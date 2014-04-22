@@ -1,0 +1,36 @@
+Name:           distributed-process-test
+Version:        0.1
+Stability:      experimental
+Synopsis:       Simple driver around the test framework shipped with Cabal.
+Description:    This driver behaves more appropriately with regards to test output
+                compared to the default test stubs in Cabal.
+Homepage:       https://parsci.assembla.com/code/eiow-ha/git/nodes/
+License:        AllRightsReserved
+Copyright:      (C) 2013 Xyratex Technology Limited
+Category:       Control
+Build-Type:     Simple
+Cabal-Version:  >=1.10
+
+source-repository master
+  Type:         git
+  Location:     git@git.assembla.com:eiow-ha.git
+  Subdir:       cabal-test-driver
+
+Library
+  Hs-Source-Dirs:   src
+  Default-Language: Haskell2010
+  Exposed-Modules:  Test.Framework
+                    Test.Driver
+  Build-Depends:    base >= 4.5,
+                    Cabal >= 1.16,
+                    containers,
+                    data-accessor,
+                    directory >= 1.2,
+                    distributed-process >= 0.4,
+                    network-transport,
+                    process >= 1.1,
+                    regex-posix
+  Ghc-Options:      -Wall -Werror
+  Default-Extensions: DeriveDataTypeable
+                      RecordWildCards
+                      ScopedTypeVariables

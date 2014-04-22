@@ -1,0 +1,37 @@
+Name:           consensus
+Version:        0.1
+Stability:      experimental
+Synopsis:       Common interface for consensus algorithms.
+License:        AllRightsReserved
+Copyright:      © 2013 Xyratex Technology Limited
+Category:       Control
+Build-Type:     Simple
+Cabal-Version:  >=1.10
+
+source-repository master
+  Type:         git
+  Location:     git@git.assembla.com:eiow-ha.git
+  Subdir:       consensus
+
+Library
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   src/
+  Exposed-Modules:  Control.Distributed.Process.Consensus
+                    Control.Distributed.Process.Quorum
+                    Data.Lifted
+  Build-Depends:    base >= 4.5.0,
+                    binary >= 0.6,
+                    distributed-static >= 0.2.0,
+                    either >= 3.0.0,
+                    mtl >= 2.0.0,
+                    distributed-process-scheduler,
+                    syb >= 0.3
+  Default-Extensions: BangPatterns
+                      DeriveDataTypeable
+                      DeriveGeneric
+                      ExistentialQuantification
+                      GeneralizedNewtypeDeriving
+                      RecordWildCards NamedFieldPuns
+                      ScopedTypeVariables
+  Other-Extensions:   TemplateHaskell
+  Ghc-Options:      -Wall -Werror

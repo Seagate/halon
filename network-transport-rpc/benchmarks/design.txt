@@ -1,0 +1,48 @@
+== Network transport benchmark design ==
+
+The goal is testing the scalability of the transport network layer on parsci
+cluster.
+
+
+The benchmark will have the following parameters:
+ * amount of machines
+ * amount of connections per machine
+ * amount of data to send through each connection
+
+== Benchmark phases ==
+
+=== Phase I ===
+
+A process creates one thread per connection and one endpoint.
+
+The processes in each machine exchange completion messages when they are done
+creating endpoints. Then threads start creating connections. And then they
+exchange completion messages again.
+
+
+=== Phase II ===
+
+Each thread starts sending data through its connection.
+
+When processes finish sending data they exchange completion messages.
+
+
+=== Phase III ===
+
+Each process reports the time taken by phase II and terminates.
+
+
+== Example scenario ==
+
+We have 20 machines and I would like to test up to 1000 threads
+distributed on them, more if possible. So we have 50 threads per
+machine.
+
+Each thread will establish a connection. So each machine should
+have some 50 connections to each of the other 19 machines.
+
+If the switch can handle 3.3 GB/s this means each thread should be
+able to send 35 KB/s on each connection.
+
+
+

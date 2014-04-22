@@ -1,0 +1,148 @@
+--
+-- Copyright (C) 2012 Xyratex Technology Limited. All rights reserved.
+--
+
+Name:         network-transport-rpc
+Version:      0.0.1
+Synopsis:     Implementation of a transport backend for RPC
+Description:  The RPC backend provides an interface to Mero RPC library.
+Author:              Facundo Domínguez, Xyratex Technology Limited
+Maintainer:          Facundo Domínguez <facundo.dominguez@parsci.com>
+Category:            Network
+Build-Type:          Simple
+Cabal-Version:       >= 1.8
+
+Flag debug
+  Description: Print messages when the RPC backend calls are evaluated
+  Default: False
+
+
+Library
+  exposed-modules:     Network.Transport.RPC.RPCLite
+                     , Network.Transport.RPC
+  other-modules:
+
+  build-depends:       base >= 4.3
+                     , binary >= 0.6
+                     , bytestring
+                     , containers >= 0.5
+                     , filepath >= 1.3
+                     , network-transport >= 0.3
+
+  ghc-options:      -O -Wall -Werror -fprof-auto -fprof-auto-calls
+  if flag(debug)
+    cpp-options:      -DDEBUG
+
+  cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
+  include-dirs: rpclite
+  extra-libraries: mero cunit
+  -- galois mero-ut mero-xcode-ff2c mero-net-test mero
+  c-sources: rpclite/rpclite.c
+             rpclite/rpclite_fom.c
+             rpclite/rpclite_fop.c
+             rpclite/rpclite_sender_fom.c
+             rpclite/rpclite_fop_ff.c
+
+Test-Suite testrpclite
+  Type:           exitcode-stdio-1.0
+  main-is:        testrpclite.hs
+  hs-source-dirs: tests
+  ghc-options:    -O -Wall -idist/build -threaded
+  build-depends:  base >= 4.3 && < 5, binary, bytestring, network-transport-rpc, filepath
+
+Test-Suite tutorial-client
+  Type:           exitcode-stdio-1.0
+  main-is:        tutorial-client.hs
+  hs-source-dirs: tests
+  ghc-options:    -O -Wall -idist/build -threaded
+  build-depends:  base >= 4.3 && < 5, binary, bytestring, network-transport-rpc, network-transport
+  buildable: False
+
+Test-Suite tutorial-server
+  Type:           exitcode-stdio-1.0
+  main-is:        tutorial-server.hs
+  hs-source-dirs: tests
+  ghc-options:    -O -Wall -idist/build -threaded
+  build-depends:  base >= 4.3 && < 5, binary, bytestring, network-transport-rpc, network-transport, containers
+  buildable: False
+
+Test-Suite ch-client
+  Type:           exitcode-stdio-1.0
+  main-is:        ch-client.hs
+  hs-source-dirs: tests
+  ghc-options:    -O -Wall -idist/build -threaded
+  build-depends:  base >= 4.3 && < 5, binary, bytestring, network-transport-rpc, network-transport, distributed-process, containers, mtl
+  buildable: False
+
+Test-Suite ch-server
+  Type:           exitcode-stdio-1.0
+  main-is:        ch-server.hs
+  hs-source-dirs: tests
+  ghc-options:    -O -Wall -idist/build -threaded
+  build-depends:  base >= 4.3 && < 5, binary, bytestring, network-transport-rpc, containers, distributed-process, network-transport, containers, mtl
+  buildable: False
+
+Test-Suite ch-delay-client
+  Type:           exitcode-stdio-1.0
+  main-is:        ch-delay-client.hs
+  hs-source-dirs: tests
+  ghc-options:    -O -Wall -idist/build -threaded
+  build-depends:  base >= 4.3 && < 5, bytestring, network-transport-rpc, network-transport, distributed-process, containers, mtl, data-accessor, random
+  buildable: False
+
+Test-Suite ch-delay-server
+  Type:           exitcode-stdio-1.0
+  main-is:        ch-delay-server.hs
+  hs-source-dirs: tests
+  ghc-options:    -O -Wall -idist/build -threaded
+  build-depends:  base >= 4.3 && < 5, bytestring, network-transport-rpc, containers, distributed-process, network-transport, containers, mtl
+  buildable: False
+
+Test-Suite testtransport
+  Type:           exitcode-stdio-1.0
+  main-is:        testtransport.hs
+  hs-source-dirs: tests, network-transport-tests/src
+  ghc-options:    -O -Wall -idist/build -threaded
+  extensions:   CPP
+              , DeriveDataTypeable
+              , ExistentialQuantification
+              , FlexibleInstances
+              , RankNTypes
+  build-depends:  base >= 4.3 && < 5
+                , binary >= 0.6
+                , bytestring
+                , containers
+                , network-transport-rpc
+                , network-transport
+                , random
+                , ansi-terminal
+
+Test-Suite TestCH
+  Type:           exitcode-stdio-1.0
+  main-is:        TestCH.hs
+  hs-source-dirs: tests
+  ghc-options:    -O -Wall -idist/build -threaded -fno-prof-count-entries -fprof-auto-calls -fprof-auto -fno-warn-unused-do-bind
+  build-depends:  base >= 4.3 && < 5, bytestring, network-transport-rpc
+                , network-transport, containers, distributed-process
+                , random, ansi-terminal, mtl, time, binary
+
+Test-Suite TestNT
+  Type:           exitcode-stdio-1.0
+  main-is:        TestNT.hs
+  hs-source-dirs: tests network-transport-tests/src
+  ghc-options:    -O -Wall -idist/build -threaded -fno-prof-count-entries -fprof-auto-calls -fprof-auto -fno-warn-unused-do-bind
+  extensions:          CPP,
+                       ExistentialQuantification,
+                       FlexibleInstances,
+                       DeriveDataTypeable,
+                       RankNTypes,
+                       OverloadedStrings,
+                       OverlappingInstances
+  build-depends:  base >= 4.3 && < 5, network-transport-rpc,
+--                   network-transport-tests
+                  network-transport >= 0.3 && < 0.4,
+                  containers >= 0.4 && < 0.6,
+                  bytestring >= 0.9 && < 0.11,
+                  random >= 1.0 && < 1.1,
+                  mtl >= 2.1 && < 2.2,
+                  ansi-terminal >= 0.5 && < 0.6

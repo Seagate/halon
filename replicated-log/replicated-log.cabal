@@ -1,0 +1,102 @@
+Name:           replicated-log
+Version:        0.1
+Stability:      experimental
+Synopsis:       Replicated log distributed abstraction.
+License:        AllRightsReserved
+Copyright:      © 2013 Xyratex Technology Limited
+Category:       Control
+Build-Type:     Simple
+Cabal-Version:  >=1.10
+
+source-repository master
+  Type:         git
+  Location:     git@git.assembla.com:eiow-ha.git
+  Subdir:       replicated-log
+
+Flag randomTests
+  Description: Builds random tests. Requires the deterministic sceduler to be enabled.
+  Default: False
+
+Library
+  Exposed-Modules:  Control.Distributed.Log
+                    Control.Distributed.Log.Policy
+                    Control.Distributed.State
+  Other-Modules:    Control.Distributed.Log.Messages
+                    Data.Some
+  Hs-Source-Dirs:   src/
+  Build-Depends:    acid-state >= 0.11,
+                    base >= 4.5.0,
+                    binary >= 0.6,
+                    bytestring >= 0.9.2,
+                    consensus,
+                    containers >= 0.5,
+                    distributed-process-scheduler,
+                    distributed-static >= 0.2,
+                    filepath >= 1.3,
+                    mtl >= 2.0,
+                    network-transport >= 0.3,
+                    syb >= 0.3,
+                    rank1dynamic >= 0.1,
+                    safecopy >= 0.8,
+                    template-haskell >= 2.7.0
+  Default-Language: Haskell2010
+  Default-Extensions: BangPatterns
+                      DeriveDataTypeable
+                      DeriveGeneric
+                      ExistentialQuantification
+                      GeneralizedNewtypeDeriving
+                      RecordWildCards NamedFieldPuns
+                      ScopedTypeVariables
+                      TupleSections
+  Other-Extensions:   TemplateHaskell
+                      TypeFamilies
+  Ghc-Options:      -Wall -Werror
+
+Test-Suite tests
+  Type:             exitcode-stdio-1.0
+  Main-Is:          ut.hs
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   tests
+  Ghc-Options:      -Wall -threaded -eventlog -debug -with-rtsopts=-v-au
+  Build-Depends:    base >= 4.5.0,
+                    binary >= 0.6,
+                    Cabal >= 1.16,
+                    consensus,
+                    consensus-paxos,
+                    directory >= 1.2,
+                    distributed-process-scheduler,
+                    distributed-process-test,
+                    distributed-static >= 0.2.0,
+                    filepath >= 1.3,
+                    mtl >= 2.0.0,
+                    network-transport,
+                    network-transport-tcp,
+                    rank1dynamic >= 0.1,
+                    replicated-log
+  Default-Extensions: DeriveDataTypeable
+                      DeriveGeneric
+                      GeneralizedNewtypeDeriving
+                      RecordWildCards NamedFieldPuns
+                      ScopedTypeVariables
+
+Test-Suite random
+  Type:             exitcode-stdio-1.0
+  Main-Is:          random.hs
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   tests
+  Ghc-Options:      -Wall -threaded
+  if flag(randomTests)
+    Build-Depends:    base >= 4.5.0,
+                    consensus,
+                    consensus-paxos,
+                    containers,
+                    distributed-process-scheduler,
+                    distributed-static >= 0.2.0,
+                    filepath >= 1.3,
+                    network-transport,
+                    network-transport-tcp,
+                    process >= 1.1,
+                    random,
+                    replicated-log
+  else
+    Buildable : False

@@ -1,0 +1,41 @@
+name:           eiow-ha-visualize
+version:        0.1
+stability:      experimental
+synopsis:       Tree building and broadcast prototype.
+description:    A prototype of broadcast through a network of Cloud
+                Haskell processes that send and receive messages.
+homepage:       https://parsci.assembla.com/code/eiow-ha/git/nodes/
+license:        AllRightsReserved
+copyright:      Xyratex Technology Limited.
+category:       Control
+build-type:     Simple
+cabal-version:  >=1.8
+
+source-repository master
+  type:         git
+  location:     git@git.assembla.com:eiow-ha.git
+  subdir:       visualize/
+
+executable eiow-ha-visualize
+  main-is:          Visualize.hs
+  other-modules:    Tree
+  hs-source-dirs:   src/
+  build-depends:    base >= 4.5.0,
+                    binary >= 0.5,
+                    bytestring >= 0.9.2,
+                    containers >= 0.4.0,
+                    distributed-process >= 0.3.0,
+                    -- XXX: indirect dependency, listed here explicitly to work
+                    -- around the fact that higher versions incompatible with
+                    -- bytestring version in HP.
+                    bmp == 1.2.2.1,
+                    gloss >= 1.7,
+                    hashable >= 1.1,
+                    mtl >= 2.1.0,
+                    network >= 2.3,
+                    network-transport >= 0.3.0,
+                    network-transport-tcp >= 0.3.0,
+                    syb >= 0.3,
+                    template-haskell >= 2.7.0
+  extensions:       DoAndIfThenElse, PatternGuards, ScopedTypeVariables, TemplateHaskell
+  ghc-options:      -threaded

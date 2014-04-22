@@ -1,0 +1,19 @@
+#!/bin/bash -eu
+#
+# wait_contents timeout file string
+#
+# Waits for the contents of a file to be non-empty, then compares the
+# contents with the given string.
+
+for (( i=0;i<$1;i++ ))
+do
+  if [ -z "`cat $2`" ]
+  then
+    sleep 1
+  else
+    break
+  fi
+done
+
+[ "`cat $2`" != "$3" ] && exit 1
+exit 0

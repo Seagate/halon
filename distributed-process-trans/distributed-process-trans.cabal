@@ -1,0 +1,26 @@
+Name:           distributed-process-trans
+Version:        0.1
+Stability:      experimental
+Synopsis:       Helper definitions to stack monads on top of the Process monad.
+License:        AllRightsReserved
+Copyright:      © 2013 Xyratex Technology Limited
+Category:       Control
+Build-Type:     Simple
+Cabal-Version:  >=1.10
+
+source-repository master
+  Type:         git
+  Location:     git@git.assembla.com:eiow-ha.git
+  Subdir:       consensus
+
+Library
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   src/
+  Exposed-Modules:  Control.Distributed.Process.Trans
+  Build-Depends:    base >= 4.5.0,
+                    binary >= 0.6,
+                    distributed-process >= 0.3.0,
+                    mtl >= 2.0.0
+  Default-Extensions: BangPatterns
+                      ScopedTypeVariables
+  Ghc-Options:      -Wall -Werror

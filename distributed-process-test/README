@@ -1,0 +1,12 @@
+== Overview ==
+
+This package provides a convenient functions to bind together Cabal Test
+framework and Process data type from CloudHaskell.
+
+
+== Examples ==
+
+See "tests/" subdirectory under packages "consensus-paxos", "replicated-log",
+"ha", and "mero-ha" for realworld examples. Cabal configuration file in these
+package also contains how to run an executable built with this package as part
+of cabal test suite.

@@ -1,0 +1,13 @@
+The files in this folder provide a Promela model of the consensus-paxos
+implementation which can be verified with spin.
+
+To run a random simulation type:
+make prom
+To verify the model type:
+make verify
+To load the model in the ispin graphical tool type:
+make ispin
+
+Part of the promela code is extracted from the Haskell source files by using
+the commentExtrator.hs script. For help using this script type:
+runhaskell commentExtrator.hs

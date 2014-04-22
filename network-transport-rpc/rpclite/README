@@ -1,0 +1,55 @@
+= RPCLITE =
+
+rpclite is an abstraction layer over RPC
+
+The purpose of this library is to hide all the details of Mero RPC that are
+not necessary for the simplest inter process communication.
+
+The API can be found in rpclite.h.
+For an example program which uses rpclite see test.c.
+
+The current implementation allows basic establishment of connections and sending
+packets.
+
+== LIMITATIONS ==
+
+* rpc_listen can be used only once. The same process cannot listen on multiple
+  addresses simultaneously.
+
+* We don't know how to terminate connections on the server side.
+
+* We don't react to connection creation or disconnection events.
+  So the callbacks of rpc_listen other than received_callback are not 
+  implemented.
+
+  Connection creation events could be captured by using an interface in mero
+  called m0_rpc_machine_watch. Disconnection events involve watching the
+  changes in state machines associated to sessions, the details have not
+  been completely sorted out.
+
+* Closing failed connections blocks the calling thread forever.
+
+* Mero seems to keep in memory all messages that are ever sent in both client and
+  server.
+
+= st script =
+
+st starts and stops Mero services. It has been adapted from
+"mero/core/m0t1fs/linux_kernel/st/st" file in mero source code.
+
+To start services run:
+
+    $ st sstart confd
+    $ st sstart ioservice
+    $ st sstart mdservice
+
+and to stop services run:
+
+    $ st sstop mdservice
+    $ st sstop ioservice
+    $ st sstop confd
+
+For now there is no specific order required to start the services.
+Whenever a service is started, the pid of the service process is written to a
+file. This file is then read when stopping the service to know which process to
+kill.

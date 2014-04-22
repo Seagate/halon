@@ -1,0 +1,20 @@
+
+sequence {
+	u32 f_count;
+	u8 f_data
+} rpclite_fop_fragment;
+
+sequence {
+	u32 f_count;
+	u8 f_fragments
+} rpclite_fop_fragments;
+
+record {
+	rpclite_fop_fragments fp_fragments
+} rpclite_fop;
+
+record {
+	u32 f_seq
+} rpclite_fop_rep;
+
+

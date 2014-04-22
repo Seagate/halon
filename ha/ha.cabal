@@ -1,0 +1,178 @@
+--
+-- Copyright (C) 2013 Xyratex Technology Limited. All rights reserved.
+--
+Name:           ha
+Version:        0.1
+Stability:      experimental
+Synopsis:       High Availability system.
+Description:    The High Availability system is a library that can be used
+                together with deployment-specific components to ensure the
+                high availability of a distributed application.
+Homepage:       https://parsci.assembla.com/code/eiow-ha/git/nodes/
+License:        AllRightsReserved
+Copyright:      (C) 2013 Xyratex Technology Limited
+Category:       Control
+Build-Type:     Simple
+Cabal-Version:  >=1.10
+
+source-repository master
+  Type:         git
+  Location:     git@git.assembla.com:eiow-ha.git
+  Subdir:       eiow-ha/
+
+Flag debug
+  Description: Enable tracing output so errors are logged.
+  Default: False
+
+Flag rpc
+  Description: Build with the RPC backend instead of TCP.
+  Default: False
+
+Library
+  Hs-Source-Dirs:  src/lib
+  Default-Language: Haskell2010
+  if flag(rpc)
+    CPP-Options:    -DUSE_RPC
+  Default-Extensions: BangPatterns
+                      DeriveDataTypeable
+                      DeriveGeneric
+                      GeneralizedNewtypeDeriving
+                      NamedFieldPuns
+                      RecordWildCards
+                      ScopedTypeVariables
+                      StandaloneDeriving
+                      TupleSections
+  Ghc-Options:     -O -Wall -Werror
+  Exposed-Modules: HA.Resources
+                   HA.EventQueue
+                   HA.EventQueue.Consumer
+                   HA.EventQueue.Producer
+                   HA.EventQueue.Types
+                   HA.ResourceGraph
+                   HA.Multimap
+                   HA.Multimap.Implementation
+                   HA.Multimap.Process
+                   HA.Replicator
+                   HA.Replicator.Log
+                   HA.Replicator.Mock
+                   HA.RecoverySupervisor
+                   HA.NodeAgent
+                   HA.NodeAgent.Messages
+                   HA.NodeAgent.Lookup
+                   HA.Network.IdentifyTCP
+                   HA.Network.Address
+                   HA.Network.RemoteTables
+                   HA.Services.Dummy
+                   HA.Services.OCF
+  if flag(rpc)
+    Exposed-Modules: HA.Network.IdentifyRPC
+  Build-Depends:   base,
+                   binary >= 0.6,
+                   bytestring,
+                   consensus,
+                   consensus-paxos,
+                   containers,
+                   filepath >= 1.3,
+                   network,
+                   distributed-process >= 0.4,
+                   distributed-process-platform >= 0.1,
+                   distributed-static,
+                   hashable,
+                   directory,
+                   ghc-prim,
+                   mtl >= 2.0,
+                   process >= 1.1,
+                   replicated-log,
+                   unordered-containers,
+                   network-transport
+  if flag(rpc)
+    Build-Depends: network-transport,
+                   network-transport-rpc >= 0.0.1,
+                   confc
+  else
+    Build-Depends: network-transport-tcp
+
+Test-Suite testidentify
+  Type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs:  tests
+  Main-Is:         testidentify.hs
+  Ghc-Options:     -threaded -Werror -Wall
+  if flag(rpc)
+    Build-Depends:   ha == 0.1,
+                     base >= 4.5,
+                     binary >= 0.6.4,
+                     network-transport-rpc,
+                     time >= 1.4
+  else
+    buildable: False
+
+Test-Suite unit-tests
+  Type:             exitcode-stdio-1.0
+  Main-Is:          ut.hs
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   tests
+  Other-Modules:    Test.Unit
+                    HA.Network.Tests
+                    HA.EventQueue.Tests
+                    HA.Multimap.Tests
+                    HA.Multimap.ProcessTests
+                    HA.RecoverySupervisor.Tests
+                    HA.ResourceGraph.Tests
+                    RemoteTables
+  Ghc-Options:      -Wall -threaded
+  CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
+  if flag(debug)
+    Ghc-Options:    -eventlog -debug -with-rtsopts=-v-au
+  Default-Extensions: DeriveDataTypeable
+                      DeriveGeneric
+                      GeneralizedNewtypeDeriving
+                      RecordWildCards NamedFieldPuns
+                      ScopedTypeVariables
+  Build-Depends:    ha == 0.1,
+                    base >= 4.5,
+                    Cabal >= 1.16,
+                    binary >= 0.6.4,
+                    bytestring,
+                    distributed-process >= 0.4,
+                    distributed-process-platform,
+                    distributed-process-test,
+                    distributed-static,
+                    hashable,
+                    unordered-containers
+  if flag(rpc)
+      Build-Depends: network-transport-rpc
+      CPP-Options:    -DUSE_RPC
+  else
+      Build-Depends: network-transport-tcp >= 0.3
+
+Test-Suite integration-tests
+  Type:             exitcode-stdio-1.0
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   tests
+  Main-Is:          it.hs
+  Ghc-Options:      -Wall -threaded
+  CPP-Options:      -DMC_RG=RLogGroup
+  if flag(debug)
+    Ghc-Options:    -eventlog -debug -with-rtsopts=-v-au
+  Default-Extensions: DeriveDataTypeable
+                      DeriveGeneric
+                      GeneralizedNewtypeDeriving
+                      RecordWildCards NamedFieldPuns
+                      ScopedTypeVariables
+  Build-Depends:    ha == 0.1,
+                    base >= 4.5,
+                    binary >= 0.6.4,
+                    bytestring,
+                    Cabal >= 1.16,
+                    distributed-process >= 0.4,
+                    distributed-process-platform,
+                    distributed-process-test,
+                    distributed-static,
+                    hashable,
+                    unordered-containers
+  if flag(rpc)
+      Build-Depends: network-transport-rpc
+      CPP-Options:    -DUSE_RPC
+  else
+      Build-Depends: network-transport-tcp >= 0.3

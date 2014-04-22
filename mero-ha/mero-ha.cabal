@@ -1,0 +1,240 @@
+--
+-- Copyright (C) 2013 Xyratex Technology Limited. All rights reserved.
+--
+Name:           mero-ha
+Version:        0.1
+Stability:      experimental
+Synopsis:       Mero interface to HA
+Description:    The High Availability system is a library that can be used
+                together with deployment-specific components to ensure the
+                high availability of a distributed application.
+Homepage:       https://parsci.assembla.com/code/eiow-ha/git/nodes/
+License:        AllRightsReserved
+Copyright:      (C) 2013 Xyratex Technology Limited
+Category:       Control
+Build-Type:     Simple
+Cabal-Version:  >=1.10
+
+source-repository master
+  Type:         git
+  Location:     git@git.assembla.com:eiow-ha.git
+  Subdir:       mero-ha/
+
+Flag debug
+  Description: Enable tracing output so errors are logged.
+  Default: False
+
+Flag rpc
+  Description: Build with the RPC backend instead of TCP.
+  Default: False
+
+Library
+  Hs-Source-Dirs:  src/lib
+  Default-Language: Haskell2010
+  if flag(rpc)
+    CPP-Options:    -DUSE_RPC
+  Default-Extensions: BangPatterns
+                      DeriveDataTypeable
+                      DeriveGeneric
+                      GeneralizedNewtypeDeriving
+                      NamedFieldPuns
+                      RecordWildCards
+                      ScopedTypeVariables
+                      StandaloneDeriving
+                      TupleSections
+  Ghc-Options:     -O -Wall -Werror
+  Exposed-Modules: Mero.Epoch
+                   Mero.Genders
+                   Mero.FakeEpoch
+                   Mero.Notification
+                   Mero.Messages
+                   Mero.RemoteTables
+                   HA.Services.Mero
+                   HA.Resources.Mero
+                   HA.RecoveryCoordinator.Mero
+                   HA.RecoveryCoordinator.Mero.Startup
+  Build-Depends:   base,
+                   ha,
+                   bytestring,
+                   containers,
+                   directory,
+                   distributed-process,
+                   hashable,
+                   mtl,
+                   process,
+                   binary,
+                   network-transport
+  if flag(rpc)
+      Exposed-Modules: Mero.Notification.HAState
+      cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
+      extra-libraries: mero
+      include-dirs: hastate
+      c-sources: hastate/hastate.c
+                 hastate/hastate_fops.c
+                 hastate/hastate_foms.c
+      Build-Depends: network-transport-rpc >= 0.0.1
+  else
+      Build-Depends: network >= 2.4,
+                     network-transport-tcp >= 0.3
+
+Executable ha-station
+  Hs-Source-Dirs:     src/station
+  Main-Is:            Main.hs
+  Ghc-Options:        -threaded
+  ghc-options:        -Wall -Werror
+  if flag(debug)
+    ghc-options:      -eventlog -debug -with-rtsopts=-v-au
+  default-language:   Haskell2010
+  Default-Extensions: DeriveDataTypeable
+                      DisambiguateRecordFields
+                      OverloadedStrings
+                      ScopedTypeVariables
+                      TupleSections
+                      StandaloneDeriving
+  Other-Extensions:   CPP
+  if flag(rpc)
+      CPP-Options:    -DUSE_RPC
+  Build-Depends:      ha == 0.1,
+                      mero-ha,
+                      base >= 4.5,
+                      distributed-process >= 0.4,
+                      filepath >= 1.3, distributed-process-platform,
+                      network-transport >= 0.3
+  if flag(rpc)
+      Build-Depends: network-transport-rpc >= 0.0.1
+  else
+      Build-Depends: network >= 2.4,
+                     network-transport-tcp >= 0.3
+
+Executable ha-node-agent
+  Hs-Source-Dirs:     src/node
+  Main-Is:            Main.hs
+  Ghc-Options:        -threaded
+  ghc-options:        -Wall -Werror
+  if flag(debug)
+    ghc-options:      -eventlog -debug -with-rtsopts=-v-au
+  default-language:   Haskell2010
+  Default-Extensions: DeriveDataTypeable
+                      DisambiguateRecordFields
+                      OverloadedStrings
+                      ScopedTypeVariables
+                      TupleSections
+                      StandaloneDeriving
+  Other-Extensions:   CPP
+  if flag(rpc)
+      CPP-Options:    -DUSE_RPC
+  Build-Depends:      ha == 0.1,
+                      mero-ha,
+                      base >= 4.5,
+                      distributed-process >= 0.4,
+                      filepath >= 1.3,
+                      network-transport >= 0.3, distributed-process-platform >= 0.1
+  if flag(rpc)
+      Build-Depends: network-transport-rpc >= 0.0.1
+  else
+      Build-Depends: network >= 2.4,
+                     network-transport-tcp >= 0.3.1
+
+Test-Suite testepoch
+  Type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs:  tests
+  Main-Is:         testepoch.hs
+  Ghc-Options:     -threaded -Werror -Wall
+  if flag(rpc)
+    Build-Depends:   ha == 0.1,
+                     mero-ha,
+                     base >= 4.5,
+                     process >= 1.1,
+                     binary >= 0.6.4,
+                     network-transport-rpc,
+                     time >= 1.4
+  else
+    buildable: False
+
+Test-Suite testhastate
+  Type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs:  tests
+  Main-Is:         testhastate.hs
+  Ghc-Options:     -threaded -Werror -Wall
+  if flag(rpc)
+    Build-Depends:   ha == 0.1,
+                     mero-ha,
+                     base >= 4.5,
+                     process >= 1.1,
+                     binary >= 0.6.4,
+                     bytestring,
+                     filepath,
+                     network-transport-rpc,
+                     time >= 1.4
+  else
+    buildable: False
+
+
+Test-Suite unit-tests
+  Type:             exitcode-stdio-1.0
+  Main-Is:          ut.hs
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   tests
+  Other-Modules:    Test.Unit
+                    HA.RecoveryCoordinator.Mero.Tests
+                    RemoteTables
+  Ghc-Options:      -Wall -threaded
+  CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
+  if flag(debug)
+    Ghc-Options:    -eventlog -debug -with-rtsopts=-v-au
+  Default-Extensions: DeriveDataTypeable
+                      DeriveGeneric
+                      GeneralizedNewtypeDeriving
+                      RecordWildCards NamedFieldPuns
+                      ScopedTypeVariables
+  Build-Depends:    ha == 0.1,
+                    mero-ha,
+                    base >= 4.5,
+                    Cabal >= 1.16,
+                    binary >= 0.6.4,
+                    bytestring,
+                    distributed-process >= 0.4,
+                    distributed-process-platform,
+                    distributed-process-test,
+                    distributed-static,
+                    hashable,
+                    unordered-containers
+  if flag(rpc)
+      Build-Depends: network-transport-rpc
+      CPP-Options:    -DUSE_RPC
+  else
+      Build-Depends: network-transport-tcp >= 0.3
+
+Test-Suite integration-tests
+  Type:             exitcode-stdio-1.0
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   tests
+  Main-Is:          it.hs
+  Ghc-Options:      -Wall -threaded
+  CPP-Options:      -DMC_RG=RLogGroup
+  if flag(debug)
+    Ghc-Options:    -eventlog -debug -with-rtsopts=-v-au
+  Default-Extensions: DeriveDataTypeable
+                      DeriveGeneric
+                      GeneralizedNewtypeDeriving
+                      RecordWildCards NamedFieldPuns
+                      ScopedTypeVariables
+  Build-Depends:    ha == 0.1,
+                    mero-ha,
+                    base >= 4.5,
+                    binary >= 0.6.4,
+                    bytestring,
+                    Cabal >= 1.16,
+                    distributed-process >= 0.4,
+                    distributed-process-platform,
+                    distributed-process-test,
+                    distributed-static,
+                    hashable,
+                    unordered-containers
+  if flag(rpc)
+      Build-Depends: network-transport-rpc
+      CPP-Options:    -DUSE_RPC
+  else
+      Build-Depends: network-transport-tcp >= 0.3

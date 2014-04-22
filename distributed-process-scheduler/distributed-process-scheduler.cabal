@@ -1,0 +1,62 @@
+--
+-- Copyright (C) 2013 Xyratex Technology Limited. All rights reserved.
+--
+Name:           distributed-process-scheduler
+Version:        0.1
+Stability:      experimental
+Synopsis:       A scheduler for events in a distributed system.
+Description:    If the processes in a Cloud Haskell application communicate with
+                each other exclusively through messages, this library offers a
+                scheduler that can be used to sequentialize delivery and processing
+                of messages in repeatable fashion (i.e. so executions are reproducible).
+Homepage:       https://parsci.assembla.com/code/eiow-ha/git/nodes/
+License:        AllRightsReserved
+Copyright:      (C) 2013 Xyratex Technology Limited
+Category:       Control
+Build-Type:     Simple
+Cabal-Version:  >=1.10
+
+source-repository master
+  Type:         git
+  Location:     git@git.assembla.com:eiow-ha.git
+  Subdir:       eiow-ha/
+
+Flag use-scheduler
+  Description: Enable deterministic scheduler.
+  Default: False
+
+Library
+  Hs-Source-Dirs:  src
+  Default-Language: Haskell2010
+  Ghc-Options:     -O -Wall -Werror
+  Exposed-Modules: Control.Distributed.Process
+                   Control.Distributed.Process.Internal.Types
+                   Control.Distributed.Process.Closure
+                   Control.Distributed.Process.Node
+                   Control.Distributed.Process.Serializable
+                   Control.Distributed.Process.Trans
+                   Control.Distributed.Process.Scheduler
+  Other-Modules:   Control.Distributed.Process.Scheduler.Internal
+  Build-Depends:   base
+                   ,binary >= 0.6
+                   ,containers
+                   ,distributed-process >= 0.4
+                   ,distributed-process-trans
+                   ,random
+  if flag(use-scheduler)
+    CPP-Options:    -DUSE_DETERMINISTIC_SCHEDULER
+
+Test-Suite unit-tests
+  Type:             exitcode-stdio-1.0
+  Main-Is:          Tests.hs
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   tests
+  Ghc-Options:      -Wall -threaded
+  Build-Depends:    distributed-process-scheduler == 0.1
+                    ,base >= 4.5
+                    ,distributed-process-scheduler
+                    ,mtl >= 2.0
+                    ,network-transport
+                    ,network-transport-tcp
+  if flag(use-scheduler)
+    CPP-Options:    -DUSE_DETERMINISTIC_SCHEDULER

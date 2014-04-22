@@ -1,0 +1,134 @@
+#!/bin/bash
+
+## This script starts ha binaries on the current system. You can run it as
+##   ha node-agent
+## or
+##   ha station
+## In both cases, the binaries will be started using configuration drawn
+## from the environment. In particular, this script will try to figure
+## out an appropriate RPC endpoint (using the RPC lctl command), and will
+## try to figure out the cluster configuration from the genders file
+## (pointed to by the GENDERS variable). If you're starting a station
+## on multple nodes and expect them to communicate, it is your responsibility
+## to ensure that they are given the same genders file.
+##
+## This script will be called automatically in a cluster environment
+## by the ha-cluster script.
+
+# Exit immediately on error.
+set -e
+
+if [[ `id -u` -ne 0 && ! -z $USE_RPC ]]
+then
+  echo 'Must be run by superuser'
+  exit 1
+fi
+
+function getaddr_rpc
+{
+  LCTL="${LCTL:-"lctl"}"
+  LCTL="$(which $LCTL 2>/dev/null)"
+
+  # Stores the local IB address
+  IB="$(${LCTL} list_nids 2>/dev/null |grep ib|head -1)"
+
+  [ -z "$IB" ] && err "Can't find a local IB address"
+
+  # Fully qualified CH address of node agent (and putAvailable)
+  export NAADDR=${IB}:12345:34:4
+
+  # Fully qualified CH address of station command
+  export STADDR=${IB}:12345:34:3
+
+  export LAADDR=${NAADDR}
+}
+
+function getaddr
+{
+  # Stores the local IP address
+  IP="$(hostname -i)"
+
+  [ -z "$IP" ] && err "Can't find a local IP address"
+
+  # Fully qualified CH address of node agent (and putAvailable)
+  export NAADDR=${IP}:8080
+
+  # Fully qualified CH address of station command
+  export STADDR=${IP}:8081
+
+  export LAADDR=${IP}:8082
+}
+
+function help
+{
+  echo "Syntax: "
+  echo "  $0 node-agent"
+  echo "  $0 station"
+  exit 1
+}
+
+function err
+{
+  echo "$(basename $0): ${1:-"Unknown error."}"
+  exit 1
+}
+
+[ -z $MERO_ROOT ] && err "Can't find Mero. Set MERO_ROOT to appropriate directory."
+
+# find absolute path of this script
+pushd `dirname $0` > /dev/null
+SCRIPTPATH=`pwd -P`
+popd > /dev/null
+
+source $SCRIPTPATH/query.inc
+
+export LIB_PATH=${MERO_ROOT}/mero/.libs:${MERO_ROOT}/extra-libs/cunit/CUnit/Sources/.libs:${MERO_ROOT}/extra-libs/galois/src/.libs
+export LD_LIBRARY_PATH=${LIB_PATH}
+
+export PATH=${PATH}:${MERO_ROOT}/mero/.libs:${MERO_ROOT}/mgmt/ctl/.libs:${SCRIPTPATH}
+
+cabal_file=$(dirname "$SCRIPTPATH")/mero-ha.cabal
+
+[ -f "$cabal_file" ] && HA_ROOT=${HA_ROOT:-$(dirname "$SCRIPTPATH")}/dist/build
+
+BIN_DIR="${HA_ROOT:-$SCRIPTPATH}"
+
+if [ -f "$cabal_file" ]
+then
+    NA_EXEC=${BIN_DIR}/ha-node-agent/ha-node-agent
+    ST_EXEC=${BIN_DIR}/ha-station/ha-station
+else
+    NA_EXEC=${BIN_DIR}/ha-node-agent
+    ST_EXEC=${BIN_DIR}/ha-station
+fi
+
+! [ -x "$NA_EXEC" -a -x "$ST_EXEC" ] && err "Can't find HA binaries. Set HA_ROOT to appropriate directory."
+
+dir=${HA_RPC_FOLDER:-tmp-HA-$RANDOM}
+
+if [ "${HA_RPC_FOLDER:-}" ]
+then
+	mkdir -p ${dir}
+else
+	mkdir ${dir}
+fi
+cd ${dir}
+
+if [ $USE_RPC ]
+then
+    getaddr_rpc
+else
+    getaddr
+fi
+
+case $1 in
+node-agent)
+  $NA_EXEC -l $NAADDR -a $LAADDR
+  ;;
+station)
+  $ST_EXEC -l $STADDR -a $LAADDR ${@:2}
+  ;;
+*)
+  help
+ ;;
+esac

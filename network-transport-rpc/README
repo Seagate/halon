@@ -1,0 +1,70 @@
+== Overview ==
+
+This is the Mero RPC backend for cloud haskell.
+
+It implements the following stack:
+
++ RPC backend for Cloud Haskell: Network/Transport/RPC.hs
++ rpclite Haskell bindings: Network/Transport/RPC/RPCLite.hsc
++ rpclite: rpclite/README
+
+rpclite sits on top of Mero RPC. rpclite exposes the features of Mero RPC which
+are required for the upper part of the network stack. This helps reducing the
+size of the Haskell bindings.
+
+The test folder contains examples for using the rpclite Haskell bindings
+(tests/testrpclite.hs) and the RPC backend (tests/tutorial-client.hs and
+tests/tutorial-server.hs).
+
+For details about the C implementation of rpclite see rpclite/README.
+
+
+== Building ==
+
+See Makefile. It contains a variable MERO_ROOT which should be set to
+the root of the mero build tree.
+
+Then typing
+
+    $ make
+
+should perform the build procedure.
+
+    $ make test
+
+will run tests. There are currently a couple of tests.
+
+To build Mero for ParSci cluster, you can follow instructions written in
+"Mero setup instructions" documentation.
+
+
+== Running ==
+
+Before using RPC, a kernel parameter needs to be set, LNET needs to be
+started and mero needs to be loaded:
+
+    $ sudo sysctl -w kernel.randomize_va_space=0
+    $ sudo modprobe lnet
+    $ sudo lctl network up
+    $ insmod galois.ko
+    $ insmod m0mero.ko
+
+Alternatively
+
+    $ rpclite/st insmod
+
+will run all of the above steps except the first.
+
+Also, there is a make target "make loadmero", for setting up LNET and mero and a
+target "make unloadmero" for cleaning up.
+
+
+== LIMITATIONS ==
+
+The limitations of rpclite apply here (see rpclite/README).
+
+ * Behavior of the network-transport interface in the case of connection
+   failures does not follow the specification faithfully. In particular,
+   when connections from endpoint A to endpoint B fail, connections from
+   endpoint B to endpoint A are also required to fail before reconnection
+   is accomplished, and this is not implemented.
