@@ -18,11 +18,13 @@ endif
 
 empty=
 sp=$(empty) $(empty)
-USER_DB=$(subst :,,$(shell ghc-pkg list | grep "/package" | tail -1))
+USER_DB=$(subst :,,$(shell cabal sandbox hc-pkg list | grep "/package" | tail -1))
 
 GHC_VERSION = $(shell ghc --numeric-version)
 
-SANDBOX_SCHED = $(shell pwd)/sandbox-scheduler
+SANDBOX_REGULAR = $(shell pwd)/.cabal-sandbox
+
+SANDBOX_SCHED = $(shell pwd)/.cabal-sandbox-scheduler
 SANDBOX_SCHED_DB = $(SANDBOX_SCHED)/packages-$(GHC_VERSION).conf
 
 # Continuous integration target.
@@ -31,6 +33,11 @@ clean: TARGET = clean
 install: TARGET = install
 ci: TARGET = ci
 ci clean install: mero-ha
+
+dep:
+	cabal sandbox init --sandbox=$(SANDBOX_REGULAR)
+	cabal install --enable-tests --only-dependencies distributed-process-platform/ distributed-process-scheduler/ distributed-process-test/ distributed-process-trans/ consensus/ consensus-paxos/ replicated-log/ network-transport-rpc/ confc/ ha/ mero-ha/
+	cabal install distributed-process-platform
 
 # This target will generate distributable packages based on
 # the checked-in master branch of this repository.
@@ -44,15 +51,17 @@ rpm:
 
 .PHONY: network-transport-rpc confc ha
 network-transport-rpc confc ha mero-ha: $(NTR_DB_DIR)
-	make -C $@ DEBUG=true $(TARGET)
+	make -C $@ SANDBOX=$(SANDBOX_REGULAR) DEBUG=true $(TARGET)
 
 .PHONY: distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log
 distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log: $(SANDBOX_SCHED_DB)
-	make -C $@ SANDBOX=$(SANDBOX_SCHED) $(TARGET)
+	make -C $@ SANDBOX=$(SANDBOX_REGULAR) $(TARGET)
+	make -C $@ SANDBOX=$(SANDBOX_SCHED) RANDOMIZED_TESTS=1 $(TARGET)
 
 .PHONY: distributed-process-scheduler
 distributed-process-scheduler: $(SANDBOX_SCHED_DB) distributed-process-trans
-	make -C $@ SANDBOX=$(SANDBOX_SCHED) $(TARGET)
+	make -C $@ SANDBOX=$(SANDBOX_REGULAR) $(TARGET)
+	make -C $@ SANDBOX=$(SANDBOX_SCHED) RANDOMIZED_TESTS=1 $(TARGET)
 
 .PHONY: $(SANDBOX_SCHED_DB)
 $(SANDBOX_SCHED_DB):
@@ -62,7 +71,7 @@ $(SANDBOX_SCHED_DB):
 
 .PHONY: $(NTR_DB_DIR)
 $(NTR_DB_DIR):
-	sudo rm -rf $@
+	rm -rf $@
 	mkdir $@
 
 mero-ha: ha

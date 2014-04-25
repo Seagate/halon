@@ -3,8 +3,13 @@ build: configure
 	cabal build
 
 configure:
+	cabal sandbox init --sandbox=$(SANDBOX)
 	cabal clean
+	ifdef $(RANDOMIZED_TESTS)
+	cabal configure --enable-tests -frandomTests
+	else
 	cabal configure --enable-tests
+	endif
 
 clean:
 	cabal clean
@@ -13,27 +18,17 @@ install: build
 	cabal copy
 	cabal register
 
-configure-dev:
-	cabal clean
-	cabal-dev configure --enable-tests -frandomTests -s $(SANDBOX)
-
-build-dev: configure-dev
-	cabal build
-
-install-dev:
-	cabal-dev copy -s $(SANDBOX)
-	cabal-dev register -s $(SANDBOX)
-
 haddock:
 	cabal haddock
 
 test:
-	dist/build/tests/tests
-
-test-dev:
+	ifdef $(RANDOMIZED_TESTS)
 	dist/build/random/random
+	else
+	dist/build/tests/tests
+	endif
 
 promela:
 	make -C promela test
 
-ci: build test install promela build-dev test-dev install-dev haddock
+ci: build test install promela haddock

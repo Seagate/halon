@@ -40,6 +40,7 @@ haddock: configure
 	cabal haddock
 
 configure:
+	cabal sandbox init --sandbox=$(SANDBOX)
 	cabal configure --enable-tests $(CONFIGURE_FLAGS)
 
 test: build

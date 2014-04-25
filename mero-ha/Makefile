@@ -107,6 +107,7 @@ haddock: configure
 	cabal haddock
 
 configure:
+	cabal sandbox init --sandbox=$(SANDBOX)
 	cabal configure $(CABAL_FLAGS)
 
 ha-node-agent:

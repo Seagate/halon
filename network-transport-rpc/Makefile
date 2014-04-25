@@ -48,6 +48,7 @@ haddock: configure
 	cabal haddock
 
 configure: rpclite/rpclite_fop_ff.c rpclite/rpclite_fop_ff.h
+	cabal sandbox init --sandbox=$(SANDBOX)
 	cabal configure --enable-tests $(CONFIGURE_FLAGS)
 
 rpclite/rpclite_fop_ff.c: rpclite/rpclite_fop.ff
