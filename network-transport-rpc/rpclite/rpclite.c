@@ -13,6 +13,7 @@
 #include "lib/misc.h" /* M0_SET0 */
 #include "lib/thread.h"
 #include "lib/time.h"
+#include "module/instance.h"
 #include "net/net.h"
 #include "net/lnet/lnet.h"
 #include "rpc/rpc.h"
@@ -28,7 +29,7 @@
 #include "ha/epoch.h"
 
 #include "ut/cs_fop_foms.c"
-#include"ut/cs_fop_foms_xc.c"
+#include "ut/cs_fop_foms_xc.c"
 #include "ut/cs_service.c"
 #include "ut/user_space/ut.c"
 
@@ -56,6 +57,7 @@ enum {
 };
 
 
+static struct m0 instance;
 static struct m0_net_domain client_net_dom;
 static struct m0_dbenv          client_dbenv;
 static struct m0_cob_domain     client_cob_dom;
@@ -95,7 +97,7 @@ int rpc_init(char *persistence_prefix) {
 
 	rpc_stat_init();
 
-	CHECK_RESULT(rc, m0_init(), return rc);
+	CHECK_RESULT(rc, m0_init(&instance), return rc);
 
 	CHECK_RESULT(rc, m0_ut_init(), goto m0_fini);
 
