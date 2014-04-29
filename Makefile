@@ -18,7 +18,6 @@ endif
 
 empty=
 sp=$(empty) $(empty)
-USER_DB=$(subst :,,$(shell cabal sandbox hc-pkg list | grep "/package" | tail -1))
 
 GHC_VERSION = $(shell ghc --numeric-version)
 
