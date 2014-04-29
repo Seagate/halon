@@ -5,11 +5,11 @@ build: configure
 configure:
 	cabal sandbox init --sandbox=$(SANDBOX)
 	cabal clean
-	ifdef $(RANDOMIZED_TESTS)
+ifdef RANDOMIZED_TESTS
 	cabal configure --enable-tests -fuse-scheduler
-	else
+else
 	cabal configure --enable-tests
-	endif
+endif
 
 clean:
 	cabal clean

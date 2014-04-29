@@ -3,12 +3,12 @@ build: configure
 
 configure:
 	cabal sandbox init --sandbox=$(SANDBOX)
- 	cabal clean
- 	ifdef $(RANDOMIZED_TESTS)
+	cabal clean
+ifdef RANDOMIZED_TESTS
 	cabal configure --enable-tests -frandomTests
-	else
+else
 	cabal configure --enable-tests
-	endif
+endif
 
 clean:
 	cabal clean
@@ -21,12 +21,12 @@ haddock:
 	cabal haddock
 
 test:
-	ifdef $(RANDOMIZED_TESTS)
+ifdef RANDOMIZED_TESTS
 	dist/build/random/random
-	else
+else
 	dist/build/tests/tests -p ut
 	dist/build/tests/tests -p durability FirstPass
 	dist/build/tests/tests -p durability SecondPass
-	endif
+endif
 
 ci: build test install haddock 
