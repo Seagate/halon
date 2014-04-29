@@ -6,8 +6,6 @@ Prequisites:
 
  * cabal-install -- http://www.haskell.org/cabal/download.html
 
- * cabal-dev -- cabal install cabal-dev # after installing cabal-install
-
  * mero
 
  * distributed-process-platform
@@ -38,11 +36,7 @@ dependencies installed:
  $ cd distributed-process-platform
  $ git checkout 54c350bd266dacfd01420a025abcd728fc7e3adf
  $ cd ..
- $ cabal install --enable-tests --only-dependencies \
-     distributed-process-platform/ distributed-process-scheduler/ \
-     distributed-process-test/ distributed-process-trans/ consensus/ \
-     consensus-paxos/ replicated-log/ network-transport-rpc/ confc/ ha/ mero-ha/
- $ cabal install distributed-process-platform/
+ $ make dep
 
 Building and testing with the TCP transport:
 
@@ -71,9 +65,6 @@ maintained by Cabal, a tool for building and installing Haskell programs and
 libraries.
 
 Randomized tests require building some packages twice. When building for regular
-use, the built packages are installed in the user package database. When
+use, the built packages are installed in the `.cabal-sandbox` sandbox. When
 building for randomized tests, the package is installed in a package database
-created by the top-level Makefile in the folder sandbox-scheduler.
-
-cabal-install is used to install packages in the user package database and
-cabal-dev is used to install packages in the sandbox-scheduler package database. 
+created by the top-level Makefile in `.cabal-sandbox-scheduler`.

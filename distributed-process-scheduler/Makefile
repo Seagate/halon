@@ -3,8 +3,13 @@ build: configure
 	cabal build
 
 configure:
+	cabal sandbox init --sandbox=$(SANDBOX)
 	cabal clean
+ifdef RANDOMIZED_TESTS
+	cabal configure --enable-tests -fuse-scheduler
+else
 	cabal configure --enable-tests
+endif
 
 clean:
 	cabal clean
@@ -13,21 +18,10 @@ install: build
 	cabal copy
 	cabal register
 
-configure-dev:
-	cabal clean
-	cabal-dev configure --enable-tests -fuse-scheduler -s $(SANDBOX)
-
-build-dev: configure-dev
-	cabal build
-
-install-dev:
-	cabal-dev copy -s $(SANDBOX)
-	cabal-dev register -s $(SANDBOX)
-
 haddock:
 	cabal haddock
 
-test test-dev:
+test:
 	dist/build/unit-tests/unit-tests
 
-ci: build test install build-dev test-dev install-dev haddock 
+ci: build test install haddock 
