@@ -59,8 +59,6 @@ enum {
 
 static struct m0 instance;
 static struct m0_net_domain client_net_dom;
-static struct m0_dbenv          client_dbenv;
-static struct m0_cob_domain     client_cob_dom;
 static struct m0_ha_domain client_ha_dom;
 static uint64_t client_max_epoch;
 static rpc_statistic_t rpc_stat[RPC_STAT_NR];
@@ -109,21 +107,14 @@ int rpc_init(char *persistence_prefix) {
 
 	m0_ha_domain_init(&client_ha_dom, 0);
 
-	struct m0_cob_domain_id   cob_dom_id = { .id = CLIENT_COB_DOM_ID };
-
 	M0_ASSERT(strlen(persistence_prefix)+strlen(DB_FILE_NAME)<STRING_LEN);
 	strcpy(client_db, persistence_prefix);
 	strcat(client_db, DB_FILE_NAME);
-	CHECK_RESULT(rc, m0_dbenv_init(&client_dbenv, client_db, 0), goto net_dom_fini);
-
-	CHECK_RESULT(rc, m0_cob_domain_init(&client_cob_dom, &client_dbenv, &cob_dom_id), goto dbenv_fini);
 
 	m0_fom_rpclite_sender_type_ini();
 
 	return 0;
 
-dbenv_fini:
-        m0_dbenv_fini(&client_dbenv);
 net_dom_fini:
 		m0_net_domain_fini(&client_net_dom);
 ha_fini:
@@ -141,8 +132,6 @@ m0_fini:
 }
 
 void rpc_fini() {
-  m0_cob_domain_fini(&client_cob_dom);
-  m0_dbenv_fini(&client_dbenv);
   m0_net_domain_fini(&client_net_dom);
   m0_ha_domain_fini(&client_ha_dom);
   m0_net_xprt_fini(&m0_net_lnet_xprt);
@@ -206,7 +195,7 @@ int rpc_create_endpoint(char* local_address,rpc_endpoint_t** e) {
 				,goto pool_fini);
 
 
-	CHECK_RESULT(rc, m0_rpc_machine_init(&(*e)->rpc_machine, &client_cob_dom,
+	CHECK_RESULT(rc, m0_rpc_machine_init(&(*e)->rpc_machine, 
 				 &client_net_dom, (*e)->local_address, NULL, &(*e)->buffer_pool, M0_BUFFER_ANY_COLOUR,
 				 MAX_MSG_SIZE, QUEUE_LEN)
 				, goto pool_fini);
@@ -302,7 +291,7 @@ int rpc_connect_m0_thread(struct m0_rpc_machine* rpc_machine,char* remote_addres
 		return rc;
 
 	CHECK_RESULT(rc, m0_rpc_session_create(&(*c)->session
-					, &(*c)->connection, slots, m0_time_from_now(timeout_s,0))
+					, &(*c)->connection, m0_time_from_now(timeout_s,0))
 				,goto conn_destroy);
 
 	return 0;
@@ -342,8 +331,6 @@ int client_fini(struct m0_rpc_client_ctx *cctx,int timeout_s)
 	rc = m0_rpc_session_destroy(&cctx->rcx_session, timeout_s);
 	rc = m0_rpc_conn_destroy(&cctx->rcx_connection, timeout_s);
 	m0_rpc_machine_fini(&cctx->rcx_rpc_machine);
-	m0_cob_domain_fini(cctx->rcx_cob_dom);
-	m0_dbenv_fini(cctx->rcx_dbenv);
 	m0_rpc_net_buffer_pool_cleanup(&cctx->rcx_buffer_pool);
 
 	return rc;
