@@ -413,7 +413,7 @@ int rpc_connect_re(rpc_receive_endpoint_t* e,char* remote_address
 	struct m0_fom_rpclite_sender *fom_obj;
 	struct fom_state fom_st;
 	m0_time_t time;
-	struct m0_reqh* reqh = m0_cs_reqh_get(&e->sctx.rsx_mero_ctx,"ds1");
+	struct m0_reqh* reqh = m0_cs_reqh_get(&e->sctx.rsx_mero_ctx);
 	if (!reqh) {
 		fprintf(stderr,"%s: could not find request handler.",__func__);
 		return 1;
