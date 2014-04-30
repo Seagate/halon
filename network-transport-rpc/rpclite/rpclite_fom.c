@@ -126,7 +126,7 @@ static int rpclite_fop_fom_create(struct m0_fop *fop, struct m0_fom **m, struct 
                 return -ENOMEM;
 	fom = &fom_obj->fp_gen;
 	m0_fom_init(fom, &fop->f_type->ft_fom_type, &m0_fom_rpclite_ops, fop, NULL
-				, reqh, fop->f_type->ft_fom_type.ft_rstype);
+				, reqh);
 	fom_obj->fp_fop = fop;
 	*m = fom;
 	return 0;
