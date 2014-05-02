@@ -39,7 +39,6 @@
 
 #define ITEM_SIZE_CUSHION 128
 #define DB_FILE_NAME     "rpclite.db"
-
 #define S_DB_FILE_NAME     "rpclite2.db"
 #define S_STOB_FILE_NAME   "rpclite2.stob"
 #define S_ADDB_STOB_FILE_NAME   "rpclite2_addb.stob"
@@ -469,7 +468,7 @@ int rpc_listen(char* persistence_prefix,char* address,rpc_listen_callbacks_t* cb
     sprintf((*re)->rpc_size, "%d" , MAX_MSG_SIZE);
 
 	char *server_argv[] = {
-	                "rpclib_ut", "-r", "-p", "-T", "AD", "-D", (*re)->db_file_name,
+	                "rpclib_ut", "-p", "-T", "AD", "-D", (*re)->db_file_name,
 	                "-S", (*re)->stob_file_name, "-e", (*re)->server_endpoint,
 					"-A", (*re)->addb_stob_file_name,"-w","5",
 	                "-s", "ds1", "-s", "ds2", "-q", (*re)->tm_len, "-m", (*re)->rpc_size
