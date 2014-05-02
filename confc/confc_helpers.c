@@ -92,11 +92,6 @@ struct m0_conf_sdev* confc_cast_sdev(struct m0_conf_obj* obj) {
     return M0_CONF_CAST(obj,m0_conf_sdev);
 }
 
-struct m0_conf_partition* confc_cast_partition(struct m0_conf_obj* obj) {
-    return M0_CONF_CAST(obj,m0_conf_partition);
-}
-
-
 int confc_open_sync(struct m0_conf_obj** child,struct m0_conf_obj* parent,char* child_name) {
     return m0_confc_open_sync(child,parent,M0_BUF_INITS(child_name));
 }

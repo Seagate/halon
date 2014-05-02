@@ -43,6 +43,11 @@ struct m0_conf_nic* confc_cast_nic(struct m0_conf_obj* obj);
 
 struct m0_conf_sdev* confc_cast_sdev(struct m0_conf_obj* obj);
 
-struct m0_conf_partition* confc_cast_partition(struct m0_conf_obj* obj);
-
-
+// Can't extract pointer in Haskell...
+const struct m0_conf_obj_type* CONF_PROFILE_TYPE = & M0_CONF_PROFILE_TYPE;
+const struct m0_conf_obj_type* CONF_FILESYSTEM_TYPE = & M0_CONF_FILESYSTEM_TYPE;
+const struct m0_conf_obj_type* CONF_SERVICE_TYPE = & M0_CONF_SERVICE_TYPE;
+const struct m0_conf_obj_type* CONF_NODE_TYPE = & M0_CONF_NODE_TYPE;
+const struct m0_conf_obj_type* CONF_NIC_TYPE = & M0_CONF_NIC_TYPE;
+const struct m0_conf_obj_type* CONF_SDEV_TYPE = & M0_CONF_SDEV_TYPE;
+const struct m0_conf_obj_type* CONF_DIR_TYPE = & M0_CONF_DIR_TYPE;

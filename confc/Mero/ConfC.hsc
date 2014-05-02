@@ -35,7 +35,6 @@ module Mero.ConfC
   , Node(..)
   , Nic(..)
   , Sdev(..)
-  , Partition(..)
   ) where
 
 #include "confc_helpers.h"
@@ -49,7 +48,7 @@ import Control.Monad ( when )
 import Data.ByteString ( useAsCString )
 import Data.Typeable ( Typeable )
 import Data.Word ( Word32, Word64 )
-import Foreign.C.String ( withCString, CString, peekCString, peekCStringLen )
+import Foreign.C.String ( withCString, CString, peekCString )
 import Foreign.C.Types ( CInt(..) )
 import Foreign.Marshal.Alloc ( alloca, malloc, free )
 import Foreign.Marshal.Array ( advancePtr )
@@ -122,7 +121,7 @@ foreign import ccall confc_destroy :: Ptr ConfCV -> IO ()
 
 -- | Slimmed down representation of @m0_conf_obj@ object from confc.
 data CObj = CObj
-  { co_id :: String
+  { co_id :: Fid
     -- ^ Object identifier.
     --
     -- This value is unique among the object of given @co_type@ in internal C
@@ -131,6 +130,9 @@ data CObj = CObj
   , co_union :: CObjUnion
     -- ^ Haskell side representation data of casted configuration object.
   }
+
+-- | Get the object type for a configuration object.
+foreign import ccall "m0_conf_obj_type" c_conf_obj_type :: Ptr Obj -> IO CInt
 
 -- | Data type to wrap around casted configuration data.
 --
@@ -145,27 +147,24 @@ data CObjUnion
     | CN Node
     | NI Nic
     | SD Sdev
-    | PA Partition
     | COUnknown Int
 
 getCObj :: Ptr Obj -> IO CObj
 getCObj po = do
-  n <- #{peek struct m0_conf_obj, co_id.b_nob} po
-  cs <- #{peek struct m0_conf_obj, co_id.b_addr} po
-  coid <- peekCStringLen (cs,n)
-  ot <- #{peek struct m0_conf_obj, co_type} po
+  id_c <- #{peek struct m0_conf_obj, co_id.f_container} po
+  id_k <- #{peek struct m0_conf_obj, co_id.f_key} po
+  ot <- c_conf_obj_type po
   ou <- case ot :: CInt of
-          #{const M0_CO_PROFILE} -> fmap CP $ getProfile po
-          #{const M0_CO_FILESYSTEM} -> fmap CF $ getFilesystem po
-          #{const M0_CO_SERVICE} -> fmap CS $ getService po
-          #{const M0_CO_NODE} -> fmap CN $ getNode po
-          #{const M0_CO_DIR} -> fmap CD $ getDir po
-          #{const M0_CO_NIC} -> fmap NI $ getNic po
-          #{const M0_CO_SDEV} -> fmap SD $ getSdev po
-          #{const M0_CO_PARTITION} -> fmap PA $ getPartition po
+          #{const CONF_PROFILE_TYPE} -> fmap CP $ getProfile po
+          #{const CONF_FILESYSTEM_TYPE} -> fmap CF $ getFilesystem po
+          #{const CONF_SERVICE_TYPE} -> fmap CS $ getService po
+          #{const CONF_NODE_TYPE} -> fmap CN $ getNode po
+          #{const CONF_DIR_TYPE} -> fmap CD $ getDir po
+          #{const CONF_NIC_TYPE} -> fmap NI $ getNic po
+          #{const CONF_SDEV_TYPE} -> fmap SD $ getSdev po
           _ -> return $ COUnknown $ fromIntegral ot
   return CObj
-      { co_id = coid
+      { co_id = Fid { f_container = id_c, f_key = id_k }
       , co_union = ou
       }
 
@@ -252,7 +251,8 @@ data ServiceType
     = CST_MDS
     | CST_IOS
     | CST_MGS
-    | CST_DLM
+    | CST_RMS
+    | CST_SS
     | CST_UNKNOWN Int
   deriving (Show,Read,Ord,Eq)
 
@@ -283,13 +283,15 @@ instance Enum ServiceType where
   toEnum #{const M0_CST_MDS} = CST_MDS
   toEnum #{const M0_CST_IOS} = CST_IOS
   toEnum #{const M0_CST_MGS} = CST_MGS
-  toEnum #{const M0_CST_DLM} = CST_DLM
+  toEnum #{const M0_CST_RMS} = CST_RMS
+  toEnum #{const M0_CST_SS}  = CST_SS
   toEnum i                   = CST_UNKNOWN i
 
   fromEnum CST_MDS         = #{const M0_CST_MDS}
   fromEnum CST_IOS         = #{const M0_CST_IOS}
   fromEnum CST_MGS         = #{const M0_CST_MGS}
-  fromEnum CST_DLM         = #{const M0_CST_DLM}
+  fromEnum CST_RMS         = #{const M0_CST_RMS}
+  fromEnum CST_SS          = #{const M0_CST_SS}
   fromEnum (CST_UNKNOWN i) = i
 
 -- | Represetation of `m0_conf_node`.
@@ -384,35 +386,6 @@ getSdev po = do
 
 foreign import ccall unsafe confc_cast_sdev :: Ptr Obj
                                             -> IO (Ptr Service)
-
--- | Representation of `m0_conf_partition`.
-data Partition = Partition
-    { pa_start    :: Word64
-    , pa_size     :: Word64
-    , pa_index    :: Word32
-    , pa_type     :: Word32
-    , pa_filename :: String
-    }
-
-getPartition :: Ptr Obj -> IO Partition
-getPartition po = do
-  pp <- confc_cast_partition po
-  start <- #{peek struct m0_conf_partition, pa_start} pp
-  size <- #{peek struct m0_conf_partition, pa_size} pp
-  index <- #{peek struct m0_conf_partition, pa_index} pp
-  ptype <- #{peek struct m0_conf_partition, pa_type} pp
-  filename <- #{peek struct m0_conf_partition, pa_filename} pp >>= peekCString
-  return Partition
-           { pa_start = start
-           , pa_size = size
-           , pa_index = index
-           , pa_type = ptype
-           , pa_filename = filename
-           }
-
-foreign import ccall unsafe confc_cast_partition :: Ptr Obj
-                                                 -> IO (Ptr Service)
-
 
 -- * Low level operations
 
