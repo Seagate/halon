@@ -48,7 +48,7 @@ int confc_init() {
 	return 0;
 }
 
-int confc_create(struct m0_confc** c,const char* prof_name
+int confc_create(struct m0_confc** c,const struct m0_fid* prof
                 ,const char* confd_addrs,struct m0_rpc_machine* m) {
 	int rc=0;
     *c = (struct m0_confc*)malloc(sizeof(struct m0_confc));
@@ -56,7 +56,7 @@ int confc_create(struct m0_confc** c,const char* prof_name
         return ENOMEM;
 
 	rc = m0_confc_init(*c, &g_grp,
-		               &M0_BUF_INITS((char *)prof_name),
+		               prof,
 	                   confd_addrs,m, NULL);
 	if (rc)
 		fprintf(stderr,"m0_confc_init: %d %s\n",rc,strerror(-rc));
@@ -92,8 +92,8 @@ struct m0_conf_sdev* confc_cast_sdev(struct m0_conf_obj* obj) {
     return M0_CONF_CAST(obj,m0_conf_sdev);
 }
 
-int confc_open_sync(struct m0_conf_obj** child,struct m0_conf_obj* parent,char* child_name) {
-    return m0_confc_open_sync(child,parent,M0_BUF_INITS(child_name));
+int confc_open_sync(struct m0_conf_obj** result,struct m0_conf_obj* parent,const struct m0_fid *child) {
+    return m0_confc_open_sync(result,parent,*child);
 }
 
 // void m0_confc_close(struct m0_confc_obj*);

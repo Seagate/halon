@@ -175,14 +175,14 @@ data Profile = Profile
 
 getProfile :: Ptr Obj -> IO Profile
 getProfile po = return Profile
-    { cp_filesystem = getChild po "filesystem"
+    { cp_filesystem = getChild po FS_FID
     }
 
-getChild :: Ptr Obj -> String -> IO (WithClose CObj)
-getChild po name = open_sync po name >>= \pc -> fmap (,close pc) $ getCObj pc
+getChild :: Ptr Obj -> RelationFid -> IO (WithClose CObj)
+getChild po fid = open_sync po fid >>= \pc -> fmap (,close pc) $ getCObj pc
 
 -- | Representation of @m0_fid@.
-data Fid = Fid { f_container :: Word64, f_key :: Word64 }
+data Fid = Fid { f_container :: Word64, f_key :: Word64 } deriving (Show)
 
 -- | Representation of @m0_conf_filesystem@.
 data Filesystem = Filesystem
@@ -200,7 +200,7 @@ getFilesystem pc = do
   return Filesystem
            { cf_rootfid = Fid { f_container = c, f_key = k }
            , cf_params = params
-           , cf_services = getChild pc "services"
+           , cf_services = getChild pc SERVICE_FID
            }
 
 foreign import ccall unsafe confc_cast_filesystem :: Ptr Obj
@@ -272,7 +272,7 @@ getService po = do
   return Service
            { cs_type = toEnum $ fromIntegral (stype :: CInt)
            , cs_endpoints = endpoints
-           , cs_node = getChild po "node"
+           , cs_node = getChild po NODE_FID
            }
 
 foreign import ccall unsafe confc_cast_service :: Ptr Obj
@@ -319,8 +319,8 @@ getNode po = do
            , cn_last_state = last_state
            , cn_flags = flags
            , cn_pool_id = pool_id
-           , cn_nics = getChild po "nics"
-           , cn_sdevs = getChild po "sdevs"
+           , cn_nics = getChild po NICS_FID
+           , cn_sdevs = getChild po SDEVS_FID
            }
 
 foreign import ccall unsafe confc_cast_node :: Ptr Obj
@@ -362,7 +362,6 @@ data Sdev = Sdev
     , sd_last_state :: Word64
     , sd_flags      :: Word64
     , sd_filename   :: String
-    , sd_partitions :: IO (WithClose CObj)
     }
 
 getSdev :: Ptr Obj -> IO Sdev
@@ -381,7 +380,6 @@ getSdev po = do
            , sd_last_state = last_state
            , sd_flags = flags
            , sd_filename = filename
-           , sd_partitions = getChild po "partitions"
            }
 
 foreign import ccall unsafe confc_cast_sdev :: Ptr Obj
@@ -391,12 +389,35 @@ foreign import ccall unsafe confc_cast_sdev :: Ptr Obj
 
 data Obj
 
-open_sync :: Ptr Obj -> String -> IO (Ptr Obj)
-open_sync po name = alloca $ \ppc ->
-  withCString name $ \cname ->
-    confc_open_sync ppc po cname >>= check_rc  "open_sync" >> peek ppc
+-- | Relation FIDs.
+data RelationFid = 
+    FS_FID
+  | SERVICE_FID
+  | NODE_FID
+  | NICS_FID
+  | SDEVS_FID
+  | UNKNOWN_FID Int
 
-foreign import ccall confc_open_sync :: Ptr (Ptr Obj) -> Ptr Obj -> CString
+instance Enum RelationFid where
+  toEnum #{const CONF_PROFILE_FILESYSTEM_FID} = FS_FID
+  toEnum #{const CONF_FILESYSTEM_SERVICES_FID} = SERVICE_FID
+  toEnum #{const CONF_SERVICE_NODE_FID} = NODE_FID
+  toEnum #{const CONF_NODE_NICS_FID} = NICS_FID
+  toEnum #{const CONF_NODE_SDEVS_FID} = SDEVS_FID
+  toEnum i = UNKNOWN_FID i
+
+  fromEnum FS_FID = #{const CONF_PROFILE_FILESYSTEM_FID}
+  fromEnum SERVICE_FID = #{const CONF_FILESYSTEM_SERVICES_FID}
+  fromEnum NODE_FID = #{const CONF_SERVICE_NODE_FID}
+  fromEnum NICS_FID = #{const CONF_NODE_NICS_FID}
+  fromEnum SDEVS_FID = #{const CONF_NODE_SDEVS_FID}
+  fromEnum (UNKNOWN_FID i) = i
+
+open_sync :: Ptr Obj -> RelationFid -> IO (Ptr Obj)
+open_sync po fid = alloca $ \ppc ->
+  confc_open_sync ppc po (fromIntegral . fromEnum $ fid) >>= check_rc  "open_sync" >> peek ppc
+
+foreign import ccall confc_open_sync :: Ptr (Ptr Obj) -> Ptr Obj -> CInt
                                      -> IO CInt
 
 close :: Ptr Obj -> IO ()
