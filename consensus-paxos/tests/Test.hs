@@ -17,7 +17,7 @@ import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Network.Transport (Transport)
 import Network.Transport.TCP
 
-import System.Process (readProcess)
+import System.Posix.Temp (mkdtemp)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar
 import Control.Applicative ((<$>))
@@ -35,7 +35,7 @@ setup :: Transport -> ([ProcessId] -> Process ()) -> IO ()
 setup transport action = do
     node0 <- newLocalNode transport remoteTables
     done <- newEmptyMVar
-    tmpdir <- init <$> readProcess "mktemp" ["-d"] ""
+    tmpdir <- mkdtemp "/tmp/tmp.XXXXXXXXXX"
 
     putChar '\n'
     runProcess node0 $ withScheduler [] 1 $ do

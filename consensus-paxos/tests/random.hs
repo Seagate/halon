@@ -15,7 +15,6 @@ import Control.Distributed.Process.Scheduler
 import Network.Transport (Transport(..))
 import Network.Transport.TCP
 
-import Control.Applicative ((<$>))
 import Control.Exception ( bracket, throwIO, SomeException )
 import Control.Monad ( when, forM, forM_, replicateM_ )
 import Data.IORef ( newIORef, atomicModifyIORef, readIORef, writeIORef )
@@ -23,7 +22,7 @@ import qualified Data.Map as Map ( empty, insert, lookup )
 import System.Exit ( exitFailure )
 import System.Environment ( getArgs )
 import System.FilePath ((</>))
-import System.Process (readProcess)
+import System.Posix.Temp (mkdtemp)
 import System.Random ( randomIO, split, mkStdGen, random, randoms, randomRs )
 
 remoteTables :: RemoteTable
@@ -64,7 +63,7 @@ main =
 run :: Int -> Process ()
 run s = let (s0,s1) = split $ mkStdGen s
          in withScheduler [] (fst $ random s0) $ do
-  tmpdir <- liftIO $ init <$> readProcess "mktemp" ["-d"] ""
+  tmpdir <- liftIO $ mkdtemp "/tmp/tmp.XXXXXXXXXX"
   let procs = 5
   αs <- forM [1..procs] $ \n ->
             spawnLocal $ acceptor (undefined :: Int)
