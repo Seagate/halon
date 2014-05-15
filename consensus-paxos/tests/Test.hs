@@ -35,7 +35,7 @@ setup :: Transport -> ([ProcessId] -> Process ()) -> IO ()
 setup transport action = do
     node0 <- newLocalNode transport remoteTables
     done <- newEmptyMVar
-    tmpdir <- mkdtemp "/tmp/tmp.XXXXXXXXXX"
+    tmpdir <- mkdtemp "/tmp/tmp."
 
     putChar '\n'
     runProcess node0 $ withScheduler [] 1 $ do

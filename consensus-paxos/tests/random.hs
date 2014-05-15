@@ -63,7 +63,7 @@ main =
 run :: Int -> Process ()
 run s = let (s0,s1) = split $ mkStdGen s
          in withScheduler [] (fst $ random s0) $ do
-  tmpdir <- liftIO $ mkdtemp "/tmp/tmp.XXXXXXXXXX"
+  tmpdir <- liftIO $ mkdtemp "/tmp/tmp."
   let procs = 5
   αs <- forM [1..procs] $ \n ->
             spawnLocal $ acceptor (undefined :: Int)

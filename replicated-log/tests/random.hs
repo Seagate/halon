@@ -118,7 +118,7 @@ run transport s = brackets 2
   $ \nodes@(n0:_) -> runProcess' n0 $
     withScheduler [] (fst $ random $ mkStdGen s) $ do
     let tries = length nodes
-    tmpdir <- liftIO $ (</> show s) <$> mkdtemp "/tmp/tmp.XXXXXXXXXX"
+    tmpdir <- liftIO $ (</> show s) <$> mkdtemp "/tmp/tmp."
     h <- Log.new $(mkStatic 'State.commandEqDict)
                      ($(mkStatic 'State.commandSerializableDict)
                         `staticApply` sdictState)

@@ -78,7 +78,7 @@ withTmpDirectory :: Test -> Test
 withTmpDirectory (Test TestInstance{..}) =
     Test $ TestInstance{ run = do
         cwd <- getCurrentDirectory
-        tmpdir <- mkdtemp "/tmp/tmp.XXXXXXXXXX"
+        tmpdir <- mkdtemp "/tmp/tmp."
         setCurrentDirectory tmpdir
         run <* setCurrentDirectory cwd, .. }
 withTmpDirectory (Group{..}) = Group{groupTests = map withTmpDirectory groupTests, ..}
