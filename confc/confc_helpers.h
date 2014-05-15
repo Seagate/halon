@@ -7,6 +7,7 @@
 #pragma once
 
 #include "conf/confc.h"
+#include "conf/obj.h"
 
 
 /// Call rpc_init() before calling confc_init.
