@@ -28,7 +28,7 @@ Library
                     directory >= 1.2,
                     distributed-process >= 0.4,
                     network-transport,
-                    process >= 1.1,
+                    unix,
                     regex-posix
   Ghc-Options:      -Wall -Werror
   Default-Extensions: DeriveDataTypeable

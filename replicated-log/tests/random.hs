@@ -27,7 +27,7 @@ import Data.List ( isPrefixOf )
 import System.Exit ( exitFailure )
 import System.Environment ( getArgs )
 import System.FilePath ((</>))
-import System.Process (readProcess)
+import System.Posix.Temp (mkdtemp)
 import System.Random ( randomIO, mkStdGen, random, randoms )
 
 
@@ -118,7 +118,7 @@ run transport s = brackets 2
   $ \nodes@(n0:_) -> runProcess' n0 $
     withScheduler [] (fst $ random $ mkStdGen s) $ do
     let tries = length nodes
-    tmpdir <- liftIO $ (</> show s) . init <$> readProcess "mktemp" ["-d"] ""
+    tmpdir <- liftIO $ (</> show s) <$> mkdtemp "/tmp/tmp."
     h <- Log.new $(mkStatic 'State.commandEqDict)
                      ($(mkStatic 'State.commandSerializableDict)
                         `staticApply` sdictState)

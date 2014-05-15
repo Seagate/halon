@@ -32,14 +32,14 @@ import Control.Distributed.Process.Node ( newLocalNode, closeLocalNode, runProce
 
 import Network.Transport (Transport)
 
-import Control.Applicative ((<$>), (<*))
+import Control.Applicative ((<*))
 import Control.Concurrent ( forkIO, killThread, myThreadId, threadDelay, throwTo )
 import Control.Exception ( AssertionFailed(..), Exception, SomeException
                          , bracket, throw, try )
 import Control.Monad ( replicateM_, void )
 import Data.Typeable (Typeable)
 import System.Directory (getCurrentDirectory, setCurrentDirectory)
-import System.Process (readProcess)
+import System.Posix.Temp (mkdtemp)
 
 
 import Data.Accessor ((^.))
@@ -78,7 +78,7 @@ withTmpDirectory :: Test -> Test
 withTmpDirectory (Test TestInstance{..}) =
     Test $ TestInstance{ run = do
         cwd <- getCurrentDirectory
-        tmpdir <- init <$> readProcess "mktemp" ["-d"] ""
+        tmpdir <- mkdtemp "/tmp/tmp."
         setCurrentDirectory tmpdir
         run <* setCurrentDirectory cwd, .. }
 withTmpDirectory (Group{..}) = Group{groupTests = map withTmpDirectory groupTests, ..}
