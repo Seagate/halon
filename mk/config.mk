@@ -44,4 +44,5 @@ PACKAGES = $(ROOT_DIR)/distributed-process-scheduler/ \
            $(ROOT_DIR)/mero-halon/
 
 VENDOR_PACKAGES = $(ROOT_DIR)/vendor/distributed-process \
-                  $(ROOT_DIR)/vendor/tasty-files
+                  $(ROOT_DIR)/vendor/tasty-files \
+                  $(ROOT_DIR)/vendor/acid-state
