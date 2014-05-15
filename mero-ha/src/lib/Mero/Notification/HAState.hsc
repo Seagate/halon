@@ -30,6 +30,7 @@ import Network.Transport.RPC.RPCLite
 import Control.Exception      ( Exception, throwIO )
 import Control.Monad          ( liftM2, liftM3 )
 import Data.Binary            ( Binary )
+import Data.Bits              ( bitSize, shiftR )
 import Data.ByteString as B   ( useAsCString )
 import Data.Dynamic           ( Typeable )
 import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef
@@ -48,6 +49,8 @@ import System.IO.Unsafe       ( unsafePerformIO )
 
 #include "rpclite.h"
 #include "hastate.h"
+#include "conf/obj.h"
+
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
 
 -- | Notes telling the state of a given configuration object
@@ -124,6 +127,30 @@ foreign import ccall "wrapper" cwrapGetCB :: (NVecRef -> IO ())
 foreign import ccall "wrapper" cwrapSetCB :: (NVecRef -> IO CInt)
                                           -> IO (FunPtr (NVecRef -> IO CInt))
 
+instance Enum ConfType where
+  toEnum #{const M0_CONF_DIR_TYPE.cot_ftype.ft_id} = M0_CO_DIR
+  toEnum #{const M0_CONF_PROFILE_TYPE.cot_ftype.ft_id} = M0_CO_PROFILE
+  toEnum #{const M0_CONF_FILESYSTEM_TYPE.cot_ftype.ft_id} = M0_CO_FILESYSTEM
+  toEnum #{const M0_CONF_SERVICE_TYPE.cot_ftype.ft_id} = M0_CO_SERVICE
+  toEnum #{const M0_CONF_NODE_TYPE.cot_ftype.ft_id} = M0_CO_NODE
+  toEnum #{const M0_CONF_NIC_TYPE.cot_ftype.ft_id} = M0_CO_NIC
+  toEnum #{const M0_CONF_SDEV_TYPE.cot_ftype.ft_id} = M0_CO_SDEV
+  toEnum a = M0_CO_UNKNOWN a
+
+  fromEnum M0_CO_DIR = #{const M0_CONF_DIR_TYPE.cot_ftype.ft_id}
+  fromEnum M0_CO_PROFILE = #{const M0_CONF_PROFILE_TYPE.cot_ftype.ft_id} 
+  fromEnum M0_CO_FILESYSTEM = #{const M0_CONF_FILESYSTEM_TYPE.cot_ftype.ft_id} 
+  fromEnum M0_CO_SERVICE = #{const M0_CONF_SERVICE_TYPE.cot_ftype.ft_id} 
+  fromEnum M0_CO_NODE = #{const M0_CONF_NODE_TYPE.cot_ftype.ft_id} 
+  fromEnum M0_CO_NIC = #{const M0_CONF_NIC_TYPE.cot_ftype.ft_id} 
+  fromEnum M0_CO_SDEV = #{const M0_CONF_SDEV_TYPE.cot_ftype.ft_id}
+  fromEnum (M0_CO_UNKNOWN a) = a
+
+-- | Conf object type is stored in the top 8 bits of f_container
+extractContainerType :: Word8 -> Word8
+extractContainerType w = let bs = bitSize w in
+  shiftR w (bs - 8)
+
 instance Storable UUID where
 
   sizeOf _ = #{size struct m0_uint128}
@@ -146,17 +173,15 @@ instance Storable Note where
 
   peek p = liftM3 Note
       (#{peek struct m0_ha_note, no_id} p)
-      (fmap (toEnum . fromIntegral)
-          (#{peek struct m0_ha_note, no_otype} p :: IO Word8)
+      (fmap (toEnum . fromIntegral . extractContainerType)
+          (#{peek struct m0_ha_note, no_id.f_container} p :: IO Word8)
       )
       (fmap (toEnum . fromIntegral)
           (#{peek struct m0_ha_note, no_state} p :: IO Word8)
       )
 
-  poke p (Note o t s) = do
+  poke p (Note o _ s) = do
       #{poke struct m0_ha_note, no_id} p o
-      #{poke struct m0_ha_note, no_otype} p
-          (fromIntegral $ fromEnum t :: Word8)
       #{poke struct m0_ha_note, no_state} p
           (fromIntegral $ fromEnum s :: Word8)
 

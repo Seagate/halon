@@ -44,8 +44,8 @@ data ConfType
     | M0_CO_NODE        -- 4
     | M0_CO_NIC         -- 5
     | M0_CO_SDEV        -- 6
-    | M0_CO_PARTITION   -- 7
-    deriving (Eq, Enum, Show, Generic, Typeable)
+    | M0_CO_UNKNOWN Int
+    deriving (Eq, Show, Generic, Typeable)
 
 instance Binary ConfType
 instance Hashable ConfType
