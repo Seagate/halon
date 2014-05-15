@@ -16,6 +16,11 @@ NTR_DB_DIR = $(shell pwd)/testdb
 export NTR_DB_DIR
 endif
 
+# By default, don't reuse any packages in the user or global database
+# to satisfy dependencies. But for faster builds, you can
+# try --package-db=user or package-db=user.
+CABAL_FLAGS = --package-db=clean
+
 empty=
 sp=$(empty) $(empty)
 
@@ -36,8 +41,9 @@ ci clean install: mero-ha
 
 dep:
 	cabal sandbox init --sandbox=$(SANDBOX_REGULAR)
-	cabal install --enable-tests --only-dependencies distributed-process-platform/ distributed-process-scheduler/ distributed-process-test/ distributed-process-trans/ consensus/ consensus-paxos/ replicated-log/ network-transport-rpc/ confc/ ha/ mero-ha/
-	cabal install distributed-process-platform/
+#	cabal sandbox add-source vendor/distributed-process
+	cabal install --enable-tests --only-dependencies $(CABAL_FLAGS) vendor/distributed-process-platform/ distributed-process-scheduler/ distributed-process-test/ distributed-process-trans/ consensus/ consensus-paxos/ replicated-log/ network-transport-rpc/ confc/ ha/ mero-ha/
+	cabal install vendor/distributed-process-platform/ --force-reinstalls
 
 # This target will generate distributable packages based on
 # the checked-in master branch of this repository.
