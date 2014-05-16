@@ -42,12 +42,12 @@ triggerEvent k = catch (expiate k) $ \(_ :: SomeException) -> return ()
 invoke :: Serializable a => ProcessId -> a -> Process ()
 invoke them x = send them x >> expect
 
-tests :: Network -> IO [Test]
+tests :: Network -> IO [TestTree]
 tests network = do
     let rt = HA.EventQueue.Tests.__remoteTable remoteTable
         transport = getNetworkTransport network
-    let (==>) :: (IO () -> Test) -> (ProcessId -> ProcessId -> MC_RG EventQueue -> Process ()) -> Test
-        t ==> action = t $ tryWithTimeout transport rt defaultTimeout $ do
+    let (==>) :: (IO () -> TestTree) -> (ProcessId -> ProcessId -> MC_RG EventQueue -> Process ()) -> TestTree
+        t ==> action = t $ withTmpDirectory $ tryWithTimeout transport rt defaultTimeout $ do
             self <- getSelfPid
             let nodes = [processNodeId self]
 
@@ -65,21 +65,21 @@ tests network = do
             action eq na rGroup
 
     return
-        [ withTmpDirectory $ testSuccess "eq-init-empty" ==> \_ _ rGroup -> do
+        [ testSuccess "eq-init-empty" ==> \_ _ rGroup -> do
               [] <- getState rGroup
               return ()
-        , withTmpDirectory $ testSuccess "eq-one-event" ==> \_ _ rGroup -> do
+        , testSuccess "eq-one-event" ==> \_ _ rGroup -> do
               triggerEvent 1
               [ HAEvent (EventId _ 0) _ ] <- getState rGroup
               return ()
-        , withTmpDirectory $ testSuccess "eq-many-events" ==> \_ _ rGroup -> do
+        , testSuccess "eq-many-events" ==> \_ _ rGroup -> do
               mapM_ triggerEvent [1..10]
               assert . (== 10) . length =<< getState rGroup
-        , withTmpDirectory $ testSuccess "eq-trim-one" ==> \eq na rGroup -> do
+        , testSuccess "eq-trim-one" ==> \eq na rGroup -> do
               mapM_ triggerEvent [1..10]
               invoke eq $ EventId na 0
               assert . (== 9) . length =<< getState rGroup
-        , withTmpDirectory $ testSuccess "eq-trim-idempotent" ==> \eq na rGroup -> do
+        , testSuccess "eq-trim-idempotent" ==> \eq na rGroup -> do
               mapM_ triggerEvent [1..10]
               before <- map (eventCounter . eventId) <$> getState rGroup
               invoke eq $ EventId na 5
@@ -87,7 +87,7 @@ tests network = do
               invoke eq $  EventId na 5
               trim2 <- map (eventCounter . eventId) <$> getState rGroup
               assert (before /= trim1 && before /= trim2 && trim1 == trim2)
-        , withTmpDirectory $ testSuccess "eq-trim-none" ==> \eq na rGroup -> do
+        , testSuccess "eq-trim-none" ==> \eq na rGroup -> do
               mapM_ triggerEvent [1..10]
               before <- map (eventCounter . eventId) <$> getState rGroup
               invoke eq $  EventId na 11

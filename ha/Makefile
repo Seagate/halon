@@ -72,10 +72,10 @@ install: build
 test: loadmero build testidentify ut it
 
 ut:
-	$(SUDO) dist/build/unit-tests/unit-tests $(TEST_LISTEN)
+	$(SUDO) dist/build/unit-tests/unit-tests --num-threads 1 -- $(TEST_LISTEN)
 
 it:
-	$(SUDO) dist/build/integration-tests/integration-tests $(TEST_LISTEN)
+	$(SUDO) dist/build/integration-tests/integration-tests --num-threads 1 -- $(TEST_LISTEN)
 
 ifdef USE_RPC
 testidentify:

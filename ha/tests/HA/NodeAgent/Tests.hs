@@ -88,7 +88,7 @@ spawnLocalLink f =
      spawnLocal $ flip catch (\e -> liftIO $ throwTo self (e :: SomeException)) $ f
 
 naTest :: Network -> ([LocalNode] -> Process ()) -> IO ()
-naTest network action = do
+naTest network action = withTmpDirectory $ do
   nodes <- replicateM 3 newNode
   let nids = map localNodeId nodes
   mapM_ (initialize nids) nodes
@@ -121,7 +121,7 @@ naTest network action = do
       Ok <- updateEQNodes na 0 nids
       return ()
 
-tests :: Network -> IO [Test]
+tests :: Network -> IO [TestTree]
 tests network = do
     return
       [ testSuccess "rc-get-expiate" $ naTest network $ \_nodes -> do

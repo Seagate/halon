@@ -49,11 +49,11 @@ setup transport action = do
 proposeWrapper :: [ProcessId] -> DecreeId -> Int -> Process Bool
 proposeWrapper αs d x = (x ==) <$> runPropose (BasicPaxos.propose αs d x)
 
-tests :: IO [Test]
+tests :: IO TestTree
 tests = do
     Right transport <- createTransport "127.0.0.1" "8080" defaultTCPParameters
 
-    return
+    return $ testGroup "consensus-paxos"
       [ testSuccess "single-decree" $ setup transport $ \them -> do
             assert =<< proposeWrapper them (DecreeId 0 0) 42
       , testSuccess "two-decree"    $ setup transport $ \them -> do

@@ -70,8 +70,8 @@ mmSDict = SerializableDict
 
 remotable [ 'mmSDict ]
 
-tests :: Network -> Test
-tests network = testSuccess "multimap" $ do
+tests :: Network -> TestTree
+tests network = testSuccess "multimap" . withTmpDirectory $ do
     lnid <- newLocalNode (getNetworkTransport network)
             $ __remoteTable remoteTable
     tryRunProcess lnid $ do

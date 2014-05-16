@@ -24,9 +24,9 @@ test:
 ifdef RANDOMIZED_TESTS
 	dist/build/random/random
 else
-	dist/build/tests/tests -p ut
-	dist/build/tests/tests -p durability FirstPass
-	dist/build/tests/tests -p durability SecondPass
+	dist/build/tests/tests --pattern ut --num-threads 1
+	dist/build/tests/tests --pattern durability --num-threads 1 -- FirstPass
+	dist/build/tests/tests --pattern durability --num-threads 1 -- SecondPass
 endif
 
 ci: build test install haddock 
