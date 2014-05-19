@@ -41,7 +41,7 @@
 #define DB_FILE_NAME     "rpclite.db"
 #define S_DB_FILE_NAME     "rpclite2.db"
 #define S_STOB_FILE_NAME   "rpclite2.stob"
-#define S_ADDB_STOB_FILE_NAME   "rpclite2_addb.stob"
+#define S_ADDB_STOB_FILE_NAME   "linuxstob:rpclite2_addb.stob"
 #define S_LOG_FILE_NAME    "rpclite2.log"
 
 enum {
