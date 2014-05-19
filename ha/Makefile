@@ -24,9 +24,10 @@ DEBUG =
 -include mk/config.mk
 
 ifndef MERO_ROOT
-$(error The variable MERO_ROOT is undefined. Please, make it point to the mero build tree.)
+$(error The variable MERO_ROOT is undefined. Please, make it point to the mero build tree or set to -- to work without mero.)
 endif
 
+ifneq ($(MERO_ROOT),--)
 empty :=
 space := $(empty) $(empty)
 export LD_LIBRARY_PATH := \
@@ -35,8 +36,11 @@ export LD_LIBRARY_PATH := \
 		$(MERO_ROOT)/extra-libs/cunit/CUnit/Sources/.libs\
 		$(MERO_ROOT)/extra-libs/galois/src/.libs\
                 $(LD_LIBRARY_PATH)))
-
 SUDO = sudo -E LD_LIBRARY_PATH=$(LD_LIBRARY_PATH)
+else
+SUDO =
+endif
+
 
 ifdef USE_TCP
 TEST_LISTEN = 127.0.0.1:8090
