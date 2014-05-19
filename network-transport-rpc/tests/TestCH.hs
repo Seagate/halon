@@ -14,7 +14,7 @@ module Main where
 import Data.Binary (Binary(..))
 import Data.Typeable (Typeable)
 import Data.Foldable (forM_)
-import Control.Concurrent (threadDelay,ThreadId,myThreadId)
+import Control.Concurrent (threadDelay)
 import Data.Time
 import Control.Concurrent.MVar 
   ( MVar
@@ -25,8 +25,8 @@ import Control.Concurrent.MVar
   , takeMVar
   , readMVar
   )
-import Control.Monad (replicateM_, replicateM, mapM, mapM_, when)
-import Control.Exception (throwIO,SomeException, throwTo, finally)
+import Control.Monad (replicateM_, replicateM)
+import Control.Exception (throwIO, finally)
 import Control.Applicative ((<$>), (<*>))
 import qualified Network.Transport as NT (Transport, closeEndPoint)
 import Network.Transport.RPC ( createTransport, defaultRPCParameters
@@ -116,9 +116,9 @@ testBigPing transport concurrent pingSize = do
   takeMVar clientDone
   takeMVar nodes >>= mapM_ closeLocalNode
     where 
-          pinger pingServer pingSize = 
+          pinger pingServer pingSize' = 
               do pid <- getSelfPid
-                 send pingServer (BigPong pid (replicate pingSize '!'))
+                 send pingServer (BigPong pid (replicate pingSize' '!'))
                  BigPing _ _ <- expect
                  return ()
 

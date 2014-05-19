@@ -77,7 +77,7 @@ reservedAddress rpcTransport serverAddrs = do
     Right e1 <- newReservedEndPoint rpcTransport 4
     Right c <- connect e0 (EndPointAddress $ B8.pack $ serverAddrs ++ ":4")
                        ReliableOrdered defaultConnectHints
-    send c [ B8.pack "ping" ]
+    _ <- send c [ B8.pack "ping" ]
     ConnectionOpened _ _ _ <- receive e1
     Received _ [bs] <- receive e1
     True <- return $ B8.unpack bs == "ping"
@@ -88,7 +88,7 @@ reservedAddress rpcTransport serverAddrs = do
     return ()
 
 reservedAddressOutOfRange :: RPCTransport -> String -> IO ()
-reservedAddressOutOfRange rpcTransport serverAddrs = do
+reservedAddressOutOfRange rpcTransport _serverAddrs = do
     Left (TransportError NewEndPointInsufficientResources
                          "EndPoint id not in the reserved range."
          )
@@ -96,7 +96,7 @@ reservedAddressOutOfRange rpcTransport serverAddrs = do
     return ()
 
 reservedAddressInUse :: RPCTransport -> String -> IO ()
-reservedAddressInUse rpcTransport serverAddrs = do
+reservedAddressInUse rpcTransport _serverAddrs = do
     Right e <- newReservedEndPoint rpcTransport 4
     Left (TransportError NewEndPointInsufficientResources
                          "EndPoint id is already in use."
