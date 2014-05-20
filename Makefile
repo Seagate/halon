@@ -42,7 +42,7 @@ ci clean install: mero-ha
 dep:
 	cabal sandbox init --sandbox=$(SANDBOX_REGULAR)
 #	cabal sandbox add-source vendor/distributed-process
-	cabal install --enable-tests --only-dependencies $(CABAL_FLAGS) vendor/distributed-process-platform/ distributed-process-scheduler/ distributed-process-test/ distributed-process-trans/ consensus/ consensus-paxos/ replicated-log/ network-transport-rpc/ confc/ ha/ mero-ha/
+	cabal install --enable-tests --only-dependencies $(CABAL_FLAGS) --reorder-goals vendor/distributed-process-platform/ distributed-process-scheduler/ distributed-process-test/ distributed-process-trans/ consensus/ consensus-paxos/ replicated-log/ network-transport-rpc/ confc/ ha/ mero-ha/
 	cabal install vendor/distributed-process-platform/ --force-reinstalls
 
 # This target will generate distributable packages based on
