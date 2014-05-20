@@ -76,9 +76,13 @@ $(SANDBOX_SCHED_DB):
 	cp -r $(SANDBOX_REGULAR_DB)/* $(SANDBOX_SCHED_DB)
 
 .PHONY: $(NTR_DB_DIR)
+ifneq ($(MERO_ROOT),--)
 $(NTR_DB_DIR):
 	sudo rm -rf $@
 	mkdir $@
+else
+$(NTR_DB_DIR):
+endif
 
 mero-ha: ha
 ha: replicated-log

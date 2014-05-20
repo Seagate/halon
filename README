@@ -14,7 +14,8 @@ Prequisites:
 
 Environment variables:
 
-  MERO_ROOT Must point to the root of the mero source and build tree.
+  MERO_ROOT Must point to the root of the mero source and build tree, or must be
+            "--" to build and test without using mero.
 
   GENDERS   Must point to a genders file describing the current host and perhaps
             others. See mero-ha/scripts/genders-parsci for an example. The file

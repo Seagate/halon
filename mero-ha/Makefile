@@ -24,9 +24,10 @@ DEBUG =
 -include mk/config.mk
 
 ifndef MERO_ROOT
-$(error The variable MERO_ROOT is undefined. Please, make it point to the mero build tree.)
+$(error The variable MERO_ROOT is undefined. Please, make it point to the mero build tree or set to -- to work without mero.)
 endif
 
+ifneq ($(MERO_ROOT),--)
 empty :=
 space := $(empty) $(empty)
 export LD_LIBRARY_PATH := \
@@ -35,8 +36,10 @@ export LD_LIBRARY_PATH := \
 		$(MERO_ROOT)/extra-libs/cunit/CUnit/Sources/.libs\
 		$(MERO_ROOT)/extra-libs/galois/src/.libs\
                 $(LD_LIBRARY_PATH)))
-
 SUDO = sudo -E LD_LIBRARY_PATH=$(LD_LIBRARY_PATH)
+else
+SUDO =
+endif
 
 ifdef USE_TCP
 TEST_LISTEN = 127.0.0.1:8090
@@ -116,11 +119,14 @@ ha-node-agent:
 ha-station:
 	$(SUDO) scripts/ha station $(ARGS)
 
-clean: cleanglobaldb cleanlocaldb
+clean: cleanglobaldb cleanlocaldb clean_hastate
 	cabal clean
-	make -C hastate clean
 	rm -rf dummy_mero.stdout
 	rm -rf dummy_mero.pid
+
+ifneq ($(MERO_ROOT),--)
+clean_hastate:
+	make -C hastate clean
 
 cleanlocaldb:
 	${SUDO} rm -rf m0.trace.* *rpclite.db* *rpclite2* tmp-HA*
@@ -135,5 +141,12 @@ loadmero:
 
 unloadmero:
 	$(SUDO) M0_CORE_DIR=$(MERO_ROOT) ../network-transport-rpc/rpclite/st rmmod
+else
+clean_hastate:
+cleanlocaldb:
+cleanglobaldb:
+loadmero:
+unloadmero:
+endif
 
 ci: clean install haddock test
