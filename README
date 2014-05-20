@@ -8,9 +8,7 @@ Prequisites:
 
  * mero
 
- * distributed-process-platform
-     https://github.com/haskell-distributed/distributed-process-platform
-     Only commit 54c350bd266dacfd01420a025abcd728fc7e3adf known to work.
+ * initialization of submodules -- `git submodule update --init --recursive`
 
  * Any other dependencies listed in subfolders.
 
@@ -32,10 +30,7 @@ all packages must be considered. The following script should get Haskell
 dependencies installed:
 
  $ export PATH=~/.cabal/bin:$PATH
- $ git clone git@github.com:haskell-distributed/distributed-process-platform.git
- $ cd distributed-process-platform
- $ git checkout 54c350bd266dacfd01420a025abcd728fc7e3adf
- $ cd ..
+ $ git submodule update --init --recursive
  $ make dep
 
 Building and testing with the TCP transport:
