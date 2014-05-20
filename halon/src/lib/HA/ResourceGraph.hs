@@ -23,6 +23,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GADTs #-}
 
 module HA.ResourceGraph
@@ -79,9 +80,13 @@ import Data.HashSet (HashSet)
 import qualified Data.HashSet as S
 import Data.Hashable
 import Data.Maybe
+#if MIN_VERSION_base(4,7,0)
+import Data.Typeable ( Typeable, cast )
+#else
 import Data.Typeable ( Typeable(..), cast, mkTyConApp, mkTyCon3, tyConModule
                      , tyConPackage, typeRepTyCon, Typeable1(..)
                      )
+#endif
 
 
 -- | A type can be declared as modeling a resource by making it an instance of
@@ -279,7 +284,9 @@ toStrict = Strict.concat . toChunks
 
 -- | An auxiliary type for hiding parameters of type constructors
 data Some f = forall a. Some (f a)
-
+#if MIN_VERSION_base(4,7,0)
+               deriving Typeable
+#else
 -- | The sole purpose of this type is to provide a typeable instance from
 -- which to extract the package and the module name.
 data T = T
@@ -291,6 +298,7 @@ instance Typeable1 f => Typeable (Some f) where
     where
       packageName = tyConPackage $ typeRepTyCon $ typeOf T
       moduleName = tyConModule $ typeRepTyCon $ typeOf T
+#endif
 
 -- | Encodes a Res into a 'Lazy.ByteString'.
 encodeRes :: Resource r => r -> ByteString

@@ -11,6 +11,9 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE CPP #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module HA.Replicator.Log
   ( RLogGroup
   , __remoteTable
@@ -50,9 +53,13 @@ import Control.Exception ( evaluate )
 import Control.Monad ( when, forM )
 import Data.Binary ( decode, encode, Binary )
 import Data.ByteString.Lazy ( ByteString )
+#if MIN_VERSION_base(4,7,0)
+import Data.Typeable ( Typeable )
+#else
 import Data.Typeable ( Typeable(..), mkTyConApp, mkTyCon3, tyConPackage
                      , tyConModule, typeRepTyCon, Typeable1(..)
                      )
+#endif
 
 -- | Implementation of RGroups on top of "Control.Distributed.State".
 data RLogGroup st where
@@ -172,6 +179,9 @@ instance RGroup RLogGroup where
 
 -- | The sole purpose of this type is to provide a typeable instance from
 -- which to extract the package and the module name.
+#if MIN_VERSION_base(4,7,0)
+deriving instance Typeable Replica
+#else
 data T = T
  deriving Typeable
 
@@ -181,3 +191,4 @@ instance Typeable (Replica RLogGroup) where
     where
       packageName = tyConPackage $ typeRepTyCon $ typeOf T
       moduleName = tyConModule $ typeRepTyCon $ typeOf T
+#endif
