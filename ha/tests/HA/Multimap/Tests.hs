@@ -11,7 +11,7 @@ import Data.ByteString.Char8 ( pack )
 import Data.List ( sort )
 import Test.Framework
 
-tests :: [Test]
+tests :: [TestTree]
 tests =
     [ pureTest "toList.fromList"
        $ let [(b0',xs)] = toList $ fromList [(b0,[b1,b2]),(b0,[b3,b4])]

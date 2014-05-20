@@ -9,7 +9,7 @@
 --
 
 module Test.Framework
-    ( module Distribution.TestSuite
+    ( module Test.Tasty
     , testSuccess
     , testFailure
     , withTmpDirectory
@@ -21,8 +21,6 @@ module Test.Framework
     , terminateLocalProcesses
     ) where
 
-import Distribution.TestSuite
-
 import Control.Distributed.Process hiding ( bracket, try )
 import Control.Distributed.Process.Internal.StrictMVar
     ( newEmptyMVar, modifyMVar, putMVar, takeMVar )
@@ -32,14 +30,15 @@ import Control.Distributed.Process.Node ( newLocalNode, closeLocalNode, runProce
 
 import Network.Transport (Transport)
 
-import Control.Applicative ((<*))
 import Control.Concurrent ( forkIO, killThread, myThreadId, threadDelay, throwTo )
 import Control.Exception ( AssertionFailed(..), Exception, SomeException
-                         , bracket, throw, try )
+                         , bracket, throw, try, finally )
 import Control.Monad ( replicateM_, void )
 import Data.Typeable (Typeable)
 import System.Directory (getCurrentDirectory, setCurrentDirectory)
 import System.Posix.Temp (mkdtemp)
+import Test.Tasty
+import Test.Tasty.HUnit hiding ( assert )
 
 
 import Data.Accessor ((^.))
@@ -50,39 +49,26 @@ import qualified Data.Map as Map ( elems )
 -- Create a test with given name and action. When given action fails, the
 -- test will be considered as 'Fail'.
 --
-testSuccess :: String -> IO () -> Test
-testSuccess name t = Test $ TestInstance
-    { run = try t >>= either (\(e :: SomeException) -> return $ Finished $ Fail $ show e)
-                             (\_ -> return $ Finished $ Pass)
-    , tags = []
-    , options = []
-    , setOption = \_ _ -> Left "No options supported."
-    , .. }
+testSuccess :: String -> IO () -> TestTree
+testSuccess = testCase
 
 -- | Smart constructor for simple test.
 --
 -- Create a test with given name and action. When given actions fails, the
 -- test will be considered as 'Pass'.
 --
-testFailure :: String -> IO () -> Test
-testFailure name t = Test $ TestInstance
-    { run = try t >>= either (\(_ :: SomeException) -> return $ Finished $ Pass)
-                             (\_ -> return $ Finished $ Fail $ "Unexpected test case success.")
-    , tags = []
-    , options = []
-    , setOption = \_ _ -> Left "No options supported."
-    , .. }
+testFailure :: String -> IO () -> TestTree
+testFailure name t = testCase name $
+    try t >>= either (\(_ :: SomeException) -> return ())
+                     (\_ -> assertFailure "Unexpected test case success.")
 
 -- | Runs given test inside newly created temporary directory.
-withTmpDirectory :: Test -> Test
-withTmpDirectory (Test TestInstance{..}) =
-    Test $ TestInstance{ run = do
-        cwd <- getCurrentDirectory
-        tmpdir <- mkdtemp "/tmp/tmp."
-        setCurrentDirectory tmpdir
-        run <* setCurrentDirectory cwd, .. }
-withTmpDirectory (Group{..}) = Group{groupTests = map withTmpDirectory groupTests, ..}
-withTmpDirectory (ExtraOptions opts t) = ExtraOptions opts (withTmpDirectory t)
+withTmpDirectory :: IO a -> IO a
+withTmpDirectory t = do
+    cwd <- getCurrentDirectory
+    tmpdir <- mkdtemp "/tmp/tmp."
+    setCurrentDirectory tmpdir
+    t `Control.Exception.finally` setCurrentDirectory cwd
 
 -- | Exception indicating timeout has occured.
 data Timeout = Timeout

@@ -16,7 +16,7 @@ import qualified HA.ResourceGraph.Tests ( tests )
 import Control.Applicative ( (<$>) )
 import System.IO ( hSetBuffering, BufferMode(..), stdout, stderr )
 
-tests :: [String] -> IO [Test]
+tests :: [String] -> IO TestTree
 tests argv = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
@@ -25,17 +25,14 @@ tests argv = do
             _    -> error "missing ADDRESS"
         addr = maybe (error "wrong address") id $ parseAddress addr0
     network <- startNetwork addr
-    map withTmpDirectory <$> sequence
-      [ group "EQ" <$> HA.EventQueue.Tests.tests network
-      , group "MM-process-tests" <$> return
+    testGroup "it" <$> sequence
+      [ testGroup "EQ" <$> HA.EventQueue.Tests.tests network
+      , testGroup "MM-process-tests" <$> return
         [ HA.Multimap.ProcessTests.tests network ]
-      , group "RG" <$> HA.ResourceGraph.Tests.tests network
-      , group "RS" <$> HA.RecoverySupervisor.Tests.tests False network
+      , testGroup "RG" <$> HA.ResourceGraph.Tests.tests network
+      , testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests False network
         -- Next test is commented since it doesn't pass reliably.
         -- TODO: fix liveness of paxos.
 --    , HA.RecoverySupervisor.Tests.tests network False
-      , group "NA" <$> HA.NodeAgent.Tests.tests network
+      , testGroup "NA" <$> HA.NodeAgent.Tests.tests network
       ]
-  where
-    group :: String -> [Test] -> Test
-    group n = Group n False

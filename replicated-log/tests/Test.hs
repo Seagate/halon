@@ -108,7 +108,7 @@ proposeWrapper αs d x = (x ==) <$> runPropose (BasicPaxos.propose αs d x)
 data Pass = FirstPass | SecondPass
           deriving (Eq, Ord, Read, Show)
 
-tests :: [String] -> IO [Test]
+tests :: [String] -> IO TestTree
 tests args = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
@@ -140,17 +140,17 @@ tests args = do
                 port <- State.newPort h
                 action h port
 
-    let ut = Group "ut" False
-          [ withTmpDirectory $ testSuccess "single-command" $ setup 1 $ \_ port -> do
+    let ut = testGroup "ut"
+          [ testSuccess "single-command" . withTmpDirectory $ setup 1 $ \_ port -> do
                 State.update port incrementCP
                 assert . (== 1) =<< State.select sdictInt port readCP
 
-          , withTmpDirectory $ testSuccess "two-command"    $ setup 1 $ \_ port -> do
+          , testSuccess "two-command" . withTmpDirectory    $ setup 1 $ \_ port -> do
                 State.update port incrementCP
                 State.update port incrementCP
                 assert . (== 2) =<< State.select sdictInt port readCP
 
-          , withTmpDirectory $ testSuccess "clone"          $ setup 1 $ \h _ -> do
+          , testSuccess "clone" . withTmpDirectory          $ setup 1 $ \h _ -> do
                 self <- getSelfPid
                 rh <- Log.remoteHandle h
                 send self rh
@@ -168,7 +168,7 @@ tests args = do
           --       State.update port' incrementCP
           --       assert . (== 2) =<< State.select sdictInt port readCP
 
-          , withTmpDirectory $ testSuccess "addReplica-start-new-replica" $ setup 1 $ \h port -> do
+          , testSuccess "addReplica-start-new-replica" . withTmpDirectory $ setup 1 $ \h port -> do
                 self <- getSelfPid
                 node1 <- liftIO $ newLocalNode transport remoteTables
                 liftIO $ runProcess node1 $ registerInterceptor $ \string -> case string of
@@ -180,7 +180,7 @@ tests args = do
                     void $ Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo)) here
                 expect
 
-          , withTmpDirectory $ testSuccess "addReplica-new-replica-old-decrees" $ setup 1 $ \h port -> do
+          , testSuccess "addReplica-new-replica-old-decrees" . withTmpDirectory $ setup 1 $ \h port -> do
                 self <- getSelfPid
                 let interceptor "Increment." = send self ()
                     interceptor _ = return ()
@@ -198,7 +198,7 @@ tests args = do
                 () <- expect
                 say "New replica incremented."
 
-          , withTmpDirectory $ testSuccess "addReplica-new-replica-new-decrees" $ setup 1 $ \h port -> do
+          , testSuccess "addReplica-new-replica-new-decrees" . withTmpDirectory $ setup 1 $ \h port -> do
                 self <- getSelfPid
                 let interceptor "Increment." = send self ()
                     interceptor _ = return ()
@@ -215,7 +215,7 @@ tests args = do
                 () <- expect
                 say "Both replicas incremented again after membership change."
 
-          , withTmpDirectory $ testSuccess "update-handle" $ do
+          , testSuccess "update-handle" . withTmpDirectory $ do
               n <- newLocalNode transport remoteTables
               tryWithTimeout transport remoteTables defaultTimeout
                   $ setup' [localNodeId n] $ \h port -> do
@@ -239,7 +239,7 @@ tests args = do
                 () <- expect
                 say "Both replicas incremented again after membership change."
 
-          , withTmpDirectory $ testSuccess "quorum-after-remove" $ setup 1 $ \h port -> do
+          , testSuccess "quorum-after-remove" . withTmpDirectory $ setup 1 $ \h port -> do
                 self <- getSelfPid
                 node0 <- getSelfNode
                 node1 <- liftIO $ newLocalNode transport remoteTables
@@ -280,4 +280,4 @@ tests args = do
                 State.update port $ incrementCP
                 assert . (== expectedState) =<< State.select sdictInt port readCP
 
-    return [ut, durability_test]
+    return $ testGroup "replicated-log" [ut, durability_test]

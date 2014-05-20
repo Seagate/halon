@@ -92,7 +92,7 @@ rsSDict = SerializableDict
 
 remotable [ 'rsSDict, 'testRS ]
 
-tests :: Bool -> Network -> IO [Test]
+tests :: Bool -> Network -> IO [TestTree]
 tests oneNode network = do
   putStrLn $ "Testing RecoverySupervisor " ++
               if oneNode then "with one node..."
@@ -131,7 +131,7 @@ tests oneNode network = do
     ]
 
 rsTest :: Network -> Bool -> (MC_RG RSState -> Process ()) -> IO ()
-rsTest network oneNode action = do
+rsTest network oneNode action = withTmpDirectory $ do
   let amountOfReplicas = 2
   ns@(n1:_) <-
     replicateM amountOfReplicas

@@ -18,7 +18,7 @@ import HA.Network.Address (parseAddress, startNetwork)
 import Control.Applicative ((<$>))
 import System.IO
 
-tests :: [String] -> IO [Test]
+tests :: [String] -> IO TestTree
 tests argv = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
@@ -27,18 +27,15 @@ tests argv = do
             _    -> error "missing ADDRESS"
         addr = maybe (error "wrong address") id $ parseAddress addr0
     network <- startNetwork addr
-    sequence
+    fmap (testGroup "ut") $ sequence
         [
-          group "NT" <$> HA.Network.Tests.tests addr network
-        , group "EQ" <$> HA.EventQueue.Tests.tests network
-        , group "MM" <$> return
-            [ group "pure" HA.Multimap.Tests.tests
-            , group "process"
+          testGroup "NT" <$> HA.Network.Tests.tests addr network
+        , testGroup "EQ" <$> HA.EventQueue.Tests.tests network
+        , testGroup "MM" <$> return
+            [ testGroup "pure" HA.Multimap.Tests.tests
+            , testGroup "process"
               [ HA.Multimap.ProcessTests.tests network ]
             ]
-        , group "RS" <$> HA.RecoverySupervisor.Tests.tests True network
-        , group "RG" <$> HA.ResourceGraph.Tests.tests network
+        , testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests True network
+        , testGroup "RG" <$> HA.ResourceGraph.Tests.tests network
         ]
-    where
-      group :: String -> [Test] -> Test
-      group n = Group n False

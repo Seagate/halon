@@ -19,7 +19,7 @@ import Control.Distributed.Process hiding (bracket)
 import Control.Exception (bracket)
 
 
-tests :: Address -> Network -> IO [Test]
+tests :: Address -> Network -> IO [TestTree]
 tests addr network = do
     let transport = getNetworkTransport network
     return

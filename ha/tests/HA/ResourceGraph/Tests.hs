@@ -145,7 +145,7 @@ instance Relation HasA NodeB NodeA where
 rGroupTest ::
     (RGroup g, Typeable1 g)
     => Network -> g Multimap -> (ProcessId -> Process ()) -> IO ()
-rGroupTest network g p = do
+rGroupTest network g p = withTmpDirectory $ do
     lnode <- newLocalNode (getNetworkTransport network) $
 	    __remoteTable remoteTable
     tryRunProcess lnode $
@@ -174,7 +174,7 @@ sampleGraph =
     newResource (NodeA 2) .
     newResource (NodeA 1)
 
-tests :: Network -> IO [Test]
+tests :: Network -> IO [TestTree]
 tests network = do
     let g = undefined :: MC_RG Multimap
     return

@@ -22,15 +22,28 @@ Library
   Exposed-Modules:  Test.Framework
                     Test.Driver
   Build-Depends:    base >= 4.5,
-                    Cabal >= 1.16,
                     containers,
                     data-accessor,
                     directory >= 1.2,
                     distributed-process >= 0.4,
                     network-transport,
+                    -- see note [Tasty upper bound]
+                    tasty >= 0.7 && < 0.8,
+                    tasty-hunit,
                     unix,
                     regex-posix
   Ghc-Options:      -Wall -Werror
   Default-Extensions: DeriveDataTypeable
                       RecordWildCards
                       ScopedTypeVariables
+
+-- Note [Tasty upper bound]
+-- ~~~~~~~~~~~~~~~~~~~~~~~~
+--
+-- Tasty 0.8 fails to build with compilation errors related to missing
+-- functions in the ansi-terminal interface. Later versions of tasty
+-- cannot be used as they depend on a version of ansi-terminal that
+-- d-p-p bans with an upper bound constraint.
+--
+-- Probably this upper bound can be raised when dropping the dependency
+-- on d-p-p.
