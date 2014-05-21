@@ -123,23 +123,23 @@ recoveryCoordinator eq mm argv = do
               loop =<< G.sync rg'
         , matchIfHAEvent
           -- Check that node is already initialized.
-          (\(HAEvent _ (ServiceFailed node _)) -> G.memberResource node rg)
-          (\(HAEvent eid (ServiceFailed (Node agent) srv)) -> do
+          (\(HAEvent _ (ServiceFailed node _) _) -> G.memberResource node rg)
+          (\(HAEvent eid (ServiceFailed (Node agent) srv) _) -> do
                sayRC $ "Notified of service failure: " ++ show (serviceName srv)
                -- XXX check for timeout.
                _ <- spawn (processNodeId agent) $ serviceProcess srv
                send eq $ eid
                loop rg)
         , matchIfHAEvent
-          (\(HAEvent _ (ServiceCouldNotStart node _)) -> G.memberResource node rg)
-          (\(HAEvent eid (ServiceCouldNotStart _ srv)) -> do
+          (\(HAEvent _ (ServiceCouldNotStart node _) _) -> G.memberResource node rg)
+          (\(HAEvent eid (ServiceCouldNotStart _ srv) _) -> do
                -- XXX notify the operator in a more appropriate manner.
                sayRC $ "Can't start service: " ++ show (serviceName srv)
                send eq $ eid
                loop rg)
         , matchIfHAEvent
-          (\(HAEvent _ (StripingError node)) -> G.memberResource node rg)
-          (\(HAEvent eid (StripingError _)) -> do
+          (\(HAEvent _ (StripingError node) _) -> G.memberResource node rg)
+          (\(HAEvent eid (StripingError _) _) -> do
               sayRC $ "Striping error detected"
 
               -- Increment the epoch.
@@ -165,7 +165,7 @@ recoveryCoordinator eq mm argv = do
                       }
 
               loop =<< G.sync rg' <* send eq eid)
-        , matchHAEvent $ \(HAEvent eid EpochTransitionRequest{..}) -> do
+        , matchHAEvent $ \(HAEvent eid EpochTransitionRequest{..} _) -> do
               let G.Edge _ Has target = head $ G.edgesFromSrc Cluster rg
               send etr_source $ EpochTransition
                   { et_current = etr_current
@@ -175,14 +175,14 @@ recoveryCoordinator eq mm argv = do
               send eq $ eid
               loop rg
 #ifdef USE_RPC
-        , matchHAEvent $ \(HAEvent eid (Mero.Notification.Get pid objs)) -> do
+        , matchHAEvent $ \(HAEvent eid (Mero.Notification.Get pid objs) _) -> do
               let f obj@(ConfObject oty oid) = Note oid oty st
                       where st = head $ G.connectedTo obj Is rg
                   nvec = map f objs
               send pid $ Mero.Notification.GetReply nvec
               send eq $ eid
               loop rg
-        , matchHAEvent $ \(HAEvent eid (Mero.Notification.Set nvec)) -> do
+        , matchHAEvent $ \(HAEvent eid (Mero.Notification.Set nvec) _) -> do
               let f rg1 (Note oid oty st) =
                       let obj = ConfObject oty oid
                           edges :: [G.Edge ConfObject Is ConfObjectState]

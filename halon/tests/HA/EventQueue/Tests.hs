@@ -35,7 +35,6 @@ import Control.Exception ( SomeException )
 import Control.Monad
 import Data.ByteString ( ByteString )
 
-
 eqSDict :: SerializableDict EventQueue
 eqSDict = SerializableDict
 
@@ -92,7 +91,7 @@ tests network = do
               return ()
         , testSuccess "eq-one-event" ==> \_ _ rGroup -> do
               triggerEvent 1
-              (_, [ HAEvent (EventId _ 0) _ ]) <- getState rGroup
+              (_, [HAEvent (EventId _ 0) _ _]) <- getState rGroup
               return ()
         , testSuccess "eq-many-events" ==> \_ _ rGroup -> do
               mapM_ triggerEvent [1..10]
@@ -117,13 +116,13 @@ tests network = do
               assert (before == trim)
         , testSuccess "eq-with-no-rc-should-replicate" $ setup $ \_ _ rGroup -> do
               triggerEvent 1
-              (_, [ HAEvent (EventId _ 0) _ ]) <- getState rGroup
+              (_, [ HAEvent (EventId _ 0) _ _]) <- getState rGroup
               return ()
         , testSuccess "eq-should-lookup-for-rc" $ setup $ \_ _ rGroup -> do
               self <- getSelfPid
               updateStateWith rGroup $ $(mkClosure 'setRC) $ Just self
               triggerEvent 1
-              (_, [ HAEvent (EventId _ 0) _ ]) <- getState rGroup
+              (_, [ HAEvent (EventId _ 0) _ _]) <- getState rGroup
               return ()
         , testSuccess "eq-should-record-that-rc-died" $ setup $ \eq _ _ -> do
               self <- getSelfPid
@@ -156,7 +155,7 @@ tests network = do
                 send eq rc
                 triggerEvent 1
                 -- The RC should forward the event to me.
-                HAEvent (EventId _ 0) _ <- expect :: Process (HAEvent [ByteString])
+                HAEvent (EventId _ 0) _ _ <- expect :: Process (HAEvent [ByteString])
                 registerInterceptor $ \string -> case string of
                   "RC is lost." -> send self ()
                   _ -> return ()
@@ -167,7 +166,12 @@ tests network = do
                 triggerEvent 2
                 -- EQ should reconnect to the RC, and the RC should forward the
                 -- event to me.
-                HAEvent (EventId _ 1) _ <- expect :: Process (HAEvent [ByteString])
+                HAEvent (EventId _ 1) _ _ <- expect :: Process (HAEvent [ByteString])
                 return ()
 #endif
+        , testSuccess "eq-save-path" ==> \eq _ rGroup -> do
+              triggerEvent 1
+              (HAEvent _ _ s1) <- expect :: Process (HAEvent [ByteString])
+              (_, [HAEvent _ _ s2]) <- getState rGroup
+              assert (head s1 == eq)
         ]

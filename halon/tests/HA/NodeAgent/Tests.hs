@@ -61,7 +61,7 @@ dummyRC' rGroup =
       let loop =
            receiveWait
            [
-             matchHAEvent (\(HAEvent _ str) ->
+             matchHAEvent (\(HAEvent _ str _) ->
                 case str of
                   "hello0" -> liftIO $ putMVar sync0 ()
                   "hello1" -> liftIO $ putMVar sync1 ()
@@ -134,12 +134,12 @@ naTest network action = withTmpDirectory $ bracket
       tryRunProcess (nodes !! 0) $ do
         self <- getSelfPid
         eq1 <- spawnLocal $ forever $
-                 (expect :: Process (ProcessId, HAEvent [ByteString]))
+                 (expect :: Process (HAEvent [ByteString]))
                  >>= send self . (,) (nids !! 0)
         register eventQueueLabel eq1
         liftIO $ tryRunProcess (nodes !! 1) $ do
           eq2 <- spawnLocal $ forever $
-                   (expect :: Process (ProcessId, HAEvent [ByteString]))
+                   (expect :: Process (HAEvent [ByteString]))
                    >>= send self . (,) (nids !! 1)
           register eventQueueLabel eq2
         na <- spawnLocalLink =<< unClosure (serviceProcess nodeAgent)
@@ -148,7 +148,7 @@ naTest network action = withTmpDirectory $ bracket
 
 expectEventOnNode :: NodeId -> Process ProcessId
 expectEventOnNode n = do
-    (n', (sender, HAEvent _ _)) <- expect :: Process (NodeId, (ProcessId, HAEvent [ByteString]))
+    (n', HAEvent _ _ (sender:_)) <- expect :: Process (NodeId, HAEvent [ByteString])
     True <- return $ n == n'
     return sender
 
@@ -217,10 +217,10 @@ tests network = do
             -- didn't reply last time, NA will send the event to the last
             -- responsive node, that is the first one.
             _ <- spawnLocal $ expiate "hello4"
-            evpairs <- replicateM 2 $ (expect :: Process (NodeId, (ProcessId, HAEvent [ByteString])))
+            evpairs <- replicateM 2 $ (expect :: Process (NodeId, (HAEvent [ByteString])))
             let nids4 = nub $ map fst evpairs
-                evs   = nub $ map (snd . snd) evpairs
-                senders = map (fst . snd) evpairs
+                evs   = nub $ map snd evpairs
+                senders = map ((\(HAEvent _ _ (x:_)) -> x) . snd) evpairs
             -- The same event was sent multiple times.
             True <- return $ length evs == 1
             -- The event was sent to both nodes.

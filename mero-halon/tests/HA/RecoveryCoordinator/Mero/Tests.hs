@@ -89,15 +89,15 @@ runRC (eq, na, args) rGroup = do
    -- instead when in test mode.
    liftIO $ threadDelay 1000000
    -- Encode the message the way 'expiate' does.
-   send rc $ HAEvent (EventId na 0) $ I.messageToPayload $ I.createMessage $
-       ServiceFailed (Node na) Services.dummy
-   send rc $ HAEvent (EventId na 1) $ I.messageToPayload $ I.createMessage $
-       Mero.StripingError (Node na)
+   send rc $ HAEvent (EventId na 0) (I.messageToPayload $ I.createMessage $
+       ServiceFailed (Node na) Services.dummy) []
+   send rc $ HAEvent (EventId na 1) (I.messageToPayload $ I.createMessage $
+       Mero.StripingError (Node na)) []
    -- XXX remove this threadDelay. It's the least hassle solution for now, until
    -- we properly add event provenance.
    liftIO $ threadDelay 1000000
-   send rc $ HAEvent (EventId na 2) $ I.messageToPayload $ I.createMessage $
-       EpochTransitionRequest na 0 1
+   send rc $ HAEvent (EventId na 2) (I.messageToPayload $ I.createMessage $
+       EpochTransitionRequest na 0 1) []
 
 mockNodeAgent :: MVar () -> Process ()
 mockNodeAgent done = do
