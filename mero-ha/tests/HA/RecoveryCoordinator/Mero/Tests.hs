@@ -12,6 +12,7 @@ module HA.RecoveryCoordinator.Mero.Tests ( tests ) where
 
 import Test.Framework
 
+import HA.Call ( callResponse )
 import HA.Resources
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue
@@ -40,7 +41,6 @@ import RemoteTables ( remoteTable )
 import Control.Distributed.Process
 import qualified Control.Distributed.Process.Internal.Types as I
     (createMessage, messageToPayload, Process(..))
-import Control.Distributed.Process.Platform.Call ( callResponse )
 import Control.Distributed.Process.Closure ( remotableDecl, mkStatic )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 

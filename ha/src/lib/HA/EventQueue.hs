@@ -24,13 +24,13 @@
 module HA.EventQueue
   ( eventQueue, EventQueue, __remoteTable, eventQueueLabel ) where
 
+import HA.Call ( callResponse )
 import HA.EventQueue.Consumer
 import HA.EventQueue.Types
 import HA.Replicator ( RGroup, updateStateWith, getState)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
-import Control.Distributed.Process.Platform.Call ( callResponse )
 
 import Data.ByteString ( ByteString )
 
