@@ -17,16 +17,13 @@ module HA.Multimap
     ( Key, Value, StoreUpdate(..), getKeyValuePairs, updateStore )where
 
 import Control.Distributed.Process (ProcessId, Process )
-import Control.Distributed.Process.Platform ( TagPool, getTag )
-import Control.Distributed.Process.Platform.Call (callAt)
+import HA.Call (callAt)
 
-import Control.Concurrent ( newMVar )
 import Control.Monad ( join )
 import Data.ByteString ( ByteString )
 import Data.Binary ( Binary )
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
-import System.IO.Unsafe ( unsafePerformIO )
 
 
 -- | Types of keys
@@ -89,12 +86,7 @@ instance Binary StoreUpdate
 --
 getKeyValuePairs :: ProcessId -> Process (Maybe [(Key,[Value])])
 getKeyValuePairs mmPid =
-    getTag tagPool >>= callAt mmPid () >>= return . join
-
-{-# NOINLINE tagPool #-}
-tagPool :: TagPool
-tagPool = unsafePerformIO $ newMVar 0
-
+    callAt mmPid () >>= return . join
 
 -- | The type of @updateStore@. It updates the store with a batch of operations.
 --
@@ -107,4 +99,4 @@ tagPool = unsafePerformIO $ newMVar 0
 --
 updateStore :: ProcessId -> [StoreUpdate] -> Process (Maybe ())
 updateStore mmPid upds =
-    getTag tagPool >>= callAt mmPid upds >>= return . join
+    callAt mmPid upds >>= return . join

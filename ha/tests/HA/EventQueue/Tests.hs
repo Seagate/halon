@@ -59,7 +59,7 @@ tests network = do
             rGroup <- unClosure cRGroup >>= id
             eq <- spawnLocal (eventQueue rGroup self)
             na <- spawn (processNodeId self) (serviceProcess nodeAgent)
-            Ok <- updateEQNodes na 0 nodes
+            Ok <- updateEQNodes na nodes
             mapM_ link [eq, na]
 
             action eq na rGroup

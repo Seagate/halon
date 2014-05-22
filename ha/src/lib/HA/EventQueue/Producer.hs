@@ -11,8 +11,8 @@ import Control.Distributed.Process.Serializable (Serializable)
 -- Qualify all imports of any distributed-process "internals".
 import qualified Control.Distributed.Process.Internal.Types as I
     (createMessage, messageToPayload)
+import HA.Call (callAt)
 import HA.NodeAgent.Lookup (nodeAgentLabel)
-import Control.Distributed.Process.Platform.Call (callAt)
 import Control.Concurrent (threadDelay)
 
 -- | Add an event to the event queue, and don't die yet.
@@ -22,7 +22,7 @@ promulgate x = do
     case mthem of
         Nothing -> error "NodeAgent is not registered."
         Just na -> do
-          ret <- callAt na msg 0
+          ret <- callAt na msg
           case ret of
             Just True -> return ()
             _ -> do liftIO $ threadDelay 5000000

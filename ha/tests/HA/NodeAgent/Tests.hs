@@ -118,7 +118,7 @@ naTest network action = withTmpDirectory $ do
                        $ __remoteTable remoteTable
     initialize nids node = tryRunProcess node $ do
       na <- spawnLocalLink =<< unClosure (serviceProcess nodeAgent)
-      Ok <- updateEQNodes na 0 nids
+      Ok <- updateEQNodes na nids
       return ()
 
 tests :: Network -> IO [TestTree]

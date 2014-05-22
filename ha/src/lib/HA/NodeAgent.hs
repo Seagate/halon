@@ -19,6 +19,7 @@ module HA.NodeAgent
       , expire
       , __remoteTableDecl ) where
 
+import HA.Call
 import HA.NodeAgent.Messages
 import HA.NodeAgent.Lookup (lookupNodeAgent,nodeAgentLabel)
 import HA.Network.Address (Address,readNetworkGlobalIVar)
@@ -31,9 +32,6 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static (closureApply)
 import Control.Distributed.Process.Serializable (Serializable)
-import Control.Distributed.Process.Platform (Tag)
-import Control.Distributed.Process.Platform.Time (Timeout)
-import Control.Distributed.Process.Platform.Call
 
 import Control.Monad (when, void)
 import Control.Applicative ((<$>))
@@ -42,6 +40,7 @@ import Data.Binary (encode)
 import Data.Maybe (catMaybes)
 import Data.ByteString (ByteString)
 import Data.Typeable (Typeable)
+import Data.Word (Word64)
 
 data ExpireReason = forall why. Serializable why => ExpireReason why
   deriving (Typeable)
@@ -59,10 +58,10 @@ expire why = liftIO $ throwIO $ ExpireException $ ExpireReason why
 
 serialCall :: (Serializable a, Serializable b) =>
               String ->
-              Tag -> [NodeId] -> a ->
+              [NodeId] -> a ->
               Timeout -> Process (Maybe b)
-serialCall _ _ [] _ _ = return (Nothing)
-serialCall name tag (node:nodes) msg timeOut =
+serialCall _ [] _ _ = return (Nothing)
+serialCall name (node:nodes) msg timeOut =
   do whereisRemoteAsync node name
      mpid <- receiver [
               matchIf (\(WhereIsReply name' mpid') ->
@@ -71,26 +70,26 @@ serialCall name tag (node:nodes) msg timeOut =
             ]
      case mpid of
        Just (Just pid) -> do
-          ret <- callTimeout pid msg tag timeOut
+          ret <- callTimeout pid msg timeOut
           case ret of
             Just b -> return (Just b)
-            _ -> serialCall name (tag+1) nodes msg timeOut
-       _ -> serialCall name tag nodes msg timeOut
+            _ -> serialCall name nodes msg timeOut
+       _ -> serialCall name nodes msg timeOut
   where receiver =
           case timeOut of
             Just n -> receiveTimeout n
             Nothing -> fmap Just . receiveWait
 
-updateEQ :: ProcessId -> Tag -> [Address] -> Process Result
-updateEQ pid tag addrs =
+updateEQ :: ProcessId -> [Address] -> Process Result
+updateEQ pid addrs =
   do network <- liftIO readNetworkGlobalIVar
      mns <- mapM (lookupNodeAgent network) addrs
      let nodes = map processNodeId $ catMaybes mns
-     updateEQNodes pid tag nodes
+     updateEQNodes pid nodes
 
-updateEQNodes :: ProcessId -> Tag -> [NodeId] -> Process Result
-updateEQNodes pid tag nodes =
-     maybe CantUpdateEQ id <$> callAt pid (UpdateEQ nodes) tag
+updateEQNodes :: ProcessId -> [NodeId] -> Process Result
+updateEQNodes pid nodes =
+     maybe CantUpdateEQ id <$> callAt pid (UpdateEQ nodes)
 
 remotableDecl [ [d|
     sdictServiceInfo :: SerializableDict (String, Closure (Process ()))
@@ -145,23 +144,23 @@ remotableDecl [ [d|
     nodeAgentProcess :: Process ()
     nodeAgentProcess = go (0,[])
       where
-        go :: (Tag, [NodeId]) -> Process a
-        go (tag, eqs) = do
+        go :: (Word64, [NodeId]) -> Process a
+        go (eventCounter, eqs) = do
               self <- getSelfPid
               receiveWait
                 [ callResponse $ \servicemsg ->
                 case servicemsg of
                   UpdateEQ eqnids -> do
-                      return $ (Ok, (tag, eqnids))
+                      return $ (Ok, (eventCounter, eqnids))
                   -- match a pre-serialized event sent from service
-                , callResponseAsync (const $ Just (tag + 1, eqs)) $ \content -> do
+                , callResponseAsync (const $ Just (eventCounter + 1, eqs)) $ \content -> do
                     when (null eqs) $ say $
                         "Warning: service event cannot proceed, since \
                         \no event queues are registed in the node agent"
                     let timeOut = Just 1000000
-                        ev = HAEvent { eventId = EventId self (fromIntegral tag)
+                        ev = HAEvent { eventId = EventId self eventCounter
                                      , eventPayload = content :: [ByteString] }
-                    ret <- serialCall eventQueueLabel tag eqs ev timeOut
+                    ret <- serialCall eventQueueLabel eqs ev timeOut
                     case ret of
                       Just () -> return True
                       Nothing -> return False

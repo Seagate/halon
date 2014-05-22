@@ -11,13 +11,13 @@
 module HA.Multimap.Process
     ( multimap, __remoteTable ) where
 
+import HA.Call ( callResponse )
 import HA.Multimap ( StoreUpdate(..) )
 import HA.Multimap.Implementation
             ( Multimap, insertMany, deleteValues, deleteKeys, toList )
 import HA.Replicator ( RGroup, updateStateWith, getState )
 
 import Control.Distributed.Process ( Process, catch , receiveWait )
-import Control.Distributed.Process.Platform.Call ( callResponse )
 import Control.Distributed.Process.Closure ( mkClosure, remotable )
 
 import Control.Exception ( SomeException )
