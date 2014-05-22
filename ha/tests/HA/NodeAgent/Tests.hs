@@ -11,6 +11,7 @@ module HA.NodeAgent.Tests ( tests ) where
 import HA.Resources (serviceProcess)
 import HA.NodeAgent (nodeAgent,updateEQNodes, Result(..))
 import HA.Network.Address ( Network, getNetworkTransport )
+import HA.Process
 import HA.EventQueue ( eventQueue, EventQueue )
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR
@@ -33,7 +34,6 @@ import Control.Distributed.Static ( closureApply )
 import Control.Distributed.Process.Closure ( mkStatic, mkClosure, remotable )
 import Control.Distributed.Process.Node ( LocalNode, localNodeId, newLocalNode, closeLocalNode )
 import Control.Distributed.Process.Internal.Primitives ( unClosure )
-import Control.Distributed.Process.Platform.Test ( tryRunProcess )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
 import Data.List (find)

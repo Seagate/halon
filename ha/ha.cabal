@@ -44,6 +44,7 @@ Library
                       TupleSections
   Ghc-Options:     -O -Wall -Werror
   Exposed-Modules: HA.Call
+                   HA.Process
                    HA.Resources
                    HA.EventQueue
                    HA.EventQueue.Consumer
@@ -135,7 +136,6 @@ Test-Suite unit-tests
                     binary >= 0.6.4,
                     bytestring,
                     distributed-process >= 0.4,
-                    distributed-process-platform,
                     distributed-process-test,
                     distributed-static,
                     hashable,
@@ -166,7 +166,6 @@ Test-Suite integration-tests
                     bytestring,
                     Cabal >= 1.16,
                     distributed-process >= 0.4,
-                    distributed-process-platform,
                     distributed-process-test,
                     distributed-static,
                     hashable,

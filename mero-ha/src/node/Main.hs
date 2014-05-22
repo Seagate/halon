@@ -7,13 +7,13 @@ module Main (main) where
 
 import Flags
 import HA.NodeAgent (nodeAgent, serviceProcess)
+import HA.Process
 import Control.Distributed.Process
 import Control.Distributed.Process.Node (newLocalNode)
 import System.Environment
 import Control.Applicative ((<$>))
 import HA.Network.Address
 import HA.NodeAgent.Lookup (advertiseNodeAgent)
-import Control.Distributed.Process.Platform.Test (tryRunProcess)
 import HA.Network.RemoteTables (haRemoteTable)
 import Mero.RemoteTables (meroRemoteTable)
 import Control.Distributed.Process.Node	(initRemoteTable)

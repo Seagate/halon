@@ -10,6 +10,7 @@
 module HA.RecoverySupervisor.Tests ( tests ) where
 
 import HA.Network.Address ( Network, getNetworkTransport )
+import HA.Process
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..), pollingPeriod
                              )
 import HA.Replicator ( RGroup(..) )
@@ -33,7 +34,6 @@ import Control.Distributed.Static ( closureApply )
 import Control.Distributed.Process.Internal.Types
            ( ProcessExitException, localNodeId )
 import Control.Distributed.Process.Node ( newLocalNode, closeLocalNode )
-import Control.Distributed.Process.Platform.Test ( tryRunProcess )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
 import Control.Concurrent ( MVar, newEmptyMVar, putMVar, takeMVar, threadDelay )
