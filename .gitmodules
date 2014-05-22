@@ -1,6 +1,3 @@
-[submodule "vendor/distributed-process-platform"]
-	path = vendor/distributed-process-platform
-	url = git@github.com:haskell-distributed/distributed-process-platform.git
 [submodule "vendor/distributed-process"]
 	path = vendor/distributed-process
 	url = git@github.com:haskell-distributed/distributed-process.git
