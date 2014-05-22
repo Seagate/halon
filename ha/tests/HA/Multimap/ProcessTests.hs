@@ -17,6 +17,7 @@ import HA.Network.Address ( Network, getNetworkTransport )
 import HA.Multimap.Process ( multimap )
 import HA.Multimap ( StoreUpdate(..), updateStore, getKeyValuePairs )
 import HA.Multimap.Implementation ( fromList, Multimap )
+import HA.Process
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
@@ -31,7 +32,6 @@ import Control.Distributed.Process
     )
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
 import Control.Distributed.Process.Node ( newLocalNode, closeLocalNode )
-import Control.Distributed.Process.Platform.Test ( tryRunProcess )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
 import Control.Concurrent ( MVar, newEmptyMVar, putMVar, takeMVar, threadDelay )

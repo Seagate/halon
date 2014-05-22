@@ -7,12 +7,12 @@ module Main (main) where
 
 import Flags
 import HA.NodeAgent.Lookup (lookupNodeAgent)
+import HA.Process
 import System.Environment
 import Control.Applicative ((<$>))
 import Control.Distributed.Process.Closure ( mkClosure, functionTDict )
 import Control.Distributed.Process
 import HA.Network.Address
-import Control.Distributed.Process.Platform.Test (tryRunProcess)
 import Control.Distributed.Process.Node (newLocalNode)
 import HA.RecoveryCoordinator.Mero.Startup
 import HA.Network.RemoteTables (haRemoteTable)
