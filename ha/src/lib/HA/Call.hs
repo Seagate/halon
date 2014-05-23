@@ -17,6 +17,8 @@ module HA.Call
       , callResponse
       , callResponseWithCaller
       , callResponseAsync
+      -- * Auxiliary helpers
+      , callLocal
       ) where
 
 import Control.Distributed.Process

@@ -71,21 +71,19 @@ remotableDecl [ [d|
   testDict = SerializableDict
   |]]
 
-runRC :: (ProcessId, IgnitionArguments) -> MC_RG TestReplicatedState -> Process ()
-runRC (na, args) rGroup = do
-   rec (eq, mm, rc) <- (,,)
+runRC :: (ProcessId, ProcessId, IgnitionArguments) -> MC_RG TestReplicatedState
+         -> Process ()
+runRC (eq, na, args) rGroup = do
+   rec (mm, rc) <- (,)
            <$> (spawnLocal $ do
-                    () <- expect
-                    link rc
-                    eventQueue (viewRState $(mkStatic 'eqView) rGroup) rc)
-           <*> (spawnLocal $ do
                     () <- expect
                     link rc
                     multimap (viewRState $(mkStatic 'multimapView) rGroup))
            <*> (spawnLocal $ do
                     () <- expect
                     recoveryCoordinator eq mm args)
-   forM_ [eq, mm, rc] $ \them -> send them ()
+   send eq rc
+   forM_ [mm, rc] $ \them -> send them ()
    -- XXX remove this threadDelay. Needed right now because service type m0d is
    -- currently hardcoded in RC, when we'd like it to start a dummy service
    -- instead when in test mode.
@@ -149,10 +147,11 @@ tests addr network =
             _ -> return ()
 
         say $ "tests node: " ++ show nid
-        cRGroup <- newRGroup $(mkStatic 'testDict) [nid] ([], fromList [])
+        cRGroup <- newRGroup $(mkStatic 'testDict) [nid] ((Nothing,[]), fromList [])
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
-        runRC (na, IgnitionArguments [laddr] [laddr]) rGroup
+        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        runRC (eq, na, IgnitionArguments [laddr] [laddr]) rGroup
         liftIO $ takeMVar done
         liftIO $ Identify.closeAvailable iid
   where

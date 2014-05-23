@@ -116,14 +116,11 @@ remotableDecl [ [d|
      rGroup <- unClosure cRGroup >>= id
      maybe (return ()) (updateRGroup rGroup) mlocalReplica
      liftIO $ writeIORef globalRGroup $ Just cRGroup
+     eqpid <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
      rspid <- spawnLocal
               $ recoverySupervisor (viewRState $(mkStatic 'rsView) rGroup)
               $ mask $ const $ do
                 mRCPid <- liftIO $ newEmptyMVar
-                eqpid <- spawnLocal $ do
-                       rcpid <- liftIO $ readMVar mRCPid
-                       link rcpid
-                       eventQueue (viewRState $(mkStatic 'eqView) rGroup) rcpid
                 mmpid <- spawnLocal $ do
                        rcpid <- liftIO $ readMVar mRCPid
                        link rcpid
@@ -171,7 +168,7 @@ remotableDecl [ [d|
        return $ Just (added,trackers,mpids,members,newNodes)
       else do
        cRGroup <- newRGroup $(mkStatic 'rsDict) nids
-                            (RSState Nothing 0,([],fromList []))
+                            (RSState Nothing 0,((Nothing,[]),fromList []))
        forM_ nids $ flip spawn $
          $(mkClosure 'startRS)
            ( IgnitionArguments nodes trackers

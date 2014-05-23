@@ -28,7 +28,7 @@ import Control.Distributed.Process
          , getSelfNode, say, ProcessId, receiveWait
          )
 #ifndef USE_MOCK_REPLICATOR
-import Control.Distributed.Process ( spawn )
+import Control.Distributed.Process ( send, spawn )
 import Control.Distributed.Static ( closureApply )
 #endif
 import Control.Distributed.Process.Closure ( mkStatic, mkClosure, remotable )
@@ -53,7 +53,8 @@ dummyRC' :: RG -> Process ()
 dummyRC' rGroup =
   flip catch (\e -> say $ show (e :: SomeException)) $ do
       self <- getSelfPid
-      _ <- spawnLocal (eventQueue rGroup self)
+      eq <- spawnLocal (eventQueue rGroup)
+      send eq self -- Report me as the RC.
 
       let loop =
            receiveWait
@@ -97,7 +98,7 @@ naTest network action = withTmpDirectory $ do
   tryRunProcess (head nodes) $ do
     liftIO $ putStrLn "Testing NodeAgent..."
     nid <- getSelfNode
-    cRGroup <- newRGroup $(mkStatic 'eqSDict) nids []
+    cRGroup <- newRGroup $(mkStatic 'eqSDict) nids (Nothing,[])
     rGroup <- unClosure cRGroup >>= id
 #ifdef USE_MOCK_REPLICATOR
     forM_ nids $ const $ spawnLocal $ dummyRC' rGroup

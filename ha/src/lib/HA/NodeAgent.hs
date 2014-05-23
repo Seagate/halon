@@ -70,7 +70,13 @@ serialCall name (node:nodes) msg timeOut =
             ]
      case mpid of
        Just (Just pid) -> do
-          ret <- callTimeout pid msg timeOut
+          -- callLocal creates a temporary mailbox so late responses don't leak or
+          -- interfere with other calls.
+          ret <- callLocal $ do
+            self <- getSelfPid
+            send pid (self, msg)
+            maybe (fmap Just expect) expectTimeout timeOut
+
           case ret of
             Just b -> return (Just b)
             _ -> serialCall name nodes msg timeOut
