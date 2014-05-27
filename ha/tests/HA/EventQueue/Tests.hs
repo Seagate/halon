@@ -134,6 +134,10 @@ tests network = do
               send eq rc
               -- Wait for confirmation of RC death.
               expect
+
+          -- XXX run this test with the rpc transport when networkBreakConnection
+          -- is implemented for it.
+#ifndef USE_RPC
         , testSuccess "eq-should-reconnect-to-rc" $
               setup $ \eq _ _ ->
                 bracket
@@ -165,4 +169,5 @@ tests network = do
                 -- event to me.
                 HAEvent (EventId _ 1) _ <- expect :: Process (HAEvent [ByteString])
                 return ()
+#endif
         ]
