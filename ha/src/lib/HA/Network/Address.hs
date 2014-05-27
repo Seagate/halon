@@ -13,6 +13,7 @@ module HA.Network.Address
      , startNetwork
      , getNetworkTransport
      , readNetworkGlobalIVar
+     , networkBreakConnection
      , hostOfAddress ) where
 
 import Network.Transport (Transport)
@@ -28,8 +29,11 @@ import System.IO.Unsafe (unsafePerformIO)
 import qualified Network.Transport.RPC as RPC
 import Data.ByteString.Char8 as B8
 #else
+import Control.Concurrent (threadDelay)
 import qualified Network.Socket as TCP
+import Network.Transport (EndPointAddress)
 import qualified Network.Transport.TCP as TCP
+import Network.Socket (sClose)
 #endif
 
 -- | An abstract 'Address' type whose definition depends on which
@@ -76,23 +80,37 @@ data Network = Network RPC.RPCTransport
 getNetworkTransport :: Network -> Transport
 getNetworkTransport (Network rpctrans) = RPC.networkTransport rpctrans
 #else
-data Network = Network Transport
+data Network = Network Transport TCP.TransportInternals
 getNetworkTransport :: Network -> Transport
-getNetworkTransport (Network trans) = trans
+getNetworkTransport (Network trans _) = trans
 #endif
 
 -- | Creates a transport that communicates through the provided 'Address'.
 startNetwork :: Address -> IO Network
 startNetwork endpoint = do
-    n <- Network <$>
 #ifdef USE_RPC
+    n <- Network <$>
          RPC.createTransport "s1" endpoint RPC.defaultRPCParameters
 #else
+    n <- uncurry Network <$>
          let (host, port) = endpoint
-         in either (error . show) id <$> TCP.createTransport host port TCP.defaultTCPParameters
+         in either (error . show) id
+              <$> TCP.createTransportExposeInternals host port TCP.defaultTCPParameters
 #endif
     writeNetworkGlobalIVar n
     return n
+
+-- | Used for testing purposes, so the behavior of code when connections fail is
+-- rehearsed.
+networkBreakConnection :: Network -> EndPointAddress -> EndPointAddress -> IO ()
+#ifdef USE_RPC
+networkBreakConnection _ _ _ = error "networkBreakConnection: unimplemented."
+#else
+networkBreakConnection (Network _ internals) ep1 ep2 = do
+    sock <- TCP.socketBetween internals ep1 ep2
+    sClose sock
+    threadDelay 10000
+#endif
 
 -- | A write-once global variable to hold the transport used by CH.
 --

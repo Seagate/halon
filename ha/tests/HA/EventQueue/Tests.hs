@@ -25,11 +25,15 @@ import RemoteTables
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
+import Control.Distributed.Process.Internal.Types ( nodeAddress )
+import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( Serializable )
 
 import Control.Applicative ((<$>))
 import Control.Arrow (first)
 import Control.Exception ( SomeException )
+import Control.Monad
+import Data.ByteString ( ByteString )
 
 
 eqSDict :: SerializableDict EventQueue
@@ -38,7 +42,16 @@ eqSDict = SerializableDict
 setRC :: Maybe ProcessId -> EventQueue -> EventQueue
 setRC = first . const
 
-remotable [ 'eqSDict, 'setRC ]
+remoteRC :: ProcessId -> Process ()
+remoteRC controller = do
+    self <- getSelfPid
+    send controller self
+    forever $ do
+      msg <- expect
+      reconnect controller
+      send controller (msg :: HAEvent [ByteString])
+
+remotable [ 'eqSDict, 'setRC, 'remoteRC ]
 
 triggerEvent :: Int -> Process ()
 triggerEvent k = catch (expiate k) $ \(_ :: SomeException) -> return ()
@@ -121,4 +134,35 @@ tests network = do
               send eq rc
               -- Wait for confirmation of RC death.
               expect
+        , testSuccess "eq-should-reconnect-to-rc" $
+              setup $ \eq _ _ ->
+                bracket
+                  (liftIO $ newLocalNode (getNetworkTransport network) rt)
+                  (liftIO . closeLocalNode)
+                  $ \ln1 ->
+                -- Spawn a remote RC.
+                bracket
+                  (getSelfPid >>= spawn (localNodeId ln1) . $(mkClosure 'remoteRC))
+                  (flip exit "test finished")
+                  $ \rc -> do
+
+                self <- getSelfPid
+                -- Set me as controller of the RC.
+                send rc self
+                send eq rc
+                triggerEvent 1
+                -- The RC should forward the event to me.
+                HAEvent (EventId _ 0) _ <- expect :: Process (HAEvent [ByteString])
+                registerInterceptor $ \string -> case string of
+                  "RC is lost." -> send self ()
+                  _ -> return ()
+                nid <- getSelfNode
+                liftIO $ networkBreakConnection network (nodeAddress nid) (nodeAddress $ localNodeId ln1)
+                -- Expect confirmation from the eq that the rc connection has broken.
+                () <- expect
+                triggerEvent 2
+                -- EQ should reconnect to the RC, and the RC should forward the
+                -- event to me.
+                HAEvent (EventId _ 1) _ <- expect :: Process (HAEvent [ByteString])
+                return ()
         ]
