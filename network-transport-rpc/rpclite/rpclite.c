@@ -38,10 +38,11 @@
 #include <stdlib.h>
 
 #define ITEM_SIZE_CUSHION 128
+#define LINUXSTOB_PREFIX "linuxstob:"
 #define DB_FILE_NAME     "rpclite.db"
 #define S_DB_FILE_NAME     "rpclite2.db"
 #define S_STOB_FILE_NAME   "rpclite2.stob"
-#define S_ADDB_STOB_FILE_NAME   "linuxstob:rpclite2_addb.stob"
+#define S_ADDB_STOB_FILE_NAME   "rpclite2_addb.stob"
 #define S_LOG_FILE_NAME    "rpclite2.log"
 
 enum {
@@ -158,7 +159,7 @@ uint32_t get_tot_rpc_num(rpc_stat_type_t type)
 void add_rpc_stat_record(rpc_stat_type_t type, m0_time_t time)
 {
 	rpc_statistic_t *rs = &rpc_stat[type];
-	
+
 	m0_mutex_lock(&rs->rs_lock);
 	rs->rs_num++;
 	rs->rs_tot_time += time;
@@ -194,7 +195,7 @@ int rpc_create_endpoint(char* local_address,rpc_endpoint_t** e) {
 				,goto pool_fini);
 
 
-	CHECK_RESULT(rc, m0_rpc_machine_init(&(*e)->rpc_machine, 
+	CHECK_RESULT(rc, m0_rpc_machine_init(&(*e)->rpc_machine,
 				 &client_net_dom, (*e)->local_address, NULL, &(*e)->buffer_pool, M0_BUFFER_ANY_COLOUR,
 				 MAX_MSG_SIZE, QUEUE_LEN)
 				, goto pool_fini);
@@ -432,6 +433,7 @@ int rpc_listen(char* persistence_prefix,char* address,rpc_listen_callbacks_t* cb
 	int rc;
 	int i;
 	struct m0_net_xprt *xprt = &m0_net_lnet_xprt;
+
 	if (cbs) {
 		rpclite_listen_cbs = *cbs;
 	} else {
@@ -447,18 +449,18 @@ int rpc_listen(char* persistence_prefix,char* address,rpc_listen_callbacks_t* cb
 	M0_ASSERT(strlen(address)+strlen((*re)->server_endpoint)<M0_NET_LNET_XEP_ADDR_LEN);
 	strcat((*re)->server_endpoint,address);
 
-
 	M0_ASSERT(strlen(persistence_prefix)+strlen(S_DB_FILE_NAME)<STRING_LEN);
 	strcpy((*re)->db_file_name,persistence_prefix);
 	strcat((*re)->db_file_name,S_DB_FILE_NAME);
 
-   	M0_ASSERT(strlen(persistence_prefix)+strlen(S_ADDB_STOB_FILE_NAME)<STRING_LEN);
-	strcpy((*re)->stob_file_name,persistence_prefix);
-	strcat((*re)->stob_file_name,S_ADDB_STOB_FILE_NAME);
+   	M0_ASSERT(strlen(LINUXSTOB_PREFIX)+strlen(persistence_prefix)+strlen(S_ADDB_STOB_FILE_NAME)<STRING_LEN);
+   	strcpy((*re)->addb_stob_file_name, LINUXSTOB_PREFIX);
+	strcat((*re)->addb_stob_file_name, persistence_prefix);
+	strcat((*re)->addb_stob_file_name, S_ADDB_STOB_FILE_NAME);
 
    	M0_ASSERT(strlen(persistence_prefix)+strlen(S_STOB_FILE_NAME)<STRING_LEN);
-	strcpy((*re)->addb_stob_file_name,persistence_prefix);
-	strcat((*re)->addb_stob_file_name,S_STOB_FILE_NAME);
+	strcpy((*re)->stob_file_name,persistence_prefix);
+	strcat((*re)->stob_file_name,S_STOB_FILE_NAME);
 
    	M0_ASSERT(strlen(persistence_prefix)+strlen(S_LOG_FILE_NAME)<STRING_LEN);
 	strcpy((*re)->log_file_name,persistence_prefix);
@@ -566,7 +568,7 @@ int rpc_send_blocking_m0_thread(rpc_connection_t* c,struct m0_fop* fop) {
 int rpc_send_fop_blocking(rpc_connection_t* c,struct m0_fop* fop,int timeout_s) {
 	m0_time_t time;
 	int rc;
-	
+
 	M0_ASSERT(fop != NULL);
     if (m0_fop_payload_size(&fop->f_item)+ITEM_SIZE_CUSHION > m0_rpc_session_get_max_item_size(&c->session)) {
         fprintf(stderr,"rpc_send_fop_blocking: rpclite got a message which is too big"
@@ -613,7 +615,7 @@ int rpc_send_blocking(rpc_connection_t* c,struct iovec* segments,int segment_cou
 	struct m0_fop      *fop;
 	struct rpclite_fop* rpclite_fop;
 	int rc;
-	
+
     M0_ALLOC_PTR(fop);
 	M0_ASSERT(fop != NULL);
     //m0_fop_init(fop,&m0_fop_rpclite_fopt, NULL, rpclite_fop_free_nonuser_memory);
@@ -675,7 +677,7 @@ void rpclite_replied(struct m0_rpc_item* item) {
 		case 0:
 			st = RPC_OK;
 			time = m0_time_now() - msg->ctime;
-			add_rpc_stat_record(RPC_STAT_SEND, time);			
+			add_rpc_stat_record(RPC_STAT_SEND, time);
 			break;
 		default:
 			fprintf(stderr,"%s error: %d",__func__,msg->fop.f_item.ri_error);
