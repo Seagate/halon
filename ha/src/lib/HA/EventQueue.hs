@@ -24,7 +24,6 @@
 module HA.EventQueue
   ( eventQueue, EventQueue, __remoteTable, eventQueueLabel ) where
 
-import HA.Call ( callResponse )
 import HA.EventQueue.Consumer
 import HA.EventQueue.Types
 import HA.Replicator ( RGroup, updateStateWith, getState)
@@ -32,7 +31,12 @@ import HA.Replicator ( RGroup, updateStateWith, getState)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 
+import Control.Arrow ( first, second )
+import Data.Binary
 import Data.ByteString ( ByteString )
+import Data.Traversable
+import Data.Typeable
+import GHC.Generics ( Generic )
 
 -- | Since there is at most one Event Queue per tracking station node,
 -- the @eventQueueLabel@ is used to register and lookup the Event Queue of a
@@ -40,8 +44,10 @@ import Data.ByteString ( ByteString )
 eventQueueLabel :: String
 eventQueueLabel = "HA.EventQueue"
 
--- | State of the event queue
-type EventQueue = [HAEvent [ByteString]]
+-- | State of the event queue.
+--
+-- It contains the process id of the RC and the list of pending events.
+type EventQueue = (Maybe ProcessId, [HAEvent [ByteString]])
 
 -- | @forceSpine xs@ evaluates the spine of @xs@.
 forceSpine :: [a] -> [a]
@@ -49,38 +55,96 @@ forceSpine [] = []
 forceSpine xs@(_:xs') = forceSpine xs' `seq` xs
 
 addSerializedEvent :: HAEvent [ByteString] -> EventQueue -> EventQueue
-addSerializedEvent = (:)
+addSerializedEvent = second . (:)
+
+setRC :: Maybe ProcessId -> EventQueue -> EventQueue
+setRC = first . const
+
+-- | "compare and swap" for updating the RC
+casRC :: (Maybe ProcessId, Maybe ProcessId) -> EventQueue -> EventQueue
+casRC (expected, new) = first $ \current ->
+    if current == expected then new else current
 
 filterEvent :: EventId -> EventQueue -> EventQueue
-filterEvent eid = forceSpine . filter (\HAEvent{..} -> eid /= eventId)
+filterEvent eid = second $ forceSpine . filter (\HAEvent{..} -> eid /= eventId)
 
-remotable [ 'addSerializedEvent, 'filterEvent ]
+remotable [ 'addSerializedEvent, 'setRC, 'casRC, 'filterEvent ]
 
--- | @eventQueue rg rc@ starts an event queue for sending events to the
--- Recovery Coordinator @rc@. @rg@ is the replicator group used to store the
--- events until RC handles them.
+data UpdateCEQ = UpdateCEQ
+  deriving (Generic, Typeable)
+
+instance Binary UpdateCEQ
+
+-- | @eventQueue rg@ starts an event queue. @rg@ is the replicator group used to
+-- store the events until RC handles them.
 --
--- The event queue is a regular process that accepts any incoming message of
--- any type. All such messages (except messages internal to the event queue)
--- are considered HA events, which are replicated and forwarded to the
--- recovery coordinator.
+-- When an RC is spawned, its pid should be sent to the collocated EQ which will
+-- record the pid in the replicated state so it is available to other EQs.
+--
+-- When the EQ receives an event, it will replicate the event, acknowledge it
+-- back to the reporter, and report it to the RC. If the EQ doesn't know where
+-- the RC is, it will try to learn it from the replicated state.
 --
 eventQueue :: RGroup g
            => g EventQueue
-           -> ProcessId -- ^ Recovery coordinator
            -> Process ()
-eventQueue rg rc =
-    getSelfPid >>= register eventQueueLabel >>
-    getState rg >>= mapM_ (send rc) . reverse >> loop
+eventQueue rg = do
+    getSelfPid >>= register eventQueueLabel
+    (mRC, _) <- getState rg
+    -- The EQ must monitor the RC or it will never realize when the RC stops
+    -- responding and won't never care of checking the replicated state to learn
+    -- of new RCs.
+    _ <- traverse monitor mRC
+    loop mRC
   where
-    loop =
+    loop mRC =
         receiveWait
-          [ match $ \(eid :: EventId) -> do
+          [ -- A local RC has been spawned.
+            match $ \(rc :: ProcessId) -> do
+              _ <- monitor rc
+              -- Record in the replicated state that there is a new RC.
+              updateStateWith rg $ $(mkClosure 'setRC) $ Just rc
+              -- Send the pending events to the new RC.
+              (_, pendingEvents) <- getState rg
+              mapM_ (send rc) $ reverse pendingEvents
+              return $ Just rc
+          , match $ \(ProcessMonitorNotification _ pid reason) -> do
+              -- Check the identity of the process in case the
+              -- notifications get mixed for old and new RCs.
+              if Just pid == mRC
+              then case reason of
+                -- The connection to the RC failed.
+                -- Call reconnect to say it is ok to connect again.
+                DiedDisconnect -> do _ <- traverse reconnect mRC
+                                     say "RC is lost."
+                                     return Nothing
+                -- The RC died.
+                -- We use compare and swap to make sure we don't overwrite
+                -- the pid of a respawned RC.
+                _ -> do updateStateWith rg $ $(mkClosure 'casRC) (mRC, Nothing :: Maybe ProcessId)
+                        say "RC died."
+                        return Nothing
+              else return mRC
+            -- The RC handled the event with the given id.
+          , match $ \(eid :: EventId) -> do
                 updateStateWith rg $ $(mkClosure 'filterEvent) eid
                 say "Trim done."
-                return ()
-          , callResponse $ \(ev :: HAEvent [ByteString]) -> do
-                send rc ev
-                updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
-                return ((), ())
-          ] >> loop
+                return mRC
+            -- Process an HA event
+          , match $ \(sender, ev :: HAEvent [ByteString]) -> do
+              updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+              send sender ()
+              case mRC of
+                -- I know where the RC is.
+                Just rc -> do
+                  send rc ev
+                  return mRC
+                -- I don't know where the RC is.
+                Nothing -> do
+                  -- See if we can learn it by looking at the replicated state.
+                  (newMRC, _) <- getState rg
+                  _ <- Data.Traversable.forM newMRC $ \rc -> do
+                    _ <- monitor rc
+                    send rc ev
+                  return newMRC
+          ] >>= loop
