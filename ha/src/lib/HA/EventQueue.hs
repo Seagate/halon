@@ -32,11 +32,8 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 
 import Control.Arrow ( first, second )
-import Data.Binary
 import Data.ByteString ( ByteString )
 import Data.Traversable
-import Data.Typeable
-import GHC.Generics ( Generic )
 
 -- | Since there is at most one Event Queue per tracking station node,
 -- the @eventQueueLabel@ is used to register and lookup the Event Queue of a
@@ -69,11 +66,6 @@ filterEvent :: EventId -> EventQueue -> EventQueue
 filterEvent eid = second $ forceSpine . filter (\HAEvent{..} -> eid /= eventId)
 
 remotable [ 'addSerializedEvent, 'setRC, 'casRC, 'filterEvent ]
-
-data UpdateCEQ = UpdateCEQ
-  deriving (Generic, Typeable)
-
-instance Binary UpdateCEQ
 
 -- | @eventQueue rg@ starts an event queue. @rg@ is the replicator group used to
 -- store the events until RC handles them.
