@@ -70,7 +70,7 @@ remotable [ 'addSerializedEvent, 'setRC, 'compareAndSwapRC, 'filterEvent ]
 -- | @eventQueue rg@ starts an event queue. @rg@ is the replicator group used to
 -- store the events until RC handles them.
 --
--- When an RC is spawned, its pid should be sent to the collocated EQ which will
+-- When an RC is spawned, its pid should be sent to the colocated EQ which will
 -- record the pid in the replicated state so it is available to other EQs.
 --
 -- When the EQ receives an event, it will replicate the event, acknowledge it
@@ -84,7 +84,7 @@ eventQueue rg = do
     getSelfPid >>= register eventQueueLabel
     (mRC, _) <- getState rg
     -- The EQ must monitor the RC or it will never realize when the RC stops
-    -- responding and won't never care of checking the replicated state to learn
+    -- responding and won't ever care of checking the replicated state to learn
     -- of new RCs.
     _ <- traverse monitor mRC
     loop mRC
