@@ -60,6 +60,7 @@ addSerializedEvent = second . (:)
 setRC :: Maybe ProcessId -> EventQueue -> EventQueue
 setRC = first . const
 
+-- | "compare and swap" for updating the RC
 casRC :: (Maybe ProcessId, Maybe ProcessId) -> EventQueue -> EventQueue
 casRC (expected, new) = first $ \current ->
     if current == expected then new else current
