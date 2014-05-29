@@ -58,14 +58,14 @@ setRC :: Maybe ProcessId -> EventQueue -> EventQueue
 setRC = first . const
 
 -- | "compare and swap" for updating the RC
-casRC :: (Maybe ProcessId, Maybe ProcessId) -> EventQueue -> EventQueue
-casRC (expected, new) = first $ \current ->
+compareAndSwapRC :: (Maybe ProcessId, Maybe ProcessId) -> EventQueue -> EventQueue
+compareAndSwapRC (expected, new) = first $ \current ->
     if current == expected then new else current
 
 filterEvent :: EventId -> EventQueue -> EventQueue
 filterEvent eid = second $ forceSpine . filter (\HAEvent{..} -> eid /= eventId)
 
-remotable [ 'addSerializedEvent, 'setRC, 'casRC, 'filterEvent ]
+remotable [ 'addSerializedEvent, 'setRC, 'compareAndSwapRC, 'filterEvent ]
 
 -- | @eventQueue rg@ starts an event queue. @rg@ is the replicator group used to
 -- store the events until RC handles them.
@@ -113,7 +113,8 @@ eventQueue rg = do
                 -- The RC died.
                 -- We use compare and swap to make sure we don't overwrite
                 -- the pid of a respawned RC.
-                _ -> do updateStateWith rg $ $(mkClosure 'casRC) (mRC, Nothing :: Maybe ProcessId)
+                _ -> do updateStateWith rg $
+                          $(mkClosure 'compareAndSwapRC) (mRC, Nothing :: Maybe ProcessId)
                         say "RC died."
                         return Nothing
               else return mRC
