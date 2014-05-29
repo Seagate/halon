@@ -32,11 +32,8 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 
 import Control.Arrow ( first, second )
-import Data.Binary
 import Data.ByteString ( ByteString )
 import Data.Traversable
-import Data.Typeable
-import GHC.Generics ( Generic )
 
 -- | Since there is at most one Event Queue per tracking station node,
 -- the @eventQueueLabel@ is used to register and lookup the Event Queue of a
@@ -61,24 +58,19 @@ setRC :: Maybe ProcessId -> EventQueue -> EventQueue
 setRC = first . const
 
 -- | "compare and swap" for updating the RC
-casRC :: (Maybe ProcessId, Maybe ProcessId) -> EventQueue -> EventQueue
-casRC (expected, new) = first $ \current ->
+compareAndSwapRC :: (Maybe ProcessId, Maybe ProcessId) -> EventQueue -> EventQueue
+compareAndSwapRC (expected, new) = first $ \current ->
     if current == expected then new else current
 
 filterEvent :: EventId -> EventQueue -> EventQueue
 filterEvent eid = second $ forceSpine . filter (\HAEvent{..} -> eid /= eventId)
 
-remotable [ 'addSerializedEvent, 'setRC, 'casRC, 'filterEvent ]
-
-data UpdateCEQ = UpdateCEQ
-  deriving (Generic, Typeable)
-
-instance Binary UpdateCEQ
+remotable [ 'addSerializedEvent, 'setRC, 'compareAndSwapRC, 'filterEvent ]
 
 -- | @eventQueue rg@ starts an event queue. @rg@ is the replicator group used to
 -- store the events until RC handles them.
 --
--- When an RC is spawned, its pid should be sent to the collocated EQ which will
+-- When an RC is spawned, its pid should be sent to the colocated EQ which will
 -- record the pid in the replicated state so it is available to other EQs.
 --
 -- When the EQ receives an event, it will replicate the event, acknowledge it
@@ -92,7 +84,7 @@ eventQueue rg = do
     getSelfPid >>= register eventQueueLabel
     (mRC, _) <- getState rg
     -- The EQ must monitor the RC or it will never realize when the RC stops
-    -- responding and won't never care of checking the replicated state to learn
+    -- responding and won't ever care of checking the replicated state to learn
     -- of new RCs.
     _ <- traverse monitor mRC
     loop mRC
@@ -121,7 +113,8 @@ eventQueue rg = do
                 -- The RC died.
                 -- We use compare and swap to make sure we don't overwrite
                 -- the pid of a respawned RC.
-                _ -> do updateStateWith rg $ $(mkClosure 'casRC) (mRC, Nothing :: Maybe ProcessId)
+                _ -> do updateStateWith rg $
+                          $(mkClosure 'compareAndSwapRC) (mRC, Nothing :: Maybe ProcessId)
                         say "RC died."
                         return Nothing
               else return mRC
