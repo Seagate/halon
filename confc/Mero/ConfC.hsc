@@ -253,6 +253,7 @@ data ServiceType
     | CST_MGS
     | CST_RMS
     | CST_SS
+    | CST_HA
     | CST_UNKNOWN Int
   deriving (Show,Read,Ord,Eq)
 
@@ -285,6 +286,7 @@ instance Enum ServiceType where
   toEnum #{const M0_CST_MGS} = CST_MGS
   toEnum #{const M0_CST_RMS} = CST_RMS
   toEnum #{const M0_CST_SS}  = CST_SS
+  toEnum #{const M0_CST_HA}  = CST_HA
   toEnum i                   = CST_UNKNOWN i
 
   fromEnum CST_MDS         = #{const M0_CST_MDS}
@@ -292,6 +294,7 @@ instance Enum ServiceType where
   fromEnum CST_MGS         = #{const M0_CST_MGS}
   fromEnum CST_RMS         = #{const M0_CST_RMS}
   fromEnum CST_SS          = #{const M0_CST_SS}
+  fromEnum CST_HA          = #{const M0_CST_HA}
   fromEnum (CST_UNKNOWN i) = i
 
 -- | Represetation of `m0_conf_node`.
@@ -390,7 +393,7 @@ foreign import ccall unsafe confc_cast_sdev :: Ptr Obj
 data Obj
 
 -- | Relation FIDs.
-data RelationFid = 
+data RelationFid =
     FS_FID
   | SERVICE_FID
   | NODE_FID
