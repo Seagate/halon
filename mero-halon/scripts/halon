@@ -53,12 +53,12 @@ function getaddr
   [ -z "$IP" ] && err "Can't find a local IP address"
 
   # Fully qualified CH address of node agent (and putAvailable)
-  export NAADDR=${IP}:8080
+  export NAADDR=${IP}:${NAPORT:-8080}
 
   # Fully qualified CH address of station command
-  export STADDR=${IP}:8081
+  export STADDR=${IP}:${STPORT:-8081}
 
-  export LAADDR=${IP}:8082
+  export LAADDR=${IP}:${LAPORT:-8082}
 }
 
 function help
