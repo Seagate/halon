@@ -71,8 +71,7 @@ int ha_state_get_fom_tick(struct m0_fom *fom)
          note->nv_nr = fop_get->hsg_ids.ni_nr;
          M0_ALLOC_ARR(note->nv_note,note->nv_nr);
          for (i = 0; i < note->nv_nr; ++i) {
-             note->nv_note[i].no_id = fop_get->hsg_ids.ni_id_types[i].it_id;
-             note->nv_note[i].no_otype = fop_get->hsg_ids.ni_id_types[i].it_type;
+             note->nv_note[i].no_id = fop_get->hsg_ids.ni_id_types[i];
          }
 
          m0_fom_phase_set(fom, M0_FOPH_TYPE_SPECIFIC);
@@ -125,7 +124,7 @@ int ha_state_get_fom_create(struct m0_fop *fop, struct m0_fom **m,
 
      fom = &fom_obj->fp_gen;
      m0_fom_init(fom, &fop->f_type->ft_fom_type, &ha_state_get_fom_ops, fop,
-                 NULL, reqh, fop->f_type->ft_fom_type.ft_rstype);
+                 NULL, reqh);
 
      fom_obj->fp_fop = fop;
      fom_obj->fp_ctx.nc_fom = fom;
@@ -213,7 +212,7 @@ int ha_state_set_fom_create(struct m0_fop *fop, struct m0_fom **m,
 
      fom = &fom_obj->fp_gen;
      m0_fom_init(fom, &fop->f_type->ft_fom_type, &ha_state_set_fom_ops, fop,
-                 NULL, reqh, fop->f_type->ft_fom_type.ft_rstype);
+                 NULL, reqh);
 
      fom_obj->fp_fop = fop;
      *m = fom;

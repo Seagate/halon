@@ -111,7 +111,7 @@ int rpclite_sender_fom_create(struct m0_fop *fop, struct m0_fom **m, struct m0_r
 	fom = &fom_obj->fp_gen;
 
 	m0_fom_init(fom, &m0_fom_rpclite_sender_type, &m0_fom_rpclite_sender_ops, fop, NULL
-				, reqh, m0_fom_rpclite_sender_type.ft_rstype);
+				, reqh);
 	*m = fom;
 	return 0;
 }

@@ -141,7 +141,7 @@ Test-Suite unit-tests
                     hashable,
                     unordered-containers
   if flag(rpc)
-      Build-Depends: network-transport-rpc
+      Build-Depends: network-transport-rpc, tasty
       CPP-Options:    -DUSE_RPC
   else
       Build-Depends: network-transport-tcp >= 0.3
@@ -171,7 +171,7 @@ Test-Suite integration-tests
                     hashable,
                     unordered-containers
   if flag(rpc)
-      Build-Depends: network-transport-rpc
+      Build-Depends: network-transport-rpc, tasty
       CPP-Options:    -DUSE_RPC
   else
       Build-Depends: network-transport-tcp >= 0.3

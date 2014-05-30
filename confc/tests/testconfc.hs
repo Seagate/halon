@@ -26,7 +26,7 @@ main =
 
 printCObj :: Int -> CObj -> IO ()
 printCObj i co = do
-    putStr $ "id = " ++ co_id co ++ ": "
+    putStr $ "id = " ++ (show . co_id $ co) ++ ": "
     printCOData i $ co_union co
 
 printCOData :: Int -> CObjUnion -> IO ()
@@ -39,7 +39,6 @@ printCOData i cou =
     CN n  -> printNode i n
     NI n  -> printNic i n
     SD s  -> printSdev i s
-    PA p  -> printPartition i p
     COUnknown t -> putStrLn $ "unknown: "++show t
 
 printProfile :: Int -> Profile -> IO ()
@@ -106,21 +105,11 @@ printNic _ n = do
     putStrLn " }"
 
 printSdev :: Int -> Sdev -> IO ()
-printSdev i s = do
+printSdev _ s = do
     putStr $ "m0_conf_sdev { iface = " ++ show (sd_iface s)
     putStr $ ", media = " ++ show (sd_media s)
     putStr $ ", size = " ++ show (sd_size s)
     putStr $ ", last_state = " ++ show (sd_last_state s)
     putStr $ ", flags = " ++ show (sd_flags s)
     putStr $ ", filename = " ++ sd_filename s
-    putStrLn " }"
-    withClose (sd_partitions s) $ printChild (i+2) "partitions"
-
-printPartition :: Int -> Partition -> IO ()
-printPartition _ p = do
-    putStr $ "m0_conf_partition { start = " ++ show (pa_start p)
-    putStr $ ", size = " ++ show (pa_size p)
-    putStr $ ", index = " ++ show (pa_index p)
-    putStr $ ", type = " ++ show (pa_type p)
-    putStr $ ", filename = " ++ pa_filename p
     putStrLn " }"

@@ -10,7 +10,7 @@ import Prelude hiding
   , catch
 #endif
   )
-import Control.Concurrent (forkIO, killThread, yield, myThreadId, threadDelay)
+import Control.Concurrent (forkIO, killThread, yield, threadDelay)
 import Control.Concurrent.MVar ( newEmptyMVar, takeMVar, putMVar, readMVar
                                , tryTakeMVar, modifyMVar_, newMVar )
 import Control.Exception (evaluate, throw, throwIO, bracket)
@@ -627,7 +627,7 @@ testCloseEndPoint transport _ = do
       Right conn <- connect endpoint theirAddr ReliableOrdered defaultConnectHints
       send conn ["pong"]
 
-      ConnectionClosed cid'' <- receive endpoint ;
+      ConnectionClosed _ <- receive endpoint ;
       -- Since the RPC backend does not implement heartbeats the rest of the test is useless.
       --
       -- res <- receive endpoint ; 
@@ -799,7 +799,7 @@ testConnectClosedEndPoint transport = do
     Right endpoint <- newEndPoint transport
     readMVar serverClosed
 
-    res <- readMVar serverAddr >>= \addr -> connect endpoint addr ReliableOrdered defaultConnectHints
+    _ <- readMVar serverAddr >>= \addr -> connect endpoint addr ReliableOrdered defaultConnectHints
     -- Left (TransportError ConnectNotFound _) <- return res
     -- Left (TransportError ConnectTimeout _) <- return res
 
