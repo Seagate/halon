@@ -102,7 +102,7 @@ remotableDecl [ [d|
                       Just na -> expire $ ServiceFailed (Node na) m0d -- XXX
             receiveWait $
               [ match $ \(EpochTransition epochExpected epochTarget state) -> do
-                  say $ "Service wrapper got new equation: " ++ show (state::ByteString)
+                  let _ = say $ "Service wrapper got new equation: " ++ show (state::ByteString)
                   wrapperPid <- getSelfPid
                   if epoch < epochExpected
                      then do promulgate $ EpochTransitionRequest wrapperPid epoch epochTarget

@@ -206,7 +206,7 @@ replica :: forall a. EqDict a
         -> [ProcessId]
         -> Process ()
 replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree acceptors replicas = do
-    say $ "New replica started in " ++ show (decreeLegislatureId decree)
+    -- say $ "New replica started in " ++ show (decreeLegislatureId decree)
 
     self <- getSelfPid
     acid <- liftIO $ openLocalStateFrom (file (processNodeId self)) (Memory Map.empty)

@@ -135,7 +135,7 @@ remotableDecl [ [d|
      -- depending on heartbeats at the transport layer
      rsref <- monitor rspid
      let refmapper ref | ref == rsref = "Recovery supervisor died"
-                       | otherwise = "Unknown subprocess died"
+                       | otherwise = "" -- "Unknown subprocess died"
      handleMessages refmapper
   where
      handleMessages refmapper =

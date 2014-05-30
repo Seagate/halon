@@ -156,9 +156,9 @@ recoveryCoordinator eq mm argv = do
                                     , G.isConnected node Runs m0d rg' ]
 
               -- Broadcast new epoch.
-              forM_ m0dNodes $ \(Node them) ->
-                  nsendRemote (processNodeId them) (serviceName m0d) $
-                  EpochTransition
+              let _ = forM_ m0dNodes $ \(Node them) ->
+                   nsendRemote (processNodeId them) (serviceName m0d) $
+                   EpochTransition
                       { et_current = epochId current
                       , et_target  = epochId target
                       , et_how     = epochState target :: ByteString

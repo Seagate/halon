@@ -31,7 +31,7 @@ data IdentifyId = IdentifyId ThreadId Socket
 -- using 'getAvailable'.
 putAvailable :: Binary a => Int -> a -> IO (Maybe IdentifyId)
 putAvailable port ident =
-  do putStrLn $ "IdentifyTCP.putAvailable has started at " ++ show port
+  do -- putStrLn $ "IdentifyTCP.putAvailable has started at " ++ show port
      msuccess <- newEmptyMVar
      _ <- forkIO (bind msuccess)
      takeMVar msuccess
@@ -61,7 +61,7 @@ getAvailable host port =
       <$> (try (timeout 5000000 doConnect)
                :: IO (Either IOError (Maybe B.ByteString)))
      where doConnect =
-              do putStrLn $ "IdentifyTCP.getAvailable has started at " ++ show port
+              do -- putStrLn $ "IdentifyTCP.getAvailable has started at " ++ show port
                  h <- connectTo host (PortNumber (toEnum port))
                  len <- decode <$> B.hGet h (fromEnum $ B.length (encode (0 :: Word32))) :: IO Word32
                  val <- B.hGet h (fromEnum len)
