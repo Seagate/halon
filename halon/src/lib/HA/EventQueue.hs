@@ -131,6 +131,7 @@ eventQueue rg = do
                 return mRC
             -- Process an HA event
           , match $ \(sender :: ProcessId, ev :: HAEvent [ByteString]) -> checkAndDo mRC $ do
+              liftIO $ putStrLn "EQ: processing event"
               updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
               selfNode <- getSelfNode
               case mRC of
@@ -175,7 +176,8 @@ checkAndDo c action = do
     fn <- fmap (clearName . show) getSelfPid
     d  <- liftIO $ doesFileExist $ "event-queue." ++ fn ++ ".fail"
     if d
-    then return c
+    then do liftIO $ putStrLn "EQ: ignored message"
+            return c
     else action
 
 #else

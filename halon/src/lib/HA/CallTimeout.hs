@@ -214,7 +214,11 @@ ncallRemoteAnyPreferTimeout softTimeout timeout preferNodes nodes label msg = do
     self <- getSelfPid
     void $ spawnLocal $ do
       link self
-      forM_ preferNodes $ \node -> nsendRemote node label (self, msg)
+      forM_ preferNodes $ \node -> do
+        liftIO $ putStrLn $ "NA: reporting to " ++ show node
+        nsendRemote node label (self, msg)
       void $ receiveTimeout softTimeout []
-      forM_ nodes $ \node -> nsendRemote node label (self, msg)
+      forM_ nodes $ \node -> do
+        liftIO $ putStrLn $ "NA: reporting to " ++ show node
+        nsendRemote node label (self, msg)
     expectTimeout timeout

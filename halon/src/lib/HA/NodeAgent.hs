@@ -192,7 +192,6 @@ remotableDecl [ [d|
                         maybeToList (nasPreferredReplica nas) ++
                         take 1 (nasReplicas nas)
                       nodes = nasReplicas nas \\ preferNodes
-
                     -- Send the event to some replica.
                     result <- callLocal $
                       ncallRemoteAnyPreferTimeout softTimeout timeout
@@ -200,6 +199,7 @@ remotableDecl [ [d|
                                                   eventQueueLabel event
                     case result :: Maybe (NodeId, NodeId) of
                       Just (rnid, pnid) -> do
+                        liftIO $ putStrLn $ "NA: got reply from " ++ show rnid ++ ": " ++ show pnid
                         send caller True
                         return $ (handleEQResponse nas rnid pnid)
                                    { nasEventCounter = nasEventCounter nas + 1 }

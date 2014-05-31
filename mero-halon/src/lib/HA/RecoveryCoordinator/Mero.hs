@@ -139,8 +139,8 @@ recoveryCoordinator eq mm argv = do
                loop rg)
         , matchIfHAEvent
           (\(HAEvent _ (StripingError node) _) -> G.memberResource node rg)
-          (\(HAEvent eid (StripingError _) _) -> do
-              sayRC $ "Striping error detected"
+          (\(HAEvent eid (StripingError _) route) -> do
+              sayRC $ "Striping error detected: " ++ show route
 
               -- Increment the epoch.
               let e :: G.Edge Cluster Has (Epoch ByteString)
