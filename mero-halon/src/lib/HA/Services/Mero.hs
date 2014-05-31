@@ -45,13 +45,15 @@ remotableDecl [ [d|
         say $ "Starting service m0d"
         self <- getSelfPid
         bracket
-          (liftIO $ createProcess $ proc "mero_call" ["m0d"])
+    --      (liftIO $ createProcess $ proc "mero_call" ["m0d"])
+          (liftIO $ createProcess $ proc "cat" [])
           (\(_, _, _, h_m0d) -> liftIO $ terminateAndWait h_m0d) $
           \_ -> bracket_ Mero.Notification.initialize Mero.Notification.finalize $ do
             -- give m0d a chance to fire up
             liftIO $ threadDelay 10000000
             bracket
-              (liftIO $ createProcess $ (proc "mero_call" ["m0ctl"]) { std_out = CreatePipe })
+              -- (liftIO $ createProcess $ (proc "mero_call" ["m0ctl"]) { std_out = CreatePipe })
+              (liftIO $ createProcess $ (proc "cat" []) { std_out = CreatePipe })
               (\(_, _, _, h_m0ctl) -> liftIO $ terminateAndWait h_m0ctl) $
               \(_, Just out, _, h_m0ctl) -> do
                 _ <- spawnLinked $ dummyStripingMonitor
