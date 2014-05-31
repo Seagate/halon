@@ -226,7 +226,7 @@ remotableDecl [ [d|
                     when (null $ nasReplicas nas) $ say $
                         "Warning: service event cannot proceed, since \
                         \no event queues are registed in the node agent"
-                    let timeOut = 1000000
+                    let timeOut = 3000000
                         ev = HAEvent { eventId = EventId self $ nasEventCounter nas
                                      , eventPayload = content :: [ByteString] }
                     -- When there is an unreachable preferred replica we must
