@@ -24,14 +24,13 @@ import Control.Exception (evaluate)
 import Control.Monad (when)
 import System.IO.Unsafe (unsafePerformIO)
 
-
+import Network.Transport (EndPointAddress)
 #ifdef USE_RPC
 import qualified Network.Transport.RPC as RPC
 import Data.ByteString.Char8 as B8
 #else
 import Control.Concurrent (threadDelay)
 import qualified Network.Socket as TCP
-import Network.Transport (EndPointAddress)
 import qualified Network.Transport.TCP as TCP
 import Network.Socket (sClose)
 #endif
