@@ -1,3 +1,8 @@
+ROOT_DIR = $(shell pwd)
+
+# LANG to be used in building cabal packages during RPM build.
+HA_BUILD_LANG = C.UTF-8
+
 # The `ci' target uses this genders file.
 export GENDERS = $(shell pwd)/mero-ha/scripts/genders-parsci
 
