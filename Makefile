@@ -1,36 +1,5 @@
-# The genders file to use for the CI target.
-ifndef GENDERS
-GENDERS = $(shell pwd)/mero-ha/scripts/genders-parsci
-export GENDERS
-endif
-RPMROOT = $(shell pwd)/rpmbuild
-
-# The git branch of this repository whose HEAD will
-# serve as the basis of RPM packaging.
-RPMBRANCH = master
-
-# DB file directory for Mero used by network-transport-rpc
-# CAUTION: This path will be removed by superuser.
-ifndef NTR_DB_DIR
-NTR_DB_DIR = $(shell pwd)/testdb
-export NTR_DB_DIR
-endif
-
-# By default, don't reuse any packages in the user or global database
-# to satisfy dependencies. But for faster builds, you can
-# try --package-db=user or package-db=user.
-CABAL_FLAGS = --package-db=clean
-
-empty=
-sp=$(empty) $(empty)
-
-GHC_VERSION = $(shell ghc --numeric-version)
-
-SANDBOX_REGULAR = $(shell pwd)/.cabal-sandbox
-SANDBOX_REGULAR_DB = $(shell pwd)/.cabal-sandbox/x86_64-linux-ghc-$(GHC_VERSION)-packages.conf.d
-
-SANDBOX_SCHED = $(shell pwd)/.cabal-sandbox-scheduler
-SANDBOX_SCHED_DB = $(SANDBOX_SCHED)/x86_64-linux-ghc-$(GHC_VERSION)-packages.conf.d
+# Global configuration variables.
+include mk/config.mk
 
 # Continuous integration target.
 .PHONY: ci clean install
