@@ -5,9 +5,8 @@ include mk/config.mk
 # each time on the command line. Please DO NOT check in this file.
 -include mk/local.mk
 
-# Continuous integration target.
+# `ci' is the continuous integration target.
 .PHONY: ci clean install
-
 clean: TARGET = clean
 install: TARGET = install
 ci: TARGET = ci
@@ -16,17 +15,34 @@ ci clean install: mero-ha
 dep:
 	cabal sandbox init --sandbox=$(SANDBOX_DEFAULT)
 	cabal sandbox add-source vendor/distributed-process/distributed-process
-	cabal install --enable-tests --only-dependencies $(CABAL_FLAGS) --reorder-goals distributed-process-scheduler/ distributed-process-test/ distributed-process-trans/ consensus/ consensus-paxos/ replicated-log/ network-transport-rpc/ confc/ ha/ mero-ha/
+	cabal install --enable-tests \
+                      --only-dependencies $(CABAL_FLAGS) \
+                      --reorder-goals distributed-process-scheduler/ \
+                                      distributed-process-test/ \
+                                      distributed-process-trans/ \
+                                      consensus/ \
+                                      consensus-paxos/ \
+                                      replicated-log/ \
+                                      network-transport-rpc/ \
+                                      confc/ \
+                                      ha/ \
+                                      mero-ha/
 
-# This target will generate distributable packages based on
-# the checked-in master branch of this repository.
-# It will generate a binary RPM in ./rpmbuild/RPMS/x86_64
-# and a source tar in ./rpmbuild/SOURCES
+# This target will generate distributable packages based on the
+# checked-in master branch of this repository. It will generate
+# a binary RPM in ./rpmbuild/RPMS/x86_64 and a source tar in
+# ./rpmbuild/SOURCES
+.PHONY: rpm-checkout rpm-build
+
 rpm:
 	echo "%_topdir   $(RPMROOT)" > ~/.rpmmacros
 	echo "%_tmppath  %{_topdir}/tmp" >> ~/.rpmmacros
-	cd $(RPMROOT)/SOURCES && rm -rf eiow-ha eiow-ha.tar.gz && git clone --branch $(RPMBRANCH) ../.. eiow-ha && tar --exclude-vcs -czf eiow-ha.tar.gz eiow-ha
-	cd $(RPMROOT)/SPECS && rpmbuild -ba eiow-ha.spec
+	(cd $(RPMROOT)/SOURCES && \
+	 rm -rf eiow-ha eiow-ha.tar.gz && \
+         git clone --branch $(RPMBRANCH) ../.. eiow-ha && \
+         tar --exclude-vcs -czf eiow-ha.tar.gz eiow-ha)
+	(cd $(RPMROOT)/SPECS && \
+         rpmbuild -ba eiow-ha.spec)
 
 .PHONY: network-transport-rpc confc ha
 network-transport-rpc confc ha mero-ha: $(NTR_DB_DIR)
