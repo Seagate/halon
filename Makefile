@@ -1,6 +1,10 @@
 # Global configuration variables.
 include mk/config.mk
 
+# Permanent local overrides go here, to avoid having to specify them
+# each time on the command line. Please DO NOT check in this file.
+-include mk/local.mk
+
 # Continuous integration target.
 .PHONY: ci clean install
 clean: TARGET = clean
