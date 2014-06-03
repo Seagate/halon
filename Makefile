@@ -7,13 +7,14 @@ include mk/config.mk
 
 # Continuous integration target.
 .PHONY: ci clean install
+
 clean: TARGET = clean
 install: TARGET = install
 ci: TARGET = ci
 ci clean install: mero-ha
 
 dep:
-	cabal sandbox init --sandbox=$(SANDBOX_REGULAR)
+	cabal sandbox init --sandbox=$(SANDBOX_DEFAULT)
 	cabal sandbox add-source vendor/distributed-process/distributed-process
 	cabal install --enable-tests --only-dependencies $(CABAL_FLAGS) --reorder-goals distributed-process-scheduler/ distributed-process-test/ distributed-process-trans/ consensus/ consensus-paxos/ replicated-log/ network-transport-rpc/ confc/ ha/ mero-ha/
 
@@ -29,23 +30,23 @@ rpm:
 
 .PHONY: network-transport-rpc confc ha
 network-transport-rpc confc ha mero-ha: $(NTR_DB_DIR)
-	make -C $@ SANDBOX=$(SANDBOX_REGULAR) DEBUG=true $(TARGET)
+	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) DEBUG=true $(TARGET)
 
 .PHONY: distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log
 distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log: $(SANDBOX_SCHED_DB)
-	make -C $@ SANDBOX=$(SANDBOX_REGULAR) $(TARGET)
+	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) $(TARGET)
 	make -C $@ SANDBOX=$(SANDBOX_SCHED) RANDOMIZED_TESTS=1 $(TARGET)
 
 .PHONY: distributed-process-scheduler
 distributed-process-scheduler: $(SANDBOX_SCHED_DB) distributed-process-trans
-	make -C $@ SANDBOX=$(SANDBOX_REGULAR) $(TARGET)
+	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) $(TARGET)
 	make -C $@ SANDBOX=$(SANDBOX_SCHED) RANDOMIZED_TESTS=1 $(TARGET)
 
 .PHONY: $(SANDBOX_SCHED_DB)
 $(SANDBOX_SCHED_DB):
 	rm -rf $(SANDBOX_SCHED_DB)
 	mkdir -p $(SANDBOX_SCHED_DB)
-	cp -r $(SANDBOX_REGULAR_DB)/* $(SANDBOX_SCHED_DB)
+	cp -r $(SANDBOX_DEFAULT_DB)/* $(SANDBOX_SCHED_DB)
 
 .PHONY: $(NTR_DB_DIR)
 ifneq ($(MERO_ROOT),--)

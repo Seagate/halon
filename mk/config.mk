@@ -18,8 +18,8 @@ CABAL_FLAGS = --package-db=clean
 
 GHC_VERSION = $(shell ghc --numeric-version)
 
-SANDBOX_REGULAR = $(shell pwd)/.cabal-sandbox
-SANDBOX_REGULAR_DB = $(shell pwd)/.cabal-sandbox/x86_64-linux-ghc-$(GHC_VERSION)-packages.conf.d
+SANDBOX_DEFAULT = $(shell pwd)/.cabal-sandbox
+SANDBOX_DEFAULT_DB = $(shell pwd)/.cabal-sandbox/x86_64-linux-ghc-$(GHC_VERSION)-packages.conf.d
 
 # When building with the scheduler enabled, use a different sandbox.
 SANDBOX_SCHED = $(shell pwd)/.cabal-sandbox-scheduler
