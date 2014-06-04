@@ -1,38 +1,11 @@
-# The genders file to use for the CI target.
-ifndef GENDERS
-GENDERS = $(shell pwd)/mero-ha/scripts/genders-parsci
-export GENDERS
-endif
-RPMROOT = $(shell pwd)/rpmbuild
+# Global configuration variables.
+include mk/config.mk
 
-# The git branch of this repository whose HEAD will
-# serve as the basis of RPM packaging.
-RPMBRANCH = master
+# Permanent local overrides go here, to avoid having to specify them
+# each time on the command line. Please DO NOT check in this file.
+-include mk/local.mk
 
-# DB file directory for Mero used by network-transport-rpc
-# CAUTION: This path will be removed by superuser.
-ifndef NTR_DB_DIR
-NTR_DB_DIR = $(shell pwd)/testdb
-export NTR_DB_DIR
-endif
-
-# By default, don't reuse any packages in the user or global database
-# to satisfy dependencies. But for faster builds, you can
-# try --package-db=user or package-db=user.
-CABAL_FLAGS = --package-db=clean
-
-empty=
-sp=$(empty) $(empty)
-
-GHC_VERSION = $(shell ghc --numeric-version)
-
-SANDBOX_REGULAR = $(shell pwd)/.cabal-sandbox
-SANDBOX_REGULAR_DB = $(shell pwd)/.cabal-sandbox/x86_64-linux-ghc-$(GHC_VERSION)-packages.conf.d
-
-SANDBOX_SCHED = $(shell pwd)/.cabal-sandbox-scheduler
-SANDBOX_SCHED_DB = $(SANDBOX_SCHED)/x86_64-linux-ghc-$(GHC_VERSION)-packages.conf.d
-
-# Continuous integration target.
+# `ci' is the continuous integration target.
 .PHONY: ci clean install
 clean: TARGET = clean
 install: TARGET = install
@@ -40,39 +13,56 @@ ci: TARGET = ci
 ci clean install: mero-ha
 
 dep:
-	cabal sandbox init --sandbox=$(SANDBOX_REGULAR)
+	cabal sandbox init --sandbox=$(SANDBOX_DEFAULT)
 	cabal sandbox add-source vendor/distributed-process/distributed-process
-	cabal install --enable-tests --only-dependencies $(CABAL_FLAGS) --reorder-goals distributed-process-scheduler/ distributed-process-test/ distributed-process-trans/ consensus/ consensus-paxos/ replicated-log/ network-transport-rpc/ confc/ ha/ mero-ha/
+	cabal install --enable-tests \
+                      --only-dependencies $(CABAL_FLAGS) \
+                      --reorder-goals distributed-process-scheduler/ \
+                                      distributed-process-test/ \
+                                      distributed-process-trans/ \
+                                      consensus/ \
+                                      consensus-paxos/ \
+                                      replicated-log/ \
+                                      network-transport-rpc/ \
+                                      confc/ \
+                                      ha/ \
+                                      mero-ha/
 
-# This target will generate distributable packages based on
-# the checked-in master branch of this repository.
-# It will generate a binary RPM in ./rpmbuild/RPMS/x86_64
-# and a source tar in ./rpmbuild/SOURCES
+# This target will generate distributable packages based on the
+# checked-in master branch of this repository. It will generate
+# a binary RPM in ./rpmbuild/RPMS/x86_64 and a source tar in
+# ./rpmbuild/SOURCES
+.PHONY: rpm-checkout rpm-build
+
 rpm:
 	echo "%_topdir   $(RPMROOT)" > ~/.rpmmacros
 	echo "%_tmppath  %{_topdir}/tmp" >> ~/.rpmmacros
-	cd $(RPMROOT)/SOURCES && rm -rf eiow-ha eiow-ha.tar.gz && git clone --branch $(RPMBRANCH) ../.. eiow-ha && tar --exclude-vcs -czf eiow-ha.tar.gz eiow-ha
-	cd $(RPMROOT)/SPECS && rpmbuild -ba eiow-ha.spec
+	(cd $(RPMROOT)/SOURCES && \
+	 rm -rf eiow-ha eiow-ha.tar.gz && \
+         git clone --branch $(RPMBRANCH) ../.. eiow-ha && \
+         tar --exclude-vcs -czf eiow-ha.tar.gz eiow-ha)
+	(cd $(RPMROOT)/SPECS && \
+         rpmbuild -ba eiow-ha.spec)
 
 .PHONY: network-transport-rpc confc ha
 network-transport-rpc confc ha mero-ha: $(NTR_DB_DIR)
-	make -C $@ SANDBOX=$(SANDBOX_REGULAR) DEBUG=true $(TARGET)
+	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) DEBUG=true $(TARGET)
 
 .PHONY: distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log
 distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log: $(SANDBOX_SCHED_DB)
-	make -C $@ SANDBOX=$(SANDBOX_REGULAR) $(TARGET)
+	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) $(TARGET)
 	make -C $@ SANDBOX=$(SANDBOX_SCHED) RANDOMIZED_TESTS=1 $(TARGET)
 
 .PHONY: distributed-process-scheduler
 distributed-process-scheduler: $(SANDBOX_SCHED_DB) distributed-process-trans
-	make -C $@ SANDBOX=$(SANDBOX_REGULAR) $(TARGET)
+	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) $(TARGET)
 	make -C $@ SANDBOX=$(SANDBOX_SCHED) RANDOMIZED_TESTS=1 $(TARGET)
 
 .PHONY: $(SANDBOX_SCHED_DB)
 $(SANDBOX_SCHED_DB):
 	rm -rf $(SANDBOX_SCHED_DB)
 	mkdir -p $(SANDBOX_SCHED_DB)
-	cp -r $(SANDBOX_REGULAR_DB)/* $(SANDBOX_SCHED_DB)
+	cp -r $(SANDBOX_DEFAULT_DB)/* $(SANDBOX_SCHED_DB)
 
 .PHONY: $(NTR_DB_DIR)
 ifneq ($(MERO_ROOT),--)
