@@ -14,19 +14,19 @@ ci clean install: mero-ha
 
 dep:
 	cabal sandbox init --sandbox=$(SANDBOX_DEFAULT)
-	cabal sandbox add-source vendor/distributed-process/distributed-process
+	cabal sandbox add-source $(ROOT_DIR)/vendor/distributed-process/distributed-process
 	cabal install --enable-tests \
                       --only-dependencies $(CABAL_FLAGS) \
-                      --reorder-goals distributed-process-scheduler/ \
-                                      distributed-process-test/ \
-                                      distributed-process-trans/ \
-                                      consensus/ \
-                                      consensus-paxos/ \
-                                      replicated-log/ \
-                                      network-transport-rpc/ \
-                                      confc/ \
-                                      ha/ \
-                                      mero-ha/
+                      --reorder-goals $(ROOT_DIR)/distributed-process-scheduler/ \
+                                      $(ROOT_DIR)/distributed-process-test/ \
+                                      $(ROOT_DIR)/distributed-process-trans/ \
+                                      $(ROOT_DIR)/consensus/ \
+                                      $(ROOT_DIR)/consensus-paxos/ \
+                                      $(ROOT_DIR)/replicated-log/ \
+                                      $(ROOT_DIR)/network-transport-rpc/ \
+                                      $(ROOT_DIR)/confc/ \
+                                      $(ROOT_DIR)/ha/ \
+                                      $(ROOT_DIR)/mero-ha/
 
 # This target will generate distributable packages based on the
 # checked-in master branch of this repository. It will generate
@@ -35,14 +35,18 @@ dep:
 .PHONY: rpm-checkout rpm-build
 
 rpm:
+ifeq ($(shell locale -a | grep -Fixc "$(HA_BUILD_LANG)"), 0)
+		$(error $(HA_BUILD_LANG) not present; please set HA_BUILD_LANG to an appropriate locale.)
+endif
 	echo "%_topdir   $(RPMROOT)" > ~/.rpmmacros
 	echo "%_tmppath  %{_topdir}/tmp" >> ~/.rpmmacros
+	mkdir -p $(RPMROOT)/SOURCES
 	(cd $(RPMROOT)/SOURCES && \
-	 rm -rf eiow-ha eiow-ha.tar.gz && \
-         git clone --branch $(RPMBRANCH) ../.. eiow-ha && \
-         tar --exclude-vcs -czf eiow-ha.tar.gz eiow-ha)
+	 rm -rf halon halon.tar.gz && \
+         git clone --branch $(RPMBRANCH) ../.. halon && \
+         tar --exclude-vcs -czf halon.tar.gz halon)
 	(cd $(RPMROOT)/SPECS && \
-         rpmbuild -ba eiow-ha.spec)
+        HA_BUILD_LANG=$(HA_BUILD_LANG) rpmbuild -ba halon.spec)
 
 .PHONY: network-transport-rpc confc ha
 network-transport-rpc confc ha mero-ha: $(NTR_DB_DIR)
