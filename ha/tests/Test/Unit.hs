@@ -10,6 +10,7 @@ import qualified HA.EventQueue.Tests (tests)
 import qualified HA.Network.Tests ( tests )
 import qualified HA.Multimap.Tests ( tests )
 import qualified HA.Multimap.ProcessTests ( tests )
+import qualified HA.NodeAgent.Tests (tests)
 import qualified HA.RecoverySupervisor.Tests ( tests )
 import qualified HA.ResourceGraph.Tests ( tests )
 
@@ -38,4 +39,5 @@ tests argv = do
             ]
         , testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests True network
         , testGroup "RG" <$> HA.ResourceGraph.Tests.tests network
+        , testGroup "NA" <$> HA.NodeAgent.Tests.tests network
         ]

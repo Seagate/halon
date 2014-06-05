@@ -126,18 +126,24 @@ eventQueue rg = do
             -- Process an HA event
           , match $ \(sender, ev :: HAEvent [ByteString]) -> do
               updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
-              send sender ()
               case mRC of
                 -- I know where the RC is.
                 Just rc -> do
+                  send sender (processNodeId rc)
                   send rc ev
                   return mRC
                 -- I don't know where the RC is.
                 Nothing -> do
                   -- See if we can learn it by looking at the replicated state.
                   (newMRC, _) <- getState rg
-                  _ <- Data.Traversable.forM newMRC $ \rc -> do
-                    _ <- monitor rc
-                    send rc ev
+                  case newMRC of
+                    Just rc -> do _ <- monitor rc
+                                  send sender (processNodeId rc)
+                                  send rc ev
+                               -- Send my own node when we don't know the RC
+                               -- location. Note that I was able to read the
+                               -- replicated state so very likely there is
+                               -- no RC.
+                    Nothing -> getSelfNode >>= send sender
                   return newMRC
           ] >>= loop

@@ -6,7 +6,7 @@
 module HA.Network.RemoteTables (haRemoteTable) where
 
 import HA.Resources ( __remoteTable )
-import HA.NodeAgent ( __remoteTableDecl )
+import HA.NodeAgent ( __remoteTableDecl, __remoteTable )
 import HA.Services.Dummy ( __remoteTableDecl )
 import HA.Services.OCF ( __remoteTableDecl )
 import HA.RecoverySupervisor ( __remoteTable )
@@ -28,6 +28,7 @@ haRemoteTable :: RemoteTable -> RemoteTable
 haRemoteTable next =
    HA.Resources.__remoteTable $
    HA.NodeAgent.__remoteTableDecl $
+   HA.NodeAgent.__remoteTable $
    HA.Services.Dummy.__remoteTableDecl $
    HA.Services.OCF.__remoteTableDecl $
    HA.RecoverySupervisor.__remoteTable $

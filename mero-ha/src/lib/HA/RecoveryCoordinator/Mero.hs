@@ -25,7 +25,7 @@ import HA.Resources
 import HA.Resources.Mero (ConfObject(..), ConfObjectState(..), Is(..))
 #endif
 import HA.Network.Address
-import HA.NodeAgent
+import HA.NodeAgent hiding (__remoteTable)
 import Mero.Messages
 import HA.NodeAgent.Lookup (lookupNodeAgent)
 import HA.EventQueue.Consumer
