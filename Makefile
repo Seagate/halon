@@ -35,7 +35,7 @@ dep:
 .PHONY: rpm-checkout rpm-build
 
 rpm:
-ifeq ($(shell locale -a | grep -ic "$(HA_BUILD_LANG)"), 0)
+ifeq ($(shell locale -a | grep -Fixc "$(HA_BUILD_LANG)"), 0)
 		$(error $(HA_BUILD_LANG) not present; please set HA_BUILD_LANG to an appropriate locale.)
 endif
 	echo "%_topdir   $(RPMROOT)" > ~/.rpmmacros
