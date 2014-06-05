@@ -35,14 +35,13 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static (closureApply)
 import Control.Distributed.Process.Serializable (Serializable)
 
-import Control.Monad (join, when, void)
+import Control.Monad (when, void)
 import Control.Applicative ((<$>))
 import Control.Exception (Exception, throwIO, SomeException(..))
 import Data.Binary (Binary, encode)
 import Data.Maybe (catMaybes)
 import Data.ByteString (ByteString)
 import Data.List (delete)
-import Data.Traversable (forM)
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
 import GHC.Generics (Generic)
@@ -105,13 +104,15 @@ sendEQ node msg timeOut = do
                           name' == eventQueueLabel && maybe False ((==)node . processNodeId) mpid')
                       (\(WhereIsReply _ mpid') -> return mpid')
             ]
-    fmap join $ forM (join mpid) $ \pid -> do
-      -- callLocal creates a temporary mailbox so late responses don't leak or
-      -- interfere with other calls.
-      callLocal $ do
-        self <- getSelfPid
-        send pid (self, msg)
-        expectTimeout timeOut
+    case mpid of
+      Just (Just pid) ->
+        -- callLocal creates a temporary mailbox so late responses don't leak or
+        -- interfere with other calls.
+        callLocal $ do
+          self <- getSelfPid
+          send pid (self, msg)
+          expectTimeout timeOut
+      _ -> return Nothing
 
 serialCall :: [NodeId] -> HAEvent [ByteString] ->
               Int -> Process (Maybe (NodeId, NodeId))
