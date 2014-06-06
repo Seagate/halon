@@ -58,6 +58,7 @@ endif
 ifdef DEBUG
 CABAL_FLAGS += -fdebug --enable-tests
 endif
+CABAL_FLAGS += -fcontrol-files
 
 # This variable is required to be set on the command line or in the
 # environment. As such, this variable does not need to be exported
