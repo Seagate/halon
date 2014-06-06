@@ -21,6 +21,7 @@
 --
 
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP #-}
 module HA.EventQueue
   ( eventQueue, EventQueue, __remoteTable, eventQueueLabel ) where
 
@@ -36,6 +37,12 @@ import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Arrow ( first, second )
 import Data.ByteString ( ByteString )
 import Data.Traversable
+
+#ifdef USE_CONTROL_FILES
+import System.Directory
+import Data.Char
+#endif
+
 
 -- | Since there is at most one Event Queue per tracking station node,
 -- the @eventQueueLabel@ is used to register and lookup the Event Queue of a
@@ -84,6 +91,7 @@ eventQueue rg = do
     -- responding and won't ever care of checking the replicated state to learn
     -- of new RCs.
     _ <- traverse monitor mRC
+    prepareControlFile
     loop mRC
   where
     loop mRC =
@@ -122,7 +130,7 @@ eventQueue rg = do
                 say "Trim done."
                 return mRC
             -- Process an HA event
-          , match $ \(sender :: ProcessId, ev :: HAEvent [ByteString]) -> do
+          , match $ \(sender :: ProcessId, ev :: HAEvent [ByteString]) -> checkAndDo mRC $ do
               updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
               selfNode <- getSelfNode
               case mRC of
@@ -148,3 +156,34 @@ eventQueue rg = do
                       send sender (n, n)
                   return newMRC
           ] >>= loop
+
+#ifdef USE_CONTROL_FILES
+
+clearName :: String -> String
+clearName = filter isAlphaNum
+
+-- | Prepare control file
+prepareControlFile :: Process ()
+prepareControlFile = do
+    fn <- fmap (clearName . show) getSelfPid
+    liftIO $ writeFile ("event-queue." ++ fn) ""
+    return ()
+
+-- | Check if failure file exists
+checkAndDo :: a -> Process a -> Process a
+checkAndDo c action = do
+    fn <- fmap (clearName . show) getSelfPid
+    d  <- liftIO $ doesFileExist $ "event-queue." ++ fn ++ ".fail"
+    if d
+    then return c
+    else action
+
+#else
+
+prepareControlFile :: Process ()
+prepareControlFile = return ()
+
+checkAndDo :: a -> Process a -> Process a
+checkAndDo _ action = action
+
+#endif

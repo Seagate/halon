@@ -28,11 +28,17 @@ Flag rpc
   Description: Build with the RPC backend instead of TCP.
   Default: False
 
+Flag control-files
+  Description: Build with control-file support.
+  Default: False
+
 Library
   Hs-Source-Dirs:  src/lib
   Default-Language: Haskell2010
   if flag(rpc)
     CPP-Options:    -DUSE_RPC
+  if flag(control-files)
+    CPP-Options:    -DUSE_CONTROL_FILES
   Default-Extensions: BangPatterns
                       DeriveDataTypeable
                       DeriveGeneric
