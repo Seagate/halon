@@ -34,6 +34,9 @@ dependencies installed:
  $ git submodule update --init --recursive
  $ make dep
 
+Note that the testing process currently requires sudo access, since it interacts with
+certain kernel modules.
+
 Building and testing with the TCP transport:
 
  $ make ci
