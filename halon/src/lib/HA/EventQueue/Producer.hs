@@ -6,12 +6,13 @@
 
 module HA.EventQueue.Producer where
 
-import Control.Distributed.Process (Process, die, whereis, liftIO)
+import Control.Distributed.Process (Process, ProcessId, getSelfPid, send, die, whereis, liftIO)
 import Control.Distributed.Process.Serializable (Serializable)
 -- Qualify all imports of any distributed-process "internals".
 import qualified Control.Distributed.Process.Internal.Types as I
     (createMessage, messageToPayload)
 import HA.Call (callAt)
+import HA.EventQueue.Types
 import HA.NodeAgent.Lookup (nodeAgentLabel)
 import Control.Concurrent (threadDelay)
 
@@ -41,3 +42,7 @@ available.
 -- | Add a new event to the event queue and then die.
 expiate :: Serializable a => a -> Process ()
 expiate x = promulgate x >> die "Expiate."
+
+-- | Send HAEvent and provide information about current process.
+sendHAEvent :: Serializable a => ProcessId -> HAEvent a -> Process ()
+sendHAEvent next ev = getSelfPid >>= \pid -> send next ev{eventHops = pid : eventHops ev}

@@ -27,7 +27,7 @@ import HA.NodeAgent.Lookup (lookupNodeAgent,nodeAgentLabel)
 import HA.Network.Address (Address,readNetworkGlobalIVar)
 import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types (HAEvent(..), EventId(..))
-import HA.EventQueue.Producer (expiate)
+import HA.EventQueue.Producer (expiate, sendHAEvent)
 import HA.Resources(Service(..),ServiceUncaughtException(..),Node(..))
 
 import Control.Distributed.Process
@@ -109,8 +109,7 @@ sendEQ node msg timeOut = do
         -- callLocal creates a temporary mailbox so late responses don't leak or
         -- interfere with other calls.
         callLocal $ do
-          self <- getSelfPid
-          send pid (self, msg)
+          sendHAEvent pid msg
           expectTimeout timeOut
       _ -> return Nothing
 
@@ -228,7 +227,8 @@ remotableDecl [ [d|
                         \no event queues are registed in the node agent"
                     let timeOut = 3000000
                         ev = HAEvent { eventId = EventId self $ nasEventCounter nas
-                                     , eventPayload = content :: [ByteString] }
+                                     , eventPayload = content :: [ByteString]
+                                     , eventHops    = [] }
                     -- When there is an unreachable preferred replica we must
                     -- attempt contact asynchronously.
                     --

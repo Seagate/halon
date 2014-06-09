@@ -26,6 +26,7 @@ module HA.EventQueue
 
 import HA.EventQueue.Consumer
 import HA.EventQueue.Types
+import HA.EventQueue.Producer ( sendHAEvent )
 import HA.Replicator ( RGroup, updateStateWith, getState)
 
 import Control.Distributed.Process
@@ -97,8 +98,9 @@ eventQueue rg = do
               -- Record in the replicated state that there is a new RC.
               updateStateWith rg $ $(mkClosure 'setRC) $ Just rc
               -- Send the pending events to the new RC.
+              self <- getSelfPid
               (_, pendingEvents) <- getState rg
-              mapM_ (send rc) $ reverse pendingEvents
+              mapM_ (send rc . (\ev -> ev{eventHops = self : eventHops ev})) $ reverse pendingEvents
               return $ Just rc
           , match $ \(ProcessMonitorNotification _ pid reason) -> do
               -- Check the identity of the process in case the
@@ -124,13 +126,14 @@ eventQueue rg = do
                 say "Trim done."
                 return mRC
             -- Process an HA event
-          , match $ \(sender, ev :: HAEvent [ByteString]) -> do
+          , match $ \(ev :: HAEvent [ByteString]) -> do
+              let sender = (\(HAEvent _ _ (x:_)) -> x) ev
               updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
               case mRC of
                 -- I know where the RC is.
                 Just rc -> do
                   send sender (processNodeId rc)
-                  send rc ev
+                  sendHAEvent rc ev
                   return mRC
                 -- I don't know where the RC is.
                 Nothing -> do
@@ -139,7 +142,7 @@ eventQueue rg = do
                   case newMRC of
                     Just rc -> do _ <- monitor rc
                                   send sender (processNodeId rc)
-                                  send rc ev
+                                  sendHAEvent rc ev
                                -- Send my own node when we don't know the RC
                                -- location. Note that I was able to read the
                                -- replicated state so very likely there is

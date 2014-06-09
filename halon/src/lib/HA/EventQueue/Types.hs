@@ -23,6 +23,7 @@ instance Binary EventId
 data HAEvent a = HAEvent
     { eventId      :: {-# UNPACK #-} !EventId
     , eventPayload :: a
+    , eventHops    :: [ProcessId]
     } deriving (Generic, Typeable)
 
 instance Binary a => Binary (HAEvent a)
