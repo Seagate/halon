@@ -7,7 +7,7 @@
 */
 
 #include "rpclite.h"
-#include "halon/epoch.h"
+#include "ha/epoch.h"
 #include "fop/fop.h"
 #include "rpclite_fom.h"
 #include <stdio.h>

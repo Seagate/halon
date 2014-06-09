@@ -5,7 +5,7 @@
 
 #include "fop/fom.h"
 #include "fop/fom_generic.h"
-#include "halon/note_fops.h"
+#include "ha/note_fops.h"
 #include "lib/errno.h"
 #include "lib/memory.h"
 #include "lib/trace.h"
