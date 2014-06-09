@@ -5,9 +5,9 @@
 
 #include "fop/fom_generic.h"
 #include "fop/fop.h"
-#include "halon/note_xc.h"
-#include "halon/note_fops.h"
-#include "halon/note_fops_xc.h"
+#include "ha/note_xc.h"
+#include "ha/note_fops.h"
+#include "ha/note_fops_xc.h"
 #include "rpc/rpc.h"
 #include "rpc/rpc_opcodes.h"
 
