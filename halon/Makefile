@@ -100,8 +100,14 @@ endif
 haddock: configure
 	cabal haddock
 
-configure:
+
+sandbox: 
 	cabal sandbox init --sandbox=$(SANDBOX)
+	cabal sandbox add-source \
+		../replicated-log
+	cabal install --only-dependencies --enable-tests --reorder-goals || echo "not installing"
+
+configure: sandbox
 	cabal configure $(CABAL_FLAGS)
 
 clean:

@@ -5,14 +5,22 @@ include mk/config.mk
 # each time on the command line. Please DO NOT check in this file.
 -include mk/local.mk
 
+all: install
+
 # `ci' is the continuous integration target.
-.PHONY: ci clean install
+.PHONY: ci clean install test
 clean: TARGET = clean
+test:  TARGET = test 
 install: TARGET = install
 ci: TARGET = ci
-ci clean install: mero-halon
+clean: mero-halon
+	[ -d $(SANDBOX_DEFAULT) ]  && rm -rf $(SANDBOX_DEFAULT)  || echo "Already removed"
+	[ -d $(SANDBOX_SCHED_DB) ] && rm -rf $(SANDBOX_SCHED_DB) || echo "Already removed"
+
+ci test install: mero-halon
 
 dep:
+	echo "Building dependencies sandboxes"
 	cabal sandbox init --sandbox=$(SANDBOX_DEFAULT)
 	cabal sandbox add-source $(ROOT_DIR)/vendor/distributed-process
 #	cabal sandbox add-source $(ROOT_DIR)/vendor/distributed-static
@@ -31,6 +39,10 @@ dep:
                                       $(ROOT_DIR)/confc/ \
                                       $(ROOT_DIR)/halon/ \
                                       $(ROOT_DIR)/mero-halon/
+	echo "Preparing scheduler sandbox"
+	rm -rf $(SANDBOX_SCHED_DB)
+	mkdir -p $(SANDBOX_SCHED_DB)
+	cp -r $(SANDBOX_DEFAULT_DB)/* $(SANDBOX_SCHED_DB)
 
 # This target will generate distributable packages based on the
 # checked-in master branch of this repository. It will generate
@@ -57,19 +69,20 @@ network-transport-rpc confc halon mero-halon: $(NTR_DB_DIR)
 
 .PHONY: distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log
 distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log: $(SANDBOX_SCHED_DB)
+	echo "Running $(TARGET) for $@ with default sandbox"
 	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) $(TARGET)
+	echo "Running $(TARGET) for $@ with default sandbox"
 	make -C $@ SANDBOX=$(SANDBOX_SCHED) RANDOMIZED_TESTS=1 $(TARGET)
 
 .PHONY: distributed-process-scheduler
 distributed-process-scheduler: $(SANDBOX_SCHED_DB) distributed-process-trans
+	echo "Running $(TARGET) for $@ with default sandbox"
 	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) $(TARGET)
+	echo "Running $(TARGET) for $@ in scheduler sandbox"
 	make -C $@ SANDBOX=$(SANDBOX_SCHED) RANDOMIZED_TESTS=1 $(TARGET)
 
 .PHONY: $(SANDBOX_SCHED_DB)
 $(SANDBOX_SCHED_DB):
-	rm -rf $(SANDBOX_SCHED_DB)
-	mkdir -p $(SANDBOX_SCHED_DB)
-	cp -r $(SANDBOX_DEFAULT_DB)/* $(SANDBOX_SCHED_DB)
 
 .PHONY: $(NTR_DB_DIR)
 ifneq ($(MERO_ROOT),--)

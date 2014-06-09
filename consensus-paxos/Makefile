@@ -1,32 +1,46 @@
+ifdef RANDOMIZED_TESTS
+BUILDDIR = dist-schedule
+TEST     = $(BUILDDIR)/build/random/random
+CFLAGS  += -frandomTests
+else
+BUILDDIR = dist
+TEST     = $(BUILDDIR)/build/tests/tests
+endif
+CFLAGS  += --builddir=$(BUILDDIR)
 
 build: configure
-	cabal build
+	cabal build --builddir=$(BUILDDIR)
 
-configure:
-	cabal sandbox init --sandbox=$(SANDBOX)
-	cabal clean
-ifdef RANDOMIZED_TESTS
-	cabal configure --enable-tests -frandomTests
-else
-	cabal configure --enable-tests
-endif
+configure: sandbox
+	cabal configure --enable-tests $(CFLAGS)
 
 clean:
-	cabal clean
+	cabal clean --builddir=$(BUILDDIR)
 
 install: build
-	cabal copy
-	cabal register
+	cabal copy --builddir=$(BUILDDIR)
+	cabal register --builddir=$(BUILDDIR)
 
 haddock:
-	cabal haddock
+	cabal haddock --builddir=$(BUILDIR)
 
-test:
+sandbox: 
+	echo "Preparing sandbox"
+	cabal sandbox init --sandbox=$(SANDBOX)
+	cabal sandbox add-source \
+		../distributed-process-scheduler \
+		../distributed-process-test \
+		../consensus
 ifdef RANDOMIZED_TESTS
-	dist/build/random/random
-else
-	dist/build/tests/tests
+	echo "Installing distributed-process-scheduler with scheduler enabled"
+	cabal install distributed-process-scheduler -fuse-scheduler --reinstall --reorder-goals || echo "is not required" 
 endif
+	cabal install --only-dependencies --enable-tests --reorder-goals || echo "it not required"
+
+test: $(TEST)
+
+$(TEST): build
+	$(TEST)
 
 promela:
 	make -C promela test

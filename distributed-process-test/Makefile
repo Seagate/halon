@@ -1,14 +1,15 @@
-
-build: configure
+build: sandbox configure
 	cabal build
 
-configure:
+sandbox:
 	cabal sandbox init --sandbox=$(SANDBOX)
-	cabal clean
+
+configure: sandbox
 	cabal configure --enable-tests
 
 clean:
 	cabal clean
+
 
 install: build
 	cabal copy
@@ -17,6 +18,8 @@ install: build
 haddock:
 	cabal haddock
 
-test:
+test-and-install: test install
 
-ci: build test install haddock
+test: configure
+
+ci: clean build test install haddock
