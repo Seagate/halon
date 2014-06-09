@@ -126,6 +126,7 @@ remotableDecl [ [d|
                        link rcpid
                        multimap (viewRState $(mkStatic 'multimapView) rGroup)
                 rcpid <- spawnLocal (recoveryCoordinator eqpid mmpid args)
+                send eqpid rcpid
                 liftIO $ putMVar mRCPid rcpid
                 return rcpid
 
