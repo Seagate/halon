@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "conf/confc.h"
-#include "ha/note.h"
+#include "halon/note.h"
 #include "rpclite.h"
 
 static struct m0_confc confc;

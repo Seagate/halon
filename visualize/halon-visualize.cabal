@@ -1,10 +1,10 @@
-name:           eiow-ha-visualize
+name:           halon-visualize
 version:        0.1
 stability:      experimental
 synopsis:       Tree building and broadcast prototype.
 description:    A prototype of broadcast through a network of Cloud
                 Haskell processes that send and receive messages.
-homepage:       https://parsci.assembla.com/code/eiow-ha/git/nodes/
+homepage:       https://github.com/tweag/halon
 license:        AllRightsReserved
 copyright:      Xyratex Technology Limited.
 category:       Control
@@ -13,10 +13,10 @@ cabal-version:  >=1.8
 
 source-repository master
   type:         git
-  location:     git@git.assembla.com:eiow-ha.git
+  location:     git@github.com:tweag/halon.git
   subdir:       visualize/
 
-executable eiow-ha-visualize
+executable halon-visualize
   main-is:          Visualize.hs
   other-modules:    Tree
   hs-source-dirs:   src/

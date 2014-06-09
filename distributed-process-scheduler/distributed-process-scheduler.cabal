@@ -9,7 +9,7 @@ Description:    If the processes in a Cloud Haskell application communicate with
                 each other exclusively through messages, this library offers a
                 scheduler that can be used to sequentialize delivery and processing
                 of messages in repeatable fashion (i.e. so executions are reproducible).
-Homepage:       https://parsci.assembla.com/code/eiow-ha/git/nodes/
+Homepage:       https://github.com/tweag/halon
 License:        AllRightsReserved
 Copyright:      (C) 2013 Xyratex Technology Limited
 Category:       Control
@@ -18,8 +18,8 @@ Cabal-Version:  >=1.10
 
 source-repository master
   Type:         git
-  Location:     git@git.assembla.com:eiow-ha.git
-  Subdir:       eiow-ha/
+  Location:     git@github.com:tweag/halon.git
+  Subdir:       distributed-process-scheduler/
 
 Flag use-scheduler
   Description: Enable deterministic scheduler.

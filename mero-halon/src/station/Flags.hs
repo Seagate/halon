@@ -44,4 +44,4 @@ parseArgs argv =
     case getOpt Permute options argv of
       (opts,[],[]) -> foldr (.) id opts defaultConfig
       (_,_,errs) -> throw $ userError $ concat errs ++ usageInfo header options
-  where header = "Usage: ha-station [OPTION...]"
+  where header = "Usage: halon-station [OPTION...]"

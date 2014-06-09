@@ -10,7 +10,7 @@ include mk/config.mk
 clean: TARGET = clean
 install: TARGET = install
 ci: TARGET = ci
-ci clean install: mero-ha
+ci clean install: mero-halon
 
 dep:
 	cabal sandbox init --sandbox=$(SANDBOX_DEFAULT)
@@ -25,8 +25,8 @@ dep:
                                       $(ROOT_DIR)/replicated-log/ \
                                       $(ROOT_DIR)/network-transport-rpc/ \
                                       $(ROOT_DIR)/confc/ \
-                                      $(ROOT_DIR)/ha/ \
-                                      $(ROOT_DIR)/mero-ha/
+                                      $(ROOT_DIR)/halon/ \
+                                      $(ROOT_DIR)/mero-halon/
 
 # This target will generate distributable packages based on the
 # checked-in master branch of this repository. It will generate
@@ -48,8 +48,8 @@ endif
 	(cd $(RPMROOT)/SPECS && \
         HA_BUILD_LANG=$(HA_BUILD_LANG) rpmbuild -ba halon.spec)
 
-.PHONY: network-transport-rpc confc ha
-network-transport-rpc confc ha mero-ha: $(NTR_DB_DIR)
+.PHONY: network-transport-rpc confc halon
+network-transport-rpc confc halon mero-halon: $(NTR_DB_DIR)
 	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) DEBUG=true $(TARGET)
 
 .PHONY: distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log
@@ -77,10 +77,10 @@ else
 $(NTR_DB_DIR):
 endif
 
-mero-ha: ha
-ha: replicated-log
+mero-halon: halon
+halon: replicated-log
 ifdef USE_RPC
-ha: network-transport-rpc confc
+halon: network-transport-rpc confc
 endif
 replicated-log:  distributed-process-test consensus consensus-paxos
 consensus-paxos: distributed-process-test consensus

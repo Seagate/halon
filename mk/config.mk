@@ -4,7 +4,7 @@ ROOT_DIR = $(shell pwd)
 HA_BUILD_LANG = C.UTF-8
 
 # The `ci' target uses this genders file.
-export GENDERS = $(shell pwd)/mero-ha/scripts/genders-parsci
+export GENDERS = $(shell pwd)/mero-halon/scripts/genders-parsci
 
 RPMROOT = $(shell pwd)/rpmbuild
 

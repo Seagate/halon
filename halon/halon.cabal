@@ -1,14 +1,14 @@
 --
 -- Copyright (C) 2013 Xyratex Technology Limited. All rights reserved.
 --
-Name:           ha
+Name:           halon
 Version:        0.1
 Stability:      experimental
 Synopsis:       High Availability system.
 Description:    The High Availability system is a library that can be used
                 together with deployment-specific components to ensure the
                 high availability of a distributed application.
-Homepage:       https://parsci.assembla.com/code/eiow-ha/git/nodes/
+Homepage:       https://github.com/tweag/halon
 License:        AllRightsReserved
 Copyright:      (C) 2013 Xyratex Technology Limited
 Category:       Control
@@ -17,8 +17,8 @@ Cabal-Version:  >=1.10
 
 source-repository master
   Type:         git
-  Location:     git@git.assembla.com:eiow-ha.git
-  Subdir:       eiow-ha/
+  Location:     git@github.com:tweag/halon.git
+  Subdir:       halon/
 
 Flag debug
   Description: Enable tracing output so errors are logged.
@@ -100,7 +100,7 @@ Test-Suite testidentify
   Main-Is:         testidentify.hs
   Ghc-Options:     -threaded -Werror -Wall
   if flag(rpc)
-    Build-Depends:   ha == 0.1,
+    Build-Depends:   halon == 0.1,
                      base >= 4.5,
                      binary >= 0.6.4,
                      network-transport-rpc,
@@ -130,7 +130,7 @@ Test-Suite unit-tests
                       GeneralizedNewtypeDeriving
                       RecordWildCards NamedFieldPuns
                       ScopedTypeVariables
-  Build-Depends:    ha == 0.1,
+  Build-Depends:    halon == 0.1,
                     base >= 4.5,
                     Cabal >= 1.16,
                     binary >= 0.6.4,
@@ -160,7 +160,7 @@ Test-Suite integration-tests
                       GeneralizedNewtypeDeriving
                       RecordWildCards NamedFieldPuns
                       ScopedTypeVariables
-  Build-Depends:    ha == 0.1,
+  Build-Depends:    halon == 0.1,
                     base >= 4.5,
                     binary >= 0.6.4,
                     bytestring,

@@ -88,9 +88,9 @@ testtutorial: build
 	sudo pkill tutorial-server
 
 testchrpc: TEST_NID := $(shell sudo lctl list_nids | grep o2ib | head -1)
-testchrpc: 
+testchrpc:
 	sudo $(ENV) dist/build/ch-server/ch-server "$(TEST_NID):12345:34:2" > ch-server.stdout &
-	../mero-ha/scripts/wait_contents 120 ch-server.stdout ready \
+	../mero-halon/scripts/wait_contents 120 ch-server.stdout ready \
 		|| (sudo pkill ch-server && false)
 	sudo $(ENV) dist/build/ch-client/ch-client "$(TEST_NID):12345:34:4" "$(TEST_NID):12345:34:2:10" \
 		|| (sudo pkill ch-server && false)
@@ -99,12 +99,12 @@ testchrpc:
 	sudo pkill ch-server
 
 testchrpc2: TEST_NID := $(shell sudo lctl list_nids | grep o2ib | head -1)
-testchrpc2: 
+testchrpc2:
 	sudo $(ENV) dist/build/ch-delay-server/ch-delay-server s2 "$(TEST_NID):12345:34:2" 2> ch-delay-server.stderr &
 	sudo $(ENV) dist/build/ch-delay-server/ch-delay-server s3 "$(TEST_NID):12345:34:3" 2> ch-delay-server2.stderr &
-	../mero-ha/scripts/wait_contents 120 ch-delay-server.stderr ready \
+	../mero-halon/scripts/wait_contents 120 ch-delay-server.stderr ready \
 		|| (sudo pkill ch-delay-server && false)
-	../mero-ha/scripts/wait_contents 120 ch-delay-server2.stderr ready \
+	../mero-halon/scripts/wait_contents 120 ch-delay-server2.stderr ready \
 		|| (sudo pkill ch-delay-server && false)
 	sudo $(ENV) dist/build/ch-delay-client/ch-delay-client "$(TEST_NID):12345:34:5" "$(TEST_NID):12345:34:2:10" "$(TEST_NID):12345:34:3:10" \
 		|| (sudo pkill ch-delay-server && false)
