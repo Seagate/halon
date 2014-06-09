@@ -16,6 +16,7 @@ source-repository master
 Flag randomTests
   Description: Builds random tests. Requires the deterministic sceduler to be enabled.
   Default: False
+  Manual:  True
 
 Library
   Default-Language: Haskell2010

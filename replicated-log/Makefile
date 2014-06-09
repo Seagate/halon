@@ -1,32 +1,46 @@
-build: configure
-	cabal build
-
-configure:
-	cabal sandbox init --sandbox=$(SANDBOX)
-	cabal clean
 ifdef RANDOMIZED_TESTS
-	cabal configure --enable-tests -frandomTests
+BUILDDIR = dist-schedule
+CFLAGS  += -frandomTests
+TEST     = $(BUILDDIR)/build/random/random
 else
-	cabal configure --enable-tests
+BUILDDIR = dist
+TEST     = $(BUILDDIR)/build/tests/tests
 endif
+
+CFLAGS  += --builddir=$(BUILDDIR)
+
+build: configure
+	cabal build --builddir=$(BUILDDIR)
+
+sandbox:
+	cabal sandbox init --sandbox=$(SANDBOX)
+	cabal sandbox add-source --snapshot \
+		../consensus \
+		../consensus-paxos
+	cabal install --only-dependencies --enable-tests --reorder-goals || echo "not installing"
+
+configure: sandbox
+	cabal configure --enable-tests $(CFLAGS)
 
 clean:
-	cabal clean
+	cabal clean --builddir=$(BUILDDIR)
 
 install: build
-	cabal copy
-	cabal register
+	cabal copy --builddir=$(BUILDDIR)
+	cabal register --builddir=$(BUILDDIR)
 
 haddock:
-	cabal haddock
+	cabal haddock --builddir=$(BUILDDIR)
 
-test:
+$(TEST): build
+
+test: $(TEST) 
 ifdef RANDOMIZED_TESTS
-	dist/build/random/random
+	$(TEST)
 else
-	dist/build/tests/tests --pattern ut --num-threads 1
-	dist/build/tests/tests --pattern durability --num-threads 1 -- FirstPass
-	dist/build/tests/tests --pattern durability --num-threads 1 -- SecondPass
+	$(TEST) --pattern ut --num-threads 1
+	$(TEST) --pattern durability --num-threads 1 -- FirstPass
+	$(TEST) --pattern durability --num-threads 1 -- SecondPass
 endif
 
-ci: build test install haddock 
+ci: clean build test install haddock 

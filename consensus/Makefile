@@ -3,9 +3,15 @@ build: configure
 	cabal build
 
 configure:
-	cabal sandbox init --sandbox=$(SANDBOX)
 	cabal clean
 	cabal configure --enable-tests
+
+sandbox:
+	echo "Preparing sandbox"
+	cabal sandbox init --sandbox=$(SANDBOX)
+	cabal sandbox add-source \
+		../distributed-process-scheduler
+	cabal install --only-dependencies --enable-tests --reorder-goals || echo "already installed"
 
 clean:
 	cabal clean
@@ -17,6 +23,6 @@ install: build
 haddock:
 	cabal haddock
 
-test:
+test: sandbox build 
 
 ci: build test install haddock 
