@@ -17,7 +17,7 @@ ifdef USE_RPC
 USE_TCP =
 endif
 
-DEBUG = 
+DEBUG =
 
 # Allow above defaults to be overriden by using a local config file.
 # That file MUST NOT BE CHECKED IN. Its content is local, not global.
@@ -113,11 +113,11 @@ configure:
 	cabal sandbox init --sandbox=$(SANDBOX)
 	cabal configure $(CABAL_FLAGS)
 
-ha-node-agent:
-	$(SUDO) scripts/ha node-agent
+halon-node-agent:
+	$(SUDO) scripts/halon node-agent
 
-ha-station:
-	$(SUDO) scripts/ha station $(ARGS)
+halon-station:
+	$(SUDO) scripts/halon station $(ARGS)
 
 clean: cleanglobaldb cleanlocaldb clean_hastate
 	cabal clean

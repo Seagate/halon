@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "ha/note.h"
+#include "halon/note.h"
 #include "rpclite.h"
 
 /// Callbacks for handling requests made with m0_ha_state_get and m0_ha_state_set.

@@ -30,7 +30,7 @@ buildType = "TCP"
 
 printHeader :: IO ()
 printHeader = do
-  putStrLn $ "This is ha-node-agent/" ++ buildType
+  putStrLn $ "This is halon-node-agent/" ++ buildType
   hFlush stdout
 
 myRemoteTable :: RemoteTable

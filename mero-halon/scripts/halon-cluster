@@ -4,8 +4,8 @@ set -m
 ## This script will read the genders file (pointed to in the
 ## GENDERS variable) and use it to deploy HA node agents
 ## and stations. The actual execution of the HA binaries
-## is taken care of by the scripts/ha script, which is called
-## by this script. Since scripts/ha reads the local genders file,
+## is taken care of by the scripts/halon script, which is called
+## by this script. Since scripts/halon reads the local genders file,
 ## this script assumes that identical genders files have already
 ## been disseminated to all nodes.
 
@@ -14,15 +14,15 @@ pushd `dirname $0` > /dev/null
 SCRIPTPATH=`pwd -P`
 popd > /dev/null
 
-HA=$SCRIPTPATH/ha
+HA=$SCRIPTPATH/halon
 
 function help
 {
   echo "Syntax: "
   echo "  $(basename "$0") [start|stop] config_file"
-  echo " "  
+  echo " "
   echo "The configuration is in the genders format. If not specified,"
-  echo "use the default /etc/mero/genders."  
+  echo "use the default /etc/mero/genders."
   echo ""
   echo "start:"
   echo "A node agent will be started on each host (m0_all) and the"
@@ -59,7 +59,7 @@ start)
   ;;
 stop)
   echo "stoping node agents ... "
-  sudo pdsh -R ssh -w "$(query m0_all c)" "killall ha-node-agent"
+  sudo pdsh -R ssh -w "$(query m0_all c)" "killall halon-node-agent"
   ;;
 *)
   help

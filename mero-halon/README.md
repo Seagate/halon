@@ -1,7 +1,7 @@
 Introduction
 ============
 
-The High Availability system consists of both command line tools and
+The Halon system consists of both command line tools and
 a library that can be used together with deployment-specific
 components to ensure the high availability of a distributed
 application.
@@ -18,8 +18,8 @@ Features
 
 Command-line tools
 ------------------
-ha-node-agent
-ha-station
+halon-node-agent
+halon-station
 
 Mero-specific components
 ------------------------

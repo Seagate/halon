@@ -10,7 +10,7 @@ Cabal-Version:  >=1.10
 
 source-repository master
   Type:         git
-  Location:     git@git.assembla.com:eiow-ha.git
+  Location:     git@github.com:tweag/halon.git
   Subdir:       consensus-paxos
 
 Flag randomTests

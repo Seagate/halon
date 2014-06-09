@@ -4,7 +4,7 @@ Stability:      experimental
 Synopsis:       Simple driver around the test framework shipped with Cabal.
 Description:    This driver behaves more appropriately with regards to test output
                 compared to the default test stubs in Cabal.
-Homepage:       https://parsci.assembla.com/code/eiow-ha/git/nodes/
+Homepage:       https://github.com/tweag/halon
 License:        AllRightsReserved
 Copyright:      (C) 2013 Xyratex Technology Limited
 Category:       Control
@@ -13,7 +13,7 @@ Cabal-Version:  >=1.10
 
 source-repository master
   Type:         git
-  Location:     git@git.assembla.com:eiow-ha.git
+  Location:     git@github.com:tweag/halon.git
   Subdir:       cabal-test-driver
 
 Library

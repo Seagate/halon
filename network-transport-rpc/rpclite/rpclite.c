@@ -26,7 +26,7 @@
 #include "reqh/reqh.h"  /* m0_reqh_rpc_mach_tl */
 #include "rpclite_fop_ff.h"
 
-#include "ha/epoch.h"
+#include "halon/epoch.h"
 
 #include "ut/cs_fop_foms.c"
 #include "ut/cs_fop_foms_xc.c"
