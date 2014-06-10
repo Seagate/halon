@@ -13,7 +13,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE CPP #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 module HA.Replicator.Log
   ( RLogGroup
   , __remoteTable
@@ -179,9 +178,7 @@ instance RGroup RLogGroup where
 
 -- | The sole purpose of this type is to provide a typeable instance from
 -- which to extract the package and the module name.
-#if MIN_VERSION_base(4,7,0)
-deriving instance Typeable Replica
-#else
+#if ! MIN_VERSION_base(4,7,0)
 data T = T
  deriving Typeable
 
