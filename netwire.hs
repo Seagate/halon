@@ -57,6 +57,15 @@ flow = proc input -> do
   let tick = timeOfInput input
   arr (ODied . Set.toList) <<< noBeatInLast (ClockTime 5) -< (m, tick)
 
+runWire :: (Show a, Show b) => Wire () IO a b -> [a] -> IO ()
+runWire _ [] = return ()
+runWire w (a:as) = do
+        putStrLn ("-> " ++ show a)
+        (e, w') <- stepWire w 0 a
+        case e of Left e' -> putStrLn ("XX " ++ show (e' :: ()))
+                  Right b -> putStrLn ("<- " ++ show b)
+        runWire w' as
+
 runFlow :: IO ()
 runFlow = do
   let ticks = [ ITick (ClockTime 1)
@@ -65,12 +74,4 @@ runFlow = do
               , ITick (ClockTime 30)
               ]
 
-  let go _ [] = return ()
-      go w (a:as) = do
-        putStrLn ("-> " ++ show a)
-        (e, w') <- stepWire w 0 a
-        case e of Left e' -> putStrLn ("XX " ++ show (e' :: ()))
-                  Right b -> putStrLn ("<- " ++ show b)
-        go w' as
-
-  go flow ticks
+  runWire flow ticks
