@@ -8,6 +8,15 @@ import qualified Data.Set as Set
 import Data.Time.Clock
 import Data.Time
 
+-- Test implementation of reactive-banana
+--
+-- Conclusion: I am sceptical about the utility of reactive banana
+-- because when behaviours are observed they contain the value
+-- triggered by the *previous* event.  This was added to make writing
+-- looping definitions harder and writing correct recursive
+-- definitions easier, however it seems to be a design flaw, at least
+-- from an uneducated point of view.
+
 newtype MachineId = MachineId Int deriving (Eq, Ord, Show)
 data Heartbeat = Heartbeat MachineId Time
 newtype Time = Time Int deriving (Eq, Ord, Show)
