@@ -126,7 +126,7 @@ Test-Suite unit-tests
   Ghc-Options:      -Wall -threaded
   CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
   if flag(debug)
-    Ghc-Options:    -eventlog -debug -with-rtsopts=-v-au
+    Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
   Default-Extensions: DeriveDataTypeable
                       DeriveGeneric
                       GeneralizedNewtypeDeriving
@@ -156,7 +156,7 @@ Test-Suite integration-tests
   Ghc-Options:      -Wall -threaded
   CPP-Options:      -DMC_RG=RLogGroup
   if flag(debug)
-    Ghc-Options:    -eventlog -debug -with-rtsopts=-v-au
+    Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
   Default-Extensions: DeriveDataTypeable
                       DeriveGeneric
                       GeneralizedNewtypeDeriving

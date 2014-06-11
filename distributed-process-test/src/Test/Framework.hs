@@ -40,7 +40,7 @@ import Control.Monad ( replicateM_, void )
 import Data.Typeable (Typeable)
 import System.Directory (getCurrentDirectory, setCurrentDirectory)
 import System.Posix.Temp (mkdtemp)
-import Test.Tasty
+import Test.Tasty hiding (Timeout)
 import Test.Tasty.HUnit hiding ( assert )
 
 

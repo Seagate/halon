@@ -5,8 +5,10 @@
 {-# LANGUAGE CPP #-}
 import Test (tests)
 
-import Test.Driver
+import Test.Tasty
+import Test.Tasty.Ingredients.FileReporter
+import Test.Tasty.Ingredients.Basic
 
 
 main :: IO ()
-main = tests >>= defaultMain
+main = tests >>= defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]

@@ -57,7 +57,7 @@ Test-Suite tests
   Main-Is:          ut.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
-  Ghc-Options:      -Wall -threaded -eventlog -debug -with-rtsopts=-v-au
+  Ghc-Options:      -Wall -threaded -eventlog -debug -with-rtsopts=-l-au
   Build-Depends:    base >= 4.5.0,
                     binary >= 0.6,
                     Cabal >= 1.16,

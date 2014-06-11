@@ -10,6 +10,8 @@ module Test.Driver
     ) where
 
 import Test.Tasty
+import Test.Tasty.Ingredients.FileReporter
+import Test.Tasty.Ingredients.Basic
 import System.Environment ( getArgs, withArgs )
 
 
@@ -32,4 +34,5 @@ defaultMainWith ::
 defaultMainWith tests = do
     args <- getArgs
     let (args',rest) = break (=="--") args
-    tests (drop 1 rest) >>= withArgs args' . defaultMain
+    tests (drop 1 rest) >>= withArgs args' .
+        defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]

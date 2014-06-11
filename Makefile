@@ -27,13 +27,13 @@ all: install
 # need to introduce a way to properly check state of dependencies and
 # reinstall them if needed.
 
-# The following code snippet allowes us to run specified target in 
+# The following code snippet allowes us to run specified target in
 # all sub-projects. By setting TARGET variable and calling the deepest
 # rule, that effectivelly lead to invoking rule in all projects.
 # `ci' is the continuous integration target.
 .PHONY: ci clean install test
 clean: TARGET = clean
-test:  TARGET = test 
+test:  TARGET = test
 install: TARGET = install
 ci: TARGET = ci
 clean: mero-halon
@@ -50,6 +50,7 @@ dep:
 #	cabal sandbox add-source $(ROOT_DIR)/vendor/network-transport
 #	cabal sandbox add-source $(ROOT_DIR)/vendor/network-transport-tcp
 #	cabal sandbox add-source $(ROOT_DIR)/vendor/rank1dynamic
+	cabal sandbox add-source $(ROOT_DIR)/vendor/tasty-files
 	cabal install --enable-tests \
                       --only-dependencies $(CABAL_FLAGS) \
                       --reorder-goals $(ROOT_DIR)/distributed-process-scheduler/ \

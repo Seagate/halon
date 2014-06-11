@@ -83,7 +83,7 @@ Executable halon-station
   Ghc-Options:        -threaded
   ghc-options:        -Wall -Werror
   if flag(debug)
-    ghc-options:      -eventlog -debug -with-rtsopts=-v-au
+    ghc-options:      -eventlog -debug -with-rtsopts=-l-au
   default-language:   Haskell2010
   Default-Extensions: DeriveDataTypeable
                       DisambiguateRecordFields
@@ -112,7 +112,7 @@ Executable halon-node-agent
   Ghc-Options:        -threaded
   ghc-options:        -Wall -Werror
   if flag(debug)
-    ghc-options:      -eventlog -debug -with-rtsopts=-v-au
+    ghc-options:      -eventlog -debug -with-rtsopts=-l-au
   default-language:   Haskell2010
   Default-Extensions: DeriveDataTypeable
                       DisambiguateRecordFields
@@ -183,7 +183,7 @@ Test-Suite unit-tests
   Ghc-Options:      -Wall -threaded
   CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
   if flag(debug)
-    Ghc-Options:    -eventlog -debug -with-rtsopts=-v-au
+    Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
   Default-Extensions: DeriveDataTypeable
                       DeriveGeneric
                       GeneralizedNewtypeDeriving
@@ -214,7 +214,7 @@ Test-Suite integration-tests
   Ghc-Options:      -Wall -threaded
   CPP-Options:      -DMC_RG=RLogGroup
   if flag(debug)
-    Ghc-Options:    -eventlog -debug -with-rtsopts=-v-au
+    Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
   Default-Extensions: DeriveDataTypeable
                       DeriveGeneric
                       GeneralizedNewtypeDeriving

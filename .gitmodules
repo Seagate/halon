@@ -13,3 +13,6 @@
 [submodule "tweag-d-p"]
 	path = vendor/distributed-process
 	url = https://github.com/tweag/distributed-process.git
+[submodule "tasty-files"]
+	path = vendor/tasty-files
+	url = git@github.com:tweag/tasty-files.git
