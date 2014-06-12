@@ -201,43 +201,47 @@ serialCallNodesTimeout nodes label msg softTimeout timeout =
       expectTimeout timeout
 
 
--- | @mixedCallNodesTimeout nodes label msg softTimeout timeout@ sends
--- @(receiver, msg)@ to each process registered under @label@ on all
--- @nodes@, expecting a reply to be sent to @receiver@.
+-- | @mixedCallNodesTimeout nodes0 nodes1 label msg softTimeout timeout@
+-- sends @(receiver, msg)@ to each process registered under @label@ on all
+-- of @nodes0@ and @nodes1@, expecting a reply to be sent to @receiver@.
 --
 -- @receiver@ is a temporary process spawned solely for the purpose of
 -- this call.
 --
--- The message is first sent to the first process, as soon as @node@
--- provides the @pid@ of the process, continuing if no reply arrives
--- within @softTimeout@, then to all remaining processes, as soon as
--- @node@ provides the @pid@ of each process.
+-- The message is first sent to each process in @nodes0@, as soon as
+-- the @pid@ of the process is obtained, continuing if no reply arrives
+-- within @softTimeout@, then to all remaining processes as soon as
+-- their @pid@s are known.
 --
 -- Returns @Just reply@, or @Nothing@ if no reply arrives within
 -- @timeout@.
 --
 mixedCallNodesTimeout :: (Serializable a, Serializable b) =>
-  [NodeId] -> Label -> a -> Timeout -> Timeout -> Process (Maybe b)
-mixedCallNodesTimeout [] _ _ _ _ = return Nothing
-mixedCallNodesTimeout nodes@(node1 : _) label msg softTimeout timeout =
+  [NodeId] -> [NodeId] -> Label -> a -> Timeout -> Timeout -> Process (Maybe b)
+mixedCallNodesTimeout [] [] _ _ _ _ = return Nothing
+mixedCallNodesTimeout nodes0 nodes1 label msg softTimeout timeout =
     runLocal $ do
       receiver <- getSelfPid
-      _sender <- spawnLocal $ do
+      -- run the first round that will contact nodes0
+      _ <- spawnLocal $ do
         link receiver
-        forM_ nodes $ \node ->
-          whereisRemoteAsync node label
-        _ <- receiveTimeout softTimeout [
-          matchIf (\(WhereIsReply _ mpid) ->
-                     maybe False (\pid -> processNodeId pid == node1) mpid) $
-            \(WhereIsReply _ mpid) ->
+        forM_ nodes0 $ \node -> whereisRemoteAsync node label
+        forever $
+          receiveWait [ matchIf
+            (\(WhereIsReply _ mpid) ->
+              maybe False (\pid -> elem (processNodeId pid) nodes0) mpid)
+            (\(WhereIsReply _ mpid) ->
+              maybe (return ()) (\pid -> send pid (receiver, msg)) mpid)
+          ]
+      _ <- spawnLocal $ do
+        link receiver
+        -- spawn the second round that will contact nodes1
+        _ <- receiveTimeout softTimeout []
+        forM_ nodes1 $ \node -> whereisRemoteAsync node label
+        forever $
+          receiveWait [
+            match $ \(WhereIsReply _ mpid) ->
               case mpid of
                 Just pid -> send pid (receiver, msg)
                 _ -> return ()]
-        forever $
-          receiveWait [
-            match $
-              \(WhereIsReply _ mpid) ->
-                case mpid of
-                  Just pid -> send pid (receiver, msg)
-                  _ -> return ()]
       expectTimeout timeout
