@@ -121,16 +121,16 @@ serialCall (node:nodes) msg timeOut = do
       Just b -> return $ Just (node, b)
       _ -> serialCall nodes msg timeOut
 
-updateEQ :: ProcessId -> [Address] -> Process Result
+updateEQ :: ProcessId -> [Address] -> Process Bool
 updateEQ pid addrs =
   do network <- liftIO readNetworkGlobalIVar
      mns <- mapM (lookupNodeAgent network) addrs
      let nodes = map processNodeId $ catMaybes mns
      updateEQNodes pid nodes
 
-updateEQNodes :: ProcessId -> [NodeId] -> Process Result
+updateEQNodes :: ProcessId -> [NodeId] -> Process Bool
 updateEQNodes pid nodes =
-     maybe CantUpdateEQ id <$> callAt pid (UpdateEQ nodes)
+     maybe False id <$> callAt pid (UpdateEQ nodes)
 
 -- | Because of GHC staging restrictions this code snippet needs
 -- to be placed in a definition outside the quotation of 'remotableDecl'.
@@ -204,7 +204,7 @@ remotableDecl [ [d|
                 [ callResponse $ \servicemsg ->
                 case servicemsg of
                   UpdateEQ eqnids -> do
-                    return $ (Ok, nas
+                    return $ (True, nas
                       { nasReplicas = eqnids
                         -- Preserve the preferred replica only if it belongs
                         -- to the new list of nodes.
