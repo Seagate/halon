@@ -130,7 +130,7 @@ updateEQAddresses pid addrs =
 
 updateEQNodes :: ProcessId -> [NodeId] -> Process Bool
 updateEQNodes pid nodes =
-     maybe False id <$> callAt pid (UpdateEQ nodes)
+     maybe False id <$> callAt pid (UpdateEQNodes nodes)
 
 -- | Because of GHC staging restrictions this code snippet needs
 -- to be placed in a definition outside the quotation of 'remotableDecl'.
@@ -203,7 +203,7 @@ remotableDecl [ [d|
               receiveWait
                 [ callResponse $ \servicemsg ->
                 case servicemsg of
-                  UpdateEQ eqnids -> do
+                  UpdateEQNodes eqnids -> do
                     return $ (True, nas
                       { nasReplicas = eqnids
                         -- Preserve the preferred replica only if it belongs
