@@ -23,12 +23,6 @@ data ServiceMessage
 
 instance Binary ServiceMessage
 
-data Result = Ok
-            | CantUpdateEQ
-            deriving (Eq, Show, Generic, Typeable)
-
-instance Binary Result
-
 data ExitReason = Shutdown
                 deriving (Eq, Show, Generic, Typeable)
 

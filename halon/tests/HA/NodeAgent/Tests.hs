@@ -9,7 +9,7 @@
 module HA.NodeAgent.Tests ( tests ) where
 
 import HA.Resources (serviceProcess)
-import HA.NodeAgent (nodeAgent,updateEQNodes, Result(..))
+import HA.NodeAgent (nodeAgent, updateEQNodes)
 import HA.Network.Address ( Network, getNetworkTransport )
 import HA.Process
 import HA.EventQueue ( eventQueue, EventQueue, eventQueueLabel )
@@ -121,7 +121,7 @@ naTestWithEQ network action = withTmpDirectory $ do
                        $ __remoteTable remoteTable
     initialize nids node = tryRunProcess node $ do
       na <- spawnLocalLink =<< unClosure (serviceProcess nodeAgent)
-      Ok <- updateEQNodes na nids
+      True <- updateEQNodes na nids
       return ()
 
 naTest :: Network -> ([NodeId] -> Process ()) -> IO ()
@@ -143,7 +143,7 @@ naTest network action = withTmpDirectory $ bracket
                    >>= send self . (,) (nids !! 1)
           register eventQueueLabel eq2
         na <- spawnLocalLink =<< unClosure (serviceProcess nodeAgent)
-        Ok <- updateEQNodes na nids
+        True <- updateEQNodes na nids
         action nids
 
 expectEventOnNode :: NodeId -> Process ProcessId

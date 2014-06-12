@@ -105,7 +105,7 @@ mockNodeAgent done = do
     register "HA.NodeAgent" self
 
     receiveWait [ callResponse $ \msg -> case msg of
-                      UpdateEQ _ -> return (Ok, ()) ]
+                      UpdateEQ _ -> return (True, ()) ]
     say "Got UpdateEQ."
 
     "Starting service m0d" :: String <- expect
