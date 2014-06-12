@@ -44,6 +44,7 @@ Library
                       TupleSections
   Ghc-Options:     -O -Wall -Werror
   Exposed-Modules: HA.Call
+                   HA.CallTimeout
                    HA.Process
                    HA.Resources
                    HA.EventQueue
