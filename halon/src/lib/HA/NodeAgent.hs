@@ -18,7 +18,6 @@ module HA.NodeAgent
       , updateEQNodes
       , expire
       , __remoteTableDecl
-      , __remoteTable
       ) where
 
 import HA.CallTimeout (callTimeout)
@@ -39,13 +38,18 @@ import Control.Distributed.Process.Serializable (Serializable)
 import Control.Monad (when, void)
 import Control.Applicative ((<$>))
 import Control.Exception (Exception, throwIO, SomeException(..))
-import Data.Binary (Binary, encode)
+import Data.Binary (encode)
 import Data.Maybe (catMaybes)
 import Data.ByteString (ByteString)
 import Data.List (delete)
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
 import GHC.Generics (Generic)
+
+
+sayNA :: String -> Process ()
+sayNA s = say $ "Node Agent: " ++ s
+
 
 -- FIXME: What do all of these expire-related things have to do with the node agent?
 data ExpireReason = forall why. Serializable why => ExpireReason why
@@ -59,42 +63,9 @@ data ExpireException = ExpireException ExpireReason
 
 instance Exception ExpireException
 
-data UpdateNAState = UpdateNAState (CU NAState)
-  deriving (Generic, Typeable)
-
--- | Closures of updates of values of type @a@.
-type CU a = Closure (a -> a)
-
-instance Binary UpdateNAState
-
 expire :: Serializable a => a -> Process b
 expire why = liftIO $ throwIO $ ExpireException $ ExpireReason why
 
--- | State of the node agent.
-data NAState = NAState
-    { nasEventCounter       :: Word64   -- ^ A counter used to tag events produced
-                                        -- in the node.
-    , nasReplicas           :: [NodeId] -- ^ The replicas we know.
-    , nasPreferredReplica   :: Maybe NodeId -- ^ The node replicas suggest as access point.
-    }
-  deriving (Generic, Typeable)
-
--- This instance is not used but we need it so the 'remotable' splice below
--- is happy.
-instance Binary NAState
-
-updateNAS :: (NodeId, Maybe NodeId) -> NAState -> NAState
-updateNAS (nid, mnid) nas =
-                                  -- Force the spine so thunks don't accumulate.
-    nas { nasReplicas           = forceSpine $ if elem nid $ nasReplicas nas
-                                    then nid : delete nid (nasReplicas nas)
-                                    -- The update is invalidated by a later
-                                    -- update to the list of replicas.
-                                    else nasReplicas nas
-        , nasPreferredReplica   = mnid
-        }
-
-remotable [ 'updateNAS ]
 
 sendEQ :: NodeId -> HAEvent [ByteString] -> Int -> Process (Maybe NodeId)
 sendEQ node msg timeOut = do
@@ -140,16 +111,32 @@ updateEQNodes pid nodes =
   where
     timeout = 3000000
 
--- | Because of GHC staging restrictions this code snippet needs
--- to be placed in a definition outside the quotation of 'remotableDecl'.
-matchNASUpdate :: NAState -> Match NAState
-matchNASUpdate nas = match $ \(UpdateNAState cNASupdate) ->
-    fmap ($ nas) $ unClosure cNASupdate
 
--- | Because of GHC staging restrictions this code snippet needs
--- to be placed in a definition outside the quotation of 'remotableDecl'.
-sendNAState :: ProcessId -> CU NAState -> Process ()
-sendNAState pid = send pid . UpdateNAState
+data State = State
+    { naEventCount :: Word64   -- ^ Number of events successfully forwarded to an EQ.
+    , naEQNodes    :: [NodeId] -- ^ Nodes of known EQs.
+    }
+  deriving (Generic, Typeable)
+
+emptyState :: State
+emptyState = State
+    { naEventCount = 0
+    , naEQNodes    = []
+    }
+
+incrementEventCount :: State -> State
+incrementEventCount state =
+    state { naEventCount = naEventCount state + 1 }
+
+setEQNodes :: State -> [NodeId] -> State
+setEQNodes state nids =
+    state { naEQNodes = forceSpine nids }
+
+setPreferredEQNode :: State -> NodeId -> State
+setPreferredEQNode state nid = setEQNodes state nids
+  where
+    nids = nid : delete nid (naEQNodes state)
+
 
 remotableDecl [ [d|
 
@@ -204,76 +191,37 @@ remotableDecl [ [d|
     nodeAgent = service nodeAgentLabel $(mkStaticClosure 'nodeAgentProcess)
 
     nodeAgentProcess :: Process ()
-    nodeAgentProcess = go $ NAState 0 [] Nothing
+    nodeAgentProcess = go emptyState
       where
-        go :: NAState -> Process a
-        go nas = do
+        go :: State -> Process a
+        go state = do
               self <- getSelfPid
               receiveWait
-                [ match $ \(caller, UpdateEQNodes eqnids) -> do
+                [ match $ \(caller, UpdateEQNodes nids) -> do
+                    when (null nids) $
+                      sayNA "Warning: Unregistering all EQs"
                     send caller True
-                    return $ nas
-                      { nasReplicas = eqnids
-                        -- Preserve the preferred replica only if it belongs
-                        -- to the new list of nodes.
-                      , nasPreferredReplica =
-                          maybe Nothing
-                                (\x -> if elem x eqnids
-                                         then Just x
-                                         else Nothing
-                                ) $
-                                nasPreferredReplica nas
-                      }
-                  -- Apply an update to the NA state.
-                , matchNASUpdate nas
-                  -- match a pre-serialized event sent from service
+                    return (setEQNodes state nids)
                 , match $ \(caller, content) -> do
-                    when (null $ nasReplicas nas) $ say $
-                        "Warning: service event cannot proceed, since \
-                        \no event queues are registed in the node agent"
+                    when (null (naEQNodes state)) $
+                      sayNA "Warning: Ignoring event because no EQs are registered"
                     let timeOut = 3000000
-                        ev = HAEvent { eventId = EventId self $ nasEventCounter nas
+                        ev = HAEvent { eventId = EventId self (naEventCount state)
                                      , eventPayload = content :: [ByteString]
                                      , eventHops    = [] }
-                    -- When there is an unreachable preferred replica we must
-                    -- attempt contact asynchronously.
-                    --
-                    -- XXX Send a ping message instead of duplicating the event.
-                    case nasPreferredReplica nas of
-                      Just pnid | pnid /= head (nasReplicas nas) ->
-                        void $ spawnLocal $ do
-                          ret <- sendEQ pnid ev timeOut
-                          case ret of
-                            Just pnid' -> handleEQResponse self nas pnid pnid'
-                            Nothing    -> return ()
-                      _   -> return ()
-                    -- Send the event to some replica.
-                    ret <- serialCall (nasReplicas nas) ev timeOut
+                    -- FIXME: Perhaps demote non-responsive EQs.
+                    ret <- serialCall (naEQNodes state) ev timeOut
                     case ret :: Maybe (NodeId, NodeId) of
-                      Just (rnid, pnid) -> do
-                        handleEQResponse self nas rnid pnid
+                      Just (_, nid) | nid `elem` naEQNodes state -> do
                         send caller True
-                        return $ nas { nasEventCounter = nasEventCounter nas + 1 }
+                        return (incrementEventCount (setPreferredEQNode state nid))
+                      Just (_, _) -> do
+                        send caller True
+                        sayNA "Warning: Ignoring preferred EQ because it is not registered"
+                        return (incrementEventCount state)
                       Nothing -> do
                         send caller False
-                        return nas
+                        sayNA "Warning: Event timed out"
+                        return state
                 ] >>= go
-
-        -- The EQ response may suggest to contact another replica. This call
-        -- handles the NA state update.
-        --
-        -- @handleEQResponse naPid naState responsiveNid preferredNid@
-        --
-        handleEQResponse :: ProcessId -> NAState -> NodeId -> NodeId -> Process ()
-        handleEQResponse na nas rnid pnid =
-          when (rnid /= head (nasReplicas nas)
-                || Just pnid /= nasPreferredReplica nas
-               ) $
-            sendNAState na $ $(mkClosure 'updateNAS) $
-              if rnid == pnid
-              then (rnid, Nothing) -- The EQ sugested itself.
-              else if elem pnid $ takeWhile (/=rnid) $ nasReplicas nas
-                then (rnid, Just pnid)
-                -- We have not tried reaching the preferred node yet.
-                else (pnid, Just pnid)
     |] ]
