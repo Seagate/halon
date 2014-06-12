@@ -201,14 +201,21 @@ serialCallNodesTimeout nodes label msg softTimeout timeout =
       expectTimeout timeout
 
 
-{-| @mixedCallNodesTimeout@ sends @(self, msg)@ to each process registered
-under @label@ on all @nodes@, expecting a reply to be sent to @receiver@.
-The message is first sent to the first process, as soon as @node@ provides
-the @pid@ of the process, continuing if no reply arrives within
-@softTimeout@, then to all remaining processes, as soon as @node@ provides
-the @pid@ of each process.
-Returns @Just reply@, or @Nothing@ if no reply arrives within @timeout@.
--}
+-- | @mixedCallNodesTimeout nodes label msg softTimeout timeout@ sends
+-- @(receiver, msg)@ to each process registered under @label@ on all
+-- @nodes@, expecting a reply to be sent to @receiver@.
+--
+-- @receiver@ is a temporary process spawned solely for the purpose of
+-- this call.
+--
+-- The message is first sent to the first process, as soon as @node@
+-- provides the @pid@ of the process, continuing if no reply arrives
+-- within @softTimeout@, then to all remaining processes, as soon as
+-- @node@ provides the @pid@ of each process.
+--
+-- Returns @Just reply@, or @Nothing@ if no reply arrives within
+-- @timeout@.
+--
 mixedCallNodesTimeout :: (Serializable a, Serializable b) =>
   [NodeId] -> Label -> a -> Timeout -> Timeout -> Process (Maybe b)
 mixedCallNodesTimeout [] _ _ _ _ = return Nothing
