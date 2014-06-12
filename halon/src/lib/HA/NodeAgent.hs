@@ -29,6 +29,7 @@ import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types (HAEvent(..), EventId(..))
 import HA.EventQueue.Producer (expiate, sendHAEvent)
 import HA.Resources(Service(..),ServiceUncaughtException(..),Node(..))
+import HA.Utils (forceSpine)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
@@ -91,8 +92,6 @@ updateNAS (nid, mnid) nas =
                                     else nasReplicas nas
         , nasPreferredReplica   = mnid
         }
-  where
-    forceSpine xs = seq (foldr (flip const) () xs) xs
 
 remotable [ 'updateNAS ]
 
