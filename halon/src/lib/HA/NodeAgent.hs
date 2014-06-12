@@ -21,7 +21,7 @@ module HA.NodeAgent
       , __remoteTable
       ) where
 
-import HA.Call
+import HA.CallTimeout (callTimeout)
 import HA.NodeAgent.Messages
 import HA.NodeAgent.Lookup (lookupNodeAgent,nodeAgentLabel)
 import HA.Network.Address (Address,readNetworkGlobalIVar)
@@ -128,9 +128,12 @@ updateEQAddresses pid addrs =
      let nodes = map processNodeId $ catMaybes mns
      updateEQNodes pid nodes
 
+-- FIXME: Use a well-defined timeout.
 updateEQNodes :: ProcessId -> [NodeId] -> Process Bool
 updateEQNodes pid nodes =
-     maybe False id <$> callAt pid (UpdateEQNodes nodes)
+    maybe False id <$> callTimeout pid (UpdateEQNodes nodes) timeout
+  where
+    timeout = 3000000
 
 -- | Because of GHC staging restrictions this code snippet needs
 -- to be placed in a definition outside the quotation of 'remotableDecl'.
@@ -201,10 +204,9 @@ remotableDecl [ [d|
         go nas = do
               self <- getSelfPid
               receiveWait
-                [ callResponse $ \servicemsg ->
-                case servicemsg of
-                  UpdateEQNodes eqnids -> do
-                    return $ (True, nas
+                [ match $ \(caller, UpdateEQNodes eqnids) -> do
+                    send caller True
+                    return $ nas
                       { nasReplicas = eqnids
                         -- Preserve the preferred replica only if it belongs
                         -- to the new list of nodes.
@@ -215,12 +217,11 @@ remotableDecl [ [d|
                                          else Nothing
                                 ) $
                                 nasPreferredReplica nas
-                      })
+                      }
                   -- Apply an update to the NA state.
                 , matchNASUpdate nas
                   -- match a pre-serialized event sent from service
-                , callResponseAsync
-                    (const $ Just nas { nasEventCounter = nasEventCounter nas + 1 }) $ \content -> do
+                , match $ \(caller, content) -> do
                     when (null $ nasReplicas nas) $ say $
                         "Warning: service event cannot proceed, since \
                         \no event queues are registed in the node agent"
@@ -243,9 +244,13 @@ remotableDecl [ [d|
                     -- Send the event to some replica.
                     ret <- serialCall (nasReplicas nas) ev timeOut
                     case ret :: Maybe (NodeId, NodeId) of
-                      Just (rnid, pnid) -> do handleEQResponse self nas rnid pnid
-                                              return True
-                      Nothing           -> return False
+                      Just (rnid, pnid) -> do
+                        handleEQResponse self nas rnid pnid
+                        send caller True
+                        return $ nas { nasEventCounter = nasEventCounter nas + 1 }
+                      Nothing -> do
+                        send caller False
+                        return nas
                 ] >>= go
 
         -- The EQ response may suggest to contact another replica. This call
