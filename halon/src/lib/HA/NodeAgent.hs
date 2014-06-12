@@ -18,7 +18,6 @@ module HA.NodeAgent
       , updateEQNodes
       , expire
       , __remoteTableDecl
-      , __remoteTable
       ) where
 
 import HA.CallTimeout (callTimeout, mixedCallNodesTimeout)
@@ -39,13 +38,12 @@ import Control.Distributed.Process.Serializable (Serializable)
 import Control.Monad (when, void)
 import Control.Applicative ((<$>))
 import Control.Exception (Exception, throwIO, SomeException(..))
-import Data.Binary (Binary, encode)
+import Data.Binary (encode)
 import Data.Maybe (catMaybes, maybeToList)
 import Data.ByteString (ByteString)
 import Data.List (delete, nub, (\\))
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
-import GHC.Generics (Generic)
 
 -- FIXME: What do all of these expire-related things have to do with the node agent?
 data ExpireReason = forall why. Serializable why => ExpireReason why
@@ -59,14 +57,6 @@ data ExpireException = ExpireException ExpireReason
 
 instance Exception ExpireException
 
-data UpdateNAState = UpdateNAState (CU NAState)
-  deriving (Generic, Typeable)
-
--- | Closures of updates of values of type @a@.
-type CU a = Closure (a -> a)
-
-instance Binary UpdateNAState
-
 expire :: Serializable a => a -> Process b
 expire why = liftIO $ throwIO $ ExpireException $ ExpireReason why
 
@@ -77,24 +67,7 @@ data NAState = NAState
     , nasReplicas           :: [NodeId] -- ^ The replicas we know.
     , nasPreferredReplica   :: Maybe NodeId -- ^ The node replicas suggest as access point.
     }
-  deriving (Generic, Typeable)
-
--- This instance is not used but we need it so the 'remotable' splice below
--- is happy.
-instance Binary NAState
-
-updateNAS :: (NodeId, Maybe NodeId) -> NAState -> NAState
-updateNAS (nid, mnid) nas =
-                                  -- Force the spine so thunks don't accumulate.
-    nas { nasReplicas           = forceSpine $ if elem nid $ nasReplicas nas
-                                    then nid : delete nid (nasReplicas nas)
-                                    -- The update is invalidated by a later
-                                    -- update to the list of replicas.
-                                    else nasReplicas nas
-        , nasPreferredReplica   = mnid
-        }
-
-remotable [ 'updateNAS ]
+  deriving (Typeable)
 
 -- FIXME: What is going on in this function?
 -- Are @mns@ the process ids of all node agents on the network?
@@ -113,17 +86,6 @@ updateEQNodes pid nodes =
     maybe False id <$> callTimeout pid (UpdateEQNodes nodes) timeout
   where
     timeout = 3000000
-
--- | Because of GHC staging restrictions this code snippet needs
--- to be placed in a definition outside the quotation of 'remotableDecl'.
-matchNASUpdate :: NAState -> Match NAState
-matchNASUpdate nas = match $ \(UpdateNAState cNASupdate) ->
-    fmap ($ nas) $ unClosure cNASupdate
-
--- | Because of GHC staging restrictions this code snippet needs
--- to be placed in a definition outside the quotation of 'remotableDecl'.
-sendNAState :: ProcessId -> CU NAState -> Process ()
-sendNAState pid = send pid . UpdateNAState
 
 remotableDecl [ [d|
 
@@ -198,8 +160,6 @@ remotableDecl [ [d|
                                 ) $
                                 nasPreferredReplica nas
                       }
-                  -- Apply an update to the NA state.
-                , matchNASUpdate nas
                   -- match a pre-serialized event sent from service
                 , match $ \(caller, payload) -> do
                     when (null (nasReplicas nas)) $
@@ -222,29 +182,44 @@ remotableDecl [ [d|
                     result <- mixedCallNodesTimeout nodes0 (nasReplicas nas \\ nodes0) eventQueueLabel event softTimeout timeout
                     case result :: Maybe (NodeId, NodeId) of
                       Just (rnid, pnid) -> do
-                        handleEQResponse self nas rnid pnid
                         send caller True
-                        return $ nas { nasEventCounter = nasEventCounter nas + 1 }
+                        return $ (handleEQResponse nas rnid pnid)
+                                   { nasEventCounter = nasEventCounter nas + 1 }
                       Nothing -> do
                         send caller False
                         return nas
                 ] >>= go
 
-        -- The EQ response may suggest to contact another replica. This call
+        -- The EQ response may suggest to contact another replica. This function
         -- handles the NA state update.
         --
-        -- @handleEQResponse naPid naState responsiveNid preferredNid@
+        -- @handleEQResponse naState responsiveNid preferredNid@
         --
-        handleEQResponse :: ProcessId -> NAState -> NodeId -> NodeId -> Process ()
-        handleEQResponse na nas rnid pnid =
-          when (rnid /= head (nasReplicas nas)
-                || Just pnid /= nasPreferredReplica nas
-               ) $
-            sendNAState na $ $(mkClosure 'updateNAS) $
+        handleEQResponse :: NAState -> NodeId -> NodeId -> NAState
+        handleEQResponse nas rnid pnid =
+          if (rnid /= head (nasReplicas nas)
+              || Just pnid /= nasPreferredReplica nas
+             ) then
+            updateNAS nas $
               if rnid == pnid
               then (rnid, Nothing) -- The EQ sugested itself.
               else if elem pnid $ takeWhile (/=rnid) $ nasReplicas nas
                 then (rnid, Just pnid)
                 -- We have not tried reaching the preferred node yet.
                 else (pnid, Just pnid)
+          else
+            nas
+
+        updateNAS :: NAState -> (NodeId, Maybe NodeId) -> NAState
+        updateNAS nas (nid, mnid) =
+                                  -- Force the spine so thunks don't accumulate.
+          nas { nasReplicas           = forceSpine $ if elem nid $ nasReplicas nas
+                                          then nid : delete nid (nasReplicas nas)
+                                          -- The update is invalidated by a later
+                                          -- update to the list of replicas.
+                                          else nasReplicas nas
+              , nasPreferredReplica   = mnid
+              }
+
+
     |] ]
