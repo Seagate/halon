@@ -66,6 +66,7 @@ Library
                    HA.Network.RemoteTables
                    HA.Services.Dummy
                    HA.Services.OCF
+                   HA.Utils
   if flag(rpc)
     Exposed-Modules: HA.Network.IdentifyRPC
   Build-Depends:   base,

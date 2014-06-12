@@ -28,6 +28,7 @@ import HA.EventQueue.Consumer
 import HA.EventQueue.Types
 import HA.EventQueue.Producer ( sendHAEvent )
 import HA.Replicator ( RGroup, updateStateWith, getState)
+import HA.Utils (forceSpine)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
@@ -46,11 +47,6 @@ eventQueueLabel = "HA.EventQueue"
 --
 -- It contains the process id of the RC and the list of pending events.
 type EventQueue = (Maybe ProcessId, [HAEvent [ByteString]])
-
--- | @forceSpine xs@ evaluates the spine of @xs@.
-forceSpine :: [a] -> [a]
-forceSpine [] = []
-forceSpine xs@(_:xs') = forceSpine xs' `seq` xs
 
 addSerializedEvent :: HAEvent [ByteString] -> EventQueue -> EventQueue
 addSerializedEvent = second . (:)
