@@ -134,12 +134,12 @@ naTest network action = withTmpDirectory $ bracket
       tryRunProcess (nodes !! 0) $ do
         self <- getSelfPid
         eq1 <- spawnLocal $ forever $
-                 (expect :: Process (HAEvent [ByteString]))
+                 (expect :: Process (ProcessId, HAEvent [ByteString]))
                  >>= send self . (,) (nids !! 0)
         register eventQueueLabel eq1
         liftIO $ tryRunProcess (nodes !! 1) $ do
           eq2 <- spawnLocal $ forever $
-                   (expect :: Process (HAEvent [ByteString]))
+                   (expect :: Process (ProcessId, HAEvent [ByteString]))
                    >>= send self . (,) (nids !! 1)
           register eventQueueLabel eq2
         na <- spawnLocalLink =<< unClosure (serviceProcess nodeAgent)
@@ -148,7 +148,7 @@ naTest network action = withTmpDirectory $ bracket
 
 expectEventOnNode :: NodeId -> Process ProcessId
 expectEventOnNode n = do
-    (n', HAEvent _ _ (sender:_)) <- expect :: Process (NodeId, HAEvent [ByteString])
+    (n', (sender, HAEvent _ _ _)) <- expect :: Process (NodeId, (ProcessId, HAEvent [ByteString]))
     True <- return $ n == n'
     return sender
 
@@ -175,35 +175,35 @@ tests network = do
             -- We get an event on the first node.
             _ <- spawnLocal $ expiate "hello1"
             sender0 <- expectEventOnNode $ nids !! 0
-            send sender0 (nids !! 0)
+            send sender0 (nids !! 0, nids !! 0)
 
             -- We still get an event on the first node and suggest NA to use the
             -- second node.
             _ <- spawnLocal $ expiate "hello2"
             sender1 <- expectEventOnNode $ nids !! 0
-            send sender1 (nids !! 1)
+            send sender1 (nids !! 0, nids !! 1)
 
             -- We get an event on the second node.
             _ <- spawnLocal $ expiate "hello3"
             sender2 <- expectEventOnNode $ nids !! 1
-            send sender2 (nids !! 1)
+            send sender2 (nids !! 1, nids !! 1)
 
             -- We get the next event on the second node again.
             _ <- spawnLocal $ expiate "hello4"
             sender3 <- expectEventOnNode $ nids !! 1
-            send sender3 (nids !! 1)
+            send sender3 (nids !! 1, nids !! 1)
 
       , testSuccess "na-should-compress-path-with-failures" $ naTest network $ \nids -> do
             -- We get an event on the first node.
             _ <- spawnLocal $ expiate "hello1"
             sender0 <- expectEventOnNode $ nids !! 0
-            send sender0 (nids !! 0)
+            send sender0 (nids !! 0, nids !! 0)
 
             -- We still get an event on the first node and suggest NA to use the
             -- second node.
             _ <- spawnLocal $ expiate "hello2"
             sender1 <- expectEventOnNode $ nids !! 0
-            send sender1 (nids !! 1)
+            send sender1 (nids !! 0, nids !! 1)
 
             -- We get an event on the second node, but we are not going to
             -- reply, so NA should resend to the first node.
@@ -211,36 +211,36 @@ tests network = do
             _ <- expectEventOnNode $ nids !! 1
 
             sender2 <- expectEventOnNode $ nids !! 0
-            send sender2 (nids !! 1)
+            send sender2 (nids !! 0, nids !! 1)
 
             -- We get an event on the second node and we reply. But because we
-            -- didn't reply last time, NA will send the event to the last
+            -- didn't reply last time, NA will also send the event to the last
             -- responsive node, that is the first one.
             _ <- spawnLocal $ expiate "hello4"
-            evpairs <- replicateM 2 $ (expect :: Process (NodeId, (HAEvent [ByteString])))
+            evpairs <- replicateM 2 $ (expect :: Process (NodeId, (ProcessId, HAEvent [ByteString])))
             let nids4 = nub $ map fst evpairs
                 evs   = nub $ map snd evpairs
-                senders = map ((\(HAEvent _ _ (x:_)) -> x) . snd) evpairs
+                (_, (sender, HAEvent _ _ _)) = head evpairs
             -- The same event was sent multiple times.
             True <- return $ length evs == 1
             -- The event was sent to both nodes.
             True <- return $ length nids4 == 2
             True <- return $ null $ nids4 \\ nids
-            forM_ senders $ \sender -> send sender (nids !! 1)
+            send sender (nids !! 1, nids !! 1)
 
             -- We get the next event on the second node again, and we suggest
             -- the first node.
             _ <- spawnLocal $ expiate "hello5"
             sender3 <- expectEventOnNode $ nids !! 1
-            send sender3 (nids !! 0)
+            send sender3 (nids !! 1, nids !! 0)
 
             -- We get the next event on the first node.
             _ <- spawnLocal $ expiate "hello6"
             sender4 <- expectEventOnNode $ nids !! 0
-            send sender4 (nids !! 0)
+            send sender4 (nids !! 0, nids !! 0)
 
             -- We get the next event on the first node again.
             _ <- spawnLocal $ expiate "hello7"
             sender5 <- expectEventOnNode $ nids !! 0
-            send sender5 (nids !! 0)
+            send sender5 (nids !! 0, nids !! 0)
       ]
