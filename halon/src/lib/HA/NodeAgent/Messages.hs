@@ -23,6 +23,7 @@ data ServiceMessage =
 
 instance Binary ServiceMessage
 
+-- FIXME: Do we want to keep this just for the dummy service?
 data ExitReason = Shutdown
                 deriving (Eq, Show, Generic, Typeable)
 
