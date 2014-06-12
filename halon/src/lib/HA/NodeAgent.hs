@@ -47,6 +47,7 @@ import Data.Typeable (Typeable)
 import Data.Word (Word64)
 import GHC.Generics (Generic)
 
+-- FIXME: What do all of these expire-related things have to do with the node agent?
 data ExpireReason = forall why. Serializable why => ExpireReason why
   deriving (Typeable)
 
@@ -121,6 +122,10 @@ serialCall (node:nodes) msg timeOut = do
       Just b -> return $ Just (node, b)
       _ -> serialCall nodes msg timeOut
 
+-- FIXME: What is going on in this function?
+-- Are @mns@ the process ids of all node agents on the network?
+-- Are @nodes@ the node ids of all node agents on the network?
+-- Is pid the process id of the node agent to be updated?
 updateEQAddresses :: ProcessId -> [Address] -> Process Bool
 updateEQAddresses pid addrs =
   do network <- liftIO readNetworkGlobalIVar
@@ -148,6 +153,7 @@ sendNAState pid = send pid . UpdateNAState
 
 remotableDecl [ [d|
 
+    -- FIXME: What is going on in these functions?
     sdictServiceInfo :: SerializableDict (String, Closure (Process ()))
     sdictServiceInfo = SerializableDict
 
