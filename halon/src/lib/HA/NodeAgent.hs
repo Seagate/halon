@@ -21,13 +21,13 @@ module HA.NodeAgent
       , __remoteTable
       ) where
 
-import HA.CallTimeout (callTimeout)
+import HA.CallTimeout (callTimeout, mixedCallNodesTimeout)
 import HA.NodeAgent.Messages
 import HA.NodeAgent.Lookup (lookupNodeAgent,nodeAgentLabel)
 import HA.Network.Address (Address,readNetworkGlobalIVar)
 import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types (HAEvent(..), EventId(..))
-import HA.EventQueue.Producer (expiate, sendHAEvent)
+import HA.EventQueue.Producer (expiate)
 import HA.Resources(Service(..),ServiceUncaughtException(..),Node(..))
 import HA.Utils (forceSpine)
 
@@ -40,9 +40,9 @@ import Control.Monad (when, void)
 import Control.Applicative ((<$>))
 import Control.Exception (Exception, throwIO, SomeException(..))
 import Data.Binary (Binary, encode)
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, maybeToList)
 import Data.ByteString (ByteString)
-import Data.List (delete)
+import Data.List (delete, nub, (\\))
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
 import GHC.Generics (Generic)
@@ -95,32 +95,6 @@ updateNAS (nid, mnid) nas =
         }
 
 remotable [ 'updateNAS ]
-
-sendEQ :: NodeId -> HAEvent [ByteString] -> Int -> Process (Maybe NodeId)
-sendEQ node msg timeOut = do
-    whereisRemoteAsync node eventQueueLabel
-    mpid <- receiveTimeout timeOut [
-              matchIf (\(WhereIsReply name' mpid') ->
-                          name' == eventQueueLabel && maybe False ((==)node . processNodeId) mpid')
-                      (\(WhereIsReply _ mpid') -> return mpid')
-            ]
-    case mpid of
-      Just (Just pid) ->
-        -- callLocal creates a temporary mailbox so late responses don't leak or
-        -- interfere with other calls.
-        callLocal $ do
-          sendHAEvent pid msg
-          expectTimeout timeOut
-      _ -> return Nothing
-
-serialCall :: [NodeId] -> HAEvent [ByteString] ->
-              Int -> Process (Maybe (NodeId, NodeId))
-serialCall           []   _       _ = return Nothing
-serialCall (node:nodes) msg timeOut = do
-    ret <- sendEQ node msg timeOut
-    case ret of
-      Just b -> return $ Just (node, b)
-      _ -> serialCall nodes msg timeOut
 
 -- FIXME: What is going on in this function?
 -- Are @mns@ the process ids of all node agents on the network?
@@ -227,29 +201,26 @@ remotableDecl [ [d|
                   -- Apply an update to the NA state.
                 , matchNASUpdate nas
                   -- match a pre-serialized event sent from service
-                , match $ \(caller, content) -> do
-                    when (null $ nasReplicas nas) $ say $
-                        "Warning: service event cannot proceed, since \
-                        \no event queues are registed in the node agent"
-                    let timeOut = 3000000
-                        ev = HAEvent { eventId = EventId self $ nasEventCounter nas
-                                     , eventPayload = content :: [ByteString]
-                                     , eventHops    = [] }
-                    -- When there is an unreachable preferred replica we must
-                    -- attempt contact asynchronously.
-                    --
-                    -- XXX Send a ping message instead of duplicating the event.
-                    case nasPreferredReplica nas of
-                      Just pnid | pnid /= head (nasReplicas nas) ->
-                        void $ spawnLocal $ do
-                          ret <- sendEQ pnid ev timeOut
-                          case ret of
-                            Just pnid' -> handleEQResponse self nas pnid pnid'
-                            Nothing    -> return ()
-                      _   -> return ()
+                , match $ \(caller, payload) -> do
+                    when (null (nasReplicas nas)) $
+                      say "Node Agent: Warning: Ignoring event because no EQs are registered"
+                    let
+                      event = HAEvent
+                        { eventId      = EventId self (nasEventCounter nas)
+                        , eventPayload = payload :: [ByteString]
+                        -- FIXME: Solve properly the conflict with event tracking.
+                        -- , eventHops    = []
+                        , eventHops    = [self]
+                        }
+                      -- FIXME: Use well-defined timeouts.
+                      softTimeout = 2000000
+                      timeout = 3000000
+                      nodes0 = nub $ take 1 (nasReplicas nas)
+                                     ++  maybeToList (nasPreferredReplica nas)
+
                     -- Send the event to some replica.
-                    ret <- serialCall (nasReplicas nas) ev timeOut
-                    case ret :: Maybe (NodeId, NodeId) of
+                    result <- mixedCallNodesTimeout nodes0 (nasReplicas nas \\ nodes0) eventQueueLabel event softTimeout timeout
+                    case result :: Maybe (NodeId, NodeId) of
                       Just (rnid, pnid) -> do
                         handleEQResponse self nas rnid pnid
                         send caller True

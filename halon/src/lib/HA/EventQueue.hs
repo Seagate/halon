@@ -122,13 +122,13 @@ eventQueue rg = do
                 say "Trim done."
                 return mRC
             -- Process an HA event
-          , match $ \(ev :: HAEvent [ByteString]) -> do
-              let sender = (\(HAEvent _ _ (x:_)) -> x) ev
+          , match $ \(sender :: ProcessId, ev :: HAEvent [ByteString]) -> do
               updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+              selfNode <- getSelfNode
               case mRC of
                 -- I know where the RC is.
                 Just rc -> do
-                  send sender (processNodeId rc)
+                  send sender (selfNode, processNodeId rc)
                   sendHAEvent rc ev
                   return mRC
                 -- I don't know where the RC is.
@@ -137,12 +137,14 @@ eventQueue rg = do
                   (newMRC, _) <- getState rg
                   case newMRC of
                     Just rc -> do _ <- monitor rc
-                                  send sender (processNodeId rc)
+                                  send sender (selfNode, processNodeId rc)
                                   sendHAEvent rc ev
                                -- Send my own node when we don't know the RC
                                -- location. Note that I was able to read the
                                -- replicated state so very likely there is
                                -- no RC.
-                    Nothing -> getSelfNode >>= send sender
+                    Nothing -> do
+                      n <- getSelfNode
+                      send sender (n, n)
                   return newMRC
           ] >>= loop
