@@ -14,7 +14,7 @@ module HA.NodeAgent
       , Service(..)
       , service
       , nodeAgent
-      , updateEQ
+      , updateEQAddresses
       , updateEQNodes
       , expire
       , __remoteTableDecl
@@ -121,8 +121,8 @@ serialCall (node:nodes) msg timeOut = do
       Just b -> return $ Just (node, b)
       _ -> serialCall nodes msg timeOut
 
-updateEQ :: ProcessId -> [Address] -> Process Bool
-updateEQ pid addrs =
+updateEQAddresses :: ProcessId -> [Address] -> Process Bool
+updateEQAddresses pid addrs =
   do network <- liftIO readNetworkGlobalIVar
      mns <- mapM (lookupNodeAgent network) addrs
      let nodes = map processNodeId $ catMaybes mns
