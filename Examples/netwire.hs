@@ -5,6 +5,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Maybe (maybeToList)
 import Data.List (foldl')
+import qualified Control.Arrow as Arrow
 
 type ClockTime = Double
 
@@ -36,14 +37,25 @@ mostRecentHeartbeat = accum1Many (\d' (Heartbeat machine t) ->
 collectTimeouts :: Wire e m [Timeout] (Map.Map Report [ClockTime])
 collectTimeouts = accum1Many (\d (Timeout report t) ->
                                Map.alter (append' t) report d) Map.empty
-  where append' t m = Just $ case m of Nothing -> [t]
-                                       Just ts -> t:ts
+
+append' :: v -> Maybe [v] -> Maybe [v]
+append' t m = Just $ case m of Nothing -> [t]
+                               Just ts -> t:ts
+
+concat' :: [v] -> Maybe [v] -> Maybe [v]
+concat' t m = Just $ case m of Nothing -> t
+                               Just ts -> t ++ ts
 
 removeTooEarly :: ClockTime -> Map.Map a [ClockTime] -> ClockTime
                   -> Map.Map a [ClockTime]
 removeTooEarly duration d now = 
   (Map.filter (not . null)
   . Map.map (filter ((> now) . (+ duration)))) d
+
+collectFailures :: Map.Map Report [ClockTime] -> Map.Map MachineId [ClockTime]
+collectFailures = foldl' (\d (k, v) -> Map.alter (concat' v) k d) Map.empty
+                  . map (Arrow.first (\(Report m _) -> m))
+                  . Map.toList
 
 noBeatInLast :: Monad m =>
                 ClockTime -> Wire e m (Map.Map MachineId ClockTime, ClockTime)
