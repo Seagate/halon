@@ -3,7 +3,7 @@
 import Control.Wire hiding (as, (.))
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.Maybe (maybeToList)
+import Data.Maybe (catMaybes)
 import Data.List (foldl')
 import qualified Control.Arrow as Arrow
 
@@ -17,9 +17,12 @@ data Timeout = Timeout { report' :: Report
 data Report = Report { timedOut :: MachineId
                      , reportedBy :: MachineId } deriving (Show, Eq, Ord)
 
-data Input = ITick ClockTime
-           | IHeartbeat Heartbeat
-           | ITimeout Timeout deriving Show
+data Input = Input { clockTime :: ClockTime 
+                   , eventsOfInput :: [InputEvent]
+                   , rebooting :: [MachineId] } deriving Show
+
+data InputEvent = IHeartbeat Heartbeat
+                | ITimeout Timeout deriving Show
 
 data Output = Output { odied ::  [MachineId] 
                      , avgDeadTime :: ClockTime 
@@ -64,16 +67,11 @@ noBeatInLast maxTime = proc (d, now) -> do
   let tooLongAgo p = now - p >= maxTime
   returnA -< Map.keysSet (Map.filter tooLongAgo d)
 
-timeOfInput :: Input -> ClockTime
-timeOfInput (ITick t) = t
-timeOfInput (IHeartbeat (Heartbeat _ t)) = t
-timeOfInput (ITimeout t) = timeoutTime t
-
-heartbeatOfInput :: Input -> Maybe Heartbeat
+heartbeatOfInput :: InputEvent -> Maybe Heartbeat
 heartbeatOfInput (IHeartbeat h) = Just h
 heartbeatOfInput _ = Nothing
 
-timeoutOfInput :: Input -> Maybe Timeout
+timeoutOfInput :: InputEvent -> Maybe Timeout
 timeoutOfInput (ITimeout t) = Just t
 timeoutOfInput _ = Nothing
 
@@ -105,9 +103,10 @@ thisDeadTime deadMachines dt = fromIntegral (length deadMachines) * dt
 
 flow :: Monad m => Wire e m Input Output
 flow = proc input -> do
-  let heartbeats = (maybeToList . heartbeatOfInput) input
-      timeouts = (maybeToList . timeoutOfInput) input
-      theTime = timeOfInput input
+  let event' = eventsOfInput input
+      heartbeats = (catMaybes . map heartbeatOfInput) event'
+      timeouts = (catMaybes . map timeoutOfInput) event'
+      theTime = clockTime input
 
   m <- mostRecentHeartbeat -< heartbeats
   -- TODO: vv this actually has a space leak
@@ -138,12 +137,14 @@ runWire w (a:as) = do
 
 runFlow :: IO ()
 runFlow = do
-  let ticks = [ ITick 1
-              , IHeartbeat (Heartbeat (MachineId 1) 2)
-              , ITimeout (Timeout (Report (MachineId 2) (MachineId 3)) 5)
-              , ITick 10
-              , ITick 20
-              , ITick 30
+  let ticks = [ Input 1 [] []
+              , Input 2 [IHeartbeat (Heartbeat (MachineId 1) 2)] []
+              , Input 5 [ITimeout
+                         (Timeout
+                          (Report (MachineId 2) (MachineId 3)) 5)] []
+              , Input 10 [] []
+              , Input 20 [] []
+              , Input 30 [] []
               ]
 
   runWire flow ticks
