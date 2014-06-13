@@ -60,6 +60,9 @@ collectFailures = foldl' (\d (k, v) -> Map.alter (concat' v) k d) Map.empty
                   . map (Arrow.first (\(Report m _) -> m))
                   . Map.toList
 
+moreThan :: Map.Map a [b] -> [a]
+moreThan = map fst . Map.toList . Map.filter ((>=3) . length)
+
 noBeatInLast :: Monad m =>
                 ClockTime -> Wire e m (Map.Map MachineId ClockTime, ClockTime)
                                       (Set.Set MachineId)
