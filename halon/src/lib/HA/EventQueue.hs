@@ -55,6 +55,9 @@ eventQueueLabel = "HA.EventQueue"
 -- It contains the process id of the RC and the list of pending events.
 type EventQueue = (Maybe ProcessId, [HAEvent [ByteString]])
 
+sayEQ :: String -> Process ()
+sayEQ = liftIO . putStrLn . ("Event Queue: " ++)
+
 addSerializedEvent :: HAEvent [ByteString] -> EventQueue -> EventQueue
 addSerializedEvent = second . (:)
 
@@ -114,26 +117,26 @@ eventQueue rg = do
                 -- The connection to the RC failed.
                 -- Call reconnect to say it is ok to connect again.
                 DiedDisconnect -> do _ <- traverse reconnect mRC
-                                     say "RC is lost."
+                                     sayEQ "RC is lost."
                                      return Nothing
                 -- The RC died.
                 -- We use compare and swap to make sure we don't overwrite
                 -- the pid of a respawned RC.
                 _ -> do updateStateWith rg $
                           $(mkClosure 'compareAndSwapRC) (mRC, Nothing :: Maybe ProcessId)
-                        say "RC died."
+                        sayEQ "RC died."
                         return Nothing
               else return mRC
             -- The RC handled the event with the given id.
           , match $ \(eid :: EventId) -> do
                 updateStateWith rg $ $(mkClosure 'filterEvent) eid
-                say "Trim done."
+                sayEQ "Trim done."
                 return mRC
             -- Process an HA event
           , match $ \(sender :: ProcessId, ev :: HAEvent [ByteString]) -> checkAndDo mRC $ do
-              liftIO $ putStrLn "EQ: processing event"
               updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
               selfNode <- getSelfNode
+              sayEQ "Replicated event."
               case mRC of
                 -- I know where the RC is.
                 Just rc -> do

@@ -70,7 +70,7 @@ data NodeAgentContacted = NodeAgentContacted ProcessId
 instance Binary NodeAgentContacted
 
 sayRC :: String -> Process ()
-sayRC s = say $ "Recovery Coordinator: " ++ s
+sayRC = liftIO . putStrLn . ("Recovery Coordinator: " ++)
 
 initialize :: ProcessId -> IgnitionArguments -> Process G.Graph
 initialize mm IgnitionArguments{..} = do
@@ -85,8 +85,8 @@ initialize mm IgnitionArguments{..} = do
             Just agent -> send self $ NodeAgentContacted agent
 
     rg <- G.getGraph mm
-    if G.null rg then say "Starting from empty graph."
-                 else say "Found existing graph."
+    if G.null rg then sayRC "Starting from empty graph."
+                 else sayRC "Found existing graph."
     -- Empty graph means cluster initialization.
     let rg' | G.null rg =
             G.newResource Cluster >>>

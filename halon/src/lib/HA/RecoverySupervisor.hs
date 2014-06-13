@@ -72,7 +72,7 @@ import HA.Replicator ( RGroup, updateStateWith, getState )
 import Control.Distributed.Process ( Process, ProcessId, liftIO, spawnLocal
                                    , getSelfPid, exit, monitor, link
                                    , ProcessMonitorNotification(..)
-                                   , match, receiveTimeout, say
+                                   , match, receiveTimeout
                                    )
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 
@@ -104,6 +104,9 @@ setLeader (candidate,previousLeaseCount) rstOld =
     then RSState (Just candidate) (previousLeaseCount+1)
     else rstOld
 
+sayRS :: String -> Process ()
+sayRS = liftIO . putStrLn . ("Recovery Supervisor: " ++)
+
 remotable [ 'setLeader ]
 
 -- | Amount of microseconds to wait before renewing a lease.
@@ -133,7 +136,7 @@ recoverySupervisor rg rcP = getState rg >>= go Nothing
     -- I'm the leader
     go (Just rc) previousState = do
       timer <- newTimer updatePeriod $ do
-        say "RS: lease expired, so killing RC ..."
+        sayRS "lease expired, so killing RC ..."
         -- TODO: ticket #394. Block until RC actually dies.
         -- Otherwise, a new RC may start before the old one quits.
         exit rc "quorum lost"
@@ -151,7 +154,7 @@ recoverySupervisor rg rcP = getState rg >>= go Nothing
        else do
          -- RC has died, will be killed by the timer or someone else
          -- has taken leadership.
-         when rcDied $ say "RS: RC died, RSs will elect a new leader"
+         when rcDied $ sayRS "RC died, RSs will elect a new leader"
          go Nothing rstNew
 
     -- I'm not the leader
@@ -166,7 +169,7 @@ recoverySupervisor rg rcP = getState rg >>= go Nothing
       canceled <- cancel timer
       if canceled && rsLeader rstNew == Just self then do
          -- Timer has not expired and I'm the new leader.
-         say "RS: I'm the new leader, so starting RC ..."
+         sayRS "I'm the new leader, so starting RC ..."
          rc <- rcP
          _ <- monitor rc
          go (Just rc) rstNew

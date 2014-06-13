@@ -25,6 +25,9 @@ import Mero.Messages
 import HA.Network.Address
 import Data.ByteString (ByteString)
 
+sayMero :: String -> Process ()
+sayMero = liftIO . putStrLn . ("Mero service: " ++)
+
 updateEpoch :: EpochId -> Process EpochId
 updateEpoch epoch =
    do network <- liftIO readNetworkGlobalIVar
@@ -32,7 +35,7 @@ updateEpoch epoch =
       mnewepoch <- liftIO $ sendEpochBlocking network addr epoch 5
       case mnewepoch of
         Just newepoch ->
-          do say $ "Updated epoch to "++show epoch
+          do sayMero $ "Updated epoch to "++show epoch
              return newepoch
         Nothing -> return 0
 
@@ -42,7 +45,7 @@ remotableDecl [ [d|
 
     m0dProcess :: Process ()
     m0dProcess = do
-        say $ "Starting service m0d"
+        sayMero $ "Starting service m0d"
         self <- getSelfPid
         bracket
     --      (liftIO $ createProcess $ proc "mero_call" ["m0d"])
@@ -102,7 +105,7 @@ remotableDecl [ [d|
                       Just na -> expire $ ServiceFailed (Node na) m0d -- XXX
             receiveWait $
               [ match $ \(EpochTransition epochExpected epochTarget state) -> do
-                  let _ = say $ "Service wrapper got new equation: " ++ show (state::ByteString)
+                  let _ = sayMero $ "Service wrapper got new equation: " ++ show (state::ByteString)
                   wrapperPid <- getSelfPid
                   if epoch < epochExpected
                      then do promulgate $ EpochTransitionRequest wrapperPid epoch epochTarget
