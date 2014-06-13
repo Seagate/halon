@@ -20,7 +20,7 @@ module HA.NodeAgent
       , __remoteTableDecl
       ) where
 
-import HA.CallTimeout (callTimeout, mixedCallNodesTimeout)
+import HA.CallTimeout (callTimeout, ncallRemoteAnyPreferTimeout)
 import HA.NodeAgent.Messages
 import HA.NodeAgent.Lookup (lookupNodeAgent,nodeAgentLabel)
 import HA.Network.Address (Address,readNetworkGlobalIVar)
@@ -94,7 +94,7 @@ updateEQAddresses pid addrs =
 -- FIXME: Use a well-defined timeout.
 updateEQNodes :: ProcessId -> [NodeId] -> Process Bool
 updateEQNodes pid nodes =
-    maybe False id <$> callTimeout pid (UpdateEQNodes nodes) timeout
+    maybe False id <$> callTimeout timeout pid (UpdateEQNodes nodes)
   where
     timeout = 3000000
 
@@ -186,11 +186,15 @@ remotableDecl [ [d|
                       -- FIXME: Use well-defined timeouts.
                       softTimeout = 2000000
                       timeout = 3000000
-                      nodes0 = nub $ take 1 (nasReplicas nas)
-                                     ++  maybeToList (nasPreferredReplica nas)
+                      preferNodes = nub $
+                        take 1 (nasReplicas nas) ++
+                        maybeToList (nasPreferredReplica nas)
+                      nodes = nasReplicas nas \\ preferNodes
 
                     -- Send the event to some replica.
-                    result <- mixedCallNodesTimeout nodes0 (nasReplicas nas \\ nodes0) eventQueueLabel event softTimeout timeout
+                    result <- ncallRemoteAnyPreferTimeout softTimeout timeout
+                                                          preferNodes nodes
+                                                          eventQueueLabel event
                     case result :: Maybe (NodeId, NodeId) of
                       Just (rnid, pnid) -> do
                         send caller True
