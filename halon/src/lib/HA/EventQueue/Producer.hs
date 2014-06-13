@@ -23,7 +23,7 @@ promulgate x = do
     case mthem of
         Nothing -> error "NodeAgent is not registered."
         Just na -> do
-          ret <- callTimeout na msg 5000000
+          ret <- callTimeout 5000000 na msg
           case ret of
             Just True -> return ()
             _ -> promulgate x
