@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+gawk -- '{ gsub(/127.0.*.1:8080:0/,"replica-1"); \
+           gsub(/127.0.*.1:8081:0/,"replica-1"); \
+           gsub(/127.0.*.1:8082:0/,"replica-2"); \
+           gsub(/127.0.*.1:8083:0/,"replica-2"); \
+           gsub(/127.0.*.1:8084:0/,"replica-3"); \
+           gsub(/127.0.*.1:8085:0/,"replica-3"); \
+           gsub(/127.0.*.1:8086:0/,"cohort"); \
+           gsub(/127.0.*.1:8087:0/,"cohort"); \
+         print }'
