@@ -65,6 +65,9 @@ incrementFrom aStart (.-) = proc aNow -> do
   aPrevious <- delay aStart -< aNow
   returnA -< aNow .- aPrevious
 
+stepSize :: (Num a, Monad m) => Wire e m a a
+stepSize = incrementFrom 0 (-)
+
 thisDeadTime :: [MachineId] -> ClockTime -> Double
 thisDeadTime deadMachines dt = fromIntegral (length deadMachines) * dt
 
@@ -75,7 +78,7 @@ flow = proc input -> do
   m <- mostRecentHeartbeat -< heartbeats
   let theTime = timeOfInput input
 
-  dt <- incrementFrom 0 (-) -< theTime
+  dt <- stepSize -< theTime
 
   deadMachines <- arr Set.toList <<< noBeatInLast 5 -< (m, theTime)
 
