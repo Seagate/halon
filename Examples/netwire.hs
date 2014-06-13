@@ -101,8 +101,7 @@ flow = proc input -> do
   -- TODO: vv this actually has a space leak
   collectedTimeouts <- collectTimeouts -< timeouts
   let t = removeTooEarly 10 collectedTimeouts theTime
-
-  let reportedTimeouts = (Set.toList . Map.keysSet) t
+      reportedTimeouts = (Set.toList . Map.keysSet) t
 
   dt <- stepSize -< theTime
 
