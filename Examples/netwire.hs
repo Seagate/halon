@@ -21,7 +21,9 @@ data Input = ITick ClockTime
            | ITimeout Timeout deriving Show
 
 data Output = Output { odied ::  [MachineId] 
-                     , avgDeadTime :: ClockTime } deriving Show
+                     , avgDeadTime :: ClockTime 
+                     , otimeouts :: [Report] } 
+            deriving Show
 
 accum1Many :: (b -> a -> b) -> b -> Wire e m [a] b
 accum1Many f = accum1 (foldl' f)
@@ -31,15 +33,17 @@ mostRecentHeartbeat = accum1Many (\d' (Heartbeat machine t) ->
                                    Map.insert machine t d')
                                  Map.empty
 
-timeoutsInLast :: ClockTime
-                  -> Wire e m [Timeout] (Map.Map Report [ClockTime])
-timeoutsInLast _ = accum1Many (\d (Timeout report t) ->
-                                removeTooEarly t (Map.alter (append' t) report d)) Map.empty
+collectTimeouts :: Wire e m [Timeout] (Map.Map Report [ClockTime])
+collectTimeouts = accum1Many (\d (Timeout report t) ->
+                               Map.alter (append' t) report d) Map.empty
   where append' t m = Just $ case m of Nothing -> [t]
                                        Just ts -> t:ts
-        removeTooEarly :: ClockTime -> Map.Map a [ClockTime]
-                          -> Map.Map a [ClockTime]
-        removeTooEarly t = Map.map (filter ((< 0) . (`subtract` t)))
+
+removeTooEarly :: ClockTime -> (Map.Map a [ClockTime], ClockTime)
+                  -> Map.Map a [ClockTime]
+removeTooEarly duration (d, now) = 
+  (Map.filter (not . null)
+  . Map.map (filter ((> now) . (+ duration)))) d
 
 noBeatInLast :: Monad m =>
                 ClockTime -> Wire e m (Map.Map MachineId ClockTime, ClockTime)
@@ -56,6 +60,10 @@ timeOfInput (ITimeout t) = timeoutTime t
 heartbeatOfInput :: Input -> Maybe Heartbeat
 heartbeatOfInput (IHeartbeat h) = Just h
 heartbeatOfInput _ = Nothing
+
+timeoutOfInput :: Input -> Maybe Timeout
+timeoutOfInput (ITimeout t) = Just t
+timeoutOfInput _ = Nothing
 
 manyInput :: Monad m => Wire e m a b -> Wire e m [a] [b]
 manyInput w = mkGen (\s as -> do
@@ -86,9 +94,15 @@ thisDeadTime deadMachines dt = fromIntegral (length deadMachines) * dt
 flow :: Monad m => Wire e m Input Output
 flow = proc input -> do
   let heartbeats = (maybeToList . heartbeatOfInput) input
+      timeouts = (maybeToList . timeoutOfInput) input
+      theTime = timeOfInput input
 
   m <- mostRecentHeartbeat -< heartbeats
-  let theTime = timeOfInput input
+  -- TODO: vv this actually has a space leak
+  collectedTimeouts <- collectTimeouts -< timeouts
+  t <- arr (removeTooEarly 10) -< (collectedTimeouts, theTime)
+
+  let reportedTimeouts = (Set.toList . Map.keysSet) t
 
   dt <- stepSize -< theTime
 
@@ -98,7 +112,9 @@ flow = proc input -> do
 
   let avgDeadTime' = totalDeadTime / theTime
 
-  returnA -< Output { odied = deadMachines, avgDeadTime = avgDeadTime' }
+  returnA -< Output { odied = deadMachines, avgDeadTime = avgDeadTime' 
+                    , otimeouts = reportedTimeouts }
+
 
 runWire :: (Show a, Show b) => Wire () IO a b -> [a] -> IO ()
 runWire _ [] = return ()
@@ -113,6 +129,8 @@ runFlow :: IO ()
 runFlow = do
   let ticks = [ ITick 1
               , IHeartbeat (Heartbeat (MachineId 1) 2)
+              , ITimeout (Timeout (Report (MachineId 2) (MachineId 3)) 5)
+              , ITick 10
               , ITick 20
               , ITick 30
               ]
