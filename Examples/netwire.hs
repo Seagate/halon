@@ -70,7 +70,8 @@ thisDeadTime deadMachines dt = fromIntegral (length deadMachines) * dt
 
 flow :: Monad m => Wire e m Input Output
 flow = proc input -> do
-  heartbeats <- arr (maybeToList . heartbeatOfInput) -< input
+  let heartbeats = (maybeToList . heartbeatOfInput) input
+
   m <- mostRecentHeartbeat -< heartbeats
   let theTime = timeOfInput input
 
