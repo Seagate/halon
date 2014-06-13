@@ -65,7 +65,18 @@ data NAState = NAState
     { nasEventCounter       :: Word64   -- ^ A counter used to tag events produced
                                         -- in the node.
     , nasReplicas           :: [NodeId] -- ^ The replicas we know.
-    , nasPreferredReplica   :: Maybe NodeId -- ^ The node replicas suggest as access point.
+    , nasPreferredReplica   :: Maybe NodeId
+       -- ^ The node replicas suggest as access point.
+       --
+       -- This field is used as a reminder for the NA to poll the preferred
+       -- replica until it replies. Therefore it obeys the following invariant:
+       --
+       -- This field is @Just nid@ for as long as @nid@ is the
+       -- preferred replica and the NA hasn't received an acknowledgement
+       -- from it sooner than from other replicas.
+       --
+       -- When the preferred replica responds fast enough, this field becomes
+       -- Nothing.
     }
   deriving (Typeable)
 
@@ -204,7 +215,7 @@ remotableDecl [ [d|
               if rnid == pnid
               then (rnid, Nothing) -- The EQ sugested itself.
               else if elem pnid $ takeWhile (/=rnid) $ nasReplicas nas
-                then (rnid, Just pnid)
+                then (rnid, Just pnid) -- The preferred replica did not respond soon enough.
                 -- We have not tried reaching the preferred node yet.
                 else (pnid, Just pnid)
           else
