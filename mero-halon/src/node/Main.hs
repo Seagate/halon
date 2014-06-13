@@ -18,7 +18,7 @@ import HA.Network.RemoteTables (haRemoteTable)
 import Mero.RemoteTables (meroRemoteTable)
 import Control.Distributed.Process.Node	(initRemoteTable)
 
-import System.IO ( hFlush, stdout )
+import System.IO
 
 
 buildType :: String
@@ -38,6 +38,8 @@ myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 main :: IO Int
 main = do
+  hSetBuffering stdout LineBuffering
+  hSetBuffering stderr LineBuffering
   config <- parseArgs <$> getArgs
   network <- startNetwork (localEndpoint config)
   lnid <- newLocalNode (getNetworkTransport network) myRemoteTable
