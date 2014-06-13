@@ -44,7 +44,7 @@ main = do
        case mpid of
           Nothing -> error "No node agent found at specified address"
           Just pid -> do
-            liftIO $ putStrLn $ "Starting Recovery Coordinator on " ++ show pid
+            liftIO $ putStrLn $ "Starting Recovery Supervisors from " ++ show pid
             result <- call $(functionTDict 'ignition) (processNodeId pid) $
                        $(mkClosure 'ignition) (update config)
             case result of
