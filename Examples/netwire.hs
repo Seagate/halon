@@ -39,9 +39,9 @@ collectTimeouts = accum1Many (\d (Timeout report t) ->
   where append' t m = Just $ case m of Nothing -> [t]
                                        Just ts -> t:ts
 
-removeTooEarly :: ClockTime -> (Map.Map a [ClockTime], ClockTime)
+removeTooEarly :: ClockTime -> Map.Map a [ClockTime] -> ClockTime
                   -> Map.Map a [ClockTime]
-removeTooEarly duration (d, now) = 
+removeTooEarly duration d now = 
   (Map.filter (not . null)
   . Map.map (filter ((> now) . (+ duration)))) d
 
@@ -100,7 +100,7 @@ flow = proc input -> do
   m <- mostRecentHeartbeat -< heartbeats
   -- TODO: vv this actually has a space leak
   collectedTimeouts <- collectTimeouts -< timeouts
-  t <- arr (removeTooEarly 10) -< (collectedTimeouts, theTime)
+  let t = removeTooEarly 10 collectedTimeouts theTime
 
   let reportedTimeouts = (Set.toList . Map.keysSet) t
 
