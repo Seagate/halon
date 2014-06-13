@@ -28,7 +28,7 @@ import HA.EventQueue.Consumer
 import HA.EventQueue.Types
 import HA.EventQueue.Producer ( sendHAEvent )
 import HA.Replicator ( RGroup, updateStateWith, getState)
-import HA.Utils (forceSpine)
+import Control.SpineSeq (spineSeq)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
@@ -60,7 +60,7 @@ compareAndSwapRC (expected, new) = first $ \current ->
     if current == expected then new else current
 
 filterEvent :: EventId -> EventQueue -> EventQueue
-filterEvent eid = second $ forceSpine . filter (\HAEvent{..} -> eid /= eventId)
+filterEvent eid = second $ spineSeq . filter (\HAEvent{..} -> eid /= eventId)
 
 remotable [ 'addSerializedEvent, 'setRC, 'compareAndSwapRC, 'filterEvent ]
 
