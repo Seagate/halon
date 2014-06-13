@@ -28,7 +28,7 @@ import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types (HAEvent(..), EventId(..))
 import HA.EventQueue.Producer (expiate)
 import HA.Resources(Service(..),ServiceUncaughtException(..),Node(..))
-import HA.Utils (forceSpine)
+import Control.SpineSeq (spineSeq)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
@@ -223,7 +223,7 @@ remotableDecl [ [d|
         updateNAS :: NAState -> (NodeId, Maybe NodeId) -> NAState
         updateNAS nas (nid, mnid) =
                                   -- Force the spine so thunks don't accumulate.
-          nas { nasReplicas           = forceSpine $ if elem nid $ nasReplicas nas
+          nas { nasReplicas           = spineSeq $ if elem nid $ nasReplicas nas
                                           then nid : delete nid (nasReplicas nas)
                                           -- The update is invalidated by a later
                                           -- update to the list of replicas.
