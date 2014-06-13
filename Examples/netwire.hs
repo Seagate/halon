@@ -23,7 +23,7 @@ data Input = ITick ClockTime
 
 data Output = Output { odied ::  [MachineId] 
                      , avgDeadTime :: ClockTime 
-                     , otimeouts :: [Report] } 
+                     , otimeouts :: [MachineId] } 
             deriving Show
 
 accum1Many :: (b -> a -> b) -> b -> Wire e m [a] b
@@ -113,7 +113,7 @@ flow = proc input -> do
   -- TODO: vv this actually has a space leak
   collectedTimeouts <- collectTimeouts -< timeouts
   let t = removeTooEarly 10 collectedTimeouts theTime
-      reportedTimeouts = (Set.toList . Map.keysSet) t
+      reportedTimeouts = (Set.toList . Map.keysSet . collectFailures) t
 
   dt <- stepSize -< theTime
 
