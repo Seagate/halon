@@ -10,9 +10,11 @@ type ClockTime = Double
 
 newtype MachineId = MachineId Int deriving (Eq, Ord, Show)
 data Heartbeat = Heartbeat MachineId ClockTime deriving (Show)
-data Timeout = Timeout { timedOut :: MachineId
-                       , reportedBy :: MachineId
+data Timeout = Timeout { report' :: Report
                        , timeoutTime :: ClockTime } deriving (Show)
+
+data Report = Report { timedOut :: MachineId
+                     , reportedBy :: MachineId } deriving (Show, Eq, Ord)
 
 data Input = ITick ClockTime
            | IHeartbeat Heartbeat
@@ -28,6 +30,16 @@ mostRecentHeartbeat :: Wire e m [Heartbeat] (Map.Map MachineId ClockTime)
 mostRecentHeartbeat = accum1Many (\d' (Heartbeat machine t) ->
                                    Map.insert machine t d')
                                  Map.empty
+
+timeoutsInLast :: ClockTime
+                  -> Wire e m [Timeout] (Map.Map Report [ClockTime])
+timeoutsInLast _ = accum1Many (\d (Timeout report t) ->
+                                removeTooEarly t (Map.alter (append' t) report d)) Map.empty
+  where append' t m = Just $ case m of Nothing -> [t]
+                                       Just ts -> t:ts
+        removeTooEarly :: ClockTime -> Map.Map a [ClockTime]
+                          -> Map.Map a [ClockTime]
+        removeTooEarly t = Map.map (filter ((< 0) . (`subtract` t)))
 
 noBeatInLast :: Monad m =>
                 ClockTime -> Wire e m (Map.Map MachineId ClockTime, ClockTime)
