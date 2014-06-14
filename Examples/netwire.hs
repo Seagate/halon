@@ -46,6 +46,13 @@ collectTimeouts :: Wire e m [Timeout] (Map.Map Report [ClockTime])
 collectTimeouts = accum1Many (\d (Timeout report t) ->
                                Map.alter (append' t) report d) Map.empty
 
+recentTimeouts :: Monad m =>
+                  Wire e m ([Timeout], ClockTime) (Map.Map Report [ClockTime])
+recentTimeouts = proc (timeouts, theTime) -> do
+  -- TODO: vv this actually has a space leak but will do for example purposes
+  collectedTimeouts <- collectTimeouts -< timeouts
+  returnA -< removeTooEarly 10 collectedTimeouts theTime
+
 append' :: v -> Maybe [v] -> Maybe [v]
 append' t m = Just $ case m of Nothing -> [t]
                                Just ts -> t:ts
@@ -130,10 +137,8 @@ flow = proc input -> do
       theTime = clockTime input
 
   m <- mostRecentHeartbeat -< heartbeats
-  -- TODO: vv this actually has a space leak
-  collectedTimeouts <- collectTimeouts -< timeouts
-  let t = removeTooEarly 10 collectedTimeouts theTime
-      reportedTimeouts = (Map.keysSet . collectFailures) t
+  t <- recentTimeouts -< (timeouts, theTime)
+  let reportedTimeouts = (Map.keysSet . collectFailures) t
 
   deadMachines <- noHeartbeatInLast 5 -< (m, theTime)
 
