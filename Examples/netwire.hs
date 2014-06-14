@@ -21,7 +21,7 @@ data Report = Report { timedOut :: MachineId
 
 data Input = Input { clockTime :: ClockTime
                    , eventsOfInput :: [InputEvent]
-                   , rebooting :: [MachineId] } deriving Show
+                   , rebooting :: Set.Set MachineId } deriving Show
 
 data InputEvent = IHeartbeat Heartbeat
                 | ITimeout Timeout deriving Show
@@ -31,7 +31,8 @@ data Statistics = Statistics { avgDeadTime :: ClockTime
 
 data Output = Output { odied ::  Set.Set MachineId
                      , otimeouts :: Set.Set MachineId
-                     , ostatistics :: Statistics }
+                     , ostatistics :: Statistics
+                     , toReboot :: Set.Set MachineId }
             deriving Show
 
 accum1Many :: (b -> a -> b) -> b -> Wire e m [a] b
@@ -117,19 +118,18 @@ stepSize = incrementFrom 0 (-)
 (^) :: Num a => a -> Int -> a
 (^) = (Prelude.^)
 
-statistics :: Monad m => Wire e m (Set.Set MachineId, ClockTime) Statistics
-statistics = proc (deadMachines, theTime) -> do
-  let numDeadMachines = Set.size deadMachines
-
+statistics :: Monad m => Wire e m (Int, ClockTime) Statistics
+statistics = proc (n, theTime) -> do
   dt <- stepSize -< theTime
-  totalDeadTime <- sum' -< fromIntegral numDeadMachines * dt
-  totalSquareDeadtime <- sum' -< fromIntegral (numDeadMachines ^ 2) * dt
+  totalDeadTime <- sum' -< fromIntegral n * dt
+  totalSquareDeadtime <- sum' -< fromIntegral (n ^ 2) * dt
 
   let avgDeadTime' = totalDeadTime / theTime
 
   returnA -< Statistics { avgDeadTime = avgDeadTime'
                         , varDeadTime = totalSquareDeadtime / theTime
                                         - (avgDeadTime' ^ 2) }
+
 flow :: Monad m => Wire e m Input Output
 flow = proc input -> do
   let events' = eventsOfInput input
@@ -143,11 +143,14 @@ flow = proc input -> do
 
   deadMachines <- noHeartbeatInLast 5 -< (m, theTime)
 
-  statistics' <- statistics -< (deadMachines, theTime)
+  let toReboot' = (timedOutNodes `Set.union` deadMachines) Set.\\ rebooting input
+
+  statistics' <- statistics -< (Set.size deadMachines, theTime)
 
   returnA -< Output { odied = deadMachines
                     , otimeouts = timedOutNodes
-                    , ostatistics = statistics' }
+                    , ostatistics = statistics'
+                    , toReboot = toReboot' }
 
 runWire :: (Show a, Show b) => Wire () IO a b -> [a] -> IO ()
 runWire _ [] = return ()
@@ -160,22 +163,22 @@ runWire w (a:as) = do
 
 runFlow :: IO ()
 runFlow = do
-  let ticks = [ Input 1 [] []
-              , Input 2 [IHeartbeat (Heartbeat (MachineId 1) 2)] []
+  let ticks = [ Input 1 [] (Set.fromList [])
+              , Input 2 [IHeartbeat (Heartbeat (MachineId 1) 2)] (Set.fromList [])
               , Input 5 [ITimeout
                          (Timeout
-                          (Report (MachineId 2) (MachineId 3)) 5)] []
-              , Input 10 [] []
-              , Input 20 [] []
-              , Input 30 [] []
-              , Input 40 [IHeartbeat (Heartbeat (MachineId 1) 40)] []
-              , Input 45 [IHeartbeat (Heartbeat (MachineId 1) 45)] []
-              , Input 50 [IHeartbeat (Heartbeat (MachineId 1) 50)] []
-              , Input 55 [IHeartbeat (Heartbeat (MachineId 1) 55)] []
-              , Input 60 [IHeartbeat (Heartbeat (MachineId 1) 60)] []
-              , Input 65 [IHeartbeat (Heartbeat (MachineId 1) 65)] []
-              , Input 70 [IHeartbeat (Heartbeat (MachineId 1) 70)] []
-              , Input 75 [IHeartbeat (Heartbeat (MachineId 1) 75)] []
+                          (Report (MachineId 2) (MachineId 3)) 5)] (Set.fromList [])
+              , Input 10 [] (Set.fromList [])
+              , Input 20 [] (Set.fromList [])
+              , Input 30 [] (Set.fromList [])
+              , Input 40 [IHeartbeat (Heartbeat (MachineId 1) 40)] (Set.fromList [])
+              , Input 45 [IHeartbeat (Heartbeat (MachineId 1) 45)] (Set.fromList [])
+              , Input 50 [IHeartbeat (Heartbeat (MachineId 1) 50)] (Set.fromList [])
+              , Input 55 [IHeartbeat (Heartbeat (MachineId 1) 55)] (Set.fromList [])
+              , Input 60 [IHeartbeat (Heartbeat (MachineId 1) 60)] (Set.fromList [])
+              , Input 65 [IHeartbeat (Heartbeat (MachineId 1) 65)] (Set.fromList [])
+              , Input 70 [IHeartbeat (Heartbeat (MachineId 1) 70)] (Set.fromList [])
+              , Input 75 [IHeartbeat (Heartbeat (MachineId 1) 75)] (Set.fromList [])
               ]
 
   runWire flow ticks
