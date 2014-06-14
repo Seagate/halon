@@ -109,6 +109,18 @@ stepSize = incrementFrom 0 (-)
 (^) :: Num a => a -> Int -> a
 a ^ b = (Prelude.^) a b
 
+statistics :: Monad m => Wire e m ([MachineId], ClockTime, ClockTime) Statistics
+statistics = proc (deadMachines, dt, theTime) -> do
+  let numDeadMachines = length deadMachines
+
+  totalDeadTime <- sum' -< fromIntegral numDeadMachines * dt
+  totalSquareDeadtime <- sum' -< fromIntegral (numDeadMachines ^ 2) * dt
+
+  let avgDeadTime' = totalDeadTime / theTime
+
+  returnA -< Statistics { avgDeadTime = avgDeadTime'
+                        , varDeadTime = totalSquareDeadtime / theTime
+                                        - (avgDeadTime' ^ 2) }
 flow :: Monad m => Wire e m Input Output
 flow = proc input -> do
   let event' = eventsOfInput input
@@ -126,19 +138,11 @@ flow = proc input -> do
 
   deadMachines <- arr Set.toList <<< noBeatInLast 5 -< (m, theTime)
 
-  let numDeadMachines = length deadMachines
-
-  totalDeadTime <- sum' -< fromIntegral numDeadMachines * dt
-  totalSquareDeadtime <- sum' -< fromIntegral (numDeadMachines ^ 2) * dt
-
-  let avgDeadTime' = totalDeadTime / theTime
-      varDeadTime' = totalSquareDeadtime / theTime - (avgDeadTime' ^ 2)
-  
+  statistics' <- statistics -< (deadMachines, dt, theTime)
 
   returnA -< Output { odied = deadMachines
-                    , otimeouts = reportedTimeouts 
-                    , ostatistics = Statistics { avgDeadTime = avgDeadTime' 
-                                               , varDeadTime = varDeadTime' } }
+                    , otimeouts = reportedTimeouts
+                    , ostatistics = statistics' }
 
 runWire :: (Show a, Show b) => Wire () IO a b -> [a] -> IO ()
 runWire _ [] = return ()
