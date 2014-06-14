@@ -30,7 +30,7 @@ data Statistics = Statistics { avgDeadTime :: ClockTime
                              , varDeadTime :: ClockTime } deriving Show
 
 data Output = Output { odied ::  Set.Set MachineId
-                     , otimeouts :: [MachineId]
+                     , otimeouts :: Set.Set MachineId
                      , ostatistics :: Statistics }
             deriving Show
 
@@ -133,7 +133,7 @@ flow = proc input -> do
   -- TODO: vv this actually has a space leak
   collectedTimeouts <- collectTimeouts -< timeouts
   let t = removeTooEarly 10 collectedTimeouts theTime
-      reportedTimeouts = (Set.toList . Map.keysSet . collectFailures) t
+      reportedTimeouts = (Map.keysSet . collectFailures) t
 
   deadMachines <- noHeartbeatInLast 5 -< (m, theTime)
 
