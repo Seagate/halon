@@ -67,8 +67,9 @@ removeTooEarly duration d now =
   (Map.filter (not . null)
   . Map.map (filter ((> now) . (+ duration)))) d
 
-collectFailures :: Map.Map Report [ClockTime] -> Map.Map MachineId [ClockTime]
-collectFailures = foldl' (\d (k, v) -> Map.alter (concat' v) k d) Map.empty
+failuresOfReports :: Map.Map Report [ClockTime] -> Set.Set MachineId
+failuresOfReports = Map.keysSet
+                    . foldl' (\d (k, v) -> Map.alter (concat' v) k d) Map.empty
                   . map (Arrow.first (\(Report m _) -> m))
                   . Map.toList
 
@@ -138,14 +139,14 @@ flow = proc input -> do
 
   m <- mostRecentHeartbeat -< heartbeats
   t <- recentTimeouts -< (timeouts, theTime)
-  let reportedTimeouts = (Map.keysSet . collectFailures) t
+  let timedOutNodes = failuresOfReports t
 
   deadMachines <- noHeartbeatInLast 5 -< (m, theTime)
 
   statistics' <- statistics -< (deadMachines, theTime)
 
   returnA -< Output { odied = deadMachines
-                    , otimeouts = reportedTimeouts
+                    , otimeouts = timedOutNodes
                     , ostatistics = statistics' }
 
 runWire :: (Show a, Show b) => Wire () IO a b -> [a] -> IO ()
