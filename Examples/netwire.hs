@@ -1,15 +1,20 @@
 {-# LANGUAGE Arrows #-}
 
-import Control.Wire hiding (as, (.))
+import qualified Control.Wire
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Maybe (catMaybes)
 import Data.List (foldl')
 import qualified Control.Arrow as Arrow
+import Control.Arrow (returnA)
 import Prelude hiding ((^))
 import qualified Prelude ((^))
+import Control.Monad.Identity (Identity(Identity))
 
 type ClockTime = Double
+
+type Wire = Control.Wire.Wire () Identity
+
 
 newtype MachineId = MachineId Int deriving (Eq, Ord, Show)
 data Heartbeat = Heartbeat MachineId ClockTime deriving (Show)
@@ -35,20 +40,19 @@ data Output = Output { odied ::  Set.Set MachineId
                      , toReboot :: Set.Set MachineId }
             deriving Show
 
-accum1Many :: (b -> a -> b) -> b -> Wire e m [a] b
-accum1Many f = accum1 (foldl' f)
+accum1Many :: (b -> a -> b) -> b -> Wire [a] b
+accum1Many f = Control.Wire.accum1 (foldl' f)
 
-mostRecentHeartbeat :: Wire e m [Heartbeat] (Map.Map MachineId ClockTime)
+mostRecentHeartbeat :: Wire [Heartbeat] (Map.Map MachineId ClockTime)
 mostRecentHeartbeat = accum1Many (\d' (Heartbeat machine t) ->
                                    Map.insert machine t d')
                                  Map.empty
 
-collectTimeouts :: Wire e m [Timeout] (Map.Map Report [ClockTime])
+collectTimeouts :: Wire [Timeout] (Map.Map Report [ClockTime])
 collectTimeouts = accum1Many (\d (Timeout report t) ->
                                Map.alter (append' t) report d) Map.empty
 
-recentTimeouts :: Monad m =>
-                  Wire e m ([Timeout], ClockTime) (Map.Map Report [ClockTime])
+recentTimeouts :: Wire ([Timeout], ClockTime) (Map.Map Report [ClockTime])
 recentTimeouts = proc (timeouts, theTime) -> do
   -- TODO: vv this actually has a space leak but will do for example purposes
   collectedTimeouts <- collectTimeouts -< timeouts
@@ -77,9 +81,8 @@ failuresOfReports = Map.keysSet
 moreThan :: Map.Map a [b] -> [a]
 moreThan = map fst . Map.toList . Map.filter ((>=3) . length)
 
-noHeartbeatInLast :: Monad m =>
-                ClockTime -> Wire e m (Map.Map MachineId ClockTime, ClockTime)
-                                      (Set.Set MachineId)
+noHeartbeatInLast :: ClockTime -> Wire (Map.Map MachineId ClockTime, ClockTime)
+                                       (Set.Set MachineId)
 noHeartbeatInLast maxTime = proc (d, now) -> do
   let tooLongAgo p = now - p >= maxTime
   returnA -< Map.keysSet (Map.filter tooLongAgo d)
@@ -92,33 +95,33 @@ timeoutOfInput :: InputEvent -> Maybe Timeout
 timeoutOfInput (ITimeout t) = Just t
 timeoutOfInput _ = Nothing
 
-manyInput :: Monad m => Wire e m a b -> Wire e m [a] [b]
-manyInput w = mkGen (\s as -> do
-                        (bs, w') <- go s w as
-                        return (Right bs, manyInput w'))
+manyInput :: Wire a b -> Wire [a] [b]
+manyInput w = Control.Wire.mkGen (\s as -> do
+                                     (bs, w') <- go s w as
+                                     return (Right bs, manyInput w'))
   where go _ w' [] = return ([], w')
         go s w' (a:as) = do
-          (e, w'') <- stepWire w' s a
+          (e, w'') <- Control.Wire.stepWire w' s a
           (bs, w''') <- go s w'' as
           let b = case e of Right r -> [r]
                             Left _  -> []
           return (b ++ bs, w''')
 
-sum' :: Num a => Wire e m a a
-sum' = accum1 (+) 0
+sum' :: Num a => Wire a a
+sum' = Control.Wire.accum1 (+) 0
 
-incrementFrom :: Monad m => a -> (a -> a -> b) -> Wire e m a b
+incrementFrom :: a -> (a -> a -> b) -> Wire a b
 incrementFrom aStart (.-) = proc aNow -> do
-  aPrevious <- delay aStart -< aNow
+  aPrevious <- Control.Wire.delay aStart -< aNow
   returnA -< aNow .- aPrevious
 
-stepSize :: (Num a, Monad m) => Wire e m a a
+stepSize :: Num a => Wire a a
 stepSize = incrementFrom 0 (-)
 
 (^) :: Num a => a -> Int -> a
 (^) = (Prelude.^)
 
-statistics :: Monad m => Wire e m (Int, ClockTime) Statistics
+statistics :: Wire (Int, ClockTime) Statistics
 statistics = proc (n, theTime) -> do
   dt <- stepSize -< theTime
   totalDeadTime <- sum' -< fromIntegral n * dt
@@ -130,7 +133,7 @@ statistics = proc (n, theTime) -> do
                         , varDeadTime = totalSquareDeadtime / theTime
                                         - (avgDeadTime' ^ 2) }
 
-flow :: Monad m => Wire e m Input Output
+flow :: Wire Input Output
 flow = proc input -> do
   let events' = eventsOfInput input
       heartbeats = (catMaybes . map heartbeatOfInput) events'
@@ -152,11 +155,11 @@ flow = proc input -> do
                     , ostatistics = statistics'
                     , toReboot = toReboot' }
 
-runWire :: (Show a, Show b) => Wire () IO a b -> [a] -> IO ()
+runWire :: (Show a, Show b) => Wire a b -> [a] -> IO ()
 runWire _ [] = return ()
 runWire w (a:as) = do
         putStrLn ("-> " ++ show a)
-        (e, w') <- stepWire w 0 a
+        let Identity (e, w') = Control.Wire.stepWire w 0 a
         case e of Left e' -> putStrLn ("XX " ++ show (e' :: ()))
                   Right b -> putStrLn ("<- " ++ show b)
         runWire w' as
