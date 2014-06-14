@@ -6,6 +6,8 @@ import qualified Data.Set as Set
 import Data.Maybe (catMaybes)
 import Data.List (foldl')
 import qualified Control.Arrow as Arrow
+import Prelude hiding ((^))
+import qualified Prelude ((^))
 
 type ClockTime = Double
 
@@ -26,6 +28,7 @@ data InputEvent = IHeartbeat Heartbeat
 
 data Output = Output { odied ::  [MachineId] 
                      , avgDeadTime :: ClockTime 
+                     , varDeadTime :: ClockTime 
                      , otimeouts :: [MachineId] } 
             deriving Show
 
@@ -101,6 +104,9 @@ incrementFrom aStart (.-) = proc aNow -> do
 stepSize :: (Num a, Monad m) => Wire e m a a
 stepSize = incrementFrom 0 (-)
 
+(^) :: Num a => a -> Int -> a
+a ^ b = (Prelude.^) a b
+
 flow :: Monad m => Wire e m Input Output
 flow = proc input -> do
   let event' = eventsOfInput input
@@ -121,10 +127,15 @@ flow = proc input -> do
   let numDeadMachines = length deadMachines
 
   totalDeadTime <- sum' -< fromIntegral numDeadMachines * dt
+  totalSquareDeadtime <- sum' -< fromIntegral (numDeadMachines ^ 2) * dt
 
   let avgDeadTime' = totalDeadTime / theTime
+      varDeadTime' = totalSquareDeadtime / theTime - (avgDeadTime' ^ 2)
+  
 
-  returnA -< Output { odied = deadMachines, avgDeadTime = avgDeadTime' 
+  returnA -< Output { odied = deadMachines
+                    , avgDeadTime = avgDeadTime' 
+                    , varDeadTime = varDeadTime'
                     , otimeouts = reportedTimeouts }
 
 
