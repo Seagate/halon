@@ -26,10 +26,12 @@ data Input = Input { clockTime :: ClockTime
 data InputEvent = IHeartbeat Heartbeat
                 | ITimeout Timeout deriving Show
 
+data Statistics = Statistics { avgDeadTime :: ClockTime 
+                             , varDeadTime :: ClockTime } deriving Show
+
 data Output = Output { odied ::  [MachineId] 
-                     , avgDeadTime :: ClockTime 
-                     , varDeadTime :: ClockTime 
-                     , otimeouts :: [MachineId] } 
+                     , otimeouts :: [MachineId] 
+                     , ostatistics :: Statistics } 
             deriving Show
 
 accum1Many :: (b -> a -> b) -> b -> Wire e m [a] b
@@ -134,10 +136,9 @@ flow = proc input -> do
   
 
   returnA -< Output { odied = deadMachines
-                    , avgDeadTime = avgDeadTime' 
-                    , varDeadTime = varDeadTime'
-                    , otimeouts = reportedTimeouts }
-
+                    , otimeouts = reportedTimeouts 
+                    , ostatistics = Statistics { avgDeadTime = avgDeadTime' 
+                                               , varDeadTime = varDeadTime' } }
 
 runWire :: (Show a, Show b) => Wire () IO a b -> [a] -> IO ()
 runWire _ [] = return ()
