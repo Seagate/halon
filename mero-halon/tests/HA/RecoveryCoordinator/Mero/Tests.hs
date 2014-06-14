@@ -103,7 +103,7 @@ mockNodeAgent done = do
     self <- getSelfPid
     register "HA.NodeAgent" self
 
-    receiveWait [ match $ \(_, UpdateEQNodes _) -> return (True, ()) ]
+    receiveWait [ match $ \(caller, UpdateEQNodes _) -> send caller True ]
     say "Got UpdateEQNodes."
 
     "Starting service m0d" :: String <- expect
