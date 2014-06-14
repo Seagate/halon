@@ -29,7 +29,7 @@ data InputEvent = IHeartbeat Heartbeat
 data Statistics = Statistics { avgDeadTime :: ClockTime
                              , varDeadTime :: ClockTime } deriving Show
 
-data Output = Output { odied ::  [MachineId]
+data Output = Output { odied ::  Set.Set MachineId
                      , otimeouts :: [MachineId]
                      , ostatistics :: Statistics }
             deriving Show
@@ -109,9 +109,9 @@ stepSize = incrementFrom 0 (-)
 (^) :: Num a => a -> Int -> a
 a ^ b = (Prelude.^) a b
 
-statistics :: Monad m => Wire e m ([MachineId], ClockTime) Statistics
+statistics :: Monad m => Wire e m (Set.Set MachineId, ClockTime) Statistics
 statistics = proc (deadMachines, theTime) -> do
-  let numDeadMachines = length deadMachines
+  let numDeadMachines = Set.size deadMachines
 
   dt <- stepSize -< theTime
   totalDeadTime <- sum' -< fromIntegral numDeadMachines * dt
@@ -135,7 +135,7 @@ flow = proc input -> do
   let t = removeTooEarly 10 collectedTimeouts theTime
       reportedTimeouts = (Set.toList . Map.keysSet . collectFailures) t
 
-  deadMachines <- arr Set.toList <<< noHeartbeatInLast 5 -< (m, theTime)
+  deadMachines <- noHeartbeatInLast 5 -< (m, theTime)
 
   statistics' <- statistics -< (deadMachines, theTime)
 
