@@ -107,7 +107,7 @@ stepSize :: (Num a, Monad m) => Wire e m a a
 stepSize = incrementFrom 0 (-)
 
 (^) :: Num a => a -> Int -> a
-a ^ b = (Prelude.^) a b
+(^) = (Prelude.^)
 
 statistics :: Monad m => Wire e m (Set.Set MachineId, ClockTime) Statistics
 statistics = proc (deadMachines, theTime) -> do
