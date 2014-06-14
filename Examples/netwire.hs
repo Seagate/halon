@@ -19,19 +19,19 @@ data Timeout = Timeout { report' :: Report
 data Report = Report { timedOut :: MachineId
                      , reportedBy :: MachineId } deriving (Show, Eq, Ord)
 
-data Input = Input { clockTime :: ClockTime 
+data Input = Input { clockTime :: ClockTime
                    , eventsOfInput :: [InputEvent]
                    , rebooting :: [MachineId] } deriving Show
 
 data InputEvent = IHeartbeat Heartbeat
                 | ITimeout Timeout deriving Show
 
-data Statistics = Statistics { avgDeadTime :: ClockTime 
+data Statistics = Statistics { avgDeadTime :: ClockTime
                              , varDeadTime :: ClockTime } deriving Show
 
-data Output = Output { odied ::  [MachineId] 
-                     , otimeouts :: [MachineId] 
-                     , ostatistics :: Statistics } 
+data Output = Output { odied ::  [MachineId]
+                     , otimeouts :: [MachineId]
+                     , ostatistics :: Statistics }
             deriving Show
 
 accum1Many :: (b -> a -> b) -> b -> Wire e m [a] b
@@ -56,7 +56,7 @@ concat' t m = Just $ case m of Nothing -> t
 
 removeTooEarly :: ClockTime -> Map.Map a [ClockTime] -> ClockTime
                   -> Map.Map a [ClockTime]
-removeTooEarly duration d now = 
+removeTooEarly duration d now =
   (Map.filter (not . null)
   . Map.map (filter ((> now) . (+ duration)))) d
 
