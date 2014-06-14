@@ -109,10 +109,11 @@ stepSize = incrementFrom 0 (-)
 (^) :: Num a => a -> Int -> a
 a ^ b = (Prelude.^) a b
 
-statistics :: Monad m => Wire e m ([MachineId], ClockTime, ClockTime) Statistics
-statistics = proc (deadMachines, dt, theTime) -> do
+statistics :: Monad m => Wire e m ([MachineId], ClockTime) Statistics
+statistics = proc (deadMachines, theTime) -> do
   let numDeadMachines = length deadMachines
 
+  dt <- stepSize -< theTime
   totalDeadTime <- sum' -< fromIntegral numDeadMachines * dt
   totalSquareDeadtime <- sum' -< fromIntegral (numDeadMachines ^ 2) * dt
 
@@ -134,11 +135,9 @@ flow = proc input -> do
   let t = removeTooEarly 10 collectedTimeouts theTime
       reportedTimeouts = (Set.toList . Map.keysSet . collectFailures) t
 
-  dt <- stepSize -< theTime
-
   deadMachines <- arr Set.toList <<< noBeatInLast 5 -< (m, theTime)
 
-  statistics' <- statistics -< (deadMachines, dt, theTime)
+  statistics' <- statistics -< (deadMachines, theTime)
 
   returnA -< Output { odied = deadMachines
                     , otimeouts = reportedTimeouts
