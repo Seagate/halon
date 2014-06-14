@@ -132,9 +132,9 @@ statistics = proc (deadMachines, theTime) -> do
                                         - (avgDeadTime' ^ 2) }
 flow :: Monad m => Wire e m Input Output
 flow = proc input -> do
-  let event' = eventsOfInput input
-      heartbeats = (catMaybes . map heartbeatOfInput) event'
-      timeouts = (catMaybes . map timeoutOfInput) event'
+  let events' = eventsOfInput input
+      heartbeats = (catMaybes . map heartbeatOfInput) events'
+      timeouts = (catMaybes . map timeoutOfInput) events'
       theTime = clockTime input
 
   m <- mostRecentHeartbeat -< heartbeats
