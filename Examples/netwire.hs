@@ -68,18 +68,16 @@ concat' t m = Just $ case m of Nothing -> t
 
 removeTooEarly :: ClockTime -> Map.Map a [ClockTime] -> ClockTime
                   -> Map.Map a [ClockTime]
-removeTooEarly duration d now =
-  (Map.filter (not . null)
-  . Map.map (filter ((> now) . (+ duration)))) d
+removeTooEarly duration d now = Map.map (filter ((> now) . (+ duration))) d
 
 failuresOfReports :: Map.Map Report [ClockTime] -> Set.Set MachineId
-failuresOfReports = Map.keysSet
+failuresOfReports = occurrencesMoreThan 3
                     . foldl' (\d (k, v) -> Map.alter (concat' v) k d) Map.empty
-                  . map (Arrow.first (\(Report m _) -> m))
-                  . Map.toList
+                    . map (Arrow.first (\(Report m _) -> m))
+                    . Map.toList
 
-moreThan :: Map.Map a [b] -> [a]
-moreThan = map fst . Map.toList . Map.filter ((>=3) . length)
+occurrencesMoreThan :: Int -> Map.Map a [b] -> Set.Set a
+occurrencesMoreThan bound = Map.keysSet . Map.filter ((>= bound) . length)
 
 noHeartbeatInLast :: ClockTime -> Wire (Map.Map MachineId ClockTime, ClockTime)
                                        (Set.Set MachineId)
@@ -171,6 +169,12 @@ runFlow = do
               , Input 5 [ITimeout
                          (Timeout
                           (Report (MachineId 2) (MachineId 3)) 5)] (Set.fromList [])
+              , Input 6 [ITimeout
+                         (Timeout
+                          (Report (MachineId 2) (MachineId 3)) 6)] (Set.fromList [])
+              , Input 7 [ITimeout
+                         (Timeout
+                          (Report (MachineId 2) (MachineId 3)) 7)] (Set.fromList [])
               , Input 10 [] (Set.fromList [])
               , Input 20 [] (Set.fromList [])
               , Input 30 [] (Set.fromList [])
