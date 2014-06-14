@@ -68,10 +68,10 @@ collectFailures = foldl' (\d (k, v) -> Map.alter (concat' v) k d) Map.empty
 moreThan :: Map.Map a [b] -> [a]
 moreThan = map fst . Map.toList . Map.filter ((>=3) . length)
 
-noBeatInLast :: Monad m =>
+noHeartbeatInLast :: Monad m =>
                 ClockTime -> Wire e m (Map.Map MachineId ClockTime, ClockTime)
                                       (Set.Set MachineId)
-noBeatInLast maxTime = proc (d, now) -> do
+noHeartbeatInLast maxTime = proc (d, now) -> do
   let tooLongAgo p = now - p >= maxTime
   returnA -< Map.keysSet (Map.filter tooLongAgo d)
 
@@ -135,7 +135,7 @@ flow = proc input -> do
   let t = removeTooEarly 10 collectedTimeouts theTime
       reportedTimeouts = (Set.toList . Map.keysSet . collectFailures) t
 
-  deadMachines <- arr Set.toList <<< noBeatInLast 5 -< (m, theTime)
+  deadMachines <- arr Set.toList <<< noHeartbeatInLast 5 -< (m, theTime)
 
   statistics' <- statistics -< (deadMachines, theTime)
 
