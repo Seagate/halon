@@ -80,10 +80,10 @@ data NAState = NAState
     }
   deriving (Typeable)
 
--- FIXME: What is going on in this function?
--- Are @mns@ the process ids of all node agents on the network?
--- Are @nodes@ the node ids of all node agents on the network?
--- Is pid the process id of the node agent to be updated?
+-- NOTE: This function expects to only be used with nodes which are part of the
+-- tracking station, as it takes the addresses of nodes which are running a NA,
+-- converts the addresses to node ids, and passes the node ids to updateEQNodes,
+-- which expects node ids of the tracking station nodes which are running an EQ.
 updateEQAddresses :: ProcessId -> [Address] -> Process Bool
 updateEQAddresses pid addrs =
   do network <- liftIO readNetworkGlobalIVar
