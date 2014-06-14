@@ -101,9 +101,6 @@ incrementFrom aStart (.-) = proc aNow -> do
 stepSize :: (Num a, Monad m) => Wire e m a a
 stepSize = incrementFrom 0 (-)
 
-thisDeadTime :: [MachineId] -> ClockTime -> Double
-thisDeadTime deadMachines dt = fromIntegral (length deadMachines) * dt
-
 flow :: Monad m => Wire e m Input Output
 flow = proc input -> do
   let event' = eventsOfInput input
@@ -121,7 +118,9 @@ flow = proc input -> do
 
   deadMachines <- arr Set.toList <<< noBeatInLast 5 -< (m, theTime)
 
-  totalDeadTime <- sum' -< thisDeadTime deadMachines dt
+  let numDeadMachines = length deadMachines
+
+  totalDeadTime <- sum' -< fromIntegral numDeadMachines * dt
 
   let avgDeadTime' = totalDeadTime / theTime
 
@@ -148,6 +147,14 @@ runFlow = do
               , Input 10 [] []
               , Input 20 [] []
               , Input 30 [] []
+              , Input 40 [IHeartbeat (Heartbeat (MachineId 1) 40)] []
+              , Input 45 [IHeartbeat (Heartbeat (MachineId 1) 45)] []
+              , Input 50 [IHeartbeat (Heartbeat (MachineId 1) 50)] []
+              , Input 55 [IHeartbeat (Heartbeat (MachineId 1) 55)] []
+              , Input 60 [IHeartbeat (Heartbeat (MachineId 1) 60)] []
+              , Input 65 [IHeartbeat (Heartbeat (MachineId 1) 65)] []
+              , Input 70 [IHeartbeat (Heartbeat (MachineId 1) 70)] []
+              , Input 75 [IHeartbeat (Heartbeat (MachineId 1) 75)] []
               ]
 
   runWire flow ticks
