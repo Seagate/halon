@@ -1,0 +1,132 @@
+# Commentary
+
+The aim of the Complex Event Processing API is to provide a composable
+and extensible interface to processing streamed data about the status
+of the nodes in a High Availability cluster.
+
+## Functional specification
+
+The Complex Event Processor is built by composing individual units
+called "Wires" into more sophisticated networks of Wires.  It is an
+example of the use of the Reactive approach to data processing
+embedded in a functional language, that is "Functional Reactive
+Programming" or "FRP".
+
+Conceptually a "Wire" represents a process that at any given time
+contains some internal state.  It will receive a value on its input
+channel, update its internal state and yield a value on its output
+channel.  The notion of "values" input and output is very broad.  A
+single value can itself consist of tuples or record types of multiple
+values thus allowing a wire to in practice input and output many
+values at once.  Inputs and outputs can be both events, like the event
+that "we received a timeout message about machine X", and observables
+of the system, for example the current time, or a value containing the
+most recent heartbeat from all machine.
+
+Wires are composed either in series, by feeding the output of one wire
+into the input of another wire, or in parallel by taking a pair of
+inputs feeding one into one wire, one into another, and collecting
+their outputs as another pair.  The result of composing two wires is
+another wire thus this API is an example of the "flat design" paradigm
+[TODO: fill in reference] which is recognised as an effective means of
+taming complexity and promoting code reuse.
+
+This ability to compose in parallel and series makes the wire datatype
+an instance of Haskell's Arrow typeclass and so we can take advantage
+of the arrow syntax and combinator libraries that Haskell provides for
+working with Arrows.
+
+## Logical specification
+
+The Wire datatype is isomorphic to the the following Haskell newtype
+declaration
+
+    newtype Wire a b = Wire (\a -> (b, Wire a b))
+
+This is essentially the approach taken by both the netwire and nettle
+Haskell FRP libraries.
+
+Time time of the current tick is passed into the network explicitly as
+an input observable.
+
+### Representing events
+
+Events, be they real-world events such as a node heartbeat, timeout
+report or notice of a network partition, be they CEP administration
+events such as the logging of a message, or be they output events such
+as the instruction to reboot a node, can by their nature happen zero,
+one or many times during each tick.  Thus we represent an event of
+type 'a' by the Haskell type of lists of 'a'.  This is a slight
+departure from the netwire 5.0 and nettle approach.  They both
+represent events of type 'a' by the Haskell type 'Maybe a', that is,
+events may occur either zero or one times and they are unable to
+process event types that may occur multiple times.  Since we may want,
+for example, a log processor to process many log message events at
+once we believe our approach is more appropriate here.
+
+## Code reuse
+
+<Use the example of statistics>
+
+## Composability
+
+<Use the example of flow>
+
+## Comparison of netwire/nettle approach with reactive-banana
+
+The API to reactive-banana is not based on arrows.  Instead reactive
+networks are constructed by passing around and manipulating 'Event'
+and 'Behavior' types as pure values, not wrapped in any datatype
+providing the arrow, applicative or monad typeclass.
+
+The reason that reactive-banana can avoid the arrow approach is
+two-fold.
+
+Firstly the networks that it creates are pure, whereas netwire's
+'Wire' type can have effects when it process an input (by contrast
+nettle's equivalent of the 'Wire' type, and the 'Wire' type we propose
+above, do *not* have effects).
+
+Secondly netwire and nettle lean on the arrow abstraction as a means
+of guaranteeing that "timeleaks" do not occur.  Timeleaks are an
+adverse behavior whereby some networks of wires take much longer to
+run than one might expect.  Reactive-banana instead uses a phantom
+type parameter to address this issue, in much the same way as
+Haskell's ST monad.  An observable, or 'Behavior' of type 'a' is thus
+represented by a type 'Behavior t a' where 't' is the phantom
+parameter.nnn
+
+A translation between reactive-banana's types and the 'Wire' type
+given above is as follows:
+
+* An event that can occur zero or more times during any tick of the
+  network is 'Event t a' in reactive-banana and 'Wire () [a]' in our
+  approach.
+
+* An observable of type 'a' is 'Behavior t a' in reactive-banana and
+  'Wire () a' in our approach.
+
+
+### The major drawback of reactive-banana
+
+The major drawback of reactive-banana is that when the value of a
+Behavior is updated by the ocurrence of an Event, the new value of the
+Behavior is not visible during the processing of the same Event.  For
+example the 'stepper' combinator updates the value of a 'Behavior' to
+be equal to the value of the 'Event' that triggers the update:
+
+    latestValue :: Behavior t a
+    latestValue = stepper event
+
+However, if we also use 'event' to trigger reading from 'latestValue'
+
+    latestValueEvent :: Event t a
+    latestValueEvent = latestValue <@ event
+
+then 'latestValueEvent' does not contain the same value that 'event'
+contains.  Instead it contains the *previous* value of 'event'.  This
+functionality of Reactive-banana makes it easier to define 'Behavior's
+recursively without creating infinite loops.  However it also leads to
+unnecessary awkwardness when trying to understand data-flow through an
+event-processing network, thus we recommend taking the approach of
+netwire's and nettle here.
