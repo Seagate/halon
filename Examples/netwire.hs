@@ -3,6 +3,7 @@
 import qualified Control.Wire
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.Set (Set, union, (\\))
 import Data.Maybe (catMaybes)
 import Data.List (foldl')
 import qualified Control.Arrow as Arrow
@@ -26,7 +27,7 @@ data Report = Report { timedOut :: MachineId
 
 data Input = Input { clockTime :: ClockTime
                    , eventsOfInput :: [InputEvent]
-                   , rebooting :: Set.Set MachineId } deriving Show
+                   , rebooting :: Set MachineId } deriving Show
 
 data InputEvent = IHeartbeat Heartbeat
                 | ITimeout Timeout deriving Show
@@ -34,10 +35,10 @@ data InputEvent = IHeartbeat Heartbeat
 data Statistics = Statistics { avgDeadTime :: ClockTime
                              , varDeadTime :: ClockTime } deriving Show
 
-data Output = Output { odied ::  Set.Set MachineId
-                     , otimeouts :: Set.Set MachineId
+data Output = Output { odied ::  Set MachineId
+                     , otimeouts :: Set MachineId
                      , ostatistics :: Statistics
-                     , toReboot :: Set.Set MachineId }
+                     , toReboot :: Set MachineId }
             deriving Show
 
 accum1Many :: (b -> a -> b) -> b -> Wire [a] b
@@ -70,17 +71,17 @@ removeTooEarly :: ClockTime -> Map.Map a [ClockTime] -> ClockTime
                   -> Map.Map a [ClockTime]
 removeTooEarly duration d now = Map.map (filter ((> now) . (+ duration))) d
 
-failuresOfReports :: Map.Map Report [ClockTime] -> Set.Set MachineId
+failuresOfReports :: Map.Map Report [ClockTime] -> Set MachineId
 failuresOfReports = occurrencesMoreThan 3
                     . foldl' (\d (k, v) -> Map.alter (concat' v) k d) Map.empty
                     . map (Arrow.first timedOut)
                     . Map.toList
 
-occurrencesMoreThan :: Int -> Map.Map a [b] -> Set.Set a
+occurrencesMoreThan :: Int -> Map.Map a [b] -> Set a
 occurrencesMoreThan bound = Map.keysSet . Map.filter ((>= bound) . length)
 
 noHeartbeatInLast :: ClockTime -> Wire (Map.Map MachineId ClockTime, ClockTime)
-                                       (Set.Set MachineId)
+                                       (Set MachineId)
 noHeartbeatInLast maxTime = proc (d, now) -> do
   let tooLongAgo p = now - p >= maxTime
   returnA -< Map.keysSet (Map.filter tooLongAgo d)
@@ -144,7 +145,7 @@ flow = proc input -> do
 
   deadMachines <- noHeartbeatInLast 5 -< (m, theTime)
 
-  let toReboot' = (timedOutNodes `Set.union` deadMachines) Set.\\ rebooting input
+  let toReboot' = (timedOutNodes `union` deadMachines) \\ rebooting input
 
   statistics' <- statistics -< (Set.size deadMachines, theTime)
 
