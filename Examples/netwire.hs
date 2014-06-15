@@ -120,11 +120,11 @@ stepSize = incrementFrom 0 (-)
 (^) :: Num a => a -> Int -> a
 (^) = (Prelude.^)
 
-statistics :: Wire (Int, ClockTime) Statistics
+statistics :: Wire (Double, ClockTime) Statistics
 statistics = proc (n, theTime) -> do
   dt <- stepSize -< theTime
-  totalDeadTime <- sum' -< fromIntegral n * dt
-  totalSquareDeadtime <- sum' -< fromIntegral (n ^ 2) * dt
+  totalDeadTime <- sum' -< n * dt
+  totalSquareDeadtime <- sum' -< (n ^ 2) * dt
 
   let avgDeadTime' = totalDeadTime / theTime
 
@@ -147,7 +147,7 @@ flow = proc input -> do
 
   let toReboot' = (timedOutNodes `union` deadMachines) \\ rebooting input
 
-  statistics' <- statistics -< (Set.size deadMachines, theTime)
+  statistics' <- statistics -< (fromIntegral (Set.size deadMachines), theTime)
 
   returnA -< Output { odied = deadMachines
                     , otimeouts = timedOutNodes
