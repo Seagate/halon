@@ -11,7 +11,7 @@ import Control.Distributed.Process.Serializable (Serializable)
 -- Qualify all imports of any distributed-process "internals".
 import qualified Control.Distributed.Process.Internal.Types as I
     (createMessage, messageToPayload)
-import HA.CallTimeout (callTimeout)
+import HA.CallTimeout (callLocal, callTimeout)
 import HA.EventQueue.Types
 import HA.NodeAgent.Lookup (nodeAgentLabel)
 
@@ -23,7 +23,8 @@ promulgate x = do
     case mthem of
         Nothing -> error "NodeAgent is not registered."
         Just na -> do
-          ret <- callTimeout 5000000 na msg
+          ret <- callLocal $
+            callTimeout 5000000 na msg
           case ret of
             Just True -> return ()
             _ -> promulgate x
