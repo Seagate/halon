@@ -43,7 +43,7 @@ declaration
 
     newtype Wire a b = Wire (\a -> (b, Wire a b))
 
-This is essentially the approach taken by both the netwire and nettle
+This is essentially the approach taken by both the Netwire and Nettle
 Haskell FRP libraries.
 
 Time time of the current tick is passed into the network explicitly as
@@ -57,7 +57,7 @@ events such as the logging of a message, or be they output events such
 as the instruction to reboot a node, can by their nature happen zero,
 one or many times during each tick.  Thus we represent an event of
 type 'a' by the Haskell type of lists of 'a'.  This is a slight
-departure from the netwire 5.0 and nettle approach.  They both
+departure from the Netwire 5.0 and Nettle approach.  They both
 represent events of type 'a' by the Haskell type 'Maybe a', that is,
 events may occur either zero or one times and they are unable to
 process event types that may occur multiple times.  Since we may want,
@@ -72,44 +72,44 @@ once we believe our approach is more appropriate here.
 
 <Use the example of flow>
 
-## Comparison of netwire/nettle approach with reactive-banana
+## Comparison of Netwire/Nettle approach with Reactive-Banana
 
-The API to reactive-banana is not based on arrows.  Instead reactive
+The API to Reactive-Banana is not based on arrows.  Instead reactive
 networks are constructed by passing around and manipulating 'Event'
 and 'Behavior' types as pure values, not wrapped in any datatype
 providing the arrow, applicative or monad typeclass.
 
-The reason that reactive-banana can avoid the arrow approach is
+The reason that Reactive-Banana can avoid the arrow approach is
 two-fold.
 
-Firstly the networks that it creates are pure, whereas netwire's
+Firstly the networks that it creates are pure, whereas Netwire's
 'Wire' type can have effects when it process an input (by contrast
 nettle's equivalent of the 'Wire' type, and the 'Wire' type we propose
 above, do *not* have effects).
 
-Secondly netwire and nettle lean on the arrow abstraction as a means
+Secondly Netwire and nettle lean on the arrow abstraction as a means
 of guaranteeing that "timeleaks" do not occur.  Timeleaks are an
 adverse behavior whereby some networks of wires take much longer to
-run than one might expect.  Reactive-banana instead uses a phantom
+run than one might expect.  Reactive-Banana instead uses a phantom
 type parameter to address this issue, in much the same way as
 Haskell's ST monad.  [TODO: reference] An observable, or 'Behavior' of
 type 'a' is thus represented by a type 'Behavior t a' where 't' is the
 phantom parameter.
 
-A translation between reactive-banana's types and the 'Wire' type
+A translation between Reactive-Banana's types and the 'Wire' type
 given above is as follows:
 
 * An event that can occur zero or more times during any tick of the
-  network is 'Event t a' in reactive-banana and 'Wire () [a]' in our
+  network is 'Event t a' in Reactive-Banana and 'Wire () [a]' in our
   approach.
 
-* An observable of type 'a' is 'Behavior t a' in reactive-banana and
+* An observable of type 'a' is 'Behavior t a' in Reactive-Banana and
   'Wire () a' in our approach.
 
 
-### The major drawback of reactive-banana
+### The major drawback of Reactive-Banana
 
-The major drawback of reactive-banana is that when the value of a
+The major drawback of Reactive-Banana is that when the value of a
 Behavior is updated by the occurrence of an Event, the new value of the
 Behavior is not visible during the processing of the same Event.  For
 example the 'stepper' combinator updates the value of a 'Behavior' to
@@ -125,8 +125,8 @@ However, if we also use 'event' to trigger reading from 'latestValue'
 
 then 'latestValueEvent' does not contain the same value that 'event'
 contains.  Instead it contains the *previous* value of 'event'.  This
-functionality of Reactive-banana makes it easier to define 'Behavior's
+functionality of Reactive-Banana makes it easier to define 'Behavior's
 recursively without creating infinite loops.  However it also leads to
 unnecessary awkwardness when trying to understand data-flow through an
 event-processing network, thus we recommend taking the approach of
-netwire's and nettle here.
+Netwire's and Nettle here.
