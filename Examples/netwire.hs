@@ -73,7 +73,7 @@ removeTooEarly duration d now = Map.map (filter ((> now) . (+ duration))) d
 failuresOfReports :: Map.Map Report [ClockTime] -> Set.Set MachineId
 failuresOfReports = occurrencesMoreThan 3
                     . foldl' (\d (k, v) -> Map.alter (concat' v) k d) Map.empty
-                    . map (Arrow.first (\(Report m _) -> m))
+                    . map (Arrow.first timedOut)
                     . Map.toList
 
 occurrencesMoreThan :: Int -> Map.Map a [b] -> Set.Set a
