@@ -92,9 +92,9 @@ of guaranteeing that "timeleaks" do not occur.  Timeleaks are an
 adverse behavior whereby some networks of wires take much longer to
 run than one might expect.  Reactive-banana instead uses a phantom
 type parameter to address this issue, in much the same way as
-Haskell's ST monad.  An observable, or 'Behavior' of type 'a' is thus
-represented by a type 'Behavior t a' where 't' is the phantom
-parameter.nnn
+Haskell's ST monad.  [TODO: reference] An observable, or 'Behavior' of
+type 'a' is thus represented by a type 'Behavior t a' where 't' is the
+phantom parameter.nnn
 
 A translation between reactive-banana's types and the 'Wire' type
 given above is as follows:
