@@ -187,8 +187,8 @@ remotableDecl [ [d|
                       softTimeout = 2000000
                       timeout = 3000000
                       preferNodes = nub $
-                        take 1 (nasReplicas nas) ++
-                        maybeToList (nasPreferredReplica nas)
+                        maybeToList (nasPreferredReplica nas) ++
+                        take 1 (nasReplicas nas)
                       nodes = nasReplicas nas \\ preferNodes
 
                     -- Send the event to some replica.
