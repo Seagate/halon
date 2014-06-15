@@ -46,7 +46,9 @@ function getaddr_rpc
 function getaddr
 {
   # Stores the local IP address
-  IP="$(hostname -i)"
+  if [ -z "$IP" ]; then
+    IP="$(hostname -i)"
+  fi
 
   [ -z "$IP" ] && err "Can't find a local IP address"
 
