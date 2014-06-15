@@ -153,8 +153,8 @@ remotableDecl [ [d|
      -- Query data from our genders file
      -- trackers  <- wellformQueryNodes "m0_station"
      -- nodes <- wellformQueryNodes "m0_all"
-     let trackers = [ "127.0.0.1:8082", "127.0.0.1:8084" ]
-         nodes = trackers ++ [ "127.0.0.1:8086" ]
+     let trackers = [ "127.0.0.1:8082", "127.0.0.1:8084", "127.0.0.1:8086" ]
+         nodes = trackers ++ [ "127.0.0.1:8088" ]
      network <- liftIO readNetworkGlobalIVar
      let trackerAddrs = mapMaybe parseAddress trackers
      mpids <- mapM (lookupNodeAgent network) trackerAddrs
