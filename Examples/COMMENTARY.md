@@ -7,12 +7,12 @@ of the nodes in a High Availability cluster.
 ## Functional specification
 
 The Complex Event Processor is built by composing individual units
-called "Wires" into more sophisticated networks of Wires.  It is an
+called "wires" into more sophisticated networks of wires.  It is an
 example of the use of the Reactive approach to data processing
 embedded in a functional language, that is "Functional Reactive
 Programming" or "FRP".
 
-Conceptually a "Wire" represents a process that at any given time
+Conceptually a "wire" represents a process that at any given time
 contains some internal state.  It will receive a value on its input
 channel, update its internal state and yield a value on its output
 channel.  The notion of "values" input and output is very broad.  A
@@ -38,7 +38,7 @@ working with Arrows.
 
 ## Logical specification
 
-The Wire datatype is isomorphic to the the following Haskell newtype
+The `Wire` datatype is isomorphic to the the following Haskell newtype
 declaration
 
     newtype Wire a b = Wire (\a -> (b, Wire a b))
@@ -56,9 +56,9 @@ report or notice of a network partition, be they CEP administration
 events such as the logging of a message, or be they output events such
 as the instruction to reboot a node, can by their nature happen zero,
 one or many times during each tick.  Thus we represent an event of
-type 'a' by the Haskell type of lists of 'a'.  This is a slight
+type `a` by the Haskell type of lists of `a`.  This is a slight
 departure from the Netwire 5.0 and Nettle approach.  They both
-represent events of type 'a' by the Haskell type 'Maybe a', that is,
+represent events of type `a` by the Haskell type `Maybe a`, that is,
 events may occur either zero or one times and they are unable to
 process event types that may occur multiple times.  Since we may want,
 for example, a log processor to process many log message events at
@@ -77,17 +77,17 @@ OCaml.
 
 One example of improved code reuse is in a reactive network component
 for calculating the mean and variance of a observable that varies with
-time.  The following code for 'statistics' implements that component.
-'statistics' is a 'Wire' which takes a pair of inputs: the
+time.  The following code for `statistics` implements that component.
+`statistics` is a `Wire` which takes a pair of inputs: the
 time-varying value to calculate the statistics of, and the current
-clock time.  It outputs a value of type 'Statistics' which contains
+clock time.  It outputs a value of type `Statistics` which contains
 both the mean and variance of the time-varying value.
 
-Note that because 'statistics' is a 'Wire' it can be reused throughout
+Note that because `statistics` is a `Wire` it can be reused throughout
 the code to calculate statistics for any number of different
 time-varying observables.  This code sample also demonstrates reuse
 itself.  The implementation of statistics reuses the reactive
-components 'stepSize' and 'sum'' which respectively calculate the
+components `stepSize` and `sum'` which respectively calculate the
 difference in a time-varying value between two ticks of the network
 and the sum of all time-varying values observed so far.
 
@@ -109,7 +109,7 @@ is a simplified, high-level model of the event flow through a reactive
 network which processes messages from nodes in a high-availability
 cluster.
 
-In brief the implementation of 'flow' proceeds by extracting the
+In brief the implementation of `flow` proceeds by extracting the
 events and the clock time from its input.  Then it calculates the most
 recent heartbeat it has heard from each node and the most recent
 timeout reports it has received about nodes from other nodes.  A
@@ -149,16 +149,16 @@ language, Haskell, too.
 ## Comparison of Netwire/Nettle approach with Reactive-Banana
 
 The API to Reactive-Banana is not based on arrows.  Instead reactive
-networks are constructed by passing around and manipulating 'Event'
-and 'Behavior' types as pure values, not wrapped in any datatype
+networks are constructed by passing around and manipulating `Event`
+and `Behavior` types as pure values, not wrapped in any datatype
 providing the arrow, applicative or monad typeclass.
 
 The reason that Reactive-Banana can avoid the arrow approach is
 two-fold.
 
 Firstly the networks that it creates are pure, whereas Netwire's
-'Wire' type can have effects when it process an input (by contrast
-nettle's equivalent of the 'Wire' type, and the 'Wire' type we propose
+`Wire` type can have effects when it process an input (by contrast
+nettle's equivalent of the `Wire` type, and the `Wire` type we propose
 above, do *not* have effects).
 
 Secondly Netwire and nettle lean on the arrow abstraction as a means
@@ -166,19 +166,19 @@ of guaranteeing that "timeleaks" do not occur.  Timeleaks are an
 adverse behavior whereby some networks of wires take much longer to
 run than one might expect.  Reactive-Banana instead uses a phantom
 type parameter to address this issue, in much the same way as
-Haskell's ST monad.  [TODO: reference] An observable, or 'Behavior' of
-type 'a' is thus represented by a type 'Behavior t a' where 't' is the
+Haskell's ST monad.  [TODO: reference] An observable, or "behavior" of
+type `a` is thus represented by a type `Behavior t a` where `t` is the
 phantom parameter.
 
-A translation between Reactive-Banana's types and the 'Wire' type
+A translation between Reactive-Banana's types and the `Wire` type
 given above is as follows:
 
 * An event that can occur zero or more times during any tick of the
-  network is 'Event t a' in Reactive-Banana and 'Wire () [a]' in our
+  network is `Event t a` in Reactive-Banana and `Wire () [a]` in our
   approach.
 
-* An observable of type 'a' is 'Behavior t a' in Reactive-Banana and
-  'Wire () a' in our approach.
+* An observable of type `a` is `Behavior t a` in Reactive-Banana and
+  `Wire () a` in our approach.
 
 
 ### The major drawback of Reactive-Banana
@@ -186,20 +186,20 @@ given above is as follows:
 The major drawback of Reactive-Banana is that when the value of a
 Behavior is updated by the occurrence of an Event, the new value of the
 Behavior is not visible during the processing of the same Event.  For
-example the 'stepper' combinator updates the value of a 'Behavior' to
-be equal to the value of the 'Event' that triggers the update:
+example the `stepper` combinator updates the value of a `Behavior` to
+be equal to the value of the `Event` that triggers the update:
 
     latestValue :: Behavior t a
     latestValue = stepper event
 
-However, if we also use 'event' to trigger reading from 'latestValue'
+However, if we also use `event` to trigger reading from `latestValue`
 
     latestValueEvent :: Event t a
     latestValueEvent = latestValue <@ event
 
-then 'latestValueEvent' does not contain the same value that 'event'
-contains.  Instead it contains the *previous* value of 'event'.  This
-functionality of Reactive-Banana makes it easier to define 'Behavior's
+then `latestValueEvent` does not contain the same value that `event`
+contains.  Instead it contains the *previous* value of `event`.  This
+functionality of Reactive-Banana makes it easier to define `Behavior`s
 recursively without creating infinite loops.  However it also leads to
 unnecessary awkwardness when trying to understand data-flow through an
 event-processing network, thus we recommend taking the approach of
