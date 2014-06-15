@@ -110,7 +110,7 @@ given above is as follows:
 ### The major drawback of reactive-banana
 
 The major drawback of reactive-banana is that when the value of a
-Behavior is updated by the ocurrence of an Event, the new value of the
+Behavior is updated by the occurrence of an Event, the new value of the
 Behavior is not visible during the processing of the same Event.  For
 example the 'stepper' combinator updates the value of a 'Behavior' to
 be equal to the value of the 'Event' that triggers the update:
