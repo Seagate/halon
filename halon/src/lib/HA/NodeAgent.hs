@@ -214,10 +214,9 @@ remotableDecl [ [d|
             updateNAS nas $
               if rnid == pnid
               then (rnid, Nothing) -- The EQ sugested itself.
-              else if elem pnid $ takeWhile (/=rnid) $ nasReplicas nas
-                then (rnid, Just pnid) -- The preferred replica did not respond soon enough.
-                -- We have not tried reaching the preferred node yet.
-                else (pnid, Just pnid)
+              else if rnid == head (nasReplicas nas)
+                then (pnid, Just pnid) -- Likely we have not tried reaching the preferred node yet.
+                else (rnid, Just pnid) -- The preferred replica did not respond soon enough.
           else
             nas
 
