@@ -184,8 +184,10 @@ remotableDecl [ [d|
                         , eventHops    = [self]
                         }
                       -- FIXME: Use well-defined timeouts.
-                      softTimeout = 2000000
-                      timeout = 3000000
+                      softTimeout = 5000000
+                      -- This timeout needs to be lower than the promulgate
+                      -- timeout.
+                      timeout = 10000000
                       preferNodes = nub $
                         maybeToList (nasPreferredReplica nas) ++
                         take 1 (nasReplicas nas)
