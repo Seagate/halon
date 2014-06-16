@@ -39,15 +39,15 @@ import Data.Function (on)
 import Prelude hiding (init, log)
 
 data CommandId = CommandId
-    { commandIdCounter   :: !Word64
-    , commandIdProcessId :: !ProcessId
+    { _commandIdCounter   :: !Word64
+    , _commandIdProcessId :: !ProcessId
     } deriving (Eq, Ord, Generic, Typeable)
 
 instance Binary CommandId
 
 data Command s = Command
     { commandId      :: !CommandId
-    , commandClosure :: CP s s
+    , _commandClosure :: CP s s
     } deriving (Generic, Typeable)
 
 instance Typeable s => Binary (Command s)

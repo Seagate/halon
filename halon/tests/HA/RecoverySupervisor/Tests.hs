@@ -161,7 +161,9 @@ rsTest network oneNode action = withTmpDirectory $ do
   -- TODO: fix closeTransport and call it here (see ticket #211).
   -- TODO: implement closing RGroups and call it here.
   threadDelay 2000000
-  mapM_ (flip terminateLocalProcesses (Just pollingPeriod)) ns
+  -- TODO: Uncomment the following line when terminateLocalProcesses
+  -- does not block indefinitely.
+  -- mapM_ (flip terminateLocalProcesses (Just pollingPeriod)) ns
   mapM_ closeLocalNode ns
 
 retryTest :: Process a -> Process a

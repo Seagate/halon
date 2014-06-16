@@ -140,7 +140,7 @@ Test-Suite TestNT
                        OverlappingInstances
   build-depends:  base >= 4.3 && < 5, network-transport-rpc,
 --                   network-transport-tests
-                  network-transport >= 0.3 && < 0.4,
+                  network-transport >= 0.3,
                   containers >= 0.4 && < 0.6,
                   bytestring >= 0.9 && < 0.11,
                   random >= 1.0 && < 1.1,
