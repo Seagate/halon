@@ -15,10 +15,10 @@ ci clean install: mero-halon
 dep:
 	cabal sandbox init --sandbox=$(SANDBOX_DEFAULT)
 	cabal sandbox add-source $(ROOT_DIR)/vendor/distributed-process
-	cabal sandbox add-source $(ROOT_DIR)/vendor/distributed-static
-	cabal sandbox add-source $(ROOT_DIR)/vendor/network-transport
-	cabal sandbox add-source $(ROOT_DIR)/vendor/network-transport-tcp
-	cabal sandbox add-source $(ROOT_DIR)/vendor/rank1dynamic
+#	cabal sandbox add-source $(ROOT_DIR)/vendor/distributed-static
+#	cabal sandbox add-source $(ROOT_DIR)/vendor/network-transport
+#	cabal sandbox add-source $(ROOT_DIR)/vendor/network-transport-tcp
+#	cabal sandbox add-source $(ROOT_DIR)/vendor/rank1dynamic
 	cabal install --enable-tests \
                       --only-dependencies $(CABAL_FLAGS) \
                       --reorder-goals $(ROOT_DIR)/distributed-process-scheduler/ \
