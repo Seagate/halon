@@ -1,6 +1,11 @@
 # Copyright : (C) 2013 Xyratex Technology Limited.
 # License   : All rights reserved.
 
+# This Makefile is DEPRECATED. It should not be called recursively.
+#
+# If there are any required targets, they should be moved to the toplevel
+# Makefile, or to be called as a part of setup / test run.
+
 # Make TCP the default. Can be overriden on the command line or in
 # mk/config.mk.
 export USE_TCP = true

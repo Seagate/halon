@@ -22,6 +22,17 @@ endif
 configure: dep 
 	$(CABAL) configure --enable-tests $(CABAL_FLAGS)
 
+CABAL  += --builddir=$(BUILDDIR)
+
+build: configure
+	$(CABAL) build
+
+dep:
+	$(CABAL) install --only-dependencies --enable-tests --reorder-goals || echo "..skipping dependency installation"
+
+configure: dep 
+	$(CABAL) configure --enable-tests $(CABAL_FLAGS)
+
 clean:
 	$(CABAL) clean
 
