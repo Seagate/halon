@@ -25,14 +25,14 @@ haddock:
 	cabal haddock --builddir=$(BUILDDIR)
 
 sandbox: 
-	echo "Preparing sandbox"
+	@echo "Preparing sandbox"
 	cabal sandbox init --sandbox=$(SANDBOX)
 	cabal sandbox add-source \
 		../distributed-process-scheduler \
 		../distributed-process-test \
 		../consensus
 ifdef RANDOMIZED_TESTS
-	echo "Installing distributed-process-scheduler with scheduler enabled"
+	@echo "Installing distributed-process-scheduler with scheduler enabled"
 	cabal install distributed-process-scheduler -fuse-scheduler --reinstall --reorder-goals || echo "is not required" 
 endif
 	cabal install --only-dependencies --enable-tests --reorder-goals || echo "it not required"
