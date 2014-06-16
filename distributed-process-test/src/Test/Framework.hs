@@ -25,7 +25,10 @@ import Control.Distributed.Process hiding ( bracket, try )
 import Control.Distributed.Process.Internal.StrictMVar
     ( newEmptyMVar, modifyMVar, putMVar, takeMVar )
 import Control.Distributed.Process.Internal.Types
-    ( localProcesses, LocalNode, LocalNodeState, localState, processId )
+    ( localProcesses, LocalNode, LocalNodeState, localState, processId
+    , localEventBus, MxEventBus(..), processThread, localProcessWithId
+    , processLocalId
+    )
 import Control.Distributed.Process.Node ( newLocalNode, closeLocalNode, runProcess )
 
 import Network.Transport (Transport)
@@ -42,6 +45,7 @@ import Test.Tasty.HUnit hiding ( assert )
 
 
 import Data.Accessor ((^.))
+import Data.List
 import qualified Data.Map as Map ( elems )
 
 -- | Smart constructor for simple test.
@@ -144,7 +148,12 @@ terminateLocalProcesses node mtimeout = do
   where
     terminateProcesses :: LocalNodeState -> Process Bool
     terminateProcesses st = do
-      let pids = map processId $ Map.elems (st ^. localProcesses)
+      -- Trying to kill the management agent controller prevents other processes
+      -- from terminating.
+      let mxACPid = case localEventBus node of
+                      MxEventBus pid _ _ _ -> pid
+                      MxEventBusInitialising -> error "terminateLocalProcesses: The given node is not initialized."
+          pids = delete mxACPid $ map processId $ Map.elems (st ^. localProcesses)
       mapM_ monitor pids
       mapM_ (flip exit "closing node") pids
       case mtimeout of
@@ -154,9 +163,11 @@ terminateLocalProcesses node mtimeout = do
           let loop 0 = do
                 exit timer "all process were terminated"
                 receiveWait
-                  [ match $ \(ProcessMonitorNotification _ _ _) ->
-                                return True
-                  ]
+                  [ match $ \(ProcessMonitorNotification _ _ _) -> return () ]
+                maybe (return ())
+                      (liftIO . killThread . processThread) $
+                      (st ^. localProcessWithId (processLocalId mxACPid))
+                return True
               loop n = receiveWait
                 [ match $ \(ProcessMonitorNotification _ mpid _) ->
                     if mpid == timer then return False
