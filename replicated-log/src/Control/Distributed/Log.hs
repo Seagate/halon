@@ -30,7 +30,12 @@ module Control.Distributed.Log
        , removeReplica
          -- * Remote Tables
        , Control.Distributed.Log.__remoteTable
-       , Control.Distributed.Log.__remoteTableDecl ) where
+       , Control.Distributed.Log.__remoteTableDecl
+       , clockInterval
+       , sdictList
+       , nodeIdClosure
+       , ambassador__tdict
+       ) where
 
 import Control.Distributed.Log.Messages
 import Control.Distributed.Log.Policy (NominationPolicy)
@@ -709,7 +714,7 @@ removeReplica :: Typeable a
               -> ProcessId
               -> ProcessId
               -> Process ()
-removeReplica h@(Handle sdict1 sdict2 _ protocol log _) α ρ = do
+removeReplica h@(Handle _sdict1 _sdict2 _ _protocol _log _) α ρ = do
     ref2 <- monitor α
     ref1 <- monitor ρ
     exit α "Remove acceptor from group."

@@ -14,6 +14,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , stopScheduler
   , withScheduler
   , __remoteTable
+  , spawnWrapClosure__tdict
   -- * distributed-process replacements
   , Match
   , send
