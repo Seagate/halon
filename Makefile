@@ -7,6 +7,25 @@ include mk/config.mk
 
 all: install
 
+# Error-hiding.
+#
+# Some subprojects has error hiding code in their snippets in 'sandbox'
+# target. This is done for purpose, as it's not possible either to run
+# --denendencies-only it the package that reverse dependencies in same
+# sandbox or reinstall package without forcing reinstall on all it's
+# dependencies. This error hiding allow to continue installation in
+# case when package already correctly installed in a sandbox.
+# The tradeoff is that if case of reinstall failure cabal will fail on
+# the configure phase not sandbox.
+# Also there are exists cases when package reinstall leads to dependency
+# breakage and cabal doesn't immediately fixes them, this case is not
+# covered by existsing 'depdenency' model, in order to fix them we
+# need to introduce a way to properly check state of dependencies and
+# reinstall them if needed.
+
+# The following code snippet allowes us to run specified target in 
+# all sub-projects. By setting TARGET variable and calling the deepest
+# rule, that effectivelly lead to invoking rule in all projects.
 # `ci' is the continuous integration target.
 .PHONY: ci clean install test
 clean: TARGET = clean
