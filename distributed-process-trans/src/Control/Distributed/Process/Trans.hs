@@ -7,10 +7,11 @@ module Control.Distributed.Process.Trans where
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Internal.CQueue
 import Control.Distributed.Process.Internal.Types
+import Control.Distributed.Process.Internal.Primitives
 import Control.Applicative (Applicative, (<$>))
+import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Reader (ask)
-import Data.Binary (decode)
 
 
 class (Applicative m, Monad m) => MonadProcess m where
@@ -25,12 +26,11 @@ matchT = matchIfT (const True)
 -- | Match against any message of the right type that satisfies a predicate
 matchIfT :: forall m a b. Serializable a =>
             (a -> Bool) -> (a -> m b) -> MatchT m b
-matchIfT c p = MatchT $ MatchMsg $ \msg ->
-   case messageFingerprint msg == fingerprint (undefined :: a) of
-     True | c decoded -> Just (p decoded)
-       where
-         !decoded = decode (messageEncoding msg) :: a
-     _ -> Nothing
+matchIfT c p = MatchT $ MatchMsg $ \msg -> join $
+   handleMessage msg $ \x ->
+     if c x
+     then Just (p x)
+     else Nothing
 
 receiveWaitT :: MonadProcess m => [MatchT m b] -> m b
 receiveWaitT ms = do
