@@ -25,7 +25,7 @@ Library
                     containers,
                     data-accessor,
                     directory >= 1.2,
-                    distributed-process >= 0.4,
+                    distributed-process >= 0.5,
                     network-transport,
                     -- see note [Tasty upper bound]
                     tasty >= 0.7 && < 0.8,
