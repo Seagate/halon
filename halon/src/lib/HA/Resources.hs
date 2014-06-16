@@ -24,8 +24,6 @@ import HA.ResourceGraph
     , Some, ResourceDict, mkResourceDict, RelationDict, mkRelationDict )
 
 import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Internal.Types
-import Network.Transport (EndPointAddress(..))
 
 import Data.ByteString ( ByteString )
 import Data.Hashable (Hashable(..))
@@ -65,16 +63,6 @@ instance Hashable Service where
 -- | A Resource Graph representation for compute nodes.
 data Node = Node ProcessId
           deriving (Eq, Ord, Show, Typeable, Generic)
-
-deriving instance Generic NodeId
-deriving instance Generic ProcessId
-deriving instance Generic EndPointAddress
-deriving instance Generic LocalProcessId
-
-instance Hashable NodeId
-instance Hashable ProcessId
-instance Hashable EndPointAddress
-instance Hashable LocalProcessId
 
 instance Hashable Node
 instance Binary Node
