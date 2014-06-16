@@ -109,8 +109,13 @@ endif
 haddock: configure
 	cabal haddock
 
-configure:
+sandbox:
 	cabal sandbox init --sandbox=$(SANDBOX)
+	cabal sandbox add-source \
+		../halon
+	cabal install --only-dependencies || echo "not installing"
+
+configure: sandbox
 	cabal configure $(CABAL_FLAGS)
 
 halon-node-agent:
