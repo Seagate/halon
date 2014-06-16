@@ -9,15 +9,19 @@ all: install
 
 # Error-hiding.
 #
-# Some subprojects has error hiding code in their snippets in 'sandbox'
-# target. This is done for purpose, as it's not possible either to run
-# --denendencies-only it the package that reverse dependencies in same
-# sandbox or reinstall package without forcing reinstall on all it's
-# dependencies. This error hiding allow to continue installation in
-# case when package already correctly installed in a sandbox.
-# The tradeoff is that if case of reinstall failure cabal will fail on
-# the configure phase not sandbox.
-# Also there are exists cases when package reinstall leads to dependency
+# Some recipes of the 'sandbox' target in subprojects ignore the
+# return code of cabal. This is done on purpose, as it's not possible
+# to successfully run --dependencies-only if reverse dependencies of
+# the package exist in the sandbox, and it is not possible to
+# forfully reinstall the package without forcing installation of all
+# its dependencies even when unneeded.
+#
+# In this cases, ignoring the return code of cabal allows the recipe
+# to proceed when the package is already installed in the sandbox.
+# The tradeoff is that in case of a reinstallation failure involving
+# dependencies, cabal will fail on the subsequent configure phase.
+#
+# Also there are cases when package reinstalls lead to dependency
 # breakage and cabal doesn't immediately fixes them, this case is not
 # covered by existsing 'depdenency' model, in order to fix them we
 # need to introduce a way to properly check state of dependencies and
