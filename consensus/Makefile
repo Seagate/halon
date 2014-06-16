@@ -7,7 +7,7 @@ configure:
 	cabal configure --enable-tests
 
 sandbox:
-	echo "Preparing sandbox"
+	@echo "Preparing sandbox"
 	cabal sandbox init --sandbox=$(SANDBOX)
 	cabal sandbox add-source \
 		../distributed-process-scheduler

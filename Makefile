@@ -39,7 +39,7 @@ clean: mero-halon
 ci test install: mero-halon
 
 dep:
-	echo "Building dependencies sandboxes"
+	@echo "Building dependencies sandboxes"
 	cabal sandbox init --sandbox=$(SANDBOX_DEFAULT)
 	cabal sandbox add-source $(ROOT_DIR)/vendor/distributed-process
 #	cabal sandbox add-source $(ROOT_DIR)/vendor/distributed-static
@@ -58,7 +58,7 @@ dep:
                                       $(ROOT_DIR)/confc/ \
                                       $(ROOT_DIR)/halon/ \
                                       $(ROOT_DIR)/mero-halon/
-	echo "Preparing scheduler sandbox"
+	@echo "Preparing scheduler sandbox"
 	rm -rf $(SANDBOX_SCHED_DB)
 	mkdir -p $(SANDBOX_SCHED_DB)
 	cp -r $(SANDBOX_DEFAULT_DB)/* $(SANDBOX_SCHED_DB)
@@ -88,14 +88,14 @@ network-transport-rpc confc halon mero-halon: $(NTR_DB_DIR)
 
 .PHONY: distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log
 distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log: $(SANDBOX_SCHED_DB)
-	echo "Running $(TARGET) for $@ with default sandbox"
+	@echo "Running $(TARGET) for $@ with default sandbox"
 	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) $(TARGET)
-	echo "Running $(TARGET) for $@ with default sandbox"
+	@echo "Running $(TARGET) for $@ with default sandbox"
 	make -C $@ SANDBOX=$(SANDBOX_SCHED) RANDOMIZED_TESTS=1 $(TARGET)
 
 .PHONY: distributed-process-scheduler
 distributed-process-scheduler: $(SANDBOX_SCHED_DB) distributed-process-trans
-	echo "Running $(TARGET) for $@ with default sandbox"
+	@echo "Running $(TARGET) for $@ with default sandbox"
 	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) $(TARGET)
 	echo "Running $(TARGET) for $@ in scheduler sandbox"
 	make -C $@ SANDBOX=$(SANDBOX_SCHED) RANDOMIZED_TESTS=1 $(TARGET)
