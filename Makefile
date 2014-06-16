@@ -14,7 +14,11 @@ ci clean install: mero-halon
 
 dep:
 	cabal sandbox init --sandbox=$(SANDBOX_DEFAULT)
-	cabal sandbox add-source $(ROOT_DIR)/vendor/distributed-process/distributed-process
+	cabal sandbox add-source $(ROOT_DIR)/vendor/distributed-process
+	cabal sandbox add-source $(ROOT_DIR)/vendor/distributed-static
+	cabal sandbox add-source $(ROOT_DIR)/vendor/network-transport
+	cabal sandbox add-source $(ROOT_DIR)/vendor/network-transport-tcp
+	cabal sandbox add-source $(ROOT_DIR)/vendor/rank1dynamic
 	cabal install --enable-tests \
                       --only-dependencies $(CABAL_FLAGS) \
                       --reorder-goals $(ROOT_DIR)/distributed-process-scheduler/ \
@@ -33,7 +37,6 @@ dep:
 # a binary RPM in ./rpmbuild/RPMS/x86_64 and a source tar in
 # ./rpmbuild/SOURCES
 .PHONY: rpm-checkout rpm-build
-
 rpm:
 ifeq ($(shell locale -a | grep -Fixc "$(HA_BUILD_LANG)"), 0)
 		$(error $(HA_BUILD_LANG) not present; please set HA_BUILD_LANG to an appropriate locale.)
