@@ -33,7 +33,7 @@ sandbox:
 		../consensus
 ifdef RANDOMIZED_TESTS
 	@echo "Installing distributed-process-scheduler with scheduler enabled"
-	cabal install distributed-process-scheduler -fuse-scheduler --reinstall --reorder-goals || echo "is not required" 
+	cabal install distributed-process-scheduler -fuse-scheduler
 endif
 	cabal install --only-dependencies --enable-tests --reorder-goals || echo "it not required"
 
