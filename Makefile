@@ -33,8 +33,8 @@ test:  TARGET = test
 install: TARGET = install
 ci: TARGET = ci
 clean: mero-halon
-	[ -d $(SANDBOX_DEFAULT) ]  && rm -rf $(SANDBOX_DEFAULT)  || echo "Already removed"
-	[ -d $(SANDBOX_SCHED_DB) ] && rm -rf $(SANDBOX_SCHED_DB) || echo "Already removed"
+	rm -rf $(SANDBOX_DEFAULT)
+	rm -rf $(SANDBOX_SCHED_DB)
 
 ci test install: mero-halon
 
