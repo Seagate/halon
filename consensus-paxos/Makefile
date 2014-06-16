@@ -1,18 +1,18 @@
 ifdef RANDOMIZED_TESTS
 BUILDDIR = dist-schedule
 TEST     = $(BUILDDIR)/build/random/random
-CFLAGS  += -frandomTests
+CABAL_FLAGS  += -frandomTests
 else
 BUILDDIR = dist
 TEST     = $(BUILDDIR)/build/tests/tests
 endif
-CFLAGS  += --builddir=$(BUILDDIR)
+CABAL_FLAGS  += --builddir=$(BUILDDIR)
 
 build: configure
 	cabal build --builddir=$(BUILDDIR)
 
 configure: sandbox
-	cabal configure --enable-tests $(CFLAGS)
+	cabal configure --enable-tests $(CABAL_FLAGS)
 
 clean:
 	cabal clean --builddir=$(BUILDDIR)
@@ -22,7 +22,7 @@ install: build
 	cabal register --builddir=$(BUILDDIR)
 
 haddock:
-	cabal haddock --builddir=$(BUILDIR)
+	cabal haddock --builddir=$(BUILDDIR)
 
 sandbox: 
 	echo "Preparing sandbox"
