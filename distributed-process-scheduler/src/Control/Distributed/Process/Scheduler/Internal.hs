@@ -31,7 +31,7 @@ module Control.Distributed.Process.Scheduler.Internal
   ) where
 
 import "distributed-process" Control.Distributed.Process
-    ( AbstractMessage, Closure, NodeId, Process, ProcessId )
+    ( Message, Closure, NodeId, Process, ProcessId )
 import qualified "distributed-process" Control.Distributed.Process as DP
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Serializable ( Serializable )
@@ -94,7 +94,7 @@ data SchedulerResponse
 -- | Transitions that the scheduler can choose to perform when all
 -- processes block.
 data TransitionRequest
-    = PutMsg AbstractMessage -- ^ Put this message in the mailbox of the target.
+    = PutMsg Message        -- ^ Put this message in the mailbox of the target.
     | ReceiveMsg            -- ^ Have a process pick a message from its mailbox.
 
 -- | Exit reason sent to stop the scheduler.
@@ -110,7 +110,7 @@ instance Binary SchedulerResponse
 instance Binary StopScheduler
 instance Binary SchedulerTerminated
 
-type ProcessMessages = Map ProcessId (Map ProcessId [AbstractMessage])
+type ProcessMessages = Map ProcessId (Map ProcessId [Message])
 
 -- | Starts the scheduler assuming the given initial amount of processes and
 -- a seed to generate a sequence of random values.
@@ -148,7 +148,7 @@ startScheduler initialProcs seed0 = do
            return (True,())
   where
     go :: ProcessId            -- ^ process providing message data
-       -> MVar AbstractMessage -- ^ mvar through which message data is passed
+       -> MVar Message         -- ^ mvar through which message data is passed
        -> StdGen               -- ^ random number generator
        -> Set ProcessId        -- ^ set of tested processes
        -> Map ProcessId Bool   -- ^ state of processes (blocked | has_a_message)
