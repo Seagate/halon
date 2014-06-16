@@ -40,6 +40,8 @@ import Control.Applicative ((<$>))
 import Data.Typeable (Typeable)
 import Data.Binary (encode)
 
+import Prelude hiding (read)
+import qualified Prelude
 
 newtype State = State { unState :: Int }
     deriving (Typeable)
