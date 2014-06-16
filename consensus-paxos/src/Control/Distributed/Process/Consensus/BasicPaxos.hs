@@ -11,6 +11,7 @@ module Control.Distributed.Process.Consensus.BasicPaxos
     , protocol
     , protocolClosure
     , __remoteTable
+    , dictString__static
     ) where
 
 import Control.Distributed.Process.Consensus hiding (__remoteTable)
