@@ -1,13 +1,13 @@
 ifdef RANDOMIZED_TESTS
 BUILDDIR = dist-schedule
-CFLAGS  += -frandomTests
+CABAL_FLAGS  += -frandomTests
 TEST     = $(BUILDDIR)/build/random/random
 else
 BUILDDIR = dist
 TEST     = $(BUILDDIR)/build/tests/tests
 endif
 
-CFLAGS  += --builddir=$(BUILDDIR)
+CABAL_FLAGS  += --builddir=$(BUILDDIR)
 
 build: configure
 	cabal build --builddir=$(BUILDDIR)
@@ -20,7 +20,7 @@ sandbox:
 	cabal install --only-dependencies --enable-tests --reorder-goals || echo "not installing"
 
 configure: sandbox
-	cabal configure --enable-tests $(CFLAGS)
+	cabal configure --enable-tests $(CABAL_FLAGS)
 
 clean:
 	cabal clean --builddir=$(BUILDDIR)
