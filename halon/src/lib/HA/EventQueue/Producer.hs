@@ -6,28 +6,28 @@
 
 module HA.EventQueue.Producer where
 
-import Control.Distributed.Process (Process, ProcessId, getSelfPid, send, die, whereis, liftIO)
+import Control.Distributed.Process (Process, ProcessId, getSelfPid, send, die, whereis)
 import Control.Distributed.Process.Serializable (Serializable)
 -- Qualify all imports of any distributed-process "internals".
 import qualified Control.Distributed.Process.Internal.Types as I
     (createMessage, messageToPayload)
-import HA.Call (callAt)
+import HA.CallTimeout (callLocal, callTimeout)
 import HA.EventQueue.Types
 import HA.NodeAgent.Lookup (nodeAgentLabel)
-import Control.Concurrent (threadDelay)
 
 -- | Add an event to the event queue, and don't die yet.
+-- FIXME: Use a well-defined timeout.
 promulgate :: Serializable a => a -> Process ()
 promulgate x = do
     mthem <- whereis nodeAgentLabel
     case mthem of
         Nothing -> error "NodeAgent is not registered."
         Just na -> do
-          ret <- callAt na msg
+          ret <- callLocal $
+            callTimeout 5000000 na msg
           case ret of
             Just True -> return ()
-            _ -> do liftIO $ threadDelay 5000000
-                    promulgate x
+            _ -> promulgate x
 {-
 The issue that this loop addresses in particular is if the node agent
 is contactable, but there are no accessible EQs, either because the

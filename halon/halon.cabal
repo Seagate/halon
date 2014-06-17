@@ -44,6 +44,7 @@ Library
                       TupleSections
   Ghc-Options:     -O -Wall -Werror
   Exposed-Modules: HA.Call
+                   HA.CallTimeout
                    HA.Process
                    HA.Resources
                    HA.EventQueue
@@ -66,6 +67,7 @@ Library
                    HA.Network.RemoteTables
                    HA.Services.Dummy
                    HA.Services.OCF
+                   Control.SpineSeq
   if flag(rpc)
     Exposed-Modules: HA.Network.IdentifyRPC
   Build-Depends:   base,

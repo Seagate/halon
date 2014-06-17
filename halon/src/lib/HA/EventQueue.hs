@@ -28,6 +28,7 @@ import HA.EventQueue.Consumer
 import HA.EventQueue.Types
 import HA.EventQueue.Producer ( sendHAEvent )
 import HA.Replicator ( RGroup, updateStateWith, getState)
+import Control.SpineSeq (spineSeq)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
@@ -47,11 +48,6 @@ eventQueueLabel = "HA.EventQueue"
 -- It contains the process id of the RC and the list of pending events.
 type EventQueue = (Maybe ProcessId, [HAEvent [ByteString]])
 
--- | @forceSpine xs@ evaluates the spine of @xs@.
-forceSpine :: [a] -> [a]
-forceSpine [] = []
-forceSpine xs@(_:xs') = forceSpine xs' `seq` xs
-
 addSerializedEvent :: HAEvent [ByteString] -> EventQueue -> EventQueue
 addSerializedEvent = second . (:)
 
@@ -64,7 +60,7 @@ compareAndSwapRC (expected, new) = first $ \current ->
     if current == expected then new else current
 
 filterEvent :: EventId -> EventQueue -> EventQueue
-filterEvent eid = second $ forceSpine . filter (\HAEvent{..} -> eid /= eventId)
+filterEvent eid = second $ spineSeq . filter (\HAEvent{..} -> eid /= eventId)
 
 remotable [ 'addSerializedEvent, 'setRC, 'compareAndSwapRC, 'filterEvent ]
 
@@ -126,13 +122,13 @@ eventQueue rg = do
                 say "Trim done."
                 return mRC
             -- Process an HA event
-          , match $ \(ev :: HAEvent [ByteString]) -> do
-              let sender = (\(HAEvent _ _ (x:_)) -> x) ev
+          , match $ \(sender :: ProcessId, ev :: HAEvent [ByteString]) -> do
               updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+              selfNode <- getSelfNode
               case mRC of
                 -- I know where the RC is.
                 Just rc -> do
-                  send sender (processNodeId rc)
+                  send sender (selfNode, processNodeId rc)
                   sendHAEvent rc ev
                   return mRC
                 -- I don't know where the RC is.
@@ -141,12 +137,14 @@ eventQueue rg = do
                   (newMRC, _) <- getState rg
                   case newMRC of
                     Just rc -> do _ <- monitor rc
-                                  send sender (processNodeId rc)
+                                  send sender (selfNode, processNodeId rc)
                                   sendHAEvent rc ev
                                -- Send my own node when we don't know the RC
                                -- location. Note that I was able to read the
                                -- replicated state so very likely there is
                                -- no RC.
-                    Nothing -> getSelfNode >>= send sender
+                    Nothing -> do
+                      n <- getSelfNode
+                      send sender (n, n)
                   return newMRC
           ] >>= loop

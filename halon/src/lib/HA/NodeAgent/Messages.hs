@@ -14,21 +14,16 @@ import GHC.Generics (Generic)
 import Data.Typeable (Typeable)
 import Data.Binary (Binary)
 
--- | Messages for manipulating services.
-data ServiceMessage
-      -- | Update the pid of the event queue, for example, in the event of the
-      -- RC restarting on a different node.
-    = UpdateEQ [NodeId]
-    deriving (Eq, Show, Generic, Typeable)
+
+data ServiceMessage =
+    -- | Update the nids of the EQs, for example, in the event of the
+    -- RC restarting on a different node.
+    UpdateEQNodes [NodeId]
+  deriving (Eq, Show, Generic, Typeable)
 
 instance Binary ServiceMessage
 
-data Result = Ok
-            | CantUpdateEQ
-            deriving (Eq, Show, Generic, Typeable)
-
-instance Binary Result
-
+-- FIXME: Do we want to keep this just for the dummy service?
 data ExitReason = Shutdown
                 deriving (Eq, Show, Generic, Typeable)
 

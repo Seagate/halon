@@ -14,21 +14,21 @@ module HA.NodeAgent
       , Service(..)
       , service
       , nodeAgent
-      , updateEQ
+      , updateEQAddresses
       , updateEQNodes
       , expire
       , __remoteTableDecl
-      , __remoteTable
       ) where
 
-import HA.Call
+import HA.CallTimeout (callLocal, callTimeout, ncallRemoteAnyPreferTimeout)
 import HA.NodeAgent.Messages
 import HA.NodeAgent.Lookup (lookupNodeAgent,nodeAgentLabel)
 import HA.Network.Address (Address,readNetworkGlobalIVar)
 import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types (HAEvent(..), EventId(..))
-import HA.EventQueue.Producer (expiate, sendHAEvent)
+import HA.EventQueue.Producer (expiate)
 import HA.Resources(Service(..),ServiceUncaughtException(..),Node(..))
+import Control.SpineSeq (spineSeq)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
@@ -38,14 +38,14 @@ import Control.Distributed.Process.Serializable (Serializable)
 import Control.Monad (when, void)
 import Control.Applicative ((<$>))
 import Control.Exception (Exception, throwIO, SomeException(..))
-import Data.Binary (Binary, encode)
-import Data.Maybe (catMaybes)
+import Data.Binary (encode)
+import Data.Maybe (catMaybes, maybeToList)
 import Data.ByteString (ByteString)
-import Data.List (delete)
+import Data.List (delete, nub, (\\))
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
-import GHC.Generics (Generic)
 
+-- FIXME: What do all of these expire-related things have to do with the node agent?
 data ExpireReason = forall why. Serializable why => ExpireReason why
   deriving (Typeable)
 
@@ -57,14 +57,6 @@ data ExpireException = ExpireException ExpireReason
 
 instance Exception ExpireException
 
-data UpdateNAState = UpdateNAState (CU NAState)
-  deriving (Generic, Typeable)
-
--- | Closures of updates of values of type @a@.
-type CU a = Closure (a -> a)
-
-instance Binary UpdateNAState
-
 expire :: Serializable a => a -> Process b
 expire why = liftIO $ throwIO $ ExpireException $ ExpireReason why
 
@@ -73,79 +65,42 @@ data NAState = NAState
     { nasEventCounter       :: Word64   -- ^ A counter used to tag events produced
                                         -- in the node.
     , nasReplicas           :: [NodeId] -- ^ The replicas we know.
-    , nasPreferredReplica   :: Maybe NodeId -- ^ The node replicas suggest as access point.
+    , nasPreferredReplica   :: Maybe NodeId
+       -- ^ The node replicas suggest as access point.
+       --
+       -- This field is used as a reminder for the NA to poll the preferred
+       -- replica until it replies. Therefore it obeys the following invariant:
+       --
+       -- This field is @Just nid@ for as long as @nid@ is the
+       -- preferred replica and the NA hasn't received an acknowledgement
+       -- from it sooner than from other replicas.
+       --
+       -- When the preferred replica responds fast enough, this field becomes
+       -- Nothing.
     }
-  deriving (Generic, Typeable)
+  deriving (Typeable)
 
--- This instance is not used but we need it so the 'remotable' splice below
--- is happy.
-instance Binary NAState
-
-updateNAS :: (NodeId, Maybe NodeId) -> NAState -> NAState
-updateNAS (nid, mnid) nas =
-                                  -- Force the spine so thunks don't accumulate.
-    nas { nasReplicas           = forceSpine $ if elem nid $ nasReplicas nas
-                                    then nid : delete nid (nasReplicas nas)
-                                    -- The update is invalidated by a later
-                                    -- update to the list of replicas.
-                                    else nasReplicas nas
-        , nasPreferredReplica   = mnid
-        }
-  where
-    forceSpine xs = seq (foldr (flip const) () xs) xs
-
-remotable [ 'updateNAS ]
-
-sendEQ :: NodeId -> HAEvent [ByteString] -> Int -> Process (Maybe NodeId)
-sendEQ node msg timeOut = do
-    whereisRemoteAsync node eventQueueLabel
-    mpid <- receiveTimeout timeOut [
-              matchIf (\(WhereIsReply name' mpid') ->
-                          name' == eventQueueLabel && maybe False ((==)node . processNodeId) mpid')
-                      (\(WhereIsReply _ mpid') -> return mpid')
-            ]
-    case mpid of
-      Just (Just pid) ->
-        -- callLocal creates a temporary mailbox so late responses don't leak or
-        -- interfere with other calls.
-        callLocal $ do
-          sendHAEvent pid msg
-          expectTimeout timeOut
-      _ -> return Nothing
-
-serialCall :: [NodeId] -> HAEvent [ByteString] ->
-              Int -> Process (Maybe (NodeId, NodeId))
-serialCall           []   _       _ = return Nothing
-serialCall (node:nodes) msg timeOut = do
-    ret <- sendEQ node msg timeOut
-    case ret of
-      Just b -> return $ Just (node, b)
-      _ -> serialCall nodes msg timeOut
-
-updateEQ :: ProcessId -> [Address] -> Process Result
-updateEQ pid addrs =
+-- NOTE: This function expects to only be used with nodes which are part of the
+-- tracking station, as it takes the addresses of nodes which are running a NA,
+-- converts the addresses to node ids, and passes the node ids to updateEQNodes,
+-- which expects node ids of the tracking station nodes which are running an EQ.
+updateEQAddresses :: ProcessId -> [Address] -> Process Bool
+updateEQAddresses pid addrs =
   do network <- liftIO readNetworkGlobalIVar
      mns <- mapM (lookupNodeAgent network) addrs
      let nodes = map processNodeId $ catMaybes mns
      updateEQNodes pid nodes
 
-updateEQNodes :: ProcessId -> [NodeId] -> Process Result
+-- FIXME: Use a well-defined timeout.
+updateEQNodes :: ProcessId -> [NodeId] -> Process Bool
 updateEQNodes pid nodes =
-     maybe CantUpdateEQ id <$> callAt pid (UpdateEQ nodes)
-
--- | Because of GHC staging restrictions this code snippet needs
--- to be placed in a definition outside the quotation of 'remotableDecl'.
-matchNASUpdate :: NAState -> Match NAState
-matchNASUpdate nas = match $ \(UpdateNAState cNASupdate) ->
-    fmap ($ nas) $ unClosure cNASupdate
-
--- | Because of GHC staging restrictions this code snippet needs
--- to be placed in a definition outside the quotation of 'remotableDecl'.
-sendNAState :: ProcessId -> CU NAState -> Process ()
-sendNAState pid = send pid . UpdateNAState
+    maybe False id <$> callLocal (callTimeout timeout pid (UpdateEQNodes nodes))
+  where
+    timeout = 3000000
 
 remotableDecl [ [d|
 
+    -- FIXME: What is going on in these functions?
     sdictServiceInfo :: SerializableDict (String, Closure (Process ()))
     sdictServiceInfo = SerializableDict
 
@@ -202,10 +157,9 @@ remotableDecl [ [d|
         go nas = do
               self <- getSelfPid
               receiveWait
-                [ callResponse $ \servicemsg ->
-                case servicemsg of
-                  UpdateEQ eqnids -> do
-                    return $ (Ok, nas
+                [ match $ \(caller, UpdateEQNodes eqnids) -> do
+                    send caller True
+                    return $ nas
                       { nasReplicas = eqnids
                         -- Preserve the preferred replica only if it belongs
                         -- to the new list of nodes.
@@ -216,54 +170,71 @@ remotableDecl [ [d|
                                          else Nothing
                                 ) $
                                 nasPreferredReplica nas
-                      })
-                  -- Apply an update to the NA state.
-                , matchNASUpdate nas
+                      }
                   -- match a pre-serialized event sent from service
-                , callResponseAsync
-                    (const $ Just nas { nasEventCounter = nasEventCounter nas + 1 }) $ \content -> do
-                    when (null $ nasReplicas nas) $ say $
-                        "Warning: service event cannot proceed, since \
-                        \no event queues are registed in the node agent"
-                    let timeOut = 3000000
-                        ev = HAEvent { eventId = EventId self $ nasEventCounter nas
-                                     , eventPayload = content :: [ByteString]
-                                     , eventHops    = [] }
-                    -- When there is an unreachable preferred replica we must
-                    -- attempt contact asynchronously.
-                    --
-                    -- XXX Send a ping message instead of duplicating the event.
-                    case nasPreferredReplica nas of
-                      Just pnid | pnid /= head (nasReplicas nas) ->
-                        void $ spawnLocal $ do
-                          ret <- sendEQ pnid ev timeOut
-                          case ret of
-                            Just pnid' -> handleEQResponse self nas pnid pnid'
-                            Nothing    -> return ()
-                      _   -> return ()
+                , match $ \(caller, payload) -> do
+                    when (null (nasReplicas nas)) $
+                      say "Node Agent: Warning: Ignoring event because no EQs are registered"
+                    let
+                      event = HAEvent
+                        { eventId      = EventId self (nasEventCounter nas)
+                        , eventPayload = payload :: [ByteString]
+                        -- FIXME: Solve properly the conflict with event tracking.
+                        -- , eventHops    = []
+                        , eventHops    = [self]
+                        }
+                      -- FIXME: Use well-defined timeouts.
+                      softTimeout = 2000000
+                      timeout = 3000000
+                      preferNodes = nub $
+                        take 1 (nasReplicas nas) ++
+                        maybeToList (nasPreferredReplica nas)
+                      nodes = nasReplicas nas \\ preferNodes
+
                     -- Send the event to some replica.
-                    ret <- serialCall (nasReplicas nas) ev timeOut
-                    case ret :: Maybe (NodeId, NodeId) of
-                      Just (rnid, pnid) -> do handleEQResponse self nas rnid pnid
-                                              return True
-                      Nothing           -> return False
+                    result <- callLocal $
+                      ncallRemoteAnyPreferTimeout softTimeout timeout
+                                                  preferNodes nodes
+                                                  eventQueueLabel event
+                    case result :: Maybe (NodeId, NodeId) of
+                      Just (rnid, pnid) -> do
+                        send caller True
+                        return $ (handleEQResponse nas rnid pnid)
+                                   { nasEventCounter = nasEventCounter nas + 1 }
+                      Nothing -> do
+                        send caller False
+                        return nas
                 ] >>= go
 
-        -- The EQ response may suggest to contact another replica. This call
+        -- The EQ response may suggest to contact another replica. This function
         -- handles the NA state update.
         --
-        -- @handleEQResponse naPid naState responsiveNid preferredNid@
+        -- @handleEQResponse naState responsiveNid preferredNid@
         --
-        handleEQResponse :: ProcessId -> NAState -> NodeId -> NodeId -> Process ()
-        handleEQResponse na nas rnid pnid =
-          when (rnid /= head (nasReplicas nas)
-                || Just pnid /= nasPreferredReplica nas
-               ) $
-            sendNAState na $ $(mkClosure 'updateNAS) $
+        handleEQResponse :: NAState -> NodeId -> NodeId -> NAState
+        handleEQResponse nas rnid pnid =
+          if (rnid /= head (nasReplicas nas)
+              || Just pnid /= nasPreferredReplica nas
+             ) then
+            updateNAS nas $
               if rnid == pnid
               then (rnid, Nothing) -- The EQ sugested itself.
-              else if elem pnid $ takeWhile (/=rnid) $ nasReplicas nas
-                then (rnid, Just pnid)
-                -- We have not tried reaching the preferred node yet.
-                else (pnid, Just pnid)
+              else if rnid == head (nasReplicas nas)
+                then (pnid, Just pnid) -- Likely we have not tried reaching the preferred node yet.
+                else (rnid, Just pnid) -- The preferred replica did not respond soon enough.
+          else
+            nas
+
+        updateNAS :: NAState -> (NodeId, Maybe NodeId) -> NAState
+        updateNAS nas (nid, mnid) =
+                                  -- Force the spine so thunks don't accumulate.
+          nas { nasReplicas           = spineSeq $ if elem nid $ nasReplicas nas
+                                          then nid : delete nid (nasReplicas nas)
+                                          -- The update is invalidated by a later
+                                          -- update to the list of replicas.
+                                          else nasReplicas nas
+              , nasPreferredReplica   = mnid
+              }
+
+
     |] ]

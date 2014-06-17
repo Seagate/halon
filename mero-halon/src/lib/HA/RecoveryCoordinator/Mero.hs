@@ -25,7 +25,7 @@ import HA.Resources
 import HA.Resources.Mero (ConfObject(..), ConfObjectState(..), Is(..))
 #endif
 import HA.Network.Address
-import HA.NodeAgent hiding (__remoteTable)
+import HA.NodeAgent
 import Mero.Messages
 import HA.NodeAgent.Lookup (lookupNodeAgent)
 import HA.EventQueue.Consumer
@@ -117,7 +117,7 @@ recoveryCoordinator eq mm argv = do
                         G.connect (Node agent) Runs m0d >>>
                         G.connect Cluster Has (Node agent) $
                         rg
-              _ <- updateEQ agent $ mapMaybe parseAddress $ stationNodes argv
+              _ <- updateEQAddresses agent $ mapMaybe parseAddress $ stationNodes argv
                -- XXX check for timeout.
               _ <- spawn (processNodeId agent) $ serviceProcess m0d
               loop =<< G.sync rg'

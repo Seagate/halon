@@ -12,7 +12,6 @@ module HA.RecoveryCoordinator.Mero.Tests ( tests ) where
 
 import Test.Framework
 
-import HA.Call ( callResponse )
 import HA.Resources
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue
@@ -104,9 +103,8 @@ mockNodeAgent done = do
     self <- getSelfPid
     register "HA.NodeAgent" self
 
-    receiveWait [ callResponse $ \msg -> case msg of
-                      UpdateEQ _ -> return (Ok, ()) ]
-    say "Got UpdateEQ."
+    receiveWait [ match $ \(caller, UpdateEQNodes _) -> send caller True ]
+    say "Got UpdateEQNodes."
 
     "Starting service m0d" :: String <- expect
     say "Got start service."
