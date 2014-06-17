@@ -37,36 +37,27 @@ test:  TARGET = test
 install: TARGET = install
 ci: TARGET = ci
 clean: mero-halon
-	rm -rf $(SANDBOX_DEFAULT)
-	rm -rf $(SANDBOX_SCHED_DB)
+	rm -rf $(SANDBOX_DEFAULT) \
+	       $(SANDBOX_SCHED) \
+	       $(SANDBOX_DEFAULT_CONFIG) \
+	       $(SANDBOX_SCHED_CONFIG)
 
 ci test install: mero-halon
 
-dep:
-	@echo "Building dependencies sandboxes"
-	cabal sandbox init --sandbox=$(SANDBOX_DEFAULT)
-	cabal sandbox add-source $(ROOT_DIR)/vendor/distributed-process
-#	cabal sandbox add-source $(ROOT_DIR)/vendor/distributed-static
-#	cabal sandbox add-source $(ROOT_DIR)/vendor/network-transport
-#	cabal sandbox add-source $(ROOT_DIR)/vendor/network-transport-tcp
-#	cabal sandbox add-source $(ROOT_DIR)/vendor/rank1dynamic
-	cabal sandbox add-source $(ROOT_DIR)/vendor/tasty-files
+$(SANDBOX_DEFAULT_CONFIG): SANDBOX_DIR = $(SANDBOX_DEFAULT)
+$(SANDBOX_SCHED_CONFIG):   SANDBOX_DIR = $(SANDBOX_SCHED)
+
+$(SANDBOX_DEFAULT_CONFIG) $(SANDBOX_SCHED_CONFIG):
+	@echo "Initializing sandbox ($@)"
+	cabal sandbox init --sandbox=$(SANDBOX_DIR)
+	cabal sandbox add-source $(VENDOR_PACKAGES) $(PACKAGES)
 	cabal install --enable-tests \
-                      --only-dependencies $(CABAL_FLAGS) \
-                      --reorder-goals $(ROOT_DIR)/distributed-process-scheduler/ \
-                                      $(ROOT_DIR)/distributed-process-test/ \
-                                      $(ROOT_DIR)/distributed-process-trans/ \
-                                      $(ROOT_DIR)/consensus/ \
-                                      $(ROOT_DIR)/consensus-paxos/ \
-                                      $(ROOT_DIR)/replicated-log/ \
-                                      $(ROOT_DIR)/network-transport-rpc/ \
-                                      $(ROOT_DIR)/confc/ \
-                                      $(ROOT_DIR)/halon/ \
-                                      $(ROOT_DIR)/mero-halon/
-	@echo "Preparing scheduler sandbox"
-	rm -rf $(SANDBOX_SCHED_DB)
-	mkdir -p $(SANDBOX_SCHED_DB)
-	cp -r $(SANDBOX_DEFAULT_DB)/* $(SANDBOX_SCHED_DB)
+                      --only-dependencies $(CABAL_FLAGS)\
+                      --reorder-goals $(PACKAGES)
+	mv cabal.sandbox.config $@
+
+.PHONY: dep
+dep: $(SANDBOX_DEFAULT_CONFIG) $(SANDBOX_SCHED_CONFIG)
 
 # This target will generate distributable packages based on the
 # checked-in master branch of this repository. It will generate
@@ -89,24 +80,21 @@ endif
 
 .PHONY: network-transport-rpc confc halon
 network-transport-rpc confc halon mero-halon: $(NTR_DB_DIR)
-	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) DEBUG=true $(TARGET)
+	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) CABAL_SANDBOX=$(CABAL_DEFAULT_SANDBOX) DEBUG=true $(TARGET)
 
 .PHONY: distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log
-distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log: $(SANDBOX_SCHED_DB)
+distributed-process-test distributed-process-trans consensus consensus-paxos replicated-log:
 	@echo "Running $(TARGET) for $@ with default sandbox"
-	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) $(TARGET)
-	@echo "Running $(TARGET) for $@ with default sandbox"
-	make -C $@ SANDBOX=$(SANDBOX_SCHED) RANDOMIZED_TESTS=1 $(TARGET)
+	make -C $@ CABAL_SANDBOX=$(CABAL_DEFAULT_SANDBOX) $(TARGET)
+	@echo "Running $(TARGET) for $@ with scheduler sandbox"
+	make -C $@ CABAL_SANDBOX=$(CABAL_SCHED_SANDBOX) RANDOMIZED_TESTS=1 $(TARGET)
 
 .PHONY: distributed-process-scheduler
-distributed-process-scheduler: $(SANDBOX_SCHED_DB) distributed-process-trans
+distributed-process-scheduler: distributed-process-trans
 	@echo "Running $(TARGET) for $@ with default sandbox"
-	make -C $@ SANDBOX=$(SANDBOX_DEFAULT) $(TARGET)
-	echo "Running $(TARGET) for $@ in scheduler sandbox"
-	make -C $@ SANDBOX=$(SANDBOX_SCHED) RANDOMIZED_TESTS=1 $(TARGET)
-
-.PHONY: $(SANDBOX_SCHED_DB)
-$(SANDBOX_SCHED_DB):
+	make -C $@ CABAL_SANDBOX=$(CABAL_DEFAULT_SANDBOX) $(TARGET)
+	echo "Running $(TARGET) for $@ with scheduler sandbox"
+	make -C $@ CABAL_SANDBOX=$(CABAL_SCHED_SANDBOX) RANDOMIZED_TESTS=1 $(TARGET)
 
 .PHONY: $(NTR_DB_DIR)
 ifneq ($(MERO_ROOT),--)

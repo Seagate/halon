@@ -1,25 +1,29 @@
-build: sandbox configure
-	cabal build
+CABAL = cabal $(CABAL_SANDBOX)
+ifdef RANDOMIZED_TESTS
+CABAL += --builddir=dist-scheduer
+CABAL_FLAGS += -fuse-scheduler
+endif
 
-sandbox:
-	cabal sandbox init --sandbox=$(SANDBOX)
+build: configure
+	$(CABAL) build
 
-configure: sandbox
-	cabal configure --enable-tests
+deps:
+	-$(CABAL) install --enable-tests --only-dependencies
+
+configure: deps
+	$(CABAL) configure --enable-tests
 
 clean:
-	cabal clean
+	$(CABAL) clean
 
 
 install: build
-	cabal copy
-	cabal register
+	$(CABAL) copy
+	$(CABAL) register
 
 haddock:
-	cabal haddock
+	$(CABAL) haddock
 
-test-and-install: test install
-
-test: configure
+test: 
 
 ci: clean build test install haddock

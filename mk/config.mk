@@ -23,9 +23,25 @@ CABAL_FLAGS = --package-db=clean
 
 GHC_VERSION = $(shell ghc --numeric-version)
 
-SANDBOX_DEFAULT = $(shell pwd)/.cabal-sandbox
-SANDBOX_DEFAULT_DB = $(shell pwd)/.cabal-sandbox/x86_64-linux-ghc-$(GHC_VERSION)-packages.conf.d
+SANDBOX_DEFAULT = $(shell pwd)/.cabal-sandbox-default
+SANDBOX_DEFAULT_CONFIG = $(shell pwd)/cabal.sandbox-default.config
+CABAL_DEFAULT_SANDBOX  = --sandbox-config-file=$(SANDBOX_DEFAULT_CONFIG)
 
 # When building with the scheduler enabled, use a different sandbox.
 SANDBOX_SCHED = $(shell pwd)/.cabal-sandbox-scheduler
-SANDBOX_SCHED_DB = $(SANDBOX_SCHED)/x86_64-linux-ghc-$(GHC_VERSION)-packages.conf.d
+SANDBOX_SCHED_CONFIG = $(shell pwd)/cabal.sandbox-scheduler.config
+CABAL_SCHED_SANDBOX  = --sandbox-config-file=$(SANDBOX_SCHED_CONFIG)
+
+PACKAGES = $(ROOT_DIR)/distributed-process-scheduler/ \
+           $(ROOT_DIR)/distributed-process-test/ \
+           $(ROOT_DIR)/distributed-process-trans/ \
+           $(ROOT_DIR)/consensus/ \
+           $(ROOT_DIR)/consensus-paxos/ \
+           $(ROOT_DIR)/replicated-log/ \
+           $(ROOT_DIR)/network-transport-rpc/ \
+           $(ROOT_DIR)/confc/ \
+           $(ROOT_DIR)/halon/ \
+           $(ROOT_DIR)/mero-halon/
+
+VENDOR_PACKAGES = $(ROOT_DIR)/vendor/distributed-process \
+                  $(ROOT_DIR)/vendor/tasty-files

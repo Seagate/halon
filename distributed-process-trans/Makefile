@@ -1,23 +1,24 @@
+CABAL = cabal $(CABAL_SANDBOX)
 
 build: configure
-	cabal build
+	$(CABAL) build
 
-sandbox:
-	cabal sandbox init --sandbox=$(SANDBOX)
+configure: deps
+	$(CABAL) configure --enable-tests
 
-configure: sandbox
-	cabal configure --enable-tests
+deps:
+	-$(CABAL) install --enable-tests --dependencies-only
 
 clean:
-	cabal clean
+	$(CABAL) clean
 
 install: build
-	cabal copy
-	cabal register
+	$(CABAL) copy
+	$(CABAL) register
 
 haddock:
-	cabal haddock
+	$(CABAL) haddock
 
-test: build 
+test:
 
 ci: clean build test install haddock 

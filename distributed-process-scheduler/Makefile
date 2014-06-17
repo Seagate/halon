@@ -1,35 +1,35 @@
+CABAL = cabal $(CABAL_SANDBOX)
 ifdef RANDOMIZED_TESTS
-BUILDDIR=dist-schedule
+CABAL += --builddir=dist-scheduler
 CABAL_FLAGS += -fuse-scheduler
+TEST = dist-scheduler/build/unit-tests/unit-tests
 else
-BUILDDIR=dist
+TEST = dist/build/unit-tests/unit-tests
 endif
-CABAL_FLAGS += --builddir=$(BUILDDIR)
 
 
-build: sandbox configure
-	cabal build --builddir=$(BUILDDIR)
+build: configure
+	$(CABAL) build
 
-sandbox:
-	cabal sandbox init --sandbox=$(SANDBOX)
-	cabal sandbox add-source \
-		../distributed-process-trans --snapshot
-	cabal install --only-dependencies --enable-tests --reorder-goals || echo "is not required"
+dep:
+	-$(CABAL) install --only-dependencies --enable-tests --reorder-goals
 
-configure:
-	cabal configure --enable-tests $(CABAL_FLAGS)
+configure: dep
+	$(CABAL) configure --enable-tests $(CABAL_FLAGS)
 
 clean:
-	cabal clean --builddir=$(BUILDDIR)
+	$(CABAL) clean
 
 install: build
-	cabal copy --builddir=$(BUILDDIR)
-	cabal register --builddir=$(BUILDDIR)
+	$(CABAL) copy
+	$(CABAL) register
 
 haddock:
-	cabal haddock --builddir=$(BUILDDIR)
+	$(CABAL) haddock
 
-test: build 
-	$(BUILDDIR)/build/unit-tests/unit-tests
+$(TEST): build
 
-ci: build test install haddock 
+test: $(TEST)
+	$(TEST)
+
+ci: clean build test install haddock 

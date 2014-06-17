@@ -64,12 +64,14 @@ endif
 # explicitly, but is available in the environment of recipes.
 export GENDERS
 
+CABAL = cabal $(CABAL_SANDBOX)
+
 build: configure
-	cabal build
+	$(CABAL) build
 
 install: build
-	cabal copy
-	cabal register
+	$(CABAL) copy
+	$(CABAL) register
 
 .PHONY: test loadmero build testidentify ut it
 
@@ -98,19 +100,16 @@ loadmero:
 endif
 
 haddock: configure
-	cabal haddock
+	$(CABAL) haddock
 
 
-sandbox: 
-	cabal sandbox init --sandbox=$(SANDBOX)
-	cabal sandbox add-source \
-		../replicated-log
-	cabal install --only-dependencies --enable-tests --reorder-goals || echo "not installing"
+dep: 
+	-$(CABAL) install --only-dependencies --enable-tests --reorder-goals
 
-configure: sandbox
-	cabal configure $(CABAL_FLAGS)
+configure: dep 
+	$(CABAL) configure $(CABAL_FLAGS)
 
 clean:
-	cabal clean
+	$(CABAL) clean
 
 ci: clean install haddock test
