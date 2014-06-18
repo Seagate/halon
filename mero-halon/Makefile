@@ -111,8 +111,6 @@ haddock: configure
 
 sandbox:
 	cabal sandbox init --sandbox=$(SANDBOX)
-	cabal sandbox add-source \
-		../halon
 	cabal install --only-dependencies || echo "not installing"
 
 configure: sandbox
