@@ -67,7 +67,9 @@ Test-Suite tests
                     mtl >= 2.0.0,
                     network-transport,
                     network-transport-tcp,
-                    unix
+                    unix,
+                    tasty,
+                    tasty-files
   Default-Extensions: RecordWildCards NamedFieldPuns
                       ScopedTypeVariables
 
