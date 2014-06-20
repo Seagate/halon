@@ -7,13 +7,15 @@
 module Test.Driver
     ( defaultMain
     , defaultMainWith
+    , defaultMainWithArgs
     ) where
 
 import Test.Tasty
+import Test.Tasty.Environment (parseArgs)
 import Test.Tasty.Ingredients.FileReporter
 import Test.Tasty.Ingredients.Basic
-import System.Environment ( getArgs, withArgs )
 
+import System.Environment (withArgs)
 
 -- | Like 'defaultMain', but for tests with extra argument
 -- passed at the time of executable invocation. Instead of calling
@@ -26,13 +28,20 @@ import System.Environment ( getArgs, withArgs )
 --
 -- '--' separates the tasty arguments from the rest.
 --
-defaultMainWith ::
-    ([String] -> IO TestTree)
-    -- ^ Action taking list of 'String' from stdarg and returning
-    -- 'Test's to run.
-    -> IO ()
-defaultMainWith tests = do
-    args <- getArgs
-    let (args',rest) = break (=="--") args
-    tests (drop 1 rest) >>= withArgs args' .
-        defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
+defaultMainWith :: ([String] -> IO TestTree)
+                -- ^ Action taking a list of 'String' from stdarg and returning
+                -- 'Tests's to run.
+                -> IO ()
+defaultMainWith tests = uncurry (defaultMainWithArgs tests) =<< parseArgs
+
+defaultMainWithArgs :: ([String] -> IO TestTree)
+                    -- ^ Action taking a list of 'String' from stdarg and returning
+                    -- 'Tests's to run.
+                    -> [String]
+                    -- ^ Arguments to pass to tast framework.
+                    -> [String]
+                    -- ^ Arguments to pass to test creation action.
+                    -> IO ()
+defaultMainWithArgs tests runnerArgs testArgs = do
+    tests testArgs >>= withArgs runnerArgs .
+      defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
