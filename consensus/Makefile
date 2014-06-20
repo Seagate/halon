@@ -1,28 +1,29 @@
+CABAL = cabal $(CABAL_SANDBOX)
 
 build: configure
-	cabal build
+	$(CABAL) build
 
-configure:
-	cabal clean
-	cabal configure --enable-tests
+configure: dep
+	$(CABAL) configure --enable-tests
 
-sandbox:
+dep:
 	@echo "Preparing sandbox"
-	cabal sandbox init --sandbox=$(SANDBOX)
-	cabal sandbox add-source \
-		../distributed-process-scheduler
-	cabal install --only-dependencies --enable-tests --reorder-goals || echo "already installed"
+ifdef RANDOMIZED_TESTS
+	@echo "Installing distributed-process-scheduler with scheduler enabled"
+	-$(CABAL) $(CABAL_FLAGS) install distributed-process-scheduler -fuse-scheduler
+endif
+	-$(CABAL) install --only-dependencies --enable-tests --reorder-goals
 
 clean:
-	cabal clean
+	$(CABAL) clean
 
 install: build
-	cabal copy
-	cabal register
+	$(CABAL) copy
+	$(CABAL) register
 
 haddock:
-	cabal haddock
+	$(CABAL) haddock
 
-test: sandbox build 
+test:
 
-ci: build test install haddock 
+ci: clean build test install haddock 

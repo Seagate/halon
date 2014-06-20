@@ -1,4 +1,6 @@
 
+CABAL = cabal $(CABAL_SANDBOX)
+
 ifndef MERO_ROOT
 $(error The variable MERO_ROOT is undefined. Please, make it point to the mero build tree.)
 endif
@@ -30,18 +32,17 @@ export LDFLAGS
 CONFIGURE_FLAGS:=--extra-include-dirs=$(MERO_ROOT) --extra-include-dirs=$(MERO_ROOT)/extra-libs/db4/build_unix $(HLD_SEARCH_PATH) $(PROF_FLAGS) $(DEBUG_FLAGS)
 
 build: configure
-	cabal build
+	$(CABAL) build
 
 install: build
-	cabal copy
-	cabal register
+	$(CABAL) copy
+	$(CABAL) register
 
 haddock: configure
-	cabal haddock
+	$(CABAL) haddock
 
 configure:
-	cabal sandbox init --sandbox=$(SANDBOX)
-	cabal configure --enable-tests $(CONFIGURE_FLAGS)
+	$(CABAL) configure --enable-tests $(CONFIGURE_FLAGS)
 
 test: build
 	sudo -E $(ENV) $(RPCLITE_PREFIX)/st sstart confd
@@ -67,7 +68,7 @@ loadmero:
 
 clean:
 	make -C ctests clean
-	cabal clean
+	$(CABAL) clean
 	rm -f rpclite_fop_ff.h
 	rm -f rpclite_fop_ff.c
 	sudo rm -rf m0.trace*

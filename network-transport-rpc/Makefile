@@ -1,3 +1,4 @@
+CABAL = cabal $(CABAL_SANDBOX)
 
 ifndef MERO_ROOT
 $(error The variable MERO_ROOT is undefined. Please, make it point to the mero build tree.)
@@ -37,19 +38,18 @@ LDFLAGS=$(LD_SEARCH_PATH) -lmero
 CONFIGURE_FLAGS:=$(EXTRAINCLUDE) $(HLD_SEARCH_PATH) $(PROF_FLAGS) $(DEBUG_FLAGS)
 
 build: configure
-	cabal build
+	$(CABAL) build
 	make -C rpclite dummyService
 
 install: build
-	cabal copy
-	cabal register
+	$(CABAL) copy
+	$(CABAL) register
 
 haddock: configure
-	cabal haddock
+	$(CABAL) haddock
 
 configure: rpclite/rpclite_fop_ff.c rpclite/rpclite_fop_ff.h
-	cabal sandbox init --sandbox=$(SANDBOX)
-	cabal configure --enable-tests $(CONFIGURE_FLAGS)
+	$(CABAL) configure --enable-tests $(CONFIGURE_FLAGS)
 
 rpclite/rpclite_fop_ff.c: rpclite/rpclite_fop.ff
 	$(FF2C) rpclite/rpclite_fop.ff
@@ -114,7 +114,7 @@ testtransport: build
 	sudo $(ENV) dist/build/testtransport/testtransport "0@lo:12345:34:2"
 
 clean:
-	cabal clean
+	$(CABAL) clean
 	cd rpclite; make clean; cd ..
 	sudo rm -rf m0.trace*
 	sudo rm -rf *.db*

@@ -66,6 +66,7 @@ endif
 ifdef DEBUG
 CABAL_FLAGS += -fdebug --enable-tests
 endif
+CABAL = cabal $(CABAL_SANDBOX)
 
 # This variable is required to be set on the command line or in the
 # environment. As such, this variable does not need to be exported
@@ -73,11 +74,11 @@ endif
 export GENDERS
 
 build: configure
-	cabal build
+	$(CABAL) build
 
 install: build
-	cabal copy
-	cabal register
+	$(CABAL) copy
+	$(CABAL) register
 
 test: build testepoch testhastate
 	make loadmero
@@ -107,16 +108,13 @@ testhastate:
 endif
 
 haddock: configure
-	cabal haddock
+	$(CABAL) haddock
 
-sandbox:
-	cabal sandbox init --sandbox=$(SANDBOX)
-	cabal sandbox add-source \
-		../halon
-	cabal install --only-dependencies || echo "not installing"
+dep:
+	-$(CABAL) install --enable-tests --only-dependencies
 
-configure: sandbox
-	cabal configure $(CABAL_FLAGS)
+configure: dep
+	$(CABAL) configure $(CABAL_FLAGS)
 
 halon-node-agent:
 	$(SUDO) scripts/halon node-agent
@@ -125,7 +123,7 @@ halon-station:
 	$(SUDO) scripts/halon station $(ARGS)
 
 clean: cleanglobaldb cleanlocaldb clean_hastate
-	cabal clean
+	$(CABAL) clean
 	rm -rf dummy_mero.stdout
 	rm -rf dummy_mero.pid
 

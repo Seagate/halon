@@ -1,36 +1,36 @@
+CABAL = cabal $(CABAL_SANDBOX)
 ifdef RANDOMIZED_TESTS
-BUILDDIR = dist-schedule
 CABAL_FLAGS  += -frandomTests
-TEST     = $(BUILDDIR)/build/random/random
+TEST     = dist-scheduler/build/random/random
+CABAL  += --builddir=dist-scheduler
 else
-BUILDDIR = dist
-TEST     = $(BUILDDIR)/build/tests/tests
+TEST     = dist/build/tests/tests
 endif
 
-CABAL_FLAGS  += --builddir=$(BUILDDIR)
 
 build: configure
-	cabal build --builddir=$(BUILDDIR)
+	$(CABAL) build
 
-sandbox:
-	cabal sandbox init --sandbox=$(SANDBOX)
-	cabal sandbox add-source --snapshot \
-		../consensus \
-		../consensus-paxos
-	cabal install --only-dependencies --enable-tests --reorder-goals || echo "not installing"
+dep:
+ifdef RANDOMIZED_TESTS
+	@echo "Installing distributed-process-scheduler with scheduler enabled"
+	-$(CABAL) $(CABAL_FLAGS) install distributed-process-scheduler -fuse-scheduler
+endif
+	-$(CABAL) install --only-dependencies --enable-tests --reorder-goals
 
-configure: sandbox
-	cabal configure --enable-tests $(CABAL_FLAGS)
+
+configure: dep 
+	$(CABAL) configure --enable-tests $(CABAL_FLAGS)
 
 clean:
-	cabal clean --builddir=$(BUILDDIR)
+	$(CABAL) clean
 
 install: build
-	cabal copy --builddir=$(BUILDDIR)
-	cabal register --builddir=$(BUILDDIR)
+	$(CABAL) copy
+	$(CABAL) register
 
 haddock:
-	cabal haddock --builddir=$(BUILDDIR)
+	$(CABAL) haddock
 
 $(TEST): build
 
