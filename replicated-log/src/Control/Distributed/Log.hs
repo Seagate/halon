@@ -7,7 +7,9 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Control.Distributed.Log
        ( -- * Reified dictionaries
          EqDict(..)
@@ -69,6 +71,7 @@ import qualified Data.Map as Map
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Prelude hiding (init, log)
+import System.Clock
 
 
 -- | An internal type used only by 'callLocal'.
@@ -141,8 +144,9 @@ data Log a = forall s. Typeable s => Log
 -- reconfiguring to the null membership list. And reconfiguring with the same
 -- membership list encodes a no-op.
 data Value a = Value a
-               -- | List of acceptors and list of replicas (i.e. proposers).
-             | Reconf [ProcessId] [ProcessId]
+               -- | Request start time, lease period, list of acceptors and list
+               -- of replicas (i.e. proposers).
+             | Reconf TimeSpec Int [ProcessId] [ProcessId]
                deriving (Eq, Generic, Typeable)
 
 instance Binary a => Binary (Value a)
@@ -160,6 +164,8 @@ data Request a = Request
   deriving (Generic, Typeable)
 
 instance Binary a => Binary (Request a)
+
+instance Binary TimeSpec
 
 queryMissing :: [ProcessId] -> Map.Map Int (Value a) -> Process ()
 queryMissing replicas log = do
@@ -231,11 +237,24 @@ replica :: forall a. EqDict a
         -> (NodeId -> FilePath)
         -> Protocol NodeId (Value a)
         -> Log a
+        -> TimeSpec
+        -> Int
+        -> Int
         -> DecreeId
         -> [ProcessId]
         -> [ProcessId]
         -> Process ()
-replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree acceptors replicas = do
+replica EqDict
+        SerializableDict
+        file
+        Protocol{prl_propose}
+        Log{..}
+        leaseStart0
+        leaseRenewalMargin
+        leasePeriod0
+        decree
+        acceptors
+        replicas = do
     say $ "New replica started in " ++ show (decreeLegislatureId decree)
 
     self <- getSelfPid
@@ -262,7 +281,12 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
     queryMissing others $ Map.insert (decreeNumber d) undefined log
 
     ppid <- spawnLocal $ link self >> proposer self Bottom acceptors
-    go ppid acid acceptors replicas d d w s
+    -- If I'm the leader, the first lease starts at the time the request to
+    -- spawn the replica was sent. Otherwise, it starts now.
+    leaseStart0' <- if [self] == take 1 replicas
+                    then return leaseStart0
+                    else liftIO $ getTime Monotonic
+    go ppid acid leaseStart0' leasePeriod0 acceptors replicas d d w s
   where
 
     -- The proposer process makes consensus proposals.
@@ -303,9 +327,25 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
         , match $ proposer ρ s
         ]
 
-    -- @go pid_of_proposer acid_handle acceptors replicas current_unconfirmed_decree current_decree watermark state@
+    -- > go pid_of_proposer
+    -- >    acid_handle
+    -- >    leaseStart
+    -- >    leasePeriod
+    -- >    acceptors
+    -- >    replicas
+    -- >    current_unconfirmed_decree
+    -- >    current_decree
+    -- >    watermark
+    -- >    state
     --
     -- The @acid_handle@ is used to persist the log.
+    --
+    -- The @leaseStart@ indicates the time at which the last lease started.
+    --
+    -- The @leasePeriod@ is the period to be used in lease requests.
+    -- The @leaseRenewalMargin@ parameter of @replica@ indicates with how much
+    -- anticipation the leader must renew the lease before expiration of the
+    -- current lease.
     --
     -- The @acceptors@ are the list of pids of the consensus acceptors.
     --
@@ -326,7 +366,7 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
     --
     -- The @state@ is the state yielded by the last executed decree.
     --
-    go ppid acid αs ρs d cd w s = do
+    go ppid acid leaseStart leasePeriod αs ρs d cd w s = do
         self <- getSelfPid
         log <- liftIO $ Acid.query acid MemoryGet
         let others = filter (/= self) ρs
@@ -339,7 +379,7 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                        \_ -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
-                  go ppid acid αs ρs d cd w s
+                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
 
               -- Commit the decree to the log.
             , matchIf (\(Decree locale dᵢ _) ->
@@ -351,7 +391,7 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                       Local κ -> send κ () -- Ack back to the client.
                       _ -> return ()
                   send self $ Decree Stored dᵢ v
-                  go ppid acid αs ρs d cd w s
+                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
 
               -- Execute the decree
             , matchIf (\(Decree locale dᵢ _) ->
@@ -362,8 +402,8 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                       let d'  = max d w'
                           cd' = max cd w'
                           w'  = succ w
-                      go ppid acid αs ρs d' cd' w' s'
-                  Reconf αs' ρs'
+                      go ppid acid leaseStart leasePeriod αs ρs d' cd' w' s'
+                  Reconf requestStart leasePeriod' αs' ρs'
                     -- Only execute reconfiguration decree if decree is from
                     -- current legislature. Otherwise we would be going back to
                     -- an old configuration.
@@ -386,11 +426,16 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                       -- Tick.
                       send self ()
 
-                      go ppid acid αs' ρs' d' cd' w' s
+                      -- If I'm the leader, the lease starts at the time
+                      -- the request was made. Otherwise, it starts now.
+                      leaseStart' <- if [self] == take 1 ρs'
+                                     then return requestStart
+                                     else liftIO $ getTime Monotonic
+                      go ppid acid leaseStart' leasePeriod' αs' ρs' d' cd' w' s
                     | otherwise -> do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
                       say $ "Not executing " ++ show dᵢ
-                      go ppid acid αs ρs d cd w' s
+                      go ppid acid leaseStart leasePeriod αs ρs d cd w' s
 
               -- If we get here, it's because there's a gap in the decrees we
               -- have received so far. Compute the gaps and ask the other
@@ -412,7 +457,7 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                   -- This Decree could have been teleported. So, we shouldn't
                   -- trust dᵢ, unless @decreeLegislatureId dᵢ < maxBound@.
                   send self $ Decree locale dᵢ v
-                  go ppid acid αs ρs d cd w s
+                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
 
               -- Client requests.
             , matchIf (\_ -> cd == w) $  -- XXX temp fix to avoid proposing
@@ -420,7 +465,7 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                        \(request :: Request a) -> do
                   send ppid (cd,request)
                   let cd' = succ cd
-                  go ppid acid αs ρs d cd' w s
+                  go ppid acid leaseStart leasePeriod αs ρs d cd' w s
 
               -- Message from the proposer process
             , match $ \(dᵢ,vᵢ,request@(Request κ (v :: Value a) _)) -> do
@@ -437,36 +482,41 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                       -- hopefully get it accepted as a future decree number.
                       send self request
                   let d' = max d (succ dᵢ)
-                  go ppid acid αs ρs d' cd w s
+                  go ppid acid leaseStart leasePeriod αs ρs d' cd w s
 
               -- If a query can be serviced, do it.
             , matchIf (\(Query _ n) -> Map.member n log) $ \(Query ρ n) -> do
                   -- See Note [Teleportation].
                   send ρ $ Decree Remote (DecreeId maxBound n) (log Map.! n)
-                  go ppid acid αs ρs d cd w s
+                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
 
               -- Upon getting the max decree of another replica, compute the
               -- gaps and query for those.
-            , matchIf (\(Max _ dᵢ _ _) -> decreeNumber d < decreeNumber dᵢ) $
-                       \(Max ρ dᵢ _ _) -> do
+            , matchIf (\(Max _ _ dᵢ _ _) -> decreeNumber d < decreeNumber dᵢ) $
+                       \(Max ρ _ dᵢ _ _) -> do
                   say $ "Got Max " ++ show dᵢ
                   queryMissing [ρ] $ Map.insert (decreeNumber dᵢ) undefined log
                   let d'  = d{decreeNumber = decreeNumber dᵢ}
                       cd' = max d' cd
-                  go ppid acid αs ρs d' cd' w s
+                  go ppid acid leaseStart leasePeriod αs ρs d' cd' w s
 
               -- Ignore max decree if it is lower than the current decree.
             , matchIf (\_ -> otherwise) $ \(_ :: Max) -> do
-                  go ppid acid αs ρs d cd w s
+                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
 
               -- A replica is trying to join the group.
             , match $ \(Helo π cpolicy) -> do
                   policy <- unClosure cpolicy
                   let (αs', ρs') = policy (αs, ρs)
+                      -- Place the proposer at the head of the list
+                      -- of replicas to be considered as future leader.
+                      ρs'' = self : filter (/= self) ρs'
+                  requestStart <- liftIO $ getTime Monotonic
                   -- Get self to propose reconfiguration...
                   send self $ Request
                     { requestSender   = π
-                    , requestValue    = Reconf αs' ρs' :: Value a
+                    , requestValue    =
+                        Reconf requestStart leasePeriod αs' ρs'' :: Value a
                     , requestHint     = None
                     }
 
@@ -474,7 +524,7 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                   send ppid (intersect αs αs')
 
                   -- ... filtering out invalidated nodes for quorum.
-                  go ppid acid (intersect αs αs') ρs d cd w s
+                  go ppid acid leaseStart leasePeriod (intersect αs αs') ρs d cd w s
 
             -- Clock tick - time to advertize. Can be sent by anyone to any
             -- replica to provoke status info.
@@ -489,8 +539,9 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                       "\n\twatermark:          " ++ show w ++
                       "\n\tacceptors:          " ++ show αs ++
                       "\n\treplicas:           " ++ show ρs
-                  forM_ others $ \ρ -> send ρ $ Max self d αs ρs
-                  go ppid acid αs ρs d cd w s
+                  forM_ others $ \ρ -> send ρ $
+                    Max self leasePeriod d αs ρs
+                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
 
             , match $ \(ProcessMonitorNotification _ π _) -> do
                   reconnect π
@@ -499,8 +550,8 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                   -- dissappears.
                   -- _ <- liftProcess $ monitor π
                   when (π `elem` replicas) $
-                      send π $ Max self d αs ρs
-                  go ppid acid αs ρs d cd w s
+                    send π $ Max self leasePeriod d αs ρs
+                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
             ]
 
 dictValue :: SerializableDict a -> SerializableDict (Value a)
@@ -529,10 +580,26 @@ delay SerializableDict them f = do
 
 -- | Like 'uncurry', but extract arguments from a 'Max' message rather than
 -- a pair.
-unMax :: (DecreeId -> [ProcessId] -> [ProcessId] -> a) -> Max -> a
-unMax f (Max _ d αs ρs) = f d αs ρs
+unMax :: (Int -> DecreeId -> [ProcessId] -> [ProcessId] -> a) -> Max -> a
+unMax f (Max _ leasePeriod d αs ρs) =
+  f leasePeriod d αs ρs
 
-remotable [ 'replica, 'delay, 'unMax, 'dictValue, 'dictList, 'dictNodeId, 'dictMax ]
+intId ::Int -> Int
+intId = id
+
+timeSpecId :: TimeSpec -> TimeSpec
+timeSpecId = id
+
+remotable [ 'replica
+          , 'delay
+          , 'unMax
+          , 'dictValue
+          , 'dictList
+          , 'dictNodeId
+          , 'dictMax
+          , 'intId
+          , 'timeSpecId
+          ]
 
 sdictValue :: Typeable a
            => Static (SerializableDict a)
@@ -572,7 +639,12 @@ delayClosure sdict them f =
       `closureApply` f
 
 unMaxCP :: (Typeable a)
-        => Closure (DecreeId -> [ProcessId] -> [ProcessId] -> Process a) -> CP Max a
+        => Closure (   Int
+                    -> DecreeId
+                    -> [ProcessId]
+                    -> [ProcessId]
+                    -> Process a)
+        -> CP Max a
 unMaxCP f = staticClosure $(mkStatic 'unMax) `closureApply` f
 
 -- | Spawn a group of processes, feeding the set of all ProcessId's to each.
@@ -590,14 +662,22 @@ replicaClosure :: Typeable a
                -> Closure (NodeId -> FilePath)
                -> Closure (Protocol NodeId (Value a))
                -> Closure (Log a)
-               -> Closure (DecreeId -> [ProcessId] -> [ProcessId] -> Process ())
-replicaClosure sdict1 sdict2 file protocol log =
+               -> Closure TimeSpec
+               -> Closure Int
+               -> Closure (   Int
+                           -> DecreeId
+                           -> [ProcessId]
+                           -> [ProcessId]
+                           -> Process ())
+replicaClosure sdict1 sdict2 file protocol log leaseStart leaseRenewalMargin =
     staticClosure $(mkStatic 'replica)
       `closureApply` staticClosure sdict1
       `closureApply` staticClosure sdict2
       `closureApply` file
       `closureApply` protocol
       `closureApply` log
+      `closureApply` leaseStart
+      `closureApply` leaseRenewalMargin
 
 -- | Hide the 'ProcessId' of the ambassador to a log behind an opaque datatype
 -- making it clear that the ambassador acts as a "handle" to the log - it does
@@ -709,25 +789,58 @@ remoteHandle (Handle sdict1 sdict2 fp protocol log α) = do
 -- a state where they can pass any decree independently of any other replicas,
 -- including client requests.
 
--- | Create a group of replicated processes. @new f nodes@ spawns one
--- replica process on each node in @nodes@. The behaviour of the replica upon
--- receipt of a message is determined by the @f@ callback, which will
--- typically be a state update function. The returned 'ProcessId' identifies
--- the group.
+-- | Create a group of replicated processes.
+--
+-- > new eqDict
+-- >     serializableDict
+-- >     fileClosure
+-- >     consensusProtocol
+-- >     logClosure
+-- >     leasePeriod
+-- >     leaseRenewalMargin
+-- >     nodes
+--
+-- spawns one replica process on each node in @nodes@. The behaviour of the
+-- replica upon receipt of a message is determined by the @logClosure@ argument
+-- which provides a callback for initilizing the state and another
+-- callback for making transitions.
+--
+-- The argument @fileClosure@ indicates for each node a path on disk where to
+-- persist the log.
+--
+-- The argument @consensusProtocol@ indicates the consensus
+-- implementation to use.
+--
+-- The argument @leasePeriod@ indicates the length of the lease period
+-- in microseconds. The lease period indicates how long the leader is guaranteed
+-- to have no competition from other replicas when serving requests
+-- as measured since the lease was requested.
+--
+-- The argument @leaseRenewalMargin@ indicates in microsencods with how much
+-- anticipation the leader must renew the lease before the lease period
+-- is over. A precondition is that @2 * leaseRenewalMargin < leasePeriod@.
+--
+-- The returned 'Handle' identifies the group.
 new :: Typeable a
     => Static (EqDict a)
     -> Static (SerializableDict a)
     -> Closure (NodeId -> FilePath)
     -> Closure (Protocol NodeId (Value a))
     -> Closure (Log a)
+    -> Int
+    -> Int
     -> [NodeId]
     -> Process (Handle a)
-new sdict1 sdict2 file protocol log nodes = do
+new sdict1 sdict2 file protocol log leasePeriod leaseRenewalMargin nodes = do
     acceptors <- forM nodes $ \nid -> spawn nid $
                      acceptorClosure $(mkStatic 'dictNodeId) protocol nid
+    now <- liftIO $ getTime Monotonic
     -- See Note [spawnRec]
     replicas <- spawnRec nodes $
                     replicaClosure sdict1 sdict2 file protocol log
+                        ($(mkClosure 'timeSpecId) now)
+                        ($(mkClosure 'intId) leaseRenewalMargin)
+                        `closureApply` $(mkClosure 'intId) leasePeriod
                         `closureApply` staticClosure initialDecreeIdStatic
                         `closureApply` listProcessIdClosure acceptors
     -- Create a new local proxy for the cgroup.
@@ -745,10 +858,10 @@ reconfigure (Handle _ _ _ _ _ μ) cpolicy = callLocal $ do
     expect
 
 -- | Start a new replica on the given node, adding it to the group pointed to by
--- the provided handle. The first argument is a function producing a nomination
+-- the provided handle. The second argument is a function producing a nomination
 -- policy provided an acceptor and a replica process. Example usage:
 --
--- > addReplica $(mkClosure 'Policy.orpn) nid h
+-- > addReplica h $(mkClosure 'Policy.orpn) nid leaseRenewalMargin
 --
 -- Note that the new replica will block until it gets a Max broadcast by one of
 -- the existing replicas. In this way, the replica will not service any client
@@ -757,12 +870,17 @@ addReplica :: Typeable a
            => Handle a
            -> Closure (ProcessId -> ProcessId -> NominationPolicy)
            -> NodeId
+           -> Int
            -> Process ProcessId
-addReplica h@(Handle sdict1 sdict2 file protocol log _) cpolicy nid = do
+addReplica h@(Handle sdict1 sdict2 file protocol log _)
+           cpolicy nid leaseRenewalMargin               = do
     self <- getSelfPid
+    now <- liftIO $ getTime Monotonic
     α <- spawn nid $ acceptorClosure $(mkStatic 'dictNodeId) protocol nid
     ρ <- spawn nid $ delayClosure sdictMax self $
              unMaxCP $ replicaClosure sdict1 sdict2 file protocol log
+                                      ($(mkClosure 'timeSpecId) now)
+                                      ($(mkClosure 'intId) leaseRenewalMargin)
     reconfigure h $ cpolicy
         `closureApply` processIdClosure α
         `closureApply` processIdClosure ρ

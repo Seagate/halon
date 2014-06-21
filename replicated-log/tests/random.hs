@@ -131,6 +131,8 @@ run transport s = brackets 2
                                 `staticApply` sdictState))
                          ($(mkClosure 'filepath) (tmpdir </> "acceptors")))
                      (staticClosure $(mkStatic 'testLog))
+                     3000000
+                     1000000
                      (map localNodeId nodes)
     rHandle <- remoteHandle h
     self <- getSelfPid

@@ -118,7 +118,8 @@ tests args = do
     Right transport <- createTransport "127.0.0.1" "8080" defaultTCPParameters
     putStrLn "Transport created."
 
-    let setup :: Int                      -- ^ Number of nodes to spawn group on.
+    let leaseRenewalMargin = 1000000
+        setup :: Int                      -- ^ Number of nodes to spawn group on.
               -> (Log.Handle (Command State) -> State.CommandPort State -> Process ())
               -> IO ()
         setup num action = tryWithTimeout transport remoteTables defaultTimeout $ do
@@ -138,6 +139,8 @@ tests args = do
                                         `staticApply` sdictState))
                                  ($(mkClosure 'filepath) "acceptors"))
                              (staticClosure $(mkStatic 'testLog))
+                             3000000
+                             leaseRenewalMargin
                              nodes
                 port <- State.newPort h
                 action h port
@@ -179,7 +182,9 @@ tests args = do
 
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
-                    void $ Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo)) here
+                    void $ Log.addReplica h
+                             (staticClosure $(mkStatic 'Policy.meToo)) here
+                             leaseRenewalMargin
                 expect
 
           , testSuccess "addReplica-new-replica-old-decrees" . withTmpDirectory $ setup 1 $ \h port -> do
@@ -196,7 +201,9 @@ tests args = do
 
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
-                    void $ Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo)) here
+                    void $ Log.addReplica h
+                             (staticClosure $(mkStatic 'Policy.meToo))
+                             here leaseRenewalMargin
                 () <- expect
                 say "New replica incremented."
 
@@ -210,7 +217,9 @@ tests args = do
 
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
-                    void $ Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo)) here
+                    void $ Log.addReplica h
+                             (staticClosure $(mkStatic 'Policy.meToo)) here
+                             leaseRenewalMargin
 
                 State.update port $ incrementCP
                 () <- expect
@@ -229,10 +238,13 @@ tests args = do
                 liftIO $ runProcess node1 $ do
                     registerInterceptor $ interceptor
                     here <- getSelfNode
-                    void $ Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo)) here
+                    void $ Log.addReplica h
+                             (staticClosure $(mkStatic 'Policy.meToo)) here
+                             leaseRenewalMargin
 
                 here <- getSelfNode
-                ρ <- Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo)) here
+                ρ <- Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo))
+                       here leaseRenewalMargin
                 updateHandle h ρ
 
                 liftIO $ closeLocalNode n
@@ -255,7 +267,9 @@ tests args = do
 
                 forM_ [node1, node2] $ \lnid -> liftIO $ runProcess lnid $ do
                     here <- getSelfNode
-                    void $ Log.addReplica h (staticClosure $(mkStatic 'Policy.orpn)) here
+                    void $ Log.addReplica h
+                             (staticClosure $(mkStatic 'Policy.orpn)) here
+                             leaseRenewalMargin
 
                 Log.status h
 

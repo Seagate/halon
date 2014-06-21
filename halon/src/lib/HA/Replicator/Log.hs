@@ -133,6 +133,10 @@ queryStatic :: (Typeable st,Typeable v) => Static (RStateView st v)
               -> Static (st -> Process v)
 queryStatic rv = staticApply $(mkStatic 'prjProc) rv
 
+-- | All replicas use the same lease renewal margin.
+leaseRenewalMargin :: Int
+leaseRenewalMargin = 1000000
+
 instance RGroup RLogGroup where
 
   newtype Replica RLogGroup = Replica ProcessId
@@ -152,6 +156,8 @@ instance RGroup RLogGroup where
          (protocolClosure (sdictValue cmSDictState)
               ($(mkClosure 'filepath) $ storageDir </> "acceptor"))
          (closure ($(mkStatic 'stateLog) `staticApply` sdictState) $ encode st)
+         3000000
+         leaseRenewalMargin
          nodes
     rHandle <- remoteHandle h
     return $ (closure $(mkStatic 'createRLogGroup)
@@ -162,7 +168,9 @@ instance RGroup RLogGroup where
 
   setRGroupMembers (RLogGroup _ h _ _) ns inGroup = do
     reconfigure h $ $(mkClosure 'removeNodes) () `closureApply` inGroup
-    forM ns $ fmap Replica . addReplica h $(mkStaticClosure 'orpn)
+    forM ns $ \nid ->
+      fmap Replica $ addReplica h $(mkStaticClosure 'orpn) nid
+                                leaseRenewalMargin
 
   updateRGroup (RLogGroup _ h _ _) (Replica ρ) = updateHandle h ρ
 

@@ -54,7 +54,7 @@ data Decree a = Decree Locale DecreeId a
 data Query = Query ProcessId Int
     deriving (Typeable, Generic)
 
-data Max = Max ProcessId DecreeId [ProcessId] [ProcessId]
+data Max = Max ProcessId Int DecreeId [ProcessId] [ProcessId]
     deriving (Typeable, Generic)
 
 instance Binary Locale
