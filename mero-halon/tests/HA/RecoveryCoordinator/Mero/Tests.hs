@@ -116,10 +116,10 @@ mockNodeAgent done = do
     "Starting service dummy" :: String <- expect
     say "Got start service again following failure."
 
-    EpochTransition{et_how = ("y = x^3" :: B8.ByteString)} <- expect
+    EpochTransition{etHow = ("y = x^3" :: B8.ByteString)} <- expect
     say $ "Received epoch transition broadcast."
 
-    EpochTransition{et_how = ("y = x^3" :: B8.ByteString)} <- expect
+    EpochTransition{etHow = ("y = x^3" :: B8.ByteString)} <- expect
     say $ "Received epoch transition following request."
 
     liftIO $ putMVar done ()

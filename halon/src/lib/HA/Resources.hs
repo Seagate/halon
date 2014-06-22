@@ -182,18 +182,18 @@ instance Binary ServiceUncaughtException
 
 -- | Sent when a service requests an epoch transition.
 data EpochTransitionRequest = EpochTransitionRequest
-    { etr_source  :: ProcessId  -- ^ Service instance process sending request.
-    , etr_current :: EpochId    -- ^ Starting epoch.
-    , etr_target  :: EpochId    -- ^ Destination epoch.
-    } deriving (Typeable, Generic)
+  { etrSource  :: ProcessId  -- ^ Service instance process sending request.
+  , etrCurrent :: EpochId    -- ^ Starting epoch.
+  , etrTarget  :: EpochId    -- ^ Destination epoch.
+  } deriving (Typeable, Generic)
 
 instance Binary EpochTransitionRequest
 
 -- | Sent when the RC communicates an epoch transition.
 data EpochTransition a = EpochTransition
-    { et_current :: EpochId  -- ^ Starting epoch.
-    , et_target  :: EpochId  -- ^ Destination epoch.
-    , et_how     :: a        -- ^ Instructions to reach destination.
-    } deriving (Typeable, Generic)
+  { etCurrent :: EpochId  -- ^ Starting epoch.
+  , etTarget  :: EpochId  -- ^ Destination epoch.
+  , etHow     :: a        -- ^ Instructions to reach destination.
+  } deriving (Typeable, Generic)
 
 instance Binary a => Binary (EpochTransition a)
