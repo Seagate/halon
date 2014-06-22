@@ -55,12 +55,12 @@ wait.
 
 The finance industry has already been facing the problem of having to
 take quick but intelligent automated decisions based on a substantial
-amount of data. Traditional SQL database don’t scale or incur
+amount of data. Traditional SQL databases don't scale, or incur
 latencies that are too high for fast decision making. Therefore, a
 handful of bespoke tools have been developed to address some of these
 needs. But most are in-house, some are prohibitively expensive
 (e.g. Oracle CEP, Streambase) and one (Esper) has open source
-components but that cannot ensure high availability and are tightly
+components that cannot ensure high availability and are tightly
 tied to the Java ecosystem. Moreover these tools are complex to
 program against: queries are performed in a custom SQL-like language
 with a custom syntax, stream processors are not particularly
@@ -81,20 +81,20 @@ programming community 20 years ago called functional reactive
 programming (FRP) focuses precisely on the same problem space:
 expressing efficient computations to analyze streams of data and
 produce streams of commands. The difference is that FRP systems are
-usually language specific libraries dressed up as embedded DSL’s,
+usually language specific libraries dressed up as embedded DSLs,
 focusing on building computations compositionally from smaller
 pieces. Compositionality is a crucial property in software design to
 simplify reasoning about the correctness of the computations and
 enhance maintainability. FRP has by now far exceeded the realm of
-functional programming alone. There exists many dozens of libraries
+functional programming alone. There exist many dozens of libraries
 for most popular programming languages, from Python to Javascript to
-C#. We propose to reuse to build our EDSL based on an existing design
+C#. We propose to build our EDSL based on an existing design
 already proven by Haskell FRP systems called Netwire and Nettle, the
 latter currently applied to reactive network control and software
 defined networking (SDN).
 
 These are high performance libraries: Nettle has been used to build
-McNettle, and SDN controller in Haskell that has been measured to
+McNettle, an SDN controller in Haskell that has been measured to
 scale to 40+ cores and process 20M requests/s, hence being the fastest
 SDN controller to date. Furthermore, programming against them in
 Haskell does not require learning any additional languages and
@@ -115,21 +115,22 @@ Programming" or "FRP".
 Conceptually a "wire" represents a process that at any given time
 contains some internal state.  It will receive a value on its input
 channel, update its internal state and yield a value on its output
-channel.  The notion of "values" input and output is very broad.  A
+channel.  The notion of input and output "values" is very broad.  A
 single value can itself consist of tuples or record types of multiple
-values thus allowing a wire to in practice input and output many
+values thus allowing a wire to effectively input and output many
 values at once.  Inputs and outputs can be both events, like the event
 that "we received a timeout message about machine X", and observables
 of the system, for example the current time, or a value containing the
-most recent heartbeat from all machine.
+most recent heartbeat from all machines.
 
 Wires are composed either in series, by feeding the output of one wire
 into the input of another wire, or in parallel by taking a pair of
-inputs feeding one into one wire, one into another, and collecting
+inputs, feeding one into one wire, one into another, and collecting
 their outputs as another pair.  The result of composing two wires is
-another wire thus this API is an example of the "flat design" paradigm
-[TODO: fill in reference] which is recognised as an effective means of
-taming complexity and promoting code reuse.
+another wire thus this API is an example of the ["flat design"
+paradigm](http://www.haskellforall.com/2014/04/scalable-program-architectures.html)
+which is recognised as an effective means of taming complexity and
+promoting code reuse.
 
 This ability to compose in parallel and series makes the wire datatype
 an instance of Haskell's Arrow typeclass and so we can take advantage
@@ -146,7 +147,7 @@ declaration
 This is essentially the approach taken by both the Netwire and Nettle
 Haskell FRP libraries.
 
-Time time of the current tick is passed into the network explicitly as
+The time of the current tick is passed into the network explicitly as
 an input observable.
 
 ### Representing events
@@ -204,8 +205,8 @@ and the sum of all time-varying values observed so far.
                                             - (avgDeadTime' ^ 2) }
 
 
-The definitive example of composability is the following example which
-is a simplified, high-level model of the event flow through a reactive
+The definitive example of composability is the following demonstration
+of a simplified, high-level model of the event flow through a reactive
 network which processes messages from nodes in a high-availability
 cluster.
 
@@ -216,9 +217,9 @@ timeout reports it has received about nodes from other nodes.  A
 machine is considered dead if a heartbeat has not been heard in the
 last 5 time units.  Then the network signals all nodes to be rebooted
 that are either timed out or dead, except those machines that are
-being rebooted already.  The dead machine statistics are also
-produced, as is a count of the number of heartbeats received in a
-given time frame.
+being rebooted already.  The dead machine statistics are also produced
+and also a count of the number of heartbeats received in a given time
+frame.
 
     flow :: Wire Input Output
     flow = proc input -> do
@@ -275,14 +276,14 @@ Firstly the networks that it creates are pure, whereas Netwire's
 nettle's equivalent of the `Wire` type, and the `Wire` type we propose
 above, do *not* have effects).
 
-Secondly Netwire and nettle lean on the arrow abstraction as a means
+Secondly Netwire and Nettle lean on the arrow abstraction as a means
 of guaranteeing that "timeleaks" do not occur.  Timeleaks are an
 adverse behavior whereby some networks of wires take much longer to
 run than one might expect.  Reactive-Banana instead uses a phantom
 type parameter to address this issue, in much the same way as
-Haskell's ST monad.  [TODO: reference] An observable, or "behavior" of
-type `a` is thus represented by a type `Behavior t a` where `t` is the
-phantom parameter.
+Haskell's [ST monad](http://www.haskell.org/haskellwiki/Monad/ST).  An
+observable, or "behavior" of type `a` is thus represented by a type
+`Behavior t a` where `t` is the phantom parameter.
 
 A translation between Reactive-Banana's types and the `Wire` type
 given above is as follows:
