@@ -216,7 +216,9 @@ timeout reports it has received about nodes from other nodes.  A
 machine is considered dead if a heartbeat has not been heard in the
 last 5 time units.  Then the network signals all nodes to be rebooted
 that are either timed out or dead, except those machines that are
-being rebooted already.
+being rebooted already.  The dead machine statistics are also
+produced, as is a count of the number of heartbeats received in a
+given time frame.
 
     flow :: Wire Input Output
     flow = proc input -> do
@@ -226,6 +228,7 @@ being rebooted already.
           theTime = clockTime input
     
       m <- mostRecentHeartbeat -< heartbeats
+      h <- heartbeatsInLast 20 -< (heartbeats, theTime)
       t <- recentTimeouts -< (timeouts, theTime)
       let timedOutNodes = failuresOfReports t
     
@@ -238,7 +241,8 @@ being rebooted already.
       returnA -< Output { odied = deadMachines
                         , otimeouts = timedOutNodes
                         , ostatistics = statistics'
-                        , toReboot = toReboot' }
+                        , toReboot = toReboot'
+                        , recentHeartbeats = countHeartbeats h }
 
 The benefit of implementing reactive systems in this fashion is that
 our code can be structured in a highly modular fashion whilst taking

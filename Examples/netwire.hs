@@ -38,7 +38,8 @@ data Statistics = Statistics { avgDeadTime :: ClockTime
 data Output = Output { odied ::  Set MachineId
                      , otimeouts :: Set MachineId
                      , ostatistics :: Statistics
-                     , toReboot :: Set MachineId }
+                     , toReboot :: Set MachineId 
+                     , recentHeartbeats :: Int }
             deriving Show
 
 accum1Many :: (b -> a -> b) -> b -> Wire [a] b
@@ -53,11 +54,24 @@ collectTimeouts :: Wire [Timeout] (Map.Map Report [ClockTime])
 collectTimeouts = accum1Many (\d (Timeout report t) ->
                                Map.alter (append' t) report d) Map.empty
 
+collectHeartbeats :: Wire [Heartbeat] (Map.Map MachineId [ClockTime])
+collectHeartbeats = accum1Many (\d (Heartbeat machine t) ->
+                                 Map.alter (append' t) machine d) Map.empty
+
+countHeartbeats :: Map.Map MachineId [ClockTime] -> Int
+countHeartbeats = Map.foldl (+) 0 . Map.map length
+
 recentTimeouts :: Wire ([Timeout], ClockTime) (Map.Map Report [ClockTime])
 recentTimeouts = proc (timeouts, theTime) -> do
   -- TODO: vv this actually has a space leak but will do for example purposes
   collectedTimeouts <- collectTimeouts -< timeouts
   returnA -< removeTooEarly 10 collectedTimeouts theTime
+
+heartbeatsInLast :: ClockTime -> Wire ([Heartbeat], ClockTime) (Map.Map MachineId [ClockTime])
+heartbeatsInLast duration = proc (heartbeats, theTime) -> do
+  collectedHeartbeats <- collectHeartbeats -< heartbeats
+  returnA -< removeTooEarly duration collectedHeartbeats theTime
+
 
 append' :: v -> Maybe [v] -> Maybe [v]
 append' t m = Just $ case m of Nothing -> [t]
@@ -140,7 +154,9 @@ flow = proc input -> do
       theTime = clockTime input
 
   m <- mostRecentHeartbeat -< heartbeats
+  h <- heartbeatsInLast 20 -< (heartbeats, theTime)
   t <- recentTimeouts -< (timeouts, theTime)
+
   let timedOutNodes = failuresOfReports t
 
   deadMachines <- noHeartbeatInLast 5 -< (m, theTime)
@@ -152,7 +168,8 @@ flow = proc input -> do
   returnA -< Output { odied = deadMachines
                     , otimeouts = timedOutNodes
                     , ostatistics = statistics'
-                    , toReboot = toReboot' }
+                    , toReboot = toReboot'
+                    , recentHeartbeats = countHeartbeats h }
 
 runWire :: (Show a, Show b) => Wire a b -> [a] -> IO ()
 runWire _ [] = return ()
