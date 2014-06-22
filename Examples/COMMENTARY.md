@@ -1,8 +1,108 @@
-# Commentary
+# Packet 3: complex event processing
 
-The aim of the Complex Event Processing API is to provide a composable
-and extensible interface to processing streamed data about the status
-of the nodes in a High Availability cluster.
+## Synopsis
+
+An embedded domain specific language (EDSL) and supporting engine for
+tracking and analyzing (processing) streams of events and deriving a
+conclusion from them. Complex event processing (CEP) combines data
+from multiple sources to infer events or patterns and take appropriate
+action as quickly as possible. For the needs of RAS, this EDSL can be
+made cross language and available from Python.  The aim of the Complex
+Event Processing API is to provide a composable and extensible
+interface to processing streamed data about the status of the nodes in
+a High Availability cluster.
+
+## Role
+
+The Mero recovery coordinator must implement policies that are
+inherently dynamic and depend on temporal conditions defined in terms
+of external events such as timeout notifications, software crashes,
+faulty hardware, network partitions and RAS policy updates. The
+proposed EDSL is a framework within which to conveniently implement
+the Mero recovery coordinator as declaratively as possible, by means
+of composing circuits of processes into larger and arbitrarily complex
+circuits for intelligent processing of sometimes seemingly unrelated
+but simultaneous events. This EDSL is reactive, because cluster
+configuration and recovery policies change over time and very quick
+processing of events is of the essence for achieving the highest
+levels of availability.
+
+Factoring out the event processing necessary for Mero into a
+principled framework is an enabling ingredient to leverage some of the
+same machinery for another component that also performs complex event
+processing: RAS.
+
+The processors built using this EDSL maintain state across event
+histories. This state will be replicated across several "supernodes"
+across the cluster using the "state replicator" component in Packet 2,
+so that processors can be restarted anywhere else in the cluster upon
+failure, without any noticeable downtime.
+
+## Discussion
+
+The sheer size of clusters at exascale, involving millions of hardware
+parts and several orders of magnitude more software threads, means
+that manual decision making and intervention by operators is nigh
+impossible. But more importantly, there cannot exist perfect fault
+detectors, so that false negatives and false positives will be
+legion. Even more importantly, faults are dependent, so that one fault
+in the system may in fact be the symptom of some other root cause
+(think node timeout vs network partitions). The fact that extremely
+high levels of availability can only be achieved if each fault is
+recovered in a matter of seconds compounds the importance of
+intelligent analysis of vast amounts of data, as opposed to having to
+wait.
+
+The finance industry has already been facing the problem of having to
+take quick but intelligent automated decisions based on a substantial
+amount of data. Traditional SQL database don’t scale or incur
+latencies that are too high for fast decision making. Therefore, a
+handful of bespoke tools have been developed to address some of these
+needs. But most are in-house, some are prohibitively expensive
+(e.g. Oracle CEP, Streambase) and one (Esper) has open source
+components but that cannot ensure high availability and are tightly
+tied to the Java ecosystem. Moreover these tools are complex to
+program against: queries are performed in a custom SQL-like language
+with a custom syntax, stream processors are not particularly
+composable and they must be pieced together by authoring a number of
+XML files that may or may not be dynamically reconfigurable with no
+downtime.
+
+Beyond their complexity, cost and relative unavailability, existing
+CEP systems are moreover poorly integrated into programming
+languages. This matter of fact further compounds complexity, much in
+the same way that having to build raw SQL request strings
+programmatically is error prone, a security hazard (SQL injections)
+and inflexible.
+
+However, there also exists much more lightweight and integrated
+alternatives. A paradigm that originally emerged from the functional
+programming community 20 years ago called functional reactive
+programming (FRP) focuses precisely on the same problem space:
+expressing efficient computations to analyze streams of data and
+produce streams of commands. The difference is that FRP systems are
+usually language specific libraries dressed up as embedded DSL’s,
+focusing on building computations compositionally from smaller
+pieces. Compositionality is a crucial property in software design to
+simplify reasoning about the correctness of the computations and
+enhance maintainability. FRP has by now far exceeded the realm of
+functional programming alone. There exists many dozens of libraries
+for most popular programming languages, from Python to Javascript to
+C#. We propose to reuse to build our EDSL based on an existing design
+already proven by Haskell FRP systems called Netwire and Nettle, the
+latter currently applied to reactive network control and software
+defined networking (SDN).
+
+These are high performance libraries: Nettle has been used to build
+McNettle, and SDN controller in Haskell that has been measured to
+scale to 40+ cores and process 20M requests/s, hence being the fastest
+SDN controller to date. Furthermore, programming against them in
+Haskell does not require learning any additional languages and
+benefits from strong static type checking, since all processors are
+written in pure Haskell. An embedding of the library into another
+language, e.g. Python, would likewise allow processors to be written
+declaratively yet still purely within Python, with no mix of
+languages.
 
 ## Functional specification
 
@@ -214,3 +314,23 @@ recursively without creating infinite loops.  However it also leads to
 unnecessary awkwardness when trying to understand data-flow through an
 event-processing network, thus we recommend taking the approach of
 Netwire's and Nettle here.
+
+## Tasks
+
+1. Design EDSL: produce high-level design documentation for all
+   primitives of the language and any additional composition operators
+   required.
+
+2. Implement EDSL as an arrow API based on the Netwire/Nettle
+   approach.
+
+3. Test and validate fault tolerance of stream processors.
+
+4. Performance testing and tuning: demonstrate that simple processor
+   networks can process upwards of several hundreds of thousands of
+   events every second.
+
+5. Python bindings (optional, see Packet 5): it can be useful to embed
+   the DSL not just into Haskell but also in Python if other
+   components such as RAS are to also use stream processing as
+   implemented here.
