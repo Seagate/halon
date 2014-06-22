@@ -8,16 +8,16 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TemplateHaskell #-}
+
 module HA.Multimap.Process
     ( multimap, __remoteTable ) where
 
-import HA.Call ( callResponse )
-import HA.Multimap ( StoreUpdate(..) )
+import HA.Multimap (Key, Value, StoreUpdate(..))
 import HA.Multimap.Implementation
             ( Multimap, insertMany, deleteValues, deleteKeys, toList )
 import HA.Replicator ( RGroup, updateStateWith, getState )
 
-import Control.Distributed.Process ( Process, catch , receiveWait )
+import Control.Distributed.Process (Process, catch, match, receiveWait, say, send)
 import Control.Distributed.Process.Closure ( mkClosure, remotable )
 
 import Control.Exception ( SomeException )
@@ -41,14 +41,16 @@ multimap :: RGroup g => g Multimap -> Process ()
 multimap rg = go
   where
     go = receiveWait
-          [ callResponse $ \upds -> do
+        [ match $ \(caller, upds) -> do
               updateStateWith rg $ $(mkClosure 'updateStore) (upds :: [StoreUpdate])
-              return (Just (), ())
-            `catch` \e -> const (return (Nothing, ())) (e :: SomeException)
-
-          , callResponse $ \() -> do
+              send caller (Just ())
+            `catch` \e -> do
+              send caller (Nothing :: Maybe ())
+              say ("MM: Writing failed: " ++ show (e :: SomeException))
+        , match $ \(caller, ()) -> do
               kvs <- fmap toList $ getState rg
-              return (Just kvs, ())
-            `catch` \e -> const (return (Nothing, ())) (e :: SomeException)
-          ]
-         >> go
+              send caller (Just kvs)
+            `catch` \e -> do
+              send caller (Nothing :: Maybe [(Key,[Value])])
+              say ("MM: Reading failed: " ++ show (e :: SomeException))
+        ] >> go
