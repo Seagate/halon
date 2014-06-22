@@ -148,6 +148,16 @@ language, Haskell, too.
 
 ## Comparison of Netwire/Nettle approach with Reactive-Banana
 
+Functional Reactive Programming is an approach to using functional
+programming languages for implementing systems that process and
+respond to streams of incoming events.  There are two successful and
+popular FRP frameworks for Haskell, Netwire and Reactive-Banana.  The
+Haskell Group at Yale has developed an FRP framework called "Nettle"
+whose design is similar to Netwire.  In this section we summarise the
+key differences between Netwire/Nettle approach and the
+Reactive-Banana approach and highlight the drawback of Reactive-Banana
+that led us to prefer a Netwire-inspired FRP framework design.
+
 The API to Reactive-Banana is not based on arrows.  Instead reactive
 networks are constructed by passing around and manipulating `Event`
 and `Behavior` types as pure values, not wrapped in any datatype
