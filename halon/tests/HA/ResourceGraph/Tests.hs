@@ -13,17 +13,16 @@ module HA.ResourceGraph.Tests ( tests ) where
 import Control.Distributed.Process
   (Process, ProcessId, spawnLocal, liftIO, catch, getSelfNode, unClosure)
 import Control.Distributed.Process.Closure (mkStatic, remotable)
-import Control.Distributed.Process.Node (closeLocalNode, newLocalNode)
+import Control.Distributed.Process.Internal.Types (LocalNode)
+import Control.Distributed.Process.Node (newLocalNode)
 import Control.Distributed.Process.Serializable (SerializableDict(..))
 
-import Control.Concurrent (MVar, newEmptyMVar, putMVar, takeMVar, threadDelay)
-import Control.Exception (SomeException)
+import Control.Exception (SomeException, bracket)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.List (sort, (\\))
 import Data.Typeable (Typeable(..), Typeable1)
 import GHC.Generics (Generic)
-import System.IO.Unsafe (unsafePerformIO)
 
 import HA.Multimap (getKeyValuePairs)
 import HA.Multimap.Implementation (Multimap, fromList)
@@ -102,17 +101,28 @@ instance Relation HasA NodeB NodeA where
 -- Test helpers                                                               --
 --------------------------------------------------------------------------------
 
-{-# NOINLINE mdone #-}
-mdone :: MVar ()
-mdone = unsafePerformIO $ newEmptyMVar
+-- | Run the given action on a newly created local node.
+withLocalNode :: Network -> (LocalNode -> IO a) -> IO a
+withLocalNode network action =
+    bracket
+      (newLocalNode (getNetworkTransport network) (__remoteTable remoteTable))
+      -- FIXME: Why does this cause gibberish to be output?
+      -- closeLocalNode
+      (const (return ()))
+      action
+
+-- | FIXME: Why do we need tryRunProcess?
+tryRunProcessLocal :: Network -> Process () -> IO ()
+tryRunProcessLocal network process =
+    withTmpDirectory $
+      withLocalNode network $ \node ->
+        tryRunProcess node process
 
 rGroupTest ::
     (RGroup g, Typeable1 g)
     => Network -> g Multimap -> (ProcessId -> Process ()) -> IO ()
-rGroupTest network g p = withTmpDirectory $ do
-    lnode <- newLocalNode (getNetworkTransport network) $
-             __remoteTable remoteTable
-    tryRunProcess lnode $
+rGroupTest network g p =
+    tryRunProcessLocal network $
       flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
         nid <- getSelfNode
         rGroup <- newRGroup $(mkStatic 'mmSDict) [nid] (fromList []) >>=
@@ -120,13 +130,6 @@ rGroupTest network g p = withTmpDirectory $ do
         mmpid <- spawnLocal $ catch (multimap rGroup) $
           (\e -> liftIO $ print (e :: SomeException))
         p mmpid
-        liftIO $ putMVar mdone ()
-    -- Exit after transport stops being used.
-    -- TODO: fix closeTransport and call it here (see ticket #211).
-    -- TODO: implement closing RGroups and call it here.
-    takeMVar mdone
-    threadDelay 2000000
-    closeLocalNode lnode
 
 sampleGraph :: Graph -> Graph
 sampleGraph =
