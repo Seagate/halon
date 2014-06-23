@@ -21,7 +21,7 @@ module Test.Framework
     , terminateLocalProcesses
     ) where
 
-import Control.Distributed.Process hiding ( bracket, try )
+import Control.Distributed.Process hiding ( bracket, finally, try )
 import Control.Distributed.Process.Internal.StrictMVar
     ( newEmptyMVar, modifyMVar, putMVar, takeMVar )
 import Control.Distributed.Process.Internal.Types
@@ -36,13 +36,14 @@ import Network.Transport (Transport)
 import Control.Concurrent ( forkIO, killThread, myThreadId, threadDelay, throwTo )
 import Control.Exception ( AssertionFailed(..), Exception, SomeException
                          , bracket, throw, try, finally )
+import qualified Control.Exception as E
 import Control.Monad ( replicateM_, void )
 import Data.Typeable (Typeable)
-import System.Directory (getCurrentDirectory, setCurrentDirectory)
+import System.Directory (getCurrentDirectory, removeDirectory,
+  setCurrentDirectory)
 import System.Posix.Temp (mkdtemp)
 import Test.Tasty hiding (Timeout)
 import Test.Tasty.HUnit hiding ( assert )
-
 
 import Data.Accessor ((^.))
 import Data.List
@@ -66,13 +67,15 @@ testFailure name t = testCase name $
     try t >>= either (\(_ :: SomeException) -> return ())
                      (\_ -> assertFailure "Unexpected test case success.")
 
--- | Runs given test inside newly created temporary directory.
+-- | Run the given action in a newly created temporary directory.
 withTmpDirectory :: IO a -> IO a
-withTmpDirectory t = do
+withTmpDirectory action = do
     cwd <- getCurrentDirectory
-    tmpdir <- mkdtemp "/tmp/tmp."
-    setCurrentDirectory tmpdir
-    t `Control.Exception.finally` setCurrentDirectory cwd
+    tmpDir <- mkdtemp "/tmp/tmp."
+    setCurrentDirectory tmpDir
+    action `finally` do
+      setCurrentDirectory cwd
+      removeDirectory tmpDir `E.catch` \(_ :: SomeException) -> return ()
 
 -- | Exception indicating timeout has occured.
 data Timeout = Timeout
