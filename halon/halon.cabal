@@ -43,8 +43,7 @@ Library
                       StandaloneDeriving
                       TupleSections
   Ghc-Options:     -O -Wall -Werror
-  Exposed-Modules: HA.Call
-                   HA.CallTimeout
+  Exposed-Modules: HA.CallTimeout
                    HA.Process
                    HA.Resources
                    HA.EventQueue
