@@ -24,7 +24,9 @@ promulgate x = do
         Nothing -> error "NodeAgent is not registered."
         Just na -> do
           ret <- callLocal $
-            callTimeout 5000000 na msg
+            -- This timeout needs to be higher than the staggering
+            -- hard timeout.
+            callTimeout 15000000 na msg
           case ret of
             Just True -> return ()
             _ -> promulgate x
