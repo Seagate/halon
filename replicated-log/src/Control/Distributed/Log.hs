@@ -252,7 +252,7 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
     queryMissing others $ Map.insert (decreeNumber d) undefined log
 
     ppid <- spawnLocal $ link self >> proposer self Bottom acceptors
-    go ppid acid acceptors replicas d w s
+    go ppid acid acceptors replicas d d w s
   where
 
     -- The proposer process makes consensus proposals.
@@ -293,7 +293,7 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
         , match $ proposer ρ s
         ]
 
-    -- @go pid_of_proposer acid_handle acceptors replicas current_decree watermark state@
+    -- @go pid_of_proposer acid_handle acceptors replicas current_unconfirmed_decree current_decree watermark state@
     --
     -- The @acid_handle@ is used to persist the log.
     --
@@ -302,17 +302,21 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
     -- The @replicas@ are the list of pids of the replicas in the group,
     -- including the self pid.
     --
-    -- The @current_decree@ is the decree identifier of the next proposal.
+    -- The @current_unconfirmed_decree@ is the decree identifier of the next
+    -- proposal to confirm. All previous decrees are known to have passed
+    -- consensus.
+    --
+    -- The @current_decree@ is the decree identifier of the next proposal to do.
     -- For now, it must never be an unreachable decree (i.e. a decree beyond the
     -- reconfiguration decree that changes to a new legislature) or any
     -- proposal using the decree identifier will never be acknowledged or
-    -- executed.
+    -- executed. Invariant: @current_unconfirmed_decree <= current_decree@
     --
     -- The @watermark@ is the identifier of the next decree to execute.
     --
     -- The @state@ is the state yielded by the last executed decree.
     --
-    go ppid acid αs ρs d w s = do
+    go ppid acid αs ρs d cd w s = do
         self <- getSelfPid
         log <- liftIO $ Acid.query acid MemoryGet
         let others = filter (/= self) ρs
@@ -325,7 +329,7 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                        \_ -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
-                  go ppid acid αs ρs d w s
+                  go ppid acid αs ρs d cd w s
 
               -- Commit the decree to the log.
             , matchIf (\(Decree locale dᵢ _) ->
@@ -337,7 +341,7 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                       Local κ -> send κ () -- Ack back to the client.
                       _ -> return ()
                   send self $ Decree Stored dᵢ v
-                  go ppid acid αs ρs d w s
+                  go ppid acid αs ρs d cd w s
 
               -- Execute the decree
             , matchIf (\(Decree locale dᵢ _) ->
@@ -345,9 +349,10 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                        \(Decree _ dᵢ v) -> case v of
                   Value x -> do
                       s' <- logNextState s x
-                      let d' = max d w'
-                          w' = succ w
-                      go ppid acid αs ρs d' w' s'
+                      let d'  = max d w'
+                          cd' = max cd w'
+                          w'  = succ w
+                      go ppid acid αs ρs d' cd' w' s'
                   Reconf αs' ρs'
                     -- Only execute reconfiguration decree if decree is from
                     -- current legislature. Otherwise we would be going back to
@@ -355,6 +360,8 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                     | ((==) `on` decreeLegislatureId) d dᵢ -> do
                       let d' = d{ decreeLegislatureId = succ (decreeLegislatureId d)
                                 , decreeNumber = max (decreeNumber d) (decreeNumber w') }
+                          cd' = cd{ decreeLegislatureId = succ (decreeLegislatureId cd)
+                                  , decreeNumber = max (decreeNumber cd) (decreeNumber w') }
                           w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
 
                       -- This can cause multiple monitors to be set for existing
@@ -369,11 +376,11 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                       -- Tick.
                       send self ()
 
-                      go ppid acid αs' ρs' d' w' s
+                      go ppid acid αs' ρs' d' cd' w' s
                     | otherwise -> do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
                       say $ "Not executing " ++ show dᵢ
-                      go ppid acid αs ρs d w' s
+                      go ppid acid αs ρs d cd w' s
 
               -- If we get here, it's because there's a gap in the decrees we
               -- have received so far. Compute the gaps and ask the other
@@ -384,19 +391,26 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                   _ <- liftIO $ Acid.update acid $ MemoryInsert (decreeNumber dᵢ) v
                   log' <- liftIO $ Acid.query acid $ MemoryGet
                   queryMissing others log'
-                  --- XXX set d to dᵢ?
+                  --- XXX set cd to @max cd (succ dᵢ)@?
+                  --
+                  -- Probably not, because then the replica might never find the
+                  -- values of decrees which are known to a quorum of acceptors
+                  -- but unknown to all online replicas.
+                  --
+                  --- XXX set d to @min cd (succ dᵢ)@?
                   --
                   -- This Decree could have been teleported. So, we shouldn't
                   -- trust dᵢ, unless @decreeLegislatureId dᵢ < maxBound@.
                   send self $ Decree locale dᵢ v
-                  go ppid acid αs ρs d w s
+                  go ppid acid αs ρs d cd w s
 
               -- Client requests.
-            , matchIf (\_ -> d == w) $  -- XXX temp fix to avoid proposing
-                                        -- values for unreachable decrees.
+            , matchIf (\_ -> cd == w) $  -- XXX temp fix to avoid proposing
+                                         -- values for unreachable decrees.
                        \request@(_ :: ProcessId, _ :: Value a, _ :: Hint) -> do
-                  send ppid (d,request)
-                  go ppid acid αs ρs d w s
+                  send ppid (cd,request)
+                  let cd' = succ cd
+                  go ppid acid αs ρs d cd' w s
 
               -- Message from the proposer process
             , match $ \(dᵢ,vᵢ,request@(κ, v :: Value a, _ :: Hint)) -> do
@@ -413,13 +427,13 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                       -- hopefully get it accepted as a future decree number.
                       send self request
                   let d' = max d (succ dᵢ)
-                  go ppid acid αs ρs d' w s
+                  go ppid acid αs ρs d' cd w s
 
               -- If a query can be serviced, do it.
             , matchIf (\(Query _ n) -> Map.member n log) $ \(Query ρ n) -> do
                   -- See Note [Teleportation].
                   send ρ $ Decree Remote (DecreeId maxBound n) (log Map.! n)
-                  go ppid acid αs ρs d w s
+                  go ppid acid αs ρs d cd w s
 
               -- Upon getting the max decree of another replica, compute the
               -- gaps and query for those.
@@ -427,12 +441,13 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                        \(Max ρ dᵢ _ _) -> do
                   say $ "Got Max " ++ show dᵢ
                   queryMissing [ρ] $ Map.insert (decreeNumber dᵢ) undefined log
-                  let d' = d{decreeNumber = decreeNumber dᵢ}
-                  go ppid acid αs ρs d' w s
+                  let d'  = d{decreeNumber = decreeNumber dᵢ}
+                      cd' = max d' cd
+                  go ppid acid αs ρs d' cd' w s
 
               -- Ignore max decree if it is lower than the current decree.
             , matchIf (\_ -> otherwise) $ \(_ :: Max) -> do
-                  go ppid acid αs ρs d w s
+                  go ppid acid αs ρs d cd w s
 
               -- A replica is trying to join the group.
             , match $ \(Helo π cpolicy) -> do
@@ -445,7 +460,7 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                   send ppid (intersect αs αs')
 
                   -- ... filtering out invalidated nodes for quorum.
-                  go ppid acid (intersect αs αs') ρs d w s
+                  go ppid acid (intersect αs αs') ρs d cd w s
 
             -- Clock tick - time to advertize. Can be sent by anyone to any
             -- replica to provoke status info.
@@ -455,12 +470,13 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                   loop
 
                   say $ "Status info:" ++
-                      "\n\tdecree:    " ++ show d ++
-                      "\n\twatermark: " ++ show w ++
-                      "\n\tacceptors: " ++ show αs ++
-                      "\n\treplicas:  " ++ show ρs
+                      "\n\tunconfirmed decree: " ++ show d ++
+                      "\n\tdecree:             " ++ show cd ++
+                      "\n\twatermark:          " ++ show w ++
+                      "\n\tacceptors:          " ++ show αs ++
+                      "\n\treplicas:           " ++ show ρs
                   forM_ others $ \ρ -> send ρ $ Max self d αs ρs
-                  go ppid acid αs ρs d w s
+                  go ppid acid αs ρs d cd w s
 
             , match $ \(ProcessMonitorNotification _ π _) -> do
                   reconnect π
@@ -470,7 +486,7 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                   -- _ <- liftProcess $ monitor π
                   when (π `elem` replicas) $
                       send π $ Max self d αs ρs
-                  go ppid acid αs ρs d w s
+                  go ppid acid αs ρs d cd w s
             ]
 
 dictValue :: SerializableDict a -> SerializableDict (Value a)
