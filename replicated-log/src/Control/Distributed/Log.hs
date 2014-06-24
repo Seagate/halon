@@ -580,25 +580,32 @@ replica EqDict
                                          -- values for unreachable decrees.
                        \(request :: Request a) -> do
                   mLeader <- liftIO getLeader
-                  cd' <- case mLeader of
+                  (s', cd') <- case mLeader of
                            Nothing -> do
                              leaseRequest <- mkLeaseRequest $
                                                decreeLegislatureId d
                              send ppid (cd, leaseRequest)
                              -- Save the current request for later.
                              send self request
-                             return $ succ cd
+                             return (s, succ cd)
 
                            -- Forward the request to the leader.
                            Just leader | self /= leader -> do
                              send leader request
-                             return cd
+                             return (s, cd)
 
                            -- I'm the leader, so handle the request.
-                           _ -> do
-                             send ppid (cd, request)
-                             return $ succ cd
-                  go' leaseStart leasePeriod αs ρs d cd' w s
+                           _ -> case (requestHint request, requestValue request) of
+                             -- Serve nullipotent requests from the local state.
+                             (Nullipotent, Value x) -> do
+                                 s' <- logNextState s x
+                                 send (requestSender request) ()
+                                 return (s', cd)
+                             -- Send the other requests to the proposer.
+                             _ -> do
+                               send ppid (cd, request)
+                               return (s, succ cd)
+                  go' leaseStart leasePeriod αs ρs d cd' w s'
 
               -- Message from the proposer process
             , match $ \(dᵢ,vᵢ,request@(Request κ (v :: Value a) _ rLease)) -> do
