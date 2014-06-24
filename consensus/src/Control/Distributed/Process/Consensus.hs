@@ -10,7 +10,6 @@
 -- group, or to none.
 
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE CPP #-}
 
 module Control.Distributed.Process.Consensus
     ( -- * Decrees
