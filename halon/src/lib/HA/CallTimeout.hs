@@ -104,12 +104,14 @@ callAnyStaggerTimeout :: (Serializable a, Serializable b) =>
   -> Process (Maybe b)  -- ^ Reply received, if any
 callAnyStaggerTimeout softTimeout timeout pids msg = do
     self <- getSelfPid
-    void $ spawnLocal $ do
+    sender <- spawnLocal $ do
       link self
       forM_ pids $ \pid -> do
         send pid (self, msg)
         void $ receiveTimeout softTimeout []
-    expectTimeout timeout
+    result <- expectTimeout timeout
+    kill sender "done"
+    return result
 
 -- | Send @(self, msg)@ to one or more @preferPids@ and @pids@ and wait for a
 -- reply.
@@ -127,12 +129,14 @@ callAnyPreferTimeout :: (Serializable a, Serializable b) =>
   -> Process (Maybe b)  -- ^ Reply received, if any
 callAnyPreferTimeout softTimeout timeout preferPids pids msg = do
     self <- getSelfPid
-    void $ spawnLocal $ do
+    sender <- spawnLocal $ do
       link self
       forM_ preferPids $ \pid -> send pid (self, msg)
       void $ receiveTimeout softTimeout []
       forM_ pids $ \pid -> send pid (self, msg)
-    expectTimeout timeout
+    result <- expectTimeout timeout
+    kill sender "done"
+    return result
 
 --------------------------------------------------------------------------------
 -- Calling named processes
@@ -187,12 +191,14 @@ ncallRemoteAnyStaggerTimeout :: (Serializable a, Serializable b) =>
   -> Process (Maybe b)  -- ^ Reply received, if any
 ncallRemoteAnyStaggerTimeout softTimeout timeout nodes label msg = do
     self <- getSelfPid
-    void $ spawnLocal $ do
+    sender <- spawnLocal $ do
       link self
       forM_ nodes $ \node -> do
         nsendRemote node label (self, msg)
         void $ receiveTimeout softTimeout []
-    expectTimeout timeout
+    result <- expectTimeout timeout
+    kill sender "done"
+    return result
 
 -- | Send @(self, msg)@ to one or more named processes @label@ on @preferNodes@
 -- and @nodes@ and wait for a reply.
@@ -212,9 +218,11 @@ ncallRemoteAnyPreferTimeout :: (Serializable a, Serializable b) =>
   -> Process (Maybe b)  -- ^ Reply received, if any
 ncallRemoteAnyPreferTimeout softTimeout timeout preferNodes nodes label msg = do
     self <- getSelfPid
-    void $ spawnLocal $ do
+    sender <- spawnLocal $ do
       link self
       forM_ preferNodes $ \node -> nsendRemote node label (self, msg)
       void $ receiveTimeout softTimeout []
       forM_ nodes $ \node -> nsendRemote node label (self, msg)
-    expectTimeout timeout
+    result <- expectTimeout timeout
+    kill sender "done"
+    return result
