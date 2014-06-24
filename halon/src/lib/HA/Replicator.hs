@@ -12,6 +12,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE CPP #-}
 module HA.Replicator
   ( RGroup(..)
   , RStateView(..)
@@ -98,3 +99,7 @@ class RGroup g where
 
   -- | Sets the view of the replicated state.
   viewRState :: Typeable v => Static (RStateView st v) -> g st -> g v
+
+#if MIN_VERSION_base(4,7,0)
+deriving instance Typeable Replica
+#endif

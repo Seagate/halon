@@ -119,7 +119,7 @@ remotableDecl [ [d|
      eqpid <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
      rspid <- spawnLocal
               $ recoverySupervisor (viewRState $(mkStatic 'rsView) rGroup)
-              $ mask $ const $ do
+              $ mask_ $ do
                 mRCPid <- liftIO $ newEmptyMVar
                 mmpid <- spawnLocal $ do
                        rcpid <- liftIO $ readMVar mRCPid

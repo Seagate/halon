@@ -14,6 +14,7 @@
 {-# LANGUAGE TypeFamilies #-}
 module HA.Replicator.Mock
   ( RLocalGroup
+  , Replica
   , __remoteTable
   , __remoteTableDecl
   ) where
@@ -74,7 +75,7 @@ instance RGroup RLocalGroup where
 
   data Replica RLocalGroup = Replica
 
-  newRGroup sd ns st = return $
+  newRGroup sd _ns st = return $
       closure $(mkStatic 'createRLocalGroup) (encode (sd,st))
         `closureApply` staticClosure sd
 
@@ -82,7 +83,7 @@ instance RGroup RLocalGroup where
 
   setRGroupMembers _ _ _ = return []
 
-  updateRGroup _ _ = return ()
+  updateRGroup _ Replica{} = return ()
 
   updateStateWith (RLocalGroup r rp) cUpd = unClosure (updateClosure rp cUpd)
     >>= \upd -> liftIO $ atomicModifyIORef r $ \st -> seq st (upd st, ())

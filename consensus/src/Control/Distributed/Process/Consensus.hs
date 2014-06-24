@@ -41,7 +41,7 @@ import Control.Distributed.Static
 import Control.Applicative (Applicative, (<$>))
 import Control.Monad.Trans (lift)
 import Control.Monad.State
-    (MonadIO, MonadState, StateT(..), get, modify)
+    (MonadIO, StateT(..), get, modify)
 import Data.Binary (Binary, encode)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
