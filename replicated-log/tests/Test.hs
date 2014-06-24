@@ -228,7 +228,7 @@ tests args = do
 
           , testSuccess "update-handle" . withTmpDirectory $ do
               n <- newLocalNode transport remoteTables
-              tryWithTimeout transport remoteTables defaultTimeout
+              tryWithTimeout transport remoteTables 8000000
                   $ setup' [localNodeId n] $ \h port -> do
                 self <- getSelfPid
                 let interceptor "Increment." = send self ()
@@ -247,7 +247,13 @@ tests args = do
                        here leaseRenewalMargin
                 updateHandle h ρ
 
+                -- Kill the first node, and see that the updated handle
+                -- still works.
                 liftIO $ closeLocalNode n
+                -- Wait for the lease of the leader to expire. Otherwise
+                -- the request would be forwarded to the leader and State.update
+                -- would block forever.
+                _ <- receiveTimeout 4000000 []
                 State.update port $ incrementCP
                 () <- expect
                 () <- expect

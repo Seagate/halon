@@ -580,14 +580,24 @@ replica EqDict
                                          -- values for unreachable decrees.
                        \(request :: Request a) -> do
                   mLeader <- liftIO getLeader
-                  case mLeader of
-                    Nothing -> do
-                      leaseRequest <- mkLeaseRequest $ decreeLegislatureId d
-                      send ppid (cd, leaseRequest)
-                      -- Save the current request for later.
-                      send self request
-                    _ -> send ppid (cd,request)
-                  let cd' = succ cd
+                  cd' <- case mLeader of
+                           Nothing -> do
+                             leaseRequest <- mkLeaseRequest $
+                                               decreeLegislatureId d
+                             send ppid (cd, leaseRequest)
+                             -- Save the current request for later.
+                             send self request
+                             return $ succ cd
+
+                           -- Forward the request to the leader.
+                           Just leader | self /= leader -> do
+                             send leader request
+                             return cd
+
+                           -- I'm the leader, so handle the request.
+                           _ -> do
+                             send ppid (cd, request)
+                             return $ succ cd
                   go' leaseStart leasePeriod αs ρs d cd' w s
 
               -- Message from the proposer process
