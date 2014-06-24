@@ -151,6 +151,16 @@ instance Serializable a => SafeCopy (Value a) where
     getCopy = contain $ fmap decode $ safeGet
     putCopy = contain . safePut . encode
 
+-- | A type for internal requests.
+data Request a = Request
+    { requestSender   :: ProcessId
+    , requestValue    :: Value a
+    , requestHint     :: Hint
+    }
+  deriving (Generic, Typeable)
+
+instance Binary a => Binary (Request a)
+
 queryMissing :: [ProcessId] -> Map.Map Int (Value a) -> Process ()
 queryMissing replicas log = do
     let ns = concat $ gaps $ (-1:) $ Map.keys $ log
@@ -259,7 +269,7 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
     -- Proposals are aborted when a reconfiguration occurs.
     proposer ρ s αs =
       receiveWait
-        [ match $ \(d,request@(_ :: ProcessId,v :: Value a,_ :: Hint)) -> do
+        [ match $ \(d,request@(Request {requestValue = v :: Value a})) -> do
             self <- getSelfPid
             -- The MVar stores the result of the proposal.
             -- With an MVar we can ensure that:
@@ -407,13 +417,13 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
               -- Client requests.
             , matchIf (\_ -> cd == w) $  -- XXX temp fix to avoid proposing
                                          -- values for unreachable decrees.
-                       \request@(_ :: ProcessId, _ :: Value a, _ :: Hint) -> do
+                       \(request :: Request a) -> do
                   send ppid (cd,request)
                   let cd' = succ cd
                   go ppid acid αs ρs d cd' w s
 
               -- Message from the proposer process
-            , match $ \(dᵢ,vᵢ,request@(κ, v :: Value a, _ :: Hint)) -> do
+            , match $ \(dᵢ,vᵢ,request@(Request κ (v :: Value a) _)) -> do
                   -- If the passed decree accepted other value than our
                   -- client's, don't treat it as local (ie. do not report back
                   -- to the client yet).
@@ -454,7 +464,11 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                   policy <- unClosure cpolicy
                   let (αs', ρs') = policy (αs, ρs)
                   -- Get self to propose reconfiguration...
-                  send self (π, Reconf αs' ρs' :: Value a, None)
+                  send self $ Request
+                    { requestSender   = π
+                    , requestValue    = Reconf αs' ρs' :: Value a
+                    , requestHint     = None
+                    }
 
                   -- Update the list of acceptors of the proposer...
                   send ppid (intersect αs αs')
@@ -617,7 +631,7 @@ instance Typeable a => Binary (RemoteHandle a)
 matchA :: forall a . SerializableDict a -> ProcessId -> Process () -> Match ()
 matchA SerializableDict ρ cont =
   match $ \a -> do
-    send ρ (a :: (ProcessId,Value a,Hint))
+    send ρ (a :: Request a)
     cont
 
 remotableDecl [
@@ -659,7 +673,11 @@ remotableDecl [
 append :: Serializable a => Handle a -> Hint -> a -> Process ()
 append (Handle _ _ _ _ _ μ) hint x = callLocal $ do
     self <- getSelfPid
-    send μ (self, Value x, hint)
+    send μ $ Request
+      { requestSender   = self
+      , requestValue    = Value x
+      , requestHint     = hint
+      }
     expect
 
 -- | Make replicas advertize their status info.
