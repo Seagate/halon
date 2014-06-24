@@ -66,8 +66,10 @@ import Control.Monad
 import Data.List (find, intersect)
 import Data.Function (on)
 import Data.Binary (Binary, encode)
+import Data.Maybe
 import Data.Monoid (Monoid(..))
 import qualified Data.Map as Map
+import Data.Ratio (Ratio, (%), numerator, denominator)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Prelude hiding (init, log)
@@ -160,12 +162,30 @@ data Request a = Request
     { requestSender   :: ProcessId
     , requestValue    :: Value a
     , requestHint     :: Hint
+    ,
+      -- | @Just d@ signals a lease request, where @d@ is the decree on which
+      -- the request is valid.
+      --
+      -- Any reconfiguration executed in a future decree before the lease
+      -- request is executed invalidates the request.
+      --
+      -- If a lease request is submitted while a Reconf message produced by a
+      -- client is sitting in the mailbox, the effects of the client
+      -- reconfiguration could be overwritten by the lease request. In order to
+      -- prevent this, the @requestForLease@ field helps discarding lease
+      -- requests which have become dated.
+      --
+      requestForLease :: Maybe LegislatureId
     }
   deriving (Generic, Typeable)
 
 instance Binary a => Binary (Request a)
 
 instance Binary TimeSpec
+
+timeSpecDiff :: TimeSpec -> TimeSpec -> Int
+timeSpecDiff t0 t1 =
+    ( sec t0 -  sec t1) * 1000 * 1000 + (nsec t0 - nsec t1) `div` 1000
 
 queryMissing :: [ProcessId] -> Map.Map Int (Value a) -> Process ()
 queryMissing replicas log = do
@@ -194,6 +214,11 @@ memoryGet = do
     return $ log
 
 $(makeAcidic ''Memory ['memoryInsert, 'memoryGet])
+
+-- | This is an adjustment to the lease period so non-leaders think it is
+-- slightly longer to account for possible clock drifts during the lease period.
+driftSafetyFactor :: Ratio Int
+driftSafetyFactor = 11 % 10
 
 -- Note [Teleportation]
 -- ~~~~~~~~~~~~~~~~~~~~
@@ -370,6 +395,36 @@ replica EqDict
         self <- getSelfPid
         log <- liftIO $ Acid.query acid MemoryGet
         let others = filter (/= self) ρs
+
+            -- Returns the leader if the lease has not expired.
+            getLeader :: IO (Maybe ProcessId)
+            getLeader = do
+              now <- getTime Monotonic
+              -- Adjust the period to account for some clock drift, so
+              -- non-leaders think the lease is slightly longer.
+              let adjustedPeriod = if self == head ρs
+                    then leasePeriod
+                    else leasePeriod * numerator   driftSafetyFactor
+                                 `div` denominator driftSafetyFactor
+              if not (null ρs) &&
+                 -- XXX Is it necessary microsecond precision for the lease?
+                 timeSpecDiff now leaseStart < adjustedPeriod
+              then return $ Just $ head ρs
+              else return Nothing
+
+            -- | Makes a lease request. It takes the legislature on which the
+            -- request is valid.
+            mkLeaseRequest :: LegislatureId -> Process (Request a)
+            mkLeaseRequest l = do
+              now <- liftIO $ getTime Monotonic
+              let ρs' = self : others
+              return Request
+                { requestSender   = self
+                , requestValue    = Reconf now leasePeriod αs ρs' :: Value a
+                , requestHint     = None
+                , requestForLease = Just l
+                }
+
         receiveWait
             [ matchIf (\(Decree _ dᵢ _ :: Decree (Value a)) ->
                         -- Take the max of the watermark legislature and the
@@ -388,7 +443,9 @@ replica EqDict
                   _ <- liftIO $ Acid.update acid $
                            MemoryInsert (decreeNumber dᵢ) (v :: Value a)
                   case locale of
-                      Local κ -> send κ () -- Ack back to the client.
+                      -- Ack back to the client, but only if it is not us asking
+                      -- the lease (no other replica uses locale Local).
+                      Local κ | κ /= self -> send κ ()
                       _ -> return ()
                   send self $ Decree Stored dᵢ v
                   go ppid acid leaseStart leasePeriod αs ρs d cd w s
@@ -459,16 +516,39 @@ replica EqDict
                   send self $ Decree locale dᵢ v
                   go ppid acid leaseStart leasePeriod αs ρs d cd w s
 
+              -- Lease requests.
+            , matchIf (\r -> cd == w     -- The log is up-to-date and fully
+                                         -- executed.
+                        && isJust (requestForLease r) -- This is a lease request.
+                      ) $
+                       \(request :: Request a) -> do
+                  cd' <- case requestForLease request of
+                    -- Discard the lease request if it corresponds to an old
+                    -- legislature.
+                    Just l | l < decreeLegislatureId d -> return cd
+                    -- Send to the proposer otherwise.
+                    _ -> do
+                      send ppid (cd, request)
+                      return $ succ cd
+                  go ppid acid leaseStart leasePeriod αs ρs d cd' w s
+
               -- Client requests.
             , matchIf (\_ -> cd == w) $  -- XXX temp fix to avoid proposing
                                          -- values for unreachable decrees.
                        \(request :: Request a) -> do
-                  send ppid (cd,request)
+                  mLeader <- liftIO getLeader
+                  case mLeader of
+                    Nothing -> do
+                      leaseRequest <- mkLeaseRequest $ decreeLegislatureId d
+                      send ppid (cd, leaseRequest)
+                      -- Save the current request for later.
+                      send self request
+                    _ -> send ppid (cd,request)
                   let cd' = succ cd
                   go ppid acid leaseStart leasePeriod αs ρs d cd' w s
 
               -- Message from the proposer process
-            , match $ \(dᵢ,vᵢ,request@(Request κ (v :: Value a) _)) -> do
+            , match $ \(dᵢ,vᵢ,request@(Request κ (v :: Value a) _ rLease)) -> do
                   -- If the passed decree accepted other value than our
                   -- client's, don't treat it as local (ie. do not report back
                   -- to the client yet).
@@ -477,9 +557,10 @@ replica EqDict
                   forM_ others $ \ρ -> do
                       send ρ $ Decree Remote dᵢ vᵢ
 
-                  when (v /= vᵢ) $
+                  when (v /= vᵢ && isNothing rLease) $
                       -- Decree already has different value, so repost to
                       -- hopefully get it accepted as a future decree number.
+                      -- But repost only if it is not a lease request.
                       send self request
                   let d' = max d (succ dᵢ)
                   go ppid acid leaseStart leasePeriod αs ρs d' cd w s
@@ -505,26 +586,41 @@ replica EqDict
                   go ppid acid leaseStart leasePeriod αs ρs d cd w s
 
               -- A replica is trying to join the group.
-            , match $ \(Helo π cpolicy) -> do
-                  policy <- unClosure cpolicy
-                  let (αs', ρs') = policy (αs, ρs)
-                      -- Place the proposer at the head of the list
-                      -- of replicas to be considered as future leader.
-                      ρs'' = self : filter (/= self) ρs'
-                  requestStart <- liftIO $ getTime Monotonic
-                  -- Get self to propose reconfiguration...
-                  send self $ Request
-                    { requestSender   = π
-                    , requestValue    =
-                        Reconf requestStart leasePeriod αs' ρs'' :: Value a
-                    , requestHint     = None
-                    }
+            , match $ \m@(Helo π cpolicy) -> do
 
-                  -- Update the list of acceptors of the proposer...
-                  send ppid (intersect αs αs')
+                  mLeader <- liftIO $ getLeader
+                  case mLeader of
+                    Nothing -> do
+                      mkLeaseRequest (decreeLegislatureId d) >>= send self
+                      -- Save the current request for later.
+                      send self m
 
-                  -- ... filtering out invalidated nodes for quorum.
-                  go ppid acid leaseStart leasePeriod (intersect αs αs') ρs d cd w s
+                    -- Forward the request to the leader.
+                    Just leader | self /= leader -> do
+                      send leader m
+
+                    -- I'm the leader, so handle the request.
+                    _ -> do
+                      policy <- unClosure cpolicy
+                      let (αs', ρs') = policy (αs, ρs)
+                          -- Place the proposer at the head of the list
+                          -- of replicas to be considered as future leader.
+                          ρs'' = self : filter (/= self) ρs'
+                      requestStart <- liftIO $ getTime Monotonic
+                      -- Get self to propose reconfiguration...
+                      send self $ Request
+                        { requestSender   = π
+                        , requestValue    =
+                            Reconf requestStart leasePeriod αs' ρs'' :: Value a
+                        , requestHint     = None
+                        , requestForLease = Nothing
+                        }
+
+                      -- Update the list of acceptors of the proposer...
+                      send ppid (intersect αs αs')
+
+                      -- ... filtering out invalidated nodes for quorum.
+                      go ppid acid leaseStart leasePeriod (intersect αs αs') ρs d cd w s
 
             -- Clock tick - time to advertize. Can be sent by anyone to any
             -- replica to provoke status info.
@@ -757,6 +853,7 @@ append (Handle _ _ _ _ _ μ) hint x = callLocal $ do
       { requestSender   = self
       , requestValue    = Value x
       , requestHint     = hint
+      , requestForLease = Nothing
       }
     expect
 
