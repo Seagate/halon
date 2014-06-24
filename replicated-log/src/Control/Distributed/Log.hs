@@ -187,6 +187,11 @@ timeSpecDiff :: TimeSpec -> TimeSpec -> Int
 timeSpecDiff t0 t1 =
     ( sec t0 -  sec t1) * 1000 * 1000 + (nsec t0 - nsec t1) `div` 1000
 
+data TimerMessage = LeaseRenewalTime
+  deriving (Generic, Typeable)
+
+instance Binary TimerMessage
+
 queryMissing :: [ProcessId] -> Map.Map Int (Value a) -> Process ()
 queryMissing replicas log = do
     let ns = concat $ gaps $ (-1:) $ Map.keys $ log
@@ -306,13 +311,27 @@ replica EqDict
     queryMissing others $ Map.insert (decreeNumber d) undefined log
 
     ppid <- spawnLocal $ link self >> proposer self Bottom acceptors
+    timerPid <- spawnLocal $ link self >> timer
     -- If I'm the leader, the first lease starts at the time the request to
     -- spawn the replica was sent. Otherwise, it starts now.
     leaseStart0' <- if [self] == take 1 replicas
                     then return leaseStart0
                     else liftIO $ getTime Monotonic
-    go ppid acid leaseStart0' leasePeriod0 acceptors replicas d d w s
+    go ppid timerPid acid leaseStart0' leasePeriod0 acceptors replicas d d w s
   where
+
+    -- A timer process. When receiving @(pid, t, msg)@, the process waits for
+    -- @t@ microsenconds and then it sends @msg@ to @pid@.
+    --
+    -- If while waiting, another @(pid', t', msg')@ value is received, the
+    -- wait resumes with the new parameters.
+    --
+    timer :: Process ()
+    timer = expect >>= wait
+      where
+        wait :: (ProcessId, Int, TimerMessage) -> Process ()
+        wait (sender, t, msg) =
+          expectTimeout t >>= maybe (send sender msg >> timer) wait
 
     -- The proposer process makes consensus proposals.
     -- Proposals are aborted when a reconfiguration occurs.
@@ -353,6 +372,7 @@ replica EqDict
         ]
 
     -- > go pid_of_proposer
+    -- >    pid_of_timer
     -- >    acid_handle
     -- >    leaseStart
     -- >    leasePeriod
@@ -391,10 +411,11 @@ replica EqDict
     --
     -- The @state@ is the state yielded by the last executed decree.
     --
-    go ppid acid leaseStart leasePeriod αs ρs d cd w s = do
+    go ppid timerPid acid leaseStart leasePeriod αs ρs d cd w s = do
         self <- getSelfPid
         log <- liftIO $ Acid.query acid MemoryGet
         let others = filter (/= self) ρs
+            go' = go ppid timerPid acid
 
             -- Returns the leader if the lease has not expired.
             getLeader :: IO (Maybe ProcessId)
@@ -426,7 +447,20 @@ replica EqDict
                 }
 
         receiveWait
-            [ matchIf (\(Decree _ dᵢ _ :: Decree (Value a)) ->
+            [ -- The lease is about to expire, so try to renew it.
+              matchIf (\_ -> w == cd) $ -- The log is up-to-date and fully
+                                        -- executed.
+                       \LeaseRenewalTime -> do
+                  mLeader <- liftIO $ getLeader
+                  cd' <- case mLeader of
+                    Just leader | self == leader -> do
+                      leaseRequest <- mkLeaseRequest $ decreeLegislatureId d
+                      send ppid (cd, leaseRequest)
+                      return $ succ cd
+                    _ ->  return cd
+                  go' leaseStart leasePeriod αs ρs d cd' w s
+
+            , matchIf (\(Decree _ dᵢ _ :: Decree (Value a)) ->
                         -- Take the max of the watermark legislature and the
                         -- incoming legislature to deal with teleportation of
                         -- decrees. See Note [Teleportation].
@@ -434,7 +468,7 @@ replica EqDict
                        \_ -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
-                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
+                  go' leaseStart leasePeriod αs ρs d cd w s
 
               -- Commit the decree to the log.
             , matchIf (\(Decree locale dᵢ _) ->
@@ -448,7 +482,7 @@ replica EqDict
                       Local κ | κ /= self -> send κ ()
                       _ -> return ()
                   send self $ Decree Stored dᵢ v
-                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
+                  go' leaseStart leasePeriod αs ρs d cd w s
 
               -- Execute the decree
             , matchIf (\(Decree locale dᵢ _) ->
@@ -459,7 +493,7 @@ replica EqDict
                       let d'  = max d w'
                           cd' = max cd w'
                           w'  = succ w
-                      go ppid acid leaseStart leasePeriod αs ρs d' cd' w' s'
+                      go' leaseStart leasePeriod αs ρs d' cd' w' s'
                   Reconf requestStart leasePeriod' αs' ρs'
                     -- Only execute reconfiguration decree if decree is from
                     -- current legislature. Otherwise we would be going back to
@@ -485,14 +519,23 @@ replica EqDict
 
                       -- If I'm the leader, the lease starts at the time
                       -- the request was made. Otherwise, it starts now.
+                      now <- liftIO $ getTime Monotonic
                       leaseStart' <- if [self] == take 1 ρs'
-                                     then return requestStart
-                                     else liftIO $ getTime Monotonic
-                      go ppid acid leaseStart' leasePeriod' αs' ρs' d' cd' w' s
+                          then do send timerPid
+                                    ( self
+                                    , max 0 (leasePeriod'
+                                              - leaseRenewalMargin
+                                              - timeSpecDiff now requestStart
+                                            )
+                                    , LeaseRenewalTime
+                                    )
+                                  return requestStart
+                          else return now
+                      go' leaseStart' leasePeriod' αs' ρs' d' cd' w' s
                     | otherwise -> do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
                       say $ "Not executing " ++ show dᵢ
-                      go ppid acid leaseStart leasePeriod αs ρs d cd w' s
+                      go' leaseStart leasePeriod αs ρs d cd w' s
 
               -- If we get here, it's because there's a gap in the decrees we
               -- have received so far. Compute the gaps and ask the other
@@ -514,7 +557,7 @@ replica EqDict
                   -- This Decree could have been teleported. So, we shouldn't
                   -- trust dᵢ, unless @decreeLegislatureId dᵢ < maxBound@.
                   send self $ Decree locale dᵢ v
-                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
+                  go' leaseStart leasePeriod αs ρs d cd w s
 
               -- Lease requests.
             , matchIf (\r -> cd == w     -- The log is up-to-date and fully
@@ -530,7 +573,7 @@ replica EqDict
                     _ -> do
                       send ppid (cd, request)
                       return $ succ cd
-                  go ppid acid leaseStart leasePeriod αs ρs d cd' w s
+                  go' leaseStart leasePeriod αs ρs d cd' w s
 
               -- Client requests.
             , matchIf (\_ -> cd == w) $  -- XXX temp fix to avoid proposing
@@ -545,7 +588,7 @@ replica EqDict
                       send self request
                     _ -> send ppid (cd,request)
                   let cd' = succ cd
-                  go ppid acid leaseStart leasePeriod αs ρs d cd' w s
+                  go' leaseStart leasePeriod αs ρs d cd' w s
 
               -- Message from the proposer process
             , match $ \(dᵢ,vᵢ,request@(Request κ (v :: Value a) _ rLease)) -> do
@@ -563,13 +606,13 @@ replica EqDict
                       -- But repost only if it is not a lease request.
                       send self request
                   let d' = max d (succ dᵢ)
-                  go ppid acid leaseStart leasePeriod αs ρs d' cd w s
+                  go' leaseStart leasePeriod αs ρs d' cd w s
 
               -- If a query can be serviced, do it.
             , matchIf (\(Query _ n) -> Map.member n log) $ \(Query ρ n) -> do
                   -- See Note [Teleportation].
                   send ρ $ Decree Remote (DecreeId maxBound n) (log Map.! n)
-                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
+                  go' leaseStart leasePeriod αs ρs d cd w s
 
               -- Upon getting the max decree of another replica, compute the
               -- gaps and query for those.
@@ -579,11 +622,11 @@ replica EqDict
                   queryMissing [ρ] $ Map.insert (decreeNumber dᵢ) undefined log
                   let d'  = d{decreeNumber = decreeNumber dᵢ}
                       cd' = max d' cd
-                  go ppid acid leaseStart leasePeriod αs ρs d' cd' w s
+                  go' leaseStart leasePeriod αs ρs d' cd' w s
 
               -- Ignore max decree if it is lower than the current decree.
             , matchIf (\_ -> otherwise) $ \(_ :: Max) -> do
-                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
+                  go' leaseStart leasePeriod αs ρs d cd w s
 
               -- A replica is trying to join the group.
             , match $ \m@(Helo π cpolicy) -> do
@@ -620,7 +663,7 @@ replica EqDict
                       send ppid (intersect αs αs')
 
                       -- ... filtering out invalidated nodes for quorum.
-                      go ppid acid leaseStart leasePeriod (intersect αs αs') ρs d cd w s
+                      go' leaseStart leasePeriod (intersect αs αs') ρs d cd w s
 
             -- Clock tick - time to advertize. Can be sent by anyone to any
             -- replica to provoke status info.
@@ -637,7 +680,7 @@ replica EqDict
                       "\n\treplicas:           " ++ show ρs
                   forM_ others $ \ρ -> send ρ $
                     Max self leasePeriod d αs ρs
-                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
+                  go' leaseStart leasePeriod αs ρs d cd w s
 
             , match $ \(ProcessMonitorNotification _ π _) -> do
                   reconnect π
@@ -647,7 +690,7 @@ replica EqDict
                   -- _ <- liftProcess $ monitor π
                   when (π `elem` replicas) $
                     send π $ Max self leasePeriod d αs ρs
-                  go ppid acid leaseStart leasePeriod αs ρs d cd w s
+                  go' leaseStart leasePeriod αs ρs d cd w s
             ]
 
 dictValue :: SerializableDict a -> SerializableDict (Value a)
