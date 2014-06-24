@@ -17,8 +17,9 @@ module HA.Multimap
     ( Key, Value, StoreUpdate(..), getKeyValuePairs, updateStore )where
 
 import Control.Distributed.Process (ProcessId, Process )
-import HA.Call (callAt)
+import HA.CallTimeout (callTimeout)
 
+import Control.Applicative ((<$>))
 import Control.Monad ( join )
 import Data.ByteString ( ByteString )
 import Data.Binary ( Binary )
@@ -86,7 +87,8 @@ instance Binary StoreUpdate
 --
 getKeyValuePairs :: ProcessId -> Process (Maybe [(Key,[Value])])
 getKeyValuePairs mmPid =
-    callAt mmPid () >>= return . join
+    -- FIXME: Use a well-defined timeout
+    join <$> callTimeout 1000000 mmPid ()
 
 -- | The type of @updateStore@. It updates the store with a batch of operations.
 --
@@ -99,4 +101,5 @@ getKeyValuePairs mmPid =
 --
 updateStore :: ProcessId -> [StoreUpdate] -> Process (Maybe ())
 updateStore mmPid upds =
-    callAt mmPid upds >>= return . join
+    -- FIXME: Use a well-defined timeout
+    join <$> callTimeout 1000000 mmPid upds

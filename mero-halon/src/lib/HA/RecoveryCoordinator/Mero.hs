@@ -159,18 +159,18 @@ recoveryCoordinator eq mm argv = do
               forM_ m0dNodes $ \(Node them) ->
                   nsendRemote (processNodeId them) (serviceName m0d) $
                   EpochTransition
-                      { et_current = epochId current
-                      , et_target  = epochId target
-                      , et_how     = epochState target :: ByteString
+                      { etCurrent = epochId current
+                      , etTarget  = epochId target
+                      , etHow     = epochState target :: ByteString
                       }
 
               loop =<< G.sync rg' <* send eq eid)
         , matchHAEvent $ \(HAEvent eid EpochTransitionRequest{..} _) -> do
               let G.Edge _ Has target = head $ G.edgesFromSrc Cluster rg
-              send etr_source $ EpochTransition
-                  { et_current = etr_current
-                  , et_target  = epochId target
-                  , et_how     = epochState target :: ByteString
+              send etrSource $ EpochTransition
+                  { etCurrent = etrCurrent
+                  , etTarget  = epochId target
+                  , etHow     = epochState target :: ByteString
                   }
               send eq $ eid
               loop rg

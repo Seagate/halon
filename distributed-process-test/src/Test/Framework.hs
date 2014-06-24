@@ -9,44 +9,81 @@
 --
 
 module Test.Framework
-    ( module Test.Tasty
-    , testSuccess
-    , testFailure
-    , withTmpDirectory
-    , Timeout(..)
-    , defaultTimeout
-    , tryWithTimeout
-    , assert
-    , registerInterceptor
-    , terminateLocalProcesses
-    ) where
+  ( module Test.Tasty
+  , testSuccess
+  , testFailure
+  , withTmpDirectory
+  , Timeout(..)
+  , defaultTimeout
+  , tryWithTimeout
+  , assert
+  , registerInterceptor
+  , terminateLocalProcesses
+  ) where
 
-import Control.Distributed.Process hiding ( bracket, try )
+import Control.Concurrent
+  ( forkIO
+  , killThread
+  , myThreadId
+  , threadDelay
+  , throwTo
+  )
+import Control.Distributed.Process hiding
+  ( bracket
+  , finally
+  , try
+  )
 import Control.Distributed.Process.Internal.StrictMVar
-    ( newEmptyMVar, modifyMVar, putMVar, takeMVar )
+  ( modifyMVar
+  , newEmptyMVar
+  , putMVar
+  , takeMVar
+  )
 import Control.Distributed.Process.Internal.Types
-    ( localProcesses, LocalNode, LocalNodeState, localState, processId
-    , localEventBus, MxEventBus(..), processThread, localProcessWithId
-    , processLocalId
-    )
-import Control.Distributed.Process.Node ( newLocalNode, closeLocalNode, runProcess )
-
-import Network.Transport (Transport)
-
-import Control.Concurrent ( forkIO, killThread, myThreadId, threadDelay, throwTo )
-import Control.Exception ( AssertionFailed(..), Exception, SomeException
-                         , bracket, throw, try, finally )
-import Control.Monad ( replicateM_, void )
-import Data.Typeable (Typeable)
-import System.Directory (getCurrentDirectory, setCurrentDirectory)
-import System.Posix.Temp (mkdtemp)
-import Test.Tasty hiding (Timeout)
-import Test.Tasty.HUnit hiding ( assert )
-
-
+  ( LocalNode
+  , LocalNodeState
+  , MxEventBus(..)
+  , localEventBus
+  , localProcessWithId
+  , localProcesses
+  , localState
+  , processId
+  , processLocalId
+  , processThread
+  )
+import Control.Distributed.Process.Node
+  ( closeLocalNode
+  , newLocalNode
+  , runProcess
+  )
+import Control.Exception
+  ( AssertionFailed(..)
+  , Exception
+  , SomeException
+  , bracket
+  , finally
+  , throw
+  , try
+  )
+import qualified Control.Exception as E
+import Control.Monad
+  ( replicateM_
+  , void
+  )
 import Data.Accessor ((^.))
 import Data.List
-import qualified Data.Map as Map ( elems )
+import qualified Data.Map as Map
+import Data.Typeable (Typeable)
+import Network.Transport (Transport)
+import System.Directory
+  ( getCurrentDirectory
+  , removeDirectory
+  , setCurrentDirectory
+  )
+import System.Posix.Temp (mkdtemp)
+import Test.Tasty hiding (Timeout)
+import Test.Tasty.HUnit hiding (assert)
+
 
 -- | Smart constructor for simple test.
 --
@@ -66,13 +103,15 @@ testFailure name t = testCase name $
     try t >>= either (\(_ :: SomeException) -> return ())
                      (\_ -> assertFailure "Unexpected test case success.")
 
--- | Runs given test inside newly created temporary directory.
+-- | Run the given action in a newly created temporary directory.
 withTmpDirectory :: IO a -> IO a
-withTmpDirectory t = do
+withTmpDirectory action = do
     cwd <- getCurrentDirectory
-    tmpdir <- mkdtemp "/tmp/tmp."
-    setCurrentDirectory tmpdir
-    t `Control.Exception.finally` setCurrentDirectory cwd
+    tmpDir <- mkdtemp "/tmp/tmp."
+    setCurrentDirectory tmpDir
+    action `finally` do
+      setCurrentDirectory cwd
+      removeDirectory tmpDir `E.catch` \(_ :: SomeException) -> return ()
 
 -- | Exception indicating timeout has occured.
 data Timeout = Timeout
