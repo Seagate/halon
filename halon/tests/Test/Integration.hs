@@ -14,16 +14,22 @@ import qualified HA.RecoverySupervisor.Tests ( tests )
 import qualified HA.ResourceGraph.Tests ( tests )
 
 import Control.Applicative ( (<$>) )
+import System.Environment (lookupEnv)
 import System.IO ( hSetBuffering, BufferMode(..), stdout, stderr )
 
 tests :: [String] -> IO TestTree
 tests argv = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
-    let addr0 = case argv of
-            a0:_ -> a0
-            _    -> error "missing ADDRESS"
-        addr = maybe (error "wrong address") id $ parseAddress addr0
+    addr0 <- case argv of
+            a0:_ -> return a0
+            _    ->
+#if USE_RPC
+                    maybe (error "TEST_LISTEN environment variable is not set") id <$> lookupEnv "TEST_LISTEN"
+#else
+                    maybe "localhost:0" id <$> lookupEnv "TEST_LISTEN"
+#endif
+    let addr = maybe (error "wrong address") id $ parseAddress addr0
     network <- startNetwork addr
     testGroup "it" <$> sequence
       [ testGroup "EQ" <$> HA.EventQueue.Tests.tests network
