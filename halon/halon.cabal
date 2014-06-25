@@ -126,9 +126,11 @@ Test-Suite unit-tests
                     network,
                     network-transport,
                     unordered-containers,
-                    options-schema >= 0.1.1.0
+                    options-schema >= 0.1.1.0,
+                    tasty >= 0.8,
+                    tasty-files
   if flag(rpc)
-      Build-Depends: network-transport-rpc, tasty
+      Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
   else
       Build-Depends: network-transport-tcp >= 0.3
@@ -159,9 +161,11 @@ Test-Suite integration-tests
                     network,
                     network-transport,
                     unordered-containers,
-                    options-schema >= 0.1.1.0
+                    options-schema >= 0.1.1.0,
+                    tasty >= 0.8,
+                    tasty-files
   if flag(rpc)
-      Build-Depends: network-transport-rpc, tasty
+      Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
   else
       Build-Depends: network-transport-tcp >= 0.3

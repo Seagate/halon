@@ -5,43 +5,26 @@
 {-# LANGUAGE CPP #-}
 module Test.Integration (tests) where
 
-import Test.Framework
 import qualified HA.EventQueue.Tests ( tests )
 import qualified HA.Multimap.ProcessTests ( tests )
 import qualified HA.NodeAgent.Tests (tests)
-import qualified HA.RecoverySupervisor.Tests ( tests )
-import qualified HA.ResourceGraph.Tests ( tests )
+import qualified HA.RecoverySupervisor.Tests (tests)
+import qualified HA.ResourceGraph.Tests (tests)
 
-import Control.Applicative ( (<$>) )
-import System.Environment (lookupEnv)
-import System.IO ( hSetBuffering, BufferMode(..), stdout, stderr )
+import Test.Tasty (TestTree, testGroup)
 
+import Control.Applicative ((<$>))
+import Network.Transport
 #ifndef USE_RPC
-import qualified HA.Network.Socket as TCP
-import qualified Network.Socket as TCP
 import qualified Network.Transport.TCP as TCP
 #endif
 
-tests :: [String] -> IO TestTree
-tests argv = do
-    hSetBuffering stdout LineBuffering
-    hSetBuffering stderr LineBuffering
-    addr <- case argv of
-            a0:_ -> return a0
-            _    ->
-#if USE_RPC
-                    maybe (error "TEST_LISTEN environment variable is not set") id <$> lookupEnv "TEST_LISTEN"
-#else
-                    maybe "127.0.0.1:0" id <$> lookupEnv "TEST_LISTEN"
-#endif
 #ifdef USE_RPC
-    transport <- RPC.createTransport "s1" addr RPC.defaultRPCParameters
-    writeNetworkGlobalIVar transport
+tests :: Transport -> IO TestTree
+tests transport = do
 #else
-    let TCP.SockAddrInet port hostaddr = TCP.decodeSocketAddress addr
-    hostname <- TCP.inet_ntoa hostaddr
-    (transport, internals) <- either (error . show) id <$>
-        TCP.createTransportExposeInternals hostname (show port) TCP.defaultTCPParameters
+tests :: Transport -> TCP.TransportInternals -> IO TestTree
+tests transport internals = do
 #endif
     testGroup "it" <$> sequence
       [
