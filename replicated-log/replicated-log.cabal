@@ -58,21 +58,24 @@ Test-Suite tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Ghc-Options:      -Wall -threaded -eventlog -debug -with-rtsopts=-l-au
-  Build-Depends:    base >= 4.5.0,
-                    binary >= 0.6,
-                    Cabal >= 1.16,
-                    consensus,
-                    consensus-paxos,
-                    directory >= 1.2,
-                    distributed-process-scheduler,
-                    distributed-process-test,
-                    distributed-static >= 0.2.0,
-                    filepath >= 1.3,
-                    mtl >= 2.0.0,
-                    network-transport,
-                    network-transport-tcp,
-                    rank1dynamic >= 0.1,
-                    replicated-log
+  if flag(randomTests)
+    Buildable:        False
+  else
+    Build-Depends:    base >= 4.5.0,
+                      binary >= 0.6,
+                      Cabal >= 1.16,
+                      consensus,
+                      consensus-paxos,
+                      directory >= 1.2,
+                      distributed-process-scheduler,
+                      distributed-process-test,
+                      distributed-static >= 0.2.0,
+                      filepath >= 1.3,
+                      mtl >= 2.0.0,
+                      network-transport,
+                      network-transport-tcp,
+                      rank1dynamic >= 0.1,
+                      replicated-log
   Default-Extensions: DeriveDataTypeable
                       DeriveGeneric
                       GeneralizedNewtypeDeriving

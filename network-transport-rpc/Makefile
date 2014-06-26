@@ -1,3 +1,9 @@
+# This Makefile is DEPRECATED. It should not be called recursively.
+#
+# If there are any required targets, they should be moved to the toplevel
+# Makefile, or to be called as a part of setup / test run.
+#
+
 CABAL = cabal $(CABAL_SANDBOX)
 
 ifndef MERO_ROOT

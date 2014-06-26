@@ -32,17 +32,27 @@ SANDBOX_SCHED = $(shell pwd)/.cabal-sandbox-scheduler
 SANDBOX_SCHED_CONFIG = $(shell pwd)/cabal.sandbox-scheduler.config
 CABAL_SCHED_SANDBOX  = --sandbox-config-file=$(SANDBOX_SCHED_CONFIG)
 
-PACKAGES = $(ROOT_DIR)/distributed-process-scheduler/ \
-           $(ROOT_DIR)/distributed-process-test/ \
-           $(ROOT_DIR)/distributed-process-trans/ \
-           $(ROOT_DIR)/consensus/ \
-           $(ROOT_DIR)/consensus-paxos/ \
-           $(ROOT_DIR)/replicated-log/ \
-           $(ROOT_DIR)/network-transport-rpc/ \
-           $(ROOT_DIR)/confc/ \
-           $(ROOT_DIR)/halon/ \
-           $(ROOT_DIR)/mero-halon/
+PACKAGE_DIR = $(ROOT_DIR)/
+VENDOR_DIR = $(ROOT_DIR)/vendor/
 
-VENDOR_PACKAGES = $(ROOT_DIR)/vendor/distributed-process \
-                  $(ROOT_DIR)/vendor/tasty-files \
-                  $(ROOT_DIR)/vendor/acid-state
+PACKAGES := distributed-process-scheduler \
+           distributed-process-test \
+           distributed-process-trans \
+           consensus \
+           consensus-paxos \
+           replicated-log \
+           halon \
+           mero-halon
+
+ifdef USE_RPC
+PACKAGES += network-transport-rpc \
+           confc
+endif
+
+VENDOR_PACKAGES = distributed-process \
+                  tasty-files \
+		  acid-state
+
+# Packages that doesn't work with deterministic scheduler
+NON_SCHED := halon \
+             mero-halon
