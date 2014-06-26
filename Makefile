@@ -131,18 +131,20 @@ build-default: SANDBOX_CONFIG = $(SANDBOX_DEFAULT_CONFIG)
 build-default: BUILDDIR = dist
 build-default:
 	cabal --sandbox-config-file=$(SANDBOX_CONFIG) \
-		      install $(PACKAGES) $(filter-out --jobs=%,$(CABAL_FLAGS)) \
-		              --jobs=1 \
-		      	      --builddir=$(BUILDDIR)
+	      install $(PACKAGES) $(filter-out --jobs=%,$(CABAL_FLAGS)) \
+	              --jobs=1 \
+	              --builddir=$(BUILDDIR)
 
 build-random:  SANDBOX_CONFIG = $(SANDBOX_SCHED_CONFIG)
 build-random:  CABAL_FLAGS += -fuse-scheduler -frandomTests
 build-random:  BUILDDIR = dist-scheduler
 build-random:
+	if [ -n "$(filter-out $(NON_SCHED),$(PACKAGES))" ] ; then \
 	cabal --sandbox-config-file=$(SANDBOX_CONFIG) \
-		      install $(filter-out $(NON_SCHED),$(PACKAGES)) \
-		              $(filter-out --jobs=%,$(CABAL_FLAGS)) \
-		      	      --builddir=$(BUILDDIR)
+	      install $(filter-out $(NON_SCHED),$(PACKAGES)) \
+	              $(filter-out --jobs=%,$(CABAL_FLAGS)) \
+	              --builddir=$(BUILDDIR) ; \
+	fi
 build: build-random build-default
 
 
