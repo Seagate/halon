@@ -12,7 +12,7 @@ Event Processing API is to provide a composable and extensible
 interface to processing streamed data about the status of the nodes in
 a High Availability cluster.
 
-## Role
+## Purpose
 
 The Mero recovery coordinator must implement policies that are
 inherently dynamic and depend on temporal conditions defined in terms
@@ -38,7 +38,7 @@ across the cluster using the "state replicator" component in Packet 2,
 so that processors can be restarted anywhere else in the cluster upon
 failure, without any noticeable downtime.
 
-## Discussion
+## Context
 
 The sheer size of clusters at exascale, involving millions of hardware
 parts and several orders of magnitude more software threads, means
@@ -251,7 +251,7 @@ advantage of all the other features of our supporting programming
 language, Haskell, too.
 
 
-## Comparison of Netwire/Nettle approach with Reactive-Banana
+## Variability guide: Netwire/Nettle vs. Reactive-Banana
 
 Functional Reactive Programming is an approach to using functional
 programming languages for implementing systems that process and
@@ -319,23 +319,3 @@ recursively without creating infinite loops.  However it also leads to
 unnecessary awkwardness when trying to understand data-flow through an
 event-processing network, thus we recommend taking the approach of
 Netwire's and Nettle here.
-
-## Tasks
-
-1. Design EDSL: produce high-level design documentation for all
-   primitives of the language and any additional composition operators
-   required.
-
-2. Implement EDSL as an arrow API based on the Netwire/Nettle
-   approach.
-
-3. Test and validate fault tolerance of stream processors.
-
-4. Performance testing and tuning: demonstrate that simple processor
-   networks can process upwards of several hundreds of thousands of
-   events every second.
-
-5. Python bindings (optional, see Packet 5): it can be useful to embed
-   the DSL not just into Haskell but also in Python if other
-   components such as RAS are to also use stream processing as
-   implemented here.
