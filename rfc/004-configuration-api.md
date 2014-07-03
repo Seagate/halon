@@ -14,9 +14,9 @@ It must be assumed that over the lifetime of a long-running system such as halon
 
 * It must be possible to change the configuration of the entire system whilst it is running without comprimising its accessibility and consistency.
 
-* The configuration API should be amenable to integration with whatever future system is put in place by Xyratex to manage the configuration of the cluster as a whole.
+* The configuration API should be amenable to integration with whatever future system is put in place to manage the configuration of the cluster as a whole.
 
-* It may at certain times be desirable to run parts of the system with different configuration parameters for the purposes of testing/benchmarking.
+* It may at certain times be desirable to run parts of the system with different configuration parameters for the purposes of testing/benchmarking, as well as supporting phased rollout of new configuration.
 
 * Running configuration must suitably persist in the case of a cluster shutdown/restart.
 
@@ -30,13 +30,17 @@ The rest of this document procedes as follows: we first dicsuss the storage of c
 
 ## Configuration storage
 
-We propose adding an additional `Configuration` type of `Resource` to the resource graph. A `Configuration` resource would possess the full global configuration; in other words, it may possess configuration elements appropriate to each cluster node and service. Each service, when spawned, would be linked by `Has` relationship to the `Configuration` used in spawning it; in this way, separate parts of the cluster may at any given time be running using different configurations.
+We propose adding an additional class of `Configuration` type `Resource`s to the resource graph (both class and type are used in their vulgar sense in this sentence). Each service would be responsible for exposing its own particular `Configuration` type, which would contain all configuration necessary to run the service and would be required to implement the classes required to make it an instance of `Resource`.  Each service, when spawned, would be linked by `Has` relationship to the `Configuration` used in spawning it; in this way, separate parts of the cluster may at any given time be running using different configurations.
 
 In order to correctly store the _disposition_ in terms of configuration, as well as its current state, we introduce a new relationship type, `Wants`, which represents the intention to change configuration. A `Wants` relationship is necessary to ensure that service configuration changes behave sensibly in spite of changes in RC, and that new configurations survive garbage collection. `Wants` relationships should be ephemeral, since they are removed as soon as configuration has been updated.
 
 ## Updating configuration
 
-We do not here make any particular requirements on how configuration external to the resource graph is to be stored, except that, as noted above, it should be provisionable by an automated deployment tool. Instead, we introduce the `reconf` abstraction. `reconf` is a short-lived process (which may run on any node having suitable access to external configuration) which is responsible for reading in configuration data from an external source and sending `ConfigurationUpdate` messages to the tracking station. A `ConfigurationUpdate` message should contain three elements:
+We do not here make any particular requirements on how configuration external to the resource graph is to be stored, except that, as noted above, it should be provisionable by an automated deployment tool. Instead, we introduce the `reconf` abstraction. `reconf` is a short-lived process (which may run on any node having suitable access to external configuration) which is responsible for reading in configuration data from an external source and sending `ConfigurationUpdate` messages to the tracking station.
+
+`reconf` must be capable of reading and providing configuration to multiple services. To do this, we propose following the example of libraries such as `optparse-applicative`, where each service provides a high-level description of its own configuration which is compiled with others into a single parser by `reconf`.
+
+A `ConfigurationUpdate` message should contain three elements:
 
 1. The current epoch.
 2. The new configuration object.
@@ -56,13 +60,13 @@ Once the resource graph has been updated with the new configuration, it is the j
 In order to support both of these possibilities, we describe the following process for reconfiguration:
 
 1. The recovery co-ordinator attempts to kill the process using `exit` and a new reason, `Reconf`, which we reserve to this purpose. It then attempts to restart the service using the new configuration. Since service starting is idempotent, we do not worry about the previous service not having exited.
-2. In the case of a regular service, this exit should be uncaught and result in the termination of the service, followed by the spawning of a replacement service with the new configuration.
-3. A new service message `ServiceConfigured` should be sent to the recovery co-ordinator upon successful startup. Upon receipt of this message, the RC should update the resource graph to reflect the new configuration.
+2. In the case of a regular service, this exit should be uncaught and result in the termination of the service. Once it has exited, the attempted startup by the RC should succeed. Alternatively, the RC may start an ephemeral process which can `monitor` the service, then kill and restart it.
+3. A new service message `ServiceStarted` should be sent to the recovery co-ordinator upon successful startup. Upon receipt of this message, the RC should update the resource graph to reflect the new configuration.
 4. In the case of a service managing its own reconfiguration, this exception should be caught by the process implementing the service, which should then send a `ConfigurationUpdateRequest` to the recovery co-ordinator. The recovery co-ordinator should then respond with a `ConfigurationUpdate` containing the current epoch and the relevant `Wants` configuration for that service.
-5. As in the case of a killable process, the service should send a `ServiceConfigured` message to the recovery co-ordinator on successful configuration, at which point the recovery co-ordinator should update the resource graph.
+5. As in the case of a killable process, the service should send a `ServiceStarted` message to the recovery co-ordinator on successful configuration, at which point the recovery co-ordinator should update the resource graph.
 6. This process should be driven by a timer, and continue until there are no remaining `Wants` edges in the graph.
 
-Sometimes, the relevant configuration to apply might be to the recovery supervisor acting as the co-ordinator itself. In this case, the co-ordinator should first apply all other `Wants` configuration changes, before killing itself (with `exit Reconf`). Since responsibility for restarting services lies with the recovery co-ordinator, this would force a new co-ordinator to be elected on a different node, which would then restart the original supervisor with a new configuration.
+Sometimes, the relevant configuration to apply might be to the recovery co-ordinator itself. In this case, the co-ordinator should simply kill itself (with `exit Reconf`), allowing a new recovery co-ordinator to be spawned with the new configuration.
 
 ## Bootstrap configuration
 
@@ -90,4 +94,4 @@ Occasionally, we may find that a change in configuration itself results in break
 
 When the recovery co-ordinator attempts to restart a service with a new configuration, it should keep track of the number of `ServiceCouldNotStart` notifications it receives. After trying a fixed number of times (itself a parameter to the recovery supervisor) it should restart the process with the old configuration, remove the `Wants` relationship and notify the operator. This count does not need to be added to the replicated log and shared amongst the tracking station; it does not matter if a new RC is elected during this process, since this will simply result in trying a few more times.
 
-What may be more damaging is a 'slow death', where services start up correctly and report `ServiceConfigured` but are unable to operate correctly. In this case, restarting the cluster may result in the same situation being replicated as halon reconfigures itself. In this case, we propose the addition of an additional bootstrap configuration parameter to the recovery supervisor which causes it to discard any configuration found in the resource graph and revert to a default configuration.
+What may be more damaging is a 'slow death', where services start up correctly and report `ServiceStarted` but are unable to operate correctly. In this case, restarting the cluster may result in the same situation being replicated as halon reconfigures itself. In this case, we propose the addition of an additional bootstrap configuration parameter to the recovery supervisor which causes it to discard any configuration found in the resource graph and revert to a default configuration.
