@@ -52,7 +52,6 @@ int m0_fom_rpclite_sender_state(struct m0_fom *fom)
             fom_obj->fom_st->rc =
                 rpc_connect_m0_thread(fom_obj->connect.rpc_machine
                                 ,fom_obj->connect.remote_address
-                                ,fom_obj->connect.slots
                                 ,fom_obj->connect.timeout_s
                                 ,fom_obj->connect.c
                                 );

@@ -32,7 +32,7 @@ int main(int argc,char** argv) {
 	fprintf(stderr,"rpc_listen: %d\n",rc);
 
     rpc_connection_t* c;
-    rc = rpc_connect_re(re,"0@lo:12345:34:500",1,5,&c);
+    rc = rpc_connect_re(re,"0@lo:12345:34:500",5,&c);
  	if (rc) {
         fprintf(stderr,"rpc_connect_re: %d\n",rc);
         exit(1);

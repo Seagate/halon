@@ -76,19 +76,12 @@ struct m0_rpc_machine* rpc_get_rpc_machine(rpc_endpoint_t* e);
  * -----------
  *
  * In Mero RPC, a connection has sessions. Each session deals with specific
- * QoS and authentication data. Each session can have multiple slots. A slot is
- * a stream of messages. Messages sent through a slot are received in the same
- * order they were sent. Messages on different slots have no ordering relation
- * when received.
+ * QoS and authentication data.
  *
  * Connections are unidirectional. The messages flow from a sender side to a
  * receiver side.
  *
- * A slot does not send a message before the reply for the previous message on
- * that slot arrives.
- *
- * An rpc_connection_t in this API is a Mero RPC connection with one session
- * and an amount of slots specified at creation time.
+ * An rpc_connection_t in this API is a Mero RPC connection with one session.
  *
  */
 
@@ -99,12 +92,10 @@ typedef struct rpc_connection rpc_connection_t;
 /// Yields the rpc session used by a connection.
 struct m0_rpc_session* rpc_get_session(rpc_connection_t* c);
 
-/** Creates an RPC connection. The RPC connection has a session with the
- * specified amount of slots.
+/** Creates an RPC connection.
  *
  * \param e endpoint to use for the connection
  * \param remote_address address of the target endpoint
- * \param slots amount of slots the connection should use
  * \param timeout_s number of milliseconds to wait for the connection to be
  *                established.
  * \param[out] c on success holds the created connection
@@ -112,7 +103,7 @@ struct m0_rpc_session* rpc_get_session(rpc_connection_t* c);
  * \return 0 on success, a non-zero value otherwise
  *
  */
-int rpc_connect(rpc_endpoint_t* e,char* remote_address,int slots,int timeout_s,rpc_connection_t** c);
+int rpc_connect(rpc_endpoint_t* e,char* remote_address,int timeout_s,rpc_connection_t** c);
 
 
 /** Closes the connection and releases local resources used by the connection.
@@ -138,16 +129,6 @@ void rpc_release_connection(rpc_connection_t* c);
 
 /// Returns the session associated with a connection.
 struct m0_rpc_session* rpc_get_session(rpc_connection_t* c);
-
-
-/** Sending messages through a connection with only one slot guarantees message ordering
- * on the receiver side.
- *
- * If the connection has more slots, then messages may not arrive ordered. In theory,
- * it is possible to send a message through a specific slot. But we don’t seem to
- * need such functionality since we are planning to send multiple messages in parallel
- * through different slots and sort them with a sequence number.
- */
 
 
 /** Status values for RPC operations */
@@ -289,7 +270,6 @@ void rpc_stop_listening(rpc_receive_endpoint_t* re);
  *
  * \param e endpoint to use for the connection
  * \param remote_address address of the target endpoint
- * \param slots amount of slots the connection should use
  * \param timeout_s number of milliseconds to wait for the connection to be
  *                established.
  * \param[out] c on success holds the created connection
@@ -297,8 +277,8 @@ void rpc_stop_listening(rpc_receive_endpoint_t* re);
  * \return 0 on success, a non-zero value otherwise
  *
  */
-int rpc_connect_re(rpc_receive_endpoint_t* e,char* remote_address
-					, int slots,int timeout_s,rpc_connection_t** c);
+int rpc_connect_re(rpc_receive_endpoint_t* e,char* remote_address,
+		   int timeout_s,rpc_connection_t** c);
 
 /// Yields the rpc_machine used by the receive endpoint.
 struct m0_rpc_machine* rpc_get_rpc_machine_re(rpc_receive_endpoint_t* e);
@@ -306,8 +286,9 @@ struct m0_rpc_machine* rpc_get_rpc_machine_re(rpc_receive_endpoint_t* e);
 
 // internal calls intended for the local request handler
 
-int rpc_connect_m0_thread(struct m0_rpc_machine* rpc_machine,char* remote_address
-						, int slots,int timeout_s,rpc_connection_t** c);
+int rpc_connect_m0_thread(struct m0_rpc_machine* rpc_machine,
+			  char* remote_address, int timeout_s,
+			  rpc_connection_t** c);
 
 int rpc_disconnect_m0_thread(rpc_connection_t* c,int timeout_s);
 

@@ -271,8 +271,9 @@ struct m0_rpc_session* rpc_get_session(rpc_connection_t* c) {
 }
 
 /* Creates an RPC connection. Must be called from an m0_thread. */
-int rpc_connect_m0_thread(struct m0_rpc_machine* rpc_machine,char* remote_address
-						, int slots,int timeout_s,rpc_connection_t** c) {
+int rpc_connect_m0_thread(struct m0_rpc_machine* rpc_machine,
+			  char* remote_address, int timeout_s,
+			  rpc_connection_t** c) {
 	M0_ASSERT(c);
 	*c = (rpc_connection_t*)malloc(sizeof(rpc_connection_t));
 	int rc;
@@ -309,12 +310,13 @@ conn_destroy:
  * rpc_connect_re.
  *
  * */
-int rpc_connect(rpc_endpoint_t* e,char* remote_address,int slots,int timeout_s,rpc_connection_t** c) {
+int rpc_connect(rpc_endpoint_t* e, char* remote_address, int timeout_s,
+		rpc_connection_t** c) {
 	m0_time_t time;
 	int rc;
 
 	time = m0_time_now();
-	rc = rpc_connect_m0_thread(&e->rpc_machine,remote_address,slots,timeout_s,c);
+	rc = rpc_connect_m0_thread(&e->rpc_machine,remote_address,timeout_s,c);
 
 	if (!rc) {
 		time = m0_time_sub(m0_time_now(), time);
@@ -392,8 +394,8 @@ rpc_listen_callbacks_t rpclite_listen_cbs;
  * Creates a connection by asking an m0_thread managed by the request
  * handler of a receive endpoint to establish the connection.
  * */
-int rpc_connect_re(rpc_receive_endpoint_t* e,char* remote_address
-					, int slots,int timeout_s,rpc_connection_t** c) {
+int rpc_connect_re(rpc_receive_endpoint_t* e, char* remote_address,
+		   int timeout_s,rpc_connection_t** c) {
 	M0_ASSERT(c);
 	struct m0_fom *fom;
 	int rc;
@@ -411,7 +413,6 @@ int rpc_connect_re(rpc_receive_endpoint_t* e,char* remote_address
 
 	fom_obj->connect.rpc_machine = m0_mero_to_rmach(&e->sctx.rsx_mero_ctx);
 	fom_obj->connect.remote_address = remote_address;
-	fom_obj->connect.slots = slots;
 	fom_obj->connect.timeout_s = timeout_s;
 	fom_obj->connect.c = c;
 

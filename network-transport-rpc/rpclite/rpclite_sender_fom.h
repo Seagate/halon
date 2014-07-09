@@ -45,7 +45,6 @@ struct m0_fom_rpclite_sender {
         struct {
             struct m0_rpc_machine* rpc_machine;
             char* remote_address;
-            int slots;
             int timeout_s;
             rpc_connection_t** c;
         } connect;
