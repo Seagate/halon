@@ -3,6 +3,7 @@ ifndef MERO_ROOT
 $(error The variable MERO_ROOT is undefined. Please, make it point to the mero build tree.)
 endif
 
+RUNDIR=/var/mero/halon
 FF2C=$(MERO_ROOT)/xcode/ff2c/ff2c
 CC=gcc
 CFLAGS=-c -I$(MERO_ROOT)/extra-libs/db4/build_unix -I$(MERO_ROOT) \
@@ -29,37 +30,37 @@ SOURCES=rpclite_fop_ff.c rpclite_fop.c rpclite.c rpclite_fom.c rpclite_sender_fo
 OBJECTS=$(SOURCES:.c=.o)
 
 runclient: test2
-	sudo $(ENV) ./test2
+	sudo sh -c "cd $(RUNDIR) && $(ENV) valgrind $(CURDIR)/test2"
 
 runserver: test2
-	sudo $(ENV) valgrind ./test2 -s
+	sudo sh -c "cd $(RUNDIR) && $(ENV) valgrind $(CURDIR)/test2 -s"
 
 runclient3: test3
-	sudo $(ENV) ./test3
+	sudo sh -c "cd $(RUNDIR) && $(ENV) $(CURDIR)/test3"
 
 runserver3: test3
-	sudo $(ENV) ./test3 -s
+	sudo sh -c "cd $(RUNDIR) && $(ENV) $(CURDIR)/test3 -s"
 
 runtest4: test4
-	sudo $(ENV) ./test4
+	sudo sh -c "cd $(RUNDIR) && $(ENV) $(CURDIR)/test4"
 
 runtest7: test7
-	sudo $(ENV) ./test7
+	sudo sh -c "cd $(RUNDIR) && $(ENV) $(CURDIR)/test7"
 
 runtest9: test9
-	sudo $(ENV) ./test9
+	sudo sh -c "cd $(RUNDIR) && $(ENV) $(CURDIR)/test9"
 
 runtest: test
-	sudo $(ENV) ./test
+	sudo sh -c "cd $(RUNDIR) && $(ENV) $(CURDIR)/test"
 
 runtestv: test
-	sudo $(ENV) valgrind ./test
+	sudo sh -c "cd $(RUNDIR) && $(ENV) valgrind $(CURDIR)/test"
 
 run-test-epoch: test-epoch
-	sudo $(ENV) ./test-epoch
+	sudo sh -c "cd $(RUNDIR) && $(ENV) $(CURDIR)/test-epoch"
 
 run-dummyService: dummyService
-	sudo $(ENV) ./dummyService $(RPC_ADDR)
+	sudo sh -c "cd $(RUNDIR) && $(ENV) $(CURDIR)/dummyService $(RPC_ADDR)"
 
 test9: $(OBJECTS) test9.o
 	$(CC) $(OBJECTS) test9.o $(LDFLAGS) -o $@
@@ -86,7 +87,6 @@ dummyService: $(OBJECTS) dummyService.o
 	$(CC) $(OBJECTS) dummyService.o $(LDFLAGS) -o $@
 
 loadmero:
-	sudo sysctl -w kernel.randomize_va_space=0
 	sudo GENDERS=$(GENDERS) M0_CORE_DIR=$(MERO_ROOT) ./st insmod
 
 unloadmero:
