@@ -195,10 +195,24 @@ int rpc_create_endpoint(char* local_address,rpc_endpoint_t** e) {
 				,goto pool_fini);
 
 
+	struct m0_reqh *reqh = malloc(sizeof(*reqh));;
+	M0_ASSERT(reqh != NULL);
+	M0_SET0(reqh);
+	rc = M0_REQH_INIT(reqh,
+			  .rhia_dtm          = (void*)1,
+			  .rhia_db           = NULL,
+			  .rhia_mdstore      = (void*)1);
+	if (rc != 0)
+		goto pool_fini;
+	m0_reqh_start(reqh);
+
 	CHECK_RESULT(rc, m0_rpc_machine_init(&(*e)->rpc_machine,
-				 &client_net_dom, (*e)->local_address, NULL, &(*e)->buffer_pool, M0_BUFFER_ANY_COLOUR,
-				 MAX_MSG_SIZE, QUEUE_LEN)
-				, goto pool_fini);
+					     &client_net_dom,
+					     (*e)->local_address, reqh,
+					     &(*e)->buffer_pool,
+					     M0_BUFFER_ANY_COLOUR,
+					     MAX_MSG_SIZE, QUEUE_LEN),
+		     goto pool_fini);
 
 	return 0;
 
@@ -209,7 +223,12 @@ pool_fini:
 }
 
 void rpc_destroy_endpoint(rpc_endpoint_t* e) {
+	struct m0_reqh *reqh = e->rpc_machine.rm_reqh;
+
 	m0_rpc_machine_fini(&e->rpc_machine);
+	m0_reqh_services_terminate(reqh);
+	m0_reqh_fini(reqh);
+	free(reqh);
 	m0_rpc_net_buffer_pool_cleanup(&e->buffer_pool);
 	free(e);
 }
