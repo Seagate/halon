@@ -486,7 +486,7 @@ rpcConnect ts sourceEpAddr lepk lep rcm targetEpAddr _ hints = do
                      modifyMVar_ connMVar $ \_ ->
                             return $ CRFailed $ show (e :: SomeException)
                    ) $ do
-            c <- R.connect_se (tsSe ts) addr 1 timeout_s
+            c <- R.connect_se (tsSe ts) addr timeout_s
             do sendBlocking c [item2bs$ ItemOpening epk sourceEpAddr] timeout_s
                atomicModifyIORef rcm$ \cm -> (M.insert c (rConnState,targetEpAddr) cm,())
               `catch` (\e -> let _ = e :: RPCException

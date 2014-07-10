@@ -125,38 +125,26 @@ destroyClientEndpoint (ClientEndpoint pce) = rpc_destroy_endpoint pce
 foreign import ccall rpc_destroy_endpoint :: Ptr ClientEndpointV -> IO ()
 
 -- | In Mero RPC, a connection has sessions. Each session deals with specific
--- QoS and authentication data. Each session can have multiple slots. A slot is
--- a stream of messages. Messages sent through a slot are received in the same
--- order they were sent. Messages on different slots have no ordering relation
--- when received.
+-- QoS and authentication data.
 --
--- Connections are unidirectional. The messages flow from a sender side to a
--- receiver side.
---
--- A slot does not send a message before the reply for the previous message on
--- that slot arrives.
---
--- A Connection in this API is a Mero RPC connection with one session
--- and an amount of slots specified at creation time.
+-- A Connection in this API is a Mero RPC connection with one session.
 --
 data Connection = Connection (Ptr ConnectionV)
   deriving (Eq,Ord,Show)
 data ConnectionV
 
--- | Creates an RPC connection. The RPC connection has a session with the
--- specified amount of slots.
+-- | Creates an RPC connection. The RPC connection has a session.
 --
 connect :: ClientEndpoint     -- ^ local endpoint to use for the connection
            -> RPCAddress      -- ^ address of the target endpoint
-           -> Int             -- ^ number of slots to use in the connection
            -> Int             -- ^ timeout in seconds to wait for the connection
            -> IO Connection
-connect (ClientEndpoint pce) (RPCAddress rpcAddr) slots timeout_s =
+connect (ClientEndpoint pce) (RPCAddress rpcAddr) timeout_s =
     alloca$ \pc -> useAsCString rpcAddr$ \cRPCAddr ->
-      rpc_connect pce cRPCAddr (fromIntegral slots) (fromIntegral timeout_s) pc
+      rpc_connect pce cRPCAddr (fromIntegral timeout_s) pc
         >>= check_rc >> fmap Connection (peek pc)
 
-foreign import ccall rpc_connect :: Ptr ClientEndpointV -> CString -> CInt -> CInt -> Ptr (Ptr ConnectionV) -> IO CInt
+foreign import ccall rpc_connect :: Ptr ClientEndpointV -> CString -> CInt -> Ptr (Ptr ConnectionV) -> IO CInt
 
 
 -- | Disconnects and releases any resources associated with the connection.
@@ -357,20 +345,19 @@ foreign import ccall rpc_stop_listening :: Ptr ServerEndpointV -> IO ()
 
 
 -- | Like 'connect' but creates an RPC connection using a server endpoint instead.
--- The RPC connection has a session with the specified amount of slots.
+-- The RPC connection has a session.
 --
 connect_se :: ServerEndpoint  -- ^ local endpoint to use for the connection
            -> RPCAddress      -- ^ address of the target endpoint
-           -> Int             -- ^ number of slots to use in the connection
            -> Int             -- ^ timeout in seconds to wait for the connection
            -> IO Connection
-connect_se (ServerEndpoint _ pse) (RPCAddress rpcAddr) slots timeout_s =
+connect_se (ServerEndpoint _ pse) (RPCAddress rpcAddr) timeout_s =
     alloca$ \pc -> useAsCString rpcAddr$ \cRPCAddr ->
-      rpc_connect_re pse cRPCAddr (fromIntegral slots) (fromIntegral timeout_s) pc
+      rpc_connect_re pse cRPCAddr (fromIntegral timeout_s) pc
         >>= check_rc >> fmap Connection (peek pc)
 
 foreign import ccall rpc_connect_re :: Ptr ServerEndpointV -> CString -> CInt
-                                    -> CInt -> Ptr (Ptr ConnectionV) -> IO CInt
+                                    -> Ptr (Ptr ConnectionV) -> IO CInt
 
 
 -- | Type of exceptions that RPC calls can produce.
