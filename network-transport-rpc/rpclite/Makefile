@@ -19,6 +19,8 @@ sp=$(empty) $(empty)
 
 ENV=LD_LIBRARY_PATH=$(subst $(sp),:,$(libdirs)) M0_CORE_DIR=$(MERO_ROOT)
 
+DEBUGGER=
+
 LD_SEARCH_PATH=$(foreach dir,$(libdirs),-L$(dir))
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
 
@@ -30,10 +32,10 @@ SOURCES=rpclite_fop_ff.c rpclite_fop.c rpclite.c rpclite_fom.c rpclite_sender_fo
 OBJECTS=$(SOURCES:.c=.o)
 
 runclient: test2
-	sudo sh -c "cd $(RUNDIR) && $(ENV) valgrind $(CURDIR)/test2"
+	sudo sh -c "cd $(RUNDIR) && $(ENV) $(DEBUGGER) $(CURDIR)/test2"
 
 runserver: test2
-	sudo sh -c "cd $(RUNDIR) && $(ENV) valgrind $(CURDIR)/test2 -s"
+	sudo sh -c "cd $(RUNDIR) && $(ENV) $(DEBUGGER) $(CURDIR)/test2 -s"
 
 runclient3: test3
 	sudo sh -c "cd $(RUNDIR) && $(ENV) $(CURDIR)/test3"
