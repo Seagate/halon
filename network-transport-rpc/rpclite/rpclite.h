@@ -96,7 +96,7 @@ struct m0_rpc_session* rpc_get_session(rpc_connection_t* c);
  *
  * \param e endpoint to use for the connection
  * \param remote_address address of the target endpoint
- * \param timeout_s number of milliseconds to wait for the connection to be
+ * \param timeout_s number of seconds to wait for the connection to be
  *                established.
  * \param[out] c on success holds the created connection
  *
@@ -270,7 +270,7 @@ void rpc_stop_listening(rpc_receive_endpoint_t* re);
  *
  * \param e endpoint to use for the connection
  * \param remote_address address of the target endpoint
- * \param timeout_s number of milliseconds to wait for the connection to be
+ * \param timeout_s number of seconds to wait for the connection to be
  *                established.
  * \param[out] c on success holds the created connection
  *
