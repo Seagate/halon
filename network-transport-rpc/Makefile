@@ -62,7 +62,7 @@ rpclite/rpclite_fop_ff.c: rpclite/rpclite_fop.ff
 rpclite/rpclite_fop_ff.h: rpclite/rpclite_fop.ff
 	$(FF2C) rpclite/rpclite_fop.ff
 
-test: loadmero testnt testch testtransport
+test: testnt testch testtransport
 
 loadmero:
 	sudo sysctl -w kernel.randomize_va_space=0
@@ -71,19 +71,19 @@ loadmero:
 unloadmero:
 	sudo GENDERS=$(GENDERS) M0_CORE_DIR=$(MERO_ROOT) ./rpclite/st rmmod
 
-testrpcliteclient: build
+testrpcliteclient:
 	sudo $(ENV) dist/build/testrpclite/testrpclite
 
-testrpcliteserver: build
+testrpcliteserver:
 	sudo $(ENV) dist/build/testrpclite/testrpclite -s
 
 ghcich:
 	sudo $(ENV) /opt/ghc/ghc-7.6.1.bin/bin/ghci tests/TestCH.hs -itests -i. -idist/build dist/build/rpclite/*.o $(LDFLAGS)
 
-testnt: build
+testnt:
 	sudo $(ENV) dist/build/TestNT/TestNT
 
-testch: build
+testch:
 	sudo $(ENV) dist/build/TestCH/TestCH
 
 testtutorial: build
@@ -115,7 +115,7 @@ testchrpc2:
 		|| (sudo pkill ch-delay-server && false)
 	sudo pkill ch-delay-server
 
-testtransport: build
+testtransport:
 	sudo $(ENV) dist/build/testtransport/testtransport "0@lo:12345:34:2"
 
 clean:
