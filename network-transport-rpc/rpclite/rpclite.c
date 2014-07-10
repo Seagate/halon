@@ -23,15 +23,11 @@
 #include "rpclite_fom.h"
 #include "rpc/rpclib.h" /* m0_rpc_server_start */
 #include "fop/fop.h"    /* m0_fop_default_item_ops */
+#include "fop/fop_item_type.h" /* m0_fop_payload_size */
 #include "reqh/reqh.h"  /* m0_reqh_rpc_mach_tl */
 #include "rpclite_fop_ff.h"
 
 #include "ha/epoch.h"
-
-#include "ut/cs_fop_foms.c"
-#include "ut/cs_fop_foms_xc.c"
-#include "ut/cs_service.c"
-#include "ut/user_space/ut.c"
 
 #include "rpclite_sender_fom.h"
 
@@ -97,9 +93,7 @@ int rpc_init(char *persistence_prefix) {
 
 	CHECK_RESULT(rc, m0_init(&instance), return rc);
 
-	CHECK_RESULT(rc, m0_ut_init(), goto m0_fini);
-
-	CHECK_RESULT(rc, rpclite_fop_init(),goto m0_ut_fini);
+	CHECK_RESULT(rc, rpclite_fop_init(),goto m0_fini);
 
 	CHECK_RESULT(rc, m0_net_xprt_init(&m0_net_lnet_xprt),goto fop_fini);
 
@@ -123,8 +117,6 @@ xprt_fini:
 		m0_net_xprt_fini(&m0_net_lnet_xprt);
 fop_fini:
 		rpclite_fop_fini();
-m0_ut_fini:
-		m0_ut_fini();
 m0_fini:
 		m0_fini();
 		rpc_stat_fini();
@@ -132,11 +124,10 @@ m0_fini:
 }
 
 void rpc_fini() {
-  m0_net_domain_fini(&client_net_dom);
   m0_ha_domain_fini(&client_ha_dom);
+  m0_net_domain_fini(&client_net_dom);
   m0_net_xprt_fini(&m0_net_lnet_xprt);
   rpclite_fop_fini();
-  m0_ut_fini();
   m0_fini();
 	rpc_stat_fini();
 }
@@ -488,7 +479,7 @@ int rpc_listen(char* persistence_prefix,char* address,rpc_listen_callbacks_t* cb
 	                "rpclib_ut", "-T", "AD", "-D", (*re)->db_file_name,
 	                "-S", (*re)->stob_file_name, "-e", (*re)->server_endpoint,
 					"-A", (*re)->addb_stob_file_name,"-w","5",
-	                "-s", "ds1", "-s", "ds2", "-q", (*re)->tm_len, "-m", (*re)->rpc_size
+	                "-q", (*re)->tm_len, "-m", (*re)->rpc_size
     };
 
 	(*re)->server_argv = (char**)malloc(sizeof(server_argv));
@@ -500,8 +491,8 @@ int rpc_listen(char* persistence_prefix,char* address,rpc_listen_callbacks_t* cb
 			                .rsx_xprts_nr         = 1,
 			                .rsx_argv             = (*re)->server_argv,
 			                .rsx_argc             = ARRAY_SIZE(server_argv),
-			                .rsx_service_types    = m0_cs_default_stypes,
-			                .rsx_service_types_nr = m0_cs_default_stypes_nr,
+			                .rsx_service_types    = NULL,
+			                .rsx_service_types_nr = 0,
 			                .rsx_log_file_name    = (*re)->log_file_name
 			        };
 

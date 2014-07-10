@@ -20,8 +20,7 @@ FF2C=$(MERO_ROOT)/xcode/ff2c/ff2c
 #		$(MERO_ROOT)/extra-libs/cunit/CUnit/Sources/.libs\
 #		$(MERO_ROOT)/ut/.libs
 
-libdirs=$(MERO_ROOT)/mero/.libs\
-        $(MERO_ROOT)/extra-libs/cunit/CUnit/Sources/.libs
+libdirs=$(MERO_ROOT)/mero/.libs
 
 empty=
 sp=$(empty) $(empty)
@@ -30,7 +29,7 @@ ENV=LD_LIBRARY_PATH=$(subst $(sp),:,$(libdirs)) NTR_DB_DIR=$(NTR_DB_DIR)
 
 LD_SEARCH_PATH=$(foreach dir,$(libdirs),-L$(dir))
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
-EXTRAINCLUDE=--extra-include-dirs=$(MERO_ROOT) --extra-include-dirs=$(MERO_ROOT)/extra-libs/db4/build_unix --extra-include-dirs=$(MERO_ROOT)/extra-libs/cunit/CUnit/Headers --extra-include-dirs=$(MERO_ROOT)/extra-libs/yaml/include
+EXTRAINCLUDE=--extra-include-dirs=$(MERO_ROOT)
 
 #PROF_FLAGS=--enable-library-profiling --enable-executable-profiling
 PROF_FLAGS=

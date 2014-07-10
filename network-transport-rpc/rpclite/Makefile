@@ -6,13 +6,10 @@ endif
 RUNDIR=/var/mero/halon
 FF2C=$(MERO_ROOT)/xcode/ff2c/ff2c
 CC=gcc
-CFLAGS=-c -I$(MERO_ROOT)/extra-libs/db4/build_unix -I$(MERO_ROOT) \
-       -I$(MERO_ROOT)/extra-libs/cunit/CUnit/Headers\
-	   -I$(MERO_ROOT)/extra-libs/yaml/include\
+CFLAGS=-c -I$(MERO_ROOT) \
 	   -Wno-attributes -Werror -g -DM0_INTERNAL='' -DM0_EXTERN=extern
 
 libdirs=$(MERO_ROOT)/mero/.libs\
-        $(MERO_ROOT)/extra-libs/cunit/CUnit/Sources/.libs
 
 empty=
 sp=$(empty) $(empty)
@@ -24,8 +21,7 @@ DEBUGGER=
 LD_SEARCH_PATH=$(foreach dir,$(libdirs),-L$(dir))
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
 
-LDFLAGS=$(LD_SEARCH_PATH) -lmero -lcunit
-#		-lgalois -lmero -lmero-ut -lmero-xcode-ff2c -lmero-net-test
+LDFLAGS=$(LD_SEARCH_PATH) -lmero
 
 SOURCES=rpclite_fop_ff.c rpclite_fop.c rpclite.c rpclite_fom.c rpclite_sender_fom.c
 
