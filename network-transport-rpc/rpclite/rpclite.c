@@ -282,7 +282,6 @@ struct rpc_connection {
 	struct m0_net_end_point* remote_ep;
 	struct m0_rpc_conn connection;
 	struct m0_rpc_session session;
-	struct m0_reqh* reqh;
 };
 
 struct m0_rpc_session* rpc_get_session(rpc_connection_t* c) {
@@ -297,7 +296,6 @@ int rpc_connect_m0_thread(struct m0_rpc_machine* rpc_machine,
 	*c = (rpc_connection_t*)malloc(sizeof(rpc_connection_t));
 	int rc;
 
-	(*c)->reqh = NULL;
 	M0_ASSERT(strlen(remote_address)<80);
 	strcpy((*c)->remote_address,remote_address);
 
@@ -369,19 +367,17 @@ int rpc_disconnect_m0_thread(rpc_connection_t* c,int timeout_s) {
 }
 
 int rpc_disconnect(rpc_connection_t* c,int timeout_s) {
-	if (!c->reqh)
-		return rpc_disconnect_m0_thread(c,timeout_s);
-
 	struct m0_fom *fom;
 	int rc;
 	struct m0_fom_rpclite_sender *fom_obj;
 	struct fom_state fom_st;
-	CHECK_RESULT(rc, create_sender_fom(&fom_obj,c->reqh,RPC_SENDER_TYPE_DISCONNECT,&fom_st), return rc);
+	struct m0_reqh *reqh = c->connection.c_rpc_machine->rm_reqh;
+	CHECK_RESULT(rc, create_sender_fom(&fom_obj,reqh,RPC_SENDER_TYPE_DISCONNECT,&fom_st), return rc);
 
 	fom_obj->disconnect.c = c;
 	fom_obj->disconnect.timeout_s = timeout_s;
 
-	run_sender_fom(fom_obj,c->reqh);
+	run_sender_fom(fom_obj,reqh);
 	return fom_st.rc;
 
 }
@@ -437,7 +433,6 @@ int rpc_connect_re(rpc_receive_endpoint_t* e, char* remote_address,
 
 	run_sender_fom(fom_obj,reqh);
 	if (fom_st.rc==0) {
-		(*c)->reqh = reqh;
 		time = m0_time_sub(m0_time_now(), time);
 		add_rpc_stat_record(RPC_STAT_CONN, time);
 	}
@@ -603,20 +598,16 @@ int rpc_send_fop_blocking(rpc_connection_t* c,struct m0_fop* fop,int timeout_s) 
 	fop->f_item.ri_nr_sent_max = 1;
 	fop->f_item.ri_resend_interval = m0_time(timeout_s?timeout_s:1,0);
 
-	if (!c->reqh) {
-		rc = rpc_send_blocking_m0_thread(c,fop);
-		goto out;
-	}
-
 	struct m0_fom *fom;
 	struct m0_fom_rpclite_sender *fom_obj;
 	struct fom_state fom_st;
-	CHECK_RESULT(rc, create_sender_fom(&fom_obj,c->reqh,RPC_SENDER_TYPE_SEND_BLOCKING,&fom_st), return rc);
+	struct m0_reqh *reqh = c->connection.c_rpc_machine->rm_reqh;
+	CHECK_RESULT(rc, create_sender_fom(&fom_obj,reqh,RPC_SENDER_TYPE_SEND_BLOCKING,&fom_st), return rc);
 
 	fom_obj->send_blocking.c = c;
 	fom_obj->send_blocking.fop = fop;
 
-	run_sender_fom(fom_obj,c->reqh);
+	run_sender_fom(fom_obj,reqh);
 	rc = fom_st.rc;
 out:
 	if (!rc) {
@@ -756,13 +747,11 @@ int rpc_send(rpc_connection_t* c,struct iovec* segments,int segment_count,void (
 	rpclite_fop = m0_fop_data(&msg->fop);
     fill_rpclite_fop(rpclite_fop,segments,segment_count);
 
-	if (!c->reqh)
-		return m0_rpc_post(&msg->fop.f_item);
-
 	struct m0_fom *fom;
 	struct m0_fom_rpclite_sender *fom_obj;
 	struct fom_state fom_st;
-	CHECK_RESULT(rc, create_sender_fom(&fom_obj,c->reqh,RPC_SENDER_TYPE_SEND,&fom_st), return rc);
+	struct m0_reqh *reqh = c->connection.c_rpc_machine->rm_reqh;
+	CHECK_RESULT(rc, create_sender_fom(&fom_obj,reqh,RPC_SENDER_TYPE_SEND,&fom_st), return rc);
 
 	fom_obj->send.rpc_item = &msg->fop.f_item;
 
@@ -773,7 +762,7 @@ int rpc_send(rpc_connection_t* c,struct iovec* segments,int segment_count,void (
                );
 exit(1);
     }
-	run_sender_fom(fom_obj,c->reqh);
+	run_sender_fom(fom_obj,reqh);
 	return fom_st.rc;
 }
 
