@@ -2,8 +2,11 @@
 
 rpclite is an abstraction layer over RPC
 
-The purpose of this library is to hide all the details of Mero RPC that are
-not necessary for the simplest inter process communication.
+The purposes of this library are:
+* to hide all the details of Mero RPC that are not necessary for the
+  simplest inter process communication, and
+* to allow any thread to use RPC. The Mero RPC interface currently
+  works only when used from m0_threads.
 
 The API can be found in rpclite.h.
 For an example program which uses rpclite see test.c.
@@ -14,7 +17,7 @@ packets.
 == LIMITATIONS ==
 
 * rpc_listen can be used only once. The same process cannot listen on multiple
-  addresses simultaneously.
+  addresses simultaneously (TODO: check if this is still the case).
 
 * We don't know how to terminate connections on the server side.
 
