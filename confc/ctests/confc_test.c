@@ -51,8 +51,12 @@ static const char* show_service_type(enum m0_conf_service_type t) {
 			return "M0_CST_IOS";
 		case M0_CST_MGS:
 			return "M0_CST_MGS";
-		case M0_CST_DLM:
-			return "M0_CST_DLM";
+		case M0_CST_RMS:
+			return "M0_CST_RMS";
+		case M0_CST_SS:
+			return "M0_CST_SS";
+		case M0_CST_HA:
+			return "M0_CST_HA";
 		default:
 			return "unknown";
 	}
@@ -60,15 +64,15 @@ static const char* show_service_type(enum m0_conf_service_type t) {
 
 static void print_configuration(int indentation,struct m0_conf_obj* obj);
 
-static void print_configuration_child(int newi,struct m0_conf_obj* obj,char* child){
+static void print_configuration_child(int newi,struct m0_conf_obj* obj,struct m0_fid child){
 	struct m0_conf_obj* dir;
-	int rc = m0_confc_open_sync(&dir, obj, M0_BUF_INITS(child));
+	int rc = m0_confc_open_sync(&dir, obj, child);
     if (rc) {
 		fprintf(stderr,"m0_confc_open_sync: %d %s\n",rc,strerror(-rc));
 		exit(1);
 	}
 	printf("%*.*c",newi,newi,' ');
-	printf("%s: ",child);
+	printf("m0_fid(0x%lX,%lu): ",child.f_container,child.f_key);
 	print_configuration(newi,dir);
 	m0_confc_close(dir);
 }
@@ -76,111 +80,82 @@ static void print_configuration_child(int newi,struct m0_conf_obj* obj,char* chi
 static void print_configuration(int indentation,struct m0_conf_obj* obj) {
 	
 	int newi = indentation+2;
-	printf("id = %.*s: ",obj->co_id.b_nob,(const char*)obj->co_id.b_addr);
-	switch(obj->co_type) {
-		case M0_CO_DIR: 
-		{
-			printf("m0_conf_dir {}\n");
-			struct m0_conf_obj* item;
-			int rc;
-			for (item = NULL; (rc = m0_confc_readdir_sync(obj, &item)) > 0; ) {
-				printf("%*.*c",newi,newi,' ');
-				print_configuration(newi,item);
-			}
-			m0_confc_close(item);
+	printf("id = m0_fid(0x%lX,%lu): ",obj->co_id.f_container,obj->co_id.f_key);
+	const struct m0_conf_obj_type *t = m0_conf_obj_type(obj);
+	if (t == &M0_CONF_DIR_TYPE) {
+		printf("m0_conf_dir {}\n");
+		struct m0_conf_obj* item;
+		int rc;
+		for (item = NULL; (rc = m0_confc_readdir_sync(obj, &item)) > 0; ) {
+			printf("%*.*c",newi,newi,' ');
+			print_configuration(newi,item);
 		}
-			break;
-		case M0_CO_PROFILE:
-			printf("m0_conf_profile {}\n");
-			print_configuration_child(newi,obj,"filesystem");
-			break;
-		case M0_CO_FILESYSTEM: 
-		{
-			struct m0_conf_filesystem* fs = M0_CONF_CAST(obj,m0_conf_filesystem);
-			printf("m0_conf_filesystem { ");
-			printf("rootfid = { .container = %lu, .key = %lu }, "
-					,fs->cf_rootfid.f_container,fs->cf_rootfid.f_key);
-			if (*fs->cf_params) {
-				printf("params = [ ");
-				printf("%s",*fs->cf_params);
-				const char** s;
-				for(s=fs->cf_params+1;*s;s+=1)
-					printf(" %s",*s);
-				printf(" ] }\n");
-			} else
-				printf(" params = [] }\n");
-			print_configuration_child(newi,obj,"services");
-		}
-		break;
-	
-		case M0_CO_SERVICE:
-		{
-			struct m0_conf_service* svc = M0_CONF_CAST(obj,m0_conf_service);
-			printf("m0_conf_service { type = %s, ",show_service_type(svc->cs_type));
-			if (*svc->cs_endpoints) {
-				printf("endpoints = [ ");
-				printf("%s",*svc->cs_endpoints);
-				const char** s;
-				for(s=svc->cs_endpoints+1;*s;s+=1)
-					printf(", %s",*s);
-				printf(" ] }\n");
-			} else
-				printf(" endpoints = [] }\n");
-			print_configuration_child(newi,obj,"node");
-		}
-		break;
-
-		case M0_CO_NODE:
-		{
-			struct m0_conf_node* node = M0_CONF_CAST(obj,m0_conf_node);
-			printf("m0_conf_node { memsize = %u, nr_cpu = %u, "
-					,node->cn_memsize,node->cn_nr_cpu);
-			printf("last_state = %lu, flags = %lu, pool_id = %lu }\n"
-					,node->cn_last_state
-					,node->cn_flags
-					,node->cn_pool_id
-					);
-			print_configuration_child(newi,obj,"nics");
-			print_configuration_child(newi,obj,"sdevs");
-		}
-		break;
-
-		case M0_CO_NIC:
-		{
-			struct m0_conf_nic* nic = M0_CONF_CAST(obj,m0_conf_nic);
-			printf("m0_conf_nic { iface = %u, mtu = %u, "
-					,nic->ni_iface,nic->ni_mtu);
-			printf("speed = %lu, filename = %s, last_state = %lu }\n"
-					,nic->ni_speed,nic->ni_filename,nic->ni_last_state);
-		}
-		break;
-
-		case M0_CO_SDEV:
-		{
-			struct m0_conf_sdev* sdev = M0_CONF_CAST(obj,m0_conf_sdev);
-			printf("m0_conf_sdev { iface = %u, media = %u, "
-					,sdev->sd_iface,sdev->sd_media);
-			printf("size = %lu, last_state = %lu, flags = %lu, "
-					,sdev->sd_size,sdev->sd_last_state,sdev->sd_flags);
-			printf("filename = %s }\n",sdev->sd_filename);
-
-			print_configuration_child(newi,obj,"partitions");
-		}
-		break;
-
-		case M0_CO_PARTITION:
-		{
-			struct m0_conf_partition* part = M0_CONF_CAST(obj,m0_conf_partition);
-			printf("m0_conf_partition { start = %lu, size = %lu, "
-					,part->pa_start,part->pa_size);
-			printf("index = %u, type = %u, filename = %s }\n"
-					,part->pa_index,part->pa_type,part->pa_filename);
-		}
-		break;
-
-		case M0_CO_NR:
-		default:
-			fprintf(stderr,"unknown configuration object type: %d\n",obj->co_type);
+		m0_confc_close(item);
+	}
+	else if (t == &M0_CONF_PROFILE_TYPE) {
+		printf("m0_conf_profile {}\n");
+		print_configuration_child(newi,obj,M0_CONF_PROFILE_FILESYSTEM_FID);
+	}
+	else if (t == &M0_CONF_FILESYSTEM_TYPE) {
+		struct m0_conf_filesystem* fs = M0_CONF_CAST(obj,m0_conf_filesystem);
+		printf("m0_conf_filesystem { ");
+		printf("rootfid = m0_fid(0x%lX,%lu), "
+				,fs->cf_rootfid.f_container,fs->cf_rootfid.f_key);
+		if (*fs->cf_params) {
+			printf("params = [ ");
+			printf("%s",*fs->cf_params);
+			const char** s;
+			for(s=fs->cf_params+1;*s;s+=1)
+				printf(" %s",*s);
+			printf(" ] }\n");
+		} else
+			printf(" params = [] }\n");
+		print_configuration_child(newi,obj,M0_CONF_FILESYSTEM_SERVICES_FID);
+	}
+	else if (t == &M0_CONF_SERVICE_TYPE) {
+		struct m0_conf_service* svc = M0_CONF_CAST(obj,m0_conf_service);
+		printf("m0_conf_service { type = %s, ",show_service_type(svc->cs_type));
+		if (*svc->cs_endpoints) {
+			printf("endpoints = [ ");
+			printf("%s",*svc->cs_endpoints);
+			const char** s;
+			for(s=svc->cs_endpoints+1;*s;s+=1)
+				printf(", %s",*s);
+			printf(" ] }\n");
+		} else
+			printf(" endpoints = [] }\n");
+		print_configuration_child(newi,obj,M0_CONF_SERVICE_NODE_FID);
+	}
+	else if (t == &M0_CONF_NODE_TYPE) {
+		struct m0_conf_node* node = M0_CONF_CAST(obj,m0_conf_node);
+		printf("m0_conf_node { memsize = %u, nr_cpu = %u, "
+				,node->cn_memsize,node->cn_nr_cpu);
+		printf("last_state = %lu, flags = %lu, pool_id = %lu }\n"
+				,node->cn_last_state
+				,node->cn_flags
+				,node->cn_pool_id
+				);
+		print_configuration_child(newi,obj,M0_CONF_NODE_NICS_FID);
+		print_configuration_child(newi,obj,M0_CONF_NODE_SDEVS_FID);
+	}
+	else if (t == &M0_CONF_NIC_TYPE) {
+		struct m0_conf_nic* nic = M0_CONF_CAST(obj,m0_conf_nic);
+		printf("m0_conf_nic { iface = %u, mtu = %u, "
+				,nic->ni_iface,nic->ni_mtu);
+		printf("speed = %lu, filename = %s, last_state = %lu }\n"
+				,nic->ni_speed,nic->ni_filename,nic->ni_last_state);
+	}
+	else if (t == &M0_CONF_SDEV_TYPE) {
+		struct m0_conf_sdev* sdev = M0_CONF_CAST(obj,m0_conf_sdev);
+		printf("m0_conf_sdev { iface = %u, media = %u, "
+				,sdev->sd_iface,sdev->sd_media);
+		printf("size = %lu, last_state = %lu, flags = %lu, "
+				,sdev->sd_size,sdev->sd_last_state,sdev->sd_flags);
+		printf("filename = %s }\n",sdev->sd_filename);
+	}
+	else {
+		fprintf(stderr,"unknown configuration object type: m0_fid_type(%d,%s)\n"
+				,t->cot_ftype.ft_id,t->cot_ftype.ft_name);
 	}
 }
 
@@ -223,9 +198,9 @@ int main(int argc,char** argv) {
 
 	char confd_addr[100];
 	strcpy(confd_addr,argv[1]);
-	strcat(confd_addr,":12345:34:1");
-	rc = m0_confc_init(&confc, &g_grp,
-		               &M0_BUF_INITS((char *)"prof-10000000000"),
+	strcat(confd_addr,":12345:34:1001");
+	const struct m0_fid prof_fid = M0_FID_TINIT('p',17,0);
+	rc = m0_confc_init(&confc, &g_grp, &prof_fid,
 	                  confd_addr,rpc_get_rpc_machine(ep), NULL);
     if (rc) {
 		fprintf(stderr,"m0_confc_init: %d %s\n",rc,strerror(-rc));
