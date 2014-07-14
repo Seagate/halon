@@ -121,7 +121,6 @@ endif
 
 export USE_TCP
 export USE_RPC
-export RANDOMIZED_TESTS
 export TEST_LISTEN
 
 
@@ -137,6 +136,7 @@ build-default:
 
 build-random:  SANDBOX_CONFIG = $(SANDBOX_SCHED_CONFIG)
 build-random:  CABAL_FLAGS += -fuse-scheduler -frandomTests
+build-random:  RANDOMIZED_TESTS = 1
 build-random:  BUILDDIR = dist-scheduler
 build-random:
 	if [ -n "$(filter-out $(NON_SCHED),$(PACKAGES))" ] ; then \
