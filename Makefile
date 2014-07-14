@@ -121,7 +121,6 @@ endif
 
 export USE_TCP
 export USE_RPC
-export RANDOMIZED_TESTS
 export TEST_LISTEN
 
 
@@ -137,6 +136,7 @@ build-default:
 
 build-random:  SANDBOX_CONFIG = $(SANDBOX_SCHED_CONFIG)
 build-random:  CABAL_FLAGS += -fuse-scheduler -frandomTests
+build-random:  RANDOMIZED_TESTS = 1
 build-random:  BUILDDIR = dist-scheduler
 build-random:
 	if [ -n "$(filter-out $(NON_SCHED),$(PACKAGES))" ] ; then \
@@ -153,11 +153,13 @@ CLEAN_SCHED := $(patsubst %, %_clean_sched, $(filter-out $(NON_SCHED), $(PACKAGE
 
 
 $(CLEAN):
+	-cd $(patsubst %_clean, %, $@) && cabal --sandbox-config-file=$(SANDBOX_DEFAULT_CONFIG) clean
 	-cabal --sandbox-config-file=$(SANDBOX_DEFAULT_CONFIG) \
 	      sandbox hc-pkg -- unregister $(patsubst %_clean, %, $@) \
 	      --force
 
 $(CLEAN_SCHED):
+	-cd $(patsubst %_clean_sched, %, $@) && cabal --sandbox-config-file=$(SANDBOX_SCHED_CONFIG) clean
 	-cabal --sandbox-config-file=$(SANDBOX_SCHED_CONFIG) \
 	      sandbox hc-pkg -- unregister $(patsubst %_clean_sched, %, $@) \
 	      --force
