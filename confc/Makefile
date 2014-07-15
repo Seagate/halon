@@ -14,15 +14,12 @@ endif
 RPCLITE_PREFIX=$(shell pwd)/../network-transport-rpc/rpclite
 
 CC=gcc
-CFLAGS=-c -I$(MERO_ROOT)/extra-libs/db4/build_unix -I$(MERO_ROOT) \
-       -I$(MERO_ROOT)/extra-libs/cunit/CUnit/Headers\
-	   -I$(MERO_ROOT)/extra-libs/yaml/include\
+CFLAGS=-c -I$(MERO_ROOT) \
 	   -I$(RPCLITE_PREFIX)\
 	   -Wno-attributes -Werror -g -DM0_INTERNAL='' -DM0_EXTERN=extern
 export CFLAGS
 
-libdirs=$(MERO_ROOT)/mero/.libs \
-        $(MERO_ROOT)/extra-libs/cunit/CUnit/Sources/.libs
+libdirs=$(MERO_ROOT)/mero/.libs
 
 empty=
 sp=$(empty) $(empty)
@@ -33,10 +30,10 @@ export ENV
 LD_SEARCH_PATH=$(foreach dir,$(libdirs),-L$(dir))
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
 
-LDFLAGS=$(LD_SEARCH_PATH) -lmero -lcunit
+LDFLAGS=$(LD_SEARCH_PATH) -lmero
 export LDFLAGS
 
-CONFIGURE_FLAGS:=--extra-include-dirs=$(MERO_ROOT) --extra-include-dirs=$(MERO_ROOT)/extra-libs/db4/build_unix $(HLD_SEARCH_PATH) $(PROF_FLAGS) $(DEBUG_FLAGS)
+CONFIGURE_FLAGS:=--extra-include-dirs=$(MERO_ROOT) $(HLD_SEARCH_PATH) $(PROF_FLAGS) $(DEBUG_FLAGS)
 
 build: configure
 	$(CABAL) build

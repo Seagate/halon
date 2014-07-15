@@ -6,12 +6,11 @@ RPCLITE_PREFIX=../../network-transport-rpc/rpclite
 
 FF2C=$(MERO_ROOT)/xcode/ff2c/ff2c
 CC=gcc
-CFLAGS=-c -I$(MERO_ROOT)/extra-libs/db4/build_unix -I$(MERO_ROOT) \
+CFLAGS=-c -I$(MERO_ROOT) \
 	   -Wno-attributes -Werror -g -DM0_INTERNAL='' -DM0_EXTERN=extern \
        -I$(RPCLITE_PREFIX)
 
-libdirs=$(MERO_ROOT)/mero/.libs \
-        $(MERO_ROOT)/extra-libs/cunit/CUnit/Sources/.libs
+libdirs=$(MERO_ROOT)/mero/.libs
 
 empty= 
 sp=$(empty) $(empty)
@@ -21,8 +20,7 @@ ENV=LD_LIBRARY_PATH=$(subst $(sp),:,$(libdirs)) M0_CORE_DIR=$(MERO_ROOT)
 LD_SEARCH_PATH=$(foreach dir,$(libdirs),-L$(dir))
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
 
-LDFLAGS=$(LD_SEARCH_PATH) -lmero -lcunit
-#		-lgalois -lmero -lmero-ut -lmero-xcode-ff2c -lmero-net-test
+LDFLAGS=$(LD_SEARCH_PATH) -lmero
 
 SOURCES=$(RPCLITE_PREFIX)/rpclite_fop_ff.c \
 		$(RPCLITE_PREFIX)/rpclite.c \
@@ -54,9 +52,10 @@ confc_test: $(OBJECTS) confc_test.o
 conf_poll_once: $(OBJECTS) conf_poll_once.o
 	$(CC) $(OBJECTS) $@.o $(LDFLAGS) -o $@
 
+ST = $(MERO_ROOT)/m0t1fs/linux_kernel/st/st
+
 loadmero:
-	sudo sysctl -w kernel.randomize_va_space=0
-	sudo M0_CORE_DIR=$(MERO_ROOT) ./st insmod
+	sudo M0_CORE_DIR=$(MERO_ROOT) $(ST) sstart
 
 .c.o:
 	$(CC) $(CFLAGS) $< -o $@
