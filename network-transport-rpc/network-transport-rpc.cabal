@@ -35,8 +35,7 @@ Library
 
   cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
   include-dirs: rpclite
-  extra-libraries: mero cunit
-  -- galois mero-ut mero-xcode-ff2c mero-net-test mero
+  extra-libraries: mero
   c-sources: rpclite/rpclite.c
              rpclite/rpclite_fom.c
              rpclite/rpclite_fop.c

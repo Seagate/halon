@@ -37,10 +37,10 @@ int main(int argc,char** argv) {
 		rpc_connection_t* c;
 		rpc_connection_t* c2;
 
-		rc = rpc_connect_re(re,"0@lo:12345:34:500",4,3,&c);
+		rc = rpc_connect_re(re,"0@lo:12345:34:500",3,&c);
 		fprintf(stderr,"rpc_connect: %d\n",rc);
 
-		rc = rpc_connect_re(re,"0@lo:12345:34:500",4,3,&c2);
+		rc = rpc_connect_re(re,"0@lo:12345:34:500",3,&c2);
 		fprintf(stderr,"rpc_connect: %d\n",rc);
 
 		struct iovec segments[] = { { .iov_base = "segment 1", .iov_len = 9 }

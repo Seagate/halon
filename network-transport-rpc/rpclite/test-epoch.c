@@ -27,7 +27,7 @@ void* epoch_client(void* args) {
   struct client_data* data = (struct client_data*)args;
   rpc_connection_t* c;
 
-  rpc_connect_re(data->c_re, SERVER_ADDRESS, 8, 1, &c);
+  rpc_connect_re(data->c_re, SERVER_ADDRESS, 1, &c);
 
   int rc;
   uint64_t epoch = 0;

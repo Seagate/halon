@@ -21,7 +21,7 @@ mainClient = flip catch (\e -> print (e::SomeException))$ do
               }
     putStrLn "listening ..."
 
-    c <- connect ce (rpcAddress "0@lo:12345:34:4") 1 3
+    c <- connect ce (rpcAddress "0@lo:12345:34:4") 3
     putStrLn "client connected"
 
     sendBlocking c [B8.pack "hello"] 3
@@ -54,7 +54,7 @@ mainServer = flip catch (\e -> print (e::SomeException))$ do
     putStrLn "listening ... (press enter)"
     void getLine
 
-    c <- connect ce (rpcAddress "0@lo:12345:34:2") 1 3
+    c <- connect ce (rpcAddress "0@lo:12345:34:2") 3
     putStrLn "client connected"
 
     sendBlocking c [B8.pack "hello"] 3

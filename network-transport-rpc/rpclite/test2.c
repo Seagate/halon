@@ -60,7 +60,7 @@ int main(int argc,char** argv) {
 		fprintf(stderr,"rpc_create_endpoint: %d\n",rc);
 
 
-		rc = rpc_connect(e,"0@lo:12345:34:500",4,3,&c);
+		rc = rpc_connect(e,"0@lo:12345:34:500",3,&c);
 		fprintf(stderr,"rpc_connect: %d\n",rc);
 
 		struct iovec segments[] = { { .iov_base = "segment 1", .iov_len = 10 }

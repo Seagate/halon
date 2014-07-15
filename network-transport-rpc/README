@@ -43,7 +43,6 @@ To build Mero for ParSci cluster, you can follow instructions written in
 Before using RPC, a kernel parameter needs to be set, LNET needs to be
 started and mero needs to be loaded:
 
-    $ sudo sysctl -w kernel.randomize_va_space=0
     $ sudo modprobe lnet
     $ sudo lctl network up
     $ insmod galois.ko
@@ -52,8 +51,6 @@ started and mero needs to be loaded:
 Alternatively
 
     $ rpclite/st insmod
-
-will run all of the above steps except the first.
 
 Also, there is a make target "make loadmero", for setting up LNET and mero and a
 target "make unloadmero" for cleaning up.

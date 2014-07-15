@@ -23,15 +23,11 @@
 #include "rpclite_fom.h"
 #include "rpc/rpclib.h" /* m0_rpc_server_start */
 #include "fop/fop.h"    /* m0_fop_default_item_ops */
+#include "fop/fop_item_type.h" /* m0_fop_payload_size */
 #include "reqh/reqh.h"  /* m0_reqh_rpc_mach_tl */
 #include "rpclite_fop_ff.h"
 
 #include "ha/epoch.h"
-
-#include "ut/cs_fop_foms.c"
-#include "ut/cs_fop_foms_xc.c"
-#include "ut/cs_service.c"
-#include "ut/user_space/ut.c"
 
 #include "rpclite_sender_fom.h"
 
@@ -97,9 +93,7 @@ int rpc_init(char *persistence_prefix) {
 
 	CHECK_RESULT(rc, m0_init(&instance), return rc);
 
-	CHECK_RESULT(rc, m0_ut_init(), goto m0_fini);
-
-	CHECK_RESULT(rc, rpclite_fop_init(),goto m0_ut_fini);
+	CHECK_RESULT(rc, rpclite_fop_init(),goto m0_fini);
 
 	CHECK_RESULT(rc, m0_net_xprt_init(&m0_net_lnet_xprt),goto fop_fini);
 
@@ -123,8 +117,6 @@ xprt_fini:
 		m0_net_xprt_fini(&m0_net_lnet_xprt);
 fop_fini:
 		rpclite_fop_fini();
-m0_ut_fini:
-		m0_ut_fini();
 m0_fini:
 		m0_fini();
 		rpc_stat_fini();
@@ -132,11 +124,10 @@ m0_fini:
 }
 
 void rpc_fini() {
-  m0_net_domain_fini(&client_net_dom);
   m0_ha_domain_fini(&client_ha_dom);
+  m0_net_domain_fini(&client_net_dom);
   m0_net_xprt_fini(&m0_net_lnet_xprt);
   rpclite_fop_fini();
-  m0_ut_fini();
   m0_fini();
 	rpc_stat_fini();
 }
@@ -195,10 +186,24 @@ int rpc_create_endpoint(char* local_address,rpc_endpoint_t** e) {
 				,goto pool_fini);
 
 
+	struct m0_reqh *reqh = malloc(sizeof(*reqh));;
+	M0_ASSERT(reqh != NULL);
+	M0_SET0(reqh);
+	rc = M0_REQH_INIT(reqh,
+			  .rhia_dtm          = (void*)1,
+			  .rhia_db           = NULL,
+			  .rhia_mdstore      = (void*)1);
+	if (rc != 0)
+		goto pool_fini;
+	m0_reqh_start(reqh);
+
 	CHECK_RESULT(rc, m0_rpc_machine_init(&(*e)->rpc_machine,
-				 &client_net_dom, (*e)->local_address, NULL, &(*e)->buffer_pool, M0_BUFFER_ANY_COLOUR,
-				 MAX_MSG_SIZE, QUEUE_LEN)
-				, goto pool_fini);
+					     &client_net_dom,
+					     (*e)->local_address, reqh,
+					     &(*e)->buffer_pool,
+					     M0_BUFFER_ANY_COLOUR,
+					     MAX_MSG_SIZE, QUEUE_LEN),
+		     goto pool_fini);
 
 	return 0;
 
@@ -209,7 +214,12 @@ pool_fini:
 }
 
 void rpc_destroy_endpoint(rpc_endpoint_t* e) {
+	struct m0_reqh *reqh = e->rpc_machine.rm_reqh;
+
 	m0_rpc_machine_fini(&e->rpc_machine);
+	m0_reqh_services_terminate(reqh);
+	m0_reqh_fini(reqh);
+	free(reqh);
 	m0_rpc_net_buffer_pool_cleanup(&e->buffer_pool);
 	free(e);
 }
@@ -263,7 +273,6 @@ struct rpc_connection {
 	struct m0_net_end_point* remote_ep;
 	struct m0_rpc_conn connection;
 	struct m0_rpc_session session;
-	struct m0_reqh* reqh;
 };
 
 struct m0_rpc_session* rpc_get_session(rpc_connection_t* c) {
@@ -271,13 +280,13 @@ struct m0_rpc_session* rpc_get_session(rpc_connection_t* c) {
 }
 
 /* Creates an RPC connection. Must be called from an m0_thread. */
-int rpc_connect_m0_thread(struct m0_rpc_machine* rpc_machine,char* remote_address
-						, int slots,int timeout_s,rpc_connection_t** c) {
+int rpc_connect_m0_thread(struct m0_rpc_machine* rpc_machine,
+			  char* remote_address, int timeout_s,
+			  rpc_connection_t** c) {
 	M0_ASSERT(c);
 	*c = (rpc_connection_t*)malloc(sizeof(rpc_connection_t));
 	int rc;
 
-	(*c)->reqh = NULL;
 	M0_ASSERT(strlen(remote_address)<80);
 	strcpy((*c)->remote_address,remote_address);
 
@@ -309,12 +318,13 @@ conn_destroy:
  * rpc_connect_re.
  *
  * */
-int rpc_connect(rpc_endpoint_t* e,char* remote_address,int slots,int timeout_s,rpc_connection_t** c) {
+int rpc_connect(rpc_endpoint_t* e, char* remote_address, int timeout_s,
+		rpc_connection_t** c) {
 	m0_time_t time;
 	int rc;
 
 	time = m0_time_now();
-	rc = rpc_connect_m0_thread(&e->rpc_machine,remote_address,slots,timeout_s,c);
+	rc = rpc_connect_m0_thread(&e->rpc_machine,remote_address,timeout_s,c);
 
 	if (!rc) {
 		time = m0_time_sub(m0_time_now(), time);
@@ -348,19 +358,17 @@ int rpc_disconnect_m0_thread(rpc_connection_t* c,int timeout_s) {
 }
 
 int rpc_disconnect(rpc_connection_t* c,int timeout_s) {
-	if (!c->reqh)
-		return rpc_disconnect_m0_thread(c,timeout_s);
-
 	struct m0_fom *fom;
 	int rc;
 	struct m0_fom_rpclite_sender *fom_obj;
 	struct fom_state fom_st;
-	CHECK_RESULT(rc, create_sender_fom(&fom_obj,c->reqh,RPC_SENDER_TYPE_DISCONNECT,&fom_st), return rc);
+	struct m0_reqh *reqh = c->connection.c_rpc_machine->rm_reqh;
+	CHECK_RESULT(rc, create_sender_fom(&fom_obj,reqh,RPC_SENDER_TYPE_DISCONNECT,&fom_st), return rc);
 
 	fom_obj->disconnect.c = c;
 	fom_obj->disconnect.timeout_s = timeout_s;
 
-	run_sender_fom(fom_obj,c->reqh);
+	run_sender_fom(fom_obj,reqh);
 	return fom_st.rc;
 
 }
@@ -392,8 +400,8 @@ rpc_listen_callbacks_t rpclite_listen_cbs;
  * Creates a connection by asking an m0_thread managed by the request
  * handler of a receive endpoint to establish the connection.
  * */
-int rpc_connect_re(rpc_receive_endpoint_t* e,char* remote_address
-					, int slots,int timeout_s,rpc_connection_t** c) {
+int rpc_connect_re(rpc_receive_endpoint_t* e, char* remote_address,
+		   int timeout_s,rpc_connection_t** c) {
 	M0_ASSERT(c);
 	struct m0_fom *fom;
 	int rc;
@@ -411,13 +419,11 @@ int rpc_connect_re(rpc_receive_endpoint_t* e,char* remote_address
 
 	fom_obj->connect.rpc_machine = m0_mero_to_rmach(&e->sctx.rsx_mero_ctx);
 	fom_obj->connect.remote_address = remote_address;
-	fom_obj->connect.slots = slots;
 	fom_obj->connect.timeout_s = timeout_s;
 	fom_obj->connect.c = c;
 
 	run_sender_fom(fom_obj,reqh);
 	if (fom_st.rc==0) {
-		(*c)->reqh = reqh;
 		time = m0_time_sub(m0_time_now(), time);
 		add_rpc_stat_record(RPC_STAT_CONN, time);
 	}
@@ -473,7 +479,7 @@ int rpc_listen(char* persistence_prefix,char* address,rpc_listen_callbacks_t* cb
 	                "rpclib_ut", "-T", "AD", "-D", (*re)->db_file_name,
 	                "-S", (*re)->stob_file_name, "-e", (*re)->server_endpoint,
 					"-A", (*re)->addb_stob_file_name,"-w","5",
-	                "-s", "ds1", "-s", "ds2", "-q", (*re)->tm_len, "-m", (*re)->rpc_size
+	                "-q", (*re)->tm_len, "-m", (*re)->rpc_size
     };
 
 	(*re)->server_argv = (char**)malloc(sizeof(server_argv));
@@ -485,8 +491,8 @@ int rpc_listen(char* persistence_prefix,char* address,rpc_listen_callbacks_t* cb
 			                .rsx_xprts_nr         = 1,
 			                .rsx_argv             = (*re)->server_argv,
 			                .rsx_argc             = ARRAY_SIZE(server_argv),
-			                .rsx_service_types    = m0_cs_default_stypes,
-			                .rsx_service_types_nr = m0_cs_default_stypes_nr,
+			                .rsx_service_types    = NULL,
+			                .rsx_service_types_nr = 0,
 			                .rsx_log_file_name    = (*re)->log_file_name
 			        };
 
@@ -583,20 +589,16 @@ int rpc_send_fop_blocking(rpc_connection_t* c,struct m0_fop* fop,int timeout_s) 
 	fop->f_item.ri_nr_sent_max = 1;
 	fop->f_item.ri_resend_interval = m0_time(timeout_s?timeout_s:1,0);
 
-	if (!c->reqh) {
-		rc = rpc_send_blocking_m0_thread(c,fop);
-		goto out;
-	}
-
 	struct m0_fom *fom;
 	struct m0_fom_rpclite_sender *fom_obj;
 	struct fom_state fom_st;
-	CHECK_RESULT(rc, create_sender_fom(&fom_obj,c->reqh,RPC_SENDER_TYPE_SEND_BLOCKING,&fom_st), return rc);
+	struct m0_reqh *reqh = c->connection.c_rpc_machine->rm_reqh;
+	CHECK_RESULT(rc, create_sender_fom(&fom_obj,reqh,RPC_SENDER_TYPE_SEND_BLOCKING,&fom_st), return rc);
 
 	fom_obj->send_blocking.c = c;
 	fom_obj->send_blocking.fop = fop;
 
-	run_sender_fom(fom_obj,c->reqh);
+	run_sender_fom(fom_obj,reqh);
 	rc = fom_st.rc;
 out:
 	if (!rc) {
@@ -736,13 +738,11 @@ int rpc_send(rpc_connection_t* c,struct iovec* segments,int segment_count,void (
 	rpclite_fop = m0_fop_data(&msg->fop);
     fill_rpclite_fop(rpclite_fop,segments,segment_count);
 
-	if (!c->reqh)
-		return m0_rpc_post(&msg->fop.f_item);
-
 	struct m0_fom *fom;
 	struct m0_fom_rpclite_sender *fom_obj;
 	struct fom_state fom_st;
-	CHECK_RESULT(rc, create_sender_fom(&fom_obj,c->reqh,RPC_SENDER_TYPE_SEND,&fom_st), return rc);
+	struct m0_reqh *reqh = c->connection.c_rpc_machine->rm_reqh;
+	CHECK_RESULT(rc, create_sender_fom(&fom_obj,reqh,RPC_SENDER_TYPE_SEND,&fom_st), return rc);
 
 	fom_obj->send.rpc_item = &msg->fop.f_item;
 
@@ -753,7 +753,7 @@ int rpc_send(rpc_connection_t* c,struct iovec* segments,int segment_count,void (
                );
 exit(1);
     }
-	run_sender_fom(fom_obj,c->reqh);
+	run_sender_fom(fom_obj,reqh);
 	return fom_st.rc;
 }
 
