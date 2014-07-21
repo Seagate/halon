@@ -8,8 +8,12 @@
 {-#  LANGUAGE TemplateHaskell #-}
 module HA.NodeAgent.Tests ( tests ) where
 
-import HA.Resources (serviceProcess)
-import HA.NodeAgent (nodeAgent, updateEQNodes)
+import HA.Service (serviceProcess)
+import HA.NodeAgent
+  ( NodeAgentConf(..)
+  , nodeAgent
+  , updateEQNodes
+  )
 import HA.Network.Address ( Network, getNetworkTransport )
 import HA.Process
 import HA.EventQueue ( eventQueue, EventQueue, eventQueueLabel )
@@ -37,6 +41,7 @@ import Control.Distributed.Process.Node ( LocalNode, localNodeId, newLocalNode, 
 import Control.Distributed.Process.Internal.Primitives ( unClosure )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
+import Data.Defaultable
 import Data.List (find, nub, (\\))
 import Control.Concurrent ( throwTo, myThreadId, threadDelay )
 import Control.Concurrent.MVar (newEmptyMVar,putMVar,takeMVar,MVar)
@@ -47,6 +52,12 @@ import System.IO.Unsafe ( unsafePerformIO )
 import Test.Framework
 
 type RG = MC_RG EventQueue
+
+testConf :: NodeAgentConf
+testConf = NodeAgentConf {
+    softTimeout = Configured 5000000
+  , timeout = Configured 10000000
+}
 
 dummyRC :: () -> Process RG -> Process ()
 dummyRC () pRGroup = pRGroup >>= dummyRC'
@@ -120,7 +131,7 @@ naTestWithEQ network action = withTmpDirectory $ do
     newNode = newLocalNode (getNetworkTransport network)
                        $ __remoteTable remoteTable
     initialize nids node = tryRunProcess node $ do
-      na <- spawnLocalLink =<< unClosure (serviceProcess nodeAgent)
+      na <- spawnLocalLink . ($ testConf) =<< unClosure (serviceProcess nodeAgent)
       True <- updateEQNodes na nids
       return ()
 
@@ -142,7 +153,8 @@ naTest network action = withTmpDirectory $ bracket
                    (expect :: Process (ProcessId, HAEvent [ByteString]))
                    >>= send self . (,) (nids !! 1)
           register eventQueueLabel eq2
-        na <- spawnLocalLink =<< unClosure (serviceProcess nodeAgent)
+        na <- spawnLocalLink =<< (fmap (\p -> p testConf)
+                                  $ unClosure (serviceProcess nodeAgent))
         True <- updateEQNodes na nids
         action nids
 

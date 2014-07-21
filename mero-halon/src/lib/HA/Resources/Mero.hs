@@ -103,9 +103,9 @@ resdict_ConfObject, resdict_ConfObjectState :: Some ResourceDict
 resdict_ConfObject = mkResourceDict (undefined :: ConfObject)
 resdict_ConfObjectState = mkResourceDict (undefined :: ConfObjectState)
 
-reldict_At_ConfObject_Node, reldict_At_ConfObject_Service :: Some RelationDict
+reldict_At_ConfObject_Node :: Some RelationDict
 reldict_At_ConfObject_Node    = mkRelationDict (undefined :: (At, ConfObject, Node))
-reldict_At_ConfObject_Service = mkRelationDict (undefined :: (At, ConfObject, Service))
+--reldict_At_ConfObject_Service = mkRelationDict (undefined :: (At, ConfObject, Service))
 
 reldict_Is_ConfObject_ConfObjectState :: Some RelationDict
 reldict_Is_ConfObject_ConfObjectState =
@@ -114,7 +114,7 @@ reldict_Is_ConfObject_ConfObjectState =
 remotable [ 'resdict_ConfObject
           , 'resdict_ConfObjectState
           , 'reldict_At_ConfObject_Node
-          , 'reldict_At_ConfObject_Service
+          --, 'reldict_At_ConfObject_Service
           , 'reldict_Is_ConfObject_ConfObjectState ]
 
 instance Resource ConfObject where
@@ -126,8 +126,8 @@ instance Resource ConfObjectState where
 instance Relation At ConfObject Node where
     relationDict _ = $(mkStatic 'reldict_At_ConfObject_Node)
 
-instance Relation At ConfObject Service where
-    relationDict _ = $(mkStatic 'reldict_At_ConfObject_Service)
+--instance Relation At ConfObject Service where
+--    relationDict _ = $(mkStatic 'reldict_At_ConfObject_Service)
 
 instance Relation Is ConfObject ConfObjectState where
     relationDict _ = $(mkStatic 'reldict_Is_ConfObject_ConfObjectState)

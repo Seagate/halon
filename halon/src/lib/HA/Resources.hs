@@ -5,6 +5,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -12,12 +13,11 @@ module HA.Resources where
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
-import Data.Binary (Binary)
+import Data.Binary
 import Data.ByteString (ByteString)
 import Data.Function (on)
 import Data.Hashable (Hashable(..))
 import Data.Typeable (Typeable)
-import Data.Word (Word64)
 import GHC.Generics (Generic)
 
 import HA.ResourceGraph
@@ -32,27 +32,6 @@ data Cluster = Cluster
 
 instance Binary Cluster
 instance Hashable Cluster
-
--- | An identifier for services, unique across the resource graph.
-type ServiceName = String
-
--- | A resource graph representation for services.
-data Service = Service
-  { serviceName    :: ServiceName           -- ^ Name of service.
-  , serviceProcess :: Closure (Process ())  -- ^ Process implementing service.
-  }
-  deriving (Typeable, Generic)
-
-instance Eq Service where
-  (==) = (==) `on` serviceName
-
-instance Ord Service where
-  compare = compare `on` serviceName
-
-instance Binary Service
-
-instance Hashable Service where
-  hashWithSalt s = hashWithSalt s . serviceName
 
 -- | A resource graph representation for nodes.
 data Node = Node ProcessId
@@ -107,28 +86,22 @@ instance Hashable Runs
 
 resourceDictCluster,
   resourceDictNode,
-  resourceDictService,
   resourceDictEpoch :: Some ResourceDict
 resourceDictCluster = mkResourceDict (undefined :: Cluster)
 resourceDictNode    = mkResourceDict (undefined :: Node)
-resourceDictService = mkResourceDict (undefined :: Service)
 resourceDictEpoch   = mkResourceDict (undefined :: Epoch ByteString)
 
 relationDictHasClusterNode,
-  relationDictHasClusterEpoch,
-  relationDictRunsNodeService :: Some RelationDict
+  relationDictHasClusterEpoch :: Some RelationDict
 relationDictHasClusterNode  = mkRelationDict (undefined :: (Has, Cluster, Node))
 relationDictHasClusterEpoch = mkRelationDict (undefined :: (Has, Cluster, Epoch ByteString))
-relationDictRunsNodeService = mkRelationDict (undefined :: (Runs, Node, Service))
 
 remotable
   [ 'resourceDictCluster
   , 'resourceDictNode
-  , 'resourceDictService
   , 'resourceDictEpoch
   , 'relationDictHasClusterNode
   , 'relationDictHasClusterEpoch
-  , 'relationDictRunsNodeService
   ]
 
 instance Resource Cluster where
@@ -136,9 +109,6 @@ instance Resource Cluster where
 
 instance Resource Node where
   resourceDict _ = $(mkStatic 'resourceDictNode)
-
-instance Resource Service where
-  resourceDict _ = $(mkStatic 'resourceDictService)
 
 instance Resource (Epoch ByteString) where
   resourceDict _ = $(mkStatic 'resourceDictEpoch)
@@ -149,36 +119,19 @@ instance Relation Has Cluster Node where
 instance Relation Has Cluster (Epoch ByteString) where
   relationDict _ = $(mkStatic 'relationDictHasClusterEpoch)
 
-instance Relation Runs Node Service where
-  relationDict _ = $(mkStatic 'relationDictRunsNodeService)
-
---------------------------------------------------------------------------------
--- Service messages                                                           --
---------------------------------------------------------------------------------
-
--- | A notification of a service failure.
-data ServiceFailed = ServiceFailed Node Service
-  deriving (Typeable, Generic)
-
-instance Binary ServiceFailed
-
--- | A notification of a failure to start a service.
-data ServiceCouldNotStart = ServiceCouldNotStart Node Service
-  deriving (Typeable, Generic)
-
-instance Binary ServiceCouldNotStart
-
--- | A notification of a service failure.
---
---  TODO: explain the difference with respect to 'ServiceFailed'.
-data ServiceUncaughtException = ServiceUncaughtException Node Service String
-  deriving (Generic, Typeable)
-
-instance Binary ServiceUncaughtException
-
 --------------------------------------------------------------------------------
 -- Epoch messages                                                             --
 --------------------------------------------------------------------------------
+
+-- | Sent when a service requests the id of the latest epoch.
+newtype EpochRequest = EpochRequest ProcessId
+  deriving (Typeable, Binary)
+
+-- | Sent by the RC to communicate the most recent epoch.
+data EpochResponse = EpochResponse EpochId
+  deriving (Typeable, Generic)
+
+instance Binary EpochResponse
 
 -- | Sent when a service requests an epoch transition.
 data EpochTransitionRequest = EpochTransitionRequest

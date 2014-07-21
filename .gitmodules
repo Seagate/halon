@@ -8,3 +8,6 @@
 	path = vendor/clock
 	url = git@github.com:tweag/clock
 	branch = staging
+[submodule "options-schema"]
+	path = vendor/options-schema
+	url = git@github.com:tweag/options-schema.git

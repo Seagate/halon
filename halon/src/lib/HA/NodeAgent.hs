@@ -6,18 +6,25 @@
 -- "ioservice" may identify the IO service running on a node.
 
 {-# LANGUAGE TemplateHaskell, ExistentialQuantification #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module HA.NodeAgent
       ( module HA.NodeAgent.Messages
+      , NodeAgentConf(..)
       , Service(..)
       , service
+      , naConfigDict
+      , naConfigDict__static
       , nodeAgent
       , updateEQAddresses
       , updateEQNodes
       , expire
-      , __remoteTableDecl
+      , HA.NodeAgent.__remoteTable
+      , HA.NodeAgent.__remoteTableDecl
       ) where
 
 import HA.CallTimeout (callLocal, callTimeout, ncallRemoteAnyPreferTimeout)
@@ -27,23 +34,124 @@ import HA.Network.Address (Address,readNetworkGlobalIVar)
 import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types (HAEvent(..), EventId(..))
 import HA.EventQueue.Producer (expiate)
-import HA.Resources(Service(..),ServiceUncaughtException(..),Node(..))
+import HA.Resources(Node(..))
+import HA.ResourceGraph hiding (null)
+import HA.Service
 import Control.SpineSeq (spineSeq)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
-import Control.Distributed.Static (closureApply)
+import Control.Distributed.Static (
+    closureApply
+  , staticApply
+  , closureApplyStatic
+  )
 import Control.Distributed.Process.Serializable (Serializable)
 
 import Control.Monad (when, void)
 import Control.Applicative ((<$>))
 import Control.Exception (Exception, throwIO, SomeException(..))
-import Data.Binary (encode)
+import Data.Binary (Binary, encode)
+import Data.Defaultable
+import Data.Hashable (Hashable)
 import Data.Maybe (catMaybes, maybeToList)
+import Data.Monoid ((<>))
 import Data.ByteString (ByteString)
 import Data.List (delete, nub, (\\))
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
+
+import GHC.Generics (Generic)
+
+import Options.Schema (Schema)
+import Options.Schema.Builder hiding (name, desc)
+
+--------------------------------------------------------------------------------
+-- Configuration                                                              --
+--------------------------------------------------------------------------------
+
+data NodeAgentConf = NodeAgentConf {
+    softTimeout :: Defaultable Int
+  , timeout :: Defaultable Int
+} deriving (Eq, Typeable, Generic)
+
+instance Binary (Defaultable Int)
+instance Hashable (Defaultable Int)
+instance Binary NodeAgentConf
+instance Hashable NodeAgentConf
+
+configSchema :: Schema NodeAgentConf
+configSchema = let
+    st = defaultableShow 5000000 . intOption $ long "softTimeout"
+                   <> summary "Soft timeout for event propogation."
+                   <> metavar "TIMEOUT"
+                   <> argSummary "(Milliseconds)"
+    t  = defaultableShow 10000000 . intOption $ long "timeout"
+                   <> summary "Hard timeout for event propogation."
+                   <> detail "This timeout needs to be lower than the promulgate timeout."
+                   <> metavar "TIMEOUT"
+                   <> argSummary "(Milliseconds)"
+  in NodeAgentConf <$$> one st <**> one t
+
+--------------------------------------------------------------------------------
+-- Dictionaries                                                               --
+--------------------------------------------------------------------------------
+
+naSerializableDict :: SerializableDict NodeAgentConf
+naSerializableDict = SerializableDict
+
+naConfigDict :: Some ConfigDict
+naConfigDict = mkConfigDict (undefined :: NodeAgentConf)
+
+--TODO Can we auto-gen this whole section?
+resourceDictServiceNA,
+  resourceDictConfigItemNA :: Some ResourceDict
+resourceDictServiceNA = mkResourceDict (undefined :: Service NodeAgentConf)
+resourceDictConfigItemNA =
+  mkResourceDict (undefined :: NodeAgentConf)
+
+relationDictHasNodeServiceNA,
+  relationDictWantsServiceNAConfigItemNA,
+  relationDictHasServiceNAConfigItemNA :: Some RelationDict
+relationDictHasNodeServiceNA = mkRelationDict (
+  undefined :: (Runs, Node, Service NodeAgentConf))
+relationDictWantsServiceNAConfigItemNA = mkRelationDict (
+  undefined :: (WantsConf, Service NodeAgentConf, NodeAgentConf))
+relationDictHasServiceNAConfigItemNA = mkRelationDict (
+  undefined :: (HasConf, Service NodeAgentConf, NodeAgentConf))
+
+remotable
+  [ 'naConfigDict
+  , 'naSerializableDict
+  , 'resourceDictServiceNA
+  , 'resourceDictConfigItemNA
+  , 'relationDictHasNodeServiceNA
+  , 'relationDictHasServiceNAConfigItemNA
+  , 'relationDictWantsServiceNAConfigItemNA
+  ]
+
+instance Resource (Service NodeAgentConf) where
+  resourceDict _ = $(mkStatic 'resourceDictServiceNA)
+
+instance Resource NodeAgentConf where
+  resourceDict _ = $(mkStatic 'resourceDictConfigItemNA)
+
+instance Relation Runs Node (Service NodeAgentConf) where
+  relationDict _ = $(mkStatic 'relationDictHasNodeServiceNA)
+
+instance Relation HasConf (Service NodeAgentConf) NodeAgentConf where
+  relationDict _ = $(mkStatic 'relationDictHasServiceNAConfigItemNA)
+
+instance Relation WantsConf (Service NodeAgentConf) NodeAgentConf where
+  relationDict _ = $(mkStatic 'relationDictWantsServiceNAConfigItemNA)
+
+--------------------------------------------------------------------------------
+-- Other stuff                                                                --
+--------------------------------------------------------------------------------
+
+instance Configuration NodeAgentConf where
+  schema = configSchema
+  sDict = $(mkStatic 'naSerializableDict)
 
 -- FIXME: What do all of these expire-related things have to do with the node agent?
 data ExpireReason = forall why. Serializable why => ExpireReason why
@@ -101,25 +209,38 @@ updateEQNodes pid nodes =
 remotableDecl [ [d|
 
     -- FIXME: What is going on in these functions?
-    sdictServiceInfo :: SerializableDict (String, Closure (Process ()))
-    sdictServiceInfo = SerializableDict
+    -- Yes I would like to know that too...
 
-    serviceWrapper :: (String, Closure (Process ())) -> Process () -> Process ()
-    serviceWrapper (name,cp) p = do
+    -- | Hack to reify the serializable dictionary for Service
+    sdictServiceInfo :: SerializableDict a
+                     -> SerializableDict (String, Closure (a -> Process ()))
+    sdictServiceInfo SerializableDict = SerializableDict
+
+    -- | Wrap a service with means to register itself on a node and to handle
+    --   service exit.
+    serviceWrapper :: SerializableDict a
+                   -> (String, Closure (a -> Process ()))
+                      -- ^ Service name, closed process (only used in a message)
+                   -> (a -> Process ())
+                      -- ^ Service process to wrap (this one is actually used.)
+                   -> (a -> Process ())
+    serviceWrapper SerializableDict (name,_) p = \a -> do
         self <- getSelfPid
-        either (\(ProcessRegistrationException _) -> return ()) (const go) =<<
-            try (register name self)
+        either
+            (\(ProcessRegistrationException _) -> return ())
+            (const (go a))
+          =<< try (register name self)
       where
         generalExpiate desc = do
           mbpid <- whereis nodeAgentLabel
           case mbpid of
              Nothing -> error "NodeAgent is not registered."
-             Just na -> expiate $ ServiceUncaughtException (Node na) (Service name cp) desc
+             Just na -> expiate $ ServiceUncaughtException (Node na) name desc
         myCatches n handler =
            (n >> handler (generalExpiate "Service died without exception")) `catches`
              [ Handler $ \(ExpireException (ExpireReason why)) -> handler $ expiate why,
                Handler $ \(SomeException e) -> handler $ generalExpiate $ show e ]
-        go = myCatches p $ \res -> do
+        go a = myCatches (p a) $ \res -> do
                self <- getSelfPid
                void $ spawnLocal $ do
                  ref <- monitor self
@@ -139,19 +260,36 @@ remotableDecl [ [d|
     -- >   fooProcess = ...
     -- >   |] ]
     --
-    service :: String -> Closure (Process ()) -> Service
-    service name p =
-        Service name $
-        $(mkStaticClosure 'serviceWrapper) `closureApply`
-        closure (staticDecode $(mkStatic 'sdictServiceInfo)) (encode (name,p)) `closureApply`
-        p
+    service :: SerializableDict a
+            -> Static (Some ConfigDict)
+            -> Static (SerializableDict a)
+            -> String -- ^ Service name
+            -> Closure (a -> Process ())
+            -> Service a
+    service SerializableDict confDict dict name p =
+        Service name (
+            $(mkStatic 'serviceWrapper) `staticApply`
+            dict `closureApplyStatic`
+            closure (staticDecode sdict) (encode (name,p)) `closureApply`
+            p
+          ) confDict
+      where
+        sdict = $(mkStatic 'sdictServiceInfo) `staticApply` dict
+
+    nodeAgentConfSDict :: SerializableDict NodeAgentConf
+    nodeAgentConfSDict = SerializableDict
 
     -- | The master node agent process.
-    nodeAgent :: Service
-    nodeAgent = service nodeAgentLabel $(mkStaticClosure 'nodeAgentProcess)
+    nodeAgent :: Service NodeAgentConf
+    nodeAgent = service
+                  nodeAgentConfSDict
+                  $(mkStatic 'naConfigDict)
+                  $(mkStatic 'nodeAgentConfSDict)
+                  nodeAgentLabel
+                  $(mkStaticClosure 'nodeAgentProcess)
 
-    nodeAgentProcess :: Process ()
-    nodeAgentProcess = go $ NAState 0 [] Nothing
+    nodeAgentProcess :: NodeAgentConf -> Process ()
+    nodeAgentProcess conf = go $ NAState 0 [] Nothing
       where
         go :: NAState -> Process a
         go nas = do
@@ -183,11 +321,6 @@ remotableDecl [ [d|
                         -- , eventHops    = []
                         , eventHops    = [self]
                         }
-                      -- FIXME: Use well-defined timeouts.
-                      softTimeout = 5000000
-                      -- This timeout needs to be lower than the promulgate
-                      -- timeout.
-                      timeout = 10000000
                       preferNodes = nub $
                         maybeToList (nasPreferredReplica nas) ++
                         take 1 (nasReplicas nas)
@@ -195,7 +328,8 @@ remotableDecl [ [d|
 
                     -- Send the event to some replica.
                     result <- callLocal $
-                      ncallRemoteAnyPreferTimeout softTimeout timeout
+                      ncallRemoteAnyPreferTimeout (fromDefault . softTimeout $ conf)
+                                                  (fromDefault . timeout $ conf)
                                                   preferNodes nodes
                                                   eventQueueLabel event
                     case result :: Maybe (NodeId, NodeId) of
@@ -239,4 +373,4 @@ remotableDecl [ [d|
               }
 
 
-    |] ]
+  |] ]

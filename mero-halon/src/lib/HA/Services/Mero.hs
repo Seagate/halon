@@ -12,8 +12,14 @@ import HA.NodeAgent
 import HA.NodeAgent.Lookup (nodeAgentLabel)
 import HA.EventQueue.Producer (promulgate)
 import HA.Resources
+import HA.Service
 import qualified Mero.Notification
-import Control.Distributed.Process.Closure (remotableDecl, mkStaticClosure)
+import Control.Distributed.Process.Closure
+  (
+    remotableDecl
+  , mkStatic
+  , mkStaticClosure
+  )
 import System.Process
 import Control.Distributed.Process
 import System.IO
@@ -37,11 +43,15 @@ updateEpoch epoch =
         Nothing -> return 0
 
 remotableDecl [ [d|
-    m0d :: Service
-    m0d = service "m0d" $(mkStaticClosure 'm0dProcess)
 
-    m0dProcess :: Process ()
-    m0dProcess = do
+    m0d :: Service ()
+    m0d = service
+            emptySDict
+            $(mkStatic 'emptyConfigDict)
+            $(mkStatic 'emptySDict) "m0d" $(mkStaticClosure 'm0dProcess)
+
+    m0dProcess :: () -> Process ()
+    m0dProcess () = do
         say $ "Starting service m0d"
         self <- getSelfPid
         bracket
@@ -97,7 +107,7 @@ remotableDecl [ [d|
                   mbpid <- whereis nodeAgentLabel
                   case mbpid of
                       Nothing -> error "NodeAgent is not registered."
-                      Just na -> expire $ ServiceFailed (Node na) m0d -- XXX
+                      Just na -> expire . encodeP $ ServiceFailed (Node na) m0d -- XXX
             receiveWait $
               [ match $ \(EpochTransition epochExpected epochTarget state) -> do
                   say $ "Service wrapper got new equation: " ++ show (state::ByteString)

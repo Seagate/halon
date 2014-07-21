@@ -12,7 +12,7 @@ module HA.Services.Dummy
     ( dummy
     , HA.Services.Dummy.__remoteTableDecl ) where
 
-import HA.Resources
+import HA.Service
 import HA.NodeAgent
 
 import Control.Distributed.Process
@@ -25,14 +25,20 @@ never :: Process ()
 never = liftIO $ newEmptyMVar >>= takeMVar
 
 remotableDecl [ [d|
-    dummy :: Service
-    dummy = service "dummy" $(mkStaticClosure 'dummyProcess)
+    dummy :: Service ()
+    dummy = service
+                emptySDict
+                $(mkStatic 'emptyConfigDict)
+                $(mkStatic 'emptySDict)
+                "dummy"
+                $(mkStaticClosure 'dummyProcess)
 
-    dummyProcess :: Process ()
-    dummyProcess = (`catchExit` onExit) $ do
+    dummyProcess :: () -> Process ()
+    dummyProcess _ = (`catchExit` onExit) $ do
         say $ "Starting service dummy"
         never
       where
         onExit _ Shutdown = say $ "DummyService stopped."
+        onExit _ Reconfigure = say $ "DummyService reconfigured."
 
     |] ]

@@ -6,10 +6,15 @@
 module Main (main) where
 
 import Flags
-import HA.NodeAgent (nodeAgent, serviceProcess)
+import HA.NodeAgent (NodeAgentConf(..), nodeAgent, serviceProcess)
 import HA.Process
+import HA.Service (sDict)
 import Control.Distributed.Process
+import Control.Distributed.Process.Closure (staticDecode)
 import Control.Distributed.Process.Node (newLocalNode)
+import Control.Distributed.Static (closureApply)
+import Data.Binary (encode)
+import Data.Defaultable
 import System.Environment
 import Control.Applicative ((<$>))
 import HA.Network.Address
@@ -36,6 +41,12 @@ printHeader = do
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
+naConf :: NodeAgentConf
+naConf = NodeAgentConf {
+    softTimeout = Default 500000
+  , timeout = Default 1000000
+}
+
 main :: IO Int
 main = do
   config <- parseArgs <$> getArgs
@@ -44,7 +55,8 @@ main = do
   tryRunProcess lnid $
      do liftIO $ printHeader
         nid <- getSelfNode
-        napid <- spawn nid (serviceProcess nodeAgent)
+        napid <- spawn nid $ (serviceProcess nodeAgent)
+                  `closureApply` closure (staticDecode sDict) (encode naConf)
         _ <- advertiseNodeAgent network (localLookup config) napid
         receiveWait [] -- wait indefinitely
   return 0
