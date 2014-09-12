@@ -68,7 +68,7 @@ Consistency
     the same no matter which node in the replication group the action
     is sent to. In particular, if a state update is sent to one node
     by a client, the update acknowledged to the client, then a query
-    subsequently sent by the client will alway return the same result.
+    subsequently sent by the client will always return the same result.
 
 Liveness
 :   the ability of the replication subsystem to update or query the
@@ -96,8 +96,8 @@ Allowed failures (no persistence)
         message reordering);
       * Up to $N-1$ nodes in the group being in a crashed state, where
         $N$ is the number of nodes in a group. Note that liveness can
-        only be ensured if at most nodes $(N-1) \div 2$ are in a
-        crashed state.
+        only be ensured if at most $\lfloor(N-1) \div 2\rfloor$ nodes
+        are in a crashed state.
 
 Allowed failures (with persistence)
 :   a failure that does not affect consistency or stability provided
@@ -105,11 +105,11 @@ Allowed failures (with persistence)
 
       * All of the failures that are allowed in the absence of persistence;
       * Up to $N$ nodes in the group being in a crashed state;
-      * Up to $(N-1) \div 2$ nodes in the group being in a corrupted
-        state. The shared state of a group can still be recovered when
-        up to $N-1$ nodes are corrupted, but in that case stability is
-        not guaranteed, unless quorum is always taken to be the entire
-        group (see “Quorum” below).
+      * Up to $\lfloor (N-1) \div 2\rfloor$ nodes in the group being
+        in a corrupted state. The shared state of a group can still be
+        recovered when up to $N-1$ nodes are corrupted, but in that
+        case stability is not guaranteed, unless quorum is always
+        taken to be the entire group (see “Quorum” above).
 
 Replication factor
 :   the average number of copies over time of a given datum being stored
@@ -243,14 +243,14 @@ duplicated or reordered.
 
 ### Quorum
 
-A quorum of replicas is any subset of the replica group. Normally,
+A *quorum* of replicas is any subset of the replica group. Normally,
 quorums are subject to the constraint that they be at least of size
-$N\div2+1$, where $N$ is the size of the group. That is, a quorum is a
-majority of nodes. However, see “Node failure” for a modified
-definition. Also, the user may choose to restrict quorum size to be
-exactly $N$, e.g. to maximize the replication factor. Maximizing the
-replication factor is useful to guarantee stability even in the face
-of $N-1$ corrupt nodes.
+$\lceil(N+1)\div 2\rceil$, where $N$ is the size of the group. That
+is, a quorum is a majority of nodes. However, see “Node failure” for a
+modified definition. Also, the user may choose to restrict quorum size
+to be exactly $N$, e.g. to maximize the replication factor. Maximizing
+the replication factor is useful to guarantee stability even in the
+face of $N-1$ corrupt nodes.
 
 ### Voting
 
@@ -302,19 +302,19 @@ necessary to make progress, so not all replicas need participate in
 all decisions, even in the absence of network failures.
 
 (Replicated) Request log
-:   abstractly speaking, a request log is a partial function $N \to
-    \mathit{Req}$ where $N$ is the set of natural numbers and
+:   abstractly speaking, a request log is a partial function $\mathds{N}
+    \to \mathit{Req}$ where $\mathds{N}$ is the set of natural numbers and
     $\mathit{Req}$ is the set of all possible requests. We define the
     following operations on the graph of a log:
 
-      * $\mathrm{append}(L,i,\mathit{req}) = L \cup \{(i, \mathit{req})\} \text{ if } i\not\in L$.
+      * $\mathrm{append}(L,i,\mathit{req}) = L \cup \{(i, \mathit{req})\} \text{ if } i\not\in \mathrm{dom}(L)$.
 
-    The set $N$ is also called the set of slots of the log.
+    The set $\mathds{N}$ is also called the set of *slots* of the log.
 
 ### Request stream
 
-The replicated request log is a distributed abstraction - at runtime a
-log is supported by a number of processes running at each replica
+The replicated request log is a distributed abstraction --- at runtime
+a log is supported by a number of processes running at each replica
 site. This log can be appended to at any time by any client
 concurrently. By contrast, a request stream is a local abstraction
 capturing the sequence of requests sent by a single client to the log.
@@ -347,7 +347,7 @@ implementation that it is paired with. And indeed one implementation
 can seamlessly be swapped out for another.
 
 3. **replicated-state**: the log makes no assumption about the values
-it receives, proposes for consensus and records. In practice, however,
+it receives, proposes for consensus, and records. In practice, however,
 values sent to the log by a client are commands that modify a single
 state variable in a sequential way. These commands are totally ordered
 by sequence number. This layer exports functionality to help a client
@@ -389,13 +389,13 @@ end Protocol
 A consensus protocol is characterized by two essential elements:
 
 1. the actions of the acceptor processes;
-2. a decree value proposal action.
+2. an action of proposing decrees.
 
 A protocol can require that state be maintained between
 proposals. This state can be used for example to optimize proposals
-from a replica using Paxos that has previously won a proposal
-- in this case the replica does not need to go through the election
-phase of Paxos. This state is internal and specific to the particular
+from a replica using Paxos that has previously won a proposal --- in
+this case the replica does not need to go through the election phase
+of Paxos. This state is internal and specific to the particular
 consensus protocol.
 
 The `Propose s a` type is the type of actions returning a value of
@@ -473,7 +473,7 @@ Calling `append` after `finalize` on a handle yields a runtime error.
 
 
 A handle is intentionally not serializable and kept completely
-abstract - as such it cannot be communicated across a network. A
+abstract --- as such it cannot be communicated across a network. A
 handle is therefore only useful on the node on which it was
 created. However, other clients must be able to address the replicated
 log too. While we do not allow sharing handles between nodes, it is
@@ -501,7 +501,7 @@ update :: CommandPort s → (s → Action s) → Action ()
 
 In general most clients send commands that are not necessarily
 idempotent. What’s more, clients manipulate replicated state much in
-the manner of a database - executing queries to read *part of* the
+the manner of a database --- executing queries to read *part of* the
 state and sending commands to update the state in arbitrary ways. A
 command port allows for a *stream* of queries and updates to be sent
 from the client. A single client can in principle open multiple
@@ -509,7 +509,7 @@ command ports, though the implementation is allowed to restrict
 command ports to only one command port per process.
 
 One creates a new command port through the `connect` action[^3]. There
-is no corresponding disconnect action - resources associated with
+is no corresponding disconnect action --- resources associated with
 command ports are naturally recycled by the garbage collector.
 
 [^3]: So named after the similar connect(2) system call of the BSD sockets API.
@@ -795,15 +795,15 @@ on each:
 ![](fig7.png)
 
 Say A passes $a$ decree d reconfiguring the group to contain just A
-and B, using A,B,C as quorum.  Say neither C nor D learned about the
+and B, using \{A, B, C\} as quorum.  Say D didn't learn about the
 reconfiguration. If D wishes to pass a decree with the same decree
 identifier $d$, then it can only do so using a quorum of nodes
 (minimum size of 3), which will necessarily overlap with the quorum
 for the existing decree. Therefore, D can only ever successfully
 propose the same decree, or decrees with a higher decree number. But
 these higher-numbered decrees, say which reconfigure the group to have
-membership C,D, will never get executed, because either D passes the
-same decree $d$, making the group A,B, or D never succeeds to pass a
+membership \{C, D\}, will never get executed, because either D passes the
+same decree $d$, making the group \{A, B\}, or D never succeeds to pass a
 decree with that number and therefore cannot execute later decrees.
 
 ### Node failure
@@ -821,8 +821,8 @@ the replica group is done through some out-of-band mechanism.
 If a replica is configured to be the unique replica on a particular
 node, then it must advertise this fact when it starts. In this manner,
 if other replicas in the group know of another replica on the same
-node, then they know that this replica is *stale*, where stale means
-that the replica can be presumed dead and never to return.
+node, then they know that this other replica is *stale*, where stale
+means that the replica can be presumed dead and never to return.
 
 These stale replicas must be removed from the group membership, lest
 quorum become increasingly difficult or even impossible to achieve as
@@ -862,6 +862,7 @@ all crashed nodes come back up, then:
       any decree that it wishes, since the group now has quorum. In
       particular, all new replicas can be added to the group.
 
+<!-- TODO: Open-ended sentence -->
 With persistence, again using the modified quorum rule, it is possible
 
 ### Conformance
@@ -977,7 +978,7 @@ Assumptions           & \begin{enumerate}[noitemsep,nolistsep]
 Steps                 & \begin{enumerate}[noitemsep,nolistsep]
                           \item Client calls \texttt{append} providing no hint.
                           \item Ambassador submits request to one or more
-                                replicas according to some configurable policy.
+                                replicas, according to some configurable policy.
                           \item If acknowledgement not received within set
                                 timeout by ambassador, then go to 2. using
                                 different replicas.
@@ -1016,7 +1017,7 @@ Actors                & Operator                                             \\
 Prerequisites \&\newline
 Assumptions           & \begin{enumerate}[noitemsep,nolistsep]
                           \item Replicated group has been created.
-                          \item Operator has a handle to replicated group.
+                          \item Operator has a handle to the replicated group.
                         \end{enumerate}                                      \\
 \hline %----------------------------------------------------------------------
 Steps                 & \begin{enumerate}[noitemsep,nolistsep]
