@@ -70,7 +70,7 @@ DESCRIPTION
 
        Fragments are of the form
 
-       {-*<keywork>
+       {-*<keyword>
        fragment contents
        *-}
 
@@ -80,7 +80,7 @@ DESCRIPTION
        Additionally, the keyword may be followed by a natural number which
        defaults to 100 when missing. As in:
 
-       {-*<keywork> 100
+       {-*<keyword> 100
        fragment contents
        *-}
 

@@ -13,6 +13,12 @@ import Control.Monad (forM_)
 -- | Wait for at least @n `div` 2 + 1@ processes to respond, where @n@ is the
 -- number of processes. The provided match clauses indicate whether to abort
 -- or continue waiting for quorum.
+--
+-- We rely on Cloud Haskell not duplicating messages and on acceptors
+-- replying with at most one message to any request in establishing a
+-- quorum.  Ie. we only need to count @n `div` 2 + 1@ positive
+-- responses, and don't need to check that they are comming from
+-- different acceptors.
 expectQuorum :: Serializable a =>
                 [Match (Either e b)] -> [ProcessId] -> a -> Process (Either e [b])
 expectQuorum clauses them msg = do

@@ -38,10 +38,10 @@ import Control.Distributed.Process.Serializable (Serializable, SerializableDict)
 import Control.Distributed.Static
     ( closureApply
     , staticClosure )
-import Control.Applicative (Applicative, (<$>))
+import Control.Applicative (Applicative)
 import Control.Monad.Trans (lift)
 import Control.Monad.State
-    (MonadIO, StateT(..), get, modify)
+    (MonadIO, StateT(..), get, modify, evalStateT)
 import Data.Binary (Binary, encode)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
@@ -69,12 +69,15 @@ instance Enum DecreeId where
     toEnum _   = error "toEnum: Cannot create DecreeId from Int."
     fromEnum _ = error "toEnum: Cannot create Int from DecreeId."
     enumFrom d              = map (\n -> d{decreeNumber=n}) $ enumFrom (decreeNumber d)
-    enumFromThen d d'       = map (\n -> d{decreeNumber=n}) $
-                              enumFromThen (decreeNumber d) (decreeNumber d')
-    enumFromTo d d'         = map (\n -> d{decreeNumber=n}) $
-                              enumFromTo (decreeNumber d) (decreeNumber d')
-    enumFromThenTo d d' d'' = map (\n -> d{decreeNumber=n}) $
-                              enumFromThenTo (decreeNumber d) (decreeNumber d') (decreeNumber d'')
+    enumFromThen (DecreeId l d) (DecreeId l' d')
+      | l /= l'             = error "enumFromThen: legislature ids don't match"
+      | otherwise           = map (DecreeId l) $ enumFromThen d d'
+    enumFromTo (DecreeId l d) (DecreeId l' d')
+      | l /= l'             = error "enumFromTo: legislature ids don't match"
+      | otherwise           = map (DecreeId l) $ enumFromTo d d'
+    enumFromThenTo (DecreeId l d) (DecreeId l' d') (DecreeId l'' d'')
+      | l /= l' || l /= l'' = error "enumFromThenTo: legislature ids don't match"
+      | otherwise           = map (DecreeId l) $ enumFromThenTo d d' d''
 
 instance Show DecreeId where
     show (DecreeId (LegislatureId l) d) = "decree://" ++ show l ++ "/" ++ show d
@@ -96,7 +99,7 @@ instance MonadProcess (Propose s) where
     liftProcess = Propose . lift
 
 runPropose :: Propose s a -> Process a
-runPropose m = fst <$> runStateT (unPropose m) Bottom
+runPropose m = evalStateT (unPropose m) Bottom
 
 runPropose' :: Propose s a -> Lifted s -> Process (a,Lifted s)
 runPropose' = runStateT . unPropose
@@ -117,7 +120,7 @@ setState x' = Propose $ modify check
 -- consensus.
 --
 -- Each time a proposal is made, the proposer may write to its internal state,
--- say to record the fact that has become a leader, which may be useful to
+-- say to record the fact that he has become a leader, which may be useful to
 -- know to make future proposals more efficient. The type of the internal
 -- state is kept abstract, through existential quantification, but since this
 -- internal state is lifted, we know how to provide the initial state: it's
@@ -132,8 +135,8 @@ data Protocol n a = forall s. Protocol
       -- another value was previously proposed for this decree.
       --
       -- This function produces an error if the decree @d@ has been garbage
-      -- collected. Garbage collection is requested by the client with a
-      -- function that is to be defined.
+      -- collected. Garbage collection can be requested by the client with an
+      -- as yet to be defined method.
     , prl_propose  :: [ProcessId]                 -- Acceptors.
                    -> DecreeId
                    -> a

@@ -24,7 +24,7 @@ import Data.Acid
 import Data.SafeCopy
 import Data.Binary (encode, decode)
 import Data.Typeable (Typeable)
-import Control.Monad.State (get, put)
+import Control.Monad.State (modify)
 import Control.Monad.Reader (ask)
 import Control.Applicative ((<$>))
 
@@ -98,16 +98,16 @@ instance Serializable a => SafeCopy (S a) where
     putCopy = contain . safePut . encode . unS
 
 insert :: a -> Update [a] ()
-insert x = do
-    xs <- get
-    put (x : xs)
+insert x = modify (x:)
 
 toList :: Query [a] [a]
 toList = ask
 
 $(makeAcidic ''[] ['insert, 'toList])
 
--- | Argument is a dummy to help resolve class constraints. Proper usage is
+-- | Acceptor process.
+--
+-- Argument is a dummy to help resolve class constraints. Proper usage is
 -- @acceptor (undefined :: a)@ where @a@ is a rigid type variable.
 --
 -- Invariant:
@@ -135,7 +135,7 @@ acceptor _ file name = do
                   if b <= Value b'
                   then do
                       let ack = Msg.Ack d b' self (x :: a)
-                      _ <- liftIO $ update acid $ Insert $ S $ ack
+                      _ <- liftIO $ update acid $ Insert $ S ack
                       send λ ack
                       loop acid (Value b')
                   else do
