@@ -378,7 +378,11 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
 
               -- Message from the proposer process
             , match $ \(dᵢ,vᵢ,request@(κ, v :: Value a, _ :: Hint)) -> do
-                  send self $ Decree (Local κ) dᵢ vᵢ
+                  -- If the passed decree accepted other value than our
+                  -- client's, don't treat it as local (ie. do not report back
+                  -- to the client yet).
+                  let locale = if v == vᵢ then Local κ else Remote
+                  send self $ Decree locale dᵢ vᵢ
                   forM_ others $ \ρ -> do
                       send ρ $ Decree Remote dᵢ vᵢ
 
