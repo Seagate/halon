@@ -179,6 +179,26 @@ memoryGet = do
 
 $(makeAcidic ''Memory ['memoryInsert, 'memoryGet])
 
+-- Note [Teleportation]
+-- ~~~~~~~~~~~~~~~~~~~~
+--
+-- A decree in legislature @l@ is "reachable" if all decrees before it are
+-- known, and the last reconfiguration decree opens a legislature @l'@ such that
+-- @l' <= l@.
+--
+-- All decrees known to be reachable inhabit all legislatures. That is, they are
+-- independent of any legislature. We are therefore free to ascribe an arbitrary
+-- legislature to any reachable decree. Doing so is called "teleporation". For
+-- reachability to be closed under teleportation, we must teleport to
+-- legislatures greater than or equal to @l@. When the original legislature of
+-- a reachable decree is unknown, we use 'maxBound'.
+--
+-- Currently the logic deciding whether to apply a Reconf decree and how to
+-- update the current decree id after a Reconf assumes that teleportation always
+-- uses maxBound. This is wrong and should be fixed, but for now this is an
+-- additional constraint on teleportation.
+-- https://app.asana.com/0/12314345447678/16427250405254
+
 -- | One replica of the log. All incoming values to add to the log are submitted
 -- for consensus. A replica does not acknowledge values being appended to the
 -- log until the replicas have reached consensus about the update, hence reached
@@ -214,11 +234,10 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
 
     -- Replay backlog if any.
     log <- liftIO $ Acid.query acid MemoryGet
-    -- Note [Teleportation]
-    -- ~~~~~~~~~~~~~~~~~~~~
+
     -- Teleport all decrees to the highest possible legislature, since all
     -- recorded decrees must be replayed. This has no effect on the current
-    -- decree number and the watermark.
+    -- decree number and the watermark. See Note [Teleportation].
     forM_ (Map.toList log) $ \(n,v) -> do
         send self $ Decree Stored (DecreeId maxBound n) v
 
@@ -366,6 +385,9 @@ replica EqDict SerializableDict file Protocol{prl_propose} Log{..} decree accept
                   log' <- liftIO $ Acid.query acid $ MemoryGet
                   queryMissing others log'
                   --- XXX set d to dᵢ?
+                  --
+                  -- This Decree could have been teleported. So, we shouldn't
+                  -- trust dᵢ, unless @decreeLegislatureId dᵢ < maxBound@.
                   send self $ Decree locale dᵢ v
                   go ppid acid αs ρs d w s
 
