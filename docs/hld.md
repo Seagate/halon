@@ -1,0 +1,1038 @@
+# Complex Event Processing: High-Level Design
+
+## Introduction
+
+CEP is a framework for writing complex event processors,
+i.e. distributed components that can accept input events and produce
+output events based on some computation potentially involving a
+history of past events or other local state.
+
+## Definitions
+
+<dl>
+  <dt>Process</dt>
+  <dd>A self-contained task that may receive or send messages.</dd>
+
+  <dt>(τ) event</dt>
+  <dd>A typed message (of type τ) indicating an occurrence somewhere on the
+      network.</dd>
+
+  <dt>(τ) event source</dt>
+  <dd>A process that may produce events (of type τ).</dd>
+
+  <dt>(τ) event sink</dt>
+  <dd>A process that accepts events (of type τ).</dd>
+
+  <dt>Complex event</dt>
+  <dd>An event formed by the aggregation or analysis of multiple other
+      events.</dd>
+
+  <dt>(Complex event) processor</dt>
+  <dd>A process that gathers events from a variety of event sources and
+      combines them intelligently to produce output events, i.e. a
+      generalization of both event source and event sink.</dd>
+</dl>
+
+## Requirements
+
+<dl>
+  <dt>[fr.composition]</dt>
+  <dd>Halon processes should be directly composable at both the intra- and inter-node level.</dd>
+
+  <dt>[fr.typing]</dt>
+  <dd>The language in which processes are written should be strongly typed, and statically forbid connecting components of mismatched types.</dd>
+
+  <dt>[fr.device-join]</dt>
+  <dd>Halon should detect and make use of new storage added to the network.</dd>
+
+  <dt>[fr.device-failure]</dt>
+  <dd>Halon should detect and initiate recovery from device failures.</dd>
+
+  <dt>[fr.node-join]</dt>
+  <dd>Halon should detect and configure a node newly joined to the network.</dd>
+
+  <dt>[fr.node-failure]</dt>
+  <dd>Halon should detect and initiate recovery from node failures.</dd>
+
+  <dt>[fr.logging]</dt>
+  <dd>Halon should log all failures and repair operations.</dd>
+
+  <dt>[fr.composite-failure]</dt>
+  <dd>Halon should diagnose and summarize complex failure events signalled by multiple errors.</dd>
+</dl>
+
+## Quality Attributes
+
++ Responsiveness
++ Composability
++ Scalability
++ Availability
+
+## Quality Attribute Scenarios
+
+<table>
+  <tr>
+    <td>[Tag]</td>
+    <td>qas.responsiveness.device</td>
+  </tr>
+  <tr>
+    <td>Scenario</td>
+    <td>Halon should be able to rapidly trigger repair for failed devices.</td>
+  </tr>
+  <tr>
+    <td>Attribute</td>
+    <td>responsiveness</td>
+  </tr>
+  <tr>
+    <td>Attribute Concern</td>
+    <td>Data repair</td>
+  </tr>
+  <tr>
+    <td>Stimulus</td>
+    <td>A number of errors from a device indicate that the device is no longer reliable.</td>
+  </tr>
+  <tr>
+    <td>Stimulus Source</td>
+    <td>Device</td>
+  </tr>
+  <tr>
+    <td>Environment</td>
+    <td>The device is connected to a node, which is in turn able to access the tracking station.</td>
+  </tr>
+  <tr>
+    <td>Artifact</td>
+    <td>Halon</td>
+  </tr>
+  <tr>
+    <td>Response</td>
+    <td>A copy machine will be constructed for the lost data.</td>
+  </tr>
+  <tr>
+    <td>Response Measure</td>
+    <td>The time between the device reporting its failure and the message being sent to begin construction of the copy machine should be drawn from a normal distribution with µ = 0.1 s and σ ≤ 0.3 s.</td>
+  </tr>
+</table>
+
+
+<table>
+  <tr>
+    <td>[Tag]</td>
+    <td>qas.composability.node</td>
+  </tr>
+  <tr>
+    <td>Scenario</td>
+    <td>Halon should be composed of a set of independent actors on nodes that function independent of other actors.</td>
+  </tr>
+  <tr>
+    <td>Attribute</td>
+    <td>composability</td>
+  </tr>
+  <tr>
+    <td>Attribute Concern</td>
+    <td>Adding nodes</td>
+  </tr>
+  <tr>
+    <td>Stimulus</td>
+    <td>Wishes to add new nodes to the pool</td>
+  </tr>
+  <tr>
+    <td>Stimulus Source</td>
+    <td>System administrator</td>
+  </tr>
+  <tr>
+    <td>Environment</td>
+    <td>A running SNS cluster.</td>
+  </tr>
+  <tr>
+    <td>Artifact</td>
+    <td>Halon</td>
+  </tr>
+  <tr>
+    <td>Response</td>
+    <td>The system administrator connects the new node, which begins participating in the system.</td>
+  </tr>
+  <tr>
+    <td>Response Measure</td>
+    <td>The administrator does not need to alter any other nodes.</td>
+  </tr>
+</table>
+
+
+<table>
+  <tr>
+    <td>[Tag]</td>
+    <td>qas.scalability.local-repair</td>
+  </tr>
+  <tr>
+    <td>Scenario</td>
+    <td>In the case where a node already has sufficient information locally to recover from a failure, the node should not require input from any external source, ensuring that such cases put minimal load on the rest of the cluster.</td>
+  </tr>
+  <tr>
+    <td>Attribute</td>
+    <td>scalability</td>
+  </tr>
+  <tr>
+    <td>Attribute Concern</td>
+    <td>Data repair</td>
+  </tr>
+  <tr>
+    <td>Stimulus</td>
+    <td>A failure occurs for whose correction all the necessary redundancy information is available locally.</td>
+  </tr>
+  <tr>
+    <td>Stimulus Source</td>
+    <td>Device</td>
+  </tr>
+  <tr>
+    <td>Environment</td>
+    <td>A running node with connected devices, the remaining of which contain sufficient information to reconstruct the failed.</td>
+  </tr>
+  <tr>
+    <td>Artifact</td>
+    <td>Node</td>
+  </tr>
+  <tr>
+    <td>Response</td>
+    <td>The node constructs a local copy machine, without recourse to data found elsewhere, and reconstructs the data.</td>
+  </tr>
+  <tr>
+    <td>Response Measure</td>
+    <td>The node does not need to consult data stored on any other nodes.</td>
+  </tr>
+</table>
+
+
+<table>
+  <tr>
+    <td>[Tag]</td>
+    <td>qas.composability.circuit</td>
+  </tr>
+  <tr>
+    <td>Scenario</td>
+    <td>The software on a node should be composed of recombinable circuits, and should itself be amenable to combination with other components.</td>
+  </tr>
+  <tr>
+    <td>Attribute</td>
+    <td>composability</td>
+  </tr>
+  <tr>
+    <td>Attribute Concern</td>
+    <td>Modification of code</td>
+  </tr>
+  <tr>
+    <td>Stimulus</td>
+    <td>Wishes to make changes to the event-processing logic</td>
+  </tr>
+  <tr>
+    <td>Stimulus Source</td>
+    <td>Developer</td>
+  </tr>
+  <tr>
+    <td>Environment</td>
+    <td>An SNS cluster</td>
+  </tr>
+  <tr>
+    <td>Artifact</td>
+    <td>CEP framework</td>
+  </tr>
+  <tr>
+    <td>Response</td>
+    <td>The developer composes a new circuit from existing components.</td>
+  </tr>
+  <tr>
+    <td>Response Measure</td>
+    <td>The developer can directly incorporate existing circuits into the new circuit.</td>
+  </tr>
+</table>
+
+
+<table>
+  <tr>
+    <td>[Tag]</td>
+    <td>qas.availability</td>
+  </tr>
+  <tr>
+    <td>Scenario</td>
+    <td>Halon should be available to handle a vast majority of events.</td>
+  </tr>
+  <tr>
+    <td>Attribute</td>
+    <td>availability</td>
+  </tr>
+  <tr>
+    <td>Attribute Concern</td>
+    <td>Handling events</td>
+  </tr>
+  <tr>
+    <td>Stimulus</td>
+    <td>An event occurs</td>
+  </tr>
+  <tr>
+    <td>Stimulus Source</td>
+    <td>Device or node</td>
+  </tr>
+  <tr>
+    <td>Environment</td>
+    <td>A running SNS cluster</td>
+  </tr>
+  <tr>
+    <td>Artifact</td>
+    <td>CEP framework</td>
+  </tr>
+  <tr>
+    <td>Response</td>
+    <td>The event is registered and handled appropriately according to the logic.</td>
+  </tr>
+  <tr>
+    <td>Response Measure</td>
+    <td>No more than one in ten thousand events should be dropped on average.</td>
+  </tr>
+</table>
+
+## Design Highlights
+
++ The core `cep` package managing transport of events has relatively
+  few dependencies, and is designed to be extended with a high-level
+  event handling abstraction of choice, thereby smoothly extending
+  that abstraction to process events across multiple distributed
+  nodes.
+
++ On top of the `cep` package is built the `cep-sodium` package,
+  providing a high-level interface based on the [Sodium][sodium]
+  functional reactive programming library, to which actual logic
+  is delegated.
+
++ We can't use broadcasting in an HPC environment, so CEP uses a
+  pre-known set of broker processes to relay publish/subscribe
+  requests between processors.
+
++ Events are categorized by their (Haskell) type, using the existing
+  `Fingerprint` machinery made available by Cloud Haskell, so events
+  are type-checked and the types can be omitted where inferrable,
+  getting the Haskell type inferrer to do the work.
+
+## Functional Specification
+
+### Communication
+
+When an event source wishes to emit an event, it must notify every
+subscriber of which it is aware.  Therefore, processors keep a local
+mapping
+
+    EventType → Set ProcessId
+
+indicating which processors have subscribed to which events (that the
+processor publishes).  This mapping is updated when the processor
+receives a `SubscribeRequest` or `NodeRemoval` event.
+
+### Brokers
+
+Processors interested in receiving events need to subscribe to the
+processors that provide those events, but there is a bootstrapping
+problem here!  Brokers solve the problem.  A broker is a very simple
+process that is known in advance to all processors in the cluster.
+Subscription requests for τ events are sent to all the brokers of
+which the processor is aware; the brokers are responsible for
+forwarding the message on to all τ-event sources.
+
+In order to register as a τ-event source, a processor may also send
+the broker a τ publish request, which should result in the broker
+forwarding the processor every τ subscription request from sinks it
+believes to be live.
+
+As an optimization, brokers also know about a node removal event,
+which they can use to prune their state of dead processors if
+informed.
+
+### Processing
+
+The core of a processor is written using Sodium, a functional reactive
+programming library.  Sodium provides an abstraction for composable
+event processing, including manipulation of streams of discrete events
+and also continuous behaviours that can be updated based upon those
+events.
+
+## Logical Specification
+
+The CEP implementation is split into two layers.
+
+<dl>
+  <dt><code>cep</code></dt>
+  <dd>The <code>cep</code> package comprises the core of CEP and
+      encompasses all the technologies necessary to write processors
+      and brokers.</dd>
+
+  <dt><code>cep-sodium</code></dt>
+  <dd>The <code>cep-sodium</code> package is a friendly and composable
+      API for building processors, based on the Sodium FRP
+      package.</dd>
+</dl>
+
+
+## Interfaces
+
+### `cep`
+
+#### Types
+
+````
+type NetworkMessage a
+
+payload ∷ Lens' (NetworkMessage a) a
+source  ∷ Lens' (NetworkMessage a) ProcessId
+
+type SubscribeRequest
+type PublishRequest
+type NodeRemoval
+type BrokerReconf
+````
+
+Types are important in CEP.  As Haskell types are used to classify
+event types, this module implicitly defines the *protocol* used to
+communicate between processors and brokers, at the infrastructure
+level.
+
+All CEP events, at the library- or user-level, are automatically
+wrapped in `NetworkMessage` on sending.  `NetworkMessage a` represents
+a message of type `a` tagged with metadata about the message, such as
+its source, which can be accessed through the lenses exported here.
+
+The remaining four types represent various infrastructure events:
+respectively,
+
++ A processor wishes to register as an event sink;
++ A processor wishes to register as an event source;
++ A processor no longer exists on the network;
++ The set of available brokers has changed.
+
+#### Broker
+
+````
+type Broker
+
+runBroker   ∷ Process ()
+startBroker ∷ Transport → IO Broker
+````
+
+`runBroker` is exported in case the user wishes to run the broker in a
+different way (e.g. on a different, pre-existing node).  For the
+common case of starting a new node over an existing transport on the
+current machine and running the broker there, `startBroker` exists as
+a convenience function.
+
+
+#### Processor
+
+````
+type Processor s a
+type Config
+type ProcessorState
+
+Config          ∷ [Broker] → Config
+runProcessor    ∷ Transport → Config → (∀ s. Processor s ()) → IO ()
+actionRunner    ∷ Processor s (Processor s Bool → IO ())
+onExit          ∷ Processor s () → Processor s ()
+getProcessorPid ∷ Processor s ProcessId
+````
+
+Each processor is run in a single instance of the `Processor` monad,
+using `runProcessor`, which has a phantom session parameter `s`.  This
+ensures that messages cannot be sent when their recipient is in the
+wrong state (e.g. emitting an event when the broker does not have the
+processor registered as a publisher of that event, so the event will
+be silently lost).  Calls to `runProcessor` will set up the processing
+callbacks according to the parameter, and then begin processing events
+in an endless loop — that is, `runProcessor` *will not return* in
+common usage, and should be forked if further processing is necessary.
+
+Since calls to `runProcessor` do not terminate, the value returned
+from the monadic value passed into `runProcessor` is *discarded*, not
+returned, and therefore it is not possible to return a value out of
+`runProcessor`.
+
+The `actionRunner` provides a limited means to run `Processor` actions
+in the current session from an `IO` callback, and also allows clean
+termination of the processor by returning `False` from the action.
+Beware: if the session from which the action originated has
+terminated, the action passed will not be executed, but it will be
+leaked at runtime.
+
+`getProcessorPid` will produce the Cloud Haskell `ProcessId` used to
+communicate with the outside world, which may not be the same as the
+current processor's `ProcessId` found with `liftProcess getSelfPid`.
+
+#### Callback Interface
+
+````
+publish   ∷ Serializable a ⇒ Processor s (a → Processor s ())
+subscribe ∷ Serializable a
+          ⇒ (NetworkMessage a → Processor s ()) → Processor s ()
+````
+
+An interface should implement these two functions to allow publishing
+of and subscription to events.
+
+### `cep-sodium`
+
+````
+publish      ∷ Serializable a ⇒ Event a → Processor s ()
+subscribe    ∷ Serializable a ⇒ Processor s (Event (NetworkMessage a))
+
+liftReactive ∷ Reactive a → Processor s a
+dieOn        ∷ Event a → Processor s ()
+````
+
+Confusingly, the name ‘event’ is used in FRP terminology for event
+*sources*, so `Event a` here refers (unlike elsewhere in the CEP
+framework) not to a single event but to a whole stream of potential
+events.
+
+In addition to the `publish`/`subscribe` functions, two additional
+functions are provided here.  The first merely allows Sodium
+`Reactive` code to be embedded into a processor's logic.  The second
+can be used to trigger processor termination on the first occurrence
+of an event, which is used in the `TemperatureRandom` example as we
+must dynamically create and destroy nodes.  It is not anticipated that
+this function will be useful in practice.
+
+The usual structure of a processor written with Sodium is to subscribe
+to one or more inputs, then use the bound names to produce one or more
+output `Event`s, which are then published.  That is,
+
+````
+someProcessor ∷ Processor s ()
+someProcessor = do
+  evt₀ ← subscribe
+  evt₁ ← subscribe
+  …
+
+  publish <=< liftReactive $ do
+    produceEvent₁ evt₀ evt₁ …
+  publish <=< liftReactive $ do
+    produceEvent₂ evt₀ evt₁ …
+  …
+````
+
+`Processor` is an instance of `MonadIO`, so `IO` actions can be used
+to set up further local inputs.  For example, many interesting
+operations require a clock-time source, which can be produced in `IO`
+(using a utility function `timeLoop` from the `sodium-utils` package):
+
+````
+timeProcessor ∷ Processor s ()
+timeProcessor = do
+  (time, pushTime) ← liftReactive newEvent
+  now              ← getCurrentTime >>= sync . flip hold time
+  liftIO . forkIO . timeLoop 0.05 . const $ getCurrentTime >>= sync . pushTime
+
+  …
+````
+
+## Conformance
+
+<dl>
+  <dt>[fr.composition]</dt>
+  <dd>Sodium provides composability of event-processing
+      mechanisms, even across sampling rates [2]; the CEP
+      framework extends this capability across the network for
+      discrete events.</dd>
+
+  <dt>[fr.typing]</dt>
+  <dd>Our implementation language is Haskell, which has a strong
+      typing discipline; Sodium forbids local composition of
+      components with mismatched types, and the CEP framework requires
+      received messages to have the expected type before processing
+      begins.</dd>
+
+  <dt>[fr.device-join]</dt>
+  <dd>A device can notify all interested parties of new devices as an
+      event, allowing them to make immediate use of it.</dd>
+
+  <dt>[fr.device-failure]</dt>
+  <dd>Simple and complex failures of devices can be diagnosed by
+      supervisors or the nodes themselves, and can then be communicated to
+      interested nodes to begin recovery.</dd>
+
+  <dt>[fr.node-join]</dt>
+  <dd>A newly joined processor can notify the brokers and other
+      interested parties of its presence, allowing them to make use of
+      it.</dd>
+
+  <dt>[fr.node-failure]</dt>
+  <dd>As [fr.device-failure], but diagnosis requires a supervisor
+      process.</dd>
+
+  <dt>[fr.logging]</dt>
+  <dd>All events are sent to all interested parties; a logging
+      processor can easily be constructed that listens for and records all
+      events of interest.</dd>
+
+  <dt>[fr.composite-failure]</dt>
+  <dd>The FRP formalism we have used is capable of making decisions
+      based on input from multiple sources, arbitrarily far into the
+      past.</dd>
+</dl>
+
+
+## Use Cases
+
+<table>
+  <tr>
+    <td>[Tag]</td>
+    <td>ucs.transient.block</td>
+  </tr>
+  <tr>
+    <td>Description</td>
+    <td>A failure occurs at the device on reading/writing a block.</td>
+  </tr>
+  <tr>
+    <td>References</td>
+    <td>HLD [1] §4.1</td>
+  </tr>
+  <tr>
+    <td>Actors</td>
+    <td>
+      <ul>
+        <li>Node</li>
+        <li>Device</li>
+        <li>Tracking station</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td>Prerequisites &amp; Assumptions</td>
+    <td>
+      <ul>
+        <li>The node is connected to the device.</li>
+        <li>The tracking station is available to the node.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td>Steps</td>
+    <td>
+      <ol>
+        <li>The node attempts to perform IO on the device.</li>
+        <li>The device reports an IO error to the node.</li>
+        <li>The node reports the error to the tracking station, including its identity, the identity of the affected device, and the nature of the error.</li>
+        <li>The node retries the IO operation.</li>
+      </ol>
+    </td>
+  </tr>
+  <tr>
+    <td>Variations</td>
+    <td>Rather than the device reporting an error, another health-monitoring layer may detect a problem with the retrieved data, e.g. failure to checksum or decrypt.</td>
+  </tr>
+  <tr>
+    <td>Quality Attributes</td>
+    <td>availability, reliability</td>
+  </tr>
+  <tr>
+    <td>Issues</td>
+    <td></td>
+  </tr>
+</table>
+
+
+<table>
+  <tr>
+    <td>[Tag]</td>
+    <td>ucs.transient.device</td>
+  </tr>
+  <tr>
+    <td>Description</td>
+    <td>A node tries to communicate with a device, but fails.</td>
+  </tr>
+  <tr>
+    <td>References</td>
+    <td>HLD [1] §4.1</td>
+  </tr>
+  <tr>
+    <td>Actors</td>
+    <td>
+      <ul>
+        <li>Node</li>
+        <li>Device</li>
+        <li>Tracking station</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td>Prerequisites &amp; Assumptions</td>
+    <td>The tracking station is available to the node.</td>
+  </tr>
+  <tr>
+    <td>Steps</td>
+    <td>
+      <ol>
+        <li>The node attempts to read or write data.</li>
+        <li>The device does not respond within t milliseconds.</li>
+        <li>The node reports the failure to the tracking station.</li>
+        <li>The node attempts to perform the operation again.</li>
+      </ol>
+    </td>
+  </tr>
+  <tr>
+    <td>Variations</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td>Quality Attributes</td>
+    <td>availability</td>
+  </tr>
+  <tr>
+    <td>Issues</td>
+    <td>
+      <ul>
+        <li>What are appropriate values for t?</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+
+<table>
+  <tr>
+    <td>[Tag]</td>
+    <td>ucs.transient.node</td>
+  </tr>
+  <tr>
+    <td>Description</td>
+    <td>A node fails to contact another node.</td>
+  </tr>
+  <tr>
+    <td>References</td>
+    <td>HLD [1] §4.1</td>
+  </tr>
+  <tr>
+    <td>Actors</td>
+    <td>
+      <ul>
+        <li>Node A</li>
+        <li>Node B</li>
+        <li>Tracking station</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td>Prerequisites &amp; Assumptions</td>
+    <td>The tracking station is available to node A.</td>
+  </tr>
+  <tr>
+    <td>Steps</td>
+    <td>
+      <ol>
+        <li>Node A attempts to contact node B.</li>
+        <li>Node B does not respond within t milliseconds.</li>
+        <li>Node A reports the failure to the tracking station.</li>
+        <li>Node A attempts to contact node B again.</li>
+      </ol>
+    </td>
+  </tr>
+  <tr>
+    <td>Variations</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td>Quality Attributes</td>
+    <td>availability</td>
+  </tr>
+  <tr>
+    <td>Issues</td>
+    <td>
+      <ul>
+        <li>What are appropriate values for t?</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+
+<table>
+  <tr>
+    <td>[Tag]</td>
+    <td>ucs.permanent.device</td>
+  </tr>
+  <tr>
+    <td>Description</td>
+    <td>A device issues a type or volume of errors that indicates that it is no longer reliable.</td>
+  </tr>
+  <tr>
+    <td>References</td>
+    <td>HLD [1] §4.9</td>
+  </tr>
+  <tr>
+    <td>Actors</td>
+    <td>
+      <ul>
+        <li>Node</li>
+        <li>Tracking station</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td>Prerequisites &amp; Assumptions</td>
+    <td>
+      <ul>
+        <li>The node is connected to the affected device.</li>
+        <li>There is a path between the node and the tracking station.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td>Steps</td>
+    <td>
+      <ol>
+        <li>The tracking station receives more than n device errors from a given device within t milliseconds.</li>
+        <li>The tracking station indicates that the node should stop retrying the device.</li>
+        <li>The tracking station broadcasts the device’s removal from the network.</li>
+      </ol>
+    </td>
+  </tr>
+  <tr>
+    <td>Variations</td>
+    <td>There are a variety of device errors that can render a device unusable, including corrupted data, persistent read/write IO failures, and connection errors.</td>
+  </tr>
+  <tr>
+    <td>Quality Attributes</td>
+    <td>availability, reliability</td>
+  </tr>
+  <tr>
+    <td>Issues</td>
+    <td>
+      <ul>
+        <li>What are appropriate values for n and t?</li>
+        <li>The number or type of error that indicates a catastrophic failure will vary depending on the drive.</li>
+        <li>Perhaps attach the tolerances for the device to the failure events themselves?  This saves us some state.</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+
+<table>
+  <tr>
+    <td>[Tag]</td>
+    <td>ucs.permanent.connection</td>
+  </tr>
+  <tr>
+    <td>Description</td>
+    <td>A node is persistently incapable of accessing another node.</td>
+  </tr>
+  <tr>
+    <td>References</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td>Actors</td>
+    <td>
+      <ul>
+        <li>Node A</li>
+        <li>Node B</li>
+        <li>Tracking station</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td>Prerequisites &amp; Assumptions</td>
+    <td>The tracking station is available to node A.</td>
+  </tr>
+  <tr>
+    <td>Steps</td>
+    <td>
+      <ol>
+        <li>The tracking station receives n connection errors from node A relating to node B within t milliseconds.</li>
+        <li>The tracking station requests that a number of other nodes also ping node B.</li>
+      </ol>
+    </td>
+  </tr>
+  <tr>
+    <td>Variations</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td>Quality Attributes</td>
+    <td>availability</td>
+  </tr>
+  <tr>
+    <td>Issues</td>
+    <td>
+      <ul>
+        <li>What are appropriate values for n and t?</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+
+<table>
+  <tr>
+    <td>[Tag]</td>
+    <td>ucs.permanent.node</td>
+  </tr>
+  <tr>
+    <td>Description</td>
+    <td>A node is no longer available to multiple nodes on the network.</td>
+  </tr>
+  <tr>
+    <td>References</td>
+    <td>HLD [1] §4.9</td>
+  </tr>
+  <tr>
+    <td>Actors</td>
+    <td>
+      <ul>
+        <li>Tracking station</li>
+        <li>Target node</li>
+        <li>Other nodes</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td>Prerequisites &amp; Assumptions</td>
+    <td>The tracking node is available to most nodes in the cluster.</td>
+  </tr>
+  <tr>
+    <td>Steps</td>
+    <td>
+      <ol>
+        <li>The tracking station receives m connection errors each from n nodes in t milliseconds.</li>
+        <li>The tracking station invokes Repair to remove all the devices attached to the affected node from all intersecting layouts on the cluster, rebuilding from redundancy if necessary.</li>
+        <li>The tracking station broadcasts the removal of each of the devices attached to the node.</li>
+        <li>The tracking station broadcasts the removal of the node from the cluster.</li>
+      </ol>
+    </td>
+  </tr>
+  <tr>
+    <td>Variations</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td>Quality Attributes</td>
+    <td>availability</td>
+  </tr>
+  <tr>
+    <td>Issues</td>
+    <td>
+      <ul>
+        <li>What are appropriate values for m, n, and t?</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+
+<table>
+  <tr>
+    <td>[Tag]</td>
+    <td>ucs.permanent.local</td>
+  </tr>
+  <tr>
+    <td>Description</td>
+    <td>Failure occurs locally and should be handled locally.</td>
+  </tr>
+  <tr>
+    <td>References</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td>Actors</td>
+    <td>
+      <ul>
+        <li>Node</li>
+        <li>Tracking station</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td>Prerequisites &amp; Assumptions</td>
+    <td>The node is connected to the tracking station.</td>
+  </tr>
+  <tr>
+    <td>Steps</td>
+    <td>
+      <ol>
+        <li>The node diagnoses a failure that can be fixed with only locally-available information.</li>
+        <li>The node reports the failure to the tracking station, indicating that it intends to fix the failure.</li>
+        <li>The node fixes the failure locally.</li>
+        <li>The node reports the fix to the tracking station.</li>
+      </ol>
+    </td>
+  </tr>
+  <tr>
+    <td>Variations</td>
+    <td>There are a variety of operations that can be fixed locally, such as disk controllers needing to be reset (triggered by a number of errors from disks on the same controller) or data being lost that can be reconstructed entirely from local redundancy data.</td>
+  </tr>
+  <tr>
+    <td>Quality Attributes</td>
+    <td>scalability, responsiveness</td>
+  </tr>
+  <tr>
+    <td>Issues</td>
+    <td></td>
+  </tr>
+</table>
+
+
+<table>
+  <tr>
+    <td>[Tag]</td>
+    <td>ucs.node-join</td>
+  </tr>
+  <tr>
+    <td>Description</td>
+    <td>A new node joins the network and should have its events handled.</td>
+  </tr>
+  <tr>
+    <td>References</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td>Actors</td>
+    <td>
+      <ul>
+        <li>Node</li>
+        <li>Other nodes</li>
+        <li>Tracking station</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td>Prerequisites &amp; Assumptions</td>
+    <td>The tracking station is available from the pool.</td>
+  </tr>
+  <tr>
+    <td>Steps</td>
+    <td>
+      <ol>
+        <li>The node is connected to the pool.</li>
+        <li>The node broadcasts its presence to the other nodes.</li>
+        <li>The other nodes begin tracking its events.</li>
+      </ol>
+    </td>
+  </tr>
+  <tr>
+    <td>Variations</td>
+    <td>Devices can also be added to a node, with similar effects.</td>
+  </tr>
+  <tr>
+    <td>Quality Attributes</td>
+    <td>scalability, composability, responsiveness</td>
+  </tr>
+  <tr>
+    <td>Issues</td>
+    <td></td>
+  </tr>
+</table>
+
+## References
+
+1. Hua, Huang and Danilov, Nikita. "High Level Design of SNS
+   Repair". Internal document. (2012).
+2. Elliott, Conal. "Push-pull functional reactive
+   programming". Haskell Symposium. (2009).
+
+[repair-hld]: https://docs.google.com/a/tweag.io/file/d/0B-mqorebq7hKZHJKd3FsQXFncEFfbzRweGR6X2RKMEF5T1pv/edit "HLD of SNS Repair, version 2.0"
+[push-pull]:  http://conal.net/papers/push-pull-frp/ "Push-pull functional reactive programming"
+
+[sodium]:     https://hackage.haskell.org/package/sodium "Hackage: sodium"
