@@ -2,10 +2,10 @@
 
 ## Introduction
 
-CEP is a framework for writing complex event processors,
-i.e. distributed components that can accept input events and produce
-output events based on some computation potentially involving a
-history of past events or other local state.
+CEP is a framework for writing complex event processors, i.e.
+distributed components that can accept input events and produce output
+events based on some computation potentially involving a history of
+past events or other local state.
 
 ## Definitions
 
