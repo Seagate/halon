@@ -9,29 +9,28 @@ history of past events or other local state.
 
 ## Definitions
 
-<dl>
-  <dt>Process</dt>
-  <dd>A self-contained task that may receive or send messages.</dd>
+Process
+:   A self-contained task that may receive or send messages.
 
-  <dt>(τ) event</dt>
-  <dd>A typed message (of type τ) indicating an occurrence somewhere
-      on the network.</dd>
+(τ) event
+:   A typed message (of type τ) indicating an occurrence somewhere on
+    the network.
 
-  <dt>(τ) event producer</dt>
-  <dd>A process that may produce events (of type τ).</dd>
+(τ) event producer
+:   A process that may produce events (of type τ).
 
-  <dt>(τ) event consumer</dt>
-  <dd>A process that accepts events (of type τ).</dd>
+(τ) event consumer
+:   A process that accepts events (of type τ).
 
-  <dt>Complex event</dt>
-  <dd>An event formed by the aggregation or analysis of multiple other
-      events.</dd>
+Complex event
+:   An event formed by the aggregation or analysis of multiple other
+    events.
 
-  <dt>(Complex event) processor</dt>
-  <dd>A process that gathers events from a variety of event producers
-      and combines them intelligently to produce output events, i.e. a
-      generalization of both event producer and event consumer.</dd>
-</dl>
+(Complex event) processor
+:   A process that gathers events from a variety of event producers and
+    combines them intelligently to produce output events, i.e. a
+    generalization of both event producer and event consumer.
+
 
 ## Requirements
 
@@ -39,39 +38,36 @@ The requirements for CEP are defined in terms of its motivation,
 Halon, a system for maintaining high availability of clusters in
 high-performance computing environments.
 
-<dl>
-  <dt>[fr.composition]</dt>
-  <dd>Halon processes should be directly composable at both the intra-
-      and inter-node level.</dd>
+[fr.composition]
+:   Halon processes should be directly composable at both the intra- and
+    inter-node level.
 
-  <dt>[fr.typing]</dt>
-  <dd>The language in which processes are written should be strongly
-      typed, and statically forbid connecting components of mismatched
-      types.</dd>
+[fr.typing]
+:   The language in which processes are written should be strongly
+    typed, and statically forbid connecting components of mismatched
+    types.
 
-  <dt>[fr.device-join]</dt>
-  <dd>Halon should detect and make use of new storage added to the
-      network.</dd>
+[fr.device-join]
+:   Halon should detect and make use of new storage added to the
+    network.
 
-  <dt>[fr.device-failure]</dt>
-  <dd>Halon should detect and initiate recovery from device
-      failures.</dd>
+[fr.device-failure]
+:   Halon should detect and initiate recovery from device failures.
 
-  <dt>[fr.node-join]</dt>
-  <dd>Halon should detect and configure a node newly joined to the
-      network.</dd>
+[fr.node-join]
+:   Halon should detect and configure a node newly joined to the
+    network.
 
-  <dt>[fr.node-failure]</dt>
-  <dd>Halon should detect and initiate recovery from node
-      failures.</dd>
+[fr.node-failure]
+:   Halon should detect and initiate recovery from node failures.
 
-  <dt>[fr.logging]</dt>
-  <dd>Halon should log all failures and repair operations.</dd>
+[fr.logging]
+:   Halon should log all failures and repair operations.
 
-  <dt>[fr.composite-failure]</dt>
-  <dd>Halon should diagnose and summarize complex failure events
-      signalled by multiple errors.</dd>
-</dl>
+[fr.composite-failure]
+:   Halon should diagnose and summarize complex failure events signalled
+    by multiple errors.
+
 
 ## Quality Attributes
 
@@ -82,246 +78,72 @@ high-performance computing environments.
 
 ## Quality Attribute Scenarios
 
-<table>
-  <tr>
-    <td>[Tag]</td>
-    <td>qas.responsiveness.device</td>
-  </tr>
-  <tr>
-    <td>Scenario</td>
-    <td>Halon should be able to rapidly trigger repair for failed
-    devices.</td>
-  </tr>
-  <tr>
-    <td>Attribute</td>
-    <td>responsiveness</td>
-  </tr>
-  <tr>
-    <td>Attribute Concern</td>
-    <td>Data repair</td>
-  </tr>
-  <tr>
-    <td>Stimulus</td>
-    <td>A number of errors from a device indicate that the device is
-        no longer reliable.</td>
-  </tr>
-  <tr>
-    <td>Stimulus Producer</td>
-    <td>Device</td>
-  </tr>
-  <tr>
-    <td>Environment</td>
-    <td>The device is connected to a node, which is in turn able to
-        access the tracking station.</td>
-  </tr>
-  <tr>
-    <td>Artifact</td>
-    <td>Halon</td>
-  </tr>
-  <tr>
-    <td>Response</td>
-    <td>A copy machine will be constructed for the lost data.</td>
-  </tr>
-  <tr>
-    <td>Response Measure</td>
-    <td>The time between the device reporting its failure and the
-        message being sent to begin construction of the copy machine
-        should be drawn from a normal distribution with µ = 0.1 s and σ ≤
-        0.3 s.</td>
-  </tr>
-</table>
+  ------------------- -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  [Tag]               qas.responsiveness.device
+  Scenario            Halon should be able to rapidly trigger repair for failed devices.
+  Attribute           responsiveness
+  Attribute Concern   Data repair
+  Stimulus            A number of errors from a device indicate that the device is no longer reliable.
+  Stimulus Producer   Device
+  Environment         The device is connected to a node, which is in turn able to access the tracking station.
+  Artifact            Halon
+  Response            A copy machine will be constructed for the lost data.
+  Response Measure    The time between the device reporting its failure and the message being sent to begin construction of the copy machine should be drawn from a normal distribution with µ = 0.1 s and σ ≤ 0.3 s.
+  ------------------- -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  ------------------- -------------------------------------------------------------------------------------------------------------
+  [Tag]               qas.composability.node
+  Scenario            Halon should be composed of a set of independent actors on nodes that function independent of other actors.
+  Attribute           composability
+  Attribute Concern   Adding nodes
+  Stimulus            Wishes to add new nodes to the pool
+  Stimulus Producer   System administrator
+  Environment         A running SNS cluster.
+  Artifact            Halon
+  Response            The system administrator connects the new node, which begins participating in the system.
+  Response Measure    The administrator does not need to alter any other nodes.
+  ------------------- -------------------------------------------------------------------------------------------------------------
+
+  ------------------- ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  [Tag]               qas.scalability.local-repair
+  Scenario            In the case where a node already has sufficient information locally to recover from a failure, the node should not require input from any external producer, ensuring that such cases put minimal load on the rest of the cluster.
+  Attribute           scalability
+  Attribute Concern   Data repair
+  Stimulus            A failure occurs for whose correction all the necessary redundancy information is available locally.
+  Stimulus Producer   Device
+  Environment         A running node with connected devices, the remaining of which contain sufficient information to reconstruct the failed.
+  Artifact            Node
+  Response            The node constructs a local copy machine, without recourse to data found elsewhere, and reconstructs the data.
+  Response Measure    The node does not need to consult data stored on any other nodes.
+  ------------------- ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  ------------------- -----------------------------------------------------------------------------------------------------------------------------------------
+  [Tag]               qas.composability.circuit
+  Scenario            The software on a node should be composed of recombinable circuits, and should itself be amenable to combination with other components.
+  Attribute           composability
+  Attribute Concern   Modification of code
+  Stimulus            Wishes to make changes to the event-processing logic
+  Stimulus Producer   Developer
+  Environment         An SNS cluster
+  Artifact            CEP framework
+  Response            The developer composes a new circuit from existing components.
+  Response Measure    The developer can directly incorporate existing circuits into the new circuit.
+  ------------------- -----------------------------------------------------------------------------------------------------------------------------------------
+
+  ------------------- ---------------------------------------------------------------------------
+  [Tag]               qas.availability
+  Scenario            Halon should be available to handle a vast majority of events.
+  Attribute           availability
+  Attribute Concern   Handling events
+  Stimulus            An event occurs
+  Stimulus Producer   Device or node
+  Environment         A running SNS cluster
+  Artifact            CEP framework
+  Response            The event is registered and handled appropriately according to the logic.
+  Response Measure    No more than one in ten thousand events should be dropped on average.
+  ------------------- ---------------------------------------------------------------------------
 
 
-<table>
-  <tr>
-    <td>[Tag]</td>
-    <td>qas.composability.node</td>
-  </tr>
-  <tr>
-    <td>Scenario</td>
-    <td>Halon should be composed of a set of independent actors on
-        nodes that function independent of other actors.</td>
-  </tr>
-  <tr>
-    <td>Attribute</td>
-    <td>composability</td>
-  </tr>
-  <tr>
-    <td>Attribute Concern</td>
-    <td>Adding nodes</td>
-  </tr>
-  <tr>
-    <td>Stimulus</td>
-    <td>Wishes to add new nodes to the pool</td>
-  </tr>
-  <tr>
-    <td>Stimulus Producer</td>
-    <td>System administrator</td>
-  </tr>
-  <tr>
-    <td>Environment</td>
-    <td>A running SNS cluster.</td>
-  </tr>
-  <tr>
-    <td>Artifact</td>
-    <td>Halon</td>
-  </tr>
-  <tr>
-    <td>Response</td>
-    <td>The system administrator connects the new node, which begins
-        participating in the system.</td>
-  </tr>
-  <tr>
-    <td>Response Measure</td>
-    <td>The administrator does not need to alter any other nodes.</td>
-  </tr>
-</table>
-
-
-<table>
-  <tr>
-    <td>[Tag]</td>
-    <td>qas.scalability.local-repair</td>
-  </tr>
-  <tr>
-    <td>Scenario</td>
-    <td>In the case where a node already has sufficient information
-        locally to recover from a failure, the node should not require
-        input from any external producer, ensuring that such cases put
-        minimal load on the rest of the cluster.</td>
-  </tr>
-  <tr>
-    <td>Attribute</td>
-    <td>scalability</td>
-  </tr>
-  <tr>
-    <td>Attribute Concern</td>
-    <td>Data repair</td>
-  </tr>
-  <tr>
-    <td>Stimulus</td>
-    <td>A failure occurs for whose correction all the necessary
-        redundancy information is available locally.</td>
-  </tr>
-  <tr>
-    <td>Stimulus Producer</td>
-    <td>Device</td>
-  </tr>
-  <tr>
-    <td>Environment</td>
-    <td>A running node with connected devices, the remaining of which
-        contain sufficient information to reconstruct the failed.</td>
-  </tr>
-  <tr>
-    <td>Artifact</td>
-    <td>Node</td>
-  </tr>
-  <tr>
-    <td>Response</td>
-    <td>The node constructs a local copy machine, without recourse to
-        data found elsewhere, and reconstructs the data.</td>
-  </tr>
-  <tr>
-    <td>Response Measure</td>
-    <td>The node does not need to consult data stored on any other
-        nodes.</td>
-  </tr>
-</table>
-
-
-<table>
-  <tr>
-    <td>[Tag]</td>
-    <td>qas.composability.circuit</td>
-  </tr>
-  <tr>
-    <td>Scenario</td>
-    <td>The software on a node should be composed of recombinable
-        circuits, and should itself be amenable to combination with other
-        components.</td>
-  </tr>
-  <tr>
-    <td>Attribute</td>
-    <td>composability</td>
-  </tr>
-  <tr>
-    <td>Attribute Concern</td>
-    <td>Modification of code</td>
-  </tr>
-  <tr>
-    <td>Stimulus</td>
-    <td>Wishes to make changes to the event-processing logic</td>
-  </tr>
-  <tr>
-    <td>Stimulus Producer</td>
-    <td>Developer</td>
-  </tr>
-  <tr>
-    <td>Environment</td>
-    <td>An SNS cluster</td>
-  </tr>
-  <tr>
-    <td>Artifact</td>
-    <td>CEP framework</td>
-  </tr>
-  <tr>
-    <td>Response</td>
-    <td>The developer composes a new circuit from existing
-        components.</td>
-  </tr>
-  <tr>
-    <td>Response Measure</td>
-    <td>The developer can directly incorporate existing circuits into
-        the new circuit.</td>
-  </tr>
-</table>
-
-
-<table>
-  <tr>
-    <td>[Tag]</td>
-    <td>qas.availability</td>
-  </tr>
-  <tr>
-    <td>Scenario</td>
-    <td>Halon should be available to handle a vast majority of
-        events.</td>
-  </tr>
-  <tr>
-    <td>Attribute</td>
-    <td>availability</td>
-  </tr>
-  <tr>
-    <td>Attribute Concern</td>
-    <td>Handling events</td>
-  </tr>
-  <tr>
-    <td>Stimulus</td>
-    <td>An event occurs</td>
-  </tr>
-  <tr>
-    <td>Stimulus Producer</td>
-    <td>Device or node</td>
-  </tr>
-  <tr>
-    <td>Environment</td>
-    <td>A running SNS cluster</td>
-  </tr>
-  <tr>
-    <td>Artifact</td>
-    <td>CEP framework</td>
-  </tr>
-  <tr>
-    <td>Response</td>
-    <td>The event is registered and handled appropriately according to
-        the logic.</td>
-  </tr>
-  <tr>
-    <td>Response Measure</td>
-    <td>No more than one in ten thousand events should be dropped on
-        average.</td>
-  </tr>
-</table>
 
 ## Design Highlights
 
@@ -390,17 +212,13 @@ events.
 
 The CEP implementation is split into two layers.
 
-<dl>
-  <dt><code>cep</code></dt>
-  <dd>The <code>cep</code> package comprises the core of CEP and
-      encompasses all the technologies necessary to write processors
-      and brokers.</dd>
+`cep`
+:   The `cep` package comprises the core of CEP and encompasses all the
+    technologies necessary to write processors and brokers.
 
-  <dt><code>cep-sodium</code></dt>
-  <dd>The <code>cep-sodium</code> package is a friendly and composable
-      API for building processors, based on the Sodium FRP
-      package.</dd>
-</dl>
+`cep-sodium`
+:   The `cep-sodium` package is a friendly and composable API for
+    building processors, based on the Sodium FRP package.
 
 
 ## Interfaces
@@ -565,533 +383,342 @@ timeProcessor = do
 
 ## Conformance
 
-<dl>
-  <dt>[fr.composition]</dt>
-  <dd>Sodium provides composability of event-processing
-      mechanisms, even across sampling rates [2]; the CEP
-      framework extends this capability across the network for
-      discrete events.</dd>
+[fr.composition]
+:   Sodium provides composability of event-processing mechanisms, even
+    across sampling rates [2]; the CEP framework extends this capability
+    across the network for discrete events.
 
-  <dt>[fr.typing]</dt>
-  <dd>Our implementation language is Haskell, which has a strong
-      typing discipline; Sodium forbids local composition of
-      components with mismatched types, and the CEP framework requires
-      received messages to have the expected type before processing
-      begins.</dd>
+[fr.typing]
+:   Our implementation language is Haskell, which has a strong typing
+    discipline; Sodium forbids local composition of components with
+    mismatched types, and the CEP framework requires received messages
+    to have the expected type before processing begins.
 
-  <dt>[fr.device-join]</dt>
-  <dd>A device can notify all interested parties of new devices as an
-      event, allowing them to make immediate use of it.</dd>
+[fr.device-join]
+:   A device can notify all interested parties of new devices as an
+    event, allowing them to make immediate use of it.
 
-  <dt>[fr.device-failure]</dt>
-  <dd>Simple and complex failures of devices can be diagnosed by
-      supervisors or the nodes themselves, and can then be communicated to
-      interested nodes to begin recovery.</dd>
+[fr.device-failure]
+:   Simple and complex failures of devices can be diagnosed by
+    supervisors or the nodes themselves, and can then be communicated to
+    interested nodes to begin recovery.
 
-  <dt>[fr.node-join]</dt>
-  <dd>A newly joined processor can notify the brokers and other
-      interested parties of its presence, allowing them to make use of
-      it.</dd>
+[fr.node-join]
+:   A newly joined processor can notify the brokers and other interested
+    parties of its presence, allowing them to make use of it.
 
-  <dt>[fr.node-failure]</dt>
-  <dd>As [fr.device-failure], but diagnosis requires a supervisor
-      process.</dd>
+[fr.node-failure]
+:   As [fr.device-failure], but diagnosis requires a supervisor process.
 
-  <dt>[fr.logging]</dt>
-  <dd>All events are sent to all interested parties; a logging
-      processor can easily be constructed that listens for and records all
-      events of interest.</dd>
+[fr.logging]
+:   All events are sent to all interested parties; a logging processor
+    can easily be constructed that listens for and records all events of
+    interest.
 
-  <dt>[fr.composite-failure]</dt>
-  <dd>The FRP formalism we have used is capable of making decisions
-      based on input from multiple producers, arbitrarily far into the
-      past.</dd>
-</dl>
+[fr.composite-failure]
+:   The FRP formalism we have used is capable of making decisions based
+    on input from multiple producers, arbitrarily far into the past.
+
+
 
 
 ## Use Cases
 
-<table>
-  <tr>
-    <td>[Tag]</td>
-    <td>ucs.transient.block</td>
-  </tr>
-  <tr>
-    <td>Description</td>
-    <td>A failure occurs at the device on reading/writing a
-    block.</td>
-  </tr>
-  <tr>
-    <td>References</td>
-    <td>HLD [1] §4.1</td>
-  </tr>
-  <tr>
-    <td>Actors</td>
-    <td>
-      <ul>
-        <li>Node</li>
-        <li>Device</li>
-        <li>Tracking station</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td>Prerequisites &amp; Assumptions</td>
-    <td>
-      <ul>
-        <li>The node is connected to the device.</li>
-        <li>The tracking station is available to the node.</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td>Steps</td>
-    <td>
-      <ol>
-        <li>The node attempts to perform IO on the device.</li>
-        <li>The device reports an IO error to the node.</li>
-        <li>The node reports the error to the tracking station,
-            including its identity, the identity of the affected device,
-            and the nature of the error.</li>
-        <li>The node retries the IO operation.</li>
-      </ol>
-    </td>
-  </tr>
-  <tr>
-    <td>Variations</td>
-    <td>Rather than the device reporting an error, another
-    health-monitoring layer may detect a problem with the retrieved
-    data, e.g. failure to checksum or decrypt.</td>
-  </tr>
-  <tr>
-    <td>Quality Attributes</td>
-    <td>availability, reliability</td>
-  </tr>
-  <tr>
-    <td>Issues</td>
-    <td></td>
-  </tr>
-</table>
++--------------------------------------+--------------------------------------+
+| [Tag]                                | ucs.transient.block                  |
++--------------------------------------+--------------------------------------+
+| Description                          | A failure occurs at the device on    |
+|                                      | reading/writing a block.             |
++--------------------------------------+--------------------------------------+
+| References                           | HLD [1] §4.1                         |
++--------------------------------------+--------------------------------------+
+| Actors                               | -   Node                             |
+|                                      | -   Device                           |
+|                                      | -   Tracking station                 |
++--------------------------------------+--------------------------------------+
+| Prerequisites & Assumptions          | -   The node is connected to the     |
+|                                      |     device.                          |
+|                                      | -   The tracking station is          |
+|                                      |     available to the node.           |
++--------------------------------------+--------------------------------------+
+| Steps                                | 1.  The node attempts to perform IO  |
+|                                      |     on the device.                   |
+|                                      | 2.  The device reports an IO error   |
+|                                      |     to the node.                     |
+|                                      | 3.  The node reports the error to    |
+|                                      |     the tracking station, including  |
+|                                      |     its identity, the identity of    |
+|                                      |     the affected device, and the     |
+|                                      |     nature of the error.             |
+|                                      | 4.  The node retries the IO          |
+|                                      |     operation.                       |
++--------------------------------------+--------------------------------------+
+| Variations                           | Rather than the device reporting an  |
+|                                      | error, another health-monitoring     |
+|                                      | layer may detect a problem with the  |
+|                                      | retrieved data, e.g. failure to      |
+|                                      | checksum or decrypt.                 |
++--------------------------------------+--------------------------------------+
+| Quality Attributes                   | availability, reliability            |
++--------------------------------------+--------------------------------------+
+| Issues                               |                                      |
++--------------------------------------+--------------------------------------+
 
 
-<table>
-  <tr>
-    <td>[Tag]</td>
-    <td>ucs.transient.device</td>
-  </tr>
-  <tr>
-    <td>Description</td>
-    <td>A node tries to communicate with a device, but fails.</td>
-  </tr>
-  <tr>
-    <td>References</td>
-    <td>HLD [1] §4.1</td>
-  </tr>
-  <tr>
-    <td>Actors</td>
-    <td>
-      <ul>
-        <li>Node</li>
-        <li>Device</li>
-        <li>Tracking station</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td>Prerequisites &amp; Assumptions</td>
-    <td>The tracking station is available to the node.</td>
-  </tr>
-  <tr>
-    <td>Steps</td>
-    <td>
-      <ol>
-        <li>The node attempts to read or write data.</li>
-        <li>The device does not respond within t milliseconds.</li>
-        <li>The node reports the failure to the tracking station.</li>
-        <li>The node attempts to perform the operation again.</li>
-      </ol>
-    </td>
-  </tr>
-  <tr>
-    <td>Variations</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td>Quality Attributes</td>
-    <td>availability</td>
-  </tr>
-  <tr>
-    <td>Issues</td>
-    <td>
-      <ul>
-        <li>What are appropriate values for t?</li>
-      </ul>
-    </td>
-  </tr>
-</table>
++--------------------------------------+--------------------------------------+
+| [Tag]                                | ucs.transient.device                 |
++--------------------------------------+--------------------------------------+
+| Description                          | A node tries to communicate with a   |
+|                                      | device, but fails.                   |
++--------------------------------------+--------------------------------------+
+| References                           | HLD [1] §4.1                         |
++--------------------------------------+--------------------------------------+
+| Actors                               | -   Node                             |
+|                                      | -   Device                           |
+|                                      | -   Tracking station                 |
++--------------------------------------+--------------------------------------+
+| Prerequisites & Assumptions          | The tracking station is available to |
+|                                      | the node.                            |
++--------------------------------------+--------------------------------------+
+| Steps                                | 1.  The node attempts to read or     |
+|                                      |     write data.                      |
+|                                      | 2.  The device does not respond      |
+|                                      |     within t milliseconds.           |
+|                                      | 3.  The node reports the failure to  |
+|                                      |     the tracking station.            |
+|                                      | 4.  The node attempts to perform the |
+|                                      |     operation again.                 |
++--------------------------------------+--------------------------------------+
+| Variations                           |                                      |
++--------------------------------------+--------------------------------------+
+| Quality Attributes                   | availability                         |
++--------------------------------------+--------------------------------------+
+| Issues                               | -   What are appropriate values for  |
+|                                      |     t?                               |
++--------------------------------------+--------------------------------------+
+
++--------------------------------------+--------------------------------------+
+| [Tag]                                | ucs.transient.node                   |
++--------------------------------------+--------------------------------------+
+| Description                          | A node fails to contact another      |
+|                                      | node.                                |
++--------------------------------------+--------------------------------------+
+| References                           | HLD [1] §4.1                         |
++--------------------------------------+--------------------------------------+
+| Actors                               | -   Node A                           |
+|                                      | -   Node B                           |
+|                                      | -   Tracking station                 |
++--------------------------------------+--------------------------------------+
+| Prerequisites & Assumptions          | The tracking station is available to |
+|                                      | node A.                              |
++--------------------------------------+--------------------------------------+
+| Steps                                | 1.  Node A attempts to contact node  |
+|                                      |     B.                               |
+|                                      | 2.  Node B does not respond within t |
+|                                      |     milliseconds.                    |
+|                                      | 3.  Node A reports the failure to    |
+|                                      |     the tracking station.            |
+|                                      | 4.  Node A attempts to contact node  |
+|                                      |     B again.                         |
++--------------------------------------+--------------------------------------+
+| Variations                           |                                      |
++--------------------------------------+--------------------------------------+
+| Quality Attributes                   | availability                         |
++--------------------------------------+--------------------------------------+
+| Issues                               | -   What are appropriate values for  |
+|                                      |     t?                               |
++--------------------------------------+--------------------------------------+
+
++--------------------------------------+--------------------------------------+
+| [Tag]                                | ucs.permanent.device                 |
++--------------------------------------+--------------------------------------+
+| Description                          | A device issues a type or volume of  |
+|                                      | errors that indicates that it is no  |
+|                                      | longer reliable.                     |
++--------------------------------------+--------------------------------------+
+| References                           | HLD [1] §4.9                         |
++--------------------------------------+--------------------------------------+
+| Actors                               | -   Node                             |
+|                                      | -   Tracking station                 |
++--------------------------------------+--------------------------------------+
+| Prerequisites & Assumptions          | -   The node is connected to the     |
+|                                      |     affected device.                 |
+|                                      | -   There is a path between the node |
+|                                      |     and the tracking station.        |
++--------------------------------------+--------------------------------------+
+| Steps                                | 1.  The tracking station receives    |
+|                                      |     more than n device errors from a |
+|                                      |     given device within t            |
+|                                      |     milliseconds.                    |
+|                                      | 2.  The tracking station indicates   |
+|                                      |     that the node should stop        |
+|                                      |     retrying the device.             |
+|                                      | 3.  The tracking station broadcasts  |
+|                                      |     the device’s removal from the    |
+|                                      |     network.                         |
++--------------------------------------+--------------------------------------+
+| Variations                           | There are a variety of device errors |
+|                                      | that can render a device unusable,   |
+|                                      | including corrupted data, persistent |
+|                                      | read/write IO failures, and          |
+|                                      | connection errors.                   |
++--------------------------------------+--------------------------------------+
+| Quality Attributes                   | availability, reliability            |
++--------------------------------------+--------------------------------------+
+| Issues                               | -   What are appropriate values for  |
+|                                      |     n and t?                         |
+|                                      | -   The number or type of error that |
+|                                      |     indicates a catastrophic failure |
+|                                      |     will vary depending on the       |
+|                                      |     drive.                           |
+|                                      | -   Perhaps attach the tolerances    |
+|                                      |     for the device to the failure    |
+|                                      |     events themselves? This saves us |
+|                                      |     some state.                      |
++--------------------------------------+--------------------------------------+
+
++--------------------------------------+--------------------------------------+
+| [Tag]                                | ucs.permanent.connection             |
++--------------------------------------+--------------------------------------+
+| Description                          | A node is persistently incapable of  |
+|                                      | accessing another node.              |
++--------------------------------------+--------------------------------------+
+| References                           |                                      |
++--------------------------------------+--------------------------------------+
+| Actors                               | -   Node A                           |
+|                                      | -   Node B                           |
+|                                      | -   Tracking station                 |
++--------------------------------------+--------------------------------------+
+| Prerequisites & Assumptions          | The tracking station is available to |
+|                                      | node A.                              |
++--------------------------------------+--------------------------------------+
+| Steps                                | 1.  The tracking station receives n  |
+|                                      |     connection errors from node A    |
+|                                      |     relating to node B within t      |
+|                                      |     milliseconds.                    |
+|                                      | 2.  The tracking station requests    |
+|                                      |     that a number of other nodes     |
+|                                      |     also ping node B.                |
++--------------------------------------+--------------------------------------+
+| Variations                           |                                      |
++--------------------------------------+--------------------------------------+
+| Quality Attributes                   | availability                         |
++--------------------------------------+--------------------------------------+
+| Issues                               | -   What are appropriate values for  |
+|                                      |     n and t?                         |
++--------------------------------------+--------------------------------------+
+
++--------------------------------------+--------------------------------------+
+| [Tag]                                | ucs.permanent.node                   |
++--------------------------------------+--------------------------------------+
+| Description                          | A node is no longer available to     |
+|                                      | multiple nodes on the network.       |
++--------------------------------------+--------------------------------------+
+| References                           | HLD [1] §4.9                         |
++--------------------------------------+--------------------------------------+
+| Actors                               | -   Tracking station                 |
+|                                      | -   Target node                      |
+|                                      | -   Other nodes                      |
++--------------------------------------+--------------------------------------+
+| Prerequisites & Assumptions          | The tracking node is available to    |
+|                                      | most nodes in the cluster.           |
++--------------------------------------+--------------------------------------+
+| Steps                                | 1.  The tracking station receives m  |
+|                                      |     connection errors each from n    |
+|                                      |     nodes in t milliseconds.         |
+|                                      | 2.  The tracking station invokes     |
+|                                      |     Repair to remove all the devices |
+|                                      |     attached to the affected node    |
+|                                      |     from all intersecting layouts on |
+|                                      |     the cluster, rebuilding from     |
+|                                      |     redundancy if necessary.         |
+|                                      | 3.  The tracking station broadcasts  |
+|                                      |     the removal of each of the       |
+|                                      |     devices attached to the node.    |
+|                                      | 4.  The tracking station broadcasts  |
+|                                      |     the removal of the node from the |
+|                                      |     cluster.                         |
++--------------------------------------+--------------------------------------+
+| Variations                           |                                      |
++--------------------------------------+--------------------------------------+
+| Quality Attributes                   | availability                         |
++--------------------------------------+--------------------------------------+
+| Issues                               | -   What are appropriate values for  |
+|                                      |     m, n, and t?                     |
++--------------------------------------+--------------------------------------+
+
++--------------------------------------+--------------------------------------+
+| [Tag]                                | ucs.permanent.local                  |
++--------------------------------------+--------------------------------------+
+| Description                          | Failure occurs locally and should be |
+|                                      | handled locally.                     |
++--------------------------------------+--------------------------------------+
+| References                           |                                      |
++--------------------------------------+--------------------------------------+
+| Actors                               | -   Node                             |
+|                                      | -   Tracking station                 |
++--------------------------------------+--------------------------------------+
+| Prerequisites & Assumptions          | The node is connected to the         |
+|                                      | tracking station.                    |
++--------------------------------------+--------------------------------------+
+| Steps                                | 1.  The node diagnoses a failure     |
+|                                      |     that can be fixed with only      |
+|                                      |     locally-available information.   |
+|                                      | 2.  The node reports the failure to  |
+|                                      |     the tracking station, indicating |
+|                                      |     that it intends to fix the       |
+|                                      |     failure.                         |
+|                                      | 3.  The node fixes the failure       |
+|                                      |     locally.                         |
+|                                      | 4.  The node reports the fix to the  |
+|                                      |     tracking station.                |
++--------------------------------------+--------------------------------------+
+| Variations                           | There are a variety of operations    |
+|                                      | that can be fixed locally, such as   |
+|                                      | disk controllers needing to be reset |
+|                                      | (triggered by a number of errors     |
+|                                      | from disks on the same controller)   |
+|                                      | or data being lost that can be       |
+|                                      | reconstructed entirely from local    |
+|                                      | redundancy data.                     |
++--------------------------------------+--------------------------------------+
+| Quality Attributes                   | scalability, responsiveness          |
++--------------------------------------+--------------------------------------+
+| Issues                               |                                      |
++--------------------------------------+--------------------------------------+
+
++--------------------------------------+--------------------------------------+
+| [Tag]                                | ucs.node-join                        |
++--------------------------------------+--------------------------------------+
+| Description                          | A new node joins the network and     |
+|                                      | should have its events handled.      |
++--------------------------------------+--------------------------------------+
+| References                           |                                      |
++--------------------------------------+--------------------------------------+
+| Actors                               | -   Node                             |
+|                                      | -   Other nodes                      |
+|                                      | -   Tracking station                 |
++--------------------------------------+--------------------------------------+
+| Prerequisites & Assumptions          | The tracking station is available    |
+|                                      | from the pool.                       |
++--------------------------------------+--------------------------------------+
+| Steps                                | 1.  The node is connected to the     |
+|                                      |     pool.                            |
+|                                      | 2.  The node broadcasts its presence |
+|                                      |     to the other nodes.              |
+|                                      | 3.  The other nodes begin tracking   |
+|                                      |     its events.                      |
++--------------------------------------+--------------------------------------+
+| Variations                           | Devices can also be added to a node, |
+|                                      | with similar effects.                |
++--------------------------------------+--------------------------------------+
+| Quality Attributes                   | scalability, composability,          |
+|                                      | responsiveness                       |
++--------------------------------------+--------------------------------------+
+| Issues                               |                                      |
++--------------------------------------+--------------------------------------+
 
 
-<table>
-  <tr>
-    <td>[Tag]</td>
-    <td>ucs.transient.node</td>
-  </tr>
-  <tr>
-    <td>Description</td>
-    <td>A node fails to contact another node.</td>
-  </tr>
-  <tr>
-    <td>References</td>
-    <td>HLD [1] §4.1</td>
-  </tr>
-  <tr>
-    <td>Actors</td>
-    <td>
-      <ul>
-        <li>Node A</li>
-        <li>Node B</li>
-        <li>Tracking station</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td>Prerequisites &amp; Assumptions</td>
-    <td>The tracking station is available to node A.</td>
-  </tr>
-  <tr>
-    <td>Steps</td>
-    <td>
-      <ol>
-        <li>Node A attempts to contact node B.</li>
-        <li>Node B does not respond within t milliseconds.</li>
-        <li>Node A reports the failure to the tracking station.</li>
-        <li>Node A attempts to contact node B again.</li>
-      </ol>
-    </td>
-  </tr>
-  <tr>
-    <td>Variations</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td>Quality Attributes</td>
-    <td>availability</td>
-  </tr>
-  <tr>
-    <td>Issues</td>
-    <td>
-      <ul>
-        <li>What are appropriate values for t?</li>
-      </ul>
-    </td>
-  </tr>
-</table>
-
-
-<table>
-  <tr>
-    <td>[Tag]</td>
-    <td>ucs.permanent.device</td>
-  </tr>
-  <tr>
-    <td>Description</td>
-    <td>A device issues a type or volume of errors that indicates that
-        it is no longer reliable.</td>
-  </tr>
-  <tr>
-    <td>References</td>
-    <td>HLD [1] §4.9</td>
-  </tr>
-  <tr>
-    <td>Actors</td>
-    <td>
-      <ul>
-        <li>Node</li>
-        <li>Tracking station</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td>Prerequisites &amp; Assumptions</td>
-    <td>
-      <ul>
-        <li>The node is connected to the affected device.</li>
-        <li>There is a path between the node and the tracking
-            station.</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td>Steps</td>
-    <td>
-      <ol>
-        <li>The tracking station receives more than n device errors
-            from a given device within t milliseconds.</li>
-        <li>The tracking station indicates that the node should stop
-            retrying the device.</li>
-        <li>The tracking station broadcasts the device’s removal from
-            the network.</li>
-      </ol>
-    </td>
-  </tr>
-  <tr>
-    <td>Variations</td>
-    <td>There are a variety of device errors that can render a device
-        unusable, including corrupted data, persistent read/write IO
-        failures, and connection errors.</td>
-  </tr>
-  <tr>
-    <td>Quality Attributes</td>
-    <td>availability, reliability</td>
-  </tr>
-  <tr>
-    <td>Issues</td>
-    <td>
-      <ul>
-        <li>What are appropriate values for n and t?</li>
-        <li>The number or type of error that indicates a catastrophic
-            failure will vary depending on the drive.</li>
-        <li>Perhaps attach the tolerances for the device to the
-            failure events themselves?  This saves us some state.</li>
-      </ul>
-    </td>
-  </tr>
-</table>
-
-
-<table>
-  <tr>
-    <td>[Tag]</td>
-    <td>ucs.permanent.connection</td>
-  </tr>
-  <tr>
-    <td>Description</td>
-    <td>A node is persistently incapable of accessing another
-        node.</td>
-  </tr>
-  <tr>
-    <td>References</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td>Actors</td>
-    <td>
-      <ul>
-        <li>Node A</li>
-        <li>Node B</li>
-        <li>Tracking station</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td>Prerequisites &amp; Assumptions</td>
-    <td>The tracking station is available to node A.</td>
-  </tr>
-  <tr>
-    <td>Steps</td>
-    <td>
-      <ol>
-        <li>The tracking station receives n connection errors from
-            node A relating to node B within t milliseconds.</li>
-        <li>The tracking station requests that a number of other nodes
-            also ping node B.</li>
-      </ol>
-    </td>
-  </tr>
-  <tr>
-    <td>Variations</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td>Quality Attributes</td>
-    <td>availability</td>
-  </tr>
-  <tr>
-    <td>Issues</td>
-    <td>
-      <ul>
-        <li>What are appropriate values for n and t?</li>
-      </ul>
-    </td>
-  </tr>
-</table>
-
-
-<table>
-  <tr>
-    <td>[Tag]</td>
-    <td>ucs.permanent.node</td>
-  </tr>
-  <tr>
-    <td>Description</td>
-    <td>A node is no longer available to multiple nodes on the
-        network.</td>
-  </tr>
-  <tr>
-    <td>References</td>
-    <td>HLD [1] §4.9</td>
-  </tr>
-  <tr>
-    <td>Actors</td>
-    <td>
-      <ul>
-        <li>Tracking station</li>
-        <li>Target node</li>
-        <li>Other nodes</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td>Prerequisites &amp; Assumptions</td>
-    <td>The tracking node is available to most nodes in the
-        cluster.</td>
-  </tr>
-  <tr>
-    <td>Steps</td>
-    <td>
-      <ol>
-        <li>The tracking station receives m connection errors each
-            from n nodes in t milliseconds.</li>
-        <li>The tracking station invokes Repair to remove all the
-            devices attached to the affected node from all intersecting
-            layouts on the cluster, rebuilding from redundancy if
-            necessary.</li>
-        <li>The tracking station broadcasts the removal of each of the
-            devices attached to the node.</li>
-        <li>The tracking station broadcasts the removal of the node
-            from the cluster.</li>
-      </ol>
-    </td>
-  </tr>
-  <tr>
-    <td>Variations</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td>Quality Attributes</td>
-    <td>availability</td>
-  </tr>
-  <tr>
-    <td>Issues</td>
-    <td>
-      <ul>
-        <li>What are appropriate values for m, n, and t?</li>
-      </ul>
-    </td>
-  </tr>
-</table>
-
-
-<table>
-  <tr>
-    <td>[Tag]</td>
-    <td>ucs.permanent.local</td>
-  </tr>
-  <tr>
-    <td>Description</td>
-    <td>Failure occurs locally and should be handled locally.</td>
-  </tr>
-  <tr>
-    <td>References</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td>Actors</td>
-    <td>
-      <ul>
-        <li>Node</li>
-        <li>Tracking station</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td>Prerequisites &amp; Assumptions</td>
-    <td>The node is connected to the tracking station.</td>
-  </tr>
-  <tr>
-    <td>Steps</td>
-    <td>
-      <ol>
-        <li>The node diagnoses a failure that can be fixed with only
-            locally-available information.</li>
-        <li>The node reports the failure to the tracking station,
-            indicating that it intends to fix the failure.</li>
-        <li>The node fixes the failure locally.</li>
-        <li>The node reports the fix to the tracking station.</li>
-      </ol>
-    </td>
-  </tr>
-  <tr>
-    <td>Variations</td>
-    <td>There are a variety of operations that can be fixed locally,
-        such as disk controllers needing to be reset (triggered by a
-        number of errors from disks on the same controller) or data being
-        lost that can be reconstructed entirely from local redundancy
-        data.</td>
-  </tr>
-  <tr>
-    <td>Quality Attributes</td>
-    <td>scalability, responsiveness</td>
-  </tr>
-  <tr>
-    <td>Issues</td>
-    <td></td>
-  </tr>
-</table>
-
-
-<table>
-  <tr>
-    <td>[Tag]</td>
-    <td>ucs.node-join</td>
-  </tr>
-  <tr>
-    <td>Description</td>
-    <td>A new node joins the network and should have its events
-        handled.</td>
-  </tr>
-  <tr>
-    <td>References</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td>Actors</td>
-    <td>
-      <ul>
-        <li>Node</li>
-        <li>Other nodes</li>
-        <li>Tracking station</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td>Prerequisites &amp; Assumptions</td>
-    <td>The tracking station is available from the pool.</td>
-  </tr>
-  <tr>
-    <td>Steps</td>
-    <td>
-      <ol>
-        <li>The node is connected to the pool.</li>
-        <li>The node broadcasts its presence to the other nodes.</li>
-        <li>The other nodes begin tracking its events.</li>
-      </ol>
-    </td>
-  </tr>
-  <tr>
-    <td>Variations</td>
-    <td>Devices can also be added to a node, with similar
-        effects.</td>
-  </tr>
-  <tr>
-    <td>Quality Attributes</td>
-    <td>scalability, composability, responsiveness</td>
-  </tr>
-  <tr>
-    <td>Issues</td>
-    <td></td>
-  </tr>
-</table>
 
 ## References
 
