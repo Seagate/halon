@@ -35,6 +35,10 @@ history of past events or other local state.
 
 ## Requirements
 
+The requirements for CEP are defined in terms of its motivation,
+Halon, a system for maintaining high availability of clusters in
+high-performance computing environments.
+
 <dl>
   <dt>[fr.composition]</dt>
   <dd>Halon processes should be directly composable at both the intra-
