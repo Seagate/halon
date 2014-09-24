@@ -17,10 +17,10 @@ history of past events or other local state.
   <dd>A typed message (of type τ) indicating an occurrence somewhere
       on the network.</dd>
 
-  <dt>(τ) event source</dt>
+  <dt>(τ) event producer</dt>
   <dd>A process that may produce events (of type τ).</dd>
 
-  <dt>(τ) event sink</dt>
+  <dt>(τ) event consumer</dt>
   <dd>A process that accepts events (of type τ).</dd>
 
   <dt>Complex event</dt>
@@ -28,9 +28,9 @@ history of past events or other local state.
       events.</dd>
 
   <dt>(Complex event) processor</dt>
-  <dd>A process that gathers events from a variety of event sources
+  <dd>A process that gathers events from a variety of event producers
       and combines them intelligently to produce output events, i.e. a
-      generalization of both event source and event sink.</dd>
+      generalization of both event producer and event consumer.</dd>
 </dl>
 
 ## Requirements
@@ -102,7 +102,7 @@ history of past events or other local state.
         no longer reliable.</td>
   </tr>
   <tr>
-    <td>Stimulus Source</td>
+    <td>Stimulus Producer</td>
     <td>Device</td>
   </tr>
   <tr>
@@ -151,7 +151,7 @@ history of past events or other local state.
     <td>Wishes to add new nodes to the pool</td>
   </tr>
   <tr>
-    <td>Stimulus Source</td>
+    <td>Stimulus Producer</td>
     <td>System administrator</td>
   </tr>
   <tr>
@@ -183,7 +183,7 @@ history of past events or other local state.
     <td>Scenario</td>
     <td>In the case where a node already has sufficient information
         locally to recover from a failure, the node should not require
-        input from any external source, ensuring that such cases put
+        input from any external producer, ensuring that such cases put
         minimal load on the rest of the cluster.</td>
   </tr>
   <tr>
@@ -200,7 +200,7 @@ history of past events or other local state.
         redundancy information is available locally.</td>
   </tr>
   <tr>
-    <td>Stimulus Source</td>
+    <td>Stimulus Producer</td>
     <td>Device</td>
   </tr>
   <tr>
@@ -249,7 +249,7 @@ history of past events or other local state.
     <td>Wishes to make changes to the event-processing logic</td>
   </tr>
   <tr>
-    <td>Stimulus Source</td>
+    <td>Stimulus Producer</td>
     <td>Developer</td>
   </tr>
   <tr>
@@ -296,7 +296,7 @@ history of past events or other local state.
     <td>An event occurs</td>
   </tr>
   <tr>
-    <td>Stimulus Source</td>
+    <td>Stimulus Producer</td>
     <td>Device or node</td>
   </tr>
   <tr>
@@ -345,7 +345,7 @@ history of past events or other local state.
 
 ### Communication
 
-When an event source wishes to emit an event, it must notify every
+When an event producer wishes to emit an event, it must notify every
 subscriber of which it is aware.  Therefore, processors keep a local
 mapping
 
@@ -363,11 +363,11 @@ problem here!  Brokers solve the problem.  A broker is a very simple
 process that is known in advance to all processors in the cluster.
 Subscription requests for τ events are sent to all the brokers of
 which the processor is aware; the brokers are responsible for
-forwarding the message on to all τ-event sources.
+forwarding the message on to all τ-event producers.
 
-In order to register as a τ-event source, a processor may also send
+In order to register as a τ-event producer, a processor may also send
 the broker a τ publish request, which should result in the broker
-forwarding the processor every τ subscription request from sinks it
+forwarding the processor every τ subscription request from consumers it
 believes to be live.
 
 As an optimization, brokers also know about a node removal event,
@@ -409,7 +409,7 @@ The CEP implementation is split into two layers.
 type NetworkMessage a
 
 payload ∷ Lens' (NetworkMessage a) a
-source  ∷ Lens' (NetworkMessage a) ProcessId
+producer  ∷ Lens' (NetworkMessage a) ProcessId
 
 type SubscribeRequest
 type PublishRequest
@@ -425,13 +425,13 @@ level.
 All CEP events, at the library- or user-level, are automatically
 wrapped in `NetworkMessage` on sending.  `NetworkMessage a` represents
 a message of type `a` tagged with metadata about the message, such as
-its source, which can be accessed through the lenses exported here.
+its producer, which can be accessed through the lenses exported here.
 
 The remaining four types represent various infrastructure events:
 respectively,
 
-+ A processor wishes to register as an event sink;
-+ A processor wishes to register as an event source;
++ A processor wishes to register as an event consumer;
++ A processor wishes to register as an event producer;
 + A processor no longer exists on the network;
 + The set of available brokers has changed.
 
@@ -513,7 +513,7 @@ dieOn        ∷ Event a → Processor s ()
 ````
 
 Confusingly, the name ‘event’ is used in FRP terminology for event
-*sources*, so `Event a` here refers (unlike elsewhere in the CEP
+*producers*, so `Event a` here refers (unlike elsewhere in the CEP
 framework) not to a single event but to a whole stream of potential
 events.
 
@@ -545,7 +545,7 @@ someProcessor = do
 
 `Processor` is an instance of `MonadIO`, so `IO` actions can be used
 to set up further local inputs.  For example, many interesting
-operations require a clock-time source, which can be produced in `IO`
+operations require a clock-time producer, which can be produced in `IO`
 (using a utility function `timeLoop` from the `sodium-utils` package):
 
 ````
@@ -553,7 +553,8 @@ timeProcessor ∷ Processor s ()
 timeProcessor = do
   (time, pushTime) ← liftReactive newEvent
   now              ← getCurrentTime >>= sync . flip hold time
-  liftIO . forkIO . timeLoop 0.05 . const $ getCurrentTime >>= sync . pushTime
+  liftIO . forkIO . timeLoop 0.05 . const $
+    getCurrentTime >>= sync . pushTime
 
   …
 ````
@@ -599,7 +600,7 @@ timeProcessor = do
 
   <dt>[fr.composite-failure]</dt>
   <dd>The FRP formalism we have used is capable of making decisions
-      based on input from multiple sources, arbitrarily far into the
+      based on input from multiple producers, arbitrarily far into the
       past.</dd>
 </dl>
 
