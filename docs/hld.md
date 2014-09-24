@@ -310,6 +310,15 @@ Beware: if the session from which the action originated has
 terminated, the action passed will not be executed, but it will be
 leaked at runtime.
 
+For example, `actionRunner` is used in cep-sodium to attach a CEP
+callback to an event that will be executed when the event fires (in
+this case, returning `False`` and thereby terminating the event
+processor):
+
+    dieOn ev = do
+      r <- actionRunner
+      void . liftReactive . listen ev . const . r $ return False
+
 `getProcessorPid` will produce the Cloud Haskell `ProcessId` used to
 communicate with the outside world, which may not be the same as the
 current processor's `ProcessId` found with `liftProcess getSelfPid`.
