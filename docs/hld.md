@@ -283,7 +283,6 @@ type ProcessorState
 
 Config          ∷ [Broker] → Config
 runProcessor    ∷ Transport → Config → (∀ s. Processor s ()) → IO ()
-actionRunner    ∷ Processor s (Processor s Bool → IO ())
 onExit          ∷ Processor s () → Processor s ()
 getProcessorPid ∷ Processor s ProcessId
 ````
@@ -302,22 +301,6 @@ Since calls to `runProcessor` do not terminate, the value returned
 from the monadic value passed into `runProcessor` is *discarded*, not
 returned, and therefore it is not possible to return a value out of
 `runProcessor`.
-
-The `actionRunner` provides a limited means to run `Processor` actions
-in the current session from an `IO` callback, and also allows clean
-termination of the processor by returning `False` from the action.
-Beware: if the session from which the action originated has
-terminated, the action passed will not be executed, but it will be
-leaked at runtime.
-
-For example, `actionRunner` is used in cep-sodium to attach a CEP
-callback to an event that will be executed when the event fires (in
-this case, returning `False`` and thereby terminating the event
-processor):
-
-    dieOn ev = do
-      r <- actionRunner
-      void . liftReactive . listen ev . const . r $ return False
 
 `getProcessorPid` will produce the Cloud Haskell `ProcessId` used to
 communicate with the outside world, which may not be the same as the
