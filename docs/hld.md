@@ -160,7 +160,7 @@ high-performance computing environments.
 
 + We can't use broadcasting in an HPC environment, so CEP uses a
   pre-known set of broker processes to relay publish/subscribe
-  requests between processors.
+  requests between event processors.
 
 + Events are categorized by their (Haskell) type, using the existing
   `Fingerprint` machinery made available by Cloud Haskell, so events
