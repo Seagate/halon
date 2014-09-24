@@ -23,15 +23,6 @@ CABAL_FLAGS = --package-db=clean
 
 GHC_VERSION = $(shell ghc --numeric-version)
 
-SANDBOX_DEFAULT = $(shell pwd)/.cabal-sandbox-default
-SANDBOX_DEFAULT_CONFIG = $(shell pwd)/cabal.sandbox-default.config
-CABAL_DEFAULT_SANDBOX  = --sandbox-config-file=$(SANDBOX_DEFAULT_CONFIG)
-
-# When building with the scheduler enabled, use a different sandbox.
-SANDBOX_SCHED = $(shell pwd)/.cabal-sandbox-scheduler
-SANDBOX_SCHED_CONFIG = $(shell pwd)/cabal.sandbox-scheduler.config
-CABAL_SCHED_SANDBOX  = --sandbox-config-file=$(SANDBOX_SCHED_CONFIG)
-
 PACKAGE_DIR = $(ROOT_DIR)/
 VENDOR_DIR = $(ROOT_DIR)/vendor/
 
@@ -52,7 +43,3 @@ endif
 VENDOR_PACKAGES = distributed-process \
                   tasty-files \
 		  acid-state
-
-# Packages that doesn't work with deterministic scheduler
-NON_SCHED := halon \
-             mero-halon

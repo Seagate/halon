@@ -27,6 +27,7 @@ import Data.List ( isPrefixOf )
 import System.Exit ( exitFailure )
 import System.Environment ( getArgs )
 import System.FilePath ((</>))
+import System.Posix.Env (setEnv)
 import System.Posix.Temp (mkdtemp)
 import System.Random ( randomIO, mkStdGen, random, randoms )
 
@@ -88,7 +89,8 @@ remoteTables =
 
 
 main :: IO ()
-main =
+main = do
+ setEnv "DP_SCHEDULER_ENABLED" "1" True
  if not schedulerIsEnabled
    then putStrLn "The deterministic scheduler is not enabled." >> exitFailure
    else do

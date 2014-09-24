@@ -1,6 +1,6 @@
-This is the source code distribution of distributed-process-scheduler,
-a package that makes possible writing randomized tests for programs using
-the distributed-process package.
+This is the source code distribution of distributed-process-scheduler, a package
+that makes it possible to write randomized tests for programs using the
+distributed-process package.
 
 The goal of randomized tests is to show that concurrent algorithms yield correct
 results in many possible interleavings of the concurrent steps. Moreover,
@@ -51,22 +51,18 @@ first.
 
 == BUILDING AND INSTALLATION ==
 
-The distributed-process-scheduler package builds by default a package that
-reexports the definitions of distributed-process. Thus the scheduler is indeed
-disabled.
-
-In order to build the package with the scheduler enabled, the flag
--fuse-scheduler must be provided to cabal install.
+The distributed-process-scheduler package is a wrapper around
+distributed-process, so you have to use the functions and the type
+signatures from the scheduler packages instead of the upstream DP.
 
 Randomized tests and the user libraries they test should list
-distributed-process-scheduler as a dependency rather than distributed-process.
+distributed-process-scheduler as a dependency rather than
+distributed-process.
 
-If a user library is not being used for testing, then it can be built against
-a distributed-process-scheduler build which has the scheduler disabled.
-
-A way to manage builds is to have a separate package database with the packages
-built with the scheduler enabled, and another package database for regular
-builds.
+Once you've changed your .cabal files accordingly and recompiled
+everything, you're able to enable the scheduler with setting the
+DP_SCHEDULER_ENABLED environment variable to 1.  By default, the
+scheduler is disabled.
 
 
 == Testing with distributed-process-scheduler ==
@@ -88,8 +84,8 @@ numbers.
 >   readServer serverPid
 
 The function starts by creating a "server" process which keeps an integer state.
-This state is initialize with the value of the first operand. The server is also
-told to terminate after serving (n+1) read requests of the state.
+This state is initialized with the value of the first operand. The server is
+also told to terminate after serving (n+1) read requests of the state.
 
 Then the function creates as many processes as the second operand indicates,
 where each process will increase by one the state of server process.
@@ -170,7 +166,8 @@ provide the list of imports for completeness.
 >       lnid <- newLocalNode transport initRemoteTable
 >       runProcess lnid p
 
-When running this program we get an output similar to what follows:
+We then do an "export DP_SCHEDULER_ENABLED=1" and run this program.
+We get an output similar to what follows:
 
 FAIL: -117157315039303149
 FAIL: -8854136653200549331

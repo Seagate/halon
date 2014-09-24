@@ -22,6 +22,7 @@ import qualified Data.Map as Map ( empty, insert, lookup )
 import System.Exit ( exitFailure )
 import System.Environment ( getArgs )
 import System.FilePath ((</>))
+import System.Posix.Env (setEnv)
 import System.Posix.Temp (mkdtemp)
 import System.Random ( randomIO, split, mkStdGen, random, randoms, randomRs )
 
@@ -33,7 +34,8 @@ remoteTables =
   Control.Distributed.Process.Node.initRemoteTable
 
 main :: IO ()
-main =
+main = do
+ setEnv "DP_SCHEDULER_ENABLED" "1" True
  if not schedulerIsEnabled
    then putStrLn "The deterministic scheduler is not enabled." >> exitFailure
    else do

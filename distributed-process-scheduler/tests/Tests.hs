@@ -4,16 +4,17 @@
 
 {-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+module Tests (main) where
+
 import Control.Distributed.Process.Scheduler (withScheduler, __remoteTable)
 import Control.Distributed.Process.Node
     ( newLocalNode, initRemoteTable, runProcess, LocalNode )
 import Control.Distributed.Process hiding (bracket)
+import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Control.Distributed.Process.Trans
 import Control.Exception ( bracket, SomeException, throwIO )
 import Control.Monad ( when, forM_, replicateM_, forM )
-#ifdef USE_DETERMINISTIC_SCHEDULER
 import Control.Monad ( replicateM )
-#endif
 import Control.Monad.State ( execStateT, modify, StateT, lift )
 import Data.IORef
 import Data.List ( nub, elemIndex )
@@ -35,21 +36,22 @@ run s = do
     (either (const $ return ()) NT.closeTransport)
     $ \(Right transport) -> do
       res <- fmap nub $ forM [1..100] $ \i -> do
-#ifdef USE_DETERMINISTIC_SCHEDULER
-        -- running three times with the same seed should produce the same execution
-        [res] <- fmap nub $ replicateM 3 $ execute transport (s+i)
-        [res'] <- fmap nub $ replicateM 3 $ executeT transport (s+i)
-        -- lifting Process has the same effect as running process unlifted
-        True <- return $ res == res'
-#else
-        res' <- executeT transport (s+i)
-        -- every execution in the provided example should have exactly 8 transitions
-        when (8 /= length res') (error $ "Test Failed: " ++ show res')
-        -- messages to each process should be delivered in order
-        when (not $ check res') (error $ "Test Failed: " ++ show res')
+        res <- if schedulerIsEnabled
+        then do
+          -- running three times with the same seed should produce the same execution
+          [res] <- fmap nub $ replicateM 3 $ execute transport (s+i)
+          [res'] <- fmap nub $ replicateM 3 $ executeT transport (s+i)
+          -- lifting Process has the same effect as running process unlifted
+          True <- return $ res == res'
+          return res
+        else do
+          res' <- executeT transport (s+i)
+          -- every execution in the provided example should have exactly 8 transitions
+          when (8 /= length res') (error $ "Test Failed: " ++ show res')
+          -- messages to each process should be delivered in order
+          when (not $ check res') (error $ "Test Failed: " ++ show res')
 
-        res <- execute transport (s+i)
-#endif
+          execute transport (s+i)
         -- every execution in the provided example should have exactly 8 transitions
         when (8 /= length res) (error $ "Test Failed: " ++ show res)
         -- messages to each process should be delivered in order

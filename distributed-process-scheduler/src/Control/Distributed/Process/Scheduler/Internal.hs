@@ -10,7 +10,8 @@
 module Control.Distributed.Process.Scheduler.Internal
   (
   -- * Initialization
-    startScheduler
+    schedulerIsEnabled
+  , startScheduler
   , stopScheduler
   , withScheduler
   , __remoteTable
@@ -31,6 +32,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , receiveWaitT
   ) where
 
+import Control.Applicative ( (<$>) )
 import "distributed-process" Control.Distributed.Process
     ( Message, Closure, NodeId, Process, ProcessId )
 import qualified "distributed-process" Control.Distributed.Process as DP
@@ -53,9 +55,16 @@ import Data.Set ( Set )
 import qualified Data.Set as Set
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
+import System.Posix.Env ( getEnv )
 import System.IO.Unsafe ( unsafePerformIO )
 import System.Random ( StdGen, randomR, mkStdGen )
 
+-- | @True@ iff the package "distributed-process-scheduler" should be
+-- used (iff DP_SCHEDULER_ENABLED environment variable is 1, to be
+-- replaced with HFlags in the future).
+{-# NOINLINE schedulerIsEnabled #-}
+schedulerIsEnabled :: Bool
+schedulerIsEnabled = unsafePerformIO $ (== Just "1") <$> getEnv "DP_SCHEDULER_ENABLED"
 
 -- | Tells if there is a scheduler running.
 {-# NOINLINE schedulerLock #-}
@@ -297,26 +306,36 @@ send pid msg = do
 sendS :: Serializable a => a -> Process ()
 sendS a = getScheduler >>= flip DP.send a
 
--- | Submits a transition request of type (2) to the scheduler.
--- Blocks until the transition is allowed and any of the match clauses
--- is performed.
+-- The receiveWait and receiveWaitT functions are marked NOINLINE,
+-- because this way the "if" statement only has to be evaluated once
+-- and not at every call site.  After the first evaluation, these
+-- top-level functions are simply a jump to the appropriate function.
+
+{-# NOINLINE receiveWait #-}
 receiveWait :: [ Match b ] -> Process b
-receiveWait ms = do
-    r <- DP.liftIO $ newIORef False
-    go r $ map (flip unMatch $ Just r) ms
+receiveWait = if schedulerIsEnabled
+              then receiveWaitSched
+              else DP.receiveWait . map (flip unMatch Nothing)
   where
-    go r ms' = do
-      self <- DP.getSelfPid
-      void $ DP.receiveTimeout 0 ms'
-      hasMsg <- DP.liftIO $ readIORef r
-      if hasMsg then do
-        sendS (HasMessage self)
-        Receive <- DP.expect
-        DP.receiveWait $ map (flip unMatch Nothing) ms
-       else do
-        sendS (Blocking self)
-        TestReceive <- DP.expect
-        go r ms'
+    -- | Submits a transition request of type (2) to the scheduler.
+    -- Blocks until the transition is allowed and any of the match clauses
+    -- is performed.
+    receiveWaitSched ms = do
+        r <- DP.liftIO $ newIORef False
+        go r $ map (flip unMatch $ Just r) ms
+      where
+        go r ms' = do
+          self <- DP.getSelfPid
+          void $ DP.receiveTimeout 0 ms'
+          hasMsg <- DP.liftIO $ readIORef r
+          if hasMsg then do
+            sendS (HasMessage self)
+            Receive <- DP.expect
+            DP.receiveWait $ map (flip unMatch Nothing) ms
+           else do
+            sendS (Blocking self)
+            TestReceive <- DP.expect
+            go r ms'
 
 -- | Shorthand for @receiveWait [ match return ]@
 expect :: Serializable a => Process a
@@ -390,23 +409,28 @@ matchIfT p h = MatchT $ \mr -> case mr of
                  writeIORef r True
                  return (a,False)
 
--- | Submits a transition request of type (2) to the scheduler.
--- Blocks until the transition is allowed and any of the match clauses
--- is performed.
+{-# NOINLINE receiveWaitT #-}
 receiveWaitT :: MonadProcess m => [MatchT m b] -> m b
-receiveWaitT ms = do
-    r <- liftProcess $ DP.liftIO $ newIORef False
-    go r $ map (flip unMatchT $ Just r) ms
+receiveWaitT = if schedulerIsEnabled
+               then receiveWaitTSched
+               else DPT.receiveWaitT . map (flip unMatchT Nothing)
   where
-    go r ms' = do
-      self <- liftProcess DP.getSelfPid
-      void $ DPT.receiveTimeoutT 0 ms'
-      hasMsg <- liftProcess $ DP.liftIO $ readIORef r
-      if hasMsg then do
-        liftProcess $ sendS (HasMessage self)
-        Receive <- liftProcess DP.expect
-        DPT.receiveWaitT $ map (flip unMatchT Nothing) ms
-       else do
-        liftProcess $ sendS (Blocking self)
-        TestReceive <- liftProcess DP.expect
-        go r ms'
+    -- | Submits a transition request of type (2) to the scheduler.
+    -- Blocks until the transition is allowed and any of the match clauses
+    -- is performed.
+    receiveWaitTSched ms = do
+        r <- liftProcess $ DP.liftIO $ newIORef False
+        go r $ map (flip unMatchT $ Just r) ms
+      where
+        go r ms' = do
+          self <- liftProcess DP.getSelfPid
+          void $ DPT.receiveTimeoutT 0 ms'
+          hasMsg <- liftProcess $ DP.liftIO $ readIORef r
+          if hasMsg then do
+            liftProcess $ sendS (HasMessage self)
+            Receive <- liftProcess DP.expect
+            DPT.receiveWaitT $ map (flip unMatchT Nothing) ms
+           else do
+            liftProcess $ sendS (Blocking self)
+            TestReceive <- liftProcess DP.expect
+            go r ms'

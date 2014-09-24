@@ -13,11 +13,6 @@ source-repository master
   Location:     git@github.com:tweag/halon.git
   Subdir:       consensus-paxos
 
-Flag randomTests
-  Description: Builds random tests. Requires the deterministic sceduler to be enabled.
-  Default: False
-  Manual:  True
-
 Library
   Default-Language: Haskell2010
   Hs-Source-Dirs:   src/
@@ -54,10 +49,7 @@ Test-Suite tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Ghc-Options:      -Wall -threaded
-  if flag(randomTests)
-    Buildable:      False
-  else
-    Build-Depends:  base >= 4.5.0,
+  Build-Depends:    base >= 4.5.0,
                     Cabal >= 1.10,
                     consensus,
                     consensus-paxos,
@@ -79,8 +71,7 @@ Test-Suite random
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Ghc-Options:      -Wall -threaded
-  if flag(randomTests)
-    Build-Depends:    base >= 4.5.0,
+  Build-Depends:    base >= 4.5.0,
                     consensus,
                     consensus-paxos,
                     containers,
@@ -91,5 +82,3 @@ Test-Suite random
                     network-transport-tcp,
                     unix,
                     random
-  else
-    Buildable : False

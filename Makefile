@@ -42,8 +42,6 @@
 #      * halon
 #      * mero-halon
 #
-#   So scheduler sandbox may work without this hack.
-#
 # * Packages Makefiles
 #
 #   All package-level Makefiles are deprecated and do not called
@@ -125,81 +123,32 @@ export TEST_LISTEN
 
 
 # See section about jobs in the top of the file
-.PHONY: build-generic build-default build-random build
-build-default: SANDBOX_CONFIG = $(SANDBOX_DEFAULT_CONFIG)
-build-default: BUILDDIR = dist
-build-default:
-	cabal --sandbox-config-file=$(SANDBOX_CONFIG) \
-	      install $(PACKAGES) $(filter-out --jobs=%,$(CABAL_FLAGS)) \
-	              --jobs=1 \
-	              --builddir=$(BUILDDIR)
-
-build-random:  SANDBOX_CONFIG = $(SANDBOX_SCHED_CONFIG)
-build-random:  CABAL_FLAGS += -fuse-scheduler -frandomTests
-build-random:  RANDOMIZED_TESTS = 1
-build-random:  BUILDDIR = dist-scheduler
-build-random:
-	if [ -n "$(filter-out $(NON_SCHED),$(PACKAGES))" ] ; then \
-	cabal --sandbox-config-file=$(SANDBOX_CONFIG) \
-	      install $(filter-out $(NON_SCHED),$(PACKAGES)) \
-	              $(filter-out --jobs=%,$(CABAL_FLAGS)) \
-	              --builddir=$(BUILDDIR) ; \
-	fi
-build: build-random build-default
-
+.PHONY: build
+build:
+	cabal install $(PACKAGES) \
+	              $(filter-out --jobs=%,$(CABAL_FLAGS)) --jobs=1
 
 CLEAN := $(patsubst %,%_clean,$(PACKAGES))
-CLEAN_SCHED := $(patsubst %, %_clean_sched, $(filter-out $(NON_SCHED), $(PACKAGES)))
-
-
+.PHONY: $(CLEAN) clean depclean
 $(CLEAN):
-	-cd $(patsubst %_clean, %, $@) && cabal --sandbox-config-file=$(SANDBOX_DEFAULT_CONFIG) clean
-	-cabal --sandbox-config-file=$(SANDBOX_DEFAULT_CONFIG) \
-	      sandbox hc-pkg -- unregister $(patsubst %_clean, %, $@) \
-	      --force
-
-$(CLEAN_SCHED):
-	-cd $(patsubst %_clean_sched, %, $@) && cabal --sandbox-config-file=$(SANDBOX_SCHED_CONFIG) clean
-	-cabal --sandbox-config-file=$(SANDBOX_SCHED_CONFIG) \
-	      sandbox hc-pkg -- unregister $(patsubst %_clean_sched, %, $@) \
-	      --force
-
-clean: $(CLEAN) $(CLEAN_SCHED)
-
+	-cd $(patsubst %_clean, %, $@) && cabal clean
+	-cabal sandbox hc-pkg -- unregister $(patsubst %_clean, %, $@) --force
+clean: $(CLEAN)
 depclean:
-# XXX The command
-#
-#     $ cabal sandox delete ...
-#
-# currently fails when sandbox config file is in "non-default location".
-	rm -rf $(SANDBOX_DEFAULT) \
-	       $(SANDBOX_SCHED) \
-	       $(SANDBOX_DEFAULT_CONFIG) \
-	       $(SANDBOX_SCHED_CONFIG)
+	cabal sandbox delete
 
-$(SANDBOX_DEFAULT_CONFIG): SANDBOX_DIR = $(SANDBOX_DEFAULT)
-$(SANDBOX_SCHED_CONFIG):   SANDBOX_DIR = $(SANDBOX_SCHED)
-$(SANDBOX_DEFAULT_CONFIG) $(SANDBOX_SCHED_CONFIG):   
-	@echo "Initializing sandbox ($@)"
-	cabal sandbox init --sandbox=$(SANDBOX_DIR)
+.PHONY: sandbox
+sandbox:
+	@echo "Initializing sandbox"
+	cabal sandbox init
 	cabal sandbox add-source $(addprefix $(VENDOR_DIR),$(VENDOR_PACKAGES)) \
 	                         $(addprefix $(PACKAGE_DIR),$(PACKAGES))
-	mv cabal.sandbox.config $@
-sandbox: $(SANDBOX_DEFAULT_CONFIG) $(SANDBOX_SCHED_CONFIG)
 
-dep-default: SANDBOX_CONFIG = $(SANDBOX_DEFAULT_CONFIG)
-dep-default:
-	cabal --sandbox-config-file=$(SANDBOX_CONFIG) \
-	      install --enable-tests \
+.PHONY: dep
+dep: sandbox
+	cabal install --enable-tests \
                       --only-dependencies $(CABAL_FLAGS)\
                       --reorder-goals $(PACKAGES)
-dep-random: SANDBOX_CONFIG = $(SANDBOX_SCHED_CONFIG)
-dep-random:
-	cabal --sandbox-config-file=$(SANDBOX_CONFIG) \
-	      install --enable-tests \
-                      --only-dependencies $(CABAL_FLAGS)\
-                      --reorder-goals $(PACKAGES)
-dep: sandbox dep-default dep-random
 
 ci: clean build
 
