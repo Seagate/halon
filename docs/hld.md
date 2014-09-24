@@ -315,7 +315,10 @@ subscribe ∷ Serializable a
 ````
 
 An interface should implement these two functions to allow publishing
-of and subscription to events.
+of and subscription to event types.  Note that it is the event *type*
+that is published, not the event itself: publishing an event type
+informs the broker and simultaneously returns a callback that can be
+used to emit an event of that type.
 
 ### `cep-sodium`
 
