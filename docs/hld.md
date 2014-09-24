@@ -185,11 +185,12 @@ receives a `SubscribeRequest` or `NodeRemoval` event.
 
 Processors interested in receiving events need to subscribe to the
 processors that provide those events, but there is a bootstrapping
-problem here!  Brokers solve the problem.  A broker is a very simple
-process that is known in advance to all processors in the cluster.
-Subscription requests for τ events are sent to all the brokers of
-which the processor is aware; the brokers are responsible for
-forwarding the message on to all τ-event producers.
+problem here, since one side needs to be able to find the other in
+order to talk to it.  Brokers solve this problem.  A broker is a very
+simple process whose address is known in advance to all processors in
+the cluster.  Subscription requests for τ events are sent to all the
+brokers of which the processor is aware; the brokers are responsible
+for forwarding the message on to all τ-event producers.
 
 In order to register as a τ-event producer, a processor may also send
 the broker a τ publish request, which should result in the broker
