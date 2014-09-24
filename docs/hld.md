@@ -14,8 +14,8 @@ history of past events or other local state.
   <dd>A self-contained task that may receive or send messages.</dd>
 
   <dt>(τ) event</dt>
-  <dd>A typed message (of type τ) indicating an occurrence somewhere on the
-      network.</dd>
+  <dd>A typed message (of type τ) indicating an occurrence somewhere
+      on the network.</dd>
 
   <dt>(τ) event source</dt>
   <dd>A process that may produce events (of type τ).</dd>
@@ -28,8 +28,8 @@ history of past events or other local state.
       events.</dd>
 
   <dt>(Complex event) processor</dt>
-  <dd>A process that gathers events from a variety of event sources and
-      combines them intelligently to produce output events, i.e. a
+  <dd>A process that gathers events from a variety of event sources
+      and combines them intelligently to produce output events, i.e. a
       generalization of both event source and event sink.</dd>
 </dl>
 
@@ -37,28 +37,36 @@ history of past events or other local state.
 
 <dl>
   <dt>[fr.composition]</dt>
-  <dd>Halon processes should be directly composable at both the intra- and inter-node level.</dd>
+  <dd>Halon processes should be directly composable at both the intra-
+      and inter-node level.</dd>
 
   <dt>[fr.typing]</dt>
-  <dd>The language in which processes are written should be strongly typed, and statically forbid connecting components of mismatched types.</dd>
+  <dd>The language in which processes are written should be strongly
+      typed, and statically forbid connecting components of mismatched
+      types.</dd>
 
   <dt>[fr.device-join]</dt>
-  <dd>Halon should detect and make use of new storage added to the network.</dd>
+  <dd>Halon should detect and make use of new storage added to the
+      network.</dd>
 
   <dt>[fr.device-failure]</dt>
-  <dd>Halon should detect and initiate recovery from device failures.</dd>
+  <dd>Halon should detect and initiate recovery from device
+      failures.</dd>
 
   <dt>[fr.node-join]</dt>
-  <dd>Halon should detect and configure a node newly joined to the network.</dd>
+  <dd>Halon should detect and configure a node newly joined to the
+      network.</dd>
 
   <dt>[fr.node-failure]</dt>
-  <dd>Halon should detect and initiate recovery from node failures.</dd>
+  <dd>Halon should detect and initiate recovery from node
+      failures.</dd>
 
   <dt>[fr.logging]</dt>
   <dd>Halon should log all failures and repair operations.</dd>
 
   <dt>[fr.composite-failure]</dt>
-  <dd>Halon should diagnose and summarize complex failure events signalled by multiple errors.</dd>
+  <dd>Halon should diagnose and summarize complex failure events
+      signalled by multiple errors.</dd>
 </dl>
 
 ## Quality Attributes
@@ -77,7 +85,8 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Scenario</td>
-    <td>Halon should be able to rapidly trigger repair for failed devices.</td>
+    <td>Halon should be able to rapidly trigger repair for failed
+    devices.</td>
   </tr>
   <tr>
     <td>Attribute</td>
@@ -89,7 +98,8 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Stimulus</td>
-    <td>A number of errors from a device indicate that the device is no longer reliable.</td>
+    <td>A number of errors from a device indicate that the device is
+        no longer reliable.</td>
   </tr>
   <tr>
     <td>Stimulus Source</td>
@@ -97,7 +107,8 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Environment</td>
-    <td>The device is connected to a node, which is in turn able to access the tracking station.</td>
+    <td>The device is connected to a node, which is in turn able to
+        access the tracking station.</td>
   </tr>
   <tr>
     <td>Artifact</td>
@@ -109,7 +120,10 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Response Measure</td>
-    <td>The time between the device reporting its failure and the message being sent to begin construction of the copy machine should be drawn from a normal distribution with µ = 0.1 s and σ ≤ 0.3 s.</td>
+    <td>The time between the device reporting its failure and the
+        message being sent to begin construction of the copy machine
+        should be drawn from a normal distribution with µ = 0.1 s and σ ≤
+        0.3 s.</td>
   </tr>
 </table>
 
@@ -121,7 +135,8 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Scenario</td>
-    <td>Halon should be composed of a set of independent actors on nodes that function independent of other actors.</td>
+    <td>Halon should be composed of a set of independent actors on
+        nodes that function independent of other actors.</td>
   </tr>
   <tr>
     <td>Attribute</td>
@@ -149,7 +164,8 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Response</td>
-    <td>The system administrator connects the new node, which begins participating in the system.</td>
+    <td>The system administrator connects the new node, which begins
+        participating in the system.</td>
   </tr>
   <tr>
     <td>Response Measure</td>
@@ -165,7 +181,10 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Scenario</td>
-    <td>In the case where a node already has sufficient information locally to recover from a failure, the node should not require input from any external source, ensuring that such cases put minimal load on the rest of the cluster.</td>
+    <td>In the case where a node already has sufficient information
+        locally to recover from a failure, the node should not require
+        input from any external source, ensuring that such cases put
+        minimal load on the rest of the cluster.</td>
   </tr>
   <tr>
     <td>Attribute</td>
@@ -177,7 +196,8 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Stimulus</td>
-    <td>A failure occurs for whose correction all the necessary redundancy information is available locally.</td>
+    <td>A failure occurs for whose correction all the necessary
+        redundancy information is available locally.</td>
   </tr>
   <tr>
     <td>Stimulus Source</td>
@@ -185,7 +205,8 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Environment</td>
-    <td>A running node with connected devices, the remaining of which contain sufficient information to reconstruct the failed.</td>
+    <td>A running node with connected devices, the remaining of which
+        contain sufficient information to reconstruct the failed.</td>
   </tr>
   <tr>
     <td>Artifact</td>
@@ -193,11 +214,13 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Response</td>
-    <td>The node constructs a local copy machine, without recourse to data found elsewhere, and reconstructs the data.</td>
+    <td>The node constructs a local copy machine, without recourse to
+        data found elsewhere, and reconstructs the data.</td>
   </tr>
   <tr>
     <td>Response Measure</td>
-    <td>The node does not need to consult data stored on any other nodes.</td>
+    <td>The node does not need to consult data stored on any other
+        nodes.</td>
   </tr>
 </table>
 
@@ -209,7 +232,9 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Scenario</td>
-    <td>The software on a node should be composed of recombinable circuits, and should itself be amenable to combination with other components.</td>
+    <td>The software on a node should be composed of recombinable
+        circuits, and should itself be amenable to combination with other
+        components.</td>
   </tr>
   <tr>
     <td>Attribute</td>
@@ -237,11 +262,13 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Response</td>
-    <td>The developer composes a new circuit from existing components.</td>
+    <td>The developer composes a new circuit from existing
+        components.</td>
   </tr>
   <tr>
     <td>Response Measure</td>
-    <td>The developer can directly incorporate existing circuits into the new circuit.</td>
+    <td>The developer can directly incorporate existing circuits into
+        the new circuit.</td>
   </tr>
 </table>
 
@@ -253,7 +280,8 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Scenario</td>
-    <td>Halon should be available to handle a vast majority of events.</td>
+    <td>Halon should be available to handle a vast majority of
+        events.</td>
   </tr>
   <tr>
     <td>Attribute</td>
@@ -281,11 +309,13 @@ history of past events or other local state.
   </tr>
   <tr>
     <td>Response</td>
-    <td>The event is registered and handled appropriately according to the logic.</td>
+    <td>The event is registered and handled appropriately according to
+        the logic.</td>
   </tr>
   <tr>
     <td>Response Measure</td>
-    <td>No more than one in ten thousand events should be dropped on average.</td>
+    <td>No more than one in ten thousand events should be dropped on
+        average.</td>
   </tr>
 </table>
 
@@ -583,7 +613,8 @@ timeProcessor = do
   </tr>
   <tr>
     <td>Description</td>
-    <td>A failure occurs at the device on reading/writing a block.</td>
+    <td>A failure occurs at the device on reading/writing a
+    block.</td>
   </tr>
   <tr>
     <td>References</td>
@@ -614,14 +645,18 @@ timeProcessor = do
       <ol>
         <li>The node attempts to perform IO on the device.</li>
         <li>The device reports an IO error to the node.</li>
-        <li>The node reports the error to the tracking station, including its identity, the identity of the affected device, and the nature of the error.</li>
+        <li>The node reports the error to the tracking station,
+            including its identity, the identity of the affected device,
+            and the nature of the error.</li>
         <li>The node retries the IO operation.</li>
       </ol>
     </td>
   </tr>
   <tr>
     <td>Variations</td>
-    <td>Rather than the device reporting an error, another health-monitoring layer may detect a problem with the retrieved data, e.g. failure to checksum or decrypt.</td>
+    <td>Rather than the device reporting an error, another
+    health-monitoring layer may detect a problem with the retrieved
+    data, e.g. failure to checksum or decrypt.</td>
   </tr>
   <tr>
     <td>Quality Attributes</td>
@@ -755,7 +790,8 @@ timeProcessor = do
   </tr>
   <tr>
     <td>Description</td>
-    <td>A device issues a type or volume of errors that indicates that it is no longer reliable.</td>
+    <td>A device issues a type or volume of errors that indicates that
+        it is no longer reliable.</td>
   </tr>
   <tr>
     <td>References</td>
@@ -775,7 +811,8 @@ timeProcessor = do
     <td>
       <ul>
         <li>The node is connected to the affected device.</li>
-        <li>There is a path between the node and the tracking station.</li>
+        <li>There is a path between the node and the tracking
+            station.</li>
       </ul>
     </td>
   </tr>
@@ -783,15 +820,20 @@ timeProcessor = do
     <td>Steps</td>
     <td>
       <ol>
-        <li>The tracking station receives more than n device errors from a given device within t milliseconds.</li>
-        <li>The tracking station indicates that the node should stop retrying the device.</li>
-        <li>The tracking station broadcasts the device’s removal from the network.</li>
+        <li>The tracking station receives more than n device errors
+            from a given device within t milliseconds.</li>
+        <li>The tracking station indicates that the node should stop
+            retrying the device.</li>
+        <li>The tracking station broadcasts the device’s removal from
+            the network.</li>
       </ol>
     </td>
   </tr>
   <tr>
     <td>Variations</td>
-    <td>There are a variety of device errors that can render a device unusable, including corrupted data, persistent read/write IO failures, and connection errors.</td>
+    <td>There are a variety of device errors that can render a device
+        unusable, including corrupted data, persistent read/write IO
+        failures, and connection errors.</td>
   </tr>
   <tr>
     <td>Quality Attributes</td>
@@ -802,8 +844,10 @@ timeProcessor = do
     <td>
       <ul>
         <li>What are appropriate values for n and t?</li>
-        <li>The number or type of error that indicates a catastrophic failure will vary depending on the drive.</li>
-        <li>Perhaps attach the tolerances for the device to the failure events themselves?  This saves us some state.</li>
+        <li>The number or type of error that indicates a catastrophic
+            failure will vary depending on the drive.</li>
+        <li>Perhaps attach the tolerances for the device to the
+            failure events themselves?  This saves us some state.</li>
       </ul>
     </td>
   </tr>
@@ -817,7 +861,8 @@ timeProcessor = do
   </tr>
   <tr>
     <td>Description</td>
-    <td>A node is persistently incapable of accessing another node.</td>
+    <td>A node is persistently incapable of accessing another
+        node.</td>
   </tr>
   <tr>
     <td>References</td>
@@ -841,8 +886,10 @@ timeProcessor = do
     <td>Steps</td>
     <td>
       <ol>
-        <li>The tracking station receives n connection errors from node A relating to node B within t milliseconds.</li>
-        <li>The tracking station requests that a number of other nodes also ping node B.</li>
+        <li>The tracking station receives n connection errors from
+            node A relating to node B within t milliseconds.</li>
+        <li>The tracking station requests that a number of other nodes
+            also ping node B.</li>
       </ol>
     </td>
   </tr>
@@ -872,7 +919,8 @@ timeProcessor = do
   </tr>
   <tr>
     <td>Description</td>
-    <td>A node is no longer available to multiple nodes on the network.</td>
+    <td>A node is no longer available to multiple nodes on the
+        network.</td>
   </tr>
   <tr>
     <td>References</td>
@@ -890,16 +938,23 @@ timeProcessor = do
   </tr>
   <tr>
     <td>Prerequisites &amp; Assumptions</td>
-    <td>The tracking node is available to most nodes in the cluster.</td>
+    <td>The tracking node is available to most nodes in the
+        cluster.</td>
   </tr>
   <tr>
     <td>Steps</td>
     <td>
       <ol>
-        <li>The tracking station receives m connection errors each from n nodes in t milliseconds.</li>
-        <li>The tracking station invokes Repair to remove all the devices attached to the affected node from all intersecting layouts on the cluster, rebuilding from redundancy if necessary.</li>
-        <li>The tracking station broadcasts the removal of each of the devices attached to the node.</li>
-        <li>The tracking station broadcasts the removal of the node from the cluster.</li>
+        <li>The tracking station receives m connection errors each
+            from n nodes in t milliseconds.</li>
+        <li>The tracking station invokes Repair to remove all the
+            devices attached to the affected node from all intersecting
+            layouts on the cluster, rebuilding from redundancy if
+            necessary.</li>
+        <li>The tracking station broadcasts the removal of each of the
+            devices attached to the node.</li>
+        <li>The tracking station broadcasts the removal of the node
+            from the cluster.</li>
       </ol>
     </td>
   </tr>
@@ -952,8 +1007,10 @@ timeProcessor = do
     <td>Steps</td>
     <td>
       <ol>
-        <li>The node diagnoses a failure that can be fixed with only locally-available information.</li>
-        <li>The node reports the failure to the tracking station, indicating that it intends to fix the failure.</li>
+        <li>The node diagnoses a failure that can be fixed with only
+            locally-available information.</li>
+        <li>The node reports the failure to the tracking station,
+            indicating that it intends to fix the failure.</li>
         <li>The node fixes the failure locally.</li>
         <li>The node reports the fix to the tracking station.</li>
       </ol>
@@ -961,7 +1018,11 @@ timeProcessor = do
   </tr>
   <tr>
     <td>Variations</td>
-    <td>There are a variety of operations that can be fixed locally, such as disk controllers needing to be reset (triggered by a number of errors from disks on the same controller) or data being lost that can be reconstructed entirely from local redundancy data.</td>
+    <td>There are a variety of operations that can be fixed locally,
+        such as disk controllers needing to be reset (triggered by a
+        number of errors from disks on the same controller) or data being
+        lost that can be reconstructed entirely from local redundancy
+        data.</td>
   </tr>
   <tr>
     <td>Quality Attributes</td>
@@ -981,7 +1042,8 @@ timeProcessor = do
   </tr>
   <tr>
     <td>Description</td>
-    <td>A new node joins the network and should have its events handled.</td>
+    <td>A new node joins the network and should have its events
+        handled.</td>
   </tr>
   <tr>
     <td>References</td>
@@ -1013,7 +1075,8 @@ timeProcessor = do
   </tr>
   <tr>
     <td>Variations</td>
-    <td>Devices can also be added to a node, with similar effects.</td>
+    <td>Devices can also be added to a node, with similar
+        effects.</td>
   </tr>
   <tr>
     <td>Quality Attributes</td>
@@ -1032,7 +1095,9 @@ timeProcessor = do
 2. Elliott, Conal. "Push-pull functional reactive
    programming". Haskell Symposium. (2009).
 
-[repair-hld]: https://docs.google.com/a/tweag.io/file/d/0B-mqorebq7hKZHJKd3FsQXFncEFfbzRweGR6X2RKMEF5T1pv/edit "HLD of SNS Repair, version 2.0"
-[push-pull]:  http://conal.net/papers/push-pull-frp/ "Push-pull functional reactive programming"
+[repair-hld]: https://docs.google.com/a/tweag.io/file/d/0B-mqorebq7hKZHJKd3FsQXFncEFfbzRweGR6X2RKMEF5T1pv/edit
+              "HLD of SNS Repair, version 2.0"
+[push-pull]:  http://conal.net/papers/push-pull-frp/
+              "Push-pull functional reactive programming"
 
 [sodium]:     https://hackage.haskell.org/package/sodium "Hackage: sodium"
