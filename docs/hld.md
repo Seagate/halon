@@ -163,7 +163,7 @@ high-performance computing environments.
   requests between event processors.
 
 + Events are categorized by their (Haskell) type, using the existing
-  `Fingerprint` machinery made available by Cloud Haskell, so events
+  `Serializable` machinery made available by Cloud Haskell, so events
   are type-checked and the types can be omitted where inferrable,
   getting the Haskell type inferrer to do the work.
 
