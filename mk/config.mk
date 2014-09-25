@@ -16,11 +16,6 @@ RPMBRANCH = master
 # CAUTION: This path will be removed by superuser.
 export NTR_DB_DIR = $(shell pwd)/testdb
 
-# By default, don't reuse any packages in the user or global database
-# to satisfy dependencies. But for faster builds, you can
-# try --package-db=user or package-db=user.
-CABAL_FLAGS = --package-db=clean
-
 GHC_VERSION = $(shell ghc --numeric-version)
 
 PACKAGE_DIR = $(ROOT_DIR)/

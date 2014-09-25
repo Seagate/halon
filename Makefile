@@ -1,55 +1,39 @@
 ####################################################################
 #
+# Halon project's Makefile
 #
-# Make halon project
+# None of the targets install and/or touch files outside of the
+# top-level directory, dependencies and build results are installed
+# into the local cabal sandbox in .cabal-sandbox.
 #
 # Targets available:
 #
 #   * project build:
-#       build  [default]  -- build all subprojects inside a sandboxes [1]
-#       clean             -- unregister subprojects from local sandbox
-#       ci                -- clear all projects and then build and test
-#                            then
+#       build  [default]  -- build, test and install all subprojects
+#       clean             -- clean sub-projects and unregister them
+#
 #   * dependencies:
-#       sandbox           -- prepare sandboxes
-#       dep               -- install all Haskell dependencies,
-#                            mero will not be installed even if it's 
-#                            required
-#       depclean          -- remove sandboxes with all dependencies
+#       dep               -- install all Haskell dependencies
+#       depclean          -- remove the sandbox altogether
 #
-# -- 
-# [1] Due to cabal problems build implies test of all built packages
+# Variables that affect the build process:
 #
-# Variables that affects installation process:
-#
-#    MERO_ROOT            -- path to the build-directory of the mero
-#                            project
+#    MERO_ROOT            -- path to the build-directory of the mero project
 #    USE_RPC              -- use rpc communication (require mero)
-#    USE_TCP              -- use TCP communication
-#    
-#    SUPPRESS_TESTS       -- do not run tests while building packages
+#    USE_TCP              -- use TCP communication (default)
+#
+#    NO_TESTS             -- do not run tests while building packages
 #    CABAL_FLAGS          -- flags passed to the cabal
-#    PACKAGES             -- projects to work with
-#
-# * Multiple jobs
-#
-#   If cabal is run with --jobs argument it attempts to run tests in
-#   parallel. This leads to interfere between integration and
-#   unit tests for some of the projects. As a result reduce a number
-#   of parallel tasks to 1 during the installation.
-#
-#   The failing packages are:
-#      * halon
-#      * mero-halon
+#    PACKAGES             -- sub-projects to work with (see README.md!)
 #
 # * Packages Makefiles
 #
-#   All package-level Makefiles are deprecated and do not called
-#   recursively. However some of the packages still contain Makefiles, 
-#   this is done because there are a complicated targets that are not
-#   run from the top level makefile. All this functionality should be moved
-#   to the top level Makefile or custom setup, but until it will be done
-#   old Makefiles can be used.
+#   All package-level Makefiles are deprecated and are not called
+#   recursively. However some of the packages still contain Makefiles,
+#   because there are complicated targets that are not run from the
+#   top-level Makefile. All this functionality should be moved to the
+#   top-level Makefile or a custom setup, but until then, old
+#   Makefiles can be used.
 
 ifdef USE_TCP
 USE_RPC =
@@ -113,7 +97,7 @@ endif
 # explicitly, but is available in the environment of recipes.
 export GENDERS
 
-ifndef SUPPRESS_TESTS
+ifndef NO_TESTS
 CABAL_FLAGS += --run-tests
 endif
 
@@ -121,8 +105,6 @@ export USE_TCP
 export USE_RPC
 export TEST_LISTEN
 
-
-# See section about jobs in the top of the file
 .PHONY: build
 build:
 	cabal install $(PACKAGES) \
@@ -137,20 +119,14 @@ clean: $(CLEAN)
 depclean:
 	cabal sandbox delete
 
-.PHONY: sandbox
-sandbox:
+.PHONY: dep
+dep:
 	@echo "Initializing sandbox"
 	cabal sandbox init
 	cabal sandbox add-source $(addprefix $(VENDOR_DIR),$(VENDOR_PACKAGES)) \
 	                         $(addprefix $(PACKAGE_DIR),$(PACKAGES))
-
-.PHONY: dep
-dep: sandbox
-	cabal install --enable-tests \
-                      --only-dependencies $(CABAL_FLAGS)\
-                      --reorder-goals $(PACKAGES)
-
-ci: clean build
+	cabal install --only-dependencies $(CABAL_FLAGS) \
+	              --reorder-goals $(PACKAGES)
 
 # This target will generate distributable packages based on the
 # checked-in master branch of this repository. It will generate
