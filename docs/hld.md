@@ -261,18 +261,14 @@ respectively,
 #### Broker
 
 ````
-type Broker
+type Broker = ProcessId
 
-runBroker   ∷ Process ()
-startBroker ∷ Transport → IO Broker
+broker ∷ Process ()
 ````
 
-`runBroker` is exported in case the user wishes to run the broker in a
-different way (e.g. on a different, pre-existing node).  For the
-common case of starting a new node over an existing transport on the
-current machine and running the broker there, `startBroker` exists as
-a convenience function.
-
+A broker process; see [Brokers](#brokers).  For now there is only one
+module implementing this interface, but there may be more at a future
+time.
 
 #### Processor
 
