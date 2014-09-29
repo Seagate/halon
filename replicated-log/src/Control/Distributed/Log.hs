@@ -181,6 +181,10 @@ data Request a = Request
 
 instance Binary a => Binary (Request a)
 
+-- | Ask a replica to print status and send Max messages.
+data Status = Status deriving (Typeable, Generic)
+instance Binary Status
+
 instance Binary TimeSpec
 
 timeSpecDiff :: TimeSpec -> TimeSpec -> Int
@@ -515,7 +519,7 @@ replica EqDict
                       send ppid αs'
 
                       -- Tick.
-                      send self ()
+                      send self Status
 
                       -- If I'm the leader, the lease starts at the time
                       -- the request was made. Otherwise, it starts now.
@@ -684,7 +688,7 @@ replica EqDict
 
             -- Clock tick - time to advertize. Can be sent by anyone to any
             -- replica to provoke status info.
-            , match $ \() -> do
+            , match $ \Status -> do
                   -- Forget about all previous ticks to avoid broadcast storm.
                   let loop = expectTimeout 0 >>= maybe (return ()) (\() -> loop)
                   loop
@@ -893,8 +897,8 @@ remotableDecl [
                           send δ $ $(mkClosure 'ambassador) (ssdict,replicas)
                           go d ρ
                     , match $ \m@(Helo _ _) -> send ρ m >> go d ρ
-                    , match $ \() -> do
-                          send ρ ()
+                    , match $ \Status -> do
+                          send ρ Status
                           go d ρ
                     , match $ \ρ' -> go d ρ'
                     , matchA sdict ρ $ go d ρ
@@ -919,7 +923,7 @@ append (Handle _ _ _ _ _ μ) hint x = callLocal $ do
 
 -- | Make replicas advertize their status info.
 status :: Serializable a => Handle a -> Process ()
-status (Handle _ _ _ _ _ μ) = send μ ()
+status (Handle _ _ _ _ _ μ) = send μ Status
 
 -- | Updates the handle so it communicates with the given replica.
 updateHandle :: Handle a -> ProcessId -> Process ()
