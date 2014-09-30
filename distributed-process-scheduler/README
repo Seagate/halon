@@ -225,3 +225,16 @@ message arrives. schedulerIsEnabled is a constant exported by
 distributed-process-scheduler that indicates whether the scheduler is enabled.
 Thus, blocking on the MVar is completely avoided when using the scheduler.
 
+
+== Finding a bug ==
+
+A failing test may either report a failure or block. There might be a bug in
+the application, but first it could save some time considering if the
+application is using unsupported synchronization primitives or if communication
+between processes occurs by other means than sending messages.
+
+Since the scheduler does not provide any tracing capabilities, the
+application code has to be instrumeted to report what is happening during
+a particular execution. The package distributed-process offers a tracing
+mechanism documented in the module `Control.Distributed.Process.Debug`.
+
