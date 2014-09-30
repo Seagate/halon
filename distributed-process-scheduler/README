@@ -225,6 +225,10 @@ message arrives. schedulerIsEnabled is a constant exported by
 distributed-process-scheduler that indicates whether the scheduler is enabled.
 Thus, blocking on the MVar is completely avoided when using the scheduler.
 
+The conditional `when schedulerIsEnabled` could be dropped so the guarded code
+is executed in all cases, but we keep it because we expect synchronization
+using MVars to be faster when not using the scheduler.
+
 
 == Finding a bug ==
 
