@@ -36,5 +36,4 @@ PACKAGES += network-transport-rpc \
 endif
 
 VENDOR_PACKAGES = distributed-process \
-                  tasty-files \
-		  acid-state
+                  tasty-files

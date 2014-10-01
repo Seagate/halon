@@ -16,6 +16,3 @@
 [submodule "tasty-files"]
 	path = vendor/tasty-files
 	url = git@github.com:tweag/tasty-files.git
-[submodule "vendor/acid-state"]
-	path = vendor/acid-state
-	url = https://github.com/acid-state/acid-state.git
