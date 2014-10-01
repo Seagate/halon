@@ -52,7 +52,7 @@ rebuild and retest can be done with `make clean build`.
 
 Building just one package can be done with:
 ```
-$ make PACKAGE=replicated-log
+$ make PACKAGES=replicated-log
 ```
 
 Testing can be disabled:
