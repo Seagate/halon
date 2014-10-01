@@ -8,7 +8,6 @@
 
 module FRP.Sodium.Util
        ( timeLoop
-       , threadDelay'
        , samplesOver
        , integral
        , average
@@ -20,7 +19,7 @@ import FRP.Sodium
 
 import Control.Applicative ((<$>))
 import Control.Arrow (first)
-import Control.Concurrent (threadDelay)
+import Control.Concurrent.Thread.Delay (delay)
 import Data.Time.Clock (UTCTime, NominalDiffTime, getCurrentTime, diffUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 
@@ -35,18 +34,11 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 timeLoop :: NominalDiffTime -> (NominalDiffTime -> IO ()) -> IO b
 timeLoop period act = getCurrentTime >>= timeLoop' period act
 
--- | 'threadDelay' but with an unbounded 'Integer' time argument.
-threadDelay' :: Integer -> IO ()
-threadDelay' n
-  | n <= maxInt = threadDelay $ fromIntegral n
-  | otherwise   = threadDelay maxBound >> threadDelay' (n - maxInt)
-  where maxInt = fromIntegral (maxBound :: Int)
-
 timeLoop' :: NominalDiffTime -> (NominalDiffTime -> IO ()) -> UTCTime -> IO b
 timeLoop' period act now = do
     now' <- getCurrentTime
     act $ diffUTCTime now' now
-    threadDelay' . floor $ period * 1000000
+    delay . floor $ period * 1000000
     timeLoop' period act now'
 
 -- TODO? this integral/average could be made more efficient by updating

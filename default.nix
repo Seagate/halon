@@ -3,7 +3,7 @@ let
   stdenv      = pkgs.stdenv;
   hpkgs       = pkgs.haskellPackages_ghc783;
   cep         = import ./cep hpkgs;
-  sodiumUtils = import ./sodium-utils hpkgs;
+  sodiumUtils = import ./sodium-utils { inherit (hpkgs) cabal time sodium unboundedDelays; };
   gloss       = hpkgs.gloss.override { bmp = hpkgs.bmp.override { binary = hpkgs.binary; }; };
   cepSodium   = import ./cep-sodium (hpkgs // { inherit cep sodiumUtils gloss; });
 in
