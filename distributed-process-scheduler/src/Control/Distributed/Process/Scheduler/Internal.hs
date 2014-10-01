@@ -152,7 +152,9 @@ startScheduler initialProcs seed0 = do
                         (\pid StopScheduler -> DP.send pid SchedulerTerminated))
                       `DP.catch` (\e -> do
                          DP.exit self $ "scheduler died: " ++ show e
-                         DP.liftIO $ throwIO (e :: SomeException)
+                         DP.liftIO $ do
+                           putStrLn $ "scheduler died: " ++ show e
+                           throwIO (e :: SomeException)
                        )
            DP.liftIO $ putMVar schedulerVar spid
            return (True,())
