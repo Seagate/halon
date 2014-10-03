@@ -36,26 +36,41 @@ therefore capable of being supervised themselves in much the same way.
 
 ### Structure
 
-The hierarchy is a tree.  Each node of the tree is responsible for the
-supervision of its immediate children; however, this may require
-consideration of events generated further down the tree.
+The hierarchy is a DAG, rooted at the recovery supervisor leader.
+Each layer of the DAG is responsible for the supervision of its
+immediate children; however, this may require consideration of events
+generated further away from the root.
 
-#### Recovery supervisor
-The root of the hierarchy is the recovery supervisor.  The recovery
-supervisor is responsible for launching and supervising recovery
-coordinator nodes.
+#### Recovery supervisors
+The topmost layer of the hierarchy is the recovery supervisor leader.
+The recovery supervisor leader is responsible for launching and
+supervising the recovery coordinator.
 
 #### Recovery coordinator
-The recovery coordinator is a distributed machine that is responsible
-for handling events that require cluster-spanning information.
-Particularly, it makes sense to have the recovery coordinator
-supervise the node supervisors and health monitors.
+The recovery coordinator is a process that is responsible for handling
+events that require cluster-spanning information.  Particularly, it
+makes sense to have the recovery coordinator supervise the node
+supervisors and health monitors.
 
 #### Node supervisor
 Each node should have a node supervisor/monitor pair.  The node's
-monitor will generate service death events, which will be handled by
+monitor will generate service failure events, which will be handled by
 the local supervisor; however, the recovery coordinator will also
 listen to them and log them as per functional requirement
 [fr.logging], and may decide that there is a larger problem that
 requires restarting or abandoning the supervisor or the node in
 general.
+
+### Startup
+
+The hierarchy is bootstrapped by the recovery supervisor leader.  The
+recovery supervisor leader will start the recovery coordinator; the
+recovery coordinator is then responsible for reading the resource
+graph and determining which supervisors (respectively, monitors)
+should be started, and in which monitors (respectively, services) they
+should be interested.
+
+As both supervisor and monitor are CEP processors, the supervisor may
+listen to events from the monitor so long as they share a broker;
+there is no need for the monitor to be aware in advance of the
+processors that will be listening to it.
