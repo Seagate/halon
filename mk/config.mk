@@ -35,5 +35,6 @@ PACKAGES += network-transport-rpc \
            confc
 endif
 
-VENDOR_PACKAGES = distributed-process \
+VENDOR_PACKAGES = clock \
+                  distributed-process \
                   tasty-files

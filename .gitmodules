@@ -4,3 +4,7 @@
 [submodule "tasty-files"]
 	path = vendor/tasty-files
 	url = git@github.com:tweag/tasty-files.git
+[submodule "vendor/clock"]
+	path = vendor/clock
+	url = git@github.com:tweag/clock
+	branch = staging
