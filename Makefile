@@ -112,8 +112,10 @@ export TEST_LISTEN
 
 .PHONY: build
 build: dep
-	cabal install $(PACKAGES) \
-	              $(filter-out --jobs=%,$(CABAL_FLAGS)) --jobs=1
+# XXX Tests tend to bind the same ports, making them mutually
+# exclusive in time. The solution is to allow tests to bind
+# a random available port.
+	cabal install $(CABAL_FLAGS) --jobs=1 $(PACKAGES)
 
 CLEAN := $(patsubst %,%_clean,$(PACKAGES))
 .PHONY: $(CLEAN) clean depclean
