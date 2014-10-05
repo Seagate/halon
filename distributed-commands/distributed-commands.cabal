@@ -1,0 +1,44 @@
+--
+-- Copyright (C) 2013 Xyratex Technology Limited. All rights reserved.
+--
+Name:           distributed-commands
+Version:        0.1
+Stability:      experimental
+Synopsis:       Provides commands to execute in remote machines.
+Homepage:       https://github.com/tweag/halon
+License:        AllRightsReserved
+Copyright:      (C) 2014 Xyratex Technology Limited
+Category:       Control
+Build-Type:     Simple
+Cabal-Version:  >=1.10
+
+source-repository master
+  Type:         git
+  Location:     git@github.com:tweag/halon.git
+  Subdir:       distributed-commands/
+
+Library
+  Hs-Source-Dirs:  src
+  Default-Language: Haskell2010
+  Ghc-Options:     -O -Wall
+  Exposed-Modules: Control.Distributed.Commands.DigitalOcean
+                   Control.Distributed.Commands
+  Build-Depends:   aeson >= 0.8.0.1
+                  ,aeson-pretty >= 0.7.1
+                  ,base
+                  ,bytestring >= 0.10.4.0
+                  ,curl >= 1.3.8
+                  ,process >= 1.2.0.0
+                  ,scientific >= 0.3.3.1
+                  ,text >= 1.2.0.0
+                  ,unordered-containers >= 0.2.5.0
+
+Test-Suite digitalocean
+  Type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs:   tests
+  Main-Is:          digitalocean.hs
+  Ghc-Options:     -threaded -Wall
+  Build-Depends:   distributed-commands
+                  ,base
+
