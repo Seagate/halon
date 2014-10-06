@@ -61,15 +61,19 @@ import Control.Monad.Reader (ask)
 
 import Control.Applicative ((<$>))
 import Control.Concurrent (newEmptyMVar, putMVar, takeMVar, tryPutMVar)
-import Control.Exception (SomeException, throwIO)
+import Control.Exception (SomeException, throwIO, assert)
 import Control.Monad
 import Data.List (find, intersect)
+import Data.Foldable (Foldable)
+import qualified Data.Foldable as Foldable
 import Data.Function (on)
 import Data.Binary (Binary, encode)
 import Data.Maybe
 import Data.Monoid (Monoid(..))
 import qualified Data.Map as Map
 import Data.Ratio (Ratio, (%), numerator, denominator)
+import Data.Sequence (Seq, (|>))
+import qualified Data.Sequence as Seq
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Prelude hiding (init, log)
@@ -145,13 +149,28 @@ data Log a = forall s. Typeable s => Log
 -- reconfigure the group. Note that stopping a group completely can be done by
 -- reconfiguring to the null membership list. And reconfiguring with the same
 -- membership list encodes a no-op.
-data Value a = Value a
+data Value a =
+               -- | Batch of values.
+               Values [a]
                -- | Request start time, lease period, list of acceptors and list
                -- of replicas (i.e. proposers).
              | Reconf TimeSpec Int [ProcessId] [ProcessId]
                deriving (Eq, Generic, Typeable)
 
 instance Binary a => Binary (Value a)
+
+concatValues :: Foldable f => f (Value a) -> Value a
+concatValues vs = case Foldable.toList vs of
+    [] -> error "concatValues: empty list"
+    xs -> Values $ concat $ map valueToList xs
+
+valueToList :: Value a -> [a]
+valueToList (Values as) = as
+valueToList _ = error "valueToList: not a Values"
+
+isValues :: Value a -> Bool
+isValues (Values _) = True
+isValues _ = False
 
 instance Serializable a => SafeCopy (Value a) where
     getCopy = contain $ fmap decode $ safeGet
@@ -492,8 +511,8 @@ replica EqDict
             , matchIf (\(Decree locale dᵢ _) ->
                         locale == Stored && w <= dᵢ && decreeNumber dᵢ == decreeNumber w) $
                        \(Decree _ dᵢ v) -> case v of
-                  Value x -> do
-                      s' <- logNextState s x
+                  Values xs -> do
+                      s' <- foldM logNextState s xs
                       let d'  = max d w'
                           cd' = max cd w'
                           w'  = succ w
@@ -601,8 +620,8 @@ replica EqDict
                            -- I'm the leader, so handle the request.
                            _ -> case (requestHint request, requestValue request) of
                              -- Serve nullipotent requests from the local state.
-                             (Nullipotent, Value x) -> do
-                                 s' <- logNextState s x
+                             (Nullipotent, Values xs) -> do
+                                 s' <- foldM logNextState s xs
                                  send (requestSender request) ()
                                  return (s', cd)
                              -- Send the other requests to the proposer.
@@ -714,6 +733,55 @@ replica EqDict
                   go' leaseStart leasePeriod αs ρs d cd w s
             ]
 
+batcher :: forall a. SerializableDict a
+        -> ProcessId
+        -> Process ()
+batcher SerializableDict ρ = do
+    link ρ
+    go Seq.empty Seq.empty
+  where
+    sendBatch :: Seq (Request a) -> Process ()
+    sendBatch requests = do
+        self <- getSelfPid
+        send ρ $ Request
+          { requestSender   = self
+          , requestValue    = concatValues $ fmap requestValue requests
+          , requestHint     = None
+          , requestForLease = Nothing }
+
+    -- collected: requests not yet submitted for consensus
+    --
+    -- inFlight: last batch of request submitted for consensus and waiting for
+    --   confirmation; or empty if no batch in-flight
+    go :: Seq (Request a) -> Seq (Request a) -> Process r
+    go collected inFlight = receiveWait
+      [ match $ \() -> do
+            -- Replica acknowledges the last submitted batch (it was accepted by
+            -- consensus and committed to log).
+            assert (not $ Seq.null inFlight) $ return ()
+            Foldable.forM_ inFlight $ \req -> send (requestSender req) ()
+            unless (Seq.null collected) $ sendBatch collected
+            go Seq.empty collected
+      , match $ \request -> do
+            assert (isValues $ requestValue request) $ return ()
+            case requestHint request of
+                -- Forward read requests immediately, as they can be answered
+                -- by the leader without consensus.
+                Nullipotent -> do
+                    send ρ request
+                    go collected inFlight
+                _ -> if Seq.null inFlight
+                     then do
+                         assert (Seq.null collected) $ return ()
+                         let inFlight' = Seq.singleton request
+                         sendBatch inFlight'
+                         go Seq.empty inFlight'
+                     else go (collected |> request) inFlight
+      -- Forward every relevant other request
+      , match $ \(request :: Helo)   -> send ρ request >> go collected inFlight
+      , match $ \(request :: Status) -> send ρ request >> go collected inFlight
+      ]
+
 dictValue :: SerializableDict a -> SerializableDict (Value a)
 dictValue SerializableDict = SerializableDict
 
@@ -759,6 +827,7 @@ remotable [ 'replica
           , 'dictMax
           , 'intId
           , 'timeSpecId
+          , 'batcher
           ]
 
 sdictValue :: Typeable a
@@ -839,6 +908,15 @@ replicaClosure sdict1 sdict2 file protocol log leaseStart leaseRenewalMargin =
       `closureApply` leaseStart
       `closureApply` leaseRenewalMargin
 
+batcherClosure :: Typeable a
+               => Static (SerializableDict a)
+               -> ProcessId
+               -> Closure (Process ())
+batcherClosure sdict ρ =
+    staticClosure $(mkStatic 'batcher)
+      `closureApply` staticClosure sdict
+      `closureApply` processIdClosure ρ
+
 -- | Hide the 'ProcessId' of the ambassador to a log behind an opaque datatype
 -- making it clear that the ambassador acts as a "handle" to the log - it does
 -- not uniquely identify the log, since there can in general be multiple
@@ -915,7 +993,7 @@ append (Handle _ _ _ _ _ μ) hint x = callLocal $ do
     self <- getSelfPid
     send μ $ Request
       { requestSender   = self
-      , requestValue    = Value x
+      , requestValue    = Values [x]
       , requestHint     = hint
       , requestForLease = Nothing
       }
@@ -1004,8 +1082,9 @@ new sdict1 sdict2 file protocol log leasePeriod leaseRenewalMargin nodes = do
                         `closureApply` $(mkClosure 'intId) leasePeriod
                         `closureApply` staticClosure initialDecreeIdStatic
                         `closureApply` listProcessIdClosure acceptors
+    batchers <- forM replicas $ \ρ -> spawn (processNodeId ρ) $ batcherClosure sdict2 ρ
     -- Create a new local proxy for the cgroup.
-    Handle sdict1 sdict2 file protocol log <$> spawnLocal (ambassador (staticApply $(mkStatic 'mkSomeSDict) sdict2, replicas))
+    Handle sdict1 sdict2 file protocol log <$> spawnLocal (ambassador (staticApply $(mkStatic 'mkSomeSDict) sdict2, batchers))
 
 -- | Propose a reconfiguration according the given nomination policy. Note that
 -- in general, it is only safe to remove replicas if they are /certainly/ dead.
@@ -1042,23 +1121,27 @@ addReplica h@(Handle sdict1 sdict2 file protocol log _)
              unMaxCP $ replicaClosure sdict1 sdict2 file protocol log
                                       ($(mkClosure 'timeSpecId) now)
                                       ($(mkClosure 'intId) leaseRenewalMargin)
+    β <- spawn nid $ batcherClosure sdict2 ρ
     reconfigure h $ cpolicy
         `closureApply` processIdClosure α
         `closureApply` processIdClosure ρ
-    return ρ
+    return β
 
 -- | Kill the replica and acceptor and remove it from the group.
 removeReplica :: Typeable a
               => Handle a
               -> ProcessId
               -> ProcessId
+              -> ProcessId
               -> Process ()
-removeReplica h@(Handle _sdict1 _sdict2 _ _protocol _log _) α ρ = do
-    ref2 <- monitor α
-    ref1 <- monitor ρ
-    exit α "Remove acceptor from group."
+removeReplica h@(Handle _sdict1 _sdict2 _ _protocol _log _) α ρ β = do
+    ref1 <- monitor β
+    ref2 <- monitor ρ
+    ref3 <- monitor α
+    exit β "Remove batcher from group."
     exit ρ "Remove replica from group."
-    forM_ [ref1, ref2] $ \ref -> receiveWait
+    exit α "Remove acceptor from group."
+    forM_ [ref1, ref2, ref3] $ \ref -> receiveWait
         [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref') $
                   \_ -> return () ]
     reconfigure h $ staticClosure $(mkStatic 'Policy.notThem)
