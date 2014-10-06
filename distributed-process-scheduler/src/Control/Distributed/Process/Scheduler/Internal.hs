@@ -46,7 +46,7 @@ import Control.Concurrent.MVar
     , readMVar, modifyMVar_
     )
 import Control.Exception ( SomeException, throwIO )
-import Control.Monad ( void, when, forever )
+import Control.Monad ( void, when )
 import Data.Binary ( Binary )
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
 import Data.Map ( Map )
@@ -78,9 +78,9 @@ schedulerVar = unsafePerformIO $ newEmptyMVar
 
 -- | Messages that the tested application sends to the scheduler.
 data SchedulerMsg
-    = Send ProcessId ProcessId -- ^ @Send source dest@: send a message from
-                               -- @source@ to @dest@. The message data is given
-                               -- to the scheduler in another message.
+    = Send ProcessId ProcessId Message
+      -- ^ @Send source dest message@: send the @message@ from @source@ to
+      -- @dest@.
     | Blocking ProcessId       -- ^ @Blocking pid@: process @pid@ has no
                                -- messages to process and is blocked.
     | HasMessage ProcessId     -- ^ @HasMessage pid@: process @pid@ is ready
@@ -97,7 +97,6 @@ data SchedulerMsg
 data SchedulerResponse
     = Receive      -- ^ Pick a message from your mailbox.
     | TestReceive  -- ^ Look if there is some elegible message in your mailbox.
-    | GetAbstractMsg ProcessId -- ^ Send message data to this auxiliary process.
     | OkNewProcess -- ^ Please go on and create the child process.
   deriving (Generic, Typeable)
 
@@ -133,18 +132,11 @@ startScheduler initialProcs seed0 = do
         if initialized
          then error "startScheduler: scheduler already started."
          else do
-           -- Communicates abstract messages to the scheduler.
-           mvAM <- DP.liftIO $ newEmptyMVar
-           -- The following auxiliary process plays a role in obtaining
-           -- the message data to deliver as abstract messages.
-           auxPid <- DP.spawnLocal $ forever
-                       $ DP.receiveWait [ DP.matchAny $ DP.liftIO . putMVar mvAM ]
            self <- DP.getSelfPid
            spid <- DP.spawnLocal $
-                     ((go auxPid mvAM (mkStdGen seed0) (Set.fromList initialProcs)
+                     ((go (mkStdGen seed0) (Set.fromList initialProcs)
                                                      Map.empty Map.empty
                        `DP.finally` do
-                          DP.exit auxPid "startScheduler: terminating scheduler"
                           DP.liftIO $ modifyMVar_ schedulerLock $
                               const $ return False
                       )
@@ -159,14 +151,12 @@ startScheduler initialProcs seed0 = do
            DP.liftIO $ putMVar schedulerVar spid
            return (True,())
   where
-    go :: ProcessId            -- ^ process providing message data
-       -> MVar Message         -- ^ mvar through which message data is passed
-       -> StdGen               -- ^ random number generator
+    go :: StdGen               -- ^ random number generator
        -> Set ProcessId        -- ^ set of tested processes
        -> Map ProcessId Bool   -- ^ state of processes (blocked | has_a_message)
        -> ProcessMessages      -- ^ messages targeted to each process
        -> Process ()
-    go auxPid mvAM seed alive procs msgs
+    go seed alive procs msgs
         -- Enter this equation if all processes are waiting for a transition
       | Set.size alive == Map.size procs = do
         -- complain if no process has a message and there are no messages to
@@ -184,20 +174,18 @@ startScheduler initialProcs seed0 = do
                then do DP.send pid TestReceive
                        return $ Map.delete pid procs'
                else return procs'
-             go auxPid mvAM seed' alive procs'' msgs'
+             go seed' alive procs'' msgs'
           ReceiveMsg -> do
              DP.send pid Receive
-             go auxPid mvAM seed' alive procs' msgs'
+             go seed' alive procs' msgs'
 
     -- enter the next equation if some process is still active
-    go auxPid mvAM seed alive procs msgs = do
+    go seed alive procs msgs = do
       m <- DP.expect
       case m of
         -- a process is sending a message
-        Send source pid -> do
-            -- get the message data as an abstract message
-            msg <- getAbstractMsg auxPid mvAM source
-            go auxPid mvAM seed alive procs
+        Send source pid msg -> do
+            go seed alive procs
               $ if Set.member pid alive
                  then Map.insertWith
                            (const $ Map.insertWith (flip (++)) source [msg])
@@ -205,29 +193,23 @@ startScheduler initialProcs seed0 = do
                  else msgs
         -- a process has a message and is ready to process it
         HasMessage pid ->
-            go auxPid mvAM seed alive (Map.insert pid True procs) msgs
+            go seed alive (Map.insert pid True procs) msgs
         -- a process has no messages and will block
         Blocking pid ->
-            go auxPid mvAM seed alive (Map.insert pid False procs) msgs
+            go seed alive (Map.insert pid False procs) msgs
         -- a new process will be created
         CreatedNewProcess parent child -> do
             DP.send parent OkNewProcess
-            go auxPid mvAM seed (Set.insert child alive) procs msgs
+            go seed (Set.insert child alive) procs msgs
         -- a process has terminated
         ProcessTerminated pid ->
-            go auxPid mvAM seed (Set.delete pid alive) (Map.delete pid procs)
+            go seed (Set.delete pid alive) (Map.delete pid procs)
                                                      (Map.delete pid msgs)
 
     -- is the given process waiting for a new message?
     isBlocked pid procs =
       maybe (error "startScheduler.isBlocked: missing pid") not
         $ Map.lookup pid procs
-
-    -- Requests to the source process to send the message to the
-    -- auxiliary process so the scheduler can get it.
-    getAbstractMsg auxPid mvAM source = do
-      DP.send source $ GetAbstractMsg auxPid
-      DP.liftIO $ takeMVar mvAM
 
     -- Picks the next transition.
     pickNextTransition :: StdGen
@@ -300,9 +282,7 @@ getScheduler = DP.liftIO (readMVar schedulerVar)
 send :: Serializable a => ProcessId -> a -> Process ()
 send pid msg = do
   self <- DP.getSelfPid
-  sendS (Send self pid)
-  GetAbstractMsg auxPid <-  DP.expect
-  DP.send auxPid msg
+  sendS (Send self pid $ DP.createMessage msg)
 
 -- | Sends a message to the scheduler.
 sendS :: Serializable a => a -> Process ()
