@@ -35,30 +35,33 @@ run s = do
     (TCP.createTransport "127.0.0.1" "8090" TCP.defaultTCPParameters)
     (either (const $ return ()) NT.closeTransport)
     $ \(Right transport) -> do
-      res <- fmap nub $ forM [1..100] $ \i -> do
-        res <- if schedulerIsEnabled
+      res <- fmap nub $ forM [1..100] $ \i ->
+        if schedulerIsEnabled
         then do
           -- running three times with the same seed should produce the same execution
           [res] <- fmap nub $ replicateM 3 $ execute transport (s+i)
           [res'] <- fmap nub $ replicateM 3 $ executeT transport (s+i)
+          [res''] <- fmap nub $ replicateM 3 $ executeChan transport (s+i)
           -- lifting Process has the same effect as running process unlifted
           True <- return $ res == res'
-          return res
+          checkInvariants res
+          checkInvariants res''
+          return $ res ++ res''
         else do
+          res <- execute transport (s+i)
+          checkInvariants res
           res' <- executeT transport (s+i)
-          -- every execution in the provided example should have exactly 8 transitions
-          when (8 /= length res') (error $ "Test Failed: " ++ show res')
-          -- messages to each process should be delivered in order
-          when (not $ check res') (error $ "Test Failed: " ++ show res')
-
-          execute transport (s+i)
-        -- every execution in the provided example should have exactly 8 transitions
-        when (8 /= length res) (error $ "Test Failed: " ++ show res)
-        -- messages to each process should be delivered in order
-        when (not $ check res) (error $ "Test Failed: " ++ show res)
-        return res
+          checkInvariants res'
+          res'' <- executeChan transport (s+i)
+          checkInvariants res''
+          return $ res ++ res' ++ res''
       putStrLn $ "Test passed with " ++ show (length res) ++ " different traces."
  where
+   checkInvariants res = do
+       -- every execution in the provided example should have exactly 8 transitions
+       when (8 /= length res) (error $ "Test Failed: " ++ show res)
+       -- messages to each process should be delivered in order
+       when (not $ check res) (error $ "Test Failed: " ++ show res)
    check res = indexOf "s0: received 0" res < indexOf "s0: received 2" res
             && indexOf "s1: received 1" res < indexOf "s1: received 3" res
             && indexOf "main: received (0,0)" res < indexOf "main: received (0,1)" res
@@ -90,6 +93,47 @@ execute transport seed = do
           i <- expect :: Process (Int,Int)
           say' $ "main: received " ++ show i
           j <- expect :: Process (Int,Int)
+          say' $ "main: received " ++ show j
+        () <- expect
+        () <- expect
+        liftIO $ fmap reverse $ readIORef traceR
+ where
+  {-# NOINLINE traceR #-}
+  traceR = unsafePerformIO $ newIORef []
+  say' = liftIO . modifyIORef traceR . (:)
+
+executeChan :: NT.Transport -> Int -> IO [String]
+executeChan transport seed = do
+      writeIORef traceR []
+      n <- newLocalNode transport $ __remoteTable initRemoteTable
+      runProcess' n $ withScheduler [] seed $ do
+        self <- getSelfPid
+        (spBack, rpBack) <- newChan
+        _ <- spawnLocal $ do
+          (sp, rp) <- newChan
+          send self sp
+          forM_ [0..1::Int] $ \i -> do
+            j <- receiveChan rp
+            say' $ "s0: received " ++ show (j :: Int)
+            sendChan spBack (0::Int,i)
+          send self ()
+        sp0 <- expect
+        _ <- spawnLocal $ do
+          (sp, rp) <- newChan
+          send self sp
+          forM_ [0..1::Int] $ \i -> do
+            j <- receiveChan rp
+            say' $ "s1: received " ++ show (j :: Int)
+            sendChan spBack (1::Int,i)
+          send self ()
+        sp1 <- expect
+        forM_ [0..1::Int] $ \i -> do
+          sendChan sp0 (2*i)
+          sendChan sp1 (2*i+1)
+        replicateM_ 2 $ do
+          i <- receiveChan rpBack
+          say' $ "main: received " ++ show i
+          j <- receiveChan rpBack
           say' $ "main: received " ++ show j
         () <- expect
         () <- expect

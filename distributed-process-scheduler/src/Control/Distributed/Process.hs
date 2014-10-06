@@ -6,26 +6,41 @@
 module Control.Distributed.Process
   ( Match
   , send
+  , sendChan
   , match
   , matchIf
+  , matchChan
+  , matchSTM
   , expect
   , receiveWait
+  , receiveChan
   , spawnLocal
   , spawn
   , module DPEtc
   )  where
 
-import Control.Distributed.Process.Scheduler.Internal (Match, match, matchIf, expect, receiveWait)
+import Control.Distributed.Process.Scheduler.Internal
+  ( Match
+  , match
+  , matchIf
+  , matchChan
+  , matchSTM
+  , expect
+  , receiveWait )
 import qualified Control.Distributed.Process.Scheduler.Internal as Internal
 import qualified "distributed-process" Control.Distributed.Process as DP
 import "distributed-process" Control.Distributed.Process as DPEtc
     hiding
   ( Match
   , send
+  , sendChan
   , match
   , matchIf
+  , matchChan
+  , matchSTM
   , expect
   , receiveWait
+  , receiveChan
   , spawnLocal
   , spawn )
 import Control.Distributed.Process.Serializable ( Serializable )
@@ -40,6 +55,18 @@ send :: Serializable a => ProcessId -> a -> Process ()
 send = if Internal.schedulerIsEnabled
        then Internal.send
        else DP.send
+
+{-# NOINLINE sendChan #-}
+sendChan :: Serializable a => SendPort a -> a -> Process ()
+sendChan = if Internal.schedulerIsEnabled
+           then Internal.sendChan
+           else DP.sendChan
+
+{-# NOINLINE receiveChan #-}
+receiveChan :: Serializable a => ReceivePort a -> Process a
+receiveChan = if Internal.schedulerIsEnabled
+              then Internal.receiveChan
+              else DP.receiveChan
 
 {-# NOINLINE spawnLocal #-}
 spawnLocal :: Process () -> Process ProcessId

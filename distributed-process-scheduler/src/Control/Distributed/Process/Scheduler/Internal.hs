@@ -19,9 +19,13 @@ module Control.Distributed.Process.Scheduler.Internal
   -- * distributed-process replacements
   , Match
   , send
+  , sendChan
   , match
   , matchIf
+  , matchChan
+  , matchSTM
   , expect
+  , receiveChan
   , receiveWait
   , spawnLocal
   , spawn
@@ -33,9 +37,12 @@ module Control.Distributed.Process.Scheduler.Internal
   ) where
 
 import Control.Applicative ( (<$>) )
+import Control.Concurrent.STM
 import "distributed-process" Control.Distributed.Process
-    ( Message, Closure, NodeId, Process, ProcessId )
+    ( Closure, NodeId, Process, ProcessId, ReceivePort, SendPort )
 import qualified "distributed-process" Control.Distributed.Process as DP
+import qualified "distributed-process" Control.Distributed.Process.Internal.Types as DP
+import qualified "distributed-process" Control.Distributed.Process.Internal.Messaging as DP
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Serializable ( Serializable )
 import "distributed-process-trans" Control.Distributed.Process.Trans ( MonadProcess(..) )
@@ -47,7 +54,10 @@ import Control.Concurrent.MVar
     )
 import Control.Exception ( SomeException, throwIO )
 import Control.Monad ( void, when )
-import Data.Binary ( Binary )
+import Control.Monad.Reader ( ask )
+import Data.Binary ( Binary, encode )
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
 import Data.Map ( Map )
 import qualified Data.Map as Map
@@ -76,9 +86,15 @@ schedulerLock = unsafePerformIO $ newMVar False
 schedulerVar :: MVar ProcessId
 schedulerVar = unsafePerformIO $ newEmptyMVar
 
+-- | Preprocessed process or channel message that can be delivered via
+-- 'DP.sendPayload'.
+data AddressedMsg = AddressedMsg DP.Identifier [BS.ByteString]
+                  deriving (Generic, Typeable)
+instance Binary AddressedMsg
+
 -- | Messages that the tested application sends to the scheduler.
 data SchedulerMsg
-    = Send ProcessId ProcessId Message
+    = Send ProcessId ProcessId AddressedMsg
       -- ^ @Send source dest message@: send the @message@ from @source@ to
       -- @dest@.
     | Blocking ProcessId       -- ^ @Blocking pid@: process @pid@ has no
@@ -103,7 +119,7 @@ data SchedulerResponse
 -- | Transitions that the scheduler can choose to perform when all
 -- processes block.
 data TransitionRequest
-    = PutMsg Message        -- ^ Put this message in the mailbox of the target.
+    = PutMsg AddressedMsg   -- ^ Put this message in the mailbox of the target.
     | ReceiveMsg            -- ^ Have a process pick a message from its mailbox.
 
 -- | Exit reason sent to stop the scheduler.
@@ -119,7 +135,7 @@ instance Binary SchedulerResponse
 instance Binary StopScheduler
 instance Binary SchedulerTerminated
 
-type ProcessMessages = Map ProcessId (Map ProcessId [Message])
+type ProcessMessages = Map ProcessId (Map ProcessId [AddressedMsg])
 
 -- | Starts the scheduler assuming the given initial amount of processes and
 -- a seed to generate a sequence of random values.
@@ -167,7 +183,7 @@ startScheduler initialProcs seed0 = do
         let ((pid,r),seed',procs',msgs') = pickNextTransition seed procs msgs
         case r of
           PutMsg msg -> do
-             DP.forward msg pid
+             forward msg
              -- if the process was blocked let's ask it to check again if it
              -- has a message.
              procs'' <- if isBlocked pid procs
@@ -245,6 +261,16 @@ startScheduler initialProcs seed0 = do
                     else Map.adjust (Map.adjust tail sender) pid msgs
                  )
 
+    forward (AddressedMsg rid payload) = do
+        self <- ask
+        DP.liftIO $ DP.sendPayload
+          (DP.processNode self)
+          (DP.ProcessIdentifier $ DP.processId self)
+          rid
+          DP.NoImplicitReconnect
+          payload
+
+
 -- | Lift 'Control.Concurrent.modifyMVar'
 modifyMVarP :: MVar a -> (a -> Process (a,b)) -> Process b
 modifyMVarP mv thing = DP.mask $ \restore -> do
@@ -282,7 +308,17 @@ getScheduler = DP.liftIO (readMVar schedulerVar)
 send :: Serializable a => ProcessId -> a -> Process ()
 send pid msg = do
   self <- DP.getSelfPid
-  sendS (Send self pid $ DP.createMessage msg)
+  sendS $ Send self pid $ AddressedMsg
+    (DP.ProcessIdentifier pid)
+    (DP.messageToPayload $ DP.createMessage msg)
+
+sendChan :: Serializable a => SendPort a -> a -> Process ()
+sendChan sendPort msg = do
+    self <- DP.getSelfPid
+    let spId = DP.sendPortId sendPort
+    sendS $ Send self (DP.sendPortProcessId spId) $ AddressedMsg
+      (DP.SendPortIdentifier spId)
+      (BSL.toChunks $ encode msg)
 
 -- | Sends a message to the scheduler.
 sendS :: Serializable a => a -> Process ()
@@ -323,6 +359,10 @@ receiveWait = if schedulerIsEnabled
 expect :: Serializable a => Process a
 expect = receiveWait [ match return ]
 
+-- | Wait for a message on a typed channel.
+receiveChan :: Serializable a => ReceivePort a -> Process a
+receiveChan rPort = receiveWait [ matchChan rPort return ]
+
 -- | Opaque type used by 'receiveWait'.
 newtype Match a = Match { unMatch :: Maybe (IORef Bool) -> DP.Match a }
 
@@ -340,6 +380,20 @@ matchIf p h = Match $ \mr -> case mr of
     test r a = snd $ unsafePerformIO $ do
                  writeIORef r True
                  return (a,False)
+
+-- | Match on arbitrary STM action.
+--
+-- This is the basic building block for 'matchChan'.
+matchSTM :: STM a -> (a -> Process b) -> Match b
+matchSTM sa h = Match $ \mr -> case mr of
+                  Nothing -> DP.matchSTM sa h
+                  Just r  -> DP.matchSTM (sa >> setAndRetry r) h
+  where
+    setAndRetry r = unsafePerformIO (writeIORef r True) `seq` retry
+
+-- | Match on a typed channel.
+matchChan :: ReceivePort a -> (a -> Process b) -> Match b
+matchChan = matchSTM . DP.receiveSTM
 
 -- | Notifies the scheduler of a new process. When acknowledged, starts the new
 -- process and notifies again the scheduler when the process terminates. Returns

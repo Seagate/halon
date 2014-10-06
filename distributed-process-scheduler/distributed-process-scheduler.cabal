@@ -26,6 +26,7 @@ Library
   Default-Language: Haskell2010
   Ghc-Options:     -O -Wall -Werror
   Exposed-Modules: Control.Distributed.Process
+                   Control.Distributed.Process.Internal.Messaging
                    Control.Distributed.Process.Internal.Types
                    Control.Distributed.Process.Closure
                    Control.Distributed.Process.Node
@@ -35,10 +36,13 @@ Library
   Other-Modules:   Control.Distributed.Process.Scheduler.Internal
   Build-Depends:   base
                    ,binary >= 0.6
+                   ,bytestring
                    ,containers
                    ,distributed-process >= 0.4
                    ,distributed-process-trans
+                   ,mtl
                    ,random
+                   ,stm
                    ,unix
 
 Test-Suite unit-tests-with-scheduler
