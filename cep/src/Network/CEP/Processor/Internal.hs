@@ -33,7 +33,7 @@ import           Data.Binary (Binary)
 import qualified Data.MultiMap as MultiMap
 import           Network.Transport (Transport)
 
-import           Control.Applicative ((<$), (<$>))
+import           Control.Applicative ((<$), (<$>), liftA2)
 import           Control.Concurrent (Chan, newChan, readChan, writeChan)
 import           Control.Monad (join, when, void)
 import           Data.Proxy (Proxy (..))
@@ -108,41 +108,63 @@ executeCleanup = do
 
 -- | Add a new subscriber from a request.
 addSubscriber :: NetworkMessage SubscribeRequest -> Processor s ()
-addSubscriber (NetworkMessage (SubscribeRequest t) s)
+addSubscriber (NetworkMessage (SubscribeRequest t) _ s)
   = subscribers %= MultiMap.insert t s
 
 -- | Remove a subscriber that has died.
 removeSubscriber :: NetworkMessage NodeRemoval -> Processor s ()
-removeSubscriber (NetworkMessage (NodeRemoval p) _)
+removeSubscriber (NetworkMessage (NodeRemoval p) _ _)
   = subscribers %= deleteValue p
 
 -- | Update the list of brokers.
 reconfBrokers :: NetworkMessage BrokerReconf -> Processor s ()
-reconfBrokers (NetworkMessage (BrokerReconf bs) _) = currentBrokers .= bs
+reconfBrokers (NetworkMessage (BrokerReconf bs) _ _) = currentBrokers .= bs
 
 -- | Send an appropriately 'NetworkMessage'-wrapped message to another
 --   process.
-sendMessage :: Serializable a => a -> ProcessId -> Processor s ()
-sendMessage msg p
-  = gets (^. listener) >>= liftProcess . send p . NetworkMessage msg
+sendMessage :: Serializable a
+            => Bool
+            -- ^ Whether to request acknowledgement.
+            -> a -> ProcessId -> Processor s ()
+sendMessage ackp msg p
+  = gets (^. listener) >>= liftProcess . send p . NetworkMessage msg ackp
 
 -- | Send a (wrapped) message to all brokers.
 sendBrokers :: Serializable a => a -> Processor s ()
-sendBrokers msg = gets (^. currentBrokers) >>= mapM_ (sendMessage msg)
+sendBrokers msg = gets (^. currentBrokers) >>= mapM_ (sendMessage False msg)
 
 -- | Send a (wrapped) message to everyone subscribed to messages of
 --   its type.
-sendSubscribers :: forall s a. Serializable a => a -> Processor s ()
-sendSubscribers msg = gets (^. subscribers)
-    >>= mapM_ (sendMessage msg)
+sendSubscribers :: forall s a. Serializable a
+                => Bool
+                -- ^ Whether to request acknowledgement.
+                -> a -> Processor s ()
+sendSubscribers ackp msg = gets (^. subscribers)
+    >>= mapM_ (sendMessage ackp msg)
         . MultiMap.lookup (eventTypeOf (Proxy :: Proxy a))
+
+publish' :: forall a s. Serializable a
+         => Bool
+         -- ^ Whether or not to request acknowledgement.
+         -> Processor s (a -> Processor s ())
+publish' ackp = do
+    sendBrokers . PublishRequest $ eventTypeOf (Proxy :: Proxy a)
+    return $ sendSubscribers ackp
 
 -- | Publish a new event.  The returned action emits the event to all
 --   subscribers.
 publish :: forall a s. Serializable a => Processor s (a -> Processor s ())
-publish = do
-    sendBrokers . PublishRequest $ eventTypeOf (Proxy :: Proxy a)
-    return sendSubscribers
+publish = publish' False
+
+-- | Publish a new event, requesting acknowledgement when it is
+--   successfully handled.
+publishAck :: forall a s. Serializable a
+           => (Ack a -> Processor s ())
+           -- ^ Callback to call when acknowledgement is received.
+           -> Processor s (a -> Processor s ())
+publishAck handleAck = do
+    handlers %= (void . flip Process.handleMessage handleAck :)
+    publish' True
 
 -- | Subscribe to a new event.
 subscribe :: forall a s. Serializable a
@@ -151,7 +173,12 @@ subscribe :: forall a s. Serializable a
           -> Processor s ()
 subscribe handle = do
     sendBrokers . SubscribeRequest $ eventTypeOf (Proxy :: Proxy a)
-    handlers %= (void . flip Process.handleMessage handle :)
+    handlers %= (void . flip Process.handleMessage
+                          (liftA2 (>>) handle acknowledge) :)
+
+acknowledge :: forall a s. Serializable a => NetworkMessage a -> Processor s ()
+acknowledge m = when (m ^. ack) $
+    gets (^. listener) >>= liftProcess . send (m ^. source) . Ack (m ^. payload)
 
 -- | Call all handlers of the correct type with the value of the
 --   supplied message.

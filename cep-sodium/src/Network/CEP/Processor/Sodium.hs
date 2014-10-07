@@ -13,6 +13,7 @@ module Network.CEP.Processor.Sodium
   , P.liftProcess
   , P.getProcessorPid
   , publish
+  , publishAck
   , subscribe
   , dieOn ) where
 
@@ -33,14 +34,23 @@ import           Control.Monad.State (liftIO, void)
 liftReactive :: Reactive a -> Processor s a
 liftReactive = liftIO . sync
 
+publish' :: Serializable a => Event a -> (a -> Processor s ()) -> Processor s ()
+publish' ev h = do
+    r <- actionRunner
+    (>>= onExit . liftIO) . liftReactive . listen ev $ r . (True <$) . h
+
 -- | Advertise with the broker as providing a source of an event of a
 -- certain type.  All firings of the provided event will be forwarded
 -- to interested subscribers.
 publish :: Serializable a => Event a -> Processor s ()
-publish ev = do
-    h <- CB.publish
-    r <- actionRunner
-    (>>= onExit . liftIO) . liftReactive . listen ev $ r . (True <$) . h
+publish ev = CB.publish >>= publish' ev
+
+-- | Publish, but request an acknowledgement response.
+publishAck :: Serializable a => Event a -> Processor s (Event (Ack a))
+publishAck ev = do
+    (ackEv, pushAck) <- liftReactive newEvent
+    CB.publishAck (liftReactive . pushAck) >>= publish' ev
+    return ackEv
 
 -- | Request that the broker direct any providers of an event of a
 -- certain type to notify this node.  Occurrences of the event on

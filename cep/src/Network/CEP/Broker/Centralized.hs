@@ -74,13 +74,13 @@ addSubscriber t s = subscribers %~ MultiMap.insert t s
 
 -- | Run a broker with a new publisher added.
 publish :: BrokerMapping -> NetworkMessage PublishRequest -> Process ()
-publish m (NetworkMessage (PublishRequest t) p) = do
+publish m (NetworkMessage (PublishRequest t) _ p) = do
     notifyPublish t p m
     runBroker $ addPublisher t p m
 
 -- | Tell a new publisher about all relevant subscribers.
 notifyPublish :: EventType -> ProcessId -> BrokerMapping -> Process ()
-notifyPublish t p m = mapM_ (send p . NetworkMessage (SubscribeRequest t)) $
+notifyPublish t p m = mapM_ (send p . NetworkMessage (SubscribeRequest t) False) $
     MultiMap.lookup t $ m ^. subscribers
 
 -- | Update the broker state with a new publisher.
@@ -95,12 +95,12 @@ addPublisher t s = publishers %~ MultiMap.insert t s
 
 -- | Run a broker with a node removed.
 remove :: BrokerMapping -> NetworkMessage NodeRemoval -> Process ()
-remove m msg@(NetworkMessage (NodeRemoval p) _) = do
+remove m msg@(NetworkMessage (NodeRemoval p) _ _) = do
     notifyRemove msg m
     runBroker $ removeNode p m
 
 notifyRemove :: NetworkMessage NodeRemoval -> BrokerMapping -> Process ()
-notifyRemove msg@(NetworkMessage (NodeRemoval p) _) m = do
+notifyRemove msg@(NetworkMessage (NodeRemoval p) _ _) m = do
     forM_ (joinOnKey (m ^. publishers) (m ^. subscribers)) $ \(pubs, subs) -> do
       when (elem p pubs) $ mapM_ (flip send msg) subs
       when (elem p subs) $ mapM_ (flip send msg) pubs

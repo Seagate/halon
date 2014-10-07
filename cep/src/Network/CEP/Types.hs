@@ -20,13 +20,17 @@ module Network.CEP.Types
   , NetworkMessage (..)
   , payload
   , source
+  , ack
   , SubscribeRequest (..)
   , PublishRequest (..)
   , eventType
   , NodeRemoval (..)
   , removedNode
   , BrokerReconf (..)
-  , newBrokers ) where
+  , newBrokers
+  , Ack (..)
+  , ackMessage
+  , ackSource ) where
 
 import Control.Distributed.Process (ProcessId)
 import Control.Distributed.Process.Serializable
@@ -57,6 +61,7 @@ eventTypeOf _ = EventType $ fingerprint (error "CEP::eventTypeOf" :: a)
 --   with its source.
 data NetworkMessage a = NetworkMessage
   { _payload :: !a
+  , _ack     :: !Bool
   , _source  :: !ProcessId
   } deriving (Typeable, Show, Eq, Ord, Generic, Functor)
 instance Binary a => Binary (NetworkMessage a)
@@ -94,3 +99,11 @@ newtype BrokerReconf = BrokerReconf
   } deriving (Typeable, Show, Eq, Generic, Binary)
 
 makeLenses ''BrokerReconf
+
+data Ack a = Ack
+  { _ackMessage :: a
+  , _ackSource  :: !ProcessId
+  } deriving (Typeable, Show, Eq, Generic)
+instance Binary a => Binary (Ack a)
+
+makeLenses ''Ack
