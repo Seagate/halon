@@ -9,6 +9,7 @@ import Control.Distributed.Log.Policy (NominationPolicy)
 import Control.Distributed.Process.Consensus (DecreeId)
 import Control.Distributed.Process (ProcessId)
 import Control.Distributed.Static (Closure)
+import Data.Int (Int64)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Data.Binary (Binary)
@@ -54,7 +55,7 @@ data Decree a = Decree Locale DecreeId a
 data Query = Query ProcessId Int
     deriving (Typeable, Generic)
 
-data Max = Max ProcessId Int DecreeId [ProcessId] [ProcessId]
+data Max = Max ProcessId Int64 DecreeId [ProcessId] [ProcessId]
     deriving (Typeable, Generic)
 
 instance Binary Locale

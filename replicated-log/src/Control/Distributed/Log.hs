@@ -63,6 +63,7 @@ import Control.Applicative ((<$>))
 import Control.Concurrent (newEmptyMVar, putMVar, takeMVar, tryPutMVar)
 import Control.Exception (SomeException, throwIO, assert)
 import Control.Monad
+import Data.Int (Int64)
 import Data.List (find, intersect)
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
@@ -154,7 +155,7 @@ data Value a =
                Values [a]
                -- | Request start time, lease period, list of acceptors and list
                -- of replicas (i.e. proposers).
-             | Reconf TimeSpec Int [ProcessId] [ProcessId]
+             | Reconf TimeSpec Int64 [ProcessId] [ProcessId]
                deriving (Eq, Generic, Typeable)
 
 instance Binary a => Binary (Value a)
@@ -206,7 +207,7 @@ instance Binary Status
 
 instance Binary TimeSpec
 
-timeSpecDiff :: TimeSpec -> TimeSpec -> Int
+timeSpecDiff :: TimeSpec -> TimeSpec -> Int64
 timeSpecDiff t0 t1 =
     ( sec t0 -  sec t1) * 1000 * 1000 + (nsec t0 - nsec t1) `div` 1000
 
@@ -223,7 +224,7 @@ queryMissing replicas log = do
         forM_ replicas $ \ρ -> do
             send ρ $ Query self n
 
-clockInterval :: Int
+clockInterval :: Int64
 clockInterval = 1000000
 
 newtype Memory a = Memory (Map.Map Int a)
@@ -245,7 +246,7 @@ $(makeAcidic ''Memory ['memoryInsert, 'memoryGet])
 
 -- | This is an adjustment to the lease period so non-leaders think it is
 -- slightly longer to account for possible clock drifts during the lease period.
-driftSafetyFactor :: Ratio Int
+driftSafetyFactor :: Ratio Int64
 driftSafetyFactor = 11 % 10
 
 -- Note [Teleportation]
@@ -291,8 +292,8 @@ replica :: forall a. EqDict a
         -> Protocol NodeId (Value a)
         -> Log a
         -> TimeSpec
-        -> Int
-        -> Int
+        -> Int64
+        -> Int64
         -> DecreeId
         -> [ProcessId]
         -> [ProcessId]
@@ -808,12 +809,12 @@ delay SerializableDict them f = do
 
 -- | Like 'uncurry', but extract arguments from a 'Max' message rather than
 -- a pair.
-unMax :: (Int -> DecreeId -> [ProcessId] -> [ProcessId] -> a) -> Max -> a
+unMax :: (Int64 -> DecreeId -> [ProcessId] -> [ProcessId] -> a) -> Max -> a
 unMax f (Max _ leasePeriod d αs ρs) =
   f leasePeriod d αs ρs
 
-intId ::Int -> Int
-intId = id
+int64Id ::Int64 -> Int64
+int64Id = id
 
 timeSpecId :: TimeSpec -> TimeSpec
 timeSpecId = id
@@ -825,7 +826,7 @@ remotable [ 'replica
           , 'dictList
           , 'dictNodeId
           , 'dictMax
-          , 'intId
+          , 'int64Id
           , 'timeSpecId
           , 'batcher
           ]
@@ -868,7 +869,7 @@ delayClosure sdict them f =
       `closureApply` f
 
 unMaxCP :: (Typeable a)
-        => Closure (   Int
+        => Closure (   Int64
                     -> DecreeId
                     -> [ProcessId]
                     -> [ProcessId]
@@ -892,8 +893,8 @@ replicaClosure :: Typeable a
                -> Closure (Protocol NodeId (Value a))
                -> Closure (Log a)
                -> Closure TimeSpec
-               -> Closure Int
-               -> Closure (   Int
+               -> Closure Int64
+               -> Closure (   Int64
                            -> DecreeId
                            -> [ProcessId]
                            -> [ProcessId]
@@ -1066,8 +1067,8 @@ new :: Typeable a
     -> Closure (NodeId -> FilePath)
     -> Closure (Protocol NodeId (Value a))
     -> Closure (Log a)
-    -> Int
-    -> Int
+    -> Int64
+    -> Int64
     -> [NodeId]
     -> Process (Handle a)
 new sdict1 sdict2 file protocol log leasePeriod leaseRenewalMargin nodes = do
@@ -1078,8 +1079,8 @@ new sdict1 sdict2 file protocol log leasePeriod leaseRenewalMargin nodes = do
     replicas <- spawnRec nodes $
                     replicaClosure sdict1 sdict2 file protocol log
                         ($(mkClosure 'timeSpecId) now)
-                        ($(mkClosure 'intId) leaseRenewalMargin)
-                        `closureApply` $(mkClosure 'intId) leasePeriod
+                        ($(mkClosure 'int64Id) leaseRenewalMargin)
+                        `closureApply` $(mkClosure 'int64Id) leasePeriod
                         `closureApply` staticClosure initialDecreeIdStatic
                         `closureApply` listProcessIdClosure acceptors
     batchers <- forM replicas $ \ρ -> spawn (processNodeId ρ) $ batcherClosure sdict2 ρ
@@ -1110,7 +1111,7 @@ addReplica :: Typeable a
            => Handle a
            -> Closure (ProcessId -> ProcessId -> NominationPolicy)
            -> NodeId
-           -> Int
+           -> Int64
            -> Process ProcessId
 addReplica h@(Handle sdict1 sdict2 file protocol log _)
            cpolicy nid leaseRenewalMargin               = do
@@ -1120,7 +1121,7 @@ addReplica h@(Handle sdict1 sdict2 file protocol log _)
     ρ <- spawn nid $ delayClosure sdictMax self $
              unMaxCP $ replicaClosure sdict1 sdict2 file protocol log
                                       ($(mkClosure 'timeSpecId) now)
-                                      ($(mkClosure 'intId) leaseRenewalMargin)
+                                      ($(mkClosure 'int64Id) leaseRenewalMargin)
     β <- spawn nid $ batcherClosure sdict2 ρ
     reconfigure h $ cpolicy
         `closureApply` processIdClosure α

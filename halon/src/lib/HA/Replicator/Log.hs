@@ -52,6 +52,7 @@ import Control.Exception ( evaluate )
 import Control.Monad ( when, forM )
 import Data.Binary ( decode, encode, Binary )
 import Data.ByteString.Lazy ( ByteString )
+import Data.Int ( Int64 )
 #if MIN_VERSION_base(4,7,0)
 import Data.Typeable ( Typeable )
 #else
@@ -134,7 +135,7 @@ queryStatic :: (Typeable st,Typeable v) => Static (RStateView st v)
 queryStatic rv = staticApply $(mkStatic 'prjProc) rv
 
 -- | All replicas use the same lease renewal margin.
-leaseRenewalMargin :: Int
+leaseRenewalMargin :: Int64
 leaseRenewalMargin = 1000000
 
 instance RGroup RLogGroup where
