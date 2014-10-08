@@ -131,8 +131,9 @@ cabal.sandbox.config: mk/config.mk
 	cabal sandbox init
 	cabal sandbox add-source $(addprefix $(VENDOR_DIR),$(VENDOR_PACKAGES)) \
 	                         $(addprefix $(PACKAGE_DIR),$(PACKAGES))
-	cabal install --only-dependencies $(CABAL_FLAGS) \
-	              --reorder-goals $(PACKAGES)
+# Using --reinstall to override packages from GHC global db.
+	cabal install --reorder-goals --reinstall $(VENDOR_PACKAGES)
+	cabal install --only-dependencies --reorder-goals $(CABAL_FLAGS) $(PACKAGES)
 
 # This target will generate distributable packages based on the
 # checked-in master branch of this repository. It will generate
