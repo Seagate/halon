@@ -50,6 +50,11 @@ include mk/config.mk
 # each time on the command line. Please DO NOT check in this file.
 -include mk/local.mk
 
+# The DELETE_ON_ERROR behavior is used in the `make dep` logic, since
+# we use the cabal.sandbox.config file as a stamp file on whether the
+# sandbox creation was successful.
+.DELETE_ON_ERROR:
+
 all: build
 
 ifdef USE_RPC
@@ -106,7 +111,7 @@ export USE_RPC
 export TEST_LISTEN
 
 .PHONY: build
-build:
+build: dep
 	cabal install $(PACKAGES) \
 	              $(filter-out --jobs=%,$(CABAL_FLAGS)) --jobs=1
 
@@ -120,7 +125,8 @@ depclean:
 	cabal sandbox delete
 
 .PHONY: dep
-dep:
+dep: cabal.sandbox.config
+cabal.sandbox.config: mk/config.mk
 	@echo "Initializing sandbox"
 	cabal sandbox init
 	cabal sandbox add-source $(addprefix $(VENDOR_DIR),$(VENDOR_PACKAGES)) \
