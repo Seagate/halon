@@ -45,6 +45,7 @@ Library
   Ghc-Options:     -O -Wall -Werror
   Exposed-Modules: HA.CallTimeout
                    HA.Process
+                   HA.Reconf
                    HA.Resources
                    HA.EventQueue
                    HA.EventQueue.Consumer
@@ -64,6 +65,7 @@ Library
                    HA.Network.IdentifyTCP
                    HA.Network.Address
                    HA.Network.RemoteTables
+                   HA.Service
                    HA.Services.Dummy
                    HA.Services.OCF
                    Control.SpineSeq
@@ -76,6 +78,7 @@ Library
                    consensus-paxos,
                    containers,
                    filepath >= 1.3,
+                   free,
                    network,
                    distributed-process >= 0.4,
                    distributed-static,
@@ -86,7 +89,8 @@ Library
                    process >= 1.1,
                    replicated-log,
                    unordered-containers,
-                   network-transport
+                   network-transport,
+                   options-schema >= 0.1.1.0
   if flag(rpc)
     Build-Depends: network-transport,
                    network-transport-rpc >= 0.0.1,
@@ -140,7 +144,8 @@ Test-Suite unit-tests
                     distributed-process-test,
                     distributed-static,
                     hashable,
-                    unordered-containers
+                    unordered-containers,
+                    options-schema >= 0.1.1.0
   if flag(rpc)
       Build-Depends: network-transport-rpc, tasty
       CPP-Options:    -DUSE_RPC
@@ -170,7 +175,8 @@ Test-Suite integration-tests
                     distributed-process-test,
                     distributed-static,
                     hashable,
-                    unordered-containers
+                    unordered-containers,
+                    options-schema >= 0.1.1.0
   if flag(rpc)
       Build-Depends: network-transport-rpc, tasty
       CPP-Options:    -DUSE_RPC

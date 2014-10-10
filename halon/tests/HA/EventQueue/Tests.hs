@@ -28,12 +28,20 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types ( nodeAddress )
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( Serializable )
+import Control.Distributed.Static (closureApply)
 
 import Control.Applicative ((<$>))
 import Control.Arrow (first)
 import Control.Exception ( SomeException )
 import Control.Monad
 import Data.ByteString ( ByteString )
+import Data.Defaultable
+
+testConf :: NodeAgentConf
+testConf = NodeAgentConf {
+    softTimeout = Configured 5000000
+  , timeout = Configured 10000000
+}
 
 eqSDict :: SerializableDict EventQueue
 eqSDict = SerializableDict
@@ -50,7 +58,7 @@ remoteRC controller = do
       reconnect controller
       send controller (msg :: HAEvent [ByteString])
 
-remotable [ 'eqSDict, 'setRC, 'remoteRC ]
+remotable [ 'testConf, 'eqSDict, 'setRC, 'remoteRC ]
 
 triggerEvent :: Int -> Process ()
 triggerEvent k = catch (expiate k) $ \(_ :: SomeException) -> return ()
@@ -79,7 +87,8 @@ tests network = do
             cRGroup <- newRGroup $(mkStatic 'eqSDict) nodes (Nothing,[])
             rGroup <- unClosure cRGroup >>= id
             eq <- spawnLocal (eventQueue rGroup)
-            na <- spawn (processNodeId self) (serviceProcess nodeAgent)
+            na <- spawn (processNodeId self) $
+                    closureApply (serviceProcess nodeAgent) $(mkStaticClosure 'testConf)
             True <- updateEQNodes na nodes
             mapM_ link [eq, na]
 

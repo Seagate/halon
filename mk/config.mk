@@ -37,4 +37,5 @@ endif
 
 VENDOR_PACKAGES = clock \
                   distributed-process \
-                  tasty-files
+                  tasty-files \
+                  options-schema

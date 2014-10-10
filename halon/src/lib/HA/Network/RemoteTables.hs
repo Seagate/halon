@@ -6,8 +6,9 @@
 module HA.Network.RemoteTables (haRemoteTable) where
 
 import HA.Resources ( __remoteTable )
-import HA.NodeAgent ( __remoteTableDecl )
+import HA.NodeAgent ( __remoteTable, __remoteTableDecl )
 import HA.Services.Dummy ( __remoteTableDecl )
+import HA.Service ( __remoteTable )
 import HA.Services.OCF ( __remoteTableDecl )
 import HA.RecoverySupervisor ( __remoteTable )
 import HA.EventQueue ( __remoteTable )
@@ -27,8 +28,10 @@ import Control.Distributed.Process.Consensus.BasicPaxos ( __remoteTable )
 haRemoteTable :: RemoteTable -> RemoteTable
 haRemoteTable next =
    HA.Resources.__remoteTable $
+   HA.NodeAgent.__remoteTable $
    HA.NodeAgent.__remoteTableDecl $
    HA.Services.Dummy.__remoteTableDecl $
+   HA.Service.__remoteTable $
    HA.Services.OCF.__remoteTableDecl $
    HA.RecoverySupervisor.__remoteTable $
    HA.EventQueue.__remoteTable $

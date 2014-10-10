@@ -34,7 +34,7 @@ module HA.ResourceGraph
     , RelationDict(..)
     , mkResourceDict
     , mkRelationDict
-    , Some
+    , Some(..)
     , Graph
     , Edge(..)
     -- * Operations

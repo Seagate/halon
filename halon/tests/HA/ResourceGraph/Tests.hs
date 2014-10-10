@@ -21,7 +21,7 @@ import Control.Exception (SomeException, bracket)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.List (sort, (\\))
-import Data.Typeable (Typeable(..), Typeable1)
+import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
 import HA.Multimap (getKeyValuePairs)
@@ -119,7 +119,7 @@ tryRunProcessLocal network process =
         tryRunProcess node process
 
 rGroupTest ::
-    (RGroup g, Typeable1 g)
+    (RGroup g, Typeable g)
     => Network -> g Multimap -> (ProcessId -> Process ()) -> IO ()
 rGroupTest network g p =
     tryRunProcessLocal network $
