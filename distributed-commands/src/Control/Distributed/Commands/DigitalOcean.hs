@@ -21,7 +21,7 @@ module Control.Distributed.Commands.DigitalOcean
     ) where
 
 import Control.Concurrent (threadDelay)
-import Control.Exception (throwIO)
+import Control.Exception (throwIO, bracketOnError)
 import Control.Monad (liftM2, when)
 import Data.Aeson (Value(..), decode)
 import Data.Aeson.Encode.Pretty (encodePretty)
@@ -39,6 +39,14 @@ import Network.Curl
     , URLString
     )
 import System.Environment (lookupEnv)
+import System.IO (hGetLine, hClose, openFile, IOMode(..))
+import System.Process
+    ( terminateProcess
+    , CreateProcess(..)
+    , proc
+    , StdStream(..)
+    , createProcess
+    )
 
 -- Initializes resources to communicate with the digital ocean interface,
 -- and releases these resources after the given action terminates.
@@ -103,7 +111,12 @@ newDroplet credentials args = do
               , Just (Number eventId) <- HM.lookup "event_id" d
               -> do waitForEventConfirmation credentials $
                       showScientificId eventId
-                    showDroplet credentials $ showScientificId dropletId
+                    dd <- showDroplet credentials $ showScientificId dropletId
+                    waitPing $ dropletDataIP dd
+                    -- Wait ten seconds before using the droplet othwerwise,
+                    -- mysterious ssh failures would ensue.
+                    threadDelay $ 10 * 1000000
+                    return dd
 
       _      -> throwIO $ userError $ "newDroplet error: " ++ showResponse r
 
@@ -197,3 +210,16 @@ waitForEventConfirmation credentials eventId = do
     else
       when (eventDataStatus ev /= Just "done") $
         throwIO $ userError $ "newDroplet error: " ++ show ev
+
+-- | Waits until the given host replies to pings.
+waitPing :: String -> IO ()
+waitPing host =
+    bracketOnError (openFile "/dev/null" ReadWriteMode) hClose $ \dev_null -> do
+      (_, Just sout, ~(Just _), ph) <- createProcess (proc "ping" [ host ])
+        { std_out = CreatePipe
+        , std_err = UseHandle dev_null
+        }
+      -- We assume that the host has responded when ping prints two lines.
+      _ <- hGetLine sout
+      _ <- hGetLine sout
+      terminateProcess ph
