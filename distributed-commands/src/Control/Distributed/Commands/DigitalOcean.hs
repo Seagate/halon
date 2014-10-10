@@ -70,7 +70,7 @@ doURL = "https://api.digitalocean.com/v1"
 data NewDropletArgs = NewDropletArgs
     { name        :: String
     , size_slug   :: String
-    , image_slug  :: String
+    , image_id    :: String
     , region_slug :: String
     , ssh_key_ids :: String
     }
@@ -89,7 +89,7 @@ newDroplet credentials args = do
            (doURL ++ "/droplets/new?" ++ credentialsToQueryString credentials
                   ++ "&name="        ++ name args
                   ++ "&size_slug="   ++ size_slug args
-                  ++ "&image_slug="  ++ image_slug args
+                  ++ "&image_id="    ++ image_id args
                   ++ "&region_slug=" ++ region_slug args
                   ++ "&ssh_key_ids=" ++ ssh_key_ids args
            )

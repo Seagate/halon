@@ -29,7 +29,7 @@ main = withDigitalOceanDo $ do
       (newDroplet credentials NewDropletArgs
            { name        = "test-droplet"
            , size_slug   = "512mb"
-           , image_slug  = "ubuntu-14-04-x64"
+           , image_id    = "6709658"
            , region_slug = "ams2"
            , ssh_key_ids = sshKeyIds
            }
