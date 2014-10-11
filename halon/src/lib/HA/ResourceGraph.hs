@@ -55,9 +55,13 @@ module HA.ResourceGraph
     , isConnected
     ) where
 
-import HA.Multimap ( Key, Value, StoreUpdate(..), updateStore
-                              , getKeyValuePairs
-                              )
+import HA.Multimap
+  ( Key
+  , Value
+  , StoreUpdate(..)
+  , updateStore
+  , getKeyValuePairs
+  )
 
 import Control.Distributed.Process ( ProcessId, Process )
 import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
