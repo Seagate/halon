@@ -1,8 +1,8 @@
 # Build requirements
 
 Prequisites:
- * ghc-7.8.3 -- http://www.haskell.org/ghc
- * cabal-install >= 1.20 -- http://www.haskell.org/cabal/download.html
+ * [GHC](http://www.haskell.org/ghc) >= 7.8.3
+ * [cabal-install](http://www.haskell.org/cabal/download.html) >= 1.20
  * mero (optional, only needed for mero-halon and MERO_RPC)
 
 Environment variables if using mero:
