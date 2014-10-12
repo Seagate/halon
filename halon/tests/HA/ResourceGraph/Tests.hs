@@ -11,7 +11,14 @@
 module HA.ResourceGraph.Tests ( tests ) where
 
 import Control.Distributed.Process
-  (Process, ProcessId, spawnLocal, liftIO, catch, getSelfNode, unClosure)
+  ( Process
+  , ProcessId
+  , spawnLocal
+  , liftIO
+  , catch
+  , getSelfNode
+  , unClosure
+  )
 import Control.Distributed.Process.Closure (mkStatic, remotable)
 import Control.Distributed.Process.Internal.Types (LocalNode)
 import Control.Distributed.Process.Node (newLocalNode)
