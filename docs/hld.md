@@ -88,7 +88,7 @@ high-performance computing environments.
   Environment         The device is connected to a node, which is in turn able to access the tracking station.
   Artifact            Halon
   Response            A copy machine will be constructed for the lost data.
-  Response Measure    The time between the device reporting its failure and the message being sent to begin construction of the copy machine should be drawn from a normal distribution with µ = 0.1 s and σ ≤ 0.3 s.
+  Response Measure    The time between the device reporting its failure and the message being sent to begin construction of the copy machine should be less than 0.3s for 99% of occurrences.
   ------------------- -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
   ------------------- -------------------------------------------------------------------------------------------------------------
