@@ -213,3 +213,114 @@ definitely cannot communicate with it from our machines.
 
 This idea is salvageable; we could run the test driver in the cloud too. But,
 based on these reasons I decided against this approach.
+
+
+## More test examples
+
+```Haskell
+----------------------------
+--
+-- Configuration management API test:
+--
+-- Deploy 2 node cluster with 1 tracking station node and 1 satellite.
+-- 
+-- Store a configuration file specifying that two dummy services should be
+-- started on the satellite, along with a dummy configuration parameter for
+-- each service.
+-- 
+-- With the tracking station already running, turn on satellite.
+-- 
+-- Test that 2 services are running on satellite.
+-----------------------------
+-- 
+-- Assumption: the binaries for the cloud platform are available.
+
+
+-- @withMachines@ is the only cloud provider-specific call in this test. 
+-- It provides the IP addresses of spawned machines as Strings.
+withMachines 2 $ \[m0, m1] -> do
+
+-- Takes pairs of consecutive elements to determine what to copy where.
+copyEverywhereFrom BUILD_HOST
+    [ ("dist/build/halon-node-agent/halon-node-agent", "halon-node-agent")
+    , ("dist/build/halon-station/halon-station", "halon-station")
+    , ("scripts", "scripts")
+    ]
+
+-- produce genders file and any other required files for the current cluster
+runEverywhere ("scripts/mk_config --station_nodes=" ++ m0 ++ " --sattelites=" ++ m1)
+
+-- copy the configuration specifying to add two services in a sattelite
+copyTo m0 "tests/configrationAPI/localconfiguration" "localConfiguration"
+
+-- start the node agent
+getLine_m0 <- spawnIn m0 "scripts/halon node-agent"
+Just "ready" <- getLine_m0
+
+-- start the tracking station
+runIn m0 "scripts/halon station"
+
+-- start the node agent in the satellite
+getLine_m1 <- spawnIn m1 "scripts/halon node-agent"
+
+-- test for creation of services
+-- or provide a halon-specific command-line tool to list the services on a node
+Just "spawned dummy service one" <- getLine_m1
+Just "spawned dummy service two" <- getLine_m1
+
+
+
+----------------------------
+--
+-- Configuration management API, another test:
+--
+-- Deploy 2 node cluster with 1 tracking station node and 1 satellite.
+--
+-- Store a configuration file specifying that two dummy services should be
+-- started on the satellite, along with a dummy configuration parameter for
+-- each service.
+--
+-- With cluster in steady state (all services are up), send reconfiguration
+-- request to one tracking station node.
+--
+-- Test that both services are running on satellite after reconfiguration.
+--
+----------------------------
+
+withMachines $ \[m0, m1] -> do
+
+copyEverywhereFrom BUILD_HOST
+    [ ("dist/build/halon-node-agent/halon-node-agent", "halon-node-agent")
+    , ("dist/build/halon-station/halon-station", "halon-station")
+    , ("scripts", "scripts")
+    ]
+
+-- produce genders file and any other required files for the current cluster
+runEverywhere ("scripts/mk_config --station_nodes=" ++ m0 ++ " --sattelites=" ++ m1)
+
+-- copy the configuration specifying to add two services in a sattelite
+-- with a dummy configuration parameter
+copyTo m0 "tests/configrationAPI/localconfiguration" "localConfiguration"
+
+-- start the node agent in all nodes
+getLine_ms <- spawnEverywhere "scripts/halon node-agent"
+[Just "ready", Just "ready"] <- sequence getLine_ms
+
+-- start the tracking station
+runIn m0 "scripts/halon station"
+
+-- test for creation of services in the satellite
+-- or provide a halon-specific command-line tool to list the services on a node
+Just "spawned dummy service one" <- getLine_ms !! 1
+Just "spawned dummy service two" <- getLine_ms !! 1
+
+-- Now we assume the cluster is in steady state.
+-- Reconfigure.
+runIn m1 "scripts/halon reconfigure ... ?"
+
+-- test that the services were reconfigured
+-- or provide a halon-specific command-line tool to list the services and
+-- their configuration on a node
+Just "spawned dummy service one with configuration: ..." <- getLine_ms !! 1
+Just "spawned dummy service two with configuration: ..." <- getLine_ms !! 1
+```
