@@ -137,6 +137,15 @@ cabal.sandbox.config: mk/config.mk
 	cabal install --reorder-goals --reinstall $(VENDOR_PACKAGES)
 	cabal install --only-dependencies --reorder-goals $(CABAL_FLAGS) $(PACKAGES)
 
+# Updating cabal.config should only ever be done manually, i.e. explicitly
+# through listing freeze as a goal, not implicitly as part of another rule.
+# This is why cabal.config is not listed as the target of this rule, even
+# though it is a product of the recipe.
+.PHONY: freeze
+freeze:
+	(cd mero-halon; cabal freeze --reorder-goals)
+	mv mero-halon/cabal.config cabal.config
+
 # This target will generate distributable packages based on the
 # checked-in master branch of this repository. It will generate
 # a binary RPM in ./rpmbuild/RPMS/x86_64 and a source tar in
