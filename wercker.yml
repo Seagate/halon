@@ -1,4 +1,4 @@
-# Use box with GHC 7.8.2 and Cabal 1.20.2.
+# Use box with GHC 7.8.3.
 box: amutake/haskell@0.0.6
 
 build:
