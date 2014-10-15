@@ -110,6 +110,10 @@ export USE_TCP
 export USE_RPC
 export TEST_LISTEN
 
+.PHONY: ci
+ci: cabal.config build
+	./scripts/check-copyright.sh
+
 .PHONY: build
 build: dep
 # XXX Tests tend to bind the same ports, making them mutually
