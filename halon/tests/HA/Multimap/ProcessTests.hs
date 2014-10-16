@@ -27,9 +27,15 @@ import HA.Replicator.Log ( MC_RG )
 import RemoteTables ( remoteTable )
 
 import Control.Distributed.Process
-    ( Process, spawnLocal, getSelfPid, liftIO, link, getSelfNode, catch
-    , unClosure
-    )
+  ( Process
+  , spawnLocal
+  , getSelfPid
+  , liftIO
+  , link
+  , getSelfNode
+  , catch
+  , unClosure
+  )
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
 import Control.Distributed.Process.Node ( newLocalNode, closeLocalNode )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
@@ -39,7 +45,6 @@ import Control.Exception ( SomeException )
 import Data.ByteString.Char8 ( pack )
 import System.IO.Unsafe ( unsafePerformIO )
 import Test.Framework
-
 
 testMultimap :: MC_RG Multimap -> Process ()
 testMultimap rGroup =

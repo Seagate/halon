@@ -7,12 +7,16 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+
 module HA.RecoverySupervisor.Tests ( tests ) where
 
 import HA.Network.Address ( Network, getNetworkTransport )
 import HA.Process
-import HA.RecoverySupervisor ( recoverySupervisor, RSState(..), pollingPeriod
-                             )
+import HA.RecoverySupervisor
+  ( recoverySupervisor
+  , RSState(..)
+  , pollingPeriod
+  )
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
@@ -22,9 +26,17 @@ import HA.Replicator.Log ( MC_RG )
 import RemoteTables ( remoteTable )
 
 import Control.Distributed.Process
-         ( Process, spawnLocal, getSelfPid, liftIO, catch
-         , receiveWait, receiveTimeout, ProcessId, exit, unClosure
-         )
+  ( Process
+  , spawnLocal
+  , getSelfPid
+  , liftIO
+  , catch
+  , receiveWait
+  , receiveTimeout
+  , ProcessId
+  , exit
+  , unClosure
+  )
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
 #ifndef USE_MOCK_REPLICATOR
 import Control.Distributed.Process ( spawn )
@@ -32,11 +44,19 @@ import Control.Distributed.Process.Closure ( mkClosure )
 import Control.Distributed.Static ( closureApply )
 #endif
 import Control.Distributed.Process.Internal.Types
-           ( ProcessExitException, localNodeId )
+  ( ProcessExitException
+  , localNodeId
+  )
 import Control.Distributed.Process.Node ( newLocalNode, closeLocalNode )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
-import Control.Concurrent ( MVar, newEmptyMVar, putMVar, takeMVar, threadDelay )
+import Control.Concurrent
+  ( MVar
+  , newEmptyMVar
+  , putMVar
+  , takeMVar
+  , threadDelay
+  )
 import Control.Exception ( SomeException )
 import Control.Monad ( liftM3, void, replicateM_, replicateM, forM_ )
 import Data.IORef ( newIORef, atomicModifyIORef, IORef, readIORef, writeIORef )

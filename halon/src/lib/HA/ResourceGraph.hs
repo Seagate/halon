@@ -55,9 +55,13 @@ module HA.ResourceGraph
     , isConnected
     ) where
 
-import HA.Multimap ( Key, Value, StoreUpdate(..), updateStore
-                              , getKeyValuePairs
-                              )
+import HA.Multimap
+  ( Key
+  , Value
+  , StoreUpdate(..)
+  , updateStore
+  , getKeyValuePairs
+  )
 
 import Control.Distributed.Process ( ProcessId, Process )
 import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
@@ -80,13 +84,7 @@ import Data.HashSet (HashSet)
 import qualified Data.HashSet as S
 import Data.Hashable
 import Data.Maybe
-#if MIN_VERSION_base(4,7,0)
 import Data.Typeable ( Typeable, cast )
-#else
-import Data.Typeable ( Typeable(..), cast, mkTyConApp, mkTyCon3, tyConModule
-                     , tyConPackage, typeRepTyCon, Typeable1(..)
-                     )
-#endif
 
 
 -- | A type can be declared as modeling a resource by making it an instance of
@@ -284,21 +282,7 @@ toStrict = Strict.concat . toChunks
 
 -- | An auxiliary type for hiding parameters of type constructors
 data Some f = forall a. Some (f a)
-#if MIN_VERSION_base(4,7,0)
                deriving Typeable
-#else
--- | The sole purpose of this type is to provide a typeable instance from
--- which to extract the package and the module name.
-data T = T
- deriving Typeable
-
-instance Typeable1 f => Typeable (Some f) where
-  typeOf _ = mkTyCon3 packageName moduleName "Some"
-             `mkTyConApp` [ typeOf1 (undefined :: f a) ]
-    where
-      packageName = tyConPackage $ typeRepTyCon $ typeOf T
-      moduleName = tyConModule $ typeRepTyCon $ typeOf T
-#endif
 
 -- | Encodes a Res into a 'Lazy.ByteString'.
 encodeRes :: Resource r => r -> ByteString

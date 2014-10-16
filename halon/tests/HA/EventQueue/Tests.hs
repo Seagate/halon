@@ -25,7 +25,6 @@ import RemoteTables
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Internal.Types ( nodeAddress )
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( Serializable )
 import Control.Distributed.Static (closureApply)

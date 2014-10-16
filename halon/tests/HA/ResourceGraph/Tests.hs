@@ -11,7 +11,14 @@
 module HA.ResourceGraph.Tests ( tests ) where
 
 import Control.Distributed.Process
-  (Process, ProcessId, spawnLocal, liftIO, catch, getSelfNode, unClosure)
+  ( Process
+  , ProcessId
+  , spawnLocal
+  , liftIO
+  , catch
+  , getSelfNode
+  , unClosure
+  )
 import Control.Distributed.Process.Closure (mkStatic, remotable)
 import Control.Distributed.Process.Internal.Types (LocalNode)
 import Control.Distributed.Process.Node (newLocalNode)
@@ -118,9 +125,8 @@ tryRunProcessLocal network process =
       withLocalNode network $ \node ->
         tryRunProcess node process
 
-rGroupTest ::
-    (RGroup g, Typeable g)
-    => Network -> g Multimap -> (ProcessId -> Process ()) -> IO ()
+rGroupTest :: (RGroup g, Typeable g)
+           => Network -> g Multimap -> (ProcessId -> Process ()) -> IO ()
 rGroupTest network g p =
     tryRunProcessLocal network $
       flip catch (\e -> liftIO $ print (e :: SomeException)) $ do

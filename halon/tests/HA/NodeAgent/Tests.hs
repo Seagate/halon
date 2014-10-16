@@ -6,6 +6,7 @@
 {-#  LANGUAGE CPP #-}
 {-#  LANGUAGE FlexibleContexts #-}
 {-#  LANGUAGE TemplateHaskell #-}
+
 module HA.NodeAgent.Tests ( tests ) where
 
 import HA.Service (serviceProcess)
@@ -28,9 +29,20 @@ import HA.EventQueue.Producer (expiate)
 import HA.EventQueue.Consumer (HAEvent(..),matchHAEvent)
 
 import Control.Distributed.Process
-         ( Process, spawnLocal, getSelfPid, liftIO,  catch, send, expect
-         , getSelfNode, say, ProcessId, receiveWait, NodeId, register
-         )
+  ( Process
+  , spawnLocal
+  , getSelfPid
+  , liftIO
+  , catch
+  , send
+  , expect
+  , getSelfNode
+  , say
+  , ProcessId
+  , receiveWait
+  , NodeId
+  , register
+  )
 #ifndef USE_MOCK_REPLICATOR
 import Control.Distributed.Process ( spawn )
 import Control.Distributed.Static ( closureApply )
