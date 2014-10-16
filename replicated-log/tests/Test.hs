@@ -9,7 +9,7 @@ module Test (Pass(..), tests) where
 import Test.Framework
 
 import Control.Distributed.Process.Consensus
-    ( DecreeId(..), runPropose, __remoteTable )
+    ( __remoteTable )
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import qualified Control.Distributed.Log as Log
 import Control.Distributed.Log
@@ -35,7 +35,6 @@ import System.Directory
 import System.IO
 import System.FilePath ((</>))
 import Control.Monad (forM_, replicateM, when, void)
-import Control.Applicative ((<$>))
 import Data.Typeable (Typeable)
 import Data.Binary (encode)
 
