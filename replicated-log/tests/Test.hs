@@ -27,7 +27,6 @@ import Control.Distributed.Process.Node
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler
     ( withScheduler, __remoteTable )
-import Control.Distributed.Process.Internal.Types (nodeAddress)
 import Control.Distributed.Static
 import Data.Rank1Dynamic
 import Network.Transport.TCP
@@ -104,9 +103,6 @@ remoteTables =
   State.__remoteTable $
   Control.Distributed.Process.Node.initRemoteTable
 
-proposeWrapper :: [ProcessId] -> DecreeId -> Int -> Process Bool
-proposeWrapper αs d x = (x ==) <$> runPropose (BasicPaxos.propose αs d x)
-
 data Pass = FirstPass | SecondPass
           deriving (Eq, Ord, Read, Show)
 
@@ -173,7 +169,7 @@ tests args = do
           --       State.update port' incrementCP
           --       assert . (== 2) =<< State.select sdictInt port readCP
 
-          , testSuccess "addReplica-start-new-replica" . withTmpDirectory $ setup 1 $ \h port -> do
+          , testSuccess "addReplica-start-new-replica" . withTmpDirectory $ setup 1 $ \h _ -> do
                 self <- getSelfPid
                 node1 <- liftIO $ newLocalNode transport remoteTables
                 liftIO $ runProcess node1 $ registerInterceptor $ \string -> case string of
@@ -261,7 +257,6 @@ tests args = do
 
           , testSuccess "quorum-after-remove" . withTmpDirectory $ setup 1 $ \h port -> do
                 self <- getSelfPid
-                node0 <- getSelfNode
                 node1 <- liftIO $ newLocalNode transport remoteTables
                 node2 <- liftIO $ newLocalNode transport remoteTables
 

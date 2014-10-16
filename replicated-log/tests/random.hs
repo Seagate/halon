@@ -4,6 +4,8 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 
+{-# OPTIONS_GHC -fno-warn-unused-binds #-}
+
 import Control.Distributed.Process.Consensus
 import Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import Control.Distributed.Log as Log
@@ -14,7 +16,6 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Scheduler
     ( withScheduler, schedulerIsEnabled, __remoteTable )
-import Control.Distributed.Process.Internal.Types (nodeAddress)
 import Control.Distributed.Static ( staticApply, staticClosure )
 import Network.Transport (Transport(..))
 import Network.Transport.TCP
