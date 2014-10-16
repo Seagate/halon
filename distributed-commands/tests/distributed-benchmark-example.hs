@@ -28,7 +28,7 @@ main = withDigitalOceanDo $ do
       ((forM [1..3] $ \i -> async $ newDroplet credentials NewDropletArgs
             { name        = "test-droplet-1" ++ show i
             , size_slug   = "512mb"
-            , image_slug  = "ubuntu-10-04-x64"
+            , image_id    = "6709658"
             , region_slug = "ams2"
             , ssh_key_ids = sshKeyIds
             }
