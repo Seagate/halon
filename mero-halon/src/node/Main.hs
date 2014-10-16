@@ -7,24 +7,23 @@ module Main (main) where
 
 import Flags
 import HA.NodeAgent (NodeAgentConf(..), nodeAgent, serviceProcess)
+import HA.Network.Address
+import HA.Network.RemoteTables (haRemoteTable)
+import HA.NodeAgent.Lookup (advertiseNodeAgent)
 import HA.Process
 import HA.Service (sDict)
+import Mero.RemoteTables (meroRemoteTable)
+
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure (staticDecode)
-import Control.Distributed.Process.Node (newLocalNode)
+import Control.Distributed.Process.Node (initRemoteTable, newLocalNode)
 import Control.Distributed.Static (closureApply)
+
+import Control.Applicative ((<$>))
 import Data.Binary (encode)
 import Data.Defaultable
 import System.Environment
-import Control.Applicative ((<$>))
-import HA.Network.Address
-import HA.NodeAgent.Lookup (advertiseNodeAgent)
-import HA.Network.RemoteTables (haRemoteTable)
-import Mero.RemoteTables (meroRemoteTable)
-import Control.Distributed.Process.Node	(initRemoteTable)
-
 import System.IO ( hFlush, stdout )
-
 
 buildType :: String
 #ifdef USE_RPC
