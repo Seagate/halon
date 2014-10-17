@@ -32,6 +32,10 @@ import qualified HA.Network.IdentifyTCP as Identify
 #endif
 import HA.NodeAgent
 import HA.NodeAgent.Lookup ( advertiseNodeAgent )
+import HA.Service
+  ( ServiceFailed(..)
+  , encodeP
+  )
 import qualified HA.Services.Dummy as Services ( dummy )
 import qualified HA.Services.Mero as Mero ( m0d )
 import qualified Mero.Messages as Mero ( StripingError(..) )
@@ -89,7 +93,7 @@ runRC (eq, na, args) rGroup = do
    liftIO $ threadDelay 1000000
    -- Encode the message the way 'expiate' does.
    send rc $ HAEvent (EventId na 0) (I.messageToPayload $ I.createMessage $
-       ServiceFailed (Node na) Services.dummy) []
+       encodeP $ ServiceFailed (Node na) Services.dummy) []
    send rc $ HAEvent (EventId na 1) (I.messageToPayload $ I.createMessage $
        Mero.StripingError (Node na)) []
    -- XXX remove this threadDelay. It's the least hassle solution for now, until
