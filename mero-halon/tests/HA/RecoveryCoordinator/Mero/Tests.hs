@@ -50,7 +50,6 @@ import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ( first, second )
 import Control.Concurrent.MVar
-import Control.Exception ( SomeException )
 import Control.Monad (forM_)
 import Control.Monad.Fix
 import Data.ByteString.Char8 as B8 (ByteString)
@@ -159,4 +158,3 @@ tests addr network =
   where
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
-    catch'em = flip catch (\e -> liftIO $ print (e :: SomeException))
