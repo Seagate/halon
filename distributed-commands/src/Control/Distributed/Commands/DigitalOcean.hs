@@ -14,7 +14,7 @@ module Control.Distributed.Commands.DigitalOcean
     , newDroplet
     , destroyDroplet
     , showDroplet
-    , Credentials
+    , Credentials(..)
     , getCredentialsFromEnv
     , DropletData(..)
     , NewDropletArgs(..)
