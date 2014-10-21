@@ -42,8 +42,8 @@ main = withDigitalOceanDo $ do
           scp (LocalPath "dist/build/the-benchmark/the-benchmark")
               (RemotePath (Just "root") (dropletDataIP d) "the-benchmark")
           -- Launch the slaves.
-          readOutput <- runCommand "root" (dropletDataIP d)
-                                          "~/the-benchmark --slave 2>&1"
+          readOutput <- runCommand (Just "root") (dropletDataIP d)
+                                                 "~/the-benchmark --slave 2>&1"
           -- Wait until the slaves are ready
           mFirstLine <- readOutput
           case mFirstLine of
@@ -52,8 +52,8 @@ main = withDigitalOceanDo $ do
             _            -> error "something bad happened"
 
         -- Kick the benchmark.
-        readOutput <- runCommand "root" (dropletDataIP (head ds))
-                                       "~/the-benchmark --start 2>&1"
+        readOutput <- runCommand (Just "root") (dropletDataIP (head ds))
+                                               "~/the-benchmark --start 2>&1"
         -- Collect the output.
         void $ repeatWhileM isJust $ do
           mLine <- readOutput

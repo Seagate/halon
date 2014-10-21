@@ -60,12 +60,12 @@ scp src dst =
 --
 -- > runCommand user host "(... cmd ...) 2>&1" >>= dropWhileM isJust
 --
-runCommand :: String -> String -> String -> IO (IO (Maybe String))
-runCommand user host cmd = do
+runCommand :: Maybe String -> String -> String -> IO (IO (Maybe String))
+runCommand muser host cmd = do
     -- Connect to the remote host.
     withFile "/dev/null" ReadWriteMode $ \dev_null -> do
       (_, Just sout, ~(Just _), _) <- createProcess (proc "ssh"
-        [ user ++ "@" ++ host
+        [ maybe "" (++ "@") muser ++ host
         , "-o", "UserKnownHostsFile=/dev/null"
         , "-o", "StrictHostKeyChecking=no"
         , "--", cmd ])

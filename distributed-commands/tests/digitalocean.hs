@@ -40,7 +40,7 @@ main = withDigitalOceanDo $ do
         scp (LocalPath "tests/digitalocean.hs")
             (RemotePath (Just "root") (dropletDataIP d) "digitalocean.hs")
         putStrLn "scp complete"
-        rio <- runCommand "root" (dropletDataIP d)
+        rio <- runCommand (Just "root") (dropletDataIP d)
                           "(echo h; echo g 1>&2; echo i; ls) 2>&1"
         putStrLn "runCommand complete"
         rio >>= test "h" (Just "h" ==)
