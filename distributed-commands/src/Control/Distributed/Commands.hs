@@ -1,9 +1,12 @@
+{-# LANGUAGE LambdaCase #-}
 module Control.Distributed.Commands where
 
-import Control.Exception (throwIO)
+import Control.Concurrent (forkIO)
+import Control.Exception (throwIO, evaluate)
+import Control.Monad (void)
+import Data.IORef (atomicModifyIORef', newIORef)
 import System.Exit (ExitCode(..))
-import System.IO (hGetLine, IOMode(..), withFile)
-import System.IO.Error (catchIOError, isEOFError)
+import System.IO (hGetContents, IOMode(..), withFile)
 import System.Process
     ( StdStream(..)
     , proc
@@ -72,7 +75,9 @@ runCommand muser host cmd = do
         { std_out = CreatePipe
         , std_err = UseHandle dev_null
         }
-      return $ catchIOError (fmap Just $ hGetLine sout)
-                            (\e -> if isEOFError e then return Nothing
-                                     else ioError e
-                            )
+      out <- hGetContents sout
+      _ <- forkIO $ void $ evaluate (length out)
+      r <- newIORef (lines out)
+      return $ atomicModifyIORef' r $ \case
+                 []     -> ([], Nothing)
+                 x : xs -> (xs, Just x )
