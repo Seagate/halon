@@ -20,6 +20,8 @@ import Control.Distributed.Process.Closure
   , mkStatic
   , mkStaticClosure
   )
+import Control.Distributed.Static
+  ( staticApply )
 import System.Process
 import Control.Distributed.Process
 import System.IO
@@ -47,7 +49,8 @@ remotableDecl [ [d|
     m0d :: Service ()
     m0d = service
             emptySDict
-            $(mkStatic 'emptyConfigDict)
+            ($(mkStatic 'someConfigDict)
+                `staticApply` $(mkStatic 'emptyConfigDict))
             $(mkStatic 'emptySDict) "m0d" $(mkStaticClosure 'm0dProcess)
 
     m0dProcess :: () -> Process ()

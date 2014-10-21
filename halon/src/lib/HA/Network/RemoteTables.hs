@@ -5,6 +5,7 @@
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 module HA.Network.RemoteTables (haRemoteTable) where
 
+import HA.ResourceGraph ( __remoteTable )
 import HA.Resources ( __remoteTable )
 import HA.NodeAgent ( __remoteTable, __remoteTableDecl )
 import HA.Services.Dummy ( __remoteTableDecl )
@@ -27,6 +28,7 @@ import Control.Distributed.Process.Consensus.BasicPaxos ( __remoteTable )
 -- collect their remote tables here.
 haRemoteTable :: RemoteTable -> RemoteTable
 haRemoteTable next =
+   HA.ResourceGraph.__remoteTable $
    HA.Resources.__remoteTable $
    HA.NodeAgent.__remoteTable $
    HA.NodeAgent.__remoteTableDecl $

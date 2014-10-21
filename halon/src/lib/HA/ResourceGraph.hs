@@ -17,26 +17,23 @@
 -- is uniquely characterized by the resources it connects and the relation it
 -- is an element of.
 
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module HA.ResourceGraph
     ( -- * Types
       Resource(..)
     , Relation(..)
-    , ResourceDict(..)
-    , RelationDict(..)
-    , mkResourceDict
-    , mkRelationDict
-    , Some(..)
     , Graph
     , Edge(..)
+    , Dict(..)
     -- * Operations
     , newResource
     , insertEdge
@@ -53,6 +50,7 @@ module HA.ResourceGraph
     , edgesFromSrc
     , connectedTo
     , isConnected
+    , __remoteTable
     ) where
 
 import HA.Multimap
@@ -66,7 +64,14 @@ import HA.Multimap
 import Control.Distributed.Process ( ProcessId, Process )
 import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
 import Control.Distributed.Process.Serializable ( Serializable )
-import Control.Distributed.Static ( Static, unstatic, RemoteTable )
+import Control.Distributed.Static
+  ( RemoteTable
+  , Static
+  , unstatic
+  , staticApply
+  )
+import Control.Distributed.Process.Closure
+import Data.Constraint ( Dict(..) )
 
 import Prelude hiding (null)
 import Control.Arrow ( (***) )
@@ -90,31 +95,17 @@ import Data.Typeable ( Typeable, cast )
 -- | A type can be declared as modeling a resource by making it an instance of
 -- this class.
 class (Eq a, Hashable a, Serializable a) => Resource a where
-  resourceDict :: a -> Static (Some ResourceDict)
+  resourceDict :: Static (Dict (Resource a))
 
--- | Hack to access methods of 'Resource' instances from 'Static' values.
-data ResourceDict a where
-  ResourceDict :: Resource a => ResourceDict a
- deriving Typeable
-
--- | Auxiliary function to implement 'relationDict'
-mkResourceDict :: forall r . Resource r => r -> Some ResourceDict
-mkResourceDict _ = Some (ResourceDict :: ResourceDict r)
+deriving instance Typeable Resource
 
 -- | A relation on resources specifies what relationships can exist between
 -- any two given types of resources. Two resources of type @a@, @b@, cannot be
 -- related through @r@ if an @Relation r a b@ instance does not exist.
 class (Hashable r, Serializable r, Resource a, Resource b) => Relation r a b where
-  relationDict :: (r,a,b) -> Static (Some RelationDict)
+  relationDict :: Static (Dict (Relation r a b))
 
--- | Hack to access methods of 'Relation' instances from 'Static' values.
-data RelationDict r where
-  RelationDict :: Relation r a b => RelationDict (r,a,b)
- deriving Typeable
-
--- | Auxiliary function to implement 'relationDict'
-mkRelationDict :: forall r x y . Relation r x y => (r,x,y) -> Some RelationDict
-mkRelationDict _ = Some (RelationDict :: RelationDict (r,x,y))
+deriving instance Typeable Relation
 
 -- | An internal wrapper for resources to have one universal type of resources.
 data Res = forall a. Resource a => Res !a
@@ -146,15 +137,33 @@ instance Eq Rel where
           x1 == x2' && y1 == y2'
         | otherwise = error "RHS and LHS relations don't match."
 
+-- XXX Specialized existential datatypes required because 'remotable' does not
+-- yet support higher kinded type variables.
+
+data SomeResourceDict = forall a. SomeResourceDict (Dict (Resource a))
+    deriving Typeable
+data SomeRelationDict = forall r a b. SomeRelationDict (Dict (Relation r a b))
+    deriving Typeable
+
+-- XXX Wrapper functions because 'remotable' doesn't like constructors names.
+
+someResourceDict :: Dict (Resource a) -> SomeResourceDict
+someResourceDict = SomeResourceDict
+
+someRelationDict :: Dict (Relation r a b) -> SomeRelationDict
+someRelationDict = SomeRelationDict
+
+remotable ['someResourceDict, 'someRelationDict]
+
 -- | The graph
-data Graph = Graph { grMMId :: ProcessId  -- ^ Pid of the multimap which
-                                          -- replicates the graph
-                   , grChangeLog :: [StoreUpdate]
-                                    -- ^ Changes in the graph with respect to
-                                    -- the version stored in the multimap
-                   , grGraph :: HashMap Res (HashSet Rel)
-                                    -- ^ The graph
-                   }
+data Graph = Graph
+  { -- | Pid of the multimap which replicates the graph.
+    grMMId :: ProcessId
+    -- | Changes in the graph with respect to the version stored in the multimap.
+  , grChangeLog :: [StoreUpdate]
+    -- | The graph.
+  , grGraph :: HashMap Res (HashSet Rel)
+  } deriving (Typeable)
 
 -- | Edges between resources. Edge types are called relations. An edge is an
 -- element of some relation. The order of the fields matches that of
@@ -185,7 +194,7 @@ fromEdge Edge{..} = Rel edgeRelation edgeSrc edgeDst
 -- change and lives forever.
 newResource :: Resource a => a -> Graph -> Graph
 newResource x g =
-    g { grChangeLog = InsertMany [ (encodeRes x,[]) ] : grChangeLog g
+    g { grChangeLog = InsertMany [ (encodeRes (Res x),[]) ] : grChangeLog g
       , grGraph = M.insertWith combineRes (Res x) S.empty $ grGraph g
       }
   where
@@ -199,7 +208,7 @@ insertEdge Edge{..} = connect edgeSrc edgeRelation edgeDst
 deleteEdge :: Relation r a b => Edge a r b -> Graph -> Graph
 deleteEdge e@Edge{..} g =
     g { grChangeLog =
-            DeleteValues [ (encodeRes edgeSrc, [ encodeRel $ fromEdge e ]) ]
+            DeleteValues [ (encodeRes (Res edgeSrc), [ encodeRel $ fromEdge e ]) ]
             : grChangeLog g
       , grGraph = M.adjust (S.delete $ fromEdge e) (Res edgeSrc) $ grGraph g
       }
@@ -208,7 +217,7 @@ deleteEdge e@Edge{..} g =
 connect :: Relation r a b => a -> r -> b -> Graph -> Graph
 connect x r y g =
    g { grChangeLog =
-         InsertMany [ (encodeRes x,[ encodeRel $ Rel r x y ])] : grChangeLog g
+         InsertMany [ (encodeRes (Res x),[ encodeRel $ Rel r x y ])] : grChangeLog g
      , grGraph =
          M.insertWith S.union (Res x) (S.singleton $ Rel r x y) $ grGraph g
      }
@@ -216,7 +225,7 @@ connect x r y g =
 -- | Removes a relation.
 disconnect :: Relation r a b => a -> r -> b -> Graph -> Graph
 disconnect x r y g =
-    g { grChangeLog = DeleteValues [ (encodeRes x, [ encodeRel $ Rel r x y ]) ]
+    g { grChangeLog = DeleteValues [ (encodeRes (Res x), [ encodeRel $ Rel r x y ]) ]
                       : grChangeLog g
       , grGraph = M.adjust (S.delete $ Rel r x y) (Res x) $ grGraph g
       }
@@ -280,36 +289,35 @@ fromStrict = fromChunks . (:[])
 toStrict :: Lazy.ByteString -> ByteString
 toStrict = Strict.concat . toChunks
 
--- | An auxiliary type for hiding parameters of type constructors
-data Some f = forall a. Some (f a)
-               deriving Typeable
-
 -- | Encodes a Res into a 'Lazy.ByteString'.
-encodeRes :: Resource r => r -> ByteString
-encodeRes r = toStrict $ encode (resourceDict r) `append` encode r
+encodeRes :: Res -> ByteString
+encodeRes (Res (r :: r)) =
+    toStrict $ encode ($(mkStatic 'someResourceDict) `staticApply`
+                       (resourceDict :: Static (Dict (Resource r)))) `append`
+    encode r
 
 -- | Decodes a Res from a 'Lazy.ByteString'.
 decodeRes :: RemoteTable -> ByteString -> Res
 decodeRes rt bs =
     case runGetOrFail get $ fromStrict bs of
       Right (rest,_,d) -> case unstatic rt d of
-        Right (Some (ResourceDict :: ResourceDict s)) -> Res (decode rest :: s)
+        Right (SomeResourceDict (Dict :: Dict (Resource s))) -> Res (decode rest :: s)
         Left err -> error $ "decodeRes: " ++ err
       Left (_,_,err) -> error $ "decodeRes: " ++ err
 
 -- | Encodes a Rel into a 'Lazy.ByteString'.
 encodeRel :: Rel -> ByteString
-encodeRel (Rel r x y) = toStrict $ encode (relationDict (r,x,y)) `append` encode (r,x,y)
+encodeRel (Rel (r :: r) (x :: a) (y :: b)) =
+    toStrict $ encode ($(mkStatic 'someRelationDict) `staticApply`
+                       (relationDict :: Static (Dict (Relation r a b)))) `append`
+    encode (r, x, y)
 
 -- | Decodes a Rel from a 'Lazy.ByteString'.
 decodeRel :: RemoteTable -> ByteString -> Rel
 decodeRel rt bs =
     case runGetOrFail get $ fromStrict bs of
       Right (rest,_,d) -> case unstatic rt d of
-        Right (Some rd@RelationDict) ->
-            let (r,x,y) = extractrxy rd $ decode rest
-                extractrxy :: RelationDict a -> a -> a
-                extractrxy _ = id
-             in Rel r x y
+        Right (SomeRelationDict (Dict :: Dict (Relation r a b))) ->
+          let (r, x, y) = decode rest :: (r, a, b) in Rel r x y
         Left err -> error $ "decodeRel: " ++ err
       Left (_,_,err) -> error $ "decodeRel: " ++ err

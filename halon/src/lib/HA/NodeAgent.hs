@@ -16,9 +16,9 @@ module HA.NodeAgent
       ( module HA.NodeAgent.Messages
       , NodeAgentConf(..)
       , Service(..)
-      , service
       , naConfigDict
       , naConfigDict__static
+      , service
       , nodeAgent
       , updateEQAddresses
       , updateEQNodes
@@ -97,28 +97,26 @@ configSchema = let
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
 
+naConfigDict :: Dict (Configuration NodeAgentConf)
+naConfigDict = Dict
+
 naSerializableDict :: SerializableDict NodeAgentConf
 naSerializableDict = SerializableDict
 
-naConfigDict :: Some ConfigDict
-naConfigDict = mkConfigDict (undefined :: NodeAgentConf)
-
 --TODO Can we auto-gen this whole section?
-resourceDictServiceNA,
-  resourceDictConfigItemNA :: Some ResourceDict
-resourceDictServiceNA = mkResourceDict (undefined :: Service NodeAgentConf)
-resourceDictConfigItemNA =
-  mkResourceDict (undefined :: NodeAgentConf)
+resourceDictServiceNA :: Dict (Resource (Service NodeAgentConf))
+resourceDictConfigItemNA :: Dict (Resource NodeAgentConf)
+resourceDictServiceNA = Dict
+resourceDictConfigItemNA = Dict
 
-relationDictHasNodeServiceNA,
-  relationDictWantsServiceNAConfigItemNA,
-  relationDictHasServiceNAConfigItemNA :: Some RelationDict
-relationDictHasNodeServiceNA = mkRelationDict (
-  undefined :: (Runs, Node, Service NodeAgentConf))
-relationDictWantsServiceNAConfigItemNA = mkRelationDict (
-  undefined :: (WantsConf, Service NodeAgentConf, NodeAgentConf))
-relationDictHasServiceNAConfigItemNA = mkRelationDict (
-  undefined :: (HasConf, Service NodeAgentConf, NodeAgentConf))
+relationDictHasNodeServiceNA :: Dict (Relation Runs Node (Service NodeAgentConf))
+relationDictWantsServiceNAConfigItemNA ::
+  Dict (Relation WantsConf (Service NodeAgentConf) NodeAgentConf)
+relationDictHasServiceNAConfigItemNA ::
+  Dict (Relation HasConf (Service NodeAgentConf) NodeAgentConf)
+relationDictHasNodeServiceNA = Dict
+relationDictWantsServiceNAConfigItemNA = Dict
+relationDictHasServiceNAConfigItemNA = Dict
 
 remotable
   [ 'naConfigDict
@@ -131,19 +129,19 @@ remotable
   ]
 
 instance Resource (Service NodeAgentConf) where
-  resourceDict _ = $(mkStatic 'resourceDictServiceNA)
+  resourceDict = $(mkStatic 'resourceDictServiceNA)
 
 instance Resource NodeAgentConf where
-  resourceDict _ = $(mkStatic 'resourceDictConfigItemNA)
+  resourceDict = $(mkStatic 'resourceDictConfigItemNA)
 
 instance Relation Runs Node (Service NodeAgentConf) where
-  relationDict _ = $(mkStatic 'relationDictHasNodeServiceNA)
+  relationDict = $(mkStatic 'relationDictHasNodeServiceNA)
 
 instance Relation HasConf (Service NodeAgentConf) NodeAgentConf where
-  relationDict _ = $(mkStatic 'relationDictHasServiceNAConfigItemNA)
+  relationDict = $(mkStatic 'relationDictHasServiceNAConfigItemNA)
 
 instance Relation WantsConf (Service NodeAgentConf) NodeAgentConf where
-  relationDict _ = $(mkStatic 'relationDictWantsServiceNAConfigItemNA)
+  relationDict = $(mkStatic 'relationDictWantsServiceNAConfigItemNA)
 
 --------------------------------------------------------------------------------
 -- Other stuff                                                                --
@@ -261,7 +259,7 @@ remotableDecl [ [d|
     -- >   |] ]
     --
     service :: SerializableDict a
-            -> Static (Some ConfigDict)
+            -> Static (SomeConfigDict)
             -> Static (SerializableDict a)
             -> String -- ^ Service name
             -> Closure (a -> Process ())
@@ -283,7 +281,8 @@ remotableDecl [ [d|
     nodeAgent :: Service NodeAgentConf
     nodeAgent = service
                   nodeAgentConfSDict
-                  $(mkStatic 'naConfigDict)
+                  ($(mkStatic 'someConfigDict)
+                    `staticApply` $(mkStatic 'naConfigDict))
                   $(mkStatic 'nodeAgentConfSDict)
                   nodeAgentLabel
                   $(mkStaticClosure 'nodeAgentProcess)

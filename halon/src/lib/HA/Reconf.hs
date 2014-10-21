@@ -14,10 +14,11 @@ module HA.Reconf (
 
 import HA.Service
 import HA.Resources
-import HA.ResourceGraph (Some)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure (mkStatic)
+import Control.Distributed.Static
+  ( staticApply )
 
 import Data.Binary (Binary)
 import Data.Monoid
@@ -57,13 +58,16 @@ reconf ((GlobalOpts nac), fltr, rc) = do
   send rc $ EpochRequest self
   _ <- receiveTimeout 5000000 [
       match $ \(EpochResponse epoch) ->
-              spawnLocal $ reconfService nac $(mkStatic 'naConfigDict) fltr epoch rc
+              spawnLocal $ reconfService nac
+                          ($(mkStatic 'someConfigDict)
+                            `staticApply` $(mkStatic 'naConfigDict))
+                          fltr epoch rc
     ]
   return ()
 
 reconfService :: (Generic a, Typeable a, Configuration a)
               => a
-              -> Static (Some ConfigDict)
+              -> Static (SomeConfigDict)
               -> ConfigurationFilter
               -> EpochId
               -> ProcessId

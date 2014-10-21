@@ -12,9 +12,10 @@ module HA.Resources.Mero where
 
 import HA.Resources
 import HA.ResourceGraph
-    ( Resource(..), Relation(..)
-    , Some, ResourceDict, mkResourceDict, RelationDict, mkRelationDict )
-
+  ( Resource(..)
+  , Relation(..)
+  , Dict(..)
+  )
 import Control.Distributed.Process.Closure
 
 import Data.Hashable (Hashable)
@@ -99,35 +100,31 @@ instance Hashable Is
 
 -- XXX Only nodes and services have runtime information attached to them, for now.
 
-resdict_ConfObject, resdict_ConfObjectState :: Some ResourceDict
-resdict_ConfObject = mkResourceDict (undefined :: ConfObject)
-resdict_ConfObjectState = mkResourceDict (undefined :: ConfObjectState)
+resdict_ConfObject :: Dict (Resource ConfObject)
+resdict_ConfObjectState :: Dict (Resource ConfObjectState)
 
-reldict_At_ConfObject_Node :: Some RelationDict
-reldict_At_ConfObject_Node    = mkRelationDict (undefined :: (At, ConfObject, Node))
---reldict_At_ConfObject_Service = mkRelationDict (undefined :: (At, ConfObject, Service))
+resdict_ConfObject = Dict
+resdict_ConfObjectState = Dict
 
-reldict_Is_ConfObject_ConfObjectState :: Some RelationDict
-reldict_Is_ConfObject_ConfObjectState =
-    mkRelationDict (undefined :: (Is, ConfObject, ConfObjectState))
+reldict_At_ConfObject_Node :: Dict (Relation At ConfObject Node)
+reldict_Is_ConfObject_ConfObjectState :: Dict (Relation Is ConfObject ConfObjectState)
+
+reldict_At_ConfObject_Node = Dict
+reldict_Is_ConfObject_ConfObjectState = Dict
 
 remotable [ 'resdict_ConfObject
           , 'resdict_ConfObjectState
           , 'reldict_At_ConfObject_Node
-          --, 'reldict_At_ConfObject_Service
           , 'reldict_Is_ConfObject_ConfObjectState ]
 
 instance Resource ConfObject where
-    resourceDict _ = $(mkStatic 'resdict_ConfObject)
+    resourceDict = $(mkStatic 'resdict_ConfObject)
 
 instance Resource ConfObjectState where
-    resourceDict _ = $(mkStatic 'resdict_ConfObjectState)
+    resourceDict = $(mkStatic 'resdict_ConfObjectState)
 
 instance Relation At ConfObject Node where
-    relationDict _ = $(mkStatic 'reldict_At_ConfObject_Node)
-
---instance Relation At ConfObject Service where
---    relationDict _ = $(mkStatic 'reldict_At_ConfObject_Service)
+    relationDict = $(mkStatic 'reldict_At_ConfObject_Node)
 
 instance Relation Is ConfObject ConfObjectState where
-    relationDict _ = $(mkStatic 'reldict_Is_ConfObject_ConfObjectState)
+    relationDict = $(mkStatic 'reldict_Is_ConfObject_ConfObjectState)

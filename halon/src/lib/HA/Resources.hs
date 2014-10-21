@@ -84,17 +84,19 @@ instance Hashable Runs
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
 
-resourceDictCluster,
-  resourceDictNode,
-  resourceDictEpoch :: Some ResourceDict
-resourceDictCluster = mkResourceDict (undefined :: Cluster)
-resourceDictNode    = mkResourceDict (undefined :: Node)
-resourceDictEpoch   = mkResourceDict (undefined :: Epoch ByteString)
+resourceDictCluster :: Dict (Resource Cluster)
+resourceDictNode :: Dict (Resource Node)
+resourceDictEpoch :: Dict (Resource (Epoch ByteString))
 
-relationDictHasClusterNode,
-  relationDictHasClusterEpoch :: Some RelationDict
-relationDictHasClusterNode  = mkRelationDict (undefined :: (Has, Cluster, Node))
-relationDictHasClusterEpoch = mkRelationDict (undefined :: (Has, Cluster, Epoch ByteString))
+resourceDictCluster = Dict
+resourceDictNode = Dict
+resourceDictEpoch = Dict
+
+relationDictHasClusterNode :: Dict (Relation Has Cluster Node)
+relationDictHasClusterEpoch :: Dict (Relation Has Cluster (Epoch ByteString))
+
+relationDictHasClusterNode = Dict
+relationDictHasClusterEpoch = Dict
 
 remotable
   [ 'resourceDictCluster
@@ -105,19 +107,19 @@ remotable
   ]
 
 instance Resource Cluster where
-  resourceDict _ = $(mkStatic 'resourceDictCluster)
+  resourceDict = $(mkStatic 'resourceDictCluster)
 
 instance Resource Node where
-  resourceDict _ = $(mkStatic 'resourceDictNode)
+  resourceDict = $(mkStatic 'resourceDictNode)
 
 instance Resource (Epoch ByteString) where
-  resourceDict _ = $(mkStatic 'resourceDictEpoch)
+  resourceDict = $(mkStatic 'resourceDictEpoch)
 
 instance Relation Has Cluster Node where
-  relationDict _ = $(mkStatic 'relationDictHasClusterNode)
+  relationDict = $(mkStatic 'relationDictHasClusterNode)
 
 instance Relation Has Cluster (Epoch ByteString) where
-  relationDict _ = $(mkStatic 'relationDictHasClusterEpoch)
+  relationDict = $(mkStatic 'relationDictHasClusterEpoch)
 
 --------------------------------------------------------------------------------
 -- Epoch messages                                                             --

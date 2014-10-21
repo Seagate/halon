@@ -19,6 +19,8 @@ import HA.NodeAgent.Lookup (nodeAgentLabel)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
+import Control.Distributed.Static
+  ( staticApply )
 
 import qualified System.Process as System
 import System.Exit (ExitCode(..))
@@ -33,7 +35,8 @@ remotableDecl [ [d|
     ocf :: FilePath -> Service ()
     ocf script = service
                   emptySDict
-                  $(mkStatic 'emptyConfigDict)
+                  ($(mkStatic 'someConfigDict)
+                    `staticApply` $(mkStatic 'emptyConfigDict))
                   $(mkStatic 'emptySDict)
                   script $
                   $(mkClosure 'ocfProcess) script

@@ -17,6 +17,8 @@ import HA.NodeAgent
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
+import Control.Distributed.Static
+  ( staticApply )
 
 import Control.Concurrent (newEmptyMVar, takeMVar)
 
@@ -28,7 +30,8 @@ remotableDecl [ [d|
     dummy :: Service ()
     dummy = service
                 emptySDict
-                $(mkStatic 'emptyConfigDict)
+                ($(mkStatic 'someConfigDict)
+                    `staticApply` $(mkStatic 'emptyConfigDict))
                 $(mkStatic 'emptySDict)
                 "dummy"
                 $(mkStaticClosure 'dummyProcess)

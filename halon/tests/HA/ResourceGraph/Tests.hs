@@ -28,6 +28,7 @@ import Control.Exception (SomeException, bracket)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.List (sort, (\\))
+import Data.Proxy (Proxy(..))
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
@@ -42,7 +43,7 @@ import HA.Replicator.Mock (MC_RG)
 #else
 import HA.Replicator.Log (MC_RG)
 #endif
-import HA.ResourceGraph
+import HA.ResourceGraph hiding (__remoteTable)
 
 import RemoteTables (remoteTable)
 import Test.Framework
@@ -75,13 +76,17 @@ data HasB = HasB
 instance Hashable HasB
 instance Binary HasB
 
-resourceDictNodeA, resourceDictNodeB :: Some ResourceDict
-resourceDictNodeA = mkResourceDict (undefined :: NodeA)
-resourceDictNodeB = mkResourceDict (undefined :: NodeB)
+resourceDictNodeA :: Dict (Resource NodeA)
+resourceDictNodeB :: Dict (Resource NodeB)
 
-relationDictHasBNodeANodeB, relationDictHasANodeBNodeA :: Some RelationDict
-relationDictHasBNodeANodeB = mkRelationDict (undefined :: (HasB, NodeA, NodeB))
-relationDictHasANodeBNodeA = mkRelationDict (undefined :: (HasA, NodeB, NodeA))
+resourceDictNodeA = Dict
+resourceDictNodeB = Dict
+
+relationDictHasBNodeANodeB :: Dict (Relation HasB NodeA NodeB)
+relationDictHasANodeBNodeA :: Dict (Relation HasA NodeB NodeA)
+
+relationDictHasBNodeANodeB = Dict
+relationDictHasANodeBNodeA = Dict
 
 mmSDict :: SerializableDict Multimap
 mmSDict = SerializableDict
@@ -95,14 +100,14 @@ remotable
   ]
 
 instance Resource NodeA where
-  resourceDict _ = $(mkStatic 'resourceDictNodeA)
+  resourceDict = $(mkStatic 'resourceDictNodeA)
 instance Resource NodeB where
-  resourceDict _ = $(mkStatic 'resourceDictNodeB)
+  resourceDict = $(mkStatic 'resourceDictNodeB)
 
 instance Relation HasB NodeA NodeB where
-  relationDict _ = $(mkStatic 'relationDictHasBNodeANodeB)
+  relationDict = $(mkStatic 'relationDictHasBNodeANodeB)
 instance Relation HasA NodeB NodeA where
-  relationDict _ = $(mkStatic 'relationDictHasANodeBNodeA)
+  relationDict = $(mkStatic 'relationDictHasANodeBNodeA)
 
 --------------------------------------------------------------------------------
 -- Test helpers                                                               --

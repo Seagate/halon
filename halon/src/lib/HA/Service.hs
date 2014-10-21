@@ -20,21 +20,22 @@ module HA.Service
   (
     -- * Types
     Configuration
-  , ConfigDict(..)
   , Service(..)
   , Runs(..)
   , HasConf(..)
   , WantsConf(..)
   , ConfigRole(..)
   , ServiceName
+  , SomeConfigDict(..)
     -- * Functions
   , schema
   , sDict
-  , mkConfigDict
   , readConfig
   , writeConfig
   , disconnectConfig
   , updateConfig
+  , someConfigDict
+  , someConfigDict__static
    -- * Messages
   , ProcessEncode
   , encodeP
@@ -177,15 +178,14 @@ class
                           connect svc HasConf new $ rg
         _ -> rg
 
--- | Reified evidence of a Configuration
-data ConfigDict a where
-    ConfigDict :: Configuration a => ConfigDict a
-  deriving Typeable
+deriving instance Typeable Configuration
 
-mkConfigDict :: forall a. Configuration a
-             => a
-             -> Some ConfigDict
-mkConfigDict _ = Some (ConfigDict :: ConfigDict a)
+-- | Reified evidence of a Configuration
+data SomeConfigDict = forall a. SomeConfigDict (Dict (Configuration a))
+  deriving (Typeable)
+
+someConfigDict :: Dict (Configuration a) -> SomeConfigDict
+someConfigDict = SomeConfigDict
 
 --------------------------------------------------------------------------------
 -- Resources and Relations                                                    --
@@ -211,7 +211,7 @@ type ServiceName = String
 data Service a = Service
     { serviceName    :: ServiceName           -- ^ Name of service.
     , serviceProcess :: Closure (a -> Process ())  -- ^ Process implementing service.
-    , configDict :: Static (Some ConfigDict)
+    , configDict :: Static (SomeConfigDict)
     }
   deriving (Typeable, Generic)
 
@@ -228,53 +228,50 @@ instance Hashable (Service a) where
 
 ---- Empty services                                                         ----
 
-emptyConfigDict :: Some ConfigDict
-emptyConfigDict = mkConfigDict (undefined :: ())
+emptyConfigDict :: Dict (Configuration ())
+emptyConfigDict = Dict
 
 emptySDict :: SerializableDict ()
 emptySDict = SerializableDict
 
 --TODO Can we auto-gen this whole section?
-resourceDictServiceEmpty,
-  resourceDictConfigItemEmpty :: Some ResourceDict
-resourceDictServiceEmpty = mkResourceDict (undefined :: Service ())
-resourceDictConfigItemEmpty =
-  mkResourceDict (undefined :: ())
+resourceDictServiceEmpty :: Dict (Resource (Service ()))
+resourceDictConfigItemEmpty :: Dict (Resource ())
+resourceDictServiceEmpty = Dict
+resourceDictConfigItemEmpty = Dict
 
-relationDictHasNodeServiceEmpty,
-  relationDictWantsServiceEmptyConfigItemEmpty,
-  relationDictHasServiceEmptyConfigItemEmpty :: Some RelationDict
-relationDictHasNodeServiceEmpty = mkRelationDict (
-  undefined :: (Runs, Node, Service ()))
-relationDictWantsServiceEmptyConfigItemEmpty = mkRelationDict (
-  undefined :: (WantsConf, Service (), ()))
-relationDictHasServiceEmptyConfigItemEmpty = mkRelationDict (
-  undefined :: (HasConf, Service (), ()))
+relationDictRunsNodeServiceEmpty :: Dict (Relation Runs Node (Service ()))
+relationDictWantsServiceEmptyConfigItemEmpty :: Dict (Relation WantsConf (Service ()) ())
+relationDictHasServiceEmptyConfigItemEmpty :: Dict (Relation HasConf (Service ()) ())
+relationDictRunsNodeServiceEmpty = Dict
+relationDictWantsServiceEmptyConfigItemEmpty = Dict
+relationDictHasServiceEmptyConfigItemEmpty = Dict
 
 remotable
-  [ 'emptySDict
+  [ 'someConfigDict
   , 'emptyConfigDict
+  , 'emptySDict
   , 'resourceDictServiceEmpty
   , 'resourceDictConfigItemEmpty
-  , 'relationDictHasNodeServiceEmpty
+  , 'relationDictRunsNodeServiceEmpty
   , 'relationDictHasServiceEmptyConfigItemEmpty
   , 'relationDictWantsServiceEmptyConfigItemEmpty
   ]
 
 instance Resource (Service ()) where
-  resourceDict _ = $(mkStatic 'resourceDictServiceEmpty)
+  resourceDict = $(mkStatic 'resourceDictServiceEmpty)
 
 instance Resource () where
-  resourceDict _ = $(mkStatic 'resourceDictConfigItemEmpty)
+  resourceDict = $(mkStatic 'resourceDictConfigItemEmpty)
 
 instance Relation Runs Node (Service ()) where
-  relationDict _ = $(mkStatic 'relationDictHasNodeServiceEmpty)
+  relationDict = $(mkStatic 'relationDictRunsNodeServiceEmpty)
 
 instance Relation HasConf (Service ()) () where
-  relationDict _ = $(mkStatic 'relationDictHasServiceEmptyConfigItemEmpty)
+  relationDict = $(mkStatic 'relationDictHasServiceEmptyConfigItemEmpty)
 
 instance Relation WantsConf (Service ()) () where
-  relationDict _ = $(mkStatic 'relationDictWantsServiceEmptyConfigItemEmpty)
+  relationDict = $(mkStatic 'relationDictWantsServiceEmptyConfigItemEmpty)
 
 instance Configuration () where
   schema = (\_ -> ()) <$$> Empty
@@ -307,11 +304,12 @@ instance ProcessEncode ServiceFailed where
       get_ rt = do
         d <- get
         case unstatic rt d of
-          Right (Some cd@(ConfigDict :: ConfigDict s)) -> do
+          Right (SomeConfigDict (Dict :: Dict (Configuration s))) -> do
             rest <- get
-            let (node, service) = extract cd rest
-                extract :: ConfigDict s -> (Node, Service s) -> (Node, Service s)
-                extract _ = id
+            let (node, service) = extract rest
+                extract :: (Node, Service s)
+                        -> (Node, Service s)
+                extract = id
             return $ ServiceFailed node service
           Left err -> error $ "decode ServiceFailed: " ++ err
     in do
@@ -338,11 +336,12 @@ instance ProcessEncode ServiceStarted where
       get_ rt = do
         d <- get
         case unstatic rt d of
-          Right (Some cd@(ConfigDict :: ConfigDict s)) -> do
+          Right (SomeConfigDict (Dict :: Dict (Configuration s))) -> do
             rest <- get
-            let (node, service) = extract cd rest
-                extract :: ConfigDict s -> (Node, Service s) -> (Node, Service s)
-                extract _ = id
+            let (node, service) = extract rest
+                extract :: (Node, Service s)
+                        -> (Node, Service s)
+                extract = id
             return $ ServiceStarted node service
           Left err -> error $ "decode ServiceStarted: " ++ err
     in do
@@ -369,11 +368,12 @@ instance ProcessEncode ServiceCouldNotStart where
       get_ rt = do
         d <- get
         case unstatic rt d of
-          Right (Some cd@(ConfigDict :: ConfigDict s)) -> do
+          Right (SomeConfigDict (Dict :: Dict (Configuration s))) -> do
             rest <- get
-            let (node, service) = extract cd rest
-                extract :: ConfigDict s -> (Node, Service s) -> (Node, Service s)
-                extract _ = id
+            let (node, service) = extract rest
+                extract :: (Node, Service s)
+                        -> (Node, Service s)
+                extract = id
             return $ ServiceCouldNotStart node service
           Left err -> error $ "decode ServiceCouldNotStart: " ++ err
     in do
@@ -398,7 +398,7 @@ data ConfigurationFilter = ConfigurationFilter NodeFilter ServiceFilter
 instance Binary ConfigurationFilter
 
 data ConfigurationUpdate = forall a. Configuration a =>
-    ConfigurationUpdate EpochId a (Static (Some ConfigDict)) ConfigurationFilter
+    ConfigurationUpdate EpochId a (Static (SomeConfigDict)) ConfigurationFilter
   deriving (Typeable)
 
 newtype ConfigurationUpdateMsg = ConfigurationUpdateMsg BS.ByteString
@@ -413,13 +413,12 @@ instance ProcessEncode ConfigurationUpdate where
       get_ rt = do
         d <- get
         case unstatic rt d of
-          Right (Some cd@(ConfigDict :: ConfigDict s)) -> do
+          Right (SomeConfigDict (Dict :: Dict (Configuration s))) -> do
             rest <- get
-            let (epoch, a, fltr) = extract cd rest
-                extract :: ConfigDict s
+            let (epoch, a, fltr) = extract rest
+                extract :: (EpochId, s, ConfigurationFilter)
                         -> (EpochId, s, ConfigurationFilter)
-                        -> (EpochId, s, ConfigurationFilter)
-                extract _ = id
+                extract = id
             return $ ConfigurationUpdate epoch a d fltr
           Left err -> error $ "decode ConfigurationUpdate: " ++ err
     in do

@@ -215,7 +215,7 @@ recoveryCoordinator eq mm argv = do
               G.Edge _ Has target = head (G.edgesFromSrc Cluster rg :: [G.Edge Cluster Has (Epoch ByteString)])
             in when (epoch == epochId target) $ do
               unStatic sdict >>= \case
-                G.Some ConfigDict -> do
+                SomeConfigDict G.Dict -> do
                   -- Write the new config as a 'Wants' config
                   let svcs = filterServices nodeFilter opts rg
                       rgUpdate = foldl1 (.) $ fmap (
@@ -246,7 +246,7 @@ recoveryCoordinator eq mm argv = do
           (\(HAEvent _ (ssm :: ServiceStartedMsg) _) -> do
             ServiceStarted _ svc <- decodeP ssm
             unStatic (configDict svc) >>= \case
-              G.Some ConfigDict -> do
+              SomeConfigDict G.Dict -> do
                 sayRC $ "Service successfully started: " ++ show (serviceName svc)
                 let rg' = updateConfig svc rg
                 loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')
@@ -258,7 +258,7 @@ recoveryCoordinator eq mm argv = do
             (ServiceFailed (Node agent)
               srv@(Service _ _ sdict)) <- decodeP sfm
             unStatic sdict >>= \case
-                G.Some ConfigDict -> do
+                SomeConfigDict G.Dict -> do
                   sayRC $ "Notified of service failure: " ++ show (serviceName srv)
                   -- XXX check for timeout.
                   _ <- restartService (processNodeId agent) srv rg
@@ -270,7 +270,7 @@ recoveryCoordinator eq mm argv = do
             (ServiceCouldNotStart (Node node)
               srv@(Service _ _ sdict)) <- decodeP scns
             unStatic sdict >>= \case
-                G.Some ConfigDict-> do
+                SomeConfigDict G.Dict-> do
                   -- Update the fail map to record this failure
                   let sName = serviceName srv
                       failmap' = Map.update (\x -> Just $ x + 1) sName failmap
