@@ -38,4 +38,3 @@ Test-Suite digitalocean
   Ghc-Options:     -threaded -Wall
   Build-Depends:   distributed-commands
                   ,base
-
