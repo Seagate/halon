@@ -26,7 +26,7 @@ module HA.Service
   , WantsConf(..)
   , ConfigRole(..)
   , ServiceName
-  , SomeConfigDict(..)
+  , SomeConfigurationDict(..)
     -- * Functions
   , schema
   , sDict
@@ -181,11 +181,11 @@ class
 deriving instance Typeable Configuration
 
 -- | Reified evidence of a Configuration
-data SomeConfigDict = forall a. SomeConfigDict (Dict (Configuration a))
+data SomeConfigurationDict = forall a. SomeConfigurationDict (Dict (Configuration a))
   deriving (Typeable)
 
-someConfigDict :: Dict (Configuration a) -> SomeConfigDict
-someConfigDict = SomeConfigDict
+someConfigDict :: Dict (Configuration a) -> SomeConfigurationDict
+someConfigDict = SomeConfigurationDict
 
 --------------------------------------------------------------------------------
 -- Resources and Relations                                                    --
@@ -211,7 +211,7 @@ type ServiceName = String
 data Service a = Service
     { serviceName    :: ServiceName           -- ^ Name of service.
     , serviceProcess :: Closure (a -> Process ())  -- ^ Process implementing service.
-    , configDict :: Static (SomeConfigDict)
+    , configDict :: Static (SomeConfigurationDict)
     }
   deriving (Typeable, Generic)
 
@@ -304,7 +304,7 @@ instance ProcessEncode ServiceFailed where
       get_ rt = do
         d <- get
         case unstatic rt d of
-          Right (SomeConfigDict (Dict :: Dict (Configuration s))) -> do
+          Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
             rest <- get
             let (node, service) = extract rest
                 extract :: (Node, Service s)
@@ -336,7 +336,7 @@ instance ProcessEncode ServiceStarted where
       get_ rt = do
         d <- get
         case unstatic rt d of
-          Right (SomeConfigDict (Dict :: Dict (Configuration s))) -> do
+          Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
             rest <- get
             let (node, service) = extract rest
                 extract :: (Node, Service s)
@@ -368,7 +368,7 @@ instance ProcessEncode ServiceCouldNotStart where
       get_ rt = do
         d <- get
         case unstatic rt d of
-          Right (SomeConfigDict (Dict :: Dict (Configuration s))) -> do
+          Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
             rest <- get
             let (node, service) = extract rest
                 extract :: (Node, Service s)
@@ -398,7 +398,7 @@ data ConfigurationFilter = ConfigurationFilter NodeFilter ServiceFilter
 instance Binary ConfigurationFilter
 
 data ConfigurationUpdate = forall a. Configuration a =>
-    ConfigurationUpdate EpochId a (Static (SomeConfigDict)) ConfigurationFilter
+    ConfigurationUpdate EpochId a (Static (SomeConfigurationDict)) ConfigurationFilter
   deriving (Typeable)
 
 newtype ConfigurationUpdateMsg = ConfigurationUpdateMsg BS.ByteString
@@ -413,7 +413,7 @@ instance ProcessEncode ConfigurationUpdate where
       get_ rt = do
         d <- get
         case unstatic rt d of
-          Right (SomeConfigDict (Dict :: Dict (Configuration s))) -> do
+          Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
             rest <- get
             let (epoch, a, fltr) = extract rest
                 extract :: (EpochId, s, ConfigurationFilter)

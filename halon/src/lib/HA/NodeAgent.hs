@@ -259,7 +259,7 @@ remotableDecl [ [d|
     -- >   |] ]
     --
     service :: SerializableDict a
-            -> Static (SomeConfigDict)
+            -> Static SomeConfigurationDict
             -> Static (SerializableDict a)
             -> String -- ^ Service name
             -> Closure (a -> Process ())
