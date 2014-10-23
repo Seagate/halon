@@ -1,16 +1,11 @@
---
--- Copyright (C) 2012 Xyratex Technology Limited. All rights reserved.
---
-
-Name:         network-transport-rpc
-Version:      0.0.1
-Synopsis:     Implementation of a transport backend for RPC
-Description:  The RPC backend provides an interface to Mero RPC library.
-Author:              Facundo Domínguez, Xyratex Technology Limited
-Maintainer:          Facundo Domínguez <facundo.dominguez@parsci.com>
-Category:            Network
-Build-Type:          Simple
-Cabal-Version:       >= 1.8
+Name:          network-transport-rpc
+Version:       0.0.1
+Synopsis:      Implementation of a transport backend for RPC
+Description:   The RPC backend provides an interface to Mero RPC library.
+Copyright:     (C) 2012 Xyratex Technology Limited
+Category:      Network
+Build-Type:    Simple
+Cabal-Version: >= 1.8
 
 Flag debug
   Description: Print messages when the RPC backend calls are evaluated
