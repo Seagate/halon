@@ -7,10 +7,6 @@
 -- It creates a droplet, copies a file, runs some commands via ssh,
 -- and destroys the droplet.
 --
--- Call as
---
--- > $ DO_SSH_KEY_IDS=<ssh_key_ids> do
---
 
 import Control.Distributed.Commands
 import Control.Distributed.Commands.DigitalOcean
@@ -18,20 +14,18 @@ import Control.Distributed.Commands.DigitalOcean
 import Control.Exception (throwIO, bracket)
 import Control.Monad (when)
 import Data.Maybe (isNothing)
-import System.Environment (lookupEnv)
 
 
 main :: IO ()
 main = withDigitalOceanDo $ do
-    Just sshKeyIds <- lookupEnv "DO_SSH_KEY_IDS"
     Just credentials <- getCredentialsFromEnv
     bracket
       (newDroplet credentials NewDropletArgs
            { name        = "test-droplet"
            , size_slug   = "512mb"
-           , image_id    = "6709658"
+           , image_id    = "7055005"
            , region_slug = "ams2"
-           , ssh_key_ids = sshKeyIds
+           , ssh_key_ids = ""
            }
       )
       (\d -> destroyDroplet credentials (dropletDataId d))
