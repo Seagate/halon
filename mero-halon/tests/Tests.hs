@@ -3,15 +3,16 @@
 -- License   : All rights reserved.
 
 {-# LANGUAGE CPP #-}
-module Test.Integration (tests) where
+module Tests (tests) where
 
 import Test.Framework
-import HA.Network.Address ( startNetwork, parseAddress )
 import qualified HA.RecoveryCoordinator.Mero.Tests ( tests )
 
+import HA.Network.Address (parseAddress, startNetwork)
+
 import Control.Applicative ((<$>))
-import System.IO ( hSetBuffering, BufferMode(..), stdout, stderr )
-import System.Environment (lookupEnv) 
+import System.Environment (lookupEnv)
+import System.IO
 
 
 -- | Temporary wrapper for components whose unit tests have not been broken up
@@ -24,10 +25,10 @@ tests argv = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
     addr0 <- case argv of
-            a0:_ -> return a0
-            _    ->
+               a0:_ -> return a0
+               _ ->
 #ifdef USE_RPC
-                 maybe (error "environement variable TEST_LISTEN is not set") id <$> lookupEnv "TEST_LISTEN"  
+                 maybe (error "environement variable TEST_LISTEN is not set") id <$> lookupEnv "TEST_LISTEN"
 #else
                  maybe "localhost:0" id <$> lookupEnv "TEST_LISTEN"
 #endif

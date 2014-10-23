@@ -1,9 +1,12 @@
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
+--
+-- Runner for both unit tests and integration tests. Unit tests use a mock
+-- replicator whereas integration tests do not.
 
 {-# LANGUAGE CPP #-}
-import Test.Integration (tests)
+import Tests (tests)
 
 import Test.Driver
 
@@ -12,7 +15,6 @@ import Test.Framework (testSuccess)
 import Test.Tasty (testGroup)
 import Control.Concurrent (threadDelay)
 #endif
-
 
 main :: IO ()
 main = defaultMainWith getTests
