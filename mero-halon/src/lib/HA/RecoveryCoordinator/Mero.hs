@@ -32,7 +32,11 @@ import HA.Service
 #ifdef USE_RPC
 import HA.Resources.Mero (ConfObject(..), ConfObjectState(..), Is(..))
 #endif
-import HA.Network.Address
+#ifdef USE_RPC
+import qualified Network.Transport.RPC as RPC
+#else
+import qualified HA.Network.Socket as TCP
+#endif
 import HA.NodeAgent
 -- import HA.NodeAgent.Messages (ExitReason(Reconfigure))
 import Mero.Messages
@@ -52,7 +56,7 @@ import Control.Distributed.Static (closureApply)
 
 import Control.Applicative ((<*), (<$>))
 import Control.Arrow ((>>>))
-import Control.Monad (forM_, when, void, (>=>))
+import Control.Monad (forM, forM_, when, void, (>=>))
 import qualified Data.Map.Strict as Map
 import Data.Typeable (Typeable)
 import Data.Binary (Binary, encode)
@@ -61,7 +65,6 @@ import GHC.Generics (Generic)
 #ifdef USE_RPC
 import Data.List (foldl')
 #endif
-import Data.Maybe (mapMaybe)
 import Data.ByteString (ByteString)
 
 import Prelude hiding (mapM_)
@@ -98,11 +101,13 @@ sayRC s = say $ "Recovery Coordinator: " ++ s
 initialize :: ProcessId -> IgnitionArguments -> Process G.Graph
 initialize mm IgnitionArguments{..} = do
     self <- getSelfPid
-    network <- liftIO readNetworkGlobalIVar
-
     -- Ask all nodes to make themselves known.
-    forM_ (mapMaybe parseAddress clusterNodes) $ \addr -> spawnLocal $ do
-        mbpid <- lookupNodeAgent network addr
+    forM_ clusterNodes $ \straddr -> spawnLocal $ do
+#ifdef USE_RPC
+        mbpid <- lookupNodeAgent (RPC.rpcAddress straddr)
+#else
+        mbpid <- lookupNodeAgent (TCP.decodeSocketAddress straddr)
+#endif
         case mbpid of
             Nothing -> sayRC $ "No node agent found."
             Just agent -> send self $ NodeAgentContacted agent
@@ -234,7 +239,14 @@ recoveryCoordinator eq mm argv = do
                         G.connect (Node agent) Runs m0d >>>
                         G.connect Cluster Has (Node agent) $
                         rg
-              _ <- updateEQAddresses agent $ mapMaybe parseAddress $ stationNodes argv
+              -- TODO make async.
+              mbpids <- forM (stationNodes argv) $ \straddr -> do
+#ifdef USE_RPC
+                  lookupNodeAgent (RPC.rpcAddress straddr)
+#else
+                  lookupNodeAgent (TCP.decodeSocketAddress straddr)
+#endif
+              _ <- updateEQNodes agent [ processNodeId pid | Just pid <- mbpids ]
                -- XXX check for timeout.
               _ <- restartService (processNodeId agent) m0d rg
               loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')

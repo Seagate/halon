@@ -5,15 +5,14 @@
 module Flags (Mode(..), Config(..), parseArgs) where
 
 import System.Console.GetOpt
-import HA.Network.Address
 import Control.Exception (throw)
 
 data Mode = Help | Version | Run
 
 data Config = Config
     { mode :: Mode
-    , localEndpoint :: Address
-    , localLookup :: Address
+    , localEndpoint :: String
+    , localLookup :: String
     , update :: Bool
     }
 
@@ -27,16 +26,17 @@ defaultConfig =
 
 options :: [OptDescr (Config -> Config)]
 options =
-    [ Option [] ["help"] (NoArg $ \c -> c{mode=Help})         "This help message."
-    , Option [] ["version"] (NoArg $ \c -> c{mode=Version})   "Display version information."
-    , Option ['a'] ["agentlookup"] (ReqArg (\s c -> c{ localLookup =
-            maybe (error "Invalid address") id (parseAddress s) }) "ADDRESS")
-                 "Address of lookup service."
-    , Option ['l'] ["listen"] (ReqArg (\s c -> c{ localEndpoint =
-            maybe (error "Invalid address") id (parseAddress s) }) "ADDRESS")
-                 "Address to listen on."
+    [ Option [] ["help"] (NoArg $ \c -> c{mode=Help})
+        "This help message."
+    , Option [] ["version"] (NoArg $ \c -> c{mode=Version})
+        "Display version information."
+    , Option ['a'] ["agentlookup"] (ReqArg (\s c -> c{ localLookup = s }) "ADDRESS")
+        "Address of lookup service."
+    , Option ['l'] ["listen"] (ReqArg (\s c -> c{ localEndpoint = s }) "ADDRESS")
+        "Address to listen on."
     , Option ['u'] ["update"] (NoArg (\c -> c { update = True }))
-                 "Update the tracking station membership rather than starting a new tracking station."
+        "Update the tracking station membership rather than starting a new \
+        \tracking station."
     ]
 
 parseArgs :: [String] -> Config

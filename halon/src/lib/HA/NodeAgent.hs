@@ -5,6 +5,7 @@
 -- Services are uniquely named on a given node by a string. For example
 -- "ioservice" may identify the IO service running on a node.
 
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell, ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -20,7 +21,6 @@ module HA.NodeAgent
       , naConfigDict__static
       , service
       , nodeAgent
-      , updateEQAddresses
       , updateEQNodes
       , expire
       , HA.NodeAgent.__remoteTable
@@ -29,8 +29,7 @@ module HA.NodeAgent
 
 import HA.CallTimeout (callLocal, callTimeout, ncallRemoteAnyPreferTimeout)
 import HA.NodeAgent.Messages
-import HA.NodeAgent.Lookup (lookupNodeAgent,nodeAgentLabel)
-import HA.Network.Address (Address,readNetworkGlobalIVar)
+import HA.NodeAgent.Lookup (nodeAgentLabel)
 import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types (HAEvent(..), EventId(..))
 import HA.EventQueue.Producer (expiate)
@@ -54,7 +53,7 @@ import Control.Exception (Exception, throwIO, SomeException(..))
 import Data.Binary (Binary, encode)
 import Data.Defaultable
 import Data.Hashable (Hashable)
-import Data.Maybe (catMaybes, maybeToList)
+import Data.Maybe (maybeToList)
 import Data.Monoid ((<>))
 import Data.ByteString (ByteString)
 import Data.List (delete, nub, (\\))
@@ -185,17 +184,6 @@ data NAState = NAState
        -- Nothing.
     }
   deriving (Typeable)
-
--- NOTE: This function expects to only be used with nodes which are part of the
--- tracking station, as it takes the addresses of nodes which are running a NA,
--- converts the addresses to node ids, and passes the node ids to updateEQNodes,
--- which expects node ids of the tracking station nodes which are running an EQ.
-updateEQAddresses :: ProcessId -> [Address] -> Process Bool
-updateEQAddresses pid addrs =
-  do network <- liftIO readNetworkGlobalIVar
-     mns <- mapM (lookupNodeAgent network) addrs
-     let nodes = map processNodeId $ catMaybes mns
-     updateEQNodes pid nodes
 
 -- FIXME: Use a well-defined timeout.
 updateEQNodes :: ProcessId -> [NodeId] -> Process Bool

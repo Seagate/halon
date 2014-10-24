@@ -202,6 +202,8 @@ Test-Suite unit-tests
                     distributed-process >= 0.4,
                     distributed-process-test,
                     distributed-static,
+                    network,
+                    network-transport,
                     hashable,
                     unordered-containers
   if flag(rpc)
@@ -238,6 +240,8 @@ Test-Suite integration-tests
                     distributed-process >= 0.4,
                     distributed-process-test,
                     distributed-static,
+                    network,
+                    network-transport,
                     hashable,
                     unordered-containers
   if flag(rpc)

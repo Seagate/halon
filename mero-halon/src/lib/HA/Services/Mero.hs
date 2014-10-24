@@ -2,6 +2,7 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
@@ -28,21 +29,26 @@ import System.IO
 import System.Directory (doesFileExist, removeFile)
 import Control.Monad (forever, unless, when, void)
 import Control.Concurrent (threadDelay)
+-- XXX We probably want USE_MERO here, rather than USE_RPC.
+#ifdef USE_RPC
 import Mero.Epoch (sendEpochBlocking)
+#endif
 import Mero.Messages
-import HA.Network.Address
 import Data.ByteString (ByteString)
 
 updateEpoch :: EpochId -> Process EpochId
-updateEpoch epoch =
-   do network <- liftIO readNetworkGlobalIVar
-      let Just addr = parseAddress "0@lo:12345:34:100"
-      mnewepoch <- liftIO $ sendEpochBlocking network addr epoch 5
-      case mnewepoch of
-        Just newepoch ->
-          do say $ "Updated epoch to "++show epoch
-             return newepoch
-        Nothing -> return 0
+-- XXX We probably want USE_MERO here, rather than USE_RPC.
+#ifdef USE_RPC
+updateEpoch epoch = do
+    mnewepoch <- liftIO $ sendEpochBlocking (RPC.rpcAddress "0@lo:12345:34:100") epoch 5
+    case mnewepoch of
+      Just newepoch ->
+        do say $ "Updated epoch to "++show epoch
+           return newepoch
+      Nothing -> return 0
+#else
+updateEpoch _ = error "updateEpoch: RPC support required."
+#endif
 
 remotableDecl [ [d|
 

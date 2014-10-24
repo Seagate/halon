@@ -8,7 +8,13 @@ module Tests (tests) where
 import Test.Framework
 import qualified HA.RecoveryCoordinator.Mero.Tests ( tests )
 
-import HA.Network.Address (parseAddress, startNetwork)
+#ifdef USE_RPC
+import qualified Network.Transport.RPC as RPC
+#else
+import qualified Network.Transport.TCP as TCP
+import qualified HA.Network.Socket as TCP
+import qualified Network.Socket as TCP
+#endif
 
 import Control.Applicative ((<$>))
 import System.Environment (lookupEnv)
@@ -30,8 +36,15 @@ tests argv = do
 #ifdef USE_RPC
                  maybe (error "environement variable TEST_LISTEN is not set") id <$> lookupEnv "TEST_LISTEN"
 #else
-                 maybe "localhost:0" id <$> lookupEnv "TEST_LISTEN"
+                 maybe "127.0.0.1:0" id <$> lookupEnv "TEST_LISTEN"
 #endif
-    let addr = maybe (error "wrong address") id $ parseAddress addr0
-    network <- startNetwork addr
-    monolith "RC" $ HA.RecoveryCoordinator.Mero.Tests.tests addr0 network
+#ifdef USE_RPC
+    transport <- RPC.createTransport "s1" addr0 RPC.defaultRPCParameters
+    writeNetworkGlobalIVar transport
+#else
+    let TCP.SockAddrInet port hostaddr = TCP.decodeSocketAddress addr0
+    hostname <- TCP.inet_ntoa hostaddr
+    transport <- either (error . show) id <$>
+                 TCP.createTransport hostname (show port) TCP.defaultTCPParameters
+#endif
+    monolith "RC" $ HA.RecoveryCoordinator.Mero.Tests.tests addr0 transport

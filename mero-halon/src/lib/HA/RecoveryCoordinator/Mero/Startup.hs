@@ -17,7 +17,11 @@ import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
 import HA.EventQueue ( eventQueue, EventQueue )
 import HA.Multimap.Implementation ( Multimap, fromList )
 import HA.Multimap.Process ( multimap )
-import HA.Network.Address (readNetworkGlobalIVar, parseAddress)
+#ifdef USE_RPC
+import qualified Network.Transport.RPC as RPC
+#else
+import qualified HA.Network.Socket as TCP
+#endif
 import HA.NodeAgent.Lookup (lookupNodeAgent)
 import HA.Replicator ( RGroup(..), RStateView(..) )
 import HA.Replicator.Log ( RLogGroup )
@@ -28,7 +32,7 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
     ( remotable, remotableDecl, mkStatic, mkClosure, functionTDict )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
-import Data.Maybe (mapMaybe, catMaybes, isJust )
+import Data.Maybe ( catMaybes, isJust )
 import qualified Mero.Genders
 import Network.Transport ( endPointAddressToByteString )
 
@@ -153,9 +157,12 @@ remotableDecl [ [d|
      -- Query data from our genders file
      trackers  <- wellformQueryNodes "m0_station"
      nodes <- wellformQueryNodes "m0_all"
-     network <- liftIO readNetworkGlobalIVar
-     let trackerAddrs = mapMaybe parseAddress trackers
-     mpids <- mapM (lookupNodeAgent network) trackerAddrs
+#ifdef USE_RPC
+     let trackerAddrs = map RPC.rpcAddress trackers
+#else
+     let trackerAddrs = map TCP.decodeSocketAddress trackers
+#endif
+     mpids <- mapM lookupNodeAgent trackerAddrs
      let nids = map processNodeId $ catMaybes mpids
      if update then do
        (members,newNodes) <- queryMembership nids
