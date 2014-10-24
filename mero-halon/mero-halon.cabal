@@ -75,8 +75,8 @@ Library
       Build-Depends: network >= 2.4,
                      network-transport-tcp >= 0.3
 
-Executable halon-station
-  Hs-Source-Dirs:     src/station
+Executable halonctl
+  Hs-Source-Dirs:     src/halonctl
   Main-Is:            Main.hs
   Ghc-Options:        -threaded
   ghc-options:        -Wall -Werror
@@ -104,8 +104,8 @@ Executable halon-station
       Build-Depends: network >= 2.4,
                      network-transport-tcp >= 0.3
 
-Executable halon-node-agent
-  Hs-Source-Dirs:     src/node
+Executable halond
+  Hs-Source-Dirs:     src/halond
   Main-Is:            Main.hs
   Ghc-Options:        -threaded
   ghc-options:        -Wall -Werror
@@ -178,10 +178,10 @@ Test-Suite testhastate
 
 Test-Suite unit-tests
   Type:             exitcode-stdio-1.0
-  Main-Is:          ut.hs
+  Main-Is:          test.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
-  Other-Modules:    Test.Unit
+  Other-Modules:    Tests
                     HA.RecoveryCoordinator.Mero.Tests
                     RemoteTables
   Ghc-Options:      -Wall -threaded
@@ -216,7 +216,10 @@ Test-Suite integration-tests
   Type:             exitcode-stdio-1.0
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
-  Main-Is:          it.hs
+  Other-Modules:    Tests
+                    HA.RecoveryCoordinator.Mero.Tests
+                    RemoteTables
+  Main-Is:          test.hs
   Ghc-Options:      -Wall -threaded
   CPP-Options:      -DMC_RG=RLogGroup
   if flag(debug)

@@ -28,7 +28,7 @@ buildType = "TCP"
 
 printHeader :: IO ()
 printHeader =
-  putStrLn $ "This is halon-station/" ++ buildType
+  putStrLn $ "This is halonctl/" ++ buildType
 
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable

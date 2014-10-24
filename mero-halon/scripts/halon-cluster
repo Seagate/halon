@@ -59,7 +59,7 @@ start)
   ;;
 stop)
   echo "stoping node agents ... "
-  sudo pdsh -R ssh -w "$(query m0_all c)" "killall halon-node-agent"
+  sudo pdsh -R ssh -w "$(query m0_all c)" "killall halond"
   ;;
 *)
   help
