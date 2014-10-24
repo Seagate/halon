@@ -22,6 +22,8 @@ import Control.Monad (join)
 import qualified HA.Network.IdentifyRPC as Identify
 #else
 import qualified HA.Network.IdentifyTCP as Identify
+import qualified HA.Network.Socket as TCP
+import qualified Network.Socket as TCP
 #endif
 import HA.Network.Address
 #ifdef USE_RPC
@@ -42,7 +44,7 @@ advertiseNodeAgent network addr pid =
 #else
   -- need to reference network to avoid spurious "defined but not used" warning
   network `seq`
-    liftIO (Identify.putAvailable (read $ snd addr) (processNodeId pid))
+    liftIO (Identify.putAvailable (fromIntegral $ TCP.socketAddressPort addr) (processNodeId pid))
 #endif
 
 lookupNodeAgent :: Network -> Address -> Process (Maybe ProcessId)
@@ -55,7 +57,9 @@ lookupNodeAgent _ addr =
 #ifdef USE_RPC
      mnid <- liftIO $ Identify.getAvailable (getNetworkTransport network) addr nodeAgentMagic
 #else
-     mnid <- liftIO $ Identify.getAvailable (fst addr) (read $ snd addr)
+     host <- liftIO $ TCP.inet_ntoa (TCP.socketAddressHost addr)
+     let port = fromIntegral $ TCP.socketAddressPort addr
+     mnid <- liftIO $ Identify.getAvailable host port
 #endif
      maybe (return Nothing) getNodeAgent mnid
 

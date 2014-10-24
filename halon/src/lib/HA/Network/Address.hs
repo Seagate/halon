@@ -31,6 +31,7 @@ import Data.ByteString.Char8 as B8
 #else
 import Control.Concurrent (threadDelay)
 import qualified Network.Socket as TCP
+import qualified HA.Network.Socket as TCP
 import qualified Network.Transport.TCP as TCP
 import Network.Socket (sClose)
 #endif
@@ -40,7 +41,7 @@ import Network.Socket (sClose)
 #ifdef USE_RPC
 type Address = RPC.RPCAddress
 #else
-type Address = (TCP.HostName, TCP.ServiceName)
+type Address = TCP.SockAddr
 #endif
 
 -- | Returns the host name of an 'Address'.
@@ -50,26 +51,16 @@ hostOfAddress =
     \(RPC.RPCAddress addr) ->
       Prelude.takeWhile (/= '@') $ B8.unpack addr
 #else
-    fst
-#endif
-
-#ifndef USE_RPC
-tcpAddress :: String -> Maybe (TCP.HostName, TCP.ServiceName)
-tcpAddress = check . break (== ':')
-  where
-    check ("",_) = Nothing
-    check (_,"") = Nothing
-    check (host,':':port) = Just (host, port)
-    check _ = Nothing
+    fst . break (== ':') . show
 #endif
 
 -- | Parse an 'Address' from a string. The format depends on the
 -- selected transport when HA is built.
 parseAddress :: String -> Maybe Address
-#ifndef USE_RPC
-parseAddress = tcpAddress
-#else
+#ifdef USE_RPC
 parseAddress = Just . RPC.rpcAddress
+#else
+parseAddress = Just . TCP.decodeSocketAddress
 #endif
 
 -- | An abstract transport datatype whose definition depends on which
@@ -91,10 +82,11 @@ startNetwork endpoint = do
     n <- Network <$>
          RPC.createTransport "s1" endpoint RPC.defaultRPCParameters
 #else
+    let TCP.SockAddrInet port host = endpoint
+    hostname <- TCP.inet_ntoa host
     n <- uncurry Network <$>
-         let (host, port) = endpoint
-         in either (error . show) id
-              <$> TCP.createTransportExposeInternals host port TCP.defaultTCPParameters
+         either (error . show) id
+              <$> TCP.createTransportExposeInternals hostname (show port) TCP.defaultTCPParameters
 #endif
     writeNetworkGlobalIVar n
     return n

@@ -62,6 +62,7 @@ Library
                    HA.Network.IdentifyTCP
                    HA.Network.Address
                    HA.Network.RemoteTables
+                   HA.Network.Socket
                    HA.Service
                    HA.Services.Dummy
                    HA.Services.OCF
