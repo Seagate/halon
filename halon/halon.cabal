@@ -58,7 +58,6 @@ Library
                    HA.RecoverySupervisor
                    HA.NodeAgent
                    HA.NodeAgent.Messages
-                   HA.NodeAgent.Lookup
                    HA.Network.IdentifyTCP
                    HA.Network.RemoteTables
                    HA.Network.Socket

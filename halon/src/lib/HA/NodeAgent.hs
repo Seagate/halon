@@ -21,6 +21,7 @@ module HA.NodeAgent
       , naConfigDict__static
       , service
       , nodeAgent
+      , getNodeAgent
       , updateEQNodes
       , expire
       , HA.NodeAgent.__remoteTable
@@ -29,10 +30,9 @@ module HA.NodeAgent
 
 import HA.CallTimeout (callLocal, callTimeout, ncallRemoteAnyPreferTimeout)
 import HA.NodeAgent.Messages
-import HA.NodeAgent.Lookup (nodeAgentLabel)
 import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types (HAEvent(..), EventId(..))
-import HA.EventQueue.Producer (expiate)
+import HA.EventQueue.Producer (expiate, nodeAgentLabel)
 import HA.Resources(Node(..))
 import HA.ResourceGraph hiding (null)
 import HA.Service
@@ -47,7 +47,7 @@ import Control.Distributed.Static (
   )
 import Control.Distributed.Process.Serializable (Serializable)
 
-import Control.Monad (when, void)
+import Control.Monad (join, void, when)
 import Control.Applicative ((<$>))
 import Control.Exception (Exception, throwIO, SomeException(..))
 import Data.Binary (Binary, encode)
@@ -192,6 +192,17 @@ updateEQNodes pid nodes =
   where
     timeout = 3000000
 
+getNodeAgent :: NodeId -> Process (Maybe ProcessId)
+getNodeAgent nid = do
+    whereisRemoteAsync nid label
+    fmap join $ receiveTimeout thetime
+                 [ matchIf (\(WhereIsReply label' _) -> label == label')
+                           (\(WhereIsReply _ mPid) -> return mPid)
+                 ]
+  where
+    label = nodeAgentLabel
+    thetime = 5000000
+
 remotableDecl [ [d|
 
     -- FIXME: What is going on in these functions?
@@ -218,7 +229,7 @@ remotableDecl [ [d|
           =<< try (register name self)
       where
         generalExpiate desc = do
-          mbpid <- whereis nodeAgentLabel
+          mbpid <- whereis (serviceName nodeAgent)
           case mbpid of
              Nothing -> error "NodeAgent is not registered."
              Just na -> expiate $ ServiceUncaughtException (Node na) name desc

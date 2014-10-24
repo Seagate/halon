@@ -7,7 +7,7 @@ module Main (main) where
 
 import Flags
 import HA.Network.RemoteTables (haRemoteTable)
-import HA.NodeAgent.Lookup (lookupNodeAgent)
+import HA.NodeAgent (getNodeAgent)
 import HA.Process
 import HA.RecoveryCoordinator.Mero.Startup
 import Mero.RemoteTables (meroRemoteTable)
@@ -17,7 +17,6 @@ import qualified Network.Transport.RPC as RPC
 #else
 import qualified Network.Transport.TCP as TCP
 import qualified HA.Network.Socket as TCP
-import qualified Network.Socket as TCP
 #endif
 
 import Control.Distributed.Process.Node (initRemoteTable)
@@ -49,21 +48,19 @@ main = do
   transport <- RPC.createTransport "s1" (localEndpoint config) RPC.defaultRPCParameters
   writeNetworkGlobalIVar transport
 #else
-  let TCP.SockAddrInet port hostaddr = TCP.decodeSocketAddress $ localEndpoint config
-  hostname <- TCP.inet_ntoa hostaddr
+  let sa = TCP.decodeSocketAddress $ localEndpoint config
+      hostname = TCP.socketAddressHostName sa
+      port = TCP.socketAddressServiceName sa
   transport <- either (error . show) id <$>
-               TCP.createTransport hostname (show port) TCP.defaultTCPParameters
+               TCP.createTransport hostname port TCP.defaultTCPParameters
 #endif
   lnid <- newLocalNode transport myRemoteTable
   tryRunProcess lnid $
     do liftIO $ printHeader
-#ifdef USE_RPC
-       mpid <- lookupNodeAgent $ RPC.rpcAddress $ localLookup config
-#else
-       mpid <- lookupNodeAgent $ TCP.decodeSocketAddress $ localLookup config
-#endif
+       self <- getSelfNode
+       mpid <- getNodeAgent self
        case mpid of
-          Nothing -> error $ "No node agent found at " ++ localLookup config
+          Nothing -> error $ "No node agent found."
           Just pid -> do
             liftIO $ putStrLn $ "Starting Recovery Supervisors from " ++ show pid
             result <- call $(functionTDict 'ignition) (processNodeId pid) $
@@ -80,6 +77,6 @@ main = do
                 mapM_ print members
                 putStrLn ""
                 putStrLn "The following nodes could not be contacted:"
-                mapM_ putStrLn $ [ tracker | (Nothing, tracker) <- zip mpids trackers ]
+                mapM_ print $ [ tracker | (Nothing, tracker) <- zip mpids trackers ]
               Nothing -> return ()
   return 0

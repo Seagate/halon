@@ -13,15 +13,14 @@ data Config = Config
     { mode :: Mode
     , configFile :: Maybe FilePath
     , localEndpoint :: String
-    , localLookup :: String
     }
 
 defaultConfig :: Config
-defaultConfig =
-    Config { mode = Run
-           , configFile = Nothing
-           , localEndpoint = error "No address to listen on given."
-           , localLookup = error "No lookup address given."}
+defaultConfig = Config
+    { mode = Run
+    , configFile = Nothing
+    , localEndpoint = error "No address to listen on given."
+    }
 
 options :: [OptDescr (Config -> Config)]
 options =
@@ -31,10 +30,8 @@ options =
                  "Display version information."
     , Option ['c'] ["config"] (ReqArg (\fp c -> c{ configFile = Just fp }) "FILE")
                  "Configuration file."
-     , Option ['a'] ["agentlookup"] (ReqArg (\s c -> c{ localLookup = s }) "ADDRESS")
-        "Address of lookup service."
     , Option ['l'] ["listen"] (ReqArg (\s c -> c{ localEndpoint = s }) "ADDRESS")
-        "Address to listen on."
+                 "Address to listen on."
     ]
 
 parseArgs :: [String] -> Config

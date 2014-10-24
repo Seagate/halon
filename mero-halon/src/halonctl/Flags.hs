@@ -12,14 +12,12 @@ data Mode = Help | Version | Run
 data Config = Config
     { mode :: Mode
     , localEndpoint :: String
-    , localLookup :: String
     , update :: Bool
     }
 
 defaultConfig :: Config
 defaultConfig =
     Config { mode = Run
-           , localLookup = error "No lookup address given."
            , localEndpoint = error "No address to listen on given."
            , update = False
            }
@@ -30,8 +28,6 @@ options =
         "This help message."
     , Option [] ["version"] (NoArg $ \c -> c{mode=Version})
         "Display version information."
-    , Option ['a'] ["agentlookup"] (ReqArg (\s c -> c{ localLookup = s }) "ADDRESS")
-        "Address of lookup service."
     , Option ['l'] ["listen"] (ReqArg (\s c -> c{ localEndpoint = s }) "ADDRESS")
         "Address to listen on."
     , Option ['u'] ["update"] (NoArg (\c -> c { update = True }))

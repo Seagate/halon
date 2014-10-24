@@ -32,15 +32,9 @@ import HA.Service
 #ifdef USE_RPC
 import HA.Resources.Mero (ConfObject(..), ConfObjectState(..), Is(..))
 #endif
-#ifdef USE_RPC
-import qualified Network.Transport.RPC as RPC
-#else
-import qualified HA.Network.Socket as TCP
-#endif
 import HA.NodeAgent
 -- import HA.NodeAgent.Messages (ExitReason(Reconfigure))
 import Mero.Messages
-import HA.NodeAgent.Lookup (lookupNodeAgent)
 import HA.EventQueue.Consumer
 import qualified HA.ResourceGraph as G
 #ifdef USE_RPC
@@ -78,10 +72,10 @@ instance Binary ReconfigureMsg
 -- | Initial configuration data.
 data IgnitionArguments = IgnitionArguments
   { -- | The names of all nodes in the cluster.
-    clusterNodes :: [String]
+    clusterNodes :: [NodeId]
 
     -- | The names of all tracking station nodes.
-  , stationNodes :: [String]
+  , stationNodes :: [NodeId]
   } deriving (Generic,Typeable)
 
 instance Binary IgnitionArguments
@@ -102,13 +96,8 @@ initialize :: ProcessId -> IgnitionArguments -> Process G.Graph
 initialize mm IgnitionArguments{..} = do
     self <- getSelfPid
     -- Ask all nodes to make themselves known.
-    forM_ clusterNodes $ \straddr -> spawnLocal $ do
-#ifdef USE_RPC
-        mbpid <- lookupNodeAgent (RPC.rpcAddress straddr)
-#else
-        mbpid <- lookupNodeAgent (TCP.decodeSocketAddress straddr)
-#endif
-        case mbpid of
+    forM_ clusterNodes $ \nid -> spawnLocal $ do
+        getNodeAgent nid >>= \case
             Nothing -> sayRC $ "No node agent found."
             Just agent -> send self $ NodeAgentContacted agent
 
@@ -240,12 +229,7 @@ recoveryCoordinator eq mm argv = do
                         G.connect Cluster Has (Node agent) $
                         rg
               -- TODO make async.
-              mbpids <- forM (stationNodes argv) $ \straddr -> do
-#ifdef USE_RPC
-                  lookupNodeAgent (RPC.rpcAddress straddr)
-#else
-                  lookupNodeAgent (TCP.decodeSocketAddress straddr)
-#endif
+              mbpids <- forM (stationNodes argv) getNodeAgent
               _ <- updateEQNodes agent [ processNodeId pid | Just pid <- mbpids ]
                -- XXX check for timeout.
               _ <- restartService (processNodeId agent) m0d rg

@@ -10,7 +10,6 @@
 module HA.Services.Mero (m0d, HA.Services.Mero.__remoteTableDecl) where
 
 import HA.NodeAgent
-import HA.NodeAgent.Lookup (nodeAgentLabel)
 import HA.EventQueue.Producer (promulgate)
 import HA.Resources
 import HA.Service
@@ -92,7 +91,7 @@ remotableDecl [ [d|
             exists <- liftIO $ doesFileExist dummyFile
             when exists $ do
               liftIO $ removeFile dummyFile
-              mbpid <- whereis nodeAgentLabel
+              mbpid <- whereis (serviceName nodeAgent)
               case mbpid of
                 Nothing -> error "NodeAgent is not registered."
                 Just na -> promulgate (StripingError (Node na))
@@ -113,7 +112,7 @@ remotableDecl [ [d|
 
         go epoch = do
             let shutdownAndTellThem = do
-                  mbpid <- whereis nodeAgentLabel
+                  mbpid <- whereis (serviceName nodeAgent)
                   case mbpid of
                       Nothing -> error "NodeAgent is not registered."
                       Just na -> expire . encodeP $ ServiceFailed (Node na) m0d -- XXX

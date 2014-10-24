@@ -12,12 +12,24 @@ module HA.Network.Socket
   , PortNumber(..)
   , socketAddressHost
   , socketAddressPort
+  , socketAddressHostName
+  , socketAddressServiceName
   , decodeSocketAddress
   , encodeSocketAddress
   ) where
 
-import Network.Socket (SockAddr(..), HostAddress, PortNumber(..), inet_addr)
+import Network.Socket
+  ( HostAddress
+  , HostName
+  , NameInfoFlag(..)
+  , PortNumber(..)
+  , ServiceName
+  , SockAddr(..)
+  , getNameInfo
+  , inet_addr
+  )
 
+import Control.Applicative ((<$>))
 import Data.Char (isDigit)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -29,6 +41,17 @@ socketAddressPort :: SockAddr -> PortNumber
 socketAddressPort (SockAddrInet port _) = port
 socketAddressPort (SockAddrInet6 port _ _ _) = port
 socketAddressPort _ = error "socketAddressPort: socket address does not have a port."
+
+socketAddressHostName :: SockAddr -> HostName
+-- No lookup, so referentially transparent, hence unsafePerformIO.
+socketAddressHostName sa = unsafePerformIO $ do
+    maybe (error "socketAddressHost: impossible") id . fst <$>
+      getNameInfo [NI_NUMERICHOST, NI_NUMERICSERV] True True sa
+
+socketAddressServiceName :: SockAddr -> ServiceName
+socketAddressServiceName sa = unsafePerformIO $ do
+    maybe (error "socketAddressHost: impossible") id . snd <$>
+      getNameInfo [NI_NUMERICHOST, NI_NUMERICSERV] True True sa
 
 -- | Read a socket address. Raises an exception on malformed inputs.
 decodeSocketAddress :: String -> SockAddr
