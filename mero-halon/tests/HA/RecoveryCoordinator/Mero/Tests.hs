@@ -24,7 +24,6 @@ import HA.Replicator.Mock ( MC_RG )
 #else
 import HA.Replicator.Log ( MC_RG )
 #endif
-import HA.Network.Address
 #ifdef USE_RPC
 import qualified HA.Network.IdentifyRPC as Identify
 #else
@@ -46,6 +45,7 @@ import qualified Control.Distributed.Process.Internal.Types as I
     (createMessage, messageToPayload, Process(..))
 import Control.Distributed.Process.Closure ( remotableDecl, mkStatic )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
+import Network.Transport (Transport)
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ( first, second )
@@ -127,19 +127,16 @@ mockNodeAgent done = do
 
     liftIO $ putMVar done ()
 
-tests :: String -> Network -> IO ()
-tests addr network =
-    tryWithTimeout (getNetworkTransport network) rt 5000000 $ do
-#ifdef USE_RPC
-        let laddr = addr
-#else
-        let Just laddr' = fmap hostOfAddress $ parseAddress addr
-            laddr = laddr' ++ ":8087"
-#endif
-            Just myaddr = parseAddress laddr
+tests :: String -> Transport -> IO ()
+tests addr transport =
+    tryWithTimeout transport rt 5000000 $ do
         done <- liftIO $ newEmptyMVar
         na <- spawnLocal $ mockNodeAgent done
-        Just iid <- advertiseNodeAgent network myaddr na
+#ifdef USE_RPC
+        Just iid <- advertiseNodeAgent na
+#else
+        Just iid <- advertiseNodeAgent (toEnum 8087) na
+#endif
         nid <- getSelfNode
 
         registerInterceptor $ \string -> case string of
@@ -152,7 +149,7 @@ tests addr network =
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        runRC (eq, na, IgnitionArguments [laddr] [laddr]) rGroup
+        runRC (eq, na, IgnitionArguments [addr] [addr]) rGroup
         liftIO $ takeMVar done
         liftIO $ Identify.closeAvailable iid
   where

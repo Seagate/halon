@@ -1,22 +1,13 @@
---
--- Copyright (C) 2012 Xyratex Technology Limited. All rights reserved.
---
--- See the accompanying COPYING file for license information.
---
-
-Name:         confc
-Version:      0.0.1
-Synopsis:     Bindings for Mero configuration client library.
-Description:  The Mero configuration client library allows programs 
-              to contact the confd service.
-
--- License:             BSD3
--- License-file:        COPYING
-Author:              Facundo Domínguez, Xyratex Technology Limited
-Maintainer:          Facundo Domínguez <facundo.dominguez@parsci.com>
-Category:            Network
-Build-Type:          Simple
-Cabal-Version:       >= 1.8
+Name:          confc
+Version:       0.0.1
+Synopsis:      Bindings for Mero configuration client library.
+Description:   The Mero configuration client library allows programs
+               to contact the confd service.
+License:       AllRightsReserved
+Copyright:     (C) 2013 Xyratex Technology Limited
+Category:      Network
+Build-Type:    Simple
+Cabal-Version: >= 1.8
 
 -- source-repository head
 --    type:     git
@@ -29,18 +20,18 @@ Cabal-Version:       >= 1.8
 
 Library
   exposed-modules:     Mero.ConfC
-  other-modules:       
+  other-modules:
 
   build-depends:       base
                      , bytestring
                      , network-transport-rpc
-                       
+
   ghc-options:      -O -Wall -Werror -fprof-auto -fprof-auto-calls
 
   cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
   include-dirs: .
   c-sources: confc_helpers.c
-  extra-libraries: mero 
+  extra-libraries: mero
 
 Test-Suite testconfc
   Type:           exitcode-stdio-1.0

@@ -13,7 +13,10 @@ import qualified Control.Distributed.Process.Internal.Types as I
     (createMessage, messageToPayload)
 import HA.CallTimeout (callLocal, callTimeout)
 import HA.EventQueue.Types
-import HA.NodeAgent.Lookup (nodeAgentLabel)
+
+-- XXX has to go here because HA.NodeAgent depends on this module.
+nodeAgentLabel :: String
+nodeAgentLabel = "HA.NodeAgent"
 
 -- | Add an event to the event queue, and don't die yet.
 -- FIXME: Use a well-defined timeout.

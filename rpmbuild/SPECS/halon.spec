@@ -13,8 +13,8 @@ Packager: Jeff Epstein <v-jeff_epstein@xyratex.com>
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 Conflicts: halon-build <= 1.0, halon-rpc <= 1.0
 
-%define bintargets halon/mero-halon/dist/build/halon-node-agent/halon-node-agent \\\
-halon/mero-halon/dist/build/halon-station/halon-station \\\
+%define bintargets halon/mero-halon/dist/build/halond/halond \\\
+halon/mero-halon/dist/build/halonctl/halonctl \\\
 halon/mero-halon/scripts/halon \\\
 halon/mero-halon/scripts/mero_call \\\
 halon/mero-halon/scripts/query.inc \\\
@@ -55,8 +55,8 @@ rm -rf %{buildroot}
 # %config(noreplace) %{_sysconfdir}/%{name}/%{name}.conf
 %{_bindir}/*
 /usr/bin/halon
-/usr/bin/halon-node-agent
-/usr/bin/halon-station
+/usr/bin/halond
+/usr/bin/halonctl
 /usr/bin/mero_call
 /usr/bin/query.inc
 /usr/bin/mkgenders

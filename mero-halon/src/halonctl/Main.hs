@@ -6,18 +6,26 @@
 module Main (main) where
 
 import Flags
-import HA.NodeAgent.Lookup (lookupNodeAgent)
+import HA.Network.RemoteTables (haRemoteTable)
+import HA.NodeAgent (getNodeAgent)
 import HA.Process
-import System.Environment
+import HA.RecoveryCoordinator.Mero.Startup
+import Mero.RemoteTables (meroRemoteTable)
+
+#ifdef USE_RPC
+import qualified Network.Transport.RPC as RPC
+#else
+import qualified Network.Transport.TCP as TCP
+import qualified HA.Network.Socket as TCP
+#endif
+
+import Control.Distributed.Process.Node (initRemoteTable)
+
 import Control.Applicative ((<$>))
 import Control.Distributed.Process.Closure ( mkClosure, functionTDict )
 import Control.Distributed.Process
-import HA.Network.Address
 import Control.Distributed.Process.Node (newLocalNode)
-import HA.RecoveryCoordinator.Mero.Startup
-import HA.Network.RemoteTables (haRemoteTable)
-import Mero.RemoteTables (meroRemoteTable)
-import Control.Distributed.Process.Node (initRemoteTable)
+import System.Environment
 
 buildType :: String
 #ifdef USE_RPC
@@ -28,7 +36,7 @@ buildType = "TCP"
 
 printHeader :: IO ()
 printHeader =
-  putStrLn $ "This is halon-station/" ++ buildType
+  putStrLn $ "This is halonctl/" ++ buildType
 
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
@@ -36,13 +44,23 @@ myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 main :: IO Int
 main = do
   config <- parseArgs <$> getArgs
-  network <- startNetwork (localEndpoint config)
-  lnid <- newLocalNode (getNetworkTransport network) myRemoteTable
+#ifdef USE_RPC
+  transport <- RPC.createTransport "s1" (localEndpoint config) RPC.defaultRPCParameters
+  writeNetworkGlobalIVar transport
+#else
+  let sa = TCP.decodeSocketAddress $ localEndpoint config
+      hostname = TCP.socketAddressHostName sa
+      port = TCP.socketAddressServiceName sa
+  transport <- either (error . show) id <$>
+               TCP.createTransport hostname port TCP.defaultTCPParameters
+#endif
+  lnid <- newLocalNode transport myRemoteTable
   tryRunProcess lnid $
     do liftIO $ printHeader
-       mpid <- lookupNodeAgent network (localLookup config)
+       self <- getSelfNode
+       mpid <- getNodeAgent self
        case mpid of
-          Nothing -> error "No node agent found at specified address"
+          Nothing -> error $ "No node agent found."
           Just pid -> do
             liftIO $ putStrLn $ "Starting Recovery Supervisors from " ++ show pid
             result <- call $(functionTDict 'ignition) (processNodeId pid) $
@@ -59,6 +77,6 @@ main = do
                 mapM_ print members
                 putStrLn ""
                 putStrLn "The following nodes could not be contacted:"
-                mapM_ putStrLn $ [ tracker | (Nothing, tracker) <- zip mpids trackers ]
+                mapM_ print $ [ tracker | (Nothing, tracker) <- zip mpids trackers ]
               Nothing -> return ()
   return 0

@@ -12,13 +12,18 @@
 {-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-orphans #-}
 module HA.RecoveryCoordinator.Mero.Startup where
 
+import HA.NodeAgent (getNodeAgent)
 import HA.RecoveryCoordinator.Mero (recoveryCoordinator, IgnitionArguments(..))
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
 import HA.EventQueue ( eventQueue, EventQueue )
 import HA.Multimap.Implementation ( Multimap, fromList )
 import HA.Multimap.Process ( multimap )
-import HA.Network.Address (readNetworkGlobalIVar, parseAddress)
-import HA.NodeAgent.Lookup (lookupNodeAgent)
+#ifdef USE_RPC
+import qualified Network.Transport.RPC as RPC
+#else
+import qualified HA.Network.Socket as TCP
+import qualified Network.Transport.TCP as TCP
+#endif
 import HA.Replicator ( RGroup(..), RStateView(..) )
 import HA.Replicator.Log ( RLogGroup )
 
@@ -28,12 +33,9 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
     ( remotable, remotableDecl, mkStatic, mkClosure, functionTDict )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
-import Data.Maybe (mapMaybe, catMaybes, isJust )
+import Data.Maybe ( catMaybes, isJust )
 import qualified Mero.Genders
-import Network.Transport ( endPointAddressToByteString )
 
-import Data.ByteString as B ( ByteString, isPrefixOf, take )
-import qualified Data.ByteString.Char8 as Char8 ( pack, elemIndex )
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
 import Data.List ( partition )
 import System.IO.Unsafe ( unsafePerformIO )
@@ -86,14 +88,10 @@ remotableDecl [ [d|
  isSelfInGroup :: () -> Process Bool
  isSelfInGroup () = liftIO $ fmap isJust $ readIORef globalRGroup
 
- isNodeInGroup :: [ByteString] -> NodeId -> Bool
- isNodeInGroup trackers n = any matchesAddress trackers
-   where
-     matchesAddress addr =
-       B.take (maybe (error "matchAddress") id $ Char8.elemIndex ':' addr) addr
-         `B.isPrefixOf` endPointAddressToByteString (nodeAddress n)
+ isNodeInGroup :: [NodeId] -> NodeId -> Bool
+ isNodeInGroup = flip elem
 
- addNodes :: ([NodeId],[String],[String]) -> Process ()
+ addNodes :: ([NodeId],[NodeId],[NodeId]) -> Process ()
  addNodes (newNodes,nodes,trackers) = do
      disconnectAllNodeConnections
      mcRGroup <- liftIO $ readIORef globalRGroup
@@ -101,7 +99,7 @@ remotableDecl [ [d|
        Just cRGroup -> do
          rGroup <- unClosure cRGroup >>= id
          replicas <- setRGroupMembers rGroup newNodes $
-                          $(mkClosure 'isNodeInGroup) $ map Char8.pack trackers
+                          $(mkClosure 'isNodeInGroup) $ trackers
          forM_ (zip newNodes replicas) $ \(n,replica) -> spawn n $
                   $(mkClosure 'startRS)
                       (IgnitionArguments nodes trackers, cRGroup, Just replica)
@@ -147,15 +145,26 @@ remotableDecl [ [d|
 
  -- | Start the RC and EQ on the nodes in the genders file
  ignition :: Bool
-          -> Process (Maybe (Bool,[String],[Maybe ProcessId],[NodeId],[NodeId]))
+          -> Process (Maybe (Bool,[NodeId],[Maybe ProcessId],[NodeId],[NodeId]))
  ignition update = do
      disconnectAllNodeConnections
      -- Query data from our genders file
-     trackers  <- wellformQueryNodes "m0_station"
-     nodes <- wellformQueryNodes "m0_all"
-     network <- liftIO readNetworkGlobalIVar
-     let trackerAddrs = mapMaybe parseAddress trackers
-     mpids <- mapM (lookupNodeAgent network) trackerAddrs
+     trackerstrs  <- wellformQueryNodes "m0_station"
+     nodestrs <- wellformQueryNodes "m0_all"
+     -- XXX we are hardcoding an endpoint here, on the assumption that there is
+     -- only one endpoint.
+#ifdef USE_RPC
+     let trackers = map RPC.rpcAddress trackers
+#else
+     let tonid x = NodeId $ TCP.encodeEndPointAddress host port 0
+           where
+             sa = TCP.decodeSocketAddress x
+             host = TCP.socketAddressHostName sa
+             port = TCP.socketAddressServiceName sa
+     let trackers = map tonid trackerstrs
+     let nodes = map tonid nodestrs
+#endif
+     mpids <- mapM getNodeAgent trackers
      let nids = map processNodeId $ catMaybes mpids
      if update then do
        (members,newNodes) <- queryMembership nids

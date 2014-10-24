@@ -32,11 +32,9 @@ import HA.Service
 #ifdef USE_RPC
 import HA.Resources.Mero (ConfObject(..), ConfObjectState(..), Is(..))
 #endif
-import HA.Network.Address
 import HA.NodeAgent
 -- import HA.NodeAgent.Messages (ExitReason(Reconfigure))
 import Mero.Messages
-import HA.NodeAgent.Lookup (lookupNodeAgent)
 import HA.EventQueue.Consumer
 import qualified HA.ResourceGraph as G
 #ifdef USE_RPC
@@ -52,7 +50,7 @@ import Control.Distributed.Static (closureApply)
 
 import Control.Applicative ((<*), (<$>))
 import Control.Arrow ((>>>))
-import Control.Monad (forM_, when, void, (>=>))
+import Control.Monad (forM, forM_, when, void, (>=>))
 import qualified Data.Map.Strict as Map
 import Data.Typeable (Typeable)
 import Data.Binary (Binary, encode)
@@ -61,7 +59,6 @@ import GHC.Generics (Generic)
 #ifdef USE_RPC
 import Data.List (foldl')
 #endif
-import Data.Maybe (mapMaybe)
 import Data.ByteString (ByteString)
 
 import Prelude hiding (mapM_)
@@ -75,10 +72,10 @@ instance Binary ReconfigureMsg
 -- | Initial configuration data.
 data IgnitionArguments = IgnitionArguments
   { -- | The names of all nodes in the cluster.
-    clusterNodes :: [String]
+    clusterNodes :: [NodeId]
 
     -- | The names of all tracking station nodes.
-  , stationNodes :: [String]
+  , stationNodes :: [NodeId]
   } deriving (Generic,Typeable)
 
 instance Binary IgnitionArguments
@@ -98,12 +95,9 @@ sayRC s = say $ "Recovery Coordinator: " ++ s
 initialize :: ProcessId -> IgnitionArguments -> Process G.Graph
 initialize mm IgnitionArguments{..} = do
     self <- getSelfPid
-    network <- liftIO readNetworkGlobalIVar
-
     -- Ask all nodes to make themselves known.
-    forM_ (mapMaybe parseAddress clusterNodes) $ \addr -> spawnLocal $ do
-        mbpid <- lookupNodeAgent network addr
-        case mbpid of
+    forM_ clusterNodes $ \nid -> spawnLocal $ do
+        getNodeAgent nid >>= \case
             Nothing -> sayRC $ "No node agent found."
             Just agent -> send self $ NodeAgentContacted agent
 
@@ -215,7 +209,7 @@ recoveryCoordinator eq mm argv = do
               G.Edge _ Has target = head (G.edgesFromSrc Cluster rg :: [G.Edge Cluster Has (Epoch ByteString)])
             in when (epoch == epochId target) $ do
               unStatic sdict >>= \case
-                SomeConfigDict G.Dict -> do
+                SomeConfigurationDict G.Dict -> do
                   -- Write the new config as a 'Wants' config
                   let svcs = filterServices nodeFilter opts rg
                       rgUpdate = foldl1 (.) $ fmap (
@@ -234,7 +228,9 @@ recoveryCoordinator eq mm argv = do
                         G.connect (Node agent) Runs m0d >>>
                         G.connect Cluster Has (Node agent) $
                         rg
-              _ <- updateEQAddresses agent $ mapMaybe parseAddress $ stationNodes argv
+              -- TODO make async.
+              mbpids <- forM (stationNodes argv) getNodeAgent
+              _ <- updateEQNodes agent [ processNodeId pid | Just pid <- mbpids ]
                -- XXX check for timeout.
               _ <- restartService (processNodeId agent) m0d rg
               loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')
@@ -246,7 +242,7 @@ recoveryCoordinator eq mm argv = do
           (\(HAEvent _ (ssm :: ServiceStartedMsg) _) -> do
             ServiceStarted _ svc <- decodeP ssm
             unStatic (configDict svc) >>= \case
-              SomeConfigDict G.Dict -> do
+              SomeConfigurationDict G.Dict -> do
                 sayRC $ "Service successfully started: " ++ show (serviceName svc)
                 let rg' = updateConfig svc rg
                 loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')
@@ -258,7 +254,7 @@ recoveryCoordinator eq mm argv = do
             (ServiceFailed (Node agent)
               srv@(Service _ _ sdict)) <- decodeP sfm
             unStatic sdict >>= \case
-                SomeConfigDict G.Dict -> do
+                SomeConfigurationDict G.Dict -> do
                   sayRC $ "Notified of service failure: " ++ show (serviceName srv)
                   -- XXX check for timeout.
                   _ <- restartService (processNodeId agent) srv rg
@@ -270,7 +266,7 @@ recoveryCoordinator eq mm argv = do
             (ServiceCouldNotStart (Node node)
               srv@(Service _ _ sdict)) <- decodeP scns
             unStatic sdict >>= \case
-                SomeConfigDict G.Dict-> do
+                SomeConfigurationDict G.Dict-> do
                   -- Update the fail map to record this failure
                   let sName = serviceName srv
                       failmap' = Map.update (\x -> Just $ x + 1) sName failmap

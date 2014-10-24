@@ -7,12 +7,17 @@ module Main (main) where
 
 import Flags
 import HA.NodeAgent (NodeAgentConf(..), nodeAgent, serviceProcess)
-import HA.Network.Address
 import HA.Network.RemoteTables (haRemoteTable)
-import HA.NodeAgent.Lookup (advertiseNodeAgent)
 import HA.Process
 import HA.Service (sDict)
 import Mero.RemoteTables (meroRemoteTable)
+
+#ifdef USE_RPC
+import qualified Network.Transport.RPC as RPC
+#else
+import qualified Network.Transport.TCP as TCP
+import qualified HA.Network.Socket as TCP
+#endif
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure (staticDecode)
@@ -25,37 +30,44 @@ import Data.Defaultable
 import System.Environment
 import System.IO ( hFlush, stdout )
 
-buildType :: String
+printHeader :: String -> IO ()
+printHeader listen = do
+    putStrLn $ "This is halond/" ++ buildType ++ " listening on " ++ listen
+    hFlush stdout
+  where
 #ifdef USE_RPC
-buildType = "RPC"
+    buildType = "RPC"
 #else
-buildType = "TCP"
+    buildType = "TCP"
 #endif
-
-printHeader :: IO ()
-printHeader = do
-  putStrLn $ "This is halon-node-agent/" ++ buildType
-  hFlush stdout
 
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 naConf :: NodeAgentConf
-naConf = NodeAgentConf {
-    softTimeout = Default 500000
+naConf = NodeAgentConf
+  { softTimeout = Default 500000
   , timeout = Default 1000000
-}
+  }
 
 main :: IO Int
 main = do
   config <- parseArgs <$> getArgs
-  network <- startNetwork (localEndpoint config)
-  lnid <- newLocalNode (getNetworkTransport network) myRemoteTable
+#ifdef USE_RPC
+  transport <- RPC.createTransport "s1" (localEndpoint config) RPC.defaultRPCParameters
+  writeNetworkGlobalIVar transport
+#else
+  let sa = TCP.decodeSocketAddress $ localEndpoint config
+      hostname = TCP.socketAddressHostName sa
+      port = TCP.socketAddressServiceName sa
+  transport <- either (error . show) id <$>
+               TCP.createTransport hostname port TCP.defaultTCPParameters
+#endif
+  lnid <- newLocalNode transport myRemoteTable
   tryRunProcess lnid $
-     do liftIO $ printHeader
+     do liftIO $ printHeader (localEndpoint config)
         nid <- getSelfNode
-        napid <- spawn nid $ (serviceProcess nodeAgent)
+        _ <- spawn nid $ (serviceProcess nodeAgent)
                   `closureApply` closure (staticDecode sDict) (encode naConf)
-        _ <- advertiseNodeAgent network (localLookup config) napid
         receiveWait [] -- wait indefinitely
   return 0

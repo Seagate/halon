@@ -67,7 +67,7 @@ reconf ((GlobalOpts nac), fltr, rc) = do
 
 reconfService :: (Generic a, Typeable a, Configuration a)
               => a
-              -> Static (SomeConfigDict)
+              -> Static (SomeConfigurationDict)
               -> ConfigurationFilter
               -> EpochId
               -> ProcessId

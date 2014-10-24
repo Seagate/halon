@@ -97,11 +97,11 @@ BIN_DIR="${HA_ROOT:-$SCRIPTPATH}"
 
 if [ -f "$cabal_file" ]
 then
-    NA_EXEC=${BIN_DIR}/halon-node-agent/halon-node-agent
-    ST_EXEC=${BIN_DIR}/halon-station/halon-station
+    NA_EXEC=${BIN_DIR}/halond/halond
+    ST_EXEC=${BIN_DIR}/halonctl/halonctl
 else
-    NA_EXEC=${BIN_DIR}/halon-node-agent
-    ST_EXEC=${BIN_DIR}/halon-station
+    NA_EXEC=${BIN_DIR}/halond
+    ST_EXEC=${BIN_DIR}/halonctl
 fi
 
 ! [ -x "$NA_EXEC" -a -x "$ST_EXEC" ] && err "Can't find HA binaries. Set HA_ROOT to appropriate directory."

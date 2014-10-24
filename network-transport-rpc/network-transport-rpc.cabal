@@ -1,21 +1,15 @@
---
--- Copyright (C) 2012 Xyratex Technology Limited. All rights reserved.
---
-
-Name:         network-transport-rpc
-Version:      0.0.1
-Synopsis:     Implementation of a transport backend for RPC
-Description:  The RPC backend provides an interface to Mero RPC library.
-Author:              Facundo Domínguez, Xyratex Technology Limited
-Maintainer:          Facundo Domínguez <facundo.dominguez@parsci.com>
-Category:            Network
-Build-Type:          Simple
-Cabal-Version:       >= 1.8
+Name:          network-transport-rpc
+Version:       0.0.1
+Synopsis:      Implementation of a transport backend for RPC
+Description:   The RPC backend provides an interface to Mero RPC library.
+Copyright:     (C) 2012 Xyratex Technology Limited
+Category:      Network
+Build-Type:    Simple
+Cabal-Version: >= 1.8
 
 Flag debug
   Description: Print messages when the RPC backend calls are evaluated
   Default: False
-
 
 Library
   exposed-modules:     Network.Transport.RPC.RPCLite
@@ -47,14 +41,22 @@ Test-Suite testrpclite
   main-is:        testrpclite.hs
   hs-source-dirs: tests
   ghc-options:    -O -Wall -idist/build -threaded
-  build-depends:  base >= 4.3 && < 5, binary, bytestring, network-transport-rpc, filepath
+  build-depends:  base >= 4.3 && < 5
+                , binary
+                , bytestring
+                , network-transport-rpc
+                , filepath
 
 Test-Suite tutorial-client
   Type:           exitcode-stdio-1.0
   main-is:        tutorial-client.hs
   hs-source-dirs: tests
   ghc-options:    -O -Wall -idist/build -threaded
-  build-depends:  base >= 4.3 && < 5, binary, bytestring, network-transport-rpc, network-transport
+  build-depends:  base >= 4.3 && < 5
+                , binary
+                , bytestring
+                , network-transport-rpc
+                , network-transport
   buildable: False
 
 Test-Suite tutorial-server
@@ -62,7 +64,12 @@ Test-Suite tutorial-server
   main-is:        tutorial-server.hs
   hs-source-dirs: tests
   ghc-options:    -O -Wall -idist/build -threaded
-  build-depends:  base >= 4.3 && < 5, binary, bytestring, network-transport-rpc, network-transport, containers
+  build-depends:  base >= 4.3 && < 5
+                , binary
+                , bytestring
+                , network-transport-rpc
+                , network-transport
+                , containers
   buildable: False
 
 Test-Suite ch-client
@@ -70,7 +77,14 @@ Test-Suite ch-client
   main-is:        ch-client.hs
   hs-source-dirs: tests
   ghc-options:    -O -Wall -idist/build -threaded
-  build-depends:  base >= 4.3 && < 5, binary, bytestring, network-transport-rpc, network-transport, distributed-process, containers, mtl
+  build-depends:  base >= 4.3 && < 5
+                , binary
+                , bytestring
+                , network-transport-rpc
+                , network-transport
+                , distributed-process
+                , containers
+                , mtl
   buildable: False
 
 Test-Suite ch-server
@@ -78,7 +92,15 @@ Test-Suite ch-server
   main-is:        ch-server.hs
   hs-source-dirs: tests
   ghc-options:    -O -Wall -idist/build -threaded
-  build-depends:  base >= 4.3 && < 5, binary, bytestring, network-transport-rpc, containers, distributed-process, network-transport, containers, mtl
+  build-depends:  base >= 4.3 && < 5
+                , binary
+                , bytestring
+                , network-transport-rpc
+                , containers
+                , distributed-process
+                , network-transport
+                , containers
+                , mtl
   buildable: False
 
 Test-Suite ch-delay-client
@@ -86,7 +108,15 @@ Test-Suite ch-delay-client
   main-is:        ch-delay-client.hs
   hs-source-dirs: tests
   ghc-options:    -O -Wall -idist/build -threaded
-  build-depends:  base >= 4.3 && < 5, bytestring, network-transport-rpc, network-transport, distributed-process, containers, mtl, data-accessor, random
+  build-depends:  base >= 4.3 && < 5
+                , bytestring
+                , network-transport-rpc
+                , network-transport
+                , distributed-process
+                , containers
+                , mtl
+                , data-accessor
+                , random
   buildable: False
 
 Test-Suite ch-delay-server
@@ -94,7 +124,14 @@ Test-Suite ch-delay-server
   main-is:        ch-delay-server.hs
   hs-source-dirs: tests
   ghc-options:    -O -Wall -idist/build -threaded
-  build-depends:  base >= 4.3 && < 5, bytestring, network-transport-rpc, containers, distributed-process, network-transport, containers, mtl
+  build-depends:  base >= 4.3 && < 5
+                , bytestring
+                , network-transport-rpc
+                , containers
+                , distributed-process
+                , network-transport
+                , containers
+                , mtl
   buildable: False
 
 Test-Suite testtransport
@@ -121,9 +158,17 @@ Test-Suite TestCH
   main-is:        TestCH.hs
   hs-source-dirs: tests
   ghc-options:    -O -Wall -idist/build -threaded -fno-prof-count-entries -fprof-auto-calls -fprof-auto -fno-warn-unused-do-bind
-  build-depends:  base >= 4.3 && < 5, bytestring, network-transport-rpc
-                , network-transport, containers, distributed-process
-                , random, ansi-terminal, mtl, time, binary
+  build-depends:  base >= 4.3 && < 5
+                , bytestring
+                , network-transport-rpc
+                , network-transport
+                , containers
+                , distributed-process
+                , random
+                , ansi-terminal
+                , mtl
+                , time
+                , binary
 
 Test-Suite TestNT
   Type:           exitcode-stdio-1.0
@@ -137,9 +182,10 @@ Test-Suite TestNT
                        RankNTypes,
                        OverloadedStrings,
                        OverlappingInstances
-  build-depends:  base >= 4.3 && < 5, network-transport-rpc,
+  build-depends:  base >= 4.3 && < 5,
 --                   network-transport-tests
                   network-transport >= 0.3,
+                  network-transport-rpc,
                   containers >= 0.4 && < 0.6,
                   bytestring >= 0.9 && < 0.11,
                   random >= 1.0 && < 1.1,

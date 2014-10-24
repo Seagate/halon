@@ -11,7 +11,6 @@ import qualified HA.Network.IdentifyRPC as Identify
 import HA.Network.Address ( parseAddress, hostOfAddress )
 import qualified HA.Network.IdentifyTCP as Identify
 #endif
-import HA.NodeAgent.Lookup ( advertiseNodeAgent, lookupNodeAgent, nodeAgentLabel )
 import RemoteTables ( remoteTable )
 
 import Control.Concurrent.MVar
