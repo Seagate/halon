@@ -27,6 +27,7 @@ PACKAGES := distributed-process-scheduler \
            consensus \
            consensus-paxos \
            replicated-log \
+           genders \
            halon \
            mero-halon
 

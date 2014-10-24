@@ -1,0 +1,18 @@
+pg155-n[10-19]  m0_all
+pg155-n[10-19]  m0_lnet_if=o2ib0,m0_lnet_pid=12345 # LNet common defaults
+pg155-n[10-19]  m0_lnet_kernel_portal=34          # portal for the kernel
+pg155-n[10-19]  m0_lnet_m0d_portal=35             # portal for m0d
+pg155-n[10-19]  m0_lnet_client_portal=36          # portal for clients (dynamic TMID)
+pg155-n[10-19]  m0_lnet_host=l%n                  # mapping of node to LNet hostname
+pg155-n[10-19]  m0_var=/var/mero                  # Mero variable data directory
+pg155-n[10-19]  m0_max_rpc_msg=163840             # max rpc message size
+pg155-n[10-19]  m0_min_recv_q=2                   # minimum receive queue length
+
+pg155-n[10-11]   m0_s_confd=-c:/var/mero/confd/confdb.txt # confd hosts, db file
+pg155-n[10-11]   m0_s_rm                           # hosts running the resource manager
+pg155-n[10-11]   m0_s_mdservice=-p                 # hosts running the metadata service
+pg155-n[10-11]   m0_station                        # hosts running HA station
+
+pg155-n[10-19]  m0_s_addb=-A:/etc/mero/stobs      # ADDB service hosts; stobs
+pg155-n[10-19]  m0_s_ioservice=-T:AD:-S:/etc/mero/stobs # IO service; stobs
+pg155-n[10-19]  m0_s_sns                          # hosts running SNS
