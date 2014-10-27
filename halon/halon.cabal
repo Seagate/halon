@@ -117,7 +117,6 @@ Test-Suite unit-tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Other-Modules:    Test.Unit
-                    HA.Network.Tests
                     HA.EventQueue.Tests
                     HA.Multimap.Tests
                     HA.Multimap.ProcessTests
@@ -142,6 +141,8 @@ Test-Suite unit-tests
                     distributed-process-test,
                     distributed-static,
                     hashable,
+                    network,
+                    network-transport,
                     unordered-containers,
                     options-schema >= 0.1.1.0
   if flag(rpc)
@@ -173,6 +174,8 @@ Test-Suite integration-tests
                     distributed-process-test,
                     distributed-static,
                     hashable,
+                    network,
+                    network-transport,
                     unordered-containers,
                     options-schema >= 0.1.1.0
   if flag(rpc)

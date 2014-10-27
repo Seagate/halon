@@ -28,14 +28,14 @@ import Control.Exception (SomeException, bracket)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.List (sort, (\\))
-import Data.Proxy (Proxy(..))
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
+
+import Network.Transport (Transport)
 
 import HA.Multimap (getKeyValuePairs)
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (multimap)
-import HA.Network.Address (Network, getNetworkTransport)
 import HA.Process
 import HA.Replicator (RGroup(..))
 #ifdef USE_MOCK_REPLICATOR
@@ -114,26 +114,26 @@ instance Relation HasA NodeB NodeA where
 --------------------------------------------------------------------------------
 
 -- | Run the given action on a newly created local node.
-withLocalNode :: Network -> (LocalNode -> IO a) -> IO a
-withLocalNode network action =
+withLocalNode :: Transport -> (LocalNode -> IO a) -> IO a
+withLocalNode transport action =
     bracket
-      (newLocalNode (getNetworkTransport network) (__remoteTable remoteTable))
+      (newLocalNode transport (__remoteTable remoteTable))
       -- FIXME: Why does this cause gibberish to be output?
       -- closeLocalNode
       (const (return ()))
       action
 
 -- | FIXME: Why do we need tryRunProcess?
-tryRunProcessLocal :: Network -> Process () -> IO ()
-tryRunProcessLocal network process =
+tryRunProcessLocal :: Transport -> Process () -> IO ()
+tryRunProcessLocal transport process =
     withTmpDirectory $
-      withLocalNode network $ \node ->
+      withLocalNode transport $ \node ->
         tryRunProcess node process
 
 rGroupTest :: (RGroup g, Typeable g)
-           => Network -> g Multimap -> (ProcessId -> Process ()) -> IO ()
-rGroupTest network g p =
-    tryRunProcessLocal network $
+           => Transport -> g Multimap -> (ProcessId -> Process ()) -> IO ()
+rGroupTest transport g p =
+    tryRunProcessLocal transport $
       flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
         nid <- getSelfNode
         rGroup <- newRGroup $(mkStatic 'mmSDict) [nid] (fromList []) >>=
@@ -156,35 +156,35 @@ sampleGraph =
 -- Tests                                                                      --
 --------------------------------------------------------------------------------
 
-tests :: Network -> IO [TestTree]
-tests network = do
+tests :: Transport -> IO [TestTree]
+tests transport = do
     let g = undefined :: MC_RG Multimap
     return
-      [ testSuccess "initial-graph" $ rGroupTest network g $ \pid -> do
+      [ testSuccess "initial-graph" $ rGroupTest transport g $ \pid -> do
           _g <- sync =<< getGraph pid
           Just ns <- getKeyValuePairs pid
           assert $ ns == []
 
-      , testSuccess "kv-length" $ rGroupTest network g $ \pid -> do
+      , testSuccess "kv-length" $ rGroupTest transport g $ \pid -> do
           _g <- sync . sampleGraph =<< getGraph pid
           Just kvs <- getKeyValuePairs pid
           assert $ 4 == length kvs
           assert $ [0, 0, 1, 2] == sort (map (length . snd) kvs)
 
-      , testSuccess "edge-nodeA-1" $ rGroupTest network g $ \pid -> do
+      , testSuccess "edge-nodeA-1" $ rGroupTest transport g $ \pid -> do
           g1 <- sync . sampleGraph =<< getGraph pid
           let es0 = edgesFromSrc (NodeA 1) g1
           assert $ length es0 == 1
           assert $ [] == es0 \\ [Edge (NodeA 1) HasB (NodeB 2)]
 
-      , testSuccess "edge-nodeB-2" $ rGroupTest network g $ \pid -> do
+      , testSuccess "edge-nodeB-2" $ rGroupTest transport g $ \pid -> do
           g1 <- sync . sampleGraph =<< getGraph pid
           let es1 = connectedTo (NodeB 2) HasA g1
           assert $ length es1 == 2
           assert $ [] == es1 \\ [NodeA 1, NodeA 2]
           assert $ [] == (connectedTo (NodeB 1) HasA g1 :: [NodeA])
 
-      , testSuccess "edge-nodeB-2-disconnect" $ rGroupTest network g $ \pid -> do
+      , testSuccess "edge-nodeB-2-disconnect" $ rGroupTest transport g $ \pid -> do
           g1 <- sync . sampleGraph =<< getGraph pid
           _ <- sync $ disconnect (NodeB 2) HasA (NodeA 1) g1
           g2 <- getGraph pid

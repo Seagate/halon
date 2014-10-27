@@ -13,7 +13,6 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module HA.Multimap.ProcessTests where
 
-import HA.Network.Address ( Network, getNetworkTransport )
 import HA.Multimap.Process ( multimap )
 import HA.Multimap ( StoreUpdate(..), updateStore, getKeyValuePairs )
 import HA.Multimap.Implementation ( fromList, Multimap )
@@ -43,6 +42,7 @@ import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Control.Concurrent ( MVar, newEmptyMVar, putMVar, takeMVar, threadDelay )
 import Control.Exception ( SomeException )
 import Data.ByteString.Char8 ( pack )
+import Network.Transport ( Transport )
 import System.IO.Unsafe ( unsafePerformIO )
 import Test.Framework
 
@@ -75,9 +75,9 @@ mmSDict = SerializableDict
 
 remotable [ 'mmSDict ]
 
-tests :: Network -> TestTree
-tests network = testSuccess "multimap" . withTmpDirectory $ do
-    lnid <- newLocalNode (getNetworkTransport network)
+tests :: Transport -> TestTree
+tests transport = testSuccess "multimap" . withTmpDirectory $ do
+    lnid <- newLocalNode transport
             $ __remoteTable remoteTable
     tryRunProcess lnid $ do
         nid <- getSelfNode

@@ -9,7 +9,6 @@ module HA.EventQueue.Tests ( tests ) where
 
 import Test.Framework
 
-import HA.Network.Address
 import HA.NodeAgent
 import HA.EventQueue
 import HA.EventQueue.Consumer
@@ -35,6 +34,15 @@ import Control.Exception ( SomeException )
 import Control.Monad
 import Data.ByteString ( ByteString )
 import Data.Defaultable
+
+import Network.Transport (Transport)
+
+#ifndef USE_RPC
+import Control.Concurrent (threadDelay)
+import qualified HA.Network.Socket as TCP
+import qualified Network.Socket as TCP
+import qualified Network.Transport.TCP as TCP
+#endif
 
 testConf :: NodeAgentConf
 testConf = NodeAgentConf {
@@ -65,11 +73,15 @@ triggerEvent k = catch (expiate k) $ \(_ :: SomeException) -> return ()
 invoke :: Serializable a => ProcessId -> a -> Process ()
 invoke them x = send them x >> expect
 
-tests :: Network -> IO [TestTree]
-tests network = do
+#ifdef USE_RPC
+tests :: Transport -> IO [TestTree]
+tests transport = do
+#else
+tests :: Transport -> TCP.TransportInternals -> IO [TestTree]
+tests transport internals = do
+#endif
     let rt = HA.EventQueue.Tests.__remoteTable remoteTable
-        transport = getNetworkTransport network
-    let (==>) :: (IO () -> TestTree) -> (ProcessId -> ProcessId -> MC_RG EventQueue -> Process ()) -> TestTree
+        (==>) :: (IO () -> TestTree) -> (ProcessId -> ProcessId -> MC_RG EventQueue -> Process ()) -> TestTree
         t ==> action = t $ setup $ \eq na rGroup ->
                 -- use me as the rc.
                 getSelfPid >>= send eq >> action eq na rGroup
@@ -148,7 +160,7 @@ tests network = do
         , testSuccess "eq-should-reconnect-to-rc" $
               setup $ \eq _ _ ->
                 bracket
-                  (liftIO $ newLocalNode (getNetworkTransport network) rt)
+                  (liftIO $ newLocalNode transport rt)
                   (liftIO . closeLocalNode)
                   $ \ln1 ->
                 -- Spawn a remote RC.
@@ -168,7 +180,11 @@ tests network = do
                   "RC is lost." -> send self ()
                   _ -> return ()
                 nid <- getSelfNode
-                liftIO $ networkBreakConnection network (nodeAddress nid) (nodeAddress $ localNodeId ln1)
+                -- Break the connection
+                liftIO $ do
+                  sock <- TCP.socketBetween internals (nodeAddress nid) (nodeAddress $ localNodeId ln1)
+                  TCP.sClose sock
+                  threadDelay 10000
                 -- Expect confirmation from the eq that the rc connection has broken.
                 () <- expect
                 triggerEvent 2
@@ -180,6 +196,6 @@ tests network = do
         , testSuccess "eq-save-path" ==> \eq _ rGroup -> do
               triggerEvent 1
               (HAEvent _ _ s1) <- expect :: Process (HAEvent [ByteString])
-              (_, [HAEvent _ _ s2]) <- getState rGroup
+              (_, [HAEvent _ _ _]) <- getState rGroup
               assert (head s1 == eq)
         ]

@@ -10,7 +10,6 @@
 
 module HA.RecoverySupervisor.Tests ( tests ) where
 
-import HA.Network.Address ( Network, getNetworkTransport )
 import HA.Process
 import HA.RecoverySupervisor
   ( recoverySupervisor
@@ -60,6 +59,7 @@ import Control.Concurrent
 import Control.Exception ( SomeException )
 import Control.Monad ( liftM3, void, replicateM_, replicateM, forM_ )
 import Data.IORef ( newIORef, atomicModifyIORef, IORef, readIORef, writeIORef )
+import Network.Transport (Transport)
 import System.IO.Unsafe ( unsafePerformIO )
 import Test.Framework
 
@@ -112,13 +112,13 @@ rsSDict = SerializableDict
 
 remotable [ 'rsSDict, 'testRS ]
 
-tests :: Bool -> Network -> IO [TestTree]
-tests oneNode network = do
+tests :: Bool -> Transport -> IO [TestTree]
+tests oneNode transport = do
   putStrLn $ "Testing RecoverySupervisor " ++
               if oneNode then "with one node..."
                else "with multiple nodes..."
   return
-    [ testSuccess "leaderSurvived" $ rsTest network oneNode $ \rGroup -> do
+    [ testSuccess "leaderSurvived" $ rsTest transport oneNode $ \rGroup -> do
         leader0 <- retryTest $ do
             1 <- readRef $ cStart counters
             0 <- readRef $ cStop counters
@@ -133,7 +133,7 @@ tests oneNode network = do
 
         assert $ leader0 == leader1 -- && c1 == 1 + div pollingPeriod updatePeriod
 
-    , testSuccess "newLeader" $ rsTest network oneNode $ \rGroup -> do
+    , testSuccess "newLeader" $ rsTest transport oneNode $ \rGroup -> do
         _leader0 <- retryTest $ do
             1 <- readRef $ cStart counters
             0 <- readRef $ cStop counters
@@ -150,12 +150,12 @@ tests oneNode network = do
             return ()
     ]
 
-rsTest :: Network -> Bool -> (MC_RG RSState -> Process ()) -> IO ()
-rsTest network oneNode action = withTmpDirectory $ do
+rsTest :: Transport -> Bool -> (MC_RG RSState -> Process ()) -> IO ()
+rsTest transport oneNode action = withTmpDirectory $ do
   let amountOfReplicas = 2
   ns@(n1:_) <-
     replicateM amountOfReplicas
-        $ newLocalNode (getNetworkTransport network)
+        $ newLocalNode transport
         $ __remoteTable remoteTable
   mTestDone <- newEmptyMVar
   tryRunProcess n1 $ do

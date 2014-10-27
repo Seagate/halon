@@ -15,7 +15,6 @@ import HA.NodeAgent
   , nodeAgent
   , updateEQNodes
   )
-import HA.Network.Address ( Network, getNetworkTransport )
 import HA.Process
 import HA.EventQueue ( eventQueue, EventQueue, eventQueueLabel )
 import HA.Replicator ( RGroup(..) )
@@ -60,6 +59,7 @@ import Control.Concurrent.MVar (newEmptyMVar,putMVar,takeMVar,MVar)
 import Control.Monad ( replicateM, forM_, forever )
 import Control.Exception ( SomeException, bracket )
 import Data.ByteString ( ByteString )
+import Network.Transport ( Transport )
 import System.IO.Unsafe ( unsafePerformIO )
 import Test.Framework
 
@@ -113,8 +113,8 @@ spawnLocalLink f =
   do self <- liftIO myThreadId
      spawnLocal $ flip catch (\e -> liftIO $ throwTo self (e :: SomeException)) $ f
 
-naTestWithEQ :: Network -> ([LocalNode] -> Process ()) -> IO ()
-naTestWithEQ network action = withTmpDirectory $ do
+naTestWithEQ :: Transport -> ([LocalNode] -> Process ()) -> IO ()
+naTestWithEQ transport action = withTmpDirectory $ do
   nodes <- replicateM 3 newNode
   let nids = map localNodeId nodes
   mapM_ (initialize nids) nodes
@@ -122,7 +122,6 @@ naTestWithEQ network action = withTmpDirectory $ do
   mdone <- newEmptyMVar
   tryRunProcess (head nodes) $ do
     liftIO $ putStrLn "Testing NodeAgent..."
-    nid <- getSelfNode
     cRGroup <- newRGroup $(mkStatic 'eqSDict) nids (Nothing,[])
     rGroup <- unClosure cRGroup >>= id
 #ifdef USE_MOCK_REPLICATOR
@@ -140,16 +139,16 @@ naTestWithEQ network action = withTmpDirectory $ do
   threadDelay 2000000
   mapM_ closeLocalNode nodes
   where
-    newNode = newLocalNode (getNetworkTransport network)
+    newNode = newLocalNode transport
                        $ __remoteTable remoteTable
     initialize nids node = tryRunProcess node $ do
       na <- spawnLocalLink . ($ testConf) =<< unClosure (serviceProcess nodeAgent)
       True <- updateEQNodes na nids
       return ()
 
-naTest :: Network -> ([NodeId] -> Process ()) -> IO ()
-naTest network action = withTmpDirectory $ bracket
-    (replicateM 2 $ newLocalNode (getNetworkTransport network)
+naTest :: Transport -> ([NodeId] -> Process ()) -> IO ()
+naTest transport action = withTmpDirectory $ bracket
+    (replicateM 2 $ newLocalNode transport
                                  (__remoteTable remoteTable))
     (mapM closeLocalNode)
     $ \nodes -> do
@@ -176,15 +175,15 @@ expectEventOnNode n = do
     True <- return $ n == n'
     return sender
 
-tests :: Network -> IO [TestTree]
-tests network = do
+tests :: Transport -> IO [TestTree]
+tests transport = do
     return
-      [ testSuccess "rc-get-expiate" $ naTestWithEQ network $ \_nodes -> do
+      [ testSuccess "rc-get-expiate" $ naTestWithEQ transport $ \_nodes -> do
              _ <- spawnLocal $ expiate "hello0"
              liftIO $ takeMVar sync0
              assert True
 
-      , testSuccess "rc-get-expiate-after-eq-death" $ naTestWithEQ network $ \nodes -> do
+      , testSuccess "rc-get-expiate-after-eq-death" $ naTestWithEQ transport $ \nodes -> do
              let getNotMe = do
                      self <- getSelfNode
                      return $ find ((/=) self . localNodeId) nodes
@@ -195,7 +194,7 @@ tests network = do
              liftIO $ takeMVar sync1
              assert True
 
-      , testSuccess "na-should-compress-path" $ naTest network $ \nids -> do
+      , testSuccess "na-should-compress-path" $ naTest transport $ \nids -> do
             -- We get an event on the first node.
             _ <- spawnLocal $ expiate "hello1"
             sender0 <- expectEventOnNode $ nids !! 0
@@ -217,7 +216,7 @@ tests network = do
             sender3 <- expectEventOnNode $ nids !! 1
             send sender3 (nids !! 1, nids !! 1)
 
-      , testSuccess "na-should-compress-path-with-failures" $ naTest network $ \nids -> do
+      , testSuccess "na-should-compress-path-with-failures" $ naTest transport $ \nids -> do
             -- We get an event on the first node.
             _ <- spawnLocal $ expiate "hello1"
             sender0 <- expectEventOnNode $ nids !! 0
