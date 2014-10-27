@@ -4,9 +4,6 @@
 --
 --------------------------------------------------------------------------------
 
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 -- | NodeAgent service proxy module. This serves to run the NodeAgent, which
 --   is necesary at the moment for certain parts of the system.
 module Handler.Bootstrap.NodeAgent
