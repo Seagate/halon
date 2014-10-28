@@ -117,6 +117,7 @@ cpUpdateWrapper f =
 -- | A port for sending commands to the log. Currently, at most one command
 -- port per process is supported.
 data CommandPort s = CommandPort !(IORef Word64) !(Log.Handle (Command s))
+  deriving Typeable
 
 type Log s = Log.Log (Command s)
 

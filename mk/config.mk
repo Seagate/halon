@@ -24,6 +24,7 @@ VENDOR_DIR = $(ROOT_DIR)/vendor/
 PACKAGES := distributed-process-scheduler \
            distributed-process-test \
            distributed-process-trans \
+           distributed-commands \
            consensus \
            consensus-paxos \
            replicated-log \

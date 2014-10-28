@@ -6,7 +6,7 @@ import Control.Exception (throwIO, evaluate)
 import Control.Monad (void)
 import Data.IORef (atomicModifyIORef', newIORef)
 import System.Exit (ExitCode(..))
-import System.IO (hGetContents, IOMode(..), withFile)
+import System.IO (hGetContents, IOMode(..), withFile, hSetBuffering, BufferMode(..))
 import System.Process
     ( StdStream(..)
     , proc
@@ -48,8 +48,10 @@ scp src dst =
     showPath (RemotePath mu h f) = maybe "" (++ "@") mu ++ h ++ ":" ++ f
 
 -- | Runs a command in the given host.
--- Returns the standard output.
--- The call returns immediately.
+--
+-- The call returns immediately. The returned actions
+-- read lines of the process stdout and terminate
+-- the process.
 --
 -- Each call of the returned IO action yields potentially
 -- a line of output and Nothing when all the output has
@@ -63,21 +65,28 @@ scp src dst =
 --
 -- > runCommand user host "(... cmd ...) 2>&1" >>= dropWhileM isJust
 --
-runCommand :: Maybe String -> String -> String -> IO (IO (Maybe String))
+runCommand :: Maybe String
+           -> String
+           -> String
+           -> IO (IO (Maybe String), IO())
 runCommand muser host cmd = do
     -- Connect to the remote host.
     withFile "/dev/null" ReadWriteMode $ \dev_null -> do
-      (_, Just sout, ~(Just _), _) <- createProcess (proc "ssh"
+      (_, Just sout, ~(Just _), ph) <- createProcess (proc "ssh"
         [ maybe "" (++ "@") muser ++ host
         , "-o", "UserKnownHostsFile=/dev/null"
         , "-o", "StrictHostKeyChecking=no"
         , "--", cmd ])
         { std_out = CreatePipe
         , std_err = UseHandle dev_null
+        , std_in = UseHandle dev_null
         }
+      hSetBuffering sout LineBuffering
       out <- hGetContents sout
       _ <- forkIO $ void $ evaluate (length out)
       r <- newIORef (lines out)
-      return $ atomicModifyIORef' r $ \case
+      return ( atomicModifyIORef' r $ \case
                  []     -> ([], Nothing)
                  x : xs -> (xs, Just x )
+             , void $ waitForProcess ph
+             )

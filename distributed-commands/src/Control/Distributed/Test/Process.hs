@@ -59,17 +59,17 @@ import Data.List (isPrefixOf)
 -- should print its 'NodeId' in the very first line of the standard
 -- output.
 --
-spawnNode :: IP -> String -> Process NodeId
+spawnNode :: IP -> String -> Process (NodeId, IO ())
 spawnNode ip = liftIO . spawnNodeIO ip
 
-spawnNodeIO :: IP -> String -> IO NodeId
+spawnNodeIO :: IP -> String -> IO (NodeId, IO ())
 spawnNodeIO (IP h) cmd = do
-    getLine_cmd <- runCommand muser h cmd
+    (getLine_cmd, waitForTermination) <- runCommand muser h cmd
     mnode <- getLine_cmd
     case mnode of
       Nothing -> error $ "The command \"" ++ cmd ++ "\" did not print a NodeId."
       Just n  -> case reads n of
-        (bs,"") : _ -> return $ decode (bs :: ByteString)
+        (bs,"") : _ -> return (decode (bs :: ByteString), waitForTermination)
         _           -> error $ "Couldn't parse node id: " ++ n
   where
     muser = if isLocalHost h then Nothing else Just "dev"
@@ -78,7 +78,7 @@ isLocalHost :: String -> Bool
 isLocalHost h = h == "localhost" || "127.0." `isPrefixOf` h
 
 -- | Like @spawnNode@ but spawns multiple nodes in parallel.
-spawnNodes :: [IP] -> String -> Process [NodeId]
+spawnNodes :: [IP] -> String -> Process [(NodeId, IO ())]
 spawnNodes ips cmd = liftIO $
     forM ips (async . flip spawnNodeIO cmd) >>= mapM wait
 
