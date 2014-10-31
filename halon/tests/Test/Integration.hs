@@ -32,7 +32,7 @@ tests argv = do
 #if USE_RPC
                     maybe (error "TEST_LISTEN environment variable is not set") id <$> lookupEnv "TEST_LISTEN"
 #else
-                    maybe "localhost:0" id <$> lookupEnv "TEST_LISTEN"
+                    maybe "127.0.0.1:0" id <$> lookupEnv "TEST_LISTEN"
 #endif
 #ifdef USE_RPC
     transport <- RPC.createTransport "s1" addr RPC.defaultRPCParameters

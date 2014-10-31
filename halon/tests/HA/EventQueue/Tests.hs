@@ -39,7 +39,6 @@ import Network.Transport (Transport)
 
 #ifndef USE_RPC
 import Control.Concurrent (threadDelay)
-import qualified HA.Network.Socket as TCP
 import qualified Network.Socket as TCP
 import qualified Network.Transport.TCP as TCP
 #endif
