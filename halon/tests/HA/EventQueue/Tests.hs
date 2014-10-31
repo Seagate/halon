@@ -46,8 +46,8 @@ import qualified Network.Transport.TCP as TCP
 
 testConf :: NodeAgentConf
 testConf = NodeAgentConf {
-    softTimeout = Configured 5000000
-  , timeout = Configured 10000000
+    softTimeout = Configured 500000
+  , timeout = Configured 1000000
 }
 
 eqSDict :: SerializableDict EventQueue
