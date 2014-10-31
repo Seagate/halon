@@ -67,7 +67,7 @@ remoteRC controller = do
 remotable [ 'testConf, 'eqSDict, 'setRC, 'remoteRC ]
 
 triggerEvent :: Int -> Process ()
-triggerEvent k = catch (expiate k) $ \(_ :: SomeException) -> return ()
+triggerEvent = promulgate
 
 invoke :: Serializable a => ProcessId -> a -> Process ()
 invoke them x = send them x >> expect
