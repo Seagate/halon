@@ -22,7 +22,7 @@ ifdef USE_RPC
 USE_TCP =
 endif
 
-DEBUG = 
+DEBUG =
 
 # Allow above defaults to be overriden by using a local config file.
 # That file MUST NOT BE CHECKED IN. Its content is local, not global.
@@ -78,9 +78,9 @@ install: build
 	$(CABAL) copy
 	$(CABAL) register
 
-.PHONY: test loadmero build testidentify ut it
+.PHONY: test loadmero build ut it
 
-test: loadmero build testidentify ut it
+test: loadmero build ut it
 
 ut:
 	$(SUDO) dist/build/unit-tests/unit-tests --num-threads 1 -- $(TEST_LISTEN)
@@ -89,8 +89,6 @@ it:
 	$(SUDO) dist/build/integration-tests/integration-tests --num-threads 1 -- $(TEST_LISTEN)
 
 ifdef USE_RPC
-testidentify:
-	$(SUDO) dist/build/testidentify/testidentify $(TEST_NID)
 
 loadmero:
 	$(SUDO) sysctl -w kernel.randomize_va_space=0
@@ -100,7 +98,6 @@ unloadmero:
 	$(SUDO) M0_CORE_DIR=$(MERO_ROOT) ../network-transport-rpc/rpclite/st rmmod
 
 else
-testidentify:
 loadmero:
 endif
 
@@ -108,10 +105,10 @@ haddock: configure
 	$(CABAL) haddock
 
 
-dep: 
+dep:
 	-$(CABAL) install --only-dependencies --enable-tests --reorder-goals
 
-configure: dep 
+configure: dep
 	$(CABAL) configure $(CABAL_FLAGS)
 
 clean:
