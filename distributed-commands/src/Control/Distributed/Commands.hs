@@ -1,9 +1,26 @@
-module Control.Distributed.Commands where
+-- |
+-- Copyright : (C) 2014 Xyratex Technology Limited.
+-- License   : All rights reserved.
+--
+-- This module provides scp and ssh conveniently wrapped to use them
+-- in scripts.
+--
 
-import Control.Exception (throwIO)
+{-# LANGUAGE LambdaCase #-}
+module Control.Distributed.Commands
+  ( systemThere
+  , systemThereAsUser
+  , scp
+  , ScpPath(..)
+  )
+  where
+
+import Control.Concurrent (forkIO)
+import Control.Exception (throwIO, evaluate)
+import Control.Monad (void)
+import Data.IORef (atomicModifyIORef', newIORef)
 import System.Exit (ExitCode(..))
-import System.IO (hGetLine, IOMode(..), withFile)
-import System.IO.Error (catchIOError, isEOFError)
+import System.IO (hGetContents, IOMode(..), withFile)
 import System.Process
     ( StdStream(..)
     , proc
@@ -44,35 +61,52 @@ scp src dst =
     showPath (LocalPath f) = f
     showPath (RemotePath mu h f) = maybe "" (++ "@") mu ++ h ++ ":" ++ f
 
--- | Runs a command in the given host.
--- Returns the standard output.
--- The call returns immediately.
+-- | A remote version of 'System.Process.system'.
 --
--- Each call of the returned IO action yields potentially
--- a line of output and Nothing when all the output has
--- been consumed and the program has terminated.
+-- Launches a command on the given host and the call returns immediately.
+--
+-- Each call of the returned IO action yields potentially a line of output and
+-- Nothing when all the output has been consumed and the program has terminated.
 --
 -- To wait for completion of the command, execute
 --
--- > runCommand user host cmd >>= dropWhileM isJust
+-- > systemThere host cmd >>= dropWhileM isJust
 --
 -- To capture the standard error, run as:
 --
--- > runCommand user host "(... cmd ...) 2>&1" >>= dropWhileM isJust
+-- > systemThere host "(... cmd ...) 2>&1" >>= dropWhileM isJust
 --
-runCommand :: String -> String -> String -> IO (IO (Maybe String))
-runCommand user host cmd = do
+systemThere :: String       -- ^ The host name or IP address
+            -> String       -- ^ A shell command
+            -> IO (IO (Maybe String))
+               -- ^ An action to read lines of output one at a time
+               --
+               -- It yields Nothing when all the output has been
+               -- consumed.
+systemThere = systemThere' Nothing
+
+-- | Like 'systemThere' but it allows to specify a user to run the command.
+systemThereAsUser :: String -> String -> String -> IO (IO (Maybe String))
+systemThereAsUser = systemThere' . Just
+
+systemThere' :: Maybe String
+             -> String
+             -> String
+             -> IO (IO (Maybe String))
+systemThere' muser host cmd = do
     -- Connect to the remote host.
     withFile "/dev/null" ReadWriteMode $ \dev_null -> do
       (_, Just sout, ~(Just _), _) <- createProcess (proc "ssh"
-        [ user ++ "@" ++ host
+        [ maybe "" (++ "@") muser ++ host
         , "-o", "UserKnownHostsFile=/dev/null"
         , "-o", "StrictHostKeyChecking=no"
         , "--", cmd ])
         { std_out = CreatePipe
         , std_err = UseHandle dev_null
         }
-      return $ catchIOError (fmap Just $ hGetLine sout)
-                            (\e -> if isEOFError e then return Nothing
-                                     else ioError e
-                            )
+      out <- hGetContents sout
+      _ <- forkIO $ void $ evaluate (length out)
+      r <- newIORef (lines out)
+      return $ atomicModifyIORef' r $ \case
+                 []     -> ([], Nothing)
+                 x : xs -> (xs, Just x )

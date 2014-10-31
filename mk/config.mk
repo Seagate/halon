@@ -21,7 +21,8 @@ GHC_VERSION = $(shell ghc --numeric-version)
 PACKAGE_DIR = $(ROOT_DIR)/
 VENDOR_DIR = $(ROOT_DIR)/vendor/
 
-PACKAGES := distributed-process-scheduler \
+PACKAGES := distributed-commands \
+           distributed-process-scheduler \
            distributed-process-test \
            distributed-process-trans \
            consensus \

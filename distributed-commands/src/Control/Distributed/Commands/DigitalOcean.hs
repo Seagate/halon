@@ -14,7 +14,7 @@ module Control.Distributed.Commands.DigitalOcean
     , newDroplet
     , destroyDroplet
     , showDroplet
-    , Credentials
+    , Credentials(..)
     , getCredentialsFromEnv
     , DropletData(..)
     , NewDropletArgs(..)
@@ -148,7 +148,9 @@ showDroplet credentials dropletId = do
               -> return $
                    DropletData dropletId (unpack dropletIP) (unpack status)
 
-      _      -> throwIO $ userError $ "showDroplet error: " ++ showResponse r
+      _      ->
+        let msg = "showDroplet error: " ++ showResponse r
+         in seq (length msg) $ throwIO $ userError msg
 
 -- | Destroys a droplet given its ID.
 destroyDroplet :: Credentials -> String -> IO ()
@@ -165,7 +167,8 @@ destroyDroplet credentials dropletId = do
               , Just (Number eventId) <- HM.lookup "event_id" obj
               -> waitForEventConfirmation credentials $ showScientificId eventId
 
-      _      -> throwIO $ userError $ "destroyDroplet error: " ++ showResponse r
+      _      -> let msg = "destroyDroplet error: " ++ showResponse r
+                 in seq (length msg) $ throwIO $ userError msg
 
 -- | Prints an integer without decimal point and places, other values are
 -- printed with the 'Show' instance for 'Scientific'.
