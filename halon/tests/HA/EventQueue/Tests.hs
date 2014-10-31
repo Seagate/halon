@@ -30,7 +30,6 @@ import Control.Distributed.Static (closureApply)
 
 import Control.Applicative ((<$>))
 import Control.Arrow (first)
-import Control.Exception ( SomeException )
 import Control.Monad
 import Data.ByteString ( ByteString )
 import Data.Defaultable
