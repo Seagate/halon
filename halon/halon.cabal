@@ -58,7 +58,6 @@ Library
                    HA.RecoverySupervisor
                    HA.NodeAgent
                    HA.NodeAgent.Messages
-                   HA.Network.IdentifyTCP
                    HA.Network.RemoteTables
                    HA.Network.Socket
                    HA.Network.Transport
@@ -66,8 +65,6 @@ Library
                    HA.Services.Dummy
                    HA.Services.OCF
                    Control.SpineSeq
-  if flag(rpc)
-    Exposed-Modules: HA.Network.IdentifyRPC
   Build-Depends:   base,
                    binary >= 0.6,
                    bytestring,
