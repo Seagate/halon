@@ -1,7 +1,7 @@
-[submodule "tweag-d-p"]
+[submodule "vendor/distributed-process"]
 	path = vendor/distributed-process
 	url = https://github.com/tweag/distributed-process.git
-[submodule "tasty-files"]
+[submodule "vendor/tasty-files"]
 	path = vendor/tasty-files
 	url = git@github.com:tweag/tasty-files.git
 [submodule "vendor/clock"]
