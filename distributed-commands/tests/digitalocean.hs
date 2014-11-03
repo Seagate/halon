@@ -17,7 +17,7 @@ import Data.Maybe (isNothing)
 
 
 main :: IO ()
-main = withDigitalOceanDo $ do
+main = do
     Just credentials <- getCredentialsFromEnv
     bracket
       (newDroplet credentials NewDropletArgs

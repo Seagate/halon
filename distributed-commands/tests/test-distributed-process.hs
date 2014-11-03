@@ -17,7 +17,6 @@ import Control.Distributed.Commands.Process
   )
 import Control.Distributed.Commands.Providers.DigitalOcean
   ( createProvider
-  , withDigitalOceanDo
   , NewDropletArgs(..)
   )
 
@@ -33,7 +32,7 @@ import Network.Transport.TCP (createTransport, defaultTCPParameters)
 
 
 main :: IO ()
-main = withDigitalOceanDo $ do
+main = do
     Just credentials <- getCredentialsFromEnv
     cp <- createProvider credentials $ return $ NewDropletArgs
       { name        = "test-droplet"

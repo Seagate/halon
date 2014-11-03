@@ -57,7 +57,7 @@ import Control.Distributed.Process.Closure
     , sdictUnit
     )
 import Control.Distributed.Process.Internal.Types (runLocalProcess)
-import Control.Monad.Reader (ask, forM, when)
+import Control.Monad.Reader (ask, when)
 import Data.Binary (decode, encode)
 import Data.ByteString.Lazy (ByteString)
 import Data.List (isPrefixOf)
@@ -102,9 +102,12 @@ isLocalHost :: String -> Bool
 isLocalHost h = h == "localhost" || "127." `isPrefixOf` h
 
 -- | Like @spawnNode@ but spawns multiple nodes in parallel.
+--
+-- XXX: This is a temporary function until there is an 'async' implementation
+-- for 'Process' which will allow to define it in terms of 'spawnNode'.
+--
 spawnNodes :: [HostName] -> String -> Process [NodeId]
-spawnNodes hs cmd = liftIO $
-    forM hs (async . flip spawnNodeIO cmd) >>= mapM wait
+spawnNodes hs cmd = liftIO $ mapConcurrently (flip spawnNodeIO cmd) hs
 
 -- | Intercepts 'say' messages from processes as a crude way to know that an
 -- action following an asynchronous send has completed.

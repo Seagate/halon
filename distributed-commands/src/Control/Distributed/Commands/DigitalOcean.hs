@@ -7,11 +7,11 @@
 --
 -- Credentials are taken from the environment variables
 --
+{-# Language LambdaCase        #-}
 {-# Language PatternGuards     #-}
 {-# Language OverloadedStrings #-}
 module Control.Distributed.Commands.DigitalOcean
-    ( withDigitalOceanDo
-    , newDroplet
+    ( newDroplet
     , destroyDroplet
     , showDroplet
     , Credentials(..)
@@ -25,19 +25,11 @@ import Control.Exception (throwIO, bracketOnError)
 import Control.Monad (liftM2, when)
 import Data.Aeson (Value(..), decode)
 import Data.Aeson.Encode.Pretty (encodePretty)
-import Data.ByteString.Lazy (ByteString)
-import qualified Data.ByteString.Lazy.Char8 as BL8 (unpack)
+import qualified Data.ByteString.Lazy.Char8 as BL8 (unpack, pack)
 import qualified Data.HashMap.Strict as HM (lookup)
 import Data.Maybe (isNothing)
 import Data.Scientific (Scientific, floatingOrInteger)
 import Data.Text (unpack)
-import Network.Curl
-    ( curlGetResponse_
-    , CurlResponse_(..)
-    , CurlCode(..)
-    , withCurlDo
-    , URLString
-    )
 import System.Environment (lookupEnv)
 import System.IO (hGetLine, hClose, openFile, IOMode(..))
 import System.Process
@@ -46,15 +38,8 @@ import System.Process
     , proc
     , StdStream(..)
     , createProcess
+    , readProcess
     )
-
--- Initializes resources to communicate with the digital ocean interface,
--- and releases these resources after the given action terminates.
---
--- This call is not thread-safe.
---
-withDigitalOceanDo :: IO a -> IO a
-withDigitalOceanDo = withCurlDo
 
 -- API key and client ID
 data Credentials = Credentials { clientId :: String, apiKey :: String }
@@ -70,7 +55,7 @@ credentialsToQueryString :: Credentials -> String
 credentialsToQueryString credentials =
   "client_id=" ++ clientId credentials ++ "&api_key=" ++ apiKey credentials
 
-doURL :: URLString
+doURL :: String
 doURL = "https://api.digitalocean.com/v1"
 
 -- | See @https://developers.digitalocean.com/v1/droplets/#new-droplet@
@@ -93,82 +78,69 @@ data DropletData = DropletData
 -- | Creates a droplet.
 newDroplet :: Credentials -> NewDropletArgs -> IO DropletData
 newDroplet credentials args = do
-    r <- curlGetResponse_
-           (doURL ++ "/droplets/new?" ++ credentialsToQueryString credentials
-                  ++ "&name="        ++ name args
-                  ++ "&size_slug="   ++ size_slug args
-                  ++ "&image_id="    ++ image_id args
-                  ++ "&region_slug=" ++ region_slug args
-                  ++ "&ssh_key_ids=" ++ ssh_key_ids args
-           )
-           []
-    case respCurlCode r of
-      CurlOK  | Just (Object obj)       <- decode (respBody r)
-              , Just (String st)        <- HM.lookup "status" obj
-              , st == "OK"
-              , Just (Object d)         <- HM.lookup "droplet" obj
-              , Just (Number dropletId) <- HM.lookup "id" d
-              , Just (Number eventId) <- HM.lookup "event_id" d
-              -> do waitForEventConfirmation credentials $
-                      showScientificId eventId
-                    dd <- showDroplet credentials $ showScientificId dropletId
-                    waitPing $ dropletDataIP dd
-                    -- Wait ten seconds before using the droplet othwerwise,
-                    -- mysterious ssh failures would ensue.
-                    threadDelay $ 10 * 1000000
-                    return dd
-
-      _      -> throwIO $ userError $ "newDroplet error: " ++ showResponse r
+    callCURLGet
+      (doURL ++ "/droplets/new?" ++ credentialsToQueryString credentials
+             ++ "&name="        ++ name args
+             ++ "&size_slug="   ++ size_slug args
+             ++ "&image_id="    ++ image_id args
+             ++ "&region_slug=" ++ region_slug args
+             ++ "&ssh_key_ids=" ++ ssh_key_ids args
+           ) >>= \case
+      r | Just (Object obj)       <- decode (BL8.pack r)
+        , Just (String st)        <- HM.lookup "status" obj
+        , st == "OK"
+        , Just (Object d)         <- HM.lookup "droplet" obj
+        , Just (Number dropletId) <- HM.lookup "id" d
+        , Just (Number eventId) <- HM.lookup "event_id" d
+        -> do waitForEventConfirmation credentials $
+                showScientificId eventId
+              dd <- showDroplet credentials $ showScientificId dropletId
+              waitPing $ dropletDataIP dd
+              -- Wait ten seconds before using the droplet othwerwise,
+              -- mysterious ssh failures would ensue.
+              threadDelay $ 10 * 1000000
+              return dd
+      r -> throwIO $ userError $ "newDroplet error: " ++ showResponse r
 
 -- Converts the response to a string, pretty printing it if
 -- it is valid JSON.
-showResponse :: CurlResponse_ [(String,String)] ByteString -> String
-showResponse r = show (respStatus r) ++ ": " ++
-    case decode $ respBody r of
+showResponse :: String -> String
+showResponse r =
+    case decode $ BL8.pack r of
       Just v -> BL8.unpack (encodePretty (v :: Value))
                 ++ "\n"
                 ++ show v
-      Nothing -> BL8.unpack $ respBody r
+      Nothing -> r
 
 -- | Takes a droplet ID and returns the droplet data.
 showDroplet :: Credentials -> String -> IO DropletData
 showDroplet credentials dropletId = do
-    r <- curlGetResponse_
-           (doURL ++ "/droplets/" ++ dropletId ++ "/"
-                  ++ "?" ++ credentialsToQueryString credentials
-           )
-           []
-    case respCurlCode (r :: CurlResponse_ [(String, String)] ByteString) of
-      CurlOK  | Just (Object obj)       <- decode (respBody r)
-              , Just (String st)        <- HM.lookup "status" obj
-              , st == "OK"
-              , Just (Object d)         <- HM.lookup "droplet" obj
-              , Just (String dropletIP) <- HM.lookup "ip_address" d
-              , Just (String status) <- HM.lookup "status" d
-              -> return $
-                   DropletData dropletId (unpack dropletIP) (unpack status)
+    callCURLGet (doURL ++ "/droplets/" ++ dropletId ++ "/"
+                       ++ "?" ++ credentialsToQueryString credentials
+                ) >>= \case
+      r | Just (Object obj)       <- decode (BL8.pack r)
+        , Just (String st)        <- HM.lookup "status" obj
+        , st == "OK"
+        , Just (Object d)         <- HM.lookup "droplet" obj
+        , Just (String dropletIP) <- HM.lookup "ip_address" d
+        , Just (String status)    <- HM.lookup "status" d
+        -> return $ DropletData dropletId (unpack dropletIP) (unpack status)
 
-      _      ->
-        let msg = "showDroplet error: " ++ showResponse r
-         in seq (length msg) $ throwIO $ userError msg
+      r -> throwIO $ userError $ "showDroplet error: " ++ showResponse r
 
 -- | Destroys a droplet given its ID.
 destroyDroplet :: Credentials -> String -> IO ()
 destroyDroplet credentials dropletId = do
-    r <- curlGetResponse_
-           (doURL ++ "/droplets/" ++ dropletId
-                  ++ "/destroy?"  ++ credentialsToQueryString credentials
-           )
-           []
-    case respCurlCode (r :: CurlResponse_ [(String, String)] ByteString) of
-      CurlOK  | Just (Object obj)       <- decode (respBody r)
-              , Just (String st)        <- HM.lookup "status" obj
-              , st == "OK"
-              , Just (Number eventId) <- HM.lookup "event_id" obj
-              -> waitForEventConfirmation credentials $ showScientificId eventId
+    callCURLGet (doURL ++ "/droplets/" ++ dropletId
+                       ++ "/destroy?"  ++ credentialsToQueryString credentials
+                ) >>= \case
+      r | Just (Object obj)     <- decode (BL8.pack r)
+        , Just (String st)      <- HM.lookup "status" obj
+        , st == "OK"
+        , Just (Number eventId) <- HM.lookup "event_id" obj
+        -> waitForEventConfirmation credentials $ showScientificId eventId
 
-      _      -> let msg = "destroyDroplet error: " ++ showResponse r
-                 in seq (length msg) $ throwIO $ userError msg
+      r -> throwIO $ userError $ "destroyDroplet error: " ++ showResponse r
 
 -- | Prints an integer without decimal point and places, other values are
 -- printed with the 'Show' instance for 'Scientific'.
@@ -184,24 +156,21 @@ data EventData = EventData { eventDataStatus :: Maybe String }
 -- | Takes an event ID and returns the event data.
 showEvent :: Credentials -> String -> IO EventData
 showEvent credentials eventId = do
-    r <- curlGetResponse_
-           (doURL ++ "/events/" ++ eventId ++ "/"
-                  ++ "?" ++ credentialsToQueryString credentials
-           )
-           []
-    case respCurlCode (r :: CurlResponse_ [(String, String)] ByteString) of
-      CurlOK  | Just (Object obj)         <- decode (respBody r)
-              , Just (String st)          <- HM.lookup "status" obj
-              , st == "OK"
-              , Just (Object d)           <- HM.lookup "event" obj
-              , Just eventStatusJ <- HM.lookup "action_status" d
-              -> case eventStatusJ of
-                  String eventStatus -> return $ EventData $ Just $ unpack eventStatus
-                  Null               -> return $ EventData Nothing
-                  _                  ->
-                    error $ "showEvent error: " ++ showResponse r
+    callCURLGet (doURL ++ "/events/" ++ eventId ++ "/"
+                       ++ "?" ++ credentialsToQueryString credentials
+                ) >>= \case
+      r | Just (Object obj)         <- decode (BL8.pack r)
+        , Just (String st)          <- HM.lookup "status" obj
+        , st == "OK"
+        , Just (Object d)           <- HM.lookup "event" obj
+        , Just eventStatusJ         <- HM.lookup "action_status" d
+        -> case eventStatusJ of
+            String eventStatus -> return $ EventData $ Just $ unpack eventStatus
+            Null               -> return $ EventData Nothing
+            _                  ->
+              throwIO $ userError $ "showEvent error: " ++ showResponse r
 
-      _      -> throwIO $ userError $ "showEvent error: " ++ showResponse r
+      r -> throwIO $ userError $ "showEvent error: " ++ showResponse r
 
 -- | Waits for an event with a given ID to be confirmed.
 waitForEventConfirmation :: Credentials -> String -> IO ()
@@ -226,3 +195,6 @@ waitPing host =
       _ <- hGetLine sout
       _ <- hGetLine sout
       terminateProcess ph
+
+callCURLGet :: String -> IO String
+callCURLGet url = readProcess "curl" ["-s", url] ""

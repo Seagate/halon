@@ -5,8 +5,7 @@
 -- 'Provider' interface for Digital Ocean
 --
 module Control.Distributed.Commands.Providers.DigitalOcean
-  ( withDigitalOceanDo
-  , Credentials(..)
+  ( Credentials(..)
   , NewDropletArgs(..)
   , createProvider
   ) where
@@ -16,8 +15,7 @@ import Control.Distributed.Commands.Management
   , Provider(..)
   )
 import Control.Distributed.Commands.DigitalOcean
-  ( withDigitalOceanDo
-  , DropletData(..)
+  ( DropletData(..)
   , NewDropletArgs(..)
   , Credentials(..)
   , newDroplet
