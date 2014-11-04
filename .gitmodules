@@ -11,3 +11,7 @@
 [submodule "options-schema"]
 	path = vendor/options-schema
 	url = git@github.com:tweag/options-schema.git
+[submodule "network-transport-tcp"]
+	path = vendor/network-transport-tcp
+	url = git@github.com:tweag/network-transport-tcp.git
+	branch = fix-zero-port-patch

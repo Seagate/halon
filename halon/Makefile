@@ -48,7 +48,7 @@ endif
 
 
 ifdef USE_TCP
-TEST_LISTEN = 127.0.0.1:8090
+TESTS_LISTEN_ADDRESS = 127.0.0.1:8090
 endif
 
 ifdef USE_RPC
@@ -56,9 +56,11 @@ ifdef USE_RPC
 # explicitly because most operating systems reset that environment
 # variable for setuid binaries.
 TEST_NID = `sudo lctl list_nids | grep o2ib | head -1`
-TEST_LISTEN = $(TEST_NID):12345:34:1
+TESTS_LISTEN_ADDRESS = $(TEST_NID):12345:34:1
 CABAL_FLAGS += -frpc
 endif
+
+export TESTS_LISTEN_ADDRESS
 
 ifdef DEBUG
 CABAL_FLAGS += -fdebug --enable-tests
@@ -83,10 +85,10 @@ install: build
 test: loadmero build ut it
 
 ut:
-	$(SUDO) dist/build/unit-tests/unit-tests --num-threads 1 -- $(TEST_LISTEN)
+	$(SUDO) dist/build/unit-tests/unit-tests --num-threads 1
 
 it:
-	$(SUDO) dist/build/integration-tests/integration-tests --num-threads 1 -- $(TEST_LISTEN)
+	$(SUDO) dist/build/integration-tests/integration-tests --num-threads 1
 
 ifdef USE_RPC
 

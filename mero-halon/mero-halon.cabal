@@ -182,10 +182,9 @@ Test-Suite unit-tests
   Main-Is:          test.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
-  Other-Modules:    Tests
-                    HA.RecoveryCoordinator.Mero.Tests
+  Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
                     RemoteTables
-  Ghc-Options:      -Wall -threaded
+  Ghc-Options:      -Wall -threaded -Werror
   CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
@@ -206,9 +205,12 @@ Test-Suite unit-tests
                     network,
                     network-transport,
                     hashable,
-                    unordered-containers
+                    unordered-containers,
+                    tasty,
+                    tasty-hunit,
+                    tasty-files
   if flag(rpc)
-      Build-Depends: network-transport-rpc, tasty
+      Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
   else
       Build-Depends: network-transport-tcp >= 0.3
@@ -219,8 +221,7 @@ Test-Suite integration-tests
   Type:             exitcode-stdio-1.0
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
-  Other-Modules:    Tests
-                    HA.RecoveryCoordinator.Mero.Tests
+  Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
                     RemoteTables
   Main-Is:          test.hs
   Ghc-Options:      -Wall -threaded
@@ -244,9 +245,12 @@ Test-Suite integration-tests
                     network,
                     network-transport,
                     hashable,
-                    unordered-containers
+                    unordered-containers,
+                    tasty,
+                    tasty-hunit,
+                    tasty-files
   if flag(rpc)
-      Build-Depends: network-transport-rpc, tasty
+      Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
   else
       Build-Depends: network-transport-tcp >= 0.3
