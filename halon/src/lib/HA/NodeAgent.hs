@@ -11,7 +11,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module HA.NodeAgent
       ( module HA.NodeAgent.Messages
@@ -48,7 +47,7 @@ import Control.Distributed.Static (
 import Control.Distributed.Process.Serializable (Serializable)
 
 import Control.Monad (join, void, when)
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Control.Exception (Exception, throwIO, SomeException(..))
 import Data.Binary (Binary, encode)
 import Data.Defaultable
@@ -74,23 +73,21 @@ data NodeAgentConf = NodeAgentConf {
   , timeout :: Defaultable Int
 } deriving (Eq, Typeable, Generic)
 
-instance Binary (Defaultable Int)
-instance Hashable (Defaultable Int)
 instance Binary NodeAgentConf
 instance Hashable NodeAgentConf
 
 configSchema :: Schema NodeAgentConf
 configSchema = let
-    st = defaultableShow 5000000 . intOption $ long "softTimeout"
+    st = defaultable 5000000 . intOption $ long "softTimeout"
                    <> summary "Soft timeout for event propogation."
                    <> metavar "TIMEOUT"
                    <> argSummary "(Milliseconds)"
-    t  = defaultableShow 10000000 . intOption $ long "timeout"
+    t  = defaultable 10000000 . intOption $ long "timeout"
                    <> summary "Hard timeout for event propogation."
                    <> detail "This timeout needs to be lower than the promulgate timeout."
                    <> metavar "TIMEOUT"
                    <> argSummary "(Milliseconds)"
-  in NodeAgentConf <$$> one st <**> one t
+  in NodeAgentConf <$> st <*> t
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --

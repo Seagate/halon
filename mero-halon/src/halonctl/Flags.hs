@@ -2,42 +2,64 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
-module Flags (Mode(..), Config(..), parseArgs) where
+module Flags where
 
-import System.Console.GetOpt
-import Control.Exception (throw)
+import Options.Applicative
+    ( (<$>)
+    , (<*>)
+    , (<>)
+    )
+import qualified Options.Applicative as O
+import qualified Options.Applicative.Extras as O
 
-data Mode = Help | Version | Run
+import qualified Handler.Bootstrap as Bootstrap
 
-data Config = Config
-    { mode :: Mode
-    , localEndpoint :: String
-    , update :: Bool
+data Options = Options
+    { optTheirAddress :: [String] -- ^ Addresses of halond nodes to control.
+    , optOurAddress   :: String
+    , optCommand      :: Command
     }
+  deriving (Eq)
 
-defaultConfig :: Config
-defaultConfig =
-    Config { mode = Run
-           , localEndpoint = error "No address to listen on given."
-           , update = False
-           }
+data Command =
+    Bootstrap Bootstrap.BootstrapOptions
+  deriving (Eq)
 
-options :: [OptDescr (Config -> Config)]
-options =
-    [ Option [] ["help"] (NoArg $ \c -> c{mode=Help})
-        "This help message."
-    , Option [] ["version"] (NoArg $ \c -> c{mode=Version})
-        "Display version information."
-    , Option ['l'] ["listen"] (ReqArg (\s c -> c{ localEndpoint = s }) "ADDRESS")
-        "Address to listen on."
-    , Option ['u'] ["update"] (NoArg (\c -> c { update = True }))
-        "Update the tracking station membership rather than starting a new \
-        \tracking station."
-    ]
+self :: String
+self = "halonctl"
 
-parseArgs :: [String] -> Config
-parseArgs argv =
-    case getOpt Permute options argv of
-      (opts,[],[]) -> foldr (.) id opts defaultConfig
-      (_,_,errs) -> throw $ userError $ concat errs ++ usageInfo header options
-  where header = "Usage: halonctl [OPTION...]"
+getOptions :: IO Options
+getOptions =
+    O.execParser $
+      O.withFullDesc self parseOptions
+        "Control Cloud Haskell nodes run by halond"
+
+parseOptions :: O.Parser Options
+parseOptions =
+    Options <$>
+        parseTheirAddress
+    <*> parseOurAddress
+    <*> parseCommand
+
+parseTheirAddress :: O.Parser [String]
+parseTheirAddress =
+    O.many . O.strOption $
+         O.metavar "ADDRESSES"
+      <> O.long "address"
+      <> O.short 'a'
+      <> O.help "Addresses of nodes to control; default 127.0.0.1:9000"
+
+parseOurAddress :: O.Parser String
+parseOurAddress =
+    O.strOption $
+         O.metavar "LISTEN"
+      <> O.long "listen"
+      <> O.short 'l'
+      <> O.value "127.0.0.1:9001"
+      <> O.help "Address halonctl binds to; default 127.0.0.1:9001"
+
+parseCommand :: O.Parser Command
+parseCommand =
+  O.subparser $
+    O.command "bootstrap"
+      (Bootstrap <$> O.withDesc Bootstrap.parseBootstrap "Bootstrap a node")

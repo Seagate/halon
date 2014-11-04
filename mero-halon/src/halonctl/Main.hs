@@ -1,18 +1,16 @@
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE CPP #-}
 module Main (main) where
 
 import Flags
 import HA.Network.RemoteTables (haRemoteTable)
-import HA.NodeAgent
-  ( NodeAgentConf(..) )
 import HA.Process
-import HA.RecoveryCoordinator.Mero.Startup
 
-import Handler.Bootstrap.NodeAgent (startNA)
+import Handler.Bootstrap
 
 import Mero.RemoteTables (meroRemoteTable)
 
@@ -24,12 +22,8 @@ import qualified HA.Network.Socket as TCP
 #endif
 
 import Control.Applicative ((<$>))
-import Control.Distributed.Process.Closure ( mkClosure, functionTDict )
 import Control.Distributed.Process
 import Control.Distributed.Process.Node (initRemoteTable, newLocalNode)
-import Data.Defaultable
-
-import System.Environment
 
 buildType :: String
 #ifdef USE_RPC
@@ -45,45 +39,38 @@ printHeader =
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
-naConf :: NodeAgentConf
-naConf = NodeAgentConf
-  { softTimeout = Default 500000
-  , timeout = Default 1000000
-  }
-
-main :: IO Int
-main = do
-  config <- parseArgs <$> getArgs
+conjureRemoteNodeId :: String -> NodeId
+conjureRemoteNodeId addr =
 #ifdef USE_RPC
-  transport <- RPC.createTransport "s1" (localEndpoint config) RPC.defaultRPCParameters
+  -- TODO
+  undefinedRPCMethod
+#else
+    NodeId $ TCP.encodeEndPointAddress host port 0
+  where
+    sa = TCP.decodeSocketAddress addr
+    host = TCP.socketAddressHostName sa
+    port = TCP.socketAddressServiceName sa
+#endif
+
+main :: IO ()
+main = getOptions >>= run
+
+run :: Options -> IO ()
+run (Options { .. }) = do
+#ifdef USE_RPC
+  transport <- RPC.createTransport "s1" optOurAddress RPC.defaultRPCParameters
   writeNetworkGlobalIVar transport
 #else
-  let sa = TCP.decodeSocketAddress $ localEndpoint config
+  let sa = TCP.decodeSocketAddress optOurAddress
       hostname = TCP.socketAddressHostName sa
       port = TCP.socketAddressServiceName sa
   transport <- either (error . show) id <$>
                TCP.createTransport hostname port TCP.defaultTCPParameters
 #endif
   lnid <- newLocalNode transport myRemoteTable
-  tryRunProcess lnid $
-    do liftIO $ printHeader
-       self <- getSelfNode
-       startNA self naConf
-       liftIO $ putStrLn $ "Starting Recovery Supervisors."
-       result <- call $(functionTDict 'ignition) self $
-                  $(mkClosure 'ignition) (update config)
-       case result of
-          Just (added, trackers, mpids, members, newNodes) -> liftIO $ do
-            if added then do
-              putStrLn "The following nodes joined successfully:"
-              mapM_ print newNodes
-            else
-              putStrLn "No new node could join the group."
-            putStrLn ""
-            putStrLn "The following nodes were already in the group:"
-            mapM_ print members
-            putStrLn ""
-            putStrLn "The following nodes could not be contacted:"
-            mapM_ print $ [ tracker | (Nothing, tracker) <- zip mpids trackers ]
-          Nothing -> return ()
-  return 0
+  let rnids = fmap conjureRemoteNodeId optTheirAddress
+  tryRunProcess lnid $ do
+    liftIO $ printHeader
+    case optCommand of
+      Bootstrap bs -> bootstrap rnids bs
+  return ()

@@ -60,6 +60,7 @@ module HA.Service
   , HA.Service.__remoteTable
 ) where
 
+import Control.Applicative (pure)
 import Control.Arrow ((>>>))
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
@@ -79,7 +80,6 @@ import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
 import Options.Schema
-import Options.Schema.Builder
 
 import HA.ResourceGraph
 import HA.Resources
@@ -274,7 +274,7 @@ instance Relation WantsConf (Service ()) () where
   relationDict = $(mkStatic 'relationDictWantsServiceEmptyConfigItemEmpty)
 
 instance Configuration () where
-  schema = (\_ -> ()) <$$> Empty
+  schema = pure ()
   sDict = $(mkStatic 'emptySDict)
 
 --------------------------------------------------------------------------------

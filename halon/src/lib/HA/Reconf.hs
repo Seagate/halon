@@ -15,6 +15,7 @@ module HA.Reconf (
 import HA.Service
 import HA.Resources
 
+import Control.Applicative ((<$>))
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure (mkStatic)
 import Control.Distributed.Static
@@ -39,7 +40,7 @@ data GlobalOpts = GlobalOpts
 
 instance Binary GlobalOpts
 
-nodeAgentConf :: Option NodeAgentConf
+nodeAgentConf :: Schema NodeAgentConf
 nodeAgentConf = compositeOption schema
               $ long "nodeAgent"
               <> long "na"
@@ -48,7 +49,7 @@ nodeAgentConf = compositeOption schema
 
 globalSchema :: Schema GlobalOpts
 globalSchema = GlobalOpts
-             <$$> one nodeAgentConf
+             <$> nodeAgentConf
 
 -- | Send new configuration messages to the recovery co-ordinator.
 reconf :: (GlobalOpts, ConfigurationFilter, ProcessId)

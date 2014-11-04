@@ -144,17 +144,15 @@ remotableDecl [ [d|
        ] >> handleMessages refmapper
 
  -- | Start the RC and EQ on the nodes in the genders file
- ignition :: Bool
+ ignition :: (Bool, [String], [String])
           -> Process (Maybe (Bool,[NodeId],[Maybe ProcessId],[NodeId],[NodeId]))
- ignition update = do
+ ignition (update, trackerstrs, nodestrs) = do
      disconnectAllNodeConnections
-     -- Query data from our genders file
-     trackerstrs  <- wellformQueryNodes "m0_station"
-     nodestrs <- wellformQueryNodes "m0_all"
      -- XXX we are hardcoding an endpoint here, on the assumption that there is
      -- only one endpoint.
 #ifdef USE_RPC
-     let trackers = map RPC.rpcAddress trackers
+    -- TODO this is broken - needs to be fixed for USE_RPC
+     let trackers = map RPC.rpcAddress trackerstrs
 #else
      let tonid x = NodeId $ TCP.encodeEndPointAddress host port 0
            where
