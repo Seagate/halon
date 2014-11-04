@@ -47,4 +47,4 @@ tests argv = do
     transport <- either (error . show) id <$>
                  TCP.createTransport hostname (show port) TCP.defaultTCPParameters
 #endif
-    monolith "RC" $ HA.RecoveryCoordinator.Mero.Tests.tests addr0 transport
+    monolith "RC" $ HA.RecoveryCoordinator.Mero.Tests.tests transport

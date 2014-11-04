@@ -24,13 +24,7 @@ import HA.Replicator.Mock ( MC_RG )
 #else
 import HA.Replicator.Log ( MC_RG )
 #endif
-#ifdef USE_RPC
-import qualified HA.Network.IdentifyRPC as Identify
-#else
-import qualified HA.Network.IdentifyTCP as Identify
-#endif
 import HA.NodeAgent
-import HA.NodeAgent.Lookup ( advertiseNodeAgent )
 import HA.Service
   ( ServiceFailed(..)
   , encodeP
@@ -127,16 +121,11 @@ mockNodeAgent done = do
 
     liftIO $ putMVar done ()
 
-tests :: String -> Transport -> IO ()
-tests addr transport =
+tests :: Transport -> IO ()
+tests transport =
     tryWithTimeout transport rt 5000000 $ do
         done <- liftIO $ newEmptyMVar
         na <- spawnLocal $ mockNodeAgent done
-#ifdef USE_RPC
-        Just iid <- advertiseNodeAgent na
-#else
-        Just iid <- advertiseNodeAgent (toEnum 8087) na
-#endif
         nid <- getSelfNode
 
         registerInterceptor $ \string -> case string of
@@ -149,9 +138,8 @@ tests addr transport =
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        runRC (eq, na, IgnitionArguments [addr] [addr]) rGroup
+        runRC (eq, na, IgnitionArguments [nid] [nid]) rGroup
         liftIO $ takeMVar done
-        liftIO $ Identify.closeAvailable iid
   where
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
