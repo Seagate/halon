@@ -2,10 +2,9 @@
 -- Copyright : (C) 2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
---------------------------------------------------------------------------------
+-- NodeAgent service proxy module. This serves to run the NodeAgent, which is
+-- necesary at the moment for certain parts of the system.
 
--- | NodeAgent service proxy module. This serves to run the NodeAgent, which
---   is necesary at the moment for certain parts of the system.
 module Handler.Bootstrap.NodeAgent
   ( NodeAgentConf
   , startNA
@@ -36,4 +35,3 @@ startNA nid naConf = do
     _ <- spawn nid $ (serviceProcess nodeAgent)
       `closureApply` closure (staticDecode sDict) (encode naConf)
     return ()
-
