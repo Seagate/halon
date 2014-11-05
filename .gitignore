@@ -1,6 +1,4 @@
 cabal.sandbox.config
-cabal.sandbox-default.config
-cabal.sandbox-scheduler.config
 .cabal-sandbox*
 dist/
 test_output/
