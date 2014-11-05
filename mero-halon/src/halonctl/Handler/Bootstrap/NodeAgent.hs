@@ -7,7 +7,7 @@
 
 module Handler.Bootstrap.NodeAgent
   ( NodeAgentConf
-  , startNA
+  , start
   )
 where
 
@@ -29,8 +29,8 @@ import HA.Service (sDict)
 self :: String
 self = "HA.NodeAgent"
 
-startNA :: NodeId -> NodeAgentConf -> Process ()
-startNA nid naConf = do
+start :: NodeId -> NodeAgentConf -> Process ()
+start nid naConf = do
     say $ "This is " ++ self
     _ <- spawn nid $ (serviceProcess nodeAgent)
       `closureApply` closure (staticDecode sDict) (encode naConf)

@@ -9,9 +9,9 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Handler.Bootstrap.TrackingStation
-  ( TrackingStationOpts
-  , tsSchema
-  , startTS
+  ( Config
+  , schema
+  , start
   )
 where
 
@@ -39,17 +39,17 @@ import qualified Options.Applicative as Opt
 
 import HA.RecoveryCoordinator.Mero.Startup
 
-data TrackingStationOpts = TrackingStationOpts {
-    tsUpdate :: Defaultable Bool
-  , tsTrackers :: Defaultable [String]
-  , tsSats :: Defaultable [String]
-} deriving (Eq, Show, Ord, Generic, Typeable)
+data Config = Config
+  { configUpdate :: Defaultable Bool
+  , configTrackers :: Defaultable [String]
+  , configSatellites :: Defaultable [String]
+  } deriving (Eq, Show, Ord, Generic, Typeable)
 
-instance Binary TrackingStationOpts
-instance Hashable TrackingStationOpts
+instance Binary Config
+instance Hashable Config
 
-tsSchema :: Opt.Parser TrackingStationOpts
-tsSchema = let
+schema :: Opt.Parser Config
+schema = let
     upd = defaultable False . Opt.switch
              $ Opt.long "update"
             <> Opt.short 'u'
@@ -59,20 +59,18 @@ tsSchema = let
             <> Opt.short 't'
             <> Opt.help "Addresses to spawn tracking station nodes on."
             <> Opt.metavar "ADDRESSES"
-    sats =  defaultable [] . Opt.many . Opt.strOption
+    sats = defaultable [] . Opt.many . Opt.strOption
              $ Opt.long "satellites"
             <> Opt.short 's'
             <> Opt.help "Satellite node addresses (not including trackers)."
             <> Opt.metavar "ADDRESSES"
-  in TrackingStationOpts <$> upd
-                         <*> trackers
-                         <*> sats
+  in Config <$> upd <*> trackers <*> sats
 
 self :: String
 self = "HA.TrackingStation"
 
-startTS :: NodeId -> TrackingStationOpts -> Process ()
-startTS nid naConf = void . spawnLocal $ do
+start :: NodeId -> Config -> Process ()
+start nid naConf = void . spawnLocal $ do
     say $ "This is " ++ self
     result <- call $(functionTDict 'ignition) nid $
                $(mkClosure 'ignition) args
@@ -91,7 +89,7 @@ startTS nid naConf = void . spawnLocal $ do
         mapM_ print $ [ tracker | (Nothing, tracker) <- zip mpids trackers ]
       Nothing -> return ()
   where
-    args = ( fromDefault . tsUpdate $ naConf
-           , fromDefault . tsTrackers $ naConf
-           , fromDefault . tsSats $ naConf
+    args = ( fromDefault . configUpdate $ naConf
+           , fromDefault . configTrackers $ naConf
+           , fromDefault . configSatellites $ naConf
            )

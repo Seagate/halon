@@ -44,7 +44,7 @@ import HA.Service (schema)
 -- | Options for bootstrapping.
 data BootstrapOptions =
       BootstrapNode NA.NodeAgentConf
-    | BootstrapStation TS.TrackingStationOpts
+    | BootstrapStation TS.Config
   deriving (Eq, Typeable, Generic)
 
 instance Binary BootstrapOptions
@@ -58,12 +58,12 @@ parseBootstrap =
             "Bootstrap a satellite")
       <> O.command "station"
           (O.withDesc
-            (BootstrapStation <$> TS.tsSchema)
+            (BootstrapStation <$> TS.schema)
             "Bootstrap a tracking station node")
 
 bootstrap :: [NodeId] -- ^ NodeIds of the node to bootstrap
           -> BootstrapOptions
           -> Process ()
 bootstrap nids opts = case opts of
-  BootstrapNode naConf -> mapM_ (\nid -> NA.startNA nid naConf) nids
-  BootstrapStation tsConf -> mapM_ (\nid -> TS.startTS nid tsConf) nids
+  BootstrapNode naConf -> mapM_ (\nid -> NA.start nid naConf) nids
+  BootstrapStation tsConf -> mapM_ (\nid -> TS.start nid tsConf) nids
