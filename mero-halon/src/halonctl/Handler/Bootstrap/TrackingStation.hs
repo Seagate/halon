@@ -2,13 +2,12 @@
 -- Copyright : (C) 2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
---------------------------------------------------------------------------------
+-- Tracking station bootstrap module. This serves to start recovery supervisors
+-- on a set of provided nodes.
 
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
 
--- | Tracking station bootstrap module. This serves to start recovery
---   supervisors on a set of provided nodes.
 module Handler.Bootstrap.TrackingStation
   ( TrackingStationOpts
   , tsSchema
