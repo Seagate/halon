@@ -4,6 +4,8 @@
 
 module Flags where
 
+import qualified Handler.Bootstrap as Bootstrap
+
 import Options.Applicative
     ( (<$>)
     , (<*>)
@@ -12,7 +14,7 @@ import Options.Applicative
 import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
 
-import qualified Handler.Bootstrap as Bootstrap
+import System.Environment (getProgName)
 
 data Options = Options
     { optTheirAddress :: [String] -- ^ Addresses of halond nodes to control.
@@ -25,41 +27,22 @@ data Command =
     Bootstrap Bootstrap.BootstrapOptions
   deriving (Eq)
 
-self :: String
-self = "halonctl"
-
 getOptions :: IO Options
-getOptions =
+getOptions = do
+    self <- getProgName
     O.execParser $
-      O.withFullDesc self parseOptions
-        "Control Cloud Haskell nodes run by halond"
-
-parseOptions :: O.Parser Options
-parseOptions =
-    Options <$>
-        parseTheirAddress
-    <*> parseOurAddress
-    <*> parseCommand
-
-parseTheirAddress :: O.Parser [String]
-parseTheirAddress =
-    O.many . O.strOption $
-         O.metavar "ADDRESSES"
-      <> O.long "address"
-      <> O.short 'a'
-      <> O.help "Addresses of nodes to control; default 127.0.0.1:9000"
-
-parseOurAddress :: O.Parser String
-parseOurAddress =
-    O.strOption $
-         O.metavar "LISTEN"
-      <> O.long "listen"
-      <> O.short 'l'
-      <> O.value "127.0.0.1:9001"
-      <> O.help "Address halonctl binds to; default 127.0.0.1:9001"
-
-parseCommand :: O.Parser Command
-parseCommand =
-  O.subparser $
-    O.command "bootstrap"
-      (Bootstrap <$> O.withDesc Bootstrap.parseBootstrap "Bootstrap a node")
+      O.withFullDesc self parseOptions "Control nodes (halond instances)."
+  where
+    parseOptions :: O.Parser Options
+    parseOptions = Options
+        <$> (O.many . O.strOption $ O.metavar "ADDRESSES" <>
+               O.long "address" <>
+               O.short 'a' <>
+               O.help "Addresses of nodes to control.")
+        <*> (O.strOption $ O.metavar "ADDRESS" <>
+               O.long "listen" <>
+               O.short 'l' <>
+               O.value "0.0.0.0:9001" <>
+               O.help "Address halonctl binds to; defaults to 0.0.0.0:0.")
+        <*> (O.subparser $ O.command "bootstrap" $ Bootstrap <$>
+               O.withDesc Bootstrap.parseBootstrap "Bootstrap a node.")
