@@ -123,13 +123,16 @@ data TypeableDict a where
     deriving (Typeable)
 
 -- | Information about a log entry.
-data Hint = None           -- ^ Assume nothing, be pessimistic.
-          | Idempotent     -- ^ Executing the command has effect on replicated
-                           -- state, but executing multiple times has same
-                           -- effect as executing once.
-          | Nullipotent    -- ^ Executing the command has no effect on
-                           -- replicated state, i.e. executing multiple times
-                           -- has same effect as executing zero or more times.
+data Hint
+      -- | Assume nothing, be pessimistic.
+    = None
+      -- | Executing the command has effect on replicated state, but executing
+      -- multiple times has same effect as executing once.
+    | Idempotent
+      -- | Executing the command has no effect on replicated state, i.e.
+      -- executing multiple times has same effect as executing zero or more
+      -- times.
+    | Nullipotent
     deriving (Eq, Ord, Show, Generic, Typeable)
 
 instance Monoid Hint where
@@ -150,13 +153,13 @@ data Log a = forall s. Typeable s => Log
 -- reconfigure the group. Note that stopping a group completely can be done by
 -- reconfiguring to the null membership list. And reconfiguring with the same
 -- membership list encodes a no-op.
-data Value a =
-               -- | Batch of values.
-               Values [a]
-               -- | Request start time, lease period, list of acceptors and list
-               -- of replicas (i.e. proposers).
-             | Reconf TimeSpec Int64 [ProcessId] [ProcessId]
-               deriving (Eq, Generic, Typeable)
+data Value a
+      -- | Batch of values.
+    = Values [a]
+      -- | Request start time, lease period, list of acceptors and list of
+      -- replicas (i.e. proposers).
+    | Reconf TimeSpec Int64 [ProcessId] [ProcessId]
+    deriving (Eq, Generic, Typeable)
 
 instance Binary a => Binary (Value a)
 
@@ -182,7 +185,6 @@ data Request a = Request
     { requestSender   :: ProcessId
     , requestValue    :: Value a
     , requestHint     :: Hint
-    ,
       -- | @Just d@ signals a lease request, where @d@ is the decree on which
       -- the request is valid.
       --
@@ -195,7 +197,7 @@ data Request a = Request
       -- prevent this, the @requestForLease@ field helps discarding lease
       -- requests which have become dated.
       --
-      requestForLease :: Maybe LegislatureId
+    , requestForLease :: Maybe LegislatureId
     }
   deriving (Generic, Typeable)
 
