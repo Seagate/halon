@@ -7,6 +7,7 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module HA.Resources.Mero where
 
@@ -17,43 +18,20 @@ import HA.ResourceGraph
   , Dict(..)
   )
 import Control.Distributed.Process.Closure
+import Mero.ConfC (Fid(..))
 
 import Data.Hashable (Hashable)
 import Data.Binary (Binary)
-import Data.Word (Word64)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
+
 
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
 
--- | Configuration object identifiers.
-data UUID = UUID {-# UNPACK #-} !Word64
-                 {-# UNPACK #-} !Word64
-    deriving (Eq, Ord, Show, Generic, Typeable)
-
-instance Binary UUID
-instance Hashable UUID
-
--- | Configuration objects types. Should match "conf/obj.h".
-data ConfType
-    = M0_CO_DIR         -- 0, unused
-    | M0_CO_PROFILE     -- 1
-    | M0_CO_FILESYSTEM  -- 2
-    | M0_CO_SERVICE     -- 3
-    | M0_CO_NODE        -- 4
-    | M0_CO_NIC         -- 5
-    | M0_CO_SDEV        -- 6
-    | M0_CO_UNKNOWN Int
-    deriving (Eq, Show, Generic, Typeable)
-
-instance Binary ConfType
-instance Hashable ConfType
-
-data ConfObject = ConfObject
-    { confObjectType :: ConfType
-    , confObjectId   :: UUID
+newtype ConfObject = ConfObject
+    { confObjectId   :: Fid
     } deriving (Eq, Show, Generic, Typeable)
 
 instance Binary ConfObject

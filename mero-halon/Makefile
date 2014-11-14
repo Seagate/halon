@@ -41,7 +41,7 @@ export LD_LIBRARY_PATH := \
 		$(MERO_ROOT)/extra-libs/cunit/CUnit/Sources/.libs\
 		$(MERO_ROOT)/extra-libs/galois/src/.libs\
                 $(LD_LIBRARY_PATH)))
-SUDO = sudo -E LD_LIBRARY_PATH=$(LD_LIBRARY_PATH)
+SUDO = sudo LD_LIBRARY_PATH=$(LD_LIBRARY_PATH)
 else
 SUDO =
 endif
@@ -85,7 +85,7 @@ install: build
 	$(CABAL) copy
 	$(CABAL) register
 
-test: build testepoch testhastate
+test: build
 	make loadmero
 # XXX: Tests for this project will not be compiled under ghc-7.8
 # because tests are failing. This workaround should be removed
@@ -96,28 +96,6 @@ test: build testepoch testhastate
 	if [ -f dist/build/integration-tests/integration-tests ] ; then \
 	$(SUDO) dist/build/integration-tests/integration-tests --num-threads 1 -- $(TEST_LISTEN); \
 	fi
-
-ifdef USE_RPC
-testepoch:
-	make loadmero
-	tests/wrapper $(SUDO) PATH=$(MYPWD)/scripts:$(PATH):$(LD_LIBRARY_PATH) ../dist/build/testepoch/testepoch $(TEST_NID)
-	$(SUDO) pkill m0d || true
-
-testhastate:
-	sudo -E $(ENV) $(RPCLITE_PREFIX)/st sstart confd
-	make -C hastate dummy_mero || \
-		($(SUDO) -E $(ENV) $(RPCLITE_PREFIX)/st sstop confd && false)
-	$(SUDO) -E $(ENV) hastate/call_dummy_mero.sh $(TEST_NID):12345:34:2 $(TEST_NID):12345:34:1 $(TEST_NID):12345:34:3 || \
-		($(SUDO) -E $(ENV) $(RPCLITE_PREFIX)/st sstop confd && false)
-	scripts/wait_contents 120 dummy_mero.stdout ready || \
-		($(SUDO) kill `cat dummy_mero.pid`; $(SUDO) -E $(ENV) $(RPCLITE_PREFIX)/st sstop confd && false)
-	$(SUDO) -E $(ENV) dist/build/testhastate/testhastate $(TEST_NID):12345:34:3 $(TEST_NID):12345:34:2 || \
-		($(SUDO) kill `cat dummy_mero.pid`; $(SUDO) -E $(ENV) $(RPCLITE_PREFIX)/st sstop confd && false)
-	$(SUDO) kill `cat dummy_mero.pid`; $(SUDO) -E $(ENV) $(RPCLITE_PREFIX)/st sstop confd
-else
-testepoch:
-testhastate:
-endif
 
 haddock: configure
 	$(CABAL) haddock

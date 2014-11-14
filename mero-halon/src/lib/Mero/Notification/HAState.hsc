@@ -24,13 +24,13 @@ module Mero.Notification.HAState
 
 import HA.Resources.Mero
 
+import Mero.ConfC (Fid)
 import Network.Transport.RPC.RPCLite
     ( ServerEndpoint(..), ServerEndpointV, RPCAddress(..) )
 
 import Control.Exception      ( Exception, throwIO )
-import Control.Monad          ( liftM2, liftM3 )
+import Control.Monad          ( liftM2 )
 import Data.Binary            ( Binary )
-import Data.Bits              ( bitSize, shiftR )
 import Data.ByteString as B   ( useAsCString )
 import Data.Dynamic           ( Typeable )
 import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef
@@ -47,7 +47,6 @@ import Foreign.Storable       ( Storable(..) )
 import GHC.Generics           ( Generic )
 import System.IO.Unsafe       ( unsafePerformIO )
 
-#include "rpclite.h"
 #include "hastate.h"
 #include "conf/obj.h"
 
@@ -55,8 +54,7 @@ import System.IO.Unsafe       ( unsafePerformIO )
 
 -- | Notes telling the state of a given configuration object
 data Note = Note
-    { no_id :: UUID
-    , no_otype :: ConfType
+    { no_id :: Fid
     , no_ostate :: ConfObjectState
     } deriving (Eq, Typeable, Generic)
 
@@ -127,60 +125,19 @@ foreign import ccall "wrapper" cwrapGetCB :: (NVecRef -> IO ())
 foreign import ccall "wrapper" cwrapSetCB :: (NVecRef -> IO CInt)
                                           -> IO (FunPtr (NVecRef -> IO CInt))
 
-instance Enum ConfType where
-  toEnum #{const M0_CONF_DIR_TYPE.cot_ftype.ft_id} = M0_CO_DIR
-  toEnum #{const M0_CONF_PROFILE_TYPE.cot_ftype.ft_id} = M0_CO_PROFILE
-  toEnum #{const M0_CONF_FILESYSTEM_TYPE.cot_ftype.ft_id} = M0_CO_FILESYSTEM
-  toEnum #{const M0_CONF_SERVICE_TYPE.cot_ftype.ft_id} = M0_CO_SERVICE
-  toEnum #{const M0_CONF_NODE_TYPE.cot_ftype.ft_id} = M0_CO_NODE
-  toEnum #{const M0_CONF_NIC_TYPE.cot_ftype.ft_id} = M0_CO_NIC
-  toEnum #{const M0_CONF_SDEV_TYPE.cot_ftype.ft_id} = M0_CO_SDEV
-  toEnum a = M0_CO_UNKNOWN a
-
-  fromEnum M0_CO_DIR = #{const M0_CONF_DIR_TYPE.cot_ftype.ft_id}
-  fromEnum M0_CO_PROFILE = #{const M0_CONF_PROFILE_TYPE.cot_ftype.ft_id} 
-  fromEnum M0_CO_FILESYSTEM = #{const M0_CONF_FILESYSTEM_TYPE.cot_ftype.ft_id} 
-  fromEnum M0_CO_SERVICE = #{const M0_CONF_SERVICE_TYPE.cot_ftype.ft_id} 
-  fromEnum M0_CO_NODE = #{const M0_CONF_NODE_TYPE.cot_ftype.ft_id} 
-  fromEnum M0_CO_NIC = #{const M0_CONF_NIC_TYPE.cot_ftype.ft_id} 
-  fromEnum M0_CO_SDEV = #{const M0_CONF_SDEV_TYPE.cot_ftype.ft_id}
-  fromEnum (M0_CO_UNKNOWN a) = a
-
--- | Conf object type is stored in the top 8 bits of f_container
-extractContainerType :: Word8 -> Word8
-extractContainerType w = let bs = bitSize w in
-  shiftR w (bs - 8)
-
-instance Storable UUID where
-
-  sizeOf _ = #{size struct m0_uint128}
-
-  alignment _ = #{alignment struct m0_uint128}
-
-  peek p = liftM2 UUID
-    (#{peek struct m0_uint128, u_hi} p)
-    (#{peek struct m0_uint128, u_lo} p)
-
-  poke p (UUID hi lo) = do
-    #{poke struct m0_uint128, u_hi} p hi
-    #{poke struct m0_uint128, u_lo} p lo
-
 instance Storable Note where
 
   sizeOf _ = #{size struct m0_ha_note}
 
   alignment _ = #{alignment struct m0_ha_note}
 
-  peek p = liftM3 Note
+  peek p = liftM2 Note
       (#{peek struct m0_ha_note, no_id} p)
-      (fmap (toEnum . fromIntegral . extractContainerType)
-          (#{peek struct m0_ha_note, no_id.f_container} p :: IO Word8)
-      )
       (fmap (toEnum . fromIntegral)
           (#{peek struct m0_ha_note, no_state} p :: IO Word8)
       )
 
-  poke p (Note o _ s) = do
+  poke p (Note o s) = do
       #{poke struct m0_ha_note, no_id} p o
       #{poke struct m0_ha_note, no_state} p
           (fromIntegral $ fromEnum s :: Word8)
@@ -205,7 +162,7 @@ updateNVecRef nref@(NVecRef pnvec) newstates = do
     pokeArray pnotes $ update newstates notes
   where
     update news = map (\n -> maybe n id $ find (eq_id n) news)
-    eq_id (Note o0 t0 _) (Note o1 t1 _) = o0 == o1 && t0 == t1
+    eq_id (Note o0 _) (Note o1 _) = o0 == o1
 
 -- Finalizes the hastate interface.
 finiHAState :: IO ()

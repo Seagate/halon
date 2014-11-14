@@ -38,6 +38,12 @@ void ha_state_fini() {
     ha_state_fop_fini();
 }
 
+// Avoids destroying the payload of the fop.
+static void notify_fop_release(struct m0_ref *ref) {
+    container_of(ref, struct m0_fop, f_ref)->f_data.fd_data = NULL;
+    m0_fop_release(ref);
+}
+
 /// Notifies mero at the remote address that the state of some objects has changed.
 int ha_state_notify( rpc_receive_endpoint_t *ep, char *remote_address
                    , struct m0_ha_nvec *note, int timeout_s
@@ -45,18 +51,16 @@ int ha_state_notify( rpc_receive_endpoint_t *ep, char *remote_address
     int rc;
     struct m0_fop *fop;
     rpc_connection_t *c;
-    rc = rpc_connect_re(ep,remote_address,1,timeout_s,&c);
+    rc = rpc_connect_re(ep,remote_address,timeout_s,&c);
     if (rc)
         return rc;
 
     M0_ALLOC_PTR(fop);
     M0_ASSERT(fop != NULL);
-    m0_fop_init(fop,&ha_state_set_fopt, note, m0_fop_release);
+    m0_fop_init(fop,&ha_state_set_fopt, note, notify_fop_release);
 
-    rc = rpc_send_fop_blocking(c,fop,timeout_s);
+    rc = rpc_send_fop_blocking_and_release(c,fop,timeout_s);
 
-    fop->f_data.fd_data = NULL;
-    m0_fop_put(fop);
     rpc_disconnect(c,timeout_s);
     return rc;
 }

@@ -24,7 +24,7 @@ sendEpochBlocking :: RPC.RPCAddress    -- ^ recepient address
                   -> Word64            -- ^ our epoch
                   -> Int               -- ^ timeout in seconds
                   -> IO (Maybe Word64) -- ^ their epoch
-sendEpochBlocking _ addr epoch _ =
+sendEpochBlocking addr epoch _ =
     do currentEpoch <- fmap read (readFile fname)
          `catchIOError` (\_ -> return 0)
        when (epoch > currentEpoch) $ do

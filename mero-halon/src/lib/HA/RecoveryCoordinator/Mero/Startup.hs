@@ -151,8 +151,9 @@ remotableDecl [ [d|
      -- XXX we are hardcoding an endpoint here, on the assumption that there is
      -- only one endpoint.
 #ifdef USE_RPC
-    -- TODO this is broken - needs to be fixed for USE_RPC
-     let trackers = map RPC.rpcAddress trackerstrs
+     -- TODO this is broken - needs to be fixed for USE_RPC
+     let trackers = [] :: [NodeId] -- map RPC.rpcAddress trackers
+     let nodes = [] :: [NodeId]
 #else
      let tonid x = NodeId $ TCP.encodeEndPointAddress host port 0
            where

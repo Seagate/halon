@@ -95,9 +95,7 @@ int rpc_init(char *persistence_prefix) {
 
 	CHECK_RESULT(rc, rpclite_fop_init(),goto m0_fini);
 
-	CHECK_RESULT(rc, m0_net_xprt_init(&m0_net_lnet_xprt),goto fop_fini);
-
-	CHECK_RESULT(rc, m0_net_domain_init(&client_net_dom, &m0_net_lnet_xprt,&m0_addb_proc_ctx),goto xprt_fini);
+	CHECK_RESULT(rc, m0_net_domain_init(&client_net_dom, &m0_net_lnet_xprt),goto fop_fini);
 
 	m0_ha_domain_init(&client_ha_dom, 0);
 
@@ -113,8 +111,6 @@ net_dom_fini:
 		m0_net_domain_fini(&client_net_dom);
 ha_fini:
 		m0_ha_domain_fini(&client_ha_dom);
-xprt_fini:
-		m0_net_xprt_fini(&m0_net_lnet_xprt);
 fop_fini:
 		rpclite_fop_fini();
 m0_fini:
@@ -126,7 +122,6 @@ m0_fini:
 void rpc_fini() {
   m0_ha_domain_fini(&client_ha_dom);
   m0_net_domain_fini(&client_net_dom);
-  m0_net_xprt_fini(&m0_net_lnet_xprt);
   rpclite_fop_fini();
   m0_fini();
 	rpc_stat_fini();
@@ -491,8 +486,6 @@ int rpc_listen(char* persistence_prefix,char* address,rpc_listen_callbacks_t* cb
 			                .rsx_xprts_nr         = 1,
 			                .rsx_argv             = (*re)->server_argv,
 			                .rsx_argc             = ARRAY_SIZE(server_argv),
-			                .rsx_service_types    = NULL,
-			                .rsx_service_types_nr = 0,
 			                .rsx_log_file_name    = (*re)->log_file_name
 			        };
 
@@ -554,30 +547,31 @@ inline void fill_rpclite_fop(struct rpclite_fop* rpclite_fop,struct iovec* segme
 }
 
 
-int rpc_send_blocking_m0_thread(rpc_connection_t* c,struct m0_fop* fop) {
+int rpc_send_blocking_and_release_m0_thread(rpc_connection_t* c,struct m0_fop* fop) {
 
-	int rc = m0_rpc_client_call(fop, &c->session, NULL, m0_time_from_now(0,1*1000*1000));
+	int rc = m0_rpc_post_sync(fop, &c->session, NULL, m0_time_from_now(0,1*1000*1000));
     if (!rc) {
 		M0_ASSERT(rc == 0);
 	    M0_ASSERT(fop->f_item.ri_error == 0);
 		M0_ASSERT(fop->f_item.ri_reply != 0);
     }
+    m0_fop_put_lock(fop);
 
 	return rc;
 }
 
-/*
- * Sends a message from the current thread if the connection was not
- * created with a request handler, otherwise, it uses the request handler
- * to send the message.
+/* Sends a message using the request handler of the connection.
+ *
+ * This method releases the fop. So don't try to use the fop afterwards!
+ *
  * */
-int rpc_send_fop_blocking(rpc_connection_t* c,struct m0_fop* fop,int timeout_s) {
+int rpc_send_fop_blocking_and_release(rpc_connection_t* c,struct m0_fop* fop,int timeout_s) {
 	m0_time_t time;
 	int rc;
 
 	M0_ASSERT(fop != NULL);
     if (m0_fop_payload_size(&fop->f_item)+ITEM_SIZE_CUSHION > m0_rpc_session_get_max_item_size(&c->session)) {
-        fprintf(stderr,"rpc_send_fop_blocking: rpclite got a message which is too big"
+        fprintf(stderr,"rpc_send_fop_blocking_and_release: rpclite got a message which is too big"
                        ": %d vs %d\n", m0_fop_payload_size(&fop->f_item)
                                      , m0_rpc_session_get_max_item_size(&c->session)-ITEM_SIZE_CUSHION
                );
@@ -608,32 +602,20 @@ out:
 	return rc;
 }
 
-/*
- * Sends a message from the current thread if the connection was not
- * created with a request handler, otherwise, it uses the request handler
- * to send the message.
- * */
+/* Sends a message using the request handler of the connection. */
 int rpc_send_blocking(rpc_connection_t* c,struct iovec* segments,int segment_count,int timeout_s) {
 	struct m0_fop      *fop;
 	struct rpclite_fop* rpclite_fop;
 	int rc;
 
-    M0_ALLOC_PTR(fop);
+	fop = m0_fop_alloc_at(&c->session, &m0_fop_rpclite_fopt);
 	M0_ASSERT(fop != NULL);
-    //m0_fop_init(fop,&m0_fop_rpclite_fopt, NULL, rpclite_fop_free_nonuser_memory);
-    m0_fop_init(fop,&m0_fop_rpclite_fopt, NULL, m0_fop_release);
-    rc = m0_fop_data_alloc(fop);
-    if (rc) {
-        m0_fop_put(fop);
-        return rc;
-    }
 
 	rpclite_fop = m0_fop_data(fop);
     fill_rpclite_fop(rpclite_fop,segments,segment_count);
 
-    rc = rpc_send_fop_blocking(c,fop,timeout_s);
+    rc = rpc_send_fop_blocking_and_release(c,fop,timeout_s);
 
-    m0_fop_put(fop);
 	return rc;
 }
 
@@ -725,6 +707,7 @@ int rpc_send(rpc_connection_t* c,struct iovec* segments,int segment_count,void (
 		msg->fop.f_item.ri_deadline = m0_time_from_now(0,1*1000*1000);
 		msg->fop.f_item.ri_nr_sent_max = 1;
 		msg->fop.f_item.ri_resend_interval = m0_time(timeout_s?timeout_s:1,0);
+		msg->fop.f_item.ri_rmachine = m0_fop_session_machine(&c->session);
 		msg->ctx = ctx;
 		msg->c = c;
 		msg->fop.f_item.ri_ops = &item_ops;
@@ -775,14 +758,8 @@ int rpc_send_epoch_blocking(rpc_connection_t* c, uint64_t ourEpoch,
   else
     client_max_epoch = ourEpoch;
 
-  M0_ALLOC_PTR(fop);
+  fop = m0_fop_alloc_at(&c->session, &m0_rpc_fop_session_terminate_fopt);
   M0_ASSERT(fop != NULL);
-  m0_fop_init(fop, &m0_rpc_fop_session_terminate_fopt, NULL, m0_fop_release);
-  rc = m0_fop_data_alloc(fop);
-  if (rc) {
-    m0_fop_put(fop);
-    return rc;
-  }
 
   fop_data = m0_fop_data(fop);
   fop_data->rst_sender_id = c->session.s_session_id;
@@ -791,13 +768,12 @@ int rpc_send_epoch_blocking(rpc_connection_t* c, uint64_t ourEpoch,
   m0_ha_domain_get_write(&client_ha_dom);
   m0_ha_domain_put_write(&client_ha_dom, ourEpoch);
 
-  rc = rpc_send_fop_blocking(c,fop,timeout_s);
+  rc = rpc_send_fop_blocking_and_release(c,fop,timeout_s);
   if (rc == 0)
   {
     *theirEpoch = m0_ha_domain_get_write(&client_ha_dom);
     m0_ha_domain_put_write(&client_ha_dom, *theirEpoch);
   }
 
-  m0_fop_put(fop);
   return rc;
 }

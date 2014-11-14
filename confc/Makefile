@@ -48,11 +48,11 @@ haddock: configure
 configure:
 	$(CABAL) configure --enable-tests $(CONFIGURE_FLAGS)
 
-test: build
-	sudo -E $(ENV) $(RPCLITE_PREFIX)/st sstart confd
+
+test:
 	sudo -E $(ENV) sh -c \
-		'./dist/build/testconfc/testconfc `lctl list_nids | head -1`:12345:35:401 `lctl list_nids | head -1`:12345:34:1' > testconfc_out.txt
-	make -C ctests runconfc_test_file; sudo -E $(ENV) $(RPCLITE_PREFIX)/st sstop confd
+		'./dist/build/testconfc/testconfc `lctl list_nids | head -1`:12345:35:401 `lctl list_nids | head -1`:12345:34:1001' > testconfc_out.txt
+	make -C ctests runconfc_test_file
 	diff -c ctests/confc_test_out.txt testconfc_out.txt
 
 testconfc: build

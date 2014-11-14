@@ -12,6 +12,7 @@ import Mero.RemoteTables (meroRemoteTable)
 
 #ifdef USE_RPC
 import qualified Network.Transport.RPC as RPC
+import HA.Network.Transport (writeTransportGlobalIVar)
 #else
 import qualified Network.Transport.TCP as TCP
 import qualified HA.Network.Socket as TCP
@@ -42,8 +43,11 @@ main :: IO Int
 main = do
   config <- parseArgs <$> getArgs
 #ifdef USE_RPC
-  transport <- RPC.createTransport "s1" (localEndpoint config) RPC.defaultRPCParameters
-  writeNetworkGlobalIVar transport
+  rpcTransport <- RPC.createTransport "s1"
+                                      (RPC.rpcAddress $ localEndpoint config)
+                                      RPC.defaultRPCParameters
+  writeTransportGlobalIVar rpcTransport
+  let transport = RPC.networkTransport rpcTransport
 #else
   let sa = TCP.decodeSocketAddress $ localEndpoint config
       hostname = TCP.socketAddressHostName sa

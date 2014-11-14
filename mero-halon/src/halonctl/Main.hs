@@ -16,6 +16,7 @@ import Mero.RemoteTables (meroRemoteTable)
 
 #ifdef USE_RPC
 import qualified Network.Transport.RPC as RPC
+import HA.Network.Transport (writeTransportGlobalIVar)
 #else
 import qualified Network.Transport.TCP as TCP
 import qualified HA.Network.Socket as TCP
@@ -43,7 +44,7 @@ conjureRemoteNodeId :: String -> NodeId
 conjureRemoteNodeId addr =
 #ifdef USE_RPC
   -- TODO
-  undefinedRPCMethod
+  error "undefined RPCMethod"
 #else
     NodeId $ TCP.encodeEndPointAddress host port 0
   where
@@ -58,8 +59,11 @@ main = getOptions >>= run
 run :: Options -> IO ()
 run (Options { .. }) = do
 #ifdef USE_RPC
-  transport <- RPC.createTransport "s1" optOurAddress RPC.defaultRPCParameters
-  writeNetworkGlobalIVar transport
+  rpcTransport <- RPC.createTransport "s1"
+                                      (RPC.rpcAddress $ optOurAddress)
+                                      RPC.defaultRPCParameters
+  writeTransportGlobalIVar rpcTransport
+  let transport = RPC.networkTransport rpcTransport
 #else
   let sa = TCP.decodeSocketAddress optOurAddress
       hostname = TCP.socketAddressHostName sa

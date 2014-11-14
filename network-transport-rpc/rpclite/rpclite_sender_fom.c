@@ -68,7 +68,8 @@ int m0_fom_rpclite_sender_state(struct m0_fom *fom)
           case RPC_SENDER_TYPE_SEND_BLOCKING:
             m0_fom_block_enter(fom);
             fom_obj->fom_st->rc =
-                rpc_send_blocking_m0_thread(fom_obj->send_blocking.c,fom_obj->send_blocking.fop);
+                rpc_send_blocking_and_release_m0_thread(
+						fom_obj->send_blocking.c,fom_obj->send_blocking.fop);
             m0_fom_block_leave(fom);
             break;
          case RPC_SENDER_TYPE_SEND:

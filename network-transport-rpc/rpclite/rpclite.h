@@ -162,12 +162,12 @@ int rpc_send(rpc_connection_t* c,struct iovec* segments,int segment_count,void (
  */
 int rpc_send_blocking(rpc_connection_t* c,struct iovec* segments,int segment_count,int timeout_s);
 
-/*
- * Sends a message from the current thread if the connection was not
- * created with a request handler, otherwise, it uses the request handler
- * to send the message.
+/* Sends a message using the request handler of the connection.
+ *
+ * This method releases the fop. So don't try to use the fop afterwards!
+ *
  * */
-int rpc_send_fop_blocking(rpc_connection_t* c,struct m0_fop* fop,int timeout_s);
+int rpc_send_fop_blocking_and_release(rpc_connection_t* c,struct m0_fop* fop,int timeout_s);
 
 
 /**
@@ -292,7 +292,7 @@ int rpc_connect_m0_thread(struct m0_rpc_machine* rpc_machine,
 
 int rpc_disconnect_m0_thread(rpc_connection_t* c,int timeout_s);
 
-int rpc_send_blocking_m0_thread(rpc_connection_t* c,struct m0_fop* fop);
+int rpc_send_blocking_and_release_m0_thread(rpc_connection_t* c,struct m0_fop* fop);
 
 int rpc_send_epoch_blocking(rpc_connection_t* c, uint64_t ourEpoch,
                             int timeout_s, uint64_t* theirEpoch);

@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE TupleSections #-}
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
@@ -38,22 +40,27 @@ module Mero.ConfC
   ) where
 
 #include "confc_helpers.h"
+#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
 
 import Network.Transport.RPC.RPCLite ( RPCAddress(..), RPCMachine(..)
                                      , RPCMachineV
                                      )
 
 import Control.Exception ( Exception, throwIO, bracket_, bracket )
-import Control.Monad ( when )
+import Control.Monad ( when, liftM2 )
+import Data.Binary (Binary)
 import Data.ByteString ( useAsCString )
+import Data.Hashable (Hashable)
 import Data.Typeable ( Typeable )
 import Data.Word ( Word32, Word64 )
-import Foreign.C.String ( withCString, CString, peekCString )
+import Foreign.C.String ( CString, peekCString )
 import Foreign.C.Types ( CInt(..) )
 import Foreign.Marshal.Alloc ( alloca, malloc, free )
 import Foreign.Marshal.Array ( advancePtr )
-import Foreign.Ptr ( Ptr, nullPtr )
+import Foreign.Marshal.Utils ( with )
+import Foreign.Ptr ( Ptr, nullPtr, castPtr )
 import Foreign.Storable ( Storable(..) )
+import GHC.Generics ( Generic )
 import System.IO.Unsafe ( unsafePerformIO )
 
 
@@ -98,23 +105,23 @@ type WithClose a = (a,IO ())
 withClose :: IO (WithClose a) -> (a -> IO b) -> IO b
 withClose wc = bracket wc snd . (.fst)
 
--- | @getRoot rpcMachine confdRPCAddress name@ gets the root of the
+-- | @getRoot rpcMachine confdRPCAddress fid@ gets the root of the
 -- configuration tree which can be found at the given confd RPC address with the
--- given name.
+-- given file identifier.
 --
 -- The @rpcMachine@ is the machine used to establish the connection with confd.
 --
-getRoot :: RPCMachine -> RPCAddress -> String -> IO (WithClose CObj)
-getRoot (RPCMachine pm) (RPCAddress addr) name = alloca $ \ppc ->
-  withCString name$ \cname ->
+getRoot :: RPCMachine -> RPCAddress -> Fid -> IO (WithClose CObj)
+getRoot (RPCMachine pm) (RPCAddress addr) fid = alloca $ \ppc ->
+  with fid $ \pfid ->
   useAsCString addr$ \cconfd_addr -> do
-    confc_create ppc cname cconfd_addr pm >>= check_rc "getProfile"
+    confc_create ppc pfid cconfd_addr pm >>= check_rc "getProfile"
     pc <- peek ppc
     fmap (,confc_destroy pc) $ #{peek struct m0_confc, cc_root} pc >>= getCObj
 
 data ConfCV
 
-foreign import ccall confc_create :: Ptr (Ptr ConfCV) -> CString -> CString
+foreign import ccall confc_create :: Ptr (Ptr ConfCV) -> Ptr Fid -> CString
                                   -> Ptr RPCMachineV -> IO CInt
 
 foreign import ccall confc_destroy :: Ptr ConfCV -> IO ()
@@ -132,7 +139,9 @@ data CObj = CObj
   }
 
 -- | Get the object type for a configuration object.
-foreign import ccall "m0_conf_obj_type" c_conf_obj_type :: Ptr Obj -> IO CInt
+foreign import ccall unsafe m0_conf_obj_type :: Ptr Obj -> IO (Ptr ObjType)
+
+data ObjType
 
 -- | Data type to wrap around casted configuration data.
 --
@@ -147,26 +156,39 @@ data CObjUnion
     | CN Node
     | NI Nic
     | SD Sdev
-    | COUnknown Int
+    | COUnknown (Ptr ())
 
 getCObj :: Ptr Obj -> IO CObj
 getCObj po = do
-  id_c <- #{peek struct m0_conf_obj, co_id.f_container} po
-  id_k <- #{peek struct m0_conf_obj, co_id.f_key} po
-  ot <- c_conf_obj_type po
-  ou <- case ot :: CInt of
-          #{const CONF_PROFILE_TYPE} -> fmap CP $ getProfile po
-          #{const CONF_FILESYSTEM_TYPE} -> fmap CF $ getFilesystem po
-          #{const CONF_SERVICE_TYPE} -> fmap CS $ getService po
-          #{const CONF_NODE_TYPE} -> fmap CN $ getNode po
-          #{const CONF_DIR_TYPE} -> fmap CD $ getDir po
-          #{const CONF_NIC_TYPE} -> fmap NI $ getNic po
-          #{const CONF_SDEV_TYPE} -> fmap SD $ getSdev po
-          _ -> return $ COUnknown $ fromIntegral ot
+  fid <- #{peek struct m0_conf_obj, co_id} po
+  ot <- m0_conf_obj_type po
+  ou <- if | ot == m0_CONF_PROFILE_TYPE    -> fmap CP $ getProfile po
+           | ot == m0_CONF_FILESYSTEM_TYPE -> fmap CF $ getFilesystem po
+           | ot == m0_CONF_SERVICE_TYPE    -> fmap CS $ getService po
+           | ot == m0_CONF_NODE_TYPE       -> fmap CN $ getNode po
+           | ot == m0_CONF_DIR_TYPE        -> fmap CD $ getDir po
+           | ot == m0_CONF_NIC_TYPE        -> fmap NI $ getNic po
+           | ot == m0_CONF_SDEV_TYPE       -> fmap SD $ getSdev po
+           | otherwise -> return $ COUnknown $ castPtr ot
   return CObj
-      { co_id = Fid { f_container = id_c, f_key = id_k }
+      { co_id = fid
       , co_union = ou
       }
+
+foreign import ccall unsafe  "&M0_CONF_PROFILE_TYPE"
+                             m0_CONF_PROFILE_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_FILESYSTEM_TYPE"
+                             m0_CONF_FILESYSTEM_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_SERVICE_TYPE"
+                             m0_CONF_SERVICE_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_NODE_TYPE"
+                             m0_CONF_NODE_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_DIR_TYPE"
+                             m0_CONF_DIR_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_NIC_TYPE"
+                             m0_CONF_NIC_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_SDEV_TYPE"
+                             m0_CONF_SDEV_TYPE :: Ptr ObjType
 
 -- | Representation of @m0_conf_profile@.
 data Profile = Profile
@@ -175,14 +197,30 @@ data Profile = Profile
 
 getProfile :: Ptr Obj -> IO Profile
 getProfile po = return Profile
-    { cp_filesystem = getChild po FS_FID
+    { cp_filesystem = getChild po m0_FS_FID
     }
 
 getChild :: Ptr Obj -> RelationFid -> IO (WithClose CObj)
 getChild po fid = open_sync po fid >>= \pc -> fmap (,close pc) $ getCObj pc
 
--- | Representation of @m0_fid@.
-data Fid = Fid { f_container :: Word64, f_key :: Word64 } deriving (Show)
+-- | Representation of @struct m0_fid@. It is an identifier for objects in
+-- confc.
+data Fid = Fid { f_container :: {-# UNPACK #-} !Word64
+               , f_key       :: {-# UNPACK #-} !Word64
+               }
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary Fid
+instance Hashable Fid
+
+instance Storable Fid where
+  sizeOf    _           = #{size struct m0_fid}
+  alignment _           = #{alignment struct m0_fid}
+  peek      p           = liftM2 Fid
+                            (#{peek struct m0_fid, f_container} p)
+                            (#{peek struct m0_fid, f_key} p)
+  poke      p (Fid c k) = do #{poke struct m0_fid, f_container} p c
+                             #{poke struct m0_fid, f_key} p k
 
 -- | Representation of @m0_conf_filesystem@.
 data Filesystem = Filesystem
@@ -194,13 +232,12 @@ data Filesystem = Filesystem
 getFilesystem :: Ptr Obj -> IO Filesystem
 getFilesystem pc = do
   pfs <- confc_cast_filesystem pc
-  c <- #{peek struct m0_conf_filesystem, cf_rootfid.f_container} pfs
-  k <- #{peek struct m0_conf_filesystem, cf_rootfid.f_key} pfs
+  fid <- #{peek struct m0_conf_filesystem, cf_rootfid} pfs
   params <- #{peek struct m0_conf_filesystem, cf_params} pfs >>= peekStringArray
   return Filesystem
-           { cf_rootfid = Fid { f_container = c, f_key = k }
+           { cf_rootfid = fid
            , cf_params = params
-           , cf_services = getChild pc SERVICE_FID
+           , cf_services = getChild pc m0_SERVICE_FID
            }
 
 foreign import ccall unsafe confc_cast_filesystem :: Ptr Obj
@@ -273,7 +310,7 @@ getService po = do
   return Service
            { cs_type = toEnum $ fromIntegral (stype :: CInt)
            , cs_endpoints = endpoints
-           , cs_node = getChild po NODE_FID
+           , cs_node = getChild po m0_NODE_FID
            }
 
 foreign import ccall unsafe confc_cast_service :: Ptr Obj
@@ -322,8 +359,8 @@ getNode po = do
            , cn_last_state = last_state
            , cn_flags = flags
            , cn_pool_id = pool_id
-           , cn_nics = getChild po NICS_FID
-           , cn_sdevs = getChild po SDEVS_FID
+           , cn_nics = getChild po m0_NICS_FID
+           , cn_sdevs = getChild po m0_SDEVS_FID
            }
 
 foreign import ccall unsafe confc_cast_node :: Ptr Obj
@@ -393,34 +430,24 @@ foreign import ccall unsafe confc_cast_sdev :: Ptr Obj
 data Obj
 
 -- | Relation FIDs.
-data RelationFid =
-    FS_FID
-  | SERVICE_FID
-  | NODE_FID
-  | NICS_FID
-  | SDEVS_FID
-  | UNKNOWN_FID Int
+type RelationFid = Ptr Fid
 
-instance Enum RelationFid where
-  toEnum #{const CONF_PROFILE_FILESYSTEM_FID} = FS_FID
-  toEnum #{const CONF_FILESYSTEM_SERVICES_FID} = SERVICE_FID
-  toEnum #{const CONF_SERVICE_NODE_FID} = NODE_FID
-  toEnum #{const CONF_NODE_NICS_FID} = NICS_FID
-  toEnum #{const CONF_NODE_SDEVS_FID} = SDEVS_FID
-  toEnum i = UNKNOWN_FID i
-
-  fromEnum FS_FID = #{const CONF_PROFILE_FILESYSTEM_FID}
-  fromEnum SERVICE_FID = #{const CONF_FILESYSTEM_SERVICES_FID}
-  fromEnum NODE_FID = #{const CONF_SERVICE_NODE_FID}
-  fromEnum NICS_FID = #{const CONF_NODE_NICS_FID}
-  fromEnum SDEVS_FID = #{const CONF_NODE_SDEVS_FID}
-  fromEnum (UNKNOWN_FID i) = i
+foreign import ccall unsafe "&M0_CONF_PROFILE_FILESYSTEM_FID"
+                            m0_FS_FID :: RelationFid
+foreign import ccall unsafe "&M0_CONF_FILESYSTEM_SERVICES_FID"
+                            m0_SERVICE_FID :: RelationFid
+foreign import ccall unsafe "&M0_CONF_SERVICE_NODE_FID"
+                            m0_NODE_FID :: RelationFid
+foreign import ccall unsafe "&M0_CONF_NODE_NICS_FID"
+                            m0_NICS_FID :: RelationFid
+foreign import ccall unsafe "&M0_CONF_NODE_SDEVS_FID"
+                            m0_SDEVS_FID :: RelationFid
 
 open_sync :: Ptr Obj -> RelationFid -> IO (Ptr Obj)
 open_sync po fid = alloca $ \ppc ->
-  confc_open_sync ppc po (fromIntegral . fromEnum $ fid) >>= check_rc  "open_sync" >> peek ppc
+  confc_open_sync ppc po fid >>= check_rc  "open_sync" >> peek ppc
 
-foreign import ccall confc_open_sync :: Ptr (Ptr Obj) -> Ptr Obj -> CInt
+foreign import ccall confc_open_sync :: Ptr (Ptr Obj) -> Ptr Obj -> RelationFid
                                      -> IO CInt
 
 close :: Ptr Obj -> IO ()

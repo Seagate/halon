@@ -81,7 +81,7 @@ int ha_state_get_fom_tick(struct m0_fom *fom)
 
          ctx = &fom_obj->fp_ctx;
          note = &ctx->nc_note;
-         fop = m0_fop_alloc(&ha_state_get_rep_fopt, NULL);
+         fop = m0_fop_reply_alloc(fom_obj->fp_fop, &ha_state_get_rep_fopt);
          M0_ASSERT(fop != NULL);
 
          fop_get_rep                  = m0_fop_data(fop);
@@ -94,7 +94,6 @@ int ha_state_get_fom_tick(struct m0_fom *fom)
          m0_rpc_reply_post(m0_fop_to_rpc_item(fom_obj->fp_fop), m0_fop_to_rpc_item(fop));
 
          m0_free(note->nv_note);
-         m0_fop_put(fop);
          m0_fom_phase_set(fom, M0_FOPH_FINISH);
      }
 
@@ -166,7 +165,7 @@ int ha_state_set_fom_tick(struct m0_fom *fom)
 
      fom_obj = container_of(fom, struct ha_state_set_fom, fp_gen);
 
-     fop = m0_fop_alloc(&m0_fop_generic_reply_fopt, NULL);
+     fop = m0_fop_reply_alloc(fom_obj->fp_fop, &m0_fop_generic_reply_fopt);
      M0_ASSERT(fop != NULL);
 
      note = m0_fop_data(fom_obj->fp_fop);
@@ -183,7 +182,6 @@ int ha_state_set_fom_tick(struct m0_fom *fom)
 
      item = m0_fop_to_rpc_item(fop);
      m0_rpc_reply_post(m0_fop_to_rpc_item(fom_obj->fp_fop), item);
-     m0_fop_put(fop);
      m0_fom_phase_set(fom, M0_FOPH_FINISH);
 
      return M0_FSO_WAIT;

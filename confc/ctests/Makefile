@@ -35,9 +35,11 @@ runconfc_test_file: confc_test
 runconfc_test: confc_test 
 	sudo $(ENV) sh -c "lctl list_nids | head -1 | xargs ./confc_test "
 
+# This test takes as argument a local RPC address and the confd RPC address.
+# The confd address is taken from $MERO_ROOT/m0t1fs/linux_kernel/st/st
 runconf_poll_once: conf_poll_once
 	sudo $(ENV) sh -c \
-		'./conf_poll_once `lctl list_nids | head -1`:12345:35:401 `lctl list_nids | head -1`:12345:34:1' \
+		'./conf_poll_once `lctl list_nids | head -1`:12345:34:401 `lctl list_nids | head -1`:12345:34:1001' \
 		&& echo confd is healthy || echo confd has failed
 
 testconfmon:

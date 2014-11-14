@@ -6,7 +6,7 @@ Description:   The Mero configuration client library allows programs
 License:       AllRightsReserved
 Copyright:     (C) 2013 Xyratex Technology Limited
 Category:      Network
-Build-Type:    Simple
+Build-Type:    Custom
 Cabal-Version: >= 1.8
 
 -- source-repository head
@@ -23,7 +23,9 @@ Library
   other-modules:
 
   build-depends:       base
+                     , binary
                      , bytestring
+                     , hashable
                      , network-transport-rpc
 
   ghc-options:      -O -Wall -Werror -fprof-auto -fprof-auto-calls

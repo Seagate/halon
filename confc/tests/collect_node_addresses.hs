@@ -14,6 +14,7 @@ import Network.Transport.RPC ( RPCTransport(..), rpcAddress, withTransport
                              )
 import Network.Transport.RPC.RPCLite ( getRPCMachine_se )
 
+import Data.Bits
 import Data.List ( nub )
 import System.Environment ( getArgs )
 
@@ -23,8 +24,14 @@ main =
   getArgs >>= \[ localAddress , confdAddress ] ->
   withTransport "s1" (rpcAddress localAddress) defaultRPCParameters
   $ \tr -> getRPCMachine_se (serverEndPoint tr)
-  >>= \rpcMachine -> withConfC
-  $ withClose (getRoot rpcMachine (rpcAddress confdAddress) "prof-1")
+  >>= \rpcMachine -> withConfC $ do
+    -- See $MERO_ROOT/conf/ut/confc.c for examples of how fid objects
+    -- are created.
+    --
+    -- root_fid is created to match the identifier used in
+    -- $MERO_ROOT/m0t1fs/linux_kernel/st/st
+    let root_fid = Fid (fromIntegral (fromEnum 'p') `shiftL` (64 - 8) .|. 17) 0
+    withClose (getRoot rpcMachine (rpcAddress confdAddress) root_fid)
               collectNodeAddresses
   >>= mapM_ putStrLn
 

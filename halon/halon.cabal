@@ -99,6 +99,7 @@ Test-Suite unit-tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Other-Modules:    Test.Unit
+                    Test.Run
                     HA.EventQueue.Tests
                     HA.Multimap.Tests
                     HA.Multimap.ProcessTests
@@ -122,9 +123,12 @@ Test-Suite unit-tests
                     distributed-process >= 0.4,
                     distributed-process-test,
                     distributed-static,
+                    directory,
+                    filepath,
                     hashable,
                     network,
                     network-transport,
+                    process >= 1.2,
                     unordered-containers,
                     options-schema >= 0.1.1.0,
                     tasty >= 0.8,
@@ -157,11 +161,14 @@ Test-Suite integration-tests
                     distributed-process >= 0.4,
                     distributed-process-test,
                     distributed-static,
+                    directory,
+                    filepath,
                     hashable,
                     network,
                     network-transport,
                     unordered-containers,
                     options-schema >= 0.1.1.0,
+                    process >= 1.2,
                     tasty >= 0.8,
                     tasty-files
   if flag(rpc)

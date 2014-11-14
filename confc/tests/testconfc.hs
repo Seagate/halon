@@ -12,7 +12,10 @@ import Network.Transport.RPC ( RPCTransport(..), rpcAddress, withTransport
                              )
 import Network.Transport.RPC.RPCLite ( getRPCMachine_se )
 
+import Data.Bits
+import Data.Char ( toUpper )
 import Data.List ( intersperse )
+import Numeric ( showHex )
 import System.Environment ( getArgs )
 
 main :: IO ()
@@ -20,14 +23,24 @@ main =
   getArgs >>= \[ localAddress , confdAddress ] ->
   withTransport "s1" (rpcAddress localAddress) defaultRPCParameters
   $ \tr -> getRPCMachine_se (serverEndPoint tr)
-  >>= \rpcMachine -> withConfC
-  $ withClose (getRoot rpcMachine (rpcAddress confdAddress) "prof-10000000000")
-  $ printCObj 0
+  >>= \rpcMachine -> withConfC $ do
+    -- See $MERO_ROOT/conf/ut/confc.c for examples of how fid objects
+    -- are created.
+    --
+    -- root_fid is created to match the identifier used in
+    -- $MERO_ROOT/m0t1fs/linux_kernel/st/st
+    let root_fid = Fid (fromIntegral (fromEnum 'p') `shiftL` (64 - 8) .|. 17) 0
+    withClose (getRoot rpcMachine (rpcAddress confdAddress) root_fid)
+              $ printCObj 0
 
 printCObj :: Int -> CObj -> IO ()
 printCObj i co = do
-    putStr $ "id = " ++ (show . co_id $ co) ++ ": "
+    putStr $ (showFid . co_id $ co) ++ ": "
     printCOData i $ co_union co
+
+showFid :: Fid -> String
+showFid (Fid c k) = "m0_fid(0x" ++ map toUpper (showHex c "")
+                                ++ "," ++ show k ++ ")"
 
 printCOData :: Int -> CObjUnion -> IO ()
 printCOData i cou =
@@ -54,10 +67,9 @@ printChild i name co = do
 printFilesystem :: Int -> Filesystem -> IO ()
 printFilesystem i fs = do
     putStr "m0_conf_filesystem { "
-    putStr $ "rootfid = { .container = "
-              ++ show (f_container $ cf_rootfid fs)
-              ++ ", .key = " ++ show (f_key $ cf_rootfid fs)
-              ++ " }, params = "
+    putStr $ "rootfid = "
+              ++ showFid (cf_rootfid fs)
+              ++ ", params = "
     if null $ cf_params fs then putStr  "[]"
       else mapM_ putStr $ intersperse " " $ "[" : cf_params fs ++ ["]"]
     putStrLn " }"

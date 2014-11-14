@@ -15,10 +15,8 @@ void show_nvec(struct m0_ha_nvec *nvec) {
      }
      for (i = 0; i < nvec->nv_nr; i++) {
           fprintf(stderr, "nvec[i]->no_id = %d:%d\n",
-                  nvec->nv_note[i].no_id.u_hi,
-                  nvec->nv_note[i].no_id.u_lo);
-          fprintf(stderr, "nvec[i]->no_otype = %d\n",
-                  nvec->nv_note[i].no_otype);
+                  nvec->nv_note[i].no_id.f_container,
+                  nvec->nv_note[i].no_id.f_key);
           fprintf(stderr, "nvec[i]->no_state = %d\n",
                   nvec->nv_note[i].no_state);
      }
@@ -57,7 +55,7 @@ int main(int argc,char **argv) {
     rc = rpc_listen("s1",argv[1],&(rpc_listen_callbacks_t){ .receive_callback=rcv },&re);
     fprintf(stderr,"rpc_listen: %d\n",rc);
 
-    struct m0_ha_note n = { 1, M0_CO_NODE, 1 };
+    struct m0_ha_note n = { M0_FID_TINIT('n',1,1), M0_NC_ACTIVE };
     struct m0_ha_nvec note = { 1, &n };
 
     rc = ha_state_notify(re,argv[2],&note,3);

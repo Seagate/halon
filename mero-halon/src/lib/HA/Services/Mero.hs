@@ -31,6 +31,7 @@ import Control.Concurrent (threadDelay)
 -- XXX We probably want USE_MERO here, rather than USE_RPC.
 #ifdef USE_RPC
 import Mero.Epoch (sendEpochBlocking)
+import qualified Network.Transport.RPC as RPC
 #endif
 import Mero.Messages
 import Data.ByteString (ByteString)

@@ -25,10 +25,10 @@ module Mero.Notification
     ) where
 
 #ifdef USE_RPC
-import HA.Resources.Mero
+import Mero.ConfC (Fid)
 import Mero.Notification.HAState
 import HA.EventQueue.Producer (promulgate)
-import HA.Network.Address
+import HA.Network.Transport
 import Network.Transport.RPC ( rpcAddress, serverEndPoint )
 import Control.Distributed.Process.Internal.Types ( processNode, LocalNode )
 import qualified Control.Distributed.Process.Node as CH ( runProcess )
@@ -53,7 +53,7 @@ newtype Set = Set NVec
 
 -- | This message is sent to the RC when Mero requests state data for some
 -- objects.
-data Get = Get ProcessId [ConfObject]
+data Get = Get ProcessId [Fid]
         deriving (Generic, Typeable)
 
 instance Binary Get
@@ -75,8 +75,7 @@ initialize = do
       CH.runProcess lnode $ void $ spawnLocal $ do
         link parent
         self <- getSelfPid
-        liftIO (readNVecRef nvecr) >>= promulgate . Get self .
-                                       map (\(Note oid oty _) -> ConfObject oty oid)
+        liftIO (readNVecRef nvecr) >>= promulgate . Get self . map no_id
         GetReply nvec <- expect
         liftIO $ updateNVecRef nvecr nvec
         liftIO $ doneGet nvecr 0
@@ -94,7 +93,7 @@ finalize = liftIO finiHAState
 matchSet :: Process a -> [Match a]
 matchSet cont =
   [  match $ \(Set nvec) -> do
-      Network transport <- liftIO readNetworkGlobalIVar
+      transport <- liftIO readTransportGlobalIVar
       liftIO $ notify (serverEndPoint transport) (rpcAddress "") nvec 5
       cont
   ]

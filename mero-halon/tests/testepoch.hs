@@ -2,68 +2,75 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
--- This program tests the "Network.Transport.Identify" module.
+-- This program tests mero epoch interface.
 
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-import Network.Transport.RPC ( rpcAddress  )
-
-import Control.Monad (when)
-import Control.Exception (bracket)
-import System.Environment ( getArgs )
-import HA.Network.Address
-import Control.Concurrent (threadDelay)
+import Network.Transport.RPC as RPC
+import HA.Network.Transport (writeTransportGlobalIVar)
 import Mero.Epoch
-import System.Exit (exitFailure)
-import System.Process
-import Data.Char (isSpace)
-import Data.List (dropWhileEnd)
 
-getEndpoint :: IO (Maybe String)
-getEndpoint =
-  do raw <- readProcess "mero_call" ["mym0dendpoint"] []
-     case dropWhileEnd isSpace raw of
-       "" -> return Nothing
-       clean -> return $ Just clean
+import Control.Applicative ((<$>))
+import Control.Monad (when)
+import Data.List (isInfixOf)
+import Data.Maybe (maybeToList)
+import System.Directory (setCurrentDirectory, createDirectoryIfMissing)
+import System.Environment (getExecutablePath, getArgs, lookupEnv)
+import System.Exit (exitFailure, exitSuccess)
+import System.FilePath ((</>), takeDirectory)
+import System.Process (readProcess, callProcess)
+
 
 printTest :: String -> Bool -> IO ()
 printTest s b = do putStr (s ++ ": ")
                    if b then putStrLn "Ok"
                         else (putStrLn "Failed" >> exitFailure)
 
-tests :: Network -> IO ()
-tests network = do
-  Just rawaddr <- getEndpoint
-  let Just addr = parseAddress rawaddr
-
-  putStrLn $ "Testing Epochs, using address " ++ show addr
-
-  bracket (createProcess $  -- proc "mero_call" ["dummyService",rawaddr])
-                             proc "mero_call" ["m0d"])
-          (\(_,_,_,m0d) -> terminateProcess m0d >> 
-              putStrLn "Ending Epoch tests") $ \(_,_,_,m0d) -> do
-     threadDelay 30000000
-     
-     running <- getProcessExitCode m0d
-     when (running /= Nothing)
-        (putStrLn "Mero exited prematurely" >> exitFailure)
-
-     putStrLn $ "About to try to set epoch on " ++ show addr
-
-     testEpoch addr "Update epoch to 2" 2 (Just 2)
-     testEpoch addr "Update epoch to 3" 3 (Just 3)
-     testEpoch addr "Re-update epoch to 3" 3 (Just 3)
-     testEpoch addr "Update epoch backwards to 2" 2 (Just 3)
-
+tests :: RPCAddress -> IO ()
+tests addr = do
+    putStrLn $ "Testing Epochs, using address " ++ show addr
+    testEpoch addr "Update epoch to 2" 2 (Just 2)
+    testEpoch addr "Update epoch to 3" 3 (Just 3)
+    testEpoch addr "Re-update epoch to 3" 3 (Just 3)
+    testEpoch addr "Update epoch backwards to 2" 2 (Just 3)
   where
-     testEpoch addr desc val expected =
-       do res <- sendEpochBlocking network addr val timeoutSecs
+     testEpoch addr' desc val expected =
+       do res <- sendEpochBlocking addr' val timeoutSecs
           printTest desc (res == expected)
      timeoutSecs = 60
 
 main :: IO ()
 main = do
-  [nid] <- getArgs
-  network <- startNetwork (rpcAddress $ nid ++ ":12345:34:2")
-  tests network
+  prog <- getExecutablePath
+  args <- getArgs
+  -- test if we have root privileges
+  ((userid, _): _ ) <- reads <$> readProcess "id" ["-u"] ""
+  when (userid /= (0 :: Int)) $ do
+    -- change directory so mero files are produced under the dist folder
+    let testDir = takeDirectory (takeDirectory $ takeDirectory prog) </> "test"
+    createDirectoryIfMissing True testDir
+    setCurrentDirectory testDir
+    putStrLn $ "Changed directory to: " ++ testDir
+    -- Invoke again with root privileges
+    putStrLn $ "Calling test with sudo ..."
+    mld <- fmap ("LD_LIBRARY_PATH=" ++) <$> lookupEnv "LD_LIBRARY_PATH"
+    callProcess "sudo" $ maybeToList mld ++ prog : args
+    exitSuccess
+  addr <- if null args
+          then do
+            [lnetaddr] <- take 1 . filter ("o2ib" `isInfixOf`) . lines <$>
+                    readProcess "sudo" ["lctl", "list_nids"] ""
+            -- form the rpc address from the LNET node Id
+            -- rpc address =  ip@network:pid:portal:buffer_pool_id
+            --
+            -- The pid and the portal are mostly fixed in all addresses.
+            -- The buffer pool id varies allowing multiple RPC endpoints
+            -- on a single host.
+            let rpcaddr = lnetaddr ++ ":12345:34:2"
+            putStrLn $ "Using rpc address: " ++ rpcaddr
+            return $ rpcAddress rpcaddr
+          else return $ rpcAddress $ head args
+  rpcTransport <- RPC.createTransport "s1" addr RPC.defaultRPCParameters
+  writeTransportGlobalIVar rpcTransport
+  tests addr

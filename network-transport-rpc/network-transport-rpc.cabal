@@ -4,7 +4,7 @@ Synopsis:      Implementation of a transport backend for RPC
 Description:   The RPC backend provides an interface to Mero RPC library.
 Copyright:     (C) 2012 Xyratex Technology Limited
 Category:      Network
-Build-Type:    Simple
+Build-Type:    Custom
 Cabal-Version: >= 1.8
 
 Flag debug
@@ -186,8 +186,8 @@ Test-Suite TestNT
 --                   network-transport-tests
                   network-transport >= 0.3,
                   network-transport-rpc,
-                  containers >= 0.4 && < 0.6,
-                  bytestring >= 0.9 && < 0.11,
-                  random >= 1.0 && < 1.1,
-                  mtl >= 2.1 && < 2.2,
+                  containers >= 0.4,
+                  bytestring >= 0.9,
+                  random >= 1.0,
+                  mtl >= 2.1,
                   ansi-terminal >= 0.5

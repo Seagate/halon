@@ -27,13 +27,12 @@ sendEpochBlocking :: RPC.RPCAddress    -- ^ recepient address
                   -> Int               -- ^ timeout in seconds
                   -> IO (Maybe Word64) -- ^ their epoch
 sendEpochBlocking addr epoch timeout_s = do
-    transport <- readTransportGlobalIVar
+    transport <- HA.Network.Transport.readTransportGlobalIVar
     bracket
-      (Lite.connect_se (RPC.serverEndPoint transport) addr slots connectTimeout)
+      (Lite.connect_se (RPC.serverEndPoint transport) addr connectTimeout)
       (\c -> void $ Lite.disconnect c connectTimeout)
       (\c -> Lite.sendEpochBlocking c epoch timeout_s)
   where
-    slots = 1
     connectTimeout = 3
 #else
 -- | Only supported when compiled with RPC. Defined to be bottom elsewhere.

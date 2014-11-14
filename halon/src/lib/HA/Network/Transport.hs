@@ -11,7 +11,7 @@
 
 module HA.Network.Transport
   ( readTransportGlobalIVar
-  , writeNetworkGlobalIVar
+  , writeTransportGlobalIVar
   ) where
 
 #ifdef USE_RPC
@@ -23,25 +23,25 @@ import Control.Monad (when)
 #endif
 
 #ifdef USE_RPC
-networkGlobalVariable :: MVar RPC.RPCTransport
+networkGlobalVariable :: MVar RPCTransport
 networkGlobalVariable = unsafePerformIO $ newEmptyMVar
 {-# NOINLINE networkGlobalVariable #-}
 
 -- | Reads the value of a global variable holding the transport in use.
-readTransportGlobalIVar :: IO RPC.RPCTransport
+readTransportGlobalIVar :: IO RPCTransport
 readTransportGlobalIVar = readMVar networkGlobalVariable
 
 -- | Write the value of the global variable. Throws an exception if the value
 -- has been alread set.
-writeNetworkGlobalIVar :: RPC.RPCTransport -> IO ()
-writeNetworkGlobalIVar n = do
+writeTransportGlobalIVar :: RPCTransport -> IO ()
+writeTransportGlobalIVar n = do
   ok <- tryPutMVar networkGlobalVariable n
   when (not ok) $ evaluate $ error
     $ "writeNetworkGlobalIVar: the network global variable has been already"
     ++ " set. You can write only once to an immutable variable."
 #else
 -- | Only supported when compiled with RPC. Defined to be bottom elsewhere.
-readTransportGlobalIVar, writeNetworkGlobalIVar :: a
+readTransportGlobalIVar, writeTransportGlobalIVar :: a
 readTransportGlobalIVar = error "readTransportGlobalIVar: only for RPC."
-writeNetworkGlobalIVar = error "writeNetworkGlobalIVar: only for RPC."
+writeTransportGlobalIVar = error "writeNetworkGlobalIVar: only for RPC."
 #endif

@@ -14,9 +14,9 @@
 #include <string.h>
 #include "conf/confc.h"
 #include "ha/note.h"
+#include "reqh/reqh.h"
 #include "rpclite.h"
 
-static struct m0_confc confc;
 static struct m0_sm_group g_grp;
 
 static struct {
@@ -50,26 +50,11 @@ static void ast_thread_fini(void)
     m0_sm_group_fini(&g_grp);
 }
 
-static const char* show_service_type(enum m0_conf_service_type t) {
-    switch(t) {
-        case  M0_CST_MDS:
-            return "M0_CST_MDS";
-        case M0_CST_IOS:
-            return "M0_CST_IOS";
-        case M0_CST_MGS:
-            return "M0_CST_MGS";
-        case M0_CST_DLM:
-            return "M0_CST_DLM";
-        default:
-            return "unknown";
-    }
-}
-
 static int walk_configuration(struct m0_conf_obj* obj, unsigned char** state);
 
-static int walk_configuration_child(struct m0_conf_obj* obj,char* child,unsigned char** state){
+static int walk_configuration_child(struct m0_conf_obj* obj,const struct m0_fid child,unsigned char** state){
     struct m0_conf_obj* dir;
-    int rc = m0_confc_open_sync(&dir, obj, M0_BUF_INITS(child));
+    int rc = m0_confc_open_sync(&dir, obj, child);
     if (rc) {
         fprintf(stderr,"m0_confc_open_sync: %d %s\n",rc,strerror(-rc));
         exit(1);
@@ -82,60 +67,32 @@ static int walk_configuration_child(struct m0_conf_obj* obj,char* child,unsigned
 static int walk_configuration(struct m0_conf_obj* obj,unsigned char** state) {
 
     *(*state)++ = obj->co_ha_state;
-    switch(obj->co_type) {
-        case M0_CO_DIR:
-        {
-            struct m0_conf_obj* item;
-            int rc;
-            for (item = NULL; (rc = m0_confc_readdir_sync(obj, &item)) > 0; ) {
-                if (walk_configuration(item,state)) {
-                    m0_confc_close(item);
-                    return 1;
-                }
+    const struct m0_conf_obj_type *t = m0_conf_obj_type(obj);
+    if (t == &M0_CONF_DIR_TYPE) {
+        struct m0_conf_obj* item;
+        int rc;
+        for (item = NULL; (rc = m0_confc_readdir_sync(obj, &item)) > 0; ) {
+            if (walk_configuration(item,state)) {
+                m0_confc_close(item);
+                return 1;
             }
-            m0_confc_close(item);
         }
-            break;
-        case M0_CO_PROFILE:
-            return walk_configuration_child(obj,"filesystem",state);
-            break;
-        case M0_CO_FILESYSTEM:
-        {
-            return walk_configuration_child(obj,"services",state);
-        }
-        break;
-
-        case M0_CO_SERVICE:
-        {
-            return walk_configuration_child(obj,"node",state);
-        }
-        break;
-
-        case M0_CO_NODE:
-        {
-            if (walk_configuration_child(obj,"nics",state)) return 1;
-            if (walk_configuration_child(obj,"sdevs",state)) return 1;
-        }
-        break;
-
-        case M0_CO_NIC:
-        break;
-
-        case M0_CO_SDEV:
-        {
-            return walk_configuration_child(obj,"partitions",state);
-        }
-        break;
-
-        case M0_CO_PARTITION:
-        break;
-
-        case M0_CO_NR:
-        default:
-            fprintf(stderr,"unknown configuration object type: %d\n",obj->co_type);
-            return 1;
+        m0_confc_close(item);
+    } else if (t == &M0_CONF_PROFILE_TYPE) {
+        return walk_configuration_child(obj,M0_CONF_PROFILE_FILESYSTEM_FID,state);
+    } else if (t == &M0_CONF_FILESYSTEM_TYPE) {
+        return walk_configuration_child(obj,M0_CONF_FILESYSTEM_SERVICES_FID,state);
+    } else if (t == &M0_CONF_SERVICE_TYPE) {
+        return walk_configuration_child(obj,M0_CONF_SERVICE_NODE_FID,state);
+    } else if (t == &M0_CONF_NODE_TYPE) {
+        if (walk_configuration_child(obj,M0_CONF_NODE_NICS_FID,state)) return 1;
+        if (walk_configuration_child(obj,M0_CONF_NODE_SDEVS_FID,state)) return 1;
+    } else if (t == &M0_CONF_NIC_TYPE || t == &M0_CONF_SDEV_TYPE) {
+        return 0;
+    } else {
+        fprintf(stderr,"unknown configuration object type: %p\n",t);
+        return 1;
     }
-    return 0;
 }
 
 sem_t reply_received;
@@ -173,6 +130,7 @@ int main(int argc,char** argv) {
         return 1;
     }
 
+    m0_ha_state_fop_init();
     m0_ha_state_init();
 
     sem_init(&reply_received,0,0);
@@ -186,22 +144,21 @@ int main(int argc,char** argv) {
     }
 
     ast_thread_init();
-
-    rc = m0_confc_init(&confc, &g_grp,
-                       &M0_BUF_INITS((char *)"prof-10000000000")
+    struct m0_reqh* reqh = rpc_get_rpc_machine_re(ep)->rm_reqh;
+    // profile id taken from $MERO_ROOT/m0t1fs/linux_kernel/st/st
+    rc = m0_confc_init(&reqh->rh_confc, &g_grp,
+                       &M0_FID_TINIT('p',0x11,0)
                       ,argv[2],rpc_get_rpc_machine_re(ep), NULL);
     if (rc) {
         fprintf(stderr,"m0_confc_init: %d %s\n",rc,strerror(-rc));
         return 1;
     }
 
-    m0_ha_state_set_confc(&confc);
-
     unsigned char states[20];
     unsigned char* it = states;
 
     // Have objects loaded in the confc cache.
-    rc = walk_configuration(confc.cc_root,&it);
+    rc = walk_configuration(reqh->rh_confc.cc_root,&it);
 
     printf("ready\n");
 
@@ -211,13 +168,13 @@ int main(int argc,char** argv) {
     rpc_connection_t* c;
 
     // Connect to HA side.
-    rc = rpc_connect_re(ep,argv[3],1,5,&c);
+    rc = rpc_connect_re(ep,argv[3],5,&c);
     if (rc) {
         fprintf(stderr,"rpc_connect_re: %d %s\n",rc,strerror(-rc));
         return 1;
     }
 
-    struct m0_ha_note n = { { 0, 1 }, M0_CO_NODE, M0_NC_OFFLINE };
+    struct m0_ha_note n = { M0_FID_TINIT('n', 1, 1), M0_NC_UNKNOWN };
     struct m0_ha_nvec note = { 1, &n };
 
     struct m0_mutex chan_lock;
@@ -241,9 +198,11 @@ int main(int argc,char** argv) {
     m0_chan_fini_lock(&chan);
     m0_mutex_fini(&chan_lock);
 
+    // These literals are copied from
+    // $MERO_ROOT/m0t1fs/linux_kernel/st/st
     struct m0_ha_note n2[] = {
-         { { 1, 2 }, M0_CO_NODE, M0_NC_OFFLINE    },
-         { { 3, 4 }, M0_CO_NIC,  M0_NC_RECOVERING }
+         { M0_FID_TINIT('n', 1, 1), M0_NC_OFFLINE    },
+         { M0_FID_TINIT('n', 1, 0),  M0_NC_RECOVERING }
     };
     struct m0_ha_nvec note_to_set = { 2, n2 };
     m0_ha_state_set(rpc_get_session(c), &note_to_set);
@@ -253,23 +212,32 @@ int main(int argc,char** argv) {
 
     rpc_send_blocking(c,segments,1,5);
 
+    // We wait a message from the HA side to learn when confc has been modified.
     sem_wait(&reply_received);
 
     it = states;
-    rc = walk_configuration(confc.cc_root,&it);
-
-    m0_confc_fini(&confc);
-
-    ast_thread_fini();
+    rc = walk_configuration(reqh->rh_confc.cc_root,&it);
 
     struct iovec segments2[] = { { .iov_base = (void*)states, .iov_len = sizeof(states) }
                                };
 
     rpc_send_blocking(c,segments2,1,5);
 
+    // Wait indefinitely. The process should be killed.
+    //
+    // XXX: We don't execute the subsequent disconnection and finalization
+    // calls to avoid a race condition in rpc_stop_listening which results in
+    // crash during tests.
+    sem_wait(&reply_received);
+
     rpc_disconnect(c,5);
 
+    m0_confc_fini(&reqh->rh_confc);
+
+    ast_thread_fini();
+
     rpc_stop_listening(ep);
+
     m0_ha_state_fini();
     rpc_fini();
     return rc;

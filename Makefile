@@ -58,21 +58,22 @@ include mk/config.mk
 all: build
 
 ifdef USE_RPC
-# -E to Preserve environment. Still need to pass LD_LIBRARY_PATH
-# explicitly because most operating systems reset that environment
-# variable for setuid binaries.
-TEST_NID = `sudo lctl list_nids | grep o2ib | head -1`
+
+ifndef MERO_ROOT
+$(error The variable MERO_ROOT is undefined. Please, make it point to the mero build tree.)
+endif
+
+TEST_NID = $(shell sudo lctl list_nids | grep o2ib | head -1)
 TEST_LISTEN = $(TEST_NID):12345:34:1
 CABAL_FLAGS += -frpc
 
-RPCLITE_PREFIX=$(shell pwd)/../network-transport-rpc/rpclite
+RPCLITE_PREFIX=$(shell pwd)/network-transport-rpc/rpclite
 
-libdirs=$(MERO_ROOT)/mero/.libs \
-        $(MERO_ROOT)/extra-libs/cunit/CUnit/Sources/.libs
+libdirs=$(MERO_ROOT)/mero/.libs
 
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
 
-CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) --extra-include-dirs=$(MERO_ROOT)/extra-libs/db4/build_unix $(HLD_SEARCH_PATH) --extra-include-dirs=$(RPCLITE_PREFIX)
+CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) $(HLD_SEARCH_PATH) --extra-include-dirs=$(RPCLITE_PREFIX)
 else
 USE_TCP = 1
 TEST_LISTEN = 127.0.0.1:8090
@@ -82,17 +83,18 @@ ifdef DEBUG
 CABAL_FLAGS += -fdebug
 endif
 
-# Borrowed from halon Makefile
-ifneq ($(MERO_ROOT),--)
+ifdef USE_RPC
 empty :=
 space := $(empty) $(empty)
 export LD_LIBRARY_PATH := \
 	$(subst $(space),:,$(strip \
 		$(MERO_ROOT)/mero/.libs\
-		$(MERO_ROOT)/extra-libs/cunit/CUnit/Sources/.libs\
-		$(MERO_ROOT)/extra-libs/galois/src/.libs\
                 $(LD_LIBRARY_PATH)))
+# -E to Preserve environment. Still need to pass LD_LIBRARY_PATH
+# explicitly because most operating systems reset that environment
+# variable for setuid binaries.
 SUDO = sudo -E LD_LIBRARY_PATH=$(LD_LIBRARY_PATH)
+CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) --extra-lib-dirs=$(MERO_ROOT)/mero/.libs
 else
 SUDO =
 endif
@@ -103,6 +105,7 @@ endif
 export GENDERS
 
 ifndef NO_TESTS
+CABAL_BUILD_JOBS = --jobs=1
 CABAL_FLAGS += --run-tests
 endif
 
@@ -119,12 +122,12 @@ build: dep
 # XXX Tests tend to bind the same ports, making them mutually
 # exclusive in time. The solution is to allow tests to bind
 # a random available port.
-	cabal install $(CABAL_FLAGS) --jobs=1 $(PACKAGES)
+	cabal install $(CABAL_FLAGS) $(CABAL_BUILD_JOBS) $(PACKAGES)
 
 CLEAN := $(patsubst %,%_clean,$(PACKAGES))
 .PHONY: $(CLEAN) clean depclean
 $(CLEAN):
-	-cd $(patsubst %_clean, %, $@) && cabal clean
+	-cd $(patsubst %_clean, %, $@) && $(SUDO) cabal clean
 	-cabal sandbox hc-pkg -- unregister $(patsubst %_clean, %, $@) --force
 clean: $(CLEAN)
 depclean:

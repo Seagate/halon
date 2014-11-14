@@ -325,20 +325,19 @@ recoveryCoordinator eq mm argv = do
               loop ls
 #ifdef USE_RPC
         , matchHAEvent $ \(HAEvent eid (Mero.Notification.Get pid objs) _) -> do
-              let f obj@(ConfObject oty oid) = Note oid oty st
-                      where st = head $ G.connectedTo obj Is rg
+              let f oid = Note oid $ head $ G.connectedTo (ConfObject oid) Is rg
                   nvec = map f objs
               send pid $ Mero.Notification.GetReply nvec
               send eq $ eid
               loop ls
         , matchHAEvent $ \(HAEvent eid (Mero.Notification.Set nvec) _) -> do
-              let f rg1 (Note oid oty st) =
-                      let obj = ConfObject oty oid
-                          edges :: [G.Edge ConfObject Is ConfObjectState]
-                          edges = G.edgesFromSrc obj rg
+              let f rg1 (Note oid st) =
+                      let edges :: [G.Edge ConfObject Is ConfObjectState]
+                          edges = G.edgesFromSrc (ConfObject oid) rg
                           -- Disconnect object from any existing state and reconnect
                           -- it to a new one.
-                      in G.connect obj Is st $ foldr G.deleteEdge rg1 edges
+                      in G.connect (ConfObject oid) Is st $
+                           foldr G.deleteEdge rg1 edges
                   rg' = foldl' f rg nvec
                   m0dNodes = [ node | node <- G.connectedTo Cluster Has rg'
                                     , G.isConnected node Runs m0d rg' ]

@@ -64,7 +64,7 @@ static const char* show_service_type(enum m0_conf_service_type t) {
 
 static void print_configuration(int indentation,struct m0_conf_obj* obj);
 
-static void print_configuration_child(int newi,struct m0_conf_obj* obj,struct m0_fid child){
+static void print_configuration_child(int newi,const char* label,struct m0_conf_obj* obj,struct m0_fid child){
 	struct m0_conf_obj* dir;
 	int rc = m0_confc_open_sync(&dir, obj, child);
     if (rc) {
@@ -72,7 +72,7 @@ static void print_configuration_child(int newi,struct m0_conf_obj* obj,struct m0
 		exit(1);
 	}
 	printf("%*.*c",newi,newi,' ');
-	printf("m0_fid(0x%lX,%lu): ",child.f_container,child.f_key);
+	printf("%s: ",label);
 	print_configuration(newi,dir);
 	m0_confc_close(dir);
 }
@@ -80,7 +80,7 @@ static void print_configuration_child(int newi,struct m0_conf_obj* obj,struct m0
 static void print_configuration(int indentation,struct m0_conf_obj* obj) {
 	
 	int newi = indentation+2;
-	printf("id = m0_fid(0x%lX,%lu): ",obj->co_id.f_container,obj->co_id.f_key);
+	printf("m0_fid(0x%lX,%lu): ",obj->co_id.f_container,obj->co_id.f_key);
 	const struct m0_conf_obj_type *t = m0_conf_obj_type(obj);
 	if (t == &M0_CONF_DIR_TYPE) {
 		printf("m0_conf_dir {}\n");
@@ -94,7 +94,7 @@ static void print_configuration(int indentation,struct m0_conf_obj* obj) {
 	}
 	else if (t == &M0_CONF_PROFILE_TYPE) {
 		printf("m0_conf_profile {}\n");
-		print_configuration_child(newi,obj,M0_CONF_PROFILE_FILESYSTEM_FID);
+		print_configuration_child(newi,"filesystem",obj,M0_CONF_PROFILE_FILESYSTEM_FID);
 	}
 	else if (t == &M0_CONF_FILESYSTEM_TYPE) {
 		struct m0_conf_filesystem* fs = M0_CONF_CAST(obj,m0_conf_filesystem);
@@ -110,7 +110,7 @@ static void print_configuration(int indentation,struct m0_conf_obj* obj) {
 			printf(" ] }\n");
 		} else
 			printf(" params = [] }\n");
-		print_configuration_child(newi,obj,M0_CONF_FILESYSTEM_SERVICES_FID);
+		print_configuration_child(newi,"services",obj,M0_CONF_FILESYSTEM_SERVICES_FID);
 	}
 	else if (t == &M0_CONF_SERVICE_TYPE) {
 		struct m0_conf_service* svc = M0_CONF_CAST(obj,m0_conf_service);
@@ -124,7 +124,7 @@ static void print_configuration(int indentation,struct m0_conf_obj* obj) {
 			printf(" ] }\n");
 		} else
 			printf(" endpoints = [] }\n");
-		print_configuration_child(newi,obj,M0_CONF_SERVICE_NODE_FID);
+		print_configuration_child(newi,"node",obj,M0_CONF_SERVICE_NODE_FID);
 	}
 	else if (t == &M0_CONF_NODE_TYPE) {
 		struct m0_conf_node* node = M0_CONF_CAST(obj,m0_conf_node);
@@ -135,8 +135,8 @@ static void print_configuration(int indentation,struct m0_conf_obj* obj) {
 				,node->cn_flags
 				,node->cn_pool_id
 				);
-		print_configuration_child(newi,obj,M0_CONF_NODE_NICS_FID);
-		print_configuration_child(newi,obj,M0_CONF_NODE_SDEVS_FID);
+		print_configuration_child(newi,"nics",obj,M0_CONF_NODE_NICS_FID);
+		print_configuration_child(newi,"sdevs",obj,M0_CONF_NODE_SDEVS_FID);
 	}
 	else if (t == &M0_CONF_NIC_TYPE) {
 		struct m0_conf_nic* nic = M0_CONF_CAST(obj,m0_conf_nic);

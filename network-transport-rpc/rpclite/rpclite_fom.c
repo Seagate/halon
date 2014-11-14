@@ -89,7 +89,7 @@ int m0_fom_rpclite_state(struct m0_fom *fom)
     if (!rpclite_listen_cbs.receive_callback
 		|| !rpclite_listen_cbs.receive_callback(&(struct rpc_item){ .fop = fom_obj->fp_fop },NULL)
        ) {
-        fop = m0_fop_alloc(&m0_fop_rpclite_rep_fopt, NULL);
+        fop = m0_fop_reply_alloc(fom_obj->fp_fop,&m0_fop_rpclite_rep_fopt);
         M0_ASSERT(fop != NULL);
         rpclite_fop_rep = m0_fop_data(fop);
         rpclite_fop_rep->f_seq = true;
