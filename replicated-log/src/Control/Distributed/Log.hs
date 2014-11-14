@@ -202,10 +202,6 @@ instance Binary Status
 
 instance Binary TimeSpec
 
-timeSpecDiff :: TimeSpec -> TimeSpec -> Int64
-timeSpecDiff t0 t1 =
-    ( sec t0 -  sec t1) * 1000 * 1000 + (nsec t0 - nsec t1) `div` 1000
-
 data TimerMessage = LeaseRenewalTime
   deriving (Generic, Typeable)
 
@@ -447,8 +443,7 @@ replica Dict
                     else leasePeriod * numerator   driftSafetyFactor
                                  `div` denominator driftSafetyFactor
               if not (null ρs) &&
-                 -- XXX Is it necessary microsecond precision for the lease?
-                 timeSpecDiff now leaseStart < adjustedPeriod
+                 now - leaseStart < TimeSpec 0 (adjustedPeriod * 1000)
               then return $ Just $ head ρs
               else return Nothing
 
@@ -539,16 +534,17 @@ replica Dict
                       -- If I'm the leader, the lease starts at the time
                       -- the request was made. Otherwise, it starts now.
                       now <- liftIO $ getTime Monotonic
-                      leaseStart' <- if [self] == take 1 ρs'
-                          then do send timerPid
-                                    ( self
-                                    , max 0 (leasePeriod'
-                                              - leaseRenewalMargin
-                                              - timeSpecDiff now requestStart
-                                            )
-                                    , LeaseRenewalTime
-                                    )
-                                  return requestStart
+                      leaseStart' <-
+                          if [self] == take 1 ρs'
+                          then do
+                            send timerPid
+                                 ( self
+                                 , max 0 (TimeSpec 0 ((leasePeriod' -
+                                                       leaseRenewalMargin) * 1000) -
+                                           (now - requestStart))
+                                 , LeaseRenewalTime
+                                 )
+                            return requestStart
                           else return now
                       go' leaseStart' leasePeriod' αs' ρs' d' cd' w' s
                     | otherwise -> do
