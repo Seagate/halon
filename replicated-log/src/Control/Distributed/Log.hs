@@ -32,7 +32,6 @@ module Control.Distributed.Log
       -- * Remote Tables
     , Control.Distributed.Log.__remoteTable
     , Control.Distributed.Log.__remoteTableDecl
-    , sdictList
     , nodeIdClosure
     , ambassador__tdict
     ) where
@@ -822,11 +821,6 @@ sdictValue :: Typeable a
            => Static (SerializableDict a)
            -> Static (SerializableDict (Value a))
 sdictValue sdict = $(mkStatic 'dictValue) `staticApply` sdict
-
-sdictList :: Typeable a
-          => Static (SerializableDict a)
-          -> Static (SerializableDict [a])
-sdictList sdict = $(mkStatic 'dictList) `staticApply` sdict
 
 sdictMax :: Static (SerializableDict Max)
 sdictMax = $(mkStatic 'dictMax)
