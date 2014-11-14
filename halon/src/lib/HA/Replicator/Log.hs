@@ -1,18 +1,19 @@
 -- |
+-- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
 -- Implementation of the replication interface on top of
 -- "Control.Distributed.State".
---
 
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE CPP #-}
+
 module HA.Replicator.Log
   ( RLogGroup
   , __remoteTable
@@ -21,30 +22,58 @@ module HA.Replicator.Log
 
 import HA.Replicator ( RGroup(..), RStateView(..) )
 
-import Control.Distributed.Process.Consensus.BasicPaxos( protocolClosure )
+import Control.Distributed.Process.Consensus.BasicPaxos ( protocolClosure )
 import Control.Distributed.Log
-           ( new, clone, remoteHandle, TypeableDict(..), sdictValue
-           , addReplica, reconfigure, Handle, updateHandle
-           )
+  ( new
+  , clone
+  , remoteHandle
+  , TypeableDict(..)
+  , sdictValue
+  , addReplica
+  , reconfigure
+  , Handle
+  , updateHandle
+  )
 import Control.Distributed.Log.Policy hiding ( __remoteTable )
 import Control.Distributed.State
-           ( CommandPort, newPort, commandEqDict, commandEqDict__static
-           , select, Log, commandSerializableDict, Command
-           )
+  ( CommandPort
+  , newPort
+  , commandEqDict
+  , commandEqDict__static
+  , select
+  , Log
+  , commandSerializableDict
+  , Command
+  )
 import qualified Control.Distributed.State as State ( update, log )
 
 import Control.Distributed.Process
-    ( Process, Static, Closure, liftIO, say, die, ProcessId, NodeId
-    , processNodeId
-    )
+  ( Process
+  , Static
+  , Closure
+  , liftIO
+  , say
+  , die
+  , ProcessId
+  , NodeId
+  , processNodeId
+  )
 import Control.Distributed.Process.Closure
-           ( remotable, mkStatic, remotableDecl, mkClosure, mkStaticClosure )
+  ( remotable
+  , mkStatic
+  , remotableDecl
+  , mkClosure
+  , mkStaticClosure
+  )
 import Control.Distributed.Process.Internal.Types (nodeAddress)
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Control.Distributed.Static
-           ( closureApplyStatic, staticApply, staticClosure, closure
-           , closureApply
-           )
+  ( closureApplyStatic
+  , staticApply
+  , staticClosure
+  , closure
+  , closureApply
+  )
 
 import Control.Arrow ( (***) )
 import System.FilePath ((</>))
@@ -53,13 +82,7 @@ import Control.Monad ( when, forM )
 import Data.Binary ( decode, encode, Binary )
 import Data.ByteString.Lazy ( ByteString )
 import Data.Int ( Int64 )
-#if MIN_VERSION_base(4,7,0)
 import Data.Typeable ( Typeable )
-#else
-import Data.Typeable ( Typeable(..), mkTyConApp, mkTyCon3, tyConPackage
-                     , tyConModule, typeRepTyCon, Typeable1(..)
-                     )
-#endif
 
 -- | Implementation of RGroups on top of "Control.Distributed.State".
 data RLogGroup st where
