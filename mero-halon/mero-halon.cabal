@@ -47,13 +47,11 @@ Library
                    Mero.Messages
                    Mero.RemoteTables
                    HA.Services.Mero
-                   HA.Resources.Mero
                    HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.Mero.Startup
   Build-Depends:   base,
                    halon,
                    bytestring,
-                   confc,
                    containers,
                    directory,
                    distributed-process,
@@ -65,13 +63,15 @@ Library
                    network-transport
   if flag(rpc)
       Exposed-Modules: Mero.Notification.HAState
+                       HA.Resources.Mero
       cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
       extra-libraries: mero
       include-dirs: hastate
       c-sources: hastate/hastate.c
                  hastate/hastate_fops.c
                  hastate/hastate_foms.c
-      Build-Depends: network-transport-rpc >= 0.0.1
+      Build-Depends: network-transport-rpc >= 0.0.1,
+                     confc
   else
       Build-Depends: network >= 2.4,
                      network-transport-tcp >= 0.3
