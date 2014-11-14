@@ -2,8 +2,8 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
--- Interface for replicated logs. This module is intended to be imported
--- qualified.
+-- Replicate state machines and their logs. This module is intended to be
+-- imported qualified.
 
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GADTs #-}
@@ -11,33 +11,33 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Control.Distributed.Log
-       ( -- * Reified dictionaries
-         EqDict(..)
-       , TypeableDict(..)
-       , sdictValue
-         -- * Operations on handles
-       , Handle
-       , updateHandle
-       , remoteHandle
-       , RemoteHandle
-       , clone
-         -- * Creating new log instances and operations
-       , Hint(..)
-       , Log(..)
-       , new
-       , append
-       , status
-       , reconfigure
-       , addReplica
-       , removeReplica
-         -- * Remote Tables
-       , Control.Distributed.Log.__remoteTable
-       , Control.Distributed.Log.__remoteTableDecl
-       , clockInterval
-       , sdictList
-       , nodeIdClosure
-       , ambassador__tdict
-       ) where
+    ( -- * Reified dictionaries
+      EqDict(..)
+    , TypeableDict(..)
+    , sdictValue
+      -- * Operations on handles
+    , Handle
+    , updateHandle
+    , remoteHandle
+    , RemoteHandle
+    , clone
+      -- * Creating new log instances and operations
+    , Hint(..)
+    , Log(..)
+    , new
+    , append
+    , status
+    , reconfigure
+    , addReplica
+    , removeReplica
+      -- * Remote Tables
+    , Control.Distributed.Log.__remoteTable
+    , Control.Distributed.Log.__remoteTableDecl
+    , clockInterval
+    , sdictList
+    , nodeIdClosure
+    , ambassador__tdict
+    ) where
 
 import Control.Distributed.Log.Messages
 import Control.Distributed.Log.Policy (NominationPolicy)
