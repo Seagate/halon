@@ -32,7 +32,6 @@ module Control.Distributed.Log
       -- * Remote Tables
     , Control.Distributed.Log.__remoteTable
     , Control.Distributed.Log.__remoteTableDecl
-    , clockInterval
     , sdictList
     , nodeIdClosure
     , ambassador__tdict
@@ -214,9 +213,6 @@ queryMissing replicas log = do
     forM_ ns $ \n -> do
         forM_ replicas $ \ρ -> do
             send ρ $ Query self n
-
-clockInterval :: Int64
-clockInterval = 1000000
 
 newtype Memory a = Memory (Map.Map Int a)
                  deriving Typeable
