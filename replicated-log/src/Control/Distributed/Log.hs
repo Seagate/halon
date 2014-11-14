@@ -5,18 +5,15 @@
 -- Replicate state machines and their logs. This module is intended to be
 -- imported qualified.
 
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Control.Distributed.Log
-    ( -- * Reified dictionaries
-      EqDict(..)
-    , TypeableDict(..)
-    , sdictValue
-      -- * Operations on handles
-    , Handle
+    ( -- * Operations on handles
+      Handle
     , updateHandle
     , remoteHandle
     , RemoteHandle
@@ -30,6 +27,8 @@ module Control.Distributed.Log
     , reconfigure
     , addReplica
     , removeReplica
+    -- * Dictionaries
+    , sdictValue
       -- * Remote Tables
     , Control.Distributed.Log.__remoteTable
     , Control.Distributed.Log.__remoteTableDecl
@@ -63,6 +62,7 @@ import Control.Applicative ((<$>))
 import Control.Concurrent (newEmptyMVar, putMVar, takeMVar, tryPutMVar)
 import Control.Exception (SomeException, throwIO, assert)
 import Control.Monad
+import Data.Constraint (Dict(..))
 import Data.Int (Int64)
 import Data.List (find, intersect)
 import Data.Foldable (Foldable)
@@ -80,6 +80,7 @@ import GHC.Generics (Generic)
 import Prelude hiding (init, log)
 import System.Clock
 
+deriving instance Typeable Eq
 
 -- | An internal type used only by 'callLocal'.
 data Done = Done
@@ -113,14 +114,6 @@ gaps = go
         go (x:xs@(x':_)) | gap <- [succ x..pred x']
                          , not (null gap) = gap : go xs
                          | otherwise = go xs
-
-data EqDict a where
-    EqDict :: Eq a => EqDict a
-    deriving (Typeable)
-
-data TypeableDict a where
-    TypeableDict :: Typeable a => TypeableDict a
-    deriving (Typeable)
 
 -- | Information about a log entry.
 data Hint
@@ -288,7 +281,7 @@ driftSafetyFactor = 11 % 10
 -- highest entry number in their log. This is a convenient way to get replicas
 -- to retry queries without blocking and/or keeping any extra state around about
 -- still pending queries.
-replica :: forall a. EqDict a
+replica :: forall a. Dict (Eq a)
         -> SerializableDict a
         -> (NodeId -> FilePath)
         -> Protocol NodeId (Value a)
@@ -300,7 +293,7 @@ replica :: forall a. EqDict a
         -> [ProcessId]
         -> [ProcessId]
         -> Process ()
-replica EqDict
+replica Dict
         SerializableDict
         file
         Protocol{prl_propose}
@@ -889,7 +882,7 @@ spawnRec nodes f = do
     return ρs
 
 replicaClosure :: Typeable a
-               => Static (EqDict a)
+               => Static (Dict (Eq a))
                -> Static (SerializableDict a)
                -> Closure (NodeId -> FilePath)
                -> Closure (Protocol NodeId (Value a))
@@ -925,7 +918,7 @@ batcherClosure sdict ρ =
 -- not uniquely identify the log, since there can in general be multiple
 -- ambassadors to the same log.
 data Handle a =
-    Handle (Static (EqDict a))
+    Handle (Static (Dict (Eq a)))
            (Static (SerializableDict a))
            (Closure (NodeId -> FilePath))
            (Closure (Protocol NodeId (Value a)))
@@ -939,7 +932,7 @@ instance Eq (Handle a) where
 -- | A handle to a log created remotely. A 'RemoteHandle' can't be used to
 -- access a log, but it can be cloned into a local handle.
 data RemoteHandle a =
-    RemoteHandle (Static (EqDict a))
+    RemoteHandle (Static (Dict (Eq a)))
                  (Static (SerializableDict a))
                  (Closure (NodeId -> FilePath))
                  (Closure (Protocol NodeId (Value a)))
@@ -1064,7 +1057,7 @@ remoteHandle (Handle sdict1 sdict2 fp protocol log α) = do
 --
 -- The returned 'Handle' identifies the group.
 new :: Typeable a
-    => Static (EqDict a)
+    => Static (Dict (Eq a))
     -> Static (SerializableDict a)
     -> Closure (NodeId -> FilePath)
     -> Closure (Protocol NodeId (Value a))
