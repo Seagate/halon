@@ -25,7 +25,7 @@ Library
                     Data.Some
   Hs-Source-Dirs:   src/
   Build-Depends:    acid-state >= 0.11,
-                    base >= 4.5.0,
+                    base >= 4.7,
                     binary >= 0.6,
                     bytestring >= 0.9.2,
                     clock,
@@ -60,7 +60,7 @@ Test-Suite tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Ghc-Options:      -Wall -threaded -eventlog -debug -with-rtsopts=-l-au
-  Build-Depends:    base >= 4.5.0,
+  Build-Depends:    base >= 4.7,
                     binary >= 0.6,
                     Cabal >= 1.16,
                     consensus,
@@ -88,7 +88,7 @@ Test-Suite random
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Ghc-Options:      -Wall -threaded
-  Build-Depends:    base >= 4.5.0,
+  Build-Depends:    base >= 4.7,
                     consensus,
                     consensus-paxos,
                     constraints >= 0.4,
@@ -108,7 +108,7 @@ Benchmark bench-suite
   Default-Language: Haskell2010
   Hs-Source-Dirs:   benchmarks
   Ghc-Options:      -Wall -threaded
-  Build-Depends:    base >= 4.5.0,
+  Build-Depends:    base >= 4.7,
                     binary,
                     consensus,
                     consensus-paxos,
@@ -132,7 +132,7 @@ Benchmark state-distributed
   Hs-Source-Dirs:   benchmarks
   Ghc-Options:      -Wall -threaded
   if flag(distributed-benchmarks)
-    Build-Depends:  base >= 4.5.0,
+    Build-Depends:  base >= 4.7,
                     consensus,
                     consensus-paxos,
                     filepath,
