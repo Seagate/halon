@@ -32,7 +32,6 @@ module Control.Distributed.Log
       -- * Remote Tables
     , Control.Distributed.Log.__remoteTable
     , Control.Distributed.Log.__remoteTableDecl
-    , nodeIdClosure
     , ambassador__tdict
     ) where
 
@@ -833,10 +832,6 @@ listProcessIdClosure xs =
 processIdClosure :: ProcessId -> Closure ProcessId
 processIdClosure x =
     closure (staticDecode sdictProcessId) (encode x)
-
-nodeIdClosure :: NodeId -> Closure NodeId
-nodeIdClosure nid =
-    closure (staticDecode $(mkStatic 'dictNodeId)) (encode nid)
 
 delayClosure :: Typeable a
              => Static (SerializableDict a)
