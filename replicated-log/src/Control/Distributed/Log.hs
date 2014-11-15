@@ -39,7 +39,6 @@ import Control.Distributed.Log.Messages
 import Control.Distributed.Log.Policy (NominationPolicy)
 import Control.Distributed.Log.Policy as Policy (notThem, notThem__static)
 import Control.Distributed.Process.Consensus hiding (Value)
-import Data.Some
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
@@ -78,6 +77,9 @@ import Prelude hiding (init, log)
 import System.Clock
 
 deriving instance Typeable Eq
+
+-- | An auxiliary type for hiding parameters of type constructors
+data Some f = forall a. Some (f a) deriving (Typeable)
 
 -- | An internal type used only by 'callLocal'.
 data Done = Done
