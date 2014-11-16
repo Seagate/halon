@@ -149,9 +149,8 @@ data Log a = forall s. Typeable s => Log
 data Value a
       -- | Batch of values.
     = Values [a]
-      -- | Request start time, lease period, list of acceptors and list of
-      -- replicas (i.e. proposers).
-    | Reconf TimeSpec Int64 [ProcessId] [ProcessId]
+      -- | Lease start time, list of acceptors and list of replicas.
+    | Reconf TimeSpec [ProcessId] [ProcessId]
     deriving (Eq, Generic, Typeable)
 
 instance Binary a => Binary (Value a)
@@ -452,7 +451,7 @@ replica Dict
               let ρs' = self : others
               return Request
                 { requestSender   = self
-                , requestValue    = Reconf now leasePeriod αs ρs' :: Value a
+                , requestValue    = Reconf now αs ρs' :: Value a
                 , requestHint     = None
                 , requestForLease = Just l
                 }
@@ -505,7 +504,7 @@ replica Dict
                           cd' = max cd w'
                           w'  = succ w
                       go' leaseStart leasePeriod αs ρs d' cd' w' s'
-                  Reconf requestStart leasePeriod' αs' ρs'
+                  Reconf requestStart αs' ρs'
                     -- Only execute reconfiguration decree if decree is from
                     -- current legislature. Otherwise we would be going back to
                     -- an old configuration.
@@ -536,14 +535,14 @@ replica Dict
                           then do
                             send timerPid
                                  ( self
-                                 , max 0 (TimeSpec 0 ((leasePeriod' -
-                                                       leaseRenewalMargin) * 1000) -
+                                 , max 0 (TimeSpec 0 ((leasePeriod -
+                                                       leaseRenewTimeout) * 1000) -
                                            (now - requestStart))
                                  , LeaseRenewalTime
                                  )
                             return requestStart
                           else return now
-                      go' leaseStart' leasePeriod' αs' ρs' d' cd' w' s
+                      go' leaseStart' leasePeriod αs' ρs' d' cd' w' s
                     | otherwise -> do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
                       say $ "Not executing " ++ show dᵢ
@@ -645,8 +644,8 @@ replica Dict
 
               -- Upon getting the max decree of another replica, compute the
               -- gaps and query for those.
-            , matchIf (\(Max _ _ dᵢ _ _) -> decreeNumber d < decreeNumber dᵢ) $
-                       \(Max ρ _ dᵢ _ _) -> do
+            , matchIf (\(Max _ dᵢ _ _) -> decreeNumber d < decreeNumber dᵢ) $
+                       \(Max ρ dᵢ _ _) -> do
                   say $ "Got Max " ++ show dᵢ
                   queryMissing [ρ] $ Map.insert (decreeNumber dᵢ) undefined log
                   let d'  = d{decreeNumber = decreeNumber dᵢ}
@@ -683,7 +682,7 @@ replica Dict
                       send self $ Request
                         { requestSender   = π
                         , requestValue    =
-                            Reconf requestStart leasePeriod αs' ρs'' :: Value a
+                            Reconf requestStart αs' ρs'' :: Value a
                         , requestHint     = None
                         , requestForLease = Nothing
                         }
@@ -708,7 +707,7 @@ replica Dict
                       "\n\tacceptors:          " ++ show αs ++
                       "\n\treplicas:           " ++ show ρs
                   forM_ others $ \ρ -> send ρ $
-                    Max self leasePeriod d αs ρs
+                    Max self d αs ρs
                   go' leaseStart leasePeriod αs ρs d cd w s
 
             , match $ \(ProcessMonitorNotification _ π _) -> do
@@ -718,7 +717,7 @@ replica Dict
                   -- dissappears.
                   -- _ <- liftProcess $ monitor π
                   when (π `elem` replicas) $
-                    send π $ Max self leasePeriod d αs ρs
+                    send π $ Max self d αs ρs
                   go' leaseStart leasePeriod αs ρs d cd w s
             ]
 
@@ -797,12 +796,9 @@ delay SerializableDict them f = do
 
 -- | Like 'uncurry', but extract arguments from a 'Max' message rather than
 -- a pair.
-unMax :: (Int64 -> DecreeId -> [ProcessId] -> [ProcessId] -> a) -> Max -> a
-unMax f (Max _ leasePeriod d αs ρs) =
-  f leasePeriod d αs ρs
-
-int64Id ::Int64 -> Int64
-int64Id = id
+unMax :: (DecreeId -> [ProcessId] -> [ProcessId] -> a) -> Max -> a
+unMax f (Max _ d αs ρs) =
+  f d αs ρs
 
 timeSpecId :: TimeSpec -> TimeSpec
 timeSpecId = id
@@ -814,7 +810,6 @@ remotable [ 'replica
           , 'dictList
           , 'dictNodeId
           , 'dictMax
-          , 'int64Id
           , 'timeSpecId
           , 'batcher
           ]
@@ -847,12 +842,8 @@ delayClosure sdict them f =
       `closureApply` processIdClosure them
       `closureApply` f
 
-unMaxCP :: (Typeable a)
-        => Closure (   Int64
-                    -> DecreeId
-                    -> [ProcessId]
-                    -> [ProcessId]
-                    -> Process a)
+unMaxCP :: Typeable a
+        => Closure (DecreeId -> [ProcessId] -> [ProcessId] -> Process a)
         -> CP Max a
 unMaxCP f = staticClosure $(mkStatic 'unMax) `closureApply` f
 
@@ -1092,8 +1083,7 @@ addReplica :: Typeable a
            -> NodeId
            -> Int64
            -> Process ProcessId
-addReplica h@(Handle sdict1 sdict2 file protocol log _)
-           cpolicy nid leaseRenewalMargin               = do
+addReplica h@(Handle sdict1 sdict2 config log _) cpolicy nid = do
     self <- getSelfPid
     now <- liftIO $ getTime Monotonic
     α <- spawn nid $ acceptorClosure $(mkStatic 'dictNodeId) protocol nid
