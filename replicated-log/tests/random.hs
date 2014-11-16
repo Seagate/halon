@@ -22,13 +22,13 @@ import Control.Distributed.Static ( staticApply, staticClosure )
 import Network.Transport (Transport(..))
 import Network.Transport.TCP
 
-import Control.Applicative ((<$>))
 import Control.Exception ( bracket, throwIO, SomeException )
 import Control.Monad ( when, forM_, replicateM, foldM_ )
 import Data.Constraint (Dict(..))
 import Data.Typeable (Typeable)
 import Data.IORef ( newIORef, readIORef, writeIORef )
 import Data.List ( isPrefixOf )
+import Data.Ratio ((%))
 import System.Exit ( exitFailure )
 import System.Environment ( getArgs )
 import System.FilePath ((</>))
@@ -44,6 +44,15 @@ dictState = Dict
 testLog :: State.Log State
 testLog = State.log $ return []
 
+testConfig :: Log.Config
+testConfig = Log.Config
+    { consensusProtocol = \dict -> BasicPaxos.protocol dict (filepath "acceptors")
+    , persistDirectory  = filepath "replicas"
+    , leaseTimeout      = 3000000
+    , leaseRenewTimeout = 1000000
+    , driftSafetyFactor = 11 % 10
+    }
+
 ssdictState :: SerializableDict State
 ssdictState = SerializableDict
 
@@ -54,7 +63,7 @@ killOnError pid p = catch p $ \e -> liftIO (print e) >>
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
 
-remotable [ 'dictState, 'testLog, 'ssdictState, 'filepath ]
+remotable [ 'dictState, 'testLog, 'ssdictState, 'testConfig ]
 
 remotableDecl [ [d|
 
@@ -116,7 +125,6 @@ main = do
                forM_ (take numIterations $ randoms $ mkStdGen s) $ run transport
            putStrLn $ "SUCCESS!"
 
-
 run :: Transport -> Int -> IO ()
 run transport s = brackets 2
   (newLocalNode transport remoteTables)
@@ -125,18 +133,11 @@ run transport s = brackets 2
     withScheduler [] (fst $ random $ mkStdGen s) $ do
     let tries = length nodes
     h <- Log.new $(mkStatic 'State.commandEqDict)
-                     ($(mkStatic 'State.commandSerializableDict)
-                        `staticApply` sdictState)
-                     ($(mkClosure 'filepath) (tmpdir </> "replicas"))
-                     (BasicPaxos.protocolClosure
-                         (sdictValue
-                             ($(mkStatic 'State.commandSerializableDict)
-                                `staticApply` sdictState))
-                         ($(mkClosure 'filepath) (tmpdir </> "acceptors")))
-                     (staticClosure $(mkStatic 'testLog))
-                     3000000
-                     1000000
-                     (map localNodeId nodes)
+                 ($(mkStatic 'State.commandSerializableDict)
+                    `staticApply` sdictState)
+                 (staticClosure $(mkStatic 'testConfig))
+                 (staticClosure $(mkStatic 'testLog))
+                 (map localNodeId nodes)
     rHandle <- remoteHandle h
     self <- getSelfPid
     let xs = [1..tries]

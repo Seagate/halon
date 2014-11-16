@@ -15,14 +15,13 @@ module Control.Distributed.Log
       -- * Creating new log instances and operations
     , Hint(..)
     , Log(..)
+    , Config(..)
     , new
     , append
     , status
     , reconfigure
     , addReplica
     , removeReplica
-    -- * Dictionaries
-    , sdictValue
       -- * Remote Tables
     , Control.Distributed.Log.Internal.__remoteTable
     , Control.Distributed.Log.Internal.__remoteTableDecl

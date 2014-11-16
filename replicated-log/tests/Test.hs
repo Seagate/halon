@@ -12,10 +12,7 @@ import Control.Distributed.Process.Consensus
     ( __remoteTable )
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import qualified Control.Distributed.Log as Log
-import Control.Distributed.Log
-    ( sdictValue
-    , updateHandle
-    )
+import Control.Distributed.Log ( updateHandle )
 import qualified Control.Distributed.State as State
 import Control.Distributed.State
     ( Command
@@ -36,6 +33,7 @@ import Network.Transport.TCP
 import Control.Monad (forM_, replicateM, when, void)
 import Data.Constraint (Dict(..))
 import Data.Binary (encode)
+import Data.Ratio ((%))
 import Data.Typeable (Typeable)
 import System.Directory
 import System.IO
@@ -80,7 +78,16 @@ testLog = State.log $ return $ State 0
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
 
-remotable [ 'dictInt, 'dictState, 'dictNodeId, 'testLog, 'filepath ]
+testConfig :: Log.Config
+testConfig = Log.Config
+    { consensusProtocol = \dict -> BasicPaxos.protocol dict (filepath "acceptors")
+    , persistDirectory  = filepath "replicas"
+    , leaseTimeout      = 3000000
+    , leaseRenewTimeout = 1000000
+    , driftSafetyFactor = 11 % 10
+    }
+
+remotable [ 'dictInt, 'dictState, 'dictNodeId, 'testLog, 'testConfig ]
 
 sdictInt :: Static (SerializableDict Int)
 sdictInt = $(mkStatic 'dictInt)
@@ -116,8 +123,7 @@ tests args = do
     Right transport <- createTransport "127.0.0.1" "8080" defaultTCPParameters
     putStrLn "Transport created."
 
-    let leaseRenewalMargin = 1000000
-        setup :: Int                      -- ^ Number of nodes to spawn group on.
+    let setup :: Int                      -- ^ Number of nodes to spawn group on.
               -> (Log.Handle (Command State) -> State.CommandPort State -> Process ())
               -> IO ()
         setup num action = tryWithTimeout transport remoteTables defaultTimeout $ do
@@ -130,15 +136,8 @@ tests args = do
                 h <- Log.new $(mkStatic 'State.commandEqDict)
                              ($(mkStatic 'State.commandSerializableDict)
                                 `staticApply` sdictState)
-                             ($(mkClosure 'filepath) "replicas")
-                             (BasicPaxos.protocolClosure
-                                 (sdictValue
-                                     ($(mkStatic 'State.commandSerializableDict)
-                                        `staticApply` sdictState))
-                                 ($(mkClosure 'filepath) "acceptors"))
+                             (staticClosure $(mkStatic 'testConfig))
                              (staticClosure $(mkStatic 'testLog))
-                             3000000
-                             leaseRenewalMargin
                              nodes
                 port <- State.newPort h
                 action h port
@@ -182,7 +181,6 @@ tests args = do
                     here <- getSelfNode
                     void $ Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.meToo)) here
-                             leaseRenewalMargin
                 expect
 
           , testSuccess "addReplica-new-replica-old-decrees" . withTmpDirectory $ setup 1 $ \h port -> do
@@ -201,7 +199,7 @@ tests args = do
                     here <- getSelfNode
                     void $ Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.meToo))
-                             here leaseRenewalMargin
+                             here
                 () <- expect
                 say "New replica incremented."
 
@@ -217,7 +215,6 @@ tests args = do
                     here <- getSelfNode
                     void $ Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.meToo)) here
-                             leaseRenewalMargin
 
                 State.update port $ incrementCP
                 () <- expect
@@ -236,13 +233,10 @@ tests args = do
                 liftIO $ runProcess node1 $ do
                     registerInterceptor $ interceptor
                     here <- getSelfNode
-                    void $ Log.addReplica h
-                             (staticClosure $(mkStatic 'Policy.meToo)) here
-                             leaseRenewalMargin
+                    void $ Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo)) here
 
                 here <- getSelfNode
-                ρ <- Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo))
-                       here leaseRenewalMargin
+                ρ <- Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo)) here
                 updateHandle h ρ
 
                 -- Kill the first node, and see that the updated handle
@@ -272,7 +266,6 @@ tests args = do
                     here <- getSelfNode
                     void $ Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.orpn)) here
-                             leaseRenewalMargin
 
                 Log.status h
 

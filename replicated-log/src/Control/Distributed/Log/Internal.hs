@@ -5,9 +5,11 @@
 -- Replicate state machines and their logs. This module is intended to be
 -- imported qualified.
 
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ViewPatterns #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -22,14 +24,13 @@ module Control.Distributed.Log.Internal
       -- * Creating new log instances and operations
     , Hint(..)
     , Log(..)
+    , Config(..)
     , new
     , append
     , status
     , reconfigure
     , addReplica
     , removeReplica
-    -- * Dictionaries
-    , sdictValue
       -- * Remote Tables
     , Control.Distributed.Log.Internal.__remoteTable
     , Control.Distributed.Log.Internal.__remoteTableDecl
@@ -69,7 +70,7 @@ import Data.Binary (Binary, encode)
 import Data.Maybe
 import Data.Monoid (Monoid(..))
 import qualified Data.Map as Map
-import Data.Ratio (Ratio, (%), numerator, denominator)
+import Data.Ratio (Ratio, numerator, denominator)
 import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
 import Data.Typeable (Typeable)
@@ -140,6 +141,26 @@ data Log a = forall s. Typeable s => Log
 
       -- | State transition callback.
     , logNextState      :: s -> a -> Process s
+    } deriving (Typeable)
+
+data Config = Config
+    { -- | The consensus protocol to use.
+      consensusProtocol :: forall a. SerializableDict a -> Protocol NodeId a
+
+      -- | For any given node, the directory in which to store persistent state.
+    , persistDirectory  :: NodeId -> FilePath
+
+      -- | The length of time before leases time out, in microseconds.
+    , leaseTimeout      :: Int64
+
+      -- | The length of time before a leader should seek lease renewal, in
+      -- microseconds. To avoid leader churn, you should ensure that
+      -- @leaseRenewTimeout <= leaseTimeout@.
+    , leaseRenewTimeout :: Int64
+
+      -- | Scale the lease by this factor in non-leaders to protect against
+      -- clock drift. This value /must/ be greater than 1.
+    , driftSafetyFactor :: Ratio Int64
     } deriving (Typeable)
 
 -- | The type of decree values. Some decrees are control decrees, that
@@ -231,10 +252,9 @@ memoryGet = do
 
 $(makeAcidic ''Memory ['memoryInsert, 'memoryGet])
 
--- | This is an adjustment to the lease period so non-leaders think it is
--- slightly longer to account for possible clock drifts during the lease period.
-driftSafetyFactor :: Ratio Int64
-driftSafetyFactor = 11 % 10
+-- | Small view function for extracting a specialized 'Protocol'. Used in 'replica'.
+unpackConfigProtocol :: Serializable a => Config -> (Config, Protocol NodeId (Value a))
+unpackConfigProtocol Config{..} = (Config{..}, consensusProtocol SerializableDict)
 
 -- Note [Teleportation]
 -- ~~~~~~~~~~~~~~~~~~~~
@@ -275,31 +295,26 @@ driftSafetyFactor = 11 % 10
 -- still pending queries.
 replica :: forall a. Dict (Eq a)
         -> SerializableDict a
+        -> Config
         -> Log a
-        -> (NodeId -> FilePath)
-        -> Protocol NodeId (Value a)
         -> TimeSpec
-        -> Int64
-        -> Int64
         -> DecreeId
         -> [ProcessId]
         -> [ProcessId]
         -> Process ()
 replica Dict
         SerializableDict
+        (unpackConfigProtocol -> (Config{..}, Protocol{prl_propose}))
         Log{..}
-        file
-        Protocol{prl_propose}
         leaseStart0
-        leaseRenewalMargin
-        leasePeriod0
         decree
         acceptors
         replicas = do
     say $ "New replica started in " ++ show (decreeLegislatureId decree)
 
     self <- getSelfPid
-    acid <- liftIO $ openLocalStateFrom (file (processNodeId self)) (Memory Map.empty)
+    acid <- liftIO $ openLocalStateFrom (persistDirectory (processNodeId self))
+                                        (Memory Map.empty)
     s <- logInitialization
 
     -- Replay backlog if any.
@@ -328,9 +343,8 @@ replica Dict
     leaseStart0' <- if [self] == take 1 replicas
                     then return leaseStart0
                     else liftIO $ getTime Monotonic
-    go ppid timerPid acid leaseStart0' leasePeriod0 acceptors replicas d d w s
+    go ppid timerPid acid leaseStart0' leaseTimeout acceptors replicas d d w s
   where
-
     -- A timer process. When receiving @(pid, t, msg)@, the process waits for
     -- @t@ microsenconds and then it sends @msg@ to @pid@.
     --
@@ -359,7 +373,8 @@ replica Dict
             mv <- liftIO newEmptyMVar
             pid <- spawnLocal $ do
                      link self
-                     runPropose' (prl_propose αs d v) s >>= liftIO . putMVar mv
+                     result <- runPropose' (prl_propose αs d v) s
+                     liftIO $ putMVar mv result
                      send self ()
             (αs',blocked) <- receiveWait
                       [ match $ \() -> return (αs,False)
@@ -386,7 +401,7 @@ replica Dict
     -- >    pid_of_timer
     -- >    acid_handle
     -- >    leaseStart
-    -- >    leasePeriod
+    -- >    leaseTimeout
     -- >    acceptors
     -- >    replicas
     -- >    current_unconfirmed_decree
@@ -398,8 +413,8 @@ replica Dict
     --
     -- The @leaseStart@ indicates the time at which the last lease started.
     --
-    -- The @leasePeriod@ is the period to be used in lease requests.
-    -- The @leaseRenewalMargin@ parameter of @replica@ indicates with how much
+    -- The @leaseTimeout@ is the length of time for which to request leases.
+    -- The @leaseRenewTimeout@ parameter of @replica@ indicates with how much
     -- anticipation the leader must renew the lease before expiration of the
     -- current lease.
     --
@@ -812,6 +827,7 @@ remotable [ 'replica
           , 'dictMax
           , 'timeSpecId
           , 'batcher
+          , 'consensusProtocol
           ]
 
 sdictValue :: Typeable a
@@ -859,25 +875,17 @@ spawnRec nodes f = do
 replicaClosure :: Typeable a
                => Static (Dict (Eq a))
                -> Static (SerializableDict a)
+               -> Closure Config
                -> Closure (Log a)
-               -> Closure (NodeId -> FilePath)
-               -> Closure (Protocol NodeId (Value a))
                -> Closure TimeSpec
-               -> Closure Int64
-               -> Closure (   Int64
-                           -> DecreeId
-                           -> [ProcessId]
-                           -> [ProcessId]
-                           -> Process ())
-replicaClosure sdict1 sdict2 log file protocol leaseStart leaseRenewalMargin =
+               -> Closure (DecreeId -> [ProcessId] -> [ProcessId] -> Process ())
+replicaClosure sdict1 sdict2 config log leaseStart =
     staticClosure $(mkStatic 'replica)
       `closureApply` staticClosure sdict1
       `closureApply` staticClosure sdict2
+      `closureApply` config
       `closureApply` log
-      `closureApply` file
-      `closureApply` protocol
       `closureApply` leaseStart
-      `closureApply` leaseRenewalMargin
 
 batcherClosure :: Typeable a
                => Static (SerializableDict a)
@@ -895,22 +903,20 @@ batcherClosure sdict ρ =
 data Handle a =
     Handle (Static (Dict (Eq a)))
            (Static (SerializableDict a))
-           (Closure (NodeId -> FilePath))
-           (Closure (Protocol NodeId (Value a)))
+           (Closure Config)
            (Closure (Log a))
            ProcessId
     deriving (Typeable, Generic)
 
 instance Eq (Handle a) where
-    Handle _ _ _ _ _ μ == Handle _ _ _ _ _ μ' = μ == μ'
+    Handle _ _ _ _ μ == Handle _ _ _ _ μ' = μ == μ'
 
 -- | A handle to a log created remotely. A 'RemoteHandle' can't be used to
 -- access a log, but it can be cloned into a local handle.
 data RemoteHandle a =
     RemoteHandle (Static (Dict (Eq a)))
                  (Static (SerializableDict a))
-                 (Closure (NodeId -> FilePath))
-                 (Closure (Protocol NodeId (Value a)))
+                 (Closure Config)
                  (Closure (Log a))
                  (Closure (Process ()))
    deriving (Typeable, Generic)
@@ -955,12 +961,11 @@ remotableDecl [
 
         mkSomeSDict :: SerializableDict a -> Some SerializableDict
         mkSomeSDict = Some
-
     |] ]
 
 -- | Append an entry to the replicated log.
 append :: Serializable a => Handle a -> Hint -> a -> Process ()
-append (Handle _ _ _ _ _ μ) hint x = callLocal $ do
+append (Handle _ _ _ _ μ) hint x = callLocal $ do
     self <- getSelfPid
     send μ $ Request
       { requestSender   = self
@@ -972,17 +977,17 @@ append (Handle _ _ _ _ _ μ) hint x = callLocal $ do
 
 -- | Make replicas advertize their status info.
 status :: Serializable a => Handle a -> Process ()
-status (Handle _ _ _ _ _ μ) = send μ Status
+status (Handle _ _ _ _ μ) = send μ Status
 
 -- | Updates the handle so it communicates with the given replica.
 updateHandle :: Handle a -> ProcessId -> Process ()
-updateHandle (Handle _ _ _ _ _ α) ρ = send α ρ
+updateHandle (Handle _ _ _ _ α) ρ = send α ρ
 
 remoteHandle :: Handle a -> Process (RemoteHandle a)
-remoteHandle (Handle sdict1 sdict2 fp protocol log α) = do
+remoteHandle (Handle sdict1 sdict2 config log α) = do
     self <- getSelfPid
     send α $ Clone self
-    RemoteHandle sdict1 sdict2 fp protocol log <$> expect
+    RemoteHandle sdict1 sdict2 config log <$> expect
 
 -- Note [spawnRec]
 -- ~~~~~~~~~~~~~~~
@@ -1001,25 +1006,10 @@ remoteHandle (Handle sdict1 sdict2 fp protocol log α) = do
 
 -- | Create a group of replicated processes.
 --
--- > new eqDict
--- >     serializableDict
--- >     fileClosure
--- >     consensusProtocol
--- >     logClosure
--- >     leasePeriod
--- >     leaseRenewalMargin
--- >     nodes
---
 -- spawns one replica process on each node in @nodes@. The behaviour of the
 -- replica upon receipt of a message is determined by the @logClosure@ argument
 -- which provides a callback for initilizing the state and another
 -- callback for making transitions.
---
--- The argument @fileClosure@ indicates for each node a path on disk where to
--- persist the log.
---
--- The argument @consensusProtocol@ indicates the consensus
--- implementation to use.
 --
 -- The argument @leasePeriod@ indicates the length of the lease period
 -- in microseconds. The lease period indicates how long the leader is guaranteed
@@ -1034,28 +1024,29 @@ remoteHandle (Handle sdict1 sdict2 fp protocol log α) = do
 new :: Typeable a
     => Static (Dict (Eq a))
     -> Static (SerializableDict a)
+    -> Closure Config
     -> Closure (Log a)
-    -> Closure (NodeId -> FilePath)
-    -> Closure (Protocol NodeId (Value a))
-    -> Int64
-    -> Int64
     -> [NodeId]
     -> Process (Handle a)
-new sdict1 sdict2 log file protocol leasePeriod leaseRenewalMargin nodes = do
-    acceptors <- forM nodes $ \nid -> spawn nid $
-                     acceptorClosure $(mkStatic 'dictNodeId) protocol nid
+new sdict1 sdict2 config log nodes = do
+    let protocol = staticClosure $(mkStatic 'consensusProtocol)
+                     `closureApply` config
+                     `closureApply` staticClosure (sdictValue sdict2)
+    acceptors <-
+        forM nodes $ \nid -> spawn nid $
+            acceptorClosure $(mkStatic 'dictNodeId)
+                            protocol
+                            nid
     now <- liftIO $ getTime Monotonic
     -- See Note [spawnRec]
     replicas <- spawnRec nodes $
-                    replicaClosure sdict1 sdict2 log file protocol
+                    replicaClosure sdict1 sdict2 config log
                         ($(mkClosure 'timeSpecId) now)
-                        ($(mkClosure 'int64Id) leaseRenewalMargin)
-                        `closureApply` $(mkClosure 'int64Id) leasePeriod
                         `closureApply` staticClosure initialDecreeIdStatic
                         `closureApply` listProcessIdClosure acceptors
     batchers <- forM replicas $ \ρ -> spawn (processNodeId ρ) $ batcherClosure sdict2 ρ
     -- Create a new local proxy for the cgroup.
-    Handle sdict1 sdict2 file protocol log <$> spawnLocal (ambassador (staticApply $(mkStatic 'mkSomeSDict) sdict2, batchers))
+    Handle sdict1 sdict2 config log <$> spawnLocal (ambassador (staticApply $(mkStatic 'mkSomeSDict) sdict2, batchers))
 
 -- | Propose a reconfiguration according the given nomination policy. Note that
 -- in general, it is only safe to remove replicas if they are /certainly/ dead.
@@ -1063,7 +1054,7 @@ reconfigure :: Typeable a
             => Handle a
             -> Closure NominationPolicy
             -> Process ()
-reconfigure (Handle _ _ _ _ _ μ) cpolicy = callLocal $ do
+reconfigure (Handle _ _ _ _ μ) cpolicy = callLocal $ do
     self <- getSelfPid
     send μ $ Helo self cpolicy
     expect
@@ -1081,17 +1072,21 @@ addReplica :: Typeable a
            => Handle a
            -> Closure (ProcessId -> ProcessId -> NominationPolicy)
            -> NodeId
-           -> Int64
            -> Process ProcessId
 addReplica h@(Handle sdict1 sdict2 config log _) cpolicy nid = do
     self <- getSelfPid
     now <- liftIO $ getTime Monotonic
-    α <- spawn nid $ acceptorClosure $(mkStatic 'dictNodeId) protocol nid
+    let protocol = staticClosure $(mkStatic 'consensusProtocol)
+                     `closureApply` config
+                     `closureApply` staticClosure (sdictValue sdict2)
+    α <- spawn nid $
+             acceptorClosure $(mkStatic 'dictNodeId)
+                             protocol
+                             nid
     -- See comment about effect of 'delayClosure' in docstring above.
     ρ <- spawn nid $ delayClosure sdictMax self $
-             unMaxCP $ replicaClosure sdict1 sdict2 log file protocol
+             unMaxCP $ replicaClosure sdict1 sdict2 config log
                                       ($(mkClosure 'timeSpecId) now)
-                                      ($(mkClosure 'int64Id) leaseRenewalMargin)
     β <- spawn nid $ batcherClosure sdict2 ρ
     reconfigure h $ cpolicy
         `closureApply` processIdClosure α
@@ -1105,7 +1100,7 @@ removeReplica :: Typeable a
               -> ProcessId
               -> ProcessId
               -> Process ()
-removeReplica h@(Handle _sdict1 _sdict2 _ _protocol _log _) α ρ β = do
+removeReplica h α ρ β = do
     ref1 <- monitor β
     ref2 <- monitor ρ
     ref3 <- monitor α
@@ -1120,5 +1115,5 @@ removeReplica h@(Handle _sdict1 _sdict2 _ _protocol _log _) α ρ β = do
         `closureApply` listProcessIdClosure [ρ]
 
 clone :: Typeable a => RemoteHandle a -> Process (Handle a)
-clone (RemoteHandle sdict1 sdict2 fp protocol log f) =
-    Handle sdict1 sdict2 fp protocol log <$> (spawnLocal =<< unClosure f)
+clone (RemoteHandle sdict1 sdict2 config log f) =
+    Handle sdict1 sdict2 config log <$> (spawnLocal =<< unClosure f)
