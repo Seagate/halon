@@ -6,6 +6,8 @@
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
+import Test.Framework (withTmpDirectory)
+
 import Control.Distributed.Process.Consensus
 import Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import Control.Distributed.Log as Log
@@ -31,7 +33,6 @@ import System.Exit ( exitFailure )
 import System.Environment ( getArgs )
 import System.FilePath ((</>))
 import System.Posix.Env (setEnv)
-import System.Posix.Temp (mkdtemp)
 import System.Random ( randomIO, mkStdGen, random, randoms )
 
 
@@ -120,10 +121,9 @@ run :: Transport -> Int -> IO ()
 run transport s = brackets 2
   (newLocalNode transport remoteTables)
   closeLocalNode
-  $ \nodes@(n0:_) -> runProcess' n0 $
+  $ \nodes@(n0:_) -> withTmpDirectory $ runProcess' n0 $
     withScheduler [] (fst $ random $ mkStdGen s) $ do
     let tries = length nodes
-    tmpdir <- liftIO $ (</> show s) <$> mkdtemp "/tmp/tmp."
     h <- Log.new $(mkStatic 'State.commandEqDict)
                      ($(mkStatic 'State.commandSerializableDict)
                         `staticApply` sdictState)
