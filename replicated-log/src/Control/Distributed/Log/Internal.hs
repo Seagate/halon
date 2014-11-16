@@ -797,6 +797,9 @@ dictNodeId = SerializableDict
 dictMax :: SerializableDict Max
 dictMax = SerializableDict
 
+dictTimeSpec :: SerializableDict TimeSpec
+dictTimeSpec = SerializableDict
+
 -- | @delay them p@ is a process that waits for a signal (a message of type @()@)
 -- from 'them' (origin is not verified) before proceeding as @p@. In order to
 -- avoid waiting forever, @delay them p@ monitors 'them'. If it receives a
@@ -815,9 +818,6 @@ unMax :: (DecreeId -> [ProcessId] -> [ProcessId] -> a) -> Max -> a
 unMax f (Max _ d αs ρs) =
   f d αs ρs
 
-timeSpecId :: TimeSpec -> TimeSpec
-timeSpecId = id
-
 remotable [ 'replica
           , 'delay
           , 'unMax
@@ -825,7 +825,7 @@ remotable [ 'replica
           , 'dictList
           , 'dictNodeId
           , 'dictMax
-          , 'timeSpecId
+          , 'dictTimeSpec
           , 'batcher
           , 'consensusProtocol
           ]
@@ -846,6 +846,10 @@ listProcessIdClosure xs =
 processIdClosure :: ProcessId -> Closure ProcessId
 processIdClosure x =
     closure (staticDecode sdictProcessId) (encode x)
+
+timeSpecClosure :: TimeSpec -> Closure TimeSpec
+timeSpecClosure ts =
+    closure (staticDecode $(mkStatic 'dictTimeSpec)) (encode ts)
 
 delayClosure :: Typeable a
              => Static (SerializableDict a)
@@ -1041,7 +1045,7 @@ new sdict1 sdict2 config log nodes = do
     -- See Note [spawnRec]
     replicas <- spawnRec nodes $
                     replicaClosure sdict1 sdict2 config log
-                        ($(mkClosure 'timeSpecId) now)
+                        `closureApply` timeSpecClosure now
                         `closureApply` staticClosure initialDecreeIdStatic
                         `closureApply` listProcessIdClosure acceptors
     batchers <- forM replicas $ \ρ -> spawn (processNodeId ρ) $ batcherClosure sdict2 ρ
@@ -1086,7 +1090,7 @@ addReplica h@(Handle sdict1 sdict2 config log _) cpolicy nid = do
     -- See comment about effect of 'delayClosure' in docstring above.
     ρ <- spawn nid $ delayClosure sdictMax self $
              unMaxCP $ replicaClosure sdict1 sdict2 config log
-                                      ($(mkClosure 'timeSpecId) now)
+               `closureApply` timeSpecClosure now
     β <- spawn nid $ batcherClosure sdict2 ρ
     reconfigure h $ cpolicy
         `closureApply` processIdClosure α
