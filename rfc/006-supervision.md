@@ -28,8 +28,8 @@ supervisor managing it.
 The system described here is an interaction between two different
 types of process: a ‘health monitor’, which is responsible for
 generating events about service failures, and a ‘supervisor’, which is
-responsible for handling them.  Each supervisor in the hierarchy
-should be paired with a health monitor.
+responsible for handling them. Each health monitor in the cluster must be
+paired with at least one supervisor.
 
 Supervisors and health monitors can themselves be processes, and are
 therefore capable of being supervised themselves in much the same way.
@@ -53,13 +53,15 @@ makes sense to have the recovery coordinator supervise the node
 supervisors and health monitors.
 
 #### Node supervisor
-Each node should have a node supervisor/monitor pair.  The node's
+Each node may have a node supervisor/monitor pair.  The node's
 monitor will generate service failure events, which will be handled by
 the local supervisor; however, the recovery coordinator will also
 listen to them and log them as per functional requirement
 [fr.logging], and may decide that there is a larger problem that
 requires restarting or abandoning the supervisor or the node in
 general.
+
+Alternate topologies are possible for handling, say, rack-local events.
 
 ### Startup
 
