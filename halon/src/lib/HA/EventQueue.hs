@@ -26,12 +26,12 @@ module HA.EventQueue
 
 import HA.EventQueue.Consumer
 import HA.EventQueue.Types
-import HA.EventQueue.Producer ( sendHAEvent )
 import HA.Replicator ( RGroup, updateStateWith, getState)
 import Control.SpineSeq (spineSeq)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
+import Control.Distributed.Process.Serializable (Serializable)
 
 import Control.Arrow ( first, second )
 import Data.ByteString ( ByteString )
@@ -42,6 +42,10 @@ import Data.Traversable
 -- node.
 eventQueueLabel :: String
 eventQueueLabel = "HA.EventQueue"
+
+-- | Send HAEvent and provide information about current process.
+sendHAEvent :: Serializable a => ProcessId -> HAEvent a -> Process ()
+sendHAEvent next ev = getSelfPid >>= \pid -> send next ev{eventHops = pid : eventHops ev}
 
 -- | State of the event queue.
 --

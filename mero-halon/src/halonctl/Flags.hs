@@ -15,6 +15,8 @@ import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
 
 import System.Environment (getProgName)
+import qualified Handler.Bootstrap as Bootstrap
+import qualified Handler.Service as Service
 
 data Options = Options
     { optTheirAddress :: [String] -- ^ Addresses of halond nodes to control.
@@ -24,7 +26,8 @@ data Options = Options
   deriving (Eq)
 
 data Command =
-    Bootstrap Bootstrap.BootstrapOptions
+      Bootstrap Bootstrap.BootstrapCmdOptions
+    | Service Service.ServiceCmdOptions
   deriving (Eq)
 
 getOptions :: IO Options
@@ -44,5 +47,9 @@ getOptions = do
                O.short 'l' <>
                O.value "0.0.0.0:9001" <>
                O.help "Address halonctl binds to; defaults to 0.0.0.0:0.")
-        <*> (O.subparser $ O.command "bootstrap" $ Bootstrap <$>
-               O.withDesc Bootstrap.parseBootstrap "Bootstrap a node.")
+        <*> (O.subparser $
+                 (O.command "bootstrap" $ Bootstrap <$>
+                    O.withDesc Bootstrap.parseBootstrap "Bootstrap a node.")
+              <> (O.command "service" $ Service <$>
+                    O.withDesc Service.parseService "Control services.")
+            )

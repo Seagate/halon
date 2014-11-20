@@ -38,10 +38,13 @@ module HA.Service
   , someConfigDict__static
    -- * Messages
   , ProcessEncode
+  , BinRep
   , encodeP
   , decodeP
   , ServiceFailed(..)
   , ServiceFailedMsg
+  , ServiceStartRequest(..)
+  , ServiceStartRequestMsg
   , ServiceStarted(..)
   , ServiceStartedMsg
   , ServiceCouldNotStart(..)
@@ -287,6 +290,38 @@ class ProcessEncode a where
   type BinRep a :: *
   encodeP :: a -> BinRep a
   decodeP :: BinRep a -> Process a
+
+-- | A request to start a service on a given node.
+data ServiceStartRequest =
+    forall a. Configuration a => ServiceStartRequest Node (Service a) a
+  deriving Typeable
+
+newtype ServiceStartRequestMsg = ServiceStartRequestMsg BS.ByteString
+  deriving (Typeable, Binary)
+
+instance ProcessEncode ServiceStartRequest where
+
+  type BinRep ServiceStartRequest = ServiceStartRequestMsg
+
+  encodeP (ServiceStartRequest node svc@(Service _ _ d) cfg) =
+    ServiceStartRequestMsg . runPut $ put d >> put (node, svc, cfg)
+
+  decodeP (ServiceStartRequestMsg bs) = let
+      get_ :: RemoteTable -> Get ServiceStartRequest
+      get_ rt = do
+        d <- get
+        case unstatic rt d of
+          Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
+            rest <- get
+            let (node, service, cfg) = extract rest
+                extract :: (Node, Service s, s)
+                        -> (Node, Service s, s)
+                extract = id
+            return $ ServiceStartRequest node service cfg
+          Left err -> error $ "decode ServiceStartRequest: " ++ err
+    in do
+      rt <- fmap (remoteTable . processNode) ask
+      return $ runGet (get_ rt) bs
 
 -- | A notification of a service failure.
 data ServiceFailed = forall a. Configuration a => ServiceFailed Node (Service a)

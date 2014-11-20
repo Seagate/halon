@@ -220,6 +220,8 @@ remotableDecl [ [d|
                    -> (a -> Process ())
     serviceWrapper SerializableDict (name,_) p = \a -> do
         self <- getSelfPid
+        say $ "Starting service " ++ name ++ " on node "
+              ++ (show . processNodeId $ self)
         either
             (\(ProcessRegistrationException _) -> return ())
             (const (go a))
@@ -229,7 +231,7 @@ remotableDecl [ [d|
           mbpid <- whereis (serviceName nodeAgent)
           case mbpid of
              Nothing -> error "NodeAgent is not registered."
-             Just na -> expiate $ ServiceUncaughtException (Node na) name desc
+             Just na -> expiate $ ServiceUncaughtException (Node (processNodeId na)) name desc
         myCatches n handler =
            (n >> handler (generalExpiate "Service died without exception")) `catches`
              [ Handler $ \(ExpireException (ExpireReason why)) -> handler $ expiate why,

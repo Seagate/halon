@@ -9,7 +9,7 @@
 {-# LANGUAGE LambdaCase #-}
 
 module Handler.Bootstrap
-  ( BootstrapOptions
+  ( BootstrapCmdOptions
   , bootstrap
   , parseBootstrap
   )
@@ -42,14 +42,14 @@ import HA.Service (schema)
 --------------------------------------------------------------------------------
 
 -- | Options for bootstrapping.
-data BootstrapOptions =
+data BootstrapCmdOptions =
       BootstrapNode NA.NodeAgentConf
     | BootstrapStation TS.Config
   deriving (Eq, Typeable, Generic)
 
-instance Binary BootstrapOptions
+instance Binary BootstrapCmdOptions
 
-parseBootstrap :: O.Parser BootstrapOptions
+parseBootstrap :: O.Parser BootstrapCmdOptions
 parseBootstrap =
     O.subparser $
          O.command "satellite"
@@ -61,9 +61,13 @@ parseBootstrap =
             (BootstrapStation <$> TS.schema)
             "Bootstrap a tracking station node")
 
+-- | Bootstrap a given node in the specified configuration.
 bootstrap :: [NodeId] -- ^ NodeIds of the node to bootstrap
-          -> BootstrapOptions
+          -> BootstrapCmdOptions
           -> Process ()
 bootstrap nids opts = case opts of
   BootstrapNode naConf -> mapM_ (\nid -> NA.start nid naConf) nids
-  BootstrapStation tsConf -> mapM_ (\nid -> TS.start nid tsConf) nids
+  -- We should use nids as the list of nodes on which to start the station,
+  -- but at the moment we need to pass in the satellites as well, so we just
+  -- use the TS conf at the moment.
+  BootstrapStation tsConf ->TS.start tsConf

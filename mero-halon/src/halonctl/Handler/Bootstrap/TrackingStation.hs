@@ -17,14 +17,12 @@ where
 
 import Control.Distributed.Process
   ( Process
-  , NodeId
   , call
+  , getSelfNode
   , liftIO
   , say
-  , spawnLocal
   )
 import Control.Distributed.Process.Closure ( mkClosure, functionTDict )
-import Control.Monad (void)
 
 import Data.Binary (Binary)
 import Data.Defaultable (Defaultable, defaultable, fromDefault)
@@ -69,9 +67,10 @@ schema = let
 self :: String
 self = "HA.TrackingStation"
 
-start :: NodeId -> Config -> Process ()
-start nid naConf = void . spawnLocal $ do
+start :: Config -> Process ()
+start naConf = do
     say $ "This is " ++ self
+    nid <- getSelfNode
     result <- call $(functionTDict 'ignition) nid $
                $(mkClosure 'ignition) args
     case result of

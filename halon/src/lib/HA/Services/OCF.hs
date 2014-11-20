@@ -47,7 +47,7 @@ remotableDecl [ [d|
         let na = maybe (error "NodeAgent is not registered.") id mbpid
         checkExitCode (liftIO $ System.rawSystem script ["start"])
                       go
-                      (expire . encodeP $ ServiceCouldNotStart (Node na) $ ocf script)
+                      (expire . encodeP $ ServiceCouldNotStart (Node (processNodeId na)) $ ocf script)
       where
         checkExitCode proc good bad =
           proc >>= \status ->

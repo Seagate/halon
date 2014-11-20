@@ -7,10 +7,13 @@
 module Main (main) where
 
 import Flags
+import Lookup
+
 import HA.Network.RemoteTables (haRemoteTable)
 import HA.Process
 
 import Handler.Bootstrap
+import Handler.Service
 
 import Mero.RemoteTables (meroRemoteTable)
 
@@ -40,19 +43,6 @@ printHeader =
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
-conjureRemoteNodeId :: String -> NodeId
-conjureRemoteNodeId addr =
-#ifdef USE_RPC
-  -- TODO
-  error "undefined RPCMethod"
-#else
-    NodeId $ TCP.encodeEndPointAddress host port 0
-  where
-    sa = TCP.decodeSocketAddress addr
-    host = TCP.socketAddressHostName sa
-    port = TCP.socketAddressServiceName sa
-#endif
-
 main :: IO ()
 main = getOptions >>= run
 
@@ -77,4 +67,5 @@ run (Options { .. }) = do
     liftIO $ printHeader
     case optCommand of
       Bootstrap bs -> bootstrap rnids bs
+      Service bs -> service rnids bs
   return ()

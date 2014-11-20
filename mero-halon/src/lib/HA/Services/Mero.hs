@@ -95,7 +95,7 @@ remotableDecl [ [d|
               mbpid <- whereis (serviceName nodeAgent)
               case mbpid of
                 Nothing -> error "NodeAgent is not registered."
-                Just na -> promulgate (StripingError (Node na))
+                Just na -> promulgate (StripingError (Node (processNodeId na)))
 
         m0ctlMonitor srv out h_m0ctl = loop [] where
           loop buf = do
@@ -116,7 +116,7 @@ remotableDecl [ [d|
                   mbpid <- whereis (serviceName nodeAgent)
                   case mbpid of
                       Nothing -> error "NodeAgent is not registered."
-                      Just na -> expire . encodeP $ ServiceFailed (Node na) m0d -- XXX
+                      Just na -> expire . encodeP $ ServiceFailed (Node (processNodeId na)) m0d -- XXX
             receiveWait $
               [ match $ \(EpochTransition epochExpected epochTarget state) -> do
                   say $ "Service wrapper got new equation: " ++ show (state::ByteString)

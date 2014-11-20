@@ -4,19 +4,68 @@
 --
 -- This is the Event Producer API, used by services.
 
-module HA.EventQueue.Producer where
+module HA.EventQueue.Producer
+  ( nodeAgentLabel
+  , promulgateEQ
+  , promulgate
+  , expiate
+  ) where
 
-import Control.Distributed.Process (Process, ProcessId, getSelfPid, send, die, whereis)
+import Control.Distributed.Process
+  ( Process
+  , ProcessId
+  , NodeId
+  , die
+  , getSelfPid
+  , spawnLocal
+  , whereis
+  )
 import Control.Distributed.Process.Serializable (Serializable)
 -- Qualify all imports of any distributed-process "internals".
 import qualified Control.Distributed.Process.Internal.Types as I
     (createMessage, messageToPayload)
-import HA.CallTimeout (callLocal, callTimeout)
+
+import Data.ByteString (ByteString)
+
+import HA.CallTimeout (callLocal, callTimeout, ncallRemoteAnyTimeout)
+import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types
 
 -- XXX has to go here because HA.NodeAgent depends on this module.
 nodeAgentLabel :: String
 nodeAgentLabel = "HA.NodeAgent"
+
+-- This timeout needs to be higher than the staggering
+-- hard timeout.
+promulgateTimeout :: Int
+promulgateTimeout = 15000000
+
+-- | Promulgate an event directly to an EQ node without indirection
+--   via the NodeAgent. Note that this spawns a local process in order
+--   to ensure that the event id is unique.
+promulgateEQ :: Serializable a
+             => [NodeId] -- ^ EQ nodes
+             -> a -- ^ Event to send
+             -> Process ProcessId
+promulgateEQ eqnids x = spawnLocal $ do
+    self <- getSelfPid
+    promulgateHAEvent eqnids $ evt self
+  where
+    evt pid = HAEvent {
+        eventId = EventId pid 1
+      , eventPayload = payload :: [ByteString]
+      , eventHops = []
+    }
+    payload = (I.messageToPayload . I.createMessage $ x)
+
+-- | Promulgate an HAEvent directly to EQ nodes.
+promulgateHAEvent :: Serializable a => [NodeId] -> HAEvent a -> Process ()
+promulgateHAEvent eqnids evt = do
+  result <- callLocal $
+    ncallRemoteAnyTimeout promulgateTimeout eqnids eventQueueLabel evt
+  case result :: Maybe (NodeId, NodeId) of
+    Nothing -> promulgateHAEvent eqnids evt
+    _ -> return ()
 
 -- | Add an event to the event queue, and don't die yet.
 -- FIXME: Use a well-defined timeout.
@@ -27,9 +76,7 @@ promulgate x = do
         Nothing -> error "NodeAgent is not registered."
         Just na -> do
           ret <- callLocal $
-            -- This timeout needs to be higher than the staggering
-            -- hard timeout.
-            callTimeout 15000000 na msg
+            callTimeout promulgateTimeout na msg
           case ret of
             Just True -> return ()
             _ -> promulgate x
@@ -47,7 +94,3 @@ available.
 -- | Add a new event to the event queue and then die.
 expiate :: Serializable a => a -> Process ()
 expiate x = promulgate x >> die "Expiate."
-
--- | Send HAEvent and provide information about current process.
-sendHAEvent :: Serializable a => ProcessId -> HAEvent a -> Process ()
-sendHAEvent next ev = getSelfPid >>= \pid -> send next ev{eventHops = pid : eventHops ev}

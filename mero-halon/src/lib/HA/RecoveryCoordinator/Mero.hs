@@ -18,6 +18,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
@@ -33,7 +35,7 @@ import HA.Service
 import HA.Resources.Mero (ConfObject(..), ConfObjectState(..), Is(..))
 #endif
 import HA.NodeAgent
--- import HA.NodeAgent.Messages (ExitReason(Reconfigure))
+
 import Mero.Messages
 import HA.EventQueue.Consumer
 import qualified HA.ResourceGraph as G
@@ -46,14 +48,19 @@ import HA.Services.Mero
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
-import Control.Distributed.Static (closureApply)
+import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
+import Control.Distributed.Static (closureApply, unstatic)
+import Control.Monad.Reader (ask)
 
 import Control.Applicative ((<*), (<$>))
 import Control.Arrow ((>>>))
 import Control.Monad (forM, forM_, when, void, (>=>))
 import qualified Data.Map.Strict as Map
 import Data.Typeable (Typeable)
-import Data.Binary (Binary, encode)
+import Data.Binary (Binary, Get, encode, get, put)
+import Data.Binary.Put (runPut)
+import Data.Binary.Get (runGet)
+import qualified Data.ByteString.Lazy as BS
 import Data.Foldable (mapM_)
 import GHC.Generics (Generic)
 #ifdef USE_RPC
@@ -64,10 +71,33 @@ import Data.ByteString (ByteString)
 import Prelude hiding (mapM_)
 
 -- | Reconfiguration message
-data ReconfigureMsg = ReconfigureMsg
-  deriving (Typeable, Generic)
+data ReconfigureCmd = forall a. Configuration a => ReconfigureCmd Node (Service a)
+  deriving (Typeable)
 
-instance Binary ReconfigureMsg
+newtype ReconfigureMsg = ReconfigureMsg BS.ByteString
+  deriving (Typeable, Binary)
+
+instance ProcessEncode ReconfigureCmd where
+  type BinRep ReconfigureCmd = ReconfigureMsg
+
+  decodeP (ReconfigureMsg bs) = let
+      get_ :: RemoteTable -> Get ReconfigureCmd
+      get_ rt = do
+        d <- get
+        case unstatic rt d of
+          Right (SomeConfigurationDict (G.Dict :: G.Dict (Configuration s))) -> do
+            rest <- get
+            let (node, svc) = extract rest
+                extract :: (Node, Service s) -> (Node, Service s)
+                extract = id
+            return $ ReconfigureCmd node svc
+          Left err -> error $ "decode ReconfigureCmd: " ++ err
+    in do
+      rt <- fmap (remoteTable . processNode) ask
+      return $ runGet (get_ rt) bs
+
+  encodeP (ReconfigureCmd node svc@(Service _ _ d)) =
+    ReconfigureMsg . runPut $ put d >> put (node, svc)
 
 -- | Initial configuration data.
 data IgnitionArguments = IgnitionArguments
@@ -168,12 +198,12 @@ filterServices :: forall a. Configuration a
                => ConfigurationFilter
                -> a -- ^ Configuration object (maybe just typeRep of this?)
                -> G.Graph
-               -> [Service a]
+               -> [(Node, Service a)]
 filterServices (ConfigurationFilter _ (ServiceFilter sf)) _ rg = do
   node <- G.connectedTo Cluster Has rg :: [Node]
   svc <- filter (\(Service n _ _) -> n `elem` sf) $
               (G.connectedTo node Runs rg :: [Service a])
-  return svc
+  return (node, svc)
 
 ----------------------------------------------------------
 -- Recovery Co-ordinator                                --
@@ -213,31 +243,51 @@ recoveryCoordinator eq mm argv = do
                   -- Write the new config as a 'Wants' config
                   let svcs = filterServices nodeFilter opts rg
                       rgUpdate = foldl1 (.) $ fmap (
-                          \case svc@(Service _ _ _)
+                          \case (_, svc@(Service _ _ _))
                                   -> writeConfig svc opts Intended
                         ) svcs
                       rg' = rgUpdate rg
                   -- Send a message to ourselves asking to reconfigure
                   self <- getSelfPid
-                  send self ReconfigureMsg
+                  mapM_ (send self . encodeP . uncurry ReconfigureCmd) svcs
                   loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')
         , match $ \(NodeAgentContacted agent) -> do
+              let nid = processNodeId agent
+                  node = Node nid
               sayRC $ "New node contacted: " ++ show agent
-              let rg' = G.newResource (Node agent) >>>
+              let rg' = G.newResource node >>>
                         G.newResource m0d >>>
-                        G.connect (Node agent) Runs m0d >>>
-                        G.connect Cluster Has (Node agent) $
+                        G.connect node Runs m0d >>>
+                        G.connect Cluster Has node $
                         rg
               -- TODO make async.
               mbpids <- forM (stationNodes argv) getNodeAgent
               _ <- updateEQNodes agent [ processNodeId pid | Just pid <- mbpids ]
                -- XXX check for timeout.
-              _ <- restartService (processNodeId agent) m0d rg
+              _ <- restartService nid m0d rg
               loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')
-        , match $ \ReconfigureMsg -> do
-            -- TODO Find the stuff and call reconfigureService
-            loop ls
-        , matchHAEvent
+        , match $ (decodeP >=>) $ \(ReconfigureCmd (Node nid) svc) ->
+            unStatic (configDict svc) >>= \case
+              SomeConfigurationDict G.Dict -> do
+                reconfigureService nid svc rg
+                loop ls
+      , matchHAEvent
+          (\evt@(HAEvent _ (ssrm :: ServiceStartRequestMsg) _) -> do
+            ServiceStartRequest n@(Node nid) svc c <- decodeP ssrm
+            if G.memberResource n rg then
+              unStatic (configDict svc) >>= \case
+                SomeConfigurationDict G.Dict -> do
+                  sayRC $ "Request to start service " ++ show (serviceName svc)
+                          ++ "on node " ++ (show n)
+                  let rg' = G.newResource svc >>>
+                            writeConfig svc c Intended >>>
+                            G.connect n Runs svc $
+                            rg
+                  startService nid svc Intended rg'
+                  loop =<< (fmap (\a -> ls { lsGraph = a}) $ G.sync rg')
+            else getSelfPid >>= \s -> send s evt >> loop ls
+          )
+      , matchHAEvent
           -- (\(HAEvent _ (ServiceStarted node _) _) -> G.memberResource node rg)
           (\(HAEvent _ (ssm :: ServiceStartedMsg) _) -> do
             ServiceStarted _ svc <- decodeP ssm
@@ -251,13 +301,13 @@ recoveryCoordinator eq mm argv = do
           -- Check that node is already initialized.
           -- (\(HAEvent _ (ServiceFailedMsg node _) _) -> G.memberResource node rg)
           (\(HAEvent eid (sfm :: ServiceFailedMsg) _) -> do
-            (ServiceFailed (Node agent)
+            (ServiceFailed (Node nid)
               srv@(Service _ _ sdict)) <- decodeP sfm
             unStatic sdict >>= \case
                 SomeConfigurationDict G.Dict -> do
                   sayRC $ "Notified of service failure: " ++ show (serviceName srv)
                   -- XXX check for timeout.
-                  _ <- restartService (processNodeId agent) srv rg
+                  _ <- restartService nid srv rg
                   send eq $ eid
                   loop ls)
         , matchHAEvent
@@ -278,13 +328,13 @@ recoveryCoordinator eq mm argv = do
                     sayRC $ "Can't start service: " ++ show (serviceName srv)
                     let failmap'' = Map.delete sName failmap'
                     rg' <- G.sync $ disconnectConfig srv Intended rg
-                    restartService (processNodeId node) srv rg
+                    restartService node srv rg
                     loop $ ls {
                         lsGraph = rg'
                       , lsFailMap = failmap''
                     }
                   else do
-                    reconfigureService (processNodeId node) srv rg
+                    reconfigureService node srv rg
                     loop (ls { lsFailMap = failmap' }))
         , matchIfHAEvent
           (\(HAEvent _ (StripingError node) _) -> G.memberResource node rg)
@@ -306,7 +356,7 @@ recoveryCoordinator eq mm argv = do
 
               -- Broadcast new epoch.
               forM_ m0dNodes $ \(Node them) ->
-                  nsendRemote (processNodeId them) (serviceName m0d) $
+                  nsendRemote them (serviceName m0d) $
                   EpochTransition
                       { etCurrent = epochId current
                       , etTarget  = epochId target
@@ -342,7 +392,7 @@ recoveryCoordinator eq mm argv = do
                   m0dNodes = [ node | node <- G.connectedTo Cluster Has rg'
                                     , G.isConnected node Runs m0d rg' ]
               forM_ m0dNodes $ \(Node them) ->
-                  nsendRemote (processNodeId them) (serviceName m0d) $
+                  nsendRemote them (serviceName m0d) $
                   Mero.Notification.Set nvec
               send eq $ eid
               loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')

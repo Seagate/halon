@@ -147,44 +147,45 @@ remotableDecl [ [d|
  ignition :: (Bool, [String], [String])
           -> Process (Maybe (Bool,[NodeId],[Maybe ProcessId],[NodeId],[NodeId]))
  ignition (update, trackerstrs, nodestrs) = do
-     disconnectAllNodeConnections
-     -- XXX we are hardcoding an endpoint here, on the assumption that there is
-     -- only one endpoint.
+    say "Ignition!"
+    disconnectAllNodeConnections
+    -- XXX we are hardcoding an endpoint here, on the assumption that there is
+    -- only one endpoint.
 #ifdef USE_RPC
      -- TODO this is broken - needs to be fixed for USE_RPC
      let trackers = [] :: [NodeId] -- map RPC.rpcAddress trackers
      let nodes = [] :: [NodeId]
 #else
-     let tonid x = NodeId $ TCP.encodeEndPointAddress host port 0
-           where
-             sa = TCP.decodeSocketAddress x
-             host = TCP.socketAddressHostName sa
-             port = TCP.socketAddressServiceName sa
-     let trackers = map tonid trackerstrs
-     let nodes = map tonid nodestrs
+    let tonid x = NodeId $ TCP.encodeEndPointAddress host port 0
+          where
+            sa = TCP.decodeSocketAddress x
+            host = TCP.socketAddressHostName sa
+            port = TCP.socketAddressServiceName sa
+    let trackers = map tonid trackerstrs
+    let nodes = map tonid nodestrs
 #endif
-     mpids <- mapM getNodeAgent trackers
-     let nids = map processNodeId $ catMaybes mpids
-     if update then do
-       (members,newNodes) <- queryMembership nids
-       added <- case members of
-         m : _ -> do
-           call $(functionTDict 'addNodes) m $
-                $(mkClosure 'addNodes) (newNodes,nodes,trackers)
-           return True
-         [] -> return False
+    mpids <- mapM getNodeAgent trackers
+    let nids = map processNodeId $ catMaybes mpids
+    if update then do
+      (members,newNodes) <- queryMembership nids
+      added <- case members of
+        m : _ -> do
+          call $(functionTDict 'addNodes) m $
+                 $(mkClosure 'addNodes) (newNodes,nodes,trackers)
+          return True
+        [] -> return False
 
-       return $ Just (added,trackers,mpids,members,newNodes)
-      else do
-       cRGroup <- newRGroup $(mkStatic 'rsDict) nids
+      return $ Just (added,trackers,mpids,members,newNodes)
+    else do
+      cRGroup <- newRGroup $(mkStatic 'rsDict) nids
                             (RSState Nothing 0,((Nothing,[]),fromList []))
-       forM_ nids $ flip spawn $
-         $(mkClosure 'startRS)
-           ( IgnitionArguments nodes trackers
-           , cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
-           , Nothing :: Maybe (Replica RLogGroup)
-           )
-       return Nothing
+      forM_ nids $ flip spawn $
+        $(mkClosure 'startRS)
+          ( IgnitionArguments nodes trackers
+          , cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
+          , Nothing :: Maybe (Replica RLogGroup)
+          )
+      return Nothing
 
   where
     queryMembership nids = do

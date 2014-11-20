@@ -34,7 +34,7 @@ instance Binary Cluster
 instance Hashable Cluster
 
 -- | A resource graph representation for nodes.
-data Node = Node ProcessId
+data Node = Node NodeId
   deriving (Eq, Ord, Show, Typeable, Generic)
 
 instance Binary Node
