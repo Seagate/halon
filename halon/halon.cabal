@@ -42,7 +42,6 @@ Library
   Ghc-Options:     -O -Wall -Werror
   Exposed-Modules: HA.CallTimeout
                    HA.Process
-                   HA.Reconf
                    HA.Resources
                    HA.EventQueue
                    HA.EventQueue.Consumer
