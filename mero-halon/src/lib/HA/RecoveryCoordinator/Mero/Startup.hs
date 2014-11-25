@@ -193,20 +193,4 @@ remotableDecl [ [d|
             call $(functionTDict 'isSelfInGroup) nid $
                  $(mkClosure 'isSelfInGroup) ()
         return $ map snd *** map snd $ partition fst $ zip bs nids
-
-    wellformQueryNodes :: String -> Process [String]
-    wellformQueryNodes field =
-        liftIO $
-        Mero.Genders.queryNodes field
-        >>= mapM (\host -> do
-               addr <- Mero.Genders.queryAttribute host nodeAttr
-               return $ addr ++ hardwiredNA)
-#ifdef USE_RPC
-    nodeAttr = "m0_lnet_host"
-    hardwiredNA = "@o2ib:12345:34:4"  -- hardwired part of the node agent address
-#else
-    nodeAttr = "m0_tcp_host"
-    hardwiredNA = ":8082"
-#endif
-
  |] ]
