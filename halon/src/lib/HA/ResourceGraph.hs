@@ -91,7 +91,6 @@ import Data.Hashable
 import Data.Maybe
 import Data.Typeable ( Typeable, cast )
 
-
 -- | A type can be declared as modeling a resource by making it an instance of
 -- this class.
 class (Eq a, Hashable a, Serializable a) => Resource a where
@@ -135,7 +134,7 @@ instance Eq Rel where
           -- assumed to be witnesses of singleton types, so if the type cast
           -- above works then they must be equal.
           x1 == x2' && y1 == y2'
-        | otherwise = error "RHS and LHS relations don't match."
+        | otherwise = False
 
 -- XXX Specialized existential datatypes required because 'remotable' does not
 -- yet support higher kinded type variables.
