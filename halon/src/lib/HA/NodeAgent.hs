@@ -237,16 +237,15 @@ remotableDecl [ [d|
              [ Handler $ \(ExpireException (ExpireReason why)) -> handler $ expiate why,
                Handler $ \(SomeException e) -> handler $ generalExpiate $ show e ]
         go a = myCatches (p a) $ \res -> do
-               self <- getSelfPid
-               void $ spawnLocal $ do
-                 ref <- monitor self
-
-                 -- Wait for main service process to die before sending expiate. This will
-                 -- ensure that any linked child processes are notified not after expiate.
-                 receiveWait [
+                self <- getSelfPid
+                void $ spawnLocal $ do
+                  ref <- monitor self
+                  -- Wait for main service process to die before sending expiate. This will
+                  -- ensure that any linked child processes are notified not after expiate.
+                  receiveWait [
                     matchIf (\(ProcessMonitorNotification ref' _ _) -> ref' == ref)
-                            (const $ return ()) ]
-                 res
+                              (const $ return ()) ]
+                  res
 
     -- | Wrapper function for services. Use as follows:
     --
@@ -272,16 +271,13 @@ remotableDecl [ [d|
       where
         sdict = $(mkStatic 'sdictServiceInfo) `staticApply` dict
 
-    nodeAgentConfSDict :: SerializableDict NodeAgentConf
-    nodeAgentConfSDict = SerializableDict
-
     -- | The master node agent process.
     nodeAgent :: Service NodeAgentConf
     nodeAgent = service
-                  nodeAgentConfSDict
+                  naSerializableDict
                   ($(mkStatic 'someConfigDict)
                     `staticApply` $(mkStatic 'naConfigDict))
-                  $(mkStatic 'nodeAgentConfSDict)
+                  $(mkStatic 'naSerializableDict)
                   nodeAgentLabel
                   $(mkStaticClosure 'nodeAgentProcess)
 

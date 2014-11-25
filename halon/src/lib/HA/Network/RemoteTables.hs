@@ -8,7 +8,7 @@ module HA.Network.RemoteTables (haRemoteTable) where
 import HA.ResourceGraph ( __remoteTable )
 import HA.Resources ( __remoteTable )
 import HA.NodeAgent ( __remoteTable, __remoteTableDecl )
-import HA.Services.Dummy ( __remoteTableDecl )
+import HA.Services.Dummy ( __remoteTable, __remoteTableDecl )
 import HA.Service ( __remoteTable )
 import HA.Services.OCF ( __remoteTableDecl )
 import HA.RecoverySupervisor ( __remoteTable )
@@ -32,6 +32,7 @@ haRemoteTable next =
    HA.Resources.__remoteTable $
    HA.NodeAgent.__remoteTable $
    HA.NodeAgent.__remoteTableDecl $
+   HA.Services.Dummy.__remoteTable $
    HA.Services.Dummy.__remoteTableDecl $
    HA.Service.__remoteTable $
    HA.Services.OCF.__remoteTableDecl $

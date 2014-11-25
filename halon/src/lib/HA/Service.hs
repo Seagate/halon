@@ -50,8 +50,7 @@ module HA.Service
   , ServiceCouldNotStart(..)
   , ServiceCouldNotStartMsg
   , ServiceUncaughtException(..)
-  , ServiceFilter(..)
-  , ConfigurationFilter(..)
+  , NodeFilter(..)
   , ConfigurationUpdate(..)
   , ConfigurationUpdateMsg
    -- * Empty service stuff
@@ -177,9 +176,9 @@ class
         ([old], [new]) -> disconnect svc HasConf old >>>
                           disconnect svc WantsConf new >>>
                           connect svc HasConf new $ rg
-        (_, [new]) ->     disconnect svc WantsConf new >>>
+        ([], [new])    -> disconnect svc WantsConf new >>>
                           connect svc HasConf new $ rg
-        _ -> rg
+        _              -> rg
 
 deriving instance Typeable Configuration
 
@@ -418,22 +417,11 @@ instance ProcessEncode ServiceCouldNotStart where
   encodeP (ServiceCouldNotStart node svc@(Service _ _ d)) =
     ServiceCouldNotStartMsg . runPut $ put d >> put (node, svc)
 
-newtype ServiceFilter = ServiceFilter [String]
-  deriving (Typeable, Binary)
-
--- | TODO At the moment we have no sensible identification of a node for filtering
-data NodeFilter = NodeFilter
-  deriving (Typeable, Generic)
-
-instance Binary NodeFilter
-
-data ConfigurationFilter = ConfigurationFilter NodeFilter ServiceFilter
-  deriving (Typeable, Generic)
-
-instance Binary ConfigurationFilter
+newtype NodeFilter = NodeFilter [NodeId]
+  deriving (Binary, Eq, Generic, Show, Typeable)
 
 data ConfigurationUpdate = forall a. Configuration a =>
-    ConfigurationUpdate EpochId a (Static (SomeConfigurationDict)) ConfigurationFilter
+    ConfigurationUpdate EpochId a (Service a) NodeFilter
   deriving (Typeable)
 
 newtype ConfigurationUpdateMsg = ConfigurationUpdateMsg BS.ByteString
@@ -450,18 +438,18 @@ instance ProcessEncode ConfigurationUpdate where
         case unstatic rt d of
           Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
             rest <- get
-            let (epoch, a, fltr) = extract rest
-                extract :: (EpochId, s, ConfigurationFilter)
-                        -> (EpochId, s, ConfigurationFilter)
+            let (epoch, a, svc, fltr) = extract rest
+                extract :: (EpochId, s, Service s, NodeFilter)
+                        -> (EpochId, s, Service s, NodeFilter)
                 extract = id
-            return $ ConfigurationUpdate epoch a d fltr
+            return $ ConfigurationUpdate epoch a svc fltr
           Left err -> error $ "decode ConfigurationUpdate: " ++ err
     in do
       rt <- fmap (remoteTable . processNode) ask
       return $ runGet (get_ rt) bs
 
-  encodeP (ConfigurationUpdate epoch a cd fltr) = ConfigurationUpdateMsg . runPut $
-    put cd >> put (epoch, a, fltr)
+  encodeP (ConfigurationUpdate epoch a svc@(Service _ _ d) fltr) =
+    ConfigurationUpdateMsg . runPut $ put d >> put (epoch, a, svc, fltr)
 
 -- | A notification of a service failure.
 --

@@ -127,13 +127,11 @@ instance Relation Has Cluster (Epoch ByteString) where
 
 -- | Sent when a service requests the id of the latest epoch.
 newtype EpochRequest = EpochRequest ProcessId
-  deriving (Typeable, Binary)
+  deriving (Typeable, Binary, Generic)
 
 -- | Sent by the RC to communicate the most recent epoch.
-data EpochResponse = EpochResponse EpochId
-  deriving (Typeable, Generic)
-
-instance Binary EpochResponse
+newtype EpochResponse = EpochResponse EpochId
+  deriving (Binary, Typeable, Generic)
 
 -- | Sent when a service requests an epoch transition.
 data EpochTransitionRequest = EpochTransitionRequest
