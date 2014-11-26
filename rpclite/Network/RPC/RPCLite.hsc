@@ -13,14 +13,14 @@
 -- The purpose of this library is to hide all the details of Mero RPC that are
 -- not necessary for the simplest inter-process communication.
 --
-module Network.Transport.RPC.RPCLite
+module Network.RPC.RPCLite
     ( initRPC
     , initRPCAt
     , finalizeRPC
     -- * Client side API
     , ClientEndpoint
     , RPCAddress(..)
-	, rpcAddress
+	  , rpcAddress
     , createClientEndpoint
     , destroyClientEndpoint
     , Connection

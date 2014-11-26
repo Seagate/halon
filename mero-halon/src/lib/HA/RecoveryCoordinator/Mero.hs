@@ -31,7 +31,7 @@ module HA.RecoveryCoordinator.Mero
 
 import HA.Resources
 import HA.Service
-#ifdef USE_RPC
+#ifdef USE_MERO
 import HA.Resources.Mero (ConfObject(..), ConfObjectState(..), Is(..))
 #endif
 import HA.NodeAgent
@@ -40,7 +40,7 @@ import Mero.Messages
 import HA.EventQueue.Consumer
 import HA.EventQueue.Producer (promulgateEQ)
 import qualified HA.ResourceGraph as G
-#ifdef USE_RPC
+#ifdef USE_MERO
 import qualified Mero.Notification
 import Mero.Notification.HAState
 #endif
@@ -389,7 +389,7 @@ recoveryCoordinator eq mm argv = do
                   }
               send eq $ eid
               loop ls
-#ifdef USE_RPC
+#ifdef USE_MERO
         , matchHAEvent $ \(HAEvent eid (Mero.Notification.Get pid objs) _) -> do
               let f oid = Note oid $ head $ G.connectedTo (ConfObject oid) Is rg
                   nvec = map f objs

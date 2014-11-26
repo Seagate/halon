@@ -25,11 +25,17 @@ Flag rpc
   Description: Build with the RPC backend instead of TCP.
   Default: False
 
+Flag mero
+  Description: Build using the real rather than fake Mero.
+  Default: False
+
 Library
   Hs-Source-Dirs:  src/lib
   Default-Language: Haskell2010
   if flag(rpc)
     CPP-Options:    -DUSE_RPC
+  if flag(mero)
+    CPP-Options:    -DUSE_MERO
   Default-Extensions: BangPatterns
                       DeriveDataTypeable
                       DeriveGeneric
@@ -61,7 +67,7 @@ Library
                    process,
                    binary,
                    network-transport
-  if flag(rpc)
+  if flag(mero)
       Exposed-Modules: Mero.Notification.HAState
                        HA.Resources.Mero
       cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
@@ -70,8 +76,12 @@ Library
       c-sources: hastate/hastate.c
                  hastate/hastate_fops.c
                  hastate/hastate_foms.c
-      Build-Depends: network-transport-rpc >= 0.0.1,
+      Build-Depends: rpclite,
                      confc
+
+  if flag(rpc)
+      Build-Depends: rpclite,
+                     network-transport-rpc
   else
       Build-Depends: network >= 2.4,
                      network-transport-tcp >= 0.3
@@ -147,7 +157,7 @@ Test-Suite testepoch
   Hs-Source-Dirs:  tests
   Main-Is:         testepoch.hs
   Ghc-Options:     -threaded -Wall
-  if flag(rpc)
+  if flag(rpc) && flag(mero)
     Build-Depends:   halon == 0.1,
                      mero-halon,
                      base >= 4.5,
@@ -167,7 +177,7 @@ Test-Suite testhastate
   Hs-Source-Dirs:  tests
   Main-Is:         testhastate.hs
   Ghc-Options:     -threaded -Werror -Wall
-  if flag(rpc)
+  if flag(rpc) && flag(mero)
     Build-Depends:   halon == 0.1,
                      confc,
                      mero-halon,
@@ -177,7 +187,7 @@ Test-Suite testhastate
                      bytestring,
                      directory,
                      filepath,
-                     network-transport-rpc,
+                     rpclite,
                      time >= 1.4
   else
     buildable: False

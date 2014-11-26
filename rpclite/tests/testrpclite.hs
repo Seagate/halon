@@ -2,7 +2,7 @@ import Control.Concurrent
 import Control.Exception
 import Control.Monad
 import qualified Data.ByteString.Char8 as B8
-import Network.Transport.RPC.RPCLite
+import Network.RPC.RPCLite
 import System.Environment
 
 main :: IO ()
@@ -13,10 +13,10 @@ main = do
 mainClient :: IO ()
 mainClient = flip catch (\e -> print (e::SomeException))$ do
     initRPC
-    ce <- createClientEndpoint$ rpcAddress "0@lo:12345:34:1"
+    ce <- createClientEndpoint $ rpcAddress "0@lo:12345:34:1"
     putStrLn "created client endpoint"
 
-    se <- listen "s1" (rpcAddress "0@lo:12345:34:2")$ ListenCallbacks 
+    se <- listen "s1" (rpcAddress "0@lo:12345:34:2")$ ListenCallbacks
               { receive_callback = \it _ ->  putStr "server: " >> unsafeGetFragments it >>= print >> return True
               }
     putStrLn "listening ..."
@@ -27,7 +27,7 @@ mainClient = flip catch (\e -> print (e::SomeException))$ do
     sendBlocking c [B8.pack "hello"] 3
     putStrLn "client sent message"
 
-    send c [B8.pack "hello"] 3$ (\st -> putStrLn$ "client received reply: "++" "++show st)
+    send c [B8.pack "hello"] 3 $ (\st -> putStrLn$ "client received reply: "++" "++show st)
     putStrLn "client sent message"
 
     threadDelay 1000000
@@ -48,7 +48,7 @@ mainServer = flip catch (\e -> print (e::SomeException))$ do
     ce <- createClientEndpoint$ rpcAddress "0@lo:12345:34:3"
     putStrLn "created client endpoint"
 
-    se <- listen "s2" (rpcAddress "0@lo:12345:34:4")$ ListenCallbacks 
+    se <- listen "s2" (rpcAddress "0@lo:12345:34:4")$ ListenCallbacks
               { receive_callback = \it _ ->  putStr "server: " >> unsafeGetFragments it >>= print >> return True
               }
     putStrLn "listening ... (press enter)"

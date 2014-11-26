@@ -13,7 +13,7 @@ module Mero.Epoch
 #ifdef USE_RPC
 import qualified HA.Network.Transport
 import qualified Network.Transport.RPC as RPC
-import qualified Network.Transport.RPC.RPCLite as Lite
+import qualified Network.RPC.RPCLite as Lite
 import Control.Exception (bracket)
 import Control.Monad (void)
 import Data.Word ( Word64 )

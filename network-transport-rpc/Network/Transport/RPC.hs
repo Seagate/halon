@@ -39,7 +39,7 @@ import Data.Map  (Map)
 import Data.Word (Word32,Word64)
 import Foreign.Ptr (WordPtr)
 import Network.Transport as T
-import Network.Transport.RPC.RPCLite as R
+import Network.RPC.RPCLite as R
 import System.Environment     ( getEnv )
 import System.FilePath        ( (</>), normalise, pathSeparator )
 import System.IO.Unsafe ( unsafePerformIO )

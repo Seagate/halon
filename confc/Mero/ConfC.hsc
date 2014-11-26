@@ -42,9 +42,11 @@ module Mero.ConfC
 #include "confc_helpers.h"
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
 
-import Network.Transport.RPC.RPCLite ( RPCAddress(..), RPCMachine(..)
-                                     , RPCMachineV
-                                     )
+import Network.RPC.RPCLite
+  ( RPCAddress(..)
+  , RPCMachine(..)
+  , RPCMachineV
+  )
 
 import Control.Exception ( Exception, throwIO, bracket_, bracket )
 import Control.Monad ( when, liftM2 )

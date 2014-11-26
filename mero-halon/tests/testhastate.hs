@@ -14,7 +14,7 @@ import Mero.Notification.HAState
                     , NVec
                     )
 
-import Network.Transport.RPC.RPCLite
+import Network.RPC.RPCLite
   ( rpcAddress, ListenCallbacks(..), listen, stopListening, getFragments
   , initRPCAt, finalizeRPC, sendBlocking, disconnect, connect_se
   )

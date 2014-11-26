@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 module Mero.RemoteTables (meroRemoteTable) where
 
-#ifdef USE_RPC
+#ifdef USE_MERO
 import HA.Resources.Mero ( __remoteTable )
 #endif
 
@@ -17,7 +17,7 @@ import Control.Distributed.Process (RemoteTable)
 
 meroRemoteTable :: RemoteTable -> RemoteTable
 meroRemoteTable next =
-#ifdef USE_RPC
+#ifdef USE_MERO
    HA.Resources.Mero.__remoteTable $
 #endif
    HA.Services.Mero.__remoteTableDecl $

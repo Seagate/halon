@@ -18,6 +18,10 @@ Cabal-Version: >= 1.8
 --    location: https://parsci.assembla.com/code/cci-haskell/git/nodes
 --    tag:      0.0.1
 
+Flag rpc
+  Description: Build with the RPC backend instead of TCP.
+  Default: False
+
 Library
   exposed-modules:     Mero.ConfC
   other-modules:
@@ -26,7 +30,7 @@ Library
                      , binary
                      , bytestring
                      , hashable
-                     , network-transport-rpc
+                     , rpclite
 
   ghc-options:      -O -Wall -Werror -fprof-auto -fprof-auto-calls
 
@@ -47,11 +51,15 @@ Test-Suite testconfc
                        RankNTypes,
                        OverloadedStrings,
                        OverlappingInstances
-  build-depends:  base >= 4.3 && < 5
-                , bytestring
-                , network-transport-rpc
-                , network-transport
-                , confc
+  if flag(rpc)
+    build-depends:  base >= 4.3 && < 5
+                  , bytestring
+                  , network-transport-rpc
+                  , network-transport
+                  , confc
+                  , rpclite
+  else
+    buildable: False
 
 Test-Suite collect_node_addresses
   Type:           exitcode-stdio-1.0
@@ -65,8 +73,12 @@ Test-Suite collect_node_addresses
                        RankNTypes,
                        OverloadedStrings,
                        OverlappingInstances
-  build-depends:  base >= 4.3 && < 5
-                , bytestring
-                , network-transport-rpc
-                , network-transport
-                , confc
+  if flag(rpc)
+    build-depends:  base >= 4.3 && < 5
+                  , bytestring
+                  , network-transport-rpc
+                  , network-transport
+                  , confc
+                  , rpclite
+  else
+    buildable: False

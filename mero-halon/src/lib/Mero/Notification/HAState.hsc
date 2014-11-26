@@ -25,7 +25,7 @@ module Mero.Notification.HAState
 import HA.Resources.Mero
 
 import Mero.ConfC (Fid)
-import Network.Transport.RPC.RPCLite
+import Network.RPC.RPCLite
     ( ServerEndpoint(..), ServerEndpointV, RPCAddress(..) )
 
 import Control.Exception      ( Exception, throwIO )

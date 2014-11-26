@@ -24,12 +24,16 @@ module Mero.Notification
     , matchSet
     ) where
 
-#ifdef USE_RPC
+#ifdef USE_MERO
 import Mero.ConfC (Fid)
 import Mero.Notification.HAState
 import HA.EventQueue.Producer (promulgate)
 import HA.Network.Transport
-import Network.Transport.RPC ( rpcAddress, serverEndPoint )
+import Network.RPC.RPCLite
+  ( ListenCallbacks(..)
+  , ServerEndpoint
+  , listen
+  , rpcAddress)
 import Control.Distributed.Process.Internal.Types ( processNode, LocalNode )
 import qualified Control.Distributed.Process.Node as CH ( runProcess )
 import Control.Monad ( void )
@@ -37,11 +41,27 @@ import Control.Monad.Reader ( ask )
 import Data.Binary (Binary)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
+
+#ifdef USE_RPC
+import HA.Network.Transport
+import Network.Transport.RPC (serverEndPoint)
+#else
+import Control.Concurrent.MVar
+import System.IO.Unsafe (unsafePerformIO)
 #endif
+
+#endif
+
 import Control.Distributed.Process
 
 
-#ifdef USE_RPC
+#ifdef USE_MERO
+
+#ifndef USE_RPC
+-- | Local endpoint
+localRPCEndpoint :: MVar ServerEndpoint
+localRPCEndpoint = unsafePerformIO $ newEmptyMVar
+#endif
 
 -- | This message is sent to the RC when Mero informs of a state change.
 --
@@ -69,7 +89,18 @@ initialize = do
     self <- getSelfPid
     liftIO $ initHAState (ha_state_get self lnode)
                          (ha_state_set lnode)
+#ifndef USE_RPC
+    liftIO $ do
+      ep <- listen "m0_halon" addr listenCallbacks
+      void $ tryPutMVar localRPCEndpoint ep
+#endif
   where
+#ifndef USE_RPC
+    addr = rpcAddress ""
+    listenCallbacks = ListenCallbacks {
+      receive_callback = \_ _ -> return False
+    }
+#endif
     ha_state_get :: ProcessId -> LocalNode -> NVecRef -> IO ()
     ha_state_get parent lnode nvecr =
       CH.runProcess lnode $ void $ spawnLocal $ do
@@ -91,12 +122,21 @@ finalize = liftIO finiHAState
 
 -- | Reacts to 'Set' messages by notifying Mero.
 matchSet :: Process a -> [Match a]
+#ifdef USE_RPC
 matchSet cont =
   [  match $ \(Set nvec) -> do
       transport <- liftIO readTransportGlobalIVar
       liftIO $ notify (serverEndPoint transport) (rpcAddress "") nvec 5
       cont
   ]
+#else
+matchSet cont =
+  [  match $ \(Set nvec) -> do
+      endPoint <- liftIO . readMVar $ localRPCEndpoint
+      liftIO $ notify endPoint (rpcAddress "") nvec 5
+      cont
+  ]
+#endif
 
 #else
 

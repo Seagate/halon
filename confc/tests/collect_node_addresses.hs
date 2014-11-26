@@ -12,7 +12,7 @@ import Mero.ConfC
 import Network.Transport.RPC ( RPCTransport(..), rpcAddress, withTransport
                              , defaultRPCParameters
                              )
-import Network.Transport.RPC.RPCLite ( getRPCMachine_se )
+import Network.RPC.RPCLite ( getRPCMachine_se )
 
 import Data.Bits
 import Data.List ( nub )

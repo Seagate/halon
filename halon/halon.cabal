@@ -86,9 +86,9 @@ Library
                    network-transport,
                    options-schema >= 0.1.1.0
   if flag(rpc)
-    Build-Depends: network-transport,
-                   network-transport-rpc >= 0.0.1,
-                   confc
+    Build-Depends: rpclite,
+                   network-transport,
+                   network-transport-rpc >= 0.0.1
   else
     Build-Depends: network-transport-tcp
 

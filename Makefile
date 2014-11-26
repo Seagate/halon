@@ -19,6 +19,7 @@
 # Variables that affect the build process:
 #
 #    MERO_ROOT            -- path to the build-directory of the mero project
+#    USE_MERO							-- use real mero (requires mero)
 #    USE_RPC              -- use rpc communication (require mero)
 #    USE_TCP              -- use TCP communication (default)
 #
@@ -40,7 +41,12 @@ USE_RPC =
 endif
 
 ifdef USE_RPC
+USE_RPCLITE = true
 USE_TCP =
+endif
+
+ifdef USE_MERO
+USE_RPCLITE = true
 endif
 
 # Global configuration variables.
@@ -57,23 +63,36 @@ include mk/config.mk
 
 all: build
 
-ifdef USE_RPC
+ifdef USE_RPCLITE
 
 ifndef MERO_ROOT
 $(error The variable MERO_ROOT is undefined. Please, make it point to the mero build tree.)
 endif
 
-TEST_NID = $(shell sudo lctl list_nids | grep o2ib | head -1)
-TEST_LISTEN = $(TEST_NID):12345:34:1
-CABAL_FLAGS += -frpc
+empty :=
+space := $(empty) $(empty)
+export LD_LIBRARY_PATH := \
+	$(subst $(space),:,$(strip \
+		$(MERO_ROOT)/mero/.libs\
+                $(LD_LIBRARY_PATH)))
 
-RPCLITE_PREFIX=$(shell pwd)/network-transport-rpc/rpclite
+RPCLITE_PREFIX=$(shell pwd)/rpclite/rpclite
 
 libdirs=$(MERO_ROOT)/mero/.libs
 
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
 
 CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) $(HLD_SEARCH_PATH) --extra-include-dirs=$(RPCLITE_PREFIX)
+endif
+
+ifdef USE_MERO
+CABAL_FLAGS += -fmero
+endif
+
+ifdef USE_RPC
+TEST_NID = $(shell sudo lctl list_nids | grep o2ib | head -1)
+TEST_LISTEN = $(TEST_NID):12345:34:1
+CABAL_FLAGS += -frpc
 else
 USE_TCP = 1
 TEST_LISTEN = 127.0.0.1:8090
@@ -84,12 +103,6 @@ CABAL_FLAGS += -fdebug
 endif
 
 ifdef USE_RPC
-empty :=
-space := $(empty) $(empty)
-export LD_LIBRARY_PATH := \
-	$(subst $(space),:,$(strip \
-		$(MERO_ROOT)/mero/.libs\
-                $(LD_LIBRARY_PATH)))
 # -E to Preserve environment. Still need to pass LD_LIBRARY_PATH
 # explicitly because most operating systems reset that environment
 # variable for setuid binaries.
@@ -111,6 +124,8 @@ endif
 
 export USE_TCP
 export USE_RPC
+export USE_RPCLITE
+export USE_MERO
 export TEST_LISTEN
 
 .PHONY: ci

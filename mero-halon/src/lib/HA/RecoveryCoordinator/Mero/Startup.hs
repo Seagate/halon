@@ -18,9 +18,7 @@ import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
 import HA.EventQueue ( eventQueue, EventQueue )
 import HA.Multimap.Implementation ( Multimap, fromList )
 import HA.Multimap.Process ( multimap )
-#ifdef USE_RPC
-import qualified Network.Transport.RPC as RPC
-#else
+#ifndef USE_RPC
 import qualified HA.Network.Socket as TCP
 import qualified Network.Transport.TCP as TCP
 #endif
@@ -152,9 +150,9 @@ remotableDecl [ [d|
     -- XXX we are hardcoding an endpoint here, on the assumption that there is
     -- only one endpoint.
 #ifdef USE_RPC
-     -- TODO this is broken - needs to be fixed for USE_RPC
-     let trackers = [] :: [NodeId] -- map RPC.rpcAddress trackers
-     let nodes = [] :: [NodeId]
+    -- TODO this is broken - needs to be fixed for USE_RPC
+    let trackers = [] :: [NodeId] -- map RPC.rpcAddress trackers
+    let nodes = [] :: [NodeId]
 #else
     let tonid x = NodeId $ TCP.encodeEndPointAddress host port 0
           where

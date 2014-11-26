@@ -32,9 +32,16 @@ PACKAGES := distributed-commands \
            halon \
            mero-halon
 
+ifdef USE_RPCLITE
+PACKAGES += rpclite
+endif
+
+ifdef USE_MERO
+PACKAGES += confc
+endif
+
 ifdef USE_RPC
-PACKAGES += network-transport-rpc \
-           confc
+PACKAGES += network-transport-rpc
 endif
 
 VENDOR_PACKAGES = clock \
