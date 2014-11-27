@@ -27,7 +27,6 @@ import Control.Distributed.Log
   ( new
   , clone
   , remoteHandle
-  , TypeableDict(..)
   , sdictValue
   , addReplica
   , reconfigure
@@ -75,6 +74,8 @@ import Control.Distributed.Static
   , closureApply
   )
 
+import Data.Constraint ( Dict(..) )
+
 import Control.Arrow ( (***) )
 import System.FilePath ((</>))
 import Control.Exception ( evaluate )
@@ -113,8 +114,8 @@ updateProc rv f = liftIO . evaluate . update rv f
 stateLog :: SerializableDict st -> ByteString -> Log st
 stateLog SerializableDict = State.log . return . decode
 
-mstateTypeableDict :: SerializableDict st -> TypeableDict st
-mstateTypeableDict SerializableDict = TypeableDict
+mstateTypeableDict :: SerializableDict st -> Dict (Typeable st)
+mstateTypeableDict SerializableDict = Dict
 
 removeNodes :: () -> (NodeId -> Bool) -> NominationPolicy
 removeNodes () np = filter (np . processNodeId)
