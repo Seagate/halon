@@ -23,6 +23,8 @@ import Network.Transport.TCP
 import Control.Applicative ((<$>))
 import Control.Exception ( bracket, throwIO, SomeException )
 import Control.Monad ( when, forM_, replicateM, foldM_ )
+import Data.Constraint (Dict(..))
+import Data.Typeable (Typeable)
 import Data.IORef ( newIORef, readIORef, writeIORef )
 import Data.List ( isPrefixOf )
 import System.Exit ( exitFailure )
@@ -35,8 +37,8 @@ import System.Random ( randomIO, mkStdGen, random, randoms )
 
 type State = [Int]
 
-dictState :: TypeableDict State
-dictState = TypeableDict
+dictState :: Dict (Typeable State)
+dictState = Dict
 
 testLog :: State.Log State
 testLog = State.log $ return []
@@ -73,7 +75,7 @@ remotableDecl [ [d|
 
  |] ]
 
-sdictState :: Static (TypeableDict State)
+sdictState :: Static (Dict (Typeable State))
 sdictState = $(mkStatic 'dictState)
 
 remoteTables :: RemoteTable

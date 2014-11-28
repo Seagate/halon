@@ -5,18 +5,15 @@
 -- Replicate state machines and their logs. This module is intended to be
 -- imported qualified.
 
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Control.Distributed.Log
-    ( -- * Reified dictionaries
-      EqDict(..)
-    , TypeableDict(..)
-    , sdictValue
-      -- * Operations on handles
-    , Handle
+    ( -- * Operations on handles
+      Handle
     , updateHandle
     , remoteHandle
     , RemoteHandle
@@ -30,12 +27,11 @@ module Control.Distributed.Log
     , reconfigure
     , addReplica
     , removeReplica
+    -- * Dictionaries
+    , sdictValue
       -- * Remote Tables
     , Control.Distributed.Log.__remoteTable
     , Control.Distributed.Log.__remoteTableDecl
-    , clockInterval
-    , sdictList
-    , nodeIdClosure
     , ambassador__tdict
     ) where
 
@@ -43,7 +39,6 @@ import Control.Distributed.Log.Messages
 import Control.Distributed.Log.Policy (NominationPolicy)
 import Control.Distributed.Log.Policy as Policy (notThem, notThem__static)
 import Control.Distributed.Process.Consensus hiding (Value)
-import Data.Some
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
@@ -63,6 +58,7 @@ import Control.Applicative ((<$>))
 import Control.Concurrent (newEmptyMVar, putMVar, takeMVar, tryPutMVar)
 import Control.Exception (SomeException, throwIO, assert)
 import Control.Monad
+import Data.Constraint (Dict(..))
 import Data.Int (Int64)
 import Data.List (find, intersect)
 import Data.Foldable (Foldable)
@@ -80,6 +76,10 @@ import GHC.Generics (Generic)
 import Prelude hiding (init, log)
 import System.Clock
 
+deriving instance Typeable Eq
+
+-- | An auxiliary type for hiding parameters of type constructors
+data Some f = forall a. Some (f a) deriving (Typeable)
 
 -- | An internal type used only by 'callLocal'.
 data Done = Done
@@ -113,14 +113,6 @@ gaps = go
         go (x:xs@(x':_)) | gap <- [succ x..pred x']
                          , not (null gap) = gap : go xs
                          | otherwise = go xs
-
-data EqDict a where
-    EqDict :: Eq a => EqDict a
-    deriving (Typeable)
-
-data TypeableDict a where
-    TypeableDict :: Typeable a => TypeableDict a
-    deriving (Typeable)
 
 -- | Information about a log entry.
 data Hint
@@ -209,10 +201,6 @@ instance Binary Status
 
 instance Binary TimeSpec
 
-timeSpecDiff :: TimeSpec -> TimeSpec -> Int64
-timeSpecDiff t0 t1 =
-    ( sec t0 -  sec t1) * 1000 * 1000 + (nsec t0 - nsec t1) `div` 1000
-
 data TimerMessage = LeaseRenewalTime
   deriving (Generic, Typeable)
 
@@ -225,9 +213,6 @@ queryMissing replicas log = do
     forM_ ns $ \n -> do
         forM_ replicas $ \ρ -> do
             send ρ $ Query self n
-
-clockInterval :: Int64
-clockInterval = 1000000
 
 newtype Memory a = Memory (Map.Map Int a)
                  deriving Typeable
@@ -288,7 +273,7 @@ driftSafetyFactor = 11 % 10
 -- highest entry number in their log. This is a convenient way to get replicas
 -- to retry queries without blocking and/or keeping any extra state around about
 -- still pending queries.
-replica :: forall a. EqDict a
+replica :: forall a. Dict (Eq a)
         -> SerializableDict a
         -> (NodeId -> FilePath)
         -> Protocol NodeId (Value a)
@@ -300,7 +285,7 @@ replica :: forall a. EqDict a
         -> [ProcessId]
         -> [ProcessId]
         -> Process ()
-replica EqDict
+replica Dict
         SerializableDict
         file
         Protocol{prl_propose}
@@ -454,8 +439,7 @@ replica EqDict
                     else leasePeriod * numerator   driftSafetyFactor
                                  `div` denominator driftSafetyFactor
               if not (null ρs) &&
-                 -- XXX Is it necessary microsecond precision for the lease?
-                 timeSpecDiff now leaseStart < adjustedPeriod
+                 now - leaseStart < TimeSpec 0 (adjustedPeriod * 1000)
               then return $ Just $ head ρs
               else return Nothing
 
@@ -546,16 +530,17 @@ replica EqDict
                       -- If I'm the leader, the lease starts at the time
                       -- the request was made. Otherwise, it starts now.
                       now <- liftIO $ getTime Monotonic
-                      leaseStart' <- if [self] == take 1 ρs'
-                          then do send timerPid
-                                    ( self
-                                    , max 0 (leasePeriod'
-                                              - leaseRenewalMargin
-                                              - timeSpecDiff now requestStart
-                                            )
-                                    , LeaseRenewalTime
-                                    )
-                                  return requestStart
+                      leaseStart' <-
+                          if [self] == take 1 ρs'
+                          then do
+                            send timerPid
+                                 ( self
+                                 , max 0 (TimeSpec 0 ((leasePeriod' -
+                                                       leaseRenewalMargin) * 1000) -
+                                           (now - requestStart))
+                                 , LeaseRenewalTime
+                                 )
+                            return requestStart
                           else return now
                       go' leaseStart' leasePeriod' αs' ρs' d' cd' w' s
                     | otherwise -> do
@@ -838,11 +823,6 @@ sdictValue :: Typeable a
            -> Static (SerializableDict (Value a))
 sdictValue sdict = $(mkStatic 'dictValue) `staticApply` sdict
 
-sdictList :: Typeable a
-          => Static (SerializableDict a)
-          -> Static (SerializableDict [a])
-sdictList sdict = $(mkStatic 'dictList) `staticApply` sdict
-
 sdictMax :: Static (SerializableDict Max)
 sdictMax = $(mkStatic 'dictMax)
 
@@ -854,10 +834,6 @@ listProcessIdClosure xs =
 processIdClosure :: ProcessId -> Closure ProcessId
 processIdClosure x =
     closure (staticDecode sdictProcessId) (encode x)
-
-nodeIdClosure :: NodeId -> Closure NodeId
-nodeIdClosure nid =
-    closure (staticDecode $(mkStatic 'dictNodeId)) (encode nid)
 
 delayClosure :: Typeable a
              => Static (SerializableDict a)
@@ -889,7 +865,7 @@ spawnRec nodes f = do
     return ρs
 
 replicaClosure :: Typeable a
-               => Static (EqDict a)
+               => Static (Dict (Eq a))
                -> Static (SerializableDict a)
                -> Closure (NodeId -> FilePath)
                -> Closure (Protocol NodeId (Value a))
@@ -925,7 +901,7 @@ batcherClosure sdict ρ =
 -- not uniquely identify the log, since there can in general be multiple
 -- ambassadors to the same log.
 data Handle a =
-    Handle (Static (EqDict a))
+    Handle (Static (Dict (Eq a)))
            (Static (SerializableDict a))
            (Closure (NodeId -> FilePath))
            (Closure (Protocol NodeId (Value a)))
@@ -939,7 +915,7 @@ instance Eq (Handle a) where
 -- | A handle to a log created remotely. A 'RemoteHandle' can't be used to
 -- access a log, but it can be cloned into a local handle.
 data RemoteHandle a =
-    RemoteHandle (Static (EqDict a))
+    RemoteHandle (Static (Dict (Eq a)))
                  (Static (SerializableDict a))
                  (Closure (NodeId -> FilePath))
                  (Closure (Protocol NodeId (Value a)))
@@ -1064,7 +1040,7 @@ remoteHandle (Handle sdict1 sdict2 fp protocol log α) = do
 --
 -- The returned 'Handle' identifies the group.
 new :: Typeable a
-    => Static (EqDict a)
+    => Static (Dict (Eq a))
     -> Static (SerializableDict a)
     -> Closure (NodeId -> FilePath)
     -> Closure (Protocol NodeId (Value a))

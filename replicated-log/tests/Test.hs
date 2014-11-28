@@ -13,7 +13,9 @@ import Control.Distributed.Process.Consensus
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import qualified Control.Distributed.Log as Log
 import Control.Distributed.Log
-    ( TypeableDict(..), sdictValue, updateHandle )
+    ( sdictValue
+    , updateHandle
+    )
 import qualified Control.Distributed.State as State
 import Control.Distributed.State
     ( Command
@@ -31,12 +33,13 @@ import Control.Distributed.Static
 import Data.Rank1Dynamic
 import Network.Transport.TCP
 
+import Control.Monad (forM_, replicateM, when, void)
+import Data.Constraint (Dict(..))
+import Data.Binary (encode)
+import Data.Typeable (Typeable)
 import System.Directory
 import System.IO
 import System.FilePath ((</>))
-import Control.Monad (forM_, replicateM, when, void)
-import Data.Typeable (Typeable)
-import Data.Binary (encode)
 
 import Prelude hiding (read)
 import qualified Prelude
@@ -65,8 +68,8 @@ readCP = staticClosure readStatic
 dictInt :: SerializableDict Int
 dictInt = SerializableDict
 
-dictState :: TypeableDict State
-dictState = TypeableDict
+dictState :: Dict (Typeable State)
+dictState = Dict
 
 dictNodeId :: SerializableDict NodeId
 dictNodeId = SerializableDict
@@ -82,7 +85,7 @@ remotable [ 'dictInt, 'dictState, 'dictNodeId, 'testLog, 'filepath ]
 sdictInt :: Static (SerializableDict Int)
 sdictInt = $(mkStatic 'dictInt)
 
-sdictState :: Static (TypeableDict State)
+sdictState :: Static (Dict (Typeable State))
 sdictState = $(mkStatic 'dictState)
 
 sdictNodeId :: Static (SerializableDict NodeId)

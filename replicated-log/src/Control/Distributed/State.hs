@@ -5,9 +5,13 @@
 -- Provides a simplified SQL-like interface to the replicated state maintained
 -- by the log.
 
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE GADTs #-}
+
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# OPTIONS_GHC -funbox-strict-fields #-}
+
 module Control.Distributed.State
        ( Command
        , commandEqDict
@@ -23,13 +27,13 @@ module Control.Distributed.State
        , __remoteTable) where
 
 import qualified Control.Distributed.Log as Log
-import Control.Distributed.Log (EqDict(..), TypeableDict(..))
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
     ( closureApply
     , staticClosure )
 
+import Data.Constraint (Dict(..))
 import GHC.IORef
 import Data.Word (Word64)
 import Data.Binary (Binary, encode)
@@ -37,6 +41,8 @@ import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Data.Function (on)
 import Prelude hiding (init, log)
+
+deriving instance Typeable Typeable
 
 data CommandId = CommandId
     { _commandIdCounter   :: !Word64
@@ -65,11 +71,11 @@ data Result a = Result
 
 instance Binary a => Binary (Result a)
 
-commandEqDict :: EqDict (Command s)
-commandEqDict  = EqDict
+commandEqDict :: Dict (Eq (Command s))
+commandEqDict  = Dict
 
-commandSerializableDict :: TypeableDict s -> SerializableDict (Command s)
-commandSerializableDict TypeableDict = SerializableDict
+commandSerializableDict :: Dict (Typeable s) -> SerializableDict (Command s)
+commandSerializableDict Dict = SerializableDict
 
 commandIdSerializableDict :: SerializableDict CommandId
 commandIdSerializableDict = SerializableDict
