@@ -881,15 +881,13 @@ replicaClosure :: Typeable a
                -> Static (SerializableDict a)
                -> Closure Config
                -> Closure (Log a)
-               -> Closure TimeSpec
-               -> Closure (DecreeId -> [ProcessId] -> [ProcessId] -> Process ())
-replicaClosure sdict1 sdict2 config log leaseStart =
+               -> Closure (TimeSpec -> DecreeId -> [ProcessId] -> [ProcessId] -> Process ())
+replicaClosure sdict1 sdict2 config log =
     staticClosure $(mkStatic 'replica)
       `closureApply` staticClosure sdict1
       `closureApply` staticClosure sdict2
       `closureApply` config
       `closureApply` log
-      `closureApply` leaseStart
 
 batcherClosure :: Typeable a
                => Static (SerializableDict a)
