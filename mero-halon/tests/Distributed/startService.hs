@@ -39,7 +39,7 @@ import Data.List (isInfixOf)
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
 
 import System.Environment (getExecutablePath)
-import System.FilePath ((</>), splitPath, joinPath)
+import System.FilePath ((</>), takeDirectory)
 import System.Process (readProcess)
 
 getBuildPath :: IO FilePath
