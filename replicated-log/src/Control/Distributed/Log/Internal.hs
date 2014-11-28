@@ -11,9 +11,10 @@
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Control.Distributed.Log
-    ( -- * Operations on handles
-      Handle
+module Control.Distributed.Log.Internal
+    ( replica
+      -- * Operations on handles
+    , Handle
     , updateHandle
     , remoteHandle
     , RemoteHandle
@@ -30,9 +31,9 @@ module Control.Distributed.Log
     -- * Dictionaries
     , sdictValue
       -- * Remote Tables
-    , Control.Distributed.Log.__remoteTable
-    , Control.Distributed.Log.__remoteTableDecl
-    , ambassador__tdict
+    , Control.Distributed.Log.Internal.__remoteTable
+    , Control.Distributed.Log.Internal.__remoteTableDecl
+    , ambassador__tdict -- XXX unused, exported to guard against warning.
     ) where
 
 import Control.Distributed.Log.Messages

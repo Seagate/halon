@@ -21,7 +21,8 @@ Library
   Exposed-Modules:  Control.Distributed.Log
                     Control.Distributed.Log.Policy
                     Control.Distributed.State
-  Other-Modules:    Control.Distributed.Log.Messages
+  Other-Modules:    Control.Distributed.Log.Internal
+                    Control.Distributed.Log.Messages
   Hs-Source-Dirs:   src/
   Build-Depends:    acid-state >= 0.11,
                     base >= 4.7,
