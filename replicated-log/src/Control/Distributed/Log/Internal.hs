@@ -276,9 +276,9 @@ driftSafetyFactor = 11 % 10
 -- still pending queries.
 replica :: forall a. Dict (Eq a)
         -> SerializableDict a
+        -> Log a
         -> (NodeId -> FilePath)
         -> Protocol NodeId (Value a)
-        -> Log a
         -> TimeSpec
         -> Int64
         -> Int64
@@ -288,9 +288,9 @@ replica :: forall a. Dict (Eq a)
         -> Process ()
 replica Dict
         SerializableDict
+        Log{..}
         file
         Protocol{prl_propose}
-        Log{..}
         leaseStart0
         leaseRenewalMargin
         leasePeriod0
@@ -868,9 +868,9 @@ spawnRec nodes f = do
 replicaClosure :: Typeable a
                => Static (Dict (Eq a))
                -> Static (SerializableDict a)
+               -> Closure (Log a)
                -> Closure (NodeId -> FilePath)
                -> Closure (Protocol NodeId (Value a))
-               -> Closure (Log a)
                -> Closure TimeSpec
                -> Closure Int64
                -> Closure (   Int64
@@ -878,13 +878,13 @@ replicaClosure :: Typeable a
                            -> [ProcessId]
                            -> [ProcessId]
                            -> Process ())
-replicaClosure sdict1 sdict2 file protocol log leaseStart leaseRenewalMargin =
+replicaClosure sdict1 sdict2 log file protocol leaseStart leaseRenewalMargin =
     staticClosure $(mkStatic 'replica)
       `closureApply` staticClosure sdict1
       `closureApply` staticClosure sdict2
+      `closureApply` log
       `closureApply` file
       `closureApply` protocol
-      `closureApply` log
       `closureApply` leaseStart
       `closureApply` leaseRenewalMargin
 
@@ -1043,20 +1043,20 @@ remoteHandle (Handle sdict1 sdict2 fp protocol log α) = do
 new :: Typeable a
     => Static (Dict (Eq a))
     -> Static (SerializableDict a)
+    -> Closure (Log a)
     -> Closure (NodeId -> FilePath)
     -> Closure (Protocol NodeId (Value a))
-    -> Closure (Log a)
     -> Int64
     -> Int64
     -> [NodeId]
     -> Process (Handle a)
-new sdict1 sdict2 file protocol log leasePeriod leaseRenewalMargin nodes = do
+new sdict1 sdict2 log file protocol leasePeriod leaseRenewalMargin nodes = do
     acceptors <- forM nodes $ \nid -> spawn nid $
                      acceptorClosure $(mkStatic 'dictNodeId) protocol nid
     now <- liftIO $ getTime Monotonic
     -- See Note [spawnRec]
     replicas <- spawnRec nodes $
-                    replicaClosure sdict1 sdict2 file protocol log
+                    replicaClosure sdict1 sdict2 log file protocol
                         ($(mkClosure 'timeSpecId) now)
                         ($(mkClosure 'int64Id) leaseRenewalMargin)
                         `closureApply` $(mkClosure 'int64Id) leasePeriod
@@ -1099,7 +1099,7 @@ addReplica h@(Handle sdict1 sdict2 file protocol log _)
     α <- spawn nid $ acceptorClosure $(mkStatic 'dictNodeId) protocol nid
     -- See comment about effect of 'delayClosure' in docstring above.
     ρ <- spawn nid $ delayClosure sdictMax self $
-             unMaxCP $ replicaClosure sdict1 sdict2 file protocol log
+             unMaxCP $ replicaClosure sdict1 sdict2 log file protocol
                                       ($(mkClosure 'timeSpecId) now)
                                       ($(mkClosure 'int64Id) leaseRenewalMargin)
     β <- spawn nid $ batcherClosure sdict2 ρ
