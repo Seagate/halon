@@ -74,6 +74,7 @@ Library
                    filepath >= 1.3,
                    free,
                    network,
+                   distributed-commands >= 0.1,
                    distributed-process >= 0.4,
                    distributed-static,
                    hashable,

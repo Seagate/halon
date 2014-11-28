@@ -7,7 +7,6 @@ module Main (main) where
 
 import Flags
 import HA.Network.RemoteTables (haRemoteTable)
-import HA.Process
 import Mero.RemoteTables (meroRemoteTable)
 
 #ifdef USE_RPC
@@ -18,15 +17,23 @@ import qualified Network.Transport.TCP as TCP
 import qualified HA.Network.Socket as TCP
 #endif
 
-import Control.Distributed.Process
-import Control.Distributed.Process.Node (initRemoteTable, newLocalNode)
-
 import Control.Applicative ((<$>))
+import Control.Distributed.Process
+import Control.Distributed.Process.Node
+  ( initRemoteTable
+  , newLocalNode
+  , localNodeId
+  , runProcess
+  )
+
+import qualified Data.Binary
+
 import System.Environment
-import System.IO ( hFlush, stdout )
+import System.IO ( hFlush, stdout , hSetBuffering, BufferMode(..))
 
 printHeader :: String -> IO ()
 printHeader listen = do
+    hSetBuffering stdout LineBuffering
     putStrLn $ "This is halond/" ++ buildType ++ " listening on " ++ listen
     hFlush stdout
   where
@@ -35,6 +42,15 @@ printHeader listen = do
 #else
     buildType = "TCP"
 #endif
+
+-- | Prints the given 'NodeId' in the standard output.
+printNodeId :: NodeId -> IO ()
+printNodeId n = do print $ Data.Binary.encode n
+                   -- XXX: an extra line of outputs seems to be needed when
+                   -- programs are run through ssh so the output is actually
+                   -- received.
+                   putStrLn ""
+                   hFlush stdout
 
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
@@ -56,7 +72,8 @@ main = do
                TCP.createTransport hostname port TCP.defaultTCPParameters
 #endif
   lnid <- newLocalNode transport myRemoteTable
-  tryRunProcess lnid $
-     do liftIO $ printHeader (localEndpoint config)
-        receiveWait [] -- wait indefinitely
+  -- Print the node id for the testing framework.
+  printNodeId .localNodeId $ lnid
+  printHeader (localEndpoint config)
+  runProcess lnid $ receiveWait []
   return 0

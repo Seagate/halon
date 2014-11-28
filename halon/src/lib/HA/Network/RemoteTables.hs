@@ -19,6 +19,7 @@ import HA.Replicator.Log (__remoteTable, __remoteTableDecl)
 import Control.Distributed.Log ( __remoteTable, __remoteTableDecl )
 import Control.Distributed.Log.Policy ( __remoteTable )
 import Control.Distributed.State ( __remoteTable )
+import Control.Distributed.Commands.Process ( __remoteTable )
 import Control.Distributed.Process
 import Control.Distributed.Process.Consensus ( __remoteTable )
 import Control.Distributed.Process.Consensus.BasicPaxos ( __remoteTable )
@@ -41,6 +42,7 @@ haRemoteTable next =
    HA.Multimap.Process.__remoteTable $
    HA.Replicator.Log.__remoteTable $
    HA.Replicator.Log.__remoteTableDecl $
+   Control.Distributed.Commands.Process.__remoteTable $
    Control.Distributed.Log.__remoteTable $
    Control.Distributed.Log.__remoteTableDecl $
    Control.Distributed.Log.Policy.__remoteTable $

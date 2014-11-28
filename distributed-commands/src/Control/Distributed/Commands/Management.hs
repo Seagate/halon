@@ -54,10 +54,9 @@ data Host = Host
 --
 copyFiles :: HostName -> [HostName] -> [(FilePath, FilePath)] -> IO ()
 copyFiles from tos paths = do
-    let (pathFrom, pathTos) = unzip paths
     bracket
       (mapM async [ scp (toScpPath from pfrom) (toScpPath to pto)
-                  | pfrom <- pathFrom, to <- tos, pto <- pathTos
+                  | (pfrom, pto) <- paths, to <- tos
                   ])
       (mapM_ waitCatch)
       (mapM waitCatch) >>= mapM_ throwIO . lefts

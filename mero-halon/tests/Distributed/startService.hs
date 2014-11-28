@@ -12,12 +12,13 @@
 --
 
 import Control.Distributed.Commands.DigitalOcean (getCredentialsFromEnv)
+import Control.Distributed.Commands.Management (withHostNames)
 import Control.Distributed.Commands.Process
-  ( withHostNames
-  , copyFiles
+  ( copyFiles
   , systemThere
   , spawnNode
-  , redirectLogs
+  , redirectLogsHere
+  , copyLog
   , expectLog
   , __remoteTable
   )
@@ -26,16 +27,23 @@ import Control.Distributed.Commands.Providers.DigitalOcean
   , NewDropletArgs(..)
   )
 
-import Control.Distributed.Process (say, liftIO, getSelfPid)
+import Control.Distributed.Process (getSelfPid, say)
 import Control.Distributed.Process.Node
   ( initRemoteTable
   , newLocalNode
   , runProcess
-  , localNodeId
   )
-import Data.Binary (encode)
+
+import Data.List (isInfixOf)
+
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
 
+import System.Environment (getExecutablePath)
+import System.FilePath ((</>), splitPath, joinPath)
+import System.Process (readProcess)
+
+getBuildPath :: IO FilePath
+getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
 
 main :: IO ()
 main = do
@@ -52,28 +60,45 @@ main = do
       , ssh_key_ids = ""
       }
 
-    Right nt <- createTransport "localhost" "4000" defaultTCPParameters
+    buildPath <- getBuildPath
+
+    [ip] <- fmap (take 1 . lines) $ readProcess "hostname" ["-I"] ""
+    Right nt <- createTransport ip "4000" defaultTCPParameters
     let remoteTable = __remoteTable initRemoteTable
     n0 <- newLocalNode nt remoteTable
 
-    runProcess n0 $ withHostNames cp 2 $ \ms@[m0, m1] -> do
+    withHostNames cp 2 $  \ms@[m0, m1] ->
+     runProcess n0 $ do
 
+      say "Copying binaries ..."
       -- test copying a folder
-      copyFiles m0 ms [ ("halond", "halonctl") ]
+      copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
+                               , (buildPath </> "halond/halond", "halond") ]
 
+      say "Running a remote test command ..."
       systemThere ms ("echo can run a remote command")
 
-      -- test spawning a node
-      nid1 <- spawnNode m1 ("halond -l 0.0.0.0:9000")
-      nid2 <- spawnNode m2 ("halond -l 0.0.0.0:9000")
+      getSelfPid >>= copyLog (const True)
 
-      getSelfPid >>= \a -> mapM_ ((flip redirectLogs) a) [nid1,nid2]
+      say "Spawning halond ..."
+      nid0 <- spawnNode m0 ("./halond -l " ++ m0 ++ ":9000 2>&1")
+      nid1 <- spawnNode m1 ("./halond -l " ++ m1 ++ ":9000 2>&1")
+      say $ "Redirecting logs from " ++ show nid0 ++ " ..."
+      redirectLogsHere nid0
+      say $ "Redirecting logs from " ++ show nid1 ++ " ..."
+      redirectLogsHere nid1
 
-      systemThere ms ("halonctl -a 127.0.0.1:9000 boostrap satellite")
-      expectLog [nid1] (== "This is HA.NodeAgent")
-      expectLog [nid2] (== "This is HA.NodeAgent")
-      systemThere m0 ("halonctl -a 127.0.0.1:9000 boostrap station -t 127.0.0.1:9000 -s " ++ m1 ++ ":9000")
-      expectLog [nid1] (== "This is HA.TrackingStation")
-      systemThere m0 ("halonctl -a " ++ m1 ++ ":9000 service dummy -e 127.0.0.1:9000 start")
-      expectLog [nid1] (== "Starting service dummy")
+      say "Spawning node agents ..."
+      systemThere ms ("./halonctl -a $(hostname -I | head -1 | tr -d ' '):9000 bootstrap satellite")
+      expectLog [nid0] (isInfixOf "Starting service HA.NodeAgent")
+      expectLog [nid1] (isInfixOf "Starting service HA.NodeAgent")
+      say "Spawning tracking station ..."
+      systemThere [m0] ("./halonctl -a " ++ m0 ++ ":9000 bootstrap" ++
+                        " station -t " ++ m0 ++ ":9000 -s " ++ m1 ++ ":9000")
+      expectLog [nid0] (isInfixOf "New replica started in legislature://0")
+      say "Starting dummy service ..."
+      expectLog [nid0] (isInfixOf "New node contacted")
+      systemThere [m0] ("./halonctl -a " ++ m1 ++ ":9000" ++
+                        " service dummy start -t " ++ m0 ++ ":9000")
+      expectLog [nid1] (isInfixOf "Starting service dummy")
 
