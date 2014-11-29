@@ -1096,6 +1096,7 @@ addReplica h@(Handle sdict1 sdict2 file protocol log _)
     self <- getSelfPid
     now <- liftIO $ getTime Monotonic
     α <- spawn nid $ acceptorClosure $(mkStatic 'dictNodeId) protocol nid
+    -- See comment about effect of 'delayClosure' in docstring above.
     ρ <- spawn nid $ delayClosure sdictMax self $
              unMaxCP $ replicaClosure sdict1 sdict2 file protocol log
                                       ($(mkClosure 'timeSpecId) now)
