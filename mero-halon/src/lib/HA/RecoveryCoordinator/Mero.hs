@@ -10,15 +10,15 @@
 -- are posted by R from the event queue maintained by R. After recovering an HA
 -- event, RC instructs R to drop the event, using a globally unique identifier.
 
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
@@ -26,7 +26,6 @@
 module HA.RecoveryCoordinator.Mero
        ( recoveryCoordinator
        , IgnitionArguments(..)
-       , HA.RecoveryCoordinator.Mero.__remoteTable
        ) where
 
 import HA.Resources
@@ -57,15 +56,16 @@ import Control.Applicative ((<*), (<$>))
 import Control.Arrow ((>>>))
 import Control.Monad (forM, forM_, when, void, (>=>))
 
-import qualified Data.Map.Strict as Map
-import Data.Typeable (Typeable)
 import Data.Binary (Binary, Get, encode, get, put)
 import Data.Binary.Put (runPut)
 import Data.Binary.Get (runGet)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BS
 import Data.Foldable (mapM_)
-import Data.List (foldl')
-import Data.ByteString (ByteString)
+import Data.List (foldl', intersect)
+import qualified Data.Map.Strict as Map
+import Data.Maybe (isJust, isNothing)
+import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
 
@@ -147,53 +147,55 @@ initialize mm IgnitionArguments{..} = do
 -- Reconfiguration                                      --
 ----------------------------------------------------------
 
--- | kill_helper is made remotable and works on the remote node running
---   the service. This is because it needs to look up the process id on the
---   remote node. In a NodeAgent-less world this should be unnecessary.
-kill_helper :: (ServiceName, ExitReason) -> Process ()
-kill_helper (svc, reason) = do
-  mpid <- whereis svc
-  mapM_ (flip exit $ reason) mpid
-
-remotable ['kill_helper]
-
 startService :: forall a. Configuration a
              => NodeId -- ^ Node to start service on
              -> Service a -- ^ Service
-             -> ConfigRole
+             -> a
              -> G.Graph
              -> Process ()
-startService node svc role rg = case readConfig svc role rg of
-  Just cfg -> do
-    mynid <- getSelfNode
-    pid <- spawn node $ serviceProcess svc
-                `closureApply` closure (staticDecode sDict) (encode cfg)
-    void . promulgateEQ [mynid] . encodeP $ ServiceStarted (Node node) svc
-  Nothing -> sayRC $ "Unable to find config for " ++ serviceName svc
+startService node svc cfg rg = do
+  mynid <- getSelfNode
+  pid <- spawn node $ serviceProcess svc
+              `closureApply` closure (staticDecode sDict) (encode cfg)
+  void . promulgateEQ [mynid] . encodeP $
+    ServiceStarted (Node node) svc cfg (ServiceProcess pid)
 
 -- | Kill a service on a remote node
 killService :: NodeId
-            -> Service a
+            -> ServiceProcess a
             -> ExitReason
             -> Process ()
-killService node svc reason =
-  void . spawn node $ $(mkClosure 'kill_helper) (serviceName svc, reason)
+killService node (ServiceProcess pid) reason =
+  exit pid reason
+
+-- | Bounce the service to a particular configuration.
+bounceServiceTo :: Configuration a
+               => ConfigRole -- ^ Configuration role to bounce to.
+               -> Node -- ^ Node on which to bounce service
+               -> Service a -- ^ Service to bounce
+               -> G.Graph -- ^ Resource Graph
+               -> Process ()
+bounceServiceTo role n@(Node nid) s g = case runningService n s g of
+    Just sp -> go sp
+    Nothing -> return ()
+  where
+    go sp = case readConfig sp role g of
+      Just cfg -> killService nid sp Shutdown >> startService nid s cfg g
+      Nothing -> sayRC $ "Cannot find current configuation"
 
 restartService :: Configuration a
-               => NodeId
+               => Node
                -> Service a
                -> G.Graph
                -> Process ()
-restartService n s g =
-  killService n s Shutdown >> startService n s Current g
+restartService = bounceServiceTo Current
 
 reconfigureService :: Configuration a
-                   => NodeId
+                   => Node
                    -> Service a
                    -> G.Graph
                    -> Process ()
-reconfigureService n s g =
-  killService n s Reconfigure >> startService n s Intended g
+reconfigureService = bounceServiceTo Intended
 
 -- | Starting from the root node, find nodes and services matching the given
 --   ConfigurationFilter (not really important how this is specified) and
@@ -202,13 +204,16 @@ filterServices :: forall a. Configuration a
                => NodeFilter
                -> Service a
                -> G.Graph
-               -> [(Node, Service a)]
+               -> [(Node, ServiceProcess a)]
 filterServices (NodeFilter nids) (Service name _ _) rg = do
   node <- filter (\(Node nid) -> nid `elem` nids) $
               G.connectedTo Cluster Has rg :: [Node]
   svc <- filter (\(Service n _ _) -> n == name) $
-              (G.connectedTo node Runs rg :: [Service a])
-  return (node, svc)
+              (G.connectedTo Cluster Supports rg :: [Service a])
+  sp <- intersect
+          (G.connectedTo svc InstanceOf rg :: [ServiceProcess a])
+          (G.connectedTo node Runs rg :: [ServiceProcess a])
+  return (node, sp)
 
 ----------------------------------------------------------
 -- Recovery Co-ordinator                                --
@@ -216,7 +221,7 @@ filterServices (NodeFilter nids) (Service name _ _) rg = do
 
 data LoopState = LoopState {
     lsGraph :: G.Graph -- ^ Graph
-  , lsFailMap :: Map.Map ServiceName Int -- ^ Failed reconfiguration count
+  , lsFailMap :: Map.Map (ServiceName, Node) Int -- ^ Failed reconfiguration count
 }
 
 -- | The entry point for the RC.
@@ -242,21 +247,22 @@ recoveryCoordinator eq mm argv = do
               sayRC $ "New node contacted: " ++ show agent
               let rg' = G.newResource node >>>
                         G.newResource m0d >>>
-                        G.connect node Runs m0d >>>
+                        G.connect Cluster Supports m0d >>>
                         G.connect Cluster Has node $
                         rg
               -- TODO make async.
               mbpids <- forM (stationNodes argv) getNodeAgent
               _ <- updateEQNodes agent [ processNodeId pid | Just pid <- mbpids ]
                -- XXX check for timeout.
-              _ <- restartService nid m0d rg
+              _ <- restartService node m0d rg
               loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')
-        , match $ (decodeP >=>) $ \(ReconfigureCmd (Node nid) svc) ->
+        , match $ (decodeP >=>) $ \(ReconfigureCmd n@(Node nid) svc) ->
             unStatic (configDict svc) >>= \case
               SomeConfigurationDict G.Dict -> do
-                sayRC $ "Reconfiguring service " ++ (serviceName svc) ++
-                        " on node " ++ (show nid)
-                reconfigureService nid svc rg
+                sayRC $ "Reconfiguring service "
+                        ++ (snString . serviceName $ svc)
+                        ++ " on node " ++ (show nid)
+                reconfigureService n svc rg
                 loop ls
         , matchHAEvent $ \(HAEvent _ (EpochRequest pid) _) -> do
             let G.Edge _ Has target = head (G.edgesFromSrc Cluster rg :: [G.Edge Cluster Has (Epoch ByteString)])
@@ -270,18 +276,18 @@ recoveryCoordinator eq mm argv = do
               if epoch == epochId target then do
                 unStatic (configDict svc) >>= \case
                   SomeConfigurationDict G.Dict -> do
-                    sayRC $ "Request to reconfigure service " ++ show (serviceName svc)
+                    sayRC $ "Request to reconfigure service " ++ snString (serviceName svc)
                             ++ " on nodes " ++ (show nodeFilter)
                     -- Write the new config as a 'Wants' config
                     let svcs = filterServices nodeFilter svc rg
                         rgUpdate = foldl' (flip (.)) id $ fmap (
-                            \case (_, svc@(Service _ _ _))
+                            \case (_, svc)
                                     -> writeConfig svc opts Intended
                           ) svcs
                         rg' = rgUpdate rg
                     -- Send a message to ourselves asking to reconfigure
                     self <- getSelfPid
-                    mapM_ (send self . encodeP . uncurry ReconfigureCmd) svcs
+                    mapM_ (send self . encodeP . (flip ReconfigureCmd) svc . fst) svcs
                     loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')
               else loop ls
               )
@@ -289,61 +295,70 @@ recoveryCoordinator eq mm argv = do
             (\evt@(HAEvent _ (ssrm :: ServiceStartRequestMsg) _) -> do
               ServiceStartRequest n@(Node nid) svc c <- decodeP ssrm
               if G.memberResource n rg
-                 && not (G.isConnected n Runs svc rg)
+                 && (isNothing $ runningService n svc rg)
               then
                 unStatic (configDict svc) >>= \case
                   SomeConfigurationDict G.Dict -> do
-                    sayRC $ "Request to start service " ++ show (serviceName svc)
+                    sayRC $ "Request to start service " ++ snString (serviceName svc)
                             ++ " on node " ++ (show n)
                     let rg' = G.newResource svc >>>
-                              writeConfig svc c Intended >>>
-                              G.connect n Runs svc $
+                              G.connect Cluster Supports svc $
                               rg
-                    startService nid svc Intended rg'
+                    startService nid svc c rg'
                     loop =<< (fmap (\a -> ls { lsGraph = a}) $ G.sync rg')
               else getSelfPid >>= \s -> send s evt >> loop ls
             )
         , matchHAEvent
             -- (\(HAEvent _ (ServiceStarted node _) _) -> G.memberResource node rg)
             (\(HAEvent _ (ssm :: ServiceStartedMsg) _) -> do
-              ServiceStarted _ svc <- decodeP ssm
-              unStatic (configDict svc) >>= \case
+              ServiceStarted n (svc @ Service {..}) cfg sp <- decodeP ssm
+              unStatic configDict >>= \case
                 SomeConfigurationDict G.Dict -> do
-                  sayRC $ "Service successfully started: " ++ show (serviceName svc)
-                  let rg' = updateConfig svc rg
+                  sayRC $ "Service successfully started: " ++ snString serviceName
+                  let rg' = case runningService n svc rg of
+                              Just sp' -> G.disconnect sp' Owns serviceName
+                                        >>> G.disconnect n Runs sp'
+                                        >>> G.disconnect svc InstanceOf sp
+                              Nothing -> G.newResource serviceName
+                            >>> G.newResource sp
+                            >>> G.connect n Runs sp
+                            >>> G.connect svc InstanceOf sp
+                            >>> G.connect sp Owns serviceName
+                            >>> writeConfig sp cfg Current $
+                            rg
                   loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')
             )
         , matchHAEvent
           -- Check that node is already initialized.
           -- (\(HAEvent _ (ServiceFailedMsg node _) _) -> G.memberResource node rg)
           (\(HAEvent eid (sfm :: ServiceFailedMsg) _) -> do
-            (ServiceFailed (Node nid)
-              srv@(Service _ _ sdict)) <- decodeP sfm
+            (ServiceFailed n srv@(Service _ _ sdict)) <- decodeP sfm
             unStatic sdict >>= \case
                 SomeConfigurationDict G.Dict -> do
                   sayRC $ "Notified of service failure: " ++ show (serviceName srv)
                   -- XXX check for timeout.
-                  _ <- restartService nid srv rg
+                  _ <- restartService n srv rg
                   send eq $ eid
                   loop ls)
         , matchHAEvent
           -- (\(HAEvent _ (ServiceCouldNotStart node _) _) -> G.memberResource node rg)
           (\(HAEvent eid (scns :: ServiceCouldNotStartMsg) _) -> do
-            (ServiceCouldNotStart (Node node)
-              srv@(Service _ _ sdict)) <- decodeP scns
+            (ServiceCouldNotStart node srv@(Service _ _ sdict)) <- decodeP scns
             unStatic sdict >>= \case
                 SomeConfigurationDict G.Dict-> do
                   -- Update the fail map to record this failure
                   let sName = serviceName srv
-                      failmap' = Map.update (\x -> Just $ x + 1) sName failmap
-                      failedCount = Map.findWithDefault 0 sName failmap'
+                      failmap' = Map.update (\x -> Just $ x + 1) (sName, node) failmap
+                      failedCount = Map.findWithDefault 0 (sName, node) failmap'
                   send eq $ eid
                   -- If we have failed too many times, stop and remove any new config.
                   if failedCount >= reconfFailureLimit then do
                     -- XXX notify the operator in a more appropriate manner.
                     sayRC $ "Can't start service: " ++ show (serviceName srv)
-                    let failmap'' = Map.delete sName failmap'
-                    rg' <- G.sync $ disconnectConfig srv Intended rg
+                    let failmap'' = Map.delete (sName, node) failmap'
+                    rg' <- case runningService node srv rg of
+                      Just sp -> G.sync $ disconnectConfig sp Intended rg
+                      Nothing -> return rg
                     restartService node srv rg
                     loop $ ls {
                         lsGraph = rg'
@@ -368,11 +383,11 @@ recoveryCoordinator eq mm argv = do
                   target = Epoch (succ (epochId current)) "y = x^3"
                   rg' = G.deleteEdge e >>> G.connect Cluster Has target $ rg
                   m0dNodes = [ node | node <- G.connectedTo Cluster Has rg'
-                                    , G.isConnected node Runs m0d rg' ]
+                                    , isJust $ runningService node m0d rg' ]
 
               -- Broadcast new epoch.
               forM_ m0dNodes $ \(Node them) ->
-                  nsendRemote them (serviceName m0d) $
+                  nsendRemote them (snString $ serviceName m0d) $
                   EpochTransition
                       { etCurrent = epochId current
                       , etTarget  = epochId target
@@ -406,7 +421,7 @@ recoveryCoordinator eq mm argv = do
                            foldr G.deleteEdge rg1 edges
                   rg' = foldl' f rg nvec
                   m0dNodes = [ node | node <- G.connectedTo Cluster Has rg'
-                                    , G.isConnected node Runs m0d rg' ]
+                                    , isJust $ runningService node m0d rg' ]
               forM_ m0dNodes $ \(Node them) ->
                   nsendRemote them (serviceName m0d) $
                   Mero.Notification.Set nvec

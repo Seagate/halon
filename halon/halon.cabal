@@ -62,6 +62,7 @@ Library
                    HA.Network.Transport
                    HA.Service
                    HA.Services.Dummy
+                   HA.Services.Empty
                    HA.Services.OCF
                    Control.SpineSeq
   Build-Depends:   base,

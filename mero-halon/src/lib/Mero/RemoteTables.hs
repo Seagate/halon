@@ -11,7 +11,6 @@ import HA.Resources.Mero ( __remoteTable )
 #endif
 
 import HA.Services.Mero ( __remoteTableDecl )
-import HA.RecoveryCoordinator.Mero ( __remoteTable )
 import HA.RecoveryCoordinator.Mero.Startup ( __remoteTable, __remoteTableDecl )
 import Control.Distributed.Process (RemoteTable)
 
@@ -21,7 +20,6 @@ meroRemoteTable next =
    HA.Resources.Mero.__remoteTable $
 #endif
    HA.Services.Mero.__remoteTableDecl $
-   HA.RecoveryCoordinator.Mero.__remoteTable $
    HA.RecoveryCoordinator.Mero.Startup.__remoteTable $
    HA.RecoveryCoordinator.Mero.Startup.__remoteTableDecl $
    next

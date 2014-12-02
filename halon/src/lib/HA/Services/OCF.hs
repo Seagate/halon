@@ -13,6 +13,7 @@ module HA.Services.OCF
     , HA.Services.OCF.__remoteTableDecl ) where
 
 import HA.Service
+import HA.Services.Empty
 import HA.Resources
 import HA.NodeAgent
 
@@ -43,7 +44,7 @@ remotableDecl [ [d|
     -- | Pacemaker / RH Cluster Suite SysV init-like service script.
     ocfProcess :: FilePath -> () -> Process ()
     ocfProcess script () = do
-        mbpid <- whereis (serviceName nodeAgent)
+        mbpid <- whereis (snString . serviceName $ nodeAgent)
         let na = maybe (error "NodeAgent is not registered.") id mbpid
         checkExitCode (liftIO $ System.rawSystem script ["start"])
                       go
