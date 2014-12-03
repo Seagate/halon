@@ -1,19 +1,21 @@
 -- |
 -- Copyright: (C) 2014 Tweag I/O Limited
--- 
+--
 -- A very simple example of using the callback interface to CEP.
--- 
+--
 
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TemplateHaskell       #-}
+
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Main where
 
-import Network.CEP.Broker.Centralized (broker)
-import Network.CEP.Processor
-  (Processor, runProcessor, Config (Config), actionRunner)
-import Network.CEP.Processor.Callback (publish, subscribe)
-import Network.CEP.Types (NetworkMessage, payload)
+import Network.CEP
 
+import Control.Distributed.Process.Closure (mkStatic, remotable)
 import Control.Distributed.Process.Node
   (newLocalNode, forkProcess, initRemoteTable)
 import Control.Lens
@@ -23,6 +25,19 @@ import Network.Transport.TCP (createTransport, defaultTCPParameters)
 import Control.Applicative ((<$))
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Monad (forever, void)
+
+sinstString :: Instance (Statically Emittable) String
+sinstInt    :: Instance (Statically Emittable) Int
+(sinstString, sinstInt) = (Instance, Instance)
+remotable [ 'sinstString, 'sinstInt ]
+
+instance Emittable [Char]
+instance Emittable Int
+
+instance Statically Emittable [Char] where
+  staticInstance = $(mkStatic 'sinstString)
+instance Statically Emittable Int where
+  staticInstance = $(mkStatic 'sinstInt)
 
 main :: IO ()
 main = do
@@ -46,10 +61,10 @@ stringEmitter = do
 countProcessor :: Processor s ()
 countProcessor = do
     intEv <- publish
-    subscribe $ \ (x :: NetworkMessage String) -> do
+    subscribe $ \(x :: NetworkMessage String) -> do
       intEv . length $ x ^. payload
 
 -- A consumer of Ints.
 intPrinter :: Processor s ()
-intPrinter = subscribe $ \ (x :: NetworkMessage Int) ->
+intPrinter = subscribe $ \(x :: NetworkMessage Int) ->
     liftIO . print $ x ^. payload

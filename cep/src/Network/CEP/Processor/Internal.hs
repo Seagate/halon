@@ -1,17 +1,18 @@
 -- |
 -- Copyright: (C) 2014 Tweag I/O Limited
--- 
+--
 -- Implementations of both basic processor functions, such as
 -- runProcessor, and also the callback processor interface, which
 -- depend on one another but are conceptually distinct layers.
--- 
+--
 -- This module is therefore not exported: its definitions are exported
 -- from Network.CEP.Processor and Network.CEP.Processor.Callback, as
 -- appropriate.
--- 
+--
 
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -135,7 +136,7 @@ sendBrokers msg = gets (^. currentBrokers) >>= mapM_ (sendMessage False msg)
 
 -- | Send a (wrapped) message to everyone subscribed to messages of
 --   its type.
-sendSubscribers :: forall s a. Serializable a
+sendSubscribers :: forall s a. Statically Emittable a
                 => Bool
                 -- ^ Whether to request acknowledgement.
                 -> a -> Processor s ()
@@ -143,7 +144,7 @@ sendSubscribers ackp msg = gets (^. subscribers)
     >>= mapM_ (sendMessage ackp msg)
         . MultiMap.lookup (eventTypeOf (Proxy :: Proxy a))
 
-publish' :: forall a s. Serializable a
+publish' :: forall a s. Statically Emittable a
          => Bool
          -- ^ Whether or not to request acknowledgement.
          -> Processor s (a -> Processor s ())
@@ -153,12 +154,13 @@ publish' ackp = do
 
 -- | Publish a new event.  The returned action emits the event to all
 --   subscribers.
-publish :: forall a s. Serializable a => Processor s (a -> Processor s ())
+publish :: forall a s. Statically Emittable a
+        => Processor s (a -> Processor s ())
 publish = publish' False
 
 -- | Publish a new event, requesting acknowledgement when it is
 --   successfully handled.
-publishAck :: forall a s. Serializable a
+publishAck :: forall a s. Statically Emittable a
            => (Ack a -> Processor s ())
            -- ^ Callback to call when acknowledgement is received.
            -> Processor s (a -> Processor s ())
@@ -167,7 +169,7 @@ publishAck handleAck = do
     publish' True
 
 -- | Subscribe to a new event.
-subscribe :: forall a s. Serializable a
+subscribe :: forall a s. Statically Emittable a
           => (NetworkMessage a -> Processor s ())
              -- ^ Callback to call on receiving a message of this type.
           -> Processor s ()

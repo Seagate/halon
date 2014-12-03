@@ -14,13 +14,17 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Network.CEP.Types,
-                       Network.CEP.Broker.Centralized,
-                       Network.CEP.Processor,
+  exposed-modules:     Network.CEP
+
+  other-modules:       Network.CEP.Instances
+                       Network.CEP.Types
+                       Network.CEP.Broker.Centralized
+                       Network.CEP.Processor
                        Network.CEP.Processor.Callback
-  other-modules:       Network.CEP.Processor.Types,
-                       Network.CEP.Processor.Internal,
+                       Network.CEP.Processor.Types
+                       Network.CEP.Processor.Internal
                        Network.CEP.Util
+
   other-extensions:    DeriveDataTypeable, ScopedTypeVariables,
                        TemplateHaskell, GeneralizedNewtypeDeriving,
                        FunctionalDependencies, MultiParamTypeClasses,
@@ -28,6 +32,7 @@ library
   build-depends:       base >=4.6 && <4.8,
                        network-transport==0.4.*,
                        distributed-process==0.5.*,
+                       distributed-static,
                        binary==0.7.*,
                        lens >=4.3 && < 4.5,
                        mtl,
@@ -47,5 +52,5 @@ executable simple
                        network-transport==0.4.*,
                        network-transport-tcp==0.4.*,
                        distributed-process==0.5.*,
-                       cep==0.1.*
+                       cep
   ghc-options:      -Wall -Werror
