@@ -15,3 +15,6 @@
 	path = vendor/network-transport-tcp
 	url = git@github.com:tweag/network-transport-tcp.git
 	branch = fix-zero-port-patch
+[submodule "cep"]
+	path = cep
+	url = git@github.com:tweag/cep.git
