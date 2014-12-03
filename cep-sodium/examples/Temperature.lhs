@@ -1,9 +1,9 @@
 -- |
 -- Copyright: (C) 2014 Tweag I/O Limited
--- 
+--
 -- A more complicated example, in which temperature signals from a
 -- variety of nodes are averaged.
--- 
+--
 
 Problem statement:
   A pool is formed of n nodes, which may leave or join the pool at any time.
@@ -12,6 +12,8 @@ Problem statement:
 
 > {-# LANGUAGE DeriveDataTypeable         #-}
 > {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+> {-# LANGUAGE MultiParamTypeClasses      #-}
+> {-# LANGUAGE TemplateHaskell            #-}
 
 > module Main where
 
@@ -22,7 +24,8 @@ which is a node at a known address through which all requests can be
 routed.  We will want access to various parts of Cloud Haskell in
 order to be able to spawn the broker.
 
-> import Network.CEP.Broker.Centralized (broker)
+> import Network.CEP (broker)
+> import Control.Distributed.Process.Closure (mkStatic, remotable)
 > import Control.Distributed.Process.Node
 >   (newLocalNode, forkProcess, initRemoteTable)
 
@@ -74,6 +77,23 @@ some other instances for convenience.
 
 > newtype AverageTemperature = AverageTemperature Temperature
 >   deriving (Typeable, Binary, Show, Eq, Ord, Num, Fractional)
+
+We will need to know that these types are *statically* serializable.
+Of course, all instances are morally static, but GHC doesn't know
+that, so we need to define a typeclass.
+
+> instance Emittable Temperature
+> instance Emittable AverageTemperature
+
+> sinstTemp :: Instance (Statically Emittable) Temperature
+> sinstAvg  :: Instance (Statically Emittable) AverageTemperature
+> (sinstTemp, sinstAvg) = (Instance, Instance)
+> remotable [ 'sinstTemp, 'sinstAvg ]
+
+> instance Statically Emittable Temperature where
+>   staticInstance = $(mkStatic 'sinstTemp)
+> instance Statically Emittable AverageTemperature where
+>   staticInstance = $(mkStatic 'sinstAvg)
 
 A temperature source — i.e. a node in our imaginary pool.  For the
 purpose of this example all our nodes will regularly broadcast a
@@ -218,4 +238,3 @@ And now begin the program's ‘main loop’, pumping the 'time' event we
 created earlier.
 
 >   timeLoop 0.5 . const $ getCurrentTime >>= sync . pushTime
-

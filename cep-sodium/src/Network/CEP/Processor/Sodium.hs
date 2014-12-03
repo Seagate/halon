@@ -1,27 +1,28 @@
 -- |
 -- Copyright: (C) 2014 Tweag I/O Limited
--- 
+--
 -- A Sodium interface to CEP.
--- 
+--
+
+{-# LANGUAGE FlexibleContexts #-}
 
 module Network.CEP.Processor.Sodium
   ( module Network.CEP.Types
   , Processor
-  , P.runProcessor
-  , P.Config (..)
+  , runProcessor
+  , Config (..)
   , liftReactive
-  , P.liftProcess
-  , P.getProcessorPid
+  , liftProcess
+  , getProcessorPid
   , publish
   , publishAck
   , subscribe
+  , listenProcessor
   , dieOn ) where
 
-
 import           Network.CEP.Types
-import           Network.CEP.Processor (Processor, actionRunner, onExit)
-import qualified Network.CEP.Processor as P
-import qualified Network.CEP.Processor.Callback as CB
+import           Network.CEP.Processor
+import qualified Network.CEP as Callback
 
 import           Control.Distributed.Process.Serializable (Serializable)
 import           FRP.Sodium
@@ -42,25 +43,31 @@ publish' ev h = do
 -- | Advertise with the broker as providing a source of an event of a
 -- certain type.  All firings of the provided event will be forwarded
 -- to interested subscribers.
-publish :: Serializable a => Event a -> Processor s ()
-publish ev = CB.publish >>= publish' ev
+publish :: Statically Emittable a => Event a -> Processor s ()
+publish ev = Callback.publish >>= publish' ev
 
 -- | Publish, but request an acknowledgement response.
-publishAck :: Serializable a => Event a -> Processor s (Event (Ack a))
+publishAck :: Statically Emittable a => Event a -> Processor s (Event (Ack a))
 publishAck ev = do
     (ackEv, pushAck) <- liftReactive newEvent
-    CB.publishAck (liftReactive . pushAck) >>= publish' ev
+    Callback.publishAck (liftReactive . pushAck) >>= publish' ev
     return ackEv
 
 -- | Request that the broker direct any providers of an event of a
 -- certain type to notify this node.  Occurrences of the event on
 -- those providers will then be forwarded to this node, causing the
 -- returned Sodium 'Event' to fire.
-subscribe :: Serializable a => Processor s (Event (NetworkMessage a))
+subscribe :: Statically Emittable a => Processor s (Event (NetworkMessage a))
 subscribe = do
     (ev, push) <- liftReactive newEvent
-    CB.subscribe $ liftReactive . push
+    Callback.subscribe $ liftReactive . push
     return ev
+
+-- | As 'listen', but executing a `Processor s Bool` action.
+listenProcessor :: Event a -> (a -> Processor s Bool) -> Processor s ()
+listenProcessor ev act = do
+  r <- actionRunner
+  (>>= onExit . liftIO) . liftReactive . listen ev $ r . act
 
 -- | Kill the process on the first occurrence of an event.
 dieOn :: Event a -> Processor s ()

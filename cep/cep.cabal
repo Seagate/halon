@@ -15,11 +15,11 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Network.CEP
+                       Network.CEP.Processor
+                       Network.CEP.Types
 
   other-modules:       Network.CEP.Instances
-                       Network.CEP.Types
                        Network.CEP.Broker.Centralized
-                       Network.CEP.Processor
                        Network.CEP.Processor.Callback
                        Network.CEP.Processor.Types
                        Network.CEP.Processor.Internal
