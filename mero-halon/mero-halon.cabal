@@ -21,6 +21,10 @@ Flag debug
   Description: Enable tracing output so errors are logged.
   Default: False
 
+Flag distributed-tests
+  Description: Enables distributed tests.
+  Default: False
+
 Flag rpc
   Description: Build with the RPC backend instead of TCP.
   Default: False
@@ -165,6 +169,8 @@ Test-Suite testdistributed
                    network-transport-tcp,
                    distributed-commands,
                    process
+  if !flag(distributed-tests)
+    Buildable:     False
 
 Test-Suite testepoch
   Type:             exitcode-stdio-1.0
