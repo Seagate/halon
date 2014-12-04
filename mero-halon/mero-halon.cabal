@@ -33,6 +33,10 @@ Flag mero
   Description: Build using the real rather than fake Mero.
   Default: False
 
+Flag eventqueue-tests
+  Description: Enables distributed tests.
+  Default: False
+
 Library
   Hs-Source-Dirs:  src/lib
   Default-Language: Haskell2010
@@ -229,6 +233,28 @@ Test-Suite testhastate
                      time >= 1.4
   else
     buildable: False
+
+Test-Suite testeventqueue
+  Type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs:  tests/Distributed
+  Main-Is:         EventQueue.hs
+  Ghc-Options:     -threaded
+  Build-Depends:   distributed-process,
+                   base,
+                   filepath,
+                   network-transport,
+                   network-transport-tcp,
+                   distributed-commands,
+                   distributed-process-test,
+                   process,
+                   transformers,
+                   halon,
+                   bytestring,
+                   network,
+                   mtl
+  if !flag(eventqueue-tests)
+    Buildable:     False
 
 -- XXX: Tests are not build under ghc >= 7.8 because currently
 -- they fails, these workarounds should be removed as soon as

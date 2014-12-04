@@ -11,11 +11,9 @@ import Test.Tasty.Ingredients.Basic (consoleTestReporter)
 import Test.Tasty.Ingredients.FileReporter (fileTestReporter)
 
 import Control.Applicative ((<$>))
-import Control.Monad (when)
 import Network.Transport (Transport)
 import System.Environment (lookupEnv, getArgs)
 import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
-import System.Process (callProcess, readProcess)
 
 #ifdef USE_RPC
 import Test.Framework (testSuccess)

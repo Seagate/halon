@@ -87,8 +87,7 @@ Library
                    unordered-containers,
                    network-transport,
                    options-schema >= 0.1.1.0,
-                   cep,
-                   cep-sodium
+                   sodium
   if flag(rpc)
     Build-Depends: rpclite,
                    network-transport,
