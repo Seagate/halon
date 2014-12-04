@@ -85,7 +85,9 @@ Library
                    replicated-log,
                    unordered-containers,
                    network-transport,
-                   options-schema >= 0.1.1.0
+                   options-schema >= 0.1.1.0,
+                   cep,
+                   cep-sodium
   if flag(rpc)
     Build-Depends: rpclite,
                    network-transport,

@@ -49,3 +49,9 @@ VENDOR_PACKAGES = clock \
                   tasty-files \
                   options-schema \
                   network-transport-tcp
+
+CEP_DIR = $(ROOT_DIR)/cep/
+
+CEP_PACKAGES := cep \
+               cep-sodium \
+               sodium-utils
