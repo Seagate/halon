@@ -1,9 +1,9 @@
 -- |
 -- Copyright: (C) 2014 Tweag I/O Limited
--- 
+--
 -- Types and utility functions for writing a CEP processor, regardless
 -- of interface.
--- 
+--
 
 module Network.CEP.Processor
        ( Processor ()
@@ -15,7 +15,8 @@ module Network.CEP.Processor
        , liftProcess
        , onExit
        , getProcessorPid
-       , say ) where
+       , say
+       , toProcess ) where
 
 import Network.CEP.Processor.Types
   ( Processor ()
@@ -29,5 +30,5 @@ import Network.CEP.Processor.Internal
   , actionRunner
   , onExit
   , getProcessorPid
-  , say )
-  
+  , say
+  , toProcess )

@@ -53,6 +53,20 @@ runProcessor trans (Config bs) m = do
     -- a node.  At least closeLocalNode means we don't leak file handles.
     Node.closeLocalNode node
 
+toProcess :: Config -> Processor s () -> Process ()
+toProcess (Config bs) p = do
+    c <- liftIO newChan
+    l <- spawnLocal $ runListener c
+    evalStateT action $ init_state c l
+
+  where
+    action = unProcessor $
+             p              >>
+             executeActions >>
+             executeCleanup
+
+    init_state c l = ProcessorState bs MultiMap.empty [] c l $ return ()
+
 newtype KillListener = KillListener ()
   deriving (Binary, Typeable)
 
