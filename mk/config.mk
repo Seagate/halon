@@ -46,6 +46,7 @@ endif
 
 VENDOR_PACKAGES = clock \
                   distributed-process \
+                  distributed-static \
                   tasty-files \
                   options-schema \
                   network-transport-tcp
