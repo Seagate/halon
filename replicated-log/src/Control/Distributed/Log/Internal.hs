@@ -256,6 +256,19 @@ $(makeAcidic ''Memory ['memoryInsert, 'memoryGet])
 unpackConfigProtocol :: Serializable a => Config -> (Config, Protocol NodeId (Value a))
 unpackConfigProtocol Config{..} = (Config{..}, consensusProtocol SerializableDict)
 
+data ReplicaState s a = ReplicaState
+  { stateProposerPid       :: ProcessId
+  , stateTimerPid          :: ProcessId
+  , stateAcidHandle        :: AcidState (Memory a)
+  , stateLeaseStart        :: TimeSpec
+  , stateAcceptors         :: [ProcessId]
+  , stateReplicas          :: [ProcessId]
+  , stateUnconfirmedDecree :: DecreeId
+  , stateCurrentDecree     :: DecreeId
+  , stateWatermark         :: DecreeId
+  , stateLogState          :: s
+  } deriving (Typeable)
+
 -- Note [Teleportation]
 -- ~~~~~~~~~~~~~~~~~~~~
 --
@@ -343,7 +356,18 @@ replica Dict
     leaseStart0' <- if [self] == take 1 replicas
                     then return leaseStart0
                     else liftIO $ getTime Monotonic
-    go ppid timerPid acid leaseStart0' leaseTimeout acceptors replicas d d w s
+    go ReplicaState
+         { stateProposerPid = ppid
+         , stateTimerPid = timerPid
+         , stateAcidHandle = acid
+         , stateLeaseStart = leaseStart0'
+         , stateAcceptors = acceptors
+         , stateReplicas = replicas
+         , stateUnconfirmedDecree = d
+         , stateCurrentDecree = d
+         , stateWatermark = w
+         , stateLogState = s
+         }
   where
     -- A timer process. When receiving @(pid, t, msg)@, the process waits for
     -- @t@ microsenconds and then it sends @msg@ to @pid@.
@@ -437,11 +461,10 @@ replica Dict
     --
     -- The @state@ is the state yielded by the last executed decree.
     --
-    go ppid timerPid acid leaseStart leasePeriod αs ρs d cd w s = do
+    go st@(ReplicaState ppid timerPid acid leaseStart αs ρs d cd w s) = do
         self <- getSelfPid
         log <- liftIO $ Acid.query acid MemoryGet
         let others = filter (/= self) ρs
-            go' = go ppid timerPid acid
 
             -- Returns the leader if the lease has not expired.
             getLeader :: IO (Maybe ProcessId)
@@ -450,8 +473,8 @@ replica Dict
               -- Adjust the period to account for some clock drift, so
               -- non-leaders think the lease is slightly longer.
               let adjustedPeriod = if self == head ρs
-                    then leasePeriod
-                    else leasePeriod * numerator   driftSafetyFactor
+                    then leaseTimeout
+                    else leaseTimeout * numerator   driftSafetyFactor
                                  `div` denominator driftSafetyFactor
               if not (null ρs) &&
                  now - leaseStart < TimeSpec 0 (adjustedPeriod * 1000)
@@ -483,7 +506,7 @@ replica Dict
                       send ppid (cd, leaseRequest)
                       return $ succ cd
                     _ ->  return cd
-                  go' leaseStart leasePeriod αs ρs d cd' w s
+                  go st{ stateCurrentDecree = cd' }
 
             , matchIf (\(Decree _ dᵢ _ :: Decree (Value a)) ->
                         -- Take the max of the watermark legislature and the
@@ -493,7 +516,7 @@ replica Dict
                        \_ -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
-                  go' leaseStart leasePeriod αs ρs d cd w s
+                  go st
 
               -- Commit the decree to the log.
             , matchIf (\(Decree locale dᵢ _) ->
@@ -507,7 +530,7 @@ replica Dict
                       Local κ | κ /= self -> send κ ()
                       _ -> return ()
                   send self $ Decree Stored dᵢ v
-                  go' leaseStart leasePeriod αs ρs d cd w s
+                  go st
 
               -- Execute the decree
             , matchIf (\(Decree locale dᵢ _) ->
@@ -518,7 +541,11 @@ replica Dict
                       let d'  = max d w'
                           cd' = max cd w'
                           w'  = succ w
-                      go' leaseStart leasePeriod αs ρs d' cd' w' s'
+                      go st{ stateUnconfirmedDecree = d'
+                           , stateCurrentDecree = cd'
+                           , stateWatermark = w'
+                           , stateLogState = s'
+                           }
                   Reconf requestStart αs' ρs'
                     -- Only execute reconfiguration decree if decree is from
                     -- current legislature. Otherwise we would be going back to
@@ -550,18 +577,24 @@ replica Dict
                           then do
                             send timerPid
                                  ( self
-                                 , max 0 (TimeSpec 0 ((leasePeriod -
+                                 , max 0 (TimeSpec 0 ((leaseTimeout -
                                                        leaseRenewTimeout) * 1000) -
                                            (now - requestStart))
                                  , LeaseRenewalTime
                                  )
                             return requestStart
                           else return now
-                      go' leaseStart' leasePeriod αs' ρs' d' cd' w' s
+                      go st{ stateLeaseStart = leaseStart'
+                           , stateAcceptors = αs'
+                           , stateReplicas = ρs'
+                           , stateUnconfirmedDecree = d'
+                           , stateCurrentDecree = cd'
+                           , stateWatermark = w'
+                           }
                     | otherwise -> do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
                       say $ "Not executing " ++ show dᵢ
-                      go' leaseStart leasePeriod αs ρs d cd w' s
+                      go st{ stateWatermark = w' }
 
               -- If we get here, it's because there's a gap in the decrees we
               -- have received so far. Compute the gaps and ask the other
@@ -583,7 +616,7 @@ replica Dict
                   -- This Decree could have been teleported. So, we shouldn't
                   -- trust dᵢ, unless @decreeLegislatureId dᵢ < maxBound@.
                   send self $ Decree locale dᵢ v
-                  go' leaseStart leasePeriod αs ρs d cd w s
+                  go st
 
               -- Lease requests.
             , matchIf (\r -> cd == w     -- The log is up-to-date and fully
@@ -599,7 +632,7 @@ replica Dict
                     _ -> do
                       send ppid (cd, request)
                       return $ succ cd
-                  go' leaseStart leasePeriod αs ρs d cd' w s
+                  go st{ stateCurrentDecree = cd' }
 
               -- Client requests.
             , matchIf (\_ -> cd == w) $  -- XXX temp fix to avoid proposing
@@ -631,7 +664,7 @@ replica Dict
                              _ -> do
                                send ppid (cd, request)
                                return (s, succ cd)
-                  go' leaseStart leasePeriod αs ρs d cd' w s'
+                  go st{ stateCurrentDecree = cd', stateLogState = s' }
 
               -- Message from the proposer process
             , match $ \(dᵢ,vᵢ,request@(Request κ (v :: Value a) _ rLease)) -> do
@@ -649,13 +682,13 @@ replica Dict
                       -- But repost only if it is not a lease request.
                       send self request
                   let d' = max d (succ dᵢ)
-                  go' leaseStart leasePeriod αs ρs d' cd w s
+                  go st{ stateUnconfirmedDecree = d' }
 
               -- If a query can be serviced, do it.
             , matchIf (\(Query _ n) -> Map.member n log) $ \(Query ρ n) -> do
                   -- See Note [Teleportation].
                   send ρ $ Decree Remote (DecreeId maxBound n) (log Map.! n)
-                  go' leaseStart leasePeriod αs ρs d cd w s
+                  go st
 
               -- Upon getting the max decree of another replica, compute the
               -- gaps and query for those.
@@ -665,11 +698,11 @@ replica Dict
                   queryMissing [ρ] $ Map.insert (decreeNumber dᵢ) undefined log
                   let d'  = d{decreeNumber = decreeNumber dᵢ}
                       cd' = max d' cd
-                  go' leaseStart leasePeriod αs ρs d' cd' w s
+                  go st{ stateUnconfirmedDecree = d', stateCurrentDecree = cd' }
 
               -- Ignore max decree if it is lower than the current decree.
             , matchIf (\_ -> otherwise) $ \(_ :: Max) -> do
-                  go' leaseStart leasePeriod αs ρs d cd w s
+                  go st
 
               -- A replica is trying to join the group.
             , match $ \m@(Helo π cpolicy) -> do
@@ -706,7 +739,7 @@ replica Dict
                       send ppid (intersect αs αs')
 
                       -- ... filtering out invalidated nodes for quorum.
-                      go' leaseStart leasePeriod (intersect αs αs') ρs d cd w s
+                      go st{ stateAcceptors = intersect αs αs' }
 
             -- Clock tick - time to advertize. Can be sent by anyone to any
             -- replica to provoke status info.
@@ -723,7 +756,7 @@ replica Dict
                       "\n\treplicas:           " ++ show ρs
                   forM_ others $ \ρ -> send ρ $
                     Max self d αs ρs
-                  go' leaseStart leasePeriod αs ρs d cd w s
+                  go st
 
             , match $ \(ProcessMonitorNotification _ π _) -> do
                   reconnect π
@@ -733,7 +766,7 @@ replica Dict
                   -- _ <- liftProcess $ monitor π
                   when (π `elem` replicas) $
                     send π $ Max self d αs ρs
-                  go' leaseStart leasePeriod αs ρs d cd w s
+                  go st
             ]
 
 batcher :: forall a. SerializableDict a
@@ -1013,14 +1046,14 @@ remoteHandle (Handle sdict1 sdict2 config log α) = do
 -- which provides a callback for initilizing the state and another
 -- callback for making transitions.
 --
--- The argument @leasePeriod@ indicates the length of the lease period
+-- The argument @leaseTimeout@ indicates the length of the lease period
 -- in microseconds. The lease period indicates how long the leader is guaranteed
 -- to have no competition from other replicas when serving requests
 -- as measured since the lease was requested.
 --
 -- The argument @leaseRenewalMargin@ indicates in microsencods with how much
 -- anticipation the leader must renew the lease before the lease period
--- is over. A precondition is that @2 * leaseRenewalMargin < leasePeriod@.
+-- is over. A precondition is that @2 * leaseRenewalMargin < leaseTimeout@.
 --
 -- The returned 'Handle' identifies the group.
 new :: Typeable a
