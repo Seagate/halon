@@ -23,8 +23,6 @@ module Network.CEP.Instances where
 import Data.Typeable (Typeable)
 import Control.Distributed.Process (Static)
 
-deriving instance Typeable Typeable
-
 data Some ctx f where
     Precisely :: forall ctx f a. ctx a => !(f a) -> Some ctx f
   deriving (Typeable)
