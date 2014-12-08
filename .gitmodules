@@ -1,6 +1,9 @@
 [submodule "vendor/distributed-process"]
 	path = vendor/distributed-process
 	url = https://github.com/tweag/distributed-process.git
+[submodule "vendor/distributed-static"]
+	path = vendor/distributed-static
+	url = git@github.com:haskell-distributed/distributed-static.git
 [submodule "vendor/tasty-files"]
 	path = vendor/tasty-files
 	url = git@github.com:tweag/tasty-files.git

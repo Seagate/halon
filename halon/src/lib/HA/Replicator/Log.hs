@@ -22,17 +22,8 @@ module HA.Replicator.Log
 
 import HA.Replicator ( RGroup(..), RStateView(..) )
 
-import Control.Distributed.Process.Consensus.BasicPaxos ( protocolClosure )
-import Control.Distributed.Log
-  ( new
-  , clone
-  , remoteHandle
-  , sdictValue
-  , addReplica
-  , reconfigure
-  , Handle
-  , updateHandle
-  )
+import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
+import qualified Control.Distributed.Log as Log
 import Control.Distributed.Log.Policy hiding ( __remoteTable )
 import Control.Distributed.State
   ( CommandPort
@@ -82,13 +73,13 @@ import Control.Exception ( evaluate )
 import Control.Monad ( when, forM )
 import Data.Binary ( decode, encode, Binary )
 import Data.ByteString.Lazy ( ByteString )
-import Data.Int ( Int64 )
+import Data.Ratio ( (%) )
 import Data.Typeable ( Typeable )
 
 -- | Implementation of RGroups on top of "Control.Distributed.State".
 data RLogGroup st where
   RLogGroup :: (Typeable q, Typeable st) => Static (SerializableDict st)
-            -> Handle (Command q)
+            -> Log.Handle (Command q)
             -> CommandPort q
             -> Static (RStateView q st)
             -> RLogGroup st
@@ -111,27 +102,46 @@ prjProc rv = return . prj rv
 updateProc :: RStateView st v -> (v -> v) -> st -> Process st
 updateProc rv f = liftIO . evaluate . update rv f
 
-stateLog :: SerializableDict st -> ByteString -> Log st
-stateLog SerializableDict = State.log . return . decode
-
 mstateTypeableDict :: SerializableDict st -> Dict (Typeable st)
 mstateTypeableDict SerializableDict = Dict
 
 removeNodes :: () -> (NodeId -> Bool) -> NominationPolicy
-removeNodes () np = filter (np . processNodeId)
-                    ***
-                    filter (np . processNodeId)
+removeNodes () np =
+    filter (np . processNodeId) *** filter (np . processNodeId)
 
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
 
-remotable [ 'composeSV, 'updateProc, 'idRStateView, 'prjProc, 'stateLog
-          , 'commandSerializableDict, 'rvDict, 'mstateTypeableDict
-          , 'removeNodes, 'filepath
+rgroupLog :: SerializableDict st -> ByteString -> Log st
+rgroupLog SerializableDict = State.log . return . decode
+
+storageDir :: FilePath
+storageDir = "acid-state"
+
+rgroupConfig :: Log.Config
+rgroupConfig = Log.Config
+    { consensusProtocol =
+          \dict -> BasicPaxos.protocol dict (filepath $ storageDir </> "acceptors")
+    , persistDirectory  = filepath $ storageDir </> "replicas"
+    , leaseTimeout      = 3000000
+    , leaseRenewTimeout = 1000000
+    , driftSafetyFactor = 11 % 10
+    }
+
+remotable [ 'composeSV
+          , 'updateProc
+          , 'idRStateView
+          , 'prjProc
+          , 'commandSerializableDict
+          , 'rvDict
+          , 'mstateTypeableDict
+          , 'removeNodes
+          , 'rgroupLog
+          , 'rgroupConfig
           ]
 
 fromPort :: Typeable st => Static (SerializableDict st)
-         -> Handle (Command st)
+         -> Log.Handle (Command st)
          -> CommandPort st
          -> Process (RLogGroup st)
 fromPort sdictState h port = do
@@ -142,7 +152,7 @@ remotableDecl [ [d|
 
  createRLogGroup :: ByteString -> SerializableDict st -> Process (RLogGroup st)
  createRLogGroup bs SerializableDict = case decode bs of
-   (sdictState,rHandle) -> do h <- clone rHandle
+   (sdictState,rHandle) -> do h <- Log.clone rHandle
                               newPort h >>= fromPort sdictState h
 
   |] ]
@@ -158,10 +168,6 @@ queryStatic :: (Typeable st,Typeable v) => Static (RStateView st v)
               -> Static (st -> Process v)
 queryStatic rv = staticApply $(mkStatic 'prjProc) rv
 
--- | All replicas use the same lease renewal margin.
-leaseRenewalMargin :: Int64
-leaseRenewalMargin = 1000000
-
 instance RGroup RLogGroup where
 
   newtype Replica RLogGroup = Replica ProcessId
@@ -172,19 +178,14 @@ instance RGroup RLogGroup where
       say "RLogGroup: newRGroup was passed an empty list of nodes."
       die "RLogGroup: newRGroup was passed an empty list of nodes."
     let cmSDictState = staticApply $(mkStatic 'commandSerializableDict)
-                     $ staticApply $(mkStatic 'mstateTypeableDict)  sdictState
-        storageDir = "acid-state"
-    h <- new
+                     $ staticApply $(mkStatic 'mstateTypeableDict) sdictState
+    h <- Log.new
          $(mkStatic 'commandEqDict)
          cmSDictState
-         ($(mkClosure 'filepath) $ storageDir </> "replica")
-         (protocolClosure (sdictValue cmSDictState)
-              ($(mkClosure 'filepath) $ storageDir </> "acceptor"))
-         (closure ($(mkStatic 'stateLog) `staticApply` sdictState) $ encode st)
-         3000000
-         leaseRenewalMargin
+         (staticClosure $(mkStatic 'rgroupConfig))
+         (closure ($(mkStatic 'rgroupLog) `staticApply` sdictState) $ encode st)
          nodes
-    rHandle <- remoteHandle h
+    rHandle <- Log.remoteHandle h
     return $ (closure $(mkStatic 'createRLogGroup)
                                  $ encode (sdictState,rHandle))
                         `closureApply` staticClosure sdictState
@@ -192,12 +193,11 @@ instance RGroup RLogGroup where
   stopRGroup _ = return ()
 
   setRGroupMembers (RLogGroup _ h _ _) ns inGroup = do
-    reconfigure h $ $(mkClosure 'removeNodes) () `closureApply` inGroup
+    Log.reconfigure h $ $(mkClosure 'removeNodes) () `closureApply` inGroup
     forM ns $ \nid ->
-      fmap Replica $ addReplica h $(mkStaticClosure 'orpn) nid
-                                leaseRenewalMargin
+      fmap Replica $ Log.addReplica h $(mkStaticClosure 'orpn) nid
 
-  updateRGroup (RLogGroup _ h _ _) (Replica ρ) = updateHandle h ρ
+  updateRGroup (RLogGroup _ h _ _) (Replica ρ) = Log.updateHandle h ρ
 
   updateStateWith (RLogGroup _ _ port rp) cUpd =
     State.update port $ updateClosure rp cUpd
