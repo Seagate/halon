@@ -60,18 +60,14 @@ import Control.Distributed.Process.Closure (remotable, mkStatic)
 import Control.Distributed.Process.Serializable (Serializable)
 import Control.Distributed.Static (staticApply)
 import Control.Lens
-import Data.Binary (Binary, encode)
+import Data.Binary (Binary)
 
-import Data.Function (on)
 import Data.Typeable (Typeable, Proxy)
 import GHC.Generics (Generic)
 
 type Broker = ProcessId
 
 deriving instance Typeable Serializable
-
-instance Typeable a => Eq  (Static a) where (==)    = on (==)    encode
-instance Typeable a => Ord (Static a) where compare = on compare encode
 
 someETInstance :: forall a. Instance (Statically Emittable) a -> Some' (Instance (Statically Emittable))
 someETInstance Instance = Precisely (Instance :: Instance (Statically Emittable) a)
