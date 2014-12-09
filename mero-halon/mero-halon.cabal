@@ -198,7 +198,7 @@ Test-Suite testhastate
   Hs-Source-Dirs:  tests
   Main-Is:         testhastate.hs
   Ghc-Options:     -threaded -Werror -Wall
-  if flag(rpc) && flag(mero)
+  if flag(mero)
     Build-Depends:   halon == 0.1,
                      confc,
                      mero-halon,
