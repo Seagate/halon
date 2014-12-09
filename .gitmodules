@@ -1,6 +1,9 @@
 [submodule "vendor/distributed-process"]
 	path = vendor/distributed-process
 	url = https://github.com/tweag/distributed-process.git
+[submodule "vendor/distributed-static"]
+	path = vendor/distributed-static
+	url = git@github.com:haskell-distributed/distributed-static.git
 [submodule "vendor/tasty-files"]
 	path = vendor/tasty-files
 	url = git@github.com:tweag/tasty-files.git
@@ -15,6 +18,6 @@
 	path = vendor/network-transport-tcp
 	url = git@github.com:tweag/network-transport-tcp.git
 	branch = fix-zero-port-patch
-[submodule "vendor/distributed-static"]
-	path = vendor/distributed-static
-	url = git@github.com:haskell-distributed/distributed-static.git
+[submodule "cep"]
+	path = cep
+	url = git@github.com:tweag/cep.git

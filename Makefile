@@ -154,6 +154,7 @@ cabal.sandbox.config: mk/config.mk
 	@echo "Initializing sandbox"
 	cabal sandbox init
 	cabal sandbox add-source $(addprefix $(VENDOR_DIR),$(VENDOR_PACKAGES)) \
+                                 $(addprefix $(CEP_DIR),$(CEP_PACKAGES)) \
 	                         $(addprefix $(PACKAGE_DIR),$(PACKAGES))
 # Using --reinstall to override packages from GHC global db.
 	cabal install --reorder-goals --reinstall $(VENDOR_PACKAGES)
