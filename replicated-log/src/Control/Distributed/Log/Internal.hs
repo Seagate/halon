@@ -256,16 +256,34 @@ $(makeAcidic ''Memory ['memoryInsert, 'memoryGet])
 unpackConfigProtocol :: Serializable a => Config -> (Config, Protocol NodeId (Value a))
 unpackConfigProtocol Config{..} = (Config{..}, consensusProtocol SerializableDict)
 
+-- | The internal state of a replica
 data ReplicaState s a = ReplicaState
-  { stateProposerPid       :: ProcessId
+  { -- | The pid of the proposer process
+    stateProposerPid       :: ProcessId
+    -- | The pid of the timer process
   , stateTimerPid          :: ProcessId
+    -- | Handle to persist the log
   , stateAcidHandle        :: AcidState (Memory a)
+    -- | The time at which the last lease started
   , stateLeaseStart        :: TimeSpec
+    -- | The list of pids of the consensus acceptors
   , stateAcceptors         :: [ProcessId]
+    -- | The list of pids of the replicas
   , stateReplicas          :: [ProcessId]
+    -- | This is the decree identifier of the next proposal to confirm. All
+    -- previous decrees are known to have passed consensus.
   , stateUnconfirmedDecree :: DecreeId
+    -- | This is the decree identifier of the next proposal to do.
+    --
+    -- For now, it must never be an unreachable decree (i.e. a decree beyond the
+    -- reconfiguration decree that changes to a new legislature) or any
+    -- proposal using the decree identifier will never be acknowledged or
+    -- executed. Invariant: @stateUnconfirmedDecree <= stateCurrentDecree@
+    --
   , stateCurrentDecree     :: DecreeId
+    -- | The identifier of the next decree to execute
   , stateWatermark         :: DecreeId
+    -- The state yielded by the last executed decree
   , stateLogState          :: s
   } deriving (Typeable)
 
@@ -421,46 +439,6 @@ replica Dict
         , match $ proposer ρ s
         ]
 
-    -- > go pid_of_proposer
-    -- >    pid_of_timer
-    -- >    acid_handle
-    -- >    leaseStart
-    -- >    leaseTimeout
-    -- >    acceptors
-    -- >    replicas
-    -- >    current_unconfirmed_decree
-    -- >    current_decree
-    -- >    watermark
-    -- >    state
-    --
-    -- The @acid_handle@ is used to persist the log.
-    --
-    -- The @leaseStart@ indicates the time at which the last lease started.
-    --
-    -- The @leaseTimeout@ is the length of time for which to request leases.
-    -- The @leaseRenewTimeout@ parameter of @replica@ indicates with how much
-    -- anticipation the leader must renew the lease before expiration of the
-    -- current lease.
-    --
-    -- The @acceptors@ are the list of pids of the consensus acceptors.
-    --
-    -- The @replicas@ are the list of pids of the replicas in the group,
-    -- including the self pid.
-    --
-    -- The @current_unconfirmed_decree@ is the decree identifier of the next
-    -- proposal to confirm. All previous decrees are known to have passed
-    -- consensus.
-    --
-    -- The @current_decree@ is the decree identifier of the next proposal to do.
-    -- For now, it must never be an unreachable decree (i.e. a decree beyond the
-    -- reconfiguration decree that changes to a new legislature) or any
-    -- proposal using the decree identifier will never be acknowledged or
-    -- executed. Invariant: @current_unconfirmed_decree <= current_decree@
-    --
-    -- The @watermark@ is the identifier of the next decree to execute.
-    --
-    -- The @state@ is the state yielded by the last executed decree.
-    --
     go st@(ReplicaState ppid timerPid acid leaseStart αs ρs d cd w s) = do
         self <- getSelfPid
         log <- liftIO $ Acid.query acid MemoryGet
