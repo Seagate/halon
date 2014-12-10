@@ -3,3 +3,4 @@ cabal.sandbox.config
 dist/
 test_output/
 tests.eventlog
+mk/local.mk
