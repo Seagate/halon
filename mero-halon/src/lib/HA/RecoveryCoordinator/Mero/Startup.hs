@@ -32,7 +32,6 @@ import Control.Distributed.Process.Closure
     ( remotable, remotableDecl, mkStatic, mkClosure, functionTDict )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Data.Maybe ( catMaybes, isJust )
-import qualified Mero.Genders
 
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
 import Data.List ( partition )

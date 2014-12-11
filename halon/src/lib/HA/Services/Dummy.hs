@@ -20,7 +20,7 @@ module HA.Services.Dummy
 import HA.Service
 import HA.NodeAgent
 import HA.ResourceGraph
-import HA.Resources (Node)
+import HA.Resources (Cluster, Node)
 
 import Control.Applicative ((<$>))
 import Control.Distributed.Process
@@ -63,44 +63,77 @@ dSerializableDict = SerializableDict
 
 --TODO Can we auto-gen this whole section?
 resourceDictServiceDummy :: Dict (Resource (Service DummyConf))
+resourceDictServiceProcessDummy :: Dict (Resource (ServiceProcess DummyConf))
 resourceDictConfigItemDummy :: Dict (Resource DummyConf)
 resourceDictServiceDummy = Dict
+resourceDictServiceProcessDummy = Dict
 resourceDictConfigItemDummy = Dict
 
-relationDictHasNodeServiceDummy :: Dict (Relation Runs Node (Service DummyConf))
-relationDictWantsServiceDummyConfigItemDummy ::
-  Dict (Relation WantsConf (Service DummyConf) DummyConf)
-relationDictHasServiceDummyConfigItemDummy ::
-  Dict (Relation HasConf (Service DummyConf) DummyConf)
-relationDictHasNodeServiceDummy = Dict
-relationDictWantsServiceDummyConfigItemDummy = Dict
-relationDictHasServiceDummyConfigItemDummy = Dict
+relationDictSupportsClusterServiceDummy :: Dict (
+    Relation Supports Cluster (Service DummyConf)
+  )
+relationDictHasNodeServiceProcessDummy :: Dict (
+    Relation Runs Node (ServiceProcess DummyConf)
+  )
+relationDictWantsServiceProcessDummyConfigItemDummy :: Dict (
+    Relation WantsConf (ServiceProcess DummyConf) DummyConf
+  )
+relationDictHasServiceProcessDummyConfigItemDummy :: Dict (
+    Relation HasConf (ServiceProcess DummyConf) DummyConf
+  )
+relationDictInstanceOfServiceDummyServiceProcessDummy :: Dict (
+    Relation InstanceOf (Service DummyConf) (ServiceProcess DummyConf)
+  )
+relationDictOwnsServiceProcessDummyServiceName :: Dict (
+    Relation Owns (ServiceProcess DummyConf) ServiceName
+  )
+relationDictSupportsClusterServiceDummy = Dict
+relationDictHasNodeServiceProcessDummy = Dict
+relationDictWantsServiceProcessDummyConfigItemDummy = Dict
+relationDictHasServiceProcessDummyConfigItemDummy = Dict
+relationDictInstanceOfServiceDummyServiceProcessDummy = Dict
+relationDictOwnsServiceProcessDummyServiceName = Dict
 
 remotable
   [ 'dConfigDict
   , 'dSerializableDict
   , 'resourceDictServiceDummy
+  , 'resourceDictServiceProcessDummy
   , 'resourceDictConfigItemDummy
-  , 'relationDictHasNodeServiceDummy
-  , 'relationDictHasServiceDummyConfigItemDummy
-  , 'relationDictWantsServiceDummyConfigItemDummy
+  , 'relationDictSupportsClusterServiceDummy
+  , 'relationDictHasNodeServiceProcessDummy
+  , 'relationDictWantsServiceProcessDummyConfigItemDummy
+  , 'relationDictHasServiceProcessDummyConfigItemDummy
+  , 'relationDictInstanceOfServiceDummyServiceProcessDummy
+  , 'relationDictOwnsServiceProcessDummyServiceName
   ]
 
 instance Resource (Service DummyConf) where
   resourceDict = $(mkStatic 'resourceDictServiceDummy)
 
+instance Resource (ServiceProcess DummyConf) where
+  resourceDict = $(mkStatic 'resourceDictServiceProcessDummy)
+
 instance Resource DummyConf where
   resourceDict = $(mkStatic 'resourceDictConfigItemDummy)
 
-instance Relation Runs Node (Service DummyConf) where
-  relationDict = $(mkStatic 'relationDictHasNodeServiceDummy)
+instance Relation Supports Cluster (Service DummyConf) where
+  relationDict = $(mkStatic 'relationDictSupportsClusterServiceDummy)
 
-instance Relation HasConf (Service DummyConf) DummyConf where
-  relationDict = $(mkStatic 'relationDictHasServiceDummyConfigItemDummy)
+instance Relation Runs Node (ServiceProcess DummyConf) where
+  relationDict = $(mkStatic 'relationDictHasNodeServiceProcessDummy)
 
-instance Relation WantsConf (Service DummyConf) DummyConf where
-  relationDict = $(mkStatic 'relationDictWantsServiceDummyConfigItemDummy)
+instance Relation HasConf (ServiceProcess DummyConf) DummyConf where
+  relationDict = $(mkStatic 'relationDictHasServiceProcessDummyConfigItemDummy)
 
+instance Relation WantsConf (ServiceProcess DummyConf) DummyConf where
+  relationDict = $(mkStatic 'relationDictWantsServiceProcessDummyConfigItemDummy)
+
+instance Relation InstanceOf (Service DummyConf) (ServiceProcess DummyConf) where
+  relationDict = $(mkStatic 'relationDictInstanceOfServiceDummyServiceProcessDummy)
+
+instance Relation Owns (ServiceProcess DummyConf) ServiceName where
+  relationDict = $(mkStatic 'relationDictOwnsServiceProcessDummyServiceName)
 --------------------------------------------------------------------------------
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------

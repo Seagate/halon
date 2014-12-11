@@ -111,12 +111,12 @@ mkStandardServiceCmd svc = let
                     <$> tsNodes
                     <*> mkParser schema)
                   "Reconfigure the service on a node.")
-  in O.command (serviceName svc) (O.withDesc
+  in O.command (snString . serviceName $ svc) (O.withDesc
       ( O.subparser
       $  startCmd
       <> reconfCmd
       )
-      ("Control the " ++ (serviceName svc) ++ " service."))
+      ("Control the " ++ (snString . serviceName $ svc) ++ " service."))
 
 -- | Parse the options for the "service" command.
 parseService :: O.Parser ServiceCmdOptions

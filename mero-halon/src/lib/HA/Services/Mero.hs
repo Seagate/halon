@@ -13,6 +13,7 @@ import HA.NodeAgent
 import HA.EventQueue.Producer (promulgate)
 import HA.Resources
 import HA.Service
+import HA.Services.Empty
 import qualified Mero.Notification
 import Control.Distributed.Process.Closure
   (
@@ -92,7 +93,7 @@ remotableDecl [ [d|
             exists <- liftIO $ doesFileExist dummyFile
             when exists $ do
               liftIO $ removeFile dummyFile
-              mbpid <- whereis (serviceName nodeAgent)
+              mbpid <- whereis (snString . serviceName $ nodeAgent)
               case mbpid of
                 Nothing -> error "NodeAgent is not registered."
                 Just na -> promulgate (StripingError (Node (processNodeId na)))
@@ -113,7 +114,7 @@ remotableDecl [ [d|
 
         go epoch = do
             let shutdownAndTellThem = do
-                  mbpid <- whereis (serviceName nodeAgent)
+                  mbpid <- whereis (snString . serviceName $ nodeAgent)
                   case mbpid of
                       Nothing -> error "NodeAgent is not registered."
                       Just na -> expire . encodeP $ ServiceFailed (Node (processNodeId na)) m0d -- XXX

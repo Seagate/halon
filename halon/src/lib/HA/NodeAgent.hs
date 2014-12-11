@@ -32,7 +32,7 @@ import HA.NodeAgent.Messages
 import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types (HAEvent(..), EventId(..))
 import HA.EventQueue.Producer (expiate, nodeAgentLabel)
-import HA.Resources(Node(..))
+import HA.Resources(Cluster, Node(..))
 import HA.ResourceGraph hiding (null)
 import HA.Service
 import Control.SpineSeq (spineSeq)
@@ -101,44 +101,77 @@ naSerializableDict = SerializableDict
 
 --TODO Can we auto-gen this whole section?
 resourceDictServiceNA :: Dict (Resource (Service NodeAgentConf))
+resourceDictServiceProcessNA :: Dict (Resource (ServiceProcess NodeAgentConf))
 resourceDictConfigItemNA :: Dict (Resource NodeAgentConf)
 resourceDictServiceNA = Dict
+resourceDictServiceProcessNA = Dict
 resourceDictConfigItemNA = Dict
 
-relationDictHasNodeServiceNA :: Dict (Relation Runs Node (Service NodeAgentConf))
-relationDictWantsServiceNAConfigItemNA ::
-  Dict (Relation WantsConf (Service NodeAgentConf) NodeAgentConf)
-relationDictHasServiceNAConfigItemNA ::
-  Dict (Relation HasConf (Service NodeAgentConf) NodeAgentConf)
-relationDictHasNodeServiceNA = Dict
-relationDictWantsServiceNAConfigItemNA = Dict
-relationDictHasServiceNAConfigItemNA = Dict
+relationDictSupportsClusterServiceNA :: Dict (
+    Relation Supports Cluster (Service NodeAgentConf)
+  )
+relationDictHasNodeServiceProcessNA :: Dict (
+    Relation Runs Node (ServiceProcess NodeAgentConf)
+  )
+relationDictWantsServiceProcessNAConfigItemNA :: Dict (
+    Relation WantsConf (ServiceProcess NodeAgentConf) NodeAgentConf
+  )
+relationDictHasServiceProcessNAConfigItemNA :: Dict (
+    Relation HasConf (ServiceProcess NodeAgentConf) NodeAgentConf
+  )
+relationDictInstanceOfServiceNAServiceProcessNA :: Dict (
+    Relation InstanceOf (Service NodeAgentConf) (ServiceProcess NodeAgentConf)
+  )
+relationDictOwnsServiceProcessNAServiceName :: Dict (
+    Relation Owns (ServiceProcess NodeAgentConf) ServiceName
+  )
+relationDictSupportsClusterServiceNA = Dict
+relationDictHasNodeServiceProcessNA = Dict
+relationDictWantsServiceProcessNAConfigItemNA = Dict
+relationDictHasServiceProcessNAConfigItemNA = Dict
+relationDictInstanceOfServiceNAServiceProcessNA = Dict
+relationDictOwnsServiceProcessNAServiceName = Dict
 
 remotable
   [ 'naConfigDict
   , 'naSerializableDict
   , 'resourceDictServiceNA
+  , 'resourceDictServiceProcessNA
   , 'resourceDictConfigItemNA
-  , 'relationDictHasNodeServiceNA
-  , 'relationDictHasServiceNAConfigItemNA
-  , 'relationDictWantsServiceNAConfigItemNA
+  , 'relationDictSupportsClusterServiceNA
+  , 'relationDictHasNodeServiceProcessNA
+  , 'relationDictWantsServiceProcessNAConfigItemNA
+  , 'relationDictHasServiceProcessNAConfigItemNA
+  , 'relationDictInstanceOfServiceNAServiceProcessNA
+  , 'relationDictOwnsServiceProcessNAServiceName
   ]
 
 instance Resource (Service NodeAgentConf) where
   resourceDict = $(mkStatic 'resourceDictServiceNA)
 
+instance Resource (ServiceProcess NodeAgentConf) where
+  resourceDict = $(mkStatic 'resourceDictServiceProcessNA)
+
 instance Resource NodeAgentConf where
   resourceDict = $(mkStatic 'resourceDictConfigItemNA)
 
-instance Relation Runs Node (Service NodeAgentConf) where
-  relationDict = $(mkStatic 'relationDictHasNodeServiceNA)
+instance Relation Supports Cluster (Service NodeAgentConf) where
+  relationDict = $(mkStatic 'relationDictSupportsClusterServiceNA)
 
-instance Relation HasConf (Service NodeAgentConf) NodeAgentConf where
-  relationDict = $(mkStatic 'relationDictHasServiceNAConfigItemNA)
+instance Relation Runs Node (ServiceProcess NodeAgentConf) where
+  relationDict = $(mkStatic 'relationDictHasNodeServiceProcessNA)
 
-instance Relation WantsConf (Service NodeAgentConf) NodeAgentConf where
-  relationDict = $(mkStatic 'relationDictWantsServiceNAConfigItemNA)
+instance Relation HasConf (ServiceProcess NodeAgentConf) NodeAgentConf where
+  relationDict = $(mkStatic 'relationDictHasServiceProcessNAConfigItemNA)
 
+instance Relation WantsConf (ServiceProcess NodeAgentConf) NodeAgentConf where
+  relationDict = $(mkStatic 'relationDictWantsServiceProcessNAConfigItemNA)
+
+instance Relation InstanceOf (Service NodeAgentConf) (ServiceProcess NodeAgentConf) where
+  relationDict = $(mkStatic 'relationDictInstanceOfServiceNAServiceProcessNA)
+
+instance Relation Owns (ServiceProcess NodeAgentConf) ServiceName where
+  relationDict = $(mkStatic 'relationDictOwnsServiceProcessNAServiceName)
 --------------------------------------------------------------------------------
 -- Other stuff                                                                --
 --------------------------------------------------------------------------------
@@ -228,7 +261,7 @@ remotableDecl [ [d|
           =<< try (register name self)
       where
         generalExpiate desc = do
-          mbpid <- whereis (serviceName nodeAgent)
+          mbpid <- whereis (snString . serviceName $ nodeAgent)
           case mbpid of
              Nothing -> error "NodeAgent is not registered."
              Just na -> expiate $ ServiceUncaughtException (Node (processNodeId na)) name desc
@@ -262,7 +295,7 @@ remotableDecl [ [d|
             -> Closure (a -> Process ())
             -> Service a
     service SerializableDict confDict dict name p =
-        Service name (
+        Service (ServiceName name) (
             $(mkStatic 'serviceWrapper) `staticApply`
             dict `closureApplyStatic`
             closure (staticDecode sdict) (encode (name,p)) `closureApply`
