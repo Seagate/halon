@@ -256,19 +256,19 @@ $(makeAcidic ''Memory ['memoryInsert, 'memoryGet])
 unpackConfigProtocol :: Serializable a => Config -> (Config, Protocol NodeId (Value a))
 unpackConfigProtocol Config{..} = (Config{..}, consensusProtocol SerializableDict)
 
--- | The internal state of a replica
+-- | The internal state of a replica.
 data ReplicaState s a = ReplicaState
-  { -- | The pid of the proposer process
+  { -- | The pid of the proposer process.
     stateProposerPid       :: ProcessId
-    -- | The pid of the timer process
+    -- | The pid of the timer process.
   , stateTimerPid          :: ProcessId
-    -- | Handle to persist the log
+    -- | Handle to persist the log.
   , stateAcidHandle        :: AcidState (Memory a)
-    -- | The time at which the last lease started
+    -- | The time at which the last lease started.
   , stateLeaseStart        :: TimeSpec
-    -- | The list of pids of the consensus acceptors
+    -- | The list of pids of the consensus acceptors.
   , stateAcceptors         :: [ProcessId]
-    -- | The list of pids of the replicas
+    -- | The list of pids of the replicas.
   , stateReplicas          :: [ProcessId]
     -- | This is the decree identifier of the next proposal to confirm. All
     -- previous decrees are known to have passed consensus.
@@ -279,11 +279,10 @@ data ReplicaState s a = ReplicaState
     -- reconfiguration decree that changes to a new legislature) or any
     -- proposal using the decree identifier will never be acknowledged or
     -- executed. Invariant: @stateUnconfirmedDecree <= stateCurrentDecree@
-    --
   , stateCurrentDecree     :: DecreeId
-    -- | The identifier of the next decree to execute
+    -- | The identifier of the next decree to execute.
   , stateWatermark         :: DecreeId
-    -- The state yielded by the last executed decree
+    -- | The state yielded by the last executed decree.
   , stateLogState          :: s
   } deriving (Typeable)
 
