@@ -1,0 +1,32 @@
+To run distributed tests in docker:
+
+  install docker
+
+  configure docker to listen on a TCP port, but make sure it is
+  one that is not available to the internet (or untrusted networks).
+
+  One of these:
+  * On ubuntu, edit /etc/default/docker to have a DOCKER_OPTS
+    including something like: -H 172.17.42.1:5555 where that IP address
+    is the address on your docker0 interface on the host.
+
+  * On a systemd system, edit ExecStart in /usr/lib/systemd/system/docker.service
+  eg ExecStart=/usr/bin/docker -d -H 172.17.42.1:5555
+
+  build the image for running remote tests:
+
+  cd docker/
+  docker --host=172.17.42.1:5555  build --tag=tweagremote tweagremote
+
+  you will need to make your ssh use docker/tweagremote/id_rsa, for
+  example by adding it to your ssh agent. if you don't do this,
+  you will get messages like: "dev@1.2.3.4 password:" when
+  running the tests below.
+
+  now run the distributed-commands tests:
+
+  export DC_PROVIDER=docker
+  export DOCKER_HOST=http://172.17.42.1:5555
+
+  cabal install distributed-commands --reinstall --enable-tests --run-tests --flag="distributed-tests" --flag="docker-tests"
+ 

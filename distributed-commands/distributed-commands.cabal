@@ -18,15 +18,27 @@ Flag distributed-tests
   Description: Enables distributed tests.
   Default: False
 
+Flag digital-ocean-tests
+  Description: Enables tests on Digital Ocean.
+  Default: False
+
+Flag docker-tests
+  Description: Enables tests on docker.
+  Default: False
+
+
 Library
   Hs-Source-Dirs:  src
   Default-Language: Haskell2010
   Ghc-Options:     -O -Wall
   Exposed-Modules: Control.Distributed.Commands.DigitalOcean
+                   Control.Distributed.Commands.Docker
                    Control.Distributed.Commands
                    Control.Distributed.Commands.Management
                    Control.Distributed.Commands.Process
+                   Control.Distributed.Commands.Providers
                    Control.Distributed.Commands.Providers.DigitalOcean
+                   Control.Distributed.Commands.Providers.Docker
   Build-Depends:   aeson >= 0.8.0.1
                   ,aeson-pretty >= 0.7.1
                   ,base
@@ -48,11 +60,24 @@ Test-Suite digitalocean
   Hs-Source-Dirs:   tests
   Main-Is:          digitalocean.hs
   Ghc-Options:     -threaded -Wall
-  if flag(distributed-tests)
+  if flag(digital-ocean-tests)
     Build-Depends:   distributed-commands
                     ,base
   else
     Buildable:      False
+
+Test-Suite docker
+  Type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs:   tests
+  Main-Is:          docker.hs
+  Ghc-Options:     -threaded -Wall
+  if flag(docker-tests)
+    Build-Depends:   distributed-commands
+                    ,base
+  else
+    Buildable:      False
+
 
 Test-Suite test-distributed-process
   Type:             exitcode-stdio-1.0
