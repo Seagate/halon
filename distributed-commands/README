@@ -1,0 +1,23 @@
+distributed-commands tests are not built/run by default in non-rpc mode.
+
+Environmental setup for tests:
+* you need digital ocean credentials set in the environment
+  get these from Google Drive in a file called "Access Tokens"
+        export DO_CLIENT_ID=...
+        export DO_API_KEY=...
+* you need ssh key that is known to the droplet test snapshot - ask
+   someone like @facundo to give you such an ssh key
+
+To build and run the tests:
+in halon/ root directory, after building halon ok, do this:
+
+ cabal install --enable-tests --run-tests --flag="distributed-tests" --reinstall distributed-command
+
+This command will build distributed-commands and run the tests
+against Digital Ocean.
+
+If the tests fail or you kill them part way, you might find some
+processes left behind without a parent; these processes
+(for example, scp) might cause subsequent attempts to run the
+tests to fail by occupying port localhost:4000. Kill them manually.
+
