@@ -50,7 +50,7 @@ main = do
 
     buildPath <- getBuildPath
 
-    [ip] <- fmap (take 1 . lines) $ readProcess "hostname" ["-I"] ""
+    [ip] <- fmap (take 1 . lines) $ readProcess "hostname" ["-i"] ""
     Right nt <- createTransport ip "4000" defaultTCPParameters
     n0 <- newLocalNode nt (__remoteTable initRemoteTable)
 
@@ -103,4 +103,3 @@ main = do
                      ++ " --helloWorld \"Foobye, World\""
                        )
       expectLog [nid1] (isInfixOf "Foobye, World")
-

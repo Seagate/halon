@@ -47,7 +47,7 @@ main = do
 
     buildPath <- getBuildPath
 
-    [ip] <- fmap (take 1 . lines) $ readProcess "hostname" ["-I"] ""
+    [ip] <- fmap (take 1 . lines) $ readProcess "hostname" ["-i"] ""
     Right nt <- createTransport ip "4000" defaultTCPParameters
     n0 <- newLocalNode nt (__remoteTable initRemoteTable)
 
@@ -85,4 +85,3 @@ main = do
       systemThere [m0] ("./halonctl -a " ++ m1 ++ ":9000" ++
                         " service dummy start -t " ++ m0 ++ ":9000")
       expectLog [nid1] (isInfixOf "Starting service dummy")
-
