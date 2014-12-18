@@ -28,6 +28,7 @@ import HA.NodeAgent
 import HA.Service
   ( ServiceFailed(..)
   , encodeP
+  , snString
   )
 import qualified HA.Services.Dummy as Services ( dummy )
 import qualified HA.Services.Mero as Mero ( m0d )
@@ -80,15 +81,16 @@ runRC (eq, na, args) rGroup = do
                     recoveryCoordinator eq mm args)
    send eq rc
    forM_ [mm, rc] $ \them -> send them ()
+   let node = Node $ processNodeId na
    -- XXX remove this threadDelay. Needed right now because service type m0d is
    -- currently hardcoded in RC, when we'd like it to start a dummy service
    -- instead when in test mode.
    liftIO $ threadDelay 1000000
    -- Encode the message the way 'expiate' does.
    send rc $ HAEvent (EventId na 0) (I.messageToPayload $ I.createMessage $
-       encodeP $ ServiceFailed (Node na) Services.dummy) []
+       encodeP $ ServiceFailed node Services.dummy) []
    send rc $ HAEvent (EventId na 1) (I.messageToPayload $ I.createMessage $
-       Mero.StripingError (Node na)) []
+       Mero.StripingError node) []
    -- XXX remove this threadDelay. It's the least hassle solution for now, until
    -- we properly add event provenance.
    liftIO $ threadDelay 1000000
@@ -107,8 +109,8 @@ mockNodeAgent done = do
     say "Got start service."
 
     -- Fake being the m0d service from here onwards.
-    unregister (serviceName Mero.m0d)
-    register (serviceName Mero.m0d) self
+    unregister (snString . serviceName $ Mero.m0d)
+    register (snString . serviceName $ Mero.m0d) self
 
     "Starting service dummy" :: String <- expect
     say "Got start service again following failure."
