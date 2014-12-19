@@ -91,8 +91,8 @@ spawnNodeIO h cmd = do
     getLine_cmd <- maybe C.systemThere C.systemThereAsUser muser h cmd
     mnode <- getLine_cmd
     case mnode of
-      Nothing -> error $ "The command \"" ++ cmd ++ "\" did not print a NodeId."
-      Just n  -> case reads n of
+      Left _ -> error $ "The command \"" ++ cmd ++ "\" did not print a NodeId."
+      Right n  -> case reads n of
         (bs,"") : _ -> return $ decode (bs :: ByteString)
         _           -> error $ "Couldn't parse node id: " ++ n
   where

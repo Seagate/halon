@@ -52,6 +52,7 @@ Library
                   ,process >= 1.2.0.0
                   ,scientific >= 0.3.3.1
                   ,text >= 1.2.0.0
+                  ,transformers >= 0.3
                   ,unordered-containers >= 0.2.5.0
 
 Test-Suite digitalocean
@@ -75,6 +76,7 @@ Test-Suite docker
   if flag(docker-tests)
     Build-Depends:   distributed-commands
                     ,base
+                    ,transformers
   else
     Buildable:      False
 
@@ -90,6 +92,7 @@ Test-Suite test-distributed-process
                    ,base
                    ,binary>=0.7.1.0
                    ,distributed-process
+                   ,lifted-base >= 0.2.3.0
                    ,network-transport-tcp
   else
     Buildable:      False

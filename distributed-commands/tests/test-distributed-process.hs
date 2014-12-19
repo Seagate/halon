@@ -4,6 +4,7 @@
 --
 -- Tests the distributed process interface for distributed tests.
 --
+{-# LANGUAGE ScopedTypeVariables #-}
 
 import Control.Distributed.Commands.Process
   ( withHostNames
@@ -23,9 +24,10 @@ import Control.Distributed.Process.Node
   , runProcess
   , localNodeId
   )
+import Control.Exception (AssertionFailed(AssertionFailed))
+import Control.Exception.Lifted (throwIO, try)
 import Data.Binary (encode)
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
-
 
 main :: IO ()
 main = do
@@ -41,6 +43,13 @@ main = do
       copyFiles m0 [m1] [ ("/var/tmp", "test-halon-cp-folder") ]
 
       systemThere ms ("echo can run a remote command")
+
+      systemThere ms ("true")
+
+      er <- try $ systemThere ms ("false")
+      case er of
+        Right _ -> throwIO (AssertionFailed "systemThere of 'false' returned a successful exit")
+        Left (_ :: IOError) -> return ()
 
       -- test spawning a node
       nid1 <- spawnNode m1 ("echo '" ++ (show $ encode $ localNodeId n1) ++ "'")

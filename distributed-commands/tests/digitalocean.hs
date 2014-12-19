@@ -13,7 +13,7 @@ import Control.Distributed.Commands.DigitalOcean
 
 import Control.Exception (throwIO, bracket)
 import Control.Monad (when)
-import Data.Maybe (isNothing)
+import System.Exit (ExitCode(ExitSuccess))
 
 
 main :: IO ()
@@ -41,12 +41,12 @@ main = do
         rio <- systemThereAsUser "dev" (dropletDataIP d)
                           "(echo h; echo g 1>&2; echo i; ls) 2>&1"
         putStrLn "systemThereAsUser complete"
-        rio >>= test "h" (Just "h" ==)
-        rio >>= test "g" (Just "g" ==)
-        rio >>= test "i" (Just "i" ==)
-        rio >>= test "digitalocean.hs" (Just "digitalocean.hs" ==)
-        rio >>= test "halon" (Just "halon" ==)
-        rio >>= test "Nothing" isNothing
+        rio >>= test "h" (Right "h" ==)
+        rio >>= test "g" (Right "g" ==)
+        rio >>= test "i" (Right "i" ==)
+        rio >>= test "digitalocean.hs" (Right "digitalocean.hs" ==)
+        rio >>= test "halon" (Right "halon" ==)
+        rio >>= test "Successful termination" (Left ExitSuccess ==)
         putStrLn "test output complete"
     putStrLn "SUCCESS!"
   where

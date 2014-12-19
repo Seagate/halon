@@ -13,8 +13,8 @@ import Control.Distributed.Commands.Docker
 
 import Control.Exception (throwIO, bracket)
 import Control.Monad (when)
-import Data.Maybe (isNothing)
 
+import System.Exit (ExitCode(ExitSuccess))
 
 main :: IO ()
 main = do
@@ -33,11 +33,11 @@ main = do
         rio <- systemThereAsUser "dev" (containerIP d)
                           "(echo h; echo g 1>&2; echo i; ls) 2>&1"
         putStrLn "systemThereAsUser complete"
-        rio >>= test "h" (Just "h" ==)
-        rio >>= test "g" (Just "g" ==)
-        rio >>= test "i" (Just "i" ==)
-        rio >>= test "docker.hs" (Just "docker.hs" ==)
-        rio >>= test "Nothing" isNothing
+        rio >>= test "h" (Right "h" ==)
+        rio >>= test "g" (Right "g" ==)
+        rio >>= test "i" (Right "i" ==)
+        rio >>= test "docker.hs" (Right "docker.hs" ==)
+        rio >>= test "Nothing" (Left ExitSuccess ==)
         putStrLn "test output complete"
     putStrLn "SUCCESS!"
   where

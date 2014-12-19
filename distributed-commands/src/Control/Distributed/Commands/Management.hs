@@ -27,6 +27,7 @@ import qualified Control.Distributed.Commands as C
 import Control.Concurrent.Async.Lifted
 import Control.Exception (bracket, throwIO)
 import Control.Monad (forM, (>=>))
+import System.Exit (ExitCode (ExitFailure, ExitSuccess))
 import Data.Either (lefts)
 import Data.List (isPrefixOf)
 import Network (HostName)
@@ -79,12 +80,18 @@ isLocalHost h = h == "localhost" || "127." `isPrefixOf` h
 systemThere :: [HostName] -> String -> IO ()
 systemThere ips cmd = bracket
     (forM ips $ \h -> async $
-      maybe C.systemThere C.systemThereAsUser (muser h) h cmd
+      (maybe C.systemThere C.systemThereAsUser (muser h) h cmd) >>= collectAndThrowException
     )
     (mapM_ waitCatch)
     (mapM waitCatch) >>= mapM_ throwIO . lefts
   where
     muser h = if isLocalHost h then Nothing else Just "dev"
+    collectAndThrowException rio = do
+      r <- rio
+      case r of
+        Right _ -> collectAndThrowException rio
+        Left (ExitSuccess) -> return ()
+        Left (ExitFailure ec) -> throwIO $ userError $ "Command " ++ (show cmd) ++ " failed with exit code " ++ (show ec)
 
 -- | @withHosts cp n action@ creates @n@ hosts from provider @cp@
 -- and then it executes the given @action@. Upon termination of the actions
