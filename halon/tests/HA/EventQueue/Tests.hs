@@ -3,9 +3,10 @@
 -- License   : All rights reserved.
 --
 
-{-#  LANGUAGE CPP #-}
-{-#  LANGUAGE TemplateHaskell #-}
-module HA.EventQueue.Tests ( tests ) where
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TemplateHaskell #-}
+module HA.EventQueue.Tests ( tests, remoteRC__tdict ) where
 
 import Test.Framework
 
@@ -33,7 +34,6 @@ import Control.Arrow (first)
 import Control.Monad
 import Data.ByteString ( ByteString )
 import Data.Defaultable
-
 import Network.Transport (Transport)
 
 #ifndef USE_RPC
@@ -71,6 +71,9 @@ triggerEvent = promulgate
 invoke :: Serializable a => ProcessId -> a -> Process ()
 invoke them x = send them x >> expect
 
+secs :: Int
+secs = 1000000
+
 #ifdef USE_RPC
 tests :: Transport -> IO [TestTree]
 tests transport = do
@@ -85,7 +88,7 @@ tests transport internals = do
                 getSelfPid >>= send eq >> action eq na rGroup
 
         setup :: (ProcessId -> ProcessId -> MC_RG EventQueue -> Process ()) -> IO ()
-        setup action = withTmpDirectory $ tryWithTimeout transport rt defaultTimeout $ do
+        setup action = withTmpDirectory $ tryWithTimeout transport rt (30 * secs) $ do
             self <- getSelfPid
             let nodes = [processNodeId self]
 
@@ -166,14 +169,17 @@ tests transport internals = do
                   (getSelfPid >>= spawn (localNodeId ln1) . $(mkClosure 'remoteRC))
                   (flip exit "test finished")
                   $ \rc -> do
-
                 self <- getSelfPid
                 -- Set me as controller of the RC.
                 send rc self
                 send eq rc
                 triggerEvent 1
                 -- The RC should forward the event to me.
-                HAEvent (EventId _ 0) _ _ <- expect :: Process (HAEvent [ByteString])
+                (expectTimeout defaultTimeout :: Process (Maybe (HAEvent [ByteString]))) >>=
+                  \case
+                    Just (HAEvent (EventId _ 0) _ _) -> return ()
+                    Nothing -> error "No HA Event received from first RC."
+                    _ -> error "Wrong event received from first RC."
                 registerInterceptor $ \string -> case string of
                   "RC is lost." -> send self ()
                   _ -> return ()
@@ -184,11 +190,17 @@ tests transport internals = do
                   TCP.sClose sock
                   threadDelay 10000
                 -- Expect confirmation from the eq that the rc connection has broken.
-                () <- expect
+                expectTimeout defaultTimeout >>= \case
+                  Just () -> return ()
+                  Nothing -> error "No confirmation of broken connection from EQ."
                 triggerEvent 2
                 -- EQ should reconnect to the RC, and the RC should forward the
                 -- event to me.
-                HAEvent (EventId _ 1) _ _ <- expect :: Process (HAEvent [ByteString])
+                (expectTimeout defaultTimeout :: Process (Maybe (HAEvent [ByteString]))) >>=
+                  \case
+                    Just (HAEvent (EventId _ 1) _ _) -> return ()
+                    Nothing -> error "No HA Event received from second RC."
+                    _ -> error "Wrong event received from second RC."
                 return ()
 #endif
         , testSuccess "eq-save-path" ==> \eq _ rGroup -> do
