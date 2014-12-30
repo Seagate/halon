@@ -72,21 +72,10 @@ data TestCounters = TestCounters
 newCounters :: IO TestCounters
 newCounters = liftM3 TestCounters (newIORef 0) (newIORef 0) (newIORef Nothing)
 
-resetCounters :: TestCounters -> IO ()
-resetCounters (TestCounters r0 r1 r2) =
-  writeIORef r0 0 >> writeIORef r1 0 >> writeIORef r2 Nothing
-
-{-# NOINLINE counters #-}
-counters :: TestCounters
-counters = unsafePerformIO $ newCounters
-
 type RG = MC_RG RSState
 
-testRS :: () -> Process RG -> Process ()
-testRS () pRGroup = pRGroup >>= testRS'
-
-testRS' :: RG -> Process ()
-testRS' rGroup = do
+testRS' :: MVar () -> TestCounters -> RG -> Process ()
+testRS' mdone counters rGroup = do
   flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
     void $ spawnLocal $ recoverySupervisor rGroup
                              $ spawnLocal (dummyRC counters)
@@ -103,14 +92,10 @@ testRS' rGroup = do
         receiveWait []
       `catch` (\(_ :: ProcessExitException) -> addCounter (cStop cnts) 1)
 
-{-# NOINLINE mdone #-}
-mdone :: MVar ()
-mdone = unsafePerformIO $ newEmptyMVar
-
 rsSDict :: SerializableDict RSState
 rsSDict = SerializableDict
 
-remotable [ 'rsSDict, 'testRS ]
+remotable [ 'rsSDict ]
 
 tests :: Bool -> Transport -> IO [TestTree]
 tests oneNode transport = do
@@ -118,7 +103,7 @@ tests oneNode transport = do
               if oneNode then "with one node..."
                else "with multiple nodes..."
   return
-    [ testSuccess "leaderSurvived" $ rsTest transport oneNode $ \rGroup -> do
+    [ testSuccess "leaderSurvived" $ rsTest transport oneNode $ \counters rGroup -> do
         leader0 <- retryTest $ do
             1 <- readRef $ cStart counters
             0 <- readRef $ cStop counters
@@ -133,7 +118,7 @@ tests oneNode transport = do
 
         assert $ leader0 == leader1 -- && c1 == 1 + div pollingPeriod updatePeriod
 
-    , testSuccess "newLeader" $ rsTest transport oneNode $ \rGroup -> do
+    , testSuccess "newLeader" $ rsTest transport oneNode $ \counters rGroup -> do
         _leader0 <- retryTest $ do
             1 <- readRef $ cStart counters
             0 <- readRef $ cStop counters
@@ -150,7 +135,7 @@ tests oneNode transport = do
             return ()
     ]
 
-rsTest :: Transport -> Bool -> (MC_RG RSState -> Process ()) -> IO ()
+rsTest :: Transport -> Bool -> (TestCounters -> MC_RG RSState -> Process ()) -> IO ()
 rsTest transport oneNode action = withTmpDirectory $ do
   let amountOfReplicas = 2
   ns@(n1:_) <-
@@ -164,16 +149,13 @@ rsTest transport oneNode action = withTmpDirectory $ do
                    else ns
       cRGroup <- newRGroup $(mkStatic 'rsSDict) nids (RSState Nothing 0)
 
-      rGroup <- unClosure cRGroup >>= id
-#ifdef USE_MOCK_REPLICATOR
-      forM_ nids $ const $ spawnLocal $ testRS' rGroup
-#else
-      forM_ nids $ flip spawn $ $(mkClosure 'testRS) ()
-                                 `closureApply` cRGroup
-#endif
+      rGroup   <- unClosure cRGroup >>= id
+      counters <- liftIO newCounters
+      mdone    <- liftIO newEmptyMVar
+
+      forM_ nids $ const $ spawnLocal $ testRS' mdone counters rGroup
       replicateM_ amountOfReplicas $ liftIO $ takeMVar mdone
-      liftIO $ resetCounters counters
-      action rGroup
+      action counters rGroup
       liftIO $ putMVar mTestDone ()
 
   takeMVar mTestDone
