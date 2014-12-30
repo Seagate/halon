@@ -196,5 +196,8 @@ waitPing host =
       _ <- hGetLine sout
       terminateProcess ph
 
+-- The digital ocean interface was first implemented with the haskell bindings
+-- to libcurl. As the implementation was crashing sporadically, we switched to
+-- using the curl command line tool.
 callCURLGet :: String -> IO String
 callCURLGet url = readProcess "curl" ["-s", url] ""
