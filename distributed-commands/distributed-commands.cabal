@@ -26,11 +26,19 @@ Flag docker-tests
   Description: Enables tests on docker.
   Default: False
 
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
 
 Library
   Hs-Source-Dirs:  src
   Default-Language: Haskell2010
-  Ghc-Options:     -O -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -O -Wall -Werror
+  else
+    Ghc-Options: -O -Wall
+
   Exposed-Modules: Control.Distributed.Commands.DigitalOcean
                    Control.Distributed.Commands.Docker
                    Control.Distributed.Commands
@@ -60,7 +68,11 @@ Test-Suite digitalocean
   default-language: Haskell2010
   Hs-Source-Dirs:   tests
   Main-Is:          digitalocean.hs
-  Ghc-Options:     -threaded -Wall
+
+  Ghc-Options: -threaded -Wall
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   if flag(digital-ocean-tests)
     Build-Depends:   distributed-commands
                     ,base
@@ -72,7 +84,11 @@ Test-Suite docker
   default-language: Haskell2010
   Hs-Source-Dirs:   tests
   Main-Is:          docker.hs
-  Ghc-Options:     -threaded -Wall
+
+  Ghc-Options: -threaded -Wall
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   if flag(docker-tests)
     Build-Depends:   distributed-commands
                     ,base
@@ -86,7 +102,12 @@ Test-Suite test-distributed-process
   default-language: Haskell2010
   Hs-Source-Dirs:   tests
   Main-Is:          test-distributed-process.hs
-  Ghc-Options:     -threaded -Wall
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   if flag(distributed-tests)
     Build-Depends:  distributed-commands
                    ,base

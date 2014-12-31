@@ -11,6 +11,10 @@ category:       Control
 build-type:     Simple
 cabal-version:  >=1.8
 
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
+
 source-repository master
   type:         git
   location:     git@github.com:tweag/halon.git
@@ -38,4 +42,8 @@ executable halon-visualize
                     syb >= 0.3,
                     template-haskell >= 2.7.0
   extensions:       DoAndIfThenElse, PatternGuards, ScopedTypeVariables, TemplateHaskell
-  ghc-options:      -threaded
+
+  ghc-options: -threaded -Wall
+
+  if flag(maintainer)
+    ghc-options: -Werror

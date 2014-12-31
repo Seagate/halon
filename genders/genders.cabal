@@ -11,6 +11,10 @@ category:            Database
 build-type:          Simple
 cabal-version:       >=1.10
 
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
+
 library
   exposed-modules:     Database.Genders
                        Database.Genders.Internal
@@ -20,7 +24,12 @@ library
                        vector >= 0.10
   hs-source-dirs:      src
   default-language:    Haskell2010
-  ghc-options:         -Wall
+
+  Ghc-Options: -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   extra-libraries:     genders
 
 test-suite tests
@@ -28,7 +37,12 @@ test-suite tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Main-Is:          test.hs
-  Ghc-Options:      -Wall
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   Build-Depends:    base >= 4.7,
                     bytestring,
                     genders,

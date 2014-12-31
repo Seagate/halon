@@ -22,6 +22,10 @@ Flag rpc
   Description: Build with the RPC backend instead of TCP.
   Default: False
 
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
+
 Library
   exposed-modules:     Mero.ConfC
   other-modules:
@@ -32,7 +36,9 @@ Library
                      , hashable
                      , rpclite
 
-  ghc-options:      -O -Wall -Werror -fprof-auto -fprof-auto-calls
+  ghc-options: -O -Wall -fprof-auto -fprof-auto-calls
+  if flag(maintainer)
+    ghc-options: -Werror
 
   cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
   include-dirs: .
@@ -61,6 +67,9 @@ Test-Suite testconfc
   else
     buildable: False
 
+  if flag(maintainer)
+    ghc-options: -Werror
+
 Test-Suite collect_node_addresses
   Type:           exitcode-stdio-1.0
   main-is:        collect_node_addresses.hs
@@ -82,3 +91,6 @@ Test-Suite collect_node_addresses
                   , rpclite
   else
     buildable: False
+
+  if flag(maintainer)
+    ghc-options: -Werror

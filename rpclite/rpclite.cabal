@@ -10,6 +10,10 @@ Flag debug
   Description: Print messages when the RPC backend calls are evaluated
   Default: False
 
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
+
 library
   exposed-modules:     Network.RPC.RPCLite
   build-depends:       base >=4.7 && <4.8
@@ -17,7 +21,12 @@ library
                      , bytestring
                      , containers >= 0.5
                      , filepath >= 1.3
-  ghc-options:      -O -Wall -Werror -fprof-auto -fprof-auto-calls
+
+  ghc-options: -O -Wall -fprof-auto -fprof-auto-calls
+
+  if flag(maintainer)
+    ghc-options: -Werror
+
   if flag(debug)
     cpp-options:      -DDEBUG
 
@@ -36,7 +45,12 @@ Test-Suite testrpclite
   default-language:    Haskell2010
   main-is:        testrpclite.hs
   hs-source-dirs: tests
-  ghc-options:    -O -Wall -idist/build -threaded
+
+  ghc-options: -O -Wall -idist/build -threaded
+
+  if flag(maintainer)
+    ghc-options: -Werror
+
   build-depends:  base >= 4.3 && < 5
                 , binary
                 , bytestring

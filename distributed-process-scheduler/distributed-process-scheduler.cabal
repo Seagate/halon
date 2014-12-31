@@ -13,6 +13,10 @@ Category:       Control
 Build-Type:     Simple
 Cabal-Version:  >=1.10
 
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
+
 source-repository master
   Type:         git
   Location:     git@github.com:tweag/halon.git
@@ -21,7 +25,12 @@ source-repository master
 Library
   Hs-Source-Dirs:  src
   Default-Language: Haskell2010
-  Ghc-Options:     -O -Wall -Werror
+
+  Ghc-Options: -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   Exposed-Modules: Control.Distributed.Process
                    Control.Distributed.Process.Internal.Messaging
                    Control.Distributed.Process.Internal.Types
@@ -47,7 +56,12 @@ Test-Suite unit-tests-with-scheduler
   Main-Is:          with_scheduler.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
-  Ghc-Options:      -Wall -threaded
+
+  Ghc-Options: -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   Build-Depends:    distributed-process-scheduler == 0.1
                     ,base >= 4.5
                     ,distributed-process-scheduler
@@ -61,7 +75,12 @@ Test-Suite unit-tests-wo-scheduler
   Main-Is:          wo_scheduler.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
-  Ghc-Options:      -Wall -threaded
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   Build-Depends:    distributed-process-scheduler == 0.1
                     ,base >= 4.5
                     ,distributed-process-scheduler

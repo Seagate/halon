@@ -17,6 +17,10 @@ Flag distributed-benchmarks
   Description: Enables distributed benchmarks.
   Default: False
 
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
+
 Library
   Exposed-Modules:  Control.Distributed.Log
                     Control.Distributed.Log.Policy
@@ -52,14 +56,24 @@ Library
                       TupleSections
   Other-Extensions:   TemplateHaskell
                       TypeFamilies
-  Ghc-Options:      -Wall -Werror
+
+  Ghc-Options: -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
 
 Test-Suite tests
   Type:             exitcode-stdio-1.0
   Main-Is:          ut.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
-  Ghc-Options:      -Wall -threaded -eventlog -debug -with-rtsopts=-l-au
+
+  Ghc-Options: -Wall -threaded -eventlog -debug -with-rtsopts=-l-au
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+
   Build-Depends:    base >= 4.7,
                     binary >= 0.6,
                     Cabal >= 1.16,
@@ -87,7 +101,12 @@ Test-Suite random
   Main-Is:          random.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
+
   Ghc-Options:      -Wall -threaded
+
+  if flag(maintainer)
+    Ghc-Options:    -Werror
+
   Build-Depends:    base >= 4.7,
                     consensus,
                     consensus-paxos,
@@ -108,7 +127,12 @@ Benchmark bench-suite
   Main-is:          state.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   benchmarks
-  Ghc-Options:      -Wall -threaded
+
+  Ghc-Options: -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   Build-Depends:    base >= 4.7,
                     binary,
                     consensus,
@@ -131,7 +155,12 @@ Benchmark state-distributed
   Main-is:          state-distributed.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   benchmarks
-  Ghc-Options:      -Wall -threaded
+
+  Ghc-Options: -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   if flag(distributed-benchmarks)
     Build-Depends:  base >= 4.7,
                     consensus,
