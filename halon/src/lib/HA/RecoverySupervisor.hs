@@ -106,15 +106,18 @@ setLeader (candidate,previousLeaseCount) rstOld =
 
 remotable [ 'setLeader ]
 
--- | Amount of microseconds to wait before renewing a lease.
+millis :: Int
+millis = 1000
+
+-- | Amount of milliseconds to wait before renewing a lease.
 -- Exposed for testing.
 updatePeriod :: Int
-updatePeriod = 15*1000000
+updatePeriod = 750 * millis
 
--- | Amount of microseconds to wait before polling the state.
+-- | Amount of milliseconds to wait before polling the state.
 -- Exposed for testing.
 pollingPeriod :: Int
-pollingPeriod = 20*1000000
+pollingPeriod = 1000 * millis
 
 -- | Runs the recovery supervisor.
 recoverySupervisor :: RGroup g
