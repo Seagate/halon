@@ -20,6 +20,7 @@ module Control.Distributed.Commands.Process
   , withHostNames
   , withHosts
   , __remoteTable
+  , redirectLogsThere__tdict
   ) where
 
 import Control.Distributed.Commands.Management

@@ -10,16 +10,16 @@
 -- are posted by R from the event queue maintained by R. After recovering an HA
 -- event, RC instructs R to drop the event, using a globally unique identifier.
 
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
@@ -54,7 +54,7 @@ import Control.Monad.Reader (ask)
 
 import Control.Applicative ((<*), (<$>))
 import Control.Arrow ((>>>))
-import Control.Monad (forM, forM_, when, void, (>=>))
+import Control.Monad (forM, forM_, void, (>=>))
 
 import Data.Binary (Binary, Get, encode, get, put)
 import Data.Binary.Put (runPut)
@@ -153,7 +153,7 @@ startService :: forall a. Configuration a
              -> a
              -> G.Graph
              -> Process ()
-startService node svc cfg rg = do
+startService node svc cfg _ = do
   mynid <- getSelfNode
   pid <- spawn node $ serviceProcess svc
               `closureApply` closure (staticDecode sDict) (encode cfg)
@@ -165,7 +165,7 @@ killService :: NodeId
             -> ServiceProcess a
             -> ExitReason
             -> Process ()
-killService node (ServiceProcess pid) reason =
+killService _ (ServiceProcess pid) reason =
   exit pid reason
 
 -- | Bounce the service to a particular configuration.
@@ -269,7 +269,7 @@ recoveryCoordinator eq mm argv = do
             send pid $ EpochResponse $ epochId target
             loop ls
         , matchHAEvent
-            (\evt@(HAEvent _ (cum :: ConfigurationUpdateMsg) _) -> do
+            (\(HAEvent _ (cum :: ConfigurationUpdateMsg) _) -> do
               ConfigurationUpdate epoch opts svc nodeFilter <- decodeP cum
               let
                 G.Edge _ Has target = head (G.edgesFromSrc Cluster rg :: [G.Edge Cluster Has (Epoch ByteString)])
@@ -281,8 +281,8 @@ recoveryCoordinator eq mm argv = do
                     -- Write the new config as a 'Wants' config
                     let svcs = filterServices nodeFilter svc rg
                         rgUpdate = foldl' (flip (.)) id $ fmap (
-                            \case (_, svc)
-                                    -> writeConfig svc opts Intended
+                            \(_, nsvc)
+                                    -> writeConfig nsvc opts Intended
                           ) svcs
                         rg' = rgUpdate rg
                     -- Send a message to ourselves asking to reconfigure

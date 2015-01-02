@@ -13,4 +13,4 @@ build:
     - script:
         name: build package
         code: |
-          make build
+          make build CABAL_FLAGS="-fmaintainer"

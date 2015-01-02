@@ -25,6 +25,10 @@ Flag rpc
   Description: Build with the RPC backend instead of TCP.
   Default: False
 
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
+
 Library
   Hs-Source-Dirs:  src/lib
   Default-Language: Haskell2010
@@ -39,7 +43,12 @@ Library
                       ScopedTypeVariables
                       StandaloneDeriving
                       TupleSections
-  Ghc-Options:     -O -Wall -Werror
+
+  Ghc-Options:  -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   Exposed-Modules: HA.CallTimeout
                    HA.Process
                    HA.Resources
@@ -108,7 +117,12 @@ Test-Suite unit-tests
                     HA.RecoverySupervisor.Tests
                     HA.ResourceGraph.Tests
                     RemoteTables
-  Ghc-Options:      -Wall -threaded
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
@@ -146,7 +160,12 @@ Test-Suite integration-tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Main-Is:          it.hs
-  Ghc-Options:      -Wall -threaded
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   CPP-Options:      -DMC_RG=RLogGroup
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au

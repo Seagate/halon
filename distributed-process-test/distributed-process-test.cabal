@@ -11,6 +11,10 @@ Category:       Control
 Build-Type:     Simple
 Cabal-Version:  >=1.10
 
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
+
 source-repository master
   Type:         git
   Location:     git@github.com:tweag/halon.git
@@ -22,6 +26,12 @@ Library
   Exposed-Modules:  Test.Framework
                     Test.Driver
                     Test.Tasty.Environment
+
+  Ghc-Options: -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   Build-Depends:    base >= 4.5,
                     containers,
                     data-accessor,
@@ -33,7 +43,7 @@ Library
                     tasty-hunit,
                     unix,
                     regex-posix
-  Ghc-Options:      -Wall -Werror
+
   Default-Extensions: DeriveDataTypeable
                       RecordWildCards
                       ScopedTypeVariables

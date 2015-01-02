@@ -37,6 +37,10 @@ Flag eventqueue-tests
   Description: Enables distributed tests.
   Default: False
 
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
+
 Library
   Hs-Source-Dirs:  src/lib
   Default-Language: Haskell2010
@@ -53,7 +57,12 @@ Library
                       ScopedTypeVariables
                       StandaloneDeriving
                       TupleSections
-  Ghc-Options:     -O -Wall
+
+  Ghc-Options:  -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   Exposed-Modules: Mero.Epoch
                    Mero.Genders
                    Mero.FakeEpoch
@@ -97,8 +106,13 @@ Library
 Executable halonctl
   Hs-Source-Dirs:     src/halonctl
   Main-Is:            Main.hs
-  Ghc-Options:        -threaded
-  ghc-options:        -Wall
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+
   if flag(debug)
     ghc-options:      -eventlog -debug -with-rtsopts=-l-au
   default-language:   Haskell2010
@@ -132,8 +146,12 @@ Executable halonctl
 Executable halond
   Hs-Source-Dirs:     src/halond
   Main-Is:            Main.hs
-  Ghc-Options:        -threaded
-  ghc-options:        -Wall
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   if flag(debug)
     ghc-options:      -eventlog -debug -with-rtsopts=-l-au
   default-language:   Haskell2010
@@ -165,7 +183,12 @@ Test-Suite testdistributed
   default-language: Haskell2010
   Hs-Source-Dirs:  tests/Distributed
   Main-Is:         startService.hs
-  Ghc-Options:     -threaded -Werror -Wall
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   Build-Depends:   distributed-process,
                    base,
                    filepath,
@@ -181,7 +204,12 @@ Test-Suite testdistributedconf
   default-language: Haskell2010
   Hs-Source-Dirs:  tests/Distributed
   Main-Is:         configureServices.hs
-  Ghc-Options:     -threaded -Werror -Wall
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   Build-Depends:   distributed-process,
                    base,
                    filepath,
@@ -198,7 +226,12 @@ Test-Suite testepoch
   default-language: Haskell2010
   Hs-Source-Dirs:  tests
   Main-Is:         testepoch.hs
-  Ghc-Options:     -threaded -Wall
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   if flag(rpc) && flag(mero)
     Build-Depends:   halon == 0.1,
                      mero-halon,
@@ -218,7 +251,12 @@ Test-Suite testhastate
   default-language: Haskell2010
   Hs-Source-Dirs:  tests
   Main-Is:         testhastate.hs
-  Ghc-Options:     -threaded -Werror -Wall
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   if flag(mero)
     Build-Depends:   halon == 0.1,
                      confc,
@@ -239,7 +277,12 @@ Test-Suite testeventqueue
   default-language: Haskell2010
   Hs-Source-Dirs:  tests/Distributed
   Main-Is:         EventQueue.hs
-  Ghc-Options:     -threaded
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   Build-Depends:   distributed-process,
                    base,
                    filepath,
@@ -267,7 +310,12 @@ Test-Suite unit-tests
   Hs-Source-Dirs:   tests
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
                     RemoteTables
-  Ghc-Options:      -Wall -threaded -Werror
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
@@ -307,7 +355,12 @@ Test-Suite integration-tests
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
                     RemoteTables
   Main-Is:          test.hs
-  Ghc-Options:      -Wall -threaded
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   CPP-Options:      -DMC_RG=RLogGroup
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au

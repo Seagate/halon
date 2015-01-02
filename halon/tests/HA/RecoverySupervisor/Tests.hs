@@ -37,11 +37,6 @@ import Control.Distributed.Process
   , unClosure
   )
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
-#ifndef USE_MOCK_REPLICATOR
-import Control.Distributed.Process ( spawn )
-import Control.Distributed.Process.Closure ( mkClosure )
-import Control.Distributed.Static ( closureApply )
-#endif
 import Control.Distributed.Process.Internal.Types
   ( ProcessExitException
   , localNodeId
@@ -60,7 +55,6 @@ import Control.Exception ( SomeException )
 import Control.Monad ( liftM3, void, replicateM_, replicateM, forM_ )
 import Data.IORef ( newIORef, atomicModifyIORef, IORef, readIORef, writeIORef )
 import Network.Transport (Transport)
-import System.IO.Unsafe ( unsafePerformIO )
 import Test.Framework
 
 data TestCounters = TestCounters

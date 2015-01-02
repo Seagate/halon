@@ -82,24 +82,24 @@ libdirs=$(MERO_ROOT)/mero/.libs
 
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
 
-CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) $(HLD_SEARCH_PATH) --extra-include-dirs=$(RPCLITE_PREFIX)
+override CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) $(HLD_SEARCH_PATH) --extra-include-dirs=$(RPCLITE_PREFIX)
 endif
 
 ifdef USE_MERO
-CABAL_FLAGS += -fmero
+override CABAL_FLAGS += -fmero
 endif
 
 ifdef USE_RPC
 TEST_NID = $(shell sudo lctl list_nids | grep o2ib | head -1)
 TEST_LISTEN = $(TEST_NID):12345:34:1
-CABAL_FLAGS += -frpc
+override CABAL_FLAGS += -frpc
 else
 USE_TCP = 1
 TEST_LISTEN = 127.0.0.1:8090
 endif
 
 ifdef DEBUG
-CABAL_FLAGS += -fdebug
+override CABAL_FLAGS += -fdebug
 endif
 
 ifdef USE_RPC
@@ -107,7 +107,7 @@ ifdef USE_RPC
 # explicitly because most operating systems reset that environment
 # variable for setuid binaries.
 SUDO = sudo -E LD_LIBRARY_PATH=$(LD_LIBRARY_PATH)
-CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) --extra-lib-dirs=$(MERO_ROOT)/mero/.libs
+override CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) --extra-lib-dirs=$(MERO_ROOT)/mero/.libs
 else
 SUDO =
 endif
@@ -119,7 +119,7 @@ export GENDERS
 
 ifndef NO_TESTS
 CABAL_BUILD_JOBS = --jobs=1
-CABAL_FLAGS += --run-tests
+override CABAL_FLAGS += --run-tests
 endif
 
 export USE_TCP

@@ -11,6 +11,10 @@ Flag debug
   Description: Print messages when the RPC backend calls are evaluated
   Default: False
 
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
+
 Library
   exposed-modules:     Network.Transport.RPC
   other-modules:
@@ -23,7 +27,11 @@ Library
                      , network-transport >= 0.3
                      , rpclite
 
-  ghc-options:      -O -Wall -Werror -fprof-auto -fprof-auto-calls
+  ghc-options:  -Wall -fprof-auto -fprof-auto-calls
+
+  if flag(maintainer)
+    ghc-options: -Werror
+
   if flag(debug)
     cpp-options:      -DDEBUG
 
@@ -34,7 +42,12 @@ Test-Suite tutorial-client
   Type:           exitcode-stdio-1.0
   main-is:        tutorial-client.hs
   hs-source-dirs: tests
-  ghc-options:    -O -Wall -idist/build -threaded
+
+  ghc-options:     -Wall -idist/build -threaded
+
+  if flag(maintainer)
+    ghc-options:  -Werror
+
   build-depends:  base >= 4.3 && < 5
                 , binary
                 , bytestring
@@ -46,7 +59,13 @@ Test-Suite tutorial-server
   Type:           exitcode-stdio-1.0
   main-is:        tutorial-server.hs
   hs-source-dirs: tests
-  ghc-options:    -O -Wall -idist/build -threaded
+
+
+  ghc-options:     -Wall -idist/build -threaded
+
+  if flag(maintainer)
+    ghc-options:  -Werror
+
   build-depends:  base >= 4.3 && < 5
                 , binary
                 , bytestring
@@ -59,7 +78,12 @@ Test-Suite ch-client
   Type:           exitcode-stdio-1.0
   main-is:        ch-client.hs
   hs-source-dirs: tests
-  ghc-options:    -O -Wall -idist/build -threaded
+
+  ghc-options:     -Wall -idist/build -threaded
+
+  if flag(maintainer)
+    ghc-options: -Werror
+
   build-depends:  base >= 4.3 && < 5
                 , binary
                 , bytestring
@@ -74,7 +98,12 @@ Test-Suite ch-server
   Type:           exitcode-stdio-1.0
   main-is:        ch-server.hs
   hs-source-dirs: tests
-  ghc-options:    -O -Wall -idist/build -threaded
+
+  ghc-options:     -Wall -idist/build -threaded
+
+  if flag(maintainer)
+    ghc-options:  -Werror
+
   build-depends:  base >= 4.3 && < 5
                 , binary
                 , bytestring
@@ -90,7 +119,12 @@ Test-Suite ch-delay-client
   Type:           exitcode-stdio-1.0
   main-is:        ch-delay-client.hs
   hs-source-dirs: tests
-  ghc-options:    -O -Wall -idist/build -threaded
+
+  ghc-options:     -Wall -idist/build -threaded
+
+  if flag(maintainer)
+    ghc-options:  -Werror
+
   build-depends:  base >= 4.3 && < 5
                 , bytestring
                 , network-transport-rpc
@@ -106,7 +140,12 @@ Test-Suite ch-delay-server
   Type:           exitcode-stdio-1.0
   main-is:        ch-delay-server.hs
   hs-source-dirs: tests
-  ghc-options:    -O -Wall -idist/build -threaded
+
+  ghc-options:     -Wall -idist/build -threaded
+
+  if flag(maintainer)
+    ghc-options:  -Werror
+
   build-depends:  base >= 4.3 && < 5
                 , bytestring
                 , network-transport-rpc
@@ -121,7 +160,12 @@ Test-Suite testtransport
   Type:           exitcode-stdio-1.0
   main-is:        testtransport.hs
   hs-source-dirs: tests, network-transport-tests/src
-  ghc-options:    -O -Wall -idist/build -threaded
+
+  ghc-options:     -Wall -idist/build -threaded
+
+  if flag(maintainer)
+    ghc-options:  -Werror
+
   extensions:   CPP
               , DeriveDataTypeable
               , ExistentialQuantification
@@ -140,7 +184,13 @@ Test-Suite TestCH
   Type:           exitcode-stdio-1.0
   main-is:        TestCH.hs
   hs-source-dirs: tests
-  ghc-options:    -O -Wall -idist/build -threaded -fno-prof-count-entries -fprof-auto-calls -fprof-auto -fno-warn-unused-do-bind
+
+
+  ghc-options:  -Wall -idist/build -threaded -fno-prof-count-entries -fprof-auto-calls -fprof-auto -fno-warn-unused-do-bind
+
+  if flag(maintainer)
+    ghc-options: -Werror
+
   build-depends:  base >= 4.3 && < 5
                 , bytestring
                 , network-transport-rpc
@@ -157,7 +207,12 @@ Test-Suite TestNT
   Type:           exitcode-stdio-1.0
   main-is:        TestNT.hs
   hs-source-dirs: tests network-transport-tests/src
-  ghc-options:    -O -Wall -idist/build -threaded -fno-prof-count-entries -fprof-auto-calls -fprof-auto -fno-warn-unused-do-bind
+
+  ghc-options:  -Wall -idist/build -threaded -fno-prof-count-entries -fprof-auto-calls -fprof-auto -fno-warn-unused-do-bind
+
+  if flag(maintainer)
+    ghc-options: -Werror
+
   extensions:          CPP,
                        ExistentialQuantification,
                        FlexibleInstances,

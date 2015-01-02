@@ -13,6 +13,10 @@ source-repository master
   Location:     git@github.com:tweag/halon.git
   Subdir:       consensus-paxos
 
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
+
 Library
   Default-Language: Haskell2010
   Hs-Source-Dirs:   src/
@@ -41,14 +45,23 @@ Library
                       ScopedTypeVariables
   Other-Extensions:   TemplateHaskell
                       TypeFamilies
-  Ghc-Options:      -Wall -Werror
+
+  Ghc-Options: -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
 
 Test-Suite tests
   Type:             exitcode-stdio-1.0
   Main-Is:          ut.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
-  Ghc-Options:      -Wall -threaded
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   Build-Depends:    base >= 4.5.0,
                     Cabal >= 1.10,
                     consensus,
@@ -70,7 +83,13 @@ Test-Suite random
   Main-Is:          random.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
-  Ghc-Options:      -Wall -threaded
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+
   Build-Depends:    base >= 4.5.0,
                     consensus,
                     consensus-paxos,

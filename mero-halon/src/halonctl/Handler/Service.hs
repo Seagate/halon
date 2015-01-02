@@ -167,7 +167,7 @@ reconf :: Configuration a
        -> Process ()
 reconf s c eqAddrs nf = do
     eid <- callLocal $ do
-      getSelfPid >>= promulgateEQ eqnids . EpochRequest
+      _ <- getSelfPid >>= promulgateEQ eqnids . EpochRequest
       EpochResponse eid <- expect
       return eid
     promulgateEQ eqnids (msg eid) >>= \pid -> withMonitor pid wait
@@ -175,4 +175,3 @@ reconf s c eqAddrs nf = do
     eqnids = fmap conjureRemoteNodeId eqAddrs
     msg eid = encodeP $ ConfigurationUpdate eid c s nf
     wait = void (expect :: Process ProcessMonitorNotification)
-
