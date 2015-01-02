@@ -15,7 +15,6 @@ import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
 
 import System.Environment (getProgName)
-import qualified Handler.Bootstrap as Bootstrap
 import qualified Handler.Service as Service
 
 data Options = Options

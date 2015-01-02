@@ -7,7 +7,7 @@
 {-#  LANGUAGE FlexibleContexts #-}
 {-#  LANGUAGE TemplateHaskell #-}
 
-module HA.NodeAgent.Tests ( tests ) where
+module HA.NodeAgent.Tests ( tests, dummyRC__static, dummyRC__sdict) where
 
 import HA.Service (serviceProcess)
 import HA.NodeAgent

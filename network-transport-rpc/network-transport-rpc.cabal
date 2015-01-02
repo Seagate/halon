@@ -27,7 +27,7 @@ Library
                      , network-transport >= 0.3
                      , rpclite
 
-  ghc-options: -O -Wall -fprof-auto -fprof-auto-calls
+  ghc-options:  -Wall -fprof-auto -fprof-auto-calls
 
   if flag(maintainer)
     ghc-options: -Werror
@@ -43,7 +43,7 @@ Test-Suite tutorial-client
   main-is:        tutorial-client.hs
   hs-source-dirs: tests
 
-  ghc-options:    -O -Wall -idist/build -threaded
+  ghc-options:     -Wall -idist/build -threaded
 
   if flag(maintainer)
     ghc-options:  -Werror
@@ -61,7 +61,7 @@ Test-Suite tutorial-server
   hs-source-dirs: tests
 
 
-  ghc-options:    -O -Wall -idist/build -threaded
+  ghc-options:     -Wall -idist/build -threaded
 
   if flag(maintainer)
     ghc-options:  -Werror
@@ -79,7 +79,7 @@ Test-Suite ch-client
   main-is:        ch-client.hs
   hs-source-dirs: tests
 
-  ghc-options:    -O -Wall -idist/build -threaded
+  ghc-options:     -Wall -idist/build -threaded
 
   if flag(maintainer)
     ghc-options: -Werror
@@ -99,7 +99,7 @@ Test-Suite ch-server
   main-is:        ch-server.hs
   hs-source-dirs: tests
 
-  ghc-options:    -O -Wall -idist/build -threaded
+  ghc-options:     -Wall -idist/build -threaded
 
   if flag(maintainer)
     ghc-options:  -Werror
@@ -120,7 +120,7 @@ Test-Suite ch-delay-client
   main-is:        ch-delay-client.hs
   hs-source-dirs: tests
 
-  ghc-options:    -O -Wall -idist/build -threaded
+  ghc-options:     -Wall -idist/build -threaded
 
   if flag(maintainer)
     ghc-options:  -Werror
@@ -141,7 +141,7 @@ Test-Suite ch-delay-server
   main-is:        ch-delay-server.hs
   hs-source-dirs: tests
 
-  ghc-options:    -O -Wall -idist/build -threaded
+  ghc-options:     -Wall -idist/build -threaded
 
   if flag(maintainer)
     ghc-options:  -Werror
@@ -161,7 +161,7 @@ Test-Suite testtransport
   main-is:        testtransport.hs
   hs-source-dirs: tests, network-transport-tests/src
 
-  ghc-options:    -O -Wall -idist/build -threaded
+  ghc-options:     -Wall -idist/build -threaded
 
   if flag(maintainer)
     ghc-options:  -Werror
@@ -186,7 +186,7 @@ Test-Suite TestCH
   hs-source-dirs: tests
 
 
-  ghc-options: -O -Wall -idist/build -threaded -fno-prof-count-entries -fprof-auto-calls -fprof-auto -fno-warn-unused-do-bind
+  ghc-options:  -Wall -idist/build -threaded -fno-prof-count-entries -fprof-auto-calls -fprof-auto -fno-warn-unused-do-bind
 
   if flag(maintainer)
     ghc-options: -Werror
@@ -208,7 +208,7 @@ Test-Suite TestNT
   main-is:        TestNT.hs
   hs-source-dirs: tests network-transport-tests/src
 
-  ghc-options: -O -Wall -idist/build -threaded -fno-prof-count-entries -fprof-auto-calls -fprof-auto -fno-warn-unused-do-bind
+  ghc-options:  -Wall -idist/build -threaded -fno-prof-count-entries -fprof-auto-calls -fprof-auto -fno-warn-unused-do-bind
 
   if flag(maintainer)
     ghc-options: -Werror

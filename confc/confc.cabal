@@ -36,7 +36,7 @@ Library
                      , hashable
                      , rpclite
 
-  ghc-options: -O -Wall -fprof-auto -fprof-auto-calls
+  ghc-options:  -Wall -fprof-auto -fprof-auto-calls
   if flag(maintainer)
     ghc-options: -Werror
 
@@ -49,7 +49,7 @@ Test-Suite testconfc
   Type:           exitcode-stdio-1.0
   main-is:        testconfc.hs
   hs-source-dirs: tests
-  ghc-options:    -O -Wall -idist/build -threaded -fno-warn-unused-do-bind
+  ghc-options:     -Wall -idist/build -threaded -fno-warn-unused-do-bind
   extensions:          CPP,
                        ExistentialQuantification,
                        FlexibleInstances,
@@ -74,7 +74,7 @@ Test-Suite collect_node_addresses
   Type:           exitcode-stdio-1.0
   main-is:        collect_node_addresses.hs
   hs-source-dirs: tests
-  ghc-options:    -O -Wall -idist/build -threaded -fno-warn-unused-do-bind
+  ghc-options:     -Wall -idist/build -threaded -fno-warn-unused-do-bind
   extensions:          CPP,
                        ExistentialQuantification,
                        FlexibleInstances,

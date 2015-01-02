@@ -35,9 +35,9 @@ Library
   Default-Language: Haskell2010
 
   if flag(maintainer)
-    Ghc-Options: -O -Wall -Werror
+    Ghc-Options:  -Wall -Werror
   else
-    Ghc-Options: -O -Wall
+    Ghc-Options:  -Wall
 
   Exposed-Modules: Control.Distributed.Commands.DigitalOcean
                    Control.Distributed.Commands.Docker
