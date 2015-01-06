@@ -18,8 +18,7 @@ import Control.Distributed.Process.Consensus
     ( __remoteTable )
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import qualified Control.Distributed.Log as Log
-import Control.Distributed.Log
-    ( sdictValue )
+import Control.Distributed.Log (Config(..))
 import qualified Control.Distributed.State as State
 import Control.Distributed.State
     ( Command
@@ -31,6 +30,9 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
+import Data.Constraint (Dict(..))
+import Data.Ratio ((%))
+import Data.Typeable (Typeable)
 import Network.Transport ( Transport )
 import Network.Transport.TCP
 
@@ -40,13 +42,12 @@ import System.IO
 import Control.Monad (replicateM_, replicateM, when)
 
 import Prelude hiding (read)
-import qualified Prelude
 
 
 type State = Int
 
-dictState :: Log.TypeableDict State
-dictState = Log.TypeableDict
+dictState :: Dict (Typeable State)
+dictState = Dict
 
 dictNodeId :: SerializableDict NodeId
 dictNodeId = SerializableDict
@@ -56,6 +57,15 @@ testLog = State.log $ return 0
 
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
+
+testConfig :: Log.Config
+testConfig = Log.Config
+    { consensusProtocol = \dict -> BasicPaxos.protocol dict (filepath "acceptors")
+    , persistDirectory  = filepath "replicas"
+    , leaseTimeout      = 3000000
+    , leaseRenewTimeout = 1000000
+    , driftSafetyFactor = 11 % 10
+    }
 
 remotableDecl [ [d|
 
@@ -89,13 +99,10 @@ performBenchmark (iters, updNo, readNo, sp) = do
       replicateM_ readNo $ State.select sdictInt port readCP
     sendChan sp ()
 
-remotable [ 'dictState, 'dictNodeId, 'testLog, 'filepath, 'performBenchmark ]
+remotable [ 'dictState, 'dictNodeId, 'testLog, 'testConfig, 'performBenchmark ]
 
-sdictState :: Static (Log.TypeableDict State)
+sdictState :: Static (Dict (Typeable State))
 sdictState = $(mkStatic 'dictState)
-
-sdictNodeId :: Static (SerializableDict NodeId)
-sdictNodeId = $(mkStatic 'dictNodeId)
 
 
 remoteTables :: RemoteTable
@@ -183,19 +190,12 @@ setup transport num action = do
       liftIO . putMVar box =<< setup' nd (node0 : map localNodeId nodes)
     takeMVar box
   where
-    setup' nd nodes = do
+    setup' _nd nodes = do
       h <- Log.new $(mkStatic 'State.commandEqDict)
                    ($(mkStatic 'State.commandSerializableDict)
                      `staticApply` sdictState)
-                   ($(mkClosure 'filepath) "replicas")
-                     (BasicPaxos.protocolClosure
-                       (sdictValue
-                         ($(mkStatic 'State.commandSerializableDict)
-                            `staticApply` sdictState))
-                       ($(mkClosure 'filepath) "acceptors"))
+                   (staticClosure $(mkStatic 'testConfig))
                    (staticClosure $(mkStatic 'testLog))
-                   3000000
-                   1000000
                    nodes
       port <- State.newPort h
       action h nodes port

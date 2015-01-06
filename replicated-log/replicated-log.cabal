@@ -137,6 +137,7 @@ Benchmark bench-suite
                     binary,
                     consensus,
                     consensus-paxos,
+                    constraints >= 0.4,
                     containers,
                     filepath,
                     replicated-log,
