@@ -94,9 +94,13 @@ performBenchmark (iters, updNo, readNo, sp) = do
     rh   <- expect :: Process (Log.RemoteHandle (Command State))
     h    <- Log.clone rh
     port <- State.newPort h
+    self <- getSelfPid
     replicateM_ iters $ do
-      replicateM_ updNo $ State.update port incrementCP
-      replicateM_ readNo $ State.select sdictInt port readCP
+      replicateM_ updNo $ spawnLocal $
+        State.update port incrementCP >> send self ()
+      replicateM_ readNo $ spawnLocal $
+        State.select sdictInt port readCP >> send self ()
+      replicateM_ (updNo + readNo) (expect :: Process ())
     sendChan sp ()
 
 remotable [ 'dictState, 'dictNodeId, 'testLog, 'testConfig, 'performBenchmark ]
@@ -150,8 +154,12 @@ main = do
 
       r <- setup transport repNo $ \_ _ port -> do
          time_ $ replicateM_ iters $ do
-           replicateM_ updNo $ State.update port incrementCP
-           replicateM_ readNo $ State.select sdictInt port readCP
+           self <- getSelfPid
+           replicateM_ updNo $ spawnLocal $
+             State.update port incrementCP >> send self ()
+           replicateM_ readNo $ spawnLocal $
+             State.select sdictInt port readCP >> send self ()
+           replicateM_ (updNo + readNo) (expect :: Process ())
       putStrLn $ "Replicas: " ++ show repNo ++ ", Clients: 1" ++
                  ", Updates: " ++ show updNo ++ ", Selects: " ++ show readNo ++
                  ": " ++ secs (r / fromIntegral iters)
@@ -163,16 +171,16 @@ main = do
     runMultiBench transport iters repNo updNo readNo = do
       mapM_ rmrf ["replicas", "acceptors"]
 
-      r <- setup transport repNo $ \h nodes port -> do
+      r <- setup transport repNo $ \h nodes _port -> do
          rh <- Log.remoteHandle h
          (sp, rp) <- newChan
          pds <- mapM (\nd -> spawn nd ($(mkClosure 'performBenchmark)
                                          (iters,updNo, readNo, sp)
                                       )
-                     ) (drop 1 nodes)
+                     ) nodes
          time_ $ do
            mapM_ (\p -> send p rh) pds
-           replicateM_ (length nodes - 1) $ (receiveChan rp :: Process ())
+           replicateM_ (length nodes) $ (receiveChan rp :: Process ())
       putStrLn $ "Replicas: " ++ show repNo ++ ", Clients: " ++ show repNo ++
                  ", Updates: " ++ show updNo ++ ", Selects: " ++ show readNo ++
                  ": " ++ secs (r / fromIntegral iters)

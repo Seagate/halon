@@ -128,7 +128,7 @@ Benchmark bench-suite
   Default-Language: Haskell2010
   Hs-Source-Dirs:   benchmarks
 
-  Ghc-Options: -Wall
+  Ghc-Options: -Wall -threaded
 
   if flag(maintainer)
     Ghc-Options: -Werror
