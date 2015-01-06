@@ -382,18 +382,22 @@ recoveryCoordinator eq mm argv = do
                   -- content is not decided upon by the RC.
                   target = Epoch (succ (epochId current)) "y = x^3"
                   rg' = G.deleteEdge e >>> G.connect Cluster Has target $ rg
-                  m0dNodes = [ node | node <- G.connectedTo Cluster Has rg'
-                                    , isJust $ runningService node m0d rg' ]
+                  m0Instances = [ i1 | node <- (G.connectedTo Cluster Has rg'
+                                          :: [Node])
+                                       , i1 <- (G.connectedTo node Runs rg'
+                                          :: [ServiceProcess ()])
+                                       , i2 <- (G.connectedTo m0d InstanceOf rg'
+                                          :: [ServiceProcess ()])
+                                       , i1 == i2 ]
 
               -- Broadcast new epoch.
-              forM_ m0dNodes $ \(Node them) ->
-                  nsendRemote them (snString $ serviceName m0d) $
+              forM_ m0Instances $ \(ServiceProcess pid) ->
+                send pid $
                   EpochTransition
-                      { etCurrent = epochId current
-                      , etTarget  = epochId target
-                      , etHow     = epochState target :: ByteString
-                      }
-
+                    { etCurrent = epochId current
+                    , etTarget  = epochId target
+                    , etHow     = epochState target :: ByteString
+                    }
               loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg' <* send eq eid))
         , matchHAEvent $ \(HAEvent eid EpochTransitionRequest{..} _) -> do
               let G.Edge _ Has target = head $ G.edgesFromSrc Cluster rg
