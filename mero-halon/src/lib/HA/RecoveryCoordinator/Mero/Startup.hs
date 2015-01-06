@@ -12,7 +12,6 @@
 {-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-orphans #-}
 module HA.RecoveryCoordinator.Mero.Startup where
 
-import HA.NodeAgent (getNodeAgent)
 import HA.RecoveryCoordinator.Mero (recoveryCoordinator, IgnitionArguments(..))
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
 import HA.EventQueue ( eventQueue, EventQueue )
@@ -31,7 +30,7 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
     ( remotable, remotableDecl, mkStatic, mkClosure, functionTDict )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
-import Data.Maybe ( catMaybes, isJust )
+import Data.Maybe ( isJust )
 
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
 import Data.List ( partition )
@@ -142,7 +141,7 @@ remotableDecl [ [d|
 
  -- | Start the RC and EQ on the nodes in the genders file
  ignition :: (Bool, [String], [String])
-          -> Process (Maybe (Bool,[NodeId],[Maybe ProcessId],[NodeId],[NodeId]))
+          -> Process (Maybe (Bool,[NodeId],[NodeId],[NodeId]))
  ignition (update, trackerstrs, nodestrs) = do
     say "Ignition!"
     disconnectAllNodeConnections
@@ -161,10 +160,8 @@ remotableDecl [ [d|
     let trackers = map tonid trackerstrs
     let nodes = map tonid nodestrs
 #endif
-    mpids <- mapM getNodeAgent trackers
-    let nids = map processNodeId $ catMaybes mpids
     if update then do
-      (members,newNodes) <- queryMembership nids
+      (members,newNodes) <- queryMembership trackers
       added <- case members of
         m : _ -> do
           call $(functionTDict 'addNodes) m $
@@ -172,11 +169,11 @@ remotableDecl [ [d|
           return True
         [] -> return False
 
-      return $ Just (added,trackers,mpids,members,newNodes)
+      return $ Just (added,trackers,members,newNodes)
     else do
-      cRGroup <- newRGroup $(mkStatic 'rsDict) nids
+      cRGroup <- newRGroup $(mkStatic 'rsDict) trackers
                             (RSState Nothing 0,((Nothing,[]),fromList []))
-      forM_ nids $ flip spawn $
+      forM_ trackers $ flip spawn $
         $(mkClosure 'startRS)
           ( IgnitionArguments nodes trackers
           , cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
