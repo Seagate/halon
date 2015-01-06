@@ -74,7 +74,7 @@ start naConf = do
     result <- call $(functionTDict 'ignition) nid $
                $(mkClosure 'ignition) args
     case result of
-      Just (added, trackers, mpids, members, newNodes) -> liftIO $ do
+      Just (added, _, members, newNodes) -> liftIO $ do
         if added then do
           putStrLn "The following nodes joined successfully:"
           mapM_ print newNodes
@@ -83,9 +83,6 @@ start naConf = do
         putStrLn ""
         putStrLn "The following nodes were already in the group:"
         mapM_ print members
-        putStrLn ""
-        putStrLn "The following nodes could not be contacted:"
-        mapM_ print $ [ tracker | (Nothing, tracker) <- zip mpids trackers ]
       Nothing -> return ()
   where
     args = ( fromDefault . configUpdate $ naConf
