@@ -6,7 +6,7 @@
 
 module Main where
 
-import qualified HA.RecoveryCoordinator.Mero.Tests ( tests )
+import qualified HA.RecoveryCoordinator.Mero.Tests
 
 import Test.Tasty (TestTree, defaultMainWithIngredients)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
@@ -32,7 +32,10 @@ import qualified Network.Transport.TCP as TCP
 ut :: Transport -> IO TestTree
 ut transport = return $
     testGroup "ut"
-      [ testCase "RC" $ HA.RecoveryCoordinator.Mero.Tests.tests transport 
+      [ testCase "RCServiceRestarting" $
+          HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport
+      , testCase "RCEpochTransition" $
+          HA.RecoveryCoordinator.Mero.Tests.testEpochTransition transport
       , testCase "uncleanRPCClose" $ threadDelay 2000000
       ]
 

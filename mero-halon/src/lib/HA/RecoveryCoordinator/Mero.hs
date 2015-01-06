@@ -254,7 +254,7 @@ recoveryCoordinator eq mm argv = do
               mbpids <- forM (stationNodes argv) getNodeAgent
               _ <- updateEQNodes agent [ processNodeId pid | Just pid <- mbpids ]
                -- XXX check for timeout.
-              _ <- restartService node m0d rg
+              _ <- startService nid m0d () rg
               loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')
         , match $ (decodeP >=>) $ \(ReconfigureCmd n@(Node nid) svc) ->
             unStatic (configDict svc) >>= \case
