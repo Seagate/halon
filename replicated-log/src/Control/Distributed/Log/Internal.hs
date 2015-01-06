@@ -428,6 +428,11 @@ replica Dict
                       ]
             if blocked then do
               exit pid "proposer reconfiguration"
+              -- If the leader loses the lease, resending the request will cause
+              -- the proposer to compete with proposals from the new leader.
+              --
+              -- TODO: Consider if there is a simple way to avoid competition of
+              -- proposers here.
               send self (d,request)
               proposer ρ s αs'
             else do
