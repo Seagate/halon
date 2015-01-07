@@ -132,8 +132,8 @@ main = do
 
         newRemoteRC nt $ \ln1 rc -> do
           send eq rc
-          promulgateId <- triggerEvent nid0 1
-          HAEvent (EventId promulgatedId 1) _ _ <- (expect :: Process (HAEvent [ByteString]))
+          _ <- triggerEvent nid0 1
+          HAEvent (EventId _ 1) _ _ <- (expect :: Process (HAEvent [ByteString]))
           say "RC forwarded the event"
           say "Simulating connection lost..."
           say $ "Remote endpoint address: " ++ show (nodeAddress nid0)

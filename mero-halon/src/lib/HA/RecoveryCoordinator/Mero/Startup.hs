@@ -17,10 +17,6 @@ import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
 import HA.EventQueue ( eventQueue, EventQueue )
 import HA.Multimap.Implementation ( Multimap, fromList )
 import HA.Multimap.Process ( multimap )
-#ifndef USE_RPC
-import qualified HA.Network.Socket as TCP
-import qualified Network.Transport.TCP as TCP
-#endif
 import HA.Replicator ( RGroup(..), RStateView(..) )
 import HA.Replicator.Log ( RLogGroup )
 
@@ -87,8 +83,9 @@ remotableDecl [ [d|
  isNodeInGroup :: [NodeId] -> NodeId -> Bool
  isNodeInGroup = flip elem
 
- addNodes :: ([NodeId],[NodeId],[NodeId]) -> Process ()
- addNodes (newNodes,nodes,trackers) = do
+ addNodes :: ([NodeId],[NodeId]) -- ^ (New nodes, existing trackers)
+          -> Process ()
+ addNodes (newNodes,trackers) = do
      disconnectAllNodeConnections
      mcRGroup <- liftIO $ readIORef globalRGroup
      case mcRGroup of
@@ -100,10 +97,10 @@ remotableDecl [ [d|
                   $(functionTDict 'spawnStartRS)
                   n
                   $ $(mkClosure 'spawnStartRS)
-                      (IgnitionArguments nodes trackers, cRGroup, Just replica)
+                      (IgnitionArguments trackers, cRGroup, Just replica)
        Nothing -> return ()
 
- 
+
  spawnStartRS :: ( IgnitionArguments
             , Closure (Process (RLogGroup HAReplicatedState))
             , Maybe (Replica RLogGroup)
@@ -150,32 +147,17 @@ remotableDecl [ [d|
        ] >> handleMessages refmapper
 
  -- | Start the RC and EQ on the nodes in the genders file
- ignition :: (Bool, [String], [String])
+ ignition :: (Bool, [NodeId])
           -> Process (Maybe (Bool,[NodeId],[NodeId],[NodeId]))
- ignition (update, trackerstrs, nodestrs) = do
+ ignition (update, trackers) = do
     say "Ignition!"
     disconnectAllNodeConnections
-    -- XXX we are hardcoding an endpoint here, on the assumption that there is
-    -- only one endpoint.
-#ifdef USE_RPC
-    -- TODO this is broken - needs to be fixed for USE_RPC
-    let trackers = [] :: [NodeId] -- map RPC.rpcAddress trackers
-    let nodes = [] :: [NodeId]
-#else
-    let tonid x = NodeId $ TCP.encodeEndPointAddress host port 0
-          where
-            sa = TCP.decodeSocketAddress x
-            host = TCP.socketAddressHostName sa
-            port = TCP.socketAddressServiceName sa
-    let trackers = map tonid trackerstrs
-    let nodes = map tonid nodestrs
-#endif
     if update then do
       (members,newNodes) <- queryMembership trackers
       added <- case members of
         m : _ -> do
           call $(functionTDict 'addNodes) m $
-                 $(mkClosure 'addNodes) (newNodes,nodes,trackers)
+                 $(mkClosure 'addNodes) (newNodes,trackers)
           return True
         [] -> return False
 
@@ -185,7 +167,7 @@ remotableDecl [ [d|
                             (RSState Nothing 0,((Nothing,[]),fromList []))
       forM_ trackers $ flip (call $(functionTDict 'spawnStartRS))  $
         $(mkClosure 'spawnStartRS)
-          ( IgnitionArguments nodes trackers
+          ( IgnitionArguments trackers
           , cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
           , Nothing :: Maybe (Replica RLogGroup)
           )

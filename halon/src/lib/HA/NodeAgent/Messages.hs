@@ -9,7 +9,14 @@
 
 module HA.NodeAgent.Messages where
 
-import Control.Distributed.Process (NodeId)
+import HA.CallTimeout
+
+import Control.Applicative ((<$>))
+import Control.Distributed.Process
+  ( ProcessId
+  , Process
+  , NodeId
+  )
 import GHC.Generics (Generic)
 import Data.Typeable (Typeable)
 import Data.Binary (Binary)
@@ -30,3 +37,9 @@ data ExitReason = Shutdown
 
 instance Binary ExitReason
 
+-- FIXME: Use a well-defined timeout.
+updateEQNodes :: ProcessId -> [NodeId] -> Process Bool
+updateEQNodes pid nodes =
+    maybe False id <$> callLocal (callTimeout timeout pid (UpdateEQNodes nodes))
+  where
+    timeout = 3000000

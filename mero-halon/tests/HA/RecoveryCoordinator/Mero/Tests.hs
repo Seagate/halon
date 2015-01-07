@@ -27,10 +27,11 @@ import HA.Replicator.Mock ( MC_RG )
 #else
 import HA.Replicator.Log ( MC_RG )
 #endif
-import HA.NodeAgent
+import HA.NodeAgent.Messages
 import HA.Service
   ( ServiceFailed(..)
   , encodeP
+  , serviceName
   , snString
   )
 import qualified HA.Services.Mero as Mero ( m0d )
@@ -107,7 +108,7 @@ testEpochTransition transport =
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        runRC (eq, na, IgnitionArguments [nid] [nid]) rGroup
+        runRC (eq, na, IgnitionArguments [nid]) rGroup
 
         "Starting service m0d" :: String <- expect
         say $ "m0d service started successfully."
@@ -151,7 +152,7 @@ testServiceRestarting transport = do
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        runRC (eq, na, IgnitionArguments [nid] [nid]) rGroup
+        runRC (eq, na, IgnitionArguments [nid]) rGroup
 
         "Starting service m0d" :: String <- expect
         say $ "m0d service started successfully."

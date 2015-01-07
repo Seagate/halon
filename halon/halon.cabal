@@ -64,14 +64,15 @@ Library
                    HA.Replicator.Log
                    HA.Replicator.Mock
                    HA.RecoverySupervisor
-                   HA.NodeAgent
                    HA.NodeAgent.Messages
+                   HA.NodeUp
                    HA.Network.RemoteTables
                    HA.Network.Socket
                    HA.Network.Transport
                    HA.Service
                    HA.Services.Dummy
                    HA.Services.Empty
+                   HA.Services.EQTracker
                    HA.Services.OCF
                    Control.SpineSeq
   Build-Depends:   base,

@@ -17,6 +17,7 @@ where
 
 import Control.Distributed.Process
   ( Process
+  , NodeId
   , call
   , getSelfNode
   , liftIO
@@ -32,15 +33,13 @@ import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
 
-import Options.Applicative ((<*>), (<$>))
+import Options.Applicative ((<$>))
 import qualified Options.Applicative as Opt
 
 import HA.RecoveryCoordinator.Mero.Startup
 
 data Config = Config
   { configUpdate :: Defaultable Bool
-  , configTrackers :: Defaultable [String]
-  , configSatellites :: Defaultable [String]
   } deriving (Eq, Show, Ord, Generic, Typeable)
 
 instance Binary Config
@@ -52,23 +51,14 @@ schema = let
              $ Opt.long "update"
             <> Opt.short 'u'
             <> Opt.help "Update something."
-    trackers = defaultable [] . Opt.many . Opt.strOption
-             $ Opt.long "trackers"
-            <> Opt.short 't'
-            <> Opt.help "Addresses to spawn tracking station nodes on."
-            <> Opt.metavar "ADDRESSES"
-    sats = defaultable [] . Opt.many . Opt.strOption
-             $ Opt.long "satellites"
-            <> Opt.short 's'
-            <> Opt.help "Satellite node addresses (not including trackers)."
-            <> Opt.metavar "ADDRESSES"
-  in Config <$> upd <*> trackers <*> sats
+  in Config <$> upd
 
 self :: String
 self = "HA.TrackingStation"
 
-start :: Config -> Process ()
-start naConf = do
+start :: [NodeId] -- ^ Nodes on which to start the tracking station
+      -> Config -> Process ()
+start nids naConf = do
     say $ "This is " ++ self
     nid <- getSelfNode
     result <- call $(functionTDict 'ignition) nid $
@@ -86,6 +76,5 @@ start naConf = do
       Nothing -> return ()
   where
     args = ( fromDefault . configUpdate $ naConf
-           , fromDefault . configTrackers $ naConf
-           , fromDefault . configSatellites $ naConf
+           , nids
            )
