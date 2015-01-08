@@ -110,17 +110,10 @@ main = do
         say $ "Redirecting logs from " ++ show nid1 ++ " to test control node"
         redirectLogsHere nid1
 
-        systemThere [m0] ("./halonctl -a " ++ m0loc ++ " -a " ++ m1loc ++ " bootstrap satellite")
-        expectLog [nid0] (isInfixOf "Starting service HA.NodeAgent")
-        expectLog [nid1] (isInfixOf "Starting service HA.NodeAgent")
-
         say "Spawning tracking station ..."
         systemThere [m0] ("./halonctl"
                        ++ " -a " ++ m0loc
-                       ++ " -a " ++ m1loc
-                       ++ " bootstrap"
-                       ++ " station -t " ++ m0loc
-                       ++ " -s " ++ m1loc
+                       ++ " bootstrap station"
                        )
 
         say "Waiting for tracking station to start ..."

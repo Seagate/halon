@@ -77,22 +77,25 @@ main = do
       say $ "Redirecting logs from " ++ show nid1 ++ " ..."
       redirectLogsHere nid1
 
-      say "Spawning node agents ..."
-      -- this runs on one node but it should control both nodes (?)
-      systemThere [m0] ("./halonctl -a " ++ m0loc ++ " -a " ++ m1loc ++ " bootstrap satellite")
-      expectLog [nid0] (isInfixOf "Starting service HA.NodeAgent")
-      expectLog [nid1] (isInfixOf "Starting service HA.NodeAgent")
       say "Spawning tracking station ..."
       systemThere [m0] ("./halonctl"
                      ++ " -a " ++ m0loc
-                     ++ " -a " ++ m1loc
-                     ++ " bootstrap"
-                     ++ " station -t " ++ m0loc
-                     ++ " -s " ++ m1loc
+                     ++ " bootstrap station"
                      )
       expectLog [nid0] (isInfixOf "New replica started in legislature://0")
+
+      say "Starting satellite nodes ..."
+      -- this runs on one node but it should control both nodes (?)
+      systemThere [m0] ("./halonctl"
+                     ++ " -a " ++ m0loc
+                     ++ " -a " ++ m1loc
+                     ++ " bootstrap satellite"
+                     ++ " -t " ++ m0loc)
+      expectLog [nid0] (isInfixOf $ "New node contacted: nid://" ++ m0loc)
+      expectLog [nid0] (isInfixOf $ "New node contacted: nid://" ++ m1loc)
+      expectLog [nid0, nid1] (isInfixOf "Got UpdateEQNodes")
+
       say "Starting dummy service ..."
-      expectLog [nid0] (isInfixOf "New node contacted")
       systemThere [m0] ("./halonctl -a " ++ m1loc ++
                         " service dummy start -t " ++ m0loc)
       expectLog [nid1] (isInfixOf "Starting service dummy")
