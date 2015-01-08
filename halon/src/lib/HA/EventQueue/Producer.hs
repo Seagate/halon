@@ -30,6 +30,7 @@ import Control.Distributed.Process
   , monitor
   , nsend
   , getSelfPid
+  , say
   , spawnLocal
   )
 import Control.Distributed.Process.Serializable (Serializable)
@@ -39,6 +40,7 @@ import qualified Control.Distributed.Process.Internal.Types as I
 import Control.Monad (void)
 
 import Data.ByteString (ByteString)
+import Data.List ((\\))
 
 softTimeout :: Int
 softTimeout = 5000000
@@ -89,12 +91,13 @@ promulgateHAEvent :: Serializable a
                   -> HAEvent a
                   -> Process ()
 promulgateHAEvent eqnids evt = do
+  say $ "Sending to " ++ (show eqnids)
   result <- callLocal $
     ncallRemoteAnyTimeout
       promulgateTimeout eqnids eventQueueLabel evt
   case result :: Maybe (NodeId, NodeId) of
     Nothing -> promulgateHAEvent eqnids evt
-    Just (_, rc) -> nsend EQT.name $ EQT.PreferReplicas [rc]
+    Just (rnid, pnid) -> nsend EQT.name $ EQT.PreferReplicas rnid pnid
 
 -- | Promulgate an HAEvent directly to EQ nodes, specifying a preference for
 --   certain nodes first. We also try to inform the local EQ tracker about
@@ -105,12 +108,15 @@ promulgateHAEventPref :: Serializable a
                   -> HAEvent a
                   -> Process ()
 promulgateHAEventPref peqnids eqnids evt = do
+  say $ "Sending to " ++ (show peqnids) ++ " and then to " ++ show (eqnids \\ peqnids)
   result <- callLocal $
     ncallRemoteAnyPreferTimeout
-      softTimeout promulgateTimeout peqnids eqnids eventQueueLabel evt
+      softTimeout promulgateTimeout
+      peqnids (eqnids \\ peqnids)
+      eventQueueLabel evt
   case result :: Maybe (NodeId, NodeId) of
     Nothing -> promulgateHAEventPref peqnids eqnids evt
-    Just (_, rc) -> nsend EQT.name $ EQT.PreferReplicas [rc]
+    Just (rnid, pnid) -> nsend EQT.name $ EQT.PreferReplicas rnid pnid
 
 -- | Add an event to the event queue, and don't die yet. This uses the local
 --   event tracker to identify the list of EQ nodes.

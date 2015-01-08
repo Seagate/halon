@@ -39,7 +39,7 @@ import Control.Distributed.Static
 
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
-import Data.List (intersect)
+import Data.List (intersect, sort)
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -50,14 +50,20 @@ import GHC.Generics (Generic)
 data ReplicaLocation = ReplicaLocation
   { eqsPreferredReplicas :: [NodeId]
   , eqsReplicas :: [NodeId]
-  } deriving (Eq, Generic, Show)
+  } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary ReplicaLocation
 instance Hashable ReplicaLocation
 
 -- | Message sent by clients to indicate a preference for certain replicas.
-newtype PreferReplicas = PreferReplicas [NodeId]
-  deriving (Eq, Show, Typeable, Binary, Hashable)
+data PreferReplicas = PreferReplicas
+  { responsiveNid :: NodeId
+  , preferredNid :: NodeId
+  }
+  deriving (Eq, Generic, Show, Typeable)
+
+instance Binary PreferReplicas
+instance Hashable PreferReplicas
 
 -- | Message sent by clients to request a replica list.
 newtype ReplicaRequest = ReplicaRequest ProcessId
@@ -92,16 +98,12 @@ remotableDecl [ [d|
                   -- Preserve the preferred replica only if it belongs
                   -- to the new list of nodes.
                 , eqsPreferredReplicas = intersect
-                                          (eqsPreferredReplicas eqs)
-                                          eqnids
+                    eqnids
+                    (eqsPreferredReplicas eqs)
                 }
-          , match $ \(PreferReplicas prs) -> do
+          , match $ \prs@(PreferReplicas rnid pnid) -> do
               say $ "Got PreferReplicas: " ++ show prs
-              return $ eqs
-                { eqsPreferredReplicas = intersect
-                                          (eqsReplicas eqs)
-                                          prs
-                }
+              return $ handleEQResponse eqs rnid pnid
           , match $ \(ReplicaRequest requester) -> do
               send requester $ ReplicaReply eqs
               return eqs
@@ -113,5 +115,26 @@ remotableDecl [ [d|
                 ($(mkStaticClosure 'eqTrackerProcess))
                 ($(mkStatic 'someConfigDict)
                   `staticApply` $(mkStatic 'emptyConfigDict))
+
+  -- The EQ response may suggest to contact another replica. This function
+  -- handles the EQTracker state update.
+  --
+  -- @handleEQResponse naState responsiveNid preferredNid@
+  --
+  handleEQResponse :: ReplicaLocation -> NodeId -> NodeId -> ReplicaLocation
+  handleEQResponse eqs rnid pnid =
+    if sort [rnid, pnid] /= sort (eqsPreferredReplicas eqs)
+    then
+      updateEQS eqs $
+        if rnid == pnid
+        then [rnid] -- The EQ sugested itself.
+        else if rnid `elem` (eqsPreferredReplicas eqs)
+          then [pnid] -- Likely we have not tried reaching the preferred node yet.
+          else [rnid, pnid] -- The preferred replica did not respond soon enough.
+    else
+      eqs
+
+  updateEQS :: ReplicaLocation -> [NodeId] -> ReplicaLocation
+  updateEQS eqs pnids = eqs { eqsPreferredReplicas = pnids }
 
   |] ]
