@@ -64,10 +64,10 @@ promulgateEQ eqnids x = spawnLocal $ do
 
 -- | Like 'promulgateEQ', but express a preference for certain EQ nodes.
 promulgateEQPref :: Serializable a
-             => [NodeId] -- ^ Preferred EQ nodes.
-             -> [NodeId] -- ^ All EQ nodes.
-             -> a -- ^ Event to send.
-             -> Process ProcessId
+                 => [NodeId] -- ^ Preferred EQ nodes.
+                 -> [NodeId] -- ^ All EQ nodes.
+                 -> a -- ^ Event to send.
+                 -> Process ProcessId
 promulgateEQPref peqnids eqnids x = spawnLocal $ do
     self <- getSelfPid
     promulgateHAEventPref peqnids eqnids $ buildHAEvent x (EventId self 1)
@@ -103,10 +103,10 @@ promulgateHAEvent eqnids evt = do
 --   certain nodes first. We also try to inform the local EQ tracker about
 --   preferred replicas, if available.
 promulgateHAEventPref :: Serializable a
-                  => [NodeId] -- ^ Preferred EQ nodes.
-                  -> [NodeId] -- ^ All EQ nodes.
-                  -> HAEvent a
-                  -> Process ()
+                      => [NodeId] -- ^ Preferred EQ nodes.
+                      -> [NodeId] -- ^ All EQ nodes.
+                      -> HAEvent a
+                      -> Process ()
 promulgateHAEventPref peqnids eqnids evt = do
   say $ "Sending to " ++ (show peqnids) ++ " and then to " ++ show (eqnids \\ peqnids)
   result <- callLocal $

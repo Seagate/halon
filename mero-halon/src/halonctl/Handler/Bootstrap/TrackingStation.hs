@@ -6,6 +6,7 @@
 -- on a set of provided nodes.
 
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Handler.Bootstrap.TrackingStation
@@ -38,12 +39,9 @@ import qualified Options.Applicative as Opt
 
 import HA.RecoveryCoordinator.Mero.Startup
 
-data Config = Config
+newtype Config = Config
   { configUpdate :: Defaultable Bool
-  } deriving (Eq, Show, Ord, Generic, Typeable)
-
-instance Binary Config
-instance Hashable Config
+  } deriving (Eq, Show, Ord, Generic, Binary, Hashable, Typeable)
 
 schema :: Opt.Parser Config
 schema = let
