@@ -63,8 +63,6 @@ module HA.RecoverySupervisor
       recoverySupervisor
     , RSState(..)
     , __remoteTable
-    , pollingPeriod
-    , updatePeriod
     ) where
 
 import HA.Replicator ( RGroup, updateStateWith, getState )
@@ -110,12 +108,10 @@ millis :: Int
 millis = 1000
 
 -- | Amount of milliseconds to wait before renewing a lease.
--- Exposed for testing.
 updatePeriod :: Int
 updatePeriod = 750 * millis
 
 -- | Amount of milliseconds to wait before polling the state.
--- Exposed for testing.
 pollingPeriod :: Int
 pollingPeriod = 1000 * millis
 
