@@ -63,8 +63,6 @@ module HA.RecoverySupervisor
       recoverySupervisor
     , RSState(..)
     , __remoteTable
-    , pollingPeriod
-    , updatePeriod
     ) where
 
 import HA.Replicator ( RGroup, updateStateWith, getState )
@@ -106,15 +104,16 @@ setLeader (candidate,previousLeaseCount) rstOld =
 
 remotable [ 'setLeader ]
 
--- | Amount of microseconds to wait before renewing a lease.
--- Exposed for testing.
-updatePeriod :: Int
-updatePeriod = 15*1000000
+millis :: Int
+millis = 1000
 
--- | Amount of microseconds to wait before polling the state.
--- Exposed for testing.
+-- | Amount of milliseconds to wait before renewing a lease.
+updatePeriod :: Int
+updatePeriod = 750 * millis
+
+-- | Amount of milliseconds to wait before polling the state.
 pollingPeriod :: Int
-pollingPeriod = 20*1000000
+pollingPeriod = 1000 * millis
 
 -- | Runs the recovery supervisor.
 recoverySupervisor :: RGroup g

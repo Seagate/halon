@@ -3,10 +3,10 @@
 -- License   : All rights reserved.
 --
 
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell     #-}
 
 module HA.RecoverySupervisor.Tests ( tests ) where
 
@@ -14,7 +14,6 @@ import HA.Process
 import HA.RecoverySupervisor
   ( recoverySupervisor
   , RSState(..)
-  , pollingPeriod
   )
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR
@@ -31,7 +30,6 @@ import Control.Distributed.Process
   , liftIO
   , catch
   , receiveWait
-  , receiveTimeout
   , ProcessId
   , exit
   , unClosure
@@ -49,22 +47,22 @@ import Control.Concurrent
   , newEmptyMVar
   , putMVar
   , takeMVar
+  , tryTakeMVar
   , threadDelay
   )
 import Control.Exception ( SomeException )
 import Control.Monad ( liftM3, void, replicateM_, replicateM, forM_ )
-import Data.IORef ( newIORef, atomicModifyIORef, IORef, readIORef, writeIORef )
 import Network.Transport (Transport)
 import Test.Framework
 
 data TestCounters = TestCounters
-    { cStart :: IORef Int -- ^ the amount of times RC has been started
-    , cStop :: IORef Int -- ^ the amount of times RC has been stopped
-    , cRC :: IORef (Maybe ProcessId) -- ^ the pid of the last started RC
+    { cStart :: MVar ()        -- ^ RC has been started
+    , cStop  :: MVar ()        -- ^ RC has been stopped
+    , cRC    :: MVar ProcessId -- ^ RC pid
     }
 
 newCounters :: IO TestCounters
-newCounters = liftM3 TestCounters (newIORef 0) (newIORef 0) (newIORef Nothing)
+newCounters = liftM3 TestCounters newEmptyMVar newEmptyMVar newEmptyMVar
 
 type RG = MC_RG RSState
 
@@ -77,14 +75,13 @@ testRS' mdone counters rGroup = do
 
   where
 
-    addCounter r i = liftIO $ atomicModifyIORef r $ \s -> (s+i,())
-
     dummyRC cnts = do
         self <- getSelfPid
-        liftIO $ writeIORef (cRC cnts) $ Just self
-        addCounter (cStart cnts) 1
+        liftIO $ do
+          putMVar (cRC cnts) self
+          putMVar (cStart cnts) ()
         receiveWait []
-      `catch` (\(_ :: ProcessExitException) -> addCounter (cStop cnts) 1)
+      `catch` (\(_ :: ProcessExitException) -> liftIO $ putMVar (cStop cnts) ())
 
 rsSDict :: SerializableDict RSState
 rsSDict = SerializableDict
@@ -97,36 +94,23 @@ tests oneNode transport = do
               if oneNode then "with one node..."
                else "with multiple nodes..."
   return
-    [ testSuccess "leaderSurvived" $ rsTest transport oneNode $ \counters rGroup -> do
-        leader0 <- retryTest $ do
-            1 <- readRef $ cStart counters
-            0 <- readRef $ cStop counters
+    [ testSuccess "newLeader" $ rsTest transport oneNode $ \counters rGroup -> do
+        _leader0 <- do
+            liftIO $ do
+              takeMVar $ cStart counters
+              Nothing <- tryTakeMVar $ cStop counters
+              return ()
             RSState (Just leader0) _ <- getState rGroup
             return leader0
 
-        leader1 <- retryTest $ do
-            RSState (Just leader1) _c1 <- getState rGroup
-            1 <- readRef $ cStart counters
-            0 <- readRef $ cStop counters
-            return leader1
-
-        assert $ leader0 == leader1 -- && c1 == 1 + div pollingPeriod updatePeriod
-
-    , testSuccess "newLeader" $ rsTest transport oneNode $ \counters rGroup -> do
-        _leader0 <- retryTest $ do
-            1 <- readRef $ cStart counters
-            0 <- readRef $ cStop counters
-            RSState (Just leader0) _ <- getState rGroup
-            return leader0
-
-        Just rc <- readRef (cRC counters)
+        rc <- liftIO $ takeMVar $ cRC counters
         exit rc "killed for testing"
 
-        retryTest $ do
-            RSState (Just _) _c2 <- getState rGroup
-            2 <- readRef $ cStart counters
-            1 <- readRef $ cStop counters
-            return ()
+        liftIO $ do
+          takeMVar $ cStart counters
+          takeMVar $ cStop counters
+        RSState (Just _) _ <- getState rGroup
+        return ()
     ]
 
 rsTest :: Transport -> Bool -> (TestCounters -> MC_RG RSState -> Process ()) -> IO ()
@@ -161,15 +145,3 @@ rsTest transport oneNode action = withTmpDirectory $ do
   -- does not block indefinitely.
   -- mapM_ (flip terminateLocalProcesses (Just pollingPeriod)) ns
   mapM_ closeLocalNode ns
-
-retryTest :: Process a -> Process a
-retryTest = retryTest' 5 pollingPeriod
-  where
-    retryTest' :: Int -> Int -> Process a -> Process a
-    retryTest' n t p | n>1 =
-       do void $ receiveTimeout t []
-          catch p $ \e -> const (retryTest' (n-1) t p) (e :: SomeException)
-    retryTest' _ _ p = p
-
-readRef :: IORef a -> Process a
-readRef = liftIO . readIORef
