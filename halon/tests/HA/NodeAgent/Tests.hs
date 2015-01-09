@@ -9,23 +9,21 @@
 
 module HA.NodeAgent.Tests ( tests, dummyRC__static, dummyRC__sdict) where
 
-import HA.Service (serviceProcess)
-import HA.NodeAgent
-  ( NodeAgentConf(..)
-  , nodeAgent
-  , updateEQNodes
-  )
-import HA.Process
 import HA.EventQueue ( eventQueue, EventQueue, eventQueueLabel )
+import HA.EventQueue.Consumer (HAEvent(..),matchHAEvent)
+import HA.EventQueue.Producer (expiate)
+import HA.NodeAgent.Messages
+import HA.Process
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
 #else
 import HA.Replicator.Log ( MC_RG )
 #endif
+import HA.Service (serviceProcess)
+import HA.Services.EQTracker
 import RemoteTables ( remoteTable )
-import HA.EventQueue.Producer (expiate)
-import HA.EventQueue.Consumer (HAEvent(..),matchHAEvent)
+
 
 import Control.Distributed.Process
   ( Process
@@ -52,8 +50,7 @@ import Control.Distributed.Process.Node ( LocalNode, localNodeId, newLocalNode, 
 import Control.Distributed.Process.Internal.Primitives ( unClosure )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
-import Data.Defaultable
-import Data.List (find, nub, (\\))
+import Data.List (find, isPrefixOf, nub, (\\))
 import Control.Concurrent ( throwTo, myThreadId, threadDelay )
 import Control.Concurrent.MVar (newEmptyMVar,putMVar,takeMVar,MVar)
 import Control.Monad ( replicateM, forM_, forever )
@@ -64,12 +61,6 @@ import System.IO.Unsafe ( unsafePerformIO )
 import Test.Framework
 
 type RG = MC_RG EventQueue
-
-testConf :: NodeAgentConf
-testConf = NodeAgentConf {
-    softTimeout = Configured 5000000
-  , timeout = Configured 10000000
-}
 
 dummyRC :: () -> Process RG -> Process ()
 dummyRC () pRGroup = pRGroup >>= dummyRC'
@@ -95,11 +86,11 @@ dummyRC' rGroup =
       _ <- loop
       return ()
 
-{- NOINLINE sync0 #-}
+{-# NOINLINE sync0 #-}
 sync0 :: MVar ()
 sync0 = unsafePerformIO $ newEmptyMVar
 
-{- NOINLINE sync1 #-}
+{-# NOINLINE sync1 #-}
 sync1 :: MVar ()
 sync1 = unsafePerformIO $ newEmptyMVar
 
@@ -142,7 +133,7 @@ naTestWithEQ transport action = withTmpDirectory $ do
     newNode = newLocalNode transport
                        $ __remoteTable remoteTable
     initialize nids node = tryRunProcess node $ do
-      na <- spawnLocalLink . ($ testConf) =<< unClosure (serviceProcess nodeAgent)
+      na <- spawnLocalLink . ($ ()) =<< unClosure (serviceProcess eqTracker)
       True <- updateEQNodes na nids
       return ()
 
@@ -164,14 +155,15 @@ naTest transport action = withTmpDirectory $ bracket
                    (expect :: Process (ProcessId, HAEvent [ByteString]))
                    >>= send self . (,) (nids !! 1)
           register eventQueueLabel eq2
-        na <- spawnLocalLink =<< (fmap (\p -> p testConf)
-                                  $ unClosure (serviceProcess nodeAgent))
+        na <- spawnLocalLink . ($ ()) =<< unClosure (serviceProcess eqTracker)
         True <- updateEQNodes na nids
         action nids
 
 expectEventOnNode :: NodeId -> Process ProcessId
 expectEventOnNode n = do
     (n', (sender, HAEvent _ _ _)) <- expect :: Process (NodeId, (ProcessId, HAEvent [ByteString]))
+    say $ "n is " ++ show n
+    say $ "n' is " ++ show n'
     True <- return $ n == n'
     return sender
 
@@ -195,16 +187,24 @@ tests transport = do
              assert True
 
       , testSuccess "na-should-compress-path" $ naTest transport $ \nids -> do
+            self <- getSelfPid
+            registerInterceptor $ \string ->
+              if "Got PreferReplicas:" `isPrefixOf` string
+              then send self ()
+              else return ()
+
             -- We get an event on the first node.
             _ <- spawnLocal $ expiate "hello1"
             sender0 <- expectEventOnNode $ nids !! 0
             send sender0 (nids !! 0, nids !! 0)
+            () <- expect
 
             -- We still get an event on the first node and suggest NA to use the
             -- second node.
             _ <- spawnLocal $ expiate "hello2"
             sender1 <- expectEventOnNode $ nids !! 0
             send sender1 (nids !! 0, nids !! 1)
+            () <- expect
 
             -- We get an event on the second node.
             _ <- spawnLocal $ expiate "hello3"
@@ -217,16 +217,26 @@ tests transport = do
             send sender3 (nids !! 1, nids !! 1)
 
       , testSuccess "na-should-compress-path-with-failures" $ naTest transport $ \nids -> do
-            -- We get an event on the first node.
+
+            self <- getSelfPid
+            registerInterceptor $ \string ->
+              if "Got PreferReplicas:" `isPrefixOf` string
+              then send self ()
+              else return ()
+
+            -- We get an event on both nodes.
             _ <- spawnLocal $ expiate "hello1"
             sender0 <- expectEventOnNode $ nids !! 0
+            _ <- expectEventOnNode $ nids !! 1
             send sender0 (nids !! 0, nids !! 0)
+            () <- expect
 
             -- We still get an event on the first node and suggest NA to use the
             -- second node.
             _ <- spawnLocal $ expiate "hello2"
             sender1 <- expectEventOnNode $ nids !! 0
             send sender1 (nids !! 0, nids !! 1)
+            () <- expect
 
             -- We get an event on the second node, but we are not going to
             -- reply, so NA should resend to the first node.
@@ -235,6 +245,7 @@ tests transport = do
 
             sender2 <- expectEventOnNode $ nids !! 0
             send sender2 (nids !! 0, nids !! 1)
+            () <- expect
 
             -- We get an event on the second node and we reply. But because we
             -- didn't reply last time, NA will also send the event to the last
@@ -250,17 +261,20 @@ tests transport = do
             True <- return $ length nids4 == 2
             True <- return $ null $ nids4 \\ nids
             send sender (nids !! 1, nids !! 1)
+            () <- expect
 
             -- We get the next event on the second node again, and we suggest
             -- the first node.
             _ <- spawnLocal $ expiate "hello5"
             sender3 <- expectEventOnNode $ nids !! 1
             send sender3 (nids !! 1, nids !! 0)
+            () <- expect
 
             -- We get the next event on the first node.
             _ <- spawnLocal $ expiate "hello6"
             sender4 <- expectEventOnNode $ nids !! 0
             send sender4 (nids !! 0, nids !! 0)
+            () <- expect
 
             -- We get the next event on the first node again.
             _ <- spawnLocal $ expiate "hello7"
