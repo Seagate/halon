@@ -27,6 +27,8 @@ import Control.Distributed.Commands.DigitalOcean
   )
 
 import Data.Maybe (fromMaybe)
+import System.Environment (lookupEnv)
+
 
 -- | Creates a Provider interface for Digital Ocean.
 --
@@ -50,15 +52,15 @@ createProvider args = do
         }
 
 createDefaultProvider :: IO Provider
-createDefaultProvider = createProvider $
- NewDropletArgs
+createDefaultProvider = do
+  mimg <- lookupEnv "DC_DO_IMAGEID"
+  case mimg of
+    Nothing -> error $ "An image Id to create a droplet needs to be provided" ++
+                       " in the environment variable DC_DO_IMAGEID."
+    Just img -> createProvider $ NewDropletArgs
       { name        = "test-droplet"
       , size_slug   = "512mb"
-      , -- The image is provisioned with halon from an ubuntu system. It has a
-        -- user dev with halon built in its home folder. The image also has
-        -- /etc/ssh/ssh_config tweaked so copying files from remote to remote
-        -- machine does not store hosts in known_hosts.
-        image_id    = "7055005"
+      , image_id    = img
       , region_slug = "ams2"
       , ssh_key_ids = ""
       }

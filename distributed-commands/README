@@ -7,8 +7,12 @@ Environmental setup for tests:
     get these from Google Drive in a file called "Access Tokens"
         export DO_CLIENT_ID=...
         export DO_API_KEY=...
-  * you need ssh key that is known to the droplet test snapshot - ask
-     someone like @facundo to give you such an ssh key
+  * you need to specify the image_id to use for tests in the environment
+    variable DC_DO_IMAGEID. It must have a user dev. And ssh must be
+    configured to allow copying files from machine to machine without
+    prompting the user with questions.
+  * if you use the droplet test snapshot you need an ssh key that is
+    known to it - ask someone like @facundo to give you such an ssh key
   * export DC_PROVIDER=digital-ocean
 
 * To test using docker:
