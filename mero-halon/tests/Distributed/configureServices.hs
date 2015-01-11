@@ -23,7 +23,8 @@ import Control.Distributed.Commands.Process
   , __remoteTable
   )
 import Control.Distributed.Commands.Providers
-  ( getProvider
+  ( getHostAddress
+  , getProvider
   )
 
 import Control.Distributed.Process (getSelfPid, say)
@@ -39,7 +40,6 @@ import Network.Transport.TCP (createTransport, defaultTCPParameters)
 
 import System.Environment (getExecutablePath)
 import System.FilePath ((</>), takeDirectory)
-import System.Process (readProcess)
 
 getBuildPath :: IO FilePath
 getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
@@ -50,7 +50,7 @@ main = do
 
     buildPath <- getBuildPath
 
-    [ip] <- fmap (take 1 . lines) $ readProcess "hostname" ["-i"] ""
+    ip <- getHostAddress
     Right nt <- createTransport ip "4000" defaultTCPParameters
     n0 <- newLocalNode nt (__remoteTable initRemoteTable)
 

@@ -21,7 +21,10 @@ import Control.Distributed.Commands.Process
   , expectLog
   , __remoteTable
   )
-import Control.Distributed.Commands.Providers (getProvider)
+import Control.Distributed.Commands.Providers
+  ( getHostAddress
+  , getProvider
+  )
 
 import Control.Distributed.Process (getSelfPid, say)
 import Control.Distributed.Process.Node
@@ -30,13 +33,13 @@ import Control.Distributed.Process.Node
   , runProcess
   )
 
+import Control.Monad (forM_)
 import Data.List (isInfixOf)
 
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
 
 import System.Environment (getExecutablePath)
 import System.FilePath ((</>), takeDirectory)
-import System.Process (readProcess)
 
 getBuildPath :: IO FilePath
 getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
@@ -47,7 +50,7 @@ main = do
 
     buildPath <- getBuildPath
 
-    [ip] <- fmap (take 1 . lines) $ readProcess "hostname" ["-i"] ""
+    ip <- getHostAddress
     Right nt <- createTransport ip "4000" defaultTCPParameters
     n0 <- newLocalNode nt (__remoteTable initRemoteTable)
 
@@ -73,7 +76,8 @@ main = do
       redirectLogsHere nid1
 
       say "Spawning node agents ..."
-      systemThere ms ("./halonctl -a $(hostname -I | head -1 | tr -d ' '):9000 bootstrap satellite")
+      forM_ ms $ \m -> 
+        systemThere [m] ("./halonctl -a " ++ m ++ ":9000 bootstrap satellite")
       expectLog [nid0] (isInfixOf "Starting service HA.NodeAgent")
       expectLog [nid1] (isInfixOf "Starting service HA.NodeAgent")
       say "Spawning tracking station ..."
