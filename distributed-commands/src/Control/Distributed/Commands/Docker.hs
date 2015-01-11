@@ -21,7 +21,7 @@ module Control.Distributed.Commands.Docker
     ) where
 
 import Control.Applicative ( (<$>) )
-import Control.Concurrent (threadDelay)
+import Control.Distributed.Commands.Internal.Probes (waitPing, waitSSH)
 import Control.Exception (throwIO)
 import Control.Monad (void)
 import Data.Aeson (Value(..), decode)
@@ -30,7 +30,9 @@ import qualified Data.ByteString.Lazy.Char8 as BL8 (unpack, pack)
 import qualified Data.HashMap.Strict as HM (lookup)
 import Data.Text (unpack)
 import System.Environment (lookupEnv)
-import System.Process ( readProcess )
+import System.Process (readProcess)
+
+
 
 -- API key and client ID
 data Credentials = Credentials { dockerHost :: String }
@@ -64,15 +66,13 @@ newContainer credentials args = do
         -> do
               -- container created - now start it
               void $ callCURLPost json (dockerHost credentials ++ "/containers/" ++ (unpack st) ++ "/start")
--- TODO: wait for this container to be up and connected to the network?
--- and pingable/ssh listening?
---
---
-              -- Wait half a second before using the container
-              -- otherwise race-condition ssh failures will ensue
-              threadDelay 500000
 
-              showContainer credentials (unpack st)
+              containerData <- showContainer credentials (unpack st)
+
+              waitPing (containerIP containerData)
+              waitSSH (containerIP containerData)
+
+              return containerData
 
       r -> throwIO $ userError $ "newContainer error: " ++ showResponse r
 

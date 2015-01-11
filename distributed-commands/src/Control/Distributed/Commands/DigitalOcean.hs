@@ -21,7 +21,8 @@ module Control.Distributed.Commands.DigitalOcean
     ) where
 
 import Control.Concurrent (threadDelay)
-import Control.Exception (throwIO, bracketOnError)
+import Control.Distributed.Commands.Internal.Probes (waitPing, waitSSH)
+import Control.Exception (throwIO)
 import Control.Monad (liftM2, when)
 import Data.Aeson (Value(..), decode)
 import Data.Aeson.Encode.Pretty (encodePretty)
@@ -31,15 +32,7 @@ import Data.Maybe (isNothing)
 import Data.Scientific (Scientific, floatingOrInteger)
 import Data.Text (unpack)
 import System.Environment (lookupEnv)
-import System.IO (hGetLine, hClose, openFile, IOMode(..))
-import System.Process
-    ( terminateProcess
-    , CreateProcess(..)
-    , proc
-    , StdStream(..)
-    , createProcess
-    , readProcess
-    )
+import System.Process (readProcess)
 
 -- API key and client ID
 data Credentials = Credentials { clientId :: String, apiKey :: String }
@@ -96,9 +89,7 @@ newDroplet credentials args = do
                 showScientificId eventId
               dd <- showDroplet credentials $ showScientificId dropletId
               waitPing $ dropletDataIP dd
-              -- Wait ten seconds before using the droplet othwerwise,
-              -- mysterious ssh failures would ensue.
-              threadDelay $ 10 * 1000000
+              waitSSH $ dropletDataIP dd
               return dd
       r -> throwIO $ userError $ "newDroplet error: " ++ showResponse r
 
@@ -182,19 +173,6 @@ waitForEventConfirmation credentials eventId = do
     else
       when (eventDataStatus ev /= Just "done") $
         throwIO $ userError $ "newDroplet error: " ++ show ev
-
--- | Waits until the given host replies to pings.
-waitPing :: String -> IO ()
-waitPing host =
-    bracketOnError (openFile "/dev/null" ReadWriteMode) hClose $ \dev_null -> do
-      (_, Just sout, ~(Just _), ph) <- createProcess (proc "ping" [ host ])
-        { std_out = CreatePipe
-        , std_err = UseHandle dev_null
-        }
-      -- We assume that the host has responded when ping prints two lines.
-      _ <- hGetLine sout
-      _ <- hGetLine sout
-      terminateProcess ph
 
 -- XXX The digital ocean interface was first implemented with the haskell
 -- bindings to libcurl. Implementation with v1.3.8 of bindings was crashing
