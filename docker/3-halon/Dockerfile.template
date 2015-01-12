@@ -1,4 +1,4 @@
-FROM tweag/halon-deps:XXXDEPVERSIONXXX
+FROM tweag/halon-deps:@@DEPVERSION@@
 MAINTAINER ben.clifford@tweag.io
 
 ADD id_rsa /root/.ssh/
@@ -6,7 +6,7 @@ ADD known_hosts /root/.ssh/
 
 WORKDIR /halon
 RUN git fetch
-RUN git checkout XXXCOMMITXXX
+RUN git checkout @@COMMIT@@
 
 # build halon, which will also run the tests,
 # hopefully.

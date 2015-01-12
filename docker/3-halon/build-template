@@ -9,6 +9,6 @@ export COMMIT=$(git rev-parse HEAD)
 echo COMMIT = $COMMIT
 
 cat docker/3-halon/Dockerfile.template \
-  | sed "s/XXXDEPVERSIONXXX/${DEPVERSION}/g" \
-  | sed "s/XXXCOMMITXXX/${COMMIT}/g" > docker/3-halon/Dockerfile
+  | sed "s/@@DEPVERSION@@/${DEPVERSION}/g" \
+  | sed "s/@@COMMIT@@/${COMMIT}/g" > docker/3-halon/Dockerfile
 docker build -t tweag/halon docker/3-halon/

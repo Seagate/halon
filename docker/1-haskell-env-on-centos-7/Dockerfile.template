@@ -14,18 +14,18 @@ RUN curl -O http://www.mirrorservice.org/sites/dl.fedoraproject.org/pub/epel/7/x
 RUN rpm --install epel-release-7-5.noarch.rpm
 RUN yum install --assumeyes libgenders-devel
 
-RUN curl -O https://downloads.haskell.org/~ghc/XXXGHCVERSIONXXX/ghc-XXXGHCVERSIONXXX-x86_64-unknown-linux-deb7.tar.bz2
+RUN curl -O https://downloads.haskell.org/~ghc/@@GHCVERSION@@/ghc-@@GHCVERSION@@-x86_64-unknown-linux-deb7.tar.bz2
 
-RUN bunzip2 ghc-XXXGHCVERSIONXXX-x86_64-unknown-linux-deb7.tar.bz2
-RUN tar xf ghc-XXXGHCVERSIONXXX-x86_64-unknown-linux-deb7.tar
+RUN bunzip2 ghc-@@GHCVERSION@@-x86_64-unknown-linux-deb7.tar.bz2
+RUN tar xf ghc-@@GHCVERSION@@-x86_64-unknown-linux-deb7.tar
 
-WORKDIR ./ghc-XXXGHCVERSIONXXX
+WORKDIR ./ghc-@@GHCVERSION@@
 RUN ./configure
 RUN make install
 WORKDIR /
-RUN curl -O https://www.haskell.org/cabal/release/cabal-install-XXXCABALVERSIONXXX/cabal-install-XXXCABALVERSIONXXX.tar.gz
-RUN tar xzf cabal-install-XXXCABALVERSIONXXX.tar.gz
-WORKDIR /cabal-install-XXXCABALVERSIONXXX
+RUN curl -O https://www.haskell.org/cabal/release/cabal-install-@@CABALVERSION@@/cabal-install-@@CABALVERSION@@.tar.gz
+RUN tar xzf cabal-install-@@CABALVERSION@@.tar.gz
+WORKDIR /cabal-install-@@CABALVERSION@@
 RUN ./bootstrap.sh
 
 RUN ln -vs /root/.cabal/bin/cabal /usr/local/bin/cabal
