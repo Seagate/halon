@@ -18,7 +18,7 @@ fi
 export COMMIT=$(git rev-parse HEAD)
 echo COMMIT = $COMMIT
 
-cat docker/${DOCKERDIR}/Dockerfile.template \
+cat docker/${DOCKERDIR}/Dockerfile.in \
   | sed "s/@@COMMIT@@/${COMMIT}/g" \
   | sed "s/@@GHCVERSION@@/${GHCVERSION}/g" \
   | sed "s/@@CABALVERSION@@/${CABALVERSION}/g" \
