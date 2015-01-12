@@ -48,7 +48,7 @@ Test-Suite tutorial-client
   if flag(maintainer)
     ghc-options:  -Werror
 
-  build-depends:  base >= 4.3 && < 5
+  build-depends:  base >= 4.3
                 , binary
                 , bytestring
                 , network-transport-rpc
@@ -66,7 +66,7 @@ Test-Suite tutorial-server
   if flag(maintainer)
     ghc-options:  -Werror
 
-  build-depends:  base >= 4.3 && < 5
+  build-depends:  base >= 4.3
                 , binary
                 , bytestring
                 , network-transport-rpc
@@ -84,7 +84,7 @@ Test-Suite ch-client
   if flag(maintainer)
     ghc-options: -Werror
 
-  build-depends:  base >= 4.3 && < 5
+  build-depends:  base >= 4.3
                 , binary
                 , bytestring
                 , network-transport-rpc
@@ -104,7 +104,7 @@ Test-Suite ch-server
   if flag(maintainer)
     ghc-options:  -Werror
 
-  build-depends:  base >= 4.3 && < 5
+  build-depends:  base >= 4.3
                 , binary
                 , bytestring
                 , network-transport-rpc
@@ -125,7 +125,7 @@ Test-Suite ch-delay-client
   if flag(maintainer)
     ghc-options:  -Werror
 
-  build-depends:  base >= 4.3 && < 5
+  build-depends:  base >= 4.3
                 , bytestring
                 , network-transport-rpc
                 , network-transport
@@ -146,7 +146,7 @@ Test-Suite ch-delay-server
   if flag(maintainer)
     ghc-options:  -Werror
 
-  build-depends:  base >= 4.3 && < 5
+  build-depends:  base >= 4.3
                 , bytestring
                 , network-transport-rpc
                 , containers
@@ -171,7 +171,7 @@ Test-Suite testtransport
               , ExistentialQuantification
               , FlexibleInstances
               , RankNTypes
-  build-depends:  base >= 4.3 && < 5
+  build-depends:  base >= 4.3
                 , binary >= 0.6
                 , bytestring
                 , containers
@@ -191,7 +191,7 @@ Test-Suite TestCH
   if flag(maintainer)
     ghc-options: -Werror
 
-  build-depends:  base >= 4.3 && < 5
+  build-depends:  base >= 4.3
                 , bytestring
                 , network-transport-rpc
                 , network-transport
@@ -220,7 +220,7 @@ Test-Suite TestNT
                        RankNTypes,
                        OverloadedStrings,
                        OverlappingInstances
-  build-depends:  base >= 4.3 && < 5,
+  build-depends:  base >= 4.3,
 --                   network-transport-tests
                   network-transport >= 0.3,
                   network-transport-rpc,

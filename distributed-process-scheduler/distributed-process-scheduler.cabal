@@ -62,7 +62,7 @@ Test-Suite unit-tests-with-scheduler
   if flag(maintainer)
     Ghc-Options: -Werror
 
-  Build-Depends:    distributed-process-scheduler == 0.1
+  Build-Depends:    distributed-process-scheduler
                     ,base >= 4.5
                     ,distributed-process-scheduler
                     ,mtl >= 2.0
@@ -81,8 +81,7 @@ Test-Suite unit-tests-wo-scheduler
   if flag(maintainer)
     Ghc-Options: -Werror
 
-  Build-Depends:    distributed-process-scheduler == 0.1
-                    ,base >= 4.5
+  Build-Depends:    base >= 4.5
                     ,distributed-process-scheduler
                     ,mtl >= 2.0
                     ,network-transport
