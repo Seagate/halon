@@ -101,3 +101,26 @@ Test-Suite random
                     network-transport-tcp,
                     unix,
                     random
+
+Benchmark paxos
+  Type:             exitcode-stdio-1.0
+  Main-Is:          paxos.hs
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   benchmarks
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  Build-Depends:    base >= 4.5.0,
+                    consensus,
+                    consensus-paxos,
+                    distributed-process,
+                    filepath,
+                    network-transport,
+                    network-transport-tcp,
+                    time,
+                    unix
+  Default-Extensions: RecordWildCards NamedFieldPuns
+                      ScopedTypeVariables

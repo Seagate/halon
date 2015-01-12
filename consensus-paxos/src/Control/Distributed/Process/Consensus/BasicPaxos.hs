@@ -192,22 +192,25 @@ propose :: Serializable a
         -> Propose () a
 propose acceptors d x = liftProcess $ do
   self <- getSelfPid
-  loop (BallotId 0 self)
-    where loop b = do
+  loop 0 (BallotId 0 self)
+    where loop backoff b = do
             eth <- scout acceptors d b
+            let backoff' = if backoff == 0 then 200000 else 2 * backoff
             case eth of
               Left b'@BallotId{..} -> do
                   when (not schedulerIsEnabled) $
-                    liftIO $ randomRIO (0,1000000) >>= threadDelay
-                  if b < b' then loop (nextBallotId b{ballotProposalId}) else loop b
+                    liftIO $ randomRIO (0, backoff) >>= threadDelay
+                  if b < b'
+                    then loop backoff' (nextBallotId b{ballotProposalId})
+                    else loop backoff' b
               Right xs -> do
                   let x' = chooseValue d x xs
                   eth' <- command acceptors d b x'
                   case eth' of
                       Left BallotId{..} -> do
                         when (not schedulerIsEnabled) $
-                          liftIO $ randomRIO (0,1000000) >>= threadDelay
-                        loop b{ballotProposalId}
+                          liftIO $ randomRIO (0, backoff) >>= threadDelay
+                        loop backoff' b{ballotProposalId}
                       Right _ -> return x'
 
 protocol :: forall a n. SerializableDict a
