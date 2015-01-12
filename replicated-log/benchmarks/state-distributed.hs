@@ -59,8 +59,7 @@ import Control.Distributed.Process.Consensus
     ( __remoteTable )
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import qualified Control.Distributed.Log as Log
-import Control.Distributed.Log
-    ( sdictValue )
+import Control.Distributed.Log (Config(..))
 import qualified Control.Distributed.State as State
 import Control.Distributed.State
     ( Command
@@ -68,10 +67,6 @@ import Control.Distributed.State
     , commandSerializableDict__static )
 import qualified Control.Distributed.Log.Policy as Policy
 
-import Control.Distributed.Commands.DigitalOcean
-    ( NewDropletArgs(..)
-    , getCredentialsFromEnv
-    )
 import Control.Distributed.Commands.Management
     ( HostName
     , withHostNames
@@ -83,7 +78,7 @@ import Control.Distributed.Commands.Process
     , redirectLogsHere
     , printNodeId
     )
-import Control.Distributed.Commands.Providers.DigitalOcean (createProvider)
+import Control.Distributed.Commands.Providers
 import Control.Distributed.Process
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Closure
@@ -92,6 +87,9 @@ import Network.Transport ( Transport )
 import Network.Transport.TCP
 import Test.Framework (withTmpDirectory)
 
+import Data.Constraint (Dict(..))
+import Data.Ratio ((%))
+import Data.Typeable (Typeable)
 import System.Environment (getArgs)
 import System.FilePath
 import System.IO
@@ -108,16 +106,26 @@ time_ act = do
   let !delta = end - start
   return delta
 
+filepath :: FilePath -> NodeId -> FilePath
+filepath prefix nid = prefix </> show (nodeAddress nid)
+
 remotableDecl [ [d|
 
   testLog :: State.Log State
   testLog = State.log $ return 0
 
-  filepath :: FilePath -> NodeId -> FilePath
-  filepath prefix nid = prefix </> show (nodeAddress nid)
+  dictState :: Dict (Typeable State)
+  dictState = Dict
 
-  dictState :: Log.TypeableDict State
-  dictState = Log.TypeableDict
+  testConfig :: Log.Config
+  testConfig = Log.Config
+      { consensusProtocol = \dict ->
+          BasicPaxos.protocol dict (filepath "acceptors")
+      , persistDirectory  = filepath "replicas"
+      , leaseTimeout      = 3000000
+      , leaseRenewTimeout = 1000000
+      , driftSafetyFactor = 11 % 10
+      }
 
   sdictInt :: Static (SerializableDict Int)
   sdictInt = $(mkStatic 'dictInt)
@@ -163,15 +171,8 @@ setupRemote nodes action = do
     h <- Log.new $(mkStatic 'State.commandEqDict)
                  ($(mkStatic 'State.commandSerializableDict)
                    `staticApply` sdictState)
-                 ($(mkClosure 'filepath) "replicas")
-                   (BasicPaxos.protocolClosure
-                     (sdictValue
-                       ($(mkStatic 'State.commandSerializableDict)
-                          `staticApply` sdictState))
-                     ($(mkClosure 'filepath) "acceptors"))
+                 (staticClosure $(mkStatic 'testConfig))
                  (staticClosure $(mkStatic 'testLog))
-                 3000000
-                 1000000
                  nodes
     port <- State.newPort h
     action h nodes port
@@ -202,7 +203,7 @@ benchAction (iters, updNo, readNo) = \_ _ port -> do
       replicateM_ updNo $ State.update port incrementCP
       replicateM_ readNo $ State.select sdictInt port readCP
 
-sdictState :: Static (Log.TypeableDict State)
+sdictState :: Static (Dict (Typeable State))
 sdictState = $(mkStatic 'dictState)
 
 
@@ -237,14 +238,7 @@ main =
            expect :: Process () -- wait for death
       _ -> do
 
-        Just credentials <- getCredentialsFromEnv
-        cp <- createProvider credentials $ return NewDropletArgs
-            { name        = "test-droplet"
-            , size_slug   = "512mb"
-            , image_id    = "7055005"
-            , region_slug = "ams2"
-            , ssh_key_ids = ""
-            }
+        cp <- getProvider
         Right transport <- createTransport "127.0.0.1" "8035" defaultTCPParameters
         withHostNames cp 5 $ \ms5 -> do
           let ms3 = take 3 ms5
