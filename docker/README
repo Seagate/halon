@@ -1,4 +1,34 @@
-To run distributed tests in docker:
+* Dockerfiles
+
+halon-docker-ubuntu14.04/ contains a dockerfile that will build
+master branch halon, with dependencies, on top of Ubuntu 14.04
+
+tweagremote/ is a base centos7 system with some SSH key
+configuration, but nothing halon specific. This is intended to
+be used as a worker node for distributed tests. See below.
+
+These three:
+1-haskell-env-on-centos-7/
+2-halon-deps/
+3-halon/
+together form a build of halon to be run by circleci. They are
+launched from the root circle.yml file. They are separated so
+that they can be built/rebuilt at different times, to allow
+CI to happen faster.
+
+1-haskell-env-on-centos-7/ contains GHC and cabal on top of
+centos 7.
+
+2-halon-deps/ builds on top of 1-haskell-env-on-centos-7 and
+adds a checkout of halon and submodules, and "make dep" with
+all the dependencies installed.
+
+3-halon/ contains a build of halon.
+
+Dependency detection logic is hash based and lives in the
+generate-*-version functions in functions.sh
+
+* To run distributed tests in docker:
 
   install docker
 
