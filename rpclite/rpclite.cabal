@@ -16,7 +16,7 @@ Flag maintainer
 
 library
   exposed-modules:     Network.RPC.RPCLite
-  build-depends:       base >=4.7 && <4.8
+  build-depends:       base >=4.7
                      , binary >= 0.6
                      , bytestring
                      , containers >= 0.5
@@ -51,7 +51,7 @@ Test-Suite testrpclite
   if flag(maintainer)
     ghc-options: -Werror
 
-  build-depends:  base >= 4.3 && < 5
+  build-depends:  base >= 4.3
                 , binary
                 , bytestring
                 , rpclite

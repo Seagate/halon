@@ -58,7 +58,7 @@ Test-Suite testconfc
                        OverloadedStrings,
                        OverlappingInstances
   if flag(rpc)
-    build-depends:  base >= 4.3 && < 5
+    build-depends:  base >= 4.3
                   , bytestring
                   , network-transport-rpc
                   , network-transport
@@ -83,7 +83,7 @@ Test-Suite collect_node_addresses
                        OverloadedStrings,
                        OverlappingInstances
   if flag(rpc)
-    build-depends:  base >= 4.3 && < 5
+    build-depends:  base >= 4.3
                   , bytestring
                   , network-transport-rpc
                   , network-transport
