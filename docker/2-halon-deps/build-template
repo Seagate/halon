@@ -1,0 +1,9 @@
+#!/bin/bash
+
+source docker/functions.sh
+
+BASEVERSION=$(generate-base-version)
+VERSION=$(generate-dep-version)
+
+build-if-needed tweag/halon-deps:${VERSION} 2-halon-deps
+

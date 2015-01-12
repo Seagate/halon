@@ -1,0 +1,18 @@
+FROM tweag/haskell-env-on-centos-7:XXXBASEVERSIONXXX
+MAINTAINER ben.clifford@tweag.io
+
+# this will need github permissions...
+RUN mkdir /root/.ssh
+ADD id_rsa /root/.ssh/
+ADD known_hosts /root/.ssh/
+
+WORKDIR /
+RUN git clone git@github.com:tweag/halon.git
+WORKDIR /halon
+RUN git checkout XXXCOMMITXXX
+
+# update and install the dependencies
+# into sandbox
+RUN git submodule update --init --recursive
+RUN make dep
+

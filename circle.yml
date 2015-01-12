@@ -1,0 +1,16 @@
+machine:
+  services:
+    - docker
+
+dependencies:
+  override:
+    - docker info
+    - docker/1-haskell-env-on-centos-7/build-template
+    - cp /home/ubuntu/.ssh/id_circleci_github docker/2-halon-deps/id_rsa
+    - docker/2-halon-deps/build-template
+
+test:
+  override:
+    - cp /home/ubuntu/.ssh/id_circleci_github docker/3-halon/id_rsa
+    - docker/3-halon/build-template
+

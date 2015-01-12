@@ -1,0 +1,10 @@
+#!/bin/bash
+
+source docker/functions.sh
+
+VERSION=$(generate-base-version)
+
+docker login --email="benc@cqx.ltd.uk" --username="benclifford" --password="${DOCKERPASS}"
+
+build-if-needed tweag/haskell-env-on-centos-7:${VERSION} 1-haskell-env-on-centos-7
+

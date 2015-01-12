@@ -1,0 +1,34 @@
+FROM centos:centos7
+MAINTAINER ben.clifford@tweag.io
+
+ENV HOME /root
+# because otherwise HOME points to / but ~root points to /root
+
+ENV LANG en_GB.UTF-8
+
+RUN yum install --assumeyes bzip2 tar zlib-devel git gmp-devel make perl gcc
+
+# we need EPEL to get genders
+WORKDIR /
+RUN curl -O http://www.mirrorservice.org/sites/dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm
+RUN rpm --install epel-release-7-5.noarch.rpm
+RUN yum install --assumeyes libgenders-devel
+
+RUN curl -O https://downloads.haskell.org/~ghc/XXXGHCVERSIONXXX/ghc-XXXGHCVERSIONXXX-x86_64-unknown-linux-deb7.tar.bz2
+
+RUN bunzip2 ghc-XXXGHCVERSIONXXX-x86_64-unknown-linux-deb7.tar.bz2
+RUN tar xf ghc-XXXGHCVERSIONXXX-x86_64-unknown-linux-deb7.tar
+
+WORKDIR ./ghc-XXXGHCVERSIONXXX
+RUN ./configure
+RUN make install
+WORKDIR /
+RUN curl -O https://www.haskell.org/cabal/release/cabal-install-XXXCABALVERSIONXXX/cabal-install-XXXCABALVERSIONXXX.tar.gz
+RUN tar xzf cabal-install-XXXCABALVERSIONXXX.tar.gz
+WORKDIR /cabal-install-XXXCABALVERSIONXXX
+RUN ./bootstrap.sh
+
+RUN ln -vs /root/.cabal/bin/cabal /usr/local/bin/cabal
+
+RUN cabal update
+
