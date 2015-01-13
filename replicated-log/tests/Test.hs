@@ -28,6 +28,7 @@ import Control.Distributed.Process.Scheduler
     ( withScheduler, __remoteTable )
 import Control.Distributed.Static
 import Data.Rank1Dynamic
+import qualified Network.Socket as N (close)
 import Network.Transport.TCP
 
 import Control.Monad (forM_, replicateM, when, void)
@@ -120,7 +121,8 @@ tests args = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
 
-    Right transport <- createTransport "127.0.0.1" "8080" defaultTCPParameters
+    Right (transport, internals) <- createTransportExposeInternals
+        "127.0.0.1" "8080" defaultTCPParameters
     putStrLn "Transport created."
 
     let setup :: Int                      -- ^ Number of nodes to spawn group on.
@@ -277,7 +279,52 @@ tests args = do
                 State.update port $ incrementCP
                 () <- expect
                 say "Still alive replica increments."
-          ]
+
+          , testSuccess "quorum-after-transient-failure" . withTmpDirectory $
+              setup 1 $ \h port -> do
+                self <- getSelfPid
+                node1 <- liftIO $ newLocalNode transport remoteTables
+
+                let interceptor "Increment." = reconnect self >> send self ()
+                    interceptor _ = return ()
+                registerInterceptor interceptor
+                liftIO $ runProcess node1 $ registerInterceptor interceptor
+
+                liftIO $ runProcess node1 $ do
+                    here <- getSelfNode
+                    ρ <- Log.addReplica h
+                             (staticClosure $(mkStatic 'Policy.orpn)) here
+                    updateHandle h ρ
+
+                liftIO $ runProcess node1 $ State.update port incrementCP
+                () <- expect
+                () <- expect
+
+                -- interrupt the connection between the replicas
+                here <- getSelfNode
+                liftIO $ do
+                  socketBetween internals
+                                (nodeAddress here)
+                                (nodeAddress $ localNodeId node1)
+                    >>= N.close
+                  socketBetween internals
+                                (nodeAddress $ localNodeId node1)
+                                (nodeAddress here)
+                    >>= N.close
+
+                firstAttempt <- spawnLocal $
+                  liftIO $ runProcess node1 $ State.update port incrementCP
+                munit <- expectTimeout 1000000
+                case munit of
+                  Just () -> return ()
+                  Nothing -> do
+                       kill firstAttempt "Blocked."
+                       _ <- spawnLocal $ do
+                         liftIO $ runProcess node1 $ State.update port incrementCP
+                       expect :: Process ()
+                expect :: Process ()
+                say "Replicas continue to have quorum."
+           ]
 
     let pass = Prelude.read $ if null args then "FirstPass" else head args
         durability_test = testSuccess "durability" $ do

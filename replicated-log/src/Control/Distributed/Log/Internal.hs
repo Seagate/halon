@@ -35,6 +35,8 @@ module Control.Distributed.Log.Internal
     , Control.Distributed.Log.Internal.__remoteTable
     , Control.Distributed.Log.Internal.__remoteTableDecl
     , ambassador__tdict -- XXX unused, exported to guard against warning.
+      -- * Other
+    , usend
     ) where
 
 import Control.Distributed.Log.Messages
@@ -99,6 +101,17 @@ callLocal p = do
   when schedulerIsEnabled $ do Done <- expect; return ()
   liftIO $ takeMVar mv
     >>= either (throwIO :: SomeException -> IO a) return
+
+-- | Unreliable send.
+--
+-- Makes an effort to deliver a message regardless of whether sending earlier
+-- messages have failed.
+--
+-- It may cause messages send with either 'usend' or 'send' to arrive unordered
+-- or to be lost.
+--
+usend :: Serializable a => ProcessId -> a -> Process ()
+usend pid a = reconnect pid >> send pid a
 
 -- | Find the gaps in a partial sequence such that, if the partial sequence and
 -- the gaps were sorted, the resulting list would form a contiguous sequence.
@@ -233,7 +246,7 @@ queryMissing replicas log = do
     self <- getSelfPid
     forM_ ns $ \n -> do
         forM_ replicas $ \ρ -> do
-            send ρ $ Query self n
+            usend ρ $ Query self n
 
 newtype Memory a = Memory (Map.Map Int a)
                  deriving Typeable
@@ -355,8 +368,6 @@ replica Dict
     -- decree number and the watermark. See Note [Teleportation].
     forM_ (Map.toList log) $ \(n,v) -> do
         send self $ Decree Stored (DecreeId maxBound n) v
-
-    forM_ (acceptors ++ replicas) $ monitor
 
     let d = if Map.null log
             then decree
@@ -539,14 +550,8 @@ replica Dict
                                   , decreeNumber = max (decreeNumber cd) (decreeNumber w') }
                           w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
 
-                      -- This can cause multiple monitors to be set for existing
-                      -- processes, but that's ok, and it saves the hassle of
-                      -- having to maintain a list of monitor references
-                      -- ourselves.
-                      forM_ (αs' ++ ρs') $ monitor
-
                       -- Update the list of acceptors of the proposer...
-                      send ppid αs'
+                      usend ppid αs'
 
                       -- Tick.
                       send self Status
@@ -632,7 +637,7 @@ replica Dict
 
                            -- Forward the request to the leader.
                            Just leader | self /= leader -> do
-                             send leader request
+                             usend leader request
                              return (s, cd)
 
                            -- I'm the leader, so handle the request.
@@ -640,7 +645,7 @@ replica Dict
                              -- Serve nullipotent requests from the local state.
                              (Nullipotent, Values xs) -> do
                                  s' <- foldM logNextState s xs
-                                 send (requestSender request) ()
+                                 usend (requestSender request) ()
                                  return (s', cd)
                              -- Send the other requests to the proposer.
                              _ -> do
@@ -656,7 +661,7 @@ replica Dict
                   let locale = if v == vᵢ then Local κ else Remote
                   send self $ Decree locale dᵢ vᵢ
                   forM_ others $ \ρ -> do
-                      send ρ $ Decree Remote dᵢ vᵢ
+                      usend ρ $ Decree Remote dᵢ vᵢ
 
                   when (v /= vᵢ && isNothing rLease) $
                       -- Decree already has different value, so repost to
@@ -669,7 +674,8 @@ replica Dict
               -- If a query can be serviced, do it.
             , matchIf (\(Query _ n) -> Map.member n log) $ \(Query ρ n) -> do
                   -- See Note [Teleportation].
-                  send ρ $ Decree Remote (DecreeId maxBound n) (log Map.! n)
+                  usend ρ $
+                    Decree Remote (DecreeId maxBound n) (log Map.! n)
                   go st
 
               -- Upon getting the max decree of another replica, compute the
@@ -698,7 +704,7 @@ replica Dict
 
                     -- Forward the request to the leader.
                     Just leader | self /= leader -> do
-                      send leader m
+                      usend leader m
 
                     -- I'm the leader, so handle the request.
                     _ -> do
@@ -736,18 +742,8 @@ replica Dict
                       "\n\twatermark:          " ++ show w ++
                       "\n\tacceptors:          " ++ show αs ++
                       "\n\treplicas:           " ++ show ρs
-                  forM_ others $ \ρ -> send ρ $
+                  forM_ others $ \ρ -> usend ρ $
                     Max self d αs ρs
-                  go st
-
-            , match $ \(ProcessMonitorNotification _ π _) -> do
-                  reconnect π
-                  -- XXX: uncomment the monitor call below but figure out first
-                  -- a way to avoid entering a tight loop when a replica
-                  -- dissappears.
-                  -- _ <- liftProcess $ monitor π
-                  when (π `elem` replicas) $
-                    send π $ Max self d αs ρs
                   go st
             ]
 
@@ -777,7 +773,8 @@ batcher SerializableDict ρ = do
             -- Replica acknowledges the last submitted batch (it was accepted by
             -- consensus and committed to log).
             assert (not $ Seq.null inFlight) $ return ()
-            Foldable.forM_ inFlight $ \req -> send (requestSender req) ()
+            Foldable.forM_ inFlight $ \req ->
+              usend (requestSender req) ()
             unless (Seq.null collected) $ sendBatch collected
             go Seq.empty collected
       , match $ \request -> do
@@ -943,7 +940,7 @@ instance Typeable a => Binary (RemoteHandle a)
 matchA :: forall a . SerializableDict a -> ProcessId -> Process () -> Match ()
 matchA SerializableDict ρ cont =
   match $ \a -> do
-    send ρ (a :: Request a)
+    usend ρ (a :: Request a)
     cont
 
 remotableDecl [
@@ -970,7 +967,7 @@ remotableDecl [
                           go d ρ
                     , match $ \m@(Helo _ _) -> send ρ m >> go d ρ
                     , match $ \Status -> do
-                          send ρ Status
+                          usend ρ Status
                           go d ρ
                     , match $ \ρ' -> go d ρ'
                     , matchA sdict ρ $ go d ρ
