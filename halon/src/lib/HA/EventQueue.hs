@@ -19,39 +19,40 @@
 -- another instance of the RC. This is why it is important that all operations
 -- of the recovery coordinator be idempotent.
 --
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE FlexibleInstances         #-}
-{-# LANGUAGE MultiParamTypeClasses     #-}
-{-# LANGUAGE TemplateHaskell           #-}
-{-# LANGUAGE TypeFamilies              #-}
-{-# LANGUAGE UndecidableInstances      #-}
-
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE FlexibleContexts   #-}
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE TemplateHaskell    #-}
 module HA.EventQueue
   ( eventQueue
   , EventQueue
   , __remoteTable
   , eventQueueLabel
+  , RCDied(..)
+  , RCLost(..)
   ) where
+
+import Prelude hiding ((.), id)
+
+import GHC.Generics
 
 import HA.EventQueue.Consumer
 import HA.EventQueue.Types
 import HA.Replicator ( RGroup, updateStateWith, getState)
 import Control.SpineSeq (spineSeq)
-import FRP.Sodium
+import FRP.Netwire hiding (Last(..), when)
 
-import Control.Concurrent
 import Control.Distributed.Process hiding (newChan)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
-import Control.Distributed.Process.Serializable (Serializable)
-import Control.Monad.State.Strict
+import Control.Distributed.Process.Serializable
 
-import Control.Applicative
-import Control.Arrow ( first, second )
+import Data.Binary
 import Data.ByteString ( ByteString )
 import Data.Foldable (for_, traverse_)
-import Data.Monoid ((<>))
+import Data.Monoid (Last(..))
+import Data.Typeable
+import Network.CEP
 
 -- | Since there is at most one Event Queue per tracking station node,
 -- the @eventQueueLabel@ is used to register and lookup the Event Queue of a
@@ -100,8 +101,7 @@ remotable [ 'addSerializedEvent
 --
 eventQueue :: RGroup g => g EventQueue -> Process ()
 eventQueue rg = do
-  jobs <- liftIO newChan
-  self  <- getSelfPid
+  self <- getSelfPid
   register eventQueueLabel self
 
   (mRC,_) <- getState rg
@@ -110,181 +110,143 @@ eventQueue rg = do
   -- responding and won't ever care of checking the replicated state to learn
   -- of new RCs
   traverse_ monitor mRC
+  runProcessor (network rg) eventQueueMsgs (Last mRC)
 
-  matches <- liftIO $ build $ network jobs mRC rg
-  forever $ do
-    receiveWait matches
-    liftIO (readChan jobs) >>= id
+data Input
+    = RCSpawned ProcessId
+    | Monitoring ProcessMonitorNotification
+    | EventHandled EventId
+    | EventAppeared ProcessId (HAEvent [ByteString])
 
---------------------------------------------------------------------------------
--- Event network
---------------------------------------------------------------------------------
--- | CEP monad. Registers any subscription and produces
---   @[Match ()]@ when executed. It's built on top of Sodium @Reactive@ monad.
-newtype CEP a = CEP (StateT [Match ()] Reactive a)
-  deriving (Functor, Applicative, Monad, MonadState [Match ()])
+eventQueueMsgs :: [Match (Msg Input)]
+eventQueueMsgs =
+    [ match (return . userMsg . RCSpawned)
+    , match (return . userMsg . Monitoring)
+    , match (return . userMsg . EventHandled)
+    , match $ \(sid, evt) -> return $ userMsg $ EventAppeared sid evt
+    ]
 
--- | Procduces a list of @Match ()@ based on all subscriptions
-build :: CEP a -> IO [Match ()]
-build (CEP m) = sync $ execStateT m []
+_RCSpawned :: ComplexEvent s Input ProcessId
+_RCSpawned = onInput $ \case
+    RCSpawned pid -> Just pid
+    _             -> Nothing
 
--- | Lifts a Sodium @Reactive@ computation in @CEP@ monad
-liftReactive :: Reactive a -> CEP a
-liftReactive m = CEP $ lift m
+_Monitoring :: ComplexEvent s Input ProcessMonitorNotification
+_Monitoring = onInput $ \case
+    Monitoring pmn -> Just pmn
+    _              -> Nothing
 
--- | Registers a subscription to a message of type 'a'. Uses `match` internally
-subscribe :: Serializable a => CEP (Event a)
-subscribe = do
-  (evt, push) <- liftReactive newEvent
-  let m = match (liftIO . sync . push)
+_EventHandled :: ComplexEvent s Input EventId
+_EventHandled = onInput $ \case
+    EventHandled eid -> Just eid
+    _                -> Nothing
 
-  modify' (m:)
-  return evt
+_EventAppeared :: ComplexEvent s Input (ProcessId, HAEvent [ByteString])
+_EventAppeared = onInput $ \case
+    EventAppeared sid evt -> Just (sid, evt)
+    _                     -> Nothing
 
--- | Event queue event network. An event queue state is based on whether we
---   know the @ProcessId@ of the current Recovery Coordinater. We update
---   that information each time one of these events occured:
---     - New Recovery Coordinater spawned
---     - New process monitor notification
---     - An event has been handled
---     - New @HAEvent [Bytestring]@ event
 network :: RGroup g
-        => Chan (Process ())
-        -> Maybe ProcessId
-        -> g EventQueue
-        -> CEP ()
-network jobs startRC rg = do
-  (ovd_rcE, push_ovd_rcE) <- liftReactive newEvent
-  local_rc_spawnedE       <- subscribe
-  monitor_notifE          <- subscribe
-  handled_evtE            <- subscribe
-  ha_eventE               <- subscribe
+        => g EventQueue
+        -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
+network rg = rcSpawned rg     <|>
+             processDied rg   <|>
+             eventHandled rg  <|>
+             eventAppeared rg
 
-  let eventQueueE = fmap localRCSpawned local_rc_spawnedE   <>
-                    fmap monitorNotification monitor_notifE <>
-                    fmap handledEvent handled_evtE          <>
-                    fmap processEvent  ha_eventE            <>
-                    fmap const ovd_rcE -- override current RC pid
-
-  eventQueueB <- liftReactive $ accum startRC eventQueueE
-
-  let monitorSnapshot = snapshot (,) monitor_notifE eventQueueB
-      processEventSnapshot =
-        snapshot (\(ssid, evt) nmRC -> (nmRC, ssid, evt)) ha_eventE eventQueueB
-
-  liftReactive $ do
-    _ <- listen local_rc_spawnedE (sendTask . observeLocalRCSpawned rg)
-    _ <- listen monitorSnapshot
-           (\(pid,res) -> sendTask $ observeMonitorNotification rg pid res)
-    _ <- listen handled_evtE (sendTask . observeEventHandled rg)
-    _ <- listen processEventSnapshot $ \(nmRC, ssid, evt) ->
-          sendTask $ observeProcessHAEvent rg push_ovd_rcE nmRC ssid evt
-    return ()
-  where
-    sendTask = writeChan jobs
-
---------------------------------------------------------------------------------
--- Model:
--- =====
--- Each time a Event is fired, we update event queue state accordingly. We can
--- only use pure functions.
---------------------------------------------------------------------------------
-localRCSpawned :: ProcessId -> Maybe ProcessId -> Maybe ProcessId
-localRCSpawned rc _ = Just rc
-
-monitorNotification :: ProcessMonitorNotification
-                    -> Maybe ProcessId
-                    -> Maybe ProcessId
-monitorNotification (ProcessMonitorNotification _ pid _) mRC
-  | Just pid == mRC = Nothing
-  | otherwise       = mRC
-
-handledEvent :: EventId -> Maybe ProcessId -> Maybe ProcessId
-handledEvent _ mRC = mRC
-
-processEvent :: (ProcessId, HAEvent [ByteString])
-             -> Maybe ProcessId
-             -> Maybe ProcessId
-processEvent _ mRC = mRC
-
---------------------------------------------------------------------------------
--- Observer:
--- =========
--- Effecful computation executed each time the Event it's listening is fired
---------------------------------------------------------------------------------
 -- | A local RC has been spawned.
-observeLocalRCSpawned :: RGroup g
-                      => g EventQueue
-                      -> ProcessId
-                      -> Process ()
-observeLocalRCSpawned rg rc = do
-  _ <- monitor rc
-  -- Record in the replicated state that there is a new RC.
-  updateStateWith rg $ $(mkClosure 'setRC) $ Just rc
-  -- Send the pending events to the new RC.
-  self <- getSelfPid
-  (_, pendingEvents) <- getState rg
-  for_ (reverse pendingEvents) $ \ev ->
-    send rc ev{eventHops = self : eventHops ev}
-
-observeMonitorNotification :: RGroup g
-                           => g EventQueue
-                           -> ProcessMonitorNotification
-                           -> Maybe ProcessId
-                           -> Process ()
-observeMonitorNotification rg (ProcessMonitorNotification _ pid reason) mRC = go
+rcSpawned :: RGroup g
+          => g EventQueue
+          -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
+rcSpawned rg = repeatedly go . _RCSpawned
   where
-    -- Check the identity of the process in case the
-    -- notifications get mixed for old and new RCs.
-    go | Just pid == mRC =
-             case reason of
-             -- The connection to the RC failed.
-             -- Call reconnect to say it is ok to connect again.
-               DiedDisconnect -> traverse_ reconnect mRC >> say "RC is lost."
-               -- The RC died.
-               -- We use compare and swap to make sure we don't overwrite
-               -- the pid of a respawned RC
-               _ -> do let nothing = Nothing :: Maybe ProcessId
-                           upd     = (mRC, nothing)
+    go _ rc = liftProcess $ do
+        _ <- monitor rc
+        -- Record in the replicated state that there is a new RC.
+        updateStateWith rg $ $(mkClosure 'setRC) $ Just rc
+        -- Send the pending events to the new RC.
+        self <- getSelfPid
+        (_, pendingEvents) <- getState rg
+        for_ (reverse pendingEvents) $ \ev ->
+          send rc ev{eventHops = self : eventHops ev}
+        return $ Last $ Just rc
 
-                       updateStateWith rg $ $(mkClosure 'compareAndSwapRC) upd
-                       say "RC died."
-       | otherwise = return ()
+processDied :: RGroup g
+            => g EventQueue
+            -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
+processDied rg = repeatedly go . _Monitoring
+  where
+    go mRC (ProcessMonitorNotification _ pid reason) = do
+        -- Check the identity of the process in case the
+        -- notifications get mixed for old and new RCs.
+        if Just pid == (getLast mRC)
+          then
+            case reason of
+              -- The connection to the RC failed.
+              -- Call reconnect to say it is ok to connect again.
+              DiedDisconnect -> do
+                liftProcess $ traverse_ reconnect $ getLast mRC
+                publish RCLost
+                return mRC
+              -- The RC died.
+              -- We use compare and swap to make sure we don't overwrite
+              -- the pid of a respawned RC
+              _ -> do
+                let upd = (getLast mRC, Nothing :: Maybe ProcessId)
+
+                liftProcess $
+                  updateStateWith rg $ $(mkClosure 'compareAndSwapRC) upd
+                publish RCDied
+                return $ Last Nothing
+           else return mRC
 
 -- | The RC handled the event with the given id.
-observeEventHandled :: RGroup g => g EventQueue -> EventId -> Process ()
-observeEventHandled rg eid = do
-  updateStateWith rg $ $(mkClosure 'filterEvent) eid
-  say "Trim done."
+eventHandled :: RGroup g
+             => g EventQueue
+             -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
+eventHandled rg = repeatedly go . _EventHandled
+  where
+    go mRC eid = liftProcess $ do
+        updateStateWith rg $ $(mkClosure 'filterEvent) eid
+        say "Trim done."
+        return mRC
 
-observeProcessHAEvent :: RGroup g
-                      => g EventQueue
-                      -> (Maybe ProcessId -> Reactive ())
-                      -> Maybe ProcessId
-                      -> ProcessId
-                      -> HAEvent [ByteString]
-                      -> Process ()
-observeProcessHAEvent rg push_override mRC sender ev = do
-  updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
-  selfNode <- getSelfNode
-  case mRC of
-     -- I know where the RC is.
-     Just rc -> do
-        send sender (selfNode, processNodeId rc)
-        sendHAEvent rc ev
-     -- I don't know where the RC is.
-     Nothing -> do
-       -- See if we can learn it by looking at the replicated state.
-       (newMRC, _) <- getState rg
-       case newMRC of
-         Just rc -> do
-           _ <- monitor rc
-           send sender (selfNode, processNodeId rc)
-           sendHAEvent rc ev
-           -- Send my own node when we don't know the RC
-           -- location. Note that I was able to read the
-           -- replicated state so very likely there is no RC.
-         Nothing -> do
-           n <- getSelfNode
-           send sender (n, n)
-       liftIO $ void $ forkIO $ sync $ push_override newMRC
+eventAppeared :: RGroup g
+              => g EventQueue
+              -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
+eventAppeared rg = repeatedly go . _EventAppeared
+  where
+    go mRC (sender, ev) = do
+        liftProcess $ updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+        selfNode <- liftProcess getSelfNode
+        case getLast mRC of
+          -- I know where the RC is.
+          Just rc -> liftProcess $ do
+            send sender (selfNode, processNodeId rc)
+            sendHAEvent rc ev
+            return mRC
+          -- I don't know where the RC is.
+          Nothing -> do
+            -- See if we can learn it by looking at the replicated state.
+            (newMRC, _) <- liftProcess $ getState rg
+            liftProcess $ do
+              case newMRC of
+                Just rc -> do
+                  _ <- monitor rc
+                  send sender (selfNode, processNodeId rc)
+                  sendHAEvent rc ev
+                -- Send my own node when we don't know the RC
+                -- location. Note that I was able to read the
+                -- replicated state so very likely there is no RC.
+                Nothing -> do
+                  n <- getSelfNode
+                  send sender (n, n)
+              return $ Last newMRC
+
+data RCDied = RCDied deriving (Show, Typeable, Generic)
+
+instance Binary RCDied
+
+data RCLost = RCLost deriving (Show, Typeable, Generic)
+
+instance Binary RCLost

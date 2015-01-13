@@ -96,7 +96,14 @@ Library
                    unordered-containers,
                    network-transport,
                    options-schema >= 0.1.1.0,
-                   sodium
+                   netwire,
+                   cep
+  if flag(rpc)
+    Build-Depends: rpclite,
+                   network-transport,
+                   network-transport-rpc >= 0.0.1
+  else
+    Build-Depends: network-transport-tcp
 
 Test-Suite unit-tests
   Type:             exitcode-stdio-1.0
@@ -142,7 +149,8 @@ Test-Suite unit-tests
                     unordered-containers,
                     options-schema >= 0.1.1.0,
                     tasty >= 0.8,
-                    tasty-files
+                    tasty-files,
+                    cep
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
@@ -185,7 +193,8 @@ Test-Suite integration-tests
                     options-schema >= 0.1.1.0,
                     process >= 1.2,
                     tasty >= 0.8,
-                    tasty-files
+                    tasty-files,
+                    cep
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC

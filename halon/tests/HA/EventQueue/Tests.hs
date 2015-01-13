@@ -38,6 +38,7 @@ import Network.Transport (Transport)
 
 #ifndef USE_RPC
 import Control.Concurrent (threadDelay)
+import Network.CEP
 import qualified Network.Socket as TCP
 import qualified Network.Transport.TCP as TCP
 #endif
@@ -151,14 +152,12 @@ tests transport internals = do
               (_, [ HAEvent (EventId _ 1) _ _]) <- getState rGroup
               return ()
         , testSuccess "eq-should-record-that-rc-died" $ setup $ \eq _ _ -> do
-              self <- getSelfPid
-              registerInterceptor $ \string -> case string of
-                "RC died." -> send self ()
-                _ -> return ()
+              simpleSubscribe eq (Sub :: Sub RCDied)
               rc <- spawnLocal $ return ()
               send eq rc
               -- Wait for confirmation of RC death.
-              expect
+              Published RCDied _ <- expect
+              return ()
 
           -- XXX run this test with the rpc transport when networkBreakConnection
           -- is implemented for it.
@@ -174,6 +173,7 @@ tests transport internals = do
                   (getSelfPid >>= spawn (localNodeId ln1) . $(mkClosure 'remoteRC))
                   (flip exit "test finished")
                   $ \rc -> do
+                simpleSubscribe eq (Sub :: Sub RCLost)
                 self <- getSelfPid
                 -- Set me as controller of the RC.
                 send rc self
@@ -185,9 +185,6 @@ tests transport internals = do
                     Just (HAEvent (EventId _ 1) _ _) -> return ()
                     Nothing -> error "No HA Event received from first RC."
                     _ -> error "Wrong event received from first RC."
-                registerInterceptor $ \string -> case string of
-                  "RC is lost." -> send self ()
-                  _ -> return ()
                 nid <- getSelfNode
                 -- Break the connection
                 liftIO $ do
@@ -196,7 +193,7 @@ tests transport internals = do
                   threadDelay 10000
                 -- Expect confirmation from the eq that the rc connection has broken.
                 expectTimeout defaultTimeout >>= \case
-                  Just () -> return ()
+                  Just (Published RCLost _) -> return ()
                   Nothing -> error "No confirmation of broken connection from EQ."
                 triggerEvent 2
                 -- EQ should reconnect to the RC, and the RC should forward the
