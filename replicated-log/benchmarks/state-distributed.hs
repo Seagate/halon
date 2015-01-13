@@ -73,7 +73,7 @@ import Control.Distributed.Commands.Management
     , copyFiles
     )
 import Control.Distributed.Commands.Process
-    ( spawnNodes
+    ( spawnNode
     , __remoteTable
     , redirectLogsHere
     , printNodeId
@@ -93,7 +93,7 @@ import Data.Typeable (Typeable)
 import System.Environment (getArgs)
 import System.FilePath
 import System.IO
-import Control.Monad (replicateM_, forM_)
+import Control.Monad (replicateM_, forM_, forM)
 
 
 type State = Int
@@ -239,7 +239,8 @@ main =
       _ -> do
 
         cp <- getProvider
-        Right transport <- createTransport "127.0.0.1" "8035" defaultTCPParameters
+        ip <- getHostAddress
+        Right transport <- createTransport ip "8035" defaultTCPParameters
         withHostNames cp 5 $ \ms5 -> do
           let ms3 = take 3 ms5
 
@@ -303,7 +304,8 @@ setup transport ms action = do
     nd <- newLocalNode transport remoteTables
     box <- newEmptyMVar
     runProcess nd $ do
-      nids <- spawnNodes ms "/tmp/state-distributed --slave `hostname -I` 2>&1"
+      nids <- forM ms $ \m ->
+                spawnNode m $ "/tmp/state-distributed --slave " ++ m ++ " 2>&1"
       mapM_ redirectLogsHere nids
       liftIO . putMVar box =<<
         call $(mkStatic 'dictDouble)
