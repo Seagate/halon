@@ -147,9 +147,13 @@ remotableDecl [ [d|
     rh   <- expect :: Process (Log.RemoteHandle (Command State))
     h    <- Log.clone rh
     port <- State.newPort h
+    self <- getSelfPid
     replicateM_ iters $ do
-      replicateM_ updNo $ State.update port incrementCP
-      replicateM_ readNo $ State.select sdictInt port readCP
+      replicateM_ updNo $ spawnLocal $
+        State.update port incrementCP >> send self ()
+      replicateM_ readNo $ spawnLocal $
+        State.select sdictInt port readCP >> send self ()
+      replicateM_ (updNo + readNo) (expect :: Process ())
     sendChan sp ()
 
   incrementCP :: CP State State
@@ -200,8 +204,13 @@ benchAction :: (Int, Int, Int)
             -> Process Double
 benchAction (iters, updNo, readNo) = \_ _ port -> do
     time_ $ replicateM_ iters $ do
-      replicateM_ updNo $ State.update port incrementCP
-      replicateM_ readNo $ State.select sdictInt port readCP
+      self <- getSelfPid
+      replicateM_ iters $ do
+        replicateM_ updNo $ spawnLocal $
+          State.update port incrementCP >> send self ()
+        replicateM_ readNo $ spawnLocal $
+          State.select sdictInt port readCP >> send self ()
+        replicateM_ (updNo + readNo) (expect :: Process ())
 
 sdictState :: Static (Dict (Typeable State))
 sdictState = $(mkStatic 'dictState)
