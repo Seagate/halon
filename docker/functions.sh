@@ -18,11 +18,11 @@ fi
 export COMMIT=$(git rev-parse HEAD)
 echo COMMIT = $COMMIT
 
-cat docker/${DOCKERDIR}/Dockerfile.template \
-  | sed "s/XXXCOMMITXXX/${COMMIT}/g" \
-  | sed "s/XXXGHCVERSIONXXX/${GHCVERSION}/g" \
-  | sed "s/XXXCABALVERSIONXXX/${CABALVERSION}/g" \
-  | sed "s/XXXBASEVERSIONXXX/${BASEVERSION}/g" \
+cat docker/${DOCKERDIR}/Dockerfile.in \
+  | sed "s/@@COMMIT@@/${COMMIT}/g" \
+  | sed "s/@@GHCVERSION@@/${GHCVERSION}/g" \
+  | sed "s/@@CABALVERSION@@/${CABALVERSION}/g" \
+  | sed "s/@@BASEVERSION@@/${BASEVERSION}/g" \
   > docker/${DOCKERDIR}/Dockerfile
 docker build -t ${TAG} docker/${DOCKERDIR}/ || exit 1
 docker push $TAG || exit 1
