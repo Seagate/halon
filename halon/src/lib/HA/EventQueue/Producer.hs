@@ -37,7 +37,6 @@ import Control.Distributed.Process.Serializable (Serializable)
 -- Qualify all imports of any distributed-process "internals".
 import qualified Control.Distributed.Process.Internal.Types as I
     (createMessage, messageToPayload)
-import Control.Monad (void)
 
 import Data.ByteString (ByteString)
 import Data.List ((\\))
