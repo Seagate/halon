@@ -96,10 +96,20 @@ remotableDecl [ [d|
          rGroup <- unClosure cRGroup >>= id
          replicas <- setRGroupMembers rGroup newNodes $
                           $(mkClosure 'isNodeInGroup) $ trackers
-         forM_ (zip newNodes replicas) $ \(n,replica) -> spawn n $
-                  $(mkClosure 'startRS)
+         forM_ (zip newNodes replicas) $ \(n,replica) -> call
+                  $(functionTDict 'spawnStartRS)
+                  n
+                  $ $(mkClosure 'spawnStartRS)
                       (IgnitionArguments nodes trackers, cRGroup, Just replica)
        Nothing -> return ()
+
+ 
+ spawnStartRS :: ( IgnitionArguments
+            , Closure (Process (RLogGroup HAReplicatedState))
+            , Maybe (Replica RLogGroup)
+            )
+         -> Process ()
+ spawnStartRS args = spawnLocal (startRS args) >> return ()
 
  startRS :: ( IgnitionArguments
             , Closure (Process (RLogGroup HAReplicatedState))
@@ -173,8 +183,8 @@ remotableDecl [ [d|
     else do
       cRGroup <- newRGroup $(mkStatic 'rsDict) trackers
                             (RSState Nothing 0,((Nothing,[]),fromList []))
-      forM_ trackers $ flip spawn $
-        $(mkClosure 'startRS)
+      forM_ trackers $ flip (call $(functionTDict 'spawnStartRS))  $
+        $(mkClosure 'spawnStartRS)
           ( IgnitionArguments nodes trackers
           , cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
           , Nothing :: Maybe (Replica RLogGroup)
