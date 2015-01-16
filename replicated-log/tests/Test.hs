@@ -21,13 +21,14 @@ import Control.Distributed.State
 import qualified Control.Distributed.Log.Policy as Policy
 import Control.Distributed.Log.Policy -- XXX workaround for distributed-process TH bug.
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler
     ( withScheduler, __remoteTable )
 import Control.Distributed.Static
 import Data.Rank1Dynamic
+import qualified Network.Socket as N (close)
 import Network.Transport.TCP
 
 import Control.Monad (forM_, replicateM, when, void)
@@ -120,7 +121,8 @@ tests args = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
 
-    Right transport <- createTransport "127.0.0.1" "8080" defaultTCPParameters
+    Right (transport, internals) <- createTransportExposeInternals
+        "127.0.0.1" "8080" defaultTCPParameters
     putStrLn "Transport created."
 
     let setup :: Int                      -- ^ Number of nodes to spawn group on.
@@ -155,7 +157,7 @@ tests args = do
           , testSuccess "clone" . withTmpDirectory          $ setup 1 $ \h _ -> do
                 self <- getSelfPid
                 rh <- Log.remoteHandle h
-                send self rh
+                usend self rh
                 rh' <- expect
                 h' <- Log.clone rh'
                 port <- State.newPort h'
@@ -174,7 +176,7 @@ tests args = do
                 self <- getSelfPid
                 node1 <- liftIO $ newLocalNode transport remoteTables
                 liftIO $ runProcess node1 $ registerInterceptor $ \string -> case string of
-                    "New replica started in legislature://1" -> send self ()
+                    "New replica started in legislature://1" -> usend self ()
                     _ -> return ()
 
                 liftIO $ runProcess node1 $ do
@@ -185,7 +187,7 @@ tests args = do
 
           , testSuccess "addReplica-new-replica-old-decrees" . withTmpDirectory $ setup 1 $ \h port -> do
                 self <- getSelfPid
-                let interceptor "Increment." = send self ()
+                let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor $ interceptor
                 node1 <- liftIO $ newLocalNode transport remoteTables
@@ -205,7 +207,7 @@ tests args = do
 
           , testSuccess "addReplica-new-replica-new-decrees" . withTmpDirectory $ setup 1 $ \h port -> do
                 self <- getSelfPid
-                let interceptor "Increment." = send self ()
+                let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor $ interceptor
                 node1 <- liftIO $ newLocalNode transport remoteTables
@@ -226,7 +228,7 @@ tests args = do
               tryWithTimeout transport remoteTables 8000000
                   $ setup' [localNodeId n] $ \h port -> do
                 self <- getSelfPid
-                let interceptor "Increment." = send self ()
+                let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor $ interceptor
                 node1 <- liftIO $ newLocalNode transport remoteTables
@@ -256,7 +258,7 @@ tests args = do
                 node1 <- liftIO $ newLocalNode transport remoteTables
                 node2 <- liftIO $ newLocalNode transport remoteTables
 
-                let interceptor "Increment." = send self ()
+                let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor $ interceptor
                 liftIO $ runProcess node1 $ registerInterceptor $ interceptor
@@ -277,7 +279,52 @@ tests args = do
                 State.update port $ incrementCP
                 () <- expect
                 say "Still alive replica increments."
-          ]
+
+          , testSuccess "quorum-after-transient-failure" . withTmpDirectory $
+              setup 1 $ \h port -> do
+                self <- getSelfPid
+                node1 <- liftIO $ newLocalNode transport remoteTables
+
+                let interceptor "Increment." = reconnect self >> usend self ()
+                    interceptor _ = return ()
+                registerInterceptor interceptor
+                liftIO $ runProcess node1 $ registerInterceptor interceptor
+
+                liftIO $ runProcess node1 $ do
+                    here <- getSelfNode
+                    ρ <- Log.addReplica h
+                             (staticClosure $(mkStatic 'Policy.orpn)) here
+                    updateHandle h ρ
+
+                liftIO $ runProcess node1 $ State.update port incrementCP
+                () <- expect
+                () <- expect
+
+                -- interrupt the connection between the replicas
+                here <- getSelfNode
+                liftIO $ do
+                  socketBetween internals
+                                (nodeAddress here)
+                                (nodeAddress $ localNodeId node1)
+                    >>= N.close
+                  socketBetween internals
+                                (nodeAddress $ localNodeId node1)
+                                (nodeAddress here)
+                    >>= N.close
+
+                firstAttempt <- spawnLocal $
+                  liftIO $ runProcess node1 $ State.update port incrementCP
+                munit <- expectTimeout 1000000
+                case munit of
+                  Just () -> return ()
+                  Nothing -> do
+                       kill firstAttempt "Blocked."
+                       _ <- spawnLocal $ do
+                         liftIO $ runProcess node1 $ State.update port incrementCP
+                       expect :: Process ()
+                expect :: Process ()
+                say "Replicas continue to have quorum."
+           ]
 
     let pass = Prelude.read $ if null args then "FirstPass" else head args
         durability_test = testSuccess "durability" $ do
