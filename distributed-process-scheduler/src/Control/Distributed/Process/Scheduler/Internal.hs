@@ -19,6 +19,7 @@ module Control.Distributed.Process.Scheduler.Internal
   -- * distributed-process replacements
   , Match
   , send
+  , usend
   , sendChan
   , match
   , matchIf
@@ -311,6 +312,9 @@ send pid msg = do
   sendS $ Send self pid $ AddressedMsg
     (DP.ProcessIdentifier pid)
     (DP.messageToPayload $ DP.createMessage msg)
+
+usend :: Serializable a => ProcessId -> a -> Process ()
+usend = send
 
 sendChan :: Serializable a => SendPort a -> a -> Process ()
 sendChan sendPort msg = do

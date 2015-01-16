@@ -36,7 +36,6 @@ module Control.Distributed.Log.Internal
     , Control.Distributed.Log.Internal.__remoteTableDecl
     , ambassador__tdict -- XXX unused, exported to guard against warning.
       -- * Other
-    , usend
     ) where
 
 import Control.Distributed.Log.Messages
@@ -44,7 +43,7 @@ import Control.Distributed.Log.Policy (NominationPolicy)
 import Control.Distributed.Log.Policy as Policy (notThem, notThem__static)
 import Control.Distributed.Process.Consensus hiding (Value)
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
@@ -97,21 +96,10 @@ callLocal p = do
   mv <-liftIO $ newEmptyMVar
   self <- getSelfPid
   _ <- spawnLocal $ link self >> try p >>= liftIO . putMVar mv
-                      >> when schedulerIsEnabled (send self Done)
+                      >> when schedulerIsEnabled (usend self Done)
   when schedulerIsEnabled $ do Done <- expect; return ()
   liftIO $ takeMVar mv
     >>= either (throwIO :: SomeException -> IO a) return
-
--- | Unreliable send.
---
--- Makes an effort to deliver a message regardless of whether sending earlier
--- messages have failed.
---
--- It may cause messages send with either 'usend' or 'send' to arrive unordered
--- or to be lost.
---
-usend :: Serializable a => ProcessId -> a -> Process ()
-usend pid a = reconnect pid >> send pid a
 
 -- | Find the gaps in a partial sequence such that, if the partial sequence and
 -- the gaps were sorted, the resulting list would form a contiguous sequence.
@@ -367,7 +355,7 @@ replica Dict
     -- recorded decrees must be replayed. This has no effect on the current
     -- decree number and the watermark. See Note [Teleportation].
     forM_ (Map.toList log) $ \(n,v) -> do
-        send self $ Decree Stored (DecreeId maxBound n) v
+        usend self $ Decree Stored (DecreeId maxBound n) v
 
     let d = if Map.null log
             then decree
@@ -408,7 +396,7 @@ replica Dict
       where
         wait :: (ProcessId, Int, TimerMessage) -> Process ()
         wait (sender, t, msg) =
-          expectTimeout t >>= maybe (send sender msg >> timer) wait
+          expectTimeout t >>= maybe (usend sender msg >> timer) wait
 
     -- The proposer process makes consensus proposals.
     -- Proposals are aborted when a reconfiguration occurs.
@@ -427,7 +415,7 @@ replica Dict
                      link self
                      result <- runPropose' (prl_propose αs d v) s
                      liftIO $ putMVar mv result
-                     send self ()
+                     usend self ()
             (αs',blocked) <- receiveWait
                       [ match $ \() -> return (αs,False)
                       , match $ \αs' -> do
@@ -444,11 +432,11 @@ replica Dict
               --
               -- TODO: Consider if there is a simple way to avoid competition of
               -- proposers here.
-              send self (d,request)
+              usend self (d,request)
               proposer ρ s αs'
             else do
               (v',s') <- liftIO $ takeMVar mv
-              send ρ (d,v',request)
+              usend ρ (d,v',request)
               proposer ρ s' αs'
 
         , match $ proposer ρ s
@@ -496,7 +484,7 @@ replica Dict
                   cd' <- case mLeader of
                     Just leader | self == leader -> do
                       leaseRequest <- mkLeaseRequest $ decreeLegislatureId d
-                      send ppid (cd, leaseRequest)
+                      usend ppid (cd, leaseRequest)
                       return $ succ cd
                     _ ->  return cd
                   go st{ stateCurrentDecree = cd' }
@@ -520,9 +508,9 @@ replica Dict
                   case locale of
                       -- Ack back to the client, but only if it is not us asking
                       -- the lease (no other replica uses locale Local).
-                      Local κ | κ /= self -> send κ ()
+                      Local κ | κ /= self -> usend κ ()
                       _ -> return ()
-                  send self $ Decree Stored dᵢ v
+                  usend self $ Decree Stored dᵢ v
                   go st
 
               -- Execute the decree
@@ -554,7 +542,7 @@ replica Dict
                       usend ppid αs'
 
                       -- Tick.
-                      send self Status
+                      usend self Status
 
                       -- If I'm the leader, the lease starts at the time
                       -- the request was made. Otherwise, it starts now.
@@ -562,7 +550,7 @@ replica Dict
                       leaseStart' <-
                           if [self] == take 1 ρs'
                           then do
-                            send timerPid
+                            usend timerPid
                                  ( self
                                  , max 0 (TimeSpec 0 ((leaseTimeout -
                                                        leaseRenewTimeout) * 1000) -
@@ -602,7 +590,7 @@ replica Dict
                   --
                   -- This Decree could have been teleported. So, we shouldn't
                   -- trust dᵢ, unless @decreeLegislatureId dᵢ < maxBound@.
-                  send self $ Decree locale dᵢ v
+                  usend self $ Decree locale dᵢ v
                   go st
 
               -- Lease requests.
@@ -617,7 +605,7 @@ replica Dict
                     Just l | l < decreeLegislatureId d -> return cd
                     -- Send to the proposer otherwise.
                     _ -> do
-                      send ppid (cd, request)
+                      usend ppid (cd, request)
                       return $ succ cd
                   go st{ stateCurrentDecree = cd' }
 
@@ -630,9 +618,9 @@ replica Dict
                            Nothing -> do
                              leaseRequest <- mkLeaseRequest $
                                                decreeLegislatureId d
-                             send ppid (cd, leaseRequest)
+                             usend ppid (cd, leaseRequest)
                              -- Save the current request for later.
-                             send self request
+                             usend self request
                              return (s, succ cd)
 
                            -- Forward the request to the leader.
@@ -649,7 +637,7 @@ replica Dict
                                  return (s', cd)
                              -- Send the other requests to the proposer.
                              _ -> do
-                               send ppid (cd, request)
+                               usend ppid (cd, request)
                                return (s, succ cd)
                   go st{ stateCurrentDecree = cd', stateLogState = s' }
 
@@ -659,7 +647,7 @@ replica Dict
                   -- client's, don't treat it as local (ie. do not report back
                   -- to the client yet).
                   let locale = if v == vᵢ then Local κ else Remote
-                  send self $ Decree locale dᵢ vᵢ
+                  usend self $ Decree locale dᵢ vᵢ
                   forM_ others $ \ρ -> do
                       usend ρ $ Decree Remote dᵢ vᵢ
 
@@ -667,7 +655,7 @@ replica Dict
                       -- Decree already has different value, so repost to
                       -- hopefully get it accepted as a future decree number.
                       -- But repost only if it is not a lease request.
-                      send self request
+                      usend self request
                   let d' = max d (succ dᵢ)
                   go st{ stateUnconfirmedDecree = d' }
 
@@ -698,9 +686,9 @@ replica Dict
                   mLeader <- liftIO $ getLeader
                   case mLeader of
                     Nothing -> do
-                      mkLeaseRequest (decreeLegislatureId d) >>= send self
+                      mkLeaseRequest (decreeLegislatureId d) >>= usend self
                       -- Save the current request for later.
-                      send self m
+                      usend self m
 
                     -- Forward the request to the leader.
                     Just leader | self /= leader -> do
@@ -715,7 +703,7 @@ replica Dict
                           ρs'' = self : filter (/= self) ρs'
                       requestStart <- liftIO $ getTime Monotonic
                       -- Get self to propose reconfiguration...
-                      send self $ Request
+                      usend self $ Request
                         { requestSender   = π
                         , requestValue    =
                             Reconf requestStart αs' ρs'' :: Value a
@@ -724,7 +712,7 @@ replica Dict
                         }
 
                       -- Update the list of acceptors of the proposer...
-                      send ppid (intersect αs αs')
+                      usend ppid (intersect αs αs')
 
                       -- ... filtering out invalidated nodes for quorum.
                       go st{ stateAcceptors = intersect αs αs' }
@@ -757,7 +745,7 @@ batcher SerializableDict ρ = do
     sendBatch :: Seq (Request a) -> Process ()
     sendBatch requests = do
         self <- getSelfPid
-        send ρ $ Request
+        usend ρ $ Request
           { requestSender   = self
           , requestValue    = concatValues $ fmap requestValue requests
           , requestHint     = None
@@ -783,7 +771,7 @@ batcher SerializableDict ρ = do
                 -- Forward read requests immediately, as they can be answered
                 -- by the leader without consensus.
                 Nullipotent -> do
-                    send ρ request
+                    usend ρ request
                     go collected inFlight
                 _ -> if Seq.null inFlight
                      then do
@@ -793,8 +781,8 @@ batcher SerializableDict ρ = do
                          go Seq.empty inFlight'
                      else go (collected |> request) inFlight
       -- Forward every relevant other request
-      , match $ \(request :: Helo)   -> send ρ request >> go collected inFlight
-      , match $ \(request :: Status) -> send ρ request >> go collected inFlight
+      , match $ \(request :: Helo)   -> usend ρ request >> go collected inFlight
+      , match $ \(request :: Status) -> usend ρ request >> go collected inFlight
       ]
 
 dictValue :: SerializableDict a -> SerializableDict (Value a)
@@ -885,7 +873,7 @@ spawnRec nodes f = do
     self <- getSelfPid
     ρs <- forM nodes $ \nid -> spawn nid $
               delayClosure ($(mkStatic 'dictList) `staticApply` sdictProcessId) self f
-    forM_ ρs $ \ρ -> send ρ ρs
+    forM_ ρs $ \ρ -> usend ρ ρs
     return ρs
 
 replicaClosure :: Typeable a
@@ -963,9 +951,9 @@ remotableDecl [
             go d@(Some sdict) ρ = do
                 receiveWait
                     [ match $ \(Clone δ) -> do
-                          send δ $ $(mkClosure 'ambassador) (ssdict,replicas)
+                          usend δ $ $(mkClosure 'ambassador) (ssdict,replicas)
                           go d ρ
-                    , match $ \m@(Helo _ _) -> send ρ m >> go d ρ
+                    , match $ \m@(Helo _ _) -> usend ρ m >> go d ρ
                     , match $ \Status -> do
                           usend ρ Status
                           go d ρ
@@ -981,7 +969,7 @@ remotableDecl [
 append :: Serializable a => Handle a -> Hint -> a -> Process ()
 append (Handle _ _ _ _ μ) hint x = callLocal $ do
     self <- getSelfPid
-    send μ $ Request
+    usend μ $ Request
       { requestSender   = self
       , requestValue    = Values [x]
       , requestHint     = hint
@@ -991,16 +979,16 @@ append (Handle _ _ _ _ μ) hint x = callLocal $ do
 
 -- | Make replicas advertize their status info.
 status :: Serializable a => Handle a -> Process ()
-status (Handle _ _ _ _ μ) = send μ Status
+status (Handle _ _ _ _ μ) = usend μ Status
 
 -- | Updates the handle so it communicates with the given replica.
 updateHandle :: Handle a -> ProcessId -> Process ()
-updateHandle (Handle _ _ _ _ α) ρ = send α ρ
+updateHandle (Handle _ _ _ _ α) ρ = usend α ρ
 
 remoteHandle :: Handle a -> Process (RemoteHandle a)
 remoteHandle (Handle sdict1 sdict2 config log α) = do
     self <- getSelfPid
-    send α $ Clone self
+    usend α $ Clone self
     RemoteHandle sdict1 sdict2 config log <$> expect
 
 -- Note [spawnRec]
@@ -1070,7 +1058,7 @@ reconfigure :: Typeable a
             -> Process ()
 reconfigure (Handle _ _ _ _ μ) cpolicy = callLocal $ do
     self <- getSelfPid
-    send μ $ Helo self cpolicy
+    usend μ $ Helo self cpolicy
     expect
 
 -- | Start a new replica on the given node, adding it to the group pointed to by

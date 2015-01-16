@@ -27,8 +27,7 @@ module Control.Distributed.State
        , __remoteTable) where
 
 import qualified Control.Distributed.Log as Log
-import qualified Control.Distributed.Log.Internal as Log(usend)
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
     ( closureApply
@@ -89,7 +88,7 @@ selectWrapper :: SerializableDict a
               -> Process s
 selectWrapper SerializableDict α cid f s = do
     x <- f s
-    Log.usend α (Result cid x)
+    usend α (Result cid x)
     return s
 
 updateWrapper :: (s -> Process s)

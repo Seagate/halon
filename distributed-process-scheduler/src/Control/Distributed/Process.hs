@@ -6,6 +6,7 @@
 module Control.Distributed.Process
   ( Match
   , send
+  , usend
   , sendChan
   , match
   , matchIf
@@ -33,6 +34,7 @@ import "distributed-process" Control.Distributed.Process as DPEtc
     hiding
   ( Match
   , send
+  , usend
   , sendChan
   , match
   , matchIf
@@ -55,6 +57,12 @@ send :: Serializable a => ProcessId -> a -> Process ()
 send = if Internal.schedulerIsEnabled
        then Internal.send
        else DP.send
+
+{-# NOINLINE usend #-}
+usend :: Serializable a => ProcessId -> a -> Process ()
+usend = if Internal.schedulerIsEnabled
+       then Internal.usend
+       else DP.usend
 
 {-# NOINLINE sendChan #-}
 sendChan :: Serializable a => SendPort a -> a -> Process ()
