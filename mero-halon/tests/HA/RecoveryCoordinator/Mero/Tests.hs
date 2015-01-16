@@ -20,22 +20,19 @@ import HA.EventQueue
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.Multimap.Implementation
 import HA.Multimap.Process
+import HA.NodeUp (nodeUp)
 import HA.Replicator
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
 #else
 import HA.Replicator.Log ( MC_RG )
 #endif
-import HA.NodeAgent.Messages
 import HA.Service
   ( ServiceFailed(..)
   , ServiceStartRequest(..)
   , encodeP
-  , serviceName
-  , snString
   )
 import qualified HA.Services.Dummy as Dummy
-import qualified Mero.Messages as Mero ( StripingError(..) )
 import RemoteTables ( remoteTable )
 
 import Control.Distributed.Process
@@ -49,7 +46,6 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ( first, second )
 import Control.Monad (forM_)
 import Control.Monad.Fix
-import Data.ByteString.Char8 as B8 (ByteString)
 import Data.Defaultable
 
 instance MonadFix Process where
@@ -105,6 +101,7 @@ testServiceRestarting transport = do
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         runRC (eq, IgnitionArguments [nid]) rGroup
 
+        nodeUp ([nid], 1000)
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest (Node nid) Dummy.dummy
             (Dummy.DummyConf $ Configured "Test 1")
