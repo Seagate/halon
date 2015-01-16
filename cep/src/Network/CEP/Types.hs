@@ -1,180 +1,67 @@
+{-# LANGUAGE DeriveDataTypeable         #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 -- |
 -- Copyright: (C) 2014 Tweag I/O Limited
 --
--- Types, lenses, and smart constructors used throughout the CEP framework.
 --
+module Network.CEP.Types where
 
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE DefaultSignatures          #-}
-{-# LANGUAGE DeriveDataTypeable         #-}
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE FunctionalDependencies     #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE PolyKinds                  #-}
-{-# LANGUAGE Rank2Types                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE TypeFamilies               #-}
+import Data.ByteString
+import Data.Typeable
+import GHC.Generics
 
-{-# OPTIONS_GHC -fno-warn-orphans #-} -- Typeable Serializable, Eq/Ord Static
+import Control.Distributed.Process
+import Control.Distributed.Process.Serializable
+import Control.Monad.State.Strict
+import Data.Binary
+import Data.MultiMap
+import Data.Time
+import FRP.Netwire
 
-module Network.CEP.Types
-  ( Some (..)
-  , Some'
-  , some
-  , Instance (..)
-  , Boring
-  , (:&:) (..)
-  , Broker
-  , EventType ()
-  , unEventType
-  , eventTypeOf
-  , Emittable (..)
-  , Statically (..)
-  , NetworkMessage (..)
-  , payload
-  , source
-  , ack
-  , SubscribeRequest (..)
-  , PublishRequest (..)
-  , eventType
-  , NodeRemoval (..)
-  , removedNode
-  , BrokerReconf (..)
-  , newBrokers
-  , Ack (..)
-  , ackMessage
-  , ackSource ) where
+data Sub a = Sub deriving (Generic, Typeable)
 
-import Network.CEP.Instances
+instance Binary a => Binary (Sub a)
 
-import Control.Distributed.Process (Process, ProcessId, Static, unStatic)
-import Control.Distributed.Process.Closure (remotable, mkStatic)
-import Control.Distributed.Process.Serializable (Serializable)
-import Control.Distributed.Static (staticApply)
-import Control.Lens
-import Data.Binary (Binary)
+data CEPMessage
+    = SubRequest Subscribe
+    | Other Message
 
-import Data.Typeable (Typeable, Proxy)
-import GHC.Generics (Generic)
+newtype CEP a = CEP (StateT Bookkeeping Process a)
+                  deriving (Functor, Applicative, Monad)
 
-type Broker = ProcessId
+newtype Ctx s = Ctx (Timed NominalDiffTime s)
+              deriving (Monoid, HasTime NominalDiffTime)
 
-deriving instance Typeable Serializable
+type ComplexEvent s a b = Wire (Ctx s) () CEP a b
 
-someETInstance :: forall a. Instance (Statically Emittable) a -> Some' (Instance (Statically Emittable))
-someETInstance Instance = Precisely (Instance :: Instance (Statically Emittable) a)
+data Bookkeeping =
+    Bookkeeping { _subscribers :: !(MultiMap Fingerprint ProcessId) }
 
-class Serializable a => Emittable a where
-  type Sundries a :: *
-  type Sundries a = ()
-  sundries :: Proxy a -> Sundries a
-  default sundries :: Proxy a -> ()
-  sundries _ = ()
-deriving instance Typeable Emittable
+data Subscribe =
+    Subscribe
+    { _subType :: !ByteString
+    , _subPid  :: !ProcessId
+    } deriving (Show, Typeable, Generic)
 
--- | A type that represents the type of a message.
---   Create them with 'eventTypeOf'.
-newtype EventType = EventType (Static (Some' (Instance (Statically Emittable))))
-  deriving (Show, Eq, Ord, Generic, Typeable, Binary)
+instance Binary Subscribe
 
--- Not sure about this returning Process.  Would rather have Processor s, but
--- needs module restructuring.
-unEventType :: EventType
-            -> (forall a. Instance (Statically Emittable) a -> b)
-            -> Process b
-unEventType (EventType bs) f = unStatic bs >>= \case
-    (s :: Some' (Instance (Statically Emittable))) -> return $ some f s
+data Published a =
+    Published
+    { pubValue :: !a
+    , pubPid   :: !ProcessId
+    } deriving (Show, Typeable, Generic)
 
--- | A type representing a message we will send over the network, tagged
---   with its source.
-data NetworkMessage a = NetworkMessage
-  { _payload :: !a
-  , _ack     :: !Bool
-  , _source  :: !ProcessId
-  } deriving (Typeable, Show, Eq, Ord, Generic, Functor)
-instance Binary a => Binary (NetworkMessage a)
+instance Binary a => Binary (Published a)
 
--- We prefer monomorphic lenses over makeClassy on event types as
--- using polymorphic lenses would require users of publish/subscribe
--- to provide unwieldy explicit type signatures, possibly involving
--- scoped type variables.
+asSub :: a -> Sub a
+asSub _ = Sub
 
-makeLenses ''NetworkMessage
+dstate :: Ctx s -> s
+dstate (Ctx (Timed _ s)) = s
 
--- | A type representing a request for subscription to a particular event.
-newtype SubscribeRequest = SubscribeRequest
-  { _subscribeEventType :: EventType
-  } deriving (Typeable, Show, Eq, Generic, Binary)
+liftProcess :: Process a -> CEP a
+liftProcess m = CEP $ lift m
 
-makeFields ''SubscribeRequest
-
--- | A type representing a request to publish a particular event.
-newtype PublishRequest = PublishRequest
-  { _publishEventType :: EventType
-  } deriving (Typeable, Show, Eq, Generic, Binary)
-
-makeFields ''PublishRequest
-
--- | A type representing a notification that a node is no longer present.
-newtype NodeRemoval = NodeRemoval
-  { _removedNode :: ProcessId
-  } deriving (Typeable, Show, Eq, Generic, Binary)
-
-makeLenses ''NodeRemoval
-
-newtype BrokerReconf = BrokerReconf
-  { _newBrokers :: [Broker]
-  } deriving (Typeable, Show, Eq, Generic, Binary)
-
-makeLenses ''BrokerReconf
-
-data Ack a = Ack
-  { _ackMessage :: a
-  , _ackSource  :: !ProcessId
-  } deriving (Typeable, Show, Eq, Generic)
-instance Binary a => Binary (Ack a)
-
-makeLenses ''Ack
-
-instance Emittable SubscribeRequest
-instance Emittable PublishRequest
-instance Emittable NodeRemoval
-instance Emittable BrokerReconf
-
-sinstSubscribeRequest :: Instance (Statically Emittable) SubscribeRequest
-sinstPublishRequest   :: Instance (Statically Emittable) PublishRequest
-sinstNodeRemoval      :: Instance (Statically Emittable) NodeRemoval
-sinstBrokerReconf     :: Instance (Statically Emittable) BrokerReconf
-sinstSubscribeRequest = Instance
-sinstPublishRequest   = Instance
-sinstNodeRemoval      = Instance
-sinstBrokerReconf     = Instance
-
-remotable [ 'sinstSubscribeRequest
-          , 'sinstPublishRequest
-          , 'sinstNodeRemoval
-          , 'sinstBrokerReconf
-          , 'someETInstance
-          ]
-
-instance Statically Emittable SubscribeRequest where
-  staticInstance = $(mkStatic 'sinstSubscribeRequest)
-instance Statically Emittable PublishRequest where
-  staticInstance = $(mkStatic 'sinstPublishRequest)
-instance Statically Emittable NodeRemoval where
-  staticInstance = $(mkStatic 'sinstNodeRemoval)
-instance Statically Emittable BrokerReconf where
-  staticInstance = $(mkStatic 'sinstBrokerReconf)
-
-
-eventTypeOf :: forall proxy a. Statically Emittable a => proxy a -> EventType
-eventTypeOf _ = EventType . staticApply $(mkStatic 'someETInstance)
-              $ (staticInstance :: Static (Instance (Statically Emittable) a))
+runCEP :: CEP a -> Bookkeeping -> Process (a, Bookkeeping)
+runCEP (CEP m) s = runStateT m s

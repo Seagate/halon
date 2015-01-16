@@ -15,42 +15,34 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Network.CEP
-                       Network.CEP.Processor
-                       Network.CEP.Types
 
-  other-modules:       Network.CEP.Instances
-                       Network.CEP.Broker.Centralized
-                       Network.CEP.Processor.Callback
-                       Network.CEP.Processor.Types
-                       Network.CEP.Processor.Internal
-                       Network.CEP.Util
+  other-modules:       Network.CEP.Types
 
-  other-extensions:    DeriveDataTypeable, ScopedTypeVariables,
-                       TemplateHaskell, GeneralizedNewtypeDeriving,
-                       FunctionalDependencies, MultiParamTypeClasses,
-                       DeriveGeneric, DeriveFunctor, TupleSections
-  build-depends:       base >=4.6 && <4.8,
-                       network-transport==0.4.*,
+  other-extensions:    DeriveDataTypeable
+                       GeneralizedNewtypeDeriving
+                       DeriveGeneric
+  build-depends:       base >=4.6 && <5,
                        distributed-process==0.5.*,
-                       distributed-static,
                        binary==0.7.*,
-                       lens >=4.3 && < 4.5,
+                       bytestring,
                        mtl,
                        multimap==1.2.*,
-                       containers==0.5.*
+                       containers==0.5.*,
+                       netwire,
+                       time
   default-language:    Haskell2010
   ghc-options:         -Wall -Werror
 
-executable simple
-  hs-source-dirs:      examples
-  default-language:    Haskell2010
-  main-is:             Simple.hs
-  default-extensions:  ScopedTypeVariables
-  build-depends:       base >=4.6 && <4.8,
-                       lens >=4.3 && <4.5,
-                       mtl,
-                       network-transport==0.4.*,
-                       network-transport-tcp==0.4.*,
-                       distributed-process==0.5.*,
-                       cep
-  ghc-options:      -Wall -Werror
+-- executable simple
+--   hs-source-dirs:      examples
+--   default-language:    Haskell2010
+--   main-is:             Simple.hs
+--   default-extensions:  ScopedTypeVariables
+--   build-depends:       base >=4.6 && <4.8,
+--                        lens >=4.3 && <4.5,
+--                        mtl,
+--                        network-transport==0.4.*,
+--                        network-transport-tcp==0.4.*,
+--                        distributed-process==0.5.*,
+--                        cep
+--   ghc-options:      -Wall -Werror
