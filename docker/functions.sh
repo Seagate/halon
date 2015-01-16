@@ -41,7 +41,7 @@ function generate-dep-version {
 # of the "make dep" image even when the
 # automated detection below does not see
 # a change.
-MANUALVERSION=2015010702
+MANUALVERSION=2015011602
 
 # these are all hashed up to decide if this layer needs
 # rebuilding or not.
