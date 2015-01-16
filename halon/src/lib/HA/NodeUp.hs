@@ -9,6 +9,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 
+{-# OPTIONS_GHC -fno-warn-unused-binds #-}
+
 module HA.NodeUp
   ( NodeUp(..)
   , nodeUp
