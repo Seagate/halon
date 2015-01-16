@@ -34,8 +34,6 @@ ut transport = return $
     testGroup "ut"
       [ testCase "RCServiceRestarting" $
           HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport
-      , testCase "RCEpochTransition" $
-          HA.RecoveryCoordinator.Mero.Tests.testEpochTransition transport
       , testCase "uncleanRPCClose" $ threadDelay 2000000
       ]
 

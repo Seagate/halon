@@ -12,10 +12,11 @@ module HA.Services.OCF
     ( ocf
     , HA.Services.OCF.__remoteTableDecl ) where
 
+import HA.EventQueue.Producer (expiate)
+import HA.NodeAgent.Messages
 import HA.Service
 import HA.Services.Empty
 import HA.Resources
-import HA.NodeAgent
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
@@ -33,22 +34,19 @@ never = liftIO $ newEmptyMVar >>= takeMVar
 remotableDecl [ [d|
 
     ocf :: FilePath -> Service ()
-    ocf script = service
-                  emptySDict
+    ocf script = Service
+                  (ServiceName script)
+                  ($(mkClosure 'ocfProcess) script)
                   ($(mkStatic 'someConfigDict)
                     `staticApply` $(mkStatic 'emptyConfigDict))
-                  $(mkStatic 'emptySDict)
-                  script $
-                  $(mkClosure 'ocfProcess) script
 
     -- | Pacemaker / RH Cluster Suite SysV init-like service script.
     ocfProcess :: FilePath -> () -> Process ()
     ocfProcess script () = do
-        mbpid <- whereis (snString . serviceName $ nodeAgent)
-        let na = maybe (error "NodeAgent is not registered.") id mbpid
+        node <- getSelfNode
         checkExitCode (liftIO $ System.rawSystem script ["start"])
                       go
-                      (expire . encodeP $ ServiceCouldNotStart (Node (processNodeId na)) $ ocf script)
+                      (expiate . encodeP $ ServiceCouldNotStart (Node node) $ ocf script)
       where
         checkExitCode proc good bad =
           proc >>= \status ->

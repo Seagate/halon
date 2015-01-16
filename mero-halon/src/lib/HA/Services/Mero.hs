@@ -9,8 +9,7 @@
 
 module HA.Services.Mero (m0d, HA.Services.Mero.__remoteTableDecl) where
 
-import HA.NodeAgent
-import HA.EventQueue.Producer (promulgate)
+import HA.EventQueue.Producer (expiate, promulgate)
 import HA.Resources
 import HA.Service
 import HA.Services.Empty
@@ -54,11 +53,11 @@ updateEpoch _ = error "updateEpoch: RPC support required."
 remotableDecl [ [d|
 
     m0d :: Service ()
-    m0d = service
-            emptySDict
+    m0d = Service
+            (ServiceName "m0d")
+            $(mkStaticClosure 'm0dProcess)
             ($(mkStatic 'someConfigDict)
                 `staticApply` $(mkStatic 'emptyConfigDict))
-            $(mkStatic 'emptySDict) "m0d" $(mkStaticClosure 'm0dProcess)
 
     m0dProcess :: () -> Process ()
     m0dProcess () = do
@@ -88,15 +87,13 @@ remotableDecl [ [d|
             terminateProcess h
             void $ waitForProcess h
         dummyStripingMonitor = forever $ do
+            node <- getSelfNode
             let dummyFile = "dummy-striping-error"
             liftIO $ threadDelay 1000000
             exists <- liftIO $ doesFileExist dummyFile
             when exists $ do
               liftIO $ removeFile dummyFile
-              mbpid <- whereis (snString . serviceName $ nodeAgent)
-              case mbpid of
-                Nothing -> error "NodeAgent is not registered."
-                Just na -> promulgate (StripingError (Node (processNodeId na)))
+              promulgate (StripingError (Node node))
 
         m0ctlMonitor srv out h_m0ctl = loop [] where
           loop buf = do
@@ -114,10 +111,8 @@ remotableDecl [ [d|
 
         go epoch = do
             let shutdownAndTellThem = do
-                  mbpid <- whereis (snString . serviceName $ nodeAgent)
-                  case mbpid of
-                      Nothing -> error "NodeAgent is not registered."
-                      Just na -> expire . encodeP $ ServiceFailed (Node (processNodeId na)) m0d -- XXX
+                  node <- getSelfNode
+                  expiate . encodeP $ ServiceFailed (Node node) m0d -- XXX
             receiveWait $
               [ match $ \(EpochTransition epochExpected epochTarget state) -> do
                   say $ "Service wrapper got new equation: " ++ show (state::ByteString)

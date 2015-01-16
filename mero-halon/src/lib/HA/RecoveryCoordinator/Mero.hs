@@ -33,7 +33,9 @@ import HA.Service
 #ifdef USE_MERO
 import HA.Resources.Mero (ConfObject(..), ConfObjectState(..), Is(..))
 #endif
-import HA.NodeAgent
+import HA.NodeAgent.Messages
+import HA.NodeUp
+import qualified HA.Services.EQTracker as EQT
 
 import Mero.Messages
 import HA.EventQueue.Consumer
@@ -54,7 +56,7 @@ import Control.Monad.Reader (ask)
 
 import Control.Applicative ((<*), (<$>))
 import Control.Arrow ((>>>))
-import Control.Monad (forM, forM_, void, (>=>))
+import Control.Monad (forM_, void, (>=>))
 
 import Data.Binary (Binary, Get, encode, get, put)
 import Data.Binary.Put (runPut)
@@ -64,7 +66,7 @@ import qualified Data.ByteString.Lazy as BS
 import Data.Foldable (mapM_)
 import Data.List (foldl', intersect)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (isJust, isNothing)
+import Data.Maybe (isNothing)
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -102,11 +104,8 @@ instance ProcessEncode ReconfigureCmd where
 
 -- | Initial configuration data.
 data IgnitionArguments = IgnitionArguments
-  { -- | The names of all nodes in the cluster.
-    clusterNodes :: [NodeId]
-
-    -- | The names of all tracking station nodes.
-  , stationNodes :: [NodeId]
+  { -- | The names of all tracking station nodes.
+    stationNodes :: [NodeId]
   } deriving (Generic,Typeable)
 
 instance Binary IgnitionArguments
@@ -123,15 +122,8 @@ reconfFailureLimit = 3
 sayRC :: String -> Process ()
 sayRC s = say $ "Recovery Coordinator: " ++ s
 
-initialize :: ProcessId -> IgnitionArguments -> Process G.Graph
-initialize mm IgnitionArguments{..} = do
-    self <- getSelfPid
-    -- Ask all nodes to make themselves known.
-    forM_ clusterNodes $ \nid -> spawnLocal $ do
-        getNodeAgent nid >>= \case
-            Nothing -> sayRC $ "No node agent found."
-            Just agent -> send self $ NodeAgentContacted agent
-
+initialize :: ProcessId -> Process G.Graph
+initialize mm = do
     rg <- G.getGraph mm
     if G.null rg then say "Starting from empty graph."
                  else say "Found existing graph."
@@ -152,13 +144,14 @@ startService :: forall a. Configuration a
              -> Service a -- ^ Service
              -> a
              -> G.Graph
-             -> Process ()
+             -> Process ProcessId
 startService node svc cfg _ = do
   mynid <- getSelfNode
   pid <- spawn node $ serviceProcess svc
               `closureApply` closure (staticDecode sDict) (encode cfg)
   void . promulgateEQ [mynid] . encodeP $
     ServiceStarted (Node node) svc cfg (ServiceProcess pid)
+  return pid
 
 -- | Kill a service on a remote node
 killService :: NodeId
@@ -174,27 +167,27 @@ bounceServiceTo :: Configuration a
                -> Node -- ^ Node on which to bounce service
                -> Service a -- ^ Service to bounce
                -> G.Graph -- ^ Resource Graph
-               -> Process ()
+               -> Process ProcessId -- ^ Process ID of new service instance.
 bounceServiceTo role n@(Node nid) s g = case runningService n s g of
     Just sp -> go sp
-    Nothing -> return ()
+    Nothing -> error "Cannot bounce non-existent service."
   where
     go sp = case readConfig sp role g of
       Just cfg -> killService nid sp Shutdown >> startService nid s cfg g
-      Nothing -> sayRC $ "Cannot find current configuation"
+      Nothing -> error "Cannot find current configuation"
 
 restartService :: Configuration a
                => Node
                -> Service a
                -> G.Graph
-               -> Process ()
+               -> Process ProcessId
 restartService = bounceServiceTo Current
 
 reconfigureService :: Configuration a
                    => Node
                    -> Service a
                    -> G.Graph
-                   -> Process ()
+                   -> Process ProcessId
 reconfigureService = bounceServiceTo Intended
 
 -- | Starting from the root node, find nodes and services matching the given
@@ -234,36 +227,41 @@ recoveryCoordinator :: ProcessId -- ^ pid of the replicated event queue
                     -> ProcessId -- ^ pid of the replicated multimap
                     -> IgnitionArguments -> Process ()
 recoveryCoordinator eq mm argv = do
-    rg <- HA.RecoveryCoordinator.Mero.initialize mm argv
+    rg <- HA.RecoveryCoordinator.Mero.initialize mm
     loop =<< initLoopState <$> G.sync rg
   where
     initLoopState :: G.Graph -> LoopState
     initLoopState g = LoopState { lsGraph = g, lsFailMap = Map.empty }
     loop :: LoopState -> Process ()
     loop ls@(LoopState rg failmap) = receiveWait
-        [ match $ \(NodeAgentContacted agent) -> do
-              let nid = processNodeId agent
-                  node = Node nid
-              sayRC $ "New node contacted: " ++ show agent
-              let rg' = G.newResource node >>>
-                        G.newResource m0d >>>
-                        G.connect Cluster Supports m0d >>>
-                        G.connect Cluster Has node $
-                        rg
-              -- TODO make async.
-              mbpids <- forM (stationNodes argv) getNodeAgent
-              _ <- updateEQNodes agent [ processNodeId pid | Just pid <- mbpids ]
-               -- XXX check for timeout.
-              _ <- startService nid m0d () rg
-              loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')
-        , match $ (decodeP >=>) $ \(ReconfigureCmd n@(Node nid) svc) ->
+        [ match $ (decodeP >=>) $ \(ReconfigureCmd n@(Node nid) svc) ->
             unStatic (configDict svc) >>= \case
               SomeConfigurationDict G.Dict -> do
                 sayRC $ "Reconfiguring service "
                         ++ (snString . serviceName $ svc)
                         ++ " on node " ++ (show nid)
-                reconfigureService n svc rg
+                _ <- reconfigureService n svc rg
                 loop ls
+        , matchHAEvent $ \(HAEvent _ (NodeUp pid) _) -> let
+              nid = processNodeId pid
+              node = Node nid
+              prg = if (G.memberResource node rg)
+                    then return rg
+                    else do
+                      sayRC $ "New node contacted: " ++ show nid
+                      let rg' = G.newResource node >>>
+                                G.newResource EQT.eqTracker >>>
+                                G.connect Cluster Supports EQT.eqTracker >>>
+                                G.connect Cluster Has node $
+                                rg
+                      eqt <- startService nid EQT.eqTracker () rg'
+                      -- Send list of EQs to the tracker
+                      True <- updateEQNodes eqt (stationNodes argv)
+                      return rg'
+            in do
+              -- Send acknowledgement to let nodeUp die
+              send pid ()
+              loop =<< (fmap (\a -> ls { lsGraph = a }) . G.sync) =<< prg
         , matchHAEvent $ \(HAEvent _ (EpochRequest pid) _) -> do
             let G.Edge _ Has target = head (G.edgesFromSrc Cluster rg :: [G.Edge Cluster Has (Epoch ByteString)])
             send pid $ EpochResponse $ epochId target
@@ -304,7 +302,7 @@ recoveryCoordinator eq mm argv = do
                     let rg' = G.newResource svc >>>
                               G.connect Cluster Supports svc $
                               rg
-                    startService nid svc c rg'
+                    _ <- startService nid svc c rg'
                     loop =<< (fmap (\a -> ls { lsGraph = a}) $ G.sync rg')
               else getSelfPid >>= \s -> send s evt >> loop ls
             )
@@ -359,13 +357,13 @@ recoveryCoordinator eq mm argv = do
                     rg' <- case runningService node srv rg of
                       Just sp -> G.sync $ disconnectConfig sp Intended rg
                       Nothing -> return rg
-                    restartService node srv rg
+                    _ <- restartService node srv rg
                     loop $ ls {
                         lsGraph = rg'
                       , lsFailMap = failmap''
                     }
                   else do
-                    reconfigureService node srv rg
+                    _ <- reconfigureService node srv rg
                     loop (ls { lsFailMap = failmap' }))
         , matchIfHAEvent
           (\(HAEvent _ (StripingError node) _) -> G.memberResource node rg)
@@ -382,18 +380,22 @@ recoveryCoordinator eq mm argv = do
                   -- content is not decided upon by the RC.
                   target = Epoch (succ (epochId current)) "y = x^3"
                   rg' = G.deleteEdge e >>> G.connect Cluster Has target $ rg
-                  m0dNodes = [ node | node <- G.connectedTo Cluster Has rg'
-                                    , isJust $ runningService node m0d rg' ]
+                  m0Instances = [ i1 | node <- (G.connectedTo Cluster Has rg'
+                                          :: [Node])
+                                       , i1 <- (G.connectedTo node Runs rg'
+                                          :: [ServiceProcess ()])
+                                       , i2 <- (G.connectedTo m0d InstanceOf rg'
+                                          :: [ServiceProcess ()])
+                                       , i1 == i2 ]
 
               -- Broadcast new epoch.
-              forM_ m0dNodes $ \(Node them) ->
-                  nsendRemote them (snString $ serviceName m0d) $
+              forM_ m0Instances $ \(ServiceProcess pid) ->
+                send pid $
                   EpochTransition
-                      { etCurrent = epochId current
-                      , etTarget  = epochId target
-                      , etHow     = epochState target :: ByteString
-                      }
-
+                    { etCurrent = epochId current
+                    , etTarget  = epochId target
+                    , etHow     = epochState target :: ByteString
+                    }
               loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg' <* send eq eid))
         , matchHAEvent $ \(HAEvent eid EpochTransitionRequest{..} _) -> do
               let G.Edge _ Has target = head $ G.edgesFromSrc Cluster rg

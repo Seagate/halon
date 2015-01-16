@@ -17,8 +17,8 @@ module HA.Services.Dummy
   , HA.Services.Dummy.__remoteTableDecl
   ) where
 
+import HA.NodeAgent.Messages
 import HA.Service
-import HA.NodeAgent
 import HA.ResourceGraph
 import HA.Resources (Cluster, Node)
 
@@ -148,13 +148,11 @@ never = liftIO $ newEmptyMVar >>= takeMVar
 
 remotableDecl [ [d|
   dummy :: Service DummyConf
-  dummy = service
-            dSerializableDict
+  dummy = Service
+            (ServiceName "dummy")
+            $(mkStaticClosure 'dummyProcess)
             ($(mkStatic 'someConfigDict)
                 `staticApply` $(mkStatic 'dConfigDict))
-            $(mkStatic 'dSerializableDict)
-            "dummy"
-            $(mkStaticClosure 'dummyProcess)
 
   dummyProcess :: DummyConf -> Process ()
   dummyProcess (DummyConf hw) = (`catchExit` onExit) $ do

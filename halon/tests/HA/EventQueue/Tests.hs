@@ -10,11 +10,13 @@ module HA.EventQueue.Tests ( tests, remoteRC__tdict ) where
 
 import Test.Framework
 
-import HA.NodeAgent
 import HA.EventQueue
 import HA.EventQueue.Consumer
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
+import HA.NodeAgent.Messages
+import HA.Service (serviceProcess)
+import HA.Services.EQTracker
 import HA.Replicator
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
@@ -27,13 +29,11 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( Serializable )
-import Control.Distributed.Static (closureApply)
 
 import Control.Applicative ((<$>))
 import Control.Arrow (first)
 import Control.Monad
 import Data.ByteString ( ByteString )
-import Data.Defaultable
 import Network.Transport (Transport)
 
 #ifndef USE_RPC
@@ -41,12 +41,6 @@ import Control.Concurrent (threadDelay)
 import qualified Network.Socket as TCP
 import qualified Network.Transport.TCP as TCP
 #endif
-
-testConf :: NodeAgentConf
-testConf = NodeAgentConf {
-    softTimeout = Configured 500000
-  , timeout = Configured 1000000
-}
 
 eqSDict :: SerializableDict EventQueue
 eqSDict = SerializableDict
@@ -63,7 +57,7 @@ remoteRC controller = do
       reconnect controller
       send controller (msg :: HAEvent [ByteString])
 
-remotable [ 'testConf, 'eqSDict, 'setRC, 'remoteRC ]
+remotable [ 'eqSDict, 'setRC, 'remoteRC ]
 
 triggerEvent :: Int -> Process ()
 triggerEvent = promulgate
@@ -99,8 +93,7 @@ tests transport internals = do
             cRGroup <- newRGroup $(mkStatic 'eqSDict) nodes (Nothing,[])
             rGroup <- unClosure cRGroup >>= id
             eq <- spawnLocal (eventQueue rGroup)
-            na <- spawn (processNodeId self) $
-                    closureApply (serviceProcess nodeAgent) $(mkStaticClosure 'testConf)
+            na <- spawnLocal . ($ ()) =<< unClosure (serviceProcess eqTracker)
             True <- updateEQNodes na nodes
             mapM_ link [eq, na]
 
@@ -110,23 +103,35 @@ tests transport internals = do
         [ testSuccess "eq-init-empty" ==> \_ _ rGroup -> do
               (_, []) <- getState rGroup
               return ()
+        , testSuccess "eq-is-registered" ==> \eq _ _ -> do
+              eqLoc <- whereis eventQueueLabel
+              assert $ eqLoc == (Just eq)
+        , testSuccess "eq-one-event-direct" ==> \_ _ rGroup -> do
+              self <- getSelfNode
+              pid <- promulgateEQ [self] (1 :: Int)
+              _ <- monitor pid
+              (_ :: ProcessMonitorNotification) <- expect
+              (_, [HAEvent (EventId _ 1) _ _]) <- getState rGroup
+              return ()
         , testSuccess "eq-one-event" ==> \_ _ rGroup -> do
               triggerEvent 1
-              (_, [HAEvent (EventId _ 0) _ _]) <- getState rGroup
+              (_, [HAEvent (EventId _ 1) _ _]) <- getState rGroup
               return ()
         , testSuccess "eq-many-events" ==> \_ _ rGroup -> do
               mapM_ triggerEvent [1..10]
               assert . (== 10) . length . snd =<< getState rGroup
-        , testSuccess "eq-trim-one" ==> \eq na rGroup -> do
+        , testSuccess "eq-trim-one" ==> \eq _ rGroup -> do
               mapM_ triggerEvent [1..10]
-              invoke eq $ EventId na 0
+              (_, (HAEvent evtid _ _ ):_) <- getState rGroup
+              invoke eq evtid
               assert . (== 9) . length . snd =<< getState rGroup
         , testSuccess "eq-trim-idempotent" ==> \eq na rGroup -> do
               mapM_ triggerEvent [1..10]
+              (_, (HAEvent evtid _ _ ):_) <- getState rGroup
               before <- map (eventCounter . eventId) . snd <$> getState rGroup
-              invoke eq $ EventId na 5
+              invoke eq evtid
               trim1 <- map (eventCounter . eventId) . snd <$> getState rGroup
-              invoke eq $  EventId na 5
+              invoke eq evtid
               trim2 <- map (eventCounter . eventId) . snd <$> getState rGroup
               assert (before /= trim1 && before /= trim2 && trim1 == trim2)
         , testSuccess "eq-trim-none" ==> \eq na rGroup -> do
@@ -137,13 +142,13 @@ tests transport internals = do
               assert (before == trim)
         , testSuccess "eq-with-no-rc-should-replicate" $ setup $ \_ _ rGroup -> do
               triggerEvent 1
-              (_, [ HAEvent (EventId _ 0) _ _]) <- getState rGroup
+              (_, [ HAEvent (EventId _ 1) _ _]) <- getState rGroup
               return ()
         , testSuccess "eq-should-lookup-for-rc" $ setup $ \_ _ rGroup -> do
               self <- getSelfPid
               updateStateWith rGroup $ $(mkClosure 'setRC) $ Just self
               triggerEvent 1
-              (_, [ HAEvent (EventId _ 0) _ _]) <- getState rGroup
+              (_, [ HAEvent (EventId _ 1) _ _]) <- getState rGroup
               return ()
         , testSuccess "eq-should-record-that-rc-died" $ setup $ \eq _ _ -> do
               self <- getSelfPid
@@ -177,7 +182,7 @@ tests transport internals = do
                 -- The RC should forward the event to me.
                 (expectTimeout defaultTimeout :: Process (Maybe (HAEvent [ByteString]))) >>=
                   \case
-                    Just (HAEvent (EventId _ 0) _ _) -> return ()
+                    Just (HAEvent (EventId _ 1) _ _) -> return ()
                     Nothing -> error "No HA Event received from first RC."
                     _ -> error "Wrong event received from first RC."
                 registerInterceptor $ \string -> case string of

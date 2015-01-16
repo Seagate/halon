@@ -33,17 +33,15 @@ import Options.Applicative
     )
 import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
-import Options.Schema.Applicative (mkParser)
 
-import qualified Handler.Bootstrap.NodeAgent as NA
+import qualified Handler.Bootstrap.Satellite as S
 import qualified Handler.Bootstrap.TrackingStation as TS
-import HA.Service (schema)
 
 --------------------------------------------------------------------------------
 
 -- | Options for bootstrapping.
 data BootstrapCmdOptions =
-      BootstrapNode NA.NodeAgentConf
+      BootstrapNode S.Config
     | BootstrapStation TS.Config
   deriving (Eq, Typeable, Generic)
 
@@ -54,7 +52,7 @@ parseBootstrap =
     O.subparser $
          O.command "satellite"
           (O.withDesc
-            (BootstrapNode <$> mkParser schema)
+            (BootstrapNode <$> S.schema)
             "Bootstrap a satellite")
       <> O.command "station"
           (O.withDesc
@@ -66,8 +64,5 @@ bootstrap :: [NodeId] -- ^ NodeIds of the node to bootstrap
           -> BootstrapCmdOptions
           -> Process ()
 bootstrap nids opts = case opts of
-  BootstrapNode naConf -> mapM_ (\nid -> NA.start nid naConf) nids
-  -- We should use nids as the list of nodes on which to start the station,
-  -- but at the moment we need to pass in the satellites as well, so we just
-  -- use the TS conf at the moment.
-  BootstrapStation tsConf ->TS.start tsConf
+  BootstrapNode naConf -> mapM_ (\nid -> S.start nid naConf) nids
+  BootstrapStation tsConf ->TS.start nids tsConf
