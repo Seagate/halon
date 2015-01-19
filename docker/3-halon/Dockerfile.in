@@ -11,5 +11,6 @@ RUN git checkout @@COMMIT@@
 # build halon, which will also run the tests,
 # hopefully.
 
+ENV CABAL_FLAGS --flag="maintainer"
 RUN make
 
