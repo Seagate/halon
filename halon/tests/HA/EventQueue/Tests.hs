@@ -125,7 +125,7 @@ tests transport internals = do
               (_, (HAEvent evtid _ _ ):_) <- getState rGroup
               invoke eq evtid
               assert . (== 9) . length . snd =<< getState rGroup
-        , testSuccess "eq-trim-idempotent" ==> \eq na rGroup -> do
+        , testSuccess "eq-trim-idempotent" ==> \eq _ rGroup -> do
               mapM_ triggerEvent [1..10]
               (_, (HAEvent evtid _ _ ):_) <- getState rGroup
               before <- map (eventCounter . eventId) . snd <$> getState rGroup
