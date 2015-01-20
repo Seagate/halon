@@ -169,7 +169,7 @@ tests transport = do
           _g <- sync . sampleGraph =<< getGraph pid
           Just kvs <- getKeyValuePairs pid
           assert $ 4 == length kvs
-          assert $ [0, 0, 1, 2] == sort (map (length . snd) kvs)
+          assert $ [0, 1, 2, 3] == sort (map (length . snd) kvs)
 
       , testSuccess "edge-nodeA-1" $ rGroupTest transport g $ \pid -> do
           g1 <- sync . sampleGraph =<< getGraph pid
@@ -191,4 +191,12 @@ tests transport = do
           let es2 = connectedTo (NodeB 2) HasA g2
           assert $ length es2 == 1
           assert $ [] == es2 \\ [NodeA 2]
+          let ed2 = connectedFrom HasA (NodeA 1) g2 :: [NodeB]
+          assert $ length ed2 == 0
+
+      , testSuccess "back-edge" $ rGroupTest transport g $ \pid -> do
+          g1 <- sync . sampleGraph =<< getGraph pid
+          let ed0 = edgesToDst (NodeB 2) g1
+          assert $ length ed0 == 1
+          assert $ [] == ed0 \\  [Edge (NodeA 1) HasB (NodeB 2)]
       ]
