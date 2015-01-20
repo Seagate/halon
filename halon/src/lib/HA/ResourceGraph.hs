@@ -48,6 +48,8 @@ module HA.ResourceGraph
     , memberResource
     , memberEdge
     , edgesFromSrc
+    , edgesToDst
+    , connectedFrom
     , connectedTo
     , isConnected
     , __remoteTable
@@ -90,6 +92,7 @@ import qualified Data.HashSet as S
 import Data.Hashable
 import Data.Maybe
 import Data.Typeable ( Typeable, cast )
+import Data.Word (Word8)
 
 -- | A type can be declared as modeling a resource by making it an instance of
 -- this class.
@@ -113,28 +116,36 @@ data Res = forall a. Resource a => Res !a
 -- A relationship is synomymous to an edge. Relationships are not type indexed
 -- and are internal to this module. Edges are external representations of
 -- a relationship.
-data Rel = forall r a b. Relation r a b => Rel !r a b
+data Rel = forall r a b. Relation r a b => InRel !r a b
+         | forall r a b. Relation r a b => OutRel !r a b
 
 instance Hashable Res where
     hashWithSalt s (Res x) = s `hashWithSalt` x
 
 instance Hashable Rel where
-    hashWithSalt s (Rel r a b) =
-        s `hashWithSalt` r `hashWithSalt` a `hashWithSalt` b
+    hashWithSalt s (InRel r a b) =
+        s `hashWithSalt` (0 :: Int) `hashWithSalt` r `hashWithSalt` a `hashWithSalt` b
+    hashWithSalt s (OutRel r a b) =
+        s `hashWithSalt` (1 :: Int) `hashWithSalt` r `hashWithSalt` a `hashWithSalt` b
 
 instance Eq Res where
     Res x == Res y = maybe False (x==) $ cast y
 
 instance Eq Rel where
-    Rel (_ :: r) x1 y1 == Rel r2 x2 y2
-        | Just _ <- cast r2 :: Maybe r,
-          Just x2' <- cast x2,
-          Just y2' <- cast y2 =
-          -- Don't need to compare r1, r2 for equality because they are
-          -- assumed to be witnesses of singleton types, so if the type cast
-          -- above works then they must be equal.
-          x1 == x2' && y1 == y2'
-        | otherwise = False
+  a == b = case (a,b) of
+      (InRel r1 x1 y1, InRel r2 x2 y2) -> comp (r1, x1, y1) (r2, x2, y2)
+      (OutRel r1 x1 y1, OutRel r2 x2 y2) -> comp (r1, x1, y1) (r2, x2, y2)
+      _ -> False
+    where
+      comp (_ :: r, x1, y1) (r2, x2, y2)
+          | Just _ <- cast r2 :: Maybe r,
+            Just x2' <- cast x2,
+            Just y2' <- cast y2 =
+            -- Don't need to compare r1, r2 for equality because they are
+            -- assumed to be witnesses of singleton types, so if the type cast
+            -- above works then they must be equal.
+            x1 == x2' && y1 == y2'
+          | otherwise = False
 
 -- XXX Specialized existential datatypes required because 'remotable' does not
 -- yet support higher kinded type variables.
@@ -153,6 +164,15 @@ someRelationDict :: Dict (Relation r a b) -> SomeRelationDict
 someRelationDict = SomeRelationDict
 
 remotable ['someResourceDict, 'someRelationDict]
+
+-- | Predicate to select 'in' edges.
+isIn :: Rel -> Bool
+isIn (InRel _ _ _) = True
+isIn (OutRel _ _ _) = False
+
+-- | Predicate to select 'out' edges.
+isOut :: Rel -> Bool
+isOut = not . isIn
 
 -- | The graph
 data Graph = Graph
@@ -184,10 +204,13 @@ memberResource a g = M.member (Res a) $ grGraph g
 -- | Test whether two resources are connected through the given relation.
 memberEdge :: forall a r b. Relation r a b => Edge a r b -> Graph -> Bool
 memberEdge e g =
-    fromEdge e `S.member` maybe S.empty id (M.lookup (Res (edgeSrc e)) (grGraph g))
+    (outFromEdge e) `S.member` maybe S.empty (S.filter isOut) (M.lookup (Res (edgeSrc e)) (grGraph g))
 
-fromEdge :: Relation r a b => Edge a r b -> Rel
-fromEdge Edge{..} = Rel edgeRelation edgeSrc edgeDst
+outFromEdge :: Relation r a b => Edge a r b -> Rel
+outFromEdge Edge{..} = OutRel edgeRelation edgeSrc edgeDst
+
+inFromEdge :: Relation r a b => Edge a r b -> Rel
+inFromEdge Edge{..} = InRel edgeRelation edgeSrc edgeDst
 
 -- | Register a new resource. A resource is meant to be immutable: it does not
 -- change and lives forever.
@@ -207,26 +230,38 @@ insertEdge Edge{..} = connect edgeSrc edgeRelation edgeDst
 deleteEdge :: Relation r a b => Edge a r b -> Graph -> Graph
 deleteEdge e@Edge{..} g =
     g { grChangeLog =
-            DeleteValues [ (encodeRes (Res edgeSrc), [ encodeRel $ fromEdge e ]) ]
+            DeleteValues [ (encodeRes (Res edgeSrc), [ encodeRel $ outFromEdge e ])
+                         , (encodeRes (Res edgeDst), [ encodeRel $ inFromEdge e ])
+                         ]
             : grChangeLog g
-      , grGraph = M.adjust (S.delete $ fromEdge e) (Res edgeSrc) $ grGraph g
+      , grGraph = M.adjust (S.delete $ outFromEdge e) (Res edgeSrc)
+                . M.adjust (S.delete $ inFromEdge e) (Res edgeDst)
+                $ grGraph g
       }
 
 -- | Adds a relation without making a conversion from 'Edge'.
 connect :: Relation r a b => a -> r -> b -> Graph -> Graph
 connect x r y g =
    g { grChangeLog =
-         InsertMany [ (encodeRes (Res x),[ encodeRel $ Rel r x y ])] : grChangeLog g
-     , grGraph =
-         M.insertWith S.union (Res x) (S.singleton $ Rel r x y) $ grGraph g
+         InsertMany [ (encodeRes (Res x),[ encodeRel $ OutRel r x y ])
+                    , (encodeRes (Res y),[ encodeRel $ InRel r x y ])
+                    ] : grChangeLog g
+     , grGraph = M.insertWith S.union (Res x) (S.singleton $ OutRel r x y)
+               . M.insertWith S.union (Res y) (S.singleton $ InRel r x y)
+               $ grGraph g
      }
 
 -- | Removes a relation.
 disconnect :: Relation r a b => a -> r -> b -> Graph -> Graph
 disconnect x r y g =
-    g { grChangeLog = DeleteValues [ (encodeRes (Res x), [ encodeRel $ Rel r x y ]) ]
-                      : grChangeLog g
-      , grGraph = M.adjust (S.delete $ Rel r x y) (Res x) $ grGraph g
+    g { grChangeLog =
+            DeleteValues [ (encodeRes (Res x), [ encodeRel $ OutRel r x y ])
+                         , (encodeRes (Res y), [ encodeRel $ InRel r x y ])
+                         ]
+            : grChangeLog g
+      , grGraph = M.adjust (S.delete $ OutRel r x y) (Res x)
+                . M.adjust (S.delete $ InRel r x y) (Res x)
+                $ grGraph g
       }
 
 -- | Remove all resources that are not connected to the rest of the graph,
@@ -240,15 +275,37 @@ garbageCollect = undefined
 -- resource to destination resources of the given type.
 edgesFromSrc :: Relation r a b => a -> Graph -> [Edge a r b]
 edgesFromSrc x0 g =
-    let f (Rel r x y) = liftM3 Edge (cast x) (cast r) (cast y)
-    in maybe [] (catMaybes . map f . S.toList) $ M.lookup (Res x0) $ grGraph g
+    let f (OutRel r x y) = liftM3 Edge (cast x) (cast r) (cast y)
+        f _ = Nothing
+    in maybe [] (catMaybes . map f . S.toList)
+        $ M.lookup (Res x0) $ grGraph g
+
+-- | List of all edges of a given relation incoming at the provided destination
+-- resource from source resources of the given type.
+edgesToDst :: Relation r a b => b -> Graph -> [Edge a r b]
+edgesToDst x0 g =
+    let f (InRel r x y) = liftM3 Edge (cast x) (cast r) (cast y)
+        f _ = Nothing
+    in maybe [] (catMaybes . map f . S.toList)
+        $ M.lookup (Res x0) $ grGraph g
 
 -- | List of all nodes connected through a given relation with a provided source
 -- resource.
 connectedTo :: forall a r b . Relation r a b => a -> r -> Graph -> [b]
 connectedTo x0 _ g =
-    let f (Rel r _ y) = maybe Nothing (const $ cast y) (cast r :: Maybe r)
-    in maybe [] (catMaybes . map f . S.toList) $ M.lookup (Res x0) $ grGraph g
+    let f (OutRel r _ y) = maybe Nothing (const $ cast y) (cast r :: Maybe r)
+        f _ = Nothing
+    in maybe [] (catMaybes . map f . S.toList)
+        $ M.lookup (Res x0) $ grGraph g
+
+-- | List of all nodes connected through a given relation with a provided
+--   destination resource.
+connectedFrom :: forall a r b . Relation r a b => r -> b -> Graph -> [a]
+connectedFrom _ x0 g =
+    let f (InRel r x _) = maybe Nothing (const $ cast x) (cast r :: Maybe r)
+        f _ = Nothing
+    in maybe [] (catMaybes . map f . S.toList)
+        $ M.lookup (Res x0) $ grGraph g
 
 -- | More convenient version of 'memberEdge'.
 isConnected :: Relation r a b => a -> r -> b -> Graph -> Bool
@@ -304,19 +361,24 @@ decodeRes rt bs =
         Left err -> error $ "decodeRes: " ++ err
       Left (_,_,err) -> error $ "decodeRes: " ++ err
 
--- | Encodes a Rel into a 'Lazy.ByteString'.
 encodeRel :: Rel -> ByteString
-encodeRel (Rel (r :: r) (x :: a) (y :: b)) =
-    toStrict $ encode ($(mkStatic 'someRelationDict) `staticApply`
-                       (relationDict :: Static (Dict (Relation r a b)))) `append`
-    encode (r, x, y)
+encodeRel (InRel (r :: r) (x :: a) (y :: b)) =
+  toStrict $ encode ($(mkStatic 'someRelationDict) `staticApply`
+                (relationDict :: Static (Dict (Relation r a b))))
+            `append` encode (0 :: Word8, r, x, y)
+encodeRel (OutRel (r :: r) (x :: a) (y :: b)) =
+  toStrict $ encode ($(mkStatic 'someRelationDict) `staticApply`
+                (relationDict :: Static (Dict (Relation r a b))))
+            `append` encode (1 :: Word8, r, x, y)
 
--- | Decodes a Rel from a 'Lazy.ByteString'.
 decodeRel :: RemoteTable -> ByteString -> Rel
-decodeRel rt bs =
-    case runGetOrFail get $ fromStrict bs of
-      Right (rest,_,d) -> case unstatic rt d of
-        Right (SomeRelationDict (Dict :: Dict (Relation r a b))) ->
-          let (r, x, y) = decode rest :: (r, a, b) in Rel r x y
-        Left err -> error $ "decodeRel: " ++ err
-      Left (_,_,err) -> error $ "decodeRel: " ++ err
+decodeRel rt bs = case runGetOrFail get $ fromStrict bs of
+  Right (rest,_,d) -> case unstatic rt d of
+    Right (SomeRelationDict (Dict :: Dict (Relation r a b))) ->
+      let (b, r, x, y) = decode rest :: (Word8, r, a, b)
+      in case b of
+        (0 :: Word8) -> InRel r x y
+        (1 :: Word8) -> OutRel r x y
+        _ -> error $ "decodeRel: Invalid direction bit."
+    Left err -> error $ "decodeRel: " ++ err
+  Left (_,_,err) -> error $ "decodeRel: " ++ err
