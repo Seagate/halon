@@ -193,9 +193,10 @@ tests transport = do
               then send self ()
               else return ()
 
-            -- We get an event on the first node.
+            -- We get an event on both nodes.
             _ <- spawnLocal $ expiate "hello1"
             sender0 <- expectEventOnNode $ nids !! 0
+            _ <- expectEventOnNode $ nids !! 1
             send sender0 (nids !! 0, nids !! 0)
             () <- expect
 
