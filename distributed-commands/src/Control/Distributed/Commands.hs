@@ -17,10 +17,11 @@ module Control.Distributed.Commands
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.Chan (newChan, readChan, writeChan)
+import Control.Distributed.Commands.Internal.Log (isVerbose)
 import Control.Exception (throwIO)
 import Control.Monad (void, forM_)
 import System.Exit (ExitCode(..))
-import System.IO (hGetContents, IOMode(..), withFile)
+import System.IO (hGetContents, IOMode(..), withFile, stderr)
 import System.Process
     ( StdStream(..)
     , proc
@@ -42,6 +43,8 @@ data ScpPath = LocalPath FilePath
 scp :: ScpPath -> ScpPath -> IO ()
 scp src dst =
     withFile "/dev/null" ReadWriteMode $ \dev_null -> do
+      dcVerbose <- isVerbose
+      let outputHandle = if dcVerbose then stderr else dev_null
       (_, _, _, ph) <- createProcess
         (proc "scp" [ "-r"
                     , "-o", "UserKnownHostsFile=/dev/null"
@@ -50,13 +53,13 @@ scp src dst =
                     , showPath dst
                     ])
         { std_in  = UseHandle dev_null
-        , std_out = UseHandle dev_null
-        , std_err = UseHandle dev_null
+        , std_out = UseHandle outputHandle
+        , std_err = UseHandle outputHandle
         }
       ret <- waitForProcess ph
       case ret of
         ExitSuccess -> return ()
-        ExitFailure r -> throwIO $ userError $ "scp error: " ++ show r
+        ExitFailure r -> throwIO $ userError $ "scp exit code " ++ show r
   where
     showPath (LocalPath f) = f
     showPath (RemotePath mu h f) = maybe "" (++ "@") mu ++ h ++ ":" ++ f

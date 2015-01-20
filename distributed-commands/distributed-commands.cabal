@@ -42,6 +42,7 @@ Library
   Exposed-Modules: Control.Distributed.Commands.DigitalOcean
                    Control.Distributed.Commands.Docker
                    Control.Distributed.Commands
+                   Control.Distributed.Commands.Internal.Log
                    Control.Distributed.Commands.Management
                    Control.Distributed.Commands.Process
                    Control.Distributed.Commands.Providers
