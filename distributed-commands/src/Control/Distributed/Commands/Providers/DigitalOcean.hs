@@ -13,6 +13,8 @@ module Control.Distributed.Commands.Providers.DigitalOcean
 
 import Control.Applicative ( (<$>) )
 
+import Control.Distributed.Commands.Internal.Log (debugLog)
+
 import Control.Distributed.Commands.Management
   ( Host(..)
   , Provider(..)
@@ -42,7 +44,9 @@ createProvider args = do
                    ) <$> getCredentialsFromEnv
 
     return $ Provider $ do
+      debugLog "Creating droplet"
       droplet <- newDroplet credentials args
+      debugLog $ "Droplet created with IP " ++ (show $ dropletDataIP droplet)
       return Host
         { destroy    = destroyDroplet credentials (dropletDataId droplet)
         , shutdown   = error "host shutdown is unimplemented"
