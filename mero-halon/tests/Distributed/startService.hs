@@ -33,7 +33,6 @@ import Control.Distributed.Process.Node
   , runProcess
   )
 
-import Control.Monad (forM_)
 import Data.List (isInfixOf)
 
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
