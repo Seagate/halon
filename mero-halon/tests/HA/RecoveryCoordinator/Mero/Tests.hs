@@ -101,7 +101,7 @@ testServiceRestarting transport = do
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         runRC (eq, IgnitionArguments [nid]) rGroup
 
-        nodeUp ([nid], 1000)
+        nodeUp ([nid], 1000000)
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest (Node nid) Dummy.dummy
             (Dummy.DummyConf $ Configured "Test 1")
