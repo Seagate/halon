@@ -67,18 +67,21 @@ listen k = mkGen_ $ \a -> do
 listenMessage :: Serializable a => (a -> CEP b) -> ComplexEvent s Message ()
 listenMessage k = listen k . decoded
 
-awaitMessage :: Process CEPMessage
-awaitMessage = receiveWait [ match (return . SubRequest)
-                           , matchAny (return . Other)
-                           ]
+awaitMessage :: [Match (Msg i)] -> Process (Msg i)
+awaitMessage ms = receiveWait xs
+  where
+    xs = match (return . SubRequest) : ms
 
-runProcessor :: ComplexEvent s Message s -> s -> Process b
-runProcessor startWire start =
+runProcessor :: ComplexEvent s i s
+             -> [Match (Msg i)]
+             -> s
+             -> Process b
+runProcessor startWire ms start =
     go emptyBookkeeping clockSession start startWire
   where
     emptyBookkeeping = Bookkeeping M.empty
     go book session state wire = do
-        cepMsg <- awaitMessage
+        cepMsg <- awaitMessage ms
         case cepMsg of
           SubRequest sub ->
             let key     = decodeFingerprint $ _subType sub

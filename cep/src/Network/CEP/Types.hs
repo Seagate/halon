@@ -23,9 +23,9 @@ data Sub a = Sub deriving (Generic, Typeable)
 
 instance Binary a => Binary (Sub a)
 
-data CEPMessage
+data Msg a
     = SubRequest Subscribe
-    | Other Message
+    | Other a
 
 newtype CEP a = CEP (StateT Bookkeeping Process a)
                   deriving (Functor, Applicative, Monad)
@@ -65,3 +65,6 @@ liftProcess m = CEP $ lift m
 
 runCEP :: CEP a -> Bookkeeping -> Process (a, Bookkeeping)
 runCEP (CEP m) s = runStateT m s
+
+userMsg :: a -> Msg a
+userMsg = Other
