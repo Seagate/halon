@@ -13,6 +13,7 @@ module Network.CEP
        , runProcessor
        , simpleSubscribe
        , subscribe
+       , onInput
        ) where
 
 import Prelude hiding ((.), id)
@@ -103,3 +104,9 @@ decoded = mkGen_ $ \msg -> do
     case mA of
       Just a -> Right a <$ publish a
       _      -> return $ Left mempty
+
+onInput :: (a -> Maybe b) -> ComplexEvent s a b
+onInput k = mkPure_ $ \a ->
+    case k a of
+      Nothing -> Left ()
+      Just b  -> Right b
