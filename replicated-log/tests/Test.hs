@@ -83,8 +83,8 @@ testConfig :: Log.Config
 testConfig = Log.Config
     { consensusProtocol = \dict -> BasicPaxos.protocol dict (filepath "acceptors")
     , persistDirectory  = filepath "replicas"
-    , leaseTimeout      = 3000000
-    , leaseRenewTimeout = 1000000
+    , leaseTimeout      = 1000000
+    , leaseRenewTimeout = 300000
     , driftSafetyFactor = 11 % 10
     }
 
@@ -249,7 +249,7 @@ tests args = do
                 -- Wait for the lease of the leader to expire. Otherwise
                 -- the request would be forwarded to the leader and State.update
                 -- would block forever.
-                _ <- receiveTimeout 4000000 []
+                _ <- receiveTimeout 1500000 []
                 State.update port $ incrementCP
                 () <- expect
                 () <- expect
