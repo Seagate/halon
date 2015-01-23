@@ -242,7 +242,9 @@ tests args = do
                 updateHandle h ρ
 
                 -- Kill the first node, and see that the updated handle
-                -- still works.
+                -- still works. But don't kill it too soon or the new replicas
+                -- wont have a chance to replicate its state.
+                _ <- receiveTimeout 500000 []
                 liftIO $ closeLocalNode n
                 -- Wait for the lease of the leader to expire. Otherwise
                 -- the request would be forwarded to the leader and State.update
