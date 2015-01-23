@@ -1076,7 +1076,6 @@ addReplica :: Typeable a
            -> NodeId
            -> Process ProcessId
 addReplica h@(Handle sdict1 sdict2 config log _) cpolicy nid = do
-    self <- getSelfPid
     now <- liftIO $ getTime Monotonic
     let protocol = staticClosure $(mkStatic 'consensusProtocol)
                      `closureApply` config
@@ -1085,8 +1084,8 @@ addReplica h@(Handle sdict1 sdict2 config log _) cpolicy nid = do
              acceptorClosure $(mkStatic 'dictNodeId)
                              protocol
                              nid
-    -- See comment about effect of 'delayClosure' in docstring above.
-    ρ <- spawn nid $ delayClosure sdictMax self $
+    -- See comment about effect of 'cpExpect' in docstring above.
+    ρ <- spawn nid $ bindCP (cpExpect sdictMax) $
              unMaxCP $ replicaClosure sdict1 sdict2 config log
                `closureApply` timeSpecClosure now
     β <- spawn nid $ batcherClosure sdict2 ρ
