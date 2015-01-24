@@ -47,6 +47,7 @@ import Mero.Notification.HAState
 #endif
 
 import HA.Services.Mero
+import HA.Services.Noisy as Noisy
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
@@ -262,6 +263,25 @@ recoveryCoordinator eq mm argv = do
               -- Send acknowledgement to let nodeUp die
               send pid ()
               loop =<< (fmap (\a -> ls { lsGraph = a }) . G.sync) =<< prg
+        , matchHAEvent $ \(HAEvent eid DummyEvent _) -> do
+            let (rg', i) = case G.connectedTo Noisy.noisy HasPingCount rg of
+                 [] -> ( G.connect Noisy.noisy HasPingCount (NoisyPingCount 0) $
+                         G.newResource (NoisyPingCount 0)
+                         rg
+                       , 0
+                       )
+                 pc@(NoisyPingCount iPc) : _ ->
+                  let newPingCount = NoisyPingCount $ iPc + 1
+                   in ( G.connect Noisy.noisy HasPingCount newPingCount $
+                        G.newResource newPingCount $
+                        G.disconnect Noisy.noisy HasPingCount pc
+                        rg
+                      , iPc
+                      )
+            rg'' <- G.sync rg'
+            send eq eid
+            sayRC $ "Noisy ping count: " ++ show i
+            loop $ ls { lsGraph = rg'' }
         , matchHAEvent $ \(HAEvent _ (EpochRequest pid) _) -> do
             let G.Edge _ Has target = head (G.edgesFromSrc Cluster rg :: [G.Edge Cluster Has (Epoch ByteString)])
             send pid $ EpochResponse $ epochId target

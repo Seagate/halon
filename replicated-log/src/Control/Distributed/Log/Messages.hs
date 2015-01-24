@@ -57,7 +57,18 @@ data Query = Query ProcessId Int
 data Max = Max ProcessId DecreeId [ProcessId] [ProcessId]
     deriving (Typeable, Generic)
 
+-- | Reports the snapshot of a replica upon receiving a 'Query' for an
+-- old-enough decree.
+--
+-- It also reports the current membership.
+--
+-- > SnapshotInfo acceptors replicas snapshotRef snapshotWatermark oldDecree
+--
+data SnapshotInfo ref = SnapshotInfo [ProcessId] [ProcessId] ref Int Int
+    deriving (Typeable, Generic)
+
 instance Binary Locale
 instance Binary a => Binary (Decree a)
 instance Binary Query
 instance Binary Max
+instance Binary ref => Binary (SnapshotInfo ref)

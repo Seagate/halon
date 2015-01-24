@@ -146,10 +146,17 @@ remotableDecl [ [d|
            return ())
        ] >> handleMessages refmapper
 
- -- | Start the RC and EQ on the nodes in the genders file
- ignition :: (Bool, [NodeId])
+ -- | Start the RC and EQ.
+ --
+ -- Takes a tuple @(update, trackers, nodestr, snapshotThreashold)@.
+ --
+ -- @update@ indicates if an existing tracking station is being updated.
+ -- @trackers@ is a list of node identifiers of tracking station nodes.
+ -- @snapshotThreashold@ indicates how many updates are allowed between
+ -- snapshots of the distributed state.
+ ignition :: (Bool, [NodeId], Int)
           -> Process (Maybe (Bool,[NodeId],[NodeId],[NodeId]))
- ignition (update, trackers) = do
+ ignition (update, trackers, snapshotThreshold) = do
     say "Ignition!"
     disconnectAllNodeConnections
     if update then do
@@ -163,7 +170,7 @@ remotableDecl [ [d|
 
       return $ Just (added,trackers,members,newNodes)
     else do
-      cRGroup <- newRGroup $(mkStatic 'rsDict) trackers
+      cRGroup <- newRGroup $(mkStatic 'rsDict) snapshotThreshold trackers
                             (RSState Nothing 0,((Nothing,[]),fromList []))
       forM_ trackers $ flip (call $(functionTDict 'spawnStartRS))  $
         $(mkClosure 'spawnStartRS)

@@ -27,6 +27,7 @@ module Control.Distributed.State
        , __remoteTable) where
 
 import qualified Control.Distributed.Log as Log
+import Control.Distributed.Log.Snapshot (LogSnapshot(..))
 import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
@@ -127,9 +128,12 @@ data CommandPort s = CommandPort !(IORef Word64) !(Log.Handle (Command s))
 
 type Log s = Log.Log (Command s)
 
-log :: Typeable s => Process s -> Log s
-log init = Log.Log
-    { logInitialization = init
+log :: Typeable s => LogSnapshot s -> Log s
+log (LogSnapshot {..}) = Log.Log
+    { logInitialize = logSnapshotInitialize
+    , logGetAvailableSnapshots = logSnapshotsGetAvailable
+    , logRestore = logSnapshotRestore
+    , logDump    = logSnapshotDump
     , logNextState = \s (Command _ f) -> do
         unClosure f >>= ($ s)
     }

@@ -48,13 +48,15 @@ class RGroup g where
 
   data Replica g
 
-  -- | @newRGroup ns onCreation st@ creates a replication group with
-  -- initial state @st@, each replica is created on a node of @ns@.
+  -- | @newRGroup t ns onCreation st@ creates a replication group which
+  -- saves snapshots of the distributed state every @t@ updates.
+  --
+  -- The initial state is @st@ and each replica is created on a node of @ns@.
   --
   -- A closure which produces a handle to the group is returned.
   --
   newRGroup :: Serializable st => Static (SerializableDict st)
-            -> [NodeId] -> st -> Process (Closure (Process (g st)))
+            -> Int -> [NodeId] -> st -> Process (Closure (Process (g st)))
 
   -- | Releases any resources used by the replication group.
   stopRGroup :: g st -> Process ()

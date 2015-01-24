@@ -125,7 +125,7 @@ rsTest transport oneNode action = withTmpDirectory $ do
       let nids = map localNodeId $ if oneNode
                    then replicate amountOfReplicas n1
                    else ns
-      cRGroup <- newRGroup $(mkStatic 'rsSDict) nids (RSState Nothing 0)
+      cRGroup <- newRGroup $(mkStatic 'rsSDict) 20 nids (RSState Nothing 0)
 
       rGroup   <- unClosure cRGroup >>= id
       counters <- liftIO newCounters

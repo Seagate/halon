@@ -60,6 +60,7 @@ import Control.Distributed.Process.Consensus
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import qualified Control.Distributed.Log as Log
 import Control.Distributed.Log (Config(..))
+import Control.Distributed.Log.Snapshot
 import qualified Control.Distributed.State as State
 import Control.Distributed.State
     ( Command
@@ -93,7 +94,7 @@ import Data.Typeable (Typeable)
 import System.Environment (getArgs)
 import System.FilePath
 import System.IO
-import Control.Monad (replicateM_, forM_, forM)
+import Control.Monad (replicateM_, forM_, forM, void)
 
 
 type State = Int
@@ -106,13 +107,22 @@ time_ act = do
   let !delta = end - start
   return delta
 
+state0 :: State
+state0 = 0
+
+snapshotServerLbl :: String
+snapshotServerLbl = "snapshot-server"
+
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
+
+snapshotThreashold :: Int
+snapshotThreashold = 5
 
 remotableDecl [ [d|
 
   testLog :: State.Log State
-  testLog = State.log $ return 0
+  testLog = State.log $ serializableSnapshot snapshotServerLbl state0
 
   dictState :: Dict (Typeable State)
   dictState = Dict
@@ -125,6 +135,7 @@ remotableDecl [ [d|
       , leaseTimeout      = 3000000
       , leaseRenewTimeout = 1000000
       , driftSafetyFactor = 11 % 10
+      , snapshotPolicy    = return . (>= snapshotThreashold)
       }
 
   sdictInt :: Static (SerializableDict Int)
@@ -162,6 +173,12 @@ remotableDecl [ [d|
   readCP :: CP State Int
   readCP = staticClosure $(mkStatic 'read)
 
+  snapshotServer :: Process ()
+  snapshotServer = void $ serializableSnapshotServer
+                    snapshotServerLbl
+                    (filepath "replica-snapshots")
+                    state0
+
  |] ]
 
 setupRemote :: [NodeId]
@@ -172,6 +189,7 @@ setupRemote :: [NodeId]
                )
       -> Process Double
 setupRemote nodes action = do
+    forM_ nodes $ flip spawn $(mkStaticClosure 'snapshotServer)
     h <- Log.new $(mkStatic 'State.commandEqDict)
                  ($(mkStatic 'State.commandSerializableDict)
                    `staticApply` sdictState)

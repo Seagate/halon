@@ -24,6 +24,7 @@ Flag maintainer
 Library
   Exposed-Modules:  Control.Distributed.Log
                     Control.Distributed.Log.Policy
+                    Control.Distributed.Log.Snapshot
                     Control.Distributed.State
   Other-Modules:    Control.Distributed.Log.Internal
                     Control.Distributed.Log.Messages
@@ -36,6 +37,7 @@ Library
                     consensus,
                     containers >= 0.5,
                     constraints >= 0.4,
+                    directory >= 1.2.1,
                     distributed-process-scheduler,
                     distributed-static >= 0.2,
                     filepath >= 1.3,

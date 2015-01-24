@@ -11,6 +11,7 @@ import Test.Framework (withTmpDirectory)
 import Control.Distributed.Process.Consensus
 import Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import Control.Distributed.Log as Log
+import Control.Distributed.Log.Snapshot
 import Control.Distributed.State as State
 
 import Control.Distributed.Process hiding (bracket)
@@ -23,7 +24,7 @@ import Network.Transport (Transport(..))
 import Network.Transport.TCP
 
 import Control.Exception ( bracket, throwIO, SomeException )
-import Control.Monad ( when, forM_, replicateM, foldM_ )
+import Control.Monad ( when, forM_, replicateM, foldM_, void )
 import Data.Constraint (Dict(..))
 import Data.Typeable (Typeable)
 import Data.IORef ( newIORef, readIORef, writeIORef )
@@ -41,8 +42,20 @@ type State = [Int]
 dictState :: Dict (Typeable State)
 dictState = Dict
 
+state0 :: State
+state0 = []
+
 testLog :: State.Log State
-testLog = State.log $ return []
+testLog = State.log $ serializableSnapshot snapshotServerLbl state0
+
+snapshotServerLbl :: String
+snapshotServerLbl = "snapshot-server"
+
+snapshotServer :: Process ()
+snapshotServer = void $
+    serializableSnapshotServer snapshotServerLbl
+                               (filepath "replica-snapshots")
+                               state0
 
 testConfig :: Log.Config
 testConfig = Log.Config
@@ -51,6 +64,7 @@ testConfig = Log.Config
     , leaseTimeout      = 3000000
     , leaseRenewTimeout = 1000000
     , driftSafetyFactor = 11 % 10
+    , snapshotPolicy    = return . (>= 100)
     }
 
 ssdictState :: SerializableDict State
@@ -63,7 +77,7 @@ killOnError pid p = catch p $ \e -> liftIO (print e) >>
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
 
-remotable [ 'dictState, 'testLog, 'ssdictState, 'testConfig ]
+remotable [ 'dictState, 'testLog, 'ssdictState, 'testConfig, 'snapshotServer ]
 
 remotableDecl [ [d|
 
@@ -132,6 +146,8 @@ run transport s = brackets 2
   $ \nodes@(n0:_) -> withTmpDirectory $ runProcess' n0 $
     withScheduler [] (fst $ random $ mkStdGen s) $ do
     let tries = length nodes
+    forM_ nodes $ \n -> spawn (localNodeId n)
+                              $(mkStaticClosure 'snapshotServer)
     h <- Log.new $(mkStatic 'State.commandEqDict)
                  ($(mkStatic 'State.commandSerializableDict)
                     `staticApply` sdictState)

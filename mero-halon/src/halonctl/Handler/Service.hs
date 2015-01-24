@@ -26,9 +26,11 @@ import HA.Resources
   )
 import HA.Service
 import qualified HA.Services.Dummy as Dummy
+import qualified HA.Services.Noisy as Noisy
 
 import Lookup (conjureRemoteNodeId)
 
+import Control.Applicative ((<|>))
 import Control.Distributed.Process
   ( NodeId
   , Process
@@ -58,7 +60,8 @@ import Options.Schema.Applicative (mkParser)
 -- | Options for the "service" command. Typically this will be a subcommand
 --   corresponding to operating on a particular service.
 data ServiceCmdOptions =
-    DummyServiceCmd (StandardServiceOptions Dummy.DummyConf)
+      DummyServiceCmd (StandardServiceOptions Dummy.DummyConf)
+    | NoisyServiceCmd (StandardServiceOptions Noisy.NoisyConf)
   deriving (Eq, Show, Generic, Typeable)
 
 -- | Options for a 'standard' service. This consists of a set of subcommands
@@ -121,8 +124,12 @@ mkStandardServiceCmd svc = let
 -- | Parse the options for the "service" command.
 parseService :: O.Parser ServiceCmdOptions
 parseService =
-    DummyServiceCmd <$> (O.subparser $
+    (DummyServiceCmd <$> (O.subparser $
          mkStandardServiceCmd Dummy.dummy)
+    ) <|>
+    (NoisyServiceCmd <$> (O.subparser $
+         mkStandardServiceCmd Noisy.noisy)
+    )
 
 -- | Handle the "service" command.
 --   The "service" command is basically a wrapper around a number of commands
@@ -133,6 +140,7 @@ service :: [NodeId] -- ^ NodeIds of the nodes to control services on.
         -> Process ()
 service nids so = case so of
   DummyServiceCmd sso -> standardService nids sso Dummy.dummy
+  NoisyServiceCmd sso -> standardService nids sso Noisy.noisy
 
 -- | Handle an instance of a "standard service" command.
 standardService :: Configuration a

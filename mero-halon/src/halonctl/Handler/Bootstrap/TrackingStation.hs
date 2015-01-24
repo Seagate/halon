@@ -34,14 +34,18 @@ import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
 
-import Options.Applicative ((<$>))
+import Options.Applicative ((<$>), (<*>))
 import qualified Options.Applicative as Opt
 
 import HA.RecoveryCoordinator.Mero.Startup
 
-newtype Config = Config
+data Config = Config
   { configUpdate :: Defaultable Bool
-  } deriving (Eq, Show, Ord, Generic, Binary, Hashable, Typeable)
+  , configSnapshotsThreshold :: Defaultable Int
+  } deriving (Eq, Show, Ord, Generic, Typeable)
+
+instance Binary Config
+instance Hashable Config
 
 schema :: Opt.Parser Config
 schema = let
@@ -49,7 +53,15 @@ schema = let
              $ Opt.long "update"
             <> Opt.short 'u'
             <> Opt.help "Update something."
-  in Config <$> upd
+    snapshotThreshold = defaultable 1000 . Opt.option Opt.auto
+             $ Opt.long "snapshots-threshold"
+            <> Opt.long "snapshot-threshold"
+            <> Opt.short 'n'
+            <> Opt.help ("Tells the amount of updates which are allowed " ++
+                         "between snapshots of the distributed state."
+                        )
+            <> Opt.metavar "INTEGER"
+  in Config <$> upd <*> snapshotThreshold
 
 self :: String
 self = "HA.TrackingStation"
@@ -75,4 +87,5 @@ start nids naConf = do
   where
     args = ( fromDefault . configUpdate $ naConf
            , nids
+           , fromDefault . configSnapshotsThreshold $ naConf
            )

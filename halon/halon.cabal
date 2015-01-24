@@ -73,6 +73,7 @@ Library
                    HA.Services.Dummy
                    HA.Services.Empty
                    HA.Services.EQTracker
+                   HA.Services.Noisy
                    HA.Services.OCF
                    Control.SpineSeq
   Build-Depends:   base,

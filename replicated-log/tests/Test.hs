@@ -12,6 +12,7 @@ import Control.Distributed.Process.Consensus
     ( __remoteTable )
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import qualified Control.Distributed.Log as Log
+import Control.Distributed.Log.Snapshot
 import Control.Distributed.Log ( updateHandle )
 import qualified Control.Distributed.State as State
 import Control.Distributed.State
@@ -31,9 +32,10 @@ import Data.Rank1Dynamic
 import qualified Network.Socket as N (close)
 import Network.Transport.TCP
 
-import Control.Monad (forM_, replicateM, when, void)
+import Control.Monad (forM_, replicateM, replicateM_, when, void, liftM2)
 import Data.Constraint (Dict(..))
-import Data.Binary (encode)
+import Data.Binary (encode, Binary)
+import Data.List (isPrefixOf)
 import Data.Ratio ((%))
 import Data.Typeable (Typeable)
 import System.Directory
@@ -43,8 +45,9 @@ import System.FilePath ((</>))
 import Prelude hiding (read)
 import qualified Prelude
 
+
 newtype State = State { unState :: Int }
-    deriving (Typeable)
+    deriving (Typeable, Binary)
 
 increment :: State -> Process State
 increment (State x) = do say "Increment."; return $ State $ x + 1
@@ -73,11 +76,20 @@ dictState = Dict
 dictNodeId :: SerializableDict NodeId
 dictNodeId = SerializableDict
 
+snapshotServerLbl :: String
+snapshotServerLbl = "snapshot-server"
+
+state0 :: State
+state0 = State 0
+
 testLog :: State.Log State
-testLog = State.log $ return $ State 0
+testLog = State.log $ serializableSnapshot snapshotServerLbl state0
 
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
+
+snapshotThreashold :: Int
+snapshotThreashold = 5
 
 testConfig :: Log.Config
 testConfig = Log.Config
@@ -86,9 +98,18 @@ testConfig = Log.Config
     , leaseTimeout      = 1000000
     , leaseRenewTimeout = 300000
     , driftSafetyFactor = 11 % 10
+    , snapshotPolicy    = return . (>= snapshotThreashold)
     }
 
-remotable [ 'dictInt, 'dictState, 'dictNodeId, 'testLog, 'testConfig ]
+snapshotServer :: Process ()
+snapshotServer = void $ serializableSnapshotServer
+                    snapshotServerLbl
+                    (filepath "replica-snapshots")
+                    state0
+
+remotable [ 'dictInt, 'dictState, 'dictNodeId, 'testLog, 'testConfig
+          , 'snapshotServer
+          ]
 
 sdictInt :: Static (SerializableDict Int)
 sdictInt = $(mkStatic 'dictInt)
@@ -128,13 +149,14 @@ tests args = do
     let setup :: Int                      -- ^ Number of nodes to spawn group on.
               -> (Log.Handle (Command State) -> State.CommandPort State -> Process ())
               -> IO ()
-        setup num action = tryWithTimeout transport remoteTables defaultTimeout $ do
+        setup num action = tryWithTimeout transport remoteTables 30000000 $ do
             node0 <- getSelfNode
             nodes <- replicateM (num - 1) $ liftIO $ newLocalNode transport remoteTables
             setup' (node0 : map localNodeId nodes) action
         setup' nodes action =
             withScheduler [] 1 $ do
                 say $ "Spawning group."
+                forM_ nodes $ \n -> spawn n $(mkStaticClosure 'snapshotServer)
                 h <- Log.new $(mkStatic 'State.commandEqDict)
                              ($(mkStatic 'State.commandSerializableDict)
                                 `staticApply` sdictState)
@@ -181,6 +203,7 @@ tests args = do
 
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
+                    snapshotServer
                     void $ Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.meToo)) here
                 expect
@@ -199,6 +222,7 @@ tests args = do
 
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
+                    snapshotServer
                     void $ Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.meToo))
                              here
@@ -215,6 +239,7 @@ tests args = do
 
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
+                    snapshotServer
                     void $ Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.meToo)) here
 
@@ -235,9 +260,11 @@ tests args = do
                 liftIO $ runProcess node1 $ do
                     registerInterceptor $ interceptor
                     here <- getSelfNode
+                    snapshotServer
                     void $ Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo)) here
 
                 here <- getSelfNode
+                snapshotServer
                 ρ <- Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo)) here
                 updateHandle h ρ
 
@@ -268,6 +295,7 @@ tests args = do
 
                 forM_ [node1, node2] $ \lnid -> liftIO $ runProcess lnid $ do
                     here <- getSelfNode
+                    snapshotServer
                     void $ Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.orpn)) here
 
@@ -282,18 +310,70 @@ tests args = do
                 () <- expect
                 say "Still alive replica increments."
 
+          , testSuccess "log-size-remains-bounded" . withTmpDirectory $
+              setup 1 $ \h port -> do
+                self <- getSelfPid
+                let logSizePfx = "Log size when trimming: "
+                    interceptor :: String -> Process ()
+                    interceptor "Increment." = usend self ()
+                    interceptor s | logSizePfx `isPrefixOf` s =
+                      usend self ( Prelude.read $ drop (length logSizePfx) s
+                                                 :: Int
+                                )
+                    interceptor _ = return ()
+                registerInterceptor interceptor
+
+                let incrementCount = snapshotThreashold + 1
+                logSizes <- replicateM 5 $ do
+                  replicateM_ incrementCount $ do
+                    State.update port incrementCP
+                    expect :: Process ()
+                  expect :: Process Int
+
+                say $ show logSizes
+                -- The size of the log should account for medieval and modern
+                -- history. It is possible to have a log slightly bigger because
+                -- leases may introduce a few reconfiguration requests.
+                assert $ all (<= snapshotThreashold * 2 + 2) logSizes
+                say "Log size remains bounded with no reconfigurations."
+
+                node1 <- liftIO $ newLocalNode transport remoteTables
+                liftIO $ runProcess node1 $ registerInterceptor interceptor
+
+                liftIO $ runProcess node1 $ do
+                    here <- getSelfNode
+                    snapshotServer
+                    void $ Log.addReplica h
+                             (staticClosure $(mkStatic 'Policy.meToo)) here
+
+                logSizes' <- replicateM 5 $ do
+                  replicateM_ incrementCount $ do
+                    State.update port incrementCP
+                    expect :: Process ()
+                    expect :: Process ()
+                  liftM2 (,) (expect :: Process Int) (expect :: Process Int)
+
+                say $ show logSizes'
+                -- The size of the log should account for medieval and modern
+                -- history. It is possible to have a log slightly bigger because
+                -- leases may introduce a few reconfiguration requests.
+                assert $ all (<= snapshotThreashold * 2 + 2)
+                             (uncurry (++) $ unzip logSizes')
+                say "Log size remains bounded after reconfiguration."
+
           , testSuccess "quorum-after-transient-failure" . withTmpDirectory $
               setup 1 $ \h port -> do
                 self <- getSelfPid
                 node1 <- liftIO $ newLocalNode transport remoteTables
 
-                let interceptor "Increment." = reconnect self >> usend self ()
+                let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor interceptor
                 liftIO $ runProcess node1 $ registerInterceptor interceptor
 
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
+                    snapshotServer
                     ρ <- Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.orpn)) here
                     updateHandle h ρ

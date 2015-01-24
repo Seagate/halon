@@ -19,6 +19,7 @@ import Control.Distributed.Process.Consensus
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import qualified Control.Distributed.Log as Log
 import Control.Distributed.Log (Config(..))
+import Control.Distributed.Log.Snapshot
 import qualified Control.Distributed.State as State
 import Control.Distributed.State
     ( Command
@@ -39,7 +40,7 @@ import Network.Transport.TCP
 import System.Directory
 import System.FilePath
 import System.IO
-import Control.Monad (replicateM_, replicateM, when)
+import Control.Monad (replicateM_, replicateM, when, void, forM_)
 
 import Prelude hiding (read)
 
@@ -49,14 +50,20 @@ type State = Int
 dictState :: Dict (Typeable State)
 dictState = Dict
 
-dictNodeId :: SerializableDict NodeId
-dictNodeId = SerializableDict
+state0 :: State
+state0 = 0
+
+snapshotServerLbl :: String
+snapshotServerLbl = "snapshot-server"
 
 testLog :: State.Log State
-testLog = State.log $ return 0
+testLog = State.log $ serializableSnapshot snapshotServerLbl state0
 
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
+
+snapshotThreashold :: Int
+snapshotThreashold = 5
 
 testConfig :: Log.Config
 testConfig = Log.Config
@@ -65,12 +72,10 @@ testConfig = Log.Config
     , leaseTimeout      = 3000000
     , leaseRenewTimeout = 1000000
     , driftSafetyFactor = 11 % 10
+    , snapshotPolicy    = return . (>= snapshotThreashold)
     }
 
 remotableDecl [ [d|
-
-  sdictInt :: Static (SerializableDict Int)
-  sdictInt = $(mkStatic 'dictInt)
 
   dictInt :: SerializableDict Int
   dictInt = SerializableDict
@@ -81,7 +86,16 @@ remotableDecl [ [d|
   read :: State -> Process Int
   read = return
 
+  snapshotServer :: Process ()
+  snapshotServer = void $ serializableSnapshotServer
+                    snapshotServerLbl
+                    (filepath "replica-snapshots")
+                    state0
+
  |] ]
+
+sdictInt :: Static (SerializableDict Int)
+sdictInt = $(mkStatic 'dictInt)
 
 incrementCP :: CP State State
 incrementCP = staticClosure $(mkStatic 'increment)
@@ -103,7 +117,7 @@ performBenchmark (iters, updNo, readNo, sp) = do
       replicateM_ (updNo + readNo) (expect :: Process ())
     sendChan sp ()
 
-remotable [ 'dictState, 'dictNodeId, 'testLog, 'testConfig, 'performBenchmark ]
+remotable [ 'dictState, 'testLog, 'testConfig, 'performBenchmark ]
 
 sdictState :: Static (Dict (Typeable State))
 sdictState = $(mkStatic 'dictState)
@@ -199,6 +213,7 @@ setup transport num action = do
     takeMVar box
   where
     setup' _nd nodes = do
+      forM_ nodes $ flip spawn $(mkStaticClosure 'snapshotServer)
       h <- Log.new $(mkStatic 'State.commandEqDict)
                    ($(mkStatic 'State.commandSerializableDict)
                      `staticApply` sdictState)

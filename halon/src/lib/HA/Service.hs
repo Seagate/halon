@@ -44,6 +44,7 @@ module HA.Service
   , BinRep
   , encodeP
   , decodeP
+  , DummyEvent(..)
   , ServiceFailed(..)
   , ServiceFailedMsg
   , ServiceStartRequest(..)
@@ -337,6 +338,12 @@ instance ProcessEncode ServiceFailed where
 
   encodeP (ServiceFailed node svc@(Service _ _ d)) = ServiceFailedMsg . runPut $
     put d >> put (node, svc)
+
+-- | An event which produces no action in the RC. Used for testing.
+data DummyEvent = DummyEvent
+  deriving (Typeable, Generic)
+
+instance Binary DummyEvent
 
 -- | A notification of a successful service start.
 data ServiceStarted = forall a. Configuration a

@@ -85,7 +85,7 @@ runRC (eq, args) rGroup = do
 --   is not violated.
 testServiceRestarting :: Transport -> IO ()
 testServiceRestarting transport = do
-  tryWithTimeout transport rt 5000000 $ do
+    withTmpDirectory $ tryWithTimeout transport rt 5000000 $ do
 
         nid <- getSelfNode
         self <- getSelfPid
@@ -95,7 +95,8 @@ testServiceRestarting transport = do
             _ -> return ()
 
         say $ "tests node: " ++ show nid
-        cRGroup <- newRGroup $(mkStatic 'testDict) [nid] ((Nothing,[]), fromList [])
+        cRGroup <- newRGroup $(mkStatic 'testDict) 1000
+                             [nid] ((Nothing,[]), fromList [])
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
