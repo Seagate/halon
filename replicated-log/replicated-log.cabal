@@ -154,6 +154,40 @@ Benchmark bench-suite
                     stm,
                     criterion
 
+Benchmark state-long
+  Type:             exitcode-stdio-1.0
+  Main-is:          state-long.hs
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   benchmarks
+
+  Ghc-Options: -Wall -threaded -fprof-auto
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  Build-Depends:    base >= 4.7,
+                    acid-state,
+                    binary,
+                    consensus,
+                    consensus-paxos,
+                    constraints >= 0.4,
+                    containers,
+                    filepath,
+                    replicated-log,
+                    distributed-static,
+                    distributed-process-test,
+                    distributed-process-scheduler,
+                    rank1dynamic,
+                    network-transport,
+                    network-transport-tcp,
+                    directory,
+                    mtl,
+                    stm,
+                    safecopy,
+                    statistics,
+                    vector,
+                    criterion
+
 Benchmark state-distributed
   Type:             exitcode-stdio-1.0
   Main-is:          state-distributed.hs

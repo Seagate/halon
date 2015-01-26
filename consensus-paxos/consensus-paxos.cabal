@@ -120,7 +120,9 @@ Benchmark paxos
                     filepath,
                     network-transport,
                     network-transport-tcp,
+                    statistics,
                     time,
-                    unix
+                    unix,
+                    vector
   Default-Extensions: RecordWildCards NamedFieldPuns
                       ScopedTypeVariables
