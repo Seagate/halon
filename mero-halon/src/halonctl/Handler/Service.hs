@@ -27,6 +27,7 @@ import HA.Resources
 import HA.Service
 import qualified HA.Services.Dummy as Dummy
 import qualified HA.Services.Noisy as Noisy
+import qualified HA.Services.SSPL as SSPL
 
 import Lookup (conjureRemoteNodeId)
 
@@ -62,6 +63,7 @@ import Options.Schema.Applicative (mkParser)
 data ServiceCmdOptions =
       DummyServiceCmd (StandardServiceOptions Dummy.DummyConf)
     | NoisyServiceCmd (StandardServiceOptions Noisy.NoisyConf)
+    | SSPLServiceCmd (StandardServiceOptions SSPL.SSPLConf)
   deriving (Eq, Show, Generic, Typeable)
 
 -- | Options for a 'standard' service. This consists of a set of subcommands
@@ -129,7 +131,9 @@ parseService =
     ) <|>
     (NoisyServiceCmd <$> (O.subparser $
          mkStandardServiceCmd Noisy.noisy)
-    )
+    ) <|>
+    (SSPLServiceCmd <$> (O.subparser $
+          mkStandardServiceCmd SSPL.sspl))
 
 -- | Handle the "service" command.
 --   The "service" command is basically a wrapper around a number of commands
@@ -141,6 +145,7 @@ service :: [NodeId] -- ^ NodeIds of the nodes to control services on.
 service nids so = case so of
   DummyServiceCmd sso -> standardService nids sso Dummy.dummy
   NoisyServiceCmd sso -> standardService nids sso Noisy.noisy
+  SSPLServiceCmd sso  -> standardService nids sso SSPL.sspl
 
 -- | Handle an instance of a "standard service" command.
 standardService :: Configuration a
