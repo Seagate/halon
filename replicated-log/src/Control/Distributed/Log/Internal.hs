@@ -800,16 +800,22 @@ dictMax = SerializableDict
 dictTimeSpec :: SerializableDict TimeSpec
 dictTimeSpec = SerializableDict
 
--- | @delay them p@ is a process that waits for a signal (a message of type @()@)
--- from 'them' (origin is not verified) before proceeding as @p@. In order to
+-- | @delay them f@ is a process that waits for a signal (a message of type @x@)
+-- from 'them' (origin is not verified) before proceeding as @f x@. Sends a
+-- notification @Done@ to @them@ just before executing @f x@. In order to
 -- avoid waiting forever, @delay them p@ monitors 'them'. If it receives a
 -- monitor message instead it simply terminates.
+--
+-- The exchange of the @Done@ message helps ensuring @them@ does not terminate
+-- before @delay@ unblocks, otherwise @delay@ could avoid execution of @f x@.
+-- See https://cloud-haskell.atlassian.net/browse/DP-99.
+--
 delay :: SerializableDict a -> ProcessId -> (a -> Process ()) -> Process ()
 delay SerializableDict them f = do
   ref <- monitor them
   let sameRef (ProcessMonitorNotification ref' _ _) = ref == ref'
   receiveWait
-      [ match           $ \x -> unmonitor ref >> f x
+      [ match           $ \x -> unmonitor ref >> usend them Done >> f x
       , matchIf sameRef $ const $ return () ]
 
 -- | Like 'uncurry', but extract arguments from a 'Max' message rather than
@@ -869,11 +875,17 @@ unMaxCP f = staticClosure $(mkStatic 'unMax) `closureApply` f
 
 -- | Spawn a group of processes, feeding the set of all ProcessId's to each.
 spawnRec :: [NodeId] -> Closure ([ProcessId] -> Process ()) -> Process [ProcessId]
-spawnRec nodes f = do
+spawnRec nodes f = callLocal $ do -- use callLocal to discard monitor
+                                  -- notifications
     self <- getSelfPid
     ρs <- forM nodes $ \nid -> spawn nid $
               delayClosure ($(mkStatic 'dictList) `staticApply` sdictProcessId) self f
+    mapM_ monitor ρs
     forM_ ρs $ \ρ -> usend ρ ρs
+    forM_ ρs $ const $ receiveWait
+      [ match $ \(ProcessMonitorNotification _ _ _) -> return ()
+      , match $ \Done -> return ()
+      ]
     return ρs
 
 replicaClosure :: Typeable a
@@ -1076,7 +1088,6 @@ addReplica :: Typeable a
            -> NodeId
            -> Process ProcessId
 addReplica h@(Handle sdict1 sdict2 config log _) cpolicy nid = do
-    self <- getSelfPid
     now <- liftIO $ getTime Monotonic
     let protocol = staticClosure $(mkStatic 'consensusProtocol)
                      `closureApply` config
@@ -1085,8 +1096,8 @@ addReplica h@(Handle sdict1 sdict2 config log _) cpolicy nid = do
              acceptorClosure $(mkStatic 'dictNodeId)
                              protocol
                              nid
-    -- See comment about effect of 'delayClosure' in docstring above.
-    ρ <- spawn nid $ delayClosure sdictMax self $
+    -- See comment about effect of 'cpExpect' in docstring above.
+    ρ <- spawn nid $ bindCP (cpExpect sdictMax) $
              unMaxCP $ replicaClosure sdict1 sdict2 config log
                `closureApply` timeSpecClosure now
     β <- spawn nid $ batcherClosure sdict2 ρ
