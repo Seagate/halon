@@ -23,7 +23,17 @@ import Test.Tasty.HUnit (testCase)
 
 import Control.Concurrent (threadDelay)
 
-#ifndef USE_RPC
+#ifdef USE_RPC
+import Control.Monad (when)
+import Data.Maybe (catMaybes)
+import HA.Network.Transport (writeTransportGlobalIVar)
+import qualified Network.Transport.RPC as RPC
+import System.Directory
+import System.Environment (getExecutablePath)
+import System.Exit
+import System.FilePath
+import System.Process
+#else
 import qualified HA.Network.Socket as TCP
 import qualified Network.Socket as TCP
 import qualified Network.Transport.TCP as TCP
@@ -52,8 +62,10 @@ runTests tests = do
                  maybe "127.0.0.1:0" id <$> lookupEnv "TEST_LISTEN"
 #endif
 #ifdef USE_RPC
-    transport <- RPC.createTransport "s1" addr0 RPC.defaultRPCParameters
-    writeNetworkGlobalIVar transport
+    rpcTransport <- RPC.createTransport "s1"
+                       (RPC.rpcAddress addr0) RPC.defaultRPCParameters
+    writeTransportGlobalIVar rpcTransport
+    let transport = RPC.networkTransport rpcTransport
 #else
     let TCP.SockAddrInet port hostaddr = TCP.decodeSocketAddress addr0
     hostname <- TCP.inet_ntoa hostaddr
@@ -64,4 +76,24 @@ runTests tests = do
       =<< tests transport
 
 main :: IO ()
-main = runTests ut
+main = do
+#if USE_RPC
+    args <- getArgs
+    prog <- getExecutablePath
+    -- test if we have root privileges
+    ((userid, _): _ ) <- reads <$> readProcess "id" ["-u"] ""
+    when (userid /= (0 :: Int)) $ do
+      -- change directory so mero files are produced under the dist folder
+      let testDir = takeDirectory (takeDirectory $ takeDirectory prog)
+                  </> "test"
+      createDirectoryIfMissing True testDir
+      setCurrentDirectory testDir
+      putStrLn $ "Changed directory to: " ++ testDir
+      -- Invoke again with root privileges
+      putStrLn $ "Calling test with sudo ..."
+      mld <- fmap ("LD_LIBRARY_PATH=" ++) <$> lookupEnv "LD_LIBRARY_PATH"
+      mtl <- fmap ("TEST_LISTEN=" ++) <$> lookupEnv "TEST_LISTEN"
+      callProcess "sudo" $ catMaybes [mld, mtl] ++ prog : args
+      exitSuccess
+#endif
+    runTests ut

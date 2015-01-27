@@ -378,7 +378,10 @@ Test-Suite unit-tests
                     tasty-hunit,
                     tasty-files
   if flag(rpc)
-      Build-Depends: network-transport-rpc
+      Build-Depends: network-transport-rpc,
+                     directory,
+                     filepath,
+                     process
       CPP-Options:    -DUSE_RPC
   else
       Build-Depends: network-transport-tcp >= 0.3
@@ -422,7 +425,10 @@ Test-Suite integration-tests
                     tasty-hunit,
                     tasty-files
   if flag(rpc)
-      Build-Depends: network-transport-rpc
+      Build-Depends: network-transport-rpc,
+                     directory,
+                     filepath,
+                     process
       CPP-Options:    -DUSE_RPC
   else
       Build-Depends: network-transport-tcp >= 0.3

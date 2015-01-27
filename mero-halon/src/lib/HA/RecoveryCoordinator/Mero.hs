@@ -68,6 +68,9 @@ import Data.Foldable (mapM_)
 import Data.List (foldl', intersect)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (isNothing)
+#ifdef USE_RPC
+import Data.Maybe (isJust)
+#endif
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -445,7 +448,7 @@ recoveryCoordinator eq mm argv = do
                   m0dNodes = [ node | node <- G.connectedTo Cluster Has rg'
                                     , isJust $ runningService node m0d rg' ]
               forM_ m0dNodes $ \(Node them) ->
-                  nsendRemote them (serviceName m0d) $
+                  nsendRemote them (snString $ serviceName m0d) $
                   Mero.Notification.Set nvec
               send eq $ eid
               loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')

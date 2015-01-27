@@ -19,6 +19,7 @@ import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
 import Test.Framework (testSuccess)
 import Test.Tasty (testGroup)
 import Control.Concurrent (threadDelay)
+import Control.Monad (when)
 import Network.Transport.RPC as RPC
 import HA.Network.Transport
 
@@ -27,6 +28,7 @@ import System.Directory (createDirectoryIfMissing, setCurrentDirectory)
 import System.FilePath (takeDirectory, (</>))
 import System.Environment (getExecutablePath)
 import System.Exit (exitSuccess)
+import System.Process (readProcess, callProcess)
 #else
 import qualified HA.Network.Socket as TCP
 import qualified Network.Socket as TCP
