@@ -36,6 +36,10 @@
 #   top-level Makefile or a custom setup, but until then, old
 #   Makefiles can be used.
 
+# Permanent local overrides go here, to avoid having to specify them
+# each time on the command line. Please DO NOT check in this file.
+-include mk/local.mk
+
 ifdef USE_TCP
 USE_RPC =
 endif
@@ -51,10 +55,6 @@ endif
 
 # Global configuration variables.
 include mk/config.mk
-
-# Permanent local overrides go here, to avoid having to specify them
-# each time on the command line. Please DO NOT check in this file.
--include mk/local.mk
 
 # The DELETE_ON_ERROR behavior is used in the `make dep` logic, since
 # we use the cabal.sandbox.config file as a stamp file on whether the
