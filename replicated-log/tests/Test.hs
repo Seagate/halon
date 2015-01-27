@@ -270,8 +270,11 @@ tests args = do
 
                 -- Kill the first node, and see that the updated handle
                 -- still works. But don't kill it too soon or the new replicas
-                -- wont have a chance to replicate its state.
-                _ <- receiveTimeout 500000 []
+                -- wont have a chance to replicate its state. We do an update
+                -- to ensure the state is replicated.
+                State.update port incrementCP
+                () <- expect
+                () <- expect
                 liftIO $ closeLocalNode n
                 -- Wait for the lease of the leader to expire. Otherwise
                 -- the request would be forwarded to the leader and State.update
