@@ -303,6 +303,13 @@ tests args = do
                              (staticClosure $(mkStatic 'Policy.orpn)) here
 
                 Log.status h
+                -- Don't remove the first node too soon or the new replicas
+                -- wont have a chance to replicate its state. We do an update
+                -- to ensure the state is replicated.
+                State.update port incrementCP
+                () <- expect
+                () <- expect
+                () <- expect
 
                 forM_ [node1, node2] $ \lnid -> liftIO $ runProcess lnid $ do
                     here <- getSelfNode
