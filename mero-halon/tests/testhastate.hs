@@ -43,8 +43,7 @@ import System.Process (readProcess, callProcess, callCommand)
 main :: IO ()
 main =
   -- find the LNET NID
-  (take 1 . filter ("o2ib" `isInfixOf`) . lines <$>
-                    readProcess "sudo" ["lctl", "list_nids"] "")
+  (take 1 . lines <$> readProcess "sudo" ["lctl", "list_nids"] "")
   >>= \[testNid] ->
   let dummyMeroAddress = testNid ++ ":12345:34:2"
       confdAddress = testNid ++ ":12345:34:1001"
