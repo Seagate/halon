@@ -21,7 +21,6 @@ import Test.Tasty (testGroup)
 import Control.Concurrent (threadDelay)
 import Control.Monad (when)
 import Network.Transport.RPC as RPC
-import HA.Network.Transport
 
 import Data.Maybe (catMaybes)
 import System.Directory (createDirectoryIfMissing, setCurrentDirectory)
@@ -75,7 +74,6 @@ runTests tests = do
     rpcTransport <- RPC.createTransport "s1"
                                         (rpcAddress addr)
                                         RPC.defaultRPCParameters
-    writeTransportGlobalIVar rpcTransport
     let transport = networkTransport rpcTransport
 #else
     let TCP.SockAddrInet port hostaddr = TCP.decodeSocketAddress addr

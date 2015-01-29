@@ -69,6 +69,7 @@ Library
                    Mero.Notification
                    Mero.Messages
                    Mero.RemoteTables
+                   HA.Network.Transport
                    HA.Services.Mero
                    HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.Mero.Startup
