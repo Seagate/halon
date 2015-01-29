@@ -74,7 +74,7 @@ runRC (eq, args) rGroup = do
                         multimap (viewRState $(mkStatic 'multimapView) rGroup))
                   <*> (spawnLocal $ do
                         () <- expect
-                        recoveryCoordinator eq mm args)
+                        recoveryCoordinator args eq mm)
   send eq rc
   forM_ [mm, rc] $ \them -> send them ()
 

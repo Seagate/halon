@@ -14,6 +14,7 @@ import HA.Services.EQTracker ( __remoteTableDecl )
 import HA.Services.Noisy ( __remoteTable, __remoteTableDecl )
 import HA.Service ( __remoteTable )
 import HA.Services.OCF ( __remoteTableDecl )
+import HA.Startup ( __remoteTable, __remoteTableDecl )
 import HA.RecoverySupervisor ( __remoteTable )
 import HA.EventQueue ( __remoteTable )
 import HA.Multimap.Process ( __remoteTable )
@@ -43,6 +44,8 @@ haRemoteTable next =
    HA.Services.Noisy.__remoteTableDecl $
    HA.Service.__remoteTable $
    HA.Services.OCF.__remoteTableDecl $
+   HA.Startup.__remoteTable $
+   HA.Startup.__remoteTableDecl $
    HA.RecoverySupervisor.__remoteTable $
    HA.EventQueue.__remoteTable $
    HA.Multimap.Process.__remoteTable $

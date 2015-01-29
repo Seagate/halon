@@ -72,7 +72,6 @@ Library
                    HA.Network.Transport
                    HA.Services.Mero
                    HA.RecoveryCoordinator.Mero
-                   HA.RecoveryCoordinator.Mero.Startup
   Build-Depends:   base,
                    halon,
                    bytestring,

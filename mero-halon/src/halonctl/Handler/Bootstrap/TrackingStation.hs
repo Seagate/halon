@@ -37,7 +37,8 @@ import GHC.Generics (Generic)
 import Options.Applicative ((<$>), (<*>))
 import qualified Options.Applicative as Opt
 
-import HA.RecoveryCoordinator.Mero.Startup
+import HA.RecoveryCoordinator.Mero
+import HA.Startup
 
 data Config = Config
   { configUpdate :: Defaultable Bool
@@ -88,4 +89,5 @@ start nids naConf = do
     args = ( fromDefault . configUpdate $ naConf
            , nids
            , fromDefault . configSnapshotsThreshold $ naConf
+           , $(mkClosure 'recoveryCoordinator) $ IgnitionArguments nids
            )

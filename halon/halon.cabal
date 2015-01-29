@@ -72,6 +72,7 @@ Library
                    HA.Services.EQTracker
                    HA.Services.Noisy
                    HA.Services.OCF
+                   HA.Startup
                    Control.SpineSeq
   Build-Depends:   base,
                    binary >= 0.6,
