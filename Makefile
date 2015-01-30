@@ -90,7 +90,7 @@ override CABAL_FLAGS += -fmero
 endif
 
 ifdef USE_RPC
-TEST_NID = $(shell sudo lctl list_nids | grep o2ib | head -1)
+TEST_NID = $(shell sudo lctl list_nids | head -1)
 TEST_LISTEN = $(TEST_NID):12345:34:1
 override CABAL_FLAGS += -frpc
 else

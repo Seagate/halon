@@ -8,11 +8,9 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-orphans #-}
-module HA.RecoveryCoordinator.Mero.Startup where
+module HA.Startup where
 
-import HA.RecoveryCoordinator.Mero (recoveryCoordinator, IgnitionArguments(..))
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
 import HA.EventQueue ( eventQueue, EventQueue )
 import HA.Multimap.Implementation ( Multimap, fromList )
@@ -83,9 +81,12 @@ remotableDecl [ [d|
  isNodeInGroup :: [NodeId] -> NodeId -> Bool
  isNodeInGroup = flip elem
 
- addNodes :: ([NodeId],[NodeId]) -- ^ (New nodes, existing trackers)
+ addNodes :: ( [NodeId]
+             , [NodeId] -- ^ (New nodes, existing trackers)
+             , Closure (ProcessId -> ProcessId -> Process ())
+             )
           -> Process ()
- addNodes (newNodes,trackers) = do
+ addNodes (newNodes, trackers, rcClosure) = do
      disconnectAllNodeConnections
      mcRGroup <- liftIO $ readIORef globalRGroup
      case mcRGroup of
@@ -97,24 +98,18 @@ remotableDecl [ [d|
                   $(functionTDict 'spawnStartRS)
                   n
                   $ $(mkClosure 'spawnStartRS)
-                      (IgnitionArguments trackers, cRGroup, Just replica)
+                      (cRGroup, Just replica, rcClosure)
        Nothing -> return ()
 
 
- spawnStartRS :: ( IgnitionArguments
-            , Closure (Process (RLogGroup HAReplicatedState))
-            , Maybe (Replica RLogGroup)
-            )
-         -> Process ()
- spawnStartRS args = spawnLocal (startRS args) >> return ()
-
- startRS :: ( IgnitionArguments
-            , Closure (Process (RLogGroup HAReplicatedState))
-            , Maybe (Replica RLogGroup)
-            )
-         -> Process ()
- startRS (args,cRGroup,mlocalReplica) = do
+ spawnStartRS :: ( Closure (Process (RLogGroup HAReplicatedState))
+                 , Maybe (Replica RLogGroup)
+                 , Closure (ProcessId -> ProcessId -> Process ())
+                 )
+              -> Process ()
+ spawnStartRS (cRGroup, mlocalReplica, rcClosure) = void $ spawnLocal $ do
      rGroup <- unClosure cRGroup >>= id
+     recoveryCoordinator <- unClosure rcClosure
      maybe (return ()) (updateRGroup rGroup) mlocalReplica
      liftIO $ writeIORef globalRGroup $ Just cRGroup
      eqpid <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
@@ -126,7 +121,7 @@ remotableDecl [ [d|
                        rcpid <- liftIO $ readMVar mRCPid
                        link rcpid
                        multimap (viewRState $(mkStatic 'multimapView) rGroup)
-                rcpid <- spawnLocal (recoveryCoordinator eqpid mmpid args)
+                rcpid <- spawnLocal (recoveryCoordinator eqpid mmpid)
                 send eqpid rcpid
                 liftIO $ putMVar mRCPid rcpid
                 return rcpid
@@ -148,15 +143,25 @@ remotableDecl [ [d|
 
  -- | Start the RC and EQ.
  --
- -- Takes a tuple @(update, trackers, nodestr, snapshotThreashold)@.
+ -- Takes a tuple @(update, trackers, snapshotThreashold, rcClosure)@.
  --
  -- @update@ indicates if an existing tracking station is being updated.
+ --
  -- @trackers@ is a list of node identifiers of tracking station nodes.
+ --
  -- @snapshotThreashold@ indicates how many updates are allowed between
  -- snapshots of the distributed state.
- ignition :: (Bool, [NodeId], Int)
+ --
+ -- @rcClosure@ is the closure which runs the recovery coordinator. It
+ -- takes the event queue and the multimap 'ProcessId's.
+ --
+ ignition :: ( Bool
+             , [NodeId]
+             , Int
+             , Closure (ProcessId -> ProcessId -> Process ())
+             )
           -> Process (Maybe (Bool,[NodeId],[NodeId],[NodeId]))
- ignition (update, trackers, snapshotThreshold) = do
+ ignition (update, trackers, snapshotThreshold, rcClosure) = do
     say "Ignition!"
     disconnectAllNodeConnections
     if update then do
@@ -164,7 +169,7 @@ remotableDecl [ [d|
       added <- case members of
         m : _ -> do
           call $(functionTDict 'addNodes) m $
-                 $(mkClosure 'addNodes) (newNodes,trackers)
+                 $(mkClosure 'addNodes) (newNodes, trackers, rcClosure)
           return True
         [] -> return False
 
@@ -174,9 +179,9 @@ remotableDecl [ [d|
                             (RSState Nothing 0,((Nothing,[]),fromList []))
       forM_ trackers $ flip (call $(functionTDict 'spawnStartRS))  $
         $(mkClosure 'spawnStartRS)
-          ( IgnitionArguments trackers
-          , cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
+          ( cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
           , Nothing :: Maybe (Replica RLogGroup)
+          , rcClosure
           )
       return Nothing
 

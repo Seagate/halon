@@ -59,7 +59,7 @@ main = do
     exitSuccess
   addr <- if null args
           then do
-            [lnetaddr] <- take 1 . filter ("o2ib" `isInfixOf`) . lines <$>
+            [lnetaddr] <- take 1 . lines <$>
                     readProcess "sudo" ["lctl", "list_nids"] ""
             -- form the rpc address from the LNET node Id
             -- rpc address =  ip@network:pid:portal:buffer_pool_id

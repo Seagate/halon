@@ -22,7 +22,7 @@ Flag debug
   Default: False
 
 Flag rpc
-  Description: Build with the RPC backend instead of TCP.
+  Description: Build tests with the RPC backend instead of TCP.
   Default: False
 
 Flag maintainer
@@ -32,8 +32,6 @@ Flag maintainer
 Library
   Hs-Source-Dirs:  src/lib
   Default-Language: Haskell2010
-  if flag(rpc)
-    CPP-Options:    -DUSE_RPC
   Default-Extensions: BangPatterns
                       DeriveDataTypeable
                       DeriveGeneric
@@ -68,13 +66,13 @@ Library
                    HA.NodeUp
                    HA.Network.RemoteTables
                    HA.Network.Socket
-                   HA.Network.Transport
                    HA.Service
                    HA.Services.Dummy
                    HA.Services.Empty
                    HA.Services.EQTracker
                    HA.Services.Noisy
                    HA.Services.OCF
+                   HA.Startup
                    Control.SpineSeq
   Build-Depends:   base,
                    binary >= 0.6,
@@ -99,12 +97,6 @@ Library
                    network-transport,
                    options-schema >= 0.1.1.0,
                    sodium
-  if flag(rpc)
-    Build-Depends: rpclite,
-                   network-transport,
-                   network-transport-rpc >= 0.0.1
-  else
-    Build-Depends: network-transport-tcp
 
 Test-Suite unit-tests
   Type:             exitcode-stdio-1.0

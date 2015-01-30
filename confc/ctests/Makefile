@@ -2,7 +2,7 @@
 ifndef MERO_ROOT
 $(error The variable MERO_ROOT is undefined. Please, make it point to the mero build tree.)
 endif
-RPCLITE_PREFIX=../../network-transport-rpc/rpclite
+RPCLITE_PREFIX=../../rpclite/rpclite
 
 FF2C=$(MERO_ROOT)/xcode/ff2c/ff2c
 CC=gcc
@@ -20,7 +20,7 @@ ENV=LD_LIBRARY_PATH=$(subst $(sp),:,$(libdirs)) M0_CORE_DIR=$(MERO_ROOT)
 LD_SEARCH_PATH=$(foreach dir,$(libdirs),-L$(dir))
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
 
-LDFLAGS=$(LD_SEARCH_PATH) -lmero
+LDFLAGS=$(LD_SEARCH_PATH) -lmero -pthread
 
 SOURCES=$(RPCLITE_PREFIX)/rpclite_fop_ff.c \
 		$(RPCLITE_PREFIX)/rpclite.c \

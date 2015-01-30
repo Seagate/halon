@@ -43,8 +43,7 @@ import System.Process (readProcess, callProcess, callCommand)
 main :: IO ()
 main =
   -- find the LNET NID
-  (take 1 . filter ("o2ib" `isInfixOf`) . lines <$>
-                    readProcess "sudo" ["lctl", "list_nids"] "")
+  (take 1 . lines <$> readProcess "sudo" ["lctl", "list_nids"] "")
   >>= \[testNid] ->
   let dummyMeroAddress = testNid ++ ":12345:34:2"
       confdAddress = testNid ++ ":12345:34:1001"
@@ -68,7 +67,7 @@ main =
       callProcess "touch" ["dummy_mero.stdout"]
       -- spawn the dummy mero
       mld <- fmap ("LD_LIBRARY_PATH=" ++) <$> lookupEnv "LD_LIBRARY_PATH"
-      bracket_ (callProcess "sudo" $
+      let dummyMeroCmd =
                   maybeToList mld ++
                   [ meroHalonTopDir </> "hastate" </> "call_dummy_mero.sh"
                     -- local addre
@@ -76,13 +75,14 @@ main =
                   , confdAddress
                   , halonAddress
                   ]
-              )
-              (callCommand "sudo kill $(cat dummy_mero.pid)")
+      putStrLn $ "Calling dummy mero: " ++ unwords dummyMeroCmd
+      bracket_ (callProcess "sudo" dummyMeroCmd)
+               (callCommand "sudo kill $(cat dummy_mero.pid)")
         $ do
-        putStrLn "Spawned dummy_mero."
         -- wait for dummy mero to be up
         callProcess (meroHalonTopDir </> "scripts" </> "wait_contents")
                     [ "120", "dummy_mero.stdout", "ready" ]
+        putStrLn "Spawned dummy_mero."
 
         -- Invoke again with root privileges
         putStrLn $ "Calling test with sudo ..."

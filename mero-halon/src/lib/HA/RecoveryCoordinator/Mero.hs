@@ -19,6 +19,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
@@ -26,6 +27,9 @@
 module HA.RecoveryCoordinator.Mero
        ( recoveryCoordinator
        , IgnitionArguments(..)
+       , HA.RecoveryCoordinator.Mero.__remoteTable
+       , recoveryCoordinator__sdict
+       , recoveryCoordinator__static
        ) where
 
 import HA.Resources
@@ -68,6 +72,9 @@ import Data.Foldable (mapM_)
 import Data.List (foldl', intersect)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (isNothing)
+#ifdef USE_RPC
+import Data.Maybe (isJust)
+#endif
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -224,10 +231,11 @@ data LoopState = LoopState {
 -- to be initialized with 'HA.Network.Address.writeNetworkGlobalIVar'. This is
 -- done automatically if 'HA.Network.Address.startNetwork' is used to create
 -- the transport.
-recoveryCoordinator :: ProcessId -- ^ pid of the replicated event queue
+recoveryCoordinator :: IgnitionArguments
+                    -> ProcessId -- ^ pid of the replicated event queue
                     -> ProcessId -- ^ pid of the replicated multimap
-                    -> IgnitionArguments -> Process ()
-recoveryCoordinator eq mm argv = do
+                    -> Process ()
+recoveryCoordinator argv eq mm = do
     rg <- HA.RecoveryCoordinator.Mero.initialize mm
     loop =<< initLoopState <$> G.sync rg
   where
@@ -445,9 +453,11 @@ recoveryCoordinator eq mm argv = do
                   m0dNodes = [ node | node <- G.connectedTo Cluster Has rg'
                                     , isJust $ runningService node m0d rg' ]
               forM_ m0dNodes $ \(Node them) ->
-                  nsendRemote them (serviceName m0d) $
+                  nsendRemote them (snString $ serviceName m0d) $
                   Mero.Notification.Set nvec
               send eq $ eid
               loop =<< (fmap (\a -> ls { lsGraph = a }) $ G.sync rg')
 #endif
         ]
+
+remotable [ 'recoveryCoordinator ]
