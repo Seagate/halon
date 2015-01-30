@@ -24,6 +24,7 @@
 {-# LANGUAGE FlexibleContexts   #-}
 {-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE TemplateHaskell    #-}
+{-# LANGUAGE TypeOperators      #-}
 module HA.EventQueue
   ( eventQueue
   , EventQueue
@@ -110,41 +111,14 @@ eventQueue rg = do
   -- responding and won't ever care of checking the replicated state to learn
   -- of new RCs
   traverse_ monitor mRC
-  runProcessor (network rg) eventQueueMsgs (Last mRC)
+  runProcessor eventqueueDefinitions (network rg) (Last mRC)
 
-data Input
-    = RCSpawned ProcessId
-    | Monitoring ProcessMonitorNotification
-    | EventHandled EventId
-    | EventAppeared ProcessId (HAEvent [ByteString])
-
-eventQueueMsgs :: [Match (Msg Input)]
-eventQueueMsgs =
-    [ match (return . userMsg . RCSpawned)
-    , match (return . userMsg . Monitoring)
-    , match (return . userMsg . EventHandled)
-    , match $ \(sid, evt) -> return $ userMsg $ EventAppeared sid evt
-    ]
-
-_RCSpawned :: ComplexEvent s Input ProcessId
-_RCSpawned = onInput $ \case
-    RCSpawned pid -> Just pid
-    _             -> Nothing
-
-_Monitoring :: ComplexEvent s Input ProcessMonitorNotification
-_Monitoring = onInput $ \case
-    Monitoring pmn -> Just pmn
-    _              -> Nothing
-
-_EventHandled :: ComplexEvent s Input EventId
-_EventHandled = onInput $ \case
-    EventHandled eid -> Just eid
-    _                -> Nothing
-
-_EventAppeared :: ComplexEvent s Input (ProcessId, HAEvent [ByteString])
-_EventAppeared = onInput $ \case
-    EventAppeared sid evt -> Just (sid, evt)
-    _                     -> Nothing
+eventqueueDefinitions :: ProcessId                         .+.
+                         ProcessMonitorNotification        .+.
+                         EventId                           .+.
+                         (ProcessId, HAEvent [ByteString]) .+.
+                         Nil
+eventqueueDefinitions = Ask
 
 network :: RGroup g
         => g EventQueue
@@ -158,7 +132,7 @@ network rg = rcSpawned rg     <|>
 rcSpawned :: RGroup g
           => g EventQueue
           -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
-rcSpawned rg = repeatedly go . _RCSpawned
+rcSpawned rg = repeatedly go . decoded
   where
     go _ rc = liftProcess $ do
         _ <- monitor rc
@@ -174,7 +148,7 @@ rcSpawned rg = repeatedly go . _RCSpawned
 processDied :: RGroup g
             => g EventQueue
             -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
-processDied rg = repeatedly go . _Monitoring
+processDied rg = repeatedly go . decoded
   where
     go mRC (ProcessMonitorNotification _ pid reason) = do
         -- Check the identity of the process in case the
@@ -204,9 +178,9 @@ processDied rg = repeatedly go . _Monitoring
 eventHandled :: RGroup g
              => g EventQueue
              -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
-eventHandled rg = repeatedly go . _EventHandled
+eventHandled rg = repeatedly go . decoded
   where
-    go mRC eid = liftProcess $ do
+    go mRC (eid :: EventId) = liftProcess $ do
         updateStateWith rg $ $(mkClosure 'filterEvent) eid
         say "Trim done."
         return mRC
@@ -214,9 +188,9 @@ eventHandled rg = repeatedly go . _EventHandled
 eventAppeared :: RGroup g
               => g EventQueue
               -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
-eventAppeared rg = repeatedly go . _EventAppeared
+eventAppeared rg = repeatedly go . decoded
   where
-    go mRC (sender, ev) = do
+    go mRC ((sender, ev) :: (ProcessId, HAEvent [ByteString])) = do
         liftProcess $ updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
         selfNode <- liftProcess getSelfNode
         case getLast mRC of
