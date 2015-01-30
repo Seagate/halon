@@ -7,10 +7,13 @@
 
 module HA.EventQueue.Consumer
        ( HAEvent(..)
+       , EQEvent
        , expectHAEvent
        , matchHAEvent
        , matchIfHAEvent
        ) where
+
+import Prelude hiding ((.))
 
 import HA.EventQueue.Types
 import Control.Distributed.Process
@@ -19,7 +22,7 @@ import Control.Distributed.Process.Serializable (Serializable, fingerprint)
 import qualified Control.Distributed.Process.Internal.Types as I
     (Message(..), payloadToMessage)
 import Data.Binary (decode)
-
+import Network.CEP hiding (decoded)
 
 -- | Use this function to get the next event sent by the event queue. Vanilla
 -- 'expect' cannot be used due to wrapping of event messages into a value of
@@ -51,3 +54,16 @@ matchIfHAEvent p f =
 -- | Takes the first HA event.
 expectHAEvent :: forall a. Serializable a => Process (HAEvent a)
 expectHAEvent = receiveWait [matchHAEvent return]
+
+data EQEvent a
+
+instance Serializable a => TypeMatch (EQEvent a) where
+    typematch _ = [ matchHAEvent go ]
+      where
+        go (e :: HAEvent a) = do
+            let input =
+                  Input { inputFingerprint = fingerprint (undefined :: HAEvent a)
+                        , inputMsg         = e
+                        }
+
+            return $ Other input

@@ -86,7 +86,6 @@ runRC (eq, args) rGroup = do
 testServiceRestarting :: Transport -> IO ()
 testServiceRestarting transport = do
     withTmpDirectory $ tryWithTimeout transport rt 5000000 $ do
-
         nid <- getSelfNode
         self <- getSelfPid
 
@@ -102,7 +101,7 @@ testServiceRestarting transport = do
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         runRC (eq, IgnitionArguments [nid]) rGroup
 
-        nodeUp ([nid], 1000000)
+        nodeUp ([nid], 2000000)
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest (Node nid) Dummy.dummy
             (Dummy.DummyConf $ Configured "Test 1")
