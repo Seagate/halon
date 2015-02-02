@@ -304,13 +304,13 @@ unpackConfigProtocol :: Serializable a => Config -> (Config, Protocol NodeId (Va
 unpackConfigProtocol Config{..} = (Config{..}, consensusProtocol SerializableDict)
 
 -- | The internal state of a replica.
-data ReplicaState s ref a = ReplicaState
+data ReplicaState s ref a = Serializable ref => ReplicaState
   { -- | The pid of the proposer process.
     stateProposerPid       :: ProcessId
     -- | The pid of the timer process.
   , stateTimerPid          :: ProcessId
     -- | Handle to persist the log.
-  , stateAcidHandle        :: AcidState (Memory a)
+  , stateAcidHandle        :: AcidState (Memory (Value a))
     -- | The time at which the last lease started.
   , stateLeaseStart        :: TimeSpec
     -- | The list of pids of the consensus acceptors.
@@ -337,6 +337,12 @@ data ReplicaState s ref a = ReplicaState
   , stateWatermark         :: DecreeId
     -- | The state yielded by the last executed decree.
   , stateLogState          :: s
+
+  -- from Log {..}
+  , stateLogRestore        :: ref -> Process s
+  , stateLogDump           :: Int -> s -> Process ref
+  , stateLogNextState      :: s -> a -> Process s
+
   } deriving (Typeable)
 
 -- Note [Trimming the log]
@@ -464,6 +470,9 @@ replica Dict
          , stateSnapshotWatermark = w0
          , stateWatermark = w
          , stateLogState = s
+         , stateLogRestore = logRestore
+         , stateLogDump = logDump
+         , stateLogNextState = logNextState
          }
   where
     -- A timer process. When receiving @(pid, t, msg)@, the process waits for
@@ -523,7 +532,10 @@ replica Dict
         , match $ proposer ρ s
         ]
 
-    go st@(ReplicaState ppid timerPid acid leaseStart αs ρs d cd msref w0 w s) =
+    go :: ReplicaState s ref a -> Process b
+    go st@(ReplicaState ppid timerPid acid leaseStart αs ρs d cd msref w0 w s
+                        stLogRestore stLogDump stLogNextState
+          ) =
      do
         self <- getSelfPid
         (_, _, log) <- liftIO $ Acid.query acid MemoryGet
@@ -600,7 +612,7 @@ replica Dict
                         locale == Stored && w <= dᵢ && decreeNumber dᵢ == decreeNumber w) $
                        \(Decree _ dᵢ v) -> case v of
                   Values xs -> do
-                      s' <- foldM logNextState s xs
+                      s' <- foldM stLogNextState s xs
                       let d'  = max d w'
                           cd' = max cd w'
                           w'  = succ w
@@ -625,7 +637,7 @@ replica Dict
                                  removeDirectoryRecursive $
                                    persistDirectory (processNodeId self)
                                    </> "Archive"
-                               sref' <- logDump (decreeNumber w') s'
+                               sref' <- stLogDump (decreeNumber w') s'
                                return (decreeNumber w', Just sref')
                              else
                                return (w0, msref)
@@ -742,7 +754,7 @@ replica Dict
                            _ -> case (requestHint request, requestValue request) of
                              -- Serve nullipotent requests from the local state.
                              (Nullipotent, Values xs) -> do
-                                 s' <- foldM logNextState s xs
+                                 s' <- foldM stLogNextState s xs
                                  usend (requestSender request) ()
                                  return (s', cd)
                              -- Send the other requests to the proposer.
@@ -796,7 +808,7 @@ replica Dict
                      decreeNumber w < w0' then do
                     -- TODO: get the snapshot asynchronously
                     -- TODO: maybe use an uninterruptible mask
-                    mask_ (try $ logRestore sref') >>= \case
+                    mask_ (try $ stLogRestore sref') >>= \case
                      Left (_ :: SomeException) -> go st
                      Right s' -> do
                       let d'  = d { decreeNumber = max w0' (decreeNumber d) }
