@@ -83,7 +83,9 @@ Library
                    mtl,
                    process,
                    binary,
-                   network-transport
+                   network-transport,
+                   unordered-containers,
+                   cep
   if flag(mero)
       Exposed-Modules: Mero.Notification.HAState
                        HA.Resources.Mero
