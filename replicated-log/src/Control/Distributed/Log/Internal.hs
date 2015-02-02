@@ -837,10 +837,12 @@ replica Dict
                       mkLeaseRequest (decreeLegislatureId d) >>= usend self
                       -- Save the current request for later.
                       usend self m
+                      go st
 
                     -- Forward the request to the leader.
                     Just leader | self /= leader -> do
                       usend leader m
+                      go st
 
                     -- I'm the leader, so handle the request.
                     _ -> do
