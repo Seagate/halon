@@ -610,38 +610,35 @@ replica Dict
               -- Execute the decree
             , matchIf (\(Decree locale dᵢ _) ->
                         locale == Stored && w <= dᵢ && decreeNumber dᵢ == decreeNumber w) $
-                       \(Decree _ dᵢ v) -> case v of
+                       \(Decree _ dᵢ v) -> do
+                let maybeTakeSnapshot w' s' = do
+                      takeSnapshot <- snapshotPolicy (decreeNumber w' - w0)
+                      if takeSnapshot then do
+                        say $ "Log size when trimming: " ++ show (Map.size log)
+                        -- First trim the log and only then save the snapshot.
+                        -- This guarantees that if later operation fails the
+                        -- latest membership can still be recovered from disk.
+                        liftIO $ do
+                          -- See note [Trimming the log]
+                          update acid $ MemoryTrim αs ρs w0
+                          createCheckpoint acid
+                          -- This call collects all acid data needed to
+                          -- reconstruct states prior to the last checkpoint.
+                          Acid.createArchive acid
+                          -- And this call removes the collected state.
+                          removeDirectoryRecursive $
+                            persistDirectory (processNodeId self) </> "Archive"
+                        sref' <- stLogDump (decreeNumber w') s'
+                        return (decreeNumber w', Just sref')
+                      else
+                        return (w0, msref)
+                case v of
                   Values xs -> do
                       s' <- foldM stLogNextState s xs
                       let d'  = max d w'
                           cd' = max cd w'
                           w'  = succ w
-                      -- take a snapshot ?
-                      takeSnapshot <- snapshotPolicy (decreeNumber w' - w0)
-                      (w0', msref') <- if takeSnapshot then do
-                               say $ "Log size when trimming: "
-                                     ++ show (Map.size log)
-                               -- First trim the log and only then save the
-                               -- snapshot. This guarantees that if later
-                               -- operation fails the latest membership can
-                               -- still be recovered from disk.
-                               liftIO $ do
-                                 -- See note [Trimming the log]
-                                 update acid $ MemoryTrim αs ρs w0
-                                 createCheckpoint acid
-                                 -- This call collects all acid data needed to
-                                 -- reconstruct states prior to the last
-                                 -- checkpoint.
-                                 Acid.createArchive acid
-                                 -- And this call removes the collected state.
-                                 removeDirectoryRecursive $
-                                   persistDirectory (processNodeId self)
-                                   </> "Archive"
-                               sref' <- stLogDump (decreeNumber w') s'
-                               return (decreeNumber w', Just sref')
-                             else
-                               return (w0, msref)
-
+                      (w0', msref') <- maybeTakeSnapshot w' s'
                       go st{ stateUnconfirmedDecree = d'
                            , stateCurrentDecree     = cd'
                            , stateSnapshotRef       = msref'
@@ -662,6 +659,8 @@ replica Dict
 
                       -- Update the list of acceptors of the proposer...
                       usend ppid αs'
+
+                      (w0', msref') <- maybeTakeSnapshot w' s
 
                       -- Tick.
                       usend self Status
@@ -686,12 +685,18 @@ replica Dict
                            , stateReplicas = ρs'
                            , stateUnconfirmedDecree = d'
                            , stateCurrentDecree = cd'
+                           , stateSnapshotRef       = msref'
+                           , stateSnapshotWatermark = w0'
                            , stateWatermark = w'
                            }
                     | otherwise -> do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
                       say $ "Not executing " ++ show dᵢ
-                      go st{ stateWatermark = w' }
+                      (w0', msref') <- maybeTakeSnapshot w' s
+                      go st{ stateSnapshotRef       = msref'
+                           , stateSnapshotWatermark = w0'
+                           , stateWatermark = w'
+                           }
 
               -- If we get here, it's because there's a gap in the decrees we
               -- have received so far. Compute the gaps and ask the other

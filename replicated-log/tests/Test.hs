@@ -343,8 +343,8 @@ tests args = do
                 say $ show logSizes
                 -- The size of the log should account for medieval and modern
                 -- history. It is possible to have a log slightly bigger because
-                -- leases may introduce a few reconfiguration requests.
-                assert $ all (<= snapshotThreashold * 2 + 2) logSizes
+                -- it may contain decrees not yet executed.
+                assert $ all (<= snapshotThreashold * 3) logSizes
                 say "Log size remains bounded with no reconfigurations."
 
                 node1 <- liftIO $ newLocalNode transport remoteTables
@@ -366,8 +366,8 @@ tests args = do
                 say $ show logSizes'
                 -- The size of the log should account for medieval and modern
                 -- history. It is possible to have a log slightly bigger because
-                -- leases may introduce a few reconfiguration requests.
-                assert $ all (<= snapshotThreashold * 2 + 2)
+                -- it may contain decrees not yet executed.
+                assert $ all (<= snapshotThreashold * 3)
                              (uncurry (++) $ unzip logSizes')
                 say "Log size remains bounded after reconfiguration."
 
