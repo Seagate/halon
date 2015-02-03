@@ -1,0 +1,17 @@
+#!/bin/bash
+
+make
+RC=$?
+# save the exit code in $RC so that
+# we can exit with the same code
+# after extracting any log files.
+
+
+mkdir artifacts
+find . -name test_output | while read dir ; do \
+  target=/halon/artifacts/$(echo $dir | cut --delimiter="/" --fields=2); \
+  mkdir $target; \
+  cp -av $dir $target ; \
+done
+exit $RC
+
