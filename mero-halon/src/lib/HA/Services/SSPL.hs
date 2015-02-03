@@ -12,6 +12,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
+{-# OPTIONS_GHC -fno-warn-unused-binds #-}
+
 module HA.Services.SSPL
   ( sspl
   , ssplProcess
