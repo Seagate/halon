@@ -197,9 +197,10 @@ tests args = do
           , testSuccess "addReplica-start-new-replica" . withTmpDirectory $ setup 1 $ \h _ -> do
                 self <- getSelfPid
                 node1 <- liftIO $ newLocalNode transport remoteTables
-                liftIO $ runProcess node1 $ registerInterceptor $ \string -> case string of
-                    "New replica started in legislature://1" -> usend self ()
-                    _ -> return ()
+                liftIO $ runProcess node1 $ registerInterceptor $ \string ->
+                  if "New replica started in legislature://" `isPrefixOf` string
+                    then usend self ()
+                    else return ()
 
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
