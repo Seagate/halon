@@ -732,8 +732,11 @@ replica Dict
                   go st{ stateCurrentDecree = cd' }
 
               -- Client requests.
-            , matchIf (\_ -> cd == w) $  -- XXX temp fix to avoid proposing
-                                         -- values for unreachable decrees.
+              --
+              -- XXX The guard avoids proposing values for unreachable decrees.
+              -- It also ensures that nullipotent requests can be handled in
+              -- this handler (i.e. they get an up-to-date state).
+            , matchIf (\_ -> cd == w) $
                        \(request :: Request a) -> do
                   mLeader <- liftIO getLeader
                   (s', cd') <- case mLeader of
