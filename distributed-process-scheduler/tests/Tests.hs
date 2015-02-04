@@ -13,6 +13,7 @@ import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Control.Distributed.Process.Trans
 import Control.Exception ( bracket, SomeException, throwIO )
+import qualified Control.Exception as E ( catch )
 import Control.Monad ( when, forM_, replicateM_, forM )
 import Control.Monad ( replicateM )
 import Control.Monad.State ( execStateT, modify, StateT, lift )
@@ -72,7 +73,11 @@ execute :: NT.Transport -> Int -> IO [String]
 execute transport seed = do
       writeIORef traceR []
       n <- newLocalNode transport $ __remoteTable initRemoteTable
-      runProcess' n $ withScheduler [] seed $ do
+      flip E.catch (\e -> do putStr "execute.seed: " >> print seed
+                             readIORef (traceR :: IORef [String]) >>= print
+                             throwIO (e :: SomeException)
+                 ) $
+       runProcess' n $ withScheduler [] seed $ do
         self <- getSelfPid
         s0 <- spawnLocal $ do
           forM_ [0..1::Int] $ \i -> do
@@ -106,7 +111,11 @@ executeChan :: NT.Transport -> Int -> IO [String]
 executeChan transport seed = do
       writeIORef traceR []
       n <- newLocalNode transport $ __remoteTable initRemoteTable
-      runProcess' n $ withScheduler [] seed $ do
+      flip E.catch (\e -> do putStr "executeChan.seed: " >> print seed
+                             readIORef (traceR :: IORef [String]) >>= print
+                             throwIO (e :: SomeException)
+                 ) $
+       runProcess' n $ withScheduler [] seed $ do
         self <- getSelfPid
         (spBack, rpBack) <- newChan
         _ <- spawnLocal $ do
@@ -153,7 +162,11 @@ executeT :: NT.Transport -> Int -> IO [String]
 executeT transport seed = do
       writeIORef traceR []
       n <- newLocalNode transport $ __remoteTable initRemoteTable
-      runProcess' n $ withScheduler [] seed $ do
+      flip E.catch (\e -> do putStr "executeT.seed: " >> print seed
+                             readIORef (traceR :: IORef [String]) >>= print
+                             throwIO (e :: SomeException)
+                 ) $
+       runProcess' n $ withScheduler [] seed $ do
         self <- getSelfPid
         s0 <- spawnLocal $ killOnError self $ do
           2 <- flip execStateT 0 $ do
