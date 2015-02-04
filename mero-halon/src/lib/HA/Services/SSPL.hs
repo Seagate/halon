@@ -41,6 +41,7 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
+import Control.Exception (catch)
 
 import Data.Binary (Binary)
 import qualified Data.ByteString.Lazy.Char8 as BL
@@ -205,40 +206,45 @@ remotableDecl [ [d|
 
   ssplProcess :: SSPLConf -> Process ()
   ssplProcess (SSPLConf{..}) = let
-      host = fromDefault $ scHostname
-      vhost = T.pack . fromDefault $ scVirtualHost
-      exchangeName = T.pack . fromDefault $ scExchangeName
-      queueName = T.pack . fromDefault $ scQueueName
-      routingKey = T.pack . fromDefault $ scRoutingKey
-      un = T.pack scLoginName
-      pw = T.pack scPassword
-      onExit _ Shutdown = say $ "SSPLService stopped."
-      onExit _ Reconfigure = say $ "SSPLService stopping for reconfiguration."
+    host = fromDefault $ scHostname
+    vhost = T.pack . fromDefault $ scVirtualHost
+    exchangeName = T.pack . fromDefault $ scExchangeName
+    queueName = T.pack . fromDefault $ scQueueName
+    routingKey = T.pack . fromDefault $ scRoutingKey
+    un = T.pack scLoginName
+    pw = T.pack scPassword
+    onExit _ Shutdown = say $ "SSPLService stopped."
+    onExit _ Reconfigure = say $ "SSPLService stopping for reconfiguration."
+    connectRetry lChan lock = catch
+      (connectSSPL lChan lock)
+      (\e -> let _ = (e :: AMQPException) in
+        connectRetry lChan lock
+      )
+    connectSSPL lChan lock = do
+      conn <- openConnection host vhost un pw
+      chan <- openChannel conn
+
+      declareExchange chan newExchange
+        { exchangeName = exchangeName
+        , exchangeType = "topic"
+        , exchangeDurable = True
+        }
+      _ <- declareQueue chan newQueue { queueName = queueName }
+      bindQueue chan queueName exchangeName routingKey
+
+      _ <- consumeMsgs chan queueName Ack $ \(message, envelope) -> do
+        writeChan lChan message
+        ackEnv envelope
+
+      () <- takeMVar lock
+      closeConnection conn
+      putStrLn "Connection closed."
     in (`catchExit` onExit) $ do
       say $ "Starting service sspl"
       lChan <- liftIO newChan
       lock <- liftIO newEmptyMVar
       _ <- spawnLocal $ msgHandler lChan
-      _ <- spawnLocal . liftIO $ do
-        conn <- openConnection host vhost un pw
-        chan <- openChannel conn
-
-        declareExchange chan newExchange
-          { exchangeName = exchangeName
-          , exchangeType = "topic"
-          , exchangeDurable = True
-          }
-        _ <- declareQueue chan newQueue { queueName = queueName }
-        bindQueue chan queueName exchangeName routingKey
-
-        _ <- consumeMsgs chan queueName Ack $ \(message, envelope) -> do
-          writeChan lChan message
-          ackEnv envelope
-
-        takeMVar lock
-        closeConnection conn
-        putStrLn "Connection closed."
-
+      _ <- spawnLocal . liftIO $ connectRetry lChan lock
       () <- expect
       liftIO $ putMVar lock ()
       return ()
