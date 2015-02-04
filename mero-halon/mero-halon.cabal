@@ -71,8 +71,10 @@ Library
                    Mero.RemoteTables
                    HA.Network.Transport
                    HA.Services.Mero
+                   HA.Services.SSPL
                    HA.RecoveryCoordinator.Mero
   Build-Depends:   base,
+                   amqp,
                    halon,
                    bytestring,
                    containers,
@@ -81,7 +83,9 @@ Library
                    distributed-static,
                    hashable,
                    mtl,
+                   options-schema,
                    process,
+                   text,
                    binary,
                    network-transport,
                    unordered-containers,
