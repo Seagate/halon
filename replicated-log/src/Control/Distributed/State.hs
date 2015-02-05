@@ -27,8 +27,9 @@ module Control.Distributed.State
        , __remoteTable) where
 
 import qualified Control.Distributed.Log as Log
+import Control.Distributed.Log.Internal (callLocal)
 import Control.Distributed.Log.Snapshot (LogSnapshot(..))
-import Control.Distributed.Process hiding (send)
+import Control.Distributed.Process hiding (send, callLocal)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
     ( closureApply
@@ -65,31 +66,20 @@ instance Eq (Command s) where
 instance Ord (Command s) where
     compare = compare `on` commandId
 
-data Result a = Result
-    { resultId :: CommandId
-    , result :: a
-    } deriving (Generic, Typeable)
-
-instance Binary a => Binary (Result a)
-
 commandEqDict :: Dict (Eq (Command s))
 commandEqDict  = Dict
 
 commandSerializableDict :: Dict (Typeable s) -> SerializableDict (Command s)
 commandSerializableDict Dict = SerializableDict
 
-commandIdSerializableDict :: SerializableDict CommandId
-commandIdSerializableDict = SerializableDict
-
 selectWrapper :: SerializableDict a
               -> ProcessId
-              -> CommandId
               -> (s -> Process a)
               -> s
               -> Process s
-selectWrapper SerializableDict α cid f s = do
+selectWrapper SerializableDict α f s = do
     x <- f s
-    usend α (Result cid x)
+    usend α x
     return s
 
 updateWrapper :: (s -> Process s)
@@ -97,23 +87,18 @@ updateWrapper :: (s -> Process s)
               -> Process s
 updateWrapper = ($)
 
-remotable [ 'commandEqDict, 'commandSerializableDict, 'commandIdSerializableDict
+remotable [ 'commandEqDict, 'commandSerializableDict
           , 'selectWrapper, 'updateWrapper ]
-
-sdictCommandId :: Static (SerializableDict CommandId)
-sdictCommandId = $(mkStatic 'commandIdSerializableDict)
 
 cpSelectWrapper :: (Typeable a, Typeable s)
                 => Static (SerializableDict a)
                 -> ProcessId
-                -> CommandId
                 -> CP s a
                 -> CP s s
-cpSelectWrapper dict α cid f =
+cpSelectWrapper dict α f =
     staticClosure $(mkStatic 'selectWrapper)
       `closureApply` staticClosure dict
       `closureApply` closure (staticDecode sdictProcessId) (encode α)
-      `closureApply` closure (staticDecode sdictCommandId) (encode cid)
       `closureApply` f
 
 cpUpdateWrapper :: Typeable s => CP s s -> CP s s
@@ -155,12 +140,12 @@ select :: (Typeable a, Typeable s)
        -> CommandPort s
        -> CP s a
        -> Process a
-select sdict port@(CommandPort _ h) f = do
+select sdict port@(CommandPort _ h) f = callLocal $ do
     SerializableDict <- unStatic sdict
     self <- getSelfPid
     cid <- nextCommandId port
-    Log.append h Log.Nullipotent $ Command cid $ cpSelectWrapper sdict self cid f
-    receiveWait [ matchIf ((cid ==) . resultId) $ \Result{..} -> return result ]
+    Log.append h Log.Nullipotent $ Command cid $ cpSelectWrapper sdict self f
+    expect
 
 -- | Update the replicated state. The provided closure tells the replicas what
 -- to do to the state at each site.

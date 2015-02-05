@@ -37,6 +37,7 @@ module Control.Distributed.Log.Internal
     , Control.Distributed.Log.Internal.__remoteTableDecl
     , ambassador__tdict -- XXX unused, exported to guard against warning.
       -- * Other
+    , callLocal
     ) where
 
 import Control.Distributed.Log.Messages
