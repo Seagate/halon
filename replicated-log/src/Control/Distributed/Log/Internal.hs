@@ -299,6 +299,25 @@ memoryTrim acceptors replicas w = do
 
 $(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim])
 
+-- | Removes all entries below the given index from the log.
+--
+-- See note [Trimming the log]
+trimTheLog :: Serializable a
+           => AcidState (Memory (Value a))
+           -> FilePath     -- ^ Directory for persistence
+           -> [ProcessId]  -- ^ Acceptors
+           -> [ProcessId]  -- ^ Replicas
+           -> Int          -- ^ Log index
+           -> IO ()
+trimTheLog acid persistDir αs ρs w0 = do
+    update acid $ MemoryTrim αs ρs w0
+    createCheckpoint acid
+    -- This call collects all acid data needed to reconstruct states prior to
+    -- the last checkpoint.
+    Acid.createArchive acid
+    -- And this call removes the collected state.
+    removeDirectoryRecursive $ persistDir </> "Archive"
+
 -- | Small view function for extracting a specialized 'Protocol'. Used in 'replica'.
 unpackConfigProtocol :: Serializable a => Config -> (Config, Protocol NodeId (Value a))
 unpackConfigProtocol Config{..} = (Config{..}, consensusProtocol SerializableDict)
@@ -610,38 +629,27 @@ replica Dict
               -- Execute the decree
             , matchIf (\(Decree locale dᵢ _) ->
                         locale == Stored && w <= dᵢ && decreeNumber dᵢ == decreeNumber w) $
-                       \(Decree _ dᵢ v) -> case v of
+                       \(Decree _ dᵢ v) -> do
+                let maybeTakeSnapshot w' s' = do
+                      takeSnapshot <- snapshotPolicy (decreeNumber w' - w0)
+                      if takeSnapshot then do
+                        say $ "Log size when trimming: " ++ show (Map.size log)
+                        -- First trim the log and only then save the snapshot.
+                        -- This guarantees that if later operation fails the
+                        -- latest membership can still be recovered from disk.
+                        liftIO $ trimTheLog
+                          acid (persistDirectory (processNodeId self)) αs ρs w0
+                        sref' <- stLogDump (decreeNumber w') s'
+                        return (decreeNumber w', Just sref')
+                      else
+                        return (w0, msref)
+                case v of
                   Values xs -> do
                       s' <- foldM stLogNextState s xs
                       let d'  = max d w'
                           cd' = max cd w'
                           w'  = succ w
-                      -- take a snapshot ?
-                      takeSnapshot <- snapshotPolicy (decreeNumber w' - w0)
-                      (w0', msref') <- if takeSnapshot then do
-                               say $ "Log size when trimming: "
-                                     ++ show (Map.size log)
-                               -- First trim the log and only then save the
-                               -- snapshot. This guarantees that if later
-                               -- operation fails the latest membership can
-                               -- still be recovered from disk.
-                               liftIO $ do
-                                 -- See note [Trimming the log]
-                                 update acid $ MemoryTrim αs ρs w0
-                                 createCheckpoint acid
-                                 -- This call collects all acid data needed to
-                                 -- reconstruct states prior to the last
-                                 -- checkpoint.
-                                 Acid.createArchive acid
-                                 -- And this call removes the collected state.
-                                 removeDirectoryRecursive $
-                                   persistDirectory (processNodeId self)
-                                   </> "Archive"
-                               sref' <- stLogDump (decreeNumber w') s'
-                               return (decreeNumber w', Just sref')
-                             else
-                               return (w0, msref)
-
+                      (w0', msref') <- maybeTakeSnapshot w' s'
                       go st{ stateUnconfirmedDecree = d'
                            , stateCurrentDecree     = cd'
                            , stateSnapshotRef       = msref'
@@ -662,6 +670,8 @@ replica Dict
 
                       -- Update the list of acceptors of the proposer...
                       usend ppid αs'
+
+                      (w0', msref') <- maybeTakeSnapshot w' s
 
                       -- Tick.
                       usend self Status
@@ -686,12 +696,18 @@ replica Dict
                            , stateReplicas = ρs'
                            , stateUnconfirmedDecree = d'
                            , stateCurrentDecree = cd'
+                           , stateSnapshotRef       = msref'
+                           , stateSnapshotWatermark = w0'
                            , stateWatermark = w'
                            }
                     | otherwise -> do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
                       say $ "Not executing " ++ show dᵢ
-                      go st{ stateWatermark = w' }
+                      (w0', msref') <- maybeTakeSnapshot w' s
+                      go st{ stateSnapshotRef       = msref'
+                           , stateSnapshotWatermark = w0'
+                           , stateWatermark = w'
+                           }
 
               -- If we get here, it's because there's a gap in the decrees we
               -- have received so far. Compute the gaps and ask the other
@@ -814,6 +830,12 @@ replica Dict
                     mask_ (try $ stLogRestore sref') >>= \case
                      Left (_ :: SomeException) -> go st
                      Right s' -> do
+                      -- Trimming here ensures that the log does not accumulate
+                      -- decrees indefinitely if the state is oftenly restored
+                      -- before saving a snapshot.
+                      liftIO $ trimTheLog
+                        acid (persistDirectory (processNodeId self)) αs' ρs' w0'
+
                       let d'  = d { decreeNumber = max w0' (decreeNumber d) }
                           cd' = cd { decreeNumber = max w0' (decreeNumber cd) }
                           w'  = w { decreeNumber = w0' }
