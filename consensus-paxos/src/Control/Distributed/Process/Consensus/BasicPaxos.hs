@@ -42,20 +42,24 @@ data Done = Done
 
 instance Binary Done
 
--- | Local version of 'call', just as 'spawnLocal' is a local version of
--- 'spawn'. Spinning an action into its own process in this way isolates it
--- from messages that it does not intend to process / makes outdated messages
--- disappear on their own without having to explicitly pluck them out of the
--- mailbox.
+-- XXX pending inclusion of a fix to callLocal upstream.
+-- XXX pending inclusion of a fix to callLocal upstream.
 callLocal :: Process a -> Process a
-callLocal p = do
+callLocal p = mask_ $ do
   mv <-liftIO $ newEmptyMVar
   self <- getSelfPid
-  _ <- spawnLocal $ link self >> try p >>= liftIO . putMVar mv
+  pid <- spawnLocal $ try p >>= liftIO . putMVar mv
                       >> when schedulerIsEnabled (usend self Done)
   when schedulerIsEnabled $ do Done <- expect; return ()
-  liftIO $ takeMVar mv
-    >>= either (throwIO :: SomeException -> IO a) return
+  liftIO (takeMVar mv >>= either (throwIO :: SomeException -> IO a) return)
+    `onException` do
+       -- Exit the worker and wait for it to terminate.
+       bracket (monitor pid) unmonitor $ \ref -> do
+         exit pid "callLocal was interrupted"
+         receiveWait
+           [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
+                     (const $ return ())
+           ]
 
 scout :: forall a. Serializable a =>
          [ProcessId] -> DecreeId -> BallotId ->

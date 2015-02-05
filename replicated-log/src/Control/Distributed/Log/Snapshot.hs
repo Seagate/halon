@@ -10,20 +10,18 @@ module Control.Distributed.Log.Snapshot
     ) where
 
 import Control.Arrow (second)
-import Control.Concurrent.MVar
 import Control.Distributed.Process hiding (callLocal, send)
-import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
+import Control.Distributed.Log.Internal (callLocal)
 import Control.Distributed.Process.Serializable
-import Control.Exception (SomeException, throwIO, Exception)
+import Control.Exception (throwIO, Exception)
 import qualified Control.Exception as E (bracket)
-import Control.Monad (forever, when)
+import Control.Monad (forever)
 import Control.Monad.Reader (ask)
 import Control.Monad.State (put)
 import Data.Acid
-import Data.Binary (encode, decode, Binary)
+import Data.Binary (encode, decode)
 import Data.SafeCopy
 import Data.Typeable
-import GHC.Generics (Generic)
 import System.Directory (removeDirectoryRecursive)
 import System.FilePath ((</>))
 
@@ -197,20 +195,3 @@ serializableSnapshotServer serverLbl snapshotDirectory s0 = do
                        (SerializableSnapshot 0 (SafeCopyFromBinary s0))
                   )
                   closeAcidState
-
--- | An internal type used only by 'callLocal'.
-data Done = Done
-  deriving (Typeable,Generic)
-
-instance Binary Done
-
--- XXX pending inclusion upstream.
-callLocal :: Process a -> Process a
-callLocal p = do
-  mv <-liftIO $ newEmptyMVar
-  self <- getSelfPid
-  _ <- spawnLocal $ link self >> try p >>= liftIO . putMVar mv
-                      >> when schedulerIsEnabled (usend self Done)
-  when schedulerIsEnabled $ do Done <- expect; return ()
-  liftIO $ takeMVar mv
-    >>= either (throwIO :: SomeException -> IO a) return

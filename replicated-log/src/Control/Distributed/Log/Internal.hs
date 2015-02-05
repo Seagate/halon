@@ -95,16 +95,23 @@ data Done = Done
 
 instance Binary Done
 
--- XXX pending inclusion upstream.
+-- XXX pending inclusion of a fix to callLocal upstream.
 callLocal :: Process a -> Process a
-callLocal p = do
+callLocal p = mask_ $ do
   mv <-liftIO $ newEmptyMVar
   self <- getSelfPid
-  _ <- spawnLocal $ link self >> try p >>= liftIO . putMVar mv
+  pid <- spawnLocal $ try p >>= liftIO . putMVar mv
                       >> when schedulerIsEnabled (usend self Done)
   when schedulerIsEnabled $ do Done <- expect; return ()
-  liftIO $ takeMVar mv
-    >>= either (throwIO :: SomeException -> IO a) return
+  liftIO (takeMVar mv >>= either (throwIO :: SomeException -> IO a) return)
+    `onException` do
+       -- Exit the worker and wait for it to terminate.
+       bracket (monitor pid) unmonitor $ \ref -> do
+         exit pid "callLocal was interrupted"
+         receiveWait
+           [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
+                     (const $ return ())
+           ]
 
 -- | Find the gaps in a partial sequence such that, if the partial sequence and
 -- the gaps were sorted, the resulting list would form a contiguous sequence.
