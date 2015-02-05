@@ -241,9 +241,9 @@ instance RGroup RLogGroup where
       RLogGroup ($(mkStatic 'rvDict) `staticApply` rv) sdq q0 h port $
                 $(mkStatic 'composeSV) `staticApply` rv' `staticApply` rv
 
+#if ! MIN_VERSION_base(4,7,0)
 -- | The sole purpose of this type is to provide a typeable instance from
 -- which to extract the package and the module name.
-#if ! MIN_VERSION_base(4,7,0)
 data T = T
  deriving Typeable
 
