@@ -98,20 +98,26 @@ serializableSnapshot serverLbl s0 = LogSnapshot
           self <- getSelfPid
           pid <- getSnapshotServer $ Just nid
           usend pid (self, i)
-          expectFrom pid >>=
-            maybe (liftIO $ throwIO (NoSnapshot (nid, i)))
-                  return
+          s <- expectFrom pid >>=
+                 maybe (liftIO $ throwIO (NoSnapshot (nid, i)))
+                       return
+          -- Dump the snapshot locally so it is available at a
+          -- later time.
+          _ <- apiLogSnapshotDump i s
+          return s
 
-    , logSnapshotDump = \i s -> callLocal $ do
-          self <- getSelfPid
-          here <- getSelfNode
-          pid <- getSnapshotServer Nothing
-          usend pid (self, (i, s))
-          () <- expectFrom pid
-          return (here, i)
+    , logSnapshotDump = apiLogSnapshotDump
     }
 
   where
+
+    apiLogSnapshotDump i s = callLocal $ do
+        self <- getSelfPid
+        here <- getSelfNode
+        pid <- getSnapshotServer Nothing
+        usend pid (self, (i, s))
+        () <- expectFrom pid
+        return (here, i)
 
     -- Retrieves the ProcessId of the snapshot server on a given node.
     --

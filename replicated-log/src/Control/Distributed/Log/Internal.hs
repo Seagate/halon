@@ -145,14 +145,19 @@ data Log a = forall s ref. Serializable ref => Log
     { -- | Yields the initial value of the log.
       logInitialize :: Process s
 
-      -- | Yields the list of available snapshots.
+      -- | Yields the list of references of available snapshots.
+      -- Each reference is accompanied with the next log index to execute.
       --
       -- On each node this function could return different results.
+      --
     , logGetAvailableSnapshots :: Process [(Int, ref)]
 
       -- | Yields the snapshot identified by ref.
       --
       -- If the snapshot cannot be retrieved an exception is thrown.
+      --
+      -- After a succesful call, the snapshot returned or a newer snapshot must
+      -- appear listed by @logGetAvailableSnapshots@.
       --
     , logRestore :: ref -> Process s
 
@@ -160,6 +165,9 @@ data Log a = forall s ref. Serializable ref => Log
       --
       -- Returns a reference which any replica can use to get the snapshot
       -- with 'logRestore'.
+      --
+      -- After a succesful call, the dumped snapshot or a newer snapshot must
+      -- appear listed in @logGetAvailableSnapshots@.
       --
     , logDump :: Int -> s -> Process ref
 
