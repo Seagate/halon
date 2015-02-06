@@ -103,11 +103,11 @@ remotable [ 'setLeader ]
 millis :: Int
 millis = 1000
 
--- | Amount of milliseconds to wait before renewing a lease.
+-- | Amount of microseconds to wait before renewing a lease
 updatePeriod :: Int
 updatePeriod = 750 * millis
 
--- | Amount of milliseconds to wait before polling the state.
+-- | Amount of microseconds to wait before polling the state
 pollingPeriod :: Int
 pollingPeriod = 1000 * millis
 
