@@ -80,7 +80,7 @@ import Data.Constraint ( Dict(..) )
 
 import Prelude hiding (null)
 import Control.Arrow ( (***) )
-import Control.Monad ( liftM3 )
+import Control.Monad ( join, liftM3 )
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary(..), decode, encode )
 import Data.Binary.Get ( runGetOrFail )
@@ -93,6 +93,7 @@ import qualified Data.HashMap.Strict as M
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as S
 import Data.Hashable
+import Data.List ((\\), foldl', intersect)
 import Data.Maybe
 import Data.Typeable ( Typeable, cast )
 import Data.Word (Word8)
@@ -272,7 +273,7 @@ disconnect x r y g =
                          ]
             : grChangeLog g
       , grGraph = M.adjust (S.delete $ OutRel r x y) (Res x)
-                . M.adjust (S.delete $ InRel r x y) (Res x)
+                . M.adjust (S.delete $ InRel r x y) (Res y)
                 $ grGraph g
       }
 
@@ -281,7 +282,35 @@ disconnect x r y g =
 -- longer participating in the graph since they are not connected to the rest
 -- and can hence safely be discarded.
 garbageCollect :: Resource a => [a] -> Graph -> Graph
-garbageCollect = undefined
+garbageCollect rootSet g@Graph{..} = go [] initWhite initGrey
+  where
+    initWhite = M.keys grGraph \\ initGrey
+    initGrey = map Res rootSet
+    go _ white [] = g {
+        grChangeLog = (DeleteKeys (map encodeRes white))
+                    : (DeleteValues (map trimRelLog deadRels))
+                    : grChangeLog
+      , grGraph = foldl' (flip (.)) id adjustments grGraph
+    } where
+      adjustments = (map M.delete white) ++ (map trimRel deadRels)
+      trimRel r@(OutRel _ x _) = M.adjust (S.delete r) (Res x)
+      trimRel r@(InRel _ _ y) = M.adjust (S.delete r) (Res y)
+      trimRelLog r@(OutRel _ x _) = (encodeRes (Res x), [ encodeRel r])
+      trimRelLog r@(InRel _ _ y) = (encodeRes (Res y), [ encodeRel r])
+      deadRels = join . catMaybes $ map (\x ->
+                    fmap (map flipRel . S.toList) $ M.lookup x grGraph
+                  ) white
+      flipRel (InRel r x y) = (OutRel r x y)
+      flipRel (OutRel r x y) = (InRel r x y)
+
+    go black white (greyHead : grey) = go black' white' grey' where
+      black' = greyHead : black
+      white' = white \\ newGrey
+      grey' = grey ++ newGrey
+      newGrey = white `intersect` (maybe [] (map f . S.toList)
+                                    $ M.lookup (greyHead) $ grGraph)
+      f (OutRel _ _ y) = Res y
+      f (InRel _ x _) =  Res x
 
 -- | List of all edges of a given relation stemming from the provided source
 -- resource to destination resources of the given type.
