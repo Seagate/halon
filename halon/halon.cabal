@@ -73,6 +73,7 @@ Library
                    HA.Services.Noisy
                    HA.Services.OCF
                    HA.Startup
+                   HA.System.Timeout
                    Control.SpineSeq
   Build-Depends:   base,
                    binary >= 0.6,

@@ -16,6 +16,7 @@ import HA.Multimap (Key, Value, StoreUpdate(..))
 import HA.Multimap.Implementation
             ( Multimap, insertMany, deleteValues, deleteKeys, toList )
 import HA.Replicator ( RGroup, updateStateWith, getState )
+import HA.System.Timeout ( retry )
 
 import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Closure ( mkClosure, remotable )
@@ -35,6 +36,11 @@ updateStore = flip $ foldl' $ flip applyUpdate
 
 remotable [ 'updateStore ]
 
+-- | Amount of microseconds between retries of requests for the replicated
+-- state
+requestTimeout :: Int
+requestTimeout = 1000 * 1000
+
 -- | Starts a loop which listens for incoming rpc calls
 -- to query and modify the 'Multimap' in the replicated state.
 multimap :: RGroup g => g Multimap -> Process ()
@@ -42,13 +48,15 @@ multimap rg = go
   where
     go = receiveWait
         [ match $ \(caller, upds) -> do
-              updateStateWith rg $ $(mkClosure 'updateStore) (upds :: [StoreUpdate])
+              retry requestTimeout $
+                updateStateWith rg $
+                  $(mkClosure 'updateStore) (upds :: [StoreUpdate])
               usend caller (Just ())
             `catch` \e -> do
               usend caller (Nothing :: Maybe ())
               say ("MM: Writing failed: " ++ show (e :: SomeException))
         , match $ \(caller, ()) -> do
-              kvs <- fmap toList $ getState rg
+              kvs <- fmap toList $ retry requestTimeout $ getState rg
               usend caller (Just kvs)
             `catch` \e -> do
               usend caller (Nothing :: Maybe [(Key,[Value])])

@@ -66,6 +66,7 @@ module HA.RecoverySupervisor
     ) where
 
 import HA.Replicator ( RGroup, updateStateWith, getState )
+import HA.System.Timeout ( retry, timeout )
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
@@ -111,7 +112,8 @@ recoverySupervisor :: RGroup g
                          -- coordinator: It must return immediately yielding
                          -- the pid of the RC.
                    -> Process ()
-recoverySupervisor rg leaderLease rcP = getState rg >>= go Nothing
+recoverySupervisor rg leaderLease rcP =
+    retry pollingPeriod (getState rg) >>= go Nothing
   where
     -- We make the polling period is slightly bigger than the lease.
     pollingPeriod = leaderLease * 11 `div` 10
@@ -171,9 +173,10 @@ recoverySupervisor rg leaderLease rcP = getState rg >>= go Nothing
     -- | Updates the state proposing the current process as leader if
     -- there has not been updates since the state was last observed.
     rsUpdate self rst = do
-      updateStateWith rg $
+      void $ timeout pollingPeriod $
+        updateStateWith rg $
           $(mkClosure 'setLeader) (self,rsLeaseCount rst)
-      getState rg
+      retry pollingPeriod $ getState rg
 
     -- | Yields @True@ iff a notification about RC death has arrived.
     rcHasDied rc = do

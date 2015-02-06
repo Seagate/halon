@@ -41,6 +41,7 @@ import GHC.Generics
 import HA.EventQueue.Consumer
 import HA.EventQueue.Types
 import HA.Replicator ( RGroup, updateStateWith, getState)
+import HA.System.Timeout ( retry )
 import Control.SpineSeq (spineSeq)
 import FRP.Netwire hiding (Last(..), when)
 
@@ -91,6 +92,11 @@ remotable [ 'addSerializedEvent
           , 'filterEvent
           ]
 
+-- | Amount of microseconds between retries of requests for the replicated
+-- state
+requestTimeout :: Int
+requestTimeout = 1000 * 1000
+
 -- | @eventQueue rg@ starts an event queue. @rg@ is the replicator group used to
 -- store the events until RC handles them.
 --
@@ -106,7 +112,7 @@ eventQueue rg = do
   self <- getSelfPid
   register eventQueueLabel self
 
-  (mRC,_) <- getState rg
+  (mRC,_) <- retry requestTimeout $ getState rg
 
   -- The EQ must monitor the RC or it will never realize when the RC stops
   -- responding and won't ever care of checking the replicated state to learn
@@ -138,10 +144,11 @@ rcSpawned rg = repeatedly go . decoded
     go _ rc = liftProcess $ do
         _ <- monitor rc
         -- Record in the replicated state that there is a new RC.
-        updateStateWith rg $ $(mkClosure 'setRC) $ Just rc
+        retry requestTimeout $
+          updateStateWith rg $ $(mkClosure 'setRC) $ Just rc
         -- Send the pending events to the new RC.
         self <- getSelfPid
-        (_, pendingEvents) <- getState rg
+        (_, pendingEvents) <- retry requestTimeout $ getState rg
         for_ (reverse pendingEvents) $ \ev ->
           usend rc ev{eventHops = self : eventHops ev}
         return $ Last $ Just rc
@@ -170,7 +177,8 @@ processDied rg = repeatedly go . decoded
                 let upd = (getLast mRC, Nothing :: Maybe ProcessId)
 
                 liftProcess $
-                  updateStateWith rg $ $(mkClosure 'compareAndSwapRC) upd
+                  retry requestTimeout $
+                    updateStateWith rg $ $(mkClosure 'compareAndSwapRC) upd
                 publish RCDied
                 return $ Last Nothing
            else return mRC
@@ -182,7 +190,8 @@ eventHandled :: RGroup g
 eventHandled rg = repeatedly go . decoded
   where
     go mRC (eid :: EventId) = liftProcess $ do
-        updateStateWith rg $ $(mkClosure 'filterEvent) eid
+        retry requestTimeout $
+          updateStateWith rg $ $(mkClosure 'filterEvent) eid
         say "Trim done."
         return mRC
 
@@ -192,7 +201,9 @@ eventAppeared :: RGroup g
 eventAppeared rg = repeatedly go . decoded
   where
     go mRC ((sender, ev) :: (ProcessId, HAEvent [ByteString])) = do
-        liftProcess $ updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+        liftProcess $
+          retry requestTimeout $
+            updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
         selfNode <- liftProcess getSelfNode
         case getLast mRC of
           -- I know where the RC is.
@@ -203,7 +214,7 @@ eventAppeared rg = repeatedly go . decoded
           -- I don't know where the RC is.
           Nothing -> do
             -- See if we can learn it by looking at the replicated state.
-            (newMRC, _) <- liftProcess $ getState rg
+            (newMRC, _) <- liftProcess $ retry requestTimeout $ getState rg
             liftProcess $ do
               case newMRC of
                 Just rc -> do
