@@ -52,7 +52,7 @@ callLocal p = do
   mv <-liftIO $ newEmptyMVar
   self <- getSelfPid
   _ <- spawnLocal $ link self >> try p >>= liftIO . putMVar mv
-                      >> when schedulerIsEnabled (send self Done)
+                      >> when schedulerIsEnabled (usend self Done)
   when schedulerIsEnabled $ do Done <- expect; return ()
   liftIO $ takeMVar mv
     >>= either (throwIO :: SomeException -> IO a) return

@@ -125,21 +125,21 @@ acceptor _ file name = do
                   if b <= Value b'
                   then do
                       acks <- map unS <$> liftIO (query acid ToList)
-                      send λ $ Msg.Promise b' self $ take 1 $
+                      usend λ $ Msg.Promise b' self $ take 1 $
                           filter (\(Msg.Ack d' _ _ _) -> d==d') acks
                       loop acid (Value b')
                   else do
-                      send λ $ Msg.Nack $ fromValue b
+                      usend λ $ Msg.Nack $ fromValue b
                       loop acid b
               , match $ \(Msg.Syn d b' λ x) -> do
                   if b <= Value b'
                   then do
                       let ack = Msg.Ack d b' self (x :: a)
                       _ <- liftIO $ update acid $ Insert $ S ack
-                      send λ ack
+                      usend λ ack
                       loop acid (Value b')
                   else do
-                      send λ $ Msg.Nack $ fromValue b
+                      usend λ $ Msg.Nack $ fromValue b
                       loop acid b ]
 
 {-*promela
