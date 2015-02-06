@@ -22,7 +22,7 @@ import Control.Monad (forM_)
 expectQuorum :: Serializable a =>
                 [Match (Either e b)] -> [ProcessId] -> a -> Process (Either e [b])
 expectQuorum clauses them msg = do
-  forM_ them $ \α -> send α msg
+  forM_ them $ \α -> usend α msg
   runEitherT (wait 0 [])
   where quorum = length them `div` 2 + 1
         wait n resps
