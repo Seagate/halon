@@ -67,11 +67,7 @@ module HA.RecoverySupervisor
 
 import HA.Replicator ( RGroup, updateStateWith, getState )
 
-import Control.Distributed.Process ( Process, ProcessId, liftIO, spawnLocal
-                                   , getSelfPid, exit, monitor, link
-                                   , ProcessMonitorNotification(..)
-                                   , match, receiveTimeout, say
-                                   )
+import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 
 import Control.Concurrent ( newMVar, takeMVar, putMVar, readMVar, newEmptyMVar )
@@ -133,9 +129,14 @@ recoverySupervisor rg rcP = getState rg >>= go Nothing
     go (Just rc) previousState = do
       timer <- newTimer updatePeriod $ do
         say "RS: lease expired, so killing RC ..."
-        -- TODO: ticket #394. Block until RC actually dies.
-        -- Otherwise, a new RC may start before the old one quits.
         exit rc "quorum lost"
+        -- Block until RC actually dies. Otherwise, a new RC may start before
+        -- the old one quits.
+        void $ monitor rc
+        receiveWait
+            [ matchIf (\(ProcessMonitorNotification _ pid _) -> pid == rc)
+                      (const $ return ())
+            ]
       self <- getSelfPid
       rstNew <- rsUpdate self previousState
       canceled <- waitAndCancel timer
