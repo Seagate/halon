@@ -73,6 +73,7 @@ import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Concurrent ( newMVar, takeMVar, putMVar, readMVar, newEmptyMVar )
 import Control.Monad ( when, void )
 import Data.Binary ( Binary )
+import Data.Time ( getCurrentTime, diffUTCTime )
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
 
@@ -210,41 +211,58 @@ data Timer = Timer { cancel :: Process Bool, waitAndCancel :: Process Bool }
 
 -- | @timer <- newTimer timeout action@ performs @action@ after waiting
 -- @timeout@ microseconds.
---
--- TODO: ticket #395. The timer may fire arbitrarily late! So it is possible
--- canceling actions after the time period has expired. To avoid this, @cancel@
--- and @waitCancel@ should read the clock and verify that the timeout period has
--- not passed.
 newTimer :: Int -> Process a -> Process Timer
 newTimer timeoutPeriod action = do
   mv <- liftIO $ newMVar Nothing -- @Nothing@ if action was canceled or not
                                  -- performed, otherwise @Just canceled@
-  mdone <- liftIO $ newEmptyMVar -- @()@ iff action was canceled
+  mdone <- liftIO newEmptyMVar   -- @()@ iff action completed or was canceled
   self <- getSelfPid
+  -- Since the timer may fire arbitrarily late, we should prevent the user from
+  -- canceling the action after the time period has expired. To avoid this,
+  -- @cancel@ and @waitCancel@ read the clock and verify that the timeout period
+  -- has not passed.
+  t0 <- liftIO $ getCurrentTime
   pid <- spawnLocal $ do
       link self
       void $ receiveTimeout timeoutPeriod []
       canceled <- liftIO $ takeMVar mv
       case canceled of
         Nothing -> do void $ action
+                      liftIO $ putMVar mdone ()
                       liftIO $ putMVar mv $ Just False
         Just _ -> liftIO $ putMVar mdone () >> putMVar mv canceled
   let cancelCall = do
         canceled <- liftIO $ takeMVar mv
         case canceled of
-          Nothing -> do exit pid "RecoverySupervisor.timer: canceled"
-                        liftIO $ putMVar mv $ Just True
-                        return True
+          Nothing -> do
+            tf <- liftIO $ getCurrentTime
+            if floor (diffUTCTime tf t0 * 1000000) >= timeoutPeriod
+            then liftIO $ do -- don't cancel if the timer period expired
+                   putMVar mv Nothing
+                   -- wait for the timer process to complete
+                   readMVar mdone
+                   return False
+            else do exit pid "RecoverySupervisor.timer: canceled"
+                    liftIO $ putMVar mv $ Just True
+                    return True
           Just c -> do liftIO $ putMVar mv canceled
                        return c
-  let waitAndCancelCall = do
-        canceled <- liftIO $ takeMVar mv
+  let waitAndCancelCall = liftIO $ do
+        canceled <- takeMVar mv
         case canceled of
-          Nothing -> do liftIO $ putMVar mv $ Just True
-                        -- wait for timer process to acknowledge
-                        liftIO $ readMVar mdone
-                        return True
-          Just c -> do liftIO $ putMVar mv canceled
+          Nothing -> do
+            tf <- getCurrentTime
+            if floor (diffUTCTime tf t0 * 1000000) >= timeoutPeriod
+            then do -- don't cancel if the timer period expired
+                    putMVar mv Nothing
+                    -- wait for the timer process to complete
+                    readMVar mdone
+                    return False
+            else do putMVar mv $ Just True
+                    -- wait for the timer process to acknowledge
+                    readMVar mdone
+                    return True
+          Just c -> do putMVar mv canceled
                        return c
   return $ Timer { cancel = cancelCall
                  , waitAndCancel = waitAndCancelCall

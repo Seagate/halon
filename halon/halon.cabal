@@ -93,6 +93,7 @@ Library
                    mtl >= 2.0,
                    process >= 1.1,
                    replicated-log,
+                   time >= 1.4.2,
                    unordered-containers,
                    network-transport,
                    options-schema >= 0.1.1.0,
