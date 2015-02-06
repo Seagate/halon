@@ -11,7 +11,7 @@ module Control.Distributed.Log.Snapshot
 
 import Control.Arrow (second)
 import Control.Concurrent.MVar
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Control.Distributed.Process.Serializable
 import Control.Exception (SomeException, throwIO, Exception)
@@ -89,7 +89,7 @@ serializableSnapshot serverLbl s0 = LogSnapshot
           self <- getSelfPid
           here <- getSelfNode
           pid <- getSnapshotServer Nothing
-          send pid self
+          usend pid self
           expectFrom pid >>=
             maybe (return [])
                   (\i -> return [(i, (here, i))])
@@ -97,7 +97,7 @@ serializableSnapshot serverLbl s0 = LogSnapshot
     , logSnapshotRestore = \(nid, i) -> callLocal $ do
           self <- getSelfPid
           pid <- getSnapshotServer $ Just nid
-          send pid (self, i)
+          usend pid (self, i)
           expectFrom pid >>=
             maybe (liftIO $ throwIO (NoSnapshot (nid, i)))
                   return
@@ -106,7 +106,7 @@ serializableSnapshot serverLbl s0 = LogSnapshot
           self <- getSelfPid
           here <- getSelfNode
           pid <- getSnapshotServer Nothing
-          send pid (self, (i, s))
+          usend pid (self, (i, s))
           () <- expectFrom pid
           return (here, i)
     }
@@ -160,12 +160,12 @@ serializableSnapshotServer serverLbl snapshotDirectory s0 = do
     pid <- spawnLocal $ forever $ receiveWait
         [ match $ \pid -> do
             i <- liftIO (withSnapshotAcidState here $ flip query ReadLogIndex)
-            send pid $ Just (i :: Int)
+            usend pid $ Just (i :: Int)
 
         , match $ \(pid, i) -> do
             (i', s) <- liftIO $ withSnapshotAcidState here $ \acid ->
               fmap (second binaryFromSafeCopy) $ query acid ReadSnapshot
-            send pid (if i == i' then Just s else Nothing)
+            usend pid (if i == i' then Just s else Nothing)
 
         , match $ \(pid, (i, s)) -> do
             liftIO $ withSnapshotAcidState here $ \acid -> do
@@ -174,7 +174,7 @@ serializableSnapshotServer serverLbl snapshotDirectory s0 = do
               createArchive acid
               removeDirectoryRecursive $ snapshotDirectory here
                                          </> "Archive"
-            send pid ()
+            usend pid ()
         ]
     register serverLbl pid
     return pid
@@ -203,7 +203,7 @@ callLocal p = do
   mv <-liftIO $ newEmptyMVar
   self <- getSelfPid
   _ <- spawnLocal $ link self >> try p >>= liftIO . putMVar mv
-                      >> when schedulerIsEnabled (send self Done)
+                      >> when schedulerIsEnabled (usend self Done)
   when schedulerIsEnabled $ do Done <- expect; return ()
   liftIO $ takeMVar mv
     >>= either (throwIO :: SomeException -> IO a) return
