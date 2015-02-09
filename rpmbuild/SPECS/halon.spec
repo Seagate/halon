@@ -1,79 +1,38 @@
-%define        __spec_install_post %{nil}
-%define          debug_package %{nil}
-%define        __os_install_post %{_dbpath}/brp-compress
-Summary: HA demo
+Summary: halon
 Name: halon
-Version: 6.0
+Version: 0.1
 Release: 1
 License: All rights reserved
 Group: Development/Tools
-SOURCE0 : %{name}.tar.gz
+SOURCE0: halond
+SOURCE1: halonctl
 URL: http://www.xyratex.com/
-Packager: Jeff Epstein <v-jeff_epstein@xyratex.com>
+Packager: Ben Clifford <ben.clifford@tweag.io>
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
-Conflicts: halon-build <= 1.0, halon-rpc <= 1.0
-
-%define bintargets halon/mero-halon/dist/build/halond/halond \\\
-halon/mero-halon/dist/build/halonctl/halonctl \\\
-halon/mero-halon/scripts/halon \\\
-halon/mero-halon/scripts/mero_call \\\
-halon/mero-halon/scripts/query.inc \\\
-halon/mero-halon/scripts/mkgenders
-
-%define sharetargets halon/mero-halon/dist/build/unit-tests/unit-tests \\\
-halon/mero-halon/dist/build/integration-tests/integration-tests \\\
-halon/halon/dist/build/unit-tests/unit-tests \\\
-halon/halon/dist/build/integration-tests/integration-tests
 
 %description
 %{summary}
 
 %prep
 rm -rf $RPM_BUILD_DIR/halon
-zcat $RPM_SOURCE_DIR/halon.tar.gz | tar -xf -
+mkdir halon
+cp $RPM_SOURCE_DIR/halonctl $RPM_BUILD_DIR/halon
+cp $RPM_SOURCE_DIR/halond $RPM_BUILD_DIR/halon
 
 %build
-make LANG=$HA_BUILD_LANG ROOT_DIR=../../.. -e -C halon DEBUG=t dep
-make LANG=$HA_BUILD_LANG -C halon -e DEBUG=t install
+echo No build - this is a binary only release
 
 %install
 rm -rf %{buildroot}
 # in builddir
 mkdir -p %{buildroot}/usr/bin
-mkdir -p %{buildroot}/usr/share/halon/tests
-cp -a %{bintargets} %{buildroot}/usr/bin
-for fname in %{sharetargets};
-do
-  cp -a $fname %{buildroot}/usr/share/halon/tests/$( echo $fname | cut -d / -f 2 )-$(basename ${fname})
-done
+cp -a $RPM_BUILD_DIR/halon/* %{buildroot}/usr/bin
 
 %clean
 rm -rf %{buildroot}
 
 %files
 %defattr(-,root,root,-)
-# %config(noreplace) %{_sysconfdir}/%{name}/%{name}.conf
-%{_bindir}/*
-/usr/bin/halon
 /usr/bin/halond
 /usr/bin/halonctl
-/usr/bin/mero_call
-/usr/bin/query.inc
-/usr/bin/mkgenders
-/usr/share/halon/tests/*
 
-%changelog
-* Fri Jul 31 2013 Jeff Epstein <v-jeff_epstein@xyratex.com> 6.0-1
-- Sprint 9 build.
-* Fri Jun 28 2013 Jeff Epstein <v-jeff_epstein@xyratex.com> 5.0-1
-- Sprint 8 build.
-* Fri May 31 2013 Vladimir Komendantsky <vladimir.komendantsky@parsci.com> 4.0-1
-- Sprint 7 build.
-* Wed May 1 2013 Vladimir Komendantsky <vladimir.komendantsky@parsci.com> 3.0-2
-- Updated usage info in the halon script.
-* Wed May 1 2013 Vladimir Komendantsky <vladimir.komendantsky@parsci.com> 3.0-1
-- Sprint 6 RPM build.
-* Thu Mar 28 2013 Vladimir Komendantsky <vladimir.komendantsky@parsci.com> 2.0-1
-- Sprint 5 RPM build. The package is renamed from halon-rpc to halon.
-* Fri Feb 22 2013 Vitalii Skakun <vitalii.skakun@parsci.com> 1.0-1
-- Sprint 4 RPM build.

@@ -1,0 +1,12 @@
+To build an RPM:
+
+  make rpm
+
+in the halon toplevel directory.
+
+This will build and test halon as usual and thne
+use the created binaries to make an RPM.
+
+The built RPM will be in rpmbuild/RPMS/x86_64/halon-0.1-1.x86_64.rpm
+(or similar)
+

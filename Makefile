@@ -169,21 +169,13 @@ freeze:
 	(cd mero-halon; cabal freeze --reorder-goals)
 	mv mero-halon/cabal.config cabal.config
 
-# This target will generate distributable packages based on the
-# checked-in master branch of this repository. It will generate
-# a binary RPM in ./rpmbuild/RPMS/x86_64 and a source tar in
-# ./rpmbuild/SOURCES
-.PHONY: rpm-checkout rpm-build
-rpm:
-ifeq ($(shell locale -a | grep -Fixc "$(HA_BUILD_LANG)"), 0)
-		$(error $(HA_BUILD_LANG) not present; please set HA_BUILD_LANG to an appropriate locale.)
-endif
-	echo "%_topdir   $(RPMROOT)" > ~/.rpmmacros
-	echo "%_tmppath  %{_topdir}/tmp" >> ~/.rpmmacros
-	mkdir -p $(RPMROOT)/SOURCES
-	(cd $(RPMROOT)/SOURCES && \
-	 rm -rf halon halon.tar.gz && \
-         git clone --branch $(RPMBRANCH) ../.. halon && \
-         tar --exclude-vcs -czf halon.tar.gz halon)
-	(cd $(RPMROOT)/SPECS && \
-        HA_BUILD_LANG=$(HA_BUILD_LANG) rpmbuild -ba halon.spec)
+# This target will generate a distributable RPM based on the
+# current checkout.
+# It will generate a binary RPM in ./rpmbuild/RPMS/x86_64 
+# and a pseudo-source tar in ./rpmbuild/SRPMS
+rpm: build
+	mkdir -p rpmbuild/SOURCES
+	cp .cabal-sandbox/bin/halond rpmbuild/SOURCES/
+	cp .cabal-sandbox/bin/halonctl rpmbuild/SOURCES/
+	rpmbuild --define "_topdir ${PWD}/rpmbuild" -ba rpmbuild/SPECS/halon.spec
+
