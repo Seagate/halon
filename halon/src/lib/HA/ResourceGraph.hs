@@ -80,7 +80,7 @@ import Data.Constraint ( Dict(..) )
 
 import Prelude hiding (null)
 import Control.Arrow ( (***) )
-import Control.Monad ( join, liftM3 )
+import Control.Monad ( liftM3 )
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary(..), decode, encode )
 import Data.Binary.Get ( runGetOrFail )
@@ -288,20 +288,10 @@ garbageCollect rootSet g@Graph{..} = go [] initWhite initGrey
     initGrey = map Res rootSet
     go _ white [] = g {
         grChangeLog = (DeleteKeys (map encodeRes white))
-                    : (DeleteValues (map trimRelLog deadRels))
                     : grChangeLog
       , grGraph = foldl' (flip (.)) id adjustments grGraph
     } where
-      adjustments = (map M.delete white) ++ (map trimRel deadRels)
-      trimRel r@(OutRel _ x _) = M.adjust (S.delete r) (Res x)
-      trimRel r@(InRel _ _ y) = M.adjust (S.delete r) (Res y)
-      trimRelLog r@(OutRel _ x _) = (encodeRes (Res x), [ encodeRel r])
-      trimRelLog r@(InRel _ _ y) = (encodeRes (Res y), [ encodeRel r])
-      deadRels = join . catMaybes $ map (\x ->
-                    fmap (map flipRel . S.toList) $ M.lookup x grGraph
-                  ) white
-      flipRel (InRel r x y) = (OutRel r x y)
-      flipRel (OutRel r x y) = (InRel r x y)
+      adjustments = (map M.delete white)
 
     go black white (greyHead : grey) = go black' white' grey' where
       black' = greyHead : black
