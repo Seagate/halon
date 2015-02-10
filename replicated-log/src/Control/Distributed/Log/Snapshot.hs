@@ -2,6 +2,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | A compendium of snapshotting methods
 module Control.Distributed.Log.Snapshot
     ( LogSnapshot(..)
@@ -10,8 +12,10 @@ module Control.Distributed.Log.Snapshot
     ) where
 
 import Control.Arrow (second)
-import Control.Distributed.Process hiding (callLocal, send)
+import Control.Distributed.Log () -- SafeCopy LegislatureId instance
 import Control.Distributed.Log.Internal (callLocal)
+import Control.Distributed.Process.Consensus (DecreeId(..))
+import Control.Distributed.Process hiding (callLocal, send)
 import Control.Distributed.Process.Serializable
 import Control.Exception (throwIO, Exception)
 import qualified Control.Exception as E (bracket)
@@ -29,9 +33,9 @@ import System.FilePath ((</>))
 -- | Operations to initialize, read and write snapshots
 data LogSnapshot s = LogSnapshot
     { logSnapshotInitialize    :: Process s
-    , logSnapshotsGetAvailable :: Process [(Int, (NodeId, Int))]
+    , logSnapshotsGetAvailable :: Process [(DecreeId, (NodeId, Int))]
     , logSnapshotRestore       :: (NodeId, Int) -> Process s
-    , logSnapshotDump          :: Int -> s -> Process (NodeId, Int)
+    , logSnapshotDump          :: DecreeId -> s -> Process (NodeId, Int)
     }
 
 -- | A newtype wrapper to provide a default instance of 'SafeCopy' for types
@@ -43,25 +47,26 @@ instance Serializable a => SafeCopy (SafeCopyFromBinary a) where
     getCopy = contain $ fmap (SafeCopyFromBinary . decode) $ safeGet
     putCopy = contain . safePut . encode . binaryFromSafeCopy
 
-data SerializableSnapshot s = SerializableSnapshot Int s
+data SerializableSnapshot s = SerializableSnapshot DecreeId s
                               -- watermark and snapshot
   deriving Typeable
 
 $(deriveSafeCopy 0 'base ''SerializableSnapshot)
+$(deriveSafeCopy 0 'base ''DecreeId)
 
-readLogIndex :: Query (SerializableSnapshot s) Int
-readLogIndex = do SerializableSnapshot w _ <- ask
+readDecreeId :: Query (SerializableSnapshot s) DecreeId
+readDecreeId = do SerializableSnapshot w _ <- ask
                   return w
 
-readSnapshot :: Query (SerializableSnapshot s) (Int, s)
+readSnapshot :: Query (SerializableSnapshot s) (DecreeId, s)
 readSnapshot = do SerializableSnapshot w s <- ask
                   return (w, s)
 
-writeSnapshot :: Int -> s -> Update (SerializableSnapshot s) ()
+writeSnapshot :: DecreeId -> s -> Update (SerializableSnapshot s) ()
 writeSnapshot w s = put $ SerializableSnapshot w s
 
 $(makeAcidic ''SerializableSnapshot
-             ['readSnapshot, 'writeSnapshot, 'readLogIndex]
+             ['readSnapshot, 'writeSnapshot, 'readDecreeId]
  )
 
 newtype NoSnapshotServer = NoSnapshotServer NodeId
@@ -88,16 +93,16 @@ serializableSnapshot serverLbl s0 = LogSnapshot
           pid <- getSnapshotServer Nothing
           callWait pid () >>=
             maybe (return [])
-                  (\i -> return [(i, (here, i))])
+                  (\d -> return [(d, (here, decreeNumber d))])
 
     , logSnapshotRestore = \(nid, i) -> do
           pid <- getSnapshotServer $ Just nid
-          s <- callWait pid i >>=
-                 maybe (liftIO $ throwIO (NoSnapshot (nid, i)))
-                       return
+          (d, s) <- callWait pid i >>=
+                      maybe (liftIO $ throwIO (NoSnapshot (nid, i)))
+                            return
           -- Dump the snapshot locally so it is available at a
           -- later time.
-          _ <- apiLogSnapshotDump i s
+          _ <- apiLogSnapshotDump d s
           return s
 
     , logSnapshotDump = apiLogSnapshotDump
@@ -105,11 +110,11 @@ serializableSnapshot serverLbl s0 = LogSnapshot
 
   where
 
-    apiLogSnapshotDump i s = do
+    apiLogSnapshotDump d s = do
         here <- getSelfNode
         pid <- getSnapshotServer Nothing
-        () <- callWait pid (i, s)
-        return (here, i)
+        () <- callWait pid (d, s)
+        return (here, decreeNumber d)
 
     -- Retrieves the ProcessId of the snapshot server on a given node.
     --
@@ -163,18 +168,18 @@ serializableSnapshotServer serverLbl snapshotDirectory s0 = do
     here <- getSelfNode
     pid <- spawnLocal $ forever $ receiveWait
         [ match $ \(pid, ()) -> do
-            i <- liftIO (withSnapshotAcidState here $ flip query ReadLogIndex)
-            usend pid $ if i == 0 then Nothing
-                                  else Just (i :: Int)
+            d <- liftIO (withSnapshotAcidState here $ flip query ReadDecreeId)
+            usend pid $ -- if i == 0 then Nothing
+                                   Just (d :: DecreeId)
 
         , match $ \(pid, i) -> do
-            (i', s) <- liftIO $ withSnapshotAcidState here $ \acid ->
+            (d, s) <- liftIO $ withSnapshotAcidState here $ \acid ->
               fmap (second binaryFromSafeCopy) $ query acid ReadSnapshot
-            usend pid (if i == i' then Just s else Nothing)
+            usend pid $ if decreeNumber d == i then Just (d, s) else Nothing
 
-        , match $ \(pid, (i, s)) -> do
+        , match $ \(pid, (d, s)) -> do
             liftIO $ withSnapshotAcidState here $ \acid -> do
-              update acid $ WriteSnapshot i (SafeCopyFromBinary s)
+              update acid $ WriteSnapshot d (SafeCopyFromBinary s)
               createCheckpoint acid
               createArchive acid
               removeDirectoryRecursive $ snapshotDirectory here
@@ -192,6 +197,8 @@ serializableSnapshotServer serverLbl snapshotDirectory s0 = do
           -> IO a
     withSnapshotAcidState nid =
         E.bracket (openLocalStateFrom (snapshotDirectory nid)
-                       (SerializableSnapshot 0 (SafeCopyFromBinary s0))
+                       (SerializableSnapshot (DecreeId 0 0)
+                                             (SafeCopyFromBinary s0)
+                       )
                   )
                   closeAcidState

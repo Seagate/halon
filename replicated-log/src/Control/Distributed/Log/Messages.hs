@@ -9,6 +9,7 @@ import Control.Distributed.Log.Policy (NominationPolicy)
 import Control.Distributed.Process.Consensus (DecreeId)
 import Control.Distributed.Process (ProcessId)
 import Control.Distributed.Static (Closure)
+import Control.Distributed.Process.Consensus (LegislatureId)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Data.Binary (Binary)
@@ -60,11 +61,13 @@ data Max = Max ProcessId DecreeId [ProcessId] [ProcessId]
 -- | Reports the snapshot of a replica upon receiving a 'Query' for an
 -- old-enough decree.
 --
--- It also reports the current membership.
+-- It also reports the current membership and legislature.
 --
--- > SnapshotInfo acceptors replicas snapshotRef snapshotWatermark oldDecree
+-- > SnapshotInfo acceptors replicas legislatureId snapshotRef
+-- >              snapshotWatermark oldDecree
 --
-data SnapshotInfo ref = SnapshotInfo [ProcessId] [ProcessId] ref Int Int
+data SnapshotInfo ref = SnapshotInfo [ProcessId] [ProcessId] LegislatureId ref
+                                     DecreeId Int
     deriving (Typeable, Generic)
 
 instance Binary Locale

@@ -154,11 +154,12 @@ data Log a = forall s ref. Serializable ref => Log
       logInitialize :: Process s
 
       -- | Yields the list of references of available snapshots.
-      -- Each reference is accompanied with the next log index to execute.
+      -- Each reference is accompanied with the 'DecreeId' of the next log entry
+      -- to execute.
       --
       -- On each node this function could return different results.
       --
-    , logGetAvailableSnapshots :: Process [(Int, ref)]
+    , logGetAvailableSnapshots :: Process [(DecreeId, ref)]
 
       -- | Yields the snapshot identified by ref.
       --
@@ -169,7 +170,7 @@ data Log a = forall s ref. Serializable ref => Log
       --
     , logRestore :: ref -> Process s
 
-      -- | Writes a snapshot together with its next log index.
+      -- | Writes a snapshot together with the 'DecreeId' of the next log index.
       --
       -- Returns a reference which any replica can use to get the snapshot
       -- with 'logRestore'.
@@ -177,7 +178,7 @@ data Log a = forall s ref. Serializable ref => Log
       -- After a succesful call, the dumped snapshot or a newer snapshot must
       -- appear listed in @logGetAvailableSnapshots@.
       --
-    , logDump :: Int -> s -> Process ref
+    , logDump :: DecreeId -> s -> Process ref
 
       -- | State transition callback.
     , logNextState      :: s -> a -> Process s
@@ -283,12 +284,12 @@ queryMissingFrom w replicas log = do
         forM_ replicas $ \ρ -> do
             usend ρ $ Query self n
 
--- | Stores acceptors, replicas and the log.
+-- | Stores acceptors, replicas, their 'LegislatureId' and the log.
 --
 -- At all times the latest membership of the log can be recovered by
 -- executing the reconfiguration decrees in modern history. See Note
 -- [Trimming the log].
-data Memory a = Memory [ProcessId] [ProcessId] (Map.Map Int a)
+data Memory a = Memory [ProcessId] [ProcessId] LegislatureId (Map.Map Int a)
   deriving Typeable
 
 $(deriveSafeCopy 0 'base ''Memory)
@@ -296,22 +297,28 @@ $(deriveSafeCopy 0 'base ''ProcessId)
 $(deriveSafeCopy 0 'base ''NodeId)
 $(deriveSafeCopy 0 'base ''LocalProcessId)
 $(deriveSafeCopy 0 'base ''EndPointAddress)
+$(deriveSafeCopy 0 'base ''LegislatureId)
 
 memoryInsert :: Int -> a -> Update (Memory a) ()
 memoryInsert n v = do
-    Memory acceptors replicas log <- get
-    put $ Memory acceptors replicas (Map.insert n v log)
+    Memory acceptors replicas lId log <- get
+    put $ Memory acceptors replicas lId (Map.insert n v log)
 
-memoryGet :: Acid.Query (Memory a) ([ProcessId], [ProcessId], Map.Map Int a)
+memoryGet :: Acid.Query (Memory a)
+                        ([ProcessId], [ProcessId], LegislatureId, Map.Map Int a)
 memoryGet = do
-    Memory acceptors replicas log <- ask
-    return (acceptors, replicas, log)
+    Memory acceptors replicas lId log <- ask
+    return (acceptors, replicas, lId, log)
 
 -- | Removes all entries below the given watermark from the log.
-memoryTrim :: [ProcessId] -> [ProcessId] -> Int -> Update (Memory a) ()
-memoryTrim acceptors replicas w = do
-    Memory _ _ log <- get
-    put $ Memory acceptors replicas $ snd $ Map.split (pred w) log
+memoryTrim :: [ProcessId]
+           -> [ProcessId]
+           -> LegislatureId
+           -> Int
+           -> Update (Memory a) ()
+memoryTrim acceptors replicas lId w = do
+    Memory _ _ _ log <- get
+    put $ Memory acceptors replicas lId $ snd $ Map.split (pred $ w) log
 
 $(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim])
 
@@ -320,13 +327,14 @@ $(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim])
 -- See note [Trimming the log]
 trimTheLog :: Serializable a
            => AcidState (Memory (Value a))
-           -> FilePath     -- ^ Directory for persistence
-           -> [ProcessId]  -- ^ Acceptors
-           -> [ProcessId]  -- ^ Replicas
-           -> Int          -- ^ Log index
+           -> FilePath      -- ^ Directory for persistence
+           -> [ProcessId]   -- ^ Acceptors
+           -> [ProcessId]   -- ^ Replicas
+           -> LegislatureId -- ^ 'LegislatureId' of given membership
+           -> Int           -- ^ Log index
            -> IO ()
-trimTheLog acid persistDir αs ρs w0 = do
-    update acid $ MemoryTrim αs ρs w0
+trimTheLog acid persistDir αs ρs lId w0 = do
+    update acid $ MemoryTrim αs ρs lId w0
     createCheckpoint acid
     -- This call collects all acid data needed to reconstruct states prior to
     -- the last checkpoint.
@@ -367,7 +375,7 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
     -- | The watermark of the lastest snapshot
     --
     -- See note [Trimming the log].
-  , stateSnapshotWatermark :: Int
+  , stateSnapshotWatermark :: DecreeId
     -- | The identifier of the next decree to execute.
   , stateWatermark         :: DecreeId
     -- | The state yielded by the last executed decree.
@@ -375,7 +383,7 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
 
   -- from Log {..}
   , stateLogRestore        :: ref -> Process s
-  , stateLogDump           :: Int -> s -> Process ref
+  , stateLogDump           :: DecreeId -> s -> Process ref
   , stateLogNextState      :: s -> a -> Process s
 
   } deriving (Typeable)
@@ -458,16 +466,21 @@ replica Dict
     say $ "New replica started in " ++ show (decreeLegislatureId decree)
 
     self <- getSelfPid
-    acid <- liftIO $ openLocalStateFrom (persistDirectory (processNodeId self))
-                                        (Memory acceptors0 replicas0 Map.empty)
+    let lId0 = decreeLegislatureId decree
+    acid <- liftIO $ openLocalStateFrom
+                       (persistDirectory (processNodeId self))
+                       (Memory acceptors0 replicas0 lId0 Map.empty)
     sns <- logGetAvailableSnapshots
-    (w0, s) <- if null sns then (0,) <$> logInitialize
+    (w0, s) <- if null sns then (DecreeId 0 0,) <$> logInitialize
                  else let (w0, ref) = maximumBy (compare `on` fst) sns
                        in (w0,) <$> logRestore ref
 
     -- Replay backlog if any.
-    (acceptors, replicas, log) <- liftIO $ Acid.query acid MemoryGet
+    (acceptors', replicas', lId', log) <- liftIO $ Acid.query acid MemoryGet
     say $ "Log size of replica: " ++ show (Map.size log)
+    let acceptors = if lId0 >= lId' then acceptors0 else acceptors'
+        replicas  = if lId0 >= lId' then replicas0 else replicas'
+        lId       = max lId0 lId'
 
     -- Teleport all decrees to the highest possible legislature, since all
     -- recorded decrees must be replayed. This has no effect on the current
@@ -475,14 +488,13 @@ replica Dict
     forM_ (Map.toList log) $ \(n,v) -> do
         usend self $ Decree Stored (DecreeId maxBound n) v
 
-    let d = decree{ decreeNumber = max (decreeNumber decree) $
-                                       if Map.null log
-                                          then w0
-                                          else succ $ fst $ Map.findMax log
-                  }
-        w = DecreeId 0 w0
+    let d = DecreeId lId (max (decreeNumber decree) $
+                            if Map.null log
+                              then decreeNumber w0
+                              else succ $ fst $ Map.findMax log
+                         )
         others = filter (/= self) replicas
-    queryMissingFrom (decreeNumber w) others $
+    queryMissingFrom (decreeNumber w0) others $
         Map.insert (decreeNumber d) undefined log
 
     ppid <- spawnLocal $ link self >> proposer self Bottom acceptors
@@ -503,7 +515,7 @@ replica Dict
          , stateCurrentDecree = d
          , stateSnapshotRef   = Nothing
          , stateSnapshotWatermark = w0
-         , stateWatermark = w
+         , stateWatermark = w0
          , stateLogState = s
          , stateLogRestore = logRestore
          , stateLogDump = logDump
@@ -573,7 +585,7 @@ replica Dict
           ) =
      do
         self <- getSelfPid
-        (_, _, log) <- liftIO $ Acid.query acid MemoryGet
+        (_, _, _, log) <- liftIO $ Acid.query acid MemoryGet
         let others = filter (/= self) ρs
 
             -- Returns the leader if the lease has not expired.
@@ -647,16 +659,18 @@ replica Dict
                         locale == Stored && w <= dᵢ && decreeNumber dᵢ == decreeNumber w) $
                        \(Decree _ dᵢ v) -> do
                 let maybeTakeSnapshot w' s' = do
-                      takeSnapshot <- snapshotPolicy (decreeNumber w' - w0)
+                      takeSnapshot <- snapshotPolicy
+                                        (decreeNumber w' - decreeNumber w0)
                       if takeSnapshot then do
                         say $ "Log size when trimming: " ++ show (Map.size log)
                         -- First trim the log and only then save the snapshot.
                         -- This guarantees that if later operation fails the
                         -- latest membership can still be recovered from disk.
                         liftIO $ trimTheLog
-                          acid (persistDirectory (processNodeId self)) αs ρs w0
-                        sref' <- stLogDump (decreeNumber w') s'
-                        return (decreeNumber w', Just sref')
+                          acid (persistDirectory (processNodeId self)) αs ρs
+                          (decreeLegislatureId d) (decreeNumber w0)
+                        sref' <- stLogDump w' s'
+                        return (w', Just sref')
                       else
                         return (w0, msref)
                 case v of
@@ -732,7 +746,7 @@ replica Dict
                         locale == Remote && w < dᵢ && not (Map.member (decreeNumber dᵢ) log)) $
                        \(Decree locale dᵢ v) -> do
                   _ <- liftIO $ Acid.update acid $ MemoryInsert (decreeNumber dᵢ) v
-                  (_, _, log') <- liftIO $ Acid.query acid $ MemoryGet
+                  (_, _, _, log') <- liftIO $ Acid.query acid $ MemoryGet
                   queryMissingFrom (decreeNumber w) others log'
                   --- XXX set cd to @max cd (succ dᵢ)@?
                   --
@@ -829,7 +843,7 @@ replica Dict
             , match $ \(Query ρ n) -> do
                   case msref of
                     Just sref -> usend ρ $
-                      SnapshotInfo αs ρs sref w0 n
+                      SnapshotInfo αs ρs (decreeLegislatureId d) sref w0 n
                     Nothing   -> return ()
                   go st
 
@@ -838,30 +852,36 @@ replica Dict
               --
               -- It does not quite eliminate the chance of multiple snapshots
               -- being read in cascade, but it makes it less likely.
-            , match $ \(SnapshotInfo αs' ρs' sref' w0' n) ->
+            , match $ \(SnapshotInfo αs' ρs' lId' sref' w0' n) ->
                   if not (Map.member n log) && decreeNumber w <= n &&
-                     decreeNumber w < w0' then do
+                     decreeNumber w < decreeNumber w0' then do
                     -- TODO: get the snapshot asynchronously
                     -- TODO: maybe use an uninterruptible mask
                     mask_ (try $ stLogRestore sref') >>= \case
                      Left (_ :: SomeException) -> go st
                      Right s' -> do
+                      let lId  = decreeLegislatureId d
+                          lId'' = max lId lId'
+                          αs'' = if lId' >= lId then αs' else αs
+                          ρs'' = if lId' >= lId then ρs' else ρs
+                          d'  = DecreeId lId'' (max (decreeNumber w0')
+                                                    (decreeNumber d))
+                          cd' = DecreeId lId'' (max (decreeNumber w0')
+                                                    (decreeNumber cd))
                       -- Trimming here ensures that the log does not accumulate
                       -- decrees indefinitely if the state is oftenly restored
                       -- before saving a snapshot.
                       liftIO $ trimTheLog
-                        acid (persistDirectory (processNodeId self)) αs' ρs' w0'
+                        acid (persistDirectory (processNodeId self)) αs'' ρs''
+                        lId'' (decreeNumber w0')
 
-                      let d'  = d { decreeNumber = max w0' (decreeNumber d) }
-                          cd' = cd { decreeNumber = max w0' (decreeNumber cd) }
-                          w'  = w { decreeNumber = w0' }
-                      go st { stateAcceptors         = αs'
-                            , stateReplicas          = ρs'
+                      go st { stateAcceptors         = αs''
+                            , stateReplicas          = ρs''
                             , stateUnconfirmedDecree = d'
                             , stateCurrentDecree     = cd'
                             , stateSnapshotRef       = Just sref'
                             , stateSnapshotWatermark = w0'
-                            , stateWatermark         = w'
+                            , stateWatermark         = w0'
                             , stateLogState          = s'
                             }
                   else go st
