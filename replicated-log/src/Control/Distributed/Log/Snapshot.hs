@@ -85,20 +85,16 @@ serializableSnapshot :: forall s. Serializable s => String -> s -> LogSnapshot s
 serializableSnapshot serverLbl s0 = LogSnapshot
     { logSnapshotInitialize = return s0
 
-    , logSnapshotsGetAvailable = callLocal $ do
-          self <- getSelfPid
+    , logSnapshotsGetAvailable = do
           here <- getSelfNode
           pid <- getSnapshotServer Nothing
-          usend pid self
-          expectFrom pid >>=
+          callWait pid () >>=
             maybe (return [])
                   (\i -> return [(i, (here, i))])
 
-    , logSnapshotRestore = \(nid, i) -> callLocal $ do
-          self <- getSelfPid
+    , logSnapshotRestore = \(nid, i) -> do
           pid <- getSnapshotServer $ Just nid
-          usend pid (self, i)
-          s <- expectFrom pid >>=
+          s <- callWait pid i >>=
                  maybe (liftIO $ throwIO (NoSnapshot (nid, i)))
                        return
           -- Dump the snapshot locally so it is available at a
@@ -111,12 +107,10 @@ serializableSnapshot serverLbl s0 = LogSnapshot
 
   where
 
-    apiLogSnapshotDump i s = callLocal $ do
-        self <- getSelfPid
+    apiLogSnapshotDump i s = do
         here <- getSelfNode
         pid <- getSnapshotServer Nothing
-        usend pid (self, (i, s))
-        () <- expectFrom pid
+        () <- callWait pid (i, s)
         return (here, i)
 
     -- Retrieves the ProcessId of the snapshot server on a given node.
@@ -142,15 +136,21 @@ serializableSnapshot serverLbl s0 = LogSnapshot
           whereis serverLbl >>=
             maybe (liftIO $ throwIO $ NoSnapshotServer here) return
 
-    -- @expectFrom pid@ monitors @pid@ while it waits for a message.
-    expectFrom :: Serializable a => ProcessId -> Process a
-    expectFrom pid =
-      withMonitor pid $ do
-        receiveWait
-          [ match $ \(ProcessMonitorNotification _ p r) ->
-              liftIO $ throwIO $ ProcessLinkException p r
-          , match return
-          ]
+    -- @callWait pid a@ sends @(tmp,a)@ to @pid@ and waits for a reply of type
+    -- @b@ sent to @tmp@. @tmp@ is the 'ProcessId' of a temporary process used
+    -- to collect the reply.
+    --
+    -- Throws a @ProcessLinkException@ if it gets disconnected from @pid@ before
+    -- receiving the reply.
+    callWait :: (Serializable a, Serializable b) => ProcessId -> a -> Process b
+    callWait pid a = callLocal $ do
+        self <- getSelfPid
+        -- @link@ works here because the target process is expected to be
+        -- non-terminating. Otherwise, the death notification could arrive
+        -- before the reply.
+        link pid
+        usend pid (self, a)
+        expect
 
 -- | Takes the snapshots server label, the filepath for saving snapshots
 -- and the initial state.
@@ -164,9 +164,10 @@ serializableSnapshotServer :: forall s . Serializable s
 serializableSnapshotServer serverLbl snapshotDirectory s0 = do
     here <- getSelfNode
     pid <- spawnLocal $ forever $ receiveWait
-        [ match $ \pid -> do
+        [ match $ \(pid, ()) -> do
             i <- liftIO (withSnapshotAcidState here $ flip query ReadLogIndex)
-            usend pid $ Just (i :: Int)
+            usend pid $ if i == 0 then Nothing
+                                  else Just (i :: Int)
 
         , match $ \(pid, i) -> do
             (i', s) <- liftIO $ withSnapshotAcidState here $ \acid ->
