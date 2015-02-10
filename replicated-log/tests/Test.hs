@@ -360,8 +360,16 @@ tests args = do
                 logSizes' <- replicateM 5 $ do
                   replicateM_ incrementCount $ do
                     State.update port incrementCP
-                    expect :: Process ()
-                    expect :: Process ()
+                    () <- expect
+                    -- We are not interested in the message per-se. We just want
+                    -- to slow down the test so the non-leader replica has a
+                    -- chance to execute the decrees and keep the log size
+                    -- controlled.
+                    --
+                    -- In addition, we cannot use @expect@ because the
+                    -- non-leader replica may not execute the request if it gets
+                    -- it as part of a snapshot.
+                    expectTimeout 1000000 :: Process (Maybe ())
                   liftM2 (,) (expect :: Process Int) (expect :: Process Int)
 
                 say $ show logSizes'
