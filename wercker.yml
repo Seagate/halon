@@ -14,3 +14,9 @@ build:
         name: build package
         code: |
           make build CABAL_FLAGS="-fmaintainer"
+  after-steps:
+    - script:
+        name: dump test output
+        code: |
+          find . -path \*/test_output/\* -type f -exec sh -c "echo === {} ===; cat {} " \;
+
