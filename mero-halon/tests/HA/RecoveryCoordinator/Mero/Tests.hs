@@ -85,7 +85,7 @@ runRC (eq, args) rGroup = do
 --   is not violated.
 testServiceRestarting :: Transport -> IO ()
 testServiceRestarting transport = do
-    withTmpDirectory $ tryWithTimeout transport rt 5000000 $ do
+    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
 
