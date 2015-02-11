@@ -102,4 +102,4 @@ getKeyValuePairs mmPid =
 updateStore :: ProcessId -> [StoreUpdate] -> Process (Maybe ())
 updateStore mmPid upds =
     -- FIXME: Use a well-defined timeout
-    join <$> callTimeout 1000000 mmPid upds
+    join <$> callTimeout 10000000 mmPid upds
