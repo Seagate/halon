@@ -146,7 +146,7 @@ $(CLEAN):
 	-cabal sandbox hc-pkg -- unregister $(patsubst %_clean, %, $@) --force
 clean: $(CLEAN)
 depclean:
-	cabal sandbox delete
+	rm -rf .cabal-sandbox
 
 .PHONY: dep
 dep: cabal.sandbox.config
@@ -171,7 +171,7 @@ freeze:
 
 # This target will generate a distributable RPM based on the
 # current checkout.
-# It will generate a binary RPM in ./rpmbuild/RPMS/x86_64 
+# It will generate a binary RPM in ./rpmbuild/RPMS/x86_64
 # and a pseudo-source tar in ./rpmbuild/SRPMS
 rpm: build
 	mkdir -p rpmbuild/SOURCES
