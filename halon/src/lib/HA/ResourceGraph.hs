@@ -26,6 +26,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module HA.ResourceGraph
     ( -- * Types
@@ -79,7 +80,7 @@ import Control.Distributed.Process.Closure
 import Data.Constraint ( Dict(..) )
 
 import Prelude hiding (null)
-import Control.Arrow ( (***) )
+import Control.Arrow ( (***), (>>>) )
 import Control.Monad ( liftM3 )
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary(..), decode, encode )
@@ -93,6 +94,7 @@ import qualified Data.HashMap.Strict as M
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as S
 import Data.Hashable
+import Data.List (foldl')
 import Data.Maybe
 import Data.Typeable ( Typeable, cast )
 import Data.Word (Word8)
@@ -272,7 +274,7 @@ disconnect x r y g =
                          ]
             : grChangeLog g
       , grGraph = M.adjust (S.delete $ OutRel r x y) (Res x)
-                . M.adjust (S.delete $ InRel r x y) (Res x)
+                . M.adjust (S.delete $ InRel r x y) (Res y)
                 $ grGraph g
       }
 
@@ -281,7 +283,27 @@ disconnect x r y g =
 -- longer participating in the graph since they are not connected to the rest
 -- and can hence safely be discarded.
 garbageCollect :: Resource a => [a] -> Graph -> Graph
-garbageCollect = undefined
+garbageCollect rootSet g@Graph{..} = go S.empty initWhite initGrey
+  where
+    initWhite = (S.fromList $ M.keys grGraph) `S.difference` initGrey
+    initGrey = S.fromList $ map Res rootSet
+    go _ white (S.null -> True) = g {
+        grChangeLog = (DeleteKeys (map encodeRes whiteList))
+                    : grChangeLog
+      , grGraph = foldl' (>>>) id adjustments grGraph
+    } where
+      adjustments = (map M.delete whiteList)
+      whiteList = S.toList white
+
+    go black white grey@(S.toList -> greyHead : _) = go black' white' grey' where
+      black' = S.insert greyHead black
+      white' = white `S.difference` newGrey
+      grey' = (S.delete greyHead grey) `S.union` newGrey
+      newGrey = white `S.intersection` (maybe S.empty (S.map f)
+                                    $ M.lookup greyHead grGraph)
+      f (OutRel _ _ y) = Res y
+      f (InRel _ x _) =  Res x
+    go _ _ _ = error "garbageCollect: Impossible."
 
 -- | List of all edges of a given relation stemming from the provided source
 -- resource to destination resources of the given type.

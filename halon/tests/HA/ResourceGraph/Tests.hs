@@ -199,4 +199,33 @@ tests transport = do
           let ed0 = edgesToDst (NodeB 2) g1
           assert $ length ed0 == 1
           assert $ [] == ed0 \\  [Edge (NodeA 1) HasB (NodeB 2)]
+
+      , testSuccess "garbage-collection" $ rGroupTest transport g $ \pid -> do
+          g1 <- sync . sampleGraph =<< getGraph pid
+          g2 <- sync $ garbageCollect [NodeB 2] g1
+          -- NodeB 1 never connected to root set
+          assert $ memberResource (NodeB 1) g2 == False
+          g3 <- sync $ garbageCollect [NodeB 2]
+                     . disconnect (NodeB 2) HasA (NodeA 1)
+                     . disconnect (NodeB 2) HasA (NodeA 2)
+                     $ g2
+          assert $ memberResource (NodeA 1) g3 == True
+          assert $ memberResource (NodeA 2) g3 == False
+          -- Create a cycle
+          g4 <- sync $ connect (NodeA 3) HasB (NodeB 3)
+                     . connect (NodeB 3) HasA (NodeA 4)
+                     . connect (NodeA 4) HasB (NodeB 4)
+                     . connect (NodeB 4) HasA (NodeA 3)
+                     . newResource (NodeA 3)
+                     . newResource (NodeA 4)
+                     . newResource (NodeB 3)
+                     . newResource (NodeB 4)
+                     $ g3
+          let g5 = garbageCollect [NodeB 2] g4
+              g6 = garbageCollect [NodeA 3] g4
+          assert $ memberResource (NodeA 3) g5 == False
+          assert $ memberResource (NodeA 3) g6 == True
+          assert $ memberResource (NodeB 2) g6 == False
+          assert $ memberResource (NodeB 2) g5 == True
+
       ]
