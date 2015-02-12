@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeOperators #-}
 -- |
 -- Copyright : (C) 2013,2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -251,111 +252,34 @@ recoveryCoordinator argv eq mm = do
     let start = LoopState { lsGraph   = startGraph
                           , lsFailMap = Map.empty
                           }
-    runProcessor (network eq argv) rcMsgs start
+
+    runProcessor definitions (network eq argv) start
 
 network :: ProcessId
         -> IgnitionArguments
         -> ComplexEvent LoopState Input LoopState
 network eq argv = reconfigureCmd  <|>
                   eventqueueEvents eq argv
-data Input
-    = OnReconfigure ReconfigureMsg
-    | OnNodeUp (HAEvent NodeUp)
-    | OnEpochRequest (HAEvent EpochRequest)
-    | OnConfigurationUpdate (HAEvent ConfigurationUpdateMsg)
-    | OnServiceStart (HAEvent ServiceStartRequestMsg)
-    | OnServiceStarted (HAEvent ServiceStartedMsg)
-    | OnServiceFailed (HAEvent ServiceFailedMsg)
-    | OnServiceCouldNotStart (HAEvent ServiceCouldNotStartMsg)
-    | OnStripingError (HAEvent StripingError)
-    | OnEpochTransition (HAEvent EpochTransitionRequest)
+
+definitions ::     ReconfigureMsg
+               .+. (    EQEvent NodeUp
+                   .++. EQEvent EpochRequest
+                   .++. EQEvent ConfigurationUpdateMsg
+                   .++. EQEvent ServiceStartRequestMsg
+                   .++. EQEvent ServiceStartedMsg
+                   .++. EQEvent ServiceFailedMsg
+                   .++. EQEvent ServiceCouldNotStartMsg
+                   .++. EQEvent StripingError
+                   .++. EQEvent EpochTransitionRequest
 #ifdef USE_MERO
-    | OnMeroGet (HAEvent Mero.Notification.Get)
-    | OnMeroSet (HAEvent Mero.Notification.Set)
+                   .++. EQEvent Mero.Notification.Get
+                   .++. EQEvent Mero.Notification.Set
 #endif
-
-rcMsgs :: [Match (Msg Input)]
-rcMsgs =
-    [ match (return . userMsg . OnReconfigure)
-    , matchHAEvent (return . userMsg . OnNodeUp)
-    , matchHAEvent (return . userMsg . OnEpochRequest)
-    , matchHAEvent (return . userMsg . OnConfigurationUpdate)
-    , matchHAEvent (return . userMsg . OnServiceStart)
-    , matchHAEvent (return . userMsg . OnServiceStarted)
-    , matchHAEvent (return . userMsg . OnServiceFailed)
-    , matchHAEvent (return . userMsg . OnServiceCouldNotStart)
-    , matchHAEvent (return . userMsg . OnStripingError)
-    , matchHAEvent (return . userMsg . OnEpochTransition)
-#ifdef USE_MERO
-    , matchHAEvent (return . userMsg . OnMeroGet)
-    , matchHAEvent (return . userMsg . OnMeroSet)
-#endif
-    ]
-
-_OnReconfigure :: ComplexEvent s Input ReconfigureMsg
-_OnReconfigure = onInput $ \case
-    OnReconfigure r -> Just r
-    _               -> Nothing
-
-_OnNodeUp :: ComplexEvent s Input (HAEvent NodeUp)
-_OnNodeUp = onInput $ \case
-    OnNodeUp e -> Just e
-    _          -> Nothing
-
-_OnEpochRequest :: ComplexEvent s Input (HAEvent EpochRequest)
-_OnEpochRequest = onInput $ \case
-    OnEpochRequest e -> Just e
-    _                -> Nothing
-
-_OnConfigurationUpdate :: ComplexEvent s Input (HAEvent ConfigurationUpdateMsg)
-_OnConfigurationUpdate = onInput $ \case
-    OnConfigurationUpdate e -> Just e
-    _                   -> Nothing
-
-_OnServiceStart :: ComplexEvent s Input (HAEvent ServiceStartRequestMsg)
-_OnServiceStart = onInput $ \case
-    OnServiceStart e -> Just e
-    _                -> Nothing
-
-_OnServiceStarted :: ComplexEvent s Input (HAEvent ServiceStartedMsg)
-_OnServiceStarted = onInput $ \case
-    OnServiceStarted e -> Just e
-    _                  -> Nothing
-
-_OnServiceFailed :: ComplexEvent s Input (HAEvent ServiceFailedMsg)
-_OnServiceFailed = onInput $ \case
-    OnServiceFailed e -> Just e
-    _                 -> Nothing
-
-_OnServiceCouldNotStart :: ComplexEvent s Input (HAEvent ServiceCouldNotStartMsg)
-_OnServiceCouldNotStart = onInput $ \case
-    OnServiceCouldNotStart e -> Just e
-    _                        -> Nothing
-
-_OnStripingError :: ComplexEvent s Input (HAEvent StripingError)
-_OnStripingError = onInput $ \case
-    OnStripingError e -> Just e
-    _                 -> Nothing
-
-_OnEpochTransition :: ComplexEvent s Input (HAEvent EpochTransitionRequest)
-_OnEpochTransition = onInput $ \case
-    OnEpochTransition e -> Just e
-    _                   -> Nothing
-
-#ifdef USE_MERO
-_OnMeroGet :: ComplexEvent s Input (HAEvent Mero.Notification.Get)
-_OnMeroGet = onInput $ \case
-    OnMeroGet e -> Just e
-    _           -> Nothing
-
-_OnMeroSet :: ComplexEvent s Input (HAEvent Mero.Notification.Set)
-_OnMeroSet = onInput $ \case
-    OnMeroSet e -> Just e
-    _           -> Nothing
-#endif
+                   )
+definitions = Ask
 
 reconfigureCmd :: ComplexEvent LoopState Input LoopState
-reconfigureCmd = repeatedly go . _OnReconfigure
+reconfigureCmd = repeatedly go . decoded
   where
     go ls@(LoopState rg _) msg = liftProcess $ do
         ReconfigureCmd n@(Node nid) svc <- decodeP msg
@@ -384,7 +308,7 @@ eventqueueEvents eq argv =     onNodeUp argv
 
 onNodeUp :: IgnitionArguments
          -> ComplexEvent LoopState Input LoopState
-onNodeUp argv = repeatedly go . _OnNodeUp
+onNodeUp argv = repeatedly go . decoded
   where
     go ls@(LoopState rg _) (HAEvent _ (NodeUp pid) _) = liftProcess $ do
         let nid  = processNodeId pid
@@ -407,7 +331,7 @@ onNodeUp argv = repeatedly go . _OnNodeUp
         return ls { lsGraph = newGraph }
 
 epochRequest :: ComplexEvent LoopState Input LoopState
-epochRequest = repeatedly go . _OnEpochRequest
+epochRequest = repeatedly go . decoded
   where
     go ls@(LoopState rg _) (HAEvent _ (EpochRequest pid) _) = liftProcess $ do
         let edges :: [G.Edge Cluster Has (Epoch ByteString)]
@@ -418,7 +342,7 @@ epochRequest = repeatedly go . _OnEpochRequest
         return ls
 
 configurationUpdate :: ComplexEvent LoopState Input LoopState
-configurationUpdate = repeatedly go . _OnConfigurationUpdate
+configurationUpdate = repeatedly go . decoded
   where
     go ls@(LoopState rg _) (HAEvent _ cum _) = liftProcess $ do
         ConfigurationUpdate epoch opts svc nodeFilter <- decodeP cum
@@ -446,7 +370,7 @@ configurationUpdate = repeatedly go . _OnConfigurationUpdate
             else return ls
 
 serviceStart :: ComplexEvent LoopState Input LoopState
-serviceStart = repeatedly go . _OnServiceStart
+serviceStart = repeatedly go . decoded
   where
     go ls@(LoopState rg _) evt@(HAEvent _ ssrm _) = liftProcess $ do
         ServiceStartRequest n@(Node nid) svc c <- decodeP ssrm
@@ -467,7 +391,7 @@ serviceStart = repeatedly go . _OnServiceStart
                  return ls
 
 serviceStarted :: ComplexEvent LoopState Input LoopState
-serviceStarted = repeatedly go . _OnServiceStarted
+serviceStarted = repeatedly go . decoded
   where
     go ls@(LoopState rg _) (HAEvent _ ssm _) = liftProcess $ do
         ServiceStarted n (svc @ Service {..}) cfg sp <- decodeP ssm
@@ -487,7 +411,7 @@ serviceStarted = repeatedly go . _OnServiceStarted
         return ls { lsGraph = newGraph }
 
 serviceFailed :: ProcessId -> ComplexEvent LoopState Input LoopState
-serviceFailed eq = repeatedly go . _OnServiceFailed
+serviceFailed eq = repeatedly go . decoded
   where
     go ls@(LoopState rg _) (HAEvent eid sfm _) = liftProcess $ do
         ServiceFailed n srv@(Service _ _ sdict) <- decodeP sfm
@@ -499,7 +423,7 @@ serviceFailed eq = repeatedly go . _OnServiceFailed
         return ls
 serviceCouldNotStart :: ProcessId
                      -> ComplexEvent LoopState Input LoopState
-serviceCouldNotStart eq = repeatedly go . _OnServiceCouldNotStart
+serviceCouldNotStart eq = repeatedly go . decoded
   where
     go ls@(LoopState rg failmap) (HAEvent eid scns _) = liftProcess $ do
         ServiceCouldNotStart node srv@(Service _ _ sdict) <- decodeP scns
@@ -529,7 +453,7 @@ serviceCouldNotStart eq = repeatedly go . _OnServiceCouldNotStart
 
 stripingError :: ProcessId
               -> ComplexEvent LoopState Input LoopState
-stripingError eq = repeatedly go . _OnStripingError
+stripingError eq = repeatedly go . decoded
   where
     go ls@(LoopState rg _) (HAEvent eid (StripingError node) _) = liftProcess $
         if G.memberResource node rg
@@ -568,7 +492,7 @@ stripingError eq = repeatedly go . _OnStripingError
 
 epochTransition :: ProcessId
                 -> ComplexEvent LoopState Input LoopState
-epochTransition eq = repeatedly go . _OnEpochTransition
+epochTransition eq = repeatedly go . decoded
   where
     go ls@(LoopState rg _) (HAEvent eid EpochTransitionRequest{..}  _) =
         liftProcess $ do
@@ -584,7 +508,7 @@ epochTransition eq = repeatedly go . _OnEpochTransition
 #ifdef USE_MERO
 meroGetNotification :: ProcessId
                     -> ComplexEvent LoopState Input LoopState
-meroGetNotification eq = repeatedly go . _OnMeroGet
+meroGetNotification eq = repeatedly go . decoded
   where
     go ls@(LoopState rg _) (HAEvent eid (Mero.Notification.Get pid objs) _) =
         liftProcess $ do
@@ -596,7 +520,7 @@ meroGetNotification eq = repeatedly go . _OnMeroGet
 
 meroSetNotification :: ProcessId
                     -> ComplexEvent LoopState Input LoopState
-meroSetNotification eq = repeatedly go . _OnMeroSet
+meroSetNotification eq = repeatedly go . decoded
   where
     go ls@(LoopState rg _) (HAEvent eid (Mero.Notification.Set nvec) _) =
         liftProcess $ do

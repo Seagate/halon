@@ -97,8 +97,8 @@ Library
                    unordered-containers,
                    network-transport,
                    options-schema >= 0.1.1.0,
-                   netwire,
-                   cep
+                   cep,
+                   netwire
   if flag(rpc)
     Build-Depends: rpclite,
                    network-transport,
