@@ -26,6 +26,9 @@
 #    NO_TESTS             -- do not run tests while building packages
 #    CABAL_FLAGS          -- flags passed to the cabal
 #    PACKAGES             -- sub-projects to work with (see README.md!)
+#    VENDOR_CABAL_FLAGS   -- provide a way to pass flags when installing vendor packages
+#    			     this may be useful for in some cases for example where
+#    			     it's needed to ignore global-db or pass other options
 #
 # * Packages Makefiles
 #
@@ -157,7 +160,7 @@ cabal.sandbox.config: mk/config.mk
                                  $(addprefix $(CEP_DIR),$(CEP_PACKAGES)) \
 	                         $(addprefix $(PACKAGE_DIR),$(PACKAGES))
 # Using --reinstall to override packages from GHC global db.
-	cabal install --reorder-goals --reinstall $(VENDOR_PACKAGES)
+	cabal install --reorder-goals --reinstall $(VENDOR_CABAL_FLAGS) $(VENDOR_PACKAGES)
 	cabal install --only-dependencies --reorder-goals $(CABAL_FLAGS) $(PACKAGES)
 
 # Updating cabal.config should only ever be done manually, i.e. explicitly
