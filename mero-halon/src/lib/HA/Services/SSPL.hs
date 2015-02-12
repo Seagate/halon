@@ -23,9 +23,12 @@ module HA.Services.SSPL
   ) where
 
 import HA.NodeAgent.Messages
+import HA.EventQueue.Producer (promulgate)
 import HA.Service hiding (configDict)
 import HA.ResourceGraph
 import HA.Resources (Cluster, Node)
+
+import SSPL.Bindings
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.Chan
@@ -43,9 +46,11 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Exception (catch)
 
+import Data.Aeson (decode)
 import Data.Binary (Binary)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Defaultable
+import Data.Foldable (mapM_)
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
@@ -57,6 +62,8 @@ import Network.AMQP
 
 import Options.Schema (Schema)
 import Options.Schema.Builder hiding (name, desc)
+
+import Prelude hiding (mapM_)
 
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process (readProcess)
@@ -200,7 +207,18 @@ msgHandler :: Chan Network.AMQP.Message
            -> Process ()
 msgHandler chan = do
   msg <- liftIO $ readChan chan
-  say $ BL.unpack $ msgBody msg
+  case decode (msgBody msg) :: Maybe MonitorResponse of
+    Just mr -> do
+      mapM_ promulgate
+            $ monitorResponseMonitor_msg_typeHost_update
+            . monitorResponseMonitor_msg_type
+            $ mr
+      mapM_ promulgate
+            $ monitorResponseMonitor_msg_typeDisk_status_drivemanager
+            . monitorResponseMonitor_msg_type
+            $ mr
+    Nothing ->
+      say $ "Unable to decode JSON message: " ++ (BL.unpack $ msgBody msg)
 
 remotableDecl [ [d|
 
