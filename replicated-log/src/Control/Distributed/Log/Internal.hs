@@ -55,12 +55,12 @@ import Control.Distributed.Static
 
 -- Imports necessary for acid-state.
 import Data.Acid as Acid
-import Data.SafeCopy
 import Data.Binary (decode)
+import Data.SafeCopy
 import Control.Monad.State (get, put)
 import Control.Monad.Reader (ask)
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<|>))
 import Control.Concurrent (newEmptyMVar, putMVar, takeMVar, tryPutMVar)
 import Control.Exception (SomeException, throwIO, assert)
 import Control.Monad
@@ -1160,7 +1160,7 @@ data RemoteHandle a =
 
 instance Typeable a => Binary (RemoteHandle a)
 
-matchA :: forall a . SerializableDict a -> ProcessId -> Process () -> Match ()
+matchA :: forall a b . SerializableDict a -> ProcessId -> Process b -> Match b
 matchA SerializableDict ρ cont =
   match $ \a -> do
     usend ρ (a :: Request a)
@@ -1174,27 +1174,37 @@ remotableDecl [
         ambassador (_,[]) = die "ambassador: Set of replicas must be non-empty."
         ambassador (ssdict,replicas) = do
             nid <- getSelfNode
-            somesdict <- unStatic ssdict
-            go somesdict $ choose nid
-          where
-            -- If there is a local replica, then always use that one. Otherwise
-            -- try all of them round robin.
-            choose nid
-                | Just ρ <- find ((nid ==) . processNodeId) replicas = ρ
-                | null replicas = error "ambassador: empty list of replicas"
-                | otherwise = head replicas
-            go d@(Some sdict) ρ = do
-                receiveWait
-                    [ match $ \(Clone δ) -> do
-                          usend δ $ $(mkClosure 'ambassador) (ssdict,replicas)
-                          go d ρ
-                    , match $ \m@(Helo _ _) -> usend ρ m >> go d ρ
-                    , match $ \Status -> do
-                          usend ρ Status
-                          go d ρ
-                    , match $ \ρ' -> go d ρ'
-                    , matchA sdict ρ $ go d ρ
-                    ]
+            Some sdict <- unStatic ssdict
+            let choose ρs =
+                  fromMaybe (error "ambassador: empty list of replicas") $
+                    -- prefer a local replica
+                    find ((nid ==) . processNodeId) ρs
+                    <|> listToMaybe ρs
+
+                go :: [ProcessId] -> ProcessId -> Process b
+                go ρs ρ = receiveWait
+                  [ match $ \(Clone δ) -> do
+                      usend δ $ $(mkClosure 'ambassador) (ssdict, ρs)
+                      go ρs ρ
+
+                  , match $ \Status -> do
+                      usend ρ Status
+                      go ρs ρ
+
+                    -- A new replica was added to the group.
+                  , match $ \ρ' ->
+                      -- Discard pids of replicas on the same node.
+                      let ρs' = ρ' : filter (((/=) `on` processNodeId) ρ') ρs
+                       in go ρs' $ choose ρs'
+
+                    -- A reconfiguration request
+                  , match $ \m@(Helo _ _) -> usend ρ m >> go ρs ρ
+
+                    -- A request
+                  , matchA sdict ρ $ go ρs ρ
+                  ]
+
+            go replicas $ choose replicas
 
         mkSomeSDict :: SerializableDict a -> Some SerializableDict
         mkSomeSDict = Some
