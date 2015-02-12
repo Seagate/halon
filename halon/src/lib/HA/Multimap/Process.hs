@@ -16,10 +16,10 @@ import HA.Multimap (Key, Value, StoreUpdate(..))
 import HA.Multimap.Implementation
             ( Multimap, insertMany, deleteValues, deleteKeys, toList )
 import HA.Replicator ( RGroup, updateStateWith, getState )
-import HA.System.Timeout ( retry )
 
 import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Closure ( mkClosure, remotable )
+import Control.Distributed.Process.Timeout ( retry )
 
 import Control.Exception ( SomeException )
 import Data.List ( foldl' )

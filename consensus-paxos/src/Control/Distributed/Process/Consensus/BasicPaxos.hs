@@ -43,7 +43,8 @@ data Done = Done
 instance Binary Done
 
 -- XXX pending inclusion of a fix to callLocal upstream.
--- XXX pending inclusion of a fix to callLocal upstream.
+--
+-- https://github.com/haskell-distributed/distributed-process/pull/180
 callLocal :: Process a -> Process a
 callLocal p = mask_ $ do
   mv <-liftIO $ newEmptyMVar

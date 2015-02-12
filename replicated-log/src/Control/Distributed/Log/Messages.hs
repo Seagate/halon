@@ -42,9 +42,9 @@ instance Binary Helo
 -- Inter-replica messages                                                     --
 --------------------------------------------------------------------------------
 
--- | Ack to client local decrees, don't ack remote decrees. Since each decree is
--- local to at least one replica, the client will get at least one ack.
-data Locale = Local ProcessId | Remote | Stored
+-- | Ack to clients local decrees, don't ack remote decrees. Since each decree
+-- is local to at least one replica, the clients will get at least one ack.
+data Locale = Local [ProcessId] | Remote | Stored
     deriving (Eq, Show, Typeable, Generic)
 
 -- | Signal other replicas that consensus has just been reached on a decree.
@@ -55,19 +55,19 @@ data Decree a = Decree Locale DecreeId a
 data Query = Query ProcessId Int
     deriving (Typeable, Generic)
 
-data Max = Max ProcessId DecreeId [ProcessId] [ProcessId]
+data Max = Max ProcessId DecreeId LegislatureId [ProcessId] [ProcessId]
     deriving (Typeable, Generic)
 
 -- | Reports the snapshot of a replica upon receiving a 'Query' for an
 -- old-enough decree.
 --
--- It also reports the current membership and legislature.
+-- It also reports the current membership, the legislature and the epoch.
 --
--- > SnapshotInfo acceptors replicas legislatureId snapshotRef
+-- > SnapshotInfo acceptors replicas legislatureId epoch snapshotRef
 -- >              snapshotWatermark oldDecree
 --
-data SnapshotInfo ref = SnapshotInfo [ProcessId] [ProcessId] LegislatureId ref
-                                     DecreeId Int
+data SnapshotInfo ref = SnapshotInfo [ProcessId] [ProcessId] LegislatureId
+                                     LegislatureId ref DecreeId Int
     deriving (Typeable, Generic)
 
 instance Binary Locale

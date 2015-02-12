@@ -66,10 +66,10 @@ module HA.RecoverySupervisor
     ) where
 
 import HA.Replicator ( RGroup, updateStateWith, getState )
-import HA.System.Timeout ( retry, timeout )
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
+import Control.Distributed.Process.Timeout ( retry, timeout )
 
 import Control.Concurrent ( newMVar, takeMVar, putMVar, readMVar, newEmptyMVar )
 import Control.Monad ( when, void )

@@ -41,13 +41,13 @@ import GHC.Generics
 import HA.EventQueue.Consumer
 import HA.EventQueue.Types
 import HA.Replicator ( RGroup, updateStateWith, getState)
-import HA.System.Timeout ( retry )
 import Control.SpineSeq (spineSeq)
 import FRP.Netwire hiding (Last(..), when)
 
 import Control.Distributed.Process hiding (newChan, send)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Serializable
+import Control.Distributed.Process.Timeout ( retry )
 
 import Data.Binary
 import Data.ByteString ( ByteString )

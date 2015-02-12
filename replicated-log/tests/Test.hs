@@ -21,6 +21,7 @@ import Control.Distributed.State
     , commandSerializableDict__static )
 import qualified Control.Distributed.Log.Policy as Policy
 import Control.Distributed.Log.Policy -- XXX workaround for distributed-process TH bug.
+import Control.Distributed.Process.Timeout (retry)
 
 import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Node
@@ -101,6 +102,9 @@ testConfig = Log.Config
     , snapshotPolicy    = return . (>= snapshotThreashold)
     }
 
+retryTimeout :: Int
+retryTimeout = fromIntegral $ Log.leaseTimeout testConfig
+
 snapshotServer :: Process ()
 snapshotServer = void $ serializableSnapshotServer
                     snapshotServerLbl
@@ -168,13 +172,18 @@ tests args = do
 
     let ut = testGroup "ut"
           [ testSuccess "single-command" . withTmpDirectory $ setup 1 $ \_ port -> do
-                State.update port incrementCP
-                assert . (== 1) =<< State.select sdictInt port readCP
+                retry retryTimeout $
+                  State.update port incrementCP
+                assert . (>= 1) =<<
+                  retry retryTimeout (State.select sdictInt port readCP)
 
           , testSuccess "two-command" . withTmpDirectory    $ setup 1 $ \_ port -> do
-                State.update port incrementCP
-                State.update port incrementCP
-                assert . (== 2) =<< State.select sdictInt port readCP
+                retry retryTimeout $
+                  State.update port incrementCP
+                retry retryTimeout $
+                  State.update port incrementCP
+                assert . (>= 2) =<<
+                  retry retryTimeout (State.select sdictInt port readCP)
 
           , testSuccess "clone" . withTmpDirectory          $ setup 1 $ \h _ -> do
                 self <- getSelfPid
@@ -183,9 +192,12 @@ tests args = do
                 rh' <- expect
                 h' <- Log.clone rh'
                 port <- State.newPort h'
-                State.update port incrementCP
-                State.update port incrementCP
-                assert . (== 2) =<< State.select sdictInt port readCP
+                retry retryTimeout $
+                  State.update port incrementCP
+                retry retryTimeout $
+                  State.update port incrementCP
+                assert . (>= 2) =<<
+                  retry retryTimeout (State.select sdictInt port readCP)
 
           -- , testSuccess "duplicate-command" $ setup $ \h port -> do
           --       port' <- State.newPort h
@@ -205,8 +217,9 @@ tests args = do
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
                     snapshotServer
-                    void $ Log.addReplica h
-                             (staticClosure $(mkStatic 'Policy.meToo)) here
+                    retry retryTimeout $
+                      void $ Log.addReplica h
+                               (staticClosure $(mkStatic 'Policy.meToo)) here
                 expect
 
           , testSuccess "addReplica-new-replica-old-decrees" . withTmpDirectory $ setup 1 $ \h port -> do
@@ -217,14 +230,16 @@ tests args = do
                 node1 <- liftIO $ newLocalNode transport remoteTables
                 liftIO $ runProcess node1 $ registerInterceptor $ interceptor
 
-                State.update port $ incrementCP
+                retry retryTimeout $
+                  State.update port incrementCP
                 () <- expect
                 say "Existing replica incremented."
 
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
                     snapshotServer
-                    void $ Log.addReplica h
+                    retry retryTimeout $
+                      void $ Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.meToo))
                              here
                 () <- expect
@@ -241,10 +256,12 @@ tests args = do
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
                     snapshotServer
-                    void $ Log.addReplica h
+                    retry retryTimeout $
+                      void $ Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.meToo)) here
 
-                State.update port $ incrementCP
+                retry retryTimeout $
+                  State.update port incrementCP
                 () <- expect
                 () <- expect
                 say "Both replicas incremented again after membership change."
@@ -262,26 +279,28 @@ tests args = do
                     registerInterceptor $ interceptor
                     here <- getSelfNode
                     snapshotServer
-                    void $ Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo)) here
+                    retry retryTimeout $
+                      void $ Log.addReplica h
+                             (staticClosure $(mkStatic 'Policy.meToo)) here
 
                 here <- getSelfNode
                 snapshotServer
-                ρ <- Log.addReplica h (staticClosure $(mkStatic 'Policy.meToo)) here
+                ρ <- retry retryTimeout $
+                       Log.addReplica h
+                         (staticClosure $(mkStatic 'Policy.meToo)) here
                 updateHandle h ρ
 
                 -- Kill the first node, and see that the updated handle
                 -- still works. But don't kill it too soon or the new replicas
                 -- wont have a chance to replicate its state. We do an update
                 -- to ensure the state is replicated.
-                State.update port incrementCP
+                retry retryTimeout $
+                  State.update port incrementCP
                 () <- expect
                 () <- expect
                 liftIO $ closeLocalNode n
-                -- Wait for the lease of the leader to expire. Otherwise
-                -- the request would be forwarded to the leader and State.update
-                -- would block forever.
-                _ <- receiveTimeout 1500000 []
-                State.update port $ incrementCP
+                retry retryTimeout $
+                  State.update port incrementCP
                 () <- expect
                 () <- expect
                 say "Both replicas incremented again after membership change."
@@ -300,24 +319,29 @@ tests args = do
                 forM_ [node1, node2] $ \lnid -> liftIO $ runProcess lnid $ do
                     here <- getSelfNode
                     snapshotServer
-                    void $ Log.addReplica h
+                    retry retryTimeout $
+                      void $ Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.orpn)) here
 
                 Log.status h
-                -- Don't remove the first node too soon or the new replicas
-                -- wont have a chance to replicate its state. We do an update
-                -- to ensure the state is replicated.
-                State.update port incrementCP
+                -- We do an update to ensure the state is replicated before
+                -- proceeding to remove nodes.
+                retry retryTimeout $
+                  State.update port incrementCP
                 () <- expect
-                () <- expect
-                () <- expect
+                _ <- expectTimeout 1000000 :: Process (Maybe ())
+                _ <- expectTimeout 1000000 :: Process (Maybe ())
 
                 forM_ [node1, node2] $ \lnid -> liftIO $ runProcess lnid $ do
                     here <- getSelfNode
-                    Log.reconfigure h $ staticClosure $(mkStatic 'Policy.notNode)
-                        `closureApply` closure (staticDecode sdictNodeId) (encode here)
+                    retry retryTimeout $
+                      Log.reconfigure h $
+                        staticClosure $(mkStatic 'Policy.notNode)
+                        `closureApply` closure (staticDecode sdictNodeId)
+                                               (encode here)
 
-                State.update port $ incrementCP
+                retry retryTimeout $
+                  State.update port incrementCP
                 () <- expect
                 say "Still alive replica increments."
 
@@ -337,7 +361,8 @@ tests args = do
                 let incrementCount = snapshotThreashold + 1
                 logSizes <- replicateM 5 $ do
                   replicateM_ incrementCount $ do
-                    State.update port incrementCP
+                    retry retryTimeout $
+                      State.update port incrementCP
                     expect :: Process ()
                   expect :: Process Int
 
@@ -354,12 +379,14 @@ tests args = do
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
                     snapshotServer
-                    void $ Log.addReplica h
+                    retry retryTimeout $
+                      void $ Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.meToo)) here
 
                 logSizes' <- replicateM 5 $ do
                   replicateM_ incrementCount $ do
-                    State.update port incrementCP
+                    retry retryTimeout $
+                      State.update port incrementCP
                     () <- expect
                     -- We are not interested in the message per-se. We just want
                     -- to slow down the test so the non-leader replica has a
@@ -369,7 +396,7 @@ tests args = do
                     -- In addition, we cannot use @expect@ because the
                     -- non-leader replica may not execute the request if it gets
                     -- it as part of a snapshot.
-                    expectTimeout 1000000 :: Process (Maybe ())
+                    void (expectTimeout 1000000 :: Process (Maybe ()))
                   liftM2 (,) (expect :: Process Int) (expect :: Process Int)
 
                 say $ show logSizes'
@@ -393,11 +420,14 @@ tests args = do
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
                     snapshotServer
-                    ρ <- Log.addReplica h
+                    ρ <- retry retryTimeout $
+                           Log.addReplica h
                              (staticClosure $(mkStatic 'Policy.orpn)) here
                     updateHandle h ρ
 
-                liftIO $ runProcess node1 $ State.update port incrementCP
+                liftIO $ runProcess node1 $
+                  retry retryTimeout $
+                    State.update port incrementCP
                 () <- expect
                 () <- expect
 
@@ -414,14 +444,18 @@ tests args = do
                     >>= N.close
 
                 firstAttempt <- spawnLocal $
-                  liftIO $ runProcess node1 $ State.update port incrementCP
+                  liftIO $ runProcess node1 $
+                    retry retryTimeout $
+                      State.update port incrementCP
                 munit <- expectTimeout 1000000
                 case munit of
                   Just () -> return ()
                   Nothing -> do
                        kill firstAttempt "Blocked."
                        _ <- spawnLocal $ do
-                         liftIO $ runProcess node1 $ State.update port incrementCP
+                         liftIO $ runProcess node1 $
+                           retry retryTimeout $
+                             State.update port incrementCP
                        expect :: Process ()
                 expect :: Process ()
                 say "Replicas continue to have quorum."
@@ -437,7 +471,9 @@ tests args = do
             createDirectoryIfMissing True tmpdir
             setCurrentDirectory tmpdir
             setup 5 $ \_ port -> do
-                State.update port $ incrementCP
-                assert . (== expectedState) =<< State.select sdictInt port readCP
+                retry retryTimeout $
+                  State.update port incrementCP
+                assert . (>= expectedState) =<<
+                  retry retryTimeout (State.select sdictInt port readCP)
 
     return $ testGroup "replicated-log" [ut, durability_test]

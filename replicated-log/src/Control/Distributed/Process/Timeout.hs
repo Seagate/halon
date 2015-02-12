@@ -4,7 +4,7 @@
 --
 -- Functions to interrupt actions
 --
-module HA.System.Timeout (retry, timeout) where
+module Control.Distributed.Process.Timeout (retry, timeout) where
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Internal.Types ( runLocalProcess )

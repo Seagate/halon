@@ -43,13 +43,17 @@ module Control.Distributed.Log.Internal
 import Control.Distributed.Log.Messages
 import Control.Distributed.Log.Policy (NominationPolicy)
 import Control.Distributed.Log.Policy as Policy (notThem, notThem__static)
+import Control.Distributed.Process.Batcher
 import Control.Distributed.Process.Consensus hiding (Value)
 
 import Control.Distributed.Process hiding (callLocal, send)
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
-import Control.Distributed.Process.Internal.Types (LocalProcessId(..))
+import Control.Distributed.Process.Internal.Types
+    ( LocalProcessId(..)
+    , runLocalProcess
+    )
 import Control.Distributed.Static
     (closureApply, staticApply, staticClosure)
 
@@ -60,14 +64,14 @@ import Data.SafeCopy
 import Control.Monad.State (get, put)
 import Control.Monad.Reader (ask)
 
-import Control.Applicative ((<$>), (<|>))
-import Control.Concurrent (newEmptyMVar, putMVar, takeMVar, tryPutMVar)
-import Control.Exception (SomeException, throwIO, assert)
+import Control.Applicative ((<$>))
+import Control.Concurrent
+import Control.Exception (SomeException, throwIO)
+import qualified Control.Exception as E (uninterruptibleMask_)
 import Control.Monad
 import Data.Constraint (Dict(..))
 import Data.Int (Int64)
-import Data.List (find, intersect, maximumBy)
-import Data.Foldable (Foldable)
+import Data.List (intersect, maximumBy, partition)
 import qualified Data.Foldable as Foldable
 import Data.Function (on)
 import Data.Binary (Binary, encode)
@@ -75,8 +79,6 @@ import Data.Maybe
 import Data.Monoid (Monoid(..))
 import qualified Data.Map as Map
 import Data.Ratio (Ratio, numerator, denominator)
-import Data.Sequence (Seq, (|>))
-import qualified Data.Sequence as Seq
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Prelude hiding (init, log)
@@ -97,6 +99,8 @@ data Done = Done
 instance Binary Done
 
 -- XXX pending inclusion of a fix to callLocal upstream.
+--
+-- https://github.com/haskell-distributed/distributed-process/pull/180
 callLocal :: Process a -> Process a
 callLocal p = mask_ $ do
   mv <-liftIO $ newEmptyMVar
@@ -129,6 +133,18 @@ gaps = go
         go (x:xs@(x':_)) | gap <- [succ x..pred x']
                          , not (null gap) = gap : go xs
                          | otherwise = go xs
+
+-- Like 'threadDelay' but takes an Int64 argument.
+expectTimeoutInt64 :: Serializable b => Int64 -> Process (Maybe b)
+expectTimeoutInt64 us | schedulerIsEnabled = fmap Just expect
+                      | otherwise = do
+    let delta  = 60 * 1000000
+        (q, r) = divMod us (fromIntegral delta)
+        go 0 = return Nothing
+        go n = expectTimeout delta
+                 >>= maybe (go $ n-1) (return . Just)
+    go (fromIntegral q :: Int) >>=
+      maybe (expectTimeout $ fromIntegral r) (return . Just)
 
 -- | Information about a log entry.
 data Hint
@@ -221,26 +237,17 @@ data Value a
 
 instance Binary a => Binary (Value a)
 
-concatValues :: Foldable f => f (Value a) -> Value a
-concatValues vs = case Foldable.toList vs of
-    [] -> error "concatValues: empty list"
-    xs -> Values $ concat $ map valueToList xs
-
-valueToList :: Value a -> [a]
-valueToList (Values as) = as
-valueToList _ = error "valueToList: not a Values"
-
-isValues :: Value a -> Bool
-isValues (Values _) = True
-isValues _ = False
-
 instance Serializable a => SafeCopy (Value a) where
     getCopy = contain $ fmap decode $ safeGet
     putCopy = contain . safePut . encode
 
+isReconf :: Value a -> Bool
+isReconf (Reconf _ _ _) = True
+isReconf _              = False
+
 -- | A type for internal requests.
 data Request a = Request
-    { requestSender   :: ProcessId
+    { requestSender   :: [ProcessId]
     , requestValue    :: Value a
     , requestHint     :: Hint
       -- | @Just d@ signals a lease request, where @d@ is the decree on which
@@ -260,6 +267,16 @@ data Request a = Request
   deriving (Generic, Typeable)
 
 instance Binary a => Binary (Request a)
+
+-- | A type for batcher messages.
+data BatcherMsg a = BatcherMsg
+    { batcherMsgAmbassador :: ProcessId
+    , batcherMsgEpoch      :: LegislatureId
+    , batcherMsgRequest    :: Request a
+    }
+  deriving (Generic, Typeable)
+
+instance Binary a => Binary (BatcherMsg a)
 
 -- | Ask a replica to print status and send Max messages.
 data Status = Status deriving (Typeable, Generic)
@@ -284,12 +301,18 @@ queryMissingFrom w replicas log = do
         forM_ replicas $ \ρ -> do
             usend ρ $ Query self n
 
--- | Stores acceptors, replicas, their 'LegislatureId' and the log.
+-- | Stores acceptors, replicas, their 'LegislatureId', the epoch and the log.
+--
+-- See Note [Epochs].
 --
 -- At all times the latest membership of the log can be recovered by
 -- executing the reconfiguration decrees in modern history. See Note
 -- [Trimming the log].
-data Memory a = Memory [ProcessId] [ProcessId] LegislatureId (Map.Map Int a)
+data Memory a = Memory [ProcessId]
+                       [ProcessId]
+                       LegislatureId
+                       LegislatureId
+                       (Map.Map Int a)
   deriving Typeable
 
 $(deriveSafeCopy 0 'base ''Memory)
@@ -301,24 +324,30 @@ $(deriveSafeCopy 0 'base ''LegislatureId)
 
 memoryInsert :: Int -> a -> Update (Memory a) ()
 memoryInsert n v = do
-    Memory acceptors replicas lId log <- get
-    put $ Memory acceptors replicas lId (Map.insert n v log)
+    Memory acceptors replicas leg epoch log <- get
+    put $ Memory acceptors replicas leg epoch (Map.insert n v log)
 
 memoryGet :: Acid.Query (Memory a)
-                        ([ProcessId], [ProcessId], LegislatureId, Map.Map Int a)
+                        ( [ProcessId]
+                        , [ProcessId]
+                        , LegislatureId
+                        , LegislatureId
+                        , Map.Map Int a
+                        )
 memoryGet = do
-    Memory acceptors replicas lId log <- ask
-    return (acceptors, replicas, lId, log)
+    Memory acceptors replicas leg epoch log <- ask
+    return (acceptors, replicas, leg, epoch, log)
 
 -- | Removes all entries below the given watermark from the log.
 memoryTrim :: [ProcessId]
            -> [ProcessId]
            -> LegislatureId
+           -> LegislatureId
            -> Int
            -> Update (Memory a) ()
-memoryTrim acceptors replicas lId w = do
-    Memory _ _ _ log <- get
-    put $ Memory acceptors replicas lId $ snd $ Map.split (pred $ w) log
+memoryTrim acceptors replicas leg epoch w = do
+    Memory _ _ _ _ log <- get
+    put $ Memory acceptors replicas leg epoch $ snd $ Map.split (pred $ w) log
 
 $(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim])
 
@@ -331,10 +360,11 @@ trimTheLog :: Serializable a
            -> [ProcessId]   -- ^ Acceptors
            -> [ProcessId]   -- ^ Replicas
            -> LegislatureId -- ^ 'LegislatureId' of given membership
+           -> LegislatureId -- ^ Epoch of the given membership
            -> Int           -- ^ Log index
            -> IO ()
-trimTheLog acid persistDir αs ρs lId w0 = do
-    update acid $ MemoryTrim αs ρs lId w0
+trimTheLog acid persistDir αs ρs leg epoch w0 = do
+    update acid $ MemoryTrim αs ρs leg epoch w0
     createCheckpoint acid
     -- This call collects all acid data needed to reconstruct states prior to
     -- the last checkpoint.
@@ -380,6 +410,11 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
   , stateWatermark         :: DecreeId
     -- | The state yielded by the last executed decree.
   , stateLogState          :: s
+    -- | The LegislatureId where the leader became the leader
+    -- See Note [Epochs].
+  , stateEpoch             :: LegislatureId
+    -- | Batcher of client requests
+  , stateBatcher           :: ProcessId
 
   -- from Log {..}
   , stateLogRestore        :: ref -> Process s
@@ -429,6 +464,22 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
 -- additional constraint on teleportation.
 -- https://app.asana.com/0/12314345447678/16427250405254
 
+-- Note [Epochs]
+-- ~~~~~~~~~~~~~
+--
+-- When a client abandons a request by sending a new one before receiving the
+-- acknowledgement, the implementation guarantees that the abandoned request
+-- won't be served after the new request.
+--
+-- For this sake, the term of each leader replica is called an epoch, and it is
+-- identified with the `LegislatureId` of the legislature where the replica
+-- became a leader.
+--
+-- Each client sends the requests accompanied by the last known epoch. The
+-- leader replica, discards the requests which do not belong to the current
+-- epoch. For the leader, there is no way to know if a request from a previous
+-- epoch has been abandoned or not.
+
 -- | One replica of the log. All incoming values to add to the log are submitted
 -- for consensus. A replica does not acknowledge values being appended to the
 -- log until the replicas have reached consensus about the update, hence reached
@@ -452,6 +503,7 @@ replica :: forall a. Dict (Eq a)
         -> Log a
         -> TimeSpec
         -> DecreeId
+        -> LegislatureId
         -> [ProcessId]
         -> [ProcessId]
         -> Process ()
@@ -461,26 +513,33 @@ replica Dict
         (Log {..})
         leaseStart0
         decree
+        epoch0
         acceptors0
         replicas0 = do
     say $ "New replica started in " ++ show (decreeLegislatureId decree)
 
     self <- getSelfPid
-    let lId0 = decreeLegislatureId decree
+    let leg0 = decreeLegislatureId decree
     acid <- liftIO $ openLocalStateFrom
                        (persistDirectory (processNodeId self))
-                       (Memory acceptors0 replicas0 lId0 Map.empty)
+                       (Memory acceptors0 replicas0 leg0 epoch0 Map.empty)
     sns <- logGetAvailableSnapshots
     (w0, s) <- if null sns then (DecreeId 0 0,) <$> logInitialize
                  else let (w0, ref) = maximumBy (compare `on` fst) sns
                        in (w0,) <$> logRestore ref
 
     -- Replay backlog if any.
-    (acceptors', replicas', lId', log) <- liftIO $ Acid.query acid MemoryGet
+    (acceptors', replicas', leg', epoch', log) <-
+      liftIO $ Acid.query acid MemoryGet
     say $ "Log size of replica: " ++ show (Map.size log)
-    let acceptors = if lId0 >= lId' then acceptors0 else acceptors'
-        replicas  = if lId0 >= lId' then replicas0 else replicas'
-        lId       = max lId0 lId'
+    -- We have a membership list comming from the function parameters
+    -- and a membership list comming from disk.
+    --
+    -- We adopt the membership list with the highest legislature.
+    let acceptors = if leg0 >= leg' then acceptors0 else acceptors'
+        replicas  = if leg0 >= leg' then replicas0 else replicas'
+        epoch     = if leg0 >= leg' then epoch0 else epoch'
+        leg       = max leg0 leg'
 
     -- Teleport all decrees to the highest possible legislature, since all
     -- recorded decrees must be replayed. This has no effect on the current
@@ -488,7 +547,7 @@ replica Dict
     forM_ (Map.toList log) $ \(n,v) -> do
         usend self $ Decree Stored (DecreeId maxBound n) v
 
-    let d = DecreeId lId (max (decreeNumber decree) $
+    let d = DecreeId leg (max (decreeNumber decree) $
                             if Map.null log
                               then decreeNumber w0
                               else succ $ fst $ Map.findMax log
@@ -500,6 +559,7 @@ replica Dict
     ppid <- spawnLocal $ link self >> proposer self Bottom acceptors
     timerPid <- spawnLocal $ link self >> timer
     leaseStart0' <- setLeaseTimer timerPid leaseStart0 replicas
+    bpid <- spawnLocal $ link self >> batcher (sendBatch self)
 
     go ReplicaState
          { stateProposerPid = ppid
@@ -514,14 +574,41 @@ replica Dict
          , stateSnapshotWatermark = w0
          , stateWatermark = w0
          , stateLogState = s
+         , stateEpoch    = epoch
+         , stateBatcher  = bpid
          , stateLogRestore = logRestore
          , stateLogDump = logDump
          , stateLogNextState = logNextState
          }
   where
 
-    -- Sets the timer to renew the lease and returns the time at which the lease
-    -- is started.
+    sendBatch :: ProcessId
+              -> [(ProcessId, LegislatureId, Request a)]
+              -> Process ()
+    sendBatch ρ rs = do
+      let (nps, other0) =
+            partition ((Nullipotent ==) . requestHint . batcherMsgRequest) $
+            map (\(a, e, r) -> BatcherMsg a e r) rs
+          (rcfgs, other) =
+            partition (isReconf . requestValue . batcherMsgRequest) other0
+      -- Submit the last configuration request in the batch.
+      unless (null rcfgs) $ do
+        usend ρ [last rcfgs]
+        expect
+      -- Submit the non-nullipotent requests.
+      unless (null other) $ do
+        usend ρ other
+        expect
+      -- Send nullipotent requests after all other batched requests.
+      unless (null nps) $ do
+        usend ρ nps
+        expect
+
+    adjustForDrift t = t * numerator   driftSafetyFactor
+                     `div` denominator driftSafetyFactor
+
+    -- Sets the timer to renew or request the lease and returns the time at
+    -- which the lease is started.
     setLeaseTimer :: ProcessId     -- ^ pid of the timer process
                   -> TimeSpec      -- ^ time at which the request was submitted
                   -> [ProcessId]   -- ^ replicas
@@ -532,13 +619,18 @@ replica Dict
       self <- getSelfPid
       now <- liftIO $ getTime Monotonic
       let timeSpecToMicro (TimeSpec s ns) = s * 1000000 + ns `div` 1000
-      if [self] == take 1 ρs then do
-        let t = (leaseTimeout - leaseRenewTimeout) -
-                timeSpecToMicro (now - requestStart)
-        usend timerPid (self, t, LeaseRenewalTime)
-        return requestStart
-      else
-        return now
+          (leaseStart', t) =
+             if [self] == take 1 ρs then
+               ( requestStart
+               , max 0 $ (leaseTimeout - leaseRenewTimeout) -
+                         timeSpecToMicro (now - requestStart)
+               )
+             -- Adjust the lease timeout to account for some clock drift, so
+             -- non-leaders think the lease is slightly longer.
+             else (now, adjustForDrift leaseTimeout)
+
+      usend timerPid (self, t, LeaseRenewalTime)
+      return leaseStart'
 
     -- A timer process. When receiving @(pid, t, msg)@, the process waits for
     -- @t@ microsenconds and then it sends @msg@ to @pid@.
@@ -550,25 +642,17 @@ replica Dict
     timer = expect >>= wait
       where
         wait :: (ProcessId, Int64, TimerMessage) -> Process ()
-        wait (sender, t, msg) = do
-          let -- Like 'threadDelay' but takes an Int64 argument.
-              expectTimeoutInt64 :: Serializable b => Int64 -> Process (Maybe b)
-              expectTimeoutInt64 us = do
-                let delta  = 60 * 1000000
-                    (q, r) = divMod us (fromIntegral delta)
-                    goN 0 = return Nothing
-                    goN n = expectTimeout delta
-                              >>= maybe (goN $ n-1) (return . Just)
-                goN (fromIntegral q :: Int)
-                  >>= maybe (expectTimeout $ fromIntegral r) (return . Just)
-
+        wait (sender, t, msg) =
           expectTimeoutInt64 t >>= maybe (usend sender msg >> timer) wait
 
     -- The proposer process makes consensus proposals.
     -- Proposals are aborted when a reconfiguration occurs.
     proposer ρ s αs =
       receiveWait
-        [ match $ \(d,request@(Request {requestValue = v :: Value a})) -> do
+        [ match $ \( d
+                   , μs :: [ProcessId]
+                   , request@(Request {requestValue = v :: Value a})
+                   ) -> do
             self <- getSelfPid
             -- The MVar stores the result of the proposal.
             -- With an MVar we can ensure that:
@@ -594,15 +678,16 @@ replica Dict
             if blocked then do
               exit pid "proposer reconfiguration"
               -- If the leader loses the lease, resending the request will cause
-              -- the proposer to compete with proposals from the new leader.
+              -- the proposer to compete with replicas trying to acquire the
+              -- lease.
               --
-              -- TODO: Consider if there is a simple way to avoid competition of
+              -- TODO: Consider if there is a way to avoid competition of
               -- proposers here.
-              usend self (d,request)
+              usend self (d, μs, request)
               proposer ρ s αs'
             else do
               (v',s') <- liftIO $ takeMVar mv
-              usend ρ (d,v',request)
+              usend ρ (d, v', μs, request)
               proposer ρ s' αs'
 
         , match $ proposer ρ s
@@ -610,11 +695,11 @@ replica Dict
 
     go :: ReplicaState s ref a -> Process b
     go st@(ReplicaState ppid timerPid acid leaseStart αs ρs d cd msref w0 w s
-                        stLogRestore stLogDump stLogNextState
+                        epoch bpid stLogRestore stLogDump stLogNextState
           ) =
      do
         self <- getSelfPid
-        (_, _, _, log) <- liftIO $ Acid.query acid MemoryGet
+        (_, _, _, _, log) <- liftIO $ Acid.query acid MemoryGet
         let others = filter (/= self) ρs
 
             -- Returns the leader if the lease has not expired.
@@ -625,8 +710,7 @@ replica Dict
               -- non-leaders think the lease is slightly longer.
               let adjustedPeriod = if self == head ρs
                     then leaseTimeout
-                    else leaseTimeout * numerator   driftSafetyFactor
-                                 `div` denominator driftSafetyFactor
+                    else adjustForDrift leaseTimeout
               if not (null ρs) &&
                 now - leaseStart < fromInteger (toInteger adjustedPeriod * 1000)
               then return $ Just $ head ρs
@@ -639,7 +723,7 @@ replica Dict
               now <- liftIO $ getTime Monotonic
               let ρs' = self : others
               return Request
-                { requestSender   = self
+                { requestSender   = [self]
                 , requestValue    = Reconf now αs ρs' :: Value a
                 , requestHint     = None
                 , requestForLease = Just l
@@ -651,12 +735,17 @@ replica Dict
                                         -- executed.
                        \LeaseRenewalTime -> do
                   mLeader <- liftIO $ getLeader
-                  cd' <- case mLeader of
-                    Just leader | self == leader -> do
+                  cd' <- if maybe True (== self) mLeader then do
                       leaseRequest <- mkLeaseRequest $ decreeLegislatureId d
-                      usend ppid (cd, leaseRequest)
+                      say $ "LeaseRenewalTime: sending lease request " ++ show w
+                      usend ppid ( cd
+                                 , [] :: [ProcessId]
+                                 , leaseRequest
+                                 )
                       return $ succ cd
-                    _ ->  return cd
+                    else
+                      return cd
+                  usend timerPid (self, leaseTimeout, LeaseRenewalTime)
                   go st{ stateCurrentDecree = cd' }
 
             , matchIf (\(Decree _ dᵢ _ :: Decree (Value a)) ->
@@ -678,7 +767,7 @@ replica Dict
                   case locale of
                       -- Ack back to the client, but only if it is not us asking
                       -- the lease (no other replica uses locale Local).
-                      Local κ | κ /= self -> usend κ ()
+                      Local κs | κs /= [self] -> forM_ κs $ flip usend ()
                       _ -> return ()
                   usend self $ Decree Stored dᵢ v
                   go st
@@ -697,7 +786,7 @@ replica Dict
                         -- latest membership can still be recovered from disk.
                         liftIO $ trimTheLog
                           acid (persistDirectory (processNodeId self)) αs ρs
-                          (decreeLegislatureId d) (decreeNumber w0)
+                          (decreeLegislatureId d) epoch (decreeNumber w0)
                         sref' <- stLogDump w' s'
                         return (w', Just sref')
                       else
@@ -736,12 +825,16 @@ replica Dict
                       usend self Status
 
                       leaseStart' <- setLeaseTimer timerPid requestStart ρs'
+                      let epoch' = if take 1 ρs' /= take 1 ρs
+                                     then decreeLegislatureId d'
+                                     else epoch
 
                       go st{ stateLeaseStart = leaseStart'
                            , stateAcceptors = αs'
                            , stateReplicas = ρs'
                            , stateUnconfirmedDecree = d'
                            , stateCurrentDecree = cd'
+                           , stateEpoch = epoch'
                            , stateSnapshotRef       = msref'
                            , stateSnapshotWatermark = w0'
                            , stateWatermark = w'
@@ -762,7 +855,7 @@ replica Dict
                         locale == Remote && w < dᵢ && not (Map.member (decreeNumber dᵢ) log)) $
                        \(Decree locale dᵢ v) -> do
                   _ <- liftIO $ Acid.update acid $ MemoryInsert (decreeNumber dᵢ) v
-                  (_, _, _, log') <- liftIO $ Acid.query acid $ MemoryGet
+                  (_, _, _, _, log') <- liftIO $ Acid.query acid MemoryGet
                   queryMissingFrom (decreeNumber w) others log'
                   --- XXX set cd to @max cd (succ dᵢ)@?
                   --
@@ -789,60 +882,128 @@ replica Dict
                     Just l | l < decreeLegislatureId d -> return cd
                     -- Send to the proposer otherwise.
                     _ -> do
-                      usend ppid (cd, request)
+                      say "sending lease request"
+                      usend ppid ( cd
+                                 , [] :: [ProcessId]
+                                 , request
+                                 )
                       return $ succ cd
                   go st{ stateCurrentDecree = cd' }
 
               -- Client requests.
+            , match $ \request@(μ, e, _ :: Request a) -> do
+                  mLeader <- liftIO getLeader
+                  if epoch <= e && mLeader == Just self then do
+                    usend bpid request
+                  else
+                    usend μ (epoch, ρs)
+                  go st
+
+              -- Message from the batcher
               --
               -- XXX The guard avoids proposing values for unreachable decrees.
-              -- It also ensures that nullipotent requests can be handled in
-              -- this handler (i.e. they get an up-to-date state).
-            , matchIf (\_ -> cd == w) $
-                       \(request :: Request a) -> do
+            , matchIf (\_ -> cd == w) $ \(rs :: [BatcherMsg a]) -> do
                   mLeader <- liftIO getLeader
                   (s', cd') <- case mLeader of
-                           Nothing -> do
-                             leaseRequest <- mkLeaseRequest $
-                                               decreeLegislatureId d
-                             usend ppid (cd, leaseRequest)
-                             -- Save the current request for later.
-                             usend self request
+                     -- Drop the request and ask for the lease.
+                     Nothing -> do
+                       leaseRequest <- mkLeaseRequest $ decreeLegislatureId d
+                       usend ppid ( cd
+                                  , [] :: [ProcessId]
+                                  , leaseRequest
+                                  )
+                       -- Notify the batcher.
+                       usend bpid ()
+                       -- Notify the ambassadors.
+                       forM_ (map batcherMsgAmbassador rs) $
+                         flip usend (epoch, ρs)
+                       return (s, succ cd)
+
+                     -- Drop the request.
+                     Just leader | self /= leader -> do
+                       -- Notify the batcher.
+                       usend bpid ()
+                       -- Notify the ambassadors.
+                       forM_ (map batcherMsgAmbassador rs) $
+                         flip usend (epoch, ρs)
+                       return (s, cd)
+
+                     -- I'm the leader, so handle the request.
+                     _ -> do
+                       let values (Values xs) = xs
+                           values _           = []
+                       if all
+                            ((Nullipotent ==) . requestHint . batcherMsgRequest)
+                            rs
+                       then do
+                         -- Serve nullipotent requests from the local state.
+                         s' <- foldM stLogNextState s $
+                                 concatMap
+                                   (values . requestValue . batcherMsgRequest)
+                                   rs
+                         -- Notify the batcher.
+                         usend bpid ()
+                         -- Notify the clients.
+                         forM_ (concatMap
+                                  (requestSender . batcherMsgRequest) rs
+                               ) $
+                           flip usend ()
+                         return (s', cd)
+                       else do
+                         let (rs', old) =
+                               partition ((epoch <=) . batcherMsgEpoch) rs
+                         -- Notify the ambassadors of old requests.
+                         forM_ (map batcherMsgAmbassador old) $
+                           flip usend (epoch, ρs)
+                         case rs' of
+                           -- Notify the batcher.
+                           [] -> do usend bpid ()
+                                    return (s, cd)
+                           BatcherMsg { batcherMsgRequest = r } : _ -> do
+                             usend ppid
+                               ( cd
+                               , map batcherMsgAmbassador rs' :: [ProcessId]
+                               , if isReconf $ requestValue r then r
+                                 else Request
+                                   { requestSender =
+                                       concatMap
+                                         (requestSender . batcherMsgRequest) rs'
+                                   , requestValue  =
+                                       Values $ concatMap
+                                         ( values
+                                         . requestValue
+                                         . batcherMsgRequest
+                                         )
+                                         rs'
+                                   , requestHint     = None
+                                   , requestForLease = Nothing
+                                   }
+                               )
                              return (s, succ cd)
-
-                           -- Forward the request to the leader.
-                           Just leader | self /= leader -> do
-                             usend leader request
-                             return (s, cd)
-
-                           -- I'm the leader, so handle the request.
-                           _ -> case (requestHint request, requestValue request) of
-                             -- Serve nullipotent requests from the local state.
-                             (Nullipotent, Values xs) -> do
-                                 s' <- foldM stLogNextState s xs
-                                 usend (requestSender request) ()
-                                 return (s', cd)
-                             -- Send the other requests to the proposer.
-                             _ -> do
-                               usend ppid (cd, request)
-                               return (s, succ cd)
                   go st{ stateCurrentDecree = cd', stateLogState = s' }
 
               -- Message from the proposer process
-            , match $ \(dᵢ,vᵢ,request@(Request κ (v :: Value a) _ rLease)) -> do
+              --
+              -- The request is dropped if the decree was accepted with a
+              -- different value already.
+            , match $
+                  \(dᵢ, vᵢ, μs, Request κs (v :: Value a) _ rLease) -> do
                   -- If the passed decree accepted other value than our
                   -- client's, don't treat it as local (ie. do not report back
                   -- to the client yet).
-                  let locale = if v == vᵢ then Local κ else Remote
+                  let κs' | isNothing rLease = bpid : κs
+                          | otherwise        = κs
+                      locale = if v == vᵢ then Local κs' else Remote
                   usend self $ Decree locale dᵢ vᵢ
                   forM_ others $ \ρ -> do
                       usend ρ $ Decree Remote dᵢ vᵢ
 
-                  when (v /= vᵢ && isNothing rLease) $
-                      -- Decree already has different value, so repost to
-                      -- hopefully get it accepted as a future decree number.
-                      -- But repost only if it is not a lease request.
-                      usend self request
+                  say "message from proposer"
+                  when (v /= vᵢ && isNothing rLease) $ do
+                    -- Send rejection acks.
+                    forM_ μs $ flip usend (epoch, ρs)
+                    usend bpid ()
+
                   let d' = max d (succ dᵢ)
                   go st{ stateUnconfirmedDecree = d' }
 
@@ -859,7 +1020,7 @@ replica Dict
             , match $ \(Query ρ n) -> do
                   case msref of
                     Just sref -> usend ρ $
-                      SnapshotInfo αs ρs (decreeLegislatureId d) sref w0 n
+                      SnapshotInfo αs ρs (decreeLegislatureId d) epoch sref w0 n
                     Nothing   -> return ()
                   go st
 
@@ -868,7 +1029,7 @@ replica Dict
               --
               -- It does not quite eliminate the chance of multiple snapshots
               -- being read in cascade, but it makes it less likely.
-            , match $ \(SnapshotInfo αs' ρs' lId' sref' w0' n) ->
+            , match $ \(SnapshotInfo αs' ρs' leg' epoch' sref' w0' n) ->
                   if not (Map.member n log) && decreeNumber w <= n &&
                      decreeNumber w < decreeNumber w0' then do
                     -- TODO: get the snapshot asynchronously
@@ -876,20 +1037,21 @@ replica Dict
                     mask_ (try $ stLogRestore sref') >>= \case
                      Left (_ :: SomeException) -> go st
                      Right s' -> do
-                      let lId  = decreeLegislatureId d
-                          lId'' = max lId lId'
-                          αs'' = if lId' >= lId then αs' else αs
-                          ρs'' = if lId' >= lId then ρs' else ρs
-                          d'  = DecreeId lId'' (max (decreeNumber w0')
+                      let leg  = decreeLegislatureId d
+                          leg'' = max leg leg'
+                          epoch'' = if leg' >= leg then epoch' else epoch
+                          αs'' = if leg' >= leg then αs' else αs
+                          ρs'' = if leg' >= leg then ρs' else ρs
+                          d'  = DecreeId leg'' (max (decreeNumber w0')
                                                     (decreeNumber d))
-                          cd' = DecreeId lId'' (max (decreeNumber w0')
+                          cd' = DecreeId leg'' (max (decreeNumber w0')
                                                     (decreeNumber cd))
                       -- Trimming here ensures that the log does not accumulate
                       -- decrees indefinitely if the state is oftenly restored
                       -- before saving a snapshot.
                       liftIO $ trimTheLog
                         acid (persistDirectory (processNodeId self)) αs'' ρs''
-                        lId'' (decreeNumber w0')
+                        leg'' epoch'' (decreeNumber w0')
 
                       go st { stateAcceptors         = αs''
                             , stateReplicas          = ρs''
@@ -899,38 +1061,48 @@ replica Dict
                             , stateSnapshotWatermark = w0'
                             , stateWatermark         = w0'
                             , stateLogState          = s'
+                            , stateEpoch             = epoch''
                             }
                   else go st
 
               -- Upon getting the max decree of another replica, compute the
               -- gaps and query for those.
-            , matchIf (\(Max _ dᵢ _ _) -> decreeNumber d < decreeNumber dᵢ) $
-                       \(Max ρ dᵢ _ _) -> do
-                  say $ "Got Max " ++ show dᵢ
+            , matchIf (\(Max _ d' _ _ _) -> decreeNumber d < decreeNumber d') $
+                       \(Max ρ d' epoch' αs' ρs') -> do
+                  say $ "Got Max " ++ show d'
                   queryMissingFrom (decreeNumber w) [ρ] $
-                    Map.insert (decreeNumber dᵢ) undefined log
-                  let d'  = d{decreeNumber = decreeNumber dᵢ}
-                      cd' = max d' cd
-                  go st{ stateUnconfirmedDecree = d', stateCurrentDecree = cd' }
+                    Map.insert (decreeNumber d') undefined log
+                  let cd' = max d' cd
+                  go st
+                    { stateUnconfirmedDecree = d'
+                    , stateCurrentDecree = cd'
+                    , stateAcceptors = αs'
+                    , stateReplicas = ρs'
+                    , stateEpoch = epoch'
+                    }
 
               -- Ignore max decree if it is lower than the current decree.
             , matchIf (\_ -> otherwise) $ \(_ :: Max) -> do
                   go st
 
               -- A replica is trying to join the group.
-            , match $ \m@(Helo π cpolicy) -> do
+            , matchIf (\(_, e, _) -> epoch <= e) $
+                       \(μ, _, Helo π cpolicy) -> do
 
                   mLeader <- liftIO $ getLeader
                   case mLeader of
+                    -- Drop the request and ask for the lease.
                     Nothing -> do
                       mkLeaseRequest (decreeLegislatureId d) >>= usend self
-                      -- Save the current request for later.
-                      usend self m
+                      -- When the leader is unknown, the negative ack is not
+                      -- very useful to the ambassador, but the batcher does
+                      -- need it to avoid blocking indefinitely.
+                      usend μ (epoch, ρs)
                       go st
 
-                    -- Forward the request to the leader.
+                    -- Drop the request.
                     Just leader | self /= leader -> do
-                      usend leader m
+                      usend μ (epoch, ρs)
                       go st
 
                     -- I'm the leader, so handle the request.
@@ -942,13 +1114,16 @@ replica Dict
                           ρs'' = self : filter (/= self) ρs'
                       requestStart <- liftIO $ getTime Monotonic
                       -- Get self to propose reconfiguration...
-                      usend self $ Request
-                        { requestSender   = π
-                        , requestValue    =
-                            Reconf requestStart αs' ρs'' :: Value a
-                        , requestHint     = None
-                        , requestForLease = Nothing
-                        }
+                      usend self ( μ
+                                 , epoch
+                                 , Request
+                                     { requestSender   = [π]
+                                     , requestValue    =
+                                         Reconf requestStart αs' ρs'' :: Value a
+                                     , requestHint     = None
+                                     , requestForLease = Nothing
+                                     }
+                                 )
 
                       -- Update the list of acceptors of the proposer...
                       usend ppid (intersect αs αs')
@@ -956,12 +1131,22 @@ replica Dict
                       -- ... filtering out invalidated nodes for quorum.
                       go st{ stateAcceptors = intersect αs αs' }
 
+            , matchIf (\(_, e, _ :: Helo) -> e < epoch) $
+                      \(μ, _, _) -> do
+                  usend μ (epoch, ρs)
+                  go st
+
+              -- An ambassador wants to know who the leader is.
+            , match $ \μ -> do
+                  usend μ (epoch, ρs)
+                  go st
+
             -- Clock tick - time to advertize. Can be sent by anyone to any
             -- replica to provoke status info.
             , match $ \Status -> do
                   -- Forget about all previous ticks to avoid broadcast storm.
                   let loop = expectTimeout 0 >>= maybe (return ()) (\() -> loop)
-                  loop
+                  when (not schedulerIsEnabled) loop
 
                   say $ "Status info:" ++
                       "\n\tunconfirmed decree: " ++ show d ++
@@ -970,59 +1155,9 @@ replica Dict
                       "\n\tacceptors:          " ++ show αs ++
                       "\n\treplicas:           " ++ show ρs
                   forM_ others $ \ρ -> usend ρ $
-                    Max self d αs ρs
+                    Max self d epoch αs ρs
                   go st
             ]
-
-batcher :: forall a. SerializableDict a
-        -> ProcessId
-        -> Process ()
-batcher SerializableDict ρ = do
-    link ρ
-    go Seq.empty Seq.empty
-  where
-    sendBatch :: Seq (Request a) -> Process ()
-    sendBatch requests = do
-        self <- getSelfPid
-        usend ρ $ Request
-          { requestSender   = self
-          , requestValue    = concatValues $ fmap requestValue requests
-          , requestHint     = None
-          , requestForLease = Nothing }
-
-    -- collected: requests not yet submitted for consensus
-    --
-    -- inFlight: last batch of request submitted for consensus and waiting for
-    --   confirmation; or empty if no batch in-flight
-    go :: Seq (Request a) -> Seq (Request a) -> Process r
-    go collected inFlight = receiveWait
-      [ match $ \() -> do
-            -- Replica acknowledges the last submitted batch (it was accepted by
-            -- consensus and committed to log).
-            assert (not $ Seq.null inFlight) $ return ()
-            Foldable.forM_ inFlight $ \req ->
-              usend (requestSender req) ()
-            unless (Seq.null collected) $ sendBatch collected
-            go Seq.empty collected
-      , match $ \request -> do
-            assert (isValues $ requestValue request) $ return ()
-            case requestHint request of
-                -- Forward read requests immediately, as they can be answered
-                -- by the leader without consensus.
-                Nullipotent -> do
-                    usend ρ request
-                    go collected inFlight
-                _ -> if Seq.null inFlight
-                     then do
-                         assert (Seq.null collected) $ return ()
-                         let inFlight' = Seq.singleton request
-                         sendBatch inFlight'
-                         go Seq.empty inFlight'
-                     else go (collected |> request) inFlight
-      -- Forward every relevant other request
-      , match $ \(request :: Helo)   -> usend ρ request >> go collected inFlight
-      , match $ \(request :: Status) -> usend ρ request >> go collected inFlight
-      ]
 
 dictValue :: SerializableDict a -> SerializableDict (Value a)
 dictValue SerializableDict = SerializableDict
@@ -1059,9 +1194,10 @@ delay SerializableDict them f = do
 
 -- | Like 'uncurry', but extract arguments from a 'Max' message rather than
 -- a pair.
-unMax :: (DecreeId -> [ProcessId] -> [ProcessId] -> a) -> Max -> a
-unMax f (Max _ d αs ρs) =
-  f d αs ρs
+unMax :: (DecreeId -> LegislatureId -> [ProcessId] -> [ProcessId] -> a)
+      -> Max
+      -> a
+unMax f (Max _ d epoch αs ρs) = f d epoch αs ρs
 
 remotable [ 'replica
           , 'delay
@@ -1071,7 +1207,6 @@ remotable [ 'replica
           , 'dictNodeId
           , 'dictMax
           , 'dictTimeSpec
-          , 'batcher
           , 'consensusProtocol
           ]
 
@@ -1108,7 +1243,12 @@ delayClosure sdict them f =
       `closureApply` f
 
 unMaxCP :: Typeable a
-        => Closure (DecreeId -> [ProcessId] -> [ProcessId] -> Process a)
+        => Closure (  DecreeId
+                   -> LegislatureId
+                   -> [ProcessId]
+                   -> [ProcessId]
+                   -> Process a
+                   )
         -> CP Max a
 unMaxCP f = staticClosure $(mkStatic 'unMax) `closureApply` f
 
@@ -1132,22 +1272,19 @@ replicaClosure :: Typeable a
                -> Static (SerializableDict a)
                -> Closure Config
                -> Closure (Log a)
-               -> Closure (TimeSpec -> DecreeId -> [ProcessId] -> [ProcessId] -> Process ())
+               -> Closure (  TimeSpec
+                          -> DecreeId
+                          -> LegislatureId
+                          -> [ProcessId]
+                          -> [ProcessId]
+                          -> Process ()
+                          )
 replicaClosure sdict1 sdict2 config log =
     staticClosure $(mkStatic 'replica)
       `closureApply` staticClosure sdict1
       `closureApply` staticClosure sdict2
       `closureApply` config
       `closureApply` log
-
-batcherClosure :: Typeable a
-               => Static (SerializableDict a)
-               -> ProcessId
-               -> Closure (Process ())
-batcherClosure sdict ρ =
-    staticClosure $(mkStatic 'batcher)
-      `closureApply` staticClosure sdict
-      `closureApply` processIdClosure ρ
 
 -- | Hide the 'ProcessId' of the ambassador to a log behind an opaque datatype
 -- making it clear that the ambassador acts as a "handle" to the log - it does
@@ -1176,67 +1313,142 @@ data RemoteHandle a =
 
 instance Typeable a => Binary (RemoteHandle a)
 
-matchA :: forall a b . SerializableDict a -> ProcessId -> Process b -> Match b
-matchA SerializableDict ρ cont =
-  match $ \a -> do
-    usend ρ (a :: Request a)
-    cont
+-- | @ambassadorAux@ provides the implementation of @ambassador@ out of the
+-- @remotableDecl@ use below. This improves compiler errors, mostly.
+ambassadorAux :: forall a . SerializableDict a
+              -> Config
+              -> [ProcessId]
+              -> ([ProcessId] -> Closure (Process ()))
+              -> Process ()
+ambassadorAux _ _ [] _ = do
+    say "ambassador: Set of replicas must be non-empty."
+    die "ambassador: Set of replicas must be non-empty."
+ambassadorAux SerializableDict Config{leaseTimeout} (ρ0 : others)
+              cAmbassador =
+    monitor ρ0 >>= go 0 (Just ρ0) others
+  where
+    go :: LegislatureId    -- ^ The epoch of the replicas (use 0 while unknown)
+       -> Maybe ProcessId  -- ^ The leader replica if known
+       -> [ProcessId]      -- ^ The other replicas
+       -> MonitorRef       -- ^ The monitor ref of a replica we are contacting
+       -> Process b
+    go epoch mLeader ρs ref = receiveWait
+      [ match $ \(Clone δ) -> do
+          usend δ $ cAmbassador $ maybe id (:) mLeader ρs
+          go epoch mLeader ρs ref
+
+      , match $ \Status -> do
+          Foldable.forM_ mLeader $ flip usend Status
+          go epoch mLeader ρs ref
+
+        -- The leader replica changed.
+      , match $ \(epoch', ρ' : ρs') ->
+          -- Only update the replicas if they are at the same or higher
+          -- epoch.
+          if epoch <= epoch' then do
+            unmonitor ref
+            monitor ρ' >>= go epoch' (Just ρ') ρs'
+          else do
+            when (isNothing mLeader) $ do
+              -- Give some time to other replicas to elect a leader.
+              liftIO $ threadDelayInt64 leaseTimeout
+              -- Ask the head replica for the new leader.
+              let ρ'' : _ = ρs
+              getSelfPid >>= usend ρ''
+            go epoch mLeader ρs ref
+
+      , match $ \(ProcessMonitorNotification ref' _ _) -> do
+          if ref == ref' then do
+            -- Give some time to other replicas to elect a leader.
+            liftIO $ threadDelayInt64 leaseTimeout
+            -- Continue poking at the disconnected leader if there
+            -- are no more replicas.
+            let ρ : ρss = maybe ρs (: ρs) mLeader
+                ρs'@(ρ' : _) = ρss ++ [ρ]
+            ref'' <- monitor ρ'
+            -- Ask the head replica for the new leader.
+            getSelfPid >>= usend ρ'
+            go epoch Nothing ρs' ref''
+          else
+            go epoch mLeader ρs ref
+
+        -- A new replica was added to the group.
+      , match $ \ρ' -> do
+          let ρs' = if mLeader == Just ρ' then ρs
+                    -- Discard pids of replicas on the same node.
+                    else filter (((/=) `on` processNodeId) ρ') ρs ++ [ρ']
+          go epoch mLeader ρs' ref
+
+        -- A reconfiguration request
+      , match $ \m@(Helo κ _) -> do
+          usend κ ()
+          self <- getSelfPid
+          Foldable.forM_ mLeader $ flip usend (self, epoch, m)
+          go epoch mLeader ρs ref
+
+        -- A request
+      , match $ \a -> do
+          forM_ (requestSender a) $ flip usend ()
+          self <- getSelfPid
+          Foldable.forM_ mLeader $ flip usend (self, epoch, a :: Request a)
+          go epoch mLeader ρs ref
+      ]
+
+    -- Like 'threadDelay' but takes an Int64 argument.
+    threadDelayInt64 :: Int64 -> IO ()
+    threadDelayInt64 us | schedulerIsEnabled = return ()
+                        | otherwise          = do
+      let delta  = 60 * 1000000
+          (q, r) = divMod us (fromIntegral delta)
+      replicateM_ (fromIntegral q) $ threadDelay delta
+      threadDelay $ fromIntegral r
 
 remotableDecl [
     [d| -- | The ambassador to a cgroup is a local process that stands as a proxy to
         -- the cgroup. Its sole purpose is to provide a 'ProcessId' to stand for the
         -- cgroup and to forward all messages to the cgroup.
-        ambassador :: (Static (Some SerializableDict),[ProcessId]) -> Process ()
-        ambassador (_,[]) = die "ambassador: Set of replicas must be non-empty."
-        ambassador (ssdict,replicas) = do
-            nid <- getSelfNode
-            Some sdict <- unStatic ssdict
-            let choose ρs =
-                  fromMaybe (error "ambassador: empty list of replicas") $
-                    -- prefer a local replica
-                    find ((nid ==) . processNodeId) ρs
-                    <|> listToMaybe ρs
-
-                go :: [ProcessId] -> ProcessId -> Process b
-                go ρs ρ = receiveWait
-                  [ match $ \(Clone δ) -> do
-                      usend δ $ $(mkClosure 'ambassador) (ssdict, ρs)
-                      go ρs ρ
-
-                  , match $ \Status -> do
-                      usend ρ Status
-                      go ρs ρ
-
-                    -- A new replica was added to the group.
-                  , match $ \ρ' ->
-                      -- Discard pids of replicas on the same node.
-                      let ρs' = ρ' : filter (((/=) `on` processNodeId) ρ') ρs
-                       in go ρs' $ choose ρs'
-
-                    -- A reconfiguration request
-                  , match $ \m@(Helo _ _) -> usend ρ m >> go ρs ρ
-
-                    -- A request
-                  , matchA sdict ρ $ go ρs ρ
-                  ]
-
-            go replicas $ choose replicas
+        ambassador :: ( Static (Some SerializableDict)
+                      , Closure Config
+                      , [ProcessId]
+                      )
+                      -> Process ()
+        ambassador (ssdict, cConfig, replicas) = do
+          Some sdict <- unStatic ssdict
+          config <- unClosure cConfig
+          ambassadorAux sdict config replicas $ \ρs ->
+            $(mkClosure 'ambassador) (ssdict, cConfig, ρs)
 
         mkSomeSDict :: SerializableDict a -> Some SerializableDict
         mkSomeSDict = Some
+
+        initialLegislatureId :: LegislatureId
+        initialLegislatureId = 0
     |] ]
 
 -- | Append an entry to the replicated log.
 append :: Serializable a => Handle a -> Hint -> a -> Process ()
 append (Handle _ _ _ _ μ) hint x = callLocal $ do
     self <- getSelfPid
-    usend μ $ Request
-      { requestSender   = self
-      , requestValue    = Values [x]
-      , requestHint     = hint
-      , requestForLease = Nothing
-      }
+    -- If we are interrupted, because the request is abandoned, we want to
+    -- yield control back only after the ambassador acknowledges reception of
+    -- the request. Thus we preserve the arrival order of requests.
+    withMonitor μ $ uninterruptibleMask_ $ do
+      usend μ $ Request
+        { requestSender   = [self]
+        , requestValue    = Values [x]
+        , requestHint     = hint
+        , requestForLease = Nothing
+        }
+      receiveWait
+        [ match return
+        , match $ \(ProcessMonitorNotification _ _ _) -> return ()
+        ]
     expect
+
+uninterruptibleMask_ :: Process a -> Process a
+uninterruptibleMask_ p = do
+    proc <- ask
+    liftIO $ E.uninterruptibleMask_ $ runLocalProcess proc p
 
 -- | Make replicas advertize their status info.
 status :: Serializable a => Handle a -> Process ()
@@ -1306,10 +1518,16 @@ new sdict1 sdict2 config log nodes = do
                     replicaClosure sdict1 sdict2 config log
                         `closureApply` timeSpecClosure now
                         `closureApply` staticClosure initialDecreeIdStatic
+                        `closureApply` staticClosure
+                                         $(mkStatic 'initialLegislatureId)
                         `closureApply` listProcessIdClosure acceptors
-    batchers <- forM replicas $ \ρ -> spawn (processNodeId ρ) $ batcherClosure sdict2 ρ
     -- Create a new local proxy for the cgroup.
-    Handle sdict1 sdict2 config log <$> spawnLocal (ambassador (staticApply $(mkStatic 'mkSomeSDict) sdict2, batchers))
+    Handle sdict1 sdict2 config log <$>
+      spawnLocal ( ambassador ( staticApply $(mkStatic 'mkSomeSDict) sdict2
+                              , config
+                              , replicas
+                              )
+                 )
 
 -- | Propose a reconfiguration according the given nomination policy. Note that
 -- in general, it is only safe to remove replicas if they are /certainly/ dead.
@@ -1319,7 +1537,15 @@ reconfigure :: Typeable a
             -> Process ()
 reconfigure (Handle _ _ _ _ μ) cpolicy = callLocal $ do
     self <- getSelfPid
-    usend μ $ Helo self cpolicy
+    -- If we are interrupted, because the request is abandoned, we want to
+    -- yield control back only after the ambassador acknowledges reception of
+    -- the request. Thus we preserve the arrival order of requests.
+    withMonitor μ $ uninterruptibleMask_ $ do
+      usend μ $ Helo self cpolicy
+      receiveWait
+        [ match return
+        , match $ \(ProcessMonitorNotification _ _ _) -> return ()
+        ]
     expect
 
 -- | Start a new replica on the given node, adding it to the group pointed to by
@@ -1349,11 +1575,10 @@ addReplica h@(Handle sdict1 sdict2 config log _) cpolicy nid = do
     ρ <- spawn nid $ bindCP (cpExpect sdictMax) $
              unMaxCP $ replicaClosure sdict1 sdict2 config log
                `closureApply` timeSpecClosure now
-    β <- spawn nid $ batcherClosure sdict2 ρ
     reconfigure h $ cpolicy
         `closureApply` processIdClosure α
         `closureApply` processIdClosure ρ
-    return β
+    return ρ
 
 -- | Kill the replica and acceptor and remove it from the group.
 removeReplica :: Typeable a
