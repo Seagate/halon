@@ -147,7 +147,7 @@ $(CLEAN):
 clean: $(CLEAN)
 depclean:
 	rm -rf .cabal-sandbox
-	rm cabal.sandbox.config
+	rm -f cabal.sandbox.config
 
 .PHONY: dep
 dep: cabal.sandbox.config
