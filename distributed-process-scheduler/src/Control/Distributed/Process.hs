@@ -13,6 +13,7 @@ module Control.Distributed.Process
   , matchChan
   , matchSTM
   , expect
+  , expectTimeout
   , receiveWait
   , receiveChan
   , spawnLocal
@@ -41,6 +42,7 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , matchChan
   , matchSTM
   , expect
+  , expectTimeout
   , receiveWait
   , receiveChan
   , spawnLocal
@@ -87,3 +89,9 @@ spawn :: NodeId -> Closure (Process ()) -> Process ProcessId
 spawn = if Internal.schedulerIsEnabled
         then Internal.spawn
         else DP.spawn
+
+{-# NOINLINE expectTimeout #-}
+expectTimeout :: Serializable a => Int -> Process (Maybe a)
+expectTimeout = if Internal.schedulerIsEnabled
+        then fmap Just . const Internal.expect
+        else DP.expectTimeout
