@@ -12,5 +12,4 @@ RUN git checkout @@COMMIT@@
 # hopefully.
 
 ENV CABAL_FLAGS --flag="maintainer"
-RUN make
-
+# RUN docker/3-halon/build-with-artifacts
