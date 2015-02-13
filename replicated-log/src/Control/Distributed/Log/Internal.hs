@@ -499,11 +499,8 @@ replica Dict
 
     ppid <- spawnLocal $ link self >> proposer self Bottom acceptors
     timerPid <- spawnLocal $ link self >> timer
-    -- If I'm the leader, the first lease starts at the time the request to
-    -- spawn the replica was sent. Otherwise, it starts now.
-    leaseStart0' <- if [self] == take 1 replicas
-                    then return leaseStart0
-                    else liftIO $ getTime Monotonic
+    leaseStart0' <- setLeaseTimer timerPid leaseStart0 replicas
+
     go ReplicaState
          { stateProposerPid = ppid
          , stateTimerPid = timerPid
@@ -522,6 +519,27 @@ replica Dict
          , stateLogNextState = logNextState
          }
   where
+
+    -- Sets the timer to renew the lease and returns the time at which the lease
+    -- is started.
+    setLeaseTimer :: ProcessId     -- ^ pid of the timer process
+                  -> TimeSpec      -- ^ time at which the request was submitted
+                  -> [ProcessId]   -- ^ replicas
+                  -> Process TimeSpec
+    setLeaseTimer timerPid requestStart ρs = do
+      -- If I'm the leader, the lease starts at the time
+      -- the request was made. Otherwise, it starts now.
+      self <- getSelfPid
+      now <- liftIO $ getTime Monotonic
+      let timeSpecToMicro (TimeSpec s ns) = s * 1000000 + ns `div` 1000
+      if [self] == take 1 ρs then do
+        let t = (leaseTimeout - leaseRenewTimeout) -
+                timeSpecToMicro (now - requestStart)
+        usend timerPid (self, t, LeaseRenewalTime)
+        return requestStart
+      else
+        return now
+
     -- A timer process. When receiving @(pid, t, msg)@, the process waits for
     -- @t@ microsenconds and then it sends @msg@ to @pid@.
     --
@@ -531,9 +549,20 @@ replica Dict
     timer :: Process ()
     timer = expect >>= wait
       where
-        wait :: (ProcessId, Int, TimerMessage) -> Process ()
-        wait (sender, t, msg) =
-          expectTimeout t >>= maybe (usend sender msg >> timer) wait
+        wait :: (ProcessId, Int64, TimerMessage) -> Process ()
+        wait (sender, t, msg) = do
+          let -- Like 'threadDelay' but takes an Int64 argument.
+              expectTimeoutInt64 :: Serializable b => Int64 -> Process (Maybe b)
+              expectTimeoutInt64 us = do
+                let delta  = 60 * 1000000
+                    (q, r) = divMod us (fromIntegral delta)
+                    goN 0 = return Nothing
+                    goN n = expectTimeout delta
+                              >>= maybe (goN $ n-1) (return . Just)
+                goN (fromIntegral q :: Int)
+                  >>= maybe (expectTimeout $ fromIntegral r) (return . Just)
+
+          expectTimeoutInt64 t >>= maybe (usend sender msg >> timer) wait
 
     -- The proposer process makes consensus proposals.
     -- Proposals are aborted when a reconfiguration occurs.
@@ -706,21 +735,8 @@ replica Dict
                       -- Tick.
                       usend self Status
 
-                      -- If I'm the leader, the lease starts at the time
-                      -- the request was made. Otherwise, it starts now.
-                      now <- liftIO $ getTime Monotonic
-                      leaseStart' <-
-                          if [self] == take 1 ρs'
-                          then do
-                            usend timerPid
-                                 ( self
-                                 , max 0 (TimeSpec 0 ((leaseTimeout -
-                                                       leaseRenewTimeout) * 1000) -
-                                           (now - requestStart))
-                                 , LeaseRenewalTime
-                                 )
-                            return requestStart
-                          else return now
+                      leaseStart' <- setLeaseTimer timerPid requestStart ρs'
+
                       go st{ stateLeaseStart = leaseStart'
                            , stateAcceptors = αs'
                            , stateReplicas = ρs'
