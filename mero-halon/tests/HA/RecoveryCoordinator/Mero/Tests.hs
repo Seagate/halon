@@ -14,6 +14,7 @@ module HA.RecoveryCoordinator.Mero.Tests
 import Test.Framework
 
 import HA.Resources
+import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue
 import HA.EventQueue.Producer (promulgateEQ)

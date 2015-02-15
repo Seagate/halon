@@ -73,6 +73,8 @@ Library
                    HA.Services.Mero
                    HA.Services.SSPL
                    HA.RecoveryCoordinator.Mero
+                   HA.RecoveryCoordinator.CEP
+                   HA.RecoveryCoordinator.Definitions
   Build-Depends:   base,
                    amqp,
                    halon,
@@ -89,7 +91,8 @@ Library
                    binary,
                    network-transport,
                    unordered-containers,
-                   cep
+                   cep,
+                   netwire
   if flag(mero)
       Exposed-Modules: Mero.Notification.HAState
                        HA.Resources.Mero

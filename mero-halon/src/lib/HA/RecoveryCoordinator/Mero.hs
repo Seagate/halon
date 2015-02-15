@@ -26,24 +26,42 @@
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
 module HA.RecoveryCoordinator.Mero
-       ( recoveryCoordinator
-       , IgnitionArguments(..)
-       , HA.RecoveryCoordinator.Mero.__remoteTable
-       , recoveryCoordinator__sdict
-       , recoveryCoordinator__static
+       ( IgnitionArguments(..)
+       , LoopState(..)
+       , ReconfigureCmd(..)
+       , ReconfigureMsg
+       , sayRC
+       , syncResourceGraph
+       , knownResource
+       , registerNode
+       , startEQTracker
+       , ack
+       , lookupRunningService
+       , isServiceRunning
+       , registerService
+       , startService
+       , getSelfProcessId
+       , sendMsg
+       , unregisterPreviousServiceProcess
+       , registerServiceName
+       , registerServiceProcess
+       , makeRecoveryCoordinator
+       , prepareEpochResponse
+       , updateServiceConfiguration
+       , getEpochId
+       , decodeMsg
+       , bounceServiceTo
        ) where
 
+import Prelude hiding ((.), id, mapM_)
 import HA.Resources
 import HA.Service
 #ifdef USE_MERO
 import HA.Resources.Mero (ConfObject(..), ConfObjectState(..), Is(..))
 #endif
 import HA.NodeAgent.Messages
-import HA.NodeUp
 import qualified HA.Services.EQTracker as EQT
 
-import Mero.Messages
-import HA.EventQueue.Consumer
 import HA.EventQueue.Producer (promulgateEQ)
 import qualified HA.ResourceGraph as G
 #ifdef USE_MERO
@@ -51,37 +69,32 @@ import qualified Mero.Notification
 import Mero.Notification.HAState
 #endif
 
-import HA.Services.Mero
-
 import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
+import Control.Distributed.Process.Serializable
 import Control.Distributed.Static (closureApply, unstatic)
 import Control.Monad.Reader (ask)
+import qualified Control.Monad.State.Strict as State
+import Control.Monad.Trans
 
-import Control.Applicative ((<|>))
-import Control.Category ((.))
-import Control.Arrow ((>>>))
-import Control.Monad (forM_, void)
+import Control.Monad (void, mapM_)
+import Control.Wire hiding (when)
 
 import Data.Binary (Binary, Get, encode, get, put)
 import Data.Binary.Put (runPut)
 import Data.Binary.Get (runGet)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BS
-import Data.Foldable (mapM_)
-import Data.List (foldl', intersect)
+import Data.Dynamic
+import Data.List (intersect, foldl')
 import qualified Data.Map.Strict as Map
-import Data.Maybe (isNothing)
 #ifdef USE_RPC
 import Data.Maybe (isJust)
 #endif
-import Data.Monoid
-import Data.Typeable (Typeable)
+import Data.Word
 
 import GHC.Generics (Generic)
-
-import Prelude hiding ((.), mapM_)
 
 import Network.CEP
 
@@ -114,6 +127,12 @@ instance ProcessEncode ReconfigureCmd where
   encodeP (ReconfigureCmd node svc@(Service _ _ d)) =
     ReconfigureMsg . runPut $ put d >> put (node, svc)
 
+-- | Fake @Monoid@ instance which still satisfies @Monoid@ laws. Used to satisfy
+-- `netwire` @Monoid@ constraint.
+instance Monoid LoopState where
+    mempty = LoopState G.unsafeEmptyGraph Map.empty
+    mappend _ r = r
+
 -- | Initial configuration data.
 data IgnitionArguments = IgnitionArguments
   { -- | The names of all tracking station nodes.
@@ -131,8 +150,117 @@ instance Binary NodeAgentContacted
 reconfFailureLimit :: Int
 reconfFailureLimit = 3
 
+syncResourceGraph :: State.StateT LoopState Process ()
+syncResourceGraph = do
+    ls       <- State.get
+    newGraph <- lift $ G.sync $ lsGraph ls
+    State.put ls { lsGraph = newGraph }
+
+knownResource :: G.Resource a => a -> State.StateT LoopState Process Bool
+knownResource res = do
+    ls <- State.get
+    return $ G.memberResource res (lsGraph ls)
+
+registerNode :: Node -> State.StateT LoopState Process ()
+registerNode node = do
+    rg <- State.gets lsGraph
+
+    let rg' = G.newResource node                       >>>
+              G.newResource EQT.eqTracker              >>>
+              G.connect Cluster Supports EQT.eqTracker >>>
+              G.connect Cluster Has node $ rg
+
+    State.modify $ \ls -> ls { lsGraph = rg' }
+
+startEQTracker :: IgnitionArguments
+               -> NodeId
+               -> State.StateT LoopState Process ()
+startEQTracker argv nid = State.gets lsGraph >>= \rg -> lift $ do
+    eqt  <- _startService nid EQT.eqTracker () rg
+    True <- updateEQNodes eqt (stationNodes argv)
+    return ()
+
+ack :: ProcessId -> State.StateT LoopState Process ()
+ack pid = lift $ usend pid ()
+
+lookupRunningService :: Configuration a
+                     => Node
+                     -> Service a
+                     -> State.StateT LoopState Process (Maybe (ServiceProcess a))
+lookupRunningService n svc =
+    fmap (runningService n svc . lsGraph) State.get
+
+isServiceRunning :: Configuration a
+                 => Node
+                 -> Service a
+                 -> State.StateT LoopState Process Bool
+isServiceRunning n svc =
+    fmap (maybe False (const True)) $ lookupRunningService n svc
+
+registerService :: Configuration a
+                => Service a
+                -> State.StateT LoopState Process ()
+registerService svc = do
+    ls <- State.get
+    let rg' = G.newResource svc >>>
+              G.connect Cluster Supports svc $ lsGraph ls
+    State.put ls { lsGraph = rg' }
+
+startService :: Configuration a
+             => NodeId
+             -> Service a
+             -> a
+             -> State.StateT LoopState Process ProcessId
+startService n svc conf =
+    lift . _startService n svc conf . lsGraph =<< State.get
+
+unregisterPreviousServiceProcess :: Configuration a
+                                 => Node
+                                 -> Service a
+                                 -> ServiceProcess a
+                                 -> State.StateT LoopState Process ()
+unregisterPreviousServiceProcess n svc sp = do
+    ls <- State.get
+    let rg' = G.disconnect sp Owns (serviceName svc) >>>
+              G.disconnect n Runs sp                 >>>
+              G.disconnect svc InstanceOf sp $ lsGraph ls
+    State.put ls { lsGraph = rg' }
+
+registerServiceName :: Configuration a
+                    => Service a
+                    -> State.StateT LoopState Process ()
+registerServiceName svc = do
+    ls <- State.get
+    let rg' = G.newResource (serviceName svc) $ lsGraph ls
+    State.put ls { lsGraph = rg' }
+
+registerServiceProcess :: Configuration a
+                       => Node
+                       -> Service a
+                       -> a
+                       -> ServiceProcess a
+                       -> State.StateT LoopState Process ()
+registerServiceProcess n svc cfg sp = do
+    ls <- State.get
+    let rg' = G.newResource sp                    >>>
+              G.connect n Runs sp                 >>>
+              G.connect svc InstanceOf sp         >>>
+              G.connect sp Owns (serviceName svc) >>>
+              writeConfig sp cfg Current $ lsGraph ls
+
+    State.put ls { lsGraph = rg' }
+
+getSelfProcessId :: MonadTrans m => m Process ProcessId
+getSelfProcessId = lift getSelfPid
+
 sayRC :: String -> Process ()
 sayRC s = say $ "Recovery Coordinator: " ++ s
+
+sendMsg :: (MonadTrans m, Serializable a) => ProcessId -> a -> m Process ()
+sendMsg pid a = lift $ usend pid a
+
+decodeMsg :: (MonadTrans m, ProcessEncode a) => BinRep a -> m Process a
+decodeMsg = lift . decodeP
 
 initialize :: ProcessId -> Process G.Graph
 initialize mm = do
@@ -151,13 +279,13 @@ initialize mm = do
 -- Reconfiguration                                      --
 ----------------------------------------------------------
 
-startService :: forall a. Configuration a
+_startService :: forall a. Configuration a
              => NodeId -- ^ Node to start service on
              -> Service a -- ^ Service
              -> a
              -> G.Graph
              -> Process ProcessId
-startService node svc cfg _ = do
+_startService node svc cfg _ = do
   mynid <- getSelfNode
   pid <- spawn node $ serviceProcess svc
               `closureApply` closure (staticDecode sDict) (encode cfg)
@@ -174,33 +302,72 @@ killService _ (ServiceProcess pid) reason =
   exit pid reason
 
 -- | Bounce the service to a particular configuration.
-bounceServiceTo :: Configuration a
+_bounceServiceTo :: Configuration a
                => ConfigRole -- ^ Configuration role to bounce to.
                -> Node -- ^ Node on which to bounce service
                -> Service a -- ^ Service to bounce
                -> G.Graph -- ^ Resource Graph
                -> Process ProcessId -- ^ Process ID of new service instance.
-bounceServiceTo role n@(Node nid) s g = case runningService n s g of
+_bounceServiceTo role n@(Node nid) s g = case runningService n s g of
     Just sp -> go sp
     Nothing -> error "Cannot bounce non-existent service."
   where
     go sp = case readConfig sp role g of
-      Just cfg -> killService nid sp Shutdown >> startService nid s cfg g
+      Just cfg -> killService nid sp Shutdown >> _startService nid s cfg g
       Nothing -> error "Cannot find current configuation"
 
-restartService :: Configuration a
-               => Node
-               -> Service a
-               -> G.Graph
-               -> Process ProcessId
-restartService = bounceServiceTo Current
 
-reconfigureService :: Configuration a
-                   => Node
-                   -> Service a
-                   -> G.Graph
-                   -> Process ProcessId
-reconfigureService = bounceServiceTo Intended
+bounceServiceTo :: Configuration a
+                => ConfigRole
+                -> Node
+                -> Service a
+                -> State.StateT LoopState Process ProcessId
+bounceServiceTo role n s =
+    lift . _bounceServiceTo role n s . lsGraph =<< State.get
+
+prepareEpochResponse :: State.StateT LoopState Process EpochResponse
+prepareEpochResponse = do
+    rg <- State.gets lsGraph
+
+    let edges :: [G.Edge Cluster Has (Epoch ByteString)]
+        edges = G.edgesFromSrc Cluster rg
+        G.Edge _ Has target = head edges
+
+    return $ EpochResponse $ epochId target
+
+updateServiceConfiguration :: Configuration a
+                           => a
+                           -> Service a
+                           -> NodeFilter
+                           -> State.StateT LoopState Process ()
+updateServiceConfiguration opts svc nodeFilter = do
+    ls <- State.get
+    lift $ sayRC $ "Request to reconfigure service "
+                 ++ snString (serviceName svc)
+                 ++ " on nodes " ++ (show nodeFilter)
+
+    let rg       = lsGraph ls
+        svcs     = filterServices nodeFilter svc rg
+        fns      = fmap (\(_, nsvc) -> writeConfig nsvc opts Intended) svcs
+        rgUpdate = foldl' (flip (.)) id fns
+        rg'      = rgUpdate rg
+
+    newGraph <- lift $ do
+      self <- getSelfPid
+      mapM_ (usend self . encodeP . (flip ReconfigureCmd) svc . fst) svcs
+      G.sync rg'
+
+    State.put ls { lsGraph = newGraph }
+
+getEpochId :: State.StateT LoopState Process Word64
+getEpochId = do
+    rg <- State.gets lsGraph
+
+    let edges :: [G.Edge Cluster Has (Epoch ByteString)]
+        edges = G.edgesFromSrc Cluster rg
+        G.Edge _ Has target = head edges
+
+    return $ epochId target
 
 -- | Starting from the root node, find nodes and services matching the given
 --   ConfigurationFilter (not really important how this is specified) and
@@ -229,281 +396,19 @@ data LoopState = LoopState {
   , lsFailMap :: Map.Map (ServiceName, Node) Int -- ^ Failed reconfiguration count
 }
 
--- | Fake @Monoid@ instance which still satisfies @Monoid@ laws. Used to satisfy
---   `netwire` @Monoid@ constraint.
-instance Monoid LoopState where
-    mempty = LoopState G.unsafeEmptyGraph Map.empty
-
-    mappend _ r = r
-
 -- | The entry point for the RC.
 --
 -- Before evaluating 'recoveryCoordinator', the global network variable needs
 -- to be initialized with 'HA.Network.Address.writeNetworkGlobalIVar'. This is
 -- done automatically if 'HA.Network.Address.startNetwork' is used to create
 -- the transport.
-recoveryCoordinator :: IgnitionArguments
-                    -> ProcessId -- ^ pid of the replicated event queue
-                    -> ProcessId -- ^ pid of the replicated multimap
-                    -> Process ()
-recoveryCoordinator argv eq mm = do
-    rg         <- HA.RecoveryCoordinator.Mero.initialize mm
-    startGraph <- G.sync rg
-    let start = LoopState { lsGraph   = startGraph
-                          , lsFailMap = Map.empty
-                          }
-
-    runProcessor definitions (network eq argv) start
-
-network :: ProcessId
-        -> IgnitionArguments
-        -> ComplexEvent LoopState Input LoopState
-network eq argv = reconfigureCmd  <|>
-                  eventqueueEvents eq argv
-
-definitions ::     ReconfigureMsg
-               .+. (    EQEvent NodeUp
-                   .++. EQEvent EpochRequest
-                   .++. EQEvent ConfigurationUpdateMsg
-                   .++. EQEvent ServiceStartRequestMsg
-                   .++. EQEvent ServiceStartedMsg
-                   .++. EQEvent ServiceFailedMsg
-                   .++. EQEvent ServiceCouldNotStartMsg
-                   .++. EQEvent StripingError
-                   .++. EQEvent EpochTransitionRequest
-#ifdef USE_MERO
-                   .++. EQEvent Mero.Notification.Get
-                   .++. EQEvent Mero.Notification.Set
-#endif
-                   )
-definitions = Ask
-
-reconfigureCmd :: ComplexEvent LoopState Input LoopState
-reconfigureCmd = repeatedly go . decoded
-  where
-    go ls@(LoopState rg _) msg = liftProcess $ do
-        ReconfigureCmd n@(Node nid) svc <- decodeP msg
-        SomeConfigurationDict G.Dict    <- unStatic (configDict svc)
-        sayRC $ "Reconfiguring service "
-                ++ (snString . serviceName $ svc)
-                ++ " on node " ++ (show nid)
-        _ <- reconfigureService n svc rg
-        return ls
-
-eventqueueEvents :: ProcessId
-                 -> IgnitionArguments
-                 -> ComplexEvent LoopState Input LoopState
-eventqueueEvents eq argv =     onNodeUp argv
-                           <|> epochRequest
-                           <|> configurationUpdate
-                           <|> serviceStart
-                           <|> serviceStarted
-                           <|> serviceFailed eq
-                           <|> stripingError eq
-                           <|> epochTransition eq
-#ifdef USE_MERO
-                           <|> meroGetNotification eq
-                           <|> meroSetNotification eq
-#endif
-
-onNodeUp :: IgnitionArguments
-         -> ComplexEvent LoopState Input LoopState
-onNodeUp argv = repeatedly go . decoded
-  where
-    go ls@(LoopState rg _) (HAEvent _ (NodeUp pid) _) = liftProcess $ do
-        let nid  = processNodeId pid
-            node = Node nid
-            prg  = if G.memberResource node rg
-                   then return rg
-                   else do
-                       sayRC $ "New node contacted: " ++ show nid
-                       let rg' = G.newResource node                       >>>
-                                 G.newResource EQT.eqTracker              >>>
-                                 G.connect Cluster Supports EQT.eqTracker >>>
-                                 G.connect Cluster Has node $ rg
-                       eqt <- startService nid EQT.eqTracker () rg'
-                       -- Send list of EQs to the tracker
-                       True <- updateEQNodes eqt (stationNodes argv)
-                       return rg'
-        usend pid ()
-        rg'      <- prg
-        newGraph <- G.sync rg'
-        return ls { lsGraph = newGraph }
-
-epochRequest :: ComplexEvent LoopState Input LoopState
-epochRequest = repeatedly go . decoded
-  where
-    go ls@(LoopState rg _) (HAEvent _ (EpochRequest pid) _) = liftProcess $ do
-        let edges :: [G.Edge Cluster Has (Epoch ByteString)]
-            edges = G.edgesFromSrc Cluster rg
-            G.Edge _ Has target = head edges
-
-        usend pid $ EpochResponse $ epochId target
-        return ls
-
-configurationUpdate :: ComplexEvent LoopState Input LoopState
-configurationUpdate = repeatedly go . decoded
-  where
-    go ls@(LoopState rg _) (HAEvent _ cum _) = liftProcess $ do
-        ConfigurationUpdate epoch opts svc nodeFilter <- decodeP cum
-        let edges :: [G.Edge Cluster Has (Epoch ByteString)]
-            edges = G.edgesFromSrc Cluster rg
-            G.Edge _ Has target = head edges
-
-        if epoch == epochId target
-            then do
-                 SomeConfigurationDict G.Dict <- unStatic (configDict svc)
-                 sayRC $ "Request to reconfigure service "
-                         ++ snString (serviceName svc)
-                         ++ " on nodes " ++ (show nodeFilter)
-                 -- Write the new config as a 'Wants' config
-                 let svcs = filterServices nodeFilter svc rg
-                     fns  = fmap (\(_, nsvc) -> writeConfig nsvc opts Intended)
-                                 svcs
-                     rgUpdate = foldl' (flip (.)) id fns
-                     rg'      = rgUpdate rg
-                 -- Send a message to ourselves asking to reconfigure
-                 self <- getSelfPid
-                 mapM_ (usend self . encodeP . (flip ReconfigureCmd) svc . fst) svcs
-                 newGraph <- G.sync rg'
-                 return ls { lsGraph = newGraph }
-            else return ls
-
-serviceStart :: ComplexEvent LoopState Input LoopState
-serviceStart = repeatedly go . decoded
-  where
-    go ls@(LoopState rg _) evt@(HAEvent _ ssrm _) = liftProcess $ do
-        ServiceStartRequest n@(Node nid) svc c <- decodeP ssrm
-        if G.memberResource n rg && (isNothing $ runningService n svc rg)
-            then do
-                SomeConfigurationDict G.Dict <- unStatic (configDict svc)
-                sayRC $ "Request to start service "
-                        ++ snString (serviceName svc)
-                        ++ " on node " ++ (show n)
-                let rg' = G.newResource svc >>>
-                          G.connect Cluster Supports svc $ rg
-                _ <- startService nid svc c rg'
-                newGraph <- G.sync rg'
-                return ls { lsGraph = newGraph }
-            else do
-                 s <- getSelfPid
-                 usend s evt
-                 return ls
-
-serviceStarted :: ComplexEvent LoopState Input LoopState
-serviceStarted = repeatedly go . decoded
-  where
-    go ls@(LoopState rg _) (HAEvent _ ssm _) = liftProcess $ do
-        ServiceStarted n (svc @ Service {..}) cfg sp <- decodeP ssm
-        SomeConfigurationDict G.Dict <- unStatic configDict
-        sayRC $ "Service successfully started: " ++ snString serviceName
-        let rg' = case runningService n svc rg of
-                    Just sp' -> G.disconnect sp' Owns serviceName >>>
-                                G.disconnect n Runs sp'           >>>
-                                G.disconnect svc InstanceOf sp
-                    Nothing -> G.newResource serviceName
-                  >>> G.newResource sp
-                  >>> G.connect n Runs sp
-                  >>> G.connect svc InstanceOf sp
-                  >>> G.connect sp Owns serviceName
-                  >>> writeConfig sp cfg Current $ rg
-        newGraph <- G.sync rg'
-        return ls { lsGraph = newGraph }
-
-serviceFailed :: ProcessId -> ComplexEvent LoopState Input LoopState
-serviceFailed eq = repeatedly go . decoded
-  where
-    go ls@(LoopState rg _) (HAEvent eid sfm _) = liftProcess $ do
-        ServiceFailed n srv@(Service _ _ sdict) <- decodeP sfm
-        SomeConfigurationDict G.Dict <- unStatic sdict
-        sayRC $ "Notified of service failure: " ++ show (serviceName srv)
-        -- XXX check for timeout.
-        _ <- restartService n srv rg
-        usend eq eid
-        return ls
-serviceCouldNotStart :: ProcessId
-                     -> ComplexEvent LoopState Input LoopState
-serviceCouldNotStart eq = repeatedly go . decoded
-  where
-    go ls@(LoopState rg failmap) (HAEvent eid scns _) = liftProcess $ do
-        ServiceCouldNotStart node srv@(Service _ _ sdict) <- decodeP scns
-        SomeConfigurationDict G.Dict <- unStatic sdict
-        -- Update the fail map to record this failure
-        let sName       = serviceName srv
-            failmap'    = Map.update (Just . succ) (sName, node) failmap
-            failedCount = Map.findWithDefault 0 (sName, node) failmap'
-
-        usend eq eid
-        -- If we have failed too many times, stop and remove any new config.
-        if failedCount >= reconfFailureLimit
-            then do
-              -- XXX notify the operator in a more appropriate manner.
-              sayRC $ "Can't start service: " ++ show (serviceName srv)
-              let failmap'' = Map.delete (sName, node) failmap'
-              rg' <- case runningService node srv rg of
-                       Just sp -> G.sync $ disconnectConfig sp Intended rg
-                       Nothing -> return rg
-              _ <- restartService node srv rg
-              return ls { lsGraph   = rg'
-                        , lsFailMap = failmap''
-                        }
-            else do
-              _ <- reconfigureService node srv rg
-              return ls { lsFailMap = failmap' }
-
-stripingError :: ProcessId
-              -> ComplexEvent LoopState Input LoopState
-stripingError eq = repeatedly go . decoded
-  where
-    go ls@(LoopState rg _) (HAEvent eid (StripingError node) _) = liftProcess $
-        if G.memberResource node rg
-        then do
-            sayRC $ "Striping error detected"
-
-            -- Increment the epoch.
-            let e :: G.Edge Cluster Has (Epoch ByteString)
-                e = head $ G.edgesFromSrc Cluster rg
-                current = G.edgeDst e
-                -- XXX this is a fake formula associated with the epoch. These
-                -- will be changed in due course to something meaningful,
-                -- possibly provided entirely by Mero and therefore the
-                -- content is not decided upon by the RC.
-                target = Epoch (succ (epochId current)) "y = x^3"
-                rg' = G.deleteEdge e >>> G.connect Cluster Has target $ rg
-                m0Instances = [ i1 | m0node <- (G.connectedTo Cluster Has rg'
-                                              :: [Node])
-                                   , i1 <- (G.connectedTo m0node Runs rg'
-                                            :: [ServiceProcess ()])
-                                   , i2 <- (G.connectedTo m0d InstanceOf rg'
-                                            :: [ServiceProcess ()])
-                                   , i1 == i2 ]
-
-            -- Broadcast new epoch.
-            forM_ m0Instances $ \(ServiceProcess pid) ->
-              usend pid EpochTransition
-                       { etCurrent = epochId current
-                       , etTarget  = epochId target
-                       , etHow     = epochState target :: ByteString
-                       }
-            usend eq eid
-            newGraph <- G.sync rg'
-            return ls { lsGraph = newGraph }
-        else return ls
-
-epochTransition :: ProcessId
-                -> ComplexEvent LoopState Input LoopState
-epochTransition eq = repeatedly go . decoded
-  where
-    go ls@(LoopState rg _) (HAEvent eid EpochTransitionRequest{..}  _) =
-        liftProcess $ do
-          let G.Edge _ Has target = head $ G.edgesFromSrc Cluster rg
-          usend etrSource EpochTransition
-                         { etCurrent = etrCurrent
-                         , etTarget  = epochId target
-                         , etHow     = epochState target :: ByteString
-                         }
-          usend eq eid
-          return ls
+makeRecoveryCoordinator :: ProcessId -- ^ pid of the replicated multimap
+                        -> RuleM LoopState ()
+                        -> Process ()
+makeRecoveryCoordinator mm rm = do
+    rg <- HA.RecoveryCoordinator.Mero.initialize mm
+    start <- G.sync rg
+    buildFromRuleMS (LoopState start Map.empty) rm
 
 #ifdef USE_MERO
 meroGetNotification :: ProcessId
@@ -543,4 +448,4 @@ meroSetNotification eq = repeatedly go . decoded
 
 #endif
 
-remotable [ 'recoveryCoordinator ]
+-- remotable [ 'recoveryCoordinator ]
