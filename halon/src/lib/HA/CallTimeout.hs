@@ -33,7 +33,7 @@ module HA.CallTimeout
   ) where
 
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Serializable (Serializable)
 import Control.Exception (throwIO, SomeException)
 import Control.Monad (forM_, void)
@@ -73,7 +73,7 @@ callTimeout :: (Serializable a, Serializable b) =>
   -> Process (Maybe b)  -- ^ Reply received, if any
 callTimeout timeout pid msg = do
     self <- getSelfPid
-    send pid (self, msg)
+    usend pid (self, msg)
     expectTimeout timeout
 
 -- | Send @(self, msg)@ to one or more @pids@ and wait for a reply.
@@ -87,7 +87,7 @@ callAnyTimeout :: (Serializable a, Serializable b) =>
   -> Process (Maybe b)  -- ^ Reply received, if any
 callAnyTimeout timeout pids msg = do
     self <- getSelfPid
-    forM_ pids $ \pid -> send pid (self, msg)
+    forM_ pids $ \pid -> usend pid (self, msg)
     expectTimeout timeout
 
 -- | Send @(self, msg)@ to one or more @pids@ and wait for a reply.
@@ -107,7 +107,7 @@ callAnyStaggerTimeout softTimeout timeout pids msg = do
     sender <- spawnLocal $ do
       link self
       forM_ pids $ \pid -> do
-        send pid (self, msg)
+        usend pid (self, msg)
         void $ receiveTimeout softTimeout []
     result <- expectTimeout timeout
     kill sender "done"
@@ -131,9 +131,9 @@ callAnyPreferTimeout softTimeout timeout preferPids pids msg = do
     self <- getSelfPid
     sender <- spawnLocal $ do
       link self
-      forM_ preferPids $ \pid -> send pid (self, msg)
+      forM_ preferPids $ \pid -> usend pid (self, msg)
       void $ receiveTimeout softTimeout []
-      forM_ pids $ \pid -> send pid (self, msg)
+      forM_ pids $ \pid -> usend pid (self, msg)
     result <- expectTimeout timeout
     kill sender "done"
     return result

@@ -20,7 +20,7 @@ import HA.Replicator.Log ( RLogGroup )
 
 import Control.Arrow ( first, second, (***) )
 import Control.Concurrent.MVar ( newEmptyMVar, readMVar, putMVar )
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Closure
     ( remotable, remotableDecl, mkStatic, mkClosure, functionTDict )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
@@ -122,7 +122,7 @@ remotableDecl [ [d|
                        link rcpid
                        multimap (viewRState $(mkStatic 'multimapView) rGroup)
                 rcpid <- spawnLocal (recoveryCoordinator eqpid mmpid)
-                send eqpid rcpid
+                usend eqpid rcpid
                 liftIO $ putMVar mRCPid rcpid
                 return rcpid
 

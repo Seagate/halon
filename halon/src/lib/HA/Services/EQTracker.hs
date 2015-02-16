@@ -32,7 +32,7 @@ import HA.NodeAgent.Messages (ServiceMessage(UpdateEQNodes))
 import HA.Service
 import HA.Services.Empty
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
@@ -92,7 +92,7 @@ remotableDecl [ [d|
         receiveWait
           [ match $ \(caller, UpdateEQNodes eqnids) -> do
               say $ "Got UpdateEQNodes: " ++ show eqnids
-              send caller True
+              usend caller True
               return $ eqs
                 { eqsReplicas = eqnids
                   -- Preserve the preferred replica only if it belongs
@@ -105,7 +105,7 @@ remotableDecl [ [d|
               say $ "Got PreferReplicas: " ++ show prs
               return $ handleEQResponse eqs rnid pnid
           , match $ \(ReplicaRequest requester) -> do
-              send requester $ ReplicaReply eqs
+              usend requester $ ReplicaReply eqs
               return eqs
           ] >>= go
 

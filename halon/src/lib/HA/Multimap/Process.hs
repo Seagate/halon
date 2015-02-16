@@ -17,7 +17,7 @@ import HA.Multimap.Implementation
             ( Multimap, insertMany, deleteValues, deleteKeys, toList )
 import HA.Replicator ( RGroup, updateStateWith, getState )
 
-import Control.Distributed.Process (Process, catch, match, receiveWait, say, send)
+import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Closure ( mkClosure, remotable )
 
 import Control.Exception ( SomeException )
@@ -43,14 +43,14 @@ multimap rg = go
     go = receiveWait
         [ match $ \(caller, upds) -> do
               updateStateWith rg $ $(mkClosure 'updateStore) (upds :: [StoreUpdate])
-              send caller (Just ())
+              usend caller (Just ())
             `catch` \e -> do
-              send caller (Nothing :: Maybe ())
+              usend caller (Nothing :: Maybe ())
               say ("MM: Writing failed: " ++ show (e :: SomeException))
         , match $ \(caller, ()) -> do
               kvs <- fmap toList $ getState rg
-              send caller (Just kvs)
+              usend caller (Just kvs)
             `catch` \e -> do
-              send caller (Nothing :: Maybe [(Key,[Value])])
+              usend caller (Nothing :: Maybe [(Key,[Value])])
               say ("MM: Reading failed: " ++ show (e :: SomeException))
         ] >> go

@@ -44,7 +44,7 @@ import HA.Replicator ( RGroup, updateStateWith, getState)
 import Control.SpineSeq (spineSeq)
 import FRP.Netwire hiding (Last(..), when)
 
-import Control.Distributed.Process hiding (newChan)
+import Control.Distributed.Process hiding (newChan, send)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Serializable
 
@@ -63,7 +63,8 @@ eventQueueLabel = "HA.EventQueue"
 
 -- | Send HAEvent and provide information about current process.
 sendHAEvent :: Serializable a => ProcessId -> HAEvent a -> Process ()
-sendHAEvent next ev = getSelfPid >>= \pid -> send next ev{eventHops = pid : eventHops ev}
+sendHAEvent next ev = do pid <- getSelfPid
+                         usend next ev{eventHops = pid : eventHops ev}
 
 -- | State of the event queue.
 --
@@ -142,7 +143,7 @@ rcSpawned rg = repeatedly go . decoded
         self <- getSelfPid
         (_, pendingEvents) <- getState rg
         for_ (reverse pendingEvents) $ \ev ->
-          send rc ev{eventHops = self : eventHops ev}
+          usend rc ev{eventHops = self : eventHops ev}
         return $ Last $ Just rc
 
 processDied :: RGroup g
@@ -196,7 +197,7 @@ eventAppeared rg = repeatedly go . decoded
         case getLast mRC of
           -- I know where the RC is.
           Just rc -> liftProcess $ do
-            send sender (selfNode, processNodeId rc)
+            usend sender (selfNode, processNodeId rc)
             sendHAEvent rc ev
             return mRC
           -- I don't know where the RC is.
@@ -207,14 +208,14 @@ eventAppeared rg = repeatedly go . decoded
               case newMRC of
                 Just rc -> do
                   _ <- monitor rc
-                  send sender (selfNode, processNodeId rc)
+                  usend sender (selfNode, processNodeId rc)
                   sendHAEvent rc ev
                 -- Send my own node when we don't know the RC
                 -- location. Note that I was able to read the
                 -- replicated state so very likely there is no RC.
                 Nothing -> do
                   n <- getSelfNode
-                  send sender (n, n)
+                  usend sender (n, n)
               return $ Last newMRC
 
 data RCDied = RCDied deriving (Show, Typeable, Generic)

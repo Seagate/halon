@@ -53,7 +53,7 @@ import Mero.Notification.HAState
 
 import HA.Services.Mero
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
 import Control.Distributed.Static (closureApply, unstatic)
@@ -325,7 +325,7 @@ onNodeUp argv = repeatedly go . decoded
                        -- Send list of EQs to the tracker
                        True <- updateEQNodes eqt (stationNodes argv)
                        return rg'
-        send pid ()
+        usend pid ()
         rg'      <- prg
         newGraph <- G.sync rg'
         return ls { lsGraph = newGraph }
@@ -338,7 +338,7 @@ epochRequest = repeatedly go . decoded
             edges = G.edgesFromSrc Cluster rg
             G.Edge _ Has target = head edges
 
-        send pid $ EpochResponse $ epochId target
+        usend pid $ EpochResponse $ epochId target
         return ls
 
 configurationUpdate :: ComplexEvent LoopState Input LoopState
@@ -364,7 +364,7 @@ configurationUpdate = repeatedly go . decoded
                      rg'      = rgUpdate rg
                  -- Send a message to ourselves asking to reconfigure
                  self <- getSelfPid
-                 mapM_ (send self . encodeP . (flip ReconfigureCmd) svc . fst) svcs
+                 mapM_ (usend self . encodeP . (flip ReconfigureCmd) svc . fst) svcs
                  newGraph <- G.sync rg'
                  return ls { lsGraph = newGraph }
             else return ls
@@ -387,7 +387,7 @@ serviceStart = repeatedly go . decoded
                 return ls { lsGraph = newGraph }
             else do
                  s <- getSelfPid
-                 send s evt
+                 usend s evt
                  return ls
 
 serviceStarted :: ComplexEvent LoopState Input LoopState
@@ -419,7 +419,7 @@ serviceFailed eq = repeatedly go . decoded
         sayRC $ "Notified of service failure: " ++ show (serviceName srv)
         -- XXX check for timeout.
         _ <- restartService n srv rg
-        send eq eid
+        usend eq eid
         return ls
 serviceCouldNotStart :: ProcessId
                      -> ComplexEvent LoopState Input LoopState
@@ -433,7 +433,7 @@ serviceCouldNotStart eq = repeatedly go . decoded
             failmap'    = Map.update (Just . succ) (sName, node) failmap
             failedCount = Map.findWithDefault 0 (sName, node) failmap'
 
-        send eq eid
+        usend eq eid
         -- If we have failed too many times, stop and remove any new config.
         if failedCount >= reconfFailureLimit
             then do
@@ -480,12 +480,12 @@ stripingError eq = repeatedly go . decoded
 
             -- Broadcast new epoch.
             forM_ m0Instances $ \(ServiceProcess pid) ->
-              send pid EpochTransition
+              usend pid EpochTransition
                        { etCurrent = epochId current
                        , etTarget  = epochId target
                        , etHow     = epochState target :: ByteString
                        }
-            send eq eid
+            usend eq eid
             newGraph <- G.sync rg'
             return ls { lsGraph = newGraph }
         else return ls
@@ -497,12 +497,12 @@ epochTransition eq = repeatedly go . decoded
     go ls@(LoopState rg _) (HAEvent eid EpochTransitionRequest{..}  _) =
         liftProcess $ do
           let G.Edge _ Has target = head $ G.edgesFromSrc Cluster rg
-          send etrSource EpochTransition
+          usend etrSource EpochTransition
                          { etCurrent = etrCurrent
                          , etTarget  = epochId target
                          , etHow     = epochState target :: ByteString
                          }
-          send eq eid
+          usend eq eid
           return ls
 
 #ifdef USE_MERO
@@ -514,8 +514,8 @@ meroGetNotification eq = repeatedly go . decoded
         liftProcess $ do
           let f oid = Note oid $ head $ G.connectedTo (ConfObject oid) Is rg
               nvec  = map f objs
-          send pid $ Mero.Notification.GetReply nvec
-          send eq eid
+          usend pid $ Mero.Notification.GetReply nvec
+          usend eq eid
           return ls
 
 meroSetNotification :: ProcessId
@@ -537,7 +537,7 @@ meroSetNotification eq = repeatedly go . decoded
           forM_ m0dNodes $ \(Node them) ->
             nsendRemote them (serviceName m0d) $
               Mero.Notification.Set nvec
-          send eq eid
+          usend eq eid
           newGraph <- G.sync rg'
           return ls { lsGraph = newGraph }
 

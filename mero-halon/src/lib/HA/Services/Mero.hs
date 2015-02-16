@@ -23,7 +23,7 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import System.Process
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (send)
 import System.IO
 import System.Directory (doesFileExist, removeFile)
 import Control.Monad (forever, unless, when, void)
@@ -98,14 +98,14 @@ remotableDecl [ [d|
         m0ctlMonitor srv out h_m0ctl = loop [] where
           loop buf = do
             let cleanup = do
-                    unless (null buf) $ send srv (reverse buf)
-                    send srv ()
+                    unless (null buf) $ usend srv (reverse buf)
+                    usend srv ()
             exited <- liftIO $ getProcessExitCode h_m0ctl
             case exited of
               Just _ -> cleanup
               _ -> do line <- liftIO (hGetLine out) `onException` cleanup
                       case (head line=='-', null buf) of
-                        (True,False) -> send srv (reverse buf) >> loop []
+                        (True,False) -> usend srv (reverse buf) >> loop []
                         (True,True) -> loop []
                         (_,_) -> loop (line:buf)
 
