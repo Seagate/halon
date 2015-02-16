@@ -579,7 +579,7 @@ replica Dict
                     else leaseTimeout * numerator   driftSafetyFactor
                                  `div` denominator driftSafetyFactor
               if not (null ρs) &&
-                 now - leaseStart < TimeSpec 0 (adjustedPeriod * 1000)
+                now - leaseStart < fromInteger (toInteger adjustedPeriod * 1000)
               then return $ Just $ head ρs
               else return Nothing
 
