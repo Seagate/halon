@@ -54,11 +54,9 @@ import Control.Concurrent.MVar
     , readMVar, modifyMVar_
     )
 import Control.Exception ( SomeException, throwIO )
-import Control.Monad ( void, when )
+import Control.Monad ( void, when, liftM2 )
 import Control.Monad.Reader ( ask )
-import Data.Binary ( Binary, encode )
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BSL
+import Data.Binary ( Binary(..) )
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
 import Data.Map ( Map )
 import qualified Data.Map as Map
@@ -89,9 +87,13 @@ schedulerVar = unsafePerformIO $ newEmptyMVar
 
 -- | Preprocessed process or channel message that can be delivered via
 -- 'DP.sendPayload'.
-data AddressedMsg = AddressedMsg DP.Identifier [BS.ByteString]
-                  deriving (Generic, Typeable)
-instance Binary AddressedMsg
+data AddressedMsg = AddressedMsg DP.Identifier DP.Message
+  deriving Typeable
+
+instance Binary AddressedMsg where
+  put (AddressedMsg ident msg) =
+    put ident >> put (DP.messageToPayload msg)
+  get = liftM2 AddressedMsg get (fmap DP.payloadToMessage get)
 
 -- | Messages that the tested application sends to the scheduler.
 data SchedulerMsg
@@ -262,14 +264,28 @@ startScheduler initialProcs seed0 = do
                     else Map.adjust (Map.adjust tail sender) pid msgs
                  )
 
-    forward (AddressedMsg rid payload) = do
+    forward (AddressedMsg rid msg) = do
         self <- ask
-        DP.liftIO $ DP.sendPayload
-          (DP.processNode self)
-          (DP.ProcessIdentifier $ DP.processId self)
-          rid
-          DP.NoImplicitReconnect
-          payload
+        let n = DP.processNode self
+            nid = DP.localNodeId n
+        case rid of
+          DP.ProcessIdentifier pid -> DP.forward msg pid
+          DP.SendPortIdentifier spId ->
+            if DP.processNodeId (DP.sendPortProcessId spId) == nid then
+              -- The local path is more than an optimization.
+              -- It is needed to ensure that forwarded messages and
+              -- those sent with DP.send arrive in order in the local case.
+              DP.sendCtrlMsg Nothing (DP.LocalPortSend spId msg)
+            else do
+              -- TODO: There used to be an implementation which used
+              -- DP.sendPayload to send messages through channels.
+              -- Unfortunately, messages sent through channels and control
+              -- messages sent by the scheduler to the process waiting on the
+              -- receiving end can arrive in any order.
+              DP.say "startScheduler.forward: remote channels are not supported"
+              error "startScheduler.forward: remote channels are not supported"
+          _ -> do DP.say $ "startScheduler.forward: unhandled case " ++ show rid
+                  error $ "startScheduler.forward: unhandled case " ++ show rid
 
 
 -- | Lift 'Control.Concurrent.modifyMVar'
@@ -311,7 +327,7 @@ send pid msg = do
   self <- DP.getSelfPid
   sendS $ Send self pid $ AddressedMsg
     (DP.ProcessIdentifier pid)
-    (DP.messageToPayload $ DP.createMessage msg)
+    (DP.createUnencodedMessage msg)
 
 usend :: Serializable a => ProcessId -> a -> Process ()
 usend = send
@@ -322,7 +338,7 @@ sendChan sendPort msg = do
     let spId = DP.sendPortId sendPort
     sendS $ Send self (DP.sendPortProcessId spId) $ AddressedMsg
       (DP.SendPortIdentifier spId)
-      (BSL.toChunks $ encode msg)
+      (DP.createUnencodedMessage msg)
 
 -- | Sends a message to the scheduler.
 sendS :: Serializable a => a -> Process ()
