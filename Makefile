@@ -96,9 +96,11 @@ ifdef USE_RPC
 TEST_NID = $(shell sudo lctl list_nids | head -1)
 TEST_LISTEN = $(TEST_NID):12345:34:1
 override CABAL_FLAGS += -frpc
+DC_HOST_IP = $(TEST_NID):12345:34
 else
 USE_TCP = 1
 TEST_LISTEN = 127.0.0.1:8090
+DC_HOST_IP = 127.0.0.1
 endif
 
 ifdef DEBUG
@@ -130,6 +132,7 @@ export USE_RPC
 export USE_RPCLITE
 export USE_MERO
 export TEST_LISTEN
+export DC_HOST_IP
 
 .PHONY: ci
 ci: cabal.config build
