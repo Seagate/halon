@@ -34,14 +34,15 @@ import Control.Applicative ((<$>))
 import Control.Arrow (first)
 import Control.Monad
 import Data.ByteString ( ByteString )
+import Network.CEP
 import Network.Transport (Transport)
 
 #ifndef USE_RPC
 import Control.Concurrent (threadDelay)
-import Network.CEP
 import qualified Network.Socket as TCP
 import qualified Network.Transport.TCP as TCP
 #endif
+
 
 eqSDict :: SerializableDict EventQueue
 eqSDict = SerializableDict
