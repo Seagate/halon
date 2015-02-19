@@ -11,7 +11,7 @@ module Control.Distributed.Log.Snapshot
 
 import Control.Arrow (second)
 import Control.Concurrent.MVar
-import Control.Distributed.Process hiding (send)
+import Control.Distributed.Process hiding (callLocal, send)
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Control.Distributed.Process.Serializable
 import Control.Exception (SomeException, throwIO, Exception)
