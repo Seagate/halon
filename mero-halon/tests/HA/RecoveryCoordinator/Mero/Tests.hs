@@ -7,7 +7,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 module HA.RecoveryCoordinator.Mero.Tests
   ( testServiceRestarting
   ) where
@@ -36,8 +35,6 @@ import qualified HA.Services.Dummy as Dummy
 import RemoteTables ( remoteTable )
 
 import Control.Distributed.Process
-import qualified Control.Distributed.Process.Internal.Types as I
-    (Process(..))
 import Control.Distributed.Process.Closure ( remotableDecl, mkStatic )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Network.Transport (Transport)
@@ -45,11 +42,8 @@ import Network.Transport (Transport)
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ( first, second )
 import Control.Monad (forM_)
-import Control.Monad.Fix
-import Data.Defaultable
 
-instance MonadFix Process where
-    mfix f = I.Process $ mfix (I.unProcess . f)
+import Data.Defaultable
 
 type TestReplicatedState = (EventQueue, Multimap)
 
