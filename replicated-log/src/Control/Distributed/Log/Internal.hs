@@ -44,7 +44,7 @@ import Control.Distributed.Log.Policy (NominationPolicy)
 import Control.Distributed.Log.Policy as Policy (notThem, notThem__static)
 import Control.Distributed.Process.Consensus hiding (Value)
 
-import Control.Distributed.Process hiding (send)
+import Control.Distributed.Process hiding (callLocal, send)
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)

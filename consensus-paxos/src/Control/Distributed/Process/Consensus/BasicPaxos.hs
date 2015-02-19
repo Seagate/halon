@@ -19,7 +19,7 @@ import Control.Distributed.Process.Consensus.Paxos
 import Control.Distributed.Process.Consensus.Paxos.Types
 import qualified Control.Distributed.Process.Consensus.Paxos.Messages as Msg
 import Control.Distributed.Process.Quorum
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (callLocal)
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Trans (liftProcess)
