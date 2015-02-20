@@ -37,6 +37,7 @@ import GHC.Generics (Generic)
 import Options.Applicative ((<$>), (<*>))
 import qualified Options.Applicative as Opt
 
+import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.Startup
 

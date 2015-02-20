@@ -11,17 +11,21 @@ module HA.EventQueue.Consumer
        , expectHAEvent
        , matchHAEvent
        , matchIfHAEvent
+       , defineHAEvent
        ) where
 
 import Prelude hiding ((.))
 
 import HA.EventQueue.Types
+import Control.Wire
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable (Serializable, fingerprint)
 -- Qualify all imports of any distributed-process "internals".
 import qualified Control.Distributed.Process.Internal.Types as I
     (Message(..), payloadToMessage)
+import Control.Monad.State.Strict
 import Data.Binary (decode)
+import Data.Dynamic
 import Network.CEP hiding (decoded)
 
 -- | Use this function to get the next event sent by the event queue. Vanilla
@@ -67,3 +71,16 @@ instance Serializable a => TypeMatch (EQEvent a) where
                         }
 
             return $ Other input
+
+defineHAEvent :: forall a b s. (Monoid s, Serializable a)
+              => ComplexEvent s (HAEvent a) b
+              -> (b -> StateT s Process ())
+              -> RuleM s ()
+defineHAEvent w k = do
+    let m       = matchHAEvent $ \(x :: HAEvent a) -> return $ toDyn x
+        rule    = observe . w . dynEvent
+        observe = mkGen $ \s b -> do
+            s' <- liftProcess $ execStateT (k b) (dstate s)
+            return (Right s', observe)
+
+    modify $ addRule m rule
