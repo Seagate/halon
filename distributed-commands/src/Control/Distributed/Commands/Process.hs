@@ -8,6 +8,7 @@
 {-# LANGUAGE TemplateHaskell     #-}
 module Control.Distributed.Commands.Process
   ( spawnNode
+  , spawnLocalNode
   , spawnNodes
   , printNodeId
   , registerLogHook
@@ -17,6 +18,7 @@ module Control.Distributed.Commands.Process
   , expectLog
   , copyFiles
   , systemThere
+  , systemLocal
   , withHostNames
   , withHosts
   , __remoteTable
@@ -30,6 +32,7 @@ import Control.Distributed.Commands.Management
 import qualified Control.Distributed.Commands as C
     ( systemThere
     , systemThereAsUser
+    , systemLocal
     )
 import qualified Control.Distributed.Commands.Management as M
 
@@ -95,7 +98,8 @@ spawnNodeIO h cmd = do
       Left _ -> error $ "The command \"" ++ cmd ++ "\" did not print a NodeId."
       Right n  -> case reads n of
         (bs,"") : _ -> return $ decode (bs :: ByteString)
-        _           -> error $ "Couldn't parse node id: " ++ n
+        _           -> error $ "Couldn't parse node id. \"" ++ cmd ++
+                               "\" produced: " ++ n
   where
     muser = if isLocalHost h then Nothing else Just "dev"
 
@@ -109,6 +113,18 @@ isLocalHost h = h == "localhost" || "127." `isPrefixOf` h
 --
 spawnNodes :: [HostName] -> String -> Process [NodeId]
 spawnNodes hs cmd = liftIO $ mapConcurrently (flip spawnNodeIO cmd) hs
+
+-- | Like @spawnNode@ but spawns the node in the local host.
+spawnLocalNode :: String -> Process NodeId
+spawnLocalNode cmd = liftIO $ do
+    getLine_cmd <- C.systemLocal cmd
+    mnode <- getLine_cmd
+    case mnode of
+      Left _ -> error $ "The command \"" ++ cmd ++ "\" did not print a NodeId."
+      Right n  -> case reads n of
+        (bs,"") : _ -> return $ decode (bs :: ByteString)
+        _           -> error $ "Couldn't parse node id. \"" ++ cmd ++
+                               "\" produced: " ++ n
 
 -- | Intercepts 'say' messages from processes as a crude way to know that an
 -- action following an asynchronous send has completed.
@@ -191,6 +207,11 @@ copyFiles from to files = liftIO $ M.copyFiles from to files
 -- until it completes.
 systemThere :: [HostName] -> String -> Process ()
 systemThere ms cmd = liftIO $ M.systemThere ms cmd
+
+-- | @systemLocal command@ runs @command@ in a shell on the local hosts and
+-- waits until it completes.
+systemLocal :: String -> Process ()
+systemLocal cmd = liftIO $ M.systemLocal cmd
 
 -- | @withHosts cp n action@ creates @n@ hosts from provider @cp@
 -- and then it executes the given @action@. Upon termination of the actions

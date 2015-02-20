@@ -13,6 +13,7 @@ module Control.Distributed.Commands.Management
   , Host(..)
   , copyFiles
   , systemThere
+  , systemLocal
   , withHosts
   , withHostNames
   , HostName
@@ -21,12 +22,13 @@ module Control.Distributed.Commands.Management
 import Control.Distributed.Commands (scp, ScpPath(..))
 import qualified Control.Distributed.Commands as C
     ( systemThere
+    , systemLocal
     , systemThereAsUser
     )
 
 import Control.Concurrent.Async.Lifted
 import Control.Exception (bracket, throwIO)
-import Control.Monad (forM, (>=>))
+import Control.Monad (forM, (>=>), void)
 import System.Exit (ExitCode (ExitFailure, ExitSuccess))
 import Data.Either (lefts)
 import Data.List (isPrefixOf)
@@ -75,7 +77,7 @@ copyFiles from tos paths = do
 isLocalHost :: String -> Bool
 isLocalHost h = h == "localhost" || "127." `isPrefixOf` h
 
--- | @runIn ms command@ runs @command@ in a shell on hosts @ms@ and waits
+-- | @systemThere ms command@ runs @command@ in a shell on hosts @ms@ and waits
 -- until it completes.
 systemThere :: [HostName] -> String -> IO ()
 systemThere ips cmd = bracket
@@ -92,6 +94,22 @@ systemThere ips cmd = bracket
         Right _ -> collectAndThrowException rio
         Left (ExitSuccess) -> return ()
         Left (ExitFailure ec) -> throwIO $ userError $ "Command " ++ (show cmd) ++ " failed with exit code " ++ (show ec)
+
+-- | @systemThere command@ runs @command@ in a shell on the local host and waits
+-- until it completes.
+systemLocal :: String -> IO ()
+systemLocal cmd = bracket
+    (async $ C.systemLocal cmd >>= collectAndThrowException)
+    (void . waitCatch)
+    waitCatch >>= either throwIO return
+  where
+    collectAndThrowException rio = do
+      r <- rio
+      case r of
+        Right n -> putStrLn n >> collectAndThrowException rio
+        Left (ExitSuccess) -> return ()
+        Left (ExitFailure ec) -> throwIO $ userError $ "Command " ++ (show cmd)
+                                       ++ " failed with exit code " ++ (show ec)
 
 -- | @withHosts cp n action@ creates @n@ hosts from provider @cp@
 -- and then it executes the given @action@. Upon termination of the actions

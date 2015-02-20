@@ -10,6 +10,7 @@
 module Control.Distributed.Commands
   ( systemThere
   , systemThereAsUser
+  , systemLocal
   , scp
   , ScpPath(..)
   )
@@ -25,6 +26,7 @@ import System.IO (hGetContents, IOMode(..), withFile, stderr)
 import System.Process
     ( StdStream(..)
     , proc
+    , shell
     , createProcess
     , CreateProcess(..)
     , waitForProcess
@@ -105,6 +107,24 @@ systemThere' muser host cmd = do
         , "-o", "UserKnownHostsFile=/dev/null"
         , "-o", "StrictHostKeyChecking=no"
         , "--", cmd ])
+        { std_out = CreatePipe
+        , std_err = UseHandle dev_null
+        }
+      out <- hGetContents sout
+      chan <- newChan
+      void $ forkIO $ void $ do
+        forM_ (lines out) $ \l ->
+          writeChan chan (Right l)
+        ec <- waitForProcess phandle
+        writeChan chan (Left ec)
+      return $ readChan chan
+
+-- | Like 'systemThere' but runs the command in the local host.
+systemLocal :: String -> IO (IO (Either ExitCode String))
+systemLocal cmd = do
+    -- Run the command locally.
+    withFile "/dev/null" ReadWriteMode $ \dev_null -> do
+      (_, Just sout, ~(Just _), phandle) <- createProcess (shell cmd)
         { std_out = CreatePipe
         , std_err = UseHandle dev_null
         }
