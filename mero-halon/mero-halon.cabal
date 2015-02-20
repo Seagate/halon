@@ -29,6 +29,10 @@ Flag rpc
   Description: Build with the RPC backend instead of TCP.
   Default: False
 
+Flag mero-note
+  Description: Build the notification interface.
+  Default: False
+
 Flag mero
   Description: Build using the real rather than fake Mero.
   Default: False
@@ -48,6 +52,8 @@ Library
     CPP-Options:    -DUSE_RPC
   if flag(mero)
     CPP-Options:    -DUSE_MERO
+  if flag(mero-note)
+    CPP-Options:    -DUSE_MERO_NOTE
   Default-Extensions: BangPatterns
                       DeriveDataTypeable
                       DeriveGeneric
@@ -93,15 +99,16 @@ Library
                    unordered-containers,
                    cep,
                    netwire
-  if flag(mero)
+  if flag(mero-note)
       Exposed-Modules: Mero.Notification.HAState
-                       HA.Resources.Mero
-      cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
-      extra-libraries: mero
-      include-dirs: hastate
       c-sources: hastate/hastate.c
                  hastate/hastate_fops.c
                  hastate/hastate_foms.c
+      include-dirs: hastate
+  if flag(mero) || flag(mero-note)
+      Exposed-Modules: HA.Resources.Mero
+      cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
+      extra-libraries: mero
       Build-Depends: rpclite,
                      confc
 
@@ -302,7 +309,7 @@ Test-Suite testhastate
   if flag(maintainer)
     Ghc-Options: -Werror
 
-  if flag(mero)
+  if flag(mero-note)
     Build-Depends:   halon,
                      confc,
                      mero-halon,

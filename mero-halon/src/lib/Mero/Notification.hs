@@ -24,7 +24,7 @@ module Mero.Notification
     , matchSet
     ) where
 
-#ifdef USE_MERO
+#ifdef USE_MERO_NOTE
 import Mero.ConfC (Fid)
 import Mero.Notification.HAState
 import HA.EventQueue.Producer (promulgate)
@@ -55,7 +55,7 @@ import System.IO.Unsafe (unsafePerformIO)
 import Control.Distributed.Process
 
 
-#ifdef USE_MERO
+#ifdef USE_MERO_NOTE
 
 #ifndef USE_RPC
 -- | Local endpoint

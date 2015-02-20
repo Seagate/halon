@@ -56,7 +56,7 @@ module HA.RecoveryCoordinator.Mero
 import Prelude hiding ((.), id, mapM_)
 import HA.Resources
 import HA.Service
-#ifdef USE_MERO
+#ifdef USE_MERO_NOTE
 import HA.Resources.Mero (ConfObject(..), ConfObjectState(..), Is(..))
 #endif
 import HA.NodeAgent.Messages
@@ -64,7 +64,7 @@ import qualified HA.Services.EQTracker as EQT
 
 import HA.EventQueue.Producer (promulgateEQ)
 import qualified HA.ResourceGraph as G
-#ifdef USE_MERO
+#ifdef USE_MERO_NOTE
 import qualified Mero.Notification
 import Mero.Notification.HAState
 #endif
@@ -411,7 +411,7 @@ makeRecoveryCoordinator mm rm = do
     start <- G.sync rg
     buildFromRuleMS (LoopState start Map.empty) rm
 
-#ifdef USE_MERO
+#ifdef USE_MERO_NOTE
 meroGetNotification :: ProcessId
                     -> ComplexEvent LoopState Input LoopState
 meroGetNotification eq = repeatedly go . decoded
