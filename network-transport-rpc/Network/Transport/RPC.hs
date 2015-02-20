@@ -15,6 +15,9 @@ module Network.Transport.RPC
     , defaultRPCParameters
     , createTransport
     , withTransport
+    , encodeEndPointAddress
+    , decodeEndPointAddress
+    , EndPointKey(..)
     , rpcAddress
     , RPCAddress(..)
     ) where
@@ -373,12 +376,12 @@ rpcNewEndPointFromKey :: TransportState -> RPCAddress -> Word32
                       -> IO (Either (TransportError NewEndPointErrorCode)
                                     EndPoint
                             )
-rpcNewEndPointFromKey ts (RPCAddress sAddr) epk = do
+rpcNewEndPointFromKey ts addr epk = do
     rcm <- newIORef M.empty
     rconngen <- newIORef $ LocalConnectionId 0
     rconns <- newIORef M.empty
     epq <- newChan
-    let epAddr = EndPointAddress$ B.append sAddr$ B8.pack$ ":"++show epk
+    let epAddr = encodeEndPointAddress addr (EndPointKey epk)
         lep = LocalEndPoint ep epq rconngen rconns
         ep = EndPoint
           { receive = readChan epq
@@ -404,10 +407,14 @@ rpcNewEndPointFromKey ts (RPCAddress sAddr) epk = do
     debug$ "RPC: created endpoint: "++show epAddr
     return$ Right ep
 
+-- | Encode end point address
+encodeEndPointAddress :: RPCAddress -> EndPointKey -> EndPointAddress
+encodeEndPointAddress (RPCAddress bAddr) (EndPointKey epk) =
+  EndPointAddress $ B.append bAddr $ B8.pack $ ":" ++ show epk
 
 -- | Extracts the RPC address and the endpoint key from an endpoint address.
-epAddressKey :: EndPointAddress -> Maybe (RPCAddress,EndPointKey)
-epAddressKey (EndPointAddress b) = case B8.elemIndexEnd ':' b of
+decodeEndPointAddress :: EndPointAddress -> Maybe (RPCAddress,EndPointKey)
+decodeEndPointAddress (EndPointAddress b) = case B8.elemIndexEnd ':' b of
     Nothing -> Nothing -- rpcEptReceive: invalid endpoint address
     Just i  -> case readsPrec 0 (B8.unpack$ B.drop (i+1) b) of
       []        -> Nothing -- rpcEptReceive: invalid endpoint identifier
@@ -467,7 +474,7 @@ rpcConnect :: TransportState -> EndPointAddress -> EndPointKey -> LocalEndPoint 
               -> IO (Either (TransportError ConnectErrorCode) T.Connection)
 rpcConnect ts sourceEpAddr lepk lep rcm targetEpAddr _ hints = do
     debug$ "RPC: connecting to "++show targetEpAddr
-    case epAddressKey targetEpAddr of
+    case decodeEndPointAddress targetEpAddr of
       Nothing -> return$ Left$ TransportError ConnectNotFound ""
       Just (addr,epk) -> readIORef (tsLocalEPs ts) >>= \leps ->
         if not$ M.member lepk leps then return$ Left$ TransportError ConnectFailed "" else do

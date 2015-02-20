@@ -18,8 +18,8 @@ import qualified HA.Network.Socket as TCP
 conjureRemoteNodeId :: String -> NodeId
 conjureRemoteNodeId addr =
 #ifdef USE_RPC
-  -- TODO
-  error "undefined RPCMethod"
+    NodeId $ RPC.encodeEndPointAddress (RPC.rpcAddress addr)
+                                       (RPC.EndPointKey 10)
 #else
     NodeId $ TCP.encodeEndPointAddress host port 0
   where
