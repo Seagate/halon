@@ -44,6 +44,7 @@ import HA.Startup
 data Config = Config
   { configUpdate :: Defaultable Bool
   , configSnapshotsThreshold :: Defaultable Int
+  , configRSLease :: Defaultable Int
   } deriving (Eq, Show, Ord, Generic, Typeable)
 
 instance Binary Config
@@ -63,7 +64,15 @@ schema = let
                          "between snapshots of the distributed state."
                         )
             <> Opt.metavar "INTEGER"
-  in Config <$> upd <*> snapshotThreshold
+    rsLease = defaultable (8 * 1000000) . Opt.option Opt.auto
+            $ Opt.long "rs-lease"
+            <> Opt.short 'r'
+            <> Opt.help ("The amount of microseconds that takes the system "
+                         ++ "to detect a failure in the recovery coordinator, "
+                         ++ "or more precisely, the lease of the recovery "
+                         ++ "supervisor."
+                        )
+  in Config <$> upd <*> snapshotThreshold <*> rsLease
 
 self :: String
 self = "HA.TrackingStation"
@@ -91,4 +100,5 @@ start nids naConf = do
            , nids
            , fromDefault . configSnapshotsThreshold $ naConf
            , $(mkClosure 'recoveryCoordinator) $ IgnitionArguments nids
+           , fromDefault . configRSLease $ naConf
            )

@@ -101,34 +101,27 @@ setLeader (candidate,previousLeaseCount) rstOld =
 
 remotable [ 'setLeader ]
 
-millis :: Int
-millis = 1000
-
--- | Amount of microseconds to wait before renewing a lease
-updatePeriod :: Int
-updatePeriod = 750 * millis
-
--- | Amount of microseconds to wait before polling the state
-pollingPeriod :: Int
-pollingPeriod = 1000 * millis
-
 -- | Runs the recovery supervisor.
 recoverySupervisor :: RGroup g
                    => g RSState -- ^ the replication group used to store
                                 -- the RS state
+                   -> Int       -- ^ The leader lease in microseconds
                    -> Process ProcessId
                          -- ^ the closure used to start the recovery
                          -- coordinator: It must return immediately yielding
                          -- the pid of the RC.
                    -> Process ()
-recoverySupervisor rg rcP = getState rg >>= go Nothing
+recoverySupervisor rg leaderLease rcP = getState rg >>= go Nothing
   where
+    -- We make the polling period is slightly bigger than the lease.
+    pollingPeriod = leaderLease * 11 `div` 10
+
     -- Takes the pid of the Recovery Coordinator and the last observed
     -- state.
     go :: Maybe ProcessId -> RSState -> Process ()
     -- I'm the leader
     go (Just rc) previousState = do
-      timer <- newTimer updatePeriod $ do
+      timer <- newTimer leaderLease $ do
         say "RS: lease expired, so killing RC ..."
         exit rc "quorum lost"
         -- Block until RC actually dies. Otherwise, a new RC may start before
@@ -161,7 +154,7 @@ recoverySupervisor rg rcP = getState rg >>= go Nothing
         -- Wait for the polling period if there is some known leader only.
         -- Otherwise, jump immediately to leader election.
         void $ receiveTimeout pollingPeriod []
-      timer <- newTimer updatePeriod $ return ()
+      timer <- newTimer leaderLease $ return ()
       self <- getSelfPid
       rstNew <- rsUpdate self previousState
       canceled <- cancel timer

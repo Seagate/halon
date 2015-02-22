@@ -104,9 +104,10 @@ remotableDecl [ [d|
  startRS :: ( Closure (Process (RLogGroup HAReplicatedState))
             , Maybe (Replica RLogGroup)
             , Closure (ProcessId -> ProcessId -> Process ())
+            , Int
             )
             -> Process ()
- startRS (cRGroup, mlocalReplica, rcClosure) = do
+ startRS (cRGroup, mlocalReplica, rcClosure, rsLeaderLease) = do
      rGroup <- unClosure cRGroup >>= id
      recoveryCoordinator <- unClosure rcClosure
      maybe (return ()) (updateRGroup rGroup) mlocalReplica
@@ -114,6 +115,7 @@ remotableDecl [ [d|
      eqpid <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
      rspid <- spawnLocal
               $ recoverySupervisor (viewRState $(mkStatic 'rsView) rGroup)
+                                   rsLeaderLease
               $ mask_ $ do
                 mRCPid <- liftIO $ newEmptyMVar
                 mmpid <- spawnLocal $ do
@@ -142,7 +144,8 @@ remotableDecl [ [d|
 
  -- | Start the RC and EQ.
  --
- -- Takes a tuple @(update, trackers, snapshotThreashold, rcClosure)@.
+ -- Takes a tuple
+ -- @(update, trackers, snapshotThreashold, rcClosure, rsLeaderLease)@.
  --
  -- @update@ indicates if an existing tracking station is being updated.
  --
@@ -154,13 +157,16 @@ remotableDecl [ [d|
  -- @rcClosure@ is the closure which runs the recovery coordinator. It
  -- takes the event queue and the multimap 'ProcessId's.
  --
+ -- @rsLeaderLease@ is the lease of the leader RS in microseconds.
+ --
  ignition :: ( Bool
              , [NodeId]
              , Int
              , Closure (ProcessId -> ProcessId -> Process ())
+             , Int
              )
           -> Process (Maybe (Bool,[NodeId],[NodeId],[NodeId]))
- ignition (update, trackers, snapshotThreshold, rcClosure) = do
+ ignition (update, trackers, snapshotThreshold, rcClosure, rsLeaderLease) = do
     say "Ignition!"
     disconnectAllNodeConnections
     if update then do
@@ -180,6 +186,7 @@ remotableDecl [ [d|
           ( cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
           , Nothing :: Maybe (Replica RLogGroup)
           , rcClosure
+          , rsLeaderLease
           )
       return Nothing
 

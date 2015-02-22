@@ -69,7 +69,7 @@ type RG = MC_RG RSState
 testRS' :: MVar () -> TestCounters -> RG -> Process ()
 testRS' mdone counters rGroup = do
   flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
-    void $ spawnLocal $ recoverySupervisor rGroup
+    void $ spawnLocal $ recoverySupervisor rGroup 1000000
                              $ spawnLocal (dummyRC counters)
     liftIO $ putMVar mdone ()
 
