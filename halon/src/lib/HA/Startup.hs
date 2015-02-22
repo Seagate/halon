@@ -94,20 +94,19 @@ remotableDecl [ [d|
          rGroup <- unClosure cRGroup >>= id
          replicas <- setRGroupMembers rGroup newNodes $
                           $(mkClosure 'isNodeInGroup) $ trackers
-         forM_ (zip newNodes replicas) $ \(n,replica) -> call
-                  $(functionTDict 'spawnStartRS)
+         forM_ (zip newNodes replicas) $ \(n,replica) -> spawn
                   n
-                  $ $(mkClosure 'spawnStartRS)
+                  $ $(mkClosure 'startRS)
                       (cRGroup, Just replica, rcClosure)
        Nothing -> return ()
 
 
- spawnStartRS :: ( Closure (Process (RLogGroup HAReplicatedState))
-                 , Maybe (Replica RLogGroup)
-                 , Closure (ProcessId -> ProcessId -> Process ())
-                 )
-              -> Process ()
- spawnStartRS (cRGroup, mlocalReplica, rcClosure) = void $ spawnLocal $ do
+ startRS :: ( Closure (Process (RLogGroup HAReplicatedState))
+            , Maybe (Replica RLogGroup)
+            , Closure (ProcessId -> ProcessId -> Process ())
+            )
+            -> Process ()
+ startRS (cRGroup, mlocalReplica, rcClosure) = do
      rGroup <- unClosure cRGroup >>= id
      recoveryCoordinator <- unClosure rcClosure
      maybe (return ()) (updateRGroup rGroup) mlocalReplica
@@ -177,8 +176,7 @@ remotableDecl [ [d|
     else do
       cRGroup <- newRGroup $(mkStatic 'rsDict) snapshotThreshold trackers
                             (RSState Nothing 0,((Nothing,[]),fromList []))
-      forM_ trackers $ flip (call $(functionTDict 'spawnStartRS))  $
-        $(mkClosure 'spawnStartRS)
+      forM_ trackers $ flip spawn $ $(mkClosure 'startRS)
           ( cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
           , Nothing :: Maybe (Replica RLogGroup)
           , rcClosure
