@@ -441,7 +441,7 @@ meroSetNotification eq = repeatedly go . decoded
               m0dNodes = [ node | node <- G.connectedTo Cluster Has rg'
                                 , isJust $ runningService node m0d rg' ]
           forM_ m0dNodes $ \(Node them) ->
-            nsendRemote them (serviceName m0d) $
+            nsendRemote them (snString $ serviceName m0d) $
               Mero.Notification.Set nvec
           usend eq eid
           newGraph <- G.sync rg'
