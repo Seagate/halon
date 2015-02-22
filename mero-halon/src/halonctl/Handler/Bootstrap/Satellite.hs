@@ -22,11 +22,6 @@ import HA.NodeUp (nodeUp, nodeUp__static, nodeUp__sdict)
 import Lookup (conjureRemoteNodeId)
 
 import Control.Distributed.Process
-  ( Process
-  , NodeId
-  , say
-  , spawn
-  )
 import Control.Distributed.Process.Closure
   ( mkClosure )
 
@@ -73,6 +68,11 @@ start nid Config{..} = do
     _ <- spawn nid $ $(mkClosure 'nodeUp) (
                           trackers
                         , fromDefault configDelay)
+#ifdef USE_RPC
+    -- The RPC transport triggers a bug in spawn where the action never
+    -- executes.
+    _ <- receiveTimeout 1000000 [] :: Process (Maybe ())
+#endif
     return ()
   where
     trackers = fmap conjureRemoteNodeId (fromDefault configTrackers)
