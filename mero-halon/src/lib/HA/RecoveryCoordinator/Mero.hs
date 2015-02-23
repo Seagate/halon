@@ -176,6 +176,7 @@ startEQTracker :: IgnitionArguments
                -> NodeId
                -> State.StateT LoopState Process ()
 startEQTracker argv nid = State.gets lsGraph >>= \rg -> lift $ do
+    sayRC $ "New node contacted: " ++ show nid
     eqt  <- _startService nid EQT.eqTracker () rg
     True <- updateEQNodes eqt (stationNodes argv)
     return ()
