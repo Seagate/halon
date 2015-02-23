@@ -33,6 +33,25 @@ library
   default-language:    Haskell2010
   ghc-options:         -Wall -Werror
 
+executable simple
+  hs-source-dirs:      castor-stories
+  default-language:    Haskell2010
+  main-is:             Main.hs
+  default-extensions:  ScopedTypeVariables
+  build-depends:       base >=4.6 && <4.8,
+                       lens >=4.3 && <4.5,
+                       mtl,
+                       network-transport==0.4.*,
+                       network-transport-tcp==0.4.*,
+                       distributed-process==0.5.*,
+                       cep,
+                       binary,
+                       containers,
+                       netwire,
+                      random
+  ghc-options:      -Wall
+
+
 -- executable simple
 --   hs-source-dirs:      examples
 --   default-language:    Haskell2010
