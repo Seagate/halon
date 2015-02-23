@@ -21,6 +21,8 @@ module HA.Services.SSPL
   , DeclareChannels(..)
   , InterestingEventMessage(..)
   , SSPLConf(..)
+  , IEMChannel(..)
+  , HA.Services.SSPL.Channel(..)
   , HA.Services.SSPL.__remoteTable
   , HA.Services.SSPL.__remoteTableDecl
   ) where
@@ -44,6 +46,7 @@ import Control.Distributed.Process
   , expect
   , expectTimeout
   , getSelfPid
+  , getSelfNode
   , liftIO
   , receiveChan
   , say
@@ -332,6 +335,7 @@ msgHandler :: Chan Network.AMQP.Message
            -> Process ()
 msgHandler chan = forever $ do
   msg <- liftIO $ readChan chan
+  nid <- getSelfNode
   case decode (msgBody msg) :: Maybe MonitorResponse of
     Just mr -> do
       mapM_ promulgate
@@ -339,7 +343,8 @@ msgHandler chan = forever $ do
             . monitorResponseMonitor_msg_type
             $ mr
       mapM_ promulgate
-            $ monitorResponseMonitor_msg_typeDisk_status_drivemanager
+            $ fmap (nid,)
+            . monitorResponseMonitor_msg_typeDisk_status_drivemanager
             . monitorResponseMonitor_msg_type
             $ mr
     Nothing ->

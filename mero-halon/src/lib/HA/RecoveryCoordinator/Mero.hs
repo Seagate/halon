@@ -51,6 +51,8 @@ module HA.RecoveryCoordinator.Mero
        , getEpochId
        , decodeMsg
        , bounceServiceTo
+       , sendInterestingEvent
+       , registerChannels
        ) where
 
 import Prelude hiding ((.), id, mapM_)
@@ -64,6 +66,8 @@ import qualified HA.Services.EQTracker as EQT
 
 import HA.EventQueue.Producer (promulgateEQ)
 import qualified HA.ResourceGraph as G
+
+import HA.Services.SSPL
 #ifdef USE_MERO_NOTE
 import qualified Mero.Notification
 import Mero.Notification.HAState
@@ -262,6 +266,24 @@ sendMsg pid a = lift $ usend pid a
 
 decodeMsg :: (MonadTrans m, ProcessEncode a) => BinRep a -> m Process a
 decodeMsg = lift . decodeP
+
+sendInterestingEvent :: InterestingEventMessage
+                     -> State.StateT LoopState Process ()
+sendInterestingEvent msg = do
+    rg <- State.gets lsGraph
+    return ()
+
+registerChannels :: ServiceProcess SSPLConf
+                 -> ActuatorChannels
+                 -> State.StateT LoopState Process ()
+registerChannels svc acs = do
+    ls <- State.get
+    let chan = Channel $ iemPort acs
+        rg' = G.newResource chan >>>
+              G.connect svc IEMChannel chan $ lsGraph ls
+
+    newGraph <- lift $ G.sync rg'
+    State.put ls { lsGraph = newGraph }
 
 initialize :: ProcessId -> Process G.Graph
 initialize mm = do
