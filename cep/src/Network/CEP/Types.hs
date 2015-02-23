@@ -10,10 +10,11 @@
 --
 module Network.CEP.Types where
 
-import Prelude hiding ((.))
-import Data.ByteString
-import Data.Dynamic
-import GHC.Generics
+import           Prelude hiding ((.))
+import           Data.ByteString
+import           Data.Dynamic
+import qualified Data.MultiMap as M
+import           GHC.Generics
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
@@ -28,27 +29,27 @@ instance Binary a => Binary (Sub a)
 
 data Msg
     = SubRequest Subscribe
-    | Other Input
+    | Other Dynamic
 
 data RuleState s =
     RuleState
-    { cepMatches :: [Match Dynamic]
-    , cepRules   :: ComplexEvent s Dynamic s
+    { cepMatches :: [Match Msg]
+    , cepRules   :: ComplexEvent s Dynamic ()
     }
 
 newtype RuleM s a = RuleM (State (RuleState s) a)
     deriving (Functor, Applicative, Monad, MonadState (RuleState s))
 
-newtype CEP a = CEP (StateT Bookkeeping Process a)
+newtype CEP s a = CEP (StateT (Bookkeeping s) Process a)
                   deriving (Functor, Applicative, Monad, MonadIO)
 
-newtype Ctx s = Ctx (Timed NominalDiffTime s)
-              deriving (Monoid, HasTime NominalDiffTime)
+type ComplexEvent s a b = Wire (Timed NominalDiffTime ()) () (CEP s) a b
 
-type ComplexEvent s a b = Wire (Ctx s) () CEP a b
-
-data Bookkeeping =
-    Bookkeeping { _subscribers :: !(MultiMap Fingerprint ProcessId) }
+data Bookkeeping s =
+    Bookkeeping
+    { _subscribers :: !(MultiMap Fingerprint ProcessId)
+    , _state       :: !s
+    }
 
 data Subscribe =
     Subscribe
@@ -64,62 +65,32 @@ data Published a =
     , pubPid   :: !ProcessId
     } deriving (Show, Typeable, Generic)
 
-infixr 6 .+.
-
-data a .+. b = Ask
-
-infixr 6 .++.
-
-data a .++. b = AskAppend
-
-data Nil
-
-data Only a = Only
-
-data Input = forall b.
-    Input { inputFingerprint :: Fingerprint
-          , inputMsg         :: b
-          }
-
-matchInput :: forall a. Serializable a => a -> Match Msg
-matchInput _ = match go
-  where
-    go (x :: a) = do
-        let input =
-              Input { inputFingerprint = fingerprint (undefined :: a)
-                    , inputMsg         = x
-                    }
-
-        return $ Other input
-
-class TypeMatch a where
-    typematch :: a -> [Match Msg]
-
-instance TypeMatch Nil where
-    typematch _ = []
-
-instance (Serializable a, TypeMatch b) => TypeMatch (a .+. b) where
-    typematch _ = matchInput (undefined :: a) : typematch (undefined :: b)
-
-instance (TypeMatch a, TypeMatch b) => TypeMatch (a .++. b) where
-    typematch _ = typematch (undefined :: a) ++ typematch (undefined :: b)
-
-instance Serializable a => TypeMatch (Only a) where
-    typematch _ = [ matchInput (undefined :: a) ]
-
 instance Binary a => Binary (Published a)
 
 asSub :: a -> Sub a
 asSub _ = Sub
 
-dstate :: Ctx s -> s
-dstate (Ctx (Timed _ s)) = s
+publish :: Serializable a => a -> CEP s ()
+publish a = CEP $ do
+    subs <- gets _subscribers
+    self <- lift getSelfPid
+    let sub = asSub a
+        key = fingerprint sub
 
-liftProcess :: Process a -> CEP a
+    lift $ forM_ (M.lookup key subs) $ \pid ->
+      send pid (Published a self)
+
+liftProcess :: Process a -> CEP s a
 liftProcess m = CEP $ lift m
 
-runCEP :: CEP a -> Bookkeeping -> Process (a, Bookkeeping)
+runCEP :: CEP s a -> Bookkeeping s -> Process (a, Bookkeeping s)
 runCEP (CEP m) s = runStateT m s
+
+getUsrState :: CEP s s
+getUsrState = CEP $ gets _state
+
+setUsrState :: s -> CEP s ()
+setUsrState s = CEP $ modify (\b -> b { _state = s})
 
 initRuleState :: RuleState s
 initRuleState = RuleState
@@ -130,8 +101,8 @@ initRuleState = RuleState
 runRuleM :: RuleM s a -> RuleState s
 runRuleM (RuleM m) = execState m initRuleState
 
-addRule :: Match Dynamic
-        -> ComplexEvent s Dynamic s
+addRule :: Match Msg
+        -> ComplexEvent s Dynamic ()
         -> RuleState s
         -> RuleState s
 addRule m r s =
@@ -139,21 +110,23 @@ addRule m r s =
       , cepRules   = cepRules s <|> r
       }
 
-dynEvent :: Typeable a => ComplexEvent s Dynamic a
-dynEvent = mkPure_ $ \dyn ->
+dynEvent :: Serializable a => ComplexEvent s Dynamic a
+dynEvent = mkGen_ $ \dyn ->
     case fromDynamic dyn of
-      Just a -> Right a
-      _      -> Left ()
+      Just a -> Right a <$ publish a
+      _      -> return $ Left ()
 
-define :: forall a b s. (Monoid s, Serializable a)
+define :: forall a b s. Serializable a
        => ComplexEvent s a b
        -> (b -> StateT s Process ())
        -> RuleM s ()
 define w k = do
-    let m       = match $ \(x :: a) -> return $ toDyn x
+    let m       = match $ \(x :: a) -> return $ Other $ toDyn x
         rule    = observe . w . dynEvent
-        observe = mkGen $ \s b -> do
-          s' <- liftProcess $ execStateT (k b) (dstate s)
-          return (Right s', observe)
+        observe = mkGen_ $ \b -> do
+          s  <- getUsrState
+          s' <- liftProcess $ execStateT (k b) s
+          setUsrState s'
+          return $ Right ()
 
     modify $ addRule m rule

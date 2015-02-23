@@ -50,6 +50,7 @@ executable simple
                        netwire,
                       random
   ghc-options:      -Wall
+  buildable: False
 
 
 -- executable simple
