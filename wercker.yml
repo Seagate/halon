@@ -7,7 +7,7 @@ build:
         name: install dependencies
         code: |
           sudo apt-get update
-          sudo apt-get install libgenders0-dev
+          sudo apt-get install libgenders0-dev libpcre3-dev libpcre3
           cabal update
           make dep
     - script:
