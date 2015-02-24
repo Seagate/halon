@@ -6,7 +6,7 @@ ENV HOME /root
 
 ENV LANG en_GB.UTF-8
 
-RUN yum install --assumeyes bzip2 tar zlib-devel git gmp-devel make perl gcc
+RUN yum install --assumeyes bzip2 tar zlib-devel git gmp-devel make perl gcc pcre-devel
 
 # we need EPEL to get genders
 WORKDIR /
