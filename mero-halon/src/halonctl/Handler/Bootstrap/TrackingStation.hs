@@ -44,6 +44,7 @@ import HA.Startup
 data Config = Config
   { configUpdate :: Defaultable Bool
   , configSnapshotsThreshold :: Defaultable Int
+  , configSnapshotsTimeout :: Defaultable Int
   , configRSLease :: Defaultable Int
   } deriving (Eq, Show, Ord, Generic, Typeable)
 
@@ -64,6 +65,15 @@ schema = let
                          "between snapshots of the distributed state."
                         )
             <> Opt.metavar "INTEGER"
+    snapshotTimeout = defaultable 1000000 . Opt.option Opt.auto
+             $ Opt.long "snapshots-timeout"
+            <> Opt.long "snapshot-timeout"
+            <> Opt.short 't'
+            <> Opt.help ("Tells the amount of microseconds to wait before " ++
+                         "giving up in transferring a snapshot of the " ++
+                         "distributed state between nodes."
+                        )
+            <> Opt.metavar "INTEGER"
     rsLease = defaultable (8 * 1000000) . Opt.option Opt.auto
             $ Opt.long "rs-lease"
             <> Opt.short 'r'
@@ -72,7 +82,7 @@ schema = let
                          ++ "or more precisely, the lease of the recovery "
                          ++ "supervisor."
                         )
-  in Config <$> upd <*> snapshotThreshold <*> rsLease
+  in Config <$> upd <*> snapshotThreshold <*> snapshotTimeout <*> rsLease
 
 self :: String
 self = "HA.TrackingStation"
@@ -99,6 +109,7 @@ start nids naConf = do
     args = ( fromDefault . configUpdate $ naConf
            , nids
            , fromDefault . configSnapshotsThreshold $ naConf
+           , fromDefault . configSnapshotsTimeout $ naConf
            , $(mkClosure 'recoveryCoordinator) $ IgnitionArguments nids
            , fromDefault . configRSLease $ naConf
            )

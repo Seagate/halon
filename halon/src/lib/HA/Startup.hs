@@ -154,6 +154,9 @@ remotableDecl [ [d|
  -- @snapshotThreashold@ indicates how many updates are allowed between
  -- snapshots of the distributed state.
  --
+ -- @snapshotTimeout@ indicates how many microseconds to wait before giving up
+ -- in trasferring a snapshot between nodes.
+ --
  -- @rcClosure@ is the closure which runs the recovery coordinator. It
  -- takes the event queue and the multimap 'ProcessId's.
  --
@@ -162,11 +165,14 @@ remotableDecl [ [d|
  ignition :: ( Bool
              , [NodeId]
              , Int
+             , Int
              , Closure (ProcessId -> ProcessId -> Process ())
              , Int
              )
           -> Process (Maybe (Bool,[NodeId],[NodeId],[NodeId]))
- ignition (update, trackers, snapshotThreshold, rcClosure, rsLeaderLease) = do
+ ignition (update, trackers, snapshotThreshold, snapshotTimeout, rcClosure
+          , rsLeaderLease
+          ) = do
     say "Ignition!"
     disconnectAllNodeConnections
     if update then do
@@ -180,8 +186,9 @@ remotableDecl [ [d|
 
       return $ Just (added,trackers,members,newNodes)
     else do
-      cRGroup <- newRGroup $(mkStatic 'rsDict) snapshotThreshold trackers
-                            (RSState Nothing 0,((Nothing,[]),fromList []))
+      cRGroup <- newRGroup $(mkStatic 'rsDict) snapshotThreshold snapshotTimeout
+                           trackers
+                           (RSState Nothing 0,((Nothing,[]),fromList []))
       forM_ trackers $ flip spawn $ $(mkClosure 'startRS)
           ( cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
           , Nothing :: Maybe (Replica RLogGroup)

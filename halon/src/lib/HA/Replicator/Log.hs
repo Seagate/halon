@@ -137,8 +137,8 @@ snapshotServer SerializableDict bs = void $ serializableSnapshotServer
 storageDir :: FilePath
 storageDir = "acid-state"
 
-rgroupConfig :: Int -> Log.Config
-rgroupConfig snapshotThreshold = Log.Config
+rgroupConfig :: (Int, Int) -> Log.Config
+rgroupConfig (snapshotThreshold, snapshotTimeout) = Log.Config
     { consensusProtocol =
           \dict -> BasicPaxos.protocol dict (filepath $ storageDir </> "acceptors")
     , persistDirectory  = filepath $ storageDir </> "replicas"
@@ -146,6 +146,7 @@ rgroupConfig snapshotThreshold = Log.Config
     , leaseRenewTimeout = 1000000
     , driftSafetyFactor = 11 % 10
     , snapshotPolicy    = return . (>= snapshotThreshold)
+    , snapshotRestoreTimeout = snapshotTimeout
     }
 
 remotable [ 'composeSV
@@ -199,7 +200,7 @@ instance RGroup RLogGroup where
   newtype Replica RLogGroup = Replica ProcessId
     deriving Binary
 
-  newRGroup sdictState snapshotThreshold nodes st = do
+  newRGroup sdictState snapshotThreshold snapshotTimeout nodes st = do
     when (null nodes) $ do
       say "RLogGroup: newRGroup was passed an empty list of nodes."
       die "RLogGroup: newRGroup was passed an empty list of nodes."
@@ -211,7 +212,7 @@ instance RGroup RLogGroup where
     h <- Log.new
          $(mkStatic 'commandEqDict)
          cmSDictState
-         ($(mkClosure 'rgroupConfig) snapshotThreshold)
+         ($(mkClosure 'rgroupConfig) (snapshotThreshold, snapshotTimeout))
          (closure ($(mkStatic 'rgroupLog) `staticApply` sdictState) est)
          nodes
     rHandle <- Log.remoteHandle h

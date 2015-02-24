@@ -122,7 +122,7 @@ snapshotThreashold = 5
 remotableDecl [ [d|
 
   testLog :: State.Log State
-  testLog = State.log $ serializableSnapshot snapshotServerLbl state0
+  testLog = State.log $ serializableSnapshot snapshotServerLbl state0 1000000
 
   dictState :: Dict (Typeable State)
   dictState = Dict

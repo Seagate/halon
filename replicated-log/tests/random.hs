@@ -65,6 +65,7 @@ testConfig = Log.Config
     , leaseRenewTimeout = 1000000
     , driftSafetyFactor = 11 % 10
     , snapshotPolicy    = return . (>= 100)
+    , snapshotRestoreTimeout = 1000000
     }
 
 ssdictState :: SerializableDict State

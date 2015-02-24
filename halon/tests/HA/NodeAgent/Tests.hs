@@ -113,7 +113,7 @@ naTestWithEQ transport action = withTmpDirectory $ do
   mdone <- newEmptyMVar
   tryRunProcess (head nodes) $ do
     liftIO $ putStrLn "Testing NodeAgent..."
-    cRGroup <- newRGroup $(mkStatic 'eqSDict) 20 nids (Nothing,[])
+    cRGroup <- newRGroup $(mkStatic 'eqSDict) 20 1000000 nids (Nothing,[])
 #ifdef USE_MOCK_REPLICATOR
     rGroup <- unClosure cRGroup >>= id
     forM_ nids $ const $ spawnLocal $ dummyRC' rGroup

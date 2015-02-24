@@ -45,6 +45,7 @@ import Control.Distributed.Log.Policy (NominationPolicy)
 import Control.Distributed.Log.Policy as Policy (notThem, notThem__static)
 import Control.Distributed.Process.Batcher
 import Control.Distributed.Process.Consensus hiding (Value)
+import Control.Distributed.Process.Timeout
 
 import Control.Distributed.Process hiding (callLocal, send)
 import Control.Distributed.Process.Serializable
@@ -71,7 +72,7 @@ import qualified Control.Exception as E (uninterruptibleMask_)
 import Control.Monad
 import Data.Constraint (Dict(..))
 import Data.Int (Int64)
-import Data.List (intersect, maximumBy, partition)
+import Data.List (intersect, partition, sortBy)
 import qualified Data.Foldable as Foldable
 import Data.Function (on)
 import Data.Binary (Binary, encode)
@@ -222,6 +223,10 @@ data Config = Config
       -- | Takes the amount of executed entries since last snapshot.
       -- Returns true whenever a snapshot of the state should be saved.
     , snapshotPolicy :: Int -> Process Bool
+
+      -- | This is the amount of microseconds a replica will wait for a snapshot
+      -- to load before giving up.
+    , snapshotRestoreTimeout :: Int
     } deriving (Typeable)
 
 -- | The type of decree values. Some decrees are control decrees, that
@@ -528,9 +533,11 @@ replica Dict
                        (persistDirectory (processNodeId self))
                        (Memory acceptors0 replicas0 leg0 epoch0 Map.empty)
     sns <- logGetAvailableSnapshots
-    (w0, s) <- if null sns then (DecreeId 0 0,) <$> logInitialize
-                 else let (w0, ref) = maximumBy (compare `on` fst) sns
-                       in (w0,) <$> logRestore ref
+    -- Try the snapshots from the most recent to the less recent.
+    let findSnapshot []               = (DecreeId 0 0,) <$> logInitialize
+        findSnapshot ((w0, ref) : xs) = restoreSnapshot (logRestore ref) >>=
+                                        maybe (findSnapshot xs) (return . (w0,))
+    (w0, s) <- findSnapshot $ sortBy (flip compare `on` fst) sns
 
     -- Replay backlog if any.
     (acceptors', replicas', leg', epoch', log) <-
@@ -585,6 +592,14 @@ replica Dict
          , stateLogNextState = logNextState
          }
   where
+    -- Restores a snapshot with the given operation and returns @Nothing@ if an
+    -- exception is thrown or if the operation times-out.
+    restoreSnapshot :: Process s -> Process (Maybe s)
+    restoreSnapshot restore =
+       -- TODO: maybe use an uninterruptible mask
+       mask_ (try $ timeout snapshotRestoreTimeout restore) >>= \case
+          Left (_ :: SomeException) -> return Nothing
+          Right ms -> return ms
 
     sendBatch :: ProcessId
               -> [(ProcessId, LegislatureId, Request a)]
@@ -1033,10 +1048,9 @@ replica Dict
                   if not (Map.member n log) && decreeNumber w <= n &&
                      decreeNumber w < decreeNumber w0' then do
                     -- TODO: get the snapshot asynchronously
-                    -- TODO: maybe use an uninterruptible mask
-                    mask_ (try $ stLogRestore sref') >>= \case
-                     Left (_ :: SomeException) -> go st
-                     Right s' -> do
+                    restoreSnapshot (stLogRestore sref') >>= \case
+                     Nothing -> go st
+                     Just s' -> do
                       let leg  = decreeLegislatureId d
                           leg'' = max leg leg'
                           epoch'' = if leg' >= leg then epoch' else epoch

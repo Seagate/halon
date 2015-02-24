@@ -57,7 +57,7 @@ snapshotServerLbl :: String
 snapshotServerLbl = "snapshot-server"
 
 testLog :: State.Log State
-testLog = State.log $ serializableSnapshot snapshotServerLbl state0
+testLog = State.log $ serializableSnapshot snapshotServerLbl state0 1000000
 
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)

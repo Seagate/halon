@@ -136,8 +136,8 @@ rGroupTest transport g p =
     tryRunProcessLocal transport $
       flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
         nid <- getSelfNode
-        rGroup <- newRGroup $(mkStatic 'mmSDict) 20 [nid] (fromList []) >>=
-                  unClosure >>= (`asTypeOf` return g)
+        rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
+                    >>= unClosure >>= (`asTypeOf` return g)
         mmpid <- spawnLocal $ catch (multimap rGroup) $
           (\e -> liftIO $ print (e :: SomeException))
         p mmpid

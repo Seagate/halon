@@ -92,7 +92,8 @@ tests transport internals = do
                 "Trim done." -> send self ()
                 _ -> return ()
 
-            cRGroup <- newRGroup $(mkStatic 'eqSDict) 20 nodes (Nothing,[])
+            cRGroup <- newRGroup $(mkStatic 'eqSDict) 20 1000000 nodes
+                                 (Nothing,[])
             rGroup <- unClosure cRGroup >>= id
             eq <- spawnLocal (eventQueue rGroup)
             na <- spawnLocal . ($ ()) =<< unClosure (serviceProcess eqTracker)

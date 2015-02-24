@@ -89,7 +89,7 @@ testServiceRestarting transport = do
             _ -> return ()
 
         say $ "tests node: " ++ show nid
-        cRGroup <- newRGroup $(mkStatic 'testDict) 1000
+        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
                              [nid] ((Nothing,[]), fromList [])
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup

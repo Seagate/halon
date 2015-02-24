@@ -55,8 +55,13 @@ class RGroup g where
   --
   -- A closure which produces a handle to the group is returned.
   --
-  newRGroup :: Serializable st => Static (SerializableDict st)
-            -> Int -> [NodeId] -> st -> Process (Closure (Process (g st)))
+  newRGroup :: Serializable st
+            => Static (SerializableDict st)
+            -> Int
+            -> Int
+            -> [NodeId]
+            -> st
+            -> Process (Closure (Process (g st)))
 
   -- | Releases any resources used by the replication group.
   stopRGroup :: g st -> Process ()

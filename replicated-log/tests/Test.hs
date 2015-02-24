@@ -100,6 +100,7 @@ testConfig = Log.Config
     , leaseRenewTimeout = 300000
     , driftSafetyFactor = 11 % 10
     , snapshotPolicy    = return . (>= snapshotThreashold)
+    , snapshotRestoreTimeout = 1000000
     }
 
 retryTimeout :: Int

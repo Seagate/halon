@@ -75,7 +75,7 @@ instance RGroup RLocalGroup where
 
   data Replica RLocalGroup = Replica
 
-  newRGroup sd _snapshotThreashold _ns st = return $
+  newRGroup sd _snapshotThreashold _snapshotTimeout _ns st = return $
       closure $(mkStatic 'createRLocalGroup) (encode (sd,st))
         `closureApply` staticClosure sd
 

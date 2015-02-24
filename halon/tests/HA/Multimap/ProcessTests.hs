@@ -81,7 +81,7 @@ tests transport = testSuccess "multimap" . withTmpDirectory $ do
             $ __remoteTable remoteTable
     tryRunProcess lnid $ do
         nid <- getSelfNode
-        cRGroup <- newRGroup $(mkStatic 'mmSDict) 20 [nid] (fromList [])
+        cRGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         testMultimap rGroup
