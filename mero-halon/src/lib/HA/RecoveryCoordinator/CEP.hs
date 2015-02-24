@@ -90,12 +90,14 @@ rcRules argv eq = do
         when (epoch == epid) $
             updateServiceConfiguration opts svc nodeFilter
 
-    define id $ \(DeclareChannels svc acs) -> do
-        registerChannels svc acs
+    defineHAEvent id $
+        \(HAEvent _ (DeclareChannels pid svc acs) _) -> do
+            registerChannels svc acs
+            ack pid
 
     -- SSPL Monitor drivemanager
-    define id $ \(nid, mrm) -> do
+    defineHAEvent id $ \(HAEvent _ (nid, mrm) _) -> do
         let disk_status = monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskStatus mrm
         when (disk_status == "inuse_removed") $ do
-          let msg = InterestingEventMessage ""
+          let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
           sendInterestingEvent nid msg

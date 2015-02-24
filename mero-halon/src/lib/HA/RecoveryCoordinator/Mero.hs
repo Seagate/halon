@@ -91,9 +91,9 @@ import Data.Binary.Get (runGet)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BS
 import Data.Dynamic
-import Data.Foldable (for_)
 import Data.List (intersect, foldl')
 import qualified Data.Map.Strict as Map
+import Data.Maybe (listToMaybe)
 #ifdef USE_RPC
 import Data.Maybe (isJust)
 #endif
@@ -272,23 +272,28 @@ sendInterestingEvent :: NodeId
                      -> InterestingEventMessage
                      -> State.StateT LoopState Process ()
 sendInterestingEvent nid msg = do
+    lift . say $ "Sending InterestingEventMessage"
     rg <- State.gets lsGraph
-    let node = Node nid
-        svc :: Service SSPLConf
-        svc = head $ G.connectedTo Cluster Supports rg
+    let
+      node = Node nid
+      chanm = do
+        s <- listToMaybe $ (G.connectedTo Cluster Supports rg :: [Service SSPLConf])
+        sp <- runningService node s rg
+        listToMaybe $ G.connectedTo sp IEMChannel rg
 
-    spm <- lookupRunningService node svc
-    for_ spm $ \sp -> do
-      let Channel chan = head $ G.connectedTo sp IEMChannel rg
-      lift $ sendChan chan msg
+    case chanm of
+      Just (Channel chan) -> lift $ sendChan chan msg
+      _ -> lift $ sayRC "Cannot find anything!"
 
 registerChannels :: ServiceProcess SSPLConf
                  -> ActuatorChannels
                  -> State.StateT LoopState Process ()
 registerChannels svc acs = do
     ls <- State.get
+    lift . say $ "Register channels"
     let chan = Channel $ iemPort acs
-        rg' = G.newResource chan >>>
+        rg' = G.newResource svc >>>
+              G.newResource chan >>>
               G.connect svc IEMChannel chan $ lsGraph ls
 
     newGraph <- lift $ G.sync rg'

@@ -40,6 +40,7 @@ import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Distributed.Process
   ( Process
+  , ProcessId
   , SendPort
   , catch
   , catchExit
@@ -95,6 +96,7 @@ instance Hashable ActuatorChannels
 
 -- | Message to the RC advertising which channels to talk on.
 data DeclareChannels = DeclareChannels
+    ProcessId -- ^ Identity of reporting process
     (ServiceProcess SSPLConf) -- ^ Identity of the service process
     ActuatorChannels -- ^ Relevant channels
   deriving (Generic, Typeable)
@@ -126,7 +128,7 @@ instance Hashable IEMConf
 
 iemSchema :: Schema IEMConf
 iemSchema = let
-    en = defaultable "iem_bcast" . strOption
+    en = defaultable "sspl_iem" . strOption
         $ long "iem_exchange"
         <> metavar "EXCHANGE_NAME"
     rk = defaultable "sspl_ll" . strOption
@@ -338,6 +340,7 @@ msgHandler chan = forever $ do
   nid <- getSelfNode
   case decode (msgBody msg) :: Maybe MonitorResponse of
     Just mr -> do
+      say $ show mr
       mapM_ promulgate
             $ monitorResponseMonitor_msg_typeHost_update
             . monitorResponseMonitor_msg_type
@@ -376,14 +379,15 @@ startSensors chan lChan sc = do
 
 startActuators :: Network.AMQP.Channel
                -> ActuatorConf
+               -> ProcessId -- ^ ProcessID of SSPL main process.
                -> Process ()
-startActuators chan ac = do
-    pid <- getSelfPid
+startActuators chan ac pid = do
     iemChan <- spawnChannelLocal (iemProcess $ acIEM ac)
     informRC (ServiceProcess pid) (ActuatorChannels iemChan)
   where
     informRC sp chans = do
-      promulgate $ DeclareChannels sp chans
+      mypid <- getSelfPid
+      promulgate $ DeclareChannels mypid sp chans
       msg <- expectTimeout (fromDefault . acDeclareChanTimeout $ ac)
       case msg of
         Nothing -> informRC sp chans
@@ -411,25 +415,26 @@ remotableDecl [ [d|
     onExit _ Shutdown = say $ "SSPLService stopped."
     onExit _ Reconfigure = say $ "SSPLService stopping for reconfiguration."
 
-    connectRetry lChan lock = catch
-      (connectSSPL lChan lock)
+    connectRetry lChan lock pid = catch
+      (connectSSPL lChan lock pid)
       (\e -> let _ = (e :: AMQPException) in
-        connectRetry lChan lock
+        connectRetry lChan lock pid
       )
-    connectSSPL lChan lock = do
+    connectSSPL lChan lock pid = do
       conn <- liftIO $ openConnection host vhost un pw
       chan <- liftIO $ openChannel conn
       startSensors chan lChan scSensorConf
-      startActuators chan scActuatorConf
+      startActuators chan scActuatorConf pid
       () <- liftIO $ takeMVar lock
       liftIO $ closeConnection conn
       say "Connection closed."
     in (`catchExit` onExit) $ do
       say $ "Starting service sspl"
+      pid <- getSelfPid
       lChan <- liftIO newChan
       lock <- liftIO newEmptyMVar
       _ <- spawnLocal $ msgHandler lChan
-      _ <- spawnLocal $ connectRetry lChan lock
+      _ <- spawnLocal $ connectRetry lChan lock pid
       () <- expect
       liftIO $ putMVar lock ()
       return ()
