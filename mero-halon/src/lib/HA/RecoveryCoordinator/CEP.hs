@@ -94,8 +94,8 @@ rcRules argv eq = do
         registerChannels svc acs
 
     -- SSPL Monitor drivemanager
-    define id $ \(nid :: NodeId, mrm) -> do
+    define id $ \(nid, mrm) -> do
         let disk_status = monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskStatus mrm
         when (disk_status == "inuse_removed") $ do
           let msg = InterestingEventMessage ""
-          sendInterestingEvent msg
+          sendInterestingEvent nid msg

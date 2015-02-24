@@ -91,6 +91,7 @@ import Data.Binary.Get (runGet)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BS
 import Data.Dynamic
+import Data.Foldable (for_)
 import Data.List (intersect, foldl')
 import qualified Data.Map.Strict as Map
 #ifdef USE_RPC
@@ -267,11 +268,19 @@ sendMsg pid a = lift $ usend pid a
 decodeMsg :: (MonadTrans m, ProcessEncode a) => BinRep a -> m Process a
 decodeMsg = lift . decodeP
 
-sendInterestingEvent :: InterestingEventMessage
+sendInterestingEvent :: NodeId
+                     -> InterestingEventMessage
                      -> State.StateT LoopState Process ()
-sendInterestingEvent msg = do
+sendInterestingEvent nid msg = do
     rg <- State.gets lsGraph
-    return ()
+    let node = Node nid
+        svc :: Service SSPLConf
+        svc = head $ G.connectedTo Cluster Supports rg
+
+    spm <- lookupRunningService node svc
+    for_ spm $ \sp -> do
+      let Channel chan = head $ G.connectedTo sp IEMChannel rg
+      lift $ sendChan chan msg
 
 registerChannels :: ServiceProcess SSPLConf
                  -> ActuatorChannels
