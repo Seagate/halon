@@ -83,18 +83,16 @@ int m0_fom_rpclite_state(struct m0_fom *fom)
 	struct m0_fop			*fop;
         struct rpclite_fop_rep		*rpclite_fop_rep;
         struct m0_rpc_item              *item;
-        struct m0_fom_rpclite		*fom_obj;
 
-	fom_obj = container_of(fom, struct m0_fom_rpclite, fp_gen);
     if (!rpclite_listen_cbs.receive_callback
-		|| !rpclite_listen_cbs.receive_callback(&(struct rpc_item){ .fop = fom_obj->fp_fop },NULL)
+		|| !rpclite_listen_cbs.receive_callback(&(struct rpc_item){ .fop = fom->fo_fop },NULL)
        ) {
-        fop = m0_fop_reply_alloc(fom_obj->fp_fop,&m0_fop_rpclite_rep_fopt);
+        fop = m0_fop_reply_alloc(fom->fo_fop,&m0_fop_rpclite_rep_fopt);
         M0_ASSERT(fop != NULL);
         rpclite_fop_rep = m0_fop_data(fop);
         rpclite_fop_rep->f_seq = true;
     	item = m0_fop_to_rpc_item(fop);
-        m0_rpc_reply_post(&fom_obj->fp_fop->f_item, item);
+        m0_rpc_reply_post(&fom->fo_fop->f_item, item);
     }
 
 	m0_fom_phase_set(fom, M0_FOPH_FINISH);
@@ -102,9 +100,9 @@ int m0_fom_rpclite_state(struct m0_fom *fom)
 //	struct m0_clink* cl;
 //	M0_ALLOC_PTR(cl);
 //	m0_clink_init(cl,disconnected_cb);
-//	m0_clink_add(&fom_obj->fp_fop->f_item.ri_session->s_sm.sm_chan,cl);
+//	m0_clink_add(&fom->fo_fop->f_item.ri_session->s_sm.sm_chan,cl);
 
-	// m0_rpc_conn_destroy(fom_obj->fp_fop->f_item.ri_session->s_conn,10);
+	// m0_rpc_conn_destroy(fom->fo_fop->f_item.ri_session->s_conn,10);
 
 	return M0_FSO_WAIT;
 }
@@ -114,31 +112,23 @@ int m0_fom_rpclite_state(struct m0_fom *fom)
 /* Init for rpclite */
 static int rpclite_fop_fom_create(struct m0_fop *fop, struct m0_fom **m, struct m0_reqh* reqh)
 {
-        struct m0_fom                   *fom;
-        struct m0_fom_rpclite		*fom_obj;
+    struct m0_fom                   *fom;
 
-        M0_PRE(fop != NULL);
-        M0_PRE(m != NULL);
+    M0_PRE(fop != NULL);
+    M0_PRE(m != NULL);
 
-        fom_obj= m0_alloc(sizeof(struct m0_fom_rpclite));
-        if (fom_obj == NULL)
-                return -ENOMEM;
-	fom = &fom_obj->fp_gen;
+    fom = m0_alloc(sizeof(struct m0_fom));
+    if (fom == NULL)
+        return -ENOMEM;
 	m0_fom_init(fom, &fop->f_type->ft_fom_type, &m0_fom_rpclite_ops, fop, NULL
 				, reqh);
-	fom_obj->fp_fop = fop;
 	*m = fom;
 	return 0;
 }
 
 void m0_fop_rpclite_fom_fini(struct m0_fom *fom)
 {
-	struct m0_fom_rpclite *fom_obj;
-
-	fom_obj = container_of(fom, struct m0_fom_rpclite, fp_gen);
 	m0_fom_fini(fom);
-	m0_free(fom_obj);
-
-	return;
+	m0_free(fom);
 }
 
