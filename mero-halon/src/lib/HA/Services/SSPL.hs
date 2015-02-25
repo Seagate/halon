@@ -17,6 +17,7 @@
 module HA.Services.SSPL
   ( sspl
   , ssplProcess
+  , ssplRules
   , ActuatorChannels(..)
   , DeclareChannels(..)
   , InterestingEventMessage(..)
@@ -28,18 +29,23 @@ module HA.Services.SSPL
   ) where
 
 import HA.NodeAgent.Messages
+import HA.EventQueue.Consumer (HAEvent(..), defineHAEvent)
 import HA.EventQueue.Producer (promulgate)
 import HA.Service hiding (configDict)
+import HA.RecoveryCoordinator.Mero
 import HA.ResourceGraph
-import HA.Resources (Cluster, Node)
+import HA.Resources (Cluster(..), Node(..))
 
 import SSPL.Bindings
 
 import Control.Applicative ((<$>), (<*>))
+import Control.Arrow ((>>>))
+import Control.Category (id)
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Distributed.Process
-  ( Process
+  ( NodeId
+  , Process
   , ProcessId
   , SendPort
   , catch
@@ -48,8 +54,8 @@ import Control.Distributed.Process
   , expectTimeout
   , getSelfPid
   , getSelfNode
-  , liftIO
   , receiveChan
+  , sendChan
   , say
   , spawnChannelLocal
   , spawnLocal
@@ -57,7 +63,7 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
-import Control.Monad (forever)
+import Control.Monad.State.Strict hiding (mapM_)
 
 import Data.Aeson (decode)
 import Data.Binary (Binary)
@@ -65,6 +71,7 @@ import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Defaultable
 import Data.Foldable (mapM_)
 import Data.Hashable (Hashable)
+import Data.Maybe (listToMaybe)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
 import Data.Typeable (Typeable)
@@ -72,11 +79,12 @@ import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
 import Network.AMQP
+import Network.CEP
 
 import Options.Schema (Schema)
 import Options.Schema.Builder hiding (name, desc)
 
-import Prelude hiding (mapM_)
+import Prelude hiding (id, mapM_)
 
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process (readProcess)
@@ -402,6 +410,52 @@ startActuators chan ac pid = do
                 , msgDeliveryMode = Just Persistent
                 }
         )
+
+sendInterestingEvent :: NodeId
+                     -> InterestingEventMessage
+                     -> StateT LoopState Process ()
+sendInterestingEvent nid msg = do
+    lift . say $ "Sending InterestingEventMessage"
+    rg <- gets lsGraph
+    let
+      node = Node nid
+      chanm = do
+        s <- listToMaybe $ (connectedTo Cluster Supports rg :: [Service SSPLConf])
+        sp <- runningService node s rg
+        listToMaybe $ connectedTo sp IEMChannel rg
+
+    case chanm of
+      Just (Channel chan) -> lift $ sendChan chan msg
+      _ -> lift $ sayRC "Cannot find anything!"
+
+registerChannels :: ServiceProcess SSPLConf
+                 -> ActuatorChannels
+                 -> StateT LoopState Process ()
+registerChannels svc acs = do
+    ls <- get
+    lift . say $ "Register channels"
+    let chan = Channel $ iemPort acs
+        rg' = newResource svc >>>
+              newResource chan >>>
+              connect svc IEMChannel chan $ lsGraph ls
+
+    newGraph <- lift $ sync rg'
+    put ls { lsGraph = newGraph }
+
+ssplRules :: RuleM LoopState ()
+ssplRules = do
+    defineHAEvent id $
+        \(HAEvent _ (DeclareChannels pid svc acs) _) -> do
+            registerChannels svc acs
+            ack pid
+
+    -- SSPL Monitor drivemanager
+    defineHAEvent id $ \(HAEvent _ (nid, mrm) _) -> do
+      let disk_status = monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskStatus mrm
+      when (disk_status == "inuse_removed") $ do
+        let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
+        sendInterestingEvent nid msg
+
 
 remotableDecl [ [d|
 
