@@ -51,6 +51,8 @@ module HA.RecoveryCoordinator.Mero
        , getEpochId
        , decodeMsg
        , bounceServiceTo
+       , sendInterestingEvent
+       , registerChannels
        ) where
 
 import Prelude hiding ((.), id, mapM_)
@@ -64,6 +66,8 @@ import qualified HA.Services.EQTracker as EQT
 
 import HA.EventQueue.Producer (promulgateEQ)
 import qualified HA.ResourceGraph as G
+
+import HA.Services.SSPL
 #ifdef USE_MERO_NOTE
 import qualified Mero.Notification
 import Mero.Notification.HAState
@@ -89,6 +93,7 @@ import qualified Data.ByteString.Lazy as BS
 import Data.Dynamic
 import Data.List (intersect, foldl')
 import qualified Data.Map.Strict as Map
+import Data.Maybe (listToMaybe)
 #ifdef USE_RPC
 import Data.Maybe (isJust)
 #endif
@@ -262,6 +267,37 @@ sendMsg pid a = lift $ usend pid a
 
 decodeMsg :: (MonadTrans m, ProcessEncode a) => BinRep a -> m Process a
 decodeMsg = lift . decodeP
+
+sendInterestingEvent :: NodeId
+                     -> InterestingEventMessage
+                     -> State.StateT LoopState Process ()
+sendInterestingEvent nid msg = do
+    lift . say $ "Sending InterestingEventMessage"
+    rg <- State.gets lsGraph
+    let
+      node = Node nid
+      chanm = do
+        s <- listToMaybe $ (G.connectedTo Cluster Supports rg :: [Service SSPLConf])
+        sp <- runningService node s rg
+        listToMaybe $ G.connectedTo sp IEMChannel rg
+
+    case chanm of
+      Just (Channel chan) -> lift $ sendChan chan msg
+      _ -> lift $ sayRC "Cannot find anything!"
+
+registerChannels :: ServiceProcess SSPLConf
+                 -> ActuatorChannels
+                 -> State.StateT LoopState Process ()
+registerChannels svc acs = do
+    ls <- State.get
+    lift . say $ "Register channels"
+    let chan = Channel $ iemPort acs
+        rg' = G.newResource svc >>>
+              G.newResource chan >>>
+              G.connect svc IEMChannel chan $ lsGraph ls
+
+    newGraph <- lift $ G.sync rg'
+    State.put ls { lsGraph = newGraph }
 
 initialize :: ProcessId -> Process G.Graph
 initialize mm = do

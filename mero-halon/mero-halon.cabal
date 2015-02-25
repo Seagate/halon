@@ -82,6 +82,7 @@ Library
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
   Build-Depends:   base,
+                   aeson,
                    amqp,
                    halon,
                    bytestring,
@@ -93,6 +94,7 @@ Library
                    mtl,
                    options-schema,
                    process,
+                   sspl,
                    text,
                    binary,
                    network-transport,

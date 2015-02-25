@@ -1,4 +1,5 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 -- |
 -- Copyright : (C) 2013,2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -13,12 +14,14 @@ import Control.Monad
 
 import Control.Distributed.Process
 import Network.CEP
+import SSPL.Bindings
 
 import HA.EventQueue.Consumer
 import HA.NodeUp
 import HA.RecoveryCoordinator.Mero
 import HA.Resources
 import HA.Service
+import HA.Services.SSPL
 
 rcRules :: IgnitionArguments -> ProcessId -> RuleM LoopState ()
 rcRules argv eq = do
@@ -86,3 +89,15 @@ rcRules argv eq = do
         epid <- getEpochId
         when (epoch == epid) $
             updateServiceConfiguration opts svc nodeFilter
+
+    defineHAEvent id $
+        \(HAEvent _ (DeclareChannels pid svc acs) _) -> do
+            registerChannels svc acs
+            ack pid
+
+    -- SSPL Monitor drivemanager
+    defineHAEvent id $ \(HAEvent _ (nid, mrm) _) -> do
+        let disk_status = monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskStatus mrm
+        when (disk_status == "inuse_removed") $ do
+          let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
+          sendInterestingEvent nid msg
