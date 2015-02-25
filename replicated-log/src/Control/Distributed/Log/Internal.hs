@@ -398,7 +398,11 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
     -- For now, it must never be an unreachable decree (i.e. a decree beyond the
     -- reconfiguration decree that changes to a new legislature) or any
     -- proposal using the decree identifier will never be acknowledged or
-    -- executed. Invariant: @stateUnconfirmedDecree <= stateCurrentDecree@
+    -- executed.
+    --
+    -- Invariant: @stateUnconfirmedDecree <= stateCurrentDecree@
+    -- Invariant: @stateWatermark <= stateUnconfirmedDecree@
+    --
   , stateCurrentDecree     :: DecreeId
     -- | The reference to the last snapshot saved.
   , stateSnapshotRef       :: Maybe ref
@@ -806,10 +810,9 @@ replica Dict
                            , stateLogState          = s'
                            }
                   Reconf requestStart αs' ρs'
-                    -- Only execute reconfiguration decree if decree is from
-                    -- current legislature. Otherwise we would be going back to
-                    -- an old configuration.
-                    | ((==) `on` decreeLegislatureId) d dᵢ -> do
+                    -- Only execute a reconfiguration if we are on an earlier
+                    -- configuration.
+                    | decreeLegislatureId d <= decreeLegislatureId w -> do
                       let d' = d{ decreeLegislatureId = succ (decreeLegislatureId d)
                                 , decreeNumber = max (decreeNumber d) (decreeNumber w') }
                           cd' = cd{ decreeLegislatureId = succ (decreeLegislatureId cd)
