@@ -7,6 +7,8 @@ module Control.Distributed.Process
   ( Match
   , send
   , usend
+  , nsend
+  , nsendRemote
   , sendChan
   , match
   , matchIf
@@ -36,6 +38,8 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   ( Match
   , send
   , usend
+  , nsend
+  , nsendRemote
   , sendChan
   , match
   , matchIf
@@ -49,6 +53,11 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , spawn )
 import Control.Distributed.Process.Serializable ( Serializable )
 
+ifSchedulerIsEnabled :: a -> a -> a
+ifSchedulerIsEnabled a b
+    | Internal.schedulerIsEnabled = a
+    | otherwise                   = b
+
 -- These functions are marked NOINLINE, because this way the "if"
 -- statement only has to be evaluated once and not at every call site.
 -- After the first evaluation, these top-level functions are simply a
@@ -56,42 +65,37 @@ import Control.Distributed.Process.Serializable ( Serializable )
 
 {-# NOINLINE send #-}
 send :: Serializable a => ProcessId -> a -> Process ()
-send = if Internal.schedulerIsEnabled
-       then Internal.send
-       else DP.send
+send = ifSchedulerIsEnabled Internal.send DP.send
 
 {-# NOINLINE usend #-}
 usend :: Serializable a => ProcessId -> a -> Process ()
-usend = if Internal.schedulerIsEnabled
-       then Internal.usend
-       else DP.usend
+usend = ifSchedulerIsEnabled Internal.usend DP.usend
+
+{-# NOINLINE nsend #-}
+nsend :: Serializable a => String -> a -> Process ()
+nsend = ifSchedulerIsEnabled Internal.nsend DP.nsend
+
+{-# NOINLINE nsendRemote #-}
+nsendRemote :: Serializable a => NodeId -> String -> a -> Process ()
+nsendRemote = ifSchedulerIsEnabled Internal.nsendRemote DP.nsendRemote
 
 {-# NOINLINE sendChan #-}
 sendChan :: Serializable a => SendPort a -> a -> Process ()
-sendChan = if Internal.schedulerIsEnabled
-           then Internal.sendChan
-           else DP.sendChan
+sendChan = ifSchedulerIsEnabled Internal.sendChan DP.sendChan
 
 {-# NOINLINE receiveChan #-}
 receiveChan :: Serializable a => ReceivePort a -> Process a
-receiveChan = if Internal.schedulerIsEnabled
-              then Internal.receiveChan
-              else DP.receiveChan
+receiveChan = ifSchedulerIsEnabled Internal.receiveChan DP.receiveChan
 
 {-# NOINLINE spawnLocal #-}
 spawnLocal :: Process () -> Process ProcessId
-spawnLocal = if Internal.schedulerIsEnabled
-             then Internal.spawnLocal
-             else DP.spawnLocal
+spawnLocal = ifSchedulerIsEnabled Internal.spawnLocal DP.spawnLocal
 
 {-# NOINLINE spawn #-}
 spawn :: NodeId -> Closure (Process ()) -> Process ProcessId
-spawn = if Internal.schedulerIsEnabled
-        then Internal.spawn
-        else DP.spawn
+spawn = ifSchedulerIsEnabled Internal.spawn DP.spawn
 
 {-# NOINLINE expectTimeout #-}
 expectTimeout :: Serializable a => Int -> Process (Maybe a)
-expectTimeout = if Internal.schedulerIsEnabled
-        then fmap Just . const Internal.expect
-        else DP.expectTimeout
+expectTimeout = ifSchedulerIsEnabled
+    (fmap Just . const Internal.expect) DP.expectTimeout

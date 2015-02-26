@@ -2,6 +2,7 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -20,6 +21,8 @@ module Control.Distributed.Process.Scheduler.Internal
   , Match
   , send
   , usend
+  , nsend
+  , nsendRemote
   , sendChan
   , match
   , matchIf
@@ -68,6 +71,7 @@ import System.Posix.Env ( getEnv )
 import System.IO.Unsafe ( unsafePerformIO )
 import System.Random ( StdGen, randomR, mkStdGen )
 
+
 -- | @True@ iff the package "distributed-process-scheduler" should be
 -- used (iff DP_SCHEDULER_ENABLED environment variable is 1, to be
 -- replaced with HFlags in the future).
@@ -100,6 +104,9 @@ data SchedulerMsg
     = Send ProcessId ProcessId AddressedMsg
       -- ^ @Send source dest message@: send the @message@ from @source@ to
       -- @dest@.
+    | NSend ProcessId NodeId String DP.Message
+      -- ^ @NSend source destNode label message@: send the @message@ from
+      -- @source@ to @label@ in @destNode@.
     | Blocking ProcessId       -- ^ @Blocking pid@: process @pid@ has no
                                -- messages to process and is blocked.
     | HasMessage ProcessId     -- ^ @HasMessage pid@: process @pid@ is ready
@@ -122,8 +129,11 @@ data SchedulerResponse
 -- | Transitions that the scheduler can choose to perform when all
 -- processes block.
 data TransitionRequest
-    = PutMsg AddressedMsg   -- ^ Put this message in the mailbox of the target.
-    | ReceiveMsg            -- ^ Have a process pick a message from its mailbox.
+    = PutMsg ProcessId AddressedMsg
+                            -- ^ Put this message in the mailbox of the target.
+    | PutNSendMsg NodeId String DP.Message
+                    -- ^ Put this nsend'ed message in the mailbox of the target.
+    | ReceiveMsg ProcessId  -- ^ Have a process pick a message from its mailbox.
 
 -- | Exit reason sent to stop the scheduler.
 data StopScheduler = StopScheduler
@@ -139,6 +149,7 @@ instance Binary StopScheduler
 instance Binary SchedulerTerminated
 
 type ProcessMessages = Map ProcessId (Map ProcessId [AddressedMsg])
+type NSendMessages = Map (NodeId, String) (Map ProcessId [DP.Message])
 
 -- | Starts the scheduler assuming the given initial amount of processes and
 -- a seed to generate a sequence of random values.
@@ -154,7 +165,7 @@ startScheduler initialProcs seed0 = do
            self <- DP.getSelfPid
            spid <- DP.spawnLocal $
                      ((go (mkStdGen seed0) (Set.fromList initialProcs)
-                                                     Map.empty Map.empty
+                          Map.empty Map.empty Map.empty
                        `DP.finally` do
                           DP.liftIO $ modifyMVar_ schedulerLock $
                               const $ return False
@@ -174,18 +185,23 @@ startScheduler initialProcs seed0 = do
        -> Set ProcessId        -- ^ set of tested processes
        -> Map ProcessId Bool   -- ^ state of processes (blocked | has_a_message)
        -> ProcessMessages      -- ^ messages targeted to each process
+       -> NSendMessages        -- ^ messages targeted with a label
        -> Process ()
-    go seed alive procs msgs
+    go seed alive procs msgs nsMsgs
         -- Enter this equation if all processes are waiting for a transition
       | Set.size alive == Map.size procs = do
         -- complain if no process has a message and there are no messages to
         -- put in a mailbox
-        when (Map.null (Map.filter id procs) && Map.null msgs) $ error $
-          "startScheduler: All processes (" ++ show (Set.size alive) ++ ") are blocked."
+        when (Map.null (Map.filter id procs)
+              && Map.null msgs
+              && Map.null nsMsgs) $
+          error $ "startScheduler: All processes (" ++ show (Set.size alive) ++
+                  ") are blocked."
         -- pick next transition
-        let ((pid,r),seed',procs',msgs') = pickNextTransition seed procs msgs
+        let (r , seed', procs', msgs', nsMsgs') =
+               pickNextTransition seed procs msgs nsMsgs
         case r of
-          PutMsg msg -> do
+          PutMsg pid msg -> do
              forward msg
              -- if the process was blocked let's ask it to check again if it
              -- has a message.
@@ -193,37 +209,62 @@ startScheduler initialProcs seed0 = do
                then do DP.send pid TestReceive
                        return $ Map.delete pid procs'
                else return procs'
-             go seed' alive procs'' msgs'
-          ReceiveMsg -> do
+             go seed' alive procs'' msgs' nsMsgs'
+          PutNSendMsg nid label msg -> do
+             DP.whereisRemoteAsync nid label
+             DP.WhereIsReply _ mpid <- DP.expect
+             case mpid of
+               Nothing -> do
+                 go seed' alive procs' msgs' nsMsgs'
+               Just pid -> do
+                 forward $ AddressedMsg (DP.ProcessIdentifier pid) msg
+                 -- if the process was blocked let's ask it to check again if it
+                 -- has a message.
+                 procs'' <- if isBlocked pid procs
+                   then do DP.send pid TestReceive
+                           return $ Map.delete pid procs'
+                   else return procs'
+                 go seed' alive procs'' msgs' nsMsgs'
+          ReceiveMsg pid -> do
              DP.send pid Receive
-             go seed' alive procs' msgs'
+             go seed' alive procs' msgs' nsMsgs'
 
     -- enter the next equation if some process is still active
-    go seed alive procs msgs = do
+    go seed alive procs msgs nsMsgs = do
       m <- DP.expect
       case m of
         -- a process is sending a message
         Send source pid msg -> do
             go seed alive procs
-              $ if Set.member pid alive
+              (if Set.member pid alive
                  then Map.insertWith
                            (const $ Map.insertWith (flip (++)) source [msg])
                            pid (Map.singleton source [msg]) msgs
                  else msgs
+              )
+              nsMsgs
+        NSend source nid label msg -> do
+            go seed alive procs msgs $
+              Map.insertWith (const $ Map.insertWith (flip (++)) source [msg])
+                             (nid, label)
+                             (Map.singleton source [msg])
+                             nsMsgs
         -- a process has a message and is ready to process it
         HasMessage pid ->
-            go seed alive (Map.insert pid True procs) msgs
+            go seed alive (Map.insert pid True procs) msgs nsMsgs
         -- a process has no messages and will block
         Blocking pid ->
-            go seed alive (Map.insert pid False procs) msgs
+            go seed alive (Map.insert pid False procs) msgs nsMsgs
         -- a new process will be created
         CreatedNewProcess parent child -> do
             DP.send parent OkNewProcess
-            go seed (Set.insert child alive) procs msgs
+            go seed (Set.insert child alive) procs msgs nsMsgs
         -- a process has terminated
         ProcessTerminated pid ->
-            go seed (Set.delete pid alive) (Map.delete pid procs)
-                                                     (Map.delete pid msgs)
+            go seed (Set.delete pid alive)
+                    (Map.delete pid procs)
+                    (Map.delete pid msgs)
+                    nsMsgs
 
     -- is the given process waiting for a new message?
     isBlocked pid procs =
@@ -234,34 +275,69 @@ startScheduler initialProcs seed0 = do
     pickNextTransition :: StdGen
                        -> Map ProcessId Bool
                        -> ProcessMessages
-                       -> ( (ProcessId,TransitionRequest)
+                       -> NSendMessages
+                       -> ( TransitionRequest
                           , StdGen
                           , Map ProcessId Bool
                           , ProcessMessages
+                          , NSendMessages
                           )
-    pickNextTransition seed procs msgs =
+    pickNextTransition seed procs msgs nsMsgs =
       let has_a_message = Map.filter id procs
-          msgsSizes@(msgsSize:_) = Map.foldl' (\ss@(s:_) ms -> s + Map.size ms : ss)
-                                            [0] msgs
-          (i,seed') = randomR (0,Map.size has_a_message + msgsSize - 1) seed
+          msgsSizes@(msgsSize:_) =
+              Map.foldl' (\ss@(!s:_) ms -> s + Map.size ms : ss) [0] msgs
+          nsMsgsSizes@(nsMsgsSize:_) =
+              Map.foldl' (\ss@(!s:_) ms -> s + Map.size ms : ss) [0] nsMsgs
+          (i,seed') = randomR (0, Map.size has_a_message +
+                                  msgsSize +
+                                  nsMsgsSize - 1
+                              )
+                              seed
        in if i < Map.size has_a_message
         then let pid = Map.keys has_a_message !! i
-              in ( (pid,ReceiveMsg)
+              in ( ReceiveMsg pid
                  , seed'
                  , Map.delete pid procs -- the process is active again
                  , msgs
+                 , nsMsgs
                  )
-        else let i' = i - Map.size has_a_message
+        else if i < Map.size has_a_message + msgsSize
+        then let -- index in the range of messages to send
+                 i' = i - Map.size has_a_message
+                 -- the start of the range of senders of messages to the chosen
+                 -- process
                  i'' : rest = dropWhile (i'<) msgsSizes
-                 (pid,pidMsgs) = Map.toList msgs !! length rest
+                 -- the chosen process
+                 (pid, pidMsgs) = Map.toList msgs !! length rest
+                 -- the chosen sender
                  (sender, m : ms) = Map.toList pidMsgs !! (i' - i'')
-              in ( (pid,PutMsg m)
+              in ( PutMsg pid m
                  , seed'
                  , procs
                  , if null ms -- make sure to delete all empty containers
                     then if 1 == Map.size pidMsgs then Map.delete pid msgs
                           else Map.adjust (Map.delete sender) pid msgs
                     else Map.adjust (Map.adjust tail sender) pid msgs
+                 , nsMsgs
+                 )
+        else let -- index in the range of messages to send
+                 i' = i - Map.size has_a_message - msgsSize
+                 -- the start of the range of senders of messages to the chosen
+                 -- process
+                 i'' : rest = dropWhile (i'<) nsMsgsSizes
+                 -- the chosen process
+                 ((nid, label), nidlMsgs) = Map.toList nsMsgs !! length rest
+                 -- the chosen sender
+                 (sender, m : ms) = Map.toList nidlMsgs !! (i' - i'')
+              in ( PutNSendMsg nid label m
+                 , seed'
+                 , procs
+                 , msgs
+                 , if null ms -- make sure to delete all empty containers
+                    then if 1 == Map.size nidlMsgs
+                         then Map.delete (nid, label) nsMsgs
+                         else Map.adjust (Map.delete sender) (nid, label) nsMsgs
+                    else Map.adjust (Map.adjust tail sender) (nid, label) nsMsgs
                  )
 
     forward (AddressedMsg rid msg) = do
@@ -331,6 +407,14 @@ send pid msg = do
 
 usend :: Serializable a => ProcessId -> a -> Process ()
 usend = send
+
+nsendRemote :: Serializable a => NodeId -> String -> a -> Process ()
+nsendRemote nid label msg = do
+    self <- DP.getSelfPid
+    sendS $ NSend self nid label $ DP.createMessage msg
+
+nsend :: Serializable a => String -> a -> Process ()
+nsend label a = DP.whereis label >>= maybe (return ()) (flip send a)
 
 sendChan :: Serializable a => SendPort a -> a -> Process ()
 sendChan sendPort msg = do
