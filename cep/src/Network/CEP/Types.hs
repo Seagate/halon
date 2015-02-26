@@ -1,7 +1,9 @@
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeOperators              #-}
 -- |
@@ -42,6 +44,11 @@ newtype RuleM s a = RuleM (State (RuleState s) a)
 
 newtype CEP s a = CEP (StateT (Bookkeeping s) Process a)
                   deriving (Functor, Applicative, Monad, MonadIO)
+
+instance MonadState s (CEP s) where
+    get = CEP $ gets _state
+
+    put s = CEP $ modify $ \b -> b { _state = s }
 
 type ComplexEvent s a b = Wire (Timed NominalDiffTime ()) () (CEP s) a b
 
@@ -118,15 +125,13 @@ dynEvent = mkGen_ $ \dyn ->
 
 define :: forall a b s. Serializable a
        => ComplexEvent s a b
-       -> (b -> StateT s Process ())
+       -> (b -> CEP s ())
        -> RuleM s ()
 define w k = do
     let m       = match $ \(x :: a) -> return $ Other $ toDyn x
         rule    = observe . w . dynEvent
         observe = mkGen_ $ \b -> do
-          s  <- getUsrState
-          s' <- liftProcess $ execStateT (k b) s
-          setUsrState s'
+          k b
           return $ Right ()
 
     modify $ addRule m rule
