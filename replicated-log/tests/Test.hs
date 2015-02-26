@@ -40,8 +40,10 @@ import Data.List (isPrefixOf)
 import Data.Ratio ((%))
 import Data.Typeable (Typeable)
 import System.Directory
+import System.Environment (getExecutablePath)
 import System.IO
 import System.FilePath ((</>))
+import System.Process (callProcess)
 
 import Prelude hiding (read)
 import qualified Prelude
@@ -140,16 +142,19 @@ remoteTables =
   State.__remoteTable $
   Control.Distributed.Process.Node.initRemoteTable
 
-data Pass = FirstPass | SecondPass
+data Pass = DriverPass | FirstPass | SecondPass
           deriving (Eq, Ord, Read, Show)
 
 tests :: [String] -> IO TestTree
 tests args = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
+    let pass = Prelude.read $ if null args then "DriverPass" else head args
+        tcpPort = case pass of DriverPass -> "8080"; _ -> "8081"
 
     Right (transport, internals) <- createTransportExposeInternals
-        "127.0.0.1" "8080" defaultTCPParameters
+        "127.0.0.1" tcpPort defaultTCPParameters
+    print pass
     putStrLn "Transport created."
 
     let setup :: Int                      -- ^ Number of nodes to spawn group on.
@@ -457,21 +462,39 @@ tests args = do
                        expect :: Process ()
                 expect :: Process ()
                 say "Replicas continue to have quorum."
+
+           , testSuccess "durability" $ do
+               let tmpdir = "/tmp/tmp.durability-test"
+                   expectedState = case pass of
+                     DriverPass ->
+                       error "expectedState is undefined in the driver pass"
+                     FirstPass -> 1
+                     SecondPass -> 2
+
+               when (pass == DriverPass) $ do
+                 doesDirectoryExist tmpdir >>=
+                   (`when` removeDirectoryRecursive tmpdir)
+                 createDirectoryIfMissing True tmpdir
+
+               cwd <- getCurrentDirectory
+               setCurrentDirectory tmpdir
+
+               if pass == DriverPass then do
+                 exe <- getExecutablePath
+                 callProcess exe [ "--output-dir"
+                                 , cwd </> "test_output_FirstPass"
+                                 , "-p", "durability", "--", "FirstPass"
+                                 ]
+                 callProcess exe [ "--output-dir"
+                                 , cwd </> "test_output_SecondPass"
+                                 , "-p", "durability", "--", "SecondPass"
+                                 ]
+               else
+                 setup 5 $ \_ port -> do
+                   retry retryTimeout $
+                     State.update port incrementCP
+                   assert . (>= expectedState) =<<
+                     retry retryTimeout (State.select sdictInt port readCP)
            ]
 
-    let pass = Prelude.read $ if null args then "FirstPass" else head args
-        durability_test = testSuccess "durability" $ do
-            let tmpdir = "/tmp/tmp.durability-test"
-                expectedState = case pass of FirstPass -> 1; SecondPass -> 2
-            when (pass == FirstPass) $
-                doesDirectoryExist tmpdir >>=
-                (`when` removeDirectoryRecursive tmpdir)
-            createDirectoryIfMissing True tmpdir
-            setCurrentDirectory tmpdir
-            setup 5 $ \_ port -> do
-                retry retryTimeout $
-                  State.update port incrementCP
-                assert . (>= expectedState) =<<
-                  retry retryTimeout (State.select sdictInt port readCP)
-
-    return $ testGroup "replicated-log" [ut, durability_test]
+    return $ testGroup "replicated-log" [ut]
