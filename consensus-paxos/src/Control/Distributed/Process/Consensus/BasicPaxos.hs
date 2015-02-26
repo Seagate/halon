@@ -5,6 +5,7 @@
 -- This is intended to be imported qualified.
 
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Control.Distributed.Process.Consensus.BasicPaxos
     ( propose
@@ -30,7 +31,7 @@ import Control.Distributed.Static
 import Control.Applicative ((<$>))
 import Control.Concurrent ( newEmptyMVar, putMVar, takeMVar, threadDelay )
 import Control.Exception ( SomeException, throwIO )
-import Control.Monad (when)
+import Control.Monad (when, forM_)
 import Data.Binary ( Binary )
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
@@ -62,15 +63,16 @@ callLocal p = mask_ $ do
                      (const $ return ())
            ]
 
-scout :: forall a. Serializable a =>
-         [ProcessId] -> DecreeId -> BallotId ->
-         Process (Either BallotId [Msg.Ack a])
-scout acceptors d b = callLocal $ do
+scout :: Serializable a
+      => (forall b. Serializable b => n -> b -> Process ())
+      -> [n] -> DecreeId -> BallotId -> Process (Either BallotId [Msg.Ack a])
+scout sendA acceptors d b = callLocal $ do
   self <- getSelfPid
   let clauses = [ match $ \(Msg.Nack b') -> return $ Left b'
                 , match $ \(Msg.Promise _ _ acks) -> return $ Right acks
                 ]
-  fmap concat <$> expectQuorum clauses acceptors (Msg.Prepare d b self)
+  forM_ acceptors $ flip sendA (Msg.Prepare d b self)
+  fmap concat <$> expectQuorum clauses (length acceptors)
 
 {-*promela
 
@@ -125,18 +127,20 @@ inline scout(self,d,b,success,tb,acks) {
 -- Return type is isomorphic to @Maybe BallotId@, but use 'Either' because it
 -- would be confusing to use 'Nothing' as a value to indicate that everything
 -- went normally, i.e. that we were not preempted.
-command :: forall a. Serializable a
-        => [ProcessId]
+command :: forall a n. Serializable a
+        => (forall b. Serializable b => n -> b -> Process ())
+        -> [n]
         -> DecreeId
         -> BallotId
         -> a
         -> Process (Either BallotId ())
-command acceptors d b x = callLocal $ do
+command sendA acceptors d b x = callLocal $ do
   self <- getSelfPid
   let clauses = [ match $ \(Msg.Nack b') -> return $ Left b'
                 , match $ \(_ :: Msg.Ack a) -> return $ Right ()
                 ]
-  fmap (const ()) <$> expectQuorum clauses acceptors (Msg.Syn d b self x)
+  forM_ acceptors $ flip sendA (Msg.Syn d b self x)
+  fmap (const ()) <$> expectQuorum clauses (length acceptors)
 
 {-*promela
 
@@ -191,15 +195,16 @@ inline command(self,success,tb,d,b,x1) {
 
 -- | Basic Paxos proposers do not keep state across proposals.
 propose :: Serializable a
-        => [ProcessId]
+        => (forall b. Serializable b => n -> b -> Process ())
+        -> [n]
         -> DecreeId
         -> a
         -> Propose () a
-propose acceptors d x = liftProcess $ do
+propose sendA acceptors d x = liftProcess $ do
   self <- getSelfPid
   loop 0 (BallotId 0 self)
     where loop backoff b = do
-            eth <- scout acceptors d b
+            eth <- scout sendA acceptors d b
             let backoff' = if backoff == 0 then 200000 else 2 * backoff
             case eth of
               Left b'@BallotId{..} -> do
@@ -210,7 +215,7 @@ propose acceptors d x = liftProcess $ do
                     else loop backoff' b
               Right xs -> do
                   let x' = chooseValue d x xs
-                  eth' <- command acceptors d b x'
+                  eth' <- command sendA acceptors d b x'
                   case eth' of
                       Left BallotId{..} -> do
                         when (not schedulerIsEnabled) $

@@ -47,7 +47,8 @@ setup transport action = do
     when failure $ fail "Test failed."
 
 proposeWrapper :: [ProcessId] -> DecreeId -> Int -> Process Bool
-proposeWrapper αs d x = (x ==) <$> runPropose (BasicPaxos.propose αs d x)
+proposeWrapper αs d x = (x ==) <$>
+    runPropose (BasicPaxos.propose send αs d x)
 
 tests :: IO TestTree
 tests = do
