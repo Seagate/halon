@@ -8,7 +8,7 @@ RC=$?
 
 
 mkdir artifacts
-find . -name test_output | while read dir ; do \
+find . -name "test_output*" | while read dir ; do \
   target=/halon/artifacts/$(echo $dir | cut --delimiter="/" --fields=2); \
   mkdir $target; \
   cp -av $dir $target ; \
