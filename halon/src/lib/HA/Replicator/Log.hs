@@ -49,9 +49,7 @@ import Control.Distributed.Process
   , liftIO
   , say
   , die
-  , ProcessId
   , NodeId
-  , processNodeId
   , spawn
   )
 import Control.Distributed.Process.Closure
@@ -66,7 +64,6 @@ import Control.Distributed.Static
 
 import Data.Constraint ( Dict(..) )
 
-import Control.Arrow ( (***) )
 import System.FilePath ((</>))
 import Control.Exception ( evaluate )
 import Control.Monad ( when, forM, void, forM_ )
@@ -108,8 +105,7 @@ mstateTypeableDict :: SerializableDict st -> Dict (Typeable st)
 mstateTypeableDict SerializableDict = Dict
 
 removeNodes :: () -> (NodeId -> Bool) -> NominationPolicy
-removeNodes () np =
-    filter (np . processNodeId) *** filter (np . processNodeId)
+removeNodes () np = filter np
 
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
@@ -132,7 +128,8 @@ storageDir = "acid-state"
 
 rgroupConfig :: (Int, Int) -> Log.Config
 rgroupConfig (snapshotThreshold, snapshotTimeout) = Log.Config
-    { consensusProtocol =
+    { logName           = "halon-log"
+    , consensusProtocol =
           \dict -> BasicPaxos.protocol dict (filepath $ storageDir </> "acceptors")
     , persistDirectory  = filepath $ storageDir </> "replicas"
     , leaseTimeout      = 3000000
@@ -190,7 +187,7 @@ queryStatic rv = staticApply $(mkStatic 'prjProc) rv
 
 instance RGroup RLogGroup where
 
-  newtype Replica RLogGroup = Replica ProcessId
+  newtype Replica RLogGroup = Replica NodeId
     deriving Binary
 
   newRGroup sdictState snapshotThreshold snapshotTimeout nodes st = do
@@ -221,7 +218,8 @@ instance RGroup RLogGroup where
     forM ns $ \nid -> do
       _ <- spawn nid $ closure ($(mkStatic 'snapshotServer) `staticApply` sdq)
                      $ encode q0
-      fmap Replica $ Log.addReplica h nid
+      Log.addReplica h nid
+      return $ Replica nid
 
   updateRGroup (RLogGroup _ _ _ h _ _) (Replica ρ) = Log.updateHandle h ρ
 

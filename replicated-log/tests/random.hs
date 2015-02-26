@@ -59,7 +59,8 @@ snapshotServer = void $
 
 testConfig :: Log.Config
 testConfig = Log.Config
-    { consensusProtocol = \dict -> BasicPaxos.protocol dict (filepath "acceptors")
+    { logName           = "test-log"
+    , consensusProtocol = \dict -> BasicPaxos.protocol dict (filepath "acceptors")
     , persistDirectory  = filepath "replicas"
     , leaseTimeout      = 3000000
     , leaseRenewTimeout = 1000000

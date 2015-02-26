@@ -10,6 +10,7 @@
 -- group, or to none.
 
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Control.Distributed.Process.Consensus
     ( -- * Decrees
@@ -137,7 +138,9 @@ data Protocol n a = forall s. Protocol
       -- This function produces an error if the decree @d@ has been garbage
       -- collected. Garbage collection can be requested by the client with an
       -- as yet to be defined method.
-    , prl_propose  :: [ProcessId]                 -- Acceptors.
+    , prl_propose  :: (forall b. Serializable b => n -> b -> Process ())
+                                   -- ^ A function to send messages to acceptors
+                   -> [n]          -- Acceptors.
                    -> DecreeId
                    -> a
                    -> Propose s a

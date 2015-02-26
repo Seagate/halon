@@ -94,7 +94,8 @@ snapshotThreashold = 5
 
 testConfig :: Log.Config
 testConfig = Log.Config
-    { consensusProtocol = \dict -> BasicPaxos.protocol dict (filepath "acceptors")
+    { logName           = "test-log"
+    , consensusProtocol = \dict -> BasicPaxos.protocol dict (filepath "acceptors")
     , persistDirectory  = filepath "replicas"
     , leaseTimeout      = 1000000
     , leaseRenewTimeout = 300000
@@ -286,9 +287,9 @@ tests args = do
 
                 here <- getSelfNode
                 snapshotServer
-                ρ <- retry retryTimeout $
-                       Log.addReplica h here
-                updateHandle h ρ
+                retry retryTimeout $
+                  Log.addReplica h here
+                updateHandle h here
 
                 -- Kill the first node, and see that the updated handle
                 -- still works. But don't kill it too soon or the new replicas
@@ -418,9 +419,9 @@ tests args = do
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
                     snapshotServer
-                    ρ <- retry retryTimeout $
-                           Log.addReplica h here
-                    updateHandle h ρ
+                    retry retryTimeout $
+                       Log.addReplica h here
+                    updateHandle h here
 
                 liftIO $ runProcess node1 $
                   retry retryTimeout $

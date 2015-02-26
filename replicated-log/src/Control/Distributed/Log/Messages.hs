@@ -7,7 +7,7 @@ module Control.Distributed.Log.Messages where
 
 import Control.Distributed.Log.Policy (NominationPolicy)
 import Control.Distributed.Process.Consensus (DecreeId)
-import Control.Distributed.Process (ProcessId)
+import Control.Distributed.Process (ProcessId, NodeId)
 import Control.Distributed.Static (Closure)
 import Control.Distributed.Process.Consensus (LegislatureId)
 import Data.Typeable (Typeable)
@@ -55,7 +55,7 @@ data Decree a = Decree Locale DecreeId a
 data Query = Query ProcessId Int
     deriving (Typeable, Generic)
 
-data Max = Max ProcessId DecreeId LegislatureId [ProcessId] [ProcessId]
+data Max = Max ProcessId DecreeId LegislatureId [NodeId]
     deriving (Typeable, Generic)
 
 -- | Reports the snapshot of a replica upon receiving a 'Query' for an
@@ -63,10 +63,10 @@ data Max = Max ProcessId DecreeId LegislatureId [ProcessId] [ProcessId]
 --
 -- It also reports the current membership, the legislature and the epoch.
 --
--- > SnapshotInfo acceptors replicas legislatureId epoch snapshotRef
+-- > SnapshotInfo replicas legislatureId epoch snapshotRef
 -- >              snapshotWatermark oldDecree
 --
-data SnapshotInfo ref = SnapshotInfo [ProcessId] [ProcessId] LegislatureId
+data SnapshotInfo ref = SnapshotInfo [NodeId] LegislatureId
                                      LegislatureId ref DecreeId Int
     deriving (Typeable, Generic)
 
