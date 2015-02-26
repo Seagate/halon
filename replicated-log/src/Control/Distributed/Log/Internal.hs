@@ -741,7 +741,6 @@ replica Dict
                   mLeader <- liftIO $ getLeader
                   cd' <- if maybe True (== self) mLeader then do
                       leaseRequest <- mkLeaseRequest $ decreeLegislatureId d
-                      say $ "LeaseRenewalTime: sending lease request " ++ show w
                       usend ppid ( cd
                                  , [] :: [ProcessId]
                                  , leaseRequest
@@ -885,7 +884,6 @@ replica Dict
                     Just l | l < decreeLegislatureId d -> return cd
                     -- Send to the proposer otherwise.
                     _ -> do
-                      say "sending lease request"
                       usend ppid ( cd
                                  , [] :: [ProcessId]
                                  , request
@@ -1001,7 +999,6 @@ replica Dict
                   forM_ others $ \ρ -> do
                       usend ρ $ Decree Remote dᵢ vᵢ
 
-                  say "message from proposer"
                   when (v /= vᵢ && isNothing rLease) $ do
                     -- Send rejection acks.
                     forM_ μs $ flip usend (epoch, ρs)
