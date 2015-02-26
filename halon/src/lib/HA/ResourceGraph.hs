@@ -54,8 +54,6 @@ module HA.ResourceGraph
     , connectedTo
     , isConnected
     , __remoteTable
-    -- * Unsafe Operations
-    , unsafeEmptyGraph
     ) where
 
 import HA.Multimap
@@ -66,9 +64,9 @@ import HA.Multimap
   , getKeyValuePairs
   )
 
-import Control.Distributed.Process ( NodeId(..), ProcessId, Process )
+import Control.Distributed.Process ( ProcessId, Process )
 import Control.Distributed.Process.Internal.Types
-    ( nullProcessId, remoteTable, processNode )
+    ( remoteTable, processNode )
 import Control.Distributed.Process.Serializable ( Serializable )
 import Control.Distributed.Static
   ( RemoteTable
@@ -85,7 +83,7 @@ import Control.Monad ( liftM3 )
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary(..), decode, encode )
 import Data.Binary.Get ( runGetOrFail )
-import qualified Data.ByteString as Strict ( concat, empty )
+import qualified Data.ByteString as Strict ( concat )
 import Data.ByteString ( ByteString )
 import Data.ByteString.Lazy as Lazy ( fromChunks, toChunks, append )
 import qualified Data.ByteString.Lazy as Lazy ( ByteString )
@@ -98,7 +96,6 @@ import Data.List (foldl')
 import Data.Maybe
 import Data.Typeable ( Typeable, cast )
 import Data.Word (Word8)
-import Network.Transport (EndPointAddress(..))
 
 -- | A type can be declared as modeling a resource by making it an instance of
 -- this class.
@@ -198,14 +195,6 @@ data Edge a r b =
          , edgeRelation :: !r
          , edgeDst      :: !b }
   deriving Eq
-
--- | Unsafe @NodeId@ using an invalid @EndPointAddress@
-unsafeEmptyNodeId :: NodeId
-unsafeEmptyNodeId = NodeId $ EndPointAddress Strict.empty
-
--- | Create an empty @Graph@ with an fake @ProcessId@ using a wrong @NodeId@
-unsafeEmptyGraph :: Graph
-unsafeEmptyGraph = Graph (nullProcessId unsafeEmptyNodeId) [] M.empty
 
 -- | Returns @True@ iff the graph is empty.
 null :: Graph -> Bool

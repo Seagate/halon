@@ -25,7 +25,7 @@ import qualified Control.Distributed.Process.Internal.Types as I
 import Control.Monad.State.Strict
 import Data.Binary (decode)
 import Data.Dynamic
-import Network.CEP hiding (decoded)
+import Network.CEP
 
 -- | Use this function to get the next event sent by the event queue. Vanilla
 -- 'expect' cannot be used due to wrapping of event messages into a value of
@@ -58,7 +58,7 @@ matchIfHAEvent p f =
 expectHAEvent :: forall a. Serializable a => Process (HAEvent a)
 expectHAEvent = receiveWait [matchHAEvent return]
 
-defineHAEvent :: forall a b s. (Monoid s, Serializable a)
+defineHAEvent :: forall a b s. Serializable a
               => ComplexEvent s (HAEvent a) b
               -> (b -> CEP s ())
               -> RuleM s ()
