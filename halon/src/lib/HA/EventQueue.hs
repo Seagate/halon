@@ -48,11 +48,11 @@ import Control.Distributed.Process hiding (newChan, send)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Timeout ( retry )
+import Control.Monad.State
 
-import Data.Binary
+import Data.Binary (Binary)
 import Data.ByteString ( ByteString )
 import Data.Foldable (for_, traverse_)
-import Data.Monoid (Last(..))
 import Data.Typeable
 import Network.CEP
 
@@ -108,40 +108,27 @@ requestTimeout = 1000 * 1000
 -- the RC is, it will try to learn it from the replicated state.
 --
 eventQueue :: RGroup g => g EventQueue -> Process ()
-eventQueue rg = do
-  self <- getSelfPid
-  register eventQueueLabel self
+eventQueue rg = makeEventQueueFromRules rg $ eqRules rg
 
-  (mRC,_) <- retry requestTimeout $ getState rg
+makeEventQueueFromRules :: RGroup g
+                        => g EventQueue
+                        -> RuleM (Maybe ProcessId) ()
+                        -> Process ()
+makeEventQueueFromRules rg rm = do
+    self <- getSelfPid
+    register eventQueueLabel self
+    (mRC,_) <- retry requestTimeout $ getState rg
+    -- The EQ must monitor the RC or it will never realize when the RC stops
+    -- responding and won't ever care of checking the replicated state to learn
+    -- of new RCs
+    traverse_ monitor mRC
+    runProcessor mRC rm
 
-  -- The EQ must monitor the RC or it will never realize when the RC stops
-  -- responding and won't ever care of checking the replicated state to learn
-  -- of new RCs
-  traverse_ monitor mRC
-  runProcessor eventqueueDefinitions (network rg) (Last mRC)
-
-eventqueueDefinitions :: ProcessId                         .+.
-                         ProcessMonitorNotification        .+.
-                         EventId                           .+.
-                         (ProcessId, HAEvent [ByteString]) .+.
-                         Nil
-eventqueueDefinitions = Ask
-
-network :: RGroup g
-        => g EventQueue
-        -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
-network rg = rcSpawned rg     <|>
-             processDied rg   <|>
-             eventHandled rg  <|>
-             eventAppeared rg
-
--- | A local RC has been spawned.
-rcSpawned :: RGroup g
-          => g EventQueue
-          -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
-rcSpawned rg = repeatedly go . decoded
-  where
-    go _ rc = liftProcess $ do
+eqRules :: RGroup g => g EventQueue -> RuleM (Maybe ProcessId) ()
+eqRules rg = do
+    -- RC Spawned
+    define id $ \rc -> do
+      liftProcess $ do
         _ <- monitor rc
         -- Record in the replicated state that there is a new RC.
         retry requestTimeout $
@@ -151,83 +138,62 @@ rcSpawned rg = repeatedly go . decoded
         (_, pendingEvents) <- retry requestTimeout $ getState rg
         for_ (reverse pendingEvents) $ \ev ->
           usend rc ev{eventHops = self : eventHops ev}
-        return $ Last $ Just rc
+      put $ Just rc
 
-processDied :: RGroup g
-            => g EventQueue
-            -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
-processDied rg = repeatedly go . decoded
-  where
-    go mRC (ProcessMonitorNotification _ pid reason) = do
-        -- Check the identity of the process in case the
-        -- notifications get mixed for old and new RCs.
-        if Just pid == (getLast mRC)
-          then
-            case reason of
-              -- The connection to the RC failed.
-              -- Call reconnect to say it is ok to connect again.
-              DiedDisconnect -> do
-                liftProcess $ traverse_ reconnect $ getLast mRC
-                publish RCLost
-                return mRC
-              -- The RC died.
-              -- We use compare and swap to make sure we don't overwrite
-              -- the pid of a respawned RC
-              _ -> do
-                let upd = (getLast mRC, Nothing :: Maybe ProcessId)
+    define id $ \(ProcessMonitorNotification _ pid reason) -> do
+      mRC <- get
+      -- Check the identity of the process in case the
+      -- notifications get mixed for old and new RCs.
+      when (Just pid == mRC) $
+        case reason of
+          -- The connection to the RC failed.
+          -- Call reconnect to say it is ok to connect again.
+          DiedDisconnect -> do
+            liftProcess $ traverse_ reconnect mRC
+            publish RCLost
+          -- The RC died.
+          -- We use compare and swap to make sure we don't overwrite
+          -- the pid of a respawned RC
+          _ -> do
+            let upd = (mRC, Nothing :: Maybe ProcessId)
 
-                liftProcess $
-                  retry requestTimeout $
-                    updateStateWith rg $ $(mkClosure 'compareAndSwapRC) upd
-                publish RCDied
-                return $ Last Nothing
-           else return mRC
+            liftProcess $ retry requestTimeout $
+              updateStateWith rg $ $(mkClosure 'compareAndSwapRC) upd
+            publish RCDied
+            put Nothing
 
--- | The RC handled the event with the given id.
-eventHandled :: RGroup g
-             => g EventQueue
-             -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
-eventHandled rg = repeatedly go . decoded
-  where
-    go mRC (eid :: EventId) = liftProcess $ do
-        retry requestTimeout $
-          updateStateWith rg $ $(mkClosure 'filterEvent) eid
-        say "Trim done."
-        return mRC
+    define id $ \(eid :: EventId) -> liftProcess $ do
+      retry requestTimeout $
+        updateStateWith rg $ $(mkClosure 'filterEvent) eid
+      say "Trim done."
 
-eventAppeared :: RGroup g
-              => g EventQueue
-              -> ComplexEvent (Last ProcessId) Input (Last ProcessId)
-eventAppeared rg = repeatedly go . decoded
-  where
-    go mRC ((sender, ev) :: (ProcessId, HAEvent [ByteString])) = do
-        liftProcess $
-          retry requestTimeout $
-            updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
-        selfNode <- liftProcess getSelfNode
-        case getLast mRC of
-          -- I know where the RC is.
-          Just rc -> liftProcess $ do
-            usend sender (selfNode, processNodeId rc)
-            sendHAEvent rc ev
-            return mRC
-          -- I don't know where the RC is.
-          Nothing -> do
-            -- See if we can learn it by looking at the replicated state.
-            (newMRC, _) <- liftProcess $ retry requestTimeout $ getState rg
-            liftProcess $ do
-              case newMRC of
-                Just rc -> do
-                  _ <- monitor rc
-                  usend sender (selfNode, processNodeId rc)
-                  sendHAEvent rc ev
-                -- Send my own node when we don't know the RC
-                -- location. Note that I was able to read the
-                -- replicated state so very likely there is no RC.
-                Nothing -> do
-                  n <- getSelfNode
-                  usend sender (n, n)
-              return $ Last newMRC
+    define id $ \((sender, ev) :: (ProcessId, HAEvent [ByteString])) -> do
+      liftProcess $ retry requestTimeout $
+        updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+      mRC      <- get
+      selfNode <- liftProcess getSelfNode
+      case mRC of
+        -- I know where the RC is.
+        Just rc -> liftProcess $ do
+          usend sender (selfNode, processNodeId rc)
+          sendHAEvent rc ev
+        -- I don't know where the RC is.
+        Nothing -> do
+          -- See if we can learn it by looking at the replicated state.
+          (newMRC, _) <- liftProcess $ retry requestTimeout $ getState rg
+          liftProcess $ do
+            case newMRC of
+              Just rc -> do
+                _ <- monitor rc
+                usend sender (selfNode, processNodeId rc)
+                sendHAEvent rc ev
+              -- Send my own node when we don't know the RC
+              -- location. Note that I was able to read the
+              -- replicated state so very likely there is no RC.
+              Nothing -> do
+                n <- getSelfNode
+                usend sender (n, n)
+          put newMRC
 
 data RCDied = RCDied deriving (Show, Typeable, Generic)
 
