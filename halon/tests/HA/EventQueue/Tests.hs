@@ -62,7 +62,9 @@ remoteRC controller = do
 remotable [ 'eqSDict, 'setRC, 'remoteRC ]
 
 triggerEvent :: Int -> Process ()
-triggerEvent = promulgate
+triggerEvent x = promulgate x >>= \pid -> withMonitor pid wait
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
 
 invoke :: Serializable a => ProcessId -> a -> Process ()
 invoke them x = send them x >> expect

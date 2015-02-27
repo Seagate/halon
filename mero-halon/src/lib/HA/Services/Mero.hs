@@ -93,7 +93,7 @@ remotableDecl [ [d|
             exists <- liftIO $ doesFileExist dummyFile
             when exists $ do
               liftIO $ removeFile dummyFile
-              promulgate (StripingError (Node node))
+              void $ promulgate (StripingError (Node node))
 
         m0ctlMonitor srv out h_m0ctl = loop [] where
           loop buf = do
