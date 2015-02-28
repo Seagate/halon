@@ -413,9 +413,9 @@ startActuators chan ac pid = do
 
 sendInterestingEvent :: NodeId
                      -> InterestingEventMessage
-                     -> StateT LoopState Process ()
+                     -> CEP LoopState ()
 sendInterestingEvent nid msg = do
-    lift . say $ "Sending InterestingEventMessage"
+    liftProcess . say $ "Sending InterestingEventMessage"
     rg <- gets lsGraph
     let
       node = Node nid
@@ -425,21 +425,21 @@ sendInterestingEvent nid msg = do
         listToMaybe $ connectedTo sp IEMChannel rg
 
     case chanm of
-      Just (Channel chan) -> lift $ sendChan chan msg
-      _ -> lift $ sayRC "Cannot find anything!"
+      Just (Channel chan) -> liftProcess $ sendChan chan msg
+      _ -> liftProcess $ sayRC "Cannot find anything!"
 
 registerChannels :: ServiceProcess SSPLConf
                  -> ActuatorChannels
-                 -> StateT LoopState Process ()
+                 -> CEP LoopState ()
 registerChannels svc acs = do
     ls <- get
-    lift . say $ "Register channels"
+    liftProcess . say $ "Register channels"
     let chan = Channel $ iemPort acs
         rg' = newResource svc >>>
               newResource chan >>>
               connect svc IEMChannel chan $ lsGraph ls
 
-    newGraph <- lift $ sync rg'
+    newGraph <- liftProcess $ sync rg'
     put ls { lsGraph = newGraph }
 
 ssplRules :: RuleM LoopState ()

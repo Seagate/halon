@@ -77,7 +77,6 @@ import Control.Distributed.Process.Serializable
 import Control.Distributed.Static (closureApply, unstatic)
 import Control.Monad.Reader (ask)
 import qualified Control.Monad.State.Strict as State
-import Control.Monad.Trans
 
 import Control.Monad (void, mapM_)
 import Control.Wire hiding (when)
@@ -128,12 +127,6 @@ instance ProcessEncode ReconfigureCmd where
   encodeP (ReconfigureCmd node svc@(Service _ _ d)) =
     ReconfigureMsg . runPut $ put d >> put (node, svc)
 
--- | Fake @Monoid@ instance which still satisfies @Monoid@ laws. Used to satisfy
--- `netwire` @Monoid@ constraint.
-instance Monoid LoopState where
-    mempty = LoopState G.unsafeEmptyGraph Map.empty
-    mappend _ r = r
-
 -- | Initial configuration data.
 data IgnitionArguments = IgnitionArguments
   { -- | The names of all tracking station nodes.
@@ -151,18 +144,18 @@ instance Binary NodeAgentContacted
 reconfFailureLimit :: Int
 reconfFailureLimit = 3
 
-syncResourceGraph :: State.StateT LoopState Process ()
+syncResourceGraph :: CEP LoopState ()
 syncResourceGraph = do
     ls       <- State.get
-    newGraph <- lift $ G.sync $ lsGraph ls
+    newGraph <- liftProcess $ G.sync $ lsGraph ls
     State.put ls { lsGraph = newGraph }
 
-knownResource :: G.Resource a => a -> State.StateT LoopState Process Bool
+knownResource :: G.Resource a => a -> CEP LoopState Bool
 knownResource res = do
     ls <- State.get
     return $ G.memberResource res (lsGraph ls)
 
-registerNode :: Node -> State.StateT LoopState Process ()
+registerNode :: Node -> CEP LoopState ()
 registerNode node = do
     rg <- State.gets lsGraph
 
@@ -175,33 +168,33 @@ registerNode node = do
 
 startEQTracker :: IgnitionArguments
                -> NodeId
-               -> State.StateT LoopState Process ()
-startEQTracker argv nid = State.gets lsGraph >>= \rg -> lift $ do
+               -> CEP LoopState ()
+startEQTracker argv nid = State.gets lsGraph >>= \rg -> liftProcess $ do
     sayRC $ "New node contacted: " ++ show nid
     eqt  <- _startService nid EQT.eqTracker () rg
     True <- updateEQNodes eqt (stationNodes argv)
     return ()
 
-ack :: ProcessId -> State.StateT LoopState Process ()
-ack pid = lift $ usend pid ()
+ack :: ProcessId -> CEP LoopState ()
+ack pid = liftProcess $ usend pid ()
 
 lookupRunningService :: Configuration a
                      => Node
                      -> Service a
-                     -> State.StateT LoopState Process (Maybe (ServiceProcess a))
+                     -> CEP LoopState (Maybe (ServiceProcess a))
 lookupRunningService n svc =
     fmap (runningService n svc . lsGraph) State.get
 
 isServiceRunning :: Configuration a
                  => Node
                  -> Service a
-                 -> State.StateT LoopState Process Bool
+                 -> CEP LoopState Bool
 isServiceRunning n svc =
     fmap (maybe False (const True)) $ lookupRunningService n svc
 
 registerService :: Configuration a
                 => Service a
-                -> State.StateT LoopState Process ()
+                -> CEP LoopState ()
 registerService svc = do
     ls <- State.get
     let rg' = G.newResource svc >>>
@@ -212,15 +205,15 @@ startService :: Configuration a
              => NodeId
              -> Service a
              -> a
-             -> State.StateT LoopState Process ProcessId
+             -> CEP LoopState ProcessId
 startService n svc conf =
-    lift . _startService n svc conf . lsGraph =<< State.get
+    liftProcess . _startService n svc conf . lsGraph =<< State.get
 
 unregisterPreviousServiceProcess :: Configuration a
                                  => Node
                                  -> Service a
                                  -> ServiceProcess a
-                                 -> State.StateT LoopState Process ()
+                                 -> CEP LoopState ()
 unregisterPreviousServiceProcess n svc sp = do
     ls <- State.get
     let rg' = G.disconnect sp Owns (serviceName svc) >>>
@@ -230,7 +223,7 @@ unregisterPreviousServiceProcess n svc sp = do
 
 registerServiceName :: Configuration a
                     => Service a
-                    -> State.StateT LoopState Process ()
+                    -> CEP LoopState ()
 registerServiceName svc = do
     ls <- State.get
     let rg' = G.newResource (serviceName svc) $ lsGraph ls
@@ -241,7 +234,7 @@ registerServiceProcess :: Configuration a
                        -> Service a
                        -> a
                        -> ServiceProcess a
-                       -> State.StateT LoopState Process ()
+                       -> CEP LoopState ()
 registerServiceProcess n svc cfg sp = do
     ls <- State.get
     let rg' = G.newResource sp                    >>>
@@ -252,17 +245,17 @@ registerServiceProcess n svc cfg sp = do
 
     State.put ls { lsGraph = rg' }
 
-getSelfProcessId :: MonadTrans m => m Process ProcessId
-getSelfProcessId = lift getSelfPid
+getSelfProcessId :: CEP s ProcessId
+getSelfProcessId = liftProcess getSelfPid
 
 sayRC :: String -> Process ()
 sayRC s = say $ "Recovery Coordinator: " ++ s
 
-sendMsg :: (MonadTrans m, Serializable a) => ProcessId -> a -> m Process ()
-sendMsg pid a = lift $ usend pid a
+sendMsg :: Serializable a => ProcessId -> a -> CEP s ()
+sendMsg pid a = liftProcess $ usend pid a
 
-decodeMsg :: (MonadTrans m, ProcessEncode a) => BinRep a -> m Process a
-decodeMsg = lift . decodeP
+decodeMsg :: ProcessEncode a => BinRep a -> CEP s a
+decodeMsg = liftProcess . decodeP
 
 initialize :: ProcessId -> Process G.Graph
 initialize mm = do
@@ -323,11 +316,11 @@ bounceServiceTo :: Configuration a
                 => ConfigRole
                 -> Node
                 -> Service a
-                -> State.StateT LoopState Process ProcessId
+                -> CEP LoopState ProcessId
 bounceServiceTo role n s =
-    lift . _bounceServiceTo role n s . lsGraph =<< State.get
+    liftProcess . _bounceServiceTo role n s . lsGraph =<< State.get
 
-prepareEpochResponse :: State.StateT LoopState Process EpochResponse
+prepareEpochResponse :: CEP LoopState EpochResponse
 prepareEpochResponse = do
     rg <- State.gets lsGraph
 
@@ -341,12 +334,12 @@ updateServiceConfiguration :: Configuration a
                            => a
                            -> Service a
                            -> NodeFilter
-                           -> State.StateT LoopState Process ()
+                           -> CEP LoopState ()
 updateServiceConfiguration opts svc nodeFilter = do
     ls <- State.get
-    lift $ sayRC $ "Request to reconfigure service "
-                 ++ snString (serviceName svc)
-                 ++ " on nodes " ++ (show nodeFilter)
+    liftProcess $ sayRC $ "Request to reconfigure service "
+                        ++ snString (serviceName svc)
+                        ++ " on nodes " ++ (show nodeFilter)
 
     let rg       = lsGraph ls
         svcs     = filterServices nodeFilter svc rg
@@ -354,14 +347,14 @@ updateServiceConfiguration opts svc nodeFilter = do
         rgUpdate = foldl' (flip (.)) id fns
         rg'      = rgUpdate rg
 
-    newGraph <- lift $ do
+    newGraph <- liftProcess $ do
       self <- getSelfPid
       mapM_ (usend self . encodeP . (flip ReconfigureCmd) svc . fst) svcs
       G.sync rg'
 
     State.put ls { lsGraph = newGraph }
 
-getEpochId :: State.StateT LoopState Process Word64
+getEpochId :: CEP LoopState Word64
 getEpochId = do
     rg <- State.gets lsGraph
 
@@ -408,9 +401,9 @@ makeRecoveryCoordinator :: ProcessId -- ^ pid of the replicated multimap
                         -> RuleM LoopState ()
                         -> Process ()
 makeRecoveryCoordinator mm rm = do
-    rg <- HA.RecoveryCoordinator.Mero.initialize mm
+    rg    <- HA.RecoveryCoordinator.Mero.initialize mm
     start <- G.sync rg
-    buildFromRuleMS (LoopState start Map.empty) rm
+    runProcessor (LoopState start Map.empty) rm
 
 #ifdef USE_MERO_NOTE
 meroGetNotification :: ProcessId

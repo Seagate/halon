@@ -7,7 +7,6 @@
 
 module HA.EventQueue.Consumer
        ( HAEvent(..)
-       , EQEvent
        , expectHAEvent
        , matchHAEvent
        , matchIfHAEvent
@@ -26,7 +25,7 @@ import qualified Control.Distributed.Process.Internal.Types as I
 import Control.Monad.State.Strict
 import Data.Binary (decode)
 import Data.Dynamic
-import Network.CEP hiding (decoded)
+import Network.CEP
 
 -- | Use this function to get the next event sent by the event queue. Vanilla
 -- 'expect' cannot be used due to wrapping of event messages into a value of
@@ -59,28 +58,15 @@ matchIfHAEvent p f =
 expectHAEvent :: forall a. Serializable a => Process (HAEvent a)
 expectHAEvent = receiveWait [matchHAEvent return]
 
-data EQEvent a
-
-instance Serializable a => TypeMatch (EQEvent a) where
-    typematch _ = [ matchHAEvent go ]
-      where
-        go (e :: HAEvent a) = do
-            let input =
-                  Input { inputFingerprint = fingerprint (undefined :: HAEvent a)
-                        , inputMsg         = e
-                        }
-
-            return $ Other input
-
-defineHAEvent :: forall a b s. (Monoid s, Serializable a)
+defineHAEvent :: forall a b s. Serializable a
               => ComplexEvent s (HAEvent a) b
-              -> (b -> StateT s Process ())
+              -> (b -> CEP s ())
               -> RuleM s ()
 defineHAEvent w k = do
-    let m       = matchHAEvent $ \(x :: HAEvent a) -> return $ toDyn x
+    let m       = matchHAEvent $ \(x :: HAEvent a) -> return $ Other $ toDyn x
         rule    = observe . w . dynEvent
-        observe = mkGen $ \s b -> do
-            s' <- liftProcess $ execStateT (k b) (dstate s)
-            return (Right s', observe)
+        observe = mkGen_ $ \b -> do
+          k b
+          return $ Right ()
 
     modify $ addRule m rule
