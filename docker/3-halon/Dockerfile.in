@@ -7,6 +7,7 @@ ADD known_hosts /root/.ssh/
 WORKDIR /halon
 RUN git fetch
 RUN git checkout @@COMMIT@@
+RUN git submodule update --init --recursive
 
 # build halon, which will also run the tests,
 # hopefully.
