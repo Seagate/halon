@@ -56,10 +56,10 @@ noisySchema = let
   in NoisyConf <$> hw
 
 newtype NoisyPingCount = NoisyPingCount Int
-  deriving (Typeable, Binary, Eq, Hashable)
+  deriving (Typeable, Binary, Eq, Hashable, Show)
 
 data HasPingCount = HasPingCount
-  deriving (Typeable, Generic, Eq)
+  deriving (Typeable, Generic, Eq, Show)
 
 instance Binary HasPingCount
 instance Hashable HasPingCount

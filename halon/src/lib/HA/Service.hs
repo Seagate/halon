@@ -239,6 +239,9 @@ data Service a = Service
     }
   deriving (Typeable, Generic)
 
+instance Show (Service a) where
+    show s = "Service " ++ (show $ serviceName s)
+
 instance (Typeable a, Binary a) => Binary (Service a)
 
 instance Eq (Service a) where
@@ -248,7 +251,7 @@ instance Ord (Service a) where
   compare = compare `on` serviceName
 
 instance Hashable (Service a) where
-  hashWithSalt s = hashWithSalt s . serviceName
+  hashWithSalt s = (*3) . hashWithSalt s . serviceName
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --

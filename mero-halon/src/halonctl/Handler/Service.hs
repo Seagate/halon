@@ -25,9 +25,10 @@ import HA.Resources
   , EpochResponse(..)
   )
 import HA.Service
-import qualified HA.Services.Dummy as Dummy
-import qualified HA.Services.Noisy as Noisy
-import qualified HA.Services.SSPL as SSPL
+import qualified HA.Services.Dummy    as Dummy
+import qualified HA.Services.Frontier as Frontier
+import qualified HA.Services.Noisy    as Noisy
+import qualified HA.Services.SSPL     as SSPL
 
 import Lookup (conjureRemoteNodeId)
 
@@ -64,6 +65,7 @@ data ServiceCmdOptions =
       DummyServiceCmd (StandardServiceOptions Dummy.DummyConf)
     | NoisyServiceCmd (StandardServiceOptions Noisy.NoisyConf)
     | SSPLServiceCmd (StandardServiceOptions SSPL.SSPLConf)
+    | FrontierServiceCmd (StandardServiceOptions Frontier.FrontierConf)
   deriving (Eq, Show, Generic, Typeable)
 
 -- | Options for a 'standard' service. This consists of a set of subcommands
@@ -133,7 +135,10 @@ parseService =
          mkStandardServiceCmd Noisy.noisy)
     ) <|>
     (SSPLServiceCmd <$> (O.subparser $
-          mkStandardServiceCmd SSPL.sspl))
+         mkStandardServiceCmd SSPL.sspl)
+    ) <|>
+    (FrontierServiceCmd <$> (O.subparser $
+         mkStandardServiceCmd Frontier.frontier))
 
 -- | Handle the "service" command.
 --   The "service" command is basically a wrapper around a number of commands
@@ -143,9 +148,10 @@ service :: [NodeId] -- ^ NodeIds of the nodes to control services on.
         -> ServiceCmdOptions
         -> Process ()
 service nids so = case so of
-  DummyServiceCmd sso -> standardService nids sso Dummy.dummy
-  NoisyServiceCmd sso -> standardService nids sso Noisy.noisy
-  SSPLServiceCmd sso  -> standardService nids sso SSPL.sspl
+  DummyServiceCmd sso    -> standardService nids sso Dummy.dummy
+  NoisyServiceCmd sso    -> standardService nids sso Noisy.noisy
+  SSPLServiceCmd sso     -> standardService nids sso SSPL.sspl
+  FrontierServiceCmd sso -> standardService nids sso Frontier.frontier
 
 -- | Handle an instance of a "standard service" command.
 standardService :: Configuration a

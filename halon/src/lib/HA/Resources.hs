@@ -48,7 +48,7 @@ data Epoch a = Epoch
   { epochId    :: EpochId  -- ^ Identifier of epoch.
   , epochState :: a        -- ^ State held by epoch.
   }
-  deriving (Typeable, Generic)
+  deriving (Show, Typeable, Generic)
 
 instance Eq (Epoch a) where
   (==) = (==) `on` epochId

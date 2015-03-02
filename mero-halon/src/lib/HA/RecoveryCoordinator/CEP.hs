@@ -16,6 +16,7 @@ import Control.Distributed.Process
 import Network.CEP
 
 import HA.EventQueue.Consumer
+import HA.EventQueue.Types
 import HA.NodeUp
 import HA.RecoveryCoordinator.Mero
 import HA.Resources
@@ -88,5 +89,9 @@ rcRules argv eq = do
         epid <- getEpochId
         when (epoch == epid) $
             updateServiceConfiguration opts svc nodeFilter
+
+    defineHAEvent id $ \(HAEvent _ (GetMultimapProcessId sender) _) -> do
+        mmid <- getMultimapProcessId
+        sendMsg sender mmid
 
     ssplRules

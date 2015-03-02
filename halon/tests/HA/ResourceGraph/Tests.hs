@@ -53,25 +53,25 @@ import Test.Framework
 --------------------------------------------------------------------------------
 
 data NodeA = NodeA Int
-  deriving (Eq, Typeable, Generic)
+  deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable NodeA
 instance Binary NodeA
 
 data NodeB = NodeB Int
-  deriving (Eq, Typeable, Generic)
+  deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable NodeB
 instance Binary NodeB
 
 data HasA = HasA
-  deriving (Eq, Typeable, Generic)
+  deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable HasA
 instance Binary HasA
 
 data HasB = HasB
-  deriving (Eq, Typeable, Generic)
+  deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable HasB
 instance Binary HasB

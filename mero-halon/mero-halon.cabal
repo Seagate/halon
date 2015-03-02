@@ -77,11 +77,15 @@ Library
                    Mero.RemoteTables
                    HA.Network.Transport
                    HA.Services.Mero
+                   HA.Services.Frontier
                    HA.Services.SSPL
                    HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
                    HA.Resources.Mero
+
+  Other-Modules:   HA.Services.Frontier.Command
+
   Build-Depends:   base,
                    aeson,
                    amqp,
@@ -103,6 +107,7 @@ Library
                    unordered-containers,
                    cep,
                    netwire
+
   if flag(mero-note)
       Exposed-Modules: Mero.Notification.HAState
       c-sources: hastate/hastate.c

@@ -30,6 +30,7 @@ module HA.RecoveryCoordinator.Mero
        , LoopState(..)
        , ReconfigureCmd(..)
        , ReconfigureMsg
+       , GetMultimapProcessId(..)
        , sayRC
        , syncResourceGraph
        , knownResource
@@ -59,6 +60,7 @@ module HA.RecoveryCoordinator.Mero
        , driveStatus
        , registerDrive
        , updateDriveStatus
+       , getMultimapProcessId
        ) where
 
 import Prelude hiding ((.), id, mapM_)
@@ -150,6 +152,11 @@ data NodeAgentContacted = NodeAgentContacted ProcessId
          deriving (Typeable, Generic)
 
 instance Binary NodeAgentContacted
+
+data GetMultimapProcessId =
+    GetMultimapProcessId ProcessId deriving (Typeable, Generic)
+
+instance Binary GetMultimapProcessId
 
 reconfFailureLimit :: Int
 reconfFailureLimit = 3
@@ -437,6 +444,9 @@ getEpochId = do
 
     return $ epochId target
 
+getMultimapProcessId :: CEP LoopState ProcessId
+getMultimapProcessId = State.gets lsMMPid
+
 -- | Starting from the root node, find nodes and services matching the given
 --   ConfigurationFilter (not really important how this is specified) and
 --   the type of the configuration.
@@ -460,8 +470,9 @@ filterServices (NodeFilter nids) (Service name _ _) rg = do
 ----------------------------------------------------------
 
 data LoopState = LoopState {
-    lsGraph :: G.Graph -- ^ Graph
+    lsGraph   :: G.Graph -- ^ Graph
   , lsFailMap :: Map.Map (ServiceName, Node) Int -- ^ Failed reconfiguration count
+  , lsMMPid   :: ProcessId -- ^ Replicated Multimap pid
 }
 
 -- | The entry point for the RC.
@@ -476,7 +487,7 @@ makeRecoveryCoordinator :: ProcessId -- ^ pid of the replicated multimap
 makeRecoveryCoordinator mm rm = do
     rg    <- HA.RecoveryCoordinator.Mero.initialize mm
     start <- G.sync rg
-    runProcessor (LoopState start Map.empty) rm
+    runProcessor (LoopState start Map.empty mm) rm
 
 #ifdef USE_MERO_NOTE
 meroGetNotification :: ProcessId

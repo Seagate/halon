@@ -35,6 +35,8 @@ module HA.ResourceGraph
     , Graph
     , Edge(..)
     , Dict(..)
+    , Res(..)
+    , Rel(..)
     -- * Operations
     , newResource
     , insertEdge
@@ -54,6 +56,7 @@ module HA.ResourceGraph
     , connectedTo
     , isConnected
     , __remoteTable
+    , getGraphResources
     ) where
 
 import HA.Multimap
@@ -78,7 +81,7 @@ import Control.Distributed.Process.Closure
 import Data.Constraint ( Dict(..) )
 
 import Prelude hiding (null)
-import Control.Arrow ( (***), (>>>) )
+import Control.Arrow ( (***), (>>>), second )
 import Control.Monad ( liftM3 )
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary(..), decode, encode )
@@ -99,7 +102,7 @@ import Data.Word (Word8)
 
 -- | A type can be declared as modeling a resource by making it an instance of
 -- this class.
-class (Eq a, Hashable a, Serializable a) => Resource a where
+class (Eq a, Hashable a, Serializable a, Show a) => Resource a where
   resourceDict :: Static (Dict (Resource a))
 
 deriving instance Typeable Resource
@@ -107,7 +110,7 @@ deriving instance Typeable Resource
 -- | A relation on resources specifies what relationships can exist between
 -- any two given types of resources. Two resources of type @a@, @b@, cannot be
 -- related through @r@ if an @Relation r a b@ instance does not exist.
-class (Hashable r, Serializable r, Resource a, Resource b) => Relation r a b where
+class (Hashable r, Serializable r, Resource a, Resource b, Show r) => Relation r a b where
   relationDict :: Static (Dict (Relation r a b))
 
 deriving instance Typeable Relation
@@ -405,3 +408,6 @@ decodeRel rt bs = case runGetOrFail get $ fromStrict bs of
         _ -> error $ "decodeRel: Invalid direction bit."
     Left err -> error $ "decodeRel: " ++ err
   Left (_,_,err) -> error $ "decodeRel: " ++ err
+
+getGraphResources :: Graph -> [(Res, [Rel])]
+getGraphResources = fmap (second S.toList) . M.toList . grGraph
