@@ -395,7 +395,7 @@ startActuators chan ac pid = do
   where
     informRC sp chans = do
       mypid <- getSelfPid
-      promulgate $ DeclareChannels mypid sp chans
+      _ <- promulgate $ DeclareChannels mypid sp chans
       msg <- expectTimeout (fromDefault . acDeclareChanTimeout $ ac)
       case msg of
         Nothing -> informRC sp chans

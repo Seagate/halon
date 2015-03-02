@@ -22,12 +22,9 @@ import qualified HA.Services.EQTracker as EQT
 import Control.Distributed.Process
   ( Process
   , ProcessId
-  , ProcessMonitorNotification
   , NodeId
   , die
-  , expect
   , expectTimeout
-  , monitor
   , nsend
   , getSelfPid
   , say
@@ -120,7 +117,7 @@ promulgateHAEventPref peqnids eqnids evt = do
 -- | Add an event to the event queue, and don't die yet. This uses the local
 --   event tracker to identify the list of EQ nodes.
 -- FIXME: Use a well-defined timeout.
-promulgate :: Serializable a => a -> Process ()
+promulgate :: Serializable a => a -> Process ProcessId
 promulgate x = do
     self <- getSelfPid
     nsend EQT.name $ EQT.ReplicaRequest self
@@ -130,9 +127,7 @@ promulgate x = do
         pid <- case pref of
           [] -> promulgateEQ rest x
           _ -> promulgateEQPref pref rest x
-        _ <- monitor pid
-        (_ :: ProcessMonitorNotification) <- expect
-        return ()
+        return pid
       Nothing -> promulgate x
 {-
 The issue that this loop addresses in particular is if the node agent
