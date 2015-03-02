@@ -51,10 +51,7 @@ import Control.Distributed.Process hiding (callLocal, send)
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
-import Control.Distributed.Process.Internal.Types
-    ( LocalProcessId(..)
-    , runLocalProcess
-    )
+import Control.Distributed.Process.Internal.Types (LocalProcessId(..))
 import Control.Distributed.Static
     (closureApply, staticApply, staticClosure)
 
@@ -68,7 +65,6 @@ import Control.Monad.Reader (ask)
 import Control.Applicative ((<$>))
 import Control.Concurrent
 import Control.Exception (SomeException, throwIO)
-import qualified Control.Exception as E (uninterruptibleMask_)
 import Control.Monad
 import Data.Constraint (Dict(..))
 import Data.Int (Int64)
@@ -1445,24 +1441,21 @@ append (Handle _ _ _ _ μ) hint x = callLocal $ do
     self <- getSelfPid
     -- If we are interrupted, because the request is abandoned, we want to
     -- yield control back only after the ambassador acknowledges reception of
-    -- the request. Thus we preserve the arrival order of requests.
-    withMonitor μ $ uninterruptibleMask_ $ do
+    -- the request. Thus we preserve the arrival order of requests. We cannot
+    -- use uninterruptibleMask_ because of DP-105.
+    withMonitor μ $ mask_ $ do
       usend μ $ Request
         { requestSender   = [self]
         , requestValue    = Values [x]
         , requestHint     = hint
         , requestForLease = Nothing
         }
-      receiveWait
-        [ match return
-        , match $ \(ProcessMonitorNotification _ _ _) -> return ()
-        ]
+      let loopingWait = receiveWait
+            [ match return
+            , match $ \(ProcessMonitorNotification _ _ _) -> return ()
+            ] `onException` loopingWait
+      loopingWait
     expect
-
-uninterruptibleMask_ :: Process a -> Process a
-uninterruptibleMask_ p = do
-    proc <- ask
-    liftIO $ E.uninterruptibleMask_ $ runLocalProcess proc p
 
 -- | Make replicas advertize their status info.
 status :: Serializable a => Handle a -> Process ()
@@ -1553,13 +1546,15 @@ reconfigure (Handle _ _ _ _ μ) cpolicy = callLocal $ do
     self <- getSelfPid
     -- If we are interrupted, because the request is abandoned, we want to
     -- yield control back only after the ambassador acknowledges reception of
-    -- the request. Thus we preserve the arrival order of requests.
-    withMonitor μ $ uninterruptibleMask_ $ do
+    -- the request. Thus we preserve the arrival order of requests. We cannot
+    -- use uninterruptibleMask_ because of DP-105.
+    withMonitor μ $ mask_ $ do
       usend μ $ Helo self cpolicy
-      receiveWait
-        [ match return
-        , match $ \(ProcessMonitorNotification _ _ _) -> return ()
-        ]
+      let loopingWait = receiveWait
+            [ match return
+            , match $ \(ProcessMonitorNotification _ _ _) -> return ()
+            ] `onException` loopingWait
+      loopingWait
     expect
 
 -- | Start a new replica on the given node, adding it to the group pointed to by
