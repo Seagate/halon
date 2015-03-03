@@ -3,10 +3,13 @@
 --
 
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Tests (main) where
 
-import Control.Distributed.Process.Scheduler (withScheduler, __remoteTable)
+import Control.Distributed.Process.Closure
+import Control.Distributed.Process.Scheduler (withScheduler)
+import qualified Control.Distributed.Process.Scheduler as S (__remoteTable)
 import Control.Distributed.Process.Node
 import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
@@ -24,6 +27,44 @@ import qualified Network.Transport as NT
 import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
 import System.IO.Unsafe ( unsafePerformIO )
 
+
+say' :: String -> Process ()
+say' = liftIO . modifyIORef traceR . (:)
+
+{-# NOINLINE traceR #-}
+traceR :: IORef [String]
+traceR = unsafePerformIO $ newIORef []
+
+resetTraceR :: IO ()
+resetTraceR = writeIORef traceR []
+
+killOnError :: ProcessId -> Process a -> Process a
+killOnError pid p = catch p $ \e -> liftIO (print e) >>
+    exit pid (show (e :: SomeException)) >> liftIO (throwIO e)
+
+senderProcess0 :: ProcessId -> Process ()
+senderProcess0 self = do
+    forM_ [0..1::Int] $ \i -> do
+      j <- expect
+      say' $ "s0: received " ++ show (j :: Int)
+      send self (0::Int,i)
+    send self ()
+
+senderProcessT0 :: ProcessId -> Process ()
+senderProcessT0 self = killOnError self $ do
+    2 <- flip execStateT 0 $ do
+      forM_ [0..1::Int] $ \i -> do
+        j <- receiveWaitT [ matchT $ \j -> modify (+j) >> return j ]
+        liftProcess $ do say' $ "s0: received " ++ show (j :: Int)
+                         send self (0::Int,i)
+    send self ()
+
+remotable [ 'senderProcess0, 'senderProcessT0 ]
+
+remoteTable :: RemoteTable
+remoteTable =  -- eliminate warning about unused binding
+    flip const [senderProcess0__tdict, senderProcessT0__tdict] $
+      __remoteTable $ S.__remoteTable initRemoteTable
 
 main :: IO ()
 main = run 0
@@ -75,20 +116,16 @@ run s = do
 
 execute :: NT.Transport -> Int -> IO [String]
 execute transport seed = do
-      writeIORef traceR []
-      n <- newLocalNode transport $ __remoteTable initRemoteTable
+      resetTraceR
+      n <- newLocalNode transport remoteTable
       flip E.catch (\e -> do putStr "execute.seed: " >> print seed
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
                  ) $
        runProcess' n $ withScheduler [] seed $ do
         self <- getSelfPid
-        s0 <- spawnLocal $ do
-          forM_ [0..1::Int] $ \i -> do
-            j <- expect
-            say' $ "s0: received " ++ show (j :: Int)
-            send self (0::Int,i)
-          send self ()
+        here <- getSelfNode
+        s0 <- spawn here $ $(mkClosure 'senderProcess0) self
         s1 <- spawnLocal $ do
           forM_ [0..1::Int] $ \i -> do
             j <- expect
@@ -106,16 +143,12 @@ execute transport seed = do
         () <- expect
         () <- expect
         liftIO $ fmap reverse $ readIORef traceR
- where
-  {-# NOINLINE traceR #-}
-  traceR = unsafePerformIO $ newIORef []
-  say' = liftIO . modifyIORef traceR . (:)
 
 executeNSend :: NT.Transport -> Int -> IO [String]
 executeNSend transport seed = do
-      writeIORef traceR []
-      n0' <- newLocalNode transport $ __remoteTable initRemoteTable
-      n1' <- newLocalNode transport $ __remoteTable initRemoteTable
+      resetTraceR
+      n0' <- newLocalNode transport remoteTable
+      n1' <- newLocalNode transport remoteTable
       let [n0, n1] = sortBy (compare `on` localNodeId) [n0', n1']
       flip E.catch (\e -> do putStr "executeNSend.seed: " >> print seed
                              readIORef (traceR :: IORef [String]) >>= print
@@ -152,16 +185,11 @@ executeNSend transport seed = do
         () <- expect
         () <- expect
         liftIO $ fmap reverse $ readIORef traceR
- where
-  {-# NOINLINE traceR #-}
-  traceR = unsafePerformIO $ newIORef []
-  say' = liftIO . modifyIORef traceR . (:)
-
 
 executeChan :: NT.Transport -> Int -> IO [String]
 executeChan transport seed = do
-      writeIORef traceR []
-      n <- newLocalNode transport $ __remoteTable initRemoteTable
+      resetTraceR
+      n <- newLocalNode transport remoteTable
       flip E.catch (\e -> do putStr "executeChan.seed: " >> print seed
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
@@ -198,10 +226,6 @@ executeChan transport seed = do
         () <- expect
         () <- expect
         liftIO $ fmap reverse $ readIORef traceR
- where
-  {-# NOINLINE traceR #-}
-  traceR = unsafePerformIO $ newIORef []
-  say' = liftIO . modifyIORef traceR . (:)
 
 instance MonadProcess Process where
   liftProcess = id
@@ -211,21 +235,16 @@ instance MonadProcess m => MonadProcess (StateT s m) where
 
 executeT :: NT.Transport -> Int -> IO [String]
 executeT transport seed = do
-      writeIORef traceR []
-      n <- newLocalNode transport $ __remoteTable initRemoteTable
+      resetTraceR
+      n <- newLocalNode transport remoteTable
       flip E.catch (\e -> do putStr "executeT.seed: " >> print seed
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
                  ) $
        runProcess' n $ withScheduler [] seed $ do
         self <- getSelfPid
-        s0 <- spawnLocal $ killOnError self $ do
-          2 <- flip execStateT 0 $ do
-            forM_ [0..1::Int] $ \i -> do
-              j <- receiveWaitT [ matchT $ \j -> modify (+j) >> return j ]
-              liftProcess $ do say' $ "s0: received " ++ show (j :: Int)
-                               send self (0::Int,i)
-          send self ()
+        here <- getSelfNode
+        s0 <- spawn here $ $(mkClosure 'senderProcessT0) self
         s1 <- spawnLocal $ killOnError self $ do
           4 <- flip execStateT 0 $ do
             forM_ [0..1::Int] $ \i -> do
@@ -244,14 +263,6 @@ executeT transport seed = do
         () <- expect
         () <- expect
         liftIO $ fmap reverse $ readIORef traceR
- where
-  {-# NOINLINE traceR #-}
-  traceR = unsafePerformIO $ newIORef []
-  say' :: String -> Process ()
-  say' = liftIO . modifyIORef traceR . (:)
-
-  killOnError pid p = catch p $ \e -> liftIO (print e) >>
-    exit pid (show (e :: SomeException)) >> liftIO (throwIO e)
 
 -- | Like 'runProcess' but forwards exceptions and returns the result of the
 -- 'Process' computation.

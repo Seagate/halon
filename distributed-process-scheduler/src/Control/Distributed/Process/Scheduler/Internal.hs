@@ -33,6 +33,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , receiveWait
   , spawnLocal
   , spawn
+  , spawnAsync
   -- * distributed-process-trans replacements
   , MatchT
   , matchT
@@ -521,15 +522,29 @@ remotable [ 'spawnWrapClosure ]
 -- | Notifies the scheduler of a new process. When acknowledged, starts the new
 -- process and notifies again the scheduler when the process terminates. Returns
 -- immediately.
-spawn :: NodeId -> Closure (Process ()) -> Process ProcessId
-spawn nid cp = do
+spawnAsync :: NodeId -> Closure (Process ()) -> Process DP.SpawnRef
+spawnAsync nid cp = do
     self <- DP.getSelfPid
-    child <- DP.spawn nid $ $(mkClosure 'spawnWrapClosure) cp
+    ref <- DP.spawnAsync nid $ $(mkClosure 'spawnWrapClosure) cp
+    child <- DP.receiveWait
+               [ DP.matchIf (\(DP.DidSpawn ref' _) -> ref' == ref) $
+                             \(DP.DidSpawn _ pid) -> return pid
+               ]
     sendS $ CreatedNewProcess self child
     OkNewProcess <- DP.expect
     DP.send child ()
-    return child
+    usend self (DP.DidSpawn ref child)
+    return ref
 
+-- | Notifies the scheduler of a new process. When acknowledged, starts the new
+-- process and notifies again the scheduler when the process terminates. Returns
+-- immediately.
+spawn :: NodeId -> Closure (Process ()) -> Process ProcessId
+spawn nid cp = do
+    ref <- spawnAsync nid cp
+    receiveWait [ matchIf (\(DP.DidSpawn ref' _) -> ref' == ref) $
+                           \(DP.DidSpawn _ pid) -> return pid
+                ]
 
 -- | Opaque type used by 'receiveWaitT'.
 newtype MatchT m a =

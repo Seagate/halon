@@ -20,6 +20,7 @@ module Control.Distributed.Process
   , receiveChan
   , spawnLocal
   , spawn
+  , spawnAsync
   , module DPEtc
   )  where
 
@@ -50,7 +51,9 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , receiveWait
   , receiveChan
   , spawnLocal
-  , spawn )
+  , spawn
+  , spawnAsync
+  )
 import Control.Distributed.Process.Serializable ( Serializable )
 
 ifSchedulerIsEnabled :: a -> a -> a
@@ -94,6 +97,10 @@ spawnLocal = ifSchedulerIsEnabled Internal.spawnLocal DP.spawnLocal
 {-# NOINLINE spawn #-}
 spawn :: NodeId -> Closure (Process ()) -> Process ProcessId
 spawn = ifSchedulerIsEnabled Internal.spawn DP.spawn
+
+{-# NOINLINE spawnAsync #-}
+spawnAsync :: NodeId -> Closure (Process ()) -> Process DP.SpawnRef
+spawnAsync = ifSchedulerIsEnabled Internal.spawnAsync DP.spawnAsync
 
 {-# NOINLINE expectTimeout #-}
 expectTimeout :: Serializable a => Int -> Process (Maybe a)
