@@ -219,8 +219,7 @@ tests args = do
                     here <- getSelfNode
                     snapshotServer
                     retry retryTimeout $
-                      void $ Log.addReplica h
-                               (staticClosure $(mkStatic 'Policy.meToo)) here
+                      void $ Log.addReplica h here
                 expect
 
           , testSuccess "addReplica-new-replica-old-decrees" . withTmpDirectory $ setup 1 $ \h port -> do
@@ -240,9 +239,7 @@ tests args = do
                     here <- getSelfNode
                     snapshotServer
                     retry retryTimeout $
-                      void $ Log.addReplica h
-                             (staticClosure $(mkStatic 'Policy.meToo))
-                             here
+                      void $ Log.addReplica h here
                 () <- expect
                 say "New replica incremented."
 
@@ -258,8 +255,7 @@ tests args = do
                     here <- getSelfNode
                     snapshotServer
                     retry retryTimeout $
-                      void $ Log.addReplica h
-                             (staticClosure $(mkStatic 'Policy.meToo)) here
+                      void $ Log.addReplica h here
 
                 retry retryTimeout $
                   State.update port incrementCP
@@ -281,14 +277,12 @@ tests args = do
                     here <- getSelfNode
                     snapshotServer
                     retry retryTimeout $
-                      void $ Log.addReplica h
-                             (staticClosure $(mkStatic 'Policy.meToo)) here
+                      void $ Log.addReplica h here
 
                 here <- getSelfNode
                 snapshotServer
                 ρ <- retry retryTimeout $
-                       Log.addReplica h
-                         (staticClosure $(mkStatic 'Policy.meToo)) here
+                       Log.addReplica h here
                 updateHandle h ρ
 
                 -- Kill the first node, and see that the updated handle
@@ -321,8 +315,7 @@ tests args = do
                     here <- getSelfNode
                     snapshotServer
                     retry retryTimeout $
-                      void $ Log.addReplica h
-                             (staticClosure $(mkStatic 'Policy.orpn)) here
+                      void $ Log.addReplica h here
 
                 Log.status h
                 -- We do an update to ensure the state is replicated before
@@ -381,8 +374,7 @@ tests args = do
                     here <- getSelfNode
                     snapshotServer
                     retry retryTimeout $
-                      void $ Log.addReplica h
-                             (staticClosure $(mkStatic 'Policy.meToo)) here
+                      void $ Log.addReplica h here
 
                 logSizes' <- replicateM 5 $ do
                   replicateM_ incrementCount $ do
@@ -422,8 +414,7 @@ tests args = do
                     here <- getSelfNode
                     snapshotServer
                     ρ <- retry retryTimeout $
-                           Log.addReplica h
-                             (staticClosure $(mkStatic 'Policy.orpn)) here
+                           Log.addReplica h here
                     updateHandle h ρ
 
                 liftIO $ runProcess node1 $

@@ -42,7 +42,12 @@ module Control.Distributed.Log.Internal
 
 import Control.Distributed.Log.Messages
 import Control.Distributed.Log.Policy (NominationPolicy)
-import Control.Distributed.Log.Policy as Policy (notThem, notThem__static)
+import Control.Distributed.Log.Policy as Policy
+    ( notThem
+    , notThem__static
+    , orpn
+    , orpn__static
+    )
 import Control.Distributed.Process.Batcher
 import Control.Distributed.Process.Consensus hiding (Value)
 import Control.Distributed.Process.Timeout
@@ -1567,20 +1572,18 @@ reconfigure (Handle _ _ _ _ μ) cpolicy = callLocal $ do
     expect
 
 -- | Start a new replica on the given node, adding it to the group pointed to by
--- the provided handle. The second argument is a function producing a nomination
--- policy provided an acceptor and a replica process. Example usage:
+-- the provided handle. Example usage:
 --
--- > addReplica h $(mkClosure 'Policy.orpn) nid leaseRenewalMargin
+-- > addReplica h nid leaseRenewalMargin
 --
 -- Note that the new replica will block until it gets a Max broadcast by one of
 -- the existing replicas. In this way, the replica will not service any client
 -- requests until it has indeed been accepted into the group.
 addReplica :: Typeable a
            => Handle a
-           -> Closure (ProcessId -> ProcessId -> NominationPolicy)
            -> NodeId
            -> Process ProcessId
-addReplica h@(Handle sdict1 sdict2 config log _) cpolicy nid = do
+addReplica h@(Handle sdict1 sdict2 config log _) nid = do
     now <- liftIO $ getTime Monotonic
     let protocol = staticClosure $(mkStatic 'consensusProtocol)
                      `closureApply` config
@@ -1596,7 +1599,7 @@ addReplica h@(Handle sdict1 sdict2 config log _) cpolicy nid = do
                            )
     α <- expectSpawn αref
     ρ <- expectSpawn ρref
-    reconfigure h $ cpolicy
+    reconfigure h $ $(mkStaticClosure 'Policy.orpn)
         `closureApply` processIdClosure α
         `closureApply` processIdClosure ρ
     return ρ

@@ -55,14 +55,7 @@ import Control.Distributed.Process
   , spawn
   )
 import Control.Distributed.Process.Closure
-  ( remotable
-  , mkStatic
-  , remotableDecl
-  , mkClosure
-  , mkStaticClosure
-  )
 import Control.Distributed.Process.Internal.Types (nodeAddress)
-import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Control.Distributed.Static
   ( closureApplyStatic
   , staticApply
@@ -228,7 +221,7 @@ instance RGroup RLogGroup where
     forM ns $ \nid -> do
       _ <- spawn nid $ closure ($(mkStatic 'snapshotServer) `staticApply` sdq)
                      $ encode q0
-      fmap Replica $ Log.addReplica h $(mkStaticClosure 'orpn) nid
+      fmap Replica $ Log.addReplica h nid
 
   updateRGroup (RLogGroup _ _ _ h _ _) (Replica ρ) = Log.updateHandle h ρ
 
