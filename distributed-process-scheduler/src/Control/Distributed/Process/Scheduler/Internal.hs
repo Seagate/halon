@@ -34,6 +34,8 @@ module Control.Distributed.Process.Scheduler.Internal
   , spawnLocal
   , spawn
   , spawnAsync
+  , whereisRemoteAsync
+  , registerRemoteAsync
   -- * distributed-process-trans replacements
   , MatchT
   , matchT
@@ -545,6 +547,24 @@ spawn nid cp = do
     receiveWait [ matchIf (\(DP.DidSpawn ref' _) -> ref' == ref) $
                            \(DP.DidSpawn _ pid) -> return pid
                 ]
+
+-- | Looks up a process in the registry of a node.
+whereisRemoteAsync :: NodeId -> String -> Process ()
+whereisRemoteAsync n label = do
+    self <- DP.getSelfPid
+    DP.whereisRemoteAsync n label
+    reply <- DP.receiveWait
+      [ DP.matchIf (\(DP.WhereIsReply label' _) -> label == label') return ]
+    usend self reply
+
+-- | Registers a process in the registry of a node.
+registerRemoteAsync :: NodeId -> String -> ProcessId -> Process ()
+registerRemoteAsync n label p = do
+    self <- DP.getSelfPid
+    DP.registerRemoteAsync n label p
+    reply <- DP.receiveWait
+      [ DP.matchIf (\(DP.RegisterReply label' _) -> label == label') return ]
+    usend self reply
 
 -- | Opaque type used by 'receiveWaitT'.
 newtype MatchT m a =

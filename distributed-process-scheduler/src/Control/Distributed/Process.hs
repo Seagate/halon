@@ -21,6 +21,8 @@ module Control.Distributed.Process
   , spawnLocal
   , spawn
   , spawnAsync
+  , whereisRemoteAsync
+  , registerRemoteAsync
   , module DPEtc
   )  where
 
@@ -53,6 +55,8 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , spawnLocal
   , spawn
   , spawnAsync
+  , whereisRemoteAsync
+  , registerRemoteAsync
   )
 import Control.Distributed.Process.Serializable ( Serializable )
 
@@ -101,6 +105,16 @@ spawn = ifSchedulerIsEnabled Internal.spawn DP.spawn
 {-# NOINLINE spawnAsync #-}
 spawnAsync :: NodeId -> Closure (Process ()) -> Process DP.SpawnRef
 spawnAsync = ifSchedulerIsEnabled Internal.spawnAsync DP.spawnAsync
+
+{-# NOINLINE whereisRemoteAsync #-}
+whereisRemoteAsync :: NodeId -> String -> Process ()
+whereisRemoteAsync = ifSchedulerIsEnabled Internal.whereisRemoteAsync
+                                          DP.whereisRemoteAsync
+
+{-# NOINLINE registerRemoteAsync #-}
+registerRemoteAsync :: NodeId -> String -> ProcessId -> Process ()
+registerRemoteAsync = ifSchedulerIsEnabled Internal.registerRemoteAsync
+                                           DP.registerRemoteAsync
 
 {-# NOINLINE expectTimeout #-}
 expectTimeout :: Serializable a => Int -> Process (Maybe a)
