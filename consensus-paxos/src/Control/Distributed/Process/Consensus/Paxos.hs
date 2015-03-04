@@ -116,8 +116,9 @@ $(makeAcidic ''[] ['insert, 'toList])
 --   responded to a 'Prepare' request in a ballot greater than b.
 acceptor :: forall a n. Serializable a => a -> (n -> FilePath) -> n -> Process ()
 acceptor _ file name = do
-    acid <- liftIO $ openLocalStateFrom (file name) []
-    loop acid Bottom
+    bracket (liftIO $ openLocalStateFrom (file name) [])
+            (liftIO . closeAcidState) $
+            \acid -> loop acid Bottom
   where loop acid b = do
           self <- getSelfPid
           receiveWait
