@@ -538,14 +538,16 @@ replica Dict
         decree
         epoch0
         replicas0 = do
-    say $ "New replica started in " ++ show (decreeLegislatureId decree)
+   say $ "New replica started in " ++ show (decreeLegislatureId decree)
 
-    self <- getSelfPid
-    here <- getSelfNode
-    let leg0 = decreeLegislatureId decree
-    acid <- liftIO $ openLocalStateFrom
-                       (persistDirectory (processNodeId self))
-                       (Memory replicas0 leg0 epoch0 Map.empty)
+   self <- getSelfPid
+   here <- getSelfNode
+   let leg0 = decreeLegislatureId decree
+   bracket (liftIO $ openLocalStateFrom (persistDirectory here)
+                                        (Memory replicas0 leg0 epoch0 Map.empty)
+           )
+           (liftIO . closeAcidState)
+           $ \acid -> do
     sns <- logGetAvailableSnapshots
     -- Try the snapshots from the most recent to the less recent.
     let findSnapshot []               = (DecreeId 0 0,) <$> logInitialize
