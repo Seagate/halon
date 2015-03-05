@@ -35,6 +35,7 @@ import HA.Service hiding (configDict)
 import HA.RecoveryCoordinator.Mero
 import HA.ResourceGraph
 import HA.Resources (Cluster(..), Node(..))
+import HA.Resources.Mero
 
 import SSPL.Bindings
 
@@ -71,8 +72,9 @@ import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Defaultable
 import Data.Foldable (mapM_)
 import Data.Hashable (Hashable)
-import Data.Maybe (listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe)
 import Data.Monoid ((<>))
+import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
 import Data.Typeable (Typeable)
 
@@ -350,7 +352,8 @@ msgHandler chan = forever $ do
     Just mr -> do
       say $ show mr
       mapM_ promulgate
-            $ monitorResponseMonitor_msg_typeHost_update
+            $ fmap (nid,)
+            . monitorResponseMonitor_msg_typeHost_update
             . monitorResponseMonitor_msg_type
             $ mr
       mapM_ promulgate
@@ -452,10 +455,39 @@ ssplRules = do
     -- SSPL Monitor drivemanager
     defineHAEvent id $ \(HAEvent _ (nid, mrm) _) -> do
       let disk_status = monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskStatus mrm
+          encName = monitorResponseMonitor_msg_typeDisk_status_drivemanagerEnclosureSN mrm
+          diskNum = monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskNum mrm
+          enc = Enclosure $ T.unpack encName
+          disk = StorageDevice . floor . (toRealFloat :: Scientific -> Double)
+                  $ diskNum
+
+      registerDrive enc disk
+      updateDriveStatus disk $ T.unpack disk_status
+      syncResourceGraph
+      liftProcess . sayRC $ "Registered drive"
       when (disk_status == "inuse_removed") $ do
         let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
         sendInterestingEvent nid msg
 
+    -- SSPL Monitor host_update
+    defineHAEvent id $ \(HAEvent _ (nid, hum) _) ->
+      case monitorResponseMonitor_msg_typeHost_updateUname hum of
+        Just a -> let
+            host = Host $ T.unpack a
+            node = Node nid
+          in do
+            registerHost host
+            locateNodeOnHost node host
+            case monitorResponseMonitor_msg_typeHost_updateIfData hum of
+              Just (xs@(_:_)) -> mapM_ (registerInterface host . mkIf) ifNames
+                where
+                  mkIf = Interface . T.unpack
+                  ifNames = catMaybes
+                            $ fmap monitorResponseMonitor_msg_typeHost_updateIfDataItemIfId xs
+              _ -> return ()
+            syncResourceGraph
+            liftProcess . sayRC $ "Registered host: " ++ show host
+        Nothing -> return ()
 
 remotableDecl [ [d|
 
