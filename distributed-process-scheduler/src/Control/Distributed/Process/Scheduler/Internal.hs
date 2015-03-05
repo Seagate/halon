@@ -355,9 +355,9 @@ startScheduler initialProcs seed0 = do
                  -- process
                  i'' : rest = dropWhile (i'<) msgsSizes
                  -- the chosen process
-                 (pid, pidMsgs) = Map.toList msgs !! length rest
+                 (pid, pidMsgs) = Map.elemAt (length rest) msgs
                  -- the chosen sender
-                 (sender, m : ms) = Map.toList pidMsgs !! (i' - i'')
+                 (sender, m : ms) = Map.elemAt (i' - i'') pidMsgs
               in ( PutMsg pid m
                  , st { stateSeed = seed'
                       , stateMessages =
@@ -373,9 +373,9 @@ startScheduler initialProcs seed0 = do
                  -- process
                  i'' : rest = dropWhile (i'<) nsMsgsSizes
                  -- the chosen process
-                 ((nid, label), nidlMsgs) = Map.toList nsMsgs !! length rest
+                 ((nid, label), nidlMsgs) = Map.elemAt (length rest) nsMsgs
                  -- the chosen sender
-                 (sender, m : ms) = Map.toList nidlMsgs !! (i' - i'')
+                 (sender, m : ms) = Map.elemAt (i' - i'') nidlMsgs
               in ( PutNSendMsg nid label m
                  , st { stateSeed = seed'
                       , stateNSend =
