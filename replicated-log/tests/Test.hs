@@ -4,7 +4,7 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GADTs #-}
-module Test (Pass(..), tests) where
+module Test (tests) where
 
 import Test.Framework
 
@@ -33,17 +33,14 @@ import Data.Rank1Dynamic
 import qualified Network.Socket as N (close)
 import Network.Transport.TCP
 
-import Control.Monad (forM_, replicateM, replicateM_, when, void, liftM2)
+import Control.Monad (forM_, replicateM, replicateM_, void, liftM2)
 import Data.Constraint (Dict(..))
 import Data.Binary (encode, Binary)
 import Data.List (isPrefixOf)
 import Data.Ratio ((%))
 import Data.Typeable (Typeable)
-import System.Directory
-import System.Environment (getExecutablePath)
 import System.IO
 import System.FilePath ((</>))
-import System.Process (callProcess)
 
 import Prelude hiding (read)
 import qualified Prelude
@@ -142,19 +139,12 @@ remoteTables =
   State.__remoteTable $
   Control.Distributed.Process.Node.initRemoteTable
 
-data Pass = DriverPass | FirstPass | SecondPass
-          deriving (Eq, Ord, Read, Show)
-
 tests :: [String] -> IO TestTree
-tests args = do
+tests _ = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
-    let pass = Prelude.read $ if null args then "DriverPass" else head args
-        tcpPort = case pass of DriverPass -> "8080"; _ -> "8081"
-
     Right (transport, internals) <- createTransportExposeInternals
-        "127.0.0.1" tcpPort defaultTCPParameters
-    print pass
+        "127.0.0.1" "8080" defaultTCPParameters
     putStrLn "Transport created."
 
     let setup :: Int                      -- ^ Number of nodes to spawn group on.
@@ -491,38 +481,37 @@ tests args = do
                 _ <- expectTimeout 5000000 :: Process (Maybe ())
                 say "Replicas continue to have quorum."
 
-           , testSuccess "durability" $ do
-               let tmpdir = "/tmp/tmp.durability-test"
-                   expectedState = case pass of
-                     DriverPass ->
-                       error "expectedState is undefined in the driver pass"
-                     FirstPass -> 1
-                     SecondPass -> 2
+           , testSuccess "durability" . withTmpDirectory $ do
+               nodes <- replicateM 5 $ fmap localNodeId $
+                          newLocalNode transport remoteTables
+               tryWithTimeout transport remoteTables 30000000 $ do
 
-               when (pass == DriverPass) $ do
-                 doesDirectoryExist tmpdir >>=
-                   (`when` removeDirectoryRecursive tmpdir)
-                 createDirectoryIfMissing True tmpdir
-
-               cwd <- getCurrentDirectory
-               setCurrentDirectory tmpdir
-
-               if pass == DriverPass then do
-                 exe <- getExecutablePath
-                 callProcess exe [ "--output-dir"
-                                 , cwd </> "test_output_FirstPass"
-                                 , "-p", "durability", "--", "FirstPass"
-                                 ]
-                 callProcess exe [ "--output-dir"
-                                 , cwd </> "test_output_SecondPass"
-                                 , "-p", "durability", "--", "SecondPass"
-                                 ]
-               else
-                 setup 5 $ \_ port -> do
+                 setup' nodes $ \_ port -> do
                    retry retryTimeout $
                      State.update port incrementCP
-                   assert . (>= expectedState) =<<
+                   assert . (>= 1) =<<
                      retry retryTimeout (State.select sdictInt port readCP)
+                   say "Incremented state from scratch."
+                   -- Remove each replica and acceptor.
+                   forM_ nodes $ \n -> do
+                     whereisRemoteAsync n "test-log.replica"
+                     whereisRemoteAsync n "test-log.acceptor"
+                     WhereIsReply _ (Just p0) <- expect
+                     exit p0 "durability test"
+                     WhereIsReply _ (Just p1) <- expect
+                     exit p1 "durability test"
+                     _ <- monitor p0
+                     _ <- monitor p1
+                     ProcessMonitorNotification _ _ _ <- expect
+                     ProcessMonitorNotification _ _ _ <- expect
+                     return ()
+
+                 setup' nodes $ \_ port -> do
+                   retry retryTimeout $
+                     State.update port incrementCP
+                   assert . (>= 2) =<<
+                     retry retryTimeout (State.select sdictInt port readCP)
+                   say "Incremented state from disk."
            ]
 
     return $ testGroup "replicated-log" [ut]
