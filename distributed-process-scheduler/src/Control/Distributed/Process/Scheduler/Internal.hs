@@ -60,7 +60,7 @@ import Control.Concurrent.MVar
     , readMVar, modifyMVar_
     )
 import Control.Exception ( SomeException, throwIO )
-import Control.Monad ( void, when, liftM2 )
+import Control.Monad ( void, when, liftM2, join )
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary(..) )
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
@@ -118,8 +118,6 @@ data SchedulerMsg
     | CreatedNewProcess ProcessId  ProcessId
                                   -- ^ @CreatedNewProcess parent child@: a new
                                   -- process will be created by @parent@.
-    | ProcessTerminated ProcessId -- ^ A process with the given pid has
-                                  -- terminated.
   deriving (Generic, Typeable)
 
 -- | Messages that the scheduler sends to the tested application.
@@ -233,9 +231,9 @@ startScheduler initialProcs seed0 = do
              go seed' alive procs' msgs' nsMsgs'
 
     -- enter the next equation if some process is still active
-    go seed alive procs msgs nsMsgs = do
-      m <- DP.expect
-      case m of
+    go seed alive procs msgs nsMsgs =
+      DP.receiveWait
+        [ DP.match $ \m -> case m of
         -- a process is sending a message
         Send source pid msg -> do
             go seed alive procs
@@ -260,14 +258,17 @@ startScheduler initialProcs seed0 = do
             go seed alive (Map.insert pid False procs) msgs nsMsgs
         -- a new process will be created
         CreatedNewProcess parent child -> do
+            _ <- DP.monitor child
             DP.send parent OkNewProcess
             go seed (Set.insert child alive) procs msgs nsMsgs
+
         -- a process has terminated
-        ProcessTerminated pid ->
+        , DP.match $ \(DP.ProcessMonitorNotification _ pid _) ->
             go seed (Set.delete pid alive)
                     (Map.delete pid procs)
                     (Map.delete pid msgs)
                     nsMsgs
+        ]
 
     -- is the given process waiting for a new message?
     isBlocked pid procs =
@@ -508,16 +509,17 @@ matchChan = matchSTM . DP.receiveSTM
 spawnLocal :: Process () -> Process ProcessId
 spawnLocal p = do
     self <- DP.getSelfPid
-    child <- DP.spawnLocal $ DP.expect >>= \() ->
-               p `DP.finally` (DP.getSelfPid >>= sendS . ProcessTerminated)
+    child <- DP.spawnLocal $ do () <- DP.expect
+                                p
     sendS $ CreatedNewProcess self child
     OkNewProcess <- DP.expect
     DP.send child ()
     return child
 
 spawnWrapClosure :: Closure (Process ()) -> Process ()
-spawnWrapClosure p = DP.expect >>= \() ->
-  (DP.unClosure p >>= id) `DP.finally` (DP.getSelfPid >>= sendS . ProcessTerminated)
+spawnWrapClosure p = do
+    () <- DP.expect
+    join $ DP.unClosure p
 
 remotable [ 'spawnWrapClosure ]
 
