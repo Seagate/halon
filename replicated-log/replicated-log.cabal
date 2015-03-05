@@ -76,8 +76,6 @@ Test-Suite tests
 
   if flag(maintainer)
     Ghc-Options: -Werror
-    Cpp-Options: -DCABAL_MAINTAINER_FLAG
-
 
   Build-Depends:    base >= 4.7,
                     binary >= 0.6,
