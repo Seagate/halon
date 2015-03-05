@@ -21,7 +21,7 @@ import Control.Distributed.State
     , commandSerializableDict__static )
 import qualified Control.Distributed.Log.Policy as Policy
 import Control.Distributed.Log.Policy -- XXX workaround for distributed-process TH bug.
-import Control.Distributed.Process.Timeout (retry)
+import Control.Distributed.Process.Timeout (retry, timeout)
 
 import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Node
@@ -268,6 +268,49 @@ tests args = do
                 () <- expect
                 () <- expect
                 say "Both replicas incremented again after membership change."
+
+          , testSuccess "addReplica-idempotent" . withTmpDirectory $
+            setup 1 $ \h port -> do
+              here <- getSelfNode
+
+              retry retryTimeout $ State.update port incrementCP
+
+              _ <- retry retryTimeout $ Log.addReplica h here
+              retry retryTimeout $ State.update port incrementCP
+
+              i <- retry retryTimeout $ State.select sdictInt port readCP
+              assert (i >= 2)
+              say "Restarting replicas preserves the state."
+
+          , testSuccess "addReplica-interrupted-idempotent" . withTmpDirectory $
+            setup 1 $ \h port -> do
+              here <- getSelfNode
+
+              retry retryTimeout $ State.update port incrementCP
+
+              _ <- retry retryTimeout $ do
+                     -- Interrupt the first attempt.
+                     _ <- timeout 1000 $ Log.addReplica h here
+                     Log.addReplica h here
+
+              retry retryTimeout $ State.update port incrementCP
+
+              i <- retry retryTimeout $ State.select sdictInt port readCP
+              assert (i >= 2)
+              say $ "Restarting replicas preserves the state even with "
+                    ++ "interruptions."
+
+          , testSuccess "new-idempotent" . withTmpDirectory $ do
+              n0 <- newLocalNode transport remoteTables
+              n1 <- newLocalNode transport remoteTables
+              tryWithTimeout transport remoteTables 30000000
+                  $ setup' [localNodeId n0, localNodeId n1] $ \_ port -> do
+                retry retryTimeout $ State.update port incrementCP
+                setup' [localNodeId n0, localNodeId n1] $ \_ port' -> do
+                  retry retryTimeout $ State.update port' incrementCP
+                  i <- retry retryTimeout $ State.select sdictInt port' readCP
+                  assert (i >= 2)
+                  say "Starting a group twice is idempotent."
 
           , testSuccess "update-handle" . withTmpDirectory $ do
               n <- newLocalNode transport remoteTables
