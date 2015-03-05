@@ -276,7 +276,7 @@ tests args = do
 #endif
                  withTmpDirectory $ do
               n <- newLocalNode transport remoteTables
-              tryWithTimeout transport remoteTables 16000000
+              tryWithTimeout transport remoteTables 30000000
                   $ setup' [localNodeId n] $ \h port -> do
                 self <- getSelfPid
                 let interceptor "Increment." = usend self ()
