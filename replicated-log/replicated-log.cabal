@@ -83,7 +83,6 @@ Test-Suite tests
                     consensus,
                     consensus-paxos,
                     constraints >= 0.4,
-                    directory >= 1.2,
                     distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static >= 0.2.0,
@@ -92,7 +91,6 @@ Test-Suite tests
                     network >= 2.4.2.3,
                     network-transport,
                     network-transport-tcp,
-                    process >= 1.2,
                     rank1dynamic >= 0.1,
                     replicated-log
   Default-Extensions: DeriveDataTypeable
