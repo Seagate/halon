@@ -462,15 +462,15 @@ tests args = do
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
                     snapshotServer
-                    ρ <- retry retryTimeout $
-                           Log.addReplica h here
-                    updateHandle h ρ
+                    retry retryTimeout $
+                      Log.addReplica h here
+                    updateHandle h here
 
                 liftIO $ runProcess node1 $
                   retry retryTimeout $
                     State.update port incrementCP
                 () <- expect
-                () <- expect
+                _ <- expectTimeout 5000000 :: Process (Maybe ())
 
                 -- interrupt the connection between the replicas
                 here <- getSelfNode
@@ -484,21 +484,11 @@ tests args = do
                                 (nodeAddress here)
                     >>= N.close
 
-                firstAttempt <- spawnLocal $
-                  liftIO $ runProcess node1 $
-                    retry retryTimeout $
-                      State.update port incrementCP
-                munit <- expectTimeout 1000000
-                case munit of
-                  Just () -> return ()
-                  Nothing -> do
-                       kill firstAttempt "Blocked."
-                       _ <- spawnLocal $ do
-                         liftIO $ runProcess node1 $
-                           retry retryTimeout $
-                             State.update port incrementCP
-                       expect :: Process ()
-                expect :: Process ()
+                liftIO $ runProcess node1 $
+                  retry retryTimeout $
+                    State.update port incrementCP
+                () <- expect
+                _ <- expectTimeout 5000000 :: Process (Maybe ())
                 say "Replicas continue to have quorum."
 
            , testSuccess "durability" $ do
