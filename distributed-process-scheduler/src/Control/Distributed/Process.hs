@@ -18,6 +18,7 @@ module Control.Distributed.Process
   , expectTimeout
   , receiveWait
   , receiveChan
+  , monitor
   , spawnLocal
   , spawn
   , spawnAsync
@@ -52,6 +53,7 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , expectTimeout
   , receiveWait
   , receiveChan
+  , monitor
   , spawnLocal
   , spawn
   , spawnAsync
@@ -93,6 +95,10 @@ sendChan = ifSchedulerIsEnabled Internal.sendChan DP.sendChan
 {-# NOINLINE receiveChan #-}
 receiveChan :: Serializable a => ReceivePort a -> Process a
 receiveChan = ifSchedulerIsEnabled Internal.receiveChan DP.receiveChan
+
+{-# NOINLINE monitor #-}
+monitor :: ProcessId -> Process DP.MonitorRef
+monitor = ifSchedulerIsEnabled Internal.monitor DP.monitor
 
 {-# NOINLINE spawnLocal #-}
 spawnLocal :: Process () -> Process ProcessId

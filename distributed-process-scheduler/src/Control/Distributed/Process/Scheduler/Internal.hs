@@ -31,6 +31,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , expect
   , receiveChan
   , receiveWait
+  , monitor
   , spawnLocal
   , spawn
   , spawnAsync
@@ -60,9 +61,10 @@ import Control.Concurrent.MVar
     , readMVar, modifyMVar_
     )
 import Control.Exception ( SomeException, throwIO )
-import Control.Monad ( void, when, liftM2, join )
+import Control.Monad ( void, when, liftM2, join, forM_ )
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary(..) )
+import Data.Int
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
 import Data.Map ( Map )
 import qualified Data.Map as Map
@@ -118,6 +120,8 @@ data SchedulerMsg
     | CreatedNewProcess ProcessId  ProcessId
                                   -- ^ @CreatedNewProcess parent child@: a new
                                   -- process will be created by @parent@.
+    | Monitoring ProcessId ProcessId -- ^ @Monitoring who whom@: the process
+                                     -- @who@ will monitor @whom@.
   deriving (Generic, Typeable)
 
 -- | Messages that the scheduler sends to the tested application.
@@ -164,6 +168,10 @@ data SchedulerState = SchedulerState
     , stateMessages :: ProcessMessages
       -- | Messages targeted with a label
     , stateNSend    :: NSendMessages
+      -- | The monitors of each process
+    , stateMonitors :: Map ProcessId [(ProcessId, DP.MonitorRef)]
+      -- | The counter for producing monitor references
+    , stateMonitorCounter :: Int32
     }
 
 -- | Starts the scheduler assuming the given initial amount of processes and
@@ -185,6 +193,8 @@ startScheduler initialProcs seed0 = do
                             , stateProcs    = Map.empty
                             , stateMessages = Map.empty
                             , stateNSend    = Map.empty
+                            , stateMonitors = Map.empty
+                            , stateMonitorCounter = 0
                             }
                        `DP.finally` do
                           DP.liftIO $ modifyMVar_ schedulerLock $
@@ -202,7 +212,7 @@ startScheduler initialProcs seed0 = do
            return (True,())
   where
     go :: SchedulerState -> Process a
-    go st@(SchedulerState _ alive procs msgs nsMsgs)
+    go st@(SchedulerState _ alive procs msgs nsMsgs _ _)
         -- Enter this equation if all processes are waiting for a transition
       | Set.size alive == Map.size procs = do
         -- complain if no process has a message and there are no messages to
@@ -219,7 +229,7 @@ startScheduler initialProcs seed0 = do
              forward msg
              -- if the process was blocked let's ask it to check again if it
              -- has a message.
-             procs'' <- if isBlocked pid (stateProcs st)
+             procs'' <- if isBlocked pid procs
                then do DP.send pid TestReceive
                        return $ Map.delete pid (stateProcs st')
                else return $ stateProcs st'
@@ -234,7 +244,7 @@ startScheduler initialProcs seed0 = do
                  forward $ AddressedMsg (DP.ProcessIdentifier pid) msg
                  -- if the process was blocked let's ask it to check again if it
                  -- has a message.
-                 procs'' <- if isBlocked pid (stateProcs st)
+                 procs'' <- if isBlocked pid procs
                    then do DP.send pid TestReceive
                            return $ Map.delete pid (stateProcs st')
                    else return $ stateProcs st'
@@ -244,7 +254,7 @@ startScheduler initialProcs seed0 = do
              go st'
 
     -- enter the next equation if some process is still active
-    go st@(SchedulerState _ alive procs msgs nsMsgs) =
+    go st@(SchedulerState _ alive procs msgs nsMsgs monitors mcounter) =
       DP.receiveWait
         [ DP.match $ \m -> case m of
         -- a process is sending a message
@@ -277,13 +287,36 @@ startScheduler initialProcs seed0 = do
             _ <- DP.monitor child
             DP.send parent OkNewProcess
             go st { stateAlive = Set.insert child alive }
+        -- the process who is monitoring whom
+        Monitoring who whom -> do
+            let ref = DP.MonitorRef (DP.ProcessIdentifier who) mcounter
+            if Set.member whom alive then do
+              DP.send who ref
+              go st { stateMonitors = Map.insertWith (++) whom [(who, ref)]
+                                                     monitors
+                    , stateMonitorCounter = mcounter + 1
+                    }
+            else do
+              send who (DP.ProcessMonitorNotification ref whom DP.DiedUnknownId)
+              DP.send who ref
+              go st { stateMonitorCounter = mcounter + 1 }
 
         -- a process has terminated
-        , DP.match $ \(DP.ProcessMonitorNotification _ pid _) ->
-            go st { stateAlive    = Set.delete pid alive
-                  , stateProcs    = Map.delete pid procs
-                  , stateMessages = Map.delete pid msgs
-                  }
+        , DP.match $ \pmn@(DP.ProcessMonitorNotification _ pid reason) -> do
+            case Map.lookup pid monitors of
+              Just mons -> do
+                forM_ mons $ \(p, ref) ->
+                  send p (DP.ProcessMonitorNotification ref pid reason)
+                -- Resend the death notification so it is handled after the
+                -- monitor notifications above.
+                DP.getSelfPid >>= flip DP.send pmn
+                go st { stateMonitors = Map.delete pid monitors }
+              Nothing ->
+                go st { stateAlive    = Set.delete pid alive
+                      , stateProcs    = Map.delete pid procs
+                      , stateMessages = Map.delete pid msgs
+                      , stateMonitors = Map.delete pid monitors
+                      }
         ]
 
     -- is the given process waiting for a new message?
@@ -296,7 +329,7 @@ startScheduler initialProcs seed0 = do
                        -> ( TransitionRequest
                           , SchedulerState
                           )
-    pickNextTransition st@(SchedulerState seed _ procs msgs nsMsgs) =
+    pickNextTransition st@(SchedulerState seed _ procs msgs nsMsgs _ _) =
       let has_a_message = Map.filter id procs
           msgsSizes@(msgsSize:_) =
               Map.foldl' (\ss@(!s:_) ms -> s + Map.size ms : ss) [0] msgs
@@ -514,6 +547,13 @@ matchSTM sa h = Match $ \mr -> case mr of
 -- | Match on a typed channel.
 matchChan :: ReceivePort a -> (a -> Process b) -> Match b
 matchChan = matchSTM . DP.receiveSTM
+
+-- | Monitors a process, sending to the caller a @ProcessMonitorNotification@
+-- when the process dies.
+monitor :: ProcessId -> Process DP.MonitorRef
+monitor pid = do self <- DP.getSelfPid
+                 sendS $ Monitoring self pid
+                 DP.expect
 
 -- | Notifies the scheduler of a new process. When acknowledged, starts the new
 -- process and notifies again the scheduler when the process terminates. Returns
