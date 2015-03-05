@@ -152,6 +152,20 @@ instance Binary SchedulerTerminated
 type ProcessMessages = Map ProcessId (Map ProcessId [AddressedMsg])
 type NSendMessages = Map (NodeId, String) (Map ProcessId [DP.Message])
 
+-- | Internal scheduler state
+data SchedulerState = SchedulerState
+    { -- | random number generator
+      stateSeed     :: StdGen
+    , -- | set of tested processes
+      stateAlive    :: Set ProcessId
+      -- | state of processes (blocked | has_a_message)
+    , stateProcs    :: Map ProcessId Bool
+      -- | Messages targeted to each process
+    , stateMessages :: ProcessMessages
+      -- | Messages targeted with a label
+    , stateNSend    :: NSendMessages
+    }
+
 -- | Starts the scheduler assuming the given initial amount of processes and
 -- a seed to generate a sequence of random values.
 startScheduler :: [ProcessId] -- ^ initial processes
@@ -165,8 +179,13 @@ startScheduler initialProcs seed0 = do
          else do
            self <- DP.getSelfPid
            spid <- DP.spawnLocal $
-                     ((go (mkStdGen seed0) (Set.fromList initialProcs)
-                          Map.empty Map.empty Map.empty
+                     ((go SchedulerState
+                            { stateSeed     = mkStdGen seed0
+                            , stateAlive    = Set.fromList initialProcs
+                            , stateProcs    = Map.empty
+                            , stateMessages = Map.empty
+                            , stateNSend    = Map.empty
+                            }
                        `DP.finally` do
                           DP.liftIO $ modifyMVar_ schedulerLock $
                               const $ return False
@@ -182,13 +201,8 @@ startScheduler initialProcs seed0 = do
            DP.liftIO $ putMVar schedulerVar spid
            return (True,())
   where
-    go :: StdGen               -- ^ random number generator
-       -> Set ProcessId        -- ^ set of tested processes
-       -> Map ProcessId Bool   -- ^ state of processes (blocked | has_a_message)
-       -> ProcessMessages      -- ^ messages targeted to each process
-       -> NSendMessages        -- ^ messages targeted with a label
-       -> Process ()
-    go seed alive procs msgs nsMsgs
+    go :: SchedulerState -> Process a
+    go st@(SchedulerState _ alive procs msgs nsMsgs)
         -- Enter this equation if all processes are waiting for a transition
       | Set.size alive == Map.size procs = do
         -- complain if no process has a message and there are no messages to
@@ -199,75 +213,77 @@ startScheduler initialProcs seed0 = do
           error $ "startScheduler: All processes (" ++ show (Set.size alive) ++
                   ") are blocked."
         -- pick next transition
-        let (r , seed', procs', msgs', nsMsgs') =
-               pickNextTransition seed procs msgs nsMsgs
+        let (r , st') = pickNextTransition st
         case r of
           PutMsg pid msg -> do
              forward msg
              -- if the process was blocked let's ask it to check again if it
              -- has a message.
-             procs'' <- if isBlocked pid procs
+             procs'' <- if isBlocked pid (stateProcs st)
                then do DP.send pid TestReceive
-                       return $ Map.delete pid procs'
-               else return procs'
-             go seed' alive procs'' msgs' nsMsgs'
+                       return $ Map.delete pid (stateProcs st')
+               else return $ stateProcs st'
+             go st' { stateProcs = procs'' }
           PutNSendMsg nid label msg -> do
              DP.whereisRemoteAsync nid label
              DP.WhereIsReply _ mpid <- DP.expect
              case mpid of
                Nothing -> do
-                 go seed' alive procs' msgs' nsMsgs'
+                 go st'
                Just pid -> do
                  forward $ AddressedMsg (DP.ProcessIdentifier pid) msg
                  -- if the process was blocked let's ask it to check again if it
                  -- has a message.
-                 procs'' <- if isBlocked pid procs
+                 procs'' <- if isBlocked pid (stateProcs st)
                    then do DP.send pid TestReceive
-                           return $ Map.delete pid procs'
-                   else return procs'
-                 go seed' alive procs'' msgs' nsMsgs'
+                           return $ Map.delete pid (stateProcs st')
+                   else return $ stateProcs st'
+                 go st' { stateProcs = procs'' }
           ReceiveMsg pid -> do
              DP.send pid Receive
-             go seed' alive procs' msgs' nsMsgs'
+             go st'
 
     -- enter the next equation if some process is still active
-    go seed alive procs msgs nsMsgs =
+    go st@(SchedulerState _ alive procs msgs nsMsgs) =
       DP.receiveWait
         [ DP.match $ \m -> case m of
         -- a process is sending a message
         Send source pid msg -> do
-            go seed alive procs
+            go st
+              { stateMessages =
               (if Set.member pid alive
                  then Map.insertWith
                            (const $ Map.insertWith (flip (++)) source [msg])
                            pid (Map.singleton source [msg]) msgs
                  else msgs
               )
-              nsMsgs
+              }
         NSend source nid label msg -> do
-            go seed alive procs msgs $
+            go st
+              { stateNSend =
               Map.insertWith (const $ Map.insertWith (flip (++)) source [msg])
                              (nid, label)
                              (Map.singleton source [msg])
                              nsMsgs
+              }
         -- a process has a message and is ready to process it
         HasMessage pid ->
-            go seed alive (Map.insert pid True procs) msgs nsMsgs
+            go st { stateProcs = Map.insert pid True procs }
         -- a process has no messages and will block
         Blocking pid ->
-            go seed alive (Map.insert pid False procs) msgs nsMsgs
+            go st { stateProcs = Map.insert pid False procs }
         -- a new process will be created
         CreatedNewProcess parent child -> do
             _ <- DP.monitor child
             DP.send parent OkNewProcess
-            go seed (Set.insert child alive) procs msgs nsMsgs
+            go st { stateAlive = Set.insert child alive }
 
         -- a process has terminated
         , DP.match $ \(DP.ProcessMonitorNotification _ pid _) ->
-            go seed (Set.delete pid alive)
-                    (Map.delete pid procs)
-                    (Map.delete pid msgs)
-                    nsMsgs
+            go st { stateAlive    = Set.delete pid alive
+                  , stateProcs    = Map.delete pid procs
+                  , stateMessages = Map.delete pid msgs
+                  }
         ]
 
     -- is the given process waiting for a new message?
@@ -276,17 +292,11 @@ startScheduler initialProcs seed0 = do
         $ Map.lookup pid procs
 
     -- Picks the next transition.
-    pickNextTransition :: StdGen
-                       -> Map ProcessId Bool
-                       -> ProcessMessages
-                       -> NSendMessages
+    pickNextTransition :: SchedulerState
                        -> ( TransitionRequest
-                          , StdGen
-                          , Map ProcessId Bool
-                          , ProcessMessages
-                          , NSendMessages
+                          , SchedulerState
                           )
-    pickNextTransition seed procs msgs nsMsgs =
+    pickNextTransition st@(SchedulerState seed _ procs msgs nsMsgs) =
       let has_a_message = Map.filter id procs
           msgsSizes@(msgsSize:_) =
               Map.foldl' (\ss@(!s:_) ms -> s + Map.size ms : ss) [0] msgs
@@ -300,10 +310,10 @@ startScheduler initialProcs seed0 = do
        in if i < Map.size has_a_message
         then let pid = Map.keys has_a_message !! i
               in ( ReceiveMsg pid
-                 , seed'
-                 , Map.delete pid procs -- the process is active again
-                 , msgs
-                 , nsMsgs
+                 , st { stateSeed  = seed'
+                        -- the process is active again
+                      , stateProcs = Map.delete pid procs
+                      }
                  )
         else if i < Map.size has_a_message + msgsSize
         then let -- index in the range of messages to send
@@ -316,13 +326,13 @@ startScheduler initialProcs seed0 = do
                  -- the chosen sender
                  (sender, m : ms) = Map.toList pidMsgs !! (i' - i'')
               in ( PutMsg pid m
-                 , seed'
-                 , procs
-                 , if null ms -- make sure to delete all empty containers
-                    then if 1 == Map.size pidMsgs then Map.delete pid msgs
-                          else Map.adjust (Map.delete sender) pid msgs
-                    else Map.adjust (Map.adjust tail sender) pid msgs
-                 , nsMsgs
+                 , st { stateSeed = seed'
+                      , stateMessages =
+                          if null ms -- make sure to delete all empty containers
+                          then if 1 == Map.size pidMsgs then Map.delete pid msgs
+                               else Map.adjust (Map.delete sender) pid msgs
+                          else Map.adjust (Map.adjust tail sender) pid msgs
+                      }
                  )
         else let -- index in the range of messages to send
                  i' = i - Map.size has_a_message - msgsSize
@@ -334,14 +344,16 @@ startScheduler initialProcs seed0 = do
                  -- the chosen sender
                  (sender, m : ms) = Map.toList nidlMsgs !! (i' - i'')
               in ( PutNSendMsg nid label m
-                 , seed'
-                 , procs
-                 , msgs
-                 , if null ms -- make sure to delete all empty containers
-                    then if 1 == Map.size nidlMsgs
-                         then Map.delete (nid, label) nsMsgs
-                         else Map.adjust (Map.delete sender) (nid, label) nsMsgs
-                    else Map.adjust (Map.adjust tail sender) (nid, label) nsMsgs
+                 , st { stateSeed = seed'
+                      , stateNSend =
+                          if null ms -- make sure to delete all empty containers
+                          then if 1 == Map.size nidlMsgs
+                               then Map.delete (nid, label) nsMsgs
+                               else Map.adjust (Map.delete sender) (nid, label)
+                                               nsMsgs
+                          else Map.adjust (Map.adjust tail sender) (nid, label)
+                                          nsMsgs
+                      }
                  )
 
     forward (AddressedMsg rid msg) = do
