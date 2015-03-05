@@ -147,6 +147,7 @@ Test-Suite unit-tests
                     network,
                     network-transport,
                     process >= 1.2,
+                    replicated-log,
                     unordered-containers,
                     options-schema >= 0.1.1.0,
                     tasty >= 0.8,
@@ -193,6 +194,7 @@ Test-Suite integration-tests
                     unordered-containers,
                     options-schema >= 0.1.1.0,
                     process >= 1.2,
+                    replicated-log,
                     tasty >= 0.8,
                     tasty-files,
                     cep

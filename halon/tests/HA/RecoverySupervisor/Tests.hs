@@ -41,6 +41,7 @@ import Control.Distributed.Process.Internal.Types
   )
 import Control.Distributed.Process.Node ( newLocalNode, closeLocalNode )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
+import Control.Distributed.Process.Timeout (retry)
 
 import Control.Concurrent
   ( MVar
@@ -54,6 +55,10 @@ import Control.Exception ( SomeException )
 import Control.Monad ( liftM3, void, replicateM_, replicateM, forM_ )
 import Network.Transport (Transport)
 import Test.Framework
+
+
+requestTimeout :: Int
+requestTimeout = 1000000
 
 data TestCounters = TestCounters
     { cStart :: MVar ()        -- ^ RC has been started
@@ -100,7 +105,7 @@ tests oneNode transport = do
               takeMVar $ cStart counters
               Nothing <- tryTakeMVar $ cStop counters
               return ()
-            RSState (Just leader0) _ <- getState rGroup
+            RSState (Just leader0) _ <- retry requestTimeout $ getState rGroup
             return leader0
 
         rc <- liftIO $ takeMVar $ cRC counters
@@ -109,7 +114,7 @@ tests oneNode transport = do
         liftIO $ do
           takeMVar $ cStart counters
           takeMVar $ cStop counters
-        RSState (Just _) _ <- getState rGroup
+        RSState (Just _) _ <- retry requestTimeout $ getState rGroup
         return ()
     ]
 

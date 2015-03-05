@@ -29,6 +29,7 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( Serializable )
+import Control.Distributed.Process.Timeout (retry)
 
 import Control.Applicative ((<$>))
 import Control.Arrow (first)
@@ -69,6 +70,9 @@ triggerEvent x = promulgate x >>= \pid -> withMonitor pid wait
 invoke :: Serializable a => ProcessId -> a -> Process ()
 invoke them x = send them x >> expect
 
+requestTimeout :: Int
+requestTimeout = 1000000
+
 secs :: Int
 secs = 1000000
 
@@ -106,7 +110,7 @@ tests transport internals = do
 
     return
         [ testSuccess "eq-init-empty" ==> \_ _ rGroup -> do
-              (_, []) <- getState rGroup
+              (_, []) <- retry requestTimeout $ getState rGroup
               return ()
         , testSuccess "eq-is-registered" ==> \eq _ _ -> do
               eqLoc <- whereis eventQueueLabel
@@ -116,44 +120,58 @@ tests transport internals = do
               pid <- promulgateEQ [self] (1 :: Int)
               _ <- monitor pid
               (_ :: ProcessMonitorNotification) <- expect
-              (_, [HAEvent (EventId _ 1) _ _]) <- getState rGroup
+              (_, [HAEvent (EventId _ 1) _ _]) <- retry requestTimeout $
+                                                    getState rGroup
               return ()
         , testSuccess "eq-one-event" ==> \_ _ rGroup -> do
               triggerEvent 1
-              (_, [HAEvent (EventId _ 1) _ _]) <- getState rGroup
+              (_, [HAEvent (EventId _ 1) _ _]) <- retry requestTimeout $
+                                                    getState rGroup
               return ()
         , testSuccess "eq-many-events" ==> \_ _ rGroup -> do
               mapM_ triggerEvent [1..10]
-              assert . (== 10) . length . snd =<< getState rGroup
+              assert . (== 10) . length . snd =<< retry requestTimeout
+                                                    (getState rGroup)
         , testSuccess "eq-trim-one" ==> \eq _ rGroup -> do
               mapM_ triggerEvent [1..10]
-              (_, (HAEvent evtid _ _ ):_) <- getState rGroup
+              (_, (HAEvent evtid _ _ ):_) <- retry requestTimeout $
+                                               getState rGroup
               invoke eq evtid
-              assert . (== 9) . length . snd =<< getState rGroup
+              assert . (== 9) . length . snd =<< retry requestTimeout
+                                                   (getState rGroup)
         , testSuccess "eq-trim-idempotent" ==> \eq _ rGroup -> do
               mapM_ triggerEvent [1..10]
-              (_, (HAEvent evtid _ _ ):_) <- getState rGroup
-              before <- map (eventCounter . eventId) . snd <$> getState rGroup
+              (_, (HAEvent evtid _ _ ):_) <- retry requestTimeout $
+                                               getState rGroup
+              before <- map (eventCounter . eventId) . snd <$>
+                          retry requestTimeout (getState rGroup)
               invoke eq evtid
-              trim1 <- map (eventCounter . eventId) . snd <$> getState rGroup
+              trim1 <- map (eventCounter . eventId) . snd <$>
+                          retry requestTimeout (getState rGroup)
               invoke eq evtid
-              trim2 <- map (eventCounter . eventId) . snd <$> getState rGroup
+              trim2 <- map (eventCounter . eventId) . snd <$>
+                          retry requestTimeout (getState rGroup)
               assert (before /= trim1 && before /= trim2 && trim1 == trim2)
         , testSuccess "eq-trim-none" ==> \eq na rGroup -> do
               mapM_ triggerEvent [1..10]
-              before <- map (eventCounter . eventId) . snd <$> getState rGroup
+              before <- map (eventCounter . eventId) . snd <$>
+                          retry requestTimeout (getState rGroup)
               invoke eq $  EventId na 11
-              trim <- map (eventCounter . eventId) . snd <$> getState rGroup
+              trim <- map (eventCounter . eventId) . snd <$>
+                          retry requestTimeout (getState rGroup)
               assert (before == trim)
         , testSuccess "eq-with-no-rc-should-replicate" $ setup $ \_ _ rGroup -> do
               triggerEvent 1
-              (_, [ HAEvent (EventId _ 1) _ _]) <- getState rGroup
+              (_, [ HAEvent (EventId _ 1) _ _]) <- retry requestTimeout $
+                                                     getState rGroup
               return ()
         , testSuccess "eq-should-lookup-for-rc" $ setup $ \_ _ rGroup -> do
               self <- getSelfPid
-              updateStateWith rGroup $ $(mkClosure 'setRC) $ Just self
+              retry requestTimeout $
+                updateStateWith rGroup $ $(mkClosure 'setRC) $ Just self
               triggerEvent 1
-              (_, [ HAEvent (EventId _ 1) _ _]) <- getState rGroup
+              (_, [ HAEvent (EventId _ 1) _ _]) <- retry requestTimeout $
+                                                     getState rGroup
               return ()
         , testSuccess "eq-should-record-that-rc-died" $ setup $ \eq _ _ -> do
               simpleSubscribe eq (Sub :: Sub RCDied)
@@ -212,6 +230,6 @@ tests transport internals = do
         , testSuccess "eq-save-path" ==> \eq _ rGroup -> do
               triggerEvent 1
               (HAEvent _ _ s1) <- expect :: Process (HAEvent [ByteString])
-              (_, [HAEvent _ _ _]) <- getState rGroup
+              (_, [HAEvent _ _ _]) <- retry requestTimeout $ getState rGroup
               assert (head s1 == eq)
         ]
