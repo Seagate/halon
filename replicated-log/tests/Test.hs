@@ -20,7 +20,6 @@ import Control.Distributed.State
     , commandEqDict__static
     , commandSerializableDict__static )
 import qualified Control.Distributed.Log.Policy as Policy
-import Control.Distributed.Log.Policy -- XXX workaround for distributed-process TH bug.
 import Control.Distributed.Process.Timeout (retry, timeout)
 
 import Control.Distributed.Process hiding (send)
@@ -35,7 +34,7 @@ import Network.Transport.TCP
 
 import Control.Monad (forM_, replicateM, replicateM_, void, liftM2)
 import Data.Constraint (Dict(..))
-import Data.Binary (encode, Binary)
+import Data.Binary (Binary)
 import Data.List (isPrefixOf)
 import Data.Ratio ((%))
 import Data.Typeable (Typeable)
@@ -73,9 +72,6 @@ dictInt = SerializableDict
 dictState :: Dict (Typeable State)
 dictState = Dict
 
-dictNodeId :: SerializableDict NodeId
-dictNodeId = SerializableDict
-
 snapshotServerLbl :: String
 snapshotServerLbl = "snapshot-server"
 
@@ -112,18 +108,13 @@ snapshotServer = void $ serializableSnapshotServer
                     (filepath "replica-snapshots")
                     state0
 
-remotable [ 'dictInt, 'dictState, 'dictNodeId, 'testLog, 'testConfig
-          , 'snapshotServer
-          ]
+remotable [ 'dictInt, 'dictState, 'testLog, 'testConfig, 'snapshotServer ]
 
 sdictInt :: Static (SerializableDict Int)
 sdictInt = $(mkStatic 'dictInt)
 
 sdictState :: Static (Dict (Typeable State))
 sdictState = $(mkStatic 'dictState)
-
-sdictNodeId :: Static (SerializableDict NodeId)
-sdictNodeId = $(mkStatic 'dictNodeId)
 
 remoteTables :: RemoteTable
 remoteTables =
@@ -332,7 +323,7 @@ tests _ = do
                   State.update port incrementCP
                 () <- expect
                 () <- expect
-                liftIO $ closeLocalNode n
+                Log.killReplica h $ localNodeId n
                 retry retryTimeout $
                   State.update port incrementCP
                 () <- expect
@@ -351,10 +342,9 @@ tests _ = do
                 liftIO $ runProcess node2 $ registerInterceptor $ interceptor
 
                 forM_ [node1, node2] $ \lnid -> liftIO $ runProcess lnid $ do
-                    here <- getSelfNode
-                    snapshotServer
-                    retry retryTimeout $
-                      void $ Log.addReplica h here
+                  snapshotServer
+                  retry retryTimeout $
+                    void $ Log.addReplica h (localNodeId lnid)
 
                 Log.status h
                 -- We do an update to ensure the state is replicated before
@@ -365,13 +355,9 @@ tests _ = do
                 _ <- expectTimeout 1000000 :: Process (Maybe ())
                 _ <- expectTimeout 1000000 :: Process (Maybe ())
 
-                forM_ [node1, node2] $ \lnid -> liftIO $ runProcess lnid $ do
-                    here <- getSelfNode
-                    retry retryTimeout $
-                      Log.reconfigure h $
-                        staticClosure $(mkStatic 'Policy.notNode)
-                        `closureApply` closure (staticDecode sdictNodeId)
-                                               (encode here)
+                forM_ [node1, node2] $ \lnid ->
+                  retry retryTimeout $
+                    Log.removeReplica h (localNodeId lnid)
 
                 retry retryTimeout $
                   State.update port incrementCP
@@ -486,25 +472,14 @@ tests _ = do
                           newLocalNode transport remoteTables
                tryWithTimeout transport remoteTables 30000000 $ do
 
-                 setup' nodes $ \_ port -> do
+                 setup' nodes $ \h port -> do
                    retry retryTimeout $
                      State.update port incrementCP
                    assert . (>= 1) =<<
                      retry retryTimeout (State.select sdictInt port readCP)
                    say "Incremented state from scratch."
-                   -- Remove each replica and acceptor.
-                   forM_ nodes $ \n -> do
-                     whereisRemoteAsync n "test-log.replica"
-                     whereisRemoteAsync n "test-log.acceptor"
-                     WhereIsReply _ (Just p0) <- expect
-                     exit p0 "durability test"
-                     WhereIsReply _ (Just p1) <- expect
-                     exit p1 "durability test"
-                     _ <- monitor p0
-                     _ <- monitor p1
-                     ProcessMonitorNotification _ _ _ <- expect
-                     ProcessMonitorNotification _ _ _ <- expect
-                     return ()
+                   -- Kill each replica and acceptor.
+                   forM_ nodes $ Log.killReplica h
 
                  setup' nodes $ \_ port -> do
                    retry retryTimeout $
