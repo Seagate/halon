@@ -1064,6 +1064,9 @@ replica Dict
             , match $ \(SnapshotInfo ρs' leg' epoch' sref' w0' n) ->
                   if not (Map.member n log) && decreeNumber w <= n &&
                      decreeNumber w < decreeNumber w0' then do
+
+                    when (decreeLegislatureId d < leg') $ usend ppid ρs'
+
                     -- TODO: get the snapshot asynchronously
                     restoreSnapshot (stLogRestore sref') >>= \case
                      Nothing -> go st
@@ -1099,6 +1102,7 @@ replica Dict
             , matchIf (\(Max _ d' _ _) -> decreeNumber d < decreeNumber d') $
                        \(Max ρ d' epoch' ρs') -> do
                   say $ "Got Max " ++ show d'
+                  usend ppid ρs'
                   queryMissingFrom logName (decreeNumber w) [processNodeId ρ] $
                     Map.insert (decreeNumber d') undefined log
                   let cd' = max d' cd
