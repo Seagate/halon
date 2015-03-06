@@ -31,6 +31,7 @@ module Control.Distributed.Log.Internal
     , status
     , reconfigure
     , addReplica
+    , killReplica
     , removeReplica
       -- * Remote Tables
     , Control.Distributed.Log.Internal.__remoteTable
@@ -1604,12 +1605,12 @@ addReplica h@(Handle sdict1 sdict2 config log _) nid = do
     reconfigure h $ $(mkStaticClosure 'Policy.orpn)
         `closureApply` nodeIdClosure nid
 
--- | Kill the replica and acceptor and remove it from the group.
-removeReplica :: Typeable a
+-- | Kill the replica and acceptor.
+killReplica :: Typeable a
               => Handle a
               -> NodeId
               -> Process ()
-removeReplica h@(Handle _ _ config _ _) nid = do
+killReplica (Handle _ _ config _ _) nid = do
     conf <- unClosure config
     whereisRemoteAsync nid (acceptorLabel $ logName conf)
     whereisRemoteAsync nid (replicaLabel $ logName conf)
@@ -1623,6 +1624,13 @@ removeReplica h@(Handle _ _ config _ _) nid = do
                     Just p  -> exitAndWait p
       ]
 
+-- | Kill the replica and acceptor and remove it from the group.
+removeReplica :: Typeable a
+              => Handle a
+              -> NodeId
+              -> Process ()
+removeReplica h nid = do
+    killReplica h nid
     reconfigure h $ staticClosure $(mkStatic 'Policy.notThem)
         `closureApply` listNodeIdClosure [nid]
 

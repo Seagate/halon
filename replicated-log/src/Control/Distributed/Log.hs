@@ -21,6 +21,7 @@ module Control.Distributed.Log
     , status
     , reconfigure
     , addReplica
+    , killReplica
     , removeReplica
       -- * Remote Tables
     , Control.Distributed.Log.Internal.__remoteTable
