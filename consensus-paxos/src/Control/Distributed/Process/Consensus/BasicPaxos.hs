@@ -23,6 +23,7 @@ import Control.Distributed.Process.Quorum
 import Control.Distributed.Process hiding (callLocal)
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
+import Control.Distributed.Process.Internal.Types ( runLocalProcess )
 import Control.Distributed.Process.Trans (liftProcess)
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Control.Distributed.Static
@@ -32,10 +33,13 @@ import Control.Applicative ((<$>))
 import Control.Concurrent ( newEmptyMVar, putMVar, takeMVar, threadDelay )
 import Control.Exception ( SomeException, throwIO )
 import Control.Monad (when, forM_)
+import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary )
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
 import System.Random ( randomRIO )
+import qualified System.Timeout as T ( timeout )
+
 
 -- | An internal type used only by 'callLocal'.
 data Done = Done
@@ -62,6 +66,22 @@ callLocal p = mask_ $ do
            [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
                      (const $ return ())
            ]
+
+-- | Retries an action every certain amount of microseconds until it completes
+-- within the given time interval.
+--
+-- The action is interrupted, if necessary, to retry.
+--
+retry :: Int  -- ^ Amount of microseconds between retries
+      -> Process a -- ^ Action to perform
+      -> Process a
+retry t action = timeout t action >>= maybe (retry t action) return
+
+-- | A version of 'System.Timeout.timeout' for the 'Process' monad.
+timeout :: Int -> Process a -> Process (Maybe a)
+timeout t action
+    | schedulerIsEnabled = fmap Just action
+    | otherwise = ask >>= liftIO . T.timeout t . (`runLocalProcess` action)
 
 scout :: Serializable a
       => (forall b. Serializable b => n -> b -> Process ())
@@ -195,16 +215,17 @@ inline command(self,success,tb,d,b,x1) {
 
 -- | Basic Paxos proposers do not keep state across proposals.
 propose :: Serializable a
-        => (forall b. Serializable b => n -> b -> Process ())
+        => Int
+        -> (forall b. Serializable b => n -> b -> Process ())
         -> [n]
         -> DecreeId
         -> a
         -> Propose () a
-propose sendA acceptors d x = liftProcess $ do
+propose retryTimeout sendA acceptors d x = liftProcess $ do
   self <- getSelfPid
   loop 0 (BallotId 0 self)
     where loop backoff b = do
-            eth <- scout sendA acceptors d b
+            eth <- retry retryTimeout $ scout sendA acceptors d b
             let backoff' = if backoff == 0 then 200000 else 2 * backoff
             case eth of
               Left b'@BallotId{..} -> do
@@ -215,7 +236,7 @@ propose sendA acceptors d x = liftProcess $ do
                     else loop backoff' b
               Right xs -> do
                   let x' = chooseValue d x xs
-                  eth' <- command sendA acceptors d b x'
+                  eth' <- retry retryTimeout $ command sendA acceptors d b x'
                   case eth' of
                       Left BallotId{..} -> do
                         when (not schedulerIsEnabled) $
@@ -224,11 +245,13 @@ propose sendA acceptors d x = liftProcess $ do
                       Right _ -> return x'
 
 protocol :: forall a n. SerializableDict a
+         -> Int
          -> (n -> FilePath)
          -> Protocol n a
-protocol SerializableDict f =
+protocol SerializableDict retryTimeout f =
     Protocol { prl_acceptor = acceptor (undefined :: a) f
-             , prl_propose = propose }
+             , prl_propose = propose retryTimeout
+             }
 
 dictString :: SerializableDict String
 dictString = SerializableDict
@@ -237,11 +260,13 @@ remotable ['protocol, 'dictString]
 
 protocolClosure :: (Typeable a, Typeable n)
                 => Static (SerializableDict a)
+                -> Closure Int
                 -> Closure (n -> FilePath)
                 -> Closure (Protocol n a)
-protocolClosure sdict fp =
+protocolClosure sdict retryTimeoutClosure fp =
     staticClosure $(mkStatic 'protocol)
       `closureApply` staticClosure sdict
+      `closureApply` retryTimeoutClosure
       `closureApply` fp
 
 {-*promela

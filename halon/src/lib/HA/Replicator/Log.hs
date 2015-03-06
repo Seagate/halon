@@ -130,7 +130,8 @@ rgroupConfig :: (Int, Int) -> Log.Config
 rgroupConfig (snapshotThreshold, snapshotTimeout) = Log.Config
     { logName           = "halon-log"
     , consensusProtocol =
-          \dict -> BasicPaxos.protocol dict (filepath $ storageDir </> "acceptors")
+          \dict -> BasicPaxos.protocol dict 3000000
+                                       (filepath $ storageDir </> "acceptors")
     , persistDirectory  = filepath $ storageDir </> "replicas"
     , leaseTimeout      = 3000000
     , leaseRenewTimeout = 1000000

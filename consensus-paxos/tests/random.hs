@@ -79,7 +79,7 @@ run s = let (s0,s1) = split $ mkStdGen s
   forM_ [0..procs-1] $ \j -> spawnLocal $ killOnError self $ do
     let d = ds !! j
         x = xs !! j
-    x' <- runPropose (propose send αs (DecreeId 0 d) x)
+    x' <- runPropose (propose 1000000 send αs (DecreeId 0 d) x)
     ok <- liftIO $ atomicModifyIORef pmapR $ \pmap ->
       case Map.lookup d pmap of
         Nothing  -> (Map.insert d x' pmap, True)

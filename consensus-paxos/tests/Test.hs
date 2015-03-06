@@ -48,7 +48,7 @@ setup transport action = do
 
 proposeWrapper :: [ProcessId] -> DecreeId -> Int -> Process Bool
 proposeWrapper αs d x = (x ==) <$>
-    runPropose (BasicPaxos.propose send αs d x)
+    runPropose (BasicPaxos.propose 1000000 send αs d x)
 
 tests :: IO TestTree
 tests = do
