@@ -424,7 +424,6 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
     -- executed.
     --
     -- Invariant: @stateUnconfirmedDecree <= stateCurrentDecree@
-    -- Invariant: @stateWatermark <= stateUnconfirmedDecree@
     --
   , stateCurrentDecree     :: DecreeId
     -- | The reference to the last snapshot saved.
@@ -855,10 +854,8 @@ replica Dict
                     -- Only execute a reconfiguration if we are on an earlier
                     -- configuration.
                     | decreeLegislatureId d <= decreeLegislatureId w -> do
-                      let d' = d{ decreeLegislatureId = succ (decreeLegislatureId d)
-                                , decreeNumber = max (decreeNumber d) (decreeNumber w') }
-                          cd' = cd{ decreeLegislatureId = succ (decreeLegislatureId cd)
-                                  , decreeNumber = max (decreeNumber cd) (decreeNumber w') }
+                      let d' = w' { decreeNumber = max (decreeNumber d) (decreeNumber w') }
+                          cd' = w' { decreeNumber = max (decreeNumber cd) (decreeNumber w') }
                           w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
 
                       -- Update the list of acceptors of the proposer...
@@ -1072,10 +1069,6 @@ replica Dict
                     -- Trimming here ensures that the log does not accumulate
                     -- decrees indefinitely if the state is oftenly restored
                     -- before saving a snapshot.
-                    --
-                    -- Also, we have to trim the log first before restoring to
-                    -- ensure the latest membership can be restored if the
-                    -- replica needs to use the watermark at startup.
                     liftIO $ trimTheLog
                       acid (persistDirectory (processNodeId self)) ρs''
                       leg'' epoch'' (decreeNumber w0)
