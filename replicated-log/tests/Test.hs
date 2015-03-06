@@ -142,7 +142,8 @@ tests _ = do
     let setup :: Int                      -- ^ Number of nodes to spawn group on.
               -> (Log.Handle (Command State) -> State.CommandPort State -> Process ())
               -> IO ()
-        setup num action = tryWithTimeout transport remoteTables 30000000 $ do
+        setup = setupTimeout 5000000
+        setupTimeout t num action = tryWithTimeout transport remoteTables t $ do
             node0 <- getSelfNode
             nodes <- replicateM (num - 1) $ liftIO $ newLocalNode transport remoteTables
             setup' (node0 : map localNodeId nodes) action
@@ -285,7 +286,7 @@ tests _ = do
           , testSuccess "new-idempotent" . withTmpDirectory $ do
               n0 <- newLocalNode transport remoteTables
               n1 <- newLocalNode transport remoteTables
-              tryWithTimeout transport remoteTables 30000000
+              tryWithTimeout transport remoteTables 5000000
                   $ setup' [localNodeId n0, localNodeId n1] $ \_ port -> do
                 retry retryTimeout $ State.update port incrementCP
                 setup' [localNodeId n0, localNodeId n1] $ \_ port' -> do
@@ -296,7 +297,7 @@ tests _ = do
 
           , testSuccess "update-handle" . withTmpDirectory $ do
               n <- newLocalNode transport remoteTables
-              tryWithTimeout transport remoteTables 30000000
+              tryWithTimeout transport remoteTables 20000000
                   $ setup' [localNodeId n] $ \h port -> do
                 self <- getSelfPid
                 let interceptor "Increment." = usend self ()
@@ -331,7 +332,8 @@ tests _ = do
                 () <- expect
                 say "Both replicas incremented again after membership change."
 
-          , testSuccess "quorum-after-remove" . withTmpDirectory $ setup 1 $ \h port -> do
+          , testSuccess "quorum-after-remove" . withTmpDirectory $
+              setupTimeout 20000000 1 $ \h port -> do
                 self <- getSelfPid
                 node1 <- liftIO $ newLocalNode transport remoteTables
                 node2 <- liftIO $ newLocalNode transport remoteTables
@@ -366,7 +368,7 @@ tests _ = do
                 say "Still alive replica increments."
 
           , testSuccess "log-size-remains-bounded" . withTmpDirectory $
-              setup 1 $ \h port -> do
+              setupTimeout 60000000 1 $ \h port -> do
                 self <- getSelfPid
                 let logSizePfx = "Log size when trimming: "
                     interceptor :: String -> Process ()
