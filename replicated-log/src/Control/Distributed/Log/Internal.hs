@@ -585,10 +585,10 @@ replica Dict
     queryMissingFrom logName (decreeNumber w0) others $
         Map.insert (decreeNumber d) undefined log
 
-    ppid <- spawnLocal $ link self >> proposer self Bottom replicas
     timerPid <- spawnLocal $ link self >> timer
     leaseStart0' <- setLeaseTimer timerPid leaseStart0 replicas
     bpid <- spawnLocal $ link self >> batcher (sendBatch self)
+    ppid <- spawnLocal $ link self >> proposer self bpid Bottom replicas
 
     go ReplicaState
          { stateProposerPid = ppid
@@ -684,9 +684,9 @@ replica Dict
 
     -- The proposer process makes consensus proposals.
     -- Proposals are aborted when a reconfiguration occurs.
-    proposer ρ s αs =
+    proposer ρ bpid s αs =
       receiveWait
-        [ match $ \(d , request@(Request {requestValue = v :: Value a})) -> do
+        [ match $ \r@(d , request@(Request {requestValue = v :: Value a})) -> do
             self <- getSelfPid
             -- The MVar stores the result of the proposal.
             -- With an MVar we can ensure that:
@@ -701,14 +701,27 @@ replica Dict
                                  (prl_propose (sendAcceptor logName) αs d v) s
                      liftIO $ putMVar mv result
                      usend self ()
-            (αs',blocked) <- receiveWait
-                      [ match $ \() -> return (αs,False)
+            let -- After this call the mailbox is guaranteed to be free of @()@
+                -- notifications from the worker.
+                --
+                -- Returns true if the worker was blocked.
+                clearNotifications = do
+                  -- block proposal
+                  blocked <- liftIO $ tryPutMVar mv undefined
+                  -- consume the final () if not blocked
+                  when (not blocked) expect
+                  return blocked
+            (αs', r', blocked) <- receiveWait
+                      [ match $ \() -> return (αs, r, False)
                       , match $ \αs' -> do
-                         -- block proposal
-                         blocked <- liftIO $ tryPutMVar mv undefined
-                         -- consume the final () if not blocked
-                         when (not blocked) expect
-                         return (αs',blocked)
+                          -- reconfiguration of the proposer
+                          (,,) αs' r <$> clearNotifications
+                      , match $ \r' -> do
+                          -- Let the batcher know of the aborted request.
+                          when (isNothing $ requestForLease request) $
+                            usend bpid ()
+                          -- a new request intended to replace the current one
+                          (,,) αs r' <$> clearNotifications
                       ]
             if blocked then do
               exit pid "proposer reconfiguration"
@@ -718,14 +731,14 @@ replica Dict
               --
               -- TODO: Consider if there is a way to avoid competition of
               -- proposers here.
-              usend self (d, request)
-              proposer ρ s αs'
+              usend self r'
+              proposer ρ bpid s αs'
             else do
               (v',s') <- liftIO $ takeMVar mv
               usend ρ (d, v', request)
-              proposer ρ s' αs'
+              proposer ρ bpid s' αs'
 
-        , match $ proposer ρ s
+        , match $ proposer ρ bpid s
         ]
 
     go :: ReplicaState s ref a -> Process b
@@ -754,12 +767,13 @@ replica Dict
 
             -- | Makes a lease request. It takes the legislature on which the
             -- request is valid.
-            mkLeaseRequest :: LegislatureId -> Process (Request a)
-            mkLeaseRequest l = do
+            mkLeaseRequest :: LegislatureId -> [ProcessId] -> [NodeId]
+                           -> Process (Request a)
+            mkLeaseRequest l senders replicas = do
               now <- liftIO $ getTime Monotonic
-              let ρs' = here : others
+              let ρs' = here : filter (here /=) replicas
               return Request
-                { requestSender   = [self]
+                { requestSender   = senders
                 , requestValue    = Reconf now ρs' :: Value a
                 , requestHint     = None
                 , requestForLease = Just l
@@ -772,7 +786,8 @@ replica Dict
                        \LeaseRenewalTime -> do
                   mLeader <- liftIO $ getLeader
                   cd' <- if maybe True (== here) mLeader then do
-                      leaseRequest <- mkLeaseRequest $ decreeLegislatureId d
+                      leaseRequest <-
+                        mkLeaseRequest (decreeLegislatureId d) [] ρs
                       usend ppid (cd, leaseRequest)
                       return $ succ cd
                     else
@@ -797,9 +812,8 @@ replica Dict
                   _ <- liftIO $ Acid.update acid $
                            MemoryInsert (decreeNumber dᵢ) (v :: Value a)
                   case locale of
-                      -- Ack back to the client, but only if it is not us asking
-                      -- the lease (no other replica uses locale Local).
-                      Local κs | κs /= [self] -> forM_ κs $ flip usend ()
+                      -- Ack back to the client.
+                      Local κs -> forM_ κs $ flip usend ()
                       _ -> return ()
                   usend self $ Decree Stored dᵢ v
                   go st
@@ -933,7 +947,8 @@ replica Dict
                   (s', cd') <- case mLeader of
                      -- Drop the request and ask for the lease.
                      Nothing -> do
-                       leaseRequest <- mkLeaseRequest $ decreeLegislatureId d
+                       leaseRequest <-
+                         mkLeaseRequest (decreeLegislatureId d) [] ρs
                        usend ppid (cd, leaseRequest)
                        -- Notify the batcher.
                        usend bpid ()
@@ -1098,16 +1113,31 @@ replica Dict
             , matchIf (\_ -> otherwise) $ \(_ :: Max) -> do
                   go st
 
-              -- A replica is trying to join the group.
+              -- Replicas are going to join or leave the group.
             , matchIf (\(_, e, _) -> epoch <= e) $
                        \(μ, _, Helo π cpolicy) -> do
 
+                  policy <- unClosure cpolicy
+                  let ρs' = policy ρs
+                      -- Place the proposer at the head of the list
+                      -- of replicas to be considered as future leader.
+                      ρs'' = here : filter (/= here) ρs'
+
                   mLeader <- liftIO $ getLeader
                   case mLeader of
-                    -- Drop the request and ask for the lease.
+                    -- Ask for the lease using the proposed membership.
+                    -- Thus reconfiguration is possible even when the group has
+                    -- no leaders and there is no quorum to elect one.
                     Nothing -> do
-                      mkLeaseRequest (decreeLegislatureId d) >>= usend self
-                      go st
+                      r <- mkLeaseRequest (decreeLegislatureId d) [π] ρs''
+                      usend ppid (d, r)
+
+                      -- Update the list of acceptors of the proposer, so we
+                      -- have a chance to suceed when there is no quorum.
+                      usend ppid (intersect ρs ρs')
+
+                      if d == cd then go st { stateCurrentDecree = succ cd }
+                      else go st
 
                     -- Drop the request.
                     Just leader | here /= leader -> do
@@ -1116,11 +1146,7 @@ replica Dict
 
                     -- I'm the leader, so handle the request.
                     _ -> do
-                      policy <- unClosure cpolicy
-                      let ρs' = policy ρs
-                          -- Place the proposer at the head of the list
-                          -- of replicas to be considered as future leader.
-                          ρs'' = here : filter (/= here) ρs'
+
                       requestStart <- liftIO $ getTime Monotonic
                       -- Get self to propose reconfiguration...
                       usend self ( μ
@@ -1134,7 +1160,8 @@ replica Dict
                                      }
                                  )
 
-                      -- Update the list of acceptors of the proposer...
+                      -- Update the list of acceptors of the proposer, so we
+                      -- have a chance to suceed when there is no quorum.
                       usend ppid (intersect ρs ρs')
 
                       go st
@@ -1352,8 +1379,13 @@ ambassadorAux SerializableDict Config{logName, leaseTimeout} (ρ0 : others)
       , match $ \m@(Helo κ _) -> do
           usend κ ()
           self <- getSelfPid
-          Foldable.forM_ mLeader $ flip (sendReplica logName) (self, epoch, m)
-          go epoch mLeader ρs ref
+          -- A reconfiguration decree does not need to go necessarily to the
+          -- leader. The replicas might have lost quorum and could be unable to
+          -- elect a new leader.
+          let ρ  : ρss = ρs
+              ρs' = maybe (ρss ++ [ρ]) (const ρs) mLeader
+          sendReplica logName (maybe ρ id mLeader) (self, epoch, m)
+          go epoch mLeader ρs' ref
 
         -- A request
       , match $ \a -> do
