@@ -90,7 +90,8 @@ snapshotThreashold = 5
 testConfig :: Log.Config
 testConfig = Log.Config
     { logName           = "test-log"
-    , consensusProtocol = \dict -> BasicPaxos.protocol dict (filepath "acceptors")
+    , consensusProtocol = \dict -> BasicPaxos.protocol dict 1000000
+                                                       (filepath "acceptors")
     , persistDirectory  = filepath "replicas"
     , leaseTimeout      = 1000000
     , leaseRenewTimeout = 300000
