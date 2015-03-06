@@ -1065,36 +1065,41 @@ replica Dict
                   if not (Map.member n log) && decreeNumber w <= n &&
                      decreeNumber w < decreeNumber w0' then do
 
-                    when (decreeLegislatureId d < leg') $ usend ppid ρs'
+                    let leg  = decreeLegislatureId d
+                        leg'' = max leg leg'
+                        epoch'' = if leg' >= leg then epoch' else epoch
+                        ρs'' = if leg' >= leg then ρs' else ρs
+                    -- Trimming here ensures that the log does not accumulate
+                    -- decrees indefinitely if the state is oftenly restored
+                    -- before saving a snapshot.
+                    --
+                    -- Also, we have to trim the log first before restoring to
+                    -- ensure the latest membership can be restored if the
+                    -- replica needs to use the watermark at startup.
+                    liftIO $ trimTheLog
+                      acid (persistDirectory (processNodeId self)) ρs''
+                      leg'' epoch'' (decreeNumber w0)
+
+                    when (leg < leg') $ usend ppid ρs'
 
                     -- TODO: get the snapshot asynchronously
-                    restoreSnapshot (stLogRestore sref') >>= \case
-                     Nothing -> go st
-                     Just s' -> do
-                      let leg  = decreeLegislatureId d
-                          leg'' = max leg leg'
-                          epoch'' = if leg' >= leg then epoch' else epoch
-                          ρs'' = if leg' >= leg then ρs' else ρs
-                          d'  = DecreeId leg'' (max (decreeNumber w0')
-                                                    (decreeNumber d))
-                          cd' = DecreeId leg'' (max (decreeNumber w0')
-                                                    (decreeNumber cd))
-                      -- Trimming here ensures that the log does not accumulate
-                      -- decrees indefinitely if the state is oftenly restored
-                      -- before saving a snapshot.
-                      liftIO $ trimTheLog
-                        acid (persistDirectory (processNodeId self)) ρs''
-                        leg'' epoch'' (decreeNumber w0')
-
-                      go st { stateReplicas          = ρs''
-                            , stateUnconfirmedDecree = d'
-                            , stateCurrentDecree     = cd'
-                            , stateSnapshotRef       = Just sref'
-                            , stateSnapshotWatermark = w0'
-                            , stateWatermark         = w0'
-                            , stateLogState          = s'
-                            , stateEpoch             = epoch''
-                            }
+                    st' <- restoreSnapshot (stLogRestore sref') >>= \case
+                             Nothing -> return st
+                             Just s' -> return st
+                                         { stateSnapshotRef       = Just sref'
+                                         , stateWatermark         = w0'
+                                         , stateSnapshotWatermark = w0'
+                                         , stateLogState          = s'
+                                         }
+                    let d'  = DecreeId leg'' (max (decreeNumber w0')
+                                                  (decreeNumber d))
+                        cd' = DecreeId leg'' (max (decreeNumber w0')
+                                                  (decreeNumber cd))
+                    go st' { stateReplicas          = ρs''
+                           , stateUnconfirmedDecree = d'
+                           , stateCurrentDecree     = cd'
+                           , stateEpoch             = epoch''
+                           }
                   else go st
 
               -- Upon getting the max decree of another replica, compute the
