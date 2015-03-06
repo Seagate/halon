@@ -31,6 +31,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , expect
   , receiveChan
   , receiveWait
+  , receiveTimeout
   , monitor
   , spawnLocal
   , spawn
@@ -507,6 +508,12 @@ receiveWait = if schedulerIsEnabled
             sendS (Blocking self)
             TestReceive <- DP.expect
             go r ms'
+
+{-# NOINLINE receiveTimeout #-}
+receiveTimeout :: Int -> [ Match b ] -> Process (Maybe b)
+receiveTimeout us = if schedulerIsEnabled
+              then fmap Just . receiveWait
+              else DP.receiveTimeout us . map (flip unMatch Nothing)
 
 -- | Shorthand for @receiveWait [ match return ]@
 expect :: Serializable a => Process a

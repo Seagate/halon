@@ -17,6 +17,7 @@ module Control.Distributed.Process
   , expect
   , expectTimeout
   , receiveWait
+  , receiveTimeout
   , receiveChan
   , monitor
   , spawnLocal
@@ -34,7 +35,9 @@ import Control.Distributed.Process.Scheduler.Internal
   , matchChan
   , matchSTM
   , expect
-  , receiveWait )
+  , receiveWait
+  , receiveTimeout
+  )
 import qualified Control.Distributed.Process.Scheduler.Internal as Internal
 import qualified "distributed-process" Control.Distributed.Process as DP
 import "distributed-process" Control.Distributed.Process as DPEtc
@@ -51,6 +54,7 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , matchSTM
   , expect
   , expectTimeout
+  , receiveTimeout
   , receiveWait
   , receiveChan
   , monitor
