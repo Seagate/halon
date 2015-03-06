@@ -26,8 +26,6 @@ import Data.Acid
 import Data.Binary (encode, decode)
 import Data.SafeCopy
 import Data.Typeable
-import System.Directory (removeDirectoryRecursive)
-import System.FilePath ((</>))
 
 
 -- | Operations to initialize, read and write snapshots
@@ -180,10 +178,15 @@ serializableSnapshotServer serverLbl snapshotDirectory s0 = do
         , match $ \(pid, (d, s)) -> do
             liftIO $ withSnapshotAcidState here $ \acid -> do
               update acid $ WriteSnapshot d (SafeCopyFromBinary s)
-              createCheckpoint acid
-              createArchive acid
-              removeDirectoryRecursive $ snapshotDirectory here
-                                         </> "Archive"
+              -- TODO: fix checkpoints in acid-state.
+              -- "log-size-remains-bounded" and "durability" were failing
+              -- because acid-state would complain that the checkpoint file is
+              -- missing.
+              --
+              -- createCheckpoint acid
+              -- createArchive acid
+              -- removeDirectoryRecursive $ snapshotDirectory here
+              --                           </> "Archive"
             usend pid ()
         ]
     register serverLbl pid
