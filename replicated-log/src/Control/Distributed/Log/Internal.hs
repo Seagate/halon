@@ -92,8 +92,6 @@ import GHC.Generics (Generic)
 import Prelude hiding (init, log)
 import Network.Transport (EndPointAddress(..))
 import System.Clock
-import System.Directory (removeDirectoryRecursive)
-import System.FilePath ((</>))
 
 deriving instance Typeable Eq
 
@@ -386,14 +384,18 @@ trimTheLog :: Serializable a
            -> LegislatureId -- ^ Epoch of the given membership
            -> Int           -- ^ Log index
            -> IO ()
-trimTheLog acid persistDir ρs leg epoch w0 = do
+trimTheLog acid _persistDir ρs leg epoch w0 = do
     update acid $ MemoryTrim ρs leg epoch w0
-    createCheckpoint acid
+    -- TODO: fix checkpoints in acid-state.
+    -- "log-size-remains-bounded" and "durability" were failing because
+    -- acid-state would complain that the checkpoint file is missing.
+    --
+    -- createCheckpoint acid
     -- This call collects all acid data needed to reconstruct states prior to
     -- the last checkpoint.
-    Acid.createArchive acid
+    -- Acid.createArchive acid
     -- And this call removes the collected state.
-    removeDirectoryRecursive $ persistDir </> "Archive"
+    -- removeDirectoryRecursive $ persistDir </> "Archive"
 
 -- | Small view function for extracting a specialized 'Protocol'. Used in 'replica'.
 unpackConfigProtocol :: Serializable a => Config -> (Config, Protocol NodeId (Value a))
