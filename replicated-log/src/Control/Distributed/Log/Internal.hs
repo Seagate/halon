@@ -686,10 +686,7 @@ replica Dict
     -- Proposals are aborted when a reconfiguration occurs.
     proposer ρ s αs =
       receiveWait
-        [ match $ \( d
-                   , μs :: [ProcessId]
-                   , request@(Request {requestValue = v :: Value a})
-                   ) -> do
+        [ match $ \(d , request@(Request {requestValue = v :: Value a})) -> do
             self <- getSelfPid
             -- The MVar stores the result of the proposal.
             -- With an MVar we can ensure that:
@@ -721,11 +718,11 @@ replica Dict
               --
               -- TODO: Consider if there is a way to avoid competition of
               -- proposers here.
-              usend self (d, μs, request)
+              usend self (d, request)
               proposer ρ s αs'
             else do
               (v',s') <- liftIO $ takeMVar mv
-              usend ρ (d, v', μs, request)
+              usend ρ (d, v', request)
               proposer ρ s' αs'
 
         , match $ proposer ρ s
@@ -776,10 +773,7 @@ replica Dict
                   mLeader <- liftIO $ getLeader
                   cd' <- if maybe True (== here) mLeader then do
                       leaseRequest <- mkLeaseRequest $ decreeLegislatureId d
-                      usend ppid ( cd
-                                 , [] :: [ProcessId]
-                                 , leaseRequest
-                                 )
+                      usend ppid (cd, leaseRequest)
                       return $ succ cd
                     else
                       return cd
@@ -918,10 +912,7 @@ replica Dict
                     Just l | l < decreeLegislatureId d -> return cd
                     -- Send to the proposer otherwise.
                     _ -> do
-                      usend ppid ( cd
-                                 , [] :: [ProcessId]
-                                 , request
-                                 )
+                      usend ppid (cd, request)
                       return $ succ cd
                   go st{ stateCurrentDecree = cd' }
 
@@ -930,8 +921,8 @@ replica Dict
                   mLeader <- liftIO getLeader
                   if epoch <= e && mLeader == Just here then do
                     usend bpid request
-                  else
-                    usend μ (epoch, ρs)
+                  else when (e < epoch) $
+                         usend μ (epoch, ρs)
                   go st
 
               -- Message from the batcher
@@ -943,15 +934,9 @@ replica Dict
                      -- Drop the request and ask for the lease.
                      Nothing -> do
                        leaseRequest <- mkLeaseRequest $ decreeLegislatureId d
-                       usend ppid ( cd
-                                  , [] :: [ProcessId]
-                                  , leaseRequest
-                                  )
+                       usend ppid (cd, leaseRequest)
                        -- Notify the batcher.
                        usend bpid ()
-                       -- Notify the ambassadors.
-                       forM_ (map batcherMsgAmbassador rs) $
-                         flip usend (epoch, ρs)
                        return (s, succ cd)
 
                      -- Drop the request.
@@ -997,7 +982,6 @@ replica Dict
                            BatcherMsg { batcherMsgRequest = r } : _ -> do
                              usend ppid
                                ( cd
-                               , map batcherMsgAmbassador rs' :: [ProcessId]
                                , if isReconf $ requestValue r then r
                                  else Request
                                    { requestSender =
@@ -1022,7 +1006,7 @@ replica Dict
               -- The request is dropped if the decree was accepted with a
               -- different value already.
             , match $
-                  \(dᵢ, vᵢ, μs, Request κs (v :: Value a) _ rLease) -> do
+                  \(dᵢ, vᵢ, Request κs (v :: Value a) _ rLease) -> do
                   -- If the passed decree accepted other value than our
                   -- client's, don't treat it as local (ie. do not report back
                   -- to the client yet).
@@ -1033,9 +1017,8 @@ replica Dict
                   forM_ others $ \ρ -> do
                       sendReplica logName ρ $ Decree Remote dᵢ vᵢ
 
-                  when (v /= vᵢ && isNothing rLease) $ do
-                    -- Send rejection acks.
-                    forM_ μs $ flip usend (epoch, ρs)
+                  when (v /= vᵢ && isNothing rLease) $
+                    -- Send rejection ack.
                     usend bpid ()
 
                   let d' = max d (succ dᵢ)
@@ -1124,10 +1107,6 @@ replica Dict
                     -- Drop the request and ask for the lease.
                     Nothing -> do
                       mkLeaseRequest (decreeLegislatureId d) >>= usend self
-                      -- When the leader is unknown, the negative ack is not
-                      -- very useful to the ambassador, but the batcher does
-                      -- need it to avoid blocking indefinitely.
-                      usend μ (epoch, ρs)
                       go st
 
                     -- Drop the request.
