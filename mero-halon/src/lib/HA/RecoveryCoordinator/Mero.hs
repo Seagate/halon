@@ -51,13 +51,23 @@ module HA.RecoveryCoordinator.Mero
        , getEpochId
        , decodeMsg
        , bounceServiceTo
+         -- * Host related functions
+       , locateNodeOnHost
+       , registerHost
+       , registerInterface
+         -- * Drive related functions
+       , driveStatus
+       , registerDrive
+       , updateDriveStatus
        ) where
 
 import Prelude hiding ((.), id, mapM_)
 import HA.Resources
 import HA.Service
+
+import HA.Resources.Mero
 #ifdef USE_MERO_NOTE
-import HA.Resources.Mero (ConfObject(..), ConfObjectState(..), Is(..))
+import HA.Resources.Mero.Note
 #endif
 import HA.NodeAgent.Messages
 import qualified HA.Services.EQTracker as EQT
@@ -248,6 +258,77 @@ registerServiceProcess n svc cfg sp = do
 getSelfProcessId :: CEP s ProcessId
 getSelfProcessId = liftProcess getSelfPid
 
+-- | Register a new drive in the system.
+registerDrive :: Enclosure
+              -> StorageDevice
+              -> CEP LoopState ()
+registerDrive enc dev = do
+  ls <- State.get
+  let rg' = G.newResource enc
+        >>> G.newResource dev
+        >>> G.connect Cluster Has enc
+        >>> G.connect enc Has dev
+          $ lsGraph ls
+  State.put ls { lsGraph = rg' }
+
+-- | Register a new host in the system.
+registerHost :: Host
+             -> CEP LoopState ()
+registerHost host = do
+  ls <- State.get
+  let rg' = G.newResource host
+        >>> G.connect Cluster Has host
+          $ lsGraph ls
+  State.put ls { lsGraph = rg' }
+
+-- | Register an interface on a host.
+registerInterface :: Host -- ^ Host on which the interface resides.
+                  -> Interface
+                  -> CEP LoopState ()
+registerInterface host int = do
+  ls <- State.get
+  let rg' = G.newResource host
+        >>> G.newResource int
+        >>> G.connect host Has int
+          $ lsGraph ls
+  State.put ls { lsGraph = rg' }
+
+-- | Record that a node is running on a host.
+locateNodeOnHost :: Node
+                 -> Host
+                 -> CEP LoopState ()
+locateNodeOnHost node host = do
+  ls <- State.get
+  let rg' = G.connect host Runs node
+          $ lsGraph ls
+  State.put ls { lsGraph = rg' }
+
+-- | Get the status of a storage device.
+driveStatus :: StorageDevice
+            -> CEP LoopState (Maybe StorageDeviceStatus)
+driveStatus dev = do
+  ls <- State.get
+  return $ case G.connectedTo dev Is (lsGraph ls) of
+    [a] -> Just a
+    _ -> Nothing
+
+-- | Update the status of a storage device.
+updateDriveStatus :: StorageDevice
+                  -> String
+                  -> CEP LoopState ()
+updateDriveStatus dev status = do
+  ls <- State.get
+  ds <- driveStatus dev
+  let statusNode = StorageDeviceStatus status
+      removeOldNode = case ds of
+        Just f -> G.disconnect dev Is f
+        Nothing -> id
+      rg' = G.newResource statusNode
+        >>> G.connect dev Is statusNode
+        >>> removeOldNode
+          $ lsGraph ls
+  State.put ls { lsGraph = rg' }
+
 sayRC :: String -> Process ()
 sayRC s = say $ "Recovery Coordinator: " ++ s
 
@@ -296,29 +377,21 @@ killService :: NodeId
 killService _ (ServiceProcess pid) reason =
   exit pid reason
 
--- | Bounce the service to a particular configuration.
-_bounceServiceTo :: Configuration a
-               => ConfigRole -- ^ Configuration role to bounce to.
-               -> Node -- ^ Node on which to bounce service
-               -> Service a -- ^ Service to bounce
-               -> G.Graph -- ^ Resource Graph
-               -> Process ProcessId -- ^ Process ID of new service instance.
-_bounceServiceTo role n@(Node nid) s g = case runningService n s g of
-    Just sp -> go sp
-    Nothing -> error "Cannot bounce non-existent service."
-  where
-    go sp = case readConfig sp role g of
-      Just cfg -> killService nid sp Shutdown >> _startService nid s cfg g
-      Nothing -> error "Cannot find current configuation"
-
-
 bounceServiceTo :: Configuration a
                 => ConfigRole
                 -> Node
                 -> Service a
                 -> CEP LoopState ProcessId
-bounceServiceTo role n s =
-    liftProcess . _bounceServiceTo role n s . lsGraph =<< State.get
+bounceServiceTo role n@(Node nid) s =
+    liftProcess . _bounceServiceTo . lsGraph =<< State.get
+  where
+    _bounceServiceTo g = case runningService n s g of
+        Just sp -> go sp
+        Nothing -> error "Cannot bounce non-existent service."
+      where
+        go sp = case readConfig sp role g of
+          Just cfg -> killService nid sp Shutdown >> _startService nid s cfg g
+          Nothing -> error "Cannot find current configuation"
 
 prepareEpochResponse :: CEP LoopState EpochResponse
 prepareEpochResponse = do

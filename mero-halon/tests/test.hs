@@ -44,6 +44,10 @@ ut transport = return $
     testGroup "ut"
       [ testCase "RCServiceRestarting" $
           HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport
+      , testCase "RGHostResources" $
+          HA.RecoveryCoordinator.Mero.Tests.testHostAddition transport
+      , testCase "RGDriveResources" $
+          HA.RecoveryCoordinator.Mero.Tests.testDriveAddition transport
       , testCase "uncleanRPCClose" $ threadDelay 2000000
       ]
 

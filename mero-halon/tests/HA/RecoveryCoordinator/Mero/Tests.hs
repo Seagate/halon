@@ -8,12 +8,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module HA.RecoveryCoordinator.Mero.Tests
-  ( testServiceRestarting
+  ( testDriveAddition
+  , testHostAddition
+  , testServiceRestarting
   ) where
 
 import Test.Framework
 
 import HA.Resources
+import HA.Resources.Mero
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue
@@ -27,6 +30,7 @@ import HA.Replicator.Mock ( MC_RG )
 #else
 import HA.Replicator.Log ( MC_RG )
 #endif
+import qualified HA.ResourceGraph as G
 import HA.Service
   ( ServiceFailed(..)
   , ServiceStartRequest(..)
@@ -35,6 +39,8 @@ import HA.Service
 import qualified HA.Services.Dummy as Dummy
 import RemoteTables ( remoteTable )
 
+import qualified SSPL.Bindings as SSPL
+
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotableDecl, mkStatic )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
@@ -42,9 +48,10 @@ import Network.Transport (Transport)
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ( first, second )
-import Control.Monad (forM_)
+import Control.Monad (forM_, void)
 
 import Data.Defaultable
+import Data.List (isInfixOf)
 
 type TestReplicatedState = (EventQueue, Multimap)
 
@@ -59,8 +66,9 @@ remotableDecl [ [d|
   testDict = SerializableDict
   |]]
 
-runRC :: (ProcessId, IgnitionArguments) -> MC_RG TestReplicatedState
-         -> Process ()
+runRC :: (ProcessId, IgnitionArguments)
+      -> MC_RG TestReplicatedState
+      -> Process ((ProcessId, ProcessId)) -- ^ MM, RC
 runRC (eq, args) rGroup = do
   rec (mm, rc) <- (,)
                   <$> (spawnLocal $ do
@@ -72,6 +80,7 @@ runRC (eq, args) rGroup = do
                         recoveryCoordinator args eq mm)
   send eq rc
   forM_ [mm, rc] $ \them -> send them ()
+  return (mm, rc)
 
 -- | Test that the recovery co-ordinator can successfully restart a service
 --   upon notification of failure.
@@ -94,7 +103,7 @@ testServiceRestarting transport = do
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        runRC (eq, IgnitionArguments [nid]) rGroup
+        void $ runRC (eq, IgnitionArguments [nid]) rGroup
 
         nodeUp ([nid], 2000000)
         _ <- promulgateEQ [nid] . encodeP $
@@ -111,3 +120,112 @@ testServiceRestarting transport = do
   where
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
+
+-- | Test that the recovery co-ordinator successfully adds a host to the
+--   resource graph.
+testHostAddition :: Transport -> IO ()
+testHostAddition transport = do
+    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
+        nid <- getSelfNode
+        self <- getSelfPid
+
+        registerInterceptor $ \string -> case string of
+            str@"Starting service dummy"   -> send self str
+            str' | "Registered host" `isInfixOf` str' -> send self ("Host" :: String)
+            _ -> return ()
+
+        say $ "tests node: " ++ show nid
+        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+                             [nid] ((Nothing,[]), fromList [])
+        pRGroup <- unClosure cRGroup
+        rGroup <- pRGroup
+        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
+
+        nodeUp ([nid], 2000000)
+
+        -- Send host update message to the RC
+        promulgateEQ [nid] (nid, mockEvent) >>= (flip withMonitor) wait
+        "Host" :: String <- expect
+
+        graph <- G.getGraph mm
+        let host = Host "mockhost"
+            int = Interface "192.168.0.1"
+            node = Node nid
+        assert $ G.memberResource host graph
+        assert $ G.memberResource int graph
+        assert $ G.memberEdge (G.Edge host Runs node) graph
+
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
+    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+         remoteTable
+    mockEvent = SSPL.MonitorResponseMonitor_msg_typeHost_update
+                { SSPL.monitorResponseMonitor_msg_typeHost_updateRunningProcessCount = Nothing
+                , SSPL.monitorResponseMonitor_msg_typeHost_updateIfData              = Just [mockIf]
+                , SSPL.monitorResponseMonitor_msg_typeHost_updateUname               = Just "mockhost"
+                , SSPL.monitorResponseMonitor_msg_typeHost_updateUpTime              = Nothing
+                , SSPL.monitorResponseMonitor_msg_typeHost_updateLocalMountData      = Nothing
+                , SSPL.monitorResponseMonitor_msg_typeHost_updateFreeMem             = Nothing
+                , SSPL.monitorResponseMonitor_msg_typeHost_updateLoggedInUsers       = Nothing
+                , SSPL.monitorResponseMonitor_msg_typeHost_updateTotalMem            = Nothing
+                , SSPL.monitorResponseMonitor_msg_typeHost_updateProcessCount        = Nothing
+                , SSPL.monitorResponseMonitor_msg_typeHost_updateBootTime            = Nothing
+                , SSPL.monitorResponseMonitor_msg_typeHost_updateCpuData             = Nothing
+                }
+    mockIf = SSPL.MonitorResponseMonitor_msg_typeHost_updateIfDataItem
+              { SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemTrafficIn         = Nothing
+              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemNetworkErrors     = Nothing
+              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemTrafficOut        = Nothing
+              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemDroppedPacketsIn  = Nothing
+              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemPacketsIn         = Nothing
+              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemDopppedPacketsOut = Nothing
+              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemIfId              = Just "192.168.0.1"
+              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemPacketsOut        = Nothing
+              }
+
+-- | Test that the recovery co-ordinator successfully adds a drive to the RG,
+--   and updates its status accordingly.
+testDriveAddition :: Transport -> IO ()
+testDriveAddition transport = do
+    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
+        nid <- getSelfNode
+        self <- getSelfPid
+
+        registerInterceptor $ \string -> case string of
+            str@"Starting service dummy"   -> send self str
+            str' | "Registered drive" `isInfixOf` str' -> send self ("Drive" :: String)
+            _ -> return ()
+
+        say $ "tests node: " ++ show nid
+        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+                             [nid] ((Nothing,[]), fromList [])
+        pRGroup <- unClosure cRGroup
+        rGroup <- pRGroup
+        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
+
+        nodeUp ([nid], 2000000)
+
+        -- Send host update message to the RC
+        promulgateEQ [nid] (nid, mockEvent "online") >>= (flip withMonitor) wait
+        "Drive" :: String <- expect
+
+        graph <- G.getGraph mm
+        let enc = Enclosure "enc1"
+            drive = StorageDevice 1
+            status = StorageDeviceStatus "online"
+        assert $ G.memberResource enc graph
+        assert $ G.memberResource drive graph
+        assert $ G.memberResource status graph
+        assert $ G.memberEdge (G.Edge enc Has drive) graph
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
+    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+         remoteTable
+    mockEvent status =
+      SSPL.MonitorResponseMonitor_msg_typeDisk_status_drivemanager
+        { SSPL.monitorResponseMonitor_msg_typeDisk_status_drivemanagerEnclosureSN = "enc1"
+        , SSPL.monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskNum = 1
+        , SSPL.monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskStatus = status
+        }
