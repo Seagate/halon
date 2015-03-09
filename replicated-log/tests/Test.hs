@@ -32,7 +32,7 @@ import Data.Rank1Dynamic
 import qualified Network.Socket as N (close)
 import Network.Transport.TCP
 
-import Control.Monad (forM_, replicateM, replicateM_, void, liftM2)
+import Control.Monad (forM, forM_, replicateM, replicateM_, void, liftM2)
 import Data.Constraint (Dict(..))
 import Data.Binary (Binary)
 import Data.List (isPrefixOf)
@@ -142,23 +142,28 @@ tests _ = do
     let setup :: Int                      -- ^ Number of nodes to spawn group on.
               -> (Log.Handle (Command State) -> State.CommandPort State -> Process ())
               -> IO ()
-        setup = setupTimeout 5000000
+        setup = setupTimeout 10000000
         setupTimeout t num action = tryWithTimeout transport remoteTables t $ do
             node0 <- getSelfNode
             nodes <- replicateM (num - 1) $ liftIO $ newLocalNode transport remoteTables
             setup' (node0 : map localNodeId nodes) action
         setup' nodes action =
             withScheduler [] 1 $ do
-                say $ "Spawning group."
-                forM_ nodes $ \n -> spawn n $(mkStaticClosure 'snapshotServer)
-                h <- Log.new $(mkStatic 'State.commandEqDict)
+              say $ "Spawning group."
+              bracket (forM nodes $ flip
+                         spawn $(mkStaticClosure 'snapshotServer)
+                      )
+                      (mapM_ (flip exit "setup")) $ const $
+                bracket (Log.new $(mkStatic 'State.commandEqDict)
                              ($(mkStatic 'State.commandSerializableDict)
                                 `staticApply` sdictState)
                              (staticClosure $(mkStatic 'testConfig))
                              (staticClosure $(mkStatic 'testLog))
                              nodes
-                port <- State.newPort h
-                action h port
+                        )
+                        (forM_ nodes . Log.killReplica)
+                        $ \h ->
+                  State.newPort h >>= action h
 
     let ut = testGroup "ut"
           [ testSuccess "single-command" . withTmpDirectory $ setup 1 $ \_ port -> do
@@ -209,7 +214,9 @@ tests _ = do
                     snapshotServer
                     retry retryTimeout $
                       void $ Log.addReplica h here
-                expect
+                () <- expect
+                say "New replica added."
+                Log.killReplica h (localNodeId node1)
 
           , testSuccess "addReplica-new-replica-old-decrees" . withTmpDirectory $ setup 1 $ \h port -> do
                 self <- getSelfPid
@@ -231,6 +238,7 @@ tests _ = do
                       void $ Log.addReplica h here
                 () <- expect
                 say "New replica incremented."
+                Log.killReplica h (localNodeId node1)
 
           , testSuccess "addReplica-new-replica-new-decrees" . withTmpDirectory $ setup 1 $ \h port -> do
                 self <- getSelfPid
@@ -251,6 +259,7 @@ tests _ = do
                 () <- expect
                 () <- expect
                 say "Both replicas incremented again after membership change."
+                Log.killReplica h (localNodeId node1)
 
           , testSuccess "addReplica-idempotent" . withTmpDirectory $
             setup 1 $ \h port -> do
@@ -287,13 +296,15 @@ tests _ = do
               n0 <- newLocalNode transport remoteTables
               n1 <- newLocalNode transport remoteTables
               tryWithTimeout transport remoteTables 5000000
-                  $ setup' [localNodeId n0, localNodeId n1] $ \_ port -> do
+                  $ setup' [localNodeId n0, localNodeId n1] $ \h port -> do
                 retry retryTimeout $ State.update port incrementCP
                 setup' [localNodeId n0, localNodeId n1] $ \_ port' -> do
                   retry retryTimeout $ State.update port' incrementCP
                   i <- retry retryTimeout $ State.select sdictInt port' readCP
                   assert (i >= 2)
                   say "Starting a group twice is idempotent."
+                  Log.killReplica h (localNodeId n0)
+                  Log.killReplica h (localNodeId n1)
 
           , testSuccess "update-handle" . withTmpDirectory $ do
               n <- newLocalNode transport remoteTables
@@ -331,6 +342,8 @@ tests _ = do
                 () <- expect
                 () <- expect
                 say "Both replicas incremented again after membership change."
+                Log.killReplica h (localNodeId node1)
+                Log.killReplica h here
 
           , testSuccess "quorum-after-remove" . withTmpDirectory $
               setupTimeout 20000000 1 $ \h port -> do
@@ -366,6 +379,8 @@ tests _ = do
                   State.update port incrementCP
                 () <- expect
                 say "Still alive replica increments."
+                Log.killReplica h (localNodeId node1)
+                Log.killReplica h (localNodeId node2)
 
           , testSuccess "log-size-remains-bounded" . withTmpDirectory $
               setupTimeout 60000000 1 $ \h port -> do
@@ -427,6 +442,7 @@ tests _ = do
                 assert $ all (<= snapshotThreashold * 3)
                              (uncurry (++) $ unzip logSizes')
                 say "Log size remains bounded after reconfiguration."
+                Log.killReplica h (localNodeId node1)
 
           , testSuccess "quorum-after-transient-failure" . withTmpDirectory $
               setup 1 $ \h port -> do
@@ -469,20 +485,19 @@ tests _ = do
                 () <- expect
                 _ <- expectTimeout 5000000 :: Process (Maybe ())
                 say "Replicas continue to have quorum."
+                Log.killReplica h (localNodeId node1)
 
            , testSuccess "durability" . withTmpDirectory $ do
                nodes <- replicateM 5 $ fmap localNodeId $
                           newLocalNode transport remoteTables
                tryWithTimeout transport remoteTables 30000000 $ do
 
-                 setup' nodes $ \h port -> do
+                 setup' nodes $ \_ port -> do
                    retry retryTimeout $
                      State.update port incrementCP
                    assert . (>= 1) =<<
                      retry retryTimeout (State.select sdictInt port readCP)
                    say "Incremented state from scratch."
-                   -- Kill each replica and acceptor.
-                   forM_ nodes $ Log.killReplica h
 
                  setup' nodes $ \_ port -> do
                    retry retryTimeout $
