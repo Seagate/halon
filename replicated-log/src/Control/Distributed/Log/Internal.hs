@@ -369,16 +369,21 @@ memoryGet = do
     return (replicas, leg, epoch, log)
 
 -- | Removes all entries below the given watermark from the log.
-memoryTrim :: [NodeId]
-           -> LegislatureId
-           -> LegislatureId
-           -> Int
-           -> Update (Memory a) ()
-memoryTrim replicas leg epoch w = do
-    Memory _ _ _ log <- get
+memoryTrim :: Int -> Update (Memory a) ()
+memoryTrim w = do
+    Memory replicas leg epoch log <- get
     put $ Memory replicas leg epoch $ snd $ Map.split (pred $ w) log
 
-$(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim])
+-- | Removes all entries below the given watermark from the log.
+memoryReconf :: [NodeId]
+             -> LegislatureId
+             -> LegislatureId
+             -> Update (Memory a) ()
+memoryReconf replicas leg epoch = do
+    Memory _ _ _ log <- get
+    put $ Memory replicas leg epoch log
+
+$(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim, 'memoryReconf])
 
 -- | Removes all entries below the given index from the log.
 --
@@ -386,13 +391,10 @@ $(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim])
 trimTheLog :: Serializable a
            => AcidState (Memory (Value a))
            -> FilePath      -- ^ Directory for persistence
-           -> [NodeId]   -- ^ Acceptors
-           -> LegislatureId -- ^ 'LegislatureId' of given membership
-           -> LegislatureId -- ^ Epoch of the given membership
            -> Int           -- ^ Log index
            -> IO ()
-trimTheLog acid _persistDir ρs leg epoch w0 = do
-    update acid $ MemoryTrim ρs leg epoch w0
+trimTheLog acid _persistDir w0 = do
+    update acid $ MemoryTrim w0
     -- TODO: fix checkpoints in acid-state.
     -- "log-size-remains-bounded" and "durability" were failing because
     -- acid-state would complain that the checkpoint file is missing.
@@ -840,8 +842,8 @@ replica Dict
                         -- This guarantees that if later operation fails the
                         -- latest membership can still be recovered from disk.
                         liftIO $ trimTheLog
-                          acid (persistDirectory (processNodeId self)) ρs
-                          (decreeLegislatureId d) epoch (decreeNumber w0)
+                          acid (persistDirectory (processNodeId self))
+                          (decreeNumber w0)
                         sref' <- stLogDump w' s'
                         return (w', Just sref')
                       else
@@ -867,6 +869,12 @@ replica Dict
                       let d' = w' { decreeNumber = max (decreeNumber d) (decreeNumber w') }
                           cd' = w' { decreeNumber = max (decreeNumber cd) (decreeNumber w') }
                           w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
+                          epoch' = if take 1 ρs' /= take 1 ρs
+                                     then decreeLegislatureId d'
+                                     else epoch
+
+                      liftIO $ Acid.update acid $
+                        MemoryReconf ρs' (decreeLegislatureId d') epoch'
 
                       -- Update the list of acceptors of the proposer...
                       usend ppid ρs'
@@ -877,9 +885,6 @@ replica Dict
                       usend self Status
 
                       leaseStart' <- setLeaseTimer timerPid requestStart ρs'
-                      let epoch' = if take 1 ρs' /= take 1 ρs
-                                     then decreeLegislatureId d'
-                                     else epoch
 
                       go st{ stateLeaseStart = leaseStart'
                            , stateReplicas = ρs'
@@ -1076,12 +1081,16 @@ replica Dict
                         leg'' = max leg leg'
                         epoch'' = if leg' >= leg then epoch' else epoch
                         ρs'' = if leg' >= leg then ρs' else ρs
+
+                    liftIO $ Acid.update acid $
+                      MemoryReconf ρs'' leg'' epoch''
+
                     -- Trimming here ensures that the log does not accumulate
                     -- decrees indefinitely if the state is oftenly restored
                     -- before saving a snapshot.
                     liftIO $ trimTheLog
-                      acid (persistDirectory (processNodeId self)) ρs''
-                      leg'' epoch'' (decreeNumber w0)
+                      acid (persistDirectory (processNodeId self))
+                      (decreeNumber w0)
 
                     when (leg < leg') $ usend ppid ρs'
 
