@@ -76,6 +76,7 @@ import Control.Monad.Reader (ask)
 import Control.Applicative ((<$>))
 import Control.Concurrent
 import Control.Exception (SomeException, throwIO)
+import Control.Exception.Enclosed (tryAny)
 import Control.Monad
 import Data.Constraint (Dict(..))
 import Data.Int (Int64)
@@ -612,10 +613,9 @@ replica Dict
     -- exception is thrown or if the operation times-out.
     restoreSnapshot :: Process s -> Process (Maybe s)
     restoreSnapshot restore =
-       -- TODO: maybe use an uninterruptible mask
-       mask_ (try $ timeout snapshotRestoreTimeout restore) >>= \case
-          Left (_ :: SomeException) -> return Nothing
-          Right ms -> return ms
+       mask_ (tryAny $ timeout snapshotRestoreTimeout restore) >>= \case
+         Left  _  -> return Nothing
+         Right ms -> return ms
 
     sendBatch :: ProcessId
               -> [(ProcessId, LegislatureId, Request a)]

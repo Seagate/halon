@@ -41,6 +41,7 @@ Library
                     constraints >= 0.4,
                     distributed-process-scheduler,
                     distributed-static >= 0.2,
+                    enclosed-exceptions >= 1.0.1.1,
                     mtl >= 2.0,
                     network-transport >= 0.3,
                     syb >= 0.3,
