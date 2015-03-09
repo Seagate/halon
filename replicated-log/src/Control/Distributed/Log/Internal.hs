@@ -62,6 +62,7 @@ import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Control.Distributed.Process.Internal.Types
     ( LocalProcessId(..)
     , nullProcessId
+    , ProcessExitException(..)
     )
 import Control.Distributed.Static
     (closureApply, staticApply, staticClosure)
@@ -75,7 +76,7 @@ import Control.Monad.Reader (ask)
 
 import Control.Applicative ((<$>))
 import Control.Concurrent
-import Control.Exception (SomeException, throwIO)
+import Control.Exception (SomeException, throwIO, fromException)
 import Control.Monad
 import Data.Constraint (Dict(..))
 import Data.Int (Int64)
@@ -301,6 +302,12 @@ data TimerMessage = LeaseRenewalTime
   deriving (Generic, Typeable)
 
 instance Binary TimerMessage
+
+-- | A reason used exclusively to terminate replicas.
+data TerminateReplica = TerminateReplica
+  deriving (Generic, Typeable)
+
+instance Binary TerminateReplica
 
 replicaLabel :: String -> String
 replicaLabel = (++ ".replica")
@@ -614,7 +621,10 @@ replica Dict
     restoreSnapshot restore =
        -- TODO: maybe use an uninterruptible mask
        mask_ (try $ timeout snapshotRestoreTimeout restore) >>= \case
-          Left (_ :: SomeException) -> return Nothing
+          Left e -> do
+            Foldable.forM_ (fromException e) $ \(ProcessExitException _ msg) ->
+              handleMessage_ msg (\TerminateReplica -> liftIO $ throwIO e)
+            return Nothing
           Right ms -> return ms
 
     sendBatch :: ProcessId
@@ -1484,10 +1494,10 @@ remoteHandle (Handle sdict1 sdict2 config log α) = do
     usend α $ Clone self
     RemoteHandle sdict1 sdict2 config log <$> expect
 
--- | Terminate the given process and wait until it dies.
-exitAndWait :: ProcessId -> Process ()
-exitAndWait p = callLocal $ bracket (monitor p) unmonitor $ \ref -> do
-    exit p "exitAndWait"
+-- | Terminate the given process with the given reason and wait until it dies.
+exitAndWait :: Serializable a => ProcessId -> a -> Process ()
+exitAndWait p reason = callLocal $ bracket (monitor p) unmonitor $ \ref -> do
+    exit p reason
     receiveWait
       [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref' == ref)
                 (const $ return ())
@@ -1636,7 +1646,7 @@ killReplica (Handle _ _ config _ _) nid = do
                 ) $
                  \(WhereIsReply _ mpid) -> case mpid of
                     Nothing -> return ()
-                    Just p  -> exitAndWait p
+                    Just p  -> exitAndWait p TerminateReplica
       ]
 
 -- | Kill the replica and acceptor and remove it from the group.
