@@ -141,18 +141,6 @@ gaps = go
                          , not (null gap) = gap : go xs
                          | otherwise = go xs
 
--- Like 'threadDelay' but takes an Int64 argument.
-expectTimeoutInt64 :: Serializable b => Int64 -> Process (Maybe b)
-expectTimeoutInt64 us | schedulerIsEnabled = fmap Just expect
-                      | otherwise = do
-    let delta  = 60 * 1000000
-        (q, r) = divMod us (fromIntegral delta)
-        go 0 = return Nothing
-        go n = expectTimeout delta
-                 >>= maybe (go $ n-1) (return . Just)
-    go (fromIntegral q :: Int) >>=
-      maybe (expectTimeout $ fromIntegral r) (return . Just)
-
 -- | Information about a log entry.
 data Hint
       -- | Assume nothing, be pessimistic.
@@ -218,12 +206,12 @@ data Config = Config
     , persistDirectory  :: NodeId -> FilePath
 
       -- | The length of time before leases time out, in microseconds.
-    , leaseTimeout      :: Int64
+    , leaseTimeout      :: Int
 
       -- | The length of time before a leader should seek lease renewal, in
       -- microseconds. To avoid leader churn, you should ensure that
       -- @leaseRenewTimeout <= leaseTimeout@.
-    , leaseRenewTimeout :: Int64
+    , leaseRenewTimeout :: Int
 
       -- | Scale the lease by this factor in non-leaders to protect against
       -- clock drift. This value /must/ be greater than 1.
@@ -639,8 +627,12 @@ replica Dict
         usend ρ nps
         expect
 
-    adjustForDrift t = t * numerator   driftSafetyFactor
-                     `div` denominator driftSafetyFactor
+    adjustForDrift :: Int -> Int
+    adjustForDrift t = fromIntegral $
+      -- Perform multiplication in Int64 arithmetic to reduce the chance
+      -- of an overflow.
+      fromIntegral t * numerator   driftSafetyFactor
+      `div` denominator driftSafetyFactor
 
     -- Sets the timer to renew or request the lease and returns the time at
     -- which the lease is started.
@@ -659,7 +651,7 @@ replica Dict
              if [here] == take 1 ρs then
                ( requestStart
                , max 0 $ (leaseTimeout - leaseRenewTimeout) -
-                         timeSpecToMicro (now - requestStart)
+                         fromIntegral (timeSpecToMicro $ now - requestStart)
                )
              -- Adjust the lease timeout to account for some clock drift, so
              -- non-leaders think the lease is slightly longer.
@@ -677,9 +669,9 @@ replica Dict
     timer :: Process ()
     timer = expect >>= wait
       where
-        wait :: (ProcessId, Int64, TimerMessage) -> Process ()
+        wait :: (ProcessId, Int, TimerMessage) -> Process ()
         wait (sender, t, msg) =
-          expectTimeoutInt64 t >>= maybe (usend sender msg >> timer) wait
+          expectTimeout t >>= maybe (usend sender msg >> timer) wait
 
     -- The proposer process makes consensus proposals.
     -- Proposals are aborted when a reconfiguration occurs.
@@ -1368,7 +1360,7 @@ ambassadorAux SerializableDict Config{logName, leaseTimeout} (ρ0 : others)
           else do
             when (isNothing mLeader) $ do
               -- Give some time to other replicas to elect a leader.
-              liftIO $ threadDelayInt64 leaseTimeout
+              liftIO $ threadDelay leaseTimeout
               -- Ask the head replica for the new leader.
               let ρ'' : _ = ρs
               getSelfPid >>= sendReplica logName ρ''
@@ -1377,7 +1369,7 @@ ambassadorAux SerializableDict Config{logName, leaseTimeout} (ρ0 : others)
       , match $ \(ProcessMonitorNotification ref' _ _) -> do
           if ref == ref' then do
             -- Give some time to other replicas to elect a leader.
-            liftIO $ threadDelayInt64 leaseTimeout
+            liftIO $ threadDelay leaseTimeout
             -- Continue poking at the disconnected leader if there
             -- are no more replicas.
             let ρ : ρss = maybe ρs (: ρs) mLeader
@@ -1417,18 +1409,9 @@ ambassadorAux SerializableDict Config{logName, leaseTimeout} (ρ0 : others)
           go epoch mLeader ρs ref
       ]
 
-    -- Like 'threadDelay' but takes an Int64 argument.
-    threadDelayInt64 :: Int64 -> IO ()
-    threadDelayInt64 us | schedulerIsEnabled = return ()
-                        | otherwise          = do
-      let delta  = 60 * 1000000
-          (q, r) = divMod us (fromIntegral delta)
-      replicateM_ (fromIntegral q) $ threadDelay delta
-      threadDelay $ fromIntegral r
-
     monitorReplica ρ = do
       whereisRemoteAsync ρ (replicaLabel logName)
-      expectTimeoutInt64 leaseTimeout >>= \case
+      expectTimeout leaseTimeout >>= \case
         Just (WhereIsReply _ mpid) -> do
           monitor $ maybe (nullProcessId ρ) id mpid
         Nothing -> monitor (nullProcessId ρ)
