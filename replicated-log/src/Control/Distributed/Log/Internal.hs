@@ -145,12 +145,12 @@ gaps = go
 expectTimeoutInt64 :: Serializable b => Int64 -> Process (Maybe b)
 expectTimeoutInt64 us | schedulerIsEnabled = fmap Just expect
                       | otherwise = do
-    let delta  = 60 * 1000000
+    let delta  = maxBound
         (q, r) = divMod us (fromIntegral delta)
         go 0 = return Nothing
         go n = expectTimeout delta
                  >>= maybe (go $ n-1) (return . Just)
-    go (fromIntegral q :: Int) >>=
+    go q >>=
       maybe (expectTimeout $ fromIntegral r) (return . Just)
 
 -- | Information about a log entry.
@@ -1412,9 +1412,11 @@ ambassadorAux SerializableDict Config{logName, leaseTimeout} (ρ0 : others)
     threadDelayInt64 :: Int64 -> IO ()
     threadDelayInt64 us | schedulerIsEnabled = return ()
                         | otherwise          = do
-      let delta  = 60 * 1000000
+      let delta  = maxBound
           (q, r) = divMod us (fromIntegral delta)
-      replicateM_ (fromIntegral q) $ threadDelay delta
+      -- Same as `replicateM_ q $ threadDelay delta` but cannot use it because q
+      -- is not of type 'Int'.
+      forM_ [1..q] $ const $ threadDelay delta
       threadDelay $ fromIntegral r
 
     monitorReplica ρ = do
