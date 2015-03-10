@@ -1113,12 +1113,21 @@ replica Dict
                   usend ppid ρs'
                   queryMissingFrom logName (decreeNumber w) [processNodeId ρ] $
                     Map.insert (decreeNumber d') undefined log
-                  let cd' = max d' cd
+
+                  let leg  = decreeLegislatureId d
+                      leg' = decreeLegislatureId d'
+                      leg'' = max leg leg'
+                      epoch'' = if leg < leg' then epoch' else epoch
+                      ρs'' = if leg < leg' then ρs' else ρs
+                      d'' = DecreeId leg'' $ decreeNumber d'
+                  when (leg < leg') $ usend ppid ρs'
+
+                  let cd' = max d'' cd
                   go st
-                    { stateUnconfirmedDecree = d'
+                    { stateUnconfirmedDecree = d''
                     , stateCurrentDecree = cd'
-                    , stateReplicas = ρs'
-                    , stateEpoch = epoch'
+                    , stateReplicas = ρs''
+                    , stateEpoch = epoch''
                     }
 
               -- Ignore max decree if it is lower than the current decree.
