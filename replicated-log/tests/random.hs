@@ -94,10 +94,8 @@ remotableDecl [ [d|
   testReplica (self,x,rHandle) = killOnError self $ do
     port <- Log.clone rHandle >>= State.newPort :: Process (CommandPort State)
     State.update port $ $(mkClosure 'consInt) x
-    liftIO $ putStrLn "update"
     newState <- State.select $(mkStatic 'ssdictState)
                   port $(mkStaticClosure 'readInts)
-    liftIO $ putStrLn "select"
     send self (x,reverse newState)
 
  |] ]
@@ -129,7 +127,7 @@ main = do
             "single" : _ -> randomIO
             sstr : _ -> return (read sstr)
             _ -> randomIO
-     let numIterations = 2
+     let numIterations = 20
      bracket
        (createTransport "127.0.0.1" "8080" defaultTCPParameters)
        (either (const (return ())) closeTransport)
