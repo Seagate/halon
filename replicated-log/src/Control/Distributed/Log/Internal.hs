@@ -1085,6 +1085,10 @@ replica Dict
 
                     when (leg < leg') $ usend ppid ρs'
 
+                    leaseStart' <- if leg < leg'
+                                   then setLeaseTimer timerPid 0 ρs'
+                                   else return leaseStart
+
                     -- TODO: get the snapshot asynchronously
                     st' <- restoreSnapshot (stLogRestore sref') >>= \case
                              Nothing -> return st
@@ -1098,7 +1102,8 @@ replica Dict
                                                   (decreeNumber d))
                         cd' = DecreeId leg'' (max (decreeNumber w0')
                                                   (decreeNumber cd))
-                    go st' { stateReplicas          = ρs''
+                    go st' { stateLeaseStart        = leaseStart'
+                           , stateReplicas          = ρs''
                            , stateUnconfirmedDecree = d'
                            , stateCurrentDecree     = cd'
                            , stateEpoch             = epoch''
@@ -1122,9 +1127,14 @@ replica Dict
                       d'' = DecreeId leg'' $ decreeNumber d'
                   when (leg < leg') $ usend ppid ρs'
 
+                  leaseStart' <- if leg < leg'
+                                 then setLeaseTimer timerPid 0 ρs'
+                                 else return leaseStart
+
                   let cd' = max d'' cd
                   go st
-                    { stateUnconfirmedDecree = d''
+                    { stateLeaseStart = leaseStart'
+                    , stateUnconfirmedDecree = d''
                     , stateCurrentDecree = cd'
                     , stateReplicas = ρs''
                     , stateEpoch = epoch''
