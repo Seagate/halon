@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 module SSPL.Bindings where
@@ -11,31 +11,31 @@ import           Data.Aeson.Schema.Choice
 import           Data.Aeson.Schema.Types
 import           Data.Aeson.Schema.Validator
 import           Data.Aeson.Types
-import           Data.Aeson.Types
 import           Data.Binary
 import           Data.Either
 import           Data.Functor
-import           Data.Hashable (Hashable)
+import           Data.Hashable               (Hashable)
 import           Data.HashMap.Lazy
 import           Data.List
 import           Data.Map
 import           Data.Maybe
-import           Data.Ratio
 import           Data.Scientific
 import           Data.Text
-import           Data.Text.Binary ()
+import           Data.Text.Binary            ()
 import           Data.Traversable
-import           Data.Typeable (Typeable)
+import           Data.Typeable               (Typeable)
 import           Data.Vector
-import           Data.Vector.Binary ()
+import           Data.Vector.Binary          ()
 import           GHC.Base
 import           GHC.Classes
-import           GHC.Generics (Generic)
+import           GHC.Generics                (Generic)
 import           GHC.Num
 import           GHC.Show
 import           Prelude
-import           Text.Regex
-import           Text.Regex.PCRE.String
+
+instance (Eq k, Hashable k, Binary k, Binary v) => Binary (HashMap k v) where
+  put x = put (Data.HashMap.Lazy.toList x)
+  get = Data.HashMap.Lazy.fromList <$> get
 
 instance Binary Scientific where
   put x = put $ toRational x
@@ -44,17 +44,12 @@ instance Binary Scientific where
 deriving instance Generic Value
 instance Binary Value
 
-instance (Eq k, Hashable k, Binary k, Binary v) => Binary (HashMap k v) where
-  put x = put (Data.HashMap.Lazy.toList x)
-  get = Data.HashMap.Lazy.fromList <$> get
-
 graph :: Data.Aeson.Schema.Types.Graph Data.Aeson.Schema.Types.Schema
                                        Data.Text.Text
+
 graph = Data.Map.fromList [(Data.Text.pack "MonitorResponse",
                             Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaType = [Data.Aeson.Schema.Choice.Choice1of2 Data.Aeson.Schema.Types.ObjectType],
-                                                          Data.Aeson.Schema.Types.schemaProperties = Data.HashMap.Lazy.fromList [(Data.Text.pack "sspl_ll_host",
-                                                                                                                                  Data.Aeson.Schema.Types.empty),
-                                                                                                                                 (Data.Text.pack "monitor_msg_type",
+                                                          Data.Aeson.Schema.Types.schemaProperties = Data.HashMap.Lazy.fromList [(Data.Text.pack "monitor_msg_type",
                                                                                                                                   Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaType = [Data.Aeson.Schema.Choice.Choice1of2 Data.Aeson.Schema.Types.ObjectType],
                                                                                                                                                                 Data.Aeson.Schema.Types.schemaProperties = Data.HashMap.Lazy.fromList [(Data.Text.pack "host_update",
                                                                                                                                                                                                                                         Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaType = [Data.Aeson.Schema.Choice.Choice1of2 Data.Aeson.Schema.Types.ObjectType],
@@ -180,15 +175,19 @@ graph = Data.Map.fromList [(Data.Text.pack "MonitorResponse",
                                                                                                                                                                                                                                         Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaType = [Data.Aeson.Schema.Choice.Choice1of2 Data.Aeson.Schema.Types.ObjectType],
                                                                                                                                                                                                                                                                       Data.Aeson.Schema.Types.schemaProperties = Data.HashMap.Lazy.fromList [(Data.Text.pack "enclosureSN",
                                                                                                                                                                                                                                                                                                                                               Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaType = [Data.Aeson.Schema.Choice.Choice1of2 Data.Aeson.Schema.Types.StringType],
-                                                                                                                                                                                                                                                                                                                                                                            Data.Aeson.Schema.Types.schemaRequired = Prelude.True}),
+                                                                                                                                                                                                                                                                                                                                                                            Data.Aeson.Schema.Types.schemaRequired = Prelude.True,
+                                                                                                                                                                                                                                                                                                                                                                            Data.Aeson.Schema.Types.schemaDescription = Data.Maybe.Just (Data.Text.pack "Enclosure Serial Number")}),
                                                                                                                                                                                                                                                                                                                                              (Data.Text.pack "diskNum",
                                                                                                                                                                                                                                                                                                                                               Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaType = [Data.Aeson.Schema.Choice.Choice1of2 Data.Aeson.Schema.Types.NumberType],
-                                                                                                                                                                                                                                                                                                                                                                            Data.Aeson.Schema.Types.schemaRequired = Prelude.True}),
+                                                                                                                                                                                                                                                                                                                                                                            Data.Aeson.Schema.Types.schemaRequired = Prelude.True,
+                                                                                                                                                                                                                                                                                                                                                                            Data.Aeson.Schema.Types.schemaDescription = Data.Maybe.Just (Data.Text.pack "Drive Number within the enclosure")}),
                                                                                                                                                                                                                                                                                                                                              (Data.Text.pack "diskStatus",
                                                                                                                                                                                                                                                                                                                                               Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaType = [Data.Aeson.Schema.Choice.Choice1of2 Data.Aeson.Schema.Types.StringType],
                                                                                                                                                                                                                                                                                                                                                                             Data.Aeson.Schema.Types.schemaRequired = Prelude.True,
                                                                                                                                                                                                                                                                                                                                                                             Data.Aeson.Schema.Types.schemaDescription = Data.Maybe.Just (Data.Text.pack "Disk Status")})]})],
-                                                                                                                                                                Data.Aeson.Schema.Types.schemaRequired = Prelude.True})],
+                                                                                                                                                                Data.Aeson.Schema.Types.schemaRequired = Prelude.True}),
+                                                                                                                                 (Data.Text.pack "sspl_ll_msg_header",
+                                                                                                                                  Data.Aeson.Schema.Types.empty)],
                                                           Data.Aeson.Schema.Types.schemaDSchema = Data.Maybe.Just (Data.Text.pack "http://json-schema.org/draft-03/schema#")})]
 
 data MonitorResponseMonitor_msg_typeHost_updateIfDataItem = MonitorResponseMonitor_msg_typeHost_updateIfDataItem
@@ -203,7 +202,6 @@ data MonitorResponseMonitor_msg_typeHost_updateIfDataItem = MonitorResponseMonit
   } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
 
 instance Binary MonitorResponseMonitor_msg_typeHost_updateIfDataItem
-
 
 instance Data.Aeson.FromJSON MonitorResponseMonitor_msg_typeHost_updateIfDataItem
     where parseJSON (Data.Aeson.Types.Object obj) = do (((((((Control.Applicative.pure MonitorResponseMonitor_msg_typeHost_updateIfDataItem Control.Applicative.<*> Data.Traversable.traverse (\val -> case val of
@@ -612,8 +610,8 @@ instance Data.Aeson.ToJSON MonitorResponseMonitor_msg_typeHost_update
                                                                                                                                                                     (,) (Data.Text.pack "cpuData") Data.Functor.<$> GHC.Base.fmap Data.Aeson.toJSON a11])
 
 data MonitorResponseMonitor_msg_typeDisk_status_drivemanager = MonitorResponseMonitor_msg_typeDisk_status_drivemanager
-  { monitorResponseMonitor_msg_typeDisk_status_drivemanagerEnclosureSN :: Data.Text.Text
-  , monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskNum     :: Data.Scientific.Scientific
+  { monitorResponseMonitor_msg_typeDisk_status_drivemanagerEnclosureSN :: Data.Text.Text -- ^ Enclosure Serial Number
+  , monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskNum     :: Data.Scientific.Scientific -- ^ Drive Number within the enclosure
   , monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskStatus  :: Data.Text.Text -- ^ Disk Status
   } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
 
@@ -653,20 +651,20 @@ instance Data.Aeson.ToJSON MonitorResponseMonitor_msg_type
                                                                                                                                                         (,) (Data.Text.pack "disk_status_drivemanager") Data.Functor.<$> GHC.Base.fmap Data.Aeson.toJSON a2])
 
 data MonitorResponse = MonitorResponse
-  { monitorResponseSspl_ll_host     :: Data.Maybe.Maybe Data.Aeson.Types.Value
-  , monitorResponseMonitor_msg_type :: MonitorResponseMonitor_msg_type
+  { monitorResponseMonitor_msg_type   :: MonitorResponseMonitor_msg_type
+  , monitorResponseSspl_ll_msg_header :: Data.Maybe.Maybe Data.Aeson.Types.Value
   } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
 
 instance Binary MonitorResponse
 
 instance Data.Aeson.FromJSON MonitorResponse
-    where parseJSON (Data.Aeson.Types.Object obj) = do (Control.Applicative.pure MonitorResponse Control.Applicative.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
-                                                                                                                                                                    [] -> GHC.Base.return ()
-                                                                                                                                                                    es_6 -> GHC.Base.fail GHC.Base.$ Data.List.unlines es_6);
-                                                                                                                                                                GHC.Base.return val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "sspl_ll_host") obj)) Control.Applicative.<*> Data.Maybe.maybe (GHC.Base.fail "required property monitor_msg_type missing") Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "monitor_msg_type") obj)
+    where parseJSON (Data.Aeson.Types.Object obj) = do (Control.Applicative.pure MonitorResponse Control.Applicative.<*> Data.Maybe.maybe (GHC.Base.fail "required property monitor_msg_type missing") Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "monitor_msg_type") obj)) Control.Applicative.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
+                                                                                                                                                                                                                                                                                                                                                                   [] -> GHC.Base.return ()
+                                                                                                                                                                                                                                                                                                                                                                   es_6 -> GHC.Base.fail GHC.Base.$ Data.List.unlines es_6);
+                                                                                                                                                                                                                                                                                                                                                               GHC.Base.return val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "sspl_ll_msg_header") obj)
           parseJSON _ = GHC.Base.fail "not an object"
 
 instance Data.Aeson.ToJSON MonitorResponse
     where toJSON (MonitorResponse a1
-                                  a2) = Data.Aeson.Types.Object GHC.Base.$ (Data.HashMap.Lazy.fromList GHC.Base.$ Data.Maybe.catMaybes [(,) (Data.Text.pack "sspl_ll_host") Data.Functor.<$> GHC.Base.fmap GHC.Base.id a1,
-                                                                                                                                        (,) (Data.Text.pack "monitor_msg_type") Data.Functor.<$> (Data.Maybe.Just GHC.Base.. Data.Aeson.toJSON) a2])
+                                  a2) = Data.Aeson.Types.Object GHC.Base.$ (Data.HashMap.Lazy.fromList GHC.Base.$ Data.Maybe.catMaybes [(,) (Data.Text.pack "monitor_msg_type") Data.Functor.<$> (Data.Maybe.Just GHC.Base.. Data.Aeson.toJSON) a1,
+                                                                                                                                        (,) (Data.Text.pack "sspl_ll_msg_header") Data.Functor.<$> GHC.Base.fmap GHC.Base.id a2])

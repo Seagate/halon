@@ -16,7 +16,7 @@ monitorResponse = [schemaQQ|
   "$schema":"http://json-schema.org/draft-03/schema#",
   "type":"object",
   "properties": {
-    "sspl_ll_host": {
+    "sspl_ll_msg_header": {
           "schema_version": {
               "description" :"SSPL JSON Schema Version",
               "type" : "string",
@@ -26,21 +26,29 @@ monitorResponse = [schemaQQ|
               "description" : "SSPL Version",
               "type" : "string",
               "required" : true
-          }
+          },
+          "msg_version" : {
+        "description" : "Message Version",
+          "type" : "string",
+          "required" : true
+      }
       },
 
     "monitor_msg_type": {
       "type" : "object",
       "required" : true,
       "properties": {
-        "disk_status_drivemanager": {
+
+                "disk_status_drivemanager": {
           "type" : "object",
           "properties": {
             "diskNum" : {
+              "description" : "Drive Number within the enclosure",
                 "type" : "number",
                 "required" : true
             },
             "enclosureSN" : {
+              "description" : "Enclosure Serial Number",
                   "type" : "string",
                   "required" : true
             },
@@ -282,5 +290,6 @@ monitorResponse = [schemaQQ|
       }
     }
   }
+
 
   |]
