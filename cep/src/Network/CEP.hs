@@ -38,6 +38,8 @@ runProcessor s rm = go start clockSession_ (cepRules rs)
   where
     rs = runRuleM rm
 
+    fin = cepFinalizers rs
+
     start = initBookkeeping s
 
     matches = match (return . SubRequest) : cepMatches rs
@@ -54,8 +56,11 @@ runProcessor s rm = go start clockSession_ (cepRules rs)
           Other dyn -> do
             (step, nextSession) <- stepSession session
             let action = stepWire wire step (Right dyn)
-            ((_, nextWire), nextBook) <- runCEP action book
-            go nextBook nextSession nextWire
+            ((resp, nextWire), nextBook) <- runCEP action book
+            newS <- case resp of
+              Right _ -> fin $ _state nextBook
+              _       -> return $ _state nextBook
+            go nextBook { _state = newS } nextSession nextWire
 
 initBookkeeping :: s -> Bookkeeping s
 initBookkeeping = Bookkeeping M.empty

@@ -35,8 +35,9 @@ data Msg
 
 data RuleState s =
     RuleState
-    { cepMatches :: [Match Msg]
-    , cepRules   :: ComplexEvent s Dynamic ()
+    { cepMatches    :: ![Match Msg]
+    , cepRules      :: !(ComplexEvent s Dynamic ())
+    , cepFinalizers :: (s -> Process s)
     }
 
 newtype RuleM s a = RuleM (State (RuleState s) a)
@@ -101,8 +102,9 @@ setUsrState s = CEP $ modify (\b -> b { _state = s})
 
 initRuleState :: RuleState s
 initRuleState = RuleState
-                { cepMatches = []
-                , cepRules   = mkEmpty
+                { cepMatches    = []
+                , cepRules      = mkEmpty
+                , cepFinalizers = return
                 }
 
 runRuleM :: RuleM s a -> RuleState s
@@ -117,11 +119,17 @@ addRule m r s =
       , cepRules   = cepRules s <|> r
       }
 
+addFinalizer :: (s -> Process s) -> RuleState s -> RuleState s
+addFinalizer p s = s { cepFinalizers = cepFinalizers s >=> p }
+
 dynEvent :: Serializable a => ComplexEvent s Dynamic a
 dynEvent = mkGen_ $ \dyn ->
     case fromDynamic dyn of
       Just a -> Right a <$ publish a
       _      -> return $ Left ()
+
+addRuleFinalizer :: (s -> Process s) -> RuleM s ()
+addRuleFinalizer = modify . addFinalizer
 
 define :: forall a b s. Serializable a
        => ComplexEvent s a b
