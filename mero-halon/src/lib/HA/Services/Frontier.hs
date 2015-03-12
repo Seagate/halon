@@ -20,7 +20,6 @@ module HA.Services.Frontier
     ) where
 
 import           Control.Applicative ((<$>))
-import           Control.Monad
 import qualified Data.ByteString      as B
 import qualified Data.ByteString.Lazy as BL
 import           Data.Monoid ((<>))
@@ -159,22 +158,24 @@ tcpServerLoop mmid sock = do
     tcpServerLoop mmid sock
 
 dialog :: ProcessId -> Handle -> Process ()
-dialog mmid h = forever $ do
-    cmd <- hReadCommand h
-    case cmd of
-      MultimapGetKeyValuePairs -> do
-        mkv <- getKeyValuePairs mmid
-        let resp = respond (ServeMultimapKeyValues mkv)
-        liftIO $ do
-          BL.hPut h resp
-          hFlush h
-      ReadResourceGraph -> do
-        rg <- getGraph mmid
-        let resp = respond (ServeResources $ getGraphResources rg)
-        liftIO $ do
-          BL.hPut h resp
-          hFlush h
-      Quit -> error "Client issued QUIT command"
+dialog mmid h = loop
+  where
+    loop = hReadCommand h >>= \case
+        MultimapGetKeyValuePairs -> do
+          mkv <- getKeyValuePairs mmid
+          let resp = respond (ServeMultimapKeyValues mkv)
+          liftIO $ do
+            BL.hPut h resp
+            hFlush h
+          loop
+        ReadResourceGraph -> do
+          rg <- getGraph mmid
+          let resp = respond (ServeResources $ getGraphResources rg)
+          liftIO $ do
+            BL.hPut h resp
+            hFlush h
+          loop
+        Quit -> return ()
 
 cleanupHandle :: Handle -> Process ()
 cleanupHandle h = liftIO $ hClose h
