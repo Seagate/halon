@@ -442,8 +442,7 @@ registerChannels svc acs = do
               newResource chan >>>
               connect svc IEMChannel chan $ lsGraph ls
 
-    newGraph <- liftProcess $ sync rg'
-    put ls { lsGraph = newGraph }
+    put ls { lsGraph = rg' }
 
 ssplRules :: RuleM LoopState ()
 ssplRules = do
@@ -463,7 +462,6 @@ ssplRules = do
 
       registerDrive enc disk
       updateDriveStatus disk $ T.unpack disk_status
-      syncResourceGraph
       liftProcess . sayRC $ "Registered drive"
       when (disk_status == "inuse_removed") $ do
         let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
@@ -485,7 +483,6 @@ ssplRules = do
                   ifNames = catMaybes
                             $ fmap monitorResponseMonitor_msg_typeHost_updateIfDataItemIfId xs
               _ -> return ()
-            syncResourceGraph
             liftProcess . sayRC $ "Registered host: " ++ show host
         Nothing -> return ()
 

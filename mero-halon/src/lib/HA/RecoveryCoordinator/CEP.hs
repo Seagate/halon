@@ -16,7 +16,6 @@ import Control.Distributed.Process
 import Network.CEP
 
 import HA.EventQueue.Consumer
-import HA.EventQueue.Types
 import HA.NodeUp
 import HA.RecoveryCoordinator.Mero
 import HA.Resources
@@ -42,7 +41,6 @@ rcRules argv eq = do
         when (not known) $ do
           registerNode node
           startEQTracker argv nid
-          syncResourceGraph
 
     -- Service Start
     defineHAEvent id $ \evt@(HAEvent _ msg _) -> do
@@ -54,7 +52,7 @@ rcRules argv eq = do
             then do
             registerService svc
             _ <- startService nid svc conf
-            syncResourceGraph
+            return ()
             else do
             pid <- getSelfProcessId
             sendMsg pid evt
@@ -69,7 +67,6 @@ rcRules argv eq = do
           Nothing  -> registerServiceName svc
 
         registerServiceProcess n svc cfg sp
-        syncResourceGraph
 
     -- Service Failed
     defineHAEvent id $ \(HAEvent eid msg _) -> do

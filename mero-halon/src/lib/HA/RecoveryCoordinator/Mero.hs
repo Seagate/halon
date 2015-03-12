@@ -32,7 +32,6 @@ module HA.RecoveryCoordinator.Mero
        , ReconfigureMsg
        , GetMultimapProcessId(..)
        , sayRC
-       , syncResourceGraph
        , knownResource
        , registerNode
        , startEQTracker
@@ -160,12 +159,6 @@ instance Binary GetMultimapProcessId
 
 reconfFailureLimit :: Int
 reconfFailureLimit = 3
-
-syncResourceGraph :: CEP LoopState ()
-syncResourceGraph = do
-    ls       <- State.get
-    newGraph <- liftProcess $ G.sync $ lsGraph ls
-    State.put ls { lsGraph = newGraph }
 
 knownResource :: G.Resource a => a -> CEP LoopState Bool
 knownResource res = do
@@ -427,12 +420,11 @@ updateServiceConfiguration opts svc nodeFilter = do
         rgUpdate = foldl' (flip (.)) id fns
         rg'      = rgUpdate rg
 
-    newGraph <- liftProcess $ do
+    liftProcess $ do
       self <- getSelfPid
       mapM_ (usend self . encodeP . (flip ReconfigureCmd) svc . fst) svcs
-      G.sync rg'
 
-    State.put ls { lsGraph = newGraph }
+    State.put ls { lsGraph = rg' }
 
 getEpochId :: CEP LoopState Word64
 getEpochId = do
@@ -487,7 +479,11 @@ makeRecoveryCoordinator :: ProcessId -- ^ pid of the replicated multimap
 makeRecoveryCoordinator mm rm = do
     rg    <- HA.RecoveryCoordinator.Mero.initialize mm
     start <- G.sync rg
-    runProcessor (LoopState start Map.empty mm) rm
+    runProcessor (LoopState start Map.empty mm) $ do
+      rm
+      addRuleFinalizer $ \ls -> do
+        newGraph <- G.sync $ lsGraph ls
+        return ls { lsGraph = newGraph }
 
 #ifdef USE_MERO_NOTE
 meroGetNotification :: ProcessId
