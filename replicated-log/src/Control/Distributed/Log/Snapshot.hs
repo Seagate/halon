@@ -76,8 +76,6 @@ instance SafeCopy s => SafeCopy (SerializableSnapshot s) where
   errorTypeName _
     = "Control.Distributed.Log.Snapshot.SerializableSnapshot"
 
-$(deriveSafeCopy 0 'base ''DecreeId)
-
 readDecreeId :: Query (SerializableSnapshot s) DecreeId
 readDecreeId = do SerializableSnapshot w _ <- ask
                   return w
