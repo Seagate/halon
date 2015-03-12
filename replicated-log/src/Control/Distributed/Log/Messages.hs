@@ -55,7 +55,7 @@ data Decree a = Decree Locale DecreeId a
 data Query = Query ProcessId Int
     deriving (Typeable, Generic)
 
-data Max = Max ProcessId DecreeId LegislatureId [NodeId]
+data Max = Max ProcessId DecreeId DecreeId LegislatureId [NodeId]
     deriving (Typeable, Generic)
 
 -- | Reports the snapshot of a replica upon receiving a 'Query' for an
@@ -66,7 +66,7 @@ data Max = Max ProcessId DecreeId LegislatureId [NodeId]
 -- > SnapshotInfo replicas legislatureId epoch snapshotRef
 -- >              snapshotWatermark oldDecree
 --
-data SnapshotInfo ref = SnapshotInfo [NodeId] LegislatureId
+data SnapshotInfo ref = SnapshotInfo [NodeId] DecreeId
                                      LegislatureId ref DecreeId Int
     deriving (Typeable, Generic)
 

@@ -50,7 +50,6 @@ data SerializableSnapshot s = SerializableSnapshot DecreeId s
   deriving Typeable
 
 $(deriveSafeCopy 0 'base ''SerializableSnapshot)
-$(deriveSafeCopy 0 'base ''DecreeId)
 
 readDecreeId :: Query (SerializableSnapshot s) DecreeId
 readDecreeId = do SerializableSnapshot w _ <- ask

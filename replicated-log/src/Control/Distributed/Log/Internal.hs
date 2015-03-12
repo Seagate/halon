@@ -246,7 +246,7 @@ data Value a
       -- | Batch of values.
     = Values [a]
       -- | Lease start time and list of replicas.
-    | Reconf TimeSpec [NodeId]
+    | Reconf TimeSpec LegislatureId [NodeId]
     deriving (Eq, Generic, Typeable)
 
 instance Binary a => Binary (Value a)
@@ -256,8 +256,8 @@ instance Serializable a => SafeCopy (Value a) where
     putCopy = contain . safePut . encode
 
 isReconf :: Value a -> Bool
-isReconf (Reconf _ _) = True
-isReconf _            = False
+isReconf (Reconf _ _ _) = True
+isReconf _              = False
 
 -- | A type for internal requests.
 data Request a = Request
@@ -334,7 +334,7 @@ queryMissingFrom name w replicas log = do
         forM_ replicas $ \ρ -> do
             sendReplica name ρ $ Query self n
 
--- | Stores acceptors, replicas, their 'LegislatureId', the epoch and the log.
+-- | Stores acceptors, replicas, their 'LegislatureId' and the log.
 --
 -- See Note [Epochs].
 --
@@ -342,8 +342,7 @@ queryMissingFrom name w replicas log = do
 -- executing the reconfiguration decrees in modern history. See Note
 -- [Trimming the log].
 data Memory a = Memory [NodeId]
-                       LegislatureId
-                       LegislatureId
+                       DecreeId
                        (Map.Map Int a)
   deriving Typeable
 
@@ -352,33 +351,41 @@ $(deriveSafeCopy 0 'base ''NodeId)
 $(deriveSafeCopy 0 'base ''LocalProcessId)
 $(deriveSafeCopy 0 'base ''EndPointAddress)
 $(deriveSafeCopy 0 'base ''LegislatureId)
+$(deriveSafeCopy 0 'base ''DecreeId)
 
-memoryInsert :: Int -> a -> Update (Memory a) ()
-memoryInsert n v = do
-    Memory replicas leg epoch log <- get
-    put $ Memory replicas leg epoch (Map.insert n v log)
+memoryInsert :: Int -> Maybe (LegislatureId, [NodeId]) -> a -> Update (Memory a) ()
+memoryInsert n m v = do
+    Memory replicas legD log <- get
+    case m of
+      Just (leg', replicas') ->
+        put $ Memory replicas' (DecreeId leg' n) (Map.insert n v log)
+      _ ->
+        put $ Memory replicas legD (Map.insert n v log)
 
 memoryGet :: Acid.Query (Memory a)
                         ( [NodeId]
-                        , LegislatureId
-                        , LegislatureId
+                        , DecreeId
                         , Map.Map Int a
                         )
 memoryGet = do
-    Memory replicas leg epoch log <- ask
-    return (replicas, leg, epoch, log)
+    Memory replicas legD log <- ask
+    return (replicas, legD, log)
 
 -- | Removes all entries below the given watermark from the log.
-memoryTrim :: [NodeId]
-           -> LegislatureId
-           -> LegislatureId
-           -> Int
+memoryTrim :: Int
            -> Update (Memory a) ()
-memoryTrim replicas leg epoch w = do
-    Memory _ _ _ log <- get
-    put $ Memory replicas leg epoch $ snd $ Map.split (pred $ w) log
+memoryTrim w = do
+    Memory replicas legD log <- get
+    put $ Memory replicas legD $ snd $ Map.split (pred $ w) log
 
 $(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim])
+
+insertInLog :: Serializable a
+            => AcidState (Memory (Value a)) -> Int -> Value a -> IO ()
+insertInLog acid n v =
+  case v of
+    Reconf _ leg' rs' -> Acid.update acid $ MemoryInsert n (Just (leg', rs')) v
+    _                 -> Acid.update acid $ MemoryInsert n Nothing v
 
 -- | Removes all entries below the given index from the log.
 --
@@ -386,13 +393,10 @@ $(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim])
 trimTheLog :: Serializable a
            => AcidState (Memory (Value a))
            -> FilePath      -- ^ Directory for persistence
-           -> [NodeId]   -- ^ Acceptors
-           -> LegislatureId -- ^ 'LegislatureId' of given membership
-           -> LegislatureId -- ^ Epoch of the given membership
            -> Int           -- ^ Log index
            -> IO ()
-trimTheLog acid _persistDir ρs leg epoch w0 = do
-    update acid $ MemoryTrim ρs leg epoch w0
+trimTheLog acid _persistDir w0 = do
+    update acid $ MemoryTrim w0
     -- TODO: fix checkpoints in acid-state.
     -- "log-size-remains-bounded" and "durability" were failing because
     -- acid-state would complain that the checkpoint file is missing.
@@ -446,6 +450,8 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
     -- | The LegislatureId where the leader became the leader
     -- See Note [Epochs].
   , stateEpoch             :: LegislatureId
+    -- | The decree of the last known reconfiguration.
+  , stateReconfDecree      :: DecreeId
     -- | Batcher of client requests
   , stateBatcher           :: ProcessId
 
@@ -536,6 +542,7 @@ replica :: forall a. Dict (Eq a)
         -> Log a
         -> TimeSpec
         -> DecreeId
+        -> DecreeId
         -> LegislatureId
         -> [NodeId]
         -> Process ()
@@ -545,15 +552,14 @@ replica Dict
         (Log {..})
         leaseStart0
         decree
+        legD0
         epoch0
         replicas0 = do
-   say $ "New replica started in " ++ show (decreeLegislatureId decree)
 
    self <- getSelfPid
    here <- getSelfNode
-   let leg0 = decreeLegislatureId decree
    bracket (liftIO $ openLocalStateFrom (persistDirectory here)
-                                        (Memory replicas0 leg0 epoch0 Map.empty)
+                                        (Memory replicas0 legD0 Map.empty)
            )
            (liftIO . closeAcidState)
            $ \acid -> do
@@ -565,16 +571,17 @@ replica Dict
     (w0, s) <- findSnapshot $ sortBy (flip compare `on` fst) sns
 
     -- Replay backlog if any.
-    (replicas', leg', epoch', log) <-
-      liftIO $ Acid.query acid MemoryGet
+    (replicas', legD', log) <- liftIO $ Acid.query acid MemoryGet
     say $ "Log size of replica: " ++ show (Map.size log)
     -- We have a membership list comming from the function parameters
     -- and a membership list comming from disk.
     --
     -- We adopt the membership list with the highest legislature.
-    let replicas  = if leg0 >= leg' then replicas0 else replicas'
-        epoch     = if leg0 >= leg' then epoch0 else epoch'
-        leg       = max leg0 leg'
+    let replicas  = if legD0 < legD' then replicas' else replicas0
+        epoch     = if legD0 < legD' then decreeLegislatureId legD' else epoch0
+        legD      = max legD0 legD'
+
+    say $ "New replica started in " ++ show (decreeLegislatureId legD)
 
     -- Teleport all decrees to the highest possible legislature, since all
     -- recorded decrees must be replayed. This has no effect on the current
@@ -582,11 +589,11 @@ replica Dict
     forM_ (Map.toList log) $ \(n,v) -> do
         usend self $ Decree Stored (DecreeId maxBound n) v
 
-    let d = DecreeId leg (max (decreeNumber decree) $
-                            if Map.null log
-                              then decreeNumber w0
-                              else succ $ fst $ Map.findMax log
-                         )
+    let d = legD { decreeNumber = max (decreeNumber decree) $
+                                    if Map.null log
+                                      then decreeNumber w0
+                                      else succ $ fst $ Map.findMax log
+                 }
         others = filter (/= here) replicas
     queryMissingFrom logName (decreeNumber w0) others $
         Map.insert (decreeNumber d) undefined log
@@ -609,6 +616,7 @@ replica Dict
          , stateWatermark = w0
          , stateLogState = s
          , stateEpoch    = epoch
+         , stateReconfDecree = legD
          , stateBatcher  = bpid
          , stateLogRestore = logRestore
          , stateLogDump = logDump
@@ -752,12 +760,12 @@ replica Dict
 
     go :: ReplicaState s ref a -> Process b
     go st@(ReplicaState ppid timerPid acid leaseStart ρs d cd msref w0 w s
-                        epoch bpid stLogRestore stLogDump stLogNextState
+                        epoch legD bpid stLogRestore stLogDump stLogNextState
           ) =
      do
         self <- getSelfPid
         here <- getSelfNode
-        (_, _, _, log) <- liftIO $ Acid.query acid MemoryGet
+        (_, _, log) <- liftIO $ Acid.query acid MemoryGet
         let others = filter (/= here) ρs
 
             -- Returns the leader if the lease has not expired.
@@ -783,7 +791,7 @@ replica Dict
               let ρs' = here : filter (here /=) replicas
               return Request
                 { requestSender   = senders
-                , requestValue    = Reconf now ρs' :: Value a
+                , requestValue    = Reconf now (succ l) ρs' :: Value a
                 , requestHint     = None
                 , requestForLease = Just l
                 }
@@ -818,8 +826,7 @@ replica Dict
             , matchIf (\(Decree locale dᵢ _) ->
                         locale /= Stored && w <= dᵢ && decreeNumber dᵢ == decreeNumber w) $
                        \(Decree locale dᵢ v) -> do
-                  _ <- liftIO $ Acid.update acid $
-                           MemoryInsert (decreeNumber dᵢ) (v :: Value a)
+                  _ <- liftIO $ insertInLog acid (decreeNumber dᵢ) (v :: Value a)
                   case locale of
                       -- Ack back to the client.
                       Local κs -> forM_ κs $ flip usend ()
@@ -840,8 +847,8 @@ replica Dict
                         -- This guarantees that if later operation fails the
                         -- latest membership can still be recovered from disk.
                         liftIO $ trimTheLog
-                          acid (persistDirectory (processNodeId self)) ρs
-                          (decreeLegislatureId d) epoch (decreeNumber w0)
+                          acid (persistDirectory (processNodeId self))
+                          (decreeNumber w0)
                         sref' <- stLogDump w' s'
                         return (w', Just sref')
                       else
@@ -860,13 +867,13 @@ replica Dict
                            , stateWatermark         = w'
                            , stateLogState          = s'
                            }
-                  Reconf requestStart ρs'
+                  Reconf requestStart leg' ρs'
                     -- Only execute a reconfiguration if we are on an earlier
                     -- configuration.
-                    | decreeLegislatureId d <= decreeLegislatureId w -> do
+                    | decreeLegislatureId d < leg' -> do
                       let d' = w' { decreeNumber = max (decreeNumber d) (decreeNumber w') }
                           cd' = w' { decreeNumber = max (decreeNumber cd) (decreeNumber w') }
-                          w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
+                          w' = succ w{decreeLegislatureId = leg'}
 
                       -- Update the list of acceptors of the proposer...
                       usend ppid ρs'
@@ -880,12 +887,14 @@ replica Dict
                       let epoch' = if take 1 ρs' /= take 1 ρs
                                      then decreeLegislatureId d'
                                      else epoch
+                          legD' = DecreeId leg' $ decreeNumber dᵢ
 
                       go st{ stateLeaseStart = leaseStart'
                            , stateReplicas = ρs'
                            , stateUnconfirmedDecree = d'
                            , stateCurrentDecree = cd'
                            , stateEpoch = epoch'
+                           , stateReconfDecree = legD'
                            , stateSnapshotRef       = msref'
                            , stateSnapshotWatermark = w0'
                            , stateWatermark = w'
@@ -905,8 +914,8 @@ replica Dict
             , matchIf (\(Decree locale dᵢ _) ->
                         locale == Remote && w < dᵢ && not (Map.member (decreeNumber dᵢ) log)) $
                        \(Decree locale dᵢ v) -> do
-                  _ <- liftIO $ Acid.update acid $ MemoryInsert (decreeNumber dᵢ) v
-                  (_, _, _, log') <- liftIO $ Acid.query acid MemoryGet
+                  _ <- liftIO $ insertInLog acid (decreeNumber dᵢ) v
+                  (_, _, log') <- liftIO $ Acid.query acid MemoryGet
                   queryMissingFrom logName (decreeNumber w) others log'
                   --- XXX set cd to @max cd (succ dᵢ)@?
                   --
@@ -1002,9 +1011,15 @@ replica Dict
                            [] -> do usend bpid ()
                                     return (s, cd)
                            BatcherMsg { batcherMsgRequest = r } : _ -> do
+                             let updateLeg (Reconf t _ ρs') =
+                                  Reconf t (succ $ decreeLegislatureId legD) ρs'
+                                 updateLeg v = v
                              usend ppid
                                ( cd
-                               , if isReconf $ requestValue r then r
+                               , if isReconf $ requestValue r
+                                 then r { requestValue =
+                                            updateLeg $ requestValue r
+                                        }
                                  else Request
                                    { requestSender =
                                        concatMap
@@ -1059,7 +1074,7 @@ replica Dict
             , match $ \(Query ρ n) -> do
                   case msref of
                     Just sref -> usend ρ $
-                      SnapshotInfo ρs (decreeLegislatureId d) epoch sref w0 n
+                      SnapshotInfo ρs legD epoch sref w0 n
                     Nothing   -> return ()
                   go st
 
@@ -1068,24 +1083,29 @@ replica Dict
               --
               -- It does not quite eliminate the chance of multiple snapshots
               -- being read in cascade, but it makes it less likely.
-            , match $ \(SnapshotInfo ρs' leg' epoch' sref' w0' n) ->
+            , match $ \(SnapshotInfo ρs' legD' epoch' sref' w0' n) ->
                   if not (Map.member n log) && decreeNumber w <= n &&
                      decreeNumber w < decreeNumber w0' then do
 
-                    let leg  = decreeLegislatureId d
-                        leg'' = max leg leg'
-                        epoch'' = if leg' >= leg then epoch' else epoch
-                        ρs'' = if leg' >= leg then ρs' else ρs
+                    let legD'' = max legD legD'
+                        leg'' = decreeLegislatureId legD''
+                        epoch'' = if legD < legD' then epoch' else epoch
+                        ρs'' = if legD < legD' then ρs' else ρs
+
+                    when (legD < legD') $
+                      liftIO $ insertInLog acid (decreeNumber legD') $
+                          Reconf 0 (decreeLegislatureId legD') ρs'
+
                     -- Trimming here ensures that the log does not accumulate
                     -- decrees indefinitely if the state is oftenly restored
                     -- before saving a snapshot.
                     liftIO $ trimTheLog
-                      acid (persistDirectory (processNodeId self)) ρs''
-                      leg'' epoch'' (decreeNumber w0)
+                      acid (persistDirectory (processNodeId self))
+                      (decreeNumber w0)
 
-                    when (leg < leg') $ usend ppid ρs'
+                    when (legD < legD') $ usend ppid ρs'
 
-                    leaseStart' <- if leg < leg'
+                    leaseStart' <- if legD < legD'
                                    then setLeaseTimer timerPid 0 ρs'
                                    else return leaseStart
 
@@ -1107,28 +1127,34 @@ replica Dict
                            , stateUnconfirmedDecree = d'
                            , stateCurrentDecree     = cd'
                            , stateEpoch             = epoch''
+                           , stateReconfDecree      = legD''
                            }
                   else go st
 
               -- Upon getting the max decree of another replica, compute the
               -- gaps and query for those.
-            , matchIf (\(Max _ d' _ _) -> decreeNumber d < decreeNumber d') $
-                       \(Max ρ d' epoch' ρs') -> do
+            , matchIf (\(Max _ d' _ _ _) -> decreeNumber d < decreeNumber d') $
+                       \(Max ρ d' legD' epoch' ρs') -> do
                   say $ "Got Max " ++ show d'
                   usend ppid ρs'
+
+                  when (legD < legD') $
+                    liftIO $ insertInLog acid (decreeNumber legD') $
+                      Reconf 0 (decreeLegislatureId legD') ρs'
+
                   queryMissingFrom logName (decreeNumber w) [processNodeId ρ] $
                     Map.insert (decreeNumber d') undefined log
 
-                  let leg  = decreeLegislatureId d
-                      leg' = decreeLegislatureId d'
-                      leg'' = max leg leg'
-                      epoch'' = if leg < leg' then epoch' else epoch
-                      ρs'' = if leg < leg' then ρs' else ρs
+                  let legD'' = max legD legD'
+                      leg'' = decreeLegislatureId legD''
+                      epoch'' = if legD < legD' then epoch' else epoch
+                      ρs'' = if legD < legD' then ρs' else ρs
                       d'' = DecreeId leg'' $ decreeNumber d'
-                  when (leg < leg') $ usend ppid ρs'
 
-                  leaseStart' <- if leg < leg'
-                                 then setLeaseTimer timerPid 0 ρs'
+                  when (legD < legD') $ usend ppid ρs'
+
+                  leaseStart' <- if legD < legD'
+                                 then setLeaseTimer timerPid 0 ρs''
                                  else return leaseStart
 
                   let cd' = max d'' cd
@@ -1138,6 +1164,7 @@ replica Dict
                     , stateCurrentDecree = cd'
                     , stateReplicas = ρs''
                     , stateEpoch = epoch''
+                    , stateReconfDecree = legD''
                     }
 
               -- Ignore max decree if it is lower than the current decree.
@@ -1185,7 +1212,9 @@ replica Dict
                                  , Request
                                      { requestSender   = [π]
                                      , requestValue    =
-                                         Reconf requestStart ρs'' :: Value a
+                                         Reconf requestStart
+                                                (succ (decreeLegislatureId d))
+                                                ρs'' :: Value a
                                      , requestHint     = None
                                      , requestForLease = Nothing
                                      }
@@ -1220,7 +1249,7 @@ replica Dict
                       "\n\twatermark:          " ++ show w ++
                       "\n\treplicas:           " ++ show ρs
                   forM_ others $ \ρ -> sendReplica logName ρ $
-                    Max self d epoch ρs
+                    Max self d legD epoch ρs
                   go st
             ]
 
@@ -1241,10 +1270,10 @@ dictTimeSpec = SerializableDict
 
 -- | Like 'uncurry', but extract arguments from a 'Max' message rather than
 -- a pair.
-unMax :: (DecreeId -> LegislatureId -> [NodeId] -> a)
+unMax :: (DecreeId -> DecreeId -> LegislatureId -> [NodeId] -> a)
       -> Max
       -> a
-unMax f (Max _ d epoch ρs) = f d epoch ρs
+unMax f (Max _ d legD epoch ρs) = f d legD epoch ρs
 
 remotable [ 'replica
           , 'unMax
@@ -1282,6 +1311,7 @@ timeSpecClosure ts =
 
 unMaxCP :: Typeable a
         => Closure (  DecreeId
+                   -> DecreeId
                    -> LegislatureId
                    -> [NodeId]
                    -> Process a
@@ -1301,6 +1331,7 @@ replicaClosure :: Typeable a
                -> Closure Config
                -> Closure (Log a)
                -> Closure (  TimeSpec
+                          -> DecreeId
                           -> DecreeId
                           -> LegislatureId
                           -> [NodeId]
@@ -1477,6 +1508,9 @@ remotableDecl [
                    p
           register label pid `onException` exit pid "localSpawnAndRegister"
           usend pid ()
+
+        initialReconfDecree :: DecreeId
+        initialReconfDecree = DecreeId 0 (-1)
     |] ]
 
 -- | Append an entry to the replicated log.
@@ -1584,6 +1618,8 @@ new sdict1 sdict2 config log nodes = do
                        replicaClosure sdict1 sdict2 config log
                          `closureApply` timeSpecClosure now
                          `closureApply` staticClosure initialDecreeIdStatic
+                         `closureApply` staticClosure
+                                          $(mkStatic 'initialReconfDecree)
                          `closureApply` staticClosure
                                           $(mkStatic 'initialLegislatureId)
                          `closureApply` listNodeIdClosure nodes
