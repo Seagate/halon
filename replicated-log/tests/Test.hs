@@ -295,7 +295,7 @@ tests _ = do
           , testSuccess "new-idempotent" . withTmpDirectory $ do
               n0 <- newLocalNode transport remoteTables
               n1 <- newLocalNode transport remoteTables
-              tryWithTimeout transport remoteTables 5000000
+              tryWithTimeout transport remoteTables 10000000
                   $ setup' [localNodeId n0, localNodeId n1] $ \h port -> do
                 retry retryTimeout $ State.update port incrementCP
                 setup' [localNodeId n0, localNodeId n1] $ \_ port' -> do
