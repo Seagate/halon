@@ -12,7 +12,7 @@ RUN yum install --assumeyes bzip2 tar zlib-devel git gmp-devel make perl gcc pcr
 WORKDIR /
 RUN curl -O http://www.mirrorservice.org/sites/dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm
 RUN rpm --install epel-release-7-5.noarch.rpm
-RUN yum install --assumeyes libgenders-devel
+RUN yum install --assumeyes libgenders-devel snappy-devel leveldb-devel libstdc++-devel
 
 RUN curl -O https://downloads.haskell.org/~ghc/@@GHCVERSION@@/ghc-@@GHCVERSION@@-x86_64-unknown-linux-deb7.tar.bz2
 

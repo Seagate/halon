@@ -488,7 +488,7 @@ tests _ = do
                 Log.killReplica h (localNodeId node1)
 
            , testSuccess "durability" . withTmpDirectory $ do
-               nodes <- replicateM 5 $ fmap localNodeId $
+               nodes <- replicateM 1 $ fmap localNodeId $
                           newLocalNode transport remoteTables
                tryWithTimeout transport remoteTables 30000000 $ do
 

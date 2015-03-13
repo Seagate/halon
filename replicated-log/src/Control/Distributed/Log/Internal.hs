@@ -42,6 +42,9 @@ module Control.Distributed.Log.Internal
     ) where
 
 import Control.Distributed.Log.Messages
+import qualified Control.Distributed.Log.Persistence as P
+import Control.Distributed.Log.Persistence.LevelDB
+import Control.Distributed.Log.Persistence (PersistentStore, PersistentMap)
 import Control.Distributed.Log.Policy (NominationPolicy)
 import Control.Distributed.Log.Policy as Policy
     ( notThem
@@ -60,21 +63,14 @@ import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Control.Distributed.Process.Internal.Types
-    ( LocalProcessId(..)
-    , nullProcessId
+    ( nullProcessId
     , ProcessExitException(..)
     )
 import Control.Distributed.Static
     (closureApply, staticApply, staticClosure)
 
--- Imports necessary for acid-state.
-import Data.Acid as Acid
-import Data.Binary (decode)
-import Data.SafeCopy
-import Control.Monad.State (get, put)
-import Control.Monad.Reader (ask)
-
 import Control.Applicative ((<$>))
+import Control.Arrow (second)
 import Control.Concurrent
 import Control.Exception (SomeException, throwIO, fromException)
 import Control.Monad
@@ -83,15 +79,16 @@ import Data.Int (Int64)
 import Data.List (intersect, partition, sortBy)
 import qualified Data.Foldable as Foldable
 import Data.Function (on)
-import Data.Binary (Binary, encode)
+import Data.Binary (Binary, encode, decode)
+import Data.IORef (IORef, modifyIORef, newIORef, readIORef)
 import Data.Maybe
 import Data.Monoid (Monoid(..))
 import qualified Data.Map as Map
+import Data.String (fromString)
 import Data.Ratio (Ratio, numerator, denominator)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Prelude hiding (init, log)
-import Network.Transport (EndPointAddress(..))
 import System.Clock
 
 deriving instance Typeable Eq
@@ -251,10 +248,6 @@ data Value a
 
 instance Binary a => Binary (Value a)
 
-instance Serializable a => SafeCopy (Value a) where
-    getCopy = contain $ fmap decode $ safeGet
-    putCopy = contain . safePut . encode
-
 isReconf :: Value a -> Bool
 isReconf (Reconf _ _ _) = True
 isReconf _              = False
@@ -334,79 +327,35 @@ queryMissingFrom name w replicas log = do
         forM_ replicas $ \ρ -> do
             sendReplica name ρ $ Query self n
 
--- | Stores acceptors, replicas, their 'LegislatureId' and the log.
---
--- See Note [Epochs].
---
--- At all times the latest membership of the log can be recovered by
--- executing the reconfiguration decrees in modern history. See Note
--- [Trimming the log].
-data Memory a = Memory [NodeId]
-                       DecreeId
-                       (Map.Map Int a)
-  deriving Typeable
+-- | A dictionary with the persistent operations used by replicas.
+data PersistenceHandle a = PersistenceHandle
+    { pStore         :: PersistentStore
+    , pMembershipMap :: PersistentMap
+    , pLogMap        :: PersistentMap
+    , pLogCache      :: IORef (Map.Map Int (Value a))
+    }
 
-$(deriveSafeCopy 0 'base ''Memory)
-$(deriveSafeCopy 0 'base ''NodeId)
-$(deriveSafeCopy 0 'base ''LocalProcessId)
-$(deriveSafeCopy 0 'base ''EndPointAddress)
-$(deriveSafeCopy 0 'base ''LegislatureId)
-$(deriveSafeCopy 0 'base ''DecreeId)
-
-memoryInsert :: Int -> Maybe (LegislatureId, [NodeId]) -> a -> Update (Memory a) ()
-memoryInsert n m v = do
-    Memory replicas legD log <- get
-    case m of
-      Just (leg', replicas') ->
-        put $ Memory replicas' (DecreeId leg' n) (Map.insert n v log)
-      _ ->
-        put $ Memory replicas legD (Map.insert n v log)
-
-memoryGet :: Acid.Query (Memory a)
-                        ( [NodeId]
-                        , DecreeId
-                        , Map.Map Int a
-                        )
-memoryGet = do
-    Memory replicas legD log <- ask
-    return (replicas, legD, log)
-
--- | Removes all entries below the given watermark from the log.
-memoryTrim :: Int
-           -> Update (Memory a) ()
-memoryTrim w = do
-    Memory replicas legD log <- get
-    put $ Memory replicas legD $ snd $ Map.split (pred $ w) log
-
-$(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim])
-
-insertInLog :: Serializable a
-            => AcidState (Memory (Value a)) -> Int -> Value a -> IO ()
-insertInLog acid n v =
-  case v of
-    Reconf _ leg' rs' -> Acid.update acid $ MemoryInsert n (Just (leg', rs')) v
-    _                 -> Acid.update acid $ MemoryInsert n Nothing v
+insertInLog :: Serializable a => PersistenceHandle a -> Int -> Value a -> IO ()
+insertInLog (PersistenceHandle {..}) n v = do
+    P.atomically pStore $
+      case v of
+        Reconf _ leg' rs' ->
+          [ P.Insert pLogMap n $ encode v
+          , P.Insert pMembershipMap 0 $ encode (DecreeId leg' n, rs')
+          ]
+        _                 ->
+          [ P.Insert pLogMap n $ encode v ]
+    modifyIORef pLogCache $ Map.insert n v
 
 -- | Removes all entries below the given index from the log.
 --
 -- See note [Trimming the log]
-trimTheLog :: Serializable a
-           => AcidState (Memory (Value a))
-           -> FilePath      -- ^ Directory for persistence
+trimTheLog :: PersistenceHandle a
            -> Int           -- ^ Log index
            -> IO ()
-trimTheLog acid _persistDir w0 = do
-    update acid $ MemoryTrim w0
-    -- TODO: fix checkpoints in acid-state.
-    -- "log-size-remains-bounded" and "durability" were failing because
-    -- acid-state would complain that the checkpoint file is missing.
-    --
-    -- createCheckpoint acid
-    -- This call collects all acid data needed to reconstruct states prior to
-    -- the last checkpoint.
-    -- Acid.createArchive acid
-    -- And this call removes the collected state.
-    -- removeDirectoryRecursive $ persistDir </> "Archive"
+trimTheLog (PersistenceHandle {..}) w0 = do
+    P.atomically pStore [ P.Trim pLogMap w0 ]
+    modifyIORef pLogCache $ snd . Map.split (pred w0)
 
 -- | Small view function for extracting a specialized 'Protocol'. Used in 'replica'.
 unpackConfigProtocol :: Serializable a => Config -> (Config, Protocol NodeId (Value a))
@@ -419,7 +368,7 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
     -- | The pid of the timer process.
   , stateTimerPid          :: ProcessId
     -- | Handle to persist the log.
-  , stateAcidHandle        :: AcidState (Memory (Value a))
+  , statePersistenceHandle :: PersistenceHandle a
     -- | The time at which the last lease started.
   , stateLeaseStart        :: TimeSpec
     -- | The list of node ids of the replicas.
@@ -558,11 +507,14 @@ replica Dict
 
    self <- getSelfPid
    here <- getSelfNode
-   bracket (liftIO $ openLocalStateFrom (persistDirectory here)
-                                        (Memory replicas0 legD0 Map.empty)
-           )
-           (liftIO . closeAcidState)
-           $ \acid -> do
+   bracket (liftIO $ openPersistentStore (persistDirectory here))
+           (liftIO . P.close) $ \persistentStore -> do
+    logMap <- liftIO $ P.getMap persistentStore $ fromString "logMap"
+    membershipMap <- liftIO $ P.getMap persistentStore
+                            $ fromString "membershipMap"
+    logCacheRef <- liftIO $ newIORef Map.empty
+    let persistenceHandle =
+          PersistenceHandle persistentStore membershipMap logMap logCacheRef
     sns <- logGetAvailableSnapshots
     -- Try the snapshots from the most recent to the less recent.
     let findSnapshot []               = (DecreeId 0 0,) <$> logInitialize
@@ -571,7 +523,10 @@ replica Dict
     (w0, s) <- findSnapshot $ sortBy (flip compare `on` fst) sns
 
     -- Replay backlog if any.
-    (replicas', legD', log) <- liftIO $ Acid.query acid MemoryGet
+    log :: Map.Map Int (Value a) <- liftIO $ Map.fromList . map (second decode)
+                                          <$> P.pairsOfMap logMap
+    (legD', replicas') <- liftIO $ maybe (legD0, replicas0) decode
+                                 <$> P.lookup membershipMap 0
     say $ "Log size of replica: " ++ show (Map.size log)
     -- We have a membership list comming from the function parameters
     -- and a membership list comming from disk.
@@ -606,7 +561,7 @@ replica Dict
     go ReplicaState
          { stateProposerPid = ppid
          , stateTimerPid = timerPid
-         , stateAcidHandle = acid
+         , statePersistenceHandle = persistenceHandle
          , stateLeaseStart = leaseStart0'
          , stateReplicas = replicas
          , stateUnconfirmedDecree = d
@@ -759,13 +714,13 @@ replica Dict
         ]
 
     go :: ReplicaState s ref a -> Process b
-    go st@(ReplicaState ppid timerPid acid leaseStart ρs d cd msref w0 w s
+    go st@(ReplicaState ppid timerPid ph leaseStart ρs d cd msref w0 w s
                         epoch legD bpid stLogRestore stLogDump stLogNextState
           ) =
      do
         self <- getSelfPid
         here <- getSelfNode
-        (_, _, log) <- liftIO $ Acid.query acid MemoryGet
+        log <- liftIO $ readIORef $ pLogCache ph
         let others = filter (/= here) ρs
 
             -- Returns the leader if the lease has not expired.
@@ -826,7 +781,7 @@ replica Dict
             , matchIf (\(Decree locale dᵢ _) ->
                         locale /= Stored && w <= dᵢ && decreeNumber dᵢ == decreeNumber w) $
                        \(Decree locale dᵢ v) -> do
-                  _ <- liftIO $ insertInLog acid (decreeNumber dᵢ) (v :: Value a)
+                  liftIO $ insertInLog ph (decreeNumber dᵢ) (v :: Value a)
                   case locale of
                       -- Ack back to the client.
                       Local κs -> forM_ κs $ flip usend ()
@@ -846,9 +801,7 @@ replica Dict
                         -- First trim the log and only then save the snapshot.
                         -- This guarantees that if later operation fails the
                         -- latest membership can still be recovered from disk.
-                        liftIO $ trimTheLog
-                          acid (persistDirectory (processNodeId self))
-                          (decreeNumber w0)
+                        liftIO $ trimTheLog ph (decreeNumber w0)
                         sref' <- stLogDump w' s'
                         return (w', Just sref')
                       else
@@ -914,8 +867,8 @@ replica Dict
             , matchIf (\(Decree locale dᵢ _) ->
                         locale == Remote && w < dᵢ && not (Map.member (decreeNumber dᵢ) log)) $
                        \(Decree locale dᵢ v) -> do
-                  _ <- liftIO $ insertInLog acid (decreeNumber dᵢ) v
-                  (_, _, log') <- liftIO $ Acid.query acid MemoryGet
+                  liftIO $ insertInLog ph (decreeNumber dᵢ) v
+                  log' <- liftIO $ readIORef $ pLogCache ph
                   queryMissingFrom logName (decreeNumber w) others log'
                   --- XXX set cd to @max cd (succ dᵢ)@?
                   --
@@ -1093,15 +1046,13 @@ replica Dict
                         ρs'' = if legD < legD' then ρs' else ρs
 
                     when (legD < legD') $
-                      liftIO $ insertInLog acid (decreeNumber legD') $
+                      liftIO $ insertInLog ph (decreeNumber legD') $
                           Reconf 0 (decreeLegislatureId legD') ρs'
 
                     -- Trimming here ensures that the log does not accumulate
                     -- decrees indefinitely if the state is oftenly restored
                     -- before saving a snapshot.
-                    liftIO $ trimTheLog
-                      acid (persistDirectory (processNodeId self))
-                      (decreeNumber w0)
+                    liftIO $ trimTheLog ph (decreeNumber w0)
 
                     when (legD < legD') $ usend ppid ρs'
 
@@ -1139,7 +1090,7 @@ replica Dict
                   usend ppid ρs'
 
                   when (legD < legD') $
-                    liftIO $ insertInLog acid (decreeNumber legD') $
+                    liftIO $ insertInLog ph (decreeNumber legD') $
                       Reconf 0 (decreeLegislatureId legD') ρs'
 
                   queryMissingFrom logName (decreeNumber w) [processNodeId ρ] $

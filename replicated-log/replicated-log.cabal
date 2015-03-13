@@ -23,6 +23,8 @@ Flag maintainer
 
 Library
   Exposed-Modules:  Control.Distributed.Log
+                    Control.Distributed.Log.Persistence
+                    Control.Distributed.Log.Persistence.LevelDB
                     Control.Distributed.Log.Policy
                     Control.Distributed.Log.Snapshot
                     Control.Distributed.Process.Batcher
@@ -31,16 +33,17 @@ Library
   Other-Modules:    Control.Distributed.Log.Internal
                     Control.Distributed.Log.Messages
   Hs-Source-Dirs:   src/
-  Build-Depends:    acid-state >= 0.11,
-                    base >= 4.7,
+  Build-Depends:    base >= 4.7,
                     binary >= 0.6,
                     bytestring >= 0.9.2,
                     clock,
                     consensus,
                     containers >= 0.5,
                     constraints >= 0.4,
+                    directory >= 1.2.1,
                     distributed-process-scheduler,
                     distributed-static >= 0.2,
+                    leveldb-haskell >= 0.6.1,
                     mtl >= 2.0,
                     network-transport >= 0.3,
                     syb >= 0.3,
@@ -97,6 +100,22 @@ Test-Suite tests
                       GeneralizedNewtypeDeriving
                       RecordWildCards NamedFieldPuns
                       ScopedTypeVariables
+
+Test-Suite persistence
+  Type:             exitcode-stdio-1.0
+  Main-Is:          persistence.hs
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   tests
+
+  Ghc-Options: -Wall -threaded
+  extra-libraries: leveldb
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  Build-Depends:    base >= 4.7,
+                    distributed-process-test,
+                    replicated-log
 
 Test-Suite random
   Type:             exitcode-stdio-1.0
