@@ -11,24 +11,19 @@ module Control.Distributed.Log.Snapshot
     , serializableSnapshotServer
     ) where
 
-import Prelude hiding ((<*>))
-import Control.Applicative ((<*>))
-import Control.Arrow (second)
+import Control.Applicative (liftA2)
 import Control.Distributed.Log () -- SafeCopy LegislatureId instance
 import Control.Distributed.Log.Internal (callLocal)
+import Control.Distributed.Log.Persistence as P
+import Control.Distributed.Log.Persistence.LevelDB
 import Control.Distributed.Process.Consensus (DecreeId(..))
 import Control.Distributed.Process hiding (callLocal, send)
 import Control.Distributed.Process.Serializable
 import Control.Exception (throwIO, Exception)
 import qualified Control.Exception as E (bracket)
 import Control.Monad (forever)
-import Control.Monad.Reader (ask)
-import Control.Monad.State (put)
-import Data.Acid
-import Data.Acid.Advanced
-import Data.Serialize.Get (label)
 import Data.Binary (encode, decode)
-import Data.SafeCopy
+import Data.String (fromString)
 import Data.Typeable
 
 
@@ -39,99 +34,6 @@ data LogSnapshot s = LogSnapshot
     , logSnapshotRestore       :: (NodeId, Int) -> Process s
     , logSnapshotDump          :: DecreeId -> s -> Process (NodeId, Int)
     }
-
--- | A newtype wrapper to provide a default instance of 'SafeCopy' for types
--- having 'Binary' instances.
-newtype SafeCopyFromBinary a = SafeCopyFromBinary { binaryFromSafeCopy :: a }
-  deriving Typeable
-
-instance Serializable a => SafeCopy (SafeCopyFromBinary a) where
-    getCopy = contain $ fmap (SafeCopyFromBinary . decode) $ safeGet
-    putCopy = contain . safePut . encode . binaryFromSafeCopy
-
-data SerializableSnapshot s = SerializableSnapshot DecreeId s
-                              -- watermark and snapshot
-  deriving Typeable
-
--- XXX: acid-state fails to derive polymorphic values
--- $(deriveSafeCopy 0 'base ''SerializableSnapshot)
-instance SafeCopy s => SafeCopy (SerializableSnapshot s) where
-  putCopy (SerializableSnapshot arg_a1jiI arg_a1jiJ)
-    = contain
-        (do { safePut_DecreeId_a1jiK <- getSafePut;
-              safePut_s_a1jiL <- getSafePut;
-              safePut_DecreeId_a1jiK arg_a1jiI;
-              safePut_s_a1jiL arg_a1jiJ;
-              return () })
-  getCopy
-    = contain
-        (label
-           "Control.Distributed.Log.Snapshot.SerializableSnapshot:"
-           (do { safeGet_DecreeId_a1jiM <- getSafeGet;
-                 safeGet_s_a1jiN <- getSafeGet;
-                 (((return SerializableSnapshot) <*> safeGet_DecreeId_a1jiM)
-                  <*> safeGet_s_a1jiN) }))
-  version = 0
-  kind = base
-  errorTypeName _
-    = "Control.Distributed.Log.Snapshot.SerializableSnapshot"
-
-readDecreeId :: Query (SerializableSnapshot s) DecreeId
-readDecreeId = do SerializableSnapshot w _ <- ask
-                  return w
-
-readSnapshot :: Query (SerializableSnapshot s) (DecreeId, s)
-readSnapshot = do SerializableSnapshot w s <- ask
-                  return (w, s)
-
-writeSnapshot :: DecreeId -> s -> Update (SerializableSnapshot s) ()
-writeSnapshot w s = put $ SerializableSnapshot w s
-
--- XXX:
-{-
-$(makeAcidic ''SerializableSnapshot
-             ['readSnapshot, 'writeSnapshot, 'readDecreeId]
- )
--}
-instance (SafeCopy s, Typeable s) => IsAcidic (SerializableSnapshot s) where
-  acidEvents
-    = [QueryEvent
-         (\ ReadSnapshot -> readSnapshot),
-       UpdateEvent
-         (\ (WriteSnapshot arg_afyG arg_afyH)
-            -> writeSnapshot arg_afyG arg_afyH),
-       QueryEvent
-         (\ ReadDecreeId -> readDecreeId)]
-data ReadSnapshot s = ReadSnapshot deriving (Typeable)
-instance (SafeCopy s, Typeable s) => SafeCopy (ReadSnapshot s) where
-  putCopy ReadSnapshot = contain (do { return () })
-  getCopy = contain (return ReadSnapshot)
-instance (SafeCopy s, Typeable s) => Method (ReadSnapshot s) where
-  type MethodResult (ReadSnapshot s) = (DecreeId, s)
-  type MethodState (ReadSnapshot s) = SerializableSnapshot s
-instance (SafeCopy s, Typeable s) => QueryEvent (ReadSnapshot s)
-data WriteSnapshot s = WriteSnapshot DecreeId s deriving (Typeable)
-instance (SafeCopy s, Typeable s) => SafeCopy (WriteSnapshot s) where
-  putCopy (WriteSnapshot arg_afyE arg_afyF)
-    = contain
-        (do { safePut arg_afyE;
-              safePut arg_afyF;
-              return () })
-  getCopy
-    = contain (((return WriteSnapshot) <*> safeGet) <*> safeGet)
-instance (SafeCopy s, Typeable s) => Method (WriteSnapshot s) where
-  type MethodResult (WriteSnapshot s) = ()
-  type MethodState (WriteSnapshot s) = SerializableSnapshot s
-instance (SafeCopy s, Typeable s) => UpdateEvent (WriteSnapshot s)
-data ReadDecreeId (s :: *) = ReadDecreeId deriving (Typeable)
-instance(SafeCopy s, Typeable s) =>  SafeCopy (ReadDecreeId s) where
-  putCopy ReadDecreeId = contain (do { return () })
-  getCopy = contain (return ReadDecreeId)
-instance (SafeCopy s, Typeable s) => Method (ReadDecreeId s) where
-  type MethodResult (ReadDecreeId s) = DecreeId
-  type MethodState (ReadDecreeId s) = SerializableSnapshot s
-instance (SafeCopy s, Typeable s) => QueryEvent (ReadDecreeId s)
-
 
 newtype NoSnapshotServer = NoSnapshotServer NodeId
   deriving (Typeable, Show)
@@ -228,31 +130,24 @@ serializableSnapshotServer :: forall s . Serializable s
                            -> (NodeId -> FilePath)
                            -> s
                            -> Process ProcessId
-serializableSnapshotServer serverLbl snapshotDirectory s0 = do
+serializableSnapshotServer serverLbl snapshotDirectory _s0 = do
     here <- getSelfNode
     pid <- spawnLocal $ forever $ receiveWait
         [ match $ \(pid, ()) -> do
-            d <- liftIO (withSnapshotAcidState here $ flip query ReadDecreeId)
-            usend pid $ -- if i == 0 then Nothing
-                                   Just (d :: DecreeId)
+            md <- liftIO $ withPersistentStore here $ \_ pm ->
+                    fmap (fmap decode) $ P.lookup pm 0
+            usend pid (md :: Maybe DecreeId)
 
         , match $ \(pid, i) -> do
-            (d, s) <- liftIO $ withSnapshotAcidState here $ \acid ->
-              fmap (second binaryFromSafeCopy) $ query acid ReadSnapshot
-            usend pid $ if decreeNumber d == i then Just (d, s) else Nothing
+            (md, ms) <- liftIO $ withPersistentStore here $ \_ pm ->
+              liftA2 (,) (P.lookup pm 0) (P.lookup pm 1)
+            usend pid $ case liftA2 (,) (fmap decode md) (fmap decode ms) of
+              Just (d, s) | decreeNumber d == i -> Just (d, s :: s)
+              _                                 -> Nothing
 
-        , match $ \(pid, (d, s)) -> do
-            liftIO $ withSnapshotAcidState here $ \acid -> do
-              update acid $ WriteSnapshot d (SafeCopyFromBinary s)
-              -- TODO: fix checkpoints in acid-state.
-              -- "log-size-remains-bounded" and "durability" were failing
-              -- because acid-state would complain that the checkpoint file is
-              -- missing.
-              --
-              -- createCheckpoint acid
-              -- createArchive acid
-              -- removeDirectoryRecursive $ snapshotDirectory here
-              --                           </> "Archive"
+        , match $ \(pid, (d :: DecreeId, s :: s)) -> do
+            liftIO $ withPersistentStore here $ \ps pm -> do
+              P.atomically ps [ Insert pm 0 (encode d), Insert pm 1 (encode s) ]
             usend pid ()
         ]
     register serverLbl pid
@@ -260,14 +155,9 @@ serializableSnapshotServer serverLbl snapshotDirectory s0 = do
 
   where
 
-    withSnapshotAcidState
-          :: NodeId
-          -> (AcidState (SerializableSnapshot (SafeCopyFromBinary s)) -> IO a)
-          -> IO a
-    withSnapshotAcidState nid =
-        E.bracket (openLocalStateFrom (snapshotDirectory nid)
-                       (SerializableSnapshot (DecreeId 0 0)
-                                             (SafeCopyFromBinary s0)
-                       )
-                  )
-                  closeAcidState
+    withPersistentStore :: NodeId
+                        -> (PersistentStore -> PersistentMap Int -> IO a)
+                        -> IO a
+    withPersistentStore nid action =
+        E.bracket (openPersistentStore (snapshotDirectory nid)) P.close $
+          \ps -> P.getMap ps (fromString serverLbl) >>= action ps
