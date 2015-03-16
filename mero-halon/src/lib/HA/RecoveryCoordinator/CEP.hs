@@ -70,9 +70,13 @@ rcRules argv eq = do
 
     -- Service Failed
     defineHAEvent id $ \(HAEvent eid msg _) -> do
-        ServiceFailed n svc <- decodeMsg msg
-        _ <- bounceServiceTo Current n svc
-        sendMsg eq eid
+        ServiceFailed n svc pid <- decodeMsg msg
+        res                     <- lookupRunningService n svc
+        case res of
+          Just (ServiceProcess spid) | spid == pid -> do
+            _ <- bounceServiceTo Current n svc
+            sendMsg eq eid
+          _ -> return ()
 
     -- EpochRequest
     defineHAEvent id $ \(HAEvent _ (EpochRequest pid) _) -> do

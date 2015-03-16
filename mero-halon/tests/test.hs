@@ -44,6 +44,8 @@ ut transport = return $
     testGroup "ut"
       [ testCase "RCServiceRestarting" $
           HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport
+      , testCase "RCServiceNOTRestarting" $
+          HA.RecoveryCoordinator.Mero.Tests.testServiceNotRestarting transport
       , testCase "RGHostResources" $
           HA.RecoveryCoordinator.Mero.Tests.testHostAddition transport
       , testCase "RGDriveResources" $
