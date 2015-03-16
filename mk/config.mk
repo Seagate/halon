@@ -50,6 +50,7 @@ VENDOR_PACKAGES = clock \
                   distributed-static \
                   distributed-process-extras \
                   distributed-process-async \
+                  leveldb-haskell \
                   tasty-files \
                   options-schema \
                   network-transport-tcp \
