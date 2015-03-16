@@ -312,7 +312,7 @@ instance ProcessEncode ServiceStartRequest where
       return $ runGet (get_ rt) bs
 
 -- | A notification of a service failure.
-data ServiceFailed = forall a. Configuration a => ServiceFailed Node (Service a)
+data ServiceFailed = forall a. Configuration a => ServiceFailed Node (Service a) ProcessId
   deriving (Typeable)
 
 newtype ServiceFailedMsg = ServiceFailedMsg BS.ByteString
@@ -329,18 +329,19 @@ instance ProcessEncode ServiceFailed where
         case unstatic rt d of
           Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
             rest <- get
+            pid  <- get
             let (node, service) = extract rest
                 extract :: (Node, Service s)
                         -> (Node, Service s)
                 extract = id
-            return $ ServiceFailed node service
+            return $ ServiceFailed node service pid
           Left err -> error $ "decode ServiceFailed: " ++ err
     in do
       rt <- fmap (remoteTable . processNode) ask
       return $ runGet (get_ rt) bs
 
-  encodeP (ServiceFailed node svc@(Service _ _ d)) = ServiceFailedMsg . runPut $
-    put d >> put (node, svc)
+  encodeP (ServiceFailed node svc@(Service _ _ d) pid) = ServiceFailedMsg . runPut $
+    put d >> put (node, svc) >> put pid
 
 -- | An event which produces no action in the RC. Used for testing.
 data DummyEvent = DummyEvent

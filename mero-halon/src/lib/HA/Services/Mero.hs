@@ -112,7 +112,8 @@ remotableDecl [ [d|
         go epoch = do
             let shutdownAndTellThem = do
                   node <- getSelfNode
-                  expiate . encodeP $ ServiceFailed (Node node) m0d -- XXX
+                  pid  <- getSelfPid
+                  expiate . encodeP $ ServiceFailed (Node node) m0d pid -- XXX
             receiveWait $
               [ match $ \(EpochTransition epochExpected epochTarget state) -> do
                   say $ "Service wrapper got new equation: " ++ show (state::ByteString)
