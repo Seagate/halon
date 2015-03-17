@@ -18,12 +18,12 @@ import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Network.Transport (Transport)
 import Network.Transport.TCP
 
-import System.Posix.Temp (mkdtemp)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar
 import Control.Applicative ((<$>))
 import Control.Monad.Writer
-
+import Data.IORef
+import qualified Data.Map as Map
 
 remoteTables :: RemoteTable
 remoteTables =
@@ -36,11 +36,21 @@ setup :: Transport -> ([ProcessId] -> Process ()) -> IO ()
 setup transport action = do
     node0 <- newLocalNode transport remoteTables
     done <- newEmptyMVar
-    tmpdir <- mkdtemp "/tmp/tmp."
 
     putChar '\n'
     runProcess node0 $ withScheduler [] 1 $ do
-         α <- spawnLocal $ acceptor (undefined :: Int) (const tmpdir) ""
+         mref <- liftIO $ newIORef Map.empty
+         vref <- liftIO $ newIORef Nothing
+         α <- spawnLocal $ acceptor (undefined :: Int)
+                 (const $ return AcceptorStore
+                    { storeInsert = \d v -> modifyIORef mref $ Map.insert d v
+                    , storeLookup = \d -> Map.lookup d <$> readIORef mref
+                    , storePut = writeIORef vref . Just
+                    , storeGet = readIORef vref
+                    , storeClose = return ()
+                    }
+                 )
+                 ""
          action [α]
          liftIO $ threadDelay 1000000
          liftIO $ putMVar done ()

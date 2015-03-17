@@ -25,6 +25,7 @@ Library
   Exposed-Modules:  Control.Distributed.Log
                     Control.Distributed.Log.Persistence
                     Control.Distributed.Log.Persistence.LevelDB
+                    Control.Distributed.Log.Persistence.Paxos
                     Control.Distributed.Log.Policy
                     Control.Distributed.Log.Snapshot
                     Control.Distributed.Process.Batcher
@@ -39,6 +40,7 @@ Library
                     clock,
                     cereal,
                     consensus,
+                    consensus-paxos,
                     containers >= 0.5,
                     constraints >= 0.4,
                     directory >= 1.2.1,
@@ -85,6 +87,7 @@ Test-Suite tests
                     consensus,
                     consensus-paxos,
                     constraints >= 0.4,
+                    containers >= 0.5,
                     distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static >= 0.2.0,

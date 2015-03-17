@@ -24,6 +24,8 @@ import HA.Replicator ( RGroup(..), RStateView(..) )
 
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import qualified Control.Distributed.Log as Log
+import Control.Distributed.Log.Persistence.LevelDB
+import Control.Distributed.Log.Persistence.Paxos (acceptorStore)
 import Control.Distributed.Log.Policy hiding ( __remoteTable )
 import Control.Distributed.Log.Snapshot
   ( serializableSnapshot
@@ -124,14 +126,17 @@ snapshotServer SerializableDict bs = void $ serializableSnapshotServer
                     (decode bs :: st)
 
 storageDir :: FilePath
-storageDir = "acid-state"
+storageDir = "halon-persistence"
 
 rgroupConfig :: (Int, Int) -> Log.Config
 rgroupConfig (snapshotThreshold, snapshotTimeout) = Log.Config
     { logName           = "halon-log"
     , consensusProtocol =
           \dict -> BasicPaxos.protocol dict 3000000
-                                       (filepath $ storageDir </> "acceptors")
+                 (\n -> openPersistentStore
+                            (filepath (storageDir </> "acceptors") n) >>=
+                        acceptorStore
+                 )
     , persistDirectory  = filepath $ storageDir </> "replicas"
     , leaseTimeout      = 3000000
     , leaseRenewTimeout = 1000000

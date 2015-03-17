@@ -24,8 +24,7 @@ Library
                     Control.Distributed.Process.Consensus.Paxos.Types
                     Control.Distributed.Process.Consensus.Paxos.Messages
                     Control.Distributed.Process.Consensus.BasicPaxos
-  Build-Depends:    acid-state >= 0.11,
-                    base >= 4.5.0,
+  Build-Depends:    base >= 4.5.0,
                     binary >= 0.6,
                     bytestring >= 0.9.2,
                     containers >= 0.4.0,
@@ -66,6 +65,7 @@ Test-Suite tests
                     Cabal >= 1.10,
                     consensus,
                     consensus-paxos,
+                    containers >= 0.4.0,
                     distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static >= 0.2.0,

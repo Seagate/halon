@@ -248,7 +248,7 @@ propose retryTimeout sendA acceptors d x = liftProcess $ do
 
 protocol :: forall a n. SerializableDict a
          -> Int
-         -> (n -> FilePath)
+         -> (n -> IO AcceptorStore)
          -> Protocol n a
 protocol SerializableDict retryTimeout f =
     Protocol { prl_acceptor = acceptor (undefined :: a) f
@@ -263,7 +263,7 @@ remotable ['protocol, 'dictString]
 protocolClosure :: (Typeable a, Typeable n)
                 => Static (SerializableDict a)
                 -> Closure Int
-                -> Closure (n -> FilePath)
+                -> Closure (n -> IO AcceptorStore)
                 -> Closure (Protocol n a)
 protocolClosure sdict retryTimeoutClosure fp =
     staticClosure $(mkStatic 'protocol)

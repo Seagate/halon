@@ -5,6 +5,7 @@
 -- Definitions common to all Paxos distributed algorithms, be they the basic
 -- one or any optimizations thereof.
 
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE KindSignatures #-}
@@ -13,23 +14,20 @@
 module Control.Distributed.Process.Consensus.Paxos
     ( chooseValue
     , acceptor
+    , AcceptorStore(..)
     ) where
 
 import Prelude hiding ((<$>), (<*>))
 import Control.Distributed.Process.Consensus
+import Control.Distributed.Process.Consensus.Paxos.Types
 import qualified Control.Distributed.Process.Consensus.Paxos.Messages as Msg
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 
--- Imports necessary for acid-state.
-import Data.Acid
-import Data.Acid.Advanced
-import Data.SafeCopy
 import Data.Binary (encode, decode)
-import Data.Typeable (Typeable)
-import Control.Monad.State (modify)
-import Control.Monad.Reader (ask)
-import Control.Applicative ((<$>), (<*>))
+import Data.ByteString.Lazy (ByteString)
+import Data.Typeable
+import Control.Monad
 
 import Data.List (maximumBy)
 import Data.Function (on)
@@ -92,45 +90,20 @@ inline chooseValue(p_x1,p_d,p_x,p_acks) {
 }
 *-}
 
--- To avoid undecidable and overlapping instances.
-newtype S a = S { unS :: a }
-            deriving Typeable
-
-instance Serializable a => SafeCopy (S a) where
-    getCopy = contain $ fmap (S . decode) $ safeGet
-    putCopy = contain . safePut . encode . unS
-
-insert :: a -> Update [a] ()
-insert x = modify (x:)
-
-toList :: Query [a] [a]
-toList = ask
-
--- $(makeAcidic ''([a]) ['toList, 'insert])
-instance (Typeable a, SafeCopy a) => IsAcidic [a] where
-  acidEvents
-    = [ UpdateEvent
-         (\ (Insert a) -> insert a)
-      , QueryEvent (\ ToList -> toList)]
-newtype Insert (a :: *) = Insert a deriving (Typeable)
-instance SafeCopy a => SafeCopy (Insert a) where
-  putCopy (Insert a)
-    = contain
-        (do { safePut a;
-              return () })
-  getCopy = contain ((return Insert) <*> safeGet)
-instance (SafeCopy a, Typeable a) => Method (Insert a) where
-  type MethodResult (Insert a) = ()
-  type MethodState (Insert a) = [a]
-instance (Typeable a, SafeCopy a) => UpdateEvent (Insert a)
-data ToList (a :: *) = ToList deriving (Typeable)
-instance SafeCopy a => SafeCopy (ToList a) where
-  putCopy ToList = contain (do { return () })
-  getCopy = contain (return ToList)
-instance (SafeCopy a, Typeable a) => Method (ToList a) where
-  type MethodResult (ToList a) = [a]
-  type MethodState (ToList a) = [a]
-instance (SafeCopy a, Typeable a) => QueryEvent (ToList a)
+-- | A persistent store for acceptor state
+data AcceptorStore = AcceptorStore
+    { -- | Inserts a decree in the store.
+      storeInsert :: DecreeId -> ByteString -> IO ()
+      -- | Retrieves a decree in the store.
+    , storeLookup :: DecreeId -> IO (Maybe ByteString)
+      -- | Saves a value in the store.
+    , storePut :: ByteString -> IO ()
+      -- | Restores a value from the store.
+    , storeGet :: IO (Maybe ByteString)
+      -- | Closes the store.
+    , storeClose :: IO ()
+    }
+  deriving Typeable
 
 -- | Acceptor process.
 --
@@ -141,34 +114,40 @@ instance (SafeCopy a, Typeable a) => QueryEvent (ToList a)
 --
 --   * P1. An acceptor can accept a proposal in ballot b iff it has not
 --   responded to a 'Prepare' request in a ballot greater than b.
-acceptor :: forall a n. Serializable a => a -> (n -> FilePath) -> n -> Process ()
-acceptor _ file name = do
-    bracket (liftIO $ openLocalStateFrom (file name) [])
-            (liftIO . closeAcidState) $
-            \acid -> loop acid Bottom
-  where loop acid b = do
+acceptor :: forall a n. Serializable a
+         => a -> (n -> IO AcceptorStore) -> n -> Process ()
+acceptor _ config name =
+  bracket (liftIO $ config name) (liftIO . storeClose) $ \case
+  AcceptorStore {..} -> do
+       liftIO storeGet >>= loop . maybe Bottom (Value . decode)
+    where
+      loop :: Lifted BallotId -> Process b
+      loop b = do
           self <- getSelfPid
           receiveWait
               [ match $ \(Msg.Prepare d b' λ) -> do
                   if b <= Value b'
                   then do
-                      acks <- map unS <$> liftIO (query acid ToList)
-                      usend λ $ Msg.Promise b' self $ take 1 $
-                          filter (\(Msg.Ack d' _ _ _) -> d==d') acks
-                      loop acid (Value b')
+                      when (b < Value b') $
+                        liftIO $ storePut $ encode b'
+                      liftIO (storeLookup d) >>= usend λ . Msg.Promise b' self .
+                        maybe [] (\(b'', x) -> [Msg.Ack d b'' self (x :: a)]) .
+                        fmap decode
+                      loop (Value b')
                   else do
                       usend λ $ Msg.Nack $ fromValue b
-                      loop acid b
+                      loop b
               , match $ \(Msg.Syn d b' λ x) -> do
                   if b <= Value b'
                   then do
-                      let ack = Msg.Ack d b' self (x :: a)
-                      _ <- liftIO $ update acid $ Insert $ S ack
-                      usend λ ack
-                      loop acid (Value b')
+                      when (b < Value b') $
+                        liftIO $ storePut $ encode b'
+                      liftIO $ storeInsert d $ encode (b', x :: a)
+                      usend λ $ Msg.Ack d b' self x
+                      loop (Value b')
                   else do
                       usend λ $ Msg.Nack $ fromValue b
-                      loop acid b ]
+                      loop b ]
 
 {-*promela
 

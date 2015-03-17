@@ -8,11 +8,12 @@ module Test (tests) where
 
 import Test.Framework
 
-import Control.Distributed.Process.Consensus
-    ( __remoteTable )
+import Control.Distributed.Process.Consensus ( __remoteTable )
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import qualified Control.Distributed.Log as Log
 import Control.Distributed.Log.Snapshot
+import Control.Distributed.Log.Persistence.Paxos (acceptorStore)
+import Control.Distributed.Log.Persistence.LevelDB
 import Control.Distributed.Log ( updateHandle )
 import qualified Control.Distributed.State as State
 import Control.Distributed.State
@@ -90,8 +91,11 @@ snapshotThreashold = 5
 testConfig :: Log.Config
 testConfig = Log.Config
     { logName           = "test-log"
-    , consensusProtocol = \dict -> BasicPaxos.protocol dict 1000000
-                                                       (filepath "acceptors")
+    , consensusProtocol = \dict ->
+               BasicPaxos.protocol dict 1000000
+                 (\n -> openPersistentStore (filepath "acceptors" n) >>=
+                          acceptorStore
+                 )
     , persistDirectory  = filepath "replicas"
     , leaseTimeout      = 1000000
     , leaseRenewTimeout = 300000

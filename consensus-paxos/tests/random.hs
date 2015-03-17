@@ -5,7 +5,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 import Control.Distributed.Process.Consensus
-import Control.Distributed.Process.Consensus.Paxos (acceptor)
+import Control.Distributed.Process.Consensus.Paxos
 import Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 
 import Control.Distributed.Process hiding (bracket)
@@ -15,15 +15,14 @@ import Control.Distributed.Process.Scheduler
 import Network.Transport (Transport(..))
 import Network.Transport.TCP
 
+import Control.Applicative ((<$>))
 import Control.Exception ( bracket, throwIO, SomeException )
 import Control.Monad ( when, forM, forM_, replicateM_ )
-import Data.IORef ( newIORef, atomicModifyIORef, readIORef, writeIORef )
+import Data.IORef
 import qualified Data.Map as Map ( empty, insert, lookup )
 import System.Exit ( exitFailure )
 import System.Environment ( getArgs )
-import System.FilePath ((</>))
 import System.Posix.Env (setEnv)
-import System.Posix.Temp (mkdtemp)
 import System.Random ( randomIO, split, mkStdGen, random, randoms, randomRs )
 
 remoteTables :: RemoteTable
@@ -65,12 +64,21 @@ main = do
 run :: Int -> Process ()
 run s = let (s0,s1) = split $ mkStdGen s
          in withScheduler [] (fst $ random s0) $ do
-  tmpdir <- liftIO $ mkdtemp "/tmp/tmp."
   let procs = 5
-  αs <- forM [1..procs] $ \n ->
-            spawnLocal $ acceptor (undefined :: Int)
-                                  (const $ tmpdir </> show s </> show n)
-                                  n
+  αs <- forM [1..procs] $ \n -> do
+          mref <- liftIO $ newIORef Map.empty
+          vref <- liftIO $ newIORef Nothing
+          spawnLocal $
+            acceptor (undefined :: Int)
+                 (const $ return AcceptorStore
+                    { storeInsert = \d v -> modifyIORef mref $ Map.insert d v
+                    , storeLookup = \d -> Map.lookup d <$> readIORef mref
+                    , storePut = writeIORef vref . Just
+                    , storeGet = readIORef vref
+                    , storeClose = return ()
+                    }
+                 )
+                 n
   pmapR <- liftIO $ newIORef Map.empty
   self <- getSelfPid
   let rs = randomRs (1,procs) s1

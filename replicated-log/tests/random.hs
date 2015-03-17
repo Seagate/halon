@@ -9,6 +9,7 @@
 import Test.Framework (withTmpDirectory)
 
 import Control.Distributed.Process.Consensus
+import Control.Distributed.Process.Consensus.Paxos
 import Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import Control.Distributed.Log as Log
 import Control.Distributed.Log.Snapshot
@@ -26,8 +27,9 @@ import Network.Transport.TCP
 import Control.Exception ( bracket, throwIO, SomeException )
 import Control.Monad ( when, forM_, replicateM, foldM_, void )
 import Data.Constraint (Dict(..))
+import qualified Data.Map as Map
 import Data.Typeable (Typeable)
-import Data.IORef ( newIORef, readIORef, writeIORef )
+import Data.IORef
 import Data.List ( isPrefixOf )
 import Data.Ratio ((%))
 import System.Exit ( exitFailure )
@@ -61,7 +63,18 @@ testConfig :: Log.Config
 testConfig = Log.Config
     { logName           = "test-log"
     , consensusProtocol = \dict -> BasicPaxos.protocol dict 3000000
-                                                       (filepath "acceptors")
+                 (\_ -> do
+                    mref <- newIORef Map.empty
+                    vref <- newIORef Nothing
+                    return AcceptorStore
+                      { storeInsert = \d v -> do
+                          modifyIORef mref $ Map.insert d v
+                      , storeLookup = \d -> fmap (Map.lookup d) $ readIORef mref
+                      , storePut = writeIORef vref . Just
+                      , storeGet = readIORef vref
+                      , storeClose = return ()
+                      }
+                 )
     , persistDirectory  = filepath "replicas"
     , leaseTimeout      = 3000000
     , leaseRenewTimeout = 1000000
