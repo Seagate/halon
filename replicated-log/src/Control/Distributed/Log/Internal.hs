@@ -47,7 +47,9 @@ import Control.Distributed.Process.Batcher
 import Control.Distributed.Process.Consensus hiding (Value)
 import Control.Distributed.Process.Timeout
 
-import Control.Distributed.Process hiding (callLocal, send)
+-- Preventing uses of spawn and call because of
+-- https://cloud-haskell.atlassian.net/browse/DP-104
+import Control.Distributed.Process hiding (callLocal, send, spawn, call)
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
@@ -1262,13 +1264,20 @@ unMaxCP :: Typeable a
         -> CP Max a
 unMaxCP f = staticClosure $(mkStatic 'unMax) `closureApply` f
 
+expectSpawn :: SpawnRef -> Process ProcessId
+expectSpawn ref =
+    receiveWait [ matchIf (\(DidSpawn ref' _) -> ref' == ref) $
+                           \(DidSpawn _ pid) -> return pid
+                ]
+
 -- | Spawn a group of processes, feeding the set of all ProcessId's to each.
 spawnRec :: [NodeId] -> Closure ([ProcessId] -> Process ()) -> Process [ProcessId]
 spawnRec nodes f = callLocal $ do -- use callLocal to discard monitor
                                   -- notifications
     self <- getSelfPid
-    ρs <- forM nodes $ \nid -> spawn nid $
+    refs <- forM nodes $ \nid -> spawnAsync nid $
               delayClosure ($(mkStatic 'dictList) `staticApply` sdictProcessId) self f
+    ρs <- forM refs expectSpawn
     mapM_ monitor ρs
     forM_ ρs $ \ρ -> usend ρ ρs
     forM_ ρs $ const $ receiveWait
@@ -1514,11 +1523,11 @@ new sdict1 sdict2 config log nodes = do
     let protocol = staticClosure $(mkStatic 'consensusProtocol)
                      `closureApply` config
                      `closureApply` staticClosure (sdictValue sdict2)
-    acceptors <-
-        forM nodes $ \nid -> spawn nid $
-            acceptorClosure $(mkStatic 'dictNodeId)
-                            protocol
-                            nid
+    refs <- forM nodes $ \nid -> spawnAsync nid $
+              acceptorClosure $(mkStatic 'dictNodeId)
+                              protocol
+                              nid
+    acceptors <- forM refs expectSpawn
     now <- liftIO $ getTime Monotonic
     -- See Note [spawnRec]
     replicas <- spawnRec nodes $
@@ -1576,14 +1585,17 @@ addReplica h@(Handle sdict1 sdict2 config log _) cpolicy nid = do
     let protocol = staticClosure $(mkStatic 'consensusProtocol)
                      `closureApply` config
                      `closureApply` staticClosure (sdictValue sdict2)
-    α <- spawn nid $
-             acceptorClosure $(mkStatic 'dictNodeId)
-                             protocol
-                             nid
+    αref <- spawnAsync nid (acceptorClosure $(mkStatic 'dictNodeId)
+                                            protocol
+                                            nid
+                           )
     -- See comment about effect of 'cpExpect' in docstring above.
-    ρ <- spawn nid $ bindCP (cpExpect sdictMax) $
-             unMaxCP $ replicaClosure sdict1 sdict2 config log
-               `closureApply` timeSpecClosure now
+    ρref <- spawnAsync nid (bindCP (cpExpect sdictMax) $
+                             unMaxCP $ replicaClosure sdict1 sdict2 config log
+                             `closureApply` timeSpecClosure now
+                           )
+    α <- expectSpawn αref
+    ρ <- expectSpawn ρref
     reconfigure h $ cpolicy
         `closureApply` processIdClosure α
         `closureApply` processIdClosure ρ
