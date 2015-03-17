@@ -85,6 +85,8 @@ Library
                    HA.Resources.Mero
 
   Other-Modules:   HA.Services.Frontier.Command
+                   HA.Services.SSPL.CEP
+                   HA.Services.SSPL.Resources
 
   Build-Depends:   base,
                    aeson,
