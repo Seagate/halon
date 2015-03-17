@@ -67,6 +67,7 @@ Library
                    HA.Network.RemoteTables
                    HA.Network.Socket
                    HA.Service
+                   HA.Service.TH
                    HA.Services.Dummy
                    HA.Services.Empty
                    HA.Services.EQTracker
@@ -98,7 +99,8 @@ Library
                    network-transport,
                    options-schema >= 0.1.1.0,
                    cep,
-                   netwire
+                   netwire,
+                   template-haskell
   if flag(rpc)
     Build-Depends: rpclite,
                    network-transport,

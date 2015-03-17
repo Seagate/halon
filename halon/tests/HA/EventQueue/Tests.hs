@@ -16,6 +16,7 @@ import HA.EventQueue.Producer
 import HA.EventQueue.Types
 import HA.NodeAgent.Messages
 import HA.Service (serviceProcess)
+import HA.Services.Empty
 import HA.Services.EQTracker
 import HA.Replicator
 #ifdef USE_MOCK_REPLICATOR
@@ -102,7 +103,7 @@ tests transport internals = do
                                  (Nothing,[])
             rGroup <- unClosure cRGroup >>= id
             eq <- spawnLocal (eventQueue rGroup)
-            na <- spawnLocal . ($ ()) =<< unClosure (serviceProcess eqTracker)
+            na <- spawnLocal . ($ EmptyConf) =<< unClosure (serviceProcess eqTracker)
             True <- updateEQNodes na nodes
             mapM_ link [eq, na]
 

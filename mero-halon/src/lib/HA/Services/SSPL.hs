@@ -28,7 +28,7 @@ module HA.Services.SSPL
 
 import HA.NodeAgent.Messages
 import HA.EventQueue.Producer (promulgate)
-import HA.Service hiding (configDict)
+import HA.Service
 import HA.Services.SSPL.CEP
 import HA.Services.SSPL.Resources
 
@@ -180,6 +180,6 @@ remotableDecl [ [d|
           (ServiceName "sspl")
           $(mkStaticClosure 'ssplProcess)
           ($(mkStatic 'someConfigDict)
-              `staticApply` $(mkStatic 'configDict))
+              `staticApply` $(mkStatic 'configDictSSPLConf))
 
   |] ]

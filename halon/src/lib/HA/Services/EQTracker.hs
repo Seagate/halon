@@ -77,7 +77,7 @@ name = "HA.EQTracker"
 
 remotableDecl [ [d|
 
-  eqTrackerProcess :: () -> Process ()
+  eqTrackerProcess :: EmptyConf -> Process ()
   eqTrackerProcess _ = do
       self <- getSelfPid
       ensureRegistered self
@@ -109,12 +109,12 @@ remotableDecl [ [d|
               return eqs
           ] >>= go
 
-  eqTracker :: Service ()
+  eqTracker :: Service EmptyConf
   eqTracker = Service
                 (ServiceName name)
                 ($(mkStaticClosure 'eqTrackerProcess))
                 ($(mkStatic 'someConfigDict)
-                  `staticApply` $(mkStatic 'emptyConfigDict))
+                  `staticApply` $(mkStatic 'configDictEmptyConf))
 
   -- The EQ response may suggest to contact another replica. This function
   -- handles the EQTracker state update.

@@ -65,6 +65,7 @@ module HA.RecoveryCoordinator.Mero
 import Prelude hiding ((.), id, mapM_)
 import HA.Resources
 import HA.Service
+import HA.Services.Empty
 
 import HA.Resources.Mero
 #ifdef USE_MERO_NOTE
@@ -181,7 +182,7 @@ startEQTracker :: IgnitionArguments
                -> CEP LoopState ()
 startEQTracker argv nid = State.gets lsGraph >>= \rg -> liftProcess $ do
     sayRC $ "New node contacted: " ++ show nid
-    eqt  <- _startService nid EQT.eqTracker () rg
+    eqt  <- _startService nid EQT.eqTracker EmptyConf rg
     True <- updateEQNodes eqt (stationNodes argv)
     return ()
 

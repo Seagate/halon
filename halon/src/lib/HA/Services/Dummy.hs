@@ -19,8 +19,7 @@ module HA.Services.Dummy
 
 import HA.NodeAgent.Messages
 import HA.Service
-import HA.ResourceGraph
-import HA.Resources (Cluster, Node)
+import HA.Service.TH
 
 import Control.Applicative ((<$>))
 import Control.Distributed.Process
@@ -51,96 +50,8 @@ dummySchema = let
                 <> metavar "GREETING"
   in DummyConf <$> hw
 
---------------------------------------------------------------------------------
--- Dictionaries                                                               --
---------------------------------------------------------------------------------
-
-dConfigDict :: Dict (Configuration DummyConf)
-dConfigDict = Dict
-
-dSerializableDict :: SerializableDict DummyConf
-dSerializableDict = SerializableDict
-
---TODO Can we auto-gen this whole section?
-resourceDictServiceDummy :: Dict (Resource (Service DummyConf))
-resourceDictServiceProcessDummy :: Dict (Resource (ServiceProcess DummyConf))
-resourceDictConfigItemDummy :: Dict (Resource DummyConf)
-resourceDictServiceDummy = Dict
-resourceDictServiceProcessDummy = Dict
-resourceDictConfigItemDummy = Dict
-
-relationDictSupportsClusterServiceDummy :: Dict (
-    Relation Supports Cluster (Service DummyConf)
-  )
-relationDictHasNodeServiceProcessDummy :: Dict (
-    Relation Runs Node (ServiceProcess DummyConf)
-  )
-relationDictWantsServiceProcessDummyConfigItemDummy :: Dict (
-    Relation WantsConf (ServiceProcess DummyConf) DummyConf
-  )
-relationDictHasServiceProcessDummyConfigItemDummy :: Dict (
-    Relation HasConf (ServiceProcess DummyConf) DummyConf
-  )
-relationDictInstanceOfServiceDummyServiceProcessDummy :: Dict (
-    Relation InstanceOf (Service DummyConf) (ServiceProcess DummyConf)
-  )
-relationDictOwnsServiceProcessDummyServiceName :: Dict (
-    Relation Owns (ServiceProcess DummyConf) ServiceName
-  )
-relationDictSupportsClusterServiceDummy = Dict
-relationDictHasNodeServiceProcessDummy = Dict
-relationDictWantsServiceProcessDummyConfigItemDummy = Dict
-relationDictHasServiceProcessDummyConfigItemDummy = Dict
-relationDictInstanceOfServiceDummyServiceProcessDummy = Dict
-relationDictOwnsServiceProcessDummyServiceName = Dict
-
-remotable
-  [ 'dConfigDict
-  , 'dSerializableDict
-  , 'resourceDictServiceDummy
-  , 'resourceDictServiceProcessDummy
-  , 'resourceDictConfigItemDummy
-  , 'relationDictSupportsClusterServiceDummy
-  , 'relationDictHasNodeServiceProcessDummy
-  , 'relationDictWantsServiceProcessDummyConfigItemDummy
-  , 'relationDictHasServiceProcessDummyConfigItemDummy
-  , 'relationDictInstanceOfServiceDummyServiceProcessDummy
-  , 'relationDictOwnsServiceProcessDummyServiceName
-  ]
-
-instance Resource (Service DummyConf) where
-  resourceDict = $(mkStatic 'resourceDictServiceDummy)
-
-instance Resource (ServiceProcess DummyConf) where
-  resourceDict = $(mkStatic 'resourceDictServiceProcessDummy)
-
-instance Resource DummyConf where
-  resourceDict = $(mkStatic 'resourceDictConfigItemDummy)
-
-instance Relation Supports Cluster (Service DummyConf) where
-  relationDict = $(mkStatic 'relationDictSupportsClusterServiceDummy)
-
-instance Relation Runs Node (ServiceProcess DummyConf) where
-  relationDict = $(mkStatic 'relationDictHasNodeServiceProcessDummy)
-
-instance Relation HasConf (ServiceProcess DummyConf) DummyConf where
-  relationDict = $(mkStatic 'relationDictHasServiceProcessDummyConfigItemDummy)
-
-instance Relation WantsConf (ServiceProcess DummyConf) DummyConf where
-  relationDict = $(mkStatic 'relationDictWantsServiceProcessDummyConfigItemDummy)
-
-instance Relation InstanceOf (Service DummyConf) (ServiceProcess DummyConf) where
-  relationDict = $(mkStatic 'relationDictInstanceOfServiceDummyServiceProcessDummy)
-
-instance Relation Owns (ServiceProcess DummyConf) ServiceName where
-  relationDict = $(mkStatic 'relationDictOwnsServiceProcessDummyServiceName)
---------------------------------------------------------------------------------
--- End Dictionaries                                                           --
---------------------------------------------------------------------------------
-
-instance Configuration DummyConf where
-  schema = dummySchema
-  sDict = $(mkStatic 'dSerializableDict)
+$(generateDicts ''DummyConf)
+$(deriveService ''DummyConf 'dummySchema [])
 
 -- | Block forever.
 never :: Process ()
@@ -152,7 +63,7 @@ remotableDecl [ [d|
             (ServiceName "dummy")
             $(mkStaticClosure 'dummyProcess)
             ($(mkStatic 'someConfigDict)
-                `staticApply` $(mkStatic 'dConfigDict))
+                `staticApply` $(mkStatic 'configDictDummyConf))
 
   dummyProcess :: DummyConf -> Process ()
   dummyProcess (DummyConf hw) = (`catchExit` onExit) $ do

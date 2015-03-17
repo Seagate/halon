@@ -3,113 +3,40 @@
 -- License   : All rights reserved.
 --
 
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveDataTypeable    #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell       #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -fno-warn-orphans      #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
 module HA.Services.Empty
-  ( HA.Services.Empty.__remoteTable
-  , emptyConfigDict
-  , emptyConfigDict__static
-  , emptySDict
-  , emptySDict__static
+  ( EmptyConf(..)
+  , HA.Services.Empty.__remoteTable
+  , configDictEmptyConf
+  , configDictEmptyConf__static
   ) where
 
-import HA.ResourceGraph
-import HA.Resources
-import HA.Service
+import Data.Binary
+import Data.Hashable
+import Data.Typeable
+import GHC.Generics
+
+import HA.Service.TH
 
 import Control.Applicative (pure)
-import Control.Distributed.Process.Closure
-  ( SerializableDict(..)
-  , mkStatic
-  , remotable
-  )
 
-emptyConfigDict :: Dict (Configuration ())
-emptyConfigDict = Dict
+import Options.Schema
 
-emptySDict :: SerializableDict ()
-emptySDict = SerializableDict
+data EmptyConf = EmptyConf deriving (Eq, Generic, Show, Typeable)
 
---TODO Can we auto-gen this whole section?
-resourceDictServiceEmpty :: Dict (Resource (Service ()))
-resourceDictServiceProcessEmpty :: Dict (Resource (ServiceProcess ()))
-resourceDictConfigItemEmpty :: Dict (Resource ())
-resourceDictServiceEmpty = Dict
-resourceDictServiceProcessEmpty = Dict
-resourceDictConfigItemEmpty = Dict
+instance Binary EmptyConf
+instance Hashable EmptyConf
 
-relationDictSupportsClusterServiceEmpty :: Dict (
-    Relation Supports Cluster (Service ())
-  )
-relationDictRunsNodeServiceProcessEmpty :: Dict (
-    Relation Runs Node (ServiceProcess ())
-  )
-relationDictWantsServiceProcessEmptyConfigItemEmpty :: Dict (
-    Relation WantsConf (ServiceProcess ()) ()
-  )
-relationDictHasServiceProcessEmptyConfigItemEmpty :: Dict (
-    Relation HasConf (ServiceProcess ()) ()
-  )
-relationDictInstanceOfServiceEmptyServiceProcessEmpty :: Dict (
-    Relation InstanceOf (Service ()) (ServiceProcess ())
-  )
-relationDictOwnsServiceProcessEmptyServiceName :: Dict (
-    Relation Owns (ServiceProcess ()) ServiceName
-  )
+emptySchema :: Schema EmptyConf
+emptySchema = pure EmptyConf
 
-relationDictSupportsClusterServiceEmpty = Dict
-relationDictRunsNodeServiceProcessEmpty = Dict
-relationDictWantsServiceProcessEmptyConfigItemEmpty = Dict
-relationDictHasServiceProcessEmptyConfigItemEmpty = Dict
-relationDictInstanceOfServiceEmptyServiceProcessEmpty = Dict
-relationDictOwnsServiceProcessEmptyServiceName = Dict
-
-remotable
-  [ 'emptyConfigDict
-  , 'emptySDict
-  , 'resourceDictServiceEmpty
-  , 'resourceDictServiceProcessEmpty
-  , 'resourceDictConfigItemEmpty
-  , 'relationDictSupportsClusterServiceEmpty
-  , 'relationDictRunsNodeServiceProcessEmpty
-  , 'relationDictHasServiceProcessEmptyConfigItemEmpty
-  , 'relationDictWantsServiceProcessEmptyConfigItemEmpty
-  , 'relationDictInstanceOfServiceEmptyServiceProcessEmpty
-  , 'relationDictOwnsServiceProcessEmptyServiceName
-  ]
-
-instance Resource (Service ()) where
-  resourceDict = $(mkStatic 'resourceDictServiceEmpty)
-
-instance Resource (ServiceProcess ()) where
-  resourceDict = $(mkStatic 'resourceDictServiceProcessEmpty)
-
-instance Resource () where
-  resourceDict = $(mkStatic 'resourceDictConfigItemEmpty)
-
-instance Relation Supports Cluster (Service ()) where
-  relationDict = $(mkStatic 'relationDictSupportsClusterServiceEmpty)
-
-instance Relation Runs Node (ServiceProcess ()) where
-  relationDict = $(mkStatic 'relationDictRunsNodeServiceProcessEmpty)
-
-instance Relation HasConf (ServiceProcess ()) () where
-  relationDict = $(mkStatic 'relationDictHasServiceProcessEmptyConfigItemEmpty)
-
-instance Relation WantsConf (ServiceProcess ()) () where
-  relationDict = $(mkStatic 'relationDictWantsServiceProcessEmptyConfigItemEmpty)
-
-instance Relation InstanceOf (Service ()) (ServiceProcess ()) where
-  relationDict = $(mkStatic 'relationDictInstanceOfServiceEmptyServiceProcessEmpty)
-
-instance Relation Owns (ServiceProcess ()) ServiceName where
-  relationDict = $(mkStatic 'relationDictOwnsServiceProcessEmptyServiceName)
-
-instance Configuration () where
-  schema = pure ()
-  sDict = $(mkStatic 'emptySDict)
+$(generateDicts ''EmptyConf)
+$(deriveService ''EmptyConf 'emptySchema [])
