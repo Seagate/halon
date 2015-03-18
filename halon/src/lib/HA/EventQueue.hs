@@ -32,6 +32,7 @@ module HA.EventQueue
   , eventQueueLabel
   , RCDied(..)
   , RCLost(..)
+  , TrimDone(..)
   ) where
 
 import Prelude hiding ((.), id)
@@ -162,10 +163,10 @@ eqRules rg = do
             publish RCDied
             put Nothing
 
-    define id $ \(eid :: EventId) -> liftProcess $ do
-      retry requestTimeout $
+    define id $ \(eid :: EventId) -> do
+      liftProcess $ retry requestTimeout $
         updateStateWith rg $ $(mkClosure 'filterEvent) eid
-      say "Trim done."
+      publish TrimDone
 
     define id $ \((sender, ev) :: (ProcessId, HAEvent [ByteString])) -> do
       liftProcess $ retry requestTimeout $
@@ -202,3 +203,7 @@ instance Binary RCDied
 data RCLost = RCLost deriving (Show, Typeable, Generic)
 
 instance Binary RCLost
+
+data TrimDone = TrimDone deriving (Show, Typeable, Generic)
+
+instance Binary TrimDone

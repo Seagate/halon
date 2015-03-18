@@ -69,13 +69,13 @@ rcRules argv eq = do
         registerServiceProcess n svc cfg sp
 
     -- Service Failed
-    defineHAEvent id $ \(HAEvent eid msg _) -> do
+    defineHAEvent id $ \(HAEvent _ msg _) -> do
         ServiceFailed n svc pid <- decodeMsg msg
         res                     <- lookupRunningService n svc
         case res of
           Just (ServiceProcess spid) | spid == pid -> do
             _ <- bounceServiceTo Current n svc
-            sendMsg eq eid
+            return ()
           _ -> return ()
 
     -- EpochRequest
@@ -94,5 +94,9 @@ rcRules argv eq = do
     defineHAEvent id $ \(HAEvent _ (GetMultimapProcessId sender) _) -> do
         mmid <- getMultimapProcessId
         sendMsg sender mmid
+
+    onEveryHAEvent $ \(HAEvent eid _ _) s -> do
+        usend eq eid
+        return s
 
     ssplRules

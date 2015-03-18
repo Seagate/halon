@@ -29,7 +29,6 @@ import RemoteTables
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
-import Control.Distributed.Process.Serializable ( Serializable )
 import Control.Distributed.Process.Timeout (retry)
 
 import Control.Applicative ((<$>))
@@ -68,9 +67,6 @@ triggerEvent x = promulgate x >>= \pid -> withMonitor pid wait
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 
-invoke :: Serializable a => ProcessId -> a -> Process ()
-invoke them x = send them x >> expect
-
 requestTimeout :: Int
 requestTimeout = 1000000
 
@@ -94,10 +90,6 @@ tests transport internals = do
         setup action = withTmpDirectory $ tryWithTimeout transport rt (30 * secs) $ do
             self <- getSelfPid
             let nodes = [processNodeId self]
-
-            registerInterceptor $ \string -> case string of
-                "Trim done." -> send self ()
-                _ -> return ()
 
             cRGroup <- newRGroup $(mkStatic 'eqSDict) 20 1000000 nodes
                                  (Nothing,[])
@@ -134,30 +126,37 @@ tests transport internals = do
               assert . (== 10) . length . snd =<< retry requestTimeout
                                                     (getState rGroup)
         , testSuccess "eq-trim-one" ==> \eq _ rGroup -> do
+              simpleSubscribe eq (Sub :: Sub TrimDone)
               mapM_ triggerEvent [1..10]
               (_, (HAEvent evtid _ _ ):_) <- retry requestTimeout $
                                                getState rGroup
-              invoke eq evtid
+              send eq evtid
+              Published TrimDone _ <- expect
               assert . (== 9) . length . snd =<< retry requestTimeout
                                                    (getState rGroup)
         , testSuccess "eq-trim-idempotent" ==> \eq _ rGroup -> do
+              simpleSubscribe eq (Sub :: Sub TrimDone)
               mapM_ triggerEvent [1..10]
               (_, (HAEvent evtid _ _ ):_) <- retry requestTimeout $
                                                getState rGroup
               before <- map (eventCounter . eventId) . snd <$>
                           retry requestTimeout (getState rGroup)
-              invoke eq evtid
+              send eq evtid
+              Published TrimDone _ <- expect
               trim1 <- map (eventCounter . eventId) . snd <$>
                           retry requestTimeout (getState rGroup)
-              invoke eq evtid
+              send eq evtid
+              Published TrimDone _ <- expect
               trim2 <- map (eventCounter . eventId) . snd <$>
                           retry requestTimeout (getState rGroup)
               assert (before /= trim1 && before /= trim2 && trim1 == trim2)
         , testSuccess "eq-trim-none" ==> \eq na rGroup -> do
+              simpleSubscribe eq (Sub :: Sub TrimDone)
               mapM_ triggerEvent [1..10]
               before <- map (eventCounter . eventId) . snd <$>
                           retry requestTimeout (getState rGroup)
-              invoke eq $  EventId na 11
+              send eq $ EventId na 11
+              Published TrimDone _ <- expect
               trim <- map (eventCounter . eventId) . snd <$>
                           retry requestTimeout (getState rGroup)
               assert (before == trim)
