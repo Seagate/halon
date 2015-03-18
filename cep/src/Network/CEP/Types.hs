@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeOperators              #-}
 -- |
@@ -29,6 +30,8 @@ data Sub a = Sub deriving (Generic, Typeable)
 
 instance Binary a => Binary (Sub a)
 
+data Handled = forall a. Typeable a => Handled a
+
 data Msg
     = SubRequest Subscribe
     | Other Dynamic
@@ -36,8 +39,9 @@ data Msg
 data RuleState s =
     RuleState
     { cepMatches    :: ![Match Msg]
-    , cepRules      :: !(ComplexEvent s Dynamic ())
+    , cepRules      :: !(ComplexEvent s Dynamic Handled)
     , cepFinalizers :: (s -> Process s)
+    , cepSpes       :: forall a. Typeable a => a -> s -> Process s
     }
 
 newtype RuleM s a = RuleM (State (RuleState s) a)
@@ -105,13 +109,14 @@ initRuleState = RuleState
                 { cepMatches    = []
                 , cepRules      = mkEmpty
                 , cepFinalizers = return
+                , cepSpes       = \_ s -> return s
                 }
 
 runRuleM :: RuleM s a -> RuleState s
 runRuleM (RuleM m) = execState m initRuleState
 
 addRule :: Match Msg
-        -> ComplexEvent s Dynamic ()
+        -> ComplexEvent s Dynamic Handled
         -> RuleState s
         -> RuleState s
 addRule m r s =
@@ -122,6 +127,22 @@ addRule m r s =
 addFinalizer :: (s -> Process s) -> RuleState s -> RuleState s
 addFinalizer p s = s { cepFinalizers = cepFinalizers s >=> p }
 
+addSpecialized :: Typeable a
+               => (a -> s -> Process s)
+               -> RuleState s
+               -> RuleState s
+addSpecialized k rs = rs { cepSpes = composeSpe (cepSpes rs) k }
+
+composeSpe :: Typeable b
+           => (forall a. Typeable a => a -> s -> Process s)
+           -> (b -> s -> Process s)
+           -> (forall a. Typeable a => a -> s -> Process s)
+composeSpe pk k r s = do
+    s' <- pk r s
+    case cast r of
+      Just b -> k b s'
+      _      -> return s'
+
 dynEvent :: Serializable a => ComplexEvent s Dynamic a
 dynEvent = mkGen_ $ \dyn ->
     case fromDynamic dyn of
@@ -131,7 +152,7 @@ dynEvent = mkGen_ $ \dyn ->
 addRuleFinalizer :: (s -> Process s) -> RuleM s ()
 addRuleFinalizer = modify . addFinalizer
 
-define :: forall a b s. Serializable a
+define :: forall a b s. (Serializable a, Typeable b)
        => ComplexEvent s a b
        -> (b -> CEP s ())
        -> RuleM s ()
@@ -140,6 +161,9 @@ define w k = do
         rule    = observe . w . dynEvent
         observe = mkGen_ $ \b -> do
           k b
-          return $ Right ()
+          return $ Right $ Handled b
 
     modify $ addRule m rule
+
+finishedBy :: Typeable a => (a -> s -> Process s) -> RuleM s ()
+finishedBy = modify . addSpecialized

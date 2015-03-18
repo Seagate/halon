@@ -58,7 +58,9 @@ runProcessor s rm = go start clockSession_ (cepRules rs)
             let action = stepWire wire step (Right dyn)
             ((resp, nextWire), nextBook) <- runCEP action book
             newS <- case resp of
-              Right _ -> fin $ _state nextBook
+              Right (Handled evt) -> do
+                ss <- fin $ _state nextBook
+                cepSpes rs evt ss
               _       -> return $ _state nextBook
             go nextBook { _state = newS } nextSession nextWire
 
