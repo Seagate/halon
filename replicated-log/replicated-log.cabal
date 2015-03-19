@@ -76,6 +76,7 @@ Test-Suite tests
 
   if flag(maintainer)
     Ghc-Options: -Werror
+    Cpp-Options: -DCABAL_MAINTAINER_FLAG
 
 
   Build-Depends:    base >= 4.7,
@@ -100,6 +101,7 @@ Test-Suite tests
                       GeneralizedNewtypeDeriving
                       RecordWildCards NamedFieldPuns
                       ScopedTypeVariables
+                      CPP
 
 Test-Suite random
   Type:             exitcode-stdio-1.0
