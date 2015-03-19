@@ -21,6 +21,7 @@ import HA.Replicator.Mock ( MC_RG )
 import HA.Replicator.Log ( MC_RG )
 #endif
 import HA.Service (serviceProcess)
+import HA.Services.Empty hiding (__remoteTable)
 import HA.Services.EQTracker
 import RemoteTables ( remoteTable )
 
@@ -133,7 +134,7 @@ naTestWithEQ transport action = withTmpDirectory $ do
     newNode = newLocalNode transport
                        $ __remoteTable remoteTable
     initialize nids node = tryRunProcess node $ do
-      na <- spawnLocalLink . ($ ()) =<< unClosure (serviceProcess eqTracker)
+      na <- spawnLocalLink . ($ EmptyConf) =<< unClosure (serviceProcess eqTracker)
       True <- updateEQNodes na nids
       return ()
 
@@ -155,7 +156,7 @@ naTest transport action = withTmpDirectory $ bracket
                    (expect :: Process (ProcessId, HAEvent [ByteString]))
                    >>= send self . (,) (nids !! 1)
           register eventQueueLabel eq2
-        na <- spawnLocalLink . ($ ()) =<< unClosure (serviceProcess eqTracker)
+        na <- spawnLocalLink . ($ EmptyConf) =<< unClosure (serviceProcess eqTracker)
         True <- updateEQNodes na nids
         action nids
 

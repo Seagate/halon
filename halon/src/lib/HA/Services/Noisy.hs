@@ -22,8 +22,7 @@ module HA.Services.Noisy
 import HA.EventQueue.Producer
 import HA.NodeAgent.Messages
 import HA.Service
-import HA.ResourceGraph
-import HA.Resources (Cluster, Node)
+import HA.Service.TH
 
 import Control.Applicative ((<$>))
 import Control.Distributed.Process
@@ -64,112 +63,8 @@ data HasPingCount = HasPingCount
 instance Binary HasPingCount
 instance Hashable HasPingCount
 
---------------------------------------------------------------------------------
--- Dictionaries                                                               --
---------------------------------------------------------------------------------
-
-dConfigDict :: Dict (Configuration NoisyConf)
-dConfigDict = Dict
-
-dSerializableDict :: SerializableDict NoisyConf
-dSerializableDict = SerializableDict
-
-
---TODO Can we auto-gen this whole section?
-resourceDictNoisyPingCount :: Dict (Resource NoisyPingCount)
-resourceDictServiceNoisy :: Dict (Resource (Service NoisyConf))
-resourceDictServiceProcessNoisy :: Dict (Resource (ServiceProcess NoisyConf))
-resourceDictConfigItemNoisy :: Dict (Resource NoisyConf)
-resourceDictNoisyPingCount = Dict
-resourceDictServiceNoisy = Dict
-resourceDictServiceProcessNoisy = Dict
-resourceDictConfigItemNoisy = Dict
-
-relationDictHasPingCountServiceNoisyNoisyPingCount :: Dict (
-    Relation HasPingCount (Service NoisyConf) NoisyPingCount
-  )
-relationDictSupportsClusterServiceNoisy :: Dict (
-    Relation Supports Cluster (Service NoisyConf)
-  )
-relationDictHasNodeServiceProcessNoisy :: Dict (
-    Relation Runs Node (ServiceProcess NoisyConf)
-  )
-relationDictWantsServiceProcessNoisyConfigItemNoisy :: Dict (
-    Relation WantsConf (ServiceProcess NoisyConf) NoisyConf
-  )
-relationDictHasServiceProcessNoisyConfigItemNoisy :: Dict (
-    Relation HasConf (ServiceProcess NoisyConf) NoisyConf
-  )
-relationDictInstanceOfServiceNoisyServiceProcessNoisy :: Dict (
-    Relation InstanceOf (Service NoisyConf) (ServiceProcess NoisyConf)
-  )
-relationDictOwnsServiceProcessNoisyServiceName :: Dict (
-    Relation Owns (ServiceProcess NoisyConf) ServiceName
-  )
-relationDictHasPingCountServiceNoisyNoisyPingCount = Dict
-relationDictSupportsClusterServiceNoisy = Dict
-relationDictHasNodeServiceProcessNoisy = Dict
-relationDictWantsServiceProcessNoisyConfigItemNoisy = Dict
-relationDictHasServiceProcessNoisyConfigItemNoisy = Dict
-relationDictInstanceOfServiceNoisyServiceProcessNoisy = Dict
-relationDictOwnsServiceProcessNoisyServiceName = Dict
-
-remotable
-  [ 'dConfigDict
-  , 'dSerializableDict
-  , 'resourceDictServiceNoisy
-  , 'resourceDictServiceProcessNoisy
-  , 'resourceDictConfigItemNoisy
-  , 'resourceDictNoisyPingCount
-  , 'relationDictSupportsClusterServiceNoisy
-  , 'relationDictHasNodeServiceProcessNoisy
-  , 'relationDictWantsServiceProcessNoisyConfigItemNoisy
-  , 'relationDictHasServiceProcessNoisyConfigItemNoisy
-  , 'relationDictInstanceOfServiceNoisyServiceProcessNoisy
-  , 'relationDictOwnsServiceProcessNoisyServiceName
-  , 'relationDictHasPingCountServiceNoisyNoisyPingCount
-  ]
-
-instance Resource (Service NoisyConf) where
-  resourceDict = $(mkStatic 'resourceDictServiceNoisy)
-
-instance Resource (ServiceProcess NoisyConf) where
-  resourceDict = $(mkStatic 'resourceDictServiceProcessNoisy)
-
-instance Resource NoisyConf where
-  resourceDict = $(mkStatic 'resourceDictConfigItemNoisy)
-
-instance Resource NoisyPingCount where
-  resourceDict = $(mkStatic 'resourceDictNoisyPingCount)
-
-instance Relation Supports Cluster (Service NoisyConf) where
-  relationDict = $(mkStatic 'relationDictSupportsClusterServiceNoisy)
-
-instance Relation Runs Node (ServiceProcess NoisyConf) where
-  relationDict = $(mkStatic 'relationDictHasNodeServiceProcessNoisy)
-
-instance Relation HasConf (ServiceProcess NoisyConf) NoisyConf where
-  relationDict = $(mkStatic 'relationDictHasServiceProcessNoisyConfigItemNoisy)
-
-instance Relation WantsConf (ServiceProcess NoisyConf) NoisyConf where
-  relationDict = $(mkStatic 'relationDictWantsServiceProcessNoisyConfigItemNoisy)
-
-instance Relation InstanceOf (Service NoisyConf) (ServiceProcess NoisyConf) where
-  relationDict = $(mkStatic 'relationDictInstanceOfServiceNoisyServiceProcessNoisy)
-
-instance Relation Owns (ServiceProcess NoisyConf) ServiceName where
-  relationDict = $(mkStatic 'relationDictOwnsServiceProcessNoisyServiceName)
-
-instance Relation HasPingCount (Service NoisyConf) NoisyPingCount where
-  relationDict = $(mkStatic 'relationDictHasPingCountServiceNoisyNoisyPingCount)
-
---------------------------------------------------------------------------------
--- End Dictionaries                                                           --
---------------------------------------------------------------------------------
-
-instance Configuration NoisyConf where
-  schema = noisySchema
-  sDict = $(mkStatic 'dSerializableDict)
+$(generateDicts ''NoisyConf)
+$(deriveService ''NoisyConf 'noisySchema [])
 
 -- | Block forever.
 never :: Process ()
@@ -181,7 +76,7 @@ remotableDecl [ [d|
             (ServiceName "noisy")
             $(mkStaticClosure 'noisyProcess)
             ($(mkStatic 'someConfigDict)
-                `staticApply` $(mkStatic 'dConfigDict))
+                `staticApply` $(mkStatic 'configDictNoisyConf))
 
   noisyProcess :: NoisyConf -> Process ()
   noisyProcess (NoisyConf hw) = (`catchExit` onExit) $ do

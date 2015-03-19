@@ -52,15 +52,15 @@ updateEpoch _ = error "updateEpoch: RPC support required."
 
 remotableDecl [ [d|
 
-    m0d :: Service ()
+    m0d :: Service EmptyConf
     m0d = Service
             (ServiceName "m0d")
             $(mkStaticClosure 'm0dProcess)
             ($(mkStatic 'someConfigDict)
-                `staticApply` $(mkStatic 'emptyConfigDict))
+                `staticApply` $(mkStatic 'configDictEmptyConf))
 
-    m0dProcess :: () -> Process ()
-    m0dProcess () = do
+    m0dProcess :: EmptyConf -> Process ()
+    m0dProcess _ = do
         say $ "Starting service m0d"
         self <- getSelfPid
         bracket

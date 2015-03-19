@@ -40,8 +40,8 @@ import HA.EventQueue.Producer (promulgate)
 import HA.Multimap
 import HA.RecoveryCoordinator.Mero
 import HA.ResourceGraph
-import HA.Resources
 import HA.Service hiding (configDict)
+import HA.Service.TH
 import HA.Services.Frontier.Command
 
 data FrontierConf =
@@ -59,94 +59,8 @@ frontierSchema =
                <> metavar "FRONTIER_PORT" in
     FrontierConf <$> port
 
-configDict :: Dict (Configuration FrontierConf)
-configDict = Dict
-
-serializableDict :: SerializableDict FrontierConf
-serializableDict = SerializableDict
-
-resourceDictService :: Dict (Resource (Service FrontierConf))
-resourceDictService = Dict
-
-resourceDictServiceProcess :: Dict (Resource (ServiceProcess FrontierConf))
-resourceDictServiceProcess = Dict
-
-relationDictHasServiceProcessConfigItem :: Dict (
-    Relation HasConf (ServiceProcess FrontierConf) FrontierConf
-    )
-relationDictHasServiceProcessConfigItem = Dict
-
-relationDictWantsServiceProcessConfigItem :: Dict (
-    Relation WantsConf (ServiceProcess FrontierConf) FrontierConf
-    )
-relationDictWantsServiceProcessConfigItem = Dict
-
-relationDictHasNodeServiceProcess :: Dict (
-    Relation Runs Node (ServiceProcess FrontierConf)
-    )
-relationDictHasNodeServiceProcess = Dict
-
-relationDictInstanceOfServiceServiceProcess :: Dict (
-    Relation InstanceOf (Service FrontierConf) (ServiceProcess FrontierConf)
-    )
-relationDictInstanceOfServiceServiceProcess = Dict
-
-relationDictOwnsServiceProcessServiceName :: Dict (
-    Relation Owns (ServiceProcess FrontierConf) ServiceName
-    )
-relationDictOwnsServiceProcessServiceName = Dict
-
-relationDictSupportsClusterService :: Dict (
-    Relation Supports Cluster (Service FrontierConf)
-    )
-relationDictSupportsClusterService = Dict
-
-resourceDictConfigItem :: Dict (Resource FrontierConf)
-resourceDictConfigItem = Dict
-
-remotable [ 'configDict
-          , 'resourceDictConfigItem
-          , 'serializableDict
-          , 'resourceDictService
-          , 'resourceDictServiceProcess
-          , 'relationDictHasServiceProcessConfigItem
-          , 'relationDictWantsServiceProcessConfigItem
-          , 'relationDictHasNodeServiceProcess
-          , 'relationDictInstanceOfServiceServiceProcess
-          , 'relationDictOwnsServiceProcessServiceName
-          , 'relationDictSupportsClusterService
-          ]
-
-instance Resource FrontierConf where
-    resourceDict = $(mkStatic 'resourceDictConfigItem)
-
-instance Resource (Service FrontierConf) where
-    resourceDict = $(mkStatic 'resourceDictService)
-
-instance Resource (ServiceProcess FrontierConf) where
-    resourceDict = $(mkStatic 'resourceDictServiceProcess)
-
-instance Relation HasConf (ServiceProcess FrontierConf) FrontierConf where
-    relationDict = $(mkStatic 'relationDictHasServiceProcessConfigItem)
-
-instance Relation WantsConf (ServiceProcess FrontierConf) FrontierConf where
-    relationDict = $(mkStatic 'relationDictWantsServiceProcessConfigItem)
-
-instance Relation Runs Node (ServiceProcess FrontierConf) where
-    relationDict = $(mkStatic 'relationDictHasNodeServiceProcess)
-
-instance Relation InstanceOf (Service FrontierConf) (ServiceProcess FrontierConf) where
-    relationDict = $(mkStatic 'relationDictInstanceOfServiceServiceProcess)
-
-instance Relation Owns (ServiceProcess FrontierConf) ServiceName where
-    relationDict = $(mkStatic 'relationDictOwnsServiceProcessServiceName)
-
-instance Relation Supports Cluster (Service FrontierConf) where
-    relationDict = $(mkStatic 'relationDictSupportsClusterService)
-
-instance Configuration FrontierConf where
-    schema = frontierSchema
-    sDict  = $(mkStatic 'serializableDict)
+$(generateDicts ''FrontierConf)
+$(deriveService ''FrontierConf 'frontierSchema [])
 
 createServerSocket :: Int -> Process Socket
 createServerSocket port = liftIO $ listenOn (PortNumber $ fromIntegral port)
@@ -201,5 +115,5 @@ remotableDecl [ [d|
                (ServiceName "frontier")
                $(mkStaticClosure 'frontierService)
                ($(mkStatic 'someConfigDict)
-                 `staticApply` $(mkStatic 'configDict))
+                 `staticApply` $(mkStatic 'configDictFrontierConf))
     |] ]

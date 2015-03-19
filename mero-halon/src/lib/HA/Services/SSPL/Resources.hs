@@ -9,10 +9,9 @@
 
 module HA.Services.SSPL.Resources where
 
-import HA.Service hiding (configDict)
+import HA.Service
+import HA.Service.TH
 import HA.ResourceGraph
-import HA.Resources (Cluster(..), Node(..))
-
 
 import Control.Applicative ((<$>), (<*>))
 
@@ -186,108 +185,28 @@ ssplSchema = let
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
-
-configDict :: Dict (Configuration SSPLConf)
-configDict = Dict
-
-serializableDict :: SerializableDict SSPLConf
-serializableDict = SerializableDict
-
---TODO Can we auto-gen this whole section?
-resourceDictService :: Dict (Resource (Service SSPLConf))
-resourceDictServiceProcess :: Dict (Resource (ServiceProcess SSPLConf))
-resourceDictConfigItem :: Dict (Resource SSPLConf)
 resourceDictChannelIEM :: Dict (Resource (Channel InterestingEventMessage))
-resourceDictService = Dict
-resourceDictServiceProcess = Dict
-resourceDictConfigItem = Dict
 resourceDictChannelIEM = Dict
 
-relationDictSupportsClusterService :: Dict (
-    Relation Supports Cluster (Service SSPLConf)
-  )
-relationDictHasNodeServiceProcess :: Dict (
-    Relation Runs Node (ServiceProcess SSPLConf)
-  )
-relationDictWantsServiceProcessConfigItem :: Dict (
-    Relation WantsConf (ServiceProcess SSPLConf) SSPLConf
-  )
-relationDictHasServiceProcessConfigItem :: Dict (
-    Relation HasConf (ServiceProcess SSPLConf) SSPLConf
-  )
-relationDictInstanceOfServiceServiceProcess :: Dict (
-    Relation InstanceOf (Service SSPLConf) (ServiceProcess SSPLConf)
-  )
-relationDictOwnsServiceProcessServiceName :: Dict (
-    Relation Owns (ServiceProcess SSPLConf) ServiceName
-  )
 relationDictIEMChannelServiceProcessChannel :: Dict (
-    Relation IEMChannel
-             (ServiceProcess SSPLConf)
-             (Channel InterestingEventMessage)
+    Relation IEMChannel (ServiceProcess SSPLConf) (Channel InterestingEventMessage)
   )
-relationDictSupportsClusterService = Dict
-relationDictHasNodeServiceProcess = Dict
-relationDictWantsServiceProcessConfigItem = Dict
-relationDictHasServiceProcessConfigItem = Dict
-relationDictInstanceOfServiceServiceProcess = Dict
-relationDictOwnsServiceProcessServiceName = Dict
 relationDictIEMChannelServiceProcessChannel = Dict
 
-remotable
-  [ 'configDict
-  , 'serializableDict
-  , 'resourceDictService
-  , 'resourceDictServiceProcess
-  , 'resourceDictConfigItem
-  , 'resourceDictChannelIEM
-  , 'relationDictSupportsClusterService
-  , 'relationDictHasNodeServiceProcess
-  , 'relationDictWantsServiceProcessConfigItem
-  , 'relationDictHasServiceProcessConfigItem
-  , 'relationDictInstanceOfServiceServiceProcess
-  , 'relationDictOwnsServiceProcessServiceName
-  , 'relationDictIEMChannelServiceProcessChannel
-  ]
-
-instance Resource (Service SSPLConf) where
-  resourceDict = $(mkStatic 'resourceDictService)
-
-instance Resource (ServiceProcess SSPLConf) where
-  resourceDict = $(mkStatic 'resourceDictServiceProcess)
-
-instance Resource SSPLConf where
-  resourceDict = $(mkStatic 'resourceDictConfigItem)
+$(generateDicts ''SSPLConf)
+$(deriveService ''SSPLConf 'ssplSchema [ 'resourceDictChannelIEM
+                                       , 'relationDictIEMChannelServiceProcessChannel
+                                       ])
 
 instance Resource (Channel InterestingEventMessage) where
   resourceDict = $(mkStatic 'resourceDictChannelIEM)
 
-instance Relation Supports Cluster (Service SSPLConf) where
-  relationDict = $(mkStatic 'relationDictSupportsClusterService)
-
-instance Relation Runs Node (ServiceProcess SSPLConf) where
-  relationDict = $(mkStatic 'relationDictHasNodeServiceProcess)
-
-instance Relation HasConf (ServiceProcess SSPLConf) SSPLConf where
-  relationDict = $(mkStatic 'relationDictHasServiceProcessConfigItem)
-
-instance Relation WantsConf (ServiceProcess SSPLConf) SSPLConf where
-  relationDict = $(mkStatic 'relationDictWantsServiceProcessConfigItem)
-
-instance Relation InstanceOf (Service SSPLConf) (ServiceProcess SSPLConf) where
-  relationDict = $(mkStatic 'relationDictInstanceOfServiceServiceProcess)
-
-instance Relation Owns (ServiceProcess SSPLConf) ServiceName where
-  relationDict = $(mkStatic 'relationDictOwnsServiceProcessServiceName)
 
 instance Relation IEMChannel
                   (ServiceProcess SSPLConf)
                   (Channel InterestingEventMessage) where
   relationDict = $(mkStatic 'relationDictIEMChannelServiceProcessChannel)
+
 --------------------------------------------------------------------------------
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------
-
-instance Configuration SSPLConf where
-  schema = ssplSchema
-  sDict = $(mkStatic 'serializableDict)
