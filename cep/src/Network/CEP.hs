@@ -1,7 +1,9 @@
-{-# LANGUAGE BangPatterns, RankNTypes, ScopedTypeVariables  #-}
 -- |
 -- Copyright: (C) 2014 Tweag I/O Limited
 --
+-- Complex Event Processing API
+-- It builds a 'Process' out of rules defined by the user. It also support
+-- pub/sub feature.
 
 module Network.CEP
        ( module Network.CEP.Types
@@ -23,6 +25,8 @@ import           FRP.Netwire
 
 import Network.CEP.Types
 
+-- | Subscribes for a specific type of event. Every time that event occures,
+--   this 'Process' will receive a 'Published a' message.
 simpleSubscribe :: Serializable a => ProcessId -> Sub a -> Process ()
 simpleSubscribe pid sub = do
     self <- getSelfPid
@@ -33,6 +37,8 @@ simpleSubscribe pid sub = do
 subscribe :: Serializable a => ProcessId -> Sub a -> CEP s ()
 subscribe pid sub = liftProcess $ simpleSubscribe pid sub
 
+-- | Builds a 'Process' out of user-defined rules. That 'Process' will run
+-- until the end of the Universe, unless an error occurs in the meantime.
 runProcessor :: s -> RuleM s () -> Process a
 runProcessor s rm = go start clockSession_ (cepRules rs)
   where
@@ -67,6 +73,8 @@ runProcessor s rm = go start clockSession_ (cepRules rs)
 initBookkeeping :: s -> Bookkeeping s
 initBookkeeping = Bookkeeping M.empty
 
+-- | @occursWithin n t@ Lets through an event every time it occurs @n@ times
+--   within @t@ seconds.
 occursWithin :: Monoid s => Int -> NominalDiffTime -> ComplexEvent s a a
 occursWithin cnt frame = go 0 frame
   where

@@ -26,27 +26,43 @@ import Control.Wire
 import Data.Binary
 import Data.MultiMap
 
+-- | Typelevel trick. It's very similar to `Data.Proxy`. It's use to declare
+--   a new subscription.
 data Sub a = Sub deriving (Generic, Typeable)
 
 instance Binary a => Binary (Sub a)
 
+-- | Only used internally. Hold the event handled by a CEP processor.
 data Handled = forall a. Typeable a => Handled a
 
+-- | Only used internally. Currently CEP either handles subscription request or
+--   user defined events. Subcription is handled automatically by CEP.
 data Msg
     = SubRequest Subscribe
     | Other Dynamic
 
+-- | Data holded by the Rule monad.
 data RuleState s =
     RuleState
-    { cepMatches    :: ![Match Msg]
-    , cepRules      :: !(ComplexEvent s Dynamic Handled)
+    { cepMatches :: ![Match Msg]
+      -- ^ A list of `Control.Distributed.Process.Match`, that list is
+      --   constructed automatically by the library.
+    , cepRules :: !(ComplexEvent s Dynamic Handled)
+      -- ^ The rule to apply when an event is sent to a CEP processor.
     , cepFinalizers :: (s -> Process s)
-    , cepSpes       :: forall a. Typeable a => a -> s -> Process s
+      -- ^ A function that is called after an event has been processed by
+      --   a rule.
+    , cepSpes :: forall a. Typeable a => a -> s -> Process s
+      -- ^ A specialized finalizer. It's called when a particular type of event
+      --   has been processed by a rule. That's finalizer is called after 'cepFinalizers'
     }
 
+-- | The Rule monad.
 newtype RuleM s a = RuleM (State (RuleState s) a)
     deriving (Functor, Applicative, Monad, MonadState (RuleState s))
 
+-- | The CEP monad. 'CEP' is exposed to the user. However, we don't exposed CEP
+--   internals state, only user-defined state.
 newtype CEP s a = CEP (StateT (Bookkeeping s) Process a)
                   deriving (Functor, Applicative, Monad, MonadIO)
 
@@ -57,31 +73,48 @@ instance MonadState s (CEP s) where
 
 type ComplexEvent s a b = Wire (Timed NominalDiffTime ()) () (CEP s) a b
 
+-- | Holds internal CEP data and user-defined state.
 data Bookkeeping s =
     Bookkeeping
     { _subscribers :: !(MultiMap Fingerprint ProcessId)
-    , _state       :: !s
+      -- ^ a 'MultiMap' of every 'ProcessId' that subscribed to a specific
+      --   event's type.
+    , _state :: !s
+      -- ^ User-defined state.
     }
 
+-- | That message is sent when a 'Process' asks for a subscription. Used
+--   internally.
 data Subscribe =
     Subscribe
     { _subType :: !ByteString
+      -- ^ Serialized event type.
     , _subPid  :: !ProcessId
+      -- ^ Subscriber 'ProcessId'
     } deriving (Show, Typeable, Generic)
 
 instance Binary Subscribe
 
+-- | That message is emitted every time an event of type `a` has been published.
+--   A 'Process' will received that message only if it subscribed for that
+--   type of message. In CEP parlance, that message will be emitted if that
+--   has been processed by the CEP processor or if that processor published it
+--   manually (using 'publish' function).
 data Published a =
     Published
     { pubValue :: !a
+      -- ^ Published event.
     , pubPid   :: !ProcessId
+      -- ^ The 'Process' that emitted this publication.
     } deriving (Show, Typeable, Generic)
 
 instance Binary a => Binary (Published a)
 
-asSub :: a -> Sub a
-asSub _ = Sub
-
+--------------------------------------------------------------------------------
+-- Public API
+--------------------------------------------------------------------------------
+-- | Publishes a event. Every subscribers of this event's type will receive a
+--   'Published a' message.
 publish :: Serializable a => a -> CEP s ()
 publish a = CEP $ do
     subs <- gets _subscribers
@@ -94,6 +127,38 @@ publish a = CEP $ do
 
 liftProcess :: Process a -> CEP s a
 liftProcess m = CEP $ lift m
+
+-- | Add a new finalizer to be performed every time a rule has been executed.
+--   That function doesn't replace a previous finalizer. It will be called
+--   right after a previous finalizer.
+addRuleFinalizer :: (s -> Process s) -> RuleM s ()
+addRuleFinalizer = modify . addFinalizer
+
+-- | Defines a new rule. A Rule consists on a 'ComplexEvent' and a handler that
+--   will be called if `ComplexEvent` emits something. A 'ComplexEvent' can be
+--   seen as state machine that also depends on time.
+define :: forall a b s. (Serializable a, Typeable b)
+       => ComplexEvent s a b
+       -> (b -> CEP s ())
+       -> RuleM s ()
+define w k = do
+    let m       = match $ \(x :: a) -> return $ Other $ toDyn x
+        rule    = observe . w . dynEvent
+        observe = mkGen_ $ \b -> do
+          k b
+          return $ Right $ Handled b
+
+    modify $ addRule m rule
+
+-- | Add a new specialized finalizer to be performed every time a specific
+--   event's type has been process by a rule. That finalizer will always be
+--   performed after a regular finalizer.
+finishedBy :: Typeable a => (a -> s -> Process s) -> RuleM s ()
+finishedBy = modify . addSpecialized
+
+--------------------------------------------------------------------------------
+asSub :: a -> Sub a
+asSub _ = Sub
 
 runCEP :: CEP s a -> Bookkeeping s -> Process (a, Bookkeeping s)
 runCEP (CEP m) s = runStateT m s
@@ -124,15 +189,6 @@ addRule m r s =
       , cepRules   = cepRules s <|> r
       }
 
-addFinalizer :: (s -> Process s) -> RuleState s -> RuleState s
-addFinalizer p s = s { cepFinalizers = cepFinalizers s >=> p }
-
-addSpecialized :: Typeable a
-               => (a -> s -> Process s)
-               -> RuleState s
-               -> RuleState s
-addSpecialized k rs = rs { cepSpes = composeSpe (cepSpes rs) k }
-
 composeSpe :: Typeable b
            => (forall a. Typeable a => a -> s -> Process s)
            -> (b -> s -> Process s)
@@ -149,21 +205,11 @@ dynEvent = mkGen_ $ \dyn ->
       Just a -> Right a <$ publish a
       _      -> return $ Left ()
 
-addRuleFinalizer :: (s -> Process s) -> RuleM s ()
-addRuleFinalizer = modify . addFinalizer
+addFinalizer :: (s -> Process s) -> RuleState s -> RuleState s
+addFinalizer p s = s { cepFinalizers = cepFinalizers s >=> p }
 
-define :: forall a b s. (Serializable a, Typeable b)
-       => ComplexEvent s a b
-       -> (b -> CEP s ())
-       -> RuleM s ()
-define w k = do
-    let m       = match $ \(x :: a) -> return $ Other $ toDyn x
-        rule    = observe . w . dynEvent
-        observe = mkGen_ $ \b -> do
-          k b
-          return $ Right $ Handled b
-
-    modify $ addRule m rule
-
-finishedBy :: Typeable a => (a -> s -> Process s) -> RuleM s ()
-finishedBy = modify . addSpecialized
+addSpecialized :: Typeable a
+               => (a -> s -> Process s)
+               -> RuleState s
+               -> RuleState s
+addSpecialized k rs = rs { cepSpes = composeSpe (cepSpes rs) k }
