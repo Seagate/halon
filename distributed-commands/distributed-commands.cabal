@@ -44,6 +44,7 @@ Library
                    Control.Distributed.Commands
                    Control.Distributed.Commands.Internal.Log
                    Control.Distributed.Commands.Internal.Probes
+                   Control.Distributed.Commands.IPTables
                    Control.Distributed.Commands.Management
                    Control.Distributed.Commands.Process
                    Control.Distributed.Commands.Providers
@@ -126,6 +127,7 @@ Test-Suite test-distributed-process
                    ,base
                    ,binary>=0.7.1.0
                    ,distributed-process
+                   ,filepath>=1.3.0.2
                    ,lifted-base >= 0.2.3.0
                    ,network-transport-tcp
   else
