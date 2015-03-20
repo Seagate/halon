@@ -404,7 +404,8 @@ Test-Suite unit-tests
                     sspl,
                     tasty,
                     tasty-hunit,
-                    tasty-files
+                    tasty-files,
+                    cep
   if flag(rpc)
       Build-Depends: network-transport-rpc,
                      directory,
@@ -452,7 +453,8 @@ Test-Suite integration-tests
                     sspl,
                     tasty,
                     tasty-hunit,
-                    tasty-files
+                    tasty-files,
+                    cep
   if flag(rpc)
       Build-Depends: network-transport-rpc,
                      directory,

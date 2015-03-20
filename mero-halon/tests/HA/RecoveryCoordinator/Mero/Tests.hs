@@ -12,6 +12,7 @@ module HA.RecoveryCoordinator.Mero.Tests
   , testHostAddition
   , testServiceRestarting
   , testServiceNotRestarting
+  , testEQTrimming
   ) where
 
 import Test.Framework
@@ -58,6 +59,8 @@ import Control.Monad (forM_, void)
 
 import Data.Defaultable
 import Data.List (isInfixOf)
+
+import Network.CEP (Published(..), Sub(..), simpleSubscribe)
 
 type TestReplicatedState = (EventQueue, Multimap)
 
@@ -195,6 +198,40 @@ testServiceNotRestarting transport = do
   where
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
+
+-- | This test verifies that every `HAEvent` sent to the RC is trimmed by the EQ
+testEQTrimming :: Transport -> IO ()
+testEQTrimming transport = do
+    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
+        nid <- getSelfNode
+
+        say $ "tests node: " ++ show nid
+        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+                             [nid] ((Nothing,[]), fromList [])
+        pRGroup <- unClosure cRGroup
+        rGroup <- pRGroup
+        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        simpleSubscribe eq (Sub :: Sub TrimDone)
+        (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+
+        nodeUp ([nid], 2000000)
+        Published TrimDone _ <- expect
+        _ <- promulgateEQ [nid] . encodeP $
+          ServiceStartRequest (Node nid) Dummy.dummy
+            (Dummy.DummyConf $ Configured "Test 1")
+
+        Published TrimDone _ <- expect
+
+        pid <- getServiceProcessPid mm (Node nid) Dummy.dummy
+        _ <- promulgateEQ [nid] . encodeP $ ServiceFailed (Node nid) Dummy.dummy
+                                                          pid
+
+        Published TrimDone _ <- expect
+        say $ "Everything got trimmed"
+  where
+    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+         remoteTable
+
 
 -- | Test that the recovery co-ordinator successfully adds a host to the
 --   resource graph.

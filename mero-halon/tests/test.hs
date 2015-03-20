@@ -46,6 +46,8 @@ ut transport = return $
           HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport
       , testCase "RCServiceNOTRestarting" $
           HA.RecoveryCoordinator.Mero.Tests.testServiceNotRestarting transport
+      , testCase "RCHAEventsGotTrimmed" $
+          HA.RecoveryCoordinator.Mero.Tests.testEQTrimming transport
       , testCase "RGHostResources" $
           HA.RecoveryCoordinator.Mero.Tests.testHostAddition transport
       , testCase "RGDriveResources" $

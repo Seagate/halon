@@ -11,9 +11,10 @@ module HA.EventQueue.Consumer
        , matchHAEvent
        , matchIfHAEvent
        , defineHAEvent
+       , onEveryHAEvent
        ) where
 
-import Prelude hiding ((.))
+import Prelude hiding ((.), id)
 
 import HA.EventQueue.Types
 import Control.Wire
@@ -58,15 +59,18 @@ matchIfHAEvent p f =
 expectHAEvent :: forall a. Serializable a => Process (HAEvent a)
 expectHAEvent = receiveWait [matchHAEvent return]
 
-defineHAEvent :: forall a b s. Serializable a
+defineHAEvent :: forall a b s. (Serializable a, Typeable b)
               => ComplexEvent s (HAEvent a) b
               -> (b -> CEP s ())
               -> RuleM s ()
 defineHAEvent w k = do
     let m       = matchHAEvent $ \(x :: HAEvent a) -> return $ Other $ toDyn x
-        rule    = observe . w . dynEvent
-        observe = mkGen_ $ \b -> do
+        rule    = observe . (id &&& w) . dynEvent
+        observe = mkGen_ $ \(hae, b) -> do
           k b
-          return $ Right ()
+          return $ Right $ Handled $ hae { eventPayload = toDyn $ eventPayload hae }
 
     modify $ addRule m rule
+
+onEveryHAEvent :: (HAEvent Dynamic -> s -> Process s) -> RuleM s ()
+onEveryHAEvent = finishedBy
