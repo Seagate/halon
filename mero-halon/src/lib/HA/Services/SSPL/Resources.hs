@@ -43,9 +43,16 @@ import System.Process (readProcess)
 newtype InterestingEventMessage = InterestingEventMessage BL.ByteString
   deriving (Binary, Hashable, Typeable)
 
+-- | Systemd actuation message.
+--   TODO Bind this to schema.
+newtype SystemdRequest = SystemdRequest BL.ByteString
+  deriving (Binary, Hashable, Typeable)
+
 -- | Actuator channel list
 data ActuatorChannels = ActuatorChannels
-    { iemPort :: SendPort InterestingEventMessage }
+    { iemPort :: SendPort InterestingEventMessage
+    , systemdPort :: SendPort SystemdRequest
+    }
   deriving (Generic, Typeable)
 
 instance Binary ActuatorChannels
@@ -72,30 +79,46 @@ data IEMChannel = IEMChannel
 instance Binary IEMChannel
 instance Hashable IEMChannel
 
+data SystemdChannel = SystemdChannel
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary SystemdChannel
+instance Hashable SystemdChannel
 --------------------------------------------------------------------------------
 -- Configuration                                                              --
 --------------------------------------------------------------------------------
 
-data IEMConf = IEMConf {
-    iemExchangeName :: Defaultable String
-  , iemRoutingKey :: Defaultable String
+data ChannelConf = ChannelConf {
+    ccExchangeName :: Defaultable String
+  , ccRoutingKey :: Defaultable String
 } deriving (Eq, Generic, Show, Typeable)
 
-instance Binary IEMConf
-instance Hashable IEMConf
+instance Binary ChannelConf
+instance Hashable ChannelConf
 
-iemSchema :: Schema IEMConf
+iemSchema :: Schema ChannelConf
 iemSchema = let
     en = defaultable "sspl_iem" . strOption
         $ long "iem_exchange"
         <> metavar "EXCHANGE_NAME"
     rk = defaultable "sspl_ll" . strOption
-          $ long "routingKey"
+          $ long "iem_routingKey"
           <> metavar "ROUTING_KEY"
-  in IEMConf <$> en <*> rk
+  in ChannelConf <$> en <*> rk
+
+systemdSchema :: Schema ChannelConf
+systemdSchema = let
+    en = defaultable "halon_sspl" . strOption
+        $ long "systemd_exchange"
+        <> metavar "EXCHANGE_NAME"
+    rk = defaultable "sspl_ll" . strOption
+          $ long "systemd_routingKey"
+          <> metavar "ROUTING_KEY"
+  in ChannelConf <$> en <*> rk
 
 data ActuatorConf = ActuatorConf {
-    acIEM :: IEMConf
+    acIEM :: ChannelConf
+  , acSystemd :: ChannelConf
   , acDeclareChanTimeout :: Defaultable Int
 } deriving (Eq, Generic, Show, Typeable)
 
@@ -107,7 +130,7 @@ actuatorSchema = compositeOption subOpts
                   $ long "actuator"
                   <> summary "Actuator configuration."
   where
-    subOpts = ActuatorConf <$> iemSchema <*> timeout
+    subOpts = ActuatorConf <$> iemSchema <*> systemdSchema <*> timeout
     timeout = defaultable 5000000 . intOption
                 $ long "declareChannelsTimeout"
                 <> summary "Timeout to use when declaring channels to the RC."
@@ -188,25 +211,41 @@ ssplSchema = let
 resourceDictChannelIEM :: Dict (Resource (Channel InterestingEventMessage))
 resourceDictChannelIEM = Dict
 
+resourceDictChannelSystemd :: Dict (Resource (Channel SystemdRequest))
+resourceDictChannelSystemd = Dict
+
 relationDictIEMChannelServiceProcessChannel :: Dict (
     Relation IEMChannel (ServiceProcess SSPLConf) (Channel InterestingEventMessage)
   )
 relationDictIEMChannelServiceProcessChannel = Dict
 
+relationDictSystemdChannelServiceProcessChannel :: Dict (
+    Relation SystemdChannel (ServiceProcess SSPLConf) (Channel SystemdRequest)
+  )
+relationDictSystemdChannelServiceProcessChannel = Dict
+
 $(generateDicts ''SSPLConf)
 $(deriveService ''SSPLConf 'ssplSchema [ 'resourceDictChannelIEM
                                        , 'relationDictIEMChannelServiceProcessChannel
+                                       , 'resourceDictChannelSystemd
+                                       , 'relationDictSystemdChannelServiceProcessChannel
                                        ])
 
 instance Resource (Channel InterestingEventMessage) where
   resourceDict = $(mkStatic 'resourceDictChannelIEM)
 
+instance Resource (Channel SystemdRequest) where
+  resourceDict = $(mkStatic 'resourceDictChannelSystemd)
 
 instance Relation IEMChannel
                   (ServiceProcess SSPLConf)
                   (Channel InterestingEventMessage) where
   relationDict = $(mkStatic 'relationDictIEMChannelServiceProcessChannel)
 
+instance Relation SystemdChannel
+                  (ServiceProcess SSPLConf)
+                  (Channel SystemdRequest) where
+  relationDict = $(mkStatic 'relationDictSystemdChannelServiceProcessChannel)
 --------------------------------------------------------------------------------
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------
