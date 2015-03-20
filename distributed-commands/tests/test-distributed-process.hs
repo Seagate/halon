@@ -40,8 +40,10 @@ main = do
     runProcess n0 $ withHostNames cp 2 $ \ms@[m0, m1] -> do
 
       -- test copying a folder
+      say "Testing copying a folder ..."
       copyFiles m0 [m1] [ ("/var/tmp", "test-halon-cp-folder") ]
 
+      say "Testing running a remote command ..."
       systemThere ms ("echo can run a remote command")
 
       systemThere ms ("true")
@@ -52,9 +54,12 @@ main = do
         Left (_ :: IOError) -> return ()
 
       -- test spawning a node
+      say "Testing spawning a node ..."
       nid1 <- spawnNode m1 ("echo '" ++ (show $ encode $ localNodeId n1) ++ "'")
       getSelfPid >>= redirectLogs nid1
 
       liftIO $ runProcess n1 $ say "a test message"
+      say "Testing log redirection ..."
 
       expectLog [nid1] (== "a test message")
+      say "SUCCESS!"
