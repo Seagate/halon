@@ -7,11 +7,11 @@
 {-# LANGUAGE QuasiQuotes     #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module SSPL.Schema where
+module SSPL.Schemata.MonitorResponse where
 
 import Data.Aeson.Schema
 
-monitorResponse = [schemaQQ|
+schema = [schemaQQ|
 {
   "$schema":"http://json-schema.org/draft-03/schema#",
   "type":"object",
