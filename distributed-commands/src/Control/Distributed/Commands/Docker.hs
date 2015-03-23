@@ -58,7 +58,8 @@ data ContainerData = ContainerData
 newContainer :: Credentials -> NewContainerArgs -> IO ContainerData
 newContainer credentials args = do
     let
-      json = "{\"Image\":\"" ++ (image_id args) ++ "\"}"
+      json = "{\"Image\":\"" ++ (image_id args) ++ "\", " ++
+                "\"HostConfig\": {\"Privileged\": true}}"
     callCURLPost json (dockerHost credentials ++ "/containers/create")
            >>= \case
       r | Just (Object obj)       <- decode (BL8.pack r)
