@@ -13,6 +13,7 @@ RUN yum install --assumeyes hostname
 
 RUN /usr/sbin/sshd-keygen
 ADD authorized_keys /root/.ssh/
+RUN chown root.root /root/.ssh/authorized_keys
 
 RUN sed -i 's/UsePAM yes/UsePAM no/' /etc/ssh/sshd_config
 
