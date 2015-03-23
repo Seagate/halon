@@ -33,7 +33,7 @@ data Sub a = Sub deriving (Generic, Typeable)
 instance Binary a => Binary (Sub a)
 
 -- | Only used internally. Hold the event handled by a CEP processor.
-data Handled = forall a. Typeable a => Handled a
+data Handled = forall a. Typeable a => Handled ByteString a
 
 -- | Only used internally. Currently CEP either handles subscription request or
 --   user defined events. Subcription is handled automatically by CEP.
@@ -138,15 +138,16 @@ addRuleFinalizer = modify . addFinalizer
 --   will be called if `ComplexEvent` emits something. A 'ComplexEvent' can be
 --   seen as state machine that also depends on time.
 define :: forall a b s. (Serializable a, Typeable b)
-       => ComplexEvent s a b
+       => ByteString
+       -> ComplexEvent s a b
        -> (b -> CEP s ())
        -> RuleM s ()
-define w k = do
+define n w k = do
     let m       = match $ \(x :: a) -> return $ Other $ toDyn x
         rule    = observe . w . dynEvent
         observe = mkGen_ $ \b -> do
           k b
-          return $ Right $ Handled b
+          return $ Right $ Handled n b
 
     modify $ addRule m rule
 
