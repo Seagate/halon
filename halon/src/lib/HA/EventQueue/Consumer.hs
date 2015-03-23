@@ -25,6 +25,7 @@ import qualified Control.Distributed.Process.Internal.Types as I
     (Message(..), payloadToMessage)
 import Control.Monad.State.Strict
 import Data.Binary (decode)
+import Data.ByteString (ByteString)
 import Data.Dynamic
 import Network.CEP
 
@@ -60,15 +61,16 @@ expectHAEvent :: forall a. Serializable a => Process (HAEvent a)
 expectHAEvent = receiveWait [matchHAEvent return]
 
 defineHAEvent :: forall a b s. (Serializable a, Typeable b)
-              => ComplexEvent s (HAEvent a) b
+              => ByteString
+              -> ComplexEvent s (HAEvent a) b
               -> (b -> CEP s ())
               -> RuleM s ()
-defineHAEvent w k = do
+defineHAEvent n w k = do
     let m       = matchHAEvent $ \(x :: HAEvent a) -> return $ Other $ toDyn x
         rule    = observe . (id &&& w) . dynEvent
         observe = mkGen_ $ \(hae, b) -> do
           k b
-          return $ Right $ Handled $ hae { eventPayload = toDyn $ eventPayload hae }
+          return $ Right $ Handled n $ hae { eventPayload = toDyn $ eventPayload hae }
 
     modify $ addRule m rule
 

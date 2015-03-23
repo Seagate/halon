@@ -76,13 +76,13 @@ registerChannels svc acs = do
 
 ssplRules :: RuleM LoopState ()
 ssplRules = do
-    defineHAEvent id $
+    defineHAEvent "declare-channels" id $
         \(HAEvent _ (DeclareChannels pid svc acs) _) -> do
             registerChannels svc acs
             ack pid
 
     -- SSPL Monitor drivemanager
-    defineHAEvent id $ \(HAEvent _ (nid, mrm) _) -> do
+    defineHAEvent "monitor-drivemanager" id $ \(HAEvent _ (nid, mrm) _) -> do
       let disk_status = monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskStatus mrm
           encName = monitorResponseMonitor_msg_typeDisk_status_drivemanagerEnclosureSN mrm
           diskNum = monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskNum mrm
@@ -98,7 +98,7 @@ ssplRules = do
         sendInterestingEvent nid msg
 
     -- SSPL Monitor host_update
-    defineHAEvent id $ \(HAEvent _ (nid, hum) _) ->
+    defineHAEvent "monitor-host-update" id $ \(HAEvent _ (nid, hum) _) ->
       case monitorResponseMonitor_msg_typeHost_updateUname hum of
         Just a -> let
             host = Host $ T.unpack a
