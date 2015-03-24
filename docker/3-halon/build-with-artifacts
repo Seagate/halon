@@ -8,10 +8,14 @@ RC=$?
 
 
 mkdir artifacts
+mkdir artifacts/logs
 find . -name test_output | while read dir ; do \
   target=/halon/artifacts/$(echo $dir | cut --delimiter="/" --fields=2); \
   mkdir $target; \
   cp -av $dir $target ; \
+done
+find . -name \*.log -type f | while read l ; do \
+  cp -v $l /halon/artifacts/logs/ ; \
 done
 exit $RC
 
