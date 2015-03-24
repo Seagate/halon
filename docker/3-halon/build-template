@@ -12,19 +12,19 @@ cat docker/3-halon/Dockerfile.in \
   | sed "s/@@DEPVERSION@@/${DEPVERSION}/g" \
   | sed "s/@@COMMIT@@/${COMMIT}/g" > docker/3-halon/Dockerfile
 
-docker build -t tweag/halon docker/3-halon/ || exit 1
+docker --host=localhost:5555 build -t tweag/halon docker/3-halon/ || exit 1
 
 echo Running build container
 
-ContainerID=$(docker run -d --name=halon-build tweag/halon docker/3-halon/build-with-artifacts)
+ContainerID=$(docker --host=localhost:5555 run -d --name=halon-build tweag/halon docker/3-halon/build-with-artifacts)
 
-docker attach $ContainerID
+docker --host=localhost:5555 attach $ContainerID
 
-BuildRC=$(docker wait $ContainerID)
+BuildRC=$(docker --host=localhost:5555 wait $ContainerID)
 
 echo Build exit code $BuildRC
 
 echo "Copying log files from halon build container to CIRCLE_ARTIFACTS ( = ${CIRCLE_ARTIFACTS} )"
-docker cp halon-build:/halon/artifacts ${CIRCLE_ARTIFACTS}
+docker --host=localhost:5555 cp halon-build:/halon/artifacts ${CIRCLE_ARTIFACTS}
 
 exit $BuildRC

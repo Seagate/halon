@@ -12,14 +12,14 @@ TAG=${BASE}:${HASH}
 BRANCH=$(git symbolic-ref --short HEAD | sed 's/[^0-9a-zA-Z_\-]/_/g')
 LATESTTAG=${BASE}:$BRANCH
 
-docker pull $TAG
+docker --host=localhost:5555 pull $TAG
 
-docker history $TAG
+docker --host=localhost:5555 history $TAG
 
 if [ "$?" == "0" ] ; then
   echo pulled OK - do not need to rebuild
-  docker tag -f ${TAG} ${LATESTTAG}
-  docker push $LATESTTAG || exit 1
+  docker --host=localhost:5555 tag -f ${TAG} ${LATESTTAG}
+  docker --host=localhost:5555 push $LATESTTAG || exit 1
   exit 0
 fi
 
@@ -32,10 +32,10 @@ cat docker/${DOCKERDIR}/Dockerfile.in \
   | sed "s/@@CABALVERSION@@/${CABALVERSION}/g" \
   | sed "s/@@BASEVERSION@@/${BASEVERSION}/g" \
   > docker/${DOCKERDIR}/Dockerfile
-docker build -t ${TAG} docker/${DOCKERDIR}/ || exit 1
-docker tag -f ${TAG} ${LATESTTAG}
-docker push $TAG || exit 1
-docker push $LATESTTAG || exit 1
+docker --host=localhost:5555 build -t ${TAG} docker/${DOCKERDIR}/ || exit 1
+docker --host=localhost:5555 tag -f ${TAG} ${LATESTTAG}
+docker --host=localhost:5555 push $TAG || exit 1
+docker --host=localhost:5555 push $LATESTTAG || exit 1
 
 echo Docker tags pushed:
 echo Docker image ${BASE}

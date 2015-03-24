@@ -1,10 +1,13 @@
 machine:
   services:
-    - docker
 
 dependencies:
+  pre:
+    - "sudo docker -d -e lxc -s btrfs -H 0.0.0.0:5555":
+        background: true
+
   override:
-    - docker info
+    - docker --host=localhost:5555 info
     - docker/1-haskell-env-on-centos-7/build-template
     - cp /home/ubuntu/.ssh/id_circleci_github docker/2-halon-deps/id_rsa
     - docker/2-halon-deps/build-template
