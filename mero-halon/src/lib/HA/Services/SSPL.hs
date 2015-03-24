@@ -21,8 +21,8 @@ module HA.Services.SSPL
   , InterestingEventMessage(..)
   , SSPLConf(..)
   , IEMChannel(..)
-  , HA.Services.SSPL.Resources.Channel(..)
-  , HA.Services.SSPL.Resources.__remoteTable
+  , HA.Services.SSPL.LL.Resources.Channel(..)
+  , HA.Services.SSPL.LL.Resources.__remoteTable
   , HA.Services.SSPL.__remoteTableDecl
   ) where
 
@@ -30,37 +30,41 @@ import HA.NodeAgent.Messages
 import HA.EventQueue.Producer (promulgate)
 import HA.Service
 import HA.Services.SSPL.CEP
-import HA.Services.SSPL.Resources
+import qualified HA.Services.SSPL.Rabbit as Rabbit
+import HA.Services.SSPL.LL.Resources
 
 import SSPL.Bindings
 
-import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Distributed.Process
   ( Process
   , ProcessId
-  , catch
+  , ProcessMonitorNotification(..)
   , catchExit
-  , expect
   , expectTimeout
   , getSelfPid
   , getSelfNode
+  , match
+  , monitor
   , receiveChan
+  , receiveWait
   , say
   , spawnChannelLocal
   , spawnLocal
+  , unmonitor
   )
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Monad.State.Strict hiding (mapM_)
 
-import Data.Aeson (decode)
+import Data.Aeson (decode, encode, toJSON)
 
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Defaultable
 import Data.Foldable (mapM_)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 
 import Network.AMQP
 
@@ -68,10 +72,9 @@ import Prelude hiding (id, mapM_)
 
 -- | Internal 'listen' handler. This is needed because AMQP runs in the
 --   IO monad, so we cannot directly handle messages using `Process` actions.
-msgHandler :: Chan Network.AMQP.Message
+msgHandler :: Network.AMQP.Message
            -> Process ()
-msgHandler chan = forever $ do
-  msg <- liftIO $ readChan chan
+msgHandler msg = do
   nid <- getSelfNode
   case decode (msgBody msg) :: Maybe MonitorResponse of
     Just mr -> do
@@ -90,28 +93,10 @@ msgHandler chan = forever $ do
       say $ "Unable to decode JSON message: " ++ (BL.unpack $ msgBody msg)
 
 startSensors :: Network.AMQP.Channel -- ^ AMQP Channel
-             -> Chan Network.AMQP.Message -- ^ Local channel to forward messages to.
              -> SensorConf -- ^ Sensor configuration.
              -> Process ()
-startSensors chan lChan sc = do
-    liftIO $ do
-      declareExchange chan newExchange
-        { exchangeName = exchangeName
-        , exchangeType = "topic"
-        , exchangeDurable = True
-        }
-      _ <- declareQueue chan newQueue { queueName = queueName }
-      bindQueue chan queueName exchangeName routingKey
-
-      _ <- consumeMsgs chan queueName Ack $ \(message, envelope) -> do
-        writeChan lChan message
-        ackEnv envelope
-      return ()
-  where
-    DCSConf{..} = scDCS sc
-    exchangeName = T.pack . fromDefault $ dcsExchangeName
-    queueName = T.pack . fromDefault $ dcsQueueName
-    routingKey = T.pack . fromDefault $ dcsRoutingKey
+startSensors chan SensorConf{..} = do
+  Rabbit.receive chan scDCS msgHandler
 
 startActuators :: Network.AMQP.Channel
                -> ActuatorConf
@@ -129,23 +114,38 @@ startActuators chan ac pid = do
       case msg of
         Nothing -> informRC sp chans
         Just () -> return ()
-    iemProcess ChannelConf{..} rp = forever $ do
+    iemProcess Rabbit.BindConf{..} rp = forever $ do
       InterestingEventMessage foo <- receiveChan rp
       liftIO $ publishMsg
         chan
-        (T.pack . fromDefault $ ccExchangeName)
-        (T.pack . fromDefault $ ccRoutingKey)
+        (T.pack . fromDefault $ bcExchangeName)
+        (T.pack . fromDefault $ bcRoutingKey)
         (newMsg { msgBody = foo
                 , msgDeliveryMode = Just Persistent
                 }
         )
-    systemdProcess ChannelConf{..} rp = forever $ do
-      SystemdRequest foo <- receiveChan rp
+    systemdProcess Rabbit.BindConf{..} rp = forever $ do
+      SystemdRequest srv cmd <- receiveChan rp
+      let msg = encode $ ActuatorRequest {
+          actuatorRequestSspl_ll_debug = Nothing
+        , actuatorRequestActuator_request_type = ActuatorRequestActuator_request_type {
+            actuatorRequestActuator_request_typeSystemd_service = Just
+              ActuatorRequestActuator_request_typeSystemd_service {
+                actuatorRequestActuator_request_typeSystemd_serviceSystemd_request =
+                  T.decodeUtf8 . BL.toStrict $ cmd
+              , actuatorRequestActuator_request_typeSystemd_serviceService_name =
+                  T.decodeUtf8 . BL.toStrict $ srv
+              }
+          , actuatorRequestActuator_request_typeThread_controller = Nothing
+          , actuatorRequestActuator_request_typeLogging = Nothing
+          }
+        , actuatorRequestSspl_ll_msg_header = toJSON (Nothing :: Maybe ())
+        }
       liftIO $ publishMsg
         chan
-        (T.pack . fromDefault $ ccExchangeName)
-        (T.pack . fromDefault $ ccRoutingKey)
-        (newMsg { msgBody = foo
+        (T.pack . fromDefault $ bcExchangeName)
+        (T.pack . fromDefault $ bcRoutingKey)
+        (newMsg { msgBody = msg
                 , msgDeliveryMode = Just Persistent
                 }
         )
@@ -154,37 +154,30 @@ remotableDecl [ [d|
 
   ssplProcess :: SSPLConf -> Process ()
   ssplProcess (SSPLConf{..}) = let
-    host = fromDefault $ scHostname
-    vhost = T.pack . fromDefault $ scVirtualHost
-    un = T.pack scLoginName
-    pw = T.pack scPassword
 
     onExit _ Shutdown = say $ "SSPLService stopped."
     onExit _ Reconfigure = say $ "SSPLService stopping for reconfiguration."
 
-    connectRetry lChan lock pid = catch
-      (connectSSPL lChan lock pid)
-      (\e -> let _ = (e :: AMQPException) in
-        connectRetry lChan lock pid
-      )
-    connectSSPL lChan lock pid = do
-      conn <- liftIO $ openConnection host vhost un pw
+    connectRetry lock = do
+      me <- getSelfPid
+      pid <- spawnLocal $ connectSSPL lock me
+      mref <- monitor pid
+      receiveWait [
+          match $ \(ProcessMonitorNotification _ _ _) -> connectRetry lock
+        , match $ \() -> unmonitor mref >> (liftIO $ putMVar lock ())
+        ]
+    connectSSPL lock pid = do
+      conn <- liftIO $ Rabbit.openConnection scConnectionConf
       chan <- liftIO $ openChannel conn
-      startSensors chan lChan scSensorConf
+      startSensors chan scSensorConf
       startActuators chan scActuatorConf pid
       () <- liftIO $ takeMVar lock
       liftIO $ closeConnection conn
       say "Connection closed."
     in (`catchExit` onExit) $ do
       say $ "Starting service sspl"
-      pid <- getSelfPid
-      lChan <- liftIO newChan
       lock <- liftIO newEmptyMVar
-      _ <- spawnLocal $ msgHandler lChan
-      _ <- spawnLocal $ connectRetry lChan lock pid
-      () <- expect
-      liftIO $ putMVar lock ()
-      return ()
+      connectRetry lock
 
   sspl :: Service SSPLConf
   sspl = Service

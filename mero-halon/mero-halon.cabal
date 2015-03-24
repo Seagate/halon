@@ -79,6 +79,7 @@ Library
                    HA.Services.Mero
                    HA.Services.Frontier
                    HA.Services.SSPL
+                   HA.Services.SSPLHL
                    HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
@@ -86,7 +87,9 @@ Library
 
   Other-Modules:   HA.Services.Frontier.Command
                    HA.Services.SSPL.CEP
-                   HA.Services.SSPL.Resources
+                   HA.Services.SSPL.Rabbit
+                   HA.Services.SSPL.LL.Resources
+                   HA.Services.SSPL.HL.Resources
 
   Build-Depends:   base,
                    aeson,

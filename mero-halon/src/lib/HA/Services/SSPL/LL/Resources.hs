@@ -7,10 +7,11 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module HA.Services.SSPL.Resources where
+module HA.Services.SSPL.LL.Resources where
 
 import HA.Service
 import HA.Service.TH
+import qualified HA.Services.SSPL.Rabbit as Rabbit
 import HA.ResourceGraph
 
 import Control.Applicative ((<$>), (<*>))
@@ -45,8 +46,13 @@ newtype InterestingEventMessage = InterestingEventMessage BL.ByteString
 
 -- | Systemd actuation message.
 --   TODO Bind this to schema.
-newtype SystemdRequest = SystemdRequest BL.ByteString
-  deriving (Binary, Hashable, Typeable)
+data SystemdRequest = SystemdRequest {
+      srService :: BL.ByteString
+    , srCommand :: BL.ByteString
+  } deriving (Generic, Typeable, Show)
+
+instance Binary SystemdRequest
+instance Hashable SystemdRequest
 
 -- | Actuator channel list
 data ActuatorChannels = ActuatorChannels
@@ -84,19 +90,12 @@ data SystemdChannel = SystemdChannel
 
 instance Binary SystemdChannel
 instance Hashable SystemdChannel
+
 --------------------------------------------------------------------------------
 -- Configuration                                                              --
 --------------------------------------------------------------------------------
 
-data ChannelConf = ChannelConf {
-    ccExchangeName :: Defaultable String
-  , ccRoutingKey :: Defaultable String
-} deriving (Eq, Generic, Show, Typeable)
-
-instance Binary ChannelConf
-instance Hashable ChannelConf
-
-iemSchema :: Schema ChannelConf
+iemSchema :: Schema Rabbit.BindConf
 iemSchema = let
     en = defaultable "sspl_iem" . strOption
         $ long "iem_exchange"
@@ -104,9 +103,12 @@ iemSchema = let
     rk = defaultable "sspl_ll" . strOption
           $ long "iem_routingKey"
           <> metavar "ROUTING_KEY"
-  in ChannelConf <$> en <*> rk
+    qn = defaultable "sspl_iem" . strOption
+          $ long "dcs_queue"
+          <> metavar "QUEUE_NAME"
+  in Rabbit.BindConf <$> en <*> rk <*> qn
 
-systemdSchema :: Schema ChannelConf
+systemdSchema :: Schema Rabbit.BindConf
 systemdSchema = let
     en = defaultable "halon_sspl" . strOption
         $ long "systemd_exchange"
@@ -114,11 +116,14 @@ systemdSchema = let
     rk = defaultable "sspl_ll" . strOption
           $ long "systemd_routingKey"
           <> metavar "ROUTING_KEY"
-  in ChannelConf <$> en <*> rk
+    qn = defaultable "halon_sspl" . strOption
+          $ long "dcs_queue"
+          <> metavar "QUEUE_NAME"
+  in Rabbit.BindConf <$> en <*> rk <*> qn
 
 data ActuatorConf = ActuatorConf {
-    acIEM :: ChannelConf
-  , acSystemd :: ChannelConf
+    acIEM :: Rabbit.BindConf
+  , acSystemd :: Rabbit.BindConf
   , acDeclareChanTimeout :: Defaultable Int
 } deriving (Eq, Generic, Show, Typeable)
 
@@ -136,16 +141,7 @@ actuatorSchema = compositeOption subOpts
                 <> summary "Timeout to use when declaring channels to the RC."
                 <> metavar "MICROSECONDS"
 
-data DCSConf = DCSConf {
-    dcsExchangeName :: Defaultable String
-  , dcsRoutingKey :: Defaultable String
-  , dcsQueueName :: Defaultable String
-} deriving (Eq, Generic, Show, Typeable)
-
-instance Binary DCSConf
-instance Hashable DCSConf
-
-dcsSchema :: Schema DCSConf
+dcsSchema :: Schema Rabbit.BindConf
 dcsSchema = let
     en = defaultable "sspl_bcast" . strOption
         $ long "dcs_exchange"
@@ -158,10 +154,10 @@ dcsSchema = let
           <> metavar "QUEUE_NAME"
           where
             shortHostName = unsafePerformIO $ readProcess "hostname" ["-s"] ""
-  in DCSConf <$> en <*> rk <*> qn
+  in Rabbit.BindConf <$> en <*> rk <*> qn
 
 data SensorConf = SensorConf {
-    scDCS :: DCSConf
+    scDCS :: Rabbit.BindConf
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary SensorConf
@@ -175,10 +171,7 @@ sensorSchema = compositeOption subOpts
     subOpts = SensorConf <$> dcsSchema
 
 data SSPLConf = SSPLConf {
-    scHostname :: Defaultable String
-  , scVirtualHost :: Defaultable String
-  , scLoginName :: String
-  , scPassword :: String
+    scConnectionConf :: Rabbit.ConnectionConf
   , scSensorConf :: SensorConf
   , scActuatorConf :: ActuatorConf
 } deriving (Eq, Generic, Show, Typeable)
@@ -187,23 +180,10 @@ instance Binary SSPLConf
 instance Hashable SSPLConf
 
 ssplSchema :: Schema SSPLConf
-ssplSchema = let
-    hn = defaultable "127.0.0.1" . strOption
-          $  long "hostname"
-          <> metavar "HOSTNAME"
-    vh = defaultable "SSPL" . strOption
-          $  long "vhost"
-          <> metavar "VIRTUAL_HOST"
-          <> summary "RabbitMQ Virtual Host to connect to."
-    un = strOption
-          $  long "username"
-          <> short 'u'
-          <> metavar "USERNAME"
-    pw = strOption
-          $ long "password"
-          <> short 'p'
-          <> metavar "PASSWORD"
-  in SSPLConf <$> hn <*> vh <*> un <*> pw <*> sensorSchema <*> actuatorSchema
+ssplSchema = SSPLConf
+            <$> Rabbit.connectionSchema
+            <*> sensorSchema
+            <*> actuatorSchema
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
@@ -249,3 +229,4 @@ instance Relation SystemdChannel
 --------------------------------------------------------------------------------
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------
+
