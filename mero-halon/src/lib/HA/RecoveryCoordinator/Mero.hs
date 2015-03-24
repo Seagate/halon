@@ -364,11 +364,18 @@ _startService :: forall a. Configuration a
              -> Process ProcessId
 _startService node svc cfg _ = do
   mynid <- getSelfNode
-  pid <- spawn node $
+  let waitSpawn = do
+          spawnRef <- spawnAsync node $
               $(mkClosure 'remoteStartService) (serviceName svc)
             `closureApply`
               (serviceProcess svc
-                `closureApply` closure (staticDecode sDict) (encode cfg))
+                 `closureApply` closure (staticDecode sDict) (encode cfg))
+          mpid <- receiveTimeout 1000000
+            [ matchIf (\(DidSpawn r _) -> r == spawnRef)
+                      (\(DidSpawn _ pid) -> return pid)
+            ]
+          maybe waitSpawn return mpid
+  pid <- waitSpawn
   void . promulgateEQ [mynid] . encodeP $
     ServiceStarted (Node node) svc cfg (ServiceProcess pid)
   return pid
