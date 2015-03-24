@@ -16,6 +16,7 @@ module Control.Distributed.Commands.Process
   , redirectLogsHere
   , copyLog
   , expectLog
+  , expectTimeoutLog
   , copyFiles
   , systemThere
   , systemLocal
@@ -50,6 +51,7 @@ import Control.Distributed.Process
     , ProcessId
     , Process
     , receiveWait
+    , receiveTimeout
     , NodeId
     , liftIO
     , processNodeId
@@ -198,6 +200,15 @@ expectLog nids p = receiveWait
               ) $
               const $ return ()
     ]
+
+-- | Like 'expectLog' but returns @False@ if the given timeout expires.
+expectTimeoutLog :: Int -> [NodeId] -> (String -> Bool) -> Process Bool
+expectTimeoutLog t nids p = receiveTimeout t
+    [ matchIf (\(_ :: String, pid, msg) ->
+                elem (processNodeId pid) nids && p msg
+              ) $
+              const $ return ()
+    ] >>= maybe (return False) (const $ return True)
 
 -- | Copies files from one host to others.
 copyFiles :: HostName -> [HostName] -> [(FilePath, FilePath)] -> Process ()
