@@ -22,6 +22,7 @@ import HA.Resources.Mero
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue
+import HA.EventQueue.Definitions
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.Multimap.Implementation
 import HA.Multimap.Process

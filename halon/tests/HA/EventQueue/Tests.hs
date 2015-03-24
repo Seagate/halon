@@ -10,7 +10,8 @@ module HA.EventQueue.Tests ( tests, remoteRC__tdict ) where
 
 import Test.Framework
 
-import HA.EventQueue
+import HA.EventQueue hiding (trim)
+import HA.EventQueue.Definitions
 import HA.EventQueue.Consumer
 import HA.EventQueue.Producer
 import HA.EventQueue.Types

@@ -12,7 +12,8 @@
 module HA.Startup where
 
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
-import HA.EventQueue ( eventQueue, EventQueue )
+import HA.EventQueue ( EventQueue )
+import HA.EventQueue.Definitions (eventQueue)
 import HA.Multimap.Implementation ( Multimap, fromList )
 import HA.Multimap.Process ( multimap )
 import HA.Replicator ( RGroup(..), RStateView(..) )

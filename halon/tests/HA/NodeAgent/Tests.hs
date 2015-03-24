@@ -9,7 +9,8 @@
 
 module HA.NodeAgent.Tests ( tests, dummyRC__static, dummyRC__sdict) where
 
-import HA.EventQueue ( eventQueue, EventQueue, eventQueueLabel )
+import HA.EventQueue ( EventQueue, eventQueueLabel )
+import HA.EventQueue.Definitions (eventQueue)
 import HA.EventQueue.Consumer (HAEvent(..),matchHAEvent)
 import HA.EventQueue.Producer (expiate)
 import HA.NodeAgent.Messages

@@ -51,7 +51,9 @@ Library
                    HA.Process
                    HA.Resources
                    HA.EventQueue
+                   HA.EventQueue.CEP
                    HA.EventQueue.Consumer
+                   HA.EventQueue.Definitions
                    HA.EventQueue.Producer
                    HA.EventQueue.Types
                    HA.ResourceGraph
