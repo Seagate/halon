@@ -6,19 +6,32 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-import SSPL.Schema (monitorResponse)
+import qualified SSPL.Schemata.MonitorResponse as MonitorResponse
+import qualified SSPL.Schemata.ActuatorRequest as ActuatorRequest
+import qualified SSPL.Schemata.ActuatorResponse as ActuatorResponse
 
 import Data.Aeson.Schema
 import Data.Aeson.Schema.CodeGen
 
 import qualified Data.Map as M
+import qualified Data.Text as T
 import qualified Data.Text.IO as T
 
 import Language.Haskell.TH
 
 main :: IO ()
 main = let
-    graph = M.singleton "MonitorResponse" monitorResponse
+    schemata = [
+        ("MonitorResponse", MonitorResponse.schema)
+      , ("ActuatorRequest", ActuatorRequest.schema)
+      , ("ActuatorResponse", ActuatorResponse.schema)
+      ]
+  in mapM_ (uncurry mkBindings) schemata
+
+mkBindings name schema = let
+    graph = M.singleton name schema
   in do
-    (code, _) <- runQ $ generateModule "SSPL.Bindings" graph
-    T.writeFile "src/SSPL/Bindings.hs" code
+    (code, _) <- runQ $ generateModule
+                          ( "SSPL.Bindings." `T.append` name)
+                          graph
+    T.writeFile ("src/SSPL/Bindings/" ++ (T.unpack name) ++ ".hs")  code

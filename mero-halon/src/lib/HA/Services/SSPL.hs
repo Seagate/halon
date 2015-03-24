@@ -119,7 +119,8 @@ startActuators :: Network.AMQP.Channel
                -> Process ()
 startActuators chan ac pid = do
     iemChan <- spawnChannelLocal (iemProcess $ acIEM ac)
-    informRC (ServiceProcess pid) (ActuatorChannels iemChan)
+    systemdChan <- spawnChannelLocal (systemdProcess $ acSystemd ac)
+    informRC (ServiceProcess pid) (ActuatorChannels iemChan systemdChan)
   where
     informRC sp chans = do
       mypid <- getSelfPid
@@ -128,12 +129,22 @@ startActuators chan ac pid = do
       case msg of
         Nothing -> informRC sp chans
         Just () -> return ()
-    iemProcess IEMConf{..} rp = forever $ do
+    iemProcess ChannelConf{..} rp = forever $ do
       InterestingEventMessage foo <- receiveChan rp
       liftIO $ publishMsg
         chan
-        (T.pack . fromDefault $ iemExchangeName)
-        (T.pack . fromDefault $ iemRoutingKey)
+        (T.pack . fromDefault $ ccExchangeName)
+        (T.pack . fromDefault $ ccRoutingKey)
+        (newMsg { msgBody = foo
+                , msgDeliveryMode = Just Persistent
+                }
+        )
+    systemdProcess ChannelConf{..} rp = forever $ do
+      SystemdRequest foo <- receiveChan rp
+      liftIO $ publishMsg
+        chan
+        (T.pack . fromDefault $ ccExchangeName)
+        (T.pack . fromDefault $ ccRoutingKey)
         (newMsg { msgBody = foo
                 , msgDeliveryMode = Just Persistent
                 }
