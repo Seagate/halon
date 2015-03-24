@@ -23,6 +23,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts   #-}
 {-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE TemplateHaskell    #-}
 {-# LANGUAGE TypeOperators      #-}
 module HA.EventQueue
@@ -128,7 +129,7 @@ makeEventQueueFromRules rg rm = do
 eqRules :: RGroup g => g EventQueue -> RuleM (Maybe ProcessId) ()
 eqRules rg = do
     -- RC Spawned
-    define id $ \rc -> do
+    define "rc-spawned" id $ \rc -> do
       liftProcess $ do
         _ <- monitor rc
         -- Record in the replicated state that there is a new RC.
@@ -141,7 +142,7 @@ eqRules rg = do
           usend rc ev{eventHops = self : eventHops ev}
       put $ Just rc
 
-    define id $ \(ProcessMonitorNotification _ pid reason) -> do
+    define "monitoring" id $ \(ProcessMonitorNotification _ pid reason) -> do
       mRC <- get
       -- Check the identity of the process in case the
       -- notifications get mixed for old and new RCs.
@@ -163,12 +164,12 @@ eqRules rg = do
             publish RCDied
             put Nothing
 
-    define id $ \(eid :: EventId) -> do
+    define "trimming" id $ \(eid :: EventId) -> do
       liftProcess $ retry requestTimeout $
         updateStateWith rg $ $(mkClosure 'filterEvent) eid
       publish TrimDone
 
-    define id $ \((sender, ev) :: (ProcessId, HAEvent [ByteString])) -> do
+    define "ha-event" id $ \((sender, ev) :: (ProcessId, HAEvent [ByteString])) -> do
       liftProcess $ retry requestTimeout $
         updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
       mRC      <- get

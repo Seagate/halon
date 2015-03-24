@@ -26,13 +26,13 @@ rcRules :: IgnitionArguments -> ProcessId -> RuleM LoopState ()
 rcRules argv eq = do
 
     -- Reconfigure
-    define id $ \msg -> do
+    define "reconfigure" id $ \msg -> do
         ReconfigureCmd n svc <- decodeMsg msg
         _                    <- bounceServiceTo Intended n svc
         return ()
 
     -- Node Up
-    defineHAEvent id $ \(HAEvent _ (NodeUp pid) _) -> do
+    defineHAEvent "node-up" id $ \(HAEvent _ (NodeUp pid) _) -> do
         let nid  = processNodeId pid
             node = Node nid
 
@@ -43,7 +43,7 @@ rcRules argv eq = do
           startEQTracker argv nid
 
     -- Service Start
-    defineHAEvent id $ \evt@(HAEvent _ msg _) -> do
+    defineHAEvent "service-start" id $ \evt@(HAEvent _ msg _) -> do
         ServiceStartRequest n@(Node nid) svc conf <- decodeMsg msg
         known   <- knownResource n
         running <- isServiceRunning n svc
@@ -58,7 +58,7 @@ rcRules argv eq = do
             sendMsg pid evt
 
     -- Service Started
-    defineHAEvent id $ \(HAEvent _ msg _) -> do
+    defineHAEvent "service-started" id $ \(HAEvent _ msg _) -> do
         ServiceStarted n svc@Service{..} cfg sp <- decodeMsg msg
         res <- lookupRunningService n svc
 
@@ -69,7 +69,7 @@ rcRules argv eq = do
         registerServiceProcess n svc cfg sp
 
     -- Service Failed
-    defineHAEvent id $ \(HAEvent _ msg _) -> do
+    defineHAEvent "service-failed" id $ \(HAEvent _ msg _) -> do
         ServiceFailed n svc pid <- decodeMsg msg
         res                     <- lookupRunningService n svc
         case res of
@@ -79,21 +79,22 @@ rcRules argv eq = do
           _ -> return ()
 
     -- EpochRequest
-    defineHAEvent id $ \(HAEvent _ (EpochRequest pid) _) -> do
+    defineHAEvent "epoch-request" id $ \(HAEvent _ (EpochRequest pid) _) -> do
         resp <- prepareEpochResponse
         sendMsg pid resp
 
     -- Configuration Update
-    defineHAEvent id $ \(HAEvent _ msg _) -> do
+    defineHAEvent "configuration-update" id $ \(HAEvent _ msg _) -> do
         ConfigurationUpdate epoch opts svc nodeFilter <- decodeMsg msg
 
         epid <- getEpochId
         when (epoch == epid) $
             updateServiceConfiguration opts svc nodeFilter
 
-    defineHAEvent id $ \(HAEvent _ (GetMultimapProcessId sender) _) -> do
-        mmid <- getMultimapProcessId
-        sendMsg sender mmid
+    defineHAEvent "mm-pid" id $
+      \(HAEvent _ (GetMultimapProcessId sender) _) -> do
+         mmid <- getMultimapProcessId
+         sendMsg sender mmid
 
     onEveryHAEvent $ \(HAEvent eid _ _) s -> do
         usend eq eid
