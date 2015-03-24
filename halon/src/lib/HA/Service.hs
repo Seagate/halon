@@ -40,6 +40,10 @@ module HA.Service
   , someConfigDict
   , someConfigDict__static
    -- * Messages
+  , serviceLabel
+  , remoteStartService
+  , remoteStartService__static
+  , remoteStartService__sdict
   , ProcessEncode
   , BinRep
   , encodeP
@@ -65,6 +69,7 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
 import Control.Distributed.Static (unstatic)
+import Control.Monad
 import Control.Monad.Reader ( ask )
 
 import Data.Binary
@@ -260,17 +265,39 @@ instance Hashable (Service a) where
 resourceDictServiceName :: Dict (Resource ServiceName)
 resourceDictServiceName = Dict
 
+--------------------------------------------------------------------------------
+-- Service messages                                                           --
+--------------------------------------------------------------------------------
+
+-- | Label used to register a service.
+serviceLabel :: ServiceName -> String
+serviceLabel sn = "service." ++ snString sn
+
+-- | Starts and registers a service in the current node.
+remoteStartService :: ServiceName -> Process () -> Process ()
+remoteStartService sn p = do
+    self <- getSelfPid
+    -- Register the service if it is not already registered.
+    let whereisOrRegister = do
+          let label = serviceLabel sn
+          regRes <- try $ register label self
+          case regRes of
+            Right () -> return self
+            Left (ProcessRegistrationException _) ->  do
+                whereis label >>= maybe whereisOrRegister return
+    pid <- whereisOrRegister
+    when (pid == self) p
+
 remotable
-  [ 'someConfigDict
+  [ 'remoteStartService
+  , 'someConfigDict
   , 'resourceDictServiceName
   ]
 
 instance Resource ServiceName where
   resourceDict = $(mkStatic 'resourceDictServiceName)
 
---------------------------------------------------------------------------------
--- Service messages                                                           --
---------------------------------------------------------------------------------
+
 
 -- | Type class to support encoding difficult types (e.g. existentials) using
 --   Static machinery in the Process monad.

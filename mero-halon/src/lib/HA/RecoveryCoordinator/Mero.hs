@@ -90,7 +90,7 @@ import Control.Distributed.Static (closureApply, unstatic)
 import Control.Monad.Reader (ask)
 import qualified Control.Monad.State.Strict as State
 
-import Control.Monad (void, mapM_)
+import Control.Monad
 import Control.Wire hiding (when)
 
 import Data.Binary (Binary, Get, encode, get, put)
@@ -364,8 +364,11 @@ _startService :: forall a. Configuration a
              -> Process ProcessId
 _startService node svc cfg _ = do
   mynid <- getSelfNode
-  pid <- spawn node $ serviceProcess svc
-              `closureApply` closure (staticDecode sDict) (encode cfg)
+  pid <- spawn node $
+              $(mkClosure 'remoteStartService) (serviceName svc)
+            `closureApply`
+              (serviceProcess svc
+                `closureApply` closure (staticDecode sDict) (encode cfg))
   void . promulgateEQ [mynid] . encodeP $
     ServiceStarted (Node node) svc cfg (ServiceProcess pid)
   return pid
@@ -383,8 +386,10 @@ bounceServiceTo :: Configuration a
                 -> Node
                 -> Service a
                 -> CEP LoopState ProcessId
-bounceServiceTo role n@(Node nid) s =
-    liftProcess . _bounceServiceTo . lsGraph =<< State.get
+bounceServiceTo role n@(Node nid) s = do
+    pid <- liftProcess . _bounceServiceTo . lsGraph =<< State.get
+    liftProcess $ sayRC $ "bounced " ++ snString (serviceName s) ++ " service"
+    return pid
   where
     _bounceServiceTo g = case runningService n s g of
         Just sp -> go sp
