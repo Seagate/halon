@@ -1,11 +1,25 @@
 #!/bin/bash
 
+export DC_HOST_IP=$( /sbin/ifconfig eth0 | grep "inet " | sed 's/^.*inet \([.0-9]*\) .*$/\1/')
+export DC_VERBOSE=1
+
+echo whoami: 
+whoami
+ 
+echo iptables is
+iptables -L -v
+
+echo ifconfig is
+/sbin/ifconfig
+
+echo DC_HOST_IP=${DC_HOST_IP}
+echo DOCKER_HOST=${DOCKER_HOST}
+
 make
 RC=$?
 # save the exit code in $RC so that
 # we can exit with the same code
 # after extracting any log files.
-
 
 mkdir artifacts
 mkdir artifacts/logs
