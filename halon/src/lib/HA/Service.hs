@@ -410,7 +410,7 @@ instance ProcessEncode ServiceStarted where
 
 -- | A notification of a failure to start a service.
 data ServiceCouldNotStart = forall a. Configuration a
-                          => ServiceCouldNotStart Node (Service a)
+                          => ServiceCouldNotStart Node (Service a) a
   deriving (Typeable)
 
 newtype ServiceCouldNotStartMsg = ServiceCouldNotStartMsg BS.ByteString
@@ -427,18 +427,18 @@ instance ProcessEncode ServiceCouldNotStart where
         case unstatic rt d of
           Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
             rest <- get
-            let (node, service) = extract rest
-                extract :: (Node, Service s)
-                        -> (Node, Service s)
+            let (node, service, cfg) = extract rest
+                extract :: (Node, Service s, s)
+                        -> (Node, Service s, s)
                 extract = id
-            return $ ServiceCouldNotStart node service
+            return $ ServiceCouldNotStart node service cfg
           Left err -> error $ "decode ServiceCouldNotStart: " ++ err
     in do
       rt <- fmap (remoteTable . processNode) ask
       return $ runGet (get_ rt) bs
 
-  encodeP (ServiceCouldNotStart node svc@(Service _ _ d)) =
-    ServiceCouldNotStartMsg . runPut $ put d >> put (node, svc)
+  encodeP (ServiceCouldNotStart node svc@(Service _ _ d) cfg) =
+    ServiceCouldNotStartMsg . runPut $ put d >> put (node, svc, cfg)
 
 newtype NodeFilter = NodeFilter [NodeId]
   deriving (Binary, Eq, Generic, Show, Typeable)

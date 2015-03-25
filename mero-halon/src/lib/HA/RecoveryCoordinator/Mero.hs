@@ -177,14 +177,10 @@ registerNode node = do
 
     State.modify $ \ls -> ls { lsGraph = rg' }
 
-startEQTracker :: IgnitionArguments
-               -> NodeId
-               -> CEP LoopState ()
-startEQTracker argv nid = State.gets lsGraph >>= \rg -> liftProcess $ do
+startEQTracker :: NodeId -> CEP LoopState ()
+startEQTracker nid = State.gets lsGraph >>= \rg -> liftProcess $ do
     sayRC $ "New node contacted: " ++ show nid
-    eqt  <- _startService nid EQT.eqTracker EmptyConf rg
-    True <- updateEQNodes eqt (stationNodes argv)
-    return ()
+    _startService nid EQT.eqTracker EmptyConf rg
 
 ack :: ProcessId -> CEP LoopState ()
 ack pid = liftProcess $ usend pid ()
@@ -216,7 +212,7 @@ startService :: Configuration a
              => NodeId
              -> Service a
              -> a
-             -> CEP LoopState ProcessId
+             -> CEP LoopState ()
 startService n svc conf =
     liftProcess . _startService n svc conf . lsGraph =<< State.get
 
@@ -361,24 +357,25 @@ _startService :: forall a. Configuration a
              -> Service a -- ^ Service
              -> a
              -> G.Graph
-             -> Process ProcessId
-_startService node svc cfg _ = do
-  mynid <- getSelfNode
-  let waitSpawn = do
-          spawnRef <- spawnAsync node $
+             -> Process ()
+_startService node svc cfg _ = void $ spawnLocal $ do
+    spawnRef <- spawnAsync node $
               $(mkClosure 'remoteStartService) (serviceName svc)
             `closureApply`
               (serviceProcess svc
                  `closureApply` closure (staticDecode sDict) (encode cfg))
-          mpid <- receiveTimeout 1000000
-            [ matchIf (\(DidSpawn r _) -> r == spawnRef)
-                      (\(DidSpawn _ pid) -> return pid)
-            ]
-          maybe waitSpawn return mpid
-  pid <- waitSpawn
-  void . promulgateEQ [mynid] . encodeP $
-    ServiceStarted (Node node) svc cfg (ServiceProcess pid)
-  return pid
+    mpid <- receiveTimeout 1000000
+              [ matchIf (\(DidSpawn r _) -> r == spawnRef)
+                        (\(DidSpawn _ pid) -> return pid)
+              ]
+    mynid <- getSelfNode
+    case mpid of
+      Nothing -> do
+        void . promulgateEQ [mynid] . encodeP $
+          ServiceCouldNotStart (Node node) svc cfg
+      Just pid -> do
+        void . promulgateEQ [mynid] . encodeP $
+          ServiceStarted (Node node) svc cfg (ServiceProcess pid)
 
 -- | Kill a service on a remote node
 killService :: NodeId
@@ -392,11 +389,9 @@ bounceServiceTo :: Configuration a
                 => ConfigRole
                 -> Node
                 -> Service a
-                -> CEP LoopState ProcessId
+                -> CEP LoopState ()
 bounceServiceTo role n@(Node nid) s = do
-    pid <- liftProcess . _bounceServiceTo . lsGraph =<< State.get
-    liftProcess $ sayRC $ "bounced " ++ snString (serviceName s) ++ " service"
-    return pid
+    liftProcess . _bounceServiceTo . lsGraph =<< State.get
   where
     _bounceServiceTo g = case runningService n s g of
         Just sp -> go sp

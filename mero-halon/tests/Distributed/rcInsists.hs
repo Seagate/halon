@@ -104,8 +104,8 @@ main = do
       say "Starting dummy service ..."
       systemThere [m0] ("./halonctl -a " ++ m1loc ++
                         " service dummy start -t " ++ m0loc)
-      expectLog [nid1] (isInfixOf "Starting service dummy")
       expectLog [nid1] (isInfixOf "Hello World!")
+      expectLog [nid0] (isInfixOf "started dummy service")
 
       say "Isolating satellite ..."
       liftIO $ isolateHostsAsUser "root" ip [m1]
@@ -114,9 +114,9 @@ main = do
       _ <- promulgateEQ [nid0] . encodeP $ ServiceFailed (Node nid1) Dummy.dummy
                                                          pid
       False <- expectTimeoutLog 1000000 [nid0]
-                                (isInfixOf "bounced dummy service")
+                                (isInfixOf "started dummy service")
 
       -- Rejoin the satellite and wait for the RC to ack the service restart.
       say "Rejoining satellite ..."
       liftIO $ rejoinHostsAsUser "root" [m1]
-      expectLog [nid0] (isInfixOf "bounced dummy service")
+      expectLog [nid0] (isInfixOf "started dummy service")

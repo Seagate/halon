@@ -44,9 +44,10 @@ remotableDecl [ [d|
     ocfProcess :: FilePath -> EmptyConf -> Process ()
     ocfProcess script _ = do
         node <- getSelfNode
-        checkExitCode (liftIO $ System.rawSystem script ["start"])
-                      go
-                      (expiate . encodeP $ ServiceCouldNotStart (Node node) $ ocf script)
+        checkExitCode
+          (liftIO $ System.rawSystem script ["start"])
+          go
+          (expiate . encodeP $ ServiceCouldNotStart (Node node) (ocf script) EmptyConf)
       where
         checkExitCode proc good bad =
           proc >>= \status ->

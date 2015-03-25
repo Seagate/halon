@@ -16,10 +16,12 @@ import Control.Distributed.Process
 import Network.CEP
 
 import HA.EventQueue.Consumer
+import HA.NodeAgent.Messages
 import HA.NodeUp
 import HA.RecoveryCoordinator.Mero
 import HA.Resources
 import HA.Service
+import qualified HA.Services.EQTracker as EQT
 import HA.Services.SSPL (ssplRules)
 
 rcRules :: IgnitionArguments -> ProcessId -> RuleM LoopState ()
@@ -28,8 +30,7 @@ rcRules argv eq = do
     -- Reconfigure
     define "reconfigure" id $ \msg -> do
         ReconfigureCmd n svc <- decodeMsg msg
-        _                    <- bounceServiceTo Intended n svc
-        return ()
+        bounceServiceTo Intended n svc
 
     -- Node Up
     defineHAEvent "node-up" id $ \(HAEvent _ (NodeUp pid) _) -> do
@@ -40,7 +41,7 @@ rcRules argv eq = do
         known <- knownResource node
         when (not known) $ do
           registerNode node
-          startEQTracker argv nid
+          startEQTracker nid
 
     -- Service Start
     defineHAEvent "service-start" id $ \evt@(HAEvent _ msg _) -> do
@@ -59,8 +60,14 @@ rcRules argv eq = do
 
     -- Service Started
     defineHAEvent "service-started" id $ \(HAEvent _ msg _) -> do
-        ServiceStarted n svc@Service{..} cfg sp <- decodeMsg msg
+        ServiceStarted n svc cfg sp@(ServiceProcess pid) <-
+          decodeMsg msg
+        when (serviceName svc == serviceName EQT.eqTracker) $ do
+          True <- liftProcess $ updateEQNodes pid (stationNodes argv)
+          return ()
         res <- lookupRunningService n svc
+        liftProcess $ sayRC $
+          "started " ++ snString (serviceName svc) ++ " service"
 
         case res of
           Just sp' -> unregisterPreviousServiceProcess n svc sp'
@@ -68,14 +75,18 @@ rcRules argv eq = do
 
         registerServiceProcess n svc cfg sp
 
+    -- Service could not start
+    defineHAEvent "service-could-not-start" id $ \(HAEvent _ msg _) -> do
+        ServiceCouldNotStart (Node n) svc cfg <- decodeMsg msg
+        startService n svc cfg
+
     -- Service Failed
     defineHAEvent "service-failed" id $ \(HAEvent _ msg _) -> do
         ServiceFailed n svc pid <- decodeMsg msg
         res                     <- lookupRunningService n svc
         case res of
           Just (ServiceProcess spid) | spid == pid -> do
-            _ <- bounceServiceTo Current n svc
-            return ()
+            bounceServiceTo Current n svc
           _ -> return ()
 
     -- EpochRequest
