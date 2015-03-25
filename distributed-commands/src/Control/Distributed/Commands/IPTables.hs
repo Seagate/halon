@@ -15,10 +15,10 @@ module Control.Distributed.Commands.IPTables
     )
   where
 
-import Control.Distributed.Commands
+import Control.Distributed.Commands.Management
+import qualified Control.Distributed.Commands as C
 
 import Control.Monad
-import Network (HostName)
 
 
 dropTrafficExceptFrom :: HostName -> String
@@ -39,13 +39,7 @@ isolateHostsAsUser user here hosts = do
     -- undo first the effect of any previos call to @isolateHostsAsUser@.
     rejoinHostsAsUser user hosts
     forM_ hosts $ \h -> do
-      void $ systemThereAsUser user h $ dropTrafficExceptFrom here
-      waitForChanges user h "INPUT" $ \case
-        ["DROP", "all", "--", _, "anywhere"] -> True
-        _ -> False
-      waitForChanges user h "OUTPUT" $ \case
-        ["DROP", "all", "--", "anywhere", _] -> True
-        _ -> False
+      systemThereAsUser user [h] $ dropTrafficExceptFrom here
 
 -- | Recovers communications of the given hosts undoing the effect of
 -- isolateHostsAsUser.
@@ -54,24 +48,18 @@ rejoinHostsAsUser user =
     mapM_ $ \h -> do
       testIPTablesAsUser user h "INPUT" $ \case
         ["DROP", "all", "--", _, "anywhere"] -> do
-           void $ systemThereAsUser user h "iptables -D INPUT 1"
-           waitForChanges user h "INPUT" $ \case
-             ["DROP", "all", "--", _, "anywhere"] -> False
-             _ -> True
+           systemThereAsUser user [h] "iptables -D INPUT 1"
         _ -> return ()
       testIPTablesAsUser user h "OUTPUT" $ \case
         ["DROP", "all", "--", "anywhere", _] -> do
-           void $ systemThereAsUser user h "iptables -D OUTPUT 1"
-           waitForChanges user h "OUTPUT" $ \case
-             ["DROP", "all", "--", "anywhere", _] -> False
-             _ -> True
+           systemThereAsUser user [h] "iptables -D OUTPUT 1"
         _ -> return ()
 
 -- | @testIPTablesAsUser user h chain f@ feeds to @f@ the first rule of @chain@
 -- in @h@ using the given @user@.
 testIPTablesAsUser :: String -> HostName -> String -> ([String] -> IO a) -> IO a
 testIPTablesAsUser user h chain f = do
-    rLine <- systemThereAsUser user h $ "iptables -L " ++ chain
+    rLine <- C.systemThereAsUser user h $ "iptables -L " ++ chain
     _ <- rLine
     _ <- rLine
     rLine >>= f . either (const []) words
@@ -85,16 +73,7 @@ cutLinksAsUser user hostPairs = do
     -- Undo first the effect of any previous call to @cutLinksAsUser@.
     reenableLinksAsUser user hostPairs
     forM_ hostPairs $ \(from, to) -> do
-      void $ systemThereAsUser user to $ dropTrafficFrom [from]
-      waitForChanges user to "INPUT" $ \case
-        ["DROP", "all", "--", _, "anywhere"] -> True
-        _ -> False
-
--- | @waitForChanges user h chain p@ feeds to @p@ the first rule of @chain@
--- in @h@ using the given @user@ until @p@ returns @True@.
-waitForChanges :: String -> HostName -> String -> ([String] -> Bool) -> IO ()
-waitForChanges user h chain p = testIPTablesAsUser user h chain $ \rule ->
-    unless (p rule) $ waitForChanges user h chain p
+      systemThereAsUser user [to] $ dropTrafficFrom [from]
 
 -- | Recover communications from a host to another, undoing the effect of
 -- cutLinks.
@@ -103,8 +82,5 @@ reenableLinksAsUser user hostPairs =
     forM_ hostPairs $ \(from, to) ->
       testIPTablesAsUser user to "INPUT" $ \case
         ["DROP", "all", "--", from', "anywhere"] | from == from' -> do
-           void $ systemThereAsUser user to "iptables -D INPUT 1"
-           waitForChanges user to "INPUT" $ \case
-             ["DROP", "all", "--", from'', "anywhere"] | from == from'' -> False
-             _ -> True
+           systemThereAsUser user [to] "iptables -D INPUT 1"
         _ -> return ()
