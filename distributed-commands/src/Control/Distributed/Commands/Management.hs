@@ -8,11 +8,13 @@
 -- commands on the various hosts.
 --
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 module Control.Distributed.Commands.Management
   ( Provider(..)
   , Host(..)
   , copyFiles
   , systemThere
+  , systemThereAsUser
   , systemLocal
   , withHosts
   , withHostNames
@@ -21,14 +23,10 @@ module Control.Distributed.Commands.Management
 
 import Control.Distributed.Commands (scp, ScpPath(..))
 import qualified Control.Distributed.Commands as C
-    ( systemThere
-    , systemLocal
-    , systemThereAsUser
-    )
 
 import Control.Concurrent.Async.Lifted
 import Control.Exception (bracket, throwIO)
-import Control.Monad (forM, (>=>), void)
+import Control.Monad
 import System.Exit (ExitCode (ExitFailure, ExitSuccess))
 import Data.Either (lefts)
 import Data.List (isPrefixOf)
@@ -80,36 +78,39 @@ isLocalHost h = h == "localhost" || "127." `isPrefixOf` h
 -- | @systemThere ms command@ runs @command@ in a shell on hosts @ms@ and waits
 -- until it completes.
 systemThere :: [HostName] -> String -> IO ()
-systemThere ips cmd = bracket
+systemThere = systemThere' Nothing
+
+-- | Like @systemThere@ but allows to specify the user to run the command.
+systemThereAsUser :: String -> [HostName] -> String -> IO ()
+systemThereAsUser = systemThere' . Just
+
+systemThere' :: Maybe String -> [HostName] -> String -> IO ()
+systemThere' muser ips cmd = bracket
     (forM ips $ \h -> async $
-      (maybe C.systemThere C.systemThereAsUser (muser h) h cmd) >>= collectAndThrowException
+      (maybe C.systemThere C.systemThereAsUser (muser `mplus` host_user h)
+                                               h cmd
+      ) >>= C.waitForCommand_ >>= \case
+          ExitSuccess -> return ()
+          ExitFailure ec -> throwIO $ userError $
+            "Command " ++ (show cmd) ++ " failed with exit code " ++ (show ec)
     )
     (mapM_ waitCatch)
     (mapM waitCatch) >>= mapM_ throwIO . lefts
   where
-    muser h = if isLocalHost h then Nothing else Just "dev"
-    collectAndThrowException rio = do
-      r <- rio
-      case r of
-        Right _ -> collectAndThrowException rio
-        Left (ExitSuccess) -> return ()
-        Left (ExitFailure ec) -> throwIO $ userError $ "Command " ++ (show cmd) ++ " failed with exit code " ++ (show ec)
+    host_user h = if isLocalHost h then Nothing else Just "dev"
 
 -- | @systemThere command@ runs @command@ in a shell on the local host and waits
 -- until it completes.
 systemLocal :: String -> IO ()
 systemLocal cmd = bracket
-    (async $ C.systemLocal cmd >>= collectAndThrowException)
+    (async $ C.systemLocal cmd
+      >>= C.waitForCommand_ >>= \case
+        ExitSuccess -> return ()
+        ExitFailure ec -> throwIO $ userError $
+          "Command " ++ (show cmd) ++ " failed with exit code " ++ (show ec)
+    )
     (void . waitCatch)
     waitCatch >>= either throwIO return
-  where
-    collectAndThrowException rio = do
-      r <- rio
-      case r of
-        Right n -> putStrLn n >> collectAndThrowException rio
-        Left (ExitSuccess) -> return ()
-        Left (ExitFailure ec) -> throwIO $ userError $ "Command " ++ (show cmd)
-                                       ++ " failed with exit code " ++ (show ec)
 
 -- | @withHosts cp n action@ creates @n@ hosts from provider @cp@
 -- and then it executes the given @action@. Upon termination of the actions

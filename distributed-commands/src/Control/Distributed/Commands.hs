@@ -13,6 +13,8 @@ module Control.Distributed.Commands
   , systemLocal
   , scp
   , ScpPath(..)
+  , waitForCommand
+  , waitForCommand_
   )
   where
 
@@ -136,3 +138,16 @@ systemLocal cmd = do
         ec <- waitForProcess phandle
         writeChan chan (Left ec)
       return $ readChan chan
+
+-- | Collects the input of a command started with 'systemThere' until the
+-- command completes.
+--
+-- It takes as argument the action used to read the input from the process.
+waitForCommand :: IO (Either ExitCode String) -> IO ([String], ExitCode)
+waitForCommand rio = go id
+  where
+    go f = rio >>= either (\ec -> return (f [], ec)) (\x -> go $ f . (x :))
+
+-- | Like 'waitForCommand' but only yields the exit code.
+waitForCommand_ :: IO (Either ExitCode String) -> IO ExitCode
+waitForCommand_ rio = rio >>= either return (const $ waitForCommand_ rio)
