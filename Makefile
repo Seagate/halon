@@ -24,11 +24,13 @@
 #    USE_TCP              -- use TCP communication (default)
 #
 #    NO_TESTS             -- do not run tests while building packages
-#    CABAL_FLAGS          -- flags passed to the cabal
 #    PACKAGES             -- sub-projects to work with (see README.md!)
+#    CABAL_FLAGS          -- common flags that are passed to all invocations of cabal the cabal
 #    VENDOR_CABAL_FLAGS   -- provide a way to pass flags when installing vendor packages
 #    			     this may be useful for in some cases for example where
 #    			     it's needed to ignore global-db or pass other options
+#    HALON_CABAL_FLAGS    -- cabal flags that are passed only to halon packages
+#
 #
 # * Packages Makefiles
 #
@@ -85,17 +87,17 @@ libdirs=$(MERO_ROOT)/mero/.libs
 
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
 
-override CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) $(HLD_SEARCH_PATH) --extra-include-dirs=$(RPCLITE_PREFIX)
+override HALON_CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) $(HLD_SEARCH_PATH) --extra-include-dirs=$(RPCLITE_PREFIX)
 endif
 
 ifdef USE_MERO
-override CABAL_FLAGS += -fmero
+override HALON_CABAL_FLAGS += -fmero
 endif
 
 ifdef USE_RPC
 TEST_NID = $(shell sudo lctl list_nids | head -1)
 TEST_LISTEN = $(TEST_NID):12345:34:1
-override CABAL_FLAGS += -frpc
+override HALON_CABAL_FLAGS += -frpc
 DC_HOST_IP = $(TEST_NID):12345:34
 else
 USE_TCP = 1
@@ -104,7 +106,7 @@ DC_HOST_IP = 127.0.0.1
 endif
 
 ifdef DEBUG
-override CABAL_FLAGS += -fdebug
+override HALON_CABAL_FLAGS += -fdebug
 endif
 
 ifdef USE_RPC
@@ -112,7 +114,7 @@ ifdef USE_RPC
 # explicitly because most operating systems reset that environment
 # variable for setuid binaries.
 SUDO = sudo -E LD_LIBRARY_PATH=$(LD_LIBRARY_PATH)
-override CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) --extra-lib-dirs=$(MERO_ROOT)/mero/.libs
+override HALON_CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) --extra-lib-dirs=$(MERO_ROOT)/mero/.libs
 else
 SUDO =
 endif
@@ -124,7 +126,7 @@ export GENDERS
 
 ifndef NO_TESTS
 CABAL_BUILD_JOBS = --jobs=1
-override CABAL_FLAGS += --run-tests
+override HALON_CABAL_FLAGS += --run-tests
 endif
 
 export USE_TCP
@@ -143,7 +145,7 @@ build: dep
 # XXX Tests tend to bind the same ports, making them mutually
 # exclusive in time. The solution is to allow tests to bind
 # a random available port.
-	cabal install $(CABAL_FLAGS) $(CABAL_BUILD_JOBS) $(PACKAGES)
+	cabal install $(CABAL_FLAGS) $(HALON_CABAL_FLAGS) $(CABAL_BUILD_JOBS) $(PACKAGES)
 
 CLEAN := $(patsubst %,%_clean,$(PACKAGES))
 .PHONY: $(CLEAN) clean depclean
@@ -164,8 +166,8 @@ cabal.sandbox.config: mk/config.mk
                                  $(addprefix $(CEP_DIR),$(CEP_PACKAGES)) \
 	                         $(addprefix $(PACKAGE_DIR),$(PACKAGES))
 # Using --reinstall to override packages from GHC global db.
-	cabal install --reorder-goals --reinstall $(VENDOR_CABAL_FLAGS) $(VENDOR_PACKAGES)
-	cabal install --only-dependencies --reorder-goals $(CABAL_FLAGS) $(PACKAGES)
+	cabal install --reorder-goals --reinstall $(VENDOR_CABAL_FLAGS) $(CABAL_FLAGS) $(VENDOR_PACKAGES)
+	cabal install --only-dependencies --reorder-goals $(VENDOR_CABAL_FLAGS) $(CABAL_FLAGS) $(PACKAGES)
 
 # Updating cabal.config should only ever be done manually, i.e. explicitly
 # through listing freeze as a goal, not implicitly as part of another rule.
