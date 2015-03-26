@@ -184,5 +184,6 @@ rpm: build
 	mkdir -p rpmbuild/SOURCES
 	cp .cabal-sandbox/bin/halond rpmbuild/SOURCES/
 	cp .cabal-sandbox/bin/halonctl rpmbuild/SOURCES/
+	cp systemd/halond.service rpmbuild/SOURCES/
 	rpmbuild --define "_topdir ${PWD}/rpmbuild" -ba rpmbuild/SPECS/halon.spec
 
