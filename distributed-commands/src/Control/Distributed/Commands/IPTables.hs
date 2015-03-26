@@ -19,6 +19,8 @@ import Control.Distributed.Commands.Management
 import qualified Control.Distributed.Commands as C
 
 import Control.Monad
+import Data.List (findIndex)
+import System.Exit
 
 
 dropTrafficExceptFrom :: HostName -> String
@@ -46,23 +48,28 @@ isolateHostsAsUser user here hosts = do
 rejoinHostsAsUser :: String -> [HostName] -> IO ()
 rejoinHostsAsUser user =
     mapM_ $ \h -> do
-      testIPTablesAsUser user h "INPUT" $ \case
-        ["DROP", "all", "--", _, "anywhere"] -> do
-           systemThereAsUser user [h] "iptables -D INPUT 1"
+      inputRules <- listIPTablesAsUser user h "INPUT"
+      let p ["DROP", "all", "--", '!' : _, "anywhere"] = True
+          p _ = False
+      case findIndex p inputRules of
+        Just i ->
+          systemThereAsUser user [h] $ "iptables -D INPUT " ++ show (i + 1)
         _ -> return ()
-      testIPTablesAsUser user h "OUTPUT" $ \case
-        ["DROP", "all", "--", "anywhere", _] -> do
-           systemThereAsUser user [h] "iptables -D OUTPUT 1"
+      outputRules <- listIPTablesAsUser user h "OUTPUT"
+      let q ["DROP", "all", "--", "anywhere", '!' : _] = True
+          q _ = False
+      case findIndex q outputRules of
+        Just i ->
+          systemThereAsUser user [h] $ "iptables -D OUTPUT " ++ show (i + 1)
         _ -> return ()
 
--- | @testIPTablesAsUser user h chain f@ feeds to @f@ the first rule of @chain@
--- in @h@ using the given @user@.
-testIPTablesAsUser :: String -> HostName -> String -> ([String] -> IO a) -> IO a
-testIPTablesAsUser user h chain f = do
+-- | @listIPTablesAsUser user h chain@ yields the rules of @chain@ in @h@ using
+-- the given @user@.
+listIPTablesAsUser :: String -> HostName -> String -> IO [[String]]
+listIPTablesAsUser user h chain = do
     rLine <- C.systemThereAsUser user h $ "iptables -L " ++ chain
-    _ <- rLine
-    _ <- rLine
-    rLine >>= f . either (const []) words
+    (output, ExitSuccess) <- C.waitForCommand rLine
+    return $ map words $ drop 2 output
 
 -- | Disables communications from a host to another.
 --
@@ -79,8 +86,11 @@ cutLinksAsUser user hostPairs = do
 -- cutLinks.
 reenableLinksAsUser :: String -> [(HostName, HostName)] -> IO ()
 reenableLinksAsUser user hostPairs =
-    forM_ hostPairs $ \(from, to) ->
-      testIPTablesAsUser user to "INPUT" $ \case
-        ["DROP", "all", "--", from', "anywhere"] | from == from' -> do
-           systemThereAsUser user [to] "iptables -D INPUT 1"
+    forM_ hostPairs $ \(from, to) -> do
+      rules <- listIPTablesAsUser user to "INPUT"
+      let p ["DROP", "all", "--", from', "anywhere"] = from == from'
+          p _ = False
+      case findIndex p rules of
+        Just i ->
+          systemThereAsUser user [to] $ "iptables -D INPUT " ++ show (i + 1)
         _ -> return ()
