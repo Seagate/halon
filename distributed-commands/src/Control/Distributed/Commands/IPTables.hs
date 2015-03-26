@@ -49,14 +49,14 @@ rejoinHostsAsUser :: String -> [HostName] -> IO ()
 rejoinHostsAsUser user =
     mapM_ $ \h -> do
       inputRules <- listIPTablesAsUser user h "INPUT"
-      let p ["DROP", "all", "--", '!' : _, "anywhere"] = True
+      let p ["DROP", "all", "--", '!' : _, "0.0.0.0/0"] = True
           p _ = False
       case findIndex p inputRules of
         Just i ->
           systemThereAsUser user [h] $ "iptables -D INPUT " ++ show (i + 1)
         _ -> return ()
       outputRules <- listIPTablesAsUser user h "OUTPUT"
-      let q ["DROP", "all", "--", "anywhere", '!' : _] = True
+      let q ["DROP", "all", "--", "0.0.0.0/0", '!' : _] = True
           q _ = False
       case findIndex q outputRules of
         Just i ->
@@ -67,7 +67,7 @@ rejoinHostsAsUser user =
 -- the given @user@.
 listIPTablesAsUser :: String -> HostName -> String -> IO [[String]]
 listIPTablesAsUser user h chain = do
-    rLine <- C.systemThereAsUser user h $ "iptables -L " ++ chain
+    rLine <- C.systemThereAsUser user h $ "iptables -n -L " ++ chain
     (output, ExitSuccess) <- C.waitForCommand rLine
     return $ map words $ drop 2 output
 
@@ -88,7 +88,7 @@ reenableLinksAsUser :: String -> [(HostName, HostName)] -> IO ()
 reenableLinksAsUser user hostPairs =
     forM_ hostPairs $ \(from, to) -> do
       rules <- listIPTablesAsUser user to "INPUT"
-      let p ["DROP", "all", "--", from', "anywhere"] = from == from'
+      let p ["DROP", "all", "--", from', "0.0.0.0/0"] = from == from'
           p _ = False
       case findIndex p rules of
         Just i ->
