@@ -24,6 +24,10 @@ module Control.Distributed.Commands.Process
   , withHosts
   , __remoteTable
   , redirectLogsThere__tdict
+    -- * Tracing
+    -- $trace
+  , mkTraceEnv
+  , TraceEnv(..)
   ) where
 
 import Control.Distributed.Commands.Management
@@ -66,8 +70,11 @@ import Control.Distributed.Process.Internal.Types (runLocalProcess)
 import Control.Monad.Reader (ask, when)
 import Data.Binary (decode, encode)
 import Data.ByteString.Lazy (ByteString)
-import Data.List (isPrefixOf)
+import Data.IORef (newIORef, readIORef, modifyIORef')
+import Data.List (isPrefixOf, isSuffixOf)
+import Data.Foldable (forM_)
 import System.IO (hFlush, stdout)
+import System.Environment (getEnvironment, setEnv)
 
 
 -- | @spawnNode h command@ launches @command@ on the host @h@.
@@ -238,3 +245,68 @@ withHostNames :: M.Provider -> Int -> ([HostName] -> Process a) -> Process a
 withHostNames cp n action = do
     lproc <- ask
     liftIO $ M.withHostNames cp n $ runLocalProcess lproc . action
+
+-- $tracing
+-- Sometimes users are interested in gathering tracing events, it is
+-- possible to set tracing options using environment variables.
+--
+-- distributed-commands can enable tracing on all processes. This is done by
+-- propagating the trace-related environment variables to to the remote hosts
+-- and having them trace to a file. Then after the test completes, it can gather
+-- all the files that were created. See 'TraceEnv' and 'mkTraceEnv'.
+--
+-- Tracing is enabled by setting the environment variables
+-- @DISTRIBUTED_PROCESS_TRACE_FLAGS@ and @DISTRIBUTED_PROCESS_TRACE_FILE@ as
+-- explained in
+-- <http://hackage.haskell.org/package/distributed-process/docs/Control-Distributed-Process-Debug.html>.
+
+-- | A trace environment is defined by a function to spawn processes with
+-- tracing enabled, and a function to collect the trace files that these
+-- processes produce.
+data TraceEnv = TraceEnv
+      { traceSpawnNode   :: String -> HostName -> String -> Process NodeId
+      , traceGatherFiles :: Process ()
+      }
+
+-- | Creates 'TraceEnv' that allow to run traced nodes on remote hosts and
+-- gather resulting the files.
+--
+-- It is intented to be used as:
+--
+-- > TraceEnv spawnNode' gatherFiels <- mkTraceEnv
+--
+-- **Note.** Since spawnNode reads the 'NodeId' from the standard output,
+-- tracing to the console is not suported. mkTraceEnv expects tracing to files.
+-- All files are given the '.trace' suffix, to make them easy to recognize.
+--
+-- **Note.** If 'mkTraceEnv' is run after 'newLocalNode', the trace file of the
+-- local node will be missing the '.trace' suffix.
+mkTraceEnv :: IO TraceEnv
+mkTraceEnv = do
+    env <- getEnvironment
+    case "DISTRIBUTED_PROCESS_TRACE_FLAGS" `lookup` env of
+      Nothing -> return envNoTrace
+      Just t  -> do
+        case "DISTRIBUTED_PROCESS_TRACE_FILE" `lookup` env of
+          Nothing -> return envNoTrace
+          Just s  -> do
+            let s' = normalize s
+            st <- newIORef []
+            setEnv "DISTRIBUTED_PROCESS_TRACE_FILE" s'
+            return $ TraceEnv (withTraceFile st t s')
+                              (do fls <- liftIO $ readIORef st
+                                  forM_ fls $ \(node,file) ->
+                                    copyFiles node ["localhost"] [(file, ".")]) -- XXX: it's possible to group files here
+  where
+    envNoTrace = TraceEnv (const spawnNode) (return ())
+    normalize t
+      | ".trace" `isSuffixOf` t = t
+      | otherwise = t ++ ".trace"
+    withTraceFile storage flags suffix prefix node cmd = do
+      let file = prefix ++ '.':suffix
+      liftIO $ modifyIORef' storage ((node,file):)
+      spawnNode node $
+        unwords [ "DISTRIBUTED_PROCESS_TRACE_FLAGS=" ++ flags
+                , " DISTRIBUTED_PROCESS_TRACE_FILE=" ++ file
+                , cmd
+                ]

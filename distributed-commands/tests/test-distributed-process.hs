@@ -12,11 +12,12 @@ import Control.Distributed.Commands.Process
   ( withHostNames
   , copyFiles
   , systemThere
-  , spawnNode
   , redirectLogs
   , expectLog
   , printNodeId
   , __remoteTable
+  , mkTraceEnv
+  , TraceEnv(..)
   )
 import Control.Distributed.Commands.Providers
 
@@ -44,8 +45,11 @@ remotableDecl [[d|
     nsendRemote nid label (sender :: ProcessId, m :: String)
  |]]
 
+
 main :: IO ()
 main = do
+    TraceEnv spawnNode' gatherTraces <- mkTraceEnv
+
     localHost <- getHostAddress
     Right nt <- createTransport localHost "4000" defaultTCPParameters
     let remoteTable = __remoteTableDecl $ __remoteTable initRemoteTable
@@ -87,11 +91,14 @@ main = do
 
       -- test spawning a node
       say "Testing spawning nodes ..."
-      nid0 <- spawnNode m0 $ "DC_HOST_IP=" ++ m0 ++
-                             " ." </> takeFileName exePath ++ " --ping-server"
+
+      nid0 <- spawnNode' "m0" m0 $
+                "DC_HOST_IP=" ++ m0 ++
+                  " ." </> takeFileName exePath ++ " --ping-server"
       getSelfPid >>= redirectLogs nid0
-      nid1 <- spawnNode m1 $ "DC_HOST_IP=" ++ m1 ++
-                             " ." </> takeFileName exePath ++ " --ping-server"
+      nid1 <- spawnNode' "m1" m1 $
+                "DC_HOST_IP=" ++ m1 ++
+                  " ." </> takeFileName exePath ++ " --ping-server"
       getSelfPid >>= redirectLogs nid1
 
       say "Testing log redirection ..."
@@ -143,3 +150,4 @@ main = do
       expectLog [nid1] (== show self)
 
       say "SUCCESS!"
+      gatherTraces

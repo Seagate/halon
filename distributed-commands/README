@@ -32,3 +32,17 @@ processes left behind without a parent; these processes
 (for example, scp) might cause subsequent attempts to run the
 tests to fail by occupying port localhost:4000. Kill them manually.
 
+Tracing
+
+distributed-commands can enable tracing on all processes. This is done by
+propagating the trace-related environment variables to to the remote hosts
+and having them trace to a file. Then after the test completes, it can gather
+all the files that were created. See 'TraceEnv' and 'mkTraceEnv'.
+
+Tracing is enabled by setting the environment variables
+DISTRIBUTED_PROCESS_TRACE_FLAGS and DISTRIBUTED_PROCESS_TRACE_FILE as explained
+in
+
+http://hackage.haskell.org/package/distributed-process/docs/Control-Distributed-Process-Debug.html
+
+
