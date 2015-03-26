@@ -51,6 +51,7 @@ scp src dst =
       let outputHandle = if dcVerbose then stderr else dev_null
       (_, _, _, ph) <- createProcess
         (proc "scp" [ "-r"
+                    , "-v"
                     , "-o", "UserKnownHostsFile=/dev/null"
                     , "-o", "StrictHostKeyChecking=no"
                     , showPath src
@@ -104,13 +105,16 @@ systemThere' :: Maybe String
 systemThere' muser host cmd = do
     -- Connect to the remote host.
     withFile "/dev/null" ReadWriteMode $ \dev_null -> do
+      dcVerbose <- isVerbose
+      let outputHandle = if dcVerbose then stderr else dev_null
       (_, Just sout, ~(Just _), phandle) <- createProcess (proc "ssh"
         [ maybe "" (++ "@") muser ++ host
+        , "-v"
         , "-o", "UserKnownHostsFile=/dev/null"
         , "-o", "StrictHostKeyChecking=no"
         , "--", cmd ])
         { std_out = CreatePipe
-        , std_err = UseHandle dev_null
+        , std_err = UseHandle outputHandle
         }
       out <- hGetContents sout
       chan <- newChan
