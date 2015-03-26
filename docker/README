@@ -59,4 +59,18 @@ generate-*-version functions in functions.sh
   export DOCKER_HOST=http://172.17.42.1:5555
 
   cabal install distributed-commands --reinstall --enable-tests --run-tests --flag="distributed-tests" --flag="docker-tests"
- 
+
+
+* To use a docker image for building in a development environment
+
+This will be needed if, for example, your host OS generates
+binaries that are not sufficiently compatible with the
+tweagremote Centos environment. (eg if you build on debian).
+
+This is an example of a command that will start a particular
+CI-built image locally, mounting your local ~/workspace/tweag/halon
+directory over the /halon directory in the build image.
+
+docker --host=172.17.42.1:5555 pull tweag/haskell-env-on-centos-7:master
+docker --host=172.17.42.1:5555 run -v ~/workspace/tweag/halon:/halon -t -i tweag/haskell-env-on-centos-7:master /bin/bash 
+
