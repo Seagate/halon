@@ -18,7 +18,7 @@ echo Running build container
 
 ContainerID=$(docker --host=localhost:5555 run -d --name=halon-build tweag/halon docker/3-halon/build-with-artifacts)
 
-docker --host=localhost:5555 attach $ContainerID
+docker --host=localhost:5555 logs -f -t $ContainerID
 
 BuildRC=$(docker --host=localhost:5555 wait $ContainerID)
 
