@@ -29,6 +29,7 @@ import qualified HA.Services.Dummy    as Dummy
 import qualified HA.Services.Frontier as Frontier
 import qualified HA.Services.Noisy    as Noisy
 import qualified HA.Services.SSPL     as SSPL
+import qualified HA.Services.SSPLHL   as SSPLHL
 
 import Lookup (conjureRemoteNodeId)
 
@@ -65,6 +66,7 @@ data ServiceCmdOptions =
       DummyServiceCmd (StandardServiceOptions Dummy.DummyConf)
     | NoisyServiceCmd (StandardServiceOptions Noisy.NoisyConf)
     | SSPLServiceCmd (StandardServiceOptions SSPL.SSPLConf)
+    | SSPLHLServiceCmd (StandardServiceOptions SSPLHL.SSPLHLConf)
     | FrontierServiceCmd (StandardServiceOptions Frontier.FrontierConf)
   deriving (Eq, Show, Generic, Typeable)
 
@@ -137,6 +139,9 @@ parseService =
     (SSPLServiceCmd <$> (O.subparser $
          mkStandardServiceCmd SSPL.sspl)
     ) <|>
+    (SSPLHLServiceCmd <$> (O.subparser $
+         mkStandardServiceCmd SSPLHL.sspl)
+    ) <|>
     (FrontierServiceCmd <$> (O.subparser $
          mkStandardServiceCmd Frontier.frontier))
 
@@ -151,6 +156,7 @@ service nids so = case so of
   DummyServiceCmd sso    -> standardService nids sso Dummy.dummy
   NoisyServiceCmd sso    -> standardService nids sso Noisy.noisy
   SSPLServiceCmd sso     -> standardService nids sso SSPL.sspl
+  SSPLHLServiceCmd sso     -> standardService nids sso SSPLHL.sspl
   FrontierServiceCmd sso -> standardService nids sso Frontier.frontier
 
 -- | Handle an instance of a "standard service" command.
