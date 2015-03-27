@@ -18,6 +18,8 @@ docker history $TAG
 
 if [ "$?" == "0" ] ; then
   echo pulled OK - do not need to rebuild
+  docker tag -f ${TAG} ${LATESTTAG}
+  docker push $LATESTTAG || exit 1
   exit 0
 fi
 
