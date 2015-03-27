@@ -14,12 +14,15 @@ module Network.CEP
        , occursWithin
        ) where
 
-import Data.Monoid
-import Prelude hiding ((.), id)
+import           Prelude hiding ((.), id)
+import           Data.Foldable (toList)
+import           Data.Monoid
+import qualified Data.Sequence as S
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Serializable
 import           Control.Wire.Core
+import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.MultiMap as M
 import           Data.Time
 import           FRP.Netwire
@@ -47,6 +50,8 @@ runProcessor s rm = go start clockSession_ (cepRules rs)
 
     fin = cepFinalizers rs
 
+    logF = cepOnLog rs
+
     start = initBookkeeping s
 
     matches = match (return . SubRequest) : cepMatches rs
@@ -65,14 +70,24 @@ runProcessor s rm = go start clockSession_ (cepRules rs)
             let action = stepWire wire step (Right dyn)
             ((resp, nextWire), nextBook) <- runCEP action book
             newS <- case resp of
-              Right (Handled _ evt) -> do
-                ss <- fin $ _state nextBook
-                cepSpes rs evt ss
+              Right (Handled rid ins logs evt) -> do
+                ss  <- fin $ _state nextBook
+                ss' <- cepSpes rs evt ss
+                case toList logs of
+                  []   -> return ()
+                  x:xs ->
+                    let lentries = LogEntries
+                                   { logEntriesRule   = rid
+                                   , logEntriesInputs = ins
+                                   , logEntries       = x :| xs
+                                   } in
+                     logF lentries ss'
+                return ss'
               _       -> return $ _state nextBook
             go nextBook { _state = newS } nextSession nextWire
 
 initBookkeeping :: s -> Bookkeeping s
-initBookkeeping = Bookkeeping M.empty
+initBookkeeping s = Bookkeeping M.empty s S.empty
 
 -- | @occursWithin n t@ Lets through an event every time it occurs @n@ times
 --   within @t@ seconds.

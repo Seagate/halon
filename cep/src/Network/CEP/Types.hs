@@ -3,6 +3,7 @@
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -13,17 +14,20 @@
 --
 module Network.CEP.Types where
 
-import           Prelude hiding ((.))
+import           Prelude hiding (id, (.))
 import           Data.ByteString
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Dynamic
 import qualified Data.MultiMap as M
+import           Data.Sequence (Seq, (|>))
 import           GHC.Generics
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 import Control.Monad.State.Strict
 import Control.Wire
-import Data.Binary
+import Data.Binary hiding (get, put)
+import Data.List.NonEmpty
 import Data.MultiMap
 
 -- | Typelevel trick. It's very similar to `Data.Proxy`. It's use to declare
@@ -32,14 +36,59 @@ data Sub a = Sub deriving (Generic, Typeable)
 
 instance Binary a => Binary (Sub a)
 
--- | Only used internally. Hold the event handled by a CEP processor.
-data Handled = forall a. Typeable a => Handled ByteString a
+-- | Only used internally. Hold the event handled by a CEP processor, the inputs
+--   and logs accumulated in the process.
+data Handled =
+    forall a. Typeable a =>
+    Handled
+    { handledRuleId :: !ByteString
+      -- ^ The rule that handles this event.
+    , handledInputs :: !Lazy.ByteString
+      -- ^ Serialized data coming from the mailbox event that triggered that
+      --   rule.
+    , handledLogs   :: !(Seq Log)
+      -- ^ The logs accumulated during the rule execution.
+    , handledValue  :: !a
+      -- ^ The value produced by the Netwire rule. Mailbox event and the handled
+      --   value could be the same.
+    }
 
 -- | Only used internally. Currently CEP either handles subscription request or
 --   user defined events. Subcription is handled automatically by CEP.
 data Msg
     = SubRequest Subscribe
     | Other Dynamic
+
+-- | A 'Log' entry is simply a tuple consisting on a context string and some
+--   value that can be rendered to something human readable. 'Log' are not use
+--   by CEP itself. It basically created by using 'cepLog'. At the end,
+--   'Log' values are gathered into 'LogEntries', typically at the end of the
+--   rule execution.
+data Log =
+    forall a. Show a =>
+    Log
+    { logCtx   :: !ByteString
+      -- ^ A context string. The content is left at the user description.
+    , logValue :: !a
+      -- ^ A simple value that is expected to be human readable.
+    }
+
+-- | Log entries produced at the end of a rule run. 'LogEntries' is only created
+--   if only a rule produced a non empty list of 'Log' values. In order to
+--   maintain that constraint, 'Log' values are stored into a 'NonEmpty'
+--   collection. 'LogEntries' has no utility for CEP. It would be passed to
+--   the callback registered when calling 'setOnLog'. 'LogEntries' is discarded
+--   once passed to 'setOnLog''s callback.
+data LogEntries =
+    LogEntries
+    { logEntriesRule :: !ByteString
+      -- ^ The rule that produced a non empty set of 'Log'
+    , logEntriesInputs :: !Lazy.ByteString
+      -- ^ Serialized data coming from the mailbox event that triggered that
+      --   rule.
+    , logEntries :: !(NonEmpty Log)
+      -- ^ Non empty collection of 'Log'
+    }
 
 -- | Data holded by the Rule monad.
 data RuleState s =
@@ -55,6 +104,9 @@ data RuleState s =
     , cepSpes :: forall a. Typeable a => a -> s -> Process s
       -- ^ A specialized finalizer. It's called when a particular type of event
       --   has been processed by a rule. That's finalizer is called after 'cepFinalizers'
+    , cepOnLog :: (LogEntries -> s -> Process ())
+      -- ^ Handler to call every time we collect a non empty list of 'Log'
+      --   produces during a rule run. It will be call at the end of the rule.
     }
 
 -- | The Rule monad.
@@ -71,6 +123,8 @@ instance MonadState s (CEP s) where
 
     put s = CEP $ modify $ \b -> b { _state = s }
 
+-- | 'ComplexEvent' is simply a specialized Netwire 'Wire' running on 'CEP'
+--   monad.
 type ComplexEvent s a b = Wire (Timed NominalDiffTime ()) () (CEP s) a b
 
 -- | Holds internal CEP data and user-defined state.
@@ -81,6 +135,9 @@ data Bookkeeping s =
       --   event's type.
     , _state :: !s
       -- ^ User-defined state.
+    , _logEntries :: !(Seq Log)
+      -- ^ Holds entries produced when a rule run. It will be set empty before
+      --   a new rule will run.
     }
 
 -- | That message is sent when a 'Process' asks for a subscription. Used
@@ -125,6 +182,7 @@ publish a = CEP $ do
     lift $ forM_ (M.lookup key subs) $ \pid ->
       send pid (Published a self)
 
+-- | Lift a 'Process' computation into the 'CEP' monad.
 liftProcess :: Process a -> CEP s a
 liftProcess m = CEP $ lift m
 
@@ -137,17 +195,24 @@ addRuleFinalizer = modify . addFinalizer
 -- | Defines a new rule. A Rule consists on a 'ComplexEvent' and a handler that
 --   will be called if `ComplexEvent` emits something. A 'ComplexEvent' can be
 --   seen as state machine that also depends on time.
-define :: forall a b s. (Serializable a, Typeable b)
+define :: forall a b s. (Serializable a, Serializable b)
        => ByteString
        -> ComplexEvent s a b
        -> (b -> CEP s ())
        -> RuleM s ()
 define n w k = do
     let m       = match $ \(x :: a) -> return $ Other $ toDyn x
-        rule    = observe . w . dynEvent
-        observe = mkGen_ $ \b -> do
+        rule    = observe . (id &&& w) . dynEvent
+        observe = mkGen_ $ \(a,b) -> do
           k b
-          return $ Right $ Handled n b
+          lgs <- getLogs
+          resetLogs
+          return $ Right $ Handled
+                           { handledRuleId = n
+                           , handledInputs = generateInputs a b
+                           , handledLogs   = lgs
+                           , handledValue  = b
+                           }
 
     modify $ addRule m rule
 
@@ -156,6 +221,21 @@ define n w k = do
 --   performed after a regular finalizer.
 finishedBy :: Typeable a => (a -> s -> Process s) -> RuleM s ()
 finishedBy = modify . addSpecialized
+
+-- | Sets a handler to call every time we collect a non empty list of 'Log'
+--   , in the form of 'LogEntries',  produced during a rule execution.
+setOnLog :: (LogEntries -> s -> Process ()) -> RuleM s ()
+setOnLog k = modify $ \s -> s { cepOnLog = k }
+
+-- | Appends a new log entry.
+cepLog :: Show a => ByteString -> a -> CEP s ()
+cepLog ctx v = CEP $ do
+    bk <- get
+    let ld = Log
+             { logCtx   = ctx
+             , logValue = v
+             }
+    put bk { _logEntries = _logEntries bk |> ld }
 
 --------------------------------------------------------------------------------
 asSub :: a -> Sub a
@@ -170,12 +250,19 @@ getUsrState = CEP $ gets _state
 setUsrState :: s -> CEP s ()
 setUsrState s = CEP $ modify (\b -> b { _state = s})
 
+getLogs :: CEP s (Seq Log)
+getLogs = CEP $ gets _logEntries
+
+resetLogs :: CEP s ()
+resetLogs = CEP $ modify $ \s -> s { _logEntries = mempty }
+
 initRuleState :: RuleState s
 initRuleState = RuleState
                 { cepMatches    = []
                 , cepRules      = mkEmpty
                 , cepFinalizers = return
                 , cepSpes       = \_ s -> return s
+                , cepOnLog      = \_ _ -> return ()
                 }
 
 runRuleM :: RuleM s a -> RuleState s
@@ -214,3 +301,20 @@ addSpecialized :: Typeable a
                -> RuleState s
                -> RuleState s
 addSpecialized k rs = rs { cepSpes = composeSpe (cepSpes rs) k }
+
+generateInputs :: forall a b. (Serializable a, Serializable b)
+               => a
+               -> b
+               -> Lazy.ByteString
+generateInputs a b =
+    "mailbox-input=" <>
+    encode a         <>
+    ";rule-output="  <>
+    encode b         <>
+    ";"              <>
+    rest
+  where
+    rest =
+        case (eqT :: Maybe (a :~: b)) of
+          Nothing -> "rule-output=" <> encode b
+          _       -> ""
