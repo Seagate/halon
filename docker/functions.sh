@@ -3,8 +3,14 @@ CABALVERSION=1.20.0.0
 
 function build-if-needed {
 
-TAG=$1
-DOCKERDIR=$2
+BASE=$1
+HASH=$2
+DOCKERDIR=$3
+
+TAG=${BASE}:${HASH}
+
+BRANCH=$(git symbolic-ref --short HEAD)
+LATESTTAG=${BASE}:$BRANCH
 
 docker pull $TAG
 
@@ -25,7 +31,14 @@ cat docker/${DOCKERDIR}/Dockerfile.in \
   | sed "s/@@BASEVERSION@@/${BASEVERSION}/g" \
   > docker/${DOCKERDIR}/Dockerfile
 docker build -t ${TAG} docker/${DOCKERDIR}/ || exit 1
+docker tag -f ${TAG} ${LATESTTAG}
 docker push $TAG || exit 1
+docker push $LATESTTAG || exit 1
+
+echo Docker tags pushed:
+echo Docker image ${BASE}
+echo Hashed tag is ${TAG}
+echo Symbolic tag is ${LATESTTAG}
 
 }
 
