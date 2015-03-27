@@ -80,8 +80,9 @@ Library
                    Mero.Messages
                    Mero.RemoteTables
                    HA.Network.Transport
-                   HA.Services.Mero
+                   HA.Services.DecisionLog
                    HA.Services.Frontier
+                   HA.Services.Mero
                    HA.Services.SSPL
                    HA.Services.SSPLHL
                    HA.RecoveryCoordinator.Mero
@@ -89,7 +90,9 @@ Library
                    HA.RecoveryCoordinator.Definitions
                    HA.Resources.Mero
 
-  Other-Modules:   HA.Services.Frontier.Command
+  Other-Modules:   HA.Services.DecisionLog.CEP
+                   HA.Services.DecisionLog.Types
+                   HA.Services.Frontier.Command
                    HA.Services.SSPL.CEP
                    HA.Services.SSPL.Rabbit
                    HA.Services.SSPL.LL.Resources
@@ -115,7 +118,8 @@ Library
                    network-transport,
                    unordered-containers,
                    cep,
-                   netwire
+                   netwire,
+                   semigroups
 
   if flag(mero-note)
       Exposed-Modules: Mero.Notification.HAState
@@ -456,7 +460,8 @@ Test-Suite unit-tests
                     tasty,
                     tasty-hunit,
                     tasty-files,
-                    cep
+                    cep,
+                    attoparsec
   if flag(rpc)
       Build-Depends: network-transport-rpc,
                      directory,
@@ -505,7 +510,8 @@ Test-Suite integration-tests
                     tasty,
                     tasty-hunit,
                     tasty-files,
-                    cep
+                    cep,
+                    attoparsec
   if flag(rpc)
       Build-Depends: network-transport-rpc,
                      directory,

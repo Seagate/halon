@@ -1,3 +1,6 @@
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -24,8 +27,10 @@ import Control.Distributed.Process.Serializable (Serializable, fingerprint)
 import qualified Control.Distributed.Process.Internal.Types as I
     (Message(..), payloadToMessage)
 import Control.Monad.State.Strict
-import Data.Binary (decode)
+import Data.Binary (encode, decode)
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as Lazy
+import Data.ByteString.Lazy.Char8 (pack)
 import Data.Dynamic
 import Network.CEP
 
@@ -60,7 +65,7 @@ matchIfHAEvent p f =
 expectHAEvent :: forall a. Serializable a => Process (HAEvent a)
 expectHAEvent = receiveWait [matchHAEvent return]
 
-defineHAEvent :: forall a b s. (Serializable a, Typeable b)
+defineHAEvent :: forall a b s. (Serializable a, Serializable b)
               => ByteString
               -> ComplexEvent s (HAEvent a) b
               -> (b -> CEP s ())
@@ -70,9 +75,39 @@ defineHAEvent n w k = do
         rule    = observe . (id &&& w) . dynEvent
         observe = mkGen_ $ \(hae, b) -> do
           k b
-          return $ Right $ Handled n $ hae { eventPayload = toDyn $ eventPayload hae }
+          lgs <- getLogs
+          resetLogs
+          return $ Right $ Handled
+                           { handledRuleId = n
+                           , handledInputs = generateHAEventInputs hae b
+                           , handledLogs   = lgs
+                           , handledValue  = hae { eventPayload = toDyn $ eventPayload hae }
+                           }
 
     modify $ addRule m rule
 
 onEveryHAEvent :: (HAEvent Dynamic -> s -> Process s) -> RuleM s ()
 onEveryHAEvent = finishedBy
+
+generateHAEventInputs :: forall a b. (Serializable a, Serializable b)
+                      => HAEvent a
+                      -> b
+                      -> Lazy.ByteString
+generateHAEventInputs hae b =
+    "eventId="                    <>
+    (renderEventId $ eventId hae) <>
+    ";eventHops="                 <>
+    renderHops (eventHops hae)    <>
+    ";"                           <>
+    rest
+  where
+    rest =
+        case (eqT :: Maybe (HAEvent a :~: b)) of
+          Nothing -> "rule-output=" <> encode b
+          _       -> ""
+
+renderEventId :: EventId -> Lazy.ByteString
+renderEventId = pack . show
+
+renderHops :: [ProcessId] -> Lazy.ByteString
+renderHops xs = pack $ show xs

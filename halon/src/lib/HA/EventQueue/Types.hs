@@ -15,7 +15,7 @@ import Data.Word (Word64)
 data EventId = EventId
     { eventNodeId  :: !ProcessId
     , eventCounter :: {-# UNPACK #-} !Word64
-    } deriving (Eq, Ord, Generic, Typeable)
+    } deriving (Eq, Ord, Generic, Show, Typeable)
 
 instance Binary EventId
 

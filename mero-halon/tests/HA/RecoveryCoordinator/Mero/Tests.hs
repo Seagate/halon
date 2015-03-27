@@ -13,6 +13,7 @@ module HA.RecoveryCoordinator.Mero.Tests
   , testServiceRestarting
   , testServiceNotRestarting
   , testEQTrimming
+  , testDecisionLog
   ) where
 
 import Test.Framework
@@ -40,10 +41,12 @@ import HA.Service
   , ServiceFailed(..)
   , ServiceProcess(..)
   , ServiceStartRequest(..)
+  , Owns(..)
   , encodeP
   , runningService
   )
 import qualified HA.Services.Dummy as Dummy
+import qualified HA.Services.DecisionLog as DLog
 import RemoteTables ( remoteTable )
 
 import qualified SSPL.Bindings as SSPL
@@ -58,8 +61,13 @@ import Control.Arrow ( first, second )
 import Control.Concurrent (threadDelay)
 import Control.Monad (forM_, void)
 
+import qualified Data.Attoparsec.ByteString.Char8 as Atto
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as B8
 import Data.Defaultable
 import Data.List (isInfixOf)
+
+import System.IO
 
 import Network.CEP (Published(..), Sub(..), simpleSubscribe)
 
@@ -342,3 +350,132 @@ testDriveAddition transport = do
         , SSPL.monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskNum = 1
         , SSPL.monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskStatus = status
         }
+
+data DLogLine =
+    DLogLine
+    { dlogRuleId  :: !B.ByteString
+    , dlogPidStr  :: !String
+    , dlogCounter :: !Int
+    , dlogHops    :: ![String]
+    , dlogEntries :: ![(B.ByteString, String)]
+    } deriving Show
+
+parsePID :: Atto.Parser B.ByteString
+parsePID = Atto.takeWhile (\c -> c /= ',' && c /= ']')
+
+parsePIDStr :: Atto.Parser String
+parsePIDStr = fmap B8.unpack parsePID
+
+parseEntry :: Atto.Parser (B.ByteString, String)
+parseEntry = do
+    _   <- Atto.string "context="
+    ctx <- Atto.takeWhile (/= ';')
+    _   <- Atto.string ";log=\""
+    v   <- Atto.takeWhile (/= '"')
+    _   <- Atto.char '"'
+    return (ctx, B8.unpack v)
+
+parseEntries :: Atto.Parser [(B.ByteString, String)]
+parseEntries = parseEntry `Atto.sepBy1'` Atto.endOfLine
+
+parseDLogLine :: Atto.Parser DLogLine
+parseDLogLine = do
+    _      <- Atto.string "rule-id="
+    ruleid <- Atto.takeWhile (/= ';')
+    _      <- Atto.string ";inputs=eventId=EventId {eventNodeId = "
+    pid    <- parsePIDStr
+    _      <- Atto.string ", eventCounter = "
+    cnt    <- Atto.decimal
+    _      <- Atto.string "};eventHops=["
+    hs     <- parsePIDStr `Atto.sepBy1'` Atto.char ','
+    _      <- Atto.string "];;entries="
+    es     <- parseEntries
+    return DLogLine
+           { dlogRuleId   = ruleid
+           , dlogPidStr   = pid
+           , dlogCounter  = cnt
+           , dlogHops     = hs
+           , dlogEntries  = es
+           }
+
+parseDLogLines :: Atto.Parser [DLogLine]
+parseDLogLines = parseDLogLine `Atto.sepBy1'` Atto.endOfLine
+
+readFileContents :: FilePath -> Process B.ByteString
+readFileContents path = liftIO $ do
+    h <- openFile path ReadMode
+    B.hGetContents h
+
+logExpectations :: ProcessId -> [DLogLine] -> Process ()
+logExpectations eq xs@[x,y] = do
+    if dlogRuleId x == "service-started" &&
+       dlogCounter x == 1 &&
+       dlogEntries x == [("started", "Service decision-log started")] &&
+       dlogHops x    == [show eq] &&
+       dlogRuleId y == "service-started" &&
+       dlogCounter y == 1 &&
+       dlogEntries y == [("started", "Service dummy started")] &&
+       dlogHops y == [show eq]
+       then return ()
+       else error $ "Wrong expectation: " ++ show xs
+logExpectations _ xs =
+    error $ "Expected 2 lines, got " ++ show (length xs) ++ " instead"
+
+confirmDead :: ProcessId -> Process ()
+confirmDead pid =
+    receiveWait [ matchIf (\(ProcessMonitorNotification _ p _) -> p == pid)
+                          (\_ -> return ()) ]
+
+testDecisionLog :: Transport -> IO ()
+testDecisionLog transport = do
+    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
+        nid <- getSelfNode
+        self <- getSelfPid
+
+        registerInterceptor $ \string -> case string of
+            str@"entries submitted" -> send self str
+            _ -> return ()
+
+        say $ "tests node: " ++ show nid
+        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+                             [nid] ((Nothing,[]), fromList [])
+        pRGroup <- unClosure cRGroup
+        rGroup <- pRGroup
+        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        (mm, rc) <- runRC (eq, IgnitionArguments [nid]) rGroup
+
+        nodeUp ([nid], 2000000)
+        _ <- promulgateEQ [nid] . encodeP $
+          ServiceStartRequest (Node nid) DLog.decisionLog
+            (DLog.DecisionLogConf "./dlog.log")
+
+        ("entries submitted" :: String) <- expect
+
+        _ <- promulgateEQ [nid] . encodeP $
+          ServiceStartRequest (Node nid) Dummy.dummy
+            (Dummy.DummyConf $ Configured "Test 1")
+
+        ("entries submitted" :: String) <- expect
+
+        rg <- G.getGraph mm
+        let sp :: ServiceProcess DLog.DecisionLogConf
+            sp = case G.connectedFrom Owns DLog.decisionLogServiceName rg of
+                   [sp'] -> sp'
+                   _     -> error "Can't retrieve DLog PID"
+            ServiceProcess dlogpid = sp
+
+        _ <- monitor rc
+        _ <- monitor dlogpid
+        kill rc "I killed you RC"
+        kill dlogpid "We want to access your log file"
+
+        confirmDead rc
+        confirmDead dlogpid
+        bs <- readFileContents "./dlog.log"
+        let res = Atto.parseOnly parseDLogLines bs
+        case res of
+          Left e   -> error $ "dlog parsing error: " ++ e
+          Right xs -> logExpectations eq xs
+  where
+    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+         remoteTable
