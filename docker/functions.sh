@@ -9,7 +9,7 @@ DOCKERDIR=$3
 
 TAG=${BASE}:${HASH}
 
-BRANCH=$(git symbolic-ref --short HEAD)
+BRANCH=$(git symbolic-ref --short HEAD | sed 's/[^0-9a-zA-Z_\-]/_/g')
 LATESTTAG=${BASE}:$BRANCH
 
 docker pull $TAG
