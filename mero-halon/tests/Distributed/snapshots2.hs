@@ -21,7 +21,7 @@ import Control.Distributed.Commands.Process
   , expectLog
   , __remoteTable
   )
-import Control.Distributed.Commands.Providers (getProvider)
+import Control.Distributed.Commands.Providers (getProvider, getHostAddress)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Node
@@ -37,7 +37,6 @@ import Network.Transport.TCP (createTransport, defaultTCPParameters)
 
 import System.Environment (getExecutablePath)
 import System.FilePath ((</>), takeDirectory)
-import System.Process (readProcess)
 
 getBuildPath :: IO FilePath
 getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
@@ -47,7 +46,7 @@ main = do
     cp <- getProvider
     buildPath <- getBuildPath
 
-    [ip] <- fmap (take 1 . lines) $ readProcess "hostname" ["-I"] ""
+    ip <- getHostAddress
     Right nt <- createTransport ip "4000" defaultTCPParameters
     let remoteTable = __remoteTable initRemoteTable
     n0 <- newLocalNode nt remoteTable
