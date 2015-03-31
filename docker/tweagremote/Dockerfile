@@ -14,7 +14,7 @@ RUN yum install --assumeyes psmisc
 
 RUN curl -O http://www.mirrorservice.org/sites/dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm
 RUN rpm --install epel-release-7-5.noarch.rpm
-RUN yum install --assumeyes leveldb-devel
+RUN yum install --assumeyes leveldb
 
 RUN /usr/sbin/sshd-keygen
 ADD authorized_keys /root/.ssh/

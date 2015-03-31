@@ -56,8 +56,8 @@ import Criterion.Measurement (getTime, secs)
 import Control.Concurrent.MVar
 
 import Control.Distributed.Process.Consensus
-    ( __remoteTable )
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
+import Control.Distributed.Process.Consensus.Paxos
 import qualified Control.Distributed.Log as Log
 import Control.Distributed.Log (Config(..))
 import Control.Distributed.Log.Snapshot
@@ -66,6 +66,8 @@ import Control.Distributed.State
     ( Command
     , commandEqDict__static
     , commandSerializableDict__static )
+import Control.Distributed.Log.Persistence as P
+import Control.Distributed.Log.Persistence.LevelDB
 import qualified Control.Distributed.Log.Policy as Policy
 
 import Control.Distributed.Commands.Management
@@ -88,8 +90,14 @@ import Network.Transport ( Transport )
 import Network.Transport.TCP
 import Test.Framework (withTmpDirectory)
 
+import Control.Concurrent (threadDelay)
 import Data.Constraint (Dict(..))
+import Data.IORef
+import Data.List (nub)
+import qualified Data.Map as Map
+import Data.Maybe (catMaybes)
 import Data.Ratio ((%))
+import Data.String (fromString)
 import Data.Typeable (Typeable)
 import System.Environment (getArgs)
 import System.FilePath
@@ -117,25 +125,49 @@ filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
 
 snapshotThreashold :: Int
-snapshotThreashold = 5
+snapshotThreashold = 10000
 
 remotableDecl [ [d|
 
   testLog :: State.Log State
-  testLog = State.log $ serializableSnapshot snapshotServerLbl state0 1000000
+  testLog = State.log $ serializableSnapshot snapshotServerLbl state0
 
   dictState :: Dict (Typeable State)
   dictState = Dict
 
   testConfig :: Log.Config
   testConfig = Log.Config
-      { consensusProtocol = \dict ->
-          BasicPaxos.protocol dict (filepath "acceptors")
+      { logName = "test-log"
+      , consensusProtocol = \dict ->
+               BasicPaxos.protocol dict 1000000
+                 (\n -> do
+                    mref <- newIORef Map.empty
+                    let dToPair (DecreeId l dn) = (fromEnum l, dn)
+                    ps <- openPersistentStore (filepath "acceptors" n)
+                    pm <- P.getMap ps $ fromString "decrees"
+                    pv <- P.getMap ps $ fromString "values"
+                    vref <- P.lookup pv 0 >>= newIORef
+                    return AcceptorStore
+                      { storeInsert = \d v -> do
+                          modifyIORef mref $ Map.insert d v
+                          P.atomically ps [ P.Insert pm (dToPair d) v ]
+                      , storeLookup = \d -> do
+                          r <- readIORef mref
+                          return $ maybe (Left False) Right $ Map.lookup d r
+                      , storePut = \v -> do
+                          writeIORef vref $ Just v
+                          P.atomically ps [ P.Insert pv (0 :: Int) v ]
+                      , storeGet = readIORef vref
+                      , storeTrim = const $ return ()
+                      , storeClose = return ()
+                      }
+                 )
       , persistDirectory  = filepath "replicas"
       , leaseTimeout      = 3000000
       , leaseRenewTimeout = 1000000
       , driftSafetyFactor = 11 % 10
       , snapshotPolicy    = return . (>= snapshotThreashold)
+      , snapshotRestoreTimeout = 10000
       }
 
   sdictInt :: Static (SerializableDict Int)
@@ -181,23 +213,23 @@ remotableDecl [ [d|
 
  |] ]
 
-setupRemote :: [NodeId]
+setupRemote :: ([NodeId], [NodeId])
             -> (  Log.Handle (Command State)
                -> [NodeId]
                -> State.CommandPort State
                -> Process Double
                )
       -> Process Double
-setupRemote nodes action = do
-    forM_ nodes $ flip spawn $(mkStaticClosure 'snapshotServer)
+setupRemote (tsNodes, clientNodes) action = do
+    forM_ tsNodes $ flip spawn $(mkStaticClosure 'snapshotServer)
     h <- Log.new $(mkStatic 'State.commandEqDict)
                  ($(mkStatic 'State.commandSerializableDict)
                    `staticApply` sdictState)
                  (staticClosure $(mkStatic 'testConfig))
                  (staticClosure $(mkStatic 'testLog))
-                 nodes
+                 tsNodes
     port <- State.newPort h
-    action h nodes port
+    action h clientNodes port
 
 multiBenchAction :: (Int, Int, Int)
                  -> Log.Handle (Command State)
@@ -210,10 +242,10 @@ multiBenchAction (iters, updNo, readNo) = \h nodes _port -> do
     pds <- mapM (\nd -> spawn nd ($(mkClosure 'performBenchmark)
                                     (iters,updNo, readNo, sp)
                                  )
-                ) (drop 1 nodes)
+                ) nodes
     time_ $ do
       mapM_ (\p -> send p rh) pds
-      replicateM_ (length nodes - 1) $ (receiveChan rp :: Process ())
+      replicateM_ (length nodes) $ (receiveChan rp :: Process ())
 
 benchAction :: (Int, Int, Int)
             -> Log.Handle (Command State)
@@ -268,27 +300,37 @@ main =
         cp <- getProvider
         ip <- getHostAddress
         Right transport <- createTransport ip "8035" defaultTCPParameters
-        withHostNames cp 5 $ \ms5 -> do
-          let ms3 = take 3 ms5
+        withHostNames cp 15 $ \ms20 -> do
+          let ms3 = take 3 ms20
+              ms5 = take 5 ms20
+              ms = drop 5 ms20
 
           copyFiles "localhost"
-                    ms5
+                    ms20
                     [ ( "dist/build/state-distributed/state-distributed"
                       , "/tmp/state-distributed"
                       )
                     ]
 
-          runBench transport ms3 20 0 30
-          runBench transport ms3 1 30 0
+          -- runBench transport ms3 1   0 600
+          -- runBench transport ms3 1 600   0
 
-          runMultiBench transport ms3 5 0 10
-          runMultiBench transport ms3 1 10 0
+          -- runMultiBench transport ms3 1   0 200
+          -- runMultiBench transport ms3 1 200   0
 
-          runBench transport ms5 10 0 30
-          runBench transport ms5 1 30 0
+          -- runBench transport ms5 1   0 600
+          -- runBench transport ms5 1 600   0
 
-          runMultiBench transport ms5 6 0 6
-          runMultiBench transport ms5 1 6 0
+          -- runMultiBench transport ms5 1   0 120
+          -- runMultiBench transport ms5 1 120   0
+
+          forM_ [1..10] $ \i -> do
+            let n    = length ms
+                nRqs = 1200 `div` i
+            runMultiBench' transport ms5 (take i ms)    0 nRqs
+            threadDelay 2000000
+            runMultiBench' transport ms5 (take i ms) nRqs    0
+            threadDelay 2000000
 
   where
     -- | @runBench transport ms iters updNo readNo@ creates replicas on
@@ -299,8 +341,8 @@ main =
 
       let repNo = length ms
       r <- setup transport
-                 ms
-                 ($(mkClosure 'benchAction) (repNo, updNo, readNo))
+                 ms ms
+                 ($(mkClosure 'benchAction) (iters, updNo, readNo))
       putStrLn $ "Replicas: " ++ show repNo ++ ", Clients: 1" ++
                  ", Updates: " ++ show updNo ++ ", Selects: " ++ show readNo ++
                  ": " ++ secs (r / fromIntegral iters)
@@ -313,13 +355,27 @@ main =
 
       let repNo = length ms
       r <- setup transport
-                 ms
-                 ($(mkClosure 'multiBenchAction) (repNo, updNo, readNo))
+                 ms ms
+                 ($(mkClosure 'multiBenchAction) (iters, updNo, readNo))
       putStrLn $ "Replicas: " ++ show repNo ++ ", Clients: " ++ show repNo ++
                  ", Updates: " ++ show updNo ++ ", Selects: " ++ show readNo ++
                  ": " ++ secs (r / fromIntegral iters)
 
+    runMultiBench' :: Transport -> [HostName] -> [HostName] -> Int -> Int -> IO ()
+    runMultiBench' transport tsNodes clientNodes updNo readNo = do
+
+      let cliNo = length clientNodes
+      r <- setup transport
+                 tsNodes
+                 clientNodes
+                 ($(mkClosure 'multiBenchAction) (1 :: Int, updNo, readNo))
+      putStrLn $ "Replicas: " ++ show (length tsNodes) ++
+                 ", Clients: " ++ show cliNo ++
+                 ", Updates: " ++ show updNo ++ ", Selects: " ++ show readNo ++
+                 ": " ++ secs r
+
 setup :: Transport
+      -> [HostName]
       -> [HostName]
       -> Closure (  Log.Handle (Command State)
                  -> [NodeId]
@@ -327,17 +383,21 @@ setup :: Transport
                  -> Process Double
                  )
       -> IO Double
-setup transport ms action = do
+setup transport tsNodes clientNodes action = do
     nd <- newLocalNode transport remoteTables
     box <- newEmptyMVar
     runProcess nd $ do
-      nids <- forM ms $ \m ->
+      nidPairs <- forM (nub $ tsNodes ++ clientNodes) $ \m -> fmap ((,) m) $
                 spawnNode m $ "/tmp/state-distributed --slave " ++ m ++ " 2>&1"
+      let tsNids = catMaybes $ map (`Prelude.lookup` nidPairs) tsNodes
+          clientNids = catMaybes $ map (`Prelude.lookup` nidPairs) clientNodes
+          nids = map snd nidPairs
       mapM_ redirectLogsHere nids
       liftIO . putMVar box =<<
         call $(mkStatic 'dictDouble)
              (head nids)
-             ($(mkClosure 'setupRemote) nids `closureApply` action)
+             ($(mkClosure 'setupRemote) (tsNids, clientNids)
+                 `closureApply` action)
       mapM_ monitorNode nids
       forM_ nids $ \n -> nsendRemote n "finalizer" ()
       replicateM_ (length nids) (expect :: Process NodeMonitorNotification)

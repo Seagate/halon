@@ -15,8 +15,8 @@ import Criterion.Measurement (getTime, secs)
 import Control.Concurrent.MVar
 
 import Control.Distributed.Process.Consensus
-    ( __remoteTable )
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
+import Control.Distributed.Process.Consensus.Paxos
 import qualified Control.Distributed.Log as Log
 import Control.Distributed.Log (Config(..))
 import Control.Distributed.Log.Snapshot
@@ -25,6 +25,8 @@ import Control.Distributed.State
     ( Command
     , commandEqDict__static
     , commandSerializableDict__static )
+import Control.Distributed.Log.Persistence as P
+import Control.Distributed.Log.Persistence.LevelDB
 import qualified Control.Distributed.Log.Policy as Policy
 
 import Control.Distributed.Process
@@ -32,8 +34,11 @@ import Control.Distributed.Process.Node
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
 import Data.Constraint (Dict(..))
+import Data.IORef
+import qualified Data.Map as Map
 import Data.Ratio ((%))
 import Data.Typeable (Typeable)
+import Data.String (fromString)
 import Network.Transport ( Transport )
 import Network.Transport.TCP
 
@@ -57,22 +62,47 @@ snapshotServerLbl :: String
 snapshotServerLbl = "snapshot-server"
 
 testLog :: State.Log State
-testLog = State.log $ serializableSnapshot snapshotServerLbl state0 1000000
+testLog = State.log $ serializableSnapshot snapshotServerLbl state0
 
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
 
 snapshotThreashold :: Int
-snapshotThreashold = 5
+snapshotThreashold = 1000
 
 testConfig :: Log.Config
 testConfig = Log.Config
-    { consensusProtocol = \dict -> BasicPaxos.protocol dict (filepath "acceptors")
+    { logName = "test-log"
+    , consensusProtocol = \dict ->
+               BasicPaxos.protocol dict 1000000
+                 (\n -> do
+                    mref <- newIORef Map.empty
+                    let dToPair (DecreeId l dn) = (fromEnum l, dn)
+                    ps <- openPersistentStore (filepath "acceptors" n)
+                    pm <- P.getMap ps $ fromString "decrees"
+                    pv <- P.getMap ps $ fromString "values"
+                    vref <- P.lookup pv 0 >>= newIORef
+                    return AcceptorStore
+                      { storeInsert = \d v -> do
+                          modifyIORef mref $ Map.insert d v
+                          P.atomically ps [ P.Insert pm (dToPair d) v ]
+                      , storeLookup = \d -> do
+                          r <- readIORef mref
+                          return $ maybe (Left False) Right $ Map.lookup d r
+                      , storePut = \v -> do
+                          writeIORef vref $ Just v
+                          P.atomically ps [ P.Insert pv (0 :: Int) v ]
+                      , storeGet = readIORef vref
+                      , storeTrim = const $ return ()
+                      , storeClose = return ()
+                      }
+                 )
     , persistDirectory  = filepath "replicas"
     , leaseTimeout      = 3000000
     , leaseRenewTimeout = 1000000
     , driftSafetyFactor = 11 % 10
     , snapshotPolicy    = return . (>= snapshotThreashold)
+    , snapshotRestoreTimeout = 1000000
     }
 
 remotableDecl [ [d|
@@ -144,17 +174,17 @@ main = do
 
     Right transport <- createTransport "127.0.0.1" "8035" defaultTCPParameters
 
-    runBench transport 20 3 0 30
-    runBench transport  1 3 30 0
+    runBench transport  1 3   0 600
+    runBench transport  1 3 600   0
 
-    runMultiBench transport 5 3 0 10
-    runMultiBench transport 1 3 10 0
+    runMultiBench transport 1 3   0 200
+    runMultiBench transport 1 3 200   0
 
-    runBench transport 10 5 0 30
-    runBench transport  1 5 30 0
+    runBench transport  1 5   0 600
+    runBench transport  1 5 600   0
 
-    runMultiBench transport 6 5 0 6
-    runMultiBench transport 1 5 6 0
+    runMultiBench transport 1 5   0 120
+    runMultiBench transport 1 5 120   0
 
   where
     rmrf d = doesDirectoryExist d >>= flip when (removeDirectoryRecursive d)

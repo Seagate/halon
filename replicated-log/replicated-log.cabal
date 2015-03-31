@@ -192,6 +192,7 @@ Benchmark state-distributed
                     consensus,
                     consensus-paxos,
                     constraints >= 0.4,
+                    containers,
                     filepath,
                     replicated-log,
                     distributed-static,
