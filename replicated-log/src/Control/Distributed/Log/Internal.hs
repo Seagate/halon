@@ -867,33 +867,33 @@ replica Dict
                   usend timerPid (self, leaseTimeout, LeaseRenewalTime)
                   go st{ stateCurrentDecree = cd' }
 
-            , matchIf (\(Decree _ dᵢ _ :: Decree (Value a)) ->
+            , matchIf (\(Decree _ di _ :: Decree (Value a)) ->
                         -- Take the max of the watermark legislature and the
                         -- incoming legislature to deal with teleportation of
                         -- decrees. See Note [Teleportation].
-                        dᵢ < max w w{decreeLegislatureId = decreeLegislatureId dᵢ}) $
+                        di < max w w{decreeLegislatureId = decreeLegislatureId di}) $
                        \_ -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
                   go st
 
               -- Commit the decree to the log.
-            , matchIf (\(Decree locale dᵢ _) ->
-                        locale /= Stored && w <= dᵢ && decreeNumber dᵢ == decreeNumber w) $
-                       \(Decree locale dᵢ v) -> do
+            , matchIf (\(Decree locale di _) ->
+                        locale /= Stored && w <= di && decreeNumber di == decreeNumber w) $
+                       \(Decree locale di v) -> do
                   _ <- liftIO $ Acid.update acid $
-                           MemoryInsert (decreeNumber dᵢ) (v :: Value a)
+                           MemoryInsert (decreeNumber di) (v :: Value a)
                   case locale of
                       -- Ack back to the client.
                       Local κs -> forM_ κs $ flip usend ()
                       _ -> return ()
-                  usend self $ Decree Stored dᵢ v
+                  usend self $ Decree Stored di v
                   go st
 
               -- Execute the decree
-            , matchIf (\(Decree locale dᵢ _) ->
-                        locale == Stored && w <= dᵢ && decreeNumber dᵢ == decreeNumber w) $
-                       \(Decree _ dᵢ v) -> do
+            , matchIf (\(Decree locale di _) ->
+                        locale == Stored && w <= di && decreeNumber di == decreeNumber w) $
+                       \(Decree _ di v) -> do
                 let maybeTakeSnapshot w' s' = do
                       takeSnapshot <- snapshotPolicy
                                         (decreeNumber w' - decreeNumber w0)
@@ -955,7 +955,7 @@ replica Dict
                            }
                     | otherwise -> do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
-                      say $ "Not executing " ++ show dᵢ
+                      say $ "Not executing " ++ show di
                       (w0', msref') <- maybeTakeSnapshot w' s
                       go st{ stateSnapshotRef       = msref'
                            , stateSnapshotWatermark = w0'
@@ -965,23 +965,23 @@ replica Dict
               -- If we get here, it's because there's a gap in the decrees we
               -- have received so far. Compute the gaps and ask the other
               -- replicas about how to fill them up.
-            , matchIf (\(Decree locale dᵢ _) ->
-                        locale == Remote && w < dᵢ && not (Map.member (decreeNumber dᵢ) log)) $
-                       \(Decree locale dᵢ v) -> do
-                  _ <- liftIO $ Acid.update acid $ MemoryInsert (decreeNumber dᵢ) v
+            , matchIf (\(Decree locale di _) ->
+                        locale == Remote && w < di && not (Map.member (decreeNumber di) log)) $
+                       \(Decree locale di v) -> do
+                  _ <- liftIO $ Acid.update acid $ MemoryInsert (decreeNumber di) v
                   (_, _, _, log') <- liftIO $ Acid.query acid MemoryGet
                   queryMissingFrom logName (decreeNumber w) others log'
-                  --- XXX set cd to @max cd (succ dᵢ)@?
+                  --- XXX set cd to @max cd (succ di)@?
                   --
                   -- Probably not, because then the replica might never find the
                   -- values of decrees which are known to a quorum of acceptors
                   -- but unknown to all online replicas.
                   --
-                  --- XXX set d to @min cd (succ dᵢ)@?
+                  --- XXX set d to @min cd (succ di)@?
                   --
                   -- This Decree could have been teleported. So, we shouldn't
-                  -- trust dᵢ, unless @decreeLegislatureId dᵢ < maxBound@.
-                  usend self $ Decree locale dᵢ v
+                  -- trust di, unless @decreeLegislatureId di < maxBound@.
+                  usend self $ Decree locale di v
                   go st
 
               -- Lease requests.
@@ -1091,22 +1091,22 @@ replica Dict
               -- The request is dropped if the decree was accepted with a
               -- different value already.
             , match $
-                  \(dᵢ, vᵢ, Request κs (v :: Value a) _ rLease) -> do
+                  \(di, vi, Request κs (v :: Value a) _ rLease) -> do
                   -- If the passed decree accepted other value than our
                   -- client's, don't treat it as local (ie. do not report back
                   -- to the client yet).
                   let κs' | isNothing rLease = bpid : κs
                           | otherwise        = κs
-                      locale = if v == vᵢ then Local κs' else Remote
-                  usend self $ Decree locale dᵢ vᵢ
+                      locale = if v == vi then Local κs' else Remote
+                  usend self $ Decree locale di vi
                   forM_ others $ \ρ -> do
                       sendReplica logName ρ $ Decree Remote di vi
 
-                  when (v /= vᵢ && isNothing rLease) $
+                  when (v /= vi && isNothing rLease) $
                     -- Send rejection ack.
                     usend bpid ()
 
-                  let d' = max d (succ dᵢ)
+                  let d' = max d (succ di)
                   go st{ stateUnconfirmedDecree = d' }
 
               -- Try to service a query if the requested decree is not too old.
