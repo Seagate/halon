@@ -5,6 +5,7 @@
 -- It builds a 'Process' out of rules defined by the user. It also support
 -- pub/sub feature.
 
+{-# LANGUAGE FlexibleContexts #-}
 module Network.CEP
        ( module Network.CEP.Types
        , runProcessor
@@ -13,8 +14,8 @@ module Network.CEP
        , occursWithin
        ) where
 
-import Prelude hiding ((.), id)
 import Data.Monoid
+import Prelude hiding ((.), id)
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Serializable
