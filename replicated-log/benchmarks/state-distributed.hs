@@ -300,7 +300,8 @@ main =
         cp <- getProvider
         ip <- getHostAddress
         Right transport <- createTransport ip "8035" defaultTCPParameters
-        withHostNames cp 15 $ \ms20 -> do
+        let numNodes = 100 + 5
+        withHostNames cp numNodes $ \ms20 -> do
           let ms3 = take 3 ms20
               ms5 = take 5 ms20
               ms = drop 5 ms20
@@ -324,11 +325,11 @@ main =
           -- runMultiBench transport ms5 1   0 120
           -- runMultiBench transport ms5 1 120   0
 
-          forM_ [1..10] $ \i -> do
+          forM_ [10,20..(numNodes - 5)] $ \i -> do
             let n    = length ms
                 nRqs = 1200 `div` i
-            runMultiBench' transport ms5 (take i ms)    0 nRqs
-            threadDelay 2000000
+            -- runMultiBench' transport ms5 (take i ms)    0 nRqs
+            -- threadDelay 1000000
             runMultiBench' transport ms5 (take i ms) nRqs    0
             threadDelay 2000000
 
