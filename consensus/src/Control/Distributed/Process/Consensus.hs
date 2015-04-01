@@ -11,6 +11,7 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE KindSignatures #-}
 
 module Control.Distributed.Process.Consensus
     ( -- * Decrees
