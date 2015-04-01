@@ -36,6 +36,7 @@ Library
                     binary >= 0.6,
                     bytestring >= 0.9.2,
                     clock,
+                    cereal,
                     consensus,
                     containers >= 0.5,
                     constraints >= 0.4,

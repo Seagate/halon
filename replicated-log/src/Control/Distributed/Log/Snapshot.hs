@@ -23,6 +23,8 @@ import Control.Monad (forever)
 import Control.Monad.Reader (ask)
 import Control.Monad.State (put)
 import Data.Acid
+import Data.Acid.Advanced
+import Data.Serialize.Get (label)
 import Data.Binary (encode, decode)
 import Data.SafeCopy
 import Data.Typeable
@@ -49,7 +51,29 @@ data SerializableSnapshot s = SerializableSnapshot DecreeId s
                               -- watermark and snapshot
   deriving Typeable
 
-$(deriveSafeCopy 0 'base ''SerializableSnapshot)
+-- XXX: acid-state fails to derive polymorphic values
+-- $(deriveSafeCopy 0 'base ''SerializableSnapshot)
+instance SafeCopy s => SafeCopy (SerializableSnapshot s) where
+  putCopy (SerializableSnapshot arg_a1jiI arg_a1jiJ)
+    = contain
+        (do { safePut_DecreeId_a1jiK <- getSafePut;
+              safePut_s_a1jiL <- getSafePut;
+              safePut_DecreeId_a1jiK arg_a1jiI;
+              safePut_s_a1jiL arg_a1jiJ;
+              return () })
+  getCopy
+    = contain
+        (label
+           "Control.Distributed.Log.Snapshot.SerializableSnapshot:"
+           (do { safeGet_DecreeId_a1jiM <- getSafeGet;
+                 safeGet_s_a1jiN <- getSafeGet;
+                 (((return SerializableSnapshot) <*> safeGet_DecreeId_a1jiM)
+                  <*> safeGet_s_a1jiN) }))
+  version = 0
+  kind = base
+  errorTypeName _
+    = "Control.Distributed.Log.Snapshot.SerializableSnapshot"
+
 $(deriveSafeCopy 0 'base ''DecreeId)
 
 readDecreeId :: Query (SerializableSnapshot s) DecreeId
@@ -63,9 +87,51 @@ readSnapshot = do SerializableSnapshot w s <- ask
 writeSnapshot :: DecreeId -> s -> Update (SerializableSnapshot s) ()
 writeSnapshot w s = put $ SerializableSnapshot w s
 
+-- XXX:
+{-
 $(makeAcidic ''SerializableSnapshot
              ['readSnapshot, 'writeSnapshot, 'readDecreeId]
  )
+-}
+instance (SafeCopy s, Typeable s) => IsAcidic (SerializableSnapshot s) where
+  acidEvents
+    = [QueryEvent
+         (\ ReadSnapshot -> readSnapshot),
+       UpdateEvent
+         (\ (WriteSnapshot arg_afyG arg_afyH)
+            -> writeSnapshot arg_afyG arg_afyH),
+       QueryEvent
+         (\ ReadDecreeId -> readDecreeId)]
+data ReadSnapshot s = ReadSnapshot deriving (Typeable)
+instance (SafeCopy s, Typeable s) => SafeCopy (ReadSnapshot s) where
+  putCopy ReadSnapshot = contain (do { return () })
+  getCopy = contain (return ReadSnapshot)
+instance (SafeCopy s, Typeable s) => Method (ReadSnapshot s) where
+  type MethodResult (ReadSnapshot s) = (DecreeId, s)
+  type MethodState (ReadSnapshot s) = SerializableSnapshot s
+instance (SafeCopy s, Typeable s) => QueryEvent (ReadSnapshot s)
+data WriteSnapshot s = WriteSnapshot DecreeId s deriving (Typeable)
+instance (SafeCopy s, Typeable s) => SafeCopy (WriteSnapshot s) where
+  putCopy (WriteSnapshot arg_afyE arg_afyF)
+    = contain
+        (do { safePut arg_afyE;
+              safePut arg_afyF;
+              return () })
+  getCopy
+    = contain (((return WriteSnapshot) <*> safeGet) <*> safeGet)
+instance (SafeCopy s, Typeable s) => Method (WriteSnapshot s) where
+  type MethodResult (WriteSnapshot s) = ()
+  type MethodState (WriteSnapshot s) = SerializableSnapshot s
+instance (SafeCopy s, Typeable s) => UpdateEvent (WriteSnapshot s)
+data ReadDecreeId (s :: *) = ReadDecreeId deriving (Typeable)
+instance(SafeCopy s, Typeable s) =>  SafeCopy (ReadDecreeId s) where
+  putCopy ReadDecreeId = contain (do { return () })
+  getCopy = contain (return ReadDecreeId)
+instance (SafeCopy s, Typeable s) => Method (ReadDecreeId s) where
+  type MethodResult (ReadDecreeId s) = DecreeId
+  type MethodState (ReadDecreeId s) = SerializableSnapshot s
+instance (SafeCopy s, Typeable s) => QueryEvent (ReadDecreeId s)
+
 
 newtype NoSnapshotServer = NoSnapshotServer NodeId
   deriving (Typeable, Show)

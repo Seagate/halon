@@ -68,8 +68,10 @@ import Control.Distributed.Static
 
 -- Imports necessary for acid-state.
 import Data.Acid as Acid
+import Data.Acid.Advanced
 import Data.Binary (decode)
 import Data.SafeCopy
+import Data.Serialize.Get (label)
 import Control.Monad.State (get, put)
 import Control.Monad.Reader (ask)
 
@@ -329,7 +331,35 @@ data Memory a = Memory [NodeId]
                        (Map.Map Int a)
   deriving Typeable
 
-$(deriveSafeCopy 0 'base ''Memory)
+-- XXX: acid-state fails to derive TH for polymorphic variables
+--      so substrituted fixed splice
+-- $(deriveSafeCopy 0 'base ''Memory)
+instance SafeCopy a => SafeCopy (Memory a) where
+  putCopy (Memory arg_aufv arg_aufw arg_aufx arg_aufy)
+    = contain
+        (do { safePut_ListNodeId_aufA <- getSafePut;
+              safePut_LegislatureId_aufB <- getSafePut;
+              safePut_MapInta_aufC <- getSafePut;
+              safePut_ListNodeId_aufA arg_aufv;
+              safePut_LegislatureId_aufB arg_aufw;
+              safePut_LegislatureId_aufB arg_aufx;
+              safePut_MapInta_aufC arg_aufy;
+              return () })
+  getCopy
+    = contain
+        (label
+           "Control.Distributed.Log.Internal.Memory:"
+           (do { safeGet_ListNodeId_aufD <- getSafeGet;
+                 safeGet_LegislatureId_aufE <- getSafeGet;
+                 safeGet_MapInta_aufF <- getSafeGet;
+                 (((((return Memory) <*> safeGet_ListNodeId_aufD)
+                    <*> safeGet_LegislatureId_aufE)
+                   <*> safeGet_LegislatureId_aufE)
+                  <*> safeGet_MapInta_aufF) }))
+  version = 0
+  kind = base
+  errorTypeName _ = "Control.Distributed.Log.Internal.Memory"
+
 $(deriveSafeCopy 0 'base ''NodeId)
 $(deriveSafeCopy 0 'base ''LocalProcessId)
 $(deriveSafeCopy 0 'base ''EndPointAddress)
@@ -360,7 +390,58 @@ memoryTrim replicas leg epoch w = do
     Memory _ _ _ log <- get
     put $ Memory replicas leg epoch $ snd $ Map.split (pred $ w) log
 
-$(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim])
+-- XXX: acid-state broke polymorphic values deriving
+-- $(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim])
+instance (SafeCopy a, Typeable a) => IsAcidic (Memory a) where
+   acidEvents
+     = [UpdateEvent
+          (\ (MemoryInsert arg_aip7 arg_aip8)
+             -> memoryInsert arg_aip7 arg_aip8)
+       ,QueryEvent
+          (\ MemoryGet -> memoryGet)
+       ,UpdateEvent
+          (\ (MemoryTrim arg_aip9 arg_aipa arg_aipb arg_aipc)
+             -> memoryTrim arg_aip9 arg_aipa arg_aipb arg_aipc)]
+data MemoryInsert a = MemoryInsert Int a deriving (Typeable)
+instance (SafeCopy a, Typeable a) => SafeCopy (MemoryInsert a) where
+  putCopy (MemoryInsert arg_aip0 arg_aip1)
+    = contain
+        (do { safePut arg_aip0;
+              safePut arg_aip1;
+              return () })
+  getCopy = contain (((return MemoryInsert) <*> safeGet) <*> safeGet)
+instance (SafeCopy a, Typeable a) => Method (MemoryInsert a) where
+  type MethodResult (MemoryInsert a) = ()
+  type MethodState (MemoryInsert a) = Memory a
+instance (SafeCopy a, Typeable a) => UpdateEvent (MemoryInsert a)
+data MemoryGet a = MemoryGet deriving (Typeable)
+instance (SafeCopy a, Typeable a) => SafeCopy (MemoryGet a) where
+  putCopy MemoryGet = contain (do { return () })
+  getCopy = contain (return MemoryGet)
+instance (SafeCopy a, Typeable a) => Method (MemoryGet a) where
+  type MethodResult (MemoryGet a) = ([NodeId],
+                                     LegislatureId,
+                                     LegislatureId,
+                                     Map.Map Int a)
+  type MethodState (MemoryGet a) = Memory a
+instance (SafeCopy a, Typeable a) => QueryEvent (MemoryGet a)
+data MemoryTrim a = MemoryTrim [NodeId] LegislatureId LegislatureId Int deriving (Typeable)
+instance (SafeCopy a, Typeable a) => SafeCopy (MemoryTrim a) where
+  putCopy (MemoryTrim arg_aip2 arg_aip3 arg_aip4 arg_aip5)
+    = contain
+        (do { safePut arg_aip2;
+              safePut arg_aip3;
+              safePut arg_aip4;
+              safePut arg_aip5;
+              return () })
+  getCopy
+    = contain
+        (((((return MemoryTrim) <*> safeGet) <*> safeGet) <*> safeGet) <*> safeGet)
+instance (SafeCopy a, Typeable a) => Method (MemoryTrim a) where
+  type MethodResult (MemoryTrim a) = ()
+  type MethodState (MemoryTrim a) = Memory a
+instance (SafeCopy a, Typeable a) => UpdateEvent (MemoryTrim a)
+
 
 -- | Removes all entries below the given index from the log.
 --
@@ -1019,7 +1100,7 @@ replica Dict
                       locale = if v == vᵢ then Local κs' else Remote
                   usend self $ Decree locale dᵢ vᵢ
                   forM_ others $ \ρ -> do
-                      sendReplica logName ρ $ Decree Remote dᵢ vᵢ
+                      sendReplica logName ρ $ Decree Remote di vi
 
                   when (v /= vᵢ && isNothing rLease) $
                     -- Send rejection ack.
