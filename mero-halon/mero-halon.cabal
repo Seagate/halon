@@ -45,6 +45,10 @@ Flag maintainer
   Description: Enforce strict code quality checks (-Werror, etc)
   Default: False
 
+Flag long-tests
+  Description: Enable very long tests
+  Default: False
+
 Library
   Hs-Source-Dirs:  src/lib
   Default-Language: Haskell2010
@@ -309,7 +313,7 @@ Test-Suite testsnapshot2
                    network-transport-tcp,
                    distributed-commands,
                    process
-  if !flag(distributed-tests)
+  if !(flag(distributed-tests) && flag(long-tests))
     Buildable:     False
 
 
