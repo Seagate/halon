@@ -11,6 +11,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -78,7 +79,6 @@ import Control.Monad.Reader (ask)
 import Control.Applicative ((<$>))
 import Control.Concurrent
 import Control.Exception (SomeException, throwIO)
-import Control.Exception.Enclosed (tryAny)
 import Control.Monad
 import Data.Constraint (Dict(..))
 import Data.Int (Int64)
@@ -682,8 +682,8 @@ replica Dict
     -- exception is thrown or if the operation times-out.
     restoreSnapshot :: Process s -> Process (Maybe s)
     restoreSnapshot restore =
-       mask_ (tryAny $ timeout snapshotRestoreTimeout restore) >>= \case
-         Left  _  -> return Nothing
+       callLocal (try $ timeout snapshotRestoreTimeout restore) >>= \case
+         Left (_::SomeException) -> return Nothing
          Right ms -> return ms
 
     sendBatch :: ProcessId
@@ -1523,11 +1523,11 @@ remotableDecl [
         --
         -- If the process cannot be registered, the closure is not run.
         localSpawnAndRegister :: String -> Process () -> Process ()
-        localSpawnAndRegister label p = do
+        localSpawnAndRegister lbl p = do
           pid <- spawnLocal $ do
                    () <- expect
                    p
-          register label pid `onException` exit pid "localSpawnAndRegister"
+          register lbl pid `onException` exit pid "localSpawnAndRegister"
           usend pid ()
     |] ]
 

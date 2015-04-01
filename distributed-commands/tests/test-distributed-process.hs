@@ -86,7 +86,7 @@ main = do
 
       er <- try $ systemThere ms ("false")
       case er of
-        Right _ -> throwIO (AssertionFailed "systemThere of 'false' returned a successful exit")
+        Right _ -> liftIO $ throwIO (AssertionFailed "systemThere of 'false' returned a successful exit")
         Left (_ :: IOError) -> return ()
 
       -- test spawning a node
