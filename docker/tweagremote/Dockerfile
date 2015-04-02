@@ -10,6 +10,7 @@ RUN yum install --assumeyes openssh-server initscripts
 RUN yum install --assumeyes passwd
 RUN yum install --assumeyes openssh-clients
 RUN yum install --assumeyes hostname
+RUN yum install --assumeyes psmisc
 
 RUN /usr/sbin/sshd-keygen
 ADD authorized_keys /root/.ssh/
@@ -31,4 +32,3 @@ RUN echo UserKnownHostsFile /dev/null >> /etc/ssh/ssh_config
 RUN echo StrictHostKeyChecking no >> /etc/ssh/ssh_config
 
 CMD /usr/sbin/sshd -D
-
