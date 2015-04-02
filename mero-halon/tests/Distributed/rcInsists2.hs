@@ -109,7 +109,7 @@ main = do
       say "Killing satellite ..."
       whereisRemoteAsync nid1 $ serviceLabel $ serviceName Dummy.dummy
       WhereIsReply _ (Just pid) <- expect
-      systemThere [m1] "pkill halond; wait `pgrep halond`"
+      systemThere [m1] "pkill halond; wait `pgrep halond`; true"
       say "sending service failed"
       _ <- promulgateEQ [nid0] . encodeP $ ServiceFailed (Node nid1) Dummy.dummy
                                                          pid
