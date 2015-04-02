@@ -15,6 +15,7 @@ module Control.Distributed.Process.Consensus.Paxos
     , acceptor
     ) where
 
+import Prelude hiding ((<$>))
 import Control.Distributed.Process.Consensus
 import qualified Control.Distributed.Process.Consensus.Paxos.Messages as Msg
 import Control.Distributed.Process

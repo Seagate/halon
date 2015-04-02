@@ -4,6 +4,7 @@
 
 module Control.Distributed.Process.Trans where
 
+import Prelude hiding (Applicative, (<$>))
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Internal.CQueue
 import Control.Distributed.Process.Internal.Types

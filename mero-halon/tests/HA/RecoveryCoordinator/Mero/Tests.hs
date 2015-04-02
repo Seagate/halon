@@ -16,6 +16,7 @@ module HA.RecoveryCoordinator.Mero.Tests
   , testDecisionLog
   ) where
 
+import Prelude hiding ((<$>), (<*>))
 import Test.Framework
 
 import HA.Resources

@@ -6,6 +6,7 @@
 
 module Main where
 
+import Prelude hiding ((<$>))
 import qualified HA.RecoveryCoordinator.Mero.Tests
 
 import Test.Tasty (TestTree, defaultMainWithIngredients)

@@ -5,6 +5,7 @@
 {-# LANGUAGE CPP #-}
 module Test.Unit (tests) where
 
+import Prelude hiding ((<$>))
 import qualified HA.EventQueue.Tests (tests)
 import qualified HA.Multimap.Tests ( tests )
 import qualified HA.Multimap.ProcessTests ( tests )

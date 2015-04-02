@@ -16,6 +16,7 @@
 module HA.Multimap
     ( Key, Value, StoreUpdate(..), getKeyValuePairs, updateStore )where
 
+import Prelude hiding ((<$>))
 import Control.Distributed.Process (ProcessId, Process )
 import HA.CallTimeout (callTimeout)
 

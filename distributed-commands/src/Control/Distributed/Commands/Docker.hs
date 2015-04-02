@@ -20,6 +20,7 @@ module Control.Distributed.Commands.Docker
     , NewContainerArgs(..)
     ) where
 
+import Prelude hiding ( (<$>) )
 import Control.Applicative ( (<$>) )
 import Control.Distributed.Commands.Internal.Probes (waitPing, waitSSH)
 import Control.Exception (throwIO)
@@ -104,7 +105,7 @@ showContainer credentials cid = do
 destroyContainer :: Credentials -> String -> IO ()
 destroyContainer credentials cId = do
     void $ callCURLPost "" ((dockerHost credentials) ++ "/containers/" ++ cId
-                            ++ "/kill" ) 
+                            ++ "/kill" )
     -- don't get a response from this...
     -- if we care, we can poll for status.
     -- or should really do a destroy too... TODO

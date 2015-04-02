@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
@@ -25,7 +26,9 @@ import HA.ResourceGraph
 import HA.Service
 import HA.Service.TH
 
+#if ! MIN_VERSION_base(4,8,0)
 import Control.Applicative ((<$>))
+#endif
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static

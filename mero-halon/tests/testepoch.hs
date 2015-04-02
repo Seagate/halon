@@ -7,6 +7,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
+import Prelude hiding ((<$>))
 import Network.Transport.RPC as RPC
 import HA.Network.Transport (writeTransportGlobalIVar)
 import Mero.Epoch

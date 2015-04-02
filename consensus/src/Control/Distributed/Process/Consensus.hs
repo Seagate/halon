@@ -12,6 +12,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE CPP #-}
 
 module Control.Distributed.Process.Consensus
     ( -- * Decrees
@@ -40,7 +41,9 @@ import Control.Distributed.Process.Serializable (Serializable, SerializableDict)
 import Control.Distributed.Static
     ( closureApply
     , staticClosure )
+#if ! MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative)
+#endif
 import Control.Monad.Trans (lift)
 import Control.Monad.State
     (MonadIO, StateT(..), get, modify, evalStateT)

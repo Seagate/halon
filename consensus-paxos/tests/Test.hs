@@ -1,6 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Test (tests) where
 
+import Prelude hiding ((<$>))
 import Control.Distributed.Process.Consensus
 import Control.Distributed.Process.Consensus.Paxos
 import Control.Distributed.Process.Consensus.Paxos.Messages

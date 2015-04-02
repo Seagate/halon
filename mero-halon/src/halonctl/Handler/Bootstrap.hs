@@ -7,6 +7,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE CPP #-}
 
 module Handler.Bootstrap
   ( BootstrapCmdOptions
@@ -15,6 +16,7 @@ module Handler.Bootstrap
   )
 where
 
+import Prelude hiding ((<$>))
 import Control.Distributed.Process
   ( NodeId
   , Process

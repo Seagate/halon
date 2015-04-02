@@ -45,6 +45,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , receiveWaitT
   ) where
 
+import Prelude hiding ( (<$>) )
 import Control.Applicative ( (<$>) )
 import Control.Concurrent.STM
 import "distributed-process" Control.Distributed.Process

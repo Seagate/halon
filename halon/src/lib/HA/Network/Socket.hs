@@ -29,6 +29,7 @@ import Network.Socket
   , inet_addr
   )
 
+import Prelude hiding ((<$>))
 import Control.Applicative ((<$>))
 import Data.Char (isDigit)
 import System.IO.Unsafe (unsafePerformIO)

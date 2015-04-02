@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE CPP #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -42,6 +43,7 @@ module Control.Distributed.Log.Internal
     , callLocal
     ) where
 
+import Prelude hiding ((<$>), init, log)
 import Control.Distributed.Log.Messages
 import Control.Distributed.Log.Policy (NominationPolicy)
 import Control.Distributed.Log.Policy as Policy
@@ -87,12 +89,13 @@ import qualified Data.Foldable as Foldable
 import Data.Function (on)
 import Data.Binary (Binary, encode)
 import Data.Maybe
+#if ! MIN_VERSION_base(4,8,0)
 import Data.Monoid (Monoid(..))
+#endif
 import qualified Data.Map as Map
 import Data.Ratio (Ratio, numerator, denominator)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
-import Prelude hiding (init, log)
 import Network.Transport (EndPointAddress(..))
 import System.Clock
 

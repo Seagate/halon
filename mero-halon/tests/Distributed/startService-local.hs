@@ -21,6 +21,7 @@ import Control.Distributed.Commands.Process
   , __remoteTable
   )
 
+import Prelude hiding ((<$>))
 import Control.Distributed.Process
 import Control.Distributed.Process.Node
   ( initRemoteTable

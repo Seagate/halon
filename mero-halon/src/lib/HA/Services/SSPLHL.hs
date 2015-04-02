@@ -11,6 +11,7 @@
 
 module HA.Services.SSPLHL where
 
+import Prelude hiding ((<$>), (<*>))
 import HA.EventQueue.Producer (promulgate)
 import HA.NodeAgent.Messages
 import HA.Service

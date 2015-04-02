@@ -13,7 +13,10 @@
 -- late or duplicate messages to be sent to the caller and accumulate in its
 -- mailbox. The caller must be prepared to handle these issues. One solution is
 -- to wrap each use of these functions with 'callLocal'.
+{-# LANGUAGE CPP #-}
+#if __GLASGOW_HASKELL__ < 710
 {-# LANGUAGE OverlappingInstances #-}
+#endif
 
 module HA.CallTimeout
   ( -- * Helpers

@@ -9,6 +9,7 @@
 
 module HA.Services.SSPL.Rabbit where
 
+import Prelude hiding ((<$>), (<*>))
 import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.Chan
 import Control.Distributed.Process

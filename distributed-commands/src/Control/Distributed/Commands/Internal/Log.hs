@@ -1,5 +1,6 @@
 module Control.Distributed.Commands.Internal.Log where
 
+  import Prelude hiding ( (<$>) )
   import Control.Applicative ( (<$>) )
   import Control.Monad (when)
   import Data.Maybe (isJust)

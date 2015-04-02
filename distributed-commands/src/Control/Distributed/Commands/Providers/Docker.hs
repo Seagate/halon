@@ -12,6 +12,7 @@ module Control.Distributed.Commands.Providers.Docker
   , createProvider
   ) where
 
+import Prelude hiding ( (<$>) )
 import Control.Applicative ( (<$>) )
 
 import Control.Distributed.Commands.Management

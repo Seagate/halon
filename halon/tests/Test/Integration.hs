@@ -5,6 +5,7 @@
 {-# LANGUAGE CPP #-}
 module Test.Integration (tests) where
 
+import           Prelude hiding ((<$>))
 import qualified HA.EventQueue.Tests ( tests )
 import qualified HA.Multimap.ProcessTests ( tests )
 import qualified HA.NodeAgent.Tests (tests)

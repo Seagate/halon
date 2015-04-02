@@ -9,6 +9,7 @@
 
 module HA.Services.SSPL.LL.Resources where
 
+import Prelude hiding (id, mapM_, (<$>),(<*>))
 import HA.Service
 import HA.Service.TH
 import qualified HA.Services.SSPL.Rabbit as Rabbit
@@ -33,8 +34,6 @@ import GHC.Generics (Generic)
 
 import Options.Schema (Schema)
 import Options.Schema.Builder hiding (name, desc)
-
-import Prelude hiding (id, mapM_)
 
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process (readProcess)

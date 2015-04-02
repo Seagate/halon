@@ -16,6 +16,7 @@ module Handler.Bootstrap.TrackingStation
   )
 where
 
+import Prelude hiding ((<$>),(<*>))
 import Control.Distributed.Process
   ( Process
   , NodeId
