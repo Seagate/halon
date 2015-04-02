@@ -1,6 +1,9 @@
 FROM tweag/haskell-env-on-centos-7:@@BASEVERSION@@
 MAINTAINER ben.clifford@tweag.io
 
+# update cabal database to get newest deps
+RUN cabal update
+
 # this will need github permissions...
 RUN mkdir /root/.ssh
 ADD id_rsa /root/.ssh/

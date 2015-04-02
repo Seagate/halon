@@ -29,6 +29,3 @@ WORKDIR /cabal-install-@@CABALVERSION@@
 RUN ./bootstrap.sh
 
 RUN ln -vs /root/.cabal/bin/cabal /usr/local/bin/cabal
-
-RUN cabal update
-
