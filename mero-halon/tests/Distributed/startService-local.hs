@@ -20,7 +20,6 @@ import Control.Distributed.Commands.Process
   , expectLog
   , __remoteTable
   )
-import Control.Distributed.Commands.Providers (getHostAddress)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Node
@@ -85,11 +84,12 @@ main = do
     setCurrentDirectory testDir
     putStrLn $ "Changed directory to: " ++ testDir
 
-    m0 <- getHostAddress
 #ifdef USE_RPC
+    let m0 = "0@lo:12345:34"
     nt <- fmap networkTransport $
            createTransport "s1" (rpcAddress $ m0 ++ ":100") defaultRPCParameters
 #else
+    let m0 = "0.0.0.0"
     Right nt <- createTransport m0 "4000" defaultTCPParameters
 #endif
     n0 <- newLocalNode nt (__remoteTable initRemoteTable)
