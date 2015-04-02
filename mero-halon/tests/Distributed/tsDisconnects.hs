@@ -6,19 +6,29 @@
 --
 -- * Start a satellite and three tracking station nodes.
 -- * Start the noisy service in the satellite.
--- * Kill a tracking station node.
+-- * Isolate a tracking station node so it cannot communicate with any other node.
 -- * Wait for the RC to report events produced by the service.
--- * Restart the tracking station node.
--- * Kill another TS node.
+-- * Re-enable communications of the TS node.
+-- * Isolate another TS node.
 -- * Wait for the RC to report events produced by the service.
--- * Restart the TS node.
--- * Kill another TS node.
+-- * Re-enable communications of the TS node.
+-- * Isolate another TS node.
 -- * Wait for the RC to report events produced by the service.
 --
 
-import Control.Distributed.Commands (waitForCommand_)
+import Control.Concurrent (forkIO)
+import Control.Distributed.Commands.IPTables
 import Control.Distributed.Commands.Management (withHostNames)
-import Control.Distributed.Commands.Process hiding (withHostNames)
+import Control.Distributed.Commands.Process
+  ( copyFiles
+  , systemThere
+  , spawnNode
+  , NodeHandle(..)
+  , redirectLogsHere
+  , copyLog
+  , expectLog
+  , __remoteTable
+  )
 import Control.Distributed.Commands.Providers
   ( getHostAddress
   , getProvider
@@ -34,12 +44,14 @@ import Control.Distributed.Process.Node
   )
 
 import Control.Monad
+import Data.Function (fix)
 import Data.List (isInfixOf)
 
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
 
 import System.Environment (getExecutablePath)
 import System.FilePath ((</>), takeDirectory)
+import System.IO
 import System.Timeout (timeout)
 
 
@@ -49,6 +61,8 @@ getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
 main :: IO ()
 main = (>>= maybe (error "test timed out") return) $
        timeout (6 * 60 * 1000000) $ do
+    hSetBuffering stdout LineBuffering
+    hSetBuffering stderr LineBuffering
     cp <- getProvider
 
     buildPath <- getBuildPath
@@ -74,6 +88,11 @@ main = (>>= maybe (error "test timed out") return) $
       nhs <- forM (zip ms [m0loc, m1loc, m2loc, m3loc]) $ \(m, mloc) ->
                spawnNode m ("./halond -l " ++ mloc ++ " 2>&1")
       let [nid0, nid1, nid2, nid3] = map handleGetNodeId nhs
+      forM_ nhs $ \nh -> liftIO $ forkIO $ fix $ \loop -> do
+        e <- handleGetInput nh
+        case e of
+          Left rc -> putStrLn $ show (handleGetNodeId nh) ++ ": terminated " ++ show rc
+          Right s -> putStrLn (show (handleGetNodeId nh) ++ ": " ++ s) >> loop
       say $ "Redirecting logs ..."
       redirectLogsHere nid0
       redirectLogsHere nid1
@@ -92,6 +111,7 @@ main = (>>= maybe (error "test timed out") return) $
       expectLog [nid0] (isInfixOf "New replica started in legislature://0")
       expectLog [nid1] (isInfixOf "New replica started in legislature://0")
       expectLog [nid2] (isInfixOf "New replica started in legislature://0")
+      expectLog [nid0, nid1, nid2] (isInfixOf "Starting from empty graph.")
 
       say "Starting satellite node ..."
       systemThere [m1] ("./halonctl"
@@ -108,9 +128,9 @@ main = (>>= maybe (error "test timed out") return) $
 
       say "Starting ping service ..."
       systemThere [m0] $ "./halonctl"
-                      ++ " -l " ++ halonctlloc m0
-                      ++ " -a " ++ m3loc
-                      ++ " service ping start -t " ++ m0loc ++ " 2>&1"
+          ++ " -l " ++ halonctlloc m0
+          ++ " -a " ++ m3loc
+          ++ " service ping start -t " ++ m0loc ++ " 2>&1"
       expectLog tsNodes (isInfixOf "started ping service")
 
       whereisRemoteAsync nid3 $ serviceLabel $ serviceName Ping.ping
@@ -118,21 +138,13 @@ main = (>>= maybe (error "test timed out") return) $
       send pingPid "0"
       expectLog tsNodes $ isInfixOf "received DummyEvent 0"
 
-      forM_ (zip3 [1,3..] [m0, m1, m2] nhs) $ \(i, m, nh) -> do
-        say $ "killing ts node " ++ m ++ " ..."
-        systemThere [m] "pkill halond; true"
-        _ <- liftIO $ waitForCommand_ $ handleGetInput nh
+      forM_ (zip [1,3..] [m0, m1, m2]) $ \(i, m) -> do
+        say $ "Isolating ts node " ++ m ++ " ..."
+        liftIO $ isolateHostsAsUser "root" [m] ms
         send pingPid $ show (i :: Int)
         expectLog tsNodes $ isInfixOf $ "received DummyEvent " ++ show i
 
-        say $ "Restarting ts node " ++ m ++ " ..."
-        nid <- spawnNode_ m ("./halond -l " ++ m ++ ":9000" ++ " 2>&1")
-        redirectLogsHere nid
-        systemThere [m] ("./halonctl"
-                     ++ " -l " ++ halonctlloc m
-                     ++ " -a " ++ m ++ ":9000"
-                     ++ " bootstrap station"
-                     ++ " -r 2000000"
-                     )
+        say $ "Rejoining ts node " ++ m ++ " ..."
+        liftIO $ rejoinHostsAsUser "root" [m] ms
         send pingPid $ show (i + 1)
         expectLog tsNodes $ isInfixOf $ "received DummyEvent " ++ show (i + 1)
