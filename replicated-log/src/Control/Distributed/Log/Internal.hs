@@ -1501,8 +1501,8 @@ exitAndWait p = callLocal $ bracket (monitor p) unmonitor $ \ref -> do
 --
 -- Returns when registration has either succeeded or failed.
 spawnAndRegister :: NodeId -> String -> Closure (Process ()) -> Process ()
-spawnAndRegister nid label cp = callLocal $ do
-    ref <- spawnAsync nid $ $(mkClosure 'localSpawnAndRegister) label
+spawnAndRegister nid label' cp = callLocal $ do
+    ref <- spawnAsync nid $ $(mkClosure 'localSpawnAndRegister) label'
                                `closureApply` cp
     pid <- expectSpawn ref
     mref <- monitor pid

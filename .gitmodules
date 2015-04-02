@@ -21,3 +21,9 @@
 [submodule "cep"]
 	path = cep
 	url = git@github.com:tweag/cep.git
+[submodule "vendor/network-transport"]
+	path = vendor/network-transport
+	url = git@github.com:tweag/network-transport.git
+[submodule "vendor/rank1dynamic"]
+	path = vendor/rank1dynamic
+	url = git@github.com:haskell-distributed/rank1dynamic.git
