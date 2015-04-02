@@ -107,6 +107,10 @@ rcRules argv eq = do
          mmid <- getMultimapProcessId
          sendMsg sender mmid
 
+    defineHAEvent "dummy-event" id $ \(HAEvent _ DummyEvent _) -> do
+        i <- getNoisyPingCount
+        liftProcess $ sayRC $ "Noisy ping count: " ++ show i
+
     onEveryHAEvent $ \(HAEvent eid _ _) s -> do
         usend eq eid
         return s

@@ -21,6 +21,7 @@ module HA.Services.Noisy
 
 import HA.EventQueue.Producer
 import HA.NodeAgent.Messages
+import HA.ResourceGraph
 import HA.Service
 import HA.Service.TH
 
@@ -63,8 +64,24 @@ data HasPingCount = HasPingCount
 instance Binary HasPingCount
 instance Hashable HasPingCount
 
+relationDictHasPingCountServiceNoisyNoisyPingCount :: Dict (
+    Relation HasPingCount (Service NoisyConf) NoisyPingCount
+ )
+relationDictHasPingCountServiceNoisyNoisyPingCount = Dict
+
+resourceDictNoisyPingCount :: Dict (Resource NoisyPingCount)
+resourceDictNoisyPingCount = Dict
+
 $(generateDicts ''NoisyConf)
-$(deriveService ''NoisyConf 'noisySchema [])
+$(deriveService ''NoisyConf 'noisySchema [ 'relationDictHasPingCountServiceNoisyNoisyPingCount
+                                         , 'resourceDictNoisyPingCount
+                                         ])
+
+instance Relation HasPingCount (Service NoisyConf) NoisyPingCount where
+  relationDict = $(mkStatic 'relationDictHasPingCountServiceNoisyNoisyPingCount)
+
+instance Resource NoisyPingCount where
+  resourceDict = $(mkStatic 'resourceDictNoisyPingCount)
 
 -- | Block forever.
 never :: Process ()

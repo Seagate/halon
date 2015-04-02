@@ -60,12 +60,14 @@ module HA.RecoveryCoordinator.Mero
        , registerDrive
        , updateDriveStatus
        , getMultimapProcessId
+       , getNoisyPingCount
        ) where
 
 import Prelude hiding ((.), id, mapM_)
 import HA.Resources
 import HA.Service
 import HA.Services.Empty
+import HA.Services.Noisy
 
 import HA.Resources.Mero
 #ifdef USE_MERO_NOTE
@@ -325,6 +327,25 @@ updateDriveStatus dev status = do
         >>> removeOldNode
           $ lsGraph ls
   State.put ls { lsGraph = rg' }
+
+getNoisyPingCount :: CEP LoopState Int
+getNoisyPingCount = do
+    ls <- State.get
+    let rg       = lsGraph ls
+        (rg', i) =
+          case G.connectedTo noisy HasPingCount rg of
+            [] ->
+              let nrg = G.connect noisy HasPingCount (NoisyPingCount 0) $
+                        G.newResource (NoisyPingCount 0) rg in
+              (nrg, 0)
+            pc@(NoisyPingCount iPc) : _ ->
+              let newPingCount = NoisyPingCount (iPc + 1)
+                  nrg = G.connect noisy HasPingCount newPingCount $
+                        G.newResource newPingCount $
+                        G.disconnect noisy HasPingCount pc rg in
+              (nrg, iPc)
+    State.put ls { lsGraph = rg' }
+    return i
 
 sayRC :: String -> Process ()
 sayRC s = say $ "Recovery Coordinator: " ++ s
