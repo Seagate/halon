@@ -4,7 +4,6 @@
 -- License   : All rights reserved.
 --
 
-import Control.Concurrent (threadDelay)
 import Control.Distributed.Commands.Management (withHostNames)
 import Control.Distributed.Commands.Process
   ( copyFiles
@@ -98,8 +97,7 @@ main = do
       assert $ all (<= 21) logSizes
 
       say "Restarting the tracking station ..."
-      systemThere [m1] "killall -SIGINT halond"
-      liftIO $ threadDelay 2000000
+      systemThere [m1] "pkill halond; wait `pgrep halond`; true"
 
       nid1' <- spawnNode m1 ("./halond -l " ++ m1 ++ ":9000 2>&1")
       redirectLogsHere nid1'
