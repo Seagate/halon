@@ -175,6 +175,9 @@ freeze:
 	(cd mero-halon; cabal freeze --reorder-goals)
 	mv mero-halon/cabal.config cabal.config
 
+check-freeze:
+	./check-freeze.sh $(PACKAGES) $(VENDOR_PACKAGES) $(CEP_PACKAGES)
+
 # This target will generate a distributable RPM based on the
 # current checkout.
 # It will generate a binary RPM in ./rpmbuild/RPMS/x86_64

@@ -17,5 +17,14 @@ done
 find . -name \*.log -type f | while read l ; do \
   cp -v $l /halon/artifacts/logs/ ; \
 done
+
+if [ "$RC" == "0" ] ; then
+  # we build OK, so check freeze
+  # and use the return code from
+  # that as overall exit
+  make check-freeze
+  RC=$?
+fi
+
 exit $RC
 
