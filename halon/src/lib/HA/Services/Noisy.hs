@@ -34,7 +34,7 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Concurrent (newEmptyMVar, takeMVar)
-import Control.Monad (replicateM_)
+import Control.Monad
 
 import Data.Binary (Binary)
 import Data.Defaultable
@@ -102,7 +102,8 @@ remotableDecl [ [d|
   noisyProcess (NoisyConf hw) = (`catchExit` onExit) $ do
       say $ "Starting service noisy"
       say $ fromDefault hw
-      replicateM_ (read $ fromDefault hw) $ promulgate DummyEvent
+      forM_ [1 .. read (fromDefault hw)] $ \i ->
+        promulgate $ DummyEvent $ show (i :: Int)
       never
     where
       onExit _ Shutdown = say $ "NoisyService stopped."

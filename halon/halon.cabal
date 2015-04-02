@@ -75,6 +75,7 @@ Library
                    HA.Services.EQTracker
                    HA.Services.Noisy
                    HA.Services.OCF
+                   HA.Services.Ping
                    HA.Startup
                    Control.SpineSeq
   Build-Depends:   base,

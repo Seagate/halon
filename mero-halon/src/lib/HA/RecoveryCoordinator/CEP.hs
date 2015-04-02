@@ -277,8 +277,9 @@ rcRules argv eq = do
          sendMsg sender mmid
          handled eq evt
 
-    defineSimple "dummy-event" $ \evt@(HAEvent _ DummyEvent _) -> do
+    defineSimple "dummy-event" $ \evt@(HAEvent _ (DummyEvent str) _) -> do
       i <- getNoisyPingCount
+      liftProcess $ sayRC $ "received DummyEvent " ++ str
       liftProcess $ sayRC $ "Noisy ping count: " ++ show i
       handled eq evt
 
