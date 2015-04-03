@@ -54,6 +54,4 @@ VENDOR_PACKAGES = clock \
 
 CEP_DIR = $(ROOT_DIR)/cep/
 
-CEP_PACKAGES := cep \
-               cep-sodium \
-               sodium-utils
+CEP_PACKAGES := cep
