@@ -164,7 +164,7 @@ cabal.sandbox.config: mk/config.mk
 	                         $(addprefix $(PACKAGE_DIR),$(PACKAGES))
 # Using --reinstall to override packages from GHC global db.
 	cabal install --reorder-goals --reinstall $(VENDOR_CABAL_FLAGS) $(CABAL_FLAGS) $(VENDOR_PACKAGES)
-	cabal install --only-dependencies --reorder-goals $(VENDOR_CABAL_FLAGS) $(CABAL_FLAGS) $(PACKAGES)
+	cabal install --only-dependencies --reorder-goals $(VENDOR_CABAL_FLAGS) $(CABAL_FLAGS) $(PACKAGES) --enable-tests
 
 # Updating cabal.config should only ever be done manually, i.e. explicitly
 # through listing freeze as a goal, not implicitly as part of another rule.
