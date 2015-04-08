@@ -5,12 +5,14 @@
 {-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module SSPL.Bindings.Instances where
 
 import           Control.Applicative
 
 import           Data.Aeson
-import           Data.Binary
+import           Data.Binary ()
 import           Data.Binary
 import           Data.Hashable       (Hashable)
 import           Data.HashMap.Lazy

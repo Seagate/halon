@@ -6,7 +6,7 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-import qualified SSPL.Schemata.MonitorResponse as MonitorResponse
+import qualified SSPL.Schemata.SensorResponse as SensorResponse
 import qualified SSPL.Schemata.ActuatorRequest as ActuatorRequest
 import qualified SSPL.Schemata.ActuatorResponse as ActuatorResponse
 
@@ -22,7 +22,7 @@ import Language.Haskell.TH
 main :: IO ()
 main = let
     schemata = [
-        ("MonitorResponse", MonitorResponse.schema)
+        ("SensorResponse", SensorResponse.schema)
       , ("ActuatorRequest", ActuatorRequest.schema)
       , ("ActuatorResponse", ActuatorResponse.schema)
       ]

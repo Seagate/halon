@@ -109,9 +109,9 @@ ssplRules = do
 
   -- SSPL Monitor drivemanager
   defineHAEvent "monitor-drivemanager" id $ \(HAEvent _ (nid, mrm) _) -> do
-    let disk_status = monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskStatus mrm
-        encName = monitorResponseMonitor_msg_typeDisk_status_drivemanagerEnclosureSN mrm
-        diskNum = monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskNum mrm
+    let disk_status = sensorResponseSensor_response_typeDisk_status_drivemanagerDiskStatus mrm
+        encName = sensorResponseSensor_response_typeDisk_status_drivemanagerEnclosureSN mrm
+        diskNum = sensorResponseSensor_response_typeDisk_status_drivemanagerDiskNum mrm
         enc = Enclosure $ T.unpack encName
         disk = StorageDevice . floor . (toRealFloat :: Scientific -> Double)
                 $ diskNum
@@ -125,19 +125,19 @@ ssplRules = do
 
   -- SSPL Monitor host_update
   defineHAEvent "monitor-host-update" id $ \(HAEvent _ (nid, hum) _) ->
-    case monitorResponseMonitor_msg_typeHost_updateUname hum of
+    case sensorResponseSensor_response_typeHost_updateUname hum of
       Just a -> let
           host = Host $ T.unpack a
           node = Node nid
         in do
           registerHost host
           locateNodeOnHost node host
-          case monitorResponseMonitor_msg_typeHost_updateIfData hum of
+          case sensorResponseSensor_response_typeHost_updateIfData hum of
             Just (xs@(_:_)) -> mapM_ (registerInterface host . mkIf) ifNames
               where
                 mkIf = Interface . T.unpack
                 ifNames = catMaybes
-                          $ fmap monitorResponseMonitor_msg_typeHost_updateIfDataItemIfId xs
+                          $ fmap sensorResponseSensor_response_typeHost_updateIfDataItemIfId xs
             _ -> return ()
           liftProcess . sayRC $ "Registered host: " ++ show host
       Nothing -> return ()

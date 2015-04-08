@@ -122,7 +122,7 @@ receive chan BindConf{..} handle = do
       declareExchange chan newExchange
         { exchangeName = exchangeName
         , exchangeType = "topic"
-        , exchangeDurable = True
+        , exchangeDurable = False
         }
       _ <- declareQueue chan newQueue { queueName = queueName }
       bindQueue chan queueName exchangeName routingKey

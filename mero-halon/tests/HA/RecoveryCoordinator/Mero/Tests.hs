@@ -273,28 +273,28 @@ testHostAddition transport = do
     wait = void (expect :: Process ProcessMonitorNotification)
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
-    mockEvent = SSPL.MonitorResponseMonitor_msg_typeHost_update
-                { SSPL.monitorResponseMonitor_msg_typeHost_updateRunningProcessCount = Nothing
-                , SSPL.monitorResponseMonitor_msg_typeHost_updateIfData              = Just [mockIf]
-                , SSPL.monitorResponseMonitor_msg_typeHost_updateUname               = Just "mockhost"
-                , SSPL.monitorResponseMonitor_msg_typeHost_updateUpTime              = Nothing
-                , SSPL.monitorResponseMonitor_msg_typeHost_updateLocalMountData      = Nothing
-                , SSPL.monitorResponseMonitor_msg_typeHost_updateFreeMem             = Nothing
-                , SSPL.monitorResponseMonitor_msg_typeHost_updateLoggedInUsers       = Nothing
-                , SSPL.monitorResponseMonitor_msg_typeHost_updateTotalMem            = Nothing
-                , SSPL.monitorResponseMonitor_msg_typeHost_updateProcessCount        = Nothing
-                , SSPL.monitorResponseMonitor_msg_typeHost_updateBootTime            = Nothing
-                , SSPL.monitorResponseMonitor_msg_typeHost_updateCpuData             = Nothing
+    mockEvent = SSPL.SensorResponseSensor_response_typeHost_update
+                { SSPL.sensorResponseSensor_response_typeHost_updateRunningProcessCount = Nothing
+                , SSPL.sensorResponseSensor_response_typeHost_updateIfData              = Just [mockIf]
+                , SSPL.sensorResponseSensor_response_typeHost_updateUname               = Just "mockhost"
+                , SSPL.sensorResponseSensor_response_typeHost_updateUpTime              = Nothing
+                , SSPL.sensorResponseSensor_response_typeHost_updateLocalMountData      = Nothing
+                , SSPL.sensorResponseSensor_response_typeHost_updateFreeMem             = Nothing
+                , SSPL.sensorResponseSensor_response_typeHost_updateLoggedInUsers       = Nothing
+                , SSPL.sensorResponseSensor_response_typeHost_updateTotalMem            = Nothing
+                , SSPL.sensorResponseSensor_response_typeHost_updateProcessCount        = Nothing
+                , SSPL.sensorResponseSensor_response_typeHost_updateBootTime            = Nothing
+                , SSPL.sensorResponseSensor_response_typeHost_updateCpuData             = Nothing
                 }
-    mockIf = SSPL.MonitorResponseMonitor_msg_typeHost_updateIfDataItem
-              { SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemTrafficIn         = Nothing
-              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemNetworkErrors     = Nothing
-              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemTrafficOut        = Nothing
-              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemDroppedPacketsIn  = Nothing
-              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemPacketsIn         = Nothing
-              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemDopppedPacketsOut = Nothing
-              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemIfId              = Just "192.168.0.1"
-              , SSPL.monitorResponseMonitor_msg_typeHost_updateIfDataItemPacketsOut        = Nothing
+    mockIf = SSPL.SensorResponseSensor_response_typeHost_updateIfDataItem
+              { SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemTrafficIn         = Nothing
+              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemNetworkErrors     = Nothing
+              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemTrafficOut        = Nothing
+              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemDroppedPacketsIn  = Nothing
+              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemPacketsIn         = Nothing
+              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemDopppedPacketsOut = Nothing
+              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemIfId              = Just "192.168.0.1"
+              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemPacketsOut        = Nothing
               }
 
 -- | Test that the recovery co-ordinator successfully adds a drive to the RG,
@@ -337,8 +337,8 @@ testDriveAddition transport = do
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
     mockEvent status =
-      SSPL.MonitorResponseMonitor_msg_typeDisk_status_drivemanager
-        { SSPL.monitorResponseMonitor_msg_typeDisk_status_drivemanagerEnclosureSN = "enc1"
-        , SSPL.monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskNum = 1
-        , SSPL.monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskStatus = status
+      SSPL.SensorResponseSensor_response_typeDisk_status_drivemanager
+        { SSPL.sensorResponseSensor_response_typeDisk_status_drivemanagerEnclosureSN = "enc1"
+        , SSPL.sensorResponseSensor_response_typeDisk_status_drivemanagerDiskNum = 1
+        , SSPL.sensorResponseSensor_response_typeDisk_status_drivemanagerDiskStatus = status
         }

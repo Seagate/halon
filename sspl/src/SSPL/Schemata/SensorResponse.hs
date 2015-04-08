@@ -7,7 +7,7 @@
 {-# LANGUAGE QuasiQuotes     #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module SSPL.Schemata.MonitorResponse where
+module SSPL.Schemata.SensorResponse where
 
 import Data.Aeson.Schema
 
@@ -34,7 +34,7 @@ schema = [schemaQQ|
       }
       },
 
-    "monitor_msg_type": {
+    "sensor_response_type": {
       "type" : "object",
       "required" : true,
       "properties": {
@@ -290,6 +290,5 @@ schema = [schemaQQ|
       }
     }
   }
-
 
   |]

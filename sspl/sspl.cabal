@@ -17,7 +17,7 @@ library
   exposed-modules:     SSPL.Bindings
   other-modules:       SSPL.Bindings.ActuatorRequest
                        SSPL.Bindings.ActuatorResponse
-                       SSPL.Bindings.MonitorResponse
+                       SSPL.Bindings.SensorResponse
                        SSPL.Bindings.Instances
   hs-source-dirs:      src
   build-depends:       base >=4.7,

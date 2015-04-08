@@ -143,7 +143,7 @@ actuatorSchema = compositeOption subOpts
 
 dcsSchema :: Schema Rabbit.BindConf
 dcsSchema = let
-    en = defaultable "sspl_bcast" . strOption
+    en = defaultable "sspl_halon" . strOption
         $ long "dcs_exchange"
         <> metavar "EXCHANGE_NAME"
     rk = defaultable "sspl_ll" . strOption
