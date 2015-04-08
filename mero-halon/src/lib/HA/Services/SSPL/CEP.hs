@@ -83,8 +83,14 @@ registerChannels :: ServiceProcess SSPLConf
 registerChannels svc acs = do
   ls <- get
   liftProcess . say $ "Register channels"
-  let chan = Channel $ iemPort acs
+  let oldChan :: [Channel InterestingEventMessage]
+      oldChan = connectedTo svc IEMChannel $ lsGraph ls
+      removeOldChan = case oldChan of
+        [a] -> disconnect svc IEMChannel a
+        _ -> id
+      chan = Channel $ iemPort acs
       rg' = newResource svc >>>
+            removeOldChan >>>
             newResource chan >>>
             connect svc IEMChannel chan $ lsGraph ls
 
