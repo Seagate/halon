@@ -1,6 +1,6 @@
 Summary: halon
 Name: halon
-Version: 0.4
+Version: 0.5
 Release: 1
 License: All rights reserved
 Group: Development/Tools
