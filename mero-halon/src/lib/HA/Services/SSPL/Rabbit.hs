@@ -109,8 +109,8 @@ receive chan BindConf{..} handle = do
     me <- getSelfPid
     lChan <- liftIO newChan
     hpid <- spawnLocal $ handler me lChan
-    rpid <- spawnLocal $ rabbitHandler me lChan
-    mapM_ link [hpid, rpid]
+    link hpid
+    rabbitHandler lChan
   where
     handler me lChan = link me >> (forever $ do
       (msg, env) <- liftIO $ readChan lChan
@@ -118,7 +118,7 @@ receive chan BindConf{..} handle = do
       liftIO $ ackEnv env
       )
 
-    rabbitHandler me lChan = link me >> (liftIO $ do
+    rabbitHandler lChan = liftIO $ do
       declareExchange chan newExchange
         { exchangeName = exchangeName
         , exchangeType = "topic"
@@ -130,7 +130,6 @@ receive chan BindConf{..} handle = do
       _ <- consumeMsgs chan queueName Ack $ \a -> do
         writeChan lChan a
       return ()
-      )
 
     exchangeName = T.pack . fromDefault $ bcExchangeName
     queueName = T.pack . fromDefault $ bcQueueName
