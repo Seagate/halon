@@ -163,7 +163,9 @@ remotableDecl [ [d|
       pid <- spawnLocal $ connectSSPL lock me
       mref <- monitor pid
       receiveWait [
-          match $ \(ProcessMonitorNotification _ _ _) -> connectRetry lock
+          match $ \(ProcessMonitorNotification _ _ r) -> do
+            say $ "SSPL Process died:\n\t" ++ show r
+            connectRetry lock
         , match $ \() -> unmonitor mref >> (liftIO $ putMVar lock ())
         ]
     connectSSPL lock pid = do

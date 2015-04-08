@@ -59,7 +59,7 @@ sendInterestingEvent nid msg = do
 
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan msg
-    _ -> liftProcess $ sayRC "Cannot find anything!"
+    _ -> liftProcess $ sayRC "Cannot find IEM channel!"
 
 sendSystemdRequest :: NodeId
                    -> SystemdRequest
@@ -75,7 +75,7 @@ sendSystemdRequest nid req = do
       listToMaybe $ connectedTo sp SystemdChannel rg
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan req
-    _ -> liftProcess $ sayRC "Cannot find anything!"
+    _ -> liftProcess $ sayRC "Cannot find systemd channel!"
 
 registerChannels :: ServiceProcess SSPLConf
                  -> ActuatorChannels
