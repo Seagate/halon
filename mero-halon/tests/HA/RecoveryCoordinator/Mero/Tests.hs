@@ -225,18 +225,18 @@ testEQTrimming transport = do
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
         nodeUp ([nid], 2000000)
-        Published TrimDone _ <- expect
+        Published (TrimDone _) _ <- expect
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest (Node nid) Dummy.dummy
             (Dummy.DummyConf $ Configured "Test 1")
 
-        Published TrimDone _ <- expect
+        Published (TrimDone _) _ <- expect
 
         pid <- getServiceProcessPid mm (Node nid) Dummy.dummy
         _ <- promulgateEQ [nid] . encodeP $ ServiceFailed (Node nid) Dummy.dummy
                                                           pid
 
-        Published TrimDone _ <- expect
+        Published (TrimDone _) _ <- expect
         say $ "Everything got trimmed"
   where
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $

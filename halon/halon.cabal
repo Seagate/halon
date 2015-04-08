@@ -102,7 +102,8 @@ Library
                    options-schema >= 0.1.1.0,
                    cep,
                    netwire,
-                   template-haskell
+                   template-haskell,
+                   distributed-process-async >= 0.2
   if flag(rpc)
     Build-Depends: rpclite,
                    network-transport,

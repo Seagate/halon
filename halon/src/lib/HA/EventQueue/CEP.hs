@@ -16,11 +16,8 @@ import HA.Replicator
 
 eqRules :: RGroup g => g EventQueue -> RuleM (Maybe ProcessId) ()
 eqRules rg = do
-    define "rc-spawned" id $ \rc -> do
-      monitoring rc
+    define "rc-spawned" id $ \rc ->
       recordNewRC rg rc
-      sendEventsToRC rg rc
-      put $ Just rc
 
     define "monitoring" id $ \(ProcessMonitorNotification _ pid reason) -> do
       mRC <- get
@@ -36,17 +33,18 @@ eqRules rg = do
           -- The RC died.
           -- We use compare and swap to make sure we don't overwrite
           -- the pid of a respawned RC
-          _ -> do
-            recordRCDied rg
-            publish RCDied
-            put Nothing
+          _ -> recordRCDied rg
 
-    define "trimming" id $ \eid -> do
+    define "trimming" id $ \eid ->
       trim rg eid
-      publish TrimDone
 
-    define "ha-event" id $ \(sender, ev) -> do
-      recordEvent rg ev
+    define "ha-event" id $ \(sender, ev) ->
+      recordEvent rg sender ev
+
+    define "trim-ack" id $ \(TrimAck eid) ->
+      publish (TrimDone eid)
+
+    define "record-ack" id $ \(RecordAck sender ev) -> do
       mRC <- get
       case mRC of
         -- I know where the RC is.
@@ -59,3 +57,12 @@ eqRules rg = do
               sendEventToRC rc sender ev
             Nothing -> sendOwnNode sender
           put rmRC
+
+    define "rc-spawned-ack" id $ \(NewRCAck rc) -> do
+      monitoring rc
+      sendEventsToRC rg rc
+      put $ Just rc
+
+    define "rc-died-ack" id $ \RCDiedAck -> do
+      publish RCDied
+      put Nothing

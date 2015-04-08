@@ -133,7 +133,8 @@ tests transport internals = do
               (_, (HAEvent evtid _ _ ):_) <- retry requestTimeout $
                                                getState rGroup
               send eq evtid
-              Published TrimDone _ <- expect
+              Published (TrimDone eid) _ <- expect
+              assert (evtid == eid)
               assert . (== 9) . length . snd =<< retry requestTimeout
                                                    (getState rGroup)
         , testSuccess "eq-trim-idempotent" ==> \eq _ rGroup -> do
@@ -144,11 +145,13 @@ tests transport internals = do
               before <- map (eventCounter . eventId) . snd <$>
                           retry requestTimeout (getState rGroup)
               send eq evtid
-              Published TrimDone _ <- expect
+              Published (TrimDone eid) _ <- expect
+              assert (evtid == eid)
               trim1 <- map (eventCounter . eventId) . snd <$>
                           retry requestTimeout (getState rGroup)
               send eq evtid
-              Published TrimDone _ <- expect
+              Published (TrimDone eid2) _ <- expect
+              assert (evtid == eid2)
               trim2 <- map (eventCounter . eventId) . snd <$>
                           retry requestTimeout (getState rGroup)
               assert (before /= trim1 && before /= trim2 && trim1 == trim2)
@@ -157,8 +160,10 @@ tests transport internals = do
               mapM_ triggerEvent [1..10]
               before <- map (eventCounter . eventId) . snd <$>
                           retry requestTimeout (getState rGroup)
-              send eq $ EventId na 11
-              Published TrimDone _ <- expect
+              let evtid = EventId na 11
+              send eq evtid
+              Published (TrimDone eid) _ <- expect
+              assert (evtid == eid)
               trim <- map (eventCounter . eventId) . snd <$>
                           retry requestTimeout (getState rGroup)
               assert (before == trim)

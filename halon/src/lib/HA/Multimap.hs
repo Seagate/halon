@@ -17,11 +17,8 @@ module HA.Multimap
     ( Key, Value, StoreUpdate(..), getKeyValuePairs, updateStore )where
 
 import Prelude hiding ((<$>))
-import Control.Distributed.Process (ProcessId, Process )
-import HA.CallTimeout (callTimeout)
+import Control.Distributed.Process
 
-import Control.Applicative ((<$>))
-import Control.Monad ( join )
 import Data.ByteString ( ByteString )
 import Data.Binary ( Binary )
 import Data.Typeable ( Typeable )
@@ -84,12 +81,12 @@ instance Binary StoreUpdate
 -- This may change to a streaming interface if the store turns out to be too big
 -- to transfer in one piece.
 --
--- Yields @Nothing@ in case of error.
---
 getKeyValuePairs :: ProcessId -> Process (Maybe [(Key,[Value])])
-getKeyValuePairs mmPid =
-    -- FIXME: Use a well-defined timeout
-    join <$> callTimeout 1000000 mmPid ()
+getKeyValuePairs mmPid = do
+    -- FIXME: Don't contact the local multimap but query the replicas directly
+    self <- getSelfPid
+    usend mmPid (self, ())
+    expect
 
 -- | The type of @updateStore@. It updates the store with a batch of operations.
 --
@@ -98,10 +95,10 @@ getKeyValuePairs mmPid =
 --
 -- More formally: @updateStore xs store = foldr ($) store xs@
 --
--- Yields @Nothing@ in case of error.
---
 updateStore :: ProcessId -> [StoreUpdate] -> Process (Maybe ())
 updateStore _ []       = return $ Just ()
-updateStore mmPid upds =
-    -- FIXME: Use a well-defined timeout
-    join <$> callTimeout 10000000 mmPid upds
+updateStore mmPid upds = do
+    -- FIXME: Don't contact the local multimap but query the replicas directly
+    self <- getSelfPid
+    usend mmPid (self, upds)
+    expect

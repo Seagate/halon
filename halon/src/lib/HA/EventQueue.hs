@@ -33,6 +33,10 @@ module HA.EventQueue
   , RCDied(..)
   , RCLost(..)
   , TrimDone(..)
+  , TrimAck(..)
+  , RecordAck(..)
+  , NewRCAck(..)
+  , RCDiedAck(..)
   , monitoring
   , recordNewRC
   , recordRCDied
@@ -57,6 +61,7 @@ import Control.SpineSeq (spineSeq)
 import FRP.Netwire hiding (Last(..), when)
 
 import Control.Distributed.Process hiding (newChan, send)
+import Control.Distributed.Process.Async (async, task)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Timeout ( retry )
@@ -140,10 +145,12 @@ monitoring rc = do
 
 -- | Record in the replicated state that there is a new RC.
 recordNewRC :: RGroup g => g EventQueue -> ProcessId -> CEP (Maybe ProcessId) ()
-recordNewRC rg rc = do
-    liftProcess $ do
-       retry requestTimeout $
-         updateStateWith rg $ $(mkClosure 'setRC) $ Just rc
+recordNewRC rg rc = liftProcess $ do
+    self <- getSelfPid
+    _    <- async $ task $ do
+      retry requestTimeout $ updateStateWith rg $ $(mkClosure 'setRC) $ Just rc
+      usend self (NewRCAck rc)
+    return ()
 
 -- | Send the pending events to the new RC.
 sendEventsToRC :: RGroup g => g EventQueue -> ProcessId -> CEP s ()
@@ -161,18 +168,36 @@ recordRCDied rg = do
     mRC <- get
     let upd = (mRC, Nothing :: Maybe ProcessId)
 
-    liftProcess $ retry requestTimeout $
-      updateStateWith rg $ $(mkClosure 'compareAndSwapRC) upd
+    _ <- liftProcess $ do
+      self <- getSelfPid
+      _    <- async $ task $ retry requestTimeout $
+                updateStateWith rg $ $(mkClosure 'compareAndSwapRC) upd
+      usend self RCDiedAck
+    return ()
 
-recordEvent :: RGroup g => g EventQueue -> HAEvent [ByteString] -> CEP s ()
-recordEvent rg ev = do
-    liftProcess $ retry requestTimeout $
-      updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+recordEvent :: RGroup g
+            => g EventQueue
+            -> ProcessId
+            -> HAEvent [ByteString]
+            -> CEP s ()
+recordEvent rg sender ev = do
+    _ <- liftProcess $ do
+      self <- getSelfPid
+      _    <- async $ task $ do
+        retry requestTimeout $
+          updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+      usend self (RecordAck sender ev)
+    return ()
 
 trim :: RGroup g => g EventQueue -> EventId -> CEP s ()
 trim rg eid =
-    liftProcess $ retry requestTimeout $
-      updateStateWith rg $ $(mkClosure 'filterEvent) eid
+    liftProcess $ do
+      self <- getSelfPid
+      _ <- async $ task $ do
+        retry requestTimeout $
+          updateStateWith rg $ $(mkClosure 'filterEvent) eid
+        usend self (TrimAck eid)
+      return ()
 
 sendEventToRC :: ProcessId -> ProcessId -> HAEvent [ByteString] -> CEP s ()
 sendEventToRC rc sender ev =
@@ -202,6 +227,23 @@ data RCLost = RCLost deriving (Show, Typeable, Generic)
 
 instance Binary RCLost
 
-data TrimDone = TrimDone deriving (Show, Typeable, Generic)
+data TrimDone = TrimDone EventId deriving (Typeable, Generic)
 
 instance Binary TrimDone
+
+data TrimAck = TrimAck EventId deriving (Typeable, Generic)
+
+instance Binary TrimAck
+
+data RecordAck = RecordAck ProcessId (HAEvent [ByteString])
+                 deriving (Typeable, Generic)
+
+instance Binary RecordAck
+
+data NewRCAck = NewRCAck ProcessId deriving (Typeable, Generic)
+
+instance Binary NewRCAck
+
+data RCDiedAck = RCDiedAck deriving (Typeable, Generic)
+
+instance Binary RCDiedAck
