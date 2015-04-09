@@ -122,6 +122,14 @@ ssplRules = do
     when (disk_status == "inuse_removed") $ do
       let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
       sendInterestingEvent nid msg
+    when (disk_status == "unused_ok") $ do
+      let msg = InterestingEventMessage . BL.pack
+                $  "Drive powered off: \n\t"
+                ++ show enc
+                ++ "\n\t"
+                ++ show disk
+      sendInterestingEvent nid msg
+
 
   -- SSPL Monitor host_update
   defineHAEvent "monitor-host-update" id $ \(HAEvent _ (nid, hum) _) ->
