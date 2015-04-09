@@ -59,7 +59,7 @@ sendInterestingEvent nid msg = do
 
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan msg
-    _ -> liftProcess $ sayRC "Cannot find anything!"
+    _ -> liftProcess $ sayRC "Cannot find IEM channel!"
 
 sendSystemdRequest :: NodeId
                    -> SystemdRequest
@@ -75,7 +75,7 @@ sendSystemdRequest nid req = do
       listToMaybe $ connectedTo sp SystemdChannel rg
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan req
-    _ -> liftProcess $ sayRC "Cannot find anything!"
+    _ -> liftProcess $ sayRC "Cannot find systemd channel!"
 
 registerChannels :: ServiceProcess SSPLConf
                  -> ActuatorChannels
@@ -83,8 +83,14 @@ registerChannels :: ServiceProcess SSPLConf
 registerChannels svc acs = do
   ls <- get
   liftProcess . say $ "Register channels"
-  let chan = Channel $ iemPort acs
+  let oldChan :: [Channel InterestingEventMessage]
+      oldChan = connectedTo svc IEMChannel $ lsGraph ls
+      removeOldChan = case oldChan of
+        [a] -> disconnect svc IEMChannel a
+        _ -> id
+      chan = Channel $ iemPort acs
       rg' = newResource svc >>>
+            removeOldChan >>>
             newResource chan >>>
             connect svc IEMChannel chan $ lsGraph ls
 
@@ -103,9 +109,9 @@ ssplRules = do
 
   -- SSPL Monitor drivemanager
   defineHAEvent "monitor-drivemanager" id $ \(HAEvent _ (nid, mrm) _) -> do
-    let disk_status = monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskStatus mrm
-        encName = monitorResponseMonitor_msg_typeDisk_status_drivemanagerEnclosureSN mrm
-        diskNum = monitorResponseMonitor_msg_typeDisk_status_drivemanagerDiskNum mrm
+    let disk_status = sensorResponseSensor_response_typeDisk_status_drivemanagerDiskStatus mrm
+        encName = sensorResponseSensor_response_typeDisk_status_drivemanagerEnclosureSN mrm
+        diskNum = sensorResponseSensor_response_typeDisk_status_drivemanagerDiskNum mrm
         enc = Enclosure $ T.unpack encName
         disk = StorageDevice . floor . (toRealFloat :: Scientific -> Double)
                 $ diskNum
@@ -116,22 +122,30 @@ ssplRules = do
     when (disk_status == "inuse_removed") $ do
       let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
       sendInterestingEvent nid msg
+    when (disk_status == "unused_ok") $ do
+      let msg = InterestingEventMessage . BL.pack
+                $  "Drive powered off: \n\t"
+                ++ show enc
+                ++ "\n\t"
+                ++ show disk
+      sendInterestingEvent nid msg
+
 
   -- SSPL Monitor host_update
   defineHAEvent "monitor-host-update" id $ \(HAEvent _ (nid, hum) _) ->
-    case monitorResponseMonitor_msg_typeHost_updateUname hum of
+    case sensorResponseSensor_response_typeHost_updateUname hum of
       Just a -> let
           host = Host $ T.unpack a
           node = Node nid
         in do
           registerHost host
           locateNodeOnHost node host
-          case monitorResponseMonitor_msg_typeHost_updateIfData hum of
+          case sensorResponseSensor_response_typeHost_updateIfData hum of
             Just (xs@(_:_)) -> mapM_ (registerInterface host . mkIf) ifNames
               where
                 mkIf = Interface . T.unpack
                 ifNames = catMaybes
-                          $ fmap monitorResponseMonitor_msg_typeHost_updateIfDataItemIfId xs
+                          $ fmap sensorResponseSensor_response_typeHost_updateIfDataItemIfId xs
             _ -> return ()
           liftProcess . sayRC $ "Registered host: " ++ show host
       Nothing -> return ()

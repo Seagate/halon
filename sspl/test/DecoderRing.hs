@@ -14,7 +14,7 @@ import System.Environment (getArgs)
 main :: IO ()
 main = do
   bs <- LB.getContents
-  case decode bs :: Maybe MonitorResponse of
+  case decode bs :: Maybe SensorResponse of
     Just mr -> print mr
     Nothing -> putStrLn "Unable to decode as MonitorResponse."
   case decode bs :: Maybe Value of

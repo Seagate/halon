@@ -76,18 +76,18 @@ msgHandler :: Network.AMQP.Message
            -> Process ()
 msgHandler msg = do
   nid <- getSelfNode
-  case decode (msgBody msg) :: Maybe MonitorResponse of
+  case decode (msgBody msg) :: Maybe SensorResponse of
     Just mr -> do
       say $ show mr
       mapM_ promulgate
             $ fmap (nid,)
-            . monitorResponseMonitor_msg_typeHost_update
-            . monitorResponseMonitor_msg_type
+            . sensorResponseSensor_response_typeHost_update
+            . sensorResponseSensor_response_type
             $ mr
       mapM_ promulgate
             $ fmap (nid,)
-            . monitorResponseMonitor_msg_typeDisk_status_drivemanager
-            . monitorResponseMonitor_msg_type
+            . sensorResponseSensor_response_typeDisk_status_drivemanager
+            . sensorResponseSensor_response_type
             $ mr
     Nothing ->
       say $ "Unable to decode JSON message: " ++ (BL.unpack $ msgBody msg)
@@ -163,7 +163,9 @@ remotableDecl [ [d|
       pid <- spawnLocal $ connectSSPL lock me
       mref <- monitor pid
       receiveWait [
-          match $ \(ProcessMonitorNotification _ _ _) -> connectRetry lock
+          match $ \(ProcessMonitorNotification _ _ r) -> do
+            say $ "SSPL Process died:\n\t" ++ show r
+            connectRetry lock
         , match $ \() -> unmonitor mref >> (liftIO $ putMVar lock ())
         ]
     connectSSPL lock pid = do
