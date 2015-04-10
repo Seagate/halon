@@ -71,9 +71,12 @@ run s = let (s0,s1) = split $ mkStdGen s
             acceptor (undefined :: Int)
                  (const $ return AcceptorStore
                     { storeInsert = \d v -> modifyIORef mref $ Map.insert d v
-                    , storeLookup = \d -> Map.lookup d <$> readIORef mref
+                    , storeLookup = \d -> do
+                        r <- readIORef mref
+                        return $ maybe (Left False) Right $ Map.lookup d r
                     , storePut = writeIORef vref . Just
                     , storeGet = readIORef vref
+                    , storeTrim = const $ return ()
                     , storeClose = return ()
                     }
                  )

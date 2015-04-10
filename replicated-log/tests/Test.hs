@@ -13,6 +13,7 @@ import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import qualified Control.Distributed.Log as Log
 import Control.Distributed.Log.Snapshot
 import Control.Distributed.Log.Persistence.Paxos (acceptorStore)
+import qualified Control.Distributed.Log.Persistence as P
 import Control.Distributed.Log.Persistence.LevelDB
 import Control.Distributed.Log ( updateHandle )
 import qualified Control.Distributed.State as State
@@ -38,6 +39,7 @@ import Data.Constraint (Dict(..))
 import Data.Binary (Binary)
 import Data.List (isPrefixOf)
 import Data.Ratio ((%))
+import Data.String (fromString)
 import Data.Typeable (Typeable)
 import System.IO
 import System.FilePath ((</>))
@@ -463,6 +465,17 @@ tests _ = do
                              (uncurry (++) $ unzip logSizes')
                 say "Log size remains bounded after reconfiguration."
                 Log.killReplica h (localNodeId node1)
+
+                here <- getSelfNode
+                Log.killReplica h here
+                -- Check that the size of the acceptor state is bounded as well.
+                forM_ [here, localNodeId node1] $ \n -> do
+                  ps <- liftIO $ openPersistentStore (filepath "acceptors" n)
+                  pm <- liftIO $ P.getMap ps $ fromString "decrees"
+                  kvs <- liftIO $
+                           P.pairsOfMap (pm :: P.PersistentMap (Int, Int))
+                  assert (length kvs <= 2*snapshotThreashold)
+                say "Acceptor state remains bounded."
 
           , testSuccess "quorum-after-transient-failure" . withTmpDirectory $
               setup 1 $ \h port -> do

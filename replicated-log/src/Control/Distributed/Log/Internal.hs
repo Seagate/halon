@@ -495,7 +495,7 @@ replica :: forall a. Dict (Eq a)
         -> Process ()
 replica Dict
         SerializableDict
-        (unpackConfigProtocol -> (Config{..}, Protocol{prl_propose}))
+        (unpackConfigProtocol -> (Config{..}, Protocol{..}))
         (Log {..})
         leaseStart0
         decree
@@ -825,6 +825,7 @@ replica Dict
                         -- latest membership can still be recovered from disk.
                         liftIO $ trimTheLog ph (decreeNumber w0)
                         sref' <- stLogDump w' s'
+                        prl_releaseDecreesBelow (sendAcceptor logName) here w0
                         return (w', Just sref')
                       else
                         return (w0, msref)

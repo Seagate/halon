@@ -148,8 +148,17 @@ data Protocol n a = forall s. Protocol
                    -> DecreeId
                    -> a
                    -> Propose s a
-      -- XXX: add a function to perform garbage collection (old decrees that
-      -- are of no use) in acceptors.
+
+      -- | Release decrees below a given decree. No call of 'prl_propose' should
+      -- be done with these decrees afterwards.
+    , prl_releaseDecreesBelow
+           :: -- | A function to send messages to acceptors
+              (forall b. Serializable b => n -> b -> Process ())
+              -- | The acceptor to contact
+           -> n
+              -- | The decree below which all other decrees should be released
+           -> DecreeId
+           -> Process ()
     } deriving (Typeable)
 
 remotable ['prl_acceptor, 'initialDecreeId]

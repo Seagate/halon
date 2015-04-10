@@ -15,6 +15,7 @@ module Control.Distributed.Process.Consensus.Paxos
     ( chooseValue
     , acceptor
     , AcceptorStore(..)
+    , Trim(..)
     ) where
 
 import Prelude hiding ((<$>), (<*>))
@@ -24,13 +25,14 @@ import qualified Control.Distributed.Process.Consensus.Paxos.Messages as Msg
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 
-import Data.Binary (encode, decode)
+import Data.Binary (Binary, encode, decode)
 import Data.ByteString.Lazy (ByteString)
 import Data.Typeable
 import Control.Monad
 
 import Data.List (maximumBy)
 import Data.Function (on)
+import GHC.Generics (Generic)
 
 
 -- Note [Naming]
@@ -90,20 +92,33 @@ inline chooseValue(p_x1,p_d,p_x,p_acks) {
 }
 *-}
 
+type Trimmed = Bool
+
 -- | A persistent store for acceptor state
 data AcceptorStore = AcceptorStore
     { -- | Inserts a decree in the store.
       storeInsert :: DecreeId -> ByteString -> IO ()
       -- | Retrieves a decree in the store.
-    , storeLookup :: DecreeId -> IO (Maybe ByteString)
+      --
+      -- If the value was trimmed, it yields @Left True@.
+      -- If the value was never stored, it yields @Left False@.
+    , storeLookup :: DecreeId -> IO (Either Trimmed ByteString)
       -- | Saves a value in the store.
     , storePut :: ByteString -> IO ()
       -- | Restores a value from the store.
     , storeGet :: IO (Maybe ByteString)
+      -- | Trims state below the given decree.
+    , storeTrim :: DecreeId -> IO ()
       -- | Closes the store.
     , storeClose :: IO ()
     }
   deriving Typeable
+
+-- | A type to ask acceptors to trim their state.
+data Trim = Trim DecreeId
+  deriving (Show, Typeable, Generic)
+
+instance Binary Trim
 
 -- | Acceptor process.
 --
@@ -130,9 +145,19 @@ acceptor _ config name =
                   then do
                       when (b < Value b') $
                         liftIO $ storePut $ encode b'
-                      liftIO (storeLookup d) >>= usend λ . Msg.Promise b' self .
-                        maybe [] (\(b'', x) -> [Msg.Ack d b'' self (x :: a)]) .
-                        fmap decode
+                      ebs <- liftIO $ storeLookup d
+                      case ebs of
+                        Left True ->
+                          -- Don't reply if the value was trimmed.
+                          -- The upper layers will have to figure out how
+                          -- to get the trimmed values otherwise.
+                          return ()
+                        Left False ->
+                          usend λ $ Msg.Promise b' self ([] :: [Msg.Ack a])
+                        Right bs -> do
+                          let (b'', x) = decode bs
+                          usend λ $ Msg.Promise b' self
+                                                [Msg.Ack d b'' self (x :: a)]
                       loop (Value b')
                   else do
                       usend λ $ Msg.Nack $ fromValue b
@@ -147,7 +172,11 @@ acceptor _ config name =
                       loop (Value b')
                   else do
                       usend λ $ Msg.Nack $ fromValue b
-                      loop b ]
+                      loop b
+              , match $ \(Trim d) -> do
+                  liftIO $ storeTrim d
+                  loop b
+              ]
 
 {-*promela
 

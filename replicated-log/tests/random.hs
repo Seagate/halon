@@ -69,9 +69,12 @@ testConfig = Log.Config
                     return AcceptorStore
                       { storeInsert = \d v -> do
                           modifyIORef mref $ Map.insert d v
-                      , storeLookup = \d -> fmap (Map.lookup d) $ readIORef mref
+                      , storeLookup = \d -> do
+                          r <- readIORef mref
+                          return $ maybe (Left False) Right $ Map.lookup d r
                       , storePut = writeIORef vref . Just
                       , storeGet = readIORef vref
+                      , storeTrim = const $ return ()
                       , storeClose = return ()
                       }
                  )

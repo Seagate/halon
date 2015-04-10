@@ -253,6 +253,7 @@ protocol :: forall a n. SerializableDict a
 protocol SerializableDict retryTimeout f =
     Protocol { prl_acceptor = acceptor (undefined :: a) f
              , prl_propose = propose retryTimeout
+             , prl_releaseDecreesBelow = \sendA n d -> sendA n $ Trim d
              }
 
 dictString :: SerializableDict String
