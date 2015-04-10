@@ -22,7 +22,6 @@ import qualified Data.Sequence as S
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Serializable
 import           Control.Wire.Core
-import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.MultiMap as M
 import           Data.Time
 import           FRP.Netwire
@@ -73,15 +72,12 @@ runProcessor s rm = go start clockSession_ (cepRules rs)
               Right (Handled rid ins logs evt) -> do
                 ss  <- fin $ _state nextBook
                 ss' <- cepSpes rs evt ss
-                case toList logs of
-                  []   -> return ()
-                  x:xs ->
-                    let lentries = LogEntries
-                                   { logEntriesRule   = rid
-                                   , logEntriesInputs = ins
-                                   , logEntries       = x :| xs
-                                   } in
-                     logF lentries ss'
+                let lentries = LogEntries
+                               { logEntriesRule   = rid
+                               , logEntriesInputs = ins
+                               , logEntries       = toList logs
+                               }
+                logF lentries ss'
                 return ss'
               _       -> return $ _state nextBook
             go nextBook { _state = newS } nextSession nextWire

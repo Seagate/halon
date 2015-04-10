@@ -27,7 +27,6 @@ import Control.Distributed.Process.Serializable
 import Control.Monad.State.Strict
 import Control.Wire
 import Data.Binary hiding (get, put)
-import Data.List.NonEmpty
 import Data.MultiMap
 
 -- | Typelevel trick. It's very similar to `Data.Proxy`. It's use to declare
@@ -86,8 +85,8 @@ data LogEntries =
     , logEntriesInputs :: !Lazy.ByteString
       -- ^ Serialized data coming from the mailbox event that triggered that
       --   rule.
-    , logEntries :: !(NonEmpty Log)
-      -- ^ Non empty collection of 'Log'
+    , logEntries :: ![Log]
+      -- ^ Collection of 'Log'
     }
 
 -- | Data holded by the Rule monad.
