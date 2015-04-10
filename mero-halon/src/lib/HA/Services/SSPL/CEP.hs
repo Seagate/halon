@@ -4,6 +4,8 @@
 --
 
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module HA.Services.SSPL.CEP where
 
@@ -23,6 +25,7 @@ import Control.Arrow ((>>>))
 import Control.Category (id)
 import Control.Distributed.Process
   ( NodeId
+  , SendPort
   , processNodeId
   , sendChan
   , say
@@ -81,20 +84,30 @@ registerChannels :: ServiceProcess SSPLConf
                  -> ActuatorChannels
                  -> CEP LoopState ()
 registerChannels svc acs = do
-  ls <- get
-  liftProcess . say $ "Register channels"
-  let oldChan :: [Channel InterestingEventMessage]
-      oldChan = connectedTo svc IEMChannel $ lsGraph ls
-      removeOldChan = case oldChan of
-        [a] -> disconnect svc IEMChannel a
-        _ -> id
-      chan = Channel $ iemPort acs
-      rg' = newResource svc >>>
-            removeOldChan >>>
-            newResource chan >>>
-            connect svc IEMChannel chan $ lsGraph ls
-
-  put ls { lsGraph = rg' }
+    ls <- get
+    liftProcess . say $ "Register channels"
+    let rg' =   registerChannel IEMChannel (iemPort acs)
+            >>> registerChannel SystemdChannel (systemdPort acs)
+            $   lsGraph ls
+    put ls { lsGraph = rg' }
+  where
+    registerChannel :: forall r b. Relation r (ServiceProcess SSPLConf) (Channel b)
+                    => r
+                    -> SendPort b
+                    -> Graph
+                    -> Graph
+    registerChannel r sp =
+        newResource svc >>>
+        removeOldChan >>>
+        newResource chan >>>
+        connect svc r chan
+      where
+        oldChan :: Graph -> [Channel b]
+        oldChan rg = connectedTo svc r rg
+        removeOldChan = \rg -> case oldChan rg of
+          [a] -> disconnect svc r a rg
+          _ -> rg
+        chan = Channel sp
 
 --------------------------------------------------------------------------------
 -- Rules                                                                      --
