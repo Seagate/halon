@@ -11,18 +11,24 @@ module HA.RecoveryCoordinator.CEP where
 import Prelude hiding ((.), id)
 import Control.Category
 import Control.Monad
+import Data.ByteString.Lazy (ByteString, fromStrict)
+import Data.ByteString.Lazy.Char8 (pack)
+import Data.Foldable (for_)
+import Data.Monoid ((<>))
 
 import Control.Distributed.Process
+import Data.List.NonEmpty (NonEmpty(..))
 import Network.CEP
 
-import HA.EventQueue.Consumer
-import HA.NodeAgent.Messages
-import HA.NodeUp
-import HA.RecoveryCoordinator.Mero
-import HA.Resources
-import HA.Service
+import           HA.EventQueue.Consumer
+import           HA.NodeAgent.Messages
+import           HA.NodeUp
+import           HA.RecoveryCoordinator.Mero
+import           HA.Resources
+import           HA.Service
 import qualified HA.Services.EQTracker as EQT
-import HA.Services.SSPL (ssplRules)
+import           HA.Services.DecisionLog (EntriesLogged(..))
+import           HA.Services.SSPL (ssplRules)
 
 rcRules :: IgnitionArguments -> ProcessId -> RuleM LoopState ()
 rcRules argv eq = do
@@ -65,6 +71,7 @@ rcRules argv eq = do
         when (serviceName svc == serviceName EQT.eqTracker) $ do
           True <- liftProcess $ updateEQNodes pid (stationNodes argv)
           return ()
+
         res <- lookupRunningService n svc
         liftProcess $ sayRC $
           "started " ++ snString (serviceName svc) ++ " service"
@@ -74,6 +81,8 @@ rcRules argv eq = do
           Nothing  -> registerServiceName svc
 
         registerServiceProcess n svc cfg sp
+        let svcStr = snString $ serviceName svc
+        cepLog "started" ("Service " ++ svcStr ++ " started")
 
     -- Service could not start
     defineHAEvent "service-could-not-start" id $ \(HAEvent _ msg _) -> do
@@ -115,4 +124,27 @@ rcRules argv eq = do
         usend eq eid
         return s
 
+    setOnLog sendLogEntries
+
     ssplRules
+
+sendLogEntries :: LogEntries -> LoopState -> Process ()
+sendLogEntries LogEntries{..} ls =
+    for_ (lookupDLogServiceProcess ls) $ \(ServiceProcess pid) -> do
+      let el = EntriesLogged
+               { elRuleId  = logEntriesRule
+               , elInputs  = logEntriesInputs
+               , elEntries = dump logEntries
+               }
+      usend pid el
+
+dump :: NonEmpty Log -> ByteString
+dump (l :| ls) = foldl go (dumpLog l) ls
+  where
+    go b x = b <> ";" <> dumpLog x
+
+    dumpLog (Log ctx v) =
+        "context="     <>
+        fromStrict ctx <>
+        ";log="        <>
+        pack (show v)

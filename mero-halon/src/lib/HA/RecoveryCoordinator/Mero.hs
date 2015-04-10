@@ -51,6 +51,7 @@ module HA.RecoveryCoordinator.Mero
        , getEpochId
        , decodeMsg
        , bounceServiceTo
+       , lookupDLogServiceProcess
          -- * Host related functions
        , locateNodeOnHost
        , registerHost
@@ -66,6 +67,7 @@ module HA.RecoveryCoordinator.Mero
 import Prelude hiding ((.), id, mapM_)
 import HA.Resources
 import HA.Service
+import HA.Services.DecisionLog
 import HA.Services.Empty
 import HA.Services.Noisy
 
@@ -346,6 +348,12 @@ getNoisyPingCount = do
               (nrg, iPc)
     State.put ls { lsGraph = rg' }
     return i
+
+lookupDLogServiceProcess :: LoopState -> Maybe (ServiceProcess DecisionLogConf)
+lookupDLogServiceProcess ls =
+    case G.connectedFrom Owns decisionLogServiceName $ lsGraph ls of
+        [sp] -> Just sp
+        _    -> Nothing
 
 sayRC :: String -> Process ()
 sayRC s = say $ "Recovery Coordinator: " ++ s

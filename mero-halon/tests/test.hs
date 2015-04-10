@@ -53,6 +53,8 @@ ut transport = return $
       , testCase "RGDriveResources" $
           HA.RecoveryCoordinator.Mero.Tests.testDriveAddition transport
       , testCase "uncleanRPCClose" $ threadDelay 2000000
+      , testCase "RCDecisionLogOutput" $
+        HA.RecoveryCoordinator.Mero.Tests.testDecisionLog transport
       ]
 
 runTests :: (Transport -> IO TestTree) -> IO ()

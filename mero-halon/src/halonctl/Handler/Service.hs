@@ -25,11 +25,12 @@ import HA.Resources
   , EpochResponse(..)
   )
 import HA.Service
-import qualified HA.Services.Dummy    as Dummy
-import qualified HA.Services.Frontier as Frontier
-import qualified HA.Services.Noisy    as Noisy
-import qualified HA.Services.SSPL     as SSPL
-import qualified HA.Services.SSPLHL   as SSPLHL
+import qualified HA.Services.DecisionLog as DLog
+import qualified HA.Services.Dummy       as Dummy
+import qualified HA.Services.Frontier    as Frontier
+import qualified HA.Services.Noisy       as Noisy
+import qualified HA.Services.SSPL        as SSPL
+import qualified HA.Services.SSPLHL      as SSPLHL
 
 import Lookup (conjureRemoteNodeId)
 
@@ -68,6 +69,7 @@ data ServiceCmdOptions =
     | SSPLServiceCmd (StandardServiceOptions SSPL.SSPLConf)
     | SSPLHLServiceCmd (StandardServiceOptions SSPLHL.SSPLHLConf)
     | FrontierServiceCmd (StandardServiceOptions Frontier.FrontierConf)
+    | DLogServiceCmd (StandardServiceOptions DLog.DecisionLogConf)
   deriving (Eq, Show, Generic, Typeable)
 
 -- | Options for a 'standard' service. This consists of a set of subcommands
@@ -143,7 +145,10 @@ parseService =
          mkStandardServiceCmd SSPLHL.sspl)
     ) <|>
     (FrontierServiceCmd <$> (O.subparser $
-         mkStandardServiceCmd Frontier.frontier))
+         mkStandardServiceCmd Frontier.frontier)
+    ) <|>
+    (DLogServiceCmd <$> (O.subparser $
+         mkStandardServiceCmd DLog.decisionLog))
 
 -- | Handle the "service" command.
 --   The "service" command is basically a wrapper around a number of commands
@@ -156,8 +161,9 @@ service nids so = case so of
   DummyServiceCmd sso    -> standardService nids sso Dummy.dummy
   NoisyServiceCmd sso    -> standardService nids sso Noisy.noisy
   SSPLServiceCmd sso     -> standardService nids sso SSPL.sspl
-  SSPLHLServiceCmd sso     -> standardService nids sso SSPLHL.sspl
+  SSPLHLServiceCmd sso   -> standardService nids sso SSPLHL.sspl
   FrontierServiceCmd sso -> standardService nids sso Frontier.frontier
+  DLogServiceCmd sso     -> standardService nids sso DLog.decisionLog
 
 -- | Handle an instance of a "standard service" command.
 standardService :: Configuration a
