@@ -118,8 +118,7 @@ Library
                    network-transport,
                    unordered-containers,
                    cep,
-                   netwire,
-                   semigroups
+                   netwire
 
   if flag(mero-note)
       Exposed-Modules: Mero.Notification.HAState

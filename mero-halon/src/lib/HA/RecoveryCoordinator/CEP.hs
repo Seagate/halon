@@ -17,7 +17,6 @@ import Data.Foldable (for_)
 import Data.Monoid ((<>))
 
 import Control.Distributed.Process
-import Data.List.NonEmpty (NonEmpty(..))
 import Network.CEP
 
 import           HA.EventQueue.Consumer
@@ -144,8 +143,8 @@ sendLogEntries LogEntries{..} ls =
                }
       usend pid el
 
-dump :: NonEmpty Log -> ByteString
-dump (l :| ls) = foldl go (dumpLog l) ls
+dump :: [Log] -> ByteString
+dump (l:ls) = foldl go (dumpLog l) ls
   where
     go b x = b <> ";" <> dumpLog x
 
@@ -154,3 +153,4 @@ dump (l :| ls) = foldl go (dumpLog l) ls
         fromStrict ctx <>
         ";log="        <>
         pack (show v)
+dump _ = ""
