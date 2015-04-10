@@ -78,7 +78,7 @@ import Data.Serialize.Get (label)
 import Control.Monad.State (get, put)
 import Control.Monad.Reader (ask)
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent
 import Control.Exception (SomeException, throwIO)
 import Control.Monad

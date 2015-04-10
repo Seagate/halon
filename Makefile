@@ -127,6 +127,12 @@ CABAL_BUILD_JOBS = --jobs=1
 override HALON_CABAL_FLAGS += --run-tests
 endif
 
+# This option is needed to make GHC keep silence when unexisting functions
+# are hidden in module. We need this trick to avoid CPP usage for workarounding
+# Applicative exported from prelude.
+override CABAL_FLAGS += --ghc-options='-fno-warn-dodgy-imports'
+
+
 export USE_TCP
 export USE_RPC
 export USE_RPCLITE

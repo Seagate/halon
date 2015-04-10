@@ -15,7 +15,7 @@ module Control.Distributed.Process.Consensus.Paxos
     , acceptor
     ) where
 
-import Prelude hiding ((<$>))
+import Prelude hiding ((<$>), (<*>))
 import Control.Distributed.Process.Consensus
 import qualified Control.Distributed.Process.Consensus.Paxos.Messages as Msg
 import Control.Distributed.Process
@@ -29,7 +29,7 @@ import Data.Binary (encode, decode)
 import Data.Typeable (Typeable)
 import Control.Monad.State (modify)
 import Control.Monad.Reader (ask)
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 
 import Data.List (maximumBy)
 import Data.Function (on)

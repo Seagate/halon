@@ -11,6 +11,8 @@ module Control.Distributed.Log.Snapshot
     , serializableSnapshotServer
     ) where
 
+import Prelude hiding ((<*>))
+import Control.Applicative ((<*>))
 import Control.Arrow (second)
 import Control.Distributed.Log () -- SafeCopy LegislatureId instance
 import Control.Distributed.Log.Internal (callLocal)
