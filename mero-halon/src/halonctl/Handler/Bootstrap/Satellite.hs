@@ -18,6 +18,7 @@ module Handler.Bootstrap.Satellite
   )
 where
 
+import Prelude hiding ((<*>), (<$>))
 import HA.NodeUp (nodeUp, nodeUp__static, nodeUp__sdict)
 import Lookup (conjureRemoteNodeId)
 

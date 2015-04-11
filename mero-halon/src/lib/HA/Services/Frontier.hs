@@ -19,6 +19,7 @@ module HA.Services.Frontier
     , frontier__static
     ) where
 
+import           Prelude hiding ((<$>))
 import           Control.Applicative ((<$>))
 import qualified Data.ByteString      as B
 import qualified Data.ByteString.Lazy as BL

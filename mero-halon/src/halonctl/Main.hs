@@ -6,6 +6,7 @@
 {-# LANGUAGE CPP #-}
 module Main (main) where
 
+import Prelude hiding ((<$>))
 import Flags
 import Lookup
 

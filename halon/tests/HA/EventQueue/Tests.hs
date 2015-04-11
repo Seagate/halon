@@ -8,6 +8,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 module HA.EventQueue.Tests ( tests, remoteRC__tdict ) where
 
+import Prelude hiding ((<$>))
 import Test.Framework
 
 import HA.EventQueue hiding (trim)

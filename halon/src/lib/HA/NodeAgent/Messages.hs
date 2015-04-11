@@ -6,12 +6,15 @@
 -- restriction.
 
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP #-}
 
 module HA.NodeAgent.Messages where
 
 import HA.CallTimeout
 
+#if ! MIN_VERSION_base(4,8,0)
 import Control.Applicative ((<$>))
+#endif
 import Control.Distributed.Process
   ( ProcessId
   , Process

@@ -17,6 +17,7 @@ module Handler.Service
   )
 where
 
+import Prelude hiding ((<$>), (<*>))
 import HA.CallTimeout (callLocal)
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.Resources

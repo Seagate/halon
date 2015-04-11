@@ -9,6 +9,7 @@ module Options.Applicative.Extras
     )
   where
 
+import Prelude hiding ((<*>))
 import Options.Applicative
     ( (<*>)
     , (<>)

@@ -50,7 +50,9 @@ VENDOR_PACKAGES = clock \
                   distributed-static \
                   tasty-files \
                   options-schema \
-                  network-transport-tcp
+                  network-transport-tcp \
+                  network-transport \
+                  rank1dynamic
 
 CEP_DIR = $(ROOT_DIR)/cep/
 

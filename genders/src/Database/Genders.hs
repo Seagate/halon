@@ -53,7 +53,7 @@ import Foreign.Storable (peek, peekElemOff)
 import GHC.Generics (Generic)
 import System.IO.Unsafe (unsafePerformIO)
 
-import Prelude hiding (lookup)
+import Prelude hiding ((<$>),lookup)
 
 -- Invariant: A DB always has its data pre-loaded into memory using
 -- genders_load_data(). Therefore querying the DB does not incur side effects.

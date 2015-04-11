@@ -6,6 +6,7 @@
 
 module Test.Run (runTests) where
 
+import Prelude hiding ((<$>))
 import Test.Tasty (TestTree, defaultMainWithIngredients)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
 import Test.Tasty.Ingredients.FileReporter (fileTestReporter)

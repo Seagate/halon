@@ -7,6 +7,7 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE KindSignatures #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Control.Distributed.Process.Consensus.Paxos
@@ -14,6 +15,7 @@ module Control.Distributed.Process.Consensus.Paxos
     , acceptor
     ) where
 
+import Prelude hiding ((<$>), (<*>))
 import Control.Distributed.Process.Consensus
 import qualified Control.Distributed.Process.Consensus.Paxos.Messages as Msg
 import Control.Distributed.Process
@@ -21,12 +23,13 @@ import Control.Distributed.Process.Serializable
 
 -- Imports necessary for acid-state.
 import Data.Acid
+import Data.Acid.Advanced
 import Data.SafeCopy
 import Data.Binary (encode, decode)
 import Data.Typeable (Typeable)
 import Control.Monad.State (modify)
 import Control.Monad.Reader (ask)
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 
 import Data.List (maximumBy)
 import Data.Function (on)
@@ -103,7 +106,31 @@ insert x = modify (x:)
 toList :: Query [a] [a]
 toList = ask
 
-$(makeAcidic ''[] ['insert, 'toList])
+-- $(makeAcidic ''([a]) ['toList, 'insert])
+instance (Typeable a, SafeCopy a) => IsAcidic [a] where
+  acidEvents
+    = [ UpdateEvent
+         (\ (Insert a) -> insert a)
+      , QueryEvent (\ ToList -> toList)]
+newtype Insert (a :: *) = Insert a deriving (Typeable)
+instance SafeCopy a => SafeCopy (Insert a) where
+  putCopy (Insert a)
+    = contain
+        (do { safePut a;
+              return () })
+  getCopy = contain ((return Insert) <*> safeGet)
+instance (SafeCopy a, Typeable a) => Method (Insert a) where
+  type MethodResult (Insert a) = ()
+  type MethodState (Insert a) = [a]
+instance (Typeable a, SafeCopy a) => UpdateEvent (Insert a)
+data ToList (a :: *) = ToList deriving (Typeable)
+instance SafeCopy a => SafeCopy (ToList a) where
+  putCopy ToList = contain (do { return () })
+  getCopy = contain (return ToList)
+instance (SafeCopy a, Typeable a) => Method (ToList a) where
+  type MethodResult (ToList a) = [a]
+  type MethodState (ToList a) = [a]
+instance (SafeCopy a, Typeable a) => QueryEvent (ToList a)
 
 -- | Acceptor process.
 --

@@ -5,6 +5,7 @@
 {-# LANGUAGE CPP #-}
 module Main (main) where
 
+import Prelude hiding ((<$>))
 import Flags
 import HA.Network.RemoteTables (haRemoteTable)
 import Mero.RemoteTables (meroRemoteTable)

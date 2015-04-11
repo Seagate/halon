@@ -6,6 +6,7 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE KindSignatures #-}
 
 module Control.Distributed.Process.Consensus.BasicPaxos
     ( propose
@@ -15,6 +16,7 @@ module Control.Distributed.Process.Consensus.BasicPaxos
     , dictString__static
     ) where
 
+import Prelude hiding ((<$>))
 import Control.Distributed.Process.Consensus hiding (__remoteTable)
 import Control.Distributed.Process.Consensus.Paxos
 import Control.Distributed.Process.Consensus.Paxos.Types

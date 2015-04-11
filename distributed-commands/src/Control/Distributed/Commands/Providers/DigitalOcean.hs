@@ -11,6 +11,7 @@ module Control.Distributed.Commands.Providers.DigitalOcean
   , createDefaultProvider
   ) where
 
+import Prelude hiding ( (<$>) )
 import Control.Applicative ( (<$>) )
 
 import Control.Distributed.Commands.Internal.Log (debugLog)

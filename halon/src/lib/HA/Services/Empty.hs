@@ -8,6 +8,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE CPP                   #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans      #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
@@ -26,7 +27,9 @@ import GHC.Generics
 
 import HA.Service.TH
 
+#if ! MIN_VERSION_base(4,8,0)
 import Control.Applicative (pure)
+#endif
 
 import Options.Schema
 

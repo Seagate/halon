@@ -5,6 +5,7 @@
 -- This program tests the notification interface from the HA side.
 -- Call as: ./testhastate local_rpc_address dummy_mero_rpc_address
 
+import Prelude hiding ((<$>))
 import HA.Resources.Mero (ConfObjectState(..))
 import Mero.ConfC (Fid(..))
 import Mero.Notification.HAState

@@ -11,6 +11,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE CPP #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -41,6 +43,7 @@ module Control.Distributed.Log.Internal
     , callLocal
     ) where
 
+import Prelude hiding ((<$>), init, log)
 import Control.Distributed.Log.Messages
 import Control.Distributed.Log.Policy (NominationPolicy)
 import Control.Distributed.Log.Policy as Policy
@@ -68,15 +71,16 @@ import Control.Distributed.Static
 
 -- Imports necessary for acid-state.
 import Data.Acid as Acid
+import Data.Acid.Advanced
 import Data.Binary (decode)
 import Data.SafeCopy
+import Data.Serialize.Get (label)
 import Control.Monad.State (get, put)
 import Control.Monad.Reader (ask)
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent
 import Control.Exception (SomeException, throwIO)
-import Control.Exception.Enclosed (tryAny)
 import Control.Monad
 import Data.Constraint (Dict(..))
 import Data.Int (Int64)
@@ -85,12 +89,13 @@ import qualified Data.Foldable as Foldable
 import Data.Function (on)
 import Data.Binary (Binary, encode)
 import Data.Maybe
+#if ! MIN_VERSION_base(4,8,0)
 import Data.Monoid (Monoid(..))
+#endif
 import qualified Data.Map as Map
 import Data.Ratio (Ratio, numerator, denominator)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
-import Prelude hiding (init, log)
 import Network.Transport (EndPointAddress(..))
 import System.Clock
 
@@ -329,7 +334,35 @@ data Memory a = Memory [NodeId]
                        (Map.Map Int a)
   deriving Typeable
 
-$(deriveSafeCopy 0 'base ''Memory)
+-- XXX: acid-state fails to derive TH for polymorphic variables
+--      so substrituted fixed splice
+-- $(deriveSafeCopy 0 'base ''Memory)
+instance SafeCopy a => SafeCopy (Memory a) where
+  putCopy (Memory arg_aufv arg_aufw arg_aufx arg_aufy)
+    = contain
+        (do { safePut_ListNodeId_aufA <- getSafePut;
+              safePut_LegislatureId_aufB <- getSafePut;
+              safePut_MapInta_aufC <- getSafePut;
+              safePut_ListNodeId_aufA arg_aufv;
+              safePut_LegislatureId_aufB arg_aufw;
+              safePut_LegislatureId_aufB arg_aufx;
+              safePut_MapInta_aufC arg_aufy;
+              return () })
+  getCopy
+    = contain
+        (label
+           "Control.Distributed.Log.Internal.Memory:"
+           (do { safeGet_ListNodeId_aufD <- getSafeGet;
+                 safeGet_LegislatureId_aufE <- getSafeGet;
+                 safeGet_MapInta_aufF <- getSafeGet;
+                 (((((return Memory) <*> safeGet_ListNodeId_aufD)
+                    <*> safeGet_LegislatureId_aufE)
+                   <*> safeGet_LegislatureId_aufE)
+                  <*> safeGet_MapInta_aufF) }))
+  version = 0
+  kind = base
+  errorTypeName _ = "Control.Distributed.Log.Internal.Memory"
+
 $(deriveSafeCopy 0 'base ''NodeId)
 $(deriveSafeCopy 0 'base ''LocalProcessId)
 $(deriveSafeCopy 0 'base ''EndPointAddress)
@@ -360,7 +393,58 @@ memoryTrim replicas leg epoch w = do
     Memory _ _ _ log <- get
     put $ Memory replicas leg epoch $ snd $ Map.split (pred $ w) log
 
-$(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim])
+-- XXX: acid-state broke polymorphic values deriving
+-- $(makeAcidic ''Memory ['memoryInsert, 'memoryGet, 'memoryTrim])
+instance (SafeCopy a, Typeable a) => IsAcidic (Memory a) where
+   acidEvents
+     = [UpdateEvent
+          (\ (MemoryInsert arg_aip7 arg_aip8)
+             -> memoryInsert arg_aip7 arg_aip8)
+       ,QueryEvent
+          (\ MemoryGet -> memoryGet)
+       ,UpdateEvent
+          (\ (MemoryTrim arg_aip9 arg_aipa arg_aipb arg_aipc)
+             -> memoryTrim arg_aip9 arg_aipa arg_aipb arg_aipc)]
+data MemoryInsert a = MemoryInsert Int a deriving (Typeable)
+instance (SafeCopy a, Typeable a) => SafeCopy (MemoryInsert a) where
+  putCopy (MemoryInsert arg_aip0 arg_aip1)
+    = contain
+        (do { safePut arg_aip0;
+              safePut arg_aip1;
+              return () })
+  getCopy = contain (((return MemoryInsert) <*> safeGet) <*> safeGet)
+instance (SafeCopy a, Typeable a) => Method (MemoryInsert a) where
+  type MethodResult (MemoryInsert a) = ()
+  type MethodState (MemoryInsert a) = Memory a
+instance (SafeCopy a, Typeable a) => UpdateEvent (MemoryInsert a)
+data MemoryGet a = MemoryGet deriving (Typeable)
+instance (SafeCopy a, Typeable a) => SafeCopy (MemoryGet a) where
+  putCopy MemoryGet = contain (do { return () })
+  getCopy = contain (return MemoryGet)
+instance (SafeCopy a, Typeable a) => Method (MemoryGet a) where
+  type MethodResult (MemoryGet a) = ([NodeId],
+                                     LegislatureId,
+                                     LegislatureId,
+                                     Map.Map Int a)
+  type MethodState (MemoryGet a) = Memory a
+instance (SafeCopy a, Typeable a) => QueryEvent (MemoryGet a)
+data MemoryTrim a = MemoryTrim [NodeId] LegislatureId LegislatureId Int deriving (Typeable)
+instance (SafeCopy a, Typeable a) => SafeCopy (MemoryTrim a) where
+  putCopy (MemoryTrim arg_aip2 arg_aip3 arg_aip4 arg_aip5)
+    = contain
+        (do { safePut arg_aip2;
+              safePut arg_aip3;
+              safePut arg_aip4;
+              safePut arg_aip5;
+              return () })
+  getCopy
+    = contain
+        (((((return MemoryTrim) <*> safeGet) <*> safeGet) <*> safeGet) <*> safeGet)
+instance (SafeCopy a, Typeable a) => Method (MemoryTrim a) where
+  type MethodResult (MemoryTrim a) = ()
+  type MethodState (MemoryTrim a) = Memory a
+instance (SafeCopy a, Typeable a) => UpdateEvent (MemoryTrim a)
+
 
 -- | Removes all entries below the given index from the log.
 --
@@ -601,8 +685,8 @@ replica Dict
     -- exception is thrown or if the operation times-out.
     restoreSnapshot :: Process s -> Process (Maybe s)
     restoreSnapshot restore =
-       mask_ (tryAny $ timeout snapshotRestoreTimeout restore) >>= \case
-         Left  _  -> return Nothing
+       callLocal (try $ timeout snapshotRestoreTimeout restore) >>= \case
+         Left (_::SomeException) -> return Nothing
          Right ms -> return ms
 
     sendBatch :: ProcessId
@@ -786,33 +870,33 @@ replica Dict
                   usend timerPid (self, leaseTimeout, LeaseRenewalTime)
                   go st{ stateCurrentDecree = cd' }
 
-            , matchIf (\(Decree _ dᵢ _ :: Decree (Value a)) ->
+            , matchIf (\(Decree _ di _ :: Decree (Value a)) ->
                         -- Take the max of the watermark legislature and the
                         -- incoming legislature to deal with teleportation of
                         -- decrees. See Note [Teleportation].
-                        dᵢ < max w w{decreeLegislatureId = decreeLegislatureId dᵢ}) $
+                        di < max w w{decreeLegislatureId = decreeLegislatureId di}) $
                        \_ -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
                   go st
 
               -- Commit the decree to the log.
-            , matchIf (\(Decree locale dᵢ _) ->
-                        locale /= Stored && w <= dᵢ && decreeNumber dᵢ == decreeNumber w) $
-                       \(Decree locale dᵢ v) -> do
+            , matchIf (\(Decree locale di _) ->
+                        locale /= Stored && w <= di && decreeNumber di == decreeNumber w) $
+                       \(Decree locale di v) -> do
                   _ <- liftIO $ Acid.update acid $
-                           MemoryInsert (decreeNumber dᵢ) (v :: Value a)
+                           MemoryInsert (decreeNumber di) (v :: Value a)
                   case locale of
                       -- Ack back to the client.
                       Local κs -> forM_ κs $ flip usend ()
                       _ -> return ()
-                  usend self $ Decree Stored dᵢ v
+                  usend self $ Decree Stored di v
                   go st
 
               -- Execute the decree
-            , matchIf (\(Decree locale dᵢ _) ->
-                        locale == Stored && w <= dᵢ && decreeNumber dᵢ == decreeNumber w) $
-                       \(Decree _ dᵢ v) -> do
+            , matchIf (\(Decree locale di _) ->
+                        locale == Stored && w <= di && decreeNumber di == decreeNumber w) $
+                       \(Decree _ di v) -> do
                 let maybeTakeSnapshot w' s' = do
                       takeSnapshot <- snapshotPolicy
                                         (decreeNumber w' - decreeNumber w0)
@@ -874,7 +958,7 @@ replica Dict
                            }
                     | otherwise -> do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
-                      say $ "Not executing " ++ show dᵢ
+                      say $ "Not executing " ++ show di
                       (w0', msref') <- maybeTakeSnapshot w' s
                       go st{ stateSnapshotRef       = msref'
                            , stateSnapshotWatermark = w0'
@@ -884,23 +968,23 @@ replica Dict
               -- If we get here, it's because there's a gap in the decrees we
               -- have received so far. Compute the gaps and ask the other
               -- replicas about how to fill them up.
-            , matchIf (\(Decree locale dᵢ _) ->
-                        locale == Remote && w < dᵢ && not (Map.member (decreeNumber dᵢ) log)) $
-                       \(Decree locale dᵢ v) -> do
-                  _ <- liftIO $ Acid.update acid $ MemoryInsert (decreeNumber dᵢ) v
+            , matchIf (\(Decree locale di _) ->
+                        locale == Remote && w < di && not (Map.member (decreeNumber di) log)) $
+                       \(Decree locale di v) -> do
+                  _ <- liftIO $ Acid.update acid $ MemoryInsert (decreeNumber di) v
                   (_, _, _, log') <- liftIO $ Acid.query acid MemoryGet
                   queryMissingFrom logName (decreeNumber w) others log'
-                  --- XXX set cd to @max cd (succ dᵢ)@?
+                  --- XXX set cd to @max cd (succ di)@?
                   --
                   -- Probably not, because then the replica might never find the
                   -- values of decrees which are known to a quorum of acceptors
                   -- but unknown to all online replicas.
                   --
-                  --- XXX set d to @min cd (succ dᵢ)@?
+                  --- XXX set d to @min cd (succ di)@?
                   --
                   -- This Decree could have been teleported. So, we shouldn't
-                  -- trust dᵢ, unless @decreeLegislatureId dᵢ < maxBound@.
-                  usend self $ Decree locale dᵢ v
+                  -- trust di, unless @decreeLegislatureId di < maxBound@.
+                  usend self $ Decree locale di v
                   go st
 
               -- Lease requests.
@@ -1010,22 +1094,22 @@ replica Dict
               -- The request is dropped if the decree was accepted with a
               -- different value already.
             , match $
-                  \(dᵢ, vᵢ, Request κs (v :: Value a) _ rLease) -> do
+                  \(di, vi, Request κs (v :: Value a) _ rLease) -> do
                   -- If the passed decree accepted other value than our
                   -- client's, don't treat it as local (ie. do not report back
                   -- to the client yet).
                   let κs' | isNothing rLease = bpid : κs
                           | otherwise        = κs
-                      locale = if v == vᵢ then Local κs' else Remote
-                  usend self $ Decree locale dᵢ vᵢ
+                      locale = if v == vi then Local κs' else Remote
+                  usend self $ Decree locale di vi
                   forM_ others $ \ρ -> do
-                      sendReplica logName ρ $ Decree Remote dᵢ vᵢ
+                      sendReplica logName ρ $ Decree Remote di vi
 
-                  when (v /= vᵢ && isNothing rLease) $
+                  when (v /= vi && isNothing rLease) $
                     -- Send rejection ack.
                     usend bpid ()
 
-                  let d' = max d (succ dᵢ)
+                  let d' = max d (succ di)
                   go st{ stateUnconfirmedDecree = d' }
 
               -- Try to service a query if the requested decree is not too old.
@@ -1442,11 +1526,11 @@ remotableDecl [
         --
         -- If the process cannot be registered, the closure is not run.
         localSpawnAndRegister :: String -> Process () -> Process ()
-        localSpawnAndRegister label p = do
+        localSpawnAndRegister lbl p = do
           pid <- spawnLocal $ do
                    () <- expect
                    p
-          register label pid `onException` exit pid "localSpawnAndRegister"
+          register lbl pid `onException` exit pid "localSpawnAndRegister"
           usend pid ()
     |] ]
 
@@ -1501,8 +1585,8 @@ exitAndWait p = callLocal $ bracket (monitor p) unmonitor $ \ref -> do
 --
 -- Returns when registration has either succeeded or failed.
 spawnAndRegister :: NodeId -> String -> Closure (Process ()) -> Process ()
-spawnAndRegister nid label cp = callLocal $ do
-    ref <- spawnAsync nid $ $(mkClosure 'localSpawnAndRegister) label
+spawnAndRegister nid label' cp = callLocal $ do
+    ref <- spawnAsync nid $ $(mkClosure 'localSpawnAndRegister) label'
                                `closureApply` cp
     pid <- expectSpawn ref
     mref <- monitor pid

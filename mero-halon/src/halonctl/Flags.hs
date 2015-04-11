@@ -4,6 +4,7 @@
 
 module Flags where
 
+import Prelude hiding ( (<$>), (<*>) )
 import qualified Handler.Bootstrap as Bootstrap
 
 import Options.Applicative
