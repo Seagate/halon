@@ -14,6 +14,7 @@ module HA.RecoveryCoordinator.Mero.Tests
   , testServiceNotRestarting
   , testEQTrimming
   , testDecisionLog
+  , testServiceStopped
   ) where
 
 import Prelude hiding ((<$>), (<*>))
@@ -42,6 +43,7 @@ import HA.Service
   , ServiceFailed(..)
   , ServiceProcess(..)
   , ServiceStartRequest(..)
+  , ServiceStopRequest(..)
   , Owns(..)
   , encodeP
   , runningService
@@ -477,6 +479,43 @@ testDecisionLog transport = do
         case res of
           Left e   -> error $ "dlog parsing error: " ++ e
           Right xs -> logExpectations eq xs
+  where
+    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+         remoteTable
+
+testServiceStopped :: Transport -> IO ()
+testServiceStopped transport = do
+    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
+        nid <- getSelfNode
+        self <- getSelfPid
+
+        registerInterceptor $ \string -> case string of
+            str@"Starting service dummy"   -> send self str
+            _ -> return ()
+
+        say $ "tests node: " ++ show nid
+        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+                             [nid] ((Nothing,[]), fromList [])
+        pRGroup <- unClosure cRGroup
+        rGroup <- pRGroup
+        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+
+        nodeUp ([nid], 2000000)
+        _ <- promulgateEQ [nid] . encodeP $
+          ServiceStartRequest (Node nid) Dummy.dummy
+            (Dummy.DummyConf $ Configured "Test 1")
+
+        "Starting service dummy" :: String <- expect
+        say $ "dummy service started successfully."
+
+        pid <- getServiceProcessPid mm (Node nid) Dummy.dummy
+        _ <- monitor pid
+        _ <- promulgateEQ [nid] . encodeP $ ServiceStopRequest (Node nid)
+                                                               Dummy.dummy
+
+        (_ :: ProcessMonitorNotification) <- expect
+        say $ "dummy service stopped."
   where
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable

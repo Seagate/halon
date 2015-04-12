@@ -56,6 +56,8 @@ ut transport = return $
       , testCase "uncleanRPCClose" $ threadDelay 2000000
       , testCase "RCDecisionLogOutput" $
         HA.RecoveryCoordinator.Mero.Tests.testDecisionLog transport
+      , testCase "RCServiceStopped" $
+        HA.RecoveryCoordinator.Mero.Tests.testServiceStopped transport
       ]
 
 runTests :: (Transport -> IO TestTree) -> IO ()

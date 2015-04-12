@@ -34,8 +34,10 @@ data ServiceMessage =
 instance Binary ServiceMessage
 
 -- FIXME: Do we want to keep this just for the dummy service?
+-- FIXME: No we don't. We now use it in RC
 data ExitReason = Shutdown
                 | Reconfigure
+                | UserStop
                 deriving (Eq, Show, Generic, Typeable)
 
 instance Binary ExitReason
