@@ -109,14 +109,14 @@ iemSchema = let
 
 systemdSchema :: Schema Rabbit.BindConf
 systemdSchema = let
-    en = defaultable "halon_sspl" . strOption
+    en = defaultable "sspl_halon" . strOption
         $ long "systemd_exchange"
         <> metavar "EXCHANGE_NAME"
     rk = defaultable "sspl_ll" . strOption
           $ long "systemd_routingKey"
           <> metavar "ROUTING_KEY"
-    qn = defaultable "halon_sspl" . strOption
-          $ long "dcs_queue"
+    qn = defaultable "sspl_halon" . strOption
+          $ long "systemd_queue"
           <> metavar "QUEUE_NAME"
   in Rabbit.BindConf <$> en <*> rk <*> qn
 
