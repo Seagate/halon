@@ -102,7 +102,7 @@ schema = [schemaQQ|
                 "type" : "string",
                 "required" : true
             },
-            "systemd_request" : {
+            "service_request" : {
               "description" : "Action to be applied to service: start | stop | restart | status",
                   "type" : "string",
                   "required" : true
