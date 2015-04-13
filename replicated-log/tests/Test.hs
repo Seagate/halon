@@ -386,22 +386,26 @@ tests _ = do
               setupTimeout 60000000 1 $ \h port -> do
                 self <- getSelfPid
                 let logSizePfx = "Log size when trimming: "
-                    interceptor :: String -> Process ()
-                    interceptor "Increment." = usend self ()
-                    interceptor s | logSizePfx `isPrefixOf` s =
-                      usend self ( Prelude.read $ drop (length logSizePfx) s
+                    interceptor :: NodeId -> String -> Process ()
+                    interceptor _ "Increment." = usend self ()
+                    interceptor nid s | logSizePfx `isPrefixOf` s =
+                      usend self ( nid
+                                 , Prelude.read $ drop (length logSizePfx) s
                                                  :: Int
-                                )
-                    interceptor _ = return ()
-                registerInterceptor interceptor
+                                 )
+                    interceptor _ _ = return ()
+                getSelfNode >>= registerInterceptor . interceptor
 
                 let incrementCount = snapshotThreashold + 1
+                    expectIntFrom :: NodeId -> Process Int
+                    expectIntFrom nid = receiveWait
+                      [ matchIf ((nid ==) . fst) (return . snd) ]
                 logSizes <- replicateM 5 $ do
                   replicateM_ incrementCount $ do
                     retry retryTimeout $
                       State.update port incrementCP
                     expect :: Process ()
-                  expect :: Process Int
+                  getSelfNode >>= expectIntFrom
 
                 say $ show logSizes
                 -- The size of the log should account for medieval and modern
@@ -411,7 +415,8 @@ tests _ = do
                 say "Log size remains bounded with no reconfigurations."
 
                 node1 <- liftIO $ newLocalNode transport remoteTables
-                liftIO $ runProcess node1 $ registerInterceptor interceptor
+                liftIO $ runProcess node1 $
+                  getSelfNode >>= registerInterceptor . interceptor
 
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
@@ -433,7 +438,9 @@ tests _ = do
                     -- non-leader replica may not execute the request if it gets
                     -- it as part of a snapshot.
                     void (expectTimeout 1000000 :: Process (Maybe ()))
-                  liftM2 (,) (expect :: Process Int) (expect :: Process Int)
+                  here <- getSelfNode
+                  liftM2 (,) (expectIntFrom here)
+                             (expectIntFrom $ localNodeId node1)
 
                 say $ show logSizes'
                 -- The size of the log should account for medieval and modern
