@@ -70,7 +70,7 @@ import Control.Distributed.Static
     (closureApply, staticApply, staticClosure)
 
 import Control.Arrow (second)
-import Control.Concurrent
+import Control.Concurrent hiding (newChan)
 import Control.Exception (SomeException, throwIO)
 import Control.Monad
 import Data.Constraint (Dict(..))
@@ -264,6 +264,13 @@ data Request a = Request
 
 instance Binary a => Binary (Request a)
 
+-- | An internal message to tell the proposer it should stop trying to pass the
+-- current proposal.
+data AbortProposerRequest = AbortProposerRequest
+  deriving (Generic, Typeable)
+
+instance Binary AbortProposerRequest
+
 -- | A type for batcher messages.
 data BatcherMsg a = BatcherMsg
     { batcherMsgAmbassador :: ProcessId
@@ -390,6 +397,10 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
   , stateReconfDecree      :: DecreeId
     -- | Batcher of client requests
   , stateBatcher           :: ProcessId
+    -- | A port used to send timeout notifications
+  , stateTimerSP           :: SendPort TimerMessage
+    -- | A port used to receive timeout notifications
+  , stateTimerRP           :: ReceivePort TimerMessage
 
   -- from Log {..}
   , stateLogRestore        :: ref -> Process s
@@ -540,8 +551,9 @@ replica Dict
     queryMissingFrom logName (decreeNumber w0) others $
         Map.insert (decreeNumber d) undefined log
 
+    (timerSP, timerRP) <- newChan
     timerPid <- spawnLocal $ link self >> timer
-    leaseStart0' <- setLeaseTimer timerPid leaseStart0 replicas
+    leaseStart0' <- setLeaseTimer timerPid timerSP leaseStart0 replicas
     bpid <- spawnLocal $ link self >> batcher (sendBatch self)
     ppid <- spawnLocal $ link self >> proposer self bpid Bottom replicas
 
@@ -560,6 +572,8 @@ replica Dict
          , stateEpoch    = epoch
          , stateReconfDecree = legD
          , stateBatcher  = bpid
+         , stateTimerSP = timerSP
+         , stateTimerRP = timerRP
          , stateLogRestore = logRestore
          , stateLogDump = logDump
          , stateLogNextState = logNextState
@@ -605,13 +619,13 @@ replica Dict
     -- Sets the timer to renew or request the lease and returns the time at
     -- which the lease is started.
     setLeaseTimer :: ProcessId     -- ^ pid of the timer process
+                  -> SendPort TimerMessage -- ^ Channel to send signals through
                   -> TimeSpec      -- ^ time at which the request was submitted
                   -> [NodeId]   -- ^ replicas
                   -> Process TimeSpec
-    setLeaseTimer timerPid requestStart ρs = do
+    setLeaseTimer timerPid timerSP requestStart ρs = do
       -- If I'm the leader, the lease starts at the time
       -- the request was made. Otherwise, it starts now.
-      self <- getSelfPid
       here <- getSelfNode
       now <- liftIO $ getTime Monotonic
       let timeSpecToMicro (TimeSpec s ns) = s * 1000000 + ns `div` 1000
@@ -625,7 +639,7 @@ replica Dict
              -- non-leaders think the lease is slightly longer.
              else (now, adjustForDrift leaseTimeout)
 
-      usend timerPid (self, t, LeaseRenewalTime)
+      usend timerPid (timerSP, t, LeaseRenewalTime)
       return leaseStart'
 
     -- A timer process. When receiving @(pid, t, msg)@, the process waits for
@@ -637,9 +651,9 @@ replica Dict
     timer :: Process ()
     timer = expect >>= wait
       where
-        wait :: (ProcessId, Int, TimerMessage) -> Process ()
-        wait (sender, t, msg) =
-          expectTimeout t >>= maybe (usend sender msg >> timer) wait
+        wait :: (SendPort TimerMessage, Int, TimerMessage) -> Process ()
+        wait (sp, t, msg) =
+          expectTimeout t >>= maybe (sendChan sp msg >> timer) wait
 
     -- The proposer process makes consensus proposals.
     -- Proposals are aborted when a reconfiguration occurs.
@@ -670,17 +684,17 @@ replica Dict
                   -- consume the final () if not blocked
                   when (not blocked) expect
                   return blocked
-            (αs', r', blocked) <- receiveWait
-                      [ match $ \() -> return (αs, r, False)
+            (αs', aborted, blocked) <- receiveWait
+                      [ match $ \() -> return (αs, False, False)
                       , match $ \αs' -> do
                           -- reconfiguration of the proposer
-                          (,,) αs' r <$> clearNotifications
-                      , match $ \r' -> do
+                          (,,) αs' False <$> clearNotifications
+                      , match $ \AbortProposerRequest -> do
                           -- Let the batcher know of the aborted request.
                           when (isNothing $ requestForLease request) $
                             usend bpid ()
                           -- a new request intended to replace the current one
-                          (,,) αs r' <$> clearNotifications
+                          (,,) αs True <$> clearNotifications
                       ]
             if blocked then do
               exit pid "proposer reconfiguration"
@@ -690,19 +704,21 @@ replica Dict
               --
               -- TODO: Consider if there is a way to avoid competition of
               -- proposers here.
-              usend self r'
+              unless aborted $ usend self r
               proposer ρ bpid s αs'
             else do
               (v',s') <- liftIO $ takeMVar mv
               usend ρ (d, v', request)
               proposer ρ bpid s' αs'
 
+        , match $ \AbortProposerRequest -> proposer ρ bpid s αs
         , match $ proposer ρ bpid s
         ]
 
     go :: ReplicaState s ref a -> Process b
     go st@(ReplicaState ppid timerPid ph leaseStart ρs d cd msref w0 w s
-                        epoch legD bpid stLogRestore stLogDump stLogNextState
+                        epoch legD bpid timerSP timerRP
+                        stLogRestore stLogDump stLogNextState
           ) =
      do
         self <- getSelfPid
@@ -748,19 +764,24 @@ replica Dict
                 }
 
         receiveWait
-            [ -- The lease is about to expire, so try to renew it.
-              matchIf (\_ -> w == cd) $ -- The log is up-to-date and fully
-                                        -- executed.
-                       \LeaseRenewalTime -> do
+            [ -- The lease is about to expire or it has already.
+              matchChan timerRP $ \LeaseRenewalTime -> do
                   mLeader <- liftIO $ getLeader
-                  cd' <- if maybe True (== here) mLeader then do
+                  cd' <- if Just here == mLeader
+                            || w == cd && isNothing mLeader then do
                       leaseRequest <-
                         mkLeaseRequest (decreeLegislatureId d) [] ρs
+                      -- If 'mLeader == Just here' we might produce an
+                      -- unreachable decree.
                       usend ppid (cd, leaseRequest)
-                      return $ succ cd
+                      -- We don't want to move the current decree to unreachable
+                      -- positions, otherwise the replica may think there is a
+                      -- gap if the legislature moves forward and the current
+                      -- decree is not reset to the watermark.
+                      return $ if w == cd then succ cd else cd
                     else
                       return cd
-                  usend timerPid (self, leaseTimeout, LeaseRenewalTime)
+                  usend timerPid (timerSP, leaseTimeout, LeaseRenewalTime)
                   go st{ stateCurrentDecree = cd' }
 
             , matchIf (\(Decree _ di _ :: Decree (Value a)) ->
@@ -837,7 +858,8 @@ replica Dict
                       -- Tick.
                       usend self Status
 
-                      leaseStart' <- setLeaseTimer timerPid requestStart ρs'
+                      leaseStart' <-
+                        setLeaseTimer timerPid timerSP requestStart ρs'
                       let epoch' = if take 1 ρs' /= take 1 ρs
                                      then decreeLegislatureId d'
                                      else epoch
@@ -1068,7 +1090,7 @@ replica Dict
                     when (legD < legD') $ updateAcceptors ρs'
 
                     leaseStart' <- if legD < legD'
-                                   then setLeaseTimer timerPid 0 ρs'
+                                   then setLeaseTimer timerPid timerSP 0 ρs'
                                    else return leaseStart
 
                     -- TODO: get the snapshot asynchronously
@@ -1116,7 +1138,7 @@ replica Dict
                   when (legD < legD') $ updateAcceptors ρs'
 
                   leaseStart' <- if legD < legD'
-                                 then setLeaseTimer timerPid 0 ρs''
+                                 then setLeaseTimer timerPid timerSP 0 ρs''
                                  else return leaseStart
 
                   let cd' = max d'' cd
@@ -1150,6 +1172,7 @@ replica Dict
                     -- no leaders and there is no quorum to elect one.
                     Nothing -> do
                       r <- mkLeaseRequest (decreeLegislatureId d) [π] ρs''
+                      usend ppid AbortProposerRequest
                       usend ppid (d, r)
 
                       -- Update the list of acceptors of the proposer, so we
