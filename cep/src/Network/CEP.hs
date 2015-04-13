@@ -14,7 +14,6 @@ module Network.CEP
        , occursWithin
        ) where
 
-import           Prelude hiding ((.), id)
 import           Data.Foldable (toList)
 import           Data.Monoid
 import qualified Data.Sequence as S
@@ -27,7 +26,9 @@ import qualified Data.MultiMap as M
 import           Data.Time
 import           FRP.Netwire
 
-import Network.CEP.Types
+import           Network.CEP.Types
+
+import           Prelude hiding ((.), id)
 
 -- | Subscribes for a specific type of event. Every time that event occures,
 --   this 'Process' will receive a 'Published a' message.
