@@ -61,6 +61,8 @@ module HA.Service
   , NodeFilter(..)
   , ConfigurationUpdate(..)
   , ConfigurationUpdateMsg
+  , ServiceStopRequest(..)
+  , ServiceStopRequestMsg
    -- * CH Paraphenalia
   , HA.Service.__remoteTable
 ) where
@@ -70,7 +72,7 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
 import Control.Distributed.Static (unstatic)
 import Control.Monad
-import Control.Monad.Reader ( ask )
+import Control.Monad.Reader ( ask, asks )
 
 import Data.Binary
 import Data.Binary.Put (runPut)
@@ -481,3 +483,33 @@ data ServiceUncaughtException = ServiceUncaughtException Node String String
     deriving (Typeable, Generic)
 
 instance Binary ServiceUncaughtException
+
+-- | A request to stop a service.
+data ServiceStopRequest =
+    forall a. Configuration a => ServiceStopRequest Node (Service a)
+    deriving Typeable
+
+newtype ServiceStopRequestMsg = ServiceStopRequestMsg BS.ByteString
+  deriving (Typeable, Binary)
+
+instance ProcessEncode ServiceStopRequest where
+    type BinRep ServiceStopRequest = ServiceStopRequestMsg
+
+    encodeP (ServiceStopRequest node svc@(Service _ _ d)) =
+        ServiceStopRequestMsg $ runPut $ do
+          put d
+          put node
+          put svc
+
+    decodeP (ServiceStopRequestMsg bs) = do
+        rt <- asks (remoteTable . processNode)
+        return $ runGet (action rt) bs
+      where
+        action rt = do
+            d <- get
+            case unstatic rt d of
+              Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) ->
+                do node               <- get
+                   (svc :: Service s) <- get
+                   return $ ServiceStopRequest node svc
+              Left err -> error $ "decode ServiceStopRequest: " ++ err

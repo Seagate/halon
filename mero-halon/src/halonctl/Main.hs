@@ -68,5 +68,5 @@ run (Options { .. }) = do
     liftIO $ printHeader
     case optCommand of
       Bootstrap bs -> bootstrap rnids bs
-      Service bs -> service rnids bs
+      Service bs   -> service rnids bs
   return ()

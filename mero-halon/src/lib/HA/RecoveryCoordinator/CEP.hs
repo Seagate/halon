@@ -120,6 +120,12 @@ rcRules argv eq = do
         i <- getNoisyPingCount
         liftProcess $ sayRC $ "Noisy ping count: " ++ show i
 
+    defineHAEvent "stop-request" id $ \(HAEvent _ msg _) -> do
+        ServiceStopRequest node svc <- decodeMsg msg
+        res                         <- lookupRunningService node svc
+        for_ res $ \sp ->
+          killService sp UserStop
+
     onEveryHAEvent $ \(HAEvent eid _ _) s -> do
         usend eq eid
         return s

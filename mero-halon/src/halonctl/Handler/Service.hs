@@ -78,6 +78,7 @@ data ServiceCmdOptions =
 data StandardServiceOptions a =
       StartCmd (StartCmdOptions a) -- ^ Start an instance of the service.
     | ReconfCmd (ReconfCmdOptions a)
+    | StopCmd (StopCmdOptions a)
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary a => Binary (StandardServiceOptions a)
@@ -99,6 +100,14 @@ data ReconfCmdOptions a =
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary a => Binary (ReconfCmdOptions a)
+
+-- | Options relevant to stopping a service.
+data StopCmdOptions a =
+    StopCmdOptions
+    [String] -- ^ EQ Nodes
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary a => Binary (StopCmdOptions a)
 
 -- | Construct a command for a 'standard' service, consisting of the usual
 --   start, stop and status subcommands.
@@ -123,10 +132,15 @@ mkStandardServiceCmd svc = let
                     <$> tsNodes
                     <*> mkParser schema)
                   "Reconfigure the service on a node.")
+    stopCmd = O.command "stop" $ StopCmd <$>
+              (O.withDesc
+                (StopCmdOptions <$> tsNodes)
+                "Stop the service on a node.")
   in O.command (snString . serviceName $ svc) (O.withDesc
       ( O.subparser
       $  startCmd
       <> reconfCmd
+      <> stopCmd
       )
       ("Control the " ++ (snString . serviceName $ svc) ++ " service."))
 
@@ -175,6 +189,7 @@ standardService :: Configuration a
 standardService nids sso svc = case sso of
   StartCmd (StartCmdOptions eqAddrs a) -> mapM_ (start svc a eqAddrs) nids
   ReconfCmd (ReconfCmdOptions eqAddrs a) -> reconf svc a eqAddrs (NodeFilter nids)
+  StopCmd (StopCmdOptions eqAddrs) -> mapM_ (stop svc eqAddrs) nids
 
 -- | Start a given service on a single node.
 start :: Configuration a
@@ -206,4 +221,17 @@ reconf s c eqAddrs nf = do
   where
     eqnids = fmap conjureRemoteNodeId eqAddrs
     msg eid = encodeP $ ConfigurationUpdate eid c s nf
+    wait = void (expect :: Process ProcessMonitorNotification)
+
+-- | Stop a given service on a single node.
+stop :: Configuration a
+     => Service a -- ^ Service to stop.
+     -> [String] -- ^ EQ Nodes to send stop messages to.
+     -> NodeId -- ^ Node on which to stop the service.
+     -> Process ()
+stop s eqAddrs nid = promulgateEQ eqnids ssrm
+    >>= \pid -> withMonitor pid wait
+  where
+    eqnids = fmap conjureRemoteNodeId eqAddrs
+    ssrm = encodeP $ ServiceStopRequest (Node nid) s
     wait = void (expect :: Process ProcessMonitorNotification)

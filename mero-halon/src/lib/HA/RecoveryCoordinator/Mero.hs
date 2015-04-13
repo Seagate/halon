@@ -62,6 +62,7 @@ module HA.RecoveryCoordinator.Mero
        , updateDriveStatus
        , getMultimapProcessId
        , getNoisyPingCount
+       , killService
        ) where
 
 import Prelude hiding ((.), id, mapM_)
@@ -407,12 +408,11 @@ _startService node svc cfg _ = void $ spawnLocal $ do
           ServiceStarted (Node node) svc cfg (ServiceProcess pid)
 
 -- | Kill a service on a remote node
-killService :: NodeId
-            -> ServiceProcess a
+killService :: ServiceProcess a
             -> ExitReason
-            -> Process ()
-killService _ (ServiceProcess pid) reason =
-  exit pid reason
+            -> CEP s ()
+killService (ServiceProcess pid) reason =
+  liftProcess $ exit pid reason
 
 bounceServiceTo :: Configuration a
                 => ConfigRole
@@ -420,14 +420,16 @@ bounceServiceTo :: Configuration a
                 -> Service a
                 -> CEP LoopState ()
 bounceServiceTo role n@(Node nid) s = do
-    liftProcess . _bounceServiceTo . lsGraph =<< State.get
+    _bounceServiceTo . lsGraph =<< State.get
   where
     _bounceServiceTo g = case runningService n s g of
         Just sp -> go sp
         Nothing -> error "Cannot bounce non-existent service."
       where
         go sp = case readConfig sp role g of
-          Just cfg -> killService nid sp Shutdown >> _startService nid s cfg g
+          Just cfg -> do
+            killService sp Shutdown
+            liftProcess $ _startService nid s cfg g
           Nothing -> error "Cannot find current configuation"
 
 prepareEpochResponse :: CEP LoopState EpochResponse
