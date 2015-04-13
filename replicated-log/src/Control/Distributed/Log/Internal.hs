@@ -835,8 +835,13 @@ replica Dict
               let adjustedPeriod = if here == head ρs
                     then leaseTimeout
                     else adjustForDrift leaseTimeout
+              -- The scheduler cannot handle timeouts yet, so we never let
+              -- the lease expire when using the scheduler.
               if not (null ρs) &&
-                now - leaseStart < fromInteger (toInteger adjustedPeriod * 1000)
+                (  schedulerIsEnabled
+                || now - leaseStart <
+                     fromInteger (toInteger adjustedPeriod * 1000)
+                )
               then return $ Just $ head ρs
               else return Nothing
 
