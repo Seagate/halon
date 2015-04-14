@@ -149,11 +149,18 @@ tests _ = do
             setup' (node0 : map localNodeId nodes) action
         setup' nodes action =
             withScheduler [] 1 $ do
+              let waitFor pid = monitor pid >> receiveWait
+                    [ matchIf (\(ProcessMonitorNotification _ pid' _) ->
+                                   pid == pid'
+                              )
+                              $ const $ return ()
+                    ]
               say $ "Spawning group."
               bracket (forM nodes $ flip
                          spawn $(mkStaticClosure 'snapshotServer)
                       )
-                      (mapM_ (flip exit "setup")) $ const $
+                      (mapM_ $ \pid -> exit pid "setup" >> waitFor pid) $
+                      const $
                 bracket (Log.new $(mkStatic 'State.commandEqDict)
                              ($(mkStatic 'State.commandSerializableDict)
                                 `staticApply` sdictState)
