@@ -11,7 +11,7 @@
 
 module HA.Services.SSPLHL where
 
-import Prelude hiding ((<$>), (<*>))
+import Prelude hiding ((<$>), (<*>), id, mapM_)
 import HA.EventQueue.Producer (promulgate)
 import HA.NodeAgent.Messages
 import HA.Service
@@ -51,8 +51,6 @@ import Network.AMQP
 
 import Options.Schema (Schema)
 import Options.Schema.Builder hiding (name, desc)
-
-import Prelude hiding (id, mapM_)
 
 --------------------------------------------------------------------------------
 -- Configuration                                                              --

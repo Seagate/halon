@@ -8,6 +8,7 @@
 --
 module HA.Services.DecisionLog.Types where
 
+import           Prelude hiding ((<$>))
 import qualified Data.ByteString      as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor ((<$>))

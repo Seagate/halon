@@ -43,7 +43,7 @@ module Control.Distributed.Log.Internal
     , callLocal
     ) where
 
-import Prelude hiding ((<$>), init, log)
+import Prelude hiding ((<$>), (<*>), init, log)
 import Control.Distributed.Log.Messages
 import Control.Distributed.Log.Policy (NominationPolicy)
 import Control.Distributed.Log.Policy as Policy
