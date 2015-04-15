@@ -22,7 +22,7 @@ module Mero.Notification.HAState
   , updateNVecRef
   ) where
 
-import HA.Resources.Mero
+import HA.Resources.Mero.Note
 
 import Mero.ConfC (Fid)
 import Network.RPC.RPCLite
@@ -33,6 +33,7 @@ import Control.Monad          ( liftM2 )
 import Data.Binary            ( Binary )
 import Data.ByteString as B   ( useAsCString )
 import Data.Dynamic           ( Typeable )
+import Data.Hashable          ( Hashable )
 import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef
                               , newIORef
                               )
@@ -59,6 +60,7 @@ data Note = Note
     } deriving (Eq, Typeable, Generic)
 
 instance Binary Note
+instance Hashable Note
 
 -- | Lists of notes
 type NVec = [Note]

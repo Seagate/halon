@@ -1,11 +1,14 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
 -- |
 -- Copyright : (C) 2013,2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
 -- Recovery coordinator CEP rules
 --
+
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
+
 module HA.RecoveryCoordinator.CEP where
 
 import Prelude hiding ((.), id)
@@ -28,7 +31,9 @@ import           HA.Resources.Mero
 import           HA.Service
 import qualified HA.Services.EQTracker as EQT
 import           HA.Services.DecisionLog (EntriesLogged(..))
+#ifdef USE_MERO_NOTE
 import           HA.Services.Mero (meroRules)
+#endif
 import           HA.Services.SSPL (ssplRules)
 
 rcRules :: IgnitionArguments -> ProcessId -> RuleM LoopState ()
@@ -138,7 +143,9 @@ rcRules argv eq = do
     setOnLog sendLogEntries
 
     ssplRules
+#ifdef USE_MERO_NOTE
     meroRules
+#endif
 
 sendLogEntries :: LogEntries -> LoopState -> Process ()
 sendLogEntries LogEntries{..} ls =

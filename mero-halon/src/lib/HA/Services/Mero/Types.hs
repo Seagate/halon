@@ -8,22 +8,28 @@
 --
 module HA.Services.Mero.Types where
 
-import Control.Applicative
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Data.Binary (Binary)
+import Data.Defaultable
 import Data.Hashable (Hashable)
+import Data.Monoid ((<>))
 
 import HA.ResourceGraph
 import HA.Service
 import HA.Service.TH
 import Mero.Notification (Set)
 import Options.Schema
+import Options.Schema.Builder
 
-data MeroConf = MeroConf deriving (Eq, Generic, Show, Typeable)
+data MeroConf = MeroConf {
+    mcServerAddr :: String
+  , mcMeroAddr :: String
+  , mcPersistencePath :: Defaultable FilePath
+} deriving (Eq, Generic, Show, Typeable)
 
 instance Binary MeroConf
 instance Hashable MeroConf
@@ -41,7 +47,7 @@ data DeclareMeroChannel =
     { dmcPid     :: !(ServiceProcess MeroConf)
     , dmcChannel :: !(TypedChannel Set)
     }
-    deriving Typeable
+    deriving (Generic, Typeable)
 
 instance Binary DeclareMeroChannel
 instance Hashable DeclareMeroChannel
@@ -55,7 +61,18 @@ relationDictMeroChanelServiceProcessChannel :: Dict (
 relationDictMeroChanelServiceProcessChannel = Dict
 
 meroSchema :: Schema MeroConf
-meroSchema = pure MeroConf
+meroSchema = MeroConf <$> sa <*> ma <*> pp where
+  sa = strOption
+        $  long "listenAddr"
+        <> short 'l'
+        <> metavar "LISTEN_ADDRESS"
+  ma = strOption
+        $  long "meroAddr"
+        <> short 'm'
+        <> metavar "MERO_ADDRESS"
+  pp = defaultable "hani_rpc" . strOption
+        $  long "persistencePath"
+        <> metavar "PATH"
 
 $(generateDicts ''MeroConf)
 $(deriveService ''MeroConf 'meroSchema [ 'resourceDictMeroChannel

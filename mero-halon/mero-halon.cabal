@@ -73,16 +73,13 @@ Library
   if flag(maintainer)
     Ghc-Options: -Werror
 
-  Exposed-Modules: Mero.Epoch
-                   Mero.Genders
+  Exposed-Modules: Mero.Genders
                    Mero.FakeEpoch
-                   Mero.Notification
                    Mero.Messages
                    Mero.RemoteTables
                    HA.Network.Transport
                    HA.Services.DecisionLog
                    HA.Services.Frontier
-                   HA.Services.Mero
                    HA.Services.SSPL
                    HA.Services.SSPLHL
                    HA.RecoveryCoordinator.Mero
@@ -93,8 +90,6 @@ Library
   Other-Modules:   HA.Services.DecisionLog.CEP
                    HA.Services.DecisionLog.Types
                    HA.Services.Frontier.Command
-                   HA.Services.Mero.CEP
-                   HA.Services.Mero.Types
                    HA.Services.SSPL.CEP
                    HA.Services.SSPL.Rabbit
                    HA.Services.SSPL.LL.Resources
@@ -124,7 +119,12 @@ Library
                    netwire
 
   if flag(mero-note)
-      Exposed-Modules: Mero.Notification.HAState
+      Exposed-Modules: Mero.Epoch
+                       Mero.Notification
+                       Mero.Notification.HAState
+                       HA.Services.Mero
+      Other-Modules: HA.Services.Mero.CEP
+                     HA.Services.Mero.Types
       c-sources: hastate/hastate.c
                  hastate/hastate_fops.c
                  hastate/hastate_foms.c

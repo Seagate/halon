@@ -10,7 +10,6 @@
 --
 -- This module is intended to be imported qualified.
 
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 {-# OPTIONS_GHC -fno-warn-dodgy-exports #-}
@@ -21,19 +20,22 @@ module Mero.Notification
     , GetReply(..)
     , initialize
     , finalize
-    , matchSet
+    , notifyMero
     ) where
 
-#ifdef USE_MERO_NOTE
+import Control.Distributed.Process
+
 import Mero.ConfC (Fid)
 import Mero.Notification.HAState
 import HA.EventQueue.Producer (promulgate)
-import HA.Network.Transport
 import Network.RPC.RPCLite
   ( ListenCallbacks(..)
+  , RPCAddress
   , ServerEndpoint
+  , initRPCAt
+  , finalizeRPC
   , listen
-  , rpcAddress)
+  )
 import Control.Distributed.Process.Internal.Types ( processNode, LocalNode )
 import qualified Control.Distributed.Process.Node as CH ( runProcess )
 import Control.Monad ( void )
@@ -42,27 +44,6 @@ import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
-
-#ifdef USE_RPC
-import HA.Network.Transport
-import Network.Transport.RPC (serverEndPoint)
-#else
-import Control.Concurrent.MVar
-import System.IO.Unsafe (unsafePerformIO)
-#endif
-
-#endif
-
-import Control.Distributed.Process
-
-
-#ifdef USE_MERO_NOTE
-
-#ifndef USE_RPC
--- | Local endpoint
-localRPCEndpoint :: MVar ServerEndpoint
-localRPCEndpoint = unsafePerformIO $ newEmptyMVar
-#endif
 
 -- | This message is sent to the RC when Mero informs of a state change.
 --
@@ -84,30 +65,27 @@ newtype GetReply = GetReply NVec
         deriving (Generic, Typeable, Binary)
 
 -- | Initialiazes the Notification subsystem.
-initialize :: Process ()
-initialize = do
+initialize :: FilePath -- ^ Persistence path for RPC.
+           -> RPCAddress -- ^ Listen address.
+           -> Process ServerEndpoint
+initialize fp addr = do
     lnode <- fmap processNode ask
     self <- getSelfPid
+    liftIO $ initRPCAt fp
+    ep <- liftIO $ listen "m0_halon" addr listenCallbacks
     liftIO $ initHAState (ha_state_get self lnode)
                          (ha_state_set lnode)
-#ifndef USE_RPC
-    liftIO $ do
-      ep <- listen "m0_halon" addr listenCallbacks
-      void $ tryPutMVar localRPCEndpoint ep
-#endif
+    return ep
   where
-#ifndef USE_RPC
-    addr = rpcAddress ""
     listenCallbacks = ListenCallbacks {
       receive_callback = \_ _ -> return False
     }
-#endif
     ha_state_get :: ProcessId -> LocalNode -> NVecRef -> IO ()
     ha_state_get parent lnode nvecr =
       CH.runProcess lnode $ void $ spawnLocal $ do
         link parent
         self <- getSelfPid
-        liftIO (readNVecRef nvecr) >>= promulgate . Get self . map no_id
+        _ <- liftIO (readNVecRef nvecr) >>= promulgate . Get self . map no_id
         GetReply nvec <- expect
         liftIO $ updateNVecRef nvecr nvec
         liftIO $ doneGet nvecr 0
@@ -119,39 +97,11 @@ initialize = do
 
 -- | Finalize the Notification subsystem.
 finalize :: Process ()
-finalize = liftIO finiHAState
+finalize = liftIO $ finiHAState >> finalizeRPC
 
--- | Reacts to 'Set' messages by notifying Mero.
-matchSet :: Process a -> [Match a]
-#ifdef USE_RPC
-matchSet cont =
-  [  match $ \(Set nvec) -> do
-      transport <- liftIO readTransportGlobalIVar
-      liftIO $ notify (serverEndPoint transport) (rpcAddress "") nvec 5
-      cont
-  ]
-#else
-matchSet cont =
-  [  match $ \(Set nvec) -> do
-      endPoint <- liftIO . readMVar $ localRPCEndpoint
-      liftIO $ notify endPoint (rpcAddress "") nvec 5
-      cont
-  ]
-#endif
-
-#else
-
-data Set
-data Get
-data GetReply
-
-initialize :: Process ()
-initialize = return ()
-
-finalize :: Process ()
-finalize = return ()
-
-matchSet :: Process a -> [Match a]
-matchSet _ = []
-
-#endif
+notifyMero :: ServerEndpoint
+           -> RPCAddress
+           -> Set
+           -> Process ()
+notifyMero ep mero (Set nvec) = liftIO $
+  notify ep mero nvec 5

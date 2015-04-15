@@ -7,6 +7,7 @@
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE TemplateHaskell       #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
@@ -25,136 +26,121 @@ module HA.Services.Mero
 
 import HA.EventQueue.Producer (expiate, promulgate)
 import HA.RecoveryCoordinator.Mero (LoopState)
-import HA.ResourceGraph hiding (null)
 import HA.Resources
 import HA.Service
-import HA.Service.TH
-import HA.Services.Empty
+import HA.Services.Mero.CEP (meroRulesF)
 import HA.Services.Mero.Types
+
+import Mero.Epoch (sendEpochBlocking)
 import qualified Mero.Notification
+
+import qualified Network.RPC.RPCLite as RPC
+
 import Control.Distributed.Process.Closure
   (
     remotableDecl
   , mkStatic
   , mkStaticClosure
   )
-import Control.Applicative
 import Control.Distributed.Static
   ( staticApply )
-import System.Process
 import Control.Distributed.Process hiding (send)
-import System.IO
-import System.Directory (doesFileExist, removeFile)
-import Control.Monad (forever, unless, when, void)
-import Control.Concurrent (threadDelay)
--- XXX We probably want USE_MERO here, rather than USE_RPC.
-#ifdef USE_RPC
-import Mero.Epoch (sendEpochBlocking)
-import qualified Network.Transport.RPC as RPC
-#endif
-import Mero.Messages
-import Network.CEP (RuleM)
+import Control.Monad (forever, when, void)
+
 import Data.ByteString (ByteString)
+import Data.Defaultable (fromDefault)
 
-updateEpoch :: EpochId -> Process EpochId
--- XXX We probably want USE_MERO here, rather than USE_RPC.
-#ifdef USE_RPC
-updateEpoch epoch = do
-    mnewepoch <- liftIO $ sendEpochBlocking (RPC.rpcAddress "0@lo:12345:34:100") epoch 5
-    case mnewepoch of
-      Just newepoch ->
-        do say $ "Updated epoch to "++show epoch
-           return newepoch
-      Nothing -> return 0
-#else
-updateEpoch _ = error "updateEpoch: RPC support required."
-#endif
+import Network.CEP (RuleM)
 
-sendMeroChannel :: Process ()
-sendMeroChannel = do
-    c   <- spawnChannelLocal statusProcess
-    pid <- getSelfPid
-    let chan = DeclareMeroChannel (ServiceProcess pid) (TypedChannel c)
-    promulgate chan
+updateEpoch :: RPC.ServerEndpoint
+            -> RPC.RPCAddress
+            -> EpochId -> Process EpochId
+updateEpoch ep m0addr epoch = do
+  mnewepoch <- liftIO $ sendEpochBlocking ep m0addr epoch 5
+  case mnewepoch of
+    Just newepoch ->
+      do say $ "Updated epoch to "++show epoch
+         return newepoch
+    Nothing -> return 0
 
-statusProcess :: ReceivePort Mero.Notification.Set -> Process ()
-statusProcess _ = return ()
+sendMeroChannel :: SendPort Mero.Notification.Set -> Process ()
+sendMeroChannel c = do
+  pid <- getSelfPid
+  let chan = DeclareMeroChannel (ServiceProcess pid) (TypedChannel c)
+  void $ promulgate chan
 
-meroRules :: RuleM LoopState ()
-meroRules = meroRulesF m0d
+statusProcess :: RPC.ServerEndpoint
+              -> RPC.RPCAddress
+              -> ProcessId
+              -> ReceivePort Mero.Notification.Set
+              -> Process ()
+statusProcess ep m0addr pid rp = link pid >> (forever $ do
+    set <- receiveChan rp
+    Mero.Notification.notifyMero ep m0addr set
+  )
 
 remotableDecl [ [d|
 
-    m0d :: Service MeroConf
-    m0d = Service
-            meroServiceName
-            $(mkStaticClosure 'm0dProcess)
-            ($(mkStatic 'someConfigDict)
-                `staticApply` $(mkStatic 'configDictMeroConf))
+  m0d :: Service MeroConf
+  m0d = Service
+          meroServiceName
+          $(mkStaticClosure 'm0dProcess)
+          ($(mkStatic 'someConfigDict)
+              `staticApply` $(mkStatic 'configDictMeroConf))
 
-    m0dProcess :: MeroConf -> Process ()
-    m0dProcess _ = do
-        say $ "Starting service m0d"
-        self <- getSelfPid
-        bracket
-          (liftIO $ createProcess $ proc "mero_call" ["m0d"])
-          (\(_, _, _, h_m0d) -> liftIO $ terminateAndWait h_m0d) $
-          \_ -> bracket_ Mero.Notification.initialize Mero.Notification.finalize $ do
-            -- give m0d a chance to fire up
-            liftIO $ threadDelay 10000000
-            bracket
-              (liftIO $ createProcess $ (proc "mero_call" ["m0ctl"]) { std_out = CreatePipe })
-              (\(_, _, _, h_m0ctl) -> liftIO $ terminateAndWait h_m0ctl) $
-              \(_, Just out, _, h_m0ctl) -> do
-                sendMeroChannel
-                go 0
+  m0dProcess :: MeroConf -> Process ()
+  m0dProcess MeroConf{..} = do
+      say $ "Starting service m0d"
+      self <- getSelfPid
+      bracket
+        (Mero.Notification.initialize fp haAddr)
+        (\_ -> Mero.Notification.finalize) $
+        \ep -> do
+          c <- spawnChannelLocal $ statusProcess ep m0addr self
+          sendMeroChannel c
+          go ep 0
+    where
+      fp = fromDefault mcPersistencePath
+      haAddr = RPC.rpcAddress mcServerAddr
+      m0addr = RPC.rpcAddress mcMeroAddr
+      go ep epoch = do
+          let shutdownAndTellThem = do
+                node <- getSelfNode
+                pid  <- getSelfPid
+                expiate . encodeP $ ServiceFailed (Node node) m0d pid -- XXX
+          receiveWait $
+            [ match $ \(EpochTransition epochExpected epochTarget state) -> do
+                say $ "Service wrapper got new equation: " ++ show (state::ByteString)
+                wrapperPid <- getSelfPid
+                if epoch < epochExpected
+                   then do promulgate $ EpochTransitionRequest wrapperPid epoch epochTarget
+                           go ep epoch
+                   else do updatedEpoch <- updateEpoch ep m0addr epochTarget
+                           -- if new epoch is rejected, die
+                           when (updatedEpoch < epochTarget) $ shutdownAndTellThem
+                           go ep updatedEpoch
+            , match $ \buf ->
+                case examine buf of
+                   True -> go ep epoch
+                   False -> shutdownAndTellThem
+            , match $ \() ->
+                shutdownAndTellThem
+            ]
 
-      where
-        spawnLinked p = do
-            self <- getSelfPid
-            spawnLocal $ do
-              link self
-              p
-        terminateAndWait h = do
-            terminateProcess h
-            void $ waitForProcess h
-
-        go epoch = do
-            let shutdownAndTellThem = do
-                  node <- getSelfNode
-                  pid  <- getSelfPid
-                  expiate . encodeP $ ServiceFailed (Node node) m0d pid -- XXX
-            receiveWait $
-              [ match $ \(EpochTransition epochExpected epochTarget state) -> do
-                  say $ "Service wrapper got new equation: " ++ show (state::ByteString)
-                  wrapperPid <- getSelfPid
-                  if epoch < epochExpected
-                     then do promulgate $ EpochTransitionRequest wrapperPid epoch epochTarget
-                             go epoch
-                     else do updatedEpoch <- updateEpoch epochTarget
-                             -- if new epoch is rejected, die
-                             when (updatedEpoch < epochTarget) $ shutdownAndTellThem
-                             go updatedEpoch
-              , match $ \buf ->
-                  case examine buf of
-                     True -> go epoch
-                     False -> shutdownAndTellThem
-              , match $ \() ->
-                  shutdownAndTellThem
-              ]
-              ++ Mero.Notification.matchSet (go epoch)
-
-        -- In lieu of properly parsing the YAML output,
-        -- we just aply a simple heuristic. This may or
-        -- may not be adequate in the long term. Returns
-        -- true if okay, false otherwise.
-        examine :: [String] -> Bool
-        examine xs = not $ or $ map hasError xs
-           where
-             hasError line =
-                let w = words line
-                 in if length w > 0
-                       then head w == "error:" ||
-                            last w == "FAILED"
-                       else False
+      -- In lieu of properly parsing the YAML output,
+      -- we just aply a simple heuristic. This may or
+      -- may not be adequate in the long term. Returns
+      -- true if okay, false otherwise.
+      examine :: [String] -> Bool
+      examine xs = not $ or $ map hasError xs
+         where
+           hasError line =
+              let w = words line
+               in if length w > 0
+                     then head w == "error:" ||
+                          last w == "FAILED"
+                     else False
     |] ]
+
+meroRules :: RuleM LoopState ()
+meroRules = meroRulesF m0d

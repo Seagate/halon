@@ -75,19 +75,12 @@ import HA.Services.Empty
 import HA.Services.Noisy
 
 import HA.Resources.Mero
-#ifdef USE_MERO_NOTE
-import HA.Resources.Mero.Note
-#endif
+
 import HA.NodeAgent.Messages
 import qualified HA.Services.EQTracker as EQT
 
 import HA.EventQueue.Producer (promulgateEQ)
 import qualified HA.ResourceGraph as G
-
-#ifdef USE_MERO_NOTE
-import qualified Mero.Notification
-import Mero.Notification.HAState
-#endif
 
 import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Closure
@@ -577,43 +570,5 @@ makeRecoveryCoordinator mm rm = do
       addRuleFinalizer $ \ls -> do
         newGraph <- G.sync $ lsGraph ls
         return ls { lsGraph = newGraph }
-
-#ifdef USE_MERO_NOTE
-meroGetNotification :: ProcessId
-                    -> ComplexEvent LoopState Input LoopState
-meroGetNotification eq = repeatedly go . decoded
-  where
-    go ls@(LoopState rg _) (HAEvent eid (Mero.Notification.Get pid objs) _) =
-        liftProcess $ do
-          let f oid = Note oid $ head $ G.connectedTo (ConfObject oid) Is rg
-              nvec  = map f objs
-          usend pid $ Mero.Notification.GetReply nvec
-          usend eq eid
-          return ls
-
-meroSetNotification :: ProcessId
-                    -> ComplexEvent LoopState Input LoopState
-meroSetNotification eq = repeatedly go . decoded
-  where
-    go ls@(LoopState rg _) (HAEvent eid (Mero.Notification.Set nvec) _) =
-        liftProcess $ do
-          let f rg1 (Note oid st) =
-                let edges :: [G.Edge ConfObject Is ConfObjectState]
-                    edges = G.edgesFromSrc (ConfObject oid) rg
-                    -- Disconnect object from any existing state and reconnect
-                    -- it to a new one.
-                in G.connect (ConfObject oid) Is st $
-                     foldr G.deleteEdge rg1 edges
-              rg'      = foldl' f rg nvec
-              m0dNodes = [ node | node <- G.connectedTo Cluster Has rg'
-                                , isJust $ runningService node m0d rg' ]
-          forM_ m0dNodes $ \(Node them) ->
-            nsendRemote them (snString $ serviceName m0d) $
-              Mero.Notification.Set nvec
-          usend eq eid
-          newGraph <- G.sync rg'
-          return ls { lsGraph = newGraph }
-
-#endif
 
 -- remotable [ 'recoveryCoordinator ]
