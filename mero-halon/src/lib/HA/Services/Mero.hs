@@ -2,17 +2,35 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DeriveDataTypeable    #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
-module HA.Services.Mero (m0d, HA.Services.Mero.__remoteTableDecl) where
+module HA.Services.Mero
+    ( MeroChannel(..)
+    , TypedChannel(..)
+    , m0d
+    , HA.Services.Mero.__remoteTableDecl
+    , HA.Services.Mero.Types.__remoteTable
+    , m0dProcess__sdict
+    , m0dProcess__tdict
+    , m0d__static
+    , meroRules
+    ) where
 
 import HA.EventQueue.Producer (expiate, promulgate)
+import HA.RecoveryCoordinator.Mero (LoopState)
+import HA.ResourceGraph hiding (null)
 import HA.Resources
 import HA.Service
+import HA.Service.TH
 import HA.Services.Empty
+import HA.Services.Mero.Types
 import qualified Mero.Notification
 import Control.Distributed.Process.Closure
   (
@@ -20,6 +38,7 @@ import Control.Distributed.Process.Closure
   , mkStatic
   , mkStaticClosure
   )
+import Control.Applicative
 import Control.Distributed.Static
   ( staticApply )
 import System.Process
@@ -34,6 +53,7 @@ import Mero.Epoch (sendEpochBlocking)
 import qualified Network.Transport.RPC as RPC
 #endif
 import Mero.Messages
+import Network.CEP (RuleM)
 import Data.ByteString (ByteString)
 
 updateEpoch :: EpochId -> Process EpochId
@@ -50,16 +70,29 @@ updateEpoch epoch = do
 updateEpoch _ = error "updateEpoch: RPC support required."
 #endif
 
+sendMeroChannel :: Process ()
+sendMeroChannel = do
+    c   <- spawnChannelLocal statusProcess
+    pid <- getSelfPid
+    let chan = DeclareMeroChannel (ServiceProcess pid) (TypedChannel c)
+    promulgate chan
+
+statusProcess :: ReceivePort Mero.Notification.Set -> Process ()
+statusProcess _ = return ()
+
+meroRules :: RuleM LoopState ()
+meroRules = meroRulesF m0d
+
 remotableDecl [ [d|
 
-    m0d :: Service EmptyConf
+    m0d :: Service MeroConf
     m0d = Service
-            (ServiceName "m0d")
+            meroServiceName
             $(mkStaticClosure 'm0dProcess)
             ($(mkStatic 'someConfigDict)
-                `staticApply` $(mkStatic 'configDictEmptyConf))
+                `staticApply` $(mkStatic 'configDictMeroConf))
 
-    m0dProcess :: EmptyConf -> Process ()
+    m0dProcess :: MeroConf -> Process ()
     m0dProcess _ = do
         say $ "Starting service m0d"
         self <- getSelfPid
@@ -73,8 +106,7 @@ remotableDecl [ [d|
               (liftIO $ createProcess $ (proc "mero_call" ["m0ctl"]) { std_out = CreatePipe })
               (\(_, _, _, h_m0ctl) -> liftIO $ terminateAndWait h_m0ctl) $
               \(_, Just out, _, h_m0ctl) -> do
-                _ <- spawnLinked $ dummyStripingMonitor
-                _ <- spawnLinked $ m0ctlMonitor self out h_m0ctl
+                sendMeroChannel
                 go 0
 
       where
@@ -86,28 +118,6 @@ remotableDecl [ [d|
         terminateAndWait h = do
             terminateProcess h
             void $ waitForProcess h
-        dummyStripingMonitor = forever $ do
-            node <- getSelfNode
-            let dummyFile = "dummy-striping-error"
-            liftIO $ threadDelay 1000000
-            exists <- liftIO $ doesFileExist dummyFile
-            when exists $ do
-              liftIO $ removeFile dummyFile
-              void $ promulgate (StripingError (Node node))
-
-        m0ctlMonitor srv out h_m0ctl = loop [] where
-          loop buf = do
-            let cleanup = do
-                    unless (null buf) $ usend srv (reverse buf)
-                    usend srv ()
-            exited <- liftIO $ getProcessExitCode h_m0ctl
-            case exited of
-              Just _ -> cleanup
-              _ -> do line <- liftIO (hGetLine out) `onException` cleanup
-                      case (head line=='-', null buf) of
-                        (True,False) -> usend srv (reverse buf) >> loop []
-                        (True,True) -> loop []
-                        (_,_) -> loop (line:buf)
 
         go epoch = do
             let shutdownAndTellThem = do

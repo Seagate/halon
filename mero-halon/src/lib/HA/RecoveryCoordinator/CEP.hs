@@ -28,6 +28,7 @@ import           HA.Resources.Mero
 import           HA.Service
 import qualified HA.Services.EQTracker as EQT
 import           HA.Services.DecisionLog (EntriesLogged(..))
+import           HA.Services.Mero (meroRules)
 import           HA.Services.SSPL (ssplRules)
 
 rcRules :: IgnitionArguments -> ProcessId -> RuleM LoopState ()
@@ -137,6 +138,7 @@ rcRules argv eq = do
     setOnLog sendLogEntries
 
     ssplRules
+    meroRules
 
 sendLogEntries :: LogEntries -> LoopState -> Process ()
 sendLogEntries LogEntries{..} ls =

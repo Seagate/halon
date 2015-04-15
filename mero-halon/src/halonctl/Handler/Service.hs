@@ -29,6 +29,7 @@ import HA.Service
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy       as Dummy
 import qualified HA.Services.Frontier    as Frontier
+import qualified HA.Services.Mero        as Mero
 import qualified HA.Services.Noisy       as Noisy
 import qualified HA.Services.SSPL        as SSPL
 import qualified HA.Services.SSPLHL      as SSPLHL
@@ -71,6 +72,7 @@ data ServiceCmdOptions =
     | SSPLHLServiceCmd (StandardServiceOptions SSPLHL.SSPLHLConf)
     | FrontierServiceCmd (StandardServiceOptions Frontier.FrontierConf)
     | DLogServiceCmd (StandardServiceOptions DLog.DecisionLogConf)
+    | MeroServiceCmd (StandardServiceOptions Mero.MeroConf)
   deriving (Eq, Show, Generic, Typeable)
 
 -- | Options for a 'standard' service. This consists of a set of subcommands
@@ -163,7 +165,10 @@ parseService =
          mkStandardServiceCmd Frontier.frontier)
     ) <|>
     (DLogServiceCmd <$> (O.subparser $
-         mkStandardServiceCmd DLog.decisionLog))
+         mkStandardServiceCmd DLog.decisionLog)
+    ) <|>
+    (MeroServiceCmd <$> (O.subparser $
+         mkStandardServiceCmd Mero.m0d))
 
 -- | Handle the "service" command.
 --   The "service" command is basically a wrapper around a number of commands
@@ -179,6 +184,7 @@ service nids so = case so of
   SSPLHLServiceCmd sso   -> standardService nids sso SSPLHL.sspl
   FrontierServiceCmd sso -> standardService nids sso Frontier.frontier
   DLogServiceCmd sso     -> standardService nids sso DLog.decisionLog
+  MeroServiceCmd sso     -> standardService nids sso Mero.m0d
 
 -- | Handle an instance of a "standard service" command.
 standardService :: Configuration a

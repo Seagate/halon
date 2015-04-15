@@ -13,7 +13,7 @@ import HA.Resources.Mero.Note ( __remoteTable )
 
 import HA.Services.DecisionLog ( __remoteTable, __remoteTableDecl )
 import HA.Services.Frontier ( __remoteTable, __remoteTableDecl )
-import HA.Services.Mero ( __remoteTableDecl )
+import HA.Services.Mero ( __remoteTable, __remoteTableDecl )
 import HA.Services.SSPL ( __remoteTable, __remoteTableDecl )
 import HA.Services.SSPLHL ( __remoteTable, __remoteTableDecl )
 import HA.RecoveryCoordinator.Definitions ( __remoteTable )
@@ -27,6 +27,7 @@ meroRemoteTable next =
    HA.Resources.Mero.Note.__remoteTable $
 #endif
    HA.Services.Mero.__remoteTableDecl $
+   HA.Services.Mero.__remoteTable $
    HA.Services.SSPL.__remoteTable $
    HA.Services.SSPL.__remoteTableDecl $
    HA.Services.SSPLHL.__remoteTable $

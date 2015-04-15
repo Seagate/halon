@@ -39,6 +39,7 @@ import qualified Control.Distributed.Process.Node as CH ( runProcess )
 import Control.Monad ( void )
 import Control.Monad.Reader ( ask )
 import Data.Binary (Binary)
+import Data.Hashable (Hashable)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
@@ -69,7 +70,7 @@ localRPCEndpoint = unsafePerformIO $ newEmptyMVar
 -- and the change has to be communicated to Mero.
 --
 newtype Set = Set NVec
-        deriving (Generic, Typeable, Binary)
+        deriving (Generic, Typeable, Binary, Hashable)
 
 -- | This message is sent to the RC when Mero requests state data for some
 -- objects.
