@@ -24,6 +24,7 @@ import           HA.NodeAgent.Messages
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
 import           HA.Resources
+import           HA.Resources.Mero
 import           HA.Service
 import qualified HA.Services.EQTracker as EQT
 import           HA.Services.DecisionLog (EntriesLogged(..))
@@ -38,14 +39,17 @@ rcRules argv eq = do
         bounceServiceTo Intended n svc
 
     -- Node Up
-    defineHAEvent "node-up" id $ \(HAEvent _ (NodeUp pid) _) -> do
+    defineHAEvent "node-up" id $ \(HAEvent _ (NodeUp h pid) _) -> do
         let nid  = processNodeId pid
             node = Node nid
 
         ack pid
         known <- knownResource node
         when (not known) $ do
+          let host = Host h
           registerNode node
+          registerHost host
+          locateNodeOnHost node host
           startEQTracker nid
 
     -- Service Start

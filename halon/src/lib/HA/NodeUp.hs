@@ -6,8 +6,10 @@
 -- process is spawned which is responsible for sending `NodeUp` messages
 -- to the RC until it acknowledges, at which point the process dies.
 
+{-# LANGUAGE DeriveDataTypeable         #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell            #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
@@ -31,14 +33,24 @@ import Control.Distributed.Process
   , say
   )
 import Control.Distributed.Process.Closure ( remotable )
+import Control.Monad.Trans (liftIO)
 
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.Typeable (Typeable)
 
+import GHC.Generics (Generic)
+
+import Network.HostName
+
 -- | NodeUp message sent to the RC (via EQ) when a node starts.
-newtype NodeUp = NodeUp ProcessId
-  deriving (Eq, Show, Typeable, Binary, Hashable)
+data NodeUp = NodeUp
+              String -- ^ Node hostname
+              ProcessId
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary NodeUp
+instance Hashable NodeUp
 
 -- | Process which repeatedly sends 'NodeUp' messages to the EQ, until
 --   one is acknowledged with a '()' reply.
@@ -50,7 +62,8 @@ nodeUp (eqs, delay) = getSelfPid >>= go
   where
     go pid = do
       say $ "Sending NodeUp message to " ++ show eqs
-      _ <- promulgateEQ eqs $ NodeUp pid
+      h <- liftIO $ getHostName
+      _ <- promulgateEQ eqs $ NodeUp h pid
       msg <- expectTimeout delay
       case msg of
         Nothing -> go pid

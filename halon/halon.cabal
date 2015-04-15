@@ -103,7 +103,8 @@ Library
                    cep,
                    netwire,
                    template-haskell,
-                   distributed-process-async >= 0.2
+                   distributed-process-async >= 0.2,
+                   hostname
   if flag(rpc)
     Build-Depends: rpclite,
                    network-transport,
