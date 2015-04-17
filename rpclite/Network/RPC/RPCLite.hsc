@@ -20,7 +20,7 @@ module Network.RPC.RPCLite
     -- * Client side API
     , ClientEndpoint
     , RPCAddress(..)
-	  , rpcAddress
+    , rpcAddress
     , createClientEndpoint
     , destroyClientEndpoint
     , Connection
@@ -309,13 +309,13 @@ data ListenCallbacks = ListenCallbacks
 -- | Creates a server endpoint at the specified RPC address.
 listen :: String              -- ^ prefix to use when the service creates files on disk.
                               -- It must be different for every service which is currently
-							  -- running or behavior would be undefined.
+                              -- running or behavior would be undefined.
           -> RPCAddress       -- ^ address of the service
-		  -> ListenCallbacks  -- ^ service callbacks
-		  -> IO ServerEndpoint
+          -> ListenCallbacks  -- ^ service callbacks
+          -> IO ServerEndpoint
 listen persistencePrefix (RPCAddress rpcAddr) cbs = do
     alloca$ \pse -> withCString persistencePrefix$ \cPersistencePrefix ->
-	  useAsCString rpcAddr$ \cRPCAddr ->
+      useAsCString rpcAddr$ \cRPCAddr ->
         allocaBytesAligned #{size rpc_listen_callbacks_t}
                            #{alignment rpc_listen_callbacks_t}$ \pcbs -> do
           wrecv <- wrapRecvCB$ receive_callback cbs
