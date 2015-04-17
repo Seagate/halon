@@ -57,6 +57,11 @@ import Control.Distributed.Log.Policy as Policy
     )
 import Control.Distributed.Process.Batcher
 import Control.Distributed.Process.Consensus hiding (Value)
+import Control.Distributed.Process.ProcessPool
+    ( submitTask
+    , ProcessPool
+    , newProcessPool
+    )
 import Control.Distributed.Process.Timeout
 
 -- Preventing uses of spawn and call because of
@@ -304,18 +309,29 @@ sendReplica name nid = nsendRemote nid $ replicaLabel name
 sendAcceptor :: Serializable a => String -> NodeId -> a -> Process ()
 sendAcceptor name nid = nsendRemote nid $ acceptorLabel name
 
-queryMissingFrom :: String
+sendReplicaAsync :: Serializable a
+                 => ProcessPool NodeId -> String -> NodeId -> a -> Process ()
+sendReplicaAsync pool name nid a =
+    submitTask pool nid (sendReplica name nid a)
+      >>= maybe (return ()) spawnWorker
+  where
+    spawnWorker worker = do
+      self <- getSelfPid
+      void $ spawnLocal $ link self >> linkNode nid >> worker
+
+queryMissingFrom :: ProcessPool NodeId
+                 -> String
                  -> Int      -- ^ next decree to execute
                  -> [NodeId] -- ^ replicas to query
                  -> Map.Map Int (Value a) -- ^ log
                  -> Process ()
-queryMissingFrom name w replicas log = do
+queryMissingFrom sendPool name w replicas log = do
     let pw = pred w
         ns = concat $ gaps $ (pw:) $ Map.keys $ snd $ Map.split pw log
     self <- getSelfPid
     forM_ ns $ \n -> do
         forM_ replicas $ \ρ -> do
-            sendReplica name ρ $ Query self n
+            sendReplicaAsync sendPool name ρ $ Query self n
 
 -- | A dictionary with the persistent operations used by replicas.
 data PersistenceHandle a = PersistenceHandle
@@ -401,6 +417,8 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
   , stateTimerSP           :: SendPort TimerMessage
     -- | A port used to receive timeout notifications
   , stateTimerRP           :: ReceivePort TimerMessage
+    -- | A pool of processes to send messages asynchronously
+  , stateSendPool          :: ProcessPool NodeId
 
   -- from Log {..}
   , stateLogRestore        :: ref -> Process s
@@ -548,7 +566,9 @@ replica Dict
                                       else succ $ fst $ Map.findMax log
                  }
         others = filter (/= here) replicas
-    queryMissingFrom logName (decreeNumber w0) others $
+
+    sendPool <- newProcessPool
+    queryMissingFrom sendPool logName (decreeNumber w0) others $
         Map.insert (decreeNumber d) undefined log
 
     (timerSP, timerRP) <- newChan
@@ -574,6 +594,7 @@ replica Dict
          , stateBatcher  = bpid
          , stateTimerSP = timerSP
          , stateTimerRP = timerRP
+         , stateSendPool = sendPool
          , stateLogRestore = logRestore
          , stateLogDump = logDump
          , stateLogNextState = logNextState
@@ -717,7 +738,7 @@ replica Dict
 
     go :: ReplicaState s ref a -> Process b
     go st@(ReplicaState ppid timerPid ph leaseStart ρs d cd msref w0 w s
-                        epoch legD bpid timerSP timerRP
+                        epoch legD bpid timerSP timerRP sendPool
                         stLogRestore stLogDump stLogNextState
           ) =
      do
@@ -796,7 +817,8 @@ replica Dict
                   -- Advertise our configuration to other replicas if we are
                   -- getting old decrees.
                   forM_ others $ \ρ ->
-                    sendReplica logName ρ $ Max self legD d epoch ρs
+                    sendReplicaAsync sendPool logName ρ $
+                      Max self legD d epoch ρs
                   go st
 
               -- Commit the decree to the log.
@@ -1039,7 +1061,7 @@ replica Dict
                       locale = if v == vi then Local κs' else Remote
                   usend self $ Decree locale di vi
                   forM_ others $ \ρ -> do
-                      sendReplica logName ρ $ Decree Remote di vi
+                    sendReplicaAsync sendPool logName ρ $ Decree Remote di vi
 
                   when (v /= vi && isNothing rLease) $
                     -- Send rejection ack.
@@ -1127,7 +1149,8 @@ replica Dict
                     liftIO $ insertInLog ph (decreeNumber legD') $
                       Reconf 0 (decreeLegislatureId legD') ρs'
 
-                  queryMissingFrom logName (decreeNumber w) [processNodeId ρ] $
+                  queryMissingFrom sendPool logName (decreeNumber w)
+                    [processNodeId ρ] $
                     Map.insert (decreeNumber d') undefined log
 
                   let legD'' = max legD legD'
@@ -1234,7 +1257,7 @@ replica Dict
                       "\n\tdecree:             " ++ show cd ++
                       "\n\twatermark:          " ++ show w ++
                       "\n\treplicas:           " ++ show ρs
-                  forM_ others $ \ρ -> sendReplica logName ρ $
+                  forM_ others $ \ρ -> sendReplicaAsync sendPool logName ρ $
                     Max self d legD epoch ρs
                   go st
             ]
