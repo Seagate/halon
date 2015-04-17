@@ -6,26 +6,23 @@ ENV HOME /root
 
 ENV LANG en_GB.UTF-8
 
-RUN yum install --assumeyes bzip2 tar zlib-devel git gmp-devel make perl gcc pcre-devel net-tools
+# install required softare from repository
+RUN yum install --assumeyes epel-release \
+    && yum install --assumeyes bzip2 tar zlib-devel git gmp-devel make perl gcc pcre-devel libgenders-devel net-tools
 
-# we need EPEL to get genders
-WORKDIR /
-RUN curl -O http://www.mirrorservice.org/sites/dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm
-RUN rpm --install epel-release-7-5.noarch.rpm
-RUN yum install --assumeyes libgenders-devel
 
-RUN curl -O https://downloads.haskell.org/~ghc/@@GHCVERSION@@/ghc-@@GHCVERSION@@-x86_64-unknown-linux-deb7.tar.bz2
+# install GHC from source
+RUN curl -O https://downloads.haskell.org/~ghc/@@GHCVERSION@@/ghc-@@GHCVERSION@@-x86_64-unknown-linux-deb7.tar.bz2 \
+    && bunzip2 ghc-@@GHCVERSION@@-x86_64-unknown-linux-deb7.tar.bz2  \
+    && tar xf ghc-@@GHCVERSION@@-x86_64-unknown-linux-deb7.tar       \
+    && cd ./ghc-@@GHCVERSION@@ && ./configure && make install && cd .. \
+    && rm -rf ghc-@@GHCVERSION@@ \
+              ghc-@@GHCVERSION@@-x86_64-unknown-linux-deb7.tar \
+              ghc-@@GHCVERSION@@-x86_64-unknown-linux-deb7.tar.bz2
 
-RUN bunzip2 ghc-@@GHCVERSION@@-x86_64-unknown-linux-deb7.tar.bz2
-RUN tar xf ghc-@@GHCVERSION@@-x86_64-unknown-linux-deb7.tar
-
-WORKDIR ./ghc-@@GHCVERSION@@
-RUN ./configure
-RUN make install
-WORKDIR /
-RUN curl -O https://www.haskell.org/cabal/release/cabal-install-@@CABALVERSION@@/cabal-install-@@CABALVERSION@@.tar.gz
-RUN tar xzf cabal-install-@@CABALVERSION@@.tar.gz
-WORKDIR /cabal-install-@@CABALVERSION@@
-RUN ./bootstrap.sh
-
-RUN ln -vs /root/.cabal/bin/cabal /usr/local/bin/cabal
+# install cabal install
+RUN curl -O https://www.haskell.org/cabal/release/cabal-install-@@CABALVERSION@@/cabal-install-@@CABALVERSION@@.tar.gz \
+    && tar xzf cabal-install-@@CABALVERSION@@.tar.gz \
+    && cd /cabal-install-@@CABALVERSION@@ && ./bootstrap.sh && cd .. \
+    && rm -rf /cabal-install-@@CABALVERSION@@ cabal-install-@@CABALVERSION@@.tar.gz \
+    && ln -vs /root/.cabal/bin/cabal /usr/local/bin/cabal

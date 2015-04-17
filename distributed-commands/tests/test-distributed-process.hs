@@ -51,7 +51,7 @@ main = do
     TraceEnv spawnNode' gatherTraces <- mkTraceEnv
 
     localHost <- getHostAddress
-    Right nt <- createTransport localHost "4000" defaultTCPParameters
+    nt <- either throwIO return =<< createTransport localHost "4000" defaultTCPParameters
     let remoteTable = __remoteTableDecl $ __remoteTable initRemoteTable
     n0 <- newLocalNode nt remoteTable
 
