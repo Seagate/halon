@@ -6,25 +6,19 @@
 #define _GNU_SOURCE
 #include "rpclite.h"
 
-#include "mero/init.h"
 #include "lib/assert.h"
 #include "lib/errno.h"
 #include "lib/memory.h"
 #include "lib/misc.h" /* M0_SET0 */
 #include "lib/thread.h"
 #include "lib/time.h"
-#include "module/instance.h"
 #include "net/net.h"
-#include "net/lnet/lnet.h"
-#include "rpc/rpc.h"
 #include "rpc/session_fops.h"
-#include "rpc/session_foms.h"
 #include "rpclite_fop.h"
 #include "rpclite_fom.h"
 #include "rpc/rpclib.h" /* m0_rpc_server_start */
 #include "fop/fop.h"    /* m0_fop_default_item_ops */
 #include "fop/fop_item_type.h" /* m0_fop_payload_size */
-#include "reqh/reqh.h"  /* m0_reqh_rpc_mach_tl */
 #include "rpclite_fop_ff.h"
 
 #include "ha/epoch.h"
@@ -53,7 +47,6 @@ enum {
 };
 
 
-static struct m0 instance;
 static struct m0_net_domain client_net_dom;
 static struct m0_ha_domain client_ha_dom;
 static uint64_t client_max_epoch;
@@ -91,9 +84,7 @@ int rpc_init(char *persistence_prefix) {
 
 	rpc_stat_init();
 
-	CHECK_RESULT(rc, m0_init(&instance), return rc);
-
-	CHECK_RESULT(rc, rpclite_fop_init(),goto m0_fini);
+    CHECK_RESULT(rc, rpclite_fop_init(),goto rpc_stat_fini);
 
 	CHECK_RESULT(rc, m0_net_domain_init(&client_net_dom, &m0_net_lnet_xprt),goto fop_fini);
 
@@ -113,8 +104,7 @@ ha_fini:
 		m0_ha_domain_fini(&client_ha_dom);
 fop_fini:
 		rpclite_fop_fini();
-m0_fini:
-		m0_fini();
+rpc_stat_fini:
 		rpc_stat_fini();
 	return rc;
 }
@@ -123,8 +113,7 @@ void rpc_fini() {
   m0_ha_domain_fini(&client_ha_dom);
   m0_net_domain_fini(&client_net_dom);
   rpclite_fop_fini();
-  m0_fini();
-	rpc_stat_fini();
+  rpc_stat_fini();
 }
 
 m0_time_t get_max_rpc_time(rpc_stat_type_t type)

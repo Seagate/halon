@@ -87,7 +87,7 @@ libdirs=$(MERO_ROOT)/mero/.libs
 
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
 
-override HALON_CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) $(HLD_SEARCH_PATH) --extra-include-dirs=$(RPCLITE_PREFIX)
+override HALON_CABAL_FLAGS += --extra-include-dirs=$(MERO_ROOT) $(HLD_SEARCH_PATH) --extra-include-dirs=$(RPCLITE_PREFIX) --extra-include-dirs=$(MERO_ROOT)/extra-libs/galois/include
 endif
 
 ifdef USE_MERO

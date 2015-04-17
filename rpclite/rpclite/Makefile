@@ -6,7 +6,7 @@ endif
 RUNDIR=/var/mero/halon
 FF2C=$(MERO_ROOT)/xcode/ff2c/ff2c
 CC=gcc
-CFLAGS=-c -I$(MERO_ROOT) \
+CFLAGS=-c -I$(MERO_ROOT) -I$(MERO_ROOT)/extra-libs/galois/include \
 	   -Wno-attributes -Werror -g -DM0_INTERNAL='' -DM0_EXTERN=extern
 
 libdirs=$(MERO_ROOT)/mero/.libs\
@@ -21,9 +21,9 @@ DEBUGGER=
 LD_SEARCH_PATH=$(foreach dir,$(libdirs),-L$(dir))
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
 
-LDFLAGS=$(LD_SEARCH_PATH) -lmero
+LDFLAGS=$(LD_SEARCH_PATH) -lmero -pthread
 
-SOURCES=rpclite_fop_ff.c rpclite_fop.c rpclite.c rpclite_fom.c rpclite_sender_fom.c
+SOURCES=rpclite_fop_ff.c rpclite_fop.c rpclite.c rpclite_fom.c rpclite_sender_fom.c m0init.c
 
 OBJECTS=$(SOURCES:.c=.o)
 

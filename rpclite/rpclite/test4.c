@@ -4,6 +4,7 @@
 //
 
 #include "rpclite.h"
+#include "m0init.h"
 
 #include "lib/memory.h"
 
@@ -24,14 +25,15 @@ int rcv(rpc_item_t* it,void* ctx) {
 rpc_receive_endpoint_t* re;
 
 
-void* threadMain(void* d) {
+//void* threadMain(void* d) {
+void threadMain(void* d) {
     int rc;
 	rpc_connection_t* c;
 
 	rc = rpc_connect_re(re,"0@lo:12345:34:500",5,&c);
     if (rc) {
         fprintf(stderr,"rpc_connect: %d\n",rc);
-        return 0;
+        return;
     }
 
     int sz = m0_rpc_session_get_max_item_size(rpc_get_session(c))-128-4;
@@ -50,11 +52,14 @@ void* threadMain(void* d) {
         fprintf(stderr,"rpc_disconnect: %d\n",rc);
     m0_free(buf);
 
-    return 0;
+//    return 0;
 }
 
 int main(int argc,char** argv) {
-	int rc = rpc_init("");
+	int rc = m0_init_wrapper();
+	fprintf(stderr,"m0_init: %d\n",rc);
+
+	rc = rpc_init("");
 	fprintf(stderr,"rpc_init: %d\n",rc);
 
 	rc = rpc_listen("s1","0@lo:12345:34:500",&(rpc_listen_callbacks_t){ .receive_callback=rcv },&re);
@@ -73,17 +78,18 @@ int main(int argc,char** argv) {
         fprintf(stderr,"rpc_disconnect: %d\n",rc);
 
     int i;
-    pthread_t thread[NUM_THREADS];
-    //struct m0_thread thread[NUM_THREADS];
+    //pthread_t thread[NUM_THREADS];
+    struct m0_thread thread[NUM_THREADS];
     for(i=0;i<NUM_THREADS;i+=1) {
-        //M0_SET0(&thread[i]);
-        //rc = M0_THREAD_INIT(&thread[i], void*, NULL, &threadMain, NULL, "client_%d", i);
-        //M0_ASSERT(rc == 0);
-        if (pthread_create(&thread[i],NULL,&threadMain,NULL))
-             fprintf(stderr,"pthread_create error\n");
+        M0_SET0(&thread[i]);
+        rc = M0_THREAD_INIT(&thread[i], void*, NULL, &threadMain, NULL, "client_%d", i);
+        M0_ASSERT(rc == 0);
+        //if (pthread_create(&thread[i],NULL,&threadMain,NULL))
+        //     fprintf(stderr,"pthread_create error\n");
     }
     for(i=0;i<NUM_THREADS;i+=1)
-        pthread_join(thread[i],NULL);
+		m0_thread_join(&thread[i]);
+        //pthread_join(thread[i],NULL);
     
 
     fprintf(stderr,"leaving...\n");

@@ -10,6 +10,7 @@
 #include "fop/fop.h"
 #include "lib/errno.h"
 #include "rpc/rpc.h"
+#include "rpc/rpc_opcodes.h"
 #include "fop/fop_item_type.h"
 #include "fop/fom_generic.h"
 
@@ -93,8 +94,8 @@ int m0_fom_rpclite_sender_state(struct m0_fom *fom)
 }
 
 
-const struct m0_fom_ops m0_fom_rpclite_sender_ops;
-const struct m0_fom_type_ops m0_fom_rpclite_sender_type_ops;
+static const struct m0_fom_ops m0_fom_rpclite_sender_ops;
+static const struct m0_fom_type_ops m0_fom_rpclite_sender_type_ops;
 struct m0_fom_type m0_fom_rpclite_sender_type;
 
 /* Init for rpclite */
@@ -116,6 +117,14 @@ int rpclite_sender_fom_create(struct m0_fop *fop, struct m0_fom **m, struct m0_r
 	return 0;
 }
 
+void m0_fom_rpclite_sender_type_ini() {
+    m0_fom_type_init( &m0_fom_rpclite_sender_type
+		            , M0_UT_IOS_OPCODE
+                    , &m0_fom_rpclite_sender_type_ops
+                    , &m0_rpc_service_type
+                    , &m0_generic_conf);
+}
+
 void m0_rpclite_sender_fom_fini(struct m0_fom *fom)
 {
 	struct m0_fom_rpclite_sender *fom_obj;
@@ -127,23 +136,15 @@ void m0_rpclite_sender_fom_fini(struct m0_fom *fom)
 	return;
 }
 
-void m0_fom_rpclite_sender_type_ini() {
-    m0_fom_type_init( &m0_fom_rpclite_sender_type
-                    , &m0_fom_rpclite_sender_type_ops
-                    , &m0_rpc_service_type
-                    , &m0_generic_conf);
-}
-
-
 /** Generic ops object for rpclite */
-const struct m0_fom_ops m0_fom_rpclite_sender_ops = {
+static const struct m0_fom_ops m0_fom_rpclite_sender_ops = {
 	.fo_fini          = m0_rpclite_sender_fom_fini,
 	.fo_tick          = m0_fom_rpclite_sender_state,
 	.fo_home_locality = m0_fom_rpclite_sender_home_locality,
 	.fo_addb_init     = m0_fom_rpclite_sender_addb_init
 };
 
-const struct m0_fom_type_ops m0_fom_rpclite_sender_type_ops = {
+static const struct m0_fom_type_ops m0_fom_rpclite_sender_type_ops = {
 	.fto_create = rpclite_sender_fom_create
 };
 

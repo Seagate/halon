@@ -11,10 +11,11 @@ import System.Process (rawSystem)
 main = defaultMainWithHooks $ simpleUserHooks
     { testHook = nt_rpc_test }
 
-nt_rpc_test :: PackageDescription
+nt_rpc_test :: Args
+            -> PackageDescription
             -> LocalBuildInfo
             -> UserHooks
             -> TestFlags
             -> IO ()
-nt_rpc_test _ lbi _ _ =
+nt_rpc_test _ _ lbi _ _ =
     rawSystem "./cabal_test.sh" [ buildDir lbi ] >>= exitWith

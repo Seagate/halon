@@ -15,7 +15,9 @@ Flag maintainer
   Default: False
 
 library
-  exposed-modules:     Network.RPC.RPCLite
+  exposed-modules:     Mero
+                       Mero.Concurrent
+                       Network.RPC.RPCLite
   build-depends:       base >=4.7
                      , binary >= 0.6
                      , bytestring
@@ -38,6 +40,8 @@ library
              rpclite/rpclite_fop.c
              rpclite/rpclite_sender_fom.c
              rpclite/rpclite_fop_ff.c
+             rpclite/forkm0os.c
+             rpclite/m0init.c
   default-language:    Haskell2010
 
 Test-Suite testrpclite

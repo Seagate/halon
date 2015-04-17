@@ -2,17 +2,23 @@ import Control.Concurrent
 import Control.Exception
 import Control.Monad
 import qualified Data.ByteString.Char8 as B8
+import Mero
+import Mero.Concurrent
 import Network.RPC.RPCLite
 import System.Environment
 
+
 main :: IO ()
-main = do
-  args <- getArgs
-  if length args>0 then mainServer else mainClient
+main = withM0 $ do
+  initRPC
+  m0t <- forkM0OS $ do
+    args <- getArgs
+    if length args>0 then mainServer else mainClient
+  joinM0OS m0t
+  finalizeRPC
 
 mainClient :: IO ()
-mainClient = flip catch (\e -> print (e::SomeException))$ do
-    initRPC
+mainClient = flip catch (\e -> print (e::SomeException)) $ do
     ce <- createClientEndpoint $ rpcAddress "0@lo:12345:34:1"
     putStrLn "created client endpoint"
 
@@ -40,11 +46,9 @@ mainClient = flip catch (\e -> print (e::SomeException))$ do
 
     stopListening se
     putStrLn "stopped listening"
-    finalizeRPC
 
 mainServer :: IO ()
 mainServer = flip catch (\e -> print (e::SomeException))$ do
-    initRPC
     ce <- createClientEndpoint$ rpcAddress "0@lo:12345:34:3"
     putStrLn "created client endpoint"
 
@@ -74,4 +78,3 @@ mainServer = flip catch (\e -> print (e::SomeException))$ do
 
     stopListening se
     putStrLn "stopped listening"
-    finalizeRPC

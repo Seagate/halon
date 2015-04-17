@@ -62,11 +62,9 @@ struct m0_fom_rpclite_sender {
     };
 };
 
-
 /// Initializes static structures describing the type
 /// of an m0_fom_rpclite_sender_fom.
 void m0_fom_rpclite_sender_type_ini();
 
 /// Creates an m0_fom_rpclite_sender_fom.
 int rpclite_sender_fom_create(struct m0_fop *fop, struct m0_fom **m, struct m0_reqh* reqh);
-
