@@ -31,7 +31,7 @@ import           HA.Resources.Mero
 import           HA.Service
 import qualified HA.Services.EQTracker as EQT
 import           HA.Services.DecisionLog (EntriesLogged(..))
-#ifdef USE_MERO_NOTE
+#ifdef USE_MERO
 import           HA.Services.Mero (meroRules)
 #endif
 import           HA.Services.SSPL (ssplRules)
@@ -143,7 +143,7 @@ rcRules argv eq = do
     setOnLog sendLogEntries
 
     ssplRules
-#ifdef USE_MERO_NOTE
+#ifdef USE_MERO
     meroRules
 #endif
 

@@ -30,7 +30,7 @@ import HA.Service
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy       as Dummy
 import qualified HA.Services.Frontier    as Frontier
-#ifdef USE_MERO_NOTE
+#ifdef USE_MERO
 import qualified HA.Services.Mero        as Mero
 #endif
 import qualified HA.Services.Noisy       as Noisy
@@ -75,7 +75,7 @@ data ServiceCmdOptions =
     | SSPLHLServiceCmd (StandardServiceOptions SSPLHL.SSPLHLConf)
     | FrontierServiceCmd (StandardServiceOptions Frontier.FrontierConf)
     | DLogServiceCmd (StandardServiceOptions DLog.DecisionLogConf)
-#ifdef USE_MERO_NOTE
+#ifdef USE_MERO
     | MeroServiceCmd (StandardServiceOptions Mero.MeroConf)
 #endif
   deriving (Eq, Show, Generic, Typeable)
@@ -172,7 +172,7 @@ parseService =
     (DLogServiceCmd <$> (O.subparser $
          mkStandardServiceCmd DLog.decisionLog)
     )
-#ifdef USE_MERO_NOTE
+#ifdef USE_MERO
     <|> (MeroServiceCmd <$> (O.subparser $
          mkStandardServiceCmd Mero.m0d))
 #endif
@@ -191,7 +191,7 @@ service nids so = case so of
   SSPLHLServiceCmd sso   -> standardService nids sso SSPLHL.sspl
   FrontierServiceCmd sso -> standardService nids sso Frontier.frontier
   DLogServiceCmd sso     -> standardService nids sso DLog.decisionLog
-#ifdef USE_MERO_NOTE
+#ifdef USE_MERO
   MeroServiceCmd sso     -> standardService nids sso Mero.m0d
 #endif
 

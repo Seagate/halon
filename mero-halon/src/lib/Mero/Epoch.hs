@@ -3,8 +3,6 @@
 -- License   : All rights reserved.
 --
 
-{-# LANGUAGE CPP #-}
-
 module Mero.Epoch
        (
          sendEpochBlocking
