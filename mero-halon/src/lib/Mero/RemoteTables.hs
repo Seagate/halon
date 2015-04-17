@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 module Mero.RemoteTables (meroRemoteTable) where
 
-import HA.Resources.Mero ( __remoteTable )
+import HA.Resources.Mero(__remoteTable)
 #ifdef USE_MERO
 import HA.Resources.Mero.Note ( __remoteTable )
 import HA.Services.Mero ( __remoteTable, __remoteTableDecl )
@@ -14,6 +14,7 @@ import HA.Services.Mero ( __remoteTable, __remoteTableDecl )
 
 import HA.Services.DecisionLog ( __remoteTable, __remoteTableDecl )
 import HA.Services.Frontier ( __remoteTable, __remoteTableDecl )
+import HA.Services.Monitor ( __remoteTable, __remoteTableDecl )
 import HA.Services.SSPL ( __remoteTable, __remoteTableDecl )
 import HA.Services.SSPLHL ( __remoteTable, __remoteTableDecl )
 import HA.RecoveryCoordinator.Definitions ( __remoteTable )
@@ -36,5 +37,7 @@ meroRemoteTable next =
    HA.Services.Frontier.__remoteTableDecl $
    HA.Services.DecisionLog.__remoteTable $
    HA.Services.DecisionLog.__remoteTableDecl $
+   HA.Services.Monitor.__remoteTable $
+   HA.Services.Monitor.__remoteTableDecl $
    HA.RecoveryCoordinator.Definitions.__remoteTable $
    next
