@@ -28,6 +28,7 @@ module HA.Services.SSPL
 
 import HA.NodeAgent.Messages
 import HA.EventQueue.Producer (promulgate)
+import HA.RecoveryCoordinator.Mero (LoopState)
 import HA.Service
 import HA.Services.SSPL.CEP
 import qualified HA.Services.SSPL.Rabbit as Rabbit
@@ -67,6 +68,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 
 import Network.AMQP
+import Network.CEP (RuleM)
 
 import Prelude hiding (id, mapM_)
 
@@ -152,6 +154,13 @@ startActuators chan ac pid = do
 
 remotableDecl [ [d|
 
+  sspl :: Service SSPLConf
+  sspl = Service
+          (ServiceName "sspl")
+          $(mkStaticClosure 'ssplProcess)
+          ($(mkStatic 'someConfigDict)
+              `staticApply` $(mkStatic 'configDictSSPLConf))
+
   ssplProcess :: SSPLConf -> Process ()
   ssplProcess (SSPLConf{..}) = let
 
@@ -181,11 +190,7 @@ remotableDecl [ [d|
       lock <- liftIO newEmptyMVar
       connectRetry lock
 
-  sspl :: Service SSPLConf
-  sspl = Service
-          (ServiceName "sspl")
-          $(mkStaticClosure 'ssplProcess)
-          ($(mkStatic 'someConfigDict)
-              `staticApply` $(mkStatic 'configDictSSPLConf))
-
   |] ]
+
+ssplRules :: RuleM LoopState ()
+ssplRules = ssplRulesF sspl

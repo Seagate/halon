@@ -10,10 +10,8 @@
 module HA.Services.SSPL.CEP where
 
 import HA.EventQueue.Consumer (HAEvent(..), defineHAEvent)
-import HA.EventQueue.Types (EventId(..))
 import HA.Service hiding (configDict)
 import HA.Services.SSPL.LL.Resources
-import HA.Services.SSPL.HL.Resources
 import HA.RecoveryCoordinator.Mero
 import HA.ResourceGraph
 import HA.Resources (Cluster(..), Node(..))
@@ -26,18 +24,19 @@ import Control.Category (id)
 import Control.Distributed.Process
   ( NodeId
   , SendPort
-  , processNodeId
   , sendChan
   , say
   )
 
 import Control.Monad.State.Strict hiding (mapM_)
 
+import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Foldable (mapM_)
 import Data.Maybe (catMaybes, listToMaybe)
 import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 
 import Network.CEP
 
@@ -113,8 +112,8 @@ registerChannels svc acs = do
 -- Rules                                                                      --
 --------------------------------------------------------------------------------
 
-ssplRules :: RuleM LoopState ()
-ssplRules = do
+ssplRulesF :: Service SSPLConf -> RuleM LoopState ()
+ssplRulesF sspl = do
   defineHAEvent "declare-channels" id $
       \(HAEvent _ (DeclareChannels pid svc acs) _) -> do
           registerChannels svc acs
@@ -164,10 +163,31 @@ ssplRules = do
       Nothing -> return ()
 
   -- Dummy rule for handling SSPL HL commands
-  defineHAEvent "systemd-restart" id $ \(HAEvent (EventId pid _) (SSPLHLCmd msg) _) -> let
-      nid = processNodeId pid
-    in do
-      sendSystemdRequest nid $ SystemdRequest msg "restart"
-      sendInterestingEvent nid $
-        InterestingEventMessage ("Restarting service " `BL.append` msg)
+  defineHAEvent "systemd-restart" id $ \(HAEvent _
+                                                 (CommandRequest (Just sr))
+                                                 _
+                                        ) ->
+    let
+      serviceName = BL.fromStrict . T.encodeUtf8 $ commandRequestServiceRequestServiceName sr
+      command = commandRequestServiceRequestCommand sr
+      nodeFilter = case commandRequestServiceRequestNodes sr of
+        Just foo -> T.unpack foo
+        Nothing -> "."
+    in case command of
+      Aeson.String "start" -> liftProcess $ say "Unsupported."
+      Aeson.String "stop" -> liftProcess $ say "Unsupported."
+      Aeson.String "restart" -> do
+        nodes <- findHosts nodeFilter
+                  >>= mapM nodesOnHost
+                  >>= return . join
+                  >>= filterM (\a -> isServiceRunning a sspl)
+        forM_ nodes $ \(Node nid) -> do
+          sendSystemdRequest nid $ SystemdRequest serviceName "restart"
+          sendInterestingEvent nid $
+            InterestingEventMessage ("Restarting service " `BL.append` serviceName)
+      Aeson.String "enable" -> liftProcess $ say "Unsupported."
+      Aeson.String "disable" -> liftProcess $ say "Unsupported."
+      Aeson.String "status" -> liftProcess $ say "Unsupported."
+      _ -> liftProcess $ say "Unsupported."
+
 

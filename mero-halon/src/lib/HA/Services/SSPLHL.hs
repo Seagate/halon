@@ -17,8 +17,8 @@ import HA.NodeAgent.Messages
 import HA.Service
 import HA.Service.TH
 import qualified HA.Services.SSPL.Rabbit as Rabbit
-import HA.Services.SSPL.HL.Resources
 
+import SSPL.Bindings
 
 import Control.Applicative ((<$>), (<*>))
 
@@ -39,7 +39,9 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Monad.State.Strict hiding (mapM_)
 
+import Data.Aeson (decode)
 import Data.Binary (Binary)
+import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
@@ -91,6 +93,14 @@ $(deriveService ''SSPLHLConf 'ssplhlSchema [])
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------
 
+msgHandler :: Network.AMQP.Message
+           -> Process ()
+msgHandler msg = case decode (msgBody msg) :: Maybe CommandRequest of
+  Just cr -> do
+    void $ promulgate cr
+  Nothing -> say $ "Unable to decode command request: "
+                    ++ (BL.unpack $ msgBody msg)
+
 remotableDecl [ [d|
 
   ssplProcess :: SSPLHLConf -> Process ()
@@ -111,8 +121,7 @@ remotableDecl [ [d|
       connectSSPL lock = do
         conn <- liftIO $ Rabbit.openConnection scConnectionConf
         chan <- liftIO $ openChannel conn
-        Rabbit.receive chan scCommandConf (\msg -> void . promulgate
-                                                    $ SSPLHLCmd (msgBody msg))
+        Rabbit.receive chan scCommandConf msgHandler
         () <- liftIO $ takeMVar lock
         liftIO $ closeConnection conn
         say "Connection closed."

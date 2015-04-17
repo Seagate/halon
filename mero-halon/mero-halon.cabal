@@ -111,6 +111,7 @@ Library
                    mtl,
                    options-schema,
                    process,
+                   regex-tdfa,
                    scientific,
                    sspl,
                    text,

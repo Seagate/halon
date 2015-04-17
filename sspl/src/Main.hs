@@ -9,6 +9,7 @@
 import qualified SSPL.Schemata.SensorResponse as SensorResponse
 import qualified SSPL.Schemata.ActuatorRequest as ActuatorRequest
 import qualified SSPL.Schemata.ActuatorResponse as ActuatorResponse
+import qualified SSPL.Schemata.CommandRequest as CommandRequest
 
 import Data.Aeson.Schema
 import Data.Aeson.Schema.CodeGen
@@ -25,6 +26,7 @@ main = let
         ("SensorResponse", SensorResponse.schema)
       , ("ActuatorRequest", ActuatorRequest.schema)
       , ("ActuatorResponse", ActuatorResponse.schema)
+      , ("CommandRequest", CommandRequest.schema)
       ]
   in mapM_ (uncurry mkBindings) schemata
 
