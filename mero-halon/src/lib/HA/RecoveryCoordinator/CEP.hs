@@ -28,6 +28,7 @@ import           HA.Resources.Mero
 import           HA.Service
 import qualified HA.Services.EQTracker as EQT
 import           HA.Services.DecisionLog (EntriesLogged(..))
+import           HA.Services.Monitor (prepareMonitorService)
 import           HA.Services.SSPL (ssplRules)
 
 rcRules :: IgnitionArguments -> ProcessId -> RuleM LoopState ()
@@ -40,8 +41,11 @@ rcRules argv eq = do
 
     -- Node Up
     defineHAEvent "node-up" id $ \(HAEvent _ (NodeUp h pid) _) -> do
-        let nid  = processNodeId pid
-            node = Node nid
+        self <- getSelfProcessId
+        let nid               = processNodeId pid
+            node              = Node nid
+            selfNodeId        = processNodeId self
+            (monSvc, monConf) = prepareMonitorService
 
         ack pid
         known <- knownResource node
@@ -51,6 +55,9 @@ rcRules argv eq = do
           registerHost host
           locateNodeOnHost node host
           startEQTracker nid
+          registerService monSvc
+          _ <- startService selfNodeId monSvc monConf
+          return ()
 
     -- Service Start
     defineHAEvent "service-start" id $ \evt@(HAEvent _ msg _) -> do

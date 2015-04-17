@@ -83,6 +83,7 @@ Library
                    HA.Services.DecisionLog
                    HA.Services.Frontier
                    HA.Services.Mero
+                   HA.Services.Monitor
                    HA.Services.SSPL
                    HA.Services.SSPLHL
                    HA.RecoveryCoordinator.Mero
@@ -93,6 +94,8 @@ Library
   Other-Modules:   HA.Services.DecisionLog.CEP
                    HA.Services.DecisionLog.Types
                    HA.Services.Frontier.Command
+                   HA.Services.Monitor.CEP
+                   HA.Services.Monitor.Types
                    HA.Services.SSPL.CEP
                    HA.Services.SSPL.Rabbit
                    HA.Services.SSPL.LL.Resources
