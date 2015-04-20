@@ -56,6 +56,8 @@ module HA.RecoveryCoordinator.Mero
        , locateNodeOnHost
        , registerHost
        , registerInterface
+       , nodesOnHost
+       , findHosts
          -- * Drive related functions
        , driveStatus
        , registerDrive
@@ -114,6 +116,8 @@ import Data.Word
 import GHC.Generics (Generic)
 
 import Network.CEP
+
+import Text.Regex.TDFA ((=~))
 
 -- | Reconfiguration message
 data ReconfigureCmd = forall a. Configuration a => ReconfigureCmd Node (Service a)
@@ -283,6 +287,18 @@ registerHost host = do
           $ lsGraph ls
   State.put ls { lsGraph = rg' }
 
+findHosts :: String
+          -> CEP LoopState [Host]
+findHosts regex = do
+  g <- State.gets lsGraph
+  return $ [ host | host@(Host hn) <- G.connectedTo Cluster Has g
+                  , hn =~ regex]
+
+-- | Find all nodes running on the given host.
+nodesOnHost :: Host
+            -> CEP LoopState [Node]
+nodesOnHost host = State.gets $ G.connectedTo host Runs . lsGraph
+
 -- | Register an interface on a host.
 registerInterface :: Host -- ^ Host on which the interface resides.
                   -> Interface
@@ -377,6 +393,7 @@ initialize mm = do
             G.connect Cluster Has (Epoch 0 "y = x^2" :: Epoch ByteString) $ rg
             | otherwise = rg
     return rg'
+
 
 ----------------------------------------------------------
 -- Reconfiguration                                      --
