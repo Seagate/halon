@@ -11,7 +11,6 @@ module HA.Services.Monitor.Types where
 import Data.Typeable
 import GHC.Generics
 
-import Control.Distributed.Process
 import Data.Binary
 import Data.Hashable
 import Options.Schema
@@ -32,11 +31,3 @@ monitorServiceName = ServiceName "monitor"
 
 $(generateDicts ''MonitorConf)
 $(deriveService ''MonitorConf 'monitorSchema [])
-
-data Monitor = Monitor deriving (Typeable, Generic)
-
-instance Binary Monitor
-
-data MonitorReply = MonitorReply ProcessId deriving (Typeable, Generic)
-
-instance Binary MonitorReply

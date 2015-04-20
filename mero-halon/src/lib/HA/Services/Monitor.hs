@@ -3,8 +3,8 @@
 -- Copyright: (C) 2015 Tweag I/O Limited
 --
 module HA.Services.Monitor
-    ( Monitor(..)
-    , MonitorReply(..)
+    ( MonitorConf
+    , monitorServiceName
     , prepareMonitorService
     , HA.Services.Monitor.Types.__remoteTable
     , __remoteTableDecl

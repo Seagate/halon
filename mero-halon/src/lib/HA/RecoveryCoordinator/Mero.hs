@@ -52,6 +52,7 @@ module HA.RecoveryCoordinator.Mero
        , decodeMsg
        , bounceServiceTo
        , lookupDLogServiceProcess
+       , sendToMonitor
          -- * Host related functions
        , locateNodeOnHost
        , registerHost
@@ -69,6 +70,7 @@ import Prelude hiding ((.), id, mapM_)
 import HA.Resources
 import HA.Service
 import HA.Services.DecisionLog
+import HA.Services.Monitor
 import HA.Services.Empty
 import HA.Services.Noisy
 
@@ -355,6 +357,20 @@ lookupDLogServiceProcess ls =
     case G.connectedFrom Owns decisionLogServiceName $ lsGraph ls of
         [sp] -> Just sp
         _    -> Nothing
+
+lookupMonitorServiceProcess :: CEP LoopState (Maybe (ServiceProcess MonitorConf))
+lookupMonitorServiceProcess = fmap go $ State.gets lsGraph
+  where
+    go rg =
+        case G.connectedFrom Owns monitorServiceName rg of
+          [sp] -> Just sp
+          _    -> Nothing
+
+sendToMonitor :: Serializable a => a -> CEP LoopState ()
+sendToMonitor a = do
+    res <- lookupMonitorServiceProcess
+    forM_ res $ \(ServiceProcess pid) ->
+      liftProcess $ usend pid a
 
 sayRC :: String -> Process ()
 sayRC s = say $ "Recovery Coordinator: " ++ s

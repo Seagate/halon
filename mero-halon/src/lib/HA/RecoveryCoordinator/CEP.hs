@@ -92,6 +92,8 @@ rcRules argv eq = do
 
         registerServiceProcess n svc cfg sp
         let svcStr = snString $ serviceName svc
+
+        sendToMonitor msg
         cepLog "started" ("Service " ++ svcStr ++ " started")
 
     -- Service could not start
