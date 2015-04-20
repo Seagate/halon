@@ -70,7 +70,7 @@ import Prelude hiding ((.), id, mapM_)
 import HA.Resources
 import HA.Service
 import HA.Services.DecisionLog
-import HA.Services.Monitor
+import HA.Services.Monitor.Types
 import HA.Services.Empty
 import HA.Services.Noisy
 

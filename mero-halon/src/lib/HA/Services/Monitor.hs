@@ -18,16 +18,30 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
 import Network.CEP
 
+import HA.EventQueue.Producer
+import HA.RecoveryCoordinator.Mero (GetMultimapProcessId(..))
+import HA.ResourceGraph
 import HA.Service
 import HA.Services.Monitor.CEP
 import HA.Services.Monitor.Types
 
-monitoring :: Process ()
-monitoring = runProcessor emptyMonitorState monitorRules
-
 remotableDecl [ [d|
     monitorService :: MonitorConf -> Process ()
-    monitorService _ = monitoring
+    monitorService _ = _monitoring
+
+    _monitoring :: Process ()
+    _monitoring = do
+        self <- getSelfPid
+        _    <- promulgate (GetMultimapProcessId self)
+        mmid <- expect
+        st   <- loadPrevProcesses mmid
+        runProcessor st (monitorRules mmid)
+      where
+        loadPrevProcesses mmid = do
+            rg <- getGraph mmid
+            case connectedTo monitor Monitor rg of
+              [ps] -> monitorState ps
+              _    -> return emptyMonitorState
 
     monitor :: Service MonitorConf
     monitor = Service
