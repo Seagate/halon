@@ -10,10 +10,11 @@ main = defaultMainWithHooks $ simpleUserHooks
     { testHook = confc_test
     }
 
-confc_test :: PackageDescription
+confc_test :: Args
+           -> PackageDescription
            -> LocalBuildInfo
            -> UserHooks
            -> TestFlags
            -> IO ()
-confc_test _ lbi _ _ =
+confc_test _ _ lbi _ _ =
     rawSystem "./cabal_test.sh" [ buildDir lbi ] >>= exitWith

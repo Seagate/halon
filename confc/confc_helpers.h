@@ -33,13 +33,32 @@ int confc_open_sync(struct m0_conf_obj** result,struct m0_conf_obj* parent,const
 //
 // Casting helpers
 //
+struct m0_conf_dir* confc_cast_dir(struct m0_conf_obj* obj);
+
+struct m0_conf_root* confc_cast_root(struct m0_conf_obj* obj);
+
+struct m0_conf_profile* confc_cast_profile(struct m0_conf_obj* obj);
 
 struct m0_conf_filesystem* confc_cast_filesystem(struct m0_conf_obj* obj);
 
-struct m0_conf_service* confc_cast_service(struct m0_conf_obj* obj);
+struct m0_conf_pool* confc_cast_pool(struct m0_conf_obj* obj);
+
+struct m0_conf_pver* confc_cast_pver(struct m0_conf_obj* obj);
+
+struct m0_conf_objv* confc_cast_objv(struct m0_conf_obj* obj);
 
 struct m0_conf_node* confc_cast_node(struct m0_conf_obj* obj);
 
-struct m0_conf_nic* confc_cast_nic(struct m0_conf_obj* obj);
+struct m0_conf_process* confc_cast_process(struct m0_conf_obj* obj);
+
+struct m0_conf_service* confc_cast_service(struct m0_conf_obj* obj);
 
 struct m0_conf_sdev* confc_cast_sdev(struct m0_conf_obj* obj);
+
+struct m0_conf_rack* confc_cast_rack(struct m0_conf_obj* obj);
+
+struct m0_conf_enclosure* confc_cast_enclosure(struct m0_conf_obj* obj);
+
+struct m0_conf_controller* confc_cast_controller(struct m0_conf_obj* obj);
+
+struct m0_conf_disk* confc_cast_disk(struct m0_conf_obj* obj);

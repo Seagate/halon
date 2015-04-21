@@ -8,15 +8,14 @@ module Mero.Epoch
          sendEpochBlocking
        ) where
 
-import qualified HA.Network.Transport
 import qualified Network.RPC.RPCLite as Lite
 import Control.Exception (bracket)
 import Control.Monad (void)
 import Data.Word ( Word64 )
 
 -- | Connects to a given 'Address', sends a given epoch and disconnects.
-sendEpochBlocking :: ServerEndpoint
-                  -> RPC.RPCAddress    -- ^ recepient address
+sendEpochBlocking :: Lite.ServerEndpoint
+                  -> Lite.RPCAddress    -- ^ recepient address
                   -> Word64            -- ^ our epoch
                   -> Int               -- ^ timeout in seconds
                   -> IO (Maybe Word64) -- ^ their epoch

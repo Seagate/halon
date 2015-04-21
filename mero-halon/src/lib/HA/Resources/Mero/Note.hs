@@ -45,14 +45,12 @@ instance Hashable ConfObject
 -- document for the semantics of each state.
 data ConfObjectState
     = M0_NC_UNKNOWN
-    | M0_NC_ACTIVE
+    | M0_NC_ONLINE
     | M0_NC_FAILED
     | M0_NC_TRANSIENT
-    | M0_NC_DEGRADED
-    | M0_NC_RECOVERING
-    | M0_NC_OFFLINE
-    | M0_NC_ANATHEMISED
-    deriving (Eq, Enum, Typeable, Generic)
+    | M0_NC_REPAIR
+    | M0_NC_REBALANCE
+    deriving (Eq, Show, Enum, Typeable, Generic)
 
 instance Binary ConfObjectState
 instance Hashable ConfObjectState

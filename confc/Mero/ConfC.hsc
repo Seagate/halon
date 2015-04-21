@@ -25,7 +25,7 @@ module Mero.ConfC
     -- * Fetching operations
   , WithClose
   , withClose
-  , getRoot
+  , openRoot
   , Profile(..)
   , CObj(..)
   , CObjUnion(..)
@@ -35,7 +35,6 @@ module Mero.ConfC
   , Iterator(..)
   , Service(..)
   , Node(..)
-  , Nic(..)
   , Sdev(..)
   ) where
 
@@ -107,14 +106,14 @@ type WithClose a = (a,IO ())
 withClose :: IO (WithClose a) -> (a -> IO b) -> IO b
 withClose wc = bracket wc snd . (.fst)
 
--- | @getRoot rpcMachine confdRPCAddress fid@ gets the root of the
+-- | @openRoot rpcMachine confdRPCAddress fid@ gets the root of the
 -- configuration tree which can be found at the given confd RPC address with the
 -- given file identifier.
 --
 -- The @rpcMachine@ is the machine used to establish the connection with confd.
 --
-getRoot :: RPCMachine -> RPCAddress -> Fid -> IO (WithClose CObj)
-getRoot (RPCMachine pm) (RPCAddress addr) fid = alloca $ \ppc ->
+openRoot :: RPCMachine -> RPCAddress -> Fid -> IO (WithClose CObj)
+openRoot (RPCMachine pm) (RPCAddress addr) fid = alloca $ \ppc ->
   with fid $ \pfid ->
   useAsCString addr$ \cconfd_addr -> do
     confc_create ppc pfid cconfd_addr pm >>= check_rc "getProfile"
@@ -127,6 +126,26 @@ foreign import ccall confc_create :: Ptr (Ptr ConfCV) -> Ptr Fid -> CString
                                   -> Ptr RPCMachineV -> IO CInt
 
 foreign import ccall confc_destroy :: Ptr ConfCV -> IO ()
+
+-- | Representation of @struct m0_fid@. It is an identifier for objects in
+-- confc.
+data Fid = Fid { f_container :: {-# UNPACK #-} !Word64
+               , f_key       :: {-# UNPACK #-} !Word64
+               }
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary Fid
+instance Hashable Fid
+
+instance Storable Fid where
+  sizeOf    _           = #{size struct m0_fid}
+  alignment _           = #{alignment struct m0_fid}
+  peek      p           = liftM2 Fid
+                            (#{peek struct m0_fid, f_container} p)
+                            (#{peek struct m0_fid, f_key} p)
+  poke      p (Fid c k) = do #{poke struct m0_fid, f_container} p c
+                             #{poke struct m0_fid, f_key} p k
+
 
 -- | Slimmed down representation of @m0_conf_obj@ object from confc.
 data CObj = CObj
@@ -151,105 +170,78 @@ data ObjType
 -- source code.
 --
 data CObjUnion
-    = CP Profile
+    = CDr Dir
+    | CRo Root
+    | CPf Profile
     | CF Filesystem
-    | CD Dir
-    | CS Service
+    | CPl Pool
+    | CPv PVer
+    | CO ObjV
     | CN Node
-    | NI Nic
-    | SD Sdev
+    | CPr Process
+    | CS Service
+    | CSd Sdev
+    | CRa Rack
+    | CE Enclosure
+    | CC Controller
+    | CDsk Disk
     | COUnknown (Ptr ())
 
 getCObj :: Ptr Obj -> IO CObj
 getCObj po = do
   fid <- #{peek struct m0_conf_obj, co_id} po
   ot <- m0_conf_obj_type po
-  ou <- if | ot == m0_CONF_PROFILE_TYPE    -> fmap CP $ getProfile po
+  ou <- if | ot == m0_CONF_DIR_TYPE        -> fmap CDr $ getDir po
+           | ot == m0_CONF_ROOT_TYPE       -> fmap CRo $ getRoot po
+           | ot == m0_CONF_PROFILE_TYPE    -> fmap CPf $ getProfile po
            | ot == m0_CONF_FILESYSTEM_TYPE -> fmap CF $ getFilesystem po
-           | ot == m0_CONF_SERVICE_TYPE    -> fmap CS $ getService po
+           | ot == m0_CONF_POOL_TYPE       -> fmap CPl $ getPool po
+           | ot == m0_CONF_PVER_TYPE       -> fmap CPv $ getPVer po
+           | ot == m0_CONF_OBJV_TYPE       -> fmap CO $ getObjV po
            | ot == m0_CONF_NODE_TYPE       -> fmap CN $ getNode po
-           | ot == m0_CONF_DIR_TYPE        -> fmap CD $ getDir po
-           | ot == m0_CONF_NIC_TYPE        -> fmap NI $ getNic po
-           | ot == m0_CONF_SDEV_TYPE       -> fmap SD $ getSdev po
+           | ot == m0_CONF_PROCESS_TYPE    -> fmap CPr $ getProcess po
+           | ot == m0_CONF_SERVICE_TYPE    -> fmap CS $ getService po
+           | ot == m0_CONF_SDEV_TYPE       -> fmap CSd $ getSdev po
+           | ot == m0_CONF_RACK_TYPE       -> fmap CRa $ getRack po
+           | ot == m0_CONF_ENCLOSURE_TYPE  -> fmap CE $ getEnclosure po
+           | ot == m0_CONF_CONTROLLER_TYPE -> fmap CC $ getController po
+           | ot == m0_CONF_DISK_TYPE  -> fmap CDsk $ getDisk po
            | otherwise -> return $ COUnknown $ castPtr ot
   return CObj
       { co_id = fid
       , co_union = ou
       }
 
+foreign import ccall unsafe  "&M0_CONF_DIR_TYPE"
+                             m0_CONF_DIR_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_ROOT_TYPE"
+                             m0_CONF_ROOT_TYPE :: Ptr ObjType
 foreign import ccall unsafe  "&M0_CONF_PROFILE_TYPE"
                              m0_CONF_PROFILE_TYPE :: Ptr ObjType
 foreign import ccall unsafe  "&M0_CONF_FILESYSTEM_TYPE"
                              m0_CONF_FILESYSTEM_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_SERVICE_TYPE"
-                             m0_CONF_SERVICE_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_POOL_TYPE"
+                             m0_CONF_POOL_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_PVER_TYPE"
+                             m0_CONF_PVER_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_OBJV_TYPE"
+                             m0_CONF_OBJV_TYPE :: Ptr ObjType
 foreign import ccall unsafe  "&M0_CONF_NODE_TYPE"
                              m0_CONF_NODE_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_DIR_TYPE"
-                             m0_CONF_DIR_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_NIC_TYPE"
-                             m0_CONF_NIC_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_PROCESS_TYPE"
+                             m0_CONF_PROCESS_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_SERVICE_TYPE"
+                             m0_CONF_SERVICE_TYPE :: Ptr ObjType
 foreign import ccall unsafe  "&M0_CONF_SDEV_TYPE"
                              m0_CONF_SDEV_TYPE :: Ptr ObjType
-
--- | Representation of @m0_conf_profile@.
-data Profile = Profile
-    { cp_filesystem :: IO (WithClose CObj)
-    }
-
-getProfile :: Ptr Obj -> IO Profile
-getProfile po = return Profile
-    { cp_filesystem = getChild po m0_FS_FID
-    }
-
-getChild :: Ptr Obj -> RelationFid -> IO (WithClose CObj)
-getChild po fid = open_sync po fid >>= \pc -> fmap (,close pc) $ getCObj pc
-
--- | Representation of @struct m0_fid@. It is an identifier for objects in
--- confc.
-data Fid = Fid { f_container :: {-# UNPACK #-} !Word64
-               , f_key       :: {-# UNPACK #-} !Word64
-               }
-  deriving (Eq, Show, Typeable, Generic)
-
-instance Binary Fid
-instance Hashable Fid
-
-instance Storable Fid where
-  sizeOf    _           = #{size struct m0_fid}
-  alignment _           = #{alignment struct m0_fid}
-  peek      p           = liftM2 Fid
-                            (#{peek struct m0_fid, f_container} p)
-                            (#{peek struct m0_fid, f_key} p)
-  poke      p (Fid c k) = do #{poke struct m0_fid, f_container} p c
-                             #{poke struct m0_fid, f_key} p k
-
--- | Representation of @m0_conf_filesystem@.
-data Filesystem = Filesystem
-    { cf_rootfid  :: Fid
-    , cf_params   :: [String]
-    , cf_services :: IO (WithClose CObj)
-    }
-
-getFilesystem :: Ptr Obj -> IO Filesystem
-getFilesystem pc = do
-  pfs <- confc_cast_filesystem pc
-  fid <- #{peek struct m0_conf_filesystem, cf_rootfid} pfs
-  params <- #{peek struct m0_conf_filesystem, cf_params} pfs >>= peekStringArray
-  return Filesystem
-           { cf_rootfid = fid
-           , cf_params = params
-           , cf_services = getChild pc m0_SERVICE_FID
-           }
-
-foreign import ccall unsafe confc_cast_filesystem :: Ptr Obj
-                                                  -> IO (Ptr Filesystem)
-
-peekStringArray :: Ptr CString -> IO [String]
-peekStringArray p = mapM peekCString
-                  $ takeWhile (/=nullPtr)
-                  $ map (unsafePerformIO . peek)
-                  $ iterate (`advancePtr` 1) p
+foreign import ccall unsafe  "&M0_CONF_RACK_TYPE"
+                             m0_CONF_RACK_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_ENCLOSURE_TYPE"
+                             m0_CONF_ENCLOSURE_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_CONTROLLER_TYPE"
+                             m0_CONF_CONTROLLER_TYPE :: Ptr ObjType
+foreign import ccall unsafe  "&M0_CONF_DISK_TYPE"
+                             m0_CONF_DISK_TYPE :: Ptr ObjType
 
 -- | Representation of @m0_conf_dir@.
 data Dir = Dir
@@ -285,6 +277,118 @@ getDir po = return Dir
 foreign import ccall m0_confc_readdir_sync :: Ptr Obj -> Ptr (Ptr Obj)
                                            -> IO CInt
 
+-- | Representation of @m0_conf_root@.
+data Root = Root {
+  rt_verno :: Word64
+}
+
+getRoot :: Ptr Obj -> IO Root
+getRoot po = do
+  pr <- confc_cast_root po
+  vn <- #{peek struct m0_conf_root, rt_verno} pr
+  return Root {
+    rt_verno = vn
+  }
+
+foreign import ccall unsafe confc_cast_root :: Ptr Obj
+                                            -> IO (Ptr Root)
+
+-- | Representation of @m0_conf_profile@.
+data Profile = Profile
+    { cp_filesystem :: IO (WithClose CObj)
+    }
+
+getProfile :: Ptr Obj -> IO Profile
+getProfile po = return Profile
+    { cp_filesystem = getChild po m0_FS_FID
+    }
+
+getChild :: Ptr Obj -> RelationFid -> IO (WithClose CObj)
+getChild po fid = open_sync po fid >>= \pc -> fmap (,close pc) $ getCObj pc
+
+-- | Representation of @m0_conf_filesystem@.
+data Filesystem = Filesystem
+    { cf_rootfid  :: Fid
+    , cf_params   :: [String]
+    }
+
+getFilesystem :: Ptr Obj -> IO Filesystem
+getFilesystem pc = do
+  pfs <- confc_cast_filesystem pc
+  fid <- #{peek struct m0_conf_filesystem, cf_rootfid} pfs
+  params <- #{peek struct m0_conf_filesystem, cf_params} pfs >>= peekStringArray
+  return Filesystem
+           { cf_rootfid = fid
+           , cf_params = params
+           }
+
+foreign import ccall unsafe confc_cast_filesystem :: Ptr Obj
+                                                  -> IO (Ptr Filesystem)
+
+peekStringArray :: Ptr CString -> IO [String]
+peekStringArray p = mapM peekCString
+                  $ takeWhile (/=nullPtr)
+                  $ map (unsafePerformIO . peek)
+                  $ iterate (`advancePtr` 1) p
+
+data Pool = Pool {
+    pl_pvers :: IO (WithClose CObj)
+  , pl_order :: Word32
+}
+
+getPool :: Ptr Obj -> IO Pool
+getPool po = do
+  pl <- confc_cast_pool po
+  o <- #{peek struct m0_conf_pool, pl_order} pl
+  return Pool {
+      pl_pvers = getChild po m0_POOL_PVERS_FID
+    , pl_order = o
+  }
+
+foreign import ccall unsafe confc_cast_pool :: Ptr Obj
+                                            -> IO (Ptr Pool)
+
+-- | Stub implementation of pool version object
+data PVer = PVer
+
+getPVer :: Ptr Obj -> IO PVer
+getPVer _ = return PVer
+
+data ObjV = ObjV
+
+getObjV :: Ptr Obj -> IO ObjV
+getObjV _ = return ObjV
+
+-- | Represetation of `m0_conf_node`.
+data Node = Node
+    { cn_memsize    :: Word32
+    , cn_nr_cpu     :: Word32
+    , cn_last_state :: Word64
+    , cn_flags      :: Word64
+    }
+
+getNode :: Ptr Obj -> IO Node
+getNode po = do
+  pn <- confc_cast_node po
+  memsize <- #{peek struct m0_conf_node, cn_memsize} pn
+  nr_cpu <- #{peek struct m0_conf_node, cn_nr_cpu} pn
+  last_state <- #{peek struct m0_conf_node, cn_last_state} pn
+  flags <- #{peek struct m0_conf_node, cn_flags} pn
+  return Node
+           { cn_memsize = memsize
+           , cn_nr_cpu = nr_cpu
+           , cn_last_state = last_state
+           , cn_flags = flags
+           }
+
+foreign import ccall unsafe confc_cast_node :: Ptr Obj
+                                            -> IO (Ptr Service)
+
+data Process = Process
+
+getProcess :: Ptr Obj -> IO Process
+getProcess _ = return Process
+
 -- | Representation of `m0_conf_service_type`.
 data ServiceType
     = CST_MDS
@@ -300,7 +404,6 @@ data ServiceType
 data Service = Service
     { cs_type      :: ServiceType
     , cs_endpoints :: [String]
-    , cs_node      :: IO (WithClose CObj)
     }
 
 getService :: Ptr Obj -> IO Service
@@ -312,7 +415,6 @@ getService po = do
   return Service
            { cs_type = toEnum $ fromIntegral (stype :: CInt)
            , cs_endpoints = endpoints
-           , cs_node = getChild po m0_NODE_FID
            }
 
 foreign import ccall unsafe confc_cast_service :: Ptr Obj
@@ -336,70 +438,26 @@ instance Enum ServiceType where
   fromEnum CST_HA          = #{const M0_CST_HA}
   fromEnum (CST_UNKNOWN i) = i
 
--- | Represetation of `m0_conf_node`.
-data Node = Node
-    { cn_memsize    :: Word32
-    , cn_nr_cpu     :: Word32
-    , cn_last_state :: Word64
-    , cn_flags      :: Word64
-    , cn_pool_id    :: Word64
-    , cn_nics       :: IO (WithClose CObj)
-    , cn_sdevs      :: IO (WithClose CObj)
-    }
+data Rack = Rack
 
-getNode :: Ptr Obj -> IO Node
-getNode po = do
-  pn <- confc_cast_node po
-  memsize <- #{peek struct m0_conf_node, cn_memsize} pn
-  nr_cpu <- #{peek struct m0_conf_node, cn_nr_cpu} pn
-  last_state <- #{peek struct m0_conf_node, cn_last_state} pn
-  flags <- #{peek struct m0_conf_node, cn_flags} pn
-  pool_id <- #{peek struct m0_conf_node, cn_pool_id} pn
-  return Node
-           { cn_memsize = memsize
-           , cn_nr_cpu = nr_cpu
-           , cn_last_state = last_state
-           , cn_flags = flags
-           , cn_pool_id = pool_id
-           , cn_nics = getChild po m0_NICS_FID
-           , cn_sdevs = getChild po m0_SDEVS_FID
-           }
+getRack :: Ptr Obj -> IO Rack
+getRack _ = return Rack
 
-foreign import ccall unsafe confc_cast_node :: Ptr Obj
-                                            -> IO (Ptr Service)
+data Enclosure = Enclosure
 
--- | Represetation of `m0_conf_nic`.
-data Nic = Nic
-    { ni_iface      :: Word32
-    , ni_mtu        :: Word32
-    , ni_speed      :: Word64
-    , ni_filename   :: String
-    , ni_last_state :: Word64
-    }
+getEnclosure :: Ptr Obj -> IO Enclosure
+getEnclosure _ = return Enclosure
 
-getNic :: Ptr Obj -> IO Nic
-getNic po = do
-  pn <- confc_cast_nic po
-  iface <- #{peek struct m0_conf_nic, ni_iface} pn
-  mtu <- #{peek struct m0_conf_nic, ni_mtu} pn
-  speed <- #{peek struct m0_conf_nic, ni_speed} pn
-  filename <- #{peek struct m0_conf_nic, ni_filename} pn >>= peekCString
-  last_state <- #{peek struct m0_conf_nic, ni_last_state} pn
-  return Nic
-           { ni_iface = iface
-           , ni_mtu = mtu
-           , ni_speed = speed
-           , ni_filename = filename
-           , ni_last_state = last_state
-           }
+data Controller = Controller
 
-foreign import ccall unsafe confc_cast_nic :: Ptr Obj
-                                           -> IO (Ptr Service)
+getController :: Ptr Obj -> IO Controller
+getController _ = return Controller
 
 -- | Representation of `m0_conf_sdev`.
 data Sdev = Sdev
     { sd_iface      :: Word32
     , sd_media      :: Word32
+    , sd_bsize      :: Word32
     , sd_size       :: Word64
     , sd_last_state :: Word64
     , sd_flags      :: Word64
@@ -411,6 +469,7 @@ getSdev po = do
   ps <- confc_cast_sdev po
   iface <- #{peek struct m0_conf_sdev, sd_iface} ps
   media <- #{peek struct m0_conf_sdev, sd_media} ps
+  bsize <- #{peek struct m0_conf_sdev, sd_bsize} ps
   size <- #{peek struct m0_conf_sdev, sd_size} ps
   last_state <- #{peek struct m0_conf_sdev, sd_last_state} ps
   flags <- #{peek struct m0_conf_sdev, sd_flags} ps
@@ -418,6 +477,7 @@ getSdev po = do
   return Sdev
            { sd_iface = iface
            , sd_media = media
+           , sd_bsize = bsize
            , sd_size = size
            , sd_last_state = last_state
            , sd_flags = flags
@@ -426,6 +486,15 @@ getSdev po = do
 
 foreign import ccall unsafe confc_cast_sdev :: Ptr Obj
                                             -> IO (Ptr Service)
+
+data Disk = Disk {
+  ck_dev :: IO (WithClose CObj)
+}
+
+getDisk :: Ptr Obj -> IO Disk
+getDisk po = return Disk {
+  ck_dev = getChild po m0_DISK_SDEV_FID
+}
 
 -- * Low level operations
 
@@ -436,14 +505,10 @@ type RelationFid = Ptr Fid
 
 foreign import ccall unsafe "&M0_CONF_PROFILE_FILESYSTEM_FID"
                             m0_FS_FID :: RelationFid
-foreign import ccall unsafe "&M0_CONF_FILESYSTEM_SERVICES_FID"
-                            m0_SERVICE_FID :: RelationFid
-foreign import ccall unsafe "&M0_CONF_SERVICE_NODE_FID"
-                            m0_NODE_FID :: RelationFid
-foreign import ccall unsafe "&M0_CONF_NODE_NICS_FID"
-                            m0_NICS_FID :: RelationFid
-foreign import ccall unsafe "&M0_CONF_NODE_SDEVS_FID"
-                            m0_SDEVS_FID :: RelationFid
+foreign import ccall unsafe "&M0_CONF_POOL_PVERS_FID"
+                            m0_POOL_PVERS_FID :: RelationFid
+foreign import ccall unsafe "&M0_CONF_DISK_SDEV_FID"
+                            m0_DISK_SDEV_FID :: RelationFid
 
 open_sync :: Ptr Obj -> RelationFid -> IO (Ptr Obj)
 open_sync po fid = alloca $ \ppc ->
