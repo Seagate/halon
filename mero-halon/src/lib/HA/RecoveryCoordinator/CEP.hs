@@ -41,10 +41,8 @@ rcRules argv eq = do
 
     -- Node Up
     defineHAEvent "node-up" id $ \(HAEvent _ (NodeUp h pid) _) -> do
-        self <- getSelfProcessId
         let nid               = processNodeId pid
             node              = Node nid
-            selfNodeId        = processNodeId self
             (monSvc, monConf) = prepareMonitorService
 
         ack pid
@@ -56,7 +54,7 @@ rcRules argv eq = do
           locateNodeOnHost node host
           startEQTracker nid
           registerService monSvc
-          _ <- startService selfNodeId monSvc monConf
+          _ <- startService nid monSvc monConf
           return ()
 
     -- Service Start

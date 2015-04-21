@@ -71,30 +71,41 @@ nodeIds = gets (S.toList . foldMap go . M.elems . msMap)
   where
     go (Monitored pid _) = S.singleton $ processNodeId pid
 
+syncRG :: Service MonitorConf
+       -> ProcessId
+       -> CEP MonitorState a
+       -> CEP MonitorState a
+syncRG monSvc mmid action = do
+    old <- get
+    res <- action
+    new <- get
+    rg  <- liftProcess $ getGraph mmid
+    let rg' = disconnect monSvc Monitor (toProcesses old) >>>
+              connect monSvc Monitor (toProcesses new) $ rg
+    _ <- liftProcess $ sync rg'
+    return res
+
 monitorService :: Configuration a
                => Service MonitorConf
                -> ProcessId
                -> Service a
                -> ServiceProcess a
                -> CEP MonitorState ()
-monitorService monSvc mmid svc (ServiceProcess pid) = do
+monitorService monSvc mmid svc (ServiceProcess pid) = syncRG monSvc mmid $ do
     ms <- get
     _  <- liftProcess $ monitor pid
-    rg <- liftProcess $ getGraph mmid
-    let oldMap = msMap ms
-        newMap = M.insert pid (Monitored pid svc) oldMap
-        newMs  = MonitorState newMap
-        rg'    = disconnect monSvc Monitor (toProcesses ms) >>>
-                 connect monSvc Monitor (toProcesses newMs) $ rg
-    put newMs
-    _ <- liftProcess $ sync rg'
-    return ()
+    let m' = M.insert pid (Monitored pid svc) (msMap ms)
+    put ms { msMap = m' }
 
-takeMonitored :: ProcessId -> CEP MonitorState (Maybe Monitored)
-takeMonitored pid = do
+takeMonitored :: Service MonitorConf
+              -> ProcessId
+              -> ProcessId
+              -> CEP MonitorState (Maybe Monitored)
+takeMonitored monSvc mmid pid = syncRG monSvc mmid $ do
     ms <- get
     let mon = M.lookup pid $ msMap ms
         m'  = M.delete pid $ msMap ms
+
     put ms { msMap = m' }
     return mon
 
@@ -113,7 +124,7 @@ monitorRules :: Service MonitorConf -> ProcessId -> RuleM MonitorState ()
 monitorRules monSvc mmid = do
     define "monitor-notification" id $
       \(ProcessMonitorNotification _ pid _) ->
-          traverse_ (reportFailure pid) =<< takeMonitored pid
+          traverse_ (reportFailure pid) =<< takeMonitored monSvc mmid pid
 
     define "service-started" id $ \msg -> do
       ServiceStarted _ svc _ sp <- decodeMsg msg

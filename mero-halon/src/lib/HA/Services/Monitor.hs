@@ -20,9 +20,13 @@ import Network.CEP
 
 import HA.EventQueue.Producer
 import HA.RecoveryCoordinator.Mero (GetMultimapProcessId(..))
+import HA.Resources (Node(..))
 import HA.Service
 import HA.Services.Monitor.CEP
 import HA.Services.Monitor.Types
+
+timeout :: Int
+timeout = 10 * 1000000
 
 remotableDecl [ [d|
     monitorService :: MonitorConf -> Process ()
@@ -30,12 +34,28 @@ remotableDecl [ [d|
 
     _monitoring :: Process ()
     _monitoring = do
+        mmid <- _lookupMultiMapPid
+        st   <- loadPrevProcesses monitor mmid
+        _spawnHeartbeatProcess
+        runProcessor st (monitorRules monitor mmid)
+
+    _lookupMultiMapPid :: Process ProcessId
+    _lookupMultiMapPid = do
         self <- getSelfPid
         _    <- promulgate (GetMultimapProcessId self)
-        mmid <- expect
-        st   <- loadPrevProcesses monitor mmid
+        res  <- expectTimeout timeout
+        case res of
+          Just pid -> return pid
+          _        -> do
+            let node = Node $ processNodeId self
+                msg  = encodeP $ ServiceFailed node monitor self
+            promulgate msg
+
+    _spawnHeartbeatProcess :: Process ()
+    _spawnHeartbeatProcess = do
+        self <- getSelfPid
         _    <- spawnLocal $ heartbeatProcess self
-        runProcessor st (monitorRules monitor mmid)
+        return ()
 
     monitor :: Service MonitorConf
     monitor = Service
