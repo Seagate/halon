@@ -22,7 +22,9 @@ import           Data.Binary (Binary)
 import qualified Data.Map.Strict as M
 import qualified Data.Set        as S
 
+import HA.EventQueue.Consumer (HAEvent(..), defineHAEvent)
 import HA.EventQueue.Producer (promulgate)
+import HA.RecoveryCoordinator.Mero (LoopState(..), decodeMsg)
 import HA.ResourceGraph
 import HA.Resources
 import HA.Service
@@ -33,6 +35,8 @@ data MonitorState = MonitorState { msMap :: !(M.Map ProcessId Monitored) }
 data Heartbeat = Heartbeat deriving (Typeable, Generic)
 
 instance Binary Heartbeat
+
+newtype SaveProcesses = SaveProcesses Processes deriving (Typeable, Binary)
 
 heartbeatDelay :: Int
 heartbeatDelay = 2 * 1000000
@@ -51,9 +55,6 @@ fromMonitoreds = MonitorState . M.fromList . fmap go
 toProcesses :: MonitorState -> Processes
 toProcesses = Processes . fmap encodeMonitored . M.elems . msMap
 
-decodeMsg :: ProcessEncode a => BinRep a -> CEP s a
-decodeMsg = liftProcess . decodeP
-
 loadPrevProcesses :: Service MonitorConf -> ProcessId -> Process MonitorState
 loadPrevProcesses svc mmid = do
     rg <- getGraph mmid
@@ -71,42 +72,28 @@ nodeIds = gets (S.toList . foldMap go . M.elems . msMap)
   where
     go (Monitored pid _) = S.singleton $ processNodeId pid
 
-syncRG :: Service MonitorConf
-       -> ProcessId
-       -> CEP MonitorState a
-       -> CEP MonitorState a
-syncRG monSvc mmid action = do
-    old <- get
-    res <- action
-    new <- get
-    rg  <- liftProcess $ getGraph mmid
-    let rg' = disconnect monSvc Monitor (toProcesses old) >>>
-              connect monSvc Monitor (toProcesses new) $ rg
-    _ <- liftProcess $ sync rg'
-    return res
-
 monitorService :: Configuration a
-               => Service MonitorConf
-               -> ProcessId
-               -> Service a
+               => Service a
                -> ServiceProcess a
                -> CEP MonitorState ()
-monitorService monSvc mmid svc (ServiceProcess pid) = syncRG monSvc mmid $ do
+monitorService svc (ServiceProcess pid) = do
     ms <- get
     _  <- liftProcess $ monitor pid
-    let m' = M.insert pid (Monitored pid svc) (msMap ms)
-    put ms { msMap = m' }
+    let m'    = M.insert pid (Monitored pid svc) (msMap ms)
+        newMs = ms { msMap = m' }
+    put newMs
+    _ <- liftProcess $ promulgate (SaveProcesses $ toProcesses newMs)
+    return ()
 
-takeMonitored :: Service MonitorConf
-              -> ProcessId
-              -> ProcessId
-              -> CEP MonitorState (Maybe Monitored)
-takeMonitored monSvc mmid pid = syncRG monSvc mmid $ do
+takeMonitored :: ProcessId -> CEP MonitorState (Maybe Monitored)
+takeMonitored pid = do
     ms <- get
-    let mon = M.lookup pid $ msMap ms
-        m'  = M.delete pid $ msMap ms
+    let mon   = M.lookup pid $ msMap ms
+        m'    = M.delete pid $ msMap ms
+        newMs = ms { msMap = m' }
 
-    put ms { msMap = m' }
+    put newMs
+    _ <- liftProcess $ promulgate (SaveProcesses $ toProcesses newMs)
     return mon
 
 reportFailure :: ProcessId -> Monitored -> CEP s ()
@@ -120,15 +107,30 @@ reportFailure pid (Monitored _ svc) = liftProcess $ do
 nodeHeartbeatRequest :: NodeId -> CEP s ()
 nodeHeartbeatRequest nid = liftProcess $ nsendRemote nid "nonexistentprocess" ()
 
-monitorRules :: Service MonitorConf -> ProcessId -> RuleM MonitorState ()
-monitorRules monSvc mmid = do
+monitorRules :: RuleM MonitorState ()
+monitorRules = do
     define "monitor-notification" id $
       \(ProcessMonitorNotification _ pid _) ->
-          traverse_ (reportFailure pid) =<< takeMonitored monSvc mmid pid
+          traverse_ (reportFailure pid) =<< takeMonitored pid
 
     define "service-started" id $ \msg -> do
       ServiceStarted _ svc _ sp <- decodeMsg msg
-      monitorService monSvc mmid svc sp
+      monitorService svc sp
 
     define "heartbeat" id $ \Heartbeat ->
       traverse_ nodeHeartbeatRequest =<< nodeIds
+
+saveProcesses :: Service MonitorConf -> Processes -> CEP LoopState ()
+saveProcesses monSvc new = do
+    ls <- get
+    let rg' =
+            case connectedTo monSvc Monitor (lsGraph ls) :: [Processes] of
+              [old] -> disconnect monSvc Monitor old >>>
+                       connect monSvc Monitor new $ lsGraph ls
+              _     -> connect monSvc Monitor new $ lsGraph ls
+    put ls { lsGraph = rg' }
+
+monitorServiceRulesF :: Service MonitorConf -> RuleM LoopState ()
+monitorServiceRulesF monSvc = do
+    defineHAEvent "save-processes" id $ \(HAEvent _ (SaveProcesses ps) _) ->
+      saveProcesses monSvc ps
