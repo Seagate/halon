@@ -20,7 +20,6 @@ import Network.CEP
 
 import HA.EventQueue.Producer
 import HA.RecoveryCoordinator.Mero (GetMultimapProcessId(..))
-import HA.ResourceGraph
 import HA.Service
 import HA.Services.Monitor.CEP
 import HA.Services.Monitor.Types
@@ -34,14 +33,8 @@ remotableDecl [ [d|
         self <- getSelfPid
         _    <- promulgate (GetMultimapProcessId self)
         mmid <- expect
-        st   <- loadPrevProcesses mmid
-        runProcessor st (monitorRules mmid)
-      where
-        loadPrevProcesses mmid = do
-            rg <- getGraph mmid
-            case connectedTo monitor Monitor rg of
-              [ps] -> monitorState ps
-              _    -> return emptyMonitorState
+        st   <- loadPrevProcesses monitor mmid
+        runProcessor st (monitorRules monitor mmid)
 
     monitor :: Service MonitorConf
     monitor = Service

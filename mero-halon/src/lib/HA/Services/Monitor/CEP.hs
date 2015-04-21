@@ -7,6 +7,7 @@ module HA.Services.Monitor.CEP where
 import Network.CEP
 
 import Prelude hiding (id)
+import Control.Arrow ((>>>))
 import Control.Category (id)
 import Data.Foldable (traverse_)
 
@@ -15,6 +16,7 @@ import           Control.Monad.State
 import qualified Data.Map.Strict as M
 
 import HA.EventQueue.Producer (promulgate)
+import HA.ResourceGraph
 import HA.Resources
 import HA.Service
 import HA.Services.Monitor.Types
@@ -32,18 +34,37 @@ fromMonitoreds = MonitorState . M.fromList . fmap go
   where
     go m@(Monitored pid _) = (pid, m)
 
+toProcesses :: MonitorState -> Processes
+toProcesses = Processes . fmap encodeMonitored . M.elems . msMap
+
 decodeMsg :: ProcessEncode a => BinRep a -> CEP s a
 decodeMsg = liftProcess . decodeP
 
+loadPrevProcesses :: Service MonitorConf -> ProcessId -> Process MonitorState
+loadPrevProcesses svc mmid = do
+    rg <- getGraph mmid
+    case connectedTo svc Monitor rg of
+      [ps] -> monitorState ps
+      _    -> return emptyMonitorState
+
 monitorService :: Configuration a
-               => Service a
+               => Service MonitorConf
+               -> ProcessId
+               -> Service a
                -> ServiceProcess a
                -> CEP MonitorState ()
-monitorService svc (ServiceProcess pid) = do
+monitorService monSvc mmid svc (ServiceProcess pid) = do
     ms <- get
     _  <- liftProcess $ monitor pid
-    let m' = M.insert pid (Monitored pid svc) $ msMap ms
-    put ms { msMap = m' }
+    rg <- liftProcess $ getGraph mmid
+    let oldMap = msMap ms
+        newMap = M.insert pid (Monitored pid svc) oldMap
+        newMs  = MonitorState newMap
+        rg'    = disconnect monSvc Monitor (toProcesses ms) >>>
+                 connect monSvc Monitor (toProcesses newMs) $ rg
+    put newMs
+    _ <- liftProcess $ sync rg'
+    return ()
 
 takeMonitored :: ProcessId -> CEP MonitorState (Maybe Monitored)
 takeMonitored pid = do
@@ -61,12 +82,12 @@ reportFailure pid (Monitored _ svc) = liftProcess $ do
     _ <- promulgate msg
     return ()
 
-monitorRules :: ProcessId -> RuleM MonitorState ()
-monitorRules _ = do
+monitorRules :: Service MonitorConf -> ProcessId -> RuleM MonitorState ()
+monitorRules monSvc mmid = do
     define "monitor-notification" id $
       \(ProcessMonitorNotification _ pid _) ->
           traverse_ (reportFailure pid) =<< takeMonitored pid
 
     define "service-started" id $ \msg -> do
       ServiceStarted _ svc _ sp <- decodeMsg msg
-      monitorService svc sp
+      monitorService monSvc mmid svc sp
