@@ -34,6 +34,7 @@ remotableDecl [ [d|
         _    <- promulgate (GetMultimapProcessId self)
         mmid <- expect
         st   <- loadPrevProcesses monitor mmid
+        _    <- spawnLocal $ heartbeatProcess self
         runProcessor st (monitorRules monitor mmid)
 
     monitor :: Service MonitorConf

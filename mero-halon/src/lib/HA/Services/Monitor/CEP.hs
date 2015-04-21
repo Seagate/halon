@@ -1,4 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE OverloadedStrings  #-}
 -- |
 -- Copyright: (C) 2015 Tweag I/O Limited
 --
@@ -9,11 +11,16 @@ import Network.CEP
 import Prelude hiding (id)
 import Control.Arrow ((>>>))
 import Control.Category (id)
+import Control.Concurrent (threadDelay)
 import Data.Foldable (traverse_)
+import Data.Typeable
+import GHC.Generics
 
 import           Control.Distributed.Process
 import           Control.Monad.State
+import           Data.Binary (Binary)
 import qualified Data.Map.Strict as M
+import qualified Data.Set        as S
 
 import HA.EventQueue.Producer (promulgate)
 import HA.ResourceGraph
@@ -22,6 +29,13 @@ import HA.Service
 import HA.Services.Monitor.Types
 
 data MonitorState = MonitorState { msMap :: !(M.Map ProcessId Monitored) }
+
+data Heartbeat = Heartbeat deriving (Typeable, Generic)
+
+instance Binary Heartbeat
+
+heartbeatDelay :: Int
+heartbeatDelay = 2 * 1000000
 
 emptyMonitorState :: MonitorState
 emptyMonitorState = MonitorState M.empty
@@ -46,6 +60,16 @@ loadPrevProcesses svc mmid = do
     case connectedTo svc Monitor rg of
       [ps] -> monitorState ps
       _    -> return emptyMonitorState
+
+heartbeatProcess :: ProcessId -> Process ()
+heartbeatProcess mainpid = forever $ do
+    liftIO $ threadDelay heartbeatDelay
+    usend mainpid Heartbeat
+
+nodeIds :: CEP MonitorState [NodeId]
+nodeIds = gets (S.toList . foldMap go . M.elems . msMap)
+  where
+    go (Monitored pid _) = S.singleton $ processNodeId pid
 
 monitorService :: Configuration a
                => Service MonitorConf
@@ -82,6 +106,9 @@ reportFailure pid (Monitored _ svc) = liftProcess $ do
     _ <- promulgate msg
     return ()
 
+nodeHeartbeatRequest :: NodeId -> CEP s ()
+nodeHeartbeatRequest nid = liftProcess $ nsendRemote nid "nonexistentprocess" ()
+
 monitorRules :: Service MonitorConf -> ProcessId -> RuleM MonitorState ()
 monitorRules monSvc mmid = do
     define "monitor-notification" id $
@@ -91,3 +118,6 @@ monitorRules monSvc mmid = do
     define "service-started" id $ \msg -> do
       ServiceStarted _ svc _ sp <- decodeMsg msg
       monitorService monSvc mmid svc sp
+
+    define "heartbeat" id $ \Heartbeat ->
+      traverse_ nodeHeartbeatRequest =<< nodeIds
