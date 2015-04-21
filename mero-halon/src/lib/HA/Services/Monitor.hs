@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 -- |
--- Copyright: (C) 2015 Tweag I/O Limited
+-- Copyright: (C) 2015  Seagate LLC
 --
 module HA.Services.Monitor
     ( MonitorConf
