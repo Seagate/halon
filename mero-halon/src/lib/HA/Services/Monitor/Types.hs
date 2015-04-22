@@ -36,6 +36,11 @@ instance Hashable MonitorConf
 
 data Monitored = forall a. Configuration a => Monitored ProcessId (Service a)
 
+data MasterMonitor = MasterMonitor deriving (Eq, Ord, Show, Typeable, Generic)
+
+instance Binary MasterMonitor
+instance Hashable MasterMonitor
+
 data Slot =
     Slot
     { sPid :: !ProcessId  -- ^ Monitored Process
@@ -69,10 +74,18 @@ instance Hashable Monitor
 resourceDictProcesses :: Dict (Resource Processes)
 resourceDictProcesses = Dict
 
+resourceDictMasterMonitor :: Dict (Resource MasterMonitor)
+resourceDictMasterMonitor = Dict
+
 relationDictMonitorProcesses :: Dict (
     Relation Monitor (ServiceProcess MonitorConf) Processes
     )
 relationDictMonitorProcesses = Dict
+
+relationDictClusterMasterMonitorServiceProcess :: Dict (
+    Relation Cluster MasterMonitor (ServiceProcess MonitorConf)
+    )
+relationDictClusterMasterMonitorServiceProcess = Dict
 
 monitorSchema :: Schema MonitorConf
 monitorSchema = pure MonitorConf
@@ -104,10 +117,18 @@ encodeMonitored (Monitored pid svc@(Service _ _ d)) =
 $(generateDicts ''MonitorConf)
 $(deriveService ''MonitorConf 'monitorSchema [ 'relationDictMonitorProcesses
                                              , 'resourceDictProcesses
+                                             , 'relationDictClusterMasterMonitorServiceProcess
+                                             , 'resourceDictMasterMonitor
                                              ])
 
 instance Resource Processes where
     resourceDict = $(mkStatic 'resourceDictProcesses)
 
+instance Resource MasterMonitor where
+    resourceDict = $(mkStatic 'resourceDictMasterMonitor)
+
 instance Relation Monitor (ServiceProcess MonitorConf) Processes where
     relationDict = $(mkStatic 'relationDictMonitorProcesses)
+
+instance Relation Cluster MasterMonitor (ServiceProcess MonitorConf) where
+    relationDict = $(mkStatic 'relationDictClusterMasterMonitorServiceProcess)

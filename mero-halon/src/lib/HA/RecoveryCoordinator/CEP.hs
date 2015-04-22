@@ -30,6 +30,8 @@ import qualified HA.Services.EQTracker as EQT
 import           HA.Services.DecisionLog (EntriesLogged(..))
 import           HA.Services.Monitor ( prepareMonitorService
                                      , monitorServiceRules
+                                     , sendToMasterMonitor
+                                     , monitorServiceName
                                      )
 import           HA.Services.SSPL (ssplRules)
 
@@ -94,7 +96,12 @@ rcRules argv eq = do
         registerServiceProcess n svc cfg sp
         let svcStr = snString $ serviceName svc
 
-        sendToMonitor msg
+        when (serviceName svc /= monitorServiceName) $
+          sendToMonitor msg
+
+        when (serviceName svc == monitorServiceName) $
+          sendToMasterMonitor msg
+
         cepLog "started" ("Service " ++ svcStr ++ " started")
 
     -- Service could not start

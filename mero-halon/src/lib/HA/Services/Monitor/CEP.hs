@@ -17,6 +17,7 @@ import Data.Typeable
 import GHC.Generics
 
 import           Control.Distributed.Process
+import           Control.Distributed.Process.Serializable (Serializable)
 import           Control.Monad.State
 import           Data.Binary (Binary)
 import qualified Data.Map.Strict as M
@@ -37,6 +38,10 @@ data Heartbeat = Heartbeat deriving (Typeable, Generic)
 instance Binary Heartbeat
 
 newtype SaveProcesses = SaveProcesses Processes deriving (Typeable, Binary)
+
+newtype SetMasterMonitor =
+    SetMasterMonitor ProcessId
+    deriving (Typeable, Binary)
 
 heartbeatDelay :: Int
 heartbeatDelay = 2 * 1000000
@@ -59,10 +64,13 @@ loadPrevProcesses :: ProcessId -> Process MonitorState
 loadPrevProcesses mmid = do
     rg   <- getGraph mmid
     self <- getSelfPid
-    let sp = ServiceProcess self :: ServiceProcess MonitorConf
-    case connectedTo sp Monitor rg of
-      [ps] -> monitorState ps
-      _    -> return emptyMonitorState
+    let node   = Node $ processNodeId self
+        action = do
+          sp <- lookupNodeMonitorProcess node rg
+          lookupMonitorProcesses sp rg
+    case action of
+      Just ps -> monitorState ps
+      _       -> return emptyMonitorState
 
 heartbeatProcess :: ProcessId -> Process ()
 heartbeatProcess mainpid = forever $ do
@@ -152,7 +160,24 @@ saveProcesses new@(Processes node _) = do
 
     put ls { lsGraph = rg' }
 
+setMasterMonitor :: ProcessId -> CEP LoopState ()
+setMasterMonitor pid = do
+    ls <- get
+    let sp  = ServiceProcess pid :: ServiceProcess MonitorConf
+        rg' = connect MasterMonitor Cluster sp $ lsGraph ls
+    put ls { lsGraph = rg' }
+
+sendToMasterMonitor :: Serializable a => a -> CEP LoopState ()
+sendToMasterMonitor a = do
+    rg <- gets lsGraph
+    case connectedTo MasterMonitor Cluster rg :: [ServiceProcess MonitorConf] of
+      [ServiceProcess pid] -> liftProcess $ usend pid a
+      _                    -> return ()
+
 monitorServiceRules :: RuleM LoopState ()
 monitorServiceRules = do
     defineHAEvent "save-processes" id $ \(HAEvent _ (SaveProcesses ps) _) ->
       saveProcesses ps
+
+    defineHAEvent "set-master-monitor" id $
+      \(HAEvent _ (SetMasterMonitor pid) _) -> setMasterMonitor pid

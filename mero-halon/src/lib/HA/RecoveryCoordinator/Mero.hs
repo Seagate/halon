@@ -166,7 +166,7 @@ data GetMultimapProcessId =
 
 instance Binary GetMultimapProcessId
 
-newtype MasterMonitor = MasterMonitor ProcessId deriving (Typeable, Binary)
+-- newtype MasterMonitor = MasterMonitor ProcessId deriving (Typeable, Binary)
 
 reconfFailureLimit :: Int
 reconfFailureLimit = 3

@@ -12,6 +12,7 @@ module HA.Services.Monitor
     , monitorService__tdict
     , monitor__static
     , monitorServiceRules
+    , sendToMasterMonitor
     ) where
 
 import Control.Distributed.Process hiding (monitor)
