@@ -13,6 +13,10 @@ module HA.Services.Monitor
     , monitor__static
     , monitorServiceRules
     , sendToMasterMonitor
+    , masterMonitorProcess
+    , masterMonitorProcess__static
+    , masterMonitorProcess__sdict
+    , masterMonitorProcess__tdict
     ) where
 
 import Control.Distributed.Process hiding (monitor)
@@ -30,6 +34,12 @@ import HA.Services.Monitor.Types
 timeout :: Int
 timeout = 10 * 1000000
 
+spawnHeartbeatProcess :: Process ()
+spawnHeartbeatProcess = do
+    self <- getSelfPid
+    _    <- spawnLocal $ heartbeatProcess self
+    return ()
+
 remotableDecl [ [d|
     monitorService :: MonitorConf -> Process ()
     monitorService _ = _monitoring
@@ -38,7 +48,7 @@ remotableDecl [ [d|
     _monitoring = do
         mmid <- _lookupMultiMapPid
         st   <- loadPrevProcesses mmid
-        _spawnHeartbeatProcess
+        spawnHeartbeatProcess
         runProcessor st monitorRules
 
     _lookupMultiMapPid :: Process ProcessId
@@ -53,11 +63,13 @@ remotableDecl [ [d|
                 msg  = encodeP $ ServiceFailed node monitor self
             promulgate msg
 
-    _spawnHeartbeatProcess :: Process ()
-    _spawnHeartbeatProcess = do
+    masterMonitorProcess :: () -> Process ()
+    masterMonitorProcess _ = do
+        spawnHeartbeatProcess
         self <- getSelfPid
-        _    <- spawnLocal $ heartbeatProcess self
-        return ()
+        let nid = processNodeId self
+        _ <- promulgateEQ [nid] (SetMasterMonitor self)
+        runProcessor emptyMonitorState monitorRules
 
     monitor :: Service MonitorConf
     monitor = Service

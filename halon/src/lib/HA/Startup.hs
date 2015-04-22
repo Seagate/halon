@@ -85,9 +85,10 @@ remotableDecl [ [d|
  addNodes :: ( [NodeId]
              , [NodeId] -- ^ (New nodes, existing trackers)
              , Closure (ProcessId -> ProcessId -> Process ())
+             , Closure (Process ())
              )
           -> Process ()
- addNodes (newNodes, trackers, rcClosure) = do
+ addNodes (newNodes, trackers, rcClosure, masterMClosure) = do
      disconnectAllNodeConnections
      mcRGroup <- liftIO $ readIORef globalRGroup
      case mcRGroup of
@@ -98,19 +99,21 @@ remotableDecl [ [d|
          forM_ (zip newNodes replicas) $ \(n,replica) -> spawn
                   n
                   $ $(mkClosure 'startRS)
-                      (cRGroup, Just replica, rcClosure)
+                      (cRGroup, Just replica, rcClosure, masterMClosure)
        Nothing -> return ()
 
 
  startRS :: ( Closure (Process (RLogGroup HAReplicatedState))
             , Maybe (Replica RLogGroup)
             , Closure (ProcessId -> ProcessId -> Process ())
+            , Closure (Process ())
             , Int
             )
             -> Process ()
- startRS (cRGroup, mlocalReplica, rcClosure, rsLeaderLease) = do
+ startRS (cRGroup, mlocalReplica, rcClosure, masterMClosure, rsLeaderLease) = do
      rGroup <- unClosure cRGroup >>= id
      recoveryCoordinator <- unClosure rcClosure
+     masterMonitor       <- unClosure masterMClosure
      maybe (return ()) (updateRGroup rGroup) mlocalReplica
      liftIO $ writeIORef globalRGroup $ Just cRGroup
      eqpid <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
@@ -118,7 +121,8 @@ remotableDecl [ [d|
               $ recoverySupervisor (viewRState $(mkStatic 'rsView) rGroup)
                                    rsLeaderLease
               $ mask_ $ do
-                mRCPid <- liftIO $ newEmptyMVar
+                mRCPid <- liftIO newEmptyMVar
+                _ <- spawnLocal masterMonitor
                 mmpid <- spawnLocal $ do
                        rcpid <- liftIO $ readMVar mRCPid
                        link rcpid
@@ -168,10 +172,12 @@ remotableDecl [ [d|
              , Int
              , Int
              , Closure (ProcessId -> ProcessId -> Process ())
+             , Closure (Process ())
              , Int
              )
           -> Process (Maybe (Bool,[NodeId],[NodeId],[NodeId]))
  ignition (update, trackers, snapshotThreshold, snapshotTimeout, rcClosure
+          , masterMClosure
           , rsLeaderLease
           ) = do
     say "Ignition!"
@@ -194,6 +200,7 @@ remotableDecl [ [d|
           ( cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
           , Nothing :: Maybe (Replica RLogGroup)
           , rcClosure
+          , masterMClosure
           , rsLeaderLease
           )
       return Nothing

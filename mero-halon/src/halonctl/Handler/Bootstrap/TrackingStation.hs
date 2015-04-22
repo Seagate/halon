@@ -40,6 +40,7 @@ import qualified Options.Applicative as Opt
 
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
+import HA.Services.Monitor
 import HA.Startup
 
 data Config = Config
@@ -112,5 +113,6 @@ start nids naConf = do
            , fromDefault . configSnapshotsThreshold $ naConf
            , fromDefault . configSnapshotsTimeout $ naConf
            , $(mkClosure 'recoveryCoordinator) $ IgnitionArguments nids
+           , $(mkClosure 'masterMonitorProcess) ()
            , fromDefault . configRSLease $ naConf
            )
