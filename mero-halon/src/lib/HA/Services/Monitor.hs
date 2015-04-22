@@ -20,7 +20,7 @@ import Control.Distributed.Static
 import Network.CEP
 
 import HA.EventQueue.Producer
-import HA.RecoveryCoordinator.Mero (GetMultimapProcessId(..), LoopState)
+import HA.RecoveryCoordinator.Mero (GetMultimapProcessId(..))
 import HA.Resources (Node(..))
 import HA.Service
 import HA.Services.Monitor.CEP
@@ -36,7 +36,7 @@ remotableDecl [ [d|
     _monitoring :: Process ()
     _monitoring = do
         mmid <- _lookupMultiMapPid
-        st   <- loadPrevProcesses monitor mmid
+        st   <- loadPrevProcesses mmid
         _spawnHeartbeatProcess
         runProcessor st monitorRules
 
@@ -68,6 +68,3 @@ remotableDecl [ [d|
 
 prepareMonitorService :: (Service MonitorConf, MonitorConf)
 prepareMonitorService = (monitor, MonitorConf)
-
-monitorServiceRules :: RuleM LoopState ()
-monitorServiceRules = monitorServiceRulesF monitor

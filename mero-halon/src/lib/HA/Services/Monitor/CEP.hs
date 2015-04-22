@@ -45,20 +45,22 @@ emptyMonitorState :: MonitorState
 emptyMonitorState = MonitorState M.empty
 
 monitorState :: Processes -> Process MonitorState
-monitorState (Processes ps) = fmap fromMonitoreds $ traverse decodeSlot ps
+monitorState (Processes _ ps) = fmap fromMonitoreds $ traverse decodeSlot ps
 
 fromMonitoreds :: [Monitored] -> MonitorState
 fromMonitoreds = MonitorState . M.fromList . fmap go
   where
     go m@(Monitored pid _) = (pid, m)
 
-toProcesses :: MonitorState -> Processes
-toProcesses = Processes . fmap encodeMonitored . M.elems . msMap
+toProcesses :: Node -> MonitorState -> Processes
+toProcesses n = Processes n . fmap encodeMonitored . M.elems . msMap
 
-loadPrevProcesses :: Service MonitorConf -> ProcessId -> Process MonitorState
-loadPrevProcesses svc mmid = do
-    rg <- getGraph mmid
-    case connectedTo svc Monitor rg of
+loadPrevProcesses :: ProcessId -> Process MonitorState
+loadPrevProcesses mmid = do
+    rg   <- getGraph mmid
+    self <- getSelfPid
+    let sp = ServiceProcess self :: ServiceProcess MonitorConf
+    case connectedTo sp Monitor rg of
       [ps] -> monitorState ps
       _    -> return emptyMonitorState
 
@@ -77,23 +79,27 @@ monitorService :: Configuration a
                -> ServiceProcess a
                -> CEP MonitorState ()
 monitorService svc (ServiceProcess pid) = do
-    ms <- get
-    _  <- liftProcess $ monitor pid
-    let m'    = M.insert pid (Monitored pid svc) (msMap ms)
+    ms   <- get
+    _    <- liftProcess $ monitor pid
+    self <- liftProcess getSelfPid
+    let node  = Node $ processNodeId self
+        m'    = M.insert pid (Monitored pid svc) (msMap ms)
         newMs = ms { msMap = m' }
     put newMs
-    _ <- liftProcess $ promulgate (SaveProcesses $ toProcesses newMs)
+    _ <- liftProcess $ promulgate (SaveProcesses $ toProcesses node newMs)
     return ()
 
 takeMonitored :: ProcessId -> CEP MonitorState (Maybe Monitored)
 takeMonitored pid = do
-    ms <- get
-    let mon   = M.lookup pid $ msMap ms
+    ms   <- get
+    self <- liftProcess getSelfPid
+    let node  = Node $ processNodeId self
+        mon   = M.lookup pid $ msMap ms
         m'    = M.delete pid $ msMap ms
         newMs = ms { msMap = m' }
 
     put newMs
-    _ <- liftProcess $ promulgate (SaveProcesses $ toProcesses newMs)
+    _ <- liftProcess $ promulgate (SaveProcesses $ toProcesses node newMs)
     return mon
 
 reportFailure :: ProcessId -> Monitored -> CEP s ()
@@ -120,17 +126,33 @@ monitorRules = do
     define "heartbeat" id $ \Heartbeat ->
       traverse_ nodeHeartbeatRequest =<< nodeIds
 
-saveProcesses :: Service MonitorConf -> Processes -> CEP LoopState ()
-saveProcesses monSvc new = do
+lookupNodeMonitorProcess :: Node -> Graph -> Maybe (ServiceProcess MonitorConf)
+lookupNodeMonitorProcess node rg =
+    case connectedTo node Runs rg of
+      [sp] -> Just sp
+      _    -> Nothing
+
+lookupMonitorProcesses :: ServiceProcess MonitorConf -> Graph -> Maybe Processes
+lookupMonitorProcesses sp rg =
+    case connectedTo sp Monitor rg of
+      [ps] -> Just ps
+      _    -> Nothing
+
+saveProcesses :: Processes -> CEP LoopState ()
+saveProcesses new@(Processes node _) = do
     ls <- get
     let rg' =
-            case connectedTo monSvc Monitor (lsGraph ls) :: [Processes] of
-              [old] -> disconnect monSvc Monitor old >>>
-                       connect monSvc Monitor new $ lsGraph ls
-              _     -> connect monSvc Monitor new $ lsGraph ls
+            case lookupNodeMonitorProcess node $ lsGraph ls of
+              Just sp ->
+                case lookupMonitorProcesses sp $ lsGraph ls of
+                  Just old -> disconnect sp Monitor old >>>
+                              connect sp Monitor new $ lsGraph ls
+                  _        -> connect sp Monitor new $ lsGraph ls
+              _ -> lsGraph ls
+
     put ls { lsGraph = rg' }
 
-monitorServiceRulesF :: Service MonitorConf -> RuleM LoopState ()
-monitorServiceRulesF monSvc = do
+monitorServiceRules :: RuleM LoopState ()
+monitorServiceRules = do
     defineHAEvent "save-processes" id $ \(HAEvent _ (SaveProcesses ps) _) ->
-      saveProcesses monSvc ps
+      saveProcesses ps

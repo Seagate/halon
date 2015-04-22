@@ -55,7 +55,8 @@ rcRules argv eq = do
           registerHost host
           locateNodeOnHost node host
           startEQTracker nid
-          registerService monSvc
+
+          -- We start a new monitor for any node that's started
           _ <- startService nid monSvc monConf
           return ()
 

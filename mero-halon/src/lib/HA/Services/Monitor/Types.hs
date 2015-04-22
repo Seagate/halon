@@ -25,6 +25,7 @@ import Data.Hashable
 import Options.Schema
 
 import HA.ResourceGraph
+import HA.Resources
 import HA.Service
 import HA.Service.TH
 
@@ -50,9 +51,15 @@ instance Hashable Slot
 instance Show Slot where
     show (Slot p _) = "Slot " ++ show p
 
-newtype Processes =
-    Processes [Slot]
-    deriving (Show, Eq, Typeable, Binary, Hashable)
+data Processes =
+    Processes
+    { psNode :: !Node
+    , psSlot :: ![Slot]
+    }
+    deriving (Show, Eq, Typeable, Generic)
+
+instance Binary Processes
+instance Hashable Processes
 
 data Monitor = Monitor deriving (Eq, Show, Typeable, Generic)
 
@@ -63,7 +70,7 @@ resourceDictProcesses :: Dict (Resource Processes)
 resourceDictProcesses = Dict
 
 relationDictMonitorProcesses :: Dict (
-    Relation Monitor (Service MonitorConf) Processes
+    Relation Monitor (ServiceProcess MonitorConf) Processes
     )
 relationDictMonitorProcesses = Dict
 
@@ -102,5 +109,5 @@ $(deriveService ''MonitorConf 'monitorSchema [ 'relationDictMonitorProcesses
 instance Resource Processes where
     resourceDict = $(mkStatic 'resourceDictProcesses)
 
-instance Relation Monitor (Service MonitorConf) Processes where
+instance Relation Monitor (ServiceProcess MonitorConf) Processes where
     relationDict = $(mkStatic 'relationDictMonitorProcesses)

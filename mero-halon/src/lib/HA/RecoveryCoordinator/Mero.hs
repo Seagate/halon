@@ -31,6 +31,7 @@ module HA.RecoveryCoordinator.Mero
        , ReconfigureCmd(..)
        , ReconfigureMsg
        , GetMultimapProcessId(..)
+       , MasterMonitor(..)
        , sayRC
        , knownResource
        , registerNode
@@ -164,6 +165,8 @@ data GetMultimapProcessId =
     GetMultimapProcessId ProcessId deriving (Typeable, Generic)
 
 instance Binary GetMultimapProcessId
+
+newtype MasterMonitor = MasterMonitor ProcessId deriving (Typeable, Binary)
 
 reconfFailureLimit :: Int
 reconfFailureLimit = 3
