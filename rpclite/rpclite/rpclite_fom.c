@@ -3,15 +3,15 @@
 // License   : All rights reserved.
 //
 
+#include "rpclite_fom.h"
+#include "rpclite.h"
+#include "rpclite_fop_ff.h"
 #include "fop/fop.h"
 #include "lib/errno.h"
 #include "lib/memory.h"
 #include "rpc/rpc.h"
 #include "fop/fom_generic.h"
 
-#include "rpclite.h"
-#include "rpclite_fom.h"
-#include "rpclite_fop_ff.h"
 
 extern rpc_listen_callbacks_t rpclite_listen_cbs;
 

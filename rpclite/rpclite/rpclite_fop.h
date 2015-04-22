@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "config.h"
 #include "fop/fop.h"
 #include "rpc/rpc_opcodes.h"
 

@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "config.h"
 #include "fop/fop.h"
 #include "sys/uio.h"
 

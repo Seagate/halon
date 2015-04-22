@@ -5,7 +5,7 @@
 
 #pragma once
 
-
+#include "config.h"
 #include "rpclite_fop.h"
 
 struct rpc_item {

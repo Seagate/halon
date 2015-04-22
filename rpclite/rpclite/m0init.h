@@ -3,4 +3,6 @@
 //
 #pragma once
 
+#include "config.h"
+
 int m0_init_wrapper ();

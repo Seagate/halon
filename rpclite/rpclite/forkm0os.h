@@ -3,6 +3,7 @@
 //
 #pragma once
 
+#include "config.h"
 #include "HsFFI.h"
 #include "lib/thread.h"
 

@@ -3,6 +3,9 @@
 // License   : All rights reserved.
 //
 
+#include "rpclite_sender_fom.h"
+#include "rpclite.h"
+
 #include <stdlib.h>
 #include "lib/errno.h"
 #include "lib/memory.h"
@@ -14,9 +17,6 @@
 #include "fop/fop_item_type.h"
 #include "fop/fom_generic.h"
 
-
-#include "rpclite.h"
-#include "rpclite_sender_fom.h"
 
 extern struct m0_reqh_service_type m0_rpc_service_type;
 

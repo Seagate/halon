@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "config.h"
 #include <semaphore.h>
 #include "rpclite.h"
 #include "fop/fom_generic.h"
