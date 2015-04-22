@@ -58,6 +58,8 @@ ut transport = return $
       --   HA.RecoveryCoordinator.Mero.Tests.testDecisionLog transport
       , testCase "RCServiceStopped" $
         HA.RecoveryCoordinator.Mero.Tests.testServiceStopped transport
+      , testCase "RCSupervision" $
+        HA.RecoveryCoordinator.Mero.Tests.testSupervison transport
       ]
 
 runTests :: (Transport -> IO TestTree) -> IO ()

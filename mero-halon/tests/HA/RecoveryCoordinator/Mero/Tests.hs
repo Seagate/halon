@@ -15,6 +15,7 @@ module HA.RecoveryCoordinator.Mero.Tests
   , testEQTrimming
 --  , testDecisionLog
   , testServiceStopped
+  , testSupervison
   ) where
 
 import Prelude hiding ((<$>), (<*>))
@@ -26,6 +27,7 @@ import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue
 import HA.EventQueue.Definitions
+import HA.EventQueue.Consumer (HAEvent(..))
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.Multimap.Implementation
 import HA.Multimap.Process
@@ -41,15 +43,20 @@ import HA.Service
   ( Configuration
   , Service
   , ServiceFailed(..)
+  , ServiceFailedMsg
   , ServiceProcess(..)
   , ServiceStartRequest(..)
   , ServiceStopRequest(..)
+  , ServiceStarted(..)
+  , ServiceStartedMsg
 --  , Owns(..)
+  , decodeP
   , encodeP
   , runningService
   )
 import qualified HA.Services.Dummy as Dummy
 -- import qualified HA.Services.DecisionLog as DLog
+import HA.Services.Monitor
 import RemoteTables ( remoteTable )
 
 import qualified SSPL.Bindings as SSPL
@@ -516,6 +523,74 @@ testServiceStopped transport = do
 
         (_ :: ProcessMonitorNotification) <- expect
         say $ "dummy service stopped."
+  where
+    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+         remoteTable
+
+testSupervison :: Transport -> IO ()
+testSupervison transport = do
+    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
+        nid <- getSelfNode
+        self <- getSelfPid
+
+        registerInterceptor $ \string -> case string of
+            str@"Starting service dummy" -> send self str
+            _ -> return ()
+
+        say $ "tests node: " ++ show nid
+        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+                             [nid] ((Nothing,[]), fromList [])
+        pRGroup <- unClosure cRGroup
+        rGroup <- pRGroup
+        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        (_,rc) <- runRC (eq, IgnitionArguments [nid]) rGroup
+
+        simpleSubscribe rc (Sub :: Sub (HAEvent SetMasterMonitor))
+        simpleSubscribe rc (Sub :: Sub (HAEvent ServiceFailedMsg))
+        mmpid <- spawnLocal $ masterMonitorProcess ()
+        Published (HAEvent _ (SetMasterMonitor ppid) _) _ <- expect
+        if ppid == mmpid
+          then say "Master Monitor configured correctly"
+          else error "Unexpected Master Monitor"
+
+        simpleSubscribe mmpid (Sub :: Sub ServiceStartedMsg)
+        simpleSubscribe mmpid (Sub :: Sub ProcessMonitorNotification)
+        nodeUp ([nid], 2000000)
+        Published (ssmsg :: ServiceStartedMsg) _ <- expect
+        say "A new Monitor process has been started on NodeUp"
+
+        ServiceStarted _ _ _ (ServiceProcess mpid) <- decodeP ssmsg
+        kill mpid "Farewell"
+        Published (_ :: ProcessMonitorNotification) _ <- expect
+        say "Master Monitor acknowledged a monitor has died"
+
+        Published (HAEvent _ (_ :: ServiceFailedMsg) _) _ <- expect
+        say "Master Monitor has notified the RC"
+
+        Published (ssmsg2 :: ServiceStartedMsg) _ <- expect
+        say "Failed monitor has be restarted by the RC and Master Node knows"
+
+        ServiceStarted _ _ _ (ServiceProcess mpid2) <- decodeP ssmsg2
+        simpleSubscribe mpid2 (Sub :: Sub ServiceStartedMsg)
+        simpleSubscribe mpid2 (Sub :: Sub ServiceFailedMsg)
+        simpleSubscribe mpid2 (Sub :: Sub ProcessMonitorNotification)
+        _ <- promulgateEQ [nid] . encodeP $
+          ServiceStartRequest (Node nid) Dummy.dummy
+            (Dummy.DummyConf $ Configured "Test 1")
+
+        Published (ssmsg3 :: ServiceStartedMsg) _ <- expect
+        say "Dummy has started and Monitor is acknowledged"
+
+        ServiceStarted _ _ _(ServiceProcess dummyPid) <- decodeP ssmsg3
+        kill dummyPid "Farewell"
+        Published (_ :: ProcessMonitorNotification) _ <- expect
+        say "Dummy died, Monitor is acknowledged"
+
+        Published (HAEvent _ (_ :: ServiceFailedMsg) _) _ <- expect
+        say "RC has been notified that Dummy service died"
+
+        Published (_ :: ServiceStartedMsg) _ <- expect
+        say "Dummy Service has been restarted and Monitor acknownledged"
   where
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable

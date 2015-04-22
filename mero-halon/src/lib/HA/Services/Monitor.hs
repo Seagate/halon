@@ -4,6 +4,7 @@
 --
 module HA.Services.Monitor
     ( MonitorConf
+    , SetMasterMonitor(..)
     , monitorServiceName
     , prepareMonitorService
     , HA.Services.Monitor.Types.__remoteTable
