@@ -31,18 +31,23 @@ import HA.Resources
 import HA.Service
 import HA.Services.Monitor.Types
 
-data MonitorState = MonitorState { msMap :: !(M.Map ProcessId Monitored) }
+-- | Monitor internal state.
+newtype MonitorState = MonitorState { msMap :: M.Map ProcessId Monitored }
 
+-- | Sent by heartbeat process.
 data Heartbeat = Heartbeat deriving (Typeable, Generic)
 
 instance Binary Heartbeat
 
+-- | Sent by a monitor process to the RC.
 newtype SaveProcesses = SaveProcesses Processes deriving (Typeable, Binary)
 
 newtype SetMasterMonitor =
     SetMasterMonitor ProcessId
     deriving (Typeable, Binary)
 
+-- | Delay (seconds) at which the heartbeat process sends a 'Heartbeat' event to main
+--   monitor process thread.
 heartbeatDelay :: Int
 heartbeatDelay = 2 * 1000000
 
@@ -57,9 +62,13 @@ fromMonitoreds = MonitorState . M.fromList . fmap go
   where
     go m@(Monitored pid _) = (pid, m)
 
+-- | Serializes a monitor state to 'Processes'. 'Node' value corresponds to the
+--   the process' node where monitor is running.
 toProcesses :: Node -> MonitorState -> Processes
 toProcesses n = Processes n . fmap encodeMonitored . M.elems . msMap
 
+-- | Loads monitor's 'Processes' from the ReplicatedGraph and construct a
+--   'MonitorState' out of it.
 loadPrevProcesses :: ProcessId -> Process MonitorState
 loadPrevProcesses mmid = do
     rg   <- getGraph mmid
@@ -72,16 +81,23 @@ loadPrevProcesses mmid = do
       Just ps -> monitorState ps
       _       -> return emptyMonitorState
 
+-- | Simple process that sends 'Heartbeat' event to main monitor thread every
+--   'heartbeatDelay'.
 heartbeatProcess :: ProcessId -> Process ()
 heartbeatProcess mainpid = forever $ do
     liftIO $ threadDelay heartbeatDelay
     usend mainpid Heartbeat
 
+-- | Builds a list of every monitored services 'NodeId'. 'NodeId' that compose
+--   that list are unique.
 nodeIds :: CEP MonitorState [NodeId]
 nodeIds = gets (S.toList . foldMap go . M.elems . msMap)
   where
     go (Monitored pid _) = S.singleton $ processNodeId pid
 
+-- | By monitoring a service, we mean calling `monitor` with its `ProcessId`,
+--   regitered it into monitor internal state and then persists that into
+--   ReplicatedGraph.
 monitorService :: Configuration a
                => Service a
                -> ServiceProcess a
@@ -97,6 +113,8 @@ monitorService svc (ServiceProcess pid) = do
     _ <- liftProcess $ promulgate (SaveProcesses $ toProcesses node newMs)
     return ()
 
+-- | Get a 'Monitored' from monitor internal state. That 'Monitored' will no
+--   longer be accessible from monitor state after.
 takeMonitored :: ProcessId -> CEP MonitorState (Maybe Monitored)
 takeMonitored pid = do
     ms   <- get
@@ -110,6 +128,7 @@ takeMonitored pid = do
     _ <- liftProcess $ promulgate (SaveProcesses $ toProcesses node newMs)
     return mon
 
+-- | Notifies the RC that a monitored service has died.
 reportFailure :: ProcessId -> Monitored -> CEP s ()
 reportFailure pid (Monitored _ svc) = liftProcess $ do
     self <- getSelfPid
@@ -118,6 +137,7 @@ reportFailure pid (Monitored _ svc) = liftProcess $ do
     _ <- promulgate msg
     return ()
 
+-- | Verifies that a node is still up.
 nodeHeartbeatRequest :: NodeId -> CEP s ()
 nodeHeartbeatRequest nid = liftProcess $ nsendRemote nid "nonexistentprocess" ()
 
@@ -134,18 +154,26 @@ monitorRules = do
     define "heartbeat" id $ \Heartbeat ->
       traverse_ nodeHeartbeatRequest =<< nodeIds
 
+-- | Gets the monitor 'ProcessId' given a 'Node' from the ReplicatedGraph.
 lookupNodeMonitorProcess :: Node -> Graph -> Maybe (ServiceProcess MonitorConf)
 lookupNodeMonitorProcess node rg =
     case connectedTo node Runs rg of
       [sp] -> Just sp
       _    -> Nothing
 
+-- | Gets monitor's 'Processes' given its `ProcessId`
 lookupMonitorProcesses :: ServiceProcess MonitorConf -> Graph -> Maybe Processes
 lookupMonitorProcesses sp rg =
     case connectedTo sp Monitor rg of
       [ps] -> Just ps
       _    -> Nothing
 
+--------------------------------------------------------------------------------
+-- RC actions
+--
+-- From here those actions have to be expected to run on the RC.
+--------------------------------------------------------------------------------
+-- | Persists monitor's 'Processes' into the ReplicatedGraph.
 saveProcesses :: Processes -> CEP LoopState ()
 saveProcesses new@(Processes node _) = do
     ls <- get
@@ -160,6 +188,7 @@ saveProcesses new@(Processes node _) = do
 
     put ls { lsGraph = rg' }
 
+-- | Registers the Master Monitor into the ReplicatedGraph.
 setMasterMonitor :: ProcessId -> CEP LoopState ()
 setMasterMonitor pid = do
     ls <- get
@@ -167,6 +196,7 @@ setMasterMonitor pid = do
         rg' = connect MasterMonitor Cluster sp $ lsGraph ls
     put ls { lsGraph = rg' }
 
+-- | Sends a message to the Master Monitor.
 sendToMasterMonitor :: Serializable a => a -> CEP LoopState ()
 sendToMasterMonitor a = do
     rg <- gets lsGraph
@@ -174,6 +204,7 @@ sendToMasterMonitor a = do
       [ServiceProcess pid] -> liftProcess $ usend pid a
       _                    -> return ()
 
+-- | Monitor infrastructure that needs be handle in the RC.
 monitorServiceRules :: RuleM LoopState ()
 monitorServiceRules = do
     defineHAEvent "save-processes" id $ \(HAEvent _ (SaveProcesses ps) _) ->

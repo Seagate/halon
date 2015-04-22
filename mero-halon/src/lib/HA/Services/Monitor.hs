@@ -2,6 +2,19 @@
 -- |
 -- Copyright: (C) 2015  Seagate LLC
 --
+-- Monitor Service. A monitor track every service started by the Resource
+-- Coordinator (RC). When a service died, monitor notifies the RC. Currently,
+-- there are 2 types of monitors. Master monitor and node monitor.
+--
+-- Master monitor manages every node monitor. There is only one per tracking
+-- station.
+--
+-- Node monitors manage every service started by the RC (monitor excluded).
+-- There is one node monitor per node.
+--
+-- Despite of a different name, Master and Node monitors share the same
+-- set of CEP rules. There are small differences on how they are
+-- bootstrapped.
 module HA.Services.Monitor
     ( MonitorConf
     , SetMasterMonitor(..)
@@ -32,6 +45,8 @@ import HA.Service
 import HA.Services.Monitor.CEP
 import HA.Services.Monitor.Types
 
+-- Timeout used when node monitor tries to get the Multimap ProcessId from the
+-- RC.
 timeout :: Int
 timeout = 10 * 1000000
 
@@ -64,6 +79,8 @@ remotableDecl [ [d|
                 msg  = encodeP $ ServiceFailed node monitor self
             promulgate msg
 
+    -- | Master node process. Differs from Node monitor by sending a message to
+    --   the RC, indicating its ProcessId
     masterMonitorProcess :: () -> Process ()
     masterMonitorProcess _ = do
         spawnHeartbeatProcess

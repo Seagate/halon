@@ -531,11 +531,6 @@ testSupervison :: Transport -> IO ()
 testSupervison transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
-        self <- getSelfPid
-
-        registerInterceptor $ \string -> case string of
-            str@"Starting service dummy" -> send self str
-            _ -> return ()
 
         say $ "tests node: " ++ show nid
         cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000

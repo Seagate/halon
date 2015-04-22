@@ -29,22 +29,35 @@ import HA.Resources
 import HA.Service
 import HA.Service.TH
 
+-- | Monitor service main configuration.
 data MonitorConf = MonitorConf deriving (Eq, Generic, Show, Typeable)
 
 instance Binary MonitorConf
 instance Hashable MonitorConf
 
-data Monitored = forall a. Configuration a => Monitored ProcessId (Service a)
+-- | Used to carry a monitored service information. We hold a 'Service' value
+-- to be able to send a proper 'ServiceFailed' message to the RC.
+data Monitored = forall a. Configuration a =>
+                 Monitored
+                 { monPid :: !ProcessId
+                   -- ^ Process where the `Service` is run.
+                 , monSvc :: !(Service a)
+                 }
 
+-- | A resource used to retrieve Master Monitor 'ProcessId'.
 data MasterMonitor = MasterMonitor deriving (Eq, Ord, Show, Typeable, Generic)
 
 instance Binary MasterMonitor
 instance Hashable MasterMonitor
 
+-- | A 'Slot' hold a serialized 'Service' value. It's used as a mean to
+-- store a monitored service to the ResourceGraph.
 data Slot =
     Slot
-    { sPid :: !ProcessId  -- ^ Monitored Process
-    , sSvc :: !ByteString -- ^ Serialized Service
+    { sPid :: !ProcessId
+      -- ^ Process where the monitored 'Service' run.
+    , sSvc :: !ByteString
+      -- ^ Serialized 'Service' value.
     } deriving (Typeable, Generic)
 
 instance Eq Slot where
@@ -56,16 +69,24 @@ instance Hashable Slot
 instance Show Slot where
     show (Slot p _) = "Slot " ++ show p
 
+-- | 'Processes' gatheres every monitored services from a 'Monitor'. Its only
+--    purpose is to be stored in the ReplicatedGraph.
 data Processes =
     Processes
     { psNode :: !Node
+      -- ^ It's not relievant to have it here but it makes operating on the
+      --   ResourceGraph much easier. 'NodeId' of the process where the
+      --   monitor run.
     , psSlot :: ![Slot]
+      -- ^ Serialized monitored services of a 'Monitor'.
     }
     deriving (Show, Eq, Typeable, Generic)
 
 instance Binary Processes
 instance Hashable Processes
 
+-- | A 'Relation' that allows retrieving monitor's 'Processes' out of
+--   'ServiceProcess'.
 data Monitor = Monitor deriving (Eq, Show, Typeable, Generic)
 
 instance Binary Monitor
@@ -93,6 +114,7 @@ monitorSchema = pure MonitorConf
 monitorServiceName :: ServiceName
 monitorServiceName = ServiceName "monitor"
 
+-- | Deserializes a 'Monitored' out of a 'Slot'.
 decodeSlot :: Slot -> Process Monitored
 decodeSlot (Slot _ bs) = fmap go $ asks (remoteTable . processNode)
   where
@@ -107,6 +129,7 @@ decodeSlot (Slot _ bs) = fmap go $ asks (remoteTable . processNode)
             return $ Monitored pid svc
           Left e -> error ("decode Slot: " ++ e)
 
+-- | Serialize a 'Monitored' to a 'Slot'.
 encodeMonitored :: Monitored -> Slot
 encodeMonitored (Monitored pid svc@(Service _ _ d)) =
     Slot pid $ runPut $ do
