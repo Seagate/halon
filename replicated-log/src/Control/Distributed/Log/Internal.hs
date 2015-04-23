@@ -771,6 +771,11 @@ replica Dict
                        \_ -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
+
+                  -- Advertise our configuration to other replicas if we are
+                  -- getting old decrees.
+                  forM_ others $ \ρ ->
+                    sendReplica logName ρ $ Max self legD d epoch ρs
                   go st
 
               -- Commit the decree to the log.
