@@ -361,17 +361,17 @@ lookupDLogServiceProcess ls =
         [sp] -> Just sp
         _    -> Nothing
 
-lookupMonitorServiceProcess :: CEP LoopState (Maybe (ServiceProcess MonitorConf))
-lookupMonitorServiceProcess = fmap go $ State.gets lsGraph
+lookupLocalMonitor :: Node -> CEP LoopState (Maybe (ServiceProcess MonitorConf))
+lookupLocalMonitor node = fmap go $ State.gets lsGraph
   where
     go rg =
-        case G.connectedFrom Owns monitorServiceName rg of
+        case G.connectedTo node Runs rg of
           [sp] -> Just sp
           _    -> Nothing
 
-sendToMonitor :: Serializable a => a -> CEP LoopState ()
-sendToMonitor a = do
-    res <- lookupMonitorServiceProcess
+sendToMonitor :: Serializable a => Node -> a -> CEP LoopState ()
+sendToMonitor node a = do
+    res <- lookupLocalMonitor node
     forM_ res $ \(ServiceProcess pid) ->
       liftProcess $ usend pid a
 

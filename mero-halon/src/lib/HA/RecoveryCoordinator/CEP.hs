@@ -97,7 +97,7 @@ rcRules argv eq = do
         let svcStr = snString $ serviceName svc
 
         when (serviceName svc /= monitorServiceName) $
-          sendToMonitor msg
+          sendToMonitor n msg
 
         when (serviceName svc == monitorServiceName) $
           sendToMasterMonitor msg
