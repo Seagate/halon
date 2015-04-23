@@ -14,6 +14,7 @@
 #include "lib/memory.h"
 
 #include "hastate_foms.h"
+#include <stdio.h>
 
 // To hold callbacks.
 ha_state_callbacks_t *ha_state_cbs;
@@ -26,11 +27,11 @@ int ha_state_init(ha_state_callbacks_t *cbs) {
 }
 
 void ha_state_get_done(struct m0_ha_nvec *note,int rc) {
-     struct note_context            *ctx;
+     struct ha_state_get_fom        *fom_obj;
 
-     ctx = container_of(note, struct note_context, nc_note);
-     ctx->nc_rc = rc;
-     m0_fom_wakeup(ctx->nc_fom);
+     fom_obj = M0_AMB(fom_obj, note, fp_note);
+     fom_obj->fp_rc = rc;
+     m0_fom_wakeup(&fom_obj->fp_gen);
 }
 
 // Finalizes the ha_state interface.

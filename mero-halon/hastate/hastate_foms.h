@@ -5,7 +5,9 @@
 
 #pragma once
 
+#include "config.h"
 #include "fop/fom.h"
+#include "ha/note.h"
 
 extern const struct m0_fom_ops ha_state_get_fom_ops;
 extern const struct m0_fom_type_ops ha_state_get_fom_type_ops;
@@ -13,9 +15,14 @@ extern const struct m0_fom_type_ops ha_state_get_fom_type_ops;
 extern const struct m0_fom_ops ha_state_set_fom_ops;
 extern const struct m0_fom_type_ops ha_state_set_fom_type_ops;
 
-/* Wrapper structure to enclose m0_ha_nvec and fop. */
-struct note_context {
-     struct m0_ha_nvec  nc_note;
-     struct m0_fom      *nc_fom;
-     int                nc_rc;
+/**
+ * Foms for ha_state_get requests.
+ * 
+ * The note context is needed so we can find the corresponding fom
+ * from a state vector which comes back from upper layers.
+ */
+struct ha_state_get_fom {
+     struct m0_fom  fp_gen;
+     struct m0_ha_nvec fp_note;
+     int fp_rc;
 };

@@ -3,6 +3,8 @@
 // License   : All rights reserved.
 //
 
+#include "config.h"
+
 void ha_state_fop_fini(void);
 
 int ha_state_fop_init(void);

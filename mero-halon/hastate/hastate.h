@@ -9,8 +9,8 @@
 
 #pragma once
 
-#include "ha/note.h"
 #include "rpclite.h"
+#include "ha/note.h"
 
 /// Callbacks for handling requests made with m0_ha_state_get and m0_ha_state_set.
 typedef struct ha_state_callbacks {
