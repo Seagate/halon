@@ -69,7 +69,6 @@ import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Static
     (closureApply, staticApply, staticClosure)
 
-import Control.Applicative ((<$>))
 import Control.Arrow (second)
 import Control.Concurrent
 import Control.Exception (SomeException, throwIO)
