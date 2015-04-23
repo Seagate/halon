@@ -50,40 +50,20 @@ data MasterMonitor = MasterMonitor deriving (Eq, Ord, Show, Typeable, Generic)
 instance Binary MasterMonitor
 instance Hashable MasterMonitor
 
--- | A 'Slot' hold a serialized 'Service' value. It's used as a mean to
--- store a monitored service to the ResourceGraph.
-data Slot =
-    Slot
-    { sPid :: !ProcessId
-      -- ^ Process where the monitored 'Service' run.
-    , sSvc :: !ByteString
-      -- ^ Serialized 'Service' value.
-    } deriving (Typeable, Generic)
+-- | A 'MonitoredSerialized' hold a serialized 'Monitored' value. It's used as a
+--   mean to store a monitored service to the ResourceGraph.
+newtype MonitoredSerialized =
+    MonitoredSerialized ByteString
+    deriving (Eq, Typeable, Binary, Hashable)
 
-instance Eq Slot where
-    Slot p _ == Slot v _ = p == v
+instance Show MonitoredSerialized where
+    show _ = "MonitoredSerialized <<binary data>>"
 
-instance Binary Slot
-instance Hashable Slot
-
-instance Show Slot where
-    show (Slot p _) = "Slot " ++ show p
-
--- | 'Processes' gatheres every monitored services from a 'Monitor'. Its only
---    purpose is to be stored in the ReplicatedGraph.
-data Processes =
-    Processes
-    { psNode :: !Node
-      -- ^ It's not relievant to have it here but it makes operating on the
-      --   ResourceGraph much easier. 'NodeId' of the process where the
-      --   monitor run.
-    , psSlot :: ![Slot]
-      -- ^ Serialized monitored services of a 'Monitor'.
-    }
-    deriving (Show, Eq, Typeable, Generic)
-
-instance Binary Processes
-instance Hashable Processes
+-- | 'Processes' gathers every monitored services (serialized) from a
+--   'Monitor'. Its only purpose is to be stored in the ReplicatedGraph.
+newtype Processes =
+    Processes [MonitoredSerialized]
+    deriving (Show, Eq, Typeable, Binary, Hashable)
 
 -- | A 'Relation' that allows retrieving monitor's 'Processes' out of
 --   'ServiceProcess'.
@@ -114,9 +94,10 @@ monitorSchema = pure MonitorConf
 monitorServiceName :: ServiceName
 monitorServiceName = ServiceName "monitor"
 
--- | Deserializes a 'Monitored' out of a 'Slot'.
-decodeSlot :: Slot -> Process Monitored
-decodeSlot (Slot _ bs) = fmap go $ asks (remoteTable . processNode)
+-- | Deserializes a 'Monitored' out of a 'MonitoredSerialized'.
+deserializedMonitored :: MonitoredSerialized -> Process Monitored
+deserializedMonitored (MonitoredSerialized bs) =
+    asks (go . remoteTable . processNode)
   where
     go rt = runGet (action rt) bs
 
@@ -127,12 +108,12 @@ decodeSlot (Slot _ bs) = fmap go $ asks (remoteTable . processNode)
             pid                <- get
             (svc :: Service s) <- get
             return $ Monitored pid svc
-          Left e -> error ("decode Slot: " ++ e)
+          Left e -> error ("decode Monitored: " ++ e)
 
--- | Serialize a 'Monitored' to a 'Slot'.
-encodeMonitored :: Monitored -> Slot
+-- | Serialize a 'Monitored' to a 'MonitoredSerialized'.
+encodeMonitored :: Monitored -> MonitoredSerialized
 encodeMonitored (Monitored pid svc@(Service _ _ d)) =
-    Slot pid $ runPut $ do
+    MonitoredSerialized $ runPut $ do
       put d
       put pid
       put svc
