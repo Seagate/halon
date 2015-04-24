@@ -28,10 +28,11 @@ import           HA.Resources.Mero
 import           HA.Service
 import qualified HA.Services.EQTracker as EQT
 import           HA.Services.DecisionLog (EntriesLogged(..))
-import           HA.Services.Monitor ( prepareMonitorService
-                                     , monitorServiceRules
-                                     , sendToMasterMonitor
+import           HA.Services.Monitor ( SaveProcesses(..)
+                                     , SaveMasterProcesses(..)
                                      , monitorServiceName
+                                     , regularMonitor
+                                     , emptyMonitorConf
                                      )
 import           HA.Services.SSPL (ssplRules)
 
@@ -47,7 +48,6 @@ rcRules argv eq = do
     defineHAEvent "node-up" id $ \(HAEvent _ (NodeUp h pid) _) -> do
         let nid               = processNodeId pid
             node              = Node nid
-            (monSvc, monConf) = prepareMonitorService
 
         ack pid
         known <- knownResource node
@@ -59,7 +59,7 @@ rcRules argv eq = do
           startEQTracker nid
 
           -- We start a new monitor for any node that's started
-          _ <- startService nid monSvc monConf
+          _ <- startService nid regularMonitor emptyMonitorConf
           return ()
 
     -- Service Start
@@ -146,6 +146,14 @@ rcRules argv eq = do
         for_ res $ \sp ->
           killService sp UserStop
 
+    defineHAEvent "save-processes" id $
+      \(HAEvent _ (SaveProcesses sp ps) _) ->
+        writeConfiguration sp ps Current
+
+    defineHAEvent "save-master-processes" id $
+      \(HAEvent _ (SaveMasterProcesses sp ps) _) ->
+        writeConfiguration sp ps Current
+
     onEveryHAEvent $ \(HAEvent eid _ _) s -> do
         usend eq eid
         return s
@@ -153,7 +161,6 @@ rcRules argv eq = do
     setOnLog sendLogEntries
 
     ssplRules
-    monitorServiceRules
 
 sendLogEntries :: LogEntries -> LoopState -> Process ()
 sendLogEntries LogEntries{..} ls =

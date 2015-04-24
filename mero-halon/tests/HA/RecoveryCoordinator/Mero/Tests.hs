@@ -527,6 +527,15 @@ testServiceStopped transport = do
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
 
+_lookupMasterMonitor :: G.Graph
+                     -> Process (Maybe (ServiceProcess MasterMonitorConf))
+_lookupMasterMonitor rg = do
+    self <- getSelfPid
+    let node = Node $ processNodeId self
+    case G.connectedTo node Runs rg of
+      [sp] -> return $ Just sp
+      _    -> return Nothing
+
 testSupervison :: Transport -> IO ()
 testSupervison transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
@@ -538,15 +547,11 @@ testSupervison transport = do
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        (_,rc) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        (mm,rc) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
-        simpleSubscribe rc (Sub :: Sub (HAEvent SetMasterMonitor))
         simpleSubscribe rc (Sub :: Sub (HAEvent ServiceFailedMsg))
-        mmpid <- spawnLocal $ masterMonitorProcess ()
-        Published (HAEvent _ (SetMasterMonitor ppid) _) _ <- expect
-        if ppid == mmpid
-          then say "Master Monitor configured correctly"
-          else error "Unexpected Master Monitor"
+        rg <- G.getGraph mm
+        Just (ServiceProcess mmpid) <- _lookupMasterMonitor rg
 
         simpleSubscribe mmpid (Sub :: Sub ServiceStartedMsg)
         simpleSubscribe mmpid (Sub :: Sub ProcessMonitorNotification)

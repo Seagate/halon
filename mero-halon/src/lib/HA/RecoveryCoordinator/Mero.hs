@@ -31,7 +31,6 @@ module HA.RecoveryCoordinator.Mero
        , ReconfigureCmd(..)
        , ReconfigureMsg
        , GetMultimapProcessId(..)
-       , MasterMonitor(..)
        , sayRC
        , knownResource
        , registerNode
@@ -65,13 +64,15 @@ module HA.RecoveryCoordinator.Mero
        , getMultimapProcessId
        , getNoisyPingCount
        , killService
+       , writeConfiguration
+       , sendToMasterMonitor
        ) where
 
 import Prelude hiding ((.), id, mapM_)
 import HA.Resources
 import HA.Service
 import HA.Services.DecisionLog
-import HA.Services.Monitor.Types
+import HA.Services.Monitor
 import HA.Services.Empty
 import HA.Services.Noisy
 
@@ -109,6 +110,7 @@ import qualified Data.ByteString.Lazy as BS
 import Data.Dynamic
 import Data.List (intersect, foldl')
 import qualified Data.Map.Strict as Map
+import Data.Maybe (fromMaybe)
 #ifdef USE_RPC
 import Data.Maybe (isJust)
 #endif
@@ -166,10 +168,51 @@ data GetMultimapProcessId =
 
 instance Binary GetMultimapProcessId
 
--- newtype MasterMonitor = MasterMonitor ProcessId deriving (Typeable, Binary)
-
 reconfFailureLimit :: Int
 reconfFailureLimit = 3
+
+rcHasStarted :: G.Graph -> Process G.Graph
+rcHasStarted rg = do
+    self <- getSelfPid
+    let selfNid  = processNodeId self
+        selfNode = Node selfNid
+
+    case prevEQTracker selfNode rg of
+      Nothing -> _startService selfNid EQT.eqTracker EmptyConf rg
+      _       -> return ()
+
+    (rg2, psm) <- case prevMasterMonitor selfNode rg of
+                    Just sp@(ServiceProcess mpid) -> do
+                      exit mpid Shutdown
+                      let conf =
+                            case readConfig sp Current rg of
+                              Just x -> x
+                              _      -> error "impossible: rcHasStarted"
+
+                      return $ ( disconnectConfig sp Current rg
+                               , Just conf
+                               )
+                    _ -> return (rg, Nothing)
+
+    let masterConf = fromMaybe emptyMasterMonitorConf psm
+    _startService selfNid masterMonitor masterConf rg2
+    return rg2
+
+prevMasterMonitor :: Node -> G.Graph -> Maybe (ServiceProcess MasterMonitorConf)
+prevMasterMonitor node rg =
+    case G.connectedTo node Runs rg of
+      [sp] -> Just sp
+      _     -> Nothing
+
+prevEQTracker :: Node -> G.Graph -> Maybe (ServiceProcess EmptyConf)
+prevEQTracker node rg =
+    case action of
+      [sp] -> Just sp
+      _    -> Nothing
+  where
+    action = [sp | sp <- G.connectedTo node Runs rg
+                 , G.isConnected EQT.eqTracker InstanceOf sp rg
+                 ]
 
 knownResource :: G.Resource a => a -> CEP LoopState Bool
 knownResource res = do
@@ -375,6 +418,32 @@ sendToMonitor node a = do
     forM_ res $ \(ServiceProcess pid) ->
       liftProcess $ usend pid a
 
+writeConfiguration :: Configuration a
+                   => ServiceProcess a
+                   -> a
+                   -> ConfigRole
+                   -> CEP LoopState ()
+writeConfiguration sp c role = do
+    ls <- State.get
+    let rg' = writeConfig sp c role $ lsGraph ls
+    State.put ls { lsGraph = rg' }
+
+lookupMasterMonitor :: CEP LoopState (Maybe (ServiceProcess MasterMonitorConf))
+lookupMasterMonitor = do
+    ls   <- State.get
+    self <- getSelfProcessId
+    let node = Node $ processNodeId self
+    case G.connectedTo node Runs $ lsGraph ls of
+      [sp] -> return $ Just sp
+      _    -> return Nothing
+
+-- | Sends a message to the Master Monitor.
+sendToMasterMonitor :: Serializable a => a -> CEP LoopState ()
+sendToMasterMonitor a = do
+    spm <- lookupMasterMonitor
+    forM_ spm $ \(ServiceProcess mpid) ->
+      liftProcess $ usend mpid a
+
 sayRC :: String -> Process ()
 sayRC s = say $ "Recovery Coordinator: " ++ s
 
@@ -520,9 +589,10 @@ filterServices (NodeFilter nids) (Service name _ _) rg = do
 ----------------------------------------------------------
 
 data LoopState = LoopState {
-    lsGraph   :: G.Graph -- ^ Graph
-  , lsFailMap :: Map.Map (ServiceName, Node) Int -- ^ Failed reconfiguration count
-  , lsMMPid   :: ProcessId -- ^ Replicated Multimap pid
+    lsGraph    :: G.Graph -- ^ Graph
+  , lsFailMap  :: Map.Map (ServiceName, Node) Int
+    -- ^ Failed reconfiguration count
+  , lsMMPid    :: ProcessId -- ^ Replicated Multimap pid
 }
 
 -- | The entry point for the RC.
@@ -535,7 +605,7 @@ makeRecoveryCoordinator :: ProcessId -- ^ pid of the replicated multimap
                         -> RuleM LoopState ()
                         -> Process ()
 makeRecoveryCoordinator mm rm = do
-    rg    <- HA.RecoveryCoordinator.Mero.initialize mm
+    rg    <- HA.RecoveryCoordinator.Mero.initialize mm >>= rcHasStarted
     start <- G.sync rg
     runProcessor (LoopState start Map.empty mm) $ do
       rm

@@ -14,7 +14,6 @@ import Data.Typeable
 import GHC.Generics
 
 import Control.Distributed.Process
-import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types (remoteTable, processNode)
 import Control.Distributed.Static (unstatic)
 import Control.Monad.Reader
@@ -25,15 +24,26 @@ import Data.Hashable
 import Options.Schema
 
 import HA.ResourceGraph
-import HA.Resources
 import HA.Service
 import HA.Service.TH
 
+-- | Monitor type. Regular monitor, a.k.a node-local monitor, monitors every
+--   services started on a particular node. There is only one regular monitor
+--   per node. Master monitor on the other hand, monitors every regular monitors
+--   . There is only one Master monitor per cluster.
+data MonitorType = Regular | Master
+
 -- | Monitor service main configuration.
-data MonitorConf = MonitorConf deriving (Eq, Generic, Show, Typeable)
+data MonitorConf = MonitorConf Processes deriving (Eq, Generic, Show, Typeable)
 
 instance Binary MonitorConf
 instance Hashable MonitorConf
+
+emptyMonitorConf :: MonitorConf
+emptyMonitorConf = MonitorConf emptyProcesses
+
+monitorConf :: Processes -> MonitorConf
+monitorConf = MonitorConf
 
 -- | Used to carry a monitored service information. We hold a 'Service' value
 -- to be able to send a proper 'ServiceFailed' message to the RC.
@@ -65,31 +75,11 @@ newtype Processes =
     Processes [MonitoredSerialized]
     deriving (Show, Eq, Typeable, Binary, Hashable)
 
--- | A 'Relation' that allows retrieving monitor's 'Processes' out of
---   'ServiceProcess'.
-data Monitor = Monitor deriving (Eq, Show, Typeable, Generic)
-
-instance Binary Monitor
-instance Hashable Monitor
-
-resourceDictProcesses :: Dict (Resource Processes)
-resourceDictProcesses = Dict
-
-resourceDictMasterMonitor :: Dict (Resource MasterMonitor)
-resourceDictMasterMonitor = Dict
-
-relationDictMonitorProcesses :: Dict (
-    Relation Monitor (ServiceProcess MonitorConf) Processes
-    )
-relationDictMonitorProcesses = Dict
-
-relationDictClusterMasterMonitorServiceProcess :: Dict (
-    Relation Cluster MasterMonitor (ServiceProcess MonitorConf)
-    )
-relationDictClusterMasterMonitorServiceProcess = Dict
+emptyProcesses :: Processes
+emptyProcesses = Processes []
 
 monitorSchema :: Schema MonitorConf
-monitorSchema = pure MonitorConf
+monitorSchema = pure emptyMonitorConf
 
 monitorServiceName :: ServiceName
 monitorServiceName = ServiceName "monitor"
@@ -119,20 +109,4 @@ encodeMonitored (Monitored pid svc@(Service _ _ d)) =
       put svc
 
 $(generateDicts ''MonitorConf)
-$(deriveService ''MonitorConf 'monitorSchema [ 'relationDictMonitorProcesses
-                                             , 'resourceDictProcesses
-                                             , 'relationDictClusterMasterMonitorServiceProcess
-                                             , 'resourceDictMasterMonitor
-                                             ])
-
-instance Resource Processes where
-    resourceDict = $(mkStatic 'resourceDictProcesses)
-
-instance Resource MasterMonitor where
-    resourceDict = $(mkStatic 'resourceDictMasterMonitor)
-
-instance Relation Monitor (ServiceProcess MonitorConf) Processes where
-    relationDict = $(mkStatic 'relationDictMonitorProcesses)
-
-instance Relation Cluster MasterMonitor (ServiceProcess MonitorConf) where
-    relationDict = $(mkStatic 'relationDictClusterMasterMonitorServiceProcess)
+$(deriveService ''MonitorConf 'monitorSchema [])
