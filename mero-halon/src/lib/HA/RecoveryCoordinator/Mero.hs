@@ -280,7 +280,9 @@ unregisterPreviousServiceProcess :: Configuration a
                                  -> CEP LoopState ()
 unregisterPreviousServiceProcess n svc sp = do
     ls <- State.get
-    let rg' = G.disconnect sp Owns (serviceName svc) >>>
+    let rg = lsGraph ls
+        rg' = G.disconnect sp Owns (serviceName svc) >>>
+              disconnectConfig sp Current            >>>
               G.disconnect n Runs sp                 >>>
               G.disconnect svc InstanceOf sp $ lsGraph ls
     State.put ls { lsGraph = rg' }
