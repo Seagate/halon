@@ -412,9 +412,12 @@ lookupLocalMonitor :: Node -> CEP LoopState (Maybe (ServiceProcess MonitorConf))
 lookupLocalMonitor node = fmap go $ State.gets lsGraph
   where
     go rg =
-        case G.connectedTo node Runs rg of
-          [sp] -> Just sp
-          _    -> Nothing
+      let sp = [ x | x <- G.connectedTo node Runs rg
+                   , G.isConnected x Owns monitorServiceName rg
+                   ]
+      in case sp of
+        [mon] -> Just mon
+        _    -> Nothing
 
 sendToMonitor :: Serializable a => Node -> a -> CEP LoopState ()
 sendToMonitor node a = do
@@ -429,7 +432,8 @@ writeConfiguration :: Configuration a
                    -> CEP LoopState ()
 writeConfiguration sp c role = do
     ls <- State.get
-    let rg' = writeConfig sp c role $ lsGraph ls
+    let rg' =   disconnectConfig sp role
+            >>> writeConfig sp c role $ lsGraph ls
     State.put ls { lsGraph = rg' }
 
 lookupMasterMonitor :: CEP LoopState (Maybe (ServiceProcess MonitorConf))
