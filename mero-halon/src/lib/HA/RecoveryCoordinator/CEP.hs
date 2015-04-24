@@ -29,7 +29,6 @@ import           HA.Service
 import qualified HA.Services.EQTracker as EQT
 import           HA.Services.DecisionLog (EntriesLogged(..))
 import           HA.Services.Monitor ( SaveProcesses(..)
-                                     , SaveMasterProcesses(..)
                                      , monitorServiceName
                                      , regularMonitor
                                      , emptyMonitorConf
@@ -148,10 +147,6 @@ rcRules argv eq = do
 
     defineHAEvent "save-processes" id $
       \(HAEvent _ (SaveProcesses sp ps) _) ->
-        writeConfiguration sp ps Current
-
-    defineHAEvent "save-master-processes" id $
-      \(HAEvent _ (SaveMasterProcesses sp ps) _) ->
         writeConfiguration sp ps Current
 
     onEveryHAEvent $ \(HAEvent eid _ _) s -> do

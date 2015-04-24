@@ -27,12 +27,6 @@ import HA.ResourceGraph
 import HA.Service
 import HA.Service.TH
 
--- | Monitor type. Regular monitor, a.k.a node-local monitor, monitors every
---   services started on a particular node. There is only one regular monitor
---   per node. Master monitor on the other hand, monitors every regular monitors
---   . There is only one Master monitor per cluster.
-data MonitorType = Regular | Master
-
 -- | Monitor service main configuration.
 data MonitorConf = MonitorConf Processes deriving (Eq, Generic, Show, Typeable)
 
@@ -83,6 +77,9 @@ monitorSchema = pure emptyMonitorConf
 
 monitorServiceName :: ServiceName
 monitorServiceName = ServiceName "monitor"
+
+masterMonitorServiceName :: ServiceName
+masterMonitorServiceName = ServiceName "master-monitor"
 
 -- | Deserializes a 'Monitored' out of a 'MonitoredSerialized'.
 deserializedMonitored :: MonitoredSerialized -> Process Monitored

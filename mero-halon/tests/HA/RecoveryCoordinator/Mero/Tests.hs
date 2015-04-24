@@ -49,7 +49,7 @@ import HA.Service
   , ServiceStopRequest(..)
   , ServiceStarted(..)
   , ServiceStartedMsg
---  , Owns(..)
+  , Owns(..)
   , decodeP
   , encodeP
   , runningService
@@ -173,7 +173,6 @@ testServiceRestarting transport = do
         pid <- getServiceProcessPid mm (Node nid) Dummy.dummy
         _ <- promulgateEQ [nid] . encodeP $ ServiceFailed (Node nid) Dummy.dummy
                                                           pid
-
         "Starting service dummy" :: String <- expect
         say $ "dummy service restarted successfully."
   where
@@ -528,13 +527,18 @@ testServiceStopped transport = do
          remoteTable
 
 _lookupMasterMonitor :: G.Graph
-                     -> Process (Maybe (ServiceProcess MasterMonitorConf))
+                     -> Process (Maybe (ServiceProcess MonitorConf))
 _lookupMasterMonitor rg = do
     self <- getSelfPid
     let node = Node $ processNodeId self
-    case G.connectedTo node Runs rg of
+    case action node  of
       [sp] -> return $ Just sp
       _    -> return Nothing
+  where
+    action :: Node -> [ServiceProcess MonitorConf]
+    action node = [ sp | sp <- G.connectedTo node Runs rg
+                       , G.isConnected sp Owns masterMonitorServiceName rg
+                       ]
 
 testSupervison :: Transport -> IO ()
 testSupervison transport = do

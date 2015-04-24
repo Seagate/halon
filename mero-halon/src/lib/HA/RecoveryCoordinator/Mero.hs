@@ -194,15 +194,19 @@ rcHasStarted rg = do
                                )
                     _ -> return (rg, Nothing)
 
-    let masterConf = fromMaybe emptyMasterMonitorConf psm
+    let masterConf = fromMaybe emptyMonitorConf psm
     _startService selfNid masterMonitor masterConf rg2
     return rg2
 
-prevMasterMonitor :: Node -> G.Graph -> Maybe (ServiceProcess MasterMonitorConf)
+prevMasterMonitor :: Node -> G.Graph -> Maybe (ServiceProcess MonitorConf)
 prevMasterMonitor node rg =
-    case G.connectedTo node Runs rg of
+    case action of
       [sp] -> Just sp
-      _     -> Nothing
+      _    -> Nothing
+  where
+    action = [ sp | sp <- G.connectedTo node Runs rg
+                  , G.isConnected sp Owns masterMonitorServiceName rg
+                  ]
 
 prevEQTracker :: Node -> G.Graph -> Maybe (ServiceProcess EmptyConf)
 prevEQTracker node rg =
@@ -428,12 +432,17 @@ writeConfiguration sp c role = do
     let rg' = writeConfig sp c role $ lsGraph ls
     State.put ls { lsGraph = rg' }
 
-lookupMasterMonitor :: CEP LoopState (Maybe (ServiceProcess MasterMonitorConf))
+lookupMasterMonitor :: CEP LoopState (Maybe (ServiceProcess MonitorConf))
 lookupMasterMonitor = do
     ls   <- State.get
     self <- getSelfProcessId
-    let node = Node $ processNodeId self
-    case G.connectedTo node Runs $ lsGraph ls of
+    let node   = Node $ processNodeId self
+        rg     = lsGraph ls
+        action :: [ServiceProcess MonitorConf]
+        action = [ sp | sp <- G.connectedTo node Runs rg
+                      , G.isConnected sp Owns masterMonitorServiceName rg
+                      ]
+    case action of
       [sp] -> return $ Just sp
       _    -> return Nothing
 

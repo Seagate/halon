@@ -25,7 +25,6 @@ import qualified Data.Set        as S
 import HA.EventQueue.Producer (promulgate)
 import HA.Resources
 import HA.Service
-import HA.Services.Monitor.Master
 import HA.Services.Monitor.Types
 
 -- | Monitor internal state.
@@ -46,17 +45,6 @@ data SaveProcesses =
     } deriving (Typeable, Generic)
 
 instance Binary SaveProcesses
-
--- |  Sent by a master monitor process to the RC.
-data SaveMasterProcesses =
-    SaveMasterProcesses
-    { smpPid :: !(ServiceProcess MasterMonitorConf)
-      -- ^ 'Process' where the master monitoring is running.
-    , smpPs :: !MasterMonitorConf
-      -- ^ Serialized list of monitors monitored by the master monitor.
-    } deriving (Typeable, Generic)
-
-instance Binary SaveMasterProcesses
 
 -- | Event send by the Master Monitor to the RC.
 newtype SetMasterMonitor =
@@ -105,45 +93,38 @@ decodeMsg = liftProcess . decodeP
 --   regitered it into monitor internal state and then persists that into
 --   ReplicatedGraph.
 monitoring :: Configuration a
-           => MonitorType
-           -> Service a
+           => Service a
            -> ServiceProcess a
            -> CEP MonitorState ()
-monitoring typ svc (ServiceProcess pid) = do
+monitoring svc (ServiceProcess pid) = do
     ms <- get
     _  <- liftProcess $ monitor pid
     let m' = M.insert pid (Monitored pid svc) (msMap ms)
 
     put ms { msMap = m' }
-    sendSaveRequest typ
+    sendSaveRequest
 
 -- | Get a 'Monitored' from monitor internal state. That 'Monitored' will no
 --   longer be accessible from monitor state after.
-takeMonitored :: MonitorType -> ProcessId -> CEP MonitorState (Maybe Monitored)
-takeMonitored typ pid = do
+takeMonitored :: ProcessId -> CEP MonitorState (Maybe Monitored)
+takeMonitored pid = do
     ms <- get
     let mon = M.lookup pid $ msMap ms
         m'  = M.delete pid $ msMap ms
 
     put ms { msMap = m' }
-    sendSaveRequest typ
+    sendSaveRequest
     return mon
 
 -- | Asks kindly the RC to persist the list of monitored services in the
 --   ReplicatedGraph.
-sendSaveRequest :: MonitorType -> CEP MonitorState ()
-sendSaveRequest typ = do
+sendSaveRequest ::CEP MonitorState ()
+sendSaveRequest = do
     ms   <- get
     self <- liftProcess getSelfPid
     let ps = toProcesses ms
 
-    case typ of
-      Regular ->
-        let conf = MonitorConf ps in
-        sendToRC $ SaveProcesses (ServiceProcess self) conf
-      Master ->
-        let conf = MasterMonitorConf ps in
-        sendToRC $ SaveMasterProcesses (ServiceProcess self) conf
+    sendToRC $ SaveProcesses (ServiceProcess self) (MonitorConf ps)
 
 -- | Sends a message to the RC. Strictly speaking, it sends the message to EQ,
 --   through the 'EQTracker', which forwards it to the RC.
@@ -164,15 +145,15 @@ reportFailure (Monitored pid svc) = liftProcess $ do
 nodeHeartbeatRequest :: NodeId -> CEP s ()
 nodeHeartbeatRequest nid = liftProcess $ nsendRemote nid "nonexistentprocess" ()
 
-monitorRules :: MonitorType -> RuleM MonitorState ()
-monitorRules typ = do
+monitorRules :: RuleM MonitorState ()
+monitorRules = do
     define "monitor-notification" id $
       \(ProcessMonitorNotification _ pid _) ->
-          traverse_ reportFailure =<< takeMonitored typ pid
+          traverse_ reportFailure =<< takeMonitored pid
 
     define "service-started" id $ \msg -> do
       ServiceStarted _ svc _ sp <- decodeMsg msg
-      monitoring typ svc sp
+      monitoring svc sp
 
     define "heartbeat" id $ \Heartbeat ->
       traverse_ nodeHeartbeatRequest =<< nodeIds

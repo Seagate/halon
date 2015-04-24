@@ -96,7 +96,6 @@ Library
                    HA.Services.Frontier.Command
                    HA.Services.Monitor.CEP
                    HA.Services.Monitor.Types
-                   HA.Services.Monitor.Master
                    HA.Services.SSPL.CEP
                    HA.Services.SSPL.Rabbit
                    HA.Services.SSPL.LL.Resources

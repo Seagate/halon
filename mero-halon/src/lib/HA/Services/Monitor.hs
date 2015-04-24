@@ -16,25 +16,20 @@
 -- set of CEP rules. There are small differences on how they are
 -- bootstrapped.
 module HA.Services.Monitor
-    ( MasterMonitorConf
-    , MonitorConf
+    ( MonitorConf
     , Processes
-    , SaveMasterProcesses(..)
     , SaveProcesses(..)
     , masterMonitorServiceName
     , monitorServiceName
     , masterMonitor
     , regularMonitor
-    , HA.Services.Monitor.__remoteTable
+    , HA.Services.Monitor.Types.__remoteTable
     , __remoteTableDecl
-    , regularMonitorService__sdict
-    , regularMonitorService__tdict
-    , masterMonitorService__sdict
-    , masterMonitorService__tdict
+    , monitorService__sdict
+    , monitorService__tdict
     , regularMonitor__static
     , masterMonitor__static
     , emptyMonitorConf
-    , emptyMasterMonitorConf
     , monitorConf
     ) where
 
@@ -45,7 +40,6 @@ import Network.CEP
 
 import HA.Service
 import HA.Services.Monitor.CEP
-import HA.Services.Monitor.Master
 import HA.Services.Monitor.Types
 
 spawnHeartbeatProcess :: Process ()
@@ -54,36 +48,28 @@ spawnHeartbeatProcess = do
     _    <- spawnLocal $ heartbeatProcess self
     return ()
 
-monitorProcess :: MonitorType -> Processes -> Process ()
-monitorProcess typ ps = do
+monitorProcess :: Processes -> Process ()
+monitorProcess  ps = do
     st <- monitorState ps
     spawnHeartbeatProcess
-    runProcessor st (monitorRules typ)
+    runProcessor st monitorRules
 
 remotableDecl [ [d|
-    regularMonitorService :: MonitorConf -> Process ()
-    regularMonitorService (MonitorConf ps) =
-        monitorProcess Regular ps
 
-    masterMonitorService :: MasterMonitorConf -> Process ()
-    masterMonitorService (MasterMonitorConf ps) =
-        monitorProcess Master ps
+    monitorService :: MonitorConf -> Process ()
+    monitorService (MonitorConf ps) = monitorProcess ps
 
     regularMonitor :: Service MonitorConf
     regularMonitor = Service
               monitorServiceName
-              $(mkStaticClosure 'regularMonitorService)
+              $(mkStaticClosure 'monitorService)
               ($(mkStatic 'someConfigDict)
                 `staticApply` $(mkStatic 'configDictMonitorConf))
 
-    masterMonitor :: Service MasterMonitorConf
+    masterMonitor :: Service MonitorConf
     masterMonitor = Service
-              monitorServiceName
-              $(mkStaticClosure 'masterMonitorService)
+              masterMonitorServiceName
+              $(mkStaticClosure 'monitorService)
               ($(mkStatic 'someConfigDict)
-                `staticApply` $(mkStatic 'configDictMasterMonitorConf))
+                `staticApply` $(mkStatic 'configDictMonitorConf))
     |] ]
-
-__remoteTable :: RemoteTable -> RemoteTable
-__remoteTable = HA.Services.Monitor.Master.__remoteTable .
-                HA.Services.Monitor.Types.__remoteTable
