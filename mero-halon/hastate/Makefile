@@ -6,7 +6,7 @@ RPCLITE_PREFIX=../../rpclite/rpclite
 FF2C=$(MERO_ROOT)/xcode/ff2c/ff2c
 CC=gcc
 CFLAGS=-c -I$(MERO_ROOT)/extra-libs/db4/build_unix -I$(MERO_ROOT) \
-	   -I$(MERO_ROOT)/extra-libs/cunit/CUnit/Headers \
+	   -I$(MERO_ROOT)/extra-libs/galois/include \
 	   -Wno-attributes -Werror -g -DM0_INTERNAL='' -DM0_EXTERN=extern \
        -I$(RPCLITE_PREFIX)
 
@@ -25,6 +25,7 @@ LDFLAGS=$(LD_SEARCH_PATH) -lmero -pthread
 
 SOURCES=$(RPCLITE_PREFIX)/rpclite_fop_ff.c \
 		$(RPCLITE_PREFIX)/rpclite.c \
+		$(RPCLITE_PREFIX)/m0init.c \
 		$(RPCLITE_PREFIX)/rpclite_fop.c \
 		$(RPCLITE_PREFIX)/rpclite_fom.c \
 		$(RPCLITE_PREFIX)/rpclite_sender_fom.c \

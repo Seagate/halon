@@ -55,7 +55,7 @@ int main(int argc,char **argv) {
     rc = rpc_listen("s1",argv[1],&(rpc_listen_callbacks_t){ .receive_callback=rcv },&re);
     fprintf(stderr,"rpc_listen: %d\n",rc);
 
-    struct m0_ha_note n = { M0_FID_TINIT('n',1,1), M0_NC_ACTIVE };
+    struct m0_ha_note n = { M0_FID_TINIT('n',1,1), M0_NC_ONLINE };
     struct m0_ha_nvec note = { 1, &n };
 
     rc = ha_state_notify(re,argv[2],&note,3);
