@@ -28,7 +28,11 @@ import Control.Concurrent.MVar
 import Control.Monad (replicateM_, replicateM)
 import Control.Exception (throwIO, finally)
 import Control.Applicative ((<$>), (<*>))
-import qualified Network.Transport as NT (Transport, closeEndPoint)
+import qualified Network.Transport as NT
+  ( Transport
+  , closeEndPoint
+  , closeTransport
+  )
 import Network.Transport.RPC ( createTransport, defaultRPCParameters
                              , RPCParameters(..), rpcAddress
                              , RPCTransport(..)
@@ -37,6 +41,7 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Internal.Types (LocalNode(localEndPoint))
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable (Serializable)
+import Mero (withM0)
 import TestAuxiliary
 
 
@@ -678,7 +683,7 @@ numPings :: Int
 numPings = 1000 -- 10000
 
 main :: IO ()
-main = do
+main = withM0 $ do
   transport <- fmap networkTransport $
                     createTransport "s1" (rpcAddress "0@lo:12345:34:2")
                                    defaultRPCParameters
@@ -748,3 +753,4 @@ main = do
                       -- terminates. Otherwise the program would print
                       -- a mysterious "interrupted" message and exit with
                       -- an error code.
+  NT.closeTransport transport

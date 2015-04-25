@@ -1,4 +1,5 @@
 
+import Mero (withM0)
 import Network.Transport.Tests.Auxiliary
 
 import Network.Transport
@@ -106,7 +107,7 @@ reservedAddressInUse rpcTransport _serverAddrs = do
     return ()
 
 main :: IO ()
-main = do
+main = withM0 $ do
   [serverAddr]    <- getArgs
   bracket
     (createTransport "s1" (rpcAddress serverAddr) defaultRPCParameters)

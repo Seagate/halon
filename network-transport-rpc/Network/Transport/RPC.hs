@@ -24,12 +24,12 @@ module Network.Transport.RPC
 
 import Control.Concurrent ( Chan, writeChan, readChan, newChan, MVar, newMVar
                           , newEmptyMVar, modifyMVar_, putMVar, takeMVar
-                          , readMVar, forkIO, modifyMVar, threadDelay
+                          , readMVar, modifyMVar, threadDelay
                           )
 import Control.Exception  ( catch, finally, bracketOnError, throwIO, try
                           , mask_, uninterruptibleMask_, bracket, SomeException
                           )
-import Control.Monad ( when, void, join )
+import Control.Monad
 import Data.Bits  (shiftL, shiftR, (.&.))
 import qualified Data.ByteString as B ( length, foldl, ByteString, null, drop, take, pack
                                       , append, concat, singleton, head )
@@ -41,10 +41,12 @@ import qualified Data.Map as M (empty, lookup, insert, filter, delete, member, p
 import Data.Map  (Map)
 import Data.Word (Word32,Word64)
 import Foreign.Ptr (WordPtr)
+import Mero.Concurrent
 import Network.Transport as T
 import Network.RPC.RPCLite as R
 import System.Environment     ( getEnv )
 import System.FilePath        ( (</>), normalise, pathSeparator )
+import System.IO
 import System.IO.Unsafe ( unsafePerformIO )
 #ifdef DEBUG
 import GHC.Exts ( currentCallStack )
@@ -114,6 +116,8 @@ data TransportState = TransportState
                                     -- Incremented on every connection creation.
     , tsLock :: MVar ()  -- A lock used to serialized access to RPCLite. This lock helps winnowing
                          -- concurrency bugs.
+    , tsM0Thread :: M0Thread
+    , tsM0Chan :: Chan (IO ())
     }
 
 
@@ -124,6 +128,16 @@ newTransportState params se = do
     kgen <- newIORef $ max 0 $ prpcReservedAddressRange params
     cidgen <- newIORef 0
     lock <- newMVar ()
+    m0chan <- newChan
+    m0t <- forkM0OS $
+             flip catch (\e -> const (return ()) (e :: SomeException)) $
+             forever $
+             catch (join $ readChan m0chan) $
+                   \e -> do
+                     hPutStrLn stderr $
+                       "n-t-rpc m0thread terminated with: "
+                       ++ show (e :: SomeException)
+                     throwIO e
     return$ TransportState
         { tsPrpc = params
         , tsSe = se
@@ -132,7 +146,19 @@ newTransportState params se = do
         , tsEPKeyGen = kgen
         , tsConnectionIdGen = cidgen
         , tsLock = lock
+        , tsM0Thread = m0t
+        , tsM0Chan = m0chan
         }
+
+m0Queue :: TransportState -> IO () -> IO ()
+m0Queue ts = writeChan (tsM0Chan ts)
+
+m0QueueWait :: TransportState -> IO a -> IO a
+m0QueueWait ts io = do
+    mv <- newEmptyMVar
+    m0Queue ts $ io >>= putMVar mv
+    takeMVar mv
+
 
 {-# NOINLINE rpcInitCounter #-}
 rpcInitCounter :: MVar Word32
@@ -202,13 +228,15 @@ createTransport persistencePrefix addr prpc = do
           return RPCTransport
             { networkTransport = Transport
                 {   newEndPoint = rpcNewEndPoint ts addr
-                ,   closeTransport = uninterruptibleMask_$
+                ,   closeTransport = uninterruptibleMask_ $
                        (readIORef (tsLocalEPs ts) >>= \eps -> F.forM_ eps$ \ep ->
                            closeEndPoint (leEndPoint ep)
                           `finally` writeChan (leQueue ep) EndPointClosed
                        )
-                      `finally` stopListening se
-                      `finally` rpcFinalize
+                      `finally` m0Queue ts (stopListening se)
+                      `finally` m0Queue ts rpcFinalize
+                      `finally` do m0Queue ts $ error "transport closed"
+                                   joinM0OS (tsM0Thread ts)
                 }
             , newReservedEndPoint = rpcNewReservedEndPoint ts addr
             , serverEndPoint = se
@@ -484,11 +512,12 @@ rpcConnect ts sourceEpAddr lepk lep rcm targetEpAddr _ hints = do
         lcid <- atomicModifyIORef (leConnIdGen lep) $ \k -> (k+1,k)
         let tc = T.Connection
                    { T.send = rpcSend ts connMVar rConnState (leQueue lep) rcm targetEpAddr
-                   , close = rpcClose lep connMVar lcid rConnState rcm True timeout_s
+                   , close = m0QueueWait ts $
+                             rpcClose lep connMVar lcid rConnState rcm True timeout_s
                    }
         uninterruptibleMask_ $ do
           atomicModifyIORef (leConns lep) $ \conns -> (M.insert lcid tc conns,())
-          void $ forkIO $ flip catch
+          m0Queue ts $ flip catch
                    (\e -> do
                      modifyMVar_ connMVar $ \_ ->
                             return $ CRFailed $ show (e :: SomeException)
@@ -518,7 +547,8 @@ rpcConnect ts sourceEpAddr lepk lep rcm targetEpAddr _ hints = do
                     _ -> return ()
             go
         return $ Right tc {
-              close = rpcClose lep connMVar lcid rConnState rcm False timeout_s
+              close = m0QueueWait ts $
+                      rpcClose lep connMVar lcid rConnState rcm False timeout_s
             }
 
        `catch` (\e -> return$ Left$ case e of
@@ -596,8 +626,8 @@ rpcSend :: TransportState -> MVar ConnectionRes -> IORef ConnectionState
            -> Chan Event
            -> IORef ConnectionMap -> EndPointAddress -> [B.ByteString]
            -> IO (Either (TransportError SendErrorCode) ())
-rpcSend ts connMVar rConnState epq rcm targetEpAddr msg =
-    join $ modifyMVar connMVar $ \mc ->
+rpcSend ts connMVar rConnState epq rcm targetEpAddr msg = m0QueueWait ts $
+    join $ modifyMVar connMVar $ \mc -> do
     case mc of
       CRConn c -> return $ (,) mc $
         (bracketOnError

@@ -178,6 +178,7 @@ Test-Suite testtransport
                 , network-transport-rpc
                 , network-transport
                 , random
+                , rpclite
                 , ansi-terminal
 
 Test-Suite TestCH
@@ -200,6 +201,7 @@ Test-Suite TestCH
                 , random
                 , ansi-terminal
                 , mtl
+                , rpclite
                 , time
                 , binary
 
@@ -227,5 +229,6 @@ Test-Suite TestNT
                   containers >= 0.4,
                   bytestring >= 0.9,
                   random >= 1.0,
+                  rpclite,
                   mtl >= 2.1,
                   ansi-terminal >= 0.5

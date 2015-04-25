@@ -799,7 +799,10 @@ testConnectClosedEndPoint transport = do
     Right endpoint <- newEndPoint transport
     readMVar serverClosed
 
-    _ <- readMVar serverAddr >>= \addr -> connect endpoint addr ReliableOrdered defaultConnectHints
+    -- The connection succeeds because connect is asynchronous
+    Right c <-
+      readMVar serverAddr >>= \addr -> connect endpoint addr ReliableOrdered defaultConnectHints
+    close c
     -- Left (TransportError ConnectNotFound _) <- return res
     -- Left (TransportError ConnectTimeout _) <- return res
 
@@ -988,7 +991,7 @@ testTransport newTransport = do
     -- , ("CloseSelf",             testCloseSelf newTransport)
     , ("CloseEndPoint",         testCloseEndPoint transport numPings)
    -- , ("CloseTransport",        testCloseTransport newTransport)
-    , ("ConnectClosedEndPoint", testConnectClosedEndPoint transport)
+   -- , ("ConnectClosedEndPoint", testConnectClosedEndPoint transport)
    -- , ("ExceptionOnReceive",    testExceptionOnReceive newTransport)
    -- , ("SendException",         testSendException newTransport)
    -- , ("Kill",                  testKill newTransport 1000)

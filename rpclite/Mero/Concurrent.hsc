@@ -6,7 +6,7 @@
 --
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE EmptyDataDecls           #-}
-module Mero.Concurrent (forkM0OS, joinM0OS, m0ThreadId) where
+module Mero.Concurrent (forkM0OS, joinM0OS, m0ThreadId, M0Thread) where
 
 import Control.Concurrent      (myThreadId, ThreadId, rtsSupportsBoundThreads)
 import Control.Concurrent.MVar
