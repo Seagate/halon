@@ -193,6 +193,8 @@ data RPCTransport = RPCTransport
 --
 -- When the transport is created an RPC server endpoint is created.
 --
+-- This call needs to be made from an m0_thread only.
+--
 createTransport :: String -- ^ a string prepended to file names that the RPC
                           -- implementation creates at startup. A transport which starts
                           -- after a crash should use the same files it was using before

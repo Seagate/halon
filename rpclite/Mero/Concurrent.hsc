@@ -28,7 +28,8 @@ data M0Thread = M0Thread
 --
 --  The thread is a resource to be disposed with 'joinM0OS'.
 --
--- None of these calls can be performed without calling 'Mero.m0_init' first.
+-- This call can happen only in an m0_thread. The thread calling 'Mero.m0_init'
+-- becomes an m0_thread.
 forkM0OS :: IO () -> IO M0Thread
 forkM0OS action | rtsSupportsBoundThreads = do
     mv <- newEmptyMVar
@@ -43,6 +44,8 @@ forkM0OS _ = fail $ "forkM0OS: RTS doesn't support multiple OS threads "
                     ++"(use ghc -threaded when linking)"
 
 -- | Waits for an m0_thread to finish and then releases it.
+--
+-- This call can happen only in an m0_thread.
 joinM0OS :: M0Thread -> IO ()
 joinM0OS m0t = do
     rc <- forkM0OS_joinThread (_m0ThreadPtr m0t)
