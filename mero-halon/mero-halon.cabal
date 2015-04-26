@@ -345,19 +345,19 @@ Test-Suite testepoch
   if flag(maintainer)
     Ghc-Options: -Werror
 
-  if flag(rpc) && flag(mero)
-    Build-Depends:   halon,
-                     mero-halon,
-                     base >= 4.5,
-                     directory,
-                     filepath,
-                     process >= 1.1,
-                     process >= 1.1,
-                     binary >= 0.6.4,
-                     network-transport-rpc,
-                     time >= 1.4
-  else
-    buildable: False
+--  if flag(rpc) && flag(mero)
+--    Build-Depends:   halon,
+--                     mero-halon,
+--                     base >= 4.5,
+--                     directory,
+--                     filepath,
+--                     process >= 1.1,
+--                     process >= 1.1,
+--                     binary >= 0.6.4,
+--                     network-transport-rpc,
+--                     time >= 1.4
+--  else
+  buildable: False
 
 Test-Suite testhastate
   Type:             exitcode-stdio-1.0
