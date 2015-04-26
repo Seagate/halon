@@ -107,6 +107,7 @@ Library
                    sspl,
                    text,
                    binary,
+                   network >= 2.4,
                    network-transport,
                    unordered-containers,
                    cep,
