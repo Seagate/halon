@@ -237,19 +237,24 @@ int create_sender_fom(struct m0_fom_rpclite_sender** fom_obj
  * Enqueues a fom to a request handler, then waits for the fom to complete.
  * */
 void run_sender_fom(struct m0_fom_rpclite_sender* fom_obj
-					, struct m0_reqh* reqh) {
-	struct fom_state* fom_st = fom_obj->fom_st;
-	m0_fom_queue(&fom_obj->fp_gen, reqh);
-	if (fom_st) {
-		if (sem_wait(&fom_st->completed)) {
-		    fprintf(stderr,"%s: sem_wait failed\n",__func__);
-			exit(1);
-		}
-		if (sem_destroy(&fom_st->completed)) {
-		    fprintf(stderr,"%s: sem_destroy failed\n",__func__);
-			exit(1);
-		}
-	}
+                   , struct m0_reqh* reqh) {
+    struct fom_state* fom_st = fom_obj->fom_st;
+    m0_fom_queue(&fom_obj->fp_gen, reqh);
+    if (fom_st) {
+        int rc;
+        while ((rc = sem_wait(&fom_st->completed)) && errno == EINTR)
+          continue;
+        if (rc) {
+            fprintf(stderr,"%s: sem_wait failed\n",__func__);
+            perror("sem_wait");
+            exit(1);
+        }
+        if (sem_destroy(&fom_st->completed)) {
+            fprintf(stderr,"%s: sem_destroy failed\n",__func__);
+            perror("sem_destroy");
+            exit(1);
+        }
+    }
 }
 
 struct rpc_connection {
