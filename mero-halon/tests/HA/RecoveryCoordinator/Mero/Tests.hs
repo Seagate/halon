@@ -527,13 +527,6 @@ testServiceStopped transport = do
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
 
-_lookupMasterMonitor :: G.Graph
-                     -> Maybe (ServiceProcess MonitorConf)
-_lookupMasterMonitor rg =
-    case G.connectedTo Cluster MasterMonitor rg of
-      [sp] -> Just sp
-      _    -> Nothing
-
 serviceStarted :: ServiceName -> Process ProcessId
 serviceStarted svname = do
     mp@(Published (HAEvent _ msg _) _)          <- expect
