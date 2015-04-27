@@ -48,7 +48,7 @@ instance Binary SaveProcesses
 
 -- | Event send by the Master Monitor to the RC.
 newtype SetMasterMonitor =
-    SetMasterMonitor ProcessId
+    SetMasterMonitor (ServiceProcess MonitorConf)
     deriving (Typeable, Binary)
 
 -- | Delay (seconds) at which the heartbeat process sends a 'Heartbeat' event to

@@ -14,6 +14,7 @@ import Data.Typeable
 import GHC.Generics
 
 import Control.Distributed.Process
+import Control.Distributed.Process.Closure (mkStatic)
 import Control.Distributed.Process.Internal.Types (remoteTable, processNode)
 import Control.Distributed.Static (unstatic)
 import Control.Monad.Reader
@@ -24,8 +25,15 @@ import Data.Hashable
 import Options.Schema
 
 import HA.ResourceGraph
+import HA.Resources
 import HA.Service
 import HA.Service.TH
+
+-- | Monitor type. Regular monitor, a.k.a node-local monitor, monitors every
+--   services started on a particular node. There is only one regular monitor
+--   per node. Master monitor on the other hand, monitors every regular monitors
+--   . There is only one Master monitor per cluster.
+data MonitorType = Regular | Master
 
 -- | Monitor service main configuration.
 data MonitorConf = MonitorConf Processes deriving (Eq, Generic, Show, Typeable)
@@ -105,5 +113,21 @@ encodeMonitored (Monitored pid svc@(Service _ _ d)) =
       put pid
       put svc
 
+resourceDictMasterMonitor :: Dict (Resource MasterMonitor)
+resourceDictMasterMonitor = Dict
+
+relationDictClusterMasterMonitorServiceProcess :: Dict (
+    Relation MasterMonitor Cluster (ServiceProcess MonitorConf)
+    )
+relationDictClusterMasterMonitorServiceProcess = Dict
+
 $(generateDicts ''MonitorConf)
-$(deriveService ''MonitorConf 'monitorSchema [])
+$(deriveService ''MonitorConf 'monitorSchema [ 'relationDictClusterMasterMonitorServiceProcess
+                                             , 'resourceDictMasterMonitor
+                                             ])
+
+instance Resource MasterMonitor where
+    resourceDict = $(mkStatic 'resourceDictMasterMonitor)
+
+instance Relation MasterMonitor Cluster (ServiceProcess MonitorConf) where
+    relationDict = $(mkStatic 'relationDictClusterMasterMonitorServiceProcess)

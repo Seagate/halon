@@ -19,14 +19,14 @@ module HA.Services.Monitor
     ( MonitorConf
     , Processes
     , SaveProcesses(..)
+    , SetMasterMonitor(..)
+    , MasterMonitor(..)
     , masterMonitorServiceName
     , monitorServiceName
     , masterMonitor
     , regularMonitor
     , HA.Services.Monitor.Types.__remoteTable
     , __remoteTableDecl
-    , monitorService__sdict
-    , monitorService__tdict
     , regularMonitor__static
     , masterMonitor__static
     , emptyMonitorConf
@@ -38,6 +38,7 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
 import Network.CEP
 
+import HA.EventQueue.Producer (promulgate)
 import HA.Service
 import HA.Services.Monitor.CEP
 import HA.Services.Monitor.Types
@@ -48,28 +49,39 @@ spawnHeartbeatProcess = do
     _    <- spawnLocal $ heartbeatProcess self
     return ()
 
-monitorProcess :: Processes -> Process ()
-monitorProcess  ps = do
+monitorProcess :: MonitorType -> Processes -> Process ()
+monitorProcess typ ps = do
     st <- monitorState ps
     spawnHeartbeatProcess
+    bootstrapMonitor typ
     runProcessor st monitorRules
+
+bootstrapMonitor :: MonitorType -> Process ()
+bootstrapMonitor Regular = return ()
+bootstrapMonitor Master  = do
+    pid <- getSelfPid
+    _   <- promulgate $ SetMasterMonitor (ServiceProcess pid)
+    return ()
 
 remotableDecl [ [d|
 
-    monitorService :: MonitorConf -> Process ()
-    monitorService (MonitorConf ps) = monitorProcess ps
+    _monitorService :: MonitorConf -> Process ()
+    _monitorService (MonitorConf ps) = monitorProcess Regular ps
+
+    _masterMonitorService :: MonitorConf -> Process ()
+    _masterMonitorService (MonitorConf ps) = monitorProcess Master ps
 
     regularMonitor :: Service MonitorConf
     regularMonitor = Service
-              monitorServiceName
-              $(mkStaticClosure 'monitorService)
-              ($(mkStatic 'someConfigDict)
-                `staticApply` $(mkStatic 'configDictMonitorConf))
+        monitorServiceName
+        $(mkStaticClosure '_monitorService)
+        ($(mkStatic 'someConfigDict)
+          `staticApply` $(mkStatic 'configDictMonitorConf))
 
     masterMonitor :: Service MonitorConf
     masterMonitor = Service
-              masterMonitorServiceName
-              $(mkStaticClosure 'monitorService)
-              ($(mkStatic 'someConfigDict)
-                `staticApply` $(mkStatic 'configDictMonitorConf))
+        masterMonitorServiceName
+        $(mkStaticClosure '_masterMonitorService)
+        ($(mkStatic 'someConfigDict)
+          `staticApply` $(mkStatic 'configDictMonitorConf))
     |] ]

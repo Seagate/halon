@@ -53,6 +53,12 @@ module HA.RecoveryCoordinator.Mero
        , bounceServiceTo
        , lookupDLogServiceProcess
        , sendToMonitor
+       , registerMasterMonitor
+       , getMultimapProcessId
+       , getNoisyPingCount
+       , killService
+       , writeConfiguration
+       , sendToMasterMonitor
          -- * Host related functions
        , locateNodeOnHost
        , registerHost
@@ -61,11 +67,6 @@ module HA.RecoveryCoordinator.Mero
        , driveStatus
        , registerDrive
        , updateDriveStatus
-       , getMultimapProcessId
-       , getNoisyPingCount
-       , killService
-       , writeConfiguration
-       , sendToMasterMonitor
        ) where
 
 import Prelude hiding ((.), id, mapM_)
@@ -176,12 +177,11 @@ rcHasStarted :: G.Graph -> Process G.Graph
 rcHasStarted rg = do
     self <- getSelfPid
     let selfNid  = processNodeId self
-        selfNode = Node selfNid
 
     -- | RC automatically is a satellite node (supports services)
-    spawnLocal $ nodeUp ([selfNid], 1000000)
+    _ <- spawnLocal $ nodeUp ([selfNid], 1000000)
 
-    (rg2, psm) <- case prevMasterMonitor selfNode rg of
+    (rg2, psm) <- case prevMasterMonitor rg of
                     Just sp@(ServiceProcess mpid) -> do
                       exit mpid Shutdown
                       let conf =
@@ -189,7 +189,8 @@ rcHasStarted rg = do
                               Just x -> x
                               _      -> error "impossible: rcHasStarted"
 
-                      return $ ( disconnectConfig sp Current rg
+                      return $ ( disconnectConfig sp Current >>>
+                                 G.disconnect Cluster MasterMonitor sp $ rg
                                , Just conf
                                )
                     _ -> return (rg, Nothing)
@@ -198,15 +199,17 @@ rcHasStarted rg = do
     _startService selfNid masterMonitor masterConf rg2
     return rg2
 
-prevMasterMonitor :: Node -> G.Graph -> Maybe (ServiceProcess MonitorConf)
-prevMasterMonitor node rg =
-    case action of
+registerMasterMonitor :: ServiceProcess MonitorConf -> CEP LoopState ()
+registerMasterMonitor sp = do
+    ls <- State.get
+    let rg' = G.connect Cluster MasterMonitor sp $ lsGraph ls
+    State.put ls { lsGraph = rg' }
+
+prevMasterMonitor :: G.Graph -> Maybe (ServiceProcess MonitorConf)
+prevMasterMonitor rg =
+    case G.connectedTo Cluster MasterMonitor rg of
       [sp] -> Just sp
       _    -> Nothing
-  where
-    action = [ sp | sp <- G.connectedTo node Runs rg
-                  , G.isConnected sp Owns masterMonitorServiceName rg
-                  ]
 
 prevEQTracker :: Node -> G.Graph -> Maybe (ServiceProcess EmptyConf)
 prevEQTracker node rg =
