@@ -69,6 +69,7 @@ module HA.RecoveryCoordinator.Mero
        ) where
 
 import Prelude hiding ((.), id, mapM_)
+import HA.NodeUp (nodeUp)
 import HA.Resources
 import HA.Service
 import HA.Services.DecisionLog
@@ -177,9 +178,8 @@ rcHasStarted rg = do
     let selfNid  = processNodeId self
         selfNode = Node selfNid
 
-    case prevEQTracker selfNode rg of
-      Nothing -> _startService selfNid EQT.eqTracker EmptyConf rg
-      _       -> return ()
+    -- | RC automatically is a satellite node (supports services)
+    spawnLocal $ nodeUp ([selfNid], 1000000)
 
     (rg2, psm) <- case prevMasterMonitor selfNode rg of
                     Just sp@(ServiceProcess mpid) -> do
@@ -236,7 +236,6 @@ registerNode node = do
 
 startEQTracker :: NodeId -> CEP LoopState ()
 startEQTracker nid = State.gets lsGraph >>= \rg -> liftProcess $ do
-    sayRC $ "New node contacted: " ++ show nid
     _startService nid EQT.eqTracker EmptyConf rg
 
 ack :: ProcessId -> CEP LoopState ()

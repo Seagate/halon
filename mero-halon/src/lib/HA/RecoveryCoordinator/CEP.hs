@@ -51,6 +51,7 @@ rcRules argv eq = do
         ack pid
         known <- knownResource node
         when (not known) $ do
+          liftProcess . sayRC $ "New node contacted: " ++ show nid
           let host = Host h
           registerNode node
           registerHost host
@@ -58,6 +59,7 @@ rcRules argv eq = do
           startEQTracker nid
 
           -- We start a new monitor for any node that's started
+          registerService regularMonitor
           _ <- startService nid regularMonitor emptyMonitorConf
           return ()
 
