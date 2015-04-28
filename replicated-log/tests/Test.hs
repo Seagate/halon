@@ -382,10 +382,12 @@ tests _ = do
                 _ <- expectTimeout 1000000 :: Process (Maybe ())
                 _ <- expectTimeout 1000000 :: Process (Maybe ())
 
+                say "Removing two replicas ..."
                 forM_ [node1, node2] $ \lnid ->
                   retry retryTimeout $
                     Log.removeReplica h (localNodeId lnid)
 
+                say "Checking quorum ..."
                 retry retryTimeout $
                   State.update port incrementCP
                 () <- expect
