@@ -175,21 +175,23 @@ knownResource res = do
     ls <- State.get
     return $ G.memberResource res (lsGraph ls)
 
+-- | Register a new satellite node in the cluster.
 registerNode :: Node -> CEP LoopState ()
 registerNode node = do
+    cepLog "rg" $ "Registering satellite node: " ++ show node
     rg <- State.gets lsGraph
 
     let rg' = G.newResource node                       >>>
-              G.newResource EQT.eqTracker              >>>
-              G.connect Cluster Supports EQT.eqTracker >>>
               G.connect Cluster Has node $ rg
 
     State.modify $ \ls -> ls { lsGraph = rg' }
 
 startEQTracker :: NodeId -> CEP LoopState ()
-startEQTracker nid = State.gets lsGraph >>= \rg -> liftProcess $ do
-    sayRC $ "New node contacted: " ++ show nid
-    _startService nid EQT.eqTracker EmptyConf rg
+startEQTracker nid = do
+    cepLog "action" $ "Starting " ++ EQT.name ++ " on node " ++ show nid
+    State.gets lsGraph >>= \rg -> liftProcess $ do
+      sayRC $ "New node contacted: " ++ show nid
+      _startService nid EQT.eqTracker EmptyConf rg
 
 ack :: ProcessId -> CEP LoopState ()
 ack pid = liftProcess $ usend pid ()
@@ -212,6 +214,8 @@ registerService :: Configuration a
                 => Service a
                 -> CEP LoopState ()
 registerService svc = do
+    cepLog "rg" $ "Registering service: "
+                ++ (snString $ serviceName svc)
     ls <- State.get
     let rg' = G.newResource svc >>>
               G.connect Cluster Supports svc $ lsGraph ls
@@ -222,7 +226,9 @@ startService :: Configuration a
              -> Service a
              -> a
              -> CEP LoopState ()
-startService n svc conf =
+startService n svc conf = do
+    cepLog "action" $ "Starting " ++ (snString $ serviceName svc) ++ " on node "
+                    ++ show n
     liftProcess . _startService n svc conf . lsGraph =<< State.get
 
 unregisterPreviousServiceProcess :: Configuration a
@@ -231,6 +237,9 @@ unregisterPreviousServiceProcess :: Configuration a
                                  -> ServiceProcess a
                                  -> CEP LoopState ()
 unregisterPreviousServiceProcess n svc sp = do
+    cepLog "rg" $ "Unregistering previous service process for service "
+                ++ (snString $ serviceName svc)
+                ++ " on node " ++ show n
     ls <- State.get
     let rg' = G.disconnect sp Owns (serviceName svc) >>>
               G.disconnect n Runs sp                 >>>
@@ -241,6 +250,7 @@ registerServiceName :: Configuration a
                     => Service a
                     -> CEP LoopState ()
 registerServiceName svc = do
+    cepLog "rg" $ "Registering service name: " ++ (snString $ serviceName svc)
     ls <- State.get
     let rg' = G.newResource (serviceName svc) $ lsGraph ls
     State.put ls { lsGraph = rg' }
@@ -252,6 +262,9 @@ registerServiceProcess :: Configuration a
                        -> ServiceProcess a
                        -> CEP LoopState ()
 registerServiceProcess n svc cfg sp = do
+    cepLog "rg" $ "Registering service process for service "
+                ++ (snString $ serviceName svc)
+                ++ " on node " ++ show n
     ls <- State.get
     let rg' = G.newResource sp                    >>>
               G.connect n Runs sp                 >>>
@@ -269,6 +282,10 @@ registerDrive :: Enclosure
               -> StorageDevice
               -> CEP LoopState ()
 registerDrive enc dev = do
+  cepLog "rg" $ "Registering storage device: "
+              ++ show dev
+              ++ " in enclosure "
+              ++ show enc
   ls <- State.get
   let rg' = G.newResource enc
         >>> G.newResource dev
@@ -281,6 +298,8 @@ registerDrive enc dev = do
 registerHost :: Host
              -> CEP LoopState ()
 registerHost host = do
+  cepLog "rg" $ "Registering host: "
+              ++ show host
   ls <- State.get
   let rg' = G.newResource host
         >>> G.connect Cluster Has host
@@ -290,6 +309,7 @@ registerHost host = do
 findHosts :: String
           -> CEP LoopState [Host]
 findHosts regex = do
+  cepLog "rg-query" $ "Looking for hosts matching regex " ++ regex
   g <- State.gets lsGraph
   return $ [ host | host@(Host hn) <- G.connectedTo Cluster Has g
                   , hn =~ regex]
@@ -297,13 +317,16 @@ findHosts regex = do
 -- | Find all nodes running on the given host.
 nodesOnHost :: Host
             -> CEP LoopState [Node]
-nodesOnHost host = State.gets $ G.connectedTo host Runs . lsGraph
+nodesOnHost host = do
+  cepLog "rg-query" $ "Looking for nodes on host " ++ show host
+  State.gets $ G.connectedTo host Runs . lsGraph
 
 -- | Register an interface on a host.
 registerInterface :: Host -- ^ Host on which the interface resides.
                   -> Interface
                   -> CEP LoopState ()
 registerInterface host int = do
+  cepLog "rg" $ "Registering interface on host " ++ show host
   ls <- State.get
   let rg' = G.newResource host
         >>> G.newResource int
@@ -316,6 +339,8 @@ locateNodeOnHost :: Node
                  -> Host
                  -> CEP LoopState ()
 locateNodeOnHost node host = do
+  cepLog "rg" $ "Locating node " ++ (show node) ++ " on host "
+              ++ show host
   ls <- State.get
   let rg' = G.connect host Runs node
           $ lsGraph ls
@@ -325,6 +350,7 @@ locateNodeOnHost node host = do
 driveStatus :: StorageDevice
             -> CEP LoopState (Maybe StorageDeviceStatus)
 driveStatus dev = do
+  cepLog "rg-query" $ "Querying status of device " ++ show dev
   ls <- State.get
   return $ case G.connectedTo dev Is (lsGraph ls) of
     [a] -> Just a
@@ -335,8 +361,10 @@ updateDriveStatus :: StorageDevice
                   -> String
                   -> CEP LoopState ()
 updateDriveStatus dev status = do
+  cepLog "rg" $ "Updating status for device " ++ show dev ++ " to " ++ status
   ls <- State.get
   ds <- driveStatus dev
+  cepLog "rg" $ "Old status was " ++ show ds
   let statusNode = StorageDeviceStatus status
       removeOldNode = case ds of
         Just f -> G.disconnect dev Is f
@@ -349,6 +377,7 @@ updateDriveStatus dev status = do
 
 getNoisyPingCount :: CEP LoopState Int
 getNoisyPingCount = do
+    cepLog "rg-query" $ ("Querying noisy ping count." :: BS.ByteString)
     ls <- State.get
     let rg       = lsGraph ls
         (rg', i) =
@@ -428,7 +457,9 @@ _startService node svc cfg _ = void $ spawnLocal $ do
 killService :: ServiceProcess a
             -> ExitReason
             -> CEP s ()
-killService (ServiceProcess pid) reason =
+killService (ServiceProcess pid) reason = do
+  cepLog "action" $ "Killing service with pid " ++ show pid
+                  ++ " because of " ++ show reason
   liftProcess $ exit pid reason
 
 bounceServiceTo :: Configuration a
@@ -437,6 +468,8 @@ bounceServiceTo :: Configuration a
                 -> Service a
                 -> CEP LoopState ()
 bounceServiceTo role n@(Node nid) s = do
+    cepLog "action" $ "Bouncing service " ++ show s
+                    ++ " on node " ++ show nid
     _bounceServiceTo . lsGraph =<< State.get
   where
     _bounceServiceTo g = case runningService n s g of
@@ -446,7 +479,7 @@ bounceServiceTo role n@(Node nid) s = do
         go sp = case readConfig sp role g of
           Just cfg -> do
             killService sp Shutdown
-            liftProcess $ _startService nid s cfg g
+            startService nid s cfg
           Nothing -> error "Cannot find current configuation"
 
 prepareEpochResponse :: CEP LoopState EpochResponse
@@ -465,6 +498,10 @@ updateServiceConfiguration :: Configuration a
                            -> NodeFilter
                            -> CEP LoopState ()
 updateServiceConfiguration opts svc nodeFilter = do
+    cepLog "rg" $ "Updating configuration for service "
+                ++ (snString $ serviceName svc)
+                ++ " on nodes "
+                ++ show nodeFilter
     ls <- State.get
     liftProcess $ sayRC $ "Request to reconfigure service "
                         ++ snString (serviceName svc)
