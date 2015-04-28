@@ -148,8 +148,12 @@ nodeHeartbeatRequest nid = liftProcess $ nsendRemote nid "nonexistentprocess" ()
 monitorRules :: RuleM MonitorState ()
 monitorRules = do
     define "monitor-notification" id $
-      \(ProcessMonitorNotification _ pid _) ->
-          traverse_ reportFailure =<< takeMonitored pid
+      \(ProcessMonitorNotification _ pid reason) ->
+        case reason of
+          DiedNormal -> do
+            _ <- takeMonitored pid
+            return ()
+          _ -> traverse_ reportFailure =<< takeMonitored pid
 
     define "service-started" id $ \msg -> do
       ServiceStarted _ svc _ sp <- decodeMsg msg
