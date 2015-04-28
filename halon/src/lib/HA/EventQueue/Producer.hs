@@ -39,7 +39,7 @@ import Data.ByteString (ByteString)
 import Data.List ((\\))
 
 softTimeout :: Int
-softTimeout = 5000000
+softTimeout = 2000000
 
 -- This timeout needs to be higher than the staggering
 -- hard timeout.
