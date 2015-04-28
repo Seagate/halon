@@ -337,7 +337,7 @@ Test-Suite testsnapshot3
                    distributed-commands,
                    distributed-process-test,
                    process
-  if !flag(distributed-tests)
+  if !(flag(distributed-tests) && flag(long-tests))
     Buildable:     False
 
 
