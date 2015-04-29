@@ -105,7 +105,7 @@ testConfig = Log.Config
     }
 
 retryTimeout :: Int
-retryTimeout = fromIntegral $ Log.leaseTimeout testConfig
+retryTimeout = fromIntegral $ Log.leaseTimeout testConfig `div` 2
 
 snapshotServer :: Process ()
 snapshotServer = void $ serializableSnapshotServer
