@@ -47,6 +47,7 @@ rcRules argv eq = do
         known <- knownResource node
         when (not known) $ do
           let host = Host h
+          registerService EQT.eqTracker
           registerNode node
           registerHost host
           locateNodeOnHost node host
