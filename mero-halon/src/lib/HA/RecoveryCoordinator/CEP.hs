@@ -164,8 +164,12 @@ rcRules argv eq = do
 
     ssplRules
 
+logStr :: Log -> String
+logStr (Log _ v) = show v
+
 sendLogEntries :: LogEntries -> LoopState -> Process ()
-sendLogEntries LogEntries{..} ls =
+sendLogEntries LogEntries{..} ls = do
+    say $ "RC DECISION ----> " ++ show logEntriesRule ++ show (fmap logStr logEntries)
     for_ (lookupDLogServiceProcess ls) $ \(ServiceProcess pid) -> do
       let el = EntriesLogged
                { elRuleId  = logEntriesRule

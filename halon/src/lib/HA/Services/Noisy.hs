@@ -88,7 +88,9 @@ instance Resource NoisyPingCount where
 
 -- | Block forever.
 never :: Process ()
-never = liftIO $ newEmptyMVar >>= takeMVar
+never = do
+    say "NOISY ---------> I DID WHAT I'VE TOLD TO DO !!!!!"
+    liftIO $ newEmptyMVar >>= takeMVar
 
 remotableDecl [ [d|
   noisy :: Service NoisyConf

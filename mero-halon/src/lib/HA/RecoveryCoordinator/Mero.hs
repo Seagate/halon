@@ -176,6 +176,7 @@ reconfFailureLimit = 3
 rcHasStarted :: G.Graph -> Process G.Graph
 rcHasStarted rg = do
     self <- getSelfPid
+    say $ "RECOVERY COORDINATOR PID ===> " ++ show self
     let selfNid  = processNodeId self
 
     -- | RC automatically is a satellite node (supports services)

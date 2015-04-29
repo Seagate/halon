@@ -88,9 +88,16 @@ promulgateHAEvent :: Serializable a
                   -> Process ()
 promulgateHAEvent eqnids evt = do
   say $ "Sending to " ++ (show eqnids)
+  say "BEFORE callLocal"
   result <- callLocal $
     ncallRemoteAnyTimeout
       promulgateTimeout eqnids eventQueueLabel evt
+  say "AFTER callLocal"
+
+  case eqnids of
+    [] -> say $ "NOISY USE-CASE --> " ++ show result
+    _  -> say $ "EVENTQUEUE-LABEL ==> " ++ show result
+
   case result :: Maybe (NodeId, NodeId) of
     Nothing -> promulgateHAEvent eqnids evt
     Just (rnid, pnid) -> nsend EQT.name $ EQT.PreferReplicas rnid pnid
@@ -124,11 +131,14 @@ promulgate x = do
     rl <- expectTimeout softTimeout
     case rl of
       Just (EQT.ReplicaReply (EQT.ReplicaLocation pref rest)) -> do
+        say $ "PROMULGATE ----> REPLICA REPLY => " ++ show (pref, rest)
         pid <- case pref of
           [] -> promulgateEQ rest x
           _ -> promulgateEQPref pref rest x
         return pid
-      Nothing -> promulgate x
+      Nothing -> do
+          say "PROMULGATE ++++> LOOPING"
+          promulgate x
 {-
 The issue that this loop addresses in particular is if the node agent
 is contactable, but there are no accessible EQs, either because the

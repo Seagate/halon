@@ -328,7 +328,11 @@ Test-Suite testsnapshot3
   default-language: Haskell2010
   Hs-Source-Dirs:  tests/Distributed
   Main-Is:         snapshots3.hs
-  Ghc-Options:     -threaded -Werror -Wall
+  Ghc-Options:     -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
   Build-Depends:   distributed-process,
                    base,
                    filepath,
@@ -336,8 +340,9 @@ Test-Suite testsnapshot3
                    network-transport-tcp,
                    distributed-commands,
                    distributed-process-test,
-                   process
-  if !(flag(distributed-tests) && flag(long-tests))
+                   process,
+                   halon
+  if !flag(distributed-tests)
     Buildable:     False
 
 

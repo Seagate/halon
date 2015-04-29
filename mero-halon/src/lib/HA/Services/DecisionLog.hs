@@ -16,6 +16,7 @@ module HA.Services.DecisionLog
     , decisionLog__static
     ) where
 
+import Control.Exception (SomeException, Exception, throw)
 import System.IO
 
 import Control.Distributed.Process
@@ -42,11 +43,19 @@ openLogFile path = liftIO $ do
     hSetBuffering h LineBuffering
     return h
 
+showException :: SomeException -> Process ()
+showException e = do
+    say $ "DECISION LOG DIED ------> " ++ show e
+    throw e
+
 remotableDecl [ [d|
     decisionLogService :: DecisionLogConf -> Process ()
-    decisionLogService (DecisionLogConf path) =
-        bracket (openLogFile path) cleanupHandle $ \h ->
+    decisionLogService (DecisionLogConf path) = do
+        res <- try $ bracket (openLogFile path) cleanupHandle $ \h ->
           makeDecisionLogProcess $ decisionLogRules h
+        case res of
+          Left e  -> showException e
+          Right a -> return a
 
     decisionLog :: Service DecisionLogConf
     decisionLog = Service
