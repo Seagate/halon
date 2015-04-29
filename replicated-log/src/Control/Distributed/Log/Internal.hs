@@ -76,7 +76,7 @@ import Control.Exception (SomeException, throwIO)
 import Control.Monad
 import Data.Constraint (Dict(..))
 import Data.Int (Int64)
-import Data.List (intersect, partition, sortBy)
+import Data.List (intersect, partition, sortBy, (\\))
 import qualified Data.Foldable as Foldable
 import Data.Function (on)
 import Data.Binary (Binary, encode, decode)
@@ -711,6 +711,10 @@ replica Dict
         log <- liftIO $ readIORef $ persistentLogCache ph
         let others = filter (/= here) ρs
 
+            -- Updates the membership list of the proposer if it has changed.
+            updateAcceptors ρs' = if null (ρs \\ ρs') then return ()
+                                  else usend ppid ρs'
+
             -- Returns the leader if the lease has not expired.
             getLeader :: IO (Maybe NodeId)
             getLeader = do
@@ -822,7 +826,7 @@ replica Dict
                           w' = succ w{decreeLegislatureId = leg'}
 
                       -- Update the list of acceptors of the proposer...
-                      usend ppid ρs'
+                      updateAcceptors ρs'
 
                       (w0', msref') <- maybeTakeSnapshot w' s
 
@@ -1047,7 +1051,7 @@ replica Dict
                     -- before saving a snapshot.
                     liftIO $ trimTheLog ph (decreeNumber w0)
 
-                    when (legD < legD') $ usend ppid ρs'
+                    when (legD < legD') $ updateAcceptors ρs'
 
                     leaseStart' <- if legD < legD'
                                    then setLeaseTimer timerPid 0 ρs'
@@ -1080,7 +1084,7 @@ replica Dict
             , matchIf (\(Max _ d' _ _ _) -> decreeNumber d < decreeNumber d') $
                        \(Max ρ d' legD' epoch' ρs') -> do
                   say $ "Got Max " ++ show d'
-                  usend ppid ρs'
+                  updateAcceptors ρs'
 
                   when (legD < legD') $
                     liftIO $ insertInLog ph (decreeNumber legD') $
@@ -1095,7 +1099,7 @@ replica Dict
                       ρs'' = if legD < legD' then ρs' else ρs
                       d'' = DecreeId leg'' $ decreeNumber d'
 
-                  when (legD < legD') $ usend ppid ρs'
+                  when (legD < legD') $ updateAcceptors ρs'
 
                   leaseStart' <- if legD < legD'
                                  then setLeaseTimer timerPid 0 ρs''
@@ -1136,7 +1140,7 @@ replica Dict
 
                       -- Update the list of acceptors of the proposer, so we
                       -- have a chance to suceed when there is no quorum.
-                      usend ppid (intersect ρs ρs')
+                      updateAcceptors (intersect ρs ρs')
 
                       if d == cd then go st { stateCurrentDecree = succ cd }
                       else go st
@@ -1166,7 +1170,7 @@ replica Dict
 
                       -- Update the list of acceptors of the proposer, so we
                       -- have a chance to suceed when there is no quorum.
-                      usend ppid (intersect ρs ρs')
+                      updateAcceptors (intersect ρs ρs')
 
                       go st
 
