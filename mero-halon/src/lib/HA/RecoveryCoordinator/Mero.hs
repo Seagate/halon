@@ -41,6 +41,7 @@ module HA.RecoveryCoordinator.Mero
        , registerService
        , startService
        , getSelfProcessId
+       , requeue
        , sendMsg
        , unregisterPreviousServiceProcess
        , registerServiceName
@@ -467,6 +468,12 @@ sayRC s = say $ "Recovery Coordinator: " ++ s
 sendMsg :: Serializable a => ProcessId -> a -> CEP s ()
 sendMsg pid a = liftProcess $ usend pid a
 
+requeue :: Serializable a => a -> CEP s ProcessId
+requeue msg = liftProcess $ do
+  sayRC "Requeuing unprocessed message."
+  nid <- getSelfNode
+  promulgateEQ [nid] msg
+
 decodeMsg :: ProcessEncode a => BinRep a -> CEP s a
 decodeMsg = liftProcess . decodeP
 
@@ -509,6 +516,7 @@ _startService node svc cfg _ = void $ spawnLocal $ do
         void . promulgateEQ [mynid] . encodeP $
           ServiceCouldNotStart (Node node) svc cfg
       Just pid -> do
+        sayRC $ "Sending ss message for service " ++ (snString . serviceName $ svc)
         void . promulgateEQ [mynid] . encodeP $
           ServiceStarted (Node node) svc cfg (ServiceProcess pid)
 

@@ -65,19 +65,21 @@ rcRules argv eq = do
           return ()
 
     -- Service Start
-    defineHAEvent "service-start" id $ \evt@(HAEvent _ msg _) -> do
+    defineHAEvent "service-start" id $ \(HAEvent _ msg _) -> do
         ServiceStartRequest n@(Node nid) svc conf <- decodeMsg msg
+        liftProcess . sayRC $ "Service start request for service "
+                            ++ snString (serviceName svc)
+                            ++ " on node "
+                            ++ show nid
         known   <- knownResource n
         running <- isServiceRunning n svc
 
         if known && not running
-            then do
+          then do
             registerService svc
-            _ <- startService nid svc conf
-            return ()
-            else do
-            pid <- getSelfProcessId
-            sendMsg pid evt
+            startService nid svc conf
+          else do
+            void . requeue $ msg
 
     -- Service Started
     defineHAEvent "service-started" id $ \(HAEvent _ msg _) -> do
@@ -89,7 +91,8 @@ rcRules argv eq = do
 
         res <- lookupRunningService n svc
         liftProcess $ sayRC $
-          "started " ++ snString (serviceName svc) ++ " service"
+          "started " ++ snString (serviceName svc) ++ " service "
+          ++ " at pid " ++ (show pid)
 
         case res of
           Just sp' -> unregisterPreviousServiceProcess n svc sp'
