@@ -15,7 +15,6 @@ import Control.Distributed.Process.Scheduler
 import Network.Transport (Transport(..))
 import Network.Transport.TCP
 
-import Control.Applicative ((<$>))
 import Control.Exception ( bracket, throwIO, SomeException )
 import Control.Monad ( when, forM, forM_, replicateM_ )
 import Data.IORef
