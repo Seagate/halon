@@ -194,13 +194,28 @@ rcInit InitNodeUp rg = do
               G.connect Cluster Has host               >>>
               G.connect host Runs node $ rg
     _startService nodeId EQT.eqTracker EmptyConf rg'
+    say "<-------------- WAINTING eqTracker"
+    waitingForEQT
+    say "---------------> Tracker is up"
     rcInit InitMasterMonitor rg'
+  where
+    waitingForEQT = do
+        r <- receiveWait [
+          matchHAEvent $ \(HAEvent _ msg _) -> do
+            ServiceStarted _ svc _ _ <- decodeP msg
+            if serviceName svc == serviceName EQT.eqTracker
+              then return True
+              else return False
+          ]
+        when (not r) waitingForEQT
 rcInit InitMasterMonitor rg = do
     rg' <- startMasterMonitor rg
+    say "<------------ WAITING Master monitor !!!"
     rg'' <- receiveWait [
         matchHAEvent $ \(HAEvent _ (SetMasterMonitor sp) _) ->
           return $ G.connect Cluster MasterMonitor sp rg'
         ]
+    say "-------------> Master monitor is up !!!!"
     rcInit InitDone rg''
 rcInit InitDone rg = do
     nodeId <- getSelfNode
@@ -209,31 +224,31 @@ rcInit InitDone rg = do
     _startService nodeId regularMonitor emptyMonitorConf rg'
     return rg'
 
-rcHasStarted :: G.Graph -> Process G.Graph
-rcHasStarted rg = do
-    self <- getSelfPid
-    let selfNid  = processNodeId self
+-- rcHasStarted :: G.Graph -> Process G.Graph
+-- rcHasStarted rg = do
+--     self <- getSelfPid
+--     let selfNid  = processNodeId self
 
-    -- | RC automatically is a satellite node (supports services)
-    _ <- spawnLocal $ nodeUp ([selfNid], 1000000)
+--     -- | RC automatically is a satellite node (supports services)
+--     _ <- spawnLocal $ nodeUp ([selfNid], 1000000)
 
-    (rg2, psm) <- case prevMasterMonitor rg of
-                    Just sp@(ServiceProcess mpid) -> do
-                      exit mpid Shutdown
-                      let conf =
-                            case readConfig sp Current rg of
-                              Just x -> x
-                              _      -> error "impossible: rcHasStarted"
+--     (rg2, psm) <- case prevMasterMonitor rg of
+--                     Just sp@(ServiceProcess mpid) -> do
+--                       exit mpid Shutdown
+--                       let conf =
+--                             case readConfig sp Current rg of
+--                               Just x -> x
+--                               _      -> error "impossible: rcHasStarted"
 
-                      return $ ( disconnectConfig sp Current >>>
-                                 G.disconnect Cluster MasterMonitor sp $ rg
-                               , Just conf
-                               )
-                    _ -> return (rg, Nothing)
+--                       return $ ( disconnectConfig sp Current >>>
+--                                  G.disconnect Cluster MasterMonitor sp $ rg
+--                                , Just conf
+--                                )
+--                     _ -> return (rg, Nothing)
 
-    let masterConf = fromMaybe emptyMonitorConf psm
-    _startService selfNid masterMonitor masterConf rg2
-    return rg2
+--     let masterConf = fromMaybe emptyMonitorConf psm
+--     _startService selfNid masterMonitor masterConf rg2
+--     return rg2
 
 startMasterMonitor :: G.Graph -> Process G.Graph
 startMasterMonitor rg = do
