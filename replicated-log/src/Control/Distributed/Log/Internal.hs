@@ -75,7 +75,7 @@ import Control.Exception (SomeException, throwIO)
 import Control.Monad
 import Data.Constraint (Dict(..))
 import Data.Int (Int64)
-import Data.List (intersect, partition, sortBy, (\\))
+import Data.List (intersect, partition, sortBy)
 import qualified Data.Foldable as Foldable
 import Data.Function (on)
 import Data.Binary (Binary, encode, decode)
@@ -711,8 +711,8 @@ replica Dict
         let others = filter (/= here) ρs
 
             -- Updates the membership list of the proposer if it has changed.
-            updateAcceptors ρs' = if null (ρs \\ ρs') then return ()
-                                  else usend ppid ρs'
+            updateAcceptors ρs' = if ρs == ρs' then return ()
+                                    else usend ppid ρs'
 
             -- Returns the leader if the lease has not expired.
             getLeader :: IO (Maybe NodeId)
