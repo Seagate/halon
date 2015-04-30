@@ -86,9 +86,11 @@ import HA.Resources.Mero.Note
 import HA.NodeAgent.Messages
 import qualified HA.Services.EQTracker as EQT
 
+import HA.EventQueue.Consumer (HAEvent(..), matchHAEvent)
 import HA.EventQueue.Producer (promulgateEQ)
 import qualified HA.ResourceGraph as G
 
+import Network.HostName
 #ifdef USE_MERO_NOTE
 import qualified Mero.Notification
 import Mero.Notification.HAState
@@ -174,6 +176,39 @@ instance Binary GetMultimapProcessId
 reconfFailureLimit :: Int
 reconfFailureLimit = 3
 
+data InitState = InitNodeUp
+               | InitMasterMonitor
+               | InitDone
+
+rcInit :: InitState -> G.Graph -> Process G.Graph
+rcInit InitNodeUp rg = do
+    nodeId <- getSelfNode
+    h      <- liftIO getHostName
+    let node = Node nodeId
+        host = Host h
+        rg' = G.newResource node                       >>>
+              G.newResource EQT.eqTracker              >>>
+              G.connect Cluster Supports EQT.eqTracker >>>
+              G.connect Cluster Has node               >>>
+              G.newResource host                       >>>
+              G.connect Cluster Has host               >>>
+              G.connect host Runs node $ rg
+    _startService nodeId EQT.eqTracker EmptyConf rg'
+    rcInit InitMasterMonitor rg'
+rcInit InitMasterMonitor rg = do
+    rg' <- startMasterMonitor rg
+    rg'' <- receiveWait [
+        matchHAEvent $ \(HAEvent _ (SetMasterMonitor sp) _) ->
+          return $ G.connect Cluster MasterMonitor sp rg'
+        ]
+    rcInit InitDone rg''
+rcInit InitDone rg = do
+    nodeId <- getSelfNode
+    let rg' = G.newResource regularMonitor >>>
+              G.connect Cluster Supports regularMonitor $ rg
+    _startService nodeId regularMonitor emptyMonitorConf rg'
+    return rg'
+
 rcHasStarted :: G.Graph -> Process G.Graph
 rcHasStarted rg = do
     self <- getSelfPid
@@ -198,6 +233,26 @@ rcHasStarted rg = do
 
     let masterConf = fromMaybe emptyMonitorConf psm
     _startService selfNid masterMonitor masterConf rg2
+    return rg2
+
+startMasterMonitor :: G.Graph -> Process G.Graph
+startMasterMonitor rg = do
+    nodeId     <- getSelfNode
+    (rg2, psm) <- case prevMasterMonitor rg of
+                    Just sp@(ServiceProcess mpid) -> do
+                      exit mpid Shutdown
+                      let conf =
+                            case readConfig sp Current rg of
+                              Just x -> x
+                              _      -> error "impossible: rcHasStarted"
+
+                      return $ ( disconnectConfig sp Current >>>
+                                 G.disconnect Cluster MasterMonitor sp $ rg
+                               , Just conf
+                               )
+                    _ -> return (rg, Nothing)
+    let masterConf = fromMaybe emptyMonitorConf psm
+    _startService nodeId masterMonitor masterConf rg2
     return rg2
 
 registerMasterMonitor :: ServiceProcess MonitorConf -> CEP LoopState ()
@@ -630,7 +685,7 @@ makeRecoveryCoordinator :: ProcessId -- ^ pid of the replicated multimap
                         -> RuleM LoopState ()
                         -> Process ()
 makeRecoveryCoordinator mm rm = do
-    rg    <- HA.RecoveryCoordinator.Mero.initialize mm >>= rcHasStarted
+    rg    <- HA.RecoveryCoordinator.Mero.initialize mm >>= rcInit InitNodeUp
     start <- G.sync rg
     runProcessor (LoopState start Map.empty mm) $ do
       rm

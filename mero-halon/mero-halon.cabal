@@ -121,7 +121,8 @@ Library
                    network-transport,
                    unordered-containers,
                    cep,
-                   netwire
+                   netwire,
+                   hostname
 
   if flag(mero-note)
       Exposed-Modules: Mero.Notification.HAState
@@ -337,7 +338,7 @@ Test-Suite testsnapshot3
                    distributed-commands,
                    distributed-process-test,
                    process
-  if !(flag(distributed-tests) && flag(long-tests))
+  if !flag(distributed-tests)
     Buildable:     False
 
 
