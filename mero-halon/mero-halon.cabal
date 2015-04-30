@@ -111,7 +111,9 @@ Library
                    network-transport,
                    unordered-containers,
                    cep,
-                   netwire
+                   netwire,
+                   uuid,
+                   random
 
   if flag(mero)
       Exposed-Modules: Mero.Epoch

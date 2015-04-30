@@ -18,17 +18,17 @@ schema = [schemaQQ|
   "properties": {
     "sspl_ll_msg_header": {
       "required" : true,
-          "schema_version": {
-              "description" :"SSPL JSON Schema Version",
-              "type" : "string",
-              "required" : true
-          },
-          "sspl_version": {
-              "description" : "SSPL Version",
-              "type" : "string",
-              "required" : true
-          },
-          "msg_version" : {
+      "schema_version": {
+        "description" :"SSPL JSON Schema Version",
+        "type" : "string",
+        "required" : true
+      },
+      "sspl_version": {
+        "description" : "SSPL Version",
+        "type" : "string",
+        "required" : true
+      },
+      "msg_version" : {
         "description" : "Message Version",
         "type" : "string",
         "required" : true
@@ -41,7 +41,7 @@ schema = [schemaQQ|
     },
 
     "sspl_ll_debug": {
-          "debug_component" : {
+        "debug_component" : {
         "description" : "Used to identify the component to debug",
         "type" : "string",
         "required" : false
@@ -93,7 +93,7 @@ schema = [schemaQQ|
           }
         },
 
-        "systemd_service": {
+        "service_controller": {
           "type" : "object",
           "additionalProperties" : false,
           "properties": {
