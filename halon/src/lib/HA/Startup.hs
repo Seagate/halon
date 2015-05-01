@@ -1,4 +1,4 @@
--- |
+ -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
@@ -118,7 +118,7 @@ remotableDecl [ [d|
               $ recoverySupervisor (viewRState $(mkStatic 'rsView) rGroup)
                                    rsLeaderLease
               $ mask_ $ do
-                mRCPid <- liftIO $ newEmptyMVar
+                mRCPid <- liftIO newEmptyMVar
                 mmpid <- spawnLocal $ do
                        rcpid <- liftIO $ readMVar mRCPid
                        link rcpid

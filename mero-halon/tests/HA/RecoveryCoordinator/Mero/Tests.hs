@@ -15,6 +15,8 @@ module HA.RecoveryCoordinator.Mero.Tests
   , testEQTrimming
 --  , testDecisionLog
   , testServiceStopped
+  , testMonitorManagement
+  , testMasterMonitorManagement
   ) where
 
 import Prelude hiding ((<$>), (<*>))
@@ -26,6 +28,7 @@ import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue
 import HA.EventQueue.Definitions
+import HA.EventQueue.Consumer (HAEvent(..))
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.Multimap.Implementation
 import HA.Multimap.Process
@@ -39,17 +42,22 @@ import HA.Replicator.Log ( MC_RG )
 import qualified HA.ResourceGraph as G
 import HA.Service
   ( Configuration
-  , Service
+  , Service(..)
+  , ServiceName(..)
   , ServiceFailed(..)
   , ServiceProcess(..)
   , ServiceStartRequest(..)
   , ServiceStopRequest(..)
---  , Owns(..)
+  , ServiceStarted(..)
+  , ServiceStartedMsg
+--   , Owns(..)
+  , decodeP
   , encodeP
   , runningService
   )
 import qualified HA.Services.Dummy as Dummy
 -- import qualified HA.Services.DecisionLog as DLog
+import HA.Services.Monitor
 import RemoteTables ( remoteTable )
 
 import qualified SSPL.Bindings as SSPL
@@ -166,7 +174,6 @@ testServiceRestarting transport = do
         pid <- getServiceProcessPid mm (Node nid) Dummy.dummy
         _ <- promulgateEQ [nid] . encodeP $ ServiceFailed (Node nid) Dummy.dummy
                                                           pid
-
         "Starting service dummy" :: String <- expect
         say $ "dummy service restarted successfully."
   where
@@ -519,3 +526,73 @@ testServiceStopped transport = do
   where
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
+
+serviceStarted :: ServiceName -> Process ProcessId
+serviceStarted svname = do
+    mp@(Published (HAEvent _ msg _) _)          <- expect
+    ServiceStarted _ svc _ (ServiceProcess pid) <- decodeP msg
+    if serviceName svc == svname
+        then return pid
+        else do
+          self <- getSelfPid
+          usend self mp
+          serviceStarted svname
+
+launchRC :: Process (ProcessId, ProcessId)
+launchRC = do
+    nid <- getSelfNode
+
+    say $ "tests node: " ++ show nid
+    cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+                             [nid] ((Nothing,[]), fromList [])
+    pRGroup <- unClosure cRGroup
+    rGroup  <- pRGroup
+    eq      <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+    runRC (eq, IgnitionArguments [nid]) rGroup
+
+serviceStart :: Configuration a => Service a -> a -> Process ()
+serviceStart svc conf = do
+    nid <- getSelfNode
+    let node = Node nid
+    _   <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest node svc conf
+    return ()
+
+-- | Make sure that when a Service died, the node-local monitor detects it
+--   and notify the RC. That service should restart.
+testMonitorManagement :: Transport -> IO ()
+testMonitorManagement transport = do
+    withTmpDirectory $ tryWithTimeout transport testRemoteTable 15000000 $ do
+      (_,rc) <- launchRC
+
+      simpleSubscribe rc (Sub :: Sub (HAEvent ServiceStartedMsg))
+
+      _ <- serviceStarted monitorServiceName
+      say "Node-local monitor has been started"
+
+      serviceStart Dummy.dummy (Dummy.DummyConf $ Configured "Test 1")
+      dpid <- serviceStarted (serviceName Dummy.dummy)
+      say "Service dummy has been started"
+
+      kill dpid "Farewell"
+      _ <- serviceStarted (serviceName Dummy.dummy)
+      say "Service dummy has been re-started"
+
+-- | Make sure that when a node-local monitor died, the RC is notified by the
+--   Master monitor and restart it.
+testMasterMonitorManagement :: Transport -> IO ()
+testMasterMonitorManagement transport = do
+    withTmpDirectory $ tryWithTimeout transport testRemoteTable 15000000 $ do
+      (_,rc) <- launchRC
+
+      simpleSubscribe rc (Sub :: Sub (HAEvent ServiceStartedMsg))
+
+      mpid <- serviceStarted monitorServiceName
+      say "Node-local monitor has been started"
+
+      kill mpid "Farewell"
+      _ <- serviceStarted monitorServiceName
+      say "Node-local monitor has been restarted"
+
+testRemoteTable :: RemoteTable
+testRemoteTable = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+                  remoteTable

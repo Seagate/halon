@@ -34,6 +34,12 @@ import           HA.Services.DecisionLog (EntriesLogged(..))
 #ifdef USE_MERO
 import           HA.Services.Mero (meroRules)
 #endif
+import           HA.Services.Monitor ( SaveProcesses(..)
+                                     , SetMasterMonitor(..)
+                                     , monitorServiceName
+                                     , regularMonitor
+                                     , emptyMonitorConf
+                                     )
 import           HA.Services.SSPL (ssplRules)
 
 rcRules :: IgnitionArguments -> ProcessId -> RuleM LoopState ()
@@ -46,18 +52,24 @@ rcRules argv eq = do
 
     -- Node Up
     defineHAEvent "node-up" id $ \(HAEvent _ (NodeUp h pid) _) -> do
-        let nid  = processNodeId pid
-            node = Node nid
+        let nid               = processNodeId pid
+            node              = Node nid
 
         ack pid
         known <- knownResource node
         when (not known) $ do
+          liftProcess . sayRC $ "New node contacted: " ++ show nid
           let host = Host h
           registerService EQT.eqTracker
           registerNode node
           registerHost host
           locateNodeOnHost node host
           startEQTracker nid
+
+          -- We start a new monitor for any node that's started
+          registerService regularMonitor
+          _ <- startService nid regularMonitor emptyMonitorConf
+          return ()
 
     -- Service Start
     defineHAEvent "service-start" id $ \evt@(HAEvent _ msg _) -> do
@@ -92,6 +104,13 @@ rcRules argv eq = do
 
         registerServiceProcess n svc cfg sp
         let svcStr = snString $ serviceName svc
+
+        when (serviceName svc /= monitorServiceName) $
+          sendToMonitor n msg
+
+        when (serviceName svc == monitorServiceName) $
+          sendToMasterMonitor msg
+
         cepLog "started" ("Service " ++ svcStr ++ " started")
 
     -- Service could not start
@@ -135,6 +154,14 @@ rcRules argv eq = do
         res                         <- lookupRunningService node svc
         for_ res $ \sp ->
           killService sp UserStop
+
+    defineHAEvent "save-processes" id $
+      \(HAEvent _ (SaveProcesses sp ps) _) ->
+        writeConfiguration sp ps Current
+
+    defineHAEvent "set-master-monitor" id $
+      \(HAEvent _ (SetMasterMonitor sp) _) ->
+        registerMasterMonitor sp
 
     onEveryHAEvent $ \(HAEvent eid _ _) s -> do
         usend eq eid
