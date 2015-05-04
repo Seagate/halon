@@ -50,8 +50,8 @@ import qualified Network.Transport.TCP as TCP
 eqSDict :: SerializableDict EventQueue
 eqSDict = SerializableDict
 
-setRC :: Maybe ProcessId -> EventQueue -> EventQueue
-setRC = first . const
+eqSetRC :: Maybe ProcessId -> EventQueue -> EventQueue
+eqSetRC = first . const
 
 remoteRC :: ProcessId -> Process ()
 remoteRC controller = do
@@ -62,7 +62,7 @@ remoteRC controller = do
       reconnect controller
       send controller (msg :: HAEvent [ByteString])
 
-remotable [ 'eqSDict, 'setRC, 'remoteRC ]
+remotable [ 'eqSDict, 'eqSetRC, 'remoteRC ]
 
 triggerEvent :: Int -> Process ()
 triggerEvent x = promulgate x >>= \pid -> withMonitor pid wait
@@ -175,7 +175,7 @@ tests transport internals = do
         , testSuccess "eq-should-lookup-for-rc" $ setup $ \_ _ rGroup -> do
               self <- getSelfPid
               retry requestTimeout $
-                updateStateWith rGroup $ $(mkClosure 'setRC) $ Just self
+                updateStateWith rGroup $ $(mkClosure 'eqSetRC) $ Just self
               triggerEvent 1
               (_, [ HAEvent (EventId _ 1) _ _]) <- retry requestTimeout $
                                                      getState rGroup

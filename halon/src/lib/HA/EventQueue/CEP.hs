@@ -14,13 +14,13 @@ import Network.CEP
 import HA.EventQueue
 import HA.Replicator
 
-eqRules :: RGroup g => g EventQueue -> RuleM (Maybe ProcessId) ()
+eqRules :: RGroup g => g EventQueue -> RuleM (Maybe EventQueueState) ()
 eqRules rg = do
     define "rc-spawned" id $ \rc ->
       recordNewRC rg rc
 
     define "monitoring" id $ \(ProcessMonitorNotification _ pid reason) -> do
-      mRC <- get
+      mRC <- getRC
       -- Check the identity of the process in case the
       -- notifications get mixed for old and new RCs.
       when (Just pid == mRC) $
@@ -45,7 +45,7 @@ eqRules rg = do
       publish (TrimDone eid)
 
     define "record-ack" id $ \(RecordAck sender ev) -> do
-      mRC <- get
+      mRC <- getRC
       case mRC of
         -- I know where the RC is.
         Just rc -> sendEventToRC rc sender ev
@@ -53,16 +53,14 @@ eqRules rg = do
           rmRC <- lookupRC rg
           case rmRC of
             Just rc -> do
-              monitoring rc
+              setRC rc
               sendEventToRC rc sender ev
             Nothing -> sendOwnNode sender
-          put rmRC
 
     define "rc-spawned-ack" id $ \(NewRCAck rc) -> do
-      monitoring rc
+      setRC rc
       sendEventsToRC rg rc
-      put $ Just rc
 
     define "rc-died-ack" id $ \RCDiedAck -> do
       publish RCDied
-      put Nothing
+      clearRC
