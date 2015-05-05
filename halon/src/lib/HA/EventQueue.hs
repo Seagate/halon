@@ -37,7 +37,8 @@ module HA.EventQueue
   , RecordAck(..)
   , NewRCAck(..)
   , RCDiedAck(..)
-  , monitoring
+  , EventQueueState
+  , setRC
   , recordNewRC
   , recordRCDied
   , recordEvent
@@ -48,6 +49,8 @@ module HA.EventQueue
   , lookupRC
   , sendOwnNode
   , makeEventQueueFromRules
+  , getRC
+  , clearRC
   ) where
 
 import Prelude hiding ((.), id)
@@ -58,7 +61,7 @@ import HA.EventQueue.Consumer
 import HA.EventQueue.Types
 import HA.Replicator ( RGroup, updateStateWith, getState)
 import Control.SpineSeq (spineSeq)
-import FRP.Netwire hiding (Last(..), when)
+import FRP.Netwire hiding (Last(..), when, for)
 
 import Control.Distributed.Process hiding (newChan, send)
 import Control.Distributed.Process.Async (async, task)
@@ -70,6 +73,7 @@ import Control.Monad.State
 import Data.Binary (Binary)
 import Data.ByteString ( ByteString )
 import Data.Foldable (for_, traverse_)
+import Data.Traversable (for)
 import Data.Typeable
 import Network.CEP
 
@@ -89,11 +93,19 @@ sendHAEvent next ev = do pid <- getSelfPid
 -- It contains the process id of the RC and the list of pending events.
 type EventQueue = (Maybe ProcessId, [HAEvent [ByteString]])
 
+data EventQueueState =
+    EventQueueState
+    { _eqsRC  :: !ProcessId
+      -- ^ Recovery Coordinator 'ProcessId'
+    , _eqsRef :: !MonitorRef
+      -- ^ Resulted 'MonitorRef' from monitoring RC 'Process'
+    }
+
 addSerializedEvent :: HAEvent [ByteString] -> EventQueue -> EventQueue
 addSerializedEvent = second . (:)
 
-setRC :: Maybe ProcessId -> EventQueue -> EventQueue
-setRC = first . const
+eqSetRC :: Maybe ProcessId -> EventQueue -> EventQueue
+eqSetRC = first . const
 
 -- | "compare and swap" for updating the RC
 compareAndSwapRC :: (Maybe ProcessId, Maybe ProcessId) -> EventQueue -> EventQueue
@@ -104,7 +116,7 @@ filterEvent :: EventId -> EventQueue -> EventQueue
 filterEvent eid = second $ spineSeq . filter (\HAEvent{..} -> eid /= eventId)
 
 remotable [ 'addSerializedEvent
-          , 'setRC
+          , 'eqSetRC
           , 'compareAndSwapRC
           , 'filterEvent
           ]
@@ -126,7 +138,7 @@ requestTimeout = 1000 * 1000
 --
 makeEventQueueFromRules :: RGroup g
                         => g EventQueue
-                        -> RuleM (Maybe ProcessId) ()
+                        -> RuleM (Maybe EventQueueState) ()
                         -> Process ()
 makeEventQueueFromRules rg rm = do
     self <- getSelfPid
@@ -135,20 +147,33 @@ makeEventQueueFromRules rg rm = do
     -- The EQ must monitor the RC or it will never realize when the RC stops
     -- responding and won't ever care of checking the replicated state to learn
     -- of new RCs
-    traverse_ monitor mRC
-    runProcessor mRC rm
+    st <- for mRC $ \pid -> fmap (EventQueueState pid) $ monitor pid
+    runProcessor st rm
 
-monitoring :: ProcessId -> CEP s ()
-monitoring rc = do
-    _ <- liftProcess $ monitor rc
-    return ()
+setRC :: ProcessId -> CEP (Maybe EventQueueState) ()
+setRC rc = do
+    prevM <- get
+    ref   <- liftProcess $ do
+      traverse_ (unmonitor . _eqsRef) prevM
+      monitor rc
+    put $ Just $ EventQueueState rc ref
+
+clearRC :: CEP (Maybe EventQueueState) ()
+clearRC = traverse_ go =<< get
+  where
+    go EventQueueState{..} = do
+        liftProcess $ unmonitor _eqsRef
+        put Nothing
 
 -- | Record in the replicated state that there is a new RC.
-recordNewRC :: RGroup g => g EventQueue -> ProcessId -> CEP (Maybe ProcessId) ()
+recordNewRC :: RGroup g
+            => g EventQueue
+            -> ProcessId
+            -> CEP (Maybe EventQueueState) ()
 recordNewRC rg rc = liftProcess $ do
     self <- getSelfPid
     _    <- async $ task $ do
-      retry requestTimeout $ updateStateWith rg $ $(mkClosure 'setRC) $ Just rc
+      retry requestTimeout $ updateStateWith rg $ $(mkClosure 'eqSetRC) $ Just rc
       usend self (NewRCAck rc)
     return ()
 
@@ -160,12 +185,12 @@ sendEventsToRC rg rc = liftProcess $ do
     for_ (reverse pendingEvents) $ \ev ->
       usend rc ev{eventHops = self : eventHops ev}
 
-reconnectToRC :: CEP (Maybe ProcessId) ()
-reconnectToRC = liftProcess . traverse_ reconnect =<< get
+reconnectToRC :: CEP (Maybe EventQueueState) ()
+reconnectToRC = liftProcess . traverse_ (reconnect . _eqsRC) =<< get
 
-recordRCDied :: RGroup g => g EventQueue -> CEP (Maybe ProcessId) ()
+recordRCDied :: RGroup g => g EventQueue -> CEP (Maybe EventQueueState) ()
 recordRCDied rg = do
-    mRC <- get
+    mRC <- gets $ fmap _eqsRC
     let upd = (mRC, Nothing :: Maybe ProcessId)
 
     _ <- liftProcess $ do
@@ -211,6 +236,9 @@ lookupRC :: RGroup g => g EventQueue -> CEP s (Maybe ProcessId)
 lookupRC rg = do
     (newMRC, _) <- liftProcess $ retry requestTimeout $ getState rg
     return newMRC
+
+getRC :: CEP (Maybe EventQueueState) (Maybe ProcessId)
+getRC = gets $ fmap _eqsRC
 
 -- | Send my own node when we don't know the RC location. Note that I was able
 --   to read the replicated state so very likely there is no RC.
