@@ -4,7 +4,7 @@
 
 module SSPL.Bindings.CommandRequest where
 
-import SSPL.Bindings.Instances
+import SSPL.Bindings.Instances ()
 
 import Data.Binary (Binary)
 import Data.Typeable
@@ -17,13 +17,11 @@ import Data.Aeson.Schema.Choice
 import Data.Aeson.Schema.Types
 import Data.Aeson.Schema.Validator
 import Data.Aeson.Types
-import Data.Aeson.Types
 import Data.Functor
 import Data.HashMap.Lazy
 import Data.List
 import Data.Map
 import Data.Maybe
-import Data.Ratio
 import Data.Text
 import Data.Traversable
 import GHC.Base
@@ -31,8 +29,6 @@ import GHC.Classes
 import GHC.List
 import GHC.Show
 import Prelude
-import Text.Regex
-import Text.Regex.PCRE.String
 
 graph :: Data.Aeson.Schema.Types.Graph Data.Aeson.Schema.Types.Schema
                                        Data.Text.Text

@@ -59,18 +59,32 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Monad.State.Strict hiding (mapM_)
 
-import Data.Aeson (decode, encode, toJSON)
+import Data.Aeson (decode, encode)
+import qualified Data.Aeson as Aeson
 
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Defaultable
 import Data.Foldable (mapM_)
+import qualified Data.HashMap.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import qualified Data.UUID as UID
 
 import Network.AMQP
 import Network.CEP (RuleM)
 
 import Prelude hiding (id, mapM_)
+
+import System.Random (randomIO)
+
+header :: UID.UUID -> Aeson.Value
+header uuid = Aeson.Object $ M.fromList [
+    ("schema_version", Aeson.String "1.0.0")
+  , ("sspl_version", Aeson.String "1.0.0")
+  , ("msg_version", Aeson.String "1.0.0")
+  , ("uuid", Aeson.String . T.decodeUtf8 . UID.toASCIIBytes $ uuid)
+  ]
+
 
 -- | Internal 'listen' handler. This is needed because AMQP runs in the
 --   IO monad, so we cannot directly handle messages using `Process` actions.
@@ -128,20 +142,21 @@ startActuators chan ac pid = do
         )
     systemdProcess Rabbit.BindConf{..} rp = forever $ do
       SystemdRequest srv cmd <- receiveChan rp
+      uuid <- liftIO $ randomIO
       let msg = encode $ ActuatorRequest {
           actuatorRequestSspl_ll_debug = Nothing
         , actuatorRequestActuator_request_type = ActuatorRequestActuator_request_type {
-            actuatorRequestActuator_request_typeSystemd_service = Just
-              ActuatorRequestActuator_request_typeSystemd_service {
-                actuatorRequestActuator_request_typeSystemd_serviceSystemd_request =
+            actuatorRequestActuator_request_typeService_controller = Just
+              ActuatorRequestActuator_request_typeService_controller {
+                actuatorRequestActuator_request_typeService_controllerService_request =
                   T.decodeUtf8 . BL.toStrict $ cmd
-              , actuatorRequestActuator_request_typeSystemd_serviceService_name =
+              , actuatorRequestActuator_request_typeService_controllerService_name =
                   T.decodeUtf8 . BL.toStrict $ srv
               }
           , actuatorRequestActuator_request_typeThread_controller = Nothing
           , actuatorRequestActuator_request_typeLogging = Nothing
           }
-        , actuatorRequestSspl_ll_msg_header = toJSON (Nothing :: Maybe ())
+        , actuatorRequestSspl_ll_msg_header = header uuid
         }
       liftIO $ publishMsg
         chan

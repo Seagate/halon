@@ -1,6 +1,6 @@
 Summary: halon
 Name: halon
-Version: 0.11
+Version: 0.12
 Release: 1
 License: All rights reserved
 Group: Development/Tools
@@ -9,6 +9,7 @@ SOURCE1: halonctl
 URL: http://www.xyratex.com/
 Packager: Ben Clifford <ben.clifford@tweag.io>
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
+Requires: leveldb
 
 %description
 %{summary}

@@ -9,8 +9,6 @@
 
 module SSPL.Bindings.Instances where
 
-import           Control.Applicative
-
 import           Data.Aeson
 import           Data.Binary ()
 import           Data.Binary
