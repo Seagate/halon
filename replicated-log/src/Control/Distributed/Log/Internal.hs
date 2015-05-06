@@ -771,6 +771,11 @@ replica Dict
                        \_ -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
+
+                  -- Advertise our configuration to other replicas if we are
+                  -- getting old decrees.
+                  forM_ others $ \ρ ->
+                    sendReplica logName ρ $ Max self legD d epoch ρs
                   go st
 
               -- Commit the decree to the log.
@@ -858,14 +863,20 @@ replica Dict
                            }
 
               -- If we get here, it's because there's a gap in the decrees we
-              -- have received so far. Compute the gaps and ask the other
-              -- replicas about how to fill them up.
+              -- have received so far.
+              --
+              -- XXX: We store the decree but do not notify the client. Some
+              -- tests expect that notifying the client happens only when the
+              -- replica is ready to execute the decree (in order to know that
+              -- a quorum of replicas has reconfigured).
+              --
+              -- We don't query missing decrees here, or it would cause quering
+              -- too often. Queries will happen when the replica receives a
+              -- 'Max' message.
             , matchIf (\(Decree locale di _) ->
                         locale == Remote && w < di && not (Map.member (decreeNumber di) log)) $
                        \(Decree locale di v) -> do
                   liftIO $ insertInLog ph (decreeNumber di) v
-                  log' <- liftIO $ readIORef $ persistentLogCache ph
-                  queryMissingFrom logName (decreeNumber w) others log'
                   --- XXX set cd to @max cd (succ di)@?
                   --
                   -- Probably not, because then the replica might never find the
@@ -876,6 +887,10 @@ replica Dict
                   --
                   -- This Decree could have been teleported. So, we shouldn't
                   -- trust di, unless @decreeLegislatureId di < maxBound@.
+                  --
+                  -- XXX: Resending the decree may cause decrees to be stored
+                  -- more than once, but this is necessary while it is
+                  -- possible for this decree to be unreachable.
                   usend self $ Decree locale di v
                   go st
 
