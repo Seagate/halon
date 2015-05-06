@@ -46,6 +46,7 @@ import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
 import Data.Typeable (Typeable)
+import qualified Data.Yaml as Yaml
 
 import GHC.Generics (Generic)
 
@@ -61,26 +62,42 @@ import Options.Schema.Builder hiding (name, desc)
 commandSchema :: Schema Rabbit.BindConf
 commandSchema = let
     en = defaultable "sspl_hl_cmd" . strOption
-        $ long "dcs_exchange"
+        $ long "cmd_exchange"
         <> metavar "EXCHANGE_NAME"
     rk = defaultable "sspl_hl_cmd" . strOption
-          $ long "dcs_routingKey"
+          $ long "cmd_routingKey"
           <> metavar "ROUTING_KEY"
     qn = defaultable "sspl_hl_cmd" . strOption
-          $ long "dcs_queue"
+          $ long "cmd_queue"
+          <> metavar "QUEUE_NAME"
+  in Rabbit.BindConf <$> en <*> rk <*> qn
+
+clusterMapSchema :: Schema Rabbit.BindConf
+clusterMapSchema = let
+    en = defaultable "cluster_map" . strOption
+        $ long "cm_exchange"
+        <> metavar "EXCHANGE_NAME"
+    rk = defaultable "cluster_map" . strOption
+          $ long "cm_routingKey"
+          <> metavar "ROUTING_KEY"
+    qn = defaultable "cluster_map" . strOption
+          $ long "cm_queue"
           <> metavar "QUEUE_NAME"
   in Rabbit.BindConf <$> en <*> rk <*> qn
 
 data SSPLHLConf = SSPLHLConf {
     scConnectionConf :: Rabbit.ConnectionConf
   , scCommandConf :: Rabbit.BindConf
+  , scClustermapConf :: Rabbit.BindConf
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary SSPLHLConf
 instance Hashable SSPLHLConf
 
 ssplhlSchema :: Schema SSPLHLConf
-ssplhlSchema = SSPLHLConf <$> Rabbit.connectionSchema <*> commandSchema
+ssplhlSchema = SSPLHLConf <$> Rabbit.connectionSchema
+                          <*> commandSchema
+                          <*> clusterMapSchema
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
@@ -93,12 +110,20 @@ $(deriveService ''SSPLHLConf 'ssplhlSchema [])
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------
 
-msgHandler :: Network.AMQP.Message
+cmdHandler :: Network.AMQP.Message
            -> Process ()
-msgHandler msg = case decode (msgBody msg) :: Maybe CommandRequest of
+cmdHandler msg = case decode (msgBody msg) :: Maybe CommandRequest of
   Just cr -> do
     void $ promulgate cr
   Nothing -> say $ "Unable to decode command request: "
+                    ++ (BL.unpack $ msgBody msg)
+
+cmHandler :: Network.AMQP.Message
+          -> Process ()
+cmHandler msg = case Yaml.decode (msgBody msg) :: Maybe Devices of
+  Just d -> do
+    void $ promulgate d
+  Nothing -> say "Unable to decode cluster map: "
                     ++ (BL.unpack $ msgBody msg)
 
 remotableDecl [ [d|
@@ -121,7 +146,8 @@ remotableDecl [ [d|
       connectSSPL lock = do
         conn <- liftIO $ Rabbit.openConnection scConnectionConf
         chan <- liftIO $ openChannel conn
-        Rabbit.receive chan scCommandConf msgHandler
+        Rabbit.receive chan scCommandConf cmdHandler
+        Rabbit.receive chan scClustermapConf cmHandler
         () <- liftIO $ takeMVar lock
         liftIO $ closeConnection conn
         say "Connection closed."
