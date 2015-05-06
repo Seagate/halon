@@ -51,6 +51,12 @@ newtype StorageDevice = StorageDevice
     Integer -- ^ Drives identified as position in enclosure.
   deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
 
+data DeviceIdentifier = DeviceIdentifier String String
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary DeviceIdentifier
+instance Hashable DeviceIdentifier
+
 -- | Representation of storage device status. Currently this just mirrors
 --   the status we get from OpenHPI.
 newtype StorageDeviceStatus = StorageDeviceStatus String
@@ -82,12 +88,14 @@ instance Hashable Is
 -- XXX Only nodes and services have runtime information attached to them, for now.
 
 resdict_Host :: Dict (Resource Host)
+resdict_DeviceIdentifier :: Dict (Resource DeviceIdentifier)
 resdict_Enclosure :: Dict (Resource Enclosure)
 resdict_Interface :: Dict (Resource Interface)
 resdict_StorageDevice :: Dict (Resource StorageDevice)
 resdict_StorageDeviceStatus :: Dict (Resource StorageDeviceStatus)
 
 resdict_Host = Dict
+resdict_DeviceIdentifier = Dict
 resdict_Enclosure = Dict
 resdict_Interface = Dict
 resdict_StorageDevice = Dict
@@ -99,6 +107,7 @@ reldict_Has_Cluster_Enclosure :: Dict (Relation Has Cluster Enclosure)
 reldict_Has_Enclosure_StorageDevice :: Dict (Relation Has Enclosure StorageDevice)
 reldict_Runs_Host_Node :: Dict (Relation Runs Host Node)
 reldict_Is_StorageDevice_StorageDeviceStatus :: Dict (Relation Is StorageDevice StorageDeviceStatus)
+reldict_Has_StorageDevice_DeviceIdentifier :: Dict (Relation Has StorageDevice DeviceIdentifier)
 
 reldict_Has_Cluster_Host = Dict
 reldict_Has_Host_Interface = Dict
@@ -106,10 +115,12 @@ reldict_Has_Cluster_Enclosure = Dict
 reldict_Has_Enclosure_StorageDevice = Dict
 reldict_Runs_Host_Node = Dict
 reldict_Is_StorageDevice_StorageDeviceStatus = Dict
+reldict_Has_StorageDevice_DeviceIdentifier = Dict
 
 remotable [ 'resdict_Host
           , 'resdict_Enclosure
           , 'resdict_Interface
+          , 'resdict_DeviceIdentifier
           , 'resdict_StorageDevice
           , 'resdict_StorageDeviceStatus
           , 'reldict_Has_Cluster_Host
@@ -118,6 +129,7 @@ remotable [ 'resdict_Host
           , 'reldict_Has_Enclosure_StorageDevice
           , 'reldict_Runs_Host_Node
           , 'reldict_Is_StorageDevice_StorageDeviceStatus
+          , 'reldict_Has_StorageDevice_DeviceIdentifier
           ]
 
 
@@ -136,6 +148,9 @@ instance Resource StorageDevice where
 instance Resource StorageDeviceStatus where
     resourceDict = $(mkStatic 'resdict_StorageDeviceStatus)
 
+instance Resource DeviceIdentifier where
+    resourceDict = $(mkStatic 'resdict_DeviceIdentifier)
+
 instance Relation Has Cluster Host where
     relationDict = $(mkStatic 'reldict_Has_Cluster_Host)
 
@@ -153,3 +168,6 @@ instance Relation Runs Host Node where
 
 instance Relation Is StorageDevice StorageDeviceStatus where
     relationDict = $(mkStatic 'reldict_Is_StorageDevice_StorageDeviceStatus)
+
+instance Relation Has StorageDevice DeviceIdentifier where
+    relationDict = $(mkStatic 'reldict_Has_StorageDevice_DeviceIdentifier)

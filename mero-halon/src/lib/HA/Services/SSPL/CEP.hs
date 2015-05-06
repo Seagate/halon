@@ -192,4 +192,9 @@ ssplRulesF sspl = do
       Aeson.String "status" -> liftProcess $ say "Unsupported."
       _ -> liftProcess $ say "Unsupported."
 
+  defineHAEvent "clustermap" id $ \(HAEvent _
+                                            (Devices devs)
+                                            _
+                                   ) ->
+    undefined
 
