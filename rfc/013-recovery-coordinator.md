@@ -133,3 +133,13 @@ Looking at these problems suggests two underlying questions:
 * Typed channels - I haven't thought about this much, but can they help us?
   For example, could we use one explicitly for timer messages to ensure they
   get fired at the correct time?
+* Delayed acknowledgement. At the moment, we acknowledge each message delivered
+  to the RC when it is processed. But for longer running scenarios, we might
+  wish to delay the original acknowledgement until the chain has fully been
+  processed.
+
+### Proposal
+
+The first critical piece of functionality is to restore `matchIf` or something
+akin to it, to allow us to make decision as to whether to process a message
+or not.
