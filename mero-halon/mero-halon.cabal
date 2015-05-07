@@ -123,6 +123,7 @@ Library
 
   if flag(mero)
       Exposed-Modules: Mero.Epoch
+                       Mero.M0Worker
                        Mero.Notification
                        Mero.Notification.HAState
                        HA.Resources.Mero.Note

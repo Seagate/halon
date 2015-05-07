@@ -29,6 +29,10 @@ import Control.Distributed.Process.Node
 
 import qualified Data.Binary
 
+#ifdef USE_MERO
+import Mero
+import Mero.M0Worker
+#endif
 import System.Environment
 import System.IO ( hFlush, stdout , hSetBuffering, BufferMode(..))
 
@@ -57,7 +61,12 @@ myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 main :: IO Int
+#ifdef USE_MERO
+main = withM0 $ do
+  startGlobalWorker
+#else
 main = do
+#endif
   config <- parseArgs <$> getArgs
 #ifdef USE_RPC
   rpcTransport <- RPC.createTransport "s1"

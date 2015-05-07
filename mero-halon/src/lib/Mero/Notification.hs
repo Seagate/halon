@@ -25,8 +25,10 @@ module Mero.Notification
 
 import Control.Distributed.Process
 
+import Mero.M0Worker
 import Mero.ConfC (Fid)
 import Mero.Notification.HAState
+import Mero.M0Worker
 import HA.EventQueue.Producer (promulgate)
 import Network.RPC.RPCLite
   ( ListenCallbacks(..)
@@ -71,11 +73,12 @@ initialize :: FilePath -- ^ Persistence path for RPC.
 initialize fp addr = do
     lnode <- fmap processNode ask
     self <- getSelfPid
-    liftIO $ initRPCAt fp
-    ep <- liftIO $ listen "m0_halon" addr listenCallbacks
-    liftIO $ initHAState (ha_state_get self lnode)
-                         (ha_state_set lnode)
-    return ep
+    say $ "listening at " ++ show addr
+    liftIO $ runOnGlobalM0Worker $ do
+      initRPCAt fp
+      ep <- listen "m0_halon" addr listenCallbacks
+      initHAState (ha_state_get self lnode) (ha_state_set lnode)
+      return ep
   where
     listenCallbacks = ListenCallbacks {
       receive_callback = \_ _ -> return False
@@ -92,16 +95,17 @@ initialize fp addr = do
 
     ha_state_set :: LocalNode -> NVec -> IO Int
     ha_state_set lnode nvec = do
+      putStrLn $ "m0d: received state vector " ++ show nvec
       CH.runProcess lnode $ void $ promulgate $ Set nvec
       return 0
 
 -- | Finalize the Notification subsystem.
 finalize :: Process ()
-finalize = liftIO $ finiHAState >> finalizeRPC
+finalize = liftIO $ runOnGlobalM0Worker $ finiHAState >> finalizeRPC
 
 notifyMero :: ServerEndpoint
            -> RPCAddress
            -> Set
            -> Process ()
 notifyMero ep mero (Set nvec) = liftIO $
-  notify ep mero nvec 5
+    runOnGlobalM0Worker (notify ep mero nvec 5)

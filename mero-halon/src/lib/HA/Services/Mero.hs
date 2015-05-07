@@ -22,6 +22,7 @@ module HA.Services.Mero
     , m0dProcess__tdict
     , m0d__static
     , meroRules
+    , MeroConf(..)
     ) where
 
 import HA.EventQueue.Producer (expiate, promulgate)
