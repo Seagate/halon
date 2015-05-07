@@ -140,6 +140,91 @@ Looking at these problems suggests two underlying questions:
 
 ### Proposal
 
-The first critical piece of functionality is to restore `matchIf` or something
-akin to it, to allow us to make decision as to whether to process a message
-or not.
+We start by identifying the core items we will need to put in place to solve
+the identified challenges. We can then derive from these some additional
+dependencies, from which we can hope to synthesize a set of tasks.
+
+Firstly, in order to handle local state in an easy and maintainable way, we
+will need to introduce some form of local state machine abstraction. We must
+additionally support the means of persisting this state machine
+
+In order to deal with the issue of multiple rules needing access to the same
+event, we must change the CEP design to ensure that the same event is delivered
+to all interested rules (rather than the first `match`).
+
+In order to deal with out-of-order messages, we propose altering the receive
+semantics of a rule to allow it to consume and buffer *all* events in which it
+may subsequently be interested. This would be a separate step to actually
+consuming the message for use.
+
+Since we now have multiple local state machines running at once, we must support
+concurrent access to the resource graph.
+
+Given the buffering of messages by state machines, we would need either to
+support persisting that buffer or altering the semantics of the EQ to support
+more than the simple 'ack' process we have now.
+
+We will need to introduce catch-all rules which are responsible for handling
+any messages not handled explicitly by any rule.
+
+State machines must all support timeout, which must be triggered automatically.
+
+#### Example Rule
+
+We give the following example rule in a pseudo-syntax for the 'node restart'
+scenario above:
+
+```Haskell
+nodeRestart = mkRule $
+    softSSPLRestart <>
+    softDirectRestart <>
+    hardRestart <>
+    failure <>
+    success
+  where
+    softSSPLRestart = match $ \(HostRestartRequest host) -> do
+      set host
+      atomically $ setHostStatus "restarting" host
+      nodes <- nodesOnHost host
+            >>= filterM (\nid -> isServiceRunning nid "sspl")
+      case nodes of
+        n:_ -> sendSystemdRequest RestartNode n
+            >> continue (success <> (timeout (5 * min) softDirectRestart))
+        _ -> continue softDirectRestart
+    softDirectRestart = do
+      host <- get
+      nodes <- nodesOnHost host
+      case nodes of
+        n:_ -> shellRestart n
+            >> continue (success <> (timeout (5 * min) hardRestart))
+        _ -> continue hardRestart
+    hardRestart = do
+      host <- get
+      ipmiRestart host >> continue (success <> timeout (5*min) failure)
+    success = matchSequentialIf
+                \(HostPoweringDown host1, HostPoweringUp host2) ->
+                  get >>= \host -> return $ host == host1 == host2
+                \(HostPoweringDown host1, HostPoweringUp host2) -> do
+                  host <- get
+                  atomically $ setHostStatus "online" host
+    failure = get >>= promulgate . HostRestartFailed
+```
+
+This aims to draw out the following points:
+
+1. Local state (we store the hostname between stages)
+2. A continuation based approach - each time we call 'continue' we temporarily
+   'park' the state machine until it is woken by one of the provided
+   continuation states.
+3. The use of 'atomically' for graph operations - we are now requiring that
+   graph writes obtain an explicit lock for the duration of the transaction.
+4. The use of `mkRule`: each call to `match` or one of its derivatives must
+   somehow register the event type for interest such that these get delivered
+   and buffered by the state machine even if it is not currently in an accepting
+   state.
+5. More complex triggers - for example, in this case we require for `success`
+   that we see an event notifying of the host powering down followed by an
+   event notifying the host coming up.
+
+
+
