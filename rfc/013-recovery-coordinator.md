@@ -225,6 +225,38 @@ This aims to draw out the following points:
 5. More complex triggers - for example, in this case we require for `success`
    that we see an event notifying of the host powering down followed by an
    event notifying the host coming up.
+6. The use of `timeout t action`. This should resolve to firing `action` after
+   the specified timeout.
 
+#### Tasks
+
+1. Implement concurrent (STM-like) access to the resource graph. This should
+   support non-blocking reads of the graph, and blocking transactional writes.
+
+2. Implement basic syntax for local state machines. This would require
+   the implementation of, approximately, `match`, `continue` and `mkRule` from
+   the above example. For an initial implementation, `match` could read
+   directly from the appropriate channel or mailbox.
+
+3. Implementing a persistent store for local state machines. State should
+   consist of a continuation `CEP LocalState ()` and a `LocalState`. These
+   should be persisted whenever `continue` is called.
+
+4. Registration of all possible events. For example, `match` would now have
+   to declare a set of interested events and expose this to `mkRule`. `mkRule`
+   would be responsible for buffering any important events until they are
+   consumed by the second half of `match`, which would read out of this buffer.
+
+5. Use the EQ for the buffer mentioned above, rather than buffering locally.
+   When an event arrives at the RC, it is proferred to all running state
+   machines. Each one increments an 'interested' counter in the EQ. When
+   each machine has processed an event (at the end of that 'phase'),
+   the counter should be decremented. When the counter on an event reaches 0,
+   it should be trimmed from the EQ.
+
+6. Implement `timeout`.
+
+7. Modify CEP/the RC to send events to all interested consumers, rather than
+   the first.
 
 
