@@ -166,6 +166,8 @@ Executable halonctl
                       TupleSections
                       StandaloneDeriving
   Other-Extensions:   CPP
+  if flag(mero)
+    CPP-Options:    -DUSE_MERO
   if flag(rpc)
       CPP-Options:    -DUSE_RPC
   Build-Depends:      halon,
@@ -204,6 +206,8 @@ Executable halond
                       TupleSections
                       StandaloneDeriving
   Other-Extensions:   CPP
+  if flag(mero)
+    CPP-Options:    -DUSE_MERO
   if flag(rpc)
       CPP-Options:    -DUSE_RPC
   Build-Depends:      halon,
@@ -214,6 +218,8 @@ Executable halond
                       filepath >= 1.3,
                       network-transport >= 0.3,
                       options-schema
+  if flag(mero)
+      Build-Depends: rpclite
   if flag(rpc)
       Build-Depends: network-transport-rpc >= 0.0.1
   else
