@@ -8,7 +8,7 @@ cabal sandbox init --sandbox=$(pwd)/../.cabal-sandbox/
 
 cp ../mero-halon/mero-halon.cabal ./freeze.cabal
 
-cabal freeze
+cabal freeze --enable-tests
 
 # this cabal freeze will contain freezes for
 # packages that are version controlled by
