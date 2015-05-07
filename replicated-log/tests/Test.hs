@@ -87,8 +87,8 @@ testLog = State.log $ serializableSnapshot snapshotServerLbl state0
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
 
-snapshotThreashold :: Int
-snapshotThreashold = 5
+snapshotThreshold :: Int
+snapshotThreshold = 5
 
 testConfig :: Log.Config
 testConfig = Log.Config
@@ -102,7 +102,7 @@ testConfig = Log.Config
     , leaseTimeout      = 1000000
     , leaseRenewTimeout = 300000
     , driftSafetyFactor = 11 % 10
-    , snapshotPolicy    = return . (>= snapshotThreashold)
+    , snapshotPolicy    = return . (>= snapshotThreshold)
     , snapshotRestoreTimeout = 1000000
     }
 
@@ -411,7 +411,7 @@ tests _ = do
                     interceptor _ _ = return ()
                 getSelfNode >>= registerInterceptor . interceptor
 
-                let incrementCount = snapshotThreashold + 1
+                let incrementCount = snapshotThreshold + 1
                     expectIntFrom :: NodeId -> Process Int
                     expectIntFrom nid = receiveWait
                       [ matchIf ((nid ==) . fst) (return . snd) ]
@@ -426,7 +426,7 @@ tests _ = do
                 -- The size of the log should account for medieval and modern
                 -- history. It is possible to have a log slightly bigger because
                 -- it may contain decrees not yet executed.
-                assert $ all (<= snapshotThreashold * 3) logSizes
+                assert $ all (<= snapshotThreshold * 3) logSizes
                 say "Log size remains bounded with no reconfigurations."
 
                 node1 <- liftIO $ newLocalNode transport remoteTables
@@ -461,7 +461,7 @@ tests _ = do
                 -- The size of the log should account for medieval and modern
                 -- history. It is possible to have a log slightly bigger because
                 -- it may contain decrees not yet executed.
-                assert $ all (<= snapshotThreashold * 3)
+                assert $ all (<= snapshotThreshold * 3)
                              (uncurry (++) $ unzip logSizes')
                 say "Log size remains bounded after reconfiguration."
                 Log.killReplica h (localNodeId node1)
@@ -474,7 +474,7 @@ tests _ = do
                   pm <- liftIO $ P.getMap ps $ fromString "decrees"
                   kvs <- liftIO $
                            P.pairsOfMap (pm :: P.PersistentMap (Int, Int))
-                  assert (length kvs <= 2*snapshotThreashold)
+                  assert (length kvs <= 2*snapshotThreshold)
                 say "Acceptor state remains bounded."
 
           , testSuccess "quorum-after-transient-failure" . withTmpDirectory $
