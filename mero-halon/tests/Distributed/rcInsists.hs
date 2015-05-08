@@ -108,7 +108,7 @@ main = do
       expectLog [nid0] (isInfixOf "started dummy service")
 
       say "Isolating satellite ..."
-      liftIO $ isolateHostsAsUser "root" ip [m1]
+      liftIO $ isolateHostsAsUser "root" [m1] ms
       whereisRemoteAsync nid1 $ serviceLabel $ serviceName Dummy.dummy
       WhereIsReply _ (Just pid) <- expect
       _ <- promulgateEQ [nid0] . encodeP $ ServiceFailed (Node nid1) Dummy.dummy
@@ -118,5 +118,5 @@ main = do
 
       -- Rejoin the satellite and wait for the RC to ack the service restart.
       say "Rejoining satellite ..."
-      liftIO $ rejoinHostsAsUser "root" [m1]
+      liftIO $ rejoinHostsAsUser "root" [m1] ms
       expectLog [nid0] (isInfixOf "started dummy service")

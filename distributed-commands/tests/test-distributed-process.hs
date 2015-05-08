@@ -118,33 +118,34 @@ main = do
       expectLog [nid1] (== show self)
 
       -- cut the link in one direction and test that messages still relay
-      liftIO $ cutLinksAsUser "root" [(m0, m1)]
+      liftIO $ cutLinksAsUser "root" [m0] [m1]
       usend relayer (self, nid0, pingServerLabel, "2")
       "2" <- expect
       expectLog [nid1] (== show self)
 
       -- now cut the link in the other direction and test that messages don't
       -- relay
-      liftIO $ cutLinksAsUser "root" [(m1, m0)]
+      liftIO $ cutLinksAsUser "root" [m1] [m0]
       usend relayer (self, nid0, pingServerLabel, "3")
       Nothing <- receiveTimeout 1000000 [ matchIf (== "3") return ]
       expectLog [nid1] (== show self)
 
       say "Testing reenabling links ..."
       -- now restore the link and check that it works
-      liftIO $ reenableLinksAsUser "root" [(m1, m0), (m0, m1)]
+      liftIO $ reenableLinksAsUser "root" [m1] [m0]
+      liftIO $ reenableLinksAsUser "root" [m0] [m1]
       usend relayer (self, nid0, pingServerLabel, "4")
       _ <- receiveWait [ matchIf (== "4") return ]
       expectLog [nid1] (== show self)
 
       say "Testing isolation ..."
-      liftIO $ isolateHostsAsUser "root" localHost [m0]
+      liftIO $ isolateHostsAsUser "root" [m0] ms
       usend relayer (self, nid0, pingServerLabel, "5")
       Nothing <- receiveTimeout 1000000 [ matchIf (== "5") return ]
       expectLog [nid1] (== show self)
 
       say "Testing rejoining ..."
-      liftIO $ rejoinHostsAsUser "root" [m0]
+      liftIO $ rejoinHostsAsUser "root" [m0] ms
       usend relayer (self, nid0, pingServerLabel, "6")
       _ <- receiveWait [ matchIf (== "6") return ]
       expectLog [nid1] (== show self)
