@@ -190,8 +190,12 @@ sendToMonitor node a = do
 -- | Sends a message to the Master Monitor.
 sendToMasterMonitor :: Serializable a => a -> CEP LoopState ()
 sendToMasterMonitor a = do
+    self <- liftProcess getSelfNode
     spm <- return . lookupMasterMonitor =<< State.gets lsGraph
-    forM_ spm $ \(ServiceProcess mpid) ->
+    -- In case the `MasterMonitor` link is not established, look for a
+    -- local instance
+    spm' <- lookupRunningService (Node self) masterMonitor
+    forM_ (spm <|> spm') $ \(ServiceProcess mpid) ->
       liftProcess $ usend mpid a
 
 sayRC :: String -> Process ()
