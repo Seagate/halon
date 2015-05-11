@@ -146,7 +146,13 @@ dependencies, from which we can hope to synthesize a set of tasks.
 
 Firstly, in order to handle local state in an easy and maintainable way, we
 will need to introduce some form of local state machine abstraction. We must
-additionally support the means of persisting this state machine
+additionally support the means of persisting this state machine to cope with
+RC failure during state machine operation.
+
+State machines must support some concept of forking, since the same rule SM may
+be in a different state for particular resources or sets of resources. For
+example, we may be handling a node restart rule for multiple machines at
+once, each of which may be in a different phase of operation.
 
 In order to deal with the issue of multiple rules needing access to the same
 event, we must change the CEP design to ensure that the same event is delivered
@@ -155,19 +161,31 @@ to all interested rules (rather than the first `match`).
 In order to deal with out-of-order messages, we propose altering the receive
 semantics of a rule to allow it to consume and buffer *all* events in which it
 may subsequently be interested. This would be a separate step to actually
-consuming the message for use.
+consuming the message for use. Buffering should be configurable by rule;
+for example, one rule might require a 5-minute buffer on events in which
+it is interested, whereas another may simply desire the last 5 events of a
+requisite type. By moving the buffering to the rule level, rather than globally,
+we can support this flexible concept of history.
 
-Since we now have multiple local state machines running at once, we must support
-concurrent access to the resource graph.
+Since we now have multiple local state machines running at once, we must do
+one of two things: implement a means of task switching between the multiple
+running processes (see for example
+http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.39.8039), or use
+Haskell's multithreading support and alter the resource graph to support
+concurrent access.
 
 Given the buffering of messages by state machines, we would need either to
 support persisting that buffer or altering the semantics of the EQ to support
 more than the simple 'ack' process we have now.
 
-We will need to introduce catch-all rules which are responsible for handling
-any messages not handled explicitly by any rule.
+Since we are now buffering all messages per rule, we may immediately discard
+any message which is not handled by a rule. This solves the issue of our
+needing to deal with unhandled messages.
 
 State machines must all support timeout, which must be triggered automatically.
+This is used to guarantee that all rules terminate after some fixed time in the
+event of message loss or compound failures.
+
 
 #### Example Rule
 
@@ -182,15 +200,16 @@ nodeRestart = mkRule $
     failure <>
     success
   where
-    softSSPLRestart = match $ \(HostRestartRequest host) -> do
-      set host
-      atomically $ setHostStatus "restarting" host
-      nodes <- nodesOnHost host
-            >>= filterM (\nid -> isServiceRunning nid "sspl")
-      case nodes of
-        n:_ -> sendSystemdRequest RestartNode n
-            >> continue (success <> (timeout (5 * min) softDirectRestart))
-        _ -> continue softDirectRestart
+    softSSPLRestart = match $ \(HostRestartRequest host) ->
+      when (getHostStatus host /= "restarting) $ forkSM $ do
+        set host
+        atomically $ setHostStatus "restarting" host
+        nodes <- nodesOnHost host
+              >>= filterM (\nid -> isServiceRunning nid "sspl")
+        case nodes of
+          n:_ -> sendSystemdRequest RestartNode n
+              >> continue (success <> (timeout (5 * min) softDirectRestart))
+          _ -> continue softDirectRestart
     softDirectRestart = do
       host <- get
       nodes <- nodesOnHost host
@@ -227,11 +246,14 @@ This aims to draw out the following points:
    event notifying the host coming up.
 6. The use of `timeout t action`. This should resolve to firing `action` after
    the specified timeout.
+7. The use of `forkSM` to fork the state machine after processing the first
+   part of the rule.
 
 #### Tasks
 
-1. Implement concurrent (STM-like) access to the resource graph. This should
-   support non-blocking reads of the graph, and blocking transactional writes.
+1. (Optional) Implement concurrent (STM-like) access to the resource graph.
+   This should support non-blocking reads of the graph, and blocking
+   transactional writes.
 
 2. Implement basic syntax for local state machines. This would require
    the implementation of, approximately, `match`, `continue` and `mkRule` from
@@ -247,9 +269,9 @@ This aims to draw out the following points:
    would be responsible for buffering any important events until they are
    consumed by the second half of `match`, which would read out of this buffer.
 
-5. Use the EQ for the buffer mentioned above, rather than buffering locally.
-   When an event arrives at the RC, it is proferred to all running state
-   machines. Each one increments an 'interested' counter in the EQ. When
+5. (Optional) Use the EQ for the buffer mentioned above, rather than buffering
+   locally. When an event arrives at the RC, it is proferred to all running
+   state machines. Each one increments an 'interested' counter in the EQ. When
    each machine has processed an event (at the end of that 'phase'),
    the counter should be decremented. When the counter on an event reaches 0,
    it should be trimmed from the EQ.
