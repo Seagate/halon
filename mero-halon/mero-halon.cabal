@@ -82,7 +82,10 @@ Library
                    HA.RecoveryCoordinator.Definitions
                    HA.Resources.Mero
 
-  Other-Modules:   HA.Services.DecisionLog.CEP
+  Other-Modules:   HA.RecoveryCoordinator.Actions.Core
+                   HA.RecoveryCoordinator.Actions.Hardware
+                   HA.RecoveryCoordinator.Actions.Service
+                   HA.Services.DecisionLog.CEP
                    HA.Services.DecisionLog.Types
                    HA.Services.Frontier.Command
                    HA.Services.Monitor.CEP

@@ -99,7 +99,7 @@ rcRules argv eq = do
           "started " ++ snString (serviceName svc) ++ " service"
 
         case res of
-          Just sp' -> unregisterPreviousServiceProcess n svc sp'
+          Just sp' -> unregisterServiceProcess n svc sp'
           Nothing  -> registerServiceName svc
 
         registerServiceProcess n svc cfg sp
@@ -138,7 +138,7 @@ rcRules argv eq = do
 
         epid <- getEpochId
         when (epoch == epid) $
-            updateServiceConfiguration opts svc nodeFilter
+            reconfigureService opts svc nodeFilter
 
     defineHAEvent "mm-pid" id $
       \(HAEvent _ (GetMultimapProcessId sender) _) -> do
