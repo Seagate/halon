@@ -181,6 +181,8 @@ ssplRulesF sspl = do
                   >>= mapM nodesOnHost
                   >>= return . join
                   >>= filterM (\a -> isServiceRunning a sspl)
+        cepLog "action" $ "Restarting " ++ (BL.unpack serviceName)
+                        ++ " on nodes " ++ (show nodes)
         forM_ nodes $ \(Node nid) -> do
           sendSystemdRequest nid $ SystemdRequest serviceName "restart"
           sendInterestingEvent nid $
