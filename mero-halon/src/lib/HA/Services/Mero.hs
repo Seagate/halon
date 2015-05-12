@@ -91,7 +91,6 @@ remotableDecl [ [d|
 
   m0dProcess :: MeroConf -> Process ()
   m0dProcess MeroConf{..} = do
-      say $ "Starting service m0d"
       self <- getSelfPid
       bracket
         (Mero.Notification.initialize fp haAddr)
@@ -99,6 +98,7 @@ remotableDecl [ [d|
         \ep -> do
           c <- spawnChannelLocal $ statusProcess ep m0addr self
           sendMeroChannel c
+          say $ "Starting service m0d"
           go ep 0
     where
       fp = fromDefault mcPersistencePath

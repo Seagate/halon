@@ -95,8 +95,9 @@ initialize fp addr = do
 
     ha_state_set :: LocalNode -> NVec -> IO Int
     ha_state_set lnode nvec = do
-      putStrLn $ "m0d: received state vector " ++ show nvec
-      CH.runProcess lnode $ void $ promulgate $ Set nvec
+      CH.runProcess lnode $ do
+        say $ "m0d: received state vector " ++ show nvec
+        void $ promulgate $ Set nvec
       return 0
 
 -- | Finalize the Notification subsystem.

@@ -565,3 +565,28 @@ Test-Suite test-start-service-local
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
+
+Test-Suite test-stha-local
+  Type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs:  tests/Distributed
+  Main-Is:         stha-local.hs
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  if flag(mero)
+    Build-Depends: distributed-process,
+                   base,
+                   filepath,
+                   directory,
+                   network-transport,
+                   network-transport-tcp,
+                   distributed-commands,
+                   distributed-process-test,
+                   process,
+                   unix
+  else
+      Buildable: False
