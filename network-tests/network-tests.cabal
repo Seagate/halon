@@ -27,3 +27,18 @@ executable network-tests
   hs-source-dirs:      src
   c-sources:           cbits.c
   default-language:    Haskell2010
+
+executable cross-requests
+  main-is:             crossRequestsTransport.hs
+  build-depends:       base >=4.7,
+                       distributed-commands,
+                       binary>=0.7.3,
+                       bytestring>=0.10.6,
+                       filepath,
+                       network,
+                       network-transport>=0.4.1,
+                       network-transport-tcp>=0.4.1,
+                       time
+  hs-source-dirs:      src
+  c-sources:           cbits.c
+  default-language:    Haskell2010
