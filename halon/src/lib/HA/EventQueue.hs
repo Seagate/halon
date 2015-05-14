@@ -66,7 +66,6 @@ import FRP.Netwire hiding (Last(..), when, for)
 import Control.Distributed.Process hiding (newChan, send)
 import Control.Distributed.Process.Async (async, task)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
-import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Timeout ( retry )
 import Control.Monad.State
 
@@ -82,11 +81,6 @@ import Network.CEP
 -- node.
 eventQueueLabel :: String
 eventQueueLabel = "HA.EventQueue"
-
--- | Send HAEvent and provide information about current process.
-sendHAEvent :: Serializable a => ProcessId -> HAEvent a -> Process ()
-sendHAEvent next ev = do pid <- getSelfPid
-                         usend next ev{eventHops = pid : eventHops ev}
 
 -- | State of the event queue.
 --
@@ -225,9 +219,9 @@ trim rg eid =
 sendEventToRC :: ProcessId -> ProcessId -> HAEvent [ByteString] -> CEP s ()
 sendEventToRC rc sender ev =
     liftProcess $ do
-      selfNode <- getSelfNode
-      usend sender (selfNode, processNodeId rc)
-      sendHAEvent rc ev
+      self <- getSelfPid
+      usend sender (processNodeId self, processNodeId rc)
+      usend rc ev{eventHops = self : eventHops ev}
 
 -- | See if we can learn it by looking at the replicated state.
 lookupRC :: RGroup g => g EventQueue -> CEP s (Maybe ProcessId)
