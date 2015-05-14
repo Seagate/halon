@@ -32,9 +32,9 @@ eqRules rg = do
             reconnectToRC
             publish RCLost
           -- The RC died.
-          -- We use compare and swap to make sure we don't overwrite
-          -- the pid of a respawned RC
-          _ -> recordRCDied rg
+          _              -> do recordRCDied rg
+                               publish RCDied
+                               clearRC
 
     define "trimming" id $ \eid ->
       trim rg eid
@@ -67,7 +67,3 @@ eqRules rg = do
     define "rc-spawned-ack" id $ \(NewRCAck rc) -> do
       setRC rc
       sendEventsToRC rg rc
-
-    define "rc-died-ack" id $ \RCDiedAck -> do
-      publish RCDied
-      clearRC

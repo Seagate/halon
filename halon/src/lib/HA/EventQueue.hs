@@ -36,7 +36,6 @@ module HA.EventQueue
   , TrimAck(..)
   , RecordAck(..)
   , NewRCAck(..)
-  , RCDiedAck(..)
   , EventQueueState
   , setRC
   , recordNewRC
@@ -185,14 +184,10 @@ reconnectToRC = liftProcess . traverse_ (reconnect . _eqsRC) =<< get
 recordRCDied :: RGroup g => g EventQueue -> CEP (Maybe EventQueueState) ()
 recordRCDied rg = do
     mRC <- gets $ fmap _eqsRC
-    let upd = (mRC, Nothing :: Maybe ProcessId)
-
-    _ <- liftProcess $ do
-      self <- getSelfPid
-      _    <- async $ task $ retry requestTimeout $
-                updateStateWith rg $ $(mkClosure 'compareAndSwapRC) upd
-      usend self RCDiedAck
-    return ()
+    -- We use compare and swap to make sure we don't overwrite
+    -- the pid of a respawned RC
+    void $ liftProcess $ async $ task $ retry requestTimeout $
+      updateStateWith rg $ $(mkClosure 'compareAndSwapRC) (mRC, Nothing :: Maybe ProcessId)
 
 recordEvent :: RGroup g
             => g EventQueue
@@ -269,7 +264,3 @@ instance Binary RecordAck
 data NewRCAck = NewRCAck ProcessId deriving (Typeable, Generic)
 
 instance Binary NewRCAck
-
-data RCDiedAck = RCDiedAck deriving (Typeable, Generic)
-
-instance Binary RCDiedAck
