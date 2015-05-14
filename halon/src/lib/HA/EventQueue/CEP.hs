@@ -45,17 +45,10 @@ eqRules rg = do
       publish (TrimDone eid)
 
     define "record-ack" id $ \(RecordAck sender ev) -> do
-      mRC <- getRC
+      mRC <- lookupRC rg
       case mRC of
-        -- I know where the RC is.
         Just rc -> sendEventToRC rc sender ev
-        Nothing -> do
-          rmRC <- lookupRC rg
-          case rmRC of
-            Just rc -> do
-              setRC rc
-              sendEventToRC rc sender ev
-            Nothing -> sendOwnNode sender
+        Nothing -> sendOwnNode sender
 
     define "rc-spawned-ack" id $ \(NewRCAck rc) -> do
       setRC rc

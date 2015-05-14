@@ -223,11 +223,17 @@ sendEventToRC rc sender ev =
       usend sender (processNodeId self, processNodeId rc)
       usend rc ev{eventHops = self : eventHops ev}
 
--- | See if we can learn it by looking at the replicated state.
-lookupRC :: RGroup g => g EventQueue -> CEP s (Maybe ProcessId)
+-- | Find the RC either in the local state or in the replicated state.
+lookupRC :: RGroup g
+         => g EventQueue -> CEP (Maybe EventQueueState) (Maybe ProcessId)
 lookupRC rg = do
-    (newMRC, _) <- liftProcess $ retry requestTimeout $ getState rg
-    return newMRC
+    mRC <- getRC
+    case mRC of
+      Just _ -> return mRC
+      Nothing -> do
+        (newMRC, _) <- liftProcess $ retry requestTimeout $ getState rg
+        forM_ newMRC setRC
+        return newMRC
 
 getRC :: CEP (Maybe EventQueueState) (Maybe ProcessId)
 getRC = gets $ fmap _eqsRC
