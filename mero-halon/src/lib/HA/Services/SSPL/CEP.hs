@@ -27,7 +27,6 @@ import Control.Distributed.Process
   , sendChan
   , say
   )
-
 import Control.Monad.State.Strict hiding (mapM_)
 
 import qualified Data.Aeson as Aeson
@@ -121,15 +120,26 @@ ssplRulesF sspl = do
 
   -- SSPL Monitor drivemanager
   defineHAEvent "monitor-drivemanager" id $ \(HAEvent _ (nid, mrm) _) -> do
+    host <- findNodeHost (Node nid)
     let disk_status = sensorResponseSensor_response_typeDisk_status_drivemanagerDiskStatus mrm
         encName = sensorResponseSensor_response_typeDisk_status_drivemanagerEnclosureSN mrm
-        diskNum = sensorResponseSensor_response_typeDisk_status_drivemanagerDiskNum mrm
+        diskNum = floor . (toRealFloat :: Scientific -> Double) $
+                  sensorResponseSensor_response_typeDisk_status_drivemanagerDiskNum mrm
         enc = Enclosure $ T.unpack encName
-        disk = StorageDevice . floor . (toRealFloat :: Scientific -> Double)
-                $ diskNum
+        disk = StorageDevice (T.unpack encName) diskNum
 
-    registerDrive enc disk
+    registerStorageDevice enc disk
+    identifyStorageDevice disk $ DeviceIdentifier "slot" (show diskNum)
     updateDriveStatus disk $ T.unpack disk_status
+    mapM_ (\h -> do
+          locateHostInEnclosure h enc
+          -- Find any existing (logical) devices and link them
+          hostDevs <- findHostLogicalDevices h
+                    >>= filterM (flip hasLogicalDeviceIdentifier
+                                  (DeviceIdentifier "slot" (show diskNum)))
+          mapM_ (\d -> locateLogicalOnStorageDevice d disk) hostDevs
+          ) host
+
     liftProcess . sayRC $ "Registered drive"
     when (disk_status == "inuse_removed") $ do
       let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
@@ -196,5 +206,22 @@ ssplRulesF sspl = do
                                             (Devices devs)
                                             _
                                    ) ->
-    undefined
+      mapM_ addDev devs
+    where
+      addDev (DevId mid fn sl hn) = do
+          registerLogicalDevice host dev
+          identifyLogicalDevice dev (DeviceIdentifier "iosid" (show mid))
+          identifyLogicalDevice dev (DeviceIdentifier "slot" (show sl))
+          -- | Find existing storage devices and link them
+          menc <- findHostEnclosure host
+          mapM_ (\enc -> do
+                  drives <- findEnclosureStorageDevices enc
+                        >>= filterM (flip hasStorageDeviceIdentifier $
+                                      DeviceIdentifier "slot" (show sl)
+                                    )
+                  mapM_ (locateLogicalOnStorageDevice dev) drives
+                ) menc
+        where
+          dev = LogicalDevice fn
+          host = Host hn
 
