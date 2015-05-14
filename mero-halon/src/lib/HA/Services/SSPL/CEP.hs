@@ -129,14 +129,14 @@ ssplRulesF sspl = do
         disk = StorageDevice (T.unpack encName) diskNum
 
     registerStorageDevice enc disk
-    identifyStorageDevice disk $ DeviceIdentifier "slot" (show diskNum)
+    identifyStorageDevice disk $ DeviceIdentifier "slot" (IdentInt diskNum)
     updateDriveStatus disk $ T.unpack disk_status
     mapM_ (\h -> do
           locateHostInEnclosure h enc
           -- Find any existing (logical) devices and link them
           hostDevs <- findHostLogicalDevices h
                     >>= filterM (flip hasLogicalDeviceIdentifier
-                                  (DeviceIdentifier "slot" (show diskNum)))
+                                  (DeviceIdentifier "slot" (IdentInt diskNum)))
           mapM_ (\d -> locateLogicalOnStorageDevice d disk) hostDevs
           ) host
 
@@ -210,14 +210,15 @@ ssplRulesF sspl = do
     where
       addDev (DevId mid fn sl hn) = do
           registerLogicalDevice host dev
-          identifyLogicalDevice dev (DeviceIdentifier "iosid" (show mid))
-          identifyLogicalDevice dev (DeviceIdentifier "slot" (show sl))
+          identifyLogicalDevice dev (DeviceIdentifier "iosid" (IdentInt mid))
+          identifyLogicalDevice dev (DeviceIdentifier "slot" (IdentInt sl))
+          identifyLogicalDevice dev (DeviceIdentifier "filename" (IdentString fn))
           -- | Find existing storage devices and link them
           menc <- findHostEnclosure host
           mapM_ (\enc -> do
                   drives <- findEnclosureStorageDevices enc
                         >>= filterM (flip hasStorageDeviceIdentifier $
-                                      DeviceIdentifier "slot" (show sl)
+                                      DeviceIdentifier "slot" (IdentInt sl)
                                     )
                   mapM_ (locateLogicalOnStorageDevice dev) drives
                 ) menc

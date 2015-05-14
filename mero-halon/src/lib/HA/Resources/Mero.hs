@@ -31,6 +31,15 @@ import GHC.Generics (Generic)
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
 
+-- | Generic 'identifier' type
+data Identifier =
+    IdentString String
+  | IdentInt Integer
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary Identifier
+instance Hashable Identifier
+
 -- | Representation of a physical host.
 newtype Host = Host
     String -- ^ Hostname
@@ -61,7 +70,7 @@ newtype LogicalDevice = LogicalDevice
   deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
 
 -- | Arbitrary identifier for a logical or storage device
-data DeviceIdentifier = DeviceIdentifier String String
+data DeviceIdentifier = DeviceIdentifier String Identifier
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary DeviceIdentifier
