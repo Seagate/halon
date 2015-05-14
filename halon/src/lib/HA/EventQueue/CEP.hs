@@ -12,6 +12,7 @@ import Control.Monad.State
 import Network.CEP
 
 import HA.EventQueue
+import HA.EventQueue.Types
 import HA.Replicator
 
 eqRules :: RGroup g => g EventQueue -> RuleM (Maybe EventQueueState) ()
@@ -38,8 +39,21 @@ eqRules rg = do
     define "trimming" id $ \eid ->
       trim rg eid
 
-    define "ha-event" id $ \(sender, ev) ->
-      recordEvent rg sender ev
+    define "ha-event" id $ \(sender, ev) -> do
+      mRC <- lookupRC rg
+      here <- liftProcess getSelfNode
+      case mRC of
+        Just rc | here /= processNodeId rc
+          -> -- Delegate on the colocated EQ.
+             -- The colocated EQ learns immediately of the RC death. This
+             -- ensures events are not sent to a defunct RC rather than to a
+             -- live one.
+             liftProcess $ do
+               self <- getSelfPid
+               nsendRemote (processNodeId rc) eventQueueLabel
+                           (sender, ev{eventHops = self : eventHops ev})
+        _ -> -- Record the event if there is no known RC or if it is colocated.
+             recordEvent rg sender ev
 
     define "trim-ack" id $ \(TrimAck eid) ->
       publish (TrimDone eid)

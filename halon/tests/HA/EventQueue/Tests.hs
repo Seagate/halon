@@ -6,7 +6,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TemplateHaskell #-}
-module HA.EventQueue.Tests ( tests, remoteRC__tdict ) where
+module HA.EventQueue.Tests ( tests ) where
 
 import Prelude hiding ((<$>))
 import Test.Framework
@@ -54,15 +54,12 @@ eqSetRC :: Maybe ProcessId -> EventQueue -> EventQueue
 eqSetRC = first . const
 
 remoteRC :: ProcessId -> Process ()
-remoteRC controller = do
-    self <- getSelfPid
-    send controller self
-    forever $ do
-      msg <- expect
-      reconnect controller
-      send controller (msg :: HAEvent [ByteString])
+remoteRC controller = forever $ do
+    msg <- expect
+    reconnect controller
+    send controller (msg :: HAEvent [ByteString])
 
-remotable [ 'eqSDict, 'eqSetRC, 'remoteRC ]
+remotable [ 'eqSDict, 'eqSetRC ]
 
 triggerEvent :: Int -> Process ()
 triggerEvent x = promulgate x >>= \pid -> withMonitor pid wait
@@ -192,20 +189,24 @@ tests transport internals = do
           -- is implemented for it.
 #ifndef USE_RPC
         , testSuccess "eq-should-reconnect-to-rc" $
-              setup $ \eq _ _ ->
+              setup $ \eq _ rGroup ->
                 bracket
                   (liftIO $ newLocalNode transport rt)
                   (liftIO . closeLocalNode)
                   $ \ln1 ->
                 -- Spawn a remote RC.
                 bracket
-                  (getSelfPid >>= spawn (localNodeId ln1) . $(mkClosure 'remoteRC))
+                  (do self <- getSelfPid
+                      liftIO $ runProcess ln1 $ do
+                        pid <- spawnLocal $ remoteRC self
+                        -- spawn a colocated EQ
+                        _ <- spawnLocal (eventQueue rGroup)
+                        send self pid
+                      expect
+                  )
                   (flip exit "test finished")
                   $ \rc -> do
                 simpleSubscribe eq (Sub :: Sub RCLost)
-                self <- getSelfPid
-                -- Set me as controller of the RC.
-                send rc self
                 send eq rc
                 triggerEvent 1
                 -- The RC should forward the event to me.
