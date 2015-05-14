@@ -17,8 +17,10 @@ import HA.Replicator
 
 eqRules :: RGroup g => g EventQueue -> RuleM (Maybe EventQueueState) ()
 eqRules rg = do
-    define "rc-spawned" id $ \rc ->
+    define "rc-spawned" id $ \rc -> do
       recordNewRC rg rc
+      setRC rc
+      sendEventsToRC rg rc
 
     define "monitoring" id $ \(ProcessMonitorNotification _ pid reason) -> do
       mRC <- getRC
@@ -63,7 +65,3 @@ eqRules rg = do
       case mRC of
         Just rc -> sendEventToRC rc sender ev
         Nothing -> sendOwnNode sender
-
-    define "rc-spawned-ack" id $ \(NewRCAck rc) -> do
-      setRC rc
-      sendEventsToRC rg rc

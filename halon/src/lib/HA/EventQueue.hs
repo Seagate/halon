@@ -35,7 +35,6 @@ module HA.EventQueue
   , TrimDone(..)
   , TrimAck(..)
   , RecordAck(..)
-  , NewRCAck(..)
   , EventQueueState
   , setRC
   , recordNewRC
@@ -163,12 +162,8 @@ recordNewRC :: RGroup g
             => g EventQueue
             -> ProcessId
             -> CEP (Maybe EventQueueState) ()
-recordNewRC rg rc = liftProcess $ do
-    self <- getSelfPid
-    _    <- async $ task $ do
-      retry requestTimeout $ updateStateWith rg $ $(mkClosure 'eqSetRC) $ Just rc
-      usend self (NewRCAck rc)
-    return ()
+recordNewRC rg rc = void $ liftProcess $ async $ task $
+    retry requestTimeout $ updateStateWith rg $ $(mkClosure 'eqSetRC) $ Just rc
 
 -- | Send the pending events to the new RC.
 sendEventsToRC :: RGroup g => g EventQueue -> ProcessId -> CEP s ()
@@ -260,7 +255,3 @@ data RecordAck = RecordAck ProcessId (HAEvent [ByteString])
                  deriving (Typeable, Generic)
 
 instance Binary RecordAck
-
-data NewRCAck = NewRCAck ProcessId deriving (Typeable, Generic)
-
-instance Binary NewRCAck
