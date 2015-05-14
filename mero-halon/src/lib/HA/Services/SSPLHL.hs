@@ -120,10 +120,10 @@ cmdHandler msg = case decode (msgBody msg) :: Maybe CommandRequest of
 
 cmHandler :: Network.AMQP.Message
           -> Process ()
-cmHandler msg = case Yaml.decode (msgBody msg) :: Maybe Devices of
+cmHandler msg = case Yaml.decode (BL.toStrict $ msgBody msg) :: Maybe Devices of
   Just d -> do
     void $ promulgate d
-  Nothing -> say "Unable to decode cluster map: "
+  Nothing -> say $ "Unable to decode cluster map: "
                     ++ (BL.unpack $ msgBody msg)
 
 remotableDecl [ [d|

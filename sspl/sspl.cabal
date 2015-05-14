@@ -17,6 +17,7 @@ library
   exposed-modules:     SSPL.Bindings
   other-modules:       SSPL.Bindings.ActuatorRequest
                        SSPL.Bindings.ActuatorResponse
+                       SSPL.Bindings.ClusterMap
                        SSPL.Bindings.CommandRequest
                        SSPL.Bindings.SensorResponse
                        SSPL.Bindings.Instances

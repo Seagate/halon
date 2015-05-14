@@ -14,13 +14,19 @@ import Data.Yaml
 
 import GHC.Generics
 
-data DevId = DevId { id :: Int, filename :: String }
+data DevId = DevId { meroid :: Int
+                   , filename :: String
+                   , slot :: Int
+                   , hostname :: String
+                   }
   deriving (Eq, Show, Generic)
 
 instance Binary DevId
 instance FromJSON DevId where
   parseJSON (Object v) = DevId <$> v .: "id"
                                <*> v .: "filename"
+                               <*> v .: "slot"
+                               <*> v .: "hostname"
   parseJSON _ = error "Can't parse DevId from Yaml"
 
 data Devices = Devices [DevId]
