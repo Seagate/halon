@@ -53,6 +53,7 @@ VENDOR_PACKAGES = clock \
                   leveldb-haskell \
                   tasty-files \
                   options-schema \
+                  network \
                   network-transport-tcp \
                   network-transport \
                   rank1dynamic

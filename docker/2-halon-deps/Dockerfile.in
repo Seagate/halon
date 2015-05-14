@@ -9,6 +9,9 @@ RUN mkdir /root/.ssh
 ADD id_rsa /root/.ssh/
 ADD known_hosts /root/.ssh/
 
+# needed while the network package is vendored
+RUN yum install --assumeyes autoconf
+
 WORKDIR /
 RUN git clone git@github.com:tweag/halon.git
 WORKDIR /halon
