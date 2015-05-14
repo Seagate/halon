@@ -205,14 +205,12 @@ recordEvent :: RGroup g
             -> ProcessId
             -> HAEvent [ByteString]
             -> CEP s ()
-recordEvent rg sender ev = do
-    _ <- liftProcess $ do
-      self <- getSelfPid
-      _    <- async $ task $ do
-        retry requestTimeout $
-          updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+recordEvent rg sender ev = void $ liftProcess $ do
+    self <- getSelfPid
+    async $ task $ do
+      retry requestTimeout $
+        updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
       usend self (RecordAck sender ev)
-    return ()
 
 trim :: RGroup g => g EventQueue -> EventId -> CEP s ()
 trim rg eid =
