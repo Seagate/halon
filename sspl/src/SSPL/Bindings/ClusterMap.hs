@@ -14,9 +14,9 @@ import Data.Yaml
 
 import GHC.Generics
 
-data DevId = DevId { meroid :: Int
+data DevId = DevId { meroid :: Integer
                    , filename :: String
-                   , slot :: Int
+                   , slot :: Integer
                    , hostname :: String
                    }
   deriving (Eq, Show, Generic)
