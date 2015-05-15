@@ -19,7 +19,7 @@ import Control.Distributed.Commands.Management (withHostNames)
 import Control.Distributed.Commands.Process
   ( copyFiles
   , systemThere
-  , spawnNode
+  , spawnNode_
   , redirectLogsHere
   , copyLog
   , expectLog
@@ -79,8 +79,8 @@ main = do
       getSelfPid >>= copyLog (const True)
 
       say "Spawning halond ..."
-      nid0 <- spawnNode m0 ("./halond -l " ++ m0loc ++ " 2>&1")
-      nid1 <- spawnNode m1 ("./halond -l " ++ m1loc ++ " 2>&1")
+      nid0 <- spawnNode_ m0 ("./halond -l " ++ m0loc ++ " 2>&1")
+      nid1 <- spawnNode_ m1 ("./halond -l " ++ m1loc ++ " 2>&1")
       say $ "Redirecting logs from " ++ show nid0 ++ " ..."
       redirectLogsHere nid0
       say $ "Redirecting logs from " ++ show nid1 ++ " ..."

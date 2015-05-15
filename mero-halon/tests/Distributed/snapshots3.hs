@@ -9,11 +9,15 @@ import Control.Distributed.Commands.Process
   ( copyFiles
   , systemThere
   , spawnNode
+  , spawnNode_
   , redirectLogsHere
   , copyLog
   , expectLog
   , __remoteTable
+  , handleGetNodeId
+  , handleGetInput
   )
+import Control.Distributed.Commands (waitForCommand_)
 import Control.Distributed.Commands.Providers (getProvider, getHostAddress)
 
 import Control.Distributed.Process
@@ -63,10 +67,13 @@ main = do
                              )
 
       say "Spawning halond ..."
-      [nid0, nid1] <- forM ms $ \m -> do
+      [nh0, nh1] <- forM ms $ \m -> do
           n <- spawnNode m ("./halond -l " ++ m ++ ":9000 2>&1")
-          redirectLogsHere n
+          redirectLogsHere $ handleGetNodeId n
           return n
+
+      let nid0 = handleGetNodeId nh0
+          nid1 = handleGetNodeId nh1
 
       say "Spawning satellites ..."
       systemThere [m0] ("./halonctl -a " ++ m0 ++ ":9000 bootstrap satellite "
@@ -97,9 +104,10 @@ main = do
       assert $ all (<= 21) logSizes
 
       say "Restarting the tracking station ..."
-      systemThere [m1] "pkill halond; wait `pgrep halond`; true"
+      systemThere [m1] "pkill halond; true"
+      _ <- liftIO $ waitForCommand_ $ handleGetInput nh1
 
-      nid1' <- spawnNode m1 ("./halond -l " ++ m1 ++ ":9000 2>&1")
+      nid1' <- spawnNode_ m1 ("./halond -l " ++ m1 ++ ":9000 2>&1")
       redirectLogsHere nid1'
       systemThere [m0] ("./halonctl -a " ++ m0 ++ ":9000 bootstrap satellite "
                         ++ "-t " ++ m1 ++ ":9000 2>&1"
