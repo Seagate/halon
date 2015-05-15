@@ -182,7 +182,7 @@ cabal.sandbox.config: mk/config.mk vendor/network/configure
 # though it is a product of the recipe.
 .PHONY: freeze
 freeze:
-	(cd mero-halon; cabal freeze --reorder-goals)
+	(cd mero-halon; cabal freeze --reorder-goals --enable-tests)
 	mv mero-halon/cabal.config cabal.config
 
 check-freeze:
