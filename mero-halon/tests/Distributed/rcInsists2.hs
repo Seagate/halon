@@ -19,12 +19,16 @@ import Control.Distributed.Commands.Process
   ( copyFiles
   , systemThere
   , spawnNode
+  , spawnNode_
   , redirectLogsHere
   , copyLog
   , expectLog
   , expectTimeoutLog
   , __remoteTable
+  , handleGetNodeId
+  , handleGetInput
   )
+import Control.Distributed.Commands (waitForCommand_)
 import Control.Distributed.Commands.Providers
   ( getHostAddress
   , getProvider
@@ -78,8 +82,10 @@ main = do
       getSelfPid >>= copyLog (const True)
 
       say "Spawning halond ..."
-      nid0 <- spawnNode m0 ("./halond -l " ++ m0loc ++ " 2>&1")
-      nid1 <- spawnNode m1 ("./halond -l " ++ m1loc ++ " 2>&1")
+      nid0 <- spawnNode_ m0 ("./halond -l " ++ m0loc ++ " 2>&1")
+      nh1  <- spawnNode m1 ("./halond -l " ++ m1loc ++ " 2>&1")
+      let nid1 = handleGetNodeId nh1
+
       say $ "Redirecting logs from " ++ show nid0 ++ " ..."
       redirectLogsHere nid0
       say $ "Redirecting logs from " ++ show nid1 ++ " ..."
@@ -109,7 +115,9 @@ main = do
       say "Killing satellite ..."
       whereisRemoteAsync nid1 $ serviceLabel $ serviceName Dummy.dummy
       WhereIsReply _ (Just pid) <- expect
-      systemThere [m1] "pkill halond; wait `pgrep halond`; true"
+      systemThere [m1] "pkill halond; true"
+      _ <- liftIO $ waitForCommand_ $ handleGetInput nh1
+
       say "sending service failed"
       _ <- promulgateEQ [nid0] . encodeP $ ServiceFailed (Node nid1) Dummy.dummy
                                                          pid
