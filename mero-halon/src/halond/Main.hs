@@ -15,7 +15,7 @@ import Mero.RemoteTables (meroRemoteTable)
 import qualified Network.Transport.RPC as RPC
 import HA.Network.Transport (writeTransportGlobalIVar)
 #else
-import qualified Network.Transport.TCP as TCP
+import Network.Transport.TCP as TCP
 #endif
 import HA.Process (tryRunProcess)
 import HA.RecoveryCoordinator.Definitions
@@ -69,6 +69,10 @@ main = do
     let (hostname, _:port) = break (== ':') $ localEndpoint config
     transport <- either (error . show) id <$>
                  TCP.createTransport hostname port TCP.defaultTCPParameters
+                   { tcpUserTimeout = Just 2000
+                   , tcpNoDelay = True
+                   , transportConnectTimeout = Just 2000000
+                   }
 #endif
     lnid <- newLocalNode transport myRemoteTable
     printHeader (localEndpoint config)

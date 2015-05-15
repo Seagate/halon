@@ -22,7 +22,7 @@ import Mero.RemoteTables (meroRemoteTable)
 import qualified Network.Transport.RPC as RPC
 import HA.Network.Transport (writeTransportGlobalIVar)
 #else
-import qualified Network.Transport.TCP as TCP
+import Network.Transport.TCP as TCP
 #endif
 
 import Control.Applicative ((<$>))
@@ -57,7 +57,11 @@ run (Options { .. }) = do
 #else
   let (hostname, _:port) = break (== ':') optOurAddress
   transport <- either (error . show) id <$>
-               TCP.createTransport hostname port TCP.defaultTCPParameters
+               TCP.createTransport hostname port
+               defaultTCPParameters { tcpUserTimeout = Just 2000
+                                    , tcpNoDelay = True
+                                    , transportConnectTimeout = Just 2000000
+                                    }
 #endif
   lnid <- newLocalNode transport myRemoteTable
   let rnids = fmap conjureRemoteNodeId optTheirAddress
