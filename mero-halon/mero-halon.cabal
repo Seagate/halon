@@ -119,7 +119,8 @@ Library
                    cep,
                    netwire,
                    uuid,
-                   random
+                   random,
+                   yaml
 
   if flag(mero)
       Exposed-Modules: Mero.Epoch

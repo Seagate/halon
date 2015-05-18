@@ -344,7 +344,7 @@ testDriveAddition transport = do
 
         graph <- G.getGraph mm
         let enc = Enclosure "enc1"
-            drive = StorageDevice 1
+            drive = head $ (G.connectedTo enc Has graph :: [StorageDevice])
             status = StorageDeviceStatus "online"
         assert $ G.memberResource enc graph
         assert $ G.memberResource drive graph

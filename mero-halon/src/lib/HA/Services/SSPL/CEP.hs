@@ -27,7 +27,6 @@ import Control.Distributed.Process
   , sendChan
   , say
   )
-
 import Control.Monad.State.Strict hiding (mapM_)
 
 import qualified Data.Aeson as Aeson
@@ -37,6 +36,7 @@ import Data.Maybe (catMaybes, listToMaybe)
 import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
 
@@ -121,15 +121,27 @@ ssplRulesF sspl = do
 
   -- SSPL Monitor drivemanager
   defineHAEvent "monitor-drivemanager" id $ \(HAEvent _ (nid, mrm) _) -> do
+    host <- findNodeHost (Node nid)
+    diskUUID <- liftIO $ nextRandom
     let disk_status = sensorResponseSensor_response_typeDisk_status_drivemanagerDiskStatus mrm
         encName = sensorResponseSensor_response_typeDisk_status_drivemanagerEnclosureSN mrm
-        diskNum = sensorResponseSensor_response_typeDisk_status_drivemanagerDiskNum mrm
+        diskNum = floor . (toRealFloat :: Scientific -> Double) $
+                  sensorResponseSensor_response_typeDisk_status_drivemanagerDiskNum mrm
         enc = Enclosure $ T.unpack encName
-        disk = StorageDevice . floor . (toRealFloat :: Scientific -> Double)
-                $ diskNum
+        disk = StorageDevice diskUUID
 
-    registerDrive enc disk
+    locateStorageDeviceInEnclosure enc disk
+    identifyStorageDevice disk $ DeviceIdentifier "slot" (IdentInt diskNum)
     updateDriveStatus disk $ T.unpack disk_status
+    mapM_ (\h -> do
+          locateHostInEnclosure h enc
+          -- Find any existing (logical) devices and link them
+          hostDevs <- findHostStorageDevices h
+                    >>= filterM (flip hasStorageDeviceIdentifier
+                                  (DeviceIdentifier "slot" (IdentInt diskNum)))
+          mapM_ (\d -> mergeStorageDevices [d,disk]) hostDevs
+          ) host
+
     liftProcess . sayRC $ "Registered drive"
     when (disk_status == "inuse_removed") $ do
       let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
@@ -192,4 +204,28 @@ ssplRulesF sspl = do
       Aeson.String "status" -> liftProcess $ say "Unsupported."
       _ -> liftProcess $ say "Unsupported."
 
+  defineHAEvent "clustermap" id $ \(HAEvent _
+                                            (Devices devs)
+                                            _
+                                   ) ->
+      mapM_ addDev devs
+    where
+      addDev (DevId mid fn sl hn) = do
+          diskUUID <- liftIO $ nextRandom
+          let dev = StorageDevice diskUUID
+          locateStorageDeviceOnHost host dev
+          identifyStorageDevice dev (DeviceIdentifier "iosid" (IdentInt mid))
+          identifyStorageDevice dev (DeviceIdentifier "slot" (IdentInt sl))
+          identifyStorageDevice dev (DeviceIdentifier "filename" (IdentString fn))
+          -- | Find existing storage devices and link them
+          menc <- findHostEnclosure host
+          mapM_ (\enc -> do
+                  drives <- findEnclosureStorageDevices enc
+                        >>= filterM (flip hasStorageDeviceIdentifier $
+                                      DeviceIdentifier "slot" (IdentInt sl)
+                                    )
+                  mapM_ (\d -> mergeStorageDevices [dev, d]) drives
+                ) menc
+        where
+          host = Host hn
 

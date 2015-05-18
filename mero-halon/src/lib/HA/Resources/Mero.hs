@@ -25,11 +25,21 @@ import Control.Distributed.Process.Closure
 import Data.Hashable (Hashable)
 import Data.Binary (Binary)
 import Data.Typeable (Typeable)
+import Data.UUID (UUID)
 import GHC.Generics (Generic)
 
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
+
+-- | Generic 'identifier' type
+data Identifier =
+    IdentString String
+  | IdentInt Integer
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary Identifier
+instance Hashable Identifier
 
 -- | Representation of a physical host.
 newtype Host = Host
@@ -46,10 +56,17 @@ newtype Interface = Interface
     String -- ^ Interface ID.
   deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
 
--- | Representation of a storage device.
+-- | Representation of a storage device
 newtype StorageDevice = StorageDevice
-    Integer -- ^ Drives identified as position in enclosure.
+    UUID -- ^ Internal UUID used to refer to the disk
   deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
+
+-- | Arbitrary identifier for a logical or storage device
+data DeviceIdentifier = DeviceIdentifier String Identifier
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary DeviceIdentifier
+instance Hashable DeviceIdentifier
 
 -- | Representation of storage device status. Currently this just mirrors
 --   the status we get from OpenHPI.
@@ -82,12 +99,14 @@ instance Hashable Is
 -- XXX Only nodes and services have runtime information attached to them, for now.
 
 resdict_Host :: Dict (Resource Host)
+resdict_DeviceIdentifier :: Dict (Resource DeviceIdentifier)
 resdict_Enclosure :: Dict (Resource Enclosure)
 resdict_Interface :: Dict (Resource Interface)
 resdict_StorageDevice :: Dict (Resource StorageDevice)
 resdict_StorageDeviceStatus :: Dict (Resource StorageDeviceStatus)
 
 resdict_Host = Dict
+resdict_DeviceIdentifier = Dict
 resdict_Enclosure = Dict
 resdict_Interface = Dict
 resdict_StorageDevice = Dict
@@ -97,17 +116,24 @@ reldict_Has_Cluster_Host :: Dict (Relation Has Cluster Host)
 reldict_Has_Host_Interface :: Dict (Relation Has Host Interface)
 reldict_Has_Cluster_Enclosure :: Dict (Relation Has Cluster Enclosure)
 reldict_Has_Enclosure_StorageDevice :: Dict (Relation Has Enclosure StorageDevice)
+reldict_Has_Enclosure_Host :: Dict (Relation Has Enclosure Host)
 reldict_Runs_Host_Node :: Dict (Relation Runs Host Node)
 reldict_Is_StorageDevice_StorageDeviceStatus :: Dict (Relation Is StorageDevice StorageDeviceStatus)
+reldict_Has_Host_StorageDevice :: Dict (Relation Has Host StorageDevice)
+reldict_Has_StorageDevice_DeviceIdentifier :: Dict (Relation Has StorageDevice DeviceIdentifier)
 
 reldict_Has_Cluster_Host = Dict
 reldict_Has_Host_Interface = Dict
 reldict_Has_Cluster_Enclosure = Dict
 reldict_Has_Enclosure_StorageDevice = Dict
+reldict_Has_Enclosure_Host = Dict
 reldict_Runs_Host_Node = Dict
 reldict_Is_StorageDevice_StorageDeviceStatus = Dict
+reldict_Has_Host_StorageDevice = Dict
+reldict_Has_StorageDevice_DeviceIdentifier = Dict
 
 remotable [ 'resdict_Host
+          , 'resdict_DeviceIdentifier
           , 'resdict_Enclosure
           , 'resdict_Interface
           , 'resdict_StorageDevice
@@ -116,8 +142,11 @@ remotable [ 'resdict_Host
           , 'reldict_Has_Host_Interface
           , 'reldict_Has_Cluster_Enclosure
           , 'reldict_Has_Enclosure_StorageDevice
+          , 'reldict_Has_Enclosure_Host
           , 'reldict_Runs_Host_Node
           , 'reldict_Is_StorageDevice_StorageDeviceStatus
+          , 'reldict_Has_Host_StorageDevice
+          , 'reldict_Has_StorageDevice_DeviceIdentifier
           ]
 
 
@@ -136,6 +165,9 @@ instance Resource StorageDevice where
 instance Resource StorageDeviceStatus where
     resourceDict = $(mkStatic 'resdict_StorageDeviceStatus)
 
+instance Resource DeviceIdentifier where
+    resourceDict = $(mkStatic 'resdict_DeviceIdentifier)
+
 instance Relation Has Cluster Host where
     relationDict = $(mkStatic 'reldict_Has_Cluster_Host)
 
@@ -148,8 +180,17 @@ instance Relation Has Cluster Enclosure where
 instance Relation Has Enclosure StorageDevice where
     relationDict = $(mkStatic 'reldict_Has_Enclosure_StorageDevice)
 
+instance Relation Has Enclosure Host where
+    relationDict = $(mkStatic 'reldict_Has_Enclosure_Host)
+
 instance Relation Runs Host Node where
     relationDict = $(mkStatic 'reldict_Runs_Host_Node)
 
 instance Relation Is StorageDevice StorageDeviceStatus where
     relationDict = $(mkStatic 'reldict_Is_StorageDevice_StorageDeviceStatus)
+
+instance Relation Has Host StorageDevice where
+    relationDict = $(mkStatic 'reldict_Has_Host_StorageDevice)
+
+instance Relation Has StorageDevice DeviceIdentifier where
+    relationDict = $(mkStatic 'reldict_Has_StorageDevice_DeviceIdentifier)
