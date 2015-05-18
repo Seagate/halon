@@ -43,6 +43,7 @@ module HA.ResourceGraph
     , deleteEdge
     , connect
     , disconnect
+    , mergeResources
     , sync
     , getGraph
     , garbageCollect
@@ -269,6 +270,29 @@ disconnect x r y g =
                 . M.adjust (S.delete $ InRel r x y) (Res y)
                 $ grGraph g
       }
+
+-- | Merge a number of homogenously typed resources into a single
+--   resource. Incoming and outgoing edge sets are merged, whilst
+--   the specified combining function is used to merge the actual
+--   resources.
+mergeResources :: Resource a => ([a] -> a) -> [a] -> Graph -> Graph
+mergeResources _ [] g = g
+mergeResources f xs g@Graph{..} = let
+    newRes = Res $ f xs
+    oldRels = foldl' S.union S.empty
+            . catMaybes
+            . map (\r -> M.lookup (Res r) grGraph)
+            $ xs
+    adjustments = M.insert newRes oldRels
+                : map (M.delete . Res) xs
+  in g {
+          grChangeLog = (InsertMany [ (encodeRes newRes
+                                    , S.toList . S.map encodeRel $ oldRels)
+                                    ])
+                      : (DeleteKeys (map (encodeRes . Res) xs))
+                      : grChangeLog
+        , grGraph = foldr (.) id adjustments grGraph
+       }
 
 -- | Remove all resources that are not connected to the rest of the graph,
 -- starting from the given root set. This cleans up resources that are no

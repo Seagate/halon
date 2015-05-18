@@ -227,5 +227,14 @@ tests transport = do
           assert $ memberResource (NodeA 3) g6 == True
           assert $ memberResource (NodeB 2) g6 == False
           assert $ memberResource (NodeB 2) g5 == True
+      , testSuccess "merge-resources" $ rGroupTest transport g $ \pid -> do
+          g1 <- sync . sampleGraph =<< getGraph pid
+          g2 <- sync $ mergeResources head [NodeA 1, NodeA 2] g1
+          let es1 = connectedTo (NodeA 1) HasB g2 :: [NodeB]
+              es2 = connectedFrom HasA (NodeA 1) g2 :: [NodeB]
+          assert $ memberResource (NodeA 1) g2 == True
+          assert $ memberResource (NodeA 2) g2 == False
+          assert $ length es1 == 1
+          assert $ length es2 == 2
 
       ]
