@@ -92,13 +92,6 @@ data Is = Is
 instance Binary Is
 instance Hashable Is
 
--- | The relation between a logical device and the physical storage device
---   it relates to.
-data On = On
-    deriving (Eq, Show, Generic, Typeable)
-
-instance Binary On
-instance Hashable On
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
