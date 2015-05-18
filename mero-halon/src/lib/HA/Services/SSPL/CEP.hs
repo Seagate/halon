@@ -36,6 +36,7 @@ import Data.Maybe (catMaybes, listToMaybe)
 import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
 
@@ -121,23 +122,24 @@ ssplRulesF sspl = do
   -- SSPL Monitor drivemanager
   defineHAEvent "monitor-drivemanager" id $ \(HAEvent _ (nid, mrm) _) -> do
     host <- findNodeHost (Node nid)
+    diskUUID <- liftIO $ nextRandom
     let disk_status = sensorResponseSensor_response_typeDisk_status_drivemanagerDiskStatus mrm
         encName = sensorResponseSensor_response_typeDisk_status_drivemanagerEnclosureSN mrm
         diskNum = floor . (toRealFloat :: Scientific -> Double) $
                   sensorResponseSensor_response_typeDisk_status_drivemanagerDiskNum mrm
         enc = Enclosure $ T.unpack encName
-        disk = StorageDevice (T.unpack encName) diskNum
+        disk = StorageDevice diskUUID
 
-    registerStorageDevice enc disk
+    locateStorageDeviceInEnclosure enc disk
     identifyStorageDevice disk $ DeviceIdentifier "slot" (IdentInt diskNum)
     updateDriveStatus disk $ T.unpack disk_status
     mapM_ (\h -> do
           locateHostInEnclosure h enc
           -- Find any existing (logical) devices and link them
-          hostDevs <- findHostLogicalDevices h
-                    >>= filterM (flip hasLogicalDeviceIdentifier
+          hostDevs <- findHostStorageDevices h
+                    >>= filterM (flip hasStorageDeviceIdentifier
                                   (DeviceIdentifier "slot" (IdentInt diskNum)))
-          mapM_ (\d -> locateLogicalOnStorageDevice d disk) hostDevs
+          mapM_ (\d -> mergeStorageDevices [d,disk]) hostDevs
           ) host
 
     liftProcess . sayRC $ "Registered drive"
@@ -209,10 +211,12 @@ ssplRulesF sspl = do
       mapM_ addDev devs
     where
       addDev (DevId mid fn sl hn) = do
-          registerLogicalDevice host dev
-          identifyLogicalDevice dev (DeviceIdentifier "iosid" (IdentInt mid))
-          identifyLogicalDevice dev (DeviceIdentifier "slot" (IdentInt sl))
-          identifyLogicalDevice dev (DeviceIdentifier "filename" (IdentString fn))
+          diskUUID <- liftIO $ nextRandom
+          let dev = StorageDevice diskUUID
+          locateStorageDeviceOnHost host dev
+          identifyStorageDevice dev (DeviceIdentifier "iosid" (IdentInt mid))
+          identifyStorageDevice dev (DeviceIdentifier "slot" (IdentInt sl))
+          identifyStorageDevice dev (DeviceIdentifier "filename" (IdentString fn))
           -- | Find existing storage devices and link them
           menc <- findHostEnclosure host
           mapM_ (\enc -> do
@@ -220,9 +224,8 @@ ssplRulesF sspl = do
                         >>= filterM (flip hasStorageDeviceIdentifier $
                                       DeviceIdentifier "slot" (IdentInt sl)
                                     )
-                  mapM_ (locateLogicalOnStorageDevice dev) drives
+                  mapM_ (\d -> mergeStorageDevices [dev, d]) drives
                 ) menc
         where
-          dev = LogicalDevice fn
           host = Host hn
 

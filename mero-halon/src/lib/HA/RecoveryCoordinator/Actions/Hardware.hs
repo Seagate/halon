@@ -19,16 +19,13 @@ module HA.RecoveryCoordinator.Actions.Hardware
     -- * Drive related functions
   , driveStatus
   , findEnclosureStorageDevices
-  , findHostLogicalDevices
-  , findLogicalDeviceIdentifiers
+  , findHostStorageDevices
   , findStorageDeviceIdentifiers
-  , hasLogicalDeviceIdentifier
   , hasStorageDeviceIdentifier
-  , identifyLogicalDevice
   , identifyStorageDevice
-  , registerStorageDevice
-  , registerLogicalDevice
-  , locateLogicalOnStorageDevice
+  , locateStorageDeviceInEnclosure
+  , locateStorageDeviceOnHost
+  , mergeStorageDevices
   , updateDriveStatus
 ) where
 
@@ -38,7 +35,10 @@ import HA.Resources
 import HA.Resources.Mero
 
 import Control.Category ((>>>))
+import Control.Distributed.Process (liftIO)
 import qualified Control.Monad.State.Strict as State
+
+import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
 
@@ -145,10 +145,10 @@ registerInterface host int = do
 ----------------------------------------------------------
 
 -- | Find logical devices on a host
-findHostLogicalDevices :: Host
-                       -> CEP LoopState [LogicalDevice]
-findHostLogicalDevices host = do
-  cepLog "rg-query" $ "Looking for logical devices on host "
+findHostStorageDevices :: Host
+                       -> CEP LoopState [StorageDevice]
+findHostStorageDevices host = do
+  cepLog "rg-query" $ "Looking for storage devices on host "
                     ++ show host
   State.gets $ (G.connectedTo host Has) . lsGraph
 
@@ -156,17 +156,9 @@ findHostLogicalDevices host = do
 findEnclosureStorageDevices :: Enclosure
                        -> CEP LoopState [StorageDevice]
 findEnclosureStorageDevices enc = do
-  cepLog "rg-query" $ "Looking for physical devices in enclosure "
+  cepLog "rg-query" $ "Looking for storage devices in enclosure "
                     ++ show enc
   State.gets $ (G.connectedTo enc Has) . lsGraph
-
--- | Find additional identifiers for a (logical) storage device.
-findLogicalDeviceIdentifiers :: LogicalDevice
-                             -> CEP LoopState [DeviceIdentifier]
-findLogicalDeviceIdentifiers ld = do
-  cepLog "rg-query" $ "Looking for identifiers for logical device "
-                    ++ show ld
-  State.gets $ (G.connectedTo ld Has) . lsGraph
 
 -- | Find additional identifiers for a (physical) storage device.
 findStorageDeviceIdentifiers :: StorageDevice
@@ -177,36 +169,12 @@ findStorageDeviceIdentifiers sd = do
   State.gets $ (G.connectedTo sd Has) . lsGraph
 
 -- | Test if a drive have a given identifier
-hasLogicalDeviceIdentifier :: LogicalDevice
-                           -> DeviceIdentifier
-                           -> CEP LoopState Bool
-hasLogicalDeviceIdentifier ld di = do
-  ids <- findLogicalDeviceIdentifiers ld
-  return $ elem di ids
-
--- | Test if a drive have a given identifier
 hasStorageDeviceIdentifier :: StorageDevice
                            -> DeviceIdentifier
                            -> CEP LoopState Bool
 hasStorageDeviceIdentifier ld di = do
   ids <- findStorageDeviceIdentifiers ld
   return $ elem di ids
-
--- | Add an additional identifier to a logical storage device.
-identifyLogicalDevice :: LogicalDevice
-                      -> DeviceIdentifier
-                      -> CEP LoopState ()
-identifyLogicalDevice ld di = do
-  cepLog "rg" $ "Adding identifier "
-              ++ show di
-              ++ " to device "
-              ++ show ld
-  ls <- State.get
-  let rg' = G.newResource ld
-        >>> G.newResource di
-        >>> G.connect ld Has di
-          $ lsGraph ls
-  State.put ls { lsGraph = rg' }
 
 -- | Add an additional identifier to a logical storage device.
 identifyStorageDevice :: StorageDevice
@@ -225,10 +193,10 @@ identifyStorageDevice ld di = do
   State.put ls { lsGraph = rg' }
 
 -- | Register a new drive in the system.
-registerStorageDevice :: Enclosure
-                      -> StorageDevice
-                      -> CEP LoopState ()
-registerStorageDevice enc dev = do
+locateStorageDeviceInEnclosure :: Enclosure
+                                -> StorageDevice
+                                -> CEP LoopState ()
+locateStorageDeviceInEnclosure enc dev = do
   cepLog "rg" $ "Registering storage device: "
               ++ show dev
               ++ " in enclosure "
@@ -241,36 +209,37 @@ registerStorageDevice enc dev = do
           $ lsGraph ls
   State.put ls { lsGraph = rg' }
 
--- | Register a logical device in the system.
-registerLogicalDevice :: Host
-                      -> LogicalDevice
-                      -> CEP LoopState ()
-registerLogicalDevice host dev = do
-  cepLog "rg" $ "Registering logical device: "
+-- | Register a new drive in the system.
+locateStorageDeviceOnHost :: Host
+                          -> StorageDevice
+                          -> CEP LoopState ()
+locateStorageDeviceOnHost host dev = do
+  cepLog "rg" $ "Registering storage device: "
               ++ show dev
               ++ " on host "
               ++ show host
   ls <- State.get
   let rg' = G.newResource host
         >>> G.newResource dev
+        >>> G.connect Cluster Has host
         >>> G.connect host Has dev
           $ lsGraph ls
   State.put ls { lsGraph = rg' }
 
--- | Locate a logical storage device as being hosted on a physical device.
-locateLogicalOnStorageDevice :: LogicalDevice
-                             -> StorageDevice
-                             -> CEP LoopState ()
-locateLogicalOnStorageDevice ld sd = do
-  cepLog "rg" $ "Locating logical device "
-              ++ show ld
-              ++ " on physical device "
-              ++ show sd
+-- | Merge multiple storage devices into one.
+--   Returns the new (merged) device.
+mergeStorageDevices :: [StorageDevice]
+                    -> CEP LoopState StorageDevice
+mergeStorageDevices sds = do
+  cepLog "rg" $ "Merging multiple storage devices: "
+              ++ (show sds)
   ls <- State.get
-  let rg' = G.connect ld On sd
+  newUUID <- liftProcess . liftIO $ nextRandom
+  let newDisk = StorageDevice newUUID
+      rg' = G.mergeResources (\_ -> newDisk) sds
           $ lsGraph ls
   State.put ls { lsGraph = rg' }
-
+  return newDisk
 
 -- | Get the status of a storage device.
 driveStatus :: StorageDevice
