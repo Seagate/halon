@@ -15,7 +15,7 @@ import Control.Distributed.Commands.Management (withHostNames)
 import Control.Distributed.Commands.Process
   ( copyFiles
   , systemThere
-  , spawnNode
+  , spawnNode_
   , redirectLogsHere
   , copyLog
   , expectLog
@@ -69,7 +69,7 @@ main = do
 
       say "Spawning halond ..."
       (nid0 : nidss) <- forM ms $ \m -> do
-                n <- spawnNode m ("./halond -l " ++ m ++ ":9000 2>&1")
+                n <- spawnNode_ m ("./halond -l " ++ m ++ ":9000 2>&1")
                 redirectLogsHere n
                 return n
 
@@ -108,5 +108,3 @@ main = do
       let pfx = "Log size when trimming: "
       if pfx `isPrefixOf` msg then return $ read $ drop (length pfx) msg
         else expectLogSize
-      
-

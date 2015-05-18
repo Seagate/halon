@@ -8,6 +8,7 @@
 {-# LANGUAGE TemplateHaskell     #-}
 module Control.Distributed.Commands.Process
   ( spawnNode
+  , spawnNode_
   , spawnLocalNode
   , spawnNodes
   , printNodeId
@@ -28,6 +29,9 @@ module Control.Distributed.Commands.Process
     -- $trace
   , mkTraceEnv
   , TraceEnv(..)
+  , NodeHandle
+  , handleGetInput
+  , handleGetNodeId
   ) where
 
 import Control.Distributed.Commands.Management
@@ -73,9 +77,18 @@ import Data.ByteString.Lazy (ByteString)
 import Data.IORef (newIORef, readIORef, modifyIORef')
 import Data.List (isPrefixOf, isSuffixOf)
 import Data.Foldable (forM_)
+import System.Exit (ExitCode(..))
 import System.IO (hFlush, stdout)
 import System.Environment (getEnvironment, setEnv)
 
+-- | Used when calling 'spawnNode', it gathers the resulted 'NodeId' and
+--   the action used to read input from the process.
+data NodeHandle =
+    NodeHandle
+    { handleGetNodeId :: NodeId
+    , handleGetInput  :: IO (Either ExitCode String)
+      -- ^ Reads input from the process.
+    }
 
 -- | @spawnNode h command@ launches @command@ on the host @h@.
 --
@@ -87,8 +100,12 @@ import System.Environment (getEnvironment, setEnv)
 --
 -- 'printNodeId' can be used for that purpose.
 --
-spawnNode :: HostName -> String -> Process NodeId
+spawnNode :: HostName -> String -> Process NodeHandle
 spawnNode h = liftIO . spawnNodeIO h
+
+-- | Same as 'spawnNode' but returns a 'NodeId' instead.
+spawnNode_ :: HostName -> String -> Process NodeId
+spawnNode_ h = fmap handleGetNodeId . spawnNode h
 
 -- | Prints the given 'NodeId' in the standard output.
 printNodeId :: NodeId -> IO ()
@@ -99,14 +116,15 @@ printNodeId n = do print $ encode n
                    putStrLn ""
                    hFlush stdout
 
-spawnNodeIO :: HostName -> String -> IO NodeId
+spawnNodeIO :: HostName -> String -> IO NodeHandle
 spawnNodeIO h cmd = do
     getLine_cmd <- maybe C.systemThere C.systemThereAsUser muser h cmd
     mnode <- getLine_cmd
     case mnode of
       Left _ -> error $ "The command \"" ++ cmd ++ "\" did not print a NodeId."
       Right n  -> case reads n of
-        (bs,"") : _ -> return $ decode (bs :: ByteString)
+        (bs,"") : _ -> return $ NodeHandle (decode (bs :: ByteString))
+                                           getLine_cmd
         _           -> error $ "Couldn't parse node id. \"" ++ cmd ++
                                "\" produced: " ++ n
   where
@@ -120,7 +138,7 @@ isLocalHost h = h == "localhost" || "127." `isPrefixOf` h
 -- XXX: This is a temporary function until there is an 'async' implementation
 -- for 'Process' which will allow to define it in terms of 'spawnNode'.
 --
-spawnNodes :: [HostName] -> String -> Process [NodeId]
+spawnNodes :: [HostName] -> String -> Process [NodeHandle]
 spawnNodes hs cmd = liftIO $ mapConcurrently (flip spawnNodeIO cmd) hs
 
 -- | Like @spawnNode@ but spawns the node in the local host.
@@ -298,15 +316,17 @@ mkTraceEnv = do
                                   forM_ fls $ \(node,file) ->
                                     copyFiles node ["localhost"] [(file, ".")]) -- XXX: it's possible to group files here
   where
-    envNoTrace = TraceEnv (const spawnNode) (return ())
+    spawnNodeId h cmd = fmap handleGetNodeId $ spawnNode h cmd
+    envNoTrace = TraceEnv (const spawnNodeId) (return ())
     normalize t
       | ".trace" `isSuffixOf` t = t
       | otherwise = t ++ ".trace"
     withTraceFile storage flags suffix prefix node cmd = do
       let file = prefix ++ '.':suffix
       liftIO $ modifyIORef' storage ((node,file):)
-      spawnNode node $
-        unwords [ "DISTRIBUTED_PROCESS_TRACE_FLAGS=" ++ flags
-                , " DISTRIBUTED_PROCESS_TRACE_FILE=" ++ file
-                , cmd
-                ]
+      nh <- spawnNode node $
+              unwords [ "DISTRIBUTED_PROCESS_TRACE_FLAGS=" ++ flags
+                      , " DISTRIBUTED_PROCESS_TRACE_FILE=" ++ file
+                      , cmd
+                      ]
+      return $ handleGetNodeId nh
