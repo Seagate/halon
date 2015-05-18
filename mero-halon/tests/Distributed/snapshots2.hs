@@ -53,6 +53,7 @@ main = do
 
     withHostNames cp 2 $ \ms@(m0: mss) ->
      runProcess n0 $ do
+      let halonctlloc = (++ ":9001")
 
       say "Copying binaries ..."
       -- test copying a folder
@@ -74,7 +75,9 @@ main = do
                 return n
 
       say "Spawning satellites ..."
-      systemThere [m0] ("./halonctl -a " ++ m0 ++ ":9000 bootstrap"
+      systemThere [m0] ("./halonctl"
+                        ++ " -l " ++ halonctlloc m0
+                        ++ " -a " ++ m0 ++ ":9000 bootstrap"
                         ++ " satellite"
                         ++ concatMap ((" -t " ++) . (++ ":9000")) mss
                         ++ " 2>&1"
@@ -82,6 +85,7 @@ main = do
 
       say "Spawning tracking station ..."
       systemThere [m0] ("./halonctl"
+                        ++ " -l " ++ halonctlloc m0
                         ++ concatMap ((" -a " ++) . (++ ":9000")) mss
                         ++ " bootstrap station -n 100 2>&1"
                        )
@@ -92,9 +96,11 @@ main = do
       expectLog nidss (isInfixOf "New node contacted")
 
       say "Starting noisy service ..."
-      systemThere [m0] ("./halonctl -a " ++ m0 ++ ":9000" ++
-                        " service noisy start" ++
-                        concatMap ((" -t " ++) . (++ ":9000")) mss
+      systemThere [m0] ("./halonctl"
+                     ++ " -l " ++ halonctlloc m0
+                     ++ " -a " ++ m0 ++ ":9000"
+                     ++ " service noisy start"
+                     ++ concatMap ((" -t " ++) . (++ ":9000")) mss
                         ++ " -n 10000 2>&1"
                        )
       expectLog [nid0] (isInfixOf "Starting service noisy")

@@ -52,6 +52,7 @@ main = (>>= maybe (error "test timed out") return) $ timeout (60 * 1000000) $ do
 
     withHostNames cp 2 $ \ms@[m0, m1] ->
      runProcess n0 $ do
+      let halonctlloc = (++ ":9001")
 
       say "Copying binaries ..."
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
@@ -77,14 +78,18 @@ main = (>>= maybe (error "test timed out") return) $ timeout (60 * 1000000) $ do
           nid1 = handleGetNodeId nh1
 
       say "Spawning satellites ..."
-      systemThere [m0] ("./halonctl -a " ++ m0 ++ ":9000 bootstrap satellite "
-                        ++ "-t " ++ m1 ++ ":9000 2>&1"
+      systemThere [m0] ("./halonctl"
+                     ++ " -l " ++ halonctlloc m0
+                     ++ " -a " ++ m0 ++ ":9000 bootstrap satellite "
+                     ++ "-t " ++ m1 ++ ":9000 2>&1"
                        )
 
       say "Spawning tracking station ..."
       let snapshotThreshold = 10 :: Int
-      systemThere [m1] ("./halonctl -a " ++ m1 ++ ":9000 bootstrap" ++
-                        " station -n " ++ show snapshotThreshold ++ " 2>&1"
+      systemThere [m1] ("./halonctl"
+                     ++ " -l " ++ halonctlloc m1
+                     ++ " -a " ++ m1 ++ ":9000 bootstrap"
+                     ++ " station -n " ++ show snapshotThreshold ++ " 2>&1"
                        )
 
       say "Waiting for RC to start ..."
@@ -93,9 +98,11 @@ main = (>>= maybe (error "test timed out") return) $ timeout (60 * 1000000) $ do
 
       say "Starting noisy service ..."
       let noisy_messages = 30 :: Int
-      systemThere [m0] ("./halonctl -a " ++ m0 ++ ":9000" ++
-                        " service noisy start" ++ " -t " ++ m1 ++ ":9000" ++
-                        " -n " ++ show noisy_messages ++ " 2>&1"
+      systemThere [m0] ("./halonctl"
+                     ++ " -l " ++ halonctlloc m0
+                     ++ " -a " ++ m0 ++ ":9000"
+                     ++ " service noisy start" ++ " -t " ++ m1 ++ ":9000"
+                     ++ " -n " ++ show noisy_messages ++ " 2>&1"
                        )
 
       expectLog [nid0] (isInfixOf "Starting service noisy")
@@ -112,12 +119,16 @@ main = (>>= maybe (error "test timed out") return) $ timeout (60 * 1000000) $ do
 
       nid1' <- spawnNode_ m1 ("./halond -l " ++ m1 ++ ":9000 2>&1")
       redirectLogsHere nid1'
-      systemThere [m0] ("./halonctl -a " ++ m0 ++ ":9000 bootstrap satellite "
-                        ++ "-t " ++ m1 ++ ":9000 2>&1"
+      systemThere [m0] ("./halonctl"
+                     ++ " -l " ++ halonctlloc m0
+                     ++ " -a " ++ m0 ++ ":9000 bootstrap satellite "
+                     ++ "-t " ++ m1 ++ ":9000 2>&1"
                        )
 
-      systemThere [m1] ("./halonctl -a " ++ m1 ++ ":9000 bootstrap" ++
-                        " station -n " ++
+      systemThere [m1] ("./halonctl"
+                     ++ " -l " ++ halonctlloc m1
+                     ++ " -a " ++ m1 ++ ":9000 bootstrap"
+                     ++ " station -n " ++
                         show snapshotThreshold ++ " 2>&1"
                        )
       logSize <- expectLogInt [nid1'] "Log size of replica: "

@@ -57,6 +57,7 @@ main = do
      runProcess n0 $ do
       let m0loc = m0 ++ ":9000"
           m1loc = m1 ++ ":9000"
+          halonctlloc = (++ ":9001")
 
       say "Copying binaries ..."
       -- test copying a folder
@@ -78,6 +79,7 @@ main = do
 
       say "Spawning tracking station ..."
       systemThere [m0] ("./halonctl"
+                     ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m0loc
                      ++ " bootstrap station" ++ " 2>&1"
                      )
@@ -87,6 +89,7 @@ main = do
       say "Starting satellite nodes ..."
       -- this runs on one node but it should control both nodes (?)
       systemThere [m0] ("./halonctl"
+                     ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m0loc
                      ++ " -a " ++ m1loc
                      ++ " bootstrap satellite"
@@ -96,7 +99,9 @@ main = do
       expectLog [nid0, nid1] (isInfixOf "Got UpdateEQNodes")
 
       say "Starting dummy service ..."
-      systemThere [m0] ("./halonctl -a " ++ m1loc ++
-                        " service dummy start -t " ++ m0loc)
+      systemThere [m0] ("./halonctl"
+                     ++ " -l " ++ halonctlloc m0
+                     ++ " -a " ++ m1loc
+                     ++ " service dummy start -t " ++ m0loc)
       expectLog [nid1] (isInfixOf "Starting service dummy")
       expectLog [nid1] (isInfixOf "Hello World!")

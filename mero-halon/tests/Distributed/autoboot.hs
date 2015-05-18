@@ -57,6 +57,7 @@ main = do
      runProcess n0 $ do
       let m0loc = m0 ++ ":9000"
           m1loc = m1 ++ ":9000"
+          halonctlloc = (++ ":9001")
 
       say "Copying binaries ..."
       -- test copying a folder
@@ -76,6 +77,7 @@ main = do
 
       say "Spawning tracking station ..."
       systemThere [m0] ("./halonctl"
+                     ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m0loc
                      ++ " -a " ++ m1loc
                      ++ " bootstrap station"

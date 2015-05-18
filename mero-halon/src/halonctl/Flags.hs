@@ -45,8 +45,7 @@ getOptions = do
         <*> (O.strOption $ O.metavar "ADDRESS" <>
                O.long "listen" <>
                O.short 'l' <>
-               O.value "0.0.0.0:9001" <>
-               O.help "Address halonctl binds to; defaults to 0.0.0.0:0.")
+               O.help "Address halonctl binds to.")
         <*> (O.subparser $
                  (O.command "bootstrap" $ Bootstrap <$>
                     O.withDesc Bootstrap.parseBootstrap "Bootstrap a node.")

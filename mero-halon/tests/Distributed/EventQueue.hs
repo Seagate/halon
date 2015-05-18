@@ -96,6 +96,7 @@ main = do
 
         let m0loc = m0 ++ ":9000"
             m1loc = m1 ++ ":9000"
+            halonctlloc = (++ ":9001")
 
         copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
                                  , (buildPath </> "halond/halond", "halond") ]
@@ -112,6 +113,7 @@ main = do
 
         say "Spawning tracking station ..."
         systemThere [m0] ("./halonctl"
+                       ++ " -l " ++ halonctlloc m0
                        ++ " -a " ++ m0loc
                        ++ " bootstrap station"
                        )
