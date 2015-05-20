@@ -29,6 +29,7 @@ Library
                     Control.Distributed.Log.Policy
                     Control.Distributed.Log.Snapshot
                     Control.Distributed.Process.Batcher
+                    Control.Distributed.Process.ProcessPool
                     Control.Distributed.Process.Timeout
                     Control.Distributed.State
   Other-Modules:    Control.Distributed.Log.Internal

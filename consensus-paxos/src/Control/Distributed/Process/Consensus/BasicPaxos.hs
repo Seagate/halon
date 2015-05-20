@@ -79,6 +79,12 @@ retry :: Int  -- ^ Amount of microseconds between retries
       -> Process a
 retry t action = timeout t action >>= maybe (retry t action) return
 
+-- | Spawns a local process and has it linked to the parent.
+spawnLocalLinked :: Process () -> Process ProcessId
+spawnLocalLinked p = do
+  self <- getSelfPid
+  spawnLocal $ link self >> p
+
 -- | A version of 'System.Timeout.timeout' for the 'Process' monad.
 timeout :: Int -> Process a -> Process (Maybe a)
 timeout t action
@@ -93,7 +99,7 @@ scout sendA acceptors d b = callLocal $ do
   let clauses = [ match $ \(Msg.Nack b') -> return $ Left b'
                 , match $ \(Msg.Promise _ _ acks) -> return $ Right acks
                 ]
-  forM_ acceptors $ flip sendA (Msg.Prepare d b self)
+  forM_ acceptors $ spawnLocalLinked . flip sendA (Msg.Prepare d b self)
   fmap concat <$> expectQuorum clauses (length acceptors)
 
 {-*promela
@@ -161,7 +167,7 @@ command sendA acceptors d b x = callLocal $ do
   let clauses = [ match $ \(Msg.Nack b') -> return $ Left b'
                 , match $ \(_ :: Msg.Ack a) -> return $ Right ()
                 ]
-  forM_ acceptors $ flip sendA (Msg.Syn d b self x)
+  forM_ acceptors $ spawnLocalLinked . flip sendA (Msg.Syn d b self x)
   fmap (const ()) <$> expectQuorum clauses (length acceptors)
 
 {-*promela
