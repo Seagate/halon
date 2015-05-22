@@ -71,7 +71,7 @@ import qualified Data.Text.Encoding as T
 import qualified Data.UUID as UID
 
 import Network.AMQP
-import Network.CEP (RuleM)
+import Network.CEP (Definitions)
 
 import Prelude hiding (id, mapM_)
 
@@ -207,5 +207,5 @@ remotableDecl [ [d|
 
   |] ]
 
-ssplRules :: RuleM LoopState ()
+ssplRules :: Definitions LoopState ()
 ssplRules = ssplRulesF sspl

@@ -14,10 +14,7 @@ module HA.RecoveryCoordinator.CEP where
 import Prelude hiding ((.), id)
 import Control.Category
 import Control.Monad
-import Data.ByteString.Lazy (ByteString, fromStrict)
-import Data.ByteString.Lazy.Char8 (pack)
 import Data.Foldable (for_)
-import Data.Monoid ((<>))
 
 import Control.Distributed.Process
 import Network.CEP
@@ -30,7 +27,6 @@ import           HA.Resources
 import           HA.Resources.Mero
 import           HA.Service
 import qualified HA.Services.EQTracker as EQT
-import           HA.Services.DecisionLog (EntriesLogged(..))
 #ifdef USE_MERO
 import           HA.Services.Mero (meroRules)
 #endif
@@ -42,18 +38,21 @@ import           HA.Services.Monitor ( SaveProcesses(..)
                                      )
 import           HA.Services.SSPL (ssplRules)
 
-rcRules :: IgnitionArguments -> ProcessId -> RuleM LoopState ()
+rcRules :: IgnitionArguments -> ProcessId -> Definitions LoopState ()
 rcRules argv eq = do
 
     -- Reconfigure
-    define "reconfigure" id $ \msg -> do
+    define "reconfigure" $ \msg -> do
+      ph1 <- phase "state1" $ do
         ReconfigureCmd n svc <- decodeMsg msg
         bounceServiceTo Intended n svc
+      start ph1
 
     -- Node Up
-    defineHAEvent "node-up" id $ \(HAEvent _ (NodeUp h pid) _) -> do
-        let nid               = processNodeId pid
-            node              = Node nid
+    defineHAEvent "node-up" $ \(HAEvent eid (NodeUp h pid) _) -> do
+      ph1 <- phase "state1" $ do
+        let nid  = processNodeId pid
+            node = Node nid
 
         ack pid
         known <- knownResource node
@@ -70,9 +69,12 @@ rcRules argv eq = do
           registerService regularMonitor
           _ <- startService nid regularMonitor emptyMonitorConf
           return ()
+        sendMsg eq eid
+      start ph1
 
     -- Service Start
-    defineHAEvent "service-start" id $ \evt@(HAEvent _ msg _) -> do
+    defineHAEvent "service-start" $ \evt@(HAEvent eid msg _) -> do
+      ph1 <- phase "state1" $ do
         ServiceStartRequest n@(Node nid) svc conf <- decodeMsg msg
         known   <- knownResource n
         running <- isServiceRunning n svc
@@ -85,14 +87,18 @@ rcRules argv eq = do
             else do
             pid <- getSelfProcessId
             sendMsg pid evt
+        sendMsg eq eid
+      start ph1
 
     -- Service Started
-    defineHAEvent "service-started" id $ \(HAEvent _ msg _) -> do
+    defineHAEvent "service-started" $ \evt@(HAEvent eid msg _) -> do
+      ph1 <- phase "state1" $ do
         ServiceStarted n svc cfg sp@(ServiceProcess pid) <-
           decodeMsg msg
         when (serviceName svc == serviceName EQT.eqTracker) $ do
           True <- liftProcess $ updateEQNodes pid (stationNodes argv)
           return ()
+        publish evt
 
         res <- lookupRunningService n svc
         liftProcess $ sayRC $
@@ -111,87 +117,95 @@ rcRules argv eq = do
         when (serviceName svc == monitorServiceName) $
           sendToMasterMonitor msg
 
-        cepLog "started" ("Service " ++ svcStr ++ " started")
+        phaseLog "started" ("Service " ++ svcStr ++ " started")
+        sendMsg eq eid
+      start ph1
 
     -- Service could not start
-    defineHAEvent "service-could-not-start" id $ \(HAEvent _ msg _) -> do
+    defineHAEvent "service-could-not-start" $ \(HAEvent eid msg _) -> do
+      ph1 <- phase "state1" $ do
         ServiceCouldNotStart (Node n) svc cfg <- decodeMsg msg
         startService n svc cfg
+        sendMsg eq eid
+      start ph1
 
     -- Service Failed
-    defineHAEvent "service-failed" id $ \(HAEvent _ msg _) -> do
+    defineHAEvent "service-failed" $ \(HAEvent eid msg _) -> do
+      ph1 <- phase "state1" $ do
         ServiceFailed n svc pid <- decodeMsg msg
         res                     <- lookupRunningService n svc
         case res of
           Just (ServiceProcess spid) | spid == pid -> do
             bounceServiceTo Current n svc
           _ -> return ()
+        sendMsg eq eid
+      start ph1
 
     -- EpochRequest
-    defineHAEvent "epoch-request" id $ \(HAEvent _ (EpochRequest pid) _) -> do
+    defineHAEvent "epoch-request" $ \(HAEvent eid (EpochRequest pid) _) -> do
+      ph1 <- phase "state1" $ do
         resp <- prepareEpochResponse
         sendMsg pid resp
+        sendMsg eq eid
+      start ph1
 
     -- Configuration Update
-    defineHAEvent "configuration-update" id $ \(HAEvent _ msg _) -> do
+    defineHAEvent "configuration-update" $ \(HAEvent eid msg _) -> do
+      ph1 <- phase "state1" $ do
         ConfigurationUpdate epoch opts svc nodeFilter <- decodeMsg msg
 
         epid <- getEpochId
         when (epoch == epid) $
-            reconfigureService opts svc nodeFilter
+          reconfigureService opts svc nodeFilter
+        sendMsg eq eid
+      start ph1
 
-    defineHAEvent "mm-pid" id $
-      \(HAEvent _ (GetMultimapProcessId sender) _) -> do
-         mmid <- getMultimapProcessId
-         sendMsg sender mmid
+    defineHAEvent "mm-pid" $
+      \(HAEvent eid (GetMultimapProcessId sender) _) -> do
+         ph1 <- phase "state1" $ do
+           mmid <- getMultimapProcessId
+           sendMsg sender mmid
+           sendMsg eq eid
+         start ph1
 
-    defineHAEvent "dummy-event" id $ \(HAEvent _ DummyEvent _) -> do
+    defineHAEvent "dummy-event" $ \(HAEvent eid DummyEvent _) -> do
+      ph1 <- phase "state1" $ do
         i <- getNoisyPingCount
         liftProcess $ sayRC $ "Noisy ping count: " ++ show i
+        sendMsg eq eid
+      start ph1
 
-    defineHAEvent "stop-request" id $ \(HAEvent _ msg _) -> do
+    defineHAEvent "stop-request" $ \(HAEvent eid msg _) -> do
+      ph1 <- phase "state1" $ do
         ServiceStopRequest node svc <- decodeMsg msg
         res                         <- lookupRunningService node svc
         for_ res $ \sp ->
           killService sp UserStop
+        sendMsg eq eid
+      start ph1
 
-    defineHAEvent "save-processes" id $
-      \(HAEvent _ (SaveProcesses sp ps) _) ->
-        writeConfiguration sp ps Current
+    defineHAEvent "save-processes" $
+      \(HAEvent eid (SaveProcesses sp ps) _) -> do
+        ph1 <- phase "state1" $ do
+          writeConfiguration sp ps Current
+          sendMsg eq eid
+        start ph1
 
-    defineHAEvent "set-master-monitor" id $
-      \(HAEvent _ (SetMasterMonitor sp) _) ->
-        registerMasterMonitor sp
+    defineHAEvent "set-master-monitor" $
+      \(HAEvent eid (SetMasterMonitor sp) _) -> do
+        ph1 <- phase "state1" $ do
+          registerMasterMonitor sp
+          sendMsg eq eid
+        start ph1
 
-    onEveryHAEvent $ \(HAEvent eid _ _) s -> do
-        usend eq eid
-        return s
-
-    setOnLog sendLogEntries
+    setLogger sendLogs
 
     ssplRules
 #ifdef USE_MERO
     meroRules
 #endif
 
-sendLogEntries :: LogEntries -> LoopState -> Process ()
-sendLogEntries LogEntries{..} ls =
+sendLogs :: Logs -> LoopState -> Process ()
+sendLogs logs ls =
     for_ (lookupDLogServiceProcess ls) $ \(ServiceProcess pid) -> do
-      let el = EntriesLogged
-               { elRuleId  = logEntriesRule
-               , elInputs  = logEntriesInputs
-               , elEntries = dump logEntries
-               }
-      usend pid el
-
-dump :: [Log] -> ByteString
-dump (l:ls) = foldl go (dumpLog l) ls
-  where
-    go b x = b <> ";" <> dumpLog x
-
-    dumpLog (Log ctx v) =
-        "context="     <>
-        fromStrict ctx <>
-        ";log="        <>
-        pack (show v)
-dump _ = ""
+      usend pid logs

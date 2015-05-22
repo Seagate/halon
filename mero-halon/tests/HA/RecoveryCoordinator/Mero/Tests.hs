@@ -80,7 +80,7 @@ import Data.List (isInfixOf)
 
 -- import System.IO
 
-import Network.CEP (Published(..), Sub(..), simpleSubscribe)
+import Network.CEP (Published(..), Sub(..), subscribe)
 
 type TestReplicatedState = (EventQueue, Multimap)
 
@@ -230,7 +230,7 @@ testEQTrimming transport = do
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        simpleSubscribe eq (Sub :: Sub TrimDone)
+        subscribe eq (Sub :: Sub TrimDone)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
         nodeUp ([nid], 2000000)
@@ -564,7 +564,7 @@ testMonitorManagement transport = do
     withTmpDirectory $ tryWithTimeout transport testRemoteTable 15000000 $ do
       (_,rc) <- launchRC
 
-      simpleSubscribe rc (Sub :: Sub (HAEvent ServiceStartedMsg))
+      subscribe rc (Sub :: Sub (HAEvent ServiceStartedMsg))
 
       _ <- serviceStarted monitorServiceName
       say "Node-local monitor has been started"
@@ -584,7 +584,7 @@ testMasterMonitorManagement transport = do
     withTmpDirectory $ tryWithTimeout transport testRemoteTable 15000000 $ do
       (_,rc) <- launchRC
 
-      simpleSubscribe rc (Sub :: Sub (HAEvent ServiceStartedMsg))
+      subscribe rc (Sub :: Sub (HAEvent ServiceStartedMsg))
 
       mpid <- serviceStarted monitorServiceName
       say "Node-local monitor has been started"

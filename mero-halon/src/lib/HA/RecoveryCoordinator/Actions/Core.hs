@@ -9,6 +9,9 @@ module HA.RecoveryCoordinator.Actions.Core
   ( LoopState(..)
   , knownResource
   , registerNode
+  , getLocalGraph
+  , putLocalGraph
+  , modifyLocalGraph
   ) where
 
 import qualified HA.ResourceGraph as G
@@ -22,7 +25,6 @@ import HA.Service (ServiceName)
 
 import Control.Category ((>>>))
 import Control.Distributed.Process (ProcessId)
-import qualified Control.Monad.State.Strict as State
 
 import qualified Data.Map.Strict as Map
 
@@ -36,16 +38,27 @@ data LoopState = LoopState {
 }
 
 -- | Is a given resource existent in the RG?
-knownResource :: G.Resource a => a -> CEP LoopState Bool
-knownResource res = State.gets (G.memberResource res . lsGraph)
+knownResource :: G.Resource a => a -> PhaseM LoopState Bool
+knownResource res = fmap (G.memberResource res) getLocalGraph
 
 -- | Register a new satellite node in the cluster.
-registerNode :: Node -> CEP LoopState ()
-registerNode node = do
-    cepLog "rg" $ "Registering satellite node: " ++ show node
-    rg <- State.gets lsGraph
+registerNode :: Node -> PhaseM LoopState ()
+registerNode node = modifyLocalGraph $ \rg -> do
+    phaseLog "rg" $ "Registering satellite node: " ++ show node
 
-    let rg' = G.newResource node                       >>>
+    let rg' = G.newResource node >>>
               G.connect Cluster Has node $ rg
 
-    State.modify $ \ls -> ls { lsGraph = rg' }
+    return rg'
+
+getLocalGraph :: PhaseM LoopState G.Graph
+getLocalGraph = fmap lsGraph get
+
+putLocalGraph :: G.Graph -> PhaseM LoopState ()
+putLocalGraph rg = modify $ \ls -> ls { lsGraph = rg }
+
+modifyLocalGraph :: (G.Graph -> PhaseM LoopState G.Graph) -> PhaseM LoopState ()
+modifyLocalGraph k = do
+    rg  <- getLocalGraph
+    rg' <- k rg
+    putLocalGraph rg'
