@@ -6,6 +6,7 @@
 
 module HA.EventQueue.Producer
   ( promulgateEQ
+  , promulgateEQPref
   , promulgate
   , expiate
   ) where
@@ -19,12 +20,14 @@ import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types
 import qualified HA.Services.EQTracker as EQT
 
+import Control.Concurrent (threadDelay)
 import Control.Distributed.Process
   ( Process
   , ProcessId
   , NodeId
   , die
   , expectTimeout
+  , liftIO
   , nsend
   , getSelfPid
   , say
@@ -34,9 +37,13 @@ import Control.Distributed.Process.Serializable (Serializable)
 -- Qualify all imports of any distributed-process "internals".
 import qualified Control.Distributed.Process.Internal.Types as I
     (createMessage, messageToPayload)
+import Control.Monad (when)
 
 import Data.ByteString (ByteString)
 import Data.List ((\\))
+
+data Result = Success | Failure
+  deriving Eq
 
 softTimeout :: Int
 softTimeout = 5000000
@@ -56,7 +63,11 @@ promulgateEQ :: Serializable a
                                   --   be used to verify receipt.
 promulgateEQ eqnids x = spawnLocal $ do
     self <- getSelfPid
-    promulgateHAEvent eqnids $ buildHAEvent x (EventId self 1)
+    go $ buildHAEvent x (EventId self 1)
+  where
+    go evt = do
+      res <- promulgateHAEvent eqnids evt
+      when (res == Failure) $ go evt
 
 -- | Like 'promulgateEQ', but express a preference for certain EQ nodes.
 promulgateEQPref :: Serializable a
@@ -66,7 +77,33 @@ promulgateEQPref :: Serializable a
                  -> Process ProcessId
 promulgateEQPref peqnids eqnids x = spawnLocal $ do
     self <- getSelfPid
-    promulgateHAEventPref peqnids eqnids $ buildHAEvent x (EventId self 1)
+    go $ buildHAEvent x (EventId self 1)
+  where
+    go evt = do
+      res <- promulgateHAEventPref peqnids eqnids evt
+      when (res == Failure) $ go evt
+
+-- | Add an event to the event queue, and don't die yet. This uses the local
+--   event tracker to identify the list of EQ nodes.
+-- FIXME: Use a well-defined timeout.
+promulgate :: Serializable a => a -> Process ProcessId
+promulgate x = spawnLocal $ getSelfPid
+                          >>= \self -> go $ buildHAEvent x (EventId self 1)
+  where
+    go evt = do
+      self <- getSelfPid
+      nsend EQT.name $ EQT.ReplicaRequest self
+      rl <- expectTimeout softTimeout
+      case rl of
+        Just (EQT.ReplicaReply (EQT.ReplicaLocation _ [])) ->
+          liftIO (threadDelay 1000000) >> go evt
+        Just (EQT.ReplicaReply (EQT.ReplicaLocation [] rest)) -> do
+          res <- promulgateHAEvent rest evt
+          when (res == Failure) $ go evt
+        Just (EQT.ReplicaReply (EQT.ReplicaLocation pref rest)) -> do
+          res <- promulgateHAEventPref pref rest evt
+          when (res == Failure) $ go evt
+        Nothing -> go evt
 
 buildHAEvent :: Serializable a
              => a
@@ -85,15 +122,17 @@ buildHAEvent x ident = HAEvent
 promulgateHAEvent :: Serializable a
                   => [NodeId] -- ^ EQ nodes.
                   -> HAEvent a
-                  -> Process ()
+                  -> Process Result
 promulgateHAEvent eqnids evt = do
   say $ "Sending to " ++ (show eqnids)
   result <- callLocal $
     ncallRemoteAnyTimeout
       promulgateTimeout eqnids eventQueueLabel evt
   case result :: Maybe (NodeId, NodeId) of
-    Nothing -> promulgateHAEvent eqnids evt
-    Just (rnid, pnid) -> nsend EQT.name $ EQT.PreferReplicas rnid pnid
+    Nothing -> return Failure
+    Just (rnid, pnid) -> do
+      nsend EQT.name $ EQT.PreferReplicas rnid pnid
+      return Success
 
 -- | Promulgate an HAEvent directly to EQ nodes, specifying a preference for
 --   certain nodes first. We also try to inform the local EQ tracker about
@@ -102,7 +141,7 @@ promulgateHAEventPref :: Serializable a
                       => [NodeId] -- ^ Preferred EQ nodes.
                       -> [NodeId] -- ^ All EQ nodes.
                       -> HAEvent a
-                      -> Process ()
+                      -> Process Result
 promulgateHAEventPref peqnids eqnids evt = do
   say $ "Sending to " ++ (show peqnids) ++ " and then to " ++ show (eqnids \\ peqnids)
   result <- callLocal $
@@ -111,32 +150,10 @@ promulgateHAEventPref peqnids eqnids evt = do
       peqnids (eqnids \\ peqnids)
       eventQueueLabel evt
   case result :: Maybe (NodeId, NodeId) of
-    Nothing -> promulgateHAEventPref peqnids eqnids evt
-    Just (rnid, pnid) -> nsend EQT.name $ EQT.PreferReplicas rnid pnid
-
--- | Add an event to the event queue, and don't die yet. This uses the local
---   event tracker to identify the list of EQ nodes.
--- FIXME: Use a well-defined timeout.
-promulgate :: Serializable a => a -> Process ProcessId
-promulgate x = do
-    self <- getSelfPid
-    nsend EQT.name $ EQT.ReplicaRequest self
-    rl <- expectTimeout softTimeout
-    case rl of
-      Just (EQT.ReplicaReply (EQT.ReplicaLocation pref rest)) -> do
-        pid <- case pref of
-          [] -> promulgateEQ rest x
-          _ -> promulgateEQPref pref rest x
-        return pid
-      Nothing -> promulgate x
-{-
-The issue that this loop addresses in particular is if the node agent
-is contactable, but there are no accessible EQs, either because the
-node agent hasn't been initialized by the RC yet, or because the known
-EQs are temporarily down. In that case, the right thing to do
-is not to throw out the message, but to keep trying until an EQ becomes
-available.
--}
+    Nothing -> return Failure
+    Just (rnid, pnid) -> do
+      nsend EQT.name $ EQT.PreferReplicas rnid pnid
+      return Success
 
 -- | Add a new event to the event queue and then die.
 expiate :: Serializable a => a -> Process ()
