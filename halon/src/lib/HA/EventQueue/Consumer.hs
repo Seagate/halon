@@ -77,3 +77,4 @@ defineHAEvent :: forall a s. Serializable a
 defineHAEvent n k = defineMatch n (haEventPredicate (Proxy :: Proxy a)) go k
   where
     go = return . decodeEvent
+

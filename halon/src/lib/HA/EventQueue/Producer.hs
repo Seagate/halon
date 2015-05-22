@@ -8,6 +8,7 @@ module HA.EventQueue.Producer
   ( promulgateEQ
   , promulgateEQPref
   , promulgate
+  , promulgateEvent
   , expiate
   ) where
 
@@ -41,6 +42,7 @@ import Control.Monad (when)
 
 import Data.ByteString (ByteString)
 import Data.List ((\\))
+import Data.UUID.V4 (nextRandom)
 
 data Result = Success | Failure
   deriving Eq
@@ -62,8 +64,7 @@ promulgateEQ :: Serializable a
              -> Process ProcessId -- ^ PID of the spawned process. This can
                                   --   be used to verify receipt.
 promulgateEQ eqnids x = spawnLocal $ do
-    self <- getSelfPid
-    go $ buildHAEvent x (EventId self 1)
+    buildHAEvent x >>= go
   where
     go evt = do
       res <- promulgateHAEvent eqnids evt
@@ -76,8 +77,7 @@ promulgateEQPref :: Serializable a
                  -> a -- ^ Event to send.
                  -> Process ProcessId
 promulgateEQPref peqnids eqnids x = spawnLocal $ do
-    self <- getSelfPid
-    go $ buildHAEvent x (EventId self 1)
+    buildHAEvent x >>= go
   where
     go evt = do
       res <- promulgateHAEventPref peqnids eqnids evt
@@ -87,29 +87,34 @@ promulgateEQPref peqnids eqnids x = spawnLocal $ do
 --   event tracker to identify the list of EQ nodes.
 -- FIXME: Use a well-defined timeout.
 promulgate :: Serializable a => a -> Process ProcessId
-promulgate x = spawnLocal $ getSelfPid
-                          >>= \self -> go $ buildHAEvent x (EventId self 1)
+promulgate x = buildHAEvent x >>= promulgateEvent
+
+-- | Add an event to the event queue. This form takes the HAEvent directly.
+promulgateEvent :: Serializable a
+                => HAEvent a
+                -> Process ProcessId
+promulgateEvent evt =
+    spawnLocal go
   where
-    go evt = do
+    go = do
       self <- getSelfPid
       nsend EQT.name $ EQT.ReplicaRequest self
       rl <- expectTimeout softTimeout
       case rl of
         Just (EQT.ReplicaReply (EQT.ReplicaLocation _ [])) ->
-          liftIO (threadDelay 1000000) >> go evt
+          liftIO (threadDelay 1000000) >> go
         Just (EQT.ReplicaReply (EQT.ReplicaLocation [] rest)) -> do
           res <- promulgateHAEvent rest evt
-          when (res == Failure) $ go evt
+          when (res == Failure) go
         Just (EQT.ReplicaReply (EQT.ReplicaLocation pref rest)) -> do
           res <- promulgateHAEventPref pref rest evt
-          when (res == Failure) $ go evt
-        Nothing -> go evt
+          when (res == Failure) go
+        Nothing -> go
 
 buildHAEvent :: Serializable a
              => a
-             -> EventId
-             -> HAEvent [ByteString]
-buildHAEvent x ident = HAEvent
+             -> Process (HAEvent [ByteString])
+buildHAEvent x = liftIO nextRandom >>= \ident -> return $ HAEvent
     { eventId = ident
     , eventPayload = payload :: [ByteString]
     , eventHops = []
