@@ -28,7 +28,7 @@ import Control.Exception ( bracket, throwIO, SomeException )
 import Control.Monad ( when, forM_, replicateM, foldM_, void )
 import Data.Constraint (Dict(..))
 import qualified Data.Map as Map
-import Data.Typeable (Typeable)
+import Data.Typeable (Typeable, Proxy(..))
 import Data.IORef
 import Data.List ( isPrefixOf )
 import Data.Ratio ((%))
@@ -57,11 +57,17 @@ snapshotServer :: Process ()
 snapshotServer = void $
     serializableSnapshotServer snapshotServerLbl
                                (filepath "replica-snapshots")
-                               state0
+                               (Proxy :: Proxy State)
+
+testLogId :: LogId
+testLogId = toLogId "test-log"
+
+testPersistDirectory :: NodeId -> FilePath
+testPersistDirectory = filepath "replicas"
 
 testConfig :: Log.Config
 testConfig = Log.Config
-    { logName           = "test-log"
+    { logId             = testLogId
     , consensusProtocol = \dict -> BasicPaxos.protocol dict 3000000
                  (\_ -> do
                     mref <- newIORef Map.empty
@@ -78,7 +84,7 @@ testConfig = Log.Config
                       , storeClose = return ()
                       }
                  )
-    , persistDirectory  = filepath "replicas"
+    , persistDirectory  = testPersistDirectory
     , leaseTimeout      = 3000000
     , leaseRenewTimeout = 1000000
     , driftSafetyFactor = 11 % 10
@@ -96,7 +102,9 @@ killOnError pid p = catch p $ \e -> liftIO (print e) >>
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
 
-remotable [ 'dictState, 'testLog, 'ssdictState, 'testConfig, 'snapshotServer ]
+remotable [ 'dictState, 'testLog, 'ssdictState, 'testConfig, 'snapshotServer
+          , 'testPersistDirectory
+          ]
 
 remotableDecl [ [d|
 
@@ -127,7 +135,6 @@ remoteTables =
   Control.Distributed.Process.Scheduler.__remoteTable $
   BasicPaxos.__remoteTable $
   Log.__remoteTable $
-  Log.__remoteTableDecl $
   State.__remoteTable $
   Control.Distributed.Process.Node.initRemoteTable
 
@@ -165,12 +172,15 @@ run transport s = brackets 2
     let tries = length nodes
     forM_ nodes $ \n -> spawn (localNodeId n)
                               $(mkStaticClosure 'snapshotServer)
-    h <- Log.new $(mkStatic 'State.commandEqDict)
-                 ($(mkStatic 'State.commandSerializableDict)
-                    `staticApply` sdictState)
-                 (staticClosure $(mkStatic 'testConfig))
-                 (staticClosure $(mkStatic 'testLog))
-                 (map localNodeId nodes)
+    Log.new $(mkStatic 'State.commandEqDict)
+            ($(mkStatic 'State.commandSerializableDict)
+               `staticApply` sdictState)
+            (staticClosure $(mkStatic 'testConfig))
+            (staticClosure $(mkStatic 'testLog))
+            (map localNodeId nodes)
+    h <- Log.spawnReplicas testLogId
+                           $(mkStaticClosure 'testPersistDirectory)
+                           (map localNodeId nodes)
     rHandle <- remoteHandle h
     self <- getSelfPid
     let xs = [1..tries]

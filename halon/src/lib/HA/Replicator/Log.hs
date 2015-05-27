@@ -72,14 +72,13 @@ import Control.Monad ( when, forM, void, forM_ )
 import Data.Binary ( decode, encode, Binary )
 import Data.ByteString.Lazy ( ByteString )
 import Data.Ratio ( (%) )
-import Data.Typeable ( Typeable )
+import Data.Typeable ( Typeable, Proxy(..) )
 
 -- | Implementation of RGroups on top of "Control.Distributed.State".
 data RLogGroup st where
   RLogGroup :: (Typeable q, Typeable st)
             => Static (SerializableDict st)
             -> Static (SerializableDict q)
-            -> q
             -> Log.Handle (Command q)
             -> CommandPort q
             -> Static (RStateView q st)
@@ -119,25 +118,31 @@ rgroupLog SerializableDict bs =
 snapshotServerLbl :: String
 snapshotServerLbl = "snapshot-server"
 
-snapshotServer :: forall st . SerializableDict st -> ByteString -> Process ()
-snapshotServer SerializableDict bs = void $ serializableSnapshotServer
+snapshotServer :: forall st . SerializableDict st -> Process ()
+snapshotServer SerializableDict = void $ serializableSnapshotServer
                     snapshotServerLbl
                     (filepath $ storageDir </> "replica-snapshots")
-                    (decode bs :: st)
+                    (Proxy :: Proxy st)
 
 storageDir :: FilePath
 storageDir = "halon-persistence"
 
+halonPersistDirectory :: NodeId -> FilePath
+halonPersistDirectory = filepath $ storageDir </> "replicas"
+
+halonLogId :: Log.LogId
+halonLogId = Log.toLogId "halon-log"
+
 rgroupConfig :: (Int, Int) -> Log.Config
 rgroupConfig (snapshotThreshold, snapshotTimeout) = Log.Config
-    { logName           = "halon-log"
+    { logId             = halonLogId
     , consensusProtocol =
           \dict -> BasicPaxos.protocol dict 3000000
                  (\n -> openPersistentStore
                             (filepath (storageDir </> "acceptors") n) >>=
                         acceptorStore
                  )
-    , persistDirectory  = filepath $ storageDir </> "replicas"
+    , persistDirectory  = halonPersistDirectory
     , leaseTimeout      = 3000000
     , leaseRenewTimeout = 1000000
     , driftSafetyFactor = 11 % 10
@@ -156,17 +161,19 @@ remotable [ 'composeSV
           , 'rgroupLog
           , 'rgroupConfig
           , 'snapshotServer
+          , 'halonPersistDirectory
           ]
 
 fromPort :: Typeable st
          => Static (SerializableDict st)
-         -> st
          -> Log.Handle (Command st)
          -> CommandPort st
          -> Process (RLogGroup st)
-fromPort sdictState st0 h port = do
-    return $ RLogGroup sdictState sdictState st0 h port
+fromPort sdictState h port = do
+    return $ RLogGroup sdictState sdictState h port
                     ($(mkStatic 'idRStateView) `staticApply` sdictState)
+  where
+    _ = $(functionSDict 'halonPersistDirectory) -- avoids unused warning
 
 remotableDecl [ [d|
 
@@ -174,9 +181,9 @@ remotableDecl [ [d|
                  -> SerializableDict st
                  -> Process (RLogGroup st)
  createRLogGroup bs SerializableDict = case decode bs of
-   (sdictState, rHandle, st0) -> do
+   (sdictState, rHandle) -> do
       h <- Log.clone rHandle
-      newPort h >>= fromPort sdictState st0 h
+      newPort h >>= fromPort sdictState h
 
   |] ]
 
@@ -196,7 +203,7 @@ instance RGroup RLogGroup where
   newtype Replica RLogGroup = Replica NodeId
     deriving Binary
 
-  newRGroup sdictState snapshotThreshold snapshotTimeout nodes st = do
+  newRGroup sdictState snapshotThreshold snapshotTimeout nodes (st :: s) = do
     when (null nodes) $ do
       say "RLogGroup: newRGroup was passed an empty list of nodes."
       die "RLogGroup: newRGroup was passed an empty list of nodes."
@@ -204,39 +211,53 @@ instance RGroup RLogGroup where
                      $ staticApply $(mkStatic 'mstateTypeableDict) sdictState
         est = encode st
     forM_ nodes $ \n -> spawn n $
-      closure ($(mkStatic 'snapshotServer) `staticApply` sdictState) est
-    h <- Log.new
+      staticClosure ($(mkStatic 'snapshotServer) `staticApply` sdictState)
+    Log.new
          $(mkStatic 'commandEqDict)
          cmSDictState
          ($(mkClosure 'rgroupConfig) (snapshotThreshold, snapshotTimeout))
          (closure ($(mkStatic 'rgroupLog) `staticApply` sdictState) est)
          nodes
-    rHandle <- Log.remoteHandle h
+    h <- Log.spawnReplicas halonLogId
+                           $(mkStaticClosure 'halonPersistDirectory)
+                           nodes
+    rHandle <- Log.remoteHandle (h :: Log.Handle (Command s))
     return $ (closure $(mkStatic 'createRLogGroup)
-                                 $ encode (sdictState, rHandle, st))
+                                 $ encode (sdictState, rHandle))
+                        `closureApply` staticClosure sdictState
+
+  spawnReplica (sdictState :: Static (SerializableDict s)) nid = do
+    _ <- spawn nid $
+           staticClosure ($(mkStatic 'snapshotServer) `staticApply` sdictState)
+    h <- Log.spawnReplicas halonLogId
+                           $(mkStaticClosure 'halonPersistDirectory)
+                           [nid]
+    rHandle <- Log.remoteHandle (h :: Log.Handle (Command s))
+    return $ (closure $(mkStatic 'createRLogGroup)
+                                 $ encode (sdictState, rHandle))
                         `closureApply` staticClosure sdictState
 
   stopRGroup _ = return ()
 
-  setRGroupMembers (RLogGroup _ sdq q0 h _ _) ns inGroup = do
+  setRGroupMembers (RLogGroup _ sdq h _ _) ns inGroup = do
     Log.reconfigure h $ $(mkClosure 'removeNodes) () `closureApply` inGroup
     SerializableDict <- unStatic sdq
     forM ns $ \nid -> do
-      _ <- spawn nid $ closure ($(mkStatic 'snapshotServer) `staticApply` sdq)
-                     $ encode q0
+      _ <- spawn nid $ staticClosure
+             ($(mkStatic 'snapshotServer) `staticApply` sdq)
       Log.addReplica h nid
       return $ Replica nid
 
-  updateRGroup (RLogGroup _ _ _ h _ _) (Replica ρ) = Log.updateHandle h ρ
+  updateRGroup (RLogGroup _ _ h _ _) (Replica ρ) = Log.updateHandle h ρ
 
-  updateStateWith (RLogGroup _ _ _ _ port rp) cUpd =
+  updateStateWith (RLogGroup _ _ _ port rp) cUpd =
     State.update port $ updateClosure rp cUpd
 
-  getState (RLogGroup sdict _ _ _ port rv) =
+  getState (RLogGroup sdict _ _ port rv) =
     select sdict port $ staticClosure $ queryStatic rv
 
-  viewRState rv (RLogGroup _ sdq q0 h port rv') =
-      RLogGroup ($(mkStatic 'rvDict) `staticApply` rv) sdq q0 h port $
+  viewRState rv (RLogGroup _ sdq h port rv') =
+      RLogGroup ($(mkStatic 'rvDict) `staticApply` rv) sdq h port $
                 $(mkStatic 'composeSV) `staticApply` rv' `staticApply` rv
 
 #if ! MIN_VERSION_base(4,7,0)

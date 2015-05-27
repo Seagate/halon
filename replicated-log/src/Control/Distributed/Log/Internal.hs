@@ -28,7 +28,10 @@ module Control.Distributed.Log.Internal
     , Hint(..)
     , Log(..)
     , Config(..)
+    , LogId
+    , toLogId
     , new
+    , spawnReplicas
     , append
     , status
     , reconfigure
@@ -37,8 +40,6 @@ module Control.Distributed.Log.Internal
     , removeReplica
       -- * Remote Tables
     , Control.Distributed.Log.Internal.__remoteTable
-    , Control.Distributed.Log.Internal.__remoteTableDecl
-    , ambassador__tdict -- XXX unused, exported to guard against warning.
       -- * Other
     , callLocal
     ) where
@@ -78,12 +79,13 @@ import Control.Arrow (second)
 import Control.Concurrent hiding (newChan)
 import Control.Exception (SomeException, throwIO)
 import Control.Monad
+import Data.Binary (Binary, encode, decode)
+import qualified Data.ByteString.Lazy as BSL (ByteString)
 import Data.Constraint (Dict(..))
 import Data.Int (Int64)
 import Data.List (intersect, partition, sortBy)
 import qualified Data.Foldable as Foldable
 import Data.Function (on)
-import Data.Binary (Binary, encode, decode)
 import Data.IORef
 import Data.Maybe
 #if ! MIN_VERSION_base(4,8,0)
@@ -96,6 +98,8 @@ import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Prelude hiding (init, log)
 import System.Clock
+import System.FilePath ((</>))
+
 
 deriving instance Typeable Eq
 
@@ -163,6 +167,14 @@ instance Monoid Hint where
 
 instance Binary Hint
 
+-- | The identity of a replica group.
+newtype LogId = LogId String
+  deriving (Typeable, Binary, Show, Eq)
+
+-- | Produces a LogId from a 'String'.
+toLogId :: String -> LogId
+toLogId = LogId
+
 data Log a = forall s ref. Serializable ref => Log
     { -- | Yields the initial value of the log.
       logInitialize :: Process s
@@ -199,8 +211,8 @@ data Log a = forall s ref. Serializable ref => Log
     } deriving (Typeable)
 
 data Config = Config
-    { -- The name of this log
-      logName :: String
+    { -- The identity of this log
+      logId :: LogId
 
       -- | The consensus protocol to use.
     , consensusProtocol :: forall a. SerializableDict a -> Protocol NodeId a
@@ -297,20 +309,20 @@ data TimerMessage = LeaseRenewalTime
 
 instance Binary TimerMessage
 
-replicaLabel :: String -> String
-replicaLabel = (++ ".replica")
+replicaLabel :: LogId -> String
+replicaLabel (LogId kstr) = kstr ++ ".replica"
 
-acceptorLabel :: String -> String
-acceptorLabel = (++ ".acceptor")
+acceptorLabel :: LogId -> String
+acceptorLabel (LogId kstr) = kstr ++ ".acceptor"
 
-sendReplica :: Serializable a => String -> NodeId -> a -> Process ()
+sendReplica :: Serializable a => LogId -> NodeId -> a -> Process ()
 sendReplica name nid = nsendRemote nid $ replicaLabel name
 
-sendAcceptor :: Serializable a => String -> NodeId -> a -> Process ()
+sendAcceptor :: Serializable a => LogId -> NodeId -> a -> Process ()
 sendAcceptor name nid = nsendRemote nid $ acceptorLabel name
 
 sendReplicaAsync :: Serializable a
-                 => ProcessPool NodeId -> String -> NodeId -> a -> Process ()
+                 => ProcessPool NodeId -> LogId -> NodeId -> a -> Process ()
 sendReplicaAsync pool name nid a =
     submitTask pool nid (sendReplica name nid a)
       >>= maybe (return ()) spawnWorker
@@ -320,7 +332,7 @@ sendReplicaAsync pool name nid a =
       void $ spawnLocal $ link self >> linkNode nid >> worker
 
 queryMissingFrom :: ProcessPool NodeId
-                 -> String
+                 -> LogId
                  -> Int      -- ^ next decree to execute
                  -> [NodeId] -- ^ replicas to query
                  -> Map.Map Int (Value a) -- ^ log
@@ -370,6 +382,12 @@ trimTheLog (PersistenceHandle {..}) w0 = do
 -- | Small view function for extracting a specialized 'Protocol'. Used in 'replica'.
 unpackConfigProtocol :: Serializable a => Config -> (Config, Protocol NodeId (Value a))
 unpackConfigProtocol Config{..} = (Config{..}, consensusProtocol SerializableDict)
+
+-- | Encloses an action with opening and close operations on a persistent store.
+withPersistentStore :: FilePath -> (PersistentStore -> Process a) -> Process a
+withPersistentStore fp =
+   bracket (liftIO $ openPersistentStore fp)
+           (liftIO . P.close)
 
 -- | The internal state of a replica.
 data ReplicaState s ref a = Serializable ref => ReplicaState
@@ -508,7 +526,6 @@ replica :: forall a. Dict (Eq a)
         -> TimeSpec
         -> DecreeId
         -> DecreeId
-        -> LegislatureId
         -> [NodeId]
         -> Process ()
 replica Dict
@@ -518,13 +535,17 @@ replica Dict
         leaseStart0
         decree
         legD0
-        epoch0
         replicas0 = do
 
    self <- getSelfPid
    here <- getSelfNode
-   bracket (liftIO $ openPersistentStore (persistDirectory here))
-           (liftIO . P.close) $ \persistentStore -> do
+   -- 'withLogIdLock' makes sure that any running operation on the local state
+   -- completes before we try to open it. By now we have registered the replica
+   -- label, so any subsequent operations on the local state won't interfere
+   -- when we release the log id lock again.
+   withLogIdLock logId $ return ()
+   path <- localLogPath logId persistDirectory
+   withPersistentStore path $ \persistentStore -> do
     logMap <- liftIO $ P.getMap persistentStore $ fromString "logMap"
     membershipMap <- liftIO $ P.getMap persistentStore
                             $ fromString "membershipMap"
@@ -548,9 +569,9 @@ replica Dict
     -- and a membership list comming from disk.
     --
     -- We adopt the membership list with the highest legislature.
-    let replicas  = if legD0 < legD' then replicas' else replicas0
-        epoch     = if legD0 < legD' then decreeLegislatureId legD' else epoch0
-        legD      = max legD0 legD'
+    let replicas = if legD0 < legD' then replicas' else replicas0
+        legD     = max legD0 legD'
+        epoch    = decreeLegislatureId legD
 
     say $ "New replica started in " ++ show (decreeLegislatureId legD)
 
@@ -568,7 +589,7 @@ replica Dict
         others = filter (/= here) replicas
 
     sendPool <- newProcessPool
-    queryMissingFrom sendPool logName (decreeNumber w0) others $
+    queryMissingFrom sendPool logId (decreeNumber w0) others $
         Map.insert (decreeNumber d) undefined log
 
     (timerSP, timerRP) <- newChan
@@ -692,7 +713,7 @@ replica Dict
             pid <- spawnLocal $ do
                      link self
                      result <- runPropose'
-                                 (prl_propose (sendAcceptor logName) αs d v) s
+                                 (prl_propose (sendAcceptor logId) αs d v) s
                      liftIO $ putMVar mv result
                      usend self ()
             let -- After this call the mailbox is guaranteed to be free of @()@
@@ -817,7 +838,7 @@ replica Dict
                   -- Advertise our configuration to other replicas if we are
                   -- getting old decrees.
                   forM_ others $ \ρ ->
-                    sendReplicaAsync sendPool logName ρ $
+                    sendReplicaAsync sendPool logId ρ $
                       Max self legD d epoch ρs
                   go st
 
@@ -847,7 +868,7 @@ replica Dict
                         -- latest membership can still be recovered from disk.
                         liftIO $ trimTheLog ph (decreeNumber w0)
                         sref' <- stLogDump w' s'
-                        prl_releaseDecreesBelow (sendAcceptor logName) here w0
+                        prl_releaseDecreesBelow (sendAcceptor logId) here w0
                         return (w', Just sref')
                       else
                         return (w0, msref)
@@ -971,7 +992,7 @@ replica Dict
                   mLeader <- liftIO getLeader
                   (s', cd') <- case mLeader of
                      -- Drop the request and ask for the lease.
-                     Nothing -> do
+                     Nothing | elem here ρs -> do
                        leaseRequest <-
                          mkLeaseRequest (decreeLegislatureId d) [] ρs
                        usend ppid (cd, leaseRequest)
@@ -979,17 +1000,8 @@ replica Dict
                        usend bpid ()
                        return (s, succ cd)
 
-                     -- Drop the request.
-                     Just leader | here /= leader -> do
-                       -- Notify the batcher.
-                       usend bpid ()
-                       -- Notify the ambassadors.
-                       forM_ (map batcherMsgAmbassador rs) $
-                         flip usend (epoch, ρs)
-                       return (s, cd)
-
                      -- I'm the leader, so handle the request.
-                     _ -> do
+                     Just leader | here == leader -> do
                        let values (Values xs) = xs
                            values _           = []
                        if all
@@ -1045,6 +1057,16 @@ replica Dict
                                    }
                                )
                              return (s, succ cd)
+
+                     -- Drop the request.
+                     _ -> do
+                       -- Notify the batcher.
+                       usend bpid ()
+                       -- Notify the ambassadors.
+                       forM_ (map batcherMsgAmbassador rs) $
+                         flip usend (epoch, ρs)
+                       return (s, cd)
+
                   go st{ stateCurrentDecree = cd', stateLogState = s' }
 
               -- Message from the proposer process
@@ -1061,7 +1083,7 @@ replica Dict
                       locale = if v == vi then Local κs' else Remote
                   usend self $ Decree locale di vi
                   forM_ others $ \ρ -> do
-                    sendReplicaAsync sendPool logName ρ $ Decree Remote di vi
+                    sendReplicaAsync sendPool logId ρ $ Decree Remote di vi
 
                   when (v /= vi && isNothing rLease) $
                     -- Send rejection ack.
@@ -1149,7 +1171,7 @@ replica Dict
                     liftIO $ insertInLog ph (decreeNumber legD') $
                       Reconf 0 (decreeLegislatureId legD') ρs'
 
-                  queryMissingFrom sendPool logName (decreeNumber w)
+                  queryMissingFrom sendPool logId (decreeNumber w)
                     [processNodeId ρ] $
                     Map.insert (decreeNumber d') undefined log
 
@@ -1194,7 +1216,10 @@ replica Dict
                     -- Ask for the lease using the proposed membership.
                     -- Thus reconfiguration is possible even when the group has
                     -- no leaders and there is no quorum to elect one.
-                    Nothing -> do
+                    --
+                    -- We only reconfigure if the replica is already part of the
+                    -- group.
+                    Nothing | elem here ρs -> do
                       r <- mkLeaseRequest (decreeLegislatureId d) [π] ρs''
                       usend ppid AbortProposerRequest
                       usend ppid (d, r)
@@ -1206,13 +1231,8 @@ replica Dict
                       if d == cd then go st { stateCurrentDecree = succ cd }
                       else go st
 
-                    -- Drop the request.
-                    Just leader | here /= leader -> do
-                      usend μ (epoch, ρs)
-                      go st
-
                     -- I'm the leader, so handle the request.
-                    _ -> do
+                    Just leader | here == leader -> do
 
                       requestStart <- liftIO $ getTime Monotonic
                       -- Get self to propose reconfiguration...
@@ -1235,6 +1255,11 @@ replica Dict
 
                       go st
 
+                    -- Drop the request.
+                    _ -> do
+                      usend μ (epoch, ρs)
+                      go st
+
             , matchIf (\(_, e, _ :: Helo) -> e < epoch) $
                       \(μ, _, _) -> do
                   usend μ (epoch, ρs)
@@ -1244,6 +1269,18 @@ replica Dict
             , match $ \μ -> do
                   usend μ (epoch, ρs)
                   go st
+
+            , match $ \(ConfigQuery sender) -> do
+                  liftIO (readGroupConfig $ persistentStore ph) >>= usend sender
+                  go st
+
+            , matchIf (\_ -> w == cd) $ \(μ, e, MembershipQuery sender) -> do
+                mLeader <- liftIO getLeader
+                when (mLeader == Just here) $
+                  usend sender (legD, ρs)
+                when (e < epoch || isJust mLeader) $
+                  usend μ (epoch, ρs)
+                go st
 
             -- Clock tick - time to advertize. Can be sent by anyone to any
             -- replica to provoke status info.
@@ -1257,13 +1294,10 @@ replica Dict
                       "\n\tdecree:             " ++ show cd ++
                       "\n\twatermark:          " ++ show w ++
                       "\n\treplicas:           " ++ show ρs
-                  forM_ others $ \ρ -> sendReplicaAsync sendPool logName ρ $
+                  forM_ others $ \ρ -> sendReplicaAsync sendPool logId ρ $
                     Max self d legD epoch ρs
                   go st
             ]
-
-dictValue :: SerializableDict a -> SerializableDict (Value a)
-dictValue SerializableDict = SerializableDict
 
 dictList :: SerializableDict a -> SerializableDict [a]
 dictList SerializableDict = SerializableDict
@@ -1271,41 +1305,188 @@ dictList SerializableDict = SerializableDict
 dictNodeId :: SerializableDict NodeId
 dictNodeId = SerializableDict
 
-dictMax :: SerializableDict Max
-dictMax = SerializableDict
+-- | The configuration data needed to operate a group
+data GroupConfig a = GroupConfig
+       (Static (Dict (Eq a)))
+       (Static (SerializableDict a))
+       (Closure Config)
+       (Closure (Log a))
+   deriving (Typeable, Generic)
 
-dictTimeSpec :: SerializableDict TimeSpec
-dictTimeSpec = SerializableDict
+instance Typeable a => Binary (GroupConfig a)
 
--- | Like 'uncurry', but extract arguments from a 'Max' message rather than
--- a pair.
-unMax :: (DecreeId -> DecreeId -> LegislatureId -> [NodeId] -> a)
-      -> Max
-      -> a
-unMax f (Max _ d legD epoch ρs) = f d legD epoch ρs
+-- | A handle to a log created remotely. A 'RemoteHandle' can't be used to
+-- access a log, but it can be cloned into a local handle.
+data RemoteHandle a =
+    RemoteHandle
+       (Static (Dict (Eq a)))
+       (Static (SerializableDict a))
+       (Closure Config)
+       (Closure (Log a))
+       [NodeId]
+    deriving (Typeable, Generic)
 
-remotable [ 'replica
-          , 'unMax
-          , 'dictValue
-          , 'dictList
+instance Typeable a => Binary (RemoteHandle a)
+
+-- | Yields the path to the persisted state in the local node.
+localLogPath :: LogId -> (NodeId -> FilePath) -> Process FilePath
+localLogPath (LogId idstr) pDirectory = do
+    here <- getSelfNode
+    return $ pDirectory here </> "replicated-log" </> idstr
+
+-- | @withLogIdLock k p@ spawns a process to execute @p@ and waits for it to
+-- complete. The process is granted a lock for log id @k@.
+--
+-- Ensures that there is at most one process holding the lock for log id @k@.
+--
+withLogIdLock :: LogId -> Process a -> Process a
+withLogIdLock (LogId idstr) action = callLocal go
+  where
+    lockLabel = "replicated-log/" ++ idstr ++ ".lock"
+    go = do
+      self <- getSelfPid
+      join $ catch (do register lockLabel self
+                       return action
+                   ) $
+        \(ProcessRegistrationException _) -> do
+          mpid <- whereis lockLabel
+          case mpid of
+            Nothing -> return go
+            Just pid -> bracket (monitor pid) unmonitor $ \r ->
+              receiveWait
+                [ matchIf (\(ProcessMonitorNotification r' _ _) -> r' == r)
+                          (const $ return go)
+                ]
+
+-- | Runs the given action if there is no local replica.
+ifNoLocalReplica :: LogId -> Process () -> Process ()
+ifNoLocalReplica k action = do
+    mpid <- whereis (replicaLabel k)
+    when (isNothing mpid) action
+
+type StoredGroupConfig = ( Static (Some SerializableDict)
+                         , BSL.ByteString
+                         , (DecreeId, [NodeId])
+                         )
+
+-- | Stores the configuration of a group.
+storeConf :: (ProcessId, StoredGroupConfig) -> Process ()
+storeConf (caller, (ssdict2, bs, membership)) = do
+    r <- try $ do
+      Some (SerializableDict :: SerializableDict a) <- unStatic ssdict2
+      let GroupConfig _ _ cConfig _ = decode bs :: GroupConfig a
+      config <- unClosure cConfig
+      let k  = logId config
+      path <- localLogPath k (persistDirectory config)
+
+      withLogIdLock k $ ifNoLocalReplica k $
+        withPersistentStore path $ \ps -> liftIO $ do
+          km <- P.getMap ps $ fromString "config"
+          mk' <- fmap (fmap decode) $ liftIO $ P.lookup km (0 :: Int)
+          case mk' of
+            Just k' | k /= k' -> error $
+              "storeConf: distinct log identities: (stored, looked up) " ++
+              show (k', k)
+            Just _  -> return ()
+            Nothing -> do
+              P.atomically ps
+                [ P.Insert km (0 :: Int) $ encode k
+                , P.Insert km 1          $ encode ssdict2
+                , P.Insert km 2            bs
+                , P.Insert km 3          $ encode membership
+                ]
+    either (usend caller . show) (usend caller) (r :: Either SomeException ())
+
+-- | Reads a GroupConfig from the local persisted state.
+readGroupConfig :: PersistentStore -> IO StoredGroupConfig
+readGroupConfig ps = do
+      km <- P.getMap ps $ fromString "config"
+      (,,) <$> (P.lookup km (1 :: Int) >>=
+                 maybe (error "readGroupConfig: missing static dict")
+                       (return . decode)
+               )
+           <*> (P.lookup km 2 >>=
+                 maybe (error "readGroupConfig: missing config") return
+               )
+
+           <*> (P.lookup km 3 >>=
+                 maybe (error "readGroupConfig: missing membership")
+                       (return . decode)
+               )
+
+-- | Spawns a replica in the local node if it has not been spawned already.
+--
+-- Sends an answer to the given process: either @Right ()@ in case of success
+-- or @Left error_message@.
+--
+spawnLocalReplica :: (LogId, ProcessId, TimeSpec)
+                  -> (NodeId -> FilePath)
+                  -> Process ()
+spawnLocalReplica (k, caller, ts0) pDirectory = do
+    r <- try $ withLogIdLock k $ ifNoLocalReplica k $ do
+           path <- localLogPath k pDirectory
+           withPersistentStore path $ \ps -> do
+             (ssdict2, bs, m) <- liftIO $ readGroupConfig ps
+             Some (SerializableDict :: SerializableDict a) <- unStatic ssdict2
+             spawnR (decode bs :: GroupConfig a) m
+    either (usend caller . ("spawnLocalReplica: " ++) . show)
+           (usend caller)
+           (r :: Either SomeException ())
+  where
+    spawnR :: Typeable a => GroupConfig a -> (DecreeId, [NodeId]) -> Process ()
+    spawnR (GroupConfig sdict1 sdict2 cConfig cLog) (legD, nodes) = do
+      dict1 <- unStatic sdict1
+      dict2 <- unStatic sdict2
+      config <- unClosure cConfig
+      log <- unClosure cLog
+      here <- getSelfNode
+
+      localSpawnAndRegister (acceptorLabel $ logId config) $
+        prl_acceptor (consensusProtocol config (dictValue dict2)) here
+
+      localSpawnAndRegister (replicaLabel $ logId config) $
+        replica dict1 dict2 config log ts0 initialDecreeId legD
+                nodes
+
+    dictValue :: SerializableDict a -> SerializableDict (Value a)
+    dictValue SerializableDict = SerializableDict
+
+-- | @localSpawnAndRegister label p@ spawns a process locally
+-- which runs @p@ and registers the process with the given @label@.
+--
+-- If the process cannot be registered, the closure is not run.
+--
+localSpawnAndRegister :: String -> Process () -> Process ()
+localSpawnAndRegister lbl p = do
+    pid <- spawnLocal $ do
+             () <- expect
+             p
+    r <- try $ register lbl pid
+    either (\(ProcessRegistrationException _) ->
+                  exit pid "localSpawnAndRegister"
+           )
+           (usend pid)
+           r
+
+mkSomeSDict :: SerializableDict a -> Some SerializableDict
+mkSomeSDict = Some
+
+persistDirectoryClosure :: () -> Config -> NodeId -> FilePath
+persistDirectoryClosure () = persistDirectory
+
+remotable [ 'dictList
           , 'dictNodeId
-          , 'dictMax
-          , 'dictTimeSpec
-          , 'consensusProtocol
+          , 'storeConf
+          , 'spawnLocalReplica
+          , 'mkSomeSDict
+          , 'persistDirectoryClosure
           ]
-
-sdictValue :: Typeable a
-           => Static (SerializableDict a)
-           -> Static (SerializableDict (Value a))
-sdictValue sdict = $(mkStatic 'dictValue) `staticApply` sdict
-
-sdictMax :: Static (SerializableDict Max)
-sdictMax = $(mkStatic 'dictMax)
 
 listNodeIdClosure :: [NodeId] -> Closure [NodeId]
 listNodeIdClosure xs =
     closure (staticDecode ($(mkStatic 'dictList) `staticApply` sdictNodeId))
             (encode xs)
+ where _ = $(functionTDict 'storeConf) -- stops unused warning
 
 -- | Serialization dictionary for 'NodeId'
 sdictNodeId :: Static (SerializableDict NodeId)
@@ -1313,45 +1494,6 @@ sdictNodeId = $(mkStatic 'dictNodeId)
 
 nodeIdClosure :: NodeId -> Closure NodeId
 nodeIdClosure x = closure (staticDecode sdictNodeId) (encode x)
-
-timeSpecClosure :: TimeSpec -> Closure TimeSpec
-timeSpecClosure ts =
-    closure (staticDecode $(mkStatic 'dictTimeSpec)) (encode ts)
-
-unMaxCP :: Typeable a
-        => Closure (  DecreeId
-                   -> DecreeId
-                   -> LegislatureId
-                   -> [NodeId]
-                   -> Process a
-                   )
-        -> CP Max a
-unMaxCP f = staticClosure $(mkStatic 'unMax) `closureApply` f
-
-expectSpawn :: SpawnRef -> Process ProcessId
-expectSpawn ref =
-    receiveWait [ matchIf (\(DidSpawn ref' _) -> ref' == ref) $
-                           \(DidSpawn _ pid) -> return pid
-                ]
-
-replicaClosure :: Typeable a
-               => Static (Dict (Eq a))
-               -> Static (SerializableDict a)
-               -> Closure Config
-               -> Closure (Log a)
-               -> Closure (  TimeSpec
-                          -> DecreeId
-                          -> DecreeId
-                          -> LegislatureId
-                          -> [NodeId]
-                          -> Process ()
-                          )
-replicaClosure sdict1 sdict2 config log =
-    staticClosure $(mkStatic 'replica)
-      `closureApply` staticClosure sdict1
-      `closureApply` staticClosure sdict2
-      `closureApply` config
-      `closureApply` log
 
 -- | Hide the 'ProcessId' of the ambassador to a log behind an opaque datatype
 -- making it clear that the ambassador acts as a "handle" to the log - it does
@@ -1368,30 +1510,17 @@ data Handle a =
 instance Eq (Handle a) where
     Handle _ _ _ _ μ == Handle _ _ _ _ μ' = μ == μ'
 
--- | A handle to a log created remotely. A 'RemoteHandle' can't be used to
--- access a log, but it can be cloned into a local handle.
-data RemoteHandle a =
-    RemoteHandle (Static (Dict (Eq a)))
-                 (Static (SerializableDict a))
-                 (Closure Config)
-                 (Closure (Log a))
-                 (Closure (Process ()))
-   deriving (Typeable, Generic)
-
-instance Typeable a => Binary (RemoteHandle a)
-
--- | @ambassadorAux@ provides the implementation of @ambassador@ out of the
--- @remotableDecl@ use below. This improves compiler errors, mostly.
-ambassadorAux :: forall a . SerializableDict a
-              -> Config
-              -> [NodeId]
-              -> ([NodeId] -> Closure (Process ()))
-              -> Process ()
-ambassadorAux _ _ [] _ = do
+-- | The ambassador to a cgroup is a local process that stands as a proxy to
+-- the cgroup. Its sole purpose is to provide a 'ProcessId' to stand for the
+-- cgroup and to forward all messages to the cgroup.
+ambassador :: forall a. SerializableDict a
+           -> Config
+           -> [NodeId]
+           -> Process ()
+ambassador _ _ [] = do
     say "ambassador: Set of replicas must be non-empty."
     die "ambassador: Set of replicas must be non-empty."
-ambassadorAux SerializableDict Config{logName, leaseTimeout} (ρ0 : others)
-              cAmbassador =
+ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
     monitorReplica ρ0 >>= go 0 (Just ρ0) others
   where
     go :: LegislatureId    -- ^ The epoch of the replicas (use 0 while unknown)
@@ -1401,11 +1530,11 @@ ambassadorAux SerializableDict Config{logName, leaseTimeout} (ρ0 : others)
        -> Process b
     go epoch mLeader ρs ref = receiveWait
       [ match $ \(Clone δ) -> do
-          usend δ $ cAmbassador $ maybe id (:) mLeader ρs
+          usend δ $ maybe id (:) mLeader ρs
           go epoch mLeader ρs ref
 
       , match $ \Status -> do
-          Foldable.forM_ mLeader $ flip (sendReplica logName) Status
+          Foldable.forM_ mLeader $ flip (sendReplica logId) Status
           go epoch mLeader ρs ref
 
         -- The leader replica changed.
@@ -1421,7 +1550,7 @@ ambassadorAux SerializableDict Config{logName, leaseTimeout} (ρ0 : others)
               liftIO $ threadDelay leaseTimeout
               -- Ask the head replica for the new leader.
               let ρ'' : _ = ρs
-              getSelfPid >>= sendReplica logName ρ''
+              getSelfPid >>= sendReplica logId ρ''
             go epoch mLeader ρs ref
 
       , match $ \(ProcessMonitorNotification ref' _ _) -> do
@@ -1434,7 +1563,7 @@ ambassadorAux SerializableDict Config{logName, leaseTimeout} (ρ0 : others)
                 ρs'@(ρ' : _) = ρss ++ [ρ]
             ref'' <- monitorReplica ρ'
             -- Ask the head replica for the new leader.
-            getSelfPid >>= sendReplica logName ρ'
+            getSelfPid >>= sendReplica logId ρ'
             go epoch Nothing ρs' ref''
           else
             go epoch mLeader ρs ref
@@ -1446,6 +1575,19 @@ ambassadorAux SerializableDict Config{logName, leaseTimeout} (ρ0 : others)
                     else filter (/= ρ') ρs ++ [ρ']
           go epoch mLeader ρs' ref
 
+        -- A membership query
+      , match $ \mq -> do
+          self <- getSelfPid
+          Foldable.forM_ mLeader $ flip (sendReplica logId)
+                                        (self, epoch, mq :: MembershipQuery)
+          go epoch mLeader ρs ref
+
+        -- A configuration query
+      , match $ \cq -> do
+          Foldable.forM_ mLeader $ flip (sendReplica logId)
+                                        (cq :: ConfigQuery)
+          go epoch mLeader ρs ref
+
         -- A reconfiguration request
       , match $ \m@(Helo κ _) -> do
           usend κ ()
@@ -1455,61 +1597,24 @@ ambassadorAux SerializableDict Config{logName, leaseTimeout} (ρ0 : others)
           -- elect a new leader.
           let ρ  : ρss = ρs
               ρs' = maybe (ρss ++ [ρ]) (const ρs) mLeader
-          sendReplica logName (maybe ρ id mLeader) (self, epoch, m)
+          sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
           go epoch mLeader ρs' ref
 
         -- A request
       , match $ \a -> do
           forM_ (requestSender a) $ flip usend ()
           self <- getSelfPid
-          Foldable.forM_ mLeader $ flip (sendReplica logName)
+          Foldable.forM_ mLeader $ flip (sendReplica logId)
                                         (self, epoch, a :: Request a)
           go epoch mLeader ρs ref
       ]
 
     monitorReplica ρ = do
-      whereisRemoteAsync ρ (replicaLabel logName)
+      whereisRemoteAsync ρ (replicaLabel logId)
       expectTimeout leaseTimeout >>= \case
         Just (WhereIsReply _ mpid) -> do
           monitor $ maybe (nullProcessId ρ) id mpid
         Nothing -> monitor (nullProcessId ρ)
-
-remotableDecl [
-    [d| -- | The ambassador to a cgroup is a local process that stands as a proxy to
-        -- the cgroup. Its sole purpose is to provide a 'ProcessId' to stand for the
-        -- cgroup and to forward all messages to the cgroup.
-        ambassador :: ( Static (Some SerializableDict)
-                      , Closure Config
-                      , [NodeId]
-                      )
-                      -> Process ()
-        ambassador (ssdict, cConfig, replicas) = do
-          Some sdict <- unStatic ssdict
-          config <- unClosure cConfig
-          ambassadorAux sdict config replicas $ \ρs ->
-            $(mkClosure 'ambassador) (ssdict, cConfig, ρs)
-
-        mkSomeSDict :: SerializableDict a -> Some SerializableDict
-        mkSomeSDict = Some
-
-        initialLegislatureId :: LegislatureId
-        initialLegislatureId = 0
-
-        -- | @localSpawnAndRegister label p@ spawns a process locally
-        -- which runs @p@ and registers the process with the given @label@.
-        --
-        -- If the process cannot be registered, the closure is not run.
-        localSpawnAndRegister :: String -> Process () -> Process ()
-        localSpawnAndRegister lbl p = do
-          pid <- spawnLocal $ do
-                   () <- expect
-                   p
-          register lbl pid `onException` exit pid "localSpawnAndRegister"
-          usend pid ()
-
-        initialReconfDecree :: DecreeId
-        initialReconfDecree = DecreeId 0 (-1)
-    |] ]
 
 -- | Append an entry to the replicated log.
 append :: Serializable a => Handle a -> Hint -> a -> Process ()
@@ -1556,79 +1661,64 @@ exitAndWait p = callLocal $ bracket (monitor p) unmonitor $ \ref -> do
                 (const $ return ())
       ]
 
--- | Spawns and registers a process running the given process in the given node.
+-- | Permanently associate a log identity to a given config, log and initial
+-- membership.
 --
--- If the process cannot be registered this function does nothing.
---
--- Returns when registration has either succeeded or failed.
-spawnAndRegister :: NodeId -> String -> Closure (Process ()) -> Process ()
-spawnAndRegister nid label' cp = callLocal $ do
-    ref <- spawnAsync nid $ $(mkClosure 'localSpawnAndRegister) label'
-                               `closureApply` cp
-    pid <- expectSpawn ref
-    mref <- monitor pid
-    receiveWait
-      [ matchIf (\(ProcessMonitorNotification ref' _ _) -> mref == ref')
-                (const $ return ())
-      ]
-
--- | Create a group of replicated processes.
---
--- spawns one replica process on each node in @nodes@. The behaviour of the
--- replica upon receipt of a message is determined by the @logClosure@ argument
--- which provides a callback for initilizing the state and another
--- callback for making transitions.
---
--- The argument @leaseTimeout@ indicates the length of the lease period
--- in microseconds. The lease period indicates how long the leader is guaranteed
--- to have no competition from other replicas when serving requests
--- as measured since the lease was requested.
---
--- The argument @leaseRenewalMargin@ indicates in microsencods with how much
--- anticipation the leader must renew the lease before the lease period
--- is over. A precondition is that @2 * leaseRenewalMargin < leaseTimeout@.
---
--- The returned 'Handle' identifies the group.
+-- Store that association at each node in the membership.
 new :: Typeable a
     => Static (Dict (Eq a))
     -> Static (SerializableDict a)
     -> Closure Config
     -> Closure (Log a)
     -> [NodeId]
-    -> Process (Handle a)
-new sdict1 sdict2 config log nodes = do
-    conf <- unClosure config
-    let protocol = staticClosure $(mkStatic 'consensusProtocol)
-                     `closureApply` config
-                     `closureApply` staticClosure (sdictValue sdict2)
-    forM_ nodes $ \nid ->
-      spawnAndRegister nid
-                       (acceptorLabel $ logName conf) $
-                       acceptorClosure $(mkStatic 'dictNodeId)
-                                       protocol
-                                       nid
+    -> Process ()
+new sdict1 sdict2 config log nodes = callLocal $ do
+    self <- getSelfPid
+    forM_ nodes $ flip spawnAsync $
+      $(mkClosure 'storeConf)
+        ( self
+        , ( $(mkStatic 'mkSomeSDict) `staticApply` sdict2
+          , encode $ GroupConfig sdict1 sdict2 config log
+          , (DecreeId 0 (-1), nodes)
+          ) :: StoredGroupConfig
+        )
+    forM_ nodes $ const $
+      receiveWait [ match error, match (\() -> return ()) ]
 
+-- | Spawns one replica process on each node in @nodes@ if it has not been
+-- spawned already.
+--
+-- This operation fails with an exception if the node is not in a group created
+-- with 'new'. The log id must be the one provided in the configuration when
+-- creating the group.
+--
+-- The behaviour of each replica is determined by the @logClosure@ argument
+-- given to 'new'.
+spawnReplicas :: forall a. Typeable a
+              => LogId                        -- ^ Id of the group
+              -> Closure (NodeId -> FilePath) -- ^ Path to the persisted
+                                              -- configuration
+              -> [NodeId]                     -- ^ Nodes on which to start
+                                              -- replicas
+              -> Process (Handle a)
+spawnReplicas k cPersisDirectory nodes = callLocal $ do
+    self <- getSelfPid
     now <- liftIO $ getTime Monotonic
+    forM_ nodes $ flip spawnAsync $
+      $(mkClosure 'spawnLocalReplica) (k, self, now)
+        `closureApply` cPersisDirectory
 
-    forM_ nodes $ \nid ->
-      spawnAndRegister nid
-                       (replicaLabel $ logName conf) $
-                       replicaClosure sdict1 sdict2 config log
-                         `closureApply` timeSpecClosure now
-                         `closureApply` staticClosure initialDecreeIdStatic
-                         `closureApply` staticClosure
-                                          $(mkStatic 'initialReconfDecree)
-                         `closureApply` staticClosure
-                                          $(mkStatic 'initialLegislatureId)
-                         `closureApply` listNodeIdClosure nodes
+    forM_ nodes $ const $
+      receiveWait [ match error, match (\() -> return ()) ]
 
-    -- Create a new local proxy for the cgroup.
-    Handle sdict1 sdict2 config log <$>
-      spawnLocal ( ambassador ( staticApply $(mkStatic 'mkSomeSDict) sdict2
-                              , config
-                              , nodes
-                              )
-                 )
+    case nodes of
+      nid : _ -> do
+        sendReplica k nid $ ConfigQuery self
+        (_, bs, _) <- expect :: Process StoredGroupConfig
+        let GroupConfig sdict1 sdict2 cConfig cLog =
+              decode bs :: GroupConfig a
+        clone $ RemoteHandle sdict1 sdict2 cConfig cLog nodes
+      [] -> error "spawnReplicas: empty list of nodes"
 
 -- | Propose a reconfiguration according the given nomination policy. Note that
 -- in general, it is only safe to remove replicas if they are /certainly/ dead.
@@ -1663,25 +1753,34 @@ addReplica :: Typeable a
            => Handle a
            -> NodeId
            -> Process ()
-addReplica h@(Handle sdict1 sdict2 config log _) nid = do
-    conf <- unClosure config
-    now <- liftIO $ getTime Monotonic
-    let protocol = staticClosure $(mkStatic 'consensusProtocol)
-                     `closureApply` config
-                     `closureApply` staticClosure (sdictValue sdict2)
-    spawnAndRegister nid
-                     (acceptorLabel $ logName conf) $
-                     acceptorClosure $(mkStatic 'dictNodeId)
-                                     protocol
-                                     nid
-    -- See comment about effect of 'cpExpect' in docstring above.
-    spawnAndRegister nid
-                     (replicaLabel $ logName conf)
-                     (bindCP (cpExpect sdictMax) $
-                        unMaxCP $ replicaClosure sdict1 sdict2 config log
-                                    `closureApply` timeSpecClosure now
-                     )
+addReplica h@(Handle _ _ cConfig _ α) nid = callLocal $ do
+    -- Get the group configuration
+    self <- getSelfPid
+    usend α $ ConfigQuery self
+    usend α $ MembershipQuery self
+    (ssdict, gcbs, _)  <- expect :: Process StoredGroupConfig
+    mship <- expect :: Process (DecreeId, [NodeId])
 
+    -- Store the configuration in the remote node.
+    _ <- spawnAsync nid $ $(mkClosure 'storeConf)
+           (self, (ssdict, gcbs, mship) :: StoredGroupConfig)
+    receiveWait [ match error, match (\() -> return ()) ]
+
+    -- Spawn the replica.
+    --
+    -- There is no danger that the replica will serve requests before the group
+    -- accepts it. It has to be leader in order to serve requests, and it cannot
+    -- be leader because it can only ask the lease or reconfigure the group
+    -- after it learns of a reconfiguration decree that joins it.
+    now <- liftIO $ getTime Monotonic
+    config <- unClosure cConfig
+    void $ spawnAsync nid $
+      $(mkClosure 'spawnLocalReplica) (logId config, self, now)
+        `closureApply`
+          ($(mkClosure 'persistDirectoryClosure) () `closureApply` cConfig)
+    receiveWait [ match error, match (\() -> return ()) ]
+
+    -- Add the node to the group
     reconfigure h $ $(mkStaticClosure 'Policy.orpn)
         `closureApply` nodeIdClosure nid
 
@@ -1692,11 +1791,11 @@ killReplica :: Typeable a
               -> Process ()
 killReplica (Handle _ _ config _ _) nid = do
     conf <- unClosure config
-    whereisRemoteAsync nid (acceptorLabel $ logName conf)
-    whereisRemoteAsync nid (replicaLabel $ logName conf)
+    whereisRemoteAsync nid (acceptorLabel $ logId conf)
+    whereisRemoteAsync nid (replicaLabel $ logId conf)
     replicateM_ 2 $ receiveWait
-      [ matchIf (\(WhereIsReply l _) -> elem l [ acceptorLabel $ logName conf
-                                               , replicaLabel $ logName conf
+      [ matchIf (\(WhereIsReply l _) -> elem l [ acceptorLabel $ logId conf
+                                               , replicaLabel $ logId conf
                                                ]
                 ) $
                  \(WhereIsReply _ mpid) -> case mpid of
@@ -1715,5 +1814,8 @@ removeReplica h nid = do
         `closureApply` listNodeIdClosure [nid]
 
 clone :: Typeable a => RemoteHandle a -> Process (Handle a)
-clone (RemoteHandle sdict1 sdict2 config log f) =
-    Handle sdict1 sdict2 config log <$> (spawnLocal =<< unClosure f)
+clone (RemoteHandle sdict1 sdict2 cConfig log nodes) = do
+    dict2 <- unStatic sdict2
+    config <- unClosure cConfig
+    Handle sdict1 sdict2 cConfig log <$>
+      spawnLocal (ambassador dict2 config nodes)

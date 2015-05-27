@@ -122,13 +122,13 @@ serializableSnapshot serverLbl s0 = LogSnapshot
         expect
 
 -- | Takes the snapshots server label, the filepath for saving snapshots
--- and the initial state.
+-- and a proxy argument indicating the type of the state.
 --
 -- It spawns the snapshot server and returns its pid.
 serializableSnapshotServer :: forall s . Serializable s
                            => String
                            -> (NodeId -> FilePath)
-                           -> s
+                           -> Proxy s
                            -> Process ProcessId
 serializableSnapshotServer serverLbl snapshotDirectory _s0 = do
     here <- getSelfNode

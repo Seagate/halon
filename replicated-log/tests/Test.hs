@@ -40,7 +40,7 @@ import Data.Binary (Binary)
 import Data.List (isPrefixOf)
 import Data.Ratio ((%))
 import Data.String (fromString)
-import Data.Typeable (Typeable)
+import Data.Typeable (Typeable, Proxy(..))
 import System.IO
 import System.FilePath ((</>))
 
@@ -90,15 +90,21 @@ filepath prefix nid = prefix </> show (nodeAddress nid)
 snapshotThreshold :: Int
 snapshotThreshold = 5
 
+testLogId :: Log.LogId
+testLogId = Log.toLogId "test-log"
+
+testPersistDirectory :: NodeId -> FilePath
+testPersistDirectory = filepath "replicas"
+
 testConfig :: Log.Config
 testConfig = Log.Config
-    { logName           = "test-log"
+    { logId             = testLogId
     , consensusProtocol = \dict ->
                BasicPaxos.protocol dict 1000000
                  (\n -> openPersistentStore (filepath "acceptors" n) >>=
                           acceptorStore
                  )
-    , persistDirectory  = filepath "replicas"
+    , persistDirectory  = testPersistDirectory
     , leaseTimeout      = 1000000
     , leaseRenewTimeout = 300000
     , driftSafetyFactor = 11 % 10
@@ -113,12 +119,15 @@ snapshotServer :: Process ()
 snapshotServer = void $ serializableSnapshotServer
                     snapshotServerLbl
                     (filepath "replica-snapshots")
-                    state0
+                    (Proxy :: Proxy State)
 
-remotable [ 'dictInt, 'dictState, 'testLog, 'testConfig, 'snapshotServer ]
+remotable [ 'dictInt, 'dictState, 'testLog, 'testConfig, 'snapshotServer
+          , 'testPersistDirectory
+          ]
 
 sdictInt :: Static (SerializableDict Int)
 sdictInt = $(mkStatic 'dictInt)
+  where _ = $(functionSDict 'testPersistDirectory) -- avoids unused warning
 
 sdictState :: Static (Dict (Typeable State))
 sdictState = $(mkStatic 'dictState)
@@ -132,7 +141,6 @@ remoteTables =
   Control.Distributed.Process.Scheduler.__remoteTable $
   BasicPaxos.__remoteTable $
   Log.__remoteTable $
-  Log.__remoteTableDecl $
   Policy.__remoteTable $
   State.__remoteTable $
   Control.Distributed.Process.Node.initRemoteTable
@@ -167,12 +175,17 @@ tests _ = do
                       )
                       (mapM_ $ \pid -> exit pid "setup" >> waitFor pid) $
                       const $
-                bracket (Log.new $(mkStatic 'State.commandEqDict)
+                bracket (Log.new
+                             $(mkStatic 'State.commandEqDict)
                              ($(mkStatic 'State.commandSerializableDict)
                                 `staticApply` sdictState)
                              (staticClosure $(mkStatic 'testConfig))
                              (staticClosure $(mkStatic 'testLog))
                              nodes
+                          >> Log.spawnReplicas
+                               testLogId
+                               $(mkStaticClosure 'testPersistDirectory)
+                               nodes
                         )
                         (forM_ nodes . Log.killReplica)
                         $ \h ->

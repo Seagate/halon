@@ -63,6 +63,14 @@ class RGroup g where
             -> st
             -> Process (Closure (Process (g st)))
 
+  -- | Like 'newRGroup' but only spawns a replica in the given node.
+  --
+  -- If the node does not form part of a group this operation fails.
+  spawnReplica :: Serializable st
+               => Static (SerializableDict st)
+               -> NodeId
+               -> Process (Closure (Process (g st)))
+
   -- | Releases any resources used by the replication group.
   stopRGroup :: g st -> Process ()
 

@@ -79,6 +79,8 @@ instance RGroup RLocalGroup where
       closure $(mkStatic 'createRLocalGroup) (encode (sd,st))
         `closureApply` staticClosure sd
 
+  spawnReplica _ _ = error "Mock.spawnReplica: unimplemented"
+
   stopRGroup _ = return ()
 
   setRGroupMembers _ _ _ = return []

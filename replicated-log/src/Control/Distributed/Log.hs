@@ -16,7 +16,10 @@ module Control.Distributed.Log
     , Hint(..)
     , Log(..)
     , Config(..)
+    , LogId
+    , toLogId
     , new
+    , spawnReplicas
     , append
     , status
     , reconfigure
@@ -25,8 +28,6 @@ module Control.Distributed.Log
     , removeReplica
       -- * Remote Tables
     , Control.Distributed.Log.Internal.__remoteTable
-    , Control.Distributed.Log.Internal.__remoteTableDecl
-    , ambassador__tdict
     ) where
 
 import Control.Distributed.Log.Internal

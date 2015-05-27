@@ -55,6 +55,12 @@ data Decree a = Decree Locale DecreeId a
 data Query = Query ProcessId Int
     deriving (Typeable, Generic)
 
+data ConfigQuery = ConfigQuery ProcessId
+    deriving (Typeable, Generic)
+
+data MembershipQuery = MembershipQuery ProcessId
+    deriving (Typeable, Generic)
+
 data Max = Max ProcessId DecreeId DecreeId LegislatureId [NodeId]
     deriving (Typeable, Generic)
 
@@ -73,5 +79,7 @@ data SnapshotInfo ref = SnapshotInfo [NodeId] DecreeId
 instance Binary Locale
 instance Binary a => Binary (Decree a)
 instance Binary Query
+instance Binary ConfigQuery
 instance Binary Max
+instance Binary MembershipQuery
 instance Binary ref => Binary (SnapshotInfo ref)
