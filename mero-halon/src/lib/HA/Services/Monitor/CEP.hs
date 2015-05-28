@@ -8,16 +8,14 @@ module HA.Services.Monitor.CEP where
 
 import Network.CEP
 
-import Prelude hiding (id)
-import Control.Category (id)
 import Control.Concurrent (threadDelay)
+import Control.Monad
 import Data.Foldable (traverse_)
 import Data.Typeable
 import GHC.Generics
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Serializable
-import           Control.Monad.State
 import           Data.Binary (Binary)
 import qualified Data.Map.Strict as M
 import qualified Data.Set        as S
@@ -81,12 +79,12 @@ heartbeatProcess mainpid = forever $ do
 
 -- | Builds a list of every monitored services 'NodeId'. 'NodeId' that compose
 --   that list are unique.
-nodeIds :: CEP MonitorState [NodeId]
-nodeIds = gets (S.toList . foldMap go . M.elems . msMap)
+nodeIds :: PhaseM MonitorState [NodeId]
+nodeIds = fmap (S.toList . foldMap go . M.elems . msMap) get
   where
     go (Monitored pid _) = S.singleton $ processNodeId pid
 
-decodeMsg :: ProcessEncode a => BinRep a -> CEP s a
+decodeMsg :: ProcessEncode a => BinRep a -> PhaseM s a
 decodeMsg = liftProcess . decodeP
 
 -- | By monitoring a service, we mean calling `monitor` with its `ProcessId`,
@@ -95,7 +93,7 @@ decodeMsg = liftProcess . decodeP
 monitoring :: Configuration a
            => Service a
            -> ServiceProcess a
-           -> CEP MonitorState ()
+           -> PhaseM MonitorState ()
 monitoring svc (ServiceProcess pid) = do
     ms <- get
     _  <- liftProcess $ monitor pid
@@ -106,7 +104,7 @@ monitoring svc (ServiceProcess pid) = do
 
 -- | Get a 'Monitored' from monitor internal state. That 'Monitored' will no
 --   longer be accessible from monitor state after.
-takeMonitored :: ProcessId -> CEP MonitorState (Maybe Monitored)
+takeMonitored :: ProcessId -> PhaseM MonitorState (Maybe Monitored)
 takeMonitored pid = do
     ms <- get
     let mon = M.lookup pid $ msMap ms
@@ -118,7 +116,7 @@ takeMonitored pid = do
 
 -- | Asks kindly the RC to persist the list of monitored services in the
 --   ReplicatedGraph.
-sendSaveRequest ::CEP MonitorState ()
+sendSaveRequest ::PhaseM MonitorState ()
 sendSaveRequest = do
     ms   <- get
     self <- liftProcess getSelfPid
@@ -128,13 +126,13 @@ sendSaveRequest = do
 
 -- | Sends a message to the RC. Strictly speaking, it sends the message to EQ,
 --   through the 'EQTracker', which forwards it to the RC.
-sendToRC :: Serializable a => a -> CEP s ()
+sendToRC :: Serializable a => a -> PhaseM s ()
 sendToRC a = do
     _ <- liftProcess $ promulgate a
     return ()
 
 -- | Notifies the RC that a monitored service has died.
-reportFailure :: Monitored -> CEP s ()
+reportFailure :: Monitored -> PhaseM s ()
 reportFailure (Monitored pid svc) = liftProcess $ do
     let node = Node $ processNodeId pid
         msg  = encodeP $ ServiceFailed node svc pid
@@ -142,22 +140,31 @@ reportFailure (Monitored pid svc) = liftProcess $ do
     return ()
 
 -- | Verifies that a node is still up.
-nodeHeartbeatRequest :: NodeId -> CEP s ()
+nodeHeartbeatRequest :: NodeId -> PhaseM s ()
 nodeHeartbeatRequest nid = liftProcess $ nsendRemote nid "nonexistentprocess" ()
 
-monitorRules :: RuleM MonitorState ()
+monitorRules :: Definitions MonitorState ()
 monitorRules = do
-    define "monitor-notification" id $
-      \(ProcessMonitorNotification _ pid reason) ->
-        case reason of
-          DiedNormal -> do
-            _ <- takeMonitored pid
-            return ()
-          _ -> traverse_ reportFailure =<< takeMonitored pid
+    define "monitor-notification" $
+      \(ProcessMonitorNotification _ pid reason) -> do
+          ph1 <- phase "state1" $ do
+            case reason of
+              DiedNormal -> do
+                _ <- takeMonitored pid
+                return ()
+              _ -> traverse_ reportFailure =<< takeMonitored pid
 
-    define "service-started" id $ \msg -> do
-      ServiceStarted _ svc _ sp <- decodeMsg msg
-      monitoring svc sp
+          start ph1
 
-    define "heartbeat" id $ \Heartbeat ->
-      traverse_ nodeHeartbeatRequest =<< nodeIds
+    define "service-started" $ \msg -> do
+      ph1 <- phase "state1" $ do
+        ServiceStarted _ svc _ sp <- decodeMsg msg
+        monitoring svc sp
+
+      start ph1
+
+    define "heartbeat" $ \Heartbeat -> do
+      ph1 <- phase "state1" $
+          traverse_ nodeHeartbeatRequest =<< nodeIds
+
+      start ph1

@@ -27,8 +27,8 @@ import HA.Service
 import HA.Services.DecisionLog.CEP
 import HA.Services.DecisionLog.Types
 
-makeDecisionLogProcess :: (forall s. RuleM s ()) -> Process a
-makeDecisionLogProcess rules = runProcessor () rules
+makeDecisionLogProcess :: (forall s. Definitions s ()) -> Process ()
+makeDecisionLogProcess rules = execute () rules
 
 decisionLogServiceName :: ServiceName
 decisionLogServiceName = ServiceName "decision-log"

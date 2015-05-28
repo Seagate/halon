@@ -54,7 +54,7 @@ monitorProcess typ ps = do
     st <- monitorState ps
     spawnHeartbeatProcess
     bootstrapMonitor typ
-    runProcessor st monitorRules
+    execute st monitorRules
 
 bootstrapMonitor :: MonitorType -> Process ()
 bootstrapMonitor Regular = return ()

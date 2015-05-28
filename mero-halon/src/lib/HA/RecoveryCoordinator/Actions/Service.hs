@@ -57,7 +57,6 @@ import Control.Distributed.Process.Internal.Types ( processNode, remoteTable )
 import Control.Distributed.Static (closureApply, unstatic)
 import Control.Monad (void)
 import Control.Monad.Reader (ask)
-import qualified Control.Monad.State.Strict as State
 
 import Data.Binary (Binary, Get, encode, get, put)
 import Data.Binary.Put (runPut)
@@ -66,7 +65,7 @@ import qualified Data.ByteString.Lazy as BS
 import Data.List (intersect, foldl')
 import Data.Typeable
 
-import Network.CEP
+import Network.CEP hiding (get, put)
 
 -- | Reconfiguration message
 data ReconfigureCmd = forall a. Configuration a => ReconfigureCmd Node (Service a)
@@ -105,14 +104,14 @@ instance ProcessEncode ReconfigureCmd where
 lookupRunningService :: Configuration a
                      => Node
                      -> Service a
-                     -> CEP LoopState (Maybe (ServiceProcess a))
-lookupRunningService n svc = State.gets (runningService n svc . lsGraph)
+                     -> PhaseM LoopState (Maybe (ServiceProcess a))
+lookupRunningService n svc = fmap (runningService n svc) getLocalGraph
 
 -- | Test if a given service is running on a node.
 isServiceRunning :: Configuration a
                  => Node
                  -> Service a
-                 -> CEP LoopState Bool
+                 -> PhaseM LoopState Bool
 isServiceRunning n svc =
     fmap (maybe False (const True)) $ lookupRunningService n svc
 
@@ -122,42 +121,39 @@ isServiceRunning n svc =
 
 registerService :: Configuration a
                 => Service a
-                -> CEP LoopState ()
-registerService svc = do
-    cepLog "rg" $ "Registering service: "
+                -> PhaseM LoopState ()
+registerService svc = modifyLocalGraph $ \rg -> do
+    phaseLog "rg" $ "Registering service: "
                 ++ (snString $ serviceName svc)
-    ls <- State.get
     let rg' = G.newResource svc >>>
-              G.connect Cluster Supports svc $ lsGraph ls
-    State.put ls { lsGraph = rg' }
+              G.connect Cluster Supports svc $ rg
+    return rg'
 
 registerServiceName :: Configuration a
                     => Service a
-                    -> CEP LoopState ()
-registerServiceName svc = do
-    cepLog "rg" $ "Registering service name: " ++ (snString $ serviceName svc)
-    ls <- State.get
-    let rg' = G.newResource (serviceName svc) $ lsGraph ls
-    State.put ls { lsGraph = rg' }
+                    -> PhaseM LoopState ()
+registerServiceName svc = modifyLocalGraph $ \rg -> do
+    phaseLog "rg" $ "Registering service name: " ++ (snString $ serviceName svc)
+    return $ G.newResource (serviceName svc) rg
 
 registerServiceProcess :: Configuration a
                        => Node
                        -> Service a
                        -> a
                        -> ServiceProcess a
-                       -> CEP LoopState ()
-registerServiceProcess n svc cfg sp = do
-    cepLog "rg" $ "Registering service process for service "
+                       -> PhaseM LoopState ()
+registerServiceProcess n svc cfg sp = modifyLocalGraph $ \rg -> do
+    phaseLog "rg" $ "Registering service process for service "
                 ++ (snString $ serviceName svc)
                 ++ " on node " ++ show n
-    ls <- State.get
+
     let rg' = G.newResource sp                    >>>
               G.connect n Runs sp                 >>>
               G.connect svc InstanceOf sp         >>>
               G.connect sp Owns (serviceName svc) >>>
-              writeConfig sp cfg Current $ lsGraph ls
+              writeConfig sp cfg Current $ rg
 
-    State.put ls { lsGraph = rg' }
+    return rg'
 
 -- | Unregister a service process from the resource graph.
 --   This is typically called when a service dies to remove the
@@ -166,29 +162,30 @@ unregisterServiceProcess :: Configuration a
                                  => Node
                                  -> Service a
                                  -> ServiceProcess a
-                                 -> CEP LoopState ()
-unregisterServiceProcess n svc sp = do
-    cepLog "rg" $ "Unregistering service process for service "
+                                 -> PhaseM LoopState ()
+unregisterServiceProcess n svc sp = modifyLocalGraph $ \rg -> do
+    phaseLog "rg" $ "Unregistering service process for service "
                 ++ (snString $ serviceName svc)
                 ++ " on node " ++ show n
-    ls <- State.get
+
     let rg' = G.disconnect sp Owns (serviceName svc) >>>
               disconnectConfig sp Current            >>>
               G.disconnect n Runs sp                 >>>
-              G.disconnect svc InstanceOf sp $ lsGraph ls
-    State.put ls { lsGraph = rg' }
+              G.disconnect svc InstanceOf sp $ rg
+
+    return rg'
 
 -- | Write the configuration into the resource graph.
 writeConfiguration :: Configuration a
                    => ServiceProcess a
                    -> a
                    -> ConfigRole
-                   -> CEP LoopState ()
-writeConfiguration sp c role = do
-    ls <- State.get
-    let rg' =   disconnectConfig sp role
-            >>> writeConfig sp c role $ lsGraph ls
-    State.put ls { lsGraph = rg' }
+                   -> PhaseM LoopState ()
+writeConfiguration sp c role = modifyLocalGraph $ \rg -> do
+    let rg' = disconnectConfig sp role >>>
+              writeConfig sp c role $ rg
+
+    return rg'
 
 ----------------------------------------------------------
 -- Controlling services                                 --
@@ -199,11 +196,12 @@ startService :: Configuration a
              => NodeId
              -> Service a
              -> a
-             -> CEP LoopState ()
+             -> PhaseM LoopState ()
 startService n svc conf = do
-    cepLog "action" $ "Starting " ++ (snString $ serviceName svc) ++ " on node "
+    phaseLog "action" $ "Starting " ++ (snString $ serviceName svc)
+                    ++ " on node "
                     ++ show n
-    liftProcess . _startService n svc conf . lsGraph =<< State.get
+    liftProcess . _startService n svc conf =<< getLocalGraph
 
 -- | Bounce a service directly to the given configuration.
 --   Fails with an error if the service is not currently running,
@@ -213,11 +211,11 @@ bounceServiceTo :: Configuration a
                 => ConfigRole
                 -> Node
                 -> Service a
-                -> CEP LoopState ()
+                -> PhaseM LoopState ()
 bounceServiceTo role n@(Node nid) s = do
-    cepLog "action" $ "Bouncing service " ++ show s
+    phaseLog "action" $ "Bouncing service " ++ show s
                     ++ " on node " ++ show nid
-    _bounceServiceTo . lsGraph =<< State.get
+    _bounceServiceTo =<< getLocalGraph
   where
     _bounceServiceTo g = case runningService n s g of
         Just sp -> go sp
@@ -232,9 +230,9 @@ bounceServiceTo role n@(Node nid) s = do
 -- | Kill a service.
 killService :: ServiceProcess a
             -> ExitReason
-            -> CEP s ()
+            -> PhaseM s ()
 killService (ServiceProcess pid) reason = do
-  cepLog "action" $ "Killing service with pid " ++ show pid
+  phaseLog "action" $ "Killing service with pid " ++ show pid
                   ++ " because of " ++ show reason
   liftProcess $ exit pid reason
 
@@ -247,16 +245,14 @@ reconfigureService :: Configuration a
                    => a
                    -> Service a
                    -> NodeFilter
-                   -> CEP LoopState ()
-reconfigureService opts svc nodeFilter = do
-    cepLog "rg" $ "Updating configuration for service "
+                   -> PhaseM LoopState ()
+reconfigureService opts svc nodeFilter = modifyLocalGraph $ \rg -> do
+    phaseLog "rg" $ "Updating configuration for service "
                 ++ (snString $ serviceName svc)
                 ++ " on nodes "
                 ++ show nodeFilter
-    ls <- State.get
 
-    let rg       = lsGraph ls
-        svcs     = _filterServices nodeFilter svc rg
+    let svcs     = _filterServices nodeFilter svc rg
         fns      = fmap (\(_, nsvc) -> writeConfig nsvc opts Intended) svcs
         rgUpdate = foldl' (flip (.)) id fns
         rg'      = rgUpdate rg
@@ -265,7 +261,7 @@ reconfigureService opts svc nodeFilter = do
       self <- getSelfPid
       mapM_ (usend self . encodeP . (flip ReconfigureCmd) svc . fst) svcs
 
-    State.put ls { lsGraph = rg' }
+    return rg'
 
 ----------------------------------------------------------
 -- Utility functions (unexported)                       --

@@ -125,7 +125,7 @@ tests transport internals = do
               assert . (== 10) . length . snd =<< retry requestTimeout
                                                     (getState rGroup)
         , testSuccess "eq-trim-one" ==> \eq _ rGroup -> do
-              simpleSubscribe eq (Sub :: Sub TrimDone)
+              subscribe eq (Sub :: Sub TrimDone)
               mapM_ triggerEvent [1..10]
               (_, (HAEvent evtid _ _ ):_) <- retry requestTimeout $
                                                getState rGroup
@@ -135,7 +135,7 @@ tests transport internals = do
               assert . (== 9) . length . snd =<< retry requestTimeout
                                                    (getState rGroup)
         , testSuccess "eq-trim-idempotent" ==> \eq _ rGroup -> do
-              simpleSubscribe eq (Sub :: Sub TrimDone)
+              subscribe eq (Sub :: Sub TrimDone)
               mapM_ triggerEvent [1..10]
               (_, (HAEvent evtid _ _ ):_) <- retry requestTimeout $
                                                getState rGroup
@@ -153,7 +153,7 @@ tests transport internals = do
                           retry requestTimeout (getState rGroup)
               assert (before /= trim1 && before /= trim2 && trim1 == trim2)
         , testSuccess "eq-trim-none" ==> \eq na rGroup -> do
-              simpleSubscribe eq (Sub :: Sub TrimDone)
+              subscribe eq (Sub :: Sub TrimDone)
               mapM_ triggerEvent [1..10]
               before <- map (eventCounter . eventId) . snd <$>
                           retry requestTimeout (getState rGroup)
@@ -178,7 +178,7 @@ tests transport internals = do
                                                      getState rGroup
               return ()
         , testSuccess "eq-should-record-that-rc-died" $ setup $ \eq _ _ -> do
-              simpleSubscribe eq (Sub :: Sub RCDied)
+              subscribe eq (Sub :: Sub RCDied)
               rc <- spawnLocal $ return ()
               send eq rc
               -- Wait for confirmation of RC death.
@@ -206,7 +206,7 @@ tests transport internals = do
                   )
                   (flip exit "test finished")
                   $ \rc -> do
-                simpleSubscribe eq (Sub :: Sub RCLost)
+                subscribe eq (Sub :: Sub RCLost)
                 send eq rc
                 triggerEvent 1
                 -- The RC should forward the event to me.

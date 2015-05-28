@@ -65,14 +65,12 @@ import qualified HA.ResourceGraph as G
 
 import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Serializable
-import qualified Control.Monad.State.Strict as State
 
 import Control.Monad
 import Control.Wire hiding (when)
 
 import Data.Binary (Binary)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as BS
 import Data.Dynamic
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
@@ -130,11 +128,9 @@ rcHasStarted rg = do
     _startService selfNid masterMonitor masterConf rg2
     return rg2
 
-registerMasterMonitor :: ServiceProcess MonitorConf -> CEP LoopState ()
-registerMasterMonitor sp = do
-    ls <- State.get
-    let rg' = G.connect Cluster MasterMonitor sp $ lsGraph ls
-    State.put ls { lsGraph = rg' }
+registerMasterMonitor :: ServiceProcess MonitorConf -> PhaseM LoopState ()
+registerMasterMonitor sp = modifyLocalGraph $ \rg ->
+    return $ G.connect Cluster MasterMonitor sp rg
 
 lookupMasterMonitor :: G.Graph -> Maybe (ServiceProcess MonitorConf)
 lookupMasterMonitor rg =
@@ -142,25 +138,24 @@ lookupMasterMonitor rg =
       [sp] -> Just sp
       _    -> Nothing
 
-startEQTracker :: NodeId -> CEP LoopState ()
+startEQTracker :: NodeId -> PhaseM LoopState ()
 startEQTracker nid = do
-    cepLog "action" $ "Starting " ++ EQT.name ++ " on node " ++ show nid
-    State.gets lsGraph >>= \rg -> liftProcess $ do
+    phaseLog "action" $ "Starting " ++ EQT.name ++ " on node " ++ show nid
+    getLocalGraph >>= \rg -> liftProcess $ do
       sayRC $ "New node contacted: " ++ show nid
       _startService nid EQT.eqTracker EmptyConf rg
 
-ack :: ProcessId -> CEP LoopState ()
+ack :: ProcessId -> PhaseM LoopState ()
 ack pid = liftProcess $ usend pid ()
 
-getSelfProcessId :: CEP s ProcessId
+getSelfProcessId :: PhaseM s ProcessId
 getSelfProcessId = liftProcess getSelfPid
 
-getNoisyPingCount :: CEP LoopState Int
+getNoisyPingCount :: PhaseM LoopState Int
 getNoisyPingCount = do
-    cepLog "rg-query" $ ("Querying noisy ping count." :: BS.ByteString)
-    ls <- State.get
-    let rg       = lsGraph ls
-        (rg', i) =
+    phaseLog "rg-query" "Querying noisy ping count."
+    rg <- getLocalGraph
+    let (rg', i) =
           case G.connectedTo noisy HasPingCount rg of
             [] ->
               let nrg = G.connect noisy HasPingCount (NoisyPingCount 0) $
@@ -172,7 +167,7 @@ getNoisyPingCount = do
                         G.newResource newPingCount $
                         G.disconnect noisy HasPingCount pc rg in
               (nrg, iPc)
-    State.put ls { lsGraph = rg' }
+    putLocalGraph rg'
     return i
 
 lookupDLogServiceProcess :: LoopState -> Maybe (ServiceProcess DecisionLogConf)
@@ -181,17 +176,17 @@ lookupDLogServiceProcess ls =
         [sp] -> Just sp
         _    -> Nothing
 
-sendToMonitor :: Serializable a => Node -> a -> CEP LoopState ()
+sendToMonitor :: Serializable a => Node -> a -> PhaseM LoopState ()
 sendToMonitor node a = do
     res <- lookupRunningService node regularMonitor
     forM_ res $ \(ServiceProcess pid) ->
       liftProcess $ usend pid a
 
 -- | Sends a message to the Master Monitor.
-sendToMasterMonitor :: Serializable a => a -> CEP LoopState ()
+sendToMasterMonitor :: Serializable a => a -> PhaseM LoopState ()
 sendToMasterMonitor a = do
     self <- liftProcess getSelfNode
-    spm <- return . lookupMasterMonitor =<< State.gets lsGraph
+    spm <- return . lookupMasterMonitor =<< getLocalGraph
     -- In case the `MasterMonitor` link is not established, look for a
     -- local instance
     spm' <- lookupRunningService (Node self) masterMonitor
@@ -201,10 +196,10 @@ sendToMasterMonitor a = do
 sayRC :: String -> Process ()
 sayRC s = say $ "Recovery Coordinator: " ++ s
 
-sendMsg :: Serializable a => ProcessId -> a -> CEP s ()
+sendMsg :: Serializable a => ProcessId -> a -> PhaseM s ()
 sendMsg pid a = liftProcess $ usend pid a
 
-decodeMsg :: ProcessEncode a => BinRep a -> CEP s a
+decodeMsg :: ProcessEncode a => BinRep a -> PhaseM s a
 decodeMsg = liftProcess . decodeP
 
 initialize :: ProcessId -> Process G.Graph
@@ -220,9 +215,9 @@ initialize mm = do
             | otherwise = rg
     return rg'
 
-prepareEpochResponse :: CEP LoopState EpochResponse
+prepareEpochResponse :: PhaseM LoopState EpochResponse
 prepareEpochResponse = do
-    rg <- State.gets lsGraph
+    rg <- getLocalGraph
 
     let edges :: [G.Edge Cluster Has (Epoch ByteString)]
         edges = G.edgesFromSrc Cluster rg
@@ -230,9 +225,9 @@ prepareEpochResponse = do
 
     return $ EpochResponse $ epochId target
 
-getEpochId :: CEP LoopState Word64
+getEpochId :: PhaseM LoopState Word64
 getEpochId = do
-    rg <- State.gets lsGraph
+    rg <- getLocalGraph
 
     let edges :: [G.Edge Cluster Has (Epoch ByteString)]
         edges = G.edgesFromSrc Cluster rg
@@ -240,8 +235,8 @@ getEpochId = do
 
     return $ epochId target
 
-getMultimapProcessId :: CEP LoopState ProcessId
-getMultimapProcessId = State.gets lsMMPid
+getMultimapProcessId :: PhaseM LoopState ProcessId
+getMultimapProcessId = fmap lsMMPid get
 
 ----------------------------------------------------------
 -- Recovery Co-ordinator                                --
@@ -254,14 +249,14 @@ getMultimapProcessId = State.gets lsMMPid
 -- done automatically if 'HA.Network.Address.startNetwork' is used to create
 -- the transport.
 makeRecoveryCoordinator :: ProcessId -- ^ pid of the replicated multimap
-                        -> RuleM LoopState ()
+                        -> Definitions LoopState ()
                         -> Process ()
 makeRecoveryCoordinator mm rm = do
-    rg    <- HA.RecoveryCoordinator.Mero.initialize mm >>= rcHasStarted
-    start <- G.sync rg
-    runProcessor (LoopState start Map.empty mm) $ do
+    rg      <- HA.RecoveryCoordinator.Mero.initialize mm >>= rcHasStarted
+    startRG <- G.sync rg
+    execute (LoopState startRG Map.empty mm) $ do
       rm
-      addRuleFinalizer $ \ls -> do
+      setRuleFinalizer $ \ls -> do
         newGraph <- G.sync $ lsGraph ls
         return ls { lsGraph = newGraph }
 
