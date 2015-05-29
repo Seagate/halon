@@ -960,7 +960,7 @@ replica Dict
                   mLeader <- liftIO getLeader
                   if epoch <= e && mLeader == Just here then do
                     usend bpid request
-                  else when (e < epoch) $
+                  else when (e < epoch || isJust mLeader) $
                          usend μ (epoch, ρs)
                   go st
 
