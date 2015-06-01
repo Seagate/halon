@@ -510,13 +510,16 @@ tests _ = do
                 registerInterceptor interceptor
                 liftIO $ runProcess node1 $ registerInterceptor interceptor
 
+                say "adding replica"
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
                     snapshotServer
-                    retry retryTimeout $
+                    retry retryTimeout $ do
+                      say "trying adding replica"
                       Log.addReplica h here
                     updateHandle h here
 
+                say "updating state"
                 liftIO $ runProcess node1 $
                   retry retryTimeout $
                     State.update port incrementCP
@@ -524,6 +527,7 @@ tests _ = do
                 _ <- expectTimeout 5000000 :: Process (Maybe ())
 
                 -- interrupt the connection between the replicas
+                say "interrupting connection"
                 here <- getSelfNode
                 liftIO $ do
                   socketBetween internals
@@ -536,9 +540,12 @@ tests _ = do
                     >>= N.close
 
                 liftIO $ runProcess node1 $
-                  retry retryTimeout $
+                  retry retryTimeout $ do
+                    say "trying update"
                     State.update port incrementCP
+                say "expecting first ()"
                 () <- expect
+                say "expecting second ()"
                 _ <- expectTimeout 5000000 :: Process (Maybe ())
                 say "Replicas continue to have quorum."
                 Log.killReplica h (localNodeId node1)
