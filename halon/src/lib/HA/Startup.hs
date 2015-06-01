@@ -23,20 +23,30 @@ import Control.Arrow ( first, second, (***) )
 import Control.Concurrent.MVar ( newEmptyMVar, readMVar, putMVar )
 import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Closure
-    ( remotable, remotableDecl, mkStatic, mkClosure, functionTDict )
-import Control.Distributed.Process.Serializable ( SerializableDict(..) )
-import Data.Maybe ( isJust )
-
-import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
-import Data.List ( partition )
-import System.IO.Unsafe ( unsafePerformIO )
-
-import Control.Distributed.Process.Internal.Types
+  ( remotable
+  , remotableDecl
+  , mkClosure
+  , mkStatic
+  , functionTDict
+  )
 import qualified Control.Distributed.Process.Internal.StrictMVar as StrictMVar
     ( modifyMVar_ )
+import Control.Distributed.Process.Internal.Types
+import Control.Distributed.Process.Serializable ( SerializableDict(..) )
+import Control.Distributed.Process.Timeout ( retry )
+import Control.Distributed.Static ( closureApply )
+
+import Data.Binary ( decode, encode )
+import Data.ByteString.Lazy (ByteString)
+import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
+import Data.List ( partition )
+import Data.Maybe ( isJust )
+
 import qualified Network.Transport as NT
 import qualified Data.Map as Map ( toList, empty )
 import Control.Monad.Reader
+
+import System.IO.Unsafe ( unsafePerformIO )
 
 {-# NOINLINE globalRGroup #-}
 globalRGroup :: IORef (Maybe (Closure (Process (RLogGroup HAReplicatedState))))
@@ -57,7 +67,10 @@ multimapView = RStateView (snd . snd) (second . second)
 rsDict :: SerializableDict HAReplicatedState
 rsDict = SerializableDict
 
-remotable [ 'rsView, 'eqView, 'multimapView, 'rsDict ]
+decodeNids :: ByteString -> [NodeId]
+decodeNids = decode
+
+remotable [ 'rsView, 'eqView, 'multimapView, 'rsDict, 'decodeNids ]
 
 -- | Closes all transport connections from the current node.
 --
@@ -105,10 +118,9 @@ remotableDecl [ [d|
  startRS :: ( Closure (Process (RLogGroup HAReplicatedState))
             , Maybe (Replica RLogGroup)
             , Closure (ProcessId -> ProcessId -> Process ())
-            , Int
             )
             -> Process ()
- startRS (cRGroup, mlocalReplica, rcClosure, rsLeaderLease) = do
+ startRS (cRGroup, mlocalReplica, rcClosure) = do
      rGroup <- unClosure cRGroup >>= id
      recoveryCoordinator <- unClosure rcClosure
      maybe (return ()) (updateRGroup rGroup) mlocalReplica
@@ -116,7 +128,6 @@ remotableDecl [ [d|
      eqpid <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
      rspid <- spawnLocal
               $ recoverySupervisor (viewRState $(mkStatic 'rsView) rGroup)
-                                   rsLeaderLease
               $ mask_ $ do
                 mRCPid <- liftIO newEmptyMVar
                 mmpid <- spawnLocal $ do
@@ -146,7 +157,8 @@ remotableDecl [ [d|
  -- | Start the RC and EQ.
  --
  -- Takes a tuple
- -- @(update, trackers, snapshotThreashold, rcClosure, rsLeaderLease)@.
+ -- @(update, trackers, snapshotThreashold,
+ --   snapshotTimeout, rcClosure, rsLeaderLease)@.
  --
  -- @update@ indicates if an existing tracking station is being updated.
  --
@@ -189,12 +201,13 @@ remotableDecl [ [d|
     else do
       cRGroup <- newRGroup $(mkStatic 'rsDict) snapshotThreshold snapshotTimeout
                            trackers
-                           (RSState Nothing 0,((Nothing,[]),fromList []))
+                           ( RSState Nothing 0 rsLeaderLease
+                           , ((Nothing,[]),fromList [])
+                           )
       forM_ trackers $ flip spawn $ $(mkClosure 'startRS)
           ( cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
           , Nothing :: Maybe (Replica RLogGroup)
           , rcClosure
-          , rsLeaderLease
           )
       return Nothing
 
@@ -204,4 +217,22 @@ remotableDecl [ [d|
             call $(functionTDict 'isSelfInGroup) nid $
                  $(mkClosure 'isSelfInGroup) ()
         return $ map snd *** map snd $ partition fst $ zip bs nids
+
+ autoboot :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
+          -> Process ()
+ autoboot rcClosure = do
+    nid <- getSelfNode
+    cRGroup <- spawnReplica $(mkStatic 'rsDict) nid
+    rGroup <- unClosure cRGroup >>= id
+    nids <- retry 1000000 $ getRGroupMembers rGroup
+    let rcClosure' = rcClosure `closureApply` (closure
+                                                $(mkStatic 'decodeNids)
+                                                (encode nids)
+                                              )
+    void . spawn nid $ $(mkClosure 'startRS)
+          ( cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
+          , Nothing :: Maybe (Replica RLogGroup)
+          , rcClosure'
+          )
+
  |] ]

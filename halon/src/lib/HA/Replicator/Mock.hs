@@ -83,6 +83,8 @@ instance RGroup RLocalGroup where
 
   stopRGroup _ = return ()
 
+  getRGroupMembers = error "Mock.getRGroupMembers: unimplemented"
+
   setRGroupMembers _ _ _ = return []
 
   updateRGroup _ Replica{} = return ()

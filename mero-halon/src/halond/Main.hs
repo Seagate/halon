@@ -3,6 +3,7 @@
 -- License   : All rights reserved.
 
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Main (main) where
 
 import Prelude hiding ((<$>))
@@ -17,15 +18,21 @@ import HA.Network.Transport (writeTransportGlobalIVar)
 import qualified Network.Transport.TCP as TCP
 import qualified HA.Network.Socket as TCP
 #endif
+import HA.Process (tryRunProcess)
+import HA.RecoveryCoordinator.Definitions
+import HA.Startup (autoboot)
 
 import Control.Applicative ((<$>))
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (catch)
+import Control.Distributed.Process.Closure ( mkStaticClosure )
 import Control.Distributed.Process.Node
   ( initRemoteTable
   , newLocalNode
   , localNodeId
   , runProcess
   )
+import Control.Distributed.Static ( closureCompose )
+import Control.Exception (SomeException, catch)
 
 import qualified Data.Binary
 
@@ -67,23 +74,29 @@ main = withM0 $ do
 #else
 main = do
 #endif
-  config <- parseArgs <$> getArgs
+    config <- parseArgs <$> getArgs
 #ifdef USE_RPC
-  rpcTransport <- RPC.createTransport "s1"
-                                      (RPC.rpcAddress $ localEndpoint config)
-                                      RPC.defaultRPCParameters
-  writeTransportGlobalIVar rpcTransport
-  let transport = RPC.networkTransport rpcTransport
+    rpcTransport <- RPC.createTransport "s1"
+                                        (RPC.rpcAddress $ localEndpoint config)
+                                        RPC.defaultRPCParameters
+    writeTransportGlobalIVar rpcTransport
+    let transport = RPC.networkTransport rpcTransport
 #else
-  let sa = TCP.decodeSocketAddress $ localEndpoint config
-      hostname = TCP.socketAddressHostName sa
-      port = TCP.socketAddressServiceName sa
-  transport <- either (error . show) id <$>
-               TCP.createTransport hostname port TCP.defaultTCPParameters
+    let sa = TCP.decodeSocketAddress $ localEndpoint config
+        hostname = TCP.socketAddressHostName sa
+        port = TCP.socketAddressServiceName sa
+    transport <- either (error . show) id <$>
+                 TCP.createTransport hostname port TCP.defaultTCPParameters
 #endif
-  lnid <- newLocalNode transport myRemoteTable
-  -- Print the node id for the testing framework.
-  printNodeId .localNodeId $ lnid
-  printHeader (localEndpoint config)
-  runProcess lnid $ receiveWait []
-  return 0
+    lnid <- newLocalNode transport myRemoteTable
+    -- Print the node id for the testing framework.
+    printNodeId .localNodeId $ lnid
+    printHeader (localEndpoint config)
+    -- Attempt to autoboot the TS
+    catch (tryRunProcess lnid $ autoboot rcClosure)
+          (\(e :: SomeException) -> putStrLn $ "Cannot autoboot: " ++ show e)
+    runProcess lnid $ receiveWait []
+    return 0
+  where
+    rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
+                  $(mkStaticClosure 'ignitionArguments)

@@ -85,7 +85,6 @@ data RLogGroup st where
             -> RLogGroup st
  deriving Typeable
 
-
 rvDict :: RStateView st v -> SerializableDict v
 rvDict (RStateView _ _) = SerializableDict
 
@@ -238,6 +237,8 @@ instance RGroup RLogGroup where
                         `closureApply` staticClosure sdictState
 
   stopRGroup _ = return ()
+
+  getRGroupMembers (RLogGroup _ _ h _ _) = Log.getMembership h
 
   setRGroupMembers (RLogGroup _ sdq h _ _) ns inGroup = do
     Log.reconfigure h $ $(mkClosure 'removeNodes) () `closureApply` inGroup

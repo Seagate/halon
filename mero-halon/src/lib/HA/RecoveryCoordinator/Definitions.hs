@@ -6,6 +6,9 @@
 -- * Recovery coordinator definitions
 module HA.RecoveryCoordinator.Definitions
     ( HA.RecoveryCoordinator.Definitions.__remoteTable
+    , ignitionArguments
+    , ignitionArguments__sdict
+    , ignitionArguments__static
     , recoveryCoordinator__sdict
     , recoveryCoordinator__static
     , recoveryCoordinator
@@ -17,6 +20,9 @@ import Control.Distributed.Process.Closure
 import HA.RecoveryCoordinator.CEP
 import HA.RecoveryCoordinator.Mero
 
+ignitionArguments :: [NodeId] -> IgnitionArguments
+ignitionArguments = IgnitionArguments
+
 recoveryCoordinator :: IgnitionArguments
                     -> ProcessId
                     -> ProcessId
@@ -24,4 +30,4 @@ recoveryCoordinator :: IgnitionArguments
 recoveryCoordinator argv eq mm =
     makeRecoveryCoordinator mm $ rcRules argv eq
 
-remotable [ 'recoveryCoordinator ]
+remotable [ 'ignitionArguments, 'recoveryCoordinator ]

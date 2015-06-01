@@ -81,6 +81,7 @@ import GHC.Generics ( Generic )
 -- | State of the recovery supervisor
 data RSState = RSState { rsLeader :: Maybe ProcessId
                        , rsLeaseCount :: LeaseCount
+                       , rsLeasePeriod :: Int
                        }
   deriving (Typeable, Generic, Eq, Show)
 
@@ -97,7 +98,7 @@ instance Binary RSState
 setLeader :: (ProcessId,LeaseCount) -> RSState -> RSState
 setLeader (candidate,previousLeaseCount) rstOld =
   if previousLeaseCount == rsLeaseCount rstOld
-    then RSState (Just candidate) (previousLeaseCount+1)
+    then RSState (Just candidate) (previousLeaseCount+1) (rsLeasePeriod rstOld)
     else rstOld
 
 remotable [ 'setLeader ]
@@ -106,24 +107,22 @@ remotable [ 'setLeader ]
 recoverySupervisor :: RGroup g
                    => g RSState -- ^ the replication group used to store
                                 -- the RS state
-                   -> Int       -- ^ The leader lease in microseconds
                    -> Process ProcessId
                          -- ^ the closure used to start the recovery
                          -- coordinator: It must return immediately yielding
                          -- the pid of the RC.
                    -> Process ()
-recoverySupervisor rg leaderLease rcP =
-    retry pollingPeriod (getState rg) >>= go Nothing
+recoverySupervisor rg rcP = do
+    rst <- retry 1000000 (getState rg)
+    go (Left $ rsLeasePeriod rst) rst
   where
-    -- We make the polling period is slightly bigger than the lease.
-    pollingPeriod = leaderLease * 11 `div` 10
-
     -- Takes the pid of the Recovery Coordinator and the last observed
-    -- state.
-    go :: Maybe ProcessId -> RSState -> Process ()
+    -- state. If the pid of the RC is not available we give it the next
+    -- lease period in microseconds.
+    go :: Either Int ProcessId -> RSState -> Process ()
     -- I'm the leader
-    go (Just rc) previousState = do
-      timer <- newTimer leaderLease $ do
+    go (Right rc) previousState = do
+      timer <- newTimer (rsLeasePeriod previousState) $ do
         say "RS: lease expired, so killing RC ..."
         exit rc "quorum lost"
         -- Block until RC actually dies. Otherwise, a new RC may start before
@@ -143,20 +142,23 @@ recoverySupervisor rg leaderLease rcP =
          -- TODO: The check for leadership seems redundant if clock drift is
          -- bounded, which is a fundamental assumption. Should we remove the
          -- test?
-         go (Just rc) rstNew
+         go (Right rc) rstNew
        else do
          -- RC has died, will be killed by the timer or someone else
          -- has taken leadership.
          when rcDied $ say "RS: RC died, RSs will elect a new leader"
-         go Nothing rstNew
+         go (Left $ rsLeasePeriod previousState) rstNew
 
     -- I'm not the leader
-    go Nothing previousState = do
+    go (Left oldLeasePeriod) previousState = do
+      -- When shortening the lease, take the longer period to avoid
+      -- interrupting the next leader before its lease expires.
+      let leasePeriod = max oldLeasePeriod (rsLeasePeriod previousState)
       when (Nothing /= rsLeader previousState) $
         -- Wait for the polling period if there is some known leader only.
         -- Otherwise, jump immediately to leader election.
-        void $ receiveTimeout pollingPeriod []
-      timer <- newTimer leaderLease $ return ()
+        void $ receiveTimeout (pollingPeriod leasePeriod) []
+      timer <- newTimer leasePeriod $ return ()
       self <- getSelfPid
       rstNew <- rsUpdate self previousState
       canceled <- cancel timer
@@ -165,18 +167,21 @@ recoverySupervisor rg leaderLease rcP =
          say "RS: I'm the new leader, so starting RC ..."
          rc <- rcP
          _ <- monitor rc
-         go (Just rc) rstNew
-       else
+         go (Right rc) rstNew
+       else do
          -- Timer has expired or I'm not the leader.
-         go Nothing rstNew
+         go (Left $ rsLeasePeriod previousState) rstNew
+
+    -- We make the polling period slightly bigger than the lease.
+    pollingPeriod = (`div` 10) . (* 11)
 
     -- | Updates the state proposing the current process as leader if
     -- there has not been updates since the state was last observed.
     rsUpdate self rst = do
-      void $ timeout pollingPeriod $
+      void $ timeout (pollingPeriod $ rsLeasePeriod rst) $
         updateStateWith rg $
           $(mkClosure 'setLeader) (self,rsLeaseCount rst)
-      retry pollingPeriod $ getState rg
+      retry (pollingPeriod $ rsLeasePeriod rst) $ getState rg
 
     -- | Yields @True@ iff a notification about RC death has arrived.
     rcHasDied rc = do

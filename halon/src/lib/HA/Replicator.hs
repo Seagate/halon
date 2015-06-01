@@ -74,6 +74,10 @@ class RGroup g where
   -- | Releases any resources used by the replication group.
   stopRGroup :: g st -> Process ()
 
+  -- | @getRGroupMembers ms@ queries the replicated state for info on the
+  --   current members of the RGroup.
+  getRGroupMembers :: g st -> Process [NodeId]
+
   -- | @setRGroupMembers ns inGroup@ creates a new replica on every node in @ns@
   -- and adds it to the group, then it removes every replica running on a node
   -- not satisfying predicate @inGroup@.

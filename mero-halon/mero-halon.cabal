@@ -216,6 +216,7 @@ Executable halond
                       mero-halon,
                       base >= 4.5,
                       distributed-process >= 0.4,
+                      distributed-static,
                       filepath >= 1.3,
                       network-transport >= 0.3,
                       options-schema
@@ -227,7 +228,7 @@ Executable halond
       Build-Depends: network >= 2.4,
                      network-transport-tcp >= 0.3.1
 
-Test-Suite testdistributed
+Test-Suite startService
   Type:             exitcode-stdio-1.0
   default-language: Haskell2010
   Hs-Source-Dirs:  tests/Distributed
@@ -247,6 +248,28 @@ Test-Suite testdistributed
                    process
   if !flag(distributed-tests)
     Buildable:     False
+
+Test-Suite autoboot
+  Type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs:  tests/Distributed
+  Main-Is:         autoboot.hs
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  Build-Depends:   distributed-process,
+                   base,
+                   filepath,
+                   network-transport,
+                   network-transport-tcp,
+                   distributed-commands,
+                   process
+  if !flag(distributed-tests)
+    Buildable:     False
+
 
 Test-Suite rcInsists
   Type:             exitcode-stdio-1.0
@@ -292,7 +315,7 @@ Test-Suite rcInsists2
   if !flag(distributed-tests)
     Buildable:     False
 
-Test-Suite testdistributedconf
+Test-Suite configureServices
   Type:             exitcode-stdio-1.0
   default-language: Haskell2010
   Hs-Source-Dirs:  tests/Distributed

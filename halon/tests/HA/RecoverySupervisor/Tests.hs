@@ -74,7 +74,7 @@ type RG = MC_RG RSState
 testRS' :: MVar () -> TestCounters -> RG -> Process ()
 testRS' mdone counters rGroup = do
   flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
-    void $ spawnLocal $ recoverySupervisor rGroup 1000000
+    void $ spawnLocal $ recoverySupervisor rGroup
                              $ spawnLocal (dummyRC counters)
     liftIO $ putMVar mdone ()
 
@@ -105,7 +105,7 @@ tests oneNode transport = do
               takeMVar $ cStart counters
               Nothing <- tryTakeMVar $ cStop counters
               return ()
-            RSState (Just leader0) _ <- retry requestTimeout $ getState rGroup
+            RSState (Just leader0) _ _ <- retry requestTimeout $ getState rGroup
             return leader0
 
         rc <- liftIO $ takeMVar $ cRC counters
@@ -114,7 +114,7 @@ tests oneNode transport = do
         liftIO $ do
           takeMVar $ cStart counters
           takeMVar $ cStop counters
-        RSState (Just _) _ <- retry requestTimeout $ getState rGroup
+        RSState (Just _) _ _<- retry requestTimeout $ getState rGroup
         return ()
     ]
 
@@ -131,7 +131,7 @@ rsTest transport oneNode action = withTmpDirectory $ do
                    then replicate amountOfReplicas n1
                    else ns
       cRGroup <- newRGroup $(mkStatic 'rsSDict) 20 1000000 nids
-                           (RSState Nothing 0)
+                           (RSState Nothing 0 1000000)
 
       rGroup   <- unClosure cRGroup >>= id
       counters <- liftIO newCounters
