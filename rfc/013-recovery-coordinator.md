@@ -193,40 +193,52 @@ We give the following example rule in a pseudo-syntax for the 'node restart'
 scenario above:
 
 ```Haskell
-nodeRestart = mkRule $
-    softSSPLRestart <>
-    softDirectRestart <>
-    hardRestart <>
-    failure <>
-    success
-  where
-    softSSPLRestart = match $ \(HostRestartRequest host) ->
-      when (getHostStatus host /= "restarting) $ forkSM $ do
-        set host
-        atomically $ setHostStatus "restarting" host
-        nodes <- nodesOnHost host
-              >>= filterM (\nid -> isServiceRunning nid "sspl")
-        case nodes of
-          n:_ -> sendSystemdRequest RestartNode n
-              >> continue (success <> (timeout (5 * min) softDirectRestart))
-          _ -> continue softDirectRestart
-    softDirectRestart = do
-      host <- get
+define "node-restart" $ do
+
+  want (Proxy :: Proxy HostRestartRequest)
+  want (Proxy :: Proxy HostPoweringDown)
+  want (Proxy :: Proxy HostPoweringUp)
+
+  softSSPLRestart <- phaseHandle "soft-sspl-restart"
+  softDirectRestart <- phaseHandle "soft-direct-restart"
+  hardRestart <- phaseHandle "hard-restart"
+  failure <- phaseHandle "failure"
+  success <- phaseHandle "success"
+
+  setPhase softSSPL $ match \(HostRestartRequest host) ->
+    when (getHostStatus host /= "restarting) $ fork NoBuffer $ do
+      set host
+      setHostStatus "restarting" host
       nodes <- nodesOnHost host
+            >>= filterM (\nid -> isServiceRunning nid "sspl")
       case nodes of
-        n:_ -> shellRestart n
-            >> continue (success <> (timeout (5 * min) hardRestart))
-        _ -> continue hardRestart
-    hardRestart = do
+        n:_ -> sendSystemdRequest RestartNode n
+            >> switch [success, timeout (5 * min) softDirectRestart]
+        _ -> continue softDirectRestart
+
+  setPhase softDirectRestart $ directly $ do
+    host <- get
+    nodes <- nodesOnHost host
+    case nodes of
+      n:_ -> shellRestart n
+          >> switch [success, (timeout (5 * min) hardRestart)]
+      _ -> continue hardRestart
+
+  setPhase hardRestart $ directly $ do
+    host <- get
+    ipmiRestart host
+    switch [success, timeout (5*min) failure]
+
+  setPhase success $ matchSequentialIf
+    \(HostPoweringDown host1, HostPoweringUp host2) ->
+      get >>= \host -> return $ host == host1 == host2
+    \(HostPoweringDown host1, HostPoweringUp host2) -> do
       host <- get
-      ipmiRestart host >> continue (success <> timeout (5*min) failure)
-    success = matchSequentialIf
-                \(HostPoweringDown host1, HostPoweringUp host2) ->
-                  get >>= \host -> return $ host == host1 == host2
-                \(HostPoweringDown host1, HostPoweringUp host2) -> do
-                  host <- get
-                  atomically $ setHostStatus "online" host
-    failure = get >>= promulgate . HostRestartFailed
+      setHostStatus "online" host
+
+  setPhase failure $ directly $ get >>= promulgate . HostRestartFailed
+
+  start softSSPL
 ```
 
 This aims to draw out the following points:
@@ -235,10 +247,10 @@ This aims to draw out the following points:
 2. A continuation based approach - each time we call 'continue' we temporarily
    'park' the state machine until it is woken by one of the provided
    continuation states.
-3. The use of 'atomically' for graph operations - we are now requiring that
-   graph writes obtain an explicit lock for the duration of the transaction.
-4. The use of `mkRule`: each call to `match` or one of its derivatives must
-   somehow register the event type for interest such that these get delivered
+3. The use of `switch` to allow alternative paths based on which messages
+   arrive; the first branch to 'commit' by changing phase will be committed.
+4. The use of `want`: each call to `want` or one of its derivatives must
+   register the event type for interest such that these get delivered
    and buffered by the state machine even if it is not currently in an accepting
    state.
 5. More complex triggers - for example, in this case we require for `success`
@@ -246,8 +258,158 @@ This aims to draw out the following points:
    event notifying the host coming up.
 6. The use of `timeout t action`. This should resolve to firing `action` after
    the specified timeout.
-7. The use of `forkSM` to fork the state machine after processing the first
+7. The use of `fork` to fork the state machine after processing the first
    part of the rule.
+
+#### Interpretation
+
+For an example interpretation, consider that we have the following:
+
+```
+type SM a = SM Rule Phase Buffer a
+```
+e.g. a State Machine is a rule in a current phase, with a buffer of events
+and some state `a`. The RC shall (approximately) consist of a set of state
+machines, along with a map instructing which messages are `want`-ed by
+which state machines.
+```
+type RC = [SM, (forall a. Typeable a => Map (Proxy a) Rule)]
+```
+
+We consider that the above rule is the only rule implemented, and give an
+approximate interpretation of its execution.
+
+```
+wantMap =
+rcInitial = [SM "node-restart" softSSPL [] undefined
+            , Map ( NodeRestartRequest -> "node-restart"
+                  , HostPoweringDown -> "node-restart"
+                  , HostPoweringUp -> "node-restart"
+                  )]
+```
+The initial recovery co-ordinator consists of a single state machine in its
+first phase, with no messages in the buffer and some undefined state.
+
+Now let us suppose that a `HostRestartRequest node1` message arrives. The type
+of message is looked up in the map, and the state machine(s) corresponding to
+that rule are looked up and run. The execution of the state machine takes three
+steps:
+
+1. Add the message to the buffer.
+2. Execute the next step of the state machine.
+3. Return some number of new state machines to continue running.
+
+Since the first step forks, it executes the phase but also forks a copy of the
+phase as is. Since we specify `NoBuffer`, the forked copy does not share a
+buffer with the original.
+
+Suppose that SSPL is running. Then we send a request to restart using SSPL,
+and use `switch` to potentially branch the computation. So the RC after this
+first event looks like the following:
+
+```
+rc1 = [ SM "node-restart"
+            (Switch [success, timeout (5 * min) softDirectRestart])
+            [NodeRestartRequest node1]
+            node1
+      , SM "node-restart" softSSPL [] undefined
+      ]
+```
+
+We now have two state machines for the same rule; one has received an event
+and is waiting on the next phase. Both `success` and `timeout ....` are
+currently suspending, since their `match` clauses are not satisfied.
+
+Now suppose a second `HostRestartRequest node2` arrives. This is delivered
+to all relevant state machines, as expected, and added to both their buffers.
+However, our first state machine is not waiting for such a message, and does
+not act upon it. Our second state machine is ready to await such a thing, and so
+does. In this case, there is no Halon `Node` running on `Host node2`, and hence
+we jump through `softDirectRestart` and into `hardRestart`
+
+```
+rc2 = [ SM "node-restart"
+            (Switch [success, timeout (5 * min) softDirectRestart])
+            [NodeRestartRequest node1, NodeRestartRequest node2]
+            node1
+      , SM "node-restart"
+            (Switch [success, timeout (5*min) failure])
+            [NodeRestartRequest node2]
+            node2
+      , SM "node-restart" softSSPL [] undefined
+      ]
+```
+
+Note that since the second state machine called `fork`, we again have a machine
+in initial phase waiting for `NodeRestartRequest`s.
+
+Now suppose that five minutes has passed since the initial SM called `timeout`.
+An ephemeral Timer process sends a `Timeout` to the RC, which is passed to the
+relevant SM. Let us suppose that the system is clever enough to not buffer
+`Timeout` messages! This causes the `timeout` branch to succeed and continue
+processing. The next step (`softDirectRestart`) does not wait for a message
+(it has `directly` instead of a `match` clause), so immediately runs to its next
+instruction. So our rc now looks like the following:
+
+```
+rc3 = [ SM "node-restart"
+            (Switch [success, (timeout (5 * min) hardRestart)])
+            [NodeRestartRequest node1, NodeRestartRequest node2]
+            node1
+      , SM "node-restart"
+            (Switch [success, timeout (5*min) failure])
+            [NodeRestartRequest node2]
+            node2
+      , SM "node-restart" softSSPL [] undefined
+      ]
+```
+
+Now suppose our command to do a soft direct restart was partially successful,
+and we receive a `NodePoweringDown node1` message to the RC. This is buffered
+at all SMs, but ignored in all cases. The last two SMs are not waiting for this
+message, and the first SM is waiting for this and another message, and so does
+not pass its `matchSequential` clause. So we are not much altered:
+
+```
+rc4 = [ SM "node-restart"
+            (Switch [success, (timeout (5 * min) hardRestart)])
+            [ NodeRestartRequest node1, NodeRestartRequest node2
+            , NodePoweringDown node1
+            ]
+            node1
+      , SM "node-restart"
+            (Switch [success, timeout (5*min) failure])
+            [NodeRestartRequest node2, NodePoweringDown node1]
+            node2
+      , SM "node-restart" softSSPL [NodePoweringDown node1] undefined
+      ]
+```
+
+Finally, notification of the node powering up arrives in the form of a
+`NodePoweringUp node1` message. This is delivered to all buffers and acted
+upon by the first SM. Since its buffer now consists of
+```
+[ NodeRestartRequest node1, NodeRestartRequest node2
+, NodePoweringDown node1 , NodePoweringUp node1
+]
+```,
+the `matchSequentialIf` clause is satisfied, and so the rest of the phase
+is executed. This phase does not end in a `continue` or `switch` instruction,
+and so processing of this state machine ends. So we have the following:
+
+```
+rc5 = [ SM "node-restart"
+            (Switch [success, timeout (5*min) failure])
+            [ NodeRestartRequest node2
+            , NodePoweringDown node1
+            , NodePoweringUp node1]
+            node2
+      , SM "node-restart" softSSPL  [ NodePoweringDown node1
+                                    , NodePoweringUp node1] undefined
+      ]
+```
+The first state machine is completed and has been removed from the list;
+others remain in a waiting state for new events.
 
 #### Tasks
 
