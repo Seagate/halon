@@ -38,6 +38,7 @@ module Control.Distributed.Log.Internal
     , addReplica
     , killReplica
     , removeReplica
+    , getMembership
       -- * Remote Tables
     , Control.Distributed.Log.Internal.__remoteTable
       -- * Other
@@ -1651,6 +1652,13 @@ remoteHandle (Handle sdict1 sdict2 config log α) = do
     self <- getSelfPid
     usend α $ Clone self
     RemoteHandle sdict1 sdict2 config log <$> expect
+
+-- | Yields the latest known membership.
+getMembership :: Handle a -> Process [NodeId]
+getMembership  (Handle _ _ _ _ α) = callLocal $ do
+    self <- getSelfPid
+    usend α $ MembershipQuery self
+    snd <$> (expect :: Process (DecreeId, [NodeId]))
 
 -- | Terminate the given process and wait until it dies.
 exitAndWait :: ProcessId -> Process ()

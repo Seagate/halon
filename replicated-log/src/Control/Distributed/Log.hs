@@ -26,6 +26,7 @@ module Control.Distributed.Log
     , addReplica
     , killReplica
     , removeReplica
+    , getMembership
       -- * Remote Tables
     , Control.Distributed.Log.Internal.__remoteTable
     ) where
