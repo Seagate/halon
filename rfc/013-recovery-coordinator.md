@@ -388,11 +388,12 @@ rc4 = [ SM "node-restart"
 Finally, notification of the node powering up arrives in the form of a
 `NodePoweringUp node1` message. This is delivered to all buffers and acted
 upon by the first SM. Since its buffer now consists of
+
 ```
 [ NodeRestartRequest node1, NodeRestartRequest node2
 , NodePoweringDown node1 , NodePoweringUp node1
 ]
-``` ,
+```,
 the `matchSequentialIf` clause is satisfied, and so the rest of the phase
 is executed. This phase does not end in a `continue` or `switch` instruction,
 and so processing of this state machine ends. So we have the following:
