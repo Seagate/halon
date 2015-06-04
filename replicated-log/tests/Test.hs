@@ -461,9 +461,17 @@ tests _ = do
                 -- The size of the log should account for medieval and modern
                 -- history. It is possible to have a log slightly bigger because
                 -- it may contain decrees not yet executed.
+                --
+                -- In addition, the first report of the log size may be bigger
+                -- than expected if the new replica is trying to catch-up.
                 assert $ all (<= snapshotThreshold * 3)
-                             (uncurry (++) $ unzip logSizes')
+                             (drop 1 $ uncurry (++) $ unzip logSizes')
                 say "Log size remains bounded after reconfiguration."
+
+                -- Wait a bit before killing the acceptors so they can process
+                -- any pending requests to trim the state.
+                Nothing <- receiveTimeout 1000000 [] :: Process (Maybe ())
+
                 Log.killReplica h (localNodeId node1)
 
                 here <- getSelfNode
@@ -474,6 +482,8 @@ tests _ = do
                   pm <- liftIO $ P.getMap ps $ fromString "decrees"
                   kvs <- liftIO $
                            P.pairsOfMap (pm :: P.PersistentMap (Int, Int))
+                  say $ "Acceptor state after reconfiguration: " ++
+                        show (map fst kvs)
                   assert (length kvs <= 2*snapshotThreshold)
                 say "Acceptor state remains bounded."
 
