@@ -7,6 +7,7 @@ ENV HOME /root
 ENV LANG en_GB.UTF-8
 
 # install required softare from repository
+# autoconf is need while the network package is vendored but we defer it until layer 2
 RUN yum install --assumeyes epel-release \
     && yum install --assumeyes bzip2 tar zlib-devel git gmp-devel make perl gcc pcre-devel libgenders-devel net-tools leveldb-devel
 
