@@ -465,7 +465,7 @@ tests _ = do
                 -- In addition, the first report of the log size may be bigger
                 -- than expected if the new replica is trying to catch-up.
                 assert $ all (<= snapshotThreshold * 3)
-                             (drop 1 $ uncurry (++) $ unzip logSizes')
+                             (concatMap (\(a, b) -> [a, b]) $ drop 1 logSizes')
                 say "Log size remains bounded after reconfiguration."
 
                 -- Wait a bit before killing the acceptors so they can process
