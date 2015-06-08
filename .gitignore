@@ -4,3 +4,6 @@ dist/
 test_output/
 tests.eventlog
 mk/local.mk
+*.tix
+*.mix
+coverage/

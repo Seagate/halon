@@ -131,6 +131,7 @@ endif
 # are hidden in module. We need this trick to avoid CPP usage for workarounding
 # Applicative exported from prelude.
 override CABAL_FLAGS += --ghc-options='-fno-warn-dodgy-imports'
+override HALON_CABAL_FLAGS += --ghc-options='-fhpc'
 
 
 export USE_TCP
@@ -143,12 +144,16 @@ export TEST_LISTEN
 ci: cabal.config build
 	./scripts/check-copyright.sh
 
+BUILD_PKGS := $(patsubst %,%_build,$(PACKAGES))
 .PHONY: build
-build: dep
+build: dep $(BUILD_PKGS)
 # XXX Tests tend to bind the same ports, making them mutually
 # exclusive in time. The solution is to allow tests to bind
 # a random available port.
-	cabal install $(CABAL_FLAGS) $(HALON_CABAL_FLAGS) $(CABAL_BUILD_JOBS) $(PACKAGES)
+
+$(BUILD_PKGS):
+	cabal install $(CABAL_FLAGS) $(HALON_CABAL_FLAGS) $(CABAL_BUILD_JOBS) $(patsubst %_build, %, $@)
+
 
 CLEAN := $(patsubst %,%_clean,$(PACKAGES))
 .PHONY: $(CLEAN) clean depclean
