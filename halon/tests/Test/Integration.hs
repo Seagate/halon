@@ -8,6 +8,7 @@ module Test.Integration (tests) where
 import           Prelude hiding ((<$>))
 import qualified HA.EventQueue.Tests ( tests )
 import qualified HA.Multimap.ProcessTests ( tests )
+import qualified HA.Multimap.Tests ( tests )
 import qualified HA.NodeAgent.Tests (tests)
 import qualified HA.RecoverySupervisor.Tests (tests)
 import qualified HA.ResourceGraph.Tests (tests)
@@ -36,6 +37,8 @@ tests transport internals = do
 #endif
       , testGroup "MM-process-tests" <$> return
         [ HA.Multimap.ProcessTests.tests transport ]
+      , testGroup "MM-pure" <$> return
+        HA.Multimap.Tests.tests
       , testGroup "RG" <$> HA.ResourceGraph.Tests.tests transport
       , testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests False transport
         -- Next test is commented since it doesn't pass reliably.
