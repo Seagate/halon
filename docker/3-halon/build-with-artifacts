@@ -41,7 +41,8 @@ if [ "$RC" == "0" ] ; then
 fi
 
 if [ "$RC" == "0" ] ; then
-  bash run-coverage.sh
+  make coverage
+  RC=$?
   cp -vr coverage /halon/artifacts/
 fi
 
