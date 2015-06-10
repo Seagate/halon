@@ -120,7 +120,9 @@ Library
                    netwire,
                    uuid,
                    random,
-                   yaml
+                   yaml,
+                   hostname,
+                   multimap
 
   if flag(mero)
       Exposed-Modules: Mero.Epoch
@@ -380,7 +382,7 @@ Test-Suite testsnapshot3
                    distributed-commands,
                    distributed-process-test,
                    process
-  if !(flag(distributed-tests) && flag(long-tests))
+  if !(flag(distributed-tests))
     Buildable:     False
 
 

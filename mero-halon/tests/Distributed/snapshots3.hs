@@ -52,6 +52,12 @@ main = do
     withHostNames cp 2 $ \ms@[m0, m1] ->
      runProcess n0 $ do
 
+      -- Time out after a while so CI can still make progress.
+      self <- getSelfPid
+      _ <- spawnLocal $ do
+             _ <- expectTimeout (60 * 1000000) :: Process (Maybe ())
+             kill self "test timed out"
+
       say "Copying binaries ..."
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
                                , (buildPath </> "halond/halond", "halond") ]
@@ -87,7 +93,8 @@ main = do
                        )
 
       say "Waiting for RC to start ..."
-      expectLog [nid1] (isInfixOf "New node contacted")
+      say $ "nid0 -> " ++ show nid0 ++ " nid1 -> " ++ show nid1
+      expectLog [nid1] (isInfixOf $ "New node contacted: " ++ show nid0)
 
       say "Starting noisy service ..."
       let noisy_messages = 30 :: Int
@@ -95,6 +102,7 @@ main = do
                         " service noisy start" ++ " -t " ++ m1 ++ ":9000" ++
                         " -n " ++ show noisy_messages ++ " 2>&1"
                        )
+
       expectLog [nid0] (isInfixOf "Starting service noisy")
       logSizes <- replicateM 5 $ expectLogInt [nid1] "Log size when trimming: "
       noisyCounts <- replicateM (noisy_messages `div` 2) $

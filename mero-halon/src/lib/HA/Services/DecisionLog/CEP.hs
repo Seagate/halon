@@ -14,12 +14,9 @@ import Network.CEP
 
 decisionLogRules :: Handle -> Definitions s ()
 decisionLogRules h =
-    define "entries-submitted" $ \logs -> do
-      ph1 <- phase "state1" $ do
-          writeEntriesLogged h logs
-          liftProcess $ say "entries submitted"
-
-      start ph1
+    defineSimple "entries-submitted" $ \logs -> do
+      writeEntriesLogged h logs
+      liftProcess $ say "entries submitted"
 
 writeEntriesLogged :: MonadIO m => Handle -> Logs -> m ()
 writeEntriesLogged h logs = liftIO $ do

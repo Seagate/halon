@@ -20,6 +20,8 @@ import HA.Resources
   , Has(..)
   , Node
   )
+
+import HA.EventQueue.Types
 import HA.Service (ServiceName)
 
 
@@ -27,6 +29,7 @@ import Control.Category ((>>>))
 import Control.Distributed.Process (ProcessId)
 
 import qualified Data.Map.Strict as Map
+import qualified Data.Set        as S
 
 import Network.CEP
 
@@ -35,14 +38,16 @@ data LoopState = LoopState {
   , lsFailMap  :: Map.Map (ServiceName, Node) Int
     -- ^ Failed reconfiguration count
   , lsMMPid    :: ProcessId -- ^ Replicated Multimap pid
+  , lsHandled  :: S.Set UUID
+    -- ^ Set of HAEvent uuid we've already handled.
 }
 
 -- | Is a given resource existent in the RG?
-knownResource :: G.Resource a => a -> PhaseM LoopState Bool
+knownResource :: G.Resource a => a -> PhaseM LoopState l Bool
 knownResource res = fmap (G.memberResource res) getLocalGraph
 
 -- | Register a new satellite node in the cluster.
-registerNode :: Node -> PhaseM LoopState ()
+registerNode :: Node -> PhaseM LoopState l ()
 registerNode node = modifyLocalGraph $ \rg -> do
     phaseLog "rg" $ "Registering satellite node: " ++ show node
 
@@ -51,13 +56,13 @@ registerNode node = modifyLocalGraph $ \rg -> do
 
     return rg'
 
-getLocalGraph :: PhaseM LoopState G.Graph
-getLocalGraph = fmap lsGraph get
+getLocalGraph :: PhaseM LoopState l G.Graph
+getLocalGraph = fmap lsGraph $ get Global
 
-putLocalGraph :: G.Graph -> PhaseM LoopState ()
-putLocalGraph rg = modify $ \ls -> ls { lsGraph = rg }
+putLocalGraph :: G.Graph -> PhaseM LoopState l ()
+putLocalGraph rg = modify Global $ \ls -> ls { lsGraph = rg }
 
-modifyLocalGraph :: (G.Graph -> PhaseM LoopState G.Graph) -> PhaseM LoopState ()
+modifyLocalGraph :: (G.Graph -> PhaseM LoopState l G.Graph) -> PhaseM LoopState l ()
 modifyLocalGraph k = do
     rg  <- getLocalGraph
     rg' <- k rg

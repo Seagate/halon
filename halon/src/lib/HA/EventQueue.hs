@@ -143,41 +143,41 @@ makeEventQueueFromRules rg rm = do
     st <- for mRC $ \pid -> fmap (EventQueueState pid) $ monitor pid
     execute st rm
 
-setRC :: ProcessId -> PhaseM (Maybe EventQueueState) ()
+setRC :: ProcessId -> PhaseM (Maybe EventQueueState) l ()
 setRC rc = do
-    prevM <- get
+    prevM <- get Global
     ref   <- liftProcess $ do
       traverse_ (unmonitor . _eqsRef) prevM
       monitor rc
-    put $ Just $ EventQueueState rc ref
+    put Global $ Just $ EventQueueState rc ref
 
-clearRC :: PhaseM (Maybe EventQueueState) ()
-clearRC = traverse_ go =<< get
+clearRC :: PhaseM (Maybe EventQueueState) l ()
+clearRC = traverse_ go =<< get Global
   where
     go EventQueueState{..} = do
         liftProcess $ unmonitor _eqsRef
-        put Nothing
+        put Global Nothing
 
 -- | Record in the replicated state that there is a new RC.
 recordNewRC :: RGroup g
             => g EventQueue
             -> ProcessId
-            -> PhaseM (Maybe EventQueueState) ()
+            -> PhaseM (Maybe EventQueueState) l ()
 recordNewRC rg rc = void $ liftProcess $ async $ task $
     retry requestTimeout $ updateStateWith rg $ $(mkClosure 'eqSetRC) $ Just rc
 
 -- | Send the pending events to the new RC.
-sendEventsToRC :: RGroup g => g EventQueue -> ProcessId -> PhaseM s ()
+sendEventsToRC :: RGroup g => g EventQueue -> ProcessId -> PhaseM s l ()
 sendEventsToRC rg rc = liftProcess $ do
     self               <- getSelfPid
     (_, pendingEvents) <- retry requestTimeout $ getState rg
     for_ (reverse pendingEvents) $ \ev ->
       usend rc ev{eventHops = self : eventHops ev}
 
-reconnectToRC :: PhaseM (Maybe EventQueueState) ()
-reconnectToRC = liftProcess . traverse_ (reconnect . _eqsRC) =<< get
+reconnectToRC :: PhaseM (Maybe EventQueueState) l ()
+reconnectToRC = liftProcess . traverse_ (reconnect . _eqsRC) =<< get Global
 
-recordRCDied :: RGroup g => g EventQueue -> PhaseM (Maybe EventQueueState) ()
+recordRCDied :: RGroup g => g EventQueue -> PhaseM (Maybe EventQueueState) l ()
 recordRCDied rg = do
     mRC <- getRC
     -- We use compare and swap to make sure we don't overwrite
@@ -189,7 +189,7 @@ recordEvent :: RGroup g
             => g EventQueue
             -> ProcessId
             -> HAEvent [ByteString]
-            -> PhaseM s ()
+            -> PhaseM s l ()
 recordEvent rg sender ev = void $ liftProcess $ do
     self <- getSelfPid
     async $ task $ do
@@ -197,7 +197,7 @@ recordEvent rg sender ev = void $ liftProcess $ do
         updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
       usend self (RecordAck sender ev)
 
-trim :: RGroup g => g EventQueue -> UUID -> PhaseM s ()
+trim :: RGroup g => g EventQueue -> UUID -> PhaseM s l ()
 trim rg eid =
     liftProcess $ do
       self <- getSelfPid
@@ -207,7 +207,7 @@ trim rg eid =
         usend self (TrimAck eid)
       return ()
 
-sendEventToRC :: ProcessId -> ProcessId -> HAEvent [ByteString] -> PhaseM s ()
+sendEventToRC :: ProcessId -> ProcessId -> HAEvent [ByteString] -> PhaseM s l ()
 sendEventToRC rc sender ev =
     liftProcess $ do
       self <- getSelfPid
@@ -216,7 +216,8 @@ sendEventToRC rc sender ev =
 
 -- | Find the RC either in the local state or in the replicated state.
 lookupRC :: RGroup g
-         => g EventQueue -> PhaseM (Maybe EventQueueState) (Maybe ProcessId)
+         => g EventQueue
+         -> PhaseM (Maybe EventQueueState) l (Maybe ProcessId)
 lookupRC rg = do
     mRC <- getRC
     case mRC of
@@ -226,12 +227,12 @@ lookupRC rg = do
         for_ newMRC setRC
         return newMRC
 
-getRC :: PhaseM (Maybe EventQueueState) (Maybe ProcessId)
-getRC = fmap (fmap _eqsRC) get
+getRC :: PhaseM (Maybe EventQueueState) l (Maybe ProcessId)
+getRC = fmap (fmap _eqsRC) $ get Global
 
 -- | Send my own node when we don't know the RC location. Note that I was able
 --   to read the replicated state so very likely there is no RC.
-sendOwnNode :: ProcessId -> PhaseM s ()
+sendOwnNode :: ProcessId -> PhaseM s l ()
 sendOwnNode sender = liftProcess $ do
     n <- getSelfNode
     usend sender (n, n)

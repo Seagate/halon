@@ -31,6 +31,7 @@ import Control.Distributed.Process
   , expectTimeout
   , getSelfPid
   , say
+  , processNodeId
   )
 import Control.Distributed.Process.Closure ( remotable )
 import Control.Monad.Trans (liftIO)
@@ -61,7 +62,7 @@ nodeUp :: ( [NodeId] -- ^ Set of EQ nodes to contact
 nodeUp (eqs, delay) = getSelfPid >>= go
   where
     go pid = do
-      say $ "Sending NodeUp message to " ++ show eqs
+      say $ "Sending NodeUp message to " ++ show eqs ++ " me -> " ++ (show $ processNodeId pid)
       h <- liftIO $ getHostName
       _ <- promulgateEQ eqs $ NodeUp h pid
       msg <- expectTimeout delay

@@ -79,8 +79,9 @@ main = do
       say "Spawning tracking station ..."
       systemThere [m0] ("./halonctl"
                      ++ " -a " ++ m0loc
-                     ++ " bootstrap station"
+                     ++ " bootstrap station" ++ " 2>&1"
                      )
+
       expectLog [nid0] (isInfixOf "New replica started in legislature://0")
 
       say "Starting satellite nodes ..."

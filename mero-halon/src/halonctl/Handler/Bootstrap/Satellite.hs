@@ -77,5 +77,3 @@ start nid Config{..} = do
     return ()
   where
     trackers = fmap conjureRemoteNodeId (fromDefault configTrackers)
-
-

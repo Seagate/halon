@@ -49,7 +49,7 @@ import Text.Regex.TDFA ((=~))
 
 -- | Find the host running the given node
 findNodeHost :: Node
-             -> PhaseM LoopState (Maybe Host)
+             -> PhaseM LoopState l (Maybe Host)
 findNodeHost node =  do
   phaseLog "rg-query" $ "Looking for host running " ++ show node
   g <- getLocalGraph
@@ -59,7 +59,7 @@ findNodeHost node =  do
 
 -- | Find the enclosure containing the given host.
 findHostEnclosure :: Host
-                  -> PhaseM LoopState (Maybe Enclosure)
+                  -> PhaseM LoopState l (Maybe Enclosure)
 findHostEnclosure host = do
   phaseLog "rg-query" $ "Looking for enclosure containing " ++ show host
   g <- getLocalGraph
@@ -70,7 +70,7 @@ findHostEnclosure host = do
 -- | Find a list of all hosts in the system matching a given
 --   regular expression.
 findHosts :: String
-          -> PhaseM LoopState [Host]
+          -> PhaseM LoopState l [Host]
 findHosts regex = do
   phaseLog "rg-query" $ "Looking for hosts matching regex " ++ regex
   g <- getLocalGraph
@@ -79,14 +79,14 @@ findHosts regex = do
 
 -- | Find all nodes running on the given host.
 nodesOnHost :: Host
-            -> PhaseM LoopState [Node]
+            -> PhaseM LoopState l [Node]
 nodesOnHost host = do
   phaseLog "rg-query" $ "Looking for nodes on host " ++ show host
   fmap (G.connectedTo host Runs) getLocalGraph
 
 -- | Register a new host in the system.
 registerHost :: Host
-             -> PhaseM LoopState ()
+             -> PhaseM LoopState l ()
 registerHost host = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ "Registering host: "
               ++ show host
@@ -99,7 +99,7 @@ registerHost host = modifyLocalGraph $ \rg -> do
 -- | Record that a host is running in an enclosure.
 locateHostInEnclosure :: Host
                       -> Enclosure
-                      -> PhaseM LoopState ()
+                      -> PhaseM LoopState l ()
 locateHostInEnclosure host enc = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ "Locating host "
               ++ show host
@@ -111,7 +111,7 @@ locateHostInEnclosure host enc = modifyLocalGraph $ \rg -> do
 -- | Record that a node is running on a host.
 locateNodeOnHost :: Node
                  -> Host
-                 -> PhaseM LoopState ()
+                 -> PhaseM LoopState l ()
 locateNodeOnHost node host = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ "Locating node " ++ (show node) ++ " on host "
               ++ show host
@@ -125,7 +125,7 @@ locateNodeOnHost node host = modifyLocalGraph $ \rg -> do
 -- | Register an interface on a host.
 registerInterface :: Host -- ^ Host on which the interface resides.
                   -> Interface
-                  -> PhaseM LoopState ()
+                  -> PhaseM LoopState l ()
 registerInterface host int = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ "Registering interface on host " ++ show host
 
@@ -141,7 +141,7 @@ registerInterface host int = modifyLocalGraph $ \rg -> do
 
 -- | Find logical devices on a host
 findHostStorageDevices :: Host
-                       -> PhaseM LoopState [StorageDevice]
+                       -> PhaseM LoopState l [StorageDevice]
 findHostStorageDevices host = do
   phaseLog "rg-query" $ "Looking for storage devices on host "
                     ++ show host
@@ -149,7 +149,7 @@ findHostStorageDevices host = do
 
 -- | Find physical devices in an enclosure
 findEnclosureStorageDevices :: Enclosure
-                            -> PhaseM LoopState [StorageDevice]
+                            -> PhaseM LoopState l [StorageDevice]
 findEnclosureStorageDevices enc = do
   phaseLog "rg-query" $ "Looking for storage devices in enclosure "
                     ++ show enc
@@ -157,7 +157,7 @@ findEnclosureStorageDevices enc = do
 
 -- | Find additional identifiers for a (physical) storage device.
 findStorageDeviceIdentifiers :: StorageDevice
-                             -> PhaseM LoopState [DeviceIdentifier]
+                             -> PhaseM LoopState l [DeviceIdentifier]
 findStorageDeviceIdentifiers sd = do
   phaseLog "rg-query" $ "Looking for identifiers for physical device "
                     ++ show sd
@@ -166,7 +166,7 @@ findStorageDeviceIdentifiers sd = do
 -- | Test if a drive have a given identifier
 hasStorageDeviceIdentifier :: StorageDevice
                            -> DeviceIdentifier
-                           -> PhaseM LoopState Bool
+                           -> PhaseM LoopState l Bool
 hasStorageDeviceIdentifier ld di = do
   ids <- findStorageDeviceIdentifiers ld
   return $ elem di ids
@@ -174,7 +174,7 @@ hasStorageDeviceIdentifier ld di = do
 -- | Add an additional identifier to a logical storage device.
 identifyStorageDevice :: StorageDevice
                       -> DeviceIdentifier
-                      -> PhaseM LoopState ()
+                      -> PhaseM LoopState l ()
 identifyStorageDevice ld di = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ "Adding identifier "
               ++ show di
@@ -191,7 +191,7 @@ identifyStorageDevice ld di = modifyLocalGraph $ \rg -> do
 -- | Register a new drive in the system.
 locateStorageDeviceInEnclosure :: Enclosure
                                 -> StorageDevice
-                                -> PhaseM LoopState ()
+                                -> PhaseM LoopState l ()
 locateStorageDeviceInEnclosure enc dev = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ "Registering storage device: "
               ++ show dev
@@ -209,7 +209,7 @@ locateStorageDeviceInEnclosure enc dev = modifyLocalGraph $ \rg -> do
 -- | Register a new drive in the system.
 locateStorageDeviceOnHost :: Host
                           -> StorageDevice
-                          -> PhaseM LoopState ()
+                          -> PhaseM LoopState l ()
 locateStorageDeviceOnHost host dev = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ "Registering storage device: "
               ++ show dev
@@ -227,7 +227,7 @@ locateStorageDeviceOnHost host dev = modifyLocalGraph $ \rg -> do
 -- | Merge multiple storage devices into one.
 --   Returns the new (merged) device.
 mergeStorageDevices :: [StorageDevice]
-                    -> PhaseM LoopState StorageDevice
+                    -> PhaseM LoopState l StorageDevice
 mergeStorageDevices sds = do
   phaseLog "rg" $ "Merging multiple storage devices: "
               ++ (show sds)
@@ -241,7 +241,7 @@ mergeStorageDevices sds = do
 
 -- | Get the status of a storage device.
 driveStatus :: StorageDevice
-            -> PhaseM LoopState (Maybe StorageDeviceStatus)
+            -> PhaseM LoopState l (Maybe StorageDeviceStatus)
 driveStatus dev = do
   phaseLog "rg-query" $ "Querying status of device " ++ show dev
   rg <- getLocalGraph
@@ -252,7 +252,7 @@ driveStatus dev = do
 -- | Update the status of a storage device.
 updateDriveStatus :: StorageDevice
                   -> String
-                  -> PhaseM LoopState ()
+                  -> PhaseM LoopState l ()
 updateDriveStatus dev status = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ "Updating status for device " ++ show dev ++ " to " ++ status
   ds <- driveStatus dev

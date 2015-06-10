@@ -19,13 +19,9 @@ module Handler.Service
 where
 
 import Prelude hiding ((<$>), (<*>))
-import HA.CallTimeout (callLocal)
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.Resources
-  ( Node(..)
-  , EpochRequest(..)
-  , EpochResponse(..)
-  )
+  ( Node(..) )
 import HA.Service
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy       as Dummy
@@ -45,8 +41,8 @@ import Control.Distributed.Process
   , Process
   , ProcessMonitorNotification
   , expect
-  , getSelfPid
   , withMonitor
+  , liftIO
   )
 import Control.Monad (void)
 
@@ -203,7 +199,7 @@ standardService :: Configuration a
               -> Process ()
 standardService nids sso svc = case sso of
   StartCmd (StartCmdOptions eqAddrs a) -> mapM_ (start svc a eqAddrs) nids
-  ReconfCmd (ReconfCmdOptions eqAddrs a) -> reconf svc a eqAddrs (NodeFilter nids)
+  ReconfCmd (ReconfCmdOptions eqAddrs a) -> mapM_ (reconf svc a eqAddrs) nids
   StopCmd (StopCmdOptions eqAddrs) -> mapM_ (stop svc eqAddrs) nids
 
 -- | Start a given service on a single node.
@@ -213,11 +209,13 @@ start :: Configuration a
       -> [String] -- ^ EQ Nodes to send start messages to.
       -> NodeId -- ^ Node on which to start the service.
       -> Process ()
-start s c eqAddrs nid = promulgateEQ eqnids ssrm
+start s c eqAddrs nid = do
+    liftIO $ putStrLn $ "Try to start " ++ (show $ serviceName s)
+    promulgateEQ eqnids ssrm
     >>= \pid -> withMonitor pid wait
   where
     eqnids = fmap conjureRemoteNodeId eqAddrs
-    ssrm = encodeP $ ServiceStartRequest (Node nid) s c
+    ssrm = encodeP $ ServiceStartRequest Start (Node nid) s c
     wait = void (expect :: Process ProcessMonitorNotification)
 
 -- | Reconfigure a service
@@ -225,17 +223,13 @@ reconf :: Configuration a
        => Service a -- ^ Service to reconfigure.
        -> a -- ^ Configuration.
        -> [String] -- ^ EQ Nodes to contact.
-       -> NodeFilter -- ^ Filter for which instances to reconfigure.
+       -> NodeId -- ^ Filter for which instances to reconfigure.
        -> Process ()
-reconf s c eqAddrs nf = do
-    eid <- callLocal $ do
-      _ <- getSelfPid >>= promulgateEQ eqnids . EpochRequest
-      EpochResponse eid <- expect
-      return eid
-    promulgateEQ eqnids (msg eid) >>= \pid -> withMonitor pid wait
+reconf s c eqAddrs nid = promulgateEQ eqnids msg
+    >>= \pid -> withMonitor pid wait
   where
     eqnids = fmap conjureRemoteNodeId eqAddrs
-    msg eid = encodeP $ ConfigurationUpdate eid c s nf
+    msg = encodeP $ ServiceStartRequest Restart (Node nid) s c
     wait = void (expect :: Process ProcessMonitorNotification)
 
 -- | Stop a given service on a single node.
