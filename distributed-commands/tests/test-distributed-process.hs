@@ -14,7 +14,7 @@ import Control.Distributed.Commands.Process
   , systemThere
   , redirectLogs
   , expectLog
-  , printNodeId
+  , sendSelfNode
   , __remoteTable
   , mkTraceEnv
   , TraceEnv(..)
@@ -62,7 +62,7 @@ main = do
       ["--ping-server"] -> do
         runProcess n0 $ do
           getSelfPid >>= register pingServerLabel
-          getSelfNode >>= liftIO . printNodeId
+          sendSelfNode
           forever $ do
             (pid, m) <- expect
             say $ show pid

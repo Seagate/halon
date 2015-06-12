@@ -23,14 +23,10 @@ import HA.RecoveryCoordinator.Definitions
 import HA.Startup (autoboot)
 
 import Control.Applicative ((<$>))
+import Control.Distributed.Commands.Process (sendSelfNode)
 import Control.Distributed.Process hiding (catch)
 import Control.Distributed.Process.Closure ( mkStaticClosure )
 import Control.Distributed.Process.Node
-  ( initRemoteTable
-  , newLocalNode
-  , localNodeId
-  , runProcess
-  )
 import Control.Distributed.Static ( closureCompose )
 import Control.Exception (SomeException, catch)
 
@@ -54,15 +50,6 @@ printHeader listen = do
 #else
     buildType = "TCP"
 #endif
-
--- | Prints the given 'NodeId' in the standard output.
-printNodeId :: NodeId -> IO ()
-printNodeId n = do print $ Data.Binary.encode n
-                   -- XXX: an extra line of outputs seems to be needed when
-                   -- programs are run through ssh so the output is actually
-                   -- received.
-                   putStrLn ""
-                   hFlush stdout
 
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
@@ -89,13 +76,14 @@ main = do
                  TCP.createTransport hostname port TCP.defaultTCPParameters
 #endif
     lnid <- newLocalNode transport myRemoteTable
-    -- Print the node id for the testing framework.
-    printNodeId .localNodeId $ lnid
     printHeader (localEndpoint config)
     -- Attempt to autoboot the TS
     catch (tryRunProcess lnid $ autoboot rcClosure)
           (\(e :: SomeException) -> putStrLn $ "Cannot autoboot: " ++ show e)
-    runProcess lnid $ receiveWait []
+    runProcess lnid $ do
+      -- Send the node id to the test driver if any.
+      sendSelfNode
+      receiveWait []
     return 0
   where
     rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`

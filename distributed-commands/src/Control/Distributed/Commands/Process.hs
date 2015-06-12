@@ -4,14 +4,14 @@
 --
 -- Distributed commands for distributed-process.
 --
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
 module Control.Distributed.Commands.Process
   ( spawnNode
   , spawnNode_
   , spawnLocalNode
-  , spawnNodes
-  , printNodeId
+  , sendSelfNode
   , registerLogHook
   , redirectLogs
   , redirectLogsHere
@@ -45,41 +45,24 @@ import qualified Control.Distributed.Commands as C
     )
 import qualified Control.Distributed.Commands.Management as M
 
-import Control.Concurrent.Async.Lifted
 import Control.Distributed.Process
-    ( spawnLocal
-    , call
-    , whereis
-    , reregister
-    , send
-    , matchAny
-    , match
-    , matchIf
-    , forward
-    , ProcessId
-    , Process
-    , receiveWait
-    , receiveTimeout
-    , NodeId
-    , liftIO
-    , processNodeId
-    , die
-    )
 import Control.Distributed.Process.Closure
     ( remotable
     , mkClosure
     , sdictUnit
     )
 import Control.Distributed.Process.Internal.Types (runLocalProcess)
+import Control.Exception as E (evaluate, onException, SomeException, throwIO)
 import Control.Monad.Reader (ask, when)
-import Data.Binary (decode, encode)
-import Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Base64.Lazy as B64
+import Data.Binary (decode, encode, Binary)
+import qualified Data.ByteString.Lazy.Char8 as C8 (pack, unpack)
 import Data.IORef (newIORef, readIORef, modifyIORef')
 import Data.List (isPrefixOf, isSuffixOf)
 import Data.Foldable (forM_)
+import Data.Typeable (Typeable)
 import System.Exit (ExitCode(..))
-import System.IO (hFlush, stdout)
-import System.Environment (getEnvironment, setEnv)
+import System.Environment (lookupEnv, getEnvironment, setEnv)
 
 -- | Used when calling 'spawnNode', it gathers the resulted 'NodeId' and
 --   the action used to read input from the process.
@@ -90,68 +73,65 @@ data NodeHandle =
       -- ^ Reads input from the process.
     }
 
+newtype SpawnNodeId = SpawnNodeId NodeId
+  deriving (Typeable, Binary)
+
 -- | @spawnNode h command@ launches @command@ on the host @h@.
 --
 -- @command@ is expected to spawn a Cloud Haskell node, and it
--- should print its 'NodeId' on the very first line of the standard
--- output as
---
--- > print (Data.Binary.encode nodeId)
---
--- 'printNodeId' can be used for that purpose.
---
+-- should send its 'NodeId' back to the caller with 'sendSelfNode' at the very
+-- start.
 spawnNode :: HostName -> String -> Process NodeHandle
-spawnNode h = liftIO . spawnNodeIO h
+spawnNode h cmd =
+    spawnNodeWith (maybe C.systemThere C.systemThereAsUser muser h) cmd
+  where
+    muser = if isLocalHost h then Nothing else Just "dev"
 
 -- | Same as 'spawnNode' but returns a 'NodeId' instead.
 spawnNode_ :: HostName -> String -> Process NodeId
 spawnNode_ h = fmap handleGetNodeId . spawnNode h
 
--- | Prints the given 'NodeId' in the standard output.
-printNodeId :: NodeId -> IO ()
-printNodeId n = do print $ encode n
-                   -- XXX: an extra line of outputs seems to be needed when
-                   -- programs are run through ssh so the output is actually
-                   -- received.
-                   putStrLn ""
-                   hFlush stdout
+-- | Sends the local 'NodeId' to the caller. Does nothing if the caller is not
+-- 'spawnNode'.
+sendSelfNode :: Process ()
+sendSelfNode = do
+  mpid <- liftIO $ lookupEnv "DC_CALLER_PID"
+  case mpid of
+    Nothing   -> return ()
+    Just epid -> do
+      pid <- liftIO $ evaluate
+                       (decode $ either error id $ B64.decode $ C8.pack epid)
+               `E.onException` putStrLn "failed decoding spawnNode pid"
+      getSelfNode >>= send pid . SpawnNodeId
 
-spawnNodeIO :: HostName -> String -> IO NodeHandle
-spawnNodeIO h cmd = do
-    getLine_cmd <- maybe C.systemThere C.systemThereAsUser muser h cmd
-    mnode <- getLine_cmd
-    case mnode of
-      Left _ -> error $ "The command \"" ++ cmd ++ "\" did not print a NodeId."
-      Right n  -> case reads n of
-        (bs,"") : _ -> return $ NodeHandle (decode (bs :: ByteString))
-                                           getLine_cmd
-        _           -> error $ "Couldn't parse node id. \"" ++ cmd ++
-                               "\" produced: " ++ n
-  where
-    muser = if isLocalHost h then Nothing else Just "dev"
+-- | Like 'spawnNode' but takes as argument the IO command used to spawn the
+-- node.
+spawnNodeWith :: (String -> IO (IO (Either ExitCode String)))
+              -> String
+              -> Process NodeHandle
+spawnNodeWith ioSpawn cmd = do
+    pid <- getSelfPid
+    getLine_cmd <- liftIO $ ioSpawn $
+      "export DC_CALLER_PID=" ++ C8.unpack (B64.encode $ encode pid) ++ "; " ++
+      cmd
+    -- The following try handles the exception that would result when the caller
+    -- interrupts the call because it takes too long.
+    enid <- try expect
+    case enid of
+      Left e -> liftIO $ do
+        let loop = getLine_cmd >>= either print (\x -> putStrLn x >> loop)
+        loop
+        putStrLn $ "The command \"" ++ cmd ++ "\" did not sent a NodeId."
+        throwIO (e :: SomeException)
+      Right (SpawnNodeId nid) ->
+        return $ NodeHandle nid getLine_cmd
 
 isLocalHost :: String -> Bool
 isLocalHost h = h == "localhost" || "127." `isPrefixOf` h
 
--- | Like @spawnNode@ but spawns multiple nodes in parallel.
---
--- XXX: This is a temporary function until there is an 'async' implementation
--- for 'Process' which will allow to define it in terms of 'spawnNode'.
---
-spawnNodes :: [HostName] -> String -> Process [NodeHandle]
-spawnNodes hs cmd = liftIO $ mapConcurrently (flip spawnNodeIO cmd) hs
-
 -- | Like @spawnNode@ but spawns the node in the local host.
 spawnLocalNode :: String -> Process NodeId
-spawnLocalNode cmd = liftIO $ do
-    getLine_cmd <- C.systemLocal cmd
-    mnode <- getLine_cmd
-    case mnode of
-      Left _ -> error $ "The command \"" ++ cmd ++ "\" did not print a NodeId."
-      Right n  -> case reads n of
-        (bs,"") : _ -> return $ decode (bs :: ByteString)
-        _           -> error $ "Couldn't parse node id. \"" ++ cmd ++
-                               "\" produced: " ++ n
+spawnLocalNode cmd = handleGetNodeId <$> spawnNodeWith C.systemLocal cmd
 
 -- | Intercepts 'say' messages from processes as a crude way to know that an
 -- action following an asynchronous send has completed.
@@ -293,9 +273,9 @@ data TraceEnv = TraceEnv
 --
 -- > TraceEnv spawnNode' gatherFiels <- mkTraceEnv
 --
--- **Note.** Since spawnNode reads the 'NodeId' from the standard output,
--- tracing to the console is not suported. mkTraceEnv expects tracing to files.
--- All files are given the '.trace' suffix, to make them easy to recognize.
+-- **Note.** Tracing to the console is not suported yet. mkTraceEnv expects
+-- tracing to files. All files are given the '.trace' suffix, to make them easy
+-- to recognize.
 --
 -- **Note.** If 'mkTraceEnv' is run after 'newLocalNode', the trace file of the
 -- local node will be missing the '.trace' suffix.
