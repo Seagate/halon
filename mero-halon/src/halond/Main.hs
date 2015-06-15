@@ -30,8 +30,6 @@ import Control.Distributed.Process.Node
 import Control.Distributed.Static ( closureCompose )
 import Control.Exception (SomeException, catch)
 
-import qualified Data.Binary
-
 #ifdef USE_MERO
 import Mero
 import Mero.M0Worker
