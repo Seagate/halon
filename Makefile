@@ -16,6 +16,10 @@
 #       dep               -- install all Haskell dependencies
 #       depclean          -- remove the sandbox altogether
 #
+#   * QA:
+#       check-freeze      -- check if cabal.config file have missing entries
+#       coverage          -- generate coverage report
+#
 # Variables that affect the build process:
 #
 #    MERO_ROOT            -- path to the build-directory of the mero project
@@ -24,6 +28,7 @@
 #    USE_TCP              -- use TCP communication (default)
 #
 #    NO_TESTS             -- do not run tests while building packages
+#    NO_COVERAGE          -- do not gather coverage stats (implied by NO_TESTS)
 #    PACKAGES             -- sub-projects to work with (see README.md!)
 #    CABAL_FLAGS          -- common flags that are passed to all invocations of cabal the cabal
 #    VENDOR_CABAL_FLAGS   -- provide a way to pass flags when installing vendor packages
@@ -125,6 +130,8 @@ export GENDERS
 ifndef NO_TESTS
 CABAL_BUILD_JOBS = --jobs=1
 override HALON_CABAL_FLAGS += --run-tests
+else
+NO_COVERAGE = 1
 endif
 
 # This option is needed to make GHC keep silence when unexisting functions
@@ -132,6 +139,9 @@ endif
 # Applicative exported from prelude.
 override CABAL_FLAGS += --ghc-options='-fno-warn-dodgy-imports'
 
+ifndef NO_COVERAGE
+override HALON_CABAL_FLAGS += --ghc-options='-fhpc'
+endif
 
 export USE_TCP
 export USE_RPC
@@ -143,12 +153,16 @@ export TEST_LISTEN
 ci: cabal.config build
 	./scripts/check-copyright.sh
 
+BUILD_PKGS := $(patsubst %,%_build,$(PACKAGES))
 .PHONY: build
-build: dep
+build: dep $(BUILD_PKGS)
 # XXX Tests tend to bind the same ports, making them mutually
 # exclusive in time. The solution is to allow tests to bind
 # a random available port.
-	cabal install $(CABAL_FLAGS) $(HALON_CABAL_FLAGS) $(CABAL_BUILD_JOBS) $(PACKAGES)
+
+$(BUILD_PKGS):
+	cabal install $(CABAL_FLAGS) $(HALON_CABAL_FLAGS) $(CABAL_BUILD_JOBS) $(patsubst %_build, %, $@)
+
 
 CLEAN := $(patsubst %,%_clean,$(PACKAGES))
 .PHONY: $(CLEAN) clean depclean
@@ -199,3 +213,7 @@ rpm: build
 	cp systemd/halond.service rpmbuild/SOURCES/
 	rpmbuild --define "_topdir ${PWD}/rpmbuild" -ba rpmbuild/SPECS/halon.spec
 
+.PHONY: coverage
+coverage: build
+	rm -rf coverage
+	bash run-coverage.sh

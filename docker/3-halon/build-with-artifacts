@@ -40,5 +40,10 @@ if [ "$RC" == "0" ] ; then
   RC=$?
 fi
 
-exit $RC
+if [ "$RC" == "0" ] ; then
+  make coverage
+  RC=$?
+  cp -vr coverage /halon/artifacts/
+fi
 
+exit $RC

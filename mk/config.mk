@@ -22,9 +22,9 @@ PACKAGE_DIR = $(ROOT_DIR)/
 VENDOR_DIR = $(ROOT_DIR)/vendor/
 
 PACKAGES := distributed-commands \
+           distributed-process-trans \
            distributed-process-scheduler \
            distributed-process-test \
-           distributed-process-trans \
            consensus \
            consensus-paxos \
            replicated-log \
