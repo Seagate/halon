@@ -72,6 +72,7 @@ import Data.Foldable (for_, traverse_)
 import Data.Functor (void)
 import Data.Traversable (for)
 import Data.Typeable
+
 import Network.CEP
 
 -- | Since there is at most one Event Queue per tracking station node,
@@ -104,7 +105,7 @@ compareAndSwapRC :: (Maybe ProcessId, Maybe ProcessId) -> EventQueue -> EventQue
 compareAndSwapRC (expected, new) = first $ \current ->
     if current == expected then new else current
 
-filterEvent :: EventId -> EventQueue -> EventQueue
+filterEvent :: UUID -> EventQueue -> EventQueue
 filterEvent eid = second $ spineSeq . filter (\HAEvent{..} -> eid /= eventId)
 
 remotable [ 'addSerializedEvent
@@ -196,7 +197,7 @@ recordEvent rg sender ev = void $ liftProcess $ do
         updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
       usend self (RecordAck sender ev)
 
-trim :: RGroup g => g EventQueue -> EventId -> PhaseM s ()
+trim :: RGroup g => g EventQueue -> UUID -> PhaseM s ()
 trim rg eid =
     liftProcess $ do
       self <- getSelfPid
@@ -243,11 +244,11 @@ data RCLost = RCLost deriving (Show, Typeable, Generic)
 
 instance Binary RCLost
 
-data TrimDone = TrimDone EventId deriving (Typeable, Generic)
+data TrimDone = TrimDone UUID deriving (Typeable, Generic)
 
 instance Binary TrimDone
 
-data TrimAck = TrimAck EventId deriving (Typeable, Generic)
+data TrimAck = TrimAck UUID deriving (Typeable, Generic)
 
 instance Binary TrimAck
 

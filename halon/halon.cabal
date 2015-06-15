@@ -104,7 +104,8 @@ Library
                    netwire,
                    template-haskell,
                    distributed-process-async >= 0.2,
-                   hostname
+                   hostname,
+                   uuid
   if flag(rpc)
     Build-Depends: rpclite,
                    network-transport,
@@ -158,7 +159,8 @@ Test-Suite unit-tests
                     options-schema >= 0.1.1.0,
                     tasty >= 0.8,
                     tasty-files,
-                    cep
+                    cep,
+                    uuid
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
@@ -203,7 +205,8 @@ Test-Suite integration-tests
                     replicated-log,
                     tasty >= 0.8,
                     tasty-files,
-                    cep
+                    cep,
+                    uuid
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
