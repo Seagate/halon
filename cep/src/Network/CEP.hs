@@ -143,6 +143,8 @@ data Machine s =
       --   the terminal.
     , _machInitRule :: !(Maybe (InitRule s))
       -- ^ Rule to run at 'InitStep' step.
+    , _machOnReady :: !(Process ())
+      -- ^ Action run when the CEP engine has been initialized.
     }
 
 _printDebugStr :: MonadIO m => Machine g -> String -> m ()
@@ -174,6 +176,7 @@ emptyMachine s =
     , _machState     = s
     , _machDebugMode = False
     , _machInitRule  = Nothing
+    , _machOnReady   = return ()
     }
 
 -- | Fills type tracking map with every type of messages needed by the engine
@@ -227,6 +230,9 @@ buildMachine s defs = go (emptyMachine s) $ view defs
     go st (SetSetting DebugMode b :>>= k) =
         let st' = st { _machDebugMode = b } in
         go st' $ view $ k ()
+    go st (SetSetting OnReady action :>>= k) =
+        let st' = st { _machOnReady = action } in
+        go st' $ view $ k ()
 
 -- | Simple 'Match' that expects a subscription request.
 subMatch :: Match Msg
@@ -272,7 +278,9 @@ initRuleMatch m =
 runMachine :: MachineStep -> Machine s -> Process ()
 runMachine InitStep st =
     case _machInitRule st of
-      Nothing -> runMachine NormalStep st
+      Nothing -> do
+        _machOnReady st
+        runMachine NormalStep st
       Just (InitRule rd typs) -> do
         (rd', g') <- runRule st NoMessage rd
         let st' = st { _machState = g' }
@@ -285,10 +293,14 @@ runMachine InitStep st =
                   (newRd, newG) <- runRule tmpSt (GotMessage info msg) tmpRd
                   let newSt = tmpSt { _machState = newG }
                   if nullStack newRd
-                      then runMachine NormalStep newSt
+                      then do
+                      _machOnReady newSt
+                      runMachine NormalStep newSt
                       else loop newRd newSt
         if nullStack rd'
-            then runMachine NormalStep st'
+            then do
+            _machOnReady st'
+            runMachine NormalStep st'
             else loop rd' st'
 runMachine step@NormalStep st = do
     msg <- receiveWait matches

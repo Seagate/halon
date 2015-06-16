@@ -319,6 +319,8 @@ data Setting s a where
     -- ^ Sets the default message 'Buffer'.
     DebugMode :: Setting s Bool
     -- ^ Sets debug mode.
+    OnReady :: Setting s (Process ())
+    -- ^ Runs an action when the CEP engine has been initialized.
 
 -- | Definition state machine.
 data Declare g a where
@@ -361,6 +363,10 @@ setRuleFinalizer k = singleton $ SetSetting RuleFinalizer k
 setBuffer :: Buffer -> Definitions s ()
 setBuffer b = singleton $ SetSetting PhaseBuffer b
 
--- | Enable debug mode.
+-- | Enables debug mode.
 enableDebugMode :: Definitions s ()
 enableDebugMode = singleton $ SetSetting DebugMode True
+
+-- | Runs an action when CEP engine has been initialized
+onReady :: Process () ->  Definitions s ()
+onReady action = singleton $ SetSetting OnReady action
