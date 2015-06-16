@@ -31,6 +31,8 @@ ut = do
                 launch sequenceIsWorking
               , testCase "Fork is working" $
                 launch forkIsWorking
+              , testCase "Init rule is working" $
+                launch initRuleIsWorking
               ]
 
     return grp

@@ -326,11 +326,18 @@ data Declare g a where
     -- ^ Defines a new rule.
     SetSetting :: Setting g a -> a -> Declare g ()
     -- ^ Set a CEP engine setting.
+    Init :: RuleM g l (Started g l) -> Declare g ()
+    -- ^ Set a rule to execute before proceeding regular CEP engine execution.
 
 -- | Defines a new rule.
 define :: String -> RuleM g l (Started g l) -> Definitions g ()
 define name action = singleton $ DefineRule name action
 
+-- | Set a rule to execute before proceeding regular CEP engine execution. That
+--   rule must successfully terminate (Doesn't have 'Phase' state machines
+--   waiting on the stack).
+initRule :: RuleM g l (Started g l) -> Definitions g ()
+initRule r = singleton $ Init r
 
 defineSimple :: Serializable a
              => String

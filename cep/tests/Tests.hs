@@ -127,3 +127,35 @@ forkIsWorking = do
     usend pid donut
     Res () <- expect
     return ()
+
+initRuleIsWorking :: Process ()
+initRuleIsWorking = do
+    self <- getSelfPid
+    pid  <- spawnLocal $ execute (1 :: Int) $ do
+
+      initRule $ do
+        ph1 <- phaseHandle "init-1"
+        ph2 <- phaseHandle "init-2"
+
+        directly ph1 $ do
+          modify Global (+1)
+          continue ph2
+
+        setPhase ph2 $ \(Donut _) ->
+          modify Global (+2)
+
+        start ph1 ()
+
+      define "rule" $ do
+        ph1 <- phaseHandle "state-1"
+
+        setPhase ph1 $ \(Donut _) -> do
+          i <- get Global
+          liftProcess $ usend self (Res i)
+
+        start ph1 ()
+
+    usend pid donut
+    usend pid donut
+    Res (i :: Int) <- expect
+    assert $ i == 4

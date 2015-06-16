@@ -20,7 +20,7 @@ module Network.CEP
     ) where
 
 import           Control.Monad
-import           Data.ByteString hiding (foldr, putStrLn, reverse, length)
+import           Data.ByteString hiding (foldr, putStrLn, reverse, length, null)
 import           Data.Dynamic
 import           Data.Foldable (toList, for_, traverse_)
 import           Data.Maybe
@@ -97,6 +97,23 @@ data Msg
       -- ^ A message has been sent to the CEP engine but no rule is interested
       --   in.
 
+-- | CEP engine current step.
+data MachineStep
+    = InitStep
+      -- ^ The engine has just started. It runs init rule (if any) then switch
+      --   'NormalStep'.
+    | NormalStep
+      -- ^ Regular CEP execution step.
+
+-- | Holds init rule state.
+data InitRule s =
+    InitRule
+    { _initRuleData :: !(RuleData s)
+      -- ^ Init rule state.
+    , _initRuleTypes :: !(M.Map Fingerprint TypeInfo)
+      -- ^ Keep track of type of messages handled by the init rule.
+    }
+
 -- | Main CEP engine data structure.
 data Machine s =
     Machine
@@ -124,6 +141,8 @@ data Machine s =
     , _machDebugMode :: !Bool
       -- ^ Set the CEP engine in debug mode, dumping more internal log to
       --   the terminal.
+    , _machInitRule :: !(Maybe (InitRule s))
+      -- ^ Rule to run at 'InitStep' step.
     }
 
 _printDebugStr :: MonadIO m => Machine g -> String -> m ()
@@ -154,6 +173,7 @@ emptyMachine s =
     , _machTypeMap   = MM.empty
     , _machState     = s
     , _machDebugMode = False
+    , _machInitRule  = Nothing
     }
 
 -- | Fills type tracking map with every type of messages needed by the engine
@@ -165,6 +185,13 @@ fillMachineTypeMap st@Machine{..} =
     go key (RuleData _ _ _ _ _ typs) m =
         let insertF i@(TypeInfo fprt _) = MM.insert fprt (key, i) in
         foldr insertF m typs
+
+-- | Fills a type tracking map with every type of messages needed by the init
+--   rule.
+initRuleTypeMap :: RuleData s -> M.Map Fingerprint TypeInfo
+initRuleTypeMap (RuleData _ _ _ _ _ typs) = foldr go M.empty typs
+  where
+    go i@(TypeInfo fprt _) = M.insert fprt i
 
 -- | Constructs a CEP engine state by using an initial global state value and a
 --   definition state machine.
@@ -181,6 +208,12 @@ buildMachine s defs = go (emptyMachine s) $ view defs
             st' = st { _machRuleData  = mp
                      , _machRuleCount = idx + 1
                      } in
+        go st' $ view $ k ()
+    go st (Init m :>>= k) =
+        let dat  = buildRuleData "init" m
+            typs = initRuleTypeMap dat
+            ir   = InitRule dat typs
+            st'  = st { _machInitRule = Just ir } in
         go st' $ view $ k ()
     go st (SetSetting Logger  action :>>= k) =
         let st' = st { _machLogger = Just action } in
@@ -208,23 +241,65 @@ buildMatch Machine{..} =
         []  -> return Discarded
         xs  -> return $ Appeared xs msg
 
--- | Main CEP engine loop.
---   I. Wait for a message to come.
+initRuleMatch :: M.Map Fingerprint TypeInfo -> Match (Maybe (Message, TypeInfo))
+initRuleMatch m =
+    matchAny $ \msg ->
+      case M.lookup (messageFingerprint msg) m of
+        Nothing  -> return Nothing
+        Just typ -> return $ Just (msg, typ)
+
+-- | Main CEP engine loop
+--   ====================
+--
+--   InitStep
+--   --------
+--   If the user register a init rule. We try to run it by passing 'NoMessage'
+--   to the rule state machine. It allows to define a init rule that maybe
+--   doesn't need a message to start or will carrying some action before asking
+--   for a particular message.
+--   If the rule state machine returns an empty stack, it means the init rule
+--   has been executed successfully. Otherwise it means it needs more inputs.
+--   In this case we're feeding the init rule with incoming messages until
+--   the rule state machine returns an empty stack.
+--
+--   NormalStep
+--   ----------
+--   Waits for a message to come.
 --     1. 'Discarded': It starts a new loop.
 --     2. 'SubRequest': It registers the new subscribers to subscribers map.
 --     3. 'Appeared': It dispatches the message to the according rule state
 --        machine.
-runMachine :: Machine s -> Process ()
-runMachine st = do
+runMachine :: MachineStep -> Machine s -> Process ()
+runMachine InitStep st =
+    case _machInitRule st of
+      Nothing -> runMachine NormalStep st
+      Just (InitRule rd typs) -> do
+        (rd', g') <- runRule st NoMessage rd
+        let st' = st { _machState = g' }
+            matches = [initRuleMatch typs]
+            loop tmpRd tmpSt = do
+              res <- receiveWait matches
+              case res of
+                Nothing          -> loop tmpRd tmpSt
+                Just (msg, info) -> do
+                  (newRd, newG) <- runRule tmpSt (GotMessage info msg) tmpRd
+                  let newSt = tmpSt { _machState = newG }
+                  if nullStack newRd
+                      then runMachine NormalStep newSt
+                      else loop newRd newSt
+        if nullStack rd'
+            then runMachine NormalStep st'
+            else loop rd' st'
+runMachine step@NormalStep st = do
     msg <- receiveWait matches
     case msg of
-      Discarded -> runMachine st
+      Discarded -> runMachine step st
       SubRequest sub ->
          let key   = decodeFingerprint $ _subType sub
              value = _subPid sub
              subs' = MM.insert key value $ _machSubs st
              st'   = st { _machSubs = subs' } in
-        runMachine st'
+        runMachine step st'
       Appeared tups imsg -> do
         let action =
               for_ tups $ \(key, info) -> do
@@ -232,21 +307,21 @@ runMachine st = do
                 let dts = _machRuleData st'
                 case M.lookup key dts of
                   Just rd -> do
-                      (rd', g') <- lift $ runRule st' info imsg rd
+                      (rd', g') <- lift $ runRule st' (GotMessage info imsg) rd
                       let  st'' = st' { _machRuleData = M.insert key rd' dts
                                       , _machState    = g'
                                       }
                       State.put st''
                   _ -> fail "runMachine: ruleKey is invalid (impossible)"
         st' <- State.execStateT action st
-        runMachine st'
+        runMachine step st'
   where
     matches = [subMatch, buildMatch st]
 
 -- | Executes a CEP definitions to the 'Process' monad given a initial global
 --   state.
 execute :: s -> Definitions s () -> Process ()
-execute s defs = runMachine machine
+execute s defs = runMachine InitStep machine
   where
     machine = buildMachine s defs
 
@@ -320,6 +395,9 @@ data RuleData g =
       --   'buildMachine'.
     }
 
+nullStack :: RuleData g -> Bool
+nullStack (RuleData _ _ _ _ stk _) = null stk
+
 -- | Used as a key for referencing a rule at upmost level of the CEP engine.
 --   The point is to allow the user to refer to rules by their name while
 --   being able to know which rule has been defined the first. That give us
@@ -346,30 +424,37 @@ data Output g l
     | Stopped
       -- ^ 'Phase' state machine decided.
 
+data RuleInput
+    = NoMessage
+    | GotMessage TypeInfo Message
+      -- ^ When we've received a message from the 'Process' mailbox.
+
 -- | Rule execution main loop. Its goal is to deserialize the message we got
 --   from the 'Process' mailbox then feed the stack of 'Phase' with it. It
 --   starts to run the stack of 'Phase' and awaiting of the result. After that
 --   it update the rule state accordingly.
 runRule :: Machine g
-        -> TypeInfo
-        -> Message
+        -> RuleInput
         -> RuleData g
         -> Process (RuleData g, g)
-runRule mach
-       (TypeInfo _ (_ :: Proxy a)) msg (RuleData sp st ps dn stk tps) = do
-    Just (a :: a) <- unwrapMessage msg
-    let jobs =
-          case stk of
-            _:_ ->
-              let mapF xstk =
+runRule mach input (RuleData sp st ps dn stk tps) = do
+    jobs <- case input of
+      GotMessage (TypeInfo _ (_ :: Proxy a)) msg -> do
+        Just (a :: a) <- unwrapMessage msg
+        case stk of
+          _:_ ->
+            let mapF xstk =
                     let buf'  = bufferInsert a $ _slotBuffer xstk
                         xstk' = xstk { _slotBuffer = buf' } in
                     xstk' in
-              fmap mapF stk
-            _ ->
-              let buf = bufferInsert a $ _machPhaseBuf mach in
-              [StackSlot buf sp st NormalContext]
-        job:rest = jobs
+            return $ fmap mapF stk
+          _ -> let buf = bufferInsert a $ _machPhaseBuf mach in
+               return [StackSlot buf sp st NormalContext]
+      NoMessage ->
+        case stk of
+          [] -> return [StackSlot (_machPhaseBuf mach) sp st NormalContext]
+          _  -> return stk
+    let job:rest = jobs
         pstate = PhaseState
                  { _phaseState   = _machState mach
                  , _phaseMap     = ps
