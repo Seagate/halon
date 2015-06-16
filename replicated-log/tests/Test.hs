@@ -169,26 +169,29 @@ tests _ = do
                               )
                               $ const $ return ()
                     ]
-              say $ "Spawning group."
               bracket (forM nodes $ flip
                          spawn $(mkStaticClosure 'snapshotServer)
                       )
                       (mapM_ $ \pid -> exit pid "setup" >> waitFor pid) $
                       const $
-                bracket (Log.new
-                             $(mkStatic 'State.commandEqDict)
-                             ($(mkStatic 'State.commandSerializableDict)
-                                `staticApply` sdictState)
-                             (staticClosure $(mkStatic 'testConfig))
-                             (staticClosure $(mkStatic 'testLog))
-                             nodes
-                          >> Log.spawnReplicas
+                bracket (do
+                            say "Creating group"
+                            Log.new
+                              $(mkStatic 'State.commandEqDict)
+                              ($(mkStatic 'State.commandSerializableDict)
+                                 `staticApply` sdictState)
+                              (staticClosure $(mkStatic 'testConfig))
+                              (staticClosure $(mkStatic 'testLog))
+                              nodes
+                            say "Spawning replicas"
+                            Log.spawnReplicas
                                testLogId
                                $(mkStaticClosure 'testPersistDirectory)
                                nodes
                         )
                         (forM_ nodes . Log.killReplica)
-                        $ \h ->
+                        $ \h -> do
+                  say "Starting test"
                   State.newPort h >>= action h
 
     let ut = testGroup "ut"
