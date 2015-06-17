@@ -98,7 +98,7 @@ engineIsRunning = Query $ GetSetting EngineIsRunning
 tick :: Request 'Write (Process (RunInfo, Engine))
 tick = Run Tick
 
-rawSubRequest :: Subscribe -> Request 'Write (Process ((), Engine))
+rawSubRequest :: Subscribe -> Request 'Write (Process ((), Engine))
 rawSubRequest = Run . NewSub
 
 rawIncoming :: Message -> Request 'Write (Process (RunInfo, Engine))
@@ -122,7 +122,7 @@ data InitRule s =
       -- ^ Keep track of type of messages handled by the init rule.
     }
 
--- | Main CEP engine data structure.
+-- | Main CEP engine state structure.
 data Machine s =
     Machine
     { _machRuleData :: !(M.Map RuleKey (RuleData s))
@@ -130,11 +130,11 @@ data Machine s =
     , _machSession :: !TimeSession
       -- ^ Time tracking session.
     , _machSubs :: !Subscribers
-      -- ^ Subscribers interested by event issued by this CEP engine.
+      -- ^ Subscribers interested in events issued by this CEP engine.
     , _machLogger :: !(Maybe (Logs -> s -> Process ()))
       -- ^ Logger callback.
     , _machRuleFin :: !(Maybe (s -> Process s))
-      -- ^ Callback used when a rule's completed.
+      -- ^ Callback used when a rule has completed.
     , _machRuleCount :: !Int
       -- ^ It will get you the number of rules that CEP engine handles. but
       --   it's use to order rule by order in appearence when generating
@@ -142,12 +142,12 @@ data Machine s =
     , _machPhaseBuf :: !Buffer
       -- ^ Default buffer when forking a new 'Phase' state machine.
     , _machTypeMap :: !(MM.MultiMap Fingerprint (RuleKey, TypeInfo))
-      -- ^ Keep track of every rule interested by a certain type. It also keep
-      --   type information that helps us deserializing.
+      -- ^ Keep track of every rule interested in a certain message type.
+      --   It also keeps type information that helpful for deserializing.
     , _machState :: !s
       -- ^ CEP engine global state.
     , _machDebugMode :: !Bool
-      -- ^ Set the CEP engine in debug mode, dumping more internal log to
+      -- ^ Set the CEP engine in debug mode, dumping more internal log to the
       --   the terminal.
     , _machInitRule :: !(Maybe (InitRule s))
       -- ^ Rule to run at 'InitStep' step.

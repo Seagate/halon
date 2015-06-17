@@ -23,8 +23,7 @@ import           FRP.Netwire (Session)
 
 import Network.CEP.Buffer
 
--- | That message is sent when a 'Process' asks for a subscription. Used
---   internally.
+-- | That message is sent when a 'Process' asks for a subscription.
 data Subscribe =
     Subscribe
     { _subType :: ! ByteString
@@ -43,23 +42,20 @@ newSubscribeRequest pid _ = Subscribe bytes pid
   where
     bytes = encodeFingerprint $ fingerprint (undefined :: a)
 
--- | That message is emitted every time an event of type `a` has been published.
---   A 'Process' will received that message only if it subscribed for that
---   type of message. In CEP parlance, that message will be emitted if that
---   has been processed by the CEP processor or if that processor published it
---   manually (using 'publish' function).
+-- | Emitted every time an event of type @a@ is published. A 'Process' will
+---  receive that message only if it subscribed for that type of message.
 data Published a =
     Published
     { pubValue :: !a
       -- ^ Published event.
     , pubPid :: !ProcessId
-      -- ^ The 'Process' that emitted this publication.
+      -- ^ The emitting process.
     } deriving (Show, Typeable, Generic)
 
 instance Binary a => Binary (Published a)
 
 -- | CEP engine uses typed subscriptions. Subscribers are referenced by their
---   'ProcessId'. Several subscribers can be associated to a type of message.
+--   'ProcessId'. Several subscribers can be associated to a type of message.
 type Subscribers = MM.MultiMap Fingerprint ProcessId
 
 type SMLogs = S.Seq (String, String, String)
@@ -97,7 +93,7 @@ type Definitions s a = Specification s a
 --   instruction is a 'start' call.
 data Started g l = StartingPhase l (Phase g l)
 
--- | Holds type information used for later type message desarialization.
+-- | Holds type information used for later type message deserialization.
 data TypeInfo =
     forall a. Serializable a =>
     TypeInfo
