@@ -235,6 +235,12 @@ data PhaseInstr g l a where
     Switch :: [PhaseHandle] -> PhaseInstr g l ()
     -- ^ Changes state machine context. Given the list of 'PhaseHandle', switch
     --   to the first 'Phase' that's successfully executed.
+    Peek :: Serializable a => Index -> PhaseInstr g l (Index, a)
+    -- ^ Peeks a message from the 'Buffer' given a minimun 'Index'. The 'Buffer'
+    --   is not altered.
+    Shift :: Serializable a => Index -> PhaseInstr g l (Index, a)
+    -- ^ Consumes a message from the 'Buffer' given a minimun 'Index'. The
+    --   'Buffer' is altered.
 
 -- | Persists the global state.
 save :: g -> PhaseM g l ()
@@ -297,6 +303,18 @@ phaseLog ctx line = singleton $ PhaseLog ctx line
 --   the first 'Phase' that's successfully executed.
 switch :: [PhaseHandle] -> PhaseM g l ()
 switch xs = singleton $ Switch xs
+
+-- | Peeks a message from the 'Buffer' given a minimun 'Index'. The 'Buffer' is
+--   not altered. If the message is not available, 'Phase' state machine is
+--   suspended.
+peek :: Serializable a => Index -> PhaseM g l (Index, a)
+peek idx = singleton $ Peek idx
+
+-- | Consumes a message from the 'Buffer' given a minimun 'Index'. The 'Buffer'
+--   is altered. If the message is not available, 'Phase' state machine is
+--   suspended.
+shift :: Serializable a => Index -> PhaseM g l (Index, a)
+shift idx = singleton $ Shift idx
 
 -- | Gathers all the logs produced during 'Phase' state machine run.
 data Logs =

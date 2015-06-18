@@ -8,6 +8,8 @@
 module Network.CEP.Buffer
     ( FIFOType(..)
     , Buffer
+    , Index
+    , initIndex
     , bufferInsert
     , bufferGetWithIndex
     , bufferGet
@@ -31,6 +33,9 @@ data FIFOType
       --   the older one when a new message is inserted.
 
 type Index = Int
+
+initIndex :: Index
+initIndex = (-1)
 
 data FIFO =
     FIFO

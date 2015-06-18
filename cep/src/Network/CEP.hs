@@ -14,7 +14,9 @@
 module Network.CEP
     ( module Network.CEP.Types
     , Published(..)
+    , Index
     , execute
+    , initIndex
     , subscribe
     , occursWithin
     ) where
@@ -739,6 +741,14 @@ runSM pname st buf l stk action = viewT action >>= go
                 parent = StackSlot buf p l (SwitchContext slots) in
             return $ Done st $ reverse (parent:stk)
           _ -> fail "impossible runPhase: one handle is invalid"
+    go (Peek idx :>>= k) =
+        case bufferPeek idx buf of
+          Nothing -> runSM pname st buf l stk suspend
+          Just r  -> runSM pname st buf l stk $ k r
+    go (Shift idx :>>= k) =
+        case bufferGetWithIndex idx buf of
+          (Nothing, _)   -> runSM pname st buf l stk suspend
+          (Just r, buf') -> runSM pname st buf' l stk $ k r
 
 -- | Execute a 'StackSlot' and update the 'Phase' execution state based of the
 --   current 'Phase' context and result evaluation.
