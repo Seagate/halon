@@ -642,6 +642,16 @@ extractSeqMsg s sbuf = go (-1) sbuf s
         return $ Just ext
     go _ _ _ = return Nothing
 
+-- | Notifies every subscriber that a message those are interested in has
+--   arrived.
+notifySubscribers :: Serializable a => PhaseState g l -> a -> Process ()
+notifySubscribers PhaseState{..} a = do
+    self <- getSelfPid
+    for_ subs $ \pid ->
+      usend pid (Published a self)
+  where
+    subs = MM.lookup (fingerprint $ asSub a) _phaseSubs
+
 -- | Execute a 'Phase' state machine. If it's 'DirectCall' 'Phase', it's runned
 --   directly. If it's 'ContCall' one, we make sure we can satisfy its
 --   dependency. Otherwise, we 'Suspend' that phase.
@@ -656,7 +666,9 @@ runPhaseCall sst buf l p =
       ContCall typ k -> do
         res <- extractMsg typ buf
         case res of
-          Just (Extraction buf' b) -> runSM (_phName p) sst buf' l [] (k b)
+          Just (Extraction buf' b) -> do
+            notifySubscribers sst b
+            runSM (_phName p) sst buf' l [] (k b)
           Nothing                  -> return Suspended
 
 -- | 'Phase' state machine execution main loop. Runs until its stack is empty
