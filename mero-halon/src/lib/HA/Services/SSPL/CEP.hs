@@ -161,7 +161,7 @@ ssplRulesF sspl = do
   -- SSPL Monitor host_update
   defineHAEvent "monitor-host-update" $ \(HAEvent _ (nid, hum) _) -> do
     ph1 <- phase "state1" $
-      case sensorResponseMessageSensor_response_typeHost_updateUname hum of
+      case sensorResponseMessageSensor_response_typeHost_updateHostId hum of
         Just a -> do
           let host = Host $ T.unpack a
               node = Node nid

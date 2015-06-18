@@ -161,6 +161,8 @@ startActuators chan ac pid = do
                     T.decodeUtf8 . BL.toStrict $ srv
                 }
             , actuatorRequestMessageActuator_request_typeThread_controller = Nothing
+            , actuatorRequestMessageActuator_request_typeLogin_controller = Nothing
+            , actuatorRequestMessageActuator_request_typeNode_controller = Nothing
             , actuatorRequestMessageActuator_request_typeLogging = Nothing
             }
           , actuatorRequestMessageSspl_ll_msg_header = header uuid
