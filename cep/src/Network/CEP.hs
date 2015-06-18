@@ -530,33 +530,37 @@ buildTypeList = foldr go []
 -- | Executes a rule state machine in order to produce a rule state data
 --   structure.
 buildRuleData :: String -> RuleM g l (Started g l) -> RuleData g
-buildRuleData name rls = go M.empty $ view rls
+buildRuleData name rls = go M.empty [] $ view rls
   where
-    go ps (Return (StartingPhase l p)) =
+    go ps tpes (Return (StartingPhase l p)) =
         RuleData
         { _ruleStartPhase  = p
         , _ruleStartState  = l
         , _rulePhases      = ps
         , _ruleDataName    = name
         , _ruleStack       = []
-        , _ruleTypes       = buildTypeList ps
+        , _ruleTypes       = tpes ++ buildTypeList ps
         }
-    go ps (Start ph l :>>= k) =
+    go ps tpes (Start ph l :>>= k) =
         case M.lookup (_phHandle ph) ps of
-          Just p  -> go ps $ view $ k (StartingPhase l p)
+          Just p  -> go ps tpes $ view $ k (StartingPhase l p)
           Nothing -> error "phase not found (Start)"
-    go ps (NewHandle n :>>= k) =
+    go ps tpes (NewHandle n :>>= k) =
         let p      = Phase n (DirectCall $ return ())
             handle = PhaseHandle n
             ps'    = M.insert n p ps in
-        go ps' $ view $ k handle
-    go ps (SetPhase ph call :>>= k) =
+        go ps' tpes $ view $ k handle
+    go ps tpes (SetPhase ph call :>>= k) =
         case M.lookup (_phHandle ph) ps of
           Just p ->
             let p'  = p { _phCall = call }
                 ps' = M.insert (_phName p) p' ps in
-            go ps' $ view $ k ()
+            go ps' tpes $ view $ k ()
           Nothing -> error "phase not found (UpdatePhase)"
+    go ps tpes (Wants (prx :: Proxy a) :>>= k) =
+        let tok = Token :: Token a
+            tpe = TypeInfo (fingerprint (undefined :: a)) prx in
+        go ps (tpe:tpes) $ view $ k tok
 
 noop :: PhaseM g l ()
 noop = return ()
@@ -741,7 +745,7 @@ runSM pname st buf l stk action = viewT action >>= go
                 parent = StackSlot buf p l (SwitchContext slots) in
             return $ Done st $ reverse (parent:stk)
           _ -> fail "impossible runPhase: one handle is invalid"
-    go (Peek idx :>>= k) =
+    go (Peek idx :>>= k) = do
         case bufferPeek idx buf of
           Nothing -> runSM pname st buf l stk suspend
           Just r  -> runSM pname st buf l stk $ k r

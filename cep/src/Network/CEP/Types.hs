@@ -102,6 +102,9 @@ data PhaseCall g l
     | forall a b. (Serializable a, Serializable b) =>
       ContCall (PhaseType a b) (b -> PhaseM g l ())
 
+-- | Testifies a 'wants' has been made before interacting with a 'Buffer'
+data Token a = Token
+
 -- | Rule state machine.
 data RuleInstr g l a where
     Start     :: PhaseHandle -> l -> RuleInstr g l (Started g l)
@@ -111,12 +114,18 @@ data RuleInstr g l a where
     --   'Phase' state machine that will ask and do nothing.
     SetPhase  :: PhaseHandle -> (PhaseCall g l) -> RuleInstr g l ()
     -- ^ Assignes a 'Phase' state machine to the handle.
+    Wants :: Serializable a => Proxy a -> RuleInstr g l (Token a)
+    -- ^ Indicates that rule is interested in a particular message.
 
 type RuleM g l a = Program (RuleInstr g l) a
 
 -- | Defines a phase handle.
 phaseHandle :: String -> RuleM g l PhaseHandle
 phaseHandle n = singleton $ NewHandle n
+
+-- | Indicates we might be interested by a particular message.
+wants :: Serializable a => Proxy a -> RuleM g l (Token a)
+wants p = singleton $ Wants p
 
 -- | Assigns a 'PhaseHandle' to a 'Phase' state machine that would be directly
 --   executed when triggered.
@@ -268,7 +277,7 @@ continue p = singleton $ Continue p
 
 -- | Stops the state machine. Depending the current state machine context:
 --   - Normal context: State machine just stops.
-
+--
 --   - Switch context: State machine tries the next alternative 'Phase' without
 --     adding back the current state machine to the list of alternatives.
 stop :: PhaseM g l a
@@ -307,14 +316,14 @@ switch xs = singleton $ Switch xs
 -- | Peeks a message from the 'Buffer' given a minimun 'Index'. The 'Buffer' is
 --   not altered. If the message is not available, 'Phase' state machine is
 --   suspended.
-peek :: Serializable a => Index -> PhaseM g l (Index, a)
-peek idx = singleton $ Peek idx
+peek :: Serializable a => Token a -> Index -> PhaseM g l (Index, a)
+peek _ idx = singleton $ Peek idx
 
 -- | Consumes a message from the 'Buffer' given a minimun 'Index'. The 'Buffer'
 --   is altered. If the message is not available, 'Phase' state machine is
 --   suspended.
-shift :: Serializable a => Index -> PhaseM g l (Index, a)
-shift idx = singleton $ Shift idx
+shift :: Serializable a => Token a -> Index -> PhaseM g l (Index, a)
+shift _ idx = singleton $ Shift idx
 
 -- | Gathers all the logs produced during 'Phase' state machine run.
 data Logs =

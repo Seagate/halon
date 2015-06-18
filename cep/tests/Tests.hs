@@ -4,6 +4,7 @@ module Tests where
 
 import Control.Distributed.Process
 import Data.Binary (Binary)
+import Data.Typeable
 
 import Network.CEP
 
@@ -159,3 +160,27 @@ initRuleIsWorking = do
     usend pid donut
     Res (i :: Int) <- expect
     assert $ i == 4
+
+peekShiftWorking :: Process ()
+peekShiftWorking = do
+    self <- getSelfPid
+    pid  <- spawnLocal $ execute () $ do
+      define "rule" $ do
+        ph1 <- phaseHandle "state-1"
+        ph2 <- phaseHandle "state-2"
+
+        tok <- wants (Proxy :: Proxy Donut)
+
+        directly ph1 $ do
+          (_, Donut _) <- peek tok initIndex
+          continue ph2
+
+        directly ph2 $ do
+          (_, Donut _) <- shift tok initIndex
+          liftProcess $ usend self (Res ())
+
+        start ph1 ()
+
+    usend pid donut
+    Res () <- expect
+    return ()

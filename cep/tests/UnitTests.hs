@@ -33,6 +33,8 @@ ut = do
                 launch forkIsWorking
               , testCase "Init rule is working" $
                 launch initRuleIsWorking
+              , testCase "Peek and Shift are working" $
+                launch peekShiftWorking
               ]
 
     return grp
