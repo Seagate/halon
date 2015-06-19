@@ -519,7 +519,7 @@ buildTypeList = foldr go []
   where
     go (Phase _ call) is =
         case call of
-          ContCall (typ :: PhaseType a b) _ ->
+          ContCall (typ :: PhaseType g l a b) _ ->
             case typ of
               PhaseSeq sq _ -> buildSeqList sq ++ is
               _ ->
@@ -576,13 +576,15 @@ data Extraction b =
 
 -- | Extracts messages from a 'Buffer' based based on 'PhaseType' need.
 extractMsg :: (Serializable a, Serializable b)
-           => PhaseType a b
+           => PhaseType g l a b
+           -> g
+           -> l
            -> Buffer
            -> Process (Maybe (Extraction b))
-extractMsg typ buf =
+extractMsg typ g l buf =
     case typ of
       PhaseWire _  -> error "phaseWire: not implemented yet"
-      PhaseMatch p -> extractMatchMsg p buf
+      PhaseMatch p -> extractMatchMsg p g l buf
       PhaseNone    -> extractNormalMsg (Proxy :: Proxy a) buf
       PhaseSeq _ s -> extractSeqMsg s buf
 
@@ -597,15 +599,17 @@ extractMsg typ buf =
 -- | Extracts a message that satifies the predicate. If it does, it's passed
 --   to an effectful callback.
 extractMatchMsg :: Serializable a
-                => (a -> Process (Maybe b))
+                => (a -> g -> l -> Process (Maybe b))
+                -> g
+                -> l
                 -> Buffer
                 -> Process (Maybe (Extraction b))
-extractMatchMsg p buf = go (-1)
+extractMatchMsg p g l buf = go (-1)
   where
     go lastIdx =
         case bufferGetWithIndex lastIdx buf of
           (Just (newIdx, a), newBuf) -> do
-            res <- p a
+            res <- p a g l
             case res of
               Nothing -> go newIdx
               Just b  ->
@@ -669,7 +673,7 @@ runPhaseCall sst buf l p =
     case _phCall p of
       DirectCall action -> runSM (_phName p) sst buf l [] action
       ContCall typ k -> do
-        res <- extractMsg typ buf
+        res <- extractMsg typ (_phaseState sst) l buf
         case res of
           Just (Extraction buf' b) -> do
             notifySubscribers sst b

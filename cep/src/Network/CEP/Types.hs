@@ -83,16 +83,16 @@ data PhaseStep a b where
 
 -- | When defining a phase that need some type of message in order to proceed,
 --   there are several type strategy that will produce that type.
-data PhaseType a b where
-    PhaseWire  :: CEPWire a b -> PhaseType a b
+data PhaseType g l a b where
+    PhaseWire  :: CEPWire a b -> PhaseType g l a b
     -- ^ Await for a message of type `a` then apply it to Netwire state machine
     --   to produce a `b`. This allows to have time varying logic.
-    PhaseMatch :: (a -> Process (Maybe b)) -> PhaseType a b
+    PhaseMatch :: (a -> g -> l ->  Process (Maybe b)) -> PhaseType g l a b
     -- ^ Await for a `a` message, if the given predicate returns 'True',
     --   pass it to the continuation in order to produce a `b`.
-    PhaseNone  :: PhaseType a a
+    PhaseNone  :: PhaseType g l a a
     -- ^ Simply awaits for a message.
-    PhaseSeq   :: Seq -> PhaseStep a b -> PhaseType a b
+    PhaseSeq   :: Seq -> PhaseStep a b -> PhaseType g l a b
     -- ^ Uses 'PhaseStep' state machine in order to produce a `b` message.
 
 -- | 'Phase' state machine type. Either it's a 'ContCall', it needs a message
@@ -100,7 +100,7 @@ data PhaseType a b where
 data PhaseCall g l
     = DirectCall (PhaseM g l ())
     | forall a b. (Serializable a, Serializable b) =>
-      ContCall (PhaseType a b) (b -> PhaseM g l ())
+      ContCall (PhaseType g l a b) (b -> PhaseM g l ())
 
 -- | Testifies a 'wants' has been made before interacting with a 'Buffer'
 data Token a = Token
@@ -154,7 +154,7 @@ setPhaseWire h w action = singleton $ SetPhase h (ContCall (PhaseWire w) action)
 --   value needed to start.
 setPhaseMatch :: (Serializable a, Serializable b)
               => PhaseHandle
-              -> (a -> Process (Maybe b))
+              -> (a -> g -> l -> Process (Maybe b))
               -> (b -> PhaseM g l ())
               -> RuleM g l ()
 setPhaseMatch h p action =
@@ -163,9 +163,9 @@ setPhaseMatch h p action =
 -- | Internal use only. Waits for 2 type of messages to come sequentially and
 --   apply them to a predicate. If the predicate is statisfied, we yield those
 --   value in a tuple, otherwise we switch to the 'Error' state.
-__phaseSeq2 :: forall a b. (Serializable a, Serializable b)
+__phaseSeq2 :: forall g l a b. (Serializable a, Serializable b)
             => (a -> b -> Bool)
-            -> PhaseType a (a, b)
+            -> PhaseType g l a (a, b)
 __phaseSeq2 p = PhaseSeq sq action
   where
     sq = Cons (Proxy :: Proxy a) (Cons (Proxy :: Proxy b) Nil)
