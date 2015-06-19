@@ -581,10 +581,10 @@ extractMsg :: (Serializable a, Serializable b)
            -> Process (Maybe (Extraction b))
 extractMsg typ buf =
     case typ of
-      PhaseWire _    -> error "phaseWire: not implemented yet"
-      PhaseMatch p t -> extractMatchMsg p t buf
-      PhaseNone      -> extractNormalMsg (Proxy :: Proxy a) buf
-      PhaseSeq _ s   -> extractSeqMsg s buf
+      PhaseWire _  -> error "phaseWire: not implemented yet"
+      PhaseMatch p -> extractMatchMsg p buf
+      PhaseNone    -> extractNormalMsg (Proxy :: Proxy a) buf
+      PhaseSeq _ s -> extractSeqMsg s buf
 
 -- -- | Extracts messages from a Netwire wire.
 -- extractWireMsg :: forall a b. (Serializable a, Serializable b)
@@ -597,24 +597,23 @@ extractMsg typ buf =
 -- | Extracts a message that satifies the predicate. If it does, it's passed
 --   to an effectful callback.
 extractMatchMsg :: Serializable a
-                => (a -> Bool)
-                -> (a -> Process b)
+                => (a -> Process (Maybe b))
                 -> Buffer
                 -> Process (Maybe (Extraction b))
-extractMatchMsg p t buf = go (-1)
+extractMatchMsg p buf = go (-1)
   where
     go lastIdx =
         case bufferGetWithIndex lastIdx buf of
-          (Just (newIdx, a), newBuf)
-            | p a -> do
-                b <- t a
+          (Just (newIdx, a), newBuf) -> do
+            res <- p a
+            case res of
+              Nothing -> go newIdx
+              Just b  ->
                 let ext = Extraction
                           { _extractBuf = newBuf
                           , _extractMsg = b
-                          }
+                          } in
                 return $ Just ext
-            | otherwise -> go newIdx
-
           _ -> return Nothing
 
 -- | Extracts a simple message from the 'Buffer'.

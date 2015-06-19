@@ -87,7 +87,7 @@ data PhaseType a b where
     PhaseWire  :: CEPWire a b -> PhaseType a b
     -- ^ Await for a message of type `a` then apply it to Netwire state machine
     --   to produce a `b`. This allows to have time varying logic.
-    PhaseMatch :: (a -> Bool) -> (a -> Process b) -> PhaseType a b
+    PhaseMatch :: (a -> Process (Maybe b)) -> PhaseType a b
     -- ^ Await for a `a` message, if the given predicate returns 'True',
     --   pass it to the continuation in order to produce a `b`.
     PhaseNone  :: PhaseType a a
@@ -154,12 +154,11 @@ setPhaseWire h w action = singleton $ SetPhase h (ContCall (PhaseWire w) action)
 --   value needed to start.
 setPhaseMatch :: (Serializable a, Serializable b)
               => PhaseHandle
-              -> (a -> Bool)
-              -> (a -> Process b)
+              -> (a -> Process (Maybe b))
               -> (b -> PhaseM g l ())
               -> RuleM g l ()
-setPhaseMatch h p t action =
-    singleton $ SetPhase h (ContCall (PhaseMatch p t) action)
+setPhaseMatch h p action =
+    singleton $ SetPhase h (ContCall (PhaseMatch p) action)
 
 -- | Internal use only. Waits for 2 type of messages to come sequentially and
 --   apply them to a predicate. If the predicate is statisfied, we yield those
