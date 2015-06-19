@@ -13,6 +13,7 @@
 -- late or duplicate messages to be sent to the caller and accumulate in its
 -- mailbox. The caller must be prepared to handle these issues. One solution is
 -- to wrap each use of these functions with 'callLocal'.
+--
 {-# LANGUAGE CPP #-}
 #if __GLASGOW_HASKELL__ < 710
 {-# LANGUAGE OverlappingInstances #-}
@@ -24,14 +25,9 @@ module HA.CallTimeout
 
     -- * Calling processes
   , callTimeout
-  , callAnyTimeout
-  , callAnyStaggerTimeout
-  , callAnyPreferTimeout
 
     -- * Calling named processes
-  , ncallRemoteTimeout
   , ncallRemoteAnyTimeout
-  , ncallRemoteAnyStaggerTimeout
   , ncallRemoteAnyPreferTimeout
   ) where
 
@@ -79,94 +75,15 @@ callTimeout timeout pid msg = do
     usend pid (self, msg)
     expectTimeout timeout
 
--- | Send @(self, msg)@ to one or more @pids@ and wait for a reply.
--- Returns @Just reply@, or @Nothing@ if no reply arrives within at least
--- @timeout@.
--- Messages are sent all at the same time.
-callAnyTimeout :: (Serializable a, Serializable b) =>
-     Int                -- ^ Timeout, in microseconds
-  -> [ProcessId]        -- ^ Target processes
-  -> a                  -- ^ Message to send
-  -> Process (Maybe b)  -- ^ Reply received, if any
-callAnyTimeout timeout pids msg = do
-    self <- getSelfPid
-    forM_ pids $ \pid -> usend pid (self, msg)
-    expectTimeout timeout
-
--- | Send @(self, msg)@ to one or more @pids@ and wait for a reply.
--- Returns @Just reply@, or @Nothing@ if no reply arrives within at least
--- @timeout@.
--- Messages are sent one at a time, preserving the order of @pids@, and using a
--- temporary process to send at most one message within at least each
--- @softTimeout@.
-callAnyStaggerTimeout :: (Serializable a, Serializable b) =>
-     Int                -- ^ Soft timeout, in microseconds
-  -> Int                -- ^ Timeout, in microseconds
-  -> [ProcessId]        -- ^ Target processes
-  -> a                  -- ^ Message to send
-  -> Process (Maybe b)  -- ^ Reply received, if any
-callAnyStaggerTimeout softTimeout timeout pids msg = do
-    self <- getSelfPid
-    sender <- spawnLocal $ do
-      link self
-      forM_ pids $ \pid -> do
-        usend pid (self, msg)
-        void $ receiveTimeout softTimeout []
-    result <- expectTimeout timeout
-    kill sender "done"
-    return result
-
--- | Send @(self, msg)@ to one or more @preferPids@ and @pids@ and wait for a
--- reply.
--- Returns @Just reply@, or @Nothing@ if no reply arrives within at least
--- @timeout@.
--- Two-stage version of 'callAnyTimeout'. Messages are first sent to all
--- @preferPids@ at the same time, then, if no reply arrives within at least
--- @softTimeout@, to all @pids@ at the same time.
-callAnyPreferTimeout :: (Serializable a, Serializable b) =>
-     Int                -- ^ Soft timeout, in microseconds
-  -> Int                -- ^ Timeout, in microseconds
-  -> [ProcessId]        -- ^ Preferred target processes
-  -> [ProcessId]        -- ^ Target processes
-  -> a                  -- ^ Message to send
-  -> Process (Maybe b)  -- ^ Reply received, if any
-callAnyPreferTimeout softTimeout timeout preferPids pids msg = do
-    self <- getSelfPid
-    sender <- spawnLocal $ do
-      link self
-      forM_ preferPids $ \pid -> usend pid (self, msg)
-      void $ receiveTimeout softTimeout []
-      forM_ pids $ \pid -> usend pid (self, msg)
-    result <- expectTimeout timeout
-    kill sender "done"
-    return result
-
 --------------------------------------------------------------------------------
 -- Calling named processes
 --------------------------------------------------------------------------------
-
--- | Send @(self, msg)@ to the named process @label@ on @node@ and wait for a
--- reply.
--- Returns @Just reply@, or @Nothing@ if no reply arrives within at least
--- @timeout@.
--- Named process version of 'callTimeout'.
-ncallRemoteTimeout :: (Serializable a, Serializable b) =>
-     Int                -- ^ Timeout, in microseconds
-  -> NodeId             -- ^ Target node
-  -> String             -- ^ Target process label
-  -> a                  -- ^ Message to send
-  -> Process (Maybe b)  -- ^ Reply received, if any
-ncallRemoteTimeout timeout node label msg = do
-    self <- getSelfPid
-    nsendRemote node label (self, msg)
-    expectTimeout timeout
 
 -- | Send @(self, msg)@ to one or more named processes @label@ on @nodes@ and
 -- wait for a reply.
 -- Returns @Just reply@, @Nothing@ if no reply arrives within at least
 -- @timeout@.
--- Named process version of 'callAnyTimeout'. Messages are sent all at the same
--- time.
+-- Messages are sent all at the same time.
 ncallRemoteAnyTimeout :: (Serializable a, Serializable b) =>
      Int                -- ^ Timeout, in microseconds
   -> [NodeId]           -- ^ Target nodes
@@ -178,39 +95,13 @@ ncallRemoteAnyTimeout timeout nodes label msg = do
     forM_ nodes $ \node -> nsendRemote node label (self, msg)
     expectTimeout timeout
 
--- | Send @(self, msg)@ to one or more named processes @label@ on @nodes@ and
--- wait for a reply.
--- Returns @Just reply@, or @Nothing@ if no reply arrives within at least
--- @timeout@.
--- Named process version of 'callAnyStaggerTimeout'. Messages are sent one at a
--- time, preserving the order of @nodes@, using a temporary process to send at
--- most one message within at least each @softTimeout@.
-ncallRemoteAnyStaggerTimeout :: (Serializable a, Serializable b) =>
-     Int                -- ^ Soft timeout, in microseconds
-  -> Int                -- ^ Timeout, in microseconds
-  -> [NodeId]           -- ^ Target nodes
-  -> String             -- ^ Target process label
-  -> a                  -- ^ Message to send
-  -> Process (Maybe b)  -- ^ Reply received, if any
-ncallRemoteAnyStaggerTimeout softTimeout timeout nodes label msg = do
-    self <- getSelfPid
-    sender <- spawnLocal $ do
-      link self
-      forM_ nodes $ \node -> do
-        nsendRemote node label (self, msg)
-        void $ receiveTimeout softTimeout []
-    result <- expectTimeout timeout
-    kill sender "done"
-    return result
-
 -- | Send @(self, msg)@ to one or more named processes @label@ on @preferNodes@
 -- and @nodes@ and wait for a reply.
 -- Returns @Just reply@, or @Nothing@ if no reply arrives within at least
 -- @timeout@.
--- Two-stage version of 'ncallRemoteAnyTimeout', and named process version of
--- 'callAnyPreferTimeout'. Messages are first sent to all @preferNodes@ at the
--- same time, then, if no reply arrives within at least @softTimeout@, to all
--- @nodes@ at the same time.
+-- Two-stage version of 'ncallRemoteAnyTimeout'. Messages are first sent to all
+-- @preferNodes@ at the same time, then, if no reply arrives within at least
+-- @softTimeout@, to all @nodes@ at the same time.
 ncallRemoteAnyPreferTimeout :: (Serializable a, Serializable b) =>
      Int                -- ^ Soft timeout, in microseconds
   -> Int                -- ^ Timeout, in microseconds
@@ -229,3 +120,18 @@ ncallRemoteAnyPreferTimeout softTimeout timeout preferNodes nodes label msg = do
     result <- expectTimeout timeout
     kill sender "done"
     return result
+
+-- [Removed Functonality]
+--
+-- Many of the functions were unused and deleted after:
+--     4dbde755af00ef451409a0c69459b8d434020376
+-- They are:
+--   * callAnyTimeout            -- Messages are sent all at the same time.
+--   * callAnyStaggerTimeout     -- Messages are sent one at a time, preserving
+--        the order of @pids@, and using a temporary process to send at most one
+--        message within at least each
+--   * callAnyPreferTimeout      -- Two-stage version of 'callAnyTimeout'. Messages
+--        are first sent to all @preferPids@ at the same time, then, if no reply
+--        arrives within at least @softTimeout@, to all @pids@ at the same time.
+--   * ncallRemoteTimeout        -- Named process version of 'callTimeout'.
+--   * ncallRemoteAnyStaggerTimeout -- Named process version of 'callAnyStaggerTimeout'.
