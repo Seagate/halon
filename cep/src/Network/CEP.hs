@@ -22,7 +22,7 @@ module Network.CEP
     ) where
 
 import           Control.Monad
-import           Data.ByteString hiding (foldr, putStrLn, reverse, length, null)
+import           Data.ByteString (ByteString)
 import           Data.Dynamic
 import           Data.Foldable (toList, for_, traverse_)
 import           Data.Maybe
@@ -38,6 +38,7 @@ import           Control.Monad.Trans
 import           Control.Wire (mkPure)
 import qualified Data.MultiMap   as MM
 import qualified Data.Map.Strict as M
+import qualified Data.Set        as Set
 import           Data.Binary
 import           Data.Time
 import           FRP.Netwire (Session, Timed, clockSession_, dtime)
@@ -50,7 +51,7 @@ import Network.CEP.Types
 --   internally.
 data Subscribe =
     Subscribe
-    { _subType :: !ByteString
+    { _subType :: ! ByteString
       -- ^ Serialized event type.
     , _subPid :: !ProcessId
       -- ^ Subscriber 'ProcessId'
@@ -388,6 +389,12 @@ data TypeInfo =
     , _typeProxy      :: !(Proxy a)
     }
 
+instance Eq TypeInfo where
+    TypeInfo a _ == TypeInfo b _ = a == b
+
+instance Ord TypeInfo where
+    compare (TypeInfo a _) (TypeInfo b _) = compare a b
+
 -- | Rule state data structure.
 data RuleData g =
     forall l.
@@ -403,7 +410,7 @@ data RuleData g =
       -- ^ Rule name.
     , _ruleStack :: ![StackSlot g l]
       -- ^ Rule stack of execution.
-    , _ruleTypes :: ![TypeInfo]
+    , _ruleTypes :: !(Set.Set TypeInfo)
       -- ^ All the 'TypeInfo' gathered while running rule state machine. It's
       --   only used at the CEP engine initialization phase, when calling
       --   'buildMachine'.
@@ -508,29 +515,31 @@ runRule mach input (RuleData sp st ps dn stk tps) = do
 
 -- | Builds a list of 'TypeInfo' out types needed by 'PhaseStep' data
 --   contructor.
-buildSeqList :: Seq -> [TypeInfo]
-buildSeqList Nil = []
+buildSeqList :: Seq -> Set.Set TypeInfo
+buildSeqList Nil = Set.empty
 buildSeqList (Cons (prx :: Proxy a) rest) =
-    TypeInfo (fingerprint (undefined :: a)) prx : buildSeqList rest
+    let i = TypeInfo (fingerprint (undefined :: a)) prx in
+    Set.insert i $ buildSeqList rest
 
 --  | Builds a list of 'TypeInfo' out types need by 'Phase's.
-buildTypeList :: Foldable f => f (Phase g l) -> [TypeInfo]
-buildTypeList = foldr go []
+buildTypeList :: Foldable f => f (Phase g l) -> Set.Set TypeInfo
+buildTypeList = foldr go Set.empty
   where
     go (Phase _ call) is =
         case call of
           ContCall (typ :: PhaseType g l a b) _ ->
             case typ of
-              PhaseSeq sq _ -> buildSeqList sq ++ is
+              PhaseSeq sq _ -> Set.union (buildSeqList sq) is
               _ ->
-                let i = TypeInfo (fingerprint (undefined :: a)) (Proxy :: Proxy a)
-                in i : is
+                let i = TypeInfo (fingerprint (undefined :: a))
+                                 (Proxy :: Proxy a) in
+                Set.insert i is
           _ -> is
 
 -- | Executes a rule state machine in order to produce a rule state data
 --   structure.
 buildRuleData :: String -> RuleM g l (Started g l) -> RuleData g
-buildRuleData name rls = go M.empty [] $ view rls
+buildRuleData name rls = go M.empty Set.empty $ view rls
   where
     go ps tpes (Return (StartingPhase l p)) =
         RuleData
@@ -539,7 +548,7 @@ buildRuleData name rls = go M.empty [] $ view rls
         , _rulePhases      = ps
         , _ruleDataName    = name
         , _ruleStack       = []
-        , _ruleTypes       = tpes ++ buildTypeList ps
+        , _ruleTypes       = Set.union tpes $ buildTypeList ps
         }
     go ps tpes (Start ph l :>>= k) =
         case M.lookup (_phHandle ph) ps of
@@ -560,7 +569,7 @@ buildRuleData name rls = go M.empty [] $ view rls
     go ps tpes (Wants (prx :: Proxy a) :>>= k) =
         let tok = Token :: Token a
             tpe = TypeInfo (fingerprint (undefined :: a)) prx in
-        go ps (tpe:tpes) $ view $ k tok
+        go ps (Set.insert tpe tpes) $ view $ k tok
 
 noop :: PhaseM g l ()
 noop = return ()
