@@ -97,13 +97,15 @@ msgHandler msg = do
       say $ show mr
       mapM_ promulgate
             $ fmap (nid,)
-            . sensorResponseSensor_response_typeHost_update
-            . sensorResponseSensor_response_type
+            . sensorResponseMessageSensor_response_typeHost_update
+            . sensorResponseMessageSensor_response_type
+            . sensorResponseMessage
             $ mr
       mapM_ promulgate
             $ fmap (nid,)
-            . sensorResponseSensor_response_typeDisk_status_drivemanager
-            . sensorResponseSensor_response_type
+            . sensorResponseMessageSensor_response_typeDisk_status_drivemanager
+            . sensorResponseMessageSensor_response_type
+            . sensorResponseMessage
             $ mr
     Nothing ->
       say $ "Unable to decode JSON message: " ++ (BL.unpack $ msgBody msg)
@@ -144,19 +146,27 @@ startActuators chan ac pid = do
       SystemdRequest srv cmd <- receiveChan rp
       uuid <- liftIO $ randomIO
       let msg = encode $ ActuatorRequest {
-          actuatorRequestSspl_ll_debug = Nothing
-        , actuatorRequestActuator_request_type = ActuatorRequestActuator_request_type {
-            actuatorRequestActuator_request_typeService_controller = Just
-              ActuatorRequestActuator_request_typeService_controller {
-                actuatorRequestActuator_request_typeService_controllerService_request =
-                  T.decodeUtf8 . BL.toStrict $ cmd
-              , actuatorRequestActuator_request_typeService_controllerService_name =
-                  T.decodeUtf8 . BL.toStrict $ srv
-              }
-          , actuatorRequestActuator_request_typeThread_controller = Nothing
-          , actuatorRequestActuator_request_typeLogging = Nothing
+          actuatorRequestSignature = ""
+        , actuatorRequestTime = ""
+        , actuatorRequestExpires = Nothing
+        , actuatorRequestUsername = "halon"
+        , actuatorRequestMessage = ActuatorRequestMessage {
+            actuatorRequestMessageSspl_ll_debug = Nothing
+          , actuatorRequestMessageActuator_request_type = ActuatorRequestMessageActuator_request_type {
+              actuatorRequestMessageActuator_request_typeService_controller = Just
+                ActuatorRequestMessageActuator_request_typeService_controller {
+                  actuatorRequestMessageActuator_request_typeService_controllerService_request =
+                    T.decodeUtf8 . BL.toStrict $ cmd
+                , actuatorRequestMessageActuator_request_typeService_controllerService_name =
+                    T.decodeUtf8 . BL.toStrict $ srv
+                }
+            , actuatorRequestMessageActuator_request_typeThread_controller = Nothing
+            , actuatorRequestMessageActuator_request_typeLogin_controller = Nothing
+            , actuatorRequestMessageActuator_request_typeNode_controller = Nothing
+            , actuatorRequestMessageActuator_request_typeLogging = Nothing
+            }
+          , actuatorRequestMessageSspl_ll_msg_header = header uuid
           }
-        , actuatorRequestSspl_ll_msg_header = header uuid
         }
       liftIO $ publishMsg
         chan

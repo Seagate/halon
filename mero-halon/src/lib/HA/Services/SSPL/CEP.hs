@@ -31,7 +31,7 @@ import Control.Monad.Trans
 
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy.Char8 as BL
-import Data.Maybe (catMaybes, listToMaybe)
+import Data.Maybe (listToMaybe)
 import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -125,10 +125,10 @@ ssplRulesF sspl = do
     ph1 <- phase "state1" $ do
       host <- findNodeHost (Node nid)
       diskUUID <- liftIO $ nextRandom
-      let disk_status = sensorResponseSensor_response_typeDisk_status_drivemanagerDiskStatus mrm
-          encName = sensorResponseSensor_response_typeDisk_status_drivemanagerEnclosureSN mrm
+      let disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus mrm
+          encName = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN mrm
           diskNum = floor . (toRealFloat :: Scientific -> Double) $
-                  sensorResponseSensor_response_typeDisk_status_drivemanagerDiskNum mrm
+                  sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum mrm
           enc = Enclosure $ T.unpack encName
           disk = StorageDevice diskUUID
 
@@ -161,19 +161,12 @@ ssplRulesF sspl = do
   -- SSPL Monitor host_update
   defineHAEvent "monitor-host-update" $ \(HAEvent _ (nid, hum) _) -> do
     ph1 <- phase "state1" $
-      case sensorResponseSensor_response_typeHost_updateUname hum of
+      case sensorResponseMessageSensor_response_typeHost_updateHostId hum of
         Just a -> do
           let host = Host $ T.unpack a
               node = Node nid
           registerHost host
           locateNodeOnHost node host
-          case sensorResponseSensor_response_typeHost_updateIfData hum of
-            Just (xs@(_:_)) -> mapM_ (registerInterface host . mkIf) ifNames
-              where
-                mkIf = Interface . T.unpack
-                ifNames = catMaybes
-                          $ fmap sensorResponseSensor_response_typeHost_updateIfDataItemIfId xs
-            _ -> return ()
           liftProcess . sayRC $ "Registered host: " ++ show host
         Nothing -> return ()
     start ph1

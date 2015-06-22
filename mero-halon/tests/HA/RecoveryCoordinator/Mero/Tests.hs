@@ -281,39 +281,26 @@ testHostAddition transport = do
 
         graph <- G.getGraph mm
         let host = Host "mockhost"
-            int = Interface "192.168.0.1"
             node = Node nid
         assert $ G.memberResource host graph
-        assert $ G.memberResource int graph
         assert $ G.memberEdge (G.Edge host Runs node) graph
 
   where
     wait = void (expect :: Process ProcessMonitorNotification)
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
-    mockEvent = SSPL.SensorResponseSensor_response_typeHost_update
-                { SSPL.sensorResponseSensor_response_typeHost_updateRunningProcessCount = Nothing
-                , SSPL.sensorResponseSensor_response_typeHost_updateIfData              = Just [mockIf]
-                , SSPL.sensorResponseSensor_response_typeHost_updateUname               = Just "mockhost"
-                , SSPL.sensorResponseSensor_response_typeHost_updateUpTime              = Nothing
-                , SSPL.sensorResponseSensor_response_typeHost_updateLocalMountData      = Nothing
-                , SSPL.sensorResponseSensor_response_typeHost_updateFreeMem             = Nothing
-                , SSPL.sensorResponseSensor_response_typeHost_updateLoggedInUsers       = Nothing
-                , SSPL.sensorResponseSensor_response_typeHost_updateTotalMem            = Nothing
-                , SSPL.sensorResponseSensor_response_typeHost_updateProcessCount        = Nothing
-                , SSPL.sensorResponseSensor_response_typeHost_updateBootTime            = Nothing
-                , SSPL.sensorResponseSensor_response_typeHost_updateCpuData             = Nothing
+    mockEvent = SSPL.SensorResponseMessageSensor_response_typeHost_update
+                { SSPL.sensorResponseMessageSensor_response_typeHost_updateRunningProcessCount = Nothing
+                , SSPL.sensorResponseMessageSensor_response_typeHost_updateUname               = Just "mockhost"
+                , SSPL.sensorResponseMessageSensor_response_typeHost_updateHostId              = Just "mockhost"
+                , SSPL.sensorResponseMessageSensor_response_typeHost_updateLocaltime           = Nothing
+                , SSPL.sensorResponseMessageSensor_response_typeHost_updateUpTime              = Nothing
+                , SSPL.sensorResponseMessageSensor_response_typeHost_updateFreeMem             = Nothing
+                , SSPL.sensorResponseMessageSensor_response_typeHost_updateLoggedInUsers       = Nothing
+                , SSPL.sensorResponseMessageSensor_response_typeHost_updateTotalMem            = Nothing
+                , SSPL.sensorResponseMessageSensor_response_typeHost_updateProcessCount        = Nothing
+                , SSPL.sensorResponseMessageSensor_response_typeHost_updateBootTime            = Nothing
                 }
-    mockIf = SSPL.SensorResponseSensor_response_typeHost_updateIfDataItem
-              { SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemTrafficIn         = Nothing
-              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemNetworkErrors     = Nothing
-              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemTrafficOut        = Nothing
-              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemDroppedPacketsIn  = Nothing
-              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemPacketsIn         = Nothing
-              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemDopppedPacketsOut = Nothing
-              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemIfId              = Just "192.168.0.1"
-              , SSPL.sensorResponseSensor_response_typeHost_updateIfDataItemPacketsOut        = Nothing
-              }
 
 -- | Test that the recovery co-ordinator successfully adds a drive to the RG,
 --   and updates its status accordingly.
@@ -355,10 +342,10 @@ testDriveAddition transport = do
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
     mockEvent status =
-      SSPL.SensorResponseSensor_response_typeDisk_status_drivemanager
-        { SSPL.sensorResponseSensor_response_typeDisk_status_drivemanagerEnclosureSN = "enc1"
-        , SSPL.sensorResponseSensor_response_typeDisk_status_drivemanagerDiskNum = 1
-        , SSPL.sensorResponseSensor_response_typeDisk_status_drivemanagerDiskStatus = status
+      SSPL.SensorResponseMessageSensor_response_typeDisk_status_drivemanager
+        { SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN = "enc1"
+        , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum = 1
+        , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus = status
         }
 
 -- data DLogLine =
