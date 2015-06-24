@@ -105,6 +105,9 @@ data MachineStep
     = InitStep
       -- ^ The engine has just started. It runs init rule (if any) then switch
       --   'NormalStep'.
+    | LeftoversStep [([(RuleKey, TypeInfo)], Message)]
+      -- ^ Some messages has been collected during 'InitStep' and regular rules
+      --   are interested.
     | NormalStep
       -- ^ Regular CEP execution step.
 
@@ -242,7 +245,7 @@ subMatch :: Match Msg
 subMatch = match $ \sub -> return $ SubRequest sub
 
 -- | Constructs a 'Match' that will only keep messages that rules are
---   interested in. Other kind of messager are just discarded.
+--   interested in. Other kind of messages are discarded.
 buildMatch :: Machine g -> Match Msg
 buildMatch Machine{..} =
     matchAny $ \msg ->
@@ -250,12 +253,34 @@ buildMatch Machine{..} =
         []  -> return Discarded
         xs  -> return $ Appeared xs msg
 
-initRuleMatch :: M.Map Fingerprint TypeInfo -> Match (Maybe (Message, TypeInfo))
-initRuleMatch m =
+-- | Message emitted by CEP engine at the initialization phase.
+data InitMsg
+    = InitAppeared TypeInfo Message [(RuleKey, TypeInfo)]
+      -- ^ A message has been sent to CEP engine and the init rule is interested
+      --   in. It also indicates wether some regular rules are interested too.
+    | RuleAppeared [(RuleKey, TypeInfo)] Message
+      -- ^ A message has been sent to CEP engine and only regular rules are
+      --   interested.
+    | Ignored
+      -- ^ Neither the init rule or regular rules are interested by that
+      --   message.
+
+-- | Contructs a 'Match' that will only keep messages that either the init rule
+--   and the regular rules are interested in. Other kind of messages are
+--   discarted.
+initRuleMatch :: Machine g
+              -> M.Map Fingerprint TypeInfo
+              -> Match InitMsg
+initRuleMatch Machine{..} m =
     matchAny $ \msg ->
-      case M.lookup (messageFingerprint msg) m of
-        Nothing  -> return Nothing
-        Just typ -> return $ Just (msg, typ)
+      let fpt = messageFingerprint msg
+          rrm = MM.lookup fpt _machTypeMap in
+      case M.lookup fpt m of
+        Nothing ->
+          case rrm of
+            [] -> return Ignored
+            xs -> return $ RuleAppeared xs msg
+        Just typ -> return $ InitAppeared typ msg rrm
 
 -- | Main CEP engine loop
 --   ====================
@@ -287,34 +312,44 @@ runMachine InitStep st =
       Just (InitRule rd typs) -> do
         (rd', g') <- runRule st NoMessage rd
         let st' = st { _machState = g' }
-            matches = [initRuleMatch typs]
-            loop tmpRd tmpSt = do
+            matches = [initRuleMatch st' typs]
+            loop lovrs tmpRd tmpSt = do
               res <- receiveWait matches
               case res of
-                Nothing          -> loop tmpRd tmpSt
-                Just (msg, info) -> do
+                Ignored                  -> loop lovrs tmpRd tmpSt
+                RuleAppeared xs msg      -> loop ((xs,msg):lovrs) tmpRd tmpSt
+                InitAppeared info msg xs -> do
+                  let lovrs' =
+                        case xs of
+                          [] -> lovrs
+                          _  -> (xs,msg) : lovrs
+
                   (newRd, newG) <- runRule tmpSt (GotMessage info msg) tmpRd
                   let newSt = tmpSt { _machState = newG }
                   if nullStack newRd
-                      then do
-                      _machOnReady newSt
-                      runMachine NormalStep newSt
-                      else loop newRd newSt
+                    then do
+                    let step =
+                          case lovrs' of
+                            [] -> NormalStep
+                            _  -> LeftoversStep $ reverse lovrs'
+                    _machOnReady newSt
+                    runMachine step newSt
+                    else loop lovrs' newRd newSt
         if nullStack rd'
-            then do
-            _machOnReady st'
-            runMachine NormalStep st'
-            else loop rd' st'
-runMachine step@NormalStep st = do
-    msg <- receiveWait matches
+          then do
+          _machOnReady st'
+          runMachine NormalStep st'
+          else loop [] rd' st'
+runMachine step st = do
+    (msg, step') <- nextStep
     case msg of
-      Discarded -> runMachine step st
+      Discarded -> runMachine step' st
       SubRequest sub ->
          let key   = decodeFingerprint $ _subType sub
              value = _subPid sub
              subs' = MM.insert key value $ _machSubs st
              st'   = st { _machSubs = subs' } in
-        runMachine step st'
+        runMachine step' st'
       Appeared tups imsg -> do
         let action =
               for_ tups $ \(key, info) -> do
@@ -329,9 +364,17 @@ runMachine step@NormalStep st = do
                       State.put st''
                   _ -> fail "runMachine: ruleKey is invalid (impossible)"
         st' <- State.execStateT action st
-        runMachine step st'
+        runMachine step' st'
   where
     matches = [subMatch, buildMatch st]
+
+    nextStep =
+        case step of
+          LeftoversStep ((xs,msg):rest) ->
+            return (Appeared xs msg, LeftoversStep rest)
+          _ -> do
+            msg <- receiveWait matches
+            return (msg, NormalStep)
 
 -- | Executes a CEP definitions to the 'Process' monad given a initial global
 --   state.
