@@ -97,8 +97,9 @@ least half of the replicas in the old membership take part in the new one. Here
 replicas of the old membership means a replica located anywhere and seeded with
 the state of a replica in the old membership.
 
-By asking all the acceptors in the new membership to be online, we can scan the
-acceptors for any accepted decrees and propagate them to a quorum of acceptors.
+By asking all acceptors and all replicas in the new membership to be online, we
+can scan the acceptors for any accepted decrees and propagate them to a quorum
+of acceptors.
 
 From then on it is safe to submit a reconfiguration request with the new
 membership.

@@ -36,7 +36,12 @@ data Helo =
          (Closure NominationPolicy)   -- Policy to decide new membership.
     deriving (Typeable, Generic)
 
+-- | @Recover sender newMembership@
+data Recover = Recover ProcessId [NodeId]
+  deriving (Typeable, Generic)
+
 instance Binary Helo
+instance Binary Recover
 
 --------------------------------------------------------------------------------
 -- Inter-replica messages                                                     --

@@ -18,7 +18,7 @@ import Network.Transport.TCP
 import Control.Exception ( bracket, throwIO, SomeException )
 import Control.Monad ( when, forM, forM_, replicateM_ )
 import Data.IORef
-import qualified Data.Map as Map ( empty, insert, lookup )
+import qualified Data.Map as Map
 import System.Exit ( exitFailure )
 import System.Environment ( getArgs )
 import System.Posix.Env (setEnv)
@@ -68,15 +68,18 @@ run s = let (s0,s1) = split $ mkStdGen s
           mref <- liftIO $ newIORef Map.empty
           vref <- liftIO $ newIORef Nothing
           spawnLocal $
-            acceptor (undefined :: Int)
+            acceptor (error "undefined Test.acceptor.send")
+                 (undefined :: Int)
+                 initialDecreeId
                  (const $ return AcceptorStore
-                    { storeInsert = \d v -> modifyIORef mref $ Map.insert d v
-                    , storeLookup = \d -> do
-                        r <- readIORef mref
-                        return $ maybe (Left False) Right $ Map.lookup d r
+                    { storeInsert =
+                        modifyIORef mref . flip (foldr (uncurry Map.insert))
+                    , storeLookup = \d -> Map.lookup d <$> readIORef mref
                     , storePut = writeIORef vref . Just
                     , storeGet = readIORef vref
                     , storeTrim = const $ return ()
+                    , storeList = Map.assocs <$> readIORef mref
+                    , storeMap = readIORef mref
                     , storeClose = return ()
                     }
                  )

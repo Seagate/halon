@@ -27,7 +27,6 @@ module Control.Distributed.Process.Consensus
     , setState
       -- * Consensus protocols
     , Protocol(..)
-    , acceptorClosure
     , runPropose
     , runPropose'
       -- * Remote table
@@ -36,18 +35,15 @@ module Control.Distributed.Process.Consensus
 import Data.Lifted
 import Control.Distributed.Process
 import Control.Distributed.Process.Trans
-import Control.Distributed.Process.Closure (mkStatic, remotable, staticDecode)
-import Control.Distributed.Process.Serializable (Serializable, SerializableDict)
-import Control.Distributed.Static
-    ( closureApply
-    , staticClosure )
+import Control.Distributed.Process.Closure (mkStatic, remotable)
+import Control.Distributed.Process.Serializable (Serializable)
 #if ! MIN_VERSION_base(4,8,0)
 import Control.Applicative (Applicative)
 #endif
 import Control.Monad.Trans (lift)
 import Control.Monad.State
     (MonadIO, StateT(..), get, modify, evalStateT)
-import Data.Binary (Binary, encode)
+import Data.Binary (Binary)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Prelude hiding (log)
@@ -133,7 +129,8 @@ setState x' = Propose $ modify check
 data Protocol n a = forall s. Protocol
     { -- | An acceptor is spawned once on each replica, and survives until the
       -- replica fails.
-      prl_acceptor :: n -> Process ()
+      prl_acceptor :: (forall b. Serializable b => n -> b -> Process ())
+                   -> DecreeId -> n -> Process ()
       -- | @propose αs d x@ proposes decree value @x@ for decree @d@ to
       -- acceptors αs. Returns the decree value that was actually agreed upon.
       -- This value may be different from that which was proposed, in case
@@ -159,19 +156,44 @@ data Protocol n a = forall s. Protocol
               -- | The decree below which all other decrees should be released
            -> DecreeId
            -> Process ()
+
+      -- | @prl_sync acceptors@ has the group of acceptors consider passed any
+      -- decrees known to any acceptor.
+      --
+      -- This is useful to resize a group of acceptors where the state of
+      -- individuals suffices to reconstruct the history but collectively there
+      -- is not enough redundancy to determine the value of each decree.
+      --
+      -- All acceptors are scanned for existing decrees so they all need to be
+      -- online.
+      --
+      -- This may have the effect of "completing" some proposals that were
+      -- interrupted.
+      --
+      -- After this call, any value successfully proposed in the past is
+      -- guaranteed to be remembered by the group.
+      --
+      -- Because it may not be possible to reconstruct the history for any
+      -- possible change of the membership, it is up to the implementation to
+      -- define the valid resizings.
+      --
+    , prl_sync :: (forall b. Serializable b => n -> b -> Process ())
+                  -- ^ The function to use to send messages to acceptors
+               -> [n] -> Process ()
+
+      -- | @prl_query acceptors d@ yields the values accepted by the given
+      -- acceptors at or above the given decree.
+      --
+      -- It is up to the implementation to decide how many acceptors need to
+      -- be online for the call to succeed.
+      --
+    , prl_query :: (forall b. Serializable b => n -> b -> Process ())
+                   -- ^ The function to use to send messages to acceptors
+                -> [n] -> DecreeId -> Process [(DecreeId, a)]
+
     } deriving (Typeable)
 
-remotable ['prl_acceptor, 'initialDecreeId]
+remotable ['initialDecreeId]
 
 initialDecreeIdStatic :: Static DecreeId
 initialDecreeIdStatic = $(mkStatic 'initialDecreeId)
-
-acceptorClosure :: (Typeable a, Serializable n)
-                => Static (SerializableDict n)
-                -> Closure (Protocol n a)
-                -> n
-                -> Closure (Process ())
-acceptorClosure dict protocol name = do
-  staticClosure $(mkStatic 'prl_acceptor)
-    `closureApply` protocol
-    `closureApply` closure (staticDecode dict) (encode name)

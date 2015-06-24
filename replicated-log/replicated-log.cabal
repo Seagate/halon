@@ -90,6 +90,7 @@ Test-Suite tests
                     consensus-paxos,
                     constraints >= 0.4,
                     containers >= 0.5,
+                    directory >= 1.2.2,
                     distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static >= 0.2.0,

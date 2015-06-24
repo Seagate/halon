@@ -23,6 +23,7 @@ module Control.Distributed.Log
     , append
     , status
     , reconfigure
+    , recover
     , addReplica
     , killReplica
     , removeReplica

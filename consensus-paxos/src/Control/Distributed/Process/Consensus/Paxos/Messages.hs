@@ -8,6 +8,7 @@ import Control.Distributed.Process.Consensus (DecreeId(..))
 import Control.Distributed.Process.Consensus.Paxos.Types
 import Control.Distributed.Process (ProcessId)
 import Data.Binary (Binary)
+import qualified Data.ByteString.Lazy as BSL (ByteString)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
@@ -47,14 +48,38 @@ data Syn a = Syn DecreeId BallotId ProcessId a
              deriving (Typeable, Generic)
 
 -- | Positive reply to a 'Syn'.
-data Ack a = Ack DecreeId BallotId ProcessId a
+data Ack a = Ack DecreeId BallotId a
              deriving (Typeable, Generic)
+
+data SyncStart n = SyncStart ProcessId [n]
+  deriving (Typeable, Generic)
+
+data SyncAdvertise n = SyncAdvertise ProcessId n [(DecreeId, DecreeId)]
+  deriving (Typeable, Generic)
+
+data SyncRequest n = SyncRequest ProcessId n [(DecreeId, DecreeId)]
+  deriving (Typeable, Generic)
+
+data SyncResponse = SyncResponse ProcessId [(DecreeId, BSL.ByteString)]
+  deriving (Typeable, Generic)
+
+data SyncCompleted n = SyncCompleted n
+  deriving (Typeable, Generic)
+
+data QueryDecrees = QueryDecrees ProcessId DecreeId
+  deriving (Typeable, Generic)
 
 instance Binary Prepare
 instance Binary a => Binary (Promise a)
 instance Binary Nack
 instance Binary a => Binary (Syn a)
 instance Binary a => Binary (Ack a)
+instance Binary n => Binary (SyncStart n)
+instance Binary n => Binary (SyncAdvertise n)
+instance Binary n => Binary (SyncRequest n)
+instance Binary n => Binary (SyncCompleted n)
+instance Binary SyncResponse
+instance Binary QueryDecrees
 
 class Decree a where
   decree :: a -> DecreeId
@@ -63,7 +88,7 @@ instance Decree (Syn a) where
   decree (Syn d _ _ _) = d
 
 instance Decree (Ack a) where
-  decree (Ack d _ _ _) = d
+  decree (Ack d _ _) = d
 
 class Ballot a where
   ballot :: a -> BallotId
@@ -81,7 +106,7 @@ instance Ballot (Syn a) where
   ballot (Syn _ b _ _) = b
 
 instance Ballot (Ack a) where
-  ballot (Ack _ b _ _) = b
+  ballot (Ack _ b _) = b
 
 class Value a where
   value :: a v -> v
@@ -90,4 +115,4 @@ instance Value Syn where
   value (Syn _ _ _ x) = x
 
 instance Value Ack where
-  value (Ack _ _ _ x) = x
+  value (Ack _ _ x) = x

@@ -35,6 +35,7 @@ module Control.Distributed.Log.Internal
     , append
     , status
     , reconfigure
+    , recover
     , addReplica
     , killReplica
     , removeReplica
@@ -84,7 +85,7 @@ import Data.Binary (Binary, encode, decode)
 import qualified Data.ByteString.Lazy as BSL (ByteString)
 import Data.Constraint (Dict(..))
 import Data.Int (Int64)
-import Data.List (intersect, partition, sortBy)
+import Data.List (partition, sortBy, nub)
 import qualified Data.Foldable as Foldable
 import Data.Function (on)
 import Data.IORef
@@ -240,6 +241,7 @@ data Config = Config
       -- | This is the amount of microseconds a replica will wait for a snapshot
       -- to load before giving up.
     , snapshotRestoreTimeout :: Int
+
     } deriving (Typeable)
 
 -- | The type of decree values. Some decrees are control decrees, that
@@ -281,13 +283,6 @@ data Request a = Request
   deriving (Generic, Typeable)
 
 instance Binary a => Binary (Request a)
-
--- | An internal message to tell the proposer it should stop trying to pass the
--- current proposal.
-data AbortProposerRequest = AbortProposerRequest
-  deriving (Generic, Typeable)
-
-instance Binary AbortProposerRequest
 
 -- | A type for batcher messages.
 data BatcherMsg a = BatcherMsg
@@ -738,17 +733,11 @@ replica Dict
                   -- consume the final () if not blocked
                   when (not blocked) expect
                   return blocked
-            (αs', aborted, blocked) <- receiveWait
-                      [ match $ \() -> return (αs, False, False)
+            (αs', blocked) <- receiveWait
+                      [ match $ \() -> return (αs, False)
                       , match $ \αs' -> do
                           -- reconfiguration of the proposer
-                          (,,) αs' False <$> clearNotifications
-                      , match $ \AbortProposerRequest -> do
-                          -- Let the batcher know of the aborted request.
-                          when (isNothing $ requestForLease request) $
-                            usend bpid ()
-                          -- a new request intended to replace the current one
-                          (,,) αs True <$> clearNotifications
+                          (,) αs' <$> clearNotifications
                       ]
             if blocked then do
               exit pid "proposer reconfiguration"
@@ -758,14 +747,13 @@ replica Dict
               --
               -- TODO: Consider if there is a way to avoid competition of
               -- proposers here.
-              unless aborted $ usend self r
+              usend self r
               proposer ρ bpid s αs'
             else do
               (v',s') <- liftIO $ takeMVar mv
               usend ρ (d, v', request)
               proposer ρ bpid s' αs'
 
-        , match $ \AbortProposerRequest -> proposer ρ bpid s αs
         , match $ proposer ρ bpid s
         ]
 
@@ -827,7 +815,11 @@ replica Dict
                       leaseRequest <-
                         mkLeaseRequest (decreeLegislatureId d) [] ρs
                       -- If 'mLeader == Just here' we might produce an
-                      -- unreachable decree.
+                      -- unreachable decree. This can happen if legislature
+                      -- changes before the in-flight proposals are passed
+                      -- (maybe because there are already reconfiguration
+                      -- requests in-flight or because of transient network
+                      -- failures and some other replica becomes the leader).
                       usend ppid (cd, leaseRequest)
                       -- We don't want to move the current decree to unreachable
                       -- positions, otherwise the replica may think there is a
@@ -1005,7 +997,7 @@ replica Dict
                   else do
                     logTrace "replica: rejected client request"
                     when (e < epoch || isJust mLeader) $
-                      usend μ (epoch, ρs)
+                      when (elem here ρs) $ usend μ (epoch, ρs)
                   go st
 
               -- Message from the batcher
@@ -1226,34 +1218,139 @@ replica Dict
                   go st
 
               -- Replicas are going to join or leave the group.
-            , matchIf (\(_, e, _) -> epoch <= e) $
+              -- The leader needs to be up-to-date so the membership given to
+              -- cpolicy is the last one.
+            , matchIf (\(_, e, _) -> epoch <= e && cd == w) $
                        \(μ, _, Helo π cpolicy) -> do
 
                   policy <- unClosure cpolicy
-                  let ρs' = policy ρs
+                  let ρs' = nub $ policy ρs
                       -- Place the proposer at the head of the list
                       -- of replicas to be considered as future leader.
-                      ρs'' = here : filter (/= here) ρs'
+                      ρs'' | elem here ρs' = here : filter (/= here) ρs'
+                           | otherwise     = ρs'
 
-                  mLeader <- liftIO $ getLeader
+                  mLeader <- liftIO getLeader
+                  case mLeader of
+                    -- I'm the leader, so handle the request.
+                    Just leader | here == leader -> do
+
+                      requestStart <- liftIO $ getTime Monotonic
+                      -- Get self to propose reconfiguration...
+                      usend self ( μ
+                                 , epoch
+                                 , Request
+                                     { requestSender   = [π]
+                                     , requestValue    =
+                                         Reconf requestStart
+                                                (succ (decreeLegislatureId d))
+                                                ρs'' :: Value a
+                                     , requestHint     = None
+                                     , requestForLease = Nothing
+                                     }
+                                 )
+
+                      go st
+
+                    -- Drop the request.
+                    _ -> do
+                      when (elem here ρs) $ usend μ (epoch, ρs)
+                      go st
+
+            , matchIf (\(_, e, _ :: Helo) -> e < epoch) $
+                      \(μ, _, _) -> do
+                  usend μ (epoch, ρs)
+                  go st
+
+              -- The group is trying to recover.
+            , matchIf (\(_, e, _) -> epoch <= e) $
+                       \(μ, _, Recover π ρs') -> do
+                  -- Place the proposer at the head of the list
+                  -- of replicas to be considered as future leader.
+                  let ρs'' | elem here ρs' = here : filter (/= here) ρs'
+                           | otherwise     = ρs'
+
+                  mLeader <- liftIO getLeader
                   case mLeader of
                     -- Ask for the lease using the proposed membership.
                     -- Thus reconfiguration is possible even when the group has
                     -- no leaders and there is no quorum to elect one.
                     --
-                    -- We only reconfigure if the replica is already part of the
+                    -- We only recover if the replica is part of the new
                     -- group.
-                    Nothing | elem here ρs -> do
-                      r <- mkLeaseRequest (decreeLegislatureId d) [π] ρs''
-                      usend ppid AbortProposerRequest
-                      usend ppid (d, r)
+                    Nothing | elem here ρs' -> do
+                      -- Synchronize acceptors acceptors.
+                      --
+                      -- 'callLocal' allows the task to be aborted if the
+                      -- replica gets an asynchronous exception. Otherwise it
+                      -- would be caught in the internal 'try'.
+                      edvs <- callLocal $ try $ do
+                        -- Stop if the connection to the client is lost.
+                        link π
+                        parentPid <- getSelfPid
+                        -- Poll the client node for prompt detection of
+                        -- connection failures.
+                        _ <- spawnLocal $ do
+                          link π >> link parentPid
+                          forever $ do
+                            -- TODO: Make this a configurable delay?
+                            liftIO $ threadDelay 1000000
+                            usend (nullProcessId (processNodeId π)) ()
 
-                      -- Update the list of acceptors of the proposer, so we
-                      -- have a chance to suceed when there is no quorum.
-                      updateAcceptors (intersect ρs ρs')
+                        prl_sync (sendAcceptor logId) ρs'
+                        -- Update this replica
+                        prl_query (sendAcceptor logId) ρs' w
 
-                      if d == cd then go st { stateCurrentDecree = succ cd }
-                      else go st
+                      case edvs :: Either SomeException [(DecreeId, Value a)] of
+                        -- Caught up and no gaps in the result
+                        Right dvs
+                            | null dvs
+                              || and (zipWith (==)
+                                       (nub $ map (decreeNumber . fst) dvs)
+                                       [decreeNumber w..]
+                                     )
+                            -> do
+                          let trimUnreachable [] _ = []
+                              trimUnreachable (p@(di, v) : ds) leg =
+                                if decreeLegislatureId di < leg
+                                then trimUnreachable ds leg
+                                else (p :) $ trimUnreachable ds $
+                                       (if isReconf v then succ else id)
+                                       (decreeLegislatureId di)
+
+                              dvs' = trimUnreachable dvs (decreeLegislatureId w)
+                          forM_ dvs' $ \(di, vi :: Value a) ->
+                            sendReplicaAsync sendPool logId here $
+                              Decree Remote di vi
+                          -- Submit the reconfiguration request.
+                          let d' = if null dvs' then d
+                                   else max d $ succ $
+                                    let (dm@(DecreeId dmleg dmn), v) = last dvs'
+                                     in if isReconf v
+                                        then DecreeId (succ dmleg) dmn
+                                        else dm
+                          r <- mkLeaseRequest (decreeLegislatureId d') [π] ρs''
+
+                          usend ppid (d', r)
+
+                          -- Update the list of acceptors of the proposer, so we
+                          -- have a chance to succeed.
+                          updateAcceptors ρs'
+
+                          -- Get any missing decrees from the other replicas.
+                          queryMissingFrom sendPool logId (decreeNumber w)
+                            ρs' $
+                            Map.insert (decreeNumber d') undefined $
+                            foldr (\(di, vi) -> Map.insert (decreeNumber di) vi)
+                                  log dvs'
+
+                          go st { stateUnconfirmedDecree = d'
+                                , stateCurrentDecree = max (succ d') cd
+                                }
+
+                        -- Didn't catch up on time
+                        _ ->
+                          go st
 
                     -- I'm the leader, so handle the request.
                     Just leader | here == leader -> do
@@ -1273,25 +1370,21 @@ replica Dict
                                      }
                                  )
 
-                      -- Update the list of acceptors of the proposer, so we
-                      -- have a chance to suceed when there is no quorum.
-                      updateAcceptors (intersect ρs ρs')
-
                       go st
 
                     -- Drop the request.
                     _ -> do
-                      usend μ (epoch, ρs)
+                      when (elem here ρs) $ usend μ (epoch, ρs)
                       go st
 
-            , matchIf (\(_, e, _ :: Helo) -> e < epoch) $
+            , matchIf (\(_, e, _ :: Recover) -> e < epoch) $
                       \(μ, _, _) -> do
                   usend μ (epoch, ρs)
                   go st
 
               -- An ambassador wants to know who the leader is.
             , match $ \μ -> do
-                  usend μ (epoch, ρs)
+                  when (elem here ρs) $ usend μ (epoch, ρs)
                   go st
 
             , match $ \(ConfigQuery sender) -> do
@@ -1303,7 +1396,7 @@ replica Dict
                 when (mLeader == Just here) $
                   usend sender (legD, ρs)
                 when (e < epoch || isJust mLeader) $
-                  usend μ (epoch, ρs)
+                  when (elem here ρs) $ usend μ (epoch, ρs)
                 go st
 
             -- Clock tick - time to advertize. Can be sent by anyone to any
@@ -1466,7 +1559,10 @@ spawnLocalReplica (k, caller, ts0) pDirectory = do
       here <- getSelfNode
 
       localSpawnAndRegister (acceptorLabel $ logId config) $
-        prl_acceptor (consensusProtocol config (dictValue dict2)) here
+        prl_acceptor (consensusProtocol config (dictValue dict2))
+                     (sendAcceptor $ logId config)
+                     legD
+                     here
 
       localSpawnAndRegister (replicaLabel $ logId config) $
         replica dict1 dict2 config log ts0 initialDecreeId legD
@@ -1613,17 +1709,24 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
                                         (cq :: ConfigQuery)
           go epoch mLeader ρs ref
 
+        -- A recovery request
+      , match $ \m@(Recover κ ρs') -> do
+          usend κ ()
+          self <- getSelfPid
+          -- A recovery request does not need to go necessarily to the leader.
+          -- The replicas might have lost quorum and could be unable to elect a
+          -- new leader.
+          let ρ  : _ = ρs'
+          sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
+          go epoch mLeader ρs ref
+
         -- A reconfiguration request
       , match $ \m@(Helo κ _) -> do
           usend κ ()
           self <- getSelfPid
-          -- A reconfiguration decree does not need to go necessarily to the
-          -- leader. The replicas might have lost quorum and could be unable to
-          -- elect a new leader.
-          let ρ  : ρss = ρs
-              ρs' = maybe (ρss ++ [ρ]) (const ρs) mLeader
-          sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
-          go epoch mLeader ρs' ref
+          Foldable.forM_ mLeader $ flip (sendReplica logId)
+                                        (self, epoch, m)
+          go epoch mLeader ρs ref
 
         -- A request
       , match $ \a -> do
@@ -1641,6 +1744,8 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
         Just (WhereIsReply _ mpid) -> do
           monitor $ maybe (nullProcessId ρ) id mpid
         Nothing -> monitor (nullProcessId ρ)
+
+    _ = $(functionTDict 'storeConf) -- stops unused warning
 
 -- | Append an entry to the replicated log.
 append :: Serializable a => Handle a -> Hint -> a -> Process ()
@@ -1755,18 +1860,50 @@ spawnReplicas k cPersisDirectory nodes = callLocal $ do
 
 -- | Propose a reconfiguration according the given nomination policy. Note that
 -- in general, it is only safe to remove replicas if they are /certainly/ dead.
+--
+-- Served only if the group has quorum.
+--
 reconfigure :: Typeable a
             => Handle a
             -> Closure NominationPolicy
             -> Process ()
 reconfigure (Handle _ _ _ _ μ) cpolicy = callLocal $ do
     self <- getSelfPid
+    -- TODO: use a channel to communicate with the ambassador
+    --
     -- If we are interrupted, because the request is abandoned, we want to
     -- yield control back only after the ambassador acknowledges reception of
     -- the request. Thus we preserve the arrival order of requests. We cannot
     -- use uninterruptibleMask_ because of DP-105.
     withMonitor μ $ mask_ $ do
       usend μ $ Helo self cpolicy
+      let loopingWait = receiveWait
+            [ match return
+            , match $ \(ProcessMonitorNotification _ _ _) -> return ()
+            ] `onException` loopingWait
+      loopingWait
+    expect
+
+-- ^ @recover h newMembership@
+--
+-- Makes the given membership the current one. Completes only if all replicas
+-- are online.
+--
+-- Recovering is safe only if at least half of the replicas of the current
+-- membership take part in the new membership (recovered replicas count as
+-- replicas in the old membership).
+--
+recover :: Handle a -> [NodeId] -> Process ()
+recover (Handle _ _ _ _ μ) ρs = callLocal $ do
+    self <- getSelfPid
+    -- TODO: use a channel to communicate with the ambassador
+    --
+    -- If we are interrupted, because the request is abandoned, we want to
+    -- yield control back only after the ambassador acknowledges reception of
+    -- the request. Thus we preserve the arrival order of requests. We cannot
+    -- use uninterruptibleMask_ because of DP-105.
+    withMonitor μ $ mask_ $ do
+      usend μ $ Recover self ρs
       let loopingWait = receiveWait
             [ match return
             , match $ \(ProcessMonitorNotification _ _ _) -> return ()

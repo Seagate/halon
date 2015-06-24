@@ -40,6 +40,7 @@ import Data.List (isPrefixOf)
 import Data.Ratio ((%))
 import Data.String (fromString)
 import Data.Typeable (Typeable, Proxy(..))
+import System.Directory (renameDirectory)
 import System.IO
 import System.FilePath ((</>))
 
@@ -401,10 +402,13 @@ tests argv = do
                 _ <- expectTimeout 1000000 :: Process (Maybe ())
                 _ <- expectTimeout 1000000 :: Process (Maybe ())
 
-                say "Removing two replicas ..."
-                forM_ [node1, node2] $ \lnid ->
-                  retry retryTimeout $
-                    Log.removeReplica h (localNodeId lnid)
+                say "Removing a replica ..."
+                retry retryTimeout $ Log.removeReplica h (localNodeId node1)
+                say "Killing another replica ..."
+                retry retryTimeout $ Log.killReplica h (localNodeId node2)
+                say "Recovering quorum ..."
+                here <- getSelfNode
+                retry retryTimeout $ Log.recover h [here]
 
                 say "Checking quorum ..."
                 retry retryTimeout $
@@ -571,6 +575,35 @@ tests argv = do
                    assert . (>= 2) =<<
                      retry retryTimeout (State.select sdictInt port readCP)
                    say "Incremented state from disk."
-           ]
+
+           , testSuccess "recovery" . withTmpDirectory $ do
+               nodes <- replicateM 4 $ fmap localNodeId $
+                          newLocalNode transport remoteTables
+               tryWithTimeout transport remoteTables 10000000 $ do
+
+                 setup' (take 2 nodes) $ \_ port -> do
+                   retry retryTimeout $
+                     State.update port incrementCP
+                   assert . (>= 1) =<<
+                     retry retryTimeout (State.select sdictInt port readCP)
+                   say "Incremented state from scratch."
+
+                 let persistDirs = map filepath
+                       ["replicas", "replica-snapshots", "acceptors"]
+                 forM_ (zip (take 2 nodes) (drop 2 nodes)) $ \(n0, n1) ->
+                   forM_ persistDirs $ \fp ->
+                     liftIO $ renameDirectory (fp n0) (fp n1)
+
+                 setup' (drop 2 nodes) $ \h port -> do
+                   retry retryTimeout $ do
+                     Log.recover h (drop 2 nodes)
+                   say "Second increment"
+                   retry retryTimeout $
+                     State.update port incrementCP
+                   say "Query"
+                   assert . (>= 2) =<<
+                     retry retryTimeout (State.select sdictInt port readCP)
+                   say "Incremented state from disk."
+            ]
 
     return $ testGroup "replicated-log" [ut]

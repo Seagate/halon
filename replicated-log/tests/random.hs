@@ -73,14 +73,14 @@ testConfig = Log.Config
                     mref <- newIORef Map.empty
                     vref <- newIORef Nothing
                     return AcceptorStore
-                      { storeInsert = \d v -> do
-                          modifyIORef mref $ Map.insert d v
-                      , storeLookup = \d -> do
-                          r <- readIORef mref
-                          return $ maybe (Left False) Right $ Map.lookup d r
+                      { storeInsert =
+                          modifyIORef mref . flip (foldr (uncurry Map.insert))
+                      , storeLookup = \d -> Map.lookup d <$> readIORef mref
                       , storePut = writeIORef vref . Just
                       , storeGet = readIORef vref
                       , storeTrim = const $ return ()
+                      , storeList = Map.assocs <$> readIORef mref
+                      , storeMap = readIORef mref
                       , storeClose = return ()
                       }
                  )

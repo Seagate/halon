@@ -32,31 +32,43 @@ remoteTables =
   BasicPaxos.__remoteTable $
   Control.Distributed.Process.Node.initRemoteTable
 
-setup :: Transport -> ([ProcessId] -> Process ()) -> IO ()
-setup transport action = do
+spawnAcceptor :: Process ProcessId
+spawnAcceptor = do
+    mref <- liftIO $ newIORef Map.empty
+    vref <- liftIO $ newIORef Nothing
+    spawnLocal $ do
+      self <- getSelfPid
+      acceptor usend
+        (undefined :: Int) initialDecreeId
+        (const $ return AcceptorStore
+                      { storeInsert =
+                          modifyIORef mref . flip (foldr (uncurry Map.insert))
+                      , storeLookup = \d -> Map.lookup d <$> readIORef mref
+                      , storePut = writeIORef vref . Just
+                      , storeGet = readIORef vref
+                      , storeTrim = const $ return ()
+                      , storeList = Map.assocs <$> readIORef mref
+                      , storeMap = readIORef mref
+                      , storeClose = return ()
+                      }
+        )
+        self
+
+setup :: Transport -> Int -> ([ProcessId] -> Process ()) -> IO ()
+setup transport numAcceptors action = do
     node0 <- newLocalNode transport remoteTables
     done <- newEmptyMVar
 
     putChar '\n'
     runProcess node0 $ withScheduler [] 1 $ do
-         mref <- liftIO $ newIORef Map.empty
-         vref <- liftIO $ newIORef Nothing
-         α <- spawnLocal $ acceptor (undefined :: Int)
-                 (const $ return AcceptorStore
-                    { storeInsert = \d v -> modifyIORef mref $ Map.insert d v
-                    , storeLookup = \d -> do
-                        r <- readIORef mref
-                        return $ maybe (Left False) Right $ Map.lookup d r
-                    , storePut = writeIORef vref . Just
-                    , storeGet = readIORef vref
-                    , storeTrim = const $ return ()
-                    , storeClose = return ()
-                    }
-                 )
-                 ""
-         action [α]
+         αs <- replicateM numAcceptors spawnAcceptor
+         action αs
+         forM_ αs monitor
+         forM_ αs (flip kill "test finished")
+         forM_ αs $ const (expect :: Process ProcessMonitorNotification)
          liftIO $ threadDelay 1000000
          liftIO $ putMVar done ()
+    closeLocalNode node0
     failure <- isEmptyMVar done
     when failure $ fail "Test failed."
 
@@ -69,21 +81,21 @@ tests = do
     Right transport <- createTransport "127.0.0.1" "0" defaultTCPParameters
 
     return $ testGroup "consensus-paxos"
-      [ testSuccess "single-decree" $ setup transport $ \them -> do
+      [ testSuccess "single-decree" $ setup transport 1 $ \them -> do
             assert =<< proposeWrapper them (DecreeId 0 0) 42
-      , testSuccess "two-decree"    $ setup transport $ \them -> do
+      , testSuccess "two-decree"    $ setup transport 1 $ \them -> do
             assert =<< proposeWrapper them (DecreeId 0 0) 42
             assert =<< proposeWrapper them (DecreeId 0 1) 10
-      , testSuccess "same-decree-same-value" $ setup transport $ \them -> do
+      , testSuccess "same-decree-same-value" $ setup transport 1 $ \them -> do
             assert =<< proposeWrapper them (DecreeId 0 0) 42
             assert =<< proposeWrapper them (DecreeId 0 0) 42
-      , testSuccess "same-decree-different-value" $ setup transport $ \them -> do
+      , testSuccess "same-decree-different-value" $ setup transport 1 $ \them -> do
             assert =<< proposeWrapper them (DecreeId 0 0) 42
             assert =<< not <$> proposeWrapper them (DecreeId 0 0) 10
 
         -- Test that the Nack sent back is always higher than the Prepare
         -- request that was sent.
-      , testSuccess "nack-prepare" $ setup transport $ \them -> do
+      , testSuccess "nack-prepare" $ setup transport 1 $ \them -> do
             self <- getSelfPid
             let first  = BallotId 0 self
             let second = BallotId 1 self
@@ -94,7 +106,7 @@ tests = do
 
         -- Test that the ballot number from a proposer always matches the
         -- ProcessId of the proposer.
-      , testSuccess "processid-proposer" $ setup transport $ \them -> do
+      , testSuccess "processid-proposer" $ setup transport 1 $ \them -> do
             self <- getSelfPid
             node <- getSelfNode
             let bogusBallot = BallotId 100 (nullProcessId node)
@@ -117,4 +129,35 @@ tests = do
 
             forM_ them $ \α -> send α $ Prepare (DecreeId 0 0) bogusBallot self
             assert =<< proposeWrapper them' (DecreeId 0 0) 42
-      ]
+
+        -- Test queries.
+      , testSuccess "query" $ setup transport 2 $ \them -> do
+            assert =<< proposeWrapper them (DecreeId 0 0) 42
+            assert =<< proposeWrapper them (DecreeId 0 1) 10
+            res <- BasicPaxos.query send them (DecreeId 0 0)
+            say (show res)
+            assert (res == [(DecreeId 0 0, 42), (DecreeId 0 1, (10 :: Int))])
+
+         -- Test that acceptors know about decrees after synchronization.
+      , testSuccess "sync" $ setup transport 1 $ \them -> do
+            assert =<< proposeWrapper them (DecreeId 0 0) 42
+            assert =<< proposeWrapper them (DecreeId 0 1) 10
+            αs <- replicateM 3 spawnAcceptor
+            say "sync ..."
+            BasicPaxos.sync usend (αs ++ them)
+            say "Testing result of sync ..."
+            res <- BasicPaxos.query send αs (DecreeId 0 0)
+            say (show res)
+            assert (res == [(DecreeId 0 0, 42), (DecreeId 0 1, (10 :: Int))])
+
+         -- Test that sync succeeds when there is nothing to update.
+      , testSuccess "sync-up-to-date" $ setup transport 2 $ \them -> do
+            assert =<< proposeWrapper them (DecreeId 0 0) 42
+            assert =<< proposeWrapper them (DecreeId 0 1) 10
+            say "sync ..."
+            BasicPaxos.sync usend them
+            say "Checking result of sync ..."
+            res <- BasicPaxos.query send them (DecreeId 0 0)
+            say (show res)
+            assert (res == [(DecreeId 0 0, 42), (DecreeId 0 1, (10 :: Int))])
+       ]

@@ -10,8 +10,9 @@
 
 module Control.Distributed.Process.Consensus.BasicPaxos
     ( propose
+    , sync
+    , query
     , protocol
-    , protocolClosure
     , __remoteTable
     , dictString__static
     ) where
@@ -28,15 +29,15 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types ( runLocalProcess )
 import Control.Distributed.Process.Trans (liftProcess)
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
-import Control.Distributed.Static
-    ( closureApply
-    , staticClosure )
 import Control.Applicative ((<$>))
 import Control.Concurrent ( newEmptyMVar, putMVar, takeMVar, threadDelay )
 import Control.Exception ( SomeException, throwIO )
-import Control.Monad (when, forM_)
+import Control.Monad (when, forM_, replicateM_, replicateM)
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary )
+import Data.List ( delete )
+import qualified Data.Map as Map
+import Data.Maybe ( catMaybes )
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
 import System.Random ( randomRIO )
@@ -252,7 +253,7 @@ propose retryTimeout sendA acceptors d x = liftProcess $
                     then loop backoff' (nextBallotId b{ballotProposalId})
                     else loop backoff' b
               Right xs -> do
-                  let x' = chooseValue d x xs
+                  let x' = maybe x id $ chooseValue d xs
                   eth' <- retry retryTimeout $ command sendA acceptors d b x'
                   case eth' of
                       Left b'@(BallotId{..}) -> do
@@ -264,31 +265,59 @@ propose retryTimeout sendA acceptors d x = liftProcess $
                         paxosTrace $ "propose succeded: " ++ show d
                         return x'
 
-protocol :: forall a n. SerializableDict a
+sync :: forall n. (Eq n, Serializable n)
+     => (forall b. Serializable b => n -> b -> Process ())
+     -> [n] -> Process ()
+sync sendA acceptors = callLocal $ do
+    let n = length acceptors
+    master <- getSelfPid
+    when (n > 1) $ do
+      forM_ acceptors $ \α ->
+        spawnLocal $ do
+          link master
+          self <- getSelfPid
+          sendA α $ Msg.SyncStart self (delete α acceptors)
+          -- wait for half of the acceptors to synchronize with α
+          replicateM_ (n `div` 2) (expect :: Process (Msg.SyncCompleted n))
+          send master ()
+      replicateM_ n (expect :: Process ())
+
+query :: forall a n. Serializable a
+      => (forall b. Serializable b => n -> b -> Process ())
+      -> [n] -> DecreeId -> Process [(DecreeId, a)]
+query sendA acceptors d = callLocal $ do
+    let n = length acceptors
+    self <- getSelfPid
+    forM_ acceptors $ \α -> sendA α $ Msg.QueryDecrees self d
+    dvs <- replicateM n expect
+    let dvs' = Map.assocs $ Map.unionsWith (++) $
+                 map ( Map.fromList
+                     . map (\a -> (Msg.decree a, [a :: Msg.Ack a]))
+                     ) dvs
+        decideDecree (di, acks) =
+          if length acks >= n `div` 2 + 1
+            then (,) di <$> chooseValue di acks
+            else Nothing
+    return $ catMaybes $ map decideDecree dvs'
+
+protocol :: forall a n. (Serializable n, Eq n)
+         => SerializableDict a
          -> Int
          -> (n -> IO AcceptorStore)
          -> Protocol n a
 protocol SerializableDict retryTimeout f =
-    Protocol { prl_acceptor = acceptor (undefined :: a) f
+    Protocol { prl_acceptor = \sendA startDecree ->
+                 acceptor sendA (undefined :: a) startDecree f
              , prl_propose = propose retryTimeout
              , prl_releaseDecreesBelow = \sendA n d -> sendA n $ Trim d
+             , prl_sync = sync
+             , prl_query = query
              }
 
 dictString :: SerializableDict String
 dictString = SerializableDict
 
-remotable ['protocol, 'dictString]
-
-protocolClosure :: (Typeable a, Typeable n)
-                => Static (SerializableDict a)
-                -> Closure Int
-                -> Closure (n -> IO AcceptorStore)
-                -> Closure (Protocol n a)
-protocolClosure sdict retryTimeoutClosure fp =
-    staticClosure $(mkStatic 'protocol)
-      `closureApply` staticClosure sdict
-      `closureApply` retryTimeoutClosure
-      `closureApply` fp
+remotable ['dictString]
 
 {-*promela
 
