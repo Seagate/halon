@@ -7,6 +7,7 @@
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
 import Test.Framework (withTmpDirectory)
+import Transport
 
 import Control.Distributed.Process.Consensus
 import Control.Distributed.Process.Consensus.Paxos
@@ -22,7 +23,6 @@ import Control.Distributed.Process.Scheduler
     ( withScheduler, schedulerIsEnabled, __remoteTable )
 import Control.Distributed.Static ( staticApply, staticClosure )
 import Network.Transport (Transport(..))
-import Network.Transport.TCP
 
 import Control.Exception ( bracket, throwIO, SomeException )
 import Control.Monad ( when, forM_, replicateM, foldM_, void )
@@ -141,6 +141,11 @@ remoteTables =
 
 main :: IO ()
 main = do
+ argv <- getArgs
+ let useTCP = case argv of
+      ("tcp":_)   -> [mkTCPTransport]
+      ("inmem":_) -> [mkInMemoryTransport]
+      _           -> [mkTCPTransport, mkInMemoryTransport]
  setEnv "DP_SCHEDULER_ENABLED" "1" True
  if not schedulerIsEnabled
    then putStrLn "The deterministic scheduler is not enabled." >> exitFailure
@@ -150,18 +155,21 @@ main = do
             "single" : _ -> randomIO
             sstr : _ -> return (read sstr)
             _ -> randomIO
-     let numIterations = 20
-     bracket
-       (createTransport "127.0.0.1" "8080" defaultTCPParameters)
-       (either (const (return ())) closeTransport)
-       $ \(Right transport) -> do
-           case args of
-             _ : istr : _ -> run transport $ read istr
-             _ -> do
-               putStrLn $ "Running " ++ show numIterations ++ " random tests..."
-               putStrLn $ "initial seed: " ++ show s
-               forM_ (take numIterations $ randoms $ mkStdGen s) $ run transport
-           putStrLn $ "SUCCESS!"
+     mapM_ (go args s) useTCP
+  where
+    go args s open =
+         bracket open
+                 (closeAbstractTransport)
+                 $ \(AbstractTransport transport _ _) -> do
+            case args of
+              _ : istr : _ -> run transport $ read istr
+              _ -> do
+                putStrLn $ "Running " ++ show numIterations ++ " random tests..."
+                putStrLn $ "initial seed: " ++ show s
+                forM_ (take numIterations $ randoms $ mkStdGen s) $ run transport
+            putStrLn $ "SUCCESS!"
+        where
+          numIterations = 20
 
 run :: Transport -> Int -> IO ()
 run transport s = brackets 2
@@ -205,6 +213,7 @@ run transport s = brackets 2
                    ++ show newState
     foldM_ compareStates [] states
    `onException` liftIO (putStrLn $ "failure seed " ++ show s)
+
 
 -- | Like 'runProcess' but forwards exceptions and returns the result of the
 -- 'Process' computation.
