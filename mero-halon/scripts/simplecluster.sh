@@ -14,5 +14,5 @@ $HALOND -l $SAT > /tmp/satellite.log 2>&1 &
 $HALONCTL -a $TS bootstrap station
 $HALONCTL -a $SAT bootstrap satellite -t $TS
 
-$HALONCTL -a $SAT service decision-log start -t $TS -f /tmp/decision.log
-$HALONCTL -a $SAT service frontier start -t $TS -p 9028
+$HALONCTL -a $SAT service decision-log start -f /tmp/decision.log --eqt-timeout 0
+$HALONCTL -a $SAT service frontier start -p 9028 --eqt-timeout 0

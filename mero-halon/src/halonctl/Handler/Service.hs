@@ -23,6 +23,7 @@ import HA.EventQueue.Producer (promulgateEQ)
 import HA.Resources
   ( Node(..) )
 import HA.Service
+import qualified HA.Services.EQTracker   as EQT
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy       as Dummy
 import qualified HA.Services.Frontier    as Frontier
@@ -41,6 +42,9 @@ import Control.Distributed.Process
   , Process
   , ProcessMonitorNotification
   , expect
+  , expectTimeout
+  , getSelfPid
+  , nsendRemote
   , withMonitor
   , liftIO
   )
@@ -89,6 +93,7 @@ instance Binary a => Binary (StandardServiceOptions a)
 -- | Options relevant to starting a service.
 data StartCmdOptions a =
     StartCmdOptions
+      Int -- ^ EQT Query timeout
       [String] -- ^ EQ Nodes
       a -- ^ Configuration
   deriving (Eq, Show, Typeable, Generic)
@@ -98,6 +103,7 @@ instance Binary a => Binary (StartCmdOptions a)
 -- | Options relevant to reconfiguring a service.
 data ReconfCmdOptions a =
     ReconfCmdOptions
+      Int -- ^ EQT Query timeout
       [String] -- ^ EQ Nodes
       a -- ^ Configuration
   deriving (Eq, Show, Typeable, Generic)
@@ -107,6 +113,7 @@ instance Binary a => Binary (ReconfCmdOptions a)
 -- | Options relevant to stopping a service.
 data StopCmdOptions a =
     StopCmdOptions
+    Int -- ^ EQT Query timeout
     [String] -- ^ EQ Nodes
   deriving (Eq, Show, Typeable, Generic)
 
@@ -123,21 +130,31 @@ mkStandardServiceCmd svc = let
                         <> O.long "trackers"
                         <> O.short 't'
                         <> O.help "Addresses of Tracking Station nodes."
+    eqtTimeout = O.option O.auto $
+                     O.metavar "TIMEOUT (μs)"
+                  <> O.long "eqt-timeout"
+                  <> O.value 1000000
+                  <> O.help ("Time to wait from a reply from the EQT when" ++
+                              " querying the location of an EQ.")
     startCmd = O.command "start" $ StartCmd <$>
                 (O.withDesc
                   (StartCmdOptions
-                    <$> tsNodes
+                    <$> eqtTimeout
+                    <*> tsNodes
                     <*> mkParser schema)
                   "Start the service on a node.")
     reconfCmd = O.command "reconfigure" $ ReconfCmd <$>
                 (O.withDesc
                   (ReconfCmdOptions
-                    <$> tsNodes
+                    <$> eqtTimeout
+                    <*> tsNodes
                     <*> mkParser schema)
                   "Reconfigure the service on a node.")
     stopCmd = O.command "stop" $ StopCmd <$>
               (O.withDesc
-                (StopCmdOptions <$> tsNodes)
+                (StopCmdOptions
+                    <$> eqtTimeout
+                    <*> tsNodes)
                 "Stop the service on a node.")
   in O.command (snString . serviceName $ svc) (O.withDesc
       ( O.subparser
@@ -198,23 +215,44 @@ standardService :: Configuration a
               -> Service a
               -> Process ()
 standardService nids sso svc = case sso of
-  StartCmd (StartCmdOptions eqAddrs a) -> mapM_ (start svc a eqAddrs) nids
-  ReconfCmd (ReconfCmdOptions eqAddrs a) -> mapM_ (reconf svc a eqAddrs) nids
-  StopCmd (StopCmdOptions eqAddrs) -> mapM_ (stop svc eqAddrs) nids
+  StartCmd (StartCmdOptions t eqAddrs a) -> getEQAddrs t eqAddrs >>= \eqs ->
+                                            mapM_ (start svc a eqs) nids
+  ReconfCmd (ReconfCmdOptions t eqAddrs a) -> getEQAddrs t eqAddrs >>= \eqs ->
+                                              mapM_ (reconf svc a eqs) nids
+  StopCmd (StopCmdOptions t eqAddrs) -> getEQAddrs t eqAddrs >>= \eqs ->
+                                        mapM_ (stop svc eqs) nids
+  where
+    getEQAddrs timeout eqs = case eqs of
+      [] -> findEQFromNodes timeout nids
+      _ -> return $ fmap conjureRemoteNodeId eqs
+
+-- | Look up the location of the EQ by querying the EQTracker(s) on the
+--   provided node(s)
+findEQFromNodes :: Int -- ^ Timeout
+                -> [NodeId]
+                -> Process [NodeId]
+findEQFromNodes t n = go t n [] where
+  go 0 [] nids = go 0 (reverse nids) []
+  go _ [] _ = error "Failed to query EQ location from any node."
+  go timeout (x:xs) done = do
+    self <- getSelfPid
+    nsendRemote x EQT.name $ EQT.ReplicaRequest self
+    rl <- expectTimeout timeout
+    case rl of
+      Just (EQT.ReplicaReply (EQT.ReplicaLocation _ rest@(_:_))) -> return rest
+      _ -> go timeout xs (x : done)
 
 -- | Start a given service on a single node.
 start :: Configuration a
       => Service a -- ^ Service to start.
       -> a -- ^ Configuration.
-      -> [String] -- ^ EQ Nodes to send start messages to.
+      -> [NodeId] -- ^ EQ Nodes to send start messages to.
       -> NodeId -- ^ Node on which to start the service.
       -> Process ()
-start s c eqAddrs nid = do
-    liftIO $ putStrLn $ "Try to start " ++ (show $ serviceName s)
-    promulgateEQ eqnids ssrm
-    >>= \pid -> withMonitor pid wait
+start s c eqnids nid = do
+    liftIO $ putStrLn $ "Trying to start " ++ (show $ serviceName s)
+    promulgateEQ eqnids ssrm >>= \pid -> withMonitor pid wait
   where
-    eqnids = fmap conjureRemoteNodeId eqAddrs
     ssrm = encodeP $ ServiceStartRequest Start (Node nid) s c
     wait = void (expect :: Process ProcessMonitorNotification)
 
@@ -222,25 +260,23 @@ start s c eqAddrs nid = do
 reconf :: Configuration a
        => Service a -- ^ Service to reconfigure.
        -> a -- ^ Configuration.
-       -> [String] -- ^ EQ Nodes to contact.
-       -> NodeId -- ^ Filter for which instances to reconfigure.
+       -> [NodeId] -- ^ EQ Nodes to contact.
+       -> NodeId -- ^ Node to reconfigure.
        -> Process ()
-reconf s c eqAddrs nid = promulgateEQ eqnids msg
+reconf s c eqnids nid = promulgateEQ eqnids msg
     >>= \pid -> withMonitor pid wait
   where
-    eqnids = fmap conjureRemoteNodeId eqAddrs
     msg = encodeP $ ServiceStartRequest Restart (Node nid) s c
     wait = void (expect :: Process ProcessMonitorNotification)
 
 -- | Stop a given service on a single node.
 stop :: Configuration a
      => Service a -- ^ Service to stop.
-     -> [String] -- ^ EQ Nodes to send stop messages to.
+     -> [NodeId] -- ^ EQ Nodes to send stop messages to.
      -> NodeId -- ^ Node on which to stop the service.
      -> Process ()
-stop s eqAddrs nid = promulgateEQ eqnids ssrm
+stop s eqnids nid = promulgateEQ eqnids ssrm
     >>= \pid -> withMonitor pid wait
   where
-    eqnids = fmap conjureRemoteNodeId eqAddrs
     ssrm = encodeP $ ServiceStopRequest (Node nid) s
     wait = void (expect :: Process ProcessMonitorNotification)
