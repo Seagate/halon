@@ -11,7 +11,7 @@ main :: IO ()
 main = do
    (testArgs, runnerArgs) <- parseArgs
    let runWithArgs t r = defaultMainWithArgs tests (testArgs `orDefault` t) (runnerArgs `orDefault` r)
-   runWithArgs ["--tcp-transport"] []
+   runWithArgs [] ["--tcp-transport"]
    runWithArgs [] [] -- in memory transport
 
 orDefault :: [a] -> [a] -> [a]

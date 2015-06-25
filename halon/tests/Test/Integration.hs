@@ -2,7 +2,6 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
-{-# LANGUAGE CPP #-}
 module Test.Integration (tests) where
 
 import           Prelude hiding ((<$>))
@@ -16,33 +15,21 @@ import qualified HA.ResourceGraph.Tests (tests)
 import Test.Tasty (TestTree, testGroup)
 
 import Control.Applicative ((<$>))
-import Network.Transport
-#ifndef USE_RPC
-import qualified Network.Transport.TCP as TCP
-#endif
+import Test.Transport
 
-#ifdef USE_RPC
-tests :: Transport -> IO TestTree
+tests :: AbstractTransport -> IO TestTree
 tests transport = do
-#else
-tests :: Transport -> TCP.TransportInternals -> IO TestTree
-tests transport internals = do
-#endif
     testGroup "it" <$> sequence
       [
-#ifdef USE_RPC
         testGroup "EQ" <$> HA.EventQueue.Tests.tests transport
-#else
-        testGroup "EQ" <$> HA.EventQueue.Tests.tests transport internals
-#endif
       , testGroup "MM-process-tests" <$> return
-        [ HA.Multimap.ProcessTests.tests transport ]
+        [ HA.Multimap.ProcessTests.tests (getTransport transport) ]
       , testGroup "MM-pure" <$> return
         HA.Multimap.Tests.tests
-      , testGroup "RG" <$> HA.ResourceGraph.Tests.tests transport
-      , testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests False transport
+      , testGroup "RG" <$> HA.ResourceGraph.Tests.tests (getTransport transport)
+      , testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests False (getTransport transport)
         -- Next test is commented since it doesn't pass reliably.
         -- TODO: fix liveness of paxos.
 --    , HA.RecoverySupervisor.Tests.tests transport False
-      , testGroup "NA" <$> HA.NodeAgent.Tests.tests transport
+      , testGroup "NA" <$> HA.NodeAgent.Tests.tests (getTransport transport)
       ]

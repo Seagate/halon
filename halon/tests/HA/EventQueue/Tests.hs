@@ -10,6 +10,7 @@ module HA.EventQueue.Tests ( tests ) where
 
 import Prelude hiding ((<$>))
 import Test.Framework
+import Test.Transport
 
 import HA.EventQueue hiding (trim)
 import HA.EventQueue.Definitions
@@ -43,13 +44,6 @@ import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import qualified Data.UUID.V5 as UUID
 import Network.CEP
-import Network.Transport (Transport)
-
-#ifndef USE_RPC
-import Control.Concurrent (threadDelay)
-import qualified Network.Socket as TCP
-import qualified Network.Transport.TCP as TCP
-#endif
 
 eqTestNamespace :: UUID
 eqTestNamespace = fromJust $
@@ -90,13 +84,8 @@ requestTimeout = 1000000
 secs :: Int
 secs = 1000000
 
-#ifdef USE_RPC
-tests :: Transport -> IO [TestTree]
-tests transport = do
-#else
-tests :: Transport -> TCP.TransportInternals -> IO [TestTree]
-tests transport internals = do
-#endif
+tests :: AbstractTransport -> IO [TestTree]
+tests (AbstractTransport transport breakConnection _) = do
     let rt = HA.EventQueue.Tests.__remoteTable remoteTable
         (==>) :: (IO () -> TestTree) -> (ProcessId -> ProcessId -> MC_RG EventQueue -> Process ()) -> TestTree
         t ==> action = t $ setup $ \eq na rGroup ->
@@ -235,10 +224,7 @@ tests transport internals = do
                     _ -> error "Wrong event received from first RC."
                 nid <- getSelfNode
                 -- Break the connection
-                liftIO $ do
-                  sock <- TCP.socketBetween internals (nodeAddress nid) (nodeAddress $ localNodeId ln1)
-                  TCP.sClose sock
-                  threadDelay 10000
+                liftIO $ breakConnection (nodeAddress nid) (nodeAddress $ localNodeId ln1)
                 -- Expect confirmation from the eq that the rc connection has broken.
                 expectTimeout defaultTimeout >>= \case
                   Just (Published RCLost _) -> return ()
