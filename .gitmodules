@@ -36,3 +36,6 @@
 [submodule "vendor/leveldb-haskell"]
 	path = vendor/leveldb-haskell
 	url = git://github.com/kim/leveldb-haskell.git
+[submodule "vendor/network-transport-inmemory"]
+	path = vendor/network-transport-inmemory
+	url = https://github.com/haskell-distributed/network-transport-inmemory.git
