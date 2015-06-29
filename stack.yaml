@@ -1,0 +1,34 @@
+packages:
+- consensus
+- consensus-paxos
+- distributed-commands
+- distributed-process-scheduler
+- distributed-process-test
+- distributed-process-trans
+- genders
+- halon
+- mero-halon
+- replicated-log
+- sspl
+- cep
+- clock
+- distributed-process
+- distributed-process-async
+- distributed-process-extras
+- distributed/distributed-process-tests
+- distributed-static
+- network-transport
+- network-transport-tcp
+- distributed/network-transport-tests
+- options-schema
+- rank1dynamic
+- tasty-files
+
+extra-deps:
+- leveldb-haskell-0.6.3
+- netwire-5.0.1
+- network-2.6.2.0
+- rematch-0.2.0.0
+- tasty-program-1.0.3
+
+resolver: nightly-2015-06-05
