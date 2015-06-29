@@ -27,17 +27,6 @@ size_t m0_fom_rpclite_sender_home_locality(const struct m0_fom *fom)
 	return (intptr_t)fom;
 }
 
-static void m0_fom_rpclite_sender_addb_init(struct m0_fom *fom,
-		                       struct m0_addb_mc *mc)
-{
-	    /**
-		 *      * @todo: Do the actual impl, need to set MAGIC, so that
-		 *           * m0_fom_init() can pass
-		 *                */
-	    fom->fo_addb_ctx.ac_magic = M0_ADDB_CTX_MAGIC;
-}
-
-
 /**
  * State function for rpclite request
  */
@@ -141,7 +130,6 @@ static const struct m0_fom_ops m0_fom_rpclite_sender_ops = {
 	.fo_fini          = m0_rpclite_sender_fom_fini,
 	.fo_tick          = m0_fom_rpclite_sender_state,
 	.fo_home_locality = m0_fom_rpclite_sender_home_locality,
-	.fo_addb_init     = m0_fom_rpclite_sender_addb_init
 };
 
 static const struct m0_fom_type_ops m0_fom_rpclite_sender_type_ops = {
