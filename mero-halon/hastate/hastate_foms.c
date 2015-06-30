@@ -26,12 +26,6 @@ size_t ha_state_fom_locality(const struct m0_fom *fom)
     return ++seq;
 }
 
-void ha_state_fom_addb_init(struct m0_fom *fom, struct m0_addb_mc *mc)
-{
-     fom->fo_addb_ctx.ac_magic = M0_ADDB_CTX_MAGIC;
-}
-
-
 /*
  * Get FOM
  */
@@ -92,7 +86,6 @@ const struct m0_fom_ops ha_state_get_fom_ops = {
     .fo_tick          = ha_state_get_fom_tick,
     .fo_fini          = ha_state_get_fom_fini,
     .fo_home_locality = ha_state_fom_locality,
-    .fo_addb_init     = ha_state_fom_addb_init
 };
 
 int ha_state_get_fom_create(struct m0_fop *fop, struct m0_fom **m,
@@ -161,7 +154,6 @@ const struct m0_fom_ops ha_state_set_fom_ops = {
      .fo_tick          = &ha_state_set_fom_tick,
      .fo_fini          = &ha_state_set_fom_fini,
      .fo_home_locality = &ha_state_fom_locality,
-     .fo_addb_init     = &ha_state_fom_addb_init
 };
 
 int ha_state_set_fom_create(struct m0_fop *fop, struct m0_fom **m,

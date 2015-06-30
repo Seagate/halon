@@ -51,7 +51,7 @@ import Control.Monad (forever, when, void)
 import Data.ByteString (ByteString)
 import Data.Defaultable (fromDefault)
 
-import Network.CEP (RuleM)
+import Network.CEP (Definitions)
 
 updateEpoch :: RPC.ServerEndpoint
             -> RPC.RPCAddress
@@ -143,5 +143,5 @@ remotableDecl [ [d|
                      else False
     |] ]
 
-meroRules :: RuleM LoopState ()
+meroRules :: Definitions LoopState ()
 meroRules = meroRulesF m0d
