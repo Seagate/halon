@@ -55,7 +55,7 @@ myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 main :: IO Int
 #ifdef USE_MERO
 main = withM0 $ do
-  startGlobalWorker
+    startGlobalWorker
 #else
 main = do
 #endif

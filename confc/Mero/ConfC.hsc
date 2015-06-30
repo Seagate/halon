@@ -395,8 +395,9 @@ data ServiceType
     | CST_IOS
     | CST_MGS
     | CST_RMS
-    | CST_SS
+    | CST_STS
     | CST_HA
+    | CST_SSS
     | CST_UNKNOWN Int
   deriving (Show,Read,Ord,Eq)
 
@@ -426,16 +427,18 @@ instance Enum ServiceType where
   toEnum #{const M0_CST_IOS} = CST_IOS
   toEnum #{const M0_CST_MGS} = CST_MGS
   toEnum #{const M0_CST_RMS} = CST_RMS
-  toEnum #{const M0_CST_SS}  = CST_SS
+  toEnum #{const M0_CST_STS} = CST_STS
   toEnum #{const M0_CST_HA}  = CST_HA
+  toEnum #{const M0_CST_SSS} = CST_SSS
   toEnum i                   = CST_UNKNOWN i
 
   fromEnum CST_MDS         = #{const M0_CST_MDS}
   fromEnum CST_IOS         = #{const M0_CST_IOS}
   fromEnum CST_MGS         = #{const M0_CST_MGS}
   fromEnum CST_RMS         = #{const M0_CST_RMS}
-  fromEnum CST_SS          = #{const M0_CST_SS}
+  fromEnum CST_STS         = #{const M0_CST_STS}
   fromEnum CST_HA          = #{const M0_CST_HA}
+  fromEnum CST_SSS         = #{const M0_CST_SSS}
   fromEnum (CST_UNKNOWN i) = i
 
 data Rack = Rack
