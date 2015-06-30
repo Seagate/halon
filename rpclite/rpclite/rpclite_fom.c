@@ -18,15 +18,11 @@ extern rpc_listen_callbacks_t rpclite_listen_cbs;
 static int rpclite_fop_fom_create(struct m0_fop *fop, struct m0_fom **m,
 									struct m0_reqh* reqh);
 
-static void m0_fom_rpclite_addb_init(struct m0_fom *fom,
-		                       struct m0_addb_mc *mc);
-
 /** Generic ops object for rpclite */
 struct m0_fom_ops m0_fom_rpclite_ops = {
 	.fo_fini          = m0_fop_rpclite_fom_fini,
 	.fo_tick          = m0_fom_rpclite_state,
 	.fo_home_locality = m0_fom_rpclite_home_locality,
-	.fo_addb_init     = m0_fom_rpclite_addb_init
 };
 
 /** FOM type specific functions for rpclite FOP. */
@@ -40,17 +36,6 @@ size_t m0_fom_rpclite_home_locality(const struct m0_fom *fom)
 
 	return m0_fop_opcode(fom->fo_fop);
 }
-
-static void m0_fom_rpclite_addb_init(struct m0_fom *fom,
-		                       struct m0_addb_mc *mc)
-{
-	    /**
-		 *      * @todo: Do the actual impl, need to set MAGIC, so that
-		 *           * m0_fom_init() can pass
-		 *                */
-	    fom->fo_addb_ctx.ac_magic = M0_ADDB_CTX_MAGIC;
-}
-
 
 void disconnected_ast(struct m0_sm_group* grp, struct m0_sm_ast* ast) {
     struct m0_clink* link = ast->sa_datum;

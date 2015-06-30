@@ -428,6 +428,8 @@ int rpc_listen(char* persistence_prefix,char* address,rpc_listen_callbacks_t* cb
 	int rc;
 	int i;
 	struct m0_net_xprt *xprt = &m0_net_lnet_xprt;
+	char* conf_profile;
+	char* conf_db_path;
 
 	if (cbs) {
 		rpclite_listen_cbs = *cbs;
@@ -464,11 +466,21 @@ int rpc_listen(char* persistence_prefix,char* address,rpc_listen_callbacks_t* cb
     sprintf((*re)->tm_len, "%d" , QUEUE_LEN);
     sprintf((*re)->rpc_size, "%d" , MAX_MSG_SIZE);
 
+	conf_profile = getenv("RPCLITE_CONF_PROFILE");
+   	M0_ASSERT_INFO(conf_profile, "RPCLITE_CONF_PROFILE must be set "
+      " (e.g. export RPCLITE_CONF_PROFILE=\"<0x7000000000000001:0>\")");
+	conf_db_path = getenv("RPCLITE_CONF_DB_PATH");
+   	M0_ASSERT_INFO(conf_db_path, "RPCLITE_CONF_DB_PATH must be set "
+      " (e.g. export RPCLITE_CONF_DB_PATH=\"conf-str.txt\")");
+
 	char *server_argv[] = {
 	                "rpclib_ut", "-T", "AD", "-D", (*re)->db_file_name,
 	                "-S", (*re)->stob_file_name, "-e", (*re)->server_endpoint,
 					"-A", (*re)->addb_stob_file_name,"-w","5",
-	                "-q", (*re)->tm_len, "-m", (*re)->rpc_size
+	                "-q", (*re)->tm_len, "-m", (*re)->rpc_size,
+	                "-s", "confd",
+	                "-P", conf_profile,
+	                "-c", conf_db_path
     };
 
 	(*re)->server_argv = (char**)malloc(sizeof(server_argv));
