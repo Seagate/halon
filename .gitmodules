@@ -36,7 +36,3 @@
 [submodule "vendor/leveldb-haskell"]
 	path = vendor/leveldb-haskell
 	url = git://github.com/kim/leveldb-haskell.git
-[submodule "vendor/network"]
-	path = vendor/network
-	url = git@github.com:tweag/network.git
-	branch = tweag-patchset

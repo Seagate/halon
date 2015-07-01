@@ -174,13 +174,9 @@ depclean:
 	rm -rf .cabal-sandbox
 	rm -f cabal.sandbox.config
 
-# The network package requires this additional step before adding it to the sandbox.
-vendor/network/configure: vendor/network/configure.ac
-	cd vendor/network; autoreconf -i
-
 .PHONY: dep
 dep: cabal.sandbox.config
-cabal.sandbox.config: mk/config.mk vendor/network/configure
+cabal.sandbox.config: mk/config.mk
 	@echo "Initializing sandbox"
 	cabal sandbox init
 	cabal sandbox add-source $(addprefix $(VENDOR_DIR),$(VENDOR_PACKAGES)) \
