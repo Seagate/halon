@@ -57,9 +57,18 @@ heartbeatDelay = 2 * 1000000
 emptyMonitorState :: MonitorState
 emptyMonitorState = MonitorState M.empty
 
+-- | Builds a list of every monitored services 'NodeId'. 'NodeId' that compose
+--   that list are unique.
+nodeIds :: PhaseM MonitorState l [NodeId]
+nodeIds = fmap (S.toList . foldMap go . M.keys . msMap) $ get Global
+  where
+    go pid = S.singleton $ processNodeId pid
+
 monitorState :: Processes -> Process MonitorState
-monitorState (Processes ps) =
-    fmap fromMonitoreds $ traverse deserializedMonitored ps
+monitorState (Processes ps) = do
+    st <- fmap fromMonitoreds $ traverse deserializedMonitored ps
+    forM_ (M.elems $ msMap st) $ \(Monitored pid _) -> monitor pid
+    return st
 
 fromMonitoreds :: [Monitored] -> MonitorState
 fromMonitoreds = MonitorState . M.fromList . fmap go
@@ -77,14 +86,7 @@ heartbeatProcess mainpid = forever $ do
     liftIO $ threadDelay heartbeatDelay
     usend mainpid Heartbeat
 
--- | Builds a list of every monitored services 'NodeId'. 'NodeId' that compose
---   that list are unique.
-nodeIds :: PhaseM MonitorState [NodeId]
-nodeIds = fmap (S.toList . foldMap go . M.elems . msMap) get
-  where
-    go (Monitored pid _) = S.singleton $ processNodeId pid
-
-decodeMsg :: ProcessEncode a => BinRep a -> PhaseM s a
+decodeMsg :: ProcessEncode a => BinRep a -> PhaseM g l a
 decodeMsg = liftProcess . decodeP
 
 -- | By monitoring a service, we mean calling `monitor` with its `ProcessId`,
@@ -93,32 +95,32 @@ decodeMsg = liftProcess . decodeP
 monitoring :: Configuration a
            => Service a
            -> ServiceProcess a
-           -> PhaseM MonitorState ()
+           -> PhaseM MonitorState l ()
 monitoring svc (ServiceProcess pid) = do
-    ms <- get
+    ms <- get Global
     _  <- liftProcess $ monitor pid
     let m' = M.insert pid (Monitored pid svc) (msMap ms)
 
-    put ms { msMap = m' }
+    put Global ms { msMap = m' }
     sendSaveRequest
 
 -- | Get a 'Monitored' from monitor internal state. That 'Monitored' will no
 --   longer be accessible from monitor state after.
-takeMonitored :: ProcessId -> PhaseM MonitorState (Maybe Monitored)
+takeMonitored :: ProcessId -> PhaseM MonitorState l (Maybe Monitored)
 takeMonitored pid = do
-    ms <- get
+    ms <- get Global
     let mon = M.lookup pid $ msMap ms
         m'  = M.delete pid $ msMap ms
 
-    put ms { msMap = m' }
+    put Global ms { msMap = m' }
     sendSaveRequest
     return mon
 
 -- | Asks kindly the RC to persist the list of monitored services in the
 --   ReplicatedGraph.
-sendSaveRequest ::PhaseM MonitorState ()
+sendSaveRequest :: PhaseM MonitorState l ()
 sendSaveRequest = do
-    ms   <- get
+    ms   <- get Global
     self <- liftProcess getSelfPid
     let ps = toProcesses ms
 
@@ -126,45 +128,42 @@ sendSaveRequest = do
 
 -- | Sends a message to the RC. Strictly speaking, it sends the message to EQ,
 --   through the 'EQTracker', which forwards it to the RC.
-sendToRC :: Serializable a => a -> PhaseM s ()
+sendToRC :: Serializable a => a -> PhaseM g l ()
 sendToRC a = do
     _ <- liftProcess $ promulgate a
     return ()
 
+sayMonitor :: String -> PhaseM g l ()
+sayMonitor s = liftProcess $ do
+    self <- getSelfPid
+    say $ "Monitor [" ++ show self ++ "] : " ++ s
+
 -- | Notifies the RC that a monitored service has died.
-reportFailure :: Monitored -> PhaseM s ()
-reportFailure (Monitored pid svc) = liftProcess $ do
+reportFailure :: Monitored -> PhaseM g l ()
+reportFailure (Monitored pid svc) = do
+    sayMonitor $ "Notify death for " ++ show (serviceName svc)
     let node = Node $ processNodeId pid
         msg  = encodeP $ ServiceFailed node svc pid
-    _ <- promulgate msg
+    _ <- liftProcess $ promulgate msg
     return ()
 
 -- | Verifies that a node is still up.
-nodeHeartbeatRequest :: NodeId -> PhaseM s ()
+nodeHeartbeatRequest :: NodeId -> PhaseM g l ()
 nodeHeartbeatRequest nid = liftProcess $ nsendRemote nid "nonexistentprocess" ()
 
 monitorRules :: Definitions MonitorState ()
 monitorRules = do
-    define "monitor-notification" $
+    defineSimple "monitor-notification" $
       \(ProcessMonitorNotification _ pid reason) -> do
-          ph1 <- phase "state1" $ do
-            case reason of
-              DiedNormal -> do
-                _ <- takeMonitored pid
-                return ()
-              _ -> traverse_ reportFailure =<< takeMonitored pid
+          case reason of
+            DiedNormal -> do
+              _ <- takeMonitored pid
+              return ()
+            _ -> traverse_ reportFailure =<< takeMonitored pid
 
-          start ph1
+    defineSimple "service-started" $ \msg -> do
+      ServiceStarted _ svc _ sp <- decodeMsg msg
+      monitoring svc sp
 
-    define "service-started" $ \msg -> do
-      ph1 <- phase "state1" $ do
-        ServiceStarted _ svc _ sp <- decodeMsg msg
-        monitoring svc sp
-
-      start ph1
-
-    define "heartbeat" $ \Heartbeat -> do
-      ph1 <- phase "state1" $
-          traverse_ nodeHeartbeatRequest =<< nodeIds
-
-      start ph1
+    defineSimple "heartbeat" $ \Heartbeat -> do
+      traverse_ nodeHeartbeatRequest =<< nodeIds

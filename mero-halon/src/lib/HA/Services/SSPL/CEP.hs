@@ -9,7 +9,7 @@
 
 module HA.Services.SSPL.CEP where
 
-import HA.EventQueue.Consumer (HAEvent(..), defineHAEvent)
+import HA.EventQueue.Consumer (HAEvent(..), defineSimpleHAEvent)
 import HA.Service hiding (configDict)
 import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
@@ -47,7 +47,7 @@ import Prelude hiding (id, mapM_)
 
 sendInterestingEvent :: NodeId
                      -> InterestingEventMessage
-                     -> PhaseM LoopState ()
+                     -> PhaseM LoopState l ()
 sendInterestingEvent nid msg = do
   liftProcess . say $ "Sending InterestingEventMessage"
   rg <- getLocalGraph
@@ -64,7 +64,7 @@ sendInterestingEvent nid msg = do
 
 sendSystemdRequest :: NodeId
                    -> SystemdRequest
-                   -> PhaseM LoopState ()
+                   -> PhaseM LoopState l ()
 sendSystemdRequest nid req = do
   liftProcess . say $ "Sending Systemd request" ++ show req
   rg <- getLocalGraph
@@ -80,7 +80,7 @@ sendSystemdRequest nid req = do
 
 registerChannels :: ServiceProcess SSPLConf
                  -> ActuatorChannels
-                 -> PhaseM LoopState ()
+                 -> PhaseM LoopState l ()
 registerChannels svc acs = modifyLocalGraph $ \rg -> do
     liftProcess . say $ "Register channels"
     let rg' =   registerChannel IEMChannel (iemPort acs)
@@ -112,103 +112,92 @@ registerChannels svc acs = modifyLocalGraph $ \rg -> do
 
 ssplRulesF :: Service SSPLConf -> Definitions LoopState ()
 ssplRulesF sspl = do
-  defineHAEvent "declare-channels" $
+  defineSimpleHAEvent "declare-channels" $
       \(HAEvent _ (DeclareChannels pid svc acs) _) -> do
-          ph1 <- phase "state-1" $ do
-            registerChannels svc acs
-            ack pid
-
-          start ph1
+          registerChannels svc acs
+          ack pid
 
   -- SSPL Monitor drivemanager
-  defineHAEvent "monitor-drivemanager" $ \(HAEvent _ (nid, mrm) _) -> do
-    ph1 <- phase "state1" $ do
-      host <- findNodeHost (Node nid)
-      diskUUID <- liftIO $ nextRandom
-      let disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus mrm
-          encName = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN mrm
-          diskNum = floor . (toRealFloat :: Scientific -> Double) $
-                  sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum mrm
-          enc = Enclosure $ T.unpack encName
-          disk = StorageDevice diskUUID
+  defineSimpleHAEvent "monitor-drivemanager" $ \(HAEvent _ (nid, mrm) _) -> do
+    host <- findNodeHost (Node nid)
+    diskUUID <- liftIO $ nextRandom
+    let disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus mrm
+        encName = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN mrm
+        diskNum = floor . (toRealFloat :: Scientific -> Double) $
+                sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum mrm
+        enc = Enclosure $ T.unpack encName
+        disk = StorageDevice diskUUID
 
-      locateStorageDeviceInEnclosure enc disk
-      identifyStorageDevice disk $ DeviceIdentifier "slot" (IdentInt diskNum)
-      updateDriveStatus disk $ T.unpack disk_status
-      mapM_ (\h -> do
-            locateHostInEnclosure h enc
-            -- Find any existing (logical) devices and link them
-            hostDevs <- findHostStorageDevices h
-                      >>= filterM (flip hasStorageDeviceIdentifier
-                                  (DeviceIdentifier "slot" (IdentInt diskNum)))
-            mapM_ (\d -> mergeStorageDevices [d,disk]) hostDevs
-            ) host
+    locateStorageDeviceInEnclosure enc disk
+    identifyStorageDevice disk $ DeviceIdentifier "slot" (IdentInt diskNum)
+    updateDriveStatus disk $ T.unpack disk_status
+    mapM_ (\h -> do
+          locateHostInEnclosure h enc
+          -- Find any existing (logical) devices and link them
+          hostDevs <- findHostStorageDevices h
+                    >>= filterM (flip hasStorageDeviceIdentifier
+                                (DeviceIdentifier "slot" (IdentInt diskNum)))
+          mapM_ (\d -> mergeStorageDevices [d,disk]) hostDevs
+          ) host
 
-      liftProcess . sayRC $ "Registered drive"
-      when (disk_status == "inuse_removed") $ do
-        let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
-        sendInterestingEvent nid msg
-      when (disk_status == "unused_ok") $ do
-        let msg = InterestingEventMessage . BL.pack
-                  $  "Drive powered off: \n\t"
-                  ++ show enc
-                  ++ "\n\t"
-                  ++ show disk
-        sendInterestingEvent nid msg
-
-    start ph1
+    liftProcess . sayRC $ "Registered drive"
+    when (disk_status == "inuse_removed") $ do
+      let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
+      sendInterestingEvent nid msg
+    when (disk_status == "unused_ok") $ do
+      let msg = InterestingEventMessage . BL.pack
+                $  "Drive powered off: \n\t"
+                ++ show enc
+                ++ "\n\t"
+                ++ show disk
+      sendInterestingEvent nid msg
 
   -- SSPL Monitor host_update
-  defineHAEvent "monitor-host-update" $ \(HAEvent _ (nid, hum) _) -> do
-    ph1 <- phase "state1" $
-      case sensorResponseMessageSensor_response_typeHost_updateHostId hum of
-        Just a -> do
-          let host = Host $ T.unpack a
-              node = Node nid
-          registerHost host
-          locateNodeOnHost node host
-          liftProcess . sayRC $ "Registered host: " ++ show host
-        Nothing -> return ()
-    start ph1
+  defineSimpleHAEvent "monitor-host-update" $ \(HAEvent _ (nid, hum) _) ->
+    case sensorResponseMessageSensor_response_typeHost_updateHostId hum of
+      Just a -> do
+        let host = Host $ T.unpack a
+            node = Node nid
+        registerHost host
+        locateNodeOnHost node host
+        liftProcess . sayRC $ "Registered host: " ++ show host
+      Nothing -> return ()
 
   -- Dummy rule for handling SSPL HL commands
-  defineHAEvent "systemd-restart" $ \(HAEvent _
-                                              (CommandRequest (Just sr))
-                                               _
-                                     ) -> do
-    ph1 <- phase "state1" $ do
-      let
-        serviceName = BL.fromStrict . T.encodeUtf8 $ commandRequestServiceRequestServiceName sr
-        command = commandRequestServiceRequestCommand sr
-        nodeFilter = case commandRequestServiceRequestNodes sr of
+  defineSimpleHAEvent "systemd-restart" $ \(HAEvent _
+                                                    (CommandRequest (Just sr))
+                                                    _
+                                           ) -> do
+    let
+      serviceName = BL.fromStrict . T.encodeUtf8 $ commandRequestServiceRequestServiceName sr
+      command = commandRequestServiceRequestCommand sr
+      nodeFilter = case commandRequestServiceRequestNodes sr of
           Just foo -> T.unpack foo
           Nothing -> "."
-      case command of
-        Aeson.String "start" -> liftProcess $ say "Unsupported."
-        Aeson.String "stop" -> liftProcess $ say "Unsupported."
-        Aeson.String "restart" -> do
-          nodes <- findHosts nodeFilter
-                    >>= mapM nodesOnHost
-                    >>= return . join
-                    >>= filterM (\a -> isServiceRunning a sspl)
-          phaseLog "action" $ "Restarting " ++ (BL.unpack serviceName)
-                          ++ " on nodes " ++ (show nodes)
-          forM_ nodes $ \(Node nid) -> do
-            sendSystemdRequest nid $ SystemdRequest serviceName "restart"
-            sendInterestingEvent nid $
-              InterestingEventMessage ("Restarting service " `BL.append` serviceName)
-        Aeson.String "enable" -> liftProcess $ say "Unsupported."
-        Aeson.String "disable" -> liftProcess $ say "Unsupported."
-        Aeson.String "status" -> liftProcess $ say "Unsupported."
-        _ -> liftProcess $ say "Unsupported."
-    start ph1
+    case command of
+      Aeson.String "start" -> liftProcess $ say "Unsupported."
+      Aeson.String "stop" -> liftProcess $ say "Unsupported."
+      Aeson.String "restart" -> do
+        nodes <- findHosts nodeFilter
+                  >>= mapM nodesOnHost
+                  >>= return . join
+                  >>= filterM (\a -> isServiceRunning a sspl)
+        phaseLog "action" $ "Restarting " ++ (BL.unpack serviceName)
+                        ++ " on nodes " ++ (show nodes)
+        forM_ nodes $ \(Node nid) -> do
+          sendSystemdRequest nid $ SystemdRequest serviceName "restart"
+          sendInterestingEvent nid $
+            InterestingEventMessage ("Restarting service " `BL.append` serviceName)
+      Aeson.String "enable" -> liftProcess $ say "Unsupported."
+      Aeson.String "disable" -> liftProcess $ say "Unsupported."
+      Aeson.String "status" -> liftProcess $ say "Unsupported."
+      _ -> liftProcess $ say "Unsupported."
 
-  defineHAEvent "clustermap" $ \(HAEvent _
-                                         (Devices devs)
-                                         _
-                                ) -> do
-    ph1 <- phase "state1" $ mapM_ addDev devs
-    start ph1
+  defineSimpleHAEvent "clustermap" $ \(HAEvent _
+                                              (Devices devs)
+                                               _
+                                      ) ->
+    mapM_ addDev devs
     where
       addDev (DevId mid fn sl hn) = do
           diskUUID <- liftIO $ nextRandom

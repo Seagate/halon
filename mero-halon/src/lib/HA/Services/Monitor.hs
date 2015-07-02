@@ -50,7 +50,11 @@ spawnHeartbeatProcess = do
     return ()
 
 monitorProcess :: MonitorType -> Processes -> Process ()
-monitorProcess typ ps = do
+monitorProcess typ ps@(Processes xs) = do
+    self <- getSelfPid
+    let len = show $ length xs
+    say $ show typ ++ " Monitor started on " ++ show self ++ " monitoring "
+        ++ len ++ " service(s) already"
     st <- monitorState ps
     spawnHeartbeatProcess
     bootstrapMonitor typ

@@ -111,7 +111,8 @@ main = do
       liftIO $ isolateHostsAsUser "root" [m1] ms
       whereisRemoteAsync nid1 $ serviceLabel $ serviceName Dummy.dummy
       WhereIsReply _ (Just pid) <- expect
-      _ <- promulgateEQ [nid0] . encodeP $ ServiceFailed (Node nid1) Dummy.dummy
+      _ <- promulgateEQ [nid0] . encodeP $ ServiceFailed (Node nid1)
+                                                         Dummy.dummy
                                                          pid
       False <- expectTimeoutLog 1000000 [nid0]
                                 (isInfixOf "started dummy service")

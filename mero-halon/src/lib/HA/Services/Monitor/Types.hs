@@ -33,7 +33,7 @@ import HA.Service.TH
 --   services started on a particular node. There is only one regular monitor
 --   per node. Master monitor on the other hand, monitors every regular monitors
 --   . There is only one Master monitor per cluster.
-data MonitorType = Regular | Master
+data MonitorType = Regular | Master deriving Show
 
 -- | Monitor service main configuration.
 data MonitorConf = MonitorConf Processes deriving (Eq, Generic, Show, Typeable)
@@ -55,6 +55,11 @@ data Monitored = forall a. Configuration a =>
                    -- ^ Process where the `Service` is run.
                  , monSvc :: !(Service a)
                  }
+
+instance Show Monitored where
+    show (Monitored pid svc) = "(Monitored on "
+                               ++ show pid ++ " - "
+                               ++ snString (serviceName svc) ++ ")"
 
 -- | A resource used to retrieve Master Monitor 'ProcessId'.
 data MasterMonitor = MasterMonitor deriving (Eq, Ord, Show, Typeable, Generic)

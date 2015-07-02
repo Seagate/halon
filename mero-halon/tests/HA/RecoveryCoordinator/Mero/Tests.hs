@@ -32,7 +32,6 @@ import HA.EventQueue.Consumer (HAEvent(..))
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.Multimap.Implementation
 import HA.Multimap.Process
-import HA.NodeUp (nodeUp)
 import HA.Replicator
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
@@ -46,6 +45,7 @@ import HA.Service
   , ServiceName(..)
   , ServiceFailed(..)
   , ServiceProcess(..)
+  , ServiceStart(..)
   , ServiceStartRequest(..)
   , ServiceStopRequest(..)
   , ServiceStarted(..)
@@ -109,6 +109,7 @@ runRC (eq, args) rGroup = do
                         recoveryCoordinator args eq mm)
   send eq rc
   forM_ [mm, rc] $ \them -> send them ()
+--  liftIO $ takeMVar var
   return (mm, rc)
 
 getServiceProcessPid :: Configuration a
@@ -163,9 +164,8 @@ testServiceRestarting transport = do
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
-        nodeUp ([nid], 2000000)
         _ <- promulgateEQ [nid] . encodeP $
-          ServiceStartRequest (Node nid) Dummy.dummy
+          ServiceStartRequest Start (Node nid) Dummy.dummy
             (Dummy.DummyConf $ Configured "Test 1")
 
         "Starting service dummy" :: String <- expect
@@ -200,9 +200,8 @@ testServiceNotRestarting transport = do
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
-        nodeUp ([nid], 2000000)
         _ <- promulgateEQ [nid] . encodeP $
-          ServiceStartRequest (Node nid) Dummy.dummy
+          ServiceStartRequest Start (Node nid) Dummy.dummy
             (Dummy.DummyConf $ Configured "Test 1")
 
         "Starting service dummy" :: String <- expect
@@ -233,10 +232,9 @@ testEQTrimming transport = do
         subscribe eq (Sub :: Sub TrimDone)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
-        nodeUp ([nid], 2000000)
         Published (TrimDone _) _ <- expect
         _ <- promulgateEQ [nid] . encodeP $
-          ServiceStartRequest (Node nid) Dummy.dummy
+          ServiceStartRequest Start (Node nid) Dummy.dummy
             (Dummy.DummyConf $ Configured "Test 1")
 
         Published (TrimDone _) _ <- expect
@@ -272,8 +270,6 @@ testHostAddition transport = do
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
-
-        nodeUp ([nid], 2000000)
 
         -- Send host update message to the RC
         promulgateEQ [nid] (nid, mockEvent) >>= (flip withMonitor) wait
@@ -322,8 +318,6 @@ testDriveAddition transport = do
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
-
-        nodeUp ([nid], 2000000)
 
         -- Send host update message to the RC
         promulgateEQ [nid] (nid, mockEvent "online") >>= (flip withMonitor) wait
@@ -495,9 +489,8 @@ testServiceStopped transport = do
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
-        nodeUp ([nid], 2000000)
         _ <- promulgateEQ [nid] . encodeP $
-          ServiceStartRequest (Node nid) Dummy.dummy
+          ServiceStartRequest Start (Node nid) Dummy.dummy
             (Dummy.DummyConf $ Configured "Test 1")
 
         "Starting service dummy" :: String <- expect
@@ -541,21 +534,31 @@ serviceStart :: Configuration a => Service a -> a -> Process ()
 serviceStart svc conf = do
     nid <- getSelfNode
     let node = Node nid
-    _   <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest node svc conf
+    _   <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest Start node svc conf
     return ()
+
+getNodeMonitor :: ProcessId -> Process ProcessId
+getNodeMonitor mm = do
+    nid <- getSelfNode
+    rg  <- G.getGraph mm
+    let n = Node nid
+    case runningService n regularMonitor rg of
+      Just (ServiceProcess pid) -> return pid
+      _  -> do
+        liftIO $ threadDelay 100000
+        getNodeMonitor mm
 
 -- | Make sure that when a Service died, the node-local monitor detects it
 --   and notify the RC. That service should restart.
 testMonitorManagement :: Transport -> IO ()
 testMonitorManagement transport = do
     withTmpDirectory $ tryWithTimeout transport testRemoteTable 15000000 $ do
-      (_,rc) <- launchRC
+      (mm,rc) <- launchRC
+
+      -- Awaits the node local monitor to be up.
+      _ <- getNodeMonitor mm
 
       subscribe rc (Sub :: Sub (HAEvent ServiceStartedMsg))
-
-      _ <- serviceStarted monitorServiceName
-      say "Node-local monitor has been started"
-
       serviceStart Dummy.dummy (Dummy.DummyConf $ Configured "Test 1")
       dpid <- serviceStarted (serviceName Dummy.dummy)
       say "Service dummy has been started"
@@ -569,11 +572,12 @@ testMonitorManagement transport = do
 testMasterMonitorManagement :: Transport -> IO ()
 testMasterMonitorManagement transport = do
     withTmpDirectory $ tryWithTimeout transport testRemoteTable 15000000 $ do
-      (_,rc) <- launchRC
+      (mm,rc) <- launchRC
+
+      -- Awaits the node local monitor to be up.
+      mpid <- getNodeMonitor mm
 
       subscribe rc (Sub :: Sub (HAEvent ServiceStartedMsg))
-
-      mpid <- serviceStarted monitorServiceName
       say "Node-local monitor has been started"
 
       kill mpid "Farewell"

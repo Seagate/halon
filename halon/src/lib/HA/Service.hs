@@ -51,6 +51,7 @@ module HA.Service
   , DummyEvent(..)
   , ServiceFailed(..)
   , ServiceFailedMsg
+  , ServiceStart(..)
   , ServiceStartRequest(..)
   , ServiceStartRequestMsg
   , ServiceStarted(..)
@@ -58,9 +59,6 @@ module HA.Service
   , ServiceCouldNotStart(..)
   , ServiceCouldNotStartMsg
   , ServiceUncaughtException(..)
-  , NodeFilter(..)
-  , ConfigurationUpdate(..)
-  , ConfigurationUpdateMsg
   , ServiceStopRequest(..)
   , ServiceStopRequestMsg
    -- * CH Paraphenalia
@@ -299,8 +297,6 @@ remotable
 instance Resource ServiceName where
   resourceDict = $(mkStatic 'resourceDictServiceName)
 
-
-
 -- | Type class to support encoding difficult types (e.g. existentials) using
 --   Static machinery in the Process monad.
 class ProcessEncode a where
@@ -308,9 +304,17 @@ class ProcessEncode a where
   encodeP :: a -> BinRep a
   decodeP :: BinRep a -> Process a
 
+-- | Restart service y/n
+data ServiceStart = Start | Restart
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Hashable ServiceStart
+instance Binary ServiceStart
+
 -- | A request to start a service on a given node.
 data ServiceStartRequest =
-    forall a. Configuration a => ServiceStartRequest Node (Service a) a
+    forall a. Configuration a =>
+      ServiceStartRequest ServiceStart Node (Service a) a
   deriving Typeable
 
 newtype ServiceStartRequestMsg = ServiceStartRequestMsg BS.ByteString
@@ -320,8 +324,8 @@ instance ProcessEncode ServiceStartRequest where
 
   type BinRep ServiceStartRequest = ServiceStartRequestMsg
 
-  encodeP (ServiceStartRequest node svc@(Service _ _ d) cfg) =
-    ServiceStartRequestMsg . runPut $ put d >> put (node, svc, cfg)
+  encodeP (ServiceStartRequest start node svc@(Service _ _ d) cfg) =
+    ServiceStartRequestMsg . runPut $ put d >> put (start, node, svc, cfg)
 
   decodeP (ServiceStartRequestMsg bs) = let
       get_ :: RemoteTable -> Get ServiceStartRequest
@@ -330,11 +334,11 @@ instance ProcessEncode ServiceStartRequest where
         case unstatic rt d of
           Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
             rest <- get
-            let (node, service, cfg) = extract rest
-                extract :: (Node, Service s, s)
-                        -> (Node, Service s, s)
+            let (start, node, service, cfg) = extract rest
+                extract :: (ServiceStart, Node, Service s, s)
+                        -> (ServiceStart, Node, Service s, s)
                 extract = id
-            return $ ServiceStartRequest node service cfg
+            return $ ServiceStartRequest start node service cfg
           Left err -> error $ "decode ServiceStartRequest: " ++ err
     in do
       rt <- fmap (remoteTable . processNode) ask
@@ -441,40 +445,6 @@ instance ProcessEncode ServiceCouldNotStart where
 
   encodeP (ServiceCouldNotStart node svc@(Service _ _ d) cfg) =
     ServiceCouldNotStartMsg . runPut $ put d >> put (node, svc, cfg)
-
-newtype NodeFilter = NodeFilter [NodeId]
-  deriving (Binary, Eq, Generic, Show, Typeable)
-
-data ConfigurationUpdate = forall a. Configuration a =>
-    ConfigurationUpdate EpochId a (Service a) NodeFilter
-  deriving (Typeable)
-
-newtype ConfigurationUpdateMsg = ConfigurationUpdateMsg BS.ByteString
-  deriving (Typeable, Binary)
-
-instance ProcessEncode ConfigurationUpdate where
-
-  type BinRep ConfigurationUpdate = ConfigurationUpdateMsg
-
-  decodeP (ConfigurationUpdateMsg bs) = let
-      get_ :: RemoteTable -> Get ConfigurationUpdate
-      get_ rt = do
-        d <- get
-        case unstatic rt d of
-          Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
-            rest <- get
-            let (epoch, a, svc, fltr) = extract rest
-                extract :: (EpochId, s, Service s, NodeFilter)
-                        -> (EpochId, s, Service s, NodeFilter)
-                extract = id
-            return $ ConfigurationUpdate epoch a svc fltr
-          Left err -> error $ "decode ConfigurationUpdate: " ++ err
-    in do
-      rt <- fmap (remoteTable . processNode) ask
-      return $ runGet (get_ rt) bs
-
-  encodeP (ConfigurationUpdate epoch a svc@(Service _ _ d) fltr) =
-    ConfigurationUpdateMsg . runPut $ put d >> put (epoch, a, svc, fltr)
 
 -- | A notification of a service failure.
 --

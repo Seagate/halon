@@ -33,8 +33,6 @@ import Control.Distributed.Commands.Providers
   ( getHostAddress
   , getProvider
   )
-import HA.EventQueue.Producer
-import HA.Resources hiding (__remoteTable)
 import HA.Service hiding (__remoteTable)
 import qualified HA.Services.Dummy as Dummy
 
@@ -114,13 +112,11 @@ main = do
 
       say "Killing satellite ..."
       whereisRemoteAsync nid1 $ serviceLabel $ serviceName Dummy.dummy
-      WhereIsReply _ (Just pid) <- expect
+      WhereIsReply _ (Just _) <- expect
       systemThere [m1] "pkill halond; true"
       _ <- liftIO $ waitForCommand_ $ handleGetInput nh1
 
       say "sending service failed"
-      _ <- promulgateEQ [nid0] . encodeP $ ServiceFailed (Node nid1) Dummy.dummy
-                                                         pid
       False <- expectTimeoutLog 1000000 [nid0]
                                 (isInfixOf "started dummy service")
 
