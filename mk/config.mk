@@ -28,7 +28,6 @@ PACKAGES := distributed-commands \
            consensus \
            consensus-paxos \
            replicated-log \
-           genders \
            sspl \
            halon \
            mero-halon
