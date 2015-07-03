@@ -9,7 +9,11 @@
 
 module HA.Services.SSPL.CEP where
 
-import HA.EventQueue.Consumer (HAEvent(..), defineSimpleHAEvent)
+import HA.EventQueue.Consumer
+  ( HAEvent(..)
+  , defineSimpleHAEvent
+  , defineSimpleHAEventIf
+  )
 import HA.Service hiding (configDict)
 import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
@@ -153,47 +157,46 @@ ssplRulesF sspl = do
       sendInterestingEvent nid msg
 
   -- SSPL Monitor host_update
-  defineSimpleHAEvent "monitor-host-update" $ \(HAEvent _ (nid, hum) _) ->
-    case sensorResponseMessageSensor_response_typeHost_updateHostId hum of
-      Just a -> do
-        let host = Host $ T.unpack a
-            node = Node nid
-        registerHost host
-        locateNodeOnHost node host
-        liftProcess . sayRC $ "Registered host: " ++ show host
-      Nothing -> return ()
+  defineSimpleHAEventIf "monitor-host-update" (\(HAEvent _ (nid, hum) _) _ ->
+      return . fmap (\a -> (nid, a))
+        $ sensorResponseMessageSensor_response_typeHost_updateHostId hum
+    ) $ \(nid, a) -> do
+      let host = Host $ T.unpack a
+          node = Node nid
+      registerHost host
+      locateNodeOnHost node host
+      liftProcess . sayRC $ "Registered host: " ++ show host
 
   -- Dummy rule for handling SSPL HL commands
-  defineSimpleHAEvent "systemd-restart" $ \(HAEvent _ cr _ ) ->
-    case (commandRequestMessageServiceRequest
-          . commandRequestMessage
-          $ cr) of
-      Just sr ->
-        let
-          serviceName = BL.fromStrict . T.encodeUtf8 $ commandRequestMessageServiceRequestServiceName sr
-          command = commandRequestMessageServiceRequestCommand sr
-          nodeFilter = case commandRequestMessageServiceRequestNodes sr of
-            Just foo -> T.unpack foo
-            Nothing -> "." in
-        case command of
-          Aeson.String "start" -> liftProcess $ say "Unsupported."
-          Aeson.String "stop" -> liftProcess $ say "Unsupported."
-          Aeson.String "restart" -> do
-            nodes <- findHosts nodeFilter
-                      >>= mapM nodesOnHost
-                      >>= return . join
-                      >>= filterM (\a -> isServiceRunning a sspl)
-            phaseLog "action" $ "Restarting " ++ (BL.unpack serviceName)
-                            ++ " on nodes " ++ (show nodes)
-            forM_ nodes $ \(Node nid) -> do
-              sendSystemdRequest nid $ SystemdRequest serviceName "restart"
-              sendInterestingEvent nid $
-                InterestingEventMessage ("Restarting service " `BL.append` serviceName)
-          Aeson.String "enable" -> liftProcess $ say "Unsupported."
-          Aeson.String "disable" -> liftProcess $ say "Unsupported."
-          Aeson.String "status" -> liftProcess $ say "Unsupported."
-          _ -> liftProcess $ say "Unsupported."
-      Nothing -> return ()
+  defineSimpleHAEventIf "systemd-restart" (\(HAEvent _ cr _ ) _ ->
+    return $ commandRequestMessageServiceRequest
+              . commandRequestMessage
+              $ cr
+    ) $ \sr ->
+      let
+        serviceName = BL.fromStrict . T.encodeUtf8 $ commandRequestMessageServiceRequestServiceName sr
+        command = commandRequestMessageServiceRequestCommand sr
+        nodeFilter = case commandRequestMessageServiceRequestNodes sr of
+          Just foo -> T.unpack foo
+          Nothing -> "." in
+      case command of
+        Aeson.String "start" -> liftProcess $ say "Unsupported."
+        Aeson.String "stop" -> liftProcess $ say "Unsupported."
+        Aeson.String "restart" -> do
+          nodes <- findHosts nodeFilter
+                    >>= mapM nodesOnHost
+                    >>= return . join
+                    >>= filterM (\a -> isServiceRunning a sspl)
+          phaseLog "action" $ "Restarting " ++ (BL.unpack serviceName)
+                          ++ " on nodes " ++ (show nodes)
+          forM_ nodes $ \(Node nid) -> do
+            sendSystemdRequest nid $ SystemdRequest serviceName "restart"
+            sendInterestingEvent nid $
+              InterestingEventMessage ("Restarting service " `BL.append` serviceName)
+        Aeson.String "enable" -> liftProcess $ say "Unsupported."
+        Aeson.String "disable" -> liftProcess $ say "Unsupported."
+        Aeson.String "status" -> liftProcess $ say "Unsupported."
+        _ -> liftProcess $ say "Unsupported."
 
   defineSimpleHAEvent "clustermap" $ \(HAEvent _
                                               (Devices devs)
