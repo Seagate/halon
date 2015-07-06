@@ -1090,7 +1090,8 @@ replica Dict
                     -- Send rejection ack.
                     usend bpid ()
 
-                  let d' = max d (succ di)
+                  -- Avoid moving to unreachable decrees.
+                  let d' = if d == cd then d else min cd (max d (succ di))
                   go st{ stateUnconfirmedDecree = d' }
 
               -- Try to service a query if the requested decree is not too old.
