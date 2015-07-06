@@ -53,6 +53,7 @@ VENDOR_PACKAGES = clock \
                   tasty-files \
                   options-schema \
                   network-transport-tcp \
+                  network-transport-inmemory \
                   network-transport \
                   rank1dynamic
 

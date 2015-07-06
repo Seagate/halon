@@ -7,6 +7,7 @@
 module Test (tests) where
 
 import Test.Framework
+import Transport
 
 import Control.Distributed.Process.Consensus ( __remoteTable )
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
@@ -31,8 +32,6 @@ import Control.Distributed.Process.Scheduler
     ( withScheduler, __remoteTable )
 import Control.Distributed.Static
 import Data.Rank1Dynamic
-import qualified Network.Socket as N (close)
-import Network.Transport.TCP
 
 import Control.Monad (forM, forM_, replicateM, replicateM_, void, liftM2)
 import Data.Constraint (Dict(..))
@@ -146,11 +145,13 @@ remoteTables =
   Control.Distributed.Process.Node.initRemoteTable
 
 tests :: [String] -> IO TestTree
-tests _ = do
+tests argv = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
-    Right (transport, internals) <- createTransportExposeInternals
-        "127.0.0.1" "8080" defaultTCPParameters
+    AbstractTransport transport closeConnection _ <-
+      if "--tcp-transport" `elem` argv
+      then mkTCPTransport
+      else mkInMemoryTransport
     putStrLn "Transport created."
 
     let setup :: Int                      -- ^ Number of nodes to spawn group on.
@@ -532,16 +533,9 @@ tests _ = do
                 -- interrupt the connection between the replicas
                 say "interrupting connection"
                 here <- getSelfNode
-                liftIO $ do
-                  socketBetween internals
-                                (nodeAddress here)
-                                (nodeAddress $ localNodeId node1)
-                    >>= N.close
-                  socketBetween internals
-                                (nodeAddress $ localNodeId node1)
-                                (nodeAddress here)
-                    >>= N.close
-
+                liftIO $
+                  closeConnection (nodeAddress here)
+                                  (nodeAddress $ localNodeId node1)
                 liftIO $ runProcess node1 $
                   retry retryTimeout $ do
                     say "trying update"
