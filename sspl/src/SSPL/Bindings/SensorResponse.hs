@@ -16,7 +16,6 @@ import Data.Aeson.Schema.Choice
 import Data.Aeson.Schema.Types
 import Data.Aeson.Schema.Validator
 import Data.Aeson.Types
-import Data.Aeson.Types
 import Data.Either
 import Data.Functor
 import Data.HashMap.Lazy

@@ -19,6 +19,7 @@ library
                        SSPL.Bindings.ActuatorResponse
                        SSPL.Bindings.ClusterMap
                        SSPL.Bindings.CommandRequest
+                       SSPL.Bindings.CommandResponse
                        SSPL.Bindings.SensorResponse
                        SSPL.Bindings.Instances
   hs-source-dirs:      src
