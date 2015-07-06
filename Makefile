@@ -23,7 +23,7 @@
 # Variables that affect the build process:
 #
 #    MERO_ROOT            -- path to the build-directory of the mero project
-#    USE_MERO							-- use real mero (requires mero)
+#    USE_MERO             -- use real mero (requires mero)
 #    USE_RPC              -- use rpc communication (require mero)
 #    USE_TCP              -- use TCP communication (default)
 #
@@ -32,8 +32,8 @@
 #    PACKAGES             -- sub-projects to work with (see README.md!)
 #    CABAL_FLAGS          -- common flags that are passed to all invocations of cabal the cabal
 #    VENDOR_CABAL_FLAGS   -- provide a way to pass flags when installing vendor packages
-#    			     this may be useful for in some cases for example where
-#    			     it's needed to ignore global-db or pass other options
+#                            this may be useful for in some cases for example where
+#                            it's needed to ignore global-db or pass other options
 #    HALON_CABAL_FLAGS    -- cabal flags that are passed only to halon packages
 #
 #
@@ -128,7 +128,6 @@ endif
 export GENDERS
 
 ifndef NO_TESTS
-CABAL_BUILD_JOBS = --jobs=1
 override HALON_CABAL_FLAGS += --run-tests
 else
 NO_COVERAGE = 1
