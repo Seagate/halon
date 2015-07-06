@@ -223,15 +223,14 @@ newTimer timeoutPeriod action = do
   -- @cancel@ and @waitCancel@ read the clock and verify that the timeout period
   -- has not passed.
   t0 <- liftIO $ getCurrentTime
-  pid <- spawnLocal $ do
+  pid <- spawnLocal $ flip finally (liftIO $ putMVar mdone ()) $ do
       link self
       void $ receiveTimeout timeoutPeriod []
       canceled <- liftIO $ takeMVar mv
       case canceled of
         Nothing -> do void $ action
-                      liftIO $ putMVar mdone ()
                       liftIO $ putMVar mv $ Just False
-        Just _ -> liftIO $ putMVar mdone () >> putMVar mv canceled
+        Just _ -> liftIO $ putMVar mv canceled
   let cancelCall = do
         canceled <- liftIO $ takeMVar mv
         case canceled of
@@ -244,6 +243,8 @@ newTimer timeoutPeriod action = do
                    readMVar mdone
                    return False
             else do exit pid "RecoverySupervisor.timer: canceled"
+                    -- wait for the timer process to die
+                    liftIO $ readMVar mdone
                     liftIO $ putMVar mv $ Just True
                     return True
           Just c -> do liftIO $ putMVar mv canceled
