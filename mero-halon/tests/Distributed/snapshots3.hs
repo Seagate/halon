@@ -34,6 +34,7 @@ import Network.Transport.TCP (createTransport, defaultTCPParameters)
 
 import System.Environment (getExecutablePath)
 import System.FilePath ((</>), takeDirectory)
+import System.Timeout (timeout)
 import Test.Framework (assert)
 
 
@@ -41,7 +42,7 @@ getBuildPath :: IO FilePath
 getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
 
 main :: IO ()
-main = do
+main = (>>= maybe (error "test timed out") return) $ timeout (60 * 1000000) $ do
     cp <- getProvider
     buildPath <- getBuildPath
     ip <- getHostAddress
@@ -51,12 +52,6 @@ main = do
 
     withHostNames cp 2 $ \ms@[m0, m1] ->
      runProcess n0 $ do
-
-      -- Time out after a while so CI can still make progress.
-      self <- getSelfPid
-      _ <- spawnLocal $ do
-             _ <- expectTimeout (60 * 1000000) :: Process (Maybe ())
-             kill self "test timed out"
 
       say "Copying binaries ..."
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
