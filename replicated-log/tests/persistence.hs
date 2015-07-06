@@ -21,7 +21,7 @@ main :: IO ()
 main = do
    (testArgs, runnerArgs) <- parseArgs
    defaultMainWithArgs testTree
-                       (testArgs `orDefault` ["-t", "5"])
+                       (testArgs `orDefault` ["-t", "10"])
                        runnerArgs
 
 orDefault :: [a] -> [a] -> [a]
