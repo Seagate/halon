@@ -128,6 +128,7 @@ endif
 export GENDERS
 
 ifndef NO_TESTS
+CABAL_BUILD_JOBS = --jobs=1
 override HALON_CABAL_FLAGS += --run-tests
 else
 NO_COVERAGE = 1
