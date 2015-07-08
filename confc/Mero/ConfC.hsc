@@ -19,7 +19,8 @@
 --
 module Mero.ConfC
   ( -- * Initialization
-    initConfC
+    ConfC
+  , initConfC
   , finalizeConfC
   , withConfC
     -- * Fetching operations
@@ -120,6 +121,8 @@ openRoot (RPCMachine pm) (RPCAddress addr) fid = alloca $ \ppc ->
     pc <- peek ppc
     fmap (,confc_destroy pc) $ #{peek struct m0_confc, cc_root} pc >>= getCObj
 
+-- | Type for configuration client. The detail does not need to be exposed.
+newtype ConfC = Confc (Ptr ConfCV)
 data ConfCV
 
 foreign import ccall confc_create :: Ptr (Ptr ConfCV) -> Ptr Fid -> CString

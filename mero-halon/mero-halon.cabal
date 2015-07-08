@@ -129,18 +129,24 @@ Library
                        Mero.M0Worker
                        Mero.Notification
                        Mero.Notification.HAState
+                       Mero.Spiel
                        HA.Resources.Mero.Note
                        HA.Services.Mero
       Other-Modules: HA.Services.Mero.CEP
                      HA.Services.Mero.Types
+                     Mero.Spiel.Context
+                     Mero.Spiel.Internal
       cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
       c-sources: hastate/hastate.c
                  hastate/hastate_fops.c
                  hastate/hastate_foms.c
+                 src/lib/Mero/Spiel/Context.c
+                 src/lib/Mero/Spiel/Internal.c
       include-dirs: hastate
       extra-libraries: mero
       Build-Depends: rpclite,
-                     confc
+                     confc,
+                     inline-c
   if flag(rpc)
       Build-Depends: rpclite,
                      network-transport-rpc
