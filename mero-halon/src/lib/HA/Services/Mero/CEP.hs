@@ -31,7 +31,7 @@ import Prelude hiding (id)
 
 registerChannel :: ServiceProcess MeroConf
                 -> TypedChannel Set
-                -> PhaseM LoopState ()
+                -> PhaseM LoopState l ()
 registerChannel sp chan = modifyLocalGraph $ \rg -> do
     phaseLog "rg" $ "Registering channel."
     return $  newResource sp   >>>
@@ -53,25 +53,20 @@ meroChannels m0d rg = [ chan | node <- connectedTo Cluster Has rg
 
 meroRulesF :: Service MeroConf -> Definitions LoopState ()
 meroRulesF m0d = do
-  defineHAEvent "declare-mero-channel" $
+  defineSimpleHAEvent "declare-mero-channel" $
     \(HAEvent _ (DeclareMeroChannel sp c) _) -> do
-      ph1 <- phase "state-1" $ do
-        registerChannel sp c
-      start ph1
+      registerChannel sp c
 
-  defineHAEvent "mero-set" $ \(HAEvent _ (Set nvec) _) -> do
-    ph1 <- phase "state-1" $ do
-      rg <- getLocalGraph
-      let f rg1 (Note oid st) =
-            let edges :: [Edge ConfObject Is ConfObjectState]
-                edges = edgesFromSrc (ConfObject oid) rg
-                    -- Disconnect object from any existing state and reconnect
-                    -- it to a new one.
-            in connect (ConfObject oid) Is st $
-               foldr deleteEdge rg1 edges
-          rg'      = foldl' f rg nvec
+  defineSimpleHAEvent "mero-set" $ \(HAEvent _ (Set nvec) _) -> do
+    rg <- getLocalGraph
+    let f rg1 (Note oid st) =
+          let edges :: [Edge ConfObject Is ConfObjectState]
+              edges = edgesFromSrc (ConfObject oid) rg
+                  -- Disconnect object from any existing state and reconnect
+                  -- it to a new one.
+          in connect (ConfObject oid) Is st $
+             foldr deleteEdge rg1 edges
+        rg'      = foldl' f rg nvec
 
-      for_ (meroChannels m0d rg') $ \(TypedChannel chan) -> do
-        liftProcess $ sendChan chan (Set nvec)
-
-    start ph1
+    for_ (meroChannels m0d rg') $ \(TypedChannel chan) -> do
+      liftProcess $ sendChan chan (Set nvec)
