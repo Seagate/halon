@@ -37,6 +37,7 @@ import Control.Distributed.Process.Timeout (retry)
 import Control.Applicative ((<$>))
 import Control.Arrow (first)
 import Control.Monad
+import qualified Data.Set as Set
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import Network.CEP
@@ -231,5 +232,25 @@ tests (AbstractTransport transport breakConnection _) = do
               HAEvent eid' (_ :: Int) _ <- expect
               assert $ eid == eid'
               (_, [PersistMessage _ _]) <- retry requestTimeout $ getState rGroup
+              return ()
+        -- Test that until removed, messages in the EQ are sent at least once
+        -- to the RC everytime it spawns.
+        , testSuccess "eq-send-events-to-new-rc" ==> \eq _na _rGroup -> do
+            let eventsNum = (5::Int)
+                testNum   = 10
+            rc <- spawnLocal $ return ()
+            send eq rc
+            evs <- Set.fromList <$> forM [1..eventsNum] triggerEvent
+            subscribe eq (Sub :: Sub RCDied)
+            replicateM_ testNum $ do
+              self <- getSelfPid
+              rc' <- spawnLocal $ do
+                evs' <- Set.fromList
+                     <$> replicateM eventsNum
+                           ((\(HAEvent e (_::Int) _) -> e) <$> expect)
+                send self (evs' == evs)
+              send eq rc'
+              True <- expect
+              Published RCDied _ <- expect
               return ()
         ]

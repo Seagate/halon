@@ -160,7 +160,8 @@ Test-Suite unit-tests
                     tasty >= 0.8,
                     tasty-files,
                     cep,
-                    uuid
+                    uuid,
+                    containers
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
@@ -207,7 +208,8 @@ Test-Suite integration-tests
                     tasty >= 0.8,
                     tasty-files,
                     cep,
-                    uuid
+                    uuid,
+                    containers
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
