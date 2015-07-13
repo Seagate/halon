@@ -140,6 +140,16 @@ setPhase :: Serializable a
          -> RuleM g l ()
 setPhase h action = singleton $ SetPhase h (ContCall PhaseNone action)
 
+-- | Assigns a 'PhaseHandle' to a 'Phase' state machine that would await for
+--   a specific message before starting. The expected messsage should
+--   satisfies the given predicate.
+setPhaseIf :: (Serializable a, Serializable b)
+           => PhaseHandle
+           -> (a -> g -> l -> Process (Maybe b))
+           -> (b -> PhaseM g l ())
+           -> RuleM g l ()
+setPhaseIf h p action = singleton $ SetPhase h (ContCall (PhaseMatch p) action)
+
 -- | Assigns a 'PhaseHandle' to a 'Phase' state machine that would require the
 --   Netwire state machine to yield a value in order to start.
 setPhaseWire :: (Serializable a, Serializable b)
