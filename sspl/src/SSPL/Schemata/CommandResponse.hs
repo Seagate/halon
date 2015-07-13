@@ -7,7 +7,7 @@
 {-# LANGUAGE QuasiQuotes     #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module SSPL.Schemata.CommandRequest where
+module SSPL.Schemata.CommandResponse where
 
 import Data.Aeson.Schema
 
@@ -45,42 +45,32 @@ schema = [schemaQQ|
           "type" : "string",
           "description": "Used to identify a response if a response is required."
         },
-        "serviceRequest" : {
-          "type" : "object",
-          "properties" : {
-            "serviceName" : {
-              "required" : true,
-              "type" : "string",
-              "description" : "Name of the service to control."
-            },
-            "command" : {
-              "required" : true,
-              "enum" : ["start", "stop", "restart", "enable", "disable", "status"]
-            },
-            "nodes" : {
-              "required" : false,
-              "type" : "string",
-              "description" : "Regex on node FQDNs. If not specified, applies to all nodes."
-            }
-          }
+        "responseId" : {
+          "required" : false,
+          "type" : "string",
+          "description": "Identity of the message this is sent in response to."
         },
-        "statusRequest" : {
-          "type": "object",
-          "properties" : {
-            "entityType" : {
-              "required" : true,
-              "enum" : ["cluster", "node"],
-              "description" : "Type of entity to query the status of."
-            },
-            "entityFilter" : {
-              "required" : false,
-              "type" : "string",
-              "description" : "Filter on entities to query. Interpretation is dependent on entity type. If not specified, applies to all entities of the given type."
+        "statusResponse" : {
+          "type": "array",
+          "items" : {
+            "type" : "object",
+            "properties" : {
+              "entityId" : {
+                "required" : true,
+                "type" : "string",
+                "description" : "Entity identifier. Depends on entity type."
+              },
+              "status" : {
+                "required" : true,
+                "type" : "string",
+                "description" : "Entity status."
+              }
             }
-          }
+          },
+          "uniqueItems" : true
         }
       }
     }
   }
 }
-  |]
+|]

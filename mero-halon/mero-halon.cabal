@@ -93,6 +93,7 @@ Library
                    HA.Services.SSPL.Rabbit
                    HA.Services.SSPL.LL.Resources
                    HA.Services.SSPL.HL.Resources
+                   HA.Services.SSPL.HL.StatusHandler
 
   Build-Depends:   base,
                    aeson,
@@ -111,6 +112,7 @@ Library
                    scientific,
                    sspl,
                    text,
+                   time,
                    binary,
                    network >= 2.4,
                    network-transport,

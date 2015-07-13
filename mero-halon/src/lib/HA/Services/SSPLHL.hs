@@ -16,6 +16,7 @@ import HA.EventQueue.Producer (promulgate)
 import HA.NodeAgent.Messages
 import HA.Service
 import HA.Service.TH
+import qualified HA.Services.SSPL.HL.StatusHandler as StatusHandler
 import qualified HA.Services.SSPL.Rabbit as Rabbit
 
 import SSPL.Bindings
@@ -25,12 +26,16 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar
 import Control.Distributed.Process
   ( Process
+  , ProcessId
   , ProcessMonitorNotification(..)
   , catchExit
   , match
   , monitor
+  , receiveChan
   , receiveWait
   , say
+  , send
+  , spawnChannelLocal
   , spawnLocal
   , unmonitor
   )
@@ -39,12 +44,14 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Monad.State.Strict hiding (mapM_)
 
-import Data.Aeson (decode)
+import Data.Aeson (decode, encode)
 import Data.Binary (Binary)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Defaultable
 import Data.Hashable (Hashable)
+import Data.Maybe (isJust)
 import Data.Monoid ((<>))
+import qualified Data.Text as T
 import Data.Typeable (Typeable)
 import qualified Data.Yaml as Yaml
 
@@ -72,6 +79,22 @@ commandSchema = let
           <> metavar "QUEUE_NAME"
   in Rabbit.BindConf <$> en <*> rk <*> qn
 
+responseSchema :: Schema Rabbit.BindConf
+responseSchema = let
+    en = defaultable "sspl_hl_cmd" . strOption
+        $ long "cmd_resp_exchange"
+        <> metavar "EXCHANGE_NAME"
+        <> summary "Exchange to send command responses to."
+    rk = defaultable "sspl_hl_cmd" . strOption
+          $ long "cmd_resp_routingKey"
+          <> metavar "ROUTING_KEY"
+          <> summary "Routing key to apply to command responses."
+    qn = defaultable "sspl_hl_cmd" . strOption
+          $ long "cmd_resp_queue"
+          <> metavar "QUEUE_NAME"
+          <> summary "Queue to bind command responses to."
+  in Rabbit.BindConf <$> en <*> rk <*> qn
+
 clusterMapSchema :: Schema Rabbit.BindConf
 clusterMapSchema = let
     en = defaultable "cluster_map" . strOption
@@ -88,6 +111,7 @@ clusterMapSchema = let
 data SSPLHLConf = SSPLHLConf {
     scConnectionConf :: Rabbit.ConnectionConf
   , scCommandConf :: Rabbit.BindConf
+  , scResponseConf :: Rabbit.BindConf
   , scClustermapConf :: Rabbit.BindConf
 } deriving (Eq, Generic, Show, Typeable)
 
@@ -97,6 +121,7 @@ instance Hashable SSPLHLConf
 ssplhlSchema :: Schema SSPLHLConf
 ssplhlSchema = SSPLHLConf <$> Rabbit.connectionSchema
                           <*> commandSchema
+                          <*> responseSchema
                           <*> clusterMapSchema
 
 --------------------------------------------------------------------------------
@@ -110,13 +135,17 @@ $(deriveService ''SSPLHLConf 'ssplhlSchema [])
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------
 
-cmdHandler :: Network.AMQP.Message
+cmdHandler :: ProcessId
+           -> Network.AMQP.Message
            -> Process ()
-cmdHandler msg = case decode (msgBody msg) :: Maybe CommandRequest of
+cmdHandler statusHandler msg = case decode (msgBody msg) :: Maybe CommandRequest of
   Just cr -> do
-    void $ promulgate cr
+    when (isJust . commandRequestMessageServiceRequest . commandRequestMessage $ cr)
+      $ void $ promulgate cr
+    when (isJust . commandRequestMessageStatusRequest . commandRequestMessage $ cr)
+      $ send statusHandler cr
   Nothing -> say $ "Unable to decode command request: "
-                    ++ (BL.unpack $ msgBody msg)
+                      ++ (BL.unpack $ msgBody msg)
 
 cmHandler :: Network.AMQP.Message
           -> Process ()
@@ -146,11 +175,31 @@ remotableDecl [ [d|
       connectSSPL lock = do
         conn <- liftIO $ Rabbit.openConnection scConnectionConf
         chan <- liftIO $ openChannel conn
-        Rabbit.receive chan scCommandConf cmdHandler
+        responseChan <- spawnChannelLocal (responseProcess chan scResponseConf)
+        statusHandler <- StatusHandler.start responseChan
+        Rabbit.receive chan scCommandConf (cmdHandler statusHandler)
         Rabbit.receive chan scClustermapConf cmHandler
         () <- liftIO $ takeMVar lock
         liftIO $ closeConnection conn
         say "Connection closed."
+
+      responseProcess chan bc rp = forever $ do
+        crm <- receiveChan rp
+        let foo = CommandResponse {
+            commandResponseSignature = ""
+          , commandResponseTime = ""
+          , commandResponseExpires = Nothing
+          , commandResponseUsername = "halon/sspl-hl"
+          , commandResponseMessage = crm
+        }
+        liftIO $ publishMsg
+          chan
+          (T.pack . fromDefault $ Rabbit.bcExchangeName bc)
+          (T.pack . fromDefault $ Rabbit.bcRoutingKey bc)
+          (newMsg { msgBody = encode foo
+                  , msgDeliveryMode = Just Persistent
+                  }
+          )
 
     in (`catchExit` onExit) $ do
       say $ "Starting service sspl-hl"
