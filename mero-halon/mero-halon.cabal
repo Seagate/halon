@@ -67,8 +67,7 @@ Library
   if flag(maintainer)
     Ghc-Options: -Werror
 
-  Exposed-Modules: Mero.Genders
-                   Mero.FakeEpoch
+  Exposed-Modules: Mero.FakeEpoch
                    Mero.Messages
                    Mero.RemoteTables
                    HA.Network.Transport
