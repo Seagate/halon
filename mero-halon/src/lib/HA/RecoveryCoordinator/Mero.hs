@@ -50,8 +50,7 @@ module HA.RecoveryCoordinator.Mero
        ) where
 
 import Prelude hiding ((.), id, mapM_)
-import HA.EventQueue.Consumer
-    (HAEvent(..), setPhaseHAEvent, setPhaseHAEventIf)
+import HA.EventQueue.Consumer (HAEvent(..))
 import HA.Resources
 import HA.Resources.Mero (Host(..))
 import HA.Service
@@ -162,7 +161,7 @@ rcInitRule argv eq = do
       startService nid EQT.eqTracker EmptyConf
       continue eqt_started
 
-    setPhaseHAEventIf eqt_started (waitServiceToStart EQT.eqTracker) $
+    setPhaseIf eqt_started (waitServiceToStart EQT.eqTracker) $
       \evt@(HAEvent _ msg _) -> do
         ServiceStarted n svc cfg sp <- decodeMsg msg
         let ServiceProcess pid = sp
@@ -180,11 +179,11 @@ rcInitRule argv eq = do
       _    <- startService nid masterMonitor conf
       continue mm_started
 
-    setPhaseHAEventIf mm_started (waitServiceToStart masterMonitor) $ \evt -> do
+    setPhaseIf mm_started (waitServiceToStart masterMonitor) $ \evt -> do
       handled eq evt
       continue mm_conf
 
-    setPhaseHAEvent mm_conf $
+    setPhase mm_conf $
         \evt@(HAEvent _ (SetMasterMonitor sp) _) -> do
       registerMasterMonitor sp
       handled eq evt
@@ -196,7 +195,7 @@ rcInitRule argv eq = do
       startService nid regularMonitor conf
       continue nm_started
 
-    setPhaseHAEventIf nm_started (waitServiceToStart regularMonitor) $
+    setPhaseIf nm_started (waitServiceToStart regularMonitor) $
       \evt@(HAEvent _ msg _) -> do
         ServiceStarted n svc cfg sp <- decodeMsg msg
         registerServiceName svc

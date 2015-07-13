@@ -11,7 +11,6 @@ import Control.Monad.State
 import Network.CEP
 
 import HA.EventQueue
-import HA.EventQueue.Types
 import HA.Replicator
 
 eqRules :: RGroup g => g EventQueue -> Definitions (Maybe EventQueueState) ()
@@ -49,9 +48,8 @@ eqRules rg = do
              -- ensures events are not sent to a defunct RC rather than to a
              -- live one.
              liftProcess $ do
-               self <- getSelfPid
                nsendRemote (processNodeId rc) eventQueueLabel
-                           (sender, ev{eventHops = self : eventHops ev})
+                           (sender, ev)
         _ -> -- Record the event if there is no known RC or if it is colocated.
              recordEvent rg sender ev
 

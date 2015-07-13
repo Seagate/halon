@@ -11,8 +11,9 @@ module HA.NodeAgent.Tests ( tests, dummyRC__static, dummyRC__sdict) where
 
 import HA.EventQueue ( EventQueue, eventQueueLabel )
 import HA.EventQueue.Definitions (eventQueue)
-import HA.EventQueue.Consumer (HAEvent(..),matchHAEvent)
+import HA.EventQueue.Consumer (HAEvent(..))
 import HA.EventQueue.Producer (expiate)
+import HA.EventQueue.Types (PersistMessage(..))
 import HA.NodeAgent.Messages
 import HA.Process
 import HA.Replicator ( RGroup(..) )
@@ -38,7 +39,6 @@ import Control.Distributed.Process
   , getSelfNode
   , say
   , ProcessId
-  , receiveWait
   , NodeId
   , register
   )
@@ -57,7 +57,6 @@ import Control.Concurrent ( throwTo, myThreadId, threadDelay )
 import Control.Concurrent.MVar (newEmptyMVar,putMVar,takeMVar,MVar)
 import Control.Monad ( replicateM, forM_, forever )
 import Control.Exception ( SomeException, bracket )
-import Data.ByteString ( ByteString )
 import Network.Transport ( Transport )
 import System.IO.Unsafe ( unsafePerformIO )
 import Test.Framework
@@ -74,19 +73,14 @@ dummyRC' rGroup =
       eq <- spawnLocal (eventQueue rGroup)
       send eq self -- Report me as the RC.
 
-      let loop =
-           receiveWait
-           [
-             matchHAEvent (\(HAEvent _ str _) ->
-                case str of
-                  "hello0" -> liftIO $ putMVar sync0 ()
-                  "hello1" -> liftIO $ putMVar sync1 ()
-                  _ -> error "Unexpected event"
-             )
-           ] >> loop
-
-      _ <- loop
-      return ()
+      let loop = do
+           HAEvent _ str _ <- expect
+           case str of
+             "hello0" -> liftIO $ putMVar sync0 ()
+             "hello1" -> liftIO $ putMVar sync1 ()
+             _        -> error "Unexpected event"
+           loop
+      loop
 
 {-# NOINLINE sync0 #-}
 sync0 :: MVar ()
@@ -148,12 +142,12 @@ naTest transport action = withTmpDirectory $ bracket
       tryRunProcess (nodes !! 0) $ do
         self <- getSelfPid
         eq1 <- spawnLocal $ forever $
-                 (expect :: Process (ProcessId, HAEvent [ByteString]))
+                 (expect :: Process (ProcessId, PersistMessage))
                  >>= send self . (,) (nids !! 0)
         register eventQueueLabel eq1
         liftIO $ tryRunProcess (nodes !! 1) $ do
           eq2 <- spawnLocal $ forever $
-                   (expect :: Process (ProcessId, HAEvent [ByteString]))
+                   (expect :: Process (ProcessId, PersistMessage))
                    >>= send self . (,) (nids !! 1)
           register eventQueueLabel eq2
         na <- spawnLocalLink . ($ EmptyConf) =<< unClosure (serviceProcess eqTracker)
@@ -162,7 +156,7 @@ naTest transport action = withTmpDirectory $ bracket
 
 expectEventOnNode :: NodeId -> Process ProcessId
 expectEventOnNode n = do
-    (n', (sender, HAEvent _ _ _)) <- expect :: Process (NodeId, (ProcessId, HAEvent [ByteString]))
+    (n', (sender, PersistMessage _ _)) <- expect :: Process (NodeId, (ProcessId, PersistMessage))
     say $ "n is " ++ show n
     say $ "n' is " ++ show n'
     True <- return $ n == n'
@@ -253,10 +247,10 @@ tests transport = do
             -- didn't reply last time, NA will also send the event to the last
             -- responsive node, that is the first one.
             _ <- spawnLocal $ expiate "hello4"
-            evpairs <- replicateM 2 $ (expect :: Process (NodeId, (ProcessId, HAEvent [ByteString])))
+            evpairs <- replicateM 2 $ (expect :: Process (NodeId, (ProcessId, PersistMessage)))
             let nids4 = nub $ map fst evpairs
                 evs   = nub $ map snd evpairs
-                (_, (sender, HAEvent _ _ _)) = head evpairs
+                (_, (sender, PersistMessage _ _)) = head evpairs
             -- The same event was sent multiple times.
             True <- return $ length evs == 1
             -- The event was sent to both nodes.

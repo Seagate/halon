@@ -1,14 +1,19 @@
 module HA.EventQueue.Types
     ( HAEvent(..)
     , UUID
+    , PersistMessage(..)
+    , newPersistMessage
     ) where
 
-import Control.Distributed.Process (ProcessId)
+import Control.Distributed.Process
+import Control.Distributed.Process.Serializable (Serializable)
+import Control.Monad.Trans (MonadIO(..))
 
 import Data.Binary (Binary)
 import Data.Function (on)
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
+import Data.UUID.V4 (nextRandom)
 
 import GHC.Generics (Generic)
 
@@ -26,3 +31,27 @@ instance Eq (HAEvent a) where
 
 instance Ord (HAEvent a) where
     compare = compare `on` eventId
+
+data PersistMessage =
+    PersistMessage
+    { persistEventId :: !UUID
+    , persistMsg     :: !Message
+    } deriving (Generic, Typeable)
+
+instance Binary PersistMessage
+
+instance Eq PersistMessage where
+    (==) = (==) `on` persistEventId
+
+newPersistMessage :: (Serializable a, MonadIO m) => a -> m PersistMessage
+newPersistMessage msg = liftIO $ do
+    uuid <- nextRandom
+    let evt = HAEvent
+              { eventId      = uuid
+              , eventPayload = msg
+              , eventHops    = []
+              }
+    return PersistMessage
+           { persistEventId = uuid
+           , persistMsg     = wrapMessage evt
+           }
