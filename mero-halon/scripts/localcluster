@@ -1,0 +1,84 @@
+#!/bin/bash
+
+IP=127.0.0.1
+
+TSSTART=9010
+SATSTART=9500
+
+TSHEAD=$IP:$TSSTART
+SATHEAD=$IP:$SATSTART
+
+# By default, halonctl listens on port 9001
+
+TSCOUNT=$1
+SATCOUNT=$2
+BOOTSTRAP=$3
+
+if [ $TSCOUNT -le 0 ]
+then
+  TSCOUNT=1
+fi
+
+if [ $SATCOUNT -le 0 ]
+then
+  SATCOUNT=1
+fi
+
+HALOND="$HALON_ROOT/halond"
+HALONCTL="$HALON_ROOT/halonctl"
+
+# Clean up anything currently running
+pkill halond
+
+# Build the arrays of addresses
+i=0
+TSADDRSTRING=""
+while [ $i -lt $TSCOUNT ]; do
+  port=$(($TSSTART + $i))
+  TSLIST[$i]="$IP:$port"
+  TSADDRSTRING="$TSADDRSTRING -a $IP:$port"
+  i=$((i + 1))
+done
+
+i=0
+SATADDRSTRING=""
+while [ $i -lt $SATCOUNT ]; do
+  port=$(($SATSTART + $i))
+  SATLIST[$i]="$IP:$port"
+  SATADDRSTRING="$SATADDRSTRING -a $IP:$port"
+  i=$((i + 1))
+done
+
+# Start halond
+for ts in "${TSLIST[@]}"
+do
+  echo "Starting halond for tracking station on $ts"
+  $HALOND -l $ts > /tmp/ts_$ts.log 2>&1 &
+done
+
+for sat in "${SATLIST[@]}"
+do
+  echo "Starting halond for satellite on $sat"
+  $HALOND -l $sat > /tmp/sat_$sat.log 2>&1 &
+done
+
+if (($# == 3))
+then
+  rm -rf halon-persistence
+  rm /tmp/decision.log
+
+  # Bootstrap tracking station
+
+  $HALONCTL $TSADDRSTRING bootstrap station
+
+  # Bootstrap satellites
+
+  $HALONCTL $SATADDRSTRING bootstrap satellite -t $TSHEAD
+
+  sleep 3
+
+  # Start a couple of services
+
+  $HALONCTL -a $SATHEAD service decision-log start -f /tmp/decision.log --eqt-timeout 0
+  $HALONCTL -a $SATHEAD service frontier start -p 9028 --eqt-timeout 0
+fi
