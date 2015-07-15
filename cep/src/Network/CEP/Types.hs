@@ -377,13 +377,25 @@ define name action = singleton $ DefineRule name action
 initRule :: RuleM g l (Started g l) -> Definitions g ()
 initRule r = singleton $ Init r
 
+-- | Like 'defineSimpleIf' but with a default predicate that lets
+--   anything goes throught.
 defineSimple :: Serializable a
              => String
              -> (forall l. a -> PhaseM g l ())
              -> Definitions g ()
-defineSimple n k = define n $ do
+defineSimple n k = defineSimpleIf n (\e _ -> return $ Just e) k
+
+-- | Shorthand to define a simple rule with a single phase. It defines
+--   'PhaseHandle' named `phase-1`, calls 'setPhaseIf' with that handle
+--   and then call `start` with a '()' local state initial value.
+defineSimpleIf :: (Serializable a, Serializable b)
+               => String
+               -> (a -> g -> Process (Maybe b))
+               -> (forall l. b -> PhaseM g l ())
+               -> Definitions g ()
+defineSimpleIf n p k = define n $ do
     h <- phaseHandle "phase-1"
-    setPhase h k
+    setPhaseIf h (\e g _ -> p e g) k
     start h ()
 
 -- | Enables logging by using the given callback. The global state can be read.
