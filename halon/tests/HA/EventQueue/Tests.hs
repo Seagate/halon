@@ -16,6 +16,7 @@ import HA.EventQueue hiding (trim)
 import HA.EventQueue.Definitions
 import HA.EventQueue.Consumer
 import HA.EventQueue.Producer
+import HA.EventQueue.Types (newPersistMessage, PersistMessage(..))
 import HA.NodeAgent.Messages
 import HA.Service (serviceProcess)
 import HA.Services.Empty
@@ -32,22 +33,13 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Timeout (retry)
-import qualified Control.Distributed.Process.Internal.Types as I
-    (createMessage, messageToPayload)
 
 import Control.Applicative ((<$>))
 import Control.Arrow (first)
 import Control.Monad
-import Data.ByteString ( ByteString )
-import Data.Maybe (fromJust)
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
-import qualified Data.UUID.V5 as UUID
 import Network.CEP
-
-eqTestNamespace :: UUID
-eqTestNamespace = fromJust $
-  UUID.fromString "e48f8044-31a3-4b09-9209-67a401cd6c8c"
 
 eqSDict :: SerializableDict EventQueue
 eqSDict = SerializableDict
@@ -57,26 +49,21 @@ eqSetRC = first . const
 
 remoteRC :: ProcessId -> Process ()
 remoteRC controller = forever $ do
-    msg <- expect
+    evt <- expect
     reconnect controller
-    send controller (msg :: HAEvent [ByteString])
+    send controller (evt :: HAEvent Int)
 
 remotable [ 'eqSDict, 'eqSetRC ]
 
 -- | Triggers an event and returns the EventId sent
 triggerEvent :: Int -> Process UUID
 triggerEvent x = do
-    pid <- promulgateEvent evt
+    msg <- newPersistMessage x
+    pid <- promulgateEvent msg
     withMonitor pid wait
-    return $ eventId evt
+    return $ persistEventId msg
   where
     wait = void (expect :: Process ProcessMonitorNotification)
-    evt = HAEvent
-      { eventId = UUID.generateNamed eqTestNamespace [fromIntegral x]
-      , eventPayload = payload :: [ByteString]
-      , eventHops = []
-      }
-    payload = (I.messageToPayload . I.createMessage $ x)
 
 requestTimeout :: Int
 requestTimeout = 1000000
@@ -119,12 +106,12 @@ tests (AbstractTransport transport breakConnection _) = do
               pid <- promulgateEQ [self] (1 :: Int)
               _ <- monitor pid
               (_ :: ProcessMonitorNotification) <- expect
-              (_, [HAEvent _ _ _]) <- retry requestTimeout $
+              (_, [PersistMessage _ _]) <- retry requestTimeout $
                                                     getState rGroup
               return ()
         , testSuccess "eq-one-event" ==> \_ _ rGroup -> do
               eid <- triggerEvent 1
-              (_, [HAEvent eid' _ _]) <- retry requestTimeout $
+              (_, [PersistMessage eid' _]) <- retry requestTimeout $
                                                     getState rGroup
               assert (eid == eid')
         , testSuccess "eq-many-events" ==> \_ _ rGroup -> do
@@ -134,7 +121,7 @@ tests (AbstractTransport transport breakConnection _) = do
         , testSuccess "eq-trim-one" ==> \eq _ rGroup -> do
               subscribe eq (Sub :: Sub TrimDone)
               mapM_ triggerEvent [1..10]
-              (_, (HAEvent evtid _ _ ):_) <- retry requestTimeout $
+              (_, (PersistMessage evtid _ ):_) <- retry requestTimeout $
                                                getState rGroup
               send eq evtid
               Published (TrimDone eid) _ <- expect
@@ -144,36 +131,36 @@ tests (AbstractTransport transport breakConnection _) = do
         , testSuccess "eq-trim-idempotent" ==> \eq _ rGroup -> do
               subscribe eq (Sub :: Sub TrimDone)
               mapM_ triggerEvent [1..10]
-              (_, (HAEvent evtid _ _ ):_) <- retry requestTimeout $
+              (_, (PersistMessage evtid _ ):_) <- retry requestTimeout $
                                                getState rGroup
-              before <- map (eventId) . snd <$>
+              before <- map persistEventId . snd <$>
                           retry requestTimeout (getState rGroup)
               send eq evtid
               Published (TrimDone eid) _ <- expect
               assert (evtid == eid)
-              trim1 <- map (eventId) . snd <$>
+              trim1 <- map persistEventId . snd <$>
                           retry requestTimeout (getState rGroup)
               send eq evtid
               Published (TrimDone eid2) _ <- expect
               assert (evtid == eid2)
-              trim2 <- map (eventId) . snd <$>
+              trim2 <- map persistEventId . snd <$>
                           retry requestTimeout (getState rGroup)
               assert (before /= trim1 && before /= trim2 && trim1 == trim2)
         , testSuccess "eq-trim-none" ==> \eq _ rGroup -> do
               subscribe eq (Sub :: Sub TrimDone)
               mapM_ triggerEvent [1..10]
-              before <- map (eventId) . snd <$>
+              before <- map persistEventId . snd <$>
                           retry requestTimeout (getState rGroup)
               let evtid = UUID.nil
               send eq evtid
               Published (TrimDone eid) _ <- expect
               assert (evtid == eid)
-              trim <- map (eventId) . snd <$>
+              trim <- map persistEventId . snd <$>
                           retry requestTimeout (getState rGroup)
               assert (before == trim)
         , testSuccess "eq-with-no-rc-should-replicate" $ setup $ \_ _ rGroup -> do
               eid <- triggerEvent 1
-              (_, [ HAEvent eid' _ _]) <- retry requestTimeout $
+              (_, [PersistMessage eid' _]) <- retry requestTimeout $
                                                      getState rGroup
               assert (eid == eid')
         , testSuccess "eq-should-lookup-for-rc" $ setup $ \_ _ rGroup -> do
@@ -181,7 +168,7 @@ tests (AbstractTransport transport breakConnection _) = do
               retry requestTimeout $
                 updateStateWith rGroup $ $(mkClosure 'eqSetRC) $ Just self
               eid <- triggerEvent 1
-              (_, [ HAEvent eid' _ _]) <- retry requestTimeout $
+              (_, [PersistMessage eid' _]) <- retry requestTimeout $
                                                      getState rGroup
               assert (eid == eid')
         , testSuccess "eq-should-record-that-rc-died" $ setup $ \eq _ _ -> do
@@ -217,7 +204,7 @@ tests (AbstractTransport transport breakConnection _) = do
                 send eq rc
                 eid <- triggerEvent 1
                 -- The RC should forward the event to me.
-                (expectTimeout defaultTimeout :: Process (Maybe (HAEvent [ByteString]))) >>=
+                (expectTimeout defaultTimeout :: Process (Maybe (HAEvent Int))) >>=
                   \case
                     Just (HAEvent eid' _ _) | eid == eid' -> return ()
                     Nothing -> error "No HA Event received from first RC."
@@ -232,17 +219,17 @@ tests (AbstractTransport transport breakConnection _) = do
                 eid2 <- triggerEvent 2
                 -- EQ should reconnect to the RC, and the RC should forward the
                 -- event to me.
-                (expectTimeout defaultTimeout :: Process (Maybe (HAEvent [ByteString]))) >>=
+                (expectTimeout defaultTimeout :: Process (Maybe (HAEvent Int))) >>=
                   \case
                     Just (HAEvent eid' _ _) | eid2 == eid' -> return ()
                     Nothing -> error "No HA Event received from second RC."
                     _ -> error "Wrong event received from second RC."
                 return ()
 #endif
-        , testSuccess "eq-save-path" ==> \eq _ rGroup -> do
+        , testSuccess "eq-save-path" ==> \_ _ rGroup -> do
               eid <- triggerEvent 1
-              (HAEvent eid' _ s1) <- expect :: Process (HAEvent [ByteString])
-              assert (eid == eid')
-              (_, [HAEvent _ _ _]) <- retry requestTimeout $ getState rGroup
-              assert (head s1 == eq)
+              HAEvent eid' (_ :: Int) _ <- expect
+              assert $ eid == eid'
+              (_, [PersistMessage _ _]) <- retry requestTimeout $ getState rGroup
+              return ()
         ]

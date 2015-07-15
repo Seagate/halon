@@ -9,11 +9,7 @@
 
 module HA.Services.SSPL.CEP where
 
-import HA.EventQueue.Consumer
-  ( HAEvent(..)
-  , defineSimpleHAEvent
-  , defineSimpleHAEventIf
-  )
+import HA.EventQueue.Consumer (HAEvent(..))
 import HA.Service hiding (configDict)
 import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
@@ -116,13 +112,13 @@ registerChannels svc acs = modifyLocalGraph $ \rg -> do
 
 ssplRulesF :: Service SSPLConf -> Definitions LoopState ()
 ssplRulesF sspl = do
-  defineSimpleHAEvent "declare-channels" $
+  defineSimple "declare-channels" $
       \(HAEvent _ (DeclareChannels pid svc acs) _) -> do
           registerChannels svc acs
           ack pid
 
   -- SSPL Monitor drivemanager
-  defineSimpleHAEvent "monitor-drivemanager" $ \(HAEvent _ (nid, mrm) _) -> do
+  defineSimple "monitor-drivemanager" $ \(HAEvent _ (nid, mrm) _) -> do
     host <- findNodeHost (Node nid)
     diskUUID <- liftIO $ nextRandom
     let disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus mrm
@@ -157,7 +153,7 @@ ssplRulesF sspl = do
       sendInterestingEvent nid msg
 
   -- SSPL Monitor host_update
-  defineSimpleHAEventIf "monitor-host-update" (\(HAEvent _ (nid, hum) _) _ ->
+  defineSimpleIf "monitor-host-update" (\(HAEvent _ (nid, hum) _) _ ->
       return . fmap (\a -> (nid, a))
         $ sensorResponseMessageSensor_response_typeHost_updateHostId hum
     ) $ \(nid, a) -> do
@@ -168,7 +164,7 @@ ssplRulesF sspl = do
       liftProcess . sayRC $ "Registered host: " ++ show host
 
   -- Dummy rule for handling SSPL HL commands
-  defineSimpleHAEventIf "systemd-restart" (\(HAEvent _ cr _ ) _ ->
+  defineSimpleIf "systemd-restart" (\(HAEvent _ cr _ ) _ ->
     return $ commandRequestMessageServiceRequest
               . commandRequestMessage
               $ cr
@@ -198,9 +194,9 @@ ssplRulesF sspl = do
         Aeson.String "status" -> liftProcess $ say "Unsupported."
         _ -> liftProcess $ say "Unsupported."
 
-  defineSimpleHAEvent "clustermap" $ \(HAEvent _
-                                              (Devices devs)
-                                               _
+  defineSimple "clustermap" $ \(HAEvent _
+                                        (Devices devs)
+                                        _
                                       ) ->
     mapM_ addDev devs
     where

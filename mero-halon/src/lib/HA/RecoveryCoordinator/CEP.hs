@@ -108,7 +108,7 @@ rcRules argv eq = do
       start_nm    <- phaseHandle "start_node_monitor"
       nm_started  <- phaseHandle "node_monitor_started"
 
-      setPhaseHAEvent boot $ \evt@(HAEvent _ (NodeUp h pid) _) -> do
+      setPhase boot $ \evt@(HAEvent _ (NodeUp h pid) _) -> do
         let nid  = processNodeId pid
             node = Node nid
         known <- knownResource node
@@ -126,7 +126,7 @@ rcRules argv eq = do
             continue eqt_started
           else ack pid
 
-      setPhaseHAEventIf eqt_started serviceBootStarted $
+      setPhaseIf eqt_started serviceBootStarted $
           \evt@(HAEvent _ msg _) -> do
         ServiceStarted n svc cfg sp@(ServiceProcess pid) <- decodeMsg msg
         liftProcess $ sayRC $
@@ -147,7 +147,7 @@ rcRules argv eq = do
         put Local (Starting regularMonitor npid)
         continue nm_started
 
-      setPhaseHAEventIf nm_started serviceBootStarted $
+      setPhaseIf nm_started serviceBootStarted $
           \evt@(HAEvent _ msg _) -> do
         ServiceStarted n svc cfg sp <- decodeMsg msg
         liftProcess $ sayRC $
@@ -173,7 +173,7 @@ rcRules argv eq = do
 
       directly ph0 $ switch [ph1, ph1']
 
-      setPhaseHAEventIf ph1 notHandled $ \evt@(HAEvent _ msg _) -> do
+      setPhaseIf ph1 notHandled $ \evt@(HAEvent _ msg _) -> do
         ServiceStartRequest sstart n@(Node nid) svc conf <- decodeMsg msg
         handled eq evt
 
@@ -194,7 +194,7 @@ rcRules argv eq = do
             switch [ph2, ph3]
           _ -> continue ph0
 
-      setPhaseHAEventIf ph1' notHandled $ \evt@(HAEvent _ msg _) -> do
+      setPhaseIf ph1' notHandled $ \evt@(HAEvent _ msg _) -> do
         ServiceFailed n svc pid <- decodeMsg msg
         res                     <- lookupRunningService n svc
         handled eq evt
@@ -206,7 +206,7 @@ rcRules argv eq = do
             switch [ph2, ph3]
           _ -> continue ph0
 
-      setPhaseHAEventIf ph2 serviceStarted $ \evt@(HAEvent _ msg _) -> do
+      setPhaseIf ph2 serviceStarted $ \evt@(HAEvent _ msg _) -> do
         ServiceStarted n svc cfg sp <- decodeMsg msg
         handled eq evt
 
@@ -238,7 +238,7 @@ rcRules argv eq = do
           "started " ++ snString (serviceName svc) ++ " service"
         continue ph0
 
-      setPhaseHAEventIf ph3 serviceCouldNotStart $ \evt@(HAEvent _ msg _) -> do
+      setPhaseIf ph3 serviceCouldNotStart $ \evt@(HAEvent _ msg _) -> do
         ServiceCouldNotStart (Node nid) svc cfg <- decodeMsg msg
         handled eq evt
         Just (n1, s1, count) <- get Local
@@ -265,31 +265,31 @@ rcRules argv eq = do
       start ph0 Nothing
 
     -- EpochRequest
-    defineSimpleHAEvent "epoch-request" $
+    defineSimple "epoch-request" $
       \evt@(HAEvent _ (EpochRequest pid) _) -> do
       resp <- prepareEpochResponse
       sendMsg pid resp
       handled eq evt
 
-    defineSimpleHAEvent "mm-pid" $
+    defineSimple "mm-pid" $
       \evt@(HAEvent _ (GetMultimapProcessId sender) _) -> do
          mmid <- getMultimapProcessId
          sendMsg sender mmid
          handled eq evt
 
-    defineSimpleHAEvent "dummy-event" $ \evt@(HAEvent _ DummyEvent _) -> do
+    defineSimple "dummy-event" $ \evt@(HAEvent _ DummyEvent _) -> do
       i <- getNoisyPingCount
       liftProcess $ sayRC $ "Noisy ping count: " ++ show i
       handled eq evt
 
-    defineSimpleHAEvent "stop-request" $ \evt@(HAEvent _ msg _) -> do
+    defineSimple "stop-request" $ \evt@(HAEvent _ msg _) -> do
       ServiceStopRequest node svc <- decodeMsg msg
       res                         <- lookupRunningService node svc
       for_ res $ \sp ->
         killService sp UserStop
       handled eq evt
 
-    defineSimpleHAEvent "save-processes" $
+    defineSimple "save-processes" $
       \evt@(HAEvent _ (SaveProcesses sp ps) _) -> do
        writeConfiguration sp ps Current
        handled eq evt

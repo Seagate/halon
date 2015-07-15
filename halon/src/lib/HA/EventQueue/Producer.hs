@@ -35,14 +35,9 @@ import Control.Distributed.Process
   , spawnLocal
   )
 import Control.Distributed.Process.Serializable (Serializable)
--- Qualify all imports of any distributed-process "internals".
-import qualified Control.Distributed.Process.Internal.Types as I
-    (createMessage, messageToPayload)
 import Control.Monad (when)
 
-import Data.ByteString (ByteString)
 import Data.List ((\\))
-import Data.UUID.V4 (nextRandom)
 
 data Result = Success | Failure
   deriving Eq
@@ -64,7 +59,7 @@ promulgateEQ :: Serializable a
              -> Process ProcessId -- ^ PID of the spawned process. This can
                                   --   be used to verify receipt.
 promulgateEQ eqnids x = spawnLocal $ do
-    buildHAEvent x >>= go
+    newPersistMessage x >>= go
   where
     go evt = do
       res <- promulgateHAEvent eqnids evt
@@ -77,7 +72,7 @@ promulgateEQPref :: Serializable a
                  -> a -- ^ Event to send.
                  -> Process ProcessId
 promulgateEQPref peqnids eqnids x = spawnLocal $ do
-    buildHAEvent x >>= go
+    newPersistMessage x >>= go
   where
     go evt = do
       res <- promulgateHAEventPref peqnids eqnids evt
@@ -87,12 +82,10 @@ promulgateEQPref peqnids eqnids x = spawnLocal $ do
 --   event tracker to identify the list of EQ nodes.
 -- FIXME: Use a well-defined timeout.
 promulgate :: Serializable a => a -> Process ProcessId
-promulgate x = buildHAEvent x >>= promulgateEvent
+promulgate x = newPersistMessage x >>= promulgateEvent
 
 -- | Add an event to the event queue. This form takes the HAEvent directly.
-promulgateEvent :: Serializable a
-                => HAEvent a
-                -> Process ProcessId
+promulgateEvent :: PersistMessage -> Process ProcessId
 promulgateEvent evt =
     spawnLocal go
   where
@@ -111,28 +104,16 @@ promulgateEvent evt =
           when (res == Failure) go
         Nothing -> go
 
-buildHAEvent :: Serializable a
-             => a
-             -> Process (HAEvent [ByteString])
-buildHAEvent x = liftIO nextRandom >>= \ident -> return $ HAEvent
-    { eventId = ident
-    , eventPayload = payload :: [ByteString]
-    , eventHops = []
-    }
-  where
-    payload = (I.messageToPayload . I.createMessage $ x)
-
 -- | Promulgate an HAEvent directly to EQ nodes. We also try to inform the
 --   local EQ tracker about preferred replicas, if available.
-promulgateHAEvent :: Serializable a
-                  => [NodeId] -- ^ EQ nodes.
-                  -> HAEvent a
+promulgateHAEvent :: [NodeId] -- ^ EQ nodes.
+                  -> PersistMessage
                   -> Process Result
-promulgateHAEvent eqnids evt = do
+promulgateHAEvent eqnids msg = do
   say $ "Sending to " ++ (show eqnids)
   result <- callLocal $
     ncallRemoteAnyTimeout
-      promulgateTimeout eqnids eventQueueLabel evt
+      promulgateTimeout eqnids eventQueueLabel msg
   case result :: Maybe (NodeId, NodeId) of
     Nothing -> return Failure
     Just (rnid, pnid) -> do
@@ -142,18 +123,17 @@ promulgateHAEvent eqnids evt = do
 -- | Promulgate an HAEvent directly to EQ nodes, specifying a preference for
 --   certain nodes first. We also try to inform the local EQ tracker about
 --   preferred replicas, if available.
-promulgateHAEventPref :: Serializable a
-                      => [NodeId] -- ^ Preferred EQ nodes.
+promulgateHAEventPref :: [NodeId] -- ^ Preferred EQ nodes.
                       -> [NodeId] -- ^ All EQ nodes.
-                      -> HAEvent a
+                      -> PersistMessage
                       -> Process Result
-promulgateHAEventPref peqnids eqnids evt = do
+promulgateHAEventPref peqnids eqnids msg = do
   say $ "Sending to " ++ (show peqnids) ++ " and then to " ++ show (eqnids \\ peqnids)
   result <- callLocal $
     ncallRemoteAnyPreferTimeout
       softTimeout promulgateTimeout
       peqnids (eqnids \\ peqnids)
-      eventQueueLabel evt
+      eventQueueLabel msg
   case result :: Maybe (NodeId, NodeId) of
     Nothing -> return Failure
     Just (rnid, pnid) -> do

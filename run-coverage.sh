@@ -36,6 +36,9 @@ excludes='
 	Test.Run
 	Test.Unit
 	Tests
+        Network.CEP
+        Network.CEP.Buffer
+        Network.CEP.Types
 '
 exclude=''
 for x in $excludes ; do

@@ -55,7 +55,6 @@ import Prelude hiding ((.), id)
 
 import GHC.Generics
 
-import HA.EventQueue.Consumer
 import HA.EventQueue.Types
 import HA.Replicator ( RGroup, updateStateWith, getState)
 import Control.SpineSeq (spineSeq)
@@ -67,7 +66,6 @@ import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Timeout ( retry )
 
 import Data.Binary (Binary)
-import Data.ByteString ( ByteString )
 import Data.Foldable (for_, traverse_)
 import Data.Functor (void)
 import Data.Traversable (for)
@@ -84,7 +82,7 @@ eventQueueLabel = "HA.EventQueue"
 -- | State of the event queue.
 --
 -- It contains the process id of the RC and the list of pending events.
-type EventQueue = (Maybe ProcessId, [HAEvent [ByteString]])
+type EventQueue = (Maybe ProcessId, [PersistMessage])
 
 data EventQueueState =
     EventQueueState
@@ -94,7 +92,7 @@ data EventQueueState =
       -- ^ Resulted 'MonitorRef' from monitoring RC 'Process'
     }
 
-addSerializedEvent :: HAEvent [ByteString] -> EventQueue -> EventQueue
+addSerializedEvent :: PersistMessage -> EventQueue -> EventQueue
 addSerializedEvent = second . (:)
 
 eqSetRC :: Maybe ProcessId -> EventQueue -> EventQueue
@@ -106,7 +104,7 @@ compareAndSwapRC (expected, new) = first $ \current ->
     if current == expected then new else current
 
 filterEvent :: UUID -> EventQueue -> EventQueue
-filterEvent eid = second $ spineSeq . filter (\HAEvent{..} -> eid /= eventId)
+filterEvent eid = second $ spineSeq . filter (\(PersistMessage uuid _) -> eid /= uuid)
 
 remotable [ 'addSerializedEvent
           , 'eqSetRC
@@ -169,10 +167,9 @@ recordNewRC rg rc = void $ liftProcess $ async $ task $
 -- | Send the pending events to the new RC.
 sendEventsToRC :: RGroup g => g EventQueue -> ProcessId -> PhaseM s l ()
 sendEventsToRC rg rc = liftProcess $ do
-    self               <- getSelfPid
     (_, pendingEvents) <- retry requestTimeout $ getState rg
-    for_ (reverse pendingEvents) $ \ev ->
-      usend rc ev{eventHops = self : eventHops ev}
+    for_ (reverse pendingEvents) $ \(PersistMessage _ ev) ->
+      uforward ev rc
 
 reconnectToRC :: PhaseM (Maybe EventQueueState) l ()
 reconnectToRC = liftProcess . traverse_ (reconnect . _eqsRC) =<< get Global
@@ -188,7 +185,7 @@ recordRCDied rg = do
 recordEvent :: RGroup g
             => g EventQueue
             -> ProcessId
-            -> HAEvent [ByteString]
+            -> PersistMessage
             -> PhaseM s l ()
 recordEvent rg sender ev = void $ liftProcess $ do
     self <- getSelfPid
@@ -207,12 +204,20 @@ trim rg eid =
         usend self (TrimAck eid)
       return ()
 
-sendEventToRC :: ProcessId -> ProcessId -> HAEvent [ByteString] -> PhaseM s l ()
-sendEventToRC rc sender ev =
+-- | TODO - Wait for 'uforward' to land on d-p. By using 'forward', we have no
+--   guarantee a message will be sent on network failure. That's why we need to
+--   'reconnect' before calling 'forward'
+uforward :: Message -> ProcessId -> Process ()
+uforward msg pid = do
+    reconnect pid
+    forward msg pid
+
+sendEventToRC :: ProcessId -> ProcessId -> PersistMessage -> PhaseM s l ()
+sendEventToRC rc sender (PersistMessage _ ev) =
     liftProcess $ do
       self <- getSelfPid
       usend sender (processNodeId self, processNodeId rc)
-      usend rc ev{eventHops = self : eventHops ev}
+      uforward ev rc
 
 -- | Find the RC either in the local state or in the replicated state.
 lookupRC :: RGroup g
@@ -253,7 +258,7 @@ data TrimAck = TrimAck UUID deriving (Typeable, Generic)
 
 instance Binary TrimAck
 
-data RecordAck = RecordAck ProcessId (HAEvent [ByteString])
+data RecordAck = RecordAck ProcessId PersistMessage
                  deriving (Typeable, Generic)
 
 instance Binary RecordAck
