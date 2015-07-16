@@ -122,7 +122,7 @@ recoverySupervisor rg rcP = do
     go :: Either Int ProcessId -> RSState -> Process ()
     -- I'm the leader
     go (Right rc) previousState = do
-      leaseTimer <- newTimer (rsLeasePeriod previousState) $ do
+      timer <- newTimer (rsLeasePeriod previousState) $ do
         say "RS: lease expired, so killing RC ..."
         exit rc "quorum lost"
         -- Block until RC actually dies. Otherwise, a new RC may start before
@@ -132,12 +132,9 @@ recoverySupervisor rg rcP = do
             [ matchIf (\(ProcessMonitorNotification _ pid _) -> pid == rc)
                       (const $ return ())
             ]
-      -- We start renewing the lease before the current lease expires.
-      let leaseRequestPeriod = rsLeasePeriod previousState `div` 3 * 2
-      void $ receiveTimeout leaseRequestPeriod []
       self <- getSelfPid
       rstNew <- rsUpdate self previousState
-      canceled <- cancel leaseTimer
+      canceled <- waitAndCancel timer
       -- Has RC died? (either for RC internal reasons or because of the timer)
       rcDied <- rcHasDied rc
       if not rcDied && canceled && rsLeader rstNew == Just self then
@@ -149,8 +146,7 @@ recoverySupervisor rg rcP = do
        else do
          -- RC has died, will be killed by the timer or someone else
          -- has taken leadership.
-         when rcDied $ say "RS: RC died, RSs will elect a new leader "
-         say $ "RS: leadership lost " ++ show (not rcDied, canceled, rsLeader rstNew == Just self)
+         when rcDied $ say "RS: RC died, RSs will elect a new leader"
          go (Left $ rsLeasePeriod previousState) rstNew
 
     -- I'm not the leader
@@ -189,9 +185,8 @@ recoverySupervisor rg rcP = do
 
     -- | Yields @True@ iff a notification about RC death has arrived.
     rcHasDied rc = do
-       mb <- receiveTimeout 0 [ match $ \(ProcessMonitorNotification _ pid r)
-                                         -> do say $ "RS: RC died " ++ show r
-                                               return $ pid == rc
+       mb <- receiveTimeout 0 [ match $ \(ProcessMonitorNotification _ pid _)
+                                         -> return $ pid == rc
                               ]
        case mb of
          Just False -> rcHasDied rc
@@ -210,7 +205,10 @@ recoverySupervisor rg rcP = do
 -- Otherwise, it returns @True@ in which case the action will be never
 -- performed.
 --
-data Timer = Timer { cancel :: Process Bool }
+-- @waitAndCancel timer@ is like @cancel timer@ but blocks until the timer
+-- expires.
+--
+data Timer = Timer { cancel :: Process Bool, waitAndCancel :: Process Bool }
 
 -- | @timer <- newTimer timeout action@ performs @action@ after waiting
 -- @timeout@ microseconds.
@@ -222,8 +220,8 @@ newTimer timeoutPeriod action = do
   self <- getSelfPid
   -- Since the timer may fire arbitrarily late, we should prevent the user from
   -- canceling the action after the time period has expired. To avoid this,
-  -- @cancel@ reads the clock and verifies that the timeout period has not
-  -- passed.
+  -- @cancel@ and @waitCancel@ read the clock and verify that the timeout period
+  -- has not passed.
   t0 <- liftIO $ getCurrentTime
   pid <- spawnLocal $ flip finally (liftIO $ putMVar mdone ()) $ do
       link self
@@ -251,4 +249,23 @@ newTimer timeoutPeriod action = do
                     return True
           Just c -> do liftIO $ putMVar mv canceled
                        return c
-  return $ Timer { cancel = cancelCall }
+  let waitAndCancelCall = liftIO $ do
+        canceled <- takeMVar mv
+        case canceled of
+          Nothing -> do
+            tf <- getCurrentTime
+            if floor (diffUTCTime tf t0 * 1000000) >= timeoutPeriod
+            then do -- don't cancel if the timer period expired
+                    putMVar mv Nothing
+                    -- wait for the timer process to complete
+                    readMVar mdone
+                    return False
+            else do putMVar mv $ Just True
+                    -- wait for the timer process to acknowledge
+                    readMVar mdone
+                    return True
+          Just c -> do putMVar mv canceled
+                       return c
+  return $ Timer { cancel = cancelCall
+                 , waitAndCancel = waitAndCancelCall
+                 }

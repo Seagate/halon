@@ -120,11 +120,6 @@ data Trim = Trim DecreeId
 
 instance Binary Trim
 
--- | A tracing function for debugging purposes.
-paxosTrace :: String -> Process ()
-paxosTrace msg = say $ "[paxos] " ++ msg
--- acceptorTrace _ = return ()
-
 -- | Acceptor process.
 --
 -- Argument is a dummy to help resolve class constraints. Proper usage is
@@ -139,16 +134,13 @@ acceptor :: forall a n. Serializable a
 acceptor _ config name =
   bracket (liftIO $ config name) (liftIO . storeClose) $ \case
   AcceptorStore {..} -> do
-       liftIO storeGet >>= flip finally (paxosTrace "Acceptor terminated") .
-                           loop . maybe Bottom (Value . decode)
+       liftIO storeGet >>= loop . maybe Bottom (Value . decode)
     where
       loop :: Lifted BallotId -> Process b
       loop b = do
           self <- getSelfPid
-          paxosTrace "Acceptor waiting"
           receiveWait
               [ match $ \(Msg.Prepare d b' λ) -> do
-                  paxosTrace "Acceptor prepare"
                   if b <= Value b'
                   then do
                       when (b < Value b') $
@@ -159,34 +151,26 @@ acceptor _ config name =
                           -- Don't reply if the value was trimmed.
                           -- The upper layers will have to figure out how
                           -- to get the trimmed values otherwise.
-                          paxosTrace $ "Prepare: Trimmed " ++ show (d, b', λ)
-                        Left False -> do
-                          paxosTrace $ "Prepare: Promise new " ++
-                                       show (d, b', λ)
+                          return ()
+                        Left False ->
                           usend λ $ Msg.Promise b' self ([] :: [Msg.Ack a])
                         Right bs -> do
                           let (b'', x) = decode bs
-                          paxosTrace $ "Prepare: Promise " ++ show (d, b', λ)
                           usend λ $ Msg.Promise b' self
                                                 [Msg.Ack d b'' self (x :: a)]
                       loop (Value b')
                   else do
-                      paxosTrace $ "Prepare: Nack " ++
-                                   show (d, b', λ, fromValue b)
                       usend λ $ Msg.Nack $ fromValue b
                       loop b
               , match $ \(Msg.Syn d b' λ x) -> do
-                  paxosTrace "Acceptor Syn"
                   if b <= Value b'
                   then do
                       when (b < Value b') $
                         liftIO $ storePut $ encode b'
                       liftIO $ storeInsert d $ encode (b', x :: a)
-                      paxosTrace $ "Syn: Ack " ++ show (d, b', λ)
                       usend λ $ Msg.Ack d b' self x
                       loop (Value b')
                   else do
-                      paxosTrace $ "Syn: Nack " ++ show (d, b', λ, fromValue b)
                       usend λ $ Msg.Nack $ fromValue b
                       loop b
               , match $ \(Trim d) -> do
