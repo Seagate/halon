@@ -871,8 +871,7 @@ replica Dict
                       takeSnapshot <- snapshotPolicy
                                         (decreeNumber w' - decreeNumber w0)
                       if takeSnapshot then do
-                        logTrace $ "Log size when trimming: " ++
-                                   show (Map.size log)
+                        say $ "Log size when trimming: " ++ show (Map.size log)
                         -- First trim the log and only then save the snapshot.
                         -- This guarantees that if later operation fails the
                         -- latest membership can still be recovered from disk.
