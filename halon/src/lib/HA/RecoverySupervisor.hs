@@ -185,12 +185,12 @@ recoverySupervisor rg rcP = do
 
     -- | Yields @True@ iff a notification about RC death has arrived.
     rcHasDied rc = do
-       mb <- receiveTimeout 0 [ match $ \(ProcessMonitorNotification _ pid _)
-                                         -> return $ pid == rc
-                              ]
-       case mb of
-         Just False -> rcHasDied rc
-         Just True -> return True
+       mn <- expectTimeout 0
+       case mn of
+         Just (ProcessMonitorNotification _ pid reason)
+           | pid == rc -> do say $ "RS: RC died: " ++ show reason
+                             return True
+           | otherwise -> rcHasDied rc
          Nothing -> return False
 
 -- | Type of timers
