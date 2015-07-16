@@ -255,8 +255,8 @@ propose retryTimeout sendA acceptors d x = liftProcess $
                   let x' = chooseValue d x xs
                   eth' <- retry retryTimeout $ command sendA acceptors d b x'
                   case eth' of
-                      Left b@(BallotId{..}) -> do
-                        paxosTrace $ "propose: command failed " ++ show b
+                      Left b'@(BallotId{..}) -> do
+                        paxosTrace $ "propose: command failed " ++ show b'
                         when (not schedulerIsEnabled) $
                           liftIO $ randomRIO (0, backoff) >>= threadDelay
                         loop backoff' b{ballotProposalId}
