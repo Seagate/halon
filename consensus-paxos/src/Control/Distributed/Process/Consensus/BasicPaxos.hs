@@ -91,10 +91,16 @@ timeout t action
     | schedulerIsEnabled = fmap Just action
     | otherwise = ask >>= liftIO . T.timeout t . (`runLocalProcess` action)
 
+-- | A tracing function for debugging purposes.
+paxosTrace :: String -> Process ()
+paxosTrace _ = return ()
+-- paxosTrace msg = say $ "[paxos] " ++ msg
+
 scout :: Serializable a
       => (forall b. Serializable b => n -> b -> Process ())
       -> [n] -> DecreeId -> BallotId -> Process (Either BallotId [Msg.Ack a])
 scout sendA acceptors d b = callLocal $ do
+  paxosTrace $ "scout: " ++ show (d, b)
   self <- getSelfPid
   let clauses = [ match $ \(Msg.Nack b') -> return $ Left b'
                 , match $ \(Msg.Promise _ _ acks) -> return $ Right acks
@@ -163,6 +169,7 @@ command :: forall a n. Serializable a
         -> a
         -> Process (Either BallotId ())
 command sendA acceptors d b x = callLocal $ do
+  paxosTrace $ "command: " ++ show (d, b)
   self <- getSelfPid
   let clauses = [ match $ \(Msg.Nack b') -> return $ Left b'
                 , match $ \(_ :: Msg.Ack a) -> return $ Right ()
@@ -229,14 +236,16 @@ propose :: Serializable a
         -> DecreeId
         -> a
         -> Propose () a
-propose retryTimeout sendA acceptors d x = liftProcess $ do
-  self <- getSelfPid
-  loop 0 (BallotId 0 self)
+propose retryTimeout sendA acceptors d x = liftProcess $
+  (do self <- getSelfPid
+      loop 0 (BallotId 0 self)
+  ) `onException` paxosTrace "terminated with exception"
     where loop backoff b = do
             eth <- retry retryTimeout $ scout sendA acceptors d b
             let backoff' = if backoff == 0 then 200000 else 2 * backoff
             case eth of
               Left b'@BallotId{..} -> do
+                  paxosTrace $ "propose: scout failed " ++ show b'
                   when (not schedulerIsEnabled) $
                     liftIO $ randomRIO (0, backoff) >>= threadDelay
                   if b < b'
@@ -246,11 +255,14 @@ propose retryTimeout sendA acceptors d x = liftProcess $ do
                   let x' = chooseValue d x xs
                   eth' <- retry retryTimeout $ command sendA acceptors d b x'
                   case eth' of
-                      Left BallotId{..} -> do
+                      Left b@(BallotId{..}) -> do
+                        paxosTrace $ "propose: command failed " ++ show b
                         when (not schedulerIsEnabled) $
                           liftIO $ randomRIO (0, backoff) >>= threadDelay
                         loop backoff' b{ballotProposalId}
-                      Right _ -> return x'
+                      Right _ -> do
+                        paxosTrace $ "propose succeded: " ++ show d
+                        return x'
 
 protocol :: forall a n. SerializableDict a
          -> Int

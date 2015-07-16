@@ -503,6 +503,11 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
 -- epoch. For the leader, there is no way to know if a request from a previous
 -- epoch has been abandoned or not.
 
+-- | A tracing function for debugging purposes.
+logTrace :: String -> Process ()
+logTrace _ = return ()
+-- logTrace msg = say $ "[replicated-log] " ++ msg
+
 -- | One replica of the log. All incoming values to add to the log are submitted
 -- for consensus. A replica does not acknowledge values being appended to the
 -- log until the replicas have reached consensus about the update, hence reached
@@ -810,6 +815,7 @@ replica Dict
             [ -- The lease is about to expire or it has already.
               matchChan timerRP $ \LeaseRenewalTime -> do
                   mLeader <- liftIO $ getLeader
+                  logTrace $ "LeaseRenewalTime: " ++ show (w, cd, mLeader)
                   cd' <- if Just here == mLeader
                             || w == cd && isNothing mLeader then do
                       leaseRequest <-
@@ -832,9 +838,10 @@ replica Dict
                         -- incoming legislature to deal with teleportation of
                         -- decrees. See Note [Teleportation].
                         di < max w w{decreeLegislatureId = decreeLegislatureId di}) $
-                       \_ -> do
+                       \(Decree _ di _) -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
+                  logTrace $ "Skipping decree: " ++ show (w, di)
 
                   -- Advertise our configuration to other replicas if we are
                   -- getting old decrees.
@@ -847,6 +854,7 @@ replica Dict
             , matchIf (\(Decree locale di _) ->
                         locale /= Stored && w <= di && decreeNumber di == decreeNumber w) $
                        \(Decree locale di v) -> do
+                  logTrace $ "Storing decree: " ++ show (w, di)
                   liftIO $ insertInLog ph (decreeNumber di) (v :: Value a)
                   case locale of
                       -- Ack back to the client.
@@ -863,7 +871,8 @@ replica Dict
                       takeSnapshot <- snapshotPolicy
                                         (decreeNumber w' - decreeNumber w0)
                       if takeSnapshot then do
-                        say $ "Log size when trimming: " ++ show (Map.size log)
+                        logTrace $ "Log size when trimming: " ++
+                                   show (Map.size log)
                         -- First trim the log and only then save the snapshot.
                         -- This guarantees that if later operation fails the
                         -- latest membership can still be recovered from disk.
@@ -875,6 +884,7 @@ replica Dict
                         return (w0, msref)
                 case v of
                   Values xs -> do
+                      logTrace $ "Executing decree: " ++ show (w, di, d, cd)
                       s' <- foldM stLogNextState s xs
                       let d'  = max d w'
                           cd' = max cd w'
@@ -891,6 +901,8 @@ replica Dict
                     -- Only execute a reconfiguration if we are on an earlier
                     -- configuration.
                     | decreeLegislatureId d < leg' -> do
+                      logTrace $ "Reconfiguring: " ++
+                                 show (w, di, d, leg', cd, ρs')
                       let d' = w' { decreeNumber = max (decreeNumber d) (decreeNumber w') }
                           cd' = w' { decreeNumber = max (decreeNumber cd) (decreeNumber w') }
                           w' = succ w{decreeLegislatureId = leg'}
@@ -943,6 +955,7 @@ replica Dict
             , matchIf (\(Decree locale di _) ->
                         locale == Remote && w < di && not (Map.member (decreeNumber di) log)) $
                        \(Decree locale di v) -> do
+                  logTrace $ "Storing decree above watermark: " ++ show (w, di)
                   liftIO $ insertInLog ph (decreeNumber di) v
                   --- XXX set cd to @max cd (succ di)@?
                   --
@@ -967,6 +980,7 @@ replica Dict
                         && isJust (requestForLease r) -- This is a lease request.
                       ) $
                        \(request :: Request a) -> do
+                  logTrace $ "Lease request: " ++ show (w, d, cd)
                   cd' <- case requestForLease request of
                     -- Discard the lease request if it corresponds to an old
                     -- legislature.
