@@ -153,6 +153,7 @@ Test-Suite unit-tests
                     hashable,
                     network,
                     network-transport,
+                    network-transport-controlled,
                     process >= 1.2,
                     replicated-log,
                     unordered-containers,
@@ -161,7 +162,8 @@ Test-Suite unit-tests
                     tasty-files,
                     cep,
                     uuid,
-                    containers
+                    containers,
+                    stm
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
@@ -201,6 +203,7 @@ Test-Suite integration-tests
                     hashable,
                     network,
                     network-transport,
+                    network-transport-controlled,
                     unordered-containers,
                     options-schema >= 0.1.1.0,
                     process >= 1.2,
@@ -209,7 +212,8 @@ Test-Suite integration-tests
                     tasty-files,
                     cep,
                     uuid,
-                    containers
+                    containers,
+                    stm
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
