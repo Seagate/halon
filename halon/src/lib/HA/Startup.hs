@@ -20,7 +20,6 @@ import HA.Replicator ( RGroup(..), RStateView(..) )
 import HA.Replicator.Log ( RLogGroup )
 
 import Control.Arrow ( first, second, (***) )
-import Control.Concurrent.MVar ( newEmptyMVar, readMVar, putMVar )
 import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Closure
   ( remotable
@@ -129,15 +128,12 @@ remotableDecl [ [d|
      rspid <- spawnLocal
               $ recoverySupervisor (viewRState $(mkStatic 'rsView) rGroup)
               $ mask_ $ do
-                mRCPid <- liftIO newEmptyMVar
+                rcpid <- getSelfPid
                 mmpid <- spawnLocal $ do
-                       rcpid <- liftIO $ readMVar mRCPid
                        link rcpid
                        multimap (viewRState $(mkStatic 'multimapView) rGroup)
-                rcpid <- spawnLocal (recoveryCoordinator eqpid mmpid)
                 usend eqpid rcpid
-                liftIO $ putMVar mRCPid rcpid
-                return rcpid
+                recoveryCoordinator eqpid mmpid
 
      -- monitoring processes is okay, since these
      -- processes are on the same node, we're not

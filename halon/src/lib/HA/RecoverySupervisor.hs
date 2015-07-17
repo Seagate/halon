@@ -74,9 +74,11 @@ import Control.Distributed.Process.Timeout ( retry, timeout )
 import Control.Concurrent ( newMVar, takeMVar, putMVar, readMVar, newEmptyMVar )
 import Control.Monad ( when, void )
 import Data.Binary ( Binary )
-import Data.Time ( getCurrentTime, diffUTCTime )
+import Data.Int ( Int64 )
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
+import System.Clock
+
 
 -- | State of the recovery supervisor
 data RSState = RSState { rsLeader :: Maybe ProcessId
@@ -107,46 +109,44 @@ remotable [ 'setLeader ]
 recoverySupervisor :: RGroup g
                    => g RSState -- ^ the replication group used to store
                                 -- the RS state
-                   -> Process ProcessId
-                         -- ^ the closure used to start the recovery
-                         -- coordinator: It must return immediately yielding
-                         -- the pid of the RC.
+                   -> Process () -- ^ the closure used to run the recovery
+                                 -- coordinator.
                    -> Process ()
 recoverySupervisor rg rcP = do
     rst <- retry 1000000 (getState rg)
     go (Left $ rsLeasePeriod rst) rst
   where
-    -- Takes the pid of the Recovery Coordinator and the last observed
-    -- state. If the pid of the RC is not available we give it the next
-    -- lease period in microseconds.
-    go :: Either Int ProcessId -> RSState -> Process ()
+    -- Takes the pid of the Recovery Coordinator, the remaining amount of
+    -- microseconds of the current lease and the last observed state. If the pid
+    -- of the RC is not available we give it the next lease period in
+    -- microseconds.
+    go :: Either Int (ProcessId, Int) -> RSState -> Process ()
     -- I'm the leader
-    go (Right rc) previousState = do
-      timer <- newTimer (rsLeasePeriod previousState) $ do
-        say "RS: lease expired, so killing RC ..."
-        exit rc "quorum lost"
-        -- Block until RC actually dies. Otherwise, a new RC may start before
-        -- the old one quits.
-        void $ monitor rc
-        receiveWait
-            [ matchIf (\(ProcessMonitorNotification _ pid _) -> pid == rc)
-                      (const $ return ())
-            ]
-      self <- getSelfPid
-      rstNew <- rsUpdate self previousState
-      canceled <- waitAndCancel timer
+    go (Right (rc, remaining)) previousState = do
+      let leaseAllowance = rsLeasePeriod previousState `div` 3
+      leaseTimer <- newTimer remaining $ killRC rc
+      void $ receiveTimeout (max 0 (remaining - leaseAllowance)) []
+
+      t0 <- liftIO $ getTime Monotonic
+      rstNew <- rsUpdate previousState
+      canceled <- cancel leaseTimer
       -- Has RC died? (either for RC internal reasons or because of the timer)
       rcDied <- rcHasDied rc
-      if not rcDied && canceled && rsLeader rstNew == Just self then
-         -- RC is still alive, the timer was canceled and I'm still the leader.
-         -- TODO: The check for leadership seems redundant if clock drift is
-         -- bounded, which is a fundamental assumption. Should we remove the
-         -- test?
-         go (Right rc) rstNew
+      tf <- liftIO $ getTime Monotonic
+      let remaining' =
+            fromIntegral (rsLeasePeriod rstNew) - timeSpecToMicro (tf - t0)
+      self <- getSelfPid
+      if remaining' > 0 && rsLeader rstNew == Just self then do
+         -- The lease has not expired and I'm still the leader.
+         rc' <- if not canceled || rcDied then
+                  spawnRC
+                else
+                  return rc
+         go (Right (rc', fromIntegral remaining')) rstNew
        else do
          -- RC has died, will be killed by the timer or someone else
          -- has taken leadership.
-         when rcDied $ say "RS: RC died, RSs will elect a new leader"
+         when rcDied $ say "RS: lease expired"
          go (Left $ rsLeasePeriod previousState) rstNew
 
     -- I'm not the leader
@@ -158,29 +158,48 @@ recoverySupervisor rg rcP = do
         -- Wait for the polling period if there is some known leader only.
         -- Otherwise, jump immediately to leader election.
         void $ receiveTimeout (pollingPeriod leasePeriod) []
-      timer <- newTimer leasePeriod $ return ()
+
+      t0 <- liftIO $ getTime Monotonic
+      rstNew <- rsUpdate previousState
       self <- getSelfPid
-      rstNew <- rsUpdate self previousState
-      canceled <- cancel timer
-      if canceled && rsLeader rstNew == Just self then do
-         -- Timer has not expired and I'm the new leader.
-         say "RS: I'm the new leader, so starting RC ..."
-         rc <- rcP
-         _ <- monitor rc
-         go (Right rc) rstNew
+      tf <- liftIO $ getTime Monotonic
+      let remaining =
+            fromIntegral (rsLeasePeriod rstNew) - timeSpecToMicro (tf - t0)
+      if remaining > 0 && rsLeader rstNew == Just self then do
+         -- The lease has not expired and I'm the new leader.
+         rc <- spawnRC
+         go (Right (rc, fromIntegral remaining)) rstNew
        else do
          -- Timer has expired or I'm not the leader.
          go (Left $ rsLeasePeriod previousState) rstNew
+
+    spawnRC = do
+      say "RS: I'm the new leader, so starting RC ..."
+      rc <- spawnLocal rcP
+      _ <- monitor rc
+      return rc
+
+    killRC rc = do
+      say "RS: lease expired, so killing RC ..."
+      exit rc "quorum lost"
+      -- Block until RC actually dies. Otherwise, a new RC may start before
+      -- the old one quits.
+      void $ monitor rc
+      receiveWait
+        [ matchIf (\(ProcessMonitorNotification _ pid _) -> pid == rc)
+                  (const $ return ())
+        ]
 
     -- We make the polling period slightly bigger than the lease.
     pollingPeriod = (`div` 10) . (* 11)
 
     -- | Updates the state proposing the current process as leader if
     -- there has not been updates since the state was last observed.
-    rsUpdate self rst = do
+    rsUpdate rst = do
+      self <- getSelfPid
       void $ timeout (pollingPeriod $ rsLeasePeriod rst) $
         updateStateWith rg $
-          $(mkClosure 'setLeader) (self,rsLeaseCount rst)
+          $(mkClosure 'setLeader) (self, rsLeaseCount rst)
       retry (pollingPeriod $ rsLeasePeriod rst) $ getState rg
 
     -- | Yields @True@ iff a notification about RC death has arrived.
@@ -192,6 +211,9 @@ recoverySupervisor rg rcP = do
                              return True
            | otherwise -> rcHasDied rc
          Nothing -> return False
+
+timeSpecToMicro :: TimeSpec -> Int64
+timeSpecToMicro (TimeSpec s ns) = s * 1000000 + ns `div` 1000
 
 -- | Type of timers
 --
@@ -205,10 +227,7 @@ recoverySupervisor rg rcP = do
 -- Otherwise, it returns @True@ in which case the action will be never
 -- performed.
 --
--- @waitAndCancel timer@ is like @cancel timer@ but blocks until the timer
--- expires.
---
-data Timer = Timer { cancel :: Process Bool, waitAndCancel :: Process Bool }
+data Timer = Timer { cancel :: Process Bool }
 
 -- | @timer <- newTimer timeout action@ performs @action@ after waiting
 -- @timeout@ microseconds.
@@ -220,23 +239,23 @@ newTimer timeoutPeriod action = do
   self <- getSelfPid
   -- Since the timer may fire arbitrarily late, we should prevent the user from
   -- canceling the action after the time period has expired. To avoid this,
-  -- @cancel@ and @waitCancel@ read the clock and verify that the timeout period
-  -- has not passed.
-  t0 <- liftIO $ getCurrentTime
+  -- @cancel@ reads the clock and verifies that the timeout period has not
+  -- passed.
+  t0 <- liftIO $ getTime Monotonic
   pid <- spawnLocal $ flip finally (liftIO $ putMVar mdone ()) $ do
       link self
       void $ receiveTimeout timeoutPeriod []
       canceled <- liftIO $ takeMVar mv
       case canceled of
-        Nothing -> do void $ action
+        Nothing -> do void action
                       liftIO $ putMVar mv $ Just False
         Just _ -> liftIO $ putMVar mv canceled
   let cancelCall = do
         canceled <- liftIO $ takeMVar mv
         case canceled of
           Nothing -> do
-            tf <- liftIO $ getCurrentTime
-            if floor (diffUTCTime tf t0 * 1000000) >= timeoutPeriod
+            tf <- liftIO $ getTime Monotonic
+            if timeSpecToMicro (tf - t0) >= fromIntegral timeoutPeriod
             then liftIO $ do -- don't cancel if the timer period expired
                    putMVar mv Nothing
                    -- wait for the timer process to complete
@@ -249,23 +268,4 @@ newTimer timeoutPeriod action = do
                     return True
           Just c -> do liftIO $ putMVar mv canceled
                        return c
-  let waitAndCancelCall = liftIO $ do
-        canceled <- takeMVar mv
-        case canceled of
-          Nothing -> do
-            tf <- getCurrentTime
-            if floor (diffUTCTime tf t0 * 1000000) >= timeoutPeriod
-            then do -- don't cancel if the timer period expired
-                    putMVar mv Nothing
-                    -- wait for the timer process to complete
-                    readMVar mdone
-                    return False
-            else do putMVar mv $ Just True
-                    -- wait for the timer process to acknowledge
-                    readMVar mdone
-                    return True
-          Just c -> do putMVar mv canceled
-                       return c
-  return $ Timer { cancel = cancelCall
-                 , waitAndCancel = waitAndCancelCall
-                 }
+  return $ Timer { cancel = cancelCall }
