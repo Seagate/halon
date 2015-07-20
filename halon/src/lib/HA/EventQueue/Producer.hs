@@ -38,6 +38,11 @@ import Control.Distributed.Process.Serializable (Serializable)
 import Control.Monad (when)
 
 import Data.List ((\\))
+import Data.Typeable
+
+producerTrace :: String -> Process ()
+producerTrace _ = return ()
+-- producerTrace = say . ("[EQ.producer] " ++)
 
 data Result = Success | Failure
   deriving Eq
@@ -82,7 +87,10 @@ promulgateEQPref peqnids eqnids x = spawnLocal $ do
 --   event tracker to identify the list of EQ nodes.
 -- FIXME: Use a well-defined timeout.
 promulgate :: Serializable a => a -> Process ProcessId
-promulgate x = newPersistMessage x >>= promulgateEvent
+promulgate x = do
+    m <- newPersistMessage x
+    producerTrace $ "Promulgating: " ++ show (typeOf x, persistEventId m)
+    promulgateEvent m
 
 -- | Add an event to the event queue. This form takes the HAEvent directly.
 promulgateEvent :: PersistMessage -> Process ProcessId

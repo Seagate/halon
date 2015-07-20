@@ -79,6 +79,10 @@ import Network.CEP
 eventQueueLabel :: String
 eventQueueLabel = "HA.EventQueue"
 
+eqTrace :: String -> Process ()
+eqTrace _ = return ()
+-- eqTrace = say . ("[EQ] " ++)
+
 -- | State of the event queue.
 --
 -- It contains the process id of the RC and the list of pending events.
@@ -168,7 +172,8 @@ recordNewRC rg rc = void $ liftProcess $ async $ task $
 sendEventsToRC :: RGroup g => g EventQueue -> ProcessId -> PhaseM s l ()
 sendEventsToRC rg rc = liftProcess $ do
     (_, pendingEvents) <- retry requestTimeout $ getState rg
-    for_ (reverse pendingEvents) $ \(PersistMessage _ ev) ->
+    for_ (reverse pendingEvents) $ \(PersistMessage mid ev) -> do
+      eqTrace $ "EQ: Sending to RC: " ++ show mid
       uforward ev rc
 
 reconnectToRC :: PhaseM (Maybe EventQueueState) l ()
@@ -213,9 +218,10 @@ uforward msg pid = do
     forward msg pid
 
 sendEventToRC :: ProcessId -> ProcessId -> PersistMessage -> PhaseM s l ()
-sendEventToRC rc sender (PersistMessage _ ev) =
+sendEventToRC rc sender (PersistMessage mid ev) =
     liftProcess $ do
       self <- getSelfPid
+      eqTrace $ "EQ: Sending to RC: " ++ show mid
       usend sender (processNodeId self, processNodeId rc)
       uforward ev rc
 
