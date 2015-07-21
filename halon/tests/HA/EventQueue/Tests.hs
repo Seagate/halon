@@ -253,4 +253,23 @@ tests (AbstractTransport transport breakConnection _) = do
               True <- expect
               Published RCDied _ <- expect
               return ()
+        , testSuccess "send-until-acknowledged" ==> \eq na rGroup -> do
+            _ <- monitor eq
+            unlink eq
+            kill eq "for testing"
+            ProcessMonitorNotification _ _ _ <- expect
+            pid <- promulgate (1::Int)
+            monitor pid
+            self <- getSelfPid
+            eq <- spawnLocal $ do
+                    -- ignore first message, promulgate should retry
+                    _ <- expect :: Process (ProcessId, PersistMessage)
+                    (pid, PersistMessage{}) <- expect
+                    n <- getSelfNode
+                    send pid (n, n)
+                    send self ()
+            register eventQueueLabel eq
+            () <- expect
+            ProcessMonitorNotification _ _ _ <- expect
+            return ()
         ]
