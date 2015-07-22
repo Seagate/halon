@@ -44,7 +44,7 @@ main = do
             _ -> randomIO
      let numIterations = 50
      bracket
-       (createTransport "127.0.0.1" "8080" defaultTCPParameters)
+       (createTransport "127.0.0.1" "0" defaultTCPParameters)
        (either (const (return ())) closeTransport)
        $ \(Right transport) -> bracket
          (newLocalNode transport remoteTables)

@@ -66,7 +66,7 @@ proposeWrapper αs d x = (x ==) <$>
 
 tests :: IO TestTree
 tests = do
-    Right transport <- createTransport "127.0.0.1" "8080" defaultTCPParameters
+    Right transport <- createTransport "127.0.0.1" "0" defaultTCPParameters
 
     return $ testGroup "consensus-paxos"
       [ testSuccess "single-decree" $ setup transport $ \them -> do
