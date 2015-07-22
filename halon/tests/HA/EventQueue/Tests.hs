@@ -35,7 +35,6 @@ import Control.Distributed.Process.Node
 import Control.Distributed.Process.Timeout (retry)
 
 import Control.Applicative ((<$>))
-import Control.Arrow (first)
 import Control.Monad
 import qualified Data.Set as Set
 import Data.UUID (UUID)
@@ -45,16 +44,13 @@ import Network.CEP
 eqSDict :: SerializableDict EventQueue
 eqSDict = SerializableDict
 
-eqSetRC :: Maybe ProcessId -> EventQueue -> EventQueue
-eqSetRC = first . const
-
 remoteRC :: ProcessId -> Process ()
 remoteRC controller = forever $ do
     evt <- expect
     reconnect controller
     send controller (evt :: HAEvent Int)
 
-remotable [ 'eqSDict, 'eqSetRC ]
+remotable [ 'eqSDict ]
 
 -- | Triggers an event and returns the EventId sent
 triggerEvent :: Int -> Process UUID
@@ -102,13 +98,16 @@ tests (AbstractTransport transport breakConnection _) = do
         , testSuccess "eq-is-registered" ==> \eq _ _ -> do
               eqLoc <- whereis eventQueueLabel
               assert $ eqLoc == (Just eq)
-        , testSuccess "eq-one-event-direct" ==> \_ _ rGroup -> do
-              self <- getSelfNode
-              pid <- promulgateEQ [self] (1 :: Int)
+        , testSuccess "eq-one-event-direct" ==> \eq _ rGroup -> do
+              selfNode <- getSelfNode
+              self     <- getSelfPid
+              send eq self
+              pid <- promulgateEQ [selfNode] (1 :: Int)
               _ <- monitor pid
               (_ :: ProcessMonitorNotification) <- expect
               (_, [PersistMessage _ _]) <- retry requestTimeout $
                                                     getState rGroup
+              _ <- expect :: Process (HAEvent Int)
               return ()
         , testSuccess "eq-one-event" ==> \_ _ rGroup -> do
               eid <- triggerEvent 1
@@ -164,14 +163,15 @@ tests (AbstractTransport transport breakConnection _) = do
               (_, [PersistMessage eid' _]) <- retry requestTimeout $
                                                      getState rGroup
               assert (eid == eid')
-        , testSuccess "eq-should-lookup-for-rc" $ setup $ \_ _ rGroup -> do
+        , testSuccess "eq-should-lookup-for-rc" $ setup $ \eq _ rGroup -> do
               self <- getSelfPid
-              retry requestTimeout $
-                updateStateWith rGroup $ $(mkClosure 'eqSetRC) $ Just self
-              eid <- triggerEvent 1
+              eid <- triggerEvent (1::Int)
               (_, [PersistMessage eid' _]) <- retry requestTimeout $
                                                      getState rGroup
               assert (eid == eid')
+              send eq self
+              _ <- expect :: Process (HAEvent Int)
+              return ()
         , testSuccess "eq-should-record-that-rc-died" $ setup $ \eq _ _ -> do
               subscribe eq (Sub :: Sub RCDied)
               rc <- spawnLocal $ return ()
@@ -253,22 +253,22 @@ tests (AbstractTransport transport breakConnection _) = do
               True <- expect
               Published RCDied _ <- expect
               return ()
-        , testSuccess "send-until-acknowledged" ==> \eq na rGroup -> do
+        , testSuccess "send-until-acknowledged" ==> \eq _na _rGroup -> do
             _ <- monitor eq
             unlink eq
             kill eq "for testing"
             ProcessMonitorNotification _ _ _ <- expect
             pid <- promulgate (1::Int)
-            monitor pid
+            _ <- monitor pid
             self <- getSelfPid
-            eq <- spawnLocal $ do
+            eq1 <- spawnLocal $ do
                     -- ignore first message, promulgate should retry
                     _ <- expect :: Process (ProcessId, PersistMessage)
-                    (pid, PersistMessage{}) <- expect
+                    (pidx, PersistMessage{}) <- expect
                     n <- getSelfNode
-                    send pid (n, n)
+                    send pidx (n, n)
                     send self ()
-            register eventQueueLabel eq
+            register eventQueueLabel eq1
             () <- expect
             ProcessMonitorNotification _ _ _ <- expect
             return ()
