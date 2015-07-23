@@ -12,9 +12,6 @@ import Control.Distributed.Process
 import qualified Network.Transport.RPC as RPC
 #else
 import qualified Network.Transport.TCP as TCP
-import qualified HA.Network.Socket as TCP
-
-import Data.List (break)
 #endif
 
 conjureRemoteNodeId :: String -> NodeId

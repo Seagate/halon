@@ -23,14 +23,11 @@ import qualified Network.Transport.RPC as RPC
 import HA.Network.Transport (writeTransportGlobalIVar)
 #else
 import qualified Network.Transport.TCP as TCP
-import qualified HA.Network.Socket as TCP
 #endif
 
 import Control.Applicative ((<$>))
 import Control.Distributed.Process
 import Control.Distributed.Process.Node (initRemoteTable, newLocalNode)
-
-import Data.List (break)
 
 buildType :: String
 #ifdef USE_RPC

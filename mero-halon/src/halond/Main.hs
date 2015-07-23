@@ -16,7 +16,6 @@ import qualified Network.Transport.RPC as RPC
 import HA.Network.Transport (writeTransportGlobalIVar)
 #else
 import qualified Network.Transport.TCP as TCP
-import qualified HA.Network.Socket as TCP
 #endif
 import HA.Process (tryRunProcess)
 import HA.RecoveryCoordinator.Definitions
