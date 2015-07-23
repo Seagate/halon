@@ -141,9 +141,12 @@ serializableSnapshotServer serverLbl snapshotDirectory _s0 = do
         , match $ \(pid, i) -> do
             (md, ms) <- liftIO $ withPersistentStore here $ \_ pm ->
               liftA2 (,) (P.lookup pm 0) (P.lookup pm 1)
-            usend pid $ case liftA2 (,) (fmap decode md) (fmap decode ms) of
-              Just (d, s) | decreeNumber d == i -> Just (d, s :: s)
-              _                                 -> Nothing
+            rsp <- liftIO $ case liftA2 (,) (fmap decode md) (fmap decode ms) of
+              Just (d, s) | decreeNumber d == i -> return $ Just (d, s :: s)
+                          | otherwise -> do putStrLn $ "serializableSnapshotServer.restore: " ++ show (d, i)
+                                            return Nothing
+              _                                 -> return Nothing
+            usend pid rsp
 
         , match $ \(pid, (d :: DecreeId, s :: s)) -> do
             liftIO $ withPersistentStore here $ \ps pm -> do

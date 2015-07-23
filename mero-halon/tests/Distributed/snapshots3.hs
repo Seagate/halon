@@ -34,6 +34,7 @@ import Network.Transport.TCP (createTransport, defaultTCPParameters)
 
 import System.Environment (getExecutablePath)
 import System.FilePath ((</>), takeDirectory)
+import System.IO
 import System.Timeout (timeout)
 import Test.Framework (assert)
 
@@ -43,6 +44,8 @@ getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
 
 main :: IO ()
 main = (>>= maybe (error "test timed out") return) $ timeout (60 * 1000000) $ do
+    hSetBuffering stdout LineBuffering
+    hSetBuffering stderr LineBuffering
     cp <- getProvider
     buildPath <- getBuildPath
     ip <- getHostAddress
