@@ -27,7 +27,7 @@ tests transport = do
             , testGroup "process"
               [ HA.Multimap.ProcessTests.tests (getTransport transport) ]
             ]
-        , testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests True (getTransport transport)
+        , testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests True transport
         , testGroup "RG" <$> HA.ResourceGraph.Tests.tests (getTransport transport)
         , testGroup "NA" <$> HA.NodeAgent.Tests.tests (getTransport transport)
         ]

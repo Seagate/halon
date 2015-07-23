@@ -7,6 +7,7 @@ module Test.Transport
   , mkTCPTransport
   , mkInMemoryTransport
   , mkRPCTransport
+  , mkControlledTransport
   ) where
 
 import Network.Transport
@@ -14,6 +15,7 @@ import Control.Concurrent (threadDelay)
 import qualified Network.Socket as N (close)
 import qualified Network.Transport.TCP as TCP
 import qualified Network.Transport.InMemory as InMemory
+import qualified Network.Transport.Controlled as Controlled
 #ifdef USE_RPC
 import Test.Framework (testSuccess)
 import Test.Tasty (testGroup)
@@ -34,6 +36,10 @@ data AbstractTransport = AbstractTransport
   , breakConnection :: EndPointAddress -> EndPointAddress -> IO ()
   , closeAbstractTransport :: IO ()
   }
+
+mkControlledTransport :: AbstractTransport -> IO (Transport,Controlled.Controlled)
+mkControlledTransport transport = Controlled.createTransport (getTransport transport)
+                                                             (breakConnection transport)
 
 mkTCPTransport :: IO AbstractTransport
 mkTCPTransport = do

@@ -25,6 +25,7 @@ PACKAGES := distributed-commands \
            distributed-process-trans \
            distributed-process-scheduler \
            distributed-process-test \
+           network-transport-controlled \
            consensus \
            consensus-paxos \
            replicated-log \
