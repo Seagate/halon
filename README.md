@@ -119,3 +119,13 @@ Caveats:
     continuing with your builds, and **always** do a `make clean
     build` without any further make arguments to conclude whether your
     change passes all of the test suite.
+
+# Running
+There is an example script in `mero-halon/scripts/simplecluster.sh` which runs
+a small two node cluster on the localhost. This script relies on `HALON_ROOT`
+being set to a directory containing the `halond` and `halonctl` binaries.
+
+By default, `halonctl` attempts to listen on the local hostname. This will fail
+if there is not an entry for the FQDN in `/etc/hosts`. In this case, you can
+either add such an entry or use the `-l` option to specify an alternate listen
+address.

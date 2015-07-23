@@ -25,5 +25,5 @@ conjureRemoteNodeId addr =
 #else
     NodeId $ TCP.encodeEndPointAddress host port 0
   where
-    (host, port) = tail <$> (break (== ':') addr)
+    (host, _:port) = break (== ':') addr
 #endif

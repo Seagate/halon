@@ -67,7 +67,7 @@ main = do
     writeTransportGlobalIVar rpcTransport
     let transport = RPC.networkTransport rpcTransport
 #else
-    let (hostname, port) = tail <$> (break (== ':') $ localEndpoint config)
+    let (hostname, _:port) = break (== ':') $ localEndpoint config
     transport <- either (error . show) id <$>
                  TCP.createTransport hostname port TCP.defaultTCPParameters
 #endif

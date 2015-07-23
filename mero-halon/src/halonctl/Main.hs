@@ -58,7 +58,7 @@ run (Options { .. }) = do
   writeTransportGlobalIVar rpcTransport
   let transport = RPC.networkTransport rpcTransport
 #else
-  let (hostname, port) = tail <$> (break (== ':') optOurAddress)
+  let (hostname, _:port) = break (== ':') optOurAddress
   transport <- either (error . show) id <$>
                TCP.createTransport hostname port TCP.defaultTCPParameters
 #endif
