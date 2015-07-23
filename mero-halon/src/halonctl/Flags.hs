@@ -15,8 +15,11 @@ import Options.Applicative
 import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
 
-import System.Environment (getProgName)
 import qualified Handler.Service as Service
+
+import System.Environment (getProgName)
+import System.IO.Unsafe (unsafePerformIO)
+import System.Process (readProcess)
 
 data Options = Options
     { optTheirAddress :: [String] -- ^ Addresses of halond nodes to control.
@@ -45,6 +48,7 @@ getOptions = do
         <*> (O.strOption $ O.metavar "ADDRESS" <>
                O.long "listen" <>
                O.short 'l' <>
+               O.value listenAddr <>
                O.help "Address halonctl binds to.")
         <*> (O.subparser $
                  (O.command "bootstrap" $ Bootstrap <$>
@@ -52,3 +56,5 @@ getOptions = do
               <> (O.command "service" $ Service <$>
                     O.withDesc Service.parseService "Control services.")
             )
+    hostname = unsafePerformIO $ readProcess "hostname" [] ""
+    listenAddr = hostname ++ ":9001"

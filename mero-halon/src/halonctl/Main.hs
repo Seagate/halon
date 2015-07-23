@@ -30,6 +30,8 @@ import Control.Applicative ((<$>))
 import Control.Distributed.Process
 import Control.Distributed.Process.Node (initRemoteTable, newLocalNode)
 
+import Data.List (break)
+
 buildType :: String
 #ifdef USE_RPC
 buildType = "RPC"
@@ -56,9 +58,7 @@ run (Options { .. }) = do
   writeTransportGlobalIVar rpcTransport
   let transport = RPC.networkTransport rpcTransport
 #else
-  let sa = TCP.decodeSocketAddress optOurAddress
-      hostname = TCP.socketAddressHostName sa
-      port = TCP.socketAddressServiceName sa
+  let (hostname, port) = tail <$> (break (== ':') optOurAddress)
   transport <- either (error . show) id <$>
                TCP.createTransport hostname port TCP.defaultTCPParameters
 #endif

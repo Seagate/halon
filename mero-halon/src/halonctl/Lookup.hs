@@ -13,6 +13,8 @@ import qualified Network.Transport.RPC as RPC
 #else
 import qualified Network.Transport.TCP as TCP
 import qualified HA.Network.Socket as TCP
+
+import Data.List (break)
 #endif
 
 conjureRemoteNodeId :: String -> NodeId
@@ -23,7 +25,5 @@ conjureRemoteNodeId addr =
 #else
     NodeId $ TCP.encodeEndPointAddress host port 0
   where
-    sa = TCP.decodeSocketAddress addr
-    host = TCP.socketAddressHostName sa
-    port = TCP.socketAddressServiceName sa
+    (host, port) = tail <$> (break (== ':') addr)
 #endif
