@@ -282,7 +282,7 @@ schema = [schemaQQ|
                 },
                 "niceTime": {
                   "type" : "integer"
-                  },
+                },
                 "softirqTime": {
                   "type" : "integer"
                 },
@@ -367,6 +367,21 @@ schema = [schemaQQ|
                       }
                     }
                   }
+                }
+              }
+            },
+
+            "raid_data" : {
+              "description" : "RAID Data",
+              "type" : "object",
+              "properties" : {
+                "hostId" : {
+                  "description" : "Hostname of system",
+                  "type" : "string"
+                },
+                "mdstat" : {
+                  "description" : "/proc/mdstat containing state information about RAID",
+                  "type" : "string"
                 }
               }
             }

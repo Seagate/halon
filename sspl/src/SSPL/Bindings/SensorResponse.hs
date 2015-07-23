@@ -741,6 +741,26 @@ instance Data.Aeson.ToJSON SensorResponseMessageSensor_response_typeCpu_data
                                                                                                                                                                            (,) (Data.Text.pack "iowaitTime ") Data.Functor.<$> GHC.Base.fmap (Data.Aeson.Types.Number GHC.Base.. GHC.Num.fromInteger) a11,
                                                                                                                                                                            (,) (Data.Text.pack "coreData") Data.Functor.<$> GHC.Base.fmap (Data.Aeson.Types.Array GHC.Base.. (Data.Vector.fromList GHC.Base.. GHC.Base.map Data.Aeson.toJSON)) a12])
 
+data SensorResponseMessageSensor_response_typeRaid_data = SensorResponseMessageSensor_response_typeRaid_data
+  { sensorResponseMessageSensor_response_typeRaid_dataHostId :: GHC.Base.Maybe Data.Text.Text -- ^ Hostname of system
+  , sensorResponseMessageSensor_response_typeRaid_dataMdstat :: GHC.Base.Maybe Data.Text.Text -- ^ /proc/mdstat containing state information about RAID
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+
+instance Binary SensorResponseMessageSensor_response_typeRaid_data
+
+instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeRaid_data
+    where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeRaid_data GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
+                                                                                                                                                                             Data.Aeson.Types.String str -> do GHC.Base.return str
+                                                                                                                                                                             _ -> GHC.Base.fail "not a string") (Data.HashMap.Lazy.lookup (Data.Text.pack "hostId") obj)) GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
+                                                                                                                                                                                                                                                                                                                              Data.Aeson.Types.String str -> do GHC.Base.return str
+                                                                                                                                                                                                                                                                                                                              _ -> GHC.Base.fail "not a string") (Data.HashMap.Lazy.lookup (Data.Text.pack "mdstat") obj)
+          parseJSON _ = GHC.Base.fail "not an object"
+
+instance Data.Aeson.ToJSON SensorResponseMessageSensor_response_typeRaid_data
+    where toJSON (SensorResponseMessageSensor_response_typeRaid_data a1
+                                                                     a2) = Data.Aeson.Types.Object GHC.Base.$ (Data.HashMap.Lazy.fromList GHC.Base.$ Data.Maybe.catMaybes [(,) (Data.Text.pack "hostId") Data.Functor.<$> GHC.Base.fmap Data.Aeson.Types.String a1,
+                                                                                                                                                                           (,) (Data.Text.pack "mdstat") Data.Functor.<$> GHC.Base.fmap Data.Aeson.Types.String a2])
+
 data SensorResponseMessageSensor_response_type = SensorResponseMessageSensor_response_type
   { sensorResponseMessageSensor_response_typeIf_data :: GHC.Base.Maybe SensorResponseMessageSensor_response_typeIf_data -- ^ Network Interface Data
   , sensorResponseMessageSensor_response_typeHost_update :: GHC.Base.Maybe SensorResponseMessageSensor_response_typeHost_update
@@ -748,12 +768,13 @@ data SensorResponseMessageSensor_response_type = SensorResponseMessageSensor_res
   , sensorResponseMessageSensor_response_typeService_watchdog :: GHC.Base.Maybe SensorResponseMessageSensor_response_typeService_watchdog
   , sensorResponseMessageSensor_response_typeLocal_mount_data :: GHC.Base.Maybe SensorResponseMessageSensor_response_typeLocal_mount_data -- ^ Local mount data
   , sensorResponseMessageSensor_response_typeCpu_data :: GHC.Base.Maybe SensorResponseMessageSensor_response_typeCpu_data -- ^ CPU Data
+  , sensorResponseMessageSensor_response_typeRaid_data :: GHC.Base.Maybe SensorResponseMessageSensor_response_typeRaid_data -- ^ RAID Data
   } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
 
 instance Binary SensorResponseMessageSensor_response_type
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_type
-    where parseJSON (Data.Aeson.Types.Object obj) = do (((((GHC.Base.pure SensorResponseMessageSensor_response_type GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "if_data") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "host_update") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "disk_status_drivemanager") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "service_watchdog") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "local_mount_data") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "cpu_data") obj)
+    where parseJSON (Data.Aeson.Types.Object obj) = do ((((((GHC.Base.pure SensorResponseMessageSensor_response_type GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "if_data") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "host_update") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "disk_status_drivemanager") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "service_watchdog") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "local_mount_data") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "cpu_data") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "raid_data") obj)
           parseJSON _ = GHC.Base.fail "not an object"
 
 instance Data.Aeson.ToJSON SensorResponseMessageSensor_response_type
@@ -762,12 +783,14 @@ instance Data.Aeson.ToJSON SensorResponseMessageSensor_response_type
                                                             a3
                                                             a4
                                                             a5
-                                                            a6) = Data.Aeson.Types.Object GHC.Base.$ (Data.HashMap.Lazy.fromList GHC.Base.$ Data.Maybe.catMaybes [(,) (Data.Text.pack "if_data") Data.Functor.<$> GHC.Base.fmap Data.Aeson.toJSON a1,
+                                                            a6
+                                                            a7) = Data.Aeson.Types.Object GHC.Base.$ (Data.HashMap.Lazy.fromList GHC.Base.$ Data.Maybe.catMaybes [(,) (Data.Text.pack "if_data") Data.Functor.<$> GHC.Base.fmap Data.Aeson.toJSON a1,
                                                                                                                                                                   (,) (Data.Text.pack "host_update") Data.Functor.<$> GHC.Base.fmap Data.Aeson.toJSON a2,
                                                                                                                                                                   (,) (Data.Text.pack "disk_status_drivemanager") Data.Functor.<$> GHC.Base.fmap Data.Aeson.toJSON a3,
                                                                                                                                                                   (,) (Data.Text.pack "service_watchdog") Data.Functor.<$> GHC.Base.fmap Data.Aeson.toJSON a4,
                                                                                                                                                                   (,) (Data.Text.pack "local_mount_data") Data.Functor.<$> GHC.Base.fmap Data.Aeson.toJSON a5,
-                                                                                                                                                                  (,) (Data.Text.pack "cpu_data") Data.Functor.<$> GHC.Base.fmap Data.Aeson.toJSON a6])
+                                                                                                                                                                  (,) (Data.Text.pack "cpu_data") Data.Functor.<$> GHC.Base.fmap Data.Aeson.toJSON a6,
+                                                                                                                                                                  (,) (Data.Text.pack "raid_data") Data.Functor.<$> GHC.Base.fmap Data.Aeson.toJSON a7])
 
 data SensorResponseMessage = SensorResponseMessage
   { sensorResponseMessageSspl_ll_msg_header :: GHC.Base.Maybe Data.Aeson.Types.Value
