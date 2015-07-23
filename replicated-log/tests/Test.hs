@@ -87,7 +87,7 @@ filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
 
 snapshotThreshold :: Int
-snapshotThreshold = 5
+snapshotThreshold = 10
 
 testLogId :: Log.LogId
 testLogId = Log.toLogId "test-log"
@@ -104,7 +104,7 @@ testConfig = Log.Config
                           acceptorStore
                  )
     , persistDirectory  = testPersistDirectory
-    , leaseTimeout      = 1000000
+    , leaseTimeout      = 2000000
     , leaseRenewTimeout = 300000
     , driftSafetyFactor = 11 % 10
     , snapshotPolicy    = return . (>= snapshotThreshold)
@@ -415,6 +415,12 @@ tests argv = do
                 Log.killReplica h (localNodeId node2)
 
           , testSuccess "log-size-remains-bounded" . withTmpDirectory $
+              -- TODO: May possibly fail if some replicas are slow.
+              -- The problem is that snapshots could be updated so fast that
+              -- a delayed replica can never grab it on time.
+              --
+              -- This failure is sensitive to the duration of the lease period
+              -- and the snapshot threashold used for replicas.
               setupTimeout 60000000 1 $ \h port -> do
                 self <- getSelfPid
                 let logSizePfx = "Log size when trimming: "
