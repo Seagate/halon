@@ -97,7 +97,7 @@ main = (>>= maybe (error "test timed out") return) $ timeout (60 * 1000000) $ do
       expectLog [nid1] (isInfixOf $ "New node contacted: " ++ show nid0)
 
       say "Starting noisy service ..."
-      let noisy_messages = 30 :: Int
+      let noisy_messages = snapshotThreshold * 3 :: Int
       systemThere [m0] ("./halonctl"
                      ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m0 ++ ":9000"
@@ -106,12 +106,12 @@ main = (>>= maybe (error "test timed out") return) $ timeout (60 * 1000000) $ do
                        )
 
       expectLog [nid0] (isInfixOf "Starting service noisy")
-      logSizes <- replicateM 5 $ expectLogInt [nid1] "Log size when trimming: "
+      logSizes <- replicateM 3 $ expectLogInt [nid1] "Log size when trimming: "
       noisyCounts <- replicateM (noisy_messages `div` 2) $
           expectLogInt [nid1] "Recovery Coordinator: Noisy ping count: "
 
       say "Checking that log size is bounded ..."
-      assert $ all (<= 21) logSizes
+      assert $ all (<= 2 * snapshotThreshold + 1) logSizes
 
       say "Restarting the tracking station ..."
       systemThere [m1] "pkill halond; true"
@@ -135,7 +135,7 @@ main = (>>= maybe (error "test timed out") return) $ timeout (60 * 1000000) $ do
       noisyCount <- expectLogInt [nid1'] "Recovery Coordinator: Noisy ping count: "
 
       say "Checking that log size is bounded ..."
-      assert $ logSize <= 21
+      assert $ logSize <= snapshotThreshold * 2 + 1
       say "Checking that ping counts were preserved ..."
       assert $ noisyCount >= maximum noisyCounts
 
