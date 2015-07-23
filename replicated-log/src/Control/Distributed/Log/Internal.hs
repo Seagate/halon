@@ -632,7 +632,9 @@ replica Dict
     restoreSnapshot :: Process s -> Process (Maybe s)
     restoreSnapshot restore =
        callLocal (try $ timeout snapshotRestoreTimeout restore) >>= \case
-         Left (_::SomeException) -> return Nothing
+         Left (e :: SomeException) -> do
+           logTrace $ "restoreSnapshot: failed with " ++ show e
+           return Nothing
          Right ms -> return ms
 
     sendBatch :: ProcessId
@@ -644,18 +646,22 @@ replica Dict
             map (\(a, e, r) -> BatcherMsg a e r) rs
           (rcfgs, other) =
             partition (isReconf . requestValue . batcherMsgRequest) other0
+      logTrace "batcher: reconf"
       -- Submit the last configuration request in the batch.
       unless (null rcfgs) $ do
         usend ρ [last rcfgs]
         expect
       -- Submit the non-nullipotent requests.
+      logTrace "batcher: non-nullipotent"
       unless (null other) $ do
         usend ρ other
         expect
       -- Send nullipotent requests after all other batched requests.
+      logTrace "batcher: nullipotent"
       unless (null nps) $ do
         usend ρ nps
         expect
+      logTrace "batcher: done"
 
     adjustForDrift :: Int -> Int
     adjustForDrift t = fromIntegral $
@@ -994,9 +1000,12 @@ replica Dict
             , match $ \request@(μ, e, _ :: Request a) -> do
                   mLeader <- liftIO getLeader
                   if epoch <= e && mLeader == Just here then do
+                    logTrace "replica: sending request to batcher"
                     usend bpid request
-                  else when (e < epoch || isJust mLeader) $
-                         usend μ (epoch, ρs)
+                  else do
+                    logTrace "replica: rejected client request"
+                    when (e < epoch || isJust mLeader) $
+                      usend μ (epoch, ρs)
                   go st
 
               -- Message from the batcher
@@ -1536,7 +1545,8 @@ ambassador _ _ [] = do
     say "ambassador: Set of replicas must be non-empty."
     die "ambassador: Set of replicas must be non-empty."
 ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
-    monitorReplica ρ0 >>= go 0 (Just ρ0) others
+    (monitorReplica ρ0 >>= go 0 (Just ρ0) others)
+      `finally` logTrace "ambassador: terminated"
   where
     go :: LegislatureId    -- ^ The epoch of the replicas (use 0 while unknown)
        -> Maybe NodeId  -- ^ The leader replica if known
@@ -1619,6 +1629,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
       , match $ \a -> do
           forM_ (requestSender a) $ flip usend ()
           self <- getSelfPid
+          logTrace $ "ambassador: sending request to " ++ show mLeader
           Foldable.forM_ mLeader $ flip (sendReplica logId)
                                         (self, epoch, a :: Request a)
           go epoch mLeader ρs ref
