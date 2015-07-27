@@ -16,7 +16,6 @@ import qualified Network.Transport.RPC as RPC
 import HA.Network.Transport (writeTransportGlobalIVar)
 #else
 import qualified Network.Transport.TCP as TCP
-import qualified HA.Network.Socket as TCP
 #endif
 import HA.Process (tryRunProcess)
 import HA.RecoveryCoordinator.Definitions
@@ -67,9 +66,7 @@ main = do
     writeTransportGlobalIVar rpcTransport
     let transport = RPC.networkTransport rpcTransport
 #else
-    let sa = TCP.decodeSocketAddress $ localEndpoint config
-        hostname = TCP.socketAddressHostName sa
-        port = TCP.socketAddressServiceName sa
+    let (hostname, _:port) = break (== ':') $ localEndpoint config
     transport <- either (error . show) id <$>
                  TCP.createTransport hostname port TCP.defaultTCPParameters
 #endif

@@ -23,7 +23,6 @@ import qualified Network.Transport.RPC as RPC
 import HA.Network.Transport (writeTransportGlobalIVar)
 #else
 import qualified Network.Transport.TCP as TCP
-import qualified HA.Network.Socket as TCP
 #endif
 
 import Control.Applicative ((<$>))
@@ -56,9 +55,7 @@ run (Options { .. }) = do
   writeTransportGlobalIVar rpcTransport
   let transport = RPC.networkTransport rpcTransport
 #else
-  let sa = TCP.decodeSocketAddress optOurAddress
-      hostname = TCP.socketAddressHostName sa
-      port = TCP.socketAddressServiceName sa
+  let (hostname, _:port) = break (== ':') optOurAddress
   transport <- either (error . show) id <$>
                TCP.createTransport hostname port TCP.defaultTCPParameters
 #endif
