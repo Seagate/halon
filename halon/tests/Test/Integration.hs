@@ -4,18 +4,18 @@
 
 module Test.Integration (tests) where
 
-import           Prelude hiding ((<$>))
 import qualified HA.EventQueue.Tests ( tests )
 import qualified HA.Multimap.ProcessTests ( tests )
 import qualified HA.Multimap.Tests ( tests )
 import qualified HA.NodeAgent.Tests (tests)
 import qualified HA.RecoverySupervisor.Tests (tests)
 import qualified HA.ResourceGraph.Tests (tests)
+import qualified HA.Autoboot.Tests (tests)
 
 import Test.Tasty (TestTree, testGroup)
 
-import Control.Applicative ((<$>))
 import Test.Transport
+import Prelude
 
 tests :: AbstractTransport -> IO TestTree
 tests transport = do
@@ -32,4 +32,5 @@ tests transport = do
         -- TODO: fix liveness of paxos.
 --    , HA.RecoverySupervisor.Tests.tests transport False
       , testGroup "NA" <$> HA.NodeAgent.Tests.tests (getTransport transport)
+      , testGroup "AB" <$> HA.Autoboot.Tests.tests transport
       ]
