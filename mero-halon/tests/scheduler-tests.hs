@@ -6,6 +6,7 @@ module Main where
 
 import qualified HA.Autoboot.Tests
 import qualified HA.RecoveryCoordinator.Mero.Tests
+import qualified HA.Test.Disconnect
 
 import Test.Tasty (TestTree, defaultMainWithIngredients, testGroup)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
@@ -44,6 +45,10 @@ ut transport = return $
           HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
       , testGroup "Autoboot" $
           HA.Autoboot.Tests.tests transport
+        -- TODO: fails very often
+      , testCase "RCToleratesDisconnections [disabled]" $ const (return ()) $
+          HA.Test.Disconnect.testDisconnect
+            transport (error "breakConnection not supplied in test")
       ]
 
 runTests :: (Transport -> IO TestTree) -> IO ()

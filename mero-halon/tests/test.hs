@@ -11,6 +11,7 @@ import qualified HA.Autoboot.Tests
 #ifdef USE_MERO
 import qualified HA.Castor.Tests
 #endif
+import qualified HA.Test.Disconnect
 
 import Test.Tasty (TestTree, defaultMainWithIngredients)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
@@ -18,7 +19,7 @@ import Test.Tasty.Ingredients.FileReporter (fileTestReporter)
 
 import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
 
-import Network.Transport (Transport)
+import Network.Transport (Transport, EndPointAddress)
 
 import Test.Tasty (testGroup)
 import Test.Tasty.HUnit (testCase)
@@ -43,8 +44,8 @@ import Prelude
 import System.Environment
 
 
-ut :: Transport -> IO TestTree
-ut transport = return $
+ut :: Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
+ut transport breakConnection = return $
     testGroup "ut"
       [ testCase "RCServiceRestarting" $
           HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport
@@ -73,9 +74,17 @@ ut transport = return $
       , testGroup "Castor" $
         HA.Castor.Tests.tests transport
 #endif
+#if !defined(USE_RPC) && !defined(USE_MOCK_REPLICATOR)
+      , testCase "RCToleratesDisconnections [disabled]" $ const (return ()) $
+          HA.Test.Disconnect.testDisconnect transport breakConnection
+#else
+      , testCase "RCToleratesDisconnections [disabled by compilation flags]" $
+          const (return ()) $
+            HA.Test.Disconnect.testDisconnect transport breakConnection
+#endif
       ]
 
-runTests :: (Transport -> IO TestTree) -> IO ()
+runTests :: (Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree) -> IO ()
 runTests tests = do
     -- TODO: Remove threadDelay after RPC transport closes cleanly
     hSetBuffering stdout LineBuffering
@@ -94,16 +103,20 @@ runTests tests = do
                        (RPC.rpcAddress addr0) RPC.defaultRPCParameters
     writeTransportGlobalIVar rpcTransport
     let transport = RPC.networkTransport rpcTransport
+        connectionBreak = undefined
 #else
     let TCP.SockAddrInet port hostaddr = TCP.decodeSocketAddress addr0
     hostname <- TCP.inet_ntoa hostaddr
-    transport <- either (error . show) id <$>
-                 TCP.createTransport hostname (show port)
+    (transport, internals) <- either (error . show) id <$>
+                 TCP.createTransportExposeInternals hostname (show port)
                    TCP.defaultTCPParameters
                      { TCP.tcpNoDelay = True
                      , TCP.tcpUserTimeout = Just 2000
                      , TCP.transportConnectTimeout = Just 2000000
                      }
+    let connectionBreak here there = do
+          TCP.socketBetween internals here there >>= TCP.close
+          TCP.socketBetween internals there here >>= TCP.close
 #endif
     withArgs (takeWhile ("--" /=) argv) $
       defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
