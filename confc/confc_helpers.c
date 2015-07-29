@@ -71,6 +71,8 @@ void confc_finalize() {
 	ast_thread_fini();
 }
 
+const struct m0_fid *CONF_ROOT_FID = &M0_CONF_ROOT_FID;
+
 struct m0_conf_dir* confc_cast_dir(struct m0_conf_obj* obj) {
     return M0_CONF_CAST(obj, m0_conf_dir);
 }
