@@ -24,16 +24,19 @@ import qualified Control.Exception as Exception
 import Data.Binary
 import Data.Typeable
 import Data.Foldable (forM_)
+import Data.List
 
 import GHC.Generics
 import System.IO.Unsafe (unsafePerformIO)
-import Network.Transport
+import Network.Transport (Transport)
+import qualified Data.Set as Set
 
 import HA.Network.RemoteTables (haRemoteTable)
 import HA.Process (tryRunProcess)
 import HA.Startup hiding (__remoteTable)
 import Test.Transport
 import Test.Framework
+import Test.Tasty.HUnit
 
 
 dummyRCStarted :: MVar ()
@@ -62,7 +65,12 @@ remotable [ 'ignitionArguments, 'dummyRC ]
 tests :: AbstractTransport -> IO [TestTree]
 tests transport =
   return [ testSuccess "autoboot-simple" $ mkAutobootTest (getTransport transport)
+         , testCaseSteps  "ignition"     $ testIgnition   (getTransport transport)
          ]
+
+rcClosure :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
+rcClosure = $(mkStaticClosure 'dummyRC) `closureCompose`
+                  $(mkStaticClosure 'ignitionArguments)
 
 -- | Test that cluster could be automatically booted after a failure
 -- without any manual interaction.
@@ -123,10 +131,68 @@ mkAutobootTest transport = withTmpDirectory $ do
 
   where
     n = 5
-    rcClosure = $(mkStaticClosure 'dummyRC) `closureCompose`
-                  $(mkStaticClosure 'ignitionArguments)
-
     autobootCluster nids = forM_ nids $ \lnid ->
       Exception.catch (tryRunProcess lnid $ autoboot rcClosure)
                       (\(_ :: SomeException) -> return ())
 
+
+-- | Test that ignition call will retrn supposed result.
+testIgnition :: Transport
+             -> (String -> IO ())
+             -> IO ()
+testIgnition transport step = withTmpDirectory $ do
+    -- 0. Run autoboot on 5 nodes
+    nids <- replicateM 5 $ newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
+    let (nids1,nids2) = splitAt 3 nids
+    let mkArgs b ns  = ( b :: Bool
+                       , map localNodeId ns
+                       , 1000 :: Int
+                       , 1000000 :: Int
+                       , $(mkClosure 'dummyRC) $ IgnitionArguments (map localNodeId ns)
+                       , 8*1000000 :: Int
+                       )
+        args = mkArgs False nids1
+    node <- newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
+    step "autobooting cluster"
+    forM_ nids1 $ \lnid ->
+      Exception.catch (tryRunProcess lnid $ autoboot rcClosure)
+                      (\(_ :: SomeException) -> return ())
+    runProcess node $ do
+
+      liftIO $ step "call initial ignition"
+      Nothing <- call $(functionTDict 'ignition) (localNodeId $ head nids1) $
+                      $(mkClosure 'ignition) args
+      liftIO $ takeMVar dummyRCStarted
+
+      liftIO $ do
+        step "kill nodes in the cluster that we will remove TS from"
+        forM_ (tail nids1) $ closeLocalNode                                              -- XXX: locks
+
+      liftIO $ step "call ignition while changing TS nodes"
+      Just (added, trackers, members, newNodes)
+              <- call $(functionTDict 'ignition) (localNodeId $ head nids1) $
+                        $(mkClosure 'ignition) (mkArgs True (head nids1: nids2))
+      liftIO $ do
+        assertBool  "set of node changed" added
+        assertEqual "nodes from new set added"                                           -- XXX: unexpected result
+                    (Set.fromList $ map localNodeId nids2)
+                    (Set.fromList newNodes)
+        assertEqual "only one node was in members"                                       -- XXX: unexpected result
+                    (Set.singleton (localNodeId $ head nids1))
+                    (Set.fromList members)
+        assertEqual "trackers should be equal to the new set of trackers"
+                    (Set.fromList (map localNodeId $ head nids1:nids2))
+                    (Set.fromList trackers)
+      self <- getSelfPid
+      liftIO $ step "check replica Info Status"
+      liftIO $ runProcess (head nids1) $
+        registerInterceptor $ \string -> case last $ lines string of
+          s | t `isPrefixOf` s -> send self (drop (length t) s)
+            | otherwise        -> return ()
+      actual <- expect
+      liftIO $ unless (any (==actual) [show x | x <- permutations trackers]) $          -- XXX: unexpected result
+        assertFailure $ "replicas should be contain all of the " ++ show trackers ++
+                        ", but got " ++ actual
+      return ()
+  where
+    t = "\treplicas:           "
