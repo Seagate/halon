@@ -224,9 +224,6 @@ typedef struct rpc_listen_callbacks {
 
 } rpc_listen_callbacks_t;
 
-/** A receiving endpoint. */
-typedef struct rpc_receive_endpoint rpc_receive_endpoint_t;
-
 /** Statistics of various time using for connection and message deliver*/
 typedef enum {
 	RPC_STAT_CONN,
@@ -246,44 +243,16 @@ m0_time_t get_max_rpc_time(rpc_stat_type_t type);
 m0_time_t get_avg_rpc_time(rpc_stat_type_t type);
 uint32_t get_tot_rpc_num(rpc_stat_type_t type);
 
-/** Starts listening for incoming connections and packets.
+/** Starts listening for incoming connections and fops.
  *
- * \param persistence_prefix a prefix to use in filenames created by the RPC service.
- *                           Different services in the same or different process should use
- *                           different prefixes or behavior would be undefined.
  * \param address the address on which the endpoint accepts connections.
  * \param cbs the callbacks this endpoint will use to process connection requests and messages.
- * \param[out] re the created receive endpoint if the call succeeds.
+ * \param[out] e the created endpoint if the call succeeds.
  *
  * \return 0 on success, a non-zero value otherwise
  *
  * */
-int rpc_listen(char* persistence_prefix,char* address,rpc_listen_callbacks_t* cbs,rpc_receive_endpoint_t** re);
-
-
-/** Stops listening for incoming connection and packets.
- * */
-void rpc_stop_listening(rpc_receive_endpoint_t* re);
-
-
-/** Like rpc_connect but creates an RPC connection employing an
- * rpc_receive_endpoint instead.
- *
- * \param e endpoint to use for the connection
- * \param remote_address address of the target endpoint
- * \param timeout_s number of seconds to wait for the connection to be
- *                established.
- * \param[out] c on success holds the created connection
- *
- * \return 0 on success, a non-zero value otherwise
- *
- */
-int rpc_connect_re(rpc_receive_endpoint_t* e,char* remote_address,
-		   int timeout_s,rpc_connection_t** c);
-
-/// Yields the rpc_machine used by the receive endpoint.
-struct m0_rpc_machine* rpc_get_rpc_machine_re(rpc_receive_endpoint_t* e);
-
+int rpc_listen(char* address,rpc_listen_callbacks_t* cbs,rpc_endpoint_t** e);
 
 // internal calls intended for the local request handler
 

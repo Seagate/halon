@@ -11,8 +11,7 @@
 #include "fop/fom_generic.h"
 
 typedef enum {
-      RPC_SENDER_TYPE_CONNECT
-    , RPC_SENDER_TYPE_DISCONNECT
+      RPC_SENDER_TYPE_DISCONNECT
     , RPC_SENDER_TYPE_SEND_BLOCKING
     , RPC_SENDER_TYPE_SEND
 } rpclite_sender_fom_type;
@@ -43,12 +42,6 @@ struct m0_fom_rpclite_sender {
     struct fom_state* fom_st;
 
     union {
-        struct {
-            struct m0_rpc_machine* rpc_machine;
-            char* remote_address;
-            int timeout_s;
-            rpc_connection_t** c;
-        } connect;
         struct {
             rpc_connection_t* c;
             int timeout_s;
