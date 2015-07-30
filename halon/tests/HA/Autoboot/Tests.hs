@@ -136,6 +136,7 @@ mkAutobootTest transport = withTmpDirectory $ do
                       (\(_ :: SomeException) -> return ())
 
 
+-- | Test that ignition call will retrn supposed result.
 testIgnition :: Transport
              -> (String -> IO ())
              -> IO ()
@@ -153,7 +154,7 @@ testIgnition transport step = withTmpDirectory $ do
         args = mkArgs False nids1
     node <- newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
     step "autobooting cluster"
-    forM_ nids $ \lnid ->
+    forM_ nids1 $ \lnid ->
       Exception.catch (tryRunProcess lnid $ autoboot rcClosure)
                       (\(_ :: SomeException) -> return ())
     runProcess node $ do
@@ -163,16 +164,20 @@ testIgnition transport step = withTmpDirectory $ do
                       $(mkClosure 'ignition) args
       liftIO $ takeMVar dummyRCStarted
 
+      liftIO $ do
+        step "kill nodes in the cluster that we will remove TS from"
+        forM_ (tail nids1) $ closeLocalNode                                              -- XXX: locks
+
       liftIO $ step "call ignition while changing TS nodes"
       Just (added, trackers, members, newNodes)
               <- call $(functionTDict 'ignition) (localNodeId $ head nids1) $
                         $(mkClosure 'ignition) (mkArgs True (head nids1: nids2))
       liftIO $ do
         assertBool  "set of node changed" added
-        assertEqual "nodes from new set added"
-                    (map localNodeId nids2)
-                    newNodes
-        assertEqual "only one node was in members"
+        assertEqual "nodes from new set added"                                           -- XXX: unexpected result
+                    (Set.fromList $ map localNodeId nids2)
+                    (Set.fromList newNodes)
+        assertEqual "only one node was in members"                                       -- XXX: unexpected result
                     (Set.singleton (localNodeId $ head nids1))
                     (Set.fromList members)
         assertEqual "trackers should be equal to the new set of trackers"
@@ -185,7 +190,7 @@ testIgnition transport step = withTmpDirectory $ do
           s | t `isPrefixOf` s -> send self (drop (length t) s)
             | otherwise        -> return ()
       actual <- expect
-      liftIO $ unless (any (==actual) [show x | x <- permutations trackers]) $
+      liftIO $ unless (any (==actual) [show x | x <- permutations trackers]) $          -- XXX: unexpected result
         assertFailure $ "replicas should be contain all of the " ++ show trackers ++
                         ", but got " ++ actual
       return ()
