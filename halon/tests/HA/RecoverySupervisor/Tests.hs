@@ -474,9 +474,8 @@ testTimerRunAfterTimeout transport = do
 testTimerCancelled :: Transport -> Assertion
 testTimerCancelled transport = do
   node <- newLocalNode transport $ __remoteTable remoteTable
-  td <- TimerData <$> newIORef 0
+  td <- liftIO $ TimerData <$> newIORef 0
   runProcess node $ do
-    replicateM 100 $ do
     forM_ [100,1000,10000] $ \delay -> do
       tf <- liftIO $ timeSpecToMicro <$> getTime Monotonic
       timer <- newTimer delay $ liftIO $ writeIORef (firedAt td) . timeSpecToMicro =<< getTime Monotonic
@@ -484,8 +483,9 @@ testTimerCancelled transport = do
       cancelled <- cancel timer
       if cancelled
          then liftIO $ assertEqual "action should not happen" 0 =<< readIORef (firedAt td)
-         else do
-           tf' <- liftIO $ timeSpecToMicro <$> getTime Monotonic
-           liftIO $ assertBool "we missed timeout"
-                          (tf'-tf >= fromIntegral delay)
+         else liftIO $ do
+           tf' <- timeSpecToMicro <$> getTime Monotonic
+           assertBool "we missed timeout"
+                      (tf'-tf >= fromIntegral delay)
+           writeIORef (firedAt td) 0
 
