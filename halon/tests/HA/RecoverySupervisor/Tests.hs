@@ -26,6 +26,8 @@ import Control.Distributed.Process
   , getSelfPid
   , liftIO
   , catch
+  , expect
+  , send
   , receiveWait
   , ProcessId
 #ifndef USE_MOCK_REPLICATOR
@@ -453,6 +455,7 @@ timerTests transport = testGroup "RS Timer"
   -- it's possible for the timer thread to lock forever.
   -- See: https://app.asana.com/0/12314345447678/43375013903903
   -- , testSuccess "rs-timer-should-survive-exceptions" $ testTimerExceptionLiveness transport
+  , testSuccess "rs-timer-concurrent-cancel" $ testTimerConcurrentCancel transport
   ]
 
 data TimerData = TimerData { firedAt :: IORef Int64 }
@@ -485,7 +488,24 @@ testTimerCancelled transport = do
          then liftIO $ assertEqual "action should not happen" 0 =<< readIORef (firedAt td)
          else liftIO $ do
            tf' <- timeSpecToMicro <$> getTime Monotonic
-           assertBool "we missed timeout"
-                      (tf'-tf >= fromIntegral delay)
+           assertBool "we missed timeout" (tf'-tf >= fromIntegral delay)
            writeIORef (firedAt td) 0
 
+testTimerConcurrentCancel :: Transport -> Assertion
+testTimerConcurrentCancel transport = do
+  node <- newLocalNode transport $ __remoteTable remoteTable
+  td <- liftIO $ TimerData <$> newIORef 0
+  runProcess node $ do
+    let delay = 10000
+    self <- getSelfPid
+    tf <- liftIO $ timeSpecToMicro <$> getTime Monotonic
+    timer <- newTimer delay $ liftIO $ writeIORef (firedAt td) . timeSpecToMicro =<< getTime Monotonic
+    replicateM_ 5 $ spawnLocal $ cancel timer >>= send self
+    (r:esults) <- replicateM 5 expect
+    liftIO $ assertBool "all results are equal" $ all (==r) esults
+    if r
+       then liftIO $ assertEqual "action should not happen" 0 =<< readIORef (firedAt td)
+       else liftIO $ do
+         tf' <- timeSpecToMicro <$> getTime Monotonic
+         assertBool "we missed timeout"
+                    (tf'-tf >= fromIntegral delay)
