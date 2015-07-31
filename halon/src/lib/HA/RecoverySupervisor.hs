@@ -63,6 +63,10 @@ module HA.RecoverySupervisor
       recoverySupervisor
     , RSState(..)
     , __remoteTable
+      -- * Timer
+    , Timer(..)
+    , newTimer
+    , timeSpecToMicro
     ) where
 
 import HA.Replicator ( RGroup, updateStateWith, getState )

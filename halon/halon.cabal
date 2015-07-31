@@ -165,7 +165,8 @@ Test-Suite unit-tests
                     cep,
                     uuid,
                     containers,
-                    stm
+                    stm,
+                    clock
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
@@ -216,7 +217,8 @@ Test-Suite integration-tests
                     cep,
                     uuid,
                     containers,
-                    stm
+                    stm,
+                    clock
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
