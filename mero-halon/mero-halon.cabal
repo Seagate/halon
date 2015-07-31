@@ -560,7 +560,8 @@ Test-Suite unit-tests
                     tasty-hunit,
                     tasty-files,
                     cep,
-                    attoparsec
+                    attoparsec,
+                    containers
   if flag(rpc)
       Build-Depends: network-transport-rpc,
                      directory,
@@ -610,7 +611,8 @@ Test-Suite integration-tests
                     tasty-hunit,
                     tasty-files,
                     cep,
-                    attoparsec
+                    attoparsec,
+                    containers
   if flag(rpc)
       Build-Depends: network-transport-rpc,
                      directory,

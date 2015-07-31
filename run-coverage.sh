@@ -39,6 +39,7 @@ excludes='
         Network.CEP
         Network.CEP.Buffer
         Network.CEP.Types
+        HA.Autoboot.Tests
 '
 exclude=''
 for x in $excludes ; do
