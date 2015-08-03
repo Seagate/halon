@@ -38,7 +38,7 @@ import Data.Maybe (fromMaybe)
 --
 createProvider :: NewContainerArgs -> IO Provider
 createProvider args = do
-    credentials <- (fromMaybe $ error "docker credentials not specified in the environment") <$> getCredentialsFromEnv
+    credentials <- (fromMaybe $ error "DOCKER_HOST not specified in the environment") <$> getCredentialsFromEnv
     return $ Provider $ do
       container <- newContainer credentials args
       return Host
