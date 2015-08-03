@@ -19,6 +19,20 @@
   * On a systemd system, edit ExecStart in /usr/lib/systemd/system/docker.service
   eg ExecStart=/usr/bin/docker -d -H 172.17.42.1:5555
 
+  * On NixOS, in your configuration.nix you'll need
+
+      virtualisation.docker = {
+        enable = true;
+        extraOptions = "-H 172.17.42.1:5555";
+        postStart = ''
+          while ! [ -e /var/run/docker.pid ]; do
+            sleep 0.1
+          done
+        '';
+      };
+
+    You'll need more recent nixpkgs if it complains about lack of postStart attribute.
+
  * To use a docker image for building in a development environment
 
    This will pull the latest master base image from CI, mounting
