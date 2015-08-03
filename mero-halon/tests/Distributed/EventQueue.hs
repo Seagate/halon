@@ -45,6 +45,7 @@ import Network.Socket hiding (send)
 import System.Environment (getExecutablePath)
 import System.FilePath ((</>), takeDirectory)
 import System.Process (readProcess)
+import System.Timeout
 
 import HA.EventQueue (EventQueue, eventQueueLabel)
 import HA.EventQueue.Producer
@@ -84,7 +85,8 @@ globalTimeout :: Int
 globalTimeout = 30 * 1000000 -- seconds
 
 main :: IO ()
-main = do
+main =
+  (>>= maybe (error "test timed out") return) $ timeout (120 * 1000000) $ do
     cp        <- getProvider
     buildPath <- getBuildPath
     ip        <- getHostAddress

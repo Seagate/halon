@@ -40,12 +40,15 @@ import System.IO
 import System.FilePath ((</>), takeDirectory)
 import System.Posix.Temp (mkdtemp)
 import System.Process hiding (runProcess)
+import System.Timeout
+
 
 getBuildPath :: IO FilePath
 getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
 
 main :: IO ()
-main = do
+main =
+  (>>= maybe (error "test timed out") return) $ timeout (120 * 1000000) $ do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
 
