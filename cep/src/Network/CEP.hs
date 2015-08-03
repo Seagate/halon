@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -13,19 +14,37 @@
 -- pub/sub feature.
 module Network.CEP
     ( module Network.CEP.Types
+    , Engine
+    , ExecutionInfo(..)
+    , ExecutionReport(..)
     , Published(..)
     , Index
+    , RuleName(..)
+    , RunResult(..)
+    , RunInfo(..)
+    , RuleInfo(..)
+    , Subscribe(..)
+    , Tick(..)
+    , Some(..)
+    , cepEngine
+    , feedEngine
     , execute
+    , stackPhaseInfoPhaseName
+    , newSubscribeRequest
     , initIndex
+    , incoming
+    , subscribeRequest
     , subscribe
+    , stepForward
+    , runItForever
     , occursWithin
     ) where
 
 import           Control.Monad
 import           Data.ByteString (ByteString)
 import           Data.Dynamic
-import           Data.Foldable (toList, for_, traverse_)
-import           Data.Maybe
+import           Data.Foldable (for_)
+import           Data.Maybe (fromMaybe)
 import qualified Data.Sequence as S
 import           Data.Traversable (for)
 
@@ -59,6 +78,14 @@ data Subscribe =
 
 instance Binary Subscribe
 
+newSubscribeRequest :: forall proxy a. Serializable a
+                    => ProcessId
+                    -> proxy a
+                    -> Subscribe
+newSubscribeRequest pid _ = Subscribe bytes pid
+  where
+    bytes = encodeFingerprint $ fingerprint (undefined :: a)
+
 -- | That message is emitted every time an event of type `a` has been published.
 --   A 'Process' will received that message only if it subscribed for that
 --   type of message. In CEP parlance, that message will be emitted if that
@@ -78,38 +105,61 @@ instance Binary a => Binary (Published a)
 --   'ProcessId'. Several subscribers can be associated to a type of message.
 type Subscribers = MM.MultiMap Fingerprint ProcessId
 
+type SMLogs = S.Seq (String, String, String)
+
 -- | Keeps track of time in order to use time varying combinators (FRP).
 type TimeSession = Session Process (Timed NominalDiffTime ())
 
--- | 'Phase' state machine context. Only interesting context is Switch context.
---   When on Switch context, 'Phase' state machine doesn't consume the stack as
---   it would do on normal context. Instead, it will find the first alternatives
---   that successfully produces a result. If no alternative produced a value,
---   the 'Phase' state machine in Switch context is set back to the end of the
---   stack.
-data Context g l = NormalContext | SwitchContext [StackSlot g l]
+data Input
+    = NoMessage
+    | GotMessage TypeInfo Message
 
--- | Message emitted by CEP engine 'Match's.
-data Msg
-    = Appeared [(RuleKey, TypeInfo)] Message
-      -- ^ A message has been sent to the CEP engine and a set of rules is
-      --   interested.
-    | SubRequest Subscribe
-      -- ^ CEP engine receives a subscription request.
-    | Discarded
-      -- ^ A message has been sent to the CEP engine but no rule is interested
-      --   in.
+--------------------------------------------------------------------------------
+-- Public execution information.
+--------------------------------------------------------------------------------
+data RuleName = InitRuleName | RuleName String deriving Show
 
--- | CEP engine current step.
-data MachineStep
-    = InitStep
-      -- ^ The engine has just started. It runs init rule (if any) then switch
-      --   'NormalStep'.
-    | LeftoversStep [([(RuleKey, TypeInfo)], Message)]
-      -- ^ Some messages has been collected during 'InitStep' and regular rules
-      --   are interested.
-    | NormalStep
-      -- ^ Regular CEP execution step.
+data RuleInfo =
+    RuleInfo
+    { ruleInfoName   :: !RuleName
+    , ruleInfoReport :: !ExecutionReport
+    } deriving Show
+
+data RunResult
+    = SubscriptionReceived
+    | RulesBeenTriggered [RuleInfo]
+    | MsgIgnored
+    | Noop
+    deriving Show
+
+data RunInfo =
+    RunInfo
+    { runTotalProcessedMsgs :: !Int
+    , runResult             :: !RunResult
+    } deriving Show
+
+emptyRunInfo :: RunInfo
+emptyRunInfo =
+    RunInfo
+    { runTotalProcessedMsgs = 0
+    , runResult             = Noop
+    }
+
+data Tick a where
+    Tick       :: Tick RunInfo
+    Incoming   :: Message -> Tick RunInfo
+    NewSub     :: Subscribe -> Tick ()
+    GetSetting :: EngineSetting a -> Tick a
+
+data EngineSetting a where
+    EngineDebugMode :: EngineSetting Bool
+
+--------------------------------------------------------------------------------
+-- CEP Engine finit state machine represented as a Mealy machine.
+newtype Engine = Engine { unEngine :: forall a. Tick a -> Process (a, Engine) }
+
+stepForward :: Tick a -> Engine -> Process (a, Engine)
+stepForward i (Engine k) = k i
 
 -- | Holds init rule state.
 data InitRule s =
@@ -151,6 +201,7 @@ data Machine s =
       -- ^ Rule to run at 'InitStep' step.
     , _machOnReady :: !(Process ())
       -- ^ Action run when the CEP engine has been initialized.
+    , _machTotalProcMsgs :: !Int
     }
 
 _printDebugStr :: MonadIO m => Machine g -> String -> m ()
@@ -163,26 +214,23 @@ _printDebug Machine{..} a =
     when _machDebugMode $
       liftIO $ print a
 
-_whenDebugging :: Monad m => PhaseState g l -> m () -> m ()
-_whenDebugging PhaseState{..} action =
-    when _phaseDebugMode action
-
 -- | Creates CEP engine state with default properties.
 emptyMachine :: s -> Machine s
 emptyMachine s =
     Machine
-    { _machRuleData  = M.empty
-    , _machSession   = clockSession_
-    , _machSubs      = MM.empty
-    , _machLogger    = Nothing
-    , _machRuleFin   = Nothing
-    , _machRuleCount = 0
-    , _machPhaseBuf  = fifoBuffer Unbounded
-    , _machTypeMap   = MM.empty
-    , _machState     = s
-    , _machDebugMode = False
-    , _machInitRule  = Nothing
-    , _machOnReady   = return ()
+    { _machRuleData      = M.empty
+    , _machSession       = clockSession_
+    , _machSubs          = MM.empty
+    , _machLogger        = Nothing
+    , _machRuleFin       = Nothing
+    , _machRuleCount     = 0
+    , _machPhaseBuf      = fifoBuffer Unbounded
+    , _machTypeMap       = MM.empty
+    , _machState         = s
+    , _machDebugMode     = False
+    , _machInitRule      = Nothing
+    , _machOnReady       = return ()
+    , _machTotalProcMsgs = 0
     }
 
 -- | Fills type tracking map with every type of messages needed by the engine
@@ -191,14 +239,14 @@ fillMachineTypeMap :: Machine s -> Machine s
 fillMachineTypeMap st@Machine{..} =
     st { _machTypeMap = M.foldrWithKey go MM.empty _machRuleData }
   where
-    go key (RuleData _ _ _ _ _ typs) m =
+    go key rd m =
         let insertF i@(TypeInfo fprt _) = MM.insert fprt (key, i) in
-        foldr insertF m typs
+        foldr insertF m $ _ruleTypes rd
 
 -- | Fills a type tracking map with every type of messages needed by the init
 --   rule.
 initRuleTypeMap :: RuleData s -> M.Map Fingerprint TypeInfo
-initRuleTypeMap (RuleData _ _ _ _ _ typs) = foldr go M.empty typs
+initRuleTypeMap rd = foldr go M.empty $ _ruleTypes rd
   where
     go i@(TypeInfo fprt _) = M.insert fprt i
 
@@ -210,16 +258,18 @@ buildMachine s defs = go (emptyMachine s) $ view defs
     go :: Machine s -> ProgramView (Declare s) () -> Machine s
     go st (Return _) = fillMachineTypeMap st
     go st (DefineRule n m :>>= k) =
-        let idx = _machRuleCount st
+        let logs = fmap (const S.empty) $ _machLogger st
+            idx = _machRuleCount st
             key = RuleKey idx n
-            dat = buildRuleData n m
+            dat = buildRuleData n m (_machPhaseBuf st) logs
             mp  = M.insert key dat $ _machRuleData st
             st' = st { _machRuleData  = mp
                      , _machRuleCount = idx + 1
                      } in
         go st' $ view $ k ()
     go st (Init m :>>= k) =
-        let dat  = buildRuleData "init" m
+        let logs = fmap (const S.empty) $ _machLogger st
+            dat  = buildRuleData "init" m (_machPhaseBuf st) logs
             typs = initRuleTypeMap dat
             ir   = InitRule dat typs
             st'  = st { _machInitRule = Just ir } in
@@ -240,49 +290,7 @@ buildMachine s defs = go (emptyMachine s) $ view defs
         let st' = st { _machOnReady = action } in
         go st' $ view $ k ()
 
--- | Simple 'Match' that expects a subscription request.
-subMatch :: Match Msg
-subMatch = match $ \sub -> return $ SubRequest sub
-
--- | Constructs a 'Match' that will only keep messages that rules are
---   interested in. Other kind of messages are discarded.
-buildMatch :: Machine g -> Match Msg
-buildMatch Machine{..} =
-    matchAny $ \msg ->
-      case MM.lookup (messageFingerprint msg) _machTypeMap of
-        []  -> return Discarded
-        xs  -> return $ Appeared xs msg
-
--- | Message emitted by CEP engine at the initialization phase.
-data InitMsg
-    = InitAppeared TypeInfo Message [(RuleKey, TypeInfo)]
-      -- ^ A message has been sent to CEP engine and the init rule is interested
-      --   in. It also indicates wether some regular rules are interested too.
-    | RuleAppeared [(RuleKey, TypeInfo)] Message
-      -- ^ A message has been sent to CEP engine and only regular rules are
-      --   interested.
-    | Ignored
-      -- ^ Neither the init rule or regular rules are interested by that
-      --   message.
-
--- | Contructs a 'Match' that will only keep messages that either the init rule
---   and the regular rules are interested in. Other kind of messages are
---   discarted.
-initRuleMatch :: Machine g
-              -> M.Map Fingerprint TypeInfo
-              -> Match InitMsg
-initRuleMatch Machine{..} m =
-    matchAny $ \msg ->
-      let fpt = messageFingerprint msg
-          rrm = MM.lookup fpt _machTypeMap in
-      case M.lookup fpt m of
-        Nothing ->
-          case rrm of
-            [] -> return Ignored
-            xs -> return $ RuleAppeared xs msg
-        Just typ -> return $ InitAppeared typ msg rrm
-
--- | Main CEP engine loop
+-- | Main CEP state-machine
 --   ====================
 --
 --   InitStep
@@ -303,126 +311,159 @@ initRuleMatch Machine{..} m =
 --     2. 'SubRequest': It registers the new subscribers to subscribers map.
 --     3. 'Appeared': It dispatches the message to the according rule state
 --        machine.
-runMachine :: MachineStep -> Machine s -> Process ()
-runMachine InitStep st =
+cepEngine :: s -> Definitions s () -> Engine
+cepEngine s defs = Engine $ cepInit st
+  where
+    st = buildMachine s defs
+
+cepInit :: Machine s -> Tick a -> Process (a, Engine)
+cepInit st i =
     case _machInitRule st of
       Nothing -> do
-        _machOnReady st
-        runMachine NormalStep st
-      Just (InitRule rd typs) -> do
-        (rd', g') <- runRule st NoMessage rd
-        let st' = st { _machState = g' }
-            matches = [initRuleMatch st' typs]
-            loop lovrs tmpRd tmpSt = do
-              res <- receiveWait matches
-              case res of
-                Ignored                  -> loop lovrs tmpRd tmpSt
-                RuleAppeared xs msg      -> loop ((xs,msg):lovrs) tmpRd tmpSt
-                InitAppeared info msg xs -> do
-                  let lovrs' =
-                        case xs of
-                          [] -> lovrs
-                          _  -> (xs,msg) : lovrs
+          _machOnReady st
+          cepCruise st i
+      Just ir -> cepInitRule ir st i
 
-                  (newRd, newG) <- runRule tmpSt (GotMessage info msg) tmpRd
-                  let newSt = tmpSt { _machState = newG }
-                  if nullStack newRd
-                    then do
-                    let step =
-                          case lovrs' of
-                            [] -> NormalStep
-                            _  -> LeftoversStep $ reverse lovrs'
-                    _machOnReady newSt
-                    runMachine step newSt
-                    else loop lovrs' newRd newSt
-        if nullStack rd'
-          then do
-          _machOnReady st'
-          runMachine NormalStep st'
-          else loop [] rd' st'
-runMachine step st = do
-    (msg, step') <- nextStep
-    case msg of
-      Discarded -> runMachine step' st
-      SubRequest sub ->
-         let key   = decodeFingerprint $ _subType sub
-             value = _subPid sub
-             subs' = MM.insert key value $ _machSubs st
-             st'   = st { _machSubs = subs' } in
-        runMachine step' st'
-      Appeared tups imsg -> do
-        let action =
-              for_ tups $ \(key, info) -> do
-                st' <- State.get
-                let dts = _machRuleData st'
-                case M.lookup key dts of
-                  Just rd -> do
-                      (rd', g') <- lift $ runRule st' (GotMessage info imsg) rd
-                      let  st'' = st' { _machRuleData = M.insert key rd' dts
-                                      , _machState    = g'
-                                      }
-                      State.put st''
-                  _ -> fail "runMachine: ruleKey is invalid (impossible)"
-        st' <- State.execStateT action st
-        runMachine step' st'
+cepSubRequest :: Machine g -> Subscribe -> Machine g
+cepSubRequest st@Machine{..} (Subscribe tpe pid) = nxt_st
   where
-    matches = [subMatch, buildMatch st]
+    key      = decodeFingerprint tpe
+    nxt_subs = MM.insert key pid _machSubs
+    nxt_st   = st { _machSubs = nxt_subs }
 
-    nextStep =
-        case step of
-          LeftoversStep ((xs,msg):rest) ->
-            return (Appeared xs msg, LeftoversStep rest)
-          _ -> do
-            msg <- receiveWait matches
-            return (msg, NormalStep)
+defaultHandler :: Machine g
+               -> (forall b. Machine g -> Tick b -> Process (b, Engine))
+               -> Tick a
+               -> Process (a, Engine)
+defaultHandler st next (NewSub sub) =
+    return ((), Engine $ next $ cepSubRequest st sub)
+defaultHandler st next Tick =
+    return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
+defaultHandler st next (Incoming _) =
+    return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
+defaultHandler st next (GetSetting s) =
+    case s of
+      EngineDebugMode -> return (_machDebugMode st, Engine $ next st)
+
+interestingMsg :: (Fingerprint -> Bool) -> Message -> Bool
+interestingMsg k msg = k $ messageFingerprint msg
+
+cepInitRule :: InitRule g -> Machine g -> Tick a -> Process (a, Engine)
+cepInitRule ir@(InitRule rd typs) st@Machine{..} i =
+    case i of
+      Tick -> go NoMessage _machTotalProcMsgs
+      Incoming m
+        | interestingMsg (\frp -> M.member frp typs) m ->
+          let tpe       = typs M.! messageFingerprint m
+              msg       = GotMessage tpe m
+              msg_count = _machTotalProcMsgs + 1 in
+          go msg msg_count
+        | otherwise -> defaultHandler st (cepInitRule ir) i
+      _ -> defaultHandler st (cepInitRule ir) i
+  where
+    go msg msg_count = do
+      let (StackSM k) = _ruleStack rd
+          input       = StackIn _machSubs _machState msg
+      (StackOut g infos res, nxt_stk) <- k input
+      let new_rd = rd { _ruleStack = nxt_stk }
+          nxt_st = st { _machState         = g
+                      , _machTotalProcMsgs = msg_count
+                      }
+          rinfo = RuleInfo InitRuleName infos
+          info  = RunInfo msg_count (RulesBeenTriggered [rinfo])
+      case res of
+        EmptyStack -> do
+          _machOnReady
+          return (info, Engine $ cepCruise nxt_st)
+        _ -> return (info, Engine $ cepInitRule (InitRule new_rd typs) nxt_st)
+
+cepCruise :: Machine s -> Tick a -> Process (a, Engine)
+cepCruise st tick =
+    case tick of
+      Tick ->
+        let _F (k,r) = (k, r, NoMessage)
+            tups     = fmap _F $ M.assocs $ _machRuleData st in
+        go tups (_machTotalProcMsgs st)
+      Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
+        let fpt = messageFingerprint m
+        tups <- for (MM.lookup fpt $ _machTypeMap st) $ \(key, info) ->
+          case M.lookup key $ _machRuleData st of
+            Just rd -> return (key, rd, GotMessage info m)
+            _       -> fail "ruleKey is invalid (impossible)"
+        go tups (_machTotalProcMsgs st + 1)
+      _ -> defaultHandler st cepCruise tick
+  where
+    go tups msg_count = do
+      let action = for tups $ \(key, rd, i) -> do
+            tmp_st          <- State.get
+            (rinfo, nxt_st) <- lift $ broadcastInput tmp_st key rd i
+            State.put nxt_st
+            return rinfo
+
+      (infos, tmp_st) <- State.runStateT action st
+      let nxt_st = tmp_st { _machTotalProcMsgs = msg_count }
+          rinfo  = RunInfo msg_count (RulesBeenTriggered infos)
+      return (rinfo, Engine $ cepCruise nxt_st)
+
+broadcastInput st key rd i = do
+    let input     = StackIn (_machSubs st) (_machState st) i
+        StackSM k = _ruleStack rd
+    (StackOut g infos _, nxt_stk) <- k input
+    let nxt_rd  = rd { _ruleStack = nxt_stk }
+        nxt_dts = M.insert key nxt_rd $ _machRuleData st
+        nxt_st  = st { _machRuleData = nxt_dts
+                     , _machState    = g
+                     }
+        info = RuleInfo (RuleName $ _ruleDataName nxt_rd) infos
+    return (info, nxt_st)
 
 -- | Executes a CEP definitions to the 'Process' monad given a initial global
 --   state.
 execute :: s -> Definitions s () -> Process ()
-execute s defs = runMachine InitStep machine
+execute s defs = runItForever $ cepEngine s defs
+
+runItForever :: Engine -> Process ()
+runItForever start_eng = do
+  (_, nxt_eng) <- stepForward Tick start_eng
+  go nxt_eng
   where
-    machine = buildMachine s defs
+    go eng = do
+        msg <- receiveWait
+          [ match (return . Left)
+          , matchAny (return . Right)
+          ]
+        case msg of
+          Left sub -> do
+            (_, nxt_eng) <- stepForward (NewSub sub) eng
+            go nxt_eng
+          Right m -> do
+            (_, nxt_eng) <- stepForward (Incoming m) eng
+            go nxt_eng
 
--- | 'Phase' state machine environment and state data structure.
-data PhaseState g l =
-    PhaseState
-    { _phaseState :: !g
-      -- ^ Copy of the global state.
-    , _phaseMap :: !(M.Map String (Phase g l))
-      -- ^ All rule 'Phase's.
-    , _phaseSubs :: !Subscribers
-      -- ^ All the subscribers of the CEP engine.
-    , _phaseStack :: ![StackSlot g l]
-      -- ^ Stack of active 'Phase' state machine.
-    , _phaseHandled :: ![StackSlot g l]
-      -- ^ List of parked 'Phase' state machine. That field is only used on per
-      --   rule run basis. It's a temporary storage for parked 'Phase's that
-      --   arise during 'Phase' state machine execution. Once the rule state
-      --   machine has finished, that list becomes the next stack value and
-      --   then sent to an empty list.
-    , _phaseLogs    :: !(Maybe (S.Seq (String, String, String)))
-      -- ^ Sequence that gathers all the log of a 'Phase' state machine
-      --   execution if logging is enabled.
-    , _phaseSession :: !TimeSession
-      -- ^ Time tracking session.
-    , _phaseBaseBuf :: !Buffer
-      -- ^ Initial buffer when forking a new 'Phase' and it asks for an empty
-      -- one.
-    , _phaseDebugMode :: !Bool
-    }
+incoming :: Serializable a => a -> Tick RunInfo
+incoming = Incoming . wrapMessage
 
--- | Stack element.
-data StackSlot g l =
-    StackSlot
-    { _slotBuffer :: !Buffer
-      -- ^ Buffer associated to that 'Phase'.
-    , _slotPhase :: !(Phase g l)
-      -- ^ 'Phase' state machine.
-    , _slotState :: !l
-      -- ^ 'Phase' local state copy.
-    , _slotCtx :: !(Context g l)
-      -- ^ Current 'Phase' context.
-    }
+subscribeRequest :: Serializable a => ProcessId -> proxy a -> Tick ()
+subscribeRequest pid p = NewSub $ newSubscribeRequest pid p
+
+data Some f = forall a. Some (f a)
+
+feedEngine :: [Some Tick] -> Engine -> Process ([RunInfo], Engine)
+feedEngine msgs = go msgs []
+  where
+    go :: [Some Tick] -> [RunInfo] -> Engine -> Process ([RunInfo], Engine)
+    go [] is end = return (reverse is, end)
+    go (Some msg:rest) is cur = do
+        case msg of
+          Tick -> do
+            (i, nxt) <- stepForward Tick cur
+            go rest (i : is) nxt
+          Incoming msg -> do
+            (i, nxt) <- stepForward (Incoming msg) cur
+            go rest (i : is) nxt
+          _ -> do
+            (_, nxt) <- stepForward msg cur
+            go rest is nxt
 
 -- | Holds type information used for later type message desarialization.
 data TypeInfo =
@@ -440,27 +481,16 @@ instance Ord TypeInfo where
 
 -- | Rule state data structure.
 data RuleData g =
-    forall l.
     RuleData
-    { _ruleStartPhase :: !(Phase g l)
-      -- ^ The 'Phase' referenced by the 'start' when the rule has been
-      --   defined.
-    , _ruleStartState :: !l
-      -- ^ Initial local state of the rule.
-    , _rulePhases :: !(M.Map String (Phase g l))
-      -- ^ All the 'Phase's of the rule.
-    , _ruleDataName :: !String
+    { _ruleDataName :: !String
       -- ^ Rule name.
-    , _ruleStack :: ![StackSlot g l]
+    , _ruleStack :: !(StackSM g)
       -- ^ Rule stack of execution.
     , _ruleTypes :: !(Set.Set TypeInfo)
       -- ^ All the 'TypeInfo' gathered while running rule state machine. It's
       --   only used at the CEP engine initialization phase, when calling
       --   'buildMachine'.
     }
-
-nullStack :: RuleData g -> Bool
-nullStack (RuleData _ _ _ _ stk _) = null stk
 
 -- | Used as a key for referencing a rule at upmost level of the CEP engine.
 --   The point is to allow the user to refer to rules by their name while
@@ -477,84 +507,6 @@ instance Eq RuleKey where
 
 instance Ord RuleKey where
     compare (RuleKey k1 _) (RuleKey k2 _) = compare k1 k2
-
--- | Response given by the 'Phase' state machine execution.
-data Output g l
-    = Done (PhaseState g l) [StackSlot g l]
-      -- ^ Ends successfully. Produced a new 'PhaseState' and have stack slots
-      --   to append them at the end of stack.
-    | Suspended
-      -- ^ 'Phase' state machine decided to be parked.
-    | Stopped
-      -- ^ 'Phase' state machine decided.
-
-data RuleInput
-    = NoMessage
-    | GotMessage TypeInfo Message
-      -- ^ When we've received a message from the 'Process' mailbox.
-
--- | Rule execution main loop. Its goal is to deserialize the message we got
---   from the 'Process' mailbox then feed the stack of 'Phase' with it. It
---   starts to run the stack of 'Phase' and awaiting of the result. After that
---   it update the rule state accordingly.
-runRule :: Machine g
-        -> RuleInput
-        -> RuleData g
-        -> Process (RuleData g, g)
-runRule mach input (RuleData sp st ps dn stk tps) = do
-    jobs <- case input of
-      GotMessage (TypeInfo _ (_ :: Proxy a)) msg -> do
-        Just (a :: a) <- unwrapMessage msg
-        case stk of
-          _:_ ->
-            let mapF xstk =
-                    let buf'  = bufferInsert a $ _slotBuffer xstk
-                        xstk' = xstk { _slotBuffer = buf' } in
-                    xstk' in
-            return $ fmap mapF stk
-          _ -> let buf = bufferInsert a $ _machPhaseBuf mach in
-               return [StackSlot buf sp st NormalContext]
-      NoMessage ->
-        case stk of
-          [] -> return [StackSlot (_machPhaseBuf mach) sp st NormalContext]
-          _  -> return stk
-    let job:rest = jobs
-        pstate = PhaseState
-                 { _phaseState   = _machState mach
-                 , _phaseMap     = ps
-                 , _phaseSubs    = _machSubs mach
-                 , _phaseLogs    = fmap (const S.empty) $_machLogger mach
-                 , _phaseSession = _machSession mach
-                 , _phaseStack   = rest
-                 , _phaseHandled = []
-                 , _phaseBaseBuf = _machPhaseBuf mach
-                 , _phaseDebugMode = _machDebugMode mach
-                 }
-    pstate' <- runPhase pstate job
-    g_may   <- for (_machRuleFin mach) $ \k -> k $ _phaseState pstate'
-    let g' = fromMaybe (_phaseState pstate') g_may
-        rd = RuleData
-             { _ruleStartPhase = sp
-             , _ruleStartState = st
-             , _rulePhases     = ps
-             , _ruleDataName   = dn
-             , _ruleStack      = _phaseHandled pstate'
-             , _ruleTypes      = tps
-             }
-        logAction = do
-          k     <- _machLogger mach
-          plogs <- _phaseLogs pstate'
-          if not $ S.null plogs
-              then
-                let lgs = Logs
-                          { logsRuleName     = dn
-                          , logsPhaseEntries = toList plogs
-                          }
-                in return $ k lgs g'
-              else Nothing
-
-    traverse_ id logAction
-    return (rd, g')
 
 -- | Builds a list of 'TypeInfo' out types needed by 'PhaseStep' data
 --   contructor.
@@ -581,17 +533,18 @@ buildTypeList = foldr go Set.empty
 
 -- | Executes a rule state machine in order to produce a rule state data
 --   structure.
-buildRuleData :: String -> RuleM g l (Started g l) -> RuleData g
-buildRuleData name rls = go M.empty Set.empty $ view rls
+buildRuleData :: String
+              -> RuleM g l (Started g l)
+              -> Buffer
+              -> Maybe SMLogs
+              -> RuleData g
+buildRuleData name rls buf logs = go M.empty Set.empty $ view rls
   where
     go ps tpes (Return (StartingPhase l p)) =
         RuleData
-        { _ruleStartPhase  = p
-        , _ruleStartState  = l
-        , _rulePhases      = ps
-        , _ruleDataName    = name
-        , _ruleStack       = []
-        , _ruleTypes       = Set.union tpes $ buildTypeList ps
+        { _ruleDataName = name
+        , _ruleStack    = newStackSM name p logs ps buf l
+        , _ruleTypes    = Set.union tpes $ buildTypeList ps
         }
     go ps tpes (Start ph l :>>= k) =
         case M.lookup (_phHandle ph) ps of
@@ -613,9 +566,6 @@ buildRuleData name rls = go M.empty Set.empty $ view rls
         let tok = Token :: Token a
             tpe = TypeInfo (fingerprint (undefined :: a)) prx in
         go ps (Set.insert tpe tpes) $ view $ k tok
-
-noop :: PhaseM g l ()
-noop = return ()
 
 -- | Simple product type used as a result of message buffer extraction.
 data Extraction b =
@@ -705,173 +655,339 @@ extractSeqMsg s sbuf = go (-1) sbuf s
 
 -- | Notifies every subscriber that a message those are interested in has
 --   arrived.
-notifySubscribers :: Serializable a => PhaseState g l -> a -> Process ()
-notifySubscribers PhaseState{..} a = do
+notifySubscribers :: Serializable a => Subscribers -> a -> Process ()
+notifySubscribers subs a = do
     self <- getSelfPid
-    for_ subs $ \pid ->
+    for_ (MM.lookup (fingerprint a) subs) $ \pid ->
       usend pid (Published a self)
+
+data PhaseBufAction = CopyThatBuffer Buffer | CreateNewBuffer
+
+data SpawnSM g l = SpawnSM PhaseBufAction l (PhaseM g l ())
+
+data StackIn g = StackIn Subscribers g Input
+
+data StackOut g =
+    StackOut
+    { _soGlobal    :: !g
+    , _soExeReport :: !ExecutionReport
+    , _soResult    :: !StackResult
+    }
+
+data StackResult = EmptyStack | NeedMore deriving Show
+
+newtype StackSM g = StackSM (StackIn g -> Process (StackOut g, StackSM g))
+
+data StackCtx g l = StackNormal (Phase g l) | StackSwitch [Phase g l]
+
+infoTarget :: StackCtx g l -> Either String [String]
+infoTarget (StackNormal ph)  = Left $ _phName ph
+infoTarget (StackSwitch phs) = Right $ fmap _phName phs
+
+data StackPhaseInfo
+    = StackSinglePhase String
+    | StackSwitchPhase String [String]
+    deriving Show
+
+stackPhaseInfoPhaseName :: StackPhaseInfo -> String
+stackPhaseInfoPhaseName (StackSinglePhase n)   = n
+stackPhaseInfoPhaseName (StackSwitchPhase n _) = n
+
+data ExecutionFail = SuspendExe deriving Show
+
+data ExecutionReport =
+    ExecutionReport
+    { exeSpawnSMs :: !Int
+    , exeTermSMs  :: !Int
+    , exeInfos    :: ![ExecutionInfo]
+    } deriving Show
+
+data ExecutionInfo
+    = SuccessExe
+      { exeInfoPhase :: !StackPhaseInfo
+      }
+    | FailExe
+      { exeInfoTarget :: !(Either String [String])
+      , exeInfoFail   :: !ExecutionFail
+      }
+    deriving Show
+
+data StackCtxResult g l
+    = StackDone StackPhaseInfo g [SpawnSM g l] [Phase g l] (SM g l)
+    | StackSuspend (StackCtx g l)
+
+data StackSlot g l
+    = OnMainSM (StackCtx g l)
+    | OnChildSM (SM g l) (StackCtx g l)
+
+newStackSM :: String
+           -> Phase g l
+           -> Maybe SMLogs
+           -> M.Map String (Phase g l)
+           -> Buffer
+           -> l
+           -> StackSM g
+newStackSM rn sp logs ps buf l =
+    StackSM (mainStackSM rn sp logs ps buf l)
+
+mainStackSM :: forall g l. String       -- Rule name.
+            -> Phase g l                -- Starting phase.
+            -> Maybe SMLogs             -- If we collect logs.
+            -> M.Map String (Phase g l) -- Rule phases.
+            -> Buffer                   -- Init buffer (when forking new SM).
+            -> l                        -- Local state.
+            -> StackIn g
+            -> Process (StackOut g, StackSM g)
+mainStackSM name sp logs ps init_buf sl = go [] (newSM init_buf logs sl)
   where
-    subs = MM.lookup (fingerprint $ asSub a) _phaseSubs
+    go [] sm i                  = go [OnMainSM (StackNormal sp)] sm i
+    go xs sm (StackIn subs g i) =
+        case i of
+          NoMessage -> executeStack subs sm g 0 0 [] [] xs
+          GotMessage (TypeInfo _ (_ :: Proxy a)) msg -> do
+            Just (a :: a) <- unwrapMessage msg
+            let input = PushMsg a
+            broadcast subs input xs sm g
+
+    broadcast subs i xs sm g = do
+        (SM_Unit, nxt_sm) <- unSM sm i
+        xs' <- for xs $ \slot ->
+          case slot of
+            OnMainSM _       -> return slot
+            OnChildSM lsm ph -> do
+              (SM_Unit, nxt_lsm) <- unSM lsm i
+              return $ OnChildSM nxt_lsm ph
+
+        executeStack subs nxt_sm g 0 0 [] [] xs'
+
+    executeStack :: Subscribers
+                 -> SM g l
+                 -> g
+                 -> Int -- Spawn SMs
+                 -> Int -- Terminated SMs
+                 -> [ExecutionInfo]
+                 -> [StackSlot g l]
+                 -> [StackSlot g l]
+                 -> Process (StackOut g, StackSM g)
+    executeStack _ sm g ssms tsms rp done [] =
+        let res = if null done then EmptyStack else NeedMore
+            eis = reverse rp
+            rep = ExecutionReport ssms tsms eis in
+        return (StackOut g rep res, StackSM $ go (reverse done) sm)
+    executeStack subs sm g ssms tsms rp done (x:xs) =
+        case x of
+          OnMainSM ctx -> do
+            res <- contextStack subs sm g ctx
+            case res of
+              StackDone pinfo g' ss phs nxt_sm -> do
+                phsm <- createSlots OnMainSM phs
+                let ssm    = spawnSMs ss
+                    jobs   = phsm ++ ssm
+                    n_ssms = ssms + length ssm
+                    r      = SuccessExe pinfo
+                executeStack subs nxt_sm g' n_ssms tsms (r:rp) done
+                                                                  (xs ++ jobs)
+              StackSuspend new_ctx ->
+                let slot = OnMainSM new_ctx
+                    r    = FailExe (infoTarget ctx) SuspendExe in
+                executeStack subs sm g ssms tsms (r:rp) (slot:done) xs
+          OnChildSM lsm ctx -> do
+            res <- contextStack subs lsm g ctx
+            case res of
+              StackDone pinfo g' ss phs nxt_lsm -> do
+                phsm <- createSlots (OnChildSM nxt_lsm) phs
+                let ssm    = spawnSMs ss
+                    n_tsms = if null phs then tsms + 1 else tsms
+                    n_ssms = length ssm + ssms
+                    jobs   = phsm ++ ssm
+                    r      = SuccessExe pinfo
+                executeStack subs sm g' n_ssms n_tsms (r:rp) done (xs ++ jobs)
+              StackSuspend new_ctx ->
+                let slot = OnChildSM lsm new_ctx
+                    r    = FailExe (infoTarget ctx) SuspendExe in
+                executeStack subs sm g ssms tsms (r:rp) (slot:done) xs
+
+    contextStack :: Subscribers
+                 -> SM g l
+                 -> g
+                 -> StackCtx g l
+                 -> Process (StackCtxResult g l)
+    contextStack subs sm g ctx@(StackNormal ph) = do
+        (out, nxt_sm) <- unSM sm (Execute subs g ph)
+        let pinfo = StackSinglePhase $ _phName ph
+        case out of
+          SM_Complete g' _ ss hs -> do
+            phs <- phases hs
+            return $ StackDone pinfo g' ss phs nxt_sm
+          SM_Suspend -> return $ StackSuspend ctx
+          SM_Stop    -> return $ StackDone pinfo g [] [] sm
+    contextStack subs sm g (StackSwitch xs) =
+        let loop done []     = return $ StackSuspend
+                                      $ StackSwitch (reverse done)
+            loop done (a:as) = do
+              let input = Execute subs g a
+              (out, nxt_sm) <- unSM sm input
+              case out of
+                SM_Complete g' _ ss hs -> do
+                  phs <- phases hs
+                  let pname = _phName a
+                      pas   = fmap _phName $ reverse done
+                      pinfo = StackSwitchPhase pname pas
+                  return $ StackDone pinfo g' ss phs nxt_sm
+                SM_Suspend -> loop (a:done) as
+                SM_Stop    -> loop done as
+        in loop [] xs
+
+    phases hs = for hs $ \h ->
+        case M.lookup (_phHandle h) ps of
+          Just ph -> return ph
+          Nothing -> fail $ "impossible: rule " ++ name
+                          ++ " doesn't have a phase named " ++ _phHandle h
+
+    spawnSMs xs =
+        let spawnIt (SpawnSM tpe l action) =
+              let tmp_buf =
+                    case tpe of
+                      CopyThatBuffer buf -> buf
+                      CreateNewBuffer    -> init_buf
+                  fsm = newSM tmp_buf logs l
+                  phc  = DirectCall action
+                  ctx  = StackNormal $ Phase (name ++ "-child") phc in
+              OnChildSM fsm ctx in
+        fmap spawnIt xs
+
+    createSlots :: (StackCtx g l -> StackSlot g l)
+                -> [Phase g l]
+                -> Process [StackSlot g l]
+    createSlots mk phs =
+        case phs of
+          []  -> return []
+          [x] -> return [mk $ StackNormal x]
+          xs  -> return [mk $ StackSwitch xs]
+
+data SM_Exe
+
+data SM_In g l a where
+    PushMsg :: Typeable m => m -> SM_In g l ()
+    Execute :: Subscribers -> g -> (Phase g l) -> SM_In g l SM_Exe
+
+data SM_Out g l a where
+    SM_Complete :: g -> l -> [SpawnSM g l] -> [PhaseHandle] -> SM_Out g l SM_Exe
+    SM_Suspend  :: SM_Out g l SM_Exe
+    SM_Stop     :: SM_Out g l SM_Exe
+    SM_Unit     :: SM_Out g l ()
+
+smLocalState :: SM_Out g l a -> Maybe l
+smLocalState (SM_Complete _ l _ _) = Just l
+smLocalState _                     = Nothing
+
+-- | Phase Mealy finite state machine.
+newtype SM g l =
+    SM { unSM :: forall a. SM_In g l a -> Process (SM_Out g l a, SM g l) }
+
+newSM :: Buffer -> Maybe SMLogs -> l -> SM g l
+newSM buf logs l = SM $ mainSM buf logs l
 
 -- | Execute a 'Phase' state machine. If it's 'DirectCall' 'Phase', it's runned
 --   directly. If it's 'ContCall' one, we make sure we can satisfy its
 --   dependency. Otherwise, we 'Suspend' that phase.
-runPhaseCall :: PhaseState g l
-             -> Buffer
-             -> l
-             -> Phase g l
-             -> Process (Output g l)
-runPhaseCall sst buf l p =
-    case _phCall p of
-      DirectCall action -> runSM (_phName p) sst buf l [] action
-      ContCall typ k -> do
-        res <- extractMsg typ (_phaseState sst) l buf
+mainSM :: Buffer
+       -> Maybe SMLogs
+       -> l
+       -> SM_In g l a
+       -> Process (SM_Out g l a, SM g l)
+mainSM buf logs l (PushMsg msg) =
+    let new_buf = bufferInsert msg buf in
+    return (SM_Unit, SM $ mainSM new_buf logs l)
+mainSM buf logs l (Execute subs g ph) =
+    case _phCall ph of
+      DirectCall action -> do
+        (new_buf, out) <- runSM (_phName ph) subs buf g l [] logs action
+        let final_buf =
+              case out of
+                SM_Suspend -> buf
+                SM_Stop    -> buf
+                _          -> new_buf
+            nxt_l = fromMaybe l $ smLocalState out
+        return (out, SM $ mainSM final_buf logs nxt_l)
+      ContCall tpe k -> do
+        res <- extractMsg tpe g l buf
         case res of
-          Just (Extraction buf' b) -> do
-            notifySubscribers sst b
-            runSM (_phName p) sst buf' l [] (k b)
-          Nothing                  -> return Suspended
+          Just (Extraction new_buf b) -> do
+            notifySubscribers subs b
+            let name = _phName ph
+            (lastest_buf, out) <- runSM name subs new_buf g l [] logs (k b)
+            let final_buf =
+                  case out of
+                    SM_Suspend -> buf
+                    SM_Stop    -> buf
+                    _          -> lastest_buf
+                nxt_l = fromMaybe l $ smLocalState out
+            case out of
+              SM_Complete{} -> notifySubscribers subs b
+              _             -> return ()
+            return (out, SM $ mainSM final_buf logs nxt_l)
+          Nothing -> return (SM_Suspend, SM $ mainSM buf logs l)
 
 -- | 'Phase' state machine execution main loop. Runs until its stack is empty
 --   except if get a 'Suspend' or 'Stop' instruction.
 runSM :: String
-      -> PhaseState g l
+      -> Subscribers
       -> Buffer
+      -> g
       -> l
-      -> [StackSlot g l]
+      -> [SpawnSM g l]
+      -> Maybe SMLogs
       -> PhaseM g l ()
-      -> Process (Output g l)
-runSM pname st buf l stk action = viewT action >>= go
+      -> Process (Buffer, SM_Out g l SM_Exe)
+runSM pname subs buf g l stk logs action = viewT action >>= go
   where
-    go (Return _) = return $ Done st $ reverse stk
-    go (Continue ph :>>= _) =
-        case M.lookup (_phHandle ph) $ _phaseMap st of
-          Just np -> do
-            let slot = StackSlot buf np l NormalContext
-            runSM pname st buf l (slot:stk) noop
-          Nothing -> fail "phase not found (Continue)"
-    go (Save s :>>= k) =
-        let st' = st { _phaseState = s } in
-        runSM pname st' buf l stk $ k ()
-    go (Load :>>= k) =
-        let s = _phaseState st in
-        runSM pname st buf l stk $ k s
-    go (Get Global :>>= k) =
-        let s = _phaseState st in
-        runSM pname st buf l stk $ k s
-    go (Get Local :>>= k) =
-        runSM pname st buf l stk $ k l
-    go (Put Global s :>>= k) =
-        let st' = st { _phaseState = s } in
-        runSM pname st' buf l stk $ k ()
-    go (Put Local l' :>>= k) =
-        runSM pname st buf l' stk $ k ()
-    go (Stop :>>= _) = return Stopped
+    go (Return _) = return (buf, SM_Complete g l (reverse stk) [])
+    go (Continue ph :>>= _) = return (buf, SM_Complete g l (reverse stk) [ph])
+    go (Save s :>>= k) = runSM pname subs buf s l stk logs $ k ()
+    go (Load :>>= k) = runSM pname subs buf g l stk logs $ k g
+    go (Get Global :>>= k) = runSM pname subs buf g l stk logs $ k g
+    go (Get Local :>>= k) = runSM pname subs buf g l stk logs $ k l
+    go (Put Global s :>>= k) = runSM pname subs buf s l stk logs $ k ()
+    go (Put Local l' :>>= k) = runSM pname subs buf g l' stk logs $ k ()
+    go (Stop :>>= _) = return (buf, SM_Stop)
     go (Fork typ naction :>>= k) =
-        let newBuf = case typ of
-                       NoBuffer   -> _phaseBaseBuf st
-                       CopyBuffer -> buf
-            newP = Phase pname (DirectCall naction)
-            slot = StackSlot newBuf newP l NormalContext in
-        runSM pname st buf l (slot:stk) $ k ()
+        let bufAction =
+              case typ of
+                NoBuffer   -> CreateNewBuffer
+                CopyBuffer -> CopyThatBuffer buf
+
+            ssm = SpawnSM bufAction l naction in
+        runSM pname subs buf g l (ssm : stk) logs $ k ()
     go (Lift m :>>= k) = do
         a <- m
-        runSM pname st buf l stk $ k a
-    go (Suspend :>>= _) = return Suspended
+        runSM pname subs buf g l stk logs $ k a
+    go (Suspend :>>= _) = return (buf, SM_Suspend)
     go (Publish e :>>= k) = do
-        let key = fingerprint $ asSub e
-        self <- getSelfPid
-        for_ (MM.lookup key $ _phaseSubs st) $ \pid ->
-          usend pid (Published e self)
-        runSM pname st buf l stk $ k ()
+        notifySubscribers subs e
+        runSM pname subs buf g l stk logs $ k ()
     go (PhaseLog ctx lg :>>= k) =
-        let logs = fmap (S.|> (pname,ctx,lg)) $ _phaseLogs st
-            st'  = st { _phaseLogs = logs } in
-        runSM pname st' buf l stk $ k ()
-    go (Switch xs :>>= _) = do
-        let collectF ph =
-              let res = M.lookup (_phHandle ph) $ _phaseMap st
-                  fin = fmap (\pp -> StackSlot buf pp l NormalContext) res in
-              fin
-            slotsM = sequence $ fmap collectF xs
-        case slotsM of
-          Just slots ->
-            let p      = Phase pname (DirectCall $ return ())
-                parent = StackSlot buf p l (SwitchContext slots) in
-            return $ Done st $ reverse (parent:stk)
-          _ -> fail "impossible runPhase: one handle is invalid"
+        let new_logs = fmap (S.|> (pname,ctx,lg)) logs in
+        runSM pname subs buf g l stk new_logs $ k ()
+    go (Switch xs :>>= _) = return (buf, SM_Complete g l (reverse stk) xs)
     go (Peek idx :>>= k) = do
         case bufferPeek idx buf of
-          Nothing -> runSM pname st buf l stk suspend
-          Just r  -> runSM pname st buf l stk $ k r
+          Nothing -> return (buf, SM_Suspend)
+          Just r  -> runSM pname subs buf g l stk logs $ k r
     go (Shift idx :>>= k) =
         case bufferGetWithIndex idx buf of
-          (Nothing, _)   -> runSM pname st buf l stk suspend
-          (Just r, buf') -> runSM pname st buf' l stk $ k r
-
--- | Execute a 'StackSlot' and update the 'Phase' execution state based of the
---   current 'Phase' context and result evaluation.
-runPhase :: PhaseState g l -> StackSlot g l -> Process (PhaseState g l)
-runPhase st@PhaseState{..} slot@(StackSlot sbuf p sl ctx) =
-    case ctx of
-      NormalContext -> do
-        res <- runPhaseCall st sbuf sl p
-        case res of
-          Suspended ->
-            case _phaseStack of
-              x:xs ->
-                let st' = st { _phaseHandled = slot : _phaseHandled
-                             , _phaseStack   = xs
-                             } in
-                runPhase st' x
-              _ ->
-                let st' = st { _phaseHandled = reverse (slot : _phaseHandled) }
-                in return st'
-          Stopped ->
-            case _phaseStack of
-              x:xs ->
-                let st' = st { _phaseStack = xs } in
-                runPhase st' x
-              _ ->
-                let st' = st { _phaseHandled = reverse _phaseHandled } in
-                return st'
-          Done st' slots ->
-            case _phaseStack ++ slots of
-              x:xs ->
-                let st'' = st' { _phaseStack = xs } in
-                runPhase st'' x
-              _ -> return st'
-      SwitchContext alts ->
-        let loop done [] =
-              let slot' = slot { _slotCtx = SwitchContext $ reverse done } in
-              case _phaseStack of
-                x:xs ->
-                  let st' = st { _phaseHandled = slot' : _phaseHandled
-                               , _phaseStack   = xs
-                               } in
-                  runPhase st' x
-                _ ->
-                  let st' = st { _phaseHandled = reverse (slot':_phaseHandled) }
-                  in return st'
-            loop done (a:as) = do
-              res <- runPhaseCall st sbuf sl $ _slotPhase a
-              case res of
-                Suspended      -> loop (a:done) as
-                Stopped        -> loop done as
-                Done st' slots ->
-                  case _phaseStack ++ slots of
-                    x:xs ->
-                      let st'' = st' { _phaseStack = xs } in
-                      runPhase st'' x
-                    _ -> return st' in
-        loop [] alts
+          (Nothing, _)   -> return (buf, SM_Suspend)
+          (Just r, buf') -> runSM pname subs buf' g l stk logs $ k r
 
 -- | Subscribes for a specific type of event. Every time that event occures,
 --   this 'Process' will receive a 'Published a' message.
-subscribe :: Serializable a => ProcessId -> Sub a -> Process ()
-subscribe pid sub = do
+subscribe :: forall a proxy. Serializable a
+          => ProcessId
+          -> proxy a
+          -> Process ()
+subscribe pid _ = do
     self <- getSelfPid
-    let key  = fingerprint sub
+    let key  = fingerprint (undefined :: a)
         fgBs = encodeFingerprint key
     usend pid (Subscribe fgBs self)
 
