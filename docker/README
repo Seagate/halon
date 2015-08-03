@@ -16,8 +16,12 @@
     including something like: -H 172.17.42.1:5555 where that IP address
     is the address on your docker0 interface on the host.
 
-  * On a systemd system, edit ExecStart in /usr/lib/systemd/system/docker.service
-  eg ExecStart=/usr/bin/docker -d -H 172.17.42.1:5555
+  * On a systemd system, create /etc/systemd/system/docker.service.d/daemon.conf 
+    with contents like:
+
+    [Service]
+    ExecStart=
+    ExecStart=/usr/bin/docker -d -H 172.17.42.1:5555
 
   * On NixOS, in your configuration.nix you'll need
 
