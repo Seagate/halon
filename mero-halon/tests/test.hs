@@ -62,6 +62,8 @@ ut transport = return $
         HA.RecoveryCoordinator.Mero.Tests.testMonitorManagement transport
       , testCase "RCMasterMonitor" $
         HA.RecoveryCoordinator.Mero.Tests.testMasterMonitorManagement transport
+      , testCase "RCNodeUpRace" $
+        HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
       ]
 
 runTests :: (Transport -> IO TestTree) -> IO ()
