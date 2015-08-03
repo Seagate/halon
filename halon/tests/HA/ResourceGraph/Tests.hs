@@ -147,7 +147,10 @@ sampleGraph =
     connect (NodeB 2) HasA (NodeA 1) .
     connect (NodeB 2) HasA (NodeA 2) .
     connect (NodeA 1) HasB (NodeB 2) .
+    connect (NodeA 1) HasB (NodeB 2) .
     newResource (NodeB 2) .
+    newResource (NodeB 1) .
+    newResource (NodeA 1) .
     newResource (NodeB 1) .
     newResource (NodeA 2) .
     newResource (NodeA 1)
