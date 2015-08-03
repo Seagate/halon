@@ -44,7 +44,7 @@
    docker --host=172.17.42.1:5555 run -v ~/workspace/tweag/halon:/halon -t -i tweag/haskell-env-on-centos-7:master /bin/bash 
 
    Once that shell appears, you can make a git checkout and
-   make deps; make build
+   make dep; make build
 
 
  * To run distributed tests, set:
