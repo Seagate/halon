@@ -1,13 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StandaloneDeriving #-}
+
 module SSPL.Bindings.CommandRequest where
-
-import SSPL.Bindings.Instances ()
-
-import Data.Binary (Binary)
-import Data.Typeable
-import GHC.Generics
 
 import Control.Monad
 import Data.Aeson
@@ -16,22 +11,25 @@ import Data.Aeson.Schema.Types
 import Data.Aeson.Schema.Validator
 import Data.Aeson.Types
 import Data.Aeson.Types
+import Data.Binary
 import Data.Either
 import Data.Foldable
 import Data.Functor
 import Data.HashMap.Lazy
-import Data.List
 import Data.Map
 import Data.Maybe
 import Data.Ratio
 import Data.Scientific
 import Data.Text
 import Data.Traversable
+import Data.Typeable
 import GHC.Base
 import GHC.Classes
+import GHC.Generics
 import GHC.Num
 import GHC.Show
 import Prelude
+import SSPL.Bindings.Instances ()
 import Text.Regex
 import Text.Regex.PCRE.String
 
@@ -94,9 +92,10 @@ data CommandRequestMessageServiceRequest = CommandRequestMessageServiceRequest
   { commandRequestMessageServiceRequestCommand :: Data.Aeson.Types.Value
   , commandRequestMessageServiceRequestServiceName :: Data.Text.Text -- ^ Name of the service to control.
   , commandRequestMessageServiceRequestNodes :: GHC.Base.Maybe Data.Text.Text -- ^ Regex on node FQDNs. If not specified, applies to all nodes.
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary CommandRequestMessageServiceRequest
+
+instance Data.Binary.Binary CommandRequestMessageServiceRequest
 
 instance Data.Aeson.FromJSON CommandRequestMessageServiceRequest
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure CommandRequestMessageServiceRequest GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property command missing") (\val -> do {Control.Monad.unless (val `Data.Foldable.elem` [Data.Aeson.Types.String (Data.Text.pack "start"),
@@ -106,14 +105,14 @@ instance Data.Aeson.FromJSON CommandRequestMessageServiceRequest
                                                                                                                                                                                                                                                           Data.Aeson.Types.String (Data.Text.pack "disable"),
                                                                                                                                                                                                                                                           Data.Aeson.Types.String (Data.Text.pack "status")]) (GHC.Base.fail "not one of the values in enum");
                                                                                                                                                                                                           (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaRequired = Prelude.True,
-                                                                                                                                                                                                                                                                                                     Data.Aeson.Schema.Types.schemaEnum = GHC.Base.Just [Data.Aeson.Types.String (Data.Text.pack "start"),
-                                                                                                                                                                                                                                                                                                                                                         Data.Aeson.Types.String (Data.Text.pack "stop"),
-                                                                                                                                                                                                                                                                                                                                                         Data.Aeson.Types.String (Data.Text.pack "restart"),
-                                                                                                                                                                                                                                                                                                                                                         Data.Aeson.Types.String (Data.Text.pack "enable"),
-                                                                                                                                                                                                                                                                                                                                                         Data.Aeson.Types.String (Data.Text.pack "disable"),
-                                                                                                                                                                                                                                                                                                                                                         Data.Aeson.Types.String (Data.Text.pack "status")]} val of
-                                                                                                                                                                                                                           [] -> GHC.Base.return ()
-                                                                                                                                                                                                                           es -> GHC.Base.fail GHC.Base.$ Data.List.unlines es);
+                                                                                                                                                                                                                                                                                                      Data.Aeson.Schema.Types.schemaEnum = GHC.Base.Just [Data.Aeson.Types.String (Data.Text.pack "start"),
+                                                                                                                                                                                                                                                                                                                                                          Data.Aeson.Types.String (Data.Text.pack "stop"),
+                                                                                                                                                                                                                                                                                                                                                          Data.Aeson.Types.String (Data.Text.pack "restart"),
+                                                                                                                                                                                                                                                                                                                                                          Data.Aeson.Types.String (Data.Text.pack "enable"),
+                                                                                                                                                                                                                                                                                                                                                          Data.Aeson.Types.String (Data.Text.pack "disable"),
+                                                                                                                                                                                                                                                                                                                                                          Data.Aeson.Types.String (Data.Text.pack "status")]} val of
+                                                                                                                                                                                                                            [] -> GHC.Base.return ()
+                                                                                                                                                                                                                            es -> GHC.Base.fail GHC.Base.$ Prelude.unlines es);
                                                                                                                                                                                                                        GHC.Base.return val}) val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "command") obj)) GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property serviceName missing") (\val -> case val of
                                                                                                                                                                                                                                                                                                                                                                                                                  Data.Aeson.Types.String str -> do GHC.Base.return str
                                                                                                                                                                                                                                                                                                                                                                                                                  _ -> GHC.Base.fail "not a string") (Data.HashMap.Lazy.lookup (Data.Text.pack "serviceName") obj)) GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -131,9 +130,10 @@ instance Data.Aeson.ToJSON CommandRequestMessageServiceRequest
 data CommandRequestMessageStatusRequest = CommandRequestMessageStatusRequest
   { commandRequestMessageStatusRequestEntityFilter :: GHC.Base.Maybe Data.Text.Text -- ^ Filter on entities to query. Interpretation is dependent on entity type. If not specified, applies to all entities of the given type.
   , commandRequestMessageStatusRequestEntityType :: Data.Aeson.Types.Value -- ^ Type of entity to query the status of.
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary CommandRequestMessageStatusRequest
+
+instance Data.Binary.Binary CommandRequestMessageStatusRequest
 
 instance Data.Aeson.FromJSON CommandRequestMessageStatusRequest
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure CommandRequestMessageStatusRequest GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -141,11 +141,11 @@ instance Data.Aeson.FromJSON CommandRequestMessageStatusRequest
                                                                                                                                                              _ -> GHC.Base.fail "not a string") (Data.HashMap.Lazy.lookup (Data.Text.pack "entityFilter") obj)) GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property entityType missing") (\val -> do {Control.Monad.unless (val `Data.Foldable.elem` [Data.Aeson.Types.String (Data.Text.pack "cluster"),
                                                                                                                                                                                                                                                                                                                                                                                                                   Data.Aeson.Types.String (Data.Text.pack "node")]) (GHC.Base.fail "not one of the values in enum");
                                                                                                                                                                                                                                                                                                                                                                   (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaRequired = Prelude.True,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                             Data.Aeson.Schema.Types.schemaEnum = GHC.Base.Just [Data.Aeson.Types.String (Data.Text.pack "cluster"),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 Data.Aeson.Types.String (Data.Text.pack "node")],
-                                                                                                                                                                                                                                                                                                                                                                                                                                                             Data.Aeson.Schema.Types.schemaDescription = GHC.Base.Just (Data.Text.pack "Type of entity to query the status of.")} val of
-                                                                                                                                                                                                                                                                                                                                                                                   [] -> GHC.Base.return ()
-                                                                                                                                                                                                                                                                                                                                                                                   es_1 -> GHC.Base.fail GHC.Base.$ Data.List.unlines es_1);
+                                                                                                                                                                                                                                                                                                                                                                                                                                                              Data.Aeson.Schema.Types.schemaEnum = GHC.Base.Just [Data.Aeson.Types.String (Data.Text.pack "cluster"),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  Data.Aeson.Types.String (Data.Text.pack "node")],
+                                                                                                                                                                                                                                                                                                                                                                                                                                                              Data.Aeson.Schema.Types.schemaDescription = GHC.Base.Just (Data.Text.pack "Type of entity to query the status of.")} val of
+                                                                                                                                                                                                                                                                                                                                                                                    [] -> GHC.Base.return ()
+                                                                                                                                                                                                                                                                                                                                                                                    es_1 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_1);
                                                                                                                                                                                                                                                                                                                                                                                GHC.Base.return val}) val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "entityType") obj)
           parseJSON _ = GHC.Base.fail "not an object"
 
@@ -158,9 +158,10 @@ data CommandRequestMessage = CommandRequestMessage
   { commandRequestMessageServiceRequest :: GHC.Base.Maybe CommandRequestMessageServiceRequest
   , commandRequestMessageStatusRequest :: GHC.Base.Maybe CommandRequestMessageStatusRequest
   , commandRequestMessageMessageId :: GHC.Base.Maybe Data.Text.Text -- ^ Used to identify a response if a response is required.
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary CommandRequestMessage
+
+instance Data.Binary.Binary CommandRequestMessage
 
 instance Data.Aeson.FromJSON CommandRequestMessage
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure CommandRequestMessage GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "serviceRequest") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "statusRequest") obj)) GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -181,9 +182,10 @@ data CommandRequest = CommandRequest
   , commandRequestExpires :: GHC.Base.Maybe Prelude.Integer -- ^ The number of secs the signature remains valid after being generated
   , commandRequestUsername :: Data.Text.Text -- ^ Username who generated message
   , commandRequestMessage :: CommandRequestMessage
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary CommandRequest
+
+instance Data.Binary.Binary CommandRequest
 
 instance Data.Aeson.FromJSON CommandRequest
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure CommandRequest GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property signature missing") (\val -> case val of

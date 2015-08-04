@@ -1,14 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 module SSPL.Bindings.ActuatorRequest where
-
-import SSPL.Bindings.Instances ()
-
-import Data.Binary (Binary)
-import Data.Typeable
-import GHC.Generics
 
 import Data.Aeson
 import Data.Aeson.Schema.Choice
@@ -16,6 +10,7 @@ import Data.Aeson.Schema.Types
 import Data.Aeson.Schema.Validator
 import Data.Aeson.Types
 import Data.Aeson.Types
+import Data.Binary
 import Data.Either
 import Data.Foldable
 import Data.Functor
@@ -27,12 +22,15 @@ import Data.Scientific
 import Data.Text
 import Data.Traversable
 import Data.Tuple
+import Data.Typeable
 import GHC.Base
 import GHC.Classes
+import GHC.Generics
 import GHC.List
 import GHC.Num
 import GHC.Show
 import Prelude
+import SSPL.Bindings.Instances ()
 import Text.Regex
 import Text.Regex.Base.RegexLike
 import Text.Regex.PCRE.String
@@ -124,22 +122,22 @@ graph = Data.Map.fromList [(Data.Text.pack "ActuatorRequest",
 data ActuatorRequestMessageActuator_request_typeThread_controller = ActuatorRequestMessageActuator_request_typeThread_controller
   { actuatorRequestMessageActuator_request_typeThread_controllerModule_name :: Data.Text.Text -- ^ Identify the thread to be managed by its class name
   , actuatorRequestMessageActuator_request_typeThread_controllerThread_request :: Data.Text.Text -- ^ Action to be applied to thread: start | stop | restart | status
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorRequestMessageActuator_request_typeThread_controller
+
+instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeThread_controller
 
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeThread_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items GHC.Base.$ (\(pname,
-                                                                                                    value) -> do
-                                                                                                                let matchingPatterns = GHC.List.filter (GHC.Base.flip Text.Regex.Base.RegexLike.match (Data.Text.unpack pname) GHC.Base.. (Data.Aeson.Schema.Types.patternCompiled GHC.Base.. Data.Tuple.fst)) [];
-                                                                                                                Data.Foldable.forM_ matchingPatterns GHC.Base.$ (\(_,
-                                                                                                                                                                   sch) -> do case Data.Aeson.Schema.Validator.validate graph sch value of
-                                                                                                                                                                                  [] -> GHC.Base.return ()
-                                                                                                                                                                                  es -> GHC.Base.fail GHC.Base.$ Prelude.unlines es);
-                                                                                                                let isAdditionalProperty = Data.Foldable.null matchingPatterns GHC.Classes.&& (pname `Data.Foldable.notElem` [Data.Text.pack "module_name",
-                                                                                                                                                                                                                              Data.Text.pack "thread_request"]);
-                                                                                                                GHC.Base.when isAdditionalProperty (GHC.Base.fail "additional properties are not allowed"));
+                                                                                                    value) -> do {matchingPatterns <- GHC.Base.return (GHC.List.filter (GHC.Base.flip Text.Regex.Base.RegexLike.match (Data.Text.unpack pname) GHC.Base.. (Data.Aeson.Schema.Types.patternCompiled GHC.Base.. Data.Tuple.fst)) []);
+                                                                                                                  Data.Foldable.forM_ matchingPatterns GHC.Base.$ (\(_,
+                                                                                                                                                                     sch) -> do (case Data.Aeson.Schema.Validator.validate graph sch value of
+                                                                                                                                                                                     [] -> GHC.Base.return ()
+                                                                                                                                                                                     es -> GHC.Base.fail GHC.Base.$ Prelude.unlines es));
+                                                                                                                  isAdditionalProperty <- GHC.Base.return (Data.Foldable.null matchingPatterns GHC.Classes.&& (pname `Data.Foldable.notElem` [Data.Text.pack "module_name",
+                                                                                                                                                                                                                                              Data.Text.pack "thread_request"]));
+                                                                                                                  GHC.Base.when isAdditionalProperty (GHC.Base.fail "additional properties are not allowed")});
                                                         (GHC.Base.pure ActuatorRequestMessageActuator_request_typeThread_controller GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property module_name missing") (\val -> case val of
                                                                                                                                                                                                                                        Data.Aeson.Types.String str -> do GHC.Base.return str
                                                                                                                                                                                                                                        _ -> GHC.Base.fail "not a string") (Data.HashMap.Lazy.lookup (Data.Text.pack "module_name") obj)) GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property thread_request missing") (\val -> case val of
@@ -154,21 +152,21 @@ instance Data.Aeson.ToJSON ActuatorRequestMessageActuator_request_typeThread_con
 
 data ActuatorRequestMessageActuator_request_typeLogin_controller = ActuatorRequestMessageActuator_request_typeLogin_controller
   { actuatorRequestMessageActuator_request_typeLogin_controllerLogin_request :: Data.Text.Text -- ^ Action to be performed on login services
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorRequestMessageActuator_request_typeLogin_controller
+
+instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeLogin_controller
 
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeLogin_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_1 = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items_1 GHC.Base.$ (\(pname_1,
-                                                                                                      value_1) -> do
-                                                                                                                    let matchingPatterns_1 = GHC.List.filter (GHC.Base.flip Text.Regex.Base.RegexLike.match (Data.Text.unpack pname_1) GHC.Base.. (Data.Aeson.Schema.Types.patternCompiled GHC.Base.. Data.Tuple.fst)) [];
-                                                                                                                    Data.Foldable.forM_ matchingPatterns_1 GHC.Base.$ (\(_,
-                                                                                                                                                                         sch_1) -> do case Data.Aeson.Schema.Validator.validate graph sch_1 value_1 of
-                                                                                                                                                                                          [] -> GHC.Base.return ()
-                                                                                                                                                                                          es_1 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_1);
-                                                                                                                    let isAdditionalProperty_1 = Data.Foldable.null matchingPatterns_1 GHC.Classes.&& (pname_1 `Data.Foldable.notElem` [Data.Text.pack "login_request"]);
-                                                                                                                    GHC.Base.when isAdditionalProperty_1 (GHC.Base.fail "additional properties are not allowed"));
+                                                                                                      value_1) -> do {matchingPatterns_1 <- GHC.Base.return (GHC.List.filter (GHC.Base.flip Text.Regex.Base.RegexLike.match (Data.Text.unpack pname_1) GHC.Base.. (Data.Aeson.Schema.Types.patternCompiled GHC.Base.. Data.Tuple.fst)) []);
+                                                                                                                      Data.Foldable.forM_ matchingPatterns_1 GHC.Base.$ (\(_,
+                                                                                                                                                                           sch_1) -> do (case Data.Aeson.Schema.Validator.validate graph sch_1 value_1 of
+                                                                                                                                                                                             [] -> GHC.Base.return ()
+                                                                                                                                                                                             es_1 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_1));
+                                                                                                                      isAdditionalProperty_1 <- GHC.Base.return (Data.Foldable.null matchingPatterns_1 GHC.Classes.&& (pname_1 `Data.Foldable.notElem` [Data.Text.pack "login_request"]));
+                                                                                                                      GHC.Base.when isAdditionalProperty_1 (GHC.Base.fail "additional properties are not allowed")});
                                                         GHC.Base.pure ActuatorRequestMessageActuator_request_typeLogin_controller GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property login_request missing") (\val -> case val of
                                                                                                                                                                                                                                        Data.Aeson.Types.String str -> do GHC.Base.return str
                                                                                                                                                                                                                                        _ -> GHC.Base.fail "not a string") (Data.HashMap.Lazy.lookup (Data.Text.pack "login_request") obj)}
@@ -179,21 +177,21 @@ instance Data.Aeson.ToJSON ActuatorRequestMessageActuator_request_typeLogin_cont
 
 data ActuatorRequestMessageActuator_request_typeNode_controller = ActuatorRequestMessageActuator_request_typeNode_controller
   { actuatorRequestMessageActuator_request_typeNode_controllerNode_request :: Data.Text.Text -- ^ Action to be performed on node; host_update, etc.
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorRequestMessageActuator_request_typeNode_controller
+
+instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeNode_controller
 
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeNode_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_2 = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items_2 GHC.Base.$ (\(pname_2,
-                                                                                                      value_2) -> do
-                                                                                                                    let matchingPatterns_2 = GHC.List.filter (GHC.Base.flip Text.Regex.Base.RegexLike.match (Data.Text.unpack pname_2) GHC.Base.. (Data.Aeson.Schema.Types.patternCompiled GHC.Base.. Data.Tuple.fst)) [];
-                                                                                                                    Data.Foldable.forM_ matchingPatterns_2 GHC.Base.$ (\(_,
-                                                                                                                                                                         sch_2) -> do case Data.Aeson.Schema.Validator.validate graph sch_2 value_2 of
-                                                                                                                                                                                          [] -> GHC.Base.return ()
-                                                                                                                                                                                          es_2 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_2);
-                                                                                                                    let isAdditionalProperty_2 = Data.Foldable.null matchingPatterns_2 GHC.Classes.&& (pname_2 `Data.Foldable.notElem` [Data.Text.pack "node_request"]);
-                                                                                                                    GHC.Base.when isAdditionalProperty_2 (GHC.Base.fail "additional properties are not allowed"));
+                                                                                                      value_2) -> do {matchingPatterns_2 <- GHC.Base.return (GHC.List.filter (GHC.Base.flip Text.Regex.Base.RegexLike.match (Data.Text.unpack pname_2) GHC.Base.. (Data.Aeson.Schema.Types.patternCompiled GHC.Base.. Data.Tuple.fst)) []);
+                                                                                                                      Data.Foldable.forM_ matchingPatterns_2 GHC.Base.$ (\(_,
+                                                                                                                                                                           sch_2) -> do (case Data.Aeson.Schema.Validator.validate graph sch_2 value_2 of
+                                                                                                                                                                                             [] -> GHC.Base.return ()
+                                                                                                                                                                                             es_2 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_2));
+                                                                                                                      isAdditionalProperty_2 <- GHC.Base.return (Data.Foldable.null matchingPatterns_2 GHC.Classes.&& (pname_2 `Data.Foldable.notElem` [Data.Text.pack "node_request"]));
+                                                                                                                      GHC.Base.when isAdditionalProperty_2 (GHC.Base.fail "additional properties are not allowed")});
                                                         GHC.Base.pure ActuatorRequestMessageActuator_request_typeNode_controller GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property node_request missing") (\val -> case val of
                                                                                                                                                                                                                                      Data.Aeson.Types.String str -> do GHC.Base.return str
                                                                                                                                                                                                                                      _ -> GHC.Base.fail "not a string") (Data.HashMap.Lazy.lookup (Data.Text.pack "node_request") obj)}
@@ -206,23 +204,23 @@ data ActuatorRequestMessageActuator_request_typeLogging = ActuatorRequestMessage
   { actuatorRequestMessageActuator_request_typeLoggingLog_msg :: Data.Text.Text -- ^ The message to be logged
   , actuatorRequestMessageActuator_request_typeLoggingLog_level :: GHC.Base.Maybe Data.Text.Text -- ^ LOG_EMERG,LOG_ALERT,LOG_CRIT,LOG_ERR,LOG_WARNING,LOG_NOTICE,LOG_INFO,LOG_DEBUG
   , actuatorRequestMessageActuator_request_typeLoggingLog_type :: Data.Text.Text -- ^ Identify the type of log message
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorRequestMessageActuator_request_typeLogging
+
+instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeLogging
 
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeLogging
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_3 = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items_3 GHC.Base.$ (\(pname_3,
-                                                                                                      value_3) -> do
-                                                                                                                    let matchingPatterns_3 = GHC.List.filter (GHC.Base.flip Text.Regex.Base.RegexLike.match (Data.Text.unpack pname_3) GHC.Base.. (Data.Aeson.Schema.Types.patternCompiled GHC.Base.. Data.Tuple.fst)) [];
-                                                                                                                    Data.Foldable.forM_ matchingPatterns_3 GHC.Base.$ (\(_,
-                                                                                                                                                                         sch_3) -> do case Data.Aeson.Schema.Validator.validate graph sch_3 value_3 of
-                                                                                                                                                                                          [] -> GHC.Base.return ()
-                                                                                                                                                                                          es_3 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_3);
-                                                                                                                    let isAdditionalProperty_3 = Data.Foldable.null matchingPatterns_3 GHC.Classes.&& (pname_3 `Data.Foldable.notElem` [Data.Text.pack "log_msg",
-                                                                                                                                                                                                                                        Data.Text.pack "log_level",
-                                                                                                                                                                                                                                        Data.Text.pack "log_type"]);
-                                                                                                                    GHC.Base.when isAdditionalProperty_3 (GHC.Base.fail "additional properties are not allowed"));
+                                                                                                      value_3) -> do {matchingPatterns_3 <- GHC.Base.return (GHC.List.filter (GHC.Base.flip Text.Regex.Base.RegexLike.match (Data.Text.unpack pname_3) GHC.Base.. (Data.Aeson.Schema.Types.patternCompiled GHC.Base.. Data.Tuple.fst)) []);
+                                                                                                                      Data.Foldable.forM_ matchingPatterns_3 GHC.Base.$ (\(_,
+                                                                                                                                                                           sch_3) -> do (case Data.Aeson.Schema.Validator.validate graph sch_3 value_3 of
+                                                                                                                                                                                             [] -> GHC.Base.return ()
+                                                                                                                                                                                             es_3 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_3));
+                                                                                                                      isAdditionalProperty_3 <- GHC.Base.return (Data.Foldable.null matchingPatterns_3 GHC.Classes.&& (pname_3 `Data.Foldable.notElem` [Data.Text.pack "log_msg",
+                                                                                                                                                                                                                                                        Data.Text.pack "log_level",
+                                                                                                                                                                                                                                                        Data.Text.pack "log_type"]));
+                                                                                                                      GHC.Base.when isAdditionalProperty_3 (GHC.Base.fail "additional properties are not allowed")});
                                                         ((GHC.Base.pure ActuatorRequestMessageActuator_request_typeLogging GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property log_msg missing") (\val -> case val of
                                                                                                                                                                                                                           Data.Aeson.Types.String str -> do GHC.Base.return str
                                                                                                                                                                                                                           _ -> GHC.Base.fail "not a string") (Data.HashMap.Lazy.lookup (Data.Text.pack "log_msg") obj)) GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -242,22 +240,22 @@ instance Data.Aeson.ToJSON ActuatorRequestMessageActuator_request_typeLogging
 data ActuatorRequestMessageActuator_request_typeService_controller = ActuatorRequestMessageActuator_request_typeService_controller
   { actuatorRequestMessageActuator_request_typeService_controllerService_name :: Data.Text.Text -- ^ Identify the service to be managed
   , actuatorRequestMessageActuator_request_typeService_controllerService_request :: Data.Text.Text -- ^ Action to be applied to service: start | stop | restart | status
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorRequestMessageActuator_request_typeService_controller
+
+instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeService_controller
 
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeService_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_4 = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items_4 GHC.Base.$ (\(pname_4,
-                                                                                                      value_4) -> do
-                                                                                                                    let matchingPatterns_4 = GHC.List.filter (GHC.Base.flip Text.Regex.Base.RegexLike.match (Data.Text.unpack pname_4) GHC.Base.. (Data.Aeson.Schema.Types.patternCompiled GHC.Base.. Data.Tuple.fst)) [];
-                                                                                                                    Data.Foldable.forM_ matchingPatterns_4 GHC.Base.$ (\(_,
-                                                                                                                                                                         sch_4) -> do case Data.Aeson.Schema.Validator.validate graph sch_4 value_4 of
-                                                                                                                                                                                          [] -> GHC.Base.return ()
-                                                                                                                                                                                          es_4 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_4);
-                                                                                                                    let isAdditionalProperty_4 = Data.Foldable.null matchingPatterns_4 GHC.Classes.&& (pname_4 `Data.Foldable.notElem` [Data.Text.pack "service_name",
-                                                                                                                                                                                                                                        Data.Text.pack "service_request"]);
-                                                                                                                    GHC.Base.when isAdditionalProperty_4 (GHC.Base.fail "additional properties are not allowed"));
+                                                                                                      value_4) -> do {matchingPatterns_4 <- GHC.Base.return (GHC.List.filter (GHC.Base.flip Text.Regex.Base.RegexLike.match (Data.Text.unpack pname_4) GHC.Base.. (Data.Aeson.Schema.Types.patternCompiled GHC.Base.. Data.Tuple.fst)) []);
+                                                                                                                      Data.Foldable.forM_ matchingPatterns_4 GHC.Base.$ (\(_,
+                                                                                                                                                                           sch_4) -> do (case Data.Aeson.Schema.Validator.validate graph sch_4 value_4 of
+                                                                                                                                                                                             [] -> GHC.Base.return ()
+                                                                                                                                                                                             es_4 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_4));
+                                                                                                                      isAdditionalProperty_4 <- GHC.Base.return (Data.Foldable.null matchingPatterns_4 GHC.Classes.&& (pname_4 `Data.Foldable.notElem` [Data.Text.pack "service_name",
+                                                                                                                                                                                                                                                        Data.Text.pack "service_request"]));
+                                                                                                                      GHC.Base.when isAdditionalProperty_4 (GHC.Base.fail "additional properties are not allowed")});
                                                         (GHC.Base.pure ActuatorRequestMessageActuator_request_typeService_controller GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property service_name missing") (\val -> case val of
                                                                                                                                                                                                                                          Data.Aeson.Types.String str -> do GHC.Base.return str
                                                                                                                                                                                                                                          _ -> GHC.Base.fail "not a string") (Data.HashMap.Lazy.lookup (Data.Text.pack "service_name") obj)) GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property service_request missing") (\val -> case val of
@@ -276,25 +274,25 @@ data ActuatorRequestMessageActuator_request_type = ActuatorRequestMessageActuato
   , actuatorRequestMessageActuator_request_typeNode_controller :: GHC.Base.Maybe ActuatorRequestMessageActuator_request_typeNode_controller
   , actuatorRequestMessageActuator_request_typeLogging :: GHC.Base.Maybe ActuatorRequestMessageActuator_request_typeLogging
   , actuatorRequestMessageActuator_request_typeService_controller :: GHC.Base.Maybe ActuatorRequestMessageActuator_request_typeService_controller
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorRequestMessageActuator_request_type
+
+instance Data.Binary.Binary ActuatorRequestMessageActuator_request_type
 
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_type
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_5 = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items_5 GHC.Base.$ (\(pname_5,
-                                                                                                      value_5) -> do
-                                                                                                                    let matchingPatterns_5 = GHC.List.filter (GHC.Base.flip Text.Regex.Base.RegexLike.match (Data.Text.unpack pname_5) GHC.Base.. (Data.Aeson.Schema.Types.patternCompiled GHC.Base.. Data.Tuple.fst)) [];
-                                                                                                                    Data.Foldable.forM_ matchingPatterns_5 GHC.Base.$ (\(_,
-                                                                                                                                                                         sch_5) -> do case Data.Aeson.Schema.Validator.validate graph sch_5 value_5 of
-                                                                                                                                                                                          [] -> GHC.Base.return ()
-                                                                                                                                                                                          es_5 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_5);
-                                                                                                                    let isAdditionalProperty_5 = Data.Foldable.null matchingPatterns_5 GHC.Classes.&& (pname_5 `Data.Foldable.notElem` [Data.Text.pack "thread_controller",
-                                                                                                                                                                                                                                        Data.Text.pack "login_controller",
-                                                                                                                                                                                                                                        Data.Text.pack "node_controller",
-                                                                                                                                                                                                                                        Data.Text.pack "logging",
-                                                                                                                                                                                                                                        Data.Text.pack "service_controller"]);
-                                                                                                                    GHC.Base.when isAdditionalProperty_5 (GHC.Base.fail "additional properties are not allowed"));
+                                                                                                      value_5) -> do {matchingPatterns_5 <- GHC.Base.return (GHC.List.filter (GHC.Base.flip Text.Regex.Base.RegexLike.match (Data.Text.unpack pname_5) GHC.Base.. (Data.Aeson.Schema.Types.patternCompiled GHC.Base.. Data.Tuple.fst)) []);
+                                                                                                                      Data.Foldable.forM_ matchingPatterns_5 GHC.Base.$ (\(_,
+                                                                                                                                                                           sch_5) -> do (case Data.Aeson.Schema.Validator.validate graph sch_5 value_5 of
+                                                                                                                                                                                             [] -> GHC.Base.return ()
+                                                                                                                                                                                             es_5 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_5));
+                                                                                                                      isAdditionalProperty_5 <- GHC.Base.return (Data.Foldable.null matchingPatterns_5 GHC.Classes.&& (pname_5 `Data.Foldable.notElem` [Data.Text.pack "thread_controller",
+                                                                                                                                                                                                                                                        Data.Text.pack "login_controller",
+                                                                                                                                                                                                                                                        Data.Text.pack "node_controller",
+                                                                                                                                                                                                                                                        Data.Text.pack "logging",
+                                                                                                                                                                                                                                                        Data.Text.pack "service_controller"]));
+                                                                                                                      GHC.Base.when isAdditionalProperty_5 (GHC.Base.fail "additional properties are not allowed")});
                                                         ((((GHC.Base.pure ActuatorRequestMessageActuator_request_type GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "thread_controller") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "login_controller") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "node_controller") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "logging") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "service_controller") obj)}
           parseJSON _ = GHC.Base.fail "not an object"
 
@@ -313,17 +311,18 @@ data ActuatorRequestMessage = ActuatorRequestMessage
   { actuatorRequestMessageSspl_ll_debug :: GHC.Base.Maybe Data.Aeson.Types.Value
   , actuatorRequestMessageActuator_request_type :: ActuatorRequestMessageActuator_request_type
   , actuatorRequestMessageSspl_ll_msg_header :: Data.Aeson.Types.Value
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorRequestMessage
+
+instance Data.Binary.Binary ActuatorRequestMessage
 
 instance Data.Aeson.FromJSON ActuatorRequestMessage
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure ActuatorRequestMessage GHC.Base.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
-                                                                                                                                                      [] -> GHC.Base.return ()
-                                                                                                                                                      es_6 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_6);
+                                                                                                                                                       [] -> GHC.Base.return ()
+                                                                                                                                                       es_6 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_6);
                                                                                                                                                   GHC.Base.return val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "sspl_ll_debug") obj)) GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property actuator_request_type missing") Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "actuator_request_type") obj)) GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property sspl_ll_msg_header missing") (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaRequired = Prelude.True} val of
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     [] -> GHC.Base.return ()
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     es_7 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_7);
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      [] -> GHC.Base.return ()
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      es_7 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_7);
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  GHC.Base.return val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "sspl_ll_msg_header") obj)
           parseJSON _ = GHC.Base.fail "not an object"
 
@@ -340,9 +339,10 @@ data ActuatorRequest = ActuatorRequest
   , actuatorRequestExpires :: GHC.Base.Maybe Prelude.Integer -- ^ The number of secs the signature remains valid after being generated
   , actuatorRequestUsername :: Data.Text.Text -- ^ Username who generated message
   , actuatorRequestMessage :: ActuatorRequestMessage
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorRequest
+
+instance Data.Binary.Binary ActuatorRequest
 
 instance Data.Aeson.FromJSON ActuatorRequest
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure ActuatorRequest GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property signature missing") (\val -> case val of
