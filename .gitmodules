@@ -39,3 +39,7 @@
 [submodule "vendor/network-transport-inmemory"]
 	path = vendor/network-transport-inmemory
 	url = https://github.com/haskell-distributed/network-transport-inmemory.git
+[submodule "vendor/aeson-schema"]
+	path = vendor/aeson-schema
+	url = https://github.com/Fuuzetsu/aeson-schema.git
+	branch = custom-options
