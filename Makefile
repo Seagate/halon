@@ -153,12 +153,17 @@ export TEST_LISTEN
 ci: cabal.config build
 	./scripts/check-copyright.sh
 
+clean_tixmix:
+	- find -name \*.mix -delete 2>/dev/null
+	- find -name \*.tix -delete 2>/dev/null
+
 BUILD_PKGS := $(patsubst %,%_build,$(PACKAGES))
 .PHONY: build
-build: dep $(BUILD_PKGS)
+build: dep clean_tixmix $(BUILD_PKGS)
 # XXX Tests tend to bind the same ports, making them mutually
 # exclusive in time. The solution is to allow tests to bind
 # a random available port.
+
 
 $(BUILD_PKGS):
 	cabal install $(CABAL_FLAGS) $(HALON_CABAL_FLAGS) $(CABAL_BUILD_JOBS) $(patsubst %_build, %, $@)
