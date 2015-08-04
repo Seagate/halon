@@ -78,6 +78,20 @@ schema = [schemaQQ|
               "description" : "Filter on entities to query. Interpretation is dependent on entity type. If not specified, applies to all entities of the given type."
             }
           }
+        },
+        "nodeStatusChangeRequest" : {
+          "type": "object",
+          "properties" : {
+            "command" : {
+              "required" : true,
+              "enum" : ["enable", "disable", "poweron", "poweroff"]
+            },
+            "nodes" : {
+              "required" : false,
+              "type" : "string",
+              "description" : "Regex on node FQDNs. If not specified, applies to all nodes."
+            }
+          }
         }
       }
     }
