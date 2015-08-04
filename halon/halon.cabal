@@ -56,6 +56,7 @@ Library
                    HA.EventQueue.Definitions
                    HA.EventQueue.Producer
                    HA.EventQueue.Types
+                   HA.EQTracker
                    HA.ResourceGraph
                    HA.Multimap
                    HA.Multimap.Implementation
@@ -72,7 +73,6 @@ Library
                    HA.Service.TH
                    HA.Services.Dummy
                    HA.Services.Empty
-                   HA.Services.EQTracker
                    HA.Services.Noisy
                    HA.Services.OCF
                    HA.Services.Ping
