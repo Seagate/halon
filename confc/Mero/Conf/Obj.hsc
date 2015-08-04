@@ -41,6 +41,7 @@ module Mero.Conf.Obj
   , Process(..)
   , getProcess
   , Service(..)
+  , ServiceType(..)
   , getService
   , Rack(..)
   , getRack
