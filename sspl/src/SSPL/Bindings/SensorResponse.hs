@@ -1,14 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 module SSPL.Bindings.SensorResponse where
-
-import SSPL.Bindings.Instances ()
-
-import Data.Binary (Binary)
-import Data.Typeable
-import GHC.Generics
 
 import Control.Monad
 import Data.Aeson
@@ -16,6 +10,8 @@ import Data.Aeson.Schema.Choice
 import Data.Aeson.Schema.Types
 import Data.Aeson.Schema.Validator
 import Data.Aeson.Types
+import Data.Aeson.Types
+import Data.Binary
 import Data.Either
 import Data.Functor
 import Data.HashMap.Lazy
@@ -25,12 +21,15 @@ import Data.Ratio
 import Data.Scientific
 import Data.Text
 import Data.Traversable
+import Data.Typeable
 import Data.Vector
 import GHC.Base
 import GHC.Classes
+import GHC.Generics
 import GHC.Num
 import GHC.Show
 import Prelude
+import SSPL.Bindings.Instances ()
 import Text.Regex
 import Text.Regex.PCRE.String
 
@@ -229,7 +228,16 @@ graph = Data.Map.fromList [(Data.Text.pack "SensorResponse",
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaType = [Data.Aeson.Schema.Choice.Choice1of2 Data.Aeson.Schema.Types.IntegerType]})]}),
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   Data.Aeson.Schema.Types.schemaMinItems = 1,
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   Data.Aeson.Schema.Types.schemaDescription = GHC.Base.Just (Data.Text.pack "CPU Core Data")})],
-                                                                                                                                                                                                                                                                                                                                                                            Data.Aeson.Schema.Types.schemaDescription = GHC.Base.Just (Data.Text.pack "CPU Data")})],
+                                                                                                                                                                                                                                                                                                                                                                            Data.Aeson.Schema.Types.schemaDescription = GHC.Base.Just (Data.Text.pack "CPU Data")}),
+                                                                                                                                                                                                                                                                                                                                             (Data.Text.pack "raid_data",
+                                                                                                                                                                                                                                                                                                                                              Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaType = [Data.Aeson.Schema.Choice.Choice1of2 Data.Aeson.Schema.Types.ObjectType],
+                                                                                                                                                                                                                                                                                                                                                                            Data.Aeson.Schema.Types.schemaProperties = Data.HashMap.Lazy.fromList [(Data.Text.pack "hostId",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                    Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaType = [Data.Aeson.Schema.Choice.Choice1of2 Data.Aeson.Schema.Types.StringType],
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  Data.Aeson.Schema.Types.schemaDescription = GHC.Base.Just (Data.Text.pack "Hostname of system")}),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                   (Data.Text.pack "mdstat",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                    Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaType = [Data.Aeson.Schema.Choice.Choice1of2 Data.Aeson.Schema.Types.StringType],
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  Data.Aeson.Schema.Types.schemaDescription = GHC.Base.Just (Data.Text.pack "/proc/mdstat containing state information about RAID")})],
+                                                                                                                                                                                                                                                                                                                                                                            Data.Aeson.Schema.Types.schemaDescription = GHC.Base.Just (Data.Text.pack "RAID Data")})],
                                                                                                                                                                                                                                                                       Data.Aeson.Schema.Types.schemaRequired = Prelude.True})],
                                                                                                                                                                 Data.Aeson.Schema.Types.schemaRequired = Prelude.True})],
                                                           Data.Aeson.Schema.Types.schemaId = GHC.Base.Just (Data.Text.pack "http://json-schema.org/draft-03/schema#"),
@@ -244,9 +252,10 @@ data SensorResponseMessageSensor_response_typeIf_dataInterfacesItem = SensorResp
   , sensorResponseMessageSensor_response_typeIf_dataInterfacesItemIfId :: GHC.Base.Maybe Data.Text.Text
   , sensorResponseMessageSensor_response_typeIf_dataInterfacesItemDroppedPacketsOut :: GHC.Base.Maybe Prelude.Integer
   , sensorResponseMessageSensor_response_typeIf_dataInterfacesItemPacketsOut :: GHC.Base.Maybe Prelude.Integer
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeIf_dataInterfacesItem
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeIf_dataInterfacesItem
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeIf_dataInterfacesItem
     where parseJSON (Data.Aeson.Types.Object obj) = do (((((((GHC.Base.pure SensorResponseMessageSensor_response_typeIf_dataInterfacesItem GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -303,9 +312,10 @@ data SensorResponseMessageSensor_response_typeIf_data = SensorResponseMessageSen
   { sensorResponseMessageSensor_response_typeIf_dataHostId :: GHC.Base.Maybe Data.Text.Text -- ^ Hostname of system
   , sensorResponseMessageSensor_response_typeIf_dataLocaltime :: GHC.Base.Maybe Data.Text.Text -- ^ Local time on system
   , sensorResponseMessageSensor_response_typeIf_dataInterfaces :: GHC.Base.Maybe ([SensorResponseMessageSensor_response_typeIf_dataInterfacesItem])
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeIf_data
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeIf_data
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeIf_data
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure SensorResponseMessageSensor_response_typeIf_data GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -328,9 +338,10 @@ instance Data.Aeson.ToJSON SensorResponseMessageSensor_response_typeIf_data
 data SensorResponseMessageSensor_response_typeHost_updateFreeMem = SensorResponseMessageSensor_response_typeHost_updateFreeMem
   { sensorResponseMessageSensor_response_typeHost_updateFreeMemValue :: GHC.Base.Maybe Prelude.Integer
   , sensorResponseMessageSensor_response_typeHost_updateFreeMemUnits :: GHC.Base.Maybe Data.Aeson.Types.Value
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeHost_updateFreeMem
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeHost_updateFreeMem
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeHost_updateFreeMem
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeHost_updateFreeMem GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -338,8 +349,8 @@ instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeHost_updat
                                                                                                                                                                                                                          Data.Either.Right i_7 -> do GHC.Base.return i_7
                                                                                                                                                                                                                          _ -> GHC.Base.fail "not an integer"
                                                                                                                                                                                       _ -> GHC.Base.fail "not an integer") (Data.HashMap.Lazy.lookup (Data.Text.pack "value") obj)) GHC.Base.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
-                                                                                                                                                                                                                                                                                                                                            [] -> GHC.Base.return ()
-                                                                                                                                                                                                                                                                                                                                            es -> GHC.Base.fail GHC.Base.$ Prelude.unlines es);
+                                                                                                                                                                                                                                                                                                                                             [] -> GHC.Base.return ()
+                                                                                                                                                                                                                                                                                                                                             es -> GHC.Base.fail GHC.Base.$ Prelude.unlines es);
                                                                                                                                                                                                                                                                                                                                         GHC.Base.return val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "units") obj)
           parseJSON _ = GHC.Base.fail "not an object"
 
@@ -351,9 +362,10 @@ instance Data.Aeson.ToJSON SensorResponseMessageSensor_response_typeHost_updateF
 data SensorResponseMessageSensor_response_typeHost_updateTotalMem = SensorResponseMessageSensor_response_typeHost_updateTotalMem
   { sensorResponseMessageSensor_response_typeHost_updateTotalMemValue :: GHC.Base.Maybe Prelude.Integer
   , sensorResponseMessageSensor_response_typeHost_updateTotalMemUnits :: GHC.Base.Maybe Data.Aeson.Types.Value
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeHost_updateTotalMem
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeHost_updateTotalMem
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeHost_updateTotalMem
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeHost_updateTotalMem GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -361,8 +373,8 @@ instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeHost_updat
                                                                                                                                                                                                                           Data.Either.Right i_8 -> do GHC.Base.return i_8
                                                                                                                                                                                                                           _ -> GHC.Base.fail "not an integer"
                                                                                                                                                                                        _ -> GHC.Base.fail "not an integer") (Data.HashMap.Lazy.lookup (Data.Text.pack "value") obj)) GHC.Base.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
-                                                                                                                                                                                                                                                                                                                                             [] -> GHC.Base.return ()
-                                                                                                                                                                                                                                                                                                                                             es_1 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_1);
+                                                                                                                                                                                                                                                                                                                                              [] -> GHC.Base.return ()
+                                                                                                                                                                                                                                                                                                                                              es_1 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_1);
                                                                                                                                                                                                                                                                                                                                          GHC.Base.return val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "units") obj)
           parseJSON _ = GHC.Base.fail "not an object"
 
@@ -382,9 +394,10 @@ data SensorResponseMessageSensor_response_typeHost_update = SensorResponseMessag
   , sensorResponseMessageSensor_response_typeHost_updateTotalMem :: GHC.Base.Maybe SensorResponseMessageSensor_response_typeHost_updateTotalMem -- ^ Total memory available
   , sensorResponseMessageSensor_response_typeHost_updateProcessCount :: GHC.Base.Maybe Prelude.Integer -- ^ Total number of processes
   , sensorResponseMessageSensor_response_typeHost_updateBootTime :: GHC.Base.Maybe Data.Text.Text -- ^ Time host was started
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeHost_update
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeHost_update
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeHost_update
     where parseJSON (Data.Aeson.Types.Object obj) = do (((((((((GHC.Base.pure SensorResponseMessageSensor_response_typeHost_update GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -435,9 +448,10 @@ data SensorResponseMessageSensor_response_typeDisk_status_drivemanager = SensorR
   { sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN :: Data.Text.Text -- ^ Enclosure Serial Number
   , sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum :: Data.Scientific.Scientific -- ^ Drive Number within the enclosure
   , sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus :: Data.Text.Text -- ^ Disk Status
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeDisk_status_drivemanager
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeDisk_status_drivemanager
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeDisk_status_drivemanager
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure SensorResponseMessageSensor_response_typeDisk_status_drivemanager GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property enclosureSN missing") (\val -> case val of
@@ -459,9 +473,10 @@ instance Data.Aeson.ToJSON SensorResponseMessageSensor_response_typeDisk_status_
 data SensorResponseMessageSensor_response_typeService_watchdog = SensorResponseMessageSensor_response_typeService_watchdog
   { sensorResponseMessageSensor_response_typeService_watchdogService_state :: Data.Text.Text -- ^ Current state of the service
   , sensorResponseMessageSensor_response_typeService_watchdogService_name :: Data.Text.Text -- ^ Identify the service with a state change
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeService_watchdog
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeService_watchdog
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeService_watchdog
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeService_watchdog GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property service_state missing") (\val -> case val of
@@ -479,9 +494,10 @@ instance Data.Aeson.ToJSON SensorResponseMessageSensor_response_typeService_watc
 data SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSwap = SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSwap
   { sensorResponseMessageSensor_response_typeLocal_mount_dataTotalSwapValue :: GHC.Base.Maybe Prelude.Integer
   , sensorResponseMessageSensor_response_typeLocal_mount_dataTotalSwapUnits :: GHC.Base.Maybe Data.Aeson.Types.Value
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSwap
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSwap
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSwap
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSwap GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -489,8 +505,8 @@ instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_moun
                                                                                                                                                                                                                                 Data.Either.Right i_11 -> do GHC.Base.return i_11
                                                                                                                                                                                                                                 _ -> GHC.Base.fail "not an integer"
                                                                                                                                                                                              _ -> GHC.Base.fail "not an integer") (Data.HashMap.Lazy.lookup (Data.Text.pack "value") obj)) GHC.Base.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
-                                                                                                                                                                                                                                                                                                                                                   [] -> GHC.Base.return ()
-                                                                                                                                                                                                                                                                                                                                                   es_2 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_2);
+                                                                                                                                                                                                                                                                                                                                                    [] -> GHC.Base.return ()
+                                                                                                                                                                                                                                                                                                                                                    es_2 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_2);
                                                                                                                                                                                                                                                                                                                                                GHC.Base.return val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "units") obj)
           parseJSON _ = GHC.Base.fail "not an object"
 
@@ -502,9 +518,10 @@ instance Data.Aeson.ToJSON SensorResponseMessageSensor_response_typeLocal_mount_
 data SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSpace = SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSpace
   { sensorResponseMessageSensor_response_typeLocal_mount_dataFreeSpaceValue :: GHC.Base.Maybe Prelude.Integer
   , sensorResponseMessageSensor_response_typeLocal_mount_dataFreeSpaceUnits :: GHC.Base.Maybe Data.Aeson.Types.Value
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSpace
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSpace
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSpace
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSpace GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -512,8 +529,8 @@ instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_moun
                                                                                                                                                                                                                                 Data.Either.Right i_12 -> do GHC.Base.return i_12
                                                                                                                                                                                                                                 _ -> GHC.Base.fail "not an integer"
                                                                                                                                                                                              _ -> GHC.Base.fail "not an integer") (Data.HashMap.Lazy.lookup (Data.Text.pack "value") obj)) GHC.Base.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
-                                                                                                                                                                                                                                                                                                                                                   [] -> GHC.Base.return ()
-                                                                                                                                                                                                                                                                                                                                                   es_3 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_3);
+                                                                                                                                                                                                                                                                                                                                                    [] -> GHC.Base.return ()
+                                                                                                                                                                                                                                                                                                                                                    es_3 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_3);
                                                                                                                                                                                                                                                                                                                                                GHC.Base.return val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "units") obj)
           parseJSON _ = GHC.Base.fail "not an object"
 
@@ -525,9 +542,10 @@ instance Data.Aeson.ToJSON SensorResponseMessageSensor_response_typeLocal_mount_
 data SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpace = SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpace
   { sensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpaceValue :: GHC.Base.Maybe Prelude.Integer
   , sensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpaceUnits :: GHC.Base.Maybe Data.Aeson.Types.Value
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpace
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpace
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpace
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpace GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -535,8 +553,8 @@ instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_moun
                                                                                                                                                                                                                                  Data.Either.Right i_13 -> do GHC.Base.return i_13
                                                                                                                                                                                                                                  _ -> GHC.Base.fail "not an integer"
                                                                                                                                                                                               _ -> GHC.Base.fail "not an integer") (Data.HashMap.Lazy.lookup (Data.Text.pack "value") obj)) GHC.Base.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
-                                                                                                                                                                                                                                                                                                                                                    [] -> GHC.Base.return ()
-                                                                                                                                                                                                                                                                                                                                                    es_4 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_4);
+                                                                                                                                                                                                                                                                                                                                                     [] -> GHC.Base.return ()
+                                                                                                                                                                                                                                                                                                                                                     es_4 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_4);
                                                                                                                                                                                                                                                                                                                                                 GHC.Base.return val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "units") obj)
           parseJSON _ = GHC.Base.fail "not an object"
 
@@ -548,9 +566,10 @@ instance Data.Aeson.ToJSON SensorResponseMessageSensor_response_typeLocal_mount_
 data SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwap = SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwap
   { sensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwapValue :: GHC.Base.Maybe Prelude.Integer
   , sensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwapUnits :: GHC.Base.Maybe Data.Aeson.Types.Value
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwap
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwap
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwap
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwap GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -558,8 +577,8 @@ instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_moun
                                                                                                                                                                                                                                Data.Either.Right i_14 -> do GHC.Base.return i_14
                                                                                                                                                                                                                                _ -> GHC.Base.fail "not an integer"
                                                                                                                                                                                             _ -> GHC.Base.fail "not an integer") (Data.HashMap.Lazy.lookup (Data.Text.pack "value") obj)) GHC.Base.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
-                                                                                                                                                                                                                                                                                                                                                  [] -> GHC.Base.return ()
-                                                                                                                                                                                                                                                                                                                                                  es_5 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_5);
+                                                                                                                                                                                                                                                                                                                                                   [] -> GHC.Base.return ()
+                                                                                                                                                                                                                                                                                                                                                   es_5 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_5);
                                                                                                                                                                                                                                                                                                                                               GHC.Base.return val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "units") obj)
           parseJSON _ = GHC.Base.fail "not an object"
 
@@ -576,9 +595,10 @@ data SensorResponseMessageSensor_response_typeLocal_mount_data = SensorResponseM
   , sensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpace :: GHC.Base.Maybe SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpace
   , sensorResponseMessageSensor_response_typeLocal_mount_dataFreeInodes :: GHC.Base.Maybe Prelude.Integer
   , sensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwap :: GHC.Base.Maybe SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwap
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeLocal_mount_data
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeLocal_mount_data
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_mount_data
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((((GHC.Base.pure SensorResponseMessageSensor_response_typeLocal_mount_data GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "totalSwap") obj)) GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -613,9 +633,10 @@ data SensorResponseMessageSensor_response_typeCpu_dataCoreDataItem = SensorRespo
   , sensorResponseMessageSensor_response_typeCpu_dataCoreDataItemLoad15MinAvg :: GHC.Base.Maybe Prelude.Integer
   , sensorResponseMessageSensor_response_typeCpu_dataCoreDataItemCoreId :: GHC.Base.Maybe Prelude.Integer
   , sensorResponseMessageSensor_response_typeCpu_dataCoreDataItemLoad5MinAvg :: GHC.Base.Maybe Prelude.Integer
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeCpu_dataCoreDataItem
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeCpu_dataCoreDataItem
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeCpu_dataCoreDataItem
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure SensorResponseMessageSensor_response_typeCpu_dataCoreDataItem GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -665,9 +686,10 @@ data SensorResponseMessageSensor_response_typeCpu_data = SensorResponseMessageSe
   , sensorResponseMessageSensor_response_typeCpu_dataInterruptTime :: GHC.Base.Maybe Prelude.Integer
   , sensorResponseMessageSensor_response_typeCpu_dataIowaitTime :: GHC.Base.Maybe Prelude.Integer
   , sensorResponseMessageSensor_response_typeCpu_dataCoreData :: GHC.Base.Maybe ([SensorResponseMessageSensor_response_typeCpu_dataCoreDataItem]) -- ^ CPU Core Data
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeCpu_data
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeCpu_data
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeCpu_data
     where parseJSON (Data.Aeson.Types.Object obj) = do (((((((((((GHC.Base.pure SensorResponseMessageSensor_response_typeCpu_data GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -744,9 +766,10 @@ instance Data.Aeson.ToJSON SensorResponseMessageSensor_response_typeCpu_data
 data SensorResponseMessageSensor_response_typeRaid_data = SensorResponseMessageSensor_response_typeRaid_data
   { sensorResponseMessageSensor_response_typeRaid_dataHostId :: GHC.Base.Maybe Data.Text.Text -- ^ Hostname of system
   , sensorResponseMessageSensor_response_typeRaid_dataMdstat :: GHC.Base.Maybe Data.Text.Text -- ^ /proc/mdstat containing state information about RAID
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_typeRaid_data
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_typeRaid_data
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeRaid_data
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeRaid_data GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -769,9 +792,10 @@ data SensorResponseMessageSensor_response_type = SensorResponseMessageSensor_res
   , sensorResponseMessageSensor_response_typeLocal_mount_data :: GHC.Base.Maybe SensorResponseMessageSensor_response_typeLocal_mount_data -- ^ Local mount data
   , sensorResponseMessageSensor_response_typeCpu_data :: GHC.Base.Maybe SensorResponseMessageSensor_response_typeCpu_data -- ^ CPU Data
   , sensorResponseMessageSensor_response_typeRaid_data :: GHC.Base.Maybe SensorResponseMessageSensor_response_typeRaid_data -- ^ RAID Data
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessageSensor_response_type
+
+instance Data.Binary.Binary SensorResponseMessageSensor_response_type
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_type
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((((GHC.Base.pure SensorResponseMessageSensor_response_type GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "if_data") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "host_update") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "disk_status_drivemanager") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "service_watchdog") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "local_mount_data") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "cpu_data") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "raid_data") obj)
@@ -795,14 +819,15 @@ instance Data.Aeson.ToJSON SensorResponseMessageSensor_response_type
 data SensorResponseMessage = SensorResponseMessage
   { sensorResponseMessageSspl_ll_msg_header :: GHC.Base.Maybe Data.Aeson.Types.Value
   , sensorResponseMessageSensor_response_type :: SensorResponseMessageSensor_response_type
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponseMessage
+
+instance Data.Binary.Binary SensorResponseMessage
 
 instance Data.Aeson.FromJSON SensorResponseMessage
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessage GHC.Base.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
-                                                                                                                                                    [] -> GHC.Base.return ()
-                                                                                                                                                    es_6 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_6);
+                                                                                                                                                     [] -> GHC.Base.return ()
+                                                                                                                                                     es_6 -> GHC.Base.fail GHC.Base.$ Prelude.unlines es_6);
                                                                                                                                                 GHC.Base.return val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "sspl_ll_msg_header") obj)) GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property sensor_response_type missing") Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "sensor_response_type") obj)
           parseJSON _ = GHC.Base.fail "not an object"
 
@@ -817,9 +842,10 @@ data SensorResponse = SensorResponse
   , sensorResponseExpires :: GHC.Base.Maybe Prelude.Integer -- ^ The number of secs the signature remains valid after being generated
   , sensorResponseUsername :: Data.Text.Text -- ^ Username who generated message
   , sensorResponseMessage :: SensorResponseMessage
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary SensorResponse
+
+instance Data.Binary.Binary SensorResponse
 
 instance Data.Aeson.FromJSON SensorResponse
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure SensorResponse GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property signature missing") (\val -> case val of
