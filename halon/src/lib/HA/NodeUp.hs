@@ -22,16 +22,24 @@ module HA.NodeUp
   )
 where
 
-import HA.EventQueue.Producer (promulgateEQ)
+import HA.EventQueue.Producer (promulgate)
+import qualified HA.EQTracker as EQT
+import HA.NodeAgent.Messages (ServiceMessage(..))
 
 import Control.Distributed.Process
   ( NodeId
   , ProcessId
   , Process
-  , expectTimeout
   , getSelfPid
+  , nsend
+  , expect
   , say
   , processNodeId
+  , spawnLocal
+  , monitor
+  , ProcessMonitorNotification(..)
+  , receiveTimeout
+  , matchIf
   )
 import Control.Distributed.Process.Closure ( remotable )
 import Control.Monad.Trans (liftIO)
@@ -53,21 +61,27 @@ data NodeUp = NodeUp
 instance Binary NodeUp
 instance Hashable NodeUp
 
--- | Process which repeatedly sends 'NodeUp' messages to the EQ, until
---   one is acknowledged with a '()' reply.
+-- | Process which setup EQT and then repeatedly sends 'NodeUp' messages
+--   to the EQ, until one is acknowledged with a '()' reply.
 nodeUp :: ( [NodeId] -- ^ Set of EQ nodes to contact
           , Int -- ^ Interval between sending messages (ms)
           )
        -> Process ()
-nodeUp (eqs, delay) = getSelfPid >>= go
+nodeUp (eqs, delay) = do
+    self <- getSelfPid
+    nsend EQT.name (self, UpdateEQNodes eqs)
+    go self
   where
     go pid = do
       say $ "Sending NodeUp message to " ++ show eqs ++ " me -> " ++ (show $ processNodeId pid)
       h <- liftIO $ getHostName
-      _ <- promulgateEQ eqs $ NodeUp h pid
-      msg <- expectTimeout delay
+      sender <- promulgate $ NodeUp h pid
+      ref <- monitor sender
+      msg <- receiveTimeout delay
+                [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref' == ref)
+                          (\_ -> return ()) ]
       case msg of
         Nothing -> go pid
-        Just () -> return ()
+        Just _  -> expect
 
 remotable ['nodeUp]
