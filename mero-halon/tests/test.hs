@@ -6,14 +6,13 @@
 
 module Main where
 
-import Prelude hiding ((<$>))
 import qualified HA.RecoveryCoordinator.Mero.Tests
+import qualified HA.Autoboot.Tests
 
 import Test.Tasty (TestTree, defaultMainWithIngredients)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
 import Test.Tasty.Ingredients.FileReporter (fileTestReporter)
 
-import Control.Applicative ((<$>))
 import System.Environment (lookupEnv, getArgs)
 import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
 
@@ -39,6 +38,7 @@ import qualified HA.Network.Socket as TCP
 import qualified Network.Socket as TCP
 import qualified Network.Transport.TCP as TCP
 #endif
+import Prelude
 
 ut :: Transport -> IO TestTree
 ut transport = return $
@@ -64,6 +64,8 @@ ut transport = return $
         HA.RecoveryCoordinator.Mero.Tests.testMasterMonitorManagement transport
       , testCase "RCNodeUpRace" $
         HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
+      , testGroup "Autoboot" $
+        HA.Autoboot.Tests.tests transport
       ]
 
 runTests :: (Transport -> IO TestTree) -> IO ()

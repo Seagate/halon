@@ -49,13 +49,15 @@ import Network.Transport.TCP (createTransport, defaultTCPParameters)
 
 import System.Environment (getExecutablePath)
 import System.FilePath ((</>), takeDirectory)
+import System.Timeout
 
 
 getBuildPath :: IO FilePath
 getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
 
 main :: IO ()
-main = do
+main =
+  (>>= maybe (error "test timed out") return) $ timeout (120 * 1000000) $ do
     cp <- getProvider
 
     buildPath <- getBuildPath

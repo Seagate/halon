@@ -1,7 +1,82 @@
 * Dockerfiles
 
-halon-docker-ubuntu14.04/ contains a dockerfile that will build
-master branch halon, with dependencies, on top of Ubuntu 14.04
+ * To configure docker for use in subsequent sections:
+
+  install docker from wherever you install your software from.
+
+  configure docker to listen on a TCP port, but make sure it is
+  one that is not available to the internet (or untrusted networks).
+
+  find out which IP address docker has configured for the docker0
+  network interface - for example, by typing: ifconfig docker0.
+  In the below notes, 172.17.42.1 will be used for that address.
+
+  One of these:
+  * On ubuntu, edit /etc/default/docker to have a DOCKER_OPTS
+    including something like: -H 172.17.42.1:5555 where that IP address
+    is the address on your docker0 interface on the host.
+
+  * On a systemd system, create /etc/systemd/system/docker.service.d/daemon.conf 
+    with contents like:
+
+    [Service]
+    ExecStart=
+    ExecStart=/usr/bin/docker -d -H 172.17.42.1:5555
+
+  * On NixOS, in your configuration.nix you'll need
+
+      virtualisation.docker = {
+        enable = true;
+        extraOptions = "-H 172.17.42.1:5555";
+        postStart = ''
+          while ! [ -e /var/run/docker.pid ]; do
+            sleep 0.1
+          done
+        '';
+      };
+
+    You'll need more recent nixpkgs if it complains about lack of postStart attribute.
+
+ * To use a docker image for building in a development environment
+
+   This will pull the latest master base image from CI, mounting
+   ~/workspace/tweag/halon on your host system into the /halon
+   directory in the build container. This is so that you can
+   use your own editor, git security, etc.
+
+   docker --host=172.17.42.1:5555 pull tweag/haskell-env-on-centos-7:master
+   docker --host=172.17.42.1:5555 run -v ~/workspace/tweag/halon:/halon -t -i tweag/haskell-env-on-centos-7:master /bin/bash 
+
+   Once that shell appears, you can make a git checkout and
+   make dep; make build
+
+
+ * To run distributed tests, set:
+   DOCKER_HOST to the same parameter you used for --host aboe
+   DC_PROVIDER=docker
+   DC_HOST_IP to the IP address of your build container (not the
+      IP address of the host system)
+ 
+   build the image for running remote tests:
+
+   cd docker/
+   docker --host=172.17.42.1:5555  build --tag=tweagremote tweagremote
+
+   you will need to make your ssh use docker/tweagremote/id_rsa, for
+   example by adding it to your ssh agent. if you don't do this,
+   you will get messages like: "dev@1.2.3.4 password:" when
+   running the tests below.
+
+   now run the distributed-commands tests, from the same build image
+   that you ran "make" above.
+
+   cabal install distributed-commands --reinstall --enable-tests --run-tests --flag="distributed-tests" --flag="docker-tests"
+
+   or to run all the distributed tests,
+     $ export CABAL_FLAGS='--flag="maintainer" --flag="distributed-tests"'
+     $ make
+
+ * Overview of the subdirectories of docker/
 
 tweagremote/ is a base centos7 system with some SSH key
 configuration, but nothing halon specific. This is intended to
@@ -28,49 +103,4 @@ all the dependencies installed.
 Dependency detection logic is hash based and lives in the
 generate-*-version functions in functions.sh
 
-* To run distributed tests in docker:
-
-  install docker
-
-  configure docker to listen on a TCP port, but make sure it is
-  one that is not available to the internet (or untrusted networks).
-
-  One of these:
-  * On ubuntu, edit /etc/default/docker to have a DOCKER_OPTS
-    including something like: -H 172.17.42.1:5555 where that IP address
-    is the address on your docker0 interface on the host.
-
-  * On a systemd system, edit ExecStart in /usr/lib/systemd/system/docker.service
-  eg ExecStart=/usr/bin/docker -d -H 172.17.42.1:5555
-
-  build the image for running remote tests:
-
-  cd docker/
-  docker --host=172.17.42.1:5555  build --tag=tweagremote tweagremote
-
-  you will need to make your ssh use docker/tweagremote/id_rsa, for
-  example by adding it to your ssh agent. if you don't do this,
-  you will get messages like: "dev@1.2.3.4 password:" when
-  running the tests below.
-
-  now run the distributed-commands tests:
-
-  export DC_PROVIDER=docker
-  export DOCKER_HOST=http://172.17.42.1:5555
-
-  cabal install distributed-commands --reinstall --enable-tests --run-tests --flag="distributed-tests" --flag="docker-tests"
-
-
-* To use a docker image for building in a development environment
-
-This will be needed if, for example, your host OS generates
-binaries that are not sufficiently compatible with the
-tweagremote Centos environment. (eg if you build on debian).
-
-This is an example of a command that will start a particular
-CI-built image locally, mounting your local ~/workspace/tweag/halon
-directory over the /halon directory in the build image.
-
-docker --host=172.17.42.1:5555 pull tweag/haskell-env-on-centos-7:master
-docker --host=172.17.42.1:5555 run -v ~/workspace/tweag/halon:/halon -t -i tweag/haskell-env-on-centos-7:master /bin/bash 
 

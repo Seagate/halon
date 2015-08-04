@@ -1,5 +1,5 @@
-GHCVERSION=7.10.1
-CABALVERSION=1.22.2.0
+GHCVERSION=7.10.2
+CABALVERSION=1.22.4.0
 
 function build-if-needed {
 
