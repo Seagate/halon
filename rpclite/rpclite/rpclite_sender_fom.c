@@ -37,16 +37,6 @@ int m0_fom_rpclite_sender_state(struct m0_fom *fom)
 
 	fom_obj = container_of(fom, struct m0_fom_rpclite_sender, fp_gen);
     switch(fom_obj->type) {
-        case RPC_SENDER_TYPE_CONNECT:
-            m0_fom_block_enter(fom);
-            fom_obj->fom_st->rc =
-                rpc_connect_m0_thread(fom_obj->connect.rpc_machine
-                                ,fom_obj->connect.remote_address
-                                ,fom_obj->connect.timeout_s
-                                ,fom_obj->connect.c
-                                );
-            m0_fom_block_leave(fom);
-            break;
          case RPC_SENDER_TYPE_DISCONNECT:
             m0_fom_block_enter(fom);
             fom_obj->fom_st->rc =

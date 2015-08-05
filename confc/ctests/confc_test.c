@@ -53,10 +53,12 @@ static const char* show_service_type(enum m0_conf_service_type t) {
 			return "M0_CST_MGS";
 		case M0_CST_RMS:
 			return "M0_CST_RMS";
-		case M0_CST_SS:
-			return "M0_CST_SS";
+		case M0_CST_STS:
+			return "M0_CST_STS";
 		case M0_CST_HA:
 			return "M0_CST_HA";
+		case M0_CST_SSS:
+			return "M0_CST_SSS";
 		default:
 			return "unknown";
 	}
@@ -78,7 +80,7 @@ static void print_configuration_child(int newi,const char* label,struct m0_conf_
 }
 
 static void print_configuration(int indentation,struct m0_conf_obj* obj) {
-	
+
 	int newi = indentation+2;
 	printf("m0_fid(0x%lX,%lu): ",obj->co_id.f_container,obj->co_id.f_key);
 	const struct m0_conf_obj_type *t = m0_conf_obj_type(obj);
@@ -133,7 +135,6 @@ static void print_configuration(int indentation,struct m0_conf_obj* obj) {
 		printf("last_state = %lu, flags = %lu, pool_id = %lu }\n"
 				,node->cn_last_state
 				,node->cn_flags
-				,node->cn_pool_id
 				);
 		print_configuration_child(newi,"nics",obj,M0_CONF_NODE_NICS_FID);
 		print_configuration_child(newi,"sdevs",obj,M0_CONF_NODE_SDEVS_FID);
@@ -206,7 +207,7 @@ int main(int argc,char** argv) {
 		fprintf(stderr,"m0_confc_init: %d %s\n",rc,strerror(-rc));
 		return 1;
 	}
-	
+
 	print_configuration(0,confc.cc_root);
 
 	m0_confc_fini(&confc);

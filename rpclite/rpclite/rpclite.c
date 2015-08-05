@@ -28,12 +28,7 @@
 #include <stdlib.h>
 
 #define ITEM_SIZE_CUSHION 128
-#define LINUXSTOB_PREFIX "linuxstob:"
 #define DB_FILE_NAME     "rpclite.db"
-#define S_DB_FILE_NAME     "rpclite2.db"
-#define S_STOB_FILE_NAME   "rpclite2.stob"
-#define S_ADDB_STOB_FILE_NAME   "rpclite2_addb.stob"
-#define S_LOG_FILE_NAME    "rpclite2.log"
 
 enum {
     BUF_LEN            = 128,
@@ -42,8 +37,8 @@ enum {
     MAX_RPCS_IN_FLIGHT = 32,
     CLIENT_COB_DOM_ID  = 13,
     CONNECT_TIMEOUT    = 20,
-	QUEUE_LEN      = 16,
-	MAX_MSG_SIZE       = 1 << 16,
+	QUEUE_LEN          = 2,
+	MAX_MSG_SIZE       = 1 << 17,
 };
 
 
@@ -156,6 +151,7 @@ struct m0_rpc_machine* rpc_get_rpc_machine(rpc_endpoint_t* e) {
 }
 
 int rpc_create_endpoint(char* local_address,rpc_endpoint_t** e) {
+	static struct m0_fid process_fid = M0_FID_TINIT('r', 0, 1);
 	M0_ASSERT(e);
 	*e = (rpc_endpoint_t*)malloc(sizeof(rpc_endpoint_t));
 	int rc;
@@ -175,8 +171,8 @@ int rpc_create_endpoint(char* local_address,rpc_endpoint_t** e) {
 	M0_SET0(reqh);
 	rc = M0_REQH_INIT(reqh,
 			  .rhia_dtm          = (void*)1,
-			  .rhia_db           = NULL,
-			  .rhia_mdstore      = (void*)1);
+			  .rhia_mdstore      = (void*)1,
+			  .rhia_fid          = &process_fid);
 	if (rc != 0)
 		goto pool_fini;
 	m0_reqh_start(reqh);
@@ -370,66 +366,9 @@ void rpc_release_connection(rpc_connection_t* c) {
 	free(c);
 }
 
-
-struct rpc_receive_endpoint {
-	struct m0_rpc_server_ctx sctx;
-	char tm_len[STRING_LEN];
-	char rpc_size[STRING_LEN];
-    char server_endpoint[M0_NET_LNET_XEP_ADDR_LEN];
-	char** server_argv;
-    char db_file_name[STRING_LEN];
-    char stob_file_name[STRING_LEN];
-    char addb_stob_file_name[STRING_LEN];
-    char log_file_name[STRING_LEN];
-};
-
 rpc_listen_callbacks_t rpclite_listen_cbs;
 
-/*
- * Creates a connection by asking an m0_thread managed by the request
- * handler of a receive endpoint to establish the connection.
- * */
-int rpc_connect_re(rpc_receive_endpoint_t* e, char* remote_address,
-		   int timeout_s,rpc_connection_t** c) {
-	M0_ASSERT(c);
-	struct m0_fom *fom;
-	int rc;
-	struct m0_fom_rpclite_sender *fom_obj;
-	struct fom_state fom_st;
-	m0_time_t time;
-	struct m0_reqh* reqh = m0_cs_reqh_get(&e->sctx.rsx_mero_ctx);
-	if (!reqh) {
-		fprintf(stderr,"%s: could not find request handler.",__func__);
-		return 1;
-	}
-
-	time = m0_time_now();
-	CHECK_RESULT(rc, create_sender_fom(&fom_obj,reqh,RPC_SENDER_TYPE_CONNECT,&fom_st), return rc);
-
-	fom_obj->connect.rpc_machine = m0_mero_to_rmach(&e->sctx.rsx_mero_ctx);
-	fom_obj->connect.remote_address = remote_address;
-	fom_obj->connect.timeout_s = timeout_s;
-	fom_obj->connect.c = c;
-
-	run_sender_fom(fom_obj,reqh);
-	if (fom_st.rc==0) {
-		time = m0_time_sub(m0_time_now(), time);
-		add_rpc_stat_record(RPC_STAT_CONN, time);
-	}
-	return fom_st.rc;
-}
-
-struct m0_rpc_machine* rpc_get_rpc_machine_re(rpc_receive_endpoint_t* e) {
-	return m0_mero_to_rmach(&e->sctx.rsx_mero_ctx);
-}
-
-int rpc_listen(char* persistence_prefix,char* address,rpc_listen_callbacks_t* cbs,rpc_receive_endpoint_t** re) {
-
-	int rc;
-	int i;
-	struct m0_net_xprt *xprt = &m0_net_lnet_xprt;
-	char* conf_profile;
-	char* conf_db_path;
+int rpc_listen(char* address,rpc_listen_callbacks_t* cbs,rpc_endpoint_t** e) {
 
 	if (cbs) {
 		rpclite_listen_cbs = *cbs;
@@ -440,84 +379,8 @@ int rpc_listen(char* persistence_prefix,char* address,rpc_listen_callbacks_t* cb
 			, .receive_callback=NULL
 			};
 	}
-	*re = (rpc_receive_endpoint_t*)malloc(sizeof(rpc_receive_endpoint_t));
 
-	strcpy((*re)->server_endpoint,"lnet:");
-	M0_ASSERT(strlen(address)+strlen((*re)->server_endpoint)<M0_NET_LNET_XEP_ADDR_LEN);
-	strcat((*re)->server_endpoint,address);
-
-	M0_ASSERT(strlen(persistence_prefix)+strlen(S_DB_FILE_NAME)<STRING_LEN);
-	strcpy((*re)->db_file_name,persistence_prefix);
-	strcat((*re)->db_file_name,S_DB_FILE_NAME);
-
-   	M0_ASSERT(strlen(LINUXSTOB_PREFIX)+strlen(persistence_prefix)+strlen(S_ADDB_STOB_FILE_NAME)<STRING_LEN);
-   	strcpy((*re)->addb_stob_file_name, LINUXSTOB_PREFIX);
-	strcat((*re)->addb_stob_file_name, persistence_prefix);
-	strcat((*re)->addb_stob_file_name, S_ADDB_STOB_FILE_NAME);
-
-   	M0_ASSERT(strlen(persistence_prefix)+strlen(S_STOB_FILE_NAME)<STRING_LEN);
-	strcpy((*re)->stob_file_name,persistence_prefix);
-	strcat((*re)->stob_file_name,S_STOB_FILE_NAME);
-
-   	M0_ASSERT(strlen(persistence_prefix)+strlen(S_LOG_FILE_NAME)<STRING_LEN);
-	strcpy((*re)->log_file_name,persistence_prefix);
-	strcat((*re)->log_file_name,S_LOG_FILE_NAME);
-
-    sprintf((*re)->tm_len, "%d" , QUEUE_LEN);
-    sprintf((*re)->rpc_size, "%d" , MAX_MSG_SIZE);
-
-	conf_profile = getenv("RPCLITE_CONF_PROFILE");
-   	M0_ASSERT_INFO(conf_profile, "RPCLITE_CONF_PROFILE must be set "
-      " (e.g. export RPCLITE_CONF_PROFILE=\"<0x7000000000000001:0>\")");
-	conf_db_path = getenv("RPCLITE_CONF_DB_PATH");
-   	M0_ASSERT_INFO(conf_db_path, "RPCLITE_CONF_DB_PATH must be set "
-      " (e.g. export RPCLITE_CONF_DB_PATH=\"conf-str.txt\")");
-
-	char *server_argv[] = {
-	                "rpclib_ut", "-T", "AD", "-D", (*re)->db_file_name,
-	                "-S", (*re)->stob_file_name, "-e", (*re)->server_endpoint,
-					"-A", (*re)->addb_stob_file_name,"-w","5",
-	                "-q", (*re)->tm_len, "-m", (*re)->rpc_size,
-	                "-s", "confd",
-	                "-P", conf_profile,
-	                "-c", conf_db_path
-    };
-
-	(*re)->server_argv = (char**)malloc(sizeof(server_argv));
-	for(i=0;i<ARRAY_SIZE(server_argv);i+=1)
-		(*re)->server_argv[i] = server_argv[i];
-
-    (*re)->sctx = (struct m0_rpc_server_ctx) {
-			                .rsx_xprts            = &xprt,
-			                .rsx_xprts_nr         = 1,
-			                .rsx_argv             = (*re)->server_argv,
-			                .rsx_argc             = ARRAY_SIZE(server_argv),
-			                .rsx_log_file_name    = (*re)->log_file_name
-			        };
-
-    CHECK_RESULT(rc, m0_rpc_server_start(&(*re)->sctx), free((*re)->server_argv);free(*re) );
-
-	return rc;
-}
-
-
-void rpc_stop_listening(rpc_receive_endpoint_t* re) {
-	m0_rpc_server_stop(&re->sctx);
-	free(re->server_argv);
-	free(re);
-}
-
-// We provide our own routine for freeing the the FOP.
-// The default m0_fop_free would free the user-suplied
-// buffers which are not intended to be owned by the rpc layer.
-void rpclite_fop_free_nonuser_memory(struct m0_ref *ref) {
-	struct m0_fop *fop = container_of(ref, struct m0_fop, f_ref);
-	struct rpclite_fop* rpclite_fop = m0_fop_data(fop);
-	int i;
-	m0_free(rpclite_fop->fp_fragments.f_fragments);
-	m0_free(fop->f_data.fd_data);
-	fop->f_data.fd_data = NULL;
-	m0_fop_release(ref);
+    return rpc_create_endpoint(address,e);
 }
 
 inline void fill_rpclite_fop(struct rpclite_fop* rpclite_fop,struct iovec* segments,int segment_count) {

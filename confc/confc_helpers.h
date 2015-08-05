@@ -27,6 +27,8 @@ void confc_finalize();
 
 int confc_open_sync(struct m0_conf_obj** result,struct m0_conf_obj* parent,const struct m0_fid *child);
 
+const struct m0_fid *CONF_ROOT_FID;
+
 // int m0_confc_readdir_sync(struct m0_conf_obj* obj,struct m0_conf_obj** item);
 // void m0_confc_close(struct m0_confc_obj*);
 

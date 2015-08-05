@@ -22,7 +22,7 @@ mainClient = flip catch (\e -> print (e::SomeException)) $ do
     ce <- createClientEndpoint $ rpcAddress "0@lo:12345:34:1"
     putStrLn "created client endpoint"
 
-    se <- listen "s1" (rpcAddress "0@lo:12345:34:2")$ ListenCallbacks
+    se <- listen (rpcAddress "0@lo:12345:34:2")$ ListenCallbacks
               { receive_callback = \it _ ->  putStr "server: " >> unsafeGetFragments it >>= print >> return True
               }
     putStrLn "listening ..."
@@ -52,7 +52,7 @@ mainServer = flip catch (\e -> print (e::SomeException))$ do
     ce <- createClientEndpoint$ rpcAddress "0@lo:12345:34:3"
     putStrLn "created client endpoint"
 
-    se <- listen "s2" (rpcAddress "0@lo:12345:34:4")$ ListenCallbacks
+    se <- listen (rpcAddress "0@lo:12345:34:4")$ ListenCallbacks
               { receive_callback = \it _ ->  putStr "server: " >> unsafeGetFragments it >>= print >> return True
               }
     putStrLn "listening ... (press enter)"
