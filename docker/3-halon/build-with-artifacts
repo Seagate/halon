@@ -15,7 +15,9 @@ echo ifconfig is
 echo DC_HOST_IP=${DC_HOST_IP}
 echo DOCKER_HOST=${DOCKER_HOST}
 
-make
+# make
+while true; do echo tick; sleep 30; done
+
 RC=$?
 # save the exit code in $RC so that
 # we can exit with the same code
