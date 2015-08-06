@@ -38,16 +38,16 @@ int main(int argc,char** argv) {
 
 	if (argc>1) { // server code
 
-		rpc_receive_endpoint_t* re;
+		rpc_endpoint_t* e;
 
-		rc = rpc_listen("s1","0@lo:12345:34:500",&(rpc_listen_callbacks_t){ .receive_callback=rcv },&re);
+		rc = rpc_listen("0@lo:12345:34:10",&(rpc_listen_callbacks_t){ .receive_callback=rcv },&e);
 		fprintf(stderr,"rpc_listen: %d\n",rc);
 
 		char ch;
 		printf("running server ... (type enter to finish)");
 		scanf("%c",&ch);
 
-		rpc_stop_listening(re);
+		rpc_destroy_endpoint(e);
 
 	} else { // client code
 
@@ -60,7 +60,7 @@ int main(int argc,char** argv) {
 		fprintf(stderr,"rpc_create_endpoint: %d\n",rc);
 
 
-		rc = rpc_connect(e,"0@lo:12345:34:500",3,&c);
+		rc = rpc_connect(e,"0@lo:12345:34:10",3,&c);
 		fprintf(stderr,"rpc_connect: %d\n",rc);
 
 		struct iovec segments[] = { { .iov_base = "segment 1", .iov_len = 10 }
@@ -83,9 +83,8 @@ int main(int argc,char** argv) {
 		rpc_destroy_endpoint(e);
 
 	}
-	
+
     rpc_fini();
 
 	return 0;
 }
-

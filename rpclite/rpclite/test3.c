@@ -22,16 +22,16 @@ int main(int argc,char** argv) {
 
     if (argc>1) {
 
-	rpc_receive_endpoint_t* re;
+	rpc_endpoint_t* e;
 
-	rc = rpc_listen("s1","0@lo:12345:34:500",&(rpc_listen_callbacks_t){ .receive_callback=rcv },&re);
+	rc = rpc_listen("0@lo:12345:34:10",&(rpc_listen_callbacks_t){ .receive_callback=rcv },&e);
 	fprintf(stderr,"rpc_listen: %d\n",rc);
 
     char c;
     fprintf(stderr,"type enter ...");
     scanf("%c",&c);
-	rpc_stop_listening(re);
-	
+	rpc_destroy_endpoint(e);
+
     } else {
 
 	rpc_endpoint_t* e;
@@ -41,7 +41,7 @@ int main(int argc,char** argv) {
 	rc = rpc_create_endpoint("0@lo:12345:34:2",&e);
 	fprintf(stderr,"rpc_create_endpoint: %d\n",rc);
 
-	rc = rpc_connect(e,"0@lo:12345:34:500",3,&c);
+	rc = rpc_connect(e,"0@lo:12345:34:10",3,&c);
 	fprintf(stderr,"rpc_connect: %d\n",rc);
 
     char arr0[1024*32];
@@ -70,4 +70,3 @@ int main(int argc,char** argv) {
 
 	return 0;
 }
-

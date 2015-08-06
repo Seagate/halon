@@ -20,14 +20,14 @@ struct client_data {
   char*                   c_name;
   uint64_t                c_min;
   uint64_t                c_max;
-  rpc_receive_endpoint_t* c_re;
+  rpc_endpoint_t*         c_e;
 };
 
 void* epoch_client(void* args) {
   struct client_data* data = (struct client_data*)args;
   rpc_connection_t* c;
 
-  rpc_connect_re(data->c_re, SERVER_ADDRESS, 1, &c);
+  rpc_connect(data->c_e, SERVER_ADDRESS, 1, &c);
 
   int rc;
   uint64_t epoch = 0;
@@ -73,8 +73,8 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  rpc_receive_endpoint_t* re;
-  rpc_listen("s1", SERVER_ADDRESS, NULL, &re);
+  rpc_endpoint_t* e;
+  rpc_listen(SERVER_ADDRESS, NULL, &e);
 
   pthread_t client1;
   pthread_t client2;
@@ -82,14 +82,14 @@ int main(int argc, char** argv) {
     .c_name = "Client 1",
     .c_min = 12,
     .c_max = 15,
-    .c_re = re
+    .c_e = e
   };
 
   struct client_data client2_data = {
     .c_name = "Client 2",
     .c_min = 13,
     .c_max = 16,
-    .c_re = re
+    .c_e = e
   };
 
   pthread_create(&client1, NULL, &epoch_client, &client1_data);
@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
   pthread_join(client1, NULL);
   pthread_join(client2, NULL);
 
-  rpc_stop_listening(re);
+  rpc_destroy_endpoint(e);
 
   rpc_fini();
   fprintf(stderr, "Test epoch: OK\n");
