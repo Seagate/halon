@@ -504,14 +504,18 @@ tests argv = do
                 here <- getSelfNode
                 Log.killReplica h here
                 -- Check that the size of the acceptor state is bounded as well.
-                forM_ [here, localNodeId node1] $ \n -> do
-                  ps <- liftIO $ openPersistentStore (filepath "acceptors" n)
-                  pm <- liftIO $ P.getMap ps $ fromString "decrees"
-                  kvs <- liftIO $
-                           P.pairsOfMap (pm :: P.PersistentMap (Int, Int))
-                  say $ "Acceptor state after reconfiguration: " ++
-                        show (map fst kvs)
-                  assert (length kvs <= 2*snapshotThreshold)
+                forM_ [here, localNodeId node1] $ \n -> bracket
+                  (liftIO $ openPersistentStore (filepath "acceptors" n))
+                  -- Don't forget to close the handle explicitly or a finalizer
+                  -- placed by leveldb-haskell may close it prematurely.
+                  (liftIO . P.close) $
+                  \ps -> do
+                    pm <- liftIO $ P.getMap ps $ fromString "decrees"
+                    kvs <- liftIO $
+                             P.pairsOfMap (pm :: P.PersistentMap (Int, Int))
+                    say $ "Acceptor state after reconfiguration: " ++
+                          show (map fst kvs)
+                    assert (length kvs <= 2*snapshotThreshold)
                 say "Acceptor state remains bounded."
 
           , testSuccess "quorum-after-transient-failure" . withTmpDirectory $
