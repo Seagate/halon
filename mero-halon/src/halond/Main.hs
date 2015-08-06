@@ -9,6 +9,7 @@ module Main (main) where
 import Prelude hiding ((<$>))
 import Flags
 import HA.Network.RemoteTables (haRemoteTable)
+import HA.EQTracker (eqTrackerProcess)
 import Mero.RemoteTables (meroRemoteTable)
 
 #ifdef USE_RPC
@@ -82,7 +83,7 @@ main = do
     runProcess lnid $ do
       -- Send the node id to the test driver if any.
       sendSelfNode
-      receiveWait []
+      eqTrackerProcess []
     return 0
   where
     rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
