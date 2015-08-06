@@ -26,7 +26,7 @@ import HA.Resources.Mero.Note
 
 import Mero.ConfC (Fid)
 import Network.RPC.RPCLite
-    ( ServerEndpoint(..), ServerEndpointV, RPCAddress(..) )
+    ( ServerEndpoint(..), ClientEndpointV, RPCAddress(..) )
 
 import Control.Exception      ( Exception, throwIO )
 import Control.Monad          ( liftM2 )
@@ -198,7 +198,7 @@ notify se (RPCAddress rpcAddr) nvec timeout_s =
       ha_state_notify (se_ptr se) caddr (NVecRef pnvec) (fromIntegral timeout_s)
         >>= check_rc "notify"
 
-foreign import ccall unsafe ha_state_notify :: Ptr ServerEndpointV
+foreign import ccall unsafe ha_state_notify :: Ptr ClientEndpointV
                                             -> CString
                                             -> NVecRef
                                             -> CInt

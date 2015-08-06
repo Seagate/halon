@@ -76,7 +76,7 @@ initialize fp addr = do
     say $ "listening at " ++ show addr
     liftIO $ runOnGlobalM0Worker $ do
       initRPCAt fp
-      ep <- listen "m0_halon" addr listenCallbacks
+      ep <- listen addr listenCallbacks
       initHAState (ha_state_get self lnode) (ha_state_set lnode)
       return ep
   where
