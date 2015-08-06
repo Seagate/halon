@@ -9,7 +9,6 @@ module Main (main) where
 import Prelude hiding ((<$>))
 import Flags
 import HA.Network.RemoteTables (haRemoteTable)
-import HA.EQTracker (eqTrackerProcess)
 import Mero.RemoteTables (meroRemoteTable)
 
 #ifdef USE_RPC
@@ -18,9 +17,8 @@ import HA.Network.Transport (writeTransportGlobalIVar)
 #else
 import Network.Transport.TCP as TCP
 #endif
-import HA.Process (tryRunProcess)
 import HA.RecoveryCoordinator.Definitions
-import HA.Startup (autoboot)
+import HA.Startup (startupHalonNode)
 
 import Control.Applicative ((<$>))
 import Control.Distributed.Commands.Process (sendSelfNode)
@@ -28,7 +26,6 @@ import Control.Distributed.Process hiding (catch)
 import Control.Distributed.Process.Closure ( mkStaticClosure )
 import Control.Distributed.Process.Node
 import Control.Distributed.Static ( closureCompose )
-import Control.Exception (SomeException, catch)
 
 #ifdef USE_MERO
 import Mero
@@ -52,7 +49,7 @@ printHeader listen = do
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
-main :: IO Int
+main :: IO ()
 #ifdef USE_MERO
 main = withM0 $ do
     startGlobalWorker
@@ -77,14 +74,8 @@ main = do
 #endif
     lnid <- newLocalNode transport myRemoteTable
     printHeader (localEndpoint config)
-    -- Attempt to autoboot the TS
-    catch (tryRunProcess lnid $ autoboot rcClosure)
-          (\(e :: SomeException) -> putStrLn $ "Cannot autoboot: " ++ show e)
-    runProcess lnid $ do
-      -- Send the node id to the test driver if any.
-      sendSelfNode
-      eqTrackerProcess []
-    return 0
+    runProcess lnid $ sendSelfNode
+    startupHalonNode lnid rcClosure
   where
     rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
                   $(mkStaticClosure 'ignitionArguments)

@@ -117,6 +117,5 @@ rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
 autobootCluster :: [LocalNode] -> IO ()
 autobootCluster nids = do
   lock <- newEmptyMVar
-  forM_ nids $ \lnid -> forkIO $ startupHalonNode lnid rcClosure
-                                   (liftIO $ putMVar lock ())
-  replicateM_ (length nids) $ takeMVar lock
+  forM_ nids $ \lnid ->
+    forkIO $ startupHalonNode lnid rcClosure
