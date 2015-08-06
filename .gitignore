@@ -7,3 +7,8 @@ mk/local.mk
 *.tix
 *.mix
 coverage/
+*.o
+rpclite/rpclite/rpclite_fop_ff.*
+rpclite/rpclite/test?
+rpclite/rpclite/test
+rpclite/rpclite/test-epoch
