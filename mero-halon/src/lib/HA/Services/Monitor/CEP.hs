@@ -141,7 +141,7 @@ sayMonitor s = liftProcess $ do
 -- | Notifies the RC that a monitored service has died.
 reportFailure :: Monitored -> PhaseM g l ()
 reportFailure (Monitored pid svc) = do
-    sayMonitor $ "Notify death for " ++ show (serviceName svc)
+    sayMonitor $ "Notify death for " ++ show (serviceName svc) ++ " at " ++ show pid
     let node = Node $ processNodeId pid
         msg  = encodeP $ ServiceFailed node svc pid
     _ <- liftProcess $ promulgate msg
