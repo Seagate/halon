@@ -19,7 +19,7 @@ import HA.RecoveryCoordinator.Mero
 import HA.Network.RemoteTables (haRemoteTable)
 import Mero.RemoteTables (meroRemoteTable)
 
-import qualified HA.Services.EQTracker as EQT
+import qualified HA.EQTracker as EQT
 import HA.NodeUp ( nodeUp )
 import HA.Startup hiding (__remoteTable)
 import Test.Framework

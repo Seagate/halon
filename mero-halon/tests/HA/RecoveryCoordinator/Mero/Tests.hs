@@ -58,9 +58,8 @@ import HA.Service
   , runningService
   )
 import           HA.NodeUp (nodeUp)
-import           HA.Services.Empty (EmptyConf(..))
 import qualified HA.Services.Dummy as Dummy
-import qualified HA.Services.EQTracker as EQT
+import qualified HA.Services.Monitor as Monitor
 -- import qualified HA.Services.DecisionLog as DLog
 import HA.Services.Monitor
 import RemoteTables ( remoteTable )
@@ -626,19 +625,19 @@ testNodeUpRace transport = do
           runProcess node2 $ do
             selfNode <- getSelfNode
             _ <- promulgateEQ [nid] . encodeP $ ServiceStarted (Node selfNode)
-                                                               EQT.eqTracker
-                                                               EmptyConf
+                                                               Monitor.regularMonitor
+                                                               Monitor.emptyMonitorConf
                                                                (ServiceProcess $ nullProcessId selfNode)
             nodeUp ([nid], 2000000)
             send self (Node selfNode)
             send self (nullProcessId selfNode)
         _ <- receiveTimeout 1000000 []
 
-        True <- serviceProcessStillAlive mm (Node nid) EQT.eqTracker
+        True <- serviceProcessStillAlive mm (Node nid) Monitor.regularMonitor
         nn <- expect
         pr <- expect
         rg <- G.getGraph mm
-        case runningService nn EQT.eqTracker rg of
+        case runningService nn Monitor.regularMonitor rg of
           Just (ServiceProcess n) -> do True <- return $ n /= pr
                                         return ()
           Nothing -> return ()
