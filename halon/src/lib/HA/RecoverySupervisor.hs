@@ -76,6 +76,7 @@ import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Timeout ( retry, timeout )
 
 import Control.Concurrent ( newMVar, takeMVar, putMVar, readMVar, newEmptyMVar )
+import Control.Exception ( SomeException, throwIO )
 import Control.Monad ( when, void )
 import Data.Binary ( Binary )
 import Data.Int ( Int64 )
@@ -179,7 +180,9 @@ recoverySupervisor rg rcP = do
 
     spawnRC = do
       say "RS: I'm the new leader, so starting RC ..."
-      rc <- spawnLocal rcP
+      rc <- spawnLocal $ (rcP >> say "RS: RC died normally")
+                `catch` \e -> do say $ "RS: RC died " ++ show (e::SomeException)
+                                 liftIO $ throwIO e
       _ <- monitor rc
       return rc
 
@@ -211,8 +214,7 @@ recoverySupervisor rg rcP = do
        mn <- expectTimeout 0
        case mn of
          Just (ProcessMonitorNotification _ pid reason)
-           | pid == rc -> do say $ "RS: RC died: " ++ show reason
-                             return True
+           | pid == rc -> return True
            | otherwise -> rcHasDied rc
          Nothing -> return False
 
