@@ -46,13 +46,13 @@ static void notify_fop_release(struct m0_ref *ref) {
 }
 
 /// Notifies mero at the remote address that the state of some objects has changed.
-int ha_state_notify( rpc_receive_endpoint_t *ep, char *remote_address
+int ha_state_notify( rpc_endpoint_t *ep, char *remote_address
                    , struct m0_ha_nvec *note, int timeout_s
                    ) {
     int rc;
     struct m0_fop *fop;
     rpc_connection_t *c;
-    rc = rpc_connect_re(ep,remote_address,timeout_s,&c);
+    rc = rpc_connect(ep,remote_address,timeout_s,&c);
     if (rc)
         return rc;
 
