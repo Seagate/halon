@@ -34,6 +34,7 @@ import HA.EventQueue.Producer (promulgateEQ)
 import HA.Multimap.Implementation
 import HA.Multimap.Process
 import HA.Replicator
+import HA.EQTracker ( eqTrackerProcess )
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
 #else
@@ -157,6 +158,7 @@ testServiceRestarting transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -193,6 +195,7 @@ testServiceNotRestarting transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -228,6 +231,7 @@ testEQTrimming :: Transport -> IO ()
 testEQTrimming transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         say $ "tests node: " ++ show nid
         cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
@@ -265,6 +269,7 @@ testHostAddition transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -313,6 +318,7 @@ testDriveAddition transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -484,6 +490,7 @@ testServiceStopped transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -529,6 +536,7 @@ serviceStarted svname = do
 launchRC :: Process (ProcessId, ProcessId)
 launchRC = do
     nid <- getSelfNode
+    _ <- spawnLocal $ eqTrackerProcess [nid]
 
     say $ "tests node: " ++ show nid
     cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
@@ -600,6 +608,8 @@ testNodeUpRace transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
+
 
         say $ "tests node: " ++ show nid
         cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000

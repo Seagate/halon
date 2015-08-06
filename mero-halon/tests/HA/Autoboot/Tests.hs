@@ -8,9 +8,7 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Distributed.Static ( closureCompose )
-import Control.Monad ( replicateM )
-import Control.Exception (SomeException(..))
-import qualified Control.Exception as Exception
+import Control.Monad ( replicateM, replicateM_ )
 import Data.Foldable (forM_)
 import qualified Data.Set as Set
 
@@ -23,18 +21,18 @@ import Mero.RemoteTables (meroRemoteTable)
 
 import qualified HA.Services.EQTracker as EQT
 import HA.NodeUp ( nodeUp )
-import HA.Process (tryRunProcess)
 import HA.Startup hiding (__remoteTable)
 import Test.Framework
+import Test.Tasty.HUnit
 
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 tests :: Transport -> [TestTree]
-tests transport =
+tests transport = map (localOption (mkTimeout $ 60*1000000))
   [ testSuccess "eqt-receive-all-tracking-stations"
                 $ eqtReceiveAllStations transport
-  , testSuccess "eqt-receive-startions-at-start"
+  , testSuccess "eqt-receive-stations-at-start"
                 $ eqtReceiveStationsAtStart transport
   ]
 
@@ -42,13 +40,17 @@ eqtReceiveAllStations :: Transport -> IO ()
 eqtReceiveAllStations transport = withTmpDirectory $ do
   (node, nids) <- bootupCluster transport (Right 5)
   runProcess node $ do
+    say . ("requesting from node " ++). show =<< getSelfNode
     nodeUp (map localNodeId nids, 1000000)
-    Just eq <- whereis EQT.name
+    meq <- whereis EQT.name
+    say (show meq)
+    Just eq <- return meq
     self <- getSelfPid
     send eq (EQT.ReplicaRequest self)
     EQT.ReplicaReply (EQT.ReplicaLocation _ xs) <- expect
-    True <- return $ Set.fromList xs == (Set.fromList $ map localNodeId nids)
-    return ()
+    liftIO $ assertEqual "list of trackers was updated"
+                (Set.fromList xs)
+                (Set.fromList $ map localNodeId nids)
 
 eqtReceiveStationsAtStart :: Transport -> IO ()
 eqtReceiveStationsAtStart transport = withTmpDirectory $ do
@@ -56,14 +58,16 @@ eqtReceiveStationsAtStart transport = withTmpDirectory $ do
   node <- newLocalNode transport $ myRemoteTable
   lock <- newEmptyMVar
   _    <- forkProcess node $ do
+    _ <- spawnLocal $ EQT.eqTrackerProcess [localNodeId $ head nids]
     nodeUp (map localNodeId nids, 1000000)
     Just eq <- whereis EQT.name
     self <- getSelfPid
     send eq (EQT.ReplicaRequest self)
     EQT.ReplicaReply (EQT.ReplicaLocation _ xs) <- expect
-    liftIO $ putMVar lock $ Set.fromList xs == (Set.fromList $ map localNodeId nids)
+    liftIO $ putMVar lock (Set.fromList xs)
   _ <- bootupCluster transport (Left nids)
-  True <- takeMVar lock
+  assertEqual "nodes updated" (Set.fromList $ map localNodeId nids)
+                              =<< takeMVar lock
   return ()
 
 -- | Startup cluster. This function autoboots required number of nodes
@@ -85,10 +89,9 @@ bootupCluster transport en = do
                , 8*1000000 :: Int
                )
     node <- newLocalNode transport $ myRemoteTable
+    -- 1. Autoboot cluster
+    liftIO $ autobootCluster (node:nids)
     runProcess node $ do
-      -- 1. Autoboot cluster
-      liftIO $ autobootCluster nids
-
       -- 2. Run ignition once
       result <- call $(functionTDict 'ignition) (localNodeId $ head nids) $
                      $(mkClosure 'ignition) args
@@ -112,6 +115,8 @@ rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
 
 -- | Autoboot helper cluster
 autobootCluster :: [LocalNode] -> IO ()
-autobootCluster nids = forM_ nids $ \lnid ->
-  Exception.catch (tryRunProcess lnid $ autoboot rcClosure)
-                  (\(_ :: SomeException) -> return ())
+autobootCluster nids = do
+  lock <- newEmptyMVar
+  forM_ nids $ \lnid -> forkIO $ startupHalonNode lnid rcClosure
+                                   (liftIO $ putMVar lock ())
+  replicateM_ (length nids) $ takeMVar lock

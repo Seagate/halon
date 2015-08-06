@@ -23,7 +23,7 @@ import HA.EventQueue.Producer (promulgateEQ)
 import HA.Resources
   ( Node(..) )
 import HA.Service
-import qualified HA.Services.EQTracker   as EQT
+import qualified HA.EQTracker            as EQT
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy       as Dummy
 import qualified HA.Services.Frontier    as Frontier
