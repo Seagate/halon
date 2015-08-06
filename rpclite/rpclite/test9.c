@@ -24,7 +24,10 @@ long nsdiff(struct timespec t0,struct timespec t1) {
 }
 
 int main(int argc,char** argv) {
-	int rc = rpc_init("");
+	int rc = m0_init_wrapper();
+	fprintf(stderr,"m0_init: %d\n",rc);
+
+	rc = rpc_init("");
 	fprintf(stderr,"rpc_init: %d\n",rc);
 
     rpc_endpoint_t* e;

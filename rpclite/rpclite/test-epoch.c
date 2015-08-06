@@ -7,7 +7,6 @@
 
 #include "rpclite.h"
 
-#include <pthread.h>
 #include <stdio.h>
 
 #define SERVER_ADDRESS "0@lo:12345:34:100"
@@ -23,8 +22,7 @@ struct client_data {
   rpc_endpoint_t*         c_e;
 };
 
-void* epoch_client(void* args) {
-  struct client_data* data = (struct client_data*)args;
+void* epoch_client(struct client_data* data) {
   rpc_connection_t* c;
 
   rpc_connect(data->c_e, SERVER_ADDRESS, 1, &c);
@@ -63,7 +61,8 @@ void* epoch_client(void* args) {
 }
 
 int main(int argc, char** argv) {
-  int ret;
+  int ret = m0_init_wrapper();
+  fprintf(stderr,"m0_init: %d\n",ret);
 
   ret = rpc_init("");
   if ( !ret )
@@ -76,8 +75,8 @@ int main(int argc, char** argv) {
   rpc_endpoint_t* e;
   rpc_listen(SERVER_ADDRESS, NULL, &e);
 
-  pthread_t client1;
-  pthread_t client2;
+  struct m0_thread client1;
+  struct m0_thread client2;
   struct client_data client1_data = {
     .c_name = "Client 1",
     .c_min = 12,
@@ -92,11 +91,13 @@ int main(int argc, char** argv) {
     .c_e = e
   };
 
-  pthread_create(&client1, NULL, &epoch_client, &client1_data);
-  pthread_create(&client2, NULL, &epoch_client, &client2_data);
+  M0_SET0(&client1);
+  M0_THREAD_INIT(&client1, struct client_data*, NULL, (void *) &epoch_client, &client1_data, "client1");
+  M0_SET0(&client2);
+  M0_THREAD_INIT(&client2, struct client_data*, NULL, (void *) &epoch_client, &client2_data, "client2");
 
-  pthread_join(client1, NULL);
-  pthread_join(client2, NULL);
+  m0_thread_join(&client1);
+  m0_thread_join(&client2);
 
   rpc_destroy_endpoint(e);
 
