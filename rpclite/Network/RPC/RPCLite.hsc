@@ -19,6 +19,7 @@ module Network.RPC.RPCLite
     , finalizeRPC
     -- * Client side API
     , ClientEndpoint
+    , ClientEndpointV
     , RPCAddress(..)
     , rpcAddress
     , createClientEndpoint
