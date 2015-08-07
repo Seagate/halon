@@ -2,7 +2,7 @@
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
--- Tests that the cluster to proceeds after the tracking station recovers
+-- Tests that the cluster proceeds after the tracking station recovers
 -- quorum.
 --
 -- * Start a satellite and three tracking station nodes.
@@ -56,11 +56,12 @@ main = (>>= maybe (error "test timed out") return) $
     Right nt <- createTransport ip "4000" defaultTCPParameters
     n0 <- newLocalNode nt (__remoteTable initRemoteTable)
 
-    withHostNames cp 4 $  \ms@[m0, m1, m2] ->
+    withHostNames cp 4 $  \ms@[m0, m1, m2, m3] ->
      runProcess n0 $ do
       let m0loc = m0 ++ ":9000"
           m1loc = m1 ++ ":9000"
           m2loc = m2 ++ ":9000"
+          m3loc = m3 ++ ":9000"
           halonctlloc = (++ ":9001")
 
       say "Copying binaries ..."
@@ -69,7 +70,7 @@ main = (>>= maybe (error "test timed out") return) $
       getSelfPid >>= copyLog (const True)
 
       say "Spawning halond ..."
-      nhs <- forM (zip ms [m0loc, m1loc, m2loc]) $ \(m, mloc) ->
+      nhs <- forM (zip ms [m0loc, m1loc, m2loc, m3loc]) $ \(m, mloc) ->
                spawnNode m ("./halond -l " ++ mloc ++ " 2>&1")
       let [nid0, nid1, nid2, nid3] = map handleGetNodeId nhs
       say $ "Redirecting logs ..."
@@ -83,6 +84,7 @@ main = (>>= maybe (error "test timed out") return) $
                      ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m0loc
                      ++ " -a " ++ m1loc
+                     ++ " -a " ++ m2loc
                      ++ " bootstrap station"
                      ++ " -r 2000000"
                      )
@@ -91,21 +93,21 @@ main = (>>= maybe (error "test timed out") return) $
       expectLog [nid2] (isInfixOf "New replica started in legislature://0")
 
       say "Starting satellite node ..."
-      systemThere [m1] ("./halonctl"
-                     ++ " -l " ++ halonctlloc m1
-                     ++ " -a " ++ m2loc
+      systemThere [m3] ("./halonctl"
+                     ++ " -l " ++ halonctlloc m3
+                     ++ " -a " ++ m3loc
                      ++ " bootstrap satellite"
                      ++ " -t " ++ m0loc
                      ++ " -t " ++ m1loc
                      )
       let tsNodes = [nid0, nid1, nid2]
-      expectLog tsNodes $ isInfixOf $ "New node contacted: nid://" ++ m2loc
+      expectLog tsNodes $ isInfixOf $ "New node contacted: nid://" ++ m3loc
       expectLog [nid3] (isInfixOf "Got UpdateEQNodes")
 
       say "Starting ping service ..."
       systemThere [m0] $ "./halonctl"
                       ++ " -l " ++ halonctlloc m0
-                      ++ " -a " ++ m2loc
+                      ++ " -a " ++ m3loc
                       ++ " service ping start -t " ++ m0loc ++ " 2>&1"
       expectLog tsNodes (isInfixOf "started ping service")
 
