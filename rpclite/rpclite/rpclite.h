@@ -260,9 +260,5 @@ int rpc_connect_m0_thread(struct m0_rpc_machine* rpc_machine,
 			  char* remote_address, int timeout_s,
 			  rpc_connection_t** c);
 
-int rpc_disconnect_m0_thread(rpc_connection_t* c,int timeout_s);
-
-int rpc_send_blocking_and_release_m0_thread(rpc_connection_t* c,struct m0_fop* fop);
-
 int rpc_send_epoch_blocking(rpc_connection_t* c, uint64_t ourEpoch,
                             int timeout_s, uint64_t* theirEpoch);

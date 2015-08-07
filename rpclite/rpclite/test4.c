@@ -38,7 +38,7 @@ void threadMain(void* d) {
 
     int sz = m0_rpc_session_get_max_item_size(rpc_get_session(c))-128-4;
     void* buf = m0_alloc(sz);
-    
+
 	struct iovec segments[] = { { .iov_base = buf, .iov_len = sz }
 						      };
 
@@ -90,7 +90,7 @@ int main(int argc,char** argv) {
     for(i=0;i<NUM_THREADS;i+=1)
 		m0_thread_join(&thread[i]);
         //pthread_join(thread[i],NULL);
-    
+
 
     fprintf(stderr,"leaving...\n");
 
@@ -100,4 +100,3 @@ int main(int argc,char** argv) {
 
 	return 0;
 }
-

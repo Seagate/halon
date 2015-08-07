@@ -23,24 +23,27 @@ void reply_rcv(rpc_connection_t* c,void* ctx,rpc_status_t st) {
 }
 
 int main(int argc,char** argv) {
-	int rc = rpc_init("");
+	int rc = m0_init_wrapper();
+	fprintf(stderr,"m0_init: %d\n",rc);
+
+	rc = rpc_init("");
 	fprintf(stderr,"rpc_init: %d\n",rc);
 
-	//if (argc>1) 
+	//if (argc>1)
     {
 
-		rpc_receive_endpoint_t* re;
+		rpc_endpoint_t* e;
 
-		rc = rpc_listen("s1","0@lo:12345:34:500",&(rpc_listen_callbacks_t){ .receive_callback=rcv },&re);
+		rc = rpc_listen("0@lo:12345:34:10",&(rpc_listen_callbacks_t){ .receive_callback=rcv },&e);
 		fprintf(stderr,"rpc_listen: %d\n",rc);
 
 		rpc_connection_t* c;
 		rpc_connection_t* c2;
 
-		rc = rpc_connect_re(re,"0@lo:12345:34:500",3,&c);
+		rc = rpc_connect(e,"0@lo:12345:34:10",3,&c);
 		fprintf(stderr,"rpc_connect: %d\n",rc);
 
-		rc = rpc_connect_re(re,"0@lo:12345:34:500",3,&c2);
+		rc = rpc_connect(e,"0@lo:12345:34:10",3,&c2);
 		fprintf(stderr,"rpc_connect: %d\n",rc);
 
 		struct iovec segments[] = { { .iov_base = "segment 1", .iov_len = 9 }
@@ -73,11 +76,10 @@ int main(int argc,char** argv) {
 		rc = rpc_disconnect(c2,2);
 		fprintf(stderr,"rpc_disconnect: %d\n",rc);
 
-		rpc_stop_listening(re);
+		rpc_destroy_endpoint(e);
 	}
-	
+
     rpc_fini();
 
 	return 0;
 }
-

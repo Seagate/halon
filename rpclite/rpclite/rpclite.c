@@ -23,8 +23,6 @@
 
 #include "ha/epoch.h"
 
-#include "rpclite_sender_fom.h"
-
 #include <stdlib.h>
 
 #define ITEM_SIZE_CUSHION 128
@@ -88,8 +86,6 @@ int rpc_init(char *persistence_prefix) {
 	M0_ASSERT(strlen(persistence_prefix)+strlen(DB_FILE_NAME)<STRING_LEN);
 	strcpy(client_db, persistence_prefix);
 	strcat(client_db, DB_FILE_NAME);
-
-	m0_fom_rpclite_sender_type_ini();
 
 	return 0;
 
@@ -204,55 +200,6 @@ void rpc_destroy_endpoint(rpc_endpoint_t* e) {
 	free(e);
 }
 
-/*
- * Creates a fom that can be submitted to the request handler
- * to perform a specific operation.
- * */
-int create_sender_fom(struct m0_fom_rpclite_sender** fom_obj
-					, struct m0_reqh* reqh
-					, rpclite_sender_fom_type type,struct fom_state* fom_st) {
-	struct m0_fom *fom;
-	int rc;
-	CHECK_RESULT(rc, rpclite_sender_fom_create(NULL,&fom,reqh), return rc);
-	*fom_obj = container_of(fom, struct m0_fom_rpclite_sender, fp_gen);
-
-	(*fom_obj)->type = type;
-	(*fom_obj)->fom_st = fom_st;
-
-	if (fom_st) {
-		fom_st->rc = 0;
-		if (sem_init(&fom_st->completed,0,0)) {
-			fprintf(stderr,"%s: sem_init failed\n",__func__);
-	        exit(1);
-		}
-	}
-	return 0;
-}
-
-/*
- * Enqueues a fom to a request handler, then waits for the fom to complete.
- * */
-void run_sender_fom(struct m0_fom_rpclite_sender* fom_obj
-                   , struct m0_reqh* reqh) {
-    struct fom_state* fom_st = fom_obj->fom_st;
-    m0_fom_queue(&fom_obj->fp_gen, reqh);
-    if (fom_st) {
-        int rc;
-        while ((rc = sem_wait(&fom_st->completed)) && errno == EINTR)
-          continue;
-        if (rc) {
-            fprintf(stderr,"%s: sem_wait failed\n",__func__);
-            perror("sem_wait");
-            exit(1);
-        }
-        if (sem_destroy(&fom_st->completed)) {
-            fprintf(stderr,"%s: sem_destroy failed\n",__func__);
-            perror("sem_destroy");
-            exit(1);
-        }
-    }
-}
-
 struct rpc_connection {
 	char remote_address[80];
 	struct m0_net_end_point* remote_ep;
@@ -264,37 +211,6 @@ struct m0_rpc_session* rpc_get_session(rpc_connection_t* c) {
     return &c->session;
 }
 
-/* Creates an RPC connection. Must be called from an m0_thread. */
-int rpc_connect_m0_thread(struct m0_rpc_machine* rpc_machine,
-			  char* remote_address, int timeout_s,
-			  rpc_connection_t** c) {
-	M0_ASSERT(c);
-	*c = (rpc_connection_t*)malloc(sizeof(rpc_connection_t));
-	int rc;
-
-	M0_ASSERT(strlen(remote_address)<80);
-	strcpy((*c)->remote_address,remote_address);
-
-	CHECK_RESULT(rc, m0_net_end_point_create(&(*c)->remote_ep,&rpc_machine->rm_tm, (*c)->remote_address)
-				, return rc);
-
-	rc = m0_rpc_conn_create(&(*c)->connection, (*c)->remote_ep
-				, rpc_machine,  MAX_RPCS_IN_FLIGHT, m0_time_from_now(timeout_s,0));
-	m0_net_end_point_put((*c)->remote_ep);
-	if (rc)
-		return rc;
-
-	CHECK_RESULT(rc, m0_rpc_session_create(&(*c)->session
-					, &(*c)->connection, m0_time_from_now(timeout_s,0))
-				,goto conn_destroy);
-
-	return 0;
-
-conn_destroy:
-		m0_rpc_conn_destroy(&(*c)->connection, timeout_s);
-
-	return rc;
-}
 
 /*
  * Establishing connections must be done from an m0_thread.
@@ -307,15 +223,40 @@ int rpc_connect(rpc_endpoint_t* e, char* remote_address, int timeout_s,
 		rpc_connection_t** c) {
 	m0_time_t time;
 	int rc;
+	M0_ASSERT(c);
 
 	time = m0_time_now();
-	rc = rpc_connect_m0_thread(&e->rpc_machine,remote_address,timeout_s,c);
+	struct m0_rpc_machine* rpc_machine = &e->rpc_machine;
+
+	*c = (rpc_connection_t*)malloc(sizeof(rpc_connection_t));
+	M0_ASSERT(strlen(remote_address)<80);
+	strcpy((*c)->remote_address,remote_address);
+
+	CHECK_RESULT(rc, m0_net_end_point_create(&(*c)->remote_ep,&rpc_machine->rm_tm, (*c)->remote_address)
+			, return rc);
+
+	rc = m0_rpc_conn_create(&(*c)->connection, (*c)->remote_ep
+				, rpc_machine,  MAX_RPCS_IN_FLIGHT, m0_time_from_now(timeout_s,0));
+	m0_net_end_point_put((*c)->remote_ep);
 
 	if (!rc) {
 		time = m0_time_sub(m0_time_now(), time);
 		add_rpc_stat_record(RPC_STAT_CONN, time);
+	} else {
+		return rc;
 	}
+
+
+	CHECK_RESULT(rc, m0_rpc_session_create(&(*c)->session
+						, &(*c)->connection, m0_time_from_now(timeout_s,0))
+			,goto conn_destroy);
+
 	return rc;
+
+conn_destroy:
+	m0_rpc_conn_destroy(&(*c)->connection, timeout_s);
+	return rc;
+
 }
 
 
@@ -331,31 +272,14 @@ int client_fini(struct m0_rpc_client_ctx *cctx,int timeout_s)
 	return rc;
 }
 
-
-int rpc_disconnect_m0_thread(rpc_connection_t* c,int timeout_s) {
-	int rc;
-	CHECK_RESULT(rc, m0_rpc_session_destroy(&c->session, M0_TIME_NEVER), );
-	CHECK_RESULT(rc, m0_rpc_conn_destroy(&c->connection, M0_TIME_NEVER), );
-	// m0_net_end_point_put(c->remote_ep);
-
-	free(c);
-	return rc;
-}
-
 int rpc_disconnect(rpc_connection_t* c,int timeout_s) {
-	struct m0_fom *fom;
-	int rc;
-	struct m0_fom_rpclite_sender *fom_obj;
-	struct fom_state fom_st;
-	struct m0_reqh *reqh = c->connection.c_rpc_machine->rm_reqh;
-	CHECK_RESULT(rc, create_sender_fom(&fom_obj,reqh,RPC_SENDER_TYPE_DISCONNECT,&fom_st), return rc);
+  int rc;
+  CHECK_RESULT(rc, m0_rpc_session_destroy(&c->session, M0_TIME_NEVER), );
+  CHECK_RESULT(rc, m0_rpc_conn_destroy(&c->connection, M0_TIME_NEVER), );
+  // m0_net_end_point_put(c->remote_ep);
 
-	fom_obj->disconnect.c = c;
-	fom_obj->disconnect.timeout_s = timeout_s;
-
-	run_sender_fom(fom_obj,reqh);
-	return fom_st.rc;
-
+  free(c);
+  return rc;
 }
 
 void rpc_release_connection(rpc_connection_t* c) {
@@ -415,20 +339,6 @@ inline void fill_rpclite_fop(struct rpclite_fop* rpclite_fop,struct iovec* segme
     */
 }
 
-
-int rpc_send_blocking_and_release_m0_thread(rpc_connection_t* c,struct m0_fop* fop) {
-
-	int rc = m0_rpc_post_sync(fop, &c->session, NULL, m0_time_from_now(0,1*1000*1000));
-    if (!rc) {
-		M0_ASSERT(rc == 0);
-	    M0_ASSERT(fop->f_item.ri_error == 0);
-		M0_ASSERT(fop->f_item.ri_reply != 0);
-    }
-    m0_fop_put_lock(fop);
-
-	return rc;
-}
-
 /* Sends a message using the request handler of the connection.
  *
  * This method releases the fop. So don't try to use the fop afterwards!
@@ -452,17 +362,18 @@ int rpc_send_fop_blocking_and_release(rpc_connection_t* c,struct m0_fop* fop,int
 	fop->f_item.ri_nr_sent_max = 1;
 	fop->f_item.ri_resend_interval = m0_time(timeout_s?timeout_s:1,0);
 
-	struct m0_fom *fom;
-	struct m0_fom_rpclite_sender *fom_obj;
-	struct fom_state fom_st;
-	struct m0_reqh *reqh = c->connection.c_rpc_machine->rm_reqh;
-	CHECK_RESULT(rc, create_sender_fom(&fom_obj,reqh,RPC_SENDER_TYPE_SEND_BLOCKING,&fom_st), return rc);
+	rc = m0_rpc_post_sync(fop, &c->session, NULL, m0_time_from_now(0,1*1000*1000));
 
-	fom_obj->send_blocking.c = c;
-	fom_obj->send_blocking.fop = fop;
+        if (!rc) {
+          M0_ASSERT(rc == 0);
+          M0_ASSERT(fop->f_item.ri_error == 0);
+          M0_ASSERT(fop->f_item.ri_reply != 0);
+        }
 
-	run_sender_fom(fom_obj,reqh);
-	rc = fom_st.rc;
+        m0_fop_put_lock(fop);
+
+	return rc;
+
 out:
 	if (!rc) {
 		time = m0_time_sub(m0_time_now(), time);
@@ -590,14 +501,6 @@ int rpc_send(rpc_connection_t* c,struct iovec* segments,int segment_count,void (
 	rpclite_fop = m0_fop_data(&msg->fop);
     fill_rpclite_fop(rpclite_fop,segments,segment_count);
 
-	struct m0_fom *fom;
-	struct m0_fom_rpclite_sender *fom_obj;
-	struct fom_state fom_st;
-	struct m0_reqh *reqh = c->connection.c_rpc_machine->rm_reqh;
-	CHECK_RESULT(rc, create_sender_fom(&fom_obj,reqh,RPC_SENDER_TYPE_SEND,&fom_st), return rc);
-
-	fom_obj->send.rpc_item = &msg->fop.f_item;
-
     if (m0_fop_payload_size(&msg->fop.f_item)+ITEM_SIZE_CUSHION > m0_rpc_session_get_max_item_size(&c->session)) {
         fprintf(stderr,"rpc_send: rpclite got a message which is too big"
                        ": %d vs %d\n", m0_fop_payload_size(&msg->fop.f_item)
@@ -605,8 +508,7 @@ int rpc_send(rpc_connection_t* c,struct iovec* segments,int segment_count,void (
                );
 exit(1);
     }
-	run_sender_fom(fom_obj,reqh);
-	return fom_st.rc;
+	return m0_rpc_post(&msg->fop.f_item);
 }
 
 /*
