@@ -51,7 +51,8 @@ executable mkBindings
                        aeson-schema,
                        containers,
                        template-haskell,
-                       text
+                       text,
+                       binary
   default-language:    Haskell2010
   if flag(maintainer)
     ghc-options: -Werror

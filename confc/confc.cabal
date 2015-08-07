@@ -1,5 +1,5 @@
 Name:          confc
-Version:       0.0.1
+Version:       0.0.2
 Synopsis:      Bindings for Mero configuration client library.
 Description:   The Mero configuration client library allows programs
                to contact the confd service.
@@ -9,27 +9,16 @@ Category:      Network
 Build-Type:    Custom
 Cabal-Version: >= 1.8
 
--- source-repository head
---    type:     git
---    location: https://parsci.assembla.com/code/cci-haskell/git/nodes
-
--- source-repository this
---    type:     git
---    location: https://parsci.assembla.com/code/cci-haskell/git/nodes
---    tag:      0.0.1
-
-Flag rpc
-  Description: Build with the RPC backend instead of TCP.
-  Default: False
-
 Flag maintainer
   Description: Enforce strict code quality checks (-Werror, etc)
   Default: False
 
 Library
   exposed-modules:     Mero.ConfC
-  other-modules:
-
+  other-modules:       Mero.Conf.Fid
+                     , Mero.Conf.Internal
+                     , Mero.Conf.Obj
+                     , Mero.Conf.Tree
   build-depends:       base
                      , binary
                      , bytestring
@@ -45,9 +34,9 @@ Library
   c-sources: confc_helpers.c
   extra-libraries: mero
 
-Test-Suite testconfc
+Test-Suite testconf
   Type:           exitcode-stdio-1.0
-  main-is:        testconfc.hs
+  main-is:        testconf.hs
   hs-source-dirs: tests
   ghc-options:     -Wall -idist/build -threaded -fno-warn-unused-do-bind
   extensions:          CPP,
@@ -55,42 +44,11 @@ Test-Suite testconfc
                        FlexibleInstances,
                        DeriveDataTypeable,
                        RankNTypes,
-                       OverloadedStrings,
-                       OverlappingInstances
-  if flag(rpc)
-    build-depends:  base >= 4.3
-                  , bytestring
-                  , network-transport-rpc
-                  , network-transport
-                  , confc
-                  , rpclite
-  else
-    buildable: False
-
-  if flag(maintainer)
-    ghc-options: -Werror
-
-Test-Suite collect_node_addresses
-  Type:           exitcode-stdio-1.0
-  main-is:        collect_node_addresses.hs
-  hs-source-dirs: tests
-  ghc-options:     -Wall -idist/build -threaded -fno-warn-unused-do-bind
-  extensions:          CPP,
-                       ExistentialQuantification,
-                       FlexibleInstances,
-                       DeriveDataTypeable,
-                       RankNTypes,
-                       OverloadedStrings,
-                       OverlappingInstances
-  if flag(rpc)
-    build-depends:  base >= 4.3
-                  , bytestring
-                  , network-transport-rpc
-                  , network-transport
-                  , confc
-                  , rpclite
-  else
-    buildable: False
+                       OverloadedStrings
+  build-depends:  base >= 4.3
+                , bytestring
+                , confc
+                , rpclite
 
   if flag(maintainer)
     ghc-options: -Werror

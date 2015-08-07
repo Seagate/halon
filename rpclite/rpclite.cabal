@@ -38,7 +38,6 @@ library
   c-sources: rpclite/rpclite.c
              rpclite/rpclite_fom.c
              rpclite/rpclite_fop.c
-             rpclite/rpclite_sender_fom.c
              rpclite/rpclite_fop_ff.c
              rpclite/forkm0os.c
              rpclite/m0init.c

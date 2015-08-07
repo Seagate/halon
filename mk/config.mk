@@ -56,7 +56,8 @@ VENDOR_PACKAGES = clock \
                   network-transport-tcp \
                   network-transport-inmemory \
                   network-transport \
-                  rank1dynamic
+                  rank1dynamic \
+                  aeson-schema
 
 CEP_DIR = $(ROOT_DIR)/cep/
 

@@ -22,7 +22,7 @@ int rcv(rpc_item_t* it,void* ctx) {
     return 0;
 }
 
-rpc_receive_endpoint_t* re;
+rpc_endpoint_t* e;
 
 
 //void* threadMain(void* d) {
@@ -30,7 +30,7 @@ void threadMain(void* d) {
     int rc;
 	rpc_connection_t* c;
 
-	rc = rpc_connect_re(re,"0@lo:12345:34:500",5,&c);
+	rc = rpc_connect(e,"0@lo:12345:34:10",5,&c);
     if (rc) {
         fprintf(stderr,"rpc_connect: %d\n",rc);
         return;
@@ -38,7 +38,7 @@ void threadMain(void* d) {
 
     int sz = m0_rpc_session_get_max_item_size(rpc_get_session(c))-128-4;
     void* buf = m0_alloc(sz);
-    
+
 	struct iovec segments[] = { { .iov_base = buf, .iov_len = sz }
 						      };
 
@@ -62,11 +62,11 @@ int main(int argc,char** argv) {
 	rc = rpc_init("");
 	fprintf(stderr,"rpc_init: %d\n",rc);
 
-	rc = rpc_listen("s1","0@lo:12345:34:500",&(rpc_listen_callbacks_t){ .receive_callback=rcv },&re);
+	rc = rpc_listen("0@lo:12345:34:10",&(rpc_listen_callbacks_t){ .receive_callback=rcv },&e);
 	fprintf(stderr,"rpc_listen: %d\n",rc);
 
 	rpc_connection_t* c;
-	rc = rpc_connect_re(re,"0@lo:12345:34:500",5,&c);
+	rc = rpc_connect(e,"0@lo:12345:34:10",5,&c);
     if (rc) {
     	fprintf(stderr,"rpc_connect: %d\n",rc);
         return 0;
@@ -90,14 +90,13 @@ int main(int argc,char** argv) {
     for(i=0;i<NUM_THREADS;i+=1)
 		m0_thread_join(&thread[i]);
         //pthread_join(thread[i],NULL);
-    
+
 
     fprintf(stderr,"leaving...\n");
 
-	rpc_stop_listening(re);
+	rpc_destroy_endpoint(e);
 
     rpc_fini();
 
 	return 0;
 }
-

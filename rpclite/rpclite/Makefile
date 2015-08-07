@@ -21,9 +21,9 @@ DEBUGGER=
 LD_SEARCH_PATH=$(foreach dir,$(libdirs),-L$(dir))
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
 
-LDFLAGS=$(LD_SEARCH_PATH) -lmero -pthread
+LDFLAGS=$(LD_SEARCH_PATH) -lmero
 
-SOURCES=rpclite_fop_ff.c rpclite_fop.c rpclite.c rpclite_fom.c rpclite_sender_fom.c m0init.c
+SOURCES=rpclite_fop_ff.c rpclite_fop.c rpclite.c rpclite_fom.c m0init.c
 
 OBJECTS=$(SOURCES:.c=.o)
 

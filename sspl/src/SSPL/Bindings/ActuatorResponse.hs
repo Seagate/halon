@@ -1,14 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 module SSPL.Bindings.ActuatorResponse where
-
-import SSPL.Bindings.Instances ()
-
-import Data.Binary (Binary)
-import Data.Typeable
-import GHC.Generics
 
 import Data.Aeson
 import Data.Aeson.Schema.Choice
@@ -16,6 +10,7 @@ import Data.Aeson.Schema.Types
 import Data.Aeson.Schema.Validator
 import Data.Aeson.Types
 import Data.Aeson.Types
+import Data.Binary
 import Data.Either
 import Data.Functor
 import Data.HashMap.Lazy
@@ -25,11 +20,14 @@ import Data.Ratio
 import Data.Scientific
 import Data.Text
 import Data.Traversable
+import Data.Typeable
 import GHC.Base
 import GHC.Classes
+import GHC.Generics
 import GHC.Num
 import GHC.Show
 import Prelude
+import SSPL.Bindings.Instances ()
 import Text.Regex
 import Text.Regex.PCRE.String
 
@@ -97,9 +95,10 @@ graph = Data.Map.fromList [(Data.Text.pack "ActuatorResponse",
 data ActuatorResponseMessageActuator_response_typeAck = ActuatorResponseMessageActuator_response_typeAck
   { actuatorResponseMessageActuator_response_typeAckAck_msg :: Data.Text.Text -- ^ Message describing acknowledgement
   , actuatorResponseMessageActuator_response_typeAckAck_type :: Data.Text.Text -- ^ Identify the type of acknowledgement
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorResponseMessageActuator_response_typeAck
+
+instance Data.Binary.Binary ActuatorResponseMessageActuator_response_typeAck
 
 instance Data.Aeson.FromJSON ActuatorResponseMessageActuator_response_typeAck
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure ActuatorResponseMessageActuator_response_typeAck GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property ack_msg missing") (\val -> case val of
@@ -117,9 +116,10 @@ instance Data.Aeson.ToJSON ActuatorResponseMessageActuator_response_typeAck
 data ActuatorResponseMessageActuator_response_typeThread_controller = ActuatorResponseMessageActuator_response_typeThread_controller
   { actuatorResponseMessageActuator_response_typeThread_controllerModule_name :: Data.Text.Text -- ^ Identify the module to be managed by its class name
   , actuatorResponseMessageActuator_response_typeThread_controllerThread_response :: Data.Text.Text -- ^ Response from action applied: start | stop | restart | status
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorResponseMessageActuator_response_typeThread_controller
+
+instance Data.Binary.Binary ActuatorResponseMessageActuator_response_typeThread_controller
 
 instance Data.Aeson.FromJSON ActuatorResponseMessageActuator_response_typeThread_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure ActuatorResponseMessageActuator_response_typeThread_controller GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property module_name missing") (\val -> case val of
@@ -137,9 +137,10 @@ instance Data.Aeson.ToJSON ActuatorResponseMessageActuator_response_typeThread_c
 data ActuatorResponseMessageActuator_response_typeService_controller = ActuatorResponseMessageActuator_response_typeService_controller
   { actuatorResponseMessageActuator_response_typeService_controllerService_response :: Data.Text.Text -- ^ Response from action applied: start | stop | restart | status
   , actuatorResponseMessageActuator_response_typeService_controllerService_name :: Data.Text.Text -- ^ Identify the service to be managed
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorResponseMessageActuator_response_typeService_controller
+
+instance Data.Binary.Binary ActuatorResponseMessageActuator_response_typeService_controller
 
 instance Data.Aeson.FromJSON ActuatorResponseMessageActuator_response_typeService_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure ActuatorResponseMessageActuator_response_typeService_controller GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property service_response missing") (\val -> case val of
@@ -158,9 +159,10 @@ data ActuatorResponseMessageActuator_response_type = ActuatorResponseMessageActu
   { actuatorResponseMessageActuator_response_typeAck :: GHC.Base.Maybe ActuatorResponseMessageActuator_response_typeAck
   , actuatorResponseMessageActuator_response_typeThread_controller :: GHC.Base.Maybe ActuatorResponseMessageActuator_response_typeThread_controller
   , actuatorResponseMessageActuator_response_typeService_controller :: GHC.Base.Maybe ActuatorResponseMessageActuator_response_typeService_controller
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorResponseMessageActuator_response_type
+
+instance Data.Binary.Binary ActuatorResponseMessageActuator_response_type
 
 instance Data.Aeson.FromJSON ActuatorResponseMessageActuator_response_type
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure ActuatorResponseMessageActuator_response_type GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "ack") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "thread_controller") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "service_controller") obj)
@@ -176,14 +178,15 @@ instance Data.Aeson.ToJSON ActuatorResponseMessageActuator_response_type
 data ActuatorResponseMessage = ActuatorResponseMessage
   { actuatorResponseMessageActuator_response_type :: ActuatorResponseMessageActuator_response_type
   , actuatorResponseMessageSspl_ll_msg_header :: Data.Aeson.Types.Value
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorResponseMessage
+
+instance Data.Binary.Binary ActuatorResponseMessage
 
 instance Data.Aeson.FromJSON ActuatorResponseMessage
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure ActuatorResponseMessage GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property actuator_response_type missing") Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "actuator_response_type") obj)) GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property sspl_ll_msg_header missing") (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaRequired = Prelude.True} val of
-                                                                                                                                                                                                                                                                                                                                                                                                            [] -> GHC.Base.return ()
-                                                                                                                                                                                                                                                                                                                                                                                                            es -> GHC.Base.fail GHC.Base.$ Prelude.unlines es);
+                                                                                                                                                                                                                                                                                                                                                                                                             [] -> GHC.Base.return ()
+                                                                                                                                                                                                                                                                                                                                                                                                             es -> GHC.Base.fail GHC.Base.$ Prelude.unlines es);
                                                                                                                                                                                                                                                                                                                                                                                                         GHC.Base.return val}) (Data.HashMap.Lazy.lookup (Data.Text.pack "sspl_ll_msg_header") obj)
           parseJSON _ = GHC.Base.fail "not an object"
 
@@ -198,9 +201,10 @@ data ActuatorResponse = ActuatorResponse
   , actuatorResponseExpires :: GHC.Base.Maybe Prelude.Integer -- ^ The number of seconds the signature remains valid after being generated
   , actuatorResponseUsername :: Data.Text.Text -- ^ Username who generated message
   , actuatorResponseMessage :: ActuatorResponseMessage
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary ActuatorResponse
+
+instance Data.Binary.Binary ActuatorResponse
 
 instance Data.Aeson.FromJSON ActuatorResponse
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure ActuatorResponse GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property signature missing") (\val -> case val of

@@ -49,7 +49,7 @@ start sp = spawnLocal $ do
       cr <- expect
       rg <- G.getGraph mmid
       uuid <- liftIO $ nextRandom
-      let (CommandRequestMessage _ msr msgId) = commandRequestMessage cr
+      let (CommandRequestMessage _ _ msr msgId) = commandRequestMessage cr
       case msr of
         Just (CommandRequestMessageStatusRequest mef et) ->
           let

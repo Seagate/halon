@@ -1,14 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 module SSPL.Bindings.CommandResponse where
-
-import SSPL.Bindings.Instances ()
-
-import Data.Binary (Binary)
-import Data.Typeable
-import GHC.Generics
 
 import Control.Monad
 import Data.Aeson
@@ -17,6 +11,7 @@ import Data.Aeson.Schema.Helpers
 import Data.Aeson.Schema.Types
 import Data.Aeson.Types
 import Data.Aeson.Types
+import Data.Binary
 import Data.Either
 import Data.Functor
 import Data.HashMap.Lazy
@@ -26,12 +21,15 @@ import Data.Ratio
 import Data.Scientific
 import Data.Text
 import Data.Traversable
+import Data.Typeable
 import Data.Vector
 import GHC.Base
 import GHC.Classes
+import GHC.Generics
 import GHC.Num
 import GHC.Show
 import Prelude
+import SSPL.Bindings.Instances ()
 import Text.Regex
 import Text.Regex.PCRE.String
 
@@ -81,9 +79,10 @@ graph = Data.Map.fromList [(Data.Text.pack "CommandResponse",
 data CommandResponseMessageStatusResponseItem = CommandResponseMessageStatusResponseItem
   { commandResponseMessageStatusResponseItemStatus :: Data.Text.Text -- ^ Entity status.
   , commandResponseMessageStatusResponseItemEntityId :: Data.Text.Text -- ^ Entity identifier. Depends on entity type.
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary CommandResponseMessageStatusResponseItem
+
+instance Data.Binary.Binary CommandResponseMessageStatusResponseItem
 
 instance Data.Aeson.FromJSON CommandResponseMessageStatusResponseItem
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure CommandResponseMessageStatusResponseItem GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property status missing") (\val -> case val of
@@ -102,9 +101,10 @@ data CommandResponseMessage = CommandResponseMessage
   { commandResponseMessageStatusResponse :: GHC.Base.Maybe ([CommandResponseMessageStatusResponseItem])
   , commandResponseMessageResponseId :: GHC.Base.Maybe Data.Text.Text -- ^ Identity of the message this is sent in response to.
   , commandResponseMessageMessageId :: GHC.Base.Maybe Data.Text.Text -- ^ Used to identify a response if a response is required.
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary CommandResponseMessage
+
+instance Data.Binary.Binary CommandResponseMessage
 
 instance Data.Aeson.FromJSON CommandResponseMessage
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure CommandResponseMessage GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -130,9 +130,10 @@ data CommandResponse = CommandResponse
   , commandResponseExpires :: GHC.Base.Maybe Prelude.Integer -- ^ The number of secs the signature remains valid after being generated
   , commandResponseUsername :: Data.Text.Text -- ^ Username who generated message
   , commandResponseMessage :: CommandResponseMessage
-  } deriving (GHC.Classes.Eq, GHC.Show.Show, Generic, Typeable)
+  } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
-instance Binary CommandResponse
+
+instance Data.Binary.Binary CommandResponse
 
 instance Data.Aeson.FromJSON CommandResponse
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure CommandResponse GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property signature missing") (\val -> case val of

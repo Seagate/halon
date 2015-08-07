@@ -68,6 +68,13 @@ data DeviceIdentifier = DeviceIdentifier String Identifier
 instance Binary DeviceIdentifier
 instance Hashable DeviceIdentifier
 
+-- | Labels used to identify what kind of 'Host' we are looking at.
+data Label = MeroClient | MeroServer | TrackingStation
+           deriving (Eq, Show, Generic, Typeable)
+
+instance Binary Label
+instance Hashable Label
+
 -- | Representation of storage device status. Currently this just mirrors
 --   the status we get from OpenHPI.
 newtype StorageDeviceStatus = StorageDeviceStatus String
@@ -104,6 +111,7 @@ resdict_Enclosure :: Dict (Resource Enclosure)
 resdict_Interface :: Dict (Resource Interface)
 resdict_StorageDevice :: Dict (Resource StorageDevice)
 resdict_StorageDeviceStatus :: Dict (Resource StorageDeviceStatus)
+resdict_Label :: Dict (Resource Label)
 
 resdict_Host = Dict
 resdict_DeviceIdentifier = Dict
@@ -111,6 +119,7 @@ resdict_Enclosure = Dict
 resdict_Interface = Dict
 resdict_StorageDevice = Dict
 resdict_StorageDeviceStatus = Dict
+resdict_Label = Dict
 
 reldict_Has_Cluster_Host :: Dict (Relation Has Cluster Host)
 reldict_Has_Host_Interface :: Dict (Relation Has Host Interface)
@@ -120,6 +129,7 @@ reldict_Has_Enclosure_Host :: Dict (Relation Has Enclosure Host)
 reldict_Runs_Host_Node :: Dict (Relation Runs Host Node)
 reldict_Is_StorageDevice_StorageDeviceStatus :: Dict (Relation Is StorageDevice StorageDeviceStatus)
 reldict_Has_Host_StorageDevice :: Dict (Relation Has Host StorageDevice)
+reldict_Has_Host_Label :: Dict (Relation Has Host Label)
 reldict_Has_StorageDevice_DeviceIdentifier :: Dict (Relation Has StorageDevice DeviceIdentifier)
 
 reldict_Has_Cluster_Host = Dict
@@ -130,6 +140,7 @@ reldict_Has_Enclosure_Host = Dict
 reldict_Runs_Host_Node = Dict
 reldict_Is_StorageDevice_StorageDeviceStatus = Dict
 reldict_Has_Host_StorageDevice = Dict
+reldict_Has_Host_Label = Dict
 reldict_Has_StorageDevice_DeviceIdentifier = Dict
 
 remotable [ 'resdict_Host
@@ -138,6 +149,7 @@ remotable [ 'resdict_Host
           , 'resdict_Interface
           , 'resdict_StorageDevice
           , 'resdict_StorageDeviceStatus
+          , 'resdict_Label
           , 'reldict_Has_Cluster_Host
           , 'reldict_Has_Host_Interface
           , 'reldict_Has_Cluster_Enclosure
@@ -146,6 +158,7 @@ remotable [ 'resdict_Host
           , 'reldict_Runs_Host_Node
           , 'reldict_Is_StorageDevice_StorageDeviceStatus
           , 'reldict_Has_Host_StorageDevice
+          , 'reldict_Has_Host_Label
           , 'reldict_Has_StorageDevice_DeviceIdentifier
           ]
 
@@ -168,11 +181,17 @@ instance Resource StorageDeviceStatus where
 instance Resource DeviceIdentifier where
     resourceDict = $(mkStatic 'resdict_DeviceIdentifier)
 
+instance Resource Label where
+    resourceDict = $(mkStatic 'resdict_Label)
+
 instance Relation Has Cluster Host where
     relationDict = $(mkStatic 'reldict_Has_Cluster_Host)
 
 instance Relation Has Host Interface where
     relationDict = $(mkStatic 'reldict_Has_Host_Interface)
+
+instance Relation Has Host Label where
+    relationDict = $(mkStatic 'reldict_Has_Host_Label)
 
 instance Relation Has Cluster Enclosure where
     relationDict = $(mkStatic 'reldict_Has_Cluster_Enclosure)

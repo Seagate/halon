@@ -9,7 +9,12 @@ module HA.RecoveryCoordinator.Actions.Hardware
   ( -- * Host related functions
     findHosts
   , findHostEnclosure
+  , findHostLabels
+  , findHostsLabelled
+  , findHostsLabelledBy
   , findNodeHost
+  , hasLabel
+  , labelHost
   , locateHostInEnclosure
   , locateNodeOnHost
   , registerHost
@@ -117,6 +122,59 @@ locateNodeOnHost node host = modifyLocalGraph $ \rg -> do
               ++ show host
 
   return $ G.connect host Runs node rg
+
+----------------------------------------------------------
+-- Host label functions                                 --
+----------------------------------------------------------
+
+-- | Find hosts with labels satisfying the user supplied predicate
+findHostsLabelledBy :: String -- ^ Message to log
+                    -> ([Label] -> Bool) -- ^ Filter predicate
+                    -> PhaseM LoopState l [Host]
+findHostsLabelledBy msg p = do
+  phaseLog "rg-query" msg
+  g <- getLocalGraph
+  return $ [ host | host@(Host {}) <- G.connectedTo Cluster Has g
+                  , p (G.connectedTo host Has g) ]
+
+-- | A specialised version of 'findHostsLabelledBy' that returns all
+-- hosts labelled with at least the given label.
+findHostsLabelled :: Label
+                  -> PhaseM LoopState l [Host]
+findHostsLabelled label =
+  findHostsLabelledBy ("Looking for hosts with label " ++ show label) p
+  where
+    p = elem label
+
+-- | Attach a label to the given host.
+labelHost :: Host
+          -> Label
+          -> PhaseM LoopState l ()
+labelHost host label = modifyLocalGraph $ \rg -> do
+  phaseLog "rg" $ unwords [ "Adding label", show label
+                          , "to host", show host ]
+  let rg' = G.newResource host
+        >>> G.newResource label
+        >>> G.connect host Has label
+          $ rg
+
+  return rg'
+
+hasLabel :: Host
+         -> Label
+         -> PhaseM LoopState l Bool
+hasLabel host label = do
+  phaseLog "rg-query" $ unwords [ "Checking if host", show host
+                                , "has label", show label ]
+  g <- getLocalGraph
+  return $ label `elem` G.connectedTo host Has g
+
+findHostLabels :: Host
+               -> PhaseM LoopState l [Label]
+findHostLabels host = do
+  phaseLog "rg-query" $ "Getting labels for" ++ show host
+  g <- getLocalGraph
+  return $ G.connectedTo host Has g
 
 ----------------------------------------------------------
 -- Interface related functions                          --

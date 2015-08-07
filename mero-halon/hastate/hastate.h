@@ -60,7 +60,7 @@ int ha_state_init(ha_state_callbacks_t *cbs);
 void ha_state_fini();
 
 /// Notifies mero at the remote address that the state of some objects has changed.
-int ha_state_notify( rpc_receive_endpoint_t *ep, char *remote_address
+int ha_state_notify( rpc_endpoint_t *ep, char *remote_address
                    , struct m0_ha_nvec *note, int timeout_s
                    );
 

@@ -19,6 +19,7 @@ module Network.RPC.RPCLite
     , finalizeRPC
     -- * Client side API
     , ClientEndpoint
+    , ClientEndpointV
     , RPCAddress(..)
     , rpcAddress
     , createClientEndpoint
@@ -35,7 +36,6 @@ module Network.RPC.RPCLite
     , getRPCMachine_se
     -- * Server side API
     , ServerEndpoint(se_ptr)
-    , ServerEndpointV
     , ListenCallbacks(..)
     , listen
     , stopListening
@@ -277,19 +277,18 @@ data RPCMachineV
 -- | Yields the RPC machine of a server endpoint.
 getRPCMachine_se :: ServerEndpoint -> IO RPCMachine
 getRPCMachine_se (ServerEndpoint _ pse) =
-    fmap RPCMachine $ rpc_get_rpc_machine_re pse
+    fmap RPCMachine $ rpc_get_rpc_machine pse
 
-foreign import ccall unsafe rpc_get_rpc_machine_re :: Ptr ServerEndpointV
-                                                   -> IO (Ptr RPCMachineV)
+foreign import ccall unsafe rpc_get_rpc_machine :: Ptr ClientEndpointV
+                                                -> IO (Ptr RPCMachineV)
 
 -- | A server endpoint handles multiple incoming connections.
 data ServerEndpoint = ServerEndpoint
   { _se_cbs :: [SomeFunPtr]
-  , se_ptr  :: Ptr ServerEndpointV -- ^ Pointer to the server endpoint. This
+  , se_ptr  :: Ptr ClientEndpointV -- ^ Pointer to the server endpoint. This
                                    -- is needed if other C libraries want to
                                    -- use the endpoint.
   }
-data ServerEndpointV
 data SomeFunPtr = forall a. SomeFunPtr (FunPtr a)
 
 data ListenCallbacksV
@@ -307,14 +306,11 @@ data ListenCallbacks = ListenCallbacks
     }
 
 -- | Creates a server endpoint at the specified RPC address.
-listen :: String              -- ^ prefix to use when the service creates files on disk.
-                              -- It must be different for every service which is currently
-                              -- running or behavior would be undefined.
-          -> RPCAddress       -- ^ address of the service
-          -> ListenCallbacks  -- ^ service callbacks
-          -> IO ServerEndpoint
-listen persistencePrefix (RPCAddress rpcAddr) cbs = do
-    alloca$ \pse -> withCString persistencePrefix$ \cPersistencePrefix ->
+listen :: RPCAddress       -- ^ address of the service
+       -> ListenCallbacks  -- ^ service callbacks
+       -> IO ServerEndpoint
+listen (RPCAddress rpcAddr) cbs = do
+    alloca$ \pse ->
       useAsCString rpcAddr$ \cRPCAddr ->
         allocaBytesAligned #{size rpc_listen_callbacks_t}
                            #{alignment rpc_listen_callbacks_t}$ \pcbs -> do
@@ -322,12 +318,12 @@ listen persistencePrefix (RPCAddress rpcAddr) cbs = do
           #{poke rpc_listen_callbacks_t, receive_callback} pcbs wrecv
           #{poke rpc_listen_callbacks_t, connection_callback} pcbs nullPtr
           #{poke rpc_listen_callbacks_t, disconnected_callback} pcbs nullPtr
-          rpc_listen cPersistencePrefix cRPCAddr pcbs pse >>= check_rc
+          rpc_listen cRPCAddr pcbs pse >>= check_rc
             >> fmap (ServerEndpoint [SomeFunPtr wrecv]) (peek pse)
   where
     wrapRecvCB f = cwrapRecvCB$ \pit ctx -> fmap not$ f (Item pit) (ptrToWordPtr ctx)
 
-foreign import ccall rpc_listen :: CString -> CString -> Ptr ListenCallbacksV -> Ptr (Ptr ServerEndpointV) -> IO CInt
+foreign import ccall rpc_listen :: CString -> Ptr ListenCallbacksV -> Ptr (Ptr ClientEndpointV) -> IO CInt
 
 foreign import ccall "wrapper" cwrapRecvCB :: (Ptr ItemV -> Ptr () -> IO Bool)
   -> IO (FunPtr (Ptr ItemV -> Ptr () -> IO Bool))
@@ -336,13 +332,10 @@ foreign import ccall "wrapper" cwrapRecvCB :: (Ptr ItemV -> Ptr () -> IO Bool)
 -- | Releases resources allocated by listen.
 stopListening :: ServerEndpoint -> IO ()
 stopListening (ServerEndpoint cbs pse) =
-    rpc_stop_listening pse >> mapM_ (withSomeFunPtr freeHaskellFunPtr) cbs
+    rpc_destroy_endpoint pse >> mapM_ (withSomeFunPtr freeHaskellFunPtr) cbs
   where
     withSomeFunPtr :: (forall a. FunPtr a -> b) -> SomeFunPtr -> b
     withSomeFunPtr f (SomeFunPtr p) = f p
-
-foreign import ccall rpc_stop_listening :: Ptr ServerEndpointV -> IO ()
-
 
 -- | Like 'connect' but creates an RPC connection using a server endpoint instead.
 -- The RPC connection has a session.
@@ -353,12 +346,8 @@ connect_se :: ServerEndpoint  -- ^ local endpoint to use for the connection
            -> IO Connection
 connect_se (ServerEndpoint _ pse) (RPCAddress rpcAddr) timeout_s =
     alloca$ \pc -> useAsCString rpcAddr$ \cRPCAddr ->
-      rpc_connect_re pse cRPCAddr (fromIntegral timeout_s) pc
+      rpc_connect pse cRPCAddr (fromIntegral timeout_s) pc
         >>= check_rc >> fmap Connection (peek pc)
-
-foreign import ccall rpc_connect_re :: Ptr ServerEndpointV -> CString -> CInt
-                                    -> Ptr (Ptr ConnectionV) -> IO CInt
-
 
 -- | Type of exceptions that RPC calls can produce.
 data RPCException = RPCException Status

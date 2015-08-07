@@ -24,17 +24,20 @@ long nsdiff(struct timespec t0,struct timespec t1) {
 }
 
 int main(int argc,char** argv) {
-	int rc = rpc_init("");
+	int rc = m0_init_wrapper();
+	fprintf(stderr,"m0_init: %d\n",rc);
+
+	rc = rpc_init("");
 	fprintf(stderr,"rpc_init: %d\n",rc);
 
-    rpc_receive_endpoint_t* re;
-	rc = rpc_listen("s1","0@lo:12345:34:500",&(rpc_listen_callbacks_t){ .receive_callback=rcv },&re);
+    rpc_endpoint_t* e;
+	rc = rpc_listen("0@lo:12345:34:10",&(rpc_listen_callbacks_t){ .receive_callback=rcv },&e);
 	fprintf(stderr,"rpc_listen: %d\n",rc);
 
     rpc_connection_t* c;
-    rc = rpc_connect_re(re,"0@lo:12345:34:500",5,&c);
+    rc = rpc_connect(e,"0@lo:12345:34:10",5,&c);
  	if (rc) {
-        fprintf(stderr,"rpc_connect_re: %d\n",rc);
+        fprintf(stderr,"rpc_connect: %d\n",rc);
         exit(1);
     }
 
@@ -67,9 +70,8 @@ int main(int argc,char** argv) {
 		get_avg_rpc_time(RPC_STAT_SEND)/(double)1000000);
     exit(0);
 
-    rpc_stop_listening(re);
+    rpc_destroy_endpoint(e);
     rpc_fini();
 
 	return 0;
 }
-
