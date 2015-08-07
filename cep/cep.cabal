@@ -21,7 +21,13 @@ library
   exposed-modules:     Network.CEP
 
   other-modules:       Network.CEP.Buffer
+                       Network.CEP.Engine
+                       Network.CEP.Execution
+                       Network.CEP.SM
+                       Network.CEP.Stack
+                       Network.CEP.StackDriver
                        Network.CEP.Types
+                       Network.CEP.Utils
 
   other-extensions:    DeriveDataTypeable
                        GeneralizedNewtypeDeriving
@@ -41,23 +47,6 @@ library
 
   if flag(maintainer)
     Ghc-Options: -Werror
-
-executable simple
- hs-source-dirs:      rewrite
- default-language:    Haskell2010
- main-is:             Simple.hs
- default-extensions:  ScopedTypeVariables
- build-depends:       base >=4.6 && <4.9,
-                      mtl,
-                      network-transport,
-                      network-transport-tcp,
-                      distributed-process,
-                      cep,
-                      binary,
-                      containers,
-                      netwire,
-                      random
- ghc-options:      -Wall
 
 Test-Suite unit-tests
   Type: exitcode-stdio-1.0
@@ -84,38 +73,3 @@ Test-Suite unit-tests
                  tasty,
                  tasty-hunit,
                  tasty-files
-
-
--- executable simple
---  hs-source-dirs:      castor-stories
---  default-language:    Haskell2010
---  main-is:             Main.hs
---  default-extensions:  ScopedTypeVariables
---  build-depends:       base >=4.6 && <4.9,
---                       lens >=4.3 && <4.9,
---                       mtl,
---                       network-transport==0.4.*,
---                       network-transport-tcp==0.4.*,
---                       distributed-process==0.5.*,
---                       cep,
---                       binary,
---                       containers,
---                       netwire,
---                      random
---  ghc-options:      -Wall
---  buildable: False
-
-
--- executable simple
---   hs-source-dirs:      examples
---   default-language:    Haskell2010
---   main-is:             Simple.hs
---   default-extensions:  ScopedTypeVariables
---   build-depends:       base >=4.6 && <4.8,
---                        lens >=4.3 && <4.5,
---                        mtl,
---                        network-transport==0.4.*,
---                        network-transport-tcp==0.4.*,
---                        distributed-process==0.5.*,
---                        cep
---   ghc-options:      -Wall -Werror

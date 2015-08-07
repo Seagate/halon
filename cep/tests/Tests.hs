@@ -602,7 +602,7 @@ shouldNotLooseMgs = do
     let [_,_,last_run] = infos
         RunInfo _ (RulesBeenTriggered [rinfo]) = last_run
         RuleInfo _ (ExecutionReport _ _ exe)   = rinfo
-        [SuccessExe ph]                        = exe
+        [SuccessExe ph _]                      = exe
 
     assertEqual "should not lose msgs" "ph2" (stackPhaseInfoPhaseName ph)
 
