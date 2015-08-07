@@ -34,6 +34,7 @@ import HA.EventQueue.Producer (promulgateEQ)
 import HA.Multimap.Implementation
 import HA.Multimap.Process
 import HA.Replicator
+import HA.EQTracker ( eqTrackerProcess )
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
 #else
@@ -57,9 +58,8 @@ import HA.Service
   , runningService
   )
 import           HA.NodeUp (nodeUp)
-import           HA.Services.Empty (EmptyConf(..))
 import qualified HA.Services.Dummy as Dummy
-import qualified HA.Services.EQTracker as EQT
+import qualified HA.Services.Monitor as Monitor
 -- import qualified HA.Services.DecisionLog as DLog
 import HA.Services.Monitor
 import RemoteTables ( remoteTable )
@@ -157,6 +157,7 @@ testServiceRestarting transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -193,6 +194,7 @@ testServiceNotRestarting transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -228,6 +230,7 @@ testEQTrimming :: Transport -> IO ()
 testEQTrimming transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         say $ "tests node: " ++ show nid
         cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
@@ -265,6 +268,7 @@ testHostAddition transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -313,6 +317,7 @@ testDriveAddition transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -484,6 +489,7 @@ testServiceStopped transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -529,6 +535,7 @@ serviceStarted svname = do
 launchRC :: Process (ProcessId, ProcessId)
 launchRC = do
     nid <- getSelfNode
+    _ <- spawnLocal $ eqTrackerProcess [nid]
 
     say $ "tests node: " ++ show nid
     cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
@@ -600,6 +607,8 @@ testNodeUpRace transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
+
 
         say $ "tests node: " ++ show nid
         cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
@@ -616,19 +625,19 @@ testNodeUpRace transport = do
           runProcess node2 $ do
             selfNode <- getSelfNode
             _ <- promulgateEQ [nid] . encodeP $ ServiceStarted (Node selfNode)
-                                                               EQT.eqTracker
-                                                               EmptyConf
+                                                               Monitor.regularMonitor
+                                                               Monitor.emptyMonitorConf
                                                                (ServiceProcess $ nullProcessId selfNode)
             nodeUp ([nid], 2000000)
             send self (Node selfNode)
             send self (nullProcessId selfNode)
         _ <- receiveTimeout 1000000 []
 
-        True <- serviceProcessStillAlive mm (Node nid) EQT.eqTracker
+        True <- serviceProcessStillAlive mm (Node nid) Monitor.regularMonitor
         nn <- expect
         pr <- expect
         rg <- G.getGraph mm
-        case runningService nn EQT.eqTracker rg of
+        case runningService nn Monitor.regularMonitor rg of
           Just (ServiceProcess n) -> do True <- return $ n /= pr
                                         return ()
           Nothing -> return ()

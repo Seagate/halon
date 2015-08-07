@@ -19,7 +19,7 @@ import HA.CallTimeout
   )
 import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types
-import qualified HA.Services.EQTracker as EQT
+import qualified HA.EQTracker as EQT
 
 import Control.Concurrent (threadDelay)
 import Control.Distributed.Process
