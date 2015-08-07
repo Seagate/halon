@@ -610,7 +610,6 @@ testNodeUpRace transport = do
         self <- getSelfPid
         _ <- spawnLocal $ eqTrackerProcess [nid]
 
-
         say $ "tests node: " ++ show nid
         cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
                              [nid] ((Nothing,[]), fromList [])
@@ -624,6 +623,7 @@ testNodeUpRace transport = do
         liftIO $ do
           node2 <- newLocalNode transport rt
           runProcess node2 $ do
+            _ <- spawnLocal $ eqTrackerProcess [nid]
             selfNode <- getSelfNode
             _ <- promulgateEQ [nid] . encodeP $ ServiceStarted (Node selfNode)
                                                                EQT.eqTracker
