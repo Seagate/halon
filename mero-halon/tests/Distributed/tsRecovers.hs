@@ -2,7 +2,7 @@
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
--- Tests that the cluster to proceeds after the tracking station recovers
+-- Tests that the cluster proceeds after the tracking station recovers
 -- quorum.
 --
 -- * Start a satellite and two tracking station nodes.
