@@ -8,7 +8,7 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Distributed.Static ( closureCompose )
-import Control.Monad ( replicateM, replicateM_ )
+import Control.Monad ( replicateM )
 import Data.Foldable (forM_)
 import qualified Data.Set as Set
 
@@ -115,7 +115,6 @@ rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
 
 -- | Autoboot helper cluster
 autobootCluster :: [LocalNode] -> IO ()
-autobootCluster nids = do
-  lock <- newEmptyMVar
+autobootCluster nids =
   forM_ nids $ \lnid ->
     forkIO $ startupHalonNode lnid rcClosure
