@@ -33,7 +33,6 @@ import Control.Distributed.Process.Closure
 import qualified Control.Distributed.Process.Internal.StrictMVar as StrictMVar
     ( modifyMVar_ )
 import Control.Distributed.Process.Internal.Types
-import Control.Distributed.Process.Node (runProcess)
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Control.Distributed.Process.Timeout ( retry )
 import Control.Distributed.Static ( closureApply )
