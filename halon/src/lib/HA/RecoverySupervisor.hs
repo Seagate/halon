@@ -213,7 +213,7 @@ recoverySupervisor rg rcP = do
     rcHasDied rc = do
        mn <- expectTimeout 0
        case mn of
-         Just (ProcessMonitorNotification _ pid reason)
+         Just (ProcessMonitorNotification _ pid _reason)
            | pid == rc -> return True
            | otherwise -> rcHasDied rc
          Nothing -> return False

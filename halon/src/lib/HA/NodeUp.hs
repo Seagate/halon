@@ -35,7 +35,6 @@ import Control.Distributed.Process
   , expect
   , say
   , processNodeId
-  , spawnLocal
   , monitor
   , ProcessMonitorNotification(..)
   , receiveTimeout
