@@ -128,11 +128,5 @@ main = (>>= maybe (error "test timed out") return) $
         say $ "Restarting ts node " ++ m ++ " ..."
         nid <- spawnNode_ m ("./halond -l " ++ m ++ ":9000" ++ " 2>&1")
         redirectLogsHere nid
-        systemThere [m] ("./halonctl"
-                     ++ " -l " ++ halonctlloc m
-                     ++ " -a " ++ m ++ ":9000"
-                     ++ " bootstrap station"
-                     ++ " -r 2000000"
-                     )
         send pingPid $ show (i + 1)
         expectLog tsNodes $ isInfixOf $ "received DummyEvent " ++ show (i + 1)
