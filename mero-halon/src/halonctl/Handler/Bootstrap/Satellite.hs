@@ -55,7 +55,7 @@ schema = let
     pingDelay = defaultable 10000000 . (Opt.option Opt.auto)
              $ Opt.long "pingDelay"
             <> Opt.short 'd'
-            <> Opt.help ("Time between sending NodeUp messages"
+            <> Opt.help ("Time between sending NodeUp messages "
                           ++ "to the tracking station (ms).")
             <> Opt.metavar "DELAY"
   in Config <$> trackers <*> pingDelay
