@@ -118,7 +118,7 @@ main = (>>= maybe (error "test timed out") return) $
 
       forM_ (zip3 [1,3..] [m0, m1] nhs) $ \(i, m, nh) -> do
         say $ "killing ts node " ++ m ++ " ..."
-        systemThere [m] "pkill halond; true"
+        systemThere [m] "pkill -KILL halond; true"
         _ <- liftIO $ waitForCommand_ $ handleGetInput nh
         send pingPid $ show (i :: Int)
         -- The event shouldn't be processed
