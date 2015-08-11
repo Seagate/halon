@@ -41,6 +41,7 @@ module Mero.Conf.Obj
   , Process(..)
   , getProcess
   , Service(..)
+  , ServiceParams(..)
   , ServiceType(..)
   , getService
   , Rack(..)
@@ -58,6 +59,7 @@ module Mero.Conf.Obj
 #include "confc_helpers.h"
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
 
+import Mero.Conf.Context
 import Mero.Conf.Fid
 
 import Data.Word ( Word32, Word64 )
@@ -115,6 +117,7 @@ data Filesystem = Filesystem
     { cf_ptr :: Ptr Obj
     , cf_fid      :: Fid
     , cf_rootfid  :: Fid
+    , cf_mdpool   :: Fid
     , cf_redundancy :: Word32
     , cf_params   :: [String]
     } deriving (Show)
@@ -124,12 +127,14 @@ getFilesystem po = do
   pfs <- confc_cast_filesystem po
   fid <- #{peek struct m0_conf_obj, co_id} po
   rfid <- #{peek struct m0_conf_filesystem, cf_rootfid} pfs
+  mdfid <- #{peek struct m0_conf_filesystem, cf_mdpool} pfs
   redundancy <- #{peek struct m0_conf_filesystem, cf_redundancy} pfs
   params <- #{peek struct m0_conf_filesystem, cf_params} pfs >>= peekStringArray
   return Filesystem
            { cf_ptr = po
            , cf_fid = fid
            , cf_rootfid = rfid
+           , cf_mdpool = mdfid
            , cf_redundancy = redundancy
            , cf_params = params
            }
@@ -167,6 +172,7 @@ data PVer = PVer {
   , pv_fid :: Fid
   , pv_ver :: Word32
   , pv_state :: PVerState
+  , pv_attr :: PDClustAttr
   , pv_permutations :: [Word32]
   , pv_failures :: [Word32]
 } deriving (Show)
@@ -177,6 +183,7 @@ getPVer po = do
   fid <- #{peek struct m0_conf_obj, co_id} po
   ver <- #{peek struct m0_conf_pver, pv_ver} pv
   state <- fmap PVerState $ #{peek struct m0_conf_pver, pv_state} pv
+  attr <- #{peek struct m0_conf_pver, pv_attr} pv
   permutations_ptr <- #{peek struct m0_conf_pver, pv_permutations} pv
   permutations_nr <- #{peek struct m0_conf_pver, pv_permutations_nr} pv
   permutations <- peekArray permutations_nr permutations_ptr
@@ -188,6 +195,7 @@ getPVer po = do
     , pv_fid = fid
     , pv_ver = ver
     , pv_state = state
+    , pv_attr = attr
     , pv_permutations = permutations
     , pv_failures = failures
     }
@@ -196,17 +204,23 @@ getPVer po = do
 data ObjV = ObjV
   { cv_ptr :: Ptr Obj
   , cv_fid :: Fid
-  , cv_real :: Ptr Obj
+  , cv_real :: Fid
   } deriving (Show)
+
+-- | Temporary workaround for MERO-1088
+foreign import ccall "confc_helpers.h cv_real_fid"
+  c_cv_real_fid :: Ptr ObjV
+                -> IO (Ptr Fid)
 
 getObjV :: Ptr Obj -> IO ObjV
 getObjV po = do
   pv <- confc_cast_objv po
   fid <- #{peek struct m0_conf_obj, co_id} po
+  real <- c_cv_real_fid pv >>= peek
   return ObjV {
       cv_ptr = po
     , cv_fid = fid
-    , cv_real = #{ptr struct m0_conf_objv, cv_real} pv
+    , cv_real = real
   }
 
 newtype RackV = RackV ObjV
@@ -226,7 +240,13 @@ data Node = Node
   , cn_nr_cpu     :: Word32
   , cn_last_state :: Word64
   , cn_flags      :: Word64
+  , cn_pool_fid   :: Fid
   } deriving (Show)
+
+-- | Temporary workaround for MERO-1088
+foreign import ccall "confc_helpers.h cn_pool_fid"
+  c_cn_pool_fid :: Ptr Node
+                -> IO (Ptr Fid)
 
 getNode :: Ptr Obj -> IO Node
 getNode po = do
@@ -236,6 +256,7 @@ getNode po = do
   nr_cpu <- #{peek struct m0_conf_node, cn_nr_cpu} pn
   last_state <- #{peek struct m0_conf_node, cn_last_state} pn
   flags <- #{peek struct m0_conf_node, cn_flags} pn
+  pool_fid <- c_cn_pool_fid pn >>= peek
   return Node
            { cn_ptr = po
            , cn_fid = fid
@@ -243,11 +264,13 @@ getNode po = do
            , cn_nr_cpu = nr_cpu
            , cn_last_state = last_state
            , cn_flags = flags
+           , cn_pool_fid = pool_fid
            }
 
 data Process = Process
   { pc_ptr :: Ptr Obj
   , pc_fid :: Fid
+  , pc_cores :: Bitmap
   , pc_memlimit_as :: Word64
   , pc_memlimit_rss :: Word64
   , pc_memlimit_stack :: Word64
@@ -259,6 +282,7 @@ getProcess po = do
   pp <- confc_cast_process po
   Process <$> (return po)
           <*> (#{peek struct m0_conf_obj, co_id} po)
+          <*> (#{peek struct m0_conf_process, pc_cores} pp)
           <*> (#{peek struct m0_conf_process, pc_memlimit_as} pp)
           <*> (#{peek struct m0_conf_process, pc_memlimit_rss} pp)
           <*> (#{peek struct m0_conf_process, pc_memlimit_stack} pp)
@@ -296,26 +320,40 @@ instance Enum ServiceType where
   fromEnum CST_SSS         = #{const M0_CST_SSS}
   fromEnum (CST_UNKNOWN i) = i
 
+data ServiceParams =
+      SPRepairLimits !Word32
+    | SPADDBStobFid !Fid
+    | SPConfDBPath String
+    | SPUnused
+  deriving (Eq, Show)
+
 -- | Representation of `m0_conf_service`.
 data Service = Service
   { cs_ptr :: Ptr Obj
   , cs_fid :: Fid
   , cs_type      :: ServiceType
   , cs_endpoints :: [String]
+  , cs_u :: ServiceParams
   } deriving Show
 
 getService :: Ptr Obj -> IO Service
 getService po = do
   ps <- confc_cast_service po
   fid <- #{peek struct m0_conf_obj, co_id} po
-  stype <- #{peek struct m0_conf_service, cs_type} ps
+  stype <- fmap (toEnum . fromIntegral)
+            $ (#{peek struct m0_conf_service, cs_type} ps :: IO CInt)
   endpoints <- #{peek struct m0_conf_service, cs_endpoints} ps
                     >>= peekStringArray
+  attrs <- case stype of
+    CST_MGS -> fmap SPConfDBPath $ peekCString $
+        #{ptr struct m0_conf_service, cs_u} ps
+    _ -> return SPUnused
   return Service
            { cs_ptr = po
            , cs_fid = fid
-           , cs_type = toEnum $ fromIntegral (stype :: CInt)
+           , cs_type = stype
            , cs_endpoints = endpoints
+           , cs_u = attrs
            }
 
 data Rack = Rack
@@ -341,12 +379,19 @@ getEnclosure po =
 data Controller = Controller
   { cc_ptr :: Ptr Obj
   , cc_fid :: Fid
+  , cc_node_fid :: Fid
   } deriving Show
+
+-- | Temporary workaround for MERO-1088
+foreign import ccall "confc_helpers.h cc_node_fid"
+  c_cc_node_fid :: Ptr Controller
+                -> IO (Ptr Fid)
 
 getController :: Ptr Obj -> IO Controller
 getController po =
   Controller <$> (return po)
              <*> (#{peek struct m0_conf_obj, co_id} po)
+             <*> (confc_cast_controller po >>= c_cc_node_fid >>= peek)
 
 -- | Representation of `m0_conf_sdev`.
 data Sdev = Sdev
@@ -384,13 +429,22 @@ getSdev po = do
            , sd_filename = filename
            }
 
+-- | Temporary workaround for MERO-1094
+foreign import ccall "confc_helpers.h ck_sdev_fid"
+  c_ck_sdev_fid :: Ptr Disk
+                -> IO (Ptr Fid)
+
 data Disk = Disk
   { ck_ptr :: Ptr Obj
   , ck_fid :: Fid
+  , ck_dev :: Fid
   } deriving Show
 
 getDisk :: Ptr Obj -> IO Disk
-getDisk po = Disk <$> (return po) <*> (#{peek struct m0_conf_obj, co_id} po)
+getDisk po =
+  Disk <$> (return po)
+       <*> (#{peek struct m0_conf_obj, co_id} po)
+       <*> (confc_cast_disk po >>= c_ck_sdev_fid >>= peek)
 
 --------------------------------------------------------------------------------
 -- Casting helpers
@@ -405,7 +459,7 @@ foreign import ccall unsafe confc_cast_sdev :: Ptr Obj
 foreign import ccall unsafe confc_cast_service :: Ptr Obj
                                                -> IO (Ptr Service)
 foreign import ccall unsafe confc_cast_node :: Ptr Obj
-                                            -> IO (Ptr Service)
+                                            -> IO (Ptr Node)
 foreign import ccall unsafe confc_cast_pool :: Ptr Obj
                                             -> IO (Ptr Pool)
 foreign import ccall unsafe confc_cast_pver :: Ptr Obj
@@ -414,16 +468,16 @@ foreign import ccall unsafe confc_cast_objv :: Ptr Obj
                                             -> IO (Ptr ObjV)
 foreign import ccall unsafe confc_cast_filesystem :: Ptr Obj
                                                   -> IO (Ptr Filesystem)
--- foreign import ccall unsafe confc_cast_disk :: Ptr Obj
---                                             -> IO (Ptr Disk)
+foreign import ccall unsafe confc_cast_disk :: Ptr Obj
+                                            -> IO (Ptr Disk)
 foreign import ccall unsafe confc_cast_process :: Ptr Obj
                                                -> IO (Ptr Process)
 -- foreign import ccall unsafe confc_cast_rack :: Ptr Obj
 --                                             -> IO (Ptr Rack)
 -- foreign import ccall unsafe confc_cast_enclosure :: Ptr Obj
 --                                                  -> IO (Ptr Enclosure)
--- foreign import ccall unsafe confc_cast_controller :: Ptr Obj
---                                                   -> IO (Ptr Controller)
+foreign import ccall unsafe confc_cast_controller :: Ptr Obj
+                                                  -> IO (Ptr Controller)
 
 --------------------------------------------------------------------------------
 -- Utility

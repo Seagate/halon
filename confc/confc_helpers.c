@@ -71,8 +71,6 @@ void confc_finalize() {
 	ast_thread_fini();
 }
 
-const struct m0_fid *CONF_ROOT_FID = &M0_CONF_ROOT_FID;
-
 struct m0_conf_dir* confc_cast_dir(struct m0_conf_obj* obj) {
     return M0_CONF_CAST(obj, m0_conf_dir);
 }
@@ -142,3 +140,17 @@ int confc_open_sync(struct m0_conf_obj** result,struct m0_conf_obj* parent,const
 
 // int m0_confc_readdir_sync(struct m0_conf_obj* obj,struct m0_conf_obj** item);
 
+// Temporary workaround
+struct m0_fid *cn_pool_fid(struct m0_conf_node *node) {
+    return &(node->cn_pool->pl_obj.co_id);
+}
+struct m0_fid *cc_node_fid(struct m0_conf_controller *cont) {
+    return &(cont->cc_node->cn_obj.co_id);
+}
+struct m0_fid *cv_real_fid(struct m0_conf_objv *obj) {
+    return &(obj->cv_real->co_id);
+}
+// Workaround for MERO-1094
+struct m0_fid *ck_sdev_fid(struct m0_conf_disk *disk) {
+    return &(disk->ck_dev->sd_obj.co_id);
+}

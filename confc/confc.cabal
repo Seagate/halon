@@ -7,39 +7,48 @@ License:       AllRightsReserved
 Copyright:     (C) 2013 Xyratex Technology Limited
 Category:      Network
 Build-Type:    Custom
-Cabal-Version: >= 1.8
+Cabal-Version: >= 1.10
 
 Flag maintainer
   Description: Enforce strict code quality checks (-Werror, etc)
   Default: False
 
 Library
+  Default-Language:    Haskell2010
   exposed-modules:     Mero.ConfC
-  other-modules:       Mero.Conf.Fid
+                     , Mero.Spiel
+  other-modules:       Mero.Conf.Context
+                     , Mero.Conf.Fid
                      , Mero.Conf.Internal
                      , Mero.Conf.Obj
                      , Mero.Conf.Tree
+                     , Mero.Spiel.Context
+                     , Mero.Spiel.Internal
   build-depends:       base
+                     , containers
                      , binary
                      , bytestring
                      , hashable
+                     , inline-c
                      , rpclite
 
-  ghc-options:  -Wall -fprof-auto -fprof-auto-calls
+  ghc-options:  -Wall -fprof-auto -fprof-auto-calls -fPIC
+  default-extensions:  CPP
   if flag(maintainer)
     ghc-options: -Werror
 
   cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
   include-dirs: .
-  c-sources: confc_helpers.c
+  c-sources:  confc_helpers.c
   extra-libraries: mero
 
 Test-Suite testconf
   Type:           exitcode-stdio-1.0
   main-is:        testconf.hs
+  Default-Language: Haskell2010
   hs-source-dirs: tests
   ghc-options:     -Wall -idist/build -threaded -fno-warn-unused-do-bind
-  extensions:          CPP,
+  default-extensions:  CPP,
                        ExistentialQuantification,
                        FlexibleInstances,
                        DeriveDataTypeable,
@@ -54,3 +63,46 @@ Test-Suite testconf
 
   if flag(maintainer)
     ghc-options: -Werror
+
+Test-Suite testspiel
+  Type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs:  tests/Spiel
+  Main-Is:         testspiel.hs
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  Build-Depends:   confc,
+                   base >= 4.5,
+                   process >= 1.1,
+                   binary >= 0.6.4,
+                   bytestring,
+                   directory,
+                   filepath,
+                   rpclite,
+                   time >= 1.4
+
+Test-Suite testcopyconf
+  Type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs:  tests/Spiel
+  Main-Is:         testbuildconf.hs
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  Build-Depends:   confc,
+                   base >= 4.5,
+                   process >= 1.1,
+                   binary >= 0.6.4,
+                   bytestring,
+                   directory,
+                   filepath,
+                   rpclite,
+                   time >= 1.4
+

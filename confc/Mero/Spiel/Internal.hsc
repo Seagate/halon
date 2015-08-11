@@ -15,14 +15,13 @@ module Mero.Spiel.Internal
   , RunningService
   ) where
 
-import Mero.ConfC
-  ( Fid )
+import Mero.Conf.Fid ( Fid )
+import Mero.Conf.Context
 import Mero.Spiel.Context
 
 import Network.RPC.RPCLite
   ( RPCMachine(..) )
 
-import Data.Monoid ((<>))
 import Data.Word ( Word32, Word64 )
 
 import Foreign.C.String
@@ -36,7 +35,7 @@ import Foreign.Ptr
   )
 import Foreign.Storable
 
-import qualified Language.C.Inline as C
+-- import qualified Language.C.Inline as C
 
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -117,6 +116,7 @@ foreign import ccall "spiel.h m0_spiel_filesystem_add"
                          -> Ptr Fid -- ^ fid of the parent profile
                          -> CUInt   -- ^ metadata redundancy count
                          -> Ptr Fid -- ^ root's fid of filesystem
+                         -> Ptr Fid -- ^ metadata pool
                          -> Ptr (Ptr CChar) -- ^ NULL-terminated array of command-line like parameters
                          -> IO CInt
 
@@ -217,43 +217,44 @@ instance Storable StorageDeviceMediaType where
 foreign import ccall "spiel.h m0_spiel_device_add"
   c_spiel_device_add :: Ptr SpielTransactionV
                      -> Ptr Fid -- ^ fid of the filesystem
-                     -> Ptr Fid -- ^ fid of the parent profile
+                     -> Ptr Fid -- ^ fid of the parent service
+                     -> Ptr Fid -- ^ fid of the parent disk
                      -> CInt -- ^ StorageDeviceInterfaceType
                      -> CInt -- ^ StorageDeviceMediaType
                      -> Word32
                      -> Word64
                      -> Word64
                      -> Word64
-                     -> Ptr Char
+                     -> CString
                      -> IO CInt
 
 foreign import ccall "spiel.h m0_spiel_pool_add"
   c_spiel_pool_add :: Ptr SpielTransactionV
-                   -> Ptr Fid -- ^ fid of the filesystem
-                   -> Ptr Fid -- ^ fid of the parent profile
-                   -> Word32
+                   -> Ptr Fid -- ^ fid of the pool
+                   -> Ptr Fid -- ^ fid of the parent filesystem
+                   -> Word32  -- ^ pool order
                    -> IO CInt
 
 foreign import ccall "spiel.h m0_spiel_rack_add"
   c_spiel_rack_add :: Ptr SpielTransactionV
-                   -> Ptr Fid -- ^ fid of the filesystem
-                   -> Ptr Fid -- ^ fid of the parent profile
+                   -> Ptr Fid -- ^ fid of the rack
+                   -> Ptr Fid -- ^ fid of the parent filesystem
                    -> IO CInt
 
 
 foreign import ccall "spiel.h m0_spiel_enclosure_add"
   c_spiel_enclosure_add :: Ptr SpielTransactionV
-                        -> Ptr Fid -- ^ fid of the filesystem
-                        -> Ptr Fid -- ^ fid of the parent profile
+                        -> Ptr Fid -- ^ fid of the enclosure
+                        -> Ptr Fid -- ^ fid of the parent rack
                         -> IO CInt
 
 
 foreign import ccall "spiel.h m0_spiel_pool_version_add"
   c_spiel_pool_version_add :: Ptr SpielTransactionV
-                         -> Ptr Fid -- ^ fid of the filesystem
-                         -> Ptr Fid -- ^ fid of the parent profile
-                         -> Ptr PDClustAttr -- ^ Node
-                         -> IO CInt
+                           -> Ptr Fid -- ^ fid of the pver
+                           -> Ptr Fid -- ^ fid of the parent pool
+                           -> Ptr PDClustAttr
+                           -> IO CInt
 
 foreign import ccall "spiel.h m0_spiel_rack_v_add"
   c_spiel_rack_v_add :: Ptr SpielTransactionV
@@ -276,6 +277,13 @@ foreign import ccall "spiel.h m0_spiel_controller_v_add"
                            -> Ptr Fid -- ^ Node
                            -> IO CInt
 
+foreign import ccall "spiel.h m0_spiel_disk_v_add"
+  c_spiel_disk_v_add :: Ptr SpielTransactionV
+                     -> Ptr Fid -- ^ fid of the disk_v
+                     -> Ptr Fid -- ^ fid of the parent controller_v
+                     -> Ptr Fid -- ^ Real
+                     -> IO CInt
+
 foreign import ccall "spiel.h m0_spiel_pool_version_done"
   c_spiel_pool_version_done :: Ptr SpielTransactionV
                             -> Ptr Fid -- ^ fid of the filesystem
@@ -287,6 +295,12 @@ foreign import ccall "spiel.h m0_spiel_controller_add"
                          -> Ptr Fid -- ^ fid of the parent profile
                          -> Ptr Fid -- ^ Node
                          -> IO CInt
+
+foreign import ccall "spiel.h m0_spiel_disk_add"
+  c_spiel_disk_add :: Ptr SpielTransactionV
+                   -> Ptr Fid -- ^ fid of the filesystem
+                   -> Ptr Fid -- ^ fid of the parent profile
+                   -> IO CInt
 
 foreign import ccall "spiel.h m0_spiel_element_del"
   c_spiel_element_del :: Ptr SpielTransactionV
@@ -396,18 +410,18 @@ foreign import ccall "spiel.h m0_spiel_pool_rebalance_quiesce"
 -- Utility                                                   --
 ---------------------------------------------------------------
 
-C.context $ C.baseCtx <> spielCtx
+-- C.context $ C.baseCtx <> confCtx <> spielCtx
 
-C.include "lib/memory.h"
-C.include "spiel/spiel.h"
+-- C.include "lib/memory.h"
+-- C.include "spiel/spiel.h"
 
-freeRunningServices :: Ptr RunningService -- ^ Pointer to head of array
-                    -> IO CInt
-freeRunningServices arr = [C.block| int {
-    struct m0_spiel_running_svc *arr = $(struct m0_spiel_running_svc *arr);
-    m0_free(arr);
-  }
-|]
+-- freeRunningServices :: Ptr RunningService -- ^ Pointer to head of array
+--                     -> IO CInt
+-- freeRunningServices arr = [C.block| int {
+--     struct m0_spiel_running_svc *arr = $(struct m0_spiel_running_svc *arr);
+--     m0_free(arr);
+--   }
+-- |]
 
 throwIfNonZero_ :: (Eq a, Num a) => (a -> String) -> IO a -> IO ()
 throwIfNonZero_ = throwIf_ (/= 0)

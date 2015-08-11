@@ -27,8 +27,6 @@ void confc_finalize();
 
 int confc_open_sync(struct m0_conf_obj** result,struct m0_conf_obj* parent,const struct m0_fid *child);
 
-const struct m0_fid *CONF_ROOT_FID;
-
 // int m0_confc_readdir_sync(struct m0_conf_obj* obj,struct m0_conf_obj** item);
 // void m0_confc_close(struct m0_confc_obj*);
 
@@ -64,3 +62,11 @@ struct m0_conf_enclosure* confc_cast_enclosure(struct m0_conf_obj* obj);
 struct m0_conf_controller* confc_cast_controller(struct m0_conf_obj* obj);
 
 struct m0_conf_disk* confc_cast_disk(struct m0_conf_obj* obj);
+
+// Workaround for MERO-1088
+struct m0_fid *cn_pool_fid(struct m0_conf_node *node);
+// Workarounds for MERO-1089
+struct m0_fid *cc_node_fid(struct m0_conf_controller *cont);
+struct m0_fid *cv_real_fid(struct m0_conf_objv *obj);
+// Workaround for MERO-1094
+struct m0_fid *ck_sdev_fid(struct m0_conf_disk *disk);
