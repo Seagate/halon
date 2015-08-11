@@ -65,7 +65,8 @@ remotable [ 'ignitionArguments, 'dummyRC ]
 tests :: AbstractTransport -> IO [TestTree]
 tests transport =
   return [ testSuccess "autoboot-simple" $ mkAutobootTest (getTransport transport)
-         , testCaseSteps  "ignition"     $ testIgnition   (getTransport transport)
+         -- XXX: should be rewritten as distributed test
+         -- , testCaseSteps  "ignition"     $ testIgnition   (getTransport transport)
          ]
 
 rcClosure :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
@@ -137,10 +138,10 @@ mkAutobootTest transport = withTmpDirectory $ do
 
 
 -- | Test that ignition call will retrn supposed result.
-testIgnition :: Transport
-             -> (String -> IO ())
-             -> IO ()
-testIgnition transport step = withTmpDirectory $ do
+_testIgnition :: Transport
+              -> (String -> IO ())
+              -> IO ()
+_testIgnition transport step = withTmpDirectory $ do
     -- 0. Run autoboot on 5 nodes
     nids <- replicateM 5 $ newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
     let (nids1,nids2) = splitAt 3 nids
