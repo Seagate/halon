@@ -161,6 +161,8 @@ monitorRules = do
               return ()
             _ -> traverse_ reportFailure =<< takeMonitored pid
 
+    defineSimple "link-to" $ liftProcess . link
+
     defineSimple "service-started" $ \msg -> do
       ServiceStarted _ svc _ sp <- decodeMsg msg
       monitoring svc sp

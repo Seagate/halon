@@ -170,7 +170,8 @@ rcInitRule argv eq = do
       continue mm_conf
 
     setPhase mm_conf $
-        \evt@(HAEvent _ (SetMasterMonitor sp) _) -> do
+        \evt@(HAEvent _ (SetMasterMonitor sp@(ServiceProcess pid)) _) -> do
+      liftProcess $ usend pid =<< getSelfPid
       registerMasterMonitor sp
       handled eq evt
       liftProcess $ sayRC $ "started master-monitor service"
