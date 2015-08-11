@@ -623,6 +623,7 @@ testNodeUpRace transport = do
         liftIO $ do
           node2 <- newLocalNode transport rt
           runProcess node2 $ do
+            _ <- spawnLocal $ eqTrackerProcess [nid]
             selfNode <- getSelfNode
             _ <- promulgateEQ [nid] . encodeP $ ServiceStarted (Node selfNode)
                                                                Monitor.regularMonitor
