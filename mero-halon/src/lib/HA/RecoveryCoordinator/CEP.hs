@@ -251,11 +251,18 @@ rcRules argv eq = do
          sendMsg sender mmid
          handled eq evt
 
-    defineSimple "dummy-event" $ \evt@(HAEvent _ (DummyEvent str) _) -> do
-      i <- getNoisyPingCount
-      liftProcess $ sayRC $ "received DummyEvent " ++ str
-      liftProcess $ sayRC $ "Noisy ping count: " ++ show i
-      handled eq evt
+    define "dummy-event" $ do
+      initial <- phaseHandle "initial"
+      dummy   <- phaseHandle "dummy"
+      noop    <- phaseHandle "noop"
+      directly initial $ switch [dummy, noop]
+      setPhase noop $ \() -> continue dummy
+      setPhase dummy $ \evt@(HAEvent _ (DummyEvent str) _) -> do
+        i <- getNoisyPingCount
+        liftProcess $ sayRC $ "received DummyEvent " ++ str
+        liftProcess $ sayRC $ "Noisy ping count: " ++ show i
+        handled eq evt
+      start initial ()
 
     defineSimple "stop-request" $ \evt@(HAEvent _ msg _) -> do
       ServiceStopRequest node svc <- decodeMsg msg
