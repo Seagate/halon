@@ -34,7 +34,7 @@ import Network.RPC.RPCLite
   ( ListenCallbacks(..)
   , RPCAddress
   , ServerEndpoint
-  , initRPCAt
+  , initRPC
   , finalizeRPC
   , listen
   )
@@ -67,15 +67,14 @@ newtype GetReply = GetReply NVec
         deriving (Generic, Typeable, Binary)
 
 -- | Initialiazes the Notification subsystem.
-initialize :: FilePath -- ^ Persistence path for RPC.
-           -> RPCAddress -- ^ Listen address.
+initialize :: RPCAddress -- ^ Listen address.
            -> Process ServerEndpoint
-initialize fp addr = do
+initialize addr = do
     lnode <- fmap processNode ask
     self <- getSelfPid
     say $ "listening at " ++ show addr
     liftIO $ runOnGlobalM0Worker $ do
-      initRPCAt fp
+      initRPC
       ep <- listen addr listenCallbacks
       initHAState (ha_state_get self lnode) (ha_state_set lnode)
       return ep
