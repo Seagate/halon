@@ -12,6 +12,7 @@ import qualified HA.NodeAgent.Tests (tests)
 import qualified HA.RecoverySupervisor.Tests ( tests )
 import qualified HA.ResourceGraph.Tests ( tests )
 import qualified Control.SpineSeq.Tests ( tests )
+import qualified HA.Storage.Tests ( tests )
 
 import Test.Tasty (TestTree, testGroup)
 
@@ -32,4 +33,5 @@ tests transport = do
         , testGroup "RG" <$> HA.ResourceGraph.Tests.tests (getTransport transport)
         , testGroup "NA" <$> HA.NodeAgent.Tests.tests (getTransport transport)
         , pure Control.SpineSeq.Tests.tests
+        , HA.Storage.Tests.tests (getTransport transport)
         ]
