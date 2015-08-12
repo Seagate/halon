@@ -17,6 +17,7 @@ module HA.RecoveryCoordinator.Mero.Tests
   , testServiceStopped
   , testMonitorManagement
   , testMasterMonitorManagement
+  , testNodeUpRace
   ) where
 
 import Prelude hiding ((<$>), (<*>))
@@ -33,6 +34,7 @@ import HA.EventQueue.Producer (promulgateEQ)
 import HA.Multimap.Implementation
 import HA.Multimap.Process
 import HA.Replicator
+import HA.EQTracker ( eqTrackerProcess )
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
 #else
@@ -55,7 +57,9 @@ import HA.Service
   , encodeP
   , runningService
   )
+import           HA.NodeUp (nodeUp)
 import qualified HA.Services.Dummy as Dummy
+import qualified HA.Services.Monitor as Monitor
 -- import qualified HA.Services.DecisionLog as DLog
 import HA.Services.Monitor
 import RemoteTables ( remoteTable )
@@ -65,6 +69,8 @@ import qualified SSPL.Bindings as SSPL
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotableDecl, mkStatic )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
+import Control.Distributed.Process.Node (newLocalNode, runProcess)
+import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Network.Transport (Transport)
 
 import Control.Applicative ((<$>), (<*>))
@@ -151,6 +157,7 @@ testServiceRestarting transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -187,6 +194,7 @@ testServiceNotRestarting transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -222,6 +230,7 @@ testEQTrimming :: Transport -> IO ()
 testEQTrimming transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         say $ "tests node: " ++ show nid
         cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
@@ -250,6 +259,8 @@ testEQTrimming transport = do
          remoteTable
 
 
+
+
 -- | Test that the recovery co-ordinator successfully adds a host to the
 --   resource graph.
 testHostAddition :: Transport -> IO ()
@@ -257,6 +268,7 @@ testHostAddition transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -305,6 +317,7 @@ testDriveAddition transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -476,6 +489,7 @@ testServiceStopped transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
         nid <- getSelfNode
         self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
             str@"Starting service dummy"   -> send self str
@@ -521,6 +535,7 @@ serviceStarted svname = do
 launchRC :: Process (ProcessId, ProcessId)
 launchRC = do
     nid <- getSelfNode
+    _ <- spawnLocal $ eqTrackerProcess [nid]
 
     say $ "tests node: " ++ show nid
     cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
@@ -583,6 +598,54 @@ testMasterMonitorManagement transport = do
       kill mpid "Farewell"
       _ <- serviceStarted monitorServiceName
       say "Node-local monitor has been restarted"
+
+-- | This test verifies that if service start message is interleaved with
+-- ServiceStart messages from the old node, that is possibe in case
+-- of network failures.
+testNodeUpRace :: Transport -> IO ()
+testNodeUpRace transport = do
+    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
+        nid <- getSelfNode
+        self <- getSelfPid
+        _ <- spawnLocal $ eqTrackerProcess [nid]
+
+        say $ "tests node: " ++ show nid
+        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+                             [nid] ((Nothing,[]), fromList [])
+        pRGroup <- unClosure cRGroup
+        rGroup <- pRGroup
+
+        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        subscribe eq (Sub :: Sub TrimDone)
+        (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+
+        liftIO $ do
+          node2 <- newLocalNode transport rt
+          runProcess node2 $ do
+            _ <- spawnLocal $ eqTrackerProcess [nid]
+            selfNode <- getSelfNode
+            _ <- promulgateEQ [nid] . encodeP $ ServiceStarted (Node selfNode)
+                                                               Monitor.regularMonitor
+                                                               Monitor.emptyMonitorConf
+                                                               (ServiceProcess $ nullProcessId selfNode)
+            nodeUp ([nid], 2000000)
+            send self (Node selfNode)
+            send self (nullProcessId selfNode)
+        _ <- receiveTimeout 1000000 []
+
+        True <- serviceProcessStillAlive mm (Node nid) Monitor.regularMonitor
+        nn <- expect
+        pr <- expect
+        rg <- G.getGraph mm
+        case runningService nn Monitor.regularMonitor rg of
+          Just (ServiceProcess n) -> do True <- return $ n /= pr
+                                        return ()
+          Nothing -> return ()
+
+  where
+    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+         remoteTable
+
 
 testRemoteTable :: RemoteTable
 testRemoteTable = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $

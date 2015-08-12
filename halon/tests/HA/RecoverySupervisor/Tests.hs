@@ -11,10 +11,7 @@
 module HA.RecoverySupervisor.Tests ( tests ) where
 
 import HA.Process
-import HA.RecoverySupervisor
-  ( recoverySupervisor
-  , RSState(..)
-  )
+import HA.RecoverySupervisor hiding (__remoteTable)
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
@@ -29,6 +26,8 @@ import Control.Distributed.Process
   , getSelfPid
   , liftIO
   , catch
+  , expect
+  , send
   , receiveWait
   , ProcessId
 #ifndef USE_MOCK_REPLICATOR
@@ -55,6 +54,7 @@ import Network.Transport.Controlled ( Controlled, silenceBetween )
 import Control.Distributed.Process
   ( Static
   , Closure
+  , receiveTimeout
 #ifndef USE_MOCK_REPLICATOR
   , say
 #endif
@@ -84,6 +84,8 @@ import Control.Monad
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TChan
 #endif
+import Data.Int
+import Data.IORef
 import Network.Transport
   (Transport
 #ifndef USE_MOCK_REPLICATOR
@@ -92,6 +94,8 @@ import Network.Transport
   )
 import Test.Framework
 import Test.Transport
+import Test.Tasty.HUnit
+import System.Clock
 
 requestTimeout :: Int
 requestTimeout = 1000000
@@ -332,6 +336,7 @@ tests oneNode abstractTransport = do
         Nothing <- atomically $ tryReadTChan events
         return ()
 #endif
+    , timerTests transport
     ]
 
 #ifndef USE_MOCK_REPLICATOR
@@ -440,3 +445,67 @@ rsTest transport oneNode action = withTmpDirectory $ do
   -- mapM_ (flip terminateLocalProcesses (Just pollingPeriod)) ns
   mapM_ closeLocalNode (controlNode:ns)
   -- mapM_ (flip terminateLocalProcesses Nothing) (controlNode:ns)
+
+
+timerTests :: Transport -> TestTree
+timerTests transport = testGroup "RS Timer"
+  [ testSuccess "rs-timer-run-after-timeout" $ testTimerRunAfterTimeout transport
+  , testSuccess "rs-timer-cancelled" $ testTimerCancelled transport
+  -- XXX: if asynchronous exception will arrive to the thread that calls cancel
+  -- it's possible for the timer thread to lock forever.
+  -- See: https://app.asana.com/0/12314345447678/43375013903903
+  -- , testSuccess "rs-timer-should-survive-exceptions" $ testTimerExceptionLiveness transport
+  , testSuccess "rs-timer-concurrent-cancel" $ testTimerConcurrentCancel transport
+  ]
+
+data TimerData = TimerData { firedAt :: IORef Int64 }
+
+testTimerRunAfterTimeout :: Transport -> Assertion
+testTimerRunAfterTimeout transport = do
+  node <- newLocalNode transport $ __remoteTable remoteTable
+  td <- TimerData <$> newIORef 0
+  runProcess node $ do
+    forM_ [100,1000,10000] $ \delay -> do
+      tf <- liftIO $ timeSpecToMicro <$> getTime Monotonic
+      timer <- newTimer delay $ liftIO $ writeIORef (firedAt td) . timeSpecToMicro =<< getTime Monotonic
+      _     <- receiveTimeout (delay*2) []
+      liftIO . assertBool "timeout callback should fire" . not =<< cancel timer
+      tf' <-   liftIO $ readIORef (firedAt td)
+      liftIO $ assertBool ("timeout should fire after " ++ show delay ++ "us")
+                          (tf'-tf >= fromIntegral delay)
+
+testTimerCancelled :: Transport -> Assertion
+testTimerCancelled transport = do
+  node <- newLocalNode transport $ __remoteTable remoteTable
+  td <- liftIO $ TimerData <$> newIORef 0
+  runProcess node $ do
+    forM_ [100,1000,10000] $ \delay -> do
+      tf <- liftIO $ timeSpecToMicro <$> getTime Monotonic
+      timer <- newTimer delay $ liftIO $ writeIORef (firedAt td) . timeSpecToMicro =<< getTime Monotonic
+      _     <- receiveTimeout (delay `div` 2) []
+      cancelled <- cancel timer
+      if cancelled
+         then liftIO $ assertEqual "action should not happen" 0 =<< readIORef (firedAt td)
+         else liftIO $ do
+           tf' <- timeSpecToMicro <$> getTime Monotonic
+           assertBool "we missed timeout" (tf'-tf >= fromIntegral delay)
+           writeIORef (firedAt td) 0
+
+testTimerConcurrentCancel :: Transport -> Assertion
+testTimerConcurrentCancel transport = do
+  node <- newLocalNode transport $ __remoteTable remoteTable
+  td <- liftIO $ TimerData <$> newIORef 0
+  runProcess node $ do
+    let delay = 10000
+    self <- getSelfPid
+    tf <- liftIO $ timeSpecToMicro <$> getTime Monotonic
+    timer <- newTimer delay $ liftIO $ writeIORef (firedAt td) . timeSpecToMicro =<< getTime Monotonic
+    replicateM_ 5 $ spawnLocal $ cancel timer >>= send self
+    (r:esults) <- replicateM 5 expect
+    liftIO $ assertBool "all results are equal" $ all (==r) esults
+    if r
+       then liftIO $ assertEqual "action should not happen" 0 =<< readIORef (firedAt td)
+       else liftIO $ do
+         tf' <- timeSpecToMicro <$> getTime Monotonic
+         assertBool "we missed timeout"
+                    (tf'-tf >= fromIntegral delay)

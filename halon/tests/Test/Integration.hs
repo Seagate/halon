@@ -12,13 +12,13 @@ import qualified HA.RecoverySupervisor.Tests (tests)
 import qualified HA.ResourceGraph.Tests (tests)
 import qualified HA.Autoboot.Tests (tests)
 
-import Test.Tasty (TestTree, testGroup)
+import Test.Tasty (TestTree, testGroup, localOption, mkTimeout)
 
 import Test.Transport
 import Prelude
 
 tests :: AbstractTransport -> IO TestTree
-tests transport = do
+tests transport = fmap (localOption (mkTimeout (7*60*1000000))) $
     testGroup "it" <$> sequence
       [
         testGroup "EQ" <$> HA.EventQueue.Tests.tests transport

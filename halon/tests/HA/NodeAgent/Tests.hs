@@ -14,7 +14,6 @@ import HA.EventQueue.Definitions (eventQueue)
 import HA.EventQueue.Consumer (HAEvent(..))
 import HA.EventQueue.Producer (expiate)
 import HA.EventQueue.Types (PersistMessage(..))
-import HA.NodeAgent.Messages
 import HA.Process
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR
@@ -22,9 +21,7 @@ import HA.Replicator.Mock ( MC_RG )
 #else
 import HA.Replicator.Log ( MC_RG )
 #endif
-import HA.Service (serviceProcess)
-import HA.Services.Empty hiding (__remoteTable)
-import HA.Services.EQTracker
+import HA.EQTracker
 import RemoteTables ( remoteTable )
 
 
@@ -46,10 +43,11 @@ import Control.Distributed.Process
 import Control.Distributed.Process ( spawn )
 import Control.Distributed.Static ( closureApply )
 import Control.Distributed.Process.Closure ( mkClosure )
+#else
+import Control.Distributed.Process.Internal.Primitives ( unClosure )
 #endif
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
 import Control.Distributed.Process.Node ( LocalNode, localNodeId, newLocalNode, closeLocalNode )
-import Control.Distributed.Process.Internal.Primitives ( unClosure )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
 import Data.List (find, isPrefixOf, nub, (\\))
@@ -128,8 +126,7 @@ naTestWithEQ transport action = withTmpDirectory $ do
     newNode = newLocalNode transport
                        $ __remoteTable remoteTable
     initialize nids node = tryRunProcess node $ do
-      na <- spawnLocalLink . ($ EmptyConf) =<< unClosure (serviceProcess eqTracker)
-      True <- updateEQNodes na nids
+      _ <- spawnLocalLink (eqTrackerProcess nids)
       return ()
 
 naTest :: Transport -> ([NodeId] -> Process ()) -> IO ()
@@ -150,8 +147,7 @@ naTest transport action = withTmpDirectory $ bracket
                    (expect :: Process (ProcessId, PersistMessage))
                    >>= send self . (,) (nids !! 1)
           register eventQueueLabel eq2
-        na <- spawnLocalLink . ($ EmptyConf) =<< unClosure (serviceProcess eqTracker)
-        True <- updateEQNodes na nids
+        _ <- spawnLocalLink (eqTrackerProcess nids)
         action nids
 
 expectEventOnNode :: NodeId -> Process ProcessId

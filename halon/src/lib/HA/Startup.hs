@@ -14,10 +14,12 @@ module HA.Startup where
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
 import HA.EventQueue ( EventQueue )
 import HA.EventQueue.Definitions (eventQueue)
+import HA.EQTracker ( eqTrackerProcess )
 import HA.Multimap.Implementation ( Multimap, fromList )
 import HA.Multimap.Process ( multimap )
 import HA.Replicator ( RGroup(..), RStateView(..) )
 import HA.Replicator.Log ( RLogGroup )
+import HA.Process (tryRunProcess)
 
 import Control.Arrow ( first, second, (***) )
 import Control.Distributed.Process hiding (send)
@@ -34,6 +36,8 @@ import Control.Distributed.Process.Internal.Types
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Control.Distributed.Process.Timeout ( retry )
 import Control.Distributed.Static ( closureApply )
+import Control.Exception (SomeException)
+import qualified Control.Exception as Exception
 
 import Data.Binary ( decode, encode )
 import Data.ByteString.Lazy (ByteString)
@@ -45,6 +49,7 @@ import qualified Network.Transport as NT
 import qualified Data.Map as Map ( toList, empty )
 import Control.Monad.Reader
 
+import System.IO ( hPutStrLn, stderr )
 import System.IO.Unsafe ( unsafePerformIO )
 
 {-# NOINLINE globalRGroup #-}
@@ -232,3 +237,21 @@ remotableDecl [ [d|
           )
 
  |] ]
+
+-- | Startup Halon node. This method run autoboot and starts all
+-- processes that are required for halon node functionality.
+-- Function will not exit until the node is running.
+-- On exit node can't be guaranteed to run properly so caller
+-- should choose what to do. Few possible options are:
+--   1. try to restart EventQueueTracker using 'HA.EQTracker.eqTrackerProcess'
+--   2. close local node, possibly killing all process on that
+--   3. send some emergency message to RecoverySupervisor and it
+--      could try to recover node.
+startupHalonNode :: LocalNode
+                 -> Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
+                 -> IO ()
+startupHalonNode lnid rcClosure = do
+    Exception.catch (tryRunProcess lnid (autoboot rcClosure))
+                    (\(e :: SomeException) -> hPutStrLn stderr $ "Cannot autoboot: " ++ show e)
+    tryRunProcess lnid $ eqTrackerProcess []
+

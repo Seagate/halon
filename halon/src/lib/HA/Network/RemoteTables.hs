@@ -10,8 +10,9 @@ import HA.ResourceGraph ( __remoteTable )
 import HA.Resources ( __remoteTable )
 import HA.Services.Dummy ( __remoteTable, __remoteTableDecl )
 import HA.Services.Empty ( __remoteTable )
-import HA.Services.EQTracker ( __remoteTableDecl )
+import HA.EQTracker ( __remoteTableDecl )
 import HA.Services.Noisy ( __remoteTable, __remoteTableDecl )
+import HA.Services.Ping ( __remoteTable, __remoteTableDecl )
 import HA.Service ( __remoteTable )
 import HA.Services.OCF ( __remoteTableDecl )
 import HA.Startup ( __remoteTable, __remoteTableDecl )
@@ -36,12 +37,14 @@ haRemoteTable next =
    HA.NodeUp.__remoteTable $
    HA.ResourceGraph.__remoteTable $
    HA.Resources.__remoteTable $
+   HA.EQTracker.__remoteTableDecl $
    HA.Services.Dummy.__remoteTable $
    HA.Services.Dummy.__remoteTableDecl $
    HA.Services.Empty.__remoteTable $
-   HA.Services.EQTracker.__remoteTableDecl $
    HA.Services.Noisy.__remoteTable $
    HA.Services.Noisy.__remoteTableDecl $
+   HA.Services.Ping.__remoteTable $
+   HA.Services.Ping.__remoteTableDecl $
    HA.Service.__remoteTable $
    HA.Services.OCF.__remoteTableDecl $
    HA.Startup.__remoteTable $

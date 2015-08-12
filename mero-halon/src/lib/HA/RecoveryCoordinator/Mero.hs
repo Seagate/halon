@@ -51,16 +51,15 @@ module HA.RecoveryCoordinator.Mero
 
 import Prelude hiding ((.), id, mapM_)
 import HA.EventQueue.Consumer (HAEvent(..))
+import HA.NodeAgent.Messages
 import HA.Resources
 import HA.Resources.Mero (Host(..))
 import HA.Service
 import HA.Services.DecisionLog
 import HA.Services.Monitor
-import HA.Services.Empty
 import HA.Services.Noisy
 
-import HA.NodeAgent.Messages
-import qualified HA.Services.EQTracker as EQT
+import qualified HA.EQTracker as EQT
 
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
@@ -69,6 +68,7 @@ import qualified HA.ResourceGraph as G
 
 import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Serializable
+import Control.Distributed.Process.Internal.Types (nullProcessId)
 
 import Control.Monad
 import Control.Wire hiding (when)
@@ -142,7 +142,6 @@ rcInitRule :: IgnitionArguments
            -> RuleM LoopState (Maybe ProcessId) (Started LoopState (Maybe ProcessId))
 rcInitRule argv eq = do
     boot        <- phaseHandle "boot"
-    eqt_started <- phaseHandle "eqt_started"
     start_mm    <- phaseHandle "start_master_monitor"
     mm_started  <- phaseHandle "master_monitor_started"
     mm_conf     <- phaseHandle "master_monitor_conf"
@@ -154,24 +153,11 @@ rcInitRule argv eq = do
       let node = Node nid
           host = Host h
       liftProcess . sayRC $ "New node contacted: " ++ show nid
-      registerService EQT.eqTracker
       registerNode node
       registerHost host
       locateNodeOnHost node host
-      startService nid EQT.eqTracker EmptyConf
-      continue eqt_started
-
-    setPhaseIf eqt_started (waitServiceToStart EQT.eqTracker) $
-      \evt@(HAEvent _ msg _) -> do
-        ServiceStarted n svc cfg sp <- decodeMsg msg
-        let ServiceProcess pid = sp
-        liftProcess $ sayRC $
-          "started " ++ snString (serviceName svc) ++ " service"
-        True <- liftProcess $ updateEQNodes pid (stationNodes argv)
-        registerServiceName svc
-        registerServiceProcess n svc cfg sp
-        handled eq evt
-        continue start_mm
+      liftProcess $ nsend EQT.name (nullProcessId nid, UpdateEQNodes $ stationNodes argv)
+      continue start_mm
 
     directly start_mm $ do
       nid  <- liftProcess getSelfNode
@@ -184,7 +170,8 @@ rcInitRule argv eq = do
       continue mm_conf
 
     setPhase mm_conf $
-        \evt@(HAEvent _ (SetMasterMonitor sp) _) -> do
+        \evt@(HAEvent _ (SetMasterMonitor sp@(ServiceProcess pid)) _) -> do
+      liftProcess $ usend pid =<< getSelfPid
       registerMasterMonitor sp
       handled eq evt
       liftProcess $ sayRC $ "started master-monitor service"
@@ -202,8 +189,10 @@ rcInitRule argv eq = do
         registerServiceProcess n svc cfg sp
         sendToMasterMonitor msg
         handled eq evt
-        liftProcess $ sayRC $
-          "started " ++ snString (serviceName svc) ++ " service"
+        liftProcess $ do
+          sayRC $ "started " ++ snString (serviceName svc) ++ " service"
+          self <- getSelfPid
+          usend self ()
 
     start boot Nothing
 

@@ -377,7 +377,7 @@ instance ProcessEncode ServiceFailed where
     put d >> put (node, svc) >> put pid
 
 -- | An event which produces no action in the RC. Used for testing.
-data DummyEvent = DummyEvent
+data DummyEvent = DummyEvent String
   deriving (Typeable, Generic)
 
 instance Binary DummyEvent

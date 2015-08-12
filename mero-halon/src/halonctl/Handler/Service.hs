@@ -23,7 +23,7 @@ import HA.EventQueue.Producer (promulgateEQ)
 import HA.Resources
   ( Node(..) )
 import HA.Service
-import qualified HA.Services.EQTracker   as EQT
+import qualified HA.EQTracker            as EQT
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy       as Dummy
 import qualified HA.Services.Frontier    as Frontier
@@ -31,6 +31,7 @@ import qualified HA.Services.Frontier    as Frontier
 import qualified HA.Services.Mero        as Mero
 #endif
 import qualified HA.Services.Noisy       as Noisy
+import qualified HA.Services.Ping        as Ping
 import qualified HA.Services.SSPL        as SSPL
 import qualified HA.Services.SSPLHL      as SSPLHL
 
@@ -71,6 +72,7 @@ import Options.Schema.Applicative (mkParser)
 data ServiceCmdOptions =
       DummyServiceCmd (StandardServiceOptions Dummy.DummyConf)
     | NoisyServiceCmd (StandardServiceOptions Noisy.NoisyConf)
+    | PingServiceCmd (StandardServiceOptions Ping.PingConf)
     | SSPLServiceCmd (StandardServiceOptions SSPL.SSPLConf)
     | SSPLHLServiceCmd (StandardServiceOptions SSPLHL.SSPLHLConf)
     | FrontierServiceCmd (StandardServiceOptions Frontier.FrontierConf)
@@ -173,6 +175,9 @@ parseService =
     (NoisyServiceCmd <$> (O.subparser $
          mkStandardServiceCmd Noisy.noisy)
     ) <|>
+    (PingServiceCmd <$> (O.subparser $
+         mkStandardServiceCmd Ping.ping)
+    ) <|>
     (SSPLServiceCmd <$> (O.subparser $
          mkStandardServiceCmd SSPL.sspl)
     ) <|>
@@ -200,6 +205,7 @@ service :: [NodeId] -- ^ NodeIds of the nodes to control services on.
 service nids so = case so of
   DummyServiceCmd sso    -> standardService nids sso Dummy.dummy
   NoisyServiceCmd sso    -> standardService nids sso Noisy.noisy
+  PingServiceCmd sso    -> standardService nids sso Ping.ping
   SSPLServiceCmd sso     -> standardService nids sso SSPL.sspl
   SSPLHLServiceCmd sso   -> standardService nids sso SSPLHL.sspl
   FrontierServiceCmd sso -> standardService nids sso Frontier.frontier

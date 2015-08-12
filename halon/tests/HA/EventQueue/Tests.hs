@@ -18,9 +18,7 @@ import HA.EventQueue.Consumer
 import HA.EventQueue.Producer
 import HA.EventQueue.Types (newPersistMessage, PersistMessage(..))
 import HA.NodeAgent.Messages
-import HA.Service (serviceProcess)
-import HA.Services.Empty
-import HA.Services.EQTracker
+import HA.EQTracker
 import HA.Replicator
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
@@ -85,7 +83,7 @@ tests (AbstractTransport transport breakConnection _) = do
                                  (Nothing,[])
             rGroup <- unClosure cRGroup >>= id
             eq <- spawnLocal (eventQueue rGroup)
-            na <- spawnLocal . ($ EmptyConf) =<< unClosure (serviceProcess eqTracker)
+            na <- spawnLocal (eqTrackerProcess [])
             True <- updateEQNodes na nodes
             mapM_ link [eq, na]
 
