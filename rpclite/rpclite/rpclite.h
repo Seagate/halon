@@ -30,7 +30,7 @@
  * \return 0 on success, a non-zero value otherwise
  *
  * */
-int rpc_init(char *persistent_prefix);
+int rpc_init();
 
 /** Releases any resources allocated by rpc_ini().
  *
