@@ -20,8 +20,10 @@ import HA.Multimap.Process ( multimap )
 import HA.Replicator ( RGroup(..), RStateView(..) )
 import HA.Replicator.Log ( RLogGroup )
 import HA.Process (tryRunProcess)
+import qualified HA.Storage as Storage
 
 import Control.Arrow ( first, second, (***) )
+import Control.Concurrent (forkIO, myThreadId, throwTo)
 import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Closure
   ( remotable
@@ -41,7 +43,6 @@ import qualified Control.Exception as Exception
 
 import Data.Binary ( decode, encode )
 import Data.ByteString.Lazy (ByteString)
-import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
 import Data.List ( partition )
 import Data.Maybe ( isJust )
 
@@ -50,11 +51,13 @@ import qualified Data.Map as Map ( toList, empty )
 import Control.Monad.Reader
 
 import System.IO ( hPutStrLn, stderr )
-import System.IO.Unsafe ( unsafePerformIO )
 
-{-# NOINLINE globalRGroup #-}
-globalRGroup :: IORef (Maybe (Closure (Process (RLogGroup HAReplicatedState))))
-globalRGroup = unsafePerformIO $ newIORef Nothing
+getGlobalRGroup :: Process (Maybe (Closure (Process (RLogGroup HAReplicatedState))))
+getGlobalRGroup = either (const Nothing) Just <$> Storage.get "global-rgroup"
+
+putGlobalRGroup :: Closure (Process (RLogGroup HAReplicatedState))
+                -> Process ()
+putGlobalRGroup = Storage.put "global-rgroup"
 
 -- | Replicated state of the HA
 type HAReplicatedState = (RSState,(EventQueue,Multimap))
@@ -94,7 +97,7 @@ disconnectAllNodeConnections = do
 remotableDecl [ [d|
 
  isSelfInGroup :: () -> Process Bool
- isSelfInGroup () = liftIO $ fmap isJust $ readIORef globalRGroup
+ isSelfInGroup () = isJust <$> getGlobalRGroup
 
  isNodeInGroup :: [NodeId] -> NodeId -> Bool
  isNodeInGroup = flip elem
@@ -106,7 +109,7 @@ remotableDecl [ [d|
           -> Process ()
  addNodes (newNodes, trackers, rcClosure) = do
      disconnectAllNodeConnections
-     mcRGroup <- liftIO $ readIORef globalRGroup
+     mcRGroup <- getGlobalRGroup
      case mcRGroup of
        Just cRGroup -> do
          rGroup <- unClosure cRGroup >>= id
@@ -128,7 +131,7 @@ remotableDecl [ [d|
      rGroup <- unClosure cRGroup >>= id
      recoveryCoordinator <- unClosure rcClosure
      maybe (return ()) (updateRGroup rGroup) mlocalReplica
-     liftIO $ writeIORef globalRGroup $ Just cRGroup
+     putGlobalRGroup cRGroup
      eqpid <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
      rspid <- spawnLocal
               $ recoverySupervisor (viewRState $(mkStatic 'rsView) rGroup)
@@ -251,7 +254,10 @@ startupHalonNode :: LocalNode
                  -> Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
                  -> IO ()
 startupHalonNode lnid rcClosure = do
+    tid <- myThreadId
+    _ <- forkIO $ Exception.catch (tryRunProcess lnid $ Storage.runStorage)
+                                  (\e -> throwTo tid (e::SomeException))
+
     Exception.catch (tryRunProcess lnid (autoboot rcClosure))
                     (\(e :: SomeException) -> hPutStrLn stderr $ "Cannot autoboot: " ++ show e)
     tryRunProcess lnid $ eqTrackerProcess []
-
