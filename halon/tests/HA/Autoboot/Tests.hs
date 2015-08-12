@@ -19,8 +19,7 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Distributed.Static ( closureCompose )
 import Control.Monad ( replicateM, replicateM_, unless )
-import Control.Exception (SomeException(..))
-import qualified Control.Exception as Exception
+-- import qualified Control.Exception as Exception
 import Data.Binary
 import Data.Typeable
 import Data.Foldable (forM_)
@@ -32,7 +31,6 @@ import Network.Transport (Transport)
 import qualified Data.Set as Set
 
 import HA.Network.RemoteTables (haRemoteTable)
-import HA.Process (tryRunProcess)
 import HA.Startup hiding (__remoteTable)
 import Test.Transport
 import Test.Framework
@@ -65,8 +63,7 @@ remotable [ 'ignitionArguments, 'dummyRC ]
 tests :: AbstractTransport -> IO [TestTree]
 tests transport =
   return [ testSuccess "autoboot-simple" $ mkAutobootTest (getTransport transport)
-         -- XXX: should be rewritten as distributed test
-         -- , testCaseSteps  "ignition"     $ testIgnition   (getTransport transport)
+         , testCaseSteps  "ignition"     $ testIgnition   (getTransport transport)
          ]
 
 rcClosure :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
@@ -133,15 +130,14 @@ mkAutobootTest transport = withTmpDirectory $ do
   where
     n = 5
     autobootCluster nids = forM_ nids $ \lnid ->
-      Exception.catch (tryRunProcess lnid $ autoboot rcClosure)
-                      (\(_ :: SomeException) -> return ())
+      forkIO $ startupHalonNode lnid rcClosure
 
 
 -- | Test that ignition call will retrn supposed result.
-_testIgnition :: Transport
+testIgnition :: Transport
               -> (String -> IO ())
               -> IO ()
-_testIgnition transport step = withTmpDirectory $ do
+testIgnition transport step = withTmpDirectory $ do
     -- 0. Run autoboot on 5 nodes
     nids <- replicateM 5 $ newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
     let (nids1,nids2) = splitAt 3 nids
@@ -155,9 +151,7 @@ _testIgnition transport step = withTmpDirectory $ do
         args = mkArgs False nids1
     node <- newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
     step "autobooting cluster"
-    forM_ nids1 $ \lnid ->
-      Exception.catch (tryRunProcess lnid $ autoboot rcClosure)
-                      (\(_ :: SomeException) -> return ())
+    forM_ (node:nids) $ \lnid -> forkIO $ startupHalonNode lnid rcClosure
     runProcess node $ do
 
       liftIO $ step "call initial ignition"
@@ -165,20 +159,22 @@ _testIgnition transport step = withTmpDirectory $ do
                       $(mkClosure 'ignition) args
       liftIO $ takeMVar dummyRCStarted
 
-      liftIO $ do
-        step "kill nodes in the cluster that we will remove TS from"
-        forM_ (tail nids1) $ closeLocalNode                                              -- XXX: locks
 
       liftIO $ step "call ignition while changing TS nodes"
       Just (added, trackers, members, newNodes)
               <- call $(functionTDict 'ignition) (localNodeId $ head nids1) $
                         $(mkClosure 'ignition) (mkArgs True (head nids1: nids2))
+
+      liftIO $ do
+        step "kill nodes in the cluster that we will remove TS from"
+        forM_ (tail nids1) $ closeLocalNode
+
       liftIO $ do
         assertBool  "set of node changed" added
-        assertEqual "nodes from new set added"                                           -- XXX: unexpected result
+        assertEqual "nodes from new set added"
                     (Set.fromList $ map localNodeId nids2)
                     (Set.fromList newNodes)
-        assertEqual "only one node was in members"                                       -- XXX: unexpected result
+        assertEqual "only one node was in members"
                     (Set.singleton (localNodeId $ head nids1))
                     (Set.fromList members)
         assertEqual "trackers should be equal to the new set of trackers"
@@ -191,7 +187,7 @@ _testIgnition transport step = withTmpDirectory $ do
           s | t `isPrefixOf` s -> send self (drop (length t) s)
             | otherwise        -> return ()
       actual <- expect
-      liftIO $ unless (any (==actual) [show x | x <- permutations trackers]) $          -- XXX: unexpected result
+      liftIO $ unless (any (==actual) [show x | x <- permutations trackers]) $
         assertFailure $ "replicas should be contain all of the " ++ show trackers ++
                         ", but got " ++ actual
       return ()
