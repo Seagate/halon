@@ -44,6 +44,7 @@ Library
                    ,binary >= 0.6
                    ,bytestring
                    ,containers
+                   ,data-accessor >= 0.2.2.6
                    ,distributed-process >= 0.4
                    ,distributed-process-trans
                    ,mtl

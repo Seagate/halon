@@ -269,6 +269,6 @@ executeT transport seed = do
 runProcess' :: LocalNode -> Process a -> IO a
 runProcess' n p = do
   r <- newIORef undefined
-  runProcess n (try (getSelfNode >>= linkNode >> p) >>= liftIO . writeIORef r)
+  runProcess n (try p >>= liftIO . writeIORef r)
     >> readIORef r
       >>= either (\e -> throwIO (e :: SomeException)) return

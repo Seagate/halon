@@ -12,8 +12,6 @@ import Test.Framework
 
 import Control.Distributed.Process hiding (try)
 import Control.Distributed.Process.Node
-import Control.Distributed.Process.Scheduler
-    ( withScheduler, __remoteTable )
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Network.Transport (Transport)
 import Network.Transport.TCP
@@ -28,7 +26,6 @@ import qualified Data.Map as Map
 remoteTables :: RemoteTable
 remoteTables =
   Control.Distributed.Process.Consensus.__remoteTable $
-  Control.Distributed.Process.Scheduler.__remoteTable $
   BasicPaxos.__remoteTable $
   Control.Distributed.Process.Node.initRemoteTable
 
@@ -60,7 +57,7 @@ setup transport numAcceptors action = do
     done <- newEmptyMVar
 
     putChar '\n'
-    runProcess node0 $ withScheduler [] 1 $ do
+    runProcess node0 $ do
          αs <- replicateM numAcceptors spawnAcceptor
          action αs
          forM_ αs monitor

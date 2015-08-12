@@ -66,7 +66,7 @@ Test-Suite tests
                     consensus,
                     consensus-paxos,
                     containers >= 0.4.0,
-                    distributed-process-scheduler,
+                    distributed-process,
                     distributed-process-test,
                     distributed-static >= 0.2.0,
                     mtl >= 2.0.0,

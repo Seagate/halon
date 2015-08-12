@@ -33,9 +33,17 @@ module Control.Distributed.Process.Scheduler.Internal
   , receiveWait
   , receiveTimeout
   , monitor
+  , unmonitor
+  , monitorNode
+  , link
+  , linkNode
+  , unlink
+  , exit
   , spawnLocal
   , spawn
   , spawnAsync
+  , whereis
+  , register
   , whereisRemoteAsync
   , registerRemoteAsync
   -- * distributed-process-trans replacements
@@ -55,6 +63,7 @@ import qualified "distributed-process" Control.Distributed.Process.Internal.Type
 import qualified "distributed-process" Control.Distributed.Process.Internal.Messaging as DP
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Serializable ( Serializable )
+import Control.Distributed.Process.Internal.StrictMVar ( withMVar )
 import "distributed-process-trans" Control.Distributed.Process.Trans ( MonadProcess(..) )
 import qualified "distributed-process-trans" Control.Distributed.Process.Trans as DPT
 
@@ -62,9 +71,10 @@ import Control.Concurrent.MVar
     ( newMVar, newEmptyMVar, takeMVar, putMVar, MVar
     , readMVar, modifyMVar_
     )
-import Control.Exception ( SomeException, throwIO )
-import Control.Monad ( void, when, liftM2, join, forM_ )
+import Control.Exception ( SomeException, throwIO, Exception, throwTo )
+import Control.Monad ( void, when, join, forM_ )
 import Control.Monad.Reader ( ask )
+import Data.Accessor ((^.))
 import Data.Binary ( Binary(..) )
 import Data.Int
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
@@ -96,19 +106,18 @@ schedulerLock = unsafePerformIO $ newMVar False
 schedulerVar :: MVar ProcessId
 schedulerVar = unsafePerformIO $ newEmptyMVar
 
--- | Preprocessed process or channel message that can be delivered via
--- 'DP.sendPayload'.
-data AddressedMsg = AddressedMsg DP.Identifier DP.Message
-  deriving Typeable
+-- | A message that the scheduler can deliver.
+data SystemMsg = MailboxMsg ProcessId DP.Message
+               | ChannelMsg DP.SendPortId DP.Message
+               | LinkExceptionMsg ProcessId ProcessId DP.DiedReason
+               | ExitMsg ProcessId ProcessId DP.Message
+  deriving (Typeable, Generic)
 
-instance Binary AddressedMsg where
-  put (AddressedMsg ident msg) =
-    put ident >> put (DP.messageToPayload msg)
-  get = liftM2 AddressedMsg get (fmap DP.payloadToMessage get)
+instance Binary SystemMsg
 
 -- | Messages that the tested application sends to the scheduler.
 data SchedulerMsg
-    = Send ProcessId ProcessId AddressedMsg
+    = Send ProcessId ProcessId SystemMsg
       -- ^ @Send source dest message@: send the @message@ from @source@ to
       -- @dest@.
     | NSend ProcessId NodeId String DP.Message
@@ -122,8 +131,11 @@ data SchedulerMsg
     | CreatedNewProcess ProcessId  ProcessId
                                   -- ^ @CreatedNewProcess parent child@: a new
                                   -- process will be created by @parent@.
-    | Monitoring ProcessId ProcessId -- ^ @Monitoring who whom@: the process
-                                     -- @who@ will monitor @whom@.
+    | Monitor ProcessId DP.Identifier Bool
+        -- ^ @Monitor who whom isLink@: the process @who@ will monitor @whom@.
+        -- @isLink@ is @True@ when linking is intended.
+    | Unmonitor DP.MonitorRef
+    | Unlink ProcessId DP.Identifier -- ^ @Unlink who whom@
   deriving (Generic, Typeable)
 
 -- | Messages that the scheduler sends to the tested application.
@@ -136,8 +148,8 @@ data SchedulerResponse
 -- | Transitions that the scheduler can choose to perform when all
 -- processes block.
 data TransitionRequest
-    = PutMsg ProcessId AddressedMsg
-                            -- ^ Put this message in the mailbox of the target.
+    = PutMsg ProcessId SystemMsg
+                  -- ^ Deliver this message to mailbox, channel or as exception.
     | PutNSendMsg NodeId String DP.Message
                     -- ^ Put this nsend'ed message in the mailbox of the target.
     | ReceiveMsg ProcessId  -- ^ Have a process pick a message from its mailbox.
@@ -155,7 +167,7 @@ instance Binary SchedulerResponse
 instance Binary StopScheduler
 instance Binary SchedulerTerminated
 
-type ProcessMessages = Map ProcessId (Map ProcessId [AddressedMsg])
+type ProcessMessages = Map ProcessId (Map ProcessId [SystemMsg])
 type NSendMessages = Map (NodeId, String) (Map ProcessId [DP.Message])
 
 -- | Internal scheduler state
@@ -171,7 +183,7 @@ data SchedulerState = SchedulerState
       -- | Messages targeted with a label
     , stateNSend    :: NSendMessages
       -- | The monitors of each process
-    , stateMonitors :: Map ProcessId [(ProcessId, DP.MonitorRef)]
+    , stateMonitors :: Map DP.Identifier [(DP.MonitorRef, Bool)]
       -- | The counter for producing monitor references
     , stateMonitorCounter :: Int32
     }
@@ -227,6 +239,9 @@ startScheduler initialProcs seed0 = do
         -- pick next transition
         let (r , st') = pickNextTransition st
         case r of
+          PutMsg pid msg | isExceptionMsg msg -> do
+             forward msg
+             go st' { stateProcs = Map.delete pid (stateProcs st') }
           PutMsg pid msg -> do
              forward msg
              -- if the process was blocked let's ask it to check again if it
@@ -243,7 +258,7 @@ startScheduler initialProcs seed0 = do
                Nothing -> do
                  go st'
                Just pid -> do
-                 forward $ AddressedMsg (DP.ProcessIdentifier pid) msg
+                 forward (MailboxMsg pid msg)
                  -- if the process was blocked let's ask it to check again if it
                  -- has a message.
                  procs'' <- if isBlocked pid procs
@@ -290,34 +305,69 @@ startScheduler initialProcs seed0 = do
             DP.send parent OkNewProcess
             go st { stateAlive = Set.insert child alive }
         -- the process who is monitoring whom
-        Monitoring who whom -> do
+        Monitor who whom@(DP.ProcessIdentifier whomPid) isLink -> do
             let ref = DP.MonitorRef (DP.ProcessIdentifier who) mcounter
-            if Set.member whom alive then do
+            if Set.member whomPid alive then do
               DP.send who ref
-              go st { stateMonitors = Map.insertWith (++) whom [(who, ref)]
-                                                     monitors
+              go st { stateMonitors =
+                        Map.insertWith (++) whom [(ref, isLink)] monitors
                     , stateMonitorCounter = mcounter + 1
                     }
             else do
-              send who (DP.ProcessMonitorNotification ref whom DP.DiedUnknownId)
+              send who $
+                DP.ProcessMonitorNotification ref whomPid DP.DiedUnknownId
               DP.send who ref
               go st { stateMonitorCounter = mcounter + 1 }
+        -- monitoring a node
+        -- TODO: Keep track of the connection states.
+        Monitor who whom isLink -> do
+            let ref = DP.MonitorRef (DP.ProcessIdentifier who) mcounter
+            DP.send who ref
+            go st { stateMonitors =
+                      Map.insertWith (++) whom [(ref, isLink)] monitors
+                  , stateMonitorCounter = mcounter + 1
+                  }
+        Unmonitor ref -> do
+            go st { stateMonitors = Map.filter (not . null)
+                                  $ Map.map (filter ((ref ==) . fst)) monitors
+                  }
+        Unlink who whom -> do
+            let upd xs =
+                  case [ x | x@( DP.MonitorRef (DP.ProcessIdentifier who') _
+                               , True
+                               ) <- xs
+                           , who == who'
+                       ] of
+                    []  -> Nothing
+                    xs' -> Just xs'
+            go st { stateMonitors = Map.update upd whom monitors }
 
         -- a process has terminated
         , DP.match $ \pmn@(DP.ProcessMonitorNotification _ pid reason) -> do
-            case Map.lookup pid monitors of
+            case Map.lookup (DP.ProcessIdentifier pid) monitors of
               Just mons -> do
-                forM_ mons $ \(p, ref) ->
-                  send p (DP.ProcessMonitorNotification ref pid reason)
+                forM_ mons $ \( ref@(DP.MonitorRef (DP.ProcessIdentifier p) _)
+                              , isLink
+                              ) ->
+                  if isLink then do
+                    self <- DP.getSelfPid
+                    sendS $ Send self p
+                          $ LinkExceptionMsg pid p reason
+                  else
+                    -- Scheduler's @send@ not DP's!
+                    send p (DP.ProcessMonitorNotification ref pid reason)
                 -- Resend the death notification so it is handled after the
                 -- monitor notifications above.
                 DP.getSelfPid >>= flip DP.send pmn
-                go st { stateMonitors = Map.delete pid monitors }
+                go st { stateMonitors =
+                          Map.delete (DP.ProcessIdentifier pid) monitors
+                      }
               Nothing ->
                 go st { stateAlive    = Set.delete pid alive
                       , stateProcs    = Map.delete pid procs
                       , stateMessages = Map.delete pid msgs
-                      , stateMonitors = Map.delete pid monitors
+                      , stateMonitors =
+                          Map.delete (DP.ProcessIdentifier pid) monitors
                       }
         ]
 
@@ -325,6 +375,10 @@ startScheduler initialProcs seed0 = do
     isBlocked pid procs =
       maybe (error "startScheduler.isBlocked: missing pid") not
         $ Map.lookup pid procs
+
+    isExceptionMsg (LinkExceptionMsg _ _ _) = True
+    isExceptionMsg (ExitMsg _ _ _) = True
+    isExceptionMsg _ = False
 
     -- Picks the next transition.
     pickNextTransition :: SchedulerState
@@ -391,29 +445,54 @@ startScheduler initialProcs seed0 = do
                       }
                  )
 
-    forward (AddressedMsg rid msg) = do
-        self <- ask
-        let n = DP.processNode self
-            nid = DP.localNodeId n
-        case rid of
-          DP.ProcessIdentifier pid -> DP.forward msg pid
-          DP.SendPortIdentifier spId ->
-            if DP.processNodeId (DP.sendPortProcessId spId) == nid then
-              -- The local path is more than an optimization.
-              -- It is needed to ensure that forwarded messages and
-              -- those sent with DP.send arrive in order in the local case.
-              DP.sendCtrlMsg Nothing (DP.LocalPortSend spId msg)
-            else do
-              -- TODO: There used to be an implementation which used
-              -- DP.sendPayload to send messages through channels.
-              -- Unfortunately, messages sent through channels and control
-              -- messages sent by the scheduler to the process waiting on the
-              -- receiving end can arrive in any order.
-              DP.say "startScheduler.forward: remote channels are not supported"
-              error "startScheduler.forward: remote channels are not supported"
-          _ -> do DP.say $ "startScheduler.forward: unhandled case " ++ show rid
-                  error $ "startScheduler.forward: unhandled case " ++ show rid
+    forward (MailboxMsg pid msg) = DP.forward msg pid
+    forward (ChannelMsg spId msg) = do
+      here <- DP.getSelfNode
+      if DP.processNodeId (DP.sendPortProcessId spId) == here then
+        -- The local path is more than an optimization.
+        -- It is needed to ensure that forwarded messages and
+        -- those sent with DP.send arrive in order in the local case.
+        DP.sendCtrlMsg Nothing (DP.LocalPortSend spId msg)
+      else do
+        -- TODO: There used to be an implementation which used
+        -- DP.sendPayload to send messages through channels.
+        -- Unfortunately, messages sent through channels and control
+        -- messages sent by the scheduler to the process waiting on the
+        -- receiving end can arrive in any order.
+        --
+        -- We should use DP.call here.
+        DP.say "startScheduler.forward: remote channels are not supported"
+        error "startScheduler.forward: remote channels are not supported"
+    forward (LinkExceptionMsg source pid reason) = do
+      here <- DP.getSelfNode
+      if DP.processNodeId pid == here then
+        throwException pid $ DP.ProcessLinkException source reason
+      else do
+        DP.say "startScheduler.forward: unhandled case (remote link exception)"
+        error "startScheduler.forward: unhandled case (remote link exception)"
+    forward (ExitMsg source pid reason) = do
+      here <- DP.getSelfNode
+      if DP.processNodeId pid == here then
+        throwException pid $ DP.ProcessExitException source reason
+      else do
+        DP.say "startScheduler.forward: unhandled case (remote link exception)"
+        error "startScheduler.forward: unhandled case (remote link exception)"
 
+throwException :: Exception e => ProcessId -> e -> Process ()
+throwException pid e = do
+  proc <- ask
+  DP.liftIO $ withLocalProc (DP.processNode proc) pid $ \p ->
+    void $ throwTo (DP.processThread p) e
+
+withLocalProc :: DP.LocalNode
+              -> ProcessId
+              -> (DP.LocalProcess -> IO ())
+              -> IO ()
+withLocalProc node pid p =
+  let lpid = DP.processLocalId pid in do
+  mProc <- withMVar (DP.localState node) $
+             return . (^. DP.localProcessWithId lpid)
+  forM_ mProc p
 
 -- | Lift 'Control.Concurrent.modifyMVar'
 modifyMVarP :: MVar a -> (a -> Process (a,b)) -> Process b
@@ -452,8 +531,8 @@ getScheduler = DP.liftIO (readMVar schedulerVar)
 send :: Serializable a => ProcessId -> a -> Process ()
 send pid msg = do
   self <- DP.getSelfPid
-  sendS $ Send self pid $ AddressedMsg
-    (DP.ProcessIdentifier pid)
+  sendS $ Send self pid $ MailboxMsg
+    pid
     (DP.createUnencodedMessage msg)
 
 usend :: Serializable a => ProcessId -> a -> Process ()
@@ -471,8 +550,8 @@ sendChan :: Serializable a => SendPort a -> a -> Process ()
 sendChan sendPort msg = do
     self <- DP.getSelfPid
     let spId = DP.sendPortId sendPort
-    sendS $ Send self (DP.sendPortProcessId spId) $ AddressedMsg
-      (DP.SendPortIdentifier spId)
+    sendS $ Send self (DP.sendPortProcessId spId) $ ChannelMsg
+      spId
       (DP.createUnencodedMessage msg)
 
 -- | Sends a message to the scheduler.
@@ -560,8 +639,47 @@ matchChan = matchSTM . DP.receiveSTM
 -- when the process dies.
 monitor :: ProcessId -> Process DP.MonitorRef
 monitor pid = do self <- DP.getSelfPid
-                 sendS $ Monitoring self pid
+                 sendS $ Monitor self (DP.ProcessIdentifier pid) False
                  DP.expect
+
+-- | Stops monitoring a process.
+unmonitor :: DP.MonitorRef -> Process ()
+unmonitor = sendS . Unmonitor
+
+-- | Monitors a process, sending to the caller a @NodeMonitorNotification@
+-- when the node is disconnected.
+monitorNode :: NodeId -> Process DP.MonitorRef
+monitorNode nid = do
+    self <- DP.getSelfPid
+    sendS $ Monitor self (DP.NodeIdentifier nid) False
+    DP.expect
+
+-- | Links a process, throwing to the caller a @ProcessLinkException@
+-- when the process dies.
+link :: ProcessId -> Process ()
+link pid = do self <- DP.getSelfPid
+              sendS $ Monitor self (DP.ProcessIdentifier pid) True
+              _ <- DP.expect :: Process DP.MonitorRef
+              return ()
+
+unlink :: ProcessId -> Process ()
+unlink pid = do self <- DP.getSelfPid
+                sendS $ Unlink self $ DP.ProcessIdentifier pid
+
+-- | Links a process, throwing to the caller a @ProcessLinkException@
+-- when the process dies.
+linkNode :: NodeId -> Process ()
+linkNode nid = do
+    self <- DP.getSelfPid
+    sendS $ Monitor self (DP.NodeIdentifier nid) True
+    _ <- DP.expect :: Process DP.MonitorRef
+    return ()
+
+-- | Throws a 'ProcessExitException' to the given process.
+exit :: Serializable a => ProcessId -> a -> Process ()
+exit pid reason = do
+  self <- DP.getSelfPid
+  sendS $ Send self pid $ ExitMsg self pid $ DP.createUnencodedMessage reason
 
 -- | Notifies the scheduler of a new process. When acknowledged, starts the new
 -- process and notifies again the scheduler when the process terminates. Returns
@@ -610,10 +728,28 @@ spawn nid cp = do
                            \(DP.DidSpawn _ pid) -> return pid
                 ]
 
+-- | Looks up a process in the local registry.
+whereis :: String -> Process (Maybe ProcessId)
+whereis label = do
+    self <- DP.getSelfPid
+    sendS (HasMessage self)
+    Receive <- DP.expect
+    DP.whereis label
+
+-- | Registers a process in the local registry.
+register :: String -> ProcessId -> Process ()
+register label p = do
+    self <- DP.getSelfPid
+    sendS (HasMessage self)
+    Receive <- DP.expect
+    DP.register label p
+
 -- | Looks up a process in the registry of a node.
 whereisRemoteAsync :: NodeId -> String -> Process ()
 whereisRemoteAsync n label = do
     self <- DP.getSelfPid
+    sendS (HasMessage self)
+    Receive <- DP.expect
     DP.whereisRemoteAsync n label
     reply <- DP.receiveWait
       [ DP.matchIf (\(DP.WhereIsReply label' _) -> label == label') return ]
@@ -623,6 +759,8 @@ whereisRemoteAsync n label = do
 registerRemoteAsync :: NodeId -> String -> ProcessId -> Process ()
 registerRemoteAsync n label p = do
     self <- DP.getSelfPid
+    sendS (HasMessage self)
+    Receive <- DP.expect
     DP.registerRemoteAsync n label p
     reply <- DP.receiveWait
       [ DP.matchIf (\(DP.RegisterReply label' _) -> label == label') return ]

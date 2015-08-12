@@ -28,8 +28,6 @@ import Control.Distributed.Process.Timeout (retry, timeout)
 import Control.Distributed.Process hiding (send)
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Scheduler
-    ( withScheduler, __remoteTable )
 import Control.Distributed.Static
 import Data.Rank1Dynamic
 
@@ -138,7 +136,6 @@ remoteTables =
   registerStatic "Test.increment" (toDynamic increment) $
   registerStatic "Test.read" (toDynamic read) $
   Control.Distributed.Process.Consensus.__remoteTable $
-  Control.Distributed.Process.Scheduler.__remoteTable $
   BasicPaxos.__remoteTable $
   Log.__remoteTable $
   Policy.__remoteTable $
@@ -163,8 +160,7 @@ tests argv = do
             node0 <- getSelfNode
             nodes <- replicateM (num - 1) $ liftIO $ newLocalNode transport remoteTables
             setup' (node0 : map localNodeId nodes) action
-        setup' nodes action =
-            withScheduler [] 1 $ do
+        setup' nodes action = do
               let waitFor pid = monitor pid >> receiveWait
                     [ matchIf (\(ProcessMonitorNotification _ pid' _) ->
                                    pid == pid'

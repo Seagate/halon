@@ -20,12 +20,54 @@ module Control.Distributed.Process
   , receiveTimeout
   , receiveChan
   , monitor
+  , unmonitor
+  , withMonitor
+  , monitorNode
+  , link
+  , linkNode
+  , unlink
+  , exit
   , spawnLocal
   , spawn
   , spawnAsync
+  , whereis
+  , register
   , whereisRemoteAsync
   , registerRemoteAsync
-  , module DPEtc
+--  , module DPEtc
+  , Process
+  , ProcessId(..)
+  , MonitorRef
+  , NodeId(..)
+  , SendPort
+  , ReceivePort
+  , Static
+  , Closure
+  , ProcessMonitorNotification(..)
+  , NodeMonitorNotification(..)
+  , ProcessRegistrationException(..)
+  , ProcessLinkException(..)
+  , NodeLinkException(..)
+  , RegisterReply(..)
+  , WhereIsReply(..)
+  , RemoteTable
+  , DiedReason(..)
+  , unStatic
+  , unClosure
+  , closure
+  , handleMessage
+  , liftIO
+  , finally
+  , bracket
+  , die
+  , getSelfPid
+  , getSelfNode
+  , say
+  , newChan
+  , catch
+  , mask_
+  , try
+  , onException
   )  where
 
 import Control.Distributed.Process.Scheduler.Internal
@@ -58,9 +100,18 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , receiveWait
   , receiveChan
   , monitor
+  , unmonitor
+  , withMonitor
+  , monitorNode
+  , link
+  , linkNode
+  , unlink
+  , exit
   , spawnLocal
   , spawn
   , spawnAsync
+  , whereis
+  , register
   , whereisRemoteAsync
   , registerRemoteAsync
   )
@@ -104,6 +155,33 @@ receiveChan = ifSchedulerIsEnabled Internal.receiveChan DP.receiveChan
 monitor :: ProcessId -> Process DP.MonitorRef
 monitor = ifSchedulerIsEnabled Internal.monitor DP.monitor
 
+{-# NOINLINE monitorNode #-}
+monitorNode :: NodeId -> Process DP.MonitorRef
+monitorNode = ifSchedulerIsEnabled Internal.monitorNode DP.monitorNode
+
+{-# NOINLINE unmonitor #-}
+unmonitor :: DP.MonitorRef -> Process ()
+unmonitor = ifSchedulerIsEnabled Internal.unmonitor DP.unmonitor
+
+withMonitor :: ProcessId -> Process a -> Process a
+withMonitor pid code = bracket (monitor pid) unmonitor (\_ -> code)
+
+{-# NOINLINE link #-}
+link :: ProcessId -> Process ()
+link = ifSchedulerIsEnabled Internal.link DP.link
+
+{-# NOINLINE unlink #-}
+unlink :: ProcessId -> Process ()
+unlink = ifSchedulerIsEnabled Internal.unlink DP.unlink
+
+{-# NOINLINE linkNode #-}
+linkNode :: NodeId -> Process ()
+linkNode = ifSchedulerIsEnabled Internal.linkNode DP.linkNode
+
+{-# NOINLINE exit #-}
+exit :: Serializable a => ProcessId -> a -> Process ()
+exit = ifSchedulerIsEnabled Internal.exit DP.exit
+
 {-# NOINLINE spawnLocal #-}
 spawnLocal :: Process () -> Process ProcessId
 spawnLocal = ifSchedulerIsEnabled Internal.spawnLocal DP.spawnLocal
@@ -115,6 +193,14 @@ spawn = ifSchedulerIsEnabled Internal.spawn DP.spawn
 {-# NOINLINE spawnAsync #-}
 spawnAsync :: NodeId -> Closure (Process ()) -> Process DP.SpawnRef
 spawnAsync = ifSchedulerIsEnabled Internal.spawnAsync DP.spawnAsync
+
+{-# NOINLINE whereis #-}
+whereis :: String -> Process (Maybe ProcessId)
+whereis = ifSchedulerIsEnabled Internal.whereis DP.whereis
+
+{-# NOINLINE register #-}
+register :: String -> ProcessId -> Process ()
+register = ifSchedulerIsEnabled Internal.register DP.register
 
 {-# NOINLINE whereisRemoteAsync #-}
 whereisRemoteAsync :: NodeId -> String -> Process ()

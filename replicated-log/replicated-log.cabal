@@ -91,7 +91,7 @@ Test-Suite tests
                     constraints >= 0.4,
                     containers >= 0.5,
                     directory >= 1.2.2,
-                    distributed-process-scheduler,
+                    distributed-process,
                     distributed-process-test,
                     distributed-static >= 0.2.0,
                     filepath >= 1.3,
