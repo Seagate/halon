@@ -27,6 +27,8 @@ import Network.CEP.Stack
 import Network.CEP.StackDriver
 import Network.CEP.Types
 
+import Debug.Trace
+
 -- | Rule state data structure.
 data RuleData g =
     RuleData
@@ -143,6 +145,7 @@ data Machine s =
     , _machTotalProcMsgs :: !Int
     , _machInitRulePassed :: !Bool
       -- ^ Indicates the if the init rule has been executed already.
+    , _machRunningSM :: ![(RuleKey,RuleData s)]
     }
 
 -- | Creates CEP engine state with default properties.
@@ -162,6 +165,7 @@ emptyMachine s =
     , _machInitRule       = Nothing
     , _machTotalProcMsgs  = 0
     , _machInitRulePassed = False
+    , _machRunningSM      = []
     }
 
 newEngine :: Machine s -> Engine
@@ -201,7 +205,8 @@ interestingMsg :: (Fingerprint -> Bool) -> Message -> Bool
 interestingMsg k msg = k $ messageFingerprint msg
 
 cepInitRule :: InitRule g -> Machine g -> Request m a -> a
-cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) =
+cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
+    traceM "init starts.."
     case i of
       Tick -> go NoMessage _machTotalProcMsgs
       Incoming m
@@ -215,8 +220,8 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) =
   where
     go msg msg_count = do
       let stk = _ruleStack rd
-      (out, nxt_stk) <- runStackDriver _machSubs _machState msg stk
-      let StackOut g infos res = out
+      (g, (out, nxt_stk)) <- fmap head <$> runStackDriver _machSubs _machState msg stk
+      let StackOut _g infos res = out
           new_rd = rd { _ruleStack = nxt_stk }
           nxt_st = st { _machState         = g
                       , _machTotalProcMsgs = msg_count
@@ -225,7 +230,10 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) =
           info  = RunInfo msg_count (RulesBeenTriggered [rinfo])
       case res of
         EmptyStack -> do
-          let final_st = nxt_st { _machInitRulePassed = True }
+          let final_st = nxt_st { _machInitRulePassed = True
+                                , _machRunningSM      = M.toList _machRuleData
+                                }
+          traceM "cruise starts.."
           return (info, Engine $ cepCruise final_st)
         _ -> return (info, Engine $ cepInitRule (InitRule new_rd typs) nxt_st)
 cepInitRule ir st req = defaultHandler st (cepInitRule ir) req
@@ -235,7 +243,7 @@ cepCruise st req@(Run t) =
     case t of
       Tick ->
         let _F (k,r) = (k, r, NoMessage)
-            tups     = fmap _F $ M.assocs $ _machRuleData st in
+            tups     = fmap _F $ _machRunningSM st in
         go tups (_machTotalProcMsgs st)
       Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
         let fpt = messageFingerprint m
@@ -256,22 +264,22 @@ cepCruise st req@(Run t) =
             State.put final_st
             return rinfo
 
-      (infos, tmp_st) <- State.runStateT action st
+      (infos, tmp_st) <- State.runStateT (State.modify (\rd -> rd{_machRunningSM=[]}) >> action) st
       let nxt_st = tmp_st { _machTotalProcMsgs = msg_count }
-          rinfo  = RunInfo msg_count (RulesBeenTriggered infos)
+          rinfo  = RunInfo msg_count (RulesBeenTriggered $ (concat :: [[a]] -> [a]) infos)
       return (rinfo, Engine $ cepCruise nxt_st)
 
     broadcastInput cur_st key rd i = do
       let ruleName = RuleName $ _ruleDataName rd
           subs     = _machSubs cur_st
           g        = _machState cur_st
-      (out, nxt_stk) <- runStackDriver subs g i $ _ruleStack rd
-      let StackOut nxt_g hi res = out
-          nxt_rd  = rd { _ruleStack = nxt_stk }
-          nxt_dts = M.insert key nxt_rd $ _machRuleData cur_st
-          nxt_st  = cur_st { _machRuleData = nxt_dts
-                           , _machState    = nxt_g
-                           }
-          info = RuleInfo ruleName res hi
-      return (info, nxt_st)
+      (nxt_g, machines) <- runStackDriver subs g i $ _ruleStack rd
+      let sms              = map inner  machines
+          infos            = map inner2 machines
+          inner (_,nxt_stk) = (key, rd{_ruleStack=nxt_stk})
+          inner2 (StackOut _ hi res,_) = RuleInfo ruleName res hi
+          nxt_st = cur_st { _machRunningSM = sms
+                          , _machState    = nxt_g
+                          }
+      return (infos, nxt_st)
 cepCruise st req = defaultHandler st cepCruise req

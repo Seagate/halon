@@ -68,6 +68,7 @@ globalUpdated = do
         setPhase ph2 $ \(Donut _) -> do
           i <- get Global
           liftProcess $ usend self (Res i)
+          continue ph1
 
         start ph1 ()
 

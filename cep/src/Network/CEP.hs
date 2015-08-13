@@ -103,6 +103,7 @@ import Network.CEP.StackDriver
 import Network.CEP.Types
 import Network.CEP.Utils
 
+import Debug.Trace
 -- | Fills type tracking map with every type of messages needed by the engine
 --   rules.
 fillMachineTypeMap :: Machine s -> Machine s
@@ -184,11 +185,14 @@ cepEngine s defs = newEngine $ buildMachine s defs
 -- | Executes a CEP Specification to the 'Process' monad given a initial global
 --   state.
 execute :: s -> Specification s () -> Process ()
-execute s defs = runItForever $ cepEngine s defs
+execute s defs = do
+  traceM "execute.."
+  runItForever $ cepEngine s defs
 
 -- | A CEP 'Engine' driver that run an 'Engine' until the end of the universe.
 runItForever :: Engine -> Process ()
 runItForever start_eng = do
+  traceM "run it forever step.."
   let debug_mode = stepForward debugModeSetting start_eng
   bootstrap debug_mode [] (1 :: Integer) start_eng
   where
