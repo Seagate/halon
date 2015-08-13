@@ -13,7 +13,7 @@ import Control.Distributed.Process.Node
 import Control.Distributed.Process.Scheduler
     ( schedulerIsEnabled, withScheduler, __remoteTable )
 import Network.Transport (Transport(..))
-import Network.Transport.TCP
+import qualified Network.Transport.InMemory as InMemory
 
 import Control.Exception ( bracket, throwIO, SomeException )
 import Control.Monad ( when, forM, forM_, replicateM_ )
@@ -43,10 +43,8 @@ main = do
             sstr : _ -> return (read sstr)
             _ -> randomIO
      let numIterations = 50
-     bracket
-       (createTransport "127.0.0.1" "0" defaultTCPParameters)
-       (either (const (return ())) closeTransport)
-       $ \(Right transport) -> bracket
+     bracket InMemory.createTransport closeTransport $ \transport ->
+       bracket
          (newLocalNode transport remoteTables)
          closeLocalNode
          $ \node0 -> do

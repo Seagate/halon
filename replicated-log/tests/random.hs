@@ -35,6 +35,7 @@ import Data.Ratio ((%))
 import System.Exit ( exitFailure )
 import System.Environment ( getArgs )
 import System.FilePath ((</>))
+import System.IO
 import System.Posix.Env (setEnv)
 import System.Random ( randomIO, mkStdGen, random, randoms )
 
@@ -141,11 +142,13 @@ remoteTables =
 
 main :: IO ()
 main = do
+ hSetBuffering stdout LineBuffering
+ hSetBuffering stderr LineBuffering
  argv <- getArgs
  let useTCP = case argv of
       ("tcp":_)   -> [mkTCPTransport]
-      ("inmem":_) -> [mkInMemoryTransport]
-      _           -> [mkTCPTransport, mkInMemoryTransport]
+      ("all":_)   -> [mkTCPTransport, mkInMemoryTransport]
+      _           -> [mkInMemoryTransport]
  setEnv "DP_SCHEDULER_ENABLED" "1" True
  if not schedulerIsEnabled
    then putStrLn "The deterministic scheduler is not enabled." >> exitFailure
@@ -169,7 +172,7 @@ main = do
                 forM_ (take numIterations $ randoms $ mkStdGen s) $ run transport
             putStrLn $ "SUCCESS!"
         where
-          numIterations = 20
+          numIterations = 50
 
 run :: Transport -> Int -> IO ()
 run transport s = brackets 2
