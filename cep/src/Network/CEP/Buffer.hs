@@ -16,7 +16,9 @@ module Network.CEP.Buffer
     , bufferLength
     , bufferPeek
     , bufferDump
+    , bufferEmpty
     , fifoBuffer
+    , emptyFifoBuffer
     ) where
 
 import Data.Dynamic
@@ -44,6 +46,16 @@ data FIFO =
     , _fifoStep  :: !Int
     , _fifoElems :: ![(Int, Dynamic)]
     }
+
+instance Show FIFO where
+    show (FIFO _ _ _ xs) = show xs
+
+instance Eq FIFO where
+    a == b =
+      _fifoFixed a   == _fifoFixed b
+      && _fifoSize a == _fifoSize b
+      && _fifoStep a == _fifoStep b
+      && (fmap fst $ _fifoElems a) == (fmap fst $ _fifoElems b)
 
 _fifoNew :: FIFOType -> FIFO
 _fifoNew typ =
@@ -73,7 +85,7 @@ _get idx = go []
 
 -- | Buffer storage.
 data Buffer =
-    forall s.
+    forall s. (Eq s, Show s, Typeable s) =>
     Buffer
     { _bufferInsert :: forall a. Typeable a => a -> s -> s
     , _bufferGet    :: forall a. Typeable a => Index -> s -> (Maybe (Index, a), s)
@@ -81,6 +93,15 @@ data Buffer =
     , _bufferDump   :: forall m. MonadIO m => s -> m ()
     , _bufferState  :: !s
     }
+
+instance Show Buffer where
+    show (Buffer _ _ _ _ s) = show s
+
+instance Eq Buffer where
+    Buffer _ _ _ _ a == Buffer _ _ _ _ b =
+        case cast b of
+          Just ba -> a == ba
+          _       -> False
 
 -- | Inserts a new message.
 bufferInsert :: Typeable a => a -> Buffer -> Buffer
@@ -123,6 +144,9 @@ bufferPeek idx = fst . bufferGetWithIndex idx
 -- | Gets the buffer's length.
 bufferLength :: Buffer -> Int
 bufferLength (Buffer _ _ bl _ s) = bl s
+
+bufferEmpty :: Buffer -> Bool
+bufferEmpty b = bufferLength b == 0
 
 -- | Prints the content of the buffer.
 bufferDump :: MonadIO m => Buffer -> m ()
@@ -168,3 +192,6 @@ fifoBuffer typ =
     , _bufferState  = _fifoNew typ
     , _bufferDump   = _bufFifoDump
     }
+
+emptyFifoBuffer :: Buffer
+emptyFifoBuffer = fifoBuffer Unbounded
