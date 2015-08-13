@@ -5,7 +5,7 @@
 -- Tests that the cluster proceeds after the tracking station recovers
 -- quorum.
 --
--- * Start a satellite and three tracking station nodes.
+-- * Start a satellite and two tracking station nodes.
 -- * Start the noisy service in the satellite.
 -- * Kill a tracking station node.
 -- * Restart the tracking station node.
@@ -56,12 +56,11 @@ main = (>>= maybe (error "test timed out") return) $
     Right nt <- createTransport ip "4000" defaultTCPParameters
     n0 <- newLocalNode nt (__remoteTable initRemoteTable)
 
-    withHostNames cp 4 $  \ms@[m0, m1, m2, m3] ->
+    withHostNames cp 3 $  \ms@[m0, m1, m2] ->
      runProcess n0 $ do
       let m0loc = m0 ++ ":9000"
           m1loc = m1 ++ ":9000"
           m2loc = m2 ++ ":9000"
-          m3loc = m3 ++ ":9000"
           halonctlloc = (++ ":9001")
 
       say "Copying binaries ..."
@@ -70,48 +69,45 @@ main = (>>= maybe (error "test timed out") return) $
       getSelfPid >>= copyLog (const True)
 
       say "Spawning halond ..."
-      nhs <- forM (zip ms [m0loc, m1loc, m2loc, m3loc]) $ \(m, mloc) ->
+      nhs <- forM (zip ms [m0loc, m1loc, m2loc]) $ \(m, mloc) ->
                spawnNode m ("./halond -l " ++ mloc ++ " 2>&1")
-      let [nid0, nid1, nid2, nid3] = map handleGetNodeId nhs
+      let [nid0, nid1, nid2] = map handleGetNodeId nhs
       say $ "Redirecting logs ..."
       redirectLogsHere nid0
       redirectLogsHere nid1
       redirectLogsHere nid2
-      redirectLogsHere nid3
 
       say "Spawning the tracking station ..."
       systemThere [m0] ("./halonctl"
                      ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m0loc
                      ++ " -a " ++ m1loc
-                     ++ " -a " ++ m2loc
                      ++ " bootstrap station"
                      ++ " -r 2000000"
                      )
       expectLog [nid0] (isInfixOf "New replica started in legislature://0")
       expectLog [nid1] (isInfixOf "New replica started in legislature://0")
-      expectLog [nid2] (isInfixOf "New replica started in legislature://0")
 
       say "Starting satellite node ..."
-      systemThere [m3] ("./halonctl"
-                     ++ " -l " ++ halonctlloc m3
-                     ++ " -a " ++ m3loc
+      systemThere [m2] ("./halonctl"
+                     ++ " -l " ++ halonctlloc m2
+                     ++ " -a " ++ m2loc
                      ++ " bootstrap satellite"
                      ++ " -t " ++ m0loc
                      ++ " -t " ++ m1loc
                      )
-      let tsNodes = [nid0, nid1, nid2]
-      expectLog tsNodes $ isInfixOf $ "New node contacted: nid://" ++ m3loc
-      expectLog [nid3] (isInfixOf "Got UpdateEQNodes")
+      let tsNodes = [nid0, nid1]
+      expectLog tsNodes $ isInfixOf $ "New node contacted: nid://" ++ m2loc
+      expectLog [nid2] (isInfixOf "Got UpdateEQNodes")
 
       say "Starting ping service ..."
       systemThere [m0] $ "./halonctl"
                       ++ " -l " ++ halonctlloc m0
-                      ++ " -a " ++ m3loc
+                      ++ " -a " ++ m2loc
                       ++ " service ping start -t " ++ m0loc ++ " 2>&1"
       expectLog tsNodes (isInfixOf "started ping service")
 
-      whereisRemoteAsync nid3 $ serviceLabel $ serviceName Ping.ping
+      whereisRemoteAsync nid2 $ serviceLabel $ serviceName Ping.ping
       WhereIsReply _ (Just pingPid) <- expect
       send pingPid "0"
       expectLog tsNodes $ isInfixOf "received DummyEvent 0"
