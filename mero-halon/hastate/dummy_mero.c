@@ -72,16 +72,7 @@ int main(int argc,char** argv) {
     }
 
     m0_init_wrapper();
-    dbdir = getenv("NTR_DB_DIR");
-    if (dbdir == NULL)
-         rc = rpc_init("");
-    else {
-         size_t destlen = strlen(dbdir) * sizeof(char) + 2;
-         char *dest = malloc(destlen);
-         strncpy(dest, dbdir, destlen);
-         strncat(dest, "/", destlen);
-         rc = rpc_init(dest);
-    }
+    rc = rpc_init();
     if (rc) {
         fprintf(stderr,"rpc_init: %d",rc);
         return 1;

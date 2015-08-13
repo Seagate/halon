@@ -49,7 +49,6 @@ import Control.Distributed.Process hiding (send)
 import Control.Monad (forever, when, void)
 
 import Data.ByteString (ByteString)
-import Data.Defaultable (fromDefault)
 
 import Network.CEP (Definitions)
 

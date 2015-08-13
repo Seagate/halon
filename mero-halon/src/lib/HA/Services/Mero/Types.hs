@@ -14,7 +14,6 @@ import GHC.Generics (Generic)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Data.Binary (Binary)
-import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
 

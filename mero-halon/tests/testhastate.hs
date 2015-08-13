@@ -18,28 +18,27 @@ import Mero.Notification.HAState
 
 import Network.RPC.RPCLite
   ( rpcAddress, ListenCallbacks(..), listen, stopListening, getFragments
-  , initRPCAt, finalizeRPC, sendBlocking, disconnect, connect_se
+  , initRPC, finalizeRPC, sendBlocking, disconnect, connect_se
   )
 
 import Control.Applicative ((<$>))
 import Control.Concurrent ( forkIO )
 import Control.Concurrent.MVar ( newEmptyMVar, takeMVar, putMVar, MVar )
-import Control.Exception ( bracket, bracket_, try, SomeException )
+import Control.Exception ( bracket, bracket_ )
 import Control.Monad ( when, void )
 import Data.Bits ( (.|.), shiftL )
 import Data.ByteString ( ByteString )
-import Data.Char ( isSpace )
 import qualified Data.ByteString as B ( concat, unpack )
-import Data.List (isInfixOf, delete)
+import Data.List (delete)
 import Data.Maybe (maybeToList)
 import System.Directory
     ( getCurrentDirectory
     , setCurrentDirectory
     , createDirectoryIfMissing
     )
-import System.Environment ( getArgs, getEnv, getExecutablePath, lookupEnv )
+import System.Environment ( getArgs, getExecutablePath, lookupEnv )
 import System.Exit ( exitFailure, exitSuccess )
-import System.FilePath ( (</>), normalise, pathSeparator, takeDirectory )
+import System.FilePath ( (</>), takeDirectory )
 import System.Process (readProcess, callProcess, callCommand)
 
 main :: IO ()
@@ -91,15 +90,14 @@ main =
         callProcess "sudo" $ maybeToList mld ++ prog : "--noscript" : args
       exitSuccess
   ) >>
-  getDbDir >>= \dbDir ->
   (newEmptyMVar :: IO (MVar [ByteString])) >>= \mv ->
   (newEmptyMVar :: IO (MVar NVec)) >>= \mv' ->
   delete "--noscript" <$> getArgs >>= (\args -> case args of
     [] -> return [ halonAddress, dummyMeroAddress ]
     _ -> return args)
   >>= \[ localAddress , meroAddress ] -> withM0 $
-  bracket_ (initRPCAt dbDir) finalizeRPC $
-  bracket (listen (dbDir </> "s2") (rpcAddress localAddress)$ ListenCallbacks
+  bracket_ initRPC finalizeRPC $
+  bracket (listen (rpcAddress localAddress)$ ListenCallbacks
               { receive_callback = \it _ ->
                   getFragments it >>= putMVar mv >> return True
               }
@@ -159,11 +157,3 @@ main =
         putStrLn $ "m0_ha_state_accept produced a bad result "
                    ++ show (B.unpack (B.concat bss))
         exitFailure
-
-getDbDir :: IO FilePath
-getDbDir = do
-  ntrDbDir <- try (getEnv "NTR_DB_DIR") :: IO (Either SomeException FilePath)
-  return $ case ntrDbDir of
-      Right dir | not (null (filter (not . isSpace) dir)) ->
-          normalise (dir ++ [pathSeparator])
-      _        -> ""
