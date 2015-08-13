@@ -85,7 +85,7 @@ main =
                      ++ " -a " ++ m1loc
                      ++ " bootstrap station"
                      )
-      expectLog [nid0] (isInfixOf "Recovery Coordinator: New node contacted:")
+      expectLog [nid0, nid1] (isInfixOf "Recovery Coordinator: New node contacted:")
 
       say "Killing halond"
       systemThere ms "pkill halond; true"
@@ -97,4 +97,4 @@ main =
       nid1' <- spawnNode_ m1 ("./halond -l " ++ m1loc ++ " 2>&1")
       redirectLogsHere nid0'
       redirectLogsHere nid1'
-      expectLog [nid0'] (isInfixOf "Found existing graph")
+      expectLog [nid0', nid1'] (isInfixOf "Found existing graph")
