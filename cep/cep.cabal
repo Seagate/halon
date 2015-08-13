@@ -27,7 +27,7 @@ library
                        GeneralizedNewtypeDeriving
                        DeriveGeneric
   build-depends:       base >=4.6 && <5,
-                       distributed-process==0.5.*,
+                       distributed-process>=0.5.3,
                        binary==0.7.*,
                        bytestring,
                        mtl,
