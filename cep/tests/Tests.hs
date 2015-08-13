@@ -179,16 +179,22 @@ switchTerminate = do
         ph2 <- phaseHandle "state-2"
         ph3 <- phaseHandle "state-3"
         directly ph1 $ do
-          switch [ph2, ph3]
           liftProcess $ usend self (Res "ph1")
+          switch [ph2, ph3]
         setPhase ph2 $ \(Foo _) ->
           liftProcess $ usend self (Foo 1)
         setPhase ph3 $ \(Foo _) ->
           liftProcess $ usend self (Baz 2)
         start ph1 ()
+    assertEqual "direct phase fired"
+                (Res "ph1") =<< expect
     usend pid (1::Int)
     usend pid (Foo 1)
     assert =<< receiveWait [ match (\Foo{} -> return True)
+                           , matchAny (\_ -> return False)
+                           ]
+    usend pid (Foo 2) -- XXX: tick
+    assert =<< receiveWait [ match (\(Res s) -> return $ s == "ph1")
                            , matchAny (\_ -> return False)
                            ]
 
@@ -204,7 +210,7 @@ switchContinue = do
         ph4 <- phaseHandle "state-4"
         setPhase ph1 $ \(Donut _) -> do
           switch [ph2,ph3]
-        setPhase ph1 $ \(Foo _) ->
+        setPhase ph2 $ \(Foo _) ->
           continue ph4
         setPhase ph3 $ \(Baz _) ->
           liftProcess $ usend self (Baz 2)
@@ -601,8 +607,8 @@ shouldNotLooseMgs = do
     (infos, _) <- feedEngine msgs $ cepEngine () defs
     let [_,_,last_run] = infos
         RunInfo _ (RulesBeenTriggered [rinfo]) = last_run
-        RuleInfo _ (ExecutionReport _ _ exe)   = rinfo
-        [SuccessExe ph _]                      = exe
+        RuleInfo _ _ (ExecutionReport _ _ exe) = rinfo
+        [_, _, SuccessExe ph _ _, _, _]        = exe
 
     assertEqual "should not lose msgs" "ph2" (stackPhaseInfoPhaseName ph)
 
@@ -616,11 +622,11 @@ forkIncrSMs = do
         start ph ()
       start_engine = cepEngine () defs
 
-  (RunInfo _ res, _) <- stepForward Tick start_engine
-  let RulesBeenTriggered [(RuleInfo _ rep)] = res
-      ExecutionReport spawned _ _           = rep
+  (RunInfo _ res, _) <- stepForward tick start_engine
+  let RulesBeenTriggered [(RuleInfo _ _ rep)] = res
+      ExecutionReport spawned term _          = rep
 
-  assert $ spawned == 1
+  assert (spawned == term && spawned == 2)
 
 testsExecution :: (Process () -> IO ()) -> TestTree
 testsExecution launch = testGroup "Execution properties"
@@ -633,6 +639,8 @@ testsExecution launch = testGroup "Execution properties"
                                    $ launch $ testConsumption 1
   , localOption (mkTimeout 500000) $ testCase "State machine runs to the end"
                                    $ launch $ testConsumption 0
+  , localOption (mkTimeout 500000) $ testCase "Direct rule is always executed"
+                                   $ launch $ testConsumptionDirect
   ]
 
 loopWorks :: Process ()
@@ -716,6 +724,22 @@ testConsumption hlpr = do
       2 -> usend pid ()
       _ -> return ()
     assertEqual "second () was processed" "ph1" =<< expect
+
+testConsumptionDirect :: Process ()
+testConsumptionDirect = do
+    self <- getSelfPid
+    pid  <- spawnLocal $ execute () $ do
+      define "rule" $ do
+        ph1 <- phaseHandle "state-1"
+        ph2 <- phaseHandle "state-2"
+        directly ph1 $ do
+          liftProcess $ usend self "ph1"
+          continue ph2
+        setPhase ph2 $ \Donut{} -> return ()
+        start ph1 ()
+    assertEqual "rule starts" "ph1" =<< expect
+    usend pid donut
+    assertEqual "rule finishes" "ph1" =<< expect
 
 testSubscriptions :: (Process () -> IO ()) -> TestTree
 testSubscriptions launch = testGroup "Subscription properties"
