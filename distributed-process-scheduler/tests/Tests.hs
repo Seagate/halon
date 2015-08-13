@@ -13,6 +13,7 @@ import qualified Control.Distributed.Process.Scheduler as S (__remoteTable)
 import Control.Distributed.Process.Node
 import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
+import Control.Distributed.Process.Internal.Types (ProcessExitException(..))
 import Control.Distributed.Process.Trans
 import Control.Exception ( bracket, SomeException, throwIO )
 import qualified Control.Exception as E ( catch )
@@ -22,7 +23,7 @@ import Control.Monad.State ( execStateT, modify, StateT, lift )
 import Data.Function (on)
 import Data.IORef
 import Data.List ( nub, elemIndex, sortBy )
-import qualified Network.Transport.TCP as TCP
+import qualified Network.Transport.InMemory as InMemory
 import qualified Network.Transport as NT
 import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
 import System.IO.Unsafe ( unsafePerformIO )
@@ -74,23 +75,26 @@ run s = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
   bracket
-    (TCP.createTransport "127.0.0.1" "8090" TCP.defaultTCPParameters)
-    (either (const $ return ()) NT.closeTransport)
-    $ \(Right transport) -> do
+    InMemory.createTransport
+    NT.closeTransport
+    $ \transport -> do
       res <- fmap nub $ forM [1..100] $ \i ->
         if schedulerIsEnabled
         then do
           -- running three times with the same seed should produce the same execution
           [res] <- fmap nub $ replicateM 3 $ execute transport (s+i)
+          checkInvariants res
           [res'] <- fmap nub $ replicateM 3 $ executeT transport (s+i)
-          [res''] <- fmap nub $ replicateM 3 $ executeChan transport (s+i)
-          [res'''] <- fmap nub $ replicateM 3 $ executeNSend transport (s+i)
           -- lifting Process has the same effect as running process unlifted
           True <- return $ res == res'
-          checkInvariants res
+          [res''] <- fmap nub $ replicateM 3 $ executeChan transport (s+i)
           checkInvariants res''
+          [res'''] <- fmap nub $ replicateM 3 $ executeNSend transport (s+i)
           checkInvariants res'''
-          return $ res ++ res'' ++ res'''
+          [res''''] <- fmap nub $ replicateM 3 $ executeRegister transport (s+i)
+          when (i `mod` 10 == 0) $
+            putStrLn $ show i ++ " iterations"
+          return $ res ++ res'' ++ res''' ++ res''''
         else do
           res <- execute transport (s+i)
           checkInvariants res
@@ -100,6 +104,8 @@ run s = do
           checkInvariants res''
           res''' <- executeNSend transport (s+i)
           checkInvariants res'''
+          when (i `mod` 10 == 0) $
+            putStrLn $ show i ++ " iterations"
           return $ res ++ res' ++ res'' ++ res'''
       putStrLn $ "Test passed with " ++ show (length res) ++ " different traces."
  where
@@ -143,6 +149,60 @@ execute transport seed = do
         () <- expect
         () <- expect
         liftIO $ fmap reverse $ readIORef traceR
+
+executeRegister :: NT.Transport -> Int -> IO [String]
+executeRegister transport seed = do
+    resetTraceR
+    n <- newLocalNode transport remoteTable
+    flip E.catch (\e -> do putStr "executeRegister.seed: " >> print seed
+                           readIORef (traceR :: IORef [String]) >>= print
+                           throwIO (e :: SomeException)
+               ) $ do
+     runProcess' n $ withScheduler [] seed $ do
+      self <- getSelfPid
+      here <- getSelfNode
+      -- s1 links to s0
+      -- self monitors s1
+      -- self terminates s0
+      -- then s1 should terminate
+      -- then self should terminate
+      s0 <- spawnLocal $ do
+        () <- expect
+        say' "s0: blocking"
+        Left (ProcessExitException pid msg) <-
+          try $ do send self ()
+                   receiveWait [] :: Process ()
+        True <- return $ self == pid
+        Just True <- handleMessage msg (return . ("terminate" ==))
+        say' "s0: terminated"
+      s1 <- spawnLocal $ do
+        link s0
+        say' "s1: blocking"
+        Left (ProcessLinkException pid DiedNormal) <-
+          try $ do send s0 ()
+                   receiveWait [] :: Process ()
+        True <- return $ s0 == pid
+        say' "s1: terminated"
+      whereisRemoteAsync here "s0"
+      WhereIsReply "s0" Nothing <- expect
+      say' "main: registering s0"
+      registerRemoteAsync here "s0" s0
+      RegisterReply "s0" True <- expect
+      say' "main: registered s0"
+      registerRemoteAsync here "s0" s0
+      RegisterReply "s0" False <- expect
+      say' "main: cannot reregister s0"
+      whereisRemoteAsync here "s0"
+      WhereIsReply "s0" (Just s0') <- expect
+      True <- return $ s0' == s0
+      say' "main: terminating s0"
+      () <- expect
+      ref <- monitor s1
+      exit s0 "terminate"
+      ProcessMonitorNotification ref' s1' DiedNormal <- expect
+      True <- return $ ref == ref'
+      True <- return $ s1 == s1'
+      liftIO $ fmap reverse $ readIORef traceR
 
 executeNSend :: NT.Transport -> Int -> IO [String]
 executeNSend transport seed = do
