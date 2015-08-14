@@ -285,17 +285,23 @@ tests oneNode abstractTransport = do
         liftIO $ takeMVar $ cStop counters
 
         return ()
-    , testSuccess "rs-split-in-majority" $ testSplit transport controlled 5 $ \pid nodes events splitNet rGroup -> do
-        liftIO $ do
+    , testSuccess "rs-split-in-majority" $ testSplit transport controlled 5
+        $ \pid nodes events splitNet _ -> liftIO $ do
           let (as,bs) = splitAt 2 $ filter ((processNodeId pid /=) . localNodeId) nodes
           splitNet (nodeAddress (processNodeId pid)
                    :map (nodeAddress.localNodeId) as)
                    (map (nodeAddress.localNodeId) bs)
           threadDelay (3*pollingPeriod)
-          Nothing <- atomically $ tryReadTChan events
-          return ()
-        RSState (Just _) _ _<- retry requestTimeout $ getState rGroup
-        return ()
+          mev <- atomically $ tryReadTChan events
+          case mev of
+            Nothing -> return ()
+            -- If the RC was killed, it should respawn quickly.
+            Just (Stopped p) | p == pid -> do
+              Started p' <- atomically $ readTChan events
+              True <- return $ elem (processNodeId p')
+                             $ processNodeId pid : map localNodeId as
+              return ()
+            _ -> error "unexpected event from the RC"
     , testSuccess "rs-split-in-minority" $ testSplit transport controlled 5 $ \pid nodes events splitNet rGroup -> do
         selfNode <- getSelfNode
         liftIO $ do
