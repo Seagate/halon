@@ -50,7 +50,7 @@ module HA.RecoveryCoordinator.Mero
        ) where
 
 import Prelude hiding ((.), id, mapM_)
-import HA.EventQueue.Consumer (HAEvent(..))
+import HA.EventQueue.Types (HAEvent(..))
 import HA.NodeAgent.Messages
 import HA.Resources
 import HA.Resources.Mero (Host(..))

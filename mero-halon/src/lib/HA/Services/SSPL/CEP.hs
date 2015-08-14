@@ -9,7 +9,7 @@
 
 module HA.Services.SSPL.CEP where
 
-import HA.EventQueue.Consumer (HAEvent(..))
+import HA.EventQueue.Types (HAEvent(..))
 import HA.Service hiding (configDict)
 import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero

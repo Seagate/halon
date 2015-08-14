@@ -20,7 +20,7 @@ import           Control.Distributed.Process
 import           Control.Distributed.Process.Internal.Types (nullProcessId)
 import           Network.CEP
 
-import           HA.EventQueue.Consumer
+import           HA.EventQueue.Types
 import           HA.NodeAgent.Messages
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero

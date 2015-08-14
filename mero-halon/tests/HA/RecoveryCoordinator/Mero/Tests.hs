@@ -29,7 +29,7 @@ import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue
 import HA.EventQueue.Definitions
-import HA.EventQueue.Consumer (HAEvent(..))
+import HA.EventQueue.Types (HAEvent(..))
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.Multimap.Implementation
 import HA.Multimap.Process
@@ -83,10 +83,11 @@ import Control.Monad (forM_, void)
 -- import qualified Data.ByteString.Char8 as B8
 import Data.Defaultable
 import Data.List (isInfixOf)
+import Data.Proxy (Proxy(..))
 
 -- import System.IO
 
-import Network.CEP (Published(..), Sub(..), subscribe)
+import Network.CEP (Published(..), subscribe)
 
 type TestReplicatedState = (EventQueue, Multimap)
 
@@ -238,7 +239,7 @@ testEQTrimming transport = do
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        subscribe eq (Sub :: Sub TrimDone)
+        subscribe eq (Proxy :: Proxy TrimDone)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
         Published (TrimDone _) _ <- expect
@@ -573,7 +574,7 @@ testMonitorManagement transport = do
       -- Awaits the node local monitor to be up.
       _ <- getNodeMonitor mm
 
-      subscribe rc (Sub :: Sub (HAEvent ServiceStartedMsg))
+      subscribe rc (Proxy :: Proxy (HAEvent ServiceStartedMsg))
       serviceStart Dummy.dummy (Dummy.DummyConf $ Configured "Test 1")
       dpid <- serviceStarted (serviceName Dummy.dummy)
       say "Service dummy has been started"
@@ -592,7 +593,7 @@ testMasterMonitorManagement transport = do
       -- Awaits the node local monitor to be up.
       mpid <- getNodeMonitor mm
 
-      subscribe rc (Sub :: Sub (HAEvent ServiceStartedMsg))
+      subscribe rc (Proxy :: Proxy (HAEvent ServiceStartedMsg))
       say "Node-local monitor has been started"
 
       kill mpid "Farewell"
@@ -616,7 +617,7 @@ testNodeUpRace transport = do
         rGroup <- pRGroup
 
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        subscribe eq (Sub :: Sub TrimDone)
+        subscribe eq (Proxy :: Proxy TrimDone)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
         liftIO $ do
