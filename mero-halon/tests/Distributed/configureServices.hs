@@ -85,7 +85,7 @@ main =
       systemThere [m0] ("./halonctl"
                      ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m0loc
-                     ++ " bootstrap station"
+                     ++ " bootstrap station 2>&1"
                      )
       expectLog [nid0] (isInfixOf "New replica started in legislature://0")
 
@@ -96,7 +96,7 @@ main =
                      ++ " -a " ++ m0loc
                      ++ " -a " ++ m1loc
                      ++ " bootstrap satellite"
-                     ++ " -t " ++ m0loc)
+                     ++ " -t " ++ m0loc ++ " 2>&1")
       expectLog [nid0] (isInfixOf $ "New node contacted: nid://" ++ m0loc)
       expectLog [nid0] (isInfixOf $ "New node contacted: nid://" ++ m1loc)
       expectLog [nid0, nid1] (isInfixOf "Got UpdateEQNodes")
@@ -105,7 +105,7 @@ main =
       systemThere [m0] ("./halonctl"
                      ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m1loc
-                     ++ " service dummy start -t " ++ m0loc)
+                     ++ " service dummy start -t " ++ m0loc ++ " 2>&1")
       expectLog [nid1] (isInfixOf "Starting service dummy")
       expectLog [nid1] (isInfixOf "Hello World!")
       say "Reconfiguring dummy service ..."
@@ -113,6 +113,6 @@ main =
                      ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m1loc
                      ++ " service dummy reconfigure -t " ++ m0loc
-                     ++ " --helloWorld \"Foobye, World\""
+                     ++ " --helloWorld \"Foobye, World\" 2>&1"
                        )
       expectLog [nid1] (isInfixOf "Foobye, World")
