@@ -101,7 +101,7 @@ requestTimeout :: Int
 requestTimeout = 1000000
 
 pollingPeriod :: Int
-pollingPeriod = 1000000
+pollingPeriod = 2000000
 
 data TestCounters = TestCounters
     { cStart :: MVar ()        -- ^ RC has been started
