@@ -49,7 +49,6 @@ import Control.Distributed.Process hiding (send)
 import Control.Monad (forever, when, void)
 
 import Data.ByteString (ByteString)
-import Data.Defaultable (fromDefault)
 
 import Network.CEP (Definitions)
 
@@ -93,7 +92,7 @@ remotableDecl [ [d|
   m0dProcess MeroConf{..} = do
       self <- getSelfPid
       bracket
-        (Mero.Notification.initialize fp haAddr)
+        (Mero.Notification.initialize haAddr)
         (\_ -> Mero.Notification.finalize) $
         \ep -> do
           c <- spawnChannelLocal $ statusProcess ep m0addr self
@@ -101,7 +100,6 @@ remotableDecl [ [d|
           say $ "Starting service m0d"
           go ep 0
     where
-      fp = fromDefault mcPersistencePath
       haAddr = RPC.rpcAddress mcServerAddr
       m0addr = RPC.rpcAddress mcMeroAddr
       go ep epoch = do

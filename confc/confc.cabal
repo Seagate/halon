@@ -49,6 +49,8 @@ Test-Suite testconf
                 , bytestring
                 , confc
                 , rpclite
+                , binary
+                , hashable
 
   if flag(maintainer)
     ghc-options: -Werror

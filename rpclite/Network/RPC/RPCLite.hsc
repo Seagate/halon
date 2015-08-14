@@ -15,7 +15,6 @@
 --
 module Network.RPC.RPCLite
     ( initRPC
-    , initRPCAt
     , finalizeRPC
     -- * Client side API
     , ClientEndpoint
@@ -58,7 +57,7 @@ import Data.Dynamic           ( Typeable )
 import Data.Binary            ( Binary )
 import Data.Word              ( Word64 )
 import Foreign.C.Types        ( CInt(..), CULong(..) )
-import Foreign.C.String       ( CString, CStringLen, withCString )
+import Foreign.C.String       ( CString, CStringLen )
 import Foreign.Marshal.Alloc  ( alloca, allocaBytesAligned )
 import Foreign.Ptr            ( Ptr, FunPtr, plusPtr, WordPtr, ptrToWordPtr
                               , nullPtr, freeHaskellFunPtr )
@@ -73,15 +72,9 @@ import Foreign.Storable       ( Storable(..) )
 -- Evaluate this action only once before calling 'finalizeRPC'.
 --
 initRPC :: IO ()
-initRPC = initRPCAt ""
+initRPC = rpc_init >>= check_rc
 
--- | Like 'initRPC', but creats database directory under given path.
-initRPCAt :: FilePath -> IO ()
-initRPCAt persistencePrefix =
-    withCString persistencePrefix $ \cPersistencePrefix ->
-        rpc_init cPersistencePrefix >>= check_rc
-
-foreign import ccall rpc_init :: CString -> IO CInt
+foreign import ccall rpc_init :: IO CInt
 
 -- | Frees any resources allocated during initialization of the RPC stack.
 --

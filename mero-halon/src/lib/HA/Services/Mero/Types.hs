@@ -14,7 +14,6 @@ import GHC.Generics (Generic)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Data.Binary (Binary)
-import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
 
@@ -28,7 +27,6 @@ import Options.Schema.Builder
 data MeroConf = MeroConf {
     mcServerAddr :: String
   , mcMeroAddr :: String
-  , mcPersistencePath :: Defaultable FilePath
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary MeroConf
@@ -61,7 +59,7 @@ relationDictMeroChanelServiceProcessChannel :: Dict (
 relationDictMeroChanelServiceProcessChannel = Dict
 
 meroSchema :: Schema MeroConf
-meroSchema = MeroConf <$> sa <*> ma <*> pp where
+meroSchema = MeroConf <$> sa <*> ma where
   sa = strOption
         $  long "listenAddr"
         <> short 'l'
@@ -70,9 +68,6 @@ meroSchema = MeroConf <$> sa <*> ma <*> pp where
         $  long "meroAddr"
         <> short 'm'
         <> metavar "MERO_ADDRESS"
-  pp = defaultable "hani_rpc" . strOption
-        $  long "persistencePath"
-        <> metavar "PATH"
 
 $(generateDicts ''MeroConf)
 $(deriveService ''MeroConf 'meroSchema [ 'resourceDictMeroChannel

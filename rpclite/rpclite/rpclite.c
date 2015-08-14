@@ -26,7 +26,6 @@
 #include <stdlib.h>
 
 #define ITEM_SIZE_CUSHION 128
-#define DB_FILE_NAME     "rpclite.db"
 
 enum {
     BUF_LEN            = 128,
@@ -69,23 +68,18 @@ void rpc_stat_fini()
 		onError; \
 	}} while (0)
 
-int rpc_init(char *persistence_prefix) {
+int rpc_init() {
 	int rc;
-        char client_db[STRING_LEN];
 
 	client_max_epoch = 0;
 
 	rpc_stat_init();
 
-    CHECK_RESULT(rc, rpclite_fop_init(),goto rpc_stat_fini);
+	CHECK_RESULT(rc, rpclite_fop_init(),goto rpc_stat_fini);
 
 	CHECK_RESULT(rc, m0_net_domain_init(&client_net_dom, &m0_net_lnet_xprt),goto fop_fini);
 
 	m0_ha_domain_init(&client_ha_dom, 0);
-
-	M0_ASSERT(strlen(persistence_prefix)+strlen(DB_FILE_NAME)<STRING_LEN);
-	strcpy(client_db, persistence_prefix);
-	strcat(client_db, DB_FILE_NAME);
 
 	return 0;
 
