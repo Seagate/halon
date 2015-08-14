@@ -11,9 +11,8 @@ module HA.NodeAgent.Tests ( tests, dummyRC__static, dummyRC__sdict) where
 
 import HA.EventQueue ( EventQueue, eventQueueLabel )
 import HA.EventQueue.Definitions (eventQueue)
-import HA.EventQueue.Consumer (HAEvent(..))
 import HA.EventQueue.Producer (expiate)
-import HA.EventQueue.Types (PersistMessage(..))
+import HA.EventQueue.Types (PersistMessage(..), HAEvent(..))
 import HA.Process
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR

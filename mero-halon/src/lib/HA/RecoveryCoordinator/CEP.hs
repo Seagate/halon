@@ -20,7 +20,7 @@ import           Control.Distributed.Process
 import           Control.Distributed.Process.Internal.Types (nullProcessId)
 import           Network.CEP
 
-import           HA.EventQueue.Consumer
+import           HA.EventQueue.Types
 import           HA.NodeAgent.Messages
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
@@ -171,7 +171,7 @@ rcRules argv eq = do
             writeConfiguration sp conf Intended
             bounceServiceTo Intended n svc
             switch [ph2, ph3]
-          _ -> continue ph0
+          _ -> return ()
 
       setPhaseIf ph1' notHandled $ \evt@(HAEvent _ msg _) -> do
         ServiceFailed n svc pid <- decodeMsg msg
@@ -183,7 +183,7 @@ rcRules argv eq = do
             put Local $ Just (n, serviceName svc, 0)
             bounceServiceTo Current n svc
             switch [ph2, ph3]
-          _ -> continue ph0
+          _ -> return ()
 
       setPhaseIf ph2 serviceStarted $ \evt@(HAEvent _ msg _) -> do
         ServiceStarted n@(Node nodeId) svc cfg sp <- decodeMsg msg
@@ -210,7 +210,6 @@ rcRules argv eq = do
 
         liftProcess $ sayRC $
           "started " ++ snString (serviceName svc) ++ " service"
-        continue ph0
 
       setPhaseIf ph3 serviceCouldNotStart $ \evt@(HAEvent _ msg _) -> do
         ServiceCouldNotStart (Node nid) svc cfg <- decodeMsg msg
@@ -234,7 +233,6 @@ rcRules argv eq = do
                         ++ show count
                         ++ " attempts."
                          )
-        continue ph0
 
       start ph0 Nothing
 
@@ -251,18 +249,12 @@ rcRules argv eq = do
          sendMsg sender mmid
          handled eq evt
 
-    define "dummy-event" $ do
-      initial <- phaseHandle "initial"
-      dummy   <- phaseHandle "dummy"
-      noop    <- phaseHandle "noop"
-      directly initial $ switch [dummy, noop]
-      setPhase noop $ \() -> continue dummy
-      setPhase dummy $ \evt@(HAEvent _ (DummyEvent str) _) -> do
+    defineSimple "dummy-event" $
+      \evt@(HAEvent _ (DummyEvent str) _) -> do
         i <- getNoisyPingCount
         liftProcess $ sayRC $ "received DummyEvent " ++ str
         liftProcess $ sayRC $ "Noisy ping count: " ++ show i
         handled eq evt
-      start initial ()
 
     defineSimple "stop-request" $ \evt@(HAEvent _ msg _) -> do
       ServiceStopRequest node svc <- decodeMsg msg

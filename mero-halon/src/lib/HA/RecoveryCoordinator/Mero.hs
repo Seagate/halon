@@ -50,7 +50,7 @@ module HA.RecoveryCoordinator.Mero
        ) where
 
 import Prelude hiding ((.), id, mapM_)
-import HA.EventQueue.Consumer (HAEvent(..))
+import HA.EventQueue.Types (HAEvent(..))
 import HA.NodeAgent.Messages
 import HA.Resources
 import HA.Resources.Mero (Host(..))
@@ -189,10 +189,8 @@ rcInitRule argv eq = do
         registerServiceProcess n svc cfg sp
         sendToMasterMonitor msg
         handled eq evt
-        liftProcess $ do
+        liftProcess $
           sayRC $ "started " ++ snString (serviceName svc) ++ " service"
-          self <- getSelfPid
-          usend self ()
 
     start boot Nothing
 

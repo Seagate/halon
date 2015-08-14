@@ -14,9 +14,8 @@ import Test.Transport
 
 import HA.EventQueue hiding (trim)
 import HA.EventQueue.Definitions
-import HA.EventQueue.Consumer
 import HA.EventQueue.Producer
-import HA.EventQueue.Types (newPersistMessage, PersistMessage(..))
+import HA.EventQueue.Types (newPersistMessage, PersistMessage(..), HAEvent(..))
 import HA.NodeAgent.Messages
 import HA.EQTracker
 import HA.Replicator
@@ -37,6 +36,7 @@ import Control.Monad
 import qualified Data.Set as Set
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
+import Data.Proxy (Proxy(..))
 import Network.CEP
 
 eqSDict :: SerializableDict EventQueue
@@ -117,7 +117,7 @@ tests (AbstractTransport transport breakConnection _) = do
               assert . (== 10) . length . snd =<< retry requestTimeout
                                                     (getState rGroup)
         , testSuccess "eq-trim-one" ==> \eq _ rGroup -> do
-              subscribe eq (Sub :: Sub TrimDone)
+              subscribe eq (Proxy :: Proxy TrimDone)
               mapM_ triggerEvent [1..10]
               (_, (PersistMessage evtid _ ):_) <- retry requestTimeout $
                                                getState rGroup
@@ -127,7 +127,7 @@ tests (AbstractTransport transport breakConnection _) = do
               assert . (== 9) . length . snd =<< retry requestTimeout
                                                    (getState rGroup)
         , testSuccess "eq-trim-idempotent" ==> \eq _ rGroup -> do
-              subscribe eq (Sub :: Sub TrimDone)
+              subscribe eq (Proxy :: Proxy TrimDone)
               mapM_ triggerEvent [1..10]
               (_, (PersistMessage evtid _ ):_) <- retry requestTimeout $
                                                getState rGroup
@@ -145,7 +145,7 @@ tests (AbstractTransport transport breakConnection _) = do
                           retry requestTimeout (getState rGroup)
               assert (before /= trim1 && before /= trim2 && trim1 == trim2)
         , testSuccess "eq-trim-none" ==> \eq _ rGroup -> do
-              subscribe eq (Sub :: Sub TrimDone)
+              subscribe eq (Proxy :: Proxy TrimDone)
               mapM_ triggerEvent [1..10]
               before <- map persistEventId . snd <$>
                           retry requestTimeout (getState rGroup)
@@ -171,7 +171,7 @@ tests (AbstractTransport transport breakConnection _) = do
               _ <- expect :: Process (HAEvent Int)
               return ()
         , testSuccess "eq-should-record-that-rc-died" $ setup $ \eq _ _ -> do
-              subscribe eq (Sub :: Sub RCDied)
+              subscribe eq (Proxy :: Proxy RCDied)
               rc <- spawnLocal $ return ()
               send eq rc
               -- Wait for confirmation of RC death.
@@ -199,7 +199,7 @@ tests (AbstractTransport transport breakConnection _) = do
                   )
                   (flip exit "test finished")
                   $ \rc -> do
-                subscribe eq (Sub :: Sub RCLost)
+                subscribe eq (Proxy :: Proxy RCLost)
                 send eq rc
                 eid <- triggerEvent 1
                 -- The RC should forward the event to me.
@@ -239,7 +239,7 @@ tests (AbstractTransport transport breakConnection _) = do
             rc <- spawnLocal $ return ()
             send eq rc
             evs <- Set.fromList <$> forM [1..eventsNum] triggerEvent
-            subscribe eq (Sub :: Sub RCDied)
+            subscribe eq (Proxy :: Proxy RCDied)
             replicateM_ testNum $ do
               self <- getSelfPid
               rc' <- spawnLocal $ do
