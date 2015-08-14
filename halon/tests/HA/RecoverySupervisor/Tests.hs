@@ -38,6 +38,7 @@ import Control.Distributed.Process
   , exit
   , unClosure
   , NodeId(..)
+  , RemoteTable
   )
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
 import Control.Distributed.Process.Internal.Types
@@ -66,9 +67,12 @@ import Control.Concurrent
   , putMVar
   , takeMVar
   , tryTakeMVar
+#ifndef USE_MOCK_REPLICATOR
   , threadDelay
+#endif
   )
 import Control.Exception ( SomeException )
+import qualified Control.Exception as E
 import Control.Monad
   ( liftM3
   , void
@@ -373,11 +377,10 @@ testSplit :: Transport
                -- ^ Group handle.
                -> Process ())
           -> IO ()
-testSplit transport t amountOfReplicas action = withTmpDirectory $ do
-    controlNode <- newLocalNode transport $ __remoteTable remoteTable
-
-    ns <- replicateM amountOfReplicas $ newLocalNode transport
-                                      $ __remoteTable remoteTable
+testSplit transport t amountOfReplicas action = withTmpDirectory $
+  withLocalNodes amountOfReplicas transport (__remoteTable remoteTable)
+   $ \ns -> withLocalNode transport (__remoteTable remoteTable)
+   $ \controlNode -> do
     events    <- newTChanIO
     mTestDone <- newEmptyMVar
     tryRunProcess controlNode $ do
@@ -407,21 +410,15 @@ testSplit transport t amountOfReplicas action = withTmpDirectory $ do
       liftIO $ putMVar mTestDone ()
 
     takeMVar mTestDone
-    -- Exit after transport stops being used.
     -- TODO: implement closing RGroups and call it here.
-    threadDelay (2*pollingPeriod)
-    mapM_ closeLocalNode (controlNode:ns)
-    -- mapM_ (flip terminateLocalProcesses Nothing) ns
 #endif
 
 rsTest :: Transport -> Bool -> ([LocalNode] -> TestCounters -> MC_RG RSState -> Process ()) -> IO ()
-rsTest transport oneNode action = withTmpDirectory $ do
-  let amountOfReplicas = 4
-  ns@(n1:_) <-
-    replicateM amountOfReplicas
-        $ newLocalNode transport
-        $ __remoteTable remoteTable
-  controlNode <- newLocalNode transport $ __remoteTable remoteTable
+rsTest transport oneNode action = withTmpDirectory $
+  let amountOfReplicas = 4 in
+  withLocalNodes amountOfReplicas transport (__remoteTable remoteTable)
+   $ \ns@(n1:_) -> withLocalNode transport (__remoteTable remoteTable)
+   $ \controlNode -> do
   mTestDone <- newEmptyMVar
   tryRunProcess controlNode $ do
       let nids = map localNodeId $ if oneNode
@@ -445,13 +442,6 @@ rsTest transport oneNode action = withTmpDirectory $ do
   -- Exit after transport stops being used.
   -- TODO: fix closeTransport and call it here (see ticket #211).
   -- TODO: implement closing RGroups and call it here.
-  threadDelay (2*pollingPeriod)
-  -- TODO: Uncomment the following line when terminateLocalProcesses
-  -- does not block indefinitely.
-  -- mapM_ (flip terminateLocalProcesses (Just pollingPeriod)) ns
-  mapM_ closeLocalNode (controlNode:ns)
-  -- mapM_ (flip terminateLocalProcesses Nothing) (controlNode:ns)
-
 
 timerTests :: Transport -> TestTree
 timerTests transport = testGroup "RS Timer"
@@ -467,8 +457,8 @@ timerTests transport = testGroup "RS Timer"
 data TimerData = TimerData { firedAt :: IORef Int64 }
 
 testTimerRunAfterTimeout :: Transport -> Assertion
-testTimerRunAfterTimeout transport = do
-  node <- newLocalNode transport $ __remoteTable remoteTable
+testTimerRunAfterTimeout transport =
+  withLocalNode transport (__remoteTable remoteTable) $ \node -> do
   td <- TimerData <$> newIORef 0
   runProcess node $ do
     forM_ [100,1000,10000] $ \delay -> do
@@ -481,8 +471,8 @@ testTimerRunAfterTimeout transport = do
                           (tf'-tf >= fromIntegral delay)
 
 testTimerCancelled :: Transport -> Assertion
-testTimerCancelled transport = do
-  node <- newLocalNode transport $ __remoteTable remoteTable
+testTimerCancelled transport =
+  withLocalNode transport (__remoteTable remoteTable) $ \node -> do
   td <- liftIO $ TimerData <$> newIORef 0
   runProcess node $ do
     forM_ [100,1000,10000] $ \delay -> do
@@ -498,8 +488,8 @@ testTimerCancelled transport = do
            writeIORef (firedAt td) 0
 
 testTimerConcurrentCancel :: Transport -> Assertion
-testTimerConcurrentCancel transport = do
-  node <- newLocalNode transport $ __remoteTable remoteTable
+testTimerConcurrentCancel transport =
+  withLocalNode transport (__remoteTable remoteTable) $ \node -> do
   td <- liftIO $ TimerData <$> newIORef 0
   runProcess node $ do
     let delay = 10000
@@ -515,3 +505,15 @@ testTimerConcurrentCancel transport = do
          tf' <- timeSpecToMicro <$> getTime Monotonic
          assertBool "we missed timeout"
                     (tf'-tf >= fromIntegral delay)
+
+withLocalNode :: Transport -> RemoteTable -> (LocalNode -> IO a) -> IO a
+withLocalNode t rt = E.bracket  (newLocalNode t rt) closeLocalNode
+
+withLocalNodes :: Int
+               -> Transport
+               -> RemoteTable
+               -> ([LocalNode] -> IO a)
+               -> IO a
+withLocalNodes 0 _t _rt f = f []
+withLocalNodes n t rt f = withLocalNode t rt $ \node ->
+    withLocalNodes (n - 1) t rt (f . (node :))
