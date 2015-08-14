@@ -90,6 +90,9 @@ newtype PhaseHandle = PhaseHandle { _phHandle :: String }
 --   up options that will change the engine behavior.
 type Specification s a = Program (Declare s) a
 
+-- | For compability purpose.
+type Definitions s a = Specification s a
+
 -- | Type level trick in order to make sure that the last rule state machine
 --   instruction is a 'start' call.
 data Started g l = StartingPhase l (Phase g l)

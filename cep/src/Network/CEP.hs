@@ -13,11 +13,14 @@ module Network.CEP
     -- * Specification API
       PhaseM
     , RuleM
+    , Definitions
     , Specification
     , Token
     , Scope(..)
     , ForkType(..)
     , Logs(..)
+    , PhaseHandle
+    , Started
     , wants
     , directly
     , setPhase
