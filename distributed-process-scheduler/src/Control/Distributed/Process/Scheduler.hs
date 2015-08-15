@@ -23,7 +23,7 @@ import "distributed-process" Control.Distributed.Process (Process, ProcessId, Re
 -- jump to the appropriate function.
 
 {-# NOINLINE startScheduler #-}
-startScheduler :: [ProcessId] -> Int -> Process ()
+startScheduler :: [ProcessId] -> Int -> Int -> Process ()
 startScheduler = if schedulerIsEnabled
                  then Internal.startScheduler
                  else error "Scheduler not enabled."
@@ -35,10 +35,10 @@ stopScheduler = if schedulerIsEnabled
                 else error "Scheduler not enabled."
 
 {-# NOINLINE withScheduler #-}
-withScheduler  :: [ProcessId] -> Int -> Process a -> Process a
+withScheduler  :: [ProcessId] -> Int -> Int -> Process a -> Process a
 withScheduler = if schedulerIsEnabled
                 then Internal.withScheduler
-                else \_ _ p -> p
+                else \_ _ _ p -> p
 
 {-# NOINLINE __remoteTable #-}
 __remoteTable  :: RemoteTable -> RemoteTable

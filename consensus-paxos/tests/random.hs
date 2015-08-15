@@ -58,9 +58,13 @@ main = do
                  forM_ (take numIterations $ randoms $ mkStdGen s) run
            putStrLn $ "SUCCESS!"
 
+-- | microseconds/transition
+clockSpeed :: Int
+clockSpeed = 10000
+
 run :: Int -> Process ()
 run s = let (s0,s1) = split $ mkStdGen s
-         in withScheduler [] (fst $ random s0) $ do
+         in withScheduler [] (fst $ random s0) clockSpeed $ do
   let procs = 5
   αs <- forM [1..procs] $ \n -> do
           mref <- liftIO $ newIORef Map.empty

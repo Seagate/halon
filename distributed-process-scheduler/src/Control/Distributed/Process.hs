@@ -56,6 +56,7 @@ module Control.Distributed.Process
   , unClosure
   , closure
   , handleMessage
+  , handleMessageIf
   , liftIO
   , finally
   , bracket
@@ -65,6 +66,9 @@ module Control.Distributed.Process
   , say
   , newChan
   , catch
+  , catchExit
+  , catchesExit
+  , mask
   , mask_
   , try
   , onException

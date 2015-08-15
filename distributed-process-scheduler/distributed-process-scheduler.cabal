@@ -39,10 +39,12 @@ Library
                    Control.Distributed.Process.Serializable
                    Control.Distributed.Process.Trans
                    Control.Distributed.Process.Scheduler
+                   System.Clock
   Other-Modules:   Control.Distributed.Process.Scheduler.Internal
   Build-Depends:   base
                    ,binary >= 0.6
                    ,bytestring
+                   ,clock
                    ,containers
                    ,data-accessor >= 0.2.2.6
                    ,distributed-process >= 0.4

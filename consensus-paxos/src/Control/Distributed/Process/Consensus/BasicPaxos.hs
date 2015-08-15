@@ -86,11 +86,51 @@ spawnLocalLinked p = do
   self <- getSelfPid
   spawnLocal $ link self >> p
 
+data TimeoutExit = TimeoutExit
+  deriving (Show, Typeable, Generic)
+
+instance Binary TimeoutExit
+
 -- | A version of 'System.Timeout.timeout' for the 'Process' monad.
 timeout :: Int -> Process a -> Process (Maybe a)
 timeout t action
-    | schedulerIsEnabled = fmap Just action
+    | schedulerIsEnabled = callLocal $ do
+        self <- getSelfPid
+        mv <- liftIO newEmptyMVar
+        _ <- spawnLocal $ do
+          Nothing <- receiveTimeout t [] :: Process (Maybe ())
+          b <- liftIO $ tryPutMVar mv ()
+          if b then exit self TimeoutExit else return ()
+        flip catchExit (\_pid TimeoutExit -> return Nothing) $ do
+          r <- action
+          b <- liftIO $ tryPutMVar mv ()
+          if b then return $ Just r
+          else receiveWait []
     | otherwise = ask >>= liftIO . T.timeout t . (`runLocalProcess` action)
+
+{-
+-- This version is slower for some reason, despite of not using 'callLocal'.
+timeout :: Int -> Process a -> Process (Maybe a)
+timeout t action
+    | schedulerIsEnabled = mask $ \unmask -> do
+        self <- getSelfPid
+        mv <- liftIO newEmptyMVar
+        timer <- spawnLocal $ do
+          Nothing <- receiveTimeout t [] :: Process (Maybe ())
+          b <- liftIO $ tryPutMVar mv ()
+          if b then exit self TimeoutExit else return ()
+        r <- unmask $ flip catchesExit
+            [ \pid msg -> do
+                handleMessageIf msg (\TimeoutExit -> pid == timer)
+                                    (\_ -> return Nothing)
+            ] $ do
+          r <- action
+          b <- liftIO $ tryPutMVar mv ()
+          if b then return $ Just r
+          else receiveWait []
+        return r
+    | otherwise = ask >>= liftIO . T.timeout t . (`runLocalProcess` action)
+-}
 
 -- | A tracing function for debugging purposes.
 paxosTrace :: String -> Process ()

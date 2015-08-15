@@ -45,9 +45,6 @@ transition to happen nor does the receiver process unblock.
 A transition request of type (2) does block the submitter process until the
 scheduler decides to make that transition.
 
-Almost all calls of this library will block unless the scheduler is started
-first.
-
 
 ## Building and installation
 
@@ -128,17 +125,24 @@ We write now a test for the addition function which uses the scheduler:
 
 ```Haskell
 runTest :: Int -> Process ()
-runTest s = withScheduler [] s $ do
-  let n = 2
-  result <- addition n n
-  liftIO $ do
-    putStr $ if result == 2*n then "PASS" else "FAIL"
-    putStrLn $ ": " ++ show s
+runTest s = withScheduler [] s clockSpeed $ do
+    let n = 2
+    result <- addition n n
+    liftIO $ do
+      putStr $ if result == 2*n then "PASS" else "FAIL"
+      putStrLn $ ": " ++ show s
+  where
+    clockSpeed :: Int
+    clockSpeed = 10000
 ```
 
 `runTest` takes a seed value that is used to initialize the scheduler.
 Changing the seed value has the scheduler pick a different set of choices
 whenever it reaches a branching point.
+
+The `clockSpeed` argument indicates the speed of an internal virtual clock.
+This clock is used to determine when timeouts have expired and it is ok to
+execute their handlers.
 
 The function `withScheduler` starts the scheduler and executes the closure
 provided as argument, in our case this is our test. Whatever the test result
@@ -174,7 +178,8 @@ runOnTempNode p =
       runProcess lnid p
 ```
 
-We then do an "export DP_SCHEDULER_ENABLED=1" and run this program.
+We then set the DP_SCHEDULER_ENABLED variable with
+`export DP_SCHEDULER_ENABLED=1` and run this program.
 We get an output similar to what follows:
 
 ```
@@ -191,23 +196,18 @@ FAIL: -8674267892396669880
 ```
 
 It can be seen that most interleavings lead to incorrect results. Fortunately,
-with the seed value, we can run runTest and reproduce the exact same
-interleaving that caused a failure, where running the a test without the
+with the seed value, we can run `runTest` and reproduce the exact same
+interleaving that caused a failure, where running the test without the
 scheduler would hardly hit the race condition.
 
 
 ## Limitations
 
-Only a handful of distributed-process definitions are supported in
-`distributed-process-scheduler`. Some operations like killing a process are
-easy to add, but others are harder, like supporting `receiveTimeout`. If a
-function like `receiveTimeout` is used, it can be faked as 
+The scheduler can handle many primitives of `distributed-process` but not all.
+Support for this primitives is added as needed.
 
-```Haskell
-receiveTimeout _ ms = fmap Just $ receiveWait ms
-```
-
-but testing the behavior in the case the timeout expires is not possible.
+Non-supported primitives are not exported by `Control.Distributed.Process` in
+`distributed-process-scheduler`.
 
 Processes are expected to synchronize exclusively through the supported
 `distributed-process` primitives (`send`, `expect` and `receiveWait`). Should
@@ -222,14 +222,19 @@ circumvent sometimes, as done in the implementation of `callLocal`.
 -- disappear on their own without having to explicitly pluck them out of the
 -- mailbox.
 callLocal :: Process a -> Process a
-callLocal p = do
-  mv <-liftIO $ newEmptyMVar
-  self <- getSelfPid
-  _ <- spawnLocal $ link self >> try p >>= liftIO . putMVar mv
-                      >> when schedulerIsEnabled (send self Done)
-  when schedulerIsEnabled $ do Done <- expect; return ()
-  liftIO $ takeMVar mv
-    >>= either (throwIO :: SomeException -> IO a) return
+callLocal proc = mask $ \release -> do
+    mv    <- liftIO newEmptyMVar :: Process (MVar (Either SomeException a))
+    child <- spawnLocal $ try (release proc) >>= liftIO . putMVar mv
+                            >> when schedulerIsEnabled (send self Done)
+    when schedulerIsEnabled $ fix $ \loop -> do
+      -- The process might be killed before reading the Done message,
+      -- thus some spurious Done message might exist in the mailbox.
+      Done <- expect
+      b <- liftIO $ isEmptyMVar mv
+      when b loop
+    rs <- liftIO (takeMVar mv) `onException`
+            (kill child "exception in parent process" >> liftIO (takeMVar mv))
+    either throw return rs
 ```
 
 Here `callLocal` is using `MVar`s. This does not prevent us from using the

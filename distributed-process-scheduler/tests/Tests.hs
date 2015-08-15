@@ -29,6 +29,10 @@ import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
 import System.IO.Unsafe ( unsafePerformIO )
 
 
+-- | microseconds/transition
+clockSpeed :: Int
+clockSpeed = 2000
+
 say' :: String -> Process ()
 say' = liftIO . modifyIORef traceR . (:)
 
@@ -82,31 +86,34 @@ run s = do
         if schedulerIsEnabled
         then do
           -- running three times with the same seed should produce the same execution
-          [res] <- fmap nub $ replicateM 3 $ execute transport (s+i)
-          checkInvariants res
-          [res'] <- fmap nub $ replicateM 3 $ executeT transport (s+i)
+          [res0] <- fmap nub $ replicateM 3 $ execute transport (s+i)
+          checkInvariants res0
+          [res1] <- fmap nub $ replicateM 3 $ executeT transport (s+i)
           -- lifting Process has the same effect as running process unlifted
-          True <- return $ res == res'
-          [res''] <- fmap nub $ replicateM 3 $ executeChan transport (s+i)
-          checkInvariants res''
-          [res'''] <- fmap nub $ replicateM 3 $ executeNSend transport (s+i)
-          checkInvariants res'''
-          [res''''] <- fmap nub $ replicateM 3 $ executeRegister transport (s+i)
+          True <- return $ res0 == res1
+          [res2] <- fmap nub $ replicateM 3 $ executeChan transport (s+i)
+          checkInvariants res2
+          [res3] <- fmap nub $ replicateM 3 $ executeNSend transport (s+i)
+          checkInvariants res3
+          [res4] <- fmap nub $ replicateM 3 $ executeRegister transport (s+i)
+          [res5] <- fmap nub $ replicateM 3 $ executeTimeouts transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
-          return $ res ++ res'' ++ res''' ++ res''''
+          return $ res0 ++ res2 ++ res3 ++ res4 ++ res5
         else do
-          res <- execute transport (s+i)
-          checkInvariants res
-          res' <- executeT transport (s+i)
-          checkInvariants res'
-          res'' <- executeChan transport (s+i)
-          checkInvariants res''
-          res''' <- executeNSend transport (s+i)
-          checkInvariants res'''
+          res0 <- execute transport (s+i)
+          checkInvariants res0
+          res1 <- executeT transport (s+i)
+          checkInvariants res1
+          res2 <- executeChan transport (s+i)
+          checkInvariants res2
+          res3 <- executeNSend transport (s+i)
+          checkInvariants res3
+          res4 <- executeRegister transport (s+i)
+          res5 <- executeTimeouts transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
-          return $ res ++ res' ++ res'' ++ res'''
+          return $ res0 ++ res1 ++ res2 ++ res3 ++ res4 ++ res5
       putStrLn $ "Test passed with " ++ show (length res) ++ " different traces."
  where
    checkInvariants res = do
@@ -128,7 +135,7 @@ execute transport seed = do
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
                  ) $
-       runProcess' n $ withScheduler [] seed $ do
+       runProcess' n $ withScheduler [] seed clockSpeed $ do
         self <- getSelfPid
         here <- getSelfNode
         s0 <- spawn here $ $(mkClosure 'senderProcess0) self
@@ -158,7 +165,7 @@ executeRegister transport seed = do
                            readIORef (traceR :: IORef [String]) >>= print
                            throwIO (e :: SomeException)
                ) $ do
-     runProcess' n $ withScheduler [] seed $ do
+     runProcess' n $ withScheduler [] seed clockSpeed $ do
       self <- getSelfPid
       here <- getSelfNode
       -- s1 links to s0
@@ -204,6 +211,21 @@ executeRegister transport seed = do
       True <- return $ s1 == s1'
       liftIO $ fmap reverse $ readIORef traceR
 
+executeTimeouts :: NT.Transport -> Int -> IO [String]
+executeTimeouts transport seed = do
+    resetTraceR
+    n <- newLocalNode transport remoteTable
+    flip E.catch (\e -> do putStr "executeTimeouts.seed: " >> print seed
+                           readIORef (traceR :: IORef [String]) >>= print
+                           throwIO (e :: SomeException)
+               ) $ do
+     runProcess' n $ withScheduler [] seed clockSpeed $ do
+      _s0 <- spawnLocal $ do
+        say' "s0: terminating"
+      Nothing <- receiveTimeout 3000 [ match $ \() -> return () ]
+      say' "main: terminated"
+      liftIO $ fmap reverse $ readIORef traceR
+
 executeNSend :: NT.Transport -> Int -> IO [String]
 executeNSend transport seed = do
       resetTraceR
@@ -214,7 +236,7 @@ executeNSend transport seed = do
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
                  ) $ do
-       runProcess' n0 $ withScheduler [] seed $ do
+       runProcess' n0 $ withScheduler [] seed clockSpeed $ do
         self <- getSelfPid
         n <- getSelfNode
         register "self" self
@@ -254,7 +276,7 @@ executeChan transport seed = do
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
                  ) $
-       runProcess' n $ withScheduler [] seed $ do
+       runProcess' n $ withScheduler [] seed clockSpeed $ do
         self <- getSelfPid
         (spBack, rpBack) <- newChan
         _ <- spawnLocal $ do
@@ -301,7 +323,7 @@ executeT transport seed = do
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
                  ) $
-       runProcess' n $ withScheduler [] seed $ do
+       runProcess' n $ withScheduler [] seed clockSpeed $ do
         self <- getSelfPid
         here <- getSelfNode
         s0 <- spawn here $ $(mkClosure 'senderProcessT0) self

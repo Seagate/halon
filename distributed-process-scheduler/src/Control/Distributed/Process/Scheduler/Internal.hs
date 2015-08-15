@@ -51,10 +51,14 @@ module Control.Distributed.Process.Scheduler.Internal
   , matchT
   , matchIfT
   , receiveWaitT
+  -- * Internal communication with the scheduler
+  , getScheduler
+  , SchedulerMsg(..)
   ) where
 
 import Prelude hiding ( (<$>) )
 import Control.Applicative ( (<$>) )
+import Control.Arrow (second)
 import Control.Concurrent.STM
 import "distributed-process" Control.Distributed.Process
     ( Closure, NodeId, Process, ProcessId, ReceivePort, SendPort )
@@ -66,6 +70,7 @@ import Control.Distributed.Process.Serializable ( Serializable )
 import Control.Distributed.Process.Internal.StrictMVar ( withMVar )
 import "distributed-process-trans" Control.Distributed.Process.Trans ( MonadProcess(..) )
 import qualified "distributed-process-trans" Control.Distributed.Process.Trans as DPT
+import Control.Distributed.Process.Internal.Types (LocalProcess(..))
 
 import Control.Concurrent.MVar
     ( newMVar, newEmptyMVar, takeMVar, putMVar, MVar
@@ -78,6 +83,7 @@ import Data.Accessor ((^.))
 import Data.Binary ( Binary(..) )
 import Data.Int
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
+import Data.List (delete, union)
 import Data.Map ( Map )
 import qualified Data.Map as Map
 import Data.Set ( Set )
@@ -103,15 +109,15 @@ schedulerLock = unsafePerformIO $ newMVar False
 
 -- | Holds the scheduler pid if there is a scheduler running.
 {-# NOINLINE schedulerVar #-}
-schedulerVar :: MVar ProcessId
-schedulerVar = unsafePerformIO $ newEmptyMVar
+schedulerVar :: MVar LocalProcess
+schedulerVar = unsafePerformIO newEmptyMVar
 
 -- | A message that the scheduler can deliver.
 data SystemMsg = MailboxMsg ProcessId DP.Message
                | ChannelMsg DP.SendPortId DP.Message
                | LinkExceptionMsg ProcessId ProcessId DP.DiedReason
                | ExitMsg ProcessId ProcessId DP.Message
-  deriving (Typeable, Generic)
+  deriving (Typeable, Generic, Show)
 
 instance Binary SystemMsg
 
@@ -123,8 +129,9 @@ data SchedulerMsg
     | NSend ProcessId NodeId String DP.Message
       -- ^ @NSend source destNode label message@: send the @message@ from
       -- @source@ to @label@ in @destNode@.
-    | Block ProcessId    -- ^ @Block pid@: process @pid@ has no
-                         -- messages to process and is blocked.
+    | Block ProcessId (Maybe Int) -- ^ @Block pid timeout@: process @pid@ has no
+                                  -- messages to process and is blocked with the
+                                  -- given timeout in microseconds.
     | Yield ProcessId    -- ^ @Yield pid@: process @pid@ is ready to continue.
     | CreatedNewProcess ProcessId  ProcessId
                                   -- ^ @CreatedNewProcess parent child@: a new
@@ -134,14 +141,16 @@ data SchedulerMsg
         -- @isLink@ is @True@ when linking is intended.
     | Unmonitor DP.MonitorRef
     | Unlink ProcessId DP.Identifier -- ^ @Unlink who whom@
+    | GetTime ProcessId -- ^ A process wants to know the time.
   deriving (Generic, Typeable)
 
 -- | Messages that the scheduler sends to the tested application.
 data SchedulerResponse
     = Continue     -- ^ Pick a message from your mailbox.
     | TestReceive  -- ^ Look if there is some elegible message in your mailbox.
+    | Timeout      -- ^ Unblock by timing out.
     | OkNewProcess -- ^ Please go on and create the child process.
-  deriving (Generic, Typeable)
+  deriving (Generic, Typeable, Show)
 
 -- | Transitions that the scheduler can choose to perform when all
 -- processes block.
@@ -151,6 +160,8 @@ data TransitionRequest
     | PutNSendMsg NodeId String DP.Message
                     -- ^ Put this nsend'ed message in the mailbox of the target.
     | ContinueMsg ProcessId  -- ^ Have a process continue.
+    | TimeoutMsg ProcessId  -- ^ Have a blocked process timeout.
+  deriving Show
 
 -- | Exit reason sent to stop the scheduler.
 data StopScheduler = StopScheduler
@@ -167,6 +178,7 @@ instance Binary SchedulerTerminated
 
 type ProcessMessages = Map ProcessId (Map ProcessId [SystemMsg])
 type NSendMessages = Map (NodeId, String) (Map ProcessId [DP.Message])
+type Time = Int
 
 -- | Internal scheduler state
 data SchedulerState = SchedulerState
@@ -184,21 +196,48 @@ data SchedulerState = SchedulerState
     , stateMonitors :: Map DP.Identifier [(DP.MonitorRef, Bool)]
       -- | The counter for producing monitor references
     , stateMonitorCounter :: Int32
+      -- | The clock of the simulation is used to decide when
+      -- timeouts are expired.
+    , stateClock :: Time
+      -- | The expired timeouts
+    , stateExpiredTimeouts :: Set ProcessId
+      -- | A map with the pending timeouts
+      --
+      -- Invariants:
+      --
+      -- > null $ Map.keys stateTimeouts `intersect`
+      -- >        Set.toList stateExpiredTimeouts
+      --
+      -- > all (not . (`Map.!` stateProcs)) $ concat $ Map.elems stateTimeouts
+      --
+    , stateTimeouts :: Map Time [ProcessId]
+      -- | Indicates the timeout of a process.
+      --
+      -- Invariant:
+      --
+      -- > Map.keys stateTimeouts == sort (Map.elems stateReverseTimeouts)
+      --
+     , stateReverseTimeouts :: Map ProcessId Time
     }
 
--- | Starts the scheduler assuming the given initial amount of processes and
--- a seed to generate a sequence of random values.
+-- | Starts the scheduler assuming the given initial amount of processes,
+-- a seed to generate a sequence of random values and the amount of microseconds
+-- to increase the clock on every transition.
 startScheduler :: [ProcessId] -- ^ initial processes
                -> Int -- ^ seed
+               -> Int -- ^ microseconds to increase the clock in every
+                      -- transition
                -> Process ()
-startScheduler initialProcs seed0 = do
+startScheduler initialProcs seed0 clockDelta = do
     modifyMVarP schedulerLock
       $ \initialized -> do
         if initialized
          then error "startScheduler: scheduler already started."
          else do
            self <- DP.getSelfPid
-           spid <- DP.spawnLocal $
+           _ <- DP.spawnLocal $ do
+                     lproc <- ask
+                     DP.liftIO $ putMVar schedulerVar lproc
                      ((go SchedulerState
                             { stateSeed     = mkStdGen seed0
                             , stateAlive    = Set.fromList initialProcs
@@ -207,6 +246,10 @@ startScheduler initialProcs seed0 = do
                             , stateNSend    = Map.empty
                             , stateMonitors = Map.empty
                             , stateMonitorCounter = 0
+                            , stateClock           = 0
+                            , stateExpiredTimeouts = Set.empty
+                            , stateTimeouts        = Map.empty
+                            , stateReverseTimeouts = Map.empty
                             }
                        `DP.finally` do
                           DP.liftIO $ modifyMVar_ schedulerLock $
@@ -220,22 +263,25 @@ startScheduler initialProcs seed0 = do
                            putStrLn $ "scheduler died: " ++ show e
                            throwIO (e :: SomeException)
                        )
-           DP.liftIO $ putMVar schedulerVar spid
            return (True,())
   where
     go :: SchedulerState -> Process a
-    go st@(SchedulerState _ alive procs msgs nsMsgs _ _)
+    go st@(SchedulerState _ alive procs msgs nsMsgs _ _ _ expired timeouts _)
         -- Enter this equation if all processes are waiting for a transition
       | Set.size alive == Map.size procs = do
         -- complain if no process has a message and there are no messages to
         -- put in a mailbox
-        when (Map.null (Map.filter id procs)
+        let systemStuck =
+                 Map.null (Map.filter id procs)
               && Map.null msgs
-              && Map.null nsMsgs) $
+              && Map.null nsMsgs
+              && Set.null expired
+        when (systemStuck && Map.null timeouts) $
           error $ "startScheduler: All processes (" ++ show (Set.size alive) ++
                   ") are blocked."
         -- pick next transition
-        let (r , st') = pickNextTransition st
+        let (r , st') = pickNextTransition $
+                          if systemStuck then jumpToNextTimeout st else st
         case r of
           PutMsg pid msg | isExceptionMsg msg -> do
              forward msg
@@ -267,11 +313,17 @@ startScheduler initialProcs seed0 = do
           ContinueMsg pid -> do
              DP.send pid Continue
              go st'
+          TimeoutMsg pid -> do
+             DP.send pid Timeout
+             go st'
 
     -- enter the next equation if some process is still active
-    go st@(SchedulerState _ alive procs msgs nsMsgs monitors mcounter) =
+    go st@(SchedulerState _ alive procs msgs nsMsgs monitors mcounter clock
+                          expired timeouts revTimeouts
+          ) =
       DP.receiveWait
         [ DP.match $ \m -> case m of
+        GetTime pid -> DP.send pid clock >> go st
         -- a process is sending a message
         Send source pid msg -> do
             go st
@@ -292,21 +344,38 @@ startScheduler initialProcs seed0 = do
                              nsMsgs
               }
         -- a process has a message and is ready to process it
-        Yield pid ->
-            go st { stateProcs = Map.insert pid True procs }
+        Yield pid -> do
+            let (mt, revTimeouts') =
+                   Map.updateLookupWithKey (\_ _ -> Nothing) pid revTimeouts
+            go st { stateProcs = Map.insert pid True procs
+                  , stateExpiredTimeouts = Set.delete pid expired
+                  , stateTimeouts =
+                      maybe timeouts (\t -> multimapDelete t pid timeouts) mt
+                  , stateReverseTimeouts = revTimeouts'
+                  }
         -- a process has no messages and will block
-        Block pid ->
+        Block pid Nothing ->
             go st { stateProcs = Map.insert pid False procs }
+        Block pid (Just ts) -> do
+            let mts = (\t -> multimapDelete t pid timeouts) <$>
+                        Map.lookup pid revTimeouts
+            go st { stateProcs = Map.insert pid False procs
+                  , stateTimeouts =
+                      Map.insertWith union (clock + ts) [pid]
+                        $ maybe timeouts id mts
+                  , stateReverseTimeouts =
+                      Map.insert pid (clock + ts) revTimeouts
+                  }
         -- a new process will be created
         CreatedNewProcess parent child -> do
-            _ <- DP.monitor child
-            DP.send parent OkNewProcess
+            _ <- DP.monitor child  `DP.onException` (DP.liftIO $ putStrLn "CreatedNewProcess0")
+            DP.send parent OkNewProcess `DP.onException` (DP.liftIO $ putStrLn "CreatedNewProcess1")
             go st { stateAlive = Set.insert child alive }
         -- the process who is monitoring whom
         Monitor who whom@(DP.ProcessIdentifier whomPid) isLink -> do
             let ref = DP.MonitorRef (DP.ProcessIdentifier who) mcounter
             if Set.member whomPid alive then do
-              DP.send who ref
+              DP.send who ref `DP.onException` (DP.liftIO $ putStrLn "Monitor0")
               go st { stateMonitors =
                         Map.insertWith (++) whom [(ref, isLink)] monitors
                     , stateMonitorCounter = mcounter + 1
@@ -347,27 +416,39 @@ startScheduler initialProcs seed0 = do
                 forM_ mons $ \( ref@(DP.MonitorRef (DP.ProcessIdentifier p) _)
                               , isLink
                               ) ->
-                  if isLink then do
+                  (if isLink then do
                     self <- DP.getSelfPid
                     sendS $ Send self p
                           $ LinkExceptionMsg pid p reason
-                  else
+                   else
                     -- Scheduler's @send@ not DP's!
                     send p (DP.ProcessMonitorNotification ref pid reason)
+                   ) `DP.onException` DP.liftIO (putStrLn "ProcessNotification failed")
                 -- Resend the death notification so it is handled after the
                 -- monitor notifications above.
                 DP.getSelfPid >>= flip DP.send pmn
                 go st { stateMonitors =
                           Map.delete (DP.ProcessIdentifier pid) monitors
                       }
-              Nothing ->
-                go st { stateAlive    = Set.delete pid alive
-                      , stateProcs    = Map.delete pid procs
-                      , stateMessages = Map.delete pid msgs
-                      , stateMonitors =
-                          Map.delete (DP.ProcessIdentifier pid) monitors
-                      }
-        ]
+              Nothing -> do
+                let (mt, revTimeouts') =
+                      Map.updateLookupWithKey (\_ _ -> Nothing) pid revTimeouts
+                go st
+                  { stateAlive    = Set.delete pid alive
+                  , stateProcs    = Map.delete pid procs
+                  , stateMessages = Map.delete pid msgs
+                  , stateExpiredTimeouts = Set.delete pid expired
+                  , stateTimeouts =
+                      maybe timeouts (\t -> multimapDelete t pid timeouts) mt
+                  , stateReverseTimeouts = revTimeouts'
+                  }
+         ]
+
+    multimapDelete :: (Ord k, Eq a) => k -> a -> Map k [a] -> Map k [a]
+    multimapDelete k x = flip Map.update k $ \xs ->
+      case delete x xs of
+        []  -> Nothing
+        xs' -> Just xs'
 
     -- is the given process waiting for a new message?
     isBlocked pid procs =
@@ -396,8 +477,10 @@ startScheduler initialProcs seed0 = do
                        -> ( TransitionRequest
                           , SchedulerState
                           )
-    pickNextTransition st@(SchedulerState seed _ procs msgs nsMsgs _ _) =
-      chooseUniformly seed $
+    pickNextTransition st@(SchedulerState seed _ procs msgs nsMsgs _ _ _
+                                          expired _ _
+                          ) =
+      second tickClock $ chooseUniformly seed $
         [ let has_a_message = Map.filter id procs
            in (Map.size has_a_message, \i seed' ->
                  let (pid, _) = Map.elemAt i has_a_message
@@ -440,7 +523,40 @@ startScheduler initialProcs seed0 = do
 
           )
         | ((nid, label), nidlMsgs) <- Map.toList nsMsgs
+        ] ++
+        [ (Set.size expired, \i seed' ->
+            let pid = Set.elemAt i expired
+             in ( TimeoutMsg pid
+                , st { stateSeed = seed'
+                     , stateExpiredTimeouts = Set.deleteAt i expired
+                       -- the process is active again
+                     , stateProcs = Map.delete pid procs
+                     }
+                )
+          )
         ]
+
+    -- Moves the clock to the next timeout.
+    jumpToNextTimeout :: SchedulerState -> SchedulerState
+    jumpToNextTimeout st =
+      tickClock st { stateClock = fst $ Map.findMin (stateTimeouts st) }
+
+    tickClock :: SchedulerState -> SchedulerState
+    tickClock st =
+      let clock' = stateClock st + clockDelta
+          (newExpired, mtpid, trest) =
+            Map.splitLookup (clock' + 1) (stateTimeouts st)
+          expired' = Set.unions $
+            stateExpiredTimeouts st : map Set.fromList (Map.elems newExpired)
+       in st { stateClock = clock'
+               -- add the newly expired timeouts
+             , stateExpiredTimeouts = expired'
+               -- remove the newly expired timeouts
+             , stateTimeouts = maybe id (Map.insert (clock' + 1)) mtpid trest
+             , stateReverseTimeouts =
+                 foldr Map.delete (stateReverseTimeouts st) $ concat $
+                   Map.elems newExpired
+             }
 
     forward (MailboxMsg pid msg) = DP.forward msg pid
     forward (ChannelMsg spId msg) = do
@@ -502,9 +618,9 @@ modifyMVarP mv thing = DP.mask $ \restore -> do
 -- | Stops the scheduler.
 stopScheduler :: Process ()
 stopScheduler =
-    do spid <- DP.liftIO (takeMVar schedulerVar)
+    do sproc <- DP.liftIO (takeMVar schedulerVar)
        running <- modifyMVarP schedulerLock $ \running -> do
-         when running $ DP.exit spid StopScheduler
+         when running $ DP.exit (processId sproc) StopScheduler
          return (False,running)
        when running $ do
          SchedulerTerminated <- DP.expect
@@ -514,13 +630,15 @@ stopScheduler =
 -- 'stopScheduler'.
 withScheduler :: [ProcessId]   -- ^ initial processes
               -> Int       -- ^ seed
+              -> Int       -- ^ clock speed (microseconds/transition)
               -> Process a -- ^ computation to wrap
               -> Process a
-withScheduler ps s p = DP.getSelfPid >>= \self ->
-  DP.bracket_ (startScheduler (self:ps) s) stopScheduler p
+withScheduler ps s clockDelta p = DP.getSelfPid >>= \self ->
+  DP.bracket_ (startScheduler (self:ps) s clockDelta) stopScheduler p
 
-getScheduler :: Process ProcessId
-getScheduler = DP.liftIO (readMVar schedulerVar)
+-- | Yields the local process of the scheduler.
+getScheduler :: IO LocalProcess
+getScheduler = readMVar schedulerVar
 
 -- | Sends a transition request of type (1) to the scheduler.
 -- The scheduler will take care of placing the message in the mailbox of the
@@ -553,7 +671,7 @@ sendChan sendPort msg = do
 
 -- | Sends a message to the scheduler.
 sendS :: Serializable a => a -> Process ()
-sendS a = getScheduler >>= flip DP.send a
+sendS a = DP.liftIO getScheduler >>= flip DP.send a . processId
 
 -- The receiveWait and receiveWaitT functions are marked NOINLINE,
 -- because this way the "if" statement only has to be evaluated once
@@ -562,35 +680,44 @@ sendS a = getScheduler >>= flip DP.send a
 
 {-# NOINLINE receiveWait #-}
 receiveWait :: [ Match b ] -> Process b
-receiveWait = if schedulerIsEnabled
-              then receiveWaitSched
-              else DP.receiveWait . map (flip unMatch Nothing)
-  where
-    -- | Submits a transition request of type (2) to the scheduler.
-    -- Blocks until the transition is allowed and any of the match clauses
-    -- is performed.
-    receiveWaitSched ms = do
-        r <- DP.liftIO $ newIORef False
-        go r $ map (flip unMatch $ Just r) ms
-      where
-        go r ms' = do
-          self <- DP.getSelfPid
-          void $ DP.receiveTimeout 0 ms'
-          hasMsg <- DP.liftIO $ readIORef r
-          if hasMsg then do
-            sendS (Yield self)
-            Continue <- DP.expect
-            DP.receiveWait $ map (flip unMatch Nothing) ms
-           else do
-            sendS (Block self)
-            TestReceive <- DP.expect
-            go r ms'
+receiveWait ms =
+    if schedulerIsEnabled
+    then do Just b <- receiveTimeoutM Nothing ms
+            return b
+    else DP.receiveWait $ map (flip unMatch Nothing) ms
 
 {-# NOINLINE receiveTimeout #-}
 receiveTimeout :: Int -> [ Match b ] -> Process (Maybe b)
-receiveTimeout us = if schedulerIsEnabled
-              then fmap Just . receiveWait
-              else DP.receiveTimeout us . map (flip unMatch Nothing)
+receiveTimeout us =
+    if schedulerIsEnabled
+    then receiveTimeoutM (Just us)
+    else DP.receiveTimeout us . map (flip unMatch Nothing)
+
+-- | Submits a transition request of type (2) to the scheduler.
+-- Blocks until the transition is allowed and any of the match clauses
+-- is performed.
+receiveTimeoutM :: Maybe Int -> [ Match b ] -> Process (Maybe b)
+receiveTimeoutM mus ms = do
+    r <- DP.liftIO $ newIORef False
+    go r $ map (flip unMatch $ Just r) ms
+  where
+    go r ms' = do
+      self <- DP.getSelfPid
+      void $ DP.receiveTimeout 0 ms'
+      hasMsg <- DP.liftIO $ readIORef r
+      if hasMsg || mus == Just 0 then do
+        sendS (Yield self)
+        Continue <- DP.expect
+        DP.receiveTimeout 0 $ map (flip unMatch Nothing) ms
+      else do
+        sendS (Block self mus)
+        command <- DP.expect
+        case command of
+          TestReceive -> go r ms'
+          Timeout     -> return Nothing
+          _           ->
+            error $ "C.D.P.S.Internal.receiveTimeoutM: unexpected command "
+                    ++ show command
 
 -- | Shorthand for @receiveWait [ match return ]@
 expect :: Serializable a => Process a
@@ -803,6 +930,6 @@ receiveWaitT = if schedulerIsEnabled
             Continue <- liftProcess DP.expect
             DPT.receiveWaitT $ map (flip unMatchT Nothing) ms
            else do
-            liftProcess $ sendS (Block self)
+            liftProcess $ sendS (Block self Nothing)
             TestReceive <- liftProcess DP.expect
             go r ms'
