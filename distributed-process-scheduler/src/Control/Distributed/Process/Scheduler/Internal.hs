@@ -86,7 +86,7 @@ import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
 import System.Posix.Env ( getEnv )
 import System.IO.Unsafe ( unsafePerformIO )
-import System.Random ( StdGen, randomR, mkStdGen )
+import System.Random
 
 
 -- | @True@ iff the package "distributed-process-scheduler" should be
@@ -378,40 +378,39 @@ startScheduler initialProcs seed0 = do
     isExceptionMsg (ExitMsg _ _ _) = True
     isExceptionMsg _ = False
 
+    -- | @chooseUniformly [(n_0, f_0),...,(n_k, f_k)] g@
+    -- Chooses a value from the range @(0, sum n_i)@ and then applies the
+    -- function @f_i@ corresponding to the subrange of the selected value.
+    chooseUniformly :: (Num i, Ord i, Random i, RandomGen g)
+                    => g -> [(i, i -> g -> a)] -> a
+    chooseUniformly seed ranges =
+      let (i, seed') = randomR (0, sum (map fst ranges) - 1) seed
+          pick xs n = case xs of
+            [] -> error "Scheduler.chooseUniformly: used with empty list."
+            (k, f) : xs' | n < k     -> f n seed'
+                         | otherwise -> pick xs' (n - k)
+       in pick ranges i
+
     -- Picks the next transition.
     pickNextTransition :: SchedulerState
                        -> ( TransitionRequest
                           , SchedulerState
                           )
     pickNextTransition st@(SchedulerState seed _ procs msgs nsMsgs _ _) =
-      let has_a_message = Map.filter id procs
-          msgsSizes@(msgsSize:_) =
-              Map.foldl' (\ss@(!s:_) ms -> s + Map.size ms : ss) [0] msgs
-          nsMsgsSizes@(nsMsgsSize:_) =
-              Map.foldl' (\ss@(!s:_) ms -> s + Map.size ms : ss) [0] nsMsgs
-          (i,seed') = randomR (0, Map.size has_a_message +
-                                  msgsSize +
-                                  nsMsgsSize - 1
-                              )
-                              seed
-       in if i < Map.size has_a_message
-        then let pid = Map.keys has_a_message !! i
-              in ( ContinueMsg pid
-                 , st { stateSeed  = seed'
-                        -- the process is active again
-                      , stateProcs = Map.delete pid procs
-                      }
-                 )
-        else if i < Map.size has_a_message + msgsSize
-        then let -- index in the range of messages to send
-                 i' = i - Map.size has_a_message
-                 -- the start of the range of senders of messages to the chosen
-                 -- process
-                 i'' : rest = dropWhile (i'<) msgsSizes
-                 -- the chosen process
-                 (pid, pidMsgs) = Map.elemAt (length rest) msgs
-                 -- the chosen sender
-                 (sender, m : ms) = Map.elemAt (i' - i'') pidMsgs
+      chooseUniformly seed $
+        [ let has_a_message = Map.filter id procs
+           in (Map.size has_a_message, \i seed' ->
+                 let (pid, _) = Map.elemAt i has_a_message
+                  in ( ContinueMsg pid
+                     , st { stateSeed  = seed'
+                            -- the process is active again
+                          , stateProcs = Map.delete pid procs
+                          }
+                     )
+              )
+        ] ++
+        [ (Map.size pidMsgs, \i seed' ->
+             let (sender, m : ms) = Map.elemAt i pidMsgs
               in ( PutMsg pid m
                  , st { stateSeed = seed'
                       , stateMessages =
@@ -421,15 +420,11 @@ startScheduler initialProcs seed0 = do
                           else Map.adjust (Map.adjust tail sender) pid msgs
                       }
                  )
-        else let -- index in the range of messages to send
-                 i' = i - Map.size has_a_message - msgsSize
-                 -- the start of the range of senders of messages to the chosen
-                 -- process
-                 i'' : rest = dropWhile (i'<) nsMsgsSizes
-                 -- the chosen process
-                 ((nid, label), nidlMsgs) = Map.elemAt (length rest) nsMsgs
-                 -- the chosen sender
-                 (sender, m : ms) = Map.elemAt (i' - i'') nidlMsgs
+          )
+        | (pid, pidMsgs) <- Map.toList msgs
+        ] ++
+        [ (Map.size nidlMsgs, \i seed' ->
+             let (sender, m : ms) = Map.elemAt i nidlMsgs
               in ( PutNSendMsg nid label m
                  , st { stateSeed = seed'
                       , stateNSend =
@@ -442,6 +437,10 @@ startScheduler initialProcs seed0 = do
                                           nsMsgs
                       }
                  )
+
+          )
+        | ((nid, label), nidlMsgs) <- Map.toList nsMsgs
+        ]
 
     forward (MailboxMsg pid msg) = DP.forward msg pid
     forward (ChannelMsg spId msg) = do
