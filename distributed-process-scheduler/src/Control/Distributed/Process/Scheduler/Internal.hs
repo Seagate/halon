@@ -123,11 +123,9 @@ data SchedulerMsg
     | NSend ProcessId NodeId String DP.Message
       -- ^ @NSend source destNode label message@: send the @message@ from
       -- @source@ to @label@ in @destNode@.
-    | Blocking ProcessId       -- ^ @Blocking pid@: process @pid@ has no
-                               -- messages to process and is blocked.
-    | HasMessage ProcessId     -- ^ @HasMessage pid@: process @pid@ is ready
-                               -- to pick a message from its mailbox (and there
-                               -- is at least one elegible message).
+    | Block ProcessId    -- ^ @Block pid@: process @pid@ has no
+                         -- messages to process and is blocked.
+    | Yield ProcessId    -- ^ @Yield pid@: process @pid@ is ready to continue.
     | CreatedNewProcess ProcessId  ProcessId
                                   -- ^ @CreatedNewProcess parent child@: a new
                                   -- process will be created by @parent@.
@@ -140,7 +138,7 @@ data SchedulerMsg
 
 -- | Messages that the scheduler sends to the tested application.
 data SchedulerResponse
-    = Receive      -- ^ Pick a message from your mailbox.
+    = Continue     -- ^ Pick a message from your mailbox.
     | TestReceive  -- ^ Look if there is some elegible message in your mailbox.
     | OkNewProcess -- ^ Please go on and create the child process.
   deriving (Generic, Typeable)
@@ -152,7 +150,7 @@ data TransitionRequest
                   -- ^ Deliver this message to mailbox, channel or as exception.
     | PutNSendMsg NodeId String DP.Message
                     -- ^ Put this nsend'ed message in the mailbox of the target.
-    | ReceiveMsg ProcessId  -- ^ Have a process pick a message from its mailbox.
+    | ContinueMsg ProcessId  -- ^ Have a process continue.
 
 -- | Exit reason sent to stop the scheduler.
 data StopScheduler = StopScheduler
@@ -266,8 +264,8 @@ startScheduler initialProcs seed0 = do
                            return $ Map.delete pid (stateProcs st')
                    else return $ stateProcs st'
                  go st' { stateProcs = procs'' }
-          ReceiveMsg pid -> do
-             DP.send pid Receive
+          ContinueMsg pid -> do
+             DP.send pid Continue
              go st'
 
     -- enter the next equation if some process is still active
@@ -294,10 +292,10 @@ startScheduler initialProcs seed0 = do
                              nsMsgs
               }
         -- a process has a message and is ready to process it
-        HasMessage pid ->
+        Yield pid ->
             go st { stateProcs = Map.insert pid True procs }
         -- a process has no messages and will block
-        Blocking pid ->
+        Block pid ->
             go st { stateProcs = Map.insert pid False procs }
         -- a new process will be created
         CreatedNewProcess parent child -> do
@@ -398,7 +396,7 @@ startScheduler initialProcs seed0 = do
                               seed
        in if i < Map.size has_a_message
         then let pid = Map.keys has_a_message !! i
-              in ( ReceiveMsg pid
+              in ( ContinueMsg pid
                  , st { stateSeed  = seed'
                         -- the process is active again
                       , stateProcs = Map.delete pid procs
@@ -581,11 +579,11 @@ receiveWait = if schedulerIsEnabled
           void $ DP.receiveTimeout 0 ms'
           hasMsg <- DP.liftIO $ readIORef r
           if hasMsg then do
-            sendS (HasMessage self)
-            Receive <- DP.expect
+            sendS (Yield self)
+            Continue <- DP.expect
             DP.receiveWait $ map (flip unMatch Nothing) ms
            else do
-            sendS (Blocking self)
+            sendS (Block self)
             TestReceive <- DP.expect
             go r ms'
 
@@ -732,24 +730,24 @@ spawn nid cp = do
 whereis :: String -> Process (Maybe ProcessId)
 whereis label = do
     self <- DP.getSelfPid
-    sendS (HasMessage self)
-    Receive <- DP.expect
+    sendS (Yield self)
+    Continue <- DP.expect
     DP.whereis label
 
 -- | Registers a process in the local registry.
 register :: String -> ProcessId -> Process ()
 register label p = do
     self <- DP.getSelfPid
-    sendS (HasMessage self)
-    Receive <- DP.expect
+    sendS (Yield self)
+    Continue <- DP.expect
     DP.register label p
 
 -- | Looks up a process in the registry of a node.
 whereisRemoteAsync :: NodeId -> String -> Process ()
 whereisRemoteAsync n label = do
     self <- DP.getSelfPid
-    sendS (HasMessage self)
-    Receive <- DP.expect
+    sendS (Yield self)
+    Continue <- DP.expect
     DP.whereisRemoteAsync n label
     reply <- DP.receiveWait
       [ DP.matchIf (\(DP.WhereIsReply label' _) -> label == label') return ]
@@ -759,8 +757,8 @@ whereisRemoteAsync n label = do
 registerRemoteAsync :: NodeId -> String -> ProcessId -> Process ()
 registerRemoteAsync n label p = do
     self <- DP.getSelfPid
-    sendS (HasMessage self)
-    Receive <- DP.expect
+    sendS (Yield self)
+    Continue <- DP.expect
     DP.registerRemoteAsync n label p
     reply <- DP.receiveWait
       [ DP.matchIf (\(DP.RegisterReply label' _) -> label == label') return ]
@@ -802,10 +800,10 @@ receiveWaitT = if schedulerIsEnabled
           void $ DPT.receiveTimeoutT 0 ms'
           hasMsg <- liftProcess $ DP.liftIO $ readIORef r
           if hasMsg then do
-            liftProcess $ sendS (HasMessage self)
-            Receive <- liftProcess DP.expect
+            liftProcess $ sendS (Yield self)
+            Continue <- liftProcess DP.expect
             DPT.receiveWaitT $ map (flip unMatchT Nothing) ms
            else do
-            liftProcess $ sendS (Blocking self)
+            liftProcess $ sendS (Block self)
             TestReceive <- liftProcess DP.expect
             go r ms'
