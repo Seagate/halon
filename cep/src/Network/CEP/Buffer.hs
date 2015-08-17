@@ -1,6 +1,5 @@
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE Rank2Types                #-}
-{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE GADTs      #-}
+{-# LANGUAGE Rank2Types #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 --
@@ -15,16 +14,26 @@ module Network.CEP.Buffer
     , bufferGet
     , bufferLength
     , bufferPeek
-    , bufferDump
     , bufferEmpty
     , fifoBuffer
     , emptyFifoBuffer
+    , merelyEqual
     ) where
 
+import Prelude hiding (length)
 import Data.Dynamic
-import Data.Foldable (traverse_)
+import Data.Foldable (toList)
 
-import Control.Monad.Trans
+import Data.Sequence
+
+data Input a where
+    Insert  :: Typeable e => e -> Input Buffer
+    Get     :: Typeable e => Index -> Input (Maybe (Index, e, Buffer))
+    Length  :: Input Int
+    Display :: Input String
+    Indexes :: Input [Index]
+
+newtype Buffer = Buffer (forall a. Input a -> a)
 
 -- | FIFO insert strategies.
 data FIFOType
@@ -39,159 +48,77 @@ type Index = Int
 initIndex :: Index
 initIndex = (-1)
 
-data FIFO =
-    FIFO
-    { _fifoFixed :: !(Maybe Int)
-    , _fifoSize  :: !Int
-    , _fifoStep  :: !Int
-    , _fifoElems :: ![(Int, Dynamic)]
-    }
-
-instance Show FIFO where
-    show (FIFO _ _ _ xs) = show xs
-
-instance Eq FIFO where
-    a == b =
-      _fifoFixed a   == _fifoFixed b
-      && _fifoSize a == _fifoSize b
-      && _fifoStep a == _fifoStep b
-      && (fmap fst $ _fifoElems a) == (fmap fst $ _fifoElems b)
-
-_fifoNew :: FIFOType -> FIFO
-_fifoNew typ =
-    FIFO
-    { _fifoFixed = case typ of
-                     Unbounded -> Nothing
-                     Bounded i -> Just i
-    , _fifoSize  = 0
-    , _fifoStep  = 0
-    , _fifoElems = []
-    }
-
-_append :: [a] -> a -> [a]
-_append xs x = xs ++ [x]
-
-_get :: Typeable a
-     => Index
-     -> [(Index, Dynamic)]
-     -> (Maybe (Index, a), [(Index, Dynamic)])
-_get idx = go []
+fifoBuffer :: FIFOType -> Buffer
+fifoBuffer tpe = Buffer $ go empty 0
   where
-    go acc []     = (Nothing, reverse acc)
-    go acc (r@(i,x):xs) =
-        case fromDynamic x of
-          Just a | idx < i -> (Just (i, a), reverse acc ++ xs)
-          _                -> go (r:acc) xs
-
--- | Buffer storage.
-data Buffer =
-    forall s. (Eq s, Show s, Typeable s) =>
-    Buffer
-    { _bufferInsert :: forall a. Typeable a => a -> s -> s
-    , _bufferGet    :: forall a. Typeable a => Index -> s -> (Maybe (Index, a), s)
-    , _bufferLength :: s -> Int
-    , _bufferDump   :: forall m. MonadIO m => s -> m ()
-    , _bufferState  :: !s
-    }
+    go :: forall a. Seq (Index, Dynamic) -> Int -> Input a -> a
+    go xs idx (Insert e) =
+        case tpe of
+          Bounded limit
+            | length xs == limit ->
+              let _ :< rest = viewl xs
+                  nxt_xs    = rest |> (idx, toDyn e)
+                  nxt_idx   = succ idx in
+              Buffer $ go nxt_xs nxt_idx
+            | otherwise ->
+              let nxt_xs  = xs |> (idx, toDyn e)
+                  nxt_idx = succ idx in
+              Buffer $ go nxt_xs nxt_idx
+          Unbounded ->
+            let nxt_xs  = xs |> (idx, toDyn e)
+                nxt_idx = succ idx in
+            Buffer $ go nxt_xs nxt_idx
+    go xs idx (Get i) =
+        let loop acc cur =
+              case viewl cur of
+                EmptyL -> Nothing
+                elm@(ei, e) :< rest
+                  | i < ei
+                  , Just a <- fromDynamic e ->
+                    let nxt_xs =  acc >< rest in
+                    Just (ei, a, Buffer $ go nxt_xs idx)
+                  | otherwise -> loop (acc |> elm) rest in
+        loop empty xs
+    go xs _ Length = length xs
+    go xs _ Display = show $ toList xs
+    go xs _ Indexes = toList $ fmap fst xs
 
 instance Show Buffer where
-    show (Buffer _ _ _ _ s) = show s
+    show (Buffer k) = k Display
 
-instance Eq Buffer where
-    Buffer _ _ _ _ a == Buffer _ _ _ _ b =
-        case cast b of
-          Just ba -> a == ba
-          _       -> False
+merelyEqual :: Buffer -> Buffer -> Bool
+merelyEqual (Buffer ka) (Buffer kb) = ka Indexes == kb Indexes
 
 -- | Inserts a new message.
 bufferInsert :: Typeable a => a -> Buffer -> Buffer
-bufferInsert a (Buffer bi bg bl dm s) =
-    Buffer
-    { _bufferInsert = bi
-    , _bufferGet    = bg
-    , _bufferLength = bl
-    , _bufferDump   = dm
-    , _bufferState  = bi a s
-    }
+bufferInsert a (Buffer k) = k (Insert a)
 
 -- | Gets the first matching type message along with its order of appearance.
 --   Returned message is removed from the buffer.
 bufferGetWithIndex :: Typeable a
                    => Index
                    -> Buffer
-                   -> (Maybe (Index, a), Buffer)
-bufferGetWithIndex idx (Buffer bi bg bl dm s) =
-    case bg idx s of
-      (res, s') ->
-        let buf' = Buffer
-                   { _bufferInsert = bi
-                   , _bufferGet    = bg
-                   , _bufferLength = bl
-                   , _bufferDump   = dm
-                   , _bufferState  = s'
-                   } in
-        (res, buf')
+                   -> Maybe (Index, a, Buffer)
+bufferGetWithIndex idx (Buffer k) = k (Get idx)
 
 -- | Gets the first matching type message. Returned message is removed from the
 --   buffer.
-bufferGet :: Typeable a => Buffer -> (Maybe a, Buffer)
-bufferGet buf =
-    let (res, buf') = bufferGetWithIndex (-1) buf in (fmap snd res, buf')
+bufferGet :: Typeable a => Buffer -> Maybe (a, Buffer)
+bufferGet = fmap go . bufferGetWithIndex initIndex
+  where
+    go (_, a, buf) = (a, buf)
 
 bufferPeek :: Typeable a => Index -> Buffer -> Maybe (Index, a)
-bufferPeek idx = fst . bufferGetWithIndex idx
+bufferPeek idx = fmap go . bufferGetWithIndex idx
+  where
+    go (i, a, _) = (i, a)
 
 -- | Gets the buffer's length.
 bufferLength :: Buffer -> Int
-bufferLength (Buffer _ _ bl _ s) = bl s
+bufferLength (Buffer k) = k Length
 
 bufferEmpty :: Buffer -> Bool
 bufferEmpty b = bufferLength b == 0
-
--- | Prints the content of the buffer.
-bufferDump :: MonadIO m => Buffer -> m ()
-bufferDump (Buffer _ _ _ dm s) = dm s
-
-_bufFifoInsert :: Typeable a => a -> FIFO -> FIFO
-_bufFifoInsert a fifo@(FIFO (Just limit) i size xs)
-    | size == limit = fifo { _fifoElems = _append (drop 1 xs) (i, toDyn a)
-                           , _fifoStep  = i + 1
-                           }
-    | otherwise     = fifo { _fifoElems = _append xs (i, toDyn a)
-                           , _fifoSize  = size + 1
-                           , _fifoStep  = i + 1
-                           }
-_bufFifoInsert a fifo@(FIFO _ size i xs) =
-    fifo { _fifoElems = _append xs (i, toDyn a)
-         , _fifoSize  = size + 1
-         , _fifoStep  = i + 1
-         }
-
-_bufFifoGet :: Typeable a => Index -> FIFO -> (Maybe (Index, a), FIFO)
-_bufFifoGet idx fifo@(FIFO _ size _ xs) =
-    case _get idx xs of
-      (Just x, xs') ->
-          let fifo' = fifo { _fifoElems = xs'
-                           , _fifoSize  = size - 1
-                           } in
-           (Just x, fifo')
-      _             -> (Nothing, fifo)
-
-_bufFifoDump :: MonadIO m => FIFO -> m ()
-_bufFifoDump (FIFO _ _ _ xs) = liftIO $ do
-    traverse_ print xs
-    putStrLn "~~~~~~~~~~~~~~~~~"
-
--- | FIFO type buffer.
-fifoBuffer :: FIFOType -> Buffer
-fifoBuffer typ =
-    Buffer
-    { _bufferInsert = _bufFifoInsert
-    , _bufferGet    = _bufFifoGet
-    , _bufferLength = _fifoSize
-    , _bufferState  = _fifoNew typ
-    , _bufferDump   = _bufFifoDump
-    }
 
 emptyFifoBuffer :: Buffer
 emptyFifoBuffer = fifoBuffer Unbounded
