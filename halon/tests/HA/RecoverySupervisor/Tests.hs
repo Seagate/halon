@@ -325,11 +325,6 @@ tests oneNode abstractTransport = do
             case e of
               Started _ -> True
               _ -> False
-          -- wait for two more pollingPeriods as smth interestring
-          -- may happen
-          threadDelay (2*pollingPeriod)
-          -- check that there were no interesting events
-          Nothing <- atomically $ tryReadTChan events
           return ()
         RSState (Just _) _ _<- retry requestTimeout $ getState rGroup
         return ()
@@ -343,7 +338,15 @@ tests oneNode abstractTransport = do
             Stopped p -> p == pid
             _ -> False
         threadDelay (3*pollingPeriod)
-        Nothing <- atomically $ tryReadTChan events
+        mev <- atomically $ tryReadTChan events
+        case mev of
+          Nothing -> return ()
+          -- If the RC was killed, it should stop quickly.
+          Just (Started p') -> do
+            Stopped p'' <- atomically $ readTChan events
+            True <- return $ p' == p''
+            return ()
+          _ -> error "unexpected event from the RC"
         return ()
 #endif
     , timerTests transport
