@@ -36,6 +36,7 @@ import Control.Distributed.Process
   , say
   , processNodeId
   , monitor
+  , kill
   , ProcessMonitorNotification(..)
   , receiveTimeout
   , matchIf
@@ -80,7 +81,7 @@ nodeUp (eqs, delay) = do
                 [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref' == ref)
                           (\_ -> return ()) ]
       case msg of
-        Nothing -> go pid
+        Nothing -> kill sender "starting new promulgate action" >> go pid
         Just _  -> expect
 
 remotable ['nodeUp]
