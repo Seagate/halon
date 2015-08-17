@@ -103,13 +103,13 @@ tests (AbstractTransport transport breakConnection _) = do
               pid <- promulgateEQ [selfNode] (1 :: Int)
               _ <- monitor pid
               (_ :: ProcessMonitorNotification) <- expect
-              (_, [PersistMessage _ _]) <- retry requestTimeout $
+              (_, PersistMessage _ _ : _) <- retry requestTimeout $
                                                     getState rGroup
               _ <- expect :: Process (HAEvent Int)
               return ()
         , testSuccess "eq-one-event" ==> \_ _ rGroup -> do
               eid <- triggerEvent 1
-              (_, [PersistMessage eid' _]) <- retry requestTimeout $
+              (_, PersistMessage eid' _ : _) <- retry requestTimeout $
                                                     getState rGroup
               assert (eid == eid')
         , testSuccess "eq-many-events" ==> \_ _ rGroup -> do
@@ -158,14 +158,14 @@ tests (AbstractTransport transport breakConnection _) = do
               assert (before == trim)
         , testSuccess "eq-with-no-rc-should-replicate" $ setup $ \_ _ rGroup -> do
               eid <- triggerEvent 1
-              (_, [PersistMessage eid' _]) <- retry requestTimeout $
+              (_, PersistMessage eid' _ : _) <- retry requestTimeout $
                                                      getState rGroup
               assert (eid == eid')
         , testSuccess "eq-should-lookup-for-rc" $ setup $ \eq _ rGroup -> do
               self <- getSelfPid
               eid <- triggerEvent (1::Int)
-              (_, [PersistMessage eid' _]) <- retry requestTimeout $
-                                                     getState rGroup
+              (_, PersistMessage eid' _ : _) <- retry requestTimeout $
+                                                  getState rGroup
               assert (eid == eid')
               send eq self
               _ <- expect :: Process (HAEvent Int)
@@ -229,7 +229,7 @@ tests (AbstractTransport transport breakConnection _) = do
               eid <- triggerEvent 1
               HAEvent eid' (_ :: Int) _ <- expect
               assert $ eid == eid'
-              (_, [PersistMessage _ _]) <- retry requestTimeout $ getState rGroup
+              (_, PersistMessage _ _ : _) <- retry requestTimeout $ getState rGroup
               return ()
         -- Test that until removed, messages in the EQ are sent at least once
         -- to the RC everytime it spawns.
