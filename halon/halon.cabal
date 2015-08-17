@@ -64,6 +64,7 @@ Library
                    HA.Replicator.Log
                    HA.Replicator.Mock
                    HA.RecoverySupervisor
+                   HA.Storage
                    HA.NodeAgent.Messages
                    HA.NodeUp
                    HA.Network.RemoteTables
@@ -80,6 +81,7 @@ Library
   Build-Depends:   base,
                    binary >= 0.6,
                    bytestring,
+                   bytestring-trie,
                    clock,
                    consensus,
                    consensus-paxos,
