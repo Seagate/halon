@@ -29,14 +29,14 @@ data SM_In g l a where
     Execute :: Subscribers -> g -> (Phase g l) -> SM_In g l SM_Exe
 
 data SM_Out g l a where
-    SM_Complete :: g -> l -> [SpawnSM g l] -> [PhaseHandle] -> SM_Out g l SM_Exe
-    SM_Suspend  :: SM_Out g l SM_Exe
-    SM_Stop     :: SM_Out g l SM_Exe
+    SM_Complete :: g -> l -> [SpawnSM g l] -> [PhaseHandle] -> Maybe SMLogs -> SM_Out g l SM_Exe
+    SM_Suspend  :: Maybe SMLogs -> SM_Out g l SM_Exe
+    SM_Stop     :: Maybe SMLogs -> SM_Out g l SM_Exe
     SM_Unit     :: SM_Out g l ()
 
 smLocalState :: SM_Out g l a -> Maybe l
-smLocalState (SM_Complete _ l _ _) = Just l
-smLocalState _                     = Nothing
+smLocalState (SM_Complete _ l _ _ _) = Just l
+smLocalState _                       = Nothing
 
 -- | Notifies every subscriber that a message those are interested in has
 --   arrived.
@@ -158,9 +158,9 @@ mainSM buf logs l (Execute subs g ph) =
         (new_buf, out) <- runSM (_phName ph) subs buf g l [] logs action
         let final_buf =
               case out of
-                SM_Suspend -> buf
-                SM_Stop    -> buf
-                _          -> new_buf
+                SM_Suspend{} -> buf
+                SM_Stop{}    -> buf
+                _            -> new_buf
             nxt_l = fromMaybe l $ smLocalState out
         return (buf, final_buf, out, SM $ mainSM final_buf logs nxt_l)
       ContCall tpe k -> do
@@ -172,15 +172,15 @@ mainSM buf logs l (Execute subs g ph) =
             (lastest_buf, out) <- runSM name subs new_buf g l [] logs (k b)
             let final_buf =
                   case out of
-                    SM_Suspend -> buf
-                    SM_Stop    -> buf
-                    _          -> lastest_buf
+                    SM_Suspend{} -> buf
+                    SM_Stop{}    -> buf
+                    _            -> lastest_buf
                 nxt_l = fromMaybe l $ smLocalState out
             case out of
               SM_Complete{} -> notifySubscribers subs b
               _             -> return ()
             return (buf, final_buf, out, SM $ mainSM final_buf logs nxt_l)
-          Nothing -> return (buf, buf, SM_Suspend, SM $ mainSM buf logs l)
+          Nothing -> return (buf, buf, SM_Suspend Nothing, SM $ mainSM buf logs l)
 
 -- | 'Phase' state machine execution main loop. Runs until its stack is empty
 --   except if get a 'Suspend' or 'Stop' instruction.
@@ -195,15 +195,15 @@ runSM :: String
       -> Process (Buffer, SM_Out g l SM_Exe)
 runSM pname subs buf g l stk logs action = viewT action >>= go
   where
-    go (Return _) = return (buf, SM_Complete g l (reverse stk) [])
-    go (Continue ph :>>= _) = return (buf, SM_Complete g l (reverse stk) [ph])
+    go (Return _) = return (buf, SM_Complete g l (reverse stk) [] logs)
+    go (Continue ph :>>= _) = return (buf, SM_Complete g l (reverse stk) [ph] logs)
     go (Save s :>>= k) = runSM pname subs buf s l stk logs $ k ()
     go (Load :>>= k) = runSM pname subs buf g l stk logs $ k g
     go (Get Global :>>= k) = runSM pname subs buf g l stk logs $ k g
     go (Get Local :>>= k) = runSM pname subs buf g l stk logs $ k l
     go (Put Global s :>>= k) = runSM pname subs buf s l stk logs $ k ()
     go (Put Local l' :>>= k) = runSM pname subs buf g l' stk logs $ k ()
-    go (Stop :>>= _) = return (buf, SM_Stop)
+    go (Stop :>>= _) = return (buf, SM_Stop logs)
     go (Fork typ naction :>>= k) =
         let bufAction =
               case typ of
@@ -215,19 +215,19 @@ runSM pname subs buf g l stk logs action = viewT action >>= go
     go (Lift m :>>= k) = do
         a <- m
         runSM pname subs buf g l stk logs $ k a
-    go (Suspend :>>= _) = return (buf, SM_Suspend)
+    go (Suspend :>>= _) = return (buf, SM_Suspend logs)
     go (Publish e :>>= k) = do
         notifySubscribers subs e
         runSM pname subs buf g l stk logs $ k ()
     go (PhaseLog ctx lg :>>= k) =
         let new_logs = fmap (S.|> (pname,ctx,lg)) logs in
         runSM pname subs buf g l stk new_logs $ k ()
-    go (Switch xs :>>= _) = return (buf, SM_Complete g l (reverse stk) xs)
+    go (Switch xs :>>= _) = return (buf, SM_Complete g l (reverse stk) xs logs)
     go (Peek idx :>>= k) = do
         case bufferPeek idx buf of
-          Nothing -> return (buf, SM_Suspend)
+          Nothing -> return (buf, SM_Suspend logs)
           Just r  -> runSM pname subs buf g l stk logs $ k r
     go (Shift idx :>>= k) =
         case bufferGetWithIndex idx buf of
-          (Nothing, _)   -> return (buf, SM_Suspend)
+          (Nothing, _)   -> return (buf, SM_Suspend logs)
           (Just r, buf') -> runSM pname subs buf' g l stk logs $ k r
