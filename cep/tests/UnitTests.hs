@@ -7,6 +7,7 @@ import Network.Transport.TCP
 import Test.Tasty
 import Test.Tasty.Ingredients.Basic
 import Test.Tasty.Ingredients.FileReporter
+import qualified CEP.Settings.Tests (tests)
 
 import Tests as Tests
 
@@ -18,7 +19,8 @@ ut = do
     let launch action = do
           n <- newLocalNode t initRemoteTable
           runProcess n action
-        grp = testGroup "CEP - Unit tests" (Tests.tests launch)
+        grp = testGroup "CEP - Unit tests" $
+              CEP.Settings.Tests.tests launch:Tests.tests launch
 
     return grp
 

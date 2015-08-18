@@ -10,6 +10,7 @@ module Network.CEP.Engine where
 
 import Data.Maybe
 import Data.Traversable (for)
+import Data.Foldable (forM_)
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Internal.Types
@@ -216,13 +217,14 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) =
     go msg msg_count = do
       let stk = _ruleStack rd
       (out, nxt_stk) <- runStackDriver _machSubs _machState msg stk
-      let StackOut g infos res = out
+      let StackOut g infos res mlogs = out
           new_rd = rd { _ruleStack = nxt_stk }
           nxt_st = st { _machState         = g
                       , _machTotalProcMsgs = msg_count
                       }
           rinfo = RuleInfo InitRuleName res infos
           info  = RunInfo msg_count (RulesBeenTriggered [rinfo])
+      forM_ _machLogger $ \f -> forM_ mlogs $ \l -> f l g
       case res of
         EmptyStack -> do
           let final_st = nxt_st { _machInitRulePassed = True }
@@ -266,12 +268,13 @@ cepCruise st req@(Run t) =
           subs     = _machSubs cur_st
           g        = _machState cur_st
       (out, nxt_stk) <- runStackDriver subs g i $ _ruleStack rd
-      let StackOut nxt_g hi res = out
+      let StackOut nxt_g hi res mlogs = out
           nxt_rd  = rd { _ruleStack = nxt_stk }
           nxt_dts = M.insert key nxt_rd $ _machRuleData cur_st
           nxt_st  = cur_st { _machRuleData = nxt_dts
                            , _machState    = nxt_g
                            }
           info = RuleInfo ruleName res hi
+      forM_ (_machLogger st) $ \f -> forM_ mlogs $ \l -> f l nxt_g
       return (info, nxt_st)
 cepCruise st req = defaultHandler st cepCruise req

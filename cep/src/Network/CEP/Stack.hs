@@ -6,10 +6,12 @@
 --
 module Network.CEP.Stack where
 
+import Data.Foldable (toList)
 import Data.Traversable (for)
 import Data.Typeable
 
 import           Control.Distributed.Process
+import Data.Monoid ((<>))
 import qualified Data.Map.Strict as M
 
 import Network.CEP.Buffer
@@ -34,6 +36,7 @@ data StackOut g =
     { _soGlobal    :: !g
     , _soExeReport :: !ExecutionReport
     , _soResult    :: !StackResult
+    , _soLogs      :: [Logs]
     }
 
 newtype StackSM g l = StackSM (forall a. StackIn g l a -> a)
@@ -54,7 +57,8 @@ data StackCtxResult g l
                 [SpawnSM g l]
                 [Phase g l]
                 (SM g l)
-    | StackSuspend Buffer (StackCtx g l)
+                (Maybe SMLogs)
+    | StackSuspend Buffer (StackCtx g l) (Maybe SMLogs)
 
 data StackSlot g l
     = OnMainSM (StackCtx g l)
@@ -89,7 +93,7 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
         StackSM $ go (x:xs) sm
     go xs sm (StackIn subs g i) =
         case i of
-          NoMessage -> executeStack subs sm g 0 0 [] [] xs
+          NoMessage -> executeStack subs sm g 0 0 [] [] xs []
           GotMessage (TypeInfo _ (_ :: Proxy e)) msg -> do
             Just (a :: e) <- unwrapMessage msg
             let input = PushMsg a
@@ -105,7 +109,7 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
               (_, _, SM_Unit, nxt_lsm) <- unSM lsm i
               return $ OnChildSM nxt_lsm ph
 
-        executeStack subs nxt_sm g 0 0 [] [] xs'
+        executeStack subs nxt_sm g 0 0 [] [] xs' []
 
     executeStack :: Subscribers
                  -> SM g l
@@ -115,44 +119,54 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
                  -> [ExecutionInfo]
                  -> [StackSlot g l]
                  -> [StackSlot g l]
+                 -> [Logs]
                  -> Process (StackOut g, StackSM g l)
-    executeStack _ sm g ssms tsms rp done [] =
+    executeStack _ sm g ssms tsms rp done [] executeLogs =
         let res = if null done then EmptyStack else NeedMore
             eis = reverse rp
             rep = ExecutionReport ssms tsms eis in
-        return (StackOut g rep res, StackSM $ go (reverse done) sm)
-    executeStack subs sm g ssms tsms rp done (x:xs) =
+        return (StackOut g rep res executeLogs, StackSM $ go (reverse done) sm)
+    executeStack subs sm g ssms tsms rp done (x:xs) executeLogs =
         case x of
           OnMainSM ctx -> do
             res <- contextStack subs sm g ctx
             case res of
-              StackDone pph p_buf buf pinfo g' ss phs nxt_sm -> do
+              StackDone pph p_buf buf pinfo g' ss phs nxt_sm lgs -> do
                 phsm <- createSlots OnMainSM pph phs
                 let ssm    = spawnSMs ss
                     jobs   = phsm ++ ssm
                     n_ssms = ssms + length ssm
                     r      = SuccessExe pinfo p_buf buf
+                    lgs' = maybe executeLogs
+                                 (\ls -> Logs name (toList ls):executeLogs) lgs
                 executeStack subs nxt_sm g' n_ssms tsms (r:rp) done
                                                                   (xs ++ jobs)
-              StackSuspend buf new_ctx ->
+                                                                  lgs'
+              StackSuspend buf new_ctx lgs ->
                 let slot = OnMainSM new_ctx
-                    r    = FailExe (infoTarget ctx) SuspendExe buf  in
-                executeStack subs sm g ssms tsms (r:rp) (slot:done) xs
+                    r    = FailExe (infoTarget ctx) SuspendExe buf
+                    lgs' = maybe executeLogs
+                                 (\ls -> Logs name (toList ls):executeLogs) lgs in
+                executeStack subs sm g ssms tsms (r:rp) (slot:done) xs lgs'
           OnChildSM lsm ctx -> do
             res <- contextStack subs lsm g ctx
             case res of
-              StackDone pph p_buf buf pinfo g' ss phs nxt_lsm -> do
+              StackDone pph p_buf buf pinfo g' ss phs nxt_lsm lgs -> do
                 phsm <- createSlots (OnChildSM nxt_lsm) pph phs
                 let ssm    = spawnSMs ss
                     n_tsms = if null phs then tsms + 1 else tsms
                     n_ssms = length ssm + ssms
                     jobs   = phsm ++ ssm
                     r      = SuccessExe pinfo p_buf buf
-                executeStack subs sm g' n_ssms n_tsms (r:rp) done (xs ++ jobs)
-              StackSuspend buf new_ctx ->
+                    lgs' = maybe executeLogs
+                                 (\ls -> Logs name (toList ls):executeLogs) lgs
+                executeStack subs sm g' n_ssms n_tsms (r:rp) done (xs ++ jobs) lgs'
+              StackSuspend buf new_ctx lgs ->
                 let slot = OnChildSM lsm new_ctx
-                    r    = FailExe (infoTarget ctx) SuspendExe buf in
-                executeStack subs sm g ssms tsms (r:rp) (slot:done) xs
+                    r    = FailExe (infoTarget ctx) SuspendExe buf
+                    lgs' = maybe executeLogs
+                                 (\ls -> Logs name (toList ls):executeLogs) lgs in
+                executeStack subs sm g ssms tsms (r:rp) (slot:done) xs lgs'
 
     contextStack :: Subscribers
                  -> SM g l
@@ -163,27 +177,28 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
         (p_buf, buf, out, nxt_sm) <- unSM sm (Execute subs g ph)
         let pinfo = StackSinglePhase $ _phName ph
         case out of
-          SM_Complete g' _ ss hs -> do
+          SM_Complete g' _ ss hs lgs -> do
             phs <- phases hs
-            return $ StackDone ph p_buf buf pinfo g' ss phs nxt_sm
-          SM_Suspend -> return $ StackSuspend buf ctx
-          SM_Stop    -> return $ StackDone ph buf buf pinfo g [] [] sm
+            return $ StackDone ph p_buf buf pinfo g' ss phs nxt_sm lgs
+          SM_Suspend lgs -> return $ StackSuspend buf ctx lgs
+          SM_Stop    lgs -> return $ StackDone ph buf buf pinfo g [] [] sm lgs
     contextStack subs sm g (StackSwitch ph xs) =
-        let loop buf done []   = return $ StackSuspend buf
-                                        $ StackSwitch ph (reverse done)
-            loop _ done (a:as) = do
+        let loop buf done [] lgs = return $ StackSuspend buf
+                                              (StackSwitch ph (reverse done))
+                                              lgs
+            loop _ done (a:as) lgs = do
               let input = Execute subs g a
               (p_buf, buf, out, nxt_sm) <- unSM sm input
               case out of
-                SM_Complete g' _ ss hs -> do
+                SM_Complete g' _ ss hs lgs' -> do
                   phs <- phases hs
                   let pname = _phName a
                       pas   = fmap _phName $ reverse done
                       pinfo = StackSwitchPhase (_phName ph) pname pas
-                  return $ StackDone a p_buf buf pinfo g' ss phs nxt_sm
-                SM_Suspend -> loop buf (a:done) as
-                SM_Stop    -> loop buf done as
-        in loop emptyFifoBuffer [] xs
+                  return $ StackDone a p_buf buf pinfo g' ss phs nxt_sm (lgs' <> lgs)
+                SM_Suspend lgs' -> loop buf (a:done) as (lgs' <> lgs)
+                SM_Stop    lgs' -> loop buf done as (lgs' <> lgs)
+        in loop emptyFifoBuffer [] xs Nothing
 
     phases hs = for hs $ \h ->
         case M.lookup (_phHandle h) ps of
