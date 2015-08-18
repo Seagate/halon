@@ -22,15 +22,23 @@ data PhaseBufAction = CopyThatBuffer Buffer | CreateNewBuffer
 
 data SpawnSM g l = SpawnSM PhaseBufAction l (PhaseM g l ())
 
+-- | Input type to a state machine.
 data SM_In g l a where
     PushMsg :: Typeable m => m -> SM_In g l ()
+    -- ^ Push a new message into the state machine's buffer.
     Execute :: Subscribers -> g -> (Phase g l) -> SM_In g l a
+    -- ^ Execute the next phase of a state machine.
 
+-- | Output type of a state machine.
 data SM_Out g l where
     SM_Complete :: g -> l -> [SpawnSM g l] -> [PhaseHandle] -> Maybe SMLogs -> SM_Out g l
+    -- ^ The phase has finished processing, yielding a new set of SMs to run.
     SM_Suspend  :: Maybe SMLogs -> SM_Out g l
+    -- ^ The phase has stopped temporarily, and should be invoked again.
     SM_Stop     :: Maybe SMLogs -> SM_Out g l
+    -- ^ The phase has stopped, and should not be executed again.
     SM_Unit     :: SM_Out g l
+    -- ^ The SM has successfully accepted a pushed message.
 
 smLocalState :: SM_Out g l -> Maybe l
 smLocalState (SM_Complete _ l _ _ _) = Just l
@@ -139,7 +147,9 @@ extractSeqMsg s sbuf = go (-1) sbuf s
     go _ _ _ = return Nothing
 
 
--- | Execute a 'Phase' state machine. If it's 'DirectCall' 'Phase', it's runned
+-- | Execute a single phase of a 'Phase' state machine.
+--
+--   If it's 'DirectCall' 'Phase', it's run
 --   directly. If it's 'ContCall' one, we make sure we can satisfy its
 --   dependency. Otherwise, we 'Suspend' that phase.
 runPhase :: Buffer
@@ -180,8 +190,13 @@ runPhase buf logs l (Execute subs g ph) =
             return (buf, final_buf, out, SM $ runPhase final_buf logs nxt_l)
           Nothing -> return (buf, buf, SM_Suspend Nothing, SM $ runPhase buf logs l)
 
--- | 'Phase' state machine execution main loop. Runs until its stack is empty
---   except if get a 'Suspend' or 'Stop' instruction.
+-- | 'PhaseM' state machine execution main loop. Runs a single phase until
+--   there are no more instructions, or until we receive a terminating
+--   instruction.
+--   Terminating instructions are:
+--   - Continue
+--   - Stop
+--   - Suspend
 runPhaseM :: String
           -> Subscribers
           -> Buffer
