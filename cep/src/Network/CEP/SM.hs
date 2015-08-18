@@ -210,8 +210,6 @@ runPhaseM pname subs buf g l stk logs action = viewT action >>= go
   where
     go (Return _) = return (buf, SM_Complete g l (reverse stk) [] logs)
     go (Continue ph :>>= _) = return (buf, SM_Complete g l (reverse stk) [ph] logs)
-    go (Save s :>>= k) = runPhaseM pname subs buf s l stk logs $ k ()
-    go (Load :>>= k) = runPhaseM pname subs buf g l stk logs $ k g
     go (Get Global :>>= k) = runPhaseM pname subs buf g l stk logs $ k g
     go (Get Local :>>= k) = runPhaseM pname subs buf g l stk logs $ k l
     go (Put Global s :>>= k) = runPhaseM pname subs buf s l stk logs $ k ()
