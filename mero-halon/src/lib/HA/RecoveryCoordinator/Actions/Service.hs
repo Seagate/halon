@@ -12,6 +12,7 @@ module HA.RecoveryCoordinator.Actions.Service
   ( -- * Querying services
     lookupRunningService
   , isServiceRunning
+  , findRunningServiceProcesses
     -- * Registering services in the graph
   , registerService
   , registerServiceName
@@ -27,6 +28,7 @@ module HA.RecoveryCoordinator.Actions.Service
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.NodeAgent.Messages (ExitReason(..))
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Hardware (nodesOnHost)
 import qualified HA.ResourceGraph as G
 import HA.Resources
 import HA.Service
@@ -47,8 +49,9 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( mkClosure, staticDecode )
 import Control.Distributed.Static (closureApply)
 import Control.Monad (void)
-
 import Data.Binary (encode)
+import Data.Maybe (catMaybes)
+
 
 import Network.CEP hiding (get, put)
 
@@ -70,6 +73,18 @@ isServiceRunning :: Configuration a
                  -> PhaseM LoopState l Bool
 isServiceRunning n svc =
     fmap (maybe False (const True)) $ lookupRunningService n svc
+
+
+-- | Given a 'Service', find all the corresponding 'ServiceProcess'es
+-- across all the nodes.
+findRunningServiceProcesses :: Configuration a
+                   => Service a
+                   -> PhaseM LoopState l [ServiceProcess a]
+findRunningServiceProcesses svc = do
+  phaseLog "rg-query" $ "Looking for all running services: " ++ show svc
+  rg <- getLocalGraph
+  nodes <- concat <$> mapM nodesOnHost (G.connectedTo Cluster Has rg)
+  catMaybes <$> mapM (`lookupRunningService` svc) nodes
 
 ----------------------------------------------------------
 -- Registering services in the graph                    --

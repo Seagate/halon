@@ -5,6 +5,7 @@
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DeriveDataTypeable    #-}
 {-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
@@ -23,18 +24,24 @@ module HA.Services.Mero
     , m0d__static
     , meroRules
     , MeroConf(..)
+    , notifyMero
     ) where
 
 import HA.EventQueue.Producer (expiate, promulgate)
-import HA.RecoveryCoordinator.Mero (LoopState)
+import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Service
 import HA.Resources
+import HA.Resources.Mero.Note (ConfObject(..), ConfObjectState)
 import HA.Service
 import HA.Services.Mero.CEP (meroRulesF)
 import HA.Services.Mero.Types
+import qualified HA.ResourceGraph as G
 
 import Mero.Epoch (sendEpochBlocking)
 import qualified Mero.Notification
+import Mero.Notification.HAState (Note(..))
 
+import Network.CEP
 import qualified Network.RPC.RPCLite as RPC
 
 import Control.Distributed.Process.Closure
@@ -47,10 +54,8 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process hiding (send)
 import Control.Monad (forever, when, void)
-
 import Data.ByteString (ByteString)
-
-import Network.CEP (Definitions)
+import Data.Maybe (listToMaybe)
 
 updateEpoch :: RPC.ServerEndpoint
             -> RPC.RPCAddress
@@ -143,3 +148,22 @@ remotableDecl [ [d|
 
 meroRules :: Definitions LoopState ()
 meroRules = meroRulesF m0d
+
+
+-- | Combine 'ConfObject's and a 'ConfObjectState' into a 'Set' and
+-- send it to every mero service running on the cluster.
+notifyMero :: [ConfObject] -> ConfObjectState -> PhaseM LoopState l ()
+notifyMero cs st = do
+  pids <- findRunningServiceProcesses m0d
+  phaseLog "action" "Sending configuration update to mero services"
+  rg <- getLocalGraph
+  mapM_ (sendSetEvent rg) pids
+  where
+    setEvent :: Mero.Notification.Set
+    setEvent = Mero.Notification.Set $ map (flip Note st . confObjectId) cs
+
+    sendSetEvent rg p = do
+      liftProcess $ case listToMaybe $ G.connectedTo p MeroChannel rg of
+        Just (TypedChannel chan) -> sendChan chan setEvent
+        _ -> say $
+          "HA.Services.Mero.notifyMero: Cannot find MeroChanel for " ++ show p
