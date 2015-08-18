@@ -280,10 +280,6 @@ data ForkType = NoBuffer | CopyBuffer
 data PhaseInstr g l a where
     Continue :: PhaseHandle -> PhaseInstr g l ()
     -- ^ Jumps to 'Phase' referenced by that handle.
-    Save :: g -> PhaseInstr g l ()
-    -- ^ Persists the global state.
-    Load :: PhaseInstr g l g
-    -- ^ Loads global state from a persistent storage.
     Get :: Scope g l a -> PhaseInstr g l a
     -- ^ Gets scoped state from memory.
     Put :: Scope g l a -> a -> PhaseInstr g l ()
@@ -312,14 +308,6 @@ data PhaseInstr g l a where
     Shift :: Serializable a => Index -> PhaseInstr g l (Index, a)
     -- ^ Consumes a message from the 'Buffer' given a minimun 'Index'. The
     --   'Buffer' is altered.
-
--- | Persists the global state.
-save :: g -> PhaseM g l ()
-save g = singleton $ Save g
-
--- | Loads global state from memory.
-load :: PhaseM g l g
-load = singleton Load
 
 -- | Gets scoped state from memory.
 get :: Scope g l a -> PhaseM g l a

@@ -32,8 +32,6 @@ module Network.CEP
     , phaseHandle
     , start
     , start_
-    , save
-    , load
     , get
     , put
     , modify
