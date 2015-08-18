@@ -26,7 +26,8 @@ data SpawnSM g l = SpawnSM PhaseBufAction l (PhaseM g l ())
 data SM_In g l a where
     PushMsg :: Typeable m => m -> SM_In g l (SM g l)
     -- ^ Push a new message into the state machine's buffer.
-    Execute  :: Subscribers -> g -> (Phase g l) -> SM_In g l (Buffer, Buffer, SM_Out g l, SM g l)
+    Execute  :: Subscribers -> g -> (Phase g l)
+             -> SM_In g l (Process (Buffer, Buffer, SM_Out g l, SM g l))
     -- ^ Execute the next phase of a state machine.
 
 -- | Output type of a state machine.
@@ -53,7 +54,7 @@ notifySubscribers subs a = do
       usend pid (Published a self)
 
 -- | Phase Mealy finite state machine.
-newtype SM g l = SM { unSM :: forall a. SM_In g l a -> Process a }
+newtype SM g l = SM { unSM :: forall a. SM_In g l a -> a }
 
 newSM :: Buffer -> Maybe SMLogs -> l -> SM g l
 newSM buf logs l = SM $ runPhase buf logs l
@@ -154,10 +155,10 @@ runPhase :: Buffer
          -> Maybe SMLogs
          -> l
          -> SM_In g l a
-         -> Process a
+         -> a
 runPhase buf logs l (PushMsg msg) =
     let new_buf = bufferInsert msg buf in
-    return (SM $ runPhase new_buf logs l)
+    SM $ runPhase new_buf logs l
 runPhase buf logs l (Execute subs g ph) =
     case _phCall ph of
       DirectCall action -> do

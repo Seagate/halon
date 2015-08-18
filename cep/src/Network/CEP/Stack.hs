@@ -100,13 +100,11 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
             broadcast subs input xs sm g
 
     broadcast :: Subscribers -> SM_In g l (SM g l) -> [StackSlot g l] -> SM g l -> g -> Process (StackOut g, StackSM g l)
-    broadcast subs i xs sm g = do
-        nxt_sm <- unSM sm i
+    broadcast subs i xs sm g = let nxt_sm = unSM sm i in do
         xs' <- for xs $ \slot ->
           case slot of
             OnMainSM _       -> return slot
-            OnChildSM lsm ph -> do
-              nxt_lsm <- unSM lsm i
+            OnChildSM lsm ph -> let nxt_lsm = unSM lsm i in
               return $ OnChildSM nxt_lsm ph
 
         executeStack subs nxt_sm g 0 0 [] [] xs' []
