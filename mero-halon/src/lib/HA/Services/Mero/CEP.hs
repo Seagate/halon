@@ -6,7 +6,7 @@
 
 module HA.Services.Mero.CEP (meroRulesF) where
 
-import HA.EventQueue.Consumer
+import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Mero
 import HA.ResourceGraph
 import HA.Resources
@@ -53,11 +53,11 @@ meroChannels m0d rg = [ chan | node <- connectedTo Cluster Has rg
 
 meroRulesF :: Service MeroConf -> Definitions LoopState ()
 meroRulesF m0d = do
-  defineSimpleHAEvent "declare-mero-channel" $
+  defineSimple "declare-mero-channel" $
     \(HAEvent _ (DeclareMeroChannel sp c) _) -> do
       registerChannel sp c
 
-  defineSimpleHAEvent "mero-set" $ \(HAEvent _ (Set nvec) _) -> do
+  defineSimple "mero-set" $ \(HAEvent _ (Set nvec) _) -> do
     rg <- getLocalGraph
     let f rg1 (Note oid st) =
           let edges :: [Edge ConfObject Is ConfObjectState]
