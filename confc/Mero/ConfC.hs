@@ -8,12 +8,14 @@
 -- The configuration data are organized in a tree.
 --
 module Mero.ConfC
-  ( module Mero.Conf.Fid
+  ( module Mero.Conf.Context
+  , module Mero.Conf.Fid
   , module Mero.Conf.Obj
   , module Mero.Conf.Tree
   , withConf
   ) where
 
+import Mero.Conf.Context
 import Mero.Conf.Fid
 import Mero.Conf.Internal (withConfC)
 import Mero.Conf.Obj

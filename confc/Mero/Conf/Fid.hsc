@@ -32,7 +32,7 @@ import Text.Printf (printf)
 data Fid = Fid { f_container :: {-# UNPACK #-} !Word64
                , f_key       :: {-# UNPACK #-} !Word64
                }
-  deriving (Eq, Typeable, Generic)
+  deriving (Eq, Ord, Typeable, Generic)
 
 instance Show Fid where
   show (Fid c k) = printf "Fid {f_container = 0x%08x, f_key = %d}" c k

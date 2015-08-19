@@ -121,7 +121,7 @@ foreign import ccall confc_create :: Ptr (Ptr ConfCV) -> Ptr Fid -> CString
 foreign import ccall confc_destroy :: Ptr ConfCV -> IO ()
 
 -- | Root of the configuration tree. Defined in conf/obj.h
-foreign import ccall "&CONF_ROOT_FID" rootFid :: Ptr Fid
+foreign import ccall "&M0_CONF_ROOT_FID" rootFid :: Ptr Fid
 
 --------------------------------------------------------------------------------
 -- Generic Configuration
