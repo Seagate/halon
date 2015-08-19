@@ -145,7 +145,7 @@ data Machine s =
     , _machTotalProcMsgs :: !Int
     , _machInitRulePassed :: !Bool
       -- ^ Indicates the if the init rule has been executed already.
-    , _machRunningSM :: ![(RuleKey,RuleData s)]
+    , _machRunningSM :: [(RuleKey,RuleData s)]
     }
 
 -- | Creates CEP engine state with default properties.
@@ -173,11 +173,13 @@ newEngine st = Engine $ cepInit st
 
 cepInit :: Machine s -> Request m a -> a
 cepInit st i =
-    case _machInitRule st of
+    case _machInitRule st' of
       Nothing -> do
-          let nxt_st = st { _machInitRulePassed = True }
+          let nxt_st = st' { _machInitRulePassed = True }
           cepCruise nxt_st i
-      Just ir -> cepInitRule ir st i
+      Just ir -> cepInitRule ir st' i
+  where
+    st' = st{_machRunningSM = M.assocs $ _machRuleData st}
 
 cepSubRequest :: Machine g -> Subscribe -> Machine g
 cepSubRequest st@Machine{..} (Subscribe tpe pid) = nxt_st
@@ -230,10 +232,7 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
           info  = RunInfo msg_count (RulesBeenTriggered [rinfo])
       case res of
         EmptyStack -> do
-          let final_st = nxt_st { _machInitRulePassed = True
-                                , _machRunningSM      = M.toList _machRuleData
-                                }
-          traceM "cruise starts.."
+          let final_st = nxt_st { _machInitRulePassed = True}
           return (info, Engine $ cepCruise final_st)
         _ -> return (info, Engine $ cepInitRule (InitRule new_rd typs) nxt_st)
 cepInitRule ir st req = defaultHandler st (cepInitRule ir) req
@@ -247,10 +246,11 @@ cepCruise st req@(Run t) =
         go tups (_machTotalProcMsgs st)
       Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
         let fpt = messageFingerprint m
-        tups <- for (MM.lookup fpt $ _machTypeMap st) $ \(key, info) ->
-          case M.lookup key $ _machRuleData st of
-            Just rd -> return (key, rd, GotMessage info m)
-            _       -> fail "ruleKey is invalid (impossible)"
+            keyInfos = MM.lookup fpt $ _machTypeMap st
+        tups <- for (_machRunningSM st) $ \(key, rd) -> do
+                 case key `lookup` keyInfos of
+                   Just info -> return (key, rd, GotMessage info m)
+                   Nothing   -> return (key, rd, NoMessage)
         go tups (_machTotalProcMsgs st + 1)
       _ -> defaultHandler st cepCruise req
   where
@@ -264,7 +264,7 @@ cepCruise st req@(Run t) =
             State.put final_st
             return rinfo
 
-      (infos, tmp_st) <- State.runStateT (State.modify (\rd -> rd{_machRunningSM=[]}) >> action) st
+      (infos, tmp_st) <- State.runStateT action st{_machRunningSM=[]}
       let nxt_st = tmp_st { _machTotalProcMsgs = msg_count }
           rinfo  = RunInfo msg_count (RulesBeenTriggered $ (concat :: [[a]] -> [a]) infos)
       return (rinfo, Engine $ cepCruise nxt_st)
@@ -278,8 +278,9 @@ cepCruise st req@(Run t) =
           infos            = map inner2 machines
           inner (_,nxt_stk) = (key, rd{_ruleStack=nxt_stk})
           inner2 (StackOut _ hi res,_) = RuleInfo ruleName res hi
-          nxt_st = cur_st { _machRunningSM = sms
+          nxt_st = cur_st { _machRunningSM = sms ++ _machRunningSM cur_st
                           , _machState    = nxt_g
                           }
+      -- forM_ (_machLogger st) $ \f -> forM_ mlogs $ \l -> f l nxt_g
       return (infos, nxt_st)
 cepCruise st req = defaultHandler st cepCruise req
