@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
+import qualified SSPL.Schemata.SensorRequest as SensorRequest
 import qualified SSPL.Schemata.SensorResponse as SensorResponse
 import qualified SSPL.Schemata.ActuatorRequest as ActuatorRequest
 import qualified SSPL.Schemata.ActuatorResponse as ActuatorResponse
@@ -31,7 +32,8 @@ import GHC.Generics
 main :: IO ()
 main = let
     schemata = [
-        ("SensorResponse", SensorResponse.schema)
+        ("SensorRequest", SensorRequest.schema)
+      , ("SensorResponse", SensorResponse.schema)
       , ("ActuatorRequest", ActuatorRequest.schema)
       , ("ActuatorResponse", ActuatorResponse.schema)
       , ("CommandRequest", CommandRequest.schema)
