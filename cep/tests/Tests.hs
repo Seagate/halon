@@ -47,7 +47,7 @@ tests launch =
   ]
 
 testsGlobal :: (Process () -> IO ()) -> TestTree
-testsGlobal launch = testGroup "State"
+testsGlobal launch = localOption (mkTimeout 500000) $ testGroup "State"
   [ testCase "Global state is updated"  $ launch globalUpdated
   , testCase "Global state is observable by all state machines" $ launch globalIsGlobal
   , testCase "Local state is updated" $ launch localUpdated
@@ -624,8 +624,10 @@ forkIncrSMs = do
       start_engine = cepEngine () defs
 
   (RunInfo _ res, _) <- stepForward tick start_engine
-  let RulesBeenTriggered [(RuleInfo _ _ rep)] = res
-      ExecutionReport spawned term _          = rep
+  let RulesBeenTriggered res' = res
+  assertEqual "length of info is 2" 4 (length res')
+  let (RuleInfo _ _ rep:_)           = res'
+      ExecutionReport spawned term _ = rep
 
   assert (spawned == term && spawned == 2)
 
