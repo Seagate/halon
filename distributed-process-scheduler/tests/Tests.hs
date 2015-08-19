@@ -76,13 +76,12 @@ main = run 0
 
 run :: Int -> IO ()
 run s = do
-  hSetBuffering stdout LineBuffering
-  hSetBuffering stderr LineBuffering
-  bracket
-    InMemory.createTransport
-    NT.closeTransport
-    $ \transport -> do
-      res <- fmap nub $ forM [1..100] $ \i ->
+    hSetBuffering stdout LineBuffering
+    hSetBuffering stderr LineBuffering
+    res <- fmap nub $ forM [1..100] $ \i ->
+      bracket InMemory.createTransport
+              NT.closeTransport
+      $ \transport -> do
         if schedulerIsEnabled
         then do
           -- running three times with the same seed should produce the same execution
@@ -114,7 +113,7 @@ run s = do
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
           return $ res0 ++ res1 ++ res2 ++ res3 ++ res4 ++ res5
-      putStrLn $ "Test passed with " ++ show (length res) ++ " different traces."
+    putStrLn $ "Test passed with " ++ show (length res) ++ " different traces."
  where
    checkInvariants res = do
        -- every execution in the provided example should have exactly 8 transitions
@@ -129,8 +128,8 @@ run s = do
 
 execute :: NT.Transport -> Int -> IO [String]
 execute transport seed = do
-      resetTraceR
-      n <- newLocalNode transport remoteTable
+   resetTraceR
+   bracket (newLocalNode transport remoteTable) closeLocalNode $ \n ->
       flip E.catch (\e -> do putStr "execute.seed: " >> print seed
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
@@ -158,9 +157,9 @@ execute transport seed = do
         liftIO $ fmap reverse $ readIORef traceR
 
 executeRegister :: NT.Transport -> Int -> IO [String]
-executeRegister transport seed = do
-    resetTraceR
-    n <- newLocalNode transport remoteTable
+executeRegister transport seed =
+    (resetTraceR >>) $
+    bracket (newLocalNode transport remoteTable) closeLocalNode $ \n ->
     flip E.catch (\e -> do putStr "executeRegister.seed: " >> print seed
                            readIORef (traceR :: IORef [String]) >>= print
                            throwIO (e :: SomeException)
@@ -212,9 +211,9 @@ executeRegister transport seed = do
       liftIO $ fmap reverse $ readIORef traceR
 
 executeTimeouts :: NT.Transport -> Int -> IO [String]
-executeTimeouts transport seed = do
-    resetTraceR
-    n <- newLocalNode transport remoteTable
+executeTimeouts transport seed =
+    (resetTraceR >>) $
+    bracket (newLocalNode transport remoteTable) closeLocalNode $ \n ->
     flip E.catch (\e -> do putStr "executeTimeouts.seed: " >> print seed
                            readIORef (traceR :: IORef [String]) >>= print
                            throwIO (e :: SomeException)
@@ -227,10 +226,10 @@ executeTimeouts transport seed = do
       liftIO $ fmap reverse $ readIORef traceR
 
 executeNSend :: NT.Transport -> Int -> IO [String]
-executeNSend transport seed = do
-      resetTraceR
-      n0' <- newLocalNode transport remoteTable
-      n1' <- newLocalNode transport remoteTable
+executeNSend transport seed =
+   (resetTraceR >>) $
+   bracket (newLocalNode transport remoteTable) closeLocalNode $ \n0' ->
+   bracket (newLocalNode transport remoteTable) closeLocalNode $ \n1' -> do
       let [n0, n1] = sortBy (compare `on` localNodeId) [n0', n1']
       flip E.catch (\e -> do putStr "executeNSend.seed: " >> print seed
                              readIORef (traceR :: IORef [String]) >>= print
@@ -270,8 +269,8 @@ executeNSend transport seed = do
 
 executeChan :: NT.Transport -> Int -> IO [String]
 executeChan transport seed = do
-      resetTraceR
-      n <- newLocalNode transport remoteTable
+   resetTraceR
+   bracket (newLocalNode transport remoteTable) closeLocalNode $ \n ->
       flip E.catch (\e -> do putStr "executeChan.seed: " >> print seed
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
@@ -317,8 +316,8 @@ instance MonadProcess m => MonadProcess (StateT s m) where
 
 executeT :: NT.Transport -> Int -> IO [String]
 executeT transport seed = do
-      resetTraceR
-      n <- newLocalNode transport remoteTable
+   resetTraceR
+   bracket (newLocalNode transport remoteTable) closeLocalNode $ \n -> do
       flip E.catch (\e -> do putStr "executeT.seed: " >> print seed
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
