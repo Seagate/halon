@@ -38,7 +38,7 @@ import           HA.Services.SSPL (ssplRules)
 data ServiceBoot
     = None
       -- ^ When no service is expected to be started. That's the inial value.
-    | forall a. Configuration a => Starting (Service a) ProcessId
+    | forall a. Configuration a => Starting NodeId a (Service a) ProcessId
       -- ^ Indicates a service has been started and we are waiting for a
       --   'ServiceStarted' message of that same service.
 
@@ -49,7 +49,7 @@ serviceBootStarted :: HAEvent ServiceStartedMsg
                    -> LoopState
                    -> ServiceBoot
                    -> Process (Maybe (HAEvent ServiceStartedMsg))
-serviceBootStarted evt@(HAEvent _ msg _) ls l@(Starting psvc pid) = do
+serviceBootStarted evt@(HAEvent _ msg _) ls l@(Starting _ _ psvc pid) = do
     res <- notHandled evt ls l
     case res of
       Nothing -> return Nothing
@@ -60,6 +60,48 @@ serviceBootStarted evt@(HAEvent _ msg _) ls l@(Starting psvc pid) = do
           then return $ Just evt
           else return Nothing
 serviceBootStarted _ _ _ = return Nothing
+
+-- | Used at RC node-up rule definition. Returnes events that we are
+-- not interested in
+serviceBootStartedOther :: HAEvent ServiceStartedMsg
+                        -> LoopState
+                        -> ServiceBoot
+                        -> Process (Maybe (HAEvent ServiceStartedMsg))
+serviceBootStartedOther evt@(HAEvent _ msg _) _ _ = do
+   ServiceStarted _ svc _ _ <- decodeP msg
+   if serviceName svc == serviceName regularMonitor
+      then return   Nothing
+      else return $ Just evt
+
+-- | Used at RC node-up rule definition. Returnes events that we are
+-- not interested in
+serviceBootCouldNotStartOther :: HAEvent ServiceCouldNotStartMsg
+                              -> LoopState
+                              -> ServiceBoot
+                              -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
+serviceBootCouldNotStartOther evt@(HAEvent _ msg _) _ _ = do
+   ServiceCouldNotStart _ svc _ <- decodeP msg
+   if serviceName svc == serviceName regularMonitor
+      then return Nothing
+      else return $ Just evt
+
+-- | Used at RC node-up rule definition. Track the confirmation of a
+--   service we've previously started by looking at 'Starting' fields. In any
+--   other case, it refuses the message.
+serviceBootCouldNotStart :: HAEvent ServiceCouldNotStartMsg
+                   -> LoopState
+                   -> ServiceBoot
+                   -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
+serviceBootCouldNotStart evt@(HAEvent _ msg _) ls l@(Starting nd _ psvc _) = do
+    res <- notHandled evt ls l
+    case res of
+      Nothing -> return Nothing
+      Just _  -> do
+        ServiceCouldNotStart n svc _ <- decodeP msg
+        if serviceName svc == serviceName psvc && Node nd == n
+          then return $ Just evt
+          else return Nothing
+serviceBootCouldNotStart _ _ _ = return Nothing
 
 -- | Used at RC service-start rule definition. Tracks the confirmation of a
 --   service we've previously started by looking at the local state. In any
@@ -103,13 +145,31 @@ rcRules argv eq = do
 
     define "node-up" $ do
       boot        <- phaseHandle "boot"
+      nodeup      <- phaseHandle "nodeup"
       nm_started  <- phaseHandle "node_monitor_started"
+      nm_start    <- phaseHandle "node_monitor_start"
+      nm_failed   <- phaseHandle "node_monitor_could_not_start"
+      clean_msgs  <- phaseHandle "clean_messages"
+      clean_failed <- phaseHandle "clean_failed_messages"
+      clean_started <- phaseHandle "clean_started_messages"
+      clean_other_failed  <- phaseHandle "clean_failed_messages_other"
+      clean_other_started <- phaseHandle "clean_started_messages_other"
 
-      setPhase boot $ \evt@(HAEvent _ (NodeUp h pid) _) -> do
+      -- we are waiting for node up message, while we are waiting we
+      -- are clearing all started and could not start messages for
+      -- services we are not interested in.
+      directly boot $ switch [ nodeup
+                             , clean_other_started
+                             , clean_other_failed
+                             ]
+      setPhaseIf clean_other_started serviceBootStartedOther $ const $ continue boot
+      setPhaseIf clean_other_failed serviceBootCouldNotStartOther $ const $ continue boot
+
+      setPhase nodeup $ \evt@(HAEvent _ (NodeUp h pid) _) -> do
         let nid  = processNodeId pid
             node = Node nid
         known <- knownResource node
-        handled eq evt
+        conf <- loadNodeMonitorConf (Node nid)
         if not known
           then do
             let host = Host h
@@ -117,26 +177,53 @@ rcRules argv eq = do
             registerNode node
             registerHost host
             locateNodeOnHost node host
-            liftProcess $ nsendRemote nid EQT.name
-              (nullProcessId nid, UpdateEQNodes $ stationNodes argv)
-            registerService regularMonitor
-            conf <- loadNodeMonitorConf (Node nid)
-            startService nid regularMonitor conf
-            put Local (Starting regularMonitor pid)
-            continue nm_started
-          else ack pid
+            handled eq evt
+            put Local (Starting nid conf regularMonitor pid)
+            continue clean_msgs
+          else do
+            handled eq evt
+            msp  <- lookupRunningService (Node nid) regularMonitor
+            case msp of
+              Nothing -> do put Local (Starting nid conf regularMonitor pid)
+                            continue clean_msgs
+              Just _  -> ack pid
+
+      directly clean_msgs $ switch [clean_started, clean_failed,nm_start]
+
+      setPhaseIf clean_started serviceBootStarted $ \evt -> do
+        handled eq evt
+        continue clean_msgs
+
+      setPhaseIf clean_failed serviceBootCouldNotStart $ \evt -> do
+        handled eq evt
+        continue clean_msgs
+
+      directly nm_start $ do
+        Starting nid conf svc _ <- get Local
+        liftProcess $ nsendRemote nid EQT.name
+          (nullProcessId nid, UpdateEQNodes $ stationNodes argv)
+        registerService svc
+        startService nid svc conf
+        switch [nm_started, nm_failed]
 
       setPhaseIf nm_started serviceBootStarted $
           \evt@(HAEvent _ msg _) -> do
         ServiceStarted n svc cfg sp <- decodeMsg msg
         liftProcess $ sayRC $
           "started " ++ snString (serviceName svc) ++ " service"
-        Starting _ npid <- get Local
+        Starting _ _ _ npid <- get Local
         registerServiceName svc
         registerServiceProcess n svc cfg sp
         handled eq evt
         sendToMasterMonitor msg
         ack npid
+
+      setPhaseIf nm_failed serviceBootCouldNotStart $
+          \evt@(HAEvent _ msg _) -> do
+        handled eq evt
+        ServiceCouldNotStart n svc _ <- decodeMsg msg
+        liftProcess $ sayRC $
+          "failed " ++ snString (serviceName svc) ++ " service on the node " ++ show n
 
       start boot None
 
