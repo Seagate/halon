@@ -37,6 +37,7 @@ data StackOut g =
     , _soExeReport :: !ExecutionReport
     , _soResult    :: !StackResult
     , _soLogs      :: [Logs]
+    , _soStopped   :: !Bool
     }
 
 newtype StackSM g l = StackSM (forall a. StackIn g l a -> a)
@@ -58,7 +59,7 @@ data StackCtxResult g l
                 [Phase g l]
                 (SM g l)
                 (Maybe SMLogs)
-    | StackSuspend Buffer (StackCtx g l) (Maybe SMLogs)
+    | StackSuspend Buffer (StackCtx g l) (Maybe SMLogs) Bool
 
 data StackSlot g l
     = OnMainSM (StackCtx g l)
@@ -93,7 +94,7 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
         StackSM $ go (x:xs) sm
     go xs sm (StackIn subs g i) =
         case i of
-          NoMessage -> executeStack subs sm g 0 0 [] [] xs []
+          NoMessage -> executeStack subs sm g 0 0 [] [] xs [] False
           GotMessage (TypeInfo _ (_ :: Proxy e)) msg -> do
             Just (a :: e) <- unwrapMessage msg
             let input = PushMsg a
@@ -107,7 +108,7 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
             OnChildSM lsm ph -> let nxt_lsm = unSM lsm i in
               return $ OnChildSM nxt_lsm ph
 
-        executeStack subs nxt_sm g 0 0 [] [] xs' []
+        executeStack subs nxt_sm g 0 0 [] [] xs' [] False
 
     executeStack :: Subscribers
                  -> SM g l
@@ -118,13 +119,14 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
                  -> [StackSlot g l]
                  -> [StackSlot g l]
                  -> [Logs]
+                 -> Bool
                  -> Process (StackOut g, StackSM g l)
-    executeStack _ sm g ssms tsms rp done [] executeLogs =
+    executeStack _ sm g ssms tsms rp done [] executeLogs stopped =
         let res = if null done then EmptyStack else NeedMore
             eis = reverse rp
             rep = ExecutionReport ssms tsms eis in
-        return (StackOut g rep res executeLogs, StackSM $ go (reverse done) sm)
-    executeStack subs sm g ssms tsms rp done (x:xs) executeLogs =
+        return (StackOut g rep res executeLogs stopped, StackSM $ go (reverse done) sm)
+    executeStack subs sm g ssms tsms rp done (x:xs) executeLogs stopped =
         case x of
           OnMainSM ctx -> do
             res <- contextStack subs sm g ctx
@@ -140,12 +142,13 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
                 executeStack subs nxt_sm g' n_ssms tsms (r:rp) done
                                                                   (xs ++ jobs)
                                                                   lgs'
-              StackSuspend buf new_ctx lgs ->
+                                                                  True
+              StackSuspend buf new_ctx lgs b ->
                 let slot = OnMainSM new_ctx
                     r    = FailExe (infoTarget ctx) SuspendExe buf
                     lgs' = maybe executeLogs
                                  (\ls -> Logs name (toList ls):executeLogs) lgs in
-                executeStack subs sm g ssms tsms (r:rp) (slot:done) xs lgs'
+                executeStack subs sm g ssms tsms (r:rp) (slot:done) xs lgs' (stopped || b)
           OnChildSM lsm ctx -> do
             res <- contextStack subs lsm g ctx
             case res of
@@ -158,13 +161,13 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
                     r      = SuccessExe pinfo p_buf buf
                     lgs' = maybe executeLogs
                                  (\ls -> Logs name (toList ls):executeLogs) lgs
-                executeStack subs sm g' n_ssms n_tsms (r:rp) done (xs ++ jobs) lgs'
-              StackSuspend buf new_ctx lgs ->
+                executeStack subs sm g' n_ssms n_tsms (r:rp) done (xs ++ jobs) lgs' stopped
+              StackSuspend buf new_ctx lgs b ->
                 let slot = OnChildSM lsm new_ctx
                     r    = FailExe (infoTarget ctx) SuspendExe buf
                     lgs' = maybe executeLogs
                                  (\ls -> Logs name (toList ls):executeLogs) lgs in
-                executeStack subs sm g ssms tsms (r:rp) (slot:done) xs lgs'
+                executeStack subs sm g ssms tsms (r:rp) (slot:done) xs lgs' (stopped || b)
 
     contextStack :: Subscribers
                  -> SM g l
@@ -178,13 +181,14 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
           SM_Complete g' _ ss hs lgs -> do
             phs <- phases hs
             return $ StackDone ph p_buf buf pinfo g' ss phs nxt_sm lgs
-          SM_Suspend lgs -> return $ StackSuspend buf ctx lgs
-          SM_Stop    lgs -> return $ StackDone ph buf buf pinfo g [] [] sm lgs
+          SM_Suspend lgs -> return $ StackSuspend buf ctx lgs True
+          SM_Stop    lgs -> return $ StackSuspend buf ctx lgs False-- StackDone ph buf buf pinfo g [] [] sm lgs
+          SM_Unit        -> error "impossible happened"
     contextStack subs sm g (StackSwitch ph xs) =
-        let loop buf done [] lgs = return $ StackSuspend buf
-                                              (StackSwitch ph (reverse done))
-                                              lgs
-            loop _ done (a:as) lgs = do
+        let loop buf done [] lgs b = return $ StackSuspend buf
+                                               (StackSwitch ph (reverse done))
+                                               lgs b
+            loop _ done (a:as) lgs _ = do
               let input = Execute subs g a
               (p_buf, buf, out, nxt_sm) <- unSM sm input
               case out of
@@ -194,9 +198,10 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
                       pas   = fmap _phName $ reverse done
                       pinfo = StackSwitchPhase (_phName ph) pname pas
                   return $ StackDone a p_buf buf pinfo g' ss phs nxt_sm (lgs' <> lgs)
-                SM_Suspend lgs' -> loop buf (a:done) as (lgs' <> lgs)
-                SM_Stop    lgs' -> loop buf done as (lgs' <> lgs)
-        in loop emptyFifoBuffer [] xs Nothing
+                SM_Suspend lgs' -> loop buf (a:done) as (lgs' <> lgs) True
+                SM_Stop    lgs' -> loop buf done as (lgs' <> lgs) True
+                SM_Unit         -> error "impossible happened"
+        in loop emptyFifoBuffer [] xs Nothing False
 
     phases hs = for hs $ \h ->
         case M.lookup (_phHandle h) ps of

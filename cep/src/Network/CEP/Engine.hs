@@ -221,7 +221,7 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) =
     go msg msg_count = do
       let stk = _ruleStack rd
       (out, nxt_stk) <- runStackDriver _machSubs _machState msg stk
-      let StackOut g infos res mlogs = out
+      let StackOut g infos res mlogs _ = out
           new_rd = rd { _ruleStack = nxt_stk }
           nxt_st = st { _machState         = g
                       , _machTotalProcMsgs = msg_count
@@ -273,9 +273,9 @@ cepCruise st req@(Run t) =
           subs     = _machSubs cur_st
           g        = _machState cur_st
       (out, nxt_stk) <- runStackDriver subs g i $ _ruleStack rd
-      let StackOut nxt_g hi res mlogs = out
+      let StackOut nxt_g hi res mlogs b = out
           nxt_rd  = rd { _ruleStack = nxt_stk }
-          nxt_dts = (key, nxt_rd):_machRunningSM cur_st
+          nxt_dts = (if b then ((key, nxt_rd):) else id) (_machRunningSM cur_st)
           nxt_st  = cur_st { _machRunningSM = nxt_dts
                            , _machState     = nxt_g
                            }
