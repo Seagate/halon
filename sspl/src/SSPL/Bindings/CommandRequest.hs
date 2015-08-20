@@ -16,6 +16,7 @@ import Data.Either
 import Data.Foldable
 import Data.Functor
 import Data.HashMap.Lazy
+import Data.Hashable
 import Data.Map
 import Data.Maybe
 import Data.Ratio
@@ -108,6 +109,8 @@ data CommandRequestMessageServiceRequest = CommandRequestMessageServiceRequest
 
 instance Data.Binary.Binary CommandRequestMessageServiceRequest
 
+instance Data.Hashable.Hashable CommandRequestMessageServiceRequest
+
 instance Data.Aeson.FromJSON CommandRequestMessageServiceRequest
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure CommandRequestMessageServiceRequest GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property command missing") (\val -> do {Control.Monad.unless (val `Data.Foldable.elem` [Data.Aeson.Types.String (Data.Text.pack "start"),
                                                                                                                                                                                                                                                           Data.Aeson.Types.String (Data.Text.pack "stop"),
@@ -146,6 +149,8 @@ data CommandRequestMessageNodeStatusChangeRequest = CommandRequestMessageNodeSta
 
 instance Data.Binary.Binary CommandRequestMessageNodeStatusChangeRequest
 
+instance Data.Hashable.Hashable CommandRequestMessageNodeStatusChangeRequest
+
 instance Data.Aeson.FromJSON CommandRequestMessageNodeStatusChangeRequest
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure CommandRequestMessageNodeStatusChangeRequest GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property command missing") (\val -> do {Control.Monad.unless (val `Data.Foldable.elem` [Data.Aeson.Types.String (Data.Text.pack "enable"),
                                                                                                                                                                                                                                                                   Data.Aeson.Types.String (Data.Text.pack "disable"),
@@ -176,6 +181,8 @@ data CommandRequestMessageStatusRequest = CommandRequestMessageStatusRequest
 
 instance Data.Binary.Binary CommandRequestMessageStatusRequest
 
+instance Data.Hashable.Hashable CommandRequestMessageStatusRequest
+
 instance Data.Aeson.FromJSON CommandRequestMessageStatusRequest
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure CommandRequestMessageStatusRequest GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
                                                                                                                                                              Data.Aeson.Types.String str -> do GHC.Base.return str
@@ -205,6 +212,8 @@ data CommandRequestMessage = CommandRequestMessage
 
 instance Data.Binary.Binary CommandRequestMessage
 
+instance Data.Hashable.Hashable CommandRequestMessage
+
 instance Data.Aeson.FromJSON CommandRequestMessage
     where parseJSON (Data.Aeson.Types.Object obj) = do (((GHC.Base.pure CommandRequestMessage GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "serviceRequest") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "nodeStatusChangeRequest") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "statusRequest") obj)) GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     Data.Aeson.Types.String str -> do GHC.Base.return str
@@ -230,6 +239,8 @@ data CommandRequest = CommandRequest
 
 
 instance Data.Binary.Binary CommandRequest
+
+instance Data.Hashable.Hashable CommandRequest
 
 instance Data.Aeson.FromJSON CommandRequest
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure CommandRequest GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property signature missing") (\val -> case val of

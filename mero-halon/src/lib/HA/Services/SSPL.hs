@@ -122,7 +122,7 @@ startActuators :: Network.AMQP.Channel
                -> Process ()
 startActuators chan ac pid = do
     iemChan <- spawnChannelLocal (iemProcess $ acIEM ac)
-    systemdChan <- spawnChannelLocal (systemdProcess $ acSystemd ac)
+    systemdChan <- spawnChannelLocal (commandProcess $ acSystemd ac)
     informRC (ServiceProcess pid) (ActuatorChannels iemChan systemdChan)
   where
     informRC sp chans = do
@@ -138,12 +138,12 @@ startActuators chan ac pid = do
         chan
         (T.pack . fromDefault $ bcExchangeName)
         (T.pack . fromDefault $ bcRoutingKey)
-        (newMsg { msgBody = foo
+        (newMsg { msgBody = BL.fromStrict $ T.encodeUtf8 foo
                 , msgDeliveryMode = Just Persistent
                 }
         )
-    systemdProcess Rabbit.BindConf{..} rp = forever $ do
-      SystemdRequest srv cmd <- receiveChan rp
+    commandProcess Rabbit.BindConf{..} rp = forever $ do
+      cmd <- receiveChan rp
       uuid <- liftIO $ randomIO
       let msg = encode $ ActuatorRequest {
           actuatorRequestSignature = ""
@@ -152,19 +152,7 @@ startActuators chan ac pid = do
         , actuatorRequestUsername = "halon"
         , actuatorRequestMessage = ActuatorRequestMessage {
             actuatorRequestMessageSspl_ll_debug = Nothing
-          , actuatorRequestMessageActuator_request_type = ActuatorRequestMessageActuator_request_type {
-              actuatorRequestMessageActuator_request_typeService_controller = Just
-                ActuatorRequestMessageActuator_request_typeService_controller {
-                  actuatorRequestMessageActuator_request_typeService_controllerService_request =
-                    T.decodeUtf8 . BL.toStrict $ cmd
-                , actuatorRequestMessageActuator_request_typeService_controllerService_name =
-                    T.decodeUtf8 . BL.toStrict $ srv
-                }
-            , actuatorRequestMessageActuator_request_typeThread_controller = Nothing
-            , actuatorRequestMessageActuator_request_typeLogin_controller = Nothing
-            , actuatorRequestMessageActuator_request_typeNode_controller = Nothing
-            , actuatorRequestMessageActuator_request_typeLogging = Nothing
-            }
+          , actuatorRequestMessageActuator_request_type = cmd
           , actuatorRequestMessageSspl_ll_msg_header = header uuid
           }
         }

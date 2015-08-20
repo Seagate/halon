@@ -15,6 +15,7 @@ import Data.Either
 import Data.Foldable
 import Data.Functor
 import Data.HashMap.Lazy
+import Data.Hashable
 import Data.Map
 import Data.Maybe
 import Data.Ratio
@@ -127,6 +128,8 @@ data ActuatorRequestMessageActuator_request_typeThread_controller = ActuatorRequ
 
 instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeThread_controller
 
+instance Data.Hashable.Hashable ActuatorRequestMessageActuator_request_typeThread_controller
+
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeThread_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items GHC.Base.$ (\(pname,
@@ -157,6 +160,8 @@ data ActuatorRequestMessageActuator_request_typeLogin_controller = ActuatorReque
 
 instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeLogin_controller
 
+instance Data.Hashable.Hashable ActuatorRequestMessageActuator_request_typeLogin_controller
+
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeLogin_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_1 = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items_1 GHC.Base.$ (\(pname_1,
@@ -181,6 +186,8 @@ data ActuatorRequestMessageActuator_request_typeNode_controller = ActuatorReques
 
 
 instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeNode_controller
+
+instance Data.Hashable.Hashable ActuatorRequestMessageActuator_request_typeNode_controller
 
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeNode_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_2 = Data.HashMap.Lazy.toList obj
@@ -208,6 +215,8 @@ data ActuatorRequestMessageActuator_request_typeLogging = ActuatorRequestMessage
 
 
 instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeLogging
+
+instance Data.Hashable.Hashable ActuatorRequestMessageActuator_request_typeLogging
 
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeLogging
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_3 = Data.HashMap.Lazy.toList obj
@@ -245,6 +254,8 @@ data ActuatorRequestMessageActuator_request_typeService_controller = ActuatorReq
 
 instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeService_controller
 
+instance Data.Hashable.Hashable ActuatorRequestMessageActuator_request_typeService_controller
+
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeService_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_4 = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items_4 GHC.Base.$ (\(pname_4,
@@ -278,6 +289,8 @@ data ActuatorRequestMessageActuator_request_type = ActuatorRequestMessageActuato
 
 
 instance Data.Binary.Binary ActuatorRequestMessageActuator_request_type
+
+instance Data.Hashable.Hashable ActuatorRequestMessageActuator_request_type
 
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_type
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_5 = Data.HashMap.Lazy.toList obj
@@ -316,6 +329,8 @@ data ActuatorRequestMessage = ActuatorRequestMessage
 
 instance Data.Binary.Binary ActuatorRequestMessage
 
+instance Data.Hashable.Hashable ActuatorRequestMessage
+
 instance Data.Aeson.FromJSON ActuatorRequestMessage
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure ActuatorRequestMessage GHC.Base.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
                                                                                                                                                        [] -> GHC.Base.return ()
@@ -343,6 +358,8 @@ data ActuatorRequest = ActuatorRequest
 
 
 instance Data.Binary.Binary ActuatorRequest
+
+instance Data.Hashable.Hashable ActuatorRequest
 
 instance Data.Aeson.FromJSON ActuatorRequest
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure ActuatorRequest GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property signature missing") (\val -> case val of

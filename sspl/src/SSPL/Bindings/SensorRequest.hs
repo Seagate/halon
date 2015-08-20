@@ -15,6 +15,7 @@ import Data.Either
 import Data.Foldable
 import Data.Functor
 import Data.HashMap.Lazy
+import Data.Hashable
 import Data.Map
 import Data.Maybe
 import Data.Ratio
@@ -83,6 +84,8 @@ data SensorRequestMessageSensor_request_typeNode_data = SensorRequestMessageSens
 
 instance Data.Binary.Binary SensorRequestMessageSensor_request_typeNode_data
 
+instance Data.Hashable.Hashable SensorRequestMessageSensor_request_typeNode_data
+
 instance Data.Aeson.FromJSON SensorRequestMessageSensor_request_typeNode_data
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items GHC.Base.$ (\(pname,
@@ -108,6 +111,8 @@ data SensorRequestMessageSensor_request_type = SensorRequestMessageSensor_reques
 
 instance Data.Binary.Binary SensorRequestMessageSensor_request_type
 
+instance Data.Hashable.Hashable SensorRequestMessageSensor_request_type
+
 instance Data.Aeson.FromJSON SensorRequestMessageSensor_request_type
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_1 = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items_1 GHC.Base.$ (\(pname_1,
@@ -132,6 +137,8 @@ data SensorRequestMessage = SensorRequestMessage
 
 
 instance Data.Binary.Binary SensorRequestMessage
+
+instance Data.Hashable.Hashable SensorRequestMessage
 
 instance Data.Aeson.FromJSON SensorRequestMessage
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure SensorRequestMessage GHC.Base.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
@@ -160,6 +167,8 @@ data SensorRequest = SensorRequest
 
 
 instance Data.Binary.Binary SensorRequest
+
+instance Data.Hashable.Hashable SensorRequest
 
 instance Data.Aeson.FromJSON SensorRequest
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure SensorRequest GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property signature missing") (\val -> case val of

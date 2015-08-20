@@ -25,6 +25,7 @@ import qualified Data.Text.IO as T
 import Language.Haskell.TH
 
 import Data.Binary
+import Data.Hashable
 import Data.Typeable
 import GHC.Generics
 
@@ -54,6 +55,11 @@ mkBindings name schema = do
                                                        , "DeriveGeneric"
                                                        , "StandaloneDeriving" ]
                                , _extraInstances =
-                                     \n -> return $ instanceD (cxt []) (conT ''Binary `appT` conT n) []
+                                     \n -> [ instanceD (cxt []) (conT ''Binary `appT` conT n) []
+                                           , instanceD (cxt []) (conT ''Hashable `appT` conT n) []
+                                           ]
+                               , _replaceModules = M.insert
+                                  "Data.Hashable.Class" "Data.Hashable"
+                                  (_replaceModules defaultOptions)
                                })
   T.writeFile ("src/SSPL/Bindings/" ++ (T.unpack name) ++ ".hs")  code

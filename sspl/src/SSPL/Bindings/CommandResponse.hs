@@ -15,6 +15,7 @@ import Data.Binary
 import Data.Either
 import Data.Functor
 import Data.HashMap.Lazy
+import Data.Hashable
 import Data.Map
 import Data.Maybe
 import Data.Ratio
@@ -84,6 +85,8 @@ data CommandResponseMessageStatusResponseItem = CommandResponseMessageStatusResp
 
 instance Data.Binary.Binary CommandResponseMessageStatusResponseItem
 
+instance Data.Hashable.Hashable CommandResponseMessageStatusResponseItem
+
 instance Data.Aeson.FromJSON CommandResponseMessageStatusResponseItem
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure CommandResponseMessageStatusResponseItem GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property status missing") (\val -> case val of
                                                                                                                                                                                                              Data.Aeson.Types.String str -> do GHC.Base.return str
@@ -105,6 +108,8 @@ data CommandResponseMessage = CommandResponseMessage
 
 
 instance Data.Binary.Binary CommandResponseMessage
+
+instance Data.Hashable.Hashable CommandResponseMessage
 
 instance Data.Aeson.FromJSON CommandResponseMessage
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure CommandResponseMessage GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -134,6 +139,8 @@ data CommandResponse = CommandResponse
 
 
 instance Data.Binary.Binary CommandResponse
+
+instance Data.Hashable.Hashable CommandResponse
 
 instance Data.Aeson.FromJSON CommandResponse
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure CommandResponse GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property signature missing") (\val -> case val of

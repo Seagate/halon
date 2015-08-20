@@ -5,6 +5,7 @@
 
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module HA.Services.SSPL.LL.Resources where
@@ -15,6 +16,12 @@ import HA.Service.TH
 import qualified HA.Services.SSPL.Rabbit as Rabbit
 import HA.ResourceGraph
 
+import SSPL.Bindings
+  ( ActuatorRequestMessageActuator_request_type (..)
+  , ActuatorRequestMessageActuator_request_typeService_controller (..)
+  , ActuatorRequestMessageActuator_request_typeNode_controller (..)
+  )
+
 import Control.Applicative ((<$>), (<*>))
 
 import Control.Distributed.Process
@@ -24,10 +31,10 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 
 import Data.Binary (Binary)
-import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
+import qualified Data.Text as T
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -38,25 +45,86 @@ import Options.Schema.Builder hiding (name, desc)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process (readProcess)
 
+--------------------------------------------------------------------------------
+-- SSPL Control messages                                                      --
+--------------------------------------------------------------------------------
+
 -- | Interesting Event Message.
 --   TODO Make this more interesting.
-newtype InterestingEventMessage = InterestingEventMessage BL.ByteString
+newtype InterestingEventMessage = InterestingEventMessage T.Text
   deriving (Binary, Hashable, Typeable)
 
--- | Systemd actuation message.
---   TODO Bind this to schema.
-data SystemdRequest = SystemdRequest {
-      srService :: BL.ByteString
-    , srCommand :: BL.ByteString
-  } deriving (Generic, Typeable, Show)
+data ServiceOp = SERVICE_START | SERVICE_STOP | SERVICE_RESTART | SERVICE_STATUS
+  deriving (Eq, Show, Generic, Typeable)
 
-instance Binary SystemdRequest
-instance Hashable SystemdRequest
+instance Binary ServiceOp
+instance Hashable ServiceOp
+
+serviceOpString :: ServiceOp -> T.Text
+serviceOpString SERVICE_START = "start"
+serviceOpString SERVICE_STOP = "stop"
+serviceOpString SERVICE_RESTART = "restart"
+serviceOpString SERVICE_STATUS = "status"
+
+data SystemdCmd = SystemdCmd T.Text ServiceOp
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary SystemdCmd
+instance Hashable SystemdCmd
+
+data IPMIOp = IPMI_ON | IPMI_OFF | IPMI_CYCLE | IPMI_STATUS
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary IPMIOp
+instance Hashable IPMIOp
+
+ipmiOpString :: IPMIOp -> T.Text
+ipmiOpString IPMI_ON = "on"
+ipmiOpString IPMI_OFF = "off"
+ipmiOpString IPMI_CYCLE = "cycle"
+ipmiOpString IPMI_STATUS = "status"
+
+data NodeCmd =
+    IPMICmd IPMIOp T.Text -- ^ IP address
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary NodeCmd
+instance Hashable NodeCmd
+
+nodeCmdString :: NodeCmd -> T.Text
+nodeCmdString (IPMICmd op ip) = T.intercalate " "
+  [ "IPMI:", ip, ipmiOpString op ]
+
+emptyActuatorMsg :: ActuatorRequestMessageActuator_request_type
+emptyActuatorMsg = ActuatorRequestMessageActuator_request_type
+  { actuatorRequestMessageActuator_request_typeThread_controller = Nothing
+  , actuatorRequestMessageActuator_request_typeLogin_controller = Nothing
+  , actuatorRequestMessageActuator_request_typeNode_controller = Nothing
+  , actuatorRequestMessageActuator_request_typeLogging = Nothing
+  , actuatorRequestMessageActuator_request_typeService_controller = Nothing
+  }
+
+makeSystemdMsg :: SystemdCmd -> ActuatorRequestMessageActuator_request_type
+makeSystemdMsg (SystemdCmd svcName op) = emptyActuatorMsg {
+  actuatorRequestMessageActuator_request_typeService_controller = Just $
+    ActuatorRequestMessageActuator_request_typeService_controller
+      svcName (serviceOpString op)
+}
+
+makeNodeMsg :: NodeCmd -> ActuatorRequestMessageActuator_request_type
+makeNodeMsg nc = emptyActuatorMsg {
+  actuatorRequestMessageActuator_request_typeNode_controller = Just $
+    ActuatorRequestMessageActuator_request_typeNode_controller
+      (nodeCmdString nc)
+}
+--------------------------------------------------------------------------------
+-- Channels                                                                   --
+--------------------------------------------------------------------------------
 
 -- | Actuator channel list
 data ActuatorChannels = ActuatorChannels
     { iemPort :: SendPort InterestingEventMessage
-    , systemdPort :: SendPort SystemdRequest
+    , systemdPort :: SendPort ActuatorRequestMessageActuator_request_type
     }
   deriving (Generic, Typeable)
 
@@ -84,11 +152,11 @@ data IEMChannel = IEMChannel
 instance Binary IEMChannel
 instance Hashable IEMChannel
 
-data SystemdChannel = SystemdChannel
+data CommandChannel = CommandChannel
   deriving (Eq, Show, Typeable, Generic)
 
-instance Binary SystemdChannel
-instance Hashable SystemdChannel
+instance Binary CommandChannel
+instance Hashable CommandChannel
 
 --------------------------------------------------------------------------------
 -- Configuration                                                              --
@@ -107,8 +175,8 @@ iemSchema = let
           <> metavar "QUEUE_NAME"
   in Rabbit.BindConf <$> en <*> rk <*> qn
 
-systemdSchema :: Schema Rabbit.BindConf
-systemdSchema = let
+commandSchema :: Schema Rabbit.BindConf
+commandSchema = let
     en = defaultable "sspl_halon" . strOption
         $ long "systemd_exchange"
         <> metavar "EXCHANGE_NAME"
@@ -134,7 +202,7 @@ actuatorSchema = compositeOption subOpts
                   $ long "actuator"
                   <> summary "Actuator configuration."
   where
-    subOpts = ActuatorConf <$> iemSchema <*> systemdSchema <*> timeout
+    subOpts = ActuatorConf <$> iemSchema <*> commandSchema <*> timeout
     timeout = defaultable 5000000 . intOption
                 $ long "declareChannelsTimeout"
                 <> summary "Timeout to use when declaring channels to the RC."
@@ -190,7 +258,7 @@ ssplSchema = SSPLConf
 resourceDictChannelIEM :: Dict (Resource (Channel InterestingEventMessage))
 resourceDictChannelIEM = Dict
 
-resourceDictChannelSystemd :: Dict (Resource (Channel SystemdRequest))
+resourceDictChannelSystemd :: Dict (Resource (Channel ActuatorRequestMessageActuator_request_type))
 resourceDictChannelSystemd = Dict
 
 relationDictIEMChannelServiceProcessChannel :: Dict (
@@ -198,22 +266,22 @@ relationDictIEMChannelServiceProcessChannel :: Dict (
   )
 relationDictIEMChannelServiceProcessChannel = Dict
 
-relationDictSystemdChannelServiceProcessChannel :: Dict (
-    Relation SystemdChannel (ServiceProcess SSPLConf) (Channel SystemdRequest)
+relationDictCommandChannelServiceProcessChannel :: Dict (
+    Relation CommandChannel (ServiceProcess SSPLConf) (Channel ActuatorRequestMessageActuator_request_type)
   )
-relationDictSystemdChannelServiceProcessChannel = Dict
+relationDictCommandChannelServiceProcessChannel = Dict
 
 $(generateDicts ''SSPLConf)
 $(deriveService ''SSPLConf 'ssplSchema [ 'resourceDictChannelIEM
                                        , 'relationDictIEMChannelServiceProcessChannel
                                        , 'resourceDictChannelSystemd
-                                       , 'relationDictSystemdChannelServiceProcessChannel
+                                       , 'relationDictCommandChannelServiceProcessChannel
                                        ])
 
 instance Resource (Channel InterestingEventMessage) where
   resourceDict = $(mkStatic 'resourceDictChannelIEM)
 
-instance Resource (Channel SystemdRequest) where
+instance Resource (Channel ActuatorRequestMessageActuator_request_type) where
   resourceDict = $(mkStatic 'resourceDictChannelSystemd)
 
 instance Relation IEMChannel
@@ -221,10 +289,10 @@ instance Relation IEMChannel
                   (Channel InterestingEventMessage) where
   relationDict = $(mkStatic 'relationDictIEMChannelServiceProcessChannel)
 
-instance Relation SystemdChannel
+instance Relation CommandChannel
                   (ServiceProcess SSPLConf)
-                  (Channel SystemdRequest) where
-  relationDict = $(mkStatic 'relationDictSystemdChannelServiceProcessChannel)
+                  (Channel ActuatorRequestMessageActuator_request_type) where
+  relationDict = $(mkStatic 'relationDictCommandChannelServiceProcessChannel)
 --------------------------------------------------------------------------------
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------

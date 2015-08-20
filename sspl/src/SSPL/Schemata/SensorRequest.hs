@@ -1,5 +1,5 @@
 -- |
--- Copyright : (C) 2014 Seagate Technology Limited.
+-- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- JSON Schema used to generate language bindings.
