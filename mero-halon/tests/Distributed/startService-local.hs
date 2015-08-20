@@ -47,7 +47,7 @@ import Network.Transport.TCP (createTransport, defaultTCPParameters)
 #endif
 
 import qualified Control.Exception as E (bracket, catch, SomeException)
-import System.Directory (setCurrentDirectory, createDirectoryIfMissing)
+import System.Directory (setCurrentDirectory, createDirectoryIfMissing, getTemporaryDirectory)
 import System.Environment
 import System.IO
 import System.FilePath ((</>), takeDirectory)
@@ -68,7 +68,8 @@ main =
     buildPath <- getBuildPath
     progName <- getProgName
 
-    let testDir = takeDirectory buildPath </> "test" </> progName
+    tmpDir <- getTemporaryDirectory
+    let testDir = tmpDir </> "test" </> progName
     createDirectoryIfMissing True testDir
 
 #ifdef USE_RPC
