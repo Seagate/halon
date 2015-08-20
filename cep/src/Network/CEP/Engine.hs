@@ -223,7 +223,7 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
     go msg msg_count = do
       let stk = _ruleStack rd
       (g, (out, nxt_stk)) <- fmap head <$> runStackDriver _machSubs _machState msg stk
-      let StackOut _g infos res = out
+      let StackOut _g infos res _ = out
           new_rd = rd { _ruleStack = nxt_stk }
           nxt_st = st { _machState         = g
                       , _machTotalProcMsgs = msg_count
@@ -274,13 +274,14 @@ cepCruise st req@(Run t) =
           subs     = _machSubs cur_st
           g        = _machState cur_st
       (nxt_g, machines) <- runStackDriver subs g i $ _ruleStack rd
-      let sms              = map inner  machines
+      let sms              = foldr inner id machines
           infos            = map inner2 machines
-          inner (_,nxt_stk) = (key, rd{_ruleStack=nxt_stk})
-          inner2 (StackOut _ hi res,_) = RuleInfo ruleName res hi
-          nxt_st = cur_st { _machRunningSM = sms ++ _machRunningSM cur_st
+          inner (StackOut _ _ _ b,nxt_stk) f
+            | b         = ((key, rd{_ruleStack=nxt_stk}):).f
+            | otherwise = f
+          inner2 (StackOut _ hi res _,_) = RuleInfo ruleName res hi
+          nxt_st = cur_st { _machRunningSM = sms $ _machRunningSM cur_st
                           , _machState    = nxt_g
                           }
-      -- forM_ (_machLogger st) $ \f -> forM_ mlogs $ \l -> f l nxt_g
       return (infos, nxt_st)
 cepCruise st req = defaultHandler st cepCruise req

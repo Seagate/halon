@@ -40,19 +40,19 @@ permanentDriver sp init_sm = StackDriver $ boot init_sm
     boot sm i = cruise (runStackSM (StackPush sp) sm) i
 
     cruise sm (PushInput subs g i) = do
-      (g, machines) <- runStackSM (StackIn subs g i) sm
+      (g', machines) <- runStackSM (StackIn subs g i) sm
       let next :: (g, [(StackOut g, StackDriver g)]) -> (StackOut g, StackSM g l) -> Process (g, [(StackOut g, StackDriver g)])
           next (gNext,acc) (out,nxt_sm) = do
-            let StackOut nxt_g rep res = out
+            let StackOut nxt_g rep res b = out
             case res of
-              EmptyStack ->
+              EmptyStack | b ->
                   let greedy :: [ExecutionReport] -> g -> StackSM g l -> Process (g,[(StackOut g, StackDriver g)])
                       greedy reps cur_g cur_sm =
                         let input = StackIn subs cur_g NoMessage
                             toDriver :: g -> [(StackOut g, StackSM g l)] -> Process (g, [(StackOut g,StackDriver g)])
                             toDriver gD [] = return (gD, [])
                             toDriver gD ((c_out,n_sm):xs) =
-                              let StackOut n_g c_r c_re = c_out in
+                              let StackOut n_g c_r c_re b' = c_out in
                               case c_re of
                                 EmptyStack
                                   | hasNonEmptyBuffers $ exeInfos c_r ->
@@ -63,20 +63,20 @@ permanentDriver sp init_sm = StackDriver $ boot init_sm
                                   | otherwise -> do
                                       let f_r  = mergeReports (c_r:reps)
                                           f_sm = runStackSM (StackPush sp) n_sm
-                                          f_o  = StackOut n_g f_r c_re
+                                          f_o  = StackOut n_g f_r c_re b'
                                       (gD', ys) <- toDriver gD xs
                                       return (gD', (f_o, StackDriver $ cruise f_sm):ys)
                                 NeedMore -> do
                                   let f_r  = mergeReports (c_r:reps)
                                       f_sm = runStackSM (StackPush sp) n_sm
-                                      f_o  = StackOut n_g f_r c_re
+                                      f_o  = StackOut n_g f_r c_re b'
                                   (gD', ys) <- toDriver gD xs
                                   return (gD', (f_o, StackDriver $ cruise f_sm):ys)
                         in uncurry toDriver =<< runStackSM input cur_sm
                       int_sm = runStackSM (StackPush sp) nxt_sm
                   in fmap (++acc) <$> greedy [rep] nxt_g int_sm
-              NeedMore -> return (gNext, (out, StackDriver (cruise nxt_sm)):acc)
-      foldlM next (g,[]) machines
+              _ -> return (gNext, (out, StackDriver (cruise nxt_sm)):acc)
+      foldlM next (g',[]) machines
 
 hasNonEmptyBuffers :: [ExecutionInfo] -> Bool
 hasNonEmptyBuffers [] = False

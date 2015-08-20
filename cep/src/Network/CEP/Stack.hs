@@ -36,6 +36,7 @@ data StackOut g =
     { _soGlobal    :: !g
     , _soExeReport :: !ExecutionReport
     , _soResult    :: !StackResult
+    , _soStopped   :: !Bool
     }
 
 newtype StackSM g l = StackSM (forall a. StackIn g l a -> a)
@@ -55,7 +56,7 @@ data StackCtxResult g l
                 g
                 [Phase g l]
                 (SM g l)
-    | StackSuspend Buffer (StackCtx g l)
+    | StackSuspend Buffer (StackCtx g l) Bool
 
 data StackSlot g l
     = OnMainSM (StackCtx g l)
@@ -90,7 +91,7 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
         StackSM $ go (x:xs) sm
     go xs sm (StackIn subs g i) =
         case i of
-          NoMessage -> executeStack subs sm g 0 0 [] [] xs
+          NoMessage -> executeStack subs sm g 0 0 [] [] xs False
           GotMessage (TypeInfo _ (_ :: Proxy e)) msg -> do
             Just (a :: e) <- unwrapMessage msg
             let input = PushMsg a
@@ -104,12 +105,7 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
                 case slot of
                   OnMainSM _       -> return slot
                   OnChildSM _ _ -> error "OnChildSM"
-                  {-
-                  OnChildSM lsm ph -> do
-                    (_, _, SM_Unit, nxt_lsm) <- unSM lsm i
-                    return $ OnChildSM nxt_lsm ph
-                    -}
-              fmap (acc++) <$> executeStack subs nxt_sm nextG 0 0 [] [] xs'
+              fmap (acc++) <$> executeStack subs nxt_sm nextG 0 0 [] [] xs' False
         foldlM next (broadcastG,[]) machines
 
     executeStack :: Subscribers
@@ -120,13 +116,14 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
                  -> [ExecutionInfo]
                  -> [StackSlot g l]
                  -> [StackSlot g l]
+                 -> Bool
                  -> Process (g, [(StackOut g, StackSM g l)])
-    executeStack _ sm g ssms tsms rp done [] =
+    executeStack _ sm g ssms tsms rp done [] stopped =
         let res = if null done then EmptyStack else NeedMore
             eis = reverse rp
             rep = ExecutionReport ssms tsms eis in
-        return (g, [(StackOut g rep res, StackSM $ go (reverse done) sm)])
-    executeStack subs sm gStack ssms tsms rp done (x:xs) =
+        return (g, [(StackOut g rep res stopped, StackSM $ go (reverse done) sm)])
+    executeStack subs sm gStack ssms tsms rp done (x:xs) stopped =
         case x of
           OnMainSM ctx -> do
             (gStack', stacks') <- contextStack subs sm gStack ctx
@@ -138,12 +135,12 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
                           n_ssms = ssms                      -- XXX: not counted
                           r = SuccessExe pinfo p_buf buf
                       fmap (acc++) <$> executeStack subs nxt_sm gNext n_ssms
-                                                    tsms (r:rp) done (xs ++ jobs)
-                    StackSuspend buf new_ctx -> do
+                                                    tsms (r:rp) done (xs ++ jobs) True
+                    StackSuspend buf new_ctx b -> do
                       let slot = OnMainSM new_ctx
                           r    = FailExe (infoTarget ctx) SuspendExe buf
                       fmap (acc++) <$> executeStack subs sm gNext ssms
-                                                    tsms (r:rp) (slot:done) xs
+                                                    tsms (r:rp) (slot:done) xs (stopped || b)
             foldlM next (gStack',[]) stacks'
           OnChildSM _ _ -> error "OnChildSM is no longer supported"
 
@@ -160,14 +157,14 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
             SM_Complete _ _ss hs -> do
               phs <- phases hs
               return $ StackDone ph p_buf buf pinfo gStack' phs next_sm
-            SM_Suspend -> return $ StackSuspend buf ctx
-            SM_Stop    -> return $ StackDone ph buf buf pinfo gStack' [] sm
+            SM_Suspend -> return $ StackSuspend buf ctx True
+            SM_Stop    -> return $ StackSuspend buf ctx False
         return (gStack', machines')
     contextStack subs sm gStack (StackSwitch ph xs) =
-        let loop gLoop buf done []   = return (gLoop
+        let loop gLoop buf done [] b = return (gLoop
                                               , [StackSuspend buf
-                                                $ StackSwitch ph (reverse done)])
-            loop gLoop _ done (a:as) = do
+                                                 (StackSwitch ph (reverse done)) b])
+            loop gLoop _ done (a:as) _ = do
               let input = Execute subs a
               (gLoop', machines) <- unSM sm gLoop input
               let next :: (g,[StackCtxResult g l])
@@ -182,31 +179,17 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
                             pinfo = StackSwitchPhase (_phName ph) pname pas
                         return (gNext, StackDone a p_buf buf pinfo gNext phs nxt_sm:accum)
                       SM_Suspend -> do
-                        (gNext',result) <- loop gNext buf (a:done) as
+                        (gNext',result) <- loop gNext buf (a:done) as True
                         return (gNext', result ++ accum)
-                      SM_Stop    -> loop gNext buf done as
+                      SM_Stop    -> loop gNext buf done as True
               fmap reverse <$> foldlM next (gLoop',[]) machines
-        in loop gStack emptyFifoBuffer [] xs
+        in loop gStack emptyFifoBuffer [] xs False
 
     phases hs = for hs $ \h ->
         case M.lookup (_phHandle h) ps of
           Just ph -> return ph
           Nothing -> fail $ "impossible: rule " ++ name
                           ++ " doesn't have a phase named " ++ _phHandle h
-
-    {-
-    spawnSMs xs =
-        let spawnIt (SpawnSM tpe l action) =
-              let tmp_buf =
-                    case tpe of
-                      CopyThatBuffer buf -> buf
-                      CreateNewBuffer    -> init_buf
-                  fsm = newSM tmp_buf logs l
-                  phc  = DirectCall action
-                  ctx  = StackNormal $ Phase (name ++ "-child") phc in
-              OnChildSM fsm ctx in
-        fmap spawnIt xs
-        -}
 
     createSlots :: (StackCtx g l -> StackSlot g l)
                 -> Phase g l

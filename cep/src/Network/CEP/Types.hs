@@ -335,7 +335,8 @@ continue :: PhaseHandle -> PhaseM g l ()
 continue p = singleton $ Continue p
 
 -- | Stops the state machine. Depending the current state machine context:
---   - Normal context: State machine just stops.
+--   - Normal context: State machine stops and is removed from engine, so
+--      current invocation of the rule is will not be triggered.
 --
 --   - Switch context: State machine tries the next alternative 'Phase' without
 --     adding back the current state machine to the list of alternatives.
