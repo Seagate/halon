@@ -147,7 +147,6 @@ data SchedulerMsg
 -- | Messages that the scheduler sends to the tested application.
 data SchedulerResponse
     = Continue     -- ^ Pick a message from your mailbox.
-    | TestReceive  -- ^ Look if there is some elegible message in your mailbox.
     | Timeout      -- ^ Unblock by timing out.
     | OkNewProcess -- ^ Please go on and create the child process.
   deriving (Generic, Typeable, Show)
@@ -291,7 +290,7 @@ startScheduler initialProcs seed0 clockDelta = do
              -- if the process was blocked let's ask it to check again if it
              -- has a message.
              procs'' <- if isBlocked pid procs
-               then do DP.send pid TestReceive
+               then do DP.send pid Continue
                        return $ Map.delete pid (stateProcs st')
                else return $ stateProcs st'
              go st' { stateProcs = procs'' }
@@ -306,7 +305,7 @@ startScheduler initialProcs seed0 clockDelta = do
                  -- if the process was blocked let's ask it to check again if it
                  -- has a message.
                  procs'' <- if isBlocked pid procs
-                   then do DP.send pid TestReceive
+                   then do DP.send pid Continue
                            return $ Map.delete pid (stateProcs st')
                    else return $ stateProcs st'
                  go st' { stateProcs = procs'' }
@@ -713,9 +712,9 @@ receiveTimeoutM mus ms = do
         sendS (Block self mus)
         command <- DP.expect
         case command of
-          TestReceive -> go r ms'
-          Timeout     -> return Nothing
-          _           ->
+          Continue -> go r ms'
+          Timeout  -> return Nothing
+          _        ->
             error $ "C.D.P.S.Internal.receiveTimeoutM: unexpected command "
                     ++ show command
 
@@ -931,5 +930,5 @@ receiveWaitT = if schedulerIsEnabled
             DPT.receiveWaitT $ map (flip unMatchT Nothing) ms
            else do
             liftProcess $ sendS (Block self Nothing)
-            TestReceive <- liftProcess DP.expect
+            Continue <- liftProcess DP.expect
             go r ms'
