@@ -23,18 +23,19 @@ import Control.Distributed.Process.Consensus.Paxos
 import Control.Distributed.Process.Consensus.Paxos.Types
 import qualified Control.Distributed.Process.Consensus.Paxos.Messages as Msg
 import Control.Distributed.Process.Quorum
-import Control.Distributed.Process hiding (callLocal)
+import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types ( runLocalProcess )
 import Control.Distributed.Process.Trans (liftProcess)
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Control.Applicative ((<$>))
-import Control.Concurrent ( newEmptyMVar, putMVar, takeMVar, threadDelay )
+import Control.Concurrent
 import Control.Exception ( SomeException, throwIO )
 import Control.Monad (when, forM_, replicateM_, replicateM)
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary )
+import Data.Function ( fix )
 import Data.List ( delete )
 import qualified Data.Map as Map
 import Data.Maybe ( catMaybes )
@@ -59,7 +60,12 @@ callLocal p = mask_ $ do
   self <- getSelfPid
   pid <- spawnLocal $ try p >>= liftIO . putMVar mv
                       >> when schedulerIsEnabled (usend self Done)
-  when schedulerIsEnabled $ do Done <- expect; return ()
+  when schedulerIsEnabled $ do
+    -- The process might be killed before reading the Done message,
+    -- thus some spurious Done message might exist in the queue.
+    fix $ \loop -> do Done <- expect
+                      b <- liftIO $ isEmptyMVar mv
+                      when b loop
   liftIO (takeMVar mv >>= either (throwIO :: SomeException -> IO a) return)
     `onException` do
        -- Exit the worker and wait for it to terminate.

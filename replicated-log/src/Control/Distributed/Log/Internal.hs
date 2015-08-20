@@ -84,6 +84,7 @@ import Control.Monad
 import Data.Binary (Binary, encode, decode)
 import qualified Data.ByteString.Lazy as BSL (ByteString)
 import Data.Constraint (Dict(..))
+import Data.Function (fix)
 import Data.Int (Int64)
 import Data.List (partition, sortBy, nub)
 import qualified Data.Foldable as Foldable
@@ -123,7 +124,12 @@ callLocal p = mask_ $ do
   self <- getSelfPid
   pid <- spawnLocal $ try p >>= liftIO . putMVar mv
                       >> when schedulerIsEnabled (usend self Done)
-  when schedulerIsEnabled $ do Done <- expect; return ()
+  when schedulerIsEnabled $ do
+    -- The process might be killed before reading the Done message,
+    -- thus some spurious Done message might exist in the queue.
+    fix $ \loop -> do Done <- expect
+                      b <- liftIO $ isEmptyMVar mv
+                      when b loop
   liftIO (takeMVar mv >>= either (throwIO :: SomeException -> IO a) return)
     `onException` do
        -- Exit the worker and wait for it to terminate.
