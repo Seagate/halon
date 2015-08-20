@@ -61,7 +61,6 @@ int rcv(rpc_item_t* it,void* ctx) {
 
 int main(int argc,char** argv) {
     int rc;
-    char *dbdir;
 
     if (argc!=4) {
         fprintf(stderr,"USAGE: %s <local RPC address> <confd RPC address> <HA RPC address>\n"
@@ -82,8 +81,8 @@ int main(int argc,char** argv) {
 
     sem_init(&reply_received,0,0);
 
-    rpc_receive_endpoint_t* ep;
-    rc = rpc_listen(dbdir == NULL ? "s1" : strcat(dbdir, "/s1"), argv[1],
+    rpc_endpoint_t* ep;
+    rc = rpc_listen(argv[1],
                     &(rpc_listen_callbacks_t){ .receive_callback=rcv },&ep);
     if (rc) {
         fprintf(stderr,"rpc_listen: %d",rc);
@@ -91,9 +90,9 @@ int main(int argc,char** argv) {
     }
 
     ast_thread_init();
-    struct m0_reqh* reqh = rpc_get_rpc_machine_re(ep)->rm_reqh;
+    struct m0_reqh* reqh = rpc_get_rpc_machine(ep)->rm_reqh;
     rc = m0_confc_init(&reqh->rh_confc, &g_grp
-                      ,argv[2],rpc_get_rpc_machine_re(ep), NULL);
+                      ,argv[2],rpc_get_rpc_machine(ep), NULL);
     if (rc) {
         fprintf(stderr,"m0_confc_init: %d %s\n",rc,strerror(-rc));
         return 1;
@@ -108,7 +107,7 @@ int main(int argc,char** argv) {
     rpc_connection_t* c;
 
     // Connect to HA side.
-    rc = rpc_connect_re(ep,argv[3],5,&c);
+    rc = rpc_connect(ep,argv[3],5,&c);
     if (rc) {
         fprintf(stderr,"rpc_connect_re: %d %s\n",rc,strerror(-rc));
         return 1;
@@ -190,7 +189,7 @@ int main(int argc,char** argv) {
 
     ast_thread_fini();
 
-    rpc_stop_listening(ep);
+    rpc_destroy_endpoint(ep);
 
     rpc_fini();
     m0_fini();
