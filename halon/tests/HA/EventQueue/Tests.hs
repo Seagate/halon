@@ -39,6 +39,8 @@ import qualified Data.UUID as UUID
 import Data.Proxy (Proxy(..))
 import Network.CEP
 
+import Test.Helpers
+
 eqSDict :: SerializableDict EventQueue
 eqSDict = SerializableDict
 
@@ -84,7 +86,8 @@ tests (AbstractTransport transport breakConnection _) = do
             rGroup <- unClosure cRGroup >>= id
             eq <- spawnLocal (eventQueue rGroup)
             na <- spawnLocal (eqTrackerProcess [])
-            True <- updateEQNodes na nodes
+            assertBool "update-eq-nodes-works"
+              =<< updateEQNodes na nodes
             mapM_ link [eq, na]
 
             action eq na rGroup
@@ -95,7 +98,7 @@ tests (AbstractTransport transport breakConnection _) = do
               return ()
         , testSuccess "eq-is-registered" ==> \eq _ _ -> do
               eqLoc <- whereis eventQueueLabel
-              assert $ eqLoc == (Just eq)
+              assertEqual "eq is registered in registry" eqLoc (Just eq)
         , testSuccess "eq-one-event-direct" ==> \eq _ rGroup -> do
               selfNode <- getSelfNode
               self     <- getSelfPid
@@ -111,39 +114,53 @@ tests (AbstractTransport transport breakConnection _) = do
               eid <- triggerEvent 1
               (_, PersistMessage eid' _ : _) <- retry requestTimeout $
                                                     getState rGroup
-              assert (eid == eid')
+              assertEqual "one message was sent" eid eid'
         , testSuccess "eq-many-events" ==> \_ _ rGroup -> do
-              mapM_ triggerEvent [1..10]
-              assert . (== 10) . length . snd =<< retry requestTimeout
-                                                    (getState rGroup)
+              let msgs = [1..10::Int]
+              mapM_ triggerEvent msgs
+              assertEqual "the number of messages received equal to number of messages sent"
+                          (Set.fromList msgs) . Set.fromList
+                          -- 10 . length .snd
+                          =<< unPersistHAEvents . snd
+                          =<< retry requestTimeout
+                                    (getState rGroup)
         , testSuccess "eq-trim-one" ==> \eq _ rGroup -> do
+              let msgs = [1..10::Int]
               subscribe eq (Proxy :: Proxy TrimDone)
-              mapM_ triggerEvent [1..10]
-              (_, (PersistMessage evtid _ ):_) <- retry requestTimeout $
-                                               getState rGroup
+              mapM_ triggerEvent msgs
+              (_, v@(PersistMessage evtid _):_) <- retry requestTimeout $
+                                                   getState rGroup
+              Just elm <- unPersistHAEvent v :: Process (Maybe Int)
               send eq evtid
               Published (TrimDone eid) _ <- expect
               assert (evtid == eid)
-              assert . (== 9) . length . snd =<< retry requestTimeout
-                                                   (getState rGroup)
+
+              assertBool "trimmed event is not in storage"
+                . not . Set.member elm . Set.fromList
+                =<< unPersistHAEvents . snd
+                =<< retry requestTimeout (getState rGroup)
         , testSuccess "eq-trim-idempotent" ==> \eq _ rGroup -> do
               subscribe eq (Proxy :: Proxy TrimDone)
-              mapM_ triggerEvent [1..10]
+              evids <- mapM triggerEvent [1..10]
               (_, (PersistMessage evtid _ ):_) <- retry requestTimeout $
                                                getState rGroup
+              assertBool "event id is one of messages that were sent"
+                (Set.member evtid (Set.fromList evids))
               before <- map persistEventId . snd <$>
                           retry requestTimeout (getState rGroup)
               send eq evtid
               Published (TrimDone eid) _ <- expect
-              assert (evtid == eid)
+              assertEqual "correct event was trimmed" evtid eid
               trim1 <- map persistEventId . snd <$>
                           retry requestTimeout (getState rGroup)
               send eq evtid
               Published (TrimDone eid2) _ <- expect
-              assert (evtid == eid2)
+              assertEqual "correct event was trimmed" evtid eid2
+
               trim2 <- map persistEventId . snd <$>
                           retry requestTimeout (getState rGroup)
-              assert (before /= trim1 && before /= trim2 && trim1 == trim2)
+              assertBool "trim is idempotent"
+                         (before /= trim1 && before /= trim2 && trim1 == trim2)
         , testSuccess "eq-trim-none" ==> \eq _ rGroup -> do
               subscribe eq (Proxy :: Proxy TrimDone)
               mapM_ triggerEvent [1..10]
@@ -152,21 +169,21 @@ tests (AbstractTransport transport breakConnection _) = do
               let evtid = UUID.nil
               send eq evtid
               Published (TrimDone eid) _ <- expect
-              assert (evtid == eid)
+              assertEqual "correct event was trimmed" evtid eid
               trim <- map persistEventId . snd <$>
                           retry requestTimeout (getState rGroup)
-              assert (before == trim)
+              assertEqual "trimming non existing event is nilpotent" before trim
         , testSuccess "eq-with-no-rc-should-replicate" $ setup $ \_ _ rGroup -> do
               eid <- triggerEvent 1
               (_, PersistMessage eid' _ : _) <- retry requestTimeout $
                                                      getState rGroup
-              assert (eid == eid')
+              assertEqual "if no rc exists eq should replicate message" eid eid'
         , testSuccess "eq-should-lookup-for-rc" $ setup $ \eq _ rGroup -> do
               self <- getSelfPid
               eid <- triggerEvent (1::Int)
               (_, PersistMessage eid' _ : _) <- retry requestTimeout $
                                                   getState rGroup
-              assert (eid == eid')
+              assertEqual "correct message was received" eid eid'
               send eq self
               _ <- expect :: Process (HAEvent Int)
               return ()
@@ -225,12 +242,6 @@ tests (AbstractTransport transport breakConnection _) = do
                     _ -> error "Wrong event received from second RC."
                 return ()
 #endif
-        , testSuccess "eq-save-path" ==> \_ _ rGroup -> do
-              eid <- triggerEvent 1
-              HAEvent eid' (_ :: Int) _ <- expect
-              assert $ eid == eid'
-              (_, PersistMessage _ _ : _) <- retry requestTimeout $ getState rGroup
-              return ()
         -- Test that until removed, messages in the EQ are sent at least once
         -- to the RC everytime it spawns.
         , testSuccess "eq-send-events-to-new-rc" ==> \eq _na _rGroup -> do
@@ -248,7 +259,7 @@ tests (AbstractTransport transport breakConnection _) = do
                            ((\(HAEvent e (_::Int) _) -> e) <$> expect)
                 send self (evs' == evs)
               send eq rc'
-              True <- expect
+              assertBool "event is correct" =<< expect
               Published RCDied _ <- expect
               return ()
         , testSuccess "send-until-acknowledged" ==> \eq _na _rGroup -> do
