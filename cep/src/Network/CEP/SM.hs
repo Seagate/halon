@@ -156,13 +156,13 @@ mainSM buf logs l g (PushMsg msg) =
 mainSM buf logs l g (Execute subs ph) =
     case _phCall ph of
       DirectCall action -> do
-        (g',results) <- runPhaseM (_phName ph) subs g logs [(buf,l,action)]
+        (g',results) <- runPhaseM (_phName ph) subs logs g l buf action
         return (g', map nextState results)
       ContCall tpe k -> do
         res <- extractMsg tpe g l buf
         case res of
           Just (Extraction new_buf b) -> do
-            (g', results) <- runPhaseM (_phName ph) subs g logs [(new_buf, l, k b)]
+            (g', results) <- runPhaseM (_phName ph) subs logs g l new_buf (k b)
             results' <- mapM (nextStateNotify b) results
             return (g', results')
           Nothing -> do
@@ -179,54 +179,68 @@ mainSM buf logs l g (Execute subs ph) =
 
 -- | 'Phase' state machine execution main loop. Runs until its stack is empty
 --   except if get a 'Suspend' or 'Stop' instruction.
+--   This execution is run goes not switch between forked threads. First parent
+--   thread is executed to a safe point, and then child is run.
 runPhaseM :: forall g l . String            -- ^ Process name.
           -> Subscribers       -- ^ List of events subscribers.
-          -> g                 -- ^ Global state.
           -> Maybe SMLogs      -- ^ Logs?.
-          -> [(Buffer, l, PhaseM g l ())]
+          -> g                 -- ^ Global state.
+          -> l                 -- ^ Local state
+          -> Buffer            -- ^ Buffer
+          -> PhaseM g l ()
           -> Process (g, [(Buffer, SM_Out g l SM_Exe)])
-runPhaseM pname subs = schedule
+runPhaseM pname subs plogs pg pl pb action = do
+    (g,t@(_,out), phases) <- go pg pl plogs pb action
+    let g' = case out of
+                SM_Complete{} -> g
+                _ -> pg
+    fmap (t:) <$> consume g' phases
   where
-    schedule :: g -> Maybe SMLogs -> [(Buffer, l, PhaseM g l ())]
-             -> Process (g, [(Buffer, SM_Out g l SM_Exe)])
-    schedule global _ [] = return (global, [])
-    schedule global lgs ((buf,local,a):as) = go lgs global local buf as a
-    go :: Maybe SMLogs -> g -> l -> Buffer -> [(Buffer, l, PhaseM g l ())] -> PhaseM g l ()
-             -> Process (g, [(Buffer, SM_Out g l SM_Exe)])
-    go lgs g l buf as a = viewT a >>= inner
+    consume :: g -> [(Buffer, l, PhaseM g l ())] -> Process (g, [(Buffer, SM_Out g l SM_Exe)])
+    consume g []     = return (g, [])
+    consume g ((b,l,p):ps) = do
+      (g',t@(_,out), phases) <- go g l plogs b p
+      case out of
+        SM_Complete{} -> fmap (t:) <$> consume g' (ps++phases)
+        _             -> fmap (t:) <$> consume g  (ps++phases)
+
+    go :: g -> l -> Maybe SMLogs -> Buffer -> PhaseM g l ()
+            -> Process (g, (Buffer, SM_Out g l SM_Exe), [(Buffer,l, PhaseM g l ())])
+    go g l lgs buf a = viewT a >>= inner
       where
-        inner (Return _) = (fmap ((buf, SM_Complete g l []):))  <$> schedule g lgs as
-        inner (Continue ph :>>= _)
-          = (fmap ((buf, SM_Complete g l [ph]):)) <$> schedule g lgs as
-        inner (Save s :>>= k) = schedule s lgs ((buf, l, k ()):as)
-        inner (Load :>>= k)   = schedule g lgs ((buf, l, k g):as)
-        inner (Get Global :>>= k) = go lgs g l buf as (k g)
-        inner (Get Local  :>>= k) = go lgs g l buf as $ k l
-        inner (Put Global s :>>= k) = go lgs s l buf as $ k ()
-        inner (Put Local s :>>= k)  = go lgs g s buf as $ k ()
-        inner (Stop :>>= _) = fmap ((buf, SM_Stop):) <$> schedule g lgs as
+        inner (Return _) = return (g, (buf, SM_Complete g l []), [])
+        inner (Continue ph :>>= _)  = return (g, (buf, SM_Complete g l [ph]), [])
+        inner (Save s :>>= k)       = go s l lgs buf $ k ()
+        inner (Load :>>= k)         = go g l lgs buf $ k g
+        inner (Get Global :>>= k)   = go g l lgs buf $ k g
+        inner (Get Local  :>>= k)   = go g l lgs buf $ k l
+        inner (Put Global s :>>= k) = go s l lgs buf $ k ()
+        inner (Put Local  s :>>= k) = go g s lgs buf $ k ()
+        inner (Stop :>>= _)         = return (g, (buf, SM_Stop), [])
         inner (Fork typ naction :>>= k) =
           let buf' = case typ of
                       NoBuffer -> emptyFifoBuffer
                       CopyBuffer -> buf
-          in schedule g lgs (as ++ [(buf', l, naction), (buf, l, k())])
+          in do (g', (b', out), sm) <- go g l lgs buf (k ())
+                return (g', (b', out), (buf',l,naction):sm)
         inner (Lift m :>>= k) = do
           a' <- m
-          schedule g lgs (as ++ [(buf, l, k a')])
-        inner (Suspend :>>= _) = fmap ((buf, SM_Suspend):) <$> schedule g lgs as
+          go g l lgs buf (k a')
+        inner (Suspend :>>= _) =
+          return (g, (buf, SM_Suspend),[])
         inner (Publish e :>>= k) = do
           notifySubscribers subs e
-          schedule g lgs (as ++ [(buf, l, k ())])
+          go g l lgs buf (k ())
         inner (PhaseLog ctx lg :>>= k) =
           let new_logs = fmap (S.|> (pname,ctx,lg)) lgs in
-          go new_logs g l buf as $ k ()
+          go g l new_logs buf $ k ()
         inner (Switch xs :>>= _) =
-          fmap ((buf, SM_Complete g l xs):) <$> schedule g lgs as
+          return (g, (buf, SM_Complete g l xs), [])
         inner (Peek idx :>>= k) = do
           case bufferPeek idx buf of
-            Nothing -> fmap ((buf, SM_Suspend):) <$> schedule g lgs as
-            Just r  -> go lgs g l buf as $ k r
+            Nothing -> return (g, (buf, SM_Suspend), [])
+            Just r  -> go g l lgs buf $ k r
         inner (Shift idx :>>= k) =
             case bufferGetWithIndex idx buf of
-              (Nothing, _) -> fmap ((buf, SM_Suspend):) <$> schedule g lgs as
-              (Just r, buf') -> go lgs g l buf' as $ k r
+              (Nothing, _)   -> return (g,(buf, SM_Suspend),[])
+              (Just r, buf') -> go g l lgs buf' $ k r
