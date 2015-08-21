@@ -33,11 +33,11 @@ data StackIn g l a where
 
 data StackOut g =
     StackOut
-    { _soGlobal    :: !g
-    , _soExeReport :: !ExecutionReport
-    , _soResult    :: !StackResult
-    , _soLogs      :: [Logs]
-    , _soStopped   :: !Bool
+    { _soGlobal    :: !g                    -- ^ Current global state.
+    , _soExeReport :: !ExecutionReport      -- ^ Execution report.
+    , _soResult    :: !StackResult          -- ^ Result of running a stack.
+    , _soLogs      :: [Logs]                -- ^ Logs.
+    , _soStopped   :: !Bool                 -- ^ Flag that shows if SM should be removed from the queue.
     }
 
 newtype StackSM g l = StackSM (forall a. StackIn g l a -> a)
