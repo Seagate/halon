@@ -81,14 +81,15 @@ globalIsGlobal :: Process ()
 globalIsGlobal = do
     self <- getSelfPid
     pid  <- spawnLocal $ execute (1 :: Int) $ do
-      initRule $ do
+      define "rule" $ do
         ph1 <- phaseHandle "state-1"
         ph2 <- phaseHandle "state-2"
         ph3 <- phaseHandle "state-3"
 
-        directly ph1 $ do
+        setPhase ph1 $ \(Foo{}) -> do
           fork NoBuffer $ continue ph2
           fork NoBuffer $ continue ph2
+          stop
 
         setPhase ph2 $ \(Donut _) -> do
           modify Global (+1)
@@ -97,9 +98,9 @@ globalIsGlobal = do
         setPhase ph3 $ \(Donut _) -> do
           i <- get Global
           liftProcess $ usend self (Res i)
-
         start ph1 ()
 
+    usend pid (Foo 1)
     usend pid donut
     usend pid donut
     Res (i :: Int) <- expect
