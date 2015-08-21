@@ -73,8 +73,7 @@ globalUpdated = do
 
     usend pid donut
     usend pid donut
-    Res (i :: Int) <- expect
-    assert $ i == 2
+    assertEqual "Global state was updated" (Res (2::Int)) =<< expect
 
 globalIsGlobal :: Process ()
 globalIsGlobal = do
@@ -641,7 +640,36 @@ testsExecution launch = testGroup "Execution properties"
                                    $ launch $ testConsumption 0
   , localOption (mkTimeout 500000) $ testCase "Direct rule is always executed"
                                    $ launch $ testConsumptionDirect
+  , localOption (mkTimeout 500000) $ testCase "Stop works"
+                                   $ launch $ testStopWorks
   ]
+
+testStopWorks :: Process ()
+testStopWorks = do
+    self <- getSelfPid
+    pid  <- spawnLocal $ execute () $ do
+      define "rule-1" $ do
+        ph1 <- phaseHandle "state-1"
+        setPhase ph1 $ \(Donut ()) ->
+          liftProcess $ usend self "."
+        start ph1 ()
+      define "rule-2" $ do
+        ph1 <- phaseHandle "state-1"
+        setPhase ph1 $ \(Donut ()) -> do
+          liftProcess $ usend self "."
+          stop
+        start ph1 ()
+    usend pid donut
+    assertEqual "both rules processed" [".","."]
+      =<< replicateM 2 expect
+    usend pid donut
+    assertEqual "one rule both rules processed" "."
+      =<< expect
+    assertEqual "one rule both rules processed" (Nothing :: Maybe String)
+      =<< expectTimeout 0
+    return ()
+
+
 
 loopWorks :: Process ()
 loopWorks = do

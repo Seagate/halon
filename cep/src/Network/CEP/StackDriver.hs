@@ -41,13 +41,13 @@ permanentDriver sp init_sm = StackDriver $ boot init_sm
 
     cruise sm (PushInput subs g i) = do
       (out, nxt_sm) <- runStackSM (StackIn subs g i) sm
-      let StackOut nxt_g rep res lgs = out
+      let StackOut nxt_g rep res lgs b' = out
       case res of
-        EmptyStack ->
+        EmptyStack | b' ->
             let greedy reps cur_g cur_sm lgsGreedy = do
                   let input = StackIn subs cur_g NoMessage
                   (c_out, n_sm) <- runStackSM input cur_sm
-                  let StackOut n_g c_r c_re logs = c_out
+                  let StackOut n_g c_r c_re logs b = c_out
                   case c_re of
                     EmptyStack
                       | hasNonEmptyBuffers $ exeInfos c_r ->
@@ -56,15 +56,15 @@ permanentDriver sp init_sm = StackDriver $ boot init_sm
                       | otherwise -> do
                         let f_r  = mergeReports (c_r:reps)
                             f_sm = runStackSM (StackPush sp) n_sm
-                            f_o  = StackOut n_g f_r c_re (lgsGreedy <> logs)
+                            f_o  = StackOut n_g f_r c_re (lgsGreedy <> logs) b
                         return (f_o, StackDriver $ cruise f_sm)
                     NeedMore ->
                       let f_r = mergeReports (c_r:reps)
-                          f_o = StackOut n_g f_r c_re (lgsGreedy <> logs) in
+                          f_o = StackOut n_g f_r c_re (lgsGreedy <> logs) b in
                       return (f_o, StackDriver $ cruise n_sm) in
             let int_sm = runStackSM (StackPush sp) nxt_sm in
             greedy [rep] nxt_g int_sm lgs
-        NeedMore -> return (out, StackDriver $ cruise nxt_sm)
+        _ -> return (out, StackDriver $ cruise nxt_sm)
 
 hasNonEmptyBuffers :: [ExecutionInfo] -> Bool
 hasNonEmptyBuffers [] = False
