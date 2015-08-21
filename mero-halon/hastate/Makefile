@@ -13,7 +13,7 @@ CFLAGS=-c -I$(MERO_ROOT)/extra-libs/db4/build_unix -I$(MERO_ROOT) \
 libdirs=$(MERO_ROOT)/mero/.libs \
         $(MERO_ROOT)/extra-libs/cunit/CUnit/Sources/.libs
 
-empty= 
+empty=
 sp=$(empty) $(empty)
 
 ENV=LD_LIBRARY_PATH=$(subst $(sp),:,$(libdirs)) M0_CORE_DIR=$(MERO_ROOT)
@@ -28,11 +28,10 @@ SOURCES=$(RPCLITE_PREFIX)/rpclite_fop_ff.c \
 		$(RPCLITE_PREFIX)/m0init.c \
 		$(RPCLITE_PREFIX)/rpclite_fop.c \
 		$(RPCLITE_PREFIX)/rpclite_fom.c \
-		$(RPCLITE_PREFIX)/rpclite_sender_fom.c \
         hastate.c \
         hastate_fops.c \
         hastate_foms.c
-OBJECTS=$(SOURCES:.c=.o) 
+OBJECTS=$(SOURCES:.c=.o)
 
 TEST_NID = $(shell sudo lctl list_nids | grep o2ib | head -1)
 
