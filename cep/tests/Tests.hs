@@ -467,7 +467,7 @@ forkCopyLocalBuffer = do
           fork CopyBuffer $ do
             liftProcess $ usend self (Res ())
             continue ph1
-          liftProcess $ usend self i
+          liftProcess $ usend self (Foo i)
           continue ph1
         start ph1 ()
     usend pid (Foo 1)
