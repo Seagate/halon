@@ -139,9 +139,9 @@ testsSwitch launch = localOption (mkTimeout 500000) $ testGroup "Switch"
   , testCase "Call suspend in switch"   $ launch switchSuspend
   , testCase "Call stop in switch"  $ launch switchStop
   , testCase "Failed rules modify local state"
-             $ launch $ switchFailedRulesDontChangeState Local True
-  , testCase "Failed rules modify global state"
-             $ launch $ switchFailedRulesDontChangeState Global True
+             $ launch $ switchFailedRulesDontChangeState "local" Local True
+  , testCase "Failed rules not modify global state"
+             $ launch $ switchFailedRulesDontChangeState "global" Global True
   ]
 
 switchIsWorking :: Process ()
@@ -307,8 +307,8 @@ switchStop = do
                 =<< replicateM 2 expect
     return ()
 
-switchFailedRulesDontChangeState :: Scope Int Int Int -> Bool -> Process ()
-switchFailedRulesDontChangeState l b = do
+switchFailedRulesDontChangeState :: String -> Scope Int Int Int -> Bool -> Process ()
+switchFailedRulesDontChangeState s l b = do
     self <- getSelfPid
     pid  <- spawnLocal $ execute (9) $ do
       define "rule" $ do
@@ -329,7 +329,7 @@ switchFailedRulesDontChangeState l b = do
         start ph1 (9::Int)
     usend pid donut
     Baz i <- expect
-    assertEqual "failed rules should not modify local state" b (i==9)
+    assertEqual ("failed rules should not modify " ++ s ++ " state") b (i==9)
 
 testsSequence :: (Process () -> IO ()) -> TestTree
 testsSequence launch = testGroup "Sequence"
