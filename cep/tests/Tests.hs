@@ -3,7 +3,7 @@
 module Tests where
 
 import Control.Distributed.Process
-import Control.Monad (replicateM)
+import Control.Monad (replicateM, replicateM_)
 import Data.Binary (Binary)
 import Data.Typeable
 import Data.List (sort)
@@ -413,7 +413,38 @@ testsFork launch = localOption (mkTimeout 500000) $ testGroup "Fork"
   , testCase "Fork copies curent buffer" $ launch forkCopyLocalBuffer
   , testCase "Fork do not copy other rules" $ launch forkDontCopyOtherRules
   -- , testCase "Fork increments number of SMs" $ launch forkIncrSMs
+  , testCase "Service usecase" $ launch forkServiceUsecase
   ]
+
+forkServiceUsecase :: Process ()
+forkServiceUsecase = do
+    self <- getSelfPid
+    pid  <- spawnLocal $ execute () $ do
+      define "rule" $ do
+        ph0 <- phaseHandle "state-1"
+        ph1 <- phaseHandle "state-2"
+        ph2 <- phaseHandle "state-3"
+        setPhase ph0 $ \(Baz{}) -> do
+          continue ph1
+
+        setPhase ph1 $ \(Donut _) -> do
+          fork NoBuffer $ do
+            continue ph2
+          continue ph1
+
+        setPhase ph2 $ \(Foo i) -> do
+          liftProcess $ usend self (Foo i)
+          continue ph2
+
+        start ph0 ()
+
+    replicateM_ 3 $ usend pid donut
+    usend pid (Baz 4)
+    usend pid (Foo 0)
+    assertEqual "foo" [0,0,0] . map unFoo
+      =<< replicateM 3 expect
+
+
 
 forkIsWorking :: Process ()
 forkIsWorking = do
