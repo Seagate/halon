@@ -31,7 +31,7 @@ import Control.Monad
 import Control.Monad.Trans
 
 import qualified Data.Aeson as Aeson
-import Data.Maybe (catMaybes, listToMaybe)
+import Data.Maybe (catMaybes, fromJust, listToMaybe, maybeToList)
 import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
 import Data.UUID.V4 (nextRandom)
@@ -133,50 +133,67 @@ ssplRulesF sspl = do
           ack pid
 
   -- SSPL Monitor drivemanager
-  defineSimple "monitor-drivemanager" $ \(HAEvent _ (nid, mrm) _) -> do
-    host <- findNodeHost (Node nid)
-    diskUUID <- liftIO $ nextRandom
-    let disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus mrm
-        encName = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN mrm
-        diskNum = floor . (toRealFloat :: Scientific -> Double) $
-                sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum mrm
-        enc = Enclosure $ T.unpack encName
-        disk = StorageDevice diskUUID
+  defineSimpleIf "monitor-drivemanager" (\(HAEvent _ (nid, mrm) _) _ ->
+    return $ sensorResponseMessageSensor_response_typeDisk_status_drivemanager mrm
+         >>= return . (nid,)
+    ) $ \(nid, mrm) -> do
+      host <- findNodeHost (Node nid)
+      diskUUID <- liftIO $ nextRandom
+      let disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus mrm
+          encName = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN mrm
+          diskNum = floor . (toRealFloat :: Scientific -> Double) $
+                  sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum mrm
+          enc = Enclosure $ T.unpack encName
+          disk = StorageDevice diskUUID
 
-    locateStorageDeviceInEnclosure enc disk
-    identifyStorageDevice disk $ DeviceIdentifier "slot" (IdentInt diskNum)
-    updateDriveStatus disk $ T.unpack disk_status
-    mapM_ (\h -> do
-          locateHostInEnclosure h enc
-          -- Find any existing (logical) devices and link them
-          hostDevs <- findHostStorageDevices h
-                    >>= filterM (flip hasStorageDeviceIdentifier
-                                (DeviceIdentifier "slot" (IdentInt diskNum)))
-          mapM_ (\d -> mergeStorageDevices [d,disk]) hostDevs
-          ) host
+      locateStorageDeviceInEnclosure enc disk
+      identifyStorageDevice disk $ DeviceIdentifier "slot" (IdentInt diskNum)
+      updateDriveStatus disk $ T.unpack disk_status
+      mapM_ (\h -> do
+            locateHostInEnclosure h enc
+            -- Find any existing (logical) devices and link them
+            hostDevs <- findHostStorageDevices h
+                      >>= filterM (flip hasStorageDeviceIdentifier
+                                  (DeviceIdentifier "slot" (IdentInt diskNum)))
+            mapM_ (\d -> mergeStorageDevices [d,disk]) hostDevs
+            ) host
 
-    liftProcess . sayRC $ "Registered drive"
-    when (disk_status == "inuse_removed") $ do
-      let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
-      sendInterestingEvent nid msg
-    when (disk_status == "unused_ok") $ do
-      let msg = InterestingEventMessage . T.pack
-                $  "Drive powered off: \n\t"
-                ++ show enc
-                ++ "\n\t"
-                ++ show disk
-      sendInterestingEvent nid msg
+      liftProcess . sayRC $ "Registered drive"
+      when (disk_status == "inuse_removed") $ do
+        let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
+        sendInterestingEvent nid msg
+      when (disk_status == "unused_ok") $ do
+        let msg = InterestingEventMessage . T.pack
+                  $  "Drive powered off: \n\t"
+                  ++ show enc
+                  ++ "\n\t"
+                  ++ show disk
+        sendInterestingEvent nid msg
 
   -- SSPL Monitor host_update
   defineSimpleIf "monitor-host-update" (\(HAEvent _ (nid, hum) _) _ ->
-      return . fmap (\a -> (nid, a))
-        $ sensorResponseMessageSensor_response_typeHost_updateHostId hum
+      return $ sensorResponseMessageSensor_response_typeHost_update hum
+           >>= sensorResponseMessageSensor_response_typeHost_updateHostId
+           >>= return . (nid,)
     ) $ \(nid, a) -> do
       let host = Host $ T.unpack a
           node = Node nid
       registerHost host
       locateNodeOnHost node host
       liftProcess . sayRC $ "Registered host: " ++ show host
+
+  -- SSPL Monitor interface data
+  defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum) _) _ ->
+      return $ sensorResponseMessageSensor_response_typeIf_data hum
+    ) $ \(SensorResponseMessageSensor_response_typeIf_data hn _ ifs') ->
+      let
+        host = Host . T.unpack $ fromJust hn
+        ifs = join $ maybeToList ifs' -- Maybe List, for some reason...
+        addIf i = registerInterface host . Interface . T.unpack . fromJust
+          $ sensorResponseMessageSensor_response_typeIf_dataInterfacesItemIfId i
+      in do
+        phaseLog "action" $ "Adding interfaces to host " ++ show host
+        forM_ ifs addIf
 
   -- Dummy rule for handling SSPL HL commands
   defineSimpleIf "systemd-cmd" (\(HAEvent _ cr _ ) _ ->

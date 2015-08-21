@@ -64,7 +64,6 @@ import qualified Data.Aeson as Aeson
 
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Defaultable
-import Data.Foldable (mapM_)
 import qualified Data.HashMap.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -95,18 +94,11 @@ msgHandler msg = do
   case decode (msgBody msg) :: Maybe SensorResponse of
     Just mr -> do
       say $ show mr
-      mapM_ promulgate
-            $ fmap (nid,)
-            . sensorResponseMessageSensor_response_typeHost_update
-            . sensorResponseMessageSensor_response_type
-            . sensorResponseMessage
-            $ mr
-      mapM_ promulgate
-            $ fmap (nid,)
-            . sensorResponseMessageSensor_response_typeDisk_status_drivemanager
-            . sensorResponseMessageSensor_response_type
-            . sensorResponseMessage
-            $ mr
+      void $ promulgate
+        ( nid
+        , sensorResponseMessageSensor_response_type
+            . sensorResponseMessage $ mr
+        )
     Nothing ->
       say $ "Unable to decode JSON message: " ++ (BL.unpack $ msgBody msg)
 
