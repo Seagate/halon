@@ -74,8 +74,7 @@ globalUpdated = do
 
     usend pid donut
     usend pid donut
-    Res (i :: Int) <- expect
-    assert $ i == 2
+    assertEqual "Global state was updated" (Res (2::Int)) =<< expect
 
 globalIsGlobal :: Process ()
 globalIsGlobal = do

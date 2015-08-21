@@ -7,11 +7,11 @@
 module Network.CEP.Stack where
 
 import Data.Traversable (for, forM)
-import Data.Foldable (foldlM)
+import Data.Foldable (foldlM, toList)
 import Data.Typeable
--- import Data.List (partition)
 
 import           Control.Distributed.Process
+import Data.Monoid ((<>))
 import qualified Data.Map.Strict as M
 
 import Network.CEP.Buffer
@@ -33,10 +33,11 @@ data StackIn g l a where
 
 data StackOut g =
     StackOut
-    { _soGlobal    :: !g
-    , _soExeReport :: !ExecutionReport
-    , _soResult    :: !StackResult
-    , _soStopped   :: !Bool
+    { _soGlobal    :: !g                    -- ^ Current global state.
+    , _soExeReport :: !ExecutionReport      -- ^ Execution report.
+    , _soResult    :: !StackResult          -- ^ Result of running a stack.
+    , _soLogs      :: [Logs]                -- ^ Logs.
+    , _soStopped   :: !Bool                 -- ^ Flag that shows if SM should be removed from the queue.
     }
 
 newtype StackSM g l = StackSM (forall a. StackIn g l a -> a)
@@ -56,7 +57,8 @@ data StackCtxResult g l
                 g
                 [Phase g l]
                 (SM g l)
-    | StackSuspend Buffer (StackCtx g l) Bool
+                (Maybe SMLogs)
+    | StackSuspend Buffer (StackCtx g l) (Maybe SMLogs) Bool
 
 data StackSlot g l
     = OnMainSM (StackCtx g l)
@@ -91,22 +93,26 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
         StackSM $ go (x:xs) sm
     go xs sm (StackIn subs g i) =
         case i of
-          NoMessage -> executeStack subs sm g 0 0 [] [] xs False
+          NoMessage -> executeStack subs sm g 0 0 [] [] xs [] False
           GotMessage (TypeInfo _ (_ :: Proxy e)) msg -> do
             Just (a :: e) <- unwrapMessage msg
             let input = PushMsg a
             broadcast subs input xs sm g
 
-    broadcast :: Subscribers -> SM_In g l () -> [StackSlot g l] -> SM g l -> g -> Process (g,[(StackOut g, StackSM g l)])
-    broadcast subs i xs sm g = do
-        (broadcastG, machines) <- unSM sm g i
-        let next (nextG,acc) (_, _, SM_Unit, nxt_sm) = do
+    broadcast :: Subscribers -> SM_In g l (SM g l) -> [StackSlot g l] -> SM g l -> g -> Process (g,[(StackOut g, StackSM g l)])
+    broadcast subs i xs sm g =
+        let nxt_sm = unSM sm g i
+        in executeStack subs nxt_sm g 0 0 [] [] xs [] False
+
+{-
+        let next (nextG,acc) (_, _, SM_Unit Nothing, nxt_sm) = do
               xs' <- for xs $ \slot ->
                 case slot of
                   OnMainSM _       -> return slot
                   OnChildSM _ _ -> error "OnChildSM"
-              fmap (acc++) <$> executeStack subs nxt_sm nextG 0 0 [] [] xs' False
+              fmap (acc++) <$>
         foldlM next (broadcastG,[]) machines
+        -}
 
     executeStack :: Subscribers
                  -> SM g l
@@ -116,31 +122,36 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
                  -> [ExecutionInfo]
                  -> [StackSlot g l]
                  -> [StackSlot g l]
+                 -> [Logs]
                  -> Bool
                  -> Process (g, [(StackOut g, StackSM g l)])
-    executeStack _ sm g ssms tsms rp done [] stopped =
+    executeStack _ sm g ssms tsms rp done [] executeLogs stopped =
         let res = if null done then EmptyStack else NeedMore
             eis = reverse rp
             rep = ExecutionReport ssms tsms eis in
-        return (g, [(StackOut g rep res stopped, StackSM $ go (reverse done) sm)])
-    executeStack subs sm gStack ssms tsms rp done (x:xs) stopped =
+        return (g, [(StackOut g rep res executeLogs stopped, StackSM $ go (reverse done) sm)])
+    executeStack subs sm gStack ssms tsms rp done (x:xs) executeLogs stopped =
         case x of
           OnMainSM ctx -> do
             (gStack', stacks') <- contextStack subs sm gStack ctx
             let next (gNext,acc) res = do
                   case res of
-                    StackDone pph p_buf buf pinfo _ phs nxt_sm -> do
+                    StackDone pph p_buf buf pinfo _ phs nxt_sm lgs -> do
                       phsm <- createSlots OnMainSM pph phs
                       let jobs = phsm
                           n_ssms = ssms                      -- XXX: not counted
                           r = SuccessExe pinfo p_buf buf
+                          lgs' = maybe executeLogs
+                                 (\ls -> Logs name (toList ls):executeLogs) lgs
                       fmap (acc++) <$> executeStack subs nxt_sm gNext n_ssms
-                                                    tsms (r:rp) done (xs ++ jobs) True
-                    StackSuspend buf new_ctx b -> do
+                                                    tsms (r:rp) done (xs ++ jobs) lgs' True
+                    StackSuspend buf new_ctx lgs b -> do
                       let slot = OnMainSM new_ctx
                           r    = FailExe (infoTarget ctx) SuspendExe buf
+                          lgs' = maybe executeLogs
+                                 (\ls -> Logs name (toList ls):executeLogs) lgs
                       fmap (acc++) <$> executeStack subs sm gNext ssms
-                                                    tsms (r:rp) (slot:done) xs (stopped || b)
+                                                    tsms (r:rp) (slot:done) xs lgs' (stopped || b)
             foldlM next (gStack',[]) stacks'
           OnChildSM _ _ -> error "OnChildSM is no longer supported"
 
@@ -154,36 +165,38 @@ mainStackSM name logs ps init_buf sl = go [] (newSM init_buf logs sl)
         (gStack', machines) <- unSM sm gStack (Execute subs ph)
         machines' <- forM machines $ \(p_buf, buf, out, next_sm) ->
           case out of
-            SM_Complete _ _ss hs -> do
+            SM_Complete _ _ss hs lgs -> do
               phs <- phases hs
-              return $ StackDone ph p_buf buf pinfo gStack' phs next_sm
-            SM_Suspend -> return $ StackSuspend buf ctx True
-            SM_Stop    -> return $ StackSuspend buf ctx False
+              return $ StackDone ph p_buf buf pinfo gStack' phs next_sm lgs
+            SM_Suspend lgs -> return $ StackSuspend buf ctx lgs True
+            SM_Stop    lgs -> return $ StackSuspend buf ctx lgs False
+            SM_Unit    _   -> error "impossible happened"
         return (gStack', machines')
     contextStack subs sm gStack (StackSwitch ph xs) =
-        let loop gLoop buf done [] b = return (gLoop
+        let loop gLoop buf done [] lgs b = return (gLoop
                                               , [StackSuspend buf
-                                                 (StackSwitch ph (reverse done)) b])
-            loop gLoop _ done (a:as) _ = do
+                                                 (StackSwitch ph (reverse done)) lgs b])
+            loop gLoop _ done (a:as) lgs _ = do
               let input = Execute subs a
               (gLoop', machines) <- unSM sm gLoop input
               let next :: (g,[StackCtxResult g l])
-                       -> (Buffer, Buffer, SM_Out g l SM_Exe, SM g l)
+                       -> (Buffer, Buffer, SM_Out g l, SM g l)
                        -> Process (g,[StackCtxResult g l])
                   next (gNext,accum) (p_buf, buf, out, nxt_sm) =
                     case out of
-                      SM_Complete _ _ss hs -> do
+                      SM_Complete _ _ss hs lgs' -> do
                         phs <- phases hs
                         let pname = _phName a
                             pas   = fmap _phName $ reverse done
                             pinfo = StackSwitchPhase (_phName ph) pname pas
-                        return (gNext, StackDone a p_buf buf pinfo gNext phs nxt_sm:accum)
-                      SM_Suspend -> do
-                        (gNext',result) <- loop gNext buf (a:done) as True
+                        return (gNext, StackDone a p_buf buf pinfo gNext phs nxt_sm (lgs'<>lgs):accum)
+                      SM_Suspend lgs' -> do
+                        (gNext',result) <- loop gNext buf (a:done) as (lgs'<>lgs) True
                         return (gNext', result ++ accum)
-                      SM_Stop    -> loop gNext buf done as True
+                      SM_Stop  lgs'  -> loop gNext buf done as (lgs' <> lgs) True
+                      SM_Unit  _     -> error "impossible happened"
               fmap reverse <$> foldlM next (gLoop',[]) machines
-        in loop gStack emptyFifoBuffer [] xs False
+        in loop gStack emptyFifoBuffer [] xs Nothing False
 
     phases hs = for hs $ \h ->
         case M.lookup (_phHandle h) ps of

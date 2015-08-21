@@ -8,6 +8,7 @@ module Network.CEP.StackDriver where
 
 import Control.Distributed.Process
 import Data.Foldable (foldlM)
+import Data.Monoid ((<>))
 
 import Network.CEP.Buffer
 import Network.CEP.Execution
@@ -43,38 +44,38 @@ permanentDriver sp init_sm = StackDriver $ boot init_sm
       (g', machines) <- runStackSM (StackIn subs g i) sm
       let next :: (g, [(StackOut g, StackDriver g)]) -> (StackOut g, StackSM g l) -> Process (g, [(StackOut g, StackDriver g)])
           next (gNext,acc) (out,nxt_sm) = do
-            let StackOut nxt_g rep res b = out
+            let StackOut nxt_g rep res lgs b = out
             case res of
               EmptyStack | b ->
-                  let greedy :: [ExecutionReport] -> g -> StackSM g l -> Process (g,[(StackOut g, StackDriver g)])
-                      greedy reps cur_g cur_sm =
+                  let greedy :: [ExecutionReport] -> g -> StackSM g l -> [Logs] -> Process (g,[(StackOut g, StackDriver g)])
+                      greedy reps cur_g cur_sm lgsGreedy =
                         let input = StackIn subs cur_g NoMessage
                             toDriver :: g -> [(StackOut g, StackSM g l)] -> Process (g, [(StackOut g,StackDriver g)])
                             toDriver gD [] = return (gD, [])
                             toDriver gD ((c_out,n_sm):xs) =
-                              let StackOut n_g c_r c_re b' = c_out in
+                              let StackOut n_g c_r c_re logs b' = c_out in
                               case c_re of
                                 EmptyStack
                                   | hasNonEmptyBuffers $ exeInfos c_r ->
                                     let int_sm' = runStackSM (StackPush sp) n_sm
-                                    in do (gD', xs') <- greedy (c_r:reps) n_g int_sm'
+                                    in do (gD', xs') <- greedy (c_r:reps) n_g int_sm' (lgsGreedy <> logs)
                                           (gD'',ys') <- toDriver gD' xs
                                           return (gD'', xs' ++ ys')
                                   | otherwise -> do
                                       let f_r  = mergeReports (c_r:reps)
                                           f_sm = runStackSM (StackPush sp) n_sm
-                                          f_o  = StackOut n_g f_r c_re b'
+                                          f_o  = StackOut n_g f_r c_re (lgsGreedy <> logs) b'
                                       (gD', ys) <- toDriver gD xs
                                       return (gD', (f_o, StackDriver $ cruise f_sm):ys)
                                 NeedMore -> do
                                   let f_r  = mergeReports (c_r:reps)
                                       f_sm = runStackSM (StackPush sp) n_sm
-                                      f_o  = StackOut n_g f_r c_re b'
+                                      f_o  = StackOut n_g f_r c_re (lgsGreedy <> logs) b'
                                   (gD', ys) <- toDriver gD xs
                                   return (gD', (f_o, StackDriver $ cruise f_sm):ys)
                         in uncurry toDriver =<< runStackSM input cur_sm
                       int_sm = runStackSM (StackPush sp) nxt_sm
-                  in fmap (++acc) <$> greedy [rep] nxt_g int_sm
+                  in fmap (++acc) <$> greedy [rep] nxt_g int_sm lgs
               _ -> return (gNext, (out, StackDriver (cruise nxt_sm)):acc)
       foldlM next (g',[]) machines
 
