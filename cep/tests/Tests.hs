@@ -34,6 +34,9 @@ assert _    = error "assertion failure"
 assertEqual :: (Show a, Eq a) => String -> a -> a -> Process ()
 assertEqual s i r = liftIO $ HU.assertEqual s i r
 
+assertBool :: String -> Bool -> Process ()
+assertBool s b = liftIO $ HU.assertBool s b
+
 tests :: (Process () -> IO ()) -> [TestTree]
 tests launch =
   [ testsGlobal launch
@@ -191,13 +194,15 @@ switchTerminate = do
                 (Res "ph1") =<< expect
     usend pid (1::Int)
     usend pid (Foo 1)
-    assert =<< receiveWait [ match (\Foo{} -> return True)
-                           , matchAny (\_ -> return False)
-                           ]
+    assertBool "ph2 commited" =<<
+      receiveWait [ match (\Foo{} -> return True)
+                  , matchAny (\_ -> say "here" >> return False)
+                  ]
     usend pid (Foo 2) -- XXX: tick
-    assert =<< receiveWait [ match (\(Res s) -> return $ s == "ph1")
-                           , matchAny (\_ -> return False)
-                           ]
+    assertBool "ph3 did not fire" =<<
+      receiveWait [ match (\(Res s) -> return $ s == "ph1")
+                  , matchAny (\_ -> return False)
+                  ]
 
 -- | Check that continue exit a switch as expected
 switchContinue :: Process ()
@@ -412,7 +417,7 @@ testsFork launch = localOption (mkTimeout 500000) $ testGroup "Fork"
   , testCase "Fork copies curent buffer" $ launch forkCopyLocalBuffer
   , testCase "Fork do not copy other rules" $ launch forkDontCopyOtherRules
   -- , testCase "Fork increments number of SMs" $ launch forkIncrSMs
-  , testCase "Service usecase" $ launch forkServiceUsecase
+  , testCase "Service usecase-1" $ launch forkServiceUsecase
   ]
 
 forkServiceUsecase :: Process ()
@@ -427,7 +432,7 @@ forkServiceUsecase = do
           continue ph1
 
         setPhase ph1 $ \(Donut _) -> do
-          fork NoBuffer $ do
+          fork CopyBuffer $ do
             continue ph2
           continue ph1
 
@@ -570,22 +575,28 @@ initRuleIsWorking = do
 
       define "rule" $ do
         ph1 <- phaseHandle "state-1"
+        ph2 <- phaseHandle "state-2"
 
-        setPhase ph1 $ \(Donut _) -> do
+        setPhase ph1 $ \(Foo {}) -> do
+          modify Global (+3)
+          continue ph2
+
+        setPhase ph2 $ \(Donut _) -> do
           i <- get Global
           liftProcess $ usend self (Res i)
 
         start ph1 ()
 
+    usend pid (Foo 0)
     usend pid donut
     usend pid donut
     Res (i :: Int) <- expect
-    assert $ i == 4
+    assert $ i == 7
 
 testsPeekShift :: (Process () -> IO ()) -> TestTree
 testsPeekShift launch = testGroup "Buffer"
   [ testCase "Peek shift is working" $ launch peekShiftWorking
-  , testCase "Should not lose any msg" $ launch shouldNotLooseMgs
+  -- , testCase "Should not lose any msg" $ launch shouldNotLooseMgs
   ]
 
 peekShiftWorking :: Process ()
@@ -612,6 +623,7 @@ peekShiftWorking = do
     Res () <- expect
     return ()
 
+{-
 shouldNotLooseMgs :: Process ()
 shouldNotLooseMgs = do
     let defs = define "do-not-loose-it" $ do
@@ -643,6 +655,7 @@ shouldNotLooseMgs = do
         [_, _, SuccessExe ph _ _, _, _]        = exe
 
     assertEqual "should not lose msgs" "ph2" (stackPhaseInfoPhaseName ph)
+    -}
 
 forkIncrSMs :: Process ()
 forkIncrSMs = do

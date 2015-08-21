@@ -99,12 +99,10 @@ import           FRP.Netwire (dtime)
 import Network.CEP.Buffer
 import Network.CEP.Engine
 import Network.CEP.Execution
-import Network.CEP.Stack
-import Network.CEP.StackDriver
+import Network.CEP.SM
 import Network.CEP.Types
 import Network.CEP.Utils
 
-import Debug.Trace
 -- | Fills type tracking map with every type of messages needed by the engine
 --   rules.
 fillMachineTypeMap :: Machine s -> Machine s
@@ -133,7 +131,7 @@ buildMachine s defs = go (emptyMachine s) $ view defs
         let logs = fmap (const S.empty) $ _machLogger st
             idx = _machRuleCount st
             key = RuleKey idx n
-            dat = buildRuleData n permanentDriver m (_machPhaseBuf st) logs
+            dat = buildRuleData n newSM m (_machPhaseBuf st) logs
             mp  = M.insert key dat $ _machRuleData st
             st' = st { _machRuleData  = mp
                      , _machRuleCount = idx + 1
@@ -141,7 +139,7 @@ buildMachine s defs = go (emptyMachine s) $ view defs
         go st' $ view $ k ()
     go st (Init m :>>= k) =
         let logs = fmap (const S.empty) $ _machLogger st
-            dat  = buildRuleData "init" oneOffDriver m (_machPhaseBuf st) logs
+            dat  = buildRuleData "init" newSM m (_machPhaseBuf st) logs
             typs = initRuleTypeMap dat
             ir   = InitRule dat typs
             st'  = st { _machInitRule = Just ir } in
@@ -186,14 +184,11 @@ cepEngine s defs = newEngine $ buildMachine s defs
 -- | Executes a CEP Specification to the 'Process' monad given a initial global
 --   state.
 execute :: s -> Specification s () -> Process ()
-execute s defs = do
-  traceM "execute.."
-  runItForever $ cepEngine s defs
+execute s defs = runItForever $ cepEngine s defs
 
 -- | A CEP 'Engine' driver that run an 'Engine' until the end of the universe.
 runItForever :: Engine -> Process ()
 runItForever start_eng = do
-  traceM "run it forever step.."
   let debug_mode = stepForward debugModeSetting start_eng
   bootstrap debug_mode [] (1 :: Integer) start_eng
   where
@@ -217,10 +212,13 @@ runItForever start_eng = do
           (_, nxt_eng) <- stepForward sub eng
           bootstrap debug_mode ms (succ loop) nxt_eng
         Right m -> do
-          (ri, nxt_eng) <- stepForward m eng
-          let act = requestAction m
+          let act' = requestAction m
+          (ri', nxt_eng') <- stepForward m eng
+          when debug_mode . liftIO $ dumpDebuggingInfo act' loop ri'
+          let act = requestAction (Run Tick)
+          (ri, nxt_eng) <- stepForward (Run Tick) nxt_eng'
           when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
-          case runResult ri of
+          case runResult ri' of
             MsgIgnored ->
               bootstrap debug_mode (m:ms) (succ loop) nxt_eng
             _ -> do
@@ -241,20 +239,30 @@ runItForever start_eng = do
       let act = requestAction x
       when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
       forwardLeftOvers debug_mode (succ loop) nxt_eng xs
-    cruise debug_mode loop eng = do
-        msg <- receiveWait
-                 [ match (return . Left . rawSubRequest)
-                 , matchAny (return . Right . rawIncoming)
-                 ]
-        case msg of
-          Left sub -> do
-            (_, nxt_eng) <- stepForward sub eng
-            cruise debug_mode (succ loop) nxt_eng
-          Right m -> do
-            (ri, nxt_eng) <- stepForward m eng
-            let act = requestAction m
-            when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
-            cruise debug_mode (succ loop) nxt_eng
+
+    cruise debug_mode loop eng
+      | stepForward engineIsRunning eng =
+        go eng =<< receiveTimeout 0 [ match (return . Left . rawSubRequest)
+                                    , matchAny (return . Right . rawIncoming)
+                                    ]
+      | otherwise =
+        go eng . Just =<< receiveWait [ match (return . Left . rawSubRequest)
+                                      , matchAny (return . Right . rawIncoming)
+                                      ]
+      where
+        go inner (Just (Left sub)) = do
+          (_, nxt_eng) <- stepForward sub inner
+          cruise debug_mode (succ loop) nxt_eng
+        go inner (Just (Right m))  = do
+          (ri, nxt_eng) <- stepForward m inner
+          let act = requestAction m
+          when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
+          go nxt_eng Nothing
+        go inner Nothing = do
+          (ri, nxt_eng) <- stepForward tick inner
+          let act = requestAction tick
+          when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
+          cruise debug_mode (succ loop) nxt_eng
 
 dumpDebuggingInfo :: Action RunInfo -> Integer -> RunInfo -> IO ()
 dumpDebuggingInfo m loop (RunInfo total rres) = do
@@ -321,7 +329,7 @@ feedEngine msgs = go msgs []
        -> [RunInfo]
        -> Engine
        -> Process ([RunInfo], Engine)
-    go [] is end = return (reverse is, end)
+    go [] is end = executeEngine is end
     go (Some req@(Run t):rest) is cur = do
         case t of
           Tick -> do
@@ -333,6 +341,12 @@ feedEngine msgs = go msgs []
           _ -> do
             (_, nxt) <- stepForward req cur
             go rest is nxt
+    executeEngine rs eng
+      | stepForward engineIsRunning eng = do
+          (r, eng') <- stepForward tick eng
+          executeEngine (r:rs) eng'
+      | otherwise = return (reverse rs, eng)
+
 
 -- | Builds a list of 'TypeInfo' out types needed by 'PhaseStep' data
 --   contructor.
@@ -360,7 +374,7 @@ buildTypeList = foldr go Set.empty
 -- | Executes a rule state machine in order to produce a rule state data
 --   structure.
 buildRuleData :: String
-              -> (Phase g l -> StackSM g l -> StackDriver g)
+              -> (Phase g l -> String -> Maybe SMLogs -> M.Map String (Phase g l) -> Buffer -> l -> SM g)
               -> RuleM g l (Started g l)
               -> Buffer
               -> Maybe SMLogs
@@ -370,7 +384,7 @@ buildRuleData name mk rls buf logs = go M.empty Set.empty $ view rls
     go ps tpes (Return (StartingPhase l p)) =
         RuleData
         { _ruleDataName = name
-        , _ruleStack    = mk p $ newStackSM name logs ps buf l
+        , _ruleStack    = mk p name logs ps buf l
         , _ruleTypes    = Set.union tpes $ buildTypeList ps
         }
     go ps tpes (Start ph l :>>= k) =

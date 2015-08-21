@@ -23,11 +23,11 @@ library
   other-modules:       Network.CEP.Buffer
                        Network.CEP.Engine
                        Network.CEP.Execution
+                       Network.CEP.Phase
                        Network.CEP.SM
-                       Network.CEP.Stack
-                       Network.CEP.StackDriver
                        Network.CEP.Types
                        Network.CEP.Utils
+                       Data.Traversable.Lib
 
   other-extensions:    DeriveDataTypeable
                        GeneralizedNewtypeDeriving
