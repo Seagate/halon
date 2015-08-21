@@ -12,6 +12,7 @@ import Transport
 import Control.Distributed.Process.Consensus
 import Control.Distributed.Process.Consensus.Paxos
 import Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
+import Control.Distributed.Process.Timeout (retry)
 import Control.Distributed.Log as Log
 import Control.Distributed.Log.Snapshot
 import Control.Distributed.State as State
@@ -66,6 +67,13 @@ testLogId = toLogId "test-log"
 testPersistDirectory :: NodeId -> FilePath
 testPersistDirectory = filepath "replicas"
 
+-- | microseconds/transition
+clockSpeed :: Int
+clockSpeed = 10000
+
+retryTimeout :: Int
+retryTimeout = 1500000
+
 testConfig :: Log.Config
 testConfig = Log.Config
     { logId             = testLogId
@@ -86,7 +94,7 @@ testConfig = Log.Config
                       }
                  )
     , persistDirectory  = testPersistDirectory
-    , leaseTimeout      = 3000000
+    , leaseTimeout      = 2 * retryTimeout
     , leaseRenewTimeout = 1000000
     , driftSafetyFactor = 11 % 10
     , snapshotPolicy    = return . (>= 100)
@@ -118,9 +126,10 @@ remotableDecl [ [d|
   testReplica :: (ProcessId,Int,RemoteHandle (Command State)) -> Process ()
   testReplica (self,x,rHandle) = killOnError self $ do
     port <- Log.clone rHandle >>= State.newPort :: Process (CommandPort State)
-    State.update port $ $(mkClosure 'consInt) x
-    newState <- State.select $(mkStatic 'ssdictState)
-                  port $(mkStaticClosure 'readInts)
+    retry retryTimeout $
+      State.update port $ $(mkClosure 'consInt) x
+    newState <- retry retryTimeout $
+      State.select $(mkStatic 'ssdictState) port $(mkStaticClosure 'readInts)
     send self (x,reverse newState)
 
  |] ]
@@ -161,16 +170,18 @@ main = do
      mapM_ (go args s) useTCP
   where
     go args s open =
-         bracket open
-                 (closeAbstractTransport)
-                 $ \(AbstractTransport transport _ _) -> do
-            case args of
-              _ : istr : _ -> run transport $ read istr
-              _ -> do
-                putStrLn $ "Running " ++ show numIterations ++ " random tests..."
-                putStrLn $ "initial seed: " ++ show s
-                forM_ (take numIterations $ randoms $ mkStdGen s) $ run transport
-            putStrLn $ "SUCCESS!"
+      case args of
+        _ : istr : _ ->
+          bracket open (closeAbstractTransport)
+            $ \(AbstractTransport transport _ _) ->
+              run transport $ read istr
+        _ -> bracket open (closeAbstractTransport)
+             $ \(AbstractTransport transport _ _) -> do
+               putStrLn $ "Running " ++ show numIterations ++ " random tests..."
+               putStrLn $ "initial seed: " ++ show s
+               forM_ (take numIterations $ randoms $ mkStdGen s) $
+                 run transport
+               putStrLn $ "SUCCESS!"
         where
           numIterations = 50
 
@@ -179,7 +190,7 @@ run transport s = brackets 2
   (newLocalNode transport remoteTables)
   closeLocalNode
   $ \nodes@(n0:_) -> withTmpDirectory $ runProcess' n0 $
-    withScheduler [] (fst $ random $ mkStdGen s) $ do
+    withScheduler [] (fst $ random $ mkStdGen s) clockSpeed $ do
     let tries = length nodes
     forM_ nodes $ \n -> spawn (localNodeId n)
                               $(mkStaticClosure 'snapshotServer)

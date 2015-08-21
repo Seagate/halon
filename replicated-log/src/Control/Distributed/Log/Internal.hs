@@ -42,8 +42,6 @@ module Control.Distributed.Log.Internal
     , getMembership
       -- * Remote Tables
     , Control.Distributed.Log.Internal.__remoteTable
-      -- * Other
-    , callLocal
     ) where
 
 import Prelude hiding ((<$>), (<*>), init, log)
@@ -69,7 +67,7 @@ import Control.Distributed.Process.Timeout
 
 -- Preventing uses of spawn and call because of
 -- https://cloud-haskell.atlassian.net/browse/DP-104
-import Control.Distributed.Process hiding (callLocal, send, spawn, call)
+import Control.Distributed.Process hiding (send, spawn)
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
@@ -79,7 +77,7 @@ import Control.Distributed.Static
 
 import Control.Arrow (second)
 import Control.Concurrent hiding (newChan)
-import Control.Exception (SomeException, throwIO)
+import Control.Exception (SomeException)
 import Control.Monad
 import Data.Binary (Binary, encode, decode)
 import qualified Data.ByteString.Lazy as BSL (ByteString)
@@ -108,37 +106,6 @@ deriving instance Typeable Eq
 
 -- | An auxiliary type for hiding parameters of type constructors
 data Some f = forall a. Some (f a) deriving (Typeable)
-
--- | An internal type used only by 'callLocal'.
-data Done = Done
-  deriving (Typeable,Generic)
-
-instance Binary Done
-
--- XXX pending inclusion of a fix to callLocal upstream.
---
--- https://github.com/haskell-distributed/distributed-process/pull/180
-callLocal :: Process a -> Process a
-callLocal p = mask_ $ do
-  mv <-liftIO $ newEmptyMVar
-  self <- getSelfPid
-  pid <- spawnLocal $ try p >>= liftIO . putMVar mv
-                      >> when schedulerIsEnabled (usend self Done)
-  when schedulerIsEnabled $ do
-    -- The process might be killed before reading the Done message,
-    -- thus some spurious Done message might exist in the queue.
-    fix $ \loop -> do Done <- expect
-                      b <- liftIO $ isEmptyMVar mv
-                      when b loop
-  liftIO (takeMVar mv >>= either (throwIO :: SomeException -> IO a) return)
-    `onException` do
-       -- Exit the worker and wait for it to terminate.
-       bracket (monitor pid) unmonitor $ \ref -> do
-         exit pid "callLocal was interrupted"
-         receiveWait
-           [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
-                     (const $ return ())
-           ]
 
 -- | Find the gaps in a partial sequence such that, if the partial sequence and
 -- the gaps were sorted, the resulting list would form a contiguous sequence.
@@ -325,7 +292,9 @@ sendAcceptor name nid = nsendRemote nid $ acceptorLabel name
 
 sendReplicaAsync :: Serializable a
                  => ProcessPool NodeId -> LogId -> NodeId -> a -> Process ()
-sendReplicaAsync pool name nid a =
+sendReplicaAsync pool name nid a
+  | schedulerIsEnabled = sendReplica name nid a
+  | otherwise          =
     submitTask pool nid (sendReplica name nid a)
       >>= maybe (return ()) spawnWorker
   where
@@ -787,12 +756,9 @@ replica Dict
               let adjustedPeriod = if here == head ρs
                     then leaseTimeout
                     else adjustForDrift leaseTimeout
-              -- The scheduler cannot handle timeouts yet, so we never let
-              -- the lease expire when using the scheduler.
               if not (null ρs) &&
-                (  schedulerIsEnabled
-                || now - leaseStart <
-                     fromInteger (toInteger adjustedPeriod * 1000)
+                (now - leaseStart <
+                   fromInteger (toInteger adjustedPeriod * 1000)
                 )
               then return $ Just $ head ρs
               else return Nothing
@@ -1409,8 +1375,8 @@ replica Dict
             -- replica to provoke status info.
             , match $ \Status -> do
                   -- Forget about all previous ticks to avoid broadcast storm.
-                  let loop = expectTimeout 0 >>= maybe (return ()) (\() -> loop)
-                  when (not schedulerIsEnabled) loop
+                  fix $ \loop ->
+                    expectTimeout 0 >>= maybe (return ()) (\() -> loop)
 
                   say $ "Status info:" ++
                       "\n\tunconfirmed decree: " ++ show d ++
