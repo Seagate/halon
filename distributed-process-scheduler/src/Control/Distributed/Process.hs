@@ -5,7 +5,6 @@
 {-# LANGUAGE PackageImports #-}
 module Control.Distributed.Process
   ( Match
-  , send
   , usend
   , nsend
   , nsendRemote
@@ -89,7 +88,6 @@ import qualified "distributed-process" Control.Distributed.Process as DP
 import "distributed-process" Control.Distributed.Process as DPEtc
     hiding
   ( Match
-  , send
   , usend
   , nsend
   , nsendRemote
@@ -130,10 +128,6 @@ ifSchedulerIsEnabled a b
 -- statement only has to be evaluated once and not at every call site.
 -- After the first evaluation, these top-level functions are simply a
 -- jump to the appropriate function.
-
-{-# NOINLINE send #-}
-send :: Serializable a => ProcessId -> a -> Process ()
-send = ifSchedulerIsEnabled Internal.send DP.send
 
 {-# NOINLINE usend #-}
 usend :: Serializable a => ProcessId -> a -> Process ()
@@ -218,5 +212,4 @@ registerRemoteAsync = ifSchedulerIsEnabled Internal.registerRemoteAsync
 
 {-# NOINLINE expectTimeout #-}
 expectTimeout :: Serializable a => Int -> Process (Maybe a)
-expectTimeout = ifSchedulerIsEnabled
-    (fmap Just . const Internal.expect) DP.expectTimeout
+expectTimeout t = receiveTimeout t [ match return ]

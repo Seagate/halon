@@ -29,7 +29,7 @@ module Control.Distributed.State
 import qualified Control.Distributed.Log as Log
 import Control.Distributed.Process.Timeout (callLocal)
 import Control.Distributed.Log.Snapshot (LogSnapshot(..))
-import Control.Distributed.Process hiding (send)
+import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
     ( closureApply

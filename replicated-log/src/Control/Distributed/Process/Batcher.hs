@@ -26,7 +26,7 @@ instance Binary Marker
 batcher :: Serializable a => ([a] -> Process ()) -> Process b
 batcher handleBatch = do
     self <- getSelfPid
-    liftM2 (:) expect (send self Marker >> collectUntilMarker) >>= handleBatch
+    liftM2 (:) expect (usend self Marker >> collectUntilMarker) >>= handleBatch
     batcher handleBatch
   where
     collectUntilMarker :: Serializable a => Process [a]

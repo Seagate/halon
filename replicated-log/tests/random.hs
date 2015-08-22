@@ -130,7 +130,7 @@ remotableDecl [ [d|
       State.update port $ $(mkClosure 'consInt) x
     newState <- retry retryTimeout $
       State.select $(mkStatic 'ssdictState) port $(mkStaticClosure 'readInts)
-    send self (x,reverse newState)
+    usend self (x,reverse newState)
 
  |] ]
 
@@ -179,8 +179,11 @@ main = do
              $ \(AbstractTransport transport _ _) -> do
                putStrLn $ "Running " ++ show numIterations ++ " random tests..."
                putStrLn $ "initial seed: " ++ show s
-               forM_ (take numIterations $ randoms $ mkStdGen s) $
-                 run transport
+               forM_ (zip [1..] $ take numIterations $ randoms $ mkStdGen s) $
+                 \(i, si) -> do
+                   when (i `mod` 10 == (0 :: Int)) $
+                     putStrLn $ show i ++ " iterations"
+                   run transport si
                putStrLn $ "SUCCESS!"
         where
           numIterations = 50
@@ -213,10 +216,9 @@ run transport s = brackets 2
     states <- replicateM tries (expect :: Process (Int,State))
     let compareStates :: [Int] -> (Int,[Int]) -> Process [Int]
         compareStates state (x,newState) = do
-          -- test that updates are not missed or duplicated
-          when (1 /= length (filter (x==) newState)) $
-            fail $ "Test failed: update missed or duplicated: "
-                   ++ show x ++ " " ++ show newState
+          -- test that updates are not missed
+          when (all (x /=) newState) $ fail $ "Test failed: update missed: "
+                                             ++ show x ++ " " ++ show newState
           -- test that states do not diverge
           if state `isPrefixOf` newState then
             return newState

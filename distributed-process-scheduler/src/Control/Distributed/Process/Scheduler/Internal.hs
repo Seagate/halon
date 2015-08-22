@@ -19,7 +19,6 @@ module Control.Distributed.Process.Scheduler.Internal
   , spawnWrapClosure__tdict
   -- * distributed-process replacements
   , Match
-  , send
   , usend
   , nsend
   , nsendRemote
@@ -747,6 +746,9 @@ addFailures = sendS . AddFailures
 removeFailures :: [(NodeId, NodeId)] -> Process ()
 removeFailures = sendS . RemoveFailures
 
+-- TODO: Implementing 'send' correctly when testing failures requires
+-- remembering the failed connections. Right now it is treated as 'usend'.
+
 -- | Sends a transition request of type (1) to the scheduler.
 -- The scheduler will take care of placing the message in the mailbox of the
 -- target process. Returns immediately.
@@ -914,12 +916,9 @@ exit pid reason = do
 -- immediately.
 spawnLocal :: Process () -> Process ProcessId
 spawnLocal p = do
-    self <- DP.getSelfPid
     child <- DP.spawnLocal $ do Continue <- DP.expect
                                 p
     sendS $ CreatedNewProcess child
-    sendS $ Yield self
-    Continue <- DP.expect
     return child
 
 spawnWrapClosure :: Closure (Process ()) -> Process ()
@@ -941,8 +940,6 @@ spawnAsync nid cp = do
                              \(DP.DidSpawn _ pid) -> return pid
                ]
     sendS $ CreatedNewProcess child
-    sendS $ Yield self
-    Continue <- DP.expect
     usend self (DP.DidSpawn ref child)
     return ref
 

@@ -56,8 +56,8 @@ senderProcess0 self = do
     forM_ [0..1::Int] $ \i -> do
       j <- expect
       say' $ "s0: received " ++ show (j :: Int)
-      send self (0::Int,i)
-    send self ()
+      usend self (0::Int,i)
+    usend self ()
 
 senderProcessT0 :: ProcessId -> Process ()
 senderProcessT0 self = killOnError self $ do
@@ -65,8 +65,8 @@ senderProcessT0 self = killOnError self $ do
       forM_ [0..1::Int] $ \i -> do
         j <- receiveWaitT [ matchT $ \j -> modify (+j) >> return j ]
         liftProcess $ do say' $ "s0: received " ++ show (j :: Int)
-                         send self (0::Int,i)
-    send self ()
+                         usend self (0::Int,i)
+    usend self ()
 
 remotable [ 'senderProcess0, 'senderProcessT0 ]
 
@@ -148,11 +148,11 @@ execute transport seed = do
           forM_ [0..1::Int] $ \i -> do
             j <- expect
             say' $ "s1: received " ++ show (j :: Int)
-            send self (1::Int,i)
-          send self ()
+            usend self (1::Int,i)
+          usend self ()
         forM_ [0..1::Int] $ \i -> do
-          send s0 (2*i)
-          send s1 (2*i+1)
+          usend s0 (2*i)
+          usend s1 (2*i+1)
         replicateM_ 2 $ do
           i <- expect :: Process (Int,Int)
           say' $ "main: received " ++ show i
@@ -182,7 +182,7 @@ executeRegister transport seed =
         () <- expect
         say' "s0: blocking"
         Left (ProcessExitException pid msg) <-
-          try $ do send self ()
+          try $ do usend self ()
                    receiveWait [] :: Process ()
         True <- return $ self == pid
         Just True <- handleMessage msg (return . ("terminate" ==))
@@ -191,7 +191,7 @@ executeRegister transport seed =
         link s0
         say' "s1: blocking"
         Left (ProcessLinkException pid DiedNormal) <-
-          try $ do send s0 ()
+          try $ do usend s0 ()
                    receiveWait [] :: Process ()
         True <- return $ s0 == pid
         say' "s1: terminated"
@@ -328,14 +328,14 @@ executeNSend transport seed =
               j <- expect
               say' $ "s0: received " ++ show (j :: Int)
               nsendRemote n "self" (0::Int,i)
-            send self ()
+            usend self ()
           register "s0" s0
           s1 <- spawnLocal $ do
             forM_ [0..1::Int] $ \i -> do
               j <- expect
               say' $ "s1: received " ++ show (j :: Int)
               nsendRemote n "self" (1::Int,i)
-            send self ()
+            usend self ()
           register "s1" s1
 
         forM_ [0..1::Int] $ \i -> do
@@ -363,21 +363,21 @@ executeChan transport seed = do
         (spBack, rpBack) <- newChan
         _ <- spawnLocal $ do
           (sp, rp) <- newChan
-          send self sp
+          usend self sp
           forM_ [0..1::Int] $ \i -> do
             j <- receiveChan rp
             say' $ "s0: received " ++ show (j :: Int)
             sendChan spBack (0::Int,i)
-          send self ()
+          usend self ()
         sp0 <- expect
         _ <- spawnLocal $ do
           (sp, rp) <- newChan
-          send self sp
+          usend self sp
           forM_ [0..1::Int] $ \i -> do
             j <- receiveChan rp
             say' $ "s1: received " ++ show (j :: Int)
             sendChan spBack (1::Int,i)
-          send self ()
+          usend self ()
         sp1 <- expect
         forM_ [0..1::Int] $ \i -> do
           sendChan sp0 (2*i)
@@ -414,11 +414,11 @@ executeT transport seed = do
             forM_ [0..1::Int] $ \i -> do
               j <- receiveWaitT [ matchT $ \j -> modify (+j) >> return j ]
               liftProcess $ do say' $ "s1: received " ++ show (j :: Int)
-                               send self (1::Int,i)
-          send self ()
+                               usend self (1::Int,i)
+          usend self ()
         forM_ [0..1::Int] $ \i -> do
-          send s0 (2*i)
-          send s1 (2*i+1)
+          usend s0 (2*i)
+          usend s1 (2*i+1)
         replicateM_ 2 $ do
           i <- expect :: Process (Int,Int)
           say' $ "main: received " ++ show i

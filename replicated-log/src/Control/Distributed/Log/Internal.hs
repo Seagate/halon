@@ -67,7 +67,7 @@ import Control.Distributed.Process.Timeout
 
 -- Preventing uses of spawn and call because of
 -- https://cloud-haskell.atlassian.net/browse/DP-104
-import Control.Distributed.Process hiding (send, spawn)
+import Control.Distributed.Process hiding (spawn)
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
@@ -677,7 +677,7 @@ replica Dict
       where
         wait :: (SendPort TimerMessage, Int, TimerMessage) -> Process ()
         wait (sp, t, msg) =
-          expectTimeout t >>= maybe (sendChan sp msg >> timer) wait
+          expectTimeout t >>= maybe (logTrace "timer expired" >> sendChan sp msg >> timer) wait
 
     -- The proposer process makes consensus proposals.
     -- Proposals are aborted when a reconfiguration occurs.
@@ -967,7 +967,7 @@ replica Dict
                     logTrace "replica: sending request to batcher"
                     usend bpid request
                   else do
-                    logTrace "replica: rejected client request"
+                    logTrace $ "replica: rejected client request"
                     when (e < epoch || isJust mLeader) $
                       when (elem here ρs) $ usend μ (epoch, ρs)
                   go st

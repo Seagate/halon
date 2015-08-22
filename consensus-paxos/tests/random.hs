@@ -21,6 +21,7 @@ import Data.IORef
 import qualified Data.Map as Map
 import System.Exit ( exitFailure )
 import System.Environment ( getArgs )
+import System.IO
 import System.Posix.Env (setEnv)
 import System.Random ( randomIO, split, mkStdGen, random, randoms, randomRs )
 
@@ -34,6 +35,8 @@ remoteTables =
 main :: IO ()
 main = do
  setEnv "DP_SCHEDULER_ENABLED" "1" True
+ hSetBuffering stdout LineBuffering
+ hSetBuffering stderr LineBuffering
  if not schedulerIsEnabled
    then putStrLn "The deterministic scheduler is not enabled." >> exitFailure
    else do
@@ -55,8 +58,12 @@ main = do
                  liftIO $ do putStrLn $ "Running " ++ show numIterations
                                         ++ " random tests..."
                              putStrLn $ "initial seed: " ++ show s
-                 forM_ (take numIterations $ randoms $ mkStdGen s) run
-           putStrLn $ "SUCCESS!"
+                 forM_ (zip [1..] $ take numIterations $ randoms $ mkStdGen s) $
+                   \(i, si) -> do
+                     when (i `mod` 10 == (0 :: Int)) $
+                       liftIO $ putStrLn $ show i ++ " iterations"
+                     run si
+           putStrLn "SUCCESS!"
 
 -- | microseconds/transition
 clockSpeed :: Int
@@ -94,13 +101,13 @@ run s = let (s0,s1) = split $ mkStdGen s
   forM_ [0..procs-1] $ \j -> spawnLocal $ killOnError self $ do
     let d = ds !! j
         x = xs !! j
-    x' <- runPropose (propose 1000000 send αs (DecreeId 0 d) x)
+    x' <- runPropose (propose 1000000 usend αs (DecreeId 0 d) x)
     ok <- liftIO $ atomicModifyIORef pmapR $ \pmap ->
       case Map.lookup d pmap of
         Nothing  -> (Map.insert d x' pmap, True)
         Just x'' -> (pmap, x'' == x')
     when (not ok) $ fail "Test failed"
-    send self ()
+    usend self ()
   replicateM_ procs (expect :: Process ())
  `onException` liftIO (putStrLn $ "failure seed " ++ show s)
 

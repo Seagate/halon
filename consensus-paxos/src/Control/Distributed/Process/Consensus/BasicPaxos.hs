@@ -103,11 +103,11 @@ timeout t action
     | schedulerIsEnabled = callLocal $ do
         self <- getSelfPid
         mv <- liftIO newEmptyMVar
-        _ <- spawnLocal $ do
-          Nothing <- receiveTimeout t [] :: Process (Maybe ())
-          b <- liftIO $ tryPutMVar mv ()
-          if b then exit self TimeoutExit else return ()
         flip catchExit (\_pid TimeoutExit -> return Nothing) $ do
+          _ <- spawnLocal $ do
+            Nothing <- receiveTimeout t [] :: Process (Maybe ())
+            b <- liftIO $ tryPutMVar mv ()
+            if b then exit self TimeoutExit else return ()
           r <- action
           b <- liftIO $ tryPutMVar mv ()
           if b then return $ Just r
@@ -325,7 +325,7 @@ sync sendA acceptors = callLocal $ do
           sendA α $ Msg.SyncStart self (delete α acceptors)
           -- wait for half of the acceptors to synchronize with α
           replicateM_ (n `div` 2) (expect :: Process (Msg.SyncCompleted n))
-          send master ()
+          usend master ()
       replicateM_ n (expect :: Process ())
 
 query :: forall a n. Serializable a
