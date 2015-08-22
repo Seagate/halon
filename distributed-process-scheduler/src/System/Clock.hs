@@ -13,7 +13,7 @@ module System.Clock
 
 import           Control.Concurrent.MVar
 import           Control.Distributed.Process.Internal.Types (LocalProcess(..))
-import           Control.Distributed.Process.Node
+import qualified "distributed-process" Control.Distributed.Process.Node as DPN
 import qualified Control.Distributed.Process.Scheduler.Internal as Internal
 import qualified "distributed-process" Control.Distributed.Process as DP
 import qualified "clock" System.Clock as C
@@ -31,7 +31,7 @@ schedGetTime :: C.Clock -> IO C.TimeSpec
 schedGetTime C.Monotonic = do
     mv <- newEmptyMVar
     sproc <- Internal.getScheduler
-    forkProcess (processNode sproc) $ do
+    _ <- DPN.forkProcess (processNode sproc) $ do
       self <- DP.getSelfPid
       DP.send (processId sproc) $ Internal.GetTime self
       DP.expect >>= DP.liftIO . putMVar mv

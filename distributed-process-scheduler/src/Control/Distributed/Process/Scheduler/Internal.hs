@@ -51,9 +51,14 @@ module Control.Distributed.Process.Scheduler.Internal
   , matchT
   , matchIfT
   , receiveWaitT
+  -- * failures
+  , addFailures
+  , removeFailures
   -- * Internal communication with the scheduler
+  , yield
   , getScheduler
   , SchedulerMsg(..)
+  , SchedulerResponse(..)
   ) where
 
 import Prelude hiding ( (<$>) )
@@ -77,7 +82,7 @@ import Control.Concurrent.MVar
     , readMVar, modifyMVar_
     )
 import Control.Exception ( SomeException, throwIO, Exception, throwTo )
-import Control.Monad ( void, when, join, forM_ )
+import Control.Monad ( void, when, join, forM_, foldM )
 import Control.Monad.Reader ( ask )
 import Data.Accessor ((^.))
 import Data.Binary ( Binary(..) )
@@ -115,7 +120,7 @@ schedulerVar = unsafePerformIO newEmptyMVar
 -- | A message that the scheduler can deliver.
 data SystemMsg = MailboxMsg ProcessId DP.Message
                | ChannelMsg DP.SendPortId DP.Message
-               | LinkExceptionMsg ProcessId ProcessId DP.DiedReason
+               | LinkExceptionMsg DP.Identifier ProcessId DP.DiedReason
                | ExitMsg ProcessId ProcessId DP.Message
   deriving (Typeable, Generic, Show)
 
@@ -133,22 +138,22 @@ data SchedulerMsg
                                   -- messages to process and is blocked with the
                                   -- given timeout in microseconds.
     | Yield ProcessId    -- ^ @Yield pid@: process @pid@ is ready to continue.
-    | CreatedNewProcess ProcessId  ProcessId
-                                  -- ^ @CreatedNewProcess parent child@: a new
-                                  -- process will be created by @parent@.
+    | CreatedNewProcess ProcessId -- ^ @CreatedNewProcess child@: a new
+                                  -- process will be created.
     | Monitor ProcessId DP.Identifier Bool
         -- ^ @Monitor who whom isLink@: the process @who@ will monitor @whom@.
         -- @isLink@ is @True@ when linking is intended.
     | Unmonitor DP.MonitorRef
     | Unlink ProcessId DP.Identifier -- ^ @Unlink who whom@
     | GetTime ProcessId -- ^ A process wants to know the time.
+    | AddFailures [((NodeId, NodeId), Double)]
+    | RemoveFailures [(NodeId, NodeId)]
   deriving (Generic, Typeable)
 
 -- | Messages that the scheduler sends to the tested application.
 data SchedulerResponse
     = Continue     -- ^ Pick a message from your mailbox.
     | Timeout      -- ^ Unblock by timing out.
-    | OkNewProcess -- ^ Please go on and create the child process.
   deriving (Generic, Typeable, Show)
 
 -- | Transitions that the scheduler can choose to perform when all
@@ -217,6 +222,9 @@ data SchedulerState = SchedulerState
       -- > Map.keys stateTimeouts == sort (Map.elems stateReverseTimeouts)
       --
      , stateReverseTimeouts :: Map ProcessId Time
+       -- | For each pair of nodes, indicate the probability of dropping a
+       -- message. Missing pairs means 0 probability.
+     , stateFailures :: Map (NodeId, NodeId) Double
     }
 
 -- | Starts the scheduler assuming the given initial amount of processes,
@@ -249,6 +257,7 @@ startScheduler initialProcs seed0 clockDelta = do
                             , stateExpiredTimeouts = Set.empty
                             , stateTimeouts        = Map.empty
                             , stateReverseTimeouts = Map.empty
+                            , stateFailures        = Map.empty
                             }
                        `DP.finally` do
                           DP.liftIO $ modifyMVar_ schedulerLock $
@@ -265,7 +274,7 @@ startScheduler initialProcs seed0 clockDelta = do
            return (True,())
   where
     go :: SchedulerState -> Process a
-    go st@(SchedulerState _ alive procs msgs nsMsgs _ _ _ expired timeouts _)
+    go st@(SchedulerState _ alive procs msgs nsMsgs _ _ _ expired timeouts _ _)
         -- Enter this equation if all processes are waiting for a transition
       | Set.size alive == Map.size procs = do
         -- complain if no process has a message and there are no messages to
@@ -317,31 +326,17 @@ startScheduler initialProcs seed0 clockDelta = do
              go st'
 
     -- enter the next equation if some process is still active
-    go st@(SchedulerState _ alive procs msgs nsMsgs monitors mcounter clock
-                          expired timeouts revTimeouts
+    go st@(SchedulerState _ alive procs _ _ monitors mcounter clock
+                          expired timeouts revTimeouts failures
           ) =
       DP.receiveWait
         [ DP.match $ \m -> case m of
         GetTime pid -> DP.send pid clock >> go st
         -- a process is sending a message
-        Send source pid msg -> do
-            go st
-              { stateMessages =
-              (if Set.member pid alive
-                 then Map.insertWith
-                           (const $ Map.insertWith (flip (++)) source [msg])
-                           pid (Map.singleton source [msg]) msgs
-                 else msgs
-              )
-              }
-        NSend source nid label msg -> do
-            go st
-              { stateNSend =
-              Map.insertWith (const $ Map.insertWith (flip (++)) source [msg])
-                             (nid, label)
-                             (Map.singleton source [msg])
-                             nsMsgs
-              }
+        Send source pid msg ->
+          handleSend st (source, pid, msg) >>= go
+        NSend source nid label msg ->
+          handleNSend st (source, nid, label, msg) >>= go
         -- a process has a message and is ready to process it
         Yield pid -> do
             let (mt, revTimeouts') =
@@ -366,15 +361,16 @@ startScheduler initialProcs seed0 clockDelta = do
                       Map.insert pid (clock + ts) revTimeouts
                   }
         -- a new process will be created
-        CreatedNewProcess parent child -> do
-            _ <- DP.monitor child  `DP.onException` (DP.liftIO $ putStrLn "CreatedNewProcess0")
-            DP.send parent OkNewProcess `DP.onException` (DP.liftIO $ putStrLn "CreatedNewProcess1")
-            go st { stateAlive = Set.insert child alive }
+        CreatedNewProcess child -> do
+            _ <- DP.monitor child
+            go st { stateAlive = Set.insert child alive
+                  , stateProcs = Map.insert child True procs
+                  }
         -- the process who is monitoring whom
         Monitor who whom@(DP.ProcessIdentifier whomPid) isLink -> do
             let ref = DP.MonitorRef (DP.ProcessIdentifier who) mcounter
             if Set.member whomPid alive then do
-              DP.send who ref `DP.onException` (DP.liftIO $ putStrLn "Monitor0")
+              DP.send who ref
               go st { stateMonitors =
                         Map.insertWith (++) whom [(ref, isLink)] monitors
                     , stateMonitorCounter = mcounter + 1
@@ -407,41 +403,128 @@ startScheduler initialProcs seed0 clockDelta = do
                     []  -> Nothing
                     xs' -> Just xs'
             go st { stateMonitors = Map.update upd whom monitors }
+        AddFailures fls ->
+            go st { stateFailures = foldr (uncurry Map.insert) failures fls }
+        RemoveFailures fls ->
+            go st { stateFailures = foldr Map.delete failures fls }
 
         -- a process has terminated
-        , DP.match $ \pmn@(DP.ProcessMonitorNotification _ pid reason) -> do
-            case Map.lookup (DP.ProcessIdentifier pid) monitors of
-              Just mons -> do
-                forM_ mons $ \( ref@(DP.MonitorRef (DP.ProcessIdentifier p) _)
-                              , isLink
-                              ) ->
-                  (if isLink then do
-                    self <- DP.getSelfPid
-                    sendS $ Send self p
-                          $ LinkExceptionMsg pid p reason
-                   else
-                    -- Scheduler's @send@ not DP's!
-                    send p (DP.ProcessMonitorNotification ref pid reason)
-                   ) `DP.onException` DP.liftIO (putStrLn "ProcessNotification failed")
-                -- Resend the death notification so it is handled after the
-                -- monitor notifications above.
-                DP.getSelfPid >>= flip DP.send pmn
-                go st { stateMonitors =
-                          Map.delete (DP.ProcessIdentifier pid) monitors
-                      }
-              Nothing -> do
-                let (mt, revTimeouts') =
-                      Map.updateLookupWithKey (\_ _ -> Nothing) pid revTimeouts
-                go st
-                  { stateAlive    = Set.delete pid alive
-                  , stateProcs    = Map.delete pid procs
-                  , stateMessages = Map.delete pid msgs
-                  , stateExpiredTimeouts = Set.delete pid expired
-                  , stateTimeouts =
-                      maybe timeouts (\t -> multimapDelete t pid timeouts) mt
-                  , stateReverseTimeouts = revTimeouts'
-                  }
+        , DP.match $ \(DP.ProcessMonitorNotification _ pid reason) -> do
+            st' <- notifyMonitors st (const True) (DP.ProcessIdentifier pid)
+                                  reason
+            let (mt, revTimeouts') =
+                  Map.updateLookupWithKey (\_ _ -> Nothing)
+                                          pid (stateReverseTimeouts st')
+            go st' { stateAlive    = Set.delete pid (stateAlive st')
+                   , stateProcs    = Map.delete pid (stateProcs st')
+                   , stateMessages = Map.delete pid (stateMessages st')
+                   , stateExpiredTimeouts =
+                       Set.delete pid (stateExpiredTimeouts st')
+                   , stateTimeouts =
+                       maybe timeouts
+                             (\t -> multimapDelete t pid $ stateTimeouts st') mt
+                   , stateReverseTimeouts = revTimeouts'
+                   }
          ]
+
+    handleSend :: SchedulerState
+               -> (ProcessId, ProcessId, SystemMsg)
+               -> Process SchedulerState
+    handleSend st (source, pid, msg) | Set.member pid (stateAlive st) = do
+      let mp = Map.lookup (DP.processNodeId source, DP.processNodeId pid)
+                          (stateFailures st)
+      case mp of
+        -- drop message
+        Just p | (v, seed') <- randomR (0.0, 1.0) (stateSeed st), v <= p -> do
+          notifyMonitors (st { stateSeed = seed' }) (== DP.processNodeId source)
+                         (DP.ProcessIdentifier pid)
+                         DP.DiedDisconnect
+        -- deliver message
+        _ -> return st
+               { stateMessages =
+                   Map.insertWith
+                     (const $ Map.insertWith (flip (++)) source [msg])
+                     pid (Map.singleton source [msg]) (stateMessages st)
+               }
+    handleSend st _ = return st
+
+    handleNSend :: SchedulerState
+                -> (ProcessId, NodeId, String, DP.Message)
+                -> Process SchedulerState
+    handleNSend st (source, nid, label, msg) = do
+      case Map.lookup (DP.processNodeId source, nid) (stateFailures st) of
+        -- drop message
+        Just p | (v, seed') <- randomR (0.0, 1.0) (stateSeed st), v <= p -> do
+          notifyMonitors (st { stateSeed = seed' }) (== DP.processNodeId source)
+                         (DP.NodeIdentifier nid)
+                         DP.DiedDisconnect
+        -- deliver message
+        _ ->
+          return st
+            { stateNSend =
+                Map.insertWith (const $ Map.insertWith (flip (++)) source [msg])
+                               (nid, label)
+                               (Map.singleton source [msg])
+                               (stateNSend st)
+            }
+
+
+    notifyMonitors :: SchedulerState
+                   -> (NodeId -> Bool)
+                   -> DP.Identifier
+                   -> DP.DiedReason
+                   -> Process SchedulerState
+    notifyMonitors st shouldNotify dpId@(DP.ProcessIdentifier pid) reason = do
+      self <- DP.getSelfPid
+      case Map.lookup (DP.ProcessIdentifier pid) (stateMonitors st) of
+        Just mons -> do
+          let shouldNotify' (DP.MonitorRef source _, _) =
+                shouldNotify $ DP.nodeOf source
+              sends = flip map (filter shouldNotify' mons) $
+                \(ref@(DP.MonitorRef (DP.ProcessIdentifier p) _)
+                 , isLink
+                 ) ->
+                  if isLink then (self, p, LinkExceptionMsg dpId p reason)
+                  else ( self
+                       , p
+                       , MailboxMsg p $
+                           DP.createUnencodedMessage $
+                           DP.ProcessMonitorNotification ref pid reason
+                       )
+          let st' = st { stateMonitors =
+                           Map.delete (DP.ProcessIdentifier pid)
+                                      (stateMonitors st)
+                       }
+          foldM handleSend st' sends
+        Nothing ->
+          return st
+    notifyMonitors st shouldNotify (DP.NodeIdentifier nid) reason = do
+      self <- DP.getSelfPid
+      let impliesDeathOf (DP.NodeIdentifier nid') = nid == nid'
+          impliesDeathOf (DP.ProcessIdentifier p) = nid == DP.processNodeId p
+          impliesDeathOf _                        = False
+          (mons, remainingMons) =
+            Map.partitionWithKey (const . impliesDeathOf) (stateMonitors st)
+          mkMsg dpId ((DP.MonitorRef (DP.ProcessIdentifier p) _), True) =
+            (self, p, LinkExceptionMsg dpId p reason)
+          mkMsg (DP.ProcessIdentifier pid)
+                (ref@(DP.MonitorRef (DP.ProcessIdentifier p) _), False) =
+             (self, p, MailboxMsg p $ DP.createUnencodedMessage $
+                         DP.ProcessMonitorNotification ref pid reason
+             )
+          mkMsg (DP.NodeIdentifier _)
+                (ref@(DP.MonitorRef (DP.ProcessIdentifier p) _), False) =
+            (self, p, MailboxMsg p $ DP.createUnencodedMessage $
+                        DP.NodeMonitorNotification ref nid reason
+            )
+          mkMsg _ _ = error "scheduler.notifyMonitors.mkMsg: unimplemented case"
+          st' = st { stateMonitors = remainingMons }
+      foldM handleSend st' [ mkMsg k x | (k, xs) <- Map.toList mons
+                                       , x@(DP.MonitorRef dpId _, _) <- xs
+                                       , shouldNotify $ DP.nodeOf dpId
+                           ]
+    notifyMonitors _ _ _ _ =
+      error "scheduler.notifyMonitors: unimplemented case"
 
     multimapDelete :: (Ord k, Eq a) => k -> a -> Map k [a] -> Map k [a]
     multimapDelete k x = flip Map.update k $ \xs ->
@@ -477,7 +560,7 @@ startScheduler initialProcs seed0 clockDelta = do
                           , SchedulerState
                           )
     pickNextTransition st@(SchedulerState seed _ procs msgs nsMsgs _ _ _
-                                          expired _ _
+                                          expired _ _ _
                           ) =
       second tickClock $ chooseUniformly seed $
         [ let has_a_message = Map.filter id procs
@@ -578,7 +661,12 @@ startScheduler initialProcs seed0 clockDelta = do
     forward (LinkExceptionMsg source pid reason) = do
       here <- DP.getSelfNode
       if DP.processNodeId pid == here then
-        throwException pid $ DP.ProcessLinkException source reason
+        case source of
+          DP.ProcessIdentifier spid ->
+            throwException pid $ DP.ProcessLinkException spid reason
+          DP.NodeIdentifier snid ->
+            throwException pid $ DP.NodeLinkException snid reason
+          _ -> error "scheduler.forward: unimplemented case"
       else do
         DP.say "startScheduler.forward: unhandled case (remote link exception)"
         error "startScheduler.forward: unhandled case (remote link exception)"
@@ -635,9 +723,29 @@ withScheduler :: [ProcessId]   -- ^ initial processes
 withScheduler ps s clockDelta p = DP.getSelfPid >>= \self ->
   DP.bracket_ (startScheduler (self:ps) s clockDelta) stopScheduler p
 
+-- | Yields control to some other process.
+yield :: Process ()
+yield = do DP.getSelfPid >>= sendS . Yield
+           Continue <- DP.expect
+           return ()
+
 -- | Yields the local process of the scheduler.
 getScheduler :: IO LocalProcess
 getScheduler = readMVar schedulerVar
+
+-- | Have messages between pairs of nodes drop with some probability.
+--
+-- @((n0, n1), p)@ indicates that messages from @n0@ to @n1@ should be
+-- dropped with probability @p@.
+addFailures :: [((NodeId, NodeId), Double)] -> Process ()
+addFailures = sendS . AddFailures
+
+-- | Have messages between pairs of nodes never drop.
+--
+-- @(n0, n1)@ means that messages from @n0@ to @n1@ shouldn't be dropped
+-- anymore.
+removeFailures :: [(NodeId, NodeId)] -> Process ()
+removeFailures = sendS . RemoveFailures
 
 -- | Sends a transition request of type (1) to the scheduler.
 -- The scheduler will take care of placing the message in the mailbox of the
@@ -714,9 +822,6 @@ receiveTimeoutM mus ms = do
         case command of
           Continue -> go r ms'
           Timeout  -> return Nothing
-          _        ->
-            error $ "C.D.P.S.Internal.receiveTimeoutM: unexpected command "
-                    ++ show command
 
 -- | Shorthand for @receiveWait [ match return ]@
 expect :: Serializable a => Process a
@@ -810,16 +915,16 @@ exit pid reason = do
 spawnLocal :: Process () -> Process ProcessId
 spawnLocal p = do
     self <- DP.getSelfPid
-    child <- DP.spawnLocal $ do () <- DP.expect
+    child <- DP.spawnLocal $ do Continue <- DP.expect
                                 p
-    sendS $ CreatedNewProcess self child
-    OkNewProcess <- DP.expect
-    DP.send child ()
+    sendS $ CreatedNewProcess child
+    sendS $ Yield self
+    Continue <- DP.expect
     return child
 
 spawnWrapClosure :: Closure (Process ()) -> Process ()
 spawnWrapClosure p = do
-    () <- DP.expect
+    Continue <- DP.expect
     join $ DP.unClosure p
 
 remotable [ 'spawnWrapClosure ]
@@ -835,9 +940,9 @@ spawnAsync nid cp = do
                [ DP.matchIf (\(DP.DidSpawn ref' _) -> ref' == ref) $
                              \(DP.DidSpawn _ pid) -> return pid
                ]
-    sendS $ CreatedNewProcess self child
-    OkNewProcess <- DP.expect
-    DP.send child ()
+    sendS $ CreatedNewProcess child
+    sendS $ Yield self
+    Continue <- DP.expect
     usend self (DP.DidSpawn ref child)
     return ref
 

@@ -12,7 +12,11 @@ import Control.Distributed.Process.Scheduler (withScheduler)
 import qualified Control.Distributed.Process.Scheduler as S (__remoteTable)
 import Control.Distributed.Process.Node
 import Control.Distributed.Process hiding (bracket)
-import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
+import Control.Distributed.Process.Scheduler
+  ( schedulerIsEnabled
+  , addFailures
+  , removeFailures
+  )
 import Control.Distributed.Process.Internal.Types (ProcessExitException(..))
 import Control.Distributed.Process.Trans
 import Control.Exception ( bracket, SomeException, throwIO )
@@ -96,9 +100,11 @@ run s = do
           checkInvariants res3
           [res4] <- fmap nub $ replicateM 3 $ executeRegister transport (s+i)
           [res5] <- fmap nub $ replicateM 3 $ executeTimeouts transport (s+i)
+          [res6] <- fmap nub $ replicateM 3 $
+                      executeDropMessages transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
-          return $ res0 ++ res2 ++ res3 ++ res4 ++ res5
+          return $ res0 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6
         else do
           res0 <- execute transport (s+i)
           checkInvariants res0
@@ -221,9 +227,86 @@ executeTimeouts transport seed =
      runProcess' n $ withScheduler [] seed clockSpeed $ do
       _s0 <- spawnLocal $ do
         say' "s0: terminating"
+      say' "main: receiveTimeout"
       Nothing <- receiveTimeout 3000 [ match $ \() -> return () ]
+      say' "main: expectTimeout"
+      Nothing <- expectTimeout 3000 :: Process (Maybe ())
       say' "main: terminated"
       liftIO $ fmap reverse $ readIORef traceR
+
+executeDropMessages :: NT.Transport -> Int -> IO [String]
+executeDropMessages transport seed =
+    (resetTraceR >>) $
+    bracket (newLocalNode transport remoteTable) closeLocalNode $ \n0 ->
+    bracket (newLocalNode transport remoteTable) closeLocalNode $ \n1 ->
+    bracket (newLocalNode transport remoteTable) closeLocalNode $ \n2 ->
+    flip E.catch (\e -> do putStr "executeDropMessages.seed: " >> print seed
+                           readIORef (traceR :: IORef [String]) >>= print
+                           throwIO (e :: SomeException)
+                 ) $ do
+     runProcess' n0 $ withScheduler [] seed clockSpeed $ do
+       mainPid <- getSelfPid
+
+       s1 <- liftIO $ forkProcess n1 $ do
+         s2 <- expect
+
+         () <- expect
+         say' "s1: sending 1"
+         ref <- monitor s2
+         usend s2 ()
+         ProcessMonitorNotification ref' s2' DiedDisconnect <- expect
+         True <- return $ ref == ref'
+         True <- return $ s2 == s2'
+
+         () <- expect
+         say' "s1: sending 2"
+         usend s2 ()
+         Nothing <- expectTimeout 1000000
+           :: Process (Maybe ProcessMonitorNotification)
+
+         () <- expect
+         say' "s1: sending 3"
+         usend s2 ()
+         Nothing <- expectTimeout 1000000
+           :: Process (Maybe ProcessMonitorNotification)
+
+         say' "s1: terminating"
+
+       s2 <- liftIO $ forkProcess n2 $ do
+         () <- expect
+         say' "s2: sending 1"
+         usend mainPid ()
+
+         () <- expect
+         say' "s2: sending 2"
+         usend mainPid ()
+
+         say' "s2: terminating"
+
+       usend s1 s2
+       _ <- monitor s1
+
+       -- No message should be sent to main
+       addFailures [((localNodeId n1, localNodeId n2), 1.0)]
+       usend s1 ()
+       Nothing <- expectTimeout 1000000 :: Process (Maybe ())
+       Nothing <- expectTimeout 1000000
+         :: Process (Maybe ProcessMonitorNotification)
+       say' "main: timeout"
+
+       -- A message should be sent to main
+       removeFailures [(localNodeId n1, localNodeId n2)]
+       usend s1 ()
+       () <- expect
+       say' "main: received 1"
+
+       -- A message should be sent to main
+       addFailures [((localNodeId n2, localNodeId n1), 1.0)]
+       usend s1 ()
+       () <- expect
+       say' "main: received 2"
+
+       liftIO $ fmap reverse $ readIORef traceR
 
 executeNSend :: NT.Transport -> Int -> IO [String]
 executeNSend transport seed =

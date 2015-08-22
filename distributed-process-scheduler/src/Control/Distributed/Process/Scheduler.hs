@@ -10,10 +10,16 @@ module Control.Distributed.Process.Scheduler
        , startScheduler
        , stopScheduler
        , withScheduler
+       , addFailures
+       , removeFailures
        , __remoteTable
        ) where
 
-import Control.Distributed.Process.Scheduler.Internal (schedulerIsEnabled)
+import Control.Distributed.Process.Scheduler.Internal
+  ( schedulerIsEnabled
+  , addFailures
+  , removeFailures
+  )
 import qualified Control.Distributed.Process.Scheduler.Internal as Internal
 import "distributed-process" Control.Distributed.Process (Process, ProcessId, RemoteTable)
 
