@@ -28,7 +28,7 @@ forkProcess n p | schedulerIsEnabled = do
     mv <- newEmptyMVar
     pid <- DPN.forkProcess n $ do
       self <- getSelfPid
-      liftIO getScheduler >>= flip DP.send (CreatedNewProcess self) . processId
+      liftIO getScheduler >>= flip DP.send (SpawnedProcess self) . processId
       liftIO $ putMVar mv ()
       Continue <- DP.expect
       p

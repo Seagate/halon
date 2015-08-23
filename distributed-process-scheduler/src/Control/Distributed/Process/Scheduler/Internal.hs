@@ -137,8 +137,8 @@ data SchedulerMsg
                                   -- messages to process and is blocked with the
                                   -- given timeout in microseconds.
     | Yield ProcessId    -- ^ @Yield pid@: process @pid@ is ready to continue.
-    | CreatedNewProcess ProcessId -- ^ @CreatedNewProcess child@: a new
-                                  -- process will be created.
+    | SpawnedProcess ProcessId
+        -- ^ @SpawnedProcess child@: a new process exists.
     | Monitor ProcessId DP.Identifier Bool
         -- ^ @Monitor who whom isLink@: the process @who@ will monitor @whom@.
         -- @isLink@ is @True@ when linking is intended.
@@ -360,7 +360,7 @@ startScheduler initialProcs seed0 clockDelta = do
                       Map.insert pid (clock + ts) revTimeouts
                   }
         -- a new process will be created
-        CreatedNewProcess child -> do
+        SpawnedProcess child -> do
             _ <- DP.monitor child
             go st { stateAlive = Set.insert child alive
                   , stateProcs = Map.insert child True procs
@@ -918,7 +918,7 @@ spawnLocal :: Process () -> Process ProcessId
 spawnLocal p = do
     child <- DP.spawnLocal $ do Continue <- DP.expect
                                 p
-    sendS $ CreatedNewProcess child
+    sendS $ SpawnedProcess child
     return child
 
 spawnWrapClosure :: Closure (Process ()) -> Process ()
@@ -939,7 +939,7 @@ spawnAsync nid cp = do
                [ DP.matchIf (\(DP.DidSpawn ref' _) -> ref' == ref) $
                              \(DP.DidSpawn _ pid) -> return pid
                ]
-    sendS $ CreatedNewProcess child
+    sendS $ SpawnedProcess child
     usend self (DP.DidSpawn ref child)
     return ref
 
