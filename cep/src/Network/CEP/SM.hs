@@ -12,50 +12,23 @@ module Network.CEP.SM
   , SMIn(..)
     -- * Reading results
   , SMResult(..)
-  , extractLogs
+  , SMState(..)
   ) where
 
 import Data.Traversable (for)
-import Data.Traversable.Lib
 import Data.Foldable (toList)
 import Data.Typeable
 
-
+import qualified Control.Monad.State.Strict as State
 import           Control.Distributed.Process
 import qualified Data.Map.Strict as M
 
 import Network.CEP.Buffer
--- import Network.CEP.Execution
+import Network.CEP.Execution
 import Network.CEP.Phase
 import Network.CEP.Types
 
-{-
-data StackOut =
-    StackOut
-    { _soExeReport :: !ExecutionReport      -- ^ Execution report.
-    , _soResult    :: !StackResult          -- ^ Result of running a stack.
-    , _soLogs      :: [Logs]                -- ^ Logs.
-    , _soStopped   :: !Bool                 -- ^ Flag that shows if SM should be removed from the queue.
-    , _soSuspended :: !Bool                 -- ^ If stack is suspended or could run.
-    }
-    -}
-
 newtype SM g = SM { runSM :: forall a. SMIn g a -> a }
-
-data SMResult = SMRunning  (Maybe Logs)
-              -- ^ 'SM' continues its run and could be executed.
-              | SMFinished (Maybe Logs)
-              -- ^ 'SM' finished evaluation in this case SM was started from beginning.
-              | SMSuspended
-              -- ^ 'SM' could not do a step forward until a new message will be fed.
-              | SMStopped
-              -- ^ 'SM' call 'stop' and should be removed from the execution.
-
-extractLogs :: SMResult -> Maybe Logs
-extractLogs (SMRunning  l) = l
-extractLogs (SMFinished l) = l
-extractLogs _              = Nothing
-
 
 -- | Input to 'SM' (Stack Machine).
 data SMIn g a where
@@ -82,7 +55,7 @@ newSM startPhase rn logs ps initialBuffer initialL =
       Just (a :: e) <- unwrapMessage msg
       return $ SM (interpretInput l (bufferInsert a b) phs)
     interpretInput l b phs (SMExecute subs g) =
-      executeStack subs g l b id phs
+      executeStack subs g l b id id phs
 
     -- We use '[Phase g l] -> [Phase g l]' in order to recreate stack in
     -- case if no branch have fired, this is needed only in presence of
@@ -93,27 +66,42 @@ newSM startPhase rn logs ps initialBuffer initialL =
                  -> l
                  -> Buffer
                  -> ([Phase g l] -> [Phase g l])
+                 -> ([ExecutionInfo] -> [ExecutionInfo])
                  -> [Phase g l]
                  -> Process (g,[(SMResult, SM g)])
-    executeStack _ g l b f [] = case f [] of
-                               [] -> return (g, [stoppedSM])
-                               ph -> return (g, [(SMSuspended, SM $ interpretInput l b ph)])
-    executeStack subs g l b f (ph:phs) = do
+    executeStack _ g l b f info [] = case f [] of
+      [] -> return (g, [stoppedSM info])
+      ph -> return (g, [(SMResult SMSuspended (info []) Nothing
+                        , SM $ interpretInput l b ph)])
+    executeStack subs g l b f info (ph:phs) = do
         (g',m) <- runPhase subs logs g l b ph
         fmap concat <$> mapAccumLM next g' m
       where
         next gNext (buffer, out) =
-         case out of
-           SM_Complete l' newPhases rlogs -> do
-              (result, phs') <- case newPhases of
-                 -- This branch is required if we want to rule to be restarted
-                 -- once it finishes "normally".
-                 []  -> return (SMFinished (mkLogs rn rlogs), [startPhase])
-                 ph' -> do xs <- for ph' mkPhase
-                           return (SMRunning (mkLogs rn rlogs), xs)
-              return (gNext, [(result, SM $ interpretInput l' buffer phs')])
-           SM_Suspend  _ -> executeStack subs gNext l b (f.(ph:)) phs
-           SM_Stop     _ -> executeStack subs gNext l b (f) phs
+            case out of
+              SM_Complete l' newPhases rlogs -> do
+                (result, phs') <- case newPhases of
+                          -- This branch is required if we want to rule to be restarted
+                          -- once it finishes "normally".
+                          []  -> return ( SMResult SMFinished
+                                                  (info [SuccessExe (_phName ph) b buffer])
+                                                  (mkLogs rn rlogs)
+                                        , [startPhase]
+                                        )
+                          ph' -> do xs <- for ph' mkPhase
+                                    return ( SMResult SMRunning
+                                                      (info [SuccessExe (_phName ph) b buffer])
+                                                      (mkLogs rn rlogs)
+                                           , xs)
+                return (gNext, [(result, SM $ interpretInput l' buffer phs')])
+              SM_Suspend  _ -> executeStack subs gNext l b
+                                 (f.(ph:))
+                                 (info . ((FailExe (_phName ph) SuspendExe b):))
+                                 phs
+              SM_Stop     _ -> executeStack subs gNext l b
+                                 f
+                                 (info . ((FailExe (_phName ph) StopExe b):))
+                                 phs
 
     mkPhase :: Monad m => PhaseHandle -> m (Phase g l)
     mkPhase h = case M.lookup (_phHandle h) ps of
@@ -121,7 +109,23 @@ newSM startPhase rn logs ps initialBuffer initialL =
       Nothing -> fail $ "impossible: rule " ++ rn
                       ++ " doesn't have a phase named " ++ _phHandle h
 
-    stoppedSM = (SMStopped, SM $ error "trying to run stack that was stopped")
+    stoppedSM mkInfo
+      = ( SMResult SMStopped (mkInfo []) Nothing
+        , SM $ error "trying to run stack that was stopped")
 
 mkLogs :: String -> Maybe SMLogs -> Maybe Logs
 mkLogs pn = fmap (Logs pn . toList)
+
+-- |The 'mapAccumLM' works like 'Data.Traversable.mapAccumL' but
+-- could perform effectfull operations.
+mapAccumLM :: (Monad m , Traversable t)
+           => (a -> b -> m (a, c))
+           -> a
+           -> t b
+           -> m (a, t c)
+mapAccumLM f s t = (\(a,b) -> (b,a)) <$> State.runStateT (traverse go t) s
+  where
+    go x = do s' <- State.get
+              (s'', x') <- State.lift $ f s' x
+              State.put s''
+              return x'

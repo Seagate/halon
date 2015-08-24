@@ -4,6 +4,7 @@
 {-# LANGUAGE Rank2Types      #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections   #-}
+{-# LANGUAGE FlexibleContexts #-}
 -- |
 -- Copyright: (C) 2015 Tweag I/O Limited
 --
@@ -243,23 +244,17 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
       -- We do not allow fork inside init rule, this may be ok or not
       -- depending on a usecase, but allowing fork will make implementation
       -- much harder and do not worth it, unless we have a concrete example.
-      (g, (out, nxt_stk)) <- fmap head <$> runSM stk (SMExecute _machSubs _machState)
-      let -- StackOut infos res mlogs _ _ = out
-          -- XXX: restore execution logs
-          new_rd = rd { _ruleStack = nxt_stk }
+      (g, (SMResult out infos mlogs, nxt_stk)) <- fmap head <$> runSM stk (SMExecute _machSubs _machState)
+      let new_rd = rd { _ruleStack = nxt_stk }
           nxt_st = st { _machState = g }
-          rinfo = RuleInfo InitRuleName EmptyStack (ExecutionReport 0 0 [])
-          info  = RunInfo msg_count (RulesBeenTriggered [])
-          mlogs = case out of
-                    SMFinished l -> l
-                    SMRunning  l -> l
-                    _            -> Nothing
+          rinfo = RuleInfo InitRuleName [(out, infos)]
+          info  = RunInfo msg_count (RulesBeenTriggered [rinfo])
       for_ _machLogger $ \f -> for_ mlogs $ \l -> f l g
       case out of
-        SMFinished{} -> do
+        SMFinished -> do
           let final_st = nxt_st { _machInitRulePassed = True}
           return (info, Engine $ cepCruise final_st)
-        SMRunning{} -> cepInitRule (InitRule new_rd typs) nxt_st (Run Tick)
+        SMRunning -> cepInitRule (InitRule new_rd typs) nxt_st (Run Tick)
         _ -> return (info, Engine $ cepInitRule (InitRule new_rd typs) nxt_st)
 cepInitRule ir st req = defaultHandler st (cepInitRule ir) req
 
@@ -271,8 +266,7 @@ cepCruise st req@(Run t) =
         --      an effectfull requirements to pass this could be a problem
         --      for the rule.
         (infos, nxt_st) <- State.runStateT executeTick st
-        -- XXX: restore rinfo:
-        let rinfo = RunInfo 1 (RulesBeenTriggered infos)
+        let rinfo = RunInfo (_machTotalProcMsgs nxt_st) (RulesBeenTriggered infos)
         return (rinfo, Engine $ cepCruise nxt_st)
       Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
         let fpt = messageFingerprint m
@@ -290,7 +284,7 @@ cepCruise st req@(Run t) =
                        return (Right (key, rd{_ruleStack=stack'}))
                      Nothing   -> return (Left (key, rd)))
         -- XXX: update runinfo
-        let rinfo = RunInfo 0 (RulesBeenTriggered [])
+        let rinfo = RunInfo 1 (RulesBeenTriggered [])
         return (rinfo, Engine $ cepCruise st{_machRunningSM   = running' ++ running
                                             ,_machSuspendedSM = susp
                                             })
@@ -299,42 +293,33 @@ cepCruise st req = defaultHandler st cepCruise req
 
 -- | Execute one step of the Engine.
 executeTick :: State.StateT (Machine g) Process [RuleInfo]
-executeTick = bootstrap >>= execute
+executeTick = bootstrap >>= traverse (uncurry execute)
   where
-    bootstrap :: State.StateT (Machine g) Process [(RuleKey, RuleData g)]
     bootstrap = do
       st <- State.get
       State.put st{_machRunningSM=[]}
       return (_machRunningSM st)
-    execute :: [(RuleKey, RuleData g)] -> State.StateT (Machine g) Process [RuleInfo]
-    execute sts = fmap concat $
-      for sts $ \(key, sm) -> do
-          sti <- State.get
-          (g', machines) <- lift $ runSM (_ruleStack sm)
-                                         (SMExecute (_machSubs sti) (_machState sti))
-          -- XXX: finalizer currently do smth terribly wrong
-          g_opt <- for (_machRuleFin sti) $ \k -> lift $ k g'
-          let addRunning   = foldr (\x y -> mkRunningSM x . y) id $ machines
-              addSuspended = foldr (\x y -> mkSuspendedSM x . y) id $ machines
-              mkRunningSM (SMRunning{},  s) = (mkSM s :)
-              mkRunningSM (SMFinished{}, s) = (mkSM s :)
-              mkRunningSM _                  = id
-              mkSuspendedSM (SMSuspended, s) = (mkSM s :)
-              mkSuspendedSM _                   = id
-              mkSM nxt_stk = (key, sm{_ruleStack=nxt_stk})
-              -- XXX: restore info
-              -- helpers:
-              -- infos     = map extractInfo machines
-              mlogs  = mapMaybe (extractLogs .fst) machines
-
-              -- runStatus x@(StackOut _ _ _ b s, _) = (b,(s,x))
-              -- extractInfo (StackOut hi res _ _ _,_) = RuleInfo (RuleName $ _ruleDataName sm) res hi
-              -- extractLogs (StackOut _ _ logs _ _,_) = logs
-              nxt_g     = fromMaybe g' g_opt
-          State.modify $ \nxt_st ->
-            nxt_st{_machRunningSM = addRunning $ _machRunningSM nxt_st
-                  ,_machSuspendedSM = addSuspended $ _machSuspendedSM nxt_st
-                  ,_machState = nxt_g
-                  }
-          lift $ for_ (_machLogger sti) $ \f -> for_ mlogs $ \l -> f l nxt_g
-          return []
+    execute key sm = do
+      sti <- State.get
+      (g', machines) <- lift $ runSM (_ruleStack sm)
+                                     (SMExecute (_machSubs sti) (_machState sti))
+      -- XXX: finalizer currently do smth terribly wrong
+      g_opt <- for (_machRuleFin sti) $ \k -> lift $ k g'
+      let addRunning   = foldr (\x y -> mkRunningSM x . y) id machines
+          addSuspended = foldr (\x y -> mkSuspendedSM x . y) id machines
+          mkRunningSM (SMResult SMRunning  _ _, s) = (mkSM s :)
+          mkRunningSM (SMResult SMFinished _ _, s) = (mkSM s :)
+          mkRunningSM _  = id
+          mkSuspendedSM (SMResult SMSuspended _ _, s) = (mkSM s :)
+          mkSuspendedSM _ = id
+          mkSM nxt_stk = (key, sm{_ruleStack=nxt_stk})
+          mlogs  = mapMaybe (smResultLogs .fst) machines
+          nxt_g  = fromMaybe g' g_opt
+      State.modify $ \nxt_st ->
+        nxt_st{_machRunningSM = addRunning $ _machRunningSM nxt_st
+              ,_machSuspendedSM = addSuspended $ _machSuspendedSM nxt_st
+              ,_machState = nxt_g
+              }
+      lift $ for_ (_machLogger sti) $ \f -> for_ mlogs $ \l -> f l nxt_g
+      return $ RuleInfo (RuleName $ _ruleDataName sm)
+             $ map ((\(SMResult s r _) -> (s, r)) . fst) machines

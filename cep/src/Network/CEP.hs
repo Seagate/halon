@@ -275,42 +275,38 @@ dumpDebuggingInfo m loop (RunInfo total rres) = do
       RulesBeenTriggered ris -> do
         putStrLn $ "Number of triggered rules: " ++ show (length ris)
                  ++ "\n"
-        for_ ris $ \(RuleInfo rname stk rep) -> do
+        for_ ris $ \(RuleInfo rname rep) -> do
           let nstr =
                 case rname of
                   InitRuleName -> "$$INIT_RULE$$"
                   RuleName s   -> s
-              ExecutionReport ssm tsm is = rep
           putStrLn $ "----- |" ++ nstr ++ "| rule -----\n"
-          putStrLn $ "-> Number of new spawn SMs: " ++ show ssm
-          putStrLn $ "-> Number of term. child SMs: " ++ show tsm
-          putStrLn $ "-> Stack state: " ++ show stk
-          putStrLn ""
-          for_ is $ \i -> do
-            case i of
-              SuccessExe pif p_buf buf -> do
-                case pif of
-                  StackSinglePhase pn ->
-                    putStrLn $ "     <" ++ pn ++ ">\n"
-                  StackSwitchPhase n pn as -> do
-                    putStrLn $ "     <" ++ n ++ " [switch] >\n"
-
-                    putStrLn $ "___ |" ++  pn
-                             ++ "| has been chosen but "
-                             ++ show as ++ " have been tried first"
-                putStrLn "___ Execution result: SUCCESS"
-                case p_buf == buf of
-                  True  -> putStrLn "___ Buffer is untounched"
-                  False -> do
-                    putStrLn $ "___ Previous buffer: " ++ show p_buf
-                    putStrLn $ "___ Resulted buffer: " ++ show buf
-              FailExe tgt r buf -> do
-                putStrLn $ "     <" ++ tgt ++ ">\n"
-                case r of
-                  SuspendExe ->
-                    putStrLn "___ Execution result: SUSPEND"
-                putStrLn $ "___ buffer " ++ show buf
-            putStrLn ""
+          putStrLn $ "-> Number of new spawn SMs: " ++ show (length rep - 1)
+          for_ (zip [1..] rep) $ \(i, (stk, einfo)) -> do
+            putStrLn $ "Machine #" ++ show (i::Int)
+            putStrLn $ case stk of
+              SMFinished  -> "Stack state: " ++ show stk ++ " (SM finished execution.)"
+              SMRunning   -> "Stack state: " ++ show stk ++ " (SM continue execution to the next state.)"
+              SMSuspended -> "Stack state: " ++ show stk ++ " (SM suspended execution.)"
+              SMStopped   -> "Stack state: " ++ show stk ++ " (SM have stopped.)"
+            putStrLn "Execution logs:"
+            for_ (zip [1..] einfo) $ \(j,e) -> do
+              putStrLn $ "Step" ++ show (j::Int) ++ ":"
+              case e of
+                SuccessExe pif p_buf buf -> do
+                  putStrLn $ "<" ++ pif ++ ">"
+                  putStrLn "___ Execution result: SUCCESS"
+                  case p_buf == buf of
+                    True  -> putStrLn "___ Buffer is untounched"
+                    False -> do
+                      putStrLn $ "___ Previous buffer: " ++ show p_buf
+                      putStrLn $ "___ Resulted buffer: " ++ show buf
+                FailExe tgt r buf -> do
+                  putStrLn $ "     <" ++ tgt ++ ">\n"
+                  case r of
+                    SuspendExe -> putStrLn "___ Execution result: SUSPEND"
+                    StopExe    -> putStrLn "___ Execution result: STOP"
+                  putStrLn $ "___ buffer " ++ show buf
     putStrLn $ "#### CEP loop " ++ show loop ++ " #####"
 
 incoming :: Serializable a => a -> Request 'Write (Process (RunInfo, Engine))

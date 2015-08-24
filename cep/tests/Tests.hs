@@ -37,6 +37,9 @@ assertEqual s i r = liftIO $ HU.assertEqual s i r
 assertBool :: String -> Bool -> Process ()
 assertBool s b = liftIO $ HU.assertBool s b
 
+assertFailure :: String -> Process ()
+assertFailure s = liftIO $ HU.assertFailure s
+
 tests :: (Process () -> IO ()) -> [TestTree]
 tests launch =
   [ testsGlobal launch
@@ -416,8 +419,8 @@ testsFork launch = localOption (mkTimeout 500000) $ testGroup "Fork"
   , testCase "Fork copies local state" $ launch forkCopyLocalState
   , testCase "Fork copies curent buffer" $ launch forkCopyLocalBuffer
   , testCase "Fork do not copy other rules" $ launch forkDontCopyOtherRules
-  -- , testCase "Fork increments number of SMs" $ launch forkIncrSMs
   , testCase "Service usecase-1" $ launch forkServiceUsecase
+  , testCase "Fork increments number of SMs" $ launch forkIncrSMs
   ]
 
 forkServiceUsecase :: Process ()
@@ -596,7 +599,7 @@ initRuleIsWorking = do
 testsPeekShift :: (Process () -> IO ()) -> TestTree
 testsPeekShift launch = testGroup "Buffer"
   [ testCase "Peek shift is working" $ launch peekShiftWorking
-  -- , testCase "Should not lose any msg" $ launch shouldNotLooseMgs
+  , testCase "Should not lose any msg" $ launch shouldNotLooseMgs
   ]
 
 peekShiftWorking :: Process ()
@@ -623,7 +626,6 @@ peekShiftWorking = do
     Res () <- expect
     return ()
 
-{-
 shouldNotLooseMgs :: Process ()
 shouldNotLooseMgs = do
     let defs = define "do-not-loose-it" $ do
@@ -649,13 +651,14 @@ shouldNotLooseMgs = do
                ]
 
     (infos, _) <- feedEngine msgs $ cepEngine () defs
-    let [_,_,last_run] = infos
+    let last_run = fst . last $ zip infos (tail infos)
         RunInfo _ (RulesBeenTriggered [rinfo]) = last_run
-        RuleInfo _ _ (ExecutionReport _ _ exe) = rinfo
-        [_, _, SuccessExe ph _ _, _, _]        = exe
-
-    assertEqual "should not lose msgs" "ph2" (stackPhaseInfoPhaseName ph)
-    -}
+        RuleInfo _ [(st, _)]  = rinfo
+    case st of
+      SMRunning  -> return ()
+      SMFinished -> return ()
+      _          -> assertFailure "message was lost"
+    return ()
 
 forkIncrSMs :: Process ()
 forkIncrSMs = do
@@ -669,12 +672,9 @@ forkIncrSMs = do
 
   (RunInfo _ res, _) <- stepForward tick start_engine
   let RulesBeenTriggered res' = res
-  assertEqual "length of info is 2" 4 (length res')
-  let (RuleInfo _ _ rep:_)           = res'
-      ExecutionReport spawned term _ = rep
-
-  assertEqual "OK" 0 term
-  assertEqual "OK" 2 spawned
+  assertEqual "only one rule fired" 1 (length res')
+  let (RuleInfo _ rep:_)           = res'
+  assertEqual "new VM were spawned" 2 (length rep)
 
 testsExecution :: (Process () -> IO ()) -> TestTree
 testsExecution launch = testGroup "Execution properties"

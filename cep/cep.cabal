@@ -27,7 +27,6 @@ library
                        Network.CEP.SM
                        Network.CEP.Types
                        Network.CEP.Utils
-                       Data.Traversable.Lib
 
   other-extensions:    DeriveDataTypeable
                        GeneralizedNewtypeDeriving

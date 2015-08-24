@@ -131,7 +131,13 @@ extractSeqMsg s sbuf = go (-1) sbuf s
 --
 --   Call is evaluated until a safe point that is either final 'return'
 --   or 'suspend' or 'commit'.
-runPhase :: Subscribers -> Maybe SMLogs -> g -> l -> Buffer -> Phase g l -> Process (g, [(Buffer, PhaseOut l)])
+runPhase :: Subscribers   -- ^ Subscribers.
+         -> Maybe SMLogs  -- ^ Current logger.
+         -> g             -- ^ Global state.
+         -> l             -- ^ Local state.
+         -> Buffer        -- ^ Current buffer.
+         -> Phase g l     -- ^ Phase handle to interpret.
+         -> Process (g, [(Buffer,PhaseOut l)])
 runPhase subs logs g l buf ph =
     case _phCall ph of
       DirectCall action -> runPhaseM (_phName ph) subs logs g l buf action
