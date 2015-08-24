@@ -13,6 +13,9 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , findHostsLabelled
   , findHostsLabelledBy
   , findNodeHost
+  , hasHostStatusFlag
+  , setHostStatusFlag
+  , unsetHostStatusFlag
   , hasLabel
   , labelHost
   , locateHostInEnclosure
@@ -21,6 +24,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , nodesOnHost
     -- * Interface related functions
   , registerInterface
+  , findBMCAddress
     -- * Drive related functions
   , driveStatus
   , findEnclosureStorageDevices
@@ -42,6 +46,8 @@ import HA.Resources.Mero
 import Control.Category ((>>>))
 import Control.Distributed.Process (liftIO)
 
+import Data.List (foldl')
+import Data.Maybe (listToMaybe)
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
@@ -124,6 +130,61 @@ locateNodeOnHost node host = modifyLocalGraph $ \rg -> do
   return $ G.connect host Runs node rg
 
 ----------------------------------------------------------
+-- Host status functions                                --
+----------------------------------------------------------
+
+hasHostStatusFlag :: HostStatusFlag
+                  -> Host
+                  -> PhaseM LoopState l Bool
+hasHostStatusFlag f h = do
+  phaseLog "rg-query" $ "Checking host "
+                      ++ show h
+                      ++ " for status "
+                      ++ show f
+  g <- getLocalGraph
+  return $ case G.connectedTo h Is g of
+    [] -> False
+    statuses -> hasStatusFlag f $ mconcat statuses
+
+modifyHostStatus :: Host
+                 -> String -- ^ Message describing the modification
+                 -> (HostStatus -> HostStatus)
+                 -> PhaseM LoopState l ()
+modifyHostStatus h msg f = modifyLocalGraph $ \rg -> do
+  phaseLog "rg" msg
+  return $ case G.connectedTo h Is rg of
+    [] -> let
+        status = f mempty
+      in
+        G.newResource status
+        >>> G.connect h Is status
+          $ rg
+    xs -> let
+        status = f $ mconcat xs
+        removeOldStatus = foldl' (.) id . fmap (G.disconnect h Is) $ xs
+      in
+        G.newResource status
+        >>> removeOldStatus
+        >>> G.connect h Is status
+          $ rg
+
+setHostStatusFlag :: Host
+                  -> HostStatusFlag
+                  -> PhaseM LoopState l ()
+setHostStatusFlag h f = let
+    msg = unwords [ "Setting flag", show f
+                  , "on host", show h ]
+  in modifyHostStatus h msg (setStatusFlag f)
+
+unsetHostStatusFlag :: Host
+                    -> HostStatusFlag
+                    -> PhaseM LoopState l ()
+unsetHostStatusFlag h f = let
+    msg = unwords [ "Unsetting flag", show f
+                  , "on host", show h ]
+  in modifyHostStatus h msg (unsetStatusFlag f)
+
+----------------------------------------------------------
 -- Host label functions                                 --
 ----------------------------------------------------------
 
@@ -192,6 +253,17 @@ registerInterface host int = modifyLocalGraph $ \rg -> do
         >>> G.connect host Has int
           $ rg
   return rg'
+
+-- | XXX Todo make this identify the address correctly.
+findBMCAddress :: Host
+               -> PhaseM LoopState l (Maybe String)
+findBMCAddress host = do
+    phaseLog "rg-query" $ "Getting BMC address for host " ++ show host
+    g <- getLocalGraph
+    return . listToMaybe . fmap unIf $ G.connectedTo host Has g
+  where
+    unIf (Interface a) = a
+
 
 ----------------------------------------------------------
 -- Drive related functions                              --

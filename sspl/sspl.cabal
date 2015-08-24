@@ -20,6 +20,7 @@ library
                        SSPL.Bindings.ClusterMap
                        SSPL.Bindings.CommandRequest
                        SSPL.Bindings.CommandResponse
+                       SSPL.Bindings.SensorRequest
                        SSPL.Bindings.SensorResponse
                        SSPL.Bindings.Instances
   hs-source-dirs:      src
@@ -52,7 +53,8 @@ executable mkBindings
                        containers,
                        template-haskell,
                        text,
-                       binary
+                       binary,
+                       hashable
   default-language:    Haskell2010
   if flag(maintainer)
     ghc-options: -Werror

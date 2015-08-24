@@ -7,7 +7,7 @@
 {-# LANGUAGE QuasiQuotes     #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module SSPL.Schemata.ActuatorRequest where
+module SSPL.Schemata.SensorRequest where
 
 import Data.Aeson.Schema
 
@@ -85,86 +85,18 @@ schema = [schemaQQ|
           }
         },
 
-        "actuator_request_type": {
+        "sensor_request_type": {
           "type": "object",
           "required": true,
           "additionalProperties": false,
           "properties": {
 
-            "logging": {
+            "node_data": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "log_type": {
-                  "description": "Identify the type of log message",
-                  "type": "string",
-                  "required": true
-                },
-                "log_level": {
-                  "description": "LOG_EMERG,LOG_ALERT,LOG_CRIT,LOG_ERR,LOG_WARNING,LOG_NOTICE,LOG_INFO,LOG_DEBUG",
-                  "type": "string",
-                  "required": false
-                },
-                "log_msg": {
-                  "description": "The message to be logged",
-                  "type": "string",
-                  "required": true
-                }
-              }
-            },
-
-            "thread_controller": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "module_name": {
-                  "description": "Identify the thread to be managed by its class name",
-                  "type": "string",
-                  "required": true
-                },
-                "thread_request": {
-                  "description": "Action to be applied to thread: start | stop | restart | status",
-                  "type": "string",
-                  "required": true
-                }
-              }
-            },
-
-            "service_controller": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "service_name": {
-                  "description": "Identify the service to be managed",
-                  "type": "string",
-                  "required": true
-                },
-                "service_request": {
-                  "description": "Action to be applied to service: start | stop | restart | status",
-                  "type": "string",
-                  "required": true
-                }
-              }
-            },
-
-            "login_controller": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "login_request": {
-                  "description": "Action to be performed on login services",
-                  "type": "string",
-                  "required": true
-                }
-              }
-            },
-
-            "node_controller": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "node_request": {
-                  "description": "Action to be performed on node",
+                "sensor_type": {
+                  "description": "Request sensor data; cpu_data, etc.",
                   "type": "string",
                   "required": true
                 }
@@ -176,5 +108,4 @@ schema = [schemaQQ|
     }
   }
 }
-
   |]

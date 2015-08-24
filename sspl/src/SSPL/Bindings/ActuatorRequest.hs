@@ -15,6 +15,7 @@ import Data.Either
 import Data.Foldable
 import Data.Functor
 import Data.HashMap.Lazy
+import Data.Hashable
 import Data.Map
 import Data.Maybe
 import Data.Ratio
@@ -84,7 +85,7 @@ graph = Data.Map.fromList [(Data.Text.pack "ActuatorRequest",
                                                                                                                                                                                                                                                                                                                                                                             Data.Aeson.Schema.Types.schemaProperties = Data.HashMap.Lazy.fromList [(Data.Text.pack "node_request",
                                                                                                                                                                                                                                                                                                                                                                                                                                                     Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaType = [Data.Aeson.Schema.Choice.Choice1of2 Data.Aeson.Schema.Types.StringType],
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   Data.Aeson.Schema.Types.schemaRequired = Prelude.True,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  Data.Aeson.Schema.Types.schemaDescription = GHC.Base.Just (Data.Text.pack "Action to be performed on node; host_update, etc.")})],
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  Data.Aeson.Schema.Types.schemaDescription = GHC.Base.Just (Data.Text.pack "Action to be performed on node")})],
                                                                                                                                                                                                                                                                                                                                                                             Data.Aeson.Schema.Types.schemaAdditionalProperties = Data.Aeson.Schema.Choice.Choice1of2 Prelude.False}),
                                                                                                                                                                                                                                                                                                                                              (Data.Text.pack "logging",
                                                                                                                                                                                                                                                                                                                                               Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaType = [Data.Aeson.Schema.Choice.Choice1of2 Data.Aeson.Schema.Types.ObjectType],
@@ -127,6 +128,8 @@ data ActuatorRequestMessageActuator_request_typeThread_controller = ActuatorRequ
 
 instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeThread_controller
 
+instance Data.Hashable.Hashable ActuatorRequestMessageActuator_request_typeThread_controller
+
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeThread_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items GHC.Base.$ (\(pname,
@@ -157,6 +160,8 @@ data ActuatorRequestMessageActuator_request_typeLogin_controller = ActuatorReque
 
 instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeLogin_controller
 
+instance Data.Hashable.Hashable ActuatorRequestMessageActuator_request_typeLogin_controller
+
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeLogin_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_1 = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items_1 GHC.Base.$ (\(pname_1,
@@ -176,11 +181,13 @@ instance Data.Aeson.ToJSON ActuatorRequestMessageActuator_request_typeLogin_cont
     where toJSON (ActuatorRequestMessageActuator_request_typeLogin_controller a1) = Data.Aeson.Types.Object GHC.Base.$ (Data.HashMap.Lazy.fromList GHC.Base.$ Data.Maybe.catMaybes [(,) (Data.Text.pack "login_request") Data.Functor.<$> (GHC.Base.Just GHC.Base.. Data.Aeson.Types.String) a1])
 
 data ActuatorRequestMessageActuator_request_typeNode_controller = ActuatorRequestMessageActuator_request_typeNode_controller
-  { actuatorRequestMessageActuator_request_typeNode_controllerNode_request :: Data.Text.Text -- ^ Action to be performed on node; host_update, etc.
+  { actuatorRequestMessageActuator_request_typeNode_controllerNode_request :: Data.Text.Text -- ^ Action to be performed on node
   } deriving (GHC.Classes.Eq, GHC.Show.Show, GHC.Generics.Generic, Data.Typeable.Typeable)
 
 
 instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeNode_controller
+
+instance Data.Hashable.Hashable ActuatorRequestMessageActuator_request_typeNode_controller
 
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeNode_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_2 = Data.HashMap.Lazy.toList obj
@@ -208,6 +215,8 @@ data ActuatorRequestMessageActuator_request_typeLogging = ActuatorRequestMessage
 
 
 instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeLogging
+
+instance Data.Hashable.Hashable ActuatorRequestMessageActuator_request_typeLogging
 
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeLogging
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_3 = Data.HashMap.Lazy.toList obj
@@ -245,6 +254,8 @@ data ActuatorRequestMessageActuator_request_typeService_controller = ActuatorReq
 
 instance Data.Binary.Binary ActuatorRequestMessageActuator_request_typeService_controller
 
+instance Data.Hashable.Hashable ActuatorRequestMessageActuator_request_typeService_controller
+
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_typeService_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_4 = Data.HashMap.Lazy.toList obj
                                                          in Data.Foldable.forM_ items_4 GHC.Base.$ (\(pname_4,
@@ -278,6 +289,8 @@ data ActuatorRequestMessageActuator_request_type = ActuatorRequestMessageActuato
 
 
 instance Data.Binary.Binary ActuatorRequestMessageActuator_request_type
+
+instance Data.Hashable.Hashable ActuatorRequestMessageActuator_request_type
 
 instance Data.Aeson.FromJSON ActuatorRequestMessageActuator_request_type
     where parseJSON (Data.Aeson.Types.Object obj) = do {let items_5 = Data.HashMap.Lazy.toList obj
@@ -316,6 +329,8 @@ data ActuatorRequestMessage = ActuatorRequestMessage
 
 instance Data.Binary.Binary ActuatorRequestMessage
 
+instance Data.Hashable.Hashable ActuatorRequestMessage
+
 instance Data.Aeson.FromJSON ActuatorRequestMessage
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure ActuatorRequestMessage GHC.Base.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
                                                                                                                                                        [] -> GHC.Base.return ()
@@ -343,6 +358,8 @@ data ActuatorRequest = ActuatorRequest
 
 
 instance Data.Binary.Binary ActuatorRequest
+
+instance Data.Hashable.Hashable ActuatorRequest
 
 instance Data.Aeson.FromJSON ActuatorRequest
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure ActuatorRequest GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property signature missing") (\val -> case val of

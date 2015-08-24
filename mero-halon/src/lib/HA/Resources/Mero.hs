@@ -24,8 +24,10 @@ import Control.Distributed.Process.Closure
 
 import Data.Hashable (Hashable)
 import Data.Binary (Binary)
+import Data.Bits
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
+import Data.Word (Word32)
 import GHC.Generics (Generic)
 
 --------------------------------------------------------------------------------
@@ -45,6 +47,37 @@ instance Hashable Identifier
 newtype Host = Host
     String -- ^ Hostname
   deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
+
+-- | Representation of host device status.
+newtype HostStatus = HostStatus Word32
+  deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
+
+instance Monoid HostStatus where
+  mempty = HostStatus zeroBits
+  mappend (HostStatus x) (HostStatus y) = HostStatus $ x .|. y
+
+-- | Possible flags which may be set in the host status.
+data HostStatusFlag =
+      HS_POWERED
+  deriving (Eq, Show, Bounded, Enum)
+
+-- | Test if a host has the given status flag.
+hasStatusFlag :: HostStatusFlag -- ^ Query for this status...
+              -> HostStatus -- ^ ...in this one.
+              -> Bool
+hasStatusFlag flag (HostStatus y) = testBit y (fromEnum flag)
+
+-- | Set a status flag.
+setStatusFlag :: HostStatusFlag -- ^ Flag to set
+              -> HostStatus
+              -> HostStatus
+setStatusFlag flag (HostStatus y) = HostStatus $ setBit y (fromEnum flag)
+
+-- | Unset a status flag.
+unsetStatusFlag :: HostStatusFlag -- ^ Flag to set
+                -> HostStatus
+                -> HostStatus
+unsetStatusFlag flag (HostStatus y) = HostStatus $ clearBit y (fromEnum flag)
 
 -- | Representation of a physical enclosure.
 newtype Enclosure = Enclosure
@@ -106,6 +139,7 @@ instance Hashable Is
 -- XXX Only nodes and services have runtime information attached to them, for now.
 
 resdict_Host :: Dict (Resource Host)
+resdict_HostStatus :: Dict (Resource HostStatus)
 resdict_DeviceIdentifier :: Dict (Resource DeviceIdentifier)
 resdict_Enclosure :: Dict (Resource Enclosure)
 resdict_Interface :: Dict (Resource Interface)
@@ -114,6 +148,7 @@ resdict_StorageDeviceStatus :: Dict (Resource StorageDeviceStatus)
 resdict_Label :: Dict (Resource Label)
 
 resdict_Host = Dict
+resdict_HostStatus = Dict
 resdict_DeviceIdentifier = Dict
 resdict_Enclosure = Dict
 resdict_Interface = Dict
@@ -123,6 +158,7 @@ resdict_Label = Dict
 
 reldict_Has_Cluster_Host :: Dict (Relation Has Cluster Host)
 reldict_Has_Host_Interface :: Dict (Relation Has Host Interface)
+reldict_Is_Host_HostStatus :: Dict (Relation Is Host HostStatus)
 reldict_Has_Cluster_Enclosure :: Dict (Relation Has Cluster Enclosure)
 reldict_Has_Enclosure_StorageDevice :: Dict (Relation Has Enclosure StorageDevice)
 reldict_Has_Enclosure_Host :: Dict (Relation Has Enclosure Host)
@@ -134,6 +170,7 @@ reldict_Has_StorageDevice_DeviceIdentifier :: Dict (Relation Has StorageDevice D
 
 reldict_Has_Cluster_Host = Dict
 reldict_Has_Host_Interface = Dict
+reldict_Is_Host_HostStatus = Dict
 reldict_Has_Cluster_Enclosure = Dict
 reldict_Has_Enclosure_StorageDevice = Dict
 reldict_Has_Enclosure_Host = Dict
@@ -144,6 +181,7 @@ reldict_Has_Host_Label = Dict
 reldict_Has_StorageDevice_DeviceIdentifier = Dict
 
 remotable [ 'resdict_Host
+          , 'resdict_HostStatus
           , 'resdict_DeviceIdentifier
           , 'resdict_Enclosure
           , 'resdict_Interface
@@ -152,6 +190,7 @@ remotable [ 'resdict_Host
           , 'resdict_Label
           , 'reldict_Has_Cluster_Host
           , 'reldict_Has_Host_Interface
+          , 'reldict_Is_Host_HostStatus
           , 'reldict_Has_Cluster_Enclosure
           , 'reldict_Has_Enclosure_StorageDevice
           , 'reldict_Has_Enclosure_Host
@@ -165,6 +204,9 @@ remotable [ 'resdict_Host
 
 instance Resource Host where
     resourceDict = $(mkStatic 'resdict_Host)
+
+instance Resource HostStatus where
+    resourceDict = $(mkStatic 'resdict_HostStatus)
 
 instance Resource Enclosure where
     resourceDict = $(mkStatic 'resdict_Enclosure)
@@ -189,6 +231,9 @@ instance Relation Has Cluster Host where
 
 instance Relation Has Host Interface where
     relationDict = $(mkStatic 'reldict_Has_Host_Interface)
+
+instance Relation Is Host HostStatus where
+    relationDict = $(mkStatic 'reldict_Is_Host_HostStatus)
 
 instance Relation Has Host Label where
     relationDict = $(mkStatic 'reldict_Has_Host_Label)

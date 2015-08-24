@@ -15,6 +15,7 @@ import Data.Binary
 import Data.Either
 import Data.Functor
 import Data.HashMap.Lazy
+import Data.Hashable
 import Data.Map
 import Data.Maybe
 import Data.Ratio
@@ -300,6 +301,8 @@ data SensorResponseMessageSensor_response_typeDisk_status_hpi = SensorResponseMe
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeDisk_status_hpi
 
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeDisk_status_hpi
+
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeDisk_status_hpi
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((((((GHC.Base.pure SensorResponseMessageSensor_response_typeDisk_status_hpi GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property productName missing") (\val -> case val of
                                                                                                                                                                                                                                          Data.Aeson.Types.String str -> do GHC.Base.return str
@@ -358,6 +361,8 @@ data SensorResponseMessageSensor_response_typeIf_dataInterfacesItem = SensorResp
 
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeIf_dataInterfacesItem
+
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeIf_dataInterfacesItem
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeIf_dataInterfacesItem
     where parseJSON (Data.Aeson.Types.Object obj) = do (((((((GHC.Base.pure SensorResponseMessageSensor_response_typeIf_dataInterfacesItem GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -419,6 +424,8 @@ data SensorResponseMessageSensor_response_typeIf_data = SensorResponseMessageSen
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeIf_data
 
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeIf_data
+
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeIf_data
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure SensorResponseMessageSensor_response_typeIf_data GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
                                                                                                                                                                             Data.Aeson.Types.String str -> do GHC.Base.return str
@@ -445,6 +452,8 @@ data SensorResponseMessageSensor_response_typeHost_updateFreeMem = SensorRespons
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeHost_updateFreeMem
 
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeHost_updateFreeMem
+
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeHost_updateFreeMem
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeHost_updateFreeMem GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
                                                                                                                                                                                       Data.Aeson.Types.Number num -> case Data.Scientific.floatingOrInteger num of
@@ -468,6 +477,8 @@ data SensorResponseMessageSensor_response_typeHost_updateTotalMem = SensorRespon
 
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeHost_updateTotalMem
+
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeHost_updateTotalMem
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeHost_updateTotalMem
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeHost_updateTotalMem GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -500,6 +511,8 @@ data SensorResponseMessageSensor_response_typeHost_update = SensorResponseMessag
 
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeHost_update
+
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeHost_update
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeHost_update
     where parseJSON (Data.Aeson.Types.Object obj) = do (((((((((GHC.Base.pure SensorResponseMessageSensor_response_typeHost_update GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -555,6 +568,8 @@ data SensorResponseMessageSensor_response_typeDisk_status_drivemanager = SensorR
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeDisk_status_drivemanager
 
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeDisk_status_drivemanager
+
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeDisk_status_drivemanager
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure SensorResponseMessageSensor_response_typeDisk_status_drivemanager GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property enclosureSN missing") (\val -> case val of
                                                                                                                                                                                                                                             Data.Aeson.Types.String str -> do GHC.Base.return str
@@ -581,6 +596,8 @@ data SensorResponseMessageSensor_response_typeService_watchdog = SensorResponseM
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeService_watchdog
 
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeService_watchdog
+
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeService_watchdog
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure SensorResponseMessageSensor_response_typeService_watchdog GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property service_state missing") (\val -> case val of
                                                                                                                                                                                                                                       Data.Aeson.Types.String str -> do GHC.Base.return str
@@ -606,6 +623,8 @@ data SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSwap = Sensor
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSwap
 
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSwap
+
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSwap
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSwap GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
                                                                                                                                                                                              Data.Aeson.Types.Number num -> case Data.Scientific.floatingOrInteger num of
@@ -629,6 +648,8 @@ data SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSpace = Sensor
 
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSpace
+
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSpace
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSpace
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSpace GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -654,6 +675,8 @@ data SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpace = Senso
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpace
 
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpace
+
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpace
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeLocal_mount_dataTotalSpace GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
                                                                                                                                                                                               Data.Aeson.Types.Number num -> case Data.Scientific.floatingOrInteger num of
@@ -677,6 +700,8 @@ data SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwap = SensorR
 
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwap
+
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwap
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwap
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeLocal_mount_dataFreeSwap GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -706,6 +731,8 @@ data SensorResponseMessageSensor_response_typeLocal_mount_data = SensorResponseM
 
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeLocal_mount_data
+
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeLocal_mount_data
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeLocal_mount_data
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((((GHC.Base.pure SensorResponseMessageSensor_response_typeLocal_mount_data GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "totalSwap") obj)) GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -744,6 +771,8 @@ data SensorResponseMessageSensor_response_typeCpu_dataCoreDataItem = SensorRespo
 
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeCpu_dataCoreDataItem
+
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeCpu_dataCoreDataItem
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeCpu_dataCoreDataItem
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure SensorResponseMessageSensor_response_typeCpu_dataCoreDataItem GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -797,6 +826,8 @@ data SensorResponseMessageSensor_response_typeCpu_data = SensorResponseMessageSe
 
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeCpu_data
+
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeCpu_data
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeCpu_data
     where parseJSON (Data.Aeson.Types.Object obj) = do (((((((((((GHC.Base.pure SensorResponseMessageSensor_response_typeCpu_data GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
@@ -878,6 +909,8 @@ data SensorResponseMessageSensor_response_typeRaid_data = SensorResponseMessageS
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_typeRaid_data
 
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_typeRaid_data
+
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_typeRaid_data
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessageSensor_response_typeRaid_data GHC.Base.<*> Data.Traversable.traverse (\val -> case val of
                                                                                                                                                                              Data.Aeson.Types.String str -> do GHC.Base.return str
@@ -904,6 +937,8 @@ data SensorResponseMessageSensor_response_type = SensorResponseMessageSensor_res
 
 
 instance Data.Binary.Binary SensorResponseMessageSensor_response_type
+
+instance Data.Hashable.Hashable SensorResponseMessageSensor_response_type
 
 instance Data.Aeson.FromJSON SensorResponseMessageSensor_response_type
     where parseJSON (Data.Aeson.Types.Object obj) = do (((((((GHC.Base.pure SensorResponseMessageSensor_response_type GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "disk_status_hpi") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "if_data") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "host_update") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "disk_status_drivemanager") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "service_watchdog") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "local_mount_data") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "cpu_data") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "raid_data") obj)
@@ -934,6 +969,8 @@ data SensorResponseMessage = SensorResponseMessage
 
 instance Data.Binary.Binary SensorResponseMessage
 
+instance Data.Hashable.Hashable SensorResponseMessage
+
 instance Data.Aeson.FromJSON SensorResponseMessage
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure SensorResponseMessage GHC.Base.<*> Data.Traversable.traverse (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty val of
                                                                                                                                                      [] -> GHC.Base.return ()
@@ -956,6 +993,8 @@ data SensorResponse = SensorResponse
 
 
 instance Data.Binary.Binary SensorResponse
+
+instance Data.Hashable.Hashable SensorResponse
 
 instance Data.Aeson.FromJSON SensorResponse
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure SensorResponse GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property signature missing") (\val -> case val of

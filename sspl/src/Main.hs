@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
+import qualified SSPL.Schemata.SensorRequest as SensorRequest
 import qualified SSPL.Schemata.SensorResponse as SensorResponse
 import qualified SSPL.Schemata.ActuatorRequest as ActuatorRequest
 import qualified SSPL.Schemata.ActuatorResponse as ActuatorResponse
@@ -24,6 +25,7 @@ import qualified Data.Text.IO as T
 import Language.Haskell.TH
 
 import Data.Binary
+import Data.Hashable
 import Data.Typeable
 import GHC.Generics
 
@@ -31,7 +33,8 @@ import GHC.Generics
 main :: IO ()
 main = let
     schemata = [
-        ("SensorResponse", SensorResponse.schema)
+        ("SensorRequest", SensorRequest.schema)
+      , ("SensorResponse", SensorResponse.schema)
       , ("ActuatorRequest", ActuatorRequest.schema)
       , ("ActuatorResponse", ActuatorResponse.schema)
       , ("CommandRequest", CommandRequest.schema)
@@ -52,6 +55,11 @@ mkBindings name schema = do
                                                        , "DeriveGeneric"
                                                        , "StandaloneDeriving" ]
                                , _extraInstances =
-                                     \n -> return $ instanceD (cxt []) (conT ''Binary `appT` conT n) []
+                                     \n -> [ instanceD (cxt []) (conT ''Binary `appT` conT n) []
+                                           , instanceD (cxt []) (conT ''Hashable `appT` conT n) []
+                                           ]
+                               , _replaceModules = M.insert
+                                  "Data.Hashable.Class" "Data.Hashable"
+                                  (_replaceModules defaultOptions)
                                })
   T.writeFile ("src/SSPL/Bindings/" ++ (T.unpack name) ++ ".hs")  code

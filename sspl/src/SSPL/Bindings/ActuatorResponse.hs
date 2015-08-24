@@ -14,6 +14,7 @@ import Data.Binary
 import Data.Either
 import Data.Functor
 import Data.HashMap.Lazy
+import Data.Hashable
 import Data.Map
 import Data.Maybe
 import Data.Ratio
@@ -100,6 +101,8 @@ data ActuatorResponseMessageActuator_response_typeAck = ActuatorResponseMessageA
 
 instance Data.Binary.Binary ActuatorResponseMessageActuator_response_typeAck
 
+instance Data.Hashable.Hashable ActuatorResponseMessageActuator_response_typeAck
+
 instance Data.Aeson.FromJSON ActuatorResponseMessageActuator_response_typeAck
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure ActuatorResponseMessageActuator_response_typeAck GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property ack_msg missing") (\val -> case val of
                                                                                                                                                                                                                       Data.Aeson.Types.String str -> do GHC.Base.return str
@@ -121,6 +124,8 @@ data ActuatorResponseMessageActuator_response_typeThread_controller = ActuatorRe
 
 instance Data.Binary.Binary ActuatorResponseMessageActuator_response_typeThread_controller
 
+instance Data.Hashable.Hashable ActuatorResponseMessageActuator_response_typeThread_controller
+
 instance Data.Aeson.FromJSON ActuatorResponseMessageActuator_response_typeThread_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure ActuatorResponseMessageActuator_response_typeThread_controller GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property module_name missing") (\val -> case val of
                                                                                                                                                                                                                                         Data.Aeson.Types.String str -> do GHC.Base.return str
@@ -141,6 +146,8 @@ data ActuatorResponseMessageActuator_response_typeService_controller = ActuatorR
 
 
 instance Data.Binary.Binary ActuatorResponseMessageActuator_response_typeService_controller
+
+instance Data.Hashable.Hashable ActuatorResponseMessageActuator_response_typeService_controller
 
 instance Data.Aeson.FromJSON ActuatorResponseMessageActuator_response_typeService_controller
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure ActuatorResponseMessageActuator_response_typeService_controller GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property service_response missing") (\val -> case val of
@@ -164,6 +171,8 @@ data ActuatorResponseMessageActuator_response_type = ActuatorResponseMessageActu
 
 instance Data.Binary.Binary ActuatorResponseMessageActuator_response_type
 
+instance Data.Hashable.Hashable ActuatorResponseMessageActuator_response_type
+
 instance Data.Aeson.FromJSON ActuatorResponseMessageActuator_response_type
     where parseJSON (Data.Aeson.Types.Object obj) = do ((GHC.Base.pure ActuatorResponseMessageActuator_response_type GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "ack") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "thread_controller") obj)) GHC.Base.<*> Data.Traversable.traverse Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "service_controller") obj)
           parseJSON _ = GHC.Base.fail "not an object"
@@ -182,6 +191,8 @@ data ActuatorResponseMessage = ActuatorResponseMessage
 
 
 instance Data.Binary.Binary ActuatorResponseMessage
+
+instance Data.Hashable.Hashable ActuatorResponseMessage
 
 instance Data.Aeson.FromJSON ActuatorResponseMessage
     where parseJSON (Data.Aeson.Types.Object obj) = do (GHC.Base.pure ActuatorResponseMessage GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property actuator_response_type missing") Data.Aeson.parseJSON (Data.HashMap.Lazy.lookup (Data.Text.pack "actuator_response_type") obj)) GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property sspl_ll_msg_header missing") (\val -> do {(case Data.Aeson.Schema.Validator.validate graph Data.Aeson.Schema.Types.empty{Data.Aeson.Schema.Types.schemaRequired = Prelude.True} val of
@@ -205,6 +216,8 @@ data ActuatorResponse = ActuatorResponse
 
 
 instance Data.Binary.Binary ActuatorResponse
+
+instance Data.Hashable.Hashable ActuatorResponse
 
 instance Data.Aeson.FromJSON ActuatorResponse
     where parseJSON (Data.Aeson.Types.Object obj) = do ((((GHC.Base.pure ActuatorResponse GHC.Base.<*> Data.Maybe.maybe (GHC.Base.fail "required property signature missing") (\val -> case val of
