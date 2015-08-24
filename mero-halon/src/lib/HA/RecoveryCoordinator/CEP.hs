@@ -144,26 +144,10 @@ rcRules argv eq = do
     initRule $ rcInitRule argv eq
 
     define "node-up" $ do
-      boot        <- phaseHandle "boot"
       nodeup      <- phaseHandle "nodeup"
       nm_started  <- phaseHandle "node_monitor_started"
       nm_start    <- phaseHandle "node_monitor_start"
       nm_failed   <- phaseHandle "node_monitor_could_not_start"
-      clean_msgs  <- phaseHandle "clean_messages"
-      clean_failed <- phaseHandle "clean_failed_messages"
-      clean_started <- phaseHandle "clean_started_messages"
-      clean_other_failed  <- phaseHandle "clean_failed_messages_other"
-      clean_other_started <- phaseHandle "clean_started_messages_other"
-
-      -- we are waiting for node up message, while we are waiting we
-      -- are clearing all started and could not start messages for
-      -- services we are not interested in.
-      directly boot $ switch [ nodeup
-                             , clean_other_started
-                             , clean_other_failed
-                             ]
-      setPhaseIf clean_other_started serviceBootStartedOther $ const $ continue boot
-      setPhaseIf clean_other_failed serviceBootCouldNotStartOther $ const $ continue boot
 
       setPhase nodeup $ \evt@(HAEvent _ (NodeUp h pid) _) -> do
         let nid  = processNodeId pid
@@ -178,25 +162,20 @@ rcRules argv eq = do
             registerHost host
             locateNodeOnHost node host
             handled eq evt
-            put Local (Starting nid conf regularMonitor pid)
-            continue clean_msgs
+            fork NoBuffer $ do
+              put Local (Starting nid conf regularMonitor pid)
+              continue nm_start
+            continue nodeup
           else do
             handled eq evt
             msp  <- lookupRunningService (Node nid) regularMonitor
             case msp of
-              Nothing -> do put Local (Starting nid conf regularMonitor pid)
-                            continue clean_msgs
+              Nothing ->
+                fork NoBuffer $ do
+                  put Local (Starting nid conf regularMonitor pid)
+                  continue nm_start
               Just _  -> ack pid
-
-      directly clean_msgs $ switch [clean_started, clean_failed,nm_start]
-
-      setPhaseIf clean_started serviceBootStarted $ \evt -> do
-        handled eq evt
-        continue clean_msgs
-
-      setPhaseIf clean_failed serviceBootCouldNotStart $ \evt -> do
-        handled eq evt
-        continue clean_msgs
+            continue nodeup
 
       directly nm_start $ do
         Starting nid conf svc _ <- get Local
@@ -217,6 +196,7 @@ rcRules argv eq = do
         handled eq evt
         sendToMasterMonitor msg
         ack npid
+        stop
 
       setPhaseIf nm_failed serviceBootCouldNotStart $
           \evt@(HAEvent _ msg _) -> do
@@ -224,8 +204,9 @@ rcRules argv eq = do
         ServiceCouldNotStart n svc _ <- decodeMsg msg
         liftProcess $ sayRC $
           "failed " ++ snString (serviceName svc) ++ " service on the node " ++ show n
+        stop
 
-      start boot None
+      start nodeup None
 
     -- Service Start
     define "service-start" $ do
