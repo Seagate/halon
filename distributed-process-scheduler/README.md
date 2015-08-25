@@ -125,7 +125,7 @@ We write now a test for the addition function which uses the scheduler:
 
 ```Haskell
 runTest :: Int -> Process ()
-runTest s = withScheduler [] s clockSpeed $ do
+runTest s = withScheduler s clockSpeed $ do
     let n = 2
     result <- addition n n
     liftIO $ do

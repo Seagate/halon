@@ -226,15 +226,13 @@ data SchedulerState = SchedulerState
      , stateFailures :: Map (NodeId, NodeId) Double
     }
 
--- | Starts the scheduler assuming the given initial amount of processes,
--- a seed to generate a sequence of random values and the amount of microseconds
--- to increase the clock on every transition.
-startScheduler :: [ProcessId] -- ^ initial processes
-               -> Int -- ^ seed
+-- | Starts the scheduler with a seed to generate a random interleaving and the
+-- amount of microseconds to increase the clock on every transition.
+startScheduler :: Int -- ^ seed
                -> Int -- ^ microseconds to increase the clock in every
                       -- transition
                -> Process ()
-startScheduler initialProcs seed0 clockDelta = do
+startScheduler seed0 clockDelta = do
     modifyMVarP schedulerLock
       $ \initialized -> do
         if initialized
@@ -246,7 +244,7 @@ startScheduler initialProcs seed0 clockDelta = do
                      DP.liftIO $ putMVar schedulerVar lproc
                      ((go SchedulerState
                             { stateSeed     = mkStdGen seed0
-                            , stateAlive    = Set.fromList initialProcs
+                            , stateAlive    = Set.singleton self
                             , stateProcs    = Map.empty
                             , stateMessages = Map.empty
                             , stateNSend    = Map.empty
@@ -714,13 +712,12 @@ stopScheduler =
 
 -- | Wraps a Process computation with calls to 'startScheduler' and
 -- 'stopScheduler'.
-withScheduler :: [ProcessId]   -- ^ initial processes
-              -> Int       -- ^ seed
+withScheduler :: Int       -- ^ seed
               -> Int       -- ^ clock speed (microseconds/transition)
               -> Process a -- ^ computation to wrap
               -> Process a
-withScheduler ps s clockDelta p = DP.getSelfPid >>= \self ->
-  DP.bracket_ (startScheduler (self:ps) s clockDelta) stopScheduler p
+withScheduler s clockDelta p =
+    DP.bracket_ (startScheduler s clockDelta) stopScheduler p
 
 -- | Yields control to some other process.
 yield :: Process ()

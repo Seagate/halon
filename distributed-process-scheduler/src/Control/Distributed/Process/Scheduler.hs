@@ -21,7 +21,7 @@ import Control.Distributed.Process.Scheduler.Internal
   , removeFailures
   )
 import qualified Control.Distributed.Process.Scheduler.Internal as Internal
-import "distributed-process" Control.Distributed.Process (Process, ProcessId, RemoteTable)
+import "distributed-process" Control.Distributed.Process (Process, RemoteTable)
 
 -- These functions are marked NOINLINE, because this way the "if"
 -- statement only has to be evaluated once and not at every call site.
@@ -29,7 +29,7 @@ import "distributed-process" Control.Distributed.Process (Process, ProcessId, Re
 -- jump to the appropriate function.
 
 {-# NOINLINE startScheduler #-}
-startScheduler :: [ProcessId] -> Int -> Int -> Process ()
+startScheduler :: Int -> Int -> Process ()
 startScheduler = if schedulerIsEnabled
                  then Internal.startScheduler
                  else error "Scheduler not enabled."
@@ -41,10 +41,10 @@ stopScheduler = if schedulerIsEnabled
                 else error "Scheduler not enabled."
 
 {-# NOINLINE withScheduler #-}
-withScheduler  :: [ProcessId] -> Int -> Int -> Process a -> Process a
+withScheduler  :: Int -> Int -> Process a -> Process a
 withScheduler = if schedulerIsEnabled
                 then Internal.withScheduler
-                else \_ _ _ p -> p
+                else \_ _ p -> p
 
 {-# NOINLINE __remoteTable #-}
 __remoteTable  :: RemoteTable -> RemoteTable

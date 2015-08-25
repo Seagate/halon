@@ -140,7 +140,7 @@ execute transport seed = do
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
                  ) $
-       runProcess' n $ withScheduler [] seed clockSpeed $ do
+       runProcess' n $ withScheduler seed clockSpeed $ do
         self <- getSelfPid
         here <- getSelfNode
         s0 <- spawn here $ $(mkClosure 'senderProcess0) self
@@ -170,7 +170,7 @@ executeRegister transport seed =
                            readIORef (traceR :: IORef [String]) >>= print
                            throwIO (e :: SomeException)
                ) $ do
-     runProcess' n $ withScheduler [] seed clockSpeed $ do
+     runProcess' n $ withScheduler seed clockSpeed $ do
       self <- getSelfPid
       here <- getSelfNode
       -- s1 links to s0
@@ -224,7 +224,7 @@ executeTimeouts transport seed =
                            readIORef (traceR :: IORef [String]) >>= print
                            throwIO (e :: SomeException)
                ) $ do
-     runProcess' n $ withScheduler [] seed clockSpeed $ do
+     runProcess' n $ withScheduler seed clockSpeed $ do
       _s0 <- spawnLocal $ do
         say' "s0: terminating"
       say' "main: receiveTimeout"
@@ -244,7 +244,7 @@ executeDropMessages transport seed =
                            readIORef (traceR :: IORef [String]) >>= print
                            throwIO (e :: SomeException)
                  ) $ do
-     runProcess' n0 $ withScheduler [] seed clockSpeed $ do
+     runProcess' n0 $ withScheduler seed clockSpeed $ do
        mainPid <- getSelfPid
 
        s1 <- liftIO $ forkProcess n1 $ do
@@ -318,7 +318,7 @@ executeNSend transport seed =
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
                  ) $ do
-       runProcess' n0 $ withScheduler [] seed clockSpeed $ do
+       runProcess' n0 $ withScheduler seed clockSpeed $ do
         self <- getSelfPid
         n <- getSelfNode
         register "self" self
@@ -358,7 +358,7 @@ executeChan transport seed = do
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
                  ) $
-       runProcess' n $ withScheduler [] seed clockSpeed $ do
+       runProcess' n $ withScheduler seed clockSpeed $ do
         self <- getSelfPid
         (spBack, rpBack) <- newChan
         _ <- spawnLocal $ do
@@ -405,7 +405,7 @@ executeT transport seed = do
                              readIORef (traceR :: IORef [String]) >>= print
                              throwIO (e :: SomeException)
                  ) $
-       runProcess' n $ withScheduler [] seed clockSpeed $ do
+       runProcess' n $ withScheduler seed clockSpeed $ do
         self <- getSelfPid
         here <- getSelfNode
         s0 <- spawn here $ $(mkClosure 'senderProcessT0) self

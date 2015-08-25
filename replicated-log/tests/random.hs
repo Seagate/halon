@@ -193,7 +193,7 @@ run transport s = brackets 2
   (newLocalNode transport remoteTables)
   closeLocalNode
   $ \nodes@(n0:_) -> withTmpDirectory $ runProcess' n0 $
-    withScheduler [] (fst $ random $ mkStdGen s) clockSpeed $ do
+    withScheduler (fst $ random $ mkStdGen s) clockSpeed $ do
     let tries = length nodes
     forM_ nodes $ \n -> spawn (localNodeId n)
                               $(mkStaticClosure 'snapshotServer)
