@@ -167,9 +167,9 @@ tests argv = do
                       )
                       closeAbstractTransport
         setupTimeout (AbstractTransport transport _ _) t num action =
+          withLocalNodes (num - 1) transport remoteTables $ \nodes ->
           tryWithTimeout transport remoteTables t $ do
             node0 <- getSelfNode
-            nodes <- replicateM (num - 1) $ liftIO $ newLocalNode transport remoteTables
             setup' (node0 : map localNodeId nodes) action
         setup' nodes action = do
             let waitFor pid = monitor pid >> receiveWait
@@ -242,9 +242,10 @@ tests argv = do
           --       assert . (== 2) =<< State.select sdictInt port readCP
 
           , testSuccess "addReplica-start-new-replica" . withTmpDirectory $
-              setup 1 $ \transport _ h _ -> do
+              setup 1 $ \transport _ h _ ->
+              bracket (liftIO $ newLocalNode transport remoteTables)
+                      (liftIO . closeLocalNode) $ \node1 -> do
                 self <- getSelfPid
-                node1 <- liftIO $ newLocalNode transport remoteTables
                 liftIO $ runProcess node1 $ registerInterceptor $ \string ->
                   if "New replica started in legislature://" `isPrefixOf` string
                     then usend self ()
@@ -260,12 +261,13 @@ tests argv = do
                 Log.killReplica h (localNodeId node1)
 
           , testSuccess "addReplica-new-replica-old-decrees" . withTmpDirectory
-              $ setup 1 $ \transport _ h port -> do
+              $ setup 1 $ \transport _ h port ->
+                bracket (liftIO $ newLocalNode transport remoteTables)
+                        (liftIO . closeLocalNode) $ \node1 -> do
                 self <- getSelfPid
                 let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor $ interceptor
-                node1 <- liftIO $ newLocalNode transport remoteTables
                 liftIO $ runProcess node1 $ registerInterceptor $ interceptor
 
                 retry retryTimeout $
@@ -283,12 +285,13 @@ tests argv = do
                 Log.killReplica h (localNodeId node1)
 
           , testSuccess "addReplica-new-replica-new-decrees" . withTmpDirectory
-              $ setup 1 $ \transport _ h port -> do
+              $ setup 1 $ \transport _ h port ->
+                bracket (liftIO $ newLocalNode transport remoteTables)
+                        (liftIO . closeLocalNode) $ \node1 -> do
                 self <- getSelfPid
                 let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor $ interceptor
-                node1 <- liftIO $ newLocalNode transport remoteTables
                 liftIO $ runProcess node1 $ registerInterceptor $ interceptor
 
                 liftIO $ runProcess node1 $ do
@@ -336,9 +339,11 @@ tests argv = do
                     ++ "interruptions."
 
           , testSuccess "new-idempotent" . withTmpDirectory $
-              withAbstractTransport $ \(AbstractTransport transport _ _) -> do
-              n0 <- newLocalNode transport remoteTables
-              n1 <- newLocalNode transport remoteTables
+              withAbstractTransport $ \(AbstractTransport transport _ _) ->
+              E.bracket (newLocalNode transport remoteTables)
+                        closeLocalNode $ \n0 ->
+              E.bracket (newLocalNode transport remoteTables)
+                        closeLocalNode $ \n1 -> do
               tryWithTimeout transport remoteTables 10000000
                   $ setup' [localNodeId n0, localNodeId n1]
                   $ \h port -> do
@@ -352,15 +357,17 @@ tests argv = do
                   Log.killReplica h (localNodeId n1)
 
           , testSuccess "update-handle" . withTmpDirectory $
-              withAbstractTransport $ \(AbstractTransport transport _ _) -> do
-              n <- newLocalNode transport remoteTables
+              withAbstractTransport $ \(AbstractTransport transport _ _) ->
+              E.bracket (newLocalNode transport remoteTables)
+                        closeLocalNode $ \n ->
+              E.bracket (newLocalNode transport remoteTables)
+                        closeLocalNode $ \node1 ->
               tryWithTimeout transport remoteTables 20000000
                   $ setup' [localNodeId n] $ \h port -> do
                 self <- getSelfPid
                 let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor $ interceptor
-                node1 <- liftIO $ newLocalNode transport remoteTables
                 liftIO $ runProcess node1 $ do
                     registerInterceptor $ interceptor
                     here <- getSelfNode
@@ -393,11 +400,12 @@ tests argv = do
 
           , testSuccess "quorum-after-remove" . withTmpDirectory $
               withAbstractTransport $ \tr@(AbstractTransport transport _ _) ->
+              E.bracket (newLocalNode transport remoteTables)
+                        closeLocalNode $ \node1 ->
+              E.bracket (newLocalNode transport remoteTables)
+                        closeLocalNode $ \node2 ->
               setupTimeout tr 20000000 1 $ \h port -> do
                 self <- getSelfPid
-                node1 <- liftIO $ newLocalNode transport remoteTables
-                node2 <- liftIO $ newLocalNode transport remoteTables
-
                 let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor $ interceptor
@@ -436,6 +444,8 @@ tests argv = do
 
           , testSuccess "log-size-remains-bounded" . withTmpDirectory $
               withAbstractTransport $ \tr@(AbstractTransport transport _ _) ->
+              E.bracket (newLocalNode transport remoteTables)
+                        closeLocalNode $ \node1 ->
               -- TODO: May possibly fail if some replicas are slow.
               -- The problem is that snapshots could be updated so fast that
               -- a delayed replica can never grab it on time.
@@ -473,7 +483,6 @@ tests argv = do
                 assert $ all (<= snapshotThreshold * 3) logSizes
                 say "Log size remains bounded with no reconfigurations."
 
-                node1 <- liftIO $ newLocalNode transport remoteTables
                 liftIO $ runProcess node1 $
                   getSelfNode >>= registerInterceptor . interceptor
 
@@ -536,10 +545,10 @@ tests argv = do
                 say "Acceptor state remains bounded."
 
           , testSuccess "quorum-after-transient-failure" . withTmpDirectory $
-              setup 1 $ \transport closeConnection h port -> do
+              setup 1 $ \transport closeConnection h port ->
+                bracket (liftIO $ newLocalNode transport remoteTables)
+                        (liftIO . closeLocalNode) $ \node1 -> do
                 self <- getSelfPid
-                node1 <- liftIO $ newLocalNode transport remoteTables
-
                 let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor interceptor
@@ -579,11 +588,11 @@ tests argv = do
                 Log.killReplica h (localNodeId node1)
 
            , testSuccess "durability" . withTmpDirectory $
-               withAbstractTransport $ \(AbstractTransport transport _ _) -> do
-               nodes <- replicateM 5 $ fmap localNodeId $
-                          newLocalNode transport remoteTables
+               withAbstractTransport $ \(AbstractTransport transport _ _) ->
+               withLocalNodes 5 transport remoteTables $ \lnodes ->
                tryWithTimeout transport remoteTables 30000000 $ do
 
+                 let nodes = map localNodeId lnodes
                  setup' nodes $ \_ port -> do
                    retry retryTimeout $
                      State.update port incrementCP
@@ -599,11 +608,11 @@ tests argv = do
                    say "Incremented state from disk."
 
            , testSuccess "recovery" . withTmpDirectory $
-               withAbstractTransport $ \(AbstractTransport transport _ _) -> do
-               nodes <- replicateM 4 $ fmap localNodeId $
-                          newLocalNode transport remoteTables
+               withAbstractTransport $ \(AbstractTransport transport _ _) ->
+               withLocalNodes 4 transport remoteTables $ \lnodes ->
                tryWithTimeout transport remoteTables 10000000 $ do
 
+                 let nodes = map localNodeId lnodes
                  setup' (take 2 nodes) $ \_ port -> do
                    retry retryTimeout $
                      State.update port incrementCP
@@ -630,3 +639,11 @@ tests argv = do
             ]
 
     return $ testGroup "replicated-log" [ut]
+
+withLocalNodes :: Int -> Transport -> RemoteTable -> ([LocalNode] -> IO a)
+               -> IO a
+withLocalNodes n t rt action = go [] 0
+  where
+    go acc i | i == n = action acc
+             | otherwise = E.bracket (newLocalNode t rt) closeLocalNode $ \ln ->
+                             go (ln : acc) (i + 1)
