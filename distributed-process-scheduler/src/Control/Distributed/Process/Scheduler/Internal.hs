@@ -5,8 +5,9 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE PackageImports #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Control.Distributed.Process.Scheduler.Internal
   (
@@ -16,6 +17,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , stopScheduler
   , withScheduler
   , __remoteTable
+  , __remoteTableDecl
   , spawnWrapClosure__tdict
   -- * distributed-process replacements
   , Match
@@ -68,12 +70,12 @@ import "distributed-process" Control.Distributed.Process
     ( Closure, NodeId, Process, ProcessId, ReceivePort, SendPort )
 import qualified "distributed-process" Control.Distributed.Process as DP
 import qualified "distributed-process" Control.Distributed.Process.Internal.Types as DP
-import qualified "distributed-process" Control.Distributed.Process.Internal.Messaging as DP
-import Control.Distributed.Process.Closure ( remotable, mkClosure )
+import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Serializable ( Serializable )
 import Control.Distributed.Process.Internal.StrictMVar ( withMVar )
 import "distributed-process-trans" Control.Distributed.Process.Trans ( MonadProcess(..) )
 import qualified "distributed-process-trans" Control.Distributed.Process.Trans as DPT
+import qualified Control.Distributed.Process.Internal.WeakTQueue as DP
 import Control.Distributed.Process.Internal.Types (LocalProcess(..))
 
 import Control.Concurrent.MVar
@@ -84,7 +86,7 @@ import Control.Exception ( SomeException, throwIO, Exception, throwTo )
 import Control.Monad ( void, when, join, forM_, foldM )
 import Control.Monad.Reader ( ask )
 import Data.Accessor ((^.))
-import Data.Binary ( Binary(..) )
+import Data.Binary ( Binary(..), decode )
 import Data.Int
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
 import Data.List (delete, union)
@@ -96,7 +98,9 @@ import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
 import System.Posix.Env ( getEnv )
 import System.IO.Unsafe ( unsafePerformIO )
+import System.Mem.Weak (deRefWeak)
 import System.Random
+import Unsafe.Coerce
 
 
 -- | @True@ iff the package "distributed-process-scheduler" should be
@@ -225,6 +229,100 @@ data SchedulerState = SchedulerState
        -- message. Missing pairs means 0 probability.
      , stateFailures :: Map (NodeId, NodeId) Double
     }
+
+throwException :: Exception e => ProcessId -> e -> Process ()
+throwException pid e = do
+  proc <- ask
+  DP.liftIO $ withLocalProc (DP.processNode proc) pid $ \p ->
+    void $ throwTo (DP.processThread p) e
+
+withLocalProc :: DP.LocalNode
+              -> ProcessId
+              -> (DP.LocalProcess -> IO ())
+              -> IO ()
+withLocalProc node pid p =
+  let lpid = DP.processLocalId pid in do
+  mProc <- withMVar (DP.localState node) $
+             return . (^. DP.localProcessWithId lpid)
+  forM_ mProc p
+
+remotableDecl [ [d|
+
+ forward :: SystemMsg -> Process ()
+ forward smsg =
+    case smsg of
+      MailboxMsg pid msg -> DP.forward msg pid
+      ChannelMsg spId msg -> do
+        here <- DP.getSelfNode
+        let pid = DP.sendPortProcessId spId
+            nid = DP.processNodeId pid
+        if nid == here then
+          -- The local path is more than an optimization.
+          -- It is needed to ensure that forwarded messages and
+          -- those sent with DP.send arrive in order in the local case.
+          --
+          -- The natural way to do this is to do:
+          --
+          -- > DP.sendCtrlMsg Nothing $ DP.LocalPortSend spId msg
+          --
+          -- Unfortunately, this doesn't work because 'ncEffectLocalPortSend'
+          -- in C.D.P.Node can't handle encoded messages. Thus we provide our
+          -- own version of the function.
+          ncEffectLocalPortSend' spId msg
+        else
+          remoteForward nid smsg
+      LinkExceptionMsg source pid reason -> do
+        here <- DP.getSelfNode
+        if DP.processNodeId pid == here then
+          case source of
+            DP.ProcessIdentifier spid ->
+              throwException pid $ DP.ProcessLinkException spid reason
+            DP.NodeIdentifier snid ->
+              throwException pid $ DP.NodeLinkException snid reason
+            _ -> error "scheduler.forward: unimplemented case"
+        else
+          remoteForward (DP.processNodeId pid) smsg
+      ExitMsg source pid reason -> do
+        here <- DP.getSelfNode
+        if DP.processNodeId pid == here then
+          throwException pid $ DP.ProcessExitException source reason
+        else
+          remoteForward (DP.processNodeId pid) smsg
+  where
+    remoteForward :: NodeId -> SystemMsg -> Process ()
+    remoteForward nid msg = do
+      DP.spawnAsync nid $ $(mkClosure 'forward) msg
+      DP.DidSpawn _ pid <- DP.expect
+      ref <- DP.monitor pid
+      DP.receiveWait
+        [ DP.matchIf (\(DP.ProcessMonitorNotification ref' _ _) -> ref == ref')
+                     (\_ -> return ())
+        ]
+
+    ncEffectLocalPortSend' :: DP.SendPortId -> DP.Message -> Process ()
+    ncEffectLocalPortSend' from msg = do
+      lproc <- ask
+      let pid = DP.sendPortProcessId from
+          cid = DP.sendPortLocalId   from
+      DP.liftIO $ withLocalProc (DP.processNode lproc) pid $ \proc -> do
+        mChan <- withMVar (DP.processState proc) $
+          return . (^. DP.typedChannelWithId cid)
+        case mChan of
+          Nothing -> return ()
+          Just (DP.TypedChannel chan') -> do
+            ch <- deRefWeak chan'
+            forM_ ch $ \chan -> deliverChan msg chan
+
+    deliverChan :: forall a . Serializable a
+                => DP.Message -> DP.TQueue a -> IO ()
+    deliverChan (DP.UnencodedMessage _ raw) chan' =
+      atomically $ DP.writeTQueue chan' ((unsafeCoerce raw) :: a)
+    deliverChan (DP.EncodedMessage   _ bs) chan' =
+      -- This is the main difference with 'C.D.P.Node.ncEffectLocalPortSend'
+      atomically $ DP.writeTQueue chan' $! (decode bs :: a)
+
+    _ = $(functionTDict 'forward)
+ |]]
 
 -- | Starts the scheduler with a seed to generate a random interleaving and the
 -- amount of microseconds to increase the clock on every transition.
@@ -636,60 +734,6 @@ startScheduler seed0 clockDelta = do
                  foldr Map.delete (stateReverseTimeouts st) $ concat $
                    Map.elems newExpired
              }
-
-    forward (MailboxMsg pid msg) = DP.forward msg pid
-    forward (ChannelMsg spId msg) = do
-      here <- DP.getSelfNode
-      if DP.processNodeId (DP.sendPortProcessId spId) == here then
-        -- The local path is more than an optimization.
-        -- It is needed to ensure that forwarded messages and
-        -- those sent with DP.send arrive in order in the local case.
-        DP.sendCtrlMsg Nothing (DP.LocalPortSend spId msg)
-      else do
-        -- TODO: There used to be an implementation which used
-        -- DP.sendPayload to send messages through channels.
-        -- Unfortunately, messages sent through channels and control
-        -- messages sent by the scheduler to the process waiting on the
-        -- receiving end can arrive in any order.
-        --
-        -- We should use DP.call here.
-        DP.say "startScheduler.forward: remote channels are not supported"
-        error "startScheduler.forward: remote channels are not supported"
-    forward (LinkExceptionMsg source pid reason) = do
-      here <- DP.getSelfNode
-      if DP.processNodeId pid == here then
-        case source of
-          DP.ProcessIdentifier spid ->
-            throwException pid $ DP.ProcessLinkException spid reason
-          DP.NodeIdentifier snid ->
-            throwException pid $ DP.NodeLinkException snid reason
-          _ -> error "scheduler.forward: unimplemented case"
-      else do
-        DP.say "startScheduler.forward: unhandled case (remote link exception)"
-        error "startScheduler.forward: unhandled case (remote link exception)"
-    forward (ExitMsg source pid reason) = do
-      here <- DP.getSelfNode
-      if DP.processNodeId pid == here then
-        throwException pid $ DP.ProcessExitException source reason
-      else do
-        DP.say "startScheduler.forward: unhandled case (remote link exception)"
-        error "startScheduler.forward: unhandled case (remote link exception)"
-
-throwException :: Exception e => ProcessId -> e -> Process ()
-throwException pid e = do
-  proc <- ask
-  DP.liftIO $ withLocalProc (DP.processNode proc) pid $ \p ->
-    void $ throwTo (DP.processThread p) e
-
-withLocalProc :: DP.LocalNode
-              -> ProcessId
-              -> (DP.LocalProcess -> IO ())
-              -> IO ()
-withLocalProc node pid p =
-  let lpid = DP.processLocalId pid in do
-  mProc <- withMVar (DP.localState node) $
-             return . (^. DP.localProcessWithId lpid)
-  forM_ mProc p
 
 -- | Lift 'Control.Concurrent.modifyMVar'
 modifyMVarP :: MVar a -> (a -> Process (a,b)) -> Process b

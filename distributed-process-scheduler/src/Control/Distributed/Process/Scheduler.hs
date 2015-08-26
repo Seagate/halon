@@ -49,5 +49,5 @@ withScheduler = if schedulerIsEnabled
 {-# NOINLINE __remoteTable #-}
 __remoteTable  :: RemoteTable -> RemoteTable
 __remoteTable = if schedulerIsEnabled
-                then Internal.__remoteTable
+                then Internal.__remoteTableDecl . Internal.__remoteTable
                 else id
