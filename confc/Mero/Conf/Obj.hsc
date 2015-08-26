@@ -27,9 +27,6 @@ module Mero.Conf.Obj
   , getPool
   , PVer(..)
   , getPVer
-  , PVerState(..)
-  , pvs_online
-  , pvs_failed
   , ObjV(..)
   , getObjV
   , RackV(..)
@@ -158,20 +155,12 @@ getPool po = do
 
 -- | Stub implementation of pool version object
 
--- | m0_service_health
-newtype PVerState = PVerState CInt
-  deriving (Show)
-#{enum PVerState, PVerState,
-    pvs_online = M0_CONF_PVER_ONLINE
-  , pvs_failed = M0_CONF_PVER_FAILED
- }
-
 -- @m0_conf_pver@
 data PVer = PVer {
     pv_ptr :: Ptr Obj
   , pv_fid :: Fid
   , pv_ver :: Word32
-  , pv_state :: PVerState
+  , pv_failed :: Word32 -- ^ Number of failed devices.
   , pv_attr :: PDClustAttr
   , pv_permutations :: [Word32]
   , pv_failures :: [Word32]
@@ -182,7 +171,7 @@ getPVer po = do
   pv <- confc_cast_pver po
   fid <- #{peek struct m0_conf_obj, co_id} po
   ver <- #{peek struct m0_conf_pver, pv_ver} pv
-  state <- fmap PVerState $ #{peek struct m0_conf_pver, pv_state} pv
+  nfailed <- #{peek struct m0_conf_pver, pv_nfailed} pv
   attr <- #{peek struct m0_conf_pver, pv_attr} pv
   permutations_ptr <- #{peek struct m0_conf_pver, pv_permutations} pv
   permutations_nr <- #{peek struct m0_conf_pver, pv_permutations_nr} pv
@@ -194,7 +183,7 @@ getPVer po = do
     { pv_ptr = po
     , pv_fid = fid
     , pv_ver = ver
-    , pv_state = state
+    , pv_failed = nfailed
     , pv_attr = attr
     , pv_permutations = permutations
     , pv_failures = failures
