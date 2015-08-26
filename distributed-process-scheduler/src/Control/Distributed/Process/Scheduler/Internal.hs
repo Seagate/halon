@@ -628,7 +628,7 @@ startScheduler seed0 clockDelta = do
 
     -- is the given process waiting for a new message?
     isBlocked pid procs =
-      maybe (error "startScheduler.isBlocked: missing pid") not
+      maybe (error $ "startScheduler.isBlocked: missing pid " ++ show pid) not
         $ Map.lookup pid procs
 
     isExceptionMsg (LinkExceptionMsg _ _ _) = True
