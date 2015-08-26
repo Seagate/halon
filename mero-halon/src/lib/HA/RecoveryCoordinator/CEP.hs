@@ -38,7 +38,7 @@ import           HA.Services.SSPL (ssplRules)
 data ServiceBoot
     = None
       -- ^ When no service is expected to be started. That's the inial value.
-    | forall a. Configuration a => Starting (Service a) ProcessId
+    | forall a. Configuration a => Starting NodeId a (Service a) ProcessId
       -- ^ Indicates a service has been started and we are waiting for a
       --   'ServiceStarted' message of that same service.
 
@@ -49,7 +49,7 @@ serviceBootStarted :: HAEvent ServiceStartedMsg
                    -> LoopState
                    -> ServiceBoot
                    -> Process (Maybe (HAEvent ServiceStartedMsg))
-serviceBootStarted evt@(HAEvent _ msg _) ls l@(Starting psvc pid) = do
+serviceBootStarted evt@(HAEvent _ msg _) ls l@(Starting _ _ psvc pid) = do
     res <- notHandled evt ls l
     case res of
       Nothing -> return Nothing
@@ -60,6 +60,48 @@ serviceBootStarted evt@(HAEvent _ msg _) ls l@(Starting psvc pid) = do
           then return $ Just evt
           else return Nothing
 serviceBootStarted _ _ _ = return Nothing
+
+-- | Used at RC node-up rule definition. Returnes events that we are
+-- not interested in
+serviceBootStartedOther :: HAEvent ServiceStartedMsg
+                        -> LoopState
+                        -> ServiceBoot
+                        -> Process (Maybe (HAEvent ServiceStartedMsg))
+serviceBootStartedOther evt@(HAEvent _ msg _) _ _ = do
+   ServiceStarted _ svc _ _ <- decodeP msg
+   if serviceName svc == serviceName regularMonitor
+      then return   Nothing
+      else return $ Just evt
+
+-- | Used at RC node-up rule definition. Returnes events that we are
+-- not interested in
+serviceBootCouldNotStartOther :: HAEvent ServiceCouldNotStartMsg
+                              -> LoopState
+                              -> ServiceBoot
+                              -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
+serviceBootCouldNotStartOther evt@(HAEvent _ msg _) _ _ = do
+   ServiceCouldNotStart _ svc _ <- decodeP msg
+   if serviceName svc == serviceName regularMonitor
+      then return Nothing
+      else return $ Just evt
+
+-- | Used at RC node-up rule definition. Track the confirmation of a
+--   service we've previously started by looking at 'Starting' fields. In any
+--   other case, it refuses the message.
+serviceBootCouldNotStart :: HAEvent ServiceCouldNotStartMsg
+                   -> LoopState
+                   -> ServiceBoot
+                   -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
+serviceBootCouldNotStart evt@(HAEvent _ msg _) ls l@(Starting nd _ psvc _) = do
+    res <- notHandled evt ls l
+    case res of
+      Nothing -> return Nothing
+      Just _  -> do
+        ServiceCouldNotStart n svc _ <- decodeP msg
+        if serviceName svc == serviceName psvc && Node nd == n
+          then return $ Just evt
+          else return Nothing
+serviceBootCouldNotStart _ _ _ = return Nothing
 
 -- | Used at RC service-start rule definition. Tracks the confirmation of a
 --   service we've previously started by looking at the local state. In any
@@ -102,14 +144,17 @@ rcRules argv eq = do
     initRule $ rcInitRule argv eq
 
     define "node-up" $ do
-      boot        <- phaseHandle "boot"
+      nodeup      <- phaseHandle "nodeup"
       nm_started  <- phaseHandle "node_monitor_started"
+      nm_start    <- phaseHandle "node_monitor_start"
+      nm_failed   <- phaseHandle "node_monitor_could_not_start"
+      end         <- phaseHandle "end"
 
-      setPhase boot $ \evt@(HAEvent _ (NodeUp h pid) _) -> do
+      setPhase nodeup $ \evt@(HAEvent _ (NodeUp h pid) _) -> do
         let nid  = processNodeId pid
             node = Node nid
         known <- knownResource node
-        handled eq evt
+        conf <- loadNodeMonitorConf (Node nid)
         if not known
           then do
             let host = Host h
@@ -117,28 +162,54 @@ rcRules argv eq = do
             registerNode node
             registerHost host
             locateNodeOnHost node host
-            liftProcess $ nsendRemote nid EQT.name
-              (nullProcessId nid, UpdateEQNodes $ stationNodes argv)
-            registerService regularMonitor
-            conf <- loadNodeMonitorConf (Node nid)
-            startService nid regularMonitor conf
-            put Local (Starting regularMonitor pid)
-            continue nm_started
-          else ack pid
+            handled eq evt
+            fork NoBuffer $ do
+              put Local (Starting nid conf regularMonitor pid)
+              continue nm_start
+            continue nodeup
+          else do
+            handled eq evt
+            msp  <- lookupRunningService (Node nid) regularMonitor
+            case msp of
+              Nothing ->
+                fork NoBuffer $ do
+                  put Local (Starting nid conf regularMonitor pid)
+                  continue nm_start
+              Just _  -> ack pid
+            continue nodeup
+
+      directly nm_start $ do
+        Starting nid conf svc _ <- get Local
+        liftProcess $ nsendRemote nid EQT.name
+          (nullProcessId nid, UpdateEQNodes $ stationNodes argv)
+        registerService svc
+        startService nid svc conf
+        switch [nm_started, nm_failed]
 
       setPhaseIf nm_started serviceBootStarted $
           \evt@(HAEvent _ msg _) -> do
         ServiceStarted n svc cfg sp <- decodeMsg msg
         liftProcess $ sayRC $
           "started " ++ snString (serviceName svc) ++ " service"
-        Starting _ npid <- get Local
+        Starting _ _ _ npid <- get Local
         registerServiceName svc
         registerServiceProcess n svc cfg sp
         handled eq evt
         sendToMasterMonitor msg
         ack npid
+        continue end
 
-      start boot None
+      setPhaseIf nm_failed serviceBootCouldNotStart $
+          \evt@(HAEvent _ msg _) -> do
+        handled eq evt
+        ServiceCouldNotStart n svc _ <- decodeMsg msg
+        liftProcess $ sayRC $
+          "failed " ++ snString (serviceName svc) ++ " service on the node " ++ show n
+        continue end
+
+      directly end stop
+
+      start nodeup None
 
     -- Service Start
     define "service-start" $ do

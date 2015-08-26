@@ -36,9 +36,14 @@ excludes='
 	Test.Run
 	Test.Unit
 	Tests
+	Data.Traversable.Lib
         Network.CEP
         Network.CEP.Buffer
         Network.CEP.Types
+        Network.CEP.Engine
+        Network.CEP.SM
+        Network.CEP.Phase
+        Network.CEP.Execution
         HA.Autoboot.Tests
 '
 exclude=''
