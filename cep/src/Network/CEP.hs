@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
--- Copyright: (C) 2014 Tweag I/O Limited
+-- Copyright : (C) 2014 Seagate Technology Limited.
 --
 -- Complex Event Processing API
 -- It builds a 'Process' out of rules defined by the user. It also support

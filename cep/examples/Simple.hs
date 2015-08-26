@@ -1,5 +1,5 @@
 -- |
--- Copyright: (C) 2014 Tweag I/O Limited
+-- Copyright : (C) 2015 Seagate Technology Limited.
 --
 -- A very simple example of using the callback interface to CEP.
 --
