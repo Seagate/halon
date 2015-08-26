@@ -25,15 +25,19 @@ import Control.Distributed.State
 import qualified Control.Distributed.Log.Policy as Policy
 import Control.Distributed.Process.Timeout (retry, timeout)
 
-import Control.Distributed.Process hiding (send)
+import Control.Distributed.Process
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Closure
+import Control.Distributed.Process.Internal.Types (processNode)
+import Control.Distributed.Process.Scheduler
 import Control.Distributed.Static
 import Data.Rank1Dynamic
-import Network.Transport (Transport, EndPointAddress)
+import Network.Transport (Transport)
 
-import qualified Control.Exception as E (bracket)
-import Control.Monad (forM, forM_, replicateM, replicateM_, void, liftM2)
+import qualified Control.Exception as E (bracket, catch)
+import Control.Exception as E (SomeException, throwIO)
+import Control.Monad
+import Control.Monad.Reader (ask)
 import Data.Constraint (Dict(..))
 import Data.Binary (Binary)
 import Data.List (isPrefixOf)
@@ -43,6 +47,8 @@ import Data.Typeable (Typeable, Proxy(..))
 import System.Directory (renameDirectory)
 import System.IO
 import System.FilePath ((</>))
+import System.Random
+import qualified System.Timeout as System
 
 import Prelude hiding (read)
 import qualified Prelude
@@ -138,6 +144,7 @@ remoteTables =
   registerStatic "Test.increment" (toDynamic increment) $
   registerStatic "Test.read" (toDynamic read) $
   Control.Distributed.Process.Consensus.__remoteTable $
+  Control.Distributed.Process.Scheduler.__remoteTable $
   BasicPaxos.__remoteTable $
   Log.__remoteTable $
   Policy.__remoteTable $
@@ -148,17 +155,45 @@ tests :: [String] -> IO TestTree
 tests argv = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
-    let setup :: Int                    -- ^ Number of nodes to spawn group on.
-              -> ( Transport ->
-                   (EndPointAddress -> EndPointAddress -> IO ()) ->
-                   Log.Handle (Command State) ->
-                   State.CommandPort State ->
-                   Process ()
-                 )
-              -> IO ()
-        setup n action = withAbstractTransport $
-          \tr@(AbstractTransport transport closeConnection _) ->
-            setupTimeout tr 10000000 n (action transport closeConnection)
+    seed <- randomIO
+    when schedulerIsEnabled $
+      putStrLn $ "Running with scheduler using " ++ show seed ++
+                 " as initial seed."
+
+    let setupSched :: Int
+                   -> Int
+                   -> Int
+                   -> Int
+                   -> Int
+                   -> Int
+                   -> ( [LocalNode] ->
+                        [LocalNode] ->
+                        Log.Handle (Command State) ->
+                        State.CommandPort State ->
+                        Process ()
+                      )
+                   -> IO ()
+        setupSched s0 clockSpeed t reps n extras action =
+          setupSched' s0 clockSpeed t reps n extras (const action)
+        setupSched' s0 clockSpeed t reps n extras action
+          | schedulerIsEnabled =
+              forM_ [1..reps] $ \i ->
+                withTmpDirectory $ withAbstractTransport $ \tr ->
+                  (setupTimeoutSched tr (s0 + i) clockSpeed t n
+                                     extras (action tr)
+                  ) `E.catch` \e -> do
+                    hPutStrLn stderr $ "execution failed with seed " ++
+                                       show (s0 + i) ++ ": " ++
+                                       show (e :: SomeException)
+                    throwIO e
+          | otherwise = withTmpDirectory $ withAbstractTransport $
+              \tr@(AbstractTransport transport _ _) ->
+                withLocalNodes (n - 1 + extras) transport remoteTables $
+                  \nodes -> do
+                    tryWithTimeout transport remoteTables t $ do
+                      node0 <- fmap processNode ask
+                      setup' (take n $ map localNodeId $ node0 : nodes) $
+                        uncurry (action tr) $ splitAt n (node0 : nodes)
         withAbstractTransport :: (AbstractTransport -> IO a) -> IO a
         withAbstractTransport =
             E.bracket (if "--tcp-transport" `elem` argv
@@ -166,11 +201,14 @@ tests argv = do
                         else mkInMemoryTransport
                       )
                       closeAbstractTransport
-        setupTimeout (AbstractTransport transport _ _) t num action =
-          withLocalNodes (num - 1) transport remoteTables $ \nodes ->
-          tryWithTimeout transport remoteTables t $ do
-            node0 <- getSelfNode
-            setup' (node0 : map localNodeId nodes) action
+        setupTimeoutSched (AbstractTransport transport _ _) s clockSpeed t num
+                          extra action =
+          (>>= maybe (error "Timeout") return) $ System.timeout t $
+            withScheduler s clockSpeed (num + extra) transport remoteTables $
+              \nodes -> do
+                node0 <- fmap processNode ask
+                setup' (take num $ map localNodeId $ node0 : nodes)
+                       (uncurry action $ splitAt num $ node0 : nodes)
         setup' nodes action = do
             let waitFor pid = monitor pid >> receiveWait
                     [ matchIf (\(ProcessMonitorNotification _ pid' _) ->
@@ -198,20 +236,22 @@ tests argv = do
                                $(mkStaticClosure 'testPersistDirectory)
                                nodes
                         )
-                        (forM_ nodes . Log.killReplica)
+                        (\h -> forM_ nodes (\n -> Log.killReplica h n))
                         $ \h -> do
                   say "Starting test"
                   State.newPort h >>= action h
 
     let ut = testGroup "ut"
-          [ testSuccess "single-command" . withTmpDirectory $ setup 1 $
-              \_ _ _ port -> do
+          [ testSuccess "single-command"
+              $ setupSched seed 10000 10000000 20 1 0
+              $ \_ _ _ port -> do
                 retry retryTimeout $
                   State.update port incrementCP
                 assert . (>= 1) =<<
                   retry retryTimeout (State.select sdictInt port readCP)
 
-          , testSuccess "two-command" . withTmpDirectory $ setup 1 $
+          , testSuccess "two-command"
+              $ setupSched seed 10000 10000000 20 1 0 $
               \_ _ _ port -> do
                 retry retryTimeout $
                   State.update port incrementCP
@@ -220,7 +260,9 @@ tests argv = do
                 assert . (>= 2) =<<
                   retry retryTimeout (State.select sdictInt port readCP)
 
-          , testSuccess "clone" . withTmpDirectory $ setup 1 $ \_ _ h _ -> do
+          , testSuccess "clone"
+              $ setupSched seed 10000 10000000 20 1 0 $
+              \_ _ h _ -> do
                 self <- getSelfPid
                 rh <- Log.remoteHandle h
                 usend self rh
@@ -241,10 +283,8 @@ tests argv = do
           --       State.update port' incrementCP
           --       assert . (== 2) =<< State.select sdictInt port readCP
 
-          , testSuccess "addReplica-start-new-replica" . withTmpDirectory $
-              setup 1 $ \transport _ h _ ->
-              bracket (liftIO $ newLocalNode transport remoteTables)
-                      (liftIO . closeLocalNode) $ \node1 -> do
+          , testSuccess "addReplica-start-new-replica" $
+              setupSched seed 8000 10000000 20 1 1 $ \_ (node1 : _) h _ -> do
                 self <- getSelfPid
                 _ <- liftIO $ forkProcess node1 $ do
                   registerInterceptor $ \string ->
@@ -255,54 +295,62 @@ tests argv = do
                   usend self ((), ())
                 ((), ()) <- expect
 
-                liftIO $ runProcess node1 $ do
+                _ <- liftIO $ forkProcess node1 $ do
                     here <- getSelfNode
                     snapshotServer
                     retry retryTimeout $
                       void $ Log.addReplica h here
+                    usend self ((), ())
+                ((), ()) <- expect
                 () <- expect
-                say "New replica added."
                 Log.killReplica h (localNodeId node1)
 
-          , testSuccess "addReplica-new-replica-old-decrees" . withTmpDirectory
-              $ setup 1 $ \transport _ h port ->
-                bracket (liftIO $ newLocalNode transport remoteTables)
-                        (liftIO . closeLocalNode) $ \node1 -> do
+          , testSuccess "addReplica-new-replica-old-decrees"
+              $ setupSched seed 7100 10000000 20 1 1 $ \_ (node1 : _) h port -> do
                 self <- getSelfPid
                 let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor $ interceptor
-                liftIO $ runProcess node1 $ registerInterceptor $ interceptor
+                _ <- liftIO $ forkProcess node1 $ do
+                  registerInterceptor $ interceptor
+                  usend self ((), ())
+                ((), ()) <- expect
 
                 retry retryTimeout $
                   State.update port incrementCP
                 () <- expect
                 say "Existing replica incremented."
 
-                liftIO $ runProcess node1 $ do
-                    here <- getSelfNode
-                    snapshotServer
-                    retry retryTimeout $
-                      void $ Log.addReplica h here
+                _ <- liftIO $ forkProcess node1 $ do
+                  here <- getSelfNode
+                  snapshotServer
+                  retry retryTimeout $
+                    void $ Log.addReplica h here
+                  usend self ((), ())
+                ((), ()) <- expect
+
                 () <- expect
                 say "New replica incremented."
                 Log.killReplica h (localNodeId node1)
 
-          , testSuccess "addReplica-new-replica-new-decrees" . withTmpDirectory
-              $ setup 1 $ \transport _ h port ->
-                bracket (liftIO $ newLocalNode transport remoteTables)
-                        (liftIO . closeLocalNode) $ \node1 -> do
+          , testSuccess "addReplica-new-replica-new-decrees"
+              $ setupSched seed 1000 10000000 20 1 1 $ \_ (node1 : _) h port -> do
                 self <- getSelfPid
                 let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor $ interceptor
-                liftIO $ runProcess node1 $ registerInterceptor $ interceptor
+                _ <- liftIO $ forkProcess node1 $ do
+                  registerInterceptor $ interceptor
+                  usend self ((), ())
+                ((), ()) <- expect
 
-                liftIO $ runProcess node1 $ do
-                    here <- getSelfNode
-                    snapshotServer
-                    retry retryTimeout $
-                      void $ Log.addReplica h here
+                _ <- liftIO $ forkProcess node1 $ do
+                  here <- getSelfNode
+                  snapshotServer
+                  retry retryTimeout $
+                    void $ Log.addReplica h here
+                  usend self ((), ())
+                ((), ()) <- expect
 
                 retry retryTimeout $
                   State.update port incrementCP
@@ -311,8 +359,8 @@ tests argv = do
                 say "Both replicas incremented again after membership change."
                 Log.killReplica h (localNodeId node1)
 
-          , testSuccess "addReplica-idempotent" . withTmpDirectory $
-            setup 1 $ \_ _ h port -> do
+          , testSuccess "addReplica-idempotent" $
+            setupSched seed 9000 10000000 20 1 0 $ \_ _ h port -> do
               here <- getSelfNode
 
               retry retryTimeout $ State.update port incrementCP
@@ -324,8 +372,8 @@ tests argv = do
               assert (i >= 2)
               say "Restarting replicas preserves the state."
 
-          , testSuccess "addReplica-interrupted-idempotent" . withTmpDirectory $
-            setup 1 $ \_ _ h port -> do
+          , testSuccess "addReplica-interrupted-idempotent" $
+            setupSched seed 5000 10000000 20 1 0 $ \_ _ h port -> do
               here <- getSelfNode
 
               retry retryTimeout $ State.update port incrementCP
@@ -342,15 +390,8 @@ tests argv = do
               say $ "Restarting replicas preserves the state even with "
                     ++ "interruptions."
 
-          , testSuccess "new-idempotent" . withTmpDirectory $
-              withAbstractTransport $ \(AbstractTransport transport _ _) ->
-              E.bracket (newLocalNode transport remoteTables)
-                        closeLocalNode $ \n0 ->
-              E.bracket (newLocalNode transport remoteTables)
-                        closeLocalNode $ \n1 -> do
-              tryWithTimeout transport remoteTables 10000000
-                  $ setup' [localNodeId n0, localNodeId n1]
-                  $ \h port -> do
+          , testSuccess "new-idempotent" $
+              setupSched seed 5000 10000000 20 2 0 $ \[n0, n1] _ h port -> do
                 retry retryTimeout $ State.update port incrementCP
                 setup' [localNodeId n0, localNodeId n1] $ \_ port' -> do
                   retry retryTimeout $ State.update port' incrementCP
@@ -360,30 +401,29 @@ tests argv = do
                   Log.killReplica h (localNodeId n0)
                   Log.killReplica h (localNodeId n1)
 
-          , testSuccess "update-handle" . withTmpDirectory $
-              withAbstractTransport $ \(AbstractTransport transport _ _) ->
-              E.bracket (newLocalNode transport remoteTables)
-                        closeLocalNode $ \n ->
-              E.bracket (newLocalNode transport remoteTables)
-                        closeLocalNode $ \node1 ->
-              tryWithTimeout transport remoteTables 20000000
-                  $ setup' [localNodeId n] $ \h port -> do
+          , testSuccess "update-handle" $
+              setupSched seed 5000 20000000 20 1 2 $ \_ [n, node1] h port -> do
                 self <- getSelfPid
                 let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
-                registerInterceptor $ interceptor
-                liftIO $ runProcess node1 $ do
-                    registerInterceptor $ interceptor
+                _ <- liftIO $ forkProcess node1 $ do
+                    registerInterceptor interceptor
                     here <- getSelfNode
                     snapshotServer
                     retry retryTimeout $
                       void $ Log.addReplica h here
+                    usend self ((), ())
+                ((), ()) <- expect
 
-                here <- getSelfNode
-                snapshotServer
-                retry retryTimeout $
-                  Log.addReplica h here
-                updateHandle h here
+                _ <- liftIO $ forkProcess n $ do
+                    registerInterceptor interceptor
+                    snapshotServer
+                    here <- getSelfNode
+                    retry retryTimeout $
+                      Log.addReplica h here
+                    updateHandle h here
+                    usend self ((), ())
+                ((), ()) <- expect
 
                 -- Kill the first node, and see that the updated handle
                 -- still works. But don't kill it too soon or the new replicas
@@ -393,33 +433,33 @@ tests argv = do
                   State.update port incrementCP
                 () <- expect
                 () <- expect
-                Log.killReplica h $ localNodeId n
+                getSelfNode >>= Log.killReplica h
                 retry retryTimeout $
                   State.update port incrementCP
                 () <- expect
                 () <- expect
                 say "Both replicas incremented again after membership change."
+                Log.killReplica h (localNodeId n)
                 Log.killReplica h (localNodeId node1)
-                Log.killReplica h here
 
-          , testSuccess "quorum-after-remove" . withTmpDirectory $
-              withAbstractTransport $ \tr@(AbstractTransport transport _ _) ->
-              E.bracket (newLocalNode transport remoteTables)
-                        closeLocalNode $ \node1 ->
-              E.bracket (newLocalNode transport remoteTables)
-                        closeLocalNode $ \node2 ->
-              setupTimeout tr 20000000 1 $ \h port -> do
+          , testSuccess "quorum-after-remove" $
+              setupSched seed 5000 20000000 20 1 2 $
+                \_ [node1, node2] h port -> do
                 self <- getSelfPid
                 let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
-                registerInterceptor $ interceptor
-                liftIO $ runProcess node1 $ registerInterceptor $ interceptor
-                liftIO $ runProcess node2 $ registerInterceptor $ interceptor
+                registerInterceptor interceptor
+                liftIO $ runProcess node1 $ registerInterceptor interceptor
+                liftIO $ runProcess node2 $ registerInterceptor interceptor
 
-                forM_ [node1, node2] $ \lnid -> liftIO $ runProcess lnid $ do
-                  snapshotServer
-                  retry retryTimeout $
-                    void $ Log.addReplica h (localNodeId lnid)
+                forM_ [node1, node2] $ \lnid -> do
+                  _ <- liftIO $ forkProcess lnid $ do
+                    snapshotServer
+                    retry retryTimeout $
+                      void $ Log.addReplica h (localNodeId lnid)
+                    usend self ((), ())
+                  ((), ()) <- expect
+                  return ()
 
                 Log.status h
                 -- We do an update to ensure the state is replicated before
@@ -447,16 +487,13 @@ tests argv = do
                 Log.killReplica h (localNodeId node2)
 
           , testSuccess "log-size-remains-bounded" . withTmpDirectory $
-              withAbstractTransport $ \tr@(AbstractTransport transport _ _) ->
-              E.bracket (newLocalNode transport remoteTables)
-                        closeLocalNode $ \node1 ->
-              -- TODO: May possibly fail if some replicas are slow.
-              -- The problem is that snapshots could be updated so fast that
-              -- a delayed replica can never grab it on time.
-              --
-              -- This failure is sensitive to the duration of the lease period
-              -- and the snapshot threashold used for replicas.
-              setupTimeout tr 60000000 1 $ \h port -> do
+              setupSched seed 5000 60000000 5 1 1 $ \_ [node1] h port -> do
+                -- TODO: May possibly fail if some replicas are slow.
+                -- The problem is that snapshots could be updated so fast that
+                -- a delayed replica can never grab it on time.
+                --
+                -- This failure is sensitive to the duration of the lease period
+                -- and the snapshot threashold used for replicas.
                 self <- getSelfPid
                 let logSizePfx = "Log size when trimming: "
                     interceptor :: NodeId -> String -> Process ()
@@ -487,14 +524,18 @@ tests argv = do
                 assert $ all (<= snapshotThreshold * 3) logSizes
                 say "Log size remains bounded with no reconfigurations."
 
-                liftIO $ runProcess node1 $
+                _ <- liftIO $ forkProcess node1 $ do
                   getSelfNode >>= registerInterceptor . interceptor
+                  usend self ((), ())
+                ((), ()) <- expect
 
-                liftIO $ runProcess node1 $ do
-                    here <- getSelfNode
-                    snapshotServer
-                    retry retryTimeout $
-                      void $ Log.addReplica h here
+                _ <- liftIO $ forkProcess node1 $ do
+                  here <- getSelfNode
+                  snapshotServer
+                  retry retryTimeout $
+                    void $ Log.addReplica h here
+                  usend self ((), ())
+                ((), ()) <- expect
 
                 logSizes' <- replicateM 5 $ do
                   replicateM_ incrementCount $ do
@@ -548,10 +589,9 @@ tests argv = do
                     assert (length kvs <= 2*snapshotThreshold)
                 say "Acceptor state remains bounded."
 
-          , testSuccess "quorum-after-transient-failure" . withTmpDirectory $
-              setup 1 $ \transport closeConnection h port ->
-                bracket (liftIO $ newLocalNode transport remoteTables)
-                        (liftIO . closeLocalNode) $ \node1 -> do
+          , testSuccess "quorum-after-transient-failure" $
+              setupSched' seed 5000 20000000 20 1 1 $
+                \(AbstractTransport _ closeConnection _) _ [node1] h port -> do
                 self <- getSelfPid
                 let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
@@ -559,31 +599,52 @@ tests argv = do
                 liftIO $ runProcess node1 $ registerInterceptor interceptor
 
                 say "adding replica"
-                liftIO $ runProcess node1 $ do
+                _ <- liftIO $ forkProcess node1 $ do
                     here <- getSelfNode
                     snapshotServer
                     retry retryTimeout $ do
                       say "trying adding replica"
                       Log.addReplica h here
                     updateHandle h here
+                    usend self ((), ())
+                ((), ()) <- expect
 
                 say "updating state"
-                liftIO $ runProcess node1 $
+                _ <- liftIO $ forkProcess node1 $ do
                   retry retryTimeout $
                     State.update port incrementCP
+                  usend self ((), ())
+                ((), ()) <- expect
                 () <- expect
                 _ <- expectTimeout 5000000 :: Process (Maybe ())
 
                 -- interrupt the connection between the replicas
                 say "interrupting connection"
                 here <- getSelfNode
-                liftIO $
-                  closeConnection (nodeAddress here)
-                                  (nodeAddress $ localNodeId node1)
-                liftIO $ runProcess node1 $
+                if schedulerIsEnabled then
+                  addFailures [ ((here, localNodeId node1), 1.0)
+                              , ((localNodeId node1, here), 1.0)
+                              ]
+                else
+                  liftIO $
+                    closeConnection (nodeAddress here)
+                                    (nodeAddress $ localNodeId node1)
+                _ <- liftIO $ forkProcess node1 $ do
+                  -- restore the communication asynchronously
+                  self1 <- getSelfPid
+                  restorePid <- spawnLocal $ do
+                    () <- expect
+                    when schedulerIsEnabled $ do
+                      removeFailures [ (here, localNodeId node1)
+                                     , (localNodeId node1, here)
+                                     ]
+                    usend self1 ()
                   retry retryTimeout $ do
                     say "trying update"
-                    State.update port incrementCP
+                    State.update port incrementCP `finally` usend restorePid ()
+                  () <- expect
+                  usend self ((), ())
+                ((), ()) <- expect
                 say "expecting first ()"
                 () <- expect
                 say "expecting second ()"
@@ -591,54 +652,49 @@ tests argv = do
                 say "Replicas continue to have quorum."
                 Log.killReplica h (localNodeId node1)
 
-           , testSuccess "durability" . withTmpDirectory $
-               withAbstractTransport $ \(AbstractTransport transport _ _) ->
-               withLocalNodes 5 transport remoteTables $ \lnodes ->
-               tryWithTimeout transport remoteTables 30000000 $ do
+           , testSuccess "durability" $
+               setupSched seed 5000 30000000 20 5 0 $ \nodes _ h port -> do
+                 retry retryTimeout $
+                   State.update port incrementCP
+                 assert . (>= 1) =<<
+                   retry retryTimeout (State.select sdictInt port readCP)
+                 say "Incremented state from scratch."
+                 forM_ (map localNodeId nodes) $ Log.killReplica h
 
-                 let nodes = map localNodeId lnodes
-                 setup' nodes $ \_ port -> do
+                 setup' (map localNodeId nodes) $ \_ port1 -> do
                    retry retryTimeout $
-                     State.update port incrementCP
-                   assert . (>= 1) =<<
-                     retry retryTimeout (State.select sdictInt port readCP)
-                   say "Incremented state from scratch."
-
-                 setup' nodes $ \_ port -> do
-                   retry retryTimeout $
-                     State.update port incrementCP
+                     State.update port1 incrementCP
                    assert . (>= 2) =<<
-                     retry retryTimeout (State.select sdictInt port readCP)
+                     retry retryTimeout (State.select sdictInt port1 readCP)
                    say "Incremented state from disk."
 
-           , testSuccess "recovery" . withTmpDirectory $
-               withAbstractTransport $ \(AbstractTransport transport _ _) ->
-               withLocalNodes 4 transport remoteTables $ \lnodes ->
-               tryWithTimeout transport remoteTables 10000000 $ do
-
-                 let nodes = map localNodeId lnodes
-                 setup' (take 2 nodes) $ \_ port -> do
-                   retry retryTimeout $
-                     State.update port incrementCP
-                   assert . (>= 1) =<<
-                     retry retryTimeout (State.select sdictInt port readCP)
-                   say "Incremented state from scratch."
+           , testSuccess "recovery" $
+               setupSched seed 5000 10000000 20 2 2 $
+               \lnodes0 lnodes1 h port -> do
+                 let nodes0 = map localNodeId lnodes0
+                     nodes1 = map localNodeId lnodes1
+                 retry retryTimeout $
+                   State.update port incrementCP
+                 assert . (>= 1) =<<
+                   retry retryTimeout (State.select sdictInt port readCP)
+                 say "Incremented state from scratch."
+                 forM_ nodes0 $ Log.killReplica h
 
                  let persistDirs = map filepath
                        ["replicas", "replica-snapshots", "acceptors"]
-                 forM_ (zip (take 2 nodes) (drop 2 nodes)) $ \(n0, n1) ->
+                 forM_ (zip nodes0 nodes1) $ \(n0, n1) ->
                    forM_ persistDirs $ \fp ->
                      liftIO $ renameDirectory (fp n0) (fp n1)
 
-                 setup' (drop 2 nodes) $ \h port -> do
+                 setup' nodes1 $ \h1 port1 -> do
                    retry retryTimeout $ do
-                     Log.recover h (drop 2 nodes)
+                     Log.recover h1 nodes1
                    say "Second increment"
                    retry retryTimeout $
-                     State.update port incrementCP
+                     State.update port1 incrementCP
                    say "Query"
                    assert . (>= 2) =<<
-                     retry retryTimeout (State.select sdictInt port readCP)
+                     retry retryTimeout (State.select sdictInt port1 readCP)
                    say "Incremented state from disk."
             ]
 

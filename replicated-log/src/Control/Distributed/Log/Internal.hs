@@ -1269,7 +1269,7 @@ replica Dict
                           link π >> link parentPid
                           forever $ do
                             -- TODO: Make this a configurable delay?
-                            liftIO $ threadDelay 1000000
+                            _ <- receiveTimeout 1000000 []
                             usend (nullProcessId (processNodeId π)) ()
 
                         prl_sync (sendAcceptor logId) ρs'
@@ -1645,7 +1645,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
           else do
             when (isNothing mLeader) $ do
               -- Give some time to other replicas to elect a leader.
-              liftIO $ threadDelay leaseTimeout
+              _ <- receiveTimeout leaseTimeout []
               -- Ask the head replica for the new leader.
               let ρ'' : _ = ρs
               getSelfPid >>= sendReplica logId ρ''
@@ -1654,7 +1654,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
       , match $ \(ProcessMonitorNotification ref' pid _) -> do
           if ref == ref' then do
             -- Give some time to other replicas to elect a leader.
-            liftIO $ threadDelay leaseTimeout
+            _ <- receiveTimeout leaseTimeout []
             -- Continue poking at the disconnected leader if there
             -- are no more replicas.
             let ρ : ρss = maybe ρs (: ρs) mLeader

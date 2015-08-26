@@ -90,7 +90,7 @@ Test-Suite tests
                     constraints >= 0.4,
                     containers >= 0.5,
                     directory >= 1.2.2,
-                    distributed-process,
+                    distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static >= 0.2.0,
                     filepath >= 1.3,
@@ -99,8 +99,49 @@ Test-Suite tests
                     network-transport,
                     network-transport-inmemory,
                     network-transport-tcp,
+                    random,
                     rank1dynamic >= 0.1,
-                    replicated-log
+                    replicated-log,
+                    unix
+  Default-Extensions: DeriveDataTypeable
+                      DeriveGeneric
+                      GeneralizedNewtypeDeriving
+                      RecordWildCards NamedFieldPuns
+                      ScopedTypeVariables
+                      CPP
+
+Test-Suite tests-scheduler
+  Type:             exitcode-stdio-1.0
+  Main-Is:          tests-scheduler.hs
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   tests
+
+  Ghc-Options: -Wall -threaded -eventlog -debug -with-rtsopts=-l-au
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  Build-Depends:    base >= 4.7,
+                    binary >= 0.6,
+                    Cabal >= 1.16,
+                    consensus,
+                    consensus-paxos,
+                    constraints >= 0.4,
+                    containers >= 0.5,
+                    directory >= 1.2.2,
+                    distributed-process-scheduler,
+                    distributed-process-test,
+                    distributed-static >= 0.2.0,
+                    filepath >= 1.3,
+                    mtl >= 2.0.0,
+                    network >= 2.4.2.3,
+                    network-transport,
+                    network-transport-inmemory,
+                    network-transport-tcp,
+                    random,
+                    rank1dynamic >= 0.1,
+                    replicated-log,
+                    unix
   Default-Extensions: DeriveDataTypeable
                       DeriveGeneric
                       GeneralizedNewtypeDeriving
