@@ -476,7 +476,6 @@ startScheduler seed0 clockDelta = do
               DP.send who ref
               go st { stateMonitorCounter = mcounter + 1 }
         -- monitoring a node
-        -- TODO: Keep track of the connection states.
         Monitor who whom isLink -> do
             let ref = DP.MonitorRef (DP.ProcessIdentifier who) mcounter
             DP.send who ref
