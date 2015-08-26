@@ -156,6 +156,7 @@ provide the list of imports for completeness.
 import Control.Distributed.Process
   ( getSelfPid, spawnLocal, send, expect, liftIO, Process, ProcessId, kill )
 import Control.Distributed.Process.Scheduler ( withScheduler )
+import qualified Control.Distributed.Process.Scheduler ( __remoteTable )
 import Control.Distributed.Process.Node
 
 import Control.Concurrent ( threadDelay )
@@ -174,7 +175,10 @@ runOnTempNode p =
     (createTransport "127.0.0.1" "8080" defaultTCPParameters)
     (either (const (return ())) closeTransport)
     $ \(Right transport) -> do
-      lnid <- newLocalNode transport initRemoteTable
+      lnid <- newLocalNode transport $
+        -- Don't forget to include the remote table from the scheduler
+        Control.Distributed.Process.Scheduler.__remoteTable
+          initRemoteTable
       runProcess lnid p
 ```
 
