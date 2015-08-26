@@ -148,6 +148,7 @@ rcRules argv eq = do
       nm_started  <- phaseHandle "node_monitor_started"
       nm_start    <- phaseHandle "node_monitor_start"
       nm_failed   <- phaseHandle "node_monitor_could_not_start"
+      end         <- phaseHandle "end"
 
       setPhase nodeup $ \evt@(HAEvent _ (NodeUp h pid) _) -> do
         let nid  = processNodeId pid
@@ -196,7 +197,7 @@ rcRules argv eq = do
         handled eq evt
         sendToMasterMonitor msg
         ack npid
-        stop
+        continue end
 
       setPhaseIf nm_failed serviceBootCouldNotStart $
           \evt@(HAEvent _ msg _) -> do
@@ -204,7 +205,9 @@ rcRules argv eq = do
         ServiceCouldNotStart n svc _ <- decodeMsg msg
         liftProcess $ sayRC $
           "failed " ++ snString (serviceName svc) ++ " service on the node " ++ show n
-        stop
+        continue end
+
+      directly end stop
 
       start nodeup None
 
