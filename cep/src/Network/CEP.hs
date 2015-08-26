@@ -99,8 +99,7 @@ import           FRP.Netwire (dtime)
 import Network.CEP.Buffer
 import Network.CEP.Engine
 import Network.CEP.Execution
-import Network.CEP.Stack
-import Network.CEP.StackDriver
+import Network.CEP.SM
 import Network.CEP.Types
 import Network.CEP.Utils
 
@@ -132,7 +131,7 @@ buildMachine s defs = go (emptyMachine s) $ view defs
         let logs = fmap (const S.empty) $ _machLogger st
             idx = _machRuleCount st
             key = RuleKey idx n
-            dat = buildRuleData n permanentDriver m (_machPhaseBuf st) logs
+            dat = buildRuleData n newSM m (_machPhaseBuf st) logs
             mp  = M.insert key dat $ _machRuleData st
             st' = st { _machRuleData  = mp
                      , _machRuleCount = idx + 1
@@ -140,7 +139,7 @@ buildMachine s defs = go (emptyMachine s) $ view defs
         go st' $ view $ k ()
     go st (Init m :>>= k) =
         let logs = fmap (const S.empty) $ _machLogger st
-            dat  = buildRuleData "init" oneOffDriver m (_machPhaseBuf st) logs
+            dat  = buildRuleData "init" newSM m (_machPhaseBuf st) logs
             typs = initRuleTypeMap dat
             ir   = InitRule dat typs
             st'  = st { _machInitRule = Just ir } in
@@ -213,10 +212,13 @@ runItForever start_eng = do
           (_, nxt_eng) <- stepForward sub eng
           bootstrap debug_mode ms (succ loop) nxt_eng
         Right m -> do
-          (ri, nxt_eng) <- stepForward m eng
-          let act = requestAction m
+          let act' = requestAction m
+          (ri', nxt_eng') <- stepForward m eng
+          when debug_mode . liftIO $ dumpDebuggingInfo act' loop ri'
+          let act = requestAction (Run Tick)
+          (ri, nxt_eng) <- stepForward (Run Tick) nxt_eng'
           when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
-          case runResult ri of
+          case runResult ri' of
             MsgIgnored ->
               bootstrap debug_mode (m:ms) (succ loop) nxt_eng
             _ -> do
@@ -237,20 +239,30 @@ runItForever start_eng = do
       let act = requestAction x
       when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
       forwardLeftOvers debug_mode (succ loop) nxt_eng xs
-    cruise debug_mode loop eng = do
-        msg <- receiveWait
-                 [ match (return . Left . rawSubRequest)
-                 , matchAny (return . Right . rawIncoming)
-                 ]
-        case msg of
-          Left sub -> do
-            (_, nxt_eng) <- stepForward sub eng
-            cruise debug_mode (succ loop) nxt_eng
-          Right m -> do
-            (ri, nxt_eng) <- stepForward m eng
-            let act = requestAction m
-            when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
-            cruise debug_mode (succ loop) nxt_eng
+
+    cruise debug_mode loop eng
+      | stepForward engineIsRunning eng =
+        go eng =<< receiveTimeout 0 [ match (return . Left . rawSubRequest)
+                                    , matchAny (return . Right . rawIncoming)
+                                    ]
+      | otherwise =
+        go eng . Just =<< receiveWait [ match (return . Left . rawSubRequest)
+                                      , matchAny (return . Right . rawIncoming)
+                                      ]
+      where
+        go inner (Just (Left sub)) = do
+          (_, nxt_eng) <- stepForward sub inner
+          cruise debug_mode (succ loop) nxt_eng
+        go inner (Just (Right m))  = do
+          (ri, nxt_eng) <- stepForward m inner
+          let act = requestAction m
+          when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
+          go nxt_eng Nothing
+        go inner Nothing = do
+          (ri, nxt_eng) <- stepForward tick inner
+          let act = requestAction tick
+          when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
+          cruise debug_mode (succ loop) nxt_eng
 
 dumpDebuggingInfo :: Action RunInfo -> Integer -> RunInfo -> IO ()
 dumpDebuggingInfo m loop (RunInfo total rres) = do
@@ -263,42 +275,38 @@ dumpDebuggingInfo m loop (RunInfo total rres) = do
       RulesBeenTriggered ris -> do
         putStrLn $ "Number of triggered rules: " ++ show (length ris)
                  ++ "\n"
-        for_ ris $ \(RuleInfo rname stk rep) -> do
+        for_ ris $ \(RuleInfo rname rep) -> do
           let nstr =
                 case rname of
                   InitRuleName -> "$$INIT_RULE$$"
                   RuleName s   -> s
-              ExecutionReport ssm tsm is = rep
           putStrLn $ "----- |" ++ nstr ++ "| rule -----\n"
-          putStrLn $ "-> Number of new spawn SMs: " ++ show ssm
-          putStrLn $ "-> Number of term. child SMs: " ++ show tsm
-          putStrLn $ "-> Stack state: " ++ show stk
-          putStrLn ""
-          for_ is $ \i -> do
-            case i of
-              SuccessExe pif p_buf buf -> do
-                case pif of
-                  StackSinglePhase pn ->
-                    putStrLn $ "     <" ++ pn ++ ">\n"
-                  StackSwitchPhase n pn as -> do
-                    putStrLn $ "     <" ++ n ++ " [switch] >\n"
-
-                    putStrLn $ "___ |" ++  pn
-                             ++ "| has been chosen but "
-                             ++ show as ++ " have been tried first"
-                putStrLn "___ Execution result: SUCCESS"
-                case p_buf == buf of
-                  True  -> putStrLn "___ Buffer is untounched"
-                  False -> do
-                    putStrLn $ "___ Previous buffer: " ++ show p_buf
-                    putStrLn $ "___ Resulted buffer: " ++ show buf
-              FailExe tgt r buf -> do
-                putStrLn $ "     <" ++ tgt ++ ">\n"
-                case r of
-                  SuspendExe ->
-                    putStrLn "___ Execution result: SUSPEND"
-                putStrLn $ "___ buffer " ++ show buf
-            putStrLn ""
+          putStrLn $ "-> Number of new spawn SMs: " ++ show (length rep - 1)
+          for_ (zip [1..] rep) $ \(i, (stk, einfo)) -> do
+            putStrLn $ "Machine #" ++ show (i::Int)
+            putStrLn $ case stk of
+              SMFinished  -> "Stack state: " ++ show stk ++ " (SM finished execution.)"
+              SMRunning   -> "Stack state: " ++ show stk ++ " (SM continue execution to the next state.)"
+              SMSuspended -> "Stack state: " ++ show stk ++ " (SM suspended execution.)"
+              SMStopped   -> "Stack state: " ++ show stk ++ " (SM have stopped.)"
+            putStrLn "Execution logs:"
+            for_ (zip [1..] einfo) $ \(j,e) -> do
+              putStrLn $ "Step" ++ show (j::Int) ++ ":"
+              case e of
+                SuccessExe pif p_buf buf -> do
+                  putStrLn $ "<" ++ pif ++ ">"
+                  putStrLn "___ Execution result: SUCCESS"
+                  case p_buf == buf of
+                    True  -> putStrLn "___ Buffer is untounched"
+                    False -> do
+                      putStrLn $ "___ Previous buffer: " ++ show p_buf
+                      putStrLn $ "___ Resulted buffer: " ++ show buf
+                FailExe tgt r buf -> do
+                  putStrLn $ "     <" ++ tgt ++ ">\n"
+                  case r of
+                    SuspendExe -> putStrLn "___ Execution result: SUSPEND"
+                    StopExe    -> putStrLn "___ Execution result: STOP"
+                  putStrLn $ "___ buffer " ++ show buf
     putStrLn $ "#### CEP loop " ++ show loop ++ " #####"
 
 incoming :: Serializable a => a -> Request 'Write (Process (RunInfo, Engine))
@@ -317,7 +325,7 @@ feedEngine msgs = go msgs []
        -> [RunInfo]
        -> Engine
        -> Process ([RunInfo], Engine)
-    go [] is end = return (reverse is, end)
+    go [] is end = executeEngine is end
     go (Some req@(Run t):rest) is cur = do
         case t of
           Tick -> do
@@ -329,6 +337,12 @@ feedEngine msgs = go msgs []
           _ -> do
             (_, nxt) <- stepForward req cur
             go rest is nxt
+    executeEngine rs eng
+      | stepForward engineIsRunning eng = do
+          (r, eng') <- stepForward tick eng
+          executeEngine (r:rs) eng'
+      | otherwise = return (reverse rs, eng)
+
 
 -- | Builds a list of 'TypeInfo' out types needed by 'PhaseStep' data
 --   contructor.
@@ -356,7 +370,7 @@ buildTypeList = foldr go Set.empty
 -- | Executes a rule state machine in order to produce a rule state data
 --   structure.
 buildRuleData :: String
-              -> (Phase g l -> StackSM g l -> StackDriver g)
+              -> (Phase g l -> String -> Maybe SMLogs -> M.Map String (Phase g l) -> Buffer -> l -> SM g)
               -> RuleM g l (Started g l)
               -> Buffer
               -> Maybe SMLogs
@@ -366,7 +380,7 @@ buildRuleData name mk rls buf logs = go M.empty Set.empty $ view rls
     go ps tpes (Return (StartingPhase l p)) =
         RuleData
         { _ruleDataName = name
-        , _ruleStack    = mk p $ newStackSM name logs ps buf l
+        , _ruleStack    = mk p name logs ps buf l
         , _ruleTypes    = Set.union tpes $ buildTypeList ps
         }
     go ps tpes (Start ph l :>>= k) =

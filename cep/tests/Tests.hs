@@ -3,7 +3,7 @@
 module Tests where
 
 import Control.Distributed.Process
-import Control.Monad (replicateM)
+import Control.Monad (replicateM, replicateM_)
 import Data.Binary (Binary)
 import Data.Typeable
 import Data.List (sort)
@@ -34,6 +34,12 @@ assert _    = error "assertion failure"
 assertEqual :: (Show a, Eq a) => String -> a -> a -> Process ()
 assertEqual s i r = liftIO $ HU.assertEqual s i r
 
+assertBool :: String -> Bool -> Process ()
+assertBool s b = liftIO $ HU.assertBool s b
+
+assertFailure :: String -> Process ()
+assertFailure s = liftIO $ HU.assertFailure s
+
 tests :: (Process () -> IO ()) -> [TestTree]
 tests launch =
   [ testsGlobal launch
@@ -47,7 +53,7 @@ tests launch =
   ]
 
 testsGlobal :: (Process () -> IO ()) -> TestTree
-testsGlobal launch = testGroup "State"
+testsGlobal launch = localOption (mkTimeout 500000) $ testGroup "State"
   [ testCase "Global state is updated"  $ launch globalUpdated
   , testCase "Global state is observable by all state machines" $ launch globalIsGlobal
   , testCase "Local state is updated" $ launch localUpdated
@@ -68,6 +74,7 @@ globalUpdated = do
         setPhase ph2 $ \(Donut _) -> do
           i <- get Global
           liftProcess $ usend self (Res i)
+          continue ph1
 
         start ph1 ()
 
@@ -79,14 +86,15 @@ globalIsGlobal :: Process ()
 globalIsGlobal = do
     self <- getSelfPid
     pid  <- spawnLocal $ execute (1 :: Int) $ do
-      initRule $ do
+      define "rule" $ do
         ph1 <- phaseHandle "state-1"
         ph2 <- phaseHandle "state-2"
         ph3 <- phaseHandle "state-3"
 
-        directly ph1 $ do
+        setPhase ph1 $ \(Foo{}) -> do
           fork NoBuffer $ continue ph2
           fork NoBuffer $ continue ph2
+          stop
 
         setPhase ph2 $ \(Donut _) -> do
           modify Global (+1)
@@ -95,9 +103,9 @@ globalIsGlobal = do
         setPhase ph3 $ \(Donut _) -> do
           i <- get Global
           liftProcess $ usend self (Res i)
-
         start ph1 ()
 
+    usend pid (Foo 1)
     usend pid donut
     usend pid donut
     Res (i :: Int) <- expect
@@ -136,9 +144,9 @@ testsSwitch launch = localOption (mkTimeout 500000) $ testGroup "Switch"
   , testCase "Call suspend in switch"   $ launch switchSuspend
   , testCase "Call stop in switch"  $ launch switchStop
   , testCase "Failed rules modify local state"
-             $ launch $ switchFailedRulesDontChangeState Local True
-  , testCase "Failed rules modify global state"
-             $ launch $ switchFailedRulesDontChangeState Global True
+             $ launch $ switchFailedRulesDontChangeState "local" Local True
+  , testCase "Failed rules not modify global state"
+             $ launch $ switchFailedRulesDontChangeState "global" Global True
   ]
 
 switchIsWorking :: Process ()
@@ -189,13 +197,15 @@ switchTerminate = do
                 (Res "ph1") =<< expect
     usend pid (1::Int)
     usend pid (Foo 1)
-    assert =<< receiveWait [ match (\Foo{} -> return True)
-                           , matchAny (\_ -> return False)
-                           ]
+    assertBool "ph2 commited" =<<
+      receiveWait [ match (\Foo{} -> return True)
+                  , matchAny (\_ -> say "here" >> return False)
+                  ]
     usend pid (Foo 2) -- XXX: tick
-    assert =<< receiveWait [ match (\(Res s) -> return $ s == "ph1")
-                           , matchAny (\_ -> return False)
-                           ]
+    assertBool "ph3 did not fire" =<<
+      receiveWait [ match (\(Res s) -> return $ s == "ph1")
+                  , matchAny (\_ -> return False)
+                  ]
 
 -- | Check that continue exit a switch as expected
 switchContinue :: Process ()
@@ -304,8 +314,8 @@ switchStop = do
                 =<< replicateM 2 expect
     return ()
 
-switchFailedRulesDontChangeState :: Scope Int Int Int -> Bool -> Process ()
-switchFailedRulesDontChangeState l b = do
+switchFailedRulesDontChangeState :: String -> Scope Int Int Int -> Bool -> Process ()
+switchFailedRulesDontChangeState s l b = do
     self <- getSelfPid
     pid  <- spawnLocal $ execute (9) $ do
       define "rule" $ do
@@ -326,7 +336,7 @@ switchFailedRulesDontChangeState l b = do
         start ph1 (9::Int)
     usend pid donut
     Baz i <- expect
-    assertEqual "failed rules should not modify local state" b (i==9)
+    assertEqual ("failed rules should not modify " ++ s ++ " state") b (i==9)
 
 testsSequence :: (Process () -> IO ()) -> TestTree
 testsSequence launch = testGroup "Sequence"
@@ -409,8 +419,39 @@ testsFork launch = localOption (mkTimeout 500000) $ testGroup "Fork"
   , testCase "Fork copies local state" $ launch forkCopyLocalState
   , testCase "Fork copies curent buffer" $ launch forkCopyLocalBuffer
   , testCase "Fork do not copy other rules" $ launch forkDontCopyOtherRules
+  , testCase "Service usecase-1" $ launch forkServiceUsecase
   , testCase "Fork increments number of SMs" $ launch forkIncrSMs
   ]
+
+forkServiceUsecase :: Process ()
+forkServiceUsecase = do
+    self <- getSelfPid
+    pid  <- spawnLocal $ execute () $ do
+      define "rule" $ do
+        ph0 <- phaseHandle "state-1"
+        ph1 <- phaseHandle "state-2"
+        ph2 <- phaseHandle "state-3"
+        setPhase ph0 $ \(Baz{}) -> do
+          continue ph1
+
+        setPhase ph1 $ \(Donut _) -> do
+          fork CopyBuffer $ do
+            continue ph2
+          continue ph1
+
+        setPhase ph2 $ \(Foo i) -> do
+          liftProcess $ usend self (Foo i)
+          continue ph2
+
+        start ph0 ()
+
+    replicateM_ 3 $ usend pid donut
+    usend pid (Baz 4)
+    usend pid (Foo 0)
+    assertEqual "foo" [0,0,0] . map unFoo
+      =<< replicateM 3 expect
+
+
 
 forkIsWorking :: Process ()
 forkIsWorking = do
@@ -464,7 +505,7 @@ forkCopyLocalBuffer = do
           fork CopyBuffer $ do
             liftProcess $ usend self (Res ())
             continue ph1
-          liftProcess $ usend self i
+          liftProcess $ usend self (Foo i)
           continue ph1
         start ph1 ()
     usend pid (Foo 1)
@@ -537,17 +578,23 @@ initRuleIsWorking = do
 
       define "rule" $ do
         ph1 <- phaseHandle "state-1"
+        ph2 <- phaseHandle "state-2"
 
-        setPhase ph1 $ \(Donut _) -> do
+        setPhase ph1 $ \(Foo {}) -> do
+          modify Global (+3)
+          continue ph2
+
+        setPhase ph2 $ \(Donut _) -> do
           i <- get Global
           liftProcess $ usend self (Res i)
 
         start ph1 ()
 
+    usend pid (Foo 0)
     usend pid donut
     usend pid donut
     Res (i :: Int) <- expect
-    assert $ i == 4
+    assert $ i == 7
 
 testsPeekShift :: (Process () -> IO ()) -> TestTree
 testsPeekShift launch = testGroup "Buffer"
@@ -604,12 +651,14 @@ shouldNotLooseMgs = do
                ]
 
     (infos, _) <- feedEngine msgs $ cepEngine () defs
-    let [_,_,last_run] = infos
+    let last_run = fst . last $ zip infos (tail infos)
         RunInfo _ (RulesBeenTriggered [rinfo]) = last_run
-        RuleInfo _ _ (ExecutionReport _ _ exe) = rinfo
-        [_, _, SuccessExe ph _ _, _, _]        = exe
-
-    assertEqual "should not lose msgs" "ph2" (stackPhaseInfoPhaseName ph)
+        RuleInfo _ [(st, _)]  = rinfo
+    case st of
+      SMRunning  -> return ()
+      SMFinished -> return ()
+      _          -> assertFailure "message was lost"
+    return ()
 
 forkIncrSMs :: Process ()
 forkIncrSMs = do
@@ -622,10 +671,10 @@ forkIncrSMs = do
       start_engine = cepEngine () defs
 
   (RunInfo _ res, _) <- stepForward tick start_engine
-  let RulesBeenTriggered [(RuleInfo _ _ rep)] = res
-      ExecutionReport spawned term _          = rep
-
-  assert (spawned == term && spawned == 2)
+  let RulesBeenTriggered res' = res
+  assertEqual "only one rule fired" 1 (length res')
+  let (RuleInfo _ rep:_)           = res'
+  assertEqual "new VM were spawned" 2 (length rep)
 
 testsExecution :: (Process () -> IO ()) -> TestTree
 testsExecution launch = testGroup "Execution properties"

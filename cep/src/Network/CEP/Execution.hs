@@ -5,14 +5,33 @@
 module Network.CEP.Execution where
 
 import Network.CEP.Buffer
+import Network.CEP.Types
+
+-- | Possible 'SM' states.
+data SMState
+      = SMRunning
+      -- ^ 'SM' continues it's run and could be executed.
+      | SMFinished
+      -- ^ 'SM' finished evaluation, and returned a fresh SM.
+      | SMSuspended
+      -- ^ 'SM' could not do a step forward until a new message will be fed.
+      | SMStopped
+      -- ^ 'SM' call 'stop' and should be removed from the execution
+      deriving Show
+
+-- | Result of SM step
+data SMResult = SMResult
+        { smResultState :: !SMState           -- ^ State machine state after a step.
+        , smResultInfo  :: [ExecutionInfo]    -- ^ Information about phases that were run.
+        , smResultLogs  :: Maybe Logs         -- ^ Logs produced on a step.
+        } deriving Show
 
 data RuleName = InitRuleName | RuleName String deriving Show
 
 data RuleInfo =
     RuleInfo
-    { ruleInfoName   :: !RuleName
-    , ruleStack      :: !StackResult
-    , ruleInfoReport :: !ExecutionReport
+    { ruleName       :: RuleName
+    , ruleResults    :: [(SMState, [ExecutionInfo])]
     } deriving Show
 
 data RunResult
@@ -37,7 +56,11 @@ stackPhaseInfoPhaseName :: StackPhaseInfo -> String
 stackPhaseInfoPhaseName (StackSinglePhase n)     = n
 stackPhaseInfoPhaseName (StackSwitchPhase _ n _) = n
 
-data ExecutionFail = SuspendExe deriving Show
+-- | Reason why 'Network.CEP.SM' failed.
+data ExecutionFail
+      = SuspendExe  -- ^ 'Network.CEP.SM' suspended.
+      | StopExe     -- ^ 'Network.CEP.SM' was stopped.
+      deriving Show
 
 data ExecutionReport =
     ExecutionReport
@@ -48,7 +71,7 @@ data ExecutionReport =
 
 data ExecutionInfo
     = SuccessExe
-      { exeInfoPhase   :: !StackPhaseInfo
+      { exeInfoPhase   :: !String
       , exeInfoPrevBuf :: !Buffer
       , exeInfoBuf     :: !Buffer
       }
