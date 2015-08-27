@@ -252,6 +252,20 @@ The conditional `when schedulerIsEnabled` could be dropped so the guarded code
 is executed in all cases, but we keep it because we expect synchronization
 using `MVar`s to be faster when not using the scheduler.
 
+Another limitation involves NodeIds. NodeIds are sorted lexicographically by the
+scheduler. A consistent order of the nodes used in tests is important to
+reproduce the test with the same seed regardless of the state of the transport.
+The order of node identifiers must be uniquely determined by the order in which
+nodes start interacting with the scheduler.
+
+Unfortunately, the lexicographic order of node identifiers can violate this
+constraint, as transports do not necessarily create node ids in lexicographic
+order. One workaround is to make sure the transport is always in the same state
+when `withScheduler` is evaluated (e.g. the transport was just created). Another
+workaround is to make sure that for the range of node identifiers that the test
+uses, the node identifiers always end up sorted in the same way (e.g. if the
+idenfier is just an integer, then all identifiers use the same amount of
+digits an the transport produces them in sequence).
 
 ## Finding a bug
 

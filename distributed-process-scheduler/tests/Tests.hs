@@ -100,6 +100,11 @@ run s = do
           [res2] <- fmap nub $ replicateM 3 $
             execute "chanTest" chanTest transport (s+i)
           checkInvariants res2
+          -- Warning: Node identifiers reach 10 in the following test.
+          --
+          -- Having a tests use node ids with different amounts of digits will
+          -- cause confusion due to a current limitation in the scheduler.
+          -- See limitation in the README file.
           [res3] <- fmap nub $ replicateM 3 $
             execute "nsendTest" (nsendTest transport) transport (s+i)
           checkInvariants res3
