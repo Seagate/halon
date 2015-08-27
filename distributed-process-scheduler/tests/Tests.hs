@@ -112,9 +112,12 @@ run s = do
                     transport (s+i)
           [res7] <- fmap nub $ replicateM 3 $
             execute "forwardTest" forwardTest transport (s+i)
+          [res8] <- fmap nub $ replicateM 3 $
+            execute "remoteChanTest" (remoteChanTest transport) transport (s+i)
+          checkInvariants res8
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
-          return $ res0 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6 ++ res7
+          return $ res0 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6 ++ res7 ++ res8
         else do
           res0 <- execute "receiveTest" receiveTest transport (s+i)
           checkInvariants res0
@@ -396,6 +399,44 @@ chanTest = do
       say' $ "main: received " ++ show j
     () <- expect
     expect
+
+remoteChanTest :: NT.Transport -> Process ()
+remoteChanTest transport = do
+  localPid <- getSelfPid
+  bracket (liftIO $ newLocalNode transport remoteTable)
+          (liftIO . closeLocalNode)
+          $ \n1 -> (>> expect) $ liftIO $ forkProcess n1 $ do
+    self <- getSelfPid
+    (spBack, rpBack) <- newChan
+    _ <- spawnLocal $ do
+      (sp, rp) <- newChan
+      usend self sp
+      forM_ [0..1::Int] $ \i -> do
+        j <- receiveChan rp
+        say' $ "s0: received " ++ show (j :: Int)
+        sendChan spBack (0::Int,i)
+      usend self ()
+    sp0 <- expect
+    _ <- spawnLocal $ do
+      (sp, rp) <- newChan
+      usend self sp
+      forM_ [0..1::Int] $ \i -> do
+        j <- receiveChan rp
+        say' $ "s1: received " ++ show (j :: Int)
+        sendChan spBack (1::Int,i)
+      usend self ()
+    sp1 <- expect
+    forM_ [0..1::Int] $ \i -> do
+      sendChan sp0 (2*i)
+      sendChan sp1 (2*i+1)
+    replicateM_ 2 $ do
+      i <- receiveChan rpBack
+      say' $ "main: received " ++ show i
+      j <- receiveChan rpBack
+      say' $ "main: received " ++ show j
+    () <- expect
+    () <- expect
+    usend localPid ()
 
 instance MonadProcess Process where
   liftProcess = id
