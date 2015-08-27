@@ -25,10 +25,12 @@ module Control.Distributed.Process.Scheduler.Internal
   , nsend
   , nsendRemote
   , sendChan
+  , forward
   , match
   , matchIf
   , matchChan
   , matchSTM
+  , matchAny
   , expect
   , receiveChan
   , receiveWait
@@ -249,8 +251,8 @@ withLocalProc node pid p =
 
 remotableDecl [ [d|
 
- forward :: SystemMsg -> Process ()
- forward smsg =
+ forwardSystemMsg :: SystemMsg -> Process ()
+ forwardSystemMsg smsg =
     case smsg of
       MailboxMsg pid msg -> DP.forward msg pid
       ChannelMsg spId msg -> do
@@ -292,7 +294,7 @@ remotableDecl [ [d|
   where
     remoteForward :: NodeId -> SystemMsg -> Process ()
     remoteForward nid msg = do
-      DP.spawnAsync nid $ $(mkClosure 'forward) msg
+      DP.spawnAsync nid $ $(mkClosure 'forwardSystemMsg) msg
       DP.DidSpawn _ pid <- DP.expect
       ref <- DP.monitor pid
       DP.receiveWait
@@ -322,7 +324,7 @@ remotableDecl [ [d|
       -- This is the main difference with 'C.D.P.Node.ncEffectLocalPortSend'
       atomically $ DP.writeTQueue chan' $! (decode bs :: a)
 
-    _ = $(functionTDict 'forward)
+    _ = $(functionTDict 'forwardSystemMsg)
  |]]
 
 -- | Starts the scheduler with a seed to generate a random interleaving and the
@@ -388,10 +390,10 @@ startScheduler seed0 clockDelta = do
                           if systemStuck then jumpToNextTimeout st else st
         case r of
           PutMsg pid msg | isExceptionMsg msg -> do
-             forward msg
+             forwardSystemMsg msg
              go st' { stateProcs = Map.delete pid (stateProcs st') }
           PutMsg pid msg -> do
-             forward msg
+             forwardSystemMsg msg
              -- if the process was blocked let's ask it to check again if it
              -- has a message.
              procs'' <- if isBlocked pid procs
@@ -406,7 +408,7 @@ startScheduler seed0 clockDelta = do
                Nothing -> do
                  go st'
                Just pid -> do
-                 forward (MailboxMsg pid msg)
+                 forwardSystemMsg (MailboxMsg pid msg)
                  -- if the process was blocked let's ask it to check again if it
                  -- has a message.
                  procs'' <- if isBlocked pid procs
@@ -819,6 +821,15 @@ sendChan sendPort msg = do
       spId
       (DP.createUnencodedMessage msg)
 
+-- | Forward a raw 'Message' to the given 'ProcessId'.
+--
+-- TODO: forward should have the semantics of 'send' however, here it has the
+-- semantics of usend.
+forward :: DP.Message -> ProcessId -> Process ()
+forward msg pid = do
+    self <- DP.getSelfPid
+    sendS $ Send self pid $ MailboxMsg pid msg
+
 -- | Sends a message to the scheduler.
 sendS :: Serializable a => a -> Process ()
 sendS a = DP.liftIO getScheduler >>= flip DP.send a . processId
@@ -885,12 +896,21 @@ match = matchIf (const True)
 -- satisfied.
 matchIf :: Serializable a => (a -> Bool) -> (a -> Process b) -> Match b
 matchIf p h = Match $ \mr -> case mr of
-                Nothing -> DP.matchIf p h
-                Just r  -> DP.matchIf (\a -> p a && test r a) h
-  where
-    test r a = snd $ unsafePerformIO $ do
-                 writeIORef r True
-                 return (a,False)
+    Nothing -> DP.matchIf p h
+    Just r  -> DP.matchIf (\a -> p a && seq (unsafeWriteIORef r True a) False) h
+
+unsafeWriteIORef :: IORef a -> a -> b -> b
+unsafeWriteIORef r a b = unsafePerformIO $ do
+    writeIORef r a
+    return b
+
+-- | Match against an arbitrary message. 'matchAny' removes the first available
+-- message from the process mailbox.
+matchAny :: (DP.Message -> Process b) -> Match b
+matchAny h = Match $ \mr -> case mr of
+    Nothing -> DP.matchAny h
+    Just r  -> fmap undefined $
+      DP.matchMessageIf (\a -> seq (unsafeWriteIORef r True a) False) return
 
 -- | Match on arbitrary STM action.
 --

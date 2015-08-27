@@ -102,9 +102,10 @@ run s = do
           [res5] <- fmap nub $ replicateM 3 $ executeTimeouts transport (s+i)
           [res6] <- fmap nub $ replicateM 3 $
                       executeDropMessages transport (s+i)
+          [res7] <- fmap nub $ replicateM 3 $ executeForward transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
-          return $ res0 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6
+          return $ res0 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6 ++ res7
         else do
           res0 <- execute transport (s+i)
           checkInvariants res0
@@ -116,9 +117,10 @@ run s = do
           checkInvariants res3
           res4 <- executeRegister transport (s+i)
           res5 <- executeTimeouts transport (s+i)
+          res6 <- executeForward transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
-          return $ res0 ++ res1 ++ res2 ++ res3 ++ res4 ++ res5
+          return $ res0 ++ res1 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6
     putStrLn $ "Test passed with " ++ show (length res) ++ " different traces."
  where
    checkInvariants res = do
@@ -214,6 +216,28 @@ executeRegister transport seed =
       ProcessMonitorNotification ref' s1' DiedNormal <- expect
       True <- return $ ref == ref'
       True <- return $ s1 == s1'
+      liftIO $ fmap reverse $ readIORef traceR
+
+executeForward :: NT.Transport -> Int -> IO [String]
+executeForward transport seed =
+    (resetTraceR >>) $
+    bracket (newLocalNode transport remoteTable) closeLocalNode $ \n ->
+    flip E.catch (\e -> do putStr "executeRegister.Forward: " >> print seed
+                           readIORef (traceR :: IORef [String]) >>= print
+                           throwIO (e :: SomeException)
+               ) $ do
+     runProcess' n $ withScheduler seed clockSpeed $ do
+      mainPid <- getSelfPid
+      s0 <- spawnLocal $ do
+        usend mainPid ()
+        say' "s0: blocking"
+        () <- expect
+        say' "s0: terminated"
+        usend mainPid ()
+      say' "main: blocking"
+      receiveWait [ matchAny (flip forward s0) ]
+      say' "main: terminated"
+      () <- expect
       liftIO $ fmap reverse $ readIORef traceR
 
 executeTimeouts :: NT.Transport -> Int -> IO [String]

@@ -9,10 +9,12 @@ module Control.Distributed.Process
   , nsend
   , nsendRemote
   , sendChan
+  , forward
   , match
   , matchIf
   , matchChan
   , matchSTM
+  , matchAny
   , expect
   , expectTimeout
   , receiveWait
@@ -80,6 +82,7 @@ import Control.Distributed.Process.Scheduler.Internal
   , matchIf
   , matchChan
   , matchSTM
+  , matchAny
   , expect
   , receiveWait
   , receiveTimeout
@@ -93,10 +96,12 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , nsend
   , nsendRemote
   , sendChan
+  , forward
   , match
   , matchIf
   , matchChan
   , matchSTM
+  , matchAny
   , expect
   , expectTimeout
   , receiveTimeout
@@ -146,6 +151,10 @@ nsendRemote = ifSchedulerIsEnabled Internal.nsendRemote DP.nsendRemote
 {-# NOINLINE sendChan #-}
 sendChan :: Serializable a => SendPort a -> a -> Process ()
 sendChan = ifSchedulerIsEnabled Internal.sendChan DP.sendChan
+
+{-# NOINLINE forward #-}
+forward :: Message -> ProcessId -> Process ()
+forward = ifSchedulerIsEnabled Internal.forward DP.forward
 
 {-# NOINLINE receiveChan #-}
 receiveChan :: Serializable a => ReceivePort a -> Process a
