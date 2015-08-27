@@ -36,7 +36,7 @@ Library
                     containers,
                     data-accessor,
                     directory >= 1.2,
-                    distributed-process >= 0.5,
+                    distributed-process-scheduler,
                     network-transport,
                     tasty >= 0.7,
                     tasty-files,

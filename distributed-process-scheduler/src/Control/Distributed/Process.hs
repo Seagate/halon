@@ -31,6 +31,7 @@ module Control.Distributed.Process
   , spawnAsync
   , whereis
   , register
+  , reregister
   , whereisRemoteAsync
   , registerRemoteAsync
 --  , module DPEtc
@@ -114,6 +115,7 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , spawnAsync
   , whereis
   , register
+  , reregister
   , whereisRemoteAsync
   , registerRemoteAsync
   )
@@ -199,6 +201,10 @@ whereis = ifSchedulerIsEnabled Internal.whereis DP.whereis
 {-# NOINLINE register #-}
 register :: String -> ProcessId -> Process ()
 register = ifSchedulerIsEnabled Internal.register DP.register
+
+{-# NOINLINE reregister #-}
+reregister :: String -> ProcessId -> Process ()
+reregister = ifSchedulerIsEnabled Internal.reregister DP.reregister
 
 {-# NOINLINE whereisRemoteAsync #-}
 whereisRemoteAsync :: NodeId -> String -> Process ()

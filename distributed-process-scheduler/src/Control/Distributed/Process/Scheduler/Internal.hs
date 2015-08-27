@@ -45,6 +45,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , spawnAsync
   , whereis
   , register
+  , reregister
   , whereisRemoteAsync
   , registerRemoteAsync
   -- * distributed-process-trans replacements
@@ -1003,33 +1004,30 @@ whereis label = do
 
 -- | Registers a process in the local registry.
 register :: String -> ProcessId -> Process ()
-register label p = do
-    self <- DP.getSelfPid
-    sendS (Yield self)
-    Continue <- DP.expect
-    DP.register label p
+register label p = yield >> DP.register label p
+
+-- | Like 'register', but will replace an existing registration.
+-- The name must already be registered.
+reregister :: String -> ProcessId -> Process ()
+reregister label p = yield >> DP.reregister label p
 
 -- | Looks up a process in the registry of a node.
 whereisRemoteAsync :: NodeId -> String -> Process ()
 whereisRemoteAsync n label = do
-    self <- DP.getSelfPid
-    sendS (Yield self)
-    Continue <- DP.expect
+    yield
     DP.whereisRemoteAsync n label
     reply <- DP.receiveWait
       [ DP.matchIf (\(DP.WhereIsReply label' _) -> label == label') return ]
-    usend self reply
+    DP.getSelfPid >>= flip usend reply
 
 -- | Registers a process in the registry of a node.
 registerRemoteAsync :: NodeId -> String -> ProcessId -> Process ()
 registerRemoteAsync n label p = do
-    self <- DP.getSelfPid
-    sendS (Yield self)
-    Continue <- DP.expect
+    yield
     DP.registerRemoteAsync n label p
     reply <- DP.receiveWait
       [ DP.matchIf (\(DP.RegisterReply label' _) -> label == label') return ]
-    usend self reply
+    DP.getSelfPid >>= flip usend reply
 
 -- | Opaque type used by 'receiveWaitT'.
 newtype MatchT m a =

@@ -163,7 +163,7 @@ registerInterceptor hook = do
     let loop = receiveWait
             [ match $ \(msg@(_, _, string) :: (String, ProcessId, String)) -> do
                   hook string
-                  send logger msg
+                  usend logger msg
                   loop
             , matchAny $ \amsg -> do
                   forward amsg logger

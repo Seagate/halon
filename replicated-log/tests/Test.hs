@@ -246,10 +246,14 @@ tests argv = do
               bracket (liftIO $ newLocalNode transport remoteTables)
                       (liftIO . closeLocalNode) $ \node1 -> do
                 self <- getSelfPid
-                liftIO $ runProcess node1 $ registerInterceptor $ \string ->
-                  if "New replica started in legislature://" `isPrefixOf` string
+                _ <- liftIO $ forkProcess node1 $ do
+                  registerInterceptor $ \string ->
+                    if "New replica started in legislature://"
+                       `isPrefixOf` string
                     then usend self ()
                     else return ()
+                  usend self ((), ())
+                ((), ()) <- expect
 
                 liftIO $ runProcess node1 $ do
                     here <- getSelfNode
