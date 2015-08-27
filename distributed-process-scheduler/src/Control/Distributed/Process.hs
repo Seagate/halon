@@ -6,6 +6,7 @@
 module Control.Distributed.Process
   ( Match
   , usend
+  , say
   , nsend
   , nsendRemote
   , sendChan
@@ -65,7 +66,6 @@ module Control.Distributed.Process
   , die
   , getSelfPid
   , getSelfNode
-  , say
   , newChan
   , catch
   , catchExit
@@ -93,6 +93,7 @@ import "distributed-process" Control.Distributed.Process as DPEtc
     hiding
   ( Match
   , usend
+  , say
   , nsend
   , nsendRemote
   , sendChan
@@ -139,6 +140,10 @@ ifSchedulerIsEnabled a b
 {-# NOINLINE usend #-}
 usend :: Serializable a => ProcessId -> a -> Process ()
 usend = ifSchedulerIsEnabled Internal.usend DP.usend
+
+{-# NOINLINE say #-}
+say :: String -> Process ()
+say = ifSchedulerIsEnabled Internal.say DP.say
 
 {-# NOINLINE nsend #-}
 nsend :: Serializable a => String -> a -> Process ()

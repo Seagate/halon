@@ -22,6 +22,7 @@ module Control.Distributed.Process.Scheduler.Internal
   -- * distributed-process replacements
   , Match
   , usend
+  , say
   , nsend
   , nsendRemote
   , sendChan
@@ -543,7 +544,11 @@ startScheduler seed0 clockDelta = do
                      (const $ Map.insertWith (flip (++)) source [msg])
                      pid (Map.singleton source [msg]) (stateMessages st)
                }
-    handleSend st _ = return st
+    handleSend st (_, _, msg) = do
+      -- If the target is not known to the scheduler we assume it doesn't
+      -- matter in which order messages are delivered to it.
+      forwardSystemMsg msg
+      return st
 
     handleNSend :: SchedulerState
                 -> (ProcessId, NodeId, String, DP.Message)
@@ -805,13 +810,21 @@ send pid msg = do
 usend :: Serializable a => ProcessId -> a -> Process ()
 usend = send
 
+-- | Log a string
+say :: String -> Process ()
+say string = do
+    self <- DP.getSelfPid
+    sendS $ GetTime self
+    now <- DP.expect
+    nsend "logger" (show (now :: Int), self, string)
+
 nsendRemote :: Serializable a => NodeId -> String -> a -> Process ()
 nsendRemote nid label msg = do
     self <- DP.getSelfPid
     sendS $ NSend self nid label $ DP.createMessage msg
 
 nsend :: Serializable a => String -> a -> Process ()
-nsend label a = DP.whereis label >>= maybe (return ()) (flip send a)
+nsend label a = DP.whereis label >>= maybe (return ()) (flip usend a)
 
 sendChan :: Serializable a => SendPort a -> a -> Process ()
 sendChan sendPort msg = do

@@ -120,9 +120,11 @@ run s = do
           [res8] <- fmap nub $ replicateM 3 $
             execute "remoteChanTest" (remoteChanTest transport) transport (s+i)
           checkInvariants res8
+          res9 <- execute "sayTest" (sayTest transport) transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
-          return $ res0 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6 ++ res7 ++ res8
+          return $ res0 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6 ++ res7 ++
+                   res8 ++ res9
         else do
           res0 <- execute "receiveTest" receiveTest transport (s+i)
           checkInvariants res0
@@ -135,9 +137,10 @@ run s = do
           res4 <- execute "registerTest" registerTest transport (s+i)
           res5 <- execute "timeoutsTest" timeoutsTest transport (s+i)
           res6 <- execute "forwardTest"  forwardTest transport (s+i)
+          res7 <- execute "sayTest" (sayTest transport) transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
-          return $ res0 ++ res1 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6
+          return $ res0 ++ res1 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6 ++ res7
     putStrLn $ "Test passed with " ++ show (length res) ++ " different traces."
  where
    checkInvariants res = do
@@ -151,6 +154,26 @@ run s = do
             && indexOf "main: received (1,0)" res < indexOf "main: received (1,1)" res
    indexOf a = maybe (error "indexOf: no such element") id . elemIndex a
 
+-- | Intercepts 'say' messages from processes as a crude way to know that an
+-- action following an asynchronous send has completed.
+registerInterceptor ::
+    (String -> Process ())
+    -- ^ Intercepter hook. Takes 'String' message sent with 'say'
+    -> Process ()
+registerInterceptor hook = do
+    Just logger <- whereis "logger"
+
+    let loop = receiveWait
+            [ match $ \msg@(_, _, string) -> do
+                  hook string
+                  usend logger (msg :: (String, ProcessId, String))
+                  loop
+            , matchAny $ \amsg -> do
+                  forward amsg logger
+                  loop ]
+
+    reregister "logger" =<< spawnLocal loop
+
 execute :: String -> Process () -> NT.Transport -> Int -> IO [String]
 execute label test transport seed = do
    resetTraceR
@@ -162,6 +185,21 @@ execute label test transport seed = do
        runProcess' n $ withScheduler seed clockSpeed $ do
          test
          liftIO $ fmap reverse $ readIORef traceR
+
+sayTest :: NT.Transport -> Process ()
+sayTest transport =
+    bracket (liftIO $ newLocalNode transport remoteTable)
+            (liftIO . closeLocalNode)
+            $ \n1 -> do
+      self <- getSelfPid
+      _ <- liftIO $ forkProcess n1 $ do
+        registerInterceptor $ \s -> usend self s
+        usend self ()
+      ()<- expect
+      _ <- liftIO $ forkProcess n1 $ do
+        say "hello"
+      "hello" <- expect
+      return ()
 
 receiveTest :: Process ()
 receiveTest = do
