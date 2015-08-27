@@ -11,7 +11,7 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler (withScheduler)
 import qualified Control.Distributed.Process.Scheduler as S (__remoteTable)
 import Control.Distributed.Process.Node
-import Control.Distributed.Process hiding (bracket)
+import Control.Distributed.Process
 import Control.Distributed.Process.Scheduler
   ( schedulerIsEnabled
   , addFailures
@@ -19,16 +19,17 @@ import Control.Distributed.Process.Scheduler
   )
 import Control.Distributed.Process.Internal.Types (ProcessExitException(..))
 import Control.Distributed.Process.Trans
-import Control.Exception ( bracket, SomeException, throwIO )
-import qualified Control.Exception as E ( catch )
+import Control.Exception ( SomeException, throwIO )
+import qualified Control.Exception as E ( catch, bracket )
 import Control.Monad ( when, forM_, replicateM_, forM )
 import Control.Monad ( replicateM )
 import Control.Monad.State ( execStateT, modify, StateT, lift )
-import Data.Function (on)
+import Data.Int
 import Data.IORef
-import Data.List ( nub, elemIndex, sortBy )
+import Data.List ( nub, elemIndex )
 import qualified Network.Transport.InMemory as InMemory
 import qualified Network.Transport as NT
+import System.Clock
 import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
 import System.IO.Unsafe ( unsafePerformIO )
 
@@ -83,41 +84,49 @@ run s = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
     res <- fmap nub $ forM [1..100] $ \i ->
-      bracket InMemory.createTransport
-              NT.closeTransport
+      E.bracket InMemory.createTransport
+                NT.closeTransport
       $ \transport -> do
         if schedulerIsEnabled
         then do
           -- running three times with the same seed should produce the same execution
-          [res0] <- fmap nub $ replicateM 3 $ execute transport (s+i)
+          [res0] <- fmap nub $ replicateM 3 $
+            execute "receiveTest" receiveTest transport (s+i)
           checkInvariants res0
-          [res1] <- fmap nub $ replicateM 3 $ executeT transport (s+i)
+          [res1] <- fmap nub $ replicateM 3 $
+            execute "processTTest" processTTest transport (s+i)
           -- lifting Process has the same effect as running process unlifted
           True <- return $ res0 == res1
-          [res2] <- fmap nub $ replicateM 3 $ executeChan transport (s+i)
+          [res2] <- fmap nub $ replicateM 3 $
+            execute "chanTest" chanTest transport (s+i)
           checkInvariants res2
-          [res3] <- fmap nub $ replicateM 3 $ executeNSend transport (s+i)
+          [res3] <- fmap nub $ replicateM 3 $
+            execute "nsendTest" (nsendTest transport) transport (s+i)
           checkInvariants res3
-          [res4] <- fmap nub $ replicateM 3 $ executeRegister transport (s+i)
-          [res5] <- fmap nub $ replicateM 3 $ executeTimeouts transport (s+i)
+          [res4] <- fmap nub $ replicateM 3 $
+            execute "registerTest" registerTest transport (s+i)
+          [res5] <- fmap nub $ replicateM 3 $
+            execute "timeoutsTest" timeoutsTest transport (s+i)
           [res6] <- fmap nub $ replicateM 3 $
-                      executeDropMessages transport (s+i)
-          [res7] <- fmap nub $ replicateM 3 $ executeForward transport (s+i)
+            execute "dropMessagesTest" (dropMessagesTest transport)
+                    transport (s+i)
+          [res7] <- fmap nub $ replicateM 3 $
+            execute "forwardTest" forwardTest transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
           return $ res0 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6 ++ res7
         else do
-          res0 <- execute transport (s+i)
+          res0 <- execute "receiveTest" receiveTest transport (s+i)
           checkInvariants res0
-          res1 <- executeT transport (s+i)
+          res1 <- execute "processTTest" processTTest transport (s+i)
           checkInvariants res1
-          res2 <- executeChan transport (s+i)
+          res2 <- execute "chanTest" chanTest transport (s+i)
           checkInvariants res2
-          res3 <- executeNSend transport (s+i)
+          res3 <- execute "nsendTest" (nsendTest transport) transport (s+i)
           checkInvariants res3
-          res4 <- executeRegister transport (s+i)
-          res5 <- executeTimeouts transport (s+i)
-          res6 <- executeForward transport (s+i)
+          res4 <- execute "registerTest" registerTest transport (s+i)
+          res5 <- execute "timeoutsTest" timeoutsTest transport (s+i)
+          res6 <- execute "forwardTest"  forwardTest transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
           return $ res0 ++ res1 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6
@@ -134,286 +143,259 @@ run s = do
             && indexOf "main: received (1,0)" res < indexOf "main: received (1,1)" res
    indexOf a = maybe (error "indexOf: no such element") id . elemIndex a
 
-execute :: NT.Transport -> Int -> IO [String]
-execute transport seed = do
+execute :: String -> Process () -> NT.Transport -> Int -> IO [String]
+execute label test transport seed = do
    resetTraceR
-   bracket (newLocalNode transport remoteTable) closeLocalNode $ \n ->
-      flip E.catch (\e -> do putStr "execute.seed: " >> print seed
-                             readIORef (traceR :: IORef [String]) >>= print
-                             throwIO (e :: SomeException)
+   E.bracket (newLocalNode transport remoteTable) closeLocalNode $ \n ->
+     flip E.catch (\e -> do putStr (label ++ ".seed: ") >> print seed
+                            readIORef (traceR :: IORef [String]) >>= print
+                            throwIO (e :: SomeException)
                  ) $
        runProcess' n $ withScheduler seed clockSpeed $ do
-        self <- getSelfPid
-        here <- getSelfNode
-        s0 <- spawn here $ $(mkClosure 'senderProcess0) self
-        s1 <- spawnLocal $ do
-          forM_ [0..1::Int] $ \i -> do
-            j <- expect
-            say' $ "s1: received " ++ show (j :: Int)
-            usend self (1::Int,i)
-          usend self ()
-        forM_ [0..1::Int] $ \i -> do
-          usend s0 (2*i)
-          usend s1 (2*i+1)
-        replicateM_ 2 $ do
-          i <- expect :: Process (Int,Int)
-          say' $ "main: received " ++ show i
-          j <- expect :: Process (Int,Int)
-          say' $ "main: received " ++ show j
-        () <- expect
-        () <- expect
-        liftIO $ fmap reverse $ readIORef traceR
+         test
+         liftIO $ fmap reverse $ readIORef traceR
 
-executeRegister :: NT.Transport -> Int -> IO [String]
-executeRegister transport seed =
-    (resetTraceR >>) $
-    bracket (newLocalNode transport remoteTable) closeLocalNode $ \n ->
-    flip E.catch (\e -> do putStr "executeRegister.seed: " >> print seed
-                           readIORef (traceR :: IORef [String]) >>= print
-                           throwIO (e :: SomeException)
-               ) $ do
-     runProcess' n $ withScheduler seed clockSpeed $ do
-      self <- getSelfPid
-      here <- getSelfNode
-      -- s1 links to s0
-      -- self monitors s1
-      -- self terminates s0
-      -- then s1 should terminate
-      -- then self should terminate
-      s0 <- spawnLocal $ do
-        () <- expect
-        say' "s0: blocking"
-        Left (ProcessExitException pid msg) <-
-          try $ do usend self ()
-                   receiveWait [] :: Process ()
-        True <- return $ self == pid
-        Just True <- handleMessage msg (return . ("terminate" ==))
-        say' "s0: terminated"
-      s1 <- spawnLocal $ do
-        link s0
-        say' "s1: blocking"
-        Left (ProcessLinkException pid DiedNormal) <-
-          try $ do usend s0 ()
-                   receiveWait [] :: Process ()
-        True <- return $ s0 == pid
-        say' "s1: terminated"
-      whereisRemoteAsync here "s0"
-      WhereIsReply "s0" Nothing <- expect
-      say' "main: registering s0"
-      registerRemoteAsync here "s0" s0
-      RegisterReply "s0" True <- expect
-      say' "main: registered s0"
-      registerRemoteAsync here "s0" s0
-      RegisterReply "s0" False <- expect
-      say' "main: cannot reregister s0"
-      whereisRemoteAsync here "s0"
-      WhereIsReply "s0" (Just s0') <- expect
-      True <- return $ s0' == s0
-      say' "main: terminating s0"
+receiveTest :: Process ()
+receiveTest = do
+    self <- getSelfPid
+    here <- getSelfNode
+    s0 <- spawn here $ $(mkClosure 'senderProcess0) self
+    s1 <- spawnLocal $ do
+      forM_ [0..1::Int] $ \i -> do
+        j <- expect
+        say' $ "s1: received " ++ show (j :: Int)
+        usend self (1::Int,i)
+      usend self ()
+    forM_ [0..1::Int] $ \i -> do
+      usend s0 (2*i)
+      usend s1 (2*i+1)
+    replicateM_ 2 $ do
+      i <- expect :: Process (Int,Int)
+      say' $ "main: received " ++ show i
+      j <- expect :: Process (Int,Int)
+      say' $ "main: received " ++ show j
+    () <- expect
+    expect
+
+registerTest :: Process ()
+registerTest = do
+    self <- getSelfPid
+    here <- getSelfNode
+    -- s1 links to s0
+    -- self monitors s1
+    -- self terminates s0
+    -- then s1 should terminate
+    -- then self should terminate
+    s0 <- spawnLocal $ do
       () <- expect
-      ref <- monitor s1
-      exit s0 "terminate"
-      ProcessMonitorNotification ref' s1' DiedNormal <- expect
+      say' "s0: blocking"
+      Left (ProcessExitException pid msg) <-
+        try $ do usend self ()
+                 receiveWait [] :: Process ()
+      True <- return $ self == pid
+      Just True <- handleMessage msg (return . ("terminate" ==))
+      say' "s0: terminated"
+    s1 <- spawnLocal $ do
+      link s0
+      say' "s1: blocking"
+      Left (ProcessLinkException pid DiedNormal) <-
+        try $ do usend s0 ()
+                 receiveWait [] :: Process ()
+      True <- return $ s0 == pid
+      say' "s1: terminated"
+    whereisRemoteAsync here "s0"
+    WhereIsReply "s0" Nothing <- expect
+    say' "main: registering s0"
+    registerRemoteAsync here "s0" s0
+    RegisterReply "s0" True <- expect
+    say' "main: registered s0"
+    registerRemoteAsync here "s0" s0
+    RegisterReply "s0" False <- expect
+    say' "main: cannot reregister s0"
+    whereisRemoteAsync here "s0"
+    WhereIsReply "s0" (Just s0') <- expect
+    True <- return $ s0' == s0
+    say' "main: terminating s0"
+    () <- expect
+    ref <- monitor s1
+    exit s0 "terminate"
+    ProcessMonitorNotification ref' s1' DiedNormal <- expect
+    True <- return $ ref == ref'
+    True <- return $ s1 == s1'
+    return ()
+
+forwardTest :: Process ()
+forwardTest = do
+    mainPid <- getSelfPid
+    s0 <- spawnLocal $ do
+      usend mainPid ()
+      say' "s0: blocking"
+      () <- expect
+      say' "s0: terminated"
+      usend mainPid ()
+    say' "main: blocking"
+    receiveWait [ matchAny (flip forward s0) ]
+    say' "main: terminated"
+    expect
+
+timeoutsTest :: Process ()
+timeoutsTest = do
+    mainPid <- getSelfPid
+    s0 <- spawnLocal $ do
+      () <- expect
+      say' "s0: terminating"
+      usend mainPid ()
+    say' "main: receiveTimeout"
+    t0 <- liftIO $ getTime Monotonic
+    Nothing <- receiveTimeout 3000 [ match $ \() -> return () ]
+    t1 <- liftIO $ getTime Monotonic
+    True <- return $ timeSpecToMicro (t1 - t0) >= 3000
+    say' "main: expectTimeout"
+    Nothing <- expectTimeout 3000 :: Process (Maybe ())
+    t2 <- liftIO $ getTime Monotonic
+    True <- return $ timeSpecToMicro (t2 - t1) >= 3000
+    usend s0 ()
+    say' "main: terminated"
+    expect
+  where
+    timeSpecToMicro :: TimeSpec -> Int64
+    timeSpecToMicro (TimeSpec s ns) = s * 1000000 + ns `div` 1000
+
+dropMessagesTest :: NT.Transport -> Process ()
+dropMessagesTest transport =
+    bracket (liftIO $ newLocalNode transport remoteTable)
+            (liftIO . closeLocalNode) $ \n1 ->
+    bracket (liftIO $ newLocalNode transport remoteTable)
+            (liftIO . closeLocalNode) $ \n2 -> do
+    mainPid <- getSelfPid
+    s1 <- liftIO $ forkProcess n1 $ do
+      s2 <- expect
+
+      () <- expect
+      say' "s1: sending 1"
+      ref <- monitor s2
+      usend s2 ()
+      ProcessMonitorNotification ref' s2' DiedDisconnect <- expect
       True <- return $ ref == ref'
-      True <- return $ s1 == s1'
-      liftIO $ fmap reverse $ readIORef traceR
+      True <- return $ s2 == s2'
 
-executeForward :: NT.Transport -> Int -> IO [String]
-executeForward transport seed =
-    (resetTraceR >>) $
-    bracket (newLocalNode transport remoteTable) closeLocalNode $ \n ->
-    flip E.catch (\e -> do putStr "executeRegister.Forward: " >> print seed
-                           readIORef (traceR :: IORef [String]) >>= print
-                           throwIO (e :: SomeException)
-               ) $ do
-     runProcess' n $ withScheduler seed clockSpeed $ do
-      mainPid <- getSelfPid
-      s0 <- spawnLocal $ do
-        usend mainPid ()
-        say' "s0: blocking"
-        () <- expect
-        say' "s0: terminated"
-        usend mainPid ()
-      say' "main: blocking"
-      receiveWait [ matchAny (flip forward s0) ]
-      say' "main: terminated"
       () <- expect
-      liftIO $ fmap reverse $ readIORef traceR
+      say' "s1: sending 2"
+      usend s2 ()
+      Nothing <- expectTimeout 1000000
+        :: Process (Maybe ProcessMonitorNotification)
 
-executeTimeouts :: NT.Transport -> Int -> IO [String]
-executeTimeouts transport seed =
-    (resetTraceR >>) $
-    bracket (newLocalNode transport remoteTable) closeLocalNode $ \n ->
-    flip E.catch (\e -> do putStr "executeTimeouts.seed: " >> print seed
-                           readIORef (traceR :: IORef [String]) >>= print
-                           throwIO (e :: SomeException)
-               ) $ do
-     runProcess' n $ withScheduler seed clockSpeed $ do
-      _s0 <- spawnLocal $ do
-        say' "s0: terminating"
-      say' "main: receiveTimeout"
-      Nothing <- receiveTimeout 3000 [ match $ \() -> return () ]
-      say' "main: expectTimeout"
-      Nothing <- expectTimeout 3000 :: Process (Maybe ())
-      say' "main: terminated"
-      liftIO $ fmap reverse $ readIORef traceR
+      () <- expect
+      say' "s1: sending 3"
+      usend s2 ()
+      Nothing <- expectTimeout 1000000
+        :: Process (Maybe ProcessMonitorNotification)
+      say' "s1: terminating"
+      usend mainPid ()
 
-executeDropMessages :: NT.Transport -> Int -> IO [String]
-executeDropMessages transport seed =
-    (resetTraceR >>) $
-    bracket (newLocalNode transport remoteTable) closeLocalNode $ \n0 ->
-    bracket (newLocalNode transport remoteTable) closeLocalNode $ \n1 ->
-    bracket (newLocalNode transport remoteTable) closeLocalNode $ \n2 ->
-    flip E.catch (\e -> do putStr "executeDropMessages.seed: " >> print seed
-                           readIORef (traceR :: IORef [String]) >>= print
-                           throwIO (e :: SomeException)
-                 ) $ do
-     runProcess' n0 $ withScheduler seed clockSpeed $ do
-       mainPid <- getSelfPid
+    s2 <- liftIO $ forkProcess n2 $ do
+      () <- expect
+      say' "s2: sending 1"
+      usend mainPid ()
 
-       s1 <- liftIO $ forkProcess n1 $ do
-         s2 <- expect
+      () <- expect
+      say' "s2: sending 2"
+      usend mainPid ()
 
-         () <- expect
-         say' "s1: sending 1"
-         ref <- monitor s2
-         usend s2 ()
-         ProcessMonitorNotification ref' s2' DiedDisconnect <- expect
-         True <- return $ ref == ref'
-         True <- return $ s2 == s2'
+      say' "s2: terminating"
+      usend mainPid ()
 
-         () <- expect
-         say' "s1: sending 2"
-         usend s2 ()
-         Nothing <- expectTimeout 1000000
-           :: Process (Maybe ProcessMonitorNotification)
+    usend s1 s2
+    _ <- monitor s1
 
-         () <- expect
-         say' "s1: sending 3"
-         usend s2 ()
-         Nothing <- expectTimeout 1000000
-           :: Process (Maybe ProcessMonitorNotification)
+    -- No message should be sent to main
+    addFailures [((localNodeId n1, localNodeId n2), 1.0)]
+    usend s1 ()
+    Nothing <- expectTimeout 1000000 :: Process (Maybe ())
+    Nothing <- expectTimeout 1000000
+      :: Process (Maybe ProcessMonitorNotification)
+    say' "main: timeout"
 
-         say' "s1: terminating"
+    -- A message should be sent to main
+    removeFailures [(localNodeId n1, localNodeId n2)]
+    usend s1 ()
+    () <- expect
+    say' "main: received 1"
 
-       s2 <- liftIO $ forkProcess n2 $ do
-         () <- expect
-         say' "s2: sending 1"
-         usend mainPid ()
+    -- A message should be sent to main
+    addFailures [((localNodeId n2, localNodeId n1), 1.0)]
+    usend s1 ()
+    () <- expect
+    say' "main: received 2"
+    () <- expect
+    expect
 
-         () <- expect
-         say' "s2: sending 2"
-         usend mainPid ()
-
-         say' "s2: terminating"
-
-       usend s1 s2
-       _ <- monitor s1
-
-       -- No message should be sent to main
-       addFailures [((localNodeId n1, localNodeId n2), 1.0)]
-       usend s1 ()
-       Nothing <- expectTimeout 1000000 :: Process (Maybe ())
-       Nothing <- expectTimeout 1000000
-         :: Process (Maybe ProcessMonitorNotification)
-       say' "main: timeout"
-
-       -- A message should be sent to main
-       removeFailures [(localNodeId n1, localNodeId n2)]
-       usend s1 ()
-       () <- expect
-       say' "main: received 1"
-
-       -- A message should be sent to main
-       addFailures [((localNodeId n2, localNodeId n1), 1.0)]
-       usend s1 ()
-       () <- expect
-       say' "main: received 2"
-
-       liftIO $ fmap reverse $ readIORef traceR
-
-executeNSend :: NT.Transport -> Int -> IO [String]
-executeNSend transport seed =
-   (resetTraceR >>) $
-   bracket (newLocalNode transport remoteTable) closeLocalNode $ \n0' ->
-   bracket (newLocalNode transport remoteTable) closeLocalNode $ \n1' -> do
-      let [n0, n1] = sortBy (compare `on` localNodeId) [n0', n1']
-      flip E.catch (\e -> do putStr "executeNSend.seed: " >> print seed
-                             readIORef (traceR :: IORef [String]) >>= print
-                             throwIO (e :: SomeException)
-                 ) $ do
-       runProcess' n0 $ withScheduler seed clockSpeed $ do
-        self <- getSelfPid
-        n <- getSelfNode
-        register "self" self
-        liftIO $ runProcess' n1 $ do
-          s0 <- spawnLocal $ do
-            forM_ [0..1::Int] $ \i -> do
-              j <- expect
-              say' $ "s0: received " ++ show (j :: Int)
-              nsendRemote n "self" (0::Int,i)
-            usend self ()
-          register "s0" s0
-          s1 <- spawnLocal $ do
-            forM_ [0..1::Int] $ \i -> do
-              j <- expect
-              say' $ "s1: received " ++ show (j :: Int)
-              nsendRemote n "self" (1::Int,i)
-            usend self ()
-          register "s1" s1
-
+nsendTest :: NT.Transport -> Process ()
+nsendTest transport =
+    bracket (liftIO $ newLocalNode transport remoteTable)
+            (liftIO . closeLocalNode) $ \n1 -> do
+    self <- getSelfPid
+    n <- getSelfNode
+    register "self" self
+    liftIO $ runProcess' n1 $ do
+      s0 <- spawnLocal $ do
         forM_ [0..1::Int] $ \i -> do
-          nsendRemote (localNodeId n1) "s0" (2*i)
-          nsendRemote (localNodeId n1) "s1" (2*i+1)
-        replicateM_ 2 $ do
-          i <- expect :: Process (Int,Int)
-          say' $ "main: received " ++ show i
-          j <- expect :: Process (Int,Int)
-          say' $ "main: received " ++ show j
-        () <- expect
-        () <- expect
-        liftIO $ fmap reverse $ readIORef traceR
-
-executeChan :: NT.Transport -> Int -> IO [String]
-executeChan transport seed = do
-   resetTraceR
-   bracket (newLocalNode transport remoteTable) closeLocalNode $ \n ->
-      flip E.catch (\e -> do putStr "executeChan.seed: " >> print seed
-                             readIORef (traceR :: IORef [String]) >>= print
-                             throwIO (e :: SomeException)
-                 ) $
-       runProcess' n $ withScheduler seed clockSpeed $ do
-        self <- getSelfPid
-        (spBack, rpBack) <- newChan
-        _ <- spawnLocal $ do
-          (sp, rp) <- newChan
-          usend self sp
-          forM_ [0..1::Int] $ \i -> do
-            j <- receiveChan rp
-            say' $ "s0: received " ++ show (j :: Int)
-            sendChan spBack (0::Int,i)
-          usend self ()
-        sp0 <- expect
-        _ <- spawnLocal $ do
-          (sp, rp) <- newChan
-          usend self sp
-          forM_ [0..1::Int] $ \i -> do
-            j <- receiveChan rp
-            say' $ "s1: received " ++ show (j :: Int)
-            sendChan spBack (1::Int,i)
-          usend self ()
-        sp1 <- expect
+          j <- expect
+          say' $ "s0: received " ++ show (j :: Int)
+          nsendRemote n "self" (0::Int,i)
+        usend self ()
+      register "s0" s0
+      s1 <- spawnLocal $ do
         forM_ [0..1::Int] $ \i -> do
-          sendChan sp0 (2*i)
-          sendChan sp1 (2*i+1)
-        replicateM_ 2 $ do
-          i <- receiveChan rpBack
-          say' $ "main: received " ++ show i
-          j <- receiveChan rpBack
-          say' $ "main: received " ++ show j
-        () <- expect
-        () <- expect
-        liftIO $ fmap reverse $ readIORef traceR
+          j <- expect
+          say' $ "s1: received " ++ show (j :: Int)
+          nsendRemote n "self" (1::Int,i)
+        usend self ()
+      register "s1" s1
+
+    forM_ [0..1::Int] $ \i -> do
+      nsendRemote (localNodeId n1) "s0" (2*i)
+      nsendRemote (localNodeId n1) "s1" (2*i+1)
+    replicateM_ 2 $ do
+      i <- expect :: Process (Int,Int)
+      say' $ "main: received " ++ show i
+      j <- expect :: Process (Int,Int)
+      say' $ "main: received " ++ show j
+    () <- expect
+    expect
+
+chanTest :: Process ()
+chanTest = do
+    self <- getSelfPid
+    (spBack, rpBack) <- newChan
+    _ <- spawnLocal $ do
+      (sp, rp) <- newChan
+      usend self sp
+      forM_ [0..1::Int] $ \i -> do
+        j <- receiveChan rp
+        say' $ "s0: received " ++ show (j :: Int)
+        sendChan spBack (0::Int,i)
+      usend self ()
+    sp0 <- expect
+    _ <- spawnLocal $ do
+      (sp, rp) <- newChan
+      usend self sp
+      forM_ [0..1::Int] $ \i -> do
+        j <- receiveChan rp
+        say' $ "s1: received " ++ show (j :: Int)
+        sendChan spBack (1::Int,i)
+      usend self ()
+    sp1 <- expect
+    forM_ [0..1::Int] $ \i -> do
+      sendChan sp0 (2*i)
+      sendChan sp1 (2*i+1)
+    replicateM_ 2 $ do
+      i <- receiveChan rpBack
+      say' $ "main: received " ++ show i
+      j <- receiveChan rpBack
+      say' $ "main: received " ++ show j
+    () <- expect
+    expect
 
 instance MonadProcess Process where
   liftProcess = id
@@ -421,36 +403,28 @@ instance MonadProcess Process where
 instance MonadProcess m => MonadProcess (StateT s m) where
   liftProcess = lift . liftProcess
 
-executeT :: NT.Transport -> Int -> IO [String]
-executeT transport seed = do
-   resetTraceR
-   bracket (newLocalNode transport remoteTable) closeLocalNode $ \n -> do
-      flip E.catch (\e -> do putStr "executeT.seed: " >> print seed
-                             readIORef (traceR :: IORef [String]) >>= print
-                             throwIO (e :: SomeException)
-                 ) $
-       runProcess' n $ withScheduler seed clockSpeed $ do
-        self <- getSelfPid
-        here <- getSelfNode
-        s0 <- spawn here $ $(mkClosure 'senderProcessT0) self
-        s1 <- spawnLocal $ killOnError self $ do
-          4 <- flip execStateT 0 $ do
-            forM_ [0..1::Int] $ \i -> do
-              j <- receiveWaitT [ matchT $ \j -> modify (+j) >> return j ]
-              liftProcess $ do say' $ "s1: received " ++ show (j :: Int)
-                               usend self (1::Int,i)
-          usend self ()
+processTTest :: Process ()
+processTTest = do
+    self <- getSelfPid
+    here <- getSelfNode
+    s0 <- spawn here $ $(mkClosure 'senderProcessT0) self
+    s1 <- spawnLocal $ killOnError self $ do
+      4 <- flip execStateT 0 $ do
         forM_ [0..1::Int] $ \i -> do
-          usend s0 (2*i)
-          usend s1 (2*i+1)
-        replicateM_ 2 $ do
-          i <- expect :: Process (Int,Int)
-          say' $ "main: received " ++ show i
-          j <- expect :: Process (Int,Int)
-          say' $ "main: received " ++ show j
-        () <- expect
-        () <- expect
-        liftIO $ fmap reverse $ readIORef traceR
+          j <- receiveWaitT [ matchT $ \j -> modify (+j) >> return j ]
+          liftProcess $ do say' $ "s1: received " ++ show (j :: Int)
+                           usend self (1::Int,i)
+      usend self ()
+    forM_ [0..1::Int] $ \i -> do
+      usend s0 (2*i)
+      usend s1 (2*i+1)
+    replicateM_ 2 $ do
+      i <- expect :: Process (Int,Int)
+      say' $ "main: received " ++ show i
+      j <- expect :: Process (Int,Int)
+      say' $ "main: received " ++ show j
+    () <- expect
+    expect
 
 -- | Like 'runProcess' but forwards exceptions and returns the result of the
 -- 'Process' computation.
