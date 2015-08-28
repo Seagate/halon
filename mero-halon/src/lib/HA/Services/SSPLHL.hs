@@ -28,6 +28,7 @@ import Control.Distributed.Process
   ( Process
   , ProcessId
   , ProcessMonitorNotification(..)
+  , SendPort
   , catchExit
   , match
   , monitor
@@ -35,6 +36,7 @@ import Control.Distributed.Process
   , receiveWait
   , say
   , send
+  , sendChan
   , spawnChannelLocal
   , spawnLocal
   , unmonitor
@@ -53,6 +55,8 @@ import Data.Maybe (isJust)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
 import Data.Typeable (Typeable)
+import Data.UUID (toString)
+import Data.UUID.V4 (nextRandom)
 import qualified Data.Yaml as Yaml
 
 import GHC.Generics (Generic)
@@ -135,13 +139,22 @@ $(deriveService ''SSPLHLConf 'ssplhlSchema [])
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------
 
-cmdHandler :: ProcessId
+cmdHandler :: ProcessId -- ^ Status handler
+           -> SendPort CommandResponseMessage -- ^ Response channel
            -> Network.AMQP.Message
            -> Process ()
-cmdHandler statusHandler msg = case decode (msgBody msg) :: Maybe CommandRequest of
+cmdHandler statusHandler responseChan msg = case decode (msgBody msg) of
   Just cr -> do
-    when (isJust . commandRequestMessageServiceRequest . commandRequestMessage $ cr)
-      $ void $ promulgate cr
+    when (isJust . commandRequestMessageServiceRequest
+                 . commandRequestMessage $ cr) $ do
+      promulgate cr
+      let (CommandRequestMessage _ _ _ msgId) = commandRequestMessage cr
+      uuid <- liftIO nextRandom
+      sendChan responseChan $ CommandResponseMessage
+        { commandResponseMessageStatusResponse = Nothing
+        , commandResponseMessageResponseId = msgId
+        , commandResponseMessageMessageId = Just . T.pack . toString $ uuid
+        }
     when (isJust . commandRequestMessageStatusRequest . commandRequestMessage $ cr)
       $ send statusHandler cr
   Nothing -> say $ "Unable to decode command request: "
@@ -177,7 +190,7 @@ remotableDecl [ [d|
         chan <- liftIO $ openChannel conn
         responseChan <- spawnChannelLocal (responseProcess chan scResponseConf)
         statusHandler <- StatusHandler.start responseChan
-        Rabbit.receive chan scCommandConf (cmdHandler statusHandler)
+        Rabbit.receive chan scCommandConf (cmdHandler statusHandler responseChan)
         Rabbit.receive chan scClustermapConf cmHandler
         () <- liftIO $ takeMVar lock
         liftIO $ closeConnection conn
