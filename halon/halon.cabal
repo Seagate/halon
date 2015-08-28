@@ -57,6 +57,7 @@ Library
                    HA.EventQueue.Types
                    HA.EQTracker
                    HA.ResourceGraph
+                   HA.Resources.TH
                    HA.Multimap
                    HA.Multimap.Implementation
                    HA.Multimap.Process
