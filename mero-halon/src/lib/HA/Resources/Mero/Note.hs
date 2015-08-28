@@ -16,6 +16,7 @@ module HA.Resources.Mero.Note where
 
 import HA.Resources
 import HA.Resources.Mero
+import HA.Resources.TH
 import HA.ResourceGraph
   ( Resource(..)
   , Relation(..)
@@ -59,35 +60,17 @@ instance Hashable ConfObjectState
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
 
--- XXX Only nodes and services have runtime information attached to them, for now.
+$(mkDicts
+  [ ''ConfObject, ''ConfObjectState]
+  [ (''ConfObject, ''At, ''Node)
+  , (''ConfObject, ''Is, ''ConfObjectState)
+  ]
+  )
 
-resdict_ConfObject :: Dict (Resource ConfObject)
-resdict_ConfObjectState :: Dict (Resource ConfObjectState)
-
-resdict_ConfObject = Dict
-resdict_ConfObjectState = Dict
-
-reldict_At_ConfObject_Node :: Dict (Relation At ConfObject Node)
-reldict_Is_ConfObject_ConfObjectState :: Dict (Relation Is ConfObject ConfObjectState)
-
-reldict_At_ConfObject_Node = Dict
-reldict_Is_ConfObject_ConfObjectState = Dict
-
-
-remotable [ 'resdict_ConfObject
-          , 'resdict_ConfObjectState
-          , 'reldict_At_ConfObject_Node
-          , 'reldict_Is_ConfObject_ConfObjectState
-          ]
-
-instance Resource ConfObject where
-    resourceDict = $(mkStatic 'resdict_ConfObject)
-
-instance Resource ConfObjectState where
-    resourceDict = $(mkStatic 'resdict_ConfObjectState)
-
-instance Relation At ConfObject Node where
-    relationDict = $(mkStatic 'reldict_At_ConfObject_Node)
-
-instance Relation Is ConfObject ConfObjectState where
-    relationDict = $(mkStatic 'reldict_Is_ConfObject_ConfObjectState)
+$(mkResRel
+  [ ''ConfObject, ''ConfObjectState]
+  [ (''ConfObject, ''At, ''Node)
+  , (''ConfObject, ''Is, ''ConfObjectState)
+  ]
+  []
+  )
