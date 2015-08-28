@@ -2,6 +2,7 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -21,6 +22,7 @@ import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
 import HA.ResourceGraph
+import HA.Resources.TH
 
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -84,42 +86,18 @@ instance Hashable Runs
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
 
-resourceDictCluster :: Dict (Resource Cluster)
-resourceDictNode :: Dict (Resource Node)
-resourceDictEpoch :: Dict (Resource (Epoch ByteString))
-
-resourceDictCluster = Dict
-resourceDictNode = Dict
-resourceDictEpoch = Dict
-
-relationDictHasClusterNode :: Dict (Relation Has Cluster Node)
-relationDictHasClusterEpoch :: Dict (Relation Has Cluster (Epoch ByteString))
-
-relationDictHasClusterNode = Dict
-relationDictHasClusterEpoch = Dict
-
-remotable
-  [ 'resourceDictCluster
-  , 'resourceDictNode
-  , 'resourceDictEpoch
-  , 'relationDictHasClusterNode
-  , 'relationDictHasClusterEpoch
+$(mkDicts
+  [conT ''Cluster, conT ''Node, [t| Epoch ByteString |]]
+  [ (conT ''Cluster, conT ''Has, conT ''Node)
+  , (conT ''Cluster, conT ''Has, [t| Epoch ByteString |])
+  ])
+$(mkResRel
+  [conT ''Cluster, conT ''Node, [t| Epoch ByteString |]]
+  [ (conT ''Cluster, conT ''Has, conT ''Node)
+  , (conT ''Cluster, conT ''Has, [t| Epoch ByteString |])
   ]
-
-instance Resource Cluster where
-  resourceDict = $(mkStatic 'resourceDictCluster)
-
-instance Resource Node where
-  resourceDict = $(mkStatic 'resourceDictNode)
-
-instance Resource (Epoch ByteString) where
-  resourceDict = $(mkStatic 'resourceDictEpoch)
-
-instance Relation Has Cluster Node where
-  relationDict = $(mkStatic 'relationDictHasClusterNode)
-
-instance Relation Has Cluster (Epoch ByteString) where
-  relationDict = $(mkStatic 'relationDictHasClusterEpoch)
+  []
+  )
 
 --------------------------------------------------------------------------------
 -- Epoch messages                                                             --
