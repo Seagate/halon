@@ -3,7 +3,7 @@
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
--- Copyright: (C) 2014 Tweag I/O Limited
+-- Copyright : (C) 2015 Seagate Technology Limited.
 --
 --
 module Network.CEP.Types where

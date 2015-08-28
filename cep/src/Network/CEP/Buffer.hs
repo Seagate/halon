@@ -2,7 +2,7 @@
 {-# LANGUAGE Rank2Types                #-}
 {-# LANGUAGE RecordWildCards           #-}
 -- |
--- Copyright: (C) 2015 Tweag I/O Limited
+-- Copyright : (C) 2015 Seagate Technology Limited.
 --
 -- Buffer data structure used to store CEP engine message
 module Network.CEP.Buffer

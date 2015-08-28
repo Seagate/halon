@@ -6,7 +6,7 @@ license:             AllRightsReserved
 license-file:        LICENSE
 author:              James ‘Twey’ Kay
 maintainer:          twey@twey.co.uk
-copyright:           (C) 2014 Tweag I/O Limited
+copyright:           (C) 2014 Seagate Technology Limited.
 category:            Network
 build-type:          Simple
 -- extra-source-files:
