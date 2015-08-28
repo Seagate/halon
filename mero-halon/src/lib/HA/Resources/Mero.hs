@@ -134,42 +134,42 @@ instance Hashable Is
 -- XXX Only nodes and services have runtime information attached to them, for now.
 
 $(mkDicts
-  [ conT ''Host, conT ''HostStatus, conT ''DeviceIdentifier
-  , conT ''Enclosure, conT ''Interface, conT ''StorageDevice
-  , conT ''StorageDeviceStatus, conT ''Label
+  [ ''Host, ''HostStatus, ''DeviceIdentifier
+  , ''Enclosure, ''Interface, ''StorageDevice
+  , ''StorageDeviceStatus, ''Label
   ]
-  [ (conT ''Cluster, conT ''Has, conT ''Host)
-  , (conT ''Host, conT ''Has, conT ''Interface)
-  , (conT ''Host, conT ''Is, conT ''HostStatus)
-  , (conT ''Cluster, conT ''Has, conT ''Enclosure)
-  , (conT ''Enclosure, conT ''Has, conT ''StorageDevice)
-  , (conT ''Enclosure, conT ''Has, conT ''Host)
-  , (conT ''Host, conT ''Runs, conT ''Node)
-  , (conT ''StorageDevice, conT ''Is, conT ''StorageDeviceStatus)
-  , (conT ''Host, conT ''Has, conT ''StorageDevice)
-  , (conT ''Host, conT ''Has, conT ''Label)
-  , (conT ''StorageDevice, conT ''Has, conT ''StorageDeviceStatus)
-  , (conT ''StorageDevice, conT ''Has, conT ''DeviceIdentifier)
+  [ (''Cluster, ''Has, ''Host)
+  , (''Host, ''Has, ''Interface)
+  , (''Host, ''Is, ''HostStatus)
+  , (''Cluster, ''Has, ''Enclosure)
+  , (''Enclosure, ''Has, ''StorageDevice)
+  , (''Enclosure, ''Has, ''Host)
+  , (''Host, ''Runs, ''Node)
+  , (''StorageDevice, ''Is, ''StorageDeviceStatus)
+  , (''Host, ''Has, ''StorageDevice)
+  , (''Host, ''Has, ''Label)
+  , (''StorageDevice, ''Has, ''StorageDeviceStatus)
+  , (''StorageDevice, ''Has, ''DeviceIdentifier)
   ]
   )
 
 $(mkResRel
-  [ conT ''Host, conT ''HostStatus, conT ''DeviceIdentifier
-  , conT ''Enclosure, conT ''Interface, conT ''StorageDevice
-  , conT ''StorageDeviceStatus, conT ''Label
+  [ ''Host, ''HostStatus, ''DeviceIdentifier
+  , ''Enclosure, ''Interface, ''StorageDevice
+  , ''StorageDeviceStatus, ''Label
   ]
-  [ (conT ''Cluster, conT ''Has, conT ''Host)
-  , (conT ''Host, conT ''Has, conT ''Interface)
-  , (conT ''Host, conT ''Is, conT ''HostStatus)
-  , (conT ''Cluster, conT ''Has, conT ''Enclosure)
-  , (conT ''Enclosure, conT ''Has, conT ''StorageDevice)
-  , (conT ''Enclosure, conT ''Has, conT ''Host)
-  , (conT ''Host, conT ''Runs, conT ''Node)
-  , (conT ''StorageDevice, conT ''Is, conT ''StorageDeviceStatus)
-  , (conT ''Host, conT ''Has, conT ''StorageDevice)
-  , (conT ''Host, conT ''Has, conT ''Label)
-  , (conT ''StorageDevice, conT ''Has, conT ''StorageDeviceStatus)
-  , (conT ''StorageDevice, conT ''Has, conT ''DeviceIdentifier)
+  [ (''Cluster, ''Has, ''Host)
+  , (''Host, ''Has, ''Interface)
+  , (''Host, ''Is, ''HostStatus)
+  , (''Cluster, ''Has, ''Enclosure)
+  , (''Enclosure, ''Has, ''StorageDevice)
+  , (''Enclosure, ''Has, ''Host)
+  , (''Host, ''Runs, ''Node)
+  , (''StorageDevice, ''Is, ''StorageDeviceStatus)
+  , (''Host, ''Has, ''StorageDevice)
+  , (''Host, ''Has, ''Label)
+  , (''StorageDevice, ''Has, ''StorageDeviceStatus)
+  , (''StorageDevice, ''Has, ''DeviceIdentifier)
   ]
   []
   )

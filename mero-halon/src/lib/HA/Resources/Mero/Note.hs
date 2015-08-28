@@ -61,16 +61,16 @@ instance Hashable ConfObjectState
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [conT ''ConfObject, conT ''ConfObjectState]
-  [ (conT ''ConfObject, conT ''At, conT ''Node)
-  , (conT ''ConfObject, conT ''Is, conT ''ConfObjectState)
+  [ ''ConfObject, ''ConfObjectState]
+  [ (''ConfObject, ''At, ''Node)
+  , (''ConfObject, ''Is, ''ConfObjectState)
   ]
   )
 
 $(mkResRel
-  [conT ''ConfObject, conT ''ConfObjectState]
-  [ (conT ''ConfObject, conT ''At, conT ''Node)
-  , (conT ''ConfObject, conT ''Is, conT ''ConfObjectState)
+  [ ''ConfObject, ''ConfObjectState]
+  [ (''ConfObject, ''At, ''Node)
+  , (''ConfObject, ''Is, ''ConfObjectState)
   ]
   []
   )

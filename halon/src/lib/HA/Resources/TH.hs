@@ -11,7 +11,6 @@ module HA.Resources.TH (
   , mkResRel
   , mkResource
   , mkRelation
-  , conT -- ^ Exported for convenience
 ) where
 
 import HA.ResourceGraph
@@ -23,83 +22,70 @@ import Data.List (intercalate)
 
 import Language.Haskell.TH
 
-mkDicts :: [TypeQ] -- ^ Resources
-        -> [(TypeQ, TypeQ, TypeQ)] -- ^ Relations
+mkDicts :: [Name] -- ^ Resources
+        -> [(Name, Name, Name)] -- ^ Relations
         -> Q [Dec] -- ^ Decls
 mkDicts res rel = do
   resD <- join <$> mapM mkResourceDict res
   relD <- join <$> mapM mkRelationDict rel
   return $ resD ++ relD
 
-mkResRel :: [TypeQ] -- ^ Resources
-         -> [(TypeQ, TypeQ, TypeQ)] -- ^ Relations
+mkResRel :: [Name] -- ^ Resources
+         -> [(Name, Name, Name)] -- ^ Relations
          -> [Name] -- ^ Any additional functions to add to `remotable`
          -> Q [Dec] -- ^ Decls
 mkResRel res rel othernames = do
-  (resN, resD) <- (fmap join . unzip) <$> mapM mkResource res
-  (relN, relD) <- (fmap join . unzip) <$> mapM mkRelation rel
+  (resN, resD) <- fmap join . unzip <$> mapM mkResource res
+  (relN, relD) <- fmap join . unzip <$> mapM mkRelation rel
   remD <- remotable (resN ++ relN ++ othernames)
   return $ remD ++ resD ++ relD
 
 -- | Make the given type into a @Resource@
-mkResource :: TypeQ -- ^ Type name of resource
+mkResource :: Name -- ^ Type name of resource
            -> Q (Name, [Dec]) -- ^ (Function to include in remotable, decls)
 mkResource res = do
-    dictName <- mkResourceName res
-    inst <- instanceD (cxt []) dictType [instDec dictName]
+    inst <- instanceD (cxt []) dictType [instDec]
     return (dictName, [inst])
   where
-    dictType = conT ''Resource `appT` res
-    instDec dn = funD 'resourceDict [clause [] (normalB $ mkStatic dn) []]
+    dictType = conT ''Resource `appT` conT res
+    instDec = funD 'resourceDict [clause [] (normalB $ mkStatic dictName) []]
+    dictName = mkResourceName res
 
 -- | Make the given (from, rel, to) tuple into a @Relation@
-mkRelation :: (TypeQ, TypeQ, TypeQ)
+mkRelation :: (Name, Name, Name)
            -> Q (Name, [Dec])
 mkRelation r@(from, by, to) = do
-    dictName <- mkRelationName r
-    inst <- instanceD (cxt []) dictType [instDec dictName]
+    inst <- instanceD (cxt []) dictType [instDec]
     return (dictName, [inst])
   where
-    dictType = conT ''Relation `appT` by `appT` from `appT` to
-    instDec dn = funD 'relationDict [clause [] (normalB $ mkStatic dn) []]
+    dictType = conT ''Relation `appT` conT by `appT` conT from `appT` conT to
+    instDec = funD 'relationDict [clause [] (normalB $ mkStatic dictName) []]
+    dictName = mkRelationName r
 
-
-mkResourceDict :: TypeQ -> Q [Dec]
+mkResourceDict :: Name -> Q [Dec]
 mkResourceDict res = do
-    dictName <- mkResourceName res
+
     dictSig <- sigD dictName (conT ''Dict `appT` dictType)
     dictVal <- valD (varP dictName) (normalB $ conE 'Dict) []
     return [dictSig, dictVal]
   where
-    dictType = conT ''Resource `appT` res
+    dictName = mkResourceName res
+    dictType = conT ''Resource `appT` conT res
 
-mkRelationDict :: (TypeQ, TypeQ, TypeQ) -> Q [Dec]
+mkRelationDict :: (Name, Name, Name) -> Q [Dec]
 mkRelationDict r@(from, by, to) = do
-    dictName <- mkRelationName r
     dictSig <- sigD dictName (conT ''Dict `appT` dictType)
     dictVal <- valD (varP dictName) (normalB $ conE 'Dict) []
     return [dictSig, dictVal]
   where
-    dictType = conT ''Relation `appT` by `appT` from `appT` to
+    dictType = conT ''Relation `appT` conT by `appT` conT from `appT` conT to
+    dictName = mkRelationName r
 
-mkResourceName :: TypeQ -> Q Name
-mkResourceName res = do
-  resN <- getName res
-  return . mkName $ "resourceDict_" ++ resN
+mkResourceName :: Name -> Name
+mkResourceName res = mkName $ "resourceDict_" ++ nameBase res
 
-mkRelationName :: (TypeQ, TypeQ, TypeQ) -> Q Name
-mkRelationName (from, by, to) = do
-  fn <- getName from
-  bn <- getName by
-  tn <- getName to
-  return . mkName $ "relationDict" ++ intercalate "_" [fn, bn, tn]
-
-getName :: TypeQ -> Q String
-getName typ = typ >>= return . go
-  where
-    go :: Type -> String
-    go (AppT t1 t2) = go t1 ++ "_" ++ go t2
-    go (ConT name) = nameBase name
-    go _ = undefined
+mkRelationName :: (Name, Name, Name) -> Name
+mkRelationName (from, by, to) = mkName $ "relationDict"
+  ++ intercalate "_" [nameBase from, nameBase by, nameBase to]
 
 

@@ -86,15 +86,18 @@ instance Hashable Runs
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
 
+-- Type alias for purposes of giving a quotable name.
+type EpochByteString = Epoch ByteString
+
 $(mkDicts
-  [conT ''Cluster, conT ''Node, [t| Epoch ByteString |]]
-  [ (conT ''Cluster, conT ''Has, conT ''Node)
-  , (conT ''Cluster, conT ''Has, [t| Epoch ByteString |])
+  [''Cluster, ''Node, ''EpochByteString]
+  [ (''Cluster, ''Has, ''Node)
+  , (''Cluster, ''Has, ''EpochByteString)
   ])
 $(mkResRel
-  [conT ''Cluster, conT ''Node, [t| Epoch ByteString |]]
-  [ (conT ''Cluster, conT ''Has, conT ''Node)
-  , (conT ''Cluster, conT ''Has, [t| Epoch ByteString |])
+  [''Cluster, ''Node, ''EpochByteString]
+  [ (''Cluster, ''Has, ''Node)
+  , (''Cluster, ''Has, ''EpochByteString)
   ]
   []
   )
