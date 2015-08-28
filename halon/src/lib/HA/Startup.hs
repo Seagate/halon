@@ -258,6 +258,8 @@ startupHalonNode lnid rcClosure = do
     _ <- forkIO $ Exception.catch (tryRunProcess lnid $ Storage.runStorage)
                                   (\e -> throwTo tid (e::SomeException))
 
-    Exception.catch (tryRunProcess lnid (autoboot rcClosure))
-                    (\(e :: SomeException) -> hPutStrLn stderr $ "Cannot autoboot: " ++ show e)
+    Exception.catch
+      (tryRunProcess lnid (autoboot rcClosure))
+      (\(_ :: SomeException) -> hPutStrLn stderr
+        $ "No persisted state could be read. Starting in listen mode.")
     tryRunProcess lnid $ eqTrackerProcess []
