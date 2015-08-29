@@ -91,14 +91,14 @@ run s = do
         then do
           -- running three times with the same seed should produce the same execution
           [res0] <- fmap nub $ replicateM 3 $
-            execute "receiveTest" receiveTest transport (s+i)
+            execute "receiveTest" (const receiveTest) 1 transport (s+i)
           checkInvariants res0
           [res1] <- fmap nub $ replicateM 3 $
-            execute "processTTest" processTTest transport (s+i)
+            execute "processTTest" (const processTTest) 1 transport (s+i)
           -- lifting Process has the same effect as running process unlifted
           True <- return $ res0 == res1
           [res2] <- fmap nub $ replicateM 3 $
-            execute "chanTest" chanTest transport (s+i)
+            execute "chanTest" (const chanTest) 1 transport (s+i)
           checkInvariants res2
           -- Warning: Node identifiers reach 10 in the following test.
           --
@@ -106,38 +106,37 @@ run s = do
           -- cause confusion due to a current limitation in the scheduler.
           -- See limitation in the README file.
           [res3] <- fmap nub $ replicateM 3 $
-            execute "nsendTest" (nsendTest transport) transport (s+i)
+            execute "nsendTest" nsendTest 2 transport (s+i)
           checkInvariants res3
           [res4] <- fmap nub $ replicateM 3 $
-            execute "registerTest" registerTest transport (s+i)
+            execute "registerTest" (const registerTest) 1 transport (s+i)
           [res5] <- fmap nub $ replicateM 3 $
-            execute "timeoutsTest" timeoutsTest transport (s+i)
+            execute "timeoutsTest" (const timeoutsTest) 1 transport (s+i)
           [res6] <- fmap nub $ replicateM 3 $
-            execute "dropMessagesTest" (dropMessagesTest transport)
-                    transport (s+i)
+            execute "dropMessagesTest" dropMessagesTest 3 transport (s+i)
           [res7] <- fmap nub $ replicateM 3 $
-            execute "forwardTest" forwardTest transport (s+i)
+            execute "forwardTest" (const forwardTest) 1 transport (s+i)
           [res8] <- fmap nub $ replicateM 3 $
-            execute "remoteChanTest" (remoteChanTest transport) transport (s+i)
+            execute "remoteChanTest" remoteChanTest 2 transport (s+i)
           checkInvariants res8
-          res9 <- execute "sayTest" (sayTest transport) transport (s+i)
+          res9 <- execute "sayTest" sayTest 2 transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
           return $ res0 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6 ++ res7 ++
                    res8 ++ res9
         else do
-          res0 <- execute "receiveTest" receiveTest transport (s+i)
+          res0 <- execute "receiveTest" (const receiveTest) 1 transport (s+i)
           checkInvariants res0
-          res1 <- execute "processTTest" processTTest transport (s+i)
+          res1 <- execute "processTTest" (const processTTest) 1 transport (s+i)
           checkInvariants res1
-          res2 <- execute "chanTest" chanTest transport (s+i)
+          res2 <- execute "chanTest" (const chanTest) 1 transport (s+i)
           checkInvariants res2
-          res3 <- execute "nsendTest" (nsendTest transport) transport (s+i)
+          res3 <- execute "nsendTest" nsendTest 2 transport (s+i)
           checkInvariants res3
-          res4 <- execute "registerTest" registerTest transport (s+i)
-          res5 <- execute "timeoutsTest" timeoutsTest transport (s+i)
-          res6 <- execute "forwardTest"  forwardTest transport (s+i)
-          res7 <- execute "sayTest" (sayTest transport) transport (s+i)
+          res4 <- execute "registerTest" (const registerTest) 1 transport (s+i)
+          res5 <- execute "timeoutsTest" (const timeoutsTest) 1 transport (s+i)
+          res6 <- execute "forwardTest"  (const forwardTest) 1 transport (s+i)
+          res7 <- execute "sayTest" sayTest 2 transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
           return $ res0 ++ res1 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6 ++ res7
@@ -174,32 +173,32 @@ registerInterceptor hook = do
 
     reregister "logger" =<< spawnLocal loop
 
-execute :: String -> Process () -> NT.Transport -> Int -> IO [String]
-execute label test transport seed = do
+execute :: String
+        -> ([LocalNode] -> Process ())
+        -> Int
+        -> NT.Transport
+        -> Int
+        -> IO [String]
+execute label test numNodes transport seed = do
    resetTraceR
-   E.bracket (newLocalNode transport remoteTable) closeLocalNode $ \n ->
-     flip E.catch (\e -> do putStr (label ++ ".seed: ") >> print seed
-                            readIORef (traceR :: IORef [String]) >>= print
-                            throwIO (e :: SomeException)
-                 ) $
-       runProcess' n $ withScheduler seed clockSpeed $ do
-         test
-         liftIO $ fmap reverse $ readIORef traceR
+   flip E.catch (\e -> do putStr (label ++ ".seed: ") >> print seed
+                          readIORef (traceR :: IORef [String]) >>= print
+                          throwIO (e :: SomeException)
+               ) $ do
+     withScheduler seed clockSpeed numNodes transport remoteTable test
+     fmap reverse $ readIORef traceR
 
-sayTest :: NT.Transport -> Process ()
-sayTest transport =
-    bracket (liftIO $ newLocalNode transport remoteTable)
-            (liftIO . closeLocalNode)
-            $ \n1 -> do
-      self <- getSelfPid
-      _ <- liftIO $ forkProcess n1 $ do
-        registerInterceptor $ \s -> usend self s
-        usend self ()
-      ()<- expect
-      _ <- liftIO $ forkProcess n1 $ do
-        say "hello"
-      "hello" <- expect
-      return ()
+sayTest :: [LocalNode] -> Process ()
+sayTest = \(n1 : _) -> do
+    self <- getSelfPid
+    _ <- liftIO $ forkProcess n1 $ do
+      registerInterceptor $ \s -> usend self s
+      usend self ()
+    ()<- expect
+    _ <- liftIO $ forkProcess n1 $ do
+      say "hello"
+    "hello" <- expect
+    return ()
 
 receiveTest :: Process ()
 receiveTest = do
@@ -307,12 +306,8 @@ timeoutsTest = do
     timeSpecToMicro :: TimeSpec -> Int64
     timeSpecToMicro (TimeSpec s ns) = s * 1000000 + ns `div` 1000
 
-dropMessagesTest :: NT.Transport -> Process ()
-dropMessagesTest transport =
-    bracket (liftIO $ newLocalNode transport remoteTable)
-            (liftIO . closeLocalNode) $ \n1 ->
-    bracket (liftIO $ newLocalNode transport remoteTable)
-            (liftIO . closeLocalNode) $ \n2 -> do
+dropMessagesTest :: [LocalNode] -> Process ()
+dropMessagesTest = \(n1 : n2 : _) -> do
     mainPid <- getSelfPid
     s1 <- liftIO $ forkProcess n1 $ do
       s2 <- expect
@@ -376,10 +371,8 @@ dropMessagesTest transport =
     () <- expect
     expect
 
-nsendTest :: NT.Transport -> Process ()
-nsendTest transport =
-    bracket (liftIO $ newLocalNode transport remoteTable)
-            (liftIO . closeLocalNode) $ \n1 -> do
+nsendTest :: [LocalNode] -> Process ()
+nsendTest = \(n1 : _) -> do
     self <- getSelfPid
     n <- getSelfNode
     register "self" self
@@ -443,12 +436,10 @@ chanTest = do
     () <- expect
     expect
 
-remoteChanTest :: NT.Transport -> Process ()
-remoteChanTest transport = do
+remoteChanTest :: [LocalNode] -> Process ()
+remoteChanTest = \(n1 : _) -> do
   localPid <- getSelfPid
-  bracket (liftIO $ newLocalNode transport remoteTable)
-          (liftIO . closeLocalNode)
-          $ \n1 -> (>> expect) $ liftIO $ forkProcess n1 $ do
+  (>> expect) $ liftIO $ forkProcess n1 $ do
     self <- getSelfPid
     (spBack, rpBack) <- newChan
     _ <- spawnLocal $ do

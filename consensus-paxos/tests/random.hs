@@ -46,32 +46,28 @@ main = do
             sstr : _ -> return (read sstr)
             _ -> randomIO
      let numIterations = 50
-     bracket InMemory.createTransport closeTransport $ \transport ->
-       bracket
-         (newLocalNode transport remoteTables)
-         closeLocalNode
-         $ \node0 -> do
-           runProcess' node0 $
-             case args of
-               _ : istr : _ -> run $ read istr
-               _ -> do
-                 liftIO $ do putStrLn $ "Running " ++ show numIterations
-                                        ++ " random tests..."
-                             putStrLn $ "initial seed: " ++ show s
-                 forM_ (zip [1..] $ take numIterations $ randoms $ mkStdGen s) $
-                   \(i, si) -> do
-                     when (i `mod` 10 == (0 :: Int)) $
-                       liftIO $ putStrLn $ show i ++ " iterations"
-                     run si
-           putStrLn "SUCCESS!"
+     case args of
+       _ : istr : _ -> run $ read istr
+       _ -> do
+         liftIO $ do putStrLn $ "Running " ++ show numIterations
+                                ++ " random tests..."
+                     putStrLn $ "initial seed: " ++ show s
+         forM_ (zip [1..] $ take numIterations $ randoms $ mkStdGen s) $
+           \(i, si) -> do
+             when (i `mod` 10 == (0 :: Int)) $
+               liftIO $ putStrLn $ show i ++ " iterations"
+             run si
+     putStrLn "SUCCESS!"
 
 -- | microseconds/transition
 clockSpeed :: Int
 clockSpeed = 10000
 
-run :: Int -> Process ()
-run s = let (s0,s1) = split $ mkStdGen s
-         in withScheduler (fst $ random s0) clockSpeed $ do
+run :: Int -> IO ()
+run s = bracket InMemory.createTransport closeTransport $ \transport ->
+    let (s0,s1) = split $ mkStdGen s
+     in withScheduler (fst $ random s0) clockSpeed 1 transport remoteTables
+              $ \_ -> do
   let procs = 5
   αs <- forM [1..procs] $ \n -> do
           mref <- liftIO $ newIORef Map.empty
@@ -114,12 +110,3 @@ run s = let (s0,s1) = split $ mkStdGen s
 killOnError :: ProcessId -> Process a -> Process a
 killOnError pid p = catch p $ \e -> liftIO (print e) >>
   exit pid (show (e :: SomeException)) >> liftIO (throwIO e)
-
--- | Like 'runProcess' but forwards exceptions and returns the result of the
--- 'Process' computation.
-runProcess' :: LocalNode -> Process a -> IO a
-runProcess' n p = do
-  r <- newIORef undefined
-  runProcess n (try p >>= liftIO . writeIORef r)
-    >> readIORef r
-      >>= either (\e -> throwIO (e :: SomeException)) return

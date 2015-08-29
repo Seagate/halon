@@ -124,8 +124,8 @@ writeServer serverPid i =
 We write now a test for the addition function which uses the scheduler:
 
 ```Haskell
-runTest :: Int -> Process ()
-runTest s = withScheduler s clockSpeed $ do
+runTest :: Int -> Transport -> IO ()
+runTest s tr = withScheduler s clockSpeed numNodes tr remoteTable $ \_ -> do
     let n = 2
     result <- addition n n
     liftIO $ do
@@ -134,6 +134,15 @@ runTest s = withScheduler s clockSpeed $ do
   where
     clockSpeed :: Int
     clockSpeed = 10000
+
+    numNodes :: Int
+    numNodes = 1
+
+    -- Don't forget to include the remote table from the scheduler
+    remoteTable :: RemoteTable
+    remoteTable = Control.Distributed.Process.Scheduler.__remoteTable
+                  initRemoteTable
+
 ```
 
 `runTest` takes a seed value that is used to initialize the scheduler.
@@ -143,6 +152,13 @@ whenever it reaches a branching point.
 The `clockSpeed` argument indicates the speed of an internal virtual clock.
 This clock is used to determine when timeouts have expired and it is ok to
 execute their handlers.
+
+The argument `numNodes` indicates the amount of nodes to use in the test and
+the arguments to create the nodes follow. The nodes are allocated by
+`withScheduler` to make harder to hit some limitations regarding ordering of
+node ids and destroying nodes. In short, the user is not allowed to create
+other nodes for a test than those provided by `withScheduler`. See the section
+on limitations below for the rationale.
 
 The function `withScheduler` starts the scheduler and executes the closure
 provided as argument, in our case this is our test. Whatever the test result
@@ -154,7 +170,9 @@ provide the list of imports for completeness.
 
 ```Haskell
 import Control.Distributed.Process
-  ( getSelfPid, spawnLocal, send, expect, liftIO, Process, ProcessId, kill )
+  ( getSelfPid, spawnLocal, send, expect, liftIO, Process, ProcessId, kill
+  , RemoteTable
+  )
 import Control.Distributed.Process.Scheduler ( withScheduler )
 import qualified Control.Distributed.Process.Scheduler ( __remoteTable )
 import Control.Distributed.Process.Node
@@ -167,19 +185,15 @@ import Network.Transport.TCP
 import System.Random ( mkStdGen, randoms )
 
 main :: IO ()
-main = runOnTempNode $ forM_ (take 10 $ randoms $ mkStdGen 0) runTest
+main = withTCPTransport $ \tr ->
+    forM_ (take 10 $ randoms $ mkStdGen 0) (runTest tr)
 
-runOnTempNode :: Process () -> IO ()
-runOnTempNode p =
+withTCPTransport :: (Transport -> IO ()) -> IO ()
+withTCPTransport p =
   bracket
     (createTransport "127.0.0.1" "8080" defaultTCPParameters)
     (either (const (return ())) closeTransport)
-    $ \(Right transport) -> do
-      lnid <- newLocalNode transport $
-        -- Don't forget to include the remote table from the scheduler
-        Control.Distributed.Process.Scheduler.__remoteTable
-          initRemoteTable
-      runProcess lnid p
+    $ \(Right transport) -> p transport
 ```
 
 We then set the DP_SCHEDULER_ENABLED variable with
@@ -266,6 +280,11 @@ workaround is to make sure that for the range of node identifiers that the test
 uses, the node identifiers always end up sorted in the same way (e.g. if the
 idenfier is just an integer, then all identifiers use the same amount of
 digits an the transport produces them in sequence).
+
+Another limitation is that nodes used in a test cannot be destroyed until the
+test completes. The scheduler might try to interact with the nodes if some
+process sends a message to them. But if the node is dead and therefore unable
+to reply to registry queries, for instance, then the scheduler might block.
 
 ## Finding a bug
 

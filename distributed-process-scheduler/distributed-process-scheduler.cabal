@@ -51,6 +51,7 @@ Library
                    ,distributed-process >= 0.4
                    ,distributed-process-trans
                    ,mtl
+                   ,network-transport
                    ,random
                    ,stm
                    ,unix

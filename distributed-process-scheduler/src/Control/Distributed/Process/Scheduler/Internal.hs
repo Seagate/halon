@@ -75,6 +75,7 @@ import "distributed-process" Control.Distributed.Process
 import qualified "distributed-process" Control.Distributed.Process as DP
 import qualified "distributed-process" Control.Distributed.Process.Internal.Types as DP
 import Control.Distributed.Process.Closure
+import "distributed-process" Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( Serializable )
 import Control.Distributed.Process.Internal.StrictMVar ( withMVar )
 import "distributed-process-trans" Control.Distributed.Process.Trans ( MonadProcess(..) )
@@ -82,24 +83,23 @@ import qualified "distributed-process-trans" Control.Distributed.Process.Trans a
 import qualified Control.Distributed.Process.Internal.WeakTQueue as DP
 import Control.Distributed.Process.Internal.Types (LocalProcess(..))
 
-import Control.Concurrent.MVar
-    ( newMVar, newEmptyMVar, takeMVar, putMVar, MVar
-    , readMVar, modifyMVar_
-    )
-import Control.Exception ( SomeException, throwIO, Exception, throwTo )
-import Control.Monad ( void, when, join, forM_, foldM )
+import Control.Concurrent.MVar hiding (withMVar)
+import Control.Exception ( SomeException, throwIO, bracket, Exception, throwTo )
+import Control.Monad
 import Control.Monad.Reader ( ask )
 import Data.Accessor ((^.))
 import Data.Binary ( Binary(..), decode )
+import Data.Function (on)
 import Data.Int
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
-import Data.List (delete, union)
+import Data.List (delete, union, sortBy)
 import Data.Map ( Map )
 import qualified Data.Map as Map
 import Data.Set ( Set )
 import qualified Data.Set as Set
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
+import Network.Transport (Transport)
 import System.Posix.Env ( getEnv )
 import System.IO.Unsafe ( unsafePerformIO )
 import System.Mem.Weak (deRefWeak)
@@ -155,7 +155,7 @@ data SchedulerMsg
     | GetTime ProcessId -- ^ A process wants to know the time.
     | AddFailures [((NodeId, NodeId), Double)]
     | RemoveFailures [(NodeId, NodeId)]
-  deriving (Generic, Typeable)
+  deriving (Generic, Typeable, Show)
 
 -- | Messages that the scheduler sends to the tested application.
 data SchedulerResponse
@@ -328,25 +328,38 @@ remotableDecl [ [d|
     _ = $(functionTDict 'forwardSystemMsg)
  |]]
 
--- | Starts the scheduler with a seed to generate a random interleaving and the
--- amount of microseconds to increase the clock on every transition.
+-- | Starts the scheduler.
+--
+-- The function returns the created nodes in lexicographical order of 'NodeId's.
+-- Creating nodes by other means, or giving special treatment to nodes with
+-- particular attributes may spoil the test. See the limitation in the README
+-- file.
+--
 startScheduler :: Int -- ^ seed
                -> Int -- ^ microseconds to increase the clock in every
                       -- transition
-               -> Process ()
-startScheduler seed0 clockDelta = do
-    modifyMVarP schedulerLock
+               -> Int -- ^ Nodes to create
+               -> Transport -- ^ Transport to use for the nodes.
+               -> DP.RemoteTable -- ^ RemoteTable to use for the nodes.
+               -> IO [LocalNode]
+startScheduler seed0 clockDelta numNodes transport rtable = do
+    modifyMVar schedulerLock
       $ \initialized -> do
         if initialized
          then error "startScheduler: scheduler already started."
          else do
-           self <- DP.getSelfPid
-           _ <- DP.spawnLocal $ do
+           lnodes <- replicateM numNodes $ newLocalNode transport rtable
+           case sortBy (compare `on` localNodeId) lnodes of
+             [] -> error "startScheduler: no nodes"
+             sortedLNodes@(n : _) -> do
+               runProcess n $ do
+                 self <- DP.getSelfPid
+                 void $ DP.spawnLocal $ do
                      lproc <- ask
                      DP.liftIO $ putMVar schedulerVar lproc
                      ((go SchedulerState
                             { stateSeed     = mkStdGen seed0
-                            , stateAlive    = Set.singleton self
+                            , stateAlive    = Set.empty
                             , stateProcs    = Map.empty
                             , stateMessages = Map.empty
                             , stateNSend    = Map.empty
@@ -370,12 +383,12 @@ startScheduler seed0 clockDelta = do
                            putStrLn $ "scheduler died: " ++ show e
                            throwIO (e :: SomeException)
                        )
-           return (True,())
+               return (True, sortedLNodes)
   where
     go :: SchedulerState -> Process a
     go st@(SchedulerState _ alive procs msgs nsMsgs _ _ _ expired timeouts _ _)
         -- Enter this equation if all processes are waiting for a transition
-      | Set.size alive == Map.size procs = do
+      | Set.size alive == Map.size procs && not (Set.null alive) = do
         -- complain if no process has a message and there are no messages to
         -- put in a mailbox
         let systemStuck =
@@ -742,33 +755,41 @@ startScheduler seed0 clockDelta = do
                    Map.elems newExpired
              }
 
--- | Lift 'Control.Concurrent.modifyMVar'
-modifyMVarP :: MVar a -> (a -> Process (a,b)) -> Process b
-modifyMVarP mv thing = DP.mask $ \restore -> do
-    a <- DP.liftIO $ takeMVar mv
-    (a',b) <- (restore (thing a) `DP.onException` DP.liftIO (putMVar mv a))
-    DP.liftIO $ putMVar mv a'
-    return b
-
 -- | Stops the scheduler.
-stopScheduler :: Process ()
-stopScheduler =
-    do sproc <- DP.liftIO (takeMVar schedulerVar)
-       running <- modifyMVarP schedulerLock $ \running -> do
-         when running $ DP.exit (processId sproc) StopScheduler
-         return (False,running)
-       when running $ do
-         SchedulerTerminated <- DP.expect
-         return ()
+--
+-- Takes the list returned by 'startScheduler'.
+stopScheduler :: [LocalNode] -> IO ()
+stopScheduler = \(~lnodes@(n : _)) -> do
+    msproc <- tryTakeMVar schedulerVar
+    running <- modifyMVar schedulerLock $ \running -> do
+      return (False,running)
+    forM_ msproc $ \sproc ->
+      when running $ runProcess n $ do
+        DP.exit (processId sproc) StopScheduler
+        SchedulerTerminated <- DP.expect
+        return ()
+    forM_ lnodes closeLocalNode
 
--- | Wraps a Process computation with calls to 'startScheduler' and
+-- | Wraps a 'Process' computation with calls to 'startScheduler' and
 -- 'stopScheduler'.
 withScheduler :: Int       -- ^ seed
               -> Int       -- ^ clock speed (microseconds/transition)
-              -> Process a -- ^ computation to wrap
-              -> Process a
-withScheduler s clockDelta p =
-    DP.bracket_ (startScheduler s clockDelta) stopScheduler p
+              -> Int       -- ^ amount of nodes to create
+              -> Transport -- ^ transport to use for the nodes
+              -> DP.RemoteTable -- ^ remote table to use for the nodes
+              -> ([LocalNode] -> Process ())
+                   -- ^ Computation to wrap
+                   --
+                   -- The list of nodes does not include the local node in which
+                   -- the computation runs.
+              -> IO ()
+withScheduler s clockDelta numNodes transport rtable p =
+    bracket (startScheduler s clockDelta numNodes transport rtable)
+            stopScheduler $ \lnodes@(n : ns) -> runProcess n $ do
+              DP.getSelfPid >>= sendS . SpawnedProcess
+              Continue <- DP.expect
+              p ns
+              DP.liftIO $ stopScheduler lnodes
 
 -- | Yields control to some other process.
 yield :: Process ()

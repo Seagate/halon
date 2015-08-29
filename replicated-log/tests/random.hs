@@ -189,23 +189,23 @@ main = do
           numIterations = 50
 
 run :: Transport -> Int -> IO ()
-run transport s = brackets 2
-  (newLocalNode transport remoteTables)
-  closeLocalNode
-  $ \nodes@(n0:_) -> withTmpDirectory $ runProcess' n0 $
-    withScheduler (fst $ random $ mkStdGen s) clockSpeed $ do
+run transport s = withTmpDirectory $
+    withScheduler (fst $ random $ mkStdGen s) clockSpeed 2
+      transport remoteTables $ \others -> do
+    here <- getSelfNode
     let tries = length nodes
-    forM_ nodes $ \n -> spawn (localNodeId n)
+        nodes = here : map localNodeId others
+    forM_ nodes $ \n -> spawn n
                               $(mkStaticClosure 'snapshotServer)
     Log.new $(mkStatic 'State.commandEqDict)
             ($(mkStatic 'State.commandSerializableDict)
                `staticApply` sdictState)
             (staticClosure $(mkStatic 'testConfig))
             (staticClosure $(mkStatic 'testLog))
-            (map localNodeId nodes)
+            nodes
     h <- Log.spawnReplicas testLogId
                            $(mkStaticClosure 'testPersistDirectory)
-                           (map localNodeId nodes)
+                           nodes
     rHandle <- remoteHandle h
     self <- getSelfPid
     let xs = [1..tries]
