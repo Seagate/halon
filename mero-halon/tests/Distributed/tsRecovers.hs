@@ -110,7 +110,7 @@ main = (>>= maybe (error "test timed out") return) $
                      )
       let tsNodes = [nid0, nid1]
       expectLog tsNodes $ isInfixOf $ "New node contacted: nid://" ++ m2loc
-      expectLog [nid2] (isInfixOf "Got UpdateEQNodes")
+      expectLog [nid2] (isInfixOf "Node succesfully joined the cluster.")
 
       say "Starting ping service ..."
       systemThere [m0] $ "./halonctl"

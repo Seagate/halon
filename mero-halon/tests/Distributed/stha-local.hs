@@ -116,7 +116,7 @@ main =
                      ++ " -t " ++ m0loc)
       say "Started satellite nodes."
       expectLog [nid0] (isInfixOf $ "New node contacted: nid://" ++ m0loc)
-      expectLog [nid0] (isInfixOf "Got UpdateEQNodes")
+      expectLog [nid0] (isInfixOf "Node succesfully joined the cluster.")
 
       say "Starting mero service ..."
       systemLocal (halonctl ++ " -l " ++ hctlloc ++ " -a " ++ m0loc ++
