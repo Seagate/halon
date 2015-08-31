@@ -46,7 +46,7 @@ import HA.Services.Monitor.Types
 spawnHeartbeatProcess :: Process ()
 spawnHeartbeatProcess = do
     self <- getSelfPid
-    _    <- spawnLocal $ heartbeatProcess self
+    _    <- spawnLocal $ link self >> heartbeatProcess self
     return ()
 
 monitorProcess :: MonitorType -> Processes -> Process ()
