@@ -502,7 +502,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                   }
         Unmonitor ref -> do
             go st { stateMonitors = Map.filter (not . null)
-                                  $ Map.map (filter ((ref ==) . fst)) monitors
+                                  $ Map.map (filter ((ref /=) . fst)) monitors
                   }
         Unlink who whom -> do
             let upd xs =

@@ -263,6 +263,9 @@ registerTest = do
     say' "main: terminating s0"
     () <- expect
     ref <- monitor s1
+    do ref0 <- monitor s1
+       -- Test that unmonitoring ref0 does not invalidate ref.
+       unmonitor ref0
     exit s0 "terminate"
     ProcessMonitorNotification ref' s1' DiedNormal <- expect
     True <- return $ ref == ref'
