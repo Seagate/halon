@@ -147,7 +147,7 @@ cmdHandler statusHandler responseChan msg = case decode (msgBody msg) of
   Just cr -> do
     when (isJust . commandRequestMessageServiceRequest
                  . commandRequestMessage $ cr) $ do
-      promulgate cr
+      _ <- promulgate cr
       let (CommandRequestMessage _ _ _ msgId) = commandRequestMessage cr
       uuid <- liftIO nextRandom
       sendChan responseChan $ CommandResponseMessage

@@ -13,7 +13,6 @@
 module HA.Resources where
 
 import Control.Distributed.Process
-import Control.Distributed.Process.Closure
 import Data.Binary
 import Data.ByteString (ByteString)
 import Data.Function (on)
@@ -21,7 +20,6 @@ import Data.Hashable (Hashable(..))
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
-import HA.ResourceGraph
 import HA.Resources.TH
 
 --------------------------------------------------------------------------------
