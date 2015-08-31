@@ -174,7 +174,7 @@ CLEAN := $(patsubst %,%_clean,$(PACKAGES))
 $(CLEAN):
 	-cd $(patsubst %_clean, %, $@) && $(SUDO) cabal clean
 	-cabal sandbox hc-pkg -- unregister $(patsubst %_clean, %, $@) --force
-clean: $(CLEAN)
+clean: clean_tixmix $(CLEAN)
 depclean:
 	rm -rf .cabal-sandbox
 	rm -f cabal.sandbox.config
