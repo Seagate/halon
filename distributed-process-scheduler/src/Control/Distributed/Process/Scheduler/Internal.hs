@@ -894,9 +894,9 @@ receiveTimeout us =
 receiveTimeoutM :: Maybe Int -> [ Match b ] -> Process (Maybe b)
 receiveTimeoutM mus ms = do
     r <- DP.liftIO $ newIORef False
-    go r $ map (flip unMatch $ Just r) ms
+    go r mus $ map (flip unMatch $ Just r) ms
   where
-    go r ms' = do
+    go r mts ms' = do
       self <- DP.getSelfPid
       void $ DP.receiveTimeout 0 ms'
       hasMsg <- DP.liftIO $ readIORef r
@@ -905,10 +905,10 @@ receiveTimeoutM mus ms = do
         Continue <- DP.expect
         DP.receiveTimeout 0 $ map (flip unMatch Nothing) ms
       else do
-        sendS (Block self mus)
+        sendS (Block self mts)
         command <- DP.expect
         case command of
-          Continue -> go r ms'
+          Continue -> go r Nothing ms'
           Timeout  -> return Nothing
 
 -- | Shorthand for @receiveWait [ match return ]@
