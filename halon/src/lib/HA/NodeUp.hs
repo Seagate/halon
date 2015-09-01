@@ -35,11 +35,6 @@ import Control.Distributed.Process
   , expect
   , say
   , processNodeId
-  , monitor
-  , kill
-  , ProcessMonitorNotification(..)
-  , receiveTimeout
-  , matchIf
   )
 import Control.Distributed.Process.Closure ( remotable )
 import Control.Monad.Trans (liftIO)
@@ -67,21 +62,13 @@ nodeUp :: ( [NodeId] -- ^ Set of EQ nodes to contact
           , Int -- ^ Interval between sending messages (ms)
           )
        -> Process ()
-nodeUp (eqs, delay) = do
+nodeUp (eqs, _delay) = do
     self <- getSelfPid
     nsend EQT.name (self, UpdateEQNodes eqs)
-    go self
-  where
-    go pid = do
-      say $ "Sending NodeUp message to " ++ show eqs ++ " me -> " ++ (show $ processNodeId pid)
-      h <- liftIO $ getHostName
-      sender <- promulgate $ NodeUp h pid
-      ref <- monitor sender
-      msg <- receiveTimeout delay
-                [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref' == ref)
-                          (\_ -> return ()) ]
-      case msg of
-        Nothing -> kill sender "starting new promulgate action" >> go pid
-        Just _  -> expect
+    say $ "Sending NodeUp message to " ++ show eqs ++ " me -> " ++ (show $ processNodeId self)
+    h <- liftIO $ getHostName
+    _ <- promulgate $ NodeUp h self
+    expect :: Process ()
+    say "Node succesfully joined the cluster."
 
 remotable ['nodeUp]

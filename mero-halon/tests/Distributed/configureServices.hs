@@ -99,7 +99,7 @@ main =
                      ++ " -t " ++ m0loc ++ " 2>&1")
       expectLog [nid0] (isInfixOf $ "New node contacted: nid://" ++ m0loc)
       expectLog [nid0] (isInfixOf $ "New node contacted: nid://" ++ m1loc)
-      expectLog [nid0, nid1] (isInfixOf "Got UpdateEQNodes")
+      expectLog [nid0, nid1] (isInfixOf "Node succesfully joined the cluster.")
 
       say "Starting dummy service ..."
       systemThere [m0] ("./halonctl"

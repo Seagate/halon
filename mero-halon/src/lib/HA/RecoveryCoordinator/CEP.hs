@@ -217,11 +217,12 @@ rcRules argv eq = do
       ph0 <- phaseHandle "pre-request"
       ph1 <- phaseHandle "start-request"
       ph1' <- phaseHandle "service-failed"
+      ph2' <- phaseHandle "service-started"
       ph2 <- phaseHandle "start-success"
       ph3 <- phaseHandle "start-failed"
       ph4 <- phaseHandle "start-failed-totally"
 
-      directly ph0 $ switch [ph1, ph1']
+      directly ph0 $ switch [ph1, ph1', ph2']
 
       setPhaseIf ph1 notHandled $ \evt@(HAEvent _ msg _) -> do
         ServiceStartRequest sstart n@(Node nid) svc conf <- decodeMsg msg
@@ -255,6 +256,37 @@ rcRules argv eq = do
             bounceServiceTo Current n svc
             switch [ph2, ph3]
           _ -> return ()
+
+      -- It may be possible that previous invocation of RC was killed during
+      -- service start, then it's perfectly ok to receive ServiceStarted
+      -- message outside of the ServiceStart procedure. In this case the
+      -- best we could do is to consult resource graph and check if we need
+      -- this service running or not and proceed evaluation.
+      setPhaseIf ph2' notHandled $ \evt@(HAEvent _ msg _) -> do
+        ServiceStarted n@(Node nodeId) svc cfg sp <- decodeMsg msg
+        known <- knownResource n
+        if known
+           then do
+            res <- lookupRunningService n svc
+            case res of
+              Just sp' -> unregisterServiceProcess n svc sp'
+              Nothing  -> registerServiceName svc
+            registerServiceProcess n svc cfg sp
+            let vitalService = serviceName regularMonitor == serviceName svc
+            if vitalService
+              then do sendToMasterMonitor msg
+                      liftProcess $ do
+                        nsendRemote nodeId EQT.name (nullProcessId nodeId, UpdateEQNodes (stationNodes argv))
+              else sendToMonitor n msg
+            handled eq evt
+            phaseLog "started" ("Service "
+                                ++ (snString . serviceName $ svc)
+                                ++ " started"
+                               )
+            liftProcess $ sayRC $
+              "started " ++ snString (serviceName svc) ++ " service"
+          else handled eq evt
+
 
       setPhaseIf ph2 serviceStarted $ \evt@(HAEvent _ msg _) -> do
         ServiceStarted n@(Node nodeId) svc cfg sp <- decodeMsg msg

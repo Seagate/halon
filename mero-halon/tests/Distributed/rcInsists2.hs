@@ -107,7 +107,8 @@ main =
                      ++ " bootstrap satellite"
                      ++ " -t " ++ m0loc)
       expectLog [nid0] (isInfixOf $ "New node contacted: nid://" ++ m1loc)
-      expectLog [nid1] (isInfixOf "Got UpdateEQNodes")
+      expectLog [nid1] (isInfixOf "Node succesfully joined the cluster.")
+
 
       say "Starting dummy service ..."
       systemThere [m0] ("./halonctl"
