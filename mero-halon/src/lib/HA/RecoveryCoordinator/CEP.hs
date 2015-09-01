@@ -162,13 +162,12 @@ rcRules argv eq = do
             registerNode node
             registerHost host
             locateNodeOnHost node host
-            handled eq evt
             fork NoBuffer $ do
               put Local (Starting nid conf regularMonitor pid)
               continue nm_start
+            handled eq evt
             continue nodeup
           else do
-            handled eq evt
             msp  <- lookupRunningService (Node nid) regularMonitor
             case msp of
               Nothing ->
@@ -176,6 +175,7 @@ rcRules argv eq = do
                   put Local (Starting nid conf regularMonitor pid)
                   continue nm_start
               Just _  -> ack pid
+            handled eq evt
             continue nodeup
 
       directly nm_start $ do
@@ -194,17 +194,17 @@ rcRules argv eq = do
         Starting _ _ _ npid <- get Local
         registerServiceName svc
         registerServiceProcess n svc cfg sp
-        handled eq evt
         sendToMasterMonitor msg
         ack npid
+        handled eq evt
         continue end
 
       setPhaseIf nm_failed serviceBootCouldNotStart $
           \evt@(HAEvent _ msg _) -> do
-        handled eq evt
         ServiceCouldNotStart n svc _ <- decodeMsg msg
         liftProcess $ sayRC $
           "failed " ++ snString (serviceName svc) ++ " service on the node " ++ show n
+        handled eq evt
         continue end
 
       directly end stop
@@ -225,7 +225,6 @@ rcRules argv eq = do
 
       setPhaseIf ph1 notHandled $ \evt@(HAEvent _ msg _) -> do
         ServiceStartRequest sstart n@(Node nid) svc conf <- decodeMsg msg
-        handled eq evt
 
         -- Store the service start request, and the failed retry count
         put Local $ Just (n, serviceName svc, 0 :: Int)
@@ -234,6 +233,7 @@ rcRules argv eq = do
         msp   <- lookupRunningService n svc
 
         registerService svc
+        handled eq evt
         case (known, msp, sstart) of
           (True, Nothing, HA.Service.Start) -> do
             startService nid svc conf
@@ -247,18 +247,17 @@ rcRules argv eq = do
       setPhaseIf ph1' notHandled $ \evt@(HAEvent _ msg _) -> do
         ServiceFailed n svc pid <- decodeMsg msg
         res                     <- lookupRunningService n svc
-        handled eq evt
         case res of
           Just (ServiceProcess spid) | spid == pid -> do
             -- Store the service failed message, and the failed retry count
             put Local $ Just (n, serviceName svc, 0)
             bounceServiceTo Current n svc
+            handled eq evt
             switch [ph2, ph3]
           _ -> return ()
 
       setPhaseIf ph2 serviceStarted $ \evt@(HAEvent _ msg _) -> do
         ServiceStarted n@(Node nodeId) svc cfg sp <- decodeMsg msg
-        handled eq evt
         res <- lookupRunningService n svc
         case res of
           Just sp' -> unregisterServiceProcess n svc sp'
@@ -274,6 +273,7 @@ rcRules argv eq = do
                     nsendRemote nodeId EQT.name (nullProcessId nodeId, UpdateEQNodes (stationNodes argv))
           else sendToMonitor n msg
 
+        handled eq evt
         phaseLog "started" ("Service "
                             ++ (snString . serviceName $ svc)
                             ++ " started"
