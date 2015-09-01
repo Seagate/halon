@@ -153,6 +153,7 @@ export TEST_LISTEN
 ci: cabal.config build
 	./scripts/check-copyright.sh
 
+.PHONY: clean_tixmix
 clean_tixmix:
 	- find -name \*.mix -delete 2>/dev/null
 	- find -name \*.tix -delete 2>/dev/null
@@ -215,6 +216,6 @@ rpm: build
 	rpmbuild --define "_topdir ${PWD}/rpmbuild" -ba rpmbuild/SPECS/halon.spec
 
 .PHONY: coverage
-coverage: build
+coverage:
 	rm -rf coverage
 	bash run-coverage.sh
