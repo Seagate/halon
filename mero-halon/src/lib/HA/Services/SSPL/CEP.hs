@@ -239,7 +239,7 @@ ssplRulesF sspl = do
       in do
         (Node actuationNode) <- fmap head
             $ findHosts ".*"
-          >>= filterM (hasHostStatusFlag HS_POWERED)
+          >>= filterM (hasHostAttr HA_POWERED)
           >>= mapM nodesOnHost
           >>= return . join
           >>= filterM (\a -> isServiceRunning a sspl)
