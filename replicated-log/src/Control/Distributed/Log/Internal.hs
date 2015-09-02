@@ -696,8 +696,8 @@ replica Dict
                      link self
                      result <- runPropose'
                                  (prl_propose (sendAcceptor logId) αs d v) s
-                     liftIO $ putMVar mv result
-                     usend self ()
+                     ok <- liftIO $ tryPutMVar mv result
+                     when ok $ usend self ()
             let -- After this call the mailbox is guaranteed to be free of @()@
                 -- notifications from the worker.
                 --
