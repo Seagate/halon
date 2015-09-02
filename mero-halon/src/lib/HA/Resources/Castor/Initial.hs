@@ -116,6 +116,9 @@ data M0Host = M0Host {
   , m0h_devices :: [M0Device]
 } deriving (Eq, Data, Generic, Show, Typeable)
 
+instance Binary M0Host
+instance Hashable M0Host
+
 data M0Service = M0Service {
     m0s_type :: String -- ^ e.g. ioservice, haservice
   , m0s_endpoints :: [String]

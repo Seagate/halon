@@ -59,12 +59,17 @@ module Mero.Conf.Obj
 import Mero.Conf.Context
 import Mero.Conf.Fid
 
+import Data.Binary ( Binary )
+import Data.Data ( Data )
+import Data.Hashable ( Hashable )
 import Data.Word ( Word32, Word64 )
+import Data.Typeable ( Typeable )
 import Foreign.C.String ( CString, peekCString )
 import Foreign.C.Types ( CInt(..) )
 import Foreign.Marshal.Array ( advancePtr, peekArray )
 import Foreign.Ptr ( Ptr, nullPtr, plusPtr )
 import Foreign.Storable ( Storable(..) )
+import GHC.Generics (Generic)
 import System.IO.Unsafe ( unsafePerformIO )
 
 --------------------------------------------------------------------------------
@@ -309,7 +314,10 @@ data ServiceParams =
     | SPADDBStobFid !Fid
     | SPConfDBPath String
     | SPUnused
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, Data, Typeable)
+
+instance Binary ServiceParams
+instance Hashable ServiceParams
 
 -- | Representation of `m0_conf_service`.
 data Service = Service

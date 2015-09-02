@@ -15,7 +15,7 @@
 module HA.Resources.Mero.Note where
 
 import HA.Resources
-import HA.Resources.Mero
+import HA.Resources.Castor
 import HA.Resources.TH
 import HA.ResourceGraph
   ( Resource(..)

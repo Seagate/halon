@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TemplateHaskell            #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
@@ -9,12 +10,18 @@ module HA.Resources.Mero
   , CI.M0Globals
   ) where
 
+import HA.Resources
 import HA.Resources.TH
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 
 import Data.Binary (Binary)
+import Data.Data (Data)
 import Data.Hashable (Hashable)
+import Data.Typeable (Typeable)
+import Data.Word ( Word32, Word64 )
+
+import GHC.Generics (Generic)
 
 data M0Host = M0Host {
     m0h_fqdn :: String -- ^ FQDN of host this server is running on
@@ -32,6 +39,7 @@ $(mkDicts
   [ ''CI.M0Globals, ''CI.M0Device, ''M0Host, ''CI.M0Service ]
   [ (''Host, ''Has, ''M0Host)
   , (''M0Host, ''Has, ''CI.M0Service)
+  , (''M0Host, ''Has, ''CI.M0Device)
   , (''Cluster, ''Has, ''CI.M0Globals)
   ]
   )
@@ -40,6 +48,7 @@ $(mkResRel
   [ ''CI.M0Globals, ''CI.M0Device, ''M0Host, ''CI.M0Service ]
   [ (''Host, ''Has, ''M0Host)
   , (''M0Host, ''Has, ''CI.M0Service)
+  , (''M0Host, ''Has, ''CI.M0Device)
   , (''Cluster, ''Has, ''CI.M0Globals)
   ]
   []
