@@ -572,7 +572,9 @@ replica Dict
     timerPid <- spawnLocal $ link self >> timer
     leaseStart0' <- setLeaseTimer timerPid timerSP leaseStart0 replicas
     bpid <- spawnLocal $ link self >> batcher (sendBatch self)
-    ppid <- spawnLocal $ link self >> proposer self bpid Bottom replicas
+    ppid <- spawnLocal $ do
+              logTrace "spawned proposer"
+              link self >> proposer self bpid Bottom replicas
 
     go ReplicaState
          { stateProposerPid = ppid
@@ -693,6 +695,7 @@ replica Dict
             -- write the code to handle that case.
             mv <- liftIO newEmptyMVar
             pid <- spawnLocal $ do
+                     logTrace "spawned proposal"
                      link self
                      result <- runPropose'
                                  (prl_propose (sendAcceptor logId) αs d v) s
@@ -1636,6 +1639,8 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
           -- epoch.
           if epoch <= epoch' then do
             unmonitor ref
+            logTrace $ "ambassador: Old epoch changed " ++ show mLeader
+                       ++ ". Trying " ++ show ρ' ++ "."
             monitorReplica ρ' >>= go epoch' (Just ρ') ρs'
           else do
             when (isNothing mLeader) $ do
@@ -1646,7 +1651,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
               getSelfPid >>= sendReplica logId ρ''
             go epoch mLeader ρs ref
 
-      , match $ \(ProcessMonitorNotification ref' _ _) -> do
+      , match $ \(ProcessMonitorNotification ref' pid _) -> do
           if ref == ref' then do
             -- Give some time to other replicas to elect a leader.
             liftIO $ threadDelay leaseTimeout
@@ -1654,6 +1659,8 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
             -- are no more replicas.
             let ρ : ρss = maybe ρs (: ρs) mLeader
                 ρs'@(ρ' : _) = ρss ++ [ρ]
+            logTrace $ "ambassador: Replica disconnected or died " ++ show pid
+                       ++ ". Trying " ++ show ρ' ++ "."
             ref'' <- monitorReplica ρ'
             -- Ask the head replica for the new leader.
             getSelfPid >>= sendReplica logId ρ'
