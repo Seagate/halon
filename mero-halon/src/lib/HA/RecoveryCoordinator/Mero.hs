@@ -167,6 +167,8 @@ rcInitRule argv eq = do
 
     setPhaseIf mm_started (waitServiceToStart masterMonitor) $ \evt -> do
       handled eq evt
+      ServiceStarted _ _ _ (ServiceProcess mpid) <- decodeMsg (eventPayload evt)
+      liftProcess $ link mpid
       continue mm_conf
 
     setPhase mm_conf $
