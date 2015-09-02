@@ -79,7 +79,8 @@ Library
                    HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
-                   HA.Resources.Mero
+                   HA.Resources.Castor
+                   HA.Resources.Castor.Initial
 
   Other-Modules:   HA.RecoveryCoordinator.Actions.Core
                    HA.RecoveryCoordinator.Actions.Hardware

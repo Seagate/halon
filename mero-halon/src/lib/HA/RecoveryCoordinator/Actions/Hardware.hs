@@ -39,7 +39,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Core
 import qualified HA.ResourceGraph as G
 import HA.Resources
-import HA.Resources.Mero
+import HA.Resources.Castor
 
 import Control.Category ((>>>))
 import Control.Distributed.Process (liftIO)
@@ -213,10 +213,11 @@ findBMCAddress :: Host
 findBMCAddress host = do
     phaseLog "rg-query" $ "Getting BMC address for host " ++ show host
     g <- getLocalGraph
-    return . listToMaybe . fmap unIf $ G.connectedTo host Has g
-  where
-    unIf (Interface a) = a
-
+    return . listToMaybe $
+      [ bmc_addr bmc
+      | (enc :: Enclosure) <- G.connectedFrom Has host g
+      , bmc <- G.connectedTo enc Has g
+      ]
 
 ----------------------------------------------------------
 -- Drive related functions                              --

@@ -25,7 +25,7 @@ import           HA.NodeAgent.Messages
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
 import           HA.Resources
-import           HA.Resources.Mero
+import           HA.Resources.Castor
 import           HA.Service
 import qualified HA.EQTracker as EQT
 #ifdef USE_MERO

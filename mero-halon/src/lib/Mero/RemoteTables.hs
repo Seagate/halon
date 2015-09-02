@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 module Mero.RemoteTables (meroRemoteTable) where
 
-import HA.Resources.Mero(__remoteTable)
+import HA.Resources.Castor(__remoteTable)
 #ifdef USE_MERO
 import HA.Resources.Mero.Note ( __remoteTable )
 import HA.Services.Mero ( __remoteTable, __remoteTableDecl )
@@ -23,7 +23,7 @@ import Control.Distributed.Process (RemoteTable)
 
 meroRemoteTable :: RemoteTable -> RemoteTable
 meroRemoteTable next =
-   HA.Resources.Mero.__remoteTable $
+   HA.Resources.Castor.__remoteTable $
 #ifdef USE_MERO
    HA.Resources.Mero.Note.__remoteTable $
    HA.Services.Mero.__remoteTableDecl $

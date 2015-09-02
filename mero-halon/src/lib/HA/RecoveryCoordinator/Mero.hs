@@ -53,7 +53,7 @@ import Prelude hiding ((.), id, mapM_)
 import HA.EventQueue.Types (HAEvent(..))
 import HA.NodeAgent.Messages
 import HA.Resources
-import HA.Resources.Mero (Host(..))
+import HA.Resources.Castor (Host(..))
 import HA.Service
 import HA.Services.DecisionLog
 import HA.Services.Monitor
