@@ -151,7 +151,7 @@ remoteTables =
   State.__remoteTable $
   Control.Distributed.Process.Node.initRemoteTable
 
-tests :: [String] -> IO TestTree
+tests :: [String] -> IO [TestTree]
 tests argv = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
@@ -698,7 +698,7 @@ tests argv = do
                    say "Incremented state from disk."
             ]
 
-    return $ testGroup "replicated-log" [ut]
+    return [ut]
 
 withLocalNodes :: Int -> Transport -> RemoteTable -> ([LocalNode] -> IO a)
                -> IO a

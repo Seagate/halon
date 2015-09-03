@@ -5,12 +5,15 @@
 import Test (tests)
 
 import Test.Driver
+import Test.Tasty (testGroup)
 import Test.Tasty.Environment
 
 main :: IO ()
 main = do
    (testArgs, runnerArgs) <- parseArgs
-   let runWithArgs t r = defaultMainWithArgs tests (testArgs `orDefault` t) (runnerArgs `orDefault` r)
+   let runWithArgs t r =
+         defaultMainWithArgs (fmap (testGroup "replicated-log") . tests)
+                             (testArgs `orDefault` t) (runnerArgs `orDefault` r)
    runWithArgs [] ["--tcp-transport"]
    runWithArgs [] [] -- in memory transport
 

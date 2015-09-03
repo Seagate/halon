@@ -102,6 +102,7 @@ Test-Suite tests
                     random,
                     rank1dynamic >= 0.1,
                     replicated-log,
+                    tasty,
                     unix
   Default-Extensions: DeriveDataTypeable
                       DeriveGeneric
@@ -141,6 +142,7 @@ Test-Suite tests-scheduler
                     random,
                     rank1dynamic >= 0.1,
                     replicated-log,
+                    tasty,
                     unix
   Default-Extensions: DeriveDataTypeable
                       DeriveGeneric

@@ -5,6 +5,7 @@
 import Test (tests)
 
 import Test.Driver
+import Test.Tasty (testGroup)
 import Test.Tasty.Environment
 
 import Control.Distributed.Process.Scheduler
@@ -16,6 +17,11 @@ main = do
    setEnv "DP_SCHEDULER_ENABLED" "1" True
    (testArgs, runnerArgs) <- parseArgs
    if schedulerIsEnabled then
-     defaultMainWithArgs tests testArgs runnerArgs
+     defaultMainWithArgs
+       (fmap ( testGroup "replicated-log"
+             . (: []) . testGroup "scheduler") . tests
+             )
+       testArgs
+       runnerArgs
    else
      error "The scheduler is not enabled."
