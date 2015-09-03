@@ -53,7 +53,7 @@ tests launch =
   ]
 
 testsGlobal :: (Process () -> IO ()) -> TestTree
-testsGlobal launch = localOption (mkTimeout 500000) $ testGroup "State"
+testsGlobal launch = testGroup "State"
   [ testCase "Global state is updated"  $ launch globalUpdated
   , testCase "Global state is observable by all state machines" $ launch globalIsGlobal
   , testCase "Local state is updated" $ launch localUpdated
@@ -137,7 +137,7 @@ localUpdated = do
     assert $ i == 2
 
 testsSwitch :: (Process () -> IO ()) -> TestTree
-testsSwitch launch = localOption (mkTimeout 500000) $ testGroup "Switch"
+testsSwitch launch = testGroup "Switch"
   [ testCase "Switching is working" $ launch switchIsWorking
   , testCase "Switch execute one rule" $ launch switchTerminate
   , testCase "Call continue in switch"  $ launch switchContinue
@@ -414,7 +414,7 @@ sequenceDoNotLoseMessages = do
     assertEqual "events are handled in order" 10 . unFoo =<< expect
 
 testsFork :: (Process () -> IO ()) -> TestTree
-testsFork launch = localOption (mkTimeout 500000) $ testGroup "Fork"
+testsFork launch = testGroup "Fork"
   [ testCase "Peek shift is working" $ launch forkIsWorking
   , testCase "Fork copies local state" $ launch forkCopyLocalState
   , testCase "Fork copies curent buffer" $ launch forkCopyLocalBuffer
@@ -679,18 +679,15 @@ forkIncrSMs = do
 testsExecution :: (Process () -> IO ()) -> TestTree
 testsExecution launch = testGroup "Execution properties"
   [ -- localOption (mkTimeout 500000) $ testCase "Loop do not prevent cep from working" $ launch loopWorks
-    localOption (mkTimeout 500000) $ HU.testCaseSteps "Parallel rule execution"
+    HU.testCaseSteps "Parallel rule execution"
                                    $ launch . testSequenceRules
-  , localOption (mkTimeout 500000) $ testCase "State machine runs to the end with helper"
+  , testCase "State machine runs to the end with helper"
                                    $ launch $ testConsumption 2
-  , localOption (mkTimeout 500000) $ testCase "State machine runs to the end with another rule"
+  , testCase "State machine runs to the end with another rule"
                                    $ launch $ testConsumption 1
-  , localOption (mkTimeout 500000) $ testCase "State machine runs to the end"
-                                   $ launch $ testConsumption 0
-  , localOption (mkTimeout 500000) $ testCase "Direct rule is always executed"
-                                   $ launch $ testConsumptionDirect
-  , localOption (mkTimeout 500000) $ testCase "Stop works"
-                                   $ launch $ testStopWorks
+  , testCase "State machine runs to the end" $ launch $ testConsumption 0
+  , testCase "Direct rule is always executed" $ launch $ testConsumptionDirect
+  , testCase "Stop works" $ launch $ testStopWorks
   ]
 
 testStopWorks :: Process ()
@@ -820,9 +817,7 @@ testConsumptionDirect = do
 
 testSubscriptions :: (Process () -> IO ()) -> TestTree
 testSubscriptions launch = testGroup "Subscription properties"
-    [ localOption (mkTimeout 500000) $ testCase "CEP should forward events"
-                                     $ launch testSimpleSub
-    ]
+    [ testCase "CEP should forward events" $ launch testSimpleSub ]
 
 testSimpleSub :: Process ()
 testSimpleSub = do

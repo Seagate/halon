@@ -84,7 +84,7 @@ import           Control.Monad
 import           Data.Dynamic
 import           Data.Foldable (for_)
 
-import           Control.Distributed.Process hiding (call)
+import           Control.Distributed.Process
 import           Control.Distributed.Process.Internal.Types
 import           Control.Distributed.Process.Serializable
 import           Control.Monad.Operational
