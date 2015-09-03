@@ -74,6 +74,9 @@ module Control.Distributed.Process
   , mask_
   , try
   , onException
+  , Message
+  , wrapMessage
+  , unwrapMessage
   )  where
 
 import Control.Distributed.Process.Scheduler.Internal
