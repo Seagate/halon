@@ -12,6 +12,7 @@ module HA.Resources.Castor.Initial where
 import Mero.ConfC (ServiceParams)
 #endif
 
+import Data.Aeson
 import Data.Binary (Binary)
 import Data.Data
 import Data.Hashable (Hashable)
@@ -29,6 +30,7 @@ data Network = Data | Management | Local
 
 instance Binary Network
 instance Hashable Network
+instance FromJSON Network
 
 data Interface = Interface {
     if_macAddress :: String
@@ -38,6 +40,7 @@ data Interface = Interface {
 
 instance Binary Interface
 instance Hashable Interface
+instance FromJSON Interface
 
 data Host = Host {
     h_fqdn :: String
@@ -48,6 +51,7 @@ data Host = Host {
 
 instance Binary Host
 instance Hashable Host
+instance FromJSON Host
 
 data BMC = BMC {
     bmc_addr :: String
@@ -57,6 +61,7 @@ data BMC = BMC {
 
 instance Binary BMC
 instance Hashable BMC
+instance FromJSON BMC
 
 data Enclosure = Enclosure {
     enc_idx :: Int
@@ -67,6 +72,7 @@ data Enclosure = Enclosure {
 
 instance Binary Enclosure
 instance Hashable Enclosure
+instance FromJSON Enclosure
 
 data Rack = Rack {
     rack_idx :: Int
@@ -75,6 +81,7 @@ data Rack = Rack {
 
 instance Binary Rack
 instance Hashable Rack
+instance FromJSON Rack
 
 #ifdef USE_MERO
 
@@ -93,6 +100,7 @@ data M0Globals = M0Globals {
 
 instance Binary M0Globals
 instance Hashable M0Globals
+instance FromJSON M0Globals
 
 data M0Device = M0Device {
     m0d_wwn :: String
@@ -103,6 +111,7 @@ data M0Device = M0Device {
 
 instance Binary M0Device
 instance Hashable M0Device
+instance FromJSON M0Device
 
 data M0Host = M0Host {
     m0h_fqdn :: String -- ^ FQDN of host this server is running on
@@ -118,6 +127,7 @@ data M0Host = M0Host {
 
 instance Binary M0Host
 instance Hashable M0Host
+instance FromJSON M0Host
 
 data M0Service = M0Service {
     m0s_type :: String -- ^ e.g. ioservice, haservice
@@ -125,8 +135,11 @@ data M0Service = M0Service {
   , m0s_params :: ServiceParams
 } deriving (Eq, Data, Generic, Show, Typeable)
 
+instance FromJSON ServiceParams
+
 instance Binary M0Service
 instance Hashable M0Service
+instance FromJSON M0Service
 
 #endif
 
@@ -140,3 +153,4 @@ data InitialData = InitialData {
 
 instance Binary InitialData
 instance Hashable InitialData
+instance FromJSON InitialData

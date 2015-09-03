@@ -180,8 +180,10 @@ Executable halonctl
       CPP-Options:    -DUSE_RPC
   Build-Depends:      halon,
                       mero-halon,
+                      aeson,
                       base >= 4.5,
                       binary,
+                      bytestring,
                       distributed-process >= 0.4,
                       distributed-static,
                       filepath >= 1.3,
