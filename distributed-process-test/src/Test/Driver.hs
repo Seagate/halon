@@ -12,7 +12,7 @@ module Test.Driver
 
 import Test.Tasty
 import Test.Tasty.Environment (parseArgs)
--- import Test.Tasty.Ingredients.FileReporter
+import Test.Tasty.Ingredients.FileReporter
 import Test.Tasty.Ingredients.Basic
 
 import System.Environment (withArgs)
@@ -44,5 +44,4 @@ defaultMainWithArgs :: ([String] -> IO TestTree)
                     -> IO ()
 defaultMainWithArgs tests runnerArgs testArgs = do
     tests testArgs >>= withArgs runnerArgs .
---      defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
-      defaultMainWithIngredients [consoleTestReporter]
+      defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
