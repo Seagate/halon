@@ -32,7 +32,7 @@ library
                        GeneralizedNewtypeDeriving
                        DeriveGeneric
   build-depends:       base >=4.6 && <5,
-                       distributed-process>=0.5.3,
+                       distributed-process-scheduler,
                        binary==0.7.*,
                        bytestring,
                        mtl,
@@ -59,11 +59,10 @@ Test-Suite unit-tests
     Ghc-Options: -Werror
 
   Build-Depends: base,
-                 distributed-process,
                  mtl,
                  network-transport,
                  network-transport-tcp,
-                 distributed-process,
+                 distributed-process-scheduler,
                  cep,
                  binary,
                  containers,
@@ -72,3 +71,28 @@ Test-Suite unit-tests
                  tasty,
                  tasty-hunit,
                  tasty-files
+
+Test-Suite unit-tests-scheduler
+  Type: exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs: tests
+  Main-Is: unit-tests-scheduler.hs
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  Build-Depends: base,
+                 mtl,
+                 network-transport-inmemory,
+                 distributed-process-scheduler,
+                 cep,
+                 binary,
+                 containers,
+                 netwire,
+                 random,
+                 tasty,
+                 tasty-hunit,
+                 tasty-files,
+                 unix

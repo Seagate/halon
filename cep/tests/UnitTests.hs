@@ -11,14 +11,19 @@ import qualified CEP.Settings.Tests (tests)
 
 import Tests as Tests
 
+import System.Timeout
+
+
 ut :: IO TestTree
 ut = do
     t <- either throwIO return =<<
          createTransport "127.0.0.1" "4000" defaultTCPParameters
 
-    let launch action = do
-          n <- newLocalNode t initRemoteTable
-          runProcess n action
+    let launch action =
+          (>>= maybe (error "Timeout") return) $ timeout 10000000 $
+            bracket (newLocalNode t initRemoteTable)
+                    closeLocalNode $
+                    flip runProcess action
         grp = testGroup "CEP - Unit tests" $
               CEP.Settings.Tests.tests launch:Tests.tests launch
 
