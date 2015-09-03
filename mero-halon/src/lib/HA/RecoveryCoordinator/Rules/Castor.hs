@@ -17,7 +17,7 @@ import qualified HA.Resources.Castor.Initial as CI
 #ifdef USE_MERO
 import HA.Resources
 import qualified HA.ResourceGraph as G
-import HA.Services.Mero.CEP (loadMeroServers)
+import HA.RecoveryCoordinator.Rules.Mero (loadMeroServers)
 #endif
 
 import Network.CEP

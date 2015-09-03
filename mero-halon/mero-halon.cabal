@@ -137,6 +137,7 @@ Library
                        HA.Services.Mero
       Other-Modules: HA.Services.Mero.CEP
                      HA.Services.Mero.Types
+                     HA.RecoveryCoordinator.Rules.Mero
       cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
       c-sources: hastate/hastate.c
                  hastate/hastate_fops.c
