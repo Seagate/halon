@@ -6,8 +6,13 @@
 {-# LANGUAGE OverloadedStrings          #-}
 
 module HA.RecoveryCoordinator.Actions.Hardware
-  ( -- * Host related functions
-    findHosts
+  ( -- * Infrastructure functions
+    registerRack
+  , registerEnclosure
+  , registerBMC
+  , findBMCAddress
+    -- * Host related functions
+  , findHosts
   , findHostEnclosure
   , findNodeHost
   , locateHostInEnclosure
@@ -22,7 +27,6 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , findHostAttrs
     -- * Interface related functions
   , registerInterface
-  , findBMCAddress
     -- * Drive related functions
   , driveStatus
   , findEnclosureStorageDevices
@@ -50,6 +54,56 @@ import Data.UUID.V4 (nextRandom)
 import Network.CEP
 
 import Text.Regex.TDFA ((=~))
+
+-- | Register a new rack in the system.
+registerRack :: Rack
+             -> PhaseM LoopState l ()
+registerRack rack = modifyLocalGraph $ \rg -> do
+  phaseLog "rg" $ "Registering rack: "
+              ++ show rack
+
+  let rg' = G.newResource rack
+        >>> G.connect Cluster Has rack
+          $ rg
+  return rg'
+
+registerEnclosure :: Rack
+                  -> Enclosure
+                  -> PhaseM LoopState l ()
+registerEnclosure rack enc = modifyLocalGraph $ \rg -> do
+  phaseLog "rg" $ unwords
+                  [ "Registering enclosure", show enc
+                  , "in rack", show rack
+                  ]
+  return  $ G.newResource enc
+        >>> G.connect rack Has enc
+          $ rg
+
+registerBMC :: Enclosure
+            -> BMC
+            -> PhaseM LoopState l ()
+registerBMC enc bmc = modifyLocalGraph $ \rg -> do
+  phaseLog "rg" $ unwords
+                  [ "Registering BMC", show bmc
+                  , "for enclosure", show enc
+                  ]
+
+  let rg' = G.newResource bmc
+        >>> G.connect enc Has bmc
+          $ rg
+  return rg'
+
+-- | XXX Todo make this identify the address correctly.
+findBMCAddress :: Host
+               -> PhaseM LoopState l (Maybe String)
+findBMCAddress host = do
+    phaseLog "rg-query" $ "Getting BMC address for host " ++ show host
+    g <- getLocalGraph
+    return . listToMaybe $
+      [ bmc_addr bmc
+      | (enc :: Enclosure) <- G.connectedFrom Has host g
+      , bmc <- G.connectedTo enc Has g
+      ]
 
 ----------------------------------------------------------
 -- Host related functions                               --
@@ -206,18 +260,6 @@ registerInterface host int = modifyLocalGraph $ \rg -> do
         >>> G.connect host Has int
           $ rg
   return rg'
-
--- | XXX Todo make this identify the address correctly.
-findBMCAddress :: Host
-               -> PhaseM LoopState l (Maybe String)
-findBMCAddress host = do
-    phaseLog "rg-query" $ "Getting BMC address for host " ++ show host
-    g <- getLocalGraph
-    return . listToMaybe $
-      [ bmc_addr bmc
-      | (enc :: Enclosure) <- G.connectedFrom Has host g
-      , bmc <- G.connectedTo enc Has g
-      ]
 
 ----------------------------------------------------------
 -- Drive related functions                              --

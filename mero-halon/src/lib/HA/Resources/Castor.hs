@@ -111,11 +111,13 @@ instance Hashable Is
 -- XXX Only nodes and services have runtime information attached to them, for now.
 
 $(mkDicts
-  [ ''Host, ''HostAttr, ''DeviceIdentifier
+  [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''MI.BMC
   ]
-  [ (''Cluster, ''Has, ''Host)
+  [ (''Cluster, ''Has, ''Rack)
+  , (''Cluster, ''Has, ''Host)
+  , (''Rack, ''Has, ''Enclosure)
   , (''Host, ''Has, ''MI.Interface)
   , (''Host, ''Has, ''HostAttr)
   , (''Cluster, ''Has, ''Enclosure)
@@ -131,11 +133,13 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''Host, ''HostAttr, ''DeviceIdentifier
+  [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''MI.BMC
   ]
-  [ (''Cluster, ''Has, ''Host)
+  [ (''Cluster, ''Has, ''Rack)
+  , (''Cluster, ''Has, ''Host)
+  , (''Rack, ''Has, ''Enclosure)
   , (''Host, ''Has, ''MI.Interface)
   , (''Host, ''Has, ''HostAttr)
   , (''Cluster, ''Has, ''Enclosure)

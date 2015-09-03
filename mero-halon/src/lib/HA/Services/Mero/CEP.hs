@@ -6,7 +6,10 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 
-module HA.Services.Mero.CEP (meroRulesF) where
+module HA.Services.Mero.CEP
+  ( meroRulesF
+  , loadMeroServers
+  ) where
 
 import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Mero

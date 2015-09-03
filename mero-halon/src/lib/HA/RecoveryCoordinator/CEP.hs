@@ -24,6 +24,7 @@ import           HA.EventQueue.Types
 import           HA.NodeAgent.Messages
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
+import           HA.RecoveryCoordinator.Rules.Castor
 import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Service
@@ -373,6 +374,7 @@ rcRules argv eq = do
 
     setLogger sendLogs
     ssplRules
+    castorRules
 #ifdef USE_MERO
     meroRules
 #endif
