@@ -9,7 +9,7 @@
 module HA.Resources.Castor.Initial where
 
 #ifdef USE_MERO
-import Mero.ConfC (ServiceParams)
+import Mero.ConfC (Fid, ServiceParams)
 #endif
 
 import Data.Aeson
@@ -113,6 +113,9 @@ instance Binary M0Device
 instance Hashable M0Device
 instance FromJSON M0Device
 
+-- | Represents an aggregation of three Mero concepts, which we don't
+--   necessarily need for the castor implementation - nodes, controllers, and
+--   processes.
 data M0Host = M0Host {
     m0h_fqdn :: String -- ^ FQDN of host this server is running on
   , m0h_mem_as :: Word64
@@ -135,6 +138,7 @@ data M0Service = M0Service {
   , m0s_params :: ServiceParams
 } deriving (Eq, Data, Generic, Show, Typeable)
 
+instance FromJSON Fid
 instance FromJSON ServiceParams
 
 instance Binary M0Service

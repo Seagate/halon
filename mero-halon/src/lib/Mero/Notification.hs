@@ -25,7 +25,6 @@ module Mero.Notification
 
 import Control.Distributed.Process
 
-import Mero.M0Worker
 import Mero.ConfC (Fid)
 import Mero.Notification.HAState
 import Mero.M0Worker

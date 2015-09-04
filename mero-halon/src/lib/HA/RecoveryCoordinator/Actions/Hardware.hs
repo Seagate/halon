@@ -196,6 +196,8 @@ hasHostAttr f h = do
   g <- getLocalGraph
   return $ G.isConnected h Has f g
 
+-- | Set an attribute on a host. Note that this will not replace
+--   any existing attributes - that must be done manually.
 setHostAttr :: Host
             -> HostAttr
             -> PhaseM LoopState l ()

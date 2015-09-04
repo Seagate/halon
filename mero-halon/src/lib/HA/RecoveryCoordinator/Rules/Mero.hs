@@ -10,41 +10,166 @@
 
 module HA.RecoveryCoordinator.Rules.Mero where
 
-import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Mero
 import HA.Resources.Castor
+import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Castor.Initial as CI
 import HA.Resources
 import qualified HA.ResourceGraph as G
-import HA.Services.Mero.CEP (loadMeroServers)
+
+import Mero.ConfC (Fid)
 
 import Control.Category (id, (>>>))
+import Control.Distributed.Process (liftIO)
+import Control.Monad (unless)
+
+import Data.List (foldl')
+import Data.Proxy
+import Data.UUID.V4 (nextRandom)
+import Data.Word ( Word64 )
 
 import Network.CEP
 
 import Prelude hiding (id)
 
+-- | Atomically fetch a FID sequence number of increment the sequence count.
+newFidSeq :: PhaseM LoopState l Word64
+newFidSeq = getLocalGraph >>= \rg ->
+    case G.connectedTo Cluster Has rg of
+      ((M0.FidSeq w):_) -> go rg w
+      [] -> go rg 0
+  where
+    go rg w = let
+        w' = w + 1
+        rg' = G.connectUniqueFrom Cluster Has (M0.FidSeq w') $ rg
+      in do
+        putLocalGraph rg'
+        return w'
+
+newFid :: M0.ConfObj a => Proxy a -> PhaseM LoopState l Fid
+newFid p = newFidSeq >>= return . M0.fidInit p 1
+
+loadMeroGlobals :: CI.M0Globals
+                -> PhaseM LoopState l ()
+loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
+
+-- | Load Mero servers (e.g. Nodes, Processes, Services, Drives) into conf
+--   tree.
+--   For each 'M0Host', we add the following:
+--     - A Host (Halon representation)
+--     - A controller (physical host)
+--     - A node (logical host)
+--     - A process (Mero process)
+--   Then we add all drives (storage devices) into the system, involving:
+--     - A @StorageDevice@ (Halon representation)
+--     - A disk (physical device)
+--     - An SDev (logical device)
+--   We then add any relevant services running on this process. If one is
+--   an ioservice (and it should be!), we link the sdevs to the IOService.
 loadMeroServers :: [CI.M0Host]
                 -> PhaseM LoopState l ()
 loadMeroServers = mapM_ goHost where
   goHost CI.M0Host{..} = let
       host = Host m0h_fqdn
-      m0host = M0Host m0h_fqdn m0h_mem_as m0h_mem_rss
-                      m0h_mem_stack m0h_mem_memlock
-                      m0h_cores
+      mkProc fid = M0.Process fid m0h_mem_as m0h_mem_rss
+                              m0h_mem_stack m0h_mem_memlock
+                              m0h_cores
 
     in modifyLocalGraph $ \rg -> do
-      return  $ newResource host
-            >>> newResource m0host
-            >>> connect host Has m0host
-            >>> (foldl' (.) id $ fmap (goSrv m0host) m0h_services)
-            >>> (foldl' (.) id $ fmap (goDev m0host) m0h_devices)
+      ctrl <- M0.Controller <$> newFid (Proxy :: Proxy M0.Controller)
+      node <- M0.Node <$> newFid (Proxy :: Proxy M0.Node)
+      proc <- mkProc <$> newFid (Proxy :: Proxy M0.Process)
+
+      devs <- mapM (goDev host) m0h_devices
+      mapM_ (goSrv proc devs) m0h_services
+
+      return  $ G.newResource host
+            >>> G.newResource ctrl
+            >>> G.newResource node
+            >>> G.newResource proc
+            >>> G.connect Cluster Has host
+            >>> G.connect ctrl M0.At host
+            >>> G.connect node M0.IsOnHardware ctrl
+            >>> G.connect node M0.IsParentOf proc
               $ rg
 
-  goSrv host svc = do
-        newResource svc
-    >>> connect host Has svc
+  goSrv proc devs CI.M0Service{..} = let
+      mkSrv fid = M0.Service fid m0s_type m0s_endpoints m0s_params
+      linkDrives svc = case m0s_type of
+        "ioservice" -> foldl' (.) id
+                    $ fmap (G.connect svc M0.IsParentOf) devs
+        _ -> id
+    in do
+      svc <- mkSrv <$> newFid (Proxy :: Proxy M0.Service)
+      modifyLocalGraph $ return
+                       . (    G.newResource svc
+                          >>> G.connect proc M0.IsParentOf svc
+                          >>> linkDrives svc
+                         )
 
-  goDev host dev = do
-        newResource dev
-    >>> connect host Has dev
+  goDev host CI.M0Device{..} = let
+      mkSDev fid = M0.SDev fid m0d_size m0d_bsize m0d_path
+      devId = DeviceIdentifier "wwn" $ IdentString m0d_wwn
+    in do
+      m0sdev <- mkSDev <$> newFid (Proxy :: Proxy M0.SDev)
+      m0disk <- M0.Disk <$> newFid (Proxy :: Proxy M0.Disk)
+      sdev <- StorageDevice <$> liftIO nextRandom
+      identifyStorageDevice sdev devId
+      locateStorageDeviceOnHost host sdev
+      modifyLocalGraph
+        $ return
+          . (     G.newResource m0sdev
+              >>> G.newResource m0disk
+              >>> G.connect m0sdev M0.IsOnHardware m0disk
+              >>> G.connect m0disk M0.At sdev
+            )
+      return m0sdev
+
+-- | Has the configuration already been initialised?
+confInitialised :: PhaseM LoopState l Bool
+confInitialised = getLocalGraph >>=
+  return . null . (G.connectedTo Cluster Has :: G.Graph -> [M0.Profile])
+
+-- | Initialise a reflection of the Mero configuration in the resource graph.
+--   This does the following:
+--   * Create a single profile, filesystem
+--   * Create Mero rack and enclosure entities reflecting existing
+--     entities in the graph.
+initialiseConfInRG :: PhaseM LoopState l ()
+initialiseConfInRG = unlessM confInitialised $ do
+    rg <- getLocalGraph
+    profile <- M0.Profile <$> newFid (Proxy :: Proxy M0.Profile)
+    fs <- M0.Filesystem <$> newFid (Proxy :: Proxy M0.Profile)
+    modifyLocalGraph $ return
+                     . ( G.connectUniqueFrom Cluster Has profile
+                         >>> G.connectUniqueFrom profile M0.IsParentOf fs
+                       )
+    let re = [ (r, G.connectedTo r Has rg)
+             | r <- G.connectedTo Cluster Has rg
+             ]
+    mapM_ mirrorRack re
+
+  where
+    unlessM foo action = foo >>= flip unless action
+    mirrorRack :: (Rack, [Enclosure]) -> PhaseM LoopState l ()
+    mirrorRack (r, encls) = do
+      m0r <- M0.Rack <$> newFid (Proxy :: Proxy M0.Rack)
+      m0e <- mapM mirrorEncl encls
+      modifyLocalGraph $ return
+                       . (    G.newResource m0r
+                          >>> G.connectUnique m0r M0.At r
+                          >>> ( foldl' (.) id
+                                $ fmap (G.connect m0r M0.IsParentOf) m0e)
+                         )
+    mirrorEncl :: Enclosure -> PhaseM LoopState l M0.Enclosure
+    mirrorEncl r = do
+      m0r <- M0.Enclosure <$> newFid (Proxy :: Proxy M0.Enclosure)
+      modifyLocalGraph $ return
+                       . (G.newResource m0r >>> G.connectUnique m0r M0.At r)
+      return m0r
+
+
+-- | Build an initial confd instance based on info in the resource graph.
+buildConfd :: PhaseM LoopState l ()
+buildConfd = undefined
+

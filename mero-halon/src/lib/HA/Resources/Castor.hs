@@ -89,14 +89,6 @@ newtype StorageDeviceStatus = StorageDeviceStatus String
 -- Relations                                                                  --
 --------------------------------------------------------------------------------
 
--- | The relation between a configuration object and the runtime resource
--- representing it.
-data At = At
-    deriving (Eq, Show, Generic, Typeable)
-
-instance Binary At
-instance Hashable At
-
 -- | The relation between a configuration object and its state marker.
 data Is = Is
     deriving (Eq, Show, Generic, Typeable)

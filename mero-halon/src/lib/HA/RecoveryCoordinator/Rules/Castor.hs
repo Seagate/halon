@@ -15,9 +15,7 @@ import HA.RecoveryCoordinator.Mero
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 #ifdef USE_MERO
-import HA.Resources
-import qualified HA.ResourceGraph as G
-import HA.RecoveryCoordinator.Rules.Mero (loadMeroServers)
+import HA.RecoveryCoordinator.Rules.Mero (loadMeroGlobals, loadMeroServers)
 #endif
 
 import Network.CEP
@@ -28,7 +26,7 @@ castorRules = do
       mapM_ goRack id_racks
 #ifdef USE_MERO
       loadMeroServers id_m0_servers
-      goM0Globals id_m0_globals
+      loadMeroGlobals id_m0_globals
 #endif
   where
     goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
@@ -50,7 +48,4 @@ castorRules = do
         locateHostInEnclosure host enc
         mapM_ (setHostAttr host) attrs
         mapM_ (registerInterface host) h_interfaces
-#ifdef USE_MERO
-    goM0Globals g = modifyLocalGraph $ return . G.connect Cluster Has g
-#endif
 
