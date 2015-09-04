@@ -42,7 +42,12 @@ module HA.ResourceGraph
     , insertEdge
     , deleteEdge
     , connect
+    , connectUnique
+    , connectUniqueFrom
+    , connectUniqueTo
     , disconnect
+    , disconnectAllFrom
+    , disconnectAllTo
     , mergeResources
     , sync
     , getGraph
@@ -98,6 +103,7 @@ import qualified Data.HashSet as S
 import Data.Hashable
 import Data.List (foldl')
 import Data.Maybe
+import Data.Proxy
 import Data.Typeable ( Typeable, cast )
 import Data.Word (Word8)
 
@@ -258,6 +264,25 @@ connect x r y g =
                $ grGraph g
      }
 
+-- | Connect uniquely between two given resources - e.g. make this relation
+--   uniquely determining from either side.
+connectUnique :: forall a r b. Relation r a b => a -> r -> b -> Graph -> Graph
+connectUnique x r y = connect x r y
+                    . disconnectAllFrom x r (Proxy :: Proxy b)
+                    . disconnectAllTo (Proxy :: Proxy a) r y
+
+-- | Connect uniquely from a given resource - e.g. remove all existing outgoing
+--   edges of the same type first.
+connectUniqueFrom :: forall a r b. Relation r a b => a -> r -> b -> Graph -> Graph
+connectUniqueFrom x r y = connect x r y
+                        . disconnectAllFrom x r (Proxy :: Proxy b)
+
+-- | Connect uniquely to a given resource - e.g. remove all existing incoming
+--   edges of the same type first.
+connectUniqueTo :: forall a r b. Relation r a b => a -> r -> b -> Graph -> Graph
+connectUniqueTo x r y = connect x r y
+                      . disconnectAllTo (Proxy :: Proxy a) r y
+
 -- | Removes a relation.
 disconnect :: Relation r a b => a -> r -> b -> Graph -> Graph
 disconnect x r y g =
@@ -270,6 +295,20 @@ disconnect x r y g =
                 . M.adjust (S.delete $ InRel r x y) (Res y)
                 $ grGraph g
       }
+
+-- | Remove all outgoing edges of the given relation type.
+disconnectAllFrom :: forall a r b. Relation r a b
+                  => a -> r -> Proxy b -> Graph -> Graph
+disconnectAllFrom a _ _ g = foldl' (.) id (fmap deleteEdge oldEdges) $ g
+  where
+    oldEdges = edgesFromSrc a g :: [Edge a r b]
+
+-- | Remove all incoming edges of the given relation type.
+disconnectAllTo :: forall a r b. Relation r a b
+                => Proxy a -> r -> b -> Graph -> Graph
+disconnectAllTo _ _ b g = foldl' (.) id (fmap deleteEdge oldEdges) $ g
+  where
+    oldEdges = edgesToDst b g :: [Edge a r b]
 
 -- | Merge a number of homogenously typed resources into a single
 --   resource. Incoming and outgoing edge sets are merged, whilst
