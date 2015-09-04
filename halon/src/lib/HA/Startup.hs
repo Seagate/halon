@@ -24,13 +24,12 @@ import qualified HA.Storage as Storage
 
 import Control.Arrow ( first, second, (***) )
 import Control.Concurrent (forkIO, myThreadId, throwTo)
-import Control.Distributed.Process hiding (send)
+import Control.Distributed.Process
 import Control.Distributed.Process.Closure
   ( remotable
   , remotableDecl
   , mkClosure
   , mkStatic
-  , functionTDict
   )
 import qualified Control.Distributed.Process.Internal.StrictMVar as StrictMVar
     ( modifyMVar_ )
@@ -96,18 +95,21 @@ disconnectAllNodeConnections = do
 
 remotableDecl [ [d|
 
- isSelfInGroup :: () -> Process Bool
- isSelfInGroup () = isJust <$> getGlobalRGroup
+ isSelfInGroup :: ProcessId -> Process ()
+ isSelfInGroup caller = do
+   r <- isJust <$> getGlobalRGroup
+   usend caller r
 
  isNodeInGroup :: [NodeId] -> NodeId -> Bool
  isNodeInGroup = flip elem
 
- addNodes :: ( [NodeId]
+ addNodes :: ( ProcessId -- ^ Caller
+             , [NodeId]
              , [NodeId] -- ^ (New nodes, existing trackers)
              , Closure (ProcessId -> ProcessId -> Process ())
              )
           -> Process ()
- addNodes (newNodes, trackers, rcClosure) = do
+ addNodes (caller, newNodes, trackers, rcClosure) = do
      disconnectAllNodeConnections
      mcRGroup <- getGlobalRGroup
      case mcRGroup of
@@ -120,6 +122,7 @@ remotableDecl [ [d|
                   $ $(mkClosure 'startRS)
                       (cRGroup, Just replica, rcClosure)
        Nothing -> return ()
+     usend caller ()
 
 
  startRS :: ( Closure (Process (RLogGroup HAReplicatedState))
@@ -196,8 +199,10 @@ remotableDecl [ [d|
       (members,newNodes) <- queryMembership trackers
       added <- case members of
         m : _ -> do
-          call $(functionTDict 'addNodes) m $
-                 $(mkClosure 'addNodes) (newNodes, trackers, rcClosure)
+          self <- getSelfPid
+          _ <- spawnAsync m $ $(mkClosure 'addNodes)
+            (self, newNodes, trackers, rcClosure)
+          () <- expect
           return True
         [] -> return False
 
@@ -217,9 +222,10 @@ remotableDecl [ [d|
 
   where
     queryMembership nids = do
-        bs <- forM nids $ \nid ->
-            call $(functionTDict 'isSelfInGroup) nid $
-                 $(mkClosure 'isSelfInGroup) ()
+        self <- getSelfPid
+        bs <- forM nids $ \nid -> do
+            _ <- spawnAsync nid $ $(mkClosure 'isSelfInGroup) self
+            expect
         return $ map snd *** map snd $ partition fst $ zip bs nids
 
  autoboot :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())

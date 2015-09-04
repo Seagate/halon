@@ -30,7 +30,7 @@ import Control.Distributed.Process
   , getSelfPid
   , liftIO
   , catch
-  , send
+  , usend
   , expect
   , getSelfNode
   , say
@@ -43,7 +43,7 @@ import Control.Distributed.Process ( spawn )
 import Control.Distributed.Static ( closureApply )
 import Control.Distributed.Process.Closure ( mkClosure )
 #else
-import Control.Distributed.Process.Internal.Primitives ( unClosure )
+import Control.Distributed.Process ( unClosure )
 #endif
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
 import Control.Distributed.Process.Node ( LocalNode, localNodeId, newLocalNode, closeLocalNode )
@@ -68,7 +68,7 @@ dummyRC' rGroup =
   flip catch (\e -> say $ show (e :: SomeException)) $ do
       self <- getSelfPid
       eq <- spawnLocal (eventQueue rGroup)
-      send eq self -- Report me as the RC.
+      usend eq self -- Report me as the RC.
 
       let loop = do
            HAEvent _ str _ <- expect
@@ -139,12 +139,12 @@ naTest transport action = withTmpDirectory $ bracket
         self <- getSelfPid
         eq1 <- spawnLocal $ forever $
                  (expect :: Process (ProcessId, PersistMessage))
-                 >>= send self . (,) (nids !! 0)
+                 >>= usend self . (,) (nids !! 0)
         register eventQueueLabel eq1
         liftIO $ tryRunProcess (nodes !! 1) $ do
           eq2 <- spawnLocal $ forever $
                    (expect :: Process (ProcessId, PersistMessage))
-                   >>= send self . (,) (nids !! 1)
+                   >>= usend self . (,) (nids !! 1)
           register eventQueueLabel eq2
         _ <- spawnLocalLink (eqTrackerProcess nids)
         action nids
@@ -180,53 +180,53 @@ tests transport = do
             self <- getSelfPid
             registerInterceptor $ \string ->
               if "Got PreferReplicas:" `isPrefixOf` string
-              then send self ()
+              then usend self ()
               else return ()
 
             -- We get an event on both nodes.
             _ <- spawnLocal $ expiate "hello1"
             sender0 <- expectEventOnNode $ nids !! 0
             _ <- expectEventOnNode $ nids !! 1
-            send sender0 (nids !! 0, nids !! 0)
+            usend sender0 (nids !! 0, nids !! 0)
             () <- expect
 
             -- We still get an event on the first node and suggest NA to use the
             -- second node.
             _ <- spawnLocal $ expiate "hello2"
             sender1 <- expectEventOnNode $ nids !! 0
-            send sender1 (nids !! 0, nids !! 1)
+            usend sender1 (nids !! 0, nids !! 1)
             () <- expect
 
             -- We get an event on the second node.
             _ <- spawnLocal $ expiate "hello3"
             sender2 <- expectEventOnNode $ nids !! 1
-            send sender2 (nids !! 1, nids !! 1)
+            usend sender2 (nids !! 1, nids !! 1)
 
             -- We get the next event on the second node again.
             _ <- spawnLocal $ expiate "hello4"
             sender3 <- expectEventOnNode $ nids !! 1
-            send sender3 (nids !! 1, nids !! 1)
+            usend sender3 (nids !! 1, nids !! 1)
 
       , testSuccess "na-should-compress-path-with-failures" $ naTest transport $ \nids -> do
 
             self <- getSelfPid
             registerInterceptor $ \string ->
               if "Got PreferReplicas:" `isPrefixOf` string
-              then send self ()
+              then usend self ()
               else return ()
 
             -- We get an event on both nodes.
             _ <- spawnLocal $ expiate "hello1"
             sender0 <- expectEventOnNode $ nids !! 0
             _ <- expectEventOnNode $ nids !! 1
-            send sender0 (nids !! 0, nids !! 0)
+            usend sender0 (nids !! 0, nids !! 0)
             () <- expect
 
             -- We still get an event on the first node and suggest NA to use the
             -- second node.
             _ <- spawnLocal $ expiate "hello2"
             sender1 <- expectEventOnNode $ nids !! 0
-            send sender1 (nids !! 0, nids !! 1)
+            usend sender1 (nids !! 0, nids !! 1)
             () <- expect
 
             -- We get an event on the second node, but we are not going to
@@ -235,7 +235,7 @@ tests transport = do
             _ <- expectEventOnNode $ nids !! 1
 
             sender2 <- expectEventOnNode $ nids !! 0
-            send sender2 (nids !! 0, nids !! 1)
+            usend sender2 (nids !! 0, nids !! 1)
             () <- expect
 
             -- We get an event on the second node and we reply. But because we
@@ -251,24 +251,24 @@ tests transport = do
             -- The event was sent to both nodes.
             True <- return $ length nids4 == 2
             True <- return $ null $ nids4 \\ nids
-            send sender (nids !! 1, nids !! 1)
+            usend sender (nids !! 1, nids !! 1)
             () <- expect
 
             -- We get the next event on the second node again, and we suggest
             -- the first node.
             _ <- spawnLocal $ expiate "hello5"
             sender3 <- expectEventOnNode $ nids !! 1
-            send sender3 (nids !! 1, nids !! 0)
+            usend sender3 (nids !! 1, nids !! 0)
             () <- expect
 
             -- We get the next event on the first node.
             _ <- spawnLocal $ expiate "hello6"
             sender4 <- expectEventOnNode $ nids !! 0
-            send sender4 (nids !! 0, nids !! 0)
+            usend sender4 (nids !! 0, nids !! 0)
             () <- expect
 
             -- We get the next event on the first node again.
             _ <- spawnLocal $ expiate "hello7"
             sender5 <- expectEventOnNode $ nids !! 0
-            send sender5 (nids !! 0, nids !! 0)
+            usend sender5 (nids !! 0, nids !! 0)
       ]

@@ -58,13 +58,29 @@ dummyRC _argv _eq _mm = do
   liftIO $ putMVar dummyRCStarted ()
   receiveWait []
 
-remotable [ 'ignitionArguments, 'dummyRC ]
+type IgnitionResult = Maybe (Bool,[NodeId],[NodeId],[NodeId])
+
+ignitionWrapper ::
+    ( ProcessId,
+      ( Bool
+      , [NodeId]
+      , Int
+      , Int
+      , Closure (ProcessId -> ProcessId -> Process ())
+      , Int
+      )
+    )
+    -> Process ()
+ignitionWrapper (caller, args) = ignition args >>= usend caller
+
+remotable [ 'ignitionArguments, 'dummyRC, 'ignitionWrapper ]
 
 tests :: AbstractTransport -> IO [TestTree]
 tests transport =
   return [ testSuccess "autoboot-simple" $ mkAutobootTest (getTransport transport)
          , testCaseSteps  "ignition"     $ testIgnition   (getTransport transport)
          ]
+  where _ = $(functionTDict 'ignitionWrapper) -- unused ignitionWrapper__tdict
 
 rcClosure :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
 rcClosure = $(mkStaticClosure 'dummyRC) `closureCompose`
@@ -92,9 +108,11 @@ mkAutobootTest transport = withTmpDirectory $ do
       liftIO $ autobootCluster nids
 
       -- 2. Run ignition once
-      result <- call $(functionTDict 'ignition) (localNodeId $ head nids) $
-                     $(mkClosure 'ignition) args
-      case result of
+      self <- getSelfPid
+      _ <- spawnAsync (localNodeId $ head nids) $
+                     $(mkClosure 'ignitionWrapper) (self, args)
+      result <- expect
+      case result :: IgnitionResult of
         Just (added, _, members, newNodes) -> liftIO $ do
           if added then do
             putStrLn "The following nodes joined successfully:"
@@ -154,16 +172,19 @@ testIgnition transport step = withTmpDirectory $ do
     forM_ (node:nids) $ \lnid -> forkIO $ startupHalonNode lnid rcClosure
     runProcess node $ do
 
+      self <- getSelfPid
       liftIO $ step "call initial ignition"
-      Nothing <- call $(functionTDict 'ignition) (localNodeId $ head nids1) $
-                      $(mkClosure 'ignition) args
+      _ <- spawnAsync (localNodeId $ head nids1) $
+                      $(mkClosure 'ignitionWrapper) (self, args)
+      Nothing <- expect :: Process IgnitionResult
       liftIO $ takeMVar dummyRCStarted
 
-
       liftIO $ step "call ignition while changing TS nodes"
-      Just (added, trackers, members, newNodes)
-              <- call $(functionTDict 'ignition) (localNodeId $ head nids1) $
-                        $(mkClosure 'ignition) (mkArgs True (head nids1: nids2))
+      _ <- spawnAsync (localNodeId $ head nids1) $
+                      $(mkClosure 'ignitionWrapper)
+                        (self, (mkArgs True (head nids1: nids2)))
+      Just (added, trackers, members, newNodes) <-
+        expect :: Process IgnitionResult
 
       liftIO $ do
         step "kill nodes in the cluster that we will remove TS from"
@@ -180,11 +201,10 @@ testIgnition transport step = withTmpDirectory $ do
         assertEqual "trackers should be equal to the new set of trackers"
                     (Set.fromList (map localNodeId $ head nids1:nids2))
                     (Set.fromList trackers)
-      self <- getSelfPid
       liftIO $ step "check replica Info Status"
       liftIO $ runProcess (head nids1) $
         registerInterceptor $ \string -> case last $ lines string of
-          s | t `isPrefixOf` s -> send self (drop (length t) s)
+          s | t `isPrefixOf` s -> usend self (drop (length t) s)
             | otherwise        -> return ()
       actual <- expect
       liftIO $ unless (any (==actual) [show x | x <- permutations trackers]) $

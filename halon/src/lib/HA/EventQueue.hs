@@ -42,7 +42,6 @@ module HA.EventQueue
   , recordEvent
   , sendEventsToRC
   , sendEventToRC
-  , reconnectToRC
   , trim
   , lookupRC
   , sendOwnNode
@@ -60,7 +59,7 @@ import HA.Replicator ( RGroup, updateStateWith, getState)
 import Control.SpineSeq (spineSeq)
 import FRP.Netwire hiding (Last(..), when, for)
 
-import Control.Distributed.Process hiding (newChan, send)
+import Control.Distributed.Process hiding (newChan)
 import Control.Distributed.Process.Async (async, task)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Timeout ( retry )
@@ -175,9 +174,6 @@ sendEventsToRC rg rc = liftProcess $ do
     for_ (reverse pendingEvents) $ \(PersistMessage mid ev) -> do
       eqTrace $ "EQ: Sending to RC: " ++ show mid
       uforward ev rc
-
-reconnectToRC :: PhaseM (Maybe EventQueueState) l ()
-reconnectToRC = liftProcess . traverse_ (reconnect . _eqsRC) =<< get Global
 
 recordRCDied :: RGroup g => g EventQueue -> PhaseM (Maybe EventQueueState) l ()
 recordRCDied rg = do

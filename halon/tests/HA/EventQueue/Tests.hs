@@ -47,8 +47,7 @@ eqSDict = SerializableDict
 remoteRC :: ProcessId -> Process ()
 remoteRC controller = forever $ do
     evt <- expect
-    reconnect controller
-    send controller (evt :: HAEvent Int)
+    usend controller (evt :: HAEvent Int)
 
 remotable [ 'eqSDict ]
 
@@ -74,7 +73,7 @@ tests (AbstractTransport transport breakConnection _) = do
         (==>) :: (IO () -> TestTree) -> (ProcessId -> ProcessId -> MC_RG EventQueue -> Process ()) -> TestTree
         t ==> action = t $ setup $ \eq na rGroup ->
                 -- use me as the rc.
-                getSelfPid >>= send eq >> action eq na rGroup
+                getSelfPid >>= usend eq >> action eq na rGroup
 
         setup :: (ProcessId -> ProcessId -> MC_RG EventQueue -> Process ()) -> IO ()
         setup action = withTmpDirectory $ tryWithTimeout transport rt (30 * secs) $ do
@@ -102,7 +101,7 @@ tests (AbstractTransport transport breakConnection _) = do
         , testSuccess "eq-one-event-direct" ==> \eq _ rGroup -> do
               selfNode <- getSelfNode
               self     <- getSelfPid
-              send eq self
+              usend eq self
               pid <- promulgateEQ [selfNode] (1 :: Int)
               _ <- monitor pid
               (_ :: ProcessMonitorNotification) <- expect
@@ -131,7 +130,7 @@ tests (AbstractTransport transport breakConnection _) = do
               (_, v@(PersistMessage evtid _):_) <- retry requestTimeout $
                                                    getState rGroup
               Just elm <- unPersistHAEvent v :: Process (Maybe Int)
-              send eq evtid
+              usend eq evtid
               Published (TrimDone eid) _ <- expect
               assert (evtid == eid)
 
@@ -148,12 +147,12 @@ tests (AbstractTransport transport breakConnection _) = do
                 (Set.member evtid (Set.fromList evids))
               before <- map persistEventId . snd <$>
                           retry requestTimeout (getState rGroup)
-              send eq evtid
+              usend eq evtid
               Published (TrimDone eid) _ <- expect
               assertEqual "correct event was trimmed" evtid eid
               trim1 <- map persistEventId . snd <$>
                           retry requestTimeout (getState rGroup)
-              send eq evtid
+              usend eq evtid
               Published (TrimDone eid2) _ <- expect
               assertEqual "correct event was trimmed" evtid eid2
 
@@ -167,7 +166,7 @@ tests (AbstractTransport transport breakConnection _) = do
               before <- map persistEventId . snd <$>
                           retry requestTimeout (getState rGroup)
               let evtid = UUID.nil
-              send eq evtid
+              usend eq evtid
               Published (TrimDone eid) _ <- expect
               assertEqual "correct event was trimmed" evtid eid
               trim <- map persistEventId . snd <$>
@@ -184,13 +183,13 @@ tests (AbstractTransport transport breakConnection _) = do
               (_, PersistMessage eid' _ : _) <- retry requestTimeout $
                                                   getState rGroup
               assertEqual "correct message was received" eid eid'
-              send eq self
+              usend eq self
               _ <- expect :: Process (HAEvent Int)
               return ()
         , testSuccess "eq-should-record-that-rc-died" $ setup $ \eq _ _ -> do
               subscribe eq (Proxy :: Proxy RCDied)
               rc <- spawnLocal $ return ()
-              send eq rc
+              usend eq rc
               -- Wait for confirmation of RC death.
               Published RCDied _ <- expect
               return ()
@@ -211,13 +210,13 @@ tests (AbstractTransport transport breakConnection _) = do
                         pid <- spawnLocal $ remoteRC self
                         -- spawn a colocated EQ
                         _ <- spawnLocal (eventQueue rGroup)
-                        send self pid
+                        usend self pid
                       expect
                   )
                   (flip exit "test finished")
                   $ \rc -> do
                 subscribe eq (Proxy :: Proxy RCLost)
-                send eq rc
+                usend eq rc
                 eid <- triggerEvent 1
                 -- The RC should forward the event to me.
                 (expectTimeout defaultTimeout :: Process (Maybe (HAEvent Int))) >>=
@@ -248,7 +247,7 @@ tests (AbstractTransport transport breakConnection _) = do
             let eventsNum = (5::Int)
                 testNum   = 10
             rc <- spawnLocal $ return ()
-            send eq rc
+            usend eq rc
             evs <- Set.fromList <$> forM [1..eventsNum] triggerEvent
             subscribe eq (Proxy :: Proxy RCDied)
             replicateM_ testNum $ do
@@ -257,8 +256,8 @@ tests (AbstractTransport transport breakConnection _) = do
                 evs' <- Set.fromList
                      <$> replicateM eventsNum
                            ((\(HAEvent e (_::Int) _) -> e) <$> expect)
-                send self (evs' == evs)
-              send eq rc'
+                usend self (evs' == evs)
+              usend eq rc'
               assertBool "event is correct" =<< expect
               Published RCDied _ <- expect
               return ()
@@ -275,8 +274,8 @@ tests (AbstractTransport transport breakConnection _) = do
                     _ <- expect :: Process (ProcessId, PersistMessage)
                     (pidx, PersistMessage{}) <- expect
                     n <- getSelfNode
-                    send pidx (n, n)
-                    send self ()
+                    usend pidx (n, n)
+                    usend self ()
             register eventQueueLabel eq1
             () <- expect
             ProcessMonitorNotification _ _ _ <- expect

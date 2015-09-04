@@ -27,9 +27,7 @@ eqRules rg = do
       when (Just pid == mRC) $
         case reason of
           -- The connection to the RC failed.
-          -- Call reconnect to say it is ok to connect again.
           DiedDisconnect -> do
-            reconnectToRC
             publish RCLost
           -- The RC died.
           _              -> do recordRCDied rg

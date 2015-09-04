@@ -83,7 +83,6 @@ Library
                    binary >= 0.6,
                    bytestring,
                    bytestring-trie,
-                   clock,
                    consensus,
                    consensus-paxos,
                    containers,
@@ -92,7 +91,7 @@ Library
                    free,
                    network,
                    distributed-commands >= 0.1,
-                   distributed-process >= 0.4,
+                   distributed-process-scheduler,
                    distributed-static,
                    hashable,
                    directory,
@@ -148,7 +147,7 @@ Test-Suite unit-tests
                     Cabal >= 1.16,
                     binary >= 0.6.4,
                     bytestring,
-                    distributed-process >= 0.4,
+                    distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static,
                     directory,
@@ -167,8 +166,7 @@ Test-Suite unit-tests
                     cep,
                     uuid,
                     containers,
-                    stm,
-                    clock
+                    stm
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
@@ -200,7 +198,7 @@ Test-Suite integration-tests
                     binary >= 0.6.4,
                     bytestring,
                     Cabal >= 1.16,
-                    distributed-process >= 0.4,
+                    distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static,
                     directory,
@@ -219,8 +217,7 @@ Test-Suite integration-tests
                     cep,
                     uuid,
                     containers,
-                    stm,
-                    clock
+                    stm
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC

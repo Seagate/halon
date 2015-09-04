@@ -29,7 +29,6 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
-import Control.Concurrent (newEmptyMVar, takeMVar)
 
 import Data.Binary (Binary)
 import Data.Defaultable
@@ -58,7 +57,7 @@ $(deriveService ''DummyConf 'dummySchema [])
 
 -- | Block forever.
 never :: Process ()
-never = liftIO $ newEmptyMVar >>= takeMVar
+never = receiveWait []
 
 remotableDecl [ [d|
   dummy :: Service DummyConf

@@ -32,7 +32,7 @@ module HA.CallTimeout
   ) where
 
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
-import Control.Distributed.Process hiding (callLocal, send)
+import Control.Distributed.Process
 import Control.Distributed.Process.Serializable (Serializable)
 import Control.Exception (throwIO, SomeException)
 import Control.Monad (forM_, void)

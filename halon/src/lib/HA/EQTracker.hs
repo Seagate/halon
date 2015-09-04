@@ -31,7 +31,7 @@ module HA.EQTracker
 import HA.NodeAgent.Messages (ServiceMessage(UpdateEQNodes))
 
 import Control.SpineSeq (spineSeq)
-import Control.Distributed.Process hiding (send)
+import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 
 import Data.Binary (Binary)

@@ -27,7 +27,7 @@ import Control.Distributed.Process
   , liftIO
   , catch
   , expect
-  , send
+  , usend
   , receiveWait
   , ProcessId
 #ifndef USE_MOCK_REPLICATOR
@@ -499,7 +499,7 @@ testTimerConcurrentCancel transport =
     self <- getSelfPid
     tf <- liftIO $ timeSpecToMicro <$> getTime Monotonic
     timer <- newTimer delay $ liftIO $ writeIORef (firedAt td) . timeSpecToMicro =<< getTime Monotonic
-    replicateM_ 5 $ spawnLocal $ cancel timer >>= send self
+    replicateM_ 5 $ spawnLocal $ cancel timer >>= usend self
     (r:esults) <- replicateM 5 expect
     liftIO $ assertBool "all results are equal" $ all (==r) esults
     if r

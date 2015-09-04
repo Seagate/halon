@@ -25,11 +25,11 @@ import Control.Distributed.Static
 
 import qualified System.Process as System
 import System.Exit (ExitCode(..))
-import Control.Concurrent (newEmptyMVar, takeMVar)
+
 
 -- | Block forever.
 never :: Process ()
-never = liftIO $ newEmptyMVar >>= takeMVar
+never = receiveWait []
 
 remotableDecl [ [d|
 

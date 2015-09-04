@@ -111,7 +111,7 @@ mainloop = go Trie.empty
             [ match $ \(Put k msg)   ->
                 return $! Trie.insert k msg t
             , match $ \(Get k them) -> do
-                send them (Reply k (Trie.lookup k t))
+                usend them (Reply k (Trie.lookup k t))
                 return t
             , match $ \(Delete k)  ->
                 return $! Trie.delete k t
