@@ -3,9 +3,6 @@ version:             0.1.0.0
 synopsis:            A Complex Event Processing framework.
 -- description:
 license:             AllRightsReserved
-license-file:        LICENSE
-author:              James ‘Twey’ Kay
-maintainer:          twey@twey.co.uk
 copyright:           (C) 2014 Seagate Technology Limited.
 category:            Network
 build-type:          Simple

@@ -2,12 +2,15 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 -- |
 -- Copyright : (C) 2014 Seagate Technology Limited.
 --
--- Complex Event Processing API
--- It builds a 'Process' out of rules defined by the user. It also support
--- pub/sub feature.
+-- = Complex Event Processing API
+--
+-- Builds a 'Process' action out of rules defined by the user. It also provides
+-- a publish/subscribe framework.
+
 module Network.CEP
     (
     -- * Specification API
@@ -181,7 +184,7 @@ buildMachine s defs = go (emptyMachine s) $ view defs
 cepEngine :: s -> Specification s () -> Engine
 cepEngine s defs = newEngine $ buildMachine s defs
 
--- | Executes a CEP Specification to the 'Process' monad given a initial global
+-- | Executes CEP 'Specification' to the 'Process' monad given initial global
 --   state.
 execute :: s -> Specification s () -> Process ()
 execute s defs = runItForever $ cepEngine s defs
@@ -343,8 +346,7 @@ feedEngine msgs = go msgs []
           executeEngine (r:rs) eng'
       | otherwise = return (reverse rs, eng)
 
-
--- | Builds a list of 'TypeInfo' out types needed by 'PhaseStep' data
+-- | Builds a list of 'TypeInfo' types needed by 'PhaseStep' data
 --   contructor.
 buildSeqList :: Seq -> Set.Set TypeInfo
 buildSeqList Nil = Set.empty
