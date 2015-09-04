@@ -29,6 +29,7 @@ module Control.Distributed.Process
   , linkNode
   , unlink
   , exit
+  , kill
   , spawnLocal
   , spawn
   , spawnAsync
@@ -120,6 +121,7 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , linkNode
   , unlink
   , exit
+  , kill
   , spawnLocal
   , spawn
   , spawnAsync
@@ -199,6 +201,10 @@ linkNode = ifSchedulerIsEnabled Internal.linkNode DP.linkNode
 {-# NOINLINE exit #-}
 exit :: Serializable a => ProcessId -> a -> Process ()
 exit = ifSchedulerIsEnabled Internal.exit DP.exit
+
+{-# NOINLINE kill #-}
+kill :: ProcessId -> String -> Process ()
+kill = ifSchedulerIsEnabled Internal.kill DP.kill
 
 {-# NOINLINE spawnLocal #-}
 spawnLocal :: Process () -> Process ProcessId

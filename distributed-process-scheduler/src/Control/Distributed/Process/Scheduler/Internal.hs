@@ -43,6 +43,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , linkNode
   , unlink
   , exit
+  , kill
   , spawnLocal
   , spawn
   , spawnAsync
@@ -129,6 +130,7 @@ data SystemMsg = MailboxMsg ProcessId DP.Message
                | ChannelMsg DP.SendPortId DP.Message
                | LinkExceptionMsg DP.Identifier ProcessId DP.DiedReason
                | ExitMsg ProcessId ProcessId DP.Message
+               | KillMsg ProcessId ProcessId String
   deriving (Typeable, Generic, Show)
 
 instance Binary SystemMsg
@@ -234,6 +236,15 @@ data SchedulerState = SchedulerState
      , stateFailures :: Map (NodeId, NodeId) Double
     }
 
+data ProcessKillException =
+    ProcessKillException !ProcessId !String
+  deriving (Typeable)
+
+instance Exception ProcessKillException
+instance Show ProcessKillException where
+  show (ProcessKillException pid reason) =
+    "killed-by=" ++ show pid ++ ",reason=" ++ reason
+
 throwException :: Exception e => ProcessId -> e -> Process ()
 throwException pid e = do
   proc <- ask
@@ -290,6 +301,12 @@ remotableDecl [ [d|
         here <- DP.getSelfNode
         if DP.processNodeId pid == here then
           throwException pid $ DP.ProcessExitException source reason
+        else
+          remoteForward (DP.processNodeId pid) smsg
+      KillMsg source pid reason -> do
+        here <- DP.getSelfNode
+        if DP.processNodeId pid == here then
+          throwException pid $ ProcessKillException source reason
         else
           remoteForward (DP.processNodeId pid) smsg
   where
@@ -654,6 +671,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
 
     isExceptionMsg (LinkExceptionMsg _ _ _) = True
     isExceptionMsg (ExitMsg _ _ _) = True
+    isExceptionMsg (KillMsg _ _ _) = True
     isExceptionMsg _ = False
 
     -- | @chooseUniformly [(n_0, f_0),...,(n_k, f_k)] g@
@@ -1004,6 +1022,12 @@ exit :: Serializable a => ProcessId -> a -> Process ()
 exit pid reason = do
   self <- DP.getSelfPid
   sendS $ Send self pid $ ExitMsg self pid $ DP.createUnencodedMessage reason
+
+-- | Forceful request to kill a process.
+kill :: ProcessId -> String -> Process ()
+kill pid reason = do
+  self <- DP.getSelfPid
+  sendS $ Send self pid $ KillMsg self pid reason
 
 -- | Notifies the scheduler of a new process. When acknowledged, starts the new
 -- process and notifies again the scheduler when the process terminates. Returns
