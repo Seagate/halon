@@ -63,6 +63,7 @@ module Control.Distributed.Process
   , liftIO
   , finally
   , bracket
+  , bracket_
   , die
   , getSelfPid
   , getSelfNode
