@@ -10,7 +10,7 @@ module Control.Distributed.Process
   , nsend
   , nsendRemote
   , sendChan
-  , forward
+  , uforward
   , match
   , matchIf
   , matchChan
@@ -100,7 +100,7 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , nsend
   , nsendRemote
   , sendChan
-  , forward
+  , uforward
   , match
   , matchIf
   , matchChan
@@ -160,9 +160,9 @@ nsendRemote = ifSchedulerIsEnabled Internal.nsendRemote DP.nsendRemote
 sendChan :: Serializable a => SendPort a -> a -> Process ()
 sendChan = ifSchedulerIsEnabled Internal.sendChan DP.sendChan
 
-{-# NOINLINE forward #-}
-forward :: Message -> ProcessId -> Process ()
-forward = ifSchedulerIsEnabled Internal.forward DP.forward
+{-# NOINLINE uforward #-}
+uforward :: Message -> ProcessId -> Process ()
+uforward = ifSchedulerIsEnabled Internal.uforward DP.uforward
 
 {-# NOINLINE receiveChan #-}
 receiveChan :: Serializable a => ReceivePort a -> Process a

@@ -166,7 +166,7 @@ registerInterceptor hook = do
                   usend logger msg
                   loop
             , matchAny $ \amsg -> do
-                  forward amsg logger
+                  uforward amsg logger
                   loop ]
 
     reregister "logger" =<< spawnLocal loop

@@ -115,7 +115,7 @@ run s = do
           [res6] <- fmap nub $ replicateM 3 $
             execute "dropMessagesTest" dropMessagesTest 3 transport (s+i)
           [res7] <- fmap nub $ replicateM 3 $
-            execute "forwardTest" (const forwardTest) 1 transport (s+i)
+            execute "uforwardTest" (const uforwardTest) 1 transport (s+i)
           [res8] <- fmap nub $ replicateM 3 $
             execute "remoteChanTest" remoteChanTest 2 transport (s+i)
           checkInvariants res8
@@ -135,7 +135,7 @@ run s = do
           checkInvariants res3
           res4 <- execute "registerTest" (const registerTest) 1 transport (s+i)
           res5 <- execute "timeoutsTest" (const timeoutsTest) 1 transport (s+i)
-          res6 <- execute "forwardTest"  (const forwardTest) 1 transport (s+i)
+          res6 <- execute "uforwardTest"  (const uforwardTest) 1 transport (s+i)
           res7 <- execute "sayTest" sayTest 2 transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
@@ -168,7 +168,7 @@ registerInterceptor hook = do
                   usend logger (msg :: (String, ProcessId, String))
                   loop
             , matchAny $ \amsg -> do
-                  forward amsg logger
+                  uforward amsg logger
                   loop ]
 
     reregister "logger" =<< spawnLocal loop
@@ -272,8 +272,8 @@ registerTest = do
     True <- return $ s1 == s1'
     return ()
 
-forwardTest :: Process ()
-forwardTest = do
+uforwardTest :: Process ()
+uforwardTest = do
     mainPid <- getSelfPid
     s0 <- spawnLocal $ do
       usend mainPid ()
@@ -282,7 +282,7 @@ forwardTest = do
       say' "s0: terminated"
       usend mainPid ()
     say' "main: blocking"
-    receiveWait [ matchAny (flip forward s0) ]
+    receiveWait [ matchAny (flip uforward s0) ]
     say' "main: terminated"
     expect
 

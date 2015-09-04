@@ -26,7 +26,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , nsend
   , nsendRemote
   , sendChan
-  , forward
+  , uforward
   , match
   , matchIf
   , matchChan
@@ -847,6 +847,8 @@ nsendRemote nid label msg = do
 nsend :: Serializable a => String -> a -> Process ()
 nsend label a = DP.whereis label >>= maybe (return ()) (flip usend a)
 
+-- TODO sendChan has the semantics of usend regarding reconnections.
+
 sendChan :: Serializable a => SendPort a -> a -> Process ()
 sendChan sendPort msg = do
     self <- DP.getSelfPid
@@ -856,11 +858,8 @@ sendChan sendPort msg = do
       (DP.createUnencodedMessage msg)
 
 -- | Forward a raw 'Message' to the given 'ProcessId'.
---
--- TODO: forward should have the semantics of 'send' however, here it has the
--- semantics of usend.
-forward :: DP.Message -> ProcessId -> Process ()
-forward msg pid = do
+uforward :: DP.Message -> ProcessId -> Process ()
+uforward msg pid = do
     self <- DP.getSelfPid
     sendS $ Send self pid $ MailboxMsg pid msg
 
