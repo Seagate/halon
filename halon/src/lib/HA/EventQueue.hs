@@ -209,14 +209,6 @@ trim rg eid =
         usend self (TrimAck eid)
       return ()
 
--- | TODO - Wait for 'uforward' to land on d-p. By using 'forward', we have no
---   guarantee a message will be sent on network failure. That's why we need to
---   'reconnect' before calling 'forward'
-uforward :: Message -> ProcessId -> Process ()
-uforward msg pid = do
-    reconnect pid
-    forward msg pid
-
 sendEventToRC :: ProcessId -> ProcessId -> PersistMessage -> PhaseM s l ()
 sendEventToRC rc sender (PersistMessage mid ev) =
     liftProcess $ do
