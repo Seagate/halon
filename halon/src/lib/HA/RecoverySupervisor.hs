@@ -75,11 +75,12 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Timeout ( retry, timeout )
 
-import Control.Concurrent ( newMVar, takeMVar, putMVar, readMVar, newEmptyMVar )
 import Control.Exception ( SomeException, throwIO )
 import Control.Monad ( when, void )
 import Data.Binary ( Binary )
 import Data.Int ( Int64 )
+import Data.IORef ( newIORef, atomicModifyIORef )
+import Data.Maybe ( isNothing )
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
 import System.Clock
@@ -237,41 +238,39 @@ data Timer = Timer { cancel :: Process Bool }
 
 -- | @timer <- newTimer timeout action@ performs @action@ after waiting
 -- @timeout@ microseconds.
-newTimer :: Int -> Process a -> Process Timer
+newTimer :: Int -> Process () -> Process Timer
 newTimer timeoutPeriod action = do
-  mv <- liftIO $ newMVar Nothing -- @Nothing@ if action was canceled or not
-                                 -- performed, otherwise @Just canceled@
-  mdone <- liftIO newEmptyMVar   -- @()@ iff action completed or was canceled
-  self <- getSelfPid
-  -- Since the timer may fire arbitrarily late, we should prevent the user from
-  -- canceling the action after the time period has expired. To avoid this,
-  -- @cancel@ reads the clock and verifies that the timeout period has not
-  -- passed.
-  t0 <- liftIO $ getTime Monotonic
-  pid <- spawnLocal $ flip finally (liftIO $ putMVar mdone ()) $ do
-      link self
+    -- @doneRef@ is @Just canceled@ iff the timer was canceled or action ran to
+    -- completion.
+    doneRef <- liftIO $ newIORef Nothing
+    -- Since the timer may fire arbitrarily late, we should prevent the user
+    -- from canceling the action after the time period has expired. To avoid
+    -- this, @cancel@ reads the clock and verifies that the timeout period has
+    -- not passed.
+    t0 <- liftIO $ getTime Monotonic
+    pid <- spawnLocal $ do
       void $ receiveTimeout timeoutPeriod []
-      canceled <- liftIO $ takeMVar mv
-      case canceled of
-        Nothing -> do void action
-                      liftIO $ putMVar mv $ Just False
-        Just _ -> liftIO $ putMVar mv canceled
-  let cancelCall = do
-        canceled <- liftIO $ takeMVar mv
-        case canceled of
-          Nothing -> do
-            tf <- liftIO $ getTime Monotonic
-            if timeSpecToMicro (tf - t0) >= fromIntegral timeoutPeriod
-            then liftIO $ do -- don't cancel if the timer period expired
-                   putMVar mv Nothing
-                   -- wait for the timer process to complete
-                   readMVar mdone
-                   return False
-            else do exit pid "RecoverySupervisor.timer: canceled"
-                    -- wait for the timer process to die
-                    liftIO $ readMVar mdone
-                    liftIO $ putMVar mv $ Just True
-                    return True
-          Just c -> do liftIO $ putMVar mv canceled
-                       return c
-  return $ Timer { cancel = cancelCall }
+      done <- liftIO $ atomicModifyIORef doneRef $ \m ->
+        case m of
+          Nothing -> (Just False, m)
+          _       -> (         m, m)
+      when (isNothing done) action
+    let cancelCall = mask_ $ do
+          tf <- liftIO $ getTime Monotonic
+          let expired = timeSpecToMicro (tf - t0) > fromIntegral timeoutPeriod
+          done <- liftIO $ atomicModifyIORef doneRef $ \m ->
+            case m of
+              Nothing | not expired -> (Just True, m)
+              _                     -> (        m, m)
+          result <- if not expired && isNothing done then do
+                      exit pid "Timer canceled"
+                      return True
+                    else
+                      return $ maybe False id done
+          bracket (monitor pid) unmonitor $ \ref ->
+            receiveWait
+              [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
+                        (const $ return ())
+              ]
+          return result
+    return $ Timer { cancel = cancelCall }
