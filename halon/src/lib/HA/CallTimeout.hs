@@ -20,43 +20,16 @@
 #endif
 
 module HA.CallTimeout
-  ( -- * Helpers
-    callLocal
-
-    -- * Calling processes
-  , callTimeout
-
+  ( callTimeout
     -- * Calling named processes
   , ncallRemoteAnyTimeout
   , ncallRemoteAnyPreferTimeout
   ) where
 
-import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable (Serializable)
-import Control.Exception (throwIO, SomeException)
 import Control.Monad (forM_, void)
 
---------------------------------------------------------------------------------
--- Helpers
---------------------------------------------------------------------------------
-
--- | Run a process locally and wait for a return value.
--- Local version of 'call'. Running a process in this way isolates it from
--- messages sent to the caller process, and also allows silently dropping late
--- or duplicate messages sent to the isolated process after it exits.
--- Silently dropping messages may not always be the best approach.
-callLocal ::
-     Process a  -- ^ Process to run
-  -> Process a  -- ^ Value returned
-callLocal proc = do
-    mv <- liftIO newEmptyMVar
-    self <- getSelfPid
-    _runner <- spawnLocal $ do
-      link self
-      try proc >>= liftIO . putMVar mv
-    liftIO $ takeMVar mv >>=
-      either (throwIO :: SomeException -> IO a) return
 
 --------------------------------------------------------------------------------
 -- Calling processes

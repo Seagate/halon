@@ -47,6 +47,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , spawnLocal
   , spawn
   , spawnAsync
+  , callLocal
   , whereis
   , register
   , reregister
@@ -85,7 +86,14 @@ import qualified Control.Distributed.Process.Internal.WeakTQueue as DP
 import Control.Distributed.Process.Internal.Types (LocalProcess(..))
 
 import Control.Concurrent.MVar hiding (withMVar)
-import Control.Exception ( SomeException, throwIO, bracket, Exception, throwTo )
+import Control.Exception
+  ( SomeException
+  , throwIO
+  , bracket
+  , Exception
+  , throwTo
+  , throw
+  )
 import Control.Monad
 import Control.Monad.Reader ( ask )
 import Data.Accessor ((^.))
@@ -1070,6 +1078,34 @@ spawn nid cp = do
     receiveWait [ matchIf (\(DP.DidSpawn ref' _) -> ref' == ref) $
                            \(DP.DidSpawn _ pid) -> return pid
                 ]
+
+-- | Local version of 'call'. Running a process in this way isolates it from
+-- messages sent to the caller process, and also allows silently dropping late
+-- or duplicate messages sent to the isolated process after it exits.
+-- Silently dropping messages may not always be the best approach.
+callLocal :: Process a -> Process a
+callLocal proc = DP.mask $ \release -> do
+    mv    <- DP.liftIO newEmptyMVar :: Process (MVar (Either SomeException a))
+    -- This is callLocal from d-p, with the addition of a c-h channel to signal
+    -- to the scheduler that the mvar is filled.
+    (sp, rp) <- DP.newChan
+    child <- spawnLocal $ DP.mask_ $ do
+               r <- DP.try (release proc)
+               sendChan sp ()
+               DP.liftIO $ putMVar mv r
+    ref <- monitor child
+    rs <- (do receiveChan rp
+              DP.liftIO (takeMVar mv)
+          ) `DP.onException`
+             (do kill child "exception in parent process"
+                 waitFor ref
+             )
+    either throw return rs
+  where
+    waitFor ref = receiveWait
+      [ matchIf (\(DP.ProcessMonitorNotification ref' _ _) -> ref == ref')
+                (\_ -> return ())
+      ]
 
 -- | Looks up a process in the local registry.
 whereis :: String -> Process (Maybe ProcessId)

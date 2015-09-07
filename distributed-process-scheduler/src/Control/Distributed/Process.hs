@@ -33,6 +33,7 @@ module Control.Distributed.Process
   , spawnLocal
   , spawn
   , spawnAsync
+  , callLocal
   , whereis
   , register
   , reregister
@@ -125,6 +126,7 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , spawnLocal
   , spawn
   , spawnAsync
+  , callLocal
   , whereis
   , register
   , reregister
@@ -217,6 +219,10 @@ spawn = ifSchedulerIsEnabled Internal.spawn DP.spawn
 {-# NOINLINE spawnAsync #-}
 spawnAsync :: NodeId -> Closure (Process ()) -> Process DP.SpawnRef
 spawnAsync = ifSchedulerIsEnabled Internal.spawnAsync DP.spawnAsync
+
+{-# NOINLINE callLocal #-}
+callLocal :: Process a -> Process a
+callLocal = ifSchedulerIsEnabled Internal.callLocal DP.callLocal
 
 {-# NOINLINE whereis #-}
 whereis :: String -> Process (Maybe ProcessId)

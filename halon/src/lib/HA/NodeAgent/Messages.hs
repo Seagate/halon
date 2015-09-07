@@ -19,6 +19,7 @@ import Control.Distributed.Process
   ( ProcessId
   , Process
   , NodeId
+  , callLocal
   )
 import GHC.Generics (Generic)
 import Data.Typeable (Typeable)

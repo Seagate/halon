@@ -13,8 +13,7 @@ module HA.EventQueue.Producer
   ) where
 
 import HA.CallTimeout
-  ( callLocal
-  , ncallRemoteAnyTimeout
+  ( ncallRemoteAnyTimeout
   , ncallRemoteAnyPreferTimeout
   )
 import HA.EventQueue (eventQueueLabel)
@@ -33,6 +32,7 @@ import Control.Distributed.Process
   , getSelfPid
   , say
   , spawnLocal
+  , callLocal
   )
 import Control.Distributed.Process.Serializable (Serializable)
 import Control.Monad (when)

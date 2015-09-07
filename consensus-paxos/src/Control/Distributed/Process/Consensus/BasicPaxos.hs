@@ -31,11 +31,9 @@ import Control.Distributed.Process.Trans (liftProcess)
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Control.Applicative ((<$>))
 import Control.Concurrent
-import Control.Exception ( SomeException, throwIO )
 import Control.Monad (when, forM_, replicateM_, replicateM)
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary )
-import Data.Function ( fix )
 import Data.List ( delete )
 import qualified Data.Map as Map
 import Data.Maybe ( catMaybes )
@@ -44,37 +42,6 @@ import GHC.Generics ( Generic )
 import System.Random ( randomRIO )
 import qualified System.Timeout as T ( timeout )
 
-
--- | An internal type used only by 'callLocal'.
-data Done = Done
-  deriving (Typeable,Generic)
-
-instance Binary Done
-
--- XXX pending inclusion of a fix to callLocal upstream.
---
--- https://github.com/haskell-distributed/distributed-process/pull/180
-callLocal :: Process a -> Process a
-callLocal p = mask_ $ do
-  mv <-liftIO $ newEmptyMVar
-  self <- getSelfPid
-  pid <- spawnLocal $ try p >>= liftIO . putMVar mv
-                      >> when schedulerIsEnabled (usend self Done)
-  when schedulerIsEnabled $ do
-    -- The process might be killed before reading the Done message,
-    -- thus some spurious Done message might exist in the queue.
-    fix $ \loop -> do Done <- expect
-                      b <- liftIO $ isEmptyMVar mv
-                      when b loop
-  liftIO (takeMVar mv >>= either (throwIO :: SomeException -> IO a) return)
-    `onException` do
-       -- Exit the worker and wait for it to terminate.
-       bracket (monitor pid) unmonitor $ \ref -> do
-         exit pid "callLocal was interrupted"
-         receiveWait
-           [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
-                     (const $ return ())
-           ]
 
 -- | Retries an action every certain amount of microseconds until it completes
 -- within the given time interval.

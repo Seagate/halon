@@ -13,7 +13,6 @@ module Control.Distributed.Log.Snapshot
 
 import Control.Applicative (liftA2)
 import Control.Distributed.Log () -- SafeCopy LegislatureId instance
-import Control.Distributed.Process.Timeout (callLocal)
 import Control.Distributed.Log.Persistence as P
 import Control.Distributed.Log.Persistence.LevelDB
 import Control.Distributed.Process.Consensus (DecreeId(..))

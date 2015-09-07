@@ -27,7 +27,6 @@ module Control.Distributed.State
        , __remoteTable) where
 
 import qualified Control.Distributed.Log as Log
-import Control.Distributed.Process.Timeout (callLocal)
 import Control.Distributed.Log.Snapshot (LogSnapshot(..))
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
