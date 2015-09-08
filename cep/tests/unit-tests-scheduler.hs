@@ -14,7 +14,7 @@ import Test.Tasty.Ingredients.FileReporter
 import qualified CEP.Settings.Tests (tests)
 
 import Control.Distributed.Process.Scheduler
-import Tests as Tests
+import qualified Tests as Tests
 
 import Control.Monad
 import System.IO

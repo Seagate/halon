@@ -50,6 +50,7 @@ tests launch =
   , testsPeekShift launch
   , testsExecution launch
   , testSubscriptions launch
+  , testsTimeout launch
   ]
 
 testsGlobal :: (Process () -> IO ()) -> TestTree
@@ -842,3 +843,33 @@ testSimpleSub = do
     _ <- expect :: Process (Published Foo)
     _ <- expect :: Process (Published Baz)
     return ()
+
+testsTimeout :: (Process () -> IO ()) -> TestTree
+testsTimeout launch = testGroup "Timeout properties"
+  [ testCase "Simple Timeout should work" $ launch testSimpleTimeout ]
+
+
+timeout :: Int -> PhaseHandle -> PhaseHandle
+timeout = error "not implemented"
+
+testSimpleTimeout :: Process ()
+testSimpleTimeout = do
+    self <- getSelfPid
+
+    let specs = define "timeout" $ do
+          ph0 <- phaseHandle "ph0"
+          ph1 <- phaseHandle "ph1"
+          ph2 <- phaseHandle "ph2"
+
+          directly ph0 $ switch [timeout 5 ph1, ph2]
+
+          setPhase ph1 $ \(Donut _) -> return ()
+
+          setPhase ph2 $ \(Foo _) -> liftProcess $ usend self ()
+
+          start ph0 ()
+
+    pid <- spawnLocal $ execute () specs
+
+    usend pid (Foo 1)
+    expect
