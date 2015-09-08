@@ -11,6 +11,7 @@ module HA.RecoveryCoordinator.Actions.Core
   , registerNode
   , getLocalGraph
   , putLocalGraph
+  , modifyGraph
   , modifyLocalGraph
   ) where
 
@@ -61,6 +62,9 @@ getLocalGraph = fmap lsGraph $ get Global
 
 putLocalGraph :: G.Graph -> PhaseM LoopState l ()
 putLocalGraph rg = modify Global $ \ls -> ls { lsGraph = rg }
+
+modifyGraph :: (G.Graph -> G.Graph) -> PhaseM LoopState l ()
+modifyGraph k = modifyLocalGraph $ return . k
 
 modifyLocalGraph :: (G.Graph -> PhaseM LoopState l G.Graph) -> PhaseM LoopState l ()
 modifyLocalGraph k = do

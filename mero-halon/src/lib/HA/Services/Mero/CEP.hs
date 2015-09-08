@@ -17,7 +17,6 @@ import HA.ResourceGraph
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note
 import HA.Service
 import HA.Services.Mero.Types
 
@@ -28,7 +27,6 @@ import Control.Category ((>>>))
 import Control.Distributed.Process (sendChan)
 
 import Data.Foldable (for_)
-import Data.List (foldl')
 import Data.Maybe (isJust)
 
 import Network.CEP

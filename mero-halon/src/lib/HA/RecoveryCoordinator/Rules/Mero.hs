@@ -21,7 +21,7 @@ import Mero.ConfC (Fid)
 
 import Control.Category (id, (>>>))
 import Control.Distributed.Process (liftIO)
-import Control.Monad (unless)
+import Control.Monad (forM_, unless)
 
 import Data.Foldable (foldl')
 import qualified Data.HashMap.Strict as M
@@ -158,18 +158,64 @@ initialiseConfInRG = unlessM confInitialised $ do
     mirrorRack (r, encls) = do
       m0r <- M0.Rack <$> newFid (Proxy :: Proxy M0.Rack)
       m0e <- mapM mirrorEncl encls
-      modifyLocalGraph $ return
-                       . (    G.newResource m0r
-                          >>> G.connectUnique m0r M0.At r
-                          >>> ( foldl' (.) id
-                                $ fmap (G.connect m0r M0.IsParentOf) m0e)
-                         )
+      modifyGraph
+          $ G.newResource m0r
+        >>> G.connectUnique m0r M0.At r
+        >>> ( foldl' (.) id
+              $ fmap (G.connect m0r M0.IsParentOf) m0e)
     mirrorEncl :: Enclosure -> PhaseM LoopState l M0.Enclosure
     mirrorEncl r = do
       m0r <- M0.Enclosure <$> newFid (Proxy :: Proxy M0.Enclosure)
       modifyLocalGraph $ return
                        . (G.newResource m0r >>> G.connectUnique m0r M0.At r)
       return m0r
+
+-- | Create pool versions based upon failure sets.
+createPoolVersions :: M0.Filesystem
+                   -> S.Set (S.Set Fid)
+                   -> PhaseM LoopState l ()
+createPoolVersions fs = mapM_ createPoolVersion . S.toList
+  where
+    createPoolVersion :: S.Set Fid -> PhaseM LoopState l ()
+    createPoolVersion failset = do
+      pool <- M0.Pool <$> newFid (Proxy :: Proxy M0.Pool)
+      pver <- M0.PVer <$> newFid (Proxy :: Proxy M0.PVer)
+      modifyGraph
+          $ G.newResource pool
+        >>> G.newResource pver
+        >>> G.connect fs M0.IsParentOf pool
+        >>> G.connect pool M0.IsRealOf pver
+      rg <- getLocalGraph
+      forM_ (G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]) $ \rack -> do
+        rackv <- M0.RackV <$> newFid (Proxy :: Proxy M0.RackV)
+        modifyGraph
+            $ G.newResource rackv
+          >>> G.connect pver M0.IsParentOf rackv
+          >>> G.connect rack M0.IsRealOf rackv
+        forM_ (filter (\x -> not $ M0.fid x `S.member` failset)
+                $ G.connectedTo rack M0.IsParentOf rg :: [M0.Enclosure])
+              $ \encl -> do
+          enclv <- M0.EnclosureV <$> newFid (Proxy :: Proxy M0.EnclosureV)
+          modifyGraph
+              $ G.newResource enclv
+            >>> G.connect rackv M0.IsParentOf enclv
+            >>> G.connect encl M0.IsRealOf enclv
+          forM_ (filter (\x -> not $ M0.fid x `S.member` failset)
+                  $ G.connectedTo encl M0.IsParentOf rg :: [M0.Controller])
+                $ \ctrl -> do
+            ctrlv <- M0.ControllerV <$> newFid (Proxy :: Proxy M0.ControllerV)
+            modifyGraph
+                $ G.newResource ctrlv
+              >>> G.connect enclv M0.IsParentOf ctrlv
+              >>> G.connect ctrl M0.IsRealOf ctrlv
+            forM_ (filter (\x -> not $ M0.fid x `S.member` failset)
+                    $ G.connectedTo ctrl M0.IsParentOf rg :: [M0.Disk])
+                  $ \disk -> do
+              diskv <- M0.DiskV <$> newFid (Proxy :: Proxy M0.DiskV)
+              modifyGraph
+                  $ G.newResource ctrlv
+                >>> G.connect ctrlv M0.IsParentOf diskv
+                >>> G.connect disk M0.IsRealOf diskv
 
 generateFailureSets :: Int -- ^ No. of disk failures to tolerate
                     -> Int -- ^ No. of controller failures to tolerate
