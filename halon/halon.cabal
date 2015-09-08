@@ -160,6 +160,7 @@ Test-Suite unit-tests
                     replicated-log,
                     unordered-containers,
                     options-schema >= 0.1.1.0,
+                    random,
                     tasty >= 0.8,
                     tasty-files,
                     tasty-hunit,
@@ -210,6 +211,7 @@ Test-Suite integration-tests
                     unordered-containers,
                     options-schema >= 0.1.1.0,
                     process >= 1.2,
+                    random,
                     replicated-log,
                     tasty >= 0.8,
                     tasty-files,
@@ -218,6 +220,59 @@ Test-Suite integration-tests
                     uuid,
                     containers,
                     stm
+  if flag(rpc)
+      Build-Depends: network-transport-rpc
+      CPP-Options:    -DUSE_RPC
+  else
+      Build-Depends: network-transport-tcp >= 0.3,
+                     network-transport-inmemory >= 0.3
+
+Test-Suite scheduler-tests
+  Type:             exitcode-stdio-1.0
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   tests
+  Main-Is:          scheduler-tests.hs
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  CPP-Options:      -DMC_RG=RLogGroup
+  if flag(debug)
+    Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
+  Default-Extensions: DeriveDataTypeable
+                      DeriveGeneric
+                      GeneralizedNewtypeDeriving
+                      RecordWildCards NamedFieldPuns
+                      ScopedTypeVariables
+  Build-Depends:    halon,
+                    base >= 4.5,
+                    binary >= 0.6.4,
+                    bytestring,
+                    Cabal >= 1.16,
+                    distributed-process-scheduler,
+                    distributed-process-test,
+                    distributed-static,
+                    directory,
+                    filepath,
+                    hashable,
+                    network,
+                    network-transport,
+                    network-transport-controlled,
+                    unordered-containers,
+                    options-schema >= 0.1.1.0,
+                    process >= 1.2,
+                    random,
+                    replicated-log,
+                    tasty >= 0.8,
+                    tasty-files,
+                    tasty-hunit,
+                    cep,
+                    uuid,
+                    containers,
+                    stm,
+                    unix
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC

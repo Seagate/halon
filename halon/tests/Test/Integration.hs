@@ -27,10 +27,7 @@ tests transport = fmap (localOption (mkTimeout (7*60*1000000))) $
       , testGroup "MM-pure" <$> return
         HA.Multimap.Tests.tests
       , testGroup "RG" <$> HA.ResourceGraph.Tests.tests (getTransport transport)
-      , testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests False transport
-        -- Next test is commented since it doesn't pass reliably.
-        -- TODO: fix liveness of paxos.
---    , HA.RecoverySupervisor.Tests.tests transport False
+      , testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests transport
       , testGroup "NA" <$> HA.NodeAgent.Tests.tests (getTransport transport)
       , testGroup "AB" <$> HA.Autoboot.Tests.tests transport
       ]

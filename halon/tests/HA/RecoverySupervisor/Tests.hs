@@ -10,7 +10,6 @@
 
 module HA.RecoverySupervisor.Tests ( tests ) where
 
-import HA.Process
 import HA.RecoverySupervisor hiding (__remoteTable)
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR
@@ -21,85 +20,41 @@ import HA.Replicator.Log ( MC_RG )
 import RemoteTables ( remoteTable )
 
 import Control.Distributed.Process
-  ( Process
-  , spawnLocal
-  , getSelfPid
-  , liftIO
-  , catch
-  , expect
-  , usend
-  , receiveWait
-  , ProcessId
-#ifndef USE_MOCK_REPLICATOR
-  , processNodeId
-  , bracket_
-#endif
-  , getSelfNode
-  , exit
-  , unClosure
-  , NodeId(..)
-  , RemoteTable
-  )
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
-import Control.Distributed.Process.Internal.Types
-  ( ProcessExitException
-  , localNodeId
-  , LocalNode
-  )
-import Control.Distributed.Process.Node ( newLocalNode, runProcess, closeLocalNode )
+import Control.Distributed.Process.Internal.Types ( ProcessExitException )
+import Control.Distributed.Process.Node
+import qualified Control.Distributed.Process.Scheduler as Scheduler
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Control.Distributed.Process.Timeout (retry)
-#ifndef USE_MOCK_REPLICATOR
 import Network.Transport.Controlled ( Controlled, silenceBetween )
-#endif
-import Control.Distributed.Process
-  ( Static
-  , Closure
-  , receiveTimeout
-#ifndef USE_MOCK_REPLICATOR
-  , say
-#endif
-  )
+import Network.Transport.InMemory (createTransport)
 
-import Control.Concurrent
-  ( MVar
-  , newEmptyMVar
-  , putMVar
-  , takeMVar
-  , tryTakeMVar
-#ifndef USE_MOCK_REPLICATOR
-  , threadDelay
-#endif
-  )
 import Control.Exception ( SomeException )
 import qualified Control.Exception as E
 import Control.Monad
-  ( liftM3
+  ( liftM2
   , void
   , replicateM_
   , replicateM
   , forM_
-#ifndef USE_MOCK_REPLICATOR
-  , liftM2
-  , unless
-#endif
+  , join
   )
 #ifndef USE_MOCK_REPLICATOR
-import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TChan
+import Control.Monad (when)
+import Data.Function (fix)
+import Data.List (partition)
 #endif
 import Data.Int
 import Data.IORef
-import Network.Transport
-  (Transport
-#ifndef USE_MOCK_REPLICATOR
-  , EndPointAddress
-#endif
-  )
+import Network.Transport (Transport(..))
 import Test.Framework
 import Test.Transport
 import Test.Tasty.HUnit
 import System.Clock
+import System.IO
+import System.Random
+import System.Timeout (timeout)
+
 
 requestTimeout :: Int
 requestTimeout = 1000000
@@ -107,14 +62,15 @@ requestTimeout = 1000000
 pollingPeriod :: Int
 pollingPeriod = 2000000
 
-data TestCounters = TestCounters
-    { cStart :: MVar ()        -- ^ RC has been started
-    , cStop  :: MVar ()        -- ^ RC has been stopped
-    , cRC    :: MVar ProcessId -- ^ RC pid
+type ChanPorts a = (SendPort a, ReceivePort a)
+
+data TestEvents = TestEvents
+    { cStart :: ChanPorts ProcessId -- ^ RC has been started
+    , cStop  :: ChanPorts ProcessId -- ^ RC has been stopped
     }
 
-newCounters :: IO TestCounters
-newCounters = liftM3 TestCounters newEmptyMVar newEmptyMVar newEmptyMVar
+newCounters :: Process TestEvents
+newCounters = liftM2 TestEvents newChan newChan
 
 type RG = MC_RG RSState
 
@@ -123,245 +79,145 @@ rsSDict = SerializableDict
 
 remotable [ 'rsSDict ]
 
-spawnReplica' :: (RGroup g)
-              => (g RSState)
-              -> Static (SerializableDict RSState)
-              -> NodeId
-              -> Process (Closure (Process (g RSState)))
-spawnReplica' _ = spawnReplica
-
 -- | Start RS environment, starts dummy RS that will notify about
 -- it's events using "Counters".
-testRS' :: Bool         -- ^ Run test on single node.
-        -> MVar ()      -- ^ MVar that is used to notify that startup procedure has finished.
-        -> TestCounters -- ^ Counters that is used in RC, see "Counters"
-        -> RG           -- ^ RG
+testRS' :: TestEvents -- ^ Counters that is used in RC, see "Counters"
+        -> Closure (Process RG) -- ^ RG
         -> Process ()
-testRS' oneNode mdone counters rGroup = do
+testRS' counters rg = do
   flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
-    rGroup' <- if oneNode
-       then return rGroup
-       else do
-         n <- getSelfNode
-         rg'      <- spawnReplica' rGroup $(mkStatic 'rsSDict) n
-         unClosure rg' >>= id
-    void $ spawnLocal $ recoverySupervisor rGroup' $ dummyRC counters
-    liftIO $ putMVar mdone ()
+    rGroup <- unClosure rg >>= id
+    void $ spawnLocal $ recoverySupervisor rGroup $ dummyRC counters
 
   where
 
     dummyRC cnts = do
+        say "started dummy RC"
         self <- getSelfPid
-        liftIO $ do
-          putMVar (cRC cnts) self
-          putMVar (cStart cnts) ()
+        sendChan (fst $ cStart cnts) self
         receiveWait []
-      `catch` (\(_ :: ProcessExitException) -> liftIO $ putMVar (cStop cnts) ())
+      `catch` (\(_ :: ProcessExitException) -> do
+                self <- getSelfPid
+                say "dummy RC died"
+                sendChan (fst $ cStop cnts) self
+              )
 
-#ifndef USE_MOCK_REPLICATOR
-
-data Event = Started ProcessId
-           | Stopped ProcessId
-           deriving (Eq, Show)
-
--- | Start RS environment, starts dummy RS that will notify about it's
--- events using "TChan" of events
-testRS'' :: MVar ()      -- ^ MVar that is used to notify that startup procedure has finished.
-         -> TChan Event  -- ^ Channel of events.
-         -> RG           -- ^ Recovery group handle.
-         -> Process ()
-testRS'' mdone chan rGroup = do
-    flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
-      n <- getSelfNode
-      rg'      <- spawnReplica' rGroup $(mkStatic 'rsSDict) n
-      rGroup'  <- unClosure rg' >>= id
-      void $ spawnLocal $ recoverySupervisor rGroup' $ dummyRC chan
-      liftIO $ putMVar mdone ()
-    where
-      dummyRC ch = do
-        self <- getSelfPid
-        say "starting dummy RC"
-        bracket_ (liftIO $ atomically $ writeTChan ch (Started self))
-                 (liftIO $ atomically $ writeTChan ch (Stopped self))
-                 (receiveWait [])
-#endif
-
-tests :: Bool -> AbstractTransport -> IO [TestTree]
-tests oneNode abstractTransport = do
-#ifndef USE_MOCK_REPLICATOR
+tests :: AbstractTransport -> IO [TestTree]
+tests abstractTransport = do
   (transport, controlled) <- mkControlledTransport abstractTransport
-#else
-  let transport = getTransport abstractTransport
-#endif
-  putStrLn $ "Testing RecoverySupervisor " ++
-              if oneNode then "with one node..."
-               else "with multiple nodes..."
+  putStrLn $ "Testing RecoverySupervisor ..."
   return
-    [ testSuccess "rs-restart-if-process-dies" $ rsTest transport oneNode $ \_ counters rGroup -> do
-        _leader0 <- do
-            liftIO $ do
-              takeMVar $ cStart counters
-              Nothing <- tryTakeMVar $ cStop counters
-              return ()
-            RSState (Just leader0) _ _ <- retry requestTimeout $ getState rGroup
-            return leader0
-
-        rc <- liftIO $ takeMVar $ cRC counters
+    [ testSuccess "rs-restart-if-process-dies" $ testSplit transport controlled 4 $
+      \rc _ events _ cRGroup -> do
         exit rc "killed for testing"
 
-        liftIO $ do
-          takeMVar $ cStart counters
-          takeMVar $ cStop counters
+        _ <- receiveChan $ snd $ cStart events
+        _ <- receiveChan $ snd $ cStop events
+        rGroup <- join $ unClosure cRGroup
         RSState (Just _) _ _<- retry requestTimeout $ getState rGroup
         return ()
 #ifndef USE_MOCK_REPLICATOR
-    , testSuccess "rs-restart-if-node-dies" $ rsTest transport oneNode $ \ns counters rGroup -> do
-        leader0 <- do
-            liftIO $ do
-              takeMVar $ cStart counters
-              Nothing <- tryTakeMVar $ cStop counters
-              return ()
-            RSState (Just leader0) _ _ <- retry requestTimeout $ getState rGroup
-            return leader0
+    , testSuccess "rs-restart-if-node-silent" $ testSplit transport controlled 4 $
+      \rc ns events splitNet cRGroup -> do
+        rGroup <- join $ unClosure cRGroup
+        RSState (Just leader0) _ _ <- retry requestTimeout $ getState rGroup
+        liftIO $ assertBool ("the leader is not the expected one"
+                             ++ show (rc, leader0)
+                            )
+                            $ processNodeId rc == processNodeId leader0
 
-        rc <- liftIO $ takeMVar $ cRC counters
-
-        let leaderNode = head $ filter ((processNodeId rc ==) . localNodeId) ns
-        _ <- liftIO $ terminateLocalProcesses leaderNode Nothing
+        let ([leaderNode], rest) =
+              partition ((processNodeId leader0 ==) . localNodeId) ns
+        say $ "Isolating " ++ show (localNodeId leaderNode)
+        splitNet [ [localNodeId leaderNode], map localNodeId rest ]
 
         -- Check that previous RC stops
-        liftIO $ takeMVar $ cStop counters
-        -- Check that new RC spawns
-        liftIO $ takeMVar $ cStart counters -- XXX: Timeout ?
+        _ <- receiveChan $ snd $ cStop events
+
+        -- Check that a new RC spawns
+        _ <- fix $ \loop -> do
+          rc' <- receiveChan $ snd $ cStart events -- XXX: Timeout ?
+          when (processNodeId rc' == localNodeId leaderNode) loop
 
         -- Read new leader pid
-        RSState (Just leader1) _ _<- retry requestTimeout $ getState rGroup
+        self <- getSelfPid
+        _ <- liftIO $ forkProcess (head rest) $ do
+               rGroup' <- join $ unClosure cRGroup
+               retry requestTimeout (getState rGroup') >>= usend self
+        RSState (Just leader1) _ _<- expect
         -- Verify that we have new leader
-        False <- return $ leader0 == leader1
-        return ()
-    , testSuccess "rs-restart-if-node-silent" $ rsTest transport oneNode $ \ns counters rGroup -> do
-        leader0 <- do
-            liftIO $ do
-              takeMVar $ cStart counters
-              Nothing <- tryTakeMVar $ cStop counters
-              return ()
-            RSState (Just leader0) _ _ <- retry requestTimeout $ getState rGroup
-            return leader0
-
-        -- Prepare new handle because silent node will not have quorum to reply
-        rg'      <- spawnReplica' rGroup $(mkStatic 'rsSDict) (localNodeId $ ns !! 1)
-        rGroup'  <- unClosure rg' >>= id
-        rc <- liftIO $ takeMVar $ cRC counters
-
-        -- Isolate leader node
-        selfNode <- getSelfNode
-        liftIO $ forM_ ns $ \n ->
-          unless (nodeAddress (processNodeId leader0) == nodeAddress (localNodeId n)) $ do
-            silenceBetween controlled (nodeAddress (processNodeId rc))
-                                      (nodeAddress (localNodeId n))
-            silenceBetween controlled (nodeAddress (processNodeId rc))
-                                      (nodeAddress selfNode)
-
-        -- Check that RC was killed
-        liftIO $ takeMVar $ cStop counters
-        -- Check that new RC was spawned
-        liftIO $ takeMVar $ cStart counters
-
-        -- Get leader using node that have quorum
-        RSState (Just leader1) _ _<- retry requestTimeout $ getState rGroup'
-        -- Verify that leader is new
-        False <- return $ leader0 == leader1
-        return ()
-    , testSuccess "rs-rc-killed-if-quorum-is-lost" $ rsTest transport oneNode $ \ns counters rGroup -> do
-        _ <- do
-            liftIO $ do
-              takeMVar $ cStart counters
-              Nothing <- tryTakeMVar $ cStop counters
-              return ()
-            RSState (Just leader0) _ _ <- retry requestTimeout $ getState rGroup
-            return leader0
-
-        rc <- liftIO $ takeMVar $ cRC counters
-
-        forM_ (filter ((processNodeId rc /=) . localNodeId) ns) $ \n ->
-          liftIO $ terminateLocalProcesses n Nothing
-
-        liftIO $ takeMVar $ cStop counters
-
+        liftIO $ assertBool ("the leader is not new " ++
+                             show (leader0, leader1)
+                            )
+                            $ leader0 /= leader1
+    , testSuccess "rs-rc-killed-if-quorum-is-lost" $
+       testSplit transport controlled 4 $ \rc ns events splitNet cRGroup -> do
+        rGroup <- join $ unClosure cRGroup
+        RSState (Just leader0) _ _ <- retry requestTimeout $ getState rGroup
+        liftIO $ assertBool ("the leader is not the expected one"
+                             ++ show (rc, leader0)
+                            )
+                            $ processNodeId rc == processNodeId leader0
+        let ([leaderNode], rest) =
+              partition (processNodeId leader0 ==) $ map localNodeId ns
+        splitNet $ [leaderNode] : map (: []) rest
+        _ <- receiveChan $ snd $ cStop events
         return ()
     , testSuccess "rs-split-in-majority" $ testSplit transport controlled 5
-        $ \pid nodes events splitNet _ -> liftIO $ do
+        $ \pid nodes events splitNet _ -> do
           let (as,bs) = splitAt 2 $ filter ((processNodeId pid /=) . localNodeId) nodes
-          splitNet (nodeAddress (processNodeId pid)
-                   :map (nodeAddress.localNodeId) as)
-                   (map (nodeAddress.localNodeId) bs)
-          threadDelay (3*pollingPeriod)
-          mev <- atomically $ tryReadTChan events
-          case mev of
+          splitNet [ processNodeId pid : map localNodeId as
+                   , map localNodeId bs
+                   ]
+          _ <- receiveTimeout (3*pollingPeriod) [] :: Process (Maybe ())
+          mp <- receiveChanTimeout 0 $ snd $ cStop events
+          case mp of
             Nothing -> return ()
             -- If the RC was killed, it should respawn quickly.
-            Just (Stopped p) | p == pid -> do
-              Started p' <- atomically $ readTChan events
+            Just p | p == pid -> do
+              p' <- receiveChan $ snd $ cStart events
               True <- return $ elem (processNodeId p')
                              $ processNodeId pid : map localNodeId as
               return ()
             _ -> error "unexpected event from the RC"
-    , testSuccess "rs-split-in-minority" $ testSplit transport controlled 5 $ \pid nodes events splitNet rGroup -> do
-        selfNode <- getSelfNode
-        liftIO $ do
-          let (as,bs) = splitAt 3 $ filter ((processNodeId pid /=) . localNodeId) nodes
-          splitNet (nodeAddress selfNode:map (nodeAddress.localNodeId) as)
-                   (nodeAddress (processNodeId pid)
-                   :map (nodeAddress . localNodeId) bs)
+    , testSuccess "rs-split-in-minority" $ testSplit transport controlled 5 $ \pid nodes events splitNet cRGroup -> do
+        let (as,bs) = splitAt 3 $ filter ((processNodeId pid /=) . localNodeId) nodes
+        splitNet [ map localNodeId as
+                 , processNodeId pid : map localNodeId bs
+                 ]
 
-        liftIO $ do
-          -- wait that RS eventually stop
-          _ <- waitMsgIO events $ \e ->
-            case e of
-              Stopped p -> p == pid
-              _ -> False
-          -- wait that new RS eventually starts
-          _ <- waitMsgIO events $ \e ->
-            case e of
-              Started _ -> True
-              _ -> False
-          return ()
-        RSState (Just _) _ _<- retry requestTimeout $ getState rGroup
-        return ()
-    , testSuccess "rs-split-in-half"  $ testSplit transport controlled 5 $ \pid nodes events splitNet _ -> liftIO $ do
-        let [a1,a2,a3,a4,a5] = map (nodeAddress . localNodeId) nodes
-        splitNet [a1,a2] [a3,a4,a5]
-        splitNet [a3,a4] [a5]
         -- wait that RS eventually stop
-        _ <- waitMsgIO events $ \e ->
-          case e of
-            Stopped p -> p == pid
-            _ -> False
-        threadDelay (3*pollingPeriod)
-        mev <- atomically $ tryReadTChan events
-        case mev of
+        _ <- fix $ \loop -> do
+               p <- receiveChan $ snd $ cStop events
+               when (p /= pid) loop
+        -- wait that new RS eventually starts
+        _ <- receiveChan $ snd $ cStart events
+        self <- getSelfPid
+        _ <- liftIO $ forkProcess (head as) $ do
+               rGroup' <- join $ unClosure cRGroup
+               retry requestTimeout (getState rGroup') >>= usend self
+        RSState (Just _) _ _<- expect
+        return ()
+    , testSuccess "rs-split-in-half"  $ testSplit transport controlled 5 $ \pid nodes events splitNet _ -> do
+        let [a1,a2,a3,a4,a5] = map localNodeId nodes
+        splitNet [[a1,a2], [a3,a4], [a5]]
+        -- wait that RS eventually stop
+        _ <- fix $ \loop -> do
+               p <- receiveChan $ snd $ cStop events
+               when (p /= pid) loop
+        _ <- receiveTimeout (3*pollingPeriod) [] :: Process (Maybe ())
+        mp <- receiveChanTimeout 0 $ snd $ cStart events
+        case mp of
           Nothing -> return ()
           -- If the RC was killed, it should stop quickly.
-          Just (Started p') -> do
-            Stopped p'' <- atomically $ readTChan events
+          Just p' -> do
+            p'' <- receiveChan $ snd $ cStop events
             True <- return $ p' == p''
             return ()
-          _ -> error "unexpected event from the RC"
         return ()
 #endif
     , timerTests transport
     ]
-
-#ifndef USE_MOCK_REPLICATOR
-waitMsgIO :: TChan a -> (a -> Bool) -> IO a
-waitMsgIO ch p = atomically $ waitMsg []
-  where
-    waitMsg x = do
-      y <- readTChan ch
-      if p y
-         then forM_ x (unGetTChan ch) >> return y
-         else waitMsg (y:x)
-
 
 testSplit :: Transport
           -> Controlled
@@ -372,79 +228,49 @@ testSplit :: Transport
                -- ^ Pd of the leader.
                -> [LocalNode]
                -- ^ List of replica nodes.
-               -> TChan Event
+               -> TestEvents
                -- ^ Channel with RS events.
-               -> ([EndPointAddress] -> [EndPointAddress] -> IO ())
+               -> ([[NodeId]] -> Process ())
                -- ^ Callback that splits network between nodes in groups.
-               -> MC_RG RSState
+               -> Closure (Process (MC_RG RSState))
                -- ^ Group handle.
                -> Process ())
           -> IO ()
-testSplit transport t amountOfReplicas action = withTmpDirectory $
-  withLocalNodes amountOfReplicas transport (__remoteTable remoteTable)
-   $ \ns -> withLocalNode transport (__remoteTable remoteTable)
-   $ \controlNode -> do
-    events    <- newTChanIO
-    mTestDone <- newEmptyMVar
-    tryRunProcess controlNode $ do
+testSplit transport t amountOfReplicas action =
+    runTest' (amountOfReplicas + 1) 10 transport $ \ns -> do
+      self <- getSelfPid
+      events    <- newCounters
       let nids = map localNodeId ns
+      bracket (do
+                 cRGroup <- newRGroup $(mkStatic 'rsSDict) 20 pollingPeriod nids
+                                      (RSState Nothing 0 pollingPeriod)
+                 rGroup <- join $ unClosure cRGroup
+                 return (cRGroup, rGroup)
+              )
+              (\(_, rGroup) -> forM_ nids $ killReplica rGroup)
+             $ \(cRGroup, rGroup) -> do
 
-      cRGroup <- newRGroup $(mkStatic 'rsSDict) 20 pollingPeriod nids
-                           (RSState Nothing 0 pollingPeriod)
+        forM_ ns $ \n -> liftIO $ forkProcess n $ do
+          testRS' events cRGroup
+          usend self ((), ())
+        replicateM_ amountOfReplicas (expect :: Process ((), ()))
 
-      rGroup <- unClosure cRGroup >>= id
-      mdone <- liftIO $ newEmptyMVar
+        let doSplit nds =
+              (if Scheduler.schedulerIsEnabled
+                 then Scheduler.addFailures . concat .
+                      map (\(a, b) -> [((a, b), 1.0), ((b, a), 1.0)])
+                 else liftIO . sequence_ .
+                      map (\(a, b) -> silenceBetween t (nodeAddress a)
+                                                    (nodeAddress b)
+                          )
+              )
+              [ (a, b) | a <- concat nds, x <- nds, notElem a x, b <- x ]
 
-      liftIO $ forM_ ns $ \n -> runProcess n $ do
-        _ <- spawnLocal $ testRS'' mdone events rGroup
-        return ()
-
-      let doSplit a b = forM_ (liftM2 (,) a b) $ uncurry (silenceBetween t)
-      replicateM_ amountOfReplicas $ liftIO $ takeMVar mdone
-
-      pid0 <- do
-          pid <- liftIO $ do
-            Started pid <- atomically $ readTChan events
-            Nothing <- atomically $ tryReadTChan events
-            return pid
-          RSState (Just _) _ _ <- retry requestTimeout $ getState rGroup
-          return pid
-      action pid0 ns events doSplit rGroup
-      liftIO $ putMVar mTestDone ()
-
-    takeMVar mTestDone
-    -- TODO: implement closing RGroups and call it here.
-#endif
-
-rsTest :: Transport -> Bool -> ([LocalNode] -> TestCounters -> MC_RG RSState -> Process ()) -> IO ()
-rsTest transport oneNode action = withTmpDirectory $
-  let amountOfReplicas = 4 in
-  withLocalNodes amountOfReplicas transport (__remoteTable remoteTable)
-   $ \ns@(n1:_) -> withLocalNode transport (__remoteTable remoteTable)
-   $ \controlNode -> do
-  mTestDone <- newEmptyMVar
-  tryRunProcess controlNode $ do
-      let nids = map localNodeId $ if oneNode
-                   then replicate amountOfReplicas n1
-                   else ns
-      cRGroup <- newRGroup $(mkStatic 'rsSDict) 20 pollingPeriod nids
-                           (RSState Nothing 0 pollingPeriod)
-
-      rGroup   <- unClosure cRGroup >>= id
-      counters <- liftIO newCounters
-      mdone    <- liftIO newEmptyMVar
-
-      liftIO $ forM_ ns $ \n -> runProcess n $ do
-        _ <- spawnLocal $ testRS' oneNode mdone counters rGroup
-        return ()
-      replicateM_ amountOfReplicas $ liftIO $ takeMVar mdone
-      action ns counters rGroup
-      liftIO $ putMVar mTestDone ()
-
-  takeMVar mTestDone
-  -- Exit after transport stops being used.
-  -- TODO: fix closeTransport and call it here (see ticket #211).
-  -- TODO: implement closing RGroups and call it here.
+        pid0 <- receiveChan $ snd $ cStart events
+        Nothing <- receiveChanTimeout 0 $ snd $ cStop events
+        RSState (Just _) _ _ <- retry requestTimeout $ getState rGroup
+        action pid0 ns events doSplit cRGroup
+        -- TODO: implement closing RGroups and call it here.
 
 timerTests :: Transport -> TestTree
 timerTests transport = testGroup "RS Timer"
@@ -460,10 +286,9 @@ timerTests transport = testGroup "RS Timer"
 data TimerData = TimerData { firedAt :: IORef Int64 }
 
 testTimerRunAfterTimeout :: Transport -> Assertion
-testTimerRunAfterTimeout transport =
-  withLocalNode transport (__remoteTable remoteTable) $ \node -> do
+testTimerRunAfterTimeout transport = do
   td <- TimerData <$> newIORef 0
-  runProcess node $ do
+  runTest transport $ do
     forM_ [100,1000,10000] $ \delay -> do
       tf <- liftIO $ timeSpecToMicro <$> getTime Monotonic
       timer <- newTimer delay $ liftIO $ writeIORef (firedAt td) . timeSpecToMicro =<< getTime Monotonic
@@ -474,10 +299,9 @@ testTimerRunAfterTimeout transport =
                           (tf'-tf >= fromIntegral delay)
 
 testTimerCancelled :: Transport -> Assertion
-testTimerCancelled transport =
-  withLocalNode transport (__remoteTable remoteTable) $ \node -> do
-  td <- liftIO $ TimerData <$> newIORef 0
-  runProcess node $ do
+testTimerCancelled transport = do
+  td <- TimerData <$> newIORef 0
+  runTest transport $ do
     forM_ [100,1000,10000] $ \delay -> do
       tf <- liftIO $ timeSpecToMicro <$> getTime Monotonic
       timer <- newTimer delay $ liftIO $ writeIORef (firedAt td) . timeSpecToMicro =<< getTime Monotonic
@@ -491,10 +315,9 @@ testTimerCancelled transport =
            writeIORef (firedAt td) 0
 
 testTimerConcurrentCancel :: Transport -> Assertion
-testTimerConcurrentCancel transport =
-  withLocalNode transport (__remoteTable remoteTable) $ \node -> do
-  td <- liftIO $ TimerData <$> newIORef 0
-  runProcess node $ do
+testTimerConcurrentCancel transport = do
+  td <- TimerData <$> newIORef 0
+  runTest transport $ do
     let delay = 10000
     self <- getSelfPid
     tf <- liftIO $ timeSpecToMicro <$> getTime Monotonic
@@ -520,3 +343,26 @@ withLocalNodes :: Int
 withLocalNodes 0 _t _rt f = f []
 withLocalNodes n t rt f = withLocalNode t rt $ \node ->
     withLocalNodes (n - 1) t rt (f . (node :))
+
+runTest :: Transport -> Process () -> IO ()
+runTest tr action = runTest' 1 200 tr $ const action
+
+runTest' :: Int -> Int -> Transport -> ([LocalNode] -> Process ()) -> IO ()
+runTest' numNodes numReps tr action
+    | Scheduler.schedulerIsEnabled = do
+        s <- randomIO
+        -- TODO: Fix leaks in n-t-inmemory and use the same transport for all
+        -- tests, maybe.
+        forM_ [1..numReps] $ \i ->  withTmpDirectory $
+          E.bracket createTransport closeTransport $
+          \tr' -> do
+            m <- timeout (7 * 60 * 1000000) $
+              Scheduler.withScheduler (s + i) 1000 numNodes tr' rt action
+            maybe (error "Timeout") return m
+          `E.onException`
+            liftIO (hPutStrLn stderr $ "Failed with seed: " ++ show (s + i))
+    | otherwise =
+        withTmpDirectory $ withLocalNodes numNodes tr rt $
+          \(n : ns) -> runProcess n (action ns)
+  where
+    rt = Scheduler.__remoteTable $ __remoteTable remoteTable
