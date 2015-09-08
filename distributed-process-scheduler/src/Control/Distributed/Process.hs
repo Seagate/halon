@@ -21,6 +21,7 @@ module Control.Distributed.Process
   , receiveWait
   , receiveTimeout
   , receiveChan
+  , receiveChanTimeout
   , monitor
   , unmonitor
   , withMonitor
@@ -114,6 +115,7 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , receiveTimeout
   , receiveWait
   , receiveChan
+  , receiveChanTimeout
   , monitor
   , unmonitor
   , withMonitor
@@ -172,6 +174,12 @@ uforward = ifSchedulerIsEnabled Internal.uforward DP.uforward
 {-# NOINLINE receiveChan #-}
 receiveChan :: Serializable a => ReceivePort a -> Process a
 receiveChan = ifSchedulerIsEnabled Internal.receiveChan DP.receiveChan
+
+-- | Wait for a message on a typed channel for at least the given amount of
+-- microseconds.
+receiveChanTimeout :: Serializable a
+                   => Int -> ReceivePort a -> Process (Maybe a)
+receiveChanTimeout t rPort = receiveTimeout t [ matchChan rPort return ]
 
 {-# NOINLINE monitor #-}
 monitor :: ProcessId -> Process DP.MonitorRef
