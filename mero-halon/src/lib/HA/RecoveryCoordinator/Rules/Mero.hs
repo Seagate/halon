@@ -23,8 +23,11 @@ import Control.Category (id, (>>>))
 import Control.Distributed.Process (liftIO)
 import Control.Monad (unless)
 
-import Data.List (foldl')
+import Data.Foldable (foldl')
+import qualified Data.HashMap.Strict as M
+import Data.List (sort, (\\))
 import Data.Proxy
+import qualified Data.Set as S
 import Data.UUID.V4 (nextRandom)
 import Data.Word ( Word64 )
 
@@ -168,8 +171,64 @@ initialiseConfInRG = unlessM confInitialised $ do
                        . (G.newResource m0r >>> G.connectUnique m0r M0.At r)
       return m0r
 
+generateFailureSets :: Int -- ^ No. of disk failures to tolerate
+                    -> Int -- ^ No. of controller failures to tolerate
+                    -> Int -- ^ No. of disk failures equivalent to ctrl failure
+                    -> PhaseM LoopState l (S.Set (S.Set Fid))
+generateFailureSets df cf cfe = do
+  rg <- getLocalGraph
+  -- Look up all disks and the controller they are attached to
+  let allDisks = M.fromListWith (S.union) . fmap (fmap S.singleton) $
+        [ (M0.fid ctrl, M0.fid disk)
+        | (host :: Host) <- G.connectedTo Cluster Has rg
+        , (ctrl :: M0.Controller) <- G.connectedFrom M0.At host rg
+        , (disk :: M0.Disk) <- G.connectedTo ctrl M0.IsParentOf rg
+        ]
+
+      -- Build failure sets for this number of failed controllers
+      buildCtrlFailureSet :: Int -- No. failed controllers
+                          -> M.HashMap Fid (S.Set Fid) -- ctrl -> disks
+                          -> S.Set (S.Set Fid)
+      buildCtrlFailureSet i fids = let
+          df' = df - (i * cfe) -- E.g. failures to support on top of ctrl failure
+          keys = sort $ M.keys fids
+          go failedCtrls = let
+              okCtrls = keys \\ failedCtrls
+              failedCtrlSet :: S.Set Fid
+              failedCtrlSet = S.fromDistinctAscList failedCtrls
+              autoFailedDisks :: S.Set Fid
+              autoFailedDisks = -- E.g. because their parent controller failed
+                S.unions $ fmap (\x -> M.lookupDefault S.empty x fids) failedCtrls
+              possibleDisks =
+                S.unions $ fmap (\x -> M.lookupDefault S.empty x fids) okCtrls
+            in
+              S.mapMonotonic (\x -> failedCtrlSet
+                        `S.union` (autoFailedDisks `S.union` x))
+                   (buildDiskFailureSets df' possibleDisks)
+        in
+          S.unions $ go <$> choose i keys
+
+      buildDiskFailureSets :: Int -- Max no. failed disks
+                           -> S.Set Fid
+                           -> S.Set (S.Set Fid)
+      buildDiskFailureSets i fids =
+        S.unions $ fmap (\j -> buildDiskFailureSet j fids) [0 .. i]
+
+      buildDiskFailureSet :: Int -- No. failed disks
+                          -> S.Set Fid
+                          -> S.Set (S.Set Fid)
+      buildDiskFailureSet i fids = S.unions $ go <$> (choose i (S.toList fids))
+        where
+          go failed = S.singleton
+                    $ fids `S.difference` (S.fromDistinctAscList failed)
+
+      choose :: Int -> [a] -> [[a]]
+      choose 0 _ = [[]]
+      choose _ [] = []
+      choose n (x:xs) = ((x:) <$> choose (n-1) xs) ++ choose (n-1) xs
+
+  return $ S.unions $ fmap (\j -> buildCtrlFailureSet j allDisks) [0 .. cf]
 
 -- | Build an initial confd instance based on info in the resource graph.
 buildConfd :: PhaseM LoopState l ()
 buildConfd = undefined
-
