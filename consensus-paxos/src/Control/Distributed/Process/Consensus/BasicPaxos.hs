@@ -259,7 +259,7 @@ propose retryTimeout sendA acceptors d x = liftProcess $
             let backoff' = if backoff == 0 then 200000 else 2 * backoff
             case eth of
               Left b'@BallotId{..} -> do
-                  paxosTrace $ "propose: scout failed " ++ show b'
+                  paxosTrace $ "propose: scout failed " ++ show (d, b')
                   when (not schedulerIsEnabled) $
                     liftIO $ randomRIO (0, backoff) >>= threadDelay
                   if b < b'
@@ -270,7 +270,7 @@ propose retryTimeout sendA acceptors d x = liftProcess $
                   eth' <- retry retryTimeout $ command sendA acceptors d b x'
                   case eth' of
                       Left b'@(BallotId{..}) -> do
-                        paxosTrace $ "propose: command failed " ++ show b'
+                        paxosTrace $ "propose: command failed " ++ show (d, b')
                         when (not schedulerIsEnabled) $
                           liftIO $ randomRIO (0, backoff) >>= threadDelay
                         loop backoff' b{ballotProposalId}
