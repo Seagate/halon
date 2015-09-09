@@ -23,7 +23,7 @@ import Network.CEP.Buffer
 import Network.CEP.Types
 
 data PhaseOut l where
-    SM_Complete :: l -> [PhaseHandle] -> Maybe SMLogs -> PhaseOut l
+    SM_Complete :: l -> [Jump PhaseHandle] -> Maybe SMLogs -> PhaseOut l
     -- ^ The phase has finished processing, yielding a new set of SMs to run.
     SM_Suspend  :: Maybe SMLogs -> PhaseOut l
     -- ^ The phase has stopped temporarily, and should be invoked again.

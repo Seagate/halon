@@ -19,7 +19,6 @@ import           Control.Wire hiding ((.))
 import           Data.Binary hiding (get, put)
 import qualified Data.MultiMap as MM
 import qualified Data.Sequence as S
-import           FRP.Netwire (Session)
 
 import Network.CEP.Buffer
 
@@ -83,32 +82,47 @@ data Phase g l =
 newtype PhaseHandle = PhaseHandle { _phHandle :: String }
 
 -- | Pretty sure my colleagues will complain about my naming skill ! It
---   reprensents the way we want to access a 'Phase'.
-data PhaseJump
-    = NormalJump PhaseHandle
-      -- ^ Accesses a 'Phase' directly.
-    | TimeoutJump (SimpleWire () ()) PhaseHandle
-      -- ^ Accesses a 'Phase' only when its 'SimpleWire' advises to do it. A
-      --   a 'CEPWire' is used in order to express a wider set of time
+--   reprensents the way we want to access a resource. It could be a 'Phase'
+--   for instance
+data Jump a
+    = NormalJump a
+      -- ^ Accesses a resource directly.
+    | ReactiveJump (SimpleWire () ()) a
+      -- ^ Accesses a resource only when its 'SimpleWire' advises to do it. A
+      --   a 'SimpleWire' is used in order to express a wider set of time
       --   restricted predicate.
 
-jumpHandle :: PhaseJump -> PhaseHandle
-jumpHandle (NormalJump h)    = h
-jumpHandle (TimeoutJump _ h) = h
+instance Functor Jump where
+    fmap f (NormalJump a)     = NormalJump $ f a
+    fmap f (ReactiveJump w a) = ReactiveJump w $ f a
 
--- | Jumps to a 'Phase' after a certain amount of time.
-timeout :: NominalDiffTime -> PhaseJump -> PhaseJump
-timeout dt jmp = TimeoutJump (after dt) (jumpHandle jmp)
+normalJump :: a -> Jump a
+normalJump = NormalJump
 
--- | Update the time of a 'PhaseJump'. If it's ready, gets its 'PhaseHandle'.
-jumpApplyTime :: Timed NominalDiffTime ()
-              -> PhaseJump
-              -> Either PhaseJump PhaseHandle
-jumpApplyTime _ (NormalJump h)    = Right h
-jumpApplyTime t (TimeoutJump w h) =
+-- | Jumps to a resource after a certain amount of time.
+timeout :: NominalDiffTime -> Jump PhaseHandle -> Jump PhaseHandle
+timeout dt (NormalJump a)     = ReactiveJump (after dt) a
+timeout dt (ReactiveJump w a) = ReactiveJump (w <> after dt) a
+
+jumpPhaseName :: Jump (Phase g l) -> String
+jumpPhaseName (NormalJump p)     = _phName p
+jumpPhaseName (ReactiveJump _ p) = _phName p
+
+jumpPhaseCall :: Jump (Phase g l) -> PhaseCall g l
+jumpPhaseCall (NormalJump p)     = _phCall p
+jumpPhaseCall (ReactiveJump _ p) = _phCall p
+
+jumpPhaseHandle :: Jump PhaseHandle -> String
+jumpPhaseHandle (NormalJump h)     = _phHandle h
+jumpPhaseHandle (ReactiveJump _ h) = _phHandle h
+
+-- | Update the time of a 'Jump'. If it's ready, gets its value.
+jumpApplyTime :: Timed NominalDiffTime () -> Jump a -> Either (Jump a) a
+jumpApplyTime _ (NormalJump h)     = Right h
+jumpApplyTime t (ReactiveJump w h) =
     let (res, nxt) = runIdentity $ stepWire w t (Right ()) in
     case res of
-      Left _ -> Left $ TimeoutJump nxt h
+      Left _ -> Left $ ReactiveJump nxt h
       _      -> Right h
 
 -- | CEP 'Engine' state-machine specification. It's about defining rule or set
@@ -120,7 +134,7 @@ type Definitions s a = Specification s a
 
 -- | Type level trick in order to make sure that the last rule state machine
 --   instruction is a 'start' call.
-data Started g l = StartingPhase l (Phase g l)
+data Started g l = StartingPhase l (Jump (Phase g l))
 
 -- | Holds type information used for later type message deserialization.
 data TypeInfo =
@@ -181,12 +195,12 @@ data Token a = Token
 
 -- | Rule state machine.
 data RuleInstr g l a where
-    Start     :: PhaseHandle -> l -> RuleInstr g l (Started g l)
+    Start     :: Jump PhaseHandle -> l -> RuleInstr g l (Started g l)
     -- ^ Starts the rule given a phase and an inital local state value.
-    NewHandle :: String -> RuleInstr g l PhaseHandle
+    NewHandle :: String -> RuleInstr g l (Jump PhaseHandle)
     -- ^ Defines a phase handle. By default, that handle would reference a
     --   'Phase' state machine that will ask and do nothing.
-    SetPhase  :: PhaseHandle -> (PhaseCall g l) -> RuleInstr g l ()
+    SetPhase  :: Jump PhaseHandle -> (PhaseCall g l) -> RuleInstr g l ()
     -- ^ Assignes a 'Phase' state machine to the handle.
     Wants :: Serializable a => Proxy a -> RuleInstr g l (Token a)
     -- ^ Indicates that rule is interested in a particular message.
@@ -194,7 +208,7 @@ data RuleInstr g l a where
 type RuleM g l a = Program (RuleInstr g l) a
 
 -- | Defines a phase handle.
-phaseHandle :: String -> RuleM g l PhaseHandle
+phaseHandle :: String -> RuleM g l (Jump PhaseHandle)
 phaseHandle n = singleton $ NewHandle n
 
 -- | Indicates we might be interested by a particular message.
@@ -203,13 +217,13 @@ wants p = singleton $ Wants p
 
 -- | Assigns a 'PhaseHandle' to a 'Phase' state machine that would be directly
 --   executed when triggered.
-directly :: PhaseHandle -> PhaseM g l () -> RuleM g l ()
+directly :: Jump PhaseHandle -> PhaseM g l () -> RuleM g l ()
 directly h action = singleton $ SetPhase h (DirectCall action)
 
 -- | Assigns a 'PhaseHandle' to a 'Phase' state machine that would await for
 --   a specific message before starting.
 setPhase :: Serializable a
-         => PhaseHandle
+         => Jump PhaseHandle
          -> (a -> PhaseM g l ())
          -> RuleM g l ()
 setPhase h action = singleton $ SetPhase h (ContCall PhaseNone action)
@@ -218,7 +232,7 @@ setPhase h action = singleton $ SetPhase h (ContCall PhaseNone action)
 --   a specific message before starting. The expected messsage should
 --   satisfies the given predicate.
 setPhaseIf :: (Serializable a, Serializable b)
-           => PhaseHandle
+           => Jump PhaseHandle
            -> (a -> g -> l -> Process (Maybe b))
            -> (b -> PhaseM g l ())
            -> RuleM g l ()
@@ -227,7 +241,7 @@ setPhaseIf h p action = singleton $ SetPhase h (ContCall (PhaseMatch p) action)
 -- | Assigns a 'PhaseHandle' to a 'Phase' state machine that would require the
 --   Netwire state machine to yield a value in order to start.
 setPhaseWire :: (Serializable a, Serializable b)
-             => PhaseHandle
+             => Jump PhaseHandle
              -> CEPWire a b
              -> (b -> PhaseM g l ())
              -> RuleM g l ()
@@ -237,7 +251,7 @@ setPhaseWire h w action = singleton $ SetPhase h (ContCall (PhaseWire w) action)
 --   type of message to conform the given predicate in order to produce the
 --   value needed to start.
 setPhaseMatch :: (Serializable a, Serializable b)
-              => PhaseHandle
+              => Jump PhaseHandle
               -> (a -> g -> l -> Process (Maybe b))
               -> (b -> PhaseM g l ())
               -> RuleM g l ()
@@ -262,7 +276,7 @@ __phaseSeq2 p = PhaseSeq sq action
 -- | Assigns a 'PhaseHandle' to a 'Phase' state machine that expects 2 types of
 --   message to come sequentially. If the predicate is satisfied, we can start.
 setPhaseSequenceIf :: (Serializable a, Serializable b)
-                => PhaseHandle
+                => Jump PhaseHandle
                 -> (a -> b -> Bool)
                 -> (a -> b -> PhaseM g l ())
                 -> RuleM g l ()
@@ -274,7 +288,7 @@ setPhaseSequenceIf h p t =
 -- | Assigns a 'PhaseHandle' to a 'Phase' state machine that expects 2 types of
 --   message to come sequentially.
 setPhaseSequence :: (Serializable a, Serializable b)
-                 => PhaseHandle
+                 => Jump PhaseHandle
                  -> (a -> b -> PhaseM g l ())
                  -> RuleM g l ()
 setPhaseSequence h t =
@@ -282,11 +296,11 @@ setPhaseSequence h t =
 
 -- | Informs CEP engine that rule will start with a particular phase given an
 --   initial local state value.
-start :: PhaseHandle -> l -> RuleM g l (Started g l)
+start :: Jump PhaseHandle -> l -> RuleM g l (Started g l)
 start h l = singleton $ Start h l
 
 -- | Like 'start' but with a local state set to unit.
-start_ :: PhaseHandle -> RuleM g () (Started g ())
+start_ :: Jump PhaseHandle -> RuleM g () (Started g ())
 start_ h = start h ()
 
 type PhaseM g l a = ProgramT (PhaseInstr g l) Process a
@@ -303,7 +317,7 @@ data ForkType = NoBuffer | CopyBuffer
 
 -- | 'Phase' state machine.
 data PhaseInstr g l a where
-    Continue :: PhaseHandle -> PhaseInstr g l ()
+    Continue :: Jump PhaseHandle -> PhaseInstr g l ()
     -- ^ Jumps to 'Phase' referenced by that handle.
     Get :: Scope g l a -> PhaseInstr g l a
     -- ^ Gets scoped state from memory.
@@ -324,7 +338,7 @@ data PhaseInstr g l a where
     PhaseLog :: String -> String -> PhaseInstr g l ()
     -- ^ Simple log. First parameter is the context and the last one is the
     --   log.
-    Switch :: [PhaseHandle] -> PhaseInstr g l ()
+    Switch :: [Jump PhaseHandle] -> PhaseInstr g l ()
     -- ^ Changes state machine context. Given the list of 'PhaseHandle', switch
     --   to the first 'Phase' that's successfully executed.
     Peek :: Serializable a => Index -> PhaseInstr g l (Index, a)
@@ -347,7 +361,7 @@ modify :: Scope g l a -> (a -> a) -> PhaseM g l ()
 modify s k = put s . k =<< get s
 
 -- | Jumps to 'Phase' referenced by given 'PhaseHandle'
-continue :: PhaseHandle -> PhaseM g l ()
+continue :: Jump PhaseHandle -> PhaseM g l ()
 continue p = singleton $ Continue p
 
 -- | Stops the state machine. Depending the current state machine context:
@@ -386,7 +400,7 @@ phaseLog ctx line = singleton $ PhaseLog ctx line
 
 -- | Changes state machine context. Given the list of 'PhaseHandle', switch to
 --   the first 'Phase' that's successfully executed.
-switch :: [PhaseHandle] -> PhaseM g l ()
+switch :: [Jump PhaseHandle] -> PhaseM g l ()
 switch xs = singleton $ Switch xs
 
 -- | Peeks a message from the 'Buffer' given a minimun 'Index'. The 'Buffer' is

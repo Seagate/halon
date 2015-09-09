@@ -56,6 +56,7 @@ module Network.CEP
     , setRuleFinalizer
     , setBuffer
     , enableDebugMode
+    , timeout
     -- * Buffer
     , Buffer
     , Index
@@ -352,24 +353,22 @@ buildSeqList (Cons (prx :: Proxy a) rest) =
     Set.insert i $ buildSeqList rest
 
 --  | Builds a list of 'TypeInfo' out types need by 'Phase's.
-buildTypeList :: Foldable f => f (Phase g l) -> Set.Set TypeInfo
-buildTypeList = foldr go Set.empty
+buildTypeList :: Foldable f => f (Jump (Phase g l)) -> Set.Set TypeInfo
+buildTypeList = foldr (go . jumpPhaseCall) Set.empty
   where
-    go (Phase _ call) is =
-        case call of
-          ContCall (typ :: PhaseType g l a b) _ ->
-            case typ of
-              PhaseSeq sq _ -> Set.union (buildSeqList sq) is
-              _ ->
-                let i = TypeInfo (fingerprint (undefined :: a))
-                                 (Proxy :: Proxy a) in
-                Set.insert i is
-          _ -> is
+    go (ContCall (typ :: PhaseType g l a b) _) is =
+        case typ of
+          PhaseSeq sq _ -> Set.union (buildSeqList sq) is
+          _ ->
+            let i = TypeInfo (fingerprint (undefined :: a))
+                             (Proxy :: Proxy a) in
+            Set.insert i is
+    go _ is = is
 
 -- | Executes a rule state machine in order to produce a rule state data
 --   structure.
 buildRuleData :: String
-              -> (Phase g l -> String -> M.Map String (Phase g l) -> Buffer -> l -> SM g)
+              -> (Jump (Phase g l) -> String -> M.Map String (Jump (Phase g l)) -> Buffer -> l -> SM g)
               -> RuleM g l (Started g l)
               -> Buffer
               -> RuleData g
@@ -382,21 +381,18 @@ buildRuleData name mk rls buf = go M.empty Set.empty $ view rls
         , _ruleTypes    = Set.union tpes $ buildTypeList ps
         }
     go ps tpes (Start ph l :>>= k) =
-        case M.lookup (_phHandle ph) ps of
-          Just p  -> go ps tpes $ view $ k (StartingPhase l p)
-          Nothing -> error "phase not found (Start)"
+        let jmp = ps M.! jumpPhaseHandle ph in
+        go ps tpes $ view $ k (StartingPhase l jmp)
     go ps tpes (NewHandle n :>>= k) =
-        let p      = Phase n (DirectCall $ return ())
+        let jmp    = normalJump $ Phase n (DirectCall $ return ())
             handle = PhaseHandle n
-            ps'    = M.insert n p ps in
-        go ps' tpes $ view $ k handle
-    go ps tpes (SetPhase ph call :>>= k) =
-        case M.lookup (_phHandle ph) ps of
-          Just p ->
-            let p'  = p { _phCall = call }
-                ps' = M.insert (_phName p) p' ps in
-            go ps' tpes $ view $ k ()
-          Nothing -> error "phase not found (UpdatePhase)"
+            ps'    = M.insert n jmp ps in
+        go ps' tpes $ view $ k $ normalJump handle
+    go ps tpes (SetPhase jmp call :>>= k) =
+        let _F p    = p { _phCall = call }
+            nxt_jmp = fmap _F (ps M.! jumpPhaseHandle jmp)
+            ps'     = M.insert (jumpPhaseHandle jmp) nxt_jmp ps in
+        go ps' tpes $ view $ k ()
     go ps tpes (Wants (prx :: Proxy a) :>>= k) =
         let tok = Token :: Token a
             tpe = TypeInfo (fingerprint (undefined :: a)) prx in

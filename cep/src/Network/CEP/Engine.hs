@@ -243,13 +243,15 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
     go NoMessage msg_count = do
       let stk  = _ruleStack rd
           logs = fmap (const S.empty) _machLogger
-          exe  = SMExecute logs _machSubs _machState
+          exe  = SMExecute _machSession _machSubs _machState
       -- We do not allow fork inside init rule, this may be ok or not
       -- depending on a usecase, but allowing fork will make implementation
       -- much harder and do not worth it, unless we have a concrete example.
-      (g, (SMResult out infos mlogs, nxt_stk)) <- fmap head <$> runSM stk exe
+      (nxt_sess, g, [(SMResult out infos mlogs, nxt_stk)]) <- runSM stk exe
       let new_rd = rd { _ruleStack = nxt_stk }
-          nxt_st = st { _machState = g }
+          nxt_st = st { _machState   = g
+                      , _machSession = nxt_sess
+                      }
           rinfo = RuleInfo InitRuleName [(out, infos)]
           info  = RunInfo msg_count (RulesBeenTriggered [rinfo])
       for_ _machLogger $ \f -> for_ mlogs $ \l -> f l g
@@ -305,8 +307,9 @@ executeTick = bootstrap >>= traverse (uncurry execute)
     execute key sm = do
       sti <- State.get
       let logs = fmap (const S.empty) $ _machLogger sti
-          exe  = SMExecute logs (_machSubs sti) (_machState sti)
-      (g', machines) <- lift $ runSM (_ruleStack sm) exe
+          exe  = SMExecute logs (_machSession sti) (_machSubs sti)
+                 (_machState sti)
+      (nxt_sess, g', machines) <- lift $ runSM (_ruleStack sm) input
       -- XXX: finalizer currently do smth terribly wrong
       g_opt <- for (_machRuleFin sti) $ \k -> lift $ k g'
       let addRunning   = foldr (\x y -> mkRunningSM x . y) id machines
@@ -323,6 +326,7 @@ executeTick = bootstrap >>= traverse (uncurry execute)
         nxt_st{_machRunningSM = addRunning $ _machRunningSM nxt_st
               ,_machSuspendedSM = addSuspended $ _machSuspendedSM nxt_st
               ,_machState = nxt_g
+              ,_machSession = nxt_sess
               }
       lift $ for_ (_machLogger sti) $ \f -> for_ mlogs $ \l -> f l nxt_g
       return $ RuleInfo (RuleName $ _ruleDataName sm)

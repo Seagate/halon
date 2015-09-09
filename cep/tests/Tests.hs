@@ -848,10 +848,6 @@ testsTimeout :: (Process () -> IO ()) -> TestTree
 testsTimeout launch = testGroup "Timeout properties"
   [ testCase "Simple Timeout should work" $ launch testSimpleTimeout ]
 
-
-timeout :: Int -> PhaseHandle -> PhaseHandle
-timeout = error "not implemented"
-
 testSimpleTimeout :: Process ()
 testSimpleTimeout = do
     self <- getSelfPid

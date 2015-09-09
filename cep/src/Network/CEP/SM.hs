@@ -15,12 +15,12 @@ module Network.CEP.SM
   , SMState(..)
   ) where
 
-import Data.Traversable (for)
 import Data.Foldable (toList)
 import Data.Typeable
 
 import qualified Control.Monad.State.Strict as State
 import           Control.Distributed.Process
+import           Control.Wire.Session
 import qualified Data.Map.Strict as M
 
 import Network.CEP.Buffer
@@ -33,31 +33,31 @@ newtype SM g = SM { runSM :: forall a. SMIn g a -> a }
 -- | Input to 'SM' (Stack Machine).
 data SMIn g a where
     SMExecute :: Maybe SMLogs
+              -> TimeSession
               -> Subscribers
               -> g
-              -> SMIn g (Process (g, [(SMResult, SM g)]))
+              -> SMIn g (Process (TimeSession, g, [(SMResult, SM g)]))
     -- ^ Execute a single step of the 'SM'. Where subscribers is the list of
     -- the current 'Subscribers' and g is current Global State.
     SMMessage :: Monad m => TypeInfo -> Message -> SMIn g (m (SM g))
     -- ^ Feed a new message into state machine.
 
 -- | Create CEP state machine
-newSM :: forall g l .
-         Phase g l                  -- ^ Initial phase.
-      -> String                     -- ^ Rule name.
-      -> M.Map String (Phase g l)   -- ^ Set of possible phases.
-      -> Buffer                     -- ^ Initial buffer.
-      -> l                          -- ^ Initial local state.
+newSM :: forall g l . Jump (Phase g l)   -- ^ Initial phase.
+      -> String                          -- ^ Rule name.
+      -> M.Map String (Jump (Phase g l)) -- ^ Set of possible phases.
+      -> Buffer                          -- ^ Initial buffer.
+      -> l                               -- ^ Initial local state.
       -> SM g
 newSM startPhase rn ps initialBuffer initialL =
     SM $ interpretInput initialL initialBuffer [startPhase]
   where
-    interpretInput :: l -> Buffer -> [Phase g l] -> (SMIn g a) -> a
+    interpretInput :: l -> Buffer -> [Jump (Phase g l)] -> (SMIn g a) -> a
     interpretInput l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) = do
       Just (a :: e) <- unwrapMessage msg
       return $ SM (interpretInput l (bufferInsert a b) phs)
-    interpretInput l b phs (SMExecute logs subs g) =
-      executeStack logs subs g l b id id phs
+    interpretInput l b phs (SMExecute logs sess subs g) =
+      executeStack logs subs sess g l b id id phs
 
     -- We use '[Phase g l] -> [Phase g l]' in order to recreate stack in
     -- case if no branch have fired, this is needed only in presence of
@@ -65,52 +65,66 @@ newSM startPhase rn ps initialBuffer initialL =
     -- live without it, and have more structure sharing.
     executeStack :: Maybe SMLogs
                  -> Subscribers
+                 -> TimeSession
                  -> g
                  -> l
                  -> Buffer
-                 -> ([Phase g l] -> [Phase g l])
+                 -> ([Jump (Phase g l)] -> [Jump (Phase g l)])
                  -> ([ExecutionInfo] -> [ExecutionInfo])
-                 -> [Phase g l]
-                 -> Process (g,[(SMResult, SM g)])
-    executeStack _ _ g l b f info [] = case f [] of
-      [] -> return (g, [stoppedSM info])
-      ph -> return (g, [(SMResult SMSuspended (info []) Nothing
+                 -> [Jump (Phase g l)]
+                 -> Process (TimeSession, g, [(SMResult, SM g)])
+    executeStack _ _ sess g l b f info [] = case f [] of
+      [] -> return (sess, g, [stoppedSM info])
+      ph -> return (sess, g, [(SMResult SMSuspended (info []) Nothing
                         , SM $ interpretInput l b ph)])
-    executeStack logs subs g l b f info (ph:phs) = do
-        (g',m) <- runPhase subs logs g l b ph
-        fmap concat <$> mapAccumLM next g' m
+    executeStack logs subs sess g l b f info (jmp:phs) = do
+        (t, nxt_sess) <- stepSession sess
+        case jumpApplyTime t jmp of
+          Left nxt_jmp ->
+            let i   = FailExe (jumpPhaseName nxt_jmp) SuspendExe b in
+            executeStack logs subs nxt_sess g l b (f . (nxt_jmp:))
+                                             (info . (i:)) phs
+          Right ph -> do
+            (g',m) <- runPhase subs logs g l b ph
+            let st = (nxt_sess, g')
+            ((fin_sess, fin_g), fin_m) <- fmap concat
+                                          <$> mapAccumLM (next ph) st m
+            return (fin_sess, fin_g, fin_m)
       where
-        next gNext (buffer, out) =
+        next ph nxt@(nxt_sess, gNext) (buffer, out) =
             case out of
               SM_Complete l' newPhases rlogs -> do
                 (result, phs') <- case newPhases of
                           -- This branch is required if we want to rule to be restarted
                           -- once it finishes "normally".
                           []  -> return ( SMResult SMFinished
-                                                  (info [SuccessExe (_phName ph) b buffer])
+                                                  (info [SuccessExe pname b buffer])
                                                   (mkLogs rn rlogs)
                                         , [startPhase]
                                         )
-                          ph' -> do xs <- for ph' mkPhase
+                          ph' -> do let xs = fmap mkPhase ph'
                                     return ( SMResult SMRunning
-                                                      (info [SuccessExe (_phName ph) b buffer])
+                                                      (info [SuccessExe pname b buffer])
                                                       (mkLogs rn rlogs)
                                            , xs)
-                return (gNext, [(result, SM $ interpretInput l' buffer phs')])
-              SM_Suspend  _ -> executeStack logs subs gNext l b
-                                 (f.(ph:))
-                                 (info . ((FailExe (_phName ph) SuspendExe b):))
-                                 phs
-              SM_Stop     _ -> executeStack logs subs gNext l b
-                                 f
-                                 (info . ((FailExe (_phName ph) StopExe b):))
-                                 phs
+                return (nxt, [(result, SM $ interpretInput l' buffer phs')])
+              SM_Suspend _ -> do
+                (fin_sess, fin_g, nres) <- executeStack logs subs nxt_sess gNext l b
+                                           (f.(normalJump ph:))
+                                           (info . ((FailExe pname SuspendExe b):))
+                                           phs
+                return ((fin_sess, fin_g), nres)
+              SM_Stop _ -> do
+                (fin_sess, fin_g, nres) <- executeStack logs subs nxt_sess gNext l b
+                                           f
+                                           (info . ((FailExe pname StopExe b):))
+                                           phs
+                return ((fin_sess, fin_g), nres)
+          where
+            pname = _phName ph
 
-    mkPhase :: Monad m => PhaseHandle -> m (Phase g l)
-    mkPhase h = case M.lookup (_phHandle h) ps of
-      Just ph -> return ph
-      Nothing -> fail $ "impossible: rule " ++ rn
-                      ++ " doesn't have a phase named " ++ _phHandle h
+    mkPhase :: Jump PhaseHandle -> Jump (Phase g l)
+    mkPhase jmp = ps M.! jumpPhaseHandle jmp
 
     stoppedSM mkInfo
       = ( SMResult SMStopped (mkInfo []) Nothing
