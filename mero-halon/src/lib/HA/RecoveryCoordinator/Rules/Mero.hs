@@ -138,7 +138,7 @@ confInitialised = getLocalGraph >>=
 --   * Create a single profile, filesystem
 --   * Create Mero rack and enclosure entities reflecting existing
 --     entities in the graph.
-initialiseConfInRG :: PhaseM LoopState l ()
+initialiseConfInRG :: PhaseM LoopState l M0.Filesystem
 initialiseConfInRG = unlessM confInitialised $ do
     rg <- getLocalGraph
     profile <- M0.Profile <$> newFid (Proxy :: Proxy M0.Profile)
@@ -151,7 +151,7 @@ initialiseConfInRG = unlessM confInitialised $ do
              | r <- G.connectedTo Cluster Has rg
              ]
     mapM_ mirrorRack re
-
+    return fs
   where
     unlessM foo action = foo >>= flip unless action
     mirrorRack :: (Rack, [Enclosure]) -> PhaseM LoopState l ()

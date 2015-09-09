@@ -88,9 +88,9 @@ instance FromJSON Rack
 data M0Globals = M0Globals {
     m0_datadir :: String
   , m0_t1fs_mount :: String
-  , m0g_data_units :: Word32 -- ^ As in genders
-  , m0g_parity_units :: Word32  -- ^ As in genders
-  , m0g_pool_width :: Word32 -- ^ As in genders
+  , m0_data_units :: Word32 -- ^ As in genders
+  , m0_parity_units :: Word32  -- ^ As in genders
+  , m0_pool_width :: Word32 -- ^ As in genders
   , m0_max_rpc_msg_size :: Word32 -- ^ As in genders
   , m0_uuid :: String
   , m0_min_rpc_recvq_len :: Word32

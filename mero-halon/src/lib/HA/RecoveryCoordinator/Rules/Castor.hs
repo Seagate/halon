@@ -15,7 +15,7 @@ import HA.RecoveryCoordinator.Mero
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 #ifdef USE_MERO
-import HA.RecoveryCoordinator.Rules.Mero (loadMeroGlobals, loadMeroServers)
+import HA.RecoveryCoordinator.Rules.Mero
 #endif
 
 import Network.CEP
@@ -25,8 +25,11 @@ castorRules = do
     defineSimple "Initial-data-load" $ \(HAEvent _ CI.InitialData{..} _) -> do
       mapM_ goRack id_racks
 #ifdef USE_MERO
-      loadMeroServers id_m0_servers
+      filesystem <- intialiseConfInRG
       loadMeroGlobals id_m0_globals
+      loadMeroServers id_m0_servers
+      failureSets <- generateFailureSets 2 2 1 -- TODO real values
+      createPoolVersions filesystem failureSets
 #endif
   where
     goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
