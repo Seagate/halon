@@ -72,7 +72,7 @@ class RGroup g where
                -> Process (Closure (Process (g st)))
 
   -- | Releases any resources used by the replication group.
-  stopRGroup :: g st -> Process ()
+  killReplica :: g st -> NodeId -> Process ()
 
   -- | @getRGroupMembers ms@ queries the replicated state for info on the
   --   current members of the RGroup.

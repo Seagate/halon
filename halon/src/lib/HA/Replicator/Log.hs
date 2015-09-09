@@ -236,7 +236,7 @@ instance RGroup RLogGroup where
                                  $ encode (sdictState, rHandle))
                         `closureApply` staticClosure sdictState
 
-  stopRGroup _ = return ()
+  killReplica (RLogGroup _ _ h _ _) nid = Log.killReplica h nid
 
   getRGroupMembers (RLogGroup _ _ h _ _) = Log.getMembership h
 

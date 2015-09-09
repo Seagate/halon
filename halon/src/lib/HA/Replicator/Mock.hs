@@ -81,7 +81,7 @@ instance RGroup RLocalGroup where
 
   spawnReplica _ _ = error "Mock.spawnReplica: unimplemented"
 
-  stopRGroup _ = return ()
+  killReplica _ _ = return ()
 
   getRGroupMembers = error "Mock.getRGroupMembers: unimplemented"
 
