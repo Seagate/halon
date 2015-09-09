@@ -970,7 +970,8 @@ replica Dict
                     logTrace "replica: sending request to batcher"
                     usend bpid request
                   else do
-                    logTrace $ "replica: rejected client request"
+                    logTrace $ "replica: rejected client request " ++
+                               show (e, epoch, mLeader)
                     when (e < epoch || isJust mLeader) $
                       when (elem here ρs) $ usend μ (epoch, ρs)
                   go st
