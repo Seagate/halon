@@ -48,22 +48,6 @@ data RuleData g =
       --   'buildMachine'.
     }
 
--- | Used as a key for referencing a rule at upmost level of the CEP engine.
---   The point is to allow the user to refer to rules by their name while
---   being able to know which rule has been defined the first. That give us
---   prioritization.
-data RuleKey =
-    RuleKey
-    { _ruleKeyId   :: !Int
-    , _ruleKeyName :: !String
-    } deriving Show
-
-instance Eq RuleKey where
-    RuleKey k1 _ == RuleKey k2 _ = k1 == k2
-
-instance Ord RuleKey where
-    compare (RuleKey k1 _) (RuleKey k2 _) = compare k1 k2
-
 data Mode = Read | Write
 
 -- | Represents the type of request a CEP 'Engine' can handle.

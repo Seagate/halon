@@ -81,7 +81,7 @@ newSM startPhase rn ps initialBuffer initialL =
         (t, nxt_sess) <- stepSession sess
         case jumpApplyTime t jmp of
           Left nxt_jmp ->
-            let i   = FailExe (jumpPhaseName nxt_jmp) SuspendExe b in
+            let i   = FailExe (jumpPhaseName jmp) SuspendExe b in
             executeStack logs subs nxt_sess g l b (f . (nxt_jmp:))
                                              (info . (i:)) phs
           Right ph -> do
@@ -95,7 +95,7 @@ newSM startPhase rn ps initialBuffer initialL =
             case out of
               SM_Complete l' newPhases rlogs -> do
                 (result, phs') <- case newPhases of
-                          -- This branch is required if we want to rule to be restarted
+                           -- This branch is required if we want to rule to be restarted
                           -- once it finishes "normally".
                           []  -> return ( SMResult SMFinished
                                                   (info [SuccessExe pname b buffer])
@@ -124,7 +124,7 @@ newSM startPhase rn ps initialBuffer initialL =
             pname = _phName ph
 
     mkPhase :: Jump PhaseHandle -> Jump (Phase g l)
-    mkPhase jmp = ps M.! jumpPhaseHandle jmp
+    mkPhase jmp = jumpBaseOn jmp (ps M.! jumpPhaseHandle jmp)
 
     stoppedSM mkInfo
       = ( SMResult SMStopped (mkInfo []) Nothing

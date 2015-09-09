@@ -857,15 +857,13 @@ testSimpleTimeout = do
           ph1 <- phaseHandle "ph1"
           ph2 <- phaseHandle "ph2"
 
-          directly ph0 $ switch [timeout 5 ph1, ph2]
+          directly ph0 $ switch [ph1, timeout 5 ph2]
 
           setPhase ph1 $ \(Donut _) -> return ()
 
-          setPhase ph2 $ \(Foo _) -> liftProcess $ usend self ()
+          directly ph2 $ liftProcess $ usend self ()
 
           start ph0 ()
 
     pid <- spawnLocal $ execute () specs
-
-    usend pid (Foo 1)
     expect
