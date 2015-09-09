@@ -79,13 +79,13 @@ Library
                    HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
+                   HA.RecoveryCoordinator.Rules.Castor
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
 
   Other-Modules:   HA.RecoveryCoordinator.Actions.Core
                    HA.RecoveryCoordinator.Actions.Hardware
                    HA.RecoveryCoordinator.Actions.Service
-                   HA.RecoveryCoordinator.Rules.Castor
                    HA.Services.DecisionLog.CEP
                    HA.Services.DecisionLog.Types
                    HA.Services.Frontier.Command
@@ -132,13 +132,13 @@ Library
                        Mero.M0Worker
                        Mero.Notification
                        Mero.Notification.HAState
+                       HA.RecoveryCoordinator.Actions.Mero
+                       HA.RecoveryCoordinator.Rules.Mero
                        HA.Resources.Mero
                        HA.Resources.Mero.Note
                        HA.Services.Mero
       Other-Modules: HA.Services.Mero.CEP
                      HA.Services.Mero.Types
-                     HA.RecoveryCoordinator.Actions.Mero
-                     HA.RecoveryCoordinator.Rules.Mero
       cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
       c-sources: hastate/hastate.c
                  hastate/hastate_fops.c
@@ -663,6 +663,10 @@ Test-Suite unit-tests
 
   if flag(maintainer)
     Ghc-Options: -Werror
+
+  if flag(mero)
+    CPP-Options:    -DUSE_MERO
+    Build-Depends:  confc
 
   CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
   if flag(debug)
