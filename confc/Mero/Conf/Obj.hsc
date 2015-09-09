@@ -162,7 +162,6 @@ data PVer = PVer {
   , pv_ver :: Word32
   , pv_failed :: Word32 -- ^ Number of failed devices.
   , pv_attr :: PDClustAttr
-  , pv_permutations :: [Word32]
   , pv_failures :: [Word32]
 } deriving (Show)
 
@@ -173,9 +172,6 @@ getPVer po = do
   ver <- #{peek struct m0_conf_pver, pv_ver} pv
   nfailed <- #{peek struct m0_conf_pver, pv_nfailed} pv
   attr <- #{peek struct m0_conf_pver, pv_attr} pv
-  permutations_ptr <- #{peek struct m0_conf_pver, pv_permutations} pv
-  permutations_nr <- #{peek struct m0_conf_pver, pv_permutations_nr} pv
-  permutations <- peekArray permutations_nr permutations_ptr
   failures_ptr <- #{peek struct m0_conf_pver, pv_nr_failures} pv
   failures_nr <- #{peek struct m0_conf_pver, pv_nr_failures_nr} pv
   failures <- peekArray failures_nr failures_ptr
@@ -185,7 +181,6 @@ getPVer po = do
     , pv_ver = ver
     , pv_failed = nfailed
     , pv_attr = attr
-    , pv_permutations = permutations
     , pv_failures = failures
     }
 
