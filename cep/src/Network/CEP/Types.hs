@@ -53,6 +53,8 @@ instance Eq RuleKey where
 instance Ord RuleKey where
     compare (RuleKey k1 _) (RuleKey k2 _) = compare k1 k2
 
+initRuleKey :: RuleKey
+initRuleKey = RuleKey 0 "init"
 
 newSubscribeRequest :: forall proxy a. Serializable a
                     => ProcessId
@@ -162,19 +164,18 @@ jumpBaseOn _ jmp = jmp
 --   will emit a value.
 jumpEmitTimeout :: RuleKey -> Jump a -> Process ()
 jumpEmitTimeout key (ReactiveJump w _) = do
-    _ <- spawnLocal $ action clockSession_ w
+    self <- getSelfPid
+    _    <- spawnLocal $ action self clockSession_ w
     return ()
   where
-    action cur_sess cur_w = do
+    action self cur_sess cur_w = do
       (t, nxt_sess) <- stepSession cur_sess
       let (res, nxt_w) = runIdentity $ stepWire cur_w t (Right ())
       case res of
         Left _ -> do
           liftIO $ threadDelay 1000
-          action nxt_sess nxt_w
-        Right _ -> do
-          self <- getSelfPid
-          usend self (Timeout key)
+          action self nxt_sess nxt_w
+        Right _ -> usend self (Timeout key)
 jumpEmitTimeout _ _ = return ()
 
 -- | CEP 'Engine' state-machine specification. It's about defining rule or set

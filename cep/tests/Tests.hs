@@ -852,18 +852,21 @@ testSimpleTimeout :: Process ()
 testSimpleTimeout = do
     self <- getSelfPid
 
-    let specs = define "timeout" $ do
-          ph0 <- phaseHandle "ph0"
-          ph1 <- phaseHandle "ph1"
-          ph2 <- phaseHandle "ph2"
+    let specs = do
+          define "timeout" $ do
+            ph0 <- phaseHandle "ph0"
+            ph1 <- phaseHandle "ph1"
+            ph2 <- phaseHandle "ph2"
 
-          directly ph0 $ switch [ph1, timeout 5 ph2]
+            directly ph0 $ switch [ph1, timeout 3 ph2]
 
-          setPhase ph1 $ \(Donut _) -> return ()
+            setPhase ph1 $ \(Donut _) -> return ()
 
-          directly ph2 $ liftProcess $ usend self ()
+            directly ph2 $ do
+              liftIO $ putStrLn "Launched !!!"
+              liftProcess $ usend self ()
 
-          start ph0 ()
+            start ph0 ()
 
-    pid <- spawnLocal $ execute () specs
+    _ <- spawnLocal $ execute () specs
     expect

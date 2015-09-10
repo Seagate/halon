@@ -133,14 +133,15 @@ buildMachine s defs = go (emptyMachine s) $ view defs
     go st (DefineRule n m :>>= k) =
         let idx = _machRuleCount st
             key = RuleKey idx n
-            dat = buildRuleData n newSM m (_machPhaseBuf st)
+            dat = buildRuleData n (newSM key) m (_machPhaseBuf st)
             mp  = M.insert key dat $ _machRuleData st
             st' = st { _machRuleData  = mp
                      , _machRuleCount = idx + 1
                      } in
         go st' $ view $ k ()
     go st (Init m :>>= k) =
-        let dat  = buildRuleData "init" newSM m (_machPhaseBuf st)
+        let buf  = _machPhaseBuf st
+            dat  = buildRuleData "init" (newSM initRuleKey) m buf
             typs = initRuleTypeMap dat
             ir   = InitRule dat typs
             st'  = st { _machInitRule = Just ir } in
@@ -187,6 +188,12 @@ cepEngine s defs = newEngine $ buildMachine s defs
 execute :: s -> Specification s () -> Process ()
 execute s defs = runItForever $ cepEngine s defs
 
+-- | Set of messages accepted by the 'runItForever' driver.
+data AcceptedMsg
+    = SubMsg Subscribe
+    | TimeoutMsg Timeout
+    | SomeMsg Message
+
 -- | A CEP 'Engine' driver that run an 'Engine' until the end of the universe.
 runItForever :: Engine -> Process ()
 runItForever start_eng = do
@@ -205,15 +212,21 @@ runItForever start_eng = do
         else bootstrap debug_mode ms 2 nxt_eng
     bootstrap debug_mode ms loop eng = do
       msg <- receiveWait
-               [ match (return . Left . rawSubRequest)
-               , matchAny (return . Right . rawIncoming)
+               [ match (return . SubMsg)
+               , match (return . TimeoutMsg)
+               , matchAny (return . SomeMsg)
                ]
       case msg of
-        Left sub -> do
-          (_, nxt_eng) <- stepForward sub eng
+        SubMsg sub -> do
+          (_, nxt_eng) <- stepForward (rawSubRequest sub) eng
           bootstrap debug_mode ms (succ loop) nxt_eng
-        Right m -> do
-          let act' = requestAction m
+        other -> do
+          let m :: Request 'Write (Process (RunInfo, Engine))
+              m = case other of
+                    TimeoutMsg t -> timeoutMsg t
+                    SomeMsg x    -> rawIncoming x
+                    _            -> error "impossible: runItForever"
+              act' = requestAction m
           (ri', nxt_eng') <- stepForward m eng
           when debug_mode . liftIO $ dumpDebuggingInfo act' loop ri'
           let act = requestAction (Run Tick)
@@ -243,18 +256,25 @@ runItForever start_eng = do
 
     cruise debug_mode loop eng
       | stepForward engineIsRunning eng =
-        go eng =<< receiveTimeout 0 [ match (return . Left . rawSubRequest)
-                                    , matchAny (return . Right . rawIncoming)
+        go eng =<< receiveTimeout 0 [ match (return . SubMsg)
+                                    , match (return . TimeoutMsg)
+                                    , matchAny (return . SomeMsg)
                                     ]
       | otherwise =
-        go eng . Just =<< receiveWait [ match (return . Left . rawSubRequest)
-                                      , matchAny (return . Right . rawIncoming)
+        go eng . Just =<< receiveWait [ match (return . SubMsg)
+                                      , match (return . TimeoutMsg)
+                                      , matchAny (return . SomeMsg)
                                       ]
       where
-        go inner (Just (Left sub)) = do
-          (_, nxt_eng) <- stepForward sub inner
+        go inner (Just (SubMsg sub)) = do
+          (_, nxt_eng) <- stepForward (rawSubRequest sub) inner
           cruise debug_mode (succ loop) nxt_eng
-        go inner (Just (Right m))  = do
+        go inner (Just other)  = do
+          let m :: Request 'Write (Process (RunInfo, Engine))
+              m = case other of
+                    TimeoutMsg t -> timeoutMsg t
+                    SomeMsg x    -> rawIncoming x
+                    _            -> error "impossible: runItForever"
           (ri, nxt_eng) <- stepForward m inner
           let act = requestAction m
           when debug_mode . liftIO $ dumpDebuggingInfo act loop ri

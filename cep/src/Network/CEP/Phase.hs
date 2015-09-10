@@ -10,7 +10,7 @@ module Network.CEP.Phase
   , PhaseOut(..)
   ) where
 
-import Data.Foldable (for_)
+import Data.Foldable (for_, traverse_)
 import Data.Typeable
 
 import           Control.Distributed.Process
@@ -132,21 +132,22 @@ extractSeqMsg s sbuf = go (-1) sbuf s
 --
 --   Call is evaluated until a safe point that is either final 'return'
 --   or 'suspend' or 'commit'.
-runPhase :: Subscribers   -- ^ Subscribers.
+runPhase :: RuleKey
+         -> Subscribers   -- ^ Subscribers.
          -> Maybe SMLogs  -- ^ Current logger.
          -> g             -- ^ Global state.
          -> l             -- ^ Local state.
          -> Buffer        -- ^ Current buffer.
          -> Phase g l     -- ^ Phase handle to interpret.
          -> Process (g, [(Buffer,PhaseOut l)])
-runPhase subs logs g l buf ph =
+runPhase key subs logs g l buf ph =
     case _phCall ph of
-      DirectCall action -> runPhaseM (_phName ph) subs logs g l buf action
+      DirectCall action -> runPhaseM key (_phName ph) subs logs g l buf action
       ContCall tpe k -> do
         res <- extractMsg tpe g l buf
         case res of
           Just (Extraction new_buf b) -> do
-            result <- runPhaseM (_phName ph) subs logs g l new_buf (k b)
+            result <- runPhaseM key (_phName ph) subs logs g l new_buf (k b)
             for_ (snd result) $ \(_,out) ->
               case out of
                 SM_Complete{} -> notifySubscribers subs b
@@ -159,7 +160,8 @@ runPhase subs logs g l buf ph =
 --   except if get a 'Suspend' or 'Stop' instruction.
 --   This execution is run goes not switch between forked threads. First parent
 --   thread is executed to a safe point, and then child is run.
-runPhaseM :: forall g l . String -- ^ Process name.
+runPhaseM :: forall g l . RuleKey
+          -> String -- ^ Process name.
           -> Subscribers         -- ^ List of events subscribers.
           -> Maybe SMLogs        -- ^ Logs.
           -> g                   -- ^ Global state.
@@ -167,7 +169,7 @@ runPhaseM :: forall g l . String -- ^ Process name.
           -> Buffer              -- ^ Buffer
           -> PhaseM g l ()
           -> Process (g, [(Buffer, PhaseOut l)])
-runPhaseM pname subs plogs pg pl pb action = do
+runPhaseM key pname subs plogs pg pl pb action = do
     (g,t@(_,out), phases) <- go pg pl plogs pb action
     let g' = case out of
                 SM_Complete{} -> g
@@ -183,7 +185,9 @@ runPhaseM pname subs plogs pg pl pb action = do
     go g l lgs buf a = viewT a >>= inner
       where
         inner (Return _) = return (g, (buf, SM_Complete l [] lgs), [])
-        inner (Continue ph :>>= _)  = return (g, (buf, SM_Complete l [ph] lgs), [])
+        inner (Continue ph :>>= _)  = do
+            jumpEmitTimeout key ph
+            return (g, (buf, SM_Complete l [ph] lgs), [])
         inner (Get Global :>>= k)   = go g l lgs buf $ k g
         inner (Get Local  :>>= k)   = go g l lgs buf $ k l
         inner (Put Global s :>>= k) = go s l lgs buf $ k ()
@@ -206,7 +210,8 @@ runPhaseM pname subs plogs pg pl pb action = do
         inner (PhaseLog ctx lg :>>= k) =
           let new_logs = fmap (S.|> (pname,ctx,lg)) lgs in
           go g l new_logs buf $ k ()
-        inner (Switch xs :>>= _) =
+        inner (Switch xs :>>= _) = do
+          traverse_ (jumpEmitTimeout key) xs
           return (g, (buf, SM_Complete l xs lgs), [])
         inner (Peek idx :>>= k) = do
           case bufferPeek idx buf of

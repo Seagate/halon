@@ -43,13 +43,14 @@ data SMIn g a where
     -- ^ Feed a new message into state machine.
 
 -- | Create CEP state machine
-newSM :: forall g l . Jump (Phase g l)   -- ^ Initial phase.
+newSM :: forall g l .RuleKey
+      -> Jump (Phase g l)                -- ^ Initial phase.
       -> String                          -- ^ Rule name.
       -> M.Map String (Jump (Phase g l)) -- ^ Set of possible phases.
       -> Buffer                          -- ^ Initial buffer.
       -> l                               -- ^ Initial local state.
       -> SM g
-newSM startPhase rn ps initialBuffer initialL =
+newSM key startPhase rn logs ps initialBuffer initialL =
     SM $ interpretInput initialL initialBuffer [startPhase]
   where
     interpretInput :: l -> Buffer -> [Jump (Phase g l)] -> (SMIn g a) -> a
@@ -85,7 +86,7 @@ newSM startPhase rn ps initialBuffer initialL =
             executeStack logs subs nxt_sess g l b (f . (nxt_jmp:))
                                              (info . (i:)) phs
           Right ph -> do
-            (g',m) <- runPhase subs logs g l b ph
+            (g',m) <- runPhase key subs logs g l b ph
             let st = (nxt_sess, g')
             ((fin_sess, fin_g), fin_m) <- fmap concat
                                           <$> mapAccumLM (next ph) st m

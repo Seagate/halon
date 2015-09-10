@@ -62,9 +62,10 @@ data Select a where
     -- ^ Get CEP 'Engine' internal setting.
 
 data Action a where
-    Tick     :: Action RunInfo
-    Incoming :: Message   -> Action RunInfo
-    NewSub   :: Subscribe -> Action ()
+    Tick           :: Action RunInfo
+    Incoming       :: Message   -> Action RunInfo
+    NewSub         :: Subscribe -> Action ()
+    TimeoutArrived :: Timeout -> Action RunInfo
 
 data EngineSetting a where
     EngineDebugMode      :: EngineSetting Bool
@@ -88,6 +89,9 @@ rawSubRequest = Run . NewSub
 
 rawIncoming :: Message -> Request 'Write (Process (RunInfo, Engine))
 rawIncoming = Run . Incoming
+
+timeoutMsg :: Timeout -> Request 'Write (Process (RunInfo, Engine))
+timeoutMsg = Run . TimeoutArrived
 
 requestAction :: Request 'Write (Process (a, Engine)) -> Action a
 requestAction (Run a) = a
@@ -196,6 +200,8 @@ defaultHandler st next (Run Tick) =
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
 defaultHandler st next (Run (Incoming _)) =
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
+defaultHandler st next (Run (TimeoutArrived _)) =
+    return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
 defaultHandler st _ (Query (GetSetting s)) =
     case s of
       EngineDebugMode      -> _machDebugMode st
@@ -209,6 +215,9 @@ cepInitRule :: InitRule g -> Machine g -> Request m a -> a
 cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
     case i of
       Tick -> go NoMessage _machTotalProcMsgs
+      TimeoutArrived (Timeout k)
+        | k == initRuleKey -> go NoMessage _machTotalProcMsgs
+        | otherwise        -> defaultHandler st (cepInitRule ir) req
       Incoming m
         | interestingMsg (\frp -> M.member frp typs) m ->
           let tpe       = typs M.! messageFingerprint m
@@ -257,6 +266,15 @@ cepCruise st req@(Run t) =
         (infos, nxt_st) <- State.runStateT executeTick st
         let rinfo = RunInfo (_machTotalProcMsgs nxt_st) (RulesBeenTriggered infos)
         return (rinfo, Engine $ cepCruise nxt_st)
+      TimeoutArrived (Timeout key) ->
+          let xs     = filter (\(k,_) -> key == k) $ _machSuspendedSM st
+              nxt_su = filter (\(k,_) -> key /= k) $ _machSuspendedSM st
+              prev   = _machRunningSM st
+              nxt_st = st { _machRunningSM   = prev ++ xs
+                          , _machSuspendedSM = nxt_su }
+              res    = RulesBeenTriggered []
+              info   = RunInfo (_machTotalProcMsgs st) res in
+          return (info, Engine $ cepCruise nxt_st)
       Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
         let fpt = messageFingerprint m
             keyInfos = MM.lookup fpt $ _machTypeMap st
