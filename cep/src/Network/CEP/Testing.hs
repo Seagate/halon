@@ -5,7 +5,9 @@
 -- Copyright : (C) 2015 Seagate Technology Limited.
 --
 module Network.CEP.Testing
-  ( runPhase ) where
+  ( runPhase
+  , runPhaseGet
+  ) where
 
 import Network.CEP.Buffer
 import Network.CEP.Phase (PhaseOut(SM_Complete), runPhaseM)
@@ -28,3 +30,13 @@ runPhase g l b p = do
     extract (b', po) = case po of
       SM_Complete l' _ _ -> Just (b',l')
       _ -> Nothing
+
+-- | Run a phase for its result, discarding any changes made to global state.
+runPhaseGet :: forall g a. g
+            -> PhaseM g (Maybe a) a
+            -> Process a
+runPhaseGet g p = do
+    (_, xs) <- runPhase g Nothing emptyFifoBuffer augPhase
+    return . head . catMaybes . fmap snd $ xs
+  where
+    augPhase = p >>= put Local . Just
