@@ -449,8 +449,14 @@ tests argv = do
                 let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor interceptor
-                liftIO $ runProcess node1 $ registerInterceptor interceptor
-                liftIO $ runProcess node2 $ registerInterceptor interceptor
+                _ <- liftIO $ forkProcess node1 $ do
+                  registerInterceptor interceptor
+                  usend self ((), ())
+                ((), ()) <- expect
+                _ <- liftIO $ forkProcess node2 $ do
+                  registerInterceptor interceptor
+                  usend self ((), ())
+                ((), ()) <- expect
 
                 forM_ [node1, node2] $ \lnid -> do
                   _ <- liftIO $ forkProcess lnid $ do
@@ -596,7 +602,10 @@ tests argv = do
                 let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
                 registerInterceptor interceptor
-                liftIO $ runProcess node1 $ registerInterceptor interceptor
+                _ <- liftIO $ forkProcess node1 $ do
+                  registerInterceptor interceptor
+                  usend self ((), ())
+                ((), ()) <- expect
 
                 say "adding replica"
                 _ <- liftIO $ forkProcess node1 $ do
