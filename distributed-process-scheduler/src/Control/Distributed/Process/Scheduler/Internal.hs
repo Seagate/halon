@@ -101,7 +101,7 @@ import Data.Binary ( Binary(..), decode )
 import Data.Function (on)
 import Data.Int
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
-import Data.List (delete, union, sortBy)
+import Data.List (delete, union, sortBy, partition)
 import Data.Map ( Map )
 import qualified Data.Map as Map
 import Data.Set ( Set )
@@ -546,8 +546,8 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
 
         -- a process has terminated
         , DP.match $ \(DP.ProcessMonitorNotification _ pid reason) -> do
-            st' <- notifyMonitors st (const True) (DP.ProcessIdentifier pid)
-                                  reason
+            st' <- notifyMonitors st (const True) (DP.processNodeId pid)
+                                  (DP.ProcessIdentifier pid) reason
             let (mt, revTimeouts') =
                   Map.updateLookupWithKey (\_ _ -> Nothing)
                                           pid (stateReverseTimeouts st')
@@ -565,6 +565,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
 
     handleSend :: SchedulerState
                -> (ProcessId, ProcessId, SystemMsg)
+                  -- ^ (sender, destination, message)
                -> Process SchedulerState
     handleSend st (source, pid, msg) | Set.member pid (stateAlive st) = do
       let mp = Map.lookup (DP.processNodeId source, DP.processNodeId pid)
@@ -572,7 +573,9 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
       case mp of
         -- drop message
         Just p | (v, seed') <- randomR (0.0, 1.0) (stateSeed st), v <= p -> do
-          notifyMonitors (st { stateSeed = seed' }) (== DP.processNodeId source)
+          let srcNid = DP.processNodeId source
+          notifyMonitors (st { stateSeed = seed' }) (== srcNid)
+                         srcNid
                          (DP.ProcessIdentifier pid)
                          DP.DiedDisconnect
         -- deliver message
@@ -595,7 +598,9 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
       case Map.lookup (DP.processNodeId source, nid) (stateFailures st) of
         -- drop message
         Just p | (v, seed') <- randomR (0.0, 1.0) (stateSeed st), v <= p -> do
-          notifyMonitors (st { stateSeed = seed' }) (== DP.processNodeId source)
+          let srcNid = DP.processNodeId source
+          notifyMonitors (st { stateSeed = seed' }) (== srcNid)
+                         srcNid
                          (DP.NodeIdentifier nid)
                          DP.DiedDisconnect
         -- deliver message
@@ -608,62 +613,87 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                                (stateNSend st)
             }
 
-
     notifyMonitors :: SchedulerState
-                   -> (NodeId -> Bool)
-                   -> DP.Identifier
+                   -> (NodeId -> Bool)  -- ^ Whether monitors residing on a
+                                        -- particular node should be notified.
+                   -> NodeId -- ^ Id of the node where the notification
+                             -- originated. For disconnected monitored
+                             -- processes, this is the node detecting the
+                             -- disconnection. For dead processes, this is the
+                             -- node where the dead process resided.
+                   -> DP.Identifier -- ^ Id of the process which was monitored.
                    -> DP.DiedReason
                    -> Process SchedulerState
-    notifyMonitors st shouldNotify dpId@(DP.ProcessIdentifier pid) reason = do
-      self <- DP.getSelfPid
+    notifyMonitors st shouldNotify srcNid dpId@(DP.ProcessIdentifier pid) reason
+      =
       case Map.lookup (DP.ProcessIdentifier pid) (stateMonitors st) of
         Just mons -> do
-          let shouldNotify' (DP.MonitorRef source _, _) =
-                shouldNotify $ DP.nodeOf source
-              sends = flip map (filter shouldNotify' mons) $
+          let (shouldMons, otherMons) =
+                partition (\(DP.MonitorRef src _, _) ->
+                             shouldNotify $ DP.nodeOf src
+                          )
+                          mons
+              sends = flip map shouldMons $
                 \(ref@(DP.MonitorRef (DP.ProcessIdentifier p) _)
                  , isLink
                  ) ->
-                  if isLink then (self, p, LinkExceptionMsg dpId p reason)
-                  else ( self
+                  if isLink
+                  then ( DP.nullProcessId srcNid, p, LinkExceptionMsg dpId p reason)
+                  else ( DP.nullProcessId srcNid
                        , p
                        , MailboxMsg p $
                            DP.createUnencodedMessage $
                            DP.ProcessMonitorNotification ref pid reason
                        )
           let st' = st { stateMonitors =
-                           Map.delete (DP.ProcessIdentifier pid)
-                                      (stateMonitors st)
+                           if null otherMons then
+                             Map.delete (DP.ProcessIdentifier pid)
+                                        (stateMonitors st)
+                           else Map.insert (DP.ProcessIdentifier pid)
+                                           otherMons
+                                           (stateMonitors st)
                        }
           foldM handleSend st' sends
         Nothing ->
           return st
-    notifyMonitors st shouldNotify (DP.NodeIdentifier nid) reason = do
-      self <- DP.getSelfPid
+    notifyMonitors st shouldNotify srcNid (DP.NodeIdentifier nid) reason = do
       let impliesDeathOf (DP.NodeIdentifier nid') = nid == nid'
           impliesDeathOf (DP.ProcessIdentifier p) = nid == DP.processNodeId p
           impliesDeathOf _                        = False
           (mons, remainingMons) =
             Map.partitionWithKey (const . impliesDeathOf) (stateMonitors st)
           mkMsg dpId ((DP.MonitorRef (DP.ProcessIdentifier p) _), True) =
-            (self, p, LinkExceptionMsg dpId p reason)
+            (DP.nullProcessId srcNid, p, LinkExceptionMsg dpId p reason)
           mkMsg (DP.ProcessIdentifier pid)
                 (ref@(DP.MonitorRef (DP.ProcessIdentifier p) _), False) =
-             (self, p, MailboxMsg p $ DP.createUnencodedMessage $
-                         DP.ProcessMonitorNotification ref pid reason
-             )
+            ( DP.nullProcessId srcNid
+            , p
+            , MailboxMsg p $ DP.createUnencodedMessage $
+                               DP.ProcessMonitorNotification ref pid reason
+            )
           mkMsg (DP.NodeIdentifier _)
                 (ref@(DP.MonitorRef (DP.ProcessIdentifier p) _), False) =
-            (self, p, MailboxMsg p $ DP.createUnencodedMessage $
-                        DP.NodeMonitorNotification ref nid reason
+            ( DP.nullProcessId srcNid
+            , p
+            , MailboxMsg p $ DP.createUnencodedMessage $
+                               DP.NodeMonitorNotification ref nid reason
             )
           mkMsg _ _ = error "scheduler.notifyMonitors.mkMsg: unimplemented case"
-          st' = st { stateMonitors = remainingMons }
-      foldM handleSend st' [ mkMsg k x | (k, xs) <- Map.toList mons
-                                       , x@(DP.MonitorRef dpId _, _) <- xs
-                                       , shouldNotify $ DP.nodeOf dpId
+          (shouldMons, otherMons) =
+            let splitMons = partition (\(DP.MonitorRef dpId _, _) ->
+                                         shouldNotify $ DP.nodeOf dpId
+                                      )
+                              <$> mons
+             in (fst <$> splitMons, snd <$> splitMons)
+
+          st' = st { stateMonitors =
+                       Map.union (Map.filter (not . null) otherMons)
+                                 remainingMons
+                   }
+      foldM handleSend st' [ mkMsg k x | (k, xs) <- Map.toList shouldMons
+                                       , x <- xs
                            ]
-    notifyMonitors _ _ _ _ =
+    notifyMonitors _ _ _ _ _ =
       error "scheduler.notifyMonitors: unimplemented case"
 
     multimapDelete :: (Ord k, Eq a) => k -> a -> Map k [a] -> Map k [a]
