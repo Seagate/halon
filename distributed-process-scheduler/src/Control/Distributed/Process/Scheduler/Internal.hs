@@ -1119,23 +1119,22 @@ callLocal proc = DP.mask $ \release -> do
     -- This is callLocal from d-p, with the addition of a c-h channel to signal
     -- to the scheduler that the mvar is filled.
     (sp, rp) <- DP.newChan
+    (spInit, rpInit) <- DP.newChan -- TODO: Remove when spawnLocal inherits the
+                                   -- masking state.
     child <- spawnLocal $ DP.mask_ $ do
+               sendChan spInit ()
                r <- DP.try (release proc)
                sendChan sp ()
                DP.liftIO $ putMVar mv r
-    ref <- monitor child
     rs <- (do receiveChan rp
               DP.liftIO (takeMVar mv)
-          ) `DP.onException`
-             (do kill child "exception in parent process"
-                 waitFor ref
-             )
+            `DP.onException`
+             do () <- receiveChan rpInit
+                kill child "exception in parent process"
+                receiveChan rp
+                DP.liftIO (takeMVar mv)
+          )
     either throw return rs
-  where
-    waitFor ref = receiveWait
-      [ matchIf (\(DP.ProcessMonitorNotification ref' _ _) -> ref == ref')
-                (\_ -> return ())
-      ]
 
 -- | Looks up a process in the local registry.
 whereis :: String -> Process (Maybe ProcessId)
