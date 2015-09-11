@@ -10,7 +10,7 @@ module Network.CEP.Phase
   , PhaseOut(..)
   ) where
 
-import Data.Foldable (for_, traverse_)
+import Data.Foldable (for_)
 import Data.Typeable
 
 import           Control.Distributed.Process
@@ -142,12 +142,12 @@ runPhase :: RuleKey
          -> Process (g, [(Buffer,PhaseOut l)])
 runPhase key subs logs g l buf ph =
     case _phCall ph of
-      DirectCall action -> runPhaseM key (_phName ph) subs logs g l buf action
+      DirectCall action -> runPhaseM key pname subs logs g l buf action
       ContCall tpe k -> do
         res <- extractMsg tpe g l buf
         case res of
           Just (Extraction new_buf b) -> do
-            result <- runPhaseM key (_phName ph) subs logs g l new_buf (k b)
+            result <- runPhaseM key pname subs logs g l new_buf (k b)
             for_ (snd result) $ \(_,out) ->
               case out of
                 SM_Complete{} -> notifySubscribers subs b
@@ -155,13 +155,15 @@ runPhase key subs logs g l buf ph =
             return result
           Nothing -> do
             return (g, [(buf, SM_Suspend logs)])
+  where
+    pname = _phName ph
 
 -- | 'Phase' state machine execution main loop. Runs until its stack is empty
 --   except if get a 'Suspend' or 'Stop' instruction.
 --   This execution is run goes not switch between forked threads. First parent
 --   thread is executed to a safe point, and then child is run.
 runPhaseM :: forall g l . RuleKey
-          -> String -- ^ Process name.
+          -> String              -- ^ Process name.
           -> Subscribers         -- ^ List of events subscribers.
           -> Maybe SMLogs        -- ^ Logs.
           -> g                   -- ^ Global state.
@@ -185,9 +187,9 @@ runPhaseM key pname subs plogs pg pl pb action = do
     go g l lgs buf a = viewT a >>= inner
       where
         inner (Return _) = return (g, (buf, SM_Complete l [] lgs), [])
-        inner (Continue ph :>>= _)  = do
-            jumpEmitTimeout key ph
-            return (g, (buf, SM_Complete l [ph] lgs), [])
+        inner (Continue ph :>>= _) = do
+            nxt_ph <- jumpEmitTimeout key ph
+            return (g, (buf, SM_Complete l [nxt_ph] lgs), [])
         inner (Get Global :>>= k)   = go g l lgs buf $ k g
         inner (Get Local  :>>= k)   = go g l lgs buf $ k l
         inner (Put Global s :>>= k) = go s l lgs buf $ k ()
@@ -211,8 +213,8 @@ runPhaseM key pname subs plogs pg pl pb action = do
           let new_logs = fmap (S.|> (pname,ctx,lg)) lgs in
           go g l new_logs buf $ k ()
         inner (Switch xs :>>= _) = do
-          traverse_ (jumpEmitTimeout key) xs
-          return (g, (buf, SM_Complete l xs lgs), [])
+          nxt_xs <- traverse (jumpEmitTimeout key) xs
+          return (g, (buf, SM_Complete l nxt_xs lgs), [])
         inner (Peek idx :>>= k) = do
           case bufferPeek idx buf of
             Nothing -> return (g, (buf, SM_Suspend lgs), [])

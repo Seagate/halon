@@ -24,7 +24,6 @@ import qualified Data.MultiMap       as MM
 import qualified Data.Map.Strict     as M
 import qualified Data.Sequence       as S
 import qualified Data.Set            as Set
-import           FRP.Netwire (clockSession_)
 
 import Network.CEP.Buffer
 import Network.CEP.Execution
@@ -116,8 +115,6 @@ data Machine s =
     Machine
     { _machRuleData :: !(M.Map RuleKey (RuleData s))
       -- ^ Rules defined by the users.
-    , _machSession :: !TimeSession
-      -- ^ Time tracking session.
     , _machSubs :: !Subscribers
       -- ^ Subscribers interested in events issued by this CEP engine.
     , _machLogger :: !(Maybe (Logs -> s -> Process ()))
@@ -154,7 +151,6 @@ emptyMachine :: s -> Machine s
 emptyMachine s =
     Machine
     { _machRuleData       = M.empty
-    , _machSession        = clockSession_
     , _machSubs           = MM.empty
     , _machLogger         = Nothing
     , _machRuleFin        = Nothing
@@ -236,15 +232,13 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
     go NoMessage msg_count = do
       let stk  = _ruleStack rd
           logs = fmap (const S.empty) _machLogger
-          exe  = SMExecute _machSession _machSubs _machState
+          exe  = SMExecute logs _machSession _machSubs _machState
       -- We do not allow fork inside init rule, this may be ok or not
       -- depending on a usecase, but allowing fork will make implementation
       -- much harder and do not worth it, unless we have a concrete example.
       (nxt_sess, g, [(SMResult out infos mlogs, nxt_stk)]) <- runSM stk exe
       let new_rd = rd { _ruleStack = nxt_stk }
-          nxt_st = st { _machState   = g
-                      , _machSession = nxt_sess
-                      }
+          nxt_st = st { _machState = g }
           rinfo = RuleInfo InitRuleName [(out, infos)]
           info  = RunInfo msg_count (RulesBeenTriggered [rinfo])
       for_ _machLogger $ \f -> for_ mlogs $ \l -> f l g
@@ -328,7 +322,6 @@ executeTick = bootstrap >>= traverse (uncurry execute)
         nxt_st{_machRunningSM = addRunning $ _machRunningSM nxt_st
               ,_machSuspendedSM = addSuspended $ _machSuspendedSM nxt_st
               ,_machState = nxt_g
-              ,_machSession = nxt_sess
               }
       lift $ for_ (_machLogger sti) $ \f -> for_ mlogs $ \l -> f l nxt_g
       return $ RuleInfo (RuleName $ _ruleDataName sm)

@@ -20,7 +20,6 @@ import Data.Typeable
 
 import qualified Control.Monad.State.Strict as State
 import           Control.Distributed.Process
-import           Control.Wire.Session
 import qualified Data.Map.Strict as M
 
 import Network.CEP.Buffer
@@ -36,7 +35,7 @@ data SMIn g a where
               -> TimeSession
               -> Subscribers
               -> g
-              -> SMIn g (Process (TimeSession, g, [(SMResult, SM g)]))
+              -> SMIn g (Process (g, [(SMResult, SM g)]))
     -- ^ Execute a single step of the 'SM'. Where subscribers is the list of
     -- the current 'Subscribers' and g is current Global State.
     SMMessage :: Monad m => TypeInfo -> Message -> SMIn g (m (SM g))
@@ -53,7 +52,11 @@ newSM :: forall g l .RuleKey
 newSM key startPhase rn logs ps initialBuffer initialL =
     SM $ interpretInput initialL initialBuffer [startPhase]
   where
-    interpretInput :: l -> Buffer -> [Jump (Phase g l)] -> (SMIn g a) -> a
+    interpretInput :: l
+                   -> Buffer
+                   -> [Jump (Phase g l)]
+                   -> SMIn g a
+                   -> a
     interpretInput l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) = do
       Just (a :: e) <- unwrapMessage msg
       return $ SM (interpretInput l (bufferInsert a b) phs)
@@ -87,12 +90,9 @@ newSM key startPhase rn logs ps initialBuffer initialL =
                                              (info . (i:)) phs
           Right ph -> do
             (g',m) <- runPhase key subs logs g l b ph
-            let st = (nxt_sess, g')
-            ((fin_sess, fin_g), fin_m) <- fmap concat
-                                          <$> mapAccumLM (next ph) st m
-            return (fin_sess, fin_g, fin_m)
+            fmap concat <$> mapAccumLM (next ph) g' m
       where
-        next ph nxt@(nxt_sess, gNext) (buffer, out) =
+        next ph gNext (buffer, out) =
             case out of
               SM_Complete l' newPhases rlogs -> do
                 (result, phs') <- case newPhases of

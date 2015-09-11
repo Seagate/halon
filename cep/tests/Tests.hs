@@ -862,9 +862,7 @@ testSimpleTimeout = do
 
             setPhase ph1 $ \(Donut _) -> return ()
 
-            directly ph2 $ do
-              liftIO $ putStrLn "Launched !!!"
-              liftProcess $ usend self ()
+            directly ph2 $ liftProcess $ usend self ()
 
             start ph0 ()
 

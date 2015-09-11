@@ -113,70 +113,76 @@ newtype Timeout = Timeout RuleKey deriving Binary
 data Jump a
     = NormalJump a
       -- ^ Accesses a resource directly.
-    | ReactiveJump (SimpleWire () ()) a
+    | ReactiveJump TimeSession (SimpleWire () ()) a
       -- ^ Accesses a resource only when its 'SimpleWire' advises to do it. A
       --   a 'SimpleWire' is used in order to express a wider set of time
       --   restricted predicate.
 
 instance Functor Jump where
-    fmap f (NormalJump a)     = NormalJump $ f a
-    fmap f (ReactiveJump w a) = ReactiveJump w $ f a
+    fmap f (NormalJump a)       = NormalJump $ f a
+    fmap f (ReactiveJump c w a) = ReactiveJump c w $ f a
 
 normalJump :: a -> Jump a
 normalJump = NormalJump
 
 -- | Jumps to a resource after a certain amount of time.
 timeout :: NominalDiffTime -> Jump PhaseHandle -> Jump PhaseHandle
-timeout dt (NormalJump a)     = ReactiveJump (after dt) a
-timeout dt (ReactiveJump w a) = ReactiveJump (w <> after dt) a
+timeout dt (NormalJump a)       = ReactiveJump clockSession_ (after dt) a
+timeout dt (ReactiveJump c w a) = ReactiveJump c (w <> after dt) a
 
 jumpPhaseName :: Jump (Phase g l) -> String
-jumpPhaseName (NormalJump p)     = _phName p
-jumpPhaseName (ReactiveJump _ p) = _phName p
+jumpPhaseName (NormalJump p)       = _phName p
+jumpPhaseName (ReactiveJump _ _ p) = _phName p
 
 jumpPhaseCall :: Jump (Phase g l) -> PhaseCall g l
-jumpPhaseCall (NormalJump p)     = _phCall p
-jumpPhaseCall (ReactiveJump _ p) = _phCall p
+jumpPhaseCall (NormalJump p)       = _phCall p
+jumpPhaseCall (ReactiveJump _ _ p) = _phCall p
 
 jumpPhaseHandle :: Jump PhaseHandle -> String
-jumpPhaseHandle (NormalJump h)     = _phHandle h
-jumpPhaseHandle (ReactiveJump _ h) = _phHandle h
+jumpPhaseHandle (NormalJump h)       = _phHandle h
+jumpPhaseHandle (ReactiveJump _ _ h) = _phHandle h
 
 -- | Update the time of a 'Jump'. If it's ready, gets its value.
-jumpApplyTime :: Timed NominalDiffTime () -> Jump a -> Either (Jump a) a
-jumpApplyTime _ (NormalJump h)     = Right h
-jumpApplyTime t (ReactiveJump w h) =
-    let (res, nxt) = runIdentity $ stepWire w t (Right ()) in
+jumpApplyTime :: Jump a -> Process (Either (Jump a) a)
+jumpApplyTime (NormalJump h)       = return $ Right h
+jumpApplyTime (ReactiveJump c w h) = do
+    (t, nxt_c) <- stepSession c
+    let (res, nxt) = runIdentity $ stepWire w t (Right ())
     case res of
-      Left _ -> Left $ ReactiveJump nxt h
-      _      -> Right h
+      Left _ -> return $ Left $ ReactiveJump nxt_c nxt h
+      _      -> return $ Right h
 
 -- | Applies a 'Jump' tatic to another one without caring about its internal
 --   value.
 jumpBaseOn :: Jump a -> Jump b -> Jump b
-jumpBaseOn (ReactiveJump w _) jmp =
+jumpBaseOn (ReactiveJump c w _) jmp =
     case jmp of
-      ReactiveJump v b -> ReactiveJump (w <> v) b
-      NormalJump b     -> ReactiveJump w b
+      ReactiveJump _ v b -> ReactiveJump c (w <> v) b
+      NormalJump b       -> ReactiveJump c w b
 jumpBaseOn _ jmp = jmp
 
 -- | Creates a process that will emit a 'Timeout' message once a 'SimpleWire'
 --   will emit a value.
-jumpEmitTimeout :: RuleKey -> Jump a -> Process ()
-jumpEmitTimeout key (ReactiveJump w _) = do
-    self <- getSelfPid
-    _    <- spawnLocal $ action self clockSession_ w
-    return ()
-  where
-    action self cur_sess cur_w = do
-      (t, nxt_sess) <- stepSession cur_sess
-      let (res, nxt_w) = runIdentity $ stepWire cur_w t (Right ())
-      case res of
-        Left _ -> do
-          liftIO $ threadDelay 1000
-          action self nxt_sess nxt_w
-        Right _ -> usend self (Timeout key)
-jumpEmitTimeout _ _ = return ()
+jumpEmitTimeout :: RuleKey -> Jump a -> Process (Jump a)
+jumpEmitTimeout key jmp = do
+    res <- jumpApplyTime jmp
+    case res of
+      Left nxt_jmp ->
+        case nxt_jmp of
+          ReactiveJump s_sess w _ -> do
+            self <- getSelfPid
+            let action c_sess cur_w = do
+                  (c_t, nxt_sess) <- stepSession c_sess
+                  let (c_res, nxt_w) = runIdentity $ stepWire cur_w c_t (Right ())
+                  case c_res of
+                    Left _ -> do
+                      liftIO $ threadDelay 1000
+                      action nxt_sess nxt_w
+                    Right _ -> usend self (Timeout key)
+            _ <- spawnLocal $ action s_sess w
+            return nxt_jmp
+          _ -> return nxt_jmp
+      Right a -> return (NormalJump a)
 
 -- | CEP 'Engine' state-machine specification. It's about defining rule or set
 --   up options that will change the engine behavior.
