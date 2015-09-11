@@ -243,7 +243,7 @@ tests argv = do
 
     let ut = testGroup "ut"
           [ testSuccess "single-command"
-              $ setupSched seed 10000 10000000 20 1 0
+              $ setupSched seed 5000 10000000 20 1 0
               $ \_ _ _ port -> do
                 retry retryTimeout $
                   State.update port incrementCP
@@ -251,7 +251,7 @@ tests argv = do
                   retry retryTimeout (State.select sdictInt port readCP)
 
           , testSuccess "two-command"
-              $ setupSched seed 10000 10000000 20 1 0 $
+              $ setupSched seed 5000 10000000 20 1 0 $
               \_ _ _ port -> do
                 retry retryTimeout $
                   State.update port incrementCP
@@ -261,7 +261,7 @@ tests argv = do
                   retry retryTimeout (State.select sdictInt port readCP)
 
           , testSuccess "clone"
-              $ setupSched seed 10000 10000000 20 1 0 $
+              $ setupSched seed 5000 10000000 20 1 0 $
               \_ _ h _ -> do
                 self <- getSelfPid
                 rh <- Log.remoteHandle h
@@ -284,7 +284,7 @@ tests argv = do
           --       assert . (== 2) =<< State.select sdictInt port readCP
 
           , testSuccess "addReplica-start-new-replica" $
-              setupSched seed 8000 10000000 20 1 1 $ \_ (node1 : _) h _ -> do
+              setupSched seed 5000 10000000 20 1 1 $ \_ (node1 : _) h _ -> do
                 self <- getSelfPid
                 _ <- liftIO $ forkProcess node1 $ do
                   registerInterceptor $ \string ->
@@ -306,7 +306,7 @@ tests argv = do
                 Log.killReplica h (localNodeId node1)
 
           , testSuccess "addReplica-new-replica-old-decrees"
-              $ setupSched seed 7100 10000000 20 1 1 $ \_ (node1 : _) h port -> do
+              $ setupSched seed 5000 10000000 20 1 1 $ \_ (node1 : _) h port -> do
                 self <- getSelfPid
                 let interceptor "Increment." = usend self ()
                     interceptor _ = return ()
@@ -360,7 +360,7 @@ tests argv = do
                 Log.killReplica h (localNodeId node1)
 
           , testSuccess "addReplica-idempotent" $
-            setupSched seed 9000 10000000 20 1 0 $ \_ _ h port -> do
+            setupSched seed 5000 10000000 20 1 0 $ \_ _ h port -> do
               here <- getSelfNode
 
               retry retryTimeout $ State.update port incrementCP
