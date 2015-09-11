@@ -52,12 +52,14 @@ class ConfObj a where
       , f_key = key
       }
     where
+      -- The top 8 bits of f_container specify the object type.
       typ = fidType p
       typMask = 0x00ffffffffffffff
       container = (typ `shiftL` (64 - 8)) .|. (cont .&. typMask)
 
   -- | Return the Mero fid for the given conf object
   fid :: a -> Fid
+  {-# MINIMAL fidType, fid #-}
 
 data AnyConfObj = forall a. ConfObj a => AnyConfObj a
 --------------------------------------------------------------------------------

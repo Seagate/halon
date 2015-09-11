@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 -- |
@@ -10,6 +11,7 @@
 
 module HA.RecoveryCoordinator.Rules.Mero where
 
+import HA.RecoveryCoordinator.Actions.Mero (getFilesystem)
 import HA.RecoveryCoordinator.Mero
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
@@ -21,7 +23,7 @@ import Mero.ConfC (Fid)
 
 import Control.Category (id, (>>>))
 import Control.Distributed.Process (liftIO)
-import Control.Monad (forM_, unless)
+import Control.Monad (forM_)
 
 import Data.Foldable (foldl')
 import qualified Data.HashMap.Strict as M
@@ -69,32 +71,39 @@ loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
 --     - An SDev (logical device)
 --   We then add any relevant services running on this process. If one is
 --   an ioservice (and it should be!), we link the sdevs to the IOService.
-loadMeroServers :: [CI.M0Host]
+loadMeroServers :: M0.Filesystem
+                -> [CI.M0Host]
                 -> PhaseM LoopState l ()
-loadMeroServers = mapM_ goHost where
+loadMeroServers fs = mapM_ goHost where
   goHost CI.M0Host{..} = let
       host = Host m0h_fqdn
       mkProc fid = M0.Process fid m0h_mem_as m0h_mem_rss
                               m0h_mem_stack m0h_mem_memlock
                               m0h_cores
 
-    in modifyLocalGraph $ \rg -> do
+    in do
       ctrl <- M0.Controller <$> newFid (Proxy :: Proxy M0.Controller)
       node <- M0.Node <$> newFid (Proxy :: Proxy M0.Node)
       proc <- mkProc <$> newFid (Proxy :: Proxy M0.Process)
 
-      devs <- mapM (goDev host) m0h_devices
+      devs <- mapM (goDev host ctrl) m0h_devices
       mapM_ (goSrv proc devs) m0h_services
 
-      return  $ G.newResource host
-            >>> G.newResource ctrl
-            >>> G.newResource node
-            >>> G.newResource proc
-            >>> G.connect Cluster Has host
-            >>> G.connect ctrl M0.At host
-            >>> G.connect node M0.IsOnHardware ctrl
-            >>> G.connect node M0.IsParentOf proc
-              $ rg
+      rg <- getLocalGraph
+      let enc = head $ [ e | e1 <- G.connectedFrom Has host rg :: [Enclosure]
+                           , e <- G.connectedFrom M0.At e1 rg :: [M0.Enclosure]
+                           ]
+
+      modifyGraph $ G.newResource host
+                >>> G.newResource ctrl
+                >>> G.newResource node
+                >>> G.newResource proc
+                >>> G.connect Cluster Has host
+                >>> G.connect fs M0.IsParentOf node
+                >>> G.connect enc M0.IsParentOf ctrl
+                >>> G.connect ctrl M0.At host
+                >>> G.connect node M0.IsOnHardware ctrl
+                >>> G.connect node M0.IsParentOf proc
 
   goSrv proc devs CI.M0Service{..} = let
       mkSrv fid = M0.Service fid m0s_type m0s_endpoints m0s_params
@@ -110,7 +119,7 @@ loadMeroServers = mapM_ goHost where
                           >>> linkDrives svc
                          )
 
-  goDev host CI.M0Device{..} = let
+  goDev host ctrl CI.M0Device{..} = let
       mkSDev fid = M0.SDev fid m0d_size m0d_bsize m0d_path
       devId = DeviceIdentifier "wwn" $ IdentString m0d_wwn
     in do
@@ -119,13 +128,12 @@ loadMeroServers = mapM_ goHost where
       sdev <- StorageDevice <$> liftIO nextRandom
       identifyStorageDevice sdev devId
       locateStorageDeviceOnHost host sdev
-      modifyLocalGraph
-        $ return
-          . (     G.newResource m0sdev
-              >>> G.newResource m0disk
-              >>> G.connect m0sdev M0.IsOnHardware m0disk
-              >>> G.connect m0disk M0.At sdev
-            )
+      modifyGraph
+          $ G.newResource m0sdev
+        >>> G.newResource m0disk
+        >>> G.connect ctrl M0.IsParentOf m0disk
+        >>> G.connect m0sdev M0.IsOnHardware m0disk
+        >>> G.connect m0disk M0.At sdev
       return m0sdev
 
 -- | Has the configuration already been initialised?
@@ -139,28 +147,30 @@ confInitialised = getLocalGraph >>=
 --   * Create Mero rack and enclosure entities reflecting existing
 --     entities in the graph.
 initialiseConfInRG :: PhaseM LoopState l M0.Filesystem
-initialiseConfInRG = unlessM confInitialised $ do
-    rg <- getLocalGraph
-    profile <- M0.Profile <$> newFid (Proxy :: Proxy M0.Profile)
-    fs <- M0.Filesystem <$> newFid (Proxy :: Proxy M0.Profile)
-    modifyLocalGraph $ return
-                     . ( G.connectUniqueFrom Cluster Has profile
-                         >>> G.connectUniqueFrom profile M0.IsParentOf fs
-                       )
-    let re = [ (r, G.connectedTo r Has rg)
-             | r <- G.connectedTo Cluster Has rg
-             ]
-    mapM_ mirrorRack re
-    return fs
+initialiseConfInRG = getFilesystem >>= \case
+    Just fs -> return fs
+    Nothing -> do
+      rg <- getLocalGraph
+      profile <- M0.Profile <$> newFid (Proxy :: Proxy M0.Profile)
+      fs <- M0.Filesystem <$> newFid (Proxy :: Proxy M0.Profile)
+      modifyLocalGraph $ return
+                       . ( G.connectUniqueFrom Cluster Has profile
+                           >>> G.connectUniqueFrom profile M0.IsParentOf fs
+                         )
+      let re = [ (r, G.connectedTo r Has rg)
+               | r <- G.connectedTo Cluster Has rg
+               ]
+      mapM_ (mirrorRack fs) re
+      return fs
   where
-    unlessM foo action = foo >>= flip unless action
-    mirrorRack :: (Rack, [Enclosure]) -> PhaseM LoopState l ()
-    mirrorRack (r, encls) = do
+    mirrorRack :: M0.Filesystem -> (Rack, [Enclosure]) -> PhaseM LoopState l ()
+    mirrorRack fs (r, encls) = do
       m0r <- M0.Rack <$> newFid (Proxy :: Proxy M0.Rack)
       m0e <- mapM mirrorEncl encls
       modifyGraph
           $ G.newResource m0r
         >>> G.connectUnique m0r M0.At r
+        >>> G.connect fs M0.IsParentOf m0r
         >>> ( foldl' (.) id
               $ fmap (G.connect m0r M0.IsParentOf) m0e)
     mirrorEncl :: Enclosure -> PhaseM LoopState l M0.Enclosure
@@ -192,24 +202,27 @@ createPoolVersions fs = mapM_ createPoolVersion . S.toList
             $ G.newResource rackv
           >>> G.connect pver M0.IsParentOf rackv
           >>> G.connect rack M0.IsRealOf rackv
+        rg1 <- getLocalGraph
         forM_ (filter (\x -> not $ M0.fid x `S.member` failset)
-                $ G.connectedTo rack M0.IsParentOf rg :: [M0.Enclosure])
+                $ G.connectedTo rack M0.IsParentOf rg1 :: [M0.Enclosure])
               $ \encl -> do
           enclv <- M0.EnclosureV <$> newFid (Proxy :: Proxy M0.EnclosureV)
           modifyGraph
               $ G.newResource enclv
             >>> G.connect rackv M0.IsParentOf enclv
             >>> G.connect encl M0.IsRealOf enclv
+          rg2 <- getLocalGraph
           forM_ (filter (\x -> not $ M0.fid x `S.member` failset)
-                  $ G.connectedTo encl M0.IsParentOf rg :: [M0.Controller])
+                  $ G.connectedTo encl M0.IsParentOf rg2 :: [M0.Controller])
                 $ \ctrl -> do
             ctrlv <- M0.ControllerV <$> newFid (Proxy :: Proxy M0.ControllerV)
             modifyGraph
                 $ G.newResource ctrlv
               >>> G.connect enclv M0.IsParentOf ctrlv
               >>> G.connect ctrl M0.IsRealOf ctrlv
+            rg3 <- getLocalGraph
             forM_ (filter (\x -> not $ M0.fid x `S.member` failset)
-                    $ G.connectedTo ctrl M0.IsParentOf rg :: [M0.Disk])
+                    $ G.connectedTo ctrl M0.IsParentOf rg3 :: [M0.Disk])
                   $ \disk -> do
               diskv <- M0.DiskV <$> newFid (Proxy :: Proxy M0.DiskV)
               modifyGraph
@@ -263,18 +276,14 @@ generateFailureSets df cf cfe = do
       buildDiskFailureSet :: Int -- No. failed disks
                           -> S.Set Fid
                           -> S.Set (S.Set Fid)
-      buildDiskFailureSet i fids = S.unions $ go <$> (choose i (S.toList fids))
+      buildDiskFailureSet i fids =
+          S.unions $ go <$> (choose i (S.toList fids))
         where
-          go failed = S.singleton
-                    $ fids `S.difference` (S.fromDistinctAscList failed)
+          go failed = S.singleton $ S.fromDistinctAscList failed
 
       choose :: Int -> [a] -> [[a]]
       choose 0 _ = [[]]
       choose _ [] = []
-      choose n (x:xs) = ((x:) <$> choose (n-1) xs) ++ choose (n-1) xs
+      choose n (x:xs) = ((x:) <$> choose (n-1) xs) ++ choose n xs
 
   return $ S.unions $ fmap (\j -> buildCtrlFailureSet j allDisks) [0 .. cf]
-
--- | Build an initial confd instance based on info in the resource graph.
-buildConfd :: PhaseM LoopState l ()
-buildConfd = undefined

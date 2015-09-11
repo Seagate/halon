@@ -25,9 +25,9 @@ castorRules = do
     defineSimple "Initial-data-load" $ \(HAEvent _ CI.InitialData{..} _) -> do
       mapM_ goRack id_racks
 #ifdef USE_MERO
-      filesystem <- intialiseConfInRG
+      filesystem <- initialiseConfInRG
       loadMeroGlobals id_m0_globals
-      loadMeroServers id_m0_servers
+      loadMeroServers filesystem id_m0_servers
       failureSets <- generateFailureSets 2 2 1 -- TODO real values
       createPoolVersions filesystem failureSets
 #endif

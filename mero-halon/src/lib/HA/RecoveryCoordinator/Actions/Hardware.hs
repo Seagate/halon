@@ -93,7 +93,7 @@ registerBMC enc bmc = modifyLocalGraph $ \rg -> do
           $ rg
   return rg'
 
--- | XXX Todo make this identify the address correctly.
+-- | Find the IP address of the BMC corresponding to this host.
 findBMCAddress :: Host
                -> PhaseM LoopState l (Maybe String)
 findBMCAddress host = do
@@ -214,7 +214,7 @@ unsetHostAttr :: Host
               -> PhaseM LoopState l ()
 unsetHostAttr h f = do
   phaseLog "rg" $ unwords [ "Unsetting attribute", show f
-                , "on host", show h ]
+                          , "on host", show h ]
   modifyLocalGraph
     $ return
     . G.disconnect h Has f
@@ -229,8 +229,8 @@ findHostsByAttributeFilter msg p = do
   return $ [ host | host@(Host {}) <- G.connectedTo Cluster Has g
                   , p (G.connectedTo host Has g) ]
 
--- | A specialised version of 'findHostsLabelledBy' that returns all
--- hosts labelled with at least the given label.
+-- | A specialised version of 'findHostsByAttributeFilter' that returns all
+-- hosts labelled with at least the given attribute.
 findHostsByAttr :: HostAttr
                 -> PhaseM LoopState l [Host]
 findHostsByAttr label =
@@ -239,6 +239,7 @@ findHostsByAttr label =
   where
     p = elem label
 
+-- | Find all attributes possessed by the given host.
 findHostAttrs :: Host
               -> PhaseM LoopState l [HostAttr]
 findHostAttrs host = do

@@ -151,9 +151,9 @@ meroRules :: Definitions LoopState ()
 meroRules = meroRulesF m0d
 
 
--- | Combine 'ConfObject's and a 'ConfObjectState' into a 'Set' and
+-- | Combine @ConfObj@s and a @ConfObjectState@ into a 'Set' and
 -- send it to every mero service running on the cluster.
-notifyMero :: [M0.AnyConfObj]
+notifyMero :: [M0.AnyConfObj] -- ^ List of resources (instance of @ConfObj@)
            -> ConfObjectState
            -> PhaseM LoopState l ()
 notifyMero cs st = do

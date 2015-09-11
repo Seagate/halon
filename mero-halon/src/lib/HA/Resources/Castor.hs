@@ -63,7 +63,7 @@ data HostAttr =
   | HA_M0SERVER
   | HA_MEMSIZE_MB Int
   | HA_CPU_COUNT Int
-  deriving (Eq, Show, Generic, Typeable)
+  deriving (Eq, Ord, Show, Generic, Typeable)
 
 instance Binary HostAttr
 instance Hashable HostAttr

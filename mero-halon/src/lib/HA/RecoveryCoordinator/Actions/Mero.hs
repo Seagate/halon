@@ -7,11 +7,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module HA.RecoveryCoordinator.Actions.Mero
-  ( lookupConfObjByFid )
+  ( getFilesystem
+  , lookupConfObjByFid
+  )
 where
 
 import HA.RecoveryCoordinator.Actions.Core
 import qualified HA.ResourceGraph as G
+import HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Mero as M0
 
 import Mero.ConfC (Fid)
@@ -28,9 +31,17 @@ lookupConfObjByFid f = do
     phaseLog "rg-query" $ "Looking for conf objects with FID "
                         ++ show f
     rg <- getLocalGraph
-    return . listToMaybe . filter (\x -> M0.fid x == f) $ allObjs rg
+    return . listToMaybe . filter ((== f) . M0.fid) $ allObjs rg
   where
     allObjs rg = catMaybes
                . fmap (\x -> cast x :: Maybe a)
                . fst . unzip
                $ G.getGraphResources rg
+
+getFilesystem :: PhaseM LoopState l (Maybe M0.Filesystem)
+getFilesystem = getLocalGraph >>= \rg -> do
+  phaseLog "rg-query" $ "Looking for Mero filesystem."
+  return . listToMaybe
+    $ [ fs | p <- G.connectedTo Cluster Has rg :: [M0.Profile]
+           , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
+      ]
