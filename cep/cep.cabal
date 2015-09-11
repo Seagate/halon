@@ -16,7 +16,7 @@ Flag maintainer
 library
   hs-source-dirs:      src
   exposed-modules:     Network.CEP
-
+                       Network.CEP.Testing
   other-modules:       Network.CEP.Buffer
                        Network.CEP.Engine
                        Network.CEP.Execution

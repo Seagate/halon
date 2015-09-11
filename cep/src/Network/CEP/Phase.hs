@@ -6,6 +6,7 @@
 --
 module Network.CEP.Phase
   ( runPhase
+  , runPhaseM
   , PhaseOut(..)
   ) where
 
