@@ -379,7 +379,7 @@ nsendTest = \(n1 : _) -> do
     self <- getSelfPid
     n <- getSelfNode
     register "self" self
-    liftIO $ runProcess' n1 $ do
+    _ <- liftIO $ forkProcess n1 $ do
       s0 <- spawnLocal $ do
         forM_ [0..1::Int] $ \i -> do
           j <- expect
@@ -394,6 +394,8 @@ nsendTest = \(n1 : _) -> do
           nsendRemote n "self" (1::Int,i)
         usend self ()
       register "s1" s1
+      usend self ((), ())
+    ((), ()) <- expect
 
     forM_ [0..1::Int] $ \i -> do
       nsendRemote (localNodeId n1) "s0" (2*i)
@@ -503,12 +505,3 @@ processTTest = do
       say' $ "main: received " ++ show j
     () <- expect
     expect
-
--- | Like 'runProcess' but forwards exceptions and returns the result of the
--- 'Process' computation.
-runProcess' :: LocalNode -> Process a -> IO a
-runProcess' n p = do
-  r <- newIORef undefined
-  runProcess n (try p >>= liftIO . writeIORef r)
-    >> readIORef r
-      >>= either (\e -> throwIO (e :: SomeException)) return
