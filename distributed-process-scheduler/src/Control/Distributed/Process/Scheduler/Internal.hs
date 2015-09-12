@@ -466,7 +466,10 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
     -- enter the next equation if some process is still active
     go st@(SchedulerState _ alive procs _ _ monitors mcounter clock
                           expired timeouts revTimeouts failures
-          ) =
+          ) = do
+      when (Set.size alive > 1 + Map.size procs) $
+        error $ "startScheduler: More than one process is alive: "
+                ++ show (alive, procs)
       DP.receiveWait
         [ DP.match $ \m -> case m of
         GetTime pid -> DP.send pid clock >> go st
