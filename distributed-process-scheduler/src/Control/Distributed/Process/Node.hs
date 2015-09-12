@@ -27,8 +27,10 @@ forkProcess :: LocalNode -> Process () -> IO ProcessId
 forkProcess n p | schedulerIsEnabled = do
     mv <- newEmptyMVar
     pid <- DPN.forkProcess n $ do
-      self <- getSelfPid
-      liftIO getScheduler >>= flip DP.send (SpawnedProcess self) . processId
+      self <- DP.getSelfPid
+      s <- liftIO getScheduler
+      DP.send (processId s) $ SpawnedProcess self self
+      SpawnAck <- DP.expect
       liftIO $ putMVar mv ()
       Continue <- DP.expect
       p

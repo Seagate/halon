@@ -155,8 +155,8 @@ data SchedulerMsg
                                   -- messages to process and is blocked with the
                                   -- given timeout in microseconds.
     | Yield ProcessId    -- ^ @Yield pid@: process @pid@ is ready to continue.
-    | SpawnedProcess ProcessId
-        -- ^ @SpawnedProcess child@: a new process exists.
+    | SpawnedProcess ProcessId ProcessId
+        -- ^ @SpawnedProcess child p@: a new process exists send ack to @p@.
     | Monitor ProcessId DP.Identifier Bool
         -- ^ @Monitor who whom isLink@: the process @who@ will monitor @whom@.
         -- @isLink@ is @True@ when linking is intended.
@@ -171,6 +171,7 @@ data SchedulerMsg
 data SchedulerResponse
     = Continue     -- ^ Pick a message from your mailbox.
     | Timeout      -- ^ Unblock by timing out.
+    | SpawnAck     -- ^ Spawned process
   deriving (Generic, Typeable, Show)
 
 -- | Transitions that the scheduler can choose to perform when all
@@ -498,8 +499,9 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                       Map.insert pid (clock + ts) revTimeouts
                   }
         -- a new process will be created
-        SpawnedProcess child -> do
+        SpawnedProcess child p -> do
             _ <- DP.monitor child
+            DP.send p SpawnAck
             go st { stateAlive = Set.insert child alive
                   , stateProcs = Map.insert child True procs
                   }
@@ -842,7 +844,9 @@ withScheduler :: Int       -- ^ seed
 withScheduler s clockDelta numNodes transport rtable p =
     bracket (startScheduler s clockDelta numNodes transport rtable)
             stopScheduler $ \lnodes@(n : ns) -> runProcess n $ do
-              DP.getSelfPid >>= sendS . SpawnedProcess
+              self <- DP.getSelfPid
+              sendS $ SpawnedProcess self self
+              SpawnAck <- DP.expect
               Continue <- DP.expect
               p ns
               DP.liftIO $ stopScheduler lnodes
@@ -965,6 +969,9 @@ receiveTimeoutM mus ms = do
         case command of
           Continue -> go r Nothing ms'
           Timeout  -> return Nothing
+          SpawnAck -> do
+            DP.say "receiveTimeoutM: unexpected SpawnAck"
+            error "receiveTimeoutM: unexpected SpawnAck"
 
 -- | Shorthand for @receiveWait [ match return ]@
 expect :: Serializable a => Process a
@@ -1074,7 +1081,8 @@ spawnLocal :: Process () -> Process ProcessId
 spawnLocal p = do
     child <- DP.spawnLocal $ do Continue <- DP.expect
                                 p
-    sendS $ SpawnedProcess child
+    DP.getSelfPid >>= sendS . SpawnedProcess child
+    SpawnAck <- DP.expect
     return child
 
 spawnWrapClosure :: Closure (Process ()) -> Process ()
@@ -1095,7 +1103,8 @@ spawnAsync nid cp = do
                [ DP.matchIf (\(DP.DidSpawn ref' _) -> ref' == ref) $
                              \(DP.DidSpawn _ pid) -> return pid
                ]
-    sendS $ SpawnedProcess child
+    DP.getSelfPid >>= sendS . SpawnedProcess child
+    SpawnAck <- DP.expect
     usend self (DP.DidSpawn ref child)
     return ref
 
