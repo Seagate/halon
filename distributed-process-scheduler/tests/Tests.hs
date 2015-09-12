@@ -192,9 +192,12 @@ sayTest :: [LocalNode] -> Process ()
 sayTest = \(n1 : _) -> do
     self <- getSelfPid
     _ <- liftIO $ forkProcess n1 $ do
-      registerInterceptor $ \s -> usend self s
+      registerInterceptor $ \s -> do
+        liftIO $ putStrLn $ "intercepted string " ++ show s
+        usend self s
       usend self ()
-    ()<- expect
+    () <- expect
+    liftIO $ putStrLn "registered interceptor"
     _ <- liftIO $ forkProcess n1 $ do
       say "hello"
     "hello" <- expect
