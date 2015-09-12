@@ -28,13 +28,17 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Serializable
            ( Serializable, SerializableDict(..) )
 import Control.Distributed.Static ( closureApplyStatic, staticApply
-                                  , closureApply, staticClosure, closure
+                                  , closure
                                   )
 
 import Data.Binary ( decode, encode )
 import Data.ByteString.Lazy ( ByteString )
 import Data.IORef ( IORef, readIORef, newIORef, atomicModifyIORef )
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as Map
 import Data.Typeable ( Typeable )
+import System.IO.Unsafe
+import Unsafe.Coerce
 
 
 -- | Type of replication groups with states of type @st@.
@@ -53,17 +57,24 @@ composeRP :: RStateView q v -> RStateView v w -> RStateView q w
 composeRP (RStateView p0 u0) (RStateView p1 u1) =
     RStateView (p1 . p0) (u0 . u1)
 
+data Some f = forall a. Some (f a) deriving (Typeable)
+
+-- | Holds the generator of groups keys and a map of local groups.
+-- Once a group is created it can be referenced by key in any node
+-- running on the same unix process.
+{-# NOINLINE globalRLocalGroups #-}
+globalRLocalGroups :: IORef (Int, IntMap (Some RLocalGroup))
+globalRLocalGroups = unsafePerformIO $ newIORef (0, Map.empty)
+
 remotable [ 'composeRP, 'update, 'idRStateView ]
 
 remotableDecl [ [d|
 
-  createRLocalGroup :: ByteString -> SerializableDict st
-                    -> Process (RLocalGroup st)
-  createRLocalGroup bs SerializableDict = case decode bs of
-      (sd,st) -> do
-        liftIO $ fmap (flip RLocalGroup
-                      $ staticApply $(mkStatic 'idRStateView) sd
-                      ) $ newIORef st
+  createRLocalGroup :: ByteString -> Process (RLocalGroup st)
+  createRLocalGroup bs = do
+      let k = decode bs
+      liftIO $ atomicModifyIORef globalRLocalGroups $ \(i, m) ->
+        ((i, m), case m Map.! k of Some rg -> unsafeCoerce rg)
  |] ]
 
 -- | Provides a way to transform closures with views.
@@ -75,9 +86,13 @@ instance RGroup RLocalGroup where
 
   data Replica RLocalGroup = Replica
 
-  newRGroup sd _snapshotThreashold _snapshotTimeout _ns st = return $
-      closure $(mkStatic 'createRLocalGroup) (encode (sd,st))
-        `closureApply` staticClosure sd
+  newRGroup sd _snapshotThreashold _snapshotTimeout _ns st = do
+    r <- liftIO $ newIORef st
+    SerializableDict <- unStatic sd
+    k <- liftIO $ atomicModifyIORef globalRLocalGroups $ \(i, m) ->
+           let rg = RLocalGroup r $ staticApply $(mkStatic 'idRStateView) sd
+            in ((i + 1, Map.insert i (Some rg) m), i)
+    return $ closure $(mkStatic 'createRLocalGroup) (encode k)
 
   spawnReplica _ _ = error "Mock.spawnReplica: unimplemented"
 
