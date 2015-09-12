@@ -83,7 +83,7 @@ run :: Int -> IO ()
 run s = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
-    res <- fmap nub $ forM [1..100] $ \i ->
+    res <- fmap nub $ forM [1..50] $ \i ->
       E.bracket InMemory.createTransport
                 NT.closeTransport
       $ \transport -> do
