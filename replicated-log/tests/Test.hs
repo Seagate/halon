@@ -190,7 +190,8 @@ tests argv = do
               \tr@(AbstractTransport transport _ _) ->
                 withLocalNodes (n - 1 + extras) transport remoteTables $
                   \nodes -> do
-                    tryWithTimeout transport remoteTables t $ do
+                    tryWithTimeout transport remoteTables
+                                   (5 * 60 * 1000000) $ do
                       node0 <- fmap processNode ask
                       setup' (take n $ map localNodeId $ node0 : nodes) $
                         uncurry (action tr) $ splitAt n (node0 : nodes)
@@ -201,9 +202,19 @@ tests argv = do
                         else mkInMemoryTransport
                       )
                       closeAbstractTransport
-        setupTimeoutSched (AbstractTransport transport _ _) s clockSpeed t num
+        setupTimeoutSched :: AbstractTransport -> Int -> Int -> Int -> Int
+                          -> Int
+                          -> ( [LocalNode] ->
+                               [LocalNode] ->
+                               Log.Handle (Command State) ->
+                               State.CommandPort State ->
+                               Process ()
+                             )
+                          -> IO ()
+        setupTimeoutSched (AbstractTransport transport _ _) s clockSpeed _t num
                           extra action =
-          (>>= maybe (error "Timeout") return) $ System.timeout t $
+          (>>= maybe (error "Timeout") return) $
+            System.timeout (5 * 60 * 1000000) $
             withScheduler s clockSpeed (num + extra) transport remoteTables $
               \nodes -> do
                 node0 <- fmap processNode ask
