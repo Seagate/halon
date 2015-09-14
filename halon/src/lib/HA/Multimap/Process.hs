@@ -17,7 +17,7 @@ import HA.Multimap.Implementation
             ( Multimap, insertMany, deleteValues, deleteKeys, toList )
 import HA.Replicator ( RGroup, updateStateWith, getState )
 
-import Control.Distributed.Process hiding (send)
+import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( mkClosure, remotable )
 import Control.Distributed.Process.Timeout ( retry )
 

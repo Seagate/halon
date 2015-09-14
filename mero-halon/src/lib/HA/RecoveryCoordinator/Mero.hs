@@ -66,7 +66,7 @@ import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Service
 import qualified HA.ResourceGraph as G
 
-import Control.Distributed.Process hiding (send)
+import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 

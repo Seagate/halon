@@ -35,7 +35,7 @@ import Control.Distributed.Process
   , receiveChan
   , receiveWait
   , say
-  , send
+  , usend
   , sendChan
   , spawnChannelLocal
   , spawnLocal
@@ -156,7 +156,7 @@ cmdHandler statusHandler responseChan msg = case decode (msgBody msg) of
         , commandResponseMessageMessageId = Just . T.pack . toString $ uuid
         }
     when (isJust . commandRequestMessageStatusRequest . commandRequestMessage $ cr)
-      $ send statusHandler cr
+      $ usend statusHandler cr
   Nothing -> say $ "Unable to decode command request: "
                       ++ (BL.unpack $ msgBody msg)
 

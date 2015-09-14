@@ -192,7 +192,7 @@ remotableDecl [ [d|
           -> Process (Maybe (Bool,[NodeId],[NodeId],[NodeId]))
  ignition (update, trackers, snapshotThreshold, snapshotTimeout, rcClosure
           , rsLeaderLease
-          ) = do
+          ) = callLocal $ do
     say "Ignition!"
     disconnectAllNodeConnections
     if update then do

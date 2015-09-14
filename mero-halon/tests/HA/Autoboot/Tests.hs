@@ -46,7 +46,7 @@ eqtReceiveAllStations transport = withTmpDirectory $ do
     say (show meq)
     Just eq <- return meq
     self <- getSelfPid
-    send eq (EQT.ReplicaRequest self)
+    usend eq (EQT.ReplicaRequest self)
     EQT.ReplicaReply (EQT.ReplicaLocation _ xs) <- expect
     liftIO $ assertEqual "list of trackers was updated"
                 (Set.fromList xs)
@@ -62,7 +62,7 @@ eqtReceiveStationsAtStart transport = withTmpDirectory $ do
     nodeUp (map localNodeId nids, 1000000)
     Just eq <- whereis EQT.name
     self <- getSelfPid
-    send eq (EQT.ReplicaRequest self)
+    usend eq (EQT.ReplicaRequest self)
     EQT.ReplicaReply (EQT.ReplicaLocation _ xs) <- expect
     liftIO $ putMVar lock (Set.fromList xs)
   _ <- bootupCluster transport (Left nids)
@@ -93,8 +93,9 @@ bootupCluster transport en = do
     liftIO $ autobootCluster (node:nids)
     runProcess node $ do
       -- 2. Run ignition once
-      result <- call $(functionTDict 'ignition) (localNodeId $ head nids) $
-                     $(mkClosure 'ignition) args
+      (sp, rp) <- Control.Distributed.Process.newChan
+      _ <- liftIO $ forkProcess (head nids) $ ignition args >>= sendChan sp
+      result <- receiveChan rp
       case result of
         Just (added, _, members, newNodes) -> liftIO $ do
           if added then do

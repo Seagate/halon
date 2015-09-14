@@ -18,14 +18,7 @@ where
 
 import Prelude hiding ((<$>),(<*>))
 import Control.Distributed.Process
-  ( Process
-  , NodeId
-  , call
-  , getSelfNode
-  , liftIO
-  , say
-  )
-import Control.Distributed.Process.Closure ( mkClosure, functionTDict )
+import Control.Distributed.Process.Closure ( mkClosure )
 
 import Data.Binary (Binary)
 import Data.Defaultable (Defaultable, defaultable, fromDefault)
@@ -92,9 +85,7 @@ start :: [NodeId] -- ^ Nodes on which to start the tracking station
       -> Config -> Process ()
 start nids naConf = do
     say $ "This is " ++ self
-    nid <- getSelfNode
-    result <- call $(functionTDict 'ignition) nid $
-               $(mkClosure 'ignition) args
+    result <- ignition args
     case result of
       Just (added, _, members, newNodes) -> liftIO $ do
         if added then do

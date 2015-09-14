@@ -114,8 +114,8 @@ runRC (eq, args) rGroup = do
                   <*> (spawnLocal $ do
                         () <- expect
                         recoveryCoordinator args eq mm)
-  send eq rc
-  forM_ [mm, rc] $ \them -> send them ()
+  usend eq rc
+  forM_ [mm, rc] $ \them -> usend them ()
 --  liftIO $ takeMVar var
   return (mm, rc)
 
@@ -161,7 +161,7 @@ testServiceRestarting transport = do
         _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
-            str@"Starting service dummy"   -> send self str
+            str@"Starting service dummy"   -> usend self str
             _ -> return ()
 
         say $ "tests node: " ++ show nid
@@ -198,7 +198,7 @@ testServiceNotRestarting transport = do
         _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
-            str@"Starting service dummy"   -> send self str
+            str@"Starting service dummy"   -> usend self str
             _ -> return ()
 
         say $ "tests node: " ++ show nid
@@ -281,8 +281,9 @@ testHostAddition transport = do
         _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
-            str@"Starting service dummy"   -> send self str
-            str' | "Registered host" `isInfixOf` str' -> send self ("Host" :: String)
+            str@"Starting service dummy"   -> usend self str
+            str' | "Registered host" `isInfixOf` str' ->
+              usend self ("Host" :: String)
             _ -> return ()
 
         say $ "tests node: " ++ show nid
@@ -332,8 +333,9 @@ testDriveAddition transport = do
         _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
-            str@"Starting service dummy"   -> send self str
-            str' | "Registered drive" `isInfixOf` str' -> send self ("Drive" :: String)
+            str@"Starting service dummy"   -> usend self str
+            str' | "Registered drive" `isInfixOf` str' ->
+              usend self ("Drive" :: String)
             _ -> return ()
 
         say $ "tests node: " ++ show nid
@@ -505,7 +507,7 @@ testServiceStopped transport = do
         _ <- spawnLocal $ eqTrackerProcess [nid]
 
         registerInterceptor $ \string -> case string of
-            str@"Starting service dummy"   -> send self str
+            str@"Starting service dummy"   -> usend self str
             _ -> return ()
 
         say $ "tests node: " ++ show nid
@@ -642,8 +644,8 @@ testNodeUpRace transport = do
                                                                Monitor.emptyMonitorConf
                                                                (ServiceProcess $ nullProcessId selfNode)
             nodeUp ([nid], 2000000)
-            send self (Node selfNode)
-            send self (nullProcessId selfNode)
+            usend self (Node selfNode)
+            usend self (nullProcessId selfNode)
         _ <- receiveTimeout 1000000 []
 
         True <- serviceProcessStillAlive mm (Node nid) Monitor.regularMonitor
