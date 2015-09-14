@@ -682,14 +682,16 @@ Test-Suite unit-tests
                     Cabal >= 1.16,
                     binary >= 0.6.4,
                     bytestring,
-                    distributed-process >= 0.4,
+                    distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static,
                     network,
                     network-transport,
+                    network-transport-inmemory,
                     options-schema,
                     hashable,
                     unordered-containers,
+                    random,
                     sspl,
                     tasty,
                     tasty-hunit,
@@ -738,9 +740,11 @@ Test-Suite integration-tests
                     distributed-static,
                     network,
                     network-transport,
+                    network-transport-inmemory,
                     options-schema,
                     hashable,
                     unordered-containers,
+                    random,
                     sspl,
                     tasty,
                     tasty-hunit,
@@ -756,6 +760,52 @@ Test-Suite integration-tests
       CPP-Options:    -DUSE_RPC
   else
       Build-Depends: network-transport-tcp >= 0.3
+
+Test-Suite scheduler-tests
+  Type:             exitcode-stdio-1.0
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   tests
+  Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
+                    RemoteTables
+  Main-Is:          scheduler-tests.hs
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  CPP-Options:      -DMC_RG=RLogGroup
+  if flag(debug)
+    Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
+  Default-Extensions: DeriveDataTypeable
+                      DeriveGeneric
+                      GeneralizedNewtypeDeriving
+                      RecordWildCards NamedFieldPuns
+                      ScopedTypeVariables
+  Build-Depends:    halon,
+                    mero-halon,
+                    base >= 4.5,
+                    binary >= 0.6.4,
+                    bytestring,
+                    Cabal >= 1.16,
+                    distributed-process-scheduler,
+                    distributed-process-test,
+                    distributed-static,
+                    network,
+                    network-transport,
+                    network-transport-inmemory,
+                    options-schema,
+                    hashable,
+                    unordered-containers,
+                    random,
+                    sspl,
+                    tasty,
+                    tasty-hunit,
+                    tasty-files,
+                    unix,
+                    cep,
+                    attoparsec,
+                    containers
 
 Test-Suite test-start-service-local
   Type:             exitcode-stdio-1.0

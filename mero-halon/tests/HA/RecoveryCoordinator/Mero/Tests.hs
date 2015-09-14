@@ -69,14 +69,16 @@ import qualified SSPL.Bindings as SSPL
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotableDecl, mkStatic )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
-import Control.Distributed.Process.Node (newLocalNode, runProcess)
+import Control.Distributed.Process.Node
 import Control.Distributed.Process.Internal.Types (nullProcessId)
-import Network.Transport (Transport)
+import qualified Control.Distributed.Process.Scheduler as Scheduler
+import Network.Transport (Transport(..))
+import Network.Transport.InMemory (createTransport)
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ( first, second )
-import Control.Concurrent (threadDelay)
-import Control.Monad (forM_, void)
+import qualified Control.Exception as E
+import Control.Monad (forM_, void, join)
 
 -- import qualified Data.Attoparsec.ByteString.Char8 as Atto
 -- import qualified Data.ByteString as B
@@ -84,10 +86,11 @@ import Control.Monad (forM_, void)
 import Data.Defaultable
 import Data.List (isInfixOf)
 import Data.Proxy (Proxy(..))
-
--- import System.IO
-
 import Network.CEP (Published(..), subscribe)
+import System.IO
+import System.Random
+import System.Timeout
+
 
 type TestReplicatedState = (EventQueue, Multimap)
 
@@ -155,20 +158,20 @@ serviceProcessStillAlive mm n sc = loop (1 :: Int)
 --   is not violated.
 testServiceRestarting :: Transport -> IO ()
 testServiceRestarting transport = do
-    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
-        nid <- getSelfNode
-        self <- getSelfPid
-        _ <- spawnLocal $ eqTrackerProcess [nid]
+    runTest 1 20 15000000 transport rt $ \_ -> do
+      nid <- getSelfNode
+      self <- getSelfPid
+      _ <- spawnLocal $ eqTrackerProcess [nid]
+      registerInterceptor $ \string -> case string of
+          str@"Starting service dummy"   -> usend self str
+          _ -> return ()
 
-        registerInterceptor $ \string -> case string of
-            str@"Starting service dummy"   -> usend self str
-            _ -> return ()
-
-        say $ "tests node: " ++ show nid
-        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+      say $ "tests node: " ++ show nid
+      bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
                              [nid] ((Nothing,[]), fromList [])
-        pRGroup <- unClosure cRGroup
-        rGroup <- pRGroup
+                  join $ unClosure cRGroup
+              )
+              (flip killReplica nid) $ \rGroup -> do
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
@@ -192,20 +195,21 @@ testServiceRestarting transport = do
 --   With a wrong `ProcessId`
 testServiceNotRestarting :: Transport -> IO ()
 testServiceNotRestarting transport = do
-    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
-        nid <- getSelfNode
-        self <- getSelfPid
-        _ <- spawnLocal $ eqTrackerProcess [nid]
+    runTest 1 20 15000000 transport rt $ \_ -> do
+      nid <- getSelfNode
+      self <- getSelfPid
+      _ <- spawnLocal $ eqTrackerProcess [nid]
 
-        registerInterceptor $ \string -> case string of
-            str@"Starting service dummy"   -> usend self str
-            _ -> return ()
+      registerInterceptor $ \string -> case string of
+          str@"Starting service dummy"   -> usend self str
+          _ -> return ()
 
-        say $ "tests node: " ++ show nid
-        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+      say $ "tests node: " ++ show nid
+      bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
                              [nid] ((Nothing,[]), fromList [])
-        pRGroup <- unClosure cRGroup
-        rGroup <- pRGroup
+                  join $ unClosure cRGroup
+              )
+              (flip killReplica nid) $ \rGroup -> do
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
@@ -229,15 +233,16 @@ testServiceNotRestarting transport = do
 -- | This test verifies that every `HAEvent` sent to the RC is trimmed by the EQ
 testEQTrimming :: Transport -> IO ()
 testEQTrimming transport = do
-    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
-        nid <- getSelfNode
-        _ <- spawnLocal $ eqTrackerProcess [nid]
+    runTest 1 20 15000000 transport rt $ \_ -> do
+      nid <- getSelfNode
+      _ <- spawnLocal $ eqTrackerProcess [nid]
 
-        say $ "tests node: " ++ show nid
-        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+      say $ "tests node: " ++ show nid
+      bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
                              [nid] ((Nothing,[]), fromList [])
-        pRGroup <- unClosure cRGroup
-        rGroup <- pRGroup
+                  join $ unClosure cRGroup
+              )
+              (flip killReplica nid) $ \rGroup -> do
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         subscribe eq (Proxy :: Proxy TrimDone)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
@@ -275,22 +280,23 @@ emptySensorMessage = SSPL.SensorResponseMessageSensor_response_type
 --   resource graph.
 testHostAddition :: Transport -> IO ()
 testHostAddition transport = do
-    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
-        nid <- getSelfNode
-        self <- getSelfPid
-        _ <- spawnLocal $ eqTrackerProcess [nid]
+    runTest 1 20 15000000 transport rt $ \_ -> do
+      nid <- getSelfNode
+      self <- getSelfPid
+      _ <- spawnLocal $ eqTrackerProcess [nid]
 
-        registerInterceptor $ \string -> case string of
-            str@"Starting service dummy"   -> usend self str
-            str' | "Registered host" `isInfixOf` str' ->
-              usend self ("Host" :: String)
-            _ -> return ()
+      registerInterceptor $ \string -> case string of
+          str@"Starting service dummy"   -> usend self str
+          str' | "Registered host" `isInfixOf` str' ->
+            usend self ("Host" :: String)
+          _ -> return ()
 
-        say $ "tests node: " ++ show nid
-        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+      say $ "tests node: " ++ show nid
+      bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
                              [nid] ((Nothing,[]), fromList [])
-        pRGroup <- unClosure cRGroup
-        rGroup <- pRGroup
+                  join $ unClosure cRGroup
+              )
+              (flip killReplica nid) $ \rGroup -> do
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
@@ -327,22 +333,23 @@ testHostAddition transport = do
 --   and updates its status accordingly.
 testDriveAddition :: Transport -> IO ()
 testDriveAddition transport = do
-    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
-        nid <- getSelfNode
-        self <- getSelfPid
-        _ <- spawnLocal $ eqTrackerProcess [nid]
+    runTest 1 20 15000000 transport rt $ \_ -> do
+      nid <- getSelfNode
+      self <- getSelfPid
+      _ <- spawnLocal $ eqTrackerProcess [nid]
 
-        registerInterceptor $ \string -> case string of
-            str@"Starting service dummy"   -> usend self str
-            str' | "Registered drive" `isInfixOf` str' ->
-              usend self ("Drive" :: String)
-            _ -> return ()
+      registerInterceptor $ \string -> case string of
+          str@"Starting service dummy"   -> usend self str
+          str' | "Registered drive" `isInfixOf` str' ->
+            usend self ("Drive" :: String)
+          _ -> return ()
 
-        say $ "tests node: " ++ show nid
-        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+      say $ "tests node: " ++ show nid
+      bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
                              [nid] ((Nothing,[]), fromList [])
-        pRGroup <- unClosure cRGroup
-        rGroup <- pRGroup
+                  join $ unClosure cRGroup
+              )
+              (flip killReplica nid) $ \rGroup -> do
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
@@ -501,20 +508,21 @@ testDriveAddition transport = do
 
 testServiceStopped :: Transport -> IO ()
 testServiceStopped transport = do
-    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
-        nid <- getSelfNode
-        self <- getSelfPid
-        _ <- spawnLocal $ eqTrackerProcess [nid]
+    runTest 1 20 15000000 transport rt $ \_ -> do
+      nid <- getSelfNode
+      self <- getSelfPid
+      _ <- spawnLocal $ eqTrackerProcess [nid]
 
-        registerInterceptor $ \string -> case string of
-            str@"Starting service dummy"   -> usend self str
-            _ -> return ()
+      registerInterceptor $ \string -> case string of
+          str@"Starting service dummy"   -> usend self str
+          _ -> return ()
 
-        say $ "tests node: " ++ show nid
-        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+      say $ "tests node: " ++ show nid
+      bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
                              [nid] ((Nothing,[]), fromList [])
-        pRGroup <- unClosure cRGroup
-        rGroup <- pRGroup
+                  join $ unClosure cRGroup
+              )
+              (flip killReplica nid) $ \rGroup -> do
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
@@ -547,18 +555,19 @@ serviceStarted svname = do
           usend self mp
           serviceStarted svname
 
-launchRC :: Process (ProcessId, ProcessId)
-launchRC = do
+launchRC :: ((ProcessId, ProcessId) -> Process a) -> Process a
+launchRC action = do
     nid <- getSelfNode
     _ <- spawnLocal $ eqTrackerProcess [nid]
 
     say $ "tests node: " ++ show nid
-    cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
-                             [nid] ((Nothing,[]), fromList [])
-    pRGroup <- unClosure cRGroup
-    rGroup  <- pRGroup
-    eq      <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-    runRC (eq, IgnitionArguments [nid]) rGroup
+    bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+                           [nid] ((Nothing,[]), fromList [])
+                join $ unClosure cRGroup
+            )
+            (flip killReplica nid) $ \rGroup -> do
+      eq      <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+      runRC (eq, IgnitionArguments [nid]) rGroup >>= action
 
 serviceStart :: Configuration a => Service a -> a -> Process ()
 serviceStart svc conf = do
@@ -575,68 +584,66 @@ getNodeMonitor mm = do
     case runningService n regularMonitor rg of
       Just (ServiceProcess pid) -> return pid
       _  -> do
-        liftIO $ threadDelay 100000
+        _ <- receiveTimeout 100000 []
         getNodeMonitor mm
 
 -- | Make sure that when a Service died, the node-local monitor detects it
 --   and notify the RC. That service should restart.
 testMonitorManagement :: Transport -> IO ()
 testMonitorManagement transport = do
-    withTmpDirectory $ tryWithTimeout transport testRemoteTable 15000000 $ do
-      (mm,rc) <- launchRC
+    runTest 1 20 15000000 transport testRemoteTable $ \_ ->
+      launchRC $ \(mm, rc) -> do
+        -- Awaits the node local monitor to be up.
+        _ <- getNodeMonitor mm
 
-      -- Awaits the node local monitor to be up.
-      _ <- getNodeMonitor mm
+        subscribe rc (Proxy :: Proxy (HAEvent ServiceStartedMsg))
+        serviceStart Dummy.dummy (Dummy.DummyConf $ Configured "Test 1")
+        dpid <- serviceStarted (serviceName Dummy.dummy)
+        say "Service dummy has been started"
 
-      subscribe rc (Proxy :: Proxy (HAEvent ServiceStartedMsg))
-      serviceStart Dummy.dummy (Dummy.DummyConf $ Configured "Test 1")
-      dpid <- serviceStarted (serviceName Dummy.dummy)
-      say "Service dummy has been started"
-
-      kill dpid "Farewell"
-      _ <- serviceStarted (serviceName Dummy.dummy)
-      say "Service dummy has been re-started"
+        kill dpid "Farewell"
+        _ <- serviceStarted (serviceName Dummy.dummy)
+        say "Service dummy has been re-started"
 
 -- | Make sure that when a node-local monitor died, the RC is notified by the
 --   Master monitor and restart it.
 testMasterMonitorManagement :: Transport -> IO ()
 testMasterMonitorManagement transport = do
-    withTmpDirectory $ tryWithTimeout transport testRemoteTable 15000000 $ do
-      (mm,rc) <- launchRC
+    runTest 1 20 15000000 transport testRemoteTable $ \_ ->
+      launchRC $ \(mm, rc) -> do
 
-      -- Awaits the node local monitor to be up.
-      mpid <- getNodeMonitor mm
+        -- Awaits the node local monitor to be up.
+        mpid <- getNodeMonitor mm
 
-      subscribe rc (Proxy :: Proxy (HAEvent ServiceStartedMsg))
-      say "Node-local monitor has been started"
+        subscribe rc (Proxy :: Proxy (HAEvent ServiceStartedMsg))
+        say "Node-local monitor has been started"
 
-      kill mpid "Farewell"
-      _ <- serviceStarted monitorServiceName
-      say "Node-local monitor has been restarted"
+        kill mpid "Farewell"
+        _ <- serviceStarted monitorServiceName
+        say "Node-local monitor has been restarted"
 
 -- | This test verifies that if service start message is interleaved with
 -- ServiceStart messages from the old node, that is possibe in case
 -- of network failures.
 testNodeUpRace :: Transport -> IO ()
 testNodeUpRace transport = do
-    withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
-        nid <- getSelfNode
-        self <- getSelfPid
-        _ <- spawnLocal $ eqTrackerProcess [nid]
+    runTest 2 20 15000000 transport rt $ \[node2] -> do
+      nid <- getSelfNode
+      self <- getSelfPid
+      _ <- spawnLocal $ eqTrackerProcess [nid]
 
-        say $ "tests node: " ++ show nid
-        cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+      say $ "tests node: " ++ show nid
+      bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
                              [nid] ((Nothing,[]), fromList [])
-        pRGroup <- unClosure cRGroup
-        rGroup <- pRGroup
+                  join $ unClosure cRGroup
+              )
+              (flip killReplica nid) $ \rGroup -> do
 
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         subscribe eq (Proxy :: Proxy TrimDone)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
-        liftIO $ do
-          node2 <- newLocalNode transport rt
-          runProcess node2 $ do
+        _ <- liftIO $ forkProcess node2 $ do
             _ <- spawnLocal $ eqTrackerProcess [nid]
             selfNode <- getSelfNode
             _ <- promulgateEQ [nid] . encodeP $ ServiceStarted (Node selfNode)
@@ -646,6 +653,8 @@ testNodeUpRace transport = do
             nodeUp ([nid], 2000000)
             usend self (Node selfNode)
             usend self (nullProcessId selfNode)
+            usend self ((), ())
+        ((), ()) <- expect
         _ <- receiveTimeout 1000000 []
 
         True <- serviceProcessStillAlive mm (Node nid) Monitor.regularMonitor
@@ -665,3 +674,39 @@ testNodeUpRace transport = do
 testRemoteTable :: RemoteTable
 testRemoteTable = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
                   remoteTable
+
+
+withLocalNode :: Transport -> RemoteTable -> (LocalNode -> IO a) -> IO a
+withLocalNode t rt = E.bracket  (newLocalNode t rt) closeLocalNode
+
+withLocalNodes :: Int
+               -> Transport
+               -> RemoteTable
+               -> ([LocalNode] -> IO a)
+               -> IO a
+withLocalNodes 0 _t _rt f = f []
+withLocalNodes n t rt f = withLocalNode t rt $ \node ->
+    withLocalNodes (n - 1) t rt (f . (node :))
+
+runTest :: Int -> Int -> Int -> Transport -> RemoteTable
+        -> ([LocalNode] -> Process ()) -> IO ()
+runTest numNodes numReps _t tr rt action
+    | Scheduler.schedulerIsEnabled = do
+        s <- randomIO
+        -- TODO: Fix leaks in n-t-inmemory and use the same transport for all
+        -- tests, maybe.
+        forM_ [1..numReps] $ \i ->  withTmpDirectory $
+          E.bracket createTransport closeTransport $
+          \tr' -> do
+            m <- timeout (7 * 60 * 1000000) $
+              Scheduler.withScheduler (s + i) 1000 numNodes tr' rt' action
+            maybe (error "Timeout") return m
+          `E.onException`
+            liftIO (hPutStrLn stderr $ "Failed with seed: " ++ show (s + i, i))
+    | otherwise =
+        withTmpDirectory $ withLocalNodes numNodes tr rt' $
+          \(n : ns) -> do
+            m <- timeout (7 * 60 * 1000000) $ runProcess n (action ns)
+            maybe (error "Timeout") return m
+  where
+    rt' = Scheduler.__remoteTable rt
