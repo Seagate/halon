@@ -21,7 +21,6 @@ import Mero.ConfC
 import Control.Monad (liftM2)
 
 import qualified Data.Map as Map
-import Data.Word ( Word32 )
 
 import Foreign.C.String
   ( CString
@@ -35,6 +34,7 @@ import Foreign.Marshal.Array
   )
 import Foreign.Ptr
   ( Ptr
+  , castPtr
   , nullPtr
   , plusPtr
   )
@@ -50,6 +50,71 @@ import System.IO.Unsafe ( unsafePerformIO )
 #include "spiel/spiel.h"
 
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
+
+-- | @schema.h m0_cfg_storage_device_interface_type@
+data StorageDeviceInterfaceType =
+    M0_CFG_DEVICE_INTERFACE_ATA
+  | M0_CFG_DEVICE_INTERFACE_SATA
+  | M0_CFG_DEVICE_INTERFACE_SCSI
+  | M0_CFG_DEVICE_INTERFACE_SATA2
+  | M0_CFG_DEVICE_INTERFACE_SCSI2
+  | M0_CFG_DEVICE_INTERFACE_SAS
+  | M0_CFG_DEVICE_INTERFACE_SAS2
+  | M0_CFG_DEVICE_INTERFACE_UNKNOWN Int
+  deriving (Eq, Show)
+
+instance Enum StorageDeviceInterfaceType where
+  toEnum #{const M0_CFG_DEVICE_INTERFACE_ATA} = M0_CFG_DEVICE_INTERFACE_ATA
+  toEnum #{const M0_CFG_DEVICE_INTERFACE_SATA} = M0_CFG_DEVICE_INTERFACE_SATA
+  toEnum #{const M0_CFG_DEVICE_INTERFACE_SCSI} = M0_CFG_DEVICE_INTERFACE_SCSI
+  toEnum #{const M0_CFG_DEVICE_INTERFACE_SATA2} = M0_CFG_DEVICE_INTERFACE_SATA2
+  toEnum #{const M0_CFG_DEVICE_INTERFACE_SCSI2} = M0_CFG_DEVICE_INTERFACE_SCSI2
+  toEnum #{const M0_CFG_DEVICE_INTERFACE_SAS} = M0_CFG_DEVICE_INTERFACE_SAS
+  toEnum #{const M0_CFG_DEVICE_INTERFACE_SAS2} = M0_CFG_DEVICE_INTERFACE_SAS2
+  toEnum i = M0_CFG_DEVICE_INTERFACE_UNKNOWN i
+
+  fromEnum M0_CFG_DEVICE_INTERFACE_ATA = #{const M0_CFG_DEVICE_INTERFACE_ATA }
+  fromEnum M0_CFG_DEVICE_INTERFACE_SATA = #{const M0_CFG_DEVICE_INTERFACE_SATA }
+  fromEnum M0_CFG_DEVICE_INTERFACE_SCSI = #{const M0_CFG_DEVICE_INTERFACE_SCSI }
+  fromEnum M0_CFG_DEVICE_INTERFACE_SATA2 = #{const M0_CFG_DEVICE_INTERFACE_SATA2 }
+  fromEnum M0_CFG_DEVICE_INTERFACE_SCSI2 = #{const M0_CFG_DEVICE_INTERFACE_SCSI2 }
+  fromEnum M0_CFG_DEVICE_INTERFACE_SAS = #{const M0_CFG_DEVICE_INTERFACE_SAS }
+  fromEnum M0_CFG_DEVICE_INTERFACE_SAS2 = #{const M0_CFG_DEVICE_INTERFACE_SAS2 }
+  fromEnum (M0_CFG_DEVICE_INTERFACE_UNKNOWN i) = i
+
+instance Storable StorageDeviceInterfaceType where
+  sizeOf _ = sizeOf (undefined :: CInt)
+  alignment _ = alignment (undefined :: CInt)
+  peek p = fmap toEnum $ peek (castPtr p)
+  poke p s = poke (castPtr p) $ fromEnum s
+
+-- | @schema.h m0_cfg_storage_device_media_type@
+data StorageDeviceMediaType =
+    M0_CFG_DEVICE_MEDIA_DISK
+  | M0_CFG_DEVICE_MEDIA_SSD
+  | M0_CFG_DEVICE_MEDIA_TAPE
+  | M0_CFG_DEVICE_MEDIA_ROM
+  | M0_CFG_DEVICE_MEDIA_UNKNOWN Int
+  deriving (Eq, Show)
+
+instance Enum StorageDeviceMediaType where
+  toEnum #{const M0_CFG_DEVICE_MEDIA_DISK} = M0_CFG_DEVICE_MEDIA_DISK
+  toEnum #{const M0_CFG_DEVICE_MEDIA_SSD} = M0_CFG_DEVICE_MEDIA_SSD
+  toEnum #{const M0_CFG_DEVICE_MEDIA_TAPE} = M0_CFG_DEVICE_MEDIA_TAPE
+  toEnum #{const M0_CFG_DEVICE_MEDIA_ROM} = M0_CFG_DEVICE_MEDIA_ROM
+  toEnum i = M0_CFG_DEVICE_MEDIA_UNKNOWN i
+
+  fromEnum M0_CFG_DEVICE_MEDIA_DISK = #{const M0_CFG_DEVICE_MEDIA_DISK }
+  fromEnum M0_CFG_DEVICE_MEDIA_SSD = #{const M0_CFG_DEVICE_MEDIA_SSD }
+  fromEnum M0_CFG_DEVICE_MEDIA_TAPE = #{const M0_CFG_DEVICE_MEDIA_TAPE }
+  fromEnum M0_CFG_DEVICE_MEDIA_ROM = #{const M0_CFG_DEVICE_MEDIA_ROM }
+  fromEnum (M0_CFG_DEVICE_MEDIA_UNKNOWN i) = i
+
+instance Storable StorageDeviceMediaType where
+  sizeOf _ = sizeOf (undefined :: CInt)
+  alignment _ = alignment (undefined :: CInt)
+  peek p = fmap toEnum $ peek (castPtr p)
+  poke p s = poke (castPtr p) $ fromEnum s
 
 -- | @spiel.h m0_spiel_running_svc@
 data RunningService = RunningService {

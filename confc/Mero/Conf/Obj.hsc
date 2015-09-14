@@ -287,8 +287,10 @@ data ServiceType
     | CST_HA
     | CST_SSS
     | CST_UNKNOWN Int
-  deriving (Show,Read,Ord,Eq)
+  deriving (Data, Eq, Generic, Ord, Read, Show )
 
+instance Binary ServiceType
+instance Hashable ServiceType
 instance Enum ServiceType where
 
   toEnum #{const M0_CST_MDS} = CST_MDS
