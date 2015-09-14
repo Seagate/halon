@@ -8,6 +8,9 @@ module Main where
 
 import qualified HA.RecoveryCoordinator.Mero.Tests
 import qualified HA.Autoboot.Tests
+#ifdef USE_MERO
+import qualified HA.Castor.Tests
+#endif
 
 import Test.Tasty (TestTree, defaultMainWithIngredients)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
@@ -66,6 +69,10 @@ ut transport = return $
         HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
       , testGroup "Autoboot" $
         HA.Autoboot.Tests.tests transport
+#ifdef USE_MERO
+      , testGroup "Castor" $
+        HA.Castor.Tests.tests transport
+#endif
       ]
 
 runTests :: (Transport -> IO TestTree) -> IO ()

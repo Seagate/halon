@@ -20,6 +20,7 @@ module Mero.Conf.Fid
 
 import Control.Monad ( liftM2 )
 import Data.Binary (Binary)
+import Data.Data (Data)
 import Data.Hashable (Hashable)
 import Data.Typeable ( Typeable )
 import Data.Word ( Word64 )
@@ -32,7 +33,7 @@ import Text.Printf (printf)
 data Fid = Fid { f_container :: {-# UNPACK #-} !Word64
                , f_key       :: {-# UNPACK #-} !Word64
                }
-  deriving (Eq, Ord, Typeable, Generic)
+  deriving (Eq, Data, Ord, Typeable, Generic)
 
 instance Show Fid where
   show (Fid c k) = printf "Fid {f_container = 0x%08x, f_key = %d}" c k

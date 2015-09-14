@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -13,6 +14,8 @@ module Mero.Conf.Context where
 
 import Mero.Conf.Fid ( Fid(..) )
 
+import Data.Binary (Binary)
+import Data.Hashable (Hashable)
 import qualified Data.Map as Map
 import Data.Word ( Word32, Word64 )
 
@@ -38,7 +41,7 @@ import qualified Language.C.Types as C
 
 -- @bitmap.h m0_bitmap@
 newtype Bitmap = Bitmap [Word64]
-  deriving (Eq, Show)
+  deriving (Binary, Eq, Hashable, Show)
 
 instance Storable Bitmap where
   sizeOf _ = #{size struct m0_bitmap}

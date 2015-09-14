@@ -17,6 +17,7 @@ module Test.Framework
   , defaultTimeout
   , tryWithTimeout
   , assert
+  , assertMsg
   , registerInterceptor
   , terminateLocalProcesses
   ) where
@@ -150,6 +151,10 @@ tryWithTimeout transport rtable timeout p = do
 assert :: Bool -> Process ()
 assert True  = say "Assertion success."
 assert False = throw $ AssertionFailed "Assertion fail."
+
+assertMsg :: String -> Bool -> Process ()
+assertMsg msg True = say $ "Assertion success: " ++ msg
+assertMsg msg False = throw . AssertionFailed $ "Assertion fail: " ++ msg
 
 -- | Intercepts 'say' messages from processes as a crude way to know that an
 -- action following an asynchronous send has completed.

@@ -14,6 +14,7 @@ import HA.Network.RemoteTables (haRemoteTable)
 import HA.Process
 
 import Handler.Bootstrap
+import Handler.Cluster
 import Handler.Service
 
 import Mero.RemoteTables (meroRemoteTable)
@@ -70,4 +71,5 @@ run (Options { .. }) = do
     case optCommand of
       Bootstrap bs -> bootstrap rnids bs
       Service bs   -> service rnids bs
+      Cluster bs -> dataLoad rnids bs
   return ()

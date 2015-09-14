@@ -31,7 +31,8 @@ import HA.EventQueue.Producer (expiate, promulgate)
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Service
 import HA.Resources
-import HA.Resources.Mero.Note (ConfObject(..), ConfObjectState)
+import qualified HA.Resources.Mero as M0
+import HA.Resources.Mero.Note (ConfObjectState)
 import HA.Service
 import HA.Services.Mero.CEP (meroRulesF)
 import HA.Services.Mero.Types
@@ -150,17 +151,21 @@ meroRules :: Definitions LoopState ()
 meroRules = meroRulesF m0d
 
 
--- | Combine 'ConfObject's and a 'ConfObjectState' into a 'Set' and
+-- | Combine @ConfObj@s and a @ConfObjectState@ into a 'Set' and
 -- send it to every mero service running on the cluster.
-notifyMero :: [ConfObject] -> ConfObjectState -> PhaseM LoopState l ()
+notifyMero :: [M0.AnyConfObj] -- ^ List of resources (instance of @ConfObj@)
+           -> ConfObjectState
+           -> PhaseM LoopState l ()
 notifyMero cs st = do
   pids <- findRunningServiceProcesses m0d
   phaseLog "action" "Sending configuration update to mero services"
   rg <- getLocalGraph
   mapM_ (sendSetEvent rg) pids
   where
+    getFid (M0.AnyConfObj a) = M0.fid a
+
     setEvent :: Mero.Notification.Set
-    setEvent = Mero.Notification.Set $ map (flip Note st . confObjectId) cs
+    setEvent = Mero.Notification.Set $ map (flip Note st . getFid) cs
 
     sendSetEvent rg p = do
       liftProcess $ case listToMaybe $ G.connectedTo p MeroChannel rg of

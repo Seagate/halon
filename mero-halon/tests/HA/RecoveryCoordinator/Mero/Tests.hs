@@ -24,7 +24,7 @@ import Prelude hiding ((<$>), (<*>))
 import Test.Framework
 
 import HA.Resources
-import HA.Resources.Mero
+import HA.Resources.Castor
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue

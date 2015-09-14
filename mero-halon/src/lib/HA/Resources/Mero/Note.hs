@@ -14,17 +14,9 @@
 
 module HA.Resources.Mero.Note where
 
-import HA.Resources
-import HA.Resources.Mero
+import HA.Resources.Castor
+import qualified HA.Resources.Mero as M0
 import HA.Resources.TH
-import HA.ResourceGraph
-  ( Resource(..)
-  , Relation(..)
-  , Dict(..)
-  )
-import Control.Distributed.Process.Closure
-
-import Mero.ConfC (Fid(..))
 
 import Data.Hashable (Hashable)
 import Data.Binary (Binary)
@@ -34,13 +26,6 @@ import GHC.Generics (Generic)
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
-
-newtype ConfObject = ConfObject
-    { confObjectId   :: Fid
-    } deriving (Eq, Show, Generic, Typeable)
-
-instance Binary ConfObject
-instance Hashable ConfObject
 
 -- | Configuration object states. See "Requirements: Mero failure notification"
 -- document for the semantics of each state.
@@ -61,16 +46,12 @@ instance Hashable ConfObjectState
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [ ''ConfObject, ''ConfObjectState]
-  [ (''ConfObject, ''At, ''Node)
-  , (''ConfObject, ''Is, ''ConfObjectState)
-  ]
+  [ ''ConfObjectState ]
+  [ (''M0.SDev, ''Is, ''ConfObjectState) ]
   )
 
 $(mkResRel
-  [ ''ConfObject, ''ConfObjectState]
-  [ (''ConfObject, ''At, ''Node)
-  , (''ConfObject, ''Is, ''ConfObjectState)
-  ]
+  [ ''ConfObjectState ]
+  [ (''M0.SDev, ''Is, ''ConfObjectState) ]
   []
   )

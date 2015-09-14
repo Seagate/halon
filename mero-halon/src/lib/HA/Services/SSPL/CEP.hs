@@ -16,7 +16,7 @@ import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
 import HA.ResourceGraph
 import HA.Resources (Cluster(..), Node(..))
-import HA.Resources.Mero
+import HA.Resources.Castor
 
 import SSPL.Bindings
 
@@ -31,7 +31,7 @@ import Control.Monad
 import Control.Monad.Trans
 
 import qualified Data.Aeson as Aeson
-import Data.Maybe (catMaybes, fromJust, listToMaybe, maybeToList)
+import Data.Maybe (catMaybes, listToMaybe)
 import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
 import Data.UUID.V4 (nextRandom)
@@ -183,17 +183,17 @@ ssplRulesF sspl = do
       liftProcess . sayRC $ "Registered host: " ++ show host
 
   -- SSPL Monitor interface data
-  defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum) _) _ ->
-      return $ sensorResponseMessageSensor_response_typeIf_data hum
-    ) $ \(SensorResponseMessageSensor_response_typeIf_data hn _ ifs') ->
-      let
-        host = Host . T.unpack $ fromJust hn
-        ifs = join $ maybeToList ifs' -- Maybe List, for some reason...
-        addIf i = registerInterface host . Interface . T.unpack . fromJust
-          $ sensorResponseMessageSensor_response_typeIf_dataInterfacesItemIfId i
-      in do
-        phaseLog "action" $ "Adding interfaces to host " ++ show host
-        forM_ ifs addIf
+  -- defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum) _) _ ->
+  --     return $ sensorResponseMessageSensor_response_typeIf_data hum
+  --   ) $ \(SensorResponseMessageSensor_response_typeIf_data hn _ ifs') ->
+  --     let
+  --       host = Host . T.unpack $ fromJust hn
+  --       ifs = join $ maybeToList ifs' -- Maybe List, for some reason...
+  --       addIf i = registerInterface host . Interface . T.unpack . fromJust
+  --         $ sensorResponseMessageSensor_response_typeIf_dataInterfacesItemIfId i
+  --     in do
+  --       phaseLog "action" $ "Adding interfaces to host " ++ show host
+  --       forM_ ifs addIf
 
   -- Dummy rule for handling SSPL HL commands
   defineSimpleIf "systemd-cmd" (\(HAEvent _ cr _ ) _ ->
@@ -239,7 +239,7 @@ ssplRulesF sspl = do
       in do
         (Node actuationNode) <- fmap head
             $ findHosts ".*"
-          >>= filterM (hasHostStatusFlag HS_POWERED)
+          >>= filterM (hasHostAttr HA_POWERED)
           >>= mapM nodesOnHost
           >>= return . join
           >>= filterM (\a -> isServiceRunning a sspl)

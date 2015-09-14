@@ -16,7 +16,7 @@ import HA.EventQueue.Producer (promulgate)
 import HA.RecoveryCoordinator.Mero (GetMultimapProcessId(..))
 import qualified HA.ResourceGraph as G
 import HA.Resources
-import HA.Resources.Mero
+import HA.Resources.Castor
 
 import SSPL.Bindings
 

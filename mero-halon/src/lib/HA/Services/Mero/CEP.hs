@@ -2,16 +2,21 @@
 -- Copyright: (C) 2015 Seagate LLC
 --
 
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 
-module HA.Services.Mero.CEP (meroRulesF) where
+module HA.Services.Mero.CEP
+  ( meroRulesF
+  ) where
 
 import HA.EventQueue.Types (HAEvent(..))
+import HA.RecoveryCoordinator.Actions.Mero (lookupConfObjByFid)
 import HA.RecoveryCoordinator.Mero
 import HA.ResourceGraph
 import HA.Resources
-import HA.Resources.Mero
-import HA.Resources.Mero.Note
+import HA.Resources.Castor
+import qualified HA.Resources.Mero as M0
 import HA.Service
 import HA.Services.Mero.Types
 
@@ -22,7 +27,6 @@ import Control.Category ((>>>))
 import Control.Distributed.Process (sendChan)
 
 import Data.Foldable (for_)
-import Data.List (foldl')
 import Data.Maybe (isJust)
 
 import Network.CEP
@@ -57,16 +61,17 @@ meroRulesF m0d = do
     \(HAEvent _ (DeclareMeroChannel sp c) _) -> do
       registerChannel sp c
 
-  defineSimple "mero-set" $ \(HAEvent _ (Set nvec) _) -> do
-    rg <- getLocalGraph
-    let f rg1 (Note oid st) =
-          let edges :: [Edge ConfObject Is ConfObjectState]
-              edges = edgesFromSrc (ConfObject oid) rg
-                  -- Disconnect object from any existing state and reconnect
-                  -- it to a new one.
-          in connect (ConfObject oid) Is st $
-             foldr deleteEdge rg1 edges
-        rg'      = foldl' f rg nvec
-
-    for_ (meroChannels m0d rg') $ \(TypedChannel chan) -> do
-      liftProcess $ sendChan chan (Set nvec)
+-- TODO at the moment we assume this is an SDev - needs to be revisited
+-- when we get updates for things other than disks.
+  defineSimple "mero-set" $ \(HAEvent _ (Set nvec) _) -> let
+      setStatus (Note oid st) = do
+        mco <- lookupConfObjByFid oid
+        case (mco :: Maybe M0.SDev) of
+          Just co -> modifyLocalGraph
+            $ return . connectUniqueFrom co Is st
+          _ -> return ()
+    in do
+      mapM_ setStatus nvec
+      rg <- getLocalGraph
+      for_ (meroChannels m0d rg) $ \(TypedChannel chan) -> do
+        liftProcess $ sendChan chan (Set nvec)

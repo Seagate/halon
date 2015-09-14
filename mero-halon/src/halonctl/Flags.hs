@@ -16,6 +16,7 @@ import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
 
 import qualified Handler.Service as Service
+import qualified Handler.Cluster as Cluster
 
 import System.Environment (getProgName)
 import System.IO.Unsafe (unsafePerformIO)
@@ -31,6 +32,7 @@ data Options = Options
 data Command =
       Bootstrap Bootstrap.BootstrapCmdOptions
     | Service Service.ServiceCmdOptions
+    | Cluster Cluster.ClusterOptions
   deriving (Eq)
 
 getOptions :: IO Options
@@ -55,6 +57,8 @@ getOptions = do
                     O.withDesc Bootstrap.parseBootstrap "Bootstrap a node.")
               <> (O.command "service" $ Service <$>
                     O.withDesc Service.parseService "Control services.")
+              <> (O.command "cluster" $ Cluster <$>
+                    O.withDesc Cluster.parseCluster "Control cluster wide options.")
             )
     hostname = unsafePerformIO $ readProcess "hostname" [] ""
     listenAddr = hostname ++ ":9001"

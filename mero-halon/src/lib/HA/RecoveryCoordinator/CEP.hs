@@ -24,8 +24,9 @@ import           HA.EventQueue.Types
 import           HA.NodeAgent.Messages
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
+import           HA.RecoveryCoordinator.Rules.Castor
 import           HA.Resources
-import           HA.Resources.Mero
+import           HA.Resources.Castor
 import           HA.Service
 import qualified HA.EQTracker as EQT
 #ifdef USE_MERO
@@ -373,6 +374,7 @@ rcRules argv eq = do
 
     setLogger sendLogs
     ssplRules
+    castorRules
 #ifdef USE_MERO
     meroRules
 #endif
