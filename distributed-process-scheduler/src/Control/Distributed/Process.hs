@@ -34,6 +34,7 @@ module Control.Distributed.Process
   , spawnLocal
   , spawn
   , spawnAsync
+  , DidSpawn(..)
   , spawnChannelLocal
   , callLocal
   , whereis
