@@ -19,7 +19,7 @@ import HA.Resources.TH
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
 
-import Mero.ConfC (Fid(..), ServiceParams)
+import Mero.ConfC (Bitmap, Fid(..), ServiceParams, ServiceType)
 
 import Data.Binary (Binary)
 import Data.Bits
@@ -147,7 +147,7 @@ data Process = Process {
   , r_mem_rss :: Word64
   , r_mem_stack :: Word64
   , r_mem_memlock :: Word64
-  , r_cores :: Word32
+  , r_cores :: Bitmap
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary Process
@@ -158,7 +158,7 @@ instance ConfObj Process where
 
 data Service = Service {
     s_fid :: Fid
-  , s_type :: String -- ^ e.g. ioservice, haservice
+  , s_type :: ServiceType -- ^ e.g. ioservice, haservice
   , s_endpoints :: [String]
   , s_params :: ServiceParams
 } deriving (Eq, Generic, Show, Typeable)

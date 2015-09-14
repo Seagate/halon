@@ -265,20 +265,25 @@ initialData = CI.InitialData {
     , CI.m0h_mem_rss = 1
     , CI.m0h_mem_stack = 1
     , CI.m0h_mem_memlock = 1
-    , CI.m0h_cores = 0xf
+    , CI.m0h_cores = [1,1,1,1,1,1,1,1]
     , CI.m0h_services = [
         CI.M0Service {
-          CI.m0s_type = "confd"
+          CI.m0s_type = CST_MGS
         , CI.m0s_endpoints = ["lnet:192.0.2.1@tcp:12345:41:101"]
         , CI.m0s_params = SPConfDBPath "/var/mero/confd"
         }
       , CI.M0Service {
-          CI.m0s_type = "mds"
+          CI.m0s_type = M0_CST_RMS
+        , CI.m0s_endpoints = ["lnet:192.0.2.1@tcp:12345:41:301"]
+        , CI.m0s_params = SPUnused
+        }
+      , CI.M0Service {
+          CI.m0s_type = CST_MDS
         , CI.m0s_endpoints = ["lnet:192.0.2.1@tcp:12345:41:201"]
         , CI.m0s_params = SPUnused
         }
       , CI.M0Service {
-          CI.m0s_type = "ios"
+          CI.m0s_type = CST_IOS
         , CI.m0s_endpoints = ["lnet:192.0.2.1@tcp:12345:41:401"]
         , CI.m0s_params = SPUnused
         }

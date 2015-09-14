@@ -9,7 +9,7 @@
 module HA.Resources.Castor.Initial where
 
 #ifdef USE_MERO
-import Mero.ConfC (Fid, ServiceParams)
+import Mero.ConfC (Fid, ServiceParams, ServiceType)
 #endif
 
 import Data.Aeson
@@ -123,7 +123,7 @@ data M0Host = M0Host {
   , m0h_mem_rss :: Word64
   , m0h_mem_stack :: Word64
   , m0h_mem_memlock :: Word64
-  , m0h_cores :: Word32
+  , m0h_cores :: [Word64]
     -- ^ Treated as a bitmap of length (no_cpu) indicating which CPUs to use
   , m0h_services :: [M0Service]
   , m0h_devices :: [M0Device]
@@ -134,13 +134,14 @@ instance Hashable M0Host
 instance FromJSON M0Host
 
 data M0Service = M0Service {
-    m0s_type :: String -- ^ e.g. ioservice, haservice
+    m0s_type :: ServiceType -- ^ e.g. ioservice, haservice
   , m0s_endpoints :: [String]
   , m0s_params :: ServiceParams
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance FromJSON Fid
 instance FromJSON ServiceParams
+instance FromJSON ServiceType
 
 instance Binary M0Service
 instance Hashable M0Service
