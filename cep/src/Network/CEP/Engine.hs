@@ -22,6 +22,7 @@ import qualified Control.Monad.State as State
 import           Control.Monad.Trans
 import qualified Data.MultiMap       as MM
 import qualified Data.Map.Strict     as M
+import qualified Data.Sequence       as S
 import qualified Data.Set            as Set
 import           FRP.Netwire (clockSession_)
 
@@ -240,11 +241,13 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
       return (rinfo, Engine $ cepInitRule (InitRule rd{_ruleStack=stack'} typs)
                                           st{ _machTotalProcMsgs = msg_count })
     go NoMessage msg_count = do
-      let stk = _ruleStack rd
+      let stk  = _ruleStack rd
+          logs = fmap (const S.empty) _machLogger
+          exe  = SMExecute logs _machSubs _machState
       -- We do not allow fork inside init rule, this may be ok or not
       -- depending on a usecase, but allowing fork will make implementation
       -- much harder and do not worth it, unless we have a concrete example.
-      (g, (SMResult out infos mlogs, nxt_stk)) <- fmap head <$> runSM stk (SMExecute _machSubs _machState)
+      (g, (SMResult out infos mlogs, nxt_stk)) <- fmap head <$> runSM stk exe
       let new_rd = rd { _ruleStack = nxt_stk }
           nxt_st = st { _machState = g }
           rinfo = RuleInfo InitRuleName [(out, infos)]
@@ -301,8 +304,9 @@ executeTick = bootstrap >>= traverse (uncurry execute)
       return (_machRunningSM st)
     execute key sm = do
       sti <- State.get
-      (g', machines) <- lift $ runSM (_ruleStack sm)
-                                     (SMExecute (_machSubs sti) (_machState sti))
+      let logs = fmap (const S.empty) $ _machLogger sti
+          exe  = SMExecute logs (_machSubs sti) (_machState sti)
+      (g', machines) <- lift $ runSM (_ruleStack sm) exe
       -- XXX: finalizer currently do smth terribly wrong
       g_opt <- for (_machRuleFin sti) $ \k -> lift $ k g'
       let addRunning   = foldr (\x y -> mkRunningSM x . y) id machines

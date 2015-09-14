@@ -94,7 +94,6 @@ import           Control.Monad.Operational
 import           Control.Wire (mkPure)
 import qualified Data.MultiMap   as MM
 import qualified Data.Map.Strict as M
-import qualified Data.Sequence   as S
 import qualified Data.Set        as Set
 import           Data.Time
 import           FRP.Netwire (dtime)
@@ -131,18 +130,16 @@ buildMachine s defs = go (emptyMachine s) $ view defs
     go :: Machine s -> ProgramView (Declare s) () -> Machine s
     go st (Return _) = fillMachineTypeMap st
     go st (DefineRule n m :>>= k) =
-        let logs = fmap (const S.empty) $ _machLogger st
-            idx = _machRuleCount st
+        let idx = _machRuleCount st
             key = RuleKey idx n
-            dat = buildRuleData n newSM m (_machPhaseBuf st) logs
+            dat = buildRuleData n newSM m (_machPhaseBuf st)
             mp  = M.insert key dat $ _machRuleData st
             st' = st { _machRuleData  = mp
                      , _machRuleCount = idx + 1
                      } in
         go st' $ view $ k ()
     go st (Init m :>>= k) =
-        let logs = fmap (const S.empty) $ _machLogger st
-            dat  = buildRuleData "init" newSM m (_machPhaseBuf st) logs
+        let dat  = buildRuleData "init" newSM m (_machPhaseBuf st)
             typs = initRuleTypeMap dat
             ir   = InitRule dat typs
             st'  = st { _machInitRule = Just ir } in
@@ -372,17 +369,16 @@ buildTypeList = foldr go Set.empty
 -- | Executes a rule state machine in order to produce a rule state data
 --   structure.
 buildRuleData :: String
-              -> (Phase g l -> String -> Maybe SMLogs -> M.Map String (Phase g l) -> Buffer -> l -> SM g)
+              -> (Phase g l -> String -> M.Map String (Phase g l) -> Buffer -> l -> SM g)
               -> RuleM g l (Started g l)
               -> Buffer
-              -> Maybe SMLogs
               -> RuleData g
-buildRuleData name mk rls buf logs = go M.empty Set.empty $ view rls
+buildRuleData name mk rls buf = go M.empty Set.empty $ view rls
   where
     go ps tpes (Return (StartingPhase l p)) =
         RuleData
         { _ruleDataName = name
-        , _ruleStack    = mk p name logs ps buf l
+        , _ruleStack    = mk p name ps buf l
         , _ruleTypes    = Set.union tpes $ buildTypeList ps
         }
     go ps tpes (Start ph l :>>= k) =
