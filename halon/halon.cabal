@@ -105,7 +105,6 @@ Library
                    cep,
                    netwire,
                    template-haskell,
-                   distributed-process-async >= 0.2,
                    hostname,
                    uuid
   if flag(rpc)

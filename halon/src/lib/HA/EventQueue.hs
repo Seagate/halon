@@ -60,7 +60,6 @@ import Control.SpineSeq (spineSeq)
 import FRP.Netwire hiding (Last(..), when, for)
 
 import Control.Distributed.Process hiding (newChan)
-import Control.Distributed.Process.Async (async, task)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Timeout ( retry )
 
@@ -71,6 +70,7 @@ import Data.Traversable (for)
 import Data.Typeable
 
 import Network.CEP
+
 
 -- | Since there is at most one Event Queue per tracking station node,
 -- the @eventQueueLabel@ is used to register and lookup the Event Queue of a
@@ -164,7 +164,7 @@ recordNewRC :: RGroup g
             => g EventQueue
             -> ProcessId
             -> PhaseM (Maybe EventQueueState) l ()
-recordNewRC rg rc = void $ liftProcess $ async $ task $
+recordNewRC rg rc = void $ liftProcess $ spawnLocal $
     retry requestTimeout $ updateStateWith rg $ $(mkClosure 'eqSetRC) $ Just rc
 
 -- | Send the pending events to the new RC.
@@ -180,7 +180,7 @@ recordRCDied rg = do
     mRC <- getRC
     -- We use compare and swap to make sure we don't overwrite
     -- the pid of a respawned RC
-    void $ liftProcess $ async $ task $ retry requestTimeout $
+    void $ liftProcess $ spawnLocal $ retry requestTimeout $
       updateStateWith rg $ $(mkClosure 'compareAndSwapRC) (mRC, Nothing :: Maybe ProcessId)
 
 recordEvent :: RGroup g
@@ -190,7 +190,7 @@ recordEvent :: RGroup g
             -> PhaseM s l ()
 recordEvent rg sender ev = void $ liftProcess $ do
     self <- getSelfPid
-    async $ task $ do
+    spawnLocal $ do
       retry requestTimeout $
         updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
       usend self (RecordAck sender ev)
@@ -199,7 +199,7 @@ trim :: RGroup g => g EventQueue -> UUID -> PhaseM s l ()
 trim rg eid =
     liftProcess $ do
       self <- getSelfPid
-      _ <- async $ task $ do
+      _ <- spawnLocal $ do
         retry requestTimeout $
           updateStateWith rg $ $(mkClosure 'filterEvent) eid
         usend self (TrimAck eid)
