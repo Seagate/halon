@@ -152,12 +152,14 @@ initialiseConfInRG = getFilesystem >>= \case
     Nothing -> do
       rg <- getLocalGraph
       profile <- M0.Profile <$> newFid (Proxy :: Proxy M0.Profile)
+      pool <- M0.Pool <$> newFid (Proxy :: Proxy M0.Pool)
       fs <- M0.Filesystem <$> newFid (Proxy :: Proxy M0.Profile)
-                          <*> newFid (Proxy :: Proxy M0.Pool)
-      modifyLocalGraph $ return
-                       . ( G.connectUniqueFrom Cluster Has profile
-                           >>> G.connectUniqueFrom profile M0.IsParentOf fs
-                         )
+                          <*> return (M0.fid pool)
+      modifyGraph
+          $ G.connectUniqueFrom Cluster Has profile
+        >>> G.connectUniqueFrom profile M0.IsParentOf fs
+        >>> G.connect fs M0.IsParentOf pool
+
       let re = [ (r, G.connectedTo r Has rg)
                | r <- G.connectedTo Cluster Has rg
                ]
@@ -187,14 +189,12 @@ createPoolVersions :: M0.Filesystem
                    -> PhaseM LoopState l ()
 createPoolVersions fs = mapM_ createPoolVersion . S.toList
   where
+    pool = M0.Pool (M0.f_mdpool_fid fs)
     createPoolVersion :: S.Set Fid -> PhaseM LoopState l ()
     createPoolVersion failset = do
-      pool <- M0.Pool <$> newFid (Proxy :: Proxy M0.Pool)
       pver <- M0.PVer <$> newFid (Proxy :: Proxy M0.PVer)
       modifyGraph
-          $ G.newResource pool
-        >>> G.newResource pver
-        >>> G.connect fs M0.IsParentOf pool
+          $ G.newResource pver
         >>> G.connect pool M0.IsRealOf pver
       rg <- getLocalGraph
       forM_ (G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]) $ \rack -> do
