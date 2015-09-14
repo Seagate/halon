@@ -47,6 +47,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , spawnLocal
   , spawn
   , spawnAsync
+  , spawnChannelLocal
   , callLocal
   , whereis
   , register
@@ -1120,6 +1121,26 @@ spawn nid cp = do
     receiveWait [ matchIf (\(DP.DidSpawn ref' _) -> ref' == ref) $
                            \(DP.DidSpawn _ pid) -> return pid
                 ]
+
+-- | Create a new typed channel, spawn a process on the local node, passing it
+-- the receive port, and return the send port
+spawnChannelLocal :: Serializable a
+                  => (ReceivePort a -> Process ())
+                  -> Process (SendPort a)
+spawnChannelLocal proc = do
+    mvar <- DP.liftIO newEmptyMVar
+    -- This is spawnChannelLocal from d-p, with the addition of a c-h channel to
+    -- signal to the scheduler that the mvar is filled.
+    (sp, rp) <- DP.newChan
+    _ <- spawnLocal $ do
+      -- It is important that we allocate the new channel in the new process,
+      -- because otherwise it will be associated with the wrong process ID
+      (sport, rport) <- DP.newChan
+      sendChan sp ()
+      DP.liftIO $ putMVar mvar sport
+      proc rport
+    receiveChan rp
+    DP.liftIO $ takeMVar mvar
 
 -- | Local version of 'call'. Running a process in this way isolates it from
 -- messages sent to the caller process, and also allows silently dropping late
