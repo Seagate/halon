@@ -481,6 +481,8 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
           handleNSend st (source, nid, label, msg) >>= go
         -- a process has a message and is ready to process it
         Yield pid -> do
+            when (not $ Set.member pid alive) $
+              error $ "startScheduler invalid Yield: " ++ show (m, alive)
             let (mt, revTimeouts') =
                    Map.updateLookupWithKey (\_ _ -> Nothing) pid revTimeouts
             go st { stateProcs = Map.insert pid True procs
@@ -490,9 +492,13 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                   , stateReverseTimeouts = revTimeouts'
                   }
         -- a process has no messages and will block
-        Block pid Nothing ->
+        Block pid Nothing -> do
+            when (not $ Set.member pid alive) $
+              error $ "startScheduler invalid Block: " ++ show (m, alive)
             go st { stateProcs = Map.insert pid False procs }
         Block pid (Just ts) -> do
+            when (not $ Set.member pid alive) $
+              error $ "startScheduler invalid Block: " ++ show (m, alive)
             let mts = (\t -> multimapDelete t pid timeouts) <$>
                         Map.lookup pid revTimeouts
             go st { stateProcs = Map.insert pid False procs
