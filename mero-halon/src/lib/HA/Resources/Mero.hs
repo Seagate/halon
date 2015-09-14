@@ -108,12 +108,17 @@ instance ConfObj Profile where
   fidType _ = fromIntegral . ord $ 'p'
   fid (Profile f) = f
 
-newtype Filesystem = Filesystem Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+data Filesystem = Filesystem {
+    f_fid :: Fid
+  , f_mdpool_fid :: Fid -- ^ Fid of filesystem metadata pool
+} deriving (Eq, Generic, Show, Typeable)
+
+instance Binary Filesystem
+instance Hashable Filesystem
 
 instance ConfObj Filesystem where
   fidType _ = fromIntegral . ord $ 'f'
-  fid (Filesystem f) = f
+  fid = f_fid
 
 newtype Node = Node Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)

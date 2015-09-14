@@ -256,6 +256,7 @@ initialData = CI.InitialData {
   , CI.m0_min_rpc_recvq_len = 16
   , CI.m0_lnet_nid = "auto"
   , CI.m0_be_segment_size = 536870912
+  , CI.m0_md_reduncandy = 2
   }
 , CI.id_m0_servers = [
     CI.M0Host {

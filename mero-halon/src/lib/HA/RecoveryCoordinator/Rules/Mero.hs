@@ -153,6 +153,7 @@ initialiseConfInRG = getFilesystem >>= \case
       rg <- getLocalGraph
       profile <- M0.Profile <$> newFid (Proxy :: Proxy M0.Profile)
       fs <- M0.Filesystem <$> newFid (Proxy :: Proxy M0.Profile)
+                          <*> newFid (Proxy :: Proxy M0.Pool)
       modifyLocalGraph $ return
                        . ( G.connectUniqueFrom Cluster Has profile
                            >>> G.connectUniqueFrom profile M0.IsParentOf fs

@@ -90,6 +90,7 @@ data M0Globals = M0Globals {
   , m0_t1fs_mount :: String
   , m0_data_units :: Word32 -- ^ As in genders
   , m0_parity_units :: Word32  -- ^ As in genders
+  , m0_md_redundancy :: Word32 -- ^ Metadata redundancy count
   , m0_pool_width :: Word32 -- ^ As in genders
   , m0_max_rpc_msg_size :: Word32 -- ^ As in genders
   , m0_uuid :: String
