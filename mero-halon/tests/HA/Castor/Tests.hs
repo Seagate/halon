@@ -173,7 +173,6 @@ loadInitialData transport = rGroupTest transport $ \pid -> do
     assertMsg "Number of storage devices" $ length sdevs == 8
     assertMsg "Number of disks (reached by host)" $ length disksByHost == 8
     assertMsg "Number of disks" $ length disks == 8
-    say $ show dvers1
     assertMsg "Number of disk versions" $ length dvers1 == 29
 
 
