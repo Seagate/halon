@@ -228,7 +228,7 @@ Non-supported primitives are not exported by `Control.Distributed.Process` in
 `distributed-process-scheduler`.
 
 Processes are expected to synchronize exclusively through the supported
-`distributed-process` primitives (`send`, `expect` and `receiveWait`). Should
+`distributed-process` primitives (`usend`, `expect` and `receiveWait`). Should
 you need to use locks, `MVars` or whatever, processes cannot block on them
 without blocking execution of the whole program.  This is possible to
 circumvent sometimes, as done in the implementation of `callLocal`.
@@ -293,8 +293,18 @@ the application, but first it could save some time considering if the
 application is using unsupported synchronization primitives or if communication
 between processes occurs by other means than sending messages.
 
+If a test fails with a given seed, a first thing to check is whether the test
+fails always with the given seed. If the first execution is successful and the
+next fails, this could be indicating that the first execution is not releasing
+some resources that the second needs.
+
+Calls to `threadDelay t` should be replaced with calls to `receiveTimeout t []`.
+The scheduler can fast-forward the time to an interesting event when using
+`receiveTimeout` and the system is still. On the contrary, `threadDelay` will
+have the scheduler delay until the delayed thread wakes up, and this could cause
+a test to fail.
+
 Since the scheduler does not provide any tracing capabilities, the
 application code has to be instrumeted to report what is happening during
 a particular execution. The package distributed-process offers a tracing
 mechanism documented in the module `Control.Distributed.Process.Debug`.
-
