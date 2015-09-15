@@ -86,6 +86,7 @@ import qualified "distributed-process-trans" Control.Distributed.Process.Trans a
 import qualified Control.Distributed.Process.Internal.WeakTQueue as DP
 import Control.Distributed.Process.Internal.Types (LocalProcess(..))
 
+import Control.Concurrent (myThreadId)
 import Control.Concurrent.MVar hiding (withMVar)
 import Control.Exception
   ( SomeException
@@ -379,37 +380,34 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
            case sortBy (compare `on` localNodeId) lnodes of
              [] -> error "startScheduler: no nodes"
              sortedLNodes@(n : _) -> do
-               runProcess n $ do
-                 self <- DP.getSelfPid
-                 void $ DP.spawnLocal $ do
-                     lproc <- ask
-                     DP.liftIO $ putMVar schedulerVar lproc
-                     ((go SchedulerState
-                            { stateSeed     = mkStdGen seed0
-                            , stateAlive    = Set.empty
-                            , stateProcs    = Map.empty
-                            , stateMessages = Map.empty
-                            , stateNSend    = Map.empty
-                            , stateMonitors = Map.empty
-                            , stateMonitorCounter = 0
-                            , stateClock           = 0
-                            , stateExpiredTimeouts = Set.empty
-                            , stateTimeouts        = Map.empty
-                            , stateReverseTimeouts = Map.empty
-                            , stateFailures        = Map.empty
-                            }
-                       `DP.finally` do
-                          DP.liftIO $ modifyMVar_ schedulerLock $
-                              const $ return False
-                      )
-                      `DP.catchExit`
-                        (\pid StopScheduler -> DP.send pid SchedulerTerminated))
-                      `DP.catch` (\e -> do
-                         DP.exit self $ "scheduler died: " ++ show e
-                         DP.liftIO $ do
-                           putStrLn $ "scheduler died: " ++ show e
-                           throwIO (e :: SomeException)
-                       )
+               void $ forkProcess n $ do
+                 lproc <- ask
+                 DP.liftIO $ putMVar schedulerVar lproc
+                 ((go SchedulerState
+                        { stateSeed     = mkStdGen seed0
+                        , stateAlive    = Set.empty
+                        , stateProcs    = Map.empty
+                        , stateMessages = Map.empty
+                        , stateNSend    = Map.empty
+                        , stateMonitors = Map.empty
+                        , stateMonitorCounter = 0
+                        , stateClock           = 0
+                        , stateExpiredTimeouts = Set.empty
+                        , stateTimeouts        = Map.empty
+                        , stateReverseTimeouts = Map.empty
+                        , stateFailures        = Map.empty
+                        }
+                   `DP.finally` do
+                      DP.liftIO $ modifyMVar_ schedulerLock $
+                          const $ return False
+                  )
+                  `DP.catchExit`
+                    (\pid StopScheduler -> DP.send pid SchedulerTerminated))
+                  `DP.catch` (\e -> do
+                     DP.liftIO $ do
+                       putStrLn $ "scheduler died: " ++ show e
+                       throwIO (e :: SomeException)
+                   )
                return (True, sortedLNodes)
   where
     go :: SchedulerState -> Process a
@@ -853,13 +851,24 @@ withScheduler :: Int       -- ^ seed
               -> IO ()
 withScheduler s clockDelta numNodes transport rtable p =
     bracket (startScheduler s clockDelta numNodes transport rtable)
-            stopScheduler $ \lnodes@(n : ns) -> runProcess n $ do
-              self <- DP.getSelfPid
-              sendS $ SpawnedProcess self self
-              SpawnAck <- DP.expect
-              Continue <- DP.expect
-              p ns
-              DP.liftIO $ stopScheduler lnodes
+            stopScheduler $ \lnodes@(n : ns) -> do
+      tid <- myThreadId
+      mv <- newEmptyMVar
+      _ <- forkProcess n $ do
+          spid <- processId <$> DP.liftIO getScheduler
+          DP.link spid
+          self <- DP.getSelfPid
+          DP.send spid $ SpawnedProcess self self
+          SpawnAck <- DP.expect
+          Continue <- DP.expect
+          p ns
+          DP.unlink spid
+          DP.liftIO $ stopScheduler lnodes
+          DP.liftIO $ putMVar mv ()
+        `DP.catch` \e -> DP.liftIO $ do
+          throwTo tid (e :: SomeException)
+          throwIO e
+      takeMVar mv
 
 -- | Yields control to some other process.
 yield :: Process ()
