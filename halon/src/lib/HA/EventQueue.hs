@@ -191,6 +191,7 @@ recordEvent :: RGroup g
 recordEvent rg sender ev = void $ liftProcess $ do
     self <- getSelfPid
     spawnLocal $ do
+      eqTrace $ "EQ: Recording event " ++ show (persistEventId ev)
       retry requestTimeout $
         updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
       usend self (RecordAck sender ev)
