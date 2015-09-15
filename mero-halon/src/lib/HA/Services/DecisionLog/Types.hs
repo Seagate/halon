@@ -9,7 +9,6 @@
 module HA.Services.DecisionLog.Types where
 
 import           Prelude hiding ((<$>))
-import           Control.Applicative ((<|>))
 import qualified Data.ByteString      as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor ((<$>))
@@ -19,6 +18,7 @@ import           GHC.Generics
 
 import Control.Distributed.Process (ProcessId, Process)
 import Data.Binary
+import Data.Defaultable
 import Data.Hashable
 import Options.Schema
 import Options.Schema.Builder
@@ -44,13 +44,13 @@ fileOutput :: FilePath -> DecisionLogOutput
 fileOutput = FileOutput
 
 -- | Sends any log to that 'Process'.
-processOutput :: ProcessId -> DecisionLogOutput
-processOutput = ProcessOutput
+processOutput :: ProcessId -> DecisionLogConf
+processOutput = DecisionLogConf . ProcessOutput
 
 
 -- | Writes any log to stdout.
-standardOutput :: DecisionLogOutput
-standardOutput = StandardOutput
+standardOutput :: DecisionLogConf
+standardOutput = DecisionLogConf StandardOutput
 
 newtype DecisionLogConf = DecisionLogConf  DecisionLogOutput
     deriving (Eq, Generic, Show, Typeable)
@@ -60,11 +60,12 @@ instance Hashable DecisionLogConf
 
 decisionLogSchema :: Schema DecisionLogConf
 decisionLogSchema =
-    let filepath = strOption
+    let _filepath = strOption
                    $  long "file"
                    <> short 'f'
-                   <> metavar "DECISION_LOG_FILE" in
-     DecisionLogConf <$> ((FileOutput <$> filepath) <|> pure StandardOutput)
+                   <> metavar "DECISION_LOG_FILE"
+        filepath = FileOutput <$> _filepath in
+    fmap (DecisionLogConf . fromDefault) $ defaultable StandardOutput filepath
 
 $(generateDicts ''DecisionLogConf)
 $(deriveService ''DecisionLogConf 'decisionLogSchema [])
