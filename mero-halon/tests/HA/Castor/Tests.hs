@@ -51,7 +51,7 @@ import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import HA.ResourceGraph hiding (__remoteTable)
 
-import Mero.ConfC (ServiceParams(..))
+import Mero.ConfC (ServiceParams(..), ServiceType(..))
 
 import RemoteTables (remoteTable)
 
@@ -255,7 +255,7 @@ initialData = CI.InitialData {
   , CI.m0_min_rpc_recvq_len = 16
   , CI.m0_lnet_nid = "auto"
   , CI.m0_be_segment_size = 536870912
-  , CI.m0_md_reduncandy = 2
+  , CI.m0_md_redundancy = 2
   }
 , CI.id_m0_servers = [
     CI.M0Host {
@@ -272,7 +272,7 @@ initialData = CI.InitialData {
         , CI.m0s_params = SPConfDBPath "/var/mero/confd"
         }
       , CI.M0Service {
-          CI.m0s_type = M0_CST_RMS
+          CI.m0s_type = CST_RMS
         , CI.m0s_endpoints = ["lnet:192.0.2.1@tcp:12345:41:301"]
         , CI.m0s_params = SPUnused
         }
