@@ -129,7 +129,7 @@ getServiceProcessPid mm n sc = do
     case runningService n sc rg of
       Just (ServiceProcess pid) -> return pid
       _ -> do
-        liftIO $ threadDelay 500000
+        _ <- receiveTimeout 500000 []
         getServiceProcessPid mm n sc
 
 serviceProcessStillAlive :: Configuration a
@@ -144,7 +144,7 @@ serviceProcessStillAlive mm n sc = loop (1 :: Int)
                  rg <- G.getGraph mm
                  case runningService n sc rg of
                    Just _ -> do
-                     liftIO $ threadDelay 250000
+                     _ <- receiveTimeout 250000 []
                      loop (i + 1)
                    _ -> return False
 

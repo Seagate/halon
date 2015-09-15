@@ -20,22 +20,9 @@ import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types
 import qualified HA.EQTracker as EQT
 
-import Control.Concurrent (threadDelay)
 import Control.Distributed.Process
-  ( Process
-  , ProcessId
-  , NodeId
-  , die
-  , expectTimeout
-  , liftIO
-  , nsend
-  , getSelfPid
-  , say
-  , spawnLocal
-  , callLocal
-  )
 import Control.Distributed.Process.Serializable (Serializable)
-import Control.Monad (when)
+import Control.Monad (when, void)
 
 import Data.List ((\\))
 import Data.Typeable
@@ -103,7 +90,7 @@ promulgateEvent evt =
       rl <- expectTimeout softTimeout
       case rl of
         Just (EQT.ReplicaReply (EQT.ReplicaLocation _ [])) ->
-          liftIO (threadDelay 1000000) >> go
+          void (receiveTimeout 1000000 []) >> go
         Just (EQT.ReplicaReply (EQT.ReplicaLocation [] rest)) -> do
           res <- promulgateHAEvent rest evt
           when (res == Failure) go

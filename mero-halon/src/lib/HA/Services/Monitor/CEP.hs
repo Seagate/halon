@@ -8,7 +8,6 @@ module HA.Services.Monitor.CEP where
 
 import Network.CEP
 
-import Control.Concurrent (threadDelay)
 import Control.Monad
 import Data.Foldable (traverse_)
 import Data.Typeable
@@ -83,7 +82,7 @@ toProcesses = Processes . fmap encodeMonitored . M.elems . msMap
 --   'heartbeatDelay'.
 heartbeatProcess :: ProcessId -> Process ()
 heartbeatProcess mainpid = forever $ do
-    liftIO $ threadDelay heartbeatDelay
+    _ <- receiveTimeout heartbeatDelay []
     usend mainpid Heartbeat
 
 decodeMsg :: ProcessEncode a => BinRep a -> PhaseM g l a
