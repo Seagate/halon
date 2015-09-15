@@ -118,4 +118,4 @@ rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
 autobootCluster :: [LocalNode] -> IO ()
 autobootCluster nids =
   forM_ nids $ \lnid ->
-    forkIO $ startupHalonNode lnid rcClosure
+    forkProcess lnid $ startupHalonNode rcClosure

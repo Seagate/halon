@@ -19,11 +19,9 @@ import HA.Multimap.Implementation ( Multimap, fromList )
 import HA.Multimap.Process ( multimap )
 import HA.Replicator ( RGroup(..), RStateView(..) )
 import HA.Replicator.Log ( RLogGroup )
-import HA.Process (tryRunProcess)
 import qualified HA.Storage as Storage
 
 import Control.Arrow ( first, second, (***) )
-import Control.Concurrent (forkIO, myThreadId, throwTo)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
   ( remotable
@@ -38,7 +36,6 @@ import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Control.Distributed.Process.Timeout ( retry )
 import Control.Distributed.Static ( closureApply )
 import Control.Exception (SomeException)
-import qualified Control.Exception as Exception
 
 import Data.Binary ( decode, encode )
 import Data.ByteString.Lazy (ByteString)
@@ -49,7 +46,6 @@ import qualified Network.Transport as NT
 import qualified Data.Map as Map ( toList, empty )
 import Control.Monad.Reader
 
-import System.IO ( hPutStrLn, stderr )
 
 getGlobalRGroup :: Process (Maybe (Closure (Process (RLogGroup HAReplicatedState))))
 getGlobalRGroup = either (const Nothing) Just <$> Storage.get "global-rgroup"
@@ -256,16 +252,12 @@ remotableDecl [ [d|
 --   2. close local node, possibly killing all process on that
 --   3. send some emergency message to RecoverySupervisor and it
 --      could try to recover node.
-startupHalonNode :: LocalNode
-                 -> Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
-                 -> IO ()
-startupHalonNode lnid rcClosure = do
-    tid <- myThreadId
-    _ <- forkIO $ Exception.catch (tryRunProcess lnid $ Storage.runStorage)
-                                  (\e -> throwTo tid (e::SomeException))
+startupHalonNode :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
+                 -> Process ()
+startupHalonNode rcClosure = do
+    p <- spawnLocal Storage.runStorage
+    link p
 
-    Exception.catch
-      (tryRunProcess lnid (autoboot rcClosure))
-      (\(_ :: SomeException) -> hPutStrLn stderr
-        $ "No persisted state could be read. Starting in listen mode.")
-    tryRunProcess lnid $ eqTrackerProcess []
+    autoboot rcClosure `catch` \(_ :: SomeException) ->
+      say "No persisted state could be read. Starting in listen mode."
+    eqTrackerProcess []

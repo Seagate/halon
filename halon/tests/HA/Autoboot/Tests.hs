@@ -13,7 +13,7 @@ module HA.Autoboot.Tests
   , ignitionArguments__sdict
   ) where
 
-import Control.Concurrent
+import Control.Concurrent.MVar
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
@@ -148,7 +148,7 @@ mkAutobootTest transport = withTmpDirectory $ do
   where
     n = 5
     autobootCluster nids = forM_ nids $ \lnid ->
-      forkIO $ startupHalonNode lnid rcClosure
+      forkProcess lnid $ startupHalonNode rcClosure
 
 
 -- | Test that ignition call will retrn supposed result.
@@ -169,7 +169,7 @@ testIgnition transport step = withTmpDirectory $ do
         args = mkArgs False nids1
     node <- newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
     step "autobooting cluster"
-    forM_ (node:nids) $ \lnid -> forkIO $ startupHalonNode lnid rcClosure
+    forM_ (node:nids) $ \lnid -> forkProcess lnid $ startupHalonNode rcClosure
     runProcess node $ do
 
       self <- getSelfPid
