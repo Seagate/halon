@@ -4,6 +4,7 @@
 
 module Main where
 
+import qualified HA.Autoboot.Tests
 import qualified HA.RecoveryCoordinator.Mero.Tests
 
 import Test.Tasty (TestTree, defaultMainWithIngredients, testGroup)
@@ -38,6 +39,8 @@ ut transport = return $
         HA.RecoveryCoordinator.Mero.Tests.testMasterMonitorManagement transport
       , testCase "RCNodeUpRace" $
         HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
+      , testGroup "Autoboot" $
+        HA.Autoboot.Tests.tests transport
       ]
 
 runTests :: (Transport -> IO TestTree) -> IO ()

@@ -3,16 +3,19 @@ module HA.Autoboot.Tests
   ( tests
   ) where
 
-import Control.Concurrent
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
+import Control.Distributed.Process.Internal.Types
 import Control.Distributed.Process.Node
+import qualified Control.Distributed.Process.Scheduler as Scheduler
 import Control.Distributed.Static ( closureCompose )
-import Control.Monad ( replicateM )
+import qualified Control.Exception as E
+import Control.Monad.Reader ( ask )
 import Data.Foldable (forM_)
 import qualified Data.Set as Set
 
-import Network.Transport (Transport)
+import Network.Transport (Transport(..))
+import Network.Transport.InMemory (createTransport)
 
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
@@ -24,6 +27,10 @@ import HA.NodeUp ( nodeUp )
 import HA.Startup hiding (__remoteTable)
 import Test.Framework
 import Test.Tasty.HUnit
+import System.IO
+import System.Random
+import System.Timeout
+
 
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
@@ -37,9 +44,10 @@ tests transport = map (localOption (mkTimeout $ 60*1000000))
   ]
 
 eqtReceiveAllStations :: Transport -> IO ()
-eqtReceiveAllStations transport = withTmpDirectory $ do
-  (node, nids) <- bootupCluster transport (Right 5)
-  runProcess node $ do
+eqtReceiveAllStations transport =
+  runTest 6 20 15000000 transport myRemoteTable $ \nids -> do
+    node <- fmap processNode ask
+    bootupCluster $ node : nids
     say . ("requesting from node " ++). show =<< getSelfNode
     nodeUp (map localNodeId nids, 1000000)
     meq <- whereis EQT.name
@@ -54,33 +62,20 @@ eqtReceiveAllStations transport = withTmpDirectory $ do
 
 eqtReceiveStationsAtStart :: Transport -> IO ()
 eqtReceiveStationsAtStart transport = withTmpDirectory $ do
-  nids <- replicateM 5 $ newLocalNode transport $ myRemoteTable
-  node <- newLocalNode transport $ myRemoteTable
-  lock <- newEmptyMVar
-  _    <- forkProcess node $ do
+  runTest 7 20 15000000 transport myRemoteTable $ \nodes@(_ : nids) -> do
+    _ <- spawnLocal $ bootupCluster nodes
     _ <- spawnLocal $ EQT.eqTrackerProcess [localNodeId $ head nids]
     nodeUp (map localNodeId nids, 1000000)
     Just eq <- whereis EQT.name
     self <- getSelfPid
     usend eq (EQT.ReplicaRequest self)
     EQT.ReplicaReply (EQT.ReplicaLocation _ xs) <- expect
-    liftIO $ putMVar lock (Set.fromList xs)
-  _ <- bootupCluster transport (Left nids)
-  assertEqual "nodes updated" (Set.fromList $ map localNodeId nids)
-                              =<< takeMVar lock
-  return ()
+    liftIO $ assertEqual "nodes updated" (Set.fromList $ map localNodeId nids)
+                                         (Set.fromList xs)
 
--- | Startup cluster. This function autoboots required number of nodes
--- and return a head node (that is not part of the cluster), and list
--- of tracking stations.
-bootupCluster :: Transport
-              -> (Either [LocalNode] Int) -- ^ list of nodes to bootstrap or number
-                                          --   of nodes to bootstrap
-              -> IO (LocalNode, [LocalNode])
-bootupCluster transport en = do
-    nids <- case en of
-              Left ns -> return ns
-              Right n -> replicateM n $ newLocalNode transport $ myRemoteTable
+-- | Startup cluster. This function autoboots required number of nodes.
+bootupCluster :: [LocalNode] -> Process ()
+bootupCluster = \(node : nids) -> do
     let args = ( False :: Bool
                , map localNodeId nids
                , 1000 :: Int
@@ -88,26 +83,23 @@ bootupCluster transport en = do
                , $(mkClosure 'recoveryCoordinator) $ IgnitionArguments (map localNodeId nids)
                , 8*1000000 :: Int
                )
-    node <- newLocalNode transport $ myRemoteTable
     -- 1. Autoboot cluster
     liftIO $ autobootCluster (node:nids)
-    runProcess node $ do
-      -- 2. Run ignition once
-      (sp, rp) <- Control.Distributed.Process.newChan
-      _ <- liftIO $ forkProcess (head nids) $ ignition args >>= sendChan sp
-      result <- receiveChan rp
-      case result of
-        Just (added, _, members, newNodes) -> liftIO $ do
-          if added then do
-            putStrLn "The following nodes joined successfully:"
-            mapM_ print newNodes
-          else
-            putStrLn "No new node could join the group."
-          putStrLn ""
-          putStrLn "The following nodes were already in the group:"
-          mapM_ print members
-        Nothing -> return ()
-    return (node,nids)
+    -- 2. Run ignition once
+    (sp, rp) <- Control.Distributed.Process.newChan
+    _ <- liftIO $ forkProcess (head nids) $ ignition args >>= sendChan sp
+    result <- receiveChan rp
+    case result of
+      Just (added, _, members, newNodes) -> liftIO $ do
+        if added then do
+          putStrLn "The following nodes joined successfully:"
+          mapM_ print newNodes
+        else
+          putStrLn "No new node could join the group."
+        putStrLn ""
+        putStrLn "The following nodes were already in the group:"
+        mapM_ print members
+      Nothing -> return ()
 
 -- | Start dummy recovery coordinator
 rcClosure :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
@@ -119,3 +111,38 @@ autobootCluster :: [LocalNode] -> IO ()
 autobootCluster nids =
   forM_ nids $ \lnid ->
     forkProcess lnid $ startupHalonNode rcClosure
+
+withLocalNode :: Transport -> RemoteTable -> (LocalNode -> IO a) -> IO a
+withLocalNode t rt = E.bracket  (newLocalNode t rt) closeLocalNode
+
+withLocalNodes :: Int
+               -> Transport
+               -> RemoteTable
+               -> ([LocalNode] -> IO a)
+               -> IO a
+withLocalNodes 0 _t _rt f = f []
+withLocalNodes n t rt f = withLocalNode t rt $ \node ->
+    withLocalNodes (n - 1) t rt (f . (node :))
+
+runTest :: Int -> Int -> Int -> Transport -> RemoteTable
+        -> ([LocalNode] -> Process ()) -> IO ()
+runTest numNodes numReps _t tr rt action
+    | Scheduler.schedulerIsEnabled = do
+        s <- randomIO
+        -- TODO: Fix leaks in n-t-inmemory and use the same transport for all
+        -- tests, maybe.
+        forM_ [1..numReps] $ \i ->  withTmpDirectory $
+          E.bracket createTransport closeTransport $
+          \tr' -> do
+            m <- timeout (7 * 60 * 1000000) $
+              Scheduler.withScheduler (s + i) 1000 numNodes tr' rt' action
+            maybe (error "Timeout") return m
+          `E.onException`
+            liftIO (hPutStrLn stderr $ "Failed with seed: " ++ show (s + i, i))
+    | otherwise =
+        withTmpDirectory $ withLocalNodes numNodes tr rt' $
+          \(n : ns) -> do
+            m <- timeout (7 * 60 * 1000000) $ runProcess n (action ns)
+            maybe (error "Timeout") return m
+  where
+    rt' = Scheduler.__remoteTable rt
