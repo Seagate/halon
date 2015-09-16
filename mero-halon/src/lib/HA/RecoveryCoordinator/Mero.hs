@@ -47,6 +47,9 @@ module HA.RecoveryCoordinator.Mero
        , handled
        , loadNodeMonitorConf
        , notHandled
+#ifdef USE_MERO
+       , withRootRC
+#endif
        ) where
 
 import Prelude hiding ((.), id, mapM_)
@@ -54,6 +57,7 @@ import HA.EventQueue.Types (HAEvent(..))
 import HA.NodeAgent.Messages
 import HA.Resources
 import HA.Resources.Castor (Host(..))
+import HA.Resources.Mero (mkConfdServer)
 import HA.Service
 import HA.Services.DecisionLog
 import HA.Services.Monitor
@@ -89,10 +93,21 @@ import GHC.Generics (Generic)
 import Network.CEP
 import Network.HostName
 
+#ifdef USE_MERO
+import Data.Maybe (listToMaybe)
+import HA.Resources.Mero (unConfdServer)
+import Mero.ConfC (withConf, Root)
+import Mero.Notification (withServerEndpoint)
+import Network.RPC.RPCLite
+#endif
+
+
 -- | Initial configuration data.
 data IgnitionArguments = IgnitionArguments
   { -- | The names of all tracking station nodes.
     stationNodes :: [NodeId]
+    -- | Address of the local endpoint to start the RPC listener on
+  , localEndpoint :: Maybe String
   } deriving (Generic,Typeable)
 
 instance Binary IgnitionArguments
@@ -137,6 +152,8 @@ handled eq (HAEvent eid _ _) = do
     put Global ls'
     sendMsg eq eid
 
+
+
 rcInitRule :: IgnitionArguments
            -> ProcessId
            -> RuleM LoopState (Maybe ProcessId) (Started LoopState (Maybe ProcessId))
@@ -157,6 +174,11 @@ rcInitRule argv eq = do
       registerHost host
       locateNodeOnHost node host
       liftProcess $ nsend EQT.name (nullProcessId nid, UpdateEQNodes $ stationNodes argv)
+
+#ifdef USE_MERO
+      ls <- get Global
+      put Global ls { lsRPCAddress = rpcAddress <$> localEndpoint argv }
+#endif
       continue start_mm
 
     directly start_mm $ do
@@ -340,10 +362,37 @@ makeRecoveryCoordinator :: ProcessId -- ^ pid of the replicated multimap
 makeRecoveryCoordinator mm rm = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
     startRG <- G.sync rg
+#ifdef USE_MERO
+    execute (LoopState startRG Map.empty mm S.empty Nothing) $ do
+#else
     execute (LoopState startRG Map.empty mm S.empty) $ do
+#endif
       rm
       setRuleFinalizer $ \ls -> do
         newGraph <- G.sync $ lsGraph ls
         return ls { lsGraph = newGraph }
 
 -- remotable [ 'recoveryCoordinator ]
+
+#ifdef USE_MERO
+-- | Find a confd server in the cluster and run the given function on
+-- the configuration tree. Returns no result if no confd servers are
+-- found in the cluster.
+--
+-- It does nothing if 'lsRPCAddress' has not been set.
+withRootRC :: (Root -> IO a) -> PhaseM LoopState l (Maybe a)
+withRootRC f = do
+ liftIO (appendFile "/tmp/log" "start of withRootRC\n")
+ getLocalGraph >>= \g -> (lsRPCAddress <$> get Global) >>= \ra ->
+  case (,) <$> listToMaybe (G.connectedTo Cluster Has g) <*> ra of
+    Nothing -> liftIO (appendFile "/tmp/log" "withRootRC Nothing\n") >> return Nothing
+    Just (confdServer, rpca) -> do
+     liftIO $ appendFile "/tmp/log" $ "Connecting to " ++ show (confdServer, rpca) ++ "\n"
+     liftProcess $ withServerEndpoint rpca $ \se -> liftIO $ do
+      appendFile "/tmp/log" "pre getrpcmachine\n"
+      rpcm <- getRPCMachine_se se
+      appendFile "/tmp/log" "post getrpcmachine\n"
+      x <- return <$> withConf rpcm (unConfdServer confdServer) f
+      appendFile "/tmp/log" "post withconf\n"
+      return x
+#endif

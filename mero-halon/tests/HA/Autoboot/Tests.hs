@@ -85,7 +85,7 @@ bootupCluster transport en = do
                , map localNodeId nids
                , 1000 :: Int
                , 1000000 :: Int
-               , $(mkClosure 'recoveryCoordinator) $ IgnitionArguments (map localNodeId nids)
+               , $(mkClosure 'recoveryCoordinator) $ IgnitionArguments (map localNodeId nids) Nothing
                , 8*1000000 :: Int
                )
     node <- newLocalNode transport $ myRemoteTable
@@ -109,7 +109,7 @@ bootupCluster transport en = do
     return (node,nids)
 
 -- | Start dummy recovery coordinator
-rcClosure :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
+rcClosure :: Closure (([NodeId], Maybe String) -> ProcessId -> ProcessId -> Process ())
 rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
                $(mkStaticClosure 'ignitionArguments)
 
@@ -117,4 +117,6 @@ rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
 autobootCluster :: [LocalNode] -> IO ()
 autobootCluster nids =
   forM_ nids $ \lnid ->
-    forkIO $ startupHalonNode lnid rcClosure
+    forkIO $ startupHalonNode lnid localEndpoint rcClosure
+  where
+    localEndpoint = Nothing

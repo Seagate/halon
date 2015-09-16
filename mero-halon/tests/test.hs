@@ -46,7 +46,7 @@ import Prelude
 ut :: Transport -> IO TestTree
 ut transport = return $
     testGroup "ut"
-      [ testCase "RCServiceRestarting" $
+      [ {-testCase "RCServiceRestarting" $
           HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport
       , testCase "RCServiceNOTRestarting" $
           HA.RecoveryCoordinator.Mero.Tests.testServiceNotRestarting transport
@@ -68,10 +68,13 @@ ut transport = return $
       , testCase "RCNodeUpRace" $
         HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
       , testGroup "Autoboot" $
-        HA.Autoboot.Tests.tests transport
+        HA.Autoboot.Tests.tests transport-}
 #ifdef USE_MERO
+{-
       , testGroup "Castor" $
         HA.Castor.Tests.tests transport
+      , -}testCase "RCMeroConfdAddRemove" $
+        HA.RecoveryCoordinator.Mero.Tests.testMeroConfdAddRemove transport
 #endif
       ]
 

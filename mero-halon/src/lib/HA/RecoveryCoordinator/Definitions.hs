@@ -20,8 +20,8 @@ import Control.Distributed.Process.Closure
 import HA.RecoveryCoordinator.CEP
 import HA.RecoveryCoordinator.Mero
 
-ignitionArguments :: [NodeId] -> IgnitionArguments
-ignitionArguments = IgnitionArguments
+ignitionArguments :: ([NodeId], Maybe String) -> IgnitionArguments
+ignitionArguments = uncurry IgnitionArguments
 
 recoveryCoordinator :: IgnitionArguments
                     -> ProcessId

@@ -18,6 +18,7 @@ import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
 
 import HA.ResourceGraph
+import HA.Resources.Mero (ConfdServer)
 import HA.Service
 import HA.Service.TH
 import Mero.Notification (Set)
@@ -49,6 +50,30 @@ data DeclareMeroChannel =
 
 instance Binary DeclareMeroChannel
 instance Hashable DeclareMeroChannel
+
+
+-- | A label used by 'ConfdNotification'
+data ConfdMessage = ConfdAdd | ConfdRemove
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary ConfdMessage
+instance Hashable ConfdMessage
+
+-- | label used to test confd server connections through a rule
+data ConfdConnect = ConfdConnect
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary ConfdConnect
+instance Hashable ConfdConnect
+
+data ConfdNotification = ConfdNotification
+  { _cnMessage :: ConfdMessage
+  , _cnServer :: ConfdServer
+  } deriving (Eq, Show, Typeable, Generic)
+
+instance Binary ConfdNotification
+instance Hashable ConfdNotification
+
 
 resourceDictMeroChannel :: Dict (Resource (TypedChannel Set))
 resourceDictMeroChannel = Dict

@@ -74,8 +74,8 @@ main = do
 #endif
     lnid <- newLocalNode transport myRemoteTable
     printHeader (localEndpoint config)
-    runProcess lnid $ sendSelfNode
-    startupHalonNode lnid rcClosure
+    runProcess lnid sendSelfNode
+    startupHalonNode lnid (Just $ localEndpoint config) rcClosure
   where
     rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
                   $(mkStaticClosure 'ignitionArguments)

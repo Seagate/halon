@@ -105,13 +105,26 @@ initHAState :: (NVecRef -> IO ())
 initHAState ha_state_get ha_state_set =
     allocaBytesAligned #{size ha_state_callbacks_t}
                        #{alignment ha_state_callbacks_t}$ \pcbs -> do
+      log' "initHAState 1"
       wget <- wrapGetCB ha_state_get
+      log' "initHAState 2"
       wset <- wrapSetCB ha_state_set
+      log' "initHAState 3"
       #{poke ha_state_callbacks_t, ha_state_get} pcbs wget
+      log' "initHAState 4"
       #{poke ha_state_callbacks_t, ha_state_set} pcbs wset
+      log' "initHAState 5"
       modifyIORef cbRefs ((SomeFunPtr wget:) . (SomeFunPtr wset:))
-      ha_state_init pcbs >>= check_rc "initHAState"
+      log' "initHAState 6"
+      return ()
+{-    -- XXX hangs here, alarm bells
+      rc <- ha_state_init pcbs
+      log' "initHAState 7"
+      check_rc "initHAState" rc
+      log' "initHAState 8"
+-}
   where
+    log' = appendFile "/tmp/log" . (++ "\n")
     wrapGetCB f = cwrapGetCB $ \note -> f note
     wrapSetCB f = cwrapSetCB $ \note ->
         readNVecRef note >>= fmap fromIntegral . f

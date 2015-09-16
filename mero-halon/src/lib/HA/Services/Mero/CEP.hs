@@ -3,6 +3,7 @@
 --
 
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 
@@ -12,6 +13,7 @@ module HA.Services.Mero.CEP
 
 import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Actions.Mero (lookupConfObjByFid)
+import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Mero
 import HA.ResourceGraph
 import HA.Resources
@@ -20,11 +22,12 @@ import qualified HA.Resources.Mero as M0
 import HA.Service
 import HA.Services.Mero.Types
 
+import Mero.ConfC (Root)
 import Mero.Notification (Set(..))
 import Mero.Notification.HAState
 
 import Control.Category ((>>>))
-import Control.Distributed.Process (sendChan)
+import Control.Distributed.Process {- (say, sendChan, unClosure)-}
 
 import Data.Foldable (for_)
 import Data.Maybe (isJust)
@@ -75,3 +78,24 @@ meroRulesF m0d = do
       rg <- getLocalGraph
       for_ (meroChannels m0d rg) $ \(TypedChannel chan) -> do
         liftProcess $ sendChan chan (Set nvec)
+
+  defineSimple "confd-notification" $ \(HAEvent _ (cn@ConfdNotification{}) _) ->
+    confdRules cn
+
+  -- confd-connect is used for testing, merely tries to connect to
+  -- existing confd server
+  defineSimple "confd-connect" $ \(HAEvent _ ConfdConnect _) -> do
+   let log = liftIO . appendFile "/tmp/log" . (++ "\n")
+   withRootRC return >>= liftProcess . \case
+     Nothing -> log "Failed to connect to confd server" >> say "Failed to connect to confd server"
+     Just _ -> log "Connected to confd server" >> say "Connected to confd server"
+
+
+confdRules :: ConfdNotification -> PhaseM LoopState l ()
+confdRules (ConfdNotification ConfdAdd s) = do
+  let msg = "Registering confd server on cluster: " ++ show s
+  registerOnCluster s msg
+  liftProcess . say $ "Registered confd server: " ++ show s
+confdRules (ConfdNotification ConfdRemove s) = do
+  modifyLocalGraph $ return . disconnect Cluster Has s
+  liftProcess . say $ "Disconnected confd server: " ++ show s

@@ -9,4 +9,4 @@ cd $TEST_DIR
 BUILD_DIR=../build
 SUDO="sudo LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 $SUDO sh -c \
-   "$BUILD_DIR/testconf/testconf `sudo lctl list_nids | head -1`:12345:35:401 `sudo lctl list_nids | head -1`:12345:41:101" > testconfc_out.txt
+   "( cd /tmp && $BUILD_DIR/testconf/testconf `sudo lctl list_nids | head -1`:12345:35:401 `sudo lctl list_nids | head -1`:12345:41:101 )" > testconfc_out.txt

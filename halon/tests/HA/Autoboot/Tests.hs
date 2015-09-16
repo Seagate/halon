@@ -36,19 +36,20 @@ import Test.Transport
 import Test.Framework
 import Test.Tasty.HUnit
 
-
 dummyRCStarted :: MVar ()
 dummyRCStarted = unsafePerformIO newEmptyMVar
 {-# NOINLINE dummyRCStarted #-}
 
 data IgnitionArguments = IgnitionArguments
   { _stationNodes :: [NodeId]
+    -- | Address of the local endpoint to start the RPC listener on
+  , _localEndpoint :: Maybe String
   } deriving (Generic, Typeable)
 
 instance Binary IgnitionArguments
 
-ignitionArguments :: [NodeId] -> IgnitionArguments
-ignitionArguments = IgnitionArguments
+ignitionArguments :: ([NodeId], Maybe String) -> IgnitionArguments
+ignitionArguments (nids, le) = IgnitionArguments nids le
 
 dummyRC :: IgnitionArguments
         -> ProcessId
@@ -82,7 +83,7 @@ tests transport =
          ]
   where _ = $(functionTDict 'ignitionWrapper) -- unused ignitionWrapper__tdict
 
-rcClosure :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
+rcClosure :: Closure (([NodeId], Maybe String) -> ProcessId -> ProcessId -> Process ())
 rcClosure = $(mkStaticClosure 'dummyRC) `closureCompose`
                   $(mkStaticClosure 'ignitionArguments)
 
@@ -97,7 +98,7 @@ mkAutobootTest transport = withTmpDirectory $ do
                , map localNodeId nids
                , 1000 :: Int
                , 1000000 :: Int
-               , $(mkClosure 'dummyRC) $ IgnitionArguments (map localNodeId nids)
+               , $(mkClosure 'dummyRC) $ IgnitionArguments (map localNodeId nids) localEndpoint
                , 8*1000000 :: Int
                )
     node <- newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
@@ -146,9 +147,10 @@ mkAutobootTest transport = withTmpDirectory $ do
       liftIO $ takeMVar dummyRCStarted
 
   where
+    localEndpoint = Nothing
     n = 5
     autobootCluster nids = forM_ nids $ \lnid ->
-      forkIO $ startupHalonNode lnid rcClosure
+      forkIO $ startupHalonNode lnid localEndpoint rcClosure
 
 
 -- | Test that ignition call will retrn supposed result.
@@ -159,17 +161,19 @@ testIgnition transport step = withTmpDirectory $ do
     -- 0. Run autoboot on 5 nodes
     nids <- replicateM 5 $ newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
     let (nids1,nids2) = splitAt 3 nids
+        localEndpoint = Nothing
+
     let mkArgs b ns  = ( b :: Bool
                        , map localNodeId ns
                        , 1000 :: Int
                        , 1000000 :: Int
-                       , $(mkClosure 'dummyRC) $ IgnitionArguments (map localNodeId ns)
+                       , $(mkClosure 'dummyRC) $ IgnitionArguments (map localNodeId ns) localEndpoint
                        , 8*1000000 :: Int
                        )
         args = mkArgs False nids1
     node <- newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
     step "autobooting cluster"
-    forM_ (node:nids) $ \lnid -> forkIO $ startupHalonNode lnid rcClosure
+    forM_ (node:nids) $ \lnid -> forkIO $ startupHalonNode lnid localEndpoint rcClosure
     runProcess node $ do
 
       self <- getSelfPid

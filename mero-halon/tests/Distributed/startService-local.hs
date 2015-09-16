@@ -27,6 +27,7 @@ import Control.Distributed.Process.Node
   ( initRemoteTable
   , newLocalNode
   , runProcess
+  , localNodeId
   )
 
 import Data.List (isInfixOf)
@@ -55,6 +56,12 @@ import System.Posix.Temp (mkdtemp)
 import System.Process hiding (runProcess)
 import System.Timeout
 
+import HA.EventQueue.Producer
+import HA.EventQueue.Types
+import HA.Resources.Mero hiding (__remoteTable)
+import Network.RPC.RPCLite
+import qualified HA.Service as HS
+import HA.Services.Mero hiding (__remoteTable)
 
 getBuildPath :: IO FilePath
 getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
@@ -121,9 +128,10 @@ main =
 
       getSelfPid >>= copyLog (const True)
 
+
       say "Spawning halond ..."
-      nid0 <- spawnLocalNode (halond1 ++ " -l " ++ m0loc ++ " 2>&1")
-      nid1 <- spawnLocalNode (halond2 ++ " -l " ++ m1loc ++ " 2>&1")
+      nid0 <- spawnLocalNode (halond1 ++ " -l " ++ m0loc ++ " > /tmp/halond1 2>&1")
+      nid1 <- spawnLocalNode (halond2 ++ " -l " ++ m1loc ++ " > /tmp/halond2 2>&1")
       say $ "Redirecting logs from " ++ show nid0 ++ " ..."
       redirectLogsHere nid0
       say $ "Redirecting logs from " ++ show nid1 ++ " ..."
@@ -148,6 +156,10 @@ main =
       expectLog [nid0] (isInfixOf $ "New node contacted: nid://" ++ m0loc)
       expectLog [nid0] (isInfixOf $ "New node contacted: nid://" ++ m1loc)
       expectLog [nid0, nid1] (isInfixOf "Node succesfully joined the cluster.")
+
+      say "Adding confd node"
+      let _cn = rpcAddress "10.0.2.15@tcp:12345:41:101"
+      promulgateEQ [localNodeId n0] $ ConfdNotification ConfdAdd (mkConfdServer _cn)
 
       say "Starting dummy service ..."
       systemLocal (halonctl ++ " -l " ++ hctlloc ++ " -a " ++ m1loc ++

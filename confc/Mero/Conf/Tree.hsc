@@ -129,10 +129,12 @@ withRoot :: RPCMachine
          -> (Root -> IO a)
          -> IO a
 withRoot rpcmach rpcaddr f = do
+  appendFile "/tmp/log" "withRoot 1\n"
   fid <- peek rootFid
+  appendFile "/tmp/log" "withRoot 2\n"
   withClose (openRoot rpcmach rpcaddr fid) $ \co -> case co_union co of
-    CRo r -> f r
-    _ -> error "Cannot open root element at root FID."
+    CRo r -> appendFile "/tmp/log" "withRoot 3 CRo\n" >> f r
+    _ -> appendFile "/tmp/log" "withRoot 3 _\n" >> error "Cannot open root element at root FID."
 
 walkChildren :: Ptr Obj
              -> RelationFid

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TemplateHaskell            #-}
@@ -28,8 +29,21 @@ import Data.Hashable (Hashable)
 import Data.Proxy (Proxy)
 import Data.Typeable (Typeable)
 import Data.Word ( Word32, Word64 )
+import Data.UUID (UUID)
+import GHC.Generics (Generic)
+
+#ifdef USE_MERO
+import Data.Binary (encode)
+import Data.Hashable (hashWithSalt)
+import Network.RPC.RPCLite
+#endif
+
+--------------------------------------------------------------------------------
+-- Resources                                                                  --
+--------------------------------------------------------------------------------
 
 import GHC.Generics (Generic)
+
 
 -- | Fid generation sequence number
 newtype FidSeq = FidSeq Word64
@@ -62,6 +76,28 @@ class ConfObj a where
   {-# MINIMAL fidType, fid #-}
 
 data AnyConfObj = forall a. ConfObj a => AnyConfObj a
+
+-- | Confd servers present on the cluster
+#ifdef USE_MERO
+newtype ConfdServer = ConfdServer HRPCAddress
+  deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
+
+-- | newtype wrapper for 'RPCAddress' providing 'Hashable' instance
+newtype HRPCAddress = HRPCAddress { _unHRPCAddress :: RPCAddress }
+  deriving (Eq, Show, Generic, Typeable, Binary)
+
+-- | Helper for 'ConfdServer' hiding the 'HRPCAddress' ugliness
+mkConfdServer :: RPCAddress -> ConfdServer
+mkConfdServer = ConfdServer . HRPCAddress
+
+-- | Helper for 'ConfdServer' hiding the 'HRPCAddress' ugliness
+unConfdServer :: ConfdServer -> RPCAddress
+unConfdServer (ConfdServer hadr) = _unHRPCAddress hadr
+
+instance Hashable HRPCAddress where
+  hashWithSalt n (HRPCAddress rpca) = hashWithSalt n (encode rpca)
+#endif
+
 --------------------------------------------------------------------------------
 -- Conf tree in the resource graph
 --------------------------------------------------------------------------------
@@ -243,6 +279,9 @@ $(mkDicts
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals
+#ifdef USE_MERO
+  , ''ConfdServer
+#endif
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Profile)
@@ -277,6 +316,9 @@ $(mkDicts
     -- Other things!
   , (''R.Cluster, ''R.Has, ''FidSeq)
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
+#ifdef USE_MERO
+  , (''R.Cluster, ''R.Has, ''ConfdServer)
+#endif
   ]
   )
 
@@ -285,6 +327,9 @@ $(mkResRel
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals
+#ifdef USE_MERO
+  , ''ConfdServer
+#endif
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Profile)
@@ -319,6 +364,9 @@ $(mkResRel
     -- Other things!
   , (''R.Cluster, ''R.Has, ''FidSeq)
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
+#ifdef USE_MERO
+  , (''R.Cluster, ''R.Has, ''ConfdServer)
+#endif
   ]
   []
   )

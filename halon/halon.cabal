@@ -108,12 +108,14 @@ Library
                    distributed-process-async >= 0.2,
                    hostname,
                    uuid
+
   if flag(rpc)
     Build-Depends: rpclite,
                    network-transport,
                    network-transport-rpc >= 0.0.1
   else
     Build-Depends: network-transport-tcp
+
 
 Test-Suite unit-tests
   Type:             exitcode-stdio-1.0

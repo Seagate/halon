@@ -33,6 +33,7 @@ options =
     , Option ['l'] ["listen"] (ReqArg (\s c -> c{ localEndpoint = s }) "ADDRESS")
                  "Address to listen on."
     ]
+  where
 
 parseArgs :: [String] -> Config
 parseArgs argv =

@@ -109,8 +109,11 @@ openRoot :: RPCMachine -> RPCAddress -> Fid -> IO (WithClose ConfObj)
 openRoot (RPCMachine pm) (RPCAddress addr) fid = alloca $ \ppc ->
   with fid $ \pfid ->
   useAsCString addr$ \cconfd_addr -> do
+    appendFile "/tmp/log" "openRoot 1\n"
     confc_create ppc pfid cconfd_addr pm >>= check_rc "getProfile"
+    appendFile "/tmp/log" "openRoot 2\n"
     pc <- peek ppc
+    appendFile "/tmp/log" "openRoot 3\n"
     fmap (,confc_destroy pc) $ #{peek struct m0_confc, cc_root} pc >>= getConfObj
 
 data ConfCV

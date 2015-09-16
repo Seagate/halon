@@ -697,6 +697,12 @@ Test-Suite unit-tests
                     cep,
                     attoparsec,
                     containers
+
+  if flag(mero)
+      Build-Depends: rpclite
+      CPP-Options:    -DUSE_MERO
+
+
   if flag(rpc)
       Build-Depends: network-transport-rpc,
                      directory,
@@ -747,7 +753,9 @@ Test-Suite integration-tests
                     tasty-files,
                     cep,
                     attoparsec,
-                    containers
+                    containers,
+                    confc
+
   if flag(rpc)
       Build-Depends: network-transport-rpc,
                      directory,
@@ -756,6 +764,10 @@ Test-Suite integration-tests
       CPP-Options:    -DUSE_RPC
   else
       Build-Depends: network-transport-tcp >= 0.3
+
+  if flag(mero)
+      Build-Depends:  rpclite
+      CPP-Options:    -DUSE_MERO
 
 Test-Suite test-start-service-local
   Type:             exitcode-stdio-1.0
@@ -777,7 +789,10 @@ Test-Suite test-start-service-local
                    distributed-commands,
                    distributed-process-test,
                    process,
-                   unix
+                   unix,
+                   halon,
+                   rpclite,
+                   mero-halon
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
@@ -806,3 +821,31 @@ Test-Suite test-stha-local
                    unix
   else
       Buildable: False
+
+Test-Suite test-confd-local
+  Type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs:  tests/Distributed
+  Main-Is:         confd-local.hs
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  if flag(mero)
+    Build-Depends: distributed-process,
+                   base,
+                   filepath,
+                   directory,
+                   network-transport,
+                   network-transport-tcp,
+                   distributed-commands,
+                   distributed-process-test,
+                   process,
+                   unix,
+                   halon,
+                   rpclite,
+                   mero-halon
+  else
+    Buildable: False

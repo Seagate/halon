@@ -3,6 +3,7 @@
 -- License   : All rights reserved.
 --
 
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE OverloadedStrings          #-}
 
 module HA.RecoveryCoordinator.Actions.Core
@@ -34,6 +35,10 @@ import qualified Data.Set        as S
 
 import Network.CEP
 
+#ifdef USE_MERO
+import Network.RPC.RPCLite
+#endif
+
 data LoopState = LoopState {
     lsGraph    :: G.Graph -- ^ Graph
   , lsFailMap  :: Map.Map (ServiceName, Node) Int
@@ -41,6 +46,10 @@ data LoopState = LoopState {
   , lsMMPid    :: ProcessId -- ^ Replicated Multimap pid
   , lsHandled  :: S.Set UUID
     -- ^ Set of HAEvent uuid we've already handled.
+#ifdef USE_MERO
+  , lsRPCAddress :: Maybe RPCAddress
+    -- ^ 'RPCAddress' that listener should start on if one does not exist yet
+#endif
 }
 
 -- | Is a given resource existent in the RG?

@@ -52,9 +52,19 @@ queueM0Worker (M0Worker {..}) task = do
 -- | Runs a task in a worker.
 runOnM0Worker :: M0Worker -> IO a -> IO a
 runOnM0Worker w task = do
+    appendFile "/tmp/log" "pre empty mvar\n"
     mv <- newEmptyMVar
+    appendFile "/tmp/log" "pre queue\n"
     queueM0Worker w $ try task >>= putMVar mv
-    takeMVar mv >>= either (throwIO :: SomeException -> IO a) return
+    appendFile "/tmp/log" "pre take\n"
+    m <- takeMVar mv
+    appendFile "/tmp/log" "post take\n"
+    case m of
+      Left a -> appendFile "/tmp/log" ("Left: " ++ show (a :: SomeException) ++ "\n")
+      Right a -> appendFile "/tmp/log" "Right\n"
+    x <- either (throwIO :: SomeException -> IO a) return m
+    appendFile "/tmp/log" "post either\n"
+    return x
 
 {-# NOINLINE globalWorkerRef #-}
 globalWorkerRef :: IORef (Maybe M0Worker)
@@ -72,4 +82,8 @@ getGlobalWorker = readIORef globalWorkerRef
 
 -- | Runs a task in the global worker.
 runOnGlobalM0Worker :: IO a -> IO a
-runOnGlobalM0Worker task = getGlobalWorker >>= flip runOnM0Worker task
+runOnGlobalM0Worker task = do
+  appendFile "/tmp/log" "rogm pre\n"
+  x <- getGlobalWorker >>= flip runOnM0Worker task
+  appendFile "/tmp/log" "rogm post\n"
+  return x

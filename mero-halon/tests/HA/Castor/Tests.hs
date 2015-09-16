@@ -66,7 +66,11 @@ remotable
 emptyLoopState :: ProcessId -> Process LoopState
 emptyLoopState pid = do
   g <- getGraph pid
+#ifdef USE_MERO
+  return $ LoopState g Map.empty pid Set.empty Nothing
+#else
   return $ LoopState g Map.empty pid Set.empty
+#endif
 
 myRemoteTable :: RemoteTable
 myRemoteTable = HA.Castor.Tests.__remoteTable remoteTable

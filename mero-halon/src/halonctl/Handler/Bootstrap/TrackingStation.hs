@@ -111,6 +111,7 @@ start nids naConf = do
            , nids
            , fromDefault . configSnapshotsThreshold $ naConf
            , fromDefault . configSnapshotsTimeout $ naConf
-           , $(mkClosure 'recoveryCoordinator) $ IgnitionArguments nids
+           -- TODO: can we do something more sensible than Nothing here?
+           , $(mkClosure 'recoveryCoordinator) $ IgnitionArguments nids Nothing
            , fromDefault . configRSLease $ naConf
            )

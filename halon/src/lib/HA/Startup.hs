@@ -8,6 +8,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-orphans #-}
 module HA.Startup where
 
@@ -73,7 +74,8 @@ multimapView = RStateView (snd . snd) (second . second)
 rsDict :: SerializableDict HAReplicatedState
 rsDict = SerializableDict
 
-decodeNids :: ByteString -> [NodeId]
+
+decodeNids :: ByteString -> ([NodeId], Maybe String)
 decodeNids = decode
 
 remotable [ 'rsView, 'eqView, 'multimapView, 'rsDict, 'decodeNids ]
@@ -228,16 +230,17 @@ remotableDecl [ [d|
             expect
         return $ map snd *** map snd $ partition fst $ zip bs nids
 
- autoboot :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
+ autoboot :: Maybe String -- ^ local endpoint address
+          -> Closure (([NodeId], Maybe String) -> ProcessId -> ProcessId -> Process ())
           -> Process ()
- autoboot rcClosure = do
+ autoboot ep rcClosure = do
     nid <- getSelfNode
     cRGroup <- spawnReplica $(mkStatic 'rsDict) nid
     rGroup <- unClosure cRGroup >>= id
     nids <- retry 1000000 $ getRGroupMembers rGroup
     let rcClosure' = rcClosure `closureApply` (closure
                                                 $(mkStatic 'decodeNids)
-                                                (encode nids)
+                                                (encode (nids, ep))
                                               )
     void . spawn nid $ $(mkClosure 'startRS)
           ( cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
@@ -257,15 +260,16 @@ remotableDecl [ [d|
 --   3. send some emergency message to RecoverySupervisor and it
 --      could try to recover node.
 startupHalonNode :: LocalNode
-                 -> Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
+                 -> Maybe String -- ^ local endpoint address
+                 -> Closure (([NodeId], Maybe String) -> ProcessId -> ProcessId -> Process ())
                  -> IO ()
-startupHalonNode lnid rcClosure = do
+startupHalonNode lnid ep rcClosure = do
     tid <- myThreadId
     _ <- forkIO $ Exception.catch (tryRunProcess lnid $ Storage.runStorage)
                                   (\e -> throwTo tid (e::SomeException))
 
     Exception.catch
-      (tryRunProcess lnid (autoboot rcClosure))
+      (tryRunProcess lnid (autoboot ep rcClosure))
       (\(_ :: SomeException) -> hPutStrLn stderr
         $ "No persisted state could be read. Starting in listen mode.")
     tryRunProcess lnid $ eqTrackerProcess []

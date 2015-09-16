@@ -18,6 +18,9 @@ module HA.RecoveryCoordinator.Mero.Tests
   , testMonitorManagement
   , testMasterMonitorManagement
   , testNodeUpRace
+#ifdef USE_MERO
+  , testMeroConfdAddRemove
+#endif
   ) where
 
 import Prelude hiding ((<$>), (<*>))
@@ -25,6 +28,7 @@ import Test.Framework
 
 import HA.Resources
 import HA.Resources.Castor
+import HA.Resources.Mero (mkConfdServer)
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue
@@ -89,7 +93,16 @@ import Data.Proxy (Proxy(..))
 
 import Network.CEP (Published(..), subscribe)
 
+#ifdef USE_MERO
+import HA.Services.Mero
+import Mero (withM0)
+import Mero.M0Worker (startGlobalWorker)
+import Network.RPC.RPCLite (rpcAddress)
+import System.IO.Unsafe
+#endif
+
 type TestReplicatedState = (EventQueue, Multimap)
+
 
 remotableDecl [ [d|
   eqView :: RStateView TestReplicatedState EventQueue
@@ -170,7 +183,7 @@ testServiceRestarting transport = do
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        (mm,_) <- runRC (eq, IgnitionArguments [nid] Nothing) rGroup
 
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
@@ -207,7 +220,7 @@ testServiceNotRestarting transport = do
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        (mm,_) <- runRC (eq, IgnitionArguments [nid] Nothing) rGroup
 
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
@@ -240,7 +253,7 @@ testEQTrimming transport = do
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         subscribe eq (Proxy :: Proxy TrimDone)
-        (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        (mm,_) <- runRC (eq, IgnitionArguments [nid] Nothing) rGroup
 
         Published (TrimDone _) _ <- expect
         _ <- promulgateEQ [nid] . encodeP $
@@ -291,7 +304,7 @@ testHostAddition transport = do
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        (mm, _) <- runRC (eq, IgnitionArguments [nid] Nothing) rGroup
 
         -- Send host update message to the RC
         promulgateEQ [nid] (nid, mockEvent) >>= (flip withMonitor) wait
@@ -342,7 +355,7 @@ testDriveAddition transport = do
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        (mm, _) <- runRC (eq, IgnitionArguments [nid] Nothing) rGroup
 
         -- Send host update message to the RC
         promulgateEQ [nid] (nid, mockEvent "online") >>= (flip withMonitor) wait
@@ -514,7 +527,7 @@ testServiceStopped transport = do
         pRGroup <- unClosure cRGroup
         rGroup <- pRGroup
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        (mm,_) <- runRC (eq, IgnitionArguments [nid] Nothing) rGroup
 
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
@@ -556,7 +569,7 @@ launchRC = do
     pRGroup <- unClosure cRGroup
     rGroup  <- pRGroup
     eq      <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-    runRC (eq, IgnitionArguments [nid]) rGroup
+    runRC (eq, IgnitionArguments [nid] Nothing) rGroup
 
 serviceStart :: Configuration a => Service a -> a -> Process ()
 serviceStart svc conf = do
@@ -630,7 +643,7 @@ testNodeUpRace transport = do
 
         eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
         subscribe eq (Proxy :: Proxy TrimDone)
-        (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        (mm,_) <- runRC (eq, IgnitionArguments [nid] Nothing) rGroup
 
         liftIO $ do
           node2 <- newLocalNode transport rt
@@ -659,6 +672,60 @@ testNodeUpRace transport = do
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
 
+#ifdef USE_MERO
+-- | Sends a message to the RC with Confd addition message and tests
+-- that it gets added to the resource graph.
+testMeroConfdAddRemove :: Transport -> IO ()
+testMeroConfdAddRemove transport = withTestEnv $ do
+  liftIO startGlobalWorker
+  nid <- getSelfNode
+  self <- getSelfPid
+  _ <- spawnLocal $ eqTrackerProcess [nid]
+
+  registerInterceptor $ \string -> case string of
+    str' | unsafePerformIO (appendFile "/tmp/strlog" (str' ++ "\n") >> return False) -> undefined
+    str' | "Registered confd server" `isInfixOf` str' -> send self ("ConfdAdd" :: String)
+    str' | "Disconnected confd server" `isInfixOf` str' -> send self ("ConfdRemove" :: String)
+    str' | "Failed to connect to confd server" `isInfixOf` str' -> send self ("ConfdFailed" :: String)
+    str' | "Connected to confd server" `isInfixOf` str' -> send self ("ConfdOK" :: String)
+    _ -> return ()
+
+
+  cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+                       [nid] ((Nothing,[]), fromList [])
+  pRGroup <- unClosure cRGroup
+  rGroup <- pRGroup
+  eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+  (mm, _) <- runRC (eq, IgnitionArguments [nid] (Just "10.0.2.15@tcp:12345:35:401")) rGroup
+
+  let cn = mkConfdServer $ rpcAddress "10.0.2.15@tcp:12345:44:101"
+      cnAdd = ConfdNotification ConfdAdd cn
+      cnRemove = ConfdNotification ConfdRemove cn
+  promulgateEQ [nid] cnAdd >>= (flip withMonitor) wait
+  "ConfdAdd" :: String <- expect
+  liftIO $ writeFile "/tmp/log" ""
+  log "post add"
+  graph <- G.getGraph mm
+  assert $ G.memberResource cn graph
+  log "post assert"
+  promulgateEQ [nid] ConfdConnect >>= (flip withMonitor) wait
+  log "post promulgate2"
+  "ConfdOK" :: String <- expect
+  log "post expect2"
+
+{-
+  promulgateEQ [nid] cnRemove >>= (flip withMonitor) wait
+  "ConfdRemove" :: String <- expect
+
+  liftIO $ threadDelay 1000000
+  graph' <- G.getGraph mm
+  assert . not $ G.memberResource cn graph'
+-}
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
+    log = liftIO . appendFile "/tmp/log" . (++ "\n")
+    withTestEnv = withTmpDirectory . withM0 . tryWithTimeout transport testRemoteTable 15000000
+#endif
 
 testRemoteTable :: RemoteTable
 testRemoteTable = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
