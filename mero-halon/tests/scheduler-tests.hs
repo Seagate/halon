@@ -12,6 +12,9 @@ import Test.Tasty.Ingredients.Basic (consoleTestReporter)
 import Test.Tasty.Ingredients.FileReporter (fileTestReporter)
 import Test.Tasty.HUnit (testCase)
 
+import Control.Concurrent
+import Control.Exception
+import Control.Monad
 import Network.Transport (Transport)
 import Network.Transport.InMemory
 import System.IO
@@ -54,4 +57,8 @@ main = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
     setEnv "DP_SCHEDULER_ENABLED" "1" True
+    tid <- myThreadId
+    _ <- forkIO $ do threadDelay (9 * 60 * 1000000)
+                     forever $ do threadDelay 100000
+                                  throwTo tid (ErrorCall "Timeout")
     runTests ut
