@@ -90,6 +90,7 @@ import Network.CEP (Published(..), subscribe)
 import System.IO
 import System.Random
 import System.Timeout
+import Test.Tasty.HUnit (assertBool)
 
 
 type TestReplicatedState = (EventQueue, Multimap)
@@ -307,8 +308,11 @@ testHostAddition transport = do
         graph <- G.getGraph mm
         let host = Host "mockhost"
             node = Node nid
-        assert $ G.memberResource host graph
-        assert $ G.memberEdge (G.Edge host Runs node) graph
+        liftIO $ do
+          assertBool (show host ++ " is not in graph") $
+            G.memberResource host graph
+          assertBool (show host ++ " is not connected to " ++ show node) $
+            G.memberEdge (G.Edge host Runs node) graph
 
   where
     wait = void (expect :: Process ProcessMonitorNotification)
