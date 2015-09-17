@@ -79,9 +79,6 @@ import Control.Arrow ( first, second )
 import qualified Control.Exception as E
 import Control.Monad (forM_, void, join)
 
--- import qualified Data.Attoparsec.ByteString.Char8 as Atto
--- import qualified Data.ByteString as B
--- import qualified Data.ByteString.Char8 as B8
 import Data.Defaultable
 import Data.List (isInfixOf)
 import Data.Proxy (Proxy(..))
