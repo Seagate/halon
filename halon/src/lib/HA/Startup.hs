@@ -14,7 +14,7 @@ module HA.Startup where
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
 import HA.EventQueue ( EventQueue )
 import HA.EventQueue.Definitions (eventQueue)
-import HA.EQTracker ( eqTrackerProcess )
+import qualified HA.EQTracker as EQT
 import HA.Multimap.Implementation ( Multimap, fromList )
 import HA.Multimap.Process ( multimap )
 import HA.Replicator ( RGroup(..), RStateView(..) )
@@ -260,4 +260,36 @@ startupHalonNode rcClosure = do
 
     autoboot rcClosure `catch` \(_ :: SomeException) ->
       say "No persisted state could be read. Starting in listen mode."
-    eqTrackerProcess []
+    EQT.eqTrackerProcess []
+
+-- | Stops a Halon node.
+stopHalonNode :: Process ()
+stopHalonNode = do
+    mcRGroup <- getGlobalRGroup
+    case mcRGroup of
+      Just cRGroup -> do
+        rGroup <- join $ unClosure cRGroup
+        getSelfNode >>= killReplica rGroup
+        -- kill EQ tracker
+        meqt <- whereis EQT.name
+        case meqt of
+          Just eqt -> do
+            kill eqt "stopHalonNode called"
+            ref <- monitor eqt
+            void $ receiveWait
+              [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
+                        return
+              ]
+          Nothing -> return ()
+        -- kill storage
+        mst <- whereis Storage.name
+        case mst of
+          Just st -> do
+            kill st "stopHalonNode called"
+            ref <- monitor st
+            void $ receiveWait
+              [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
+                        return
+              ]
+          Nothing -> return ()
+      Nothing -> return ()

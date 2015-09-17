@@ -141,14 +141,22 @@ runTest numNodes numReps _t tr rt action
           E.bracket createTransport closeTransport $
           \tr' -> do
             m <- timeout (7 * 60 * 1000000) $
-              Scheduler.withScheduler (s + i) 1000 numNodes tr' rt' action
+              Scheduler.withScheduler (s + i) 1000 numNodes tr' rt' $ \nodes ->
+                action nodes `finally` stopHalon nodes
             maybe (error "Timeout") return m
           `E.onException`
             liftIO (hPutStrLn stderr $ "Failed with seed: " ++ show (s + i, i))
     | otherwise =
         withTmpDirectory $ withLocalNodes numNodes tr rt' $
-          \(n : ns) -> do
-            m <- timeout (7 * 60 * 1000000) $ runProcess n (action ns)
+          \nodes@(n : ns) -> do
+            m <- timeout (7 * 60 * 1000000) $ runProcess n $
+              action ns `finally` stopHalon nodes
             maybe (error "Timeout") return m
   where
     rt' = Scheduler.__remoteTable rt
+    stopHalon nodes = do
+        self <- getSelfPid
+        forM_ nodes $ \node -> liftIO $ forkProcess node $ do
+          stopHalonNode
+          usend self ((), ())
+        forM_ nodes $ const (expect :: Process ((), ()))
