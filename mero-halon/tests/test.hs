@@ -16,7 +16,6 @@ import Test.Tasty (TestTree, defaultMainWithIngredients)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
 import Test.Tasty.Ingredients.FileReporter (fileTestReporter)
 
-import System.Environment (lookupEnv, getArgs)
 import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
 
 import Network.Transport (Transport)
@@ -32,7 +31,6 @@ import Data.Maybe (catMaybes)
 import HA.Network.Transport (writeTransportGlobalIVar)
 import qualified Network.Transport.RPC as RPC
 import System.Directory
-import System.Environment (getExecutablePath)
 import System.Exit
 import System.FilePath
 import System.Process
@@ -42,6 +40,8 @@ import qualified Network.Socket as TCP
 import qualified Network.Transport.TCP as TCP
 #endif
 import Prelude
+import System.Environment
+
 
 ut :: Transport -> IO TestTree
 ut transport = return $
@@ -81,7 +81,7 @@ runTests tests = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
     argv  <- getArgs
-    addr0 <- case argv of
+    addr0 <- case drop 1 $ dropWhile ("--" /=) argv of
                a0:_ -> return a0
                _ ->
 #ifdef USE_RPC
@@ -100,8 +100,9 @@ runTests tests = do
     transport <- either (error . show) id <$>
                  TCP.createTransport hostname (show port) TCP.defaultTCPParameters
 #endif
-    defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
-      =<< tests transport
+    withArgs (takeWhile ("--" /=) argv) $
+      defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
+        =<< tests transport connectionBreak
 
 main :: IO ()
 main = do
