@@ -30,24 +30,20 @@ ut transport = return $
           HA.RecoveryCoordinator.Mero.Tests.testServiceNotRestarting transport
       , testCase "RCHAEventsGotTrimmed" $
           HA.RecoveryCoordinator.Mero.Tests.testEQTrimming transport
-      -- TODO: This tests has a race. The RC says "Registered host" before the
-      -- graph updates are replicated. Thus the host can potentially get the
-      -- graph without the updates.
-      , testCase "RGHostResources [disabled]" $ const (return ()) $
+      , testCase "RGHostResources" $
           HA.RecoveryCoordinator.Mero.Tests.testHostAddition transport
-      -- TODO: Has the same race as 'RGHostResources'.
-      , testCase "RGDriveResources [disabled]" $ const (return ()) $
+      , testCase "RGDriveResources" $
           HA.RecoveryCoordinator.Mero.Tests.testDriveAddition transport
       , testCase "RCServiceStopped" $
-        HA.RecoveryCoordinator.Mero.Tests.testServiceStopped transport
+          HA.RecoveryCoordinator.Mero.Tests.testServiceStopped transport
       , testCase "RCNodeLocalMonitor" $
-        HA.RecoveryCoordinator.Mero.Tests.testMonitorManagement transport
+          HA.RecoveryCoordinator.Mero.Tests.testMonitorManagement transport
       , testCase "RCMasterMonitor" $
-        HA.RecoveryCoordinator.Mero.Tests.testMasterMonitorManagement transport
+          HA.RecoveryCoordinator.Mero.Tests.testMasterMonitorManagement transport
       , testCase "RCNodeUpRace" $
-        HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
+          HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
       , testGroup "Autoboot" $
-        HA.Autoboot.Tests.tests transport
+          HA.Autoboot.Tests.tests transport
       ]
 
 runTests :: (Transport -> IO TestTree) -> IO ()

@@ -121,6 +121,12 @@ registerChannels svc acs = modifyLocalGraph $ \rg -> do
           _ -> rg
         chan = Channel sp
 
+promptRGSync :: PhaseM LoopState l ()
+promptRGSync = do
+    ls <- get Global
+    rg <- liftProcess $ sync $ lsGraph ls
+    put Global ls { lsGraph = rg }
+
 --------------------------------------------------------------------------------
 -- Rules                                                                      --
 --------------------------------------------------------------------------------
@@ -158,6 +164,7 @@ ssplRulesF sspl = do
             mapM_ (\d -> mergeStorageDevices [d,disk]) hostDevs
             ) host
 
+      promptRGSync
       liftProcess . sayRC $ "Registered drive"
       when (disk_status == "inuse_removed") $ do
         let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
@@ -180,6 +187,7 @@ ssplRulesF sspl = do
           node = Node nid
       registerHost host
       locateNodeOnHost node host
+      promptRGSync
       liftProcess . sayRC $ "Registered host: " ++ show host
 
   -- SSPL Monitor interface data
