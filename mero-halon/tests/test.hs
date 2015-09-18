@@ -98,7 +98,12 @@ runTests tests = do
     let TCP.SockAddrInet port hostaddr = TCP.decodeSocketAddress addr0
     hostname <- TCP.inet_ntoa hostaddr
     transport <- either (error . show) id <$>
-                 TCP.createTransport hostname (show port) TCP.defaultTCPParameters
+                 TCP.createTransport hostname (show port)
+                   TCP.defaultTCPParameters
+                     { TCP.tcpNoDelay = True
+                     , TCP.tcpUserTimeout = Just 2000
+                     , TCP.transportConnectTimeout = Just 2000000
+                     }
 #endif
     withArgs (takeWhile ("--" /=) argv) $
       defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
