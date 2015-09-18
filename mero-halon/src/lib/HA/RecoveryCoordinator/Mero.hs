@@ -99,6 +99,7 @@ import HA.Resources.Mero (unConfdServer)
 import Mero.ConfC (withConf, Root)
 import Mero.Notification (withServerEndpoint)
 import Network.RPC.RPCLite
+import Mero.M0Worker (runOnGlobalM0Worker)
 #endif
 
 
@@ -388,7 +389,7 @@ withRootRC f = do
     Nothing -> liftIO (appendFile "/tmp/log" "withRootRC Nothing\n") >> return Nothing
     Just (confdServer, rpca) -> do
      liftIO $ appendFile "/tmp/log" $ "Connecting to " ++ show (confdServer, rpca) ++ "\n"
-     liftProcess $ withServerEndpoint rpca $ \se -> liftIO $ do
+     liftProcess $ withServerEndpoint rpca $ \se -> liftIO {-. runOnGlobalM0Worker-} $ do
       appendFile "/tmp/log" "pre getrpcmachine\n"
       rpcm <- getRPCMachine_se se
       appendFile "/tmp/log" "post getrpcmachine\n"

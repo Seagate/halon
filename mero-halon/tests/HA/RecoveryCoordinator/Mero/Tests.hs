@@ -99,6 +99,7 @@ import Mero (withM0)
 import Mero.M0Worker (startGlobalWorker)
 import Network.RPC.RPCLite (rpcAddress)
 import System.IO.Unsafe
+import Mero.Notification (finalize)
 #endif
 
 type TestReplicatedState = (EventQueue, Multimap)
@@ -712,6 +713,8 @@ testMeroConfdAddRemove transport = withTestEnv $ do
   log "post promulgate2"
   "ConfdOK" :: String <- expect
   log "post expect2"
+  finalize
+  log "post finalize"
 
 {-
   promulgateEQ [nid] cnRemove >>= (flip withMonitor) wait

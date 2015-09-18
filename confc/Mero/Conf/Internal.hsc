@@ -66,7 +66,7 @@ import Foreign.Storable ( Storable(..) )
 -- calling 'initConfC'.
 --
 initConfC :: IO ()
-initConfC = confc_init >>= check_rc "initConfC"
+initConfC = appendFile "/tmp/log" "pre confc_init 1\n" >> confc_init >>= check_rc "initConfC" >> appendFile "/tmp/log" "post confc_init\n"
 
 foreign import ccall unsafe confc_init :: IO CInt
 
