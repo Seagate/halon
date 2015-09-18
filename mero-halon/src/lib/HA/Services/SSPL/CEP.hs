@@ -122,10 +122,7 @@ registerChannels svc acs = modifyLocalGraph $ \rg -> do
         chan = Channel sp
 
 promptRGSync :: PhaseM LoopState l ()
-promptRGSync = do
-    ls <- get Global
-    rg <- liftProcess $ sync $ lsGraph ls
-    put Global ls { lsGraph = rg }
+promptRGSync = modifyLocalGraph (liftProcess . sync)
 
 --------------------------------------------------------------------------------
 -- Rules                                                                      --
