@@ -80,6 +80,8 @@ import Network.Transport (Transport)
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ( first, second )
 import Control.Concurrent (threadDelay)
+import qualified Control.Exception as E
+import Control.Exception (SomeException)
 import Control.Monad (forM_, void)
 
 -- import qualified Data.Attoparsec.ByteString.Char8 as Atto
@@ -96,7 +98,7 @@ import Network.CEP (Published(..), subscribe)
 #ifdef USE_MERO
 import HA.Services.Mero
 import Mero (withM0)
-import Mero.M0Worker (startGlobalWorker)
+import Mero.M0Worker
 import Network.RPC.RPCLite (rpcAddress)
 import System.IO.Unsafe
 import Mero.Notification (finalize)
@@ -678,7 +680,6 @@ testNodeUpRace transport = do
 -- that it gets added to the resource graph.
 testMeroConfdAddRemove :: Transport -> IO ()
 testMeroConfdAddRemove transport = withTestEnv $ do
-  liftIO startGlobalWorker
   nid <- getSelfNode
   self <- getSelfPid
   _ <- spawnLocal $ eqTrackerProcess [nid]
@@ -732,7 +733,10 @@ testMeroConfdAddRemove transport = withTestEnv $ do
   where
     wait = void (expect :: Process ProcessMonitorNotification)
     log = liftIO . appendFile "/tmp/log" . (++ "\n")
-    withTestEnv = withTmpDirectory . withM0 . tryWithTimeout transport testRemoteTable 15000000
+    withTestEnv action = withM0 $
+      E.bracket_ startGlobalWorker (getGlobalWorker >>= terminateM0Worker) $ do
+      withTmpDirectory $ tryWithTimeout transport testRemoteTable 15000000 $
+        action
 #endif
 
 testRemoteTable :: RemoteTable
