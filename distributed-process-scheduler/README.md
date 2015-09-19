@@ -304,6 +304,12 @@ The scheduler can fast-forward the time to an interesting event when using
 have the scheduler delay until the delayed thread wakes up, and this could cause
 a test to fail.
 
+Usually tests should use `withScheduler` to create nodes and start an initial
+process. Having a process use `liftIO . runProcess n` explicitly can cause
+execution to block. However, `forkProcess` is safe to use and
+`liftIO. runProcess n` can be simulated with a combination of `forkProcess n`
+and typed channels.
+
 Since the scheduler does not provide any tracing capabilities, the
 application code has to be instrumeted to report what is happening during
 a particular execution. The package distributed-process offers a tracing
