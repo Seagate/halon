@@ -35,7 +35,8 @@ newM0Worker = do
     c <- newChan
     fmap (M0Worker c) $ forkM0OS (worker c)
   where
-    worker c = forever $ join $ readChan c
+    worker c = forever (join $ readChan c) `catch` \e ->
+                 const (return ()) (e :: SomeException)
 
 -- | Terminates a worker. Waits for all queued tasks to be executed.
 terminateM0Worker :: M0Worker -> IO ()
