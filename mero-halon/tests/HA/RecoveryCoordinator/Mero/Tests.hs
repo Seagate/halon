@@ -79,7 +79,8 @@ import Network.Transport (Transport)
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ( first, second )
-import Control.Concurrent (threadDelay)
+import Control.Concurrent (threadDelay, forkOS)
+import Control.Concurrent.MVar
 import qualified Control.Exception as E
 import Control.Exception (SomeException)
 import Control.Monad (forM_, void)
@@ -733,10 +734,15 @@ testMeroConfdAddRemove transport = withTestEnv $ do
   where
     wait = void (expect :: Process ProcessMonitorNotification)
     log = liftIO . appendFile "/tmp/log" . (++ "\n")
-    withTestEnv action = withM0 $
+    withTestEnv action = withBoundThread $ withM0 $
       E.bracket_ startGlobalWorker (getGlobalWorker >>= terminateM0Worker) $ do
       withTmpDirectory $ tryWithTimeout transport testRemoteTable 15000000 $
         action
+
+    withBoundThread action = do
+      mv <- newEmptyMVar
+      void $ forkOS $ E.try action >>= putMVar mv
+      takeMVar mv >>= either (E.throwIO :: SomeException -> IO a) return
 #endif
 
 testRemoteTable :: RemoteTable
