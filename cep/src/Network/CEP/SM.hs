@@ -32,7 +32,10 @@ newtype SM g = SM { runSM :: forall a. SMIn g a -> a }
 
 -- | Input to 'SM' (Stack Machine).
 data SMIn g a where
-    SMExecute :: Subscribers -> g -> SMIn g (Process (g, [(SMResult, SM g)]))
+    SMExecute :: Maybe SMLogs
+              -> Subscribers
+              -> g
+              -> SMIn g (Process (g, [(SMResult, SM g)]))
     -- ^ Execute a single step of the 'SM'. Where subscribers is the list of
     -- the current 'Subscribers' and g is current Global State.
     SMMessage :: Monad m => TypeInfo -> Message -> SMIn g (m (SM g))
@@ -42,26 +45,26 @@ data SMIn g a where
 newSM :: forall g l .
          Phase g l                  -- ^ Initial phase.
       -> String                     -- ^ Rule name.
-      -> Maybe SMLogs               -- ^ Rule logger.
       -> M.Map String (Phase g l)   -- ^ Set of possible phases.
       -> Buffer                     -- ^ Initial buffer.
       -> l                          -- ^ Initial local state.
       -> SM g
-newSM startPhase rn logs ps initialBuffer initialL =
+newSM startPhase rn ps initialBuffer initialL =
     SM $ interpretInput initialL initialBuffer [startPhase]
   where
     interpretInput :: l -> Buffer -> [Phase g l] -> (SMIn g a) -> a
     interpretInput l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) = do
       Just (a :: e) <- unwrapMessage msg
       return $ SM (interpretInput l (bufferInsert a b) phs)
-    interpretInput l b phs (SMExecute subs g) =
-      executeStack subs g l b id id phs
+    interpretInput l b phs (SMExecute logs subs g) =
+      executeStack logs subs g l b id id phs
 
     -- We use '[Phase g l] -> [Phase g l]' in order to recreate stack in
     -- case if no branch have fired, this is needed only in presence of
     -- stop. In there is no `stop` keyword in a branches then we could
     -- live without it, and have more structure sharing.
-    executeStack :: Subscribers
+    executeStack :: Maybe SMLogs
+                 -> Subscribers
                  -> g
                  -> l
                  -> Buffer
@@ -69,11 +72,11 @@ newSM startPhase rn logs ps initialBuffer initialL =
                  -> ([ExecutionInfo] -> [ExecutionInfo])
                  -> [Phase g l]
                  -> Process (g,[(SMResult, SM g)])
-    executeStack _ g l b f info [] = case f [] of
+    executeStack _ _ g l b f info [] = case f [] of
       [] -> return (g, [stoppedSM info])
       ph -> return (g, [(SMResult SMSuspended (info []) Nothing
                         , SM $ interpretInput l b ph)])
-    executeStack subs g l b f info (ph:phs) = do
+    executeStack logs subs g l b f info (ph:phs) = do
         (g',m) <- runPhase subs logs g l b ph
         fmap concat <$> mapAccumLM next g' m
       where
@@ -94,11 +97,11 @@ newSM startPhase rn logs ps initialBuffer initialL =
                                                       (mkLogs rn rlogs)
                                            , xs)
                 return (gNext, [(result, SM $ interpretInput l' buffer phs')])
-              SM_Suspend  _ -> executeStack subs gNext l b
+              SM_Suspend  _ -> executeStack logs subs gNext l b
                                  (f.(ph:))
                                  (info . ((FailExe (_phName ph) SuspendExe b):))
                                  phs
-              SM_Stop     _ -> executeStack subs gNext l b
+              SM_Stop     _ -> executeStack logs subs gNext l b
                                  f
                                  (info . ((FailExe (_phName ph) StopExe b):))
                                  phs
