@@ -31,13 +31,18 @@ import Control.Distributed.Process
   , ProcessId
   , Process
   , getSelfPid
-  , nsend
   , expect
   , say
   , processNodeId
+  , usend
+  , whereis
+  , receiveTimeout
+  , expectTimeout
   )
 import Control.Distributed.Process.Closure ( remotable )
 import Control.Monad.Trans (liftIO)
+import Control.Monad.Fix ( fix )
+import Control.Monad ( unless )
 
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
@@ -64,7 +69,12 @@ nodeUp :: ( [NodeId] -- ^ Set of EQ nodes to contact
        -> Process ()
 nodeUp (eqs, _delay) = do
     self <- getSelfPid
-    nsend EQT.name (self, UpdateEQNodes eqs)
+    fix $ \loop ->
+      whereis EQT.name >>= maybe (receiveTimeout 100000 [] >> loop)
+                                 (\ps -> do usend ps (self, UpdateEQNodes eqs)
+                                            mt <- expectTimeout 1000000
+                                            unless (mt == Just True) loop
+                                 )
     say $ "Sending NodeUp message to " ++ show eqs ++ " me -> " ++ (show $ processNodeId self)
     h <- liftIO $ getHostName
     _ <- promulgate $ NodeUp h self
