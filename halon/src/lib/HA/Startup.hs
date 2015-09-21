@@ -12,7 +12,7 @@
 module HA.Startup where
 
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
-import HA.EventQueue ( EventQueue )
+import HA.EventQueue ( EventQueue, eventQueueLabel )
 import HA.EventQueue.Definitions (eventQueue)
 import qualified HA.EQTracker as EQT
 import HA.Multimap.Implementation ( Multimap, fromList )
@@ -267,6 +267,17 @@ startupHalonNode rcClosure = do
 -- | Stops a Halon node.
 stopHalonNode :: Process ()
 stopHalonNode = do
+    -- kill EQ
+    meq <- whereis eventQueueLabel
+    case meq of
+      Just eq -> do
+        kill eq "stopHalonNode called"
+        ref <- monitor eq
+        void $ receiveWait
+          [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
+                    return
+          ]
+      Nothing -> return ()
     -- kill EQ tracker
     meqt <- whereis EQT.name
     case meqt of
