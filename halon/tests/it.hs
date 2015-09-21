@@ -9,5 +9,11 @@ module Main where
 import Test.Integration (tests)
 import Test.Run (runTests)
 
+import System.IO
+
+
 main :: IO ()
-main = runTests tests
+main = do
+  hSetBuffering stdout LineBuffering
+  hSetBuffering stderr LineBuffering
+  runTests tests
