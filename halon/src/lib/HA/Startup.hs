@@ -12,7 +12,7 @@
 module HA.Startup where
 
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
-import HA.EventQueue ( EventQueue )
+import HA.EventQueue ( EventQueue, eventQueueLabel )
 import HA.EventQueue.Definitions (eventQueue)
 import qualified HA.EQTracker as EQT
 import HA.Multimap.Implementation ( Multimap, fromList )
@@ -132,15 +132,17 @@ remotableDecl [ [d|
      maybe (return ()) (updateRGroup rGroup) mlocalReplica
      putGlobalRGroup cRGroup
      eqpid <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-     rspid <- spawnLocal
-              $ recoverySupervisor (viewRState $(mkStatic 'rsView) rGroup)
-              $ mask_ $ do
-                rcpid <- getSelfPid
-                mmpid <- spawnLocal $ do
-                       link rcpid
-                       multimap (viewRState $(mkStatic 'multimapView) rGroup)
-                usend eqpid rcpid
-                recoveryCoordinator eqpid mmpid
+     rspid <- spawnLocal $ do
+       -- Killing RS when EQ dies, helps cleaning up in tests.
+       link eqpid
+       recoverySupervisor (viewRState $(mkStatic 'rsView) rGroup) $
+         mask_ $ do
+           rcpid <- getSelfPid
+           mmpid <- spawnLocal $ do
+             link rcpid
+             multimap (viewRState $(mkStatic 'multimapView) rGroup)
+           usend eqpid rcpid
+           recoveryCoordinator eqpid mmpid
 
      -- monitoring processes is okay, since these
      -- processes are on the same node, we're not
