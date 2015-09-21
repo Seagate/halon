@@ -181,7 +181,8 @@ recoverySupervisor rg rcP = do
 
     spawnRC = do
       say "RS: I'm the new leader, so starting RC ..."
-      rc <- spawnLocal $ (rcP >> say "RS: RC died normally")
+      self <- getSelfPid
+      rc <- spawnLocal $ (link self >> rcP >> say "RS: RC died normally")
                 `catch` \e -> do say $ "RS: RC died " ++ show (e::SomeException)
                                  liftIO $ throwIO e
       _ <- monitor rc
