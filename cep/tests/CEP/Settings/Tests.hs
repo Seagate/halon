@@ -20,13 +20,13 @@ testSettingsLogger :: Process ()
 testSettingsLogger = do
   self <- getSelfPid
   pid  <- spawnLocal $ execute () $ do
-    setLogger $ dummyLogger self
     define "rule" $ do
       ph1 <- phaseHandle "state-1"
       setPhase ph1 $ \() -> do
         phaseLog "test" "test"
         liftProcess $ usend self ()
       start ph1 ()
+    setLogger $ dummyLogger self
   usend pid ()
   () <- expect
   ((), ()) <- expect
