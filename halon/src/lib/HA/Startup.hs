@@ -12,7 +12,7 @@
 module HA.Startup where
 
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
-import HA.EventQueue ( EventQueue, eventQueueLabel )
+import HA.EventQueue ( EventQueue )
 import HA.EventQueue.Definitions (eventQueue)
 import qualified HA.EQTracker as EQT
 import HA.Multimap.Implementation ( Multimap, fromList )
@@ -267,31 +267,32 @@ startupHalonNode rcClosure = do
 -- | Stops a Halon node.
 stopHalonNode :: Process ()
 stopHalonNode = do
-    mcRGroup <- getGlobalRGroup
-    case mcRGroup of
-      Just cRGroup -> do
-        rGroup <- join $ unClosure cRGroup
-        getSelfNode >>= killReplica rGroup
-        -- kill EQ tracker
-        meqt <- whereis EQT.name
-        case meqt of
-          Just eqt -> do
-            kill eqt "stopHalonNode called"
-            ref <- monitor eqt
-            void $ receiveWait
-              [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
-                        return
-              ]
+    -- kill EQ tracker
+    meqt <- whereis EQT.name
+    case meqt of
+      Just eqt -> do
+        kill eqt "stopHalonNode called"
+        ref <- monitor eqt
+        void $ receiveWait
+          [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
+                    return
+          ]
+      Nothing -> return ()
+    mst <- whereis Storage.name
+    case mst of
+      Just st -> do
+        -- kill replica
+        mcRGroup <- getGlobalRGroup
+        case mcRGroup of
+          Just cRGroup -> do
+            rGroup <- join $ unClosure cRGroup
+            getSelfNode >>= killReplica rGroup
           Nothing -> return ()
         -- kill storage
-        mst <- whereis Storage.name
-        case mst of
-          Just st -> do
-            kill st "stopHalonNode called"
-            ref <- monitor st
-            void $ receiveWait
-              [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
-                        return
-              ]
-          Nothing -> return ()
+        kill st "stopHalonNode called"
+        ref <- monitor st
+        void $ receiveWait
+          [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
+                    return
+          ]
       Nothing -> return ()
