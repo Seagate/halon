@@ -36,18 +36,12 @@ myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 tests :: Transport -> [TestTree]
-tests transport = map (localOption (mkTimeout $ 60*1000000))
-    -- TODO: Investigate random failures occurring in this test
-    -- (even with the same seed).
-    --
-    -- TODO: Fix when running with seed -4491321425843199644.
-  [ testSuccess "eqt-receive-all-tracking-stations [disabled]"
-                $ const (return ()) $ eqtReceiveAllStations transport
-    -- TODO: Enable this test after fixing it.
-    -- It is failing with seed 7310084895444705829
-  , testSuccess "eqt-receive-stations-at-start [disabled]"
-                $ const (return ()) $ eqtReceiveStationsAtStart transport
-  ]
+tests transport =
+    [ testSuccess "eqt-receive-all-tracking-stations"
+                  $ eqtReceiveAllStations transport
+    , testSuccess "eqt-receive-stations-at-start"
+                  $ eqtReceiveStationsAtStart transport
+    ]
 
 eqtReceiveAllStations :: Transport -> IO ()
 eqtReceiveAllStations transport =
