@@ -379,9 +379,8 @@ testDriveAddition transport = do
 testDecisionLog :: Transport -> IO ()
 testDecisionLog transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
-        self     <- getSelfPid
-        (mm, rc) <- launchRC
-
+      self <- getSelfPid
+      launchRC $ \(mm, rc) -> do
         -- Awaits the node local monitor to be up.
         _ <- getNodeMonitor mm
 
