@@ -117,12 +117,14 @@ initHAState ha_state_get ha_state_set =
       modifyIORef cbRefs ((SomeFunPtr wget:) . (SomeFunPtr wset:))
       log' "initHAState 6"
       return ()
-{-    -- XXX hangs here, alarm bells
+      -- XXX hangs here, alarm bells
+{-
       rc <- ha_state_init pcbs
       log' "initHAState 7"
       check_rc "initHAState" rc
       log' "initHAState 8"
 -}
+
   where
     log' = appendFile "/tmp/log" . (++ "\n")
     wrapGetCB f = cwrapGetCB $ \note -> f note

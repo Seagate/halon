@@ -86,7 +86,8 @@ meroRulesF m0d = do
   -- existing confd server
   defineSimple "confd-connect" $ \(HAEvent _ ConfdConnect _) -> do
    let log = liftIO . appendFile "/tmp/log" . (++ "\n")
-   withRootRC return >>= liftProcess . \case
+       act x = appendFile "/tmp/log" ("returning with Root: " ++ show x ++ "\n") >> return x
+   withRootRC act >>= liftProcess . \case
      Nothing -> log "Failed to connect to confd server" >> say "Failed to connect to confd server"
      Just _ -> log "Connected to confd server" >> say "Connected to confd server"
 

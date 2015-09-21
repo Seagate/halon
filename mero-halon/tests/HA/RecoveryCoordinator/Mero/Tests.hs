@@ -697,9 +697,10 @@ testMeroConfdAddRemove transport = withTestEnv $ do
   pRGroup <- unClosure cRGroup
   rGroup <- pRGroup
   eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-  (mm, _) <- runRC (eq, IgnitionArguments [nid] (Just "10.0.2.15@tcp:12345:35:401")) rGroup
+--  (mm, _) <- runRC (eq, IgnitionArguments [nid] (Just "10.0.2.15@tcp:12345:35:401")) rGroup
+  (mm, _) <- runRC (eq, IgnitionArguments [nid] (Just "10.0.2.15@tcp:12345:34:100")) rGroup
 
-  let cn = mkConfdServer $ rpcAddress "10.0.2.15@tcp:12345:44:101"
+  let cn = mkConfdServer $ rpcAddress "10.0.2.15@tcp:12345:34:1001" -- "10.0.2.15@tcp:12345:44:101"
       cnAdd = ConfdNotification ConfdAdd cn
       cnRemove = ConfdNotification ConfdRemove cn
   promulgateEQ [nid] cnAdd >>= (flip withMonitor) wait
@@ -709,12 +710,17 @@ testMeroConfdAddRemove transport = withTestEnv $ do
   graph <- G.getGraph mm
   assert $ G.memberResource cn graph
   log "post assert"
+
   promulgateEQ [nid] ConfdConnect >>= (flip withMonitor) wait
   log "post promulgate2"
+{-
   "ConfdOK" :: String <- expect
   log "post expect2"
+-}
+{-
   finalize
   log "post finalize"
+-}
 
 {-
   promulgateEQ [nid] cnRemove >>= (flip withMonitor) wait

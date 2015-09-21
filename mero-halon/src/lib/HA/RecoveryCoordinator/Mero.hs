@@ -389,7 +389,7 @@ withRootRC f = do
     Nothing -> liftIO (appendFile "/tmp/log" "withRootRC Nothing\n") >> return Nothing
     Just (confdServer, rpca) -> do
      liftIO $ appendFile "/tmp/log" $ "Connecting to " ++ show (confdServer, rpca) ++ "\n"
-     liftProcess $ withServerEndpoint rpca $ \se -> liftIO {-. runOnGlobalM0Worker-} $ do
+     liftProcess $ withServerEndpoint rpca $ \se -> liftIO . runOnGlobalM0Worker $ do
       appendFile "/tmp/log" "pre getrpcmachine\n"
       rpcm <- getRPCMachine_se se
       appendFile "/tmp/log" "post getrpcmachine\n"
@@ -397,3 +397,5 @@ withRootRC f = do
       appendFile "/tmp/log" "post withconf\n"
       return x
 #endif
+
+--

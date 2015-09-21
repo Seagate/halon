@@ -161,7 +161,15 @@ initialize addr = log' "init" >> liftIO (tryTakeMVar globalEndpointRef) >>= \cas
 finalize :: Process ()
 finalize = liftIO (tryTakeMVar globalEndpointRef) >>= \case
   Nothing -> return ()
-  Just _ -> liftIO $ runOnGlobalM0Worker $ finiHAState >> finalizeRPC
+  Just _ -> liftIO $ runOnGlobalM0Worker $ do
+    appendFile "/tmp/log" "pre finiHAState\n"
+    finiHAState
+    {-
+    -- XXX finalizeRPC hangs
+    appendFile "/tmp/log" "pre finalizeRPC\n"
+    finalizeRPC
+    appendFile "/tmp/log" "post finalizeRPC\n"
+    -}
 
 notifyMero :: ServerEndpoint
            -> RPCAddress
@@ -169,3 +177,4 @@ notifyMero :: ServerEndpoint
            -> Process ()
 notifyMero ep mero (Set nvec) = liftIO $
     runOnGlobalM0Worker (notify ep mero nvec 5)
+--
