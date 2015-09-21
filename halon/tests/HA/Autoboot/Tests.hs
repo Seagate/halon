@@ -7,39 +7,34 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-module HA.Autoboot.Tests
-  ( tests
-  , ignitionArguments__static -- in order to make -Wall happy
-  , ignitionArguments__sdict
-  ) where
+module HA.Autoboot.Tests (tests) where
 
-import Control.Concurrent.MVar
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
+import Control.Distributed.Process.Internal.Types
 import Control.Distributed.Process.Node
-import Control.Distributed.Static ( closureCompose )
-import Control.Monad ( replicateM, replicateM_, unless )
+import qualified Control.Distributed.Process.Scheduler as Scheduler
 -- import qualified Control.Exception as Exception
 import Data.Binary
 import Data.Typeable
-import Data.Foldable (forM_)
 import Data.List
 
 import GHC.Generics
-import System.IO.Unsafe (unsafePerformIO)
-import Network.Transport (Transport)
+import Network.Transport (Transport(..))
+import Network.Transport.InMemory (createTransport)
 import qualified Data.Set as Set
 
+import qualified Control.Exception as E
+import Control.Monad.Reader
 import HA.Network.RemoteTables (haRemoteTable)
 import HA.Startup hiding (__remoteTable)
 import Test.Transport
 import Test.Framework
 import Test.Tasty.HUnit
+import System.IO
+import System.Random
+import System.Timeout
 
-
-dummyRCStarted :: MVar ()
-dummyRCStarted = unsafePerformIO newEmptyMVar
-{-# NOINLINE dummyRCStarted #-}
 
 data IgnitionArguments = IgnitionArguments
   { _stationNodes :: [NodeId]
@@ -47,70 +42,47 @@ data IgnitionArguments = IgnitionArguments
 
 instance Binary IgnitionArguments
 
-ignitionArguments :: [NodeId] -> IgnitionArguments
-ignitionArguments = IgnitionArguments
-
-dummyRC :: IgnitionArguments
-        -> ProcessId
-        -> ProcessId
-        -> Process ()
-dummyRC _argv _eq _mm = do
-  liftIO $ putMVar dummyRCStarted ()
+dummyRC :: SendPort () -> ProcessId -> ProcessId -> Process ()
+dummyRC sp _eq _mm = do
+  sendChan sp ()
   receiveWait []
+
+rcClosure :: SendPort () -> [NodeId] -> ProcessId -> ProcessId -> Process ()
+rcClosure sp _ = dummyRC sp
 
 type IgnitionResult = Maybe (Bool,[NodeId],[NodeId],[NodeId])
 
-ignitionWrapper ::
-    ( ProcessId,
-      ( Bool
-      , [NodeId]
-      , Int
-      , Int
-      , Closure (ProcessId -> ProcessId -> Process ())
-      , Int
-      )
-    )
-    -> Process ()
-ignitionWrapper (caller, args) = ignition args >>= usend caller
-
-remotable [ 'ignitionArguments, 'dummyRC, 'ignitionWrapper ]
+remotable [ 'dummyRC, 'rcClosure ]
 
 tests :: AbstractTransport -> IO [TestTree]
 tests transport =
   return [ testSuccess "autoboot-simple" $ mkAutobootTest (getTransport transport)
          , testCaseSteps  "ignition"     $ testIgnition   (getTransport transport)
          ]
-  where _ = $(functionTDict 'ignitionWrapper) -- unused ignitionWrapper__tdict
-
-rcClosure :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
-rcClosure = $(mkStaticClosure 'dummyRC) `closureCompose`
-                  $(mkStaticClosure 'ignitionArguments)
 
 -- | Test that cluster could be automatically booted after a failure
 -- without any manual interaction.
 mkAutobootTest :: Transport -- ^ Nodes on which to start the tracking stations
                -> IO ()
-mkAutobootTest transport = withTmpDirectory $ do
+mkAutobootTest transport =
     -- 0. Run autoboot on 5 nodes
-    nids <- replicateM 5 $ newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
-    let args = ( False :: Bool
-               , map localNodeId nids
-               , 1000 :: Int
-               , 1000000 :: Int
-               , $(mkClosure 'dummyRC) $ IgnitionArguments (map localNodeId nids)
-               , 8*1000000 :: Int
-               )
-    node <- newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
+    runTest 6 20 transport (__remoteTable $ haRemoteTable $ initRemoteTable) $
+      \nids -> do
+      (sp, rp) <- newChan
+      let args = ( False :: Bool
+                 , map localNodeId nids
+                 , 1000 :: Int
+                 , 1000000 :: Int
+                 , $(mkClosure 'dummyRC) sp
+                 , 3*1000000 :: Int
+                 )
 
-
-    runProcess node $ do
       -- 1. Autoboot cluster
-      liftIO $ autobootCluster nids
+      liftIO $ autobootCluster sp nids
 
       -- 2. Run ignition once
       self <- getSelfPid
-      _ <- spawnAsync (localNodeId $ head nids) $
-                     $(mkClosure 'ignitionWrapper) (self, args)
+      _ <- liftIO $ forkProcess (head nids) $ ignition args >>= usend self
       result <- expect
       case result :: IgnitionResult of
         Just (added, _, members, newNodes) -> liftIO $ do
@@ -125,70 +97,74 @@ mkAutobootTest transport = withTmpDirectory $ do
         Nothing -> return ()
 
       -- 3. Wait RC to spawn.
-      liftIO $ takeMVar dummyRCStarted
+      receiveChan rp
 
       -- 4. Instead of stopping the node we kill all processes. This is a way of
       -- simulating a node dying and coming back again without actually ending
       -- the unix process. Creating a new node on the same unix process would
       --  assign a different NodeId to it, and this in turn changes the location
       -- where the persisted state is expected to be.
-      lock <- liftIO $ newEmptyMVar
-      forM_ nids $ \lnid -> spawnLocal $ liftIO $ do
-        v <- terminateLocalProcesses lnid Nothing
-        unless v $ putStrLn "some processes still alive"
-        putMVar lock ()
-      liftIO $ replicateM_ n $ takeMVar lock
+      liftIO $ forM_ nids $ \lnid -> forkProcess lnid $ do
+        stopHalonNode
+        usend self ((), ())
+      forM_ nids $ const $ do
+        ((), ()) <- expect
+        return ()
 
       -- 5. run autoboot once again
-      liftIO $ autobootCluster nids
+      liftIO $ autobootCluster sp nids
 
       -- 6. wait for RC to spawn
-      liftIO $ takeMVar dummyRCStarted
-
+      receiveChan rp
   where
-    n = 5
-    autobootCluster nids = forM_ nids $ \lnid ->
-      forkProcess lnid $ startupHalonNode rcClosure
+    autobootCluster sp nids = forM_ nids $ \lnid ->
+      forkProcess lnid $ startupHalonNode $ $(mkClosure 'rcClosure) sp
 
 
 -- | Test that ignition call will retrn supposed result.
 testIgnition :: Transport
               -> (String -> IO ())
               -> IO ()
-testIgnition transport step = withTmpDirectory $ do
-    -- 0. Run autoboot on 5 nodes
-    nids <- replicateM 5 $ newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
-    let (nids1,nids2) = splitAt 3 nids
-    let mkArgs b ns  = ( b :: Bool
+testIgnition transport step =
+    runTest 6 20 transport (__remoteTable $ haRemoteTable $ initRemoteTable) $
+      \nids -> do
+      (sp :: SendPort (), rp) <- newChan
+      let (nids1, nids2) = splitAt 3 nids
+          mkArgs b ns  = ( b :: Bool
                        , map localNodeId ns
                        , 1000 :: Int
                        , 1000000 :: Int
-                       , $(mkClosure 'dummyRC) $ IgnitionArguments (map localNodeId ns)
-                       , 8*1000000 :: Int
+                       , $(mkClosure 'dummyRC) sp
+                       , 3*1000000 :: Int
                        )
-        args = mkArgs False nids1
-    node <- newLocalNode transport $ __remoteTable $ haRemoteTable $ initRemoteTable
-    step "autobooting cluster"
-    forM_ (node:nids) $ \lnid -> forkProcess lnid $ startupHalonNode rcClosure
-    runProcess node $ do
+          args = mkArgs False nids1
+      lproc <- ask
+      liftIO $ do
+        step "autobooting cluster"
+        forM_ (processNode lproc: nids) $ \lnid ->
+          forkProcess lnid $ startupHalonNode $ $(mkClosure 'rcClosure) sp
 
       self <- getSelfPid
       liftIO $ step "call initial ignition"
-      _ <- spawnAsync (localNodeId $ head nids1) $
-                      $(mkClosure 'ignitionWrapper) (self, args)
+      _ <- liftIO $ forkProcess (head nids1) $ ignition args >>= usend self
       Nothing <- expect :: Process IgnitionResult
-      liftIO $ takeMVar dummyRCStarted
+      receiveChan rp
 
       liftIO $ step "call ignition while changing TS nodes"
-      _ <- spawnAsync (localNodeId $ head nids1) $
-                      $(mkClosure 'ignitionWrapper)
-                        (self, (mkArgs True (head nids1: nids2)))
+      _ <- liftIO $ forkProcess (head nids1) $
+             ignition (mkArgs True (head nids1: nids2)) >>= usend self
       Just (added, trackers, members, newNodes) <-
         expect :: Process IgnitionResult
 
       liftIO $ do
         step "kill nodes in the cluster that we will remove TS from"
-        forM_ (tail nids1) $ closeLocalNode
+        forM_ (tail nids1) $ \nid -> do
+          forkProcess nid $ do
+            stopHalonNode
+            usend self ((), ())
+      forM_ (tail nids1) $ \_ -> do
+        ((), ()) <- expect
+        return ()
 
       liftIO $ do
         assertBool  "set of node changed" added
@@ -202,14 +178,57 @@ testIgnition transport step = withTmpDirectory $ do
                     (Set.fromList (map localNodeId $ head nids1:nids2))
                     (Set.fromList trackers)
       liftIO $ step "check replica Info Status"
-      liftIO $ runProcess (head nids1) $
+      _ <- liftIO $ forkProcess (head nids1) $ do
+        let t = "\treplicas:           "
         registerInterceptor $ \string -> case last $ lines string of
           s | t `isPrefixOf` s -> usend self (drop (length t) s)
             | otherwise        -> return ()
+        usend self ((), ())
+      ((), ()) <- expect
       actual <- expect
       liftIO $ unless (any (==actual) [show x | x <- permutations trackers]) $
         assertFailure $ "replicas should be contain all of the " ++ show trackers ++
                         ", but got " ++ actual
-      return ()
+
+withLocalNode :: Transport -> RemoteTable -> (LocalNode -> IO a) -> IO a
+withLocalNode t rt = E.bracket  (newLocalNode t rt) closeLocalNode
+
+withLocalNodes :: Int
+               -> Transport
+               -> RemoteTable
+               -> ([LocalNode] -> IO a)
+               -> IO a
+withLocalNodes 0 _t _rt f = f []
+withLocalNodes n t rt f = withLocalNode t rt $ \node ->
+    withLocalNodes (n - 1) t rt (f . (node :))
+
+runTest :: Int -> Int -> Transport -> RemoteTable
+        -> ([LocalNode] -> Process ()) -> IO ()
+runTest numNodes numReps tr rt action
+    | Scheduler.schedulerIsEnabled = do
+        s <- randomIO
+        -- TODO: Fix leaks in n-t-inmemory and use the same transport for all
+        -- tests, maybe.
+        forM_ [1..numReps] $ \i ->  withTmpDirectory $
+          E.bracket createTransport closeTransport $
+          \tr' -> do
+            m <- timeout (7 * 60 * 1000000) $
+              Scheduler.withScheduler (s + i) 1000 numNodes tr' rt' $ \nodes ->
+                action nodes `finally` stopHalon nodes
+            maybe (error "Timeout") return m
+          `E.onException`
+            liftIO (hPutStrLn stderr $ "Failed with seed: " ++ show (s + i, i))
+    | otherwise =
+        withTmpDirectory $ withLocalNodes numNodes tr rt' $
+          \nodes@(n : ns) -> do
+            m <- timeout (7 * 60 * 1000000) $ runProcess n $
+              action ns `finally` stopHalon nodes
+            maybe (error "Timeout") return m
   where
-    t = "\treplicas:           "
+    rt' = Scheduler.__remoteTable rt
+    stopHalon nodes = do
+        self <- getSelfPid
+        forM_ nodes $ \node -> liftIO $ forkProcess node $ do
+          stopHalonNode
+          usend self ((), ())
+        forM_ nodes $ const (expect :: Process ((), ()))

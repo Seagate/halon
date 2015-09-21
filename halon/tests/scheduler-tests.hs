@@ -6,6 +6,7 @@
 
 module Main where
 
+import qualified HA.Autoboot.Tests (tests)
 import qualified HA.RecoverySupervisor.Tests (tests)
 import Test.Run (runTests)
 
@@ -24,4 +25,6 @@ main = do
                    forever $ do threadDelay 100000
                                 throwTo tid (ErrorCall "Timeout")
   runTests $ \transport -> testGroup "scheduler" <$> sequence
-      [ testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests transport ]
+      [ testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests transport
+      , testGroup "AB" <$> HA.Autoboot.Tests.tests transport
+      ]
