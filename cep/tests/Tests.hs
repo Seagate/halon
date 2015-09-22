@@ -848,6 +848,7 @@ testsTimeout :: (Process () -> IO ()) -> TestTree
 testsTimeout launch = testGroup "Timeout properties"
   [ testCase "Simple Timeout should work" $ launch testSimpleTimeout
   , testCase "All timeout should work" $ launch testAllTimeout
+  , testCase "Continue timeout should work" $ launch testContinueTimeout
   ]
 
 testSimpleTimeout :: Process ()
@@ -894,3 +895,21 @@ testAllTimeout = do
     
     i <- expect
     assertEqual "Ph1 should fire first" (1 :: Int) i
+
+testContinueTimeout :: Process ()
+testContinueTimeout = do
+    self <- getSelfPid
+    
+    let specs = define "continue-timeout" $ do
+          ph0 <- phaseHandle "ph0"
+          ph1 <- phaseHandle "ph1"
+
+          directly ph0 $ continue $ timeout 2 ph1
+
+          setPhase ph1 $ \(Donut _) -> liftProcess $ usend self ()
+
+          start ph0 ()
+
+    pid <- spawnLocal $ execute () specs
+    usend pid donut
+    expect
