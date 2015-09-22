@@ -42,7 +42,7 @@ ut transport = return $
       , testCase "RCMasterMonitor" $
           HA.RecoveryCoordinator.Mero.Tests.testMasterMonitorManagement
             transport
-      , testCase "RCNodeUpRace [disabled]" $
+      , testCase "RCNodeUpRace" $
           HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
       , testGroup "Autoboot" $
           HA.Autoboot.Tests.tests transport
