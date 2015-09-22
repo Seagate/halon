@@ -849,6 +849,7 @@ testsTimeout launch = testGroup "Timeout properties"
   [ testCase "Simple Timeout should work" $ launch testSimpleTimeout
   , testCase "All timeout should work" $ launch testAllTimeout
   , testCase "Continue timeout should work" $ launch testContinueTimeout
+  , testCase "Init rule timeout should work" $ launch testInitTimeout
   ]
 
 testSimpleTimeout :: Process ()
@@ -910,6 +911,24 @@ testContinueTimeout = do
 
           start ph0 ()
 
+    pid <- spawnLocal $ execute () specs
+    usend pid donut
+    expect
+
+testInitTimeout :: Process ()
+testInitTimeout = do
+    self <- getSelfPid
+    
+    let specs = initRule $ do
+          ph0 <- phaseHandle "ph0"
+          ph1 <- phaseHandle "ph1"
+          
+          directly ph0 $ continue $ timeout 2 ph1
+    
+          setPhase ph1 $ \(Donut _) -> liftProcess $ usend self ()
+
+          start ph0 ()
+    
     pid <- spawnLocal $ execute () specs
     usend pid donut
     expect
