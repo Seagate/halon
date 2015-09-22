@@ -846,7 +846,9 @@ testSimpleSub = do
 
 testsTimeout :: (Process () -> IO ()) -> TestTree
 testsTimeout launch = testGroup "Timeout properties"
-  [ testCase "Simple Timeout should work" $ launch testSimpleTimeout ]
+  [ testCase "Simple Timeout should work" $ launch testSimpleTimeout
+  , testCase "All timeout should work" $ launch testAllTimeout
+  ]
 
 testSimpleTimeout :: Process ()
 testSimpleTimeout = do
@@ -868,3 +870,27 @@ testSimpleTimeout = do
 
     _ <- spawnLocal $ execute () specs
     expect
+
+testAllTimeout :: Process ()
+testAllTimeout = do
+    self <- getSelfPid
+    
+    let specs = define "all-timeout" $ do
+          ph0 <- phaseHandle "ph0"
+          ph1 <- phaseHandle "ph1"
+          ph2 <- phaseHandle "ph2"
+
+          directly ph0 $ switch [timeout 2 ph1, timeout 3 ph2]
+          
+          setPhase ph1 $ \(Donut _) -> liftProcess $ usend self (1 :: Int)
+
+          setPhase ph2 $ \(Foo _) -> liftProcess $ usend self (2 :: Int)
+
+          start ph0 ()
+
+    pid <- spawnLocal $ execute () specs
+    usend pid (Foo 1)
+    usend pid donut
+    
+    i <- expect
+    assertEqual "Ph1 should fire first" (1 :: Int) i
