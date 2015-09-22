@@ -401,7 +401,8 @@ buildRuleData name mk rls buf = go M.empty Set.empty $ view rls
         , _ruleTypes    = Set.union tpes $ buildTypeList ps
         }
     go ps tpes (Start ph l :>>= k) =
-        let jmp = ps M.! jumpPhaseHandle ph in
+        let old = ps M.! jumpPhaseHandle ph 
+            jmp = jumpBaseOn ph old in
         go ps tpes $ view $ k (StartingPhase l jmp)
     go ps tpes (NewHandle n :>>= k) =
         let jmp    = normalJump $ Phase n (DirectCall $ return ())
