@@ -39,7 +39,6 @@ import Network.Transport (Transport)
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue.Producer
-import qualified HA.EQTracker as EQT
 import HA.Resources
 import HA.Service hiding (__remoteTable)
 import qualified HA.Services.Ping as Ping
@@ -53,7 +52,6 @@ import HA.NodeUp ( nodeUp )
 import HA.Startup
 import Test.Framework
 
-import Data.Function
 import Data.Typeable
 import GHC.Generics
 import System.IO
@@ -122,7 +120,6 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
       say "running NodeUp"
       void $ liftIO $ forkProcess m3 $ do
         -- wait until the EQ tracker is registered
-        _ <- fix $ \loop -> whereis EQT.name >>= maybe loop return
         nodeUp (map localNodeId [m0, m1, m2], 1000000)
         registerInterceptor $ \string -> do
           case string of

@@ -6,6 +6,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 module HA.RecoveryCoordinator.Mero.Tests
   ( testDriveAddition
@@ -90,6 +91,7 @@ import Network.CEP (Published(..), subscribe)
 import System.IO
 import System.Random
 import System.Timeout
+import System.Environment
 import Test.Tasty.HUnit (assertBool)
 
 
@@ -696,10 +698,12 @@ runTest :: Int -> Int -> Int -> Transport -> RemoteTable
         -> ([LocalNode] -> Process ()) -> IO ()
 runTest numNodes numReps _t tr rt action
     | Scheduler.schedulerIsEnabled = do
-        s <- randomIO
+        (s,numReps') <- lookupEnv "DP_SCHEDULER_SEED" >>= \mx -> case mx of
+          Nothing -> (,numReps) <$> randomIO
+          Just s  -> return (read s,1)
         -- TODO: Fix leaks in n-t-inmemory and use the same transport for all
         -- tests, maybe.
-        forM_ [1..numReps] $ \i ->  withTmpDirectory $
+        forM_ [1..numReps'] $ \i ->  withTmpDirectory $
           E.bracket createTransport closeTransport $
           \tr' -> do
             m <- timeout (7 * 60 * 1000000) $
