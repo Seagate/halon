@@ -706,17 +706,16 @@ testMeroConfdAddRemove transport = withTestEnv $ do
   promulgateEQ [nid] cnAdd >>= (flip withMonitor) wait
   "ConfdAdd" :: String <- expect
   liftIO $ writeFile "/tmp/log" ""
-  log "post add"
+  log "post add~"
   graph <- G.getGraph mm
   assert $ G.memberResource cn graph
   log "post assert"
 
   promulgateEQ [nid] ConfdConnect >>= (flip withMonitor) wait
   log "post promulgate2"
-{-
   "ConfdOK" :: String <- expect
   log "post expect2"
--}
+
 {-
   finalize
   log "post finalize"

@@ -87,9 +87,11 @@ meroRulesF m0d = do
   defineSimple "confd-connect" $ \(HAEvent _ ConfdConnect _) -> do
    let log = liftIO . appendFile "/tmp/log" . (++ "\n")
        act x = appendFile "/tmp/log" ("returning with Root: " ++ show x ++ "\n") >> return x
-   withRootRC act >>= liftProcess . \case
+   liftProcess $ log "about to act in ConfdConnect"
+   withRootRC {-return-}act >>= liftProcess . \case
      Nothing -> log "Failed to connect to confd server" >> say "Failed to connect to confd server"
      Just _ -> log "Connected to confd server" >> say "Connected to confd server"
+   liftProcess $ log "post act in ConfdConnect"
 
 
 confdRules :: ConfdNotification -> PhaseM LoopState l ()
@@ -100,3 +102,4 @@ confdRules (ConfdNotification ConfdAdd s) = do
 confdRules (ConfdNotification ConfdRemove s) = do
   modifyLocalGraph $ return . disconnect Cluster Has s
   liftProcess . say $ "Disconnected confd server: " ++ show s
+--
