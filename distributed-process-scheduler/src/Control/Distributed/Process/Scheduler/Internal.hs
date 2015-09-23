@@ -1087,7 +1087,7 @@ linkNode nid = do
 exit :: Serializable a => ProcessId -> a -> Process ()
 exit pid reason = do
   self <- DP.getSelfPid
-  sendS $ Send self pid $ ExitMsg self pid $ DP.createUnencodedMessage reason
+  sendS $ Send self pid $ ExitMsg self pid $ DP.createMessage reason
 
 -- | Forceful request to kill a process.
 kill :: ProcessId -> String -> Process ()
