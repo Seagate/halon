@@ -26,12 +26,16 @@ import Control.Distributed.Process.Quorum
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Internal.Types ( runLocalProcess )
+import Control.Distributed.Process.Internal.Types
+  ( runLocalProcess
+  , ProcessExitException(..)
+  )
 import Control.Distributed.Process.Trans (liftProcess)
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Control.Applicative ((<$>))
 import Control.Concurrent
-import Control.Monad (when, forM_, replicateM_, replicateM)
+import Control.Exception (throwIO, SomeException)
+import Control.Monad
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary )
 import Data.List ( delete )
@@ -67,43 +71,39 @@ instance Binary TimeoutExit
 -- | A version of 'System.Timeout.timeout' for the 'Process' monad.
 timeout :: Int -> Process a -> Process (Maybe a)
 timeout t action
-    | schedulerIsEnabled = callLocal $ do
+    | schedulerIsEnabled = do
         self <- getSelfPid
+        -- Filled with () iff the timeout expired or the action was
+        -- completed. It helps ensuring at most one of these events is
+        -- considered.
         mv <- liftIO newEmptyMVar
-        flip catchExit (\_pid TimeoutExit -> return Nothing) $ do
-          _ <- spawnLocal $ do
+        mask $ \unmask -> do
+          timerPid <- spawnLocal $ do
             Nothing <- receiveTimeout t [] :: Process (Maybe ())
             b <- liftIO $ tryPutMVar mv ()
             if b then exit self TimeoutExit else return ()
-          r <- action
-          b <- liftIO $ tryPutMVar mv ()
-          if b then return $ Just r
-          else receiveWait []
+          let handleExceptions proc = catches proc
+                [ Handler $ \e@(ProcessExitException pid _) -> do
+                    if pid == timerPid then return Nothing
+                    else do
+                      b <- liftIO $ tryPutMVar mv ()
+                      if b then exit timerPid "timeout completed"
+                      else void $ handleExceptions (receiveWait [])
+                      liftIO $ throwIO e
+                , Handler $ \e -> do
+                    b <- liftIO $ tryPutMVar mv ()
+                    if b then exit timerPid "timeout completed"
+                    else void $ handleExceptions (receiveWait [])
+                    liftIO $ throwIO (e :: SomeException)
+                ]
+          handleExceptions $ do
+            r <- unmask action
+            b <- liftIO $ tryPutMVar mv ()
+            if b then do
+              exit timerPid "timeout completed"
+              return $ Just r
+            else receiveWait []
     | otherwise = ask >>= liftIO . T.timeout t . (`runLocalProcess` action)
-
-{-
--- This version is slower for some reason, despite of not using 'callLocal'.
-timeout :: Int -> Process a -> Process (Maybe a)
-timeout t action
-    | schedulerIsEnabled = mask $ \unmask -> do
-        self <- getSelfPid
-        mv <- liftIO newEmptyMVar
-        timer <- spawnLocal $ do
-          Nothing <- receiveTimeout t [] :: Process (Maybe ())
-          b <- liftIO $ tryPutMVar mv ()
-          if b then exit self TimeoutExit else return ()
-        r <- unmask $ flip catchesExit
-            [ \pid msg -> do
-                handleMessageIf msg (\TimeoutExit -> pid == timer)
-                                    (\_ -> return Nothing)
-            ] $ do
-          r <- action
-          b <- liftIO $ tryPutMVar mv ()
-          if b then return $ Just r
-          else receiveWait []
-        return r
-    | otherwise = ask >>= liftIO . T.timeout t . (`runLocalProcess` action)
--}
 
 -- | A tracing function for debugging purposes.
 paxosTrace :: String -> Process ()

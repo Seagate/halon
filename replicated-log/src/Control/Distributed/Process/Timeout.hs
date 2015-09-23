@@ -8,8 +8,13 @@ module Control.Distributed.Process.Timeout (retry, timeout, callLocal) where
 
 import Control.Concurrent.MVar
 import Control.Distributed.Process
-import Control.Distributed.Process.Internal.Types ( runLocalProcess )
+import Control.Distributed.Process.Internal.Types
+  ( runLocalProcess
+  , ProcessExitException(..)
+  )
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
+import Control.Exception (throwIO, SomeException)
+import Control.Monad
 import Control.Monad.Reader ( ask )
 import Data.Binary (Binary)
 import Data.Typeable (Typeable)
@@ -34,16 +39,36 @@ instance Binary TimeoutExit
 -- | A version of 'System.Timeout.timeout' for the 'Process' monad.
 timeout :: Int -> Process a -> Process (Maybe a)
 timeout t action
-    | schedulerIsEnabled = callLocal $ do
+    | schedulerIsEnabled = do
         self <- getSelfPid
+        -- Filled with () iff the timeout expired or the action was
+        -- completed. It helps ensuring at most one of these events is
+        -- considered.
         mv <- liftIO newEmptyMVar
-        _ <- spawnLocal $ do
-          Nothing <- receiveTimeout t [] :: Process (Maybe ())
-          b <- liftIO $ tryPutMVar mv ()
-          if b then exit self TimeoutExit else return ()
-        flip catchExit (\_pid TimeoutExit -> return Nothing) $ do
-          r <- action
-          b <- liftIO $ tryPutMVar mv ()
-          if b then return $ Just r
-          else receiveWait []
+        mask $ \unmask -> do
+          timerPid <- spawnLocal $ do
+            Nothing <- receiveTimeout t [] :: Process (Maybe ())
+            b <- liftIO $ tryPutMVar mv ()
+            if b then exit self TimeoutExit else return ()
+          let handleExceptions proc = catches proc
+                [ Handler $ \e@(ProcessExitException pid _) -> do
+                    if pid == timerPid then return Nothing
+                    else do
+                      b <- liftIO $ tryPutMVar mv ()
+                      if b then exit timerPid "timeout completed"
+                      else void $ handleExceptions (receiveWait [])
+                      liftIO $ throwIO e
+                , Handler $ \e -> do
+                    b <- liftIO $ tryPutMVar mv ()
+                    if b then exit timerPid "timeout completed"
+                    else void $ handleExceptions (receiveWait [])
+                    liftIO $ throwIO (e :: SomeException)
+                ]
+          handleExceptions $ do
+            r <- unmask action
+            b <- liftIO $ tryPutMVar mv ()
+            if b then do
+              exit timerPid "timeout completed"
+              return $ Just r
+            else receiveWait []
     | otherwise = ask >>= liftIO . T.timeout t . (`runLocalProcess` action)
