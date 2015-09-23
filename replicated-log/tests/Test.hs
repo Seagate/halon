@@ -160,7 +160,37 @@ tests argv = do
       putStrLn $ "Running with scheduler using " ++ show seed ++
                  " as initial seed."
 
-    let setupSched :: Int
+    let runTest :: Int
+                -> Int
+                -> Int
+                -> Int
+                -> Int
+                -> (AbstractTransport -> [LocalNode] -> Process ())
+                -> IO ()
+        runTest s0 clockSpeed _t reps n action
+          | schedulerIsEnabled =
+              forM_ [1..reps] $ \i ->
+                (withTmpDirectory $ withAbstractTransport $
+                  \tr@(AbstractTransport transport _ _) ->
+                  (>>= maybe (error "Timeout") return) $
+                  System.timeout (5 * 60 * 1000000) $
+                  withScheduler (s0 + i) clockSpeed n transport remoteTables $
+                    \nodes ->
+                    do node0 <- fmap processNode ask
+                       action tr (node0 : nodes)
+                 ) `E.catch` \e -> do
+                    hPutStrLn stderr $ "execution failed with seed " ++
+                                       show (s0 + i, i) ++ ": " ++
+                                       show (e :: SomeException)
+                    throwIO e
+          | otherwise = withTmpDirectory $ withAbstractTransport $
+              \tr@(AbstractTransport transport _ _) ->
+                withLocalNodes (n - 1) transport remoteTables $ \nodes ->
+                  tryWithTimeout transport remoteTables
+                                 (5 * 60 * 1000000) $ do
+                     node0 <- fmap processNode ask
+                     action tr (node0 : nodes)
+        setupSched :: Int
                    -> Int
                    -> Int
                    -> Int
@@ -175,26 +205,10 @@ tests argv = do
                    -> IO ()
         setupSched s0 clockSpeed t reps n extras action =
           setupSched' s0 clockSpeed t reps n extras (const action)
-        setupSched' s0 clockSpeed t reps n extras action
-          | schedulerIsEnabled =
-              forM_ [1..reps] $ \i ->
-                withTmpDirectory $ withAbstractTransport $ \tr ->
-                  (setupTimeoutSched tr (s0 + i) clockSpeed t n
-                                     extras (action tr)
-                  ) `E.catch` \e -> do
-                    hPutStrLn stderr $ "execution failed with seed " ++
-                                       show (s0 + i) ++ ": " ++
-                                       show (e :: SomeException)
-                    throwIO e
-          | otherwise = withTmpDirectory $ withAbstractTransport $
-              \tr@(AbstractTransport transport _ _) ->
-                withLocalNodes (n - 1 + extras) transport remoteTables $
-                  \nodes -> do
-                    tryWithTimeout transport remoteTables
-                                   (5 * 60 * 1000000) $ do
-                      node0 <- fmap processNode ask
-                      setup' (take n $ map localNodeId $ node0 : nodes) $
-                        uncurry (action tr) $ splitAt n (node0 : nodes)
+        setupSched' s0 clockSpeed t reps n extras action =
+          runTest s0 clockSpeed t reps (n + extras) $ \tr nodes ->
+            setup' (take n $ map localNodeId nodes)
+                   (uncurry (action tr) $ splitAt n nodes)
         withAbstractTransport :: (AbstractTransport -> IO a) -> IO a
         withAbstractTransport =
             E.bracket (if "--tcp-transport" `elem` argv
@@ -202,24 +216,6 @@ tests argv = do
                         else mkInMemoryTransport
                       )
                       closeAbstractTransport
-        setupTimeoutSched :: AbstractTransport -> Int -> Int -> Int -> Int
-                          -> Int
-                          -> ( [LocalNode] ->
-                               [LocalNode] ->
-                               Log.Handle (Command State) ->
-                               State.CommandPort State ->
-                               Process ()
-                             )
-                          -> IO ()
-        setupTimeoutSched (AbstractTransport transport _ _) s clockSpeed _t num
-                          extra action =
-          (>>= maybe (error "Timeout") return) $
-            System.timeout (5 * 60 * 1000000) $
-            withScheduler s clockSpeed (num + extra) transport remoteTables $
-              \nodes -> do
-                node0 <- fmap processNode ask
-                setup' (take num $ map localNodeId $ node0 : nodes)
-                       (uncurry action $ splitAt num $ node0 : nodes)
         setup' nodes action = do
             let waitFor pid = monitor pid >> receiveWait
                     [ matchIf (\(ProcessMonitorNotification _ pid' _) ->
@@ -717,8 +713,36 @@ tests argv = do
                      retry retryTimeout (State.select sdictInt port1 readCP)
                    say "Incremented state from disk."
             ]
+        timeoutTests = testGroup "timeout"
+            [ testSuccess "timeout-expires" $ runTest seed 1000 10000000 20 1 $
+                \_ _ -> do
+                Nothing <- timeout 1000 (expect :: Process ())
+                return ()
 
-    return [ut]
+            , testSuccess "timeout-completes" $ runTest seed 1000 10000000 20 1
+                $ \_ _ -> do
+                Just () <- timeout 1000 (return ())
+                return ()
+
+            , testSuccess "retry-completes" $ runTest seed 1000 10000000 20 1
+                $ \_ _ -> do
+                self <- getSelfPid
+                retry 1000 $ do
+                  _ <- spawnLocal $ do
+                    Nothing <- receiveTimeout 1000 []
+                    usend self ()
+                  expect
+
+            , testSuccess "retry-can-be-interrupted" $
+                runTest seed 1000 10000000 20 1 $ \_ _ -> do
+                self <- getSelfPid
+                do retry 10000 $ do
+                     _ <- spawnLocal $ exit self "test interruption"
+                     (expect :: Process ())
+                   assert False
+                  `catchExit` \_ "test interruption" -> return ()
+            ]
+    return [ timeoutTests, ut ]
 
 withLocalNodes :: Int -> Transport -> RemoteTable -> ([LocalNode] -> IO a)
                -> IO a
