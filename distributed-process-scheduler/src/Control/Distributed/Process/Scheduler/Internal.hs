@@ -408,6 +408,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                        putStrLn $ "scheduler died: " ++ show e
                        throwIO (e :: SomeException)
                    )
+               void $ DP.liftIO $ readMVar schedulerVar
                return (True, sortedLNodes)
   where
     go :: SchedulerState -> Process a
