@@ -74,6 +74,8 @@ module Control.Distributed.Process
   , getSelfNode
   , newChan
   , catch
+  , catches
+  , Handler(..)
   , catchExit
   , catchesExit
   , mask
