@@ -878,7 +878,9 @@ yield = do DP.getSelfPid >>= sendS . Yield
 
 -- | Yields the local process of the scheduler.
 getScheduler :: IO LocalProcess
-getScheduler = readMVar schedulerVar
+getScheduler =
+    tryReadMVar schedulerVar >>=
+      maybe (error "getScheduler: Scheduler is not running.") return
 
 -- | Have messages between pairs of nodes drop with some probability.
 --
