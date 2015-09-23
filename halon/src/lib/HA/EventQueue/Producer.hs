@@ -28,11 +28,11 @@ import Data.List ((\\))
 import Data.Typeable
 
 producerTrace :: String -> Process ()
-producerTrace _ = return ()
--- producerTrace = say . ("[EQ.producer] " ++)
+-- producerTrace _ = return ()
+producerTrace = say . ("[EQ.producer] " ++)
 
 data Result = Success | Failure
-  deriving Eq
+  deriving (Eq, Show)
 
 softTimeout :: Int
 softTimeout = 5000000
@@ -93,9 +93,11 @@ promulgateEvent evt =
           void (receiveTimeout 1000000 []) >> go
         Just (EQT.ReplicaReply (EQT.ReplicaLocation [] rest)) -> do
           res <- promulgateHAEvent rest evt
+          producerTrace $ "promulgateEvent: " ++ show (res, persistEventId evt)
           when (res == Failure) go
         Just (EQT.ReplicaReply (EQT.ReplicaLocation pref rest)) -> do
           res <- promulgateHAEventPref pref rest evt
+          producerTrace $ "promulgateEvent: " ++ show (res, persistEventId evt)
           when (res == Failure) go
         Nothing -> go
 
