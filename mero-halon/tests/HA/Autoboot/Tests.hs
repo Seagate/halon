@@ -61,7 +61,7 @@ eqtReceiveAllStations transport =
                 (Set.fromList $ map localNodeId nids)
 
 eqtReceiveStationsAtStart :: Transport -> IO ()
-eqtReceiveStationsAtStart transport = withTmpDirectory $ do
+eqtReceiveStationsAtStart transport = do
   runTest 7 20 15000000 transport myRemoteTable $ \nodes@(_ : nids) -> do
     _ <- spawnLocal $ bootupCluster nodes
     _ <- spawnLocal $ EQT.eqTrackerProcess [localNodeId $ head nids]
