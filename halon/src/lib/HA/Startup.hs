@@ -45,6 +45,7 @@ import Data.Maybe ( isJust )
 import qualified Network.Transport as NT
 import qualified Data.Map as Map ( toList, empty )
 import Control.Monad.Reader
+import System.IO (hPutStrLn, stderr)
 
 
 getGlobalRGroup :: Process (Maybe (Closure (Process (RLogGroup HAReplicatedState))))
@@ -155,7 +156,7 @@ remotableDecl [ [d|
      handleMessages refmapper =
        receiveWait [
          match (\(ProcessMonitorNotification ref _ _) ->
-           liftIO (putStrLn (refmapper ref)) >>
+           liftIO (hPutStrLn stderr (refmapper ref)) >>
            return ())
        ] >> handleMessages refmapper
 
