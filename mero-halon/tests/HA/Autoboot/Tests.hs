@@ -39,8 +39,8 @@ tests :: Transport -> [TestTree]
 tests transport =
     [ testSuccess "eqt-receive-all-tracking-stations"
                   $ eqtReceiveAllStations transport
-    , testSuccess "eqt-receive-stations-at-start [disabled]"
-                  $ const (return ()) $ eqtReceiveStationsAtStart transport
+    , testSuccess "eqt-receive-stations-at-start"
+                  $ eqtReceiveStationsAtStart transport
     ]
 
 eqtReceiveAllStations :: Transport -> IO ()
