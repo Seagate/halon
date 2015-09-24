@@ -36,7 +36,7 @@ import Control.Distributed.Process.Closure
 
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
-import Data.List (intersect, sort)
+import Data.List (intersect, sort, union)
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -128,7 +128,9 @@ remotableDecl [ [d|
                        else if rnid `elem` (eqsPreferredReplicas eqs)
                             then [pnid] -- Likely we have not tried reaching the preferred node yet.
                             else [rnid, pnid] -- The preferred replica did not respond soon enough.
-      in eqs{ eqsPreferredReplicas = preferred }
+      in eqs{ eqsPreferredReplicas = preferred
+            , eqsReplicas = preferred `union` eqsReplicas eqs
+            }
     else
       eqs
 
