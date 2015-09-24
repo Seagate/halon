@@ -253,11 +253,9 @@ getNoisyPingCount = do
     putLocalGraph rg'
     return i
 
-lookupDLogServiceProcess :: LoopState -> Maybe (ServiceProcess DecisionLogConf)
-lookupDLogServiceProcess ls =
-    case G.connectedFrom Owns decisionLogServiceName $ lsGraph ls of
-        [sp] -> Just sp
-        _    -> Nothing
+lookupDLogServiceProcess :: NodeId -> LoopState -> Maybe (ServiceProcess DecisionLogConf)
+lookupDLogServiceProcess nid ls =
+    runningService (Node nid) decisionLog $ lsGraph ls
 
 sendToMonitor :: Serializable a => Node -> a -> PhaseM LoopState l ()
 sendToMonitor node a = do

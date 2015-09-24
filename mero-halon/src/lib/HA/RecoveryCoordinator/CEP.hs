@@ -380,6 +380,7 @@ rcRules argv eq = do
 #endif
 
 sendLogs :: Logs -> LoopState -> Process ()
-sendLogs logs ls =
-    for_ (lookupDLogServiceProcess ls) $ \(ServiceProcess pid) -> do
+sendLogs logs ls = do
+    nid <- getSelfNode
+    for_ (lookupDLogServiceProcess nid ls) $ \(ServiceProcess pid) ->
       usend pid logs

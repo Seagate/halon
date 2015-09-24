@@ -4,21 +4,11 @@
 --
 module HA.Services.DecisionLog.CEP where
 
-import qualified Data.ByteString.Lazy as Lazy
-import           Data.ByteString.Lazy.Char8 (pack)
-import           System.IO
-
-import Control.Distributed.Process
-import Control.Monad.Trans
 import Network.CEP
 
-decisionLogRules :: Handle -> Definitions s ()
-decisionLogRules h =
-    defineSimple "entries-submitted" $ \logs -> do
-      writeEntriesLogged h logs
-      liftProcess $ say "entries submitted"
+import HA.Services.DecisionLog.Types
 
-writeEntriesLogged :: MonadIO m => Handle -> Logs -> m ()
-writeEntriesLogged h logs = liftIO $ do
-    Lazy.hPut h $ pack $ show logs
-    Lazy.hPut h "\n"
+decisionLogRules :: WriteLogs -> Definitions s ()
+decisionLogRules wl =
+    defineSimple "entries-submitted" $ \logs ->
+      liftProcess $ writeLogs wl logs
