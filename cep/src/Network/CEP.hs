@@ -401,7 +401,7 @@ buildRuleData name mk rls buf = go M.empty Set.empty $ view rls
         , _ruleTypes    = Set.union tpes $ buildTypeList ps
         }
     go ps tpes (Start ph l :>>= k) =
-        let old = ps M.! jumpPhaseHandle ph 
+        let old = ps M.! jumpPhaseHandle ph
             jmp = jumpBaseOn ph old in
         go ps tpes $ view $ k (StartingPhase l jmp)
     go ps tpes (NewHandle n :>>= k) =
@@ -411,7 +411,7 @@ buildRuleData name mk rls buf = go M.empty Set.empty $ view rls
         go ps' tpes $ view $ k $ normalJump handle
     go ps tpes (SetPhase jmp call :>>= k) =
         let _F p    = p { _phCall = call }
-            nxt_jmp = fmap _F (ps M.! jumpPhaseHandle jmp)
+            nxt_jmp = fmap _F $ jumpBaseOn jmp (ps M.! jumpPhaseHandle jmp)
             ps'     = M.insert (jumpPhaseHandle jmp) nxt_jmp ps in
         go ps' tpes $ view $ k ()
     go ps tpes (Wants (prx :: Proxy a) :>>= k) =
