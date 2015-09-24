@@ -169,11 +169,13 @@ schema = [schemaQQ|
               "properties": {
                 "hostId" : {
                   "description" : "Hostname of system",
-                  "type" : "string"
+                  "type" : "string",
+                  "required": true
                 },
                 "localtime" : {
                   "description" : "Local time on system",
-                  "type" : "string"
+                  "type" : "string",
+                  "required": true
                 },
                 "bootTime" : {
                   "description" : "Time host was started",
@@ -240,11 +242,13 @@ schema = [schemaQQ|
               "properties": {
                 "hostId" : {
                   "description" : "Hostname of system",
-                  "type" : "string"
+                  "type" : "string",
+                  "required": true
                 },
                 "localtime" : {
                   "description" : "Local time on system",
-                  "type" : "string"
+                  "type" : "string",
+                  "required": true
                 },
                 "freeSpace": {
                   "type" : "object",
@@ -318,11 +322,13 @@ schema = [schemaQQ|
               "properties": {
                 "hostId" : {
                   "description" : "Hostname of system",
-                  "type" : "string"
+                  "type" : "string",
+                  "required": true
                 },
                 "localtime" : {
                   "description" : "Local time on system",
-                  "type" : "string"
+                  "type" : "string",
+                  "required": true
                 },
                 "csps": {
                   "type" : "integer"
@@ -385,11 +391,13 @@ schema = [schemaQQ|
               "properties": {
                 "hostId" : {
                   "description" : "Hostname of system",
-                  "type" : "string"
+                  "type" : "string",
+                  "required": true
                 },
                 "localtime" : {
                   "description" : "Local time on system",
-                  "type" : "string"
+                  "type" : "string",
+                  "required": true
                 },
                 "interfaces": {
                   "type": "array",
@@ -433,7 +441,8 @@ schema = [schemaQQ|
               "properties" : {
                 "hostId" : {
                   "description" : "Hostname of system",
-                  "type" : "string"
+                  "type" : "string",
+                  "required": true
                 },
                 "mdstat" : {
                   "description" : "/proc/mdstat containing state information about RAID",

@@ -167,7 +167,7 @@ data PVer = PVer {
   , pv_ver :: Word32
   , pv_failed :: Word32 -- ^ Number of failed devices.
   , pv_attr :: PDClustAttr
-  , pv_failures :: [Word32]
+  , pv_failures :: [Word32] -- ^ Allowed failures.
 } deriving (Show)
 
 getPVer :: Ptr Obj -> IO PVer
@@ -286,6 +286,11 @@ data ServiceType
     | CST_STS
     | CST_HA
     | CST_SSS
+    | CST_SNS_REP -- ^ Repair
+    | CST_SNS_REB -- ^ Rebalance
+    | CST_ADDB2
+    | CST_DS1 -- ^ Dummy service 1
+    | CST_DS2 -- ^ Dummy service 2
     | CST_UNKNOWN Int
   deriving (Data, Eq, Generic, Ord, Read, Show )
 
@@ -293,23 +298,33 @@ instance Binary ServiceType
 instance Hashable ServiceType
 instance Enum ServiceType where
 
-  toEnum #{const M0_CST_MDS} = CST_MDS
-  toEnum #{const M0_CST_IOS} = CST_IOS
-  toEnum #{const M0_CST_MGS} = CST_MGS
-  toEnum #{const M0_CST_RMS} = CST_RMS
-  toEnum #{const M0_CST_STS} = CST_STS
-  toEnum #{const M0_CST_HA}  = CST_HA
-  toEnum #{const M0_CST_SSS} = CST_SSS
-  toEnum i                   = CST_UNKNOWN i
+  toEnum #{const M0_CST_MDS}      = CST_MDS
+  toEnum #{const M0_CST_IOS}      = CST_IOS
+  toEnum #{const M0_CST_MGS}      = CST_MGS
+  toEnum #{const M0_CST_RMS}      = CST_RMS
+  toEnum #{const M0_CST_STS}      = CST_STS
+  toEnum #{const M0_CST_HA}       = CST_HA
+  toEnum #{const M0_CST_SSS}      = CST_SSS
+  toEnum #{const M0_CST_SNS_REP}  = CST_SNS_REP
+  toEnum #{const M0_CST_SNS_REB}  = CST_SNS_REB
+  toEnum #{const M0_CST_ADDB2}    = CST_ADDB2
+  toEnum #{const M0_CST_DS1}      = CST_DS1
+  toEnum #{const M0_CST_DS2}      = CST_DS2
+  toEnum i                        = CST_UNKNOWN i
 
-  fromEnum CST_MDS         = #{const M0_CST_MDS}
-  fromEnum CST_IOS         = #{const M0_CST_IOS}
-  fromEnum CST_MGS         = #{const M0_CST_MGS}
-  fromEnum CST_RMS         = #{const M0_CST_RMS}
-  fromEnum CST_STS         = #{const M0_CST_STS}
-  fromEnum CST_HA          = #{const M0_CST_HA}
-  fromEnum CST_SSS         = #{const M0_CST_SSS}
-  fromEnum (CST_UNKNOWN i) = i
+  fromEnum CST_MDS          = #{const M0_CST_MDS}
+  fromEnum CST_IOS          = #{const M0_CST_IOS}
+  fromEnum CST_MGS          = #{const M0_CST_MGS}
+  fromEnum CST_RMS          = #{const M0_CST_RMS}
+  fromEnum CST_STS          = #{const M0_CST_STS}
+  fromEnum CST_HA           = #{const M0_CST_HA}
+  fromEnum CST_SSS          = #{const M0_CST_SSS}
+  fromEnum CST_SNS_REP      = #{const M0_CST_SNS_REP}
+  fromEnum CST_SNS_REB      = #{const M0_CST_SNS_REB}
+  fromEnum CST_ADDB2        = #{const M0_CST_ADDB2}
+  fromEnum CST_DS1          = #{const M0_CST_DS1}
+  fromEnum CST_DS2          = #{const M0_CST_DS2}
+  fromEnum (CST_UNKNOWN i)  = i
 
 data ServiceParams =
       SPRepairLimits !Word32

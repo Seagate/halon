@@ -43,6 +43,7 @@ import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
   ( peekArray
   , withArray
+  , withArrayLen
   )
 import Foreign.Marshal.Error
   ( throwIfNeg
@@ -269,13 +270,17 @@ addController (SpielTransaction fsc) fid fsFid nodeFid = withForeignPtr fsc $ \s
 addPVer :: SpielTransaction
         -> Fid
         -> Fid -- ^ Parent pool
+        -> [Word32] -- ^ Number of failures in each failure domain.
         -> PDClustAttr -- ^ attributes specific to layout type
         -> IO ()
-addPVer (SpielTransaction fsc) fid parent attrs = withForeignPtr fsc $ \sc ->
-  withMany with [fid, parent] $ \[fid_ptr, fs_ptr] ->
-    with attrs $ \ c_attrs ->
-      throwIfNonZero_ (\rc -> "Cannot add pool version: " ++ show rc)
-        $ c_spiel_pool_version_add sc fid_ptr fs_ptr c_attrs
+addPVer (SpielTransaction fsc) fid parent failures attrs =
+  withForeignPtr fsc $ \sc ->
+    withMany with [fid, parent] $ \[fid_ptr, fs_ptr] ->
+      withArrayLen failures $ \fail_nr fail_ptr ->
+        with attrs $ \c_attrs ->
+          throwIfNonZero_ (\rc -> "Cannot add pool version: " ++ show rc)
+            $ c_spiel_pool_version_add sc fid_ptr fs_ptr fail_ptr
+                                       (fromIntegral fail_nr) c_attrs
 
 addDisk :: SpielTransaction
         -> Fid
@@ -413,7 +418,7 @@ instance Spliceable Rack where
     mapM_ (spliceTree t (cr_fid o)) kids
 
 instance Spliceable PVer where
-  splice t p o = addPVer t (pv_fid o) p (pv_attr o)
+  splice t p o = addPVer t (pv_fid o) p (pv_failures o) (pv_attr o)
   spliceTree t p o = do
     splice t p o
     kids <- children o :: IO [RackV]

@@ -186,6 +186,8 @@ foreign import ccall "spiel.h m0_spiel_pool_version_add"
   c_spiel_pool_version_add :: Ptr SpielTransactionV
                            -> Ptr Fid -- ^ fid of the pver
                            -> Ptr Fid -- ^ fid of the parent pool
+                           -> Ptr Word32 -- ^ nr_failures
+                           -> Word32 -- ^ nr_failures_cnt
                            -> Ptr PDClustAttr
                            -> IO CInt
 
