@@ -177,8 +177,8 @@ ssplRulesF sspl = do
   -- SSPL Monitor host_update
   defineSimpleIf "monitor-host-update" (\(HAEvent _ (nid, hum) _) _ ->
       return $ sensorResponseMessageSensor_response_typeHost_update hum
-           >>= sensorResponseMessageSensor_response_typeHost_updateHostId
            >>= return . (nid,)
+                . sensorResponseMessageSensor_response_typeHost_updateHostId
     ) $ \(nid, a) -> do
       let host = Host $ T.unpack a
           node = Node nid

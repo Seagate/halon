@@ -324,8 +324,8 @@ testHostAddition transport = do
       Just $ SSPL.SensorResponseMessageSensor_response_typeHost_update
         { SSPL.sensorResponseMessageSensor_response_typeHost_updateRunningProcessCount = Nothing
         , SSPL.sensorResponseMessageSensor_response_typeHost_updateUname               = Just "mockhost"
-        , SSPL.sensorResponseMessageSensor_response_typeHost_updateHostId              = Just "mockhost"
-        , SSPL.sensorResponseMessageSensor_response_typeHost_updateLocaltime           = Nothing
+        , SSPL.sensorResponseMessageSensor_response_typeHost_updateHostId              = "mockhost"
+        , SSPL.sensorResponseMessageSensor_response_typeHost_updateLocaltime           = ""
         , SSPL.sensorResponseMessageSensor_response_typeHost_updateUpTime              = Nothing
         , SSPL.sensorResponseMessageSensor_response_typeHost_updateFreeMem             = Nothing
         , SSPL.sensorResponseMessageSensor_response_typeHost_updateLoggedInUsers       = Nothing
