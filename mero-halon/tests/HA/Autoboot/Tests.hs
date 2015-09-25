@@ -45,7 +45,7 @@ tests transport =
 
 eqtReceiveAllStations :: Transport -> IO ()
 eqtReceiveAllStations transport =
-  runTest 6 20 15000000 transport myRemoteTable $ \nids -> do
+  runTest 6 10 15000000 transport myRemoteTable $ \nids -> do
     node <- fmap processNode ask
     bootupCluster $ node : nids
     say . ("requesting from node " ++). show =<< getSelfNode
@@ -62,7 +62,7 @@ eqtReceiveAllStations transport =
 
 eqtReceiveStationsAtStart :: Transport -> IO ()
 eqtReceiveStationsAtStart transport = do
-  runTest 7 20 15000000 transport myRemoteTable $ \nodes@(_ : nids) -> do
+  runTest 7 10 15000000 transport myRemoteTable $ \nodes@(_ : nids) -> do
     _ <- spawnLocal $ bootupCluster nodes
     _ <- spawnLocal $ EQT.eqTrackerProcess [localNodeId $ head nids]
     nodeUp (map localNodeId nids, 1000000)
