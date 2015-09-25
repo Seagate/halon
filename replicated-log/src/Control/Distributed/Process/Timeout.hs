@@ -12,9 +12,8 @@ import Control.Distributed.Process.Internal.Types
   ( runLocalProcess
   , ProcessExitException(..)
   )
-import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
+import Control.Distributed.Process.Scheduler
 import Control.Exception (throwIO, SomeException)
-import Control.Monad
 import Control.Monad.Reader ( ask )
 import Data.Binary (Binary)
 import Data.Typeable (Typeable)
@@ -56,14 +55,18 @@ timeout t action
                     else do
                       b <- liftIO $ tryPutMVar mv ()
                       if b then exit timerPid "timeout completed"
-                      else void $ handleExceptions (receiveWait [])
+                      else waitTimeout
                       liftIO $ throwIO e
                 , Handler $ \e -> do
                     b <- liftIO $ tryPutMVar mv ()
                     if b then exit timerPid "timeout completed"
-                    else void $ handleExceptions (receiveWait [])
+                    else waitTimeout
                     liftIO $ throwIO (e :: SomeException)
                 ]
+              waitTimeout = uninterruptiblyMaskKnownExceptions_ $
+                catch (receiveWait []) $ \e@(ProcessExitException pid _) ->
+                  if pid == timerPid then return ()
+                  else liftIO $ throwIO e
           handleExceptions $ do
             r <- unmask action
             b <- liftIO $ tryPutMVar mv ()
