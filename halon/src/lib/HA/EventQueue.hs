@@ -210,7 +210,7 @@ sendEventToRC :: ProcessId -> ProcessId -> PersistMessage -> PhaseM s l ()
 sendEventToRC rc sender (PersistMessage mid ev) =
     liftProcess $ do
       self <- getSelfPid
-      eqTrace $ "EQ: Sending to RC: " ++ show mid
+      eqTrace $ "EQ: Sending to RC (" ++ show rc ++"): " ++ show mid
       usend sender (processNodeId self, processNodeId rc)
       uforward ev rc
 

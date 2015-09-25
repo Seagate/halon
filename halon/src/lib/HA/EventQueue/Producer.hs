@@ -125,7 +125,9 @@ promulgateHAEventPref :: [NodeId] -- ^ Preferred EQ nodes.
                       -> PersistMessage
                       -> Process Result
 promulgateHAEventPref peqnids eqnids msg = do
-  say $ "Sending to " ++ (show peqnids) ++ " and then to " ++ show (eqnids \\ peqnids)
+  say $ "Sending " ++ show (persistEventId msg)
+                   ++ " to " ++ show peqnids
+                   ++ " and then to " ++ show (eqnids \\ peqnids)
   result <- callLocal $
     ncallRemoteAnyPreferTimeout
       softTimeout promulgateTimeout
