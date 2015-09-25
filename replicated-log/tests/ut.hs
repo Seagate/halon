@@ -20,7 +20,7 @@ main = do
          defaultMainWithArgs (fmap (testGroup "replicated-log") . tests)
                              (testArgs `orDefault` t) (runnerArgs `orDefault` r)
    tid <- myThreadId
-   _ <- forkIO $ do threadDelay (9 * 60 * 1000000)
+   _ <- forkIO $ do threadDelay (30 * 60 * 1000000)
                     forever $ do threadDelay 100000
                                  throwTo tid (ErrorCall "Timeout")
    runWithArgs [] ["--tcp-transport"]

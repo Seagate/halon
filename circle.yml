@@ -15,5 +15,5 @@ dependencies:
 test:
   override:
     - cp /home/ubuntu/.ssh/id_circleci_github docker/3-halon/id_rsa
-    - docker/3-halon/build-template
-
+    - docker/3-halon/build-template:
+        timeout: 3600

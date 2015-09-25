@@ -20,7 +20,7 @@ main = do
     setEnv "DP_SCHEDULER_ENABLED" "1" True
     (testArgs, runnerArgs) <- parseArgs
     tid <- myThreadId
-    _ <- forkIO $ do threadDelay (9 * 60 * 1000000)
+    _ <- forkIO $ do threadDelay (30 * 60 * 1000000)
                      forever $ do threadDelay 100000
                                   throwTo tid (ErrorCall "Timeout")
     if schedulerIsEnabled then
