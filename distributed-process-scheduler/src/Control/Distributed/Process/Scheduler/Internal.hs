@@ -67,6 +67,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , getScheduler
   , SchedulerMsg(..)
   , SchedulerResponse(..)
+  , uninterruptiblyMaskKnownExceptions_
   ) where
 
 import Prelude hiding ( (<$>) )
@@ -1179,13 +1180,63 @@ callLocal proc = DP.mask $ \release -> do
                DP.liftIO $ putMVar mv r
     rs <- (do receiveChan rp
               DP.liftIO (takeMVar mv)
-            `DP.onException`
-             do () <- receiveChan rpInit
-                kill child "exception in parent process"
-                receiveChan rp
-                DP.liftIO (takeMVar mv)
+            `DP.catch` \e ->
+             do -- Don't kill the child before knowing that it had a chance
+                -- to mask exceptions.
+                --
+                -- Also, be sure to rethrow async exceptions received during
+                -- the cleanup. System.Timeout.timeout is sensitive to this.
+                --
+                -- Ideally, we would mask exceptions uninterruptibly, but the
+                -- scheduler could block as it does not support doing this.
+                uninterruptiblyMaskKnownExceptions_ $ receiveChan rpInit
+                kill child ("exception in parent process " ++ show e)
+                uninterruptiblyMaskKnownExceptions_ $ receiveChan rp
+                DP.liftIO $ throwIO (e :: SomeException)
           )
     either throw return rs
+
+-- Evaluates the given closure. Whenever known exceptions are raised,
+-- the closure is retried and the exceptions are collected and rethrown after
+-- evaluation of the closure succeeds.
+--
+-- This is a trick to simulate 'uninterruptibleMask_' at points where only
+-- asynchronous exceptions are expected.
+--
+-- Unknown exception are not handled. The known exceptions are:
+-- * 'ProcessExitException'
+-- * 'ProcessKillException'
+-- * 'ProcessLinkException'
+-- * 'NodeLinkException'
+--
+-- These are all the exceptions the scheduler would ever deliver asynchronously.
+--
+uninterruptiblyMaskKnownExceptions_ :: Process a -> Process a
+uninterruptiblyMaskKnownExceptions_ p = do
+    (a, asyncRethrow) <- collectExceptions p
+    asyncRethrow
+    return a
+  where
+    collectExceptions :: Process a -> Process (a, Process ())
+    collectExceptions proc = do
+      let handler pid msg = do
+            (a, r) <- collectExceptions proc
+            self <- DP.getSelfPid
+            return (a, sendS (Send pid self msg) >> r)
+      self <- DP.getSelfPid
+      (proc >>= \a -> return (a, return ()))
+        `DP.catches`
+          [ DP.Handler $ \(DP.ProcessExitException pid reason) ->
+               handler pid (ExitMsg pid self reason)
+          , DP.Handler $ \(ProcessKillException pid reason) ->
+               handler pid (KillMsg pid self reason)
+          , DP.Handler $ \(DP.ProcessLinkException pid reason) ->
+               handler pid $
+                 LinkExceptionMsg (DP.ProcessIdentifier pid) self reason
+          , DP.Handler $ \(DP.NodeLinkException nid reason) ->
+               handler (DP.nullProcessId nid) $
+                 LinkExceptionMsg (DP.NodeIdentifier nid) self reason
+          ]
 
 -- | Looks up a process in the local registry.
 whereis :: String -> Process (Maybe ProcessId)

@@ -12,6 +12,7 @@ module Control.Distributed.Process.Scheduler
        , withScheduler
        , addFailures
        , removeFailures
+       , uninterruptiblyMaskKnownExceptions_
        , __remoteTable
        ) where
 
@@ -20,6 +21,7 @@ import Control.Distributed.Process.Scheduler.Internal
   ( schedulerIsEnabled
   , addFailures
   , removeFailures
+  , uninterruptiblyMaskKnownExceptions_
   )
 import qualified Control.Distributed.Process.Scheduler.Internal as Internal
 import "distributed-process" Control.Distributed.Process (Process, RemoteTable)
