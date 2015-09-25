@@ -57,8 +57,8 @@ remotable [ 'dummyRC, 'rcClosure ]
 tests :: AbstractTransport -> IO [TestTree]
 tests transport =
   return [ testSuccess "autoboot-simple" $ mkAutobootTest (getTransport transport)
-         , testCaseSteps  "ignition [disabled]"
-             $ const (const $ return ()) $ testIgnition (getTransport transport)
+         , testCaseSteps  "ignition"
+             $ testIgnition (getTransport transport)
          ]
 
 -- | Test that cluster could be automatically booted after a failure
