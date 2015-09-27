@@ -79,7 +79,7 @@ mkAutobootTest transport =
                  )
 
       -- 1. Autoboot cluster
-      liftIO $ autobootCluster sp nids
+      autobootCluster sp nids
 
       -- 2. Run ignition once
       self <- getSelfPid
@@ -113,13 +113,20 @@ mkAutobootTest transport =
         return ()
 
       -- 5. run autoboot once again
-      liftIO $ autobootCluster sp nids
+      autobootCluster sp nids
 
       -- 6. wait for RC to spawn
       receiveChan rp
-  where
-    autobootCluster sp nids = forM_ nids $ \lnid ->
-      forkProcess lnid $ startupHalonNode $ $(mkClosure 'rcClosure) sp
+
+autobootCluster :: SendPort () -> [LocalNode] -> Process ()
+autobootCluster sp nids = do
+    self <- getSelfPid
+    liftIO $ forM_ nids $ \lnid -> forkProcess lnid $ do
+      startupHalonNode $ $(mkClosure 'rcClosure) sp
+      usend self ((), ())
+    forM_ nids $ \_ -> do
+      ((), ()) <- expect
+      return ()
 
 
 -- | Test that ignition call will retrn supposed result.
@@ -142,8 +149,7 @@ testIgnition transport step =
       lproc <- ask
       liftIO $ do
         step "autobooting cluster"
-        forM_ (processNode lproc: nids) $ \lnid ->
-          forkProcess lnid $ startupHalonNode $ $(mkClosure 'rcClosure) sp
+      autobootCluster sp (processNode lproc: nids)
 
       self <- getSelfPid
       liftIO $ step "call initial ignition"

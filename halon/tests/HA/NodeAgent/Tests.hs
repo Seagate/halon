@@ -25,35 +25,20 @@ import RemoteTables ( remoteTable )
 
 
 import Control.Distributed.Process
-  ( Process
-  , spawnLocal
-  , getSelfPid
-  , liftIO
-  , catch
-  , usend
-  , expect
-  , getSelfNode
-  , say
-  , ProcessId
-  , NodeId
-  , register
-  )
 #ifndef USE_MOCK_REPLICATOR
-import Control.Distributed.Process ( spawn )
 import Control.Distributed.Static ( closureApply )
 import Control.Distributed.Process.Closure ( mkClosure )
-#else
-import Control.Distributed.Process ( unClosure )
 #endif
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
 import Control.Distributed.Process.Node ( LocalNode, localNodeId, newLocalNode, closeLocalNode )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
 import Data.List (find, isPrefixOf, nub, (\\))
-import Control.Concurrent ( throwTo, myThreadId, threadDelay )
+import Control.Concurrent ( threadDelay )
 import Control.Concurrent.MVar (newEmptyMVar,putMVar,takeMVar,MVar)
 import Control.Monad ( replicateM, forM_, forever )
-import Control.Exception ( SomeException, bracket )
+import Control.Exception ( SomeException )
+import Control.Exception as E ( bracket )
 import Network.Transport ( Transport )
 import System.IO.Unsafe ( unsafePerformIO )
 import Test.Framework
@@ -92,11 +77,6 @@ eqSDict = SerializableDict
 
 remotable [ 'eqSDict, 'dummyRC ]
 
-spawnLocalLink :: Process () -> Process ProcessId
-spawnLocalLink f =
-  do self <- liftIO myThreadId
-     spawnLocal $ flip catch (\e -> liftIO $ throwTo self (e :: SomeException)) $ f
-
 naTestWithEQ :: Transport -> ([LocalNode] -> Process ()) -> IO ()
 naTestWithEQ transport action = withTmpDirectory $ do
   nodes <- replicateM 3 newNode
@@ -125,11 +105,11 @@ naTestWithEQ transport action = withTmpDirectory $ do
     newNode = newLocalNode transport
                        $ __remoteTable remoteTable
     initialize nids node = tryRunProcess node $ do
-      _ <- spawnLocalLink (eqTrackerProcess nids)
-      return ()
+      eqt <- startEQTracker nids
+      link eqt
 
 naTest :: Transport -> ([NodeId] -> Process ()) -> IO ()
-naTest transport action = withTmpDirectory $ bracket
+naTest transport action = withTmpDirectory $ E.bracket
     (replicateM 2 $ newLocalNode transport
                                  (__remoteTable remoteTable))
     (mapM closeLocalNode)
@@ -146,7 +126,8 @@ naTest transport action = withTmpDirectory $ bracket
                    (expect :: Process (ProcessId, PersistMessage))
                    >>= usend self . (,) (nids !! 1)
           register eventQueueLabel eq2
-        _ <- spawnLocalLink (eqTrackerProcess nids)
+        eqt <- startEQTracker nids
+        link eqt
         action nids
 
 expectEventOnNode :: NodeId -> Process ProcessId
