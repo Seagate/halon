@@ -181,6 +181,7 @@ runTest numNodes numReps tr rt action
         forM_ [1..numReps] $ \i ->  withTmpDirectory $
           E.bracket createTransport closeTransport $
           \tr' -> do
+            liftIO $ putStrLn $ "Running with seed: " ++ show (s + i)
             m <- timeout (7 * 60 * 1000000) $
               Scheduler.withScheduler (s + i) 1000 numNodes tr' rt' action
             maybe (error "Timeout") return m
