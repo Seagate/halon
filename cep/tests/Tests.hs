@@ -852,6 +852,7 @@ testsTimeout launch = testGroup "Timeout properties"
   , testCase "Init rule timeout should work" $ launch testInitTimeout
   , testCase "Start timeout should work" $ launch testStartTimeout
   , testCase "SetPhase timeout should work" $ launch testSetPhaseTimeout
+  , testCase "All timeout reverse should work" $ launch testAllReverseTimeout
   ]
 
 testSimpleTimeout :: Process ()
@@ -964,3 +965,27 @@ testSetPhaseTimeout = do
     pid <- spawnLocal $ execute () specs
     usend pid donut
     expect
+
+testAllReverseTimeout :: Process ()
+testAllReverseTimeout = do
+    self <- getSelfPid
+
+    let specs = define "all-timeout" $ do
+          ph0 <- phaseHandle "ph0"
+          ph1 <- phaseHandle "ph1"
+          ph2 <- phaseHandle "ph2"
+
+          directly ph0 $ switch [timeout 3 ph1, timeout 2 ph2]
+
+          setPhase ph1 $ \(Donut _) -> liftProcess $ usend self (1 :: Int)
+
+          setPhase ph2 $ \(Foo _) -> liftProcess $ usend self (2 :: Int)
+
+          start ph0 ()
+
+    pid <- spawnLocal $ execute () specs
+    usend pid donut
+    usend pid (Foo 1)
+
+    i <- expect
+    assertEqual "Ph2 should fire first" (2 :: Int) i
