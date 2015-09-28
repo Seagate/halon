@@ -15,9 +15,9 @@ dependencies:
     - cabal install ./tasty-files
     - git clone git@github.com:tweag/halon.git
     - cd halon ; git submodule update --init --recursive
-    - cabal install ./halon/vendor/distributed-process
-    - cabal install ./halon/distributed-process-trans
-    - cabal install ./halon/distributed-process-scheduler
+    - cabal install ./halon/vendor/distributed-process --force-reinstalls
+    - cabal install ./halon/distributed-process-trans --force-reinstalls
+    - cabal install ./halon/distributed-process-scheduler --force-reinstalls
   override:
     - cabal install --dependencies-only --enable-tests
     - cabal configure --enable-tests
