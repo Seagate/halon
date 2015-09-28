@@ -29,7 +29,7 @@ withProcess node action = do
 tests :: Transport -> IO TestTree
 tests transport = do
   node <- newLocalNode transport remoteTable
-  _    <- forkProcess node $ Storage.runStorage
+  _    <- forkProcess node $ Storage.runStorage >> return ()
   return $ testGroup "HA.Storage"
              [ testCase "get . put == id" $ do
                   assertEqual "read value from storage" (Right (1::Int))

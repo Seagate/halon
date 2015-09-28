@@ -263,7 +263,7 @@ remotableDecl [ [d|
 startupHalonNode :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
                  -> Process ()
 startupHalonNode rcClosure = do
-    p <- spawnLocal Storage.runStorage
+    p <- Storage.runStorage
     link p
 
     autoboot rcClosure `catch` \(_ :: SomeException) ->
