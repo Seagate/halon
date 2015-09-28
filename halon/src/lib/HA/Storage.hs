@@ -91,14 +91,16 @@ delete :: String -> Process ()
 delete = nsend name . Delete . BS.pack
 
 -- | Start a storage process
-runStorage :: Process ()
-runStorage = prepare >> mainloop
+runStorage :: Process ProcessId
+runStorage = do
+    pid <- spawnLocal mainloop
+    prepare pid
+    return pid
   where
-    prepare = do
-      self <- getSelfPid
+    prepare pid = do
       mpid <- whereis name
       case mpid of
-        Nothing -> register name self
+        Nothing -> register name pid
         Just _  -> do
           say "Could not start storage, as previous storage exists."
           error "Storage: takeover procedure is not yet implemented."

@@ -114,10 +114,13 @@ remotableDecl [ [d|
          rGroup <- unClosure cRGroup >>= id
          replicas <- setRGroupMembers rGroup newNodes $
                           $(mkClosure 'isNodeInGroup) $ trackers
+
+         (sp, rp) <- newChan
          forM_ (zip newNodes replicas) $ \(n,replica) -> spawn
                   n
                   $ $(mkClosure 'startRS)
-                      (cRGroup, Just replica, rcClosure)
+                      (cRGroup, Just replica, rcClosure, sp :: SendPort ())
+         forM_ replicas $ \_ -> receiveChan rp
        Nothing -> return ()
      usend caller ()
 
@@ -125,9 +128,10 @@ remotableDecl [ [d|
  startRS :: ( Closure (Process (RLogGroup HAReplicatedState))
             , Maybe (Replica RLogGroup)
             , Closure (ProcessId -> ProcessId -> Process ())
+            , SendPort ()
             )
             -> Process ()
- startRS (cRGroup, mlocalReplica, rcClosure) = do
+ startRS (cRGroup, mlocalReplica, rcClosure, sp) = do
      rGroup <- unClosure cRGroup >>= id
      recoveryCoordinator <- unClosure rcClosure
      maybe (return ()) (updateRGroup rGroup) mlocalReplica
@@ -148,10 +152,12 @@ remotableDecl [ [d|
      -- monitoring processes is okay, since these
      -- processes are on the same node, we're not
      -- depending on heartbeats at the transport layer
-     rsref <- monitor rspid
-     let refmapper ref | ref == rsref = "Recovery supervisor died"
-                       | otherwise = "Unknown subprocess died"
-     handleMessages refmapper
+     void $ spawnLocal $ do
+       rsref <- monitor rspid
+       let refmapper ref | ref == rsref = "Recovery supervisor died"
+                         | otherwise = "Unknown subprocess died"
+       handleMessages refmapper
+     sendChan sp ()
   where
      handleMessages refmapper =
        receiveWait [
@@ -212,11 +218,14 @@ remotableDecl [ [d|
                            ( RSState Nothing 0 rsLeaderLease
                            , ((Nothing,[]),fromList [])
                            )
+      (sp, rp) <- newChan
       forM_ trackers $ flip spawn $ $(mkClosure 'startRS)
           ( cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
           , Nothing :: Maybe (Replica RLogGroup)
           , rcClosure
+          , sp :: SendPort ()
           )
+      forM_ trackers $ \_ -> receiveChan rp
       return Nothing
 
   where
@@ -238,11 +247,14 @@ remotableDecl [ [d|
                                                 $(mkStatic 'decodeNids)
                                                 (encode nids)
                                               )
+    (sp, rp) <- newChan
     void $ spawn nid $ $(mkClosure 'startRS)
           ( cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
           , Nothing :: Maybe (Replica RLogGroup)
           , rcClosure'
+          , sp:: SendPort ()
           )
+    receiveChan rp
 
  |] ]
 
@@ -251,7 +263,7 @@ remotableDecl [ [d|
 startupHalonNode :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
                  -> Process ()
 startupHalonNode rcClosure = do
-    p <- spawnLocal Storage.runStorage
+    p <- Storage.runStorage
     link p
 
     autoboot rcClosure `catch` \(_ :: SomeException) ->
