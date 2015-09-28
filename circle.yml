@@ -1,0 +1,23 @@
+machine:
+  ghc:
+    version: 7.10.1
+
+general:
+  branches:
+    ignore:
+      - gh-pages
+  build_dir: cep
+
+dependencies:
+  pre:
+    - cabal update
+    - git clone git@github.com:tweag/tasty-files.git 
+    - cabal install ./tasty-files
+    - git clone git@github.com:tweag/halon.git
+    - cd halon ; git submodule update --init --recursive
+    - cabal install ./halon/vendor/distributed-process
+    - cabal install ./halon/distributed-process-trans
+    - cabal install ./halon/distributed-process-scheduler
+  override:
+    - cabal install --dependencies-only --enable-tests
+    - cabal configure --enable-tests
