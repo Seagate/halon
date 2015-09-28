@@ -32,7 +32,6 @@ newtype SM g = SM { runSM :: forall a. SMIn g a -> a }
 -- | Input to 'SM' (Stack Machine).
 data SMIn g a where
     SMExecute :: Maybe SMLogs
-              -> TimeSession
               -> Subscribers
               -> g
               -> SMIn g (Process (g, [(SMResult, SM g)]))
@@ -49,14 +48,14 @@ newSM :: forall g l. RuleKey
       -> Buffer                          -- ^ Initial buffer.
       -> l                               -- ^ Initial local state.
       -> SM g
-newSM key startPhase rn logs ps initialBuffer initialL =
+newSM key startPhase rn ps initialBuffer initialL =
     SM $ bootstrap initialBuffer
   where
     bootstrap :: Buffer -> SMIn g a -> a
     bootstrap b (SMMessage (TypeInfo _ (_ :: Proxy e)) msg) = do
       Just (a :: e) <- unwrapMessage msg
       return $ SM (bootstrap (bufferInsert a b))
-    bootstrap b i@(SMExecute _ _) = do
+    bootstrap b i@(SMExecute _ _ _) = do
         ph <- jumpEmitTimeout key startPhase
         interpretInput initialL b [ph] i
 
@@ -68,8 +67,8 @@ newSM key startPhase rn logs ps initialBuffer initialL =
     interpretInput l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) = do
       Just (a :: e) <- unwrapMessage msg
       return $ SM (interpretInput l (bufferInsert a b) phs)
-    interpretInput l b phs (SMExecute logs sess subs g) =
-      executeStack logs subs sess g l b id id phs
+    interpretInput l b phs (SMExecute logs subs g) =
+      executeStack logs subs g l b id id phs
 
     -- We use '[Phase g l] -> [Phase g l]' in order to recreate stack in
     -- case if no branch have fired, this is needed only in presence of
@@ -77,25 +76,23 @@ newSM key startPhase rn logs ps initialBuffer initialL =
     -- live without it, and have more structure sharing.
     executeStack :: Maybe SMLogs
                  -> Subscribers
-                 -> TimeSession
                  -> g
                  -> l
                  -> Buffer
                  -> ([Jump (Phase g l)] -> [Jump (Phase g l)])
                  -> ([ExecutionInfo] -> [ExecutionInfo])
                  -> [Jump (Phase g l)]
-                 -> Process (TimeSession, g, [(SMResult, SM g)])
-    executeStack _ _ sess g l b f info [] = case f [] of
-      [] -> return (sess, g, [stoppedSM info])
-      ph -> return (sess, g, [(SMResult SMSuspended (info []) Nothing
+                 -> Process (g, [(SMResult, SM g)])
+    executeStack _ _ g l b f info [] = case f [] of
+      [] -> return (g, [stoppedSM info])
+      ph -> return (g, [(SMResult SMSuspended (info []) Nothing
                         , SM $ interpretInput l b ph)])
-    executeStack logs subs sess g l b f info (jmp:phs) = do
-        (t, nxt_sess) <- stepSession sess
-        case jumpApplyTime t jmp of
+    executeStack logs subs g l b f info (jmp:phs) = do
+        res <- jumpApplyTime jmp
+        case res of
           Left nxt_jmp ->
             let i   = FailExe (jumpPhaseName jmp) SuspendExe b in
-            executeStack logs subs nxt_sess g l b (f . (nxt_jmp:))
-                                             (info . (i:)) phs
+            executeStack logs subs g l b (f . (nxt_jmp:)) (info . (i:)) phs
           Right ph -> do
             (g',m) <- runPhase subs logs g l b ph
             fmap concat <$> mapAccumLM (next ph) g' m
@@ -116,19 +113,16 @@ newSM key startPhase rn logs ps initialBuffer initialL =
                                                       (info [SuccessExe pname b buffer])
                                                       (mkLogs rn rlogs)
                                            , xs)
-                return (nxt, [(result, SM $ interpretInput l' buffer phs')])
-              SM_Suspend _ -> do
-                (fin_sess, fin_g, nres) <- executeStack logs subs nxt_sess gNext l b
-                                           (f.(normalJump ph:))
-                                           (info . ((FailExe pname SuspendExe b):))
-                                           phs
-                return ((fin_sess, fin_g), nres)
-              SM_Stop _ -> do
-                (fin_sess, fin_g, nres) <- executeStack logs subs nxt_sess gNext l b
-                                           f
-                                           (info . ((FailExe pname StopExe b):))
-                                           phs
-                return ((fin_sess, fin_g), nres)
+                fin_phs <- traverse (jumpEmitTimeout key) phs'
+                return (gNext, [(result, SM $ interpretInput l' buffer fin_phs)])
+              SM_Suspend _ -> executeStack logs subs gNext l b
+                                (f.(normalJump ph:))
+                                (info . ((FailExe pname SuspendExe b):))
+                                phs
+              SM_Stop _ -> executeStack logs subs gNext l b
+                             f
+                             (info . ((FailExe pname StopExe b):))
+                             phs
           where
             pname = _phName ph
 
