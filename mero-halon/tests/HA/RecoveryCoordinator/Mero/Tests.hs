@@ -35,7 +35,7 @@ import HA.EventQueue.Producer (promulgateEQ)
 import HA.Multimap.Implementation
 import HA.Multimap.Process
 import HA.Replicator
-import HA.EQTracker ( eqTrackerProcess )
+import HA.EQTracker
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
 #else
@@ -159,7 +159,7 @@ testServiceRestarting transport = do
     runTest 1 20 15000000 transport rt $ \_ -> do
       nid <- getSelfNode
       self <- getSelfPid
-      _ <- spawnLocal $ eqTrackerProcess [nid]
+      void $ startEQTracker [nid]
       registerInterceptor $ \string -> case string of
           str@"Starting service dummy"   -> usend self str
           _ -> return ()
@@ -196,7 +196,7 @@ testServiceNotRestarting transport = do
     runTest 1 20 15000000 transport rt $ \_ -> do
       nid <- getSelfNode
       self <- getSelfPid
-      _ <- spawnLocal $ eqTrackerProcess [nid]
+      void $ startEQTracker [nid]
 
       registerInterceptor $ \string -> case string of
           str@"Starting service dummy"   -> usend self str
@@ -233,7 +233,7 @@ testEQTrimming :: Transport -> IO ()
 testEQTrimming transport = do
     runTest 1 20 15000000 transport rt $ \_ -> do
       nid <- getSelfNode
-      _ <- spawnLocal $ eqTrackerProcess [nid]
+      void $ startEQTracker [nid]
 
       say $ "tests node: " ++ show nid
       bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
@@ -281,7 +281,7 @@ testHostAddition transport = do
     runTest 1 20 15000000 transport rt $ \_ -> do
       nid <- getSelfNode
       self <- getSelfPid
-      _ <- spawnLocal $ eqTrackerProcess [nid]
+      void $ startEQTracker [nid]
 
       registerInterceptor $ \string -> case string of
           str@"Starting service dummy"   -> usend self str
@@ -337,7 +337,7 @@ testDriveAddition transport = do
     runTest 1 20 15000000 transport rt $ \_ -> do
       nid <- getSelfNode
       self <- getSelfPid
-      _ <- spawnLocal $ eqTrackerProcess [nid]
+      void $ startEQTracker [nid]
 
       registerInterceptor $ \string -> case string of
           str@"Starting service dummy"   -> usend self str
@@ -404,7 +404,7 @@ testServiceStopped transport = do
     runTest 1 20 15000000 transport rt $ \_ -> do
       nid <- getSelfNode
       self <- getSelfPid
-      _ <- spawnLocal $ eqTrackerProcess [nid]
+      void $ startEQTracker [nid]
 
       registerInterceptor $ \string -> case string of
           str@"Starting service dummy"   -> usend self str
@@ -451,7 +451,7 @@ serviceStarted svname = do
 launchRC :: ((ProcessId, ProcessId) -> Process a) -> Process a
 launchRC action = do
     nid <- getSelfNode
-    _ <- spawnLocal $ eqTrackerProcess [nid]
+    void $ startEQTracker [nid]
 
     say $ "tests node: " ++ show nid
     bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
@@ -523,7 +523,7 @@ testNodeUpRace transport = do
     runTest 2 20 15000000 transport rt $ \[node2] -> do
       nid <- getSelfNode
       self <- getSelfPid
-      _ <- spawnLocal $ eqTrackerProcess [nid]
+      void $ startEQTracker [nid]
 
       say $ "tests node: " ++ show nid
       bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
@@ -537,7 +537,7 @@ testNodeUpRace transport = do
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
         _ <- liftIO $ forkProcess node2 $ do
-            _ <- spawnLocal $ eqTrackerProcess [nid]
+            void $ startEQTracker [nid]
             selfNode <- getSelfNode
             _ <- promulgateEQ [nid] . encodeP $ ServiceStarted (Node selfNode)
                                                                Monitor.regularMonitor

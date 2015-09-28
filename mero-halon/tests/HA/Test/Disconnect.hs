@@ -97,16 +97,18 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
       usend self ((), ())
     ((), ()) <- expect
     bracket_ (do liftIO $ forM_ [m0, m1, m2, m3] $ \m -> forkProcess m $ do
-                   void $ spawnLocal $ startupHalonNode rcClosure
+                   startupHalonNode rcClosure
                    usend self ((), ())
-                 ((), ()) <- expect
-                 return ()
+                 forM_ [m0, m1, m2, m3] $ \_ -> do
+                   ((), ()) <- expect
+                   return ()
              )
              (do liftIO $ forM_ [m0, m1, m2, m3] $ \m -> forkProcess m $ do
-                   void $ spawnLocal stopHalonNode
+                   stopHalonNode
                    usend self ((), ())
-                 ((), ()) <- expect
-                 return ()
+                 forM_ [m0, m1, m2, m3] $ \_ -> do
+                   ((), ()) <- expect
+                   return ()
              ) $ do
 
       let nids = map localNodeId [m0, m1, m2]
@@ -179,6 +181,7 @@ runTest numNodes numReps tr rt action
         forM_ [1..numReps] $ \i ->  withTmpDirectory $
           E.bracket createTransport closeTransport $
           \tr' -> do
+            liftIO $ putStrLn $ "Running with seed: " ++ show (s + i)
             m <- timeout (7 * 60 * 1000000) $
               Scheduler.withScheduler (s + i) 1000 numNodes tr' rt' action
             maybe (error "Timeout") return m

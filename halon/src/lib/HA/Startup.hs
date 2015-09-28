@@ -238,7 +238,7 @@ remotableDecl [ [d|
                                                 $(mkStatic 'decodeNids)
                                                 (encode nids)
                                               )
-    void . spawn nid $ $(mkClosure 'startRS)
+    void $ spawn nid $ $(mkClosure 'startRS)
           ( cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
           , Nothing :: Maybe (Replica RLogGroup)
           , rcClosure'
@@ -248,13 +248,6 @@ remotableDecl [ [d|
 
 -- | Startup Halon node. This method run autoboot and starts all
 -- processes that are required for halon node functionality.
--- Function will not exit until the node is running.
--- On exit node can't be guaranteed to run properly so caller
--- should choose what to do. Few possible options are:
---   1. try to restart EventQueueTracker using 'HA.EQTracker.eqTrackerProcess'
---   2. close local node, possibly killing all process on that
---   3. send some emergency message to RecoverySupervisor and it
---      could try to recover node.
 startupHalonNode :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
                  -> Process ()
 startupHalonNode rcClosure = do
@@ -263,7 +256,7 @@ startupHalonNode rcClosure = do
 
     autoboot rcClosure `catch` \(_ :: SomeException) ->
       say "No persisted state could be read. Starting in listen mode."
-    EQT.eqTrackerProcess []
+    void $ EQT.startEQTracker []
 
 -- | Stops a Halon node.
 stopHalonNode :: Process ()

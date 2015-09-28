@@ -23,16 +23,14 @@ module HA.EQTracker
   , ReplicaRequest(..)
   , ReplicaReply(..)
   , PreferReplicas(..)
-  , eqTrackerProcess
+  , startEQTracker
   , name
-  , HA.EQTracker.__remoteTableDecl
   ) where
 
 import HA.NodeAgent.Messages (ServiceMessage(UpdateEQNodes))
 
 import Control.SpineSeq (spineSeq)
 import Control.Distributed.Process
-import Control.Distributed.Process.Closure
 
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
@@ -40,7 +38,7 @@ import Data.List (intersect, sort, union)
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
-import Text.Printf
+
 
 -- | Loop state for the tracker. We store a list of preferred replicas as
 --   well as the full list of known replicas. None of these are guaranteed
@@ -73,27 +71,14 @@ newtype ReplicaReply = ReplicaReply ReplicaLocation
 name :: String
 name = "HA.EQTracker"
 
-
-remotableDecl [ [d|
-
-  -- | Run Event Queue process.
-  --
-  -- This process is not intended to fail, in because if this process
-  -- fails then there is no way to reliably send messages to the EQ.
-  eqTrackerProcess :: [NodeId] -> Process ()
-  eqTrackerProcess nodes = do
-      self <- getSelfPid
-      ensureRegistered self
+-- | Run Event Queue process.
+--
+-- This process is not intended to fail, in because if this process
+-- fails then there is no way to reliably send messages to the EQ.
+eqTrackerProcess :: [NodeId] -> Process ()
+eqTrackerProcess nodes = do
       go $ ReplicaLocation [] nodes
     where
-      ensureRegistered pid = do
-        exists <- whereis name
-        case exists of
-          Just old -> do
-            -- XXX: announce the change, ideally we should register ourself on RC
-            say $ printf "EQTracker: reregistering %s (old EQT was %s)" name (show old)
-            reregister name pid
-          Nothing -> register name pid
       go eqs = do
         receiveWait
           [ match $ \(caller, UpdateEQNodes eqnids) -> do
@@ -114,13 +99,13 @@ remotableDecl [ [d|
               return eqs
           ] >>= go
 
-  -- The EQ response may suggest to contact another replica. This function
-  -- handles the EQTracker state update.
-  --
-  -- @handleEQResponse naState responsiveNid preferredNid@
-  --
-  handleEQResponse :: ReplicaLocation -> NodeId -> NodeId -> ReplicaLocation
-  handleEQResponse eqs rnid pnid =
+-- The EQ response may suggest to contact another replica. This function
+-- handles the EQTracker state update.
+--
+-- @handleEQResponse naState responsiveNid preferredNid@
+--
+handleEQResponse :: ReplicaLocation -> NodeId -> NodeId -> ReplicaLocation
+handleEQResponse eqs rnid pnid =
     if sort [rnid, pnid] /= sort (eqsPreferredReplicas eqs)
     then
       let !preferred = if rnid == pnid
@@ -134,4 +119,8 @@ remotableDecl [ [d|
     else
       eqs
 
-  |] ]
+startEQTracker :: [NodeId] -> Process ProcessId
+startEQTracker eqs = do
+    eqt <- spawnLocal $ eqTrackerProcess eqs
+    register name eqt
+    return eqt

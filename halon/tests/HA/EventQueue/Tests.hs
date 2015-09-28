@@ -84,7 +84,7 @@ tests (AbstractTransport transport breakConnection _) = do
                                  (Nothing,[])
             rGroup <- unClosure cRGroup >>= id
             eq <- spawnLocal (eventQueue rGroup)
-            na <- spawnLocal (eqTrackerProcess [])
+            na <- startEQTracker []
             assertBool "update-eq-nodes-works"
               =<< updateEQNodes na nodes
             mapM_ link [eq, na]

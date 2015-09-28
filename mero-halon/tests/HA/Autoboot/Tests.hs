@@ -64,7 +64,7 @@ eqtReceiveStationsAtStart :: Transport -> IO ()
 eqtReceiveStationsAtStart transport = do
   runTest 7 10 15000000 transport myRemoteTable $ \nodes@(_ : nids) -> do
     _ <- spawnLocal $ bootupCluster nodes
-    _ <- spawnLocal $ EQT.eqTrackerProcess [localNodeId $ head nids]
+    _ <- EQT.startEQTracker [localNodeId $ head nids]
     nodeUp (map localNodeId nids, 1000000)
     Just eq <- whereis EQT.name
     self <- getSelfPid
@@ -84,7 +84,7 @@ bootupCluster = \(node : nids) -> do
                , 8*1000000 :: Int
                )
     -- 1. Autoboot cluster
-    liftIO $ autobootCluster (node:nids)
+    autobootCluster (node:nids)
     -- 2. Run ignition once
     (sp, rp) <- Control.Distributed.Process.newChan
     _ <- liftIO $ forkProcess (head nids) $ ignition args >>= sendChan sp
@@ -107,10 +107,15 @@ rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
                $(mkStaticClosure 'ignitionArguments)
 
 -- | Autoboot helper cluster
-autobootCluster :: [LocalNode] -> IO ()
-autobootCluster nids =
-  forM_ nids $ \lnid ->
-    forkProcess lnid $ startupHalonNode rcClosure
+autobootCluster :: [LocalNode] -> Process ()
+autobootCluster nids = do
+    self <- getSelfPid
+    liftIO $ forM_ nids $ \lnid -> forkProcess lnid $ do
+      startupHalonNode rcClosure
+      usend self ((), ())
+    forM_ nids $ \_ -> do
+      ((), ()) <- expect
+      return ()
 
 withLocalNode :: Transport -> RemoteTable -> (LocalNode -> IO a) -> IO a
 withLocalNode t rt = E.bracket  (newLocalNode t rt) closeLocalNode
