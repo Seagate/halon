@@ -8,6 +8,7 @@ import Data.Binary (Binary)
 import Data.Typeable
 import Data.List (sort)
 import Data.IORef
+import Data.Time
 
 import Test.Tasty
 import Test.Tasty.HUnit (testCase)
@@ -915,8 +916,12 @@ testContinueTimeout = do
           start ph0 ()
 
     pid <- spawnLocal $ execute () specs
+    begin <- liftIO getCurrentTime
     usend pid donut
-    expect
+    () <- expect
+    end <- liftIO getCurrentTime
+    let test = diffUTCTime end begin >= 2
+    assertEqual "Should take at least 2 seconds" True test
 
 testInitTimeout :: Process ()
 testInitTimeout = do

@@ -67,7 +67,8 @@ Test-Suite unit-tests
                  random,
                  tasty,
                  tasty-hunit,
-                 tasty-files
+                 tasty-files,
+                 time
 
 Test-Suite unit-tests-scheduler
   Type: exitcode-stdio-1.0
@@ -92,4 +93,5 @@ Test-Suite unit-tests-scheduler
                  tasty,
                  tasty-hunit,
                  tasty-files,
-                 unix
+                 unix,
+                 time
