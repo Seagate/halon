@@ -5,10 +5,12 @@
 -- Bindings to the spiel interface.
 --
 
-module Mero.Spiel where
+module Mero.Spiel
+  ( module Mero.Spiel
+  , module Mero.Spiel.Context
+  ) where
 
 import Mero.ConfC
-import Mero.Conf.Context
 import Mero.Spiel.Context
 import Mero.Spiel.Internal
 
@@ -42,7 +44,7 @@ import Foreign.Marshal.Alloc
   )
 import Foreign.Marshal.Array
   ( peekArray
-  , withArray
+  , withArray0
   , withArrayLen
   )
 import Foreign.Marshal.Error
@@ -53,6 +55,8 @@ import Foreign.Marshal.Utils
   ( with
   , withMany
   )
+import Foreign.Ptr
+  ( nullPtr )
 import Foreign.Storable
   ( peek
   , poke
@@ -72,7 +76,7 @@ start rpcmach eps rm_ep = withCString rm_ep $ \c_rm_ep -> do
   bracket
     (mapM newCString eps)
     (mapM_ free)
-    (\eps_arr -> withArray eps_arr $ \c_eps -> do
+    (\eps_arr -> withArray0 nullPtr eps_arr $ \c_eps -> do
       sc <- mallocForeignPtrBytes m0_spiel_size
       throwIfNonZero_ (\rc -> "Cannot initialize Spiel context: " ++ show rc)
                       $ withForeignPtr sc
@@ -90,9 +94,7 @@ withSpiel :: RPCMachine -- ^ Request handler
           -> String -- ^ Network endpoint of Resource Manager service.
           -> (SpielContext -> IO a) -- ^ Action to undertake with Spiel
           -> IO a
-withSpiel rpcmach eps rm_ep = bracket
-  (start rpcmach eps rm_ep)
-  stop
+withSpiel rpcmach eps rm_ep = bracket (start rpcmach eps rm_ep) stop
 
 ---------------------------------------------------------------
 -- Configuration management                                  --
@@ -116,8 +118,19 @@ closeTransaction (SpielTransaction ptr) = withForeignPtr ptr c_spiel_tx_close
 commitTransaction :: SpielTransaction
                   -> IO ()
 commitTransaction (SpielTransaction ptr) =
-  throwIfNonZero_ (\rc -> "Cannot close Spiel transaction: " ++ show rc)
+  throwIfNonZero_ (\rc -> "Cannot commit Spiel transaction: " ++ show rc)
                   $ withForeignPtr ptr c_spiel_tx_commit
+
+commitTransactionForced :: SpielTransaction
+                        -> Bool
+                        -> Word64 -- ^ Version number
+                        -> Word32 -- ^ Quorum
+                        -> IO ()
+commitTransactionForced (SpielTransaction ptr) forced ver quorum =
+  throwIfNonZero_ (\rc -> "Cannot commmit Spiel transaction: " ++ show rc)
+    $ withForeignPtr ptr $ \c_ptr ->
+      c_spiel_tx_commit_forced c_ptr forced ver quorum
+
 
 withTransaction :: SpielContext
                 -> (SpielTransaction -> IO a)
@@ -150,7 +163,7 @@ addFilesystem (SpielTransaction fsc) fid profile mdRedundancy
         bracket
           (mapM newCString params)
           (mapM_ free)
-          (\eps_arr -> withArray eps_arr $ \c_eps -> do
+          (\eps_arr -> withArray0 nullPtr eps_arr $ \c_eps -> do
             throwIfNonZero_ (\rc -> "Cannot add filesystem: " ++ show rc)
               $ c_spiel_filesystem_add sc fid_ptr prof_ptr
                                        (CUInt mdRedundancy)

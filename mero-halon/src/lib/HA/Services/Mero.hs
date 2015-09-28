@@ -97,18 +97,19 @@ remotableDecl [ [d|
   m0dProcess :: MeroConf -> Process ()
   m0dProcess MeroConf{..} = do
       self <- getSelfPid
-      bracket
+      bracket_
         (Mero.Notification.initialize haAddr)
-        (\_ -> Mero.Notification.finalize) $
-        \ep -> do
-          c <- spawnChannelLocal $ statusProcess ep m0addr self
+        Mero.Notification.finalize $
+        do
+          c <- withEp $ \ep -> spawnChannelLocal (statusProcess ep m0addr self)
           sendMeroChannel c
           say $ "Starting service m0d"
-          go ep 0
+          go 0
     where
       haAddr = RPC.rpcAddress mcServerAddr
       m0addr = RPC.rpcAddress mcMeroAddr
-      go ep epoch = do
+      withEp = Mero.Notification.withServerEndpoint haAddr
+      go epoch = do
           let shutdownAndTellThem = do
                 node <- getSelfNode
                 pid  <- getSelfPid
@@ -119,14 +120,14 @@ remotableDecl [ [d|
                 wrapperPid <- getSelfPid
                 if epoch < epochExpected
                    then do promulgate $ EpochTransitionRequest wrapperPid epoch epochTarget
-                           go ep epoch
-                   else do updatedEpoch <- updateEpoch ep m0addr epochTarget
+                           go epoch
+                   else do updatedEpoch <- withEp $ \ep -> updateEpoch ep m0addr epochTarget
                            -- if new epoch is rejected, die
                            when (updatedEpoch < epochTarget) $ shutdownAndTellThem
-                           go ep updatedEpoch
+                           go updatedEpoch
             , match $ \buf ->
                 case examine buf of
-                   True -> go ep epoch
+                   True -> go epoch
                    False -> shutdownAndTellThem
             , match $ \() ->
                 shutdownAndTellThem

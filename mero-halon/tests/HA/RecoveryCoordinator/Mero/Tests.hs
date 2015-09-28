@@ -7,6 +7,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
 
 module HA.RecoveryCoordinator.Mero.Tests
   ( testDriveAddition
@@ -19,6 +20,9 @@ module HA.RecoveryCoordinator.Mero.Tests
   , testMonitorManagement
   , testMasterMonitorManagement
   , testNodeUpRace
+#ifdef USE_MERO
+  , testRCsyncToConfd
+#endif
   ) where
 
 import Prelude hiding ((<$>), (<*>))
@@ -79,18 +83,41 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ( first, second )
 import qualified Control.Exception as E
 import Control.Monad (forM_, void, join)
-
 import Data.Defaultable
 import Data.List (isInfixOf)
 import Data.Proxy (Proxy(..))
-import Network.CEP (Published(..), Logs(..), subscribe)
+import Network.CEP (Published(..), Logs(..), subscribe, Definitions)
 import System.IO
 import System.Random
 import System.Timeout
 import System.Environment
 import Test.Tasty.HUnit (assertBool)
 
+#ifdef USE_MERO
+import Data.Binary (Binary)
+import Data.Hashable (Hashable)
+import Data.Typeable (Typeable)
+import GHC.Generics (Generic)
+import HA.Castor.Tests (initialDataAddr)
+import HA.RecoveryCoordinator.Actions.Mero (syncToConfd)
+import Mero (m0_init)
+import Mero.M0Worker
+import Mero.Notification (finalize)
+import Network.CEP (defineSimple, liftProcess)
+import System.IO.Unsafe
+#endif
+
 type TestReplicatedState = (EventQueue, Multimap)
+
+#ifdef USE_MERO
+-- | label used to test spiel sync through a rule
+data SpielSync = SpielSync
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary SpielSync
+instance Hashable SpielSync
+#endif
+
 
 remotableDecl [ [d|
   eqView :: RStateView TestReplicatedState EventQueue
@@ -101,12 +128,28 @@ remotableDecl [ [d|
 
   testDict :: SerializableDict TestReplicatedState
   testDict = SerializableDict
+
+  emptyRules :: [Definitions LoopState ()]
+  emptyRules = []
+
+#ifdef USE_MERO
+  testSyncRules :: [Definitions LoopState ()]
+  testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent _ SpielSync _) -> do
+    syncToConfd
+    liftProcess $ say "Finished sync to confd"
+#endif
   |]]
 
 runRC :: (ProcessId, IgnitionArguments)
       -> MC_RG TestReplicatedState
       -> Process ((ProcessId, ProcessId)) -- ^ MM, RC
-runRC (eq, args) rGroup = do
+runRC (eq, args) rGroup = runRCEx (eq, args) $(mkStatic 'emptyRules) rGroup
+
+runRCEx :: (ProcessId, IgnitionArguments)
+        -> Static [Definitions LoopState ()]
+        -> MC_RG TestReplicatedState
+        -> Process ((ProcessId, ProcessId)) -- ^ MM, RC
+runRCEx (eq, args) rules rGroup = do
   rec (mm, rc) <- (,)
                   <$> (spawnLocal $ do
                         () <- expect
@@ -114,11 +157,11 @@ runRC (eq, args) rGroup = do
                         multimap (viewRState $(mkStatic 'multimapView) rGroup))
                   <*> (spawnLocal $ do
                         () <- expect
-                        recoveryCoordinator args eq mm)
+                        recoveryCoordinatorEx args rules eq mm)
   usend eq rc
   forM_ [mm, rc] $ \them -> usend them ()
---  liftIO $ takeMVar var
   return (mm, rc)
+
 
 getServiceProcessPid :: Configuration a
                      => ProcessId
@@ -563,6 +606,47 @@ testNodeUpRace transport = do
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
 
+#ifdef USE_MERO
+-- | Sends a message to the RC with Confd addition message and tests
+-- that it gets added to the resource graph.
+testRCsyncToConfd :: String -- ^ IP we're listening on, used in this
+                            -- test to assume confd server is on the
+                            -- same host
+                  -> Transport -> IO ()
+testRCsyncToConfd host transport = do
+ withTestEnv $ do
+  liftIO $ writeFile "/tmp/strlog" ""
+  nid <- getSelfNode
+  self <- getSelfPid
+  void $ startEQTracker [nid]
+  registerInterceptor $ \case
+    str' | unsafePerformIO (appendFile "/tmp/strlog" (str' ++ "\n") >> return False) -> undefined
+    str' | "Finished sync to confd" `isInfixOf` str' -> usend self ("SyncOK" :: String)
+    str' | "Loaded initial data" `isInfixOf` str' -> usend self ("InitialLoad" :: String)
+    _ -> return ()
+  cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+                       [nid] ((Nothing,[]), fromList [])
+  pRGroup <- unClosure cRGroup
+  rGroup <- pRGroup
+  eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+  _ <- runRCEx (eq, IgnitionArguments [nid]) $(mkStatic 'testSyncRules) rGroup
+
+  promulgateEQ [nid] (initialDataAddr host host) >>= (`withMonitor` wait)
+  "InitialLoad" :: String <- expect
+
+  liftIO $ appendFile "/tmp/strlog" "about to syncToConfd\n"
+  promulgateEQ [nid] SpielSync >>= (flip withMonitor) wait
+  "SyncOK" :: String <- expect
+
+  finalize
+
+  -- XXX m0_fini
+
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
+    startM0 x = m0_init >> startGlobalWorker >> x
+    withTestEnv = withTmpDirectory . startM0 . tryWithTimeout transport testRemoteTable 15000000
+#endif
 
 testRemoteTable :: RemoteTable
 testRemoteTable = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $

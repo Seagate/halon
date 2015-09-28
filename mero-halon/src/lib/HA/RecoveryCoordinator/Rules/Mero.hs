@@ -31,7 +31,7 @@ import Data.List (sort, (\\))
 import Data.Proxy
 import qualified Data.Set as S
 import Data.UUID.V4 (nextRandom)
-import Data.Word ( Word64 )
+import Data.Word ( Word32, Word64 )
 
 import Network.CEP
 
@@ -153,10 +153,13 @@ initialiseConfInRG = getFilesystem >>= \case
       rg <- getLocalGraph
       profile <- M0.Profile <$> newFid (Proxy :: Proxy M0.Profile)
       pool <- M0.Pool <$> newFid (Proxy :: Proxy M0.Pool)
-      fs <- M0.Filesystem <$> newFid (Proxy :: Proxy M0.Profile)
+      fs <- M0.Filesystem <$> newFid (Proxy :: Proxy M0.Filesystem)
                           <*> return (M0.fid pool)
       modifyGraph
-          $ G.connectUniqueFrom Cluster Has profile
+          $ G.newResource profile
+        >>> G.newResource fs
+        >>> G.newResource pool
+        >>> G.connectUniqueFrom Cluster Has profile
         >>> G.connectUniqueFrom profile M0.IsParentOf fs
         >>> G.connect fs M0.IsParentOf pool
 
@@ -183,16 +186,37 @@ initialiseConfInRG = getFilesystem >>= \case
                        . (G.newResource m0r >>> G.connectUnique m0r M0.At r)
       return m0r
 
+-- ^ Allowed failures in each failure domain
+data Failures = Failures {
+    f_pool :: Word32
+  , f_rack :: Word32
+  , f_encl :: Word32
+  , f_ctrl :: Word32
+  , f_disk :: Word32
+} deriving (Eq, Ord, Show)
+
+data FailureSet = FailureSet
+    (S.Set Fid) -- ^ Set of Fids
+    Failures -- ^ Allowable failures in each failure domain.
+  deriving (Eq, Ord, Show)
+
+failureSetToArray :: Failures -> [Word32]
+failureSetToArray f = [f_pool f, f_rack f, f_encl f, f_ctrl f, f_disk f]
+
+mapFS :: (S.Set Fid -> S.Set Fid) -> FailureSet -> FailureSet
+mapFS f (FailureSet a b) = FailureSet (f a) b
+
 -- | Create pool versions based upon failure sets.
 createPoolVersions :: M0.Filesystem
-                   -> S.Set (S.Set Fid)
+                   -> S.Set FailureSet
                    -> PhaseM LoopState l ()
 createPoolVersions fs = mapM_ createPoolVersion . S.toList
   where
     pool = M0.Pool (M0.f_mdpool_fid fs)
-    createPoolVersion :: S.Set Fid -> PhaseM LoopState l ()
-    createPoolVersion failset = do
+    createPoolVersion :: FailureSet -> PhaseM LoopState l ()
+    createPoolVersion (FailureSet failset failures) = do
       pver <- M0.PVer <$> newFid (Proxy :: Proxy M0.PVer)
+                      <*> return (failureSetToArray failures)
       modifyGraph
           $ G.newResource pver
         >>> G.connect pool M0.IsRealOf pver
@@ -231,10 +255,10 @@ createPoolVersions fs = mapM_ createPoolVersion . S.toList
                 >>> G.connect ctrlv M0.IsParentOf diskv
                 >>> G.connect disk M0.IsRealOf diskv
 
-generateFailureSets :: Int -- ^ No. of disk failures to tolerate
-                    -> Int -- ^ No. of controller failures to tolerate
-                    -> Int -- ^ No. of disk failures equivalent to ctrl failure
-                    -> PhaseM LoopState l (S.Set (S.Set Fid))
+generateFailureSets :: Word32 -- ^ No. of disk failures to tolerate
+                    -> Word32 -- ^ No. of controller failures to tolerate
+                    -> Word32 -- ^ No. of disk failures equivalent to ctrl failure
+                    -> PhaseM LoopState l (S.Set FailureSet)
 generateFailureSets df cf cfe = do
   rg <- getLocalGraph
   -- Look up all disks and the controller they are attached to
@@ -246,12 +270,14 @@ generateFailureSets df cf cfe = do
         ]
 
       -- Build failure sets for this number of failed controllers
-      buildCtrlFailureSet :: Int -- No. failed controllers
+      buildCtrlFailureSet :: Word32 -- No. failed controllers
                           -> M.HashMap Fid (S.Set Fid) -- ctrl -> disks
-                          -> S.Set (S.Set Fid)
+                          -> S.Set FailureSet
       buildCtrlFailureSet i fids = let
           df' = df - (i * cfe) -- E.g. failures to support on top of ctrl failure
+          failures = Failures 0 0 0 (cf - i) (df')
           keys = sort $ M.keys fids
+          go :: [Fid] -> S.Set FailureSet
           go failedCtrls = let
               okCtrls = keys \\ failedCtrls
               failedCtrlSet :: S.Set Fid
@@ -262,27 +288,31 @@ generateFailureSets df cf cfe = do
               possibleDisks =
                 S.unions $ fmap (\x -> M.lookupDefault S.empty x fids) okCtrls
             in
-              S.mapMonotonic (\x -> failedCtrlSet
+              S.mapMonotonic (mapFS $ \x -> failedCtrlSet
                         `S.union` (autoFailedDisks `S.union` x))
-                   (buildDiskFailureSets df' possibleDisks)
+                   (buildDiskFailureSets df' possibleDisks failures)
         in
           S.unions $ go <$> choose i keys
 
-      buildDiskFailureSets :: Int -- Max no. failed disks
+      buildDiskFailureSets :: Word32 -- Max no. failed disks
                            -> S.Set Fid
-                           -> S.Set (S.Set Fid)
-      buildDiskFailureSets i fids =
-        S.unions $ fmap (\j -> buildDiskFailureSet j fids) [0 .. i]
+                           -> Failures
+                           -> S.Set FailureSet
+      buildDiskFailureSets i fids failures =
+        S.unions $ fmap (\j -> buildDiskFailureSet j fids failures) [0 .. i]
 
-      buildDiskFailureSet :: Int -- No. failed disks
-                          -> S.Set Fid
-                          -> S.Set (S.Set Fid)
-      buildDiskFailureSet i fids =
-          S.unions $ go <$> (choose i (S.toList fids))
+      buildDiskFailureSet :: Word32 -- No. failed disks
+                          -> S.Set Fid -- Set of disks
+                          -> Failures -- Existing allowed failure map
+                          -> S.Set FailureSet
+      buildDiskFailureSet i fids failures =
+          S.fromList $ go <$> (choose i (S.toList fids))
         where
-          go failed = S.singleton $ S.fromDistinctAscList failed
+          go failed = FailureSet
+                        (S.fromDistinctAscList failed)
+                        failures { f_disk = f_disk failures - i }
 
-      choose :: Int -> [a] -> [[a]]
+      choose :: Word32 -> [a] -> [[a]]
       choose 0 _ = [[]]
       choose _ [] = []
       choose n (x:xs) = ((x:) <$> choose (n-1) xs) ++ choose n xs
