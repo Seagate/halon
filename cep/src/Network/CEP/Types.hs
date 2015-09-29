@@ -9,7 +9,6 @@
 --
 module Network.CEP.Types where
 
-import Control.Concurrent
 import Data.ByteString (ByteString)
 import Data.Dynamic
 import GHC.Generics
@@ -176,7 +175,7 @@ jumpEmitTimeout key jmp = do
                   let (c_res, nxt_w) = runIdentity $ stepWire cur_w c_t (Right ())
                   case c_res of
                     Left _ -> do
-                      liftIO $ threadDelay 1000
+                      (_ :: Maybe ()) <- receiveTimeout 1000 []
                       action nxt_sess nxt_w
                     Right _ -> usend self (Timeout key)
             _ <- spawnLocal $ action s_sess w
