@@ -97,6 +97,8 @@ parseIPMIOp t = case (T.toLower t) of
 data NodeCmd
   = IPMICmd IPMIOp T.Text -- ^ IP address
   | DriveReset T.Text     -- ^ Reset drive
+  | DrivePowerdown T.Text -- ^ Powerdown drive
+  | DrivePoweron T.Text   -- ^ Poweron drive
   | SmartTest  T.Text     -- ^ SMART drive test
   deriving (Eq, Show, Generic, Typeable)
 
@@ -109,6 +111,10 @@ nodeCmdString (IPMICmd op ip) = T.intercalate " "
   [ "IPMI:", ip, ipmiOpString op ]
 nodeCmdString (DriveReset drive) = T.intercalate " "
   [ "DRIVE_RESET:", drive ]
+nodeCmdString (DrivePowerdown drive) = T.intercalate " "
+  [ "DRIVE_POWERDOWN:", drive ]
+nodeCmdString (DrivePoweron drive) = T.intercalate " "
+  [ "DRIVE_POWERON:", drive ]
 nodeCmdString (SmartTest drive) = T.intercalate " "
   [ "SMART_TEST:", drive ]
 
@@ -120,6 +126,8 @@ parseNodeCmd t =
                            op <- parseIPMIOp opt
                            return $ IPMICmd op ip
       "DRIVE_RESET:" -> return $ DriveReset (head rest)
+      "DRIVE_POWERDOWN:" -> return $ DrivePowerdown (head rest)
+      "DRIVE_POWERON:" -> return $ DrivePoweron (head rest)
       "SMART_TEST:"  -> return $ SmartTest (head rest)
       _ -> Nothing
   where
@@ -363,4 +371,3 @@ instance Relation CommandChannel
 --------------------------------------------------------------------------------
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------
-

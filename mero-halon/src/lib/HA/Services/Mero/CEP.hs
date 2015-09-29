@@ -10,6 +10,7 @@
 
 module HA.Services.Mero.CEP
   ( meroRulesF
+  , meroChannels
   ) where
 
 import HA.EventQueue.Types (HAEvent(..))

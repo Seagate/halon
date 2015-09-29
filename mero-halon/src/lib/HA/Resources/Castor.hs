@@ -32,15 +32,6 @@ import GHC.Generics (Generic)
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
 
--- | Generic 'identifier' type
-data Identifier =
-    IdentString String
-  | IdentInt Integer
-  deriving (Eq, Show, Generic, Typeable)
-
-instance Binary Identifier
-instance Hashable Identifier
-
 newtype Rack = Rack
   Int -- ^ Rack index
   deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
@@ -73,8 +64,25 @@ newtype StorageDevice = StorageDevice
     UUID -- ^ Internal UUID used to refer to the disk
   deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
 
+data StorageDeviceAttr
+    = SDResetAttempts !Int
+    | SDPowerOnAttempts !Int
+    | SDPowerOffAttempts !Int
+    | SDPowered
+    | SDSMARTRunning
+    | SDOnGoingReset
+    deriving (Eq, Ord, Show, Generic)
+
+instance Binary StorageDeviceAttr
+instance Hashable StorageDeviceAttr
+
 -- | Arbitrary identifier for a logical or storage device
-data DeviceIdentifier = DeviceIdentifier String Identifier
+data DeviceIdentifier =
+      DIPath String
+    | DIIndexInEnclosure Int
+    | DIWWN String
+    | DIUUID String
+    | DIOther String
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary DeviceIdentifier
@@ -105,7 +113,8 @@ instance Hashable Is
 $(mkDicts
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''MI.Interface, ''StorageDevice
-  , ''StorageDeviceStatus, ''MI.BMC
+  , ''StorageDeviceStatus, ''StorageDeviceAttr
+  , ''MI.BMC
   ]
   [ (''Cluster, ''Has, ''Rack)
   , (''Cluster, ''Has, ''Host)
@@ -121,13 +130,15 @@ $(mkDicts
   , (''Host, ''Has, ''StorageDevice)
   , (''StorageDevice, ''Has, ''StorageDeviceStatus)
   , (''StorageDevice, ''Has, ''DeviceIdentifier)
+  , (''StorageDevice, ''Has, ''StorageDeviceAttr)
   ]
   )
 
 $(mkResRel
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''MI.Interface, ''StorageDevice
-  , ''StorageDeviceStatus, ''MI.BMC
+  , ''StorageDeviceStatus, ''StorageDeviceAttr
+  , ''MI.BMC
   ]
   [ (''Cluster, ''Has, ''Rack)
   , (''Cluster, ''Has, ''Host)
@@ -143,6 +154,7 @@ $(mkResRel
   , (''Host, ''Has, ''StorageDevice)
   , (''StorageDevice, ''Has, ''StorageDeviceStatus)
   , (''StorageDevice, ''Has, ''DeviceIdentifier)
+  , (''StorageDevice, ''Has, ''StorageDeviceAttr)
   ]
   []
   )

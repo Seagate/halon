@@ -36,10 +36,22 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , findStorageDeviceIdentifiers
   , hasStorageDeviceIdentifier
   , identifyStorageDevice
+  , lookupStorageDevicePaths
   , locateStorageDeviceInEnclosure
   , locateStorageDeviceOnHost
   , mergeStorageDevices
   , updateDriveStatus
+  , incrDiskPowerOnAttempts
+  , incrDiskPowerOffAttempts
+  , incrDiskResetAttempts
+  , markDiskPowerOn
+  , markSMARTTestIsRunning
+  , getDiskResetAttempts
+  , markDiskPowerOff
+  , markSMARTTestComplete
+  , hasOngoingReset
+  , markOnGoingReset
+  , markResetComplete
 ) where
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -50,7 +62,7 @@ import HA.Resources.Castor
 import Control.Category ((>>>))
 import Control.Distributed.Process (liftIO)
 
-import Data.Maybe (listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe)
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
@@ -325,6 +337,14 @@ identifyStorageDevice ld di = modifyLocalGraph $ \rg -> do
 
   return rg'
 
+-- | Lookup filesystem
+lookupStorageDevicePaths :: StorageDevice -> PhaseM LoopState l [String]
+lookupStorageDevicePaths sd =
+  catMaybes . map extractPath <$> findStorageDeviceIdentifiers sd
+  where
+    extractPath (DIPath x) = Just x
+    extractPath _ = Nothing
+
 -- | Register a new drive in the system.
 locateStorageDeviceInEnclosure :: Enclosure
                                 -> StorageDevice
@@ -403,3 +423,129 @@ updateDriveStatus dev status = modifyLocalGraph $ \rg -> do
         >>> removeOldNode
           $ rg
   return rg'
+
+setStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM LoopState l ()
+setStorageDeviceAttr sd attr  = do
+    phaseLog "rg" $ "Setting disk attribute " ++ show attr ++ "on " ++ show sd
+    modifyGraph (G.newResource attr >>> G.connect sd Has attr)
+
+unsetStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM LoopState l ()
+unsetStorageDeviceAttr sd attr = do
+    phaseLog "rg" $ "Unsetting disk attribute "
+                  ++ show attr ++ "on " ++ show sd
+    modifyGraph (G.disconnect sd Has attr)
+
+findStorageDeviceAttr :: (StorageDeviceAttr -> Bool)
+             -> StorageDevice
+             -> PhaseM LoopState l (Maybe StorageDeviceAttr)
+findStorageDeviceAttr k sdev = do
+    rg <- getLocalGraph
+    let attrs =
+          [ attr | attr <- G.connectedTo sdev Has rg :: [StorageDeviceAttr]
+                 , k attr
+                 ]
+    return $ listToMaybe attrs
+
+hasOngoingReset :: StorageDevice -> PhaseM LoopState l Bool
+hasOngoingReset =
+    fmap (maybe False (const True)) . findStorageDeviceAttr go
+  where
+    go SDOnGoingReset = True
+    go _              = False
+
+
+incrDiskPowerOnAttempts :: StorageDevice -> PhaseM LoopState l ()
+incrDiskPowerOnAttempts sdev = do
+    let _F (SDPowerOnAttempts _) = True
+        _F _                     = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Just old@(SDPowerOnAttempts i) -> do
+        unsetStorageDeviceAttr sdev old
+        setStorageDeviceAttr sdev (SDPowerOnAttempts (i+1))
+      _ -> setStorageDeviceAttr sdev (SDPowerOnAttempts 1)
+
+incrDiskPowerOffAttempts :: StorageDevice -> PhaseM LoopState l ()
+incrDiskPowerOffAttempts sdev = do
+    let _F (SDPowerOffAttempts _) = True
+        _F _                           = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Just old@(SDPowerOffAttempts i) -> do
+        unsetStorageDeviceAttr sdev old
+        setStorageDeviceAttr sdev (SDPowerOffAttempts (i+1))
+      _ -> setStorageDeviceAttr sdev (SDPowerOffAttempts 1)
+
+incrDiskResetAttempts :: StorageDevice -> PhaseM LoopState l ()
+incrDiskResetAttempts sdev = do
+    let _F (SDResetAttempts _) = True
+        _F _                        = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Just old@(SDResetAttempts i) -> do
+        unsetStorageDeviceAttr sdev old
+        setStorageDeviceAttr sdev (SDResetAttempts (i+1))
+      _ -> setStorageDeviceAttr sdev (SDResetAttempts 1)
+
+markOnGoingReset :: StorageDevice -> PhaseM LoopState l ()
+markOnGoingReset sdev = do
+    let _F SDOnGoingReset = True
+        _F _                 = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Nothing -> setStorageDeviceAttr sdev SDOnGoingReset
+      _       -> return ()
+
+markResetComplete :: StorageDevice -> PhaseM LoopState l ()
+markResetComplete sdev = do
+    let _F SDOnGoingReset = True
+        _F _                 = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Nothing  -> return ()
+      Just old -> unsetStorageDeviceAttr sdev old
+
+markDiskPowerOn :: StorageDevice -> PhaseM LoopState l ()
+markDiskPowerOn sdev = do
+    let _F SDPowered = True
+        _F _              = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Nothing -> setStorageDeviceAttr sdev SDPowered
+      _       -> return ()
+
+markSMARTTestIsRunning :: StorageDevice -> PhaseM LoopState l ()
+markSMARTTestIsRunning sdev = do
+    let _F SDSMARTRunning = True
+        _F _                   = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Nothing -> setStorageDeviceAttr sdev SDSMARTRunning
+      _       -> return ()
+
+markDiskPowerOff :: StorageDevice -> PhaseM LoopState l ()
+markDiskPowerOff sdev = do
+    let _F SDPowered = True
+        _F _              = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Nothing  -> return ()
+      Just old -> unsetStorageDeviceAttr sdev old
+
+markSMARTTestComplete :: StorageDevice -> PhaseM LoopState l ()
+markSMARTTestComplete sdev = do
+    let _F SDSMARTRunning = True
+        _F _                   = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Nothing  -> return ()
+      Just old -> unsetStorageDeviceAttr sdev old
+
+getDiskResetAttempts :: StorageDevice -> PhaseM LoopState l Int
+getDiskResetAttempts sdev = do
+    let _F (SDResetAttempts _) = True
+        _F _                        = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Just (SDResetAttempts i) -> return i
+      _                             -> return 0

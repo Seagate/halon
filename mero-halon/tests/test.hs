@@ -10,6 +10,7 @@ import qualified HA.RecoveryCoordinator.Mero.Tests
 import qualified HA.Autoboot.Tests
 #ifdef USE_MERO
 import qualified HA.Castor.Tests
+import qualified HA.Castor.Story.Tests
 #endif
 import qualified HA.Test.Disconnect
 import qualified HA.Test.Cluster
@@ -90,6 +91,8 @@ ut _host transport breakConnection = do
         HA.Castor.Tests.tests _host transport
       , testCase "RCsyncToConfd" $
           HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd _host transport
+      , testGroup "Castor stories" $
+        HA.Castor.Story.Tests.tests transport
 #endif
 #if !defined(USE_RPC) && !defined(USE_MOCK_REPLICATOR)
       , testCase "RCToleratesDisconnections" $

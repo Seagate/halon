@@ -42,7 +42,7 @@ import Network.CEP
 import Prelude hiding (id, mapM_)
 
 --------------------------------------------------------------------------------
--- Primitives                                                                 --
+-- Primitives
 --------------------------------------------------------------------------------
 
 sendInterestingEvent :: NodeId
@@ -167,14 +167,14 @@ ssplRulesF sspl = do
           disk = StorageDevice diskUUID
 
       locateStorageDeviceInEnclosure enc disk
-      identifyStorageDevice disk $ DeviceIdentifier "slot" (IdentInt diskNum)
+      identifyStorageDevice disk $ DIIndexInEnclosure diskNum
       updateDriveStatus disk $ T.unpack disk_status
       mapM_ (\h -> do
             locateHostInEnclosure h enc
             -- Find any existing (logical) devices and link them
             hostDevs <- findHostStorageDevices h
                       >>= filterM (flip hasStorageDeviceIdentifier
-                                  (DeviceIdentifier "slot" (IdentInt diskNum)))
+                                  (DIIndexInEnclosure diskNum))
             mapM_ (\d -> mergeStorageDevices [d,disk]) hostDevs
             ) host
 
@@ -293,28 +293,3 @@ ssplRulesF sspl = do
             forM_ hosts $ \(nodeIp) -> do
               sendNodeCmd actuationNode Nothing $ IPMICmd IPMI_ON (T.pack nodeIp)
           x -> liftProcess . say $ "Unsupported node command: " ++ show x
-
-  defineSimple "clustermap" $ \(HAEvent _
-                                        (Devices devs)
-                                        _
-                                      ) ->
-    mapM_ addDev devs
-    where
-      addDev (DevId mid fn sl hn) = do
-          diskUUID <- liftIO $ nextRandom
-          let dev = StorageDevice diskUUID
-          locateStorageDeviceOnHost host dev
-          identifyStorageDevice dev (DeviceIdentifier "iosid" (IdentInt mid))
-          identifyStorageDevice dev (DeviceIdentifier "slot" (IdentInt sl))
-          identifyStorageDevice dev (DeviceIdentifier "filename" (IdentString fn))
-          -- | Find existing storage devices and link them
-          menc <- findHostEnclosure host
-          mapM_ (\enc -> do
-                  drives <- findEnclosureStorageDevices enc
-                        >>= filterM (flip hasStorageDeviceIdentifier $
-                                      DeviceIdentifier "slot" (IdentInt sl)
-                                    )
-                  mapM_ (\d -> mergeStorageDevices [dev, d]) drives
-                ) menc
-        where
-          host = Host hn

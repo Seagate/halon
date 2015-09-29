@@ -31,6 +31,7 @@ import Control.Distributed.Process
 
 import Network.CEP (liftProcess, MonadProcess)
 
+import Mero
 import Mero.ConfC (Fid)
 import Mero.Notification.HAState
 import Mero.M0Worker
