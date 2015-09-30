@@ -12,6 +12,7 @@ module HA.Services.SSPL.Rabbit where
 import Prelude hiding ((<$>), (<*>))
 import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.Chan
+import Control.Concurrent.MVar
 import Control.Distributed.Process
   ( Process
   , getSelfPid
@@ -19,6 +20,7 @@ import Control.Distributed.Process
   , link
   , spawnLocal
   , finally
+  , bracket
   )
 import Control.Monad (forever)
 
@@ -135,3 +137,29 @@ receive chan BindConf{..} handle = do
     queueName = T.pack . fromDefault $ bcQueueName
     routingKey = T.pack . fromDefault $ bcRoutingKey
 
+receiveAck :: Network.AMQP.Channel
+           -> T.Text -- ^ Exchange
+           -> T.Text -- ^ Queue
+           -> T.Text -- ^ Routing key
+           -> (Network.AMQP.Message -> Process ())
+           -> Process ()
+receiveAck chan exchange queue routingKey handle = bracket
+  (liftIO $ do
+     declareExchange chan newExchange
+       { exchangeName = exchange
+       , exchangeType = "topic"
+       , exchangeDurable = False
+       }
+     _  <- declareQueue chan newQueue{ queueName = queue }
+     bindQueue chan queue exchange routingKey
+     mbox  <- newEmptyMVar
+     mdone <- newEmptyMVar
+     tag   <- consumeMsgs chan queue Ack $ \(msg,env) -> do
+       putMVar mbox msg
+       takeMVar mdone
+       ackEnv env
+     return (tag,(mbox,mdone)))
+  (liftIO . cancelConsumer chan . fst)
+  (\(_,(mbox,mdone)) -> forever $ do
+     handle =<< liftIO (takeMVar mbox)
+     liftIO $ putMVar mdone ())
