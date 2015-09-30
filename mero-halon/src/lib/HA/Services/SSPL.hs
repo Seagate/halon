@@ -52,11 +52,14 @@ import Control.Distributed.Process
   , spawnLocal
   , unmonitor
   , link
+  , expect
+  , withMonitor
   )
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Monad.State.Strict hiding (mapM_)
+import Data.Foldable (for_)
 
 import Data.Aeson (decode, encode)
 import qualified Data.Aeson as Aeson
@@ -67,6 +70,7 @@ import qualified Data.HashMap.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.UUID as UID
+import qualified Data.HashMap.Strict as HM
 
 import Network.AMQP
 import Network.CEP (Definitions)
@@ -114,8 +118,10 @@ startActuators :: Network.AMQP.Channel
 startActuators chan ac pid = do
     iemChan <- spawnChannelLocal (iemProcess $ acIEM ac)
     systemdChan <- spawnChannelLocal (commandProcess $ acSystemd ac)
+    _ <- spawnLocal $ replyProcess (acCommandAck ac)
     informRC (ServiceProcess pid) (ActuatorChannels iemChan systemdChan)
   where
+    cmdAckQueueName = T.pack . fromDefault . Rabbit.bcQueueName $ acCommandAck ac
     informRC sp chans = do
       mypid <- getSelfPid
       _ <- promulgate $ DeclareChannels mypid sp chans
@@ -134,8 +140,8 @@ startActuators chan ac pid = do
                 }
         )
     commandProcess Rabbit.BindConf{..} rp = forever $ do
-      cmd <- receiveChan rp
-      uuid <- liftIO $ randomIO
+      (muuid, cmd) <- receiveChan rp
+      uuid <- liftIO $ maybe randomIO return muuid
       let msg = encode $ ActuatorRequest {
           actuatorRequestSignature = ""
         , actuatorRequestTime = ""
@@ -152,9 +158,29 @@ startActuators chan ac pid = do
         (T.pack . fromDefault $ bcExchangeName)
         (T.pack . fromDefault $ bcRoutingKey)
         (newMsg { msgBody = msg
+                , msgReplyTo = Just cmdAckQueueName
                 , msgDeliveryMode = Just Persistent
                 }
         )
+    replyProcess Rabbit.BindConf{..} = Rabbit.receiveAck chan
+      (T.pack . fromDefault $ bcExchangeName)
+      (cmdAckQueueName)
+      (T.pack . fromDefault $ bcRoutingKey)
+      (\msg -> for_ (decode $ msgBody msg) $ \response -> do
+          let uuid = (\(Aeson.Object hm) -> (\(Aeson.String s) -> s) <$> "uuid" `HM.lookup` hm)
+                   . actuatorResponseMessageSspl_ll_msg_header
+                   . actuatorResponseMessage $ response :: Maybe T.Text
+              Just (ActuatorResponseMessageActuator_response_typeAck mmsg mtype)
+                   = actuatorResponseMessageActuator_response_typeAck
+                   . actuatorResponseMessageActuator_response_type
+                   . actuatorResponseMessage $ response
+          -- XXX: uuid-1.3.10 has UID.fromText primitive
+          ppid <- promulgate $ CommandAck (UID.fromString =<< T.unpack <$> uuid)
+                                          (parseNodeCmd  mtype)
+                                          (parseAckReply mmsg)
+          ProcessMonitorNotification _ _ _ <-
+            withMonitor ppid $ expect
+          return ())
 
 remotableDecl [ [d|
 
