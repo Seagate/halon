@@ -1801,7 +1801,11 @@ new sdict1 sdict2 config log nodes = callLocal $ do
           ) :: StoredGroupConfig
         )
     forM_ nodes $ const $
-      receiveWait [ match error, match (\() -> return ()) ]
+      receiveWait [ match logError, match (\() -> return ()) ]
+  where
+    logError s = do
+      say $ "Control.Distributed.Log.new: " ++ s
+      error s
 
 -- | Spawns one replica process on each node in @nodes@ if it has not been
 -- spawned already.
@@ -1827,7 +1831,7 @@ spawnReplicas k cPersisDirectory nodes = callLocal $ do
         `closureApply` cPersisDirectory
 
     forM_ nodes $ const $
-      receiveWait [ match error, match (\() -> return ()) ]
+      receiveWait [ match logError, match (\() -> return ()) ]
 
     case nodes of
       nid : _ -> do
@@ -1836,7 +1840,11 @@ spawnReplicas k cPersisDirectory nodes = callLocal $ do
         let GroupConfig sdict1 sdict2 cConfig cLog =
               decode bs :: GroupConfig a
         clone $ RemoteHandle sdict1 sdict2 cConfig cLog nodes
-      [] -> error "spawnReplicas: empty list of nodes"
+      [] -> logError "empty list of nodes"
+  where
+    logError s = do
+      say $ "Control.Distributed.Log.spawnReplicas: " ++ s
+      error s
 
 -- | Propose a reconfiguration according the given nomination policy. Note that
 -- in general, it is only safe to remove replicas if they are /certainly/ dead.
@@ -1914,7 +1922,7 @@ addReplica h@(Handle _ _ cConfig _ α) nid = callLocal $ do
     -- Store the configuration in the remote node.
     _ <- spawnAsync nid $ $(mkClosure 'storeConf)
            (self, (ssdict, gcbs, mship) :: StoredGroupConfig)
-    receiveWait [ match error, match (\() -> return ()) ]
+    receiveWait [ match logError, match (\() -> return ()) ]
 
     -- Spawn the replica.
     --
@@ -1928,11 +1936,15 @@ addReplica h@(Handle _ _ cConfig _ α) nid = callLocal $ do
       $(mkClosure 'spawnLocalReplica) (logId config, self, now)
         `closureApply`
           ($(mkClosure 'persistDirectoryClosure) () `closureApply` cConfig)
-    receiveWait [ match error, match (\() -> return ()) ]
+    receiveWait [ match logError, match (\() -> return ()) ]
 
     -- Add the node to the group
     reconfigure h $ $(mkStaticClosure 'Policy.orpn)
         `closureApply` nodeIdClosure nid
+  where
+    logError s = do
+      say $ "Control.Distributed.Log.addReplica: " ++ s
+      error s
 
 -- | Kill the replica and acceptor.
 killReplica :: Typeable a
