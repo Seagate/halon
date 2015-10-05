@@ -76,13 +76,14 @@ clusterStatus _ = CommandResponseMessageStatusResponseItem {
 hostStatus :: G.Graph
            -> Maybe String
            -> [CommandResponseMessageStatusResponseItem]
-hostStatus rg regex = fmap (\(Host name) ->
+hostStatus rg regex = fmap (\h@(Host name) ->
       CommandResponseMessageStatusResponseItem {
         commandResponseMessageStatusResponseItemEntityId = T.pack name
-      , commandResponseMessageStatusResponseItemStatus = "ok"
+      , commandResponseMessageStatusResponseItemStatus = status h
       }
     ) hosts
   where hosts = [ host | host@(Host hn) <- G.connectedTo Cluster Has rg
                        , hn =~? regex]
         a =~? (Just ef) = a =~ ef
         _ =~? Nothing = True
+        status host = T.pack . show $ (G.connectedTo host Has rg :: [HostAttr])
