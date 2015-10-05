@@ -12,8 +12,12 @@ module HA.RecoveryCoordinator.Definitions
     , recoveryCoordinator__sdict
     , recoveryCoordinator__static
     , recoveryCoordinator
+    , recoveryCoordinatorEx__sdict
+    , recoveryCoordinatorEx__static
+    , recoveryCoordinatorEx
     ) where
 
+import Network.CEP (Definitions)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 
@@ -28,6 +32,15 @@ recoveryCoordinator :: IgnitionArguments
                     -> ProcessId
                     -> Process ()
 recoveryCoordinator argv eq mm =
-    makeRecoveryCoordinator mm $ rcRules argv eq
+    makeRecoveryCoordinator mm $ rcRules argv eq []
 
-remotable [ 'ignitionArguments, 'recoveryCoordinator ]
+recoveryCoordinatorEx :: IgnitionArguments
+                      -> (Static [Definitions LoopState ()])
+                      -> ProcessId
+                      -> ProcessId
+                      -> Process ()
+recoveryCoordinatorEx argv cdefs eq mm = do
+  rules <- unStatic cdefs
+  makeRecoveryCoordinator mm $ rcRules argv eq rules
+
+remotable [ 'ignitionArguments, 'recoveryCoordinator, 'recoveryCoordinatorEx ]
