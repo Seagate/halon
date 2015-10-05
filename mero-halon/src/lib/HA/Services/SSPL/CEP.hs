@@ -213,8 +213,28 @@ ssplRulesF sspl = do
           Just foo -> T.unpack foo
           Nothing -> "." in
       case command of
-        -- Aeson.String "start" -> liftProcess $ say "Unsupported."
-        -- Aeson.String "stop" -> liftProcess $ say "Unsupported."
+        Aeson.String "start" -> do
+          nodes <- findHosts nodeFilter
+                    >>= mapM nodesOnHost
+                    >>= return . join
+                    >>= filterM (\a -> fmap not $ isServiceRunning a sspl)
+          phaseLog "action" $ "Starting " ++ (T.unpack serviceName)
+                          ++ " on nodes " ++ (show nodes)
+          forM_ nodes $ \(Node nid) -> do
+            sendSystemdCmd nid $ SystemdCmd serviceName SERVICE_START
+            sendInterestingEvent nid $
+              InterestingEventMessage ("Starting service " `T.append` serviceName)
+        Aeson.String "stop" -> do
+          nodes <- findHosts nodeFilter
+                    >>= mapM nodesOnHost
+                    >>= return . join
+                    >>= filterM (\a -> isServiceRunning a sspl)
+          phaseLog "action" $ "Stopping " ++ (T.unpack serviceName)
+                          ++ " on nodes " ++ (show nodes)
+          forM_ nodes $ \(Node nid) -> do
+            sendSystemdCmd nid $ SystemdCmd serviceName SERVICE_STOP
+            sendInterestingEvent nid $
+              InterestingEventMessage ("Stopping service " `T.append` serviceName)
         Aeson.String "restart" -> do
           nodes <- findHosts nodeFilter
                     >>= mapM nodesOnHost
