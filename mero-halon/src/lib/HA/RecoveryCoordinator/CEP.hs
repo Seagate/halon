@@ -140,8 +140,8 @@ serviceCouldNotStart evt@(HAEvent _ msg _) ls l@(Just (n1, sname, _)) = do
          else return Nothing
 serviceCouldNotStart _ _ _ = return Nothing
 
-rcRules :: IgnitionArguments -> ProcessId -> Definitions LoopState ()
-rcRules argv eq = do
+rcRules :: IgnitionArguments -> ProcessId -> [Definitions LoopState ()] -> Definitions LoopState ()
+rcRules argv eq additionalRules = do
     initRule $ rcInitRule argv eq
 
     define "node-up" $ do
@@ -378,6 +378,7 @@ rcRules argv eq = do
 #ifdef USE_MERO
     meroRules
 #endif
+    sequence_ additionalRules
 
 sendLogs :: Logs -> LoopState -> Process ()
 sendLogs logs ls = do
