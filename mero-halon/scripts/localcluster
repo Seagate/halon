@@ -69,16 +69,16 @@ then
 
   # Bootstrap tracking station
 
-  $HALONCTL $TSADDRSTRING bootstrap station
+  $HALONCTL $TSADDRSTRING -l $IP:9001 bootstrap station
 
   # Bootstrap satellites
 
-  $HALONCTL $SATADDRSTRING bootstrap satellite -t $TSHEAD
+  $HALONCTL $SATADDRSTRING -l $IP:9001 bootstrap satellite -t $TSHEAD
 
   sleep 3
 
   # Start a couple of services
 
-  $HALONCTL -a $SATHEAD service decision-log start -f /tmp/decision.log --eqt-timeout 0
-  $HALONCTL -a $SATHEAD service frontier start -p 9028 --eqt-timeout 0
+  $HALONCTL -a $SATHEAD -l $IP:9001 service decision-log start -f /tmp/decision.log --eqt-timeout 0
+  $HALONCTL -a $SATHEAD -l $IP:9001 service frontier start -p 9028 --eqt-timeout 0
 fi
