@@ -44,4 +44,7 @@ schedGetTime c = error $ "scheduler.schedGetTime not defined for " ++ show c
 
 -- | TimeSpec as nano seconds.
 timeSpecAsNanoSecs :: C.TimeSpec -> Integer
-timeSpecAsNanoSecs t = toInteger (C.sec t) * (10^9) + toInteger (C.nsec t)
+timeSpecAsNanoSecs t = toInteger (C.sec t) * nanos + toInteger (C.nsec t)
+  where
+    nanos :: Integer
+    nanos = 10 ^ (9 :: Integer)
