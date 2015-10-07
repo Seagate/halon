@@ -23,7 +23,7 @@ import Network.CEP.Buffer
 import Network.CEP.Types
 
 data PhaseOut l where
-    SM_Complete :: l -> [PhaseHandle] -> Maybe SMLogs -> PhaseOut l
+    SM_Complete :: l -> [Jump PhaseHandle] -> Maybe SMLogs -> PhaseOut l
     -- ^ The phase has finished processing, yielding a new set of SMs to run.
     SM_Suspend  :: Maybe SMLogs -> PhaseOut l
     -- ^ The phase has stopped temporarily, and should be invoked again.
@@ -141,12 +141,12 @@ runPhase :: Subscribers   -- ^ Subscribers.
          -> Process (g, [(Buffer,PhaseOut l)])
 runPhase subs logs g l buf ph =
     case _phCall ph of
-      DirectCall action -> runPhaseM (_phName ph) subs logs g l buf action
+      DirectCall action -> runPhaseM pname subs logs g l buf action
       ContCall tpe k -> do
         res <- extractMsg tpe g l buf
         case res of
           Just (Extraction new_buf b) -> do
-            result <- runPhaseM (_phName ph) subs logs g l new_buf (k b)
+            result <- runPhaseM pname subs logs g l new_buf (k b)
             for_ (snd result) $ \(_,out) ->
               case out of
                 SM_Complete{} -> notifySubscribers subs b
@@ -154,12 +154,14 @@ runPhase subs logs g l buf ph =
             return result
           Nothing -> do
             return (g, [(buf, SM_Suspend logs)])
+  where
+    pname = _phName ph
 
 -- | 'Phase' state machine execution main loop. Runs until its stack is empty
 --   except if get a 'Suspend' or 'Stop' instruction.
 --   This execution is run goes not switch between forked threads. First parent
 --   thread is executed to a safe point, and then child is run.
-runPhaseM :: forall g l . String -- ^ Process name.
+runPhaseM :: forall g l. String  -- ^ Process name.
           -> Subscribers         -- ^ List of events subscribers.
           -> Maybe SMLogs        -- ^ Logs.
           -> g                   -- ^ Global state.
@@ -183,7 +185,8 @@ runPhaseM pname subs plogs pg pl pb action = do
     go g l lgs buf a = viewT a >>= inner
       where
         inner (Return _) = return (g, (buf, SM_Complete l [] lgs), [])
-        inner (Continue ph :>>= _)  = return (g, (buf, SM_Complete l [ph] lgs), [])
+        inner (Continue ph :>>= _) =
+            return (g, (buf, SM_Complete l [ph] lgs), [])
         inner (Get Global :>>= k)   = go g l lgs buf $ k g
         inner (Get Local  :>>= k)   = go g l lgs buf $ k l
         inner (Put Global s :>>= k) = go s l lgs buf $ k ()

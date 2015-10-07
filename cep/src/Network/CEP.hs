@@ -56,6 +56,7 @@ module Network.CEP
     , setRuleFinalizer
     , setBuffer
     , enableDebugMode
+    , timeout
     -- * Buffer
     , Buffer
     , Index
@@ -95,7 +96,6 @@ import           Control.Wire (mkPure)
 import qualified Data.MultiMap   as MM
 import qualified Data.Map.Strict as M
 import qualified Data.Set        as Set
-import           Data.Time
 import           FRP.Netwire (dtime)
 
 import Network.CEP.Buffer
@@ -132,14 +132,15 @@ buildMachine s defs = go (emptyMachine s) $ view defs
     go st (DefineRule n m :>>= k) =
         let idx = _machRuleCount st
             key = RuleKey idx n
-            dat = buildRuleData n newSM m (_machPhaseBuf st)
+            dat = buildRuleData n (newSM key) m (_machPhaseBuf st)
             mp  = M.insert key dat $ _machRuleData st
             st' = st { _machRuleData  = mp
                      , _machRuleCount = idx + 1
                      } in
         go st' $ view $ k ()
     go st (Init m :>>= k) =
-        let dat  = buildRuleData "init" newSM m (_machPhaseBuf st)
+        let buf  = _machPhaseBuf st
+            dat  = buildRuleData "init" (newSM initRuleKey) m buf
             typs = initRuleTypeMap dat
             ir   = InitRule dat typs
             st'  = st { _machInitRule = Just ir } in
@@ -186,6 +187,12 @@ cepEngine s defs = newEngine $ buildMachine s defs
 execute :: s -> Specification s () -> Process ()
 execute s defs = runItForever $ cepEngine s defs
 
+-- | Set of messages accepted by the 'runItForever' driver.
+data AcceptedMsg
+    = SubMsg Subscribe
+    | TimeoutMsg Timeout
+    | SomeMsg Message
+
 -- | A CEP 'Engine' driver that run an 'Engine' until the end of the universe.
 runItForever :: Engine -> Process ()
 runItForever start_eng = do
@@ -204,15 +211,21 @@ runItForever start_eng = do
         else bootstrap debug_mode ms 2 nxt_eng
     bootstrap debug_mode ms loop eng = do
       msg <- receiveWait
-               [ match (return . Left . rawSubRequest)
-               , matchAny (return . Right . rawIncoming)
+               [ match (return . SubMsg)
+               , match (return . TimeoutMsg)
+               , matchAny (return . SomeMsg)
                ]
       case msg of
-        Left sub -> do
-          (_, nxt_eng) <- stepForward sub eng
+        SubMsg sub -> do
+          (_, nxt_eng) <- stepForward (rawSubRequest sub) eng
           bootstrap debug_mode ms (succ loop) nxt_eng
-        Right m -> do
-          let act' = requestAction m
+        other -> do
+          let m :: Request 'Write (Process (RunInfo, Engine))
+              m = case other of
+                    TimeoutMsg t -> timeoutMsg t
+                    SomeMsg x    -> rawIncoming x
+                    _            -> error "impossible: runItForever"
+              act' = requestAction m
           (ri', nxt_eng') <- stepForward m eng
           when debug_mode . liftIO $ dumpDebuggingInfo act' loop ri'
           let act = requestAction (Run Tick)
@@ -242,18 +255,25 @@ runItForever start_eng = do
 
     cruise debug_mode loop eng
       | stepForward engineIsRunning eng =
-        go eng =<< receiveTimeout 0 [ match (return . Left . rawSubRequest)
-                                    , matchAny (return . Right . rawIncoming)
+        go eng =<< receiveTimeout 0 [ match (return . SubMsg)
+                                    , match (return . TimeoutMsg)
+                                    , matchAny (return . SomeMsg)
                                     ]
       | otherwise =
-        go eng . Just =<< receiveWait [ match (return . Left . rawSubRequest)
-                                      , matchAny (return . Right . rawIncoming)
+        go eng . Just =<< receiveWait [ match (return . SubMsg)
+                                      , match (return . TimeoutMsg)
+                                      , matchAny (return . SomeMsg)
                                       ]
       where
-        go inner (Just (Left sub)) = do
-          (_, nxt_eng) <- stepForward sub inner
+        go inner (Just (SubMsg sub)) = do
+          (_, nxt_eng) <- stepForward (rawSubRequest sub) inner
           cruise debug_mode (succ loop) nxt_eng
-        go inner (Just (Right m))  = do
+        go inner (Just other)  = do
+          let m :: Request 'Write (Process (RunInfo, Engine))
+              m = case other of
+                    TimeoutMsg t -> timeoutMsg t
+                    SomeMsg x    -> rawIncoming x
+                    _            -> error "impossible: runItForever"
           (ri, nxt_eng) <- stepForward m inner
           let act = requestAction m
           when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
@@ -352,24 +372,22 @@ buildSeqList (Cons (prx :: Proxy a) rest) =
     Set.insert i $ buildSeqList rest
 
 --  | Builds a list of 'TypeInfo' out types need by 'Phase's.
-buildTypeList :: Foldable f => f (Phase g l) -> Set.Set TypeInfo
-buildTypeList = foldr go Set.empty
+buildTypeList :: Foldable f => f (Jump (Phase g l)) -> Set.Set TypeInfo
+buildTypeList = foldr (go . jumpPhaseCall) Set.empty
   where
-    go (Phase _ call) is =
-        case call of
-          ContCall (typ :: PhaseType g l a b) _ ->
-            case typ of
-              PhaseSeq sq _ -> Set.union (buildSeqList sq) is
-              _ ->
-                let i = TypeInfo (fingerprint (undefined :: a))
-                                 (Proxy :: Proxy a) in
-                Set.insert i is
-          _ -> is
+    go (ContCall (typ :: PhaseType g l a b) _) is =
+        case typ of
+          PhaseSeq sq _ -> Set.union (buildSeqList sq) is
+          _ ->
+            let i = TypeInfo (fingerprint (undefined :: a))
+                             (Proxy :: Proxy a) in
+            Set.insert i is
+    go _ is = is
 
 -- | Executes a rule state machine in order to produce a rule state data
 --   structure.
 buildRuleData :: String
-              -> (Phase g l -> String -> M.Map String (Phase g l) -> Buffer -> l -> SM g)
+              -> (Jump (Phase g l) -> String -> M.Map String (Jump (Phase g l)) -> Buffer -> l -> SM g)
               -> RuleM g l (Started g l)
               -> Buffer
               -> RuleData g
@@ -382,21 +400,19 @@ buildRuleData name mk rls buf = go M.empty Set.empty $ view rls
         , _ruleTypes    = Set.union tpes $ buildTypeList ps
         }
     go ps tpes (Start ph l :>>= k) =
-        case M.lookup (_phHandle ph) ps of
-          Just p  -> go ps tpes $ view $ k (StartingPhase l p)
-          Nothing -> error "phase not found (Start)"
+        let old = ps M.! jumpPhaseHandle ph
+            jmp = jumpBaseOn ph old in
+        go ps tpes $ view $ k (StartingPhase l jmp)
     go ps tpes (NewHandle n :>>= k) =
-        let p      = Phase n (DirectCall $ return ())
+        let jmp    = normalJump $ Phase n (DirectCall $ return ())
             handle = PhaseHandle n
-            ps'    = M.insert n p ps in
-        go ps' tpes $ view $ k handle
-    go ps tpes (SetPhase ph call :>>= k) =
-        case M.lookup (_phHandle ph) ps of
-          Just p ->
-            let p'  = p { _phCall = call }
-                ps' = M.insert (_phName p) p' ps in
-            go ps' tpes $ view $ k ()
-          Nothing -> error "phase not found (UpdatePhase)"
+            ps'    = M.insert n jmp ps in
+        go ps' tpes $ view $ k $ normalJump handle
+    go ps tpes (SetPhase jmp call :>>= k) =
+        let _F p    = p { _phCall = call }
+            nxt_jmp = fmap _F $ jumpBaseOn jmp (ps M.! jumpPhaseHandle jmp)
+            ps'     = M.insert (jumpPhaseHandle jmp) nxt_jmp ps in
+        go ps' tpes $ view $ k ()
     go ps tpes (Wants (prx :: Proxy a) :>>= k) =
         let tok = Token :: Token a
             tpe = TypeInfo (fingerprint (undefined :: a)) prx in
@@ -416,12 +432,13 @@ subscribe pid _ = do
 
 -- | @occursWithin n t@ Lets through an event every time it occurs @n@ times
 --   within @t@ seconds.
-occursWithin :: Int -> NominalDiffTime -> CEPWire a a
-occursWithin cnt frame = go 0 frame
+occursWithin :: Int -> Int -> CEPWire a a
+occursWithin cnt frame = go 0 frame_spec
   where
+    frame_spec = toSecs frame
     go nb t = mkPure $ \ds a ->
         let nb' = nb + 1
             t'  = t - dtime ds in
         if nb' == cnt && t' > 0
-        then (Right a, go 0 frame)
+        then (Right a, go 0 frame_spec)
         else (Left (), go nb' t')

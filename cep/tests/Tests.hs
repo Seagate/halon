@@ -9,6 +9,8 @@ import Data.Typeable
 import Data.List (sort)
 import Data.IORef
 
+import System.Clock
+
 import Test.Tasty
 import Test.Tasty.HUnit (testCase)
 import qualified Test.Tasty.HUnit as HU
@@ -50,6 +52,7 @@ tests launch =
   , testsPeekShift launch
   , testsExecution launch
   , testSubscriptions launch
+  , testsTimeout launch
   ]
 
 testsGlobal :: (Process () -> IO ()) -> TestTree
@@ -842,3 +845,152 @@ testSimpleSub = do
     _ <- expect :: Process (Published Foo)
     _ <- expect :: Process (Published Baz)
     return ()
+
+testsTimeout :: (Process () -> IO ()) -> TestTree
+testsTimeout launch = testGroup "Timeout properties"
+  [ testCase "Simple Timeout should work" $ launch testSimpleTimeout
+  , testCase "All timeout should work" $ launch testAllTimeout
+  , testCase "Continue timeout should work" $ launch testContinueTimeout
+  , testCase "Init rule timeout should work" $ launch testInitTimeout
+  , testCase "Start timeout should work" $ launch testStartTimeout
+  , testCase "SetPhase timeout should work" $ launch testSetPhaseTimeout
+  , testCase "All timeout reverse should work" $ launch testAllReverseTimeout
+  ]
+
+testSimpleTimeout :: Process ()
+testSimpleTimeout = do
+    self <- getSelfPid
+    let specs = do
+          define "timeout" $ do
+            ph0 <- phaseHandle "ph0"
+            ph1 <- phaseHandle "ph1"
+            ph2 <- phaseHandle "ph2"
+
+            directly ph0 $ switch [ph1, timeout 3 ph2]
+
+            setPhase ph1 $ \(Donut _) -> return ()
+
+            directly ph2 $ liftProcess $ usend self ()
+
+            start ph0 ()
+
+    _ <- spawnLocal $ execute () specs
+    expect
+
+testAllTimeout :: Process ()
+testAllTimeout = do
+    self <- getSelfPid
+
+    let specs = define "all-timeout" $ do
+          ph0 <- phaseHandle "ph0"
+          ph1 <- phaseHandle "ph1"
+          ph2 <- phaseHandle "ph2"
+
+          directly ph0 $ switch [timeout 2 ph1, timeout 3 ph2]
+
+          setPhase ph1 $ \(Donut _) -> liftProcess $ usend self (1 :: Int)
+
+          setPhase ph2 $ \(Foo _) -> liftProcess $ usend self (2 :: Int)
+
+          start ph0 ()
+
+    pid <- spawnLocal $ execute () specs
+    usend pid (Foo 1)
+    usend pid donut
+
+    i <- expect
+    assertEqual "Ph1 should fire first" (1 :: Int) i
+
+testContinueTimeout :: Process ()
+testContinueTimeout = do
+    self <- getSelfPid
+
+    let specs = define "continue-timeout" $ do
+          ph0 <- phaseHandle "ph0"
+          ph1 <- phaseHandle "ph1"
+
+          directly ph0 $ continue $ timeout 2 ph1
+
+          setPhase ph1 $ \(Donut _) -> liftProcess $ usend self ()
+
+          start ph0 ()
+
+    pid <- spawnLocal $ execute () specs
+    begin <- liftIO $ getTime Monotonic
+    usend pid donut
+    () <- expect
+    end <- liftIO $ getTime Monotonic
+    let test = diffTimeSpec begin end >= TimeSpec 2 0
+    assertEqual "Should take at least 2 seconds" True test
+
+testInitTimeout :: Process ()
+testInitTimeout = do
+    self <- getSelfPid
+
+    let specs = initRule $ do
+          ph0 <- phaseHandle "ph0"
+          ph1 <- phaseHandle "ph1"
+
+          directly ph0 $ continue $ timeout 2 ph1
+
+          setPhase ph1 $ \(Donut _) -> liftProcess $ usend self ()
+
+          start ph0 ()
+
+    pid <- spawnLocal $ execute () specs
+    usend pid donut
+    expect
+
+testStartTimeout :: Process ()
+testStartTimeout = do
+    self <- getSelfPid
+
+    let specs = define "start-timeout" $ do
+          ph0 <- phaseHandle "ph0"
+
+          setPhase ph0 $ \(Donut _) -> liftProcess $ usend self ()
+
+          start (timeout 2 ph0) ()
+
+    pid <- spawnLocal $ execute () specs
+    usend pid donut
+    expect
+
+testSetPhaseTimeout :: Process ()
+testSetPhaseTimeout = do
+    self <- getSelfPid
+
+    let specs = define "set-phase-timeout" $ do
+          ph0 <- phaseHandle "ph0"
+
+          setPhase (timeout 2 ph0) $ \(Donut _) -> liftProcess $ usend self ()
+
+          start ph0 ()
+
+    pid <- spawnLocal $ execute () specs
+    usend pid donut
+    expect
+
+testAllReverseTimeout :: Process ()
+testAllReverseTimeout = do
+    self <- getSelfPid
+
+    let specs = define "all-timeout" $ do
+          ph0 <- phaseHandle "ph0"
+          ph1 <- phaseHandle "ph1"
+          ph2 <- phaseHandle "ph2"
+
+          directly ph0 $ switch [timeout 3 ph1, timeout 2 ph2]
+
+          setPhase ph1 $ \(Donut _) -> liftProcess $ usend self (1 :: Int)
+
+          setPhase ph2 $ \(Foo _) -> liftProcess $ usend self (2 :: Int)
+
+          start ph0 ()
+
+    pid <- spawnLocal $ execute () specs
+    usend pid donut
+    usend pid (Foo 1)
+
+    i <- expect
+    assertEqual "Ph2 should fire first" (2 :: Int) i

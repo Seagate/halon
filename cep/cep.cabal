@@ -36,7 +36,6 @@ library
                        multimap==1.2.*,
                        containers==0.5.*,
                        netwire,
-                       time,
                        operational
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -92,4 +91,5 @@ Test-Suite unit-tests-scheduler
                  tasty,
                  tasty-hunit,
                  tasty-files,
-                 unix
+                 unix,
+                 time

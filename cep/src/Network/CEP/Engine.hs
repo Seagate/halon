@@ -24,7 +24,6 @@ import qualified Data.MultiMap       as MM
 import qualified Data.Map.Strict     as M
 import qualified Data.Sequence       as S
 import qualified Data.Set            as Set
-import           FRP.Netwire (clockSession_)
 
 import Network.CEP.Buffer
 import Network.CEP.Execution
@@ -48,22 +47,6 @@ data RuleData g =
       --   'buildMachine'.
     }
 
--- | Used as a key for referencing a rule at upmost level of the CEP engine.
---   The point is to allow the user to refer to rules by their name while
---   being able to know which rule has been defined the first. That give us
---   prioritization.
-data RuleKey =
-    RuleKey
-    { _ruleKeyId   :: !Int
-    , _ruleKeyName :: !String
-    } deriving Show
-
-instance Eq RuleKey where
-    RuleKey k1 _ == RuleKey k2 _ = k1 == k2
-
-instance Ord RuleKey where
-    compare (RuleKey k1 _) (RuleKey k2 _) = compare k1 k2
-
 data Mode = Read | Write
 
 -- | Represents the type of request a CEP 'Engine' can handle.
@@ -78,9 +61,10 @@ data Select a where
     -- ^ Get CEP 'Engine' internal setting.
 
 data Action a where
-    Tick     :: Action RunInfo
-    Incoming :: Message   -> Action RunInfo
-    NewSub   :: Subscribe -> Action ()
+    Tick           :: Action RunInfo
+    Incoming       :: Message   -> Action RunInfo
+    NewSub         :: Subscribe -> Action ()
+    TimeoutArrived :: Timeout -> Action RunInfo
 
 data EngineSetting a where
     EngineDebugMode      :: EngineSetting Bool
@@ -105,6 +89,9 @@ rawSubRequest = Run . NewSub
 rawIncoming :: Message -> Request 'Write (Process (RunInfo, Engine))
 rawIncoming = Run . Incoming
 
+timeoutMsg :: Timeout -> Request 'Write (Process (RunInfo, Engine))
+timeoutMsg = Run . TimeoutArrived
+
 requestAction :: Request 'Write (Process (a, Engine)) -> Action a
 requestAction (Run a) = a
 
@@ -128,8 +115,6 @@ data Machine s =
     Machine
     { _machRuleData :: !(M.Map RuleKey (RuleData s))
       -- ^ Rules defined by the users.
-    , _machSession :: !TimeSession
-      -- ^ Time tracking session.
     , _machSubs :: !Subscribers
       -- ^ Subscribers interested in events issued by this CEP engine.
     , _machLogger :: !(Maybe (Logs -> s -> Process ()))
@@ -166,7 +151,6 @@ emptyMachine :: s -> Machine s
 emptyMachine s =
     Machine
     { _machRuleData       = M.empty
-    , _machSession        = clockSession_
     , _machSubs           = MM.empty
     , _machLogger         = Nothing
     , _machRuleFin        = Nothing
@@ -212,6 +196,8 @@ defaultHandler st next (Run Tick) =
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
 defaultHandler st next (Run (Incoming _)) =
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
+defaultHandler st next (Run (TimeoutArrived _)) =
+    return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
 defaultHandler st _ (Query (GetSetting s)) =
     case s of
       EngineDebugMode      -> _machDebugMode st
@@ -225,6 +211,9 @@ cepInitRule :: InitRule g -> Machine g -> Request m a -> a
 cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
     case i of
       Tick -> go NoMessage _machTotalProcMsgs
+      TimeoutArrived (Timeout k)
+        | k == initRuleKey -> go NoMessage _machTotalProcMsgs
+        | otherwise        -> defaultHandler st (cepInitRule ir) req
       Incoming m
         | interestingMsg (\frp -> M.member frp typs) m ->
           let tpe       = typs M.! messageFingerprint m
@@ -247,7 +236,7 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
       -- We do not allow fork inside init rule, this may be ok or not
       -- depending on a usecase, but allowing fork will make implementation
       -- much harder and do not worth it, unless we have a concrete example.
-      (g, (SMResult out infos mlogs, nxt_stk)) <- fmap head <$> runSM stk exe
+      (g, [(SMResult out infos mlogs, nxt_stk)]) <- runSM stk exe
       let new_rd = rd { _ruleStack = nxt_stk }
           nxt_st = st { _machState = g }
           rinfo = RuleInfo InitRuleName [(out, infos)]
@@ -271,6 +260,15 @@ cepCruise st req@(Run t) =
         (infos, nxt_st) <- State.runStateT executeTick st
         let rinfo = RunInfo (_machTotalProcMsgs nxt_st) (RulesBeenTriggered infos)
         return (rinfo, Engine $ cepCruise nxt_st)
+      TimeoutArrived (Timeout key) ->
+          let xs     = filter (\(k,_) -> key == k) $ _machSuspendedSM st
+              nxt_su = filter (\(k,_) -> key /= k) $ _machSuspendedSM st
+              prev   = _machRunningSM st
+              nxt_st = st { _machRunningSM   = prev ++ xs
+                          , _machSuspendedSM = nxt_su }
+              res    = RulesBeenTriggered []
+              info   = RunInfo (_machTotalProcMsgs st) res in
+          return (info, Engine $ cepCruise nxt_st)
       Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
         let fpt = messageFingerprint m
             keyInfos = MM.lookup fpt $ _machTypeMap st

@@ -9,7 +9,7 @@ import Test.Tasty.Ingredients.Basic
 import Test.Tasty.Ingredients.FileReporter
 import qualified CEP.Settings.Tests (tests)
 
-import Tests as Tests
+import qualified Tests as Tests
 
 import System.Timeout
 
