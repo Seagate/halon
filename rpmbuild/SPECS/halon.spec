@@ -1,6 +1,6 @@
 Summary: halon
 Name: halon
-Version: 0.15.1
+Version: 0.16
 Release: 1
 License: All rights reserved
 Group: Development/Tools
@@ -20,6 +20,7 @@ mkdir halon
 mkdir systemd
 cp $RPM_SOURCE_DIR/halonctl $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halond $RPM_BUILD_DIR/halon
+cp $RPM_SOURCE_DIR/halon-simplelocalcluster $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halond.service $RPM_BUILD_DIR/systemd
 
 %build
@@ -40,5 +41,6 @@ rm -rf %{buildroot}
 %defattr(-,root,root,-)
 /usr/bin/halond
 /usr/bin/halonctl
+/usr/bin/halon-simplelocalcluster
 /usr/lib/systemd/system/halond.service
 
