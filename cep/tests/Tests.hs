@@ -8,7 +8,6 @@ import Data.Binary (Binary)
 import Data.Typeable
 import Data.List (sort)
 import Data.IORef
-import Data.Time
 
 import System.Clock
 
@@ -921,7 +920,7 @@ testContinueTimeout = do
     usend pid donut
     () <- expect
     end <- liftIO $ getTime Monotonic
-    let test = diffUTCTime begin end >= TimeSpec 2 0
+    let test = diffTimeSpec begin end >= TimeSpec 2 0
     assertEqual "Should take at least 2 seconds" True test
 
 testInitTimeout :: Process ()
