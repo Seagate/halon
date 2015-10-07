@@ -144,6 +144,8 @@ rcRules :: IgnitionArguments -> ProcessId -> [Definitions LoopState ()] -> Defin
 rcRules argv eq additionalRules = do
     initRule $ rcInitRule argv eq
 
+    let timeup = 30 -- secs
+
     define "node-up" $ do
       nodeup      <- phaseHandle "nodeup"
       nm_started  <- phaseHandle "node_monitor_started"
@@ -239,11 +241,11 @@ rcRules argv eq additionalRules = do
         case (known, msp, sstart) of
           (True, Nothing, HA.Service.Start) -> do
             startService nid svc conf
-            switch [ph2, ph3]
+            switch [ph2, ph3, timeout timeup ph4]
           (True, Just sp, Restart) -> do
             writeConfiguration sp conf Intended
             bounceServiceTo Intended n svc
-            switch [ph2, ph3]
+            switch [ph2, ph3, timeout timeup ph4]
           _ -> return ()
 
       setPhaseIf ph1' notHandled $ \evt@(HAEvent _ msg _) -> do
@@ -255,7 +257,7 @@ rcRules argv eq additionalRules = do
             put Local $ Just (n, serviceName svc, 0)
             bounceServiceTo Current n svc
             handled eq evt
-            switch [ph2, ph3]
+            switch [ph2, ph3, timeout timeup ph4]
           _ -> return ()
 
       -- It may be possible that previous invocation of RC was killed during
@@ -324,7 +326,7 @@ rcRules argv eq additionalRules = do
             -- | Increment the failure count
             put Local $ Just (n1, s1, count+1)
             startService nid svc cfg
-            switch [ph2, ph3]
+            switch [ph2, ph3, timeout timeup ph4]
           else continue ph4
 
       directly ph4 $ do
