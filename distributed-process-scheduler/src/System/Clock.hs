@@ -9,6 +9,8 @@ module System.Clock
   ( getTime
   , C.Clock(..)
   , C.TimeSpec(..)
+  , C.diffTimeSpec
+  , timeSpecAsNanoSecs
   ) where
 
 import           Control.Concurrent.MVar
@@ -39,3 +41,7 @@ schedGetTime C.Monotonic = do
     let (q, r) = divMod (t :: Int) (1000 * 1000)
     return $ C.TimeSpec (fromIntegral q) (fromIntegral $ r * 1000)
 schedGetTime c = error $ "scheduler.schedGetTime not defined for " ++ show c
+
+-- | TimeSpec as nano seconds.
+timeSpecAsNanoSecs :: C.TimeSpec -> Integer
+timeSpecAsNanoSecs t = toInteger (C.sec t) * (10^9) + toInteger (C.nsec t)
