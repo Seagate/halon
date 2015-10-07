@@ -25,7 +25,7 @@ import           System.Clock
 
 import Network.CEP.Buffer
 
-newtype Time = Time TimeSpec deriving (Eq, Ord, Num)
+newtype Time = Time TimeSpec deriving (Eq, Ord, Num, Show)
 
 instance Monoid Time where
     mempty = Time 0
@@ -47,7 +47,7 @@ systemClockSession = go <*> pure ()
 
     loop (Time t') = Session $ do
       t <- liftIO $ getTime Monotonic
-      let !dt = diffTimeSpec t t'
+      let !dt = diffTimeSpec t' t
       return (Timed $ Time dt, loop $ Time t)
 
 -- | That message is sent when a 'Process' asks for a subscription.

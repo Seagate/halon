@@ -10,6 +10,8 @@ import Data.List (sort)
 import Data.IORef
 import Data.Time
 
+import System.Clock
+
 import Test.Tasty
 import Test.Tasty.HUnit (testCase)
 import qualified Test.Tasty.HUnit as HU
@@ -859,7 +861,6 @@ testsTimeout launch = testGroup "Timeout properties"
 testSimpleTimeout :: Process ()
 testSimpleTimeout = do
     self <- getSelfPid
-
     let specs = do
           define "timeout" $ do
             ph0 <- phaseHandle "ph0"
@@ -916,11 +917,11 @@ testContinueTimeout = do
           start ph0 ()
 
     pid <- spawnLocal $ execute () specs
-    begin <- liftIO getCurrentTime
+    begin <- liftIO $ getTime Monotonic
     usend pid donut
     () <- expect
-    end <- liftIO getCurrentTime
-    let test = diffUTCTime end begin >= 2
+    end <- liftIO $ getTime Monotonic
+    let test = diffUTCTime begin end >= TimeSpec 2 0
     assertEqual "Should take at least 2 seconds" True test
 
 testInitTimeout :: Process ()
