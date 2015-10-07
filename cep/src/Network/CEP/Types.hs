@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -16,12 +17,38 @@ import GHC.Generics
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Serializable
 import           Control.Monad.Operational
-import           Control.Wire hiding ((.))
+import           Control.Wire hiding ((.), loop)
 import           Data.Binary hiding (get, put)
 import qualified Data.MultiMap as MM
 import qualified Data.Sequence as S
+import           System.Clock
 
 import Network.CEP.Buffer
+
+newtype Time = Time TimeSpec deriving (Eq, Ord, Num)
+
+instance Monoid Time where
+    mempty = Time 0
+
+    mappend (Time a) (Time b) = Time (a + b)
+
+instance Real Time where
+    toRational (Time i) = toRational $ timeSpecAsNanoSecs i
+
+diffTime :: Time -> Time -> Time
+diffTime (Time a) (Time b) = Time (diffTimeSpec a b)
+
+systemClockSession :: Session Process (Timed Time ())
+systemClockSession = go <*> pure ()
+  where
+    go =  Session $ do
+      t0 <- liftIO $ getTime Monotonic
+      return (Timed mempty, loop $ Time t0)
+
+    loop (Time t') = Session $ do
+      t <- liftIO $ getTime Monotonic
+      let !dt = diffTimeSpec t t'
+      return (Timed $ Time dt, loop $ Time t)
 
 -- | That message is sent when a 'Process' asks for a subscription.
 data Subscribe =
@@ -82,11 +109,13 @@ type Subscribers = MM.MultiMap Fingerprint ProcessId
 type SMLogs = S.Seq (String, String, String)
 
 -- | Keeps track of time in order to use time varying combinators (FRP).
-type TimeSession = Session Process (Timed NominalDiffTime ())
+type TimeSession = Session Process (Timed Time ())
 
--- | Simplest Netwire 'Wire' type used accross CEP space. It's use for type
+-- | Common Netwire 'Wire' type used accross CEP space. It's use for type
 --   dependent state machine.
-type CEPWire a b = Wire (Timed NominalDiffTime ()) () Process a b
+type CEPWire a b = Wire (Timed Time ()) () Process a b
+
+type SimpleCEPWire a b = Wire (Timed Time ()) () Identity a b
 
 -- | Rule dependent, labeled state machine. 'Phase's are defined withing a rule.
 --   'Phase's are able to handle a global state `g` shared with all rules and a
@@ -112,7 +141,7 @@ newtype Timeout = Timeout RuleKey deriving Binary
 data Jump a
     = NormalJump a
       -- ^ Accesses a resource directly.
-    | ReactiveJump TimeSession (SimpleWire () ()) a
+    | ReactiveJump TimeSession (SimpleCEPWire () ()) a
       -- ^ Accesses a resource only when its 'SimpleWire' advises to do it. A
       --   a 'SimpleWire' is used in order to express a wider set of time
       --   restricted predicate.
@@ -125,9 +154,14 @@ normalJump :: a -> Jump a
 normalJump = NormalJump
 
 -- | Jumps to a resource after a certain amount of time.
-timeout :: NominalDiffTime -> Jump PhaseHandle -> Jump PhaseHandle
-timeout dt (NormalJump a)       = ReactiveJump clockSession_ (after dt) a
-timeout dt (ReactiveJump c w a) = ReactiveJump c (w <> after dt) a
+timeout :: Int -> Jump PhaseHandle -> Jump PhaseHandle
+timeout dt (NormalJump a) =
+    ReactiveJump systemClockSession (after $ toSecs dt) a
+timeout dt (ReactiveJump c w a) =
+    ReactiveJump c (w <> after (toSecs dt)) a
+
+toSecs :: Int -> Time
+toSecs i = Time $ TimeSpec (fromIntegral i) 0
 
 jumpPhaseName :: Jump (Phase g l) -> String
 jumpPhaseName (NormalJump p)       = _phName p

@@ -96,7 +96,6 @@ import           Control.Wire (mkPure)
 import qualified Data.MultiMap   as MM
 import qualified Data.Map.Strict as M
 import qualified Data.Set        as Set
-import           Data.Time
 import           FRP.Netwire (dtime)
 
 import Network.CEP.Buffer
@@ -433,12 +432,13 @@ subscribe pid _ = do
 
 -- | @occursWithin n t@ Lets through an event every time it occurs @n@ times
 --   within @t@ seconds.
-occursWithin :: Int -> NominalDiffTime -> CEPWire a a
-occursWithin cnt frame = go 0 frame
+occursWithin :: Int -> Int -> CEPWire a a
+occursWithin cnt frame = go 0 frame_spec
   where
+    frame_spec = toSecs frame
     go nb t = mkPure $ \ds a ->
         let nb' = nb + 1
             t'  = t - dtime ds in
         if nb' == cnt && t' > 0
-        then (Right a, go 0 frame)
+        then (Right a, go 0 frame_spec)
         else (Left (), go nb' t')
