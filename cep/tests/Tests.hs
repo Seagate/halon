@@ -150,7 +150,25 @@ testsSwitch launch = testGroup "Switch"
              $ launch $ switchFailedRulesDontChangeState "local" Local True
   , testCase "Failed rules not modify global state"
              $ launch $ switchFailedRulesDontChangeState "global" Global True
+  , testCase "Direct switch works" $ launch switchDirect
   ]
+
+switchDirect :: Process ()
+switchDirect = do
+    self <- getSelfPid
+    pid  <- spawnLocal $ execute () $ do
+      define "rule" $ do
+        ph1 <- phaseHandle "state-1"
+        ph2 <- phaseHandle "state-2"
+        ph3 <- phaseHandle "state-3"
+        setPhase ph1 $ \(Donut _) -> switch [ph2, ph3]
+        setPhase ph2 $ \(Donut _) -> liftProcess $ usend self (Foo 0)
+        directly ph3 $ liftProcess $ usend self (Foo 1)
+        start ph1 ()
+
+    usend pid donut
+    Foo 1 <- expect
+    return ()
 
 switchIsWorking :: Process ()
 switchIsWorking = do
@@ -424,7 +442,32 @@ testsFork launch = testGroup "Fork"
   , testCase "Fork do not copy other rules" $ launch forkDontCopyOtherRules
   , testCase "Service usecase-1" $ launch forkServiceUsecase
   , testCase "Fork increments number of SMs" $ launch forkIncrSMs
+  , testCase "Fork consume message" $ launch forkConsumeMsgs
   ]
+
+forkConsumeMsgs :: Process ()
+forkConsumeMsgs = do
+  self <- getSelfPid
+  pid  <- spawnLocal $ execute () $ do
+    define "rule" $ do
+      ph0 <- phaseHandle "state-0"
+      ph1 <- phaseHandle "state-1"
+      ph2 <- phaseHandle "state-2"
+      end <- phaseHandle "end"
+      setPhase ph0 $ \(Donut _) -> do
+        fork NoBuffer $ do
+          continue end
+        switch [ph1, ph2]
+      setPhase ph1 $ \(Donut _) -> do
+        liftProcess $ usend self (Foo 1)
+        continue end
+      directly ph2 $ do
+        liftProcess $ usend self (Foo 2)
+        continue end
+      directly end $ stop
+      start ph0 ()
+  usend pid donut
+  assertEqual "foo" 2 . unFoo =<< expect
 
 forkServiceUsecase :: Process ()
 forkServiceUsecase = do
