@@ -154,7 +154,7 @@ rcRules argv eq additionalRules = do
       end         <- phaseHandle "end"
 
       setPhaseIf nodeup notHandled $ \evt@(HAEvent e (NodeUp h pid) _) -> do
-        startProcessingMsg evt
+        startProcessingMsg e
         let nid  = processNodeId pid
             node = Node nid
         known <- knownResource node
@@ -200,7 +200,7 @@ rcRules argv eq additionalRules = do
         sendToMasterMonitor msg
         ack npid
         handled eq evt
-        handledUUID eq e
+        sendMsg eq e
         continue end
 
       setPhaseIf nm_failed serviceBootCouldNotStart $
@@ -345,35 +345,35 @@ rcRules argv eq additionalRules = do
 
     -- EpochRequest
     defineSimple "epoch-request" $
-      \evt@(HAEvent _ (EpochRequest pid) _) -> do
+      \(HAEvent uuid (EpochRequest pid) _) -> do
       resp <- prepareEpochResponse
       sendMsg pid resp
-      handled eq evt
+      sendMsg eq uuid
 
     defineSimple "mm-pid" $
-      \evt@(HAEvent _ (GetMultimapProcessId sender) _) -> do
+      \(HAEvent uuid (GetMultimapProcessId sender) _) -> do
          mmid <- getMultimapProcessId
          sendMsg sender mmid
-         handled eq evt
+         sendMsg eq uuid
 
     defineSimple "dummy-event" $
-      \evt@(HAEvent _ (DummyEvent str) _) -> do
+      \(HAEvent uuid (DummyEvent str) _) -> do
         i <- getNoisyPingCount
         liftProcess $ sayRC $ "received DummyEvent " ++ str
         liftProcess $ sayRC $ "Noisy ping count: " ++ show i
-        handled eq evt
+        sendMsg eq uuid
 
-    defineSimple "stop-request" $ \evt@(HAEvent _ msg _) -> do
+    defineSimple "stop-request" $ \(HAEvent uuid msg _) -> do
       ServiceStopRequest node svc <- decodeMsg msg
       res                         <- lookupRunningService node svc
       for_ res $ \sp ->
         killService sp UserStop
-      handled eq evt
+      sendMsg eq uuid
 
     defineSimple "save-processes" $
-      \evt@(HAEvent _ (SaveProcesses sp ps) _) -> do
+      \(HAEvent uuid (SaveProcesses sp ps) _) -> do
        writeConfiguration sp ps Current
-       handled eq evt
+       sendMsg eq uuid
 
     setLogger sendLogs
     ssplRules
