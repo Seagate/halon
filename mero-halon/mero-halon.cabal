@@ -210,7 +210,7 @@ Executable halond
     Ghc-Options: -Werror
 
   if flag(debug)
-    ghc-options:      -eventlog -debug -with-rtsopts=-l-au
+    ghc-options:      -eventlog -debug -with-rtsopts=-l-au -rtsopts
   default-language:   Haskell2010
   Default-Extensions: DeriveDataTypeable
                       DisambiguateRecordFields
