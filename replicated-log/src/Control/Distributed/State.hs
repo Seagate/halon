@@ -54,7 +54,7 @@ instance Binary CommandId
 
 data Command s = Command
     { commandId      :: !CommandId
-    , _commandClosure :: CP s s
+    , _commandClosure :: !(CP s s)
     } deriving (Generic, Typeable)
 
 instance Typeable s => Binary (Command s)

@@ -152,7 +152,7 @@ toLogId = LogId
 
 data Log a = forall s ref. Serializable ref => Log
     { -- | Yields the initial value of the log.
-      logInitialize :: Process s
+      logInitialize :: !(Process s)
 
       -- | Yields the list of references of available snapshots.
       -- Each reference is accompanied with the 'DecreeId' of the next log entry
@@ -160,7 +160,7 @@ data Log a = forall s ref. Serializable ref => Log
       --
       -- On each node this function could return different results.
       --
-    , logGetAvailableSnapshots :: Process [(DecreeId, ref)]
+    , logGetAvailableSnapshots :: !(Process [(DecreeId, ref)])
 
       -- | Yields the snapshot identified by ref.
       --
@@ -169,7 +169,7 @@ data Log a = forall s ref. Serializable ref => Log
       -- After a succesful call, the snapshot returned or a newer snapshot must
       -- appear listed by @logGetAvailableSnapshots@.
       --
-    , logRestore :: ref -> Process s
+    , logRestore :: !(ref -> Process s)
 
       -- | Writes a snapshot together with the 'DecreeId' of the next log index.
       --
@@ -179,10 +179,10 @@ data Log a = forall s ref. Serializable ref => Log
       -- After a succesful call, the dumped snapshot or a newer snapshot must
       -- appear listed in @logGetAvailableSnapshots@.
       --
-    , logDump :: DecreeId -> s -> Process ref
+    , logDump :: !(DecreeId -> s -> Process ref)
 
       -- | State transition callback.
-    , logNextState      :: s -> a -> Process s
+    , logNextState      :: !(s -> a -> Process s)
     } deriving (Typeable)
 
 data Config = Config
@@ -363,18 +363,18 @@ withPersistentStore fp =
 -- | The internal state of a replica.
 data ReplicaState s ref a = Serializable ref => ReplicaState
   { -- | The pid of the proposer process.
-    stateProposerPid       :: ProcessId
+    stateProposerPid       :: !ProcessId
     -- | The pid of the timer process.
-  , stateTimerPid          :: ProcessId
+  , stateTimerPid          :: !ProcessId
     -- | Handle to persist the log.
-  , statePersistenceHandle :: PersistenceHandle a
+  , statePersistenceHandle :: !(PersistenceHandle a)
     -- | The time at which the last lease started.
-  , stateLeaseStart        :: TimeSpec
+  , stateLeaseStart        :: !TimeSpec
     -- | The list of node ids of the replicas.
   , stateReplicas          :: [NodeId]
     -- | This is the decree identifier of the next proposal to confirm. All
     -- previous decrees are known to have passed consensus.
-  , stateUnconfirmedDecree :: DecreeId
+  , stateUnconfirmedDecree :: !DecreeId
     -- | This is the decree identifier of the next proposal to do.
     --
     -- For now, it must never be an unreachable decree (i.e. a decree beyond the
@@ -384,35 +384,35 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
     --
     -- Invariant: @stateUnconfirmedDecree <= stateCurrentDecree@
     --
-  , stateCurrentDecree     :: DecreeId
+  , stateCurrentDecree     :: !DecreeId
     -- | The reference to the last snapshot saved.
-  , stateSnapshotRef       :: Maybe ref
+  , stateSnapshotRef       :: !(Maybe ref)
     -- | The watermark of the lastest snapshot
     --
     -- See note [Trimming the log].
-  , stateSnapshotWatermark :: DecreeId
+  , stateSnapshotWatermark :: !DecreeId
     -- | The identifier of the next decree to execute.
-  , stateWatermark         :: DecreeId
+  , stateWatermark         :: !DecreeId
     -- | The state yielded by the last executed decree.
   , stateLogState          :: s
     -- | The LegislatureId where the leader became the leader
     -- See Note [Epochs].
-  , stateEpoch             :: LegislatureId
+  , stateEpoch             :: !LegislatureId
     -- | The decree of the last known reconfiguration.
-  , stateReconfDecree      :: DecreeId
+  , stateReconfDecree      :: !DecreeId
     -- | Batcher of client requests
-  , stateBatcher           :: ProcessId
+  , stateBatcher           :: !ProcessId
     -- | A port used to send timeout notifications
-  , stateTimerSP           :: SendPort TimerMessage
+  , stateTimerSP           :: !(SendPort TimerMessage)
     -- | A port used to receive timeout notifications
-  , stateTimerRP           :: ReceivePort TimerMessage
+  , stateTimerRP           :: !(ReceivePort TimerMessage)
     -- | A pool of processes to send messages asynchronously
-  , stateSendPool          :: ProcessPool NodeId
+  , stateSendPool          :: !(ProcessPool NodeId)
 
   -- from Log {..}
-  , stateLogRestore        :: ref -> Process s
-  , stateLogDump           :: DecreeId -> s -> Process ref
-  , stateLogNextState      :: s -> a -> Process s
+  , stateLogRestore        :: !(ref -> Process s)
+  , stateLogDump           :: !(DecreeId -> s -> Process ref)
+  , stateLogNextState      :: !(s -> a -> Process s)
 
   } deriving (Typeable)
 
@@ -810,7 +810,7 @@ replica Dict
                         -- Take the max of the watermark legislature and the
                         -- incoming legislature to deal with teleportation of
                         -- decrees. See Note [Teleportation].
-                        di < max w w{decreeLegislatureId = decreeLegislatureId di}) $
+                        di < max w w{decreeLegislatureId = decreeLegislatureId di}) $ {-# SCC "go/Decree/Value" #-}
                        \(Decree _ di _) -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
@@ -825,7 +825,7 @@ replica Dict
 
               -- Commit the decree to the log.
             , matchIf (\(Decree locale di _) ->
-                        locale /= Stored && w <= di && decreeNumber di == decreeNumber w) $
+                        locale /= Stored && w <= di && decreeNumber di == decreeNumber w) $ {-# SCC "go/Decree/Commit" #-}
                        \(Decree locale di v) -> do
                   logTrace $ "Storing decree: " ++ show (w, di)
                   liftIO $ insertInLog ph (decreeNumber di) (v :: Value a)
@@ -838,7 +838,7 @@ replica Dict
 
               -- Execute the decree
             , matchIf (\(Decree locale di _) ->
-                        locale == Stored && w <= di && decreeNumber di == decreeNumber w) $
+                        locale == Stored && w <= di && decreeNumber di == decreeNumber w) $ {-# SCC "go/Decree/Execute" #-}
                        \(Decree _ di v) -> do
                 let maybeTakeSnapshot w' s' = do
                       takeSnapshot <- snapshotPolicy
@@ -855,7 +855,7 @@ replica Dict
                       else
                         return (w0, msref)
                 case v of
-                  Values xs -> do
+                  Values xs -> {-# SCC "Execute/Values" #-} do
                       logTrace $ "Executing decree: " ++ show (w, di, d, cd)
                       s' <- foldM stLogNextState s xs
                       let d'  = max d w'
@@ -872,7 +872,7 @@ replica Dict
                   Reconf requestStart leg' ρs'
                     -- Only execute a reconfiguration if we are on an earlier
                     -- configuration.
-                    | decreeLegislatureId d < leg' -> do
+                    | decreeLegislatureId d < leg' -> {-# SCC "Execute/Reconf" #-} do
                       logTrace $ "Reconfiguring: " ++
                                  show (w, di, d, leg', cd, ρs')
                       let d' = w' { decreeNumber = max (decreeNumber d) (decreeNumber w') }
@@ -904,7 +904,7 @@ replica Dict
                            , stateSnapshotWatermark = w0'
                            , stateWatermark = w'
                            }
-                    | otherwise -> do
+                    | otherwise -> {-# SCC "Execute/otherwise" #-} do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
                       say $ "Not executing " ++ show di
                       (w0', msref') <- maybeTakeSnapshot w' s
@@ -925,7 +925,7 @@ replica Dict
               -- too often. Queries will happen when the replica receives a
               -- 'Max' message.
             , matchIf (\(Decree locale di _) ->
-                        locale == Remote && w < di && not (Map.member (decreeNumber di) log)) $
+                        locale == Remote && w < di && not (Map.member (decreeNumber di) log)) $ {-# SCC "go/other" #-}
                        \(Decree locale di v) -> do
                   logTrace $ "Storing decree above watermark: " ++ show (w, di)
                   liftIO $ insertInLog ph (decreeNumber di) v
@@ -950,7 +950,7 @@ replica Dict
             , matchIf (\r -> cd == w     -- The log is up-to-date and fully
                                          -- executed.
                         && isJust (requestForLease r) -- This is a lease request.
-                      ) $
+                      ) $ {-# SCC "go/lease" #-}
                        \(request :: Request a) -> do
                   logTrace $ "Lease request: " ++ show (w, d, cd)
                   cd' <- case requestForLease request of
@@ -964,7 +964,7 @@ replica Dict
                   go st{ stateCurrentDecree = cd' }
 
               -- Client requests.
-            , match $ \request@(μ, e, _ :: Request a) -> do
+            , match $ {-# SCC "go/Request" #-} \request@(μ, e, _ :: Request a) -> do
                   mLeader <- liftIO getLeader
                   if epoch <= e && mLeader == Just here then do
                     logTrace "replica: sending request to batcher"
@@ -979,7 +979,7 @@ replica Dict
               -- Message from the batcher
               --
               -- XXX The guard avoids proposing values for unreachable decrees.
-            , matchIf (\_ -> cd == w) $ \(rs :: [BatcherMsg a]) -> do
+            , matchIf (\_ -> cd == w) $ {-# SCC "go/batcher" #-} \(rs :: [BatcherMsg a]) -> do
                   mLeader <- liftIO getLeader
                   (s', cd') <- case mLeader of
                      -- Drop the request and ask for the lease.
@@ -1064,7 +1064,7 @@ replica Dict
               --
               -- The request is dropped if the decree was accepted with a
               -- different value already.
-            , match $
+            , match $ {-# SCC "go/Proposer" #-}
                   \(di, vi, Request κs (v :: Value a) _ rLease) -> do
                   -- If the passed decree accepted other value than our
                   -- client's, don't treat it as local (ie. do not report back
@@ -1085,7 +1085,7 @@ replica Dict
                   go st{ stateUnconfirmedDecree = d' }
 
               -- Try to service a query if the requested decree is not too old.
-            , matchIf (\(Query _ n) -> fst (Map.findMin log) <= n) $
+            , matchIf (\(Query _ n) -> fst (Map.findMin log) <= n) $ {-# SCC "go/Query" #-}
                        \(Query ρ n) -> do
                   case Map.lookup n log of
                             -- See Note [Teleportation].
@@ -1094,7 +1094,7 @@ replica Dict
                   go st
 
               -- The decree of the query is old-enough.
-            , match $ \(Query ρ n) -> do
+            , match $  {-# SCC "go/Query2" #-} \(Query ρ n) -> do
                   case msref of
                     Just sref -> usend ρ $
                       SnapshotInfo ρs legD epoch sref w0 n
@@ -1106,7 +1106,7 @@ replica Dict
               --
               -- It does not quite eliminate the chance of multiple snapshots
               -- being read in cascade, but it makes it less likely.
-            , match $ \(SnapshotInfo ρs' legD' epoch' sref' w0' n) ->
+            , match $ {-# SCC "go/SnapshotInfo" #-} \(SnapshotInfo ρs' legD' epoch' sref' w0' n) ->
                   if not (Map.member n log) && decreeNumber w <= n &&
                      decreeNumber w < decreeNumber w0' then do
 
@@ -1154,7 +1154,7 @@ replica Dict
 
               -- Upon getting the max decree of another replica, compute the
               -- gaps and query for those.
-            , matchIf (\(Max _ d' _ _ _) -> decreeNumber d < decreeNumber d') $
+            , matchIf (\(Max _ d' _ _ _) -> decreeNumber d < decreeNumber d') $ {-# SCC "go/Max" #-}
                        \(Max ρ d' legD' epoch' ρs') -> do
                   say $ "Got Max " ++ show d'
                   updateAcceptors ρs'
@@ -1196,7 +1196,7 @@ replica Dict
               -- Replicas are going to join or leave the group.
               -- The leader needs to be up-to-date so the membership given to
               -- cpolicy is the last one.
-            , matchIf (\(_, e, _) -> epoch <= e && cd == w) $
+            , matchIf (\(_, e, _) -> epoch <= e && cd == w) $ {-# SCC "go/Leave" #-}
                        \(μ, _, Helo π cpolicy) -> do
 
                   policy <- unClosure cpolicy
@@ -1239,7 +1239,7 @@ replica Dict
                   go st
 
               -- The group is trying to recover.
-            , matchIf (\(_, e, _) -> epoch <= e) $
+            , matchIf (\(_, e, _) -> epoch <= e) $ {-# SCC "go/Recover" #-}
                        \(μ, _, Recover π ρs') -> do
                   -- Place the proposer at the head of the list
                   -- of replicas to be considered as future leader.
@@ -1363,7 +1363,7 @@ replica Dict
                   when (elem here ρs) $ usend μ (epoch, ρs)
                   go st
 
-            , match $ \(ConfigQuery sender) -> do
+            , match $ {-# SCC "go/ConfigQuery" #-} \(ConfigQuery sender) -> do
                   liftIO (readGroupConfig $ persistentStore ph) >>= usend sender
                   go st
 
@@ -1377,7 +1377,7 @@ replica Dict
 
             -- Clock tick - time to advertize. Can be sent by anyone to any
             -- replica to provoke status info.
-            , match $ \Status -> do
+            , match $ {-# SCC "go/Status" #-} \Status -> do
                   -- Forget about all previous ticks to avoid broadcast storm.
                   fix $ \loop ->
                     expectTimeout 0 >>= maybe (return ()) (\() -> loop)

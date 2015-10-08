@@ -28,10 +28,10 @@ import Data.Typeable
 
 -- | Operations to initialize, read and write snapshots
 data LogSnapshot s = LogSnapshot
-    { logSnapshotInitialize    :: Process s
-    , logSnapshotsGetAvailable :: Process [(DecreeId, (NodeId, Int))]
-    , logSnapshotRestore       :: (NodeId, Int) -> Process s
-    , logSnapshotDump          :: DecreeId -> s -> Process (NodeId, Int)
+    { logSnapshotInitialize    :: !(Process s)
+    , logSnapshotsGetAvailable :: !(Process [(DecreeId, (NodeId, Int))])
+    , logSnapshotRestore       :: !((NodeId, Int) -> Process s)
+    , logSnapshotDump          :: !(DecreeId -> s -> Process (NodeId, Int))
     }
 
 newtype NoSnapshotServer = NoSnapshotServer NodeId
