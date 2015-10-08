@@ -45,7 +45,7 @@ Library
   Build-Depends:   base
                    ,binary >= 0.6
                    ,bytestring
-                   ,clock
+                   ,clock >= 0.5.1
                    ,containers
                    ,data-accessor >= 0.2.2.6
                    ,distributed-process >= 0.4

@@ -45,8 +45,7 @@ ifdef USE_RPC
 PACKAGES += network-transport-rpc
 endif
 
-VENDOR_PACKAGES = clock \
-                  distributed-process \
+VENDOR_PACKAGES = distributed-process \
                   distributed-static \
                   distributed-process-extras \
                   distributed-process-async \
