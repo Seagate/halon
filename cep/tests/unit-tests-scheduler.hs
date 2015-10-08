@@ -31,7 +31,7 @@ ut = do
     s <- randomIO
     let clockSpeed = 5000 :: Int
         launch action = do
-          forM_ [1..200] $ \i -> do
+          forM_ [1..20] $ \i -> do
             t <- createTransport
             (>>= maybe (error "Timeout") return) $ timeout 5000000 $
               withScheduler (s + i) clockSpeed 1 t initRemoteTable $ const action
