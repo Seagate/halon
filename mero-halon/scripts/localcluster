@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 
 IP=127.0.0.1
 
@@ -24,11 +24,11 @@ then
   SATCOUNT=1
 fi
 
-HALOND="$HALON_ROOT/halond"
+HALOND="$HALON_ROOT/halond +RTS $HALON_RTS_OPTS -RTS"
 HALONCTL="$HALON_ROOT/halonctl"
 
 # Clean up anything currently running
-pkill halond
+pkill halond || /bin/true 
 
 # Build the arrays of addresses
 i=0
@@ -53,19 +53,18 @@ done
 for ts in "${TSLIST[@]}"
 do
   echo "Starting halond for tracking station on $ts"
-  $HALOND -l $ts > /tmp/ts_$ts.log 2>&1 &
+  $( rm -rf $ts ; mkdir -p $ts ; cd $ts ; $HALOND -l $ts 2>&1 > ./ts_$ts.log 2>&1 & )
 done
 
 for sat in "${SATLIST[@]}"
 do
   echo "Starting halond for satellite on $sat"
-  $HALOND -l $sat > /tmp/sat_$sat.log 2>&1 &
+  $( rm -rf $sat ; mkdir -p $sat ; cd $sat ; $HALOND -l $sat > ./sat_$sat.log 2>&1 & )
 done
 
 if (($# == 3))
 then
-  rm -rf halon-persistence
-  rm /tmp/decision.log
+  rm -f /tmp/decision.log
 
   # Bootstrap tracking station
 
