@@ -39,7 +39,7 @@ import           HA.Services.SSPL (ssplRules)
 data ServiceBoot
     = None
       -- ^ When no service is expected to be started. That's the inial value.
-    | forall a. Configuration a => Starting NodeId a (Service a) ProcessId
+    | forall a. Configuration a => Starting UUID NodeId a (Service a) ProcessId
       -- ^ Indicates a service has been started and we are waiting for a
       --   'ServiceStarted' message of that same service.
 
@@ -50,7 +50,7 @@ serviceBootStarted :: HAEvent ServiceStartedMsg
                    -> LoopState
                    -> ServiceBoot
                    -> Process (Maybe (HAEvent ServiceStartedMsg))
-serviceBootStarted evt@(HAEvent _ msg _) ls l@(Starting _ _ psvc pid) = do
+serviceBootStarted evt@(HAEvent _ msg _) ls l@(Starting _ _ _ psvc pid) = do
     res <- notHandled evt ls l
     case res of
       Nothing -> return Nothing
@@ -93,7 +93,7 @@ serviceBootCouldNotStart :: HAEvent ServiceCouldNotStartMsg
                    -> LoopState
                    -> ServiceBoot
                    -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
-serviceBootCouldNotStart evt@(HAEvent _ msg _) ls l@(Starting nd _ psvc _) = do
+serviceBootCouldNotStart evt@(HAEvent _ msg _) ls l@(Starting _ nd _ psvc _) = do
     res <- notHandled evt ls l
     case res of
       Nothing -> return Nothing
@@ -153,7 +153,8 @@ rcRules argv eq additionalRules = do
       nm_failed   <- phaseHandle "node_monitor_could_not_start"
       end         <- phaseHandle "end"
 
-      setPhase nodeup $ \evt@(HAEvent _ (NodeUp h pid) _) -> do
+      setPhaseIf nodeup notHandled $ \evt@(HAEvent e (NodeUp h pid) _) -> do
+        startProcessingMsg evt
         let nid  = processNodeId pid
             node = Node nid
         known <- knownResource node
@@ -166,23 +167,22 @@ rcRules argv eq additionalRules = do
             registerHost host
             locateNodeOnHost node host
             fork NoBuffer $ do
-              put Local (Starting nid conf regularMonitor pid)
+              put Local (Starting e nid conf regularMonitor pid)
               continue nm_start
-            handled eq evt
             continue nodeup
           else do
             msp  <- lookupRunningService (Node nid) regularMonitor
             case msp of
               Nothing ->
                 fork NoBuffer $ do
-                  put Local (Starting nid conf regularMonitor pid)
+                  put Local (Starting e nid conf regularMonitor pid)
                   continue nm_start
               Just _  -> ack pid
             handled eq evt
             continue nodeup
 
       directly nm_start $ do
-        Starting nid conf svc _ <- get Local
+        Starting _ nid conf svc _ <- get Local
         liftProcess $ nsendRemote nid EQT.name
           (nullProcessId nid, UpdateEQNodes $ stationNodes argv)
         registerService svc
@@ -193,13 +193,14 @@ rcRules argv eq additionalRules = do
           \evt@(HAEvent _ msg _) -> do
         ServiceStarted n svc cfg sp <- decodeMsg msg
         liftProcess $ sayRC $
-          "started " ++ snString (serviceName svc) ++ " service"
-        Starting _ _ _ npid <- get Local
+          "started " ++ snString (serviceName svc) ++ " service on " ++ show sp
+        Starting e _ _ _ npid <- get Local
         registerServiceName svc
         registerServiceProcess n svc cfg sp
         sendToMasterMonitor msg
         ack npid
         handled eq evt
+        handledUUID eq e
         continue end
 
       setPhaseIf nm_failed serviceBootCouldNotStart $
@@ -278,7 +279,7 @@ rcRules argv eq additionalRules = do
             let vitalService = serviceName regularMonitor == serviceName svc
             if vitalService
               then do sendToMasterMonitor msg
-                      liftProcess $ do
+                      liftProcess $
                         nsendRemote nodeId EQT.name (nullProcessId nodeId, UpdateEQNodes (stationNodes argv))
               else sendToMonitor n msg
             handled eq evt
