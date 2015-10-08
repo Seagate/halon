@@ -50,15 +50,19 @@ spawnHeartbeatProcess = do
     return ()
 
 monitorProcess :: MonitorType -> Processes -> Process ()
-monitorProcess typ ps@(Processes xs) = do
-    self <- getSelfPid
-    let len = show $ length xs
-    say $ show typ ++ " Monitor started on " ++ show self ++ " monitoring "
-        ++ len ++ " service(s) already"
-    st <- monitorState ps
-    spawnHeartbeatProcess
-    bootstrapMonitor typ
-    execute st monitorRules
+monitorProcess typ ps@(Processes xs) = run `finally` logDeath
+  where
+    run = do
+      self <- getSelfPid
+      let len = show $ length xs
+      say $ show typ ++ " Monitor started on " ++ show self ++ " monitoring "
+          ++ len ++ " service(s) already"
+      st <- monitorState ps
+      spawnHeartbeatProcess
+      bootstrapMonitor typ
+      execute st monitorRules
+    logDeath = do
+      say $ show typ ++ " Monitor exit."
 
 bootstrapMonitor :: MonitorType -> Process ()
 bootstrapMonitor Regular = return ()
