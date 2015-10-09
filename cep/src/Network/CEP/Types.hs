@@ -47,7 +47,7 @@ systemClockSession = go <*> pure ()
 
     loop (Time t') = Session $ do
       t <- liftIO $ getTime Monotonic
-      let !dt = diffTimeSpec t' t
+      let !dt = diffTimeSpec t t'
       return (Timed $ Time dt, loop $ Time t)
 
 -- | That message is sent when a 'Process' asks for a subscription.

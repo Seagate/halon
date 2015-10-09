@@ -920,7 +920,7 @@ testContinueTimeout = do
     usend pid donut
     () <- expect
     end <- liftIO $ getTime Monotonic
-    let test = diffTimeSpec begin end >= TimeSpec 2 0
+    let test = diffTimeSpec end begin >= TimeSpec 2 0
     assertEqual "Should take at least 2 seconds" True test
 
 testInitTimeout :: Process ()
