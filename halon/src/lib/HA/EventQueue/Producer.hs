@@ -107,7 +107,7 @@ promulgateHAEvent :: [NodeId] -- ^ EQ nodes.
                   -> PersistMessage
                   -> Process Result
 promulgateHAEvent eqnids msg = do
-  say $ "Sending to " ++ (show eqnids)
+  producerTrace $ "Sending " ++ show (persistEventId msg) ++ " to " ++ show eqnids
   result <- callLocal $
     ncallRemoteAnyTimeout
       promulgateTimeout eqnids eventQueueLabel msg

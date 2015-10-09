@@ -134,8 +134,7 @@ sendToRC a = do
 
 sayMonitor :: String -> PhaseM g l ()
 sayMonitor s = liftProcess $ do
-    self <- getSelfPid
-    say $ "Monitor [" ++ show self ++ "] : " ++ s
+    say $ "[Monitor]: " ++ s
 
 -- | Notifies the RC that a monitored service has died.
 reportFailure :: Monitored -> PhaseM g l ()
