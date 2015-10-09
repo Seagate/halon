@@ -118,7 +118,7 @@ log (LogSnapshot {..}) = Log.Log
     , logGetAvailableSnapshots = logSnapshotsGetAvailable
     , logRestore = logSnapshotRestore
     , logDump    = logSnapshotDump
-    , logNextState = \s (Command _ f) -> do
+    , logNextState = \s (Command _ f) -> {-# SCC "log/nextState" #-} do
         unClosure f >>= ($ s)
     }
 

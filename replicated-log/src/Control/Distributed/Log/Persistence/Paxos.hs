@@ -24,19 +24,19 @@ acceptorStore ps = do
               newIORef .  Map.fromList .  map (\(k, v) -> (pairToD k, v))
     vref <- P.lookup pv 0 >>= newIORef
     return AcceptorStore
-      { storeInsert = \dvs -> do
-          modifyIORef mref $ \m -> foldr (uncurry Map.insert) m dvs
+      { storeInsert = \dvs -> {-# SCC "acceptorStore/storeInsert" #-}do
+          modifyIORef' mref $ \m -> foldr (uncurry Map.insert) m dvs
           P.atomically ps $ map (\(d, v) -> P.Insert pm (dToPair d) v) dvs
-      , storeLookup = \d ->
+      , storeLookup = \d -> {-# SCC "acceptorStore/storeLookup" #-}
           Map.lookup d <$> readIORef mref
-      , storeTrim = \d -> do
+      , storeTrim = \d -> {-# SCC "acceptorStore/storeTrim" #-} do
           m <- readIORef mref
           let (olds, mv, m') = Map.splitLookup d m
           writeIORef mref $ maybe id (Map.insert d) mv m'
           P.atomically ps [ P.Trim pm $ map dToPair $ Map.keys olds ]
       , storeList = Map.assocs <$> readIORef mref
       , storeMap = readIORef mref
-      , storePut = \v -> do
+      , storePut = \v -> {-# SCC "acceptorStore/storePut" #-} do
           writeIORef vref $ Just v
           P.atomically ps [ P.Insert pv (0 :: Int) v ]
       , storeGet = readIORef vref
