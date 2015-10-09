@@ -336,7 +336,7 @@ insertInLog (PersistenceHandle {..}) n v = do
           ]
         _                 ->
           [ P.Insert persistentLogMap n $ encode v ]
-    modifyIORef persistentLogCache $ Map.insert n v
+    modifyIORef' persistentLogCache $ Map.insert n v
 
 -- | Removes all entries below the given index from the log.
 --
@@ -345,7 +345,7 @@ trimTheLog :: PersistenceHandle a
            -> Int           -- ^ Log index
            -> IO ()
 trimTheLog (PersistenceHandle {..}) w0 = do
-    (toTrim, rest) <- Map.split (pred w0) <$> readIORef persistentLogCache
+    (toTrim, !rest) <- Map.split (pred w0) <$> readIORef persistentLogCache
     P.atomically persistentStore
       [ P.Trim persistentLogMap (Map.keys toTrim ++ [w0]) ]
     writeIORef persistentLogCache rest

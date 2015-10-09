@@ -29,9 +29,9 @@ data PersistentStore = PersistentStore
 
 -- | Operations that can modify the store
 data WriteOp = -- | Inserts a key/value pair in the given map.
-               forall k. IsKey k => Insert (PersistentMap k) k ByteString
+               forall k. IsKey k => Insert !(PersistentMap k) !k !ByteString
                -- | Eliminates from a map all the given keys.
-             | forall k. IsKey k => Trim (PersistentMap k) [k]
+             | forall k. IsKey k => Trim !(PersistentMap k) ![k]
 
 -- | A class of types that can be converted to keys.
 class Typeable k => IsKey k where
