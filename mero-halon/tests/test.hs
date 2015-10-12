@@ -77,7 +77,7 @@ ut transport breakConnection = return $
         HA.Castor.Tests.tests transport
 #endif
 #if !defined(USE_RPC) && !defined(USE_MOCK_REPLICATOR)
-      , testCase "RCToleratesDisconnections [disabled]" $ const (return ()) $
+      , testCase "RCToleratesDisconnections" $
           HA.Test.Disconnect.testDisconnect transport breakConnection
 #else
       , testCase "RCToleratesDisconnections [disabled by compilation flags]" $
