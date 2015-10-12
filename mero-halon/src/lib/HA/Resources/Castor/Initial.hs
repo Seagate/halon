@@ -66,7 +66,7 @@ instance FromJSON BMC
 data Enclosure = Enclosure {
     enc_idx :: Int
   , enc_id :: String
-  , enc_bmc :: BMC
+  , enc_bmc :: [BMC]
   , enc_hosts :: [Host]
 } deriving (Eq, Data, Generic, Show, Typeable)
 

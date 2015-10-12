@@ -39,7 +39,7 @@ castorRules = do
         enclosure = Enclosure enc_id
       in do
         registerEnclosure rack enclosure
-        registerBMC enclosure enc_bmc
+        mapM_ (registerBMC enclosure) enc_bmc
         mapM_ (goHost enclosure) enc_hosts
     goHost enc (CI.Host{..}) = let
         host = Host h_fqdn
