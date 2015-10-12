@@ -825,18 +825,17 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
 
 -- | Stops the scheduler.
 --
--- Takes the list returned by 'startScheduler'.
-stopScheduler :: [LocalNode] -> IO ()
-stopScheduler = \(~lnodes@(n : _)) -> do
+-- It is ok to close the nodes returned by 'startScheduler' afterwards.
+stopScheduler :: IO ()
+stopScheduler = do
     msproc <- tryTakeMVar schedulerVar
     running <- modifyMVar schedulerLock $ \running -> do
       return (False,running)
     forM_ msproc $ \sproc ->
-      when running $ runProcess n $ do
+      when running $ runProcess (processNode sproc) $ do
         DP.exit (processId sproc) StopScheduler
         SchedulerTerminated <- DP.expect
         return ()
-    forM_ lnodes closeLocalNode
 
 -- | Wraps a 'Process' computation with calls to 'startScheduler' and
 -- 'stopScheduler'.
@@ -853,7 +852,7 @@ withScheduler :: Int       -- ^ seed
               -> IO ()
 withScheduler s clockDelta numNodes transport rtable p =
     bracket (startScheduler s clockDelta numNodes transport rtable)
-            stopScheduler $ \lnodes@(n : ns) -> do
+            (mapM_ closeLocalNode) $ \(n : ns) -> do
       tid <- myThreadId
       mv <- newEmptyMVar
       _ <- forkProcess n $ do
@@ -865,7 +864,7 @@ withScheduler s clockDelta numNodes transport rtable p =
           Continue <- DP.expect
           p ns
           DP.unlink spid
-          DP.liftIO $ stopScheduler lnodes
+          DP.liftIO stopScheduler
           DP.liftIO $ putMVar mv ()
         `DP.catch` \e -> DP.liftIO $ do
           throwTo tid (e :: SomeException)

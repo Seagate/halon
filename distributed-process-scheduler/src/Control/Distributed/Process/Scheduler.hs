@@ -43,7 +43,7 @@ startScheduler = if schedulerIsEnabled
                  else error "Scheduler not enabled."
 
 {-# NOINLINE stopScheduler #-}
-stopScheduler  :: [LocalNode] -> IO ()
+stopScheduler  :: IO ()
 stopScheduler = if schedulerIsEnabled
                 then Internal.stopScheduler
                 else error "Scheduler not enabled."
