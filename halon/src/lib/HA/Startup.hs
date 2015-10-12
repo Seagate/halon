@@ -84,8 +84,11 @@ disconnectAllNodeConnections :: Process ()
 disconnectAllNodeConnections = do
     node <- fmap processNode ask
     liftIO $ StrictMVar.modifyMVar_ (localState node) $ \st -> do
-      mapM_ closeIfNodeId . Map.toList $ _localConnections st
-      return st { _localConnections = Map.empty }
+      case st of
+        LocalNodeValid vst -> do
+          mapM_ closeIfNodeId . Map.toList $ _localConnections vst
+          return $ LocalNodeValid vst{ _localConnections = Map.empty }
+        _ -> return st
   where
     closeIfNodeId ((NodeIdentifier _,_),(c,_)) = NT.close c
     closeIfNodeId _ = return ()

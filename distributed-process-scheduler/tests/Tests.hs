@@ -255,10 +255,10 @@ registerTest = do
     WhereIsReply "s0" Nothing <- expect
     say' "main: registering s0"
     registerRemoteAsync here "s0" s0
-    RegisterReply "s0" True <- expect
+    RegisterReply "s0" True _ <- expect
     say' "main: registered s0"
     registerRemoteAsync here "s0" s0
-    RegisterReply "s0" False <- expect
+    RegisterReply "s0" False _ <- expect
     say' "main: cannot reregister s0"
     whereisRemoteAsync here "s0"
     WhereIsReply "s0" (Just s0') <- expect

@@ -284,7 +284,7 @@ remoteStartService (caller, sn) p = do
           regRes <- try $ register label self
           case regRes of
             Right () -> return self
-            Left (ProcessRegistrationException _) ->  do
+            Left (ProcessRegistrationException _ _) ->  do
                 whereis label >>= maybe whereisOrRegister return
     pid <- whereisOrRegister
     usend caller pid

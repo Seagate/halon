@@ -1453,7 +1453,7 @@ withLogIdLock (LogId idstr) action = callLocal go
       join $ catch (do register lockLabel self
                        return action
                    ) $
-        \(ProcessRegistrationException _) -> do
+        \(ProcessRegistrationException _ _) -> do
           mpid <- whereis lockLabel
           case mpid of
             Nothing -> return go
@@ -1573,7 +1573,7 @@ localSpawnAndRegister lbl p = do
              () <- expect
              p
     r <- try $ register lbl pid
-    either (\(ProcessRegistrationException _) ->
+    either (\(ProcessRegistrationException _ _) ->
                   exit pid "localSpawnAndRegister"
            )
            (usend pid)

@@ -270,9 +270,8 @@ withLocalProc :: DP.LocalNode
               -> IO ()
 withLocalProc node pid p =
   let lpid = DP.processLocalId pid in do
-  mProc <- withMVar (DP.localState node) $
-             return . (^. DP.localProcessWithId lpid)
-  forM_ mProc p
+  DP.withValidLocalState node $ \vst ->
+    forM_ (vst ^. DP.localProcessWithId lpid) p
 
 remotableDecl [ [d|
 
@@ -1277,7 +1276,7 @@ registerRemoteAsync n label p = do
     yield
     DP.registerRemoteAsync n label p
     reply <- DP.receiveWait
-      [ DP.matchIf (\(DP.RegisterReply label' _) -> label == label') return ]
+      [ DP.matchIf (\(DP.RegisterReply label' _ _) -> label == label') return ]
     DP.getSelfPid >>= flip usend reply
 
 -- | Opaque type used by 'receiveWaitT'.
