@@ -24,7 +24,9 @@ import Network.Transport (Transport, EndPointAddress)
 import Test.Tasty (testGroup)
 import Test.Tasty.HUnit (testCase)
 
-import Control.Concurrent (threadDelay)
+import Control.Concurrent (threadDelay, forkIO)
+import Control.Concurrent.MVar
+import Control.Exception
 
 #ifdef USE_RPC
 import Control.Monad (when)
@@ -114,9 +116,17 @@ runTests tests = do
                      , TCP.tcpUserTimeout = Just 2000
                      , TCP.transportConnectTimeout = Just 2000000
                      }
-    let connectionBreak here there = do
-          TCP.socketBetween internals here there >>= TCP.close
-          TCP.socketBetween internals there here >>= TCP.close
+    let -- XXX: Could use enclosed-exceptions here. Note that the worker
+        -- is not killed in case of an exception.
+        ignoreSyncExceptions action = do
+          mv <- newEmptyMVar
+          _ <- forkIO $ action `finally` putMVar mv ()
+          takeMVar mv
+        connectionBreak here there = do
+          ignoreSyncExceptions $
+            TCP.socketBetween internals here there >>= TCP.close
+          ignoreSyncExceptions $
+            TCP.socketBetween internals there here >>= TCP.close
 #endif
     withArgs (takeWhile ("--" /=) argv) $
       defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
