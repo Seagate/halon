@@ -150,6 +150,16 @@ newtype LogId = LogId String
 toLogId :: String -> LogId
 toLogId = LogId
 
+-- TODO: Make requirements on snapshot availability explicit.
+--
+-- The log has two persisted components: a snapshot and a write-ahead log (WAL).
+-- Only the WAL is locally available. Thus for this implementation to deliver
+-- its guarantees, some requirements on how the user makes the snapshots
+-- available needs to be formulated.
+--
+-- Some related discussion is here:
+-- https://github.com/tweag/halon/pull/185
+
 data Log a = forall s ref. Serializable ref => Log
     { -- | Yields the initial value of the log.
       logInitialize :: !(Process s)
