@@ -157,30 +157,33 @@ rcRules argv eq additionalRules = do
         startProcessingMsg uuid
         let nid  = processNodeId pid
             node = Node nid
+        liftProcess . sayRC $ "New node contacted: " ++ show nid
         known <- knownResource node
         conf <- loadNodeMonitorConf (Node nid)
         if not known
           then do
             let host = Host h
-            liftProcess . sayRC $ "New node contacted: " ++ show nid
             registerNode node
             registerHost host
             locateNodeOnHost node host
             fork NoBuffer $ do
               put Local (Starting uuid nid conf regularMonitor pid)
               continue nm_start
+            continue nodeup
           else do
             -- Check if we already provision node with a monitor or not.
             msp  <- lookupRunningService (Node nid) regularMonitor
             case msp of
-              Nothing ->
+              Nothing -> do
                 fork NoBuffer $ do
                   put Local (Starting uuid nid conf regularMonitor pid)
                   continue nm_start
-              Just _  -> do ack pid
+                continue nodeup
+              Just _  -> do liftProcess . sayRC $ "node is already provisioned: " ++ show nid
+                            ack pid
                             sendMsg eq uuid
                             finishProcessingMsg uuid
-        continue nodeup
+                            continue nodeup
 
       directly nm_start $ do
         Starting _ nid conf svc _ <- get Local
