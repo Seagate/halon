@@ -856,19 +856,19 @@ withScheduler s clockDelta numNodes transport rtable p =
       tid <- myThreadId
       mv <- newEmptyMVar
       _ <- forkProcess n $ do
-          spid <- processId <$> DP.liftIO getScheduler
-          DP.link spid
-          self <- DP.getSelfPid
-          DP.send spid $ SpawnedProcess self self
-          SpawnAck <- DP.expect
-          Continue <- DP.expect
-          p ns
-          DP.unlink spid
-          DP.liftIO stopScheduler
-          DP.liftIO $ putMVar mv ()
-        `DP.catch` \e -> DP.liftIO $ do
-          throwTo tid (e :: SomeException)
-          throwIO e
+        do spid <- processId <$> DP.liftIO getScheduler
+           DP.link spid
+           self <- DP.getSelfPid
+           DP.send spid $ SpawnedProcess self self
+           SpawnAck <- DP.expect
+           Continue <- DP.expect
+           p ns
+           DP.unlink spid
+          `DP.finally` DP.liftIO stopScheduler
+        DP.liftIO $ putMVar mv ()
+       `DP.catch` \e -> DP.liftIO $ do
+         throwTo tid (e :: SomeException)
+         throwIO e
       takeMVar mv
 
 -- | Yields control to some other process.
