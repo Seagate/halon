@@ -274,8 +274,9 @@ serviceLabel :: ServiceName -> String
 serviceLabel sn = "service." ++ snString sn
 
 -- | Starts and registers a service in the current node.
-remoteStartService :: ServiceName -> Process () -> Process ()
-remoteStartService sn p = do
+-- Sends @ProcessId@ of the running service to the caller.
+remoteStartService :: (ProcessId, ServiceName) -> Process () -> Process ()
+remoteStartService (caller, sn) p = do
     self <- getSelfPid
     -- Register the service if it is not already registered.
     let whereisOrRegister = do
@@ -286,6 +287,7 @@ remoteStartService sn p = do
             Left (ProcessRegistrationException _) ->  do
                 whereis label >>= maybe whereisOrRegister return
     pid <- whereisOrRegister
+    usend caller pid
     when (pid == self) p
 
 remotable
