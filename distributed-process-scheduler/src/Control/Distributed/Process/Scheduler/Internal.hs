@@ -65,6 +65,7 @@ module Control.Distributed.Process.Scheduler.Internal
   -- * Internal communication with the scheduler
   , yield
   , getScheduler
+  , AbsentScheduler(..)
   , SchedulerMsg(..)
   , SchedulerResponse(..)
   , uninterruptiblyMaskKnownExceptions_
@@ -877,11 +878,18 @@ yield = do DP.getSelfPid >>= sendS . Yield
            Continue <- DP.expect
            return ()
 
+-- | Thrown by wrapped primitives when the scheduler was meant to be enabled
+-- but it is not running.
+data AbsentScheduler = AbsentScheduler
+  deriving Show
+
+instance Exception AbsentScheduler
+
 -- | Yields the local process of the scheduler.
 getScheduler :: IO LocalProcess
 getScheduler =
     tryReadMVar schedulerVar >>=
-      maybe (error "getScheduler: Scheduler is not running.") return
+      maybe (throwIO AbsentScheduler) return
 
 -- | Have messages between pairs of nodes drop with some probability.
 --

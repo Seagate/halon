@@ -70,14 +70,15 @@ import Control.Distributed.Process.Timeout
 import Control.Distributed.Process hiding (spawn)
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
+import Control.Distributed.Process.Scheduler
+    (schedulerIsEnabled, AbsentScheduler)
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Static
     (closureApply, staticApply, staticClosure)
 
 import Control.Arrow (second)
 import Control.Concurrent hiding (newChan)
-import Control.Exception (SomeException)
+import Control.Exception (SomeException, throwIO)
 import Control.Monad
 import Data.Binary (Binary, encode, decode)
 import qualified Data.ByteString.Lazy as BSL (ByteString)
@@ -1759,7 +1760,12 @@ append (Handle _ _ _ _ μ) hint x = callLocal $ do
       let loopingWait = receiveWait
             [ match return
             , match $ \(ProcessMonitorNotification _ _ _) -> return ()
-            ] `onException` loopingWait
+            ] `catches` [ -- Thrown when the scheduler is stopped
+                          Handler $ \(e :: AbsentScheduler) ->
+                            liftIO $ throwIO e
+                        , Handler $ \(e :: SomeException) ->
+                            loopingWait >> liftIO (throwIO e)
+                        ]
       loopingWait
     expect
 
