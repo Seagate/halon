@@ -232,7 +232,8 @@ rcRules argv eq additionalRules = do
 
       directly ph0 $ switch [ph1, ph1', ph2']
 
-      setPhaseIf ph1 notHandled $ \evt@(HAEvent uuid msg _) -> do
+      setPhaseIf ph1 notHandled $ \(HAEvent uuid msg _) -> do
+        startProcessingMsg uuid
         ServiceStartRequest sstart n@(Node nid) svc conf <- decodeMsg msg
 
         -- Store the service start request, and the failed retry count
@@ -242,7 +243,6 @@ rcRules argv eq additionalRules = do
         msp   <- lookupRunningService n svc
 
         registerService svc
-        handled eq evt
         case (known, msp, sstart) of
           (True, Nothing, HA.Service.Start) -> do
             startService nid svc conf
@@ -251,9 +251,11 @@ rcRules argv eq additionalRules = do
             writeConfiguration sp conf Intended
             bounceServiceTo Intended n svc
             switch [ph2, ph3, timeout timeup ph4]
-          _ -> return ()
+          _ -> do finishProcessingMsg uuid
+                  sendMsg eq uuid
 
-      setPhaseIf ph1' notHandled $ \evt@(HAEvent uuid msg _) -> do
+      setPhaseIf ph1' notHandled $ \(HAEvent uuid msg _) -> do
+        startProcessingMsg uuid
         ServiceFailed n svc pid <- decodeMsg msg
         res                     <- lookupRunningService n svc
         case res of
@@ -261,7 +263,6 @@ rcRules argv eq additionalRules = do
             -- Store the service failed message, and the failed retry count
             put Local $ Just (uuid, n, serviceName svc, 0)
             bounceServiceTo Current n svc
-            handled eq evt
             switch [ph2, ph3, timeout timeup ph4]
           _ -> return ()
 
@@ -270,7 +271,7 @@ rcRules argv eq additionalRules = do
       -- message outside of the ServiceStart procedure. In this case the
       -- best we could do is to consult resource graph and check if we need
       -- this service running or not and proceed evaluation.
-      setPhaseIf ph2' notHandled $ \evt@(HAEvent _ msg _) -> do
+      setPhaseIf ph2' notHandled $ \evt@(HAEvent uuid msg _) -> do
         ServiceStarted n@(Node nodeId) svc cfg sp <- decodeMsg msg
         known <- knownResource n
         if known
@@ -292,7 +293,9 @@ rcRules argv eq additionalRules = do
                                )
             liftProcess $ sayRC $
               "started " ++ snString (serviceName svc) ++ " service"
-          else handled eq evt
+            sendMsg eq uuid
+          else sendMsg eq uuid
+
 
 
       setPhaseIf ph2 serviceStarted $ \evt@(HAEvent _ msg _) -> do
@@ -318,6 +321,9 @@ rcRules argv eq additionalRules = do
                             ++ " started"
                            )
 
+        Just (uuid, _, _, _) <- get Local
+        finishProcessingMsg uuid
+        sendMsg eq uuid
         liftProcess $ sayRC $
           "started " ++ snString (serviceName svc) ++ " service"
 
@@ -334,7 +340,7 @@ rcRules argv eq additionalRules = do
           else continue ph4
 
       directly ph4 $ do
-        Just (_, n1, s1, count) <- get Local
+        Just (uuid, n1, s1, count) <- get Local
         phaseLog "error" ("Service "
                         ++ (snString s1)
                         ++ " on node "
@@ -343,6 +349,8 @@ rcRules argv eq additionalRules = do
                         ++ show count
                         ++ " attempts."
                          )
+        finishProcessingMsg uuid
+        sendMsg eq uuid
 
       start ph0 Nothing
 
