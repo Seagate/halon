@@ -82,14 +82,14 @@ import qualified "distributed-process" Control.Distributed.Process.Internal.Type
 import Control.Distributed.Process.Closure
 import "distributed-process" Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( Serializable )
-import qualified Control.Distributed.Process.Internal.StrictMVar as DP
+import Control.Distributed.Process.Internal.StrictMVar ( withMVar )
 import "distributed-process-trans" Control.Distributed.Process.Trans ( MonadProcess(..) )
 import qualified "distributed-process-trans" Control.Distributed.Process.Trans as DPT
 import qualified Control.Distributed.Process.Internal.WeakTQueue as DP
 import Control.Distributed.Process.Internal.Types (LocalProcess(..))
 
 import Control.Concurrent (myThreadId)
-import Control.Concurrent.MVar
+import Control.Concurrent.MVar hiding (withMVar)
 import Control.Exception
   ( SomeException
   , throwIO
@@ -339,7 +339,7 @@ remotableDecl [ [d|
       let pid = DP.sendPortProcessId from
           cid = DP.sendPortLocalId   from
       DP.liftIO $ withLocalProc (DP.processNode lproc) pid $ \proc -> do
-        mChan <- DP.withMVar (DP.processState proc) $
+        mChan <- withMVar (DP.processState proc) $
           return . (^. DP.typedChannelWithId cid)
         case mChan of
           Nothing -> return ()
@@ -853,10 +853,7 @@ withScheduler :: Int       -- ^ seed
               -> IO ()
 withScheduler s clockDelta numNodes transport rtable p =
     bracket (startScheduler s clockDelta numNodes transport rtable)
-            (\ns -> do
-              mapM_ terminateLocalProcesses ns
-              mapM_ closeLocalNode ns
-            ) $ \(n : ns) -> do
+            (mapM_ closeLocalNode) $ \(n : ns) -> do
       tid <- myThreadId
       mv <- newEmptyMVar
       _ <- forkProcess n $ do
@@ -874,32 +871,6 @@ withScheduler s clockDelta numNodes transport rtable p =
          throwTo tid (e :: SomeException)
          throwIO e
       takeMVar mv
-
--- | Kills all processes with 'kill' except for the management agent.
--- Use 'closeLocalNode' to kill the management agent.
-terminateLocalProcesses :: LocalNode -> IO ()
-terminateLocalProcesses node = do
-    st <- DP.modifyMVar (DP.localState node) (\st -> return (st,st))
-    runProcess node $ terminateProcesses st
-  where
-    terminateProcesses :: DP.LocalNodeState -> Process ()
-    terminateProcesses (DP.LocalNodeValid st) = do
-      -- The management agent controller doesn't die unless killed with
-      -- killThread.
-      let mxACPid = case DP.localEventBus node of
-            DP.MxEventBus pid _ _ _ -> pid
-            DP.MxEventBusInitialising ->
-              error "terminateLocalProcesses: The node is not initialized."
-          pids = delete mxACPid $ map processId $
-                   Map.elems (st ^. DP.localProcesses)
-      mapM_ DP.monitor pids
-      killerPid <- DP.spawnLocal $ forever $ do
-        mapM_ (flip DP.kill "terminateLocalProcesses") pids
-        DP.receiveTimeout 1000000 []
-      replicateM_ (length pids) $ DP.receiveWait
-        [ DP.match $ \(DP.ProcessMonitorNotification _ _ _) -> return () ]
-      DP.exit killerPid "terminateLocalProcesses"
-    terminateProcesses _ = return ()
 
 -- | Yields control to some other process.
 yield :: Process ()
