@@ -5,6 +5,7 @@ copyright:           (C) 2013 Xyratex Technology Limited
 category:            Network
 build-type:          Custom
 cabal-version:       >=1.10
+data-files:          rpclite/rpclite.h
 
 Flag debug
   Description: Print messages when the RPC backend calls are evaluated
