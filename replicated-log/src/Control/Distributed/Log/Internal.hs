@@ -100,6 +100,7 @@ import GHC.Generics (Generic)
 import Prelude hiding (init, log)
 import System.Clock
 import System.FilePath ((</>))
+import System.Directory (doesDirectoryExist)
 
 
 deriving instance Typeable Eq
@@ -1528,10 +1529,13 @@ spawnLocalReplica :: (LogId, ProcessId, TimeSpec)
 spawnLocalReplica (k, caller, ts0) pDirectory = do
     r <- try $ withLogIdLock k $ ifNoLocalReplica k $ do
            path <- localLogPath k pDirectory
-           withPersistentStore path $ \ps -> do
-             (ssdict2, bs, m) <- liftIO $ readGroupConfig ps
-             Some (SerializableDict :: SerializableDict a) <- unStatic ssdict2
-             spawnR (decode bs :: GroupConfig a) m
+           exist <- liftIO $ doesDirectoryExist path
+           if exist
+              then withPersistentStore path $ \ps -> do
+                (ssdict2, bs, m) <- liftIO $ readGroupConfig ps
+                Some (SerializableDict :: SerializableDict a) <- unStatic ssdict2
+                spawnR (decode bs :: GroupConfig a) m
+              else error $ "no persisted storage found (" ++ show path ++ ")"
     either (usend caller . ("spawnLocalReplica: " ++) . show)
            (usend caller)
            (r :: Either SomeException ())
