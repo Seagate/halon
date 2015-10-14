@@ -109,9 +109,9 @@ serviceBootCouldNotStart _ _ _ = return Nothing
 --   other case, it refuses the message.
 serviceStarted :: HAEvent ServiceStartedMsg
                -> LoopState
-               -> Maybe (Node, ServiceName, Int)
+               -> Maybe (UUID, Node, ServiceName, Int)
                -> Process (Maybe (HAEvent ServiceStartedMsg))
-serviceStarted evt@(HAEvent _ msg _) ls l@(Just (n1, sname, _)) = do
+serviceStarted evt@(HAEvent _ msg _) ls l@(Just (_, n1, sname, _)) = do
     res <- notHandled evt ls l
     case res of
       Nothing -> return Nothing
@@ -127,9 +127,9 @@ serviceStarted _ _ _ = return Nothing
 --   other case, it refuses the message.
 serviceCouldNotStart :: HAEvent ServiceCouldNotStartMsg
                      -> LoopState
-                     -> Maybe (Node, ServiceName, Int)
+                     -> Maybe (UUID, Node, ServiceName, Int)
                      -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
-serviceCouldNotStart evt@(HAEvent _ msg _) ls l@(Just (n1, sname, _)) = do
+serviceCouldNotStart evt@(HAEvent _ msg _) ls l@(Just (_, n1, sname, _)) = do
     res <- notHandled evt ls l
     case res of
       Nothing -> return Nothing
@@ -153,8 +153,8 @@ rcRules argv eq additionalRules = do
       nm_failed   <- phaseHandle "node_monitor_could_not_start"
       end         <- phaseHandle "end"
 
-      setPhaseIf nodeup notHandled $ \evt@(HAEvent e (NodeUp h pid) _) -> do
-        startProcessingMsg e
+      setPhaseIf nodeup notHandled $ \(HAEvent uuid (NodeUp h pid) _) -> do
+        startProcessingMsg uuid
         let nid  = processNodeId pid
             node = Node nid
         known <- knownResource node
@@ -167,19 +167,20 @@ rcRules argv eq additionalRules = do
             registerHost host
             locateNodeOnHost node host
             fork NoBuffer $ do
-              put Local (Starting e nid conf regularMonitor pid)
+              put Local (Starting uuid nid conf regularMonitor pid)
               continue nm_start
-            continue nodeup
           else do
+            -- Check if we already provision node with a monitor or not.
             msp  <- lookupRunningService (Node nid) regularMonitor
             case msp of
               Nothing ->
                 fork NoBuffer $ do
-                  put Local (Starting e nid conf regularMonitor pid)
+                  put Local (Starting uuid nid conf regularMonitor pid)
                   continue nm_start
-              Just _  -> ack pid
-            handled eq evt
-            continue nodeup
+              Just _  -> do ack pid
+                            sendMsg eq uuid
+                            finishProcessingMsg uuid
+        continue nodeup
 
       directly nm_start $ do
         Starting _ nid conf svc _ <- get Local
@@ -190,25 +191,28 @@ rcRules argv eq additionalRules = do
         switch [nm_started, nm_failed]
 
       setPhaseIf nm_started serviceBootStarted $
-          \evt@(HAEvent _ msg _) -> do
+          \(HAEvent msgid msg _) -> do
         ServiceStarted n svc cfg sp <- decodeMsg msg
         liftProcess $ sayRC $
           "started " ++ snString (serviceName svc) ++ " service on " ++ show sp
-        Starting e _ _ _ npid <- get Local
+        Starting uuid _ _ _ npid <- get Local
         registerServiceName svc
         registerServiceProcess n svc cfg sp
         sendToMasterMonitor msg
         ack npid
-        handled eq evt
-        sendMsg eq e
+        sendMsg eq msgid
+        sendMsg eq uuid
+        finishProcessingMsg uuid
         continue end
 
       setPhaseIf nm_failed serviceBootCouldNotStart $
-          \evt@(HAEvent _ msg _) -> do
+          \(HAEvent msgid msg _) -> do
         ServiceCouldNotStart n svc _ <- decodeMsg msg
         liftProcess $ sayRC $
           "failed " ++ snString (serviceName svc) ++ " service on the node " ++ show n
-        handled eq evt
+        sendMsg eq msgid
+        Starting uuid _ _ _ _ <- get Local
+        finishProcessingMsg uuid
         continue end
 
       directly end stop
@@ -228,11 +232,11 @@ rcRules argv eq additionalRules = do
 
       directly ph0 $ switch [ph1, ph1', ph2']
 
-      setPhaseIf ph1 notHandled $ \evt@(HAEvent _ msg _) -> do
+      setPhaseIf ph1 notHandled $ \evt@(HAEvent uuid msg _) -> do
         ServiceStartRequest sstart n@(Node nid) svc conf <- decodeMsg msg
 
         -- Store the service start request, and the failed retry count
-        put Local $ Just (n, serviceName svc, 0 :: Int)
+        put Local $ Just (uuid, n, serviceName svc, 0 :: Int)
 
         known <- knownResource n
         msp   <- lookupRunningService n svc
@@ -249,13 +253,13 @@ rcRules argv eq additionalRules = do
             switch [ph2, ph3, timeout timeup ph4]
           _ -> return ()
 
-      setPhaseIf ph1' notHandled $ \evt@(HAEvent _ msg _) -> do
+      setPhaseIf ph1' notHandled $ \evt@(HAEvent uuid msg _) -> do
         ServiceFailed n svc pid <- decodeMsg msg
         res                     <- lookupRunningService n svc
         case res of
           Just (ServiceProcess spid) | spid == pid -> do
             -- Store the service failed message, and the failed retry count
-            put Local $ Just (n, serviceName svc, 0)
+            put Local $ Just (uuid, n, serviceName svc, 0)
             bounceServiceTo Current n svc
             handled eq evt
             switch [ph2, ph3, timeout timeup ph4]
@@ -282,7 +286,6 @@ rcRules argv eq additionalRules = do
                       liftProcess $
                         nsendRemote nodeId EQT.name (nullProcessId nodeId, UpdateEQNodes (stationNodes argv))
               else sendToMonitor n msg
-            handled eq evt
             phaseLog "started" ("Service "
                                 ++ (snString . serviceName $ svc)
                                 ++ " started"
@@ -318,20 +321,20 @@ rcRules argv eq additionalRules = do
         liftProcess $ sayRC $
           "started " ++ snString (serviceName svc) ++ " service"
 
-      setPhaseIf ph3 serviceCouldNotStart $ \evt@(HAEvent _ msg _) -> do
+      setPhaseIf ph3 serviceCouldNotStart $ \evt@(HAEvent uuid msg _) -> do
         ServiceCouldNotStart (Node nid) svc cfg <- decodeMsg msg
         handled eq evt
-        Just (n1, s1, count) <- get Local
+        Just (_, n1, s1, count) <- get Local
         if count <= 4
           then do
             -- | Increment the failure count
-            put Local $ Just (n1, s1, count+1)
+            put Local $ Just (uuid, n1, s1, count+1)
             startService nid svc cfg
             switch [ph2, ph3, timeout timeup ph4]
           else continue ph4
 
       directly ph4 $ do
-        Just (n1, s1, count) <- get Local
+        Just (_, n1, s1, count) <- get Local
         phaseLog "error" ("Service "
                         ++ (snString s1)
                         ++ " on node "
