@@ -72,7 +72,8 @@ import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler
     (schedulerIsEnabled, AbsentScheduler)
-import Control.Distributed.Process.Internal.Types (nullProcessId)
+import Control.Distributed.Process.Internal.Types
+    (nullProcessId, processNode, withValidLocalState)
 import Control.Distributed.Static
     (closureApply, staticApply, staticClosure)
 
@@ -80,6 +81,7 @@ import Control.Arrow (second)
 import Control.Concurrent hiding (newChan)
 import Control.Exception (SomeException, throwIO)
 import Control.Monad
+import Control.Monad.Reader (ask)
 import Data.Binary (Binary, encode, decode)
 import qualified Data.ByteString.Lazy as BSL (ByteString)
 import Data.Constraint (Dict(..))
@@ -1757,15 +1759,20 @@ append (Handle _ _ _ _ μ) hint x = callLocal $ do
         , requestHint     = hint
         , requestForLease = Nothing
         }
-      let loopingWait = receiveWait
-            [ match return
-            , match $ \(ProcessMonitorNotification _ _ _) -> return ()
-            ] `catches` [ -- Thrown when the scheduler is stopped
-                          Handler $ \(e :: AbsentScheduler) ->
-                            liftIO $ throwIO e
-                        , Handler $ \(e :: SomeException) ->
-                            loopingWait >> liftIO (throwIO e)
-                        ]
+      let loopingWait = do
+            -- fail if the node is closed
+            lproc <- ask
+            liftIO $ withValidLocalState (processNode lproc) $
+              const (return ())
+            receiveWait
+              [ match return
+              , match $ \(ProcessMonitorNotification _ _ _) -> return ()
+              ] `catches` [ -- Thrown when the scheduler is stopped
+                            Handler $ \(e :: AbsentScheduler) ->
+                              liftIO $ throwIO e
+                          , Handler $ \(e :: SomeException) ->
+                              loopingWait >> liftIO (throwIO e)
+                          ]
       loopingWait
     expect
 
