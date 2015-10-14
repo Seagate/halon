@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# this script is intended for invoking from circleci
+
+export COMMIT=$(git rev-parse HEAD)
+echo COMMIT = $COMMIT
+
+cat docker/rpm/Dockerfile.in | sed "s/@@COMMIT@@/${COMMIT}/g" > docker/rpm/Dockerfile
+
+docker --host=localhost:5555 build docker/rpm/ || exit 1
+
