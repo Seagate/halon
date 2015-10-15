@@ -6,7 +6,7 @@ export CBLRPM=${WORKDIR}/cabal-installers/bin/cblrpm
 export PATH=${WORKDIR}/cabal-installers/bin/:$PATH
 
 export CBLRPM_FREEZE=${HALONSRC}/cabal.config
-export CBLRPM_PREFIX=halon
+export CBLRPM_PACKAGING=${HALONSRC}/docker/rpm/packaging.yaml
 
 # network git repo does not have a configure
 # script; if it was downloaded from hackage,
