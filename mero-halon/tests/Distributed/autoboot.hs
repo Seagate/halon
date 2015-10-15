@@ -85,7 +85,7 @@ main =
                      ++ " -a " ++ m1loc
                      ++ " bootstrap station"
                      )
-      expectLog [nid0, nid1] (isInfixOf "Recovery Coordinator: New node contacted:")
+      expectLog [nid0, nid1] (isInfixOf "Recovery Coordinator: Executing on node:")
 
       say "Killing halond"
       systemThere ms "pkill halond; true"
