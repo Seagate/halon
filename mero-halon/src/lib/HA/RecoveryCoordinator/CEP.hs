@@ -274,7 +274,7 @@ rcRules argv eq additionalRules = do
       -- message outside of the ServiceStart procedure. In this case the
       -- best we could do is to consult resource graph and check if we need
       -- this service running or not and proceed evaluation.
-      setPhaseIf ph2' notHandled $ \evt@(HAEvent uuid msg _) -> do
+      setPhaseIf ph2' notHandled $ \(HAEvent uuid msg _) -> do
         ServiceStarted n@(Node nodeId) svc cfg sp <- decodeMsg msg
         known <- knownResource n
         if known
