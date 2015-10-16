@@ -11,10 +11,12 @@
 --   -- send reply from SSPL-LL and check that it was received by
 --        RC
 --   -- sensor receives message from sspl-ll
+--
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE CPP #-}
 module HA.Test.SSPL where
 
@@ -49,9 +51,15 @@ import Data.Defaultable
 import Data.Binary (Binary)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Text.Encoding as T
+import Data.List (isInfixOf)
+import Data.Maybe (fromJust)
 import Data.Typeable
+import qualified Data.UUID as UUID
 import Network.AMQP
 import GHC.Generics
+
 
 import TestRunner
 
@@ -63,9 +71,17 @@ data SChan = SChan SensorResponseMessageSensor_response_type deriving (Generic, 
 
 instance Binary SChan
 
-testRules :: ProcessId -> [Definitions LoopState ()]
+data TestSmartCmd = TestSmartCmd NodeId ByteString deriving (Generic, Typeable)
+
+instance Binary TestSmartCmd
+
+testRules :: ProcessId ->  [Definitions LoopState ()]
 testRules pid =
-  [ defineSimple "sspl-test-sensor" $ \(HAEvent _ (_::NodeId, s) _) ->
+  [ defineSimple "sspl-test-send" $ \(HAEvent _ (TestSmartCmd nid t) _) ->
+      sendNodeCmd nid Nothing (SmartTest $ T.decodeUtf8 t)
+  , defineSimple "sspl-test-reply" $ \(HAEvent _ s@CommandAck{} _) ->
+      liftProcess $ say $ "TEST-CA " ++ show s
+  , defineSimple "sspl-test-sensor" $ \(HAEvent _ (_::NodeId, s) _) ->
       liftProcess $ usend pid (SChan s)
   ]
 
@@ -89,6 +105,7 @@ mkTests = do
         testGroup "SSPL"
           [ testCase "proxy test" $ testProxy transport
           , testCase "SSPL Sensor" $ testSensor transport
+          , testCase "SSPL Interface tests" $ testDelivery transport
           ]
 
 testProxy :: Transport -> IO ()
@@ -158,6 +175,9 @@ runSSPLTest transport interseptor test =
                                   (BindConf (Configured "sspl_halon")
                                             (Configured "sspl_ll")
                                             (Configured "sspl_halon"))
+                                  (BindConf (Configured "sspl_command_ack")
+                                            (Configured "halon_ack")
+                                            (Configured "sspl_command_ack"))
                                   (Configured 1000000)))
           []
     ("Starting service sspl" :: String) <- expect
@@ -196,3 +216,52 @@ testSensor transport = runSSPLTest transport interseptor test
       usend pid $ MQPublish "sspl_halon" "sspl_ll" rawmsg
       (SChan s) <- expect
       liftIO $ assertEqual "Correct command received" msg s
+
+testDelivery :: Transport -> IO ()
+testDelivery transport = runSSPLTest transport interseptor test
+  where
+    interseptor self string
+      | "TEST-CA " `isInfixOf` string =
+        usend self (drop (length ("TEST-CA "::String)) string)
+    interseptor self _ = return ()
+    test pid n = do
+      _ <- promulgateEQ [localNodeId n] (TestSmartCmd (localNodeId n) "foo")
+      MQMessage _ bs <- expect
+      let Just ActuatorRequest
+            {actuatorRequestMessage =
+              ActuatorRequestMessage
+                { actuatorRequestMessageActuator_request_type = ActuatorRequestMessageActuator_request_type
+                    { actuatorRequestMessageActuator_request_typeNode_controller
+                        = Just (ActuatorRequestMessageActuator_request_typeNode_controller cmd)
+                    }
+                , actuatorRequestMessageSspl_ll_msg_header=_header
+                }} = decodeStrict bs
+      Just (SmartTest "foo") <- return $ parseNodeCmd cmd
+
+      let uuid = fromJust $ UUID.fromString "c2cc10e1-57d6-4b6f-9899-38d972112d8c"
+      let msg = ActuatorResponse
+                  { actuatorResponseSignature = "auth_sig"
+                  , actuatorResponseTime      = "msg_time"
+                  , actuatorResponseExpires   = Nothing
+                  , actuatorResponseUsername  = "ssplll"
+                  , actuatorResponseMessage   =
+                      ActuatorResponseMessage
+                        { actuatorResponseMessageActuator_response_type
+                            = ActuatorResponseMessageActuator_response_type
+                               { actuatorResponseMessageActuator_response_typeAck =
+                                  Just ActuatorResponseMessageActuator_response_typeAck
+                                    { actuatorResponseMessageActuator_response_typeAckAck_msg  = "Passed"
+                                    , actuatorResponseMessageActuator_response_typeAckAck_type =
+                                        nodeCmdString (SmartTest "foo")
+                                    }
+                               , actuatorResponseMessageActuator_response_typeThread_controller = Nothing
+                               , actuatorResponseMessageActuator_response_typeService_controller = Nothing
+                               }
+                        , actuatorResponseMessageSspl_ll_msg_header = header uuid
+                        }
+                  }
+      usend pid $ MQPublish "sspl_command_ack" "halon_ack" (LBS.toStrict $ encode msg)
+      let scmd = "CommandAck {commandAckUUID = Just c2cc10e1-57d6-4b6f-9899-38d972112d8c"
+                  ++ ", commandAckType = Just (SmartTest \"foo\"), commandAck = AckReplyPassed}" :: String
+      s <- expect
+      liftIO $ assertEqual "Correct command received" scmd s
