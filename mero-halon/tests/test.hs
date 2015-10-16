@@ -13,6 +13,7 @@ import qualified HA.Castor.Tests
 #endif
 import qualified HA.Test.Disconnect
 import qualified HA.Test.Cluster
+import qualified HA.Test.SSPL
 
 import Test.Tasty (TestTree, defaultMainWithIngredients)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
@@ -50,7 +51,9 @@ import System.Environment
 
 
 ut :: String -> Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
-ut _host transport breakConnection = return $
+ut _host transport breakConnection = do
+  ssplTest <- HA.Test.SSPL.mkTests
+  return $
 #ifdef USE_MOCK_REPLICATOR
     testGroup "ut"
 #else
@@ -95,6 +98,7 @@ ut _host transport breakConnection = return $
           const (return ()) $
             HA.Test.Disconnect.testDisconnect transport breakConnection
 #endif
+      , ssplTest transport
       ]
 
 runTests :: (String -> Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree) -> IO ()
