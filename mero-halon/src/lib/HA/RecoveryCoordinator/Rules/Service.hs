@@ -166,8 +166,12 @@ serviceRules argv eq = do
           writeConfiguration sp conf Intended
           bounceServiceTo Intended n svc
           switch [ph2, ph3, timeout timeup ph4]
-        _ -> do finishProcessingMsg uuid
-                sendMsg eq uuid
+        _ -> do
+          phaseLog "info" $ unwords [ snString $ serviceName svc
+                                    , "already running on"
+                                    , show nid]
+          finishProcessingMsg uuid
+          sendMsg eq uuid
 
     setPhaseIf ph1' notHandled $ \(HAEvent uuid msg _) -> do
       startProcessingMsg uuid
@@ -202,7 +206,7 @@ serviceRules argv eq = do
                     liftProcess $
                       nsendRemote nodeId EQT.name (nullProcessId nodeId, UpdateEQNodes (stationNodes argv))
             else sendToMonitor n msg
-          phaseLog "started" ("Service "
+          phaseLog "info" ("Service "
                               ++ (snString . serviceName $ svc)
                               ++ " started"
                              )
@@ -210,8 +214,6 @@ serviceRules argv eq = do
             "started " ++ snString (serviceName svc) ++ " service"
           sendMsg eq uuid
         else sendMsg eq uuid
-
-
 
     setPhaseIf ph2 serviceStarted $ \evt@(HAEvent _ msg _) -> do
       ServiceStarted n@(Node nodeId) svc cfg sp <- decodeMsg msg
@@ -231,7 +233,7 @@ serviceRules argv eq = do
         else sendToMonitor n msg
 
       handled eq evt
-      phaseLog "started" ("Service "
+      phaseLog "info" ("Service "
                           ++ (snString . serviceName $ svc)
                           ++ " started"
                          )
@@ -248,6 +250,11 @@ serviceRules argv eq = do
       Just (_, n1, s1, count) <- get Local
       if count <= 4
         then do
+          phaseLog "debug"
+            $ unwords [ snString $ serviceName svc , "did not start on node"
+                      , show nid ++ ".", "Retrying another"
+                      , show (4 - count) , "times."
+                      ]
           -- | Increment the failure count
           put Local $ Just (uuid, n1, s1, count+1)
           startService nid svc cfg
