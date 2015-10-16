@@ -70,18 +70,17 @@ import Control.Distributed.Process.Timeout
 import Control.Distributed.Process hiding (spawn)
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Scheduler
-    (schedulerIsEnabled, AbsentScheduler)
-import Control.Distributed.Process.Internal.Types
-    (nullProcessId, processNode, withValidLocalState)
+import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
+import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Static
     (closureApply, staticApply, staticClosure)
 
 import Control.Arrow (second)
 import Control.Concurrent hiding (newChan)
-import Control.Exception (SomeException, throwIO)
+import Control.Concurrent.STM (atomically)
+import Control.Concurrent.STM.TChan
+import Control.Exception (SomeException)
 import Control.Monad
-import Control.Monad.Reader (ask)
 import Data.Binary (Binary, encode, decode)
 import qualified Data.ByteString.Lazy as BSL (ByteString)
 import Data.Constraint (Dict(..))
@@ -1608,6 +1607,11 @@ sdictNodeId = $(mkStatic 'dictNodeId)
 nodeIdClosure :: NodeId -> Closure NodeId
 nodeIdClosure x = closure (staticDecode sdictNodeId) (encode x)
 
+-- | Messages that must be delivered in order to the ambassador
+data OrderedMessage a = OMRequest (Request a)
+                      | OMHelo Helo
+                      | OMRecover Recover
+
 -- | Hide the 'ProcessId' of the ambassador to a log behind an opaque datatype
 -- making it clear that the ambassador acts as a "handle" to the log - it does
 -- not uniquely identify the log, since there can in general be multiple
@@ -1617,23 +1621,25 @@ data Handle a =
            (Static (SerializableDict a))
            (Closure Config)
            (Closure (Log a))
+           (TChan (OrderedMessage a))
            ProcessId
     deriving (Typeable, Generic)
 
 instance Eq (Handle a) where
-    Handle _ _ _ _ μ == Handle _ _ _ _ μ' = μ == μ'
+    Handle _ _ _ _ _ μ == Handle _ _ _ _ _ μ' = μ == μ'
 
 -- | The ambassador to a cgroup is a local process that stands as a proxy to
 -- the cgroup. Its sole purpose is to provide a 'ProcessId' to stand for the
 -- cgroup and to forward all messages to the cgroup.
 ambassador :: forall a. SerializableDict a
            -> Config
+           -> TChan (OrderedMessage a)
            -> [NodeId]
            -> Process ()
-ambassador _ _ [] = do
+ambassador _ _ _ [] = do
     say "ambassador: Set of replicas must be non-empty."
     die "ambassador: Set of replicas must be non-empty."
-ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
+ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
     (monitorReplica ρ0 >>= go 0 (Just ρ0) others)
       `finally` logTrace "ambassador: terminated"
   where
@@ -1642,7 +1648,11 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
        -> [NodeId]      -- ^ The other replicas
        -> MonitorRef       -- ^ The monitor ref of a replica we are contacting
        -> Process b
-    go epoch mLeader ρs ref = receiveWait
+    go epoch mLeader ρs ref = receiveWait $
+      (if schedulerIsEnabled
+       then [match $ \() -> go epoch mLeader ρs ref]
+       else []
+      ) ++
       [ match $ \(Clone δ) -> do
           usend δ $ maybe id (:) mLeader ρs
           go epoch mLeader ρs ref
@@ -1706,33 +1716,31 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
                                         (cq :: ConfigQuery)
           go epoch mLeader ρs ref
 
-        -- A recovery request
-      , match $ \m@(Recover κ ρs') -> do
-          usend κ ()
-          self <- getSelfPid
-          -- A recovery request does not need to go necessarily to the leader.
-          -- The replicas might have lost quorum and could be unable to elect a
-          -- new leader.
-          let ρ  : _ = ρs'
-          sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
-          go epoch mLeader ρs ref
+      , matchSTM (readTChan omchan) $ \case
+          -- A request
+          OMRequest a -> do
+            self <- getSelfPid
+            logTrace $ "ambassador: sending request to " ++ show mLeader
+            Foldable.forM_ mLeader $ flip (sendReplica logId)
+                                          (self, epoch, a :: Request a)
+            go epoch mLeader ρs ref
 
-        -- A reconfiguration request
-      , match $ \m@(Helo κ _) -> do
-          usend κ ()
-          self <- getSelfPid
-          Foldable.forM_ mLeader $ flip (sendReplica logId)
-                                        (self, epoch, m)
-          go epoch mLeader ρs ref
+          -- A reconfiguration request
+          OMHelo m -> do
+            self <- getSelfPid
+            Foldable.forM_ mLeader $ flip (sendReplica logId)
+                                          (self, epoch, m)
+            go epoch mLeader ρs ref
 
-        -- A request
-      , match $ \a -> do
-          forM_ (requestSender a) $ flip usend ()
-          self <- getSelfPid
-          logTrace $ "ambassador: sending request to " ++ show mLeader
-          Foldable.forM_ mLeader $ flip (sendReplica logId)
-                                        (self, epoch, a :: Request a)
-          go epoch mLeader ρs ref
+          -- A recovery request
+          OMRecover m@(Recover _ ρs') -> do
+            self <- getSelfPid
+            -- A recovery request does not need to go necessarily to the leader.
+            -- The replicas might have lost quorum and could be unable to elect
+            -- a new leader.
+            let ρ  : _ = ρs'
+            sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
+            go epoch mLeader ρs ref
       ]
 
     monitorReplica ρ = do
@@ -1746,53 +1754,34 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
 
 -- | Append an entry to the replicated log.
 append :: Serializable a => Handle a -> Hint -> a -> Process ()
-append (Handle _ _ _ _ μ) hint x = callLocal $ do
+append (Handle _ _ _ _ omchan μ) hint x = callLocal $ do
     self <- getSelfPid
-    -- If we are interrupted, because the request is abandoned, we want to
-    -- yield control back only after the ambassador acknowledges reception of
-    -- the request. Thus we preserve the arrival order of requests. We cannot
-    -- use uninterruptibleMask_ because of DP-105.
-    withMonitor μ $ mask_ $ do
-      usend μ $ Request
+    liftIO $ atomically $ writeTChan omchan $ OMRequest $ Request
         { requestSender   = [self]
         , requestValue    = Values [x]
         , requestHint     = hint
         , requestForLease = Nothing
         }
-      let loopingWait = do
-            -- fail if the node is closed
-            lproc <- ask
-            liftIO $ withValidLocalState (processNode lproc) $
-              const (return ())
-            receiveWait
-              [ match return
-              , match $ \(ProcessMonitorNotification _ _ _) -> return ()
-              ] `catches` [ -- Thrown when the scheduler is stopped
-                            Handler $ \(e :: AbsentScheduler) ->
-                              liftIO $ throwIO e
-                          , Handler $ \(e :: SomeException) ->
-                              loopingWait >> liftIO (throwIO e)
-                          ]
-      loopingWait
+    when schedulerIsEnabled $ usend μ ()
     expect
 
 -- | Make replicas advertize their status info.
 status :: Serializable a => Handle a -> Process ()
-status (Handle _ _ _ _ μ) = usend μ Status
+status (Handle _ _ _ _ _ μ) = usend μ Status
 
 -- | Updates the handle so it communicates with the given replica.
 updateHandle :: Handle a -> NodeId -> Process ()
-updateHandle (Handle _ _ _ _ α) = usend α
+updateHandle (Handle _ _ _ _ _ α) = usend α
 
 remoteHandle :: Handle a -> Process (RemoteHandle a)
-remoteHandle (Handle sdict1 sdict2 config log α) = do
+remoteHandle (Handle sdict1 sdict2 config log _ α) = do
     self <- getSelfPid
     usend α $ Clone self
     RemoteHandle sdict1 sdict2 config log <$> expect
 
 -- | Yields the latest known membership.
 getMembership :: Handle a -> Process [NodeId]
-getMembership  (Handle _ _ _ _ α) = callLocal $ do
+getMembership  (Handle _ _ _ _ _ α) = callLocal $ do
     self <- getSelfPid
     usend α $ MembershipQuery self
     snd <$> (expect :: Process (DecreeId, [NodeId]))
@@ -1882,21 +1871,10 @@ reconfigure :: Typeable a
             => Handle a
             -> Closure NominationPolicy
             -> Process ()
-reconfigure (Handle _ _ _ _ μ) cpolicy = callLocal $ do
+reconfigure (Handle _ _ _ _ omchan μ) cpolicy = callLocal $ do
     self <- getSelfPid
-    -- TODO: use a channel to communicate with the ambassador
-    --
-    -- If we are interrupted, because the request is abandoned, we want to
-    -- yield control back only after the ambassador acknowledges reception of
-    -- the request. Thus we preserve the arrival order of requests. We cannot
-    -- use uninterruptibleMask_ because of DP-105.
-    withMonitor μ $ mask_ $ do
-      usend μ $ Helo self cpolicy
-      let loopingWait = receiveWait
-            [ match return
-            , match $ \(ProcessMonitorNotification _ _ _) -> return ()
-            ] `onException` loopingWait
-      loopingWait
+    liftIO $ atomically $ writeTChan omchan $ OMHelo $ Helo self cpolicy
+    when schedulerIsEnabled $ usend μ ()
     expect
 
 -- ^ @recover h newMembership@
@@ -1909,21 +1887,10 @@ reconfigure (Handle _ _ _ _ μ) cpolicy = callLocal $ do
 -- replicas in the old membership).
 --
 recover :: Handle a -> [NodeId] -> Process ()
-recover (Handle _ _ _ _ μ) ρs = callLocal $ do
+recover (Handle _ _ _ _ omchan μ) ρs = callLocal $ do
     self <- getSelfPid
-    -- TODO: use a channel to communicate with the ambassador
-    --
-    -- If we are interrupted, because the request is abandoned, we want to
-    -- yield control back only after the ambassador acknowledges reception of
-    -- the request. Thus we preserve the arrival order of requests. We cannot
-    -- use uninterruptibleMask_ because of DP-105.
-    withMonitor μ $ mask_ $ do
-      usend μ $ Recover self ρs
-      let loopingWait = receiveWait
-            [ match return
-            , match $ \(ProcessMonitorNotification _ _ _) -> return ()
-            ] `onException` loopingWait
-      loopingWait
+    liftIO $ atomically $ writeTChan omchan $ OMRecover $ Recover self ρs
+    when schedulerIsEnabled $ usend μ ()
     expect
 
 -- | Start a new replica on the given node, adding it to the group pointed to by
@@ -1938,7 +1905,7 @@ addReplica :: Typeable a
            => Handle a
            -> NodeId
            -> Process ()
-addReplica h@(Handle _ _ cConfig _ α) nid = callLocal $ do
+addReplica h@(Handle _ _ cConfig _ _ α) nid = callLocal $ do
     -- Get the group configuration
     self <- getSelfPid
     usend α $ ConfigQuery self
@@ -1978,7 +1945,7 @@ killReplica :: Typeable a
               => Handle a
               -> NodeId
               -> Process ()
-killReplica (Handle _ _ config _ _) nid = do
+killReplica (Handle _ _ config _ _ _) nid = do
     conf <- unClosure config
     whereisRemoteAsync nid (acceptorLabel $ logId conf)
     whereisRemoteAsync nid (replicaLabel $ logId conf)
@@ -2006,5 +1973,6 @@ clone :: Typeable a => RemoteHandle a -> Process (Handle a)
 clone (RemoteHandle sdict1 sdict2 cConfig log nodes) = do
     dict2 <- unStatic sdict2
     config <- unClosure cConfig
-    Handle sdict1 sdict2 cConfig log <$>
-      spawnLocal (ambassador dict2 config nodes)
+    omchan <- liftIO newTChanIO
+    Handle sdict1 sdict2 cConfig log omchan <$>
+      spawnLocal (ambassador dict2 config omchan nodes)

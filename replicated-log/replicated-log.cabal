@@ -53,6 +53,7 @@ Library
                     syb >= 0.3,
                     rank1dynamic >= 0.1,
                     safecopy >= 0.8,
+                    stm,
                     template-haskell >= 2.7.0
   Default-Language: Haskell2010
   Default-Extensions: BangPatterns
