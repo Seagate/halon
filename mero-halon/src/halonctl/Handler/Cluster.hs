@@ -19,10 +19,7 @@ import Control.Monad (void)
 import Data.Yaml
   ( decodeFileEither
   , prettyPrintParseException
-  , ParseException
-  , Value (..)
   )
-import qualified Data.ByteString.Lazy as BS
 import Options.Applicative ((<>))
 import qualified Options.Applicative as Opt
 
