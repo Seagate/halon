@@ -16,6 +16,7 @@ Requires: leveldb
 
 %prep
 rm -rf $RPM_BUILD_DIR/halon
+rm -rf $RPM_BUILD_DIR/systemd
 mkdir halon
 mkdir systemd
 cp $RPM_SOURCE_DIR/halonctl $RPM_BUILD_DIR/halon
@@ -29,7 +30,7 @@ echo No build - this is a binary only release
 %install
 rm -rf %{buildroot}
 # in builddir
-mkdir -p %{buildroot}/usr/bin
+mkdir -p %{buildroot}/usr/local/bin
 mkdir -p %{buildroot}/usr/lib/systemd/system
 cp -a $RPM_BUILD_DIR/halon/* %{buildroot}/usr/local/bin
 cp -a $RPM_BUILD_DIR/systemd/* %{buildroot}/usr/lib/systemd/system
