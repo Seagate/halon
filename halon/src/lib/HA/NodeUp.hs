@@ -38,12 +38,14 @@ import Control.Distributed.Process
   , whereis
   , receiveTimeout
   , expectTimeout
+  , catch
   )
 import Control.Distributed.Process.Closure ( remotable )
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Fix ( fix )
 import Control.Monad ( unless )
 
+import Control.Exception (SomeException, throwIO)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.Typeable (Typeable)
@@ -51,6 +53,8 @@ import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
 import Network.HostName
+import System.IO
+
 
 -- | NodeUp message sent to the RC (via EQ) when a node starts.
 data NodeUp = NodeUp
@@ -80,5 +84,10 @@ nodeUp (eqs, _delay) = do
     _ <- promulgate $ NodeUp h self
     expect :: Process ()
     say "Node succesfully joined the cluster."
+   `catch` \e -> do
+     liftIO $ hPutStrLn stderr $
+       "nodeUp exception: " ++ show (e :: SomeException)
+     say $ "nodeUp exception: " ++ show e
+     liftIO $ throwIO e
 
 remotable ['nodeUp]

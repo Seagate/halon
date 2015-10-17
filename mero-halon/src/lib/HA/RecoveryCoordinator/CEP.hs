@@ -98,6 +98,7 @@ rcRules argv eq additionalRules = do
         registerServiceProcess n svc cfg sp
         sendToMasterMonitor msg
         ack npid
+        liftProcess $ sayRC $ "Ack sent to " ++ show npid
         sendMsg eq msgid
         sendMsg eq uuid
         finishProcessingMsg uuid
