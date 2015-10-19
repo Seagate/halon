@@ -16,6 +16,7 @@ module Network.CEP
     -- * Specification API
       PhaseM
     , RuleM
+    , MonadProcess(..)
     , Definitions
     , Specification
     , Token

@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE Rank2Types                 #-}
@@ -149,6 +150,21 @@ data Jump a
 instance Functor Jump where
     fmap f (NormalJump a)       = NormalJump $ f a
     fmap f (ReactiveJump c w a) = ReactiveJump c w $ f a
+
+-- | Just like 'MonadIO', 'MonadProcess' should satisfy the following
+-- laws:
+--
+-- * @'liftProcess' . 'return' = 'return'@
+-- * @'liftProcess' (m >>= f) = 'liftProcess' m >>= ('liftProcess' . f)@
+class MonadProcess m where
+  -- | Lifts a 'Process' computation in the state machine.
+  liftProcess :: Process a -> m a
+
+instance MonadProcess Process where
+  liftProcess = Prelude.id
+
+instance MonadProcess (ProgramT (PhaseInstr g l) Process) where
+  liftProcess = singleton . Lift
 
 normalJump :: a -> Jump a
 normalJump = NormalJump
@@ -464,10 +480,6 @@ continue p = singleton $ Continue p
 --     adding back the current state machine to the list of alternatives.
 stop :: PhaseM g l a
 stop = singleton $ Stop
-
--- | Lifts a 'Process' computation in the state machine.
-liftProcess :: Process a -> PhaseM g l a
-liftProcess m = singleton $ Lift m
 
 -- | Stops the state machine. Has different behavior depending on the context
 --   of the state machine.
