@@ -80,6 +80,7 @@ Library
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
                    HA.RecoveryCoordinator.Rules.Castor
+                   HA.RecoveryCoordinator.Rules.Service
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
 
