@@ -150,7 +150,12 @@ serviceRules argv eq = do
     setPhaseIf ph1 notHandled $ \(HAEvent uuid msg _) -> do
       startProcessingMsg uuid
       ServiceStartRequest sstart n@(Node nid) svc conf <- decodeMsg msg
-
+      phaseLog "input" $ unwords [ "ServiceStartRequest:"
+                                 , "name=" ++ (snString $ serviceName svc)
+                                 , "type=" ++ show sstart
+                                 , "nid=" ++ show nid
+                                 ]
+      phaseLog "thread-id" (show uuid)
       -- Store the service start request, and the failed retry count
       put Local $ Just (uuid, n, serviceName svc, 0 :: Int)
 
@@ -177,6 +182,11 @@ serviceRules argv eq = do
       startProcessingMsg uuid
       ServiceFailed n svc pid <- decodeMsg msg
       res                     <- lookupRunningService n svc
+      phaseLog "input" $ unwords [ "ServiceFailed:"
+                                 , "name=" ++ (snString $ serviceName svc)
+                                 , "nid=" ++ show n
+                                 ]
+      phaseLog "thread-id" $ show uuid
       case res of
         Just (ServiceProcess spid) | spid == pid -> do
           -- Store the service failed message, and the failed retry count
@@ -192,6 +202,11 @@ serviceRules argv eq = do
     -- this service running or not and proceed evaluation.
     setPhaseIf ph2' notHandled $ \(HAEvent uuid msg _) -> do
       ServiceStarted n@(Node nodeId) svc cfg sp <- decodeMsg msg
+      phaseLog "input" $ unwords [ "ServiceStarted:"
+                                 , "name=" ++ (snString $ serviceName svc)
+                                 , "nid=" ++ show nodeId
+                                 ]
+      phaseLog "thread-id" $ show uuid
       known <- knownResource n
       if known
          then do
@@ -215,8 +230,14 @@ serviceRules argv eq = do
           sendMsg eq uuid
         else sendMsg eq uuid
 
-    setPhaseIf ph2 serviceStarted $ \evt@(HAEvent _ msg _) -> do
+    setPhaseIf ph2 serviceStarted $ \(HAEvent uuid msg _) -> do
       ServiceStarted n@(Node nodeId) svc cfg sp <- decodeMsg msg
+      Just (thread, _, _, _) <- get Local
+      phaseLog "input" $ unwords [ "ServiceStarted:"
+                                 , "name=" ++ (snString $ serviceName svc)
+                                 , "nid=" ++ show nodeId
+                                 ]
+      phaseLog "thread-id" $ show thread
       res <- lookupRunningService n svc
       case res of
         Just sp' -> unregisterServiceProcess n svc sp'
@@ -232,22 +253,26 @@ serviceRules argv eq = do
                   nsendRemote nodeId EQT.name (nullProcessId nodeId, UpdateEQNodes (stationNodes argv))
         else sendToMonitor n msg
 
-      handled eq evt
       phaseLog "info" ("Service "
                           ++ (snString . serviceName $ svc)
                           ++ " started"
                          )
 
-      Just (uuid, _, _, _) <- get Local
-      finishProcessingMsg uuid
+      finishProcessingMsg thread
       sendMsg eq uuid
+      sendMsg eq thread
       liftProcess $ sayRC $
         "started " ++ snString (serviceName svc) ++ " service"
 
-    setPhaseIf ph3 serviceCouldNotStart $ \evt@(HAEvent uuid msg _) -> do
+    setPhaseIf ph3 serviceCouldNotStart $ \(HAEvent uuid msg _) -> do
       ServiceCouldNotStart (Node nid) svc cfg <- decodeMsg msg
-      handled eq evt
-      Just (_, n1, s1, count) <- get Local
+      sendMsg eq uuid
+      Just (thread, n1, s1, count) <- get Local
+      phaseLog "input" $ unwords [ "ServiceCouldNotStart:"
+                                 , "name=" ++ (snString $ serviceName svc)
+                                 , "nid=" ++ show nid
+                                 ]
+      phaseLog "thread-id" $ show thread
       if count <= 4
         then do
           phaseLog "debug"
@@ -256,13 +281,14 @@ serviceRules argv eq = do
                       , show (4 - count) , "times."
                       ]
           -- | Increment the failure count
-          put Local $ Just (uuid, n1, s1, count+1)
+          put Local $ Just (thread, n1, s1, count+1)
           startService nid svc cfg
           switch [ph2, ph3, timeout timeup ph4]
         else continue ph4
 
     directly ph4 $ do
       Just (uuid, n1, s1, count) <- get Local
+      phaseLog "thread-id" $ show uuid
       phaseLog "error" ("Service "
                       ++ (snString s1)
                       ++ " on node "
