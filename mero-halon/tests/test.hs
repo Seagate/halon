@@ -48,7 +48,11 @@ import System.Environment
 
 ut :: Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
 ut transport breakConnection = return $
+#ifdef USE_MOCK_REPLICATOR
     testGroup "ut"
+#else
+    testGroup "it"
+#endif
       [ testCase "RCServiceRestarting" $
           HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport
       , testCase "RCServiceNOTRestarting" $
