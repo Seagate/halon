@@ -24,6 +24,8 @@ module HA.Services.SSPL
   , HA.Services.SSPL.LL.Resources.Channel(..)
   , HA.Services.SSPL.LL.Resources.__remoteTable
   , HA.Services.SSPL.__remoteTableDecl
+  , sendNodeCmd
+  , header
   ) where
 
 import HA.EventQueue.Producer (promulgate)
