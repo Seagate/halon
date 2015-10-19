@@ -17,6 +17,7 @@ import Control.Distributed.Process
   , liftIO
   , link
   , spawnLocal
+  , finally
   )
 import Control.Monad (forever)
 
@@ -108,15 +109,15 @@ receive :: Network.AMQP.Channel
 receive chan BindConf{..} handle = do
     me <- getSelfPid
     lChan <- liftIO newChan
-    hpid <- spawnLocal $ handler me lChan
+    tag <- rabbitHandler lChan
+    hpid <- spawnLocal $ finally
+              (link me >> handler lChan)
+              (liftIO $ cancelConsumer chan tag)
     link hpid
-    rabbitHandler lChan
   where
-    handler me lChan = link me >> (forever $ do
-      (msg, env) <- liftIO $ readChan lChan
+    handler lChan = forever $ do
+      (msg, _env) <- liftIO $ readChan lChan
       handle msg
-      liftIO $ ackEnv env
-      )
 
     rabbitHandler lChan = liftIO $ do
       declareExchange chan newExchange
@@ -127,9 +128,7 @@ receive chan BindConf{..} handle = do
       _ <- declareQueue chan newQueue { queueName = queueName }
       bindQueue chan queueName exchangeName routingKey
 
-      _ <- consumeMsgs chan queueName Ack $ \a -> do
-        writeChan lChan a
-      return ()
+      consumeMsgs chan queueName NoAck $ writeChan lChan
 
     exchangeName = T.pack . fromDefault $ bcExchangeName
     queueName = T.pack . fromDefault $ bcQueueName
