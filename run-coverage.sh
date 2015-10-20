@@ -51,7 +51,18 @@ for x in $excludes ; do
 	exclude+=" --exclude=$x"
 done
 
+
+
 hpc sum --union --output=result.tix $exclude $(find . -name \*.tix)
 hpc report $srcs --hpcdir='' $exclude result.tix | tee coverage/overall_report.txt
 hpc report --per-module $srcs $exclude result.tix | tee coverage/per_module_report.txt
 hpc markup --destdir=coverage $srcs $exclude result.tix
+
+
+rm -rf coverage/not_covered.txt
+for f in $(find coverage/ -name \*.html | sed 's/\.hs\.html$//'); do  basename $f ; done | sort | uniq > 1.tmp
+for f in $(find -name \*.mix | sed 's/\.mix$//') ; do basename $f ; done | sort | uniq > 2.tmp
+
+echo "Files that not appeared in the report:"
+comm -13 1.tmp 2.tmp | tee coverage/not_covered.txt
+rm -rf 1.tmp 2.tmp
