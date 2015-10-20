@@ -222,7 +222,7 @@ standardService :: Configuration a
               -> Process ()
 standardService nids sso svc = case sso of
   StartCmd (StartCmdOptions t eqAddrs a) -> getEQAddrs t eqAddrs >>= \eqs ->
-                                            mapM_ (start svc a eqs) nids
+                                            mapM_ (start t svc a eqs) nids
   ReconfCmd (ReconfCmdOptions t eqAddrs a) -> getEQAddrs t eqAddrs >>= \eqs ->
                                               mapM_ (reconf svc a eqs) nids
   StopCmd (StopCmdOptions t eqAddrs) -> getEQAddrs t eqAddrs >>= \eqs ->
@@ -250,17 +250,24 @@ findEQFromNodes t n = go t n [] where
 
 -- | Start a given service on a single node.
 start :: Configuration a
-      => Service a -- ^ Service to start.
+      => Int -- ^ timeout
+      -> Service a -- ^ Service to start.
       -> a -- ^ Configuration.
       -> [NodeId] -- ^ EQ Nodes to send start messages to.
       -> NodeId -- ^ Node on which to start the service.
       -> Process ()
-start s c eqnids nid = do
-    liftIO $ putStrLn $ "Trying to start " ++ (show $ serviceName s)
-    promulgateEQ eqnids ssrm >>= \pid -> withMonitor pid wait
+start t s c eqnids nid = do
+    self <- getSelfPid
+    promulgateEQ eqnids (ssrm self) >>= \pid -> withMonitor pid wait
   where
-    ssrm = encodeP $ ServiceStartRequest Start (Node nid) s c
-    wait = void (expect :: Process ProcessMonitorNotification)
+    ssrm self = encodeP $ ServiceStartRequest Start (Node nid) s c [self]
+    wait = do
+      _ <- expect :: Process ProcessMonitorNotification
+      stat <- expectTimeout t
+      liftIO . putStrLn $ case stat of
+        Just AlreadyRunning -> "Service already running."
+        Just AttemptingToStart -> "Trying to start " ++ (show $ serviceName s)
+        Nothing -> "No contact from RC after " ++ show t ++ " milliseconds."
 
 -- | Reconfigure a service
 reconf :: Configuration a
@@ -272,7 +279,7 @@ reconf :: Configuration a
 reconf s c eqnids nid = promulgateEQ eqnids msg
     >>= \pid -> withMonitor pid wait
   where
-    msg = encodeP $ ServiceStartRequest Restart (Node nid) s c
+    msg = encodeP $ ServiceStartRequest Restart (Node nid) s c []
     wait = void (expect :: Process ProcessMonitorNotification)
 
 -- | Stop a given service on a single node.

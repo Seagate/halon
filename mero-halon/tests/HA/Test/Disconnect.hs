@@ -124,7 +124,7 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
             _ -> return ()
         pid <- promulgateEQ nids $
           encodeP $ ServiceStartRequest Start (Node $ localNodeId m3) Ping.ping
-                                        Ping.PingConf
+                                        Ping.PingConf []
         ref <- monitor pid
         receiveWait
           [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')

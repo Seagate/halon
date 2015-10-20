@@ -149,11 +149,12 @@ serviceRules argv eq = do
 
     setPhaseIf ph1 notHandled $ \(HAEvent uuid msg _) -> do
       startProcessingMsg uuid
-      ServiceStartRequest sstart n@(Node nid) svc conf <- decodeMsg msg
+      ServiceStartRequest sstart n@(Node nid) svc conf lis <- decodeMsg msg
       phaseLog "input" $ unwords [ "ServiceStartRequest:"
                                  , "name=" ++ (snString $ serviceName svc)
                                  , "type=" ++ show sstart
                                  , "nid=" ++ show nid
+                                 , "listeners=" ++ show lis
                                  ]
       phaseLog "thread-id" (show uuid)
       -- Store the service start request, and the failed retry count
@@ -166,6 +167,7 @@ serviceRules argv eq = do
       case (known, msp, sstart) of
         (True, Nothing, HA.Service.Start) -> do
           startService nid svc conf
+          liftProcess $ mapM_ (flip usend AttemptingToStart) lis
           switch [ph2, ph3, timeout timeup ph4]
         (True, Just sp, Restart) -> do
           writeConfiguration sp conf Intended
@@ -175,6 +177,7 @@ serviceRules argv eq = do
           phaseLog "info" $ unwords [ snString $ serviceName svc
                                     , "already running on"
                                     , show nid]
+          liftProcess $ mapM_ (flip usend AlreadyRunning) lis
           finishProcessingMsg uuid
           sendMsg eq uuid
 

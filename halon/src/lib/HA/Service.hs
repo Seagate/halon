@@ -54,6 +54,7 @@ module HA.Service
   , ServiceStart(..)
   , ServiceStartRequest(..)
   , ServiceStartRequestMsg
+  , ServiceStartResponse(..)
   , ServiceStarted(..)
   , ServiceStartedMsg
   , ServiceCouldNotStart(..)
@@ -316,7 +317,7 @@ instance Binary ServiceStart
 -- | A request to start a service on a given node.
 data ServiceStartRequest =
     forall a. Configuration a =>
-      ServiceStartRequest ServiceStart Node (Service a) a
+      ServiceStartRequest ServiceStart Node (Service a) a [ProcessId]
   deriving Typeable
 
 newtype ServiceStartRequestMsg = ServiceStartRequestMsg BS.ByteString
@@ -326,8 +327,8 @@ instance ProcessEncode ServiceStartRequest where
 
   type BinRep ServiceStartRequest = ServiceStartRequestMsg
 
-  encodeP (ServiceStartRequest start node svc@(Service _ _ d) cfg) =
-    ServiceStartRequestMsg . runPut $ put d >> put (start, node, svc, cfg)
+  encodeP (ServiceStartRequest start node svc@(Service _ _ d) cfg lis) =
+    ServiceStartRequestMsg . runPut $ put d >> put (start, node, svc, cfg, lis)
 
   decodeP (ServiceStartRequestMsg bs) = let
       get_ :: RemoteTable -> Get ServiceStartRequest
@@ -336,15 +337,24 @@ instance ProcessEncode ServiceStartRequest where
         case unstatic rt d of
           Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
             rest <- get
-            let (start, node, service, cfg) = extract rest
-                extract :: (ServiceStart, Node, Service s, s)
-                        -> (ServiceStart, Node, Service s, s)
+            let (start, node, service, cfg, lis) = extract rest
+                extract :: (ServiceStart, Node, Service s, s, [ProcessId])
+                        -> (ServiceStart, Node, Service s, s, [ProcessId])
                 extract = id
-            return $ ServiceStartRequest start node service cfg
+            return $ ServiceStartRequest start node service cfg lis
           Left err -> error $ "decode ServiceStartRequest: " ++ err
     in do
       rt <- fmap (remoteTable . processNode) ask
       return $ runGet (get_ rt) bs
+
+-- | Repsonse from RC to any processes interested in service start.
+data ServiceStartResponse =
+      AttemptingToStart
+    | AlreadyRunning
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Hashable ServiceStartResponse
+instance Binary ServiceStartResponse
 
 -- | A notification of a service failure.
 data ServiceFailed = forall a. Configuration a => ServiceFailed Node (Service a) ProcessId
