@@ -12,6 +12,7 @@ import qualified HA.Autoboot.Tests
 import qualified HA.Castor.Tests
 #endif
 import qualified HA.Test.Disconnect
+import qualified HA.Test.Cluster
 
 import Test.Tasty (TestTree, defaultMainWithIngredients)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
@@ -79,6 +80,7 @@ ut _host transport breakConnection = return $
         HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
       , testGroup "Autoboot" $
         HA.Autoboot.Tests.tests transport
+      , HA.Test.Cluster.tests transport
 #ifdef USE_MERO
       , testGroup "Castor" $
         HA.Castor.Tests.tests transport
