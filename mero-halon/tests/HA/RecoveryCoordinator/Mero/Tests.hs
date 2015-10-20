@@ -127,13 +127,14 @@ remotableDecl [ [d|
   emptyRules :: [Definitions LoopState ()]
   emptyRules = []
 
-#ifdef USE_MERO
-  testSyncRules :: [Definitions LoopState ()]
-  testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent _ SpielSync _) -> do
-    syncToConfd
-    liftProcess $ say "Finished sync to confd"
-#endif
   |]]
+
+#ifdef USE_MERO
+testSyncRules :: [Definitions LoopState ()]
+testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent _ SpielSync _) -> do
+  syncToConfd
+  liftProcess $ say "Finished sync to confd"
+#endif
 
 runRC :: (ProcessId, IgnitionArguments)
       -> MC_RG TestReplicatedState
@@ -624,7 +625,7 @@ testRCsyncToConfd host transport = do
   pRGroup <- unClosure cRGroup
   rGroup <- pRGroup
   eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
-  _ <- runRCEx (eq, IgnitionArguments [nid]) $(mkStatic 'testSyncRules) rGroup
+  _ <- runRCEx (eq, IgnitionArguments [nid]) testSyncRules rGroup
 
   promulgateEQ [nid] (initialDataAddr host host) >>= (`withMonitor` wait)
   "InitialLoad" :: String <- expect
