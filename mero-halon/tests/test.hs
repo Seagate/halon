@@ -81,7 +81,7 @@ ut _host transport breakConnection = return $
         HA.Autoboot.Tests.tests transport
 #ifdef USE_MERO
       , testGroup "Castor" $
-        HA.Castor.Tests.tests transport
+        HA.Castor.Tests.tests _host transport
       , testCase "RCsyncToConfd" $
           HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd _host transport
 #endif
@@ -104,11 +104,9 @@ runTests tests = do
     (host0, p0) <- case drop 1 $ dropWhile ("--" /=) argv of
                a0:_ -> return $ break (== ':') a0
                _ ->
-#ifdef USE_RPC
-                 maybe (error "environement variable TEST_LISTEN is not set") id <$> lookupEnv "TEST_LISTEN"
-#else
-                 maybe ("10.0.2.15", ":0") (break (== ':')) <$> lookupEnv "TEST_LISTEN"
-#endif
+                 maybe (error "environement variable TEST_LISTEN is not set; example: 192.0.2.1:0")
+                       (break (== ':'))
+                       <$> lookupEnv "TEST_LISTEN"
     let addr0 = host0 ++ p0
 #ifdef USE_RPC
     rpcTransport <- RPC.createTransport "s1"
