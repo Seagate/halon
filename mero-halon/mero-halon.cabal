@@ -80,6 +80,7 @@ Library
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
                    HA.RecoveryCoordinator.Rules.Castor
+                   HA.RecoveryCoordinator.Rules.Service
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
 
@@ -125,7 +126,8 @@ Library
                    random,
                    yaml,
                    hostname,
-                   multimap
+                   multimap,
+                   wl-pprint
 
   if flag(mero)
       Exposed-Modules: Mero.Epoch
@@ -147,7 +149,8 @@ Library
       extra-libraries: mero
       Build-Depends: rpclite,
                      confc,
-                     inline-c
+                     inline-c,
+                     transformers
   if flag(rpc)
       Build-Depends: rpclite,
                      network-transport-rpc
@@ -193,7 +196,8 @@ Executable halonctl
                       network-transport >= 0.3,
                       options-schema >= 0.2,
                       optparse-applicative >= 0.11,
-                      process
+                      process,
+                      yaml
   if flag(rpc)
       Build-Depends: network-transport-rpc >= 0.0.1
   else
@@ -700,12 +704,18 @@ Test-Suite unit-tests
                     tasty-files,
                     cep,
                     attoparsec,
-                    containers
+                    containers,
+                    directory,
+                    filepath,
+                    process
+
+  if flag(mero)
+      Build-Depends: rpclite, syb
+      CPP-Options:    -DUSE_MERO
+
+
   if flag(rpc)
-      Build-Depends: network-transport-rpc,
-                     directory,
-                     filepath,
-                     process
+      Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
   else
       Build-Depends: network-transport-tcp >= 0.3
@@ -755,15 +765,22 @@ Test-Suite integration-tests
                     tasty-files,
                     cep,
                     attoparsec,
-                    containers
+                    containers,
+                    directory,
+                    filepath,
+                    process
+
   if flag(rpc)
-      Build-Depends: network-transport-rpc,
-                     directory,
-                     filepath,
-                     process
+      Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
   else
       Build-Depends: network-transport-tcp >= 0.3
+
+  if flag(mero)
+      Build-Depends:  confc,
+                      rpclite,
+                      syb
+      CPP-Options:    -DUSE_MERO
 
 Test-Suite scheduler-tests
   Type:             exitcode-stdio-1.0
@@ -833,7 +850,9 @@ Test-Suite test-start-service-local
                    distributed-commands,
                    distributed-process-test,
                    process,
-                   unix
+                   unix,
+                   halon,
+                   mero-halon
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC

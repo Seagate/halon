@@ -9,7 +9,7 @@
 module HA.Resources.Castor.Initial where
 
 #ifdef USE_MERO
-import Mero.ConfC (Fid, ServiceParams, ServiceType)
+import Mero.ConfC (ServiceParams, ServiceType)
 #endif
 
 import Data.Aeson
@@ -66,7 +66,7 @@ instance FromJSON BMC
 data Enclosure = Enclosure {
     enc_idx :: Int
   , enc_id :: String
-  , enc_bmc :: BMC
+  , enc_bmc :: [BMC]
   , enc_hosts :: [Host]
 } deriving (Eq, Data, Generic, Show, Typeable)
 
@@ -138,10 +138,6 @@ data M0Service = M0Service {
   , m0s_endpoints :: [String]
   , m0s_params :: ServiceParams
 } deriving (Eq, Data, Generic, Show, Typeable)
-
-instance FromJSON Fid
-instance FromJSON ServiceParams
-instance FromJSON ServiceType
 
 instance Binary M0Service
 instance Hashable M0Service

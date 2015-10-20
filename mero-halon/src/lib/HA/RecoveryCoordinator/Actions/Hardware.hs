@@ -3,6 +3,7 @@
 -- License   : All rights reserved.
 --
 
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE OverloadedStrings          #-}
 
 module HA.RecoveryCoordinator.Actions.Hardware
@@ -18,6 +19,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , locateHostInEnclosure
   , locateNodeOnHost
   , registerHost
+  , registerOnCluster
   , nodesOnHost
   , hasHostAttr
   , setHostAttr
@@ -149,12 +151,18 @@ nodesOnHost host = do
 -- | Register a new host in the system.
 registerHost :: Host
              -> PhaseM LoopState l ()
-registerHost host = modifyLocalGraph $ \rg -> do
-  phaseLog "rg" $ "Registering host: "
-              ++ show host
+registerHost host = registerOnCluster host $ "Registering host: " ++ show host
 
-  let rg' = G.newResource host
-        >>> G.connect Cluster Has host
+-- | Register a new thing on 'Cluster' as long as it has a 'Has'
+-- 'G.Relation' instance.
+registerOnCluster :: G.Relation Has Cluster a
+                  => a -- ^ The thing to register
+                  -> String -- ^ The message to log
+                  -> PhaseM LoopState l ()
+registerOnCluster x m = modifyLocalGraph $ \rg -> do
+  phaseLog "rg" m
+  let rg' = G.newResource x
+        >>> G.connect Cluster Has x
           $ rg
   return rg'
 

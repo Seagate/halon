@@ -13,12 +13,14 @@ module Mero.M0Worker
     , startGlobalWorker
     , getGlobalWorker
     , runOnGlobalM0Worker
+    , liftM0
     ) where
 
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Exception
 import Control.Monad
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.IORef
 import Mero.Concurrent
 import System.IO.Unsafe
@@ -73,3 +75,8 @@ getGlobalWorker = readIORef globalWorkerRef
 -- | Runs a task in the global worker.
 runOnGlobalM0Worker :: IO a -> IO a
 runOnGlobalM0Worker task = getGlobalWorker >>= flip runOnM0Worker task
+
+-- | Runs the given action in the global mero worker and lifts the
+-- operation into the desired monad.
+liftM0 :: MonadIO m => IO a -> m a
+liftM0 = liftIO . runOnGlobalM0Worker

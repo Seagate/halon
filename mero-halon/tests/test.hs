@@ -24,17 +24,21 @@ import Network.Transport (Transport, EndPointAddress)
 import Test.Tasty (testGroup)
 import Test.Tasty.HUnit (testCase)
 
-import Control.Concurrent (threadDelay)
+import Control.Concurrent (threadDelay, forkIO)
+import Control.Concurrent.MVar
+import Control.Exception
 
-#ifdef USE_RPC
+
 import Control.Monad (when)
 import Data.Maybe (catMaybes)
-import HA.Network.Transport (writeTransportGlobalIVar)
-import qualified Network.Transport.RPC as RPC
 import System.Directory
 import System.Exit
 import System.FilePath
 import System.Process
+
+#ifdef USE_RPC
+import qualified Network.Transport.RPC as RPC
+import HA.Network.Transport (writeTransportGlobalIVar)
 #else
 import qualified HA.Network.Socket as TCP
 import qualified Network.Socket as TCP
@@ -44,11 +48,16 @@ import Prelude
 import System.Environment
 
 
-ut :: Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
-ut transport breakConnection = return $
+ut :: String -> Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
+ut _host transport breakConnection = return $
+#ifdef USE_MOCK_REPLICATOR
     testGroup "ut"
+#else
+    testGroup "it"
+#endif
       [ testCase "RCServiceRestarting" $
           HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport
+
       , testCase "RCServiceNOTRestarting" $
           HA.RecoveryCoordinator.Mero.Tests.testServiceNotRestarting transport
       , testCase "RCHAEventsGotTrimmed" $
@@ -73,9 +82,11 @@ ut transport breakConnection = return $
 #ifdef USE_MERO
       , testGroup "Castor" $
         HA.Castor.Tests.tests transport
+      , testCase "RCsyncToConfd" $
+          HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd _host transport
 #endif
 #if !defined(USE_RPC) && !defined(USE_MOCK_REPLICATOR)
-      , testCase "RCToleratesDisconnections [disabled]" $ const (return ()) $
+      , testCase "RCToleratesDisconnections" $
           HA.Test.Disconnect.testDisconnect transport breakConnection
 #else
       , testCase "RCToleratesDisconnections [disabled by compilation flags]" $
@@ -84,20 +95,21 @@ ut transport breakConnection = return $
 #endif
       ]
 
-runTests :: (Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree) -> IO ()
+runTests :: (String -> Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree) -> IO ()
 runTests tests = do
     -- TODO: Remove threadDelay after RPC transport closes cleanly
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
     argv  <- getArgs
-    addr0 <- case drop 1 $ dropWhile ("--" /=) argv of
-               a0:_ -> return a0
+    (host0, p0) <- case drop 1 $ dropWhile ("--" /=) argv of
+               a0:_ -> return $ break (== ':') a0
                _ ->
 #ifdef USE_RPC
                  maybe (error "environement variable TEST_LISTEN is not set") id <$> lookupEnv "TEST_LISTEN"
 #else
-                 maybe "127.0.0.1:0" id <$> lookupEnv "TEST_LISTEN"
+                 maybe ("10.0.2.15", ":0") (break (== ':')) <$> lookupEnv "TEST_LISTEN"
 #endif
+    let addr0 = host0 ++ p0
 #ifdef USE_RPC
     rpcTransport <- RPC.createTransport "s1"
                        (RPC.rpcAddress addr0) RPC.defaultRPCParameters
@@ -114,33 +126,40 @@ runTests tests = do
                      , TCP.tcpUserTimeout = Just 2000
                      , TCP.transportConnectTimeout = Just 2000000
                      }
-    let connectionBreak here there = do
-          TCP.socketBetween internals here there >>= TCP.close
-          TCP.socketBetween internals there here >>= TCP.close
+    let -- XXX: Could use enclosed-exceptions here. Note that the worker
+        -- is not killed in case of an exception.
+        ignoreSyncExceptions action = do
+          mv <- newEmptyMVar
+          _ <- forkIO $ action `finally` putMVar mv ()
+          takeMVar mv
+        connectionBreak here there = do
+          ignoreSyncExceptions $
+            TCP.socketBetween internals here there >>= TCP.close
+          ignoreSyncExceptions $
+            TCP.socketBetween internals there here >>= TCP.close
 #endif
     withArgs (takeWhile ("--" /=) argv) $
       defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
-        =<< tests transport connectionBreak
+        =<< tests host0 transport connectionBreak
 
 main :: IO ()
 main = do
-#if USE_RPC
-    args <- getArgs
-    prog <- getExecutablePath
-    -- test if we have root privileges
-    ((userid, _): _ ) <- reads <$> readProcess "id" ["-u"] ""
-    when (userid /= (0 :: Int)) $ do
-      -- change directory so mero files are produced under the dist folder
-      let testDir = takeDirectory (takeDirectory $ takeDirectory prog)
-                  </> "test"
-      createDirectoryIfMissing True testDir
-      setCurrentDirectory testDir
-      putStrLn $ "Changed directory to: " ++ testDir
-      -- Invoke again with root privileges
-      putStrLn $ "Calling test with sudo ..."
-      mld <- fmap ("LD_LIBRARY_PATH=" ++) <$> lookupEnv "LD_LIBRARY_PATH"
-      mtl <- fmap ("TEST_LISTEN=" ++) <$> lookupEnv "TEST_LISTEN"
-      callProcess "sudo" $ catMaybes [mld, mtl] ++ prog : args
-      exitSuccess
-#endif
+  args <- getArgs
+  prog <- getExecutablePath
+  -- test if we have root privileges
+  ((userid, _): _ ) <- reads <$> readProcess "id" ["-u"] ""
+  when (userid /= (0 :: Int)) $ do
+    -- change directory so mero files are produced under the dist folder
+    let testDir = takeDirectory (takeDirectory $ takeDirectory prog)
+                </> "test"
+    createDirectoryIfMissing True testDir
+    setCurrentDirectory testDir
+    putStrLn $ "Changed directory to: " ++ testDir
+    -- Invoke again with root privileges
+    putStrLn $ "Calling test with sudo ..."
+    mld <- fmap ("LD_LIBRARY_PATH=" ++) <$> lookupEnv "LD_LIBRARY_PATH"
+    mtl <- fmap ("TEST_LISTEN=" ++) <$> lookupEnv "TEST_LISTEN"
+    callProcess "sudo" $ catMaybes [mld, mtl] ++ prog : args
+    exitSuccess
+  when (userid == (0 :: Int)) $ do
     runTests ut

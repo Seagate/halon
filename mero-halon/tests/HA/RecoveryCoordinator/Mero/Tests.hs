@@ -7,6 +7,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
 
 module HA.RecoveryCoordinator.Mero.Tests
   ( testDriveAddition
@@ -19,6 +20,10 @@ module HA.RecoveryCoordinator.Mero.Tests
   , testMonitorManagement
   , testMasterMonitorManagement
   , testNodeUpRace
+#ifdef USE_MERO
+  , testRCsyncToConfd
+#endif
+  , emptyRules__static
   ) where
 
 import Prelude hiding ((<$>), (<*>))
@@ -71,26 +76,43 @@ import Control.Distributed.Process.Closure ( remotableDecl, mkStatic )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Internal.Types (nullProcessId)
-import qualified Control.Distributed.Process.Scheduler as Scheduler
 import Network.Transport (Transport(..))
-import Network.Transport.InMemory (createTransport)
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ( first, second )
-import qualified Control.Exception as E
 import Control.Monad (forM_, void, join)
-
 import Data.Defaultable
 import Data.List (isInfixOf)
 import Data.Proxy (Proxy(..))
-import Network.CEP (Published(..), Logs(..), subscribe)
-import System.IO
-import System.Random
-import System.Timeout
-import System.Environment
+import Network.CEP (Published(..), Logs(..), subscribe, Definitions)
 import Test.Tasty.HUnit (assertBool)
+import TestRunner
+
+#ifdef USE_MERO
+import Data.Binary (Binary)
+import Data.Hashable (Hashable)
+import Data.Typeable (Typeable)
+import GHC.Generics (Generic)
+import HA.Castor.Tests (initialDataAddr)
+import HA.RecoveryCoordinator.Actions.Mero (syncToConfd)
+import Mero (m0_init)
+import Mero.M0Worker
+import Mero.Notification (finalize)
+import Network.CEP (defineSimple, liftProcess)
+import System.IO.Unsafe
+#endif
 
 type TestReplicatedState = (EventQueue, Multimap)
+
+#ifdef USE_MERO
+-- | label used to test spiel sync through a rule
+data SpielSync = SpielSync
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary SpielSync
+instance Hashable SpielSync
+#endif
+
 
 remotableDecl [ [d|
   eqView :: RStateView TestReplicatedState EventQueue
@@ -101,12 +123,29 @@ remotableDecl [ [d|
 
   testDict :: SerializableDict TestReplicatedState
   testDict = SerializableDict
+
+  emptyRules :: [Definitions LoopState ()]
+  emptyRules = []
+
   |]]
+
+#ifdef USE_MERO
+testSyncRules :: [Definitions LoopState ()]
+testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent _ SpielSync _) -> do
+  syncToConfd
+  liftProcess $ say "Finished sync to confd"
+#endif
 
 runRC :: (ProcessId, IgnitionArguments)
       -> MC_RG TestReplicatedState
       -> Process ((ProcessId, ProcessId)) -- ^ MM, RC
-runRC (eq, args) rGroup = do
+runRC (eq, args) rGroup = runRCEx (eq, args) emptyRules rGroup
+
+runRCEx :: (ProcessId, IgnitionArguments)
+        -> [Definitions LoopState ()]
+        -> MC_RG TestReplicatedState
+        -> Process ((ProcessId, ProcessId)) -- ^ MM, RC
+runRCEx (eq, args) rules rGroup = do
   rec (mm, rc) <- (,)
                   <$> (spawnLocal $ do
                         () <- expect
@@ -114,11 +153,11 @@ runRC (eq, args) rGroup = do
                         multimap (viewRState $(mkStatic 'multimapView) rGroup))
                   <*> (spawnLocal $ do
                         () <- expect
-                        recoveryCoordinator args eq mm)
+                        recoveryCoordinatorEx () rules args eq mm)
   usend eq rc
   forM_ [mm, rc] $ \them -> usend them ()
---  liftIO $ takeMVar var
   return (mm, rc)
+
 
 getServiceProcessPid :: Configuration a
                      => ProcessId
@@ -563,45 +602,48 @@ testNodeUpRace transport = do
     rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
          remoteTable
 
+#ifdef USE_MERO
+-- | Sends a message to the RC with Confd addition message and tests
+-- that it gets added to the resource graph.
+testRCsyncToConfd :: String -- ^ IP we're listening on, used in this
+                            -- test to assume confd server is on the
+                            -- same host
+                  -> Transport -> IO ()
+testRCsyncToConfd host transport = do
+ withTestEnv $ do
+  liftIO $ writeFile "/tmp/strlog" ""
+  nid <- getSelfNode
+  self <- getSelfPid
+  void $ startEQTracker [nid]
+  registerInterceptor $ \case
+    str' | unsafePerformIO (appendFile "/tmp/strlog" (str' ++ "\n") >> return False) -> undefined
+    str' | "Finished sync to confd" `isInfixOf` str' -> usend self ("SyncOK" :: String)
+    str' | "Loaded initial data" `isInfixOf` str' -> usend self ("InitialLoad" :: String)
+    _ -> return ()
+  cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+                       [nid] ((Nothing,[]), fromList [])
+  pRGroup <- unClosure cRGroup
+  rGroup <- pRGroup
+  eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+  _ <- runRCEx (eq, IgnitionArguments [nid]) testSyncRules rGroup
+
+  promulgateEQ [nid] (initialDataAddr host host) >>= (`withMonitor` wait)
+  "InitialLoad" :: String <- expect
+
+  liftIO $ appendFile "/tmp/strlog" "about to syncToConfd\n"
+  promulgateEQ [nid] SpielSync >>= (flip withMonitor) wait
+  "SyncOK" :: String <- expect
+
+  finalize
+
+  -- XXX m0_fini
+
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
+    startM0 x = m0_init >> startGlobalWorker >> x
+    withTestEnv = withTmpDirectory . startM0 . tryWithTimeout transport testRemoteTable 15000000
+#endif
 
 testRemoteTable :: RemoteTable
 testRemoteTable = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
                   remoteTable
-
-
-withLocalNode :: Transport -> RemoteTable -> (LocalNode -> IO a) -> IO a
-withLocalNode t rt = E.bracket  (newLocalNode t rt) closeLocalNode
-
-withLocalNodes :: Int
-               -> Transport
-               -> RemoteTable
-               -> ([LocalNode] -> IO a)
-               -> IO a
-withLocalNodes 0 _t _rt f = f []
-withLocalNodes n t rt f = withLocalNode t rt $ \node ->
-    withLocalNodes (n - 1) t rt (f . (node :))
-
-runTest :: Int -> Int -> Int -> Transport -> RemoteTable
-        -> ([LocalNode] -> Process ()) -> IO ()
-runTest numNodes numReps _t tr rt action
-    | Scheduler.schedulerIsEnabled = do
-        (s,numReps') <- lookupEnv "DP_SCHEDULER_SEED" >>= \mx -> case mx of
-          Nothing -> (,numReps) <$> randomIO
-          Just s  -> return (read s,1)
-        -- TODO: Fix leaks in n-t-inmemory and use the same transport for all
-        -- tests, maybe.
-        forM_ [1..numReps'] $ \i ->  withTmpDirectory $
-          E.bracket createTransport closeTransport $
-          \tr' -> do
-            m <- timeout (7 * 60 * 1000000) $
-              Scheduler.withScheduler (s + i) 1000 numNodes tr' rt' action
-            maybe (error "Timeout") return m
-          `E.onException`
-            liftIO (hPutStrLn stderr $ "Failed with seed: " ++ show (s + i, i))
-    | otherwise =
-        withTmpDirectory $ withLocalNodes numNodes tr rt' $
-          \(n : ns) -> do
-            m <- timeout (7 * 60 * 1000000) $ runProcess n (action ns)
-            maybe (error "Timeout") return m
-  where
-    rt' = Scheduler.__remoteTable rt

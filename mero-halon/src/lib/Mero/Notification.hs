@@ -11,6 +11,8 @@
 -- This module is intended to be imported qualified.
 
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -fno-warn-dodgy-exports #-}
 
@@ -21,9 +23,13 @@ module Mero.Notification
     , initialize
     , finalize
     , notifyMero
+    , withServerEndpoint
+    , MonadProcess(..)
     ) where
 
 import Control.Distributed.Process
+
+import Network.CEP (liftProcess, MonadProcess)
 
 import Mero.ConfC (Fid)
 import Mero.Notification.HAState
@@ -34,17 +40,20 @@ import Network.RPC.RPCLite
   , RPCAddress
   , ServerEndpoint
   , initRPC
-  , finalizeRPC
+  -- , finalizeRPC
   , listen
   )
+import Control.Concurrent.MVar
 import Control.Distributed.Process.Internal.Types ( processNode, LocalNode )
 import qualified Control.Distributed.Process.Node as CH ( runProcess )
 import Control.Monad ( void )
+import Control.Monad.Trans (MonadIO)
 import Control.Monad.Reader ( ask )
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
+import System.IO.Unsafe (unsafePerformIO)
 
 -- | This message is sent to the RC when Mero informs of a state change.
 --
@@ -65,10 +74,91 @@ instance Binary Get
 newtype GetReply = GetReply NVec
         deriving (Generic, Typeable, Binary)
 
--- | Initialiazes the Notification subsystem.
-initialize :: RPCAddress -- ^ Listen address.
-           -> Process ServerEndpoint
-initialize addr = do
+-- | A reference to a 'ServerEndpoint' along with metadata about
+-- number of current users and finalization.
+data EndpointRef = EndpointRef
+  { _erServerEndpoint :: Maybe ServerEndpoint
+    -- ^ The actual 'ServerEndpoint' used by the clients. If
+    -- 'Nothing', it hasn't been 'initializeInternal'd.
+  , _erRefCount :: Int
+    -- ^ Number of current users, used to keep track of when it's safe
+    -- to finalize.
+  , _erWantsFinalize :: Bool
+    -- ^ A flag determining whether any client asked for finalisation.
+  }
+
+emptyEndpointRef :: EndpointRef
+emptyEndpointRef = EndpointRef Nothing 0 False
+
+-- | Multiple places such as mero service or confc may need a
+-- 'ServerEndpoint' but currently RPC(Lite) only supports a single
+-- endpoint at a time. In order to ensure we don't end up calling
+-- 'initRPC' multiple times or 'finalizeRPC' while the endpoint is
+-- still in use, we use a global lock.
+--
+-- This lock is internal to the module. All users except 'initalize'
+-- and 'finalizeInternal' should use 'withServerEndpoint,
+-- 'initializeInternal' and 'finalize' themselves.
+globalEndpointRef :: MVar EndpointRef
+globalEndpointRef = unsafePerformIO $ newMVar emptyEndpointRef
+{-# NOINLINE globalEndpointRef #-}
+
+-- | Grab hold of a 'ServerEndpoint' and run the action on it. You
+-- are required to pass in an 'RPCAddress' in case the endpoint is not
+-- initialized already. Note that if the endpoint is already
+-- initialized, the passed in 'RPCAddress' is __not__ used so do not
+-- make any assumptions about which address the endpoint is started
+-- at.
+--
+-- Further, be aware that the 'ServerEndpoint' used may be used
+-- concurrently by other callers at the same time. For this reason you
+-- should not use any sort of finalizers on it here: use 'finalize'
+-- instead.
+withServerEndpoint :: forall m a. (MonadIO m, MonadProcess m)
+                   => RPCAddress
+                   -> (ServerEndpoint -> m a)
+                   -> m a
+withServerEndpoint addr f = liftProcess (initializeInternal addr)
+                            >>= (`withMVarProcess` f)
+  where
+    withMVarProcess :: (MVar EndpointRef, EndpointRef, ServerEndpoint)
+                    -> (ServerEndpoint -> m a) -> m a
+    withMVarProcess (m, ref, ep) p = do
+      -- Increase the refcount and run the process with the lock released
+      void . liftIO $ putMVar m (ref { _erRefCount = _erRefCount ref + 1 })
+      v <- p ep
+      -- Get the possibly updated endpoint reference after our process
+      -- has finished and decrease the count
+      newRef <- liftIO $ takeMVar m >>= \x ->
+        return (x { _erRefCount = max 0 (_erRefCount x - 1) })
+
+      liftIO $ case _erWantsFinalize newRef && _erRefCount newRef <= 0 of
+        -- There's either more workers or we don't want to finalize,
+        -- just put the endpoint with decreased refcount back
+        False -> putMVar m newRef
+        -- We're the last worker, someone wanted to finalize and we
+        -- have the lock: just call 'finalizeInternal'.
+        True -> finalizeInternal m
+
+      -- no matter what happened with the endpoint, return the result
+      return v
+
+-- | Initialiazes the 'EndpointRef' subsystem.
+--
+-- An important thing to notice is that this function takes the lock
+-- on 'globalEndpointRef' but does not release it:
+-- 'initializeInternal' is only meant to be used followed by
+-- 'withServerEndpoint' which will release the lock. This is to ensure
+-- that finalization doesn't happen between 'initializeInternal' and
+-- 'withServerEndpoint'.
+initializeInternal :: RPCAddress -- ^ Listen address.
+                   -> Process (MVar EndpointRef, EndpointRef, ServerEndpoint)
+initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \case
+  ref@(EndpointRef { _erServerEndpoint = Just ep }) -> do
+    say "initializeInternal: using existing endpoint"
+    return (globalEndpointRef, ref, ep)
+  EndpointRef { _erServerEndpoint = Nothing } -> do
+    say "initializeInternal: making new endpoint"
     lnode <- fmap processNode ask
     self <- getSelfPid
     say $ "listening at " ++ show addr
@@ -76,7 +166,8 @@ initialize addr = do
       initRPC
       ep <- listen addr listenCallbacks
       initHAState (ha_state_get self lnode) (ha_state_set lnode)
-      return ep
+      let ref = emptyEndpointRef { _erServerEndpoint = Just ep }
+      return (globalEndpointRef, ref, ep)
   where
     listenCallbacks = ListenCallbacks {
       receive_callback = \_ _ -> return False
@@ -98,9 +189,40 @@ initialize addr = do
         void $ promulgate $ Set nvec
       return 0
 
--- | Finalize the Notification subsystem.
+-- | Initialiazes the 'EndpointRef' subsystem.
+--
+-- This function is not too useful by itself as by the time the
+-- resulting 'MVar' is to be used, it could be finalized already. Most
+-- users want to simply call 'withServerEndpoint'.
+initialize :: RPCAddress -- ^ Listen address.
+           -> Process (MVar EndpointRef)
+initialize adr = do
+  (m, ref, _) <- initializeInternal adr
+  liftIO $ putMVar m ref
+  return m
+
+-- | Internal initialization routine, should not be called by external
+-- users. Only to be called when the lock on the lock is already held.
+finalizeInternal :: MVar EndpointRef -> IO ()
+finalizeInternal m = runOnGlobalM0Worker $ do
+  finiHAState
+  -- XXX finalizeRPC hangs
+  -- finalizeRPC
+  putMVar m emptyEndpointRef
+
+-- | Finalize the Notification subsystem. We make an assumption that
+-- if 'globalEndpointRef' is empty, we have already finalized before
+-- and do nothing.
 finalize :: Process ()
-finalize = liftIO $ runOnGlobalM0Worker $ finiHAState >> finalizeRPC
+finalize = liftIO $ takeMVar globalEndpointRef >>= \case
+  -- if we have no further workers active, just finalize and fill the
+  -- MVar with 'emptyEndpointRef'
+  ref | _erRefCount ref <= 0 -> finalizeInternal globalEndpointRef
+  -- There are some workers active so just signal that we want to
+  -- finalize and put the MVar back. Once the last worker finishes, it
+  -- will check this flag and run the finalization itself
+      | otherwise -> putMVar globalEndpointRef $ ref { _erWantsFinalize = True }
+
 
 notifyMero :: ServerEndpoint
            -> RPCAddress

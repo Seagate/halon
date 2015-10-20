@@ -15,13 +15,14 @@ module Mero.Conf.Context where
 import Mero.Conf.Fid ( Fid(..) )
 
 import Data.Binary (Binary)
+import Data.Bits (shiftR)
 import Data.Hashable (Hashable)
 import qualified Data.Map as Map
 import Data.Word ( Word32, Word64 )
 
 import Foreign.Marshal.Array
   ( peekArray
-  , pokeArray
+  , newArray
   )
 import Foreign.Ptr
   ( plusPtr )
@@ -47,13 +48,17 @@ instance Storable Bitmap where
   sizeOf _ = #{size struct m0_bitmap}
   alignment _ = #{alignment struct m0_bitmap}
   peek p = do
-      nr <- #{peek struct m0_bitmap, b_nr} p
+      nr <- bits2words <$> (#{peek struct m0_bitmap, b_nr} p)
       w <- (peekArray nr (#{ptr struct m0_bitmap, b_words} p) :: IO [Word64])
       return $ Bitmap w
+    where
+      bits2words bits = (bits + 63) `shiftR` 6
 
   poke p (Bitmap b) = do
-    #{poke struct m0_bitmap, b_nr} p $ length b
-    pokeArray (#{ptr struct m0_bitmap, b_words} p) b
+      #{poke struct m0_bitmap, b_nr} p $ 64 * length b
+      -- TODO This memory is never freed
+      words_ptr <- newArray b
+      #{poke struct m0_bitmap, b_words} p words_ptr
 
 -- @types.h m0_unit128@
 data Word128 = Word128 {-# UNPACK #-} !Word64 {-# UNPACK #-} !Word64

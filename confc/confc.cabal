@@ -25,6 +25,7 @@ Library
                      , Mero.Spiel.Context
                      , Mero.Spiel.Internal
   build-depends:       base
+                     , aeson
                      , containers
                      , binary
                      , bytestring
@@ -105,4 +106,3 @@ Test-Suite testcopyconf
                    filepath,
                    rpclite,
                    time >= 1.4
-

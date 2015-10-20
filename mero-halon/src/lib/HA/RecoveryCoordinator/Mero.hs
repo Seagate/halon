@@ -45,6 +45,8 @@ module HA.RecoveryCoordinator.Mero
        , sendToMasterMonitor
        , rcInitRule
        , handled
+       , startProcessingMsg
+       , finishProcessingMsg
        , loadNodeMonitorConf
        , notHandled
        ) where
@@ -79,9 +81,7 @@ import Data.Dynamic
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as S
 import Data.Maybe (fromMaybe)
-#ifdef USE_RPC
-import Data.Maybe (isJust)
-#endif
+import Data.UUID (UUID)
 import Data.Word
 
 import GHC.Generics (Generic)
@@ -137,6 +137,18 @@ handled eq (HAEvent eid _ _) = do
     put Global ls'
     sendMsg eq eid
 
+finishProcessingMsg :: UUID -> PhaseM LoopState l ()
+finishProcessingMsg eid = do
+    ls <- get Global
+    let ls' = ls { lsHandled = S.delete eid $ lsHandled ls }
+    put Global ls'
+
+startProcessingMsg :: UUID -> PhaseM LoopState l ()
+startProcessingMsg eid = do
+    ls <- get Global
+    let ls' = ls { lsHandled = S.insert eid $ lsHandled ls }
+    put Global ls'
+
 rcInitRule :: IgnitionArguments
            -> ProcessId
            -> RuleM LoopState (Maybe ProcessId) (Started LoopState (Maybe ProcessId))
@@ -150,9 +162,10 @@ rcInitRule argv eq = do
     directly boot $ do
       h   <- liftIO getHostName
       nid <- liftProcess getSelfNode
+      liftProcess . sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
       let node = Node nid
           host = Host h
-      liftProcess . sayRC $ "New node contacted: " ++ show nid
+      liftProcess . sayRC $ "Executing on node: " ++ show nid
       registerNode node
       registerHost host
       locateNodeOnHost node host
@@ -167,6 +180,8 @@ rcInitRule argv eq = do
 
     setPhaseIf mm_started (waitServiceToStart masterMonitor) $ \evt -> do
       handled eq evt
+      ServiceStarted _ _ _ (ServiceProcess mpid) <- decodeMsg (eventPayload evt)
+      liftProcess $ link mpid
       continue mm_conf
 
     setPhase mm_conf $
@@ -189,8 +204,9 @@ rcInitRule argv eq = do
         registerServiceProcess n svc cfg sp
         sendToMasterMonitor msg
         handled eq evt
-        liftProcess $
+        liftProcess $ do
           sayRC $ "started " ++ snString (serviceName svc) ++ " service"
+          sayRC $ "continuing in normal mode"
 
     start boot Nothing
 

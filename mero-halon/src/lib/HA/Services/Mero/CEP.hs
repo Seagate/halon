@@ -3,8 +3,10 @@
 --
 
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE RankNTypes                 #-}
 
 module HA.Services.Mero.CEP
   ( meroRulesF
@@ -16,7 +18,7 @@ import HA.RecoveryCoordinator.Mero
 import HA.ResourceGraph
 import HA.Resources
 import HA.Resources.Castor
-import qualified HA.Resources.Mero as M0
+import HA.Resources.Mero (SDev(..))
 import HA.Service
 import HA.Services.Mero.Types
 
@@ -24,7 +26,7 @@ import Mero.Notification (Set(..))
 import Mero.Notification.HAState
 
 import Control.Category ((>>>))
-import Control.Distributed.Process (sendChan)
+import Control.Distributed.Process
 
 import Data.Foldable (for_)
 import Data.Maybe (isJust)
@@ -32,6 +34,8 @@ import Data.Maybe (isJust)
 import Network.CEP
 
 import Prelude hiding (id)
+
+
 
 registerChannel :: ServiceProcess MeroConf
                 -> TypedChannel Set
@@ -66,7 +70,7 @@ meroRulesF m0d = do
   defineSimple "mero-set" $ \(HAEvent _ (Set nvec) _) -> let
       setStatus (Note oid st) = do
         mco <- lookupConfObjByFid oid
-        case (mco :: Maybe M0.SDev) of
+        case (mco :: Maybe SDev) of
           Just co -> modifyLocalGraph
             $ return . connectUniqueFrom co Is st
           _ -> return ()

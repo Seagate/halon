@@ -94,7 +94,7 @@ foreign import ccall "spiel.h m0_spiel_tx_commit"
 
 foreign import ccall "spiel.h m0_spiel_tx_commit_forced"
   c_spiel_tx_commit_forced :: Ptr SpielTransactionV
-                           -> CChar -- ^ Forced - used as bool
+                           -> Bool -- ^ Forced - used as bool
                            -> Word64 -- ^ ver_forced
                            -> Word32 -- ^ Quorum
                            -> IO CInt

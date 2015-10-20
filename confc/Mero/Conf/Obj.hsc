@@ -59,6 +59,7 @@ module Mero.Conf.Obj
 import Mero.Conf.Context
 import Mero.Conf.Fid
 
+import Data.Aeson (FromJSON)
 import Data.Binary ( Binary )
 import Data.Data ( Data )
 import Data.Hashable ( Hashable )
@@ -296,8 +297,9 @@ data ServiceType
 
 instance Binary ServiceType
 instance Hashable ServiceType
-instance Enum ServiceType where
+instance FromJSON ServiceType
 
+instance Enum ServiceType where
   toEnum #{const M0_CST_MDS}      = CST_MDS
   toEnum #{const M0_CST_IOS}      = CST_IOS
   toEnum #{const M0_CST_MGS}      = CST_MGS
@@ -335,6 +337,7 @@ data ServiceParams =
 
 instance Binary ServiceParams
 instance Hashable ServiceParams
+instance FromJSON ServiceParams
 
 -- | Representation of `m0_conf_service`.
 data Service = Service

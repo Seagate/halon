@@ -55,7 +55,6 @@ import System.Posix.Temp (mkdtemp)
 import System.Process hiding (runProcess)
 import System.Timeout
 
-
 getBuildPath :: IO FilePath
 getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
 
@@ -121,9 +120,10 @@ main =
 
       getSelfPid >>= copyLog (const True)
 
+
       say "Spawning halond ..."
-      nid0 <- spawnLocalNode (halond1 ++ " -l " ++ m0loc ++ " 2>&1")
-      nid1 <- spawnLocalNode (halond2 ++ " -l " ++ m1loc ++ " 2>&1")
+      nid0 <- spawnLocalNode (halond1 ++ " -l " ++ m0loc ++ " > /tmp/halond1 2>&1")
+      nid1 <- spawnLocalNode (halond2 ++ " -l " ++ m1loc ++ " > /tmp/halond2 2>&1")
       say $ "Redirecting logs from " ++ show nid0 ++ " ..."
       redirectLogsHere nid0
       say $ "Redirecting logs from " ++ show nid1 ++ " ..."

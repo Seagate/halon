@@ -11,7 +11,9 @@ module Test.Transport
   ) where
 
 import Network.Transport
-import Control.Concurrent (threadDelay)
+import Control.Concurrent (threadDelay, forkIO)
+import Control.Concurrent.MVar
+import Control.Exception
 import qualified Network.Socket as N (close)
 import qualified Network.Transport.TCP as TCP
 import qualified Network.Transport.InMemory as InMemory
@@ -19,7 +21,6 @@ import qualified Network.Transport.Controlled as Controlled
 #ifdef USE_RPC
 import Test.Framework (testSuccess)
 import Test.Tasty (testGroup)
-import Control.Concurrent (threadDelay)
 import Control.Monad (when)
 import qualified Network.Transport.RPC as RPC
 
@@ -43,12 +44,20 @@ mkControlledTransport transport = Controlled.createTransport (getTransport trans
 
 mkTCPTransport :: IO AbstractTransport
 mkTCPTransport = do
-  Right (transport, internals) <- TCP.createTransportExposeInternals "127.0.0.1" "0" TCP.defaultTCPParameters
-  let closeConnection here there = do
-        TCP.socketBetween internals here there >>= N.close
-        TCP.socketBetween internals there here >>= N.close
-        threadDelay 1000000
-  return (AbstractTransport transport closeConnection (closeTransport transport))
+    Right (transport, internals) <- TCP.createTransportExposeInternals "127.0.0.1" "0" TCP.defaultTCPParameters
+    let -- XXX: Could use enclosed-exceptions here. Note that the worker
+        -- is not killed in case of an exception.
+        ignoreSyncExceptions action = do
+          mv <- newEmptyMVar
+          _ <- forkIO $ action `finally` putMVar mv ()
+          takeMVar mv
+        closeConnection here there = do
+          ignoreSyncExceptions $
+            TCP.socketBetween internals here there >>= N.close
+          ignoreSyncExceptions $
+            TCP.socketBetween internals there here >>= N.close
+          threadDelay 1000000
+    return (AbstractTransport transport closeConnection (closeTransport transport))
 
 mkInMemoryTransport :: IO AbstractTransport
 mkInMemoryTransport = do

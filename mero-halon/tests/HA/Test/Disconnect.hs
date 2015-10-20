@@ -29,12 +29,11 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import qualified Control.Distributed.Process.Scheduler as Scheduler
 import Control.Distributed.Static ( closureCompose )
-import qualified Control.Exception as E
 import Control.Monad
 import Data.List
 import Data.Binary
 
-import Network.Transport (Transport)
+import Network.Transport (Transport, EndPointAddress)
 
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
@@ -44,9 +43,7 @@ import HA.Service hiding (__remoteTable)
 import qualified HA.Services.Ping as Ping
 import HA.Network.RemoteTables (haRemoteTable)
 import Mero.RemoteTables (meroRemoteTable)
-import Network.Transport (EndPointAddress, Transport(..))
 import qualified Network.Transport.Controlled as Controlled
-import Network.Transport.InMemory
 
 import HA.NodeUp ( nodeUp )
 import HA.Startup
@@ -54,10 +51,8 @@ import Test.Framework
 
 import Data.Typeable
 import GHC.Generics
-import System.IO
-import System.Random
-import System.Timeout
 
+import TestRunner
 
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
@@ -159,42 +154,6 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
           [ matchIf (\(Dummy z) -> show (i + 1) == z) (const $ return ()) ]
       say "Test complete"
 
-withLocalNode :: Transport -> RemoteTable -> (LocalNode -> IO a) -> IO a
-withLocalNode t rt = E.bracket  (newLocalNode t rt) closeLocalNode
-
-withLocalNodes :: Int
-               -> Transport
-               -> RemoteTable
-               -> ([LocalNode] -> IO a)
-               -> IO a
-withLocalNodes 0 _t _rt f = f []
-withLocalNodes n t rt f = withLocalNode t rt $ \node ->
-    withLocalNodes (n - 1) t rt (f . (node :))
-
-runTest :: Int -> Int -> Transport -> RemoteTable
-        -> ([LocalNode] -> Process ()) -> IO ()
-runTest numNodes numReps tr rt action
-    | Scheduler.schedulerIsEnabled = do
-        s <- randomIO
-        -- TODO: Fix leaks in n-t-inmemory and use the same transport for all
-        -- tests, maybe.
-        forM_ [1..numReps] $ \i ->  withTmpDirectory $
-          E.bracket createTransport closeTransport $
-          \tr' -> do
-            liftIO $ putStrLn $ "Running with seed: " ++ show (s + i)
-            m <- timeout (7 * 60 * 1000000) $
-              Scheduler.withScheduler (s + i) 1000 numNodes tr' rt' action
-            maybe (error "Timeout") return m
-          `E.onException`
-            liftIO (hPutStrLn stderr $ "Failed with seed: " ++ show (s + i, i))
-    | otherwise = do
-        withTmpDirectory $ withLocalNodes numNodes tr rt' $
-          \(n : ns) -> do
-            m <- timeout (7 * 60 * 1000000) $ runProcess n (action ns)
-            maybe (error "Timeout") return m
-  where
-    rt' = Scheduler.__remoteTable rt
-
 testSplit :: Transport
           -> Controlled.Controlled
           -- ^ Transport and controller object.
@@ -210,7 +169,7 @@ testSplit :: Transport
              )
           -> IO ()
 testSplit transport t amountOfReplicas action =
-    runTest (amountOfReplicas + 1) 10 transport myRemoteTable $ \ns -> do
+    runTest (amountOfReplicas + 1) 10 1000000 transport myRemoteTable $ \ns -> do
       let doSplit nds =
             (if Scheduler.schedulerIsEnabled
                then Scheduler.addFailures . concat .

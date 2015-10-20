@@ -15,14 +15,16 @@ import           Data.Functor ((<$>))
 import           Data.Monoid ((<>))
 import           Data.Typeable
 import           GHC.Generics
+import           System.IO
 
-import Control.Distributed.Process (ProcessId, Process)
+import Control.Distributed.Process
 import Data.Binary
 import Data.Defaultable
 import Data.Hashable
 import Options.Schema
 import Options.Schema.Builder
 import Network.CEP
+import Text.PrettyPrint.Leijen hiding ((<>), (<$>))
 
 import HA.Service.TH
 
@@ -80,6 +82,45 @@ data EntriesLogged =
 instance Binary EntriesLogged
 
 newtype WriteLogs = WriteLogs (Logs -> Process ())
+
+ppLogs :: Logs -> Doc
+ppLogs logs =
+    vsep [ text $ logsRuleName logs
+         , indent 2 $ ppEntries entries
+         ]
+  where
+    entries = logsPhaseEntries logs
+
+ppEntries :: [(String, String, String)] -> Doc
+ppEntries xs = indent 2 (vsep $ fmap ppEntry xs)
+
+ppEntry :: (String, String, String) -> Doc
+ppEntry (pname, ctx, str) =
+    vsep [ text pname
+         , indent 2 (text ctx <+> hcat [equals, rangle] <+> text str)
+         ]
+
+openLogFile :: FilePath -> Process Handle
+openLogFile path = liftIO $ do
+    h <- openFile path AppendMode
+    hSetBuffering h LineBuffering
+    return h
+
+cleanupHandle :: Handle -> Process ()
+cleanupHandle h = liftIO $ hClose h
+
+handleLogs :: DecisionLogOutput -> Logs -> Process ()
+handleLogs (ProcessOutput pid) logs = usend pid logs
+handleLogs StandardOutput logs = liftIO $ do
+    putDoc $ ppLogs logs
+    putStr "\n"
+handleLogs (FileOutput path) logs =
+    bracket (openLogFile path) cleanupHandle $ \h -> liftIO $ do
+      hPutDoc h $ ppLogs logs
+      hPutStr h "\n"
+
+newWriteLogs :: DecisionLogOutput -> WriteLogs
+newWriteLogs tpe = WriteLogs $ handleLogs tpe
 
 writeLogs :: WriteLogs -> Logs -> Process ()
 writeLogs (WriteLogs k) logs = k logs

@@ -42,7 +42,7 @@ import Control.Distributed.Process.Internal.StrictMVar
   )
 import Control.Distributed.Process.Internal.Types
   ( LocalNode
-  , LocalNodeState
+  , LocalNodeState(..)
   , MxEventBus(..)
   , localEventBus
   , localProcessWithId
@@ -191,7 +191,7 @@ terminateLocalProcesses node mtimeout = do
     takeMVar mv
   where
     terminateProcesses :: LocalNodeState -> Process Bool
-    terminateProcesses st = do
+    terminateProcesses (LocalNodeValid st) = do
       -- Trying to kill the management agent controller prevents other processes
       -- from terminating.
       let mxACPid = case localEventBus node of
@@ -222,3 +222,4 @@ terminateLocalProcesses node mtimeout = do
           replicateM_ (length pids) $ receiveWait
             [ match $ \(ProcessMonitorNotification _ _ _) -> return () ]
           return True
+    terminateProcesses _ = return True
