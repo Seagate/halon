@@ -65,6 +65,7 @@ module Control.Distributed.Process.Scheduler.Internal
   -- * Internal communication with the scheduler
   , yield
   , getScheduler
+  , AbsentScheduler(..)
   , SchedulerMsg(..)
   , SchedulerResponse(..)
   , uninterruptiblyMaskKnownExceptions_
@@ -269,9 +270,8 @@ withLocalProc :: DP.LocalNode
               -> IO ()
 withLocalProc node pid p =
   let lpid = DP.processLocalId pid in do
-  mProc <- withMVar (DP.localState node) $
-             return . (^. DP.localProcessWithId lpid)
-  forM_ mProc p
+  DP.withValidLocalState node $ \vst ->
+    forM_ (vst ^. DP.localProcessWithId lpid) p
 
 remotableDecl [ [d|
 
@@ -825,18 +825,17 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
 
 -- | Stops the scheduler.
 --
--- Takes the list returned by 'startScheduler'.
-stopScheduler :: [LocalNode] -> IO ()
-stopScheduler = \(~lnodes@(n : _)) -> do
+-- It is ok to close the nodes returned by 'startScheduler' afterwards.
+stopScheduler :: IO ()
+stopScheduler = do
     msproc <- tryTakeMVar schedulerVar
     running <- modifyMVar schedulerLock $ \running -> do
       return (False,running)
     forM_ msproc $ \sproc ->
-      when running $ runProcess n $ do
+      when running $ runProcess (processNode sproc) $ do
         DP.exit (processId sproc) StopScheduler
         SchedulerTerminated <- DP.expect
         return ()
-    forM_ lnodes closeLocalNode
 
 -- | Wraps a 'Process' computation with calls to 'startScheduler' and
 -- 'stopScheduler'.
@@ -853,23 +852,23 @@ withScheduler :: Int       -- ^ seed
               -> IO ()
 withScheduler s clockDelta numNodes transport rtable p =
     bracket (startScheduler s clockDelta numNodes transport rtable)
-            stopScheduler $ \lnodes@(n : ns) -> do
+            (mapM_ closeLocalNode) $ \(n : ns) -> do
       tid <- myThreadId
       mv <- newEmptyMVar
       _ <- forkProcess n $ do
-          spid <- processId <$> DP.liftIO getScheduler
-          DP.link spid
-          self <- DP.getSelfPid
-          DP.send spid $ SpawnedProcess self self
-          SpawnAck <- DP.expect
-          Continue <- DP.expect
-          p ns
-          DP.unlink spid
-          DP.liftIO $ stopScheduler lnodes
-          DP.liftIO $ putMVar mv ()
-        `DP.catch` \e -> DP.liftIO $ do
-          throwTo tid (e :: SomeException)
-          throwIO e
+        do spid <- processId <$> DP.liftIO getScheduler
+           DP.link spid
+           self <- DP.getSelfPid
+           DP.send spid $ SpawnedProcess self self
+           SpawnAck <- DP.expect
+           Continue <- DP.expect
+           p ns
+           DP.unlink spid
+          `DP.finally` DP.liftIO stopScheduler
+        DP.liftIO $ putMVar mv ()
+       `DP.catch` \e -> DP.liftIO $ do
+         throwTo tid (e :: SomeException)
+         throwIO e
       takeMVar mv
 
 -- | Yields control to some other process.
@@ -878,11 +877,18 @@ yield = do DP.getSelfPid >>= sendS . Yield
            Continue <- DP.expect
            return ()
 
+-- | Thrown by wrapped primitives when the scheduler was meant to be enabled
+-- but it is not running.
+data AbsentScheduler = AbsentScheduler
+  deriving Show
+
+instance Exception AbsentScheduler
+
 -- | Yields the local process of the scheduler.
 getScheduler :: IO LocalProcess
 getScheduler =
     tryReadMVar schedulerVar >>=
-      maybe (error "getScheduler: Scheduler is not running.") return
+      maybe (throwIO AbsentScheduler) return
 
 -- | Have messages between pairs of nodes drop with some probability.
 --
@@ -1270,7 +1276,7 @@ registerRemoteAsync n label p = do
     yield
     DP.registerRemoteAsync n label p
     reply <- DP.receiveWait
-      [ DP.matchIf (\(DP.RegisterReply label' _) -> label == label') return ]
+      [ DP.matchIf (\(DP.RegisterReply label' _ _) -> label == label') return ]
     DP.getSelfPid >>= flip usend reply
 
 -- | Opaque type used by 'receiveWaitT'.

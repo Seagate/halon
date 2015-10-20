@@ -279,12 +279,19 @@ when `withScheduler` is evaluated (e.g. the transport was just created). Another
 workaround is to make sure that for the range of node identifiers that the test
 uses, the node identifiers always end up sorted in the same way (e.g. if the
 idenfier is just an integer, then all identifiers use the same amount of
-digits an the transport produces them in sequence).
+digits and the transport produces them in sequence).
 
 Another limitation is that nodes used in a test cannot be destroyed until the
 test completes. The scheduler might try to interact with the nodes if some
 process sends a message to them. But if the node is dead and therefore unable
 to reply to registry queries, for instance, then the scheduler might block.
+
+`spawnLocal` inherits the masking state but the spawned thread can still be
+interrupted before executing it. This needs to be fixed.
+
+`matchSTM` might produce incorrect behavior if there is more than one consumer
+for the same transactional resource (e.g. multiple processes trying to read the
+same `TChan` with `matchSTM`).
 
 ## Finding a bug
 

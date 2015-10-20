@@ -10,6 +10,7 @@
 
 module HA.RecoveryCoordinator.Rules.Castor where
 
+import Control.Distributed.Process (say)
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Mero
 import HA.Resources.Castor
@@ -31,6 +32,7 @@ castorRules = do
       failureSets <- generateFailureSets 2 2 1 -- TODO real values
       createPoolVersions filesystem failureSets
 #endif
+      liftProcess $ say "Loaded initial data"
   where
     goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
       registerRack rack
@@ -39,7 +41,7 @@ castorRules = do
         enclosure = Enclosure enc_id
       in do
         registerEnclosure rack enclosure
-        registerBMC enclosure enc_bmc
+        mapM_ (registerBMC enclosure) enc_bmc
         mapM_ (goHost enclosure) enc_hosts
     goHost enc (CI.Host{..}) = let
         host = Host h_fqdn
@@ -51,4 +53,3 @@ castorRules = do
         locateHostInEnclosure host enc
         mapM_ (setHostAttr host) attrs
         mapM_ (registerInterface host) h_interfaces
-

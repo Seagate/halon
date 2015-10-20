@@ -1,9 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
-module HA.Castor.Tests
-  ( tests
-  ) where
+module HA.Castor.Tests (tests, initialData, initialDataAddr) where
 
 import Control.Distributed.Process
   ( Process
@@ -106,6 +104,9 @@ tests transport = map (localOption (mkTimeout $ 60*1000000))
   , testSuccess "initial-data-doesn't-error" $ loadInitialData transport
   ]
 
+fsSize :: FailureSet -> Int
+fsSize (FailureSet a _) = Set.size a
+
 testFailureSets :: Transport -> IO ()
 testFailureSets transport = rGroupTest transport $ \pid -> do
     ls <- emptyLoopState pid
@@ -119,16 +120,15 @@ testFailureSets transport = rGroupTest transport $ \pid -> do
     say $ show failureSets
     assertMsg "Number of failure sets (100)" $ Set.size failureSets == 9
     assertMsg "Smallest failure set is empty (100)"
-      $ Set.elemAt 0 failureSets == Set.empty
+      $ fsSize (Set.elemAt 0 failureSets) == 0
 
     -- 8 disks, two failures at a time
     failureSets2 <- runGet ls' $ generateFailureSets 2 0 0
     assertMsg "Number of failure sets (200)" $ Set.size failureSets2 == 37
     assertMsg "Smallest failure set is empty (200)"
-      $ Set.elemAt 0 failureSets2 == Set.empty
+      $ fsSize (Set.elemAt 0 failureSets2) == 0
     assertMsg "Next smallest failure set has one disk (200)"
-      $ Set.size (Set.elemAt 1 failureSets2) == 1
-
+      $ fsSize (Set.elemAt 1 failureSets2) == 1
 
 loadInitialData :: Transport -> IO ()
 loadInitialData transport = rGroupTest transport $ \pid -> do
@@ -149,7 +149,12 @@ loadInitialData transport = rGroupTest transport $ \pid -> do
     assertMsg "Host attributes"
       $ sort hostAttrs == sort [HA_MEMSIZE_MB 4096, HA_CPU_COUNT 8]
     (Just fs) <- runGet ls' getFilesystem
-
+    let pool = M0.Pool (M0.f_mdpool_fid fs)
+    assertMsg "MDPool is stored in RG"
+      $ memberResource pool (lsGraph ls')
+    mdpool <- runGet ls' $ lookupConfObjByFid (M0.f_mdpool_fid fs)
+    assertMsg "MDPool is findable by Fid"
+      $ mdpool == Just pool
     -- We have 8 disks in only a single enclosure. Thus, each disk should
     -- be in 29 pool versions (1 with 0 failures, 7 with 1 failure, 21 with
     -- 2 failures)
@@ -199,7 +204,7 @@ goEnc rack (CI.Enclosure{..}) = let
     enclosure = Enclosure enc_id
   in do
     registerEnclosure rack enclosure
-    registerBMC enclosure enc_bmc
+    mapM_ (registerBMC enclosure) enc_bmc
     mapM_ (goHost enclosure) enc_hosts
 goHost :: forall l. Enclosure
        -> CI.Host
@@ -215,9 +220,8 @@ goHost enc (CI.Host{..}) = let
     mapM_ (setHostAttr host) attrs
     mapM_ (registerInterface host) h_interfaces
 
--- | Sample initial data for test purposes
-initialData :: CI.InitialData
-initialData = CI.InitialData {
+initialDataAddr :: String -> String -> CI.InitialData
+initialDataAddr host ifaddr = CI.InitialData {
   CI.id_racks = [
     CI.Rack {
       CI.rack_idx = 1
@@ -225,7 +229,7 @@ initialData = CI.InitialData {
         CI.Enclosure {
           CI.enc_idx = 1
         , CI.enc_id = "enclosure1"
-        , CI.enc_bmc = CI.BMC "192.0.2.1" "admin" "admin"
+        , CI.enc_bmc = [CI.BMC host "admin" "admin"]
         , CI.enc_hosts = [
             CI.Host {
               CI.h_fqdn = "primus.example.com"
@@ -235,7 +239,7 @@ initialData = CI.InitialData {
                 CI.Interface {
                   CI.if_macAddress = "10-00-00-00-00"
                 , CI.if_network = CI.Data
-                , CI.if_ipAddrs = ["192.0.2.2"]
+                , CI.if_ipAddrs = [ifaddr]
                 }
               ]
             }
@@ -249,7 +253,7 @@ initialData = CI.InitialData {
   , CI.m0_t1fs_mount = "/mnt/mero"
   , CI.m0_data_units = 8
   , CI.m0_parity_units = 2
-  , CI.m0_pool_width = 8
+  , CI.m0_pool_width = 16
   , CI.m0_max_rpc_msg_size = 65536
   , CI.m0_uuid = "096051ac-b79b-4045-a70b-1141ca4e4de1"
   , CI.m0_min_rpc_recvq_len = 16
@@ -264,26 +268,26 @@ initialData = CI.InitialData {
     , CI.m0h_mem_rss = 1
     , CI.m0h_mem_stack = 1
     , CI.m0h_mem_memlock = 1
-    , CI.m0h_cores = [1,1,1,1,1,1,1,1]
+    , CI.m0h_cores = [1]
     , CI.m0h_services = [
         CI.M0Service {
           CI.m0s_type = CST_MGS
-        , CI.m0s_endpoints = ["lnet:192.0.2.1@tcp:12345:41:101"]
+        , CI.m0s_endpoints = [host ++ "@tcp:12345:44:101"]
         , CI.m0s_params = SPConfDBPath "/var/mero/confd"
         }
       , CI.M0Service {
           CI.m0s_type = CST_RMS
-        , CI.m0s_endpoints = ["lnet:192.0.2.1@tcp:12345:41:301"]
+        , CI.m0s_endpoints = [host ++ "@tcp:12345:41:301"]
         , CI.m0s_params = SPUnused
         }
       , CI.M0Service {
           CI.m0s_type = CST_MDS
-        , CI.m0s_endpoints = ["lnet:192.0.2.1@tcp:12345:41:201"]
+        , CI.m0s_endpoints = [host ++ "@tcp:12345:41:201"]
         , CI.m0s_params = SPUnused
         }
       , CI.M0Service {
           CI.m0s_type = CST_IOS
-        , CI.m0s_endpoints = ["lnet:192.0.2.1@tcp:12345:41:401"]
+        , CI.m0s_endpoints = [host ++ "@tcp:12345:41:401"]
         , CI.m0s_params = SPUnused
         }
       ]
@@ -293,3 +297,8 @@ initialData = CI.InitialData {
     }
   ]
 }
+
+
+-- | Sample initial data for test purposes
+initialData :: CI.InitialData
+initialData = initialDataAddr "192.0.2.1" "192.0.2.2"

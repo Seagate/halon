@@ -12,6 +12,7 @@ module Control.Distributed.Process.Scheduler
        , withScheduler
        , addFailures
        , removeFailures
+       , AbsentScheduler(..)
        , uninterruptiblyMaskKnownExceptions_
        , __remoteTable
        ) where
@@ -19,6 +20,7 @@ module Control.Distributed.Process.Scheduler
 import "distributed-process" Control.Distributed.Process.Node
 import Control.Distributed.Process.Scheduler.Internal
   ( schedulerIsEnabled
+  , AbsentScheduler(..)
   , addFailures
   , removeFailures
   , uninterruptiblyMaskKnownExceptions_
@@ -43,7 +45,7 @@ startScheduler = if schedulerIsEnabled
                  else error "Scheduler not enabled."
 
 {-# NOINLINE stopScheduler #-}
-stopScheduler  :: [LocalNode] -> IO ()
+stopScheduler  :: IO ()
 stopScheduler = if schedulerIsEnabled
                 then Internal.stopScheduler
                 else error "Scheduler not enabled."

@@ -1,6 +1,7 @@
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# OPTIONS_GHC -fno-warn-orphans       #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -28,8 +29,11 @@ import Data.Hashable (Hashable)
 import Data.Proxy (Proxy)
 import Data.Typeable (Typeable)
 import Data.Word ( Word32, Word64 )
-
 import GHC.Generics (Generic)
+
+--------------------------------------------------------------------------------
+-- Resources                                                                  --
+--------------------------------------------------------------------------------
 
 -- | Fid generation sequence number
 newtype FidSeq = FidSeq Word64
@@ -62,6 +66,7 @@ class ConfObj a where
   {-# MINIMAL fidType, fid #-}
 
 data AnyConfObj = forall a. ConfObj a => AnyConfObj a
+
 --------------------------------------------------------------------------------
 -- Conf tree in the resource graph
 --------------------------------------------------------------------------------
@@ -203,12 +208,17 @@ instance ConfObj Disk where
   fidType _ = fromIntegral . ord $ 'k'
   fid (Disk f) = f
 
-newtype PVer = PVer Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+data PVer = PVer {
+    v_fid :: Fid
+  , v_failures :: [Word32]
+} deriving (Eq, Generic, Show, Typeable)
+
+instance Binary PVer
+instance Hashable PVer
 
 instance ConfObj PVer where
   fidType _ = fromIntegral . ord $ 'v'
-  fid (PVer f) = f
+  fid = v_fid
 
 newtype RackV = RackV Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)

@@ -77,6 +77,8 @@ import Control.Distributed.Static
 
 import Control.Arrow (second)
 import Control.Concurrent hiding (newChan)
+import Control.Concurrent.STM (atomically)
+import Control.Concurrent.STM.TChan
 import Control.Exception (SomeException)
 import Control.Monad
 import Data.Binary (Binary, encode, decode)
@@ -100,6 +102,7 @@ import GHC.Generics (Generic)
 import Prelude hiding (init, log)
 import System.Clock
 import System.FilePath ((</>))
+import System.Directory (doesDirectoryExist)
 
 
 deriving instance Typeable Eq
@@ -150,9 +153,19 @@ newtype LogId = LogId String
 toLogId :: String -> LogId
 toLogId = LogId
 
+-- TODO: Make requirements on snapshot availability explicit.
+--
+-- The log has two persisted components: a snapshot and a write-ahead log (WAL).
+-- Only the WAL is locally available. Thus for this implementation to deliver
+-- its guarantees, some requirements on how the user makes the snapshots
+-- available needs to be formulated.
+--
+-- Some related discussion is here:
+-- https://github.com/tweag/halon/pull/185
+
 data Log a = forall s ref. Serializable ref => Log
     { -- | Yields the initial value of the log.
-      logInitialize :: Process s
+      logInitialize :: !(Process s)
 
       -- | Yields the list of references of available snapshots.
       -- Each reference is accompanied with the 'DecreeId' of the next log entry
@@ -160,7 +173,7 @@ data Log a = forall s ref. Serializable ref => Log
       --
       -- On each node this function could return different results.
       --
-    , logGetAvailableSnapshots :: Process [(DecreeId, ref)]
+    , logGetAvailableSnapshots :: !(Process [(DecreeId, ref)])
 
       -- | Yields the snapshot identified by ref.
       --
@@ -169,7 +182,7 @@ data Log a = forall s ref. Serializable ref => Log
       -- After a succesful call, the snapshot returned or a newer snapshot must
       -- appear listed by @logGetAvailableSnapshots@.
       --
-    , logRestore :: ref -> Process s
+    , logRestore :: !(ref -> Process s)
 
       -- | Writes a snapshot together with the 'DecreeId' of the next log index.
       --
@@ -179,10 +192,10 @@ data Log a = forall s ref. Serializable ref => Log
       -- After a succesful call, the dumped snapshot or a newer snapshot must
       -- appear listed in @logGetAvailableSnapshots@.
       --
-    , logDump :: DecreeId -> s -> Process ref
+    , logDump :: !(DecreeId -> s -> Process ref)
 
       -- | State transition callback.
-    , logNextState      :: s -> a -> Process s
+    , logNextState      :: !(s -> a -> Process s)
     } deriving (Typeable)
 
 data Config = Config
@@ -363,18 +376,18 @@ withPersistentStore fp =
 -- | The internal state of a replica.
 data ReplicaState s ref a = Serializable ref => ReplicaState
   { -- | The pid of the proposer process.
-    stateProposerPid       :: ProcessId
+    stateProposerPid       :: !ProcessId
     -- | The pid of the timer process.
-  , stateTimerPid          :: ProcessId
+  , stateTimerPid          :: !ProcessId
     -- | Handle to persist the log.
-  , statePersistenceHandle :: PersistenceHandle a
+  , statePersistenceHandle :: !(PersistenceHandle a)
     -- | The time at which the last lease started.
-  , stateLeaseStart        :: TimeSpec
+  , stateLeaseStart        :: !TimeSpec
     -- | The list of node ids of the replicas.
   , stateReplicas          :: [NodeId]
     -- | This is the decree identifier of the next proposal to confirm. All
     -- previous decrees are known to have passed consensus.
-  , stateUnconfirmedDecree :: DecreeId
+  , stateUnconfirmedDecree :: !DecreeId
     -- | This is the decree identifier of the next proposal to do.
     --
     -- For now, it must never be an unreachable decree (i.e. a decree beyond the
@@ -384,35 +397,35 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
     --
     -- Invariant: @stateUnconfirmedDecree <= stateCurrentDecree@
     --
-  , stateCurrentDecree     :: DecreeId
+  , stateCurrentDecree     :: !DecreeId
     -- | The reference to the last snapshot saved.
-  , stateSnapshotRef       :: Maybe ref
+  , stateSnapshotRef       :: !(Maybe ref)
     -- | The watermark of the lastest snapshot
     --
     -- See note [Trimming the log].
-  , stateSnapshotWatermark :: DecreeId
+  , stateSnapshotWatermark :: !DecreeId
     -- | The identifier of the next decree to execute.
-  , stateWatermark         :: DecreeId
+  , stateWatermark         :: !DecreeId
     -- | The state yielded by the last executed decree.
   , stateLogState          :: s
     -- | The LegislatureId where the leader became the leader
     -- See Note [Epochs].
-  , stateEpoch             :: LegislatureId
+  , stateEpoch             :: !LegislatureId
     -- | The decree of the last known reconfiguration.
-  , stateReconfDecree      :: DecreeId
+  , stateReconfDecree      :: !DecreeId
     -- | Batcher of client requests
-  , stateBatcher           :: ProcessId
+  , stateBatcher           :: !ProcessId
     -- | A port used to send timeout notifications
-  , stateTimerSP           :: SendPort TimerMessage
+  , stateTimerSP           :: !(SendPort TimerMessage)
     -- | A port used to receive timeout notifications
-  , stateTimerRP           :: ReceivePort TimerMessage
+  , stateTimerRP           :: !(ReceivePort TimerMessage)
     -- | A pool of processes to send messages asynchronously
-  , stateSendPool          :: ProcessPool NodeId
+  , stateSendPool          :: !(ProcessPool NodeId)
 
   -- from Log {..}
-  , stateLogRestore        :: ref -> Process s
-  , stateLogDump           :: DecreeId -> s -> Process ref
-  , stateLogNextState      :: s -> a -> Process s
+  , stateLogRestore        :: !(ref -> Process s)
+  , stateLogDump           :: !(DecreeId -> s -> Process ref)
+  , stateLogNextState      :: !(s -> a -> Process s)
 
   } deriving (Typeable)
 
@@ -810,7 +823,7 @@ replica Dict
                         -- Take the max of the watermark legislature and the
                         -- incoming legislature to deal with teleportation of
                         -- decrees. See Note [Teleportation].
-                        di < max w w{decreeLegislatureId = decreeLegislatureId di}) $
+                        di < max w w{decreeLegislatureId = decreeLegislatureId di}) $ {-# SCC "go/Decree/Value" #-}
                        \(Decree _ di _) -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
@@ -825,7 +838,7 @@ replica Dict
 
               -- Commit the decree to the log.
             , matchIf (\(Decree locale di _) ->
-                        locale /= Stored && w <= di && decreeNumber di == decreeNumber w) $
+                        locale /= Stored && w <= di && decreeNumber di == decreeNumber w) $ {-# SCC "go/Decree/Commit" #-}
                        \(Decree locale di v) -> do
                   logTrace $ "Storing decree: " ++ show (w, di)
                   liftIO $ insertInLog ph (decreeNumber di) (v :: Value a)
@@ -838,7 +851,7 @@ replica Dict
 
               -- Execute the decree
             , matchIf (\(Decree locale di _) ->
-                        locale == Stored && w <= di && decreeNumber di == decreeNumber w) $
+                        locale == Stored && w <= di && decreeNumber di == decreeNumber w) $ {-# SCC "go/Decree/Execute" #-}
                        \(Decree _ di v) -> do
                 let maybeTakeSnapshot w' s' = do
                       takeSnapshot <- snapshotPolicy
@@ -855,7 +868,7 @@ replica Dict
                       else
                         return (w0, msref)
                 case v of
-                  Values xs -> do
+                  Values xs -> {-# SCC "Execute/Values" #-} do
                       logTrace $ "Executing decree: " ++ show (w, di, d, cd)
                       s' <- foldM stLogNextState s xs
                       let d'  = max d w'
@@ -872,7 +885,7 @@ replica Dict
                   Reconf requestStart leg' ρs'
                     -- Only execute a reconfiguration if we are on an earlier
                     -- configuration.
-                    | decreeLegislatureId d < leg' -> do
+                    | decreeLegislatureId d < leg' -> {-# SCC "Execute/Reconf" #-} do
                       logTrace $ "Reconfiguring: " ++
                                  show (w, di, d, leg', cd, ρs')
                       let d' = w' { decreeNumber = max (decreeNumber d) (decreeNumber w') }
@@ -904,7 +917,7 @@ replica Dict
                            , stateSnapshotWatermark = w0'
                            , stateWatermark = w'
                            }
-                    | otherwise -> do
+                    | otherwise -> {-# SCC "Execute/otherwise" #-} do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
                       say $ "Not executing " ++ show di
                       (w0', msref') <- maybeTakeSnapshot w' s
@@ -925,7 +938,7 @@ replica Dict
               -- too often. Queries will happen when the replica receives a
               -- 'Max' message.
             , matchIf (\(Decree locale di _) ->
-                        locale == Remote && w < di && not (Map.member (decreeNumber di) log)) $
+                        locale == Remote && w < di && not (Map.member (decreeNumber di) log)) $ {-# SCC "go/other" #-}
                        \(Decree locale di v) -> do
                   logTrace $ "Storing decree above watermark: " ++ show (w, di)
                   liftIO $ insertInLog ph (decreeNumber di) v
@@ -950,7 +963,7 @@ replica Dict
             , matchIf (\r -> cd == w     -- The log is up-to-date and fully
                                          -- executed.
                         && isJust (requestForLease r) -- This is a lease request.
-                      ) $
+                      ) $ {-# SCC "go/lease" #-}
                        \(request :: Request a) -> do
                   logTrace $ "Lease request: " ++ show (w, d, cd)
                   cd' <- case requestForLease request of
@@ -964,7 +977,7 @@ replica Dict
                   go st{ stateCurrentDecree = cd' }
 
               -- Client requests.
-            , match $ \request@(μ, e, _ :: Request a) -> do
+            , match $ {-# SCC "go/Request" #-} \request@(μ, e, _ :: Request a) -> do
                   mLeader <- liftIO getLeader
                   if epoch <= e && mLeader == Just here then do
                     logTrace "replica: sending request to batcher"
@@ -979,7 +992,7 @@ replica Dict
               -- Message from the batcher
               --
               -- XXX The guard avoids proposing values for unreachable decrees.
-            , matchIf (\_ -> cd == w) $ \(rs :: [BatcherMsg a]) -> do
+            , matchIf (\_ -> cd == w) $ {-# SCC "go/batcher" #-} \(rs :: [BatcherMsg a]) -> do
                   mLeader <- liftIO getLeader
                   (s', cd') <- case mLeader of
                      -- Drop the request and ask for the lease.
@@ -1064,7 +1077,7 @@ replica Dict
               --
               -- The request is dropped if the decree was accepted with a
               -- different value already.
-            , match $
+            , match $ {-# SCC "go/Proposer" #-}
                   \(di, vi, Request κs (v :: Value a) _ rLease) -> do
                   -- If the passed decree accepted other value than our
                   -- client's, don't treat it as local (ie. do not report back
@@ -1085,7 +1098,7 @@ replica Dict
                   go st{ stateUnconfirmedDecree = d' }
 
               -- Try to service a query if the requested decree is not too old.
-            , matchIf (\(Query _ n) -> fst (Map.findMin log) <= n) $
+            , matchIf (\(Query _ n) -> fst (Map.findMin log) <= n) $ {-# SCC "go/Query" #-}
                        \(Query ρ n) -> do
                   case Map.lookup n log of
                             -- See Note [Teleportation].
@@ -1094,7 +1107,7 @@ replica Dict
                   go st
 
               -- The decree of the query is old-enough.
-            , match $ \(Query ρ n) -> do
+            , match $  {-# SCC "go/Query2" #-} \(Query ρ n) -> do
                   case msref of
                     Just sref -> usend ρ $
                       SnapshotInfo ρs legD epoch sref w0 n
@@ -1106,7 +1119,7 @@ replica Dict
               --
               -- It does not quite eliminate the chance of multiple snapshots
               -- being read in cascade, but it makes it less likely.
-            , match $ \(SnapshotInfo ρs' legD' epoch' sref' w0' n) ->
+            , match $ {-# SCC "go/SnapshotInfo" #-} \(SnapshotInfo ρs' legD' epoch' sref' w0' n) ->
                   if not (Map.member n log) && decreeNumber w <= n &&
                      decreeNumber w < decreeNumber w0' then do
 
@@ -1154,7 +1167,7 @@ replica Dict
 
               -- Upon getting the max decree of another replica, compute the
               -- gaps and query for those.
-            , matchIf (\(Max _ d' _ _ _) -> decreeNumber d < decreeNumber d') $
+            , matchIf (\(Max _ d' _ _ _) -> decreeNumber d < decreeNumber d') $ {-# SCC "go/Max" #-}
                        \(Max ρ d' legD' epoch' ρs') -> do
                   say $ "Got Max " ++ show d'
                   updateAcceptors ρs'
@@ -1196,7 +1209,7 @@ replica Dict
               -- Replicas are going to join or leave the group.
               -- The leader needs to be up-to-date so the membership given to
               -- cpolicy is the last one.
-            , matchIf (\(_, e, _) -> epoch <= e && cd == w) $
+            , matchIf (\(_, e, _) -> epoch <= e && cd == w) $ {-# SCC "go/Leave" #-}
                        \(μ, _, Helo π cpolicy) -> do
 
                   policy <- unClosure cpolicy
@@ -1239,7 +1252,7 @@ replica Dict
                   go st
 
               -- The group is trying to recover.
-            , matchIf (\(_, e, _) -> epoch <= e) $
+            , matchIf (\(_, e, _) -> epoch <= e) $ {-# SCC "go/Recover" #-}
                        \(μ, _, Recover π ρs') -> do
                   -- Place the proposer at the head of the list
                   -- of replicas to be considered as future leader.
@@ -1363,7 +1376,7 @@ replica Dict
                   when (elem here ρs) $ usend μ (epoch, ρs)
                   go st
 
-            , match $ \(ConfigQuery sender) -> do
+            , match $ {-# SCC "go/ConfigQuery" #-} \(ConfigQuery sender) -> do
                   liftIO (readGroupConfig $ persistentStore ph) >>= usend sender
                   go st
 
@@ -1377,7 +1390,7 @@ replica Dict
 
             -- Clock tick - time to advertize. Can be sent by anyone to any
             -- replica to provoke status info.
-            , match $ \Status -> do
+            , match $ {-# SCC "go/Status" #-} \Status -> do
                   -- Forget about all previous ticks to avoid broadcast storm.
                   fix $ \loop ->
                     expectTimeout 0 >>= maybe (return ()) (\() -> loop)
@@ -1441,7 +1454,7 @@ withLogIdLock (LogId idstr) action = callLocal go
       join $ catch (do register lockLabel self
                        return action
                    ) $
-        \(ProcessRegistrationException _) -> do
+        \(ProcessRegistrationException _ _) -> do
           mpid <- whereis lockLabel
           case mpid of
             Nothing -> return go
@@ -1518,10 +1531,13 @@ spawnLocalReplica :: (LogId, ProcessId, TimeSpec)
 spawnLocalReplica (k, caller, ts0) pDirectory = do
     r <- try $ withLogIdLock k $ ifNoLocalReplica k $ do
            path <- localLogPath k pDirectory
-           withPersistentStore path $ \ps -> do
-             (ssdict2, bs, m) <- liftIO $ readGroupConfig ps
-             Some (SerializableDict :: SerializableDict a) <- unStatic ssdict2
-             spawnR (decode bs :: GroupConfig a) m
+           exist <- liftIO $ doesDirectoryExist path
+           if exist
+              then withPersistentStore path $ \ps -> do
+                (ssdict2, bs, m) <- liftIO $ readGroupConfig ps
+                Some (SerializableDict :: SerializableDict a) <- unStatic ssdict2
+                spawnR (decode bs :: GroupConfig a) m
+              else error $ "no persisted storage found (" ++ show path ++ ")"
     either (usend caller . ("spawnLocalReplica: " ++) . show)
            (usend caller)
            (r :: Either SomeException ())
@@ -1558,7 +1574,7 @@ localSpawnAndRegister lbl p = do
              () <- expect
              p
     r <- try $ register lbl pid
-    either (\(ProcessRegistrationException _) ->
+    either (\(ProcessRegistrationException _ _) ->
                   exit pid "localSpawnAndRegister"
            )
            (usend pid)
@@ -1591,6 +1607,11 @@ sdictNodeId = $(mkStatic 'dictNodeId)
 nodeIdClosure :: NodeId -> Closure NodeId
 nodeIdClosure x = closure (staticDecode sdictNodeId) (encode x)
 
+-- | Messages that must be delivered in order to the ambassador
+data OrderedMessage a = OMRequest (Request a)
+                      | OMHelo Helo
+                      | OMRecover Recover
+
 -- | Hide the 'ProcessId' of the ambassador to a log behind an opaque datatype
 -- making it clear that the ambassador acts as a "handle" to the log - it does
 -- not uniquely identify the log, since there can in general be multiple
@@ -1600,23 +1621,25 @@ data Handle a =
            (Static (SerializableDict a))
            (Closure Config)
            (Closure (Log a))
+           (TChan (OrderedMessage a))
            ProcessId
     deriving (Typeable, Generic)
 
 instance Eq (Handle a) where
-    Handle _ _ _ _ μ == Handle _ _ _ _ μ' = μ == μ'
+    Handle _ _ _ _ _ μ == Handle _ _ _ _ _ μ' = μ == μ'
 
 -- | The ambassador to a cgroup is a local process that stands as a proxy to
 -- the cgroup. Its sole purpose is to provide a 'ProcessId' to stand for the
 -- cgroup and to forward all messages to the cgroup.
 ambassador :: forall a. SerializableDict a
            -> Config
+           -> TChan (OrderedMessage a)
            -> [NodeId]
            -> Process ()
-ambassador _ _ [] = do
+ambassador _ _ _ [] = do
     say "ambassador: Set of replicas must be non-empty."
     die "ambassador: Set of replicas must be non-empty."
-ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
+ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
     (monitorReplica ρ0 >>= go 0 (Just ρ0) others)
       `finally` logTrace "ambassador: terminated"
   where
@@ -1625,7 +1648,11 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
        -> [NodeId]      -- ^ The other replicas
        -> MonitorRef       -- ^ The monitor ref of a replica we are contacting
        -> Process b
-    go epoch mLeader ρs ref = receiveWait
+    go epoch mLeader ρs ref = receiveWait $
+      (if schedulerIsEnabled
+       then [match $ \() -> go epoch mLeader ρs ref]
+       else []
+      ) ++
       [ match $ \(Clone δ) -> do
           usend δ $ maybe id (:) mLeader ρs
           go epoch mLeader ρs ref
@@ -1689,33 +1716,31 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
                                         (cq :: ConfigQuery)
           go epoch mLeader ρs ref
 
-        -- A recovery request
-      , match $ \m@(Recover κ ρs') -> do
-          usend κ ()
-          self <- getSelfPid
-          -- A recovery request does not need to go necessarily to the leader.
-          -- The replicas might have lost quorum and could be unable to elect a
-          -- new leader.
-          let ρ  : _ = ρs'
-          sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
-          go epoch mLeader ρs ref
+      , matchSTM (readTChan omchan) $ \case
+          -- A request
+          OMRequest a -> do
+            self <- getSelfPid
+            logTrace $ "ambassador: sending request to " ++ show mLeader
+            Foldable.forM_ mLeader $ flip (sendReplica logId)
+                                          (self, epoch, a :: Request a)
+            go epoch mLeader ρs ref
 
-        -- A reconfiguration request
-      , match $ \m@(Helo κ _) -> do
-          usend κ ()
-          self <- getSelfPid
-          Foldable.forM_ mLeader $ flip (sendReplica logId)
-                                        (self, epoch, m)
-          go epoch mLeader ρs ref
+          -- A reconfiguration request
+          OMHelo m -> do
+            self <- getSelfPid
+            Foldable.forM_ mLeader $ flip (sendReplica logId)
+                                          (self, epoch, m)
+            go epoch mLeader ρs ref
 
-        -- A request
-      , match $ \a -> do
-          forM_ (requestSender a) $ flip usend ()
-          self <- getSelfPid
-          logTrace $ "ambassador: sending request to " ++ show mLeader
-          Foldable.forM_ mLeader $ flip (sendReplica logId)
-                                        (self, epoch, a :: Request a)
-          go epoch mLeader ρs ref
+          -- A recovery request
+          OMRecover m@(Recover _ ρs') -> do
+            self <- getSelfPid
+            -- A recovery request does not need to go necessarily to the leader.
+            -- The replicas might have lost quorum and could be unable to elect
+            -- a new leader.
+            let ρ  : _ = ρs'
+            sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
+            go epoch mLeader ρs ref
       ]
 
     monitorReplica ρ = do
@@ -1729,43 +1754,34 @@ ambassador SerializableDict Config{logId, leaseTimeout} (ρ0 : others) =
 
 -- | Append an entry to the replicated log.
 append :: Serializable a => Handle a -> Hint -> a -> Process ()
-append (Handle _ _ _ _ μ) hint x = callLocal $ do
+append (Handle _ _ _ _ omchan μ) hint x = callLocal $ do
     self <- getSelfPid
-    -- If we are interrupted, because the request is abandoned, we want to
-    -- yield control back only after the ambassador acknowledges reception of
-    -- the request. Thus we preserve the arrival order of requests. We cannot
-    -- use uninterruptibleMask_ because of DP-105.
-    withMonitor μ $ mask_ $ do
-      usend μ $ Request
+    liftIO $ atomically $ writeTChan omchan $ OMRequest $ Request
         { requestSender   = [self]
         , requestValue    = Values [x]
         , requestHint     = hint
         , requestForLease = Nothing
         }
-      let loopingWait = receiveWait
-            [ match return
-            , match $ \(ProcessMonitorNotification _ _ _) -> return ()
-            ] `onException` loopingWait
-      loopingWait
+    when schedulerIsEnabled $ usend μ ()
     expect
 
 -- | Make replicas advertize their status info.
 status :: Serializable a => Handle a -> Process ()
-status (Handle _ _ _ _ μ) = usend μ Status
+status (Handle _ _ _ _ _ μ) = usend μ Status
 
 -- | Updates the handle so it communicates with the given replica.
 updateHandle :: Handle a -> NodeId -> Process ()
-updateHandle (Handle _ _ _ _ α) = usend α
+updateHandle (Handle _ _ _ _ _ α) = usend α
 
 remoteHandle :: Handle a -> Process (RemoteHandle a)
-remoteHandle (Handle sdict1 sdict2 config log α) = do
+remoteHandle (Handle sdict1 sdict2 config log _ α) = do
     self <- getSelfPid
     usend α $ Clone self
     RemoteHandle sdict1 sdict2 config log <$> expect
 
 -- | Yields the latest known membership.
 getMembership :: Handle a -> Process [NodeId]
-getMembership  (Handle _ _ _ _ α) = callLocal $ do
+getMembership  (Handle _ _ _ _ _ α) = callLocal $ do
     self <- getSelfPid
     usend α $ MembershipQuery self
     snd <$> (expect :: Process (DecreeId, [NodeId]))
@@ -1801,7 +1817,11 @@ new sdict1 sdict2 config log nodes = callLocal $ do
           ) :: StoredGroupConfig
         )
     forM_ nodes $ const $
-      receiveWait [ match error, match (\() -> return ()) ]
+      receiveWait [ match logError, match (\() -> return ()) ]
+  where
+    logError s = do
+      say $ "Control.Distributed.Log.new: " ++ s
+      error s
 
 -- | Spawns one replica process on each node in @nodes@ if it has not been
 -- spawned already.
@@ -1827,7 +1847,7 @@ spawnReplicas k cPersisDirectory nodes = callLocal $ do
         `closureApply` cPersisDirectory
 
     forM_ nodes $ const $
-      receiveWait [ match error, match (\() -> return ()) ]
+      receiveWait [ match logError, match (\() -> return ()) ]
 
     case nodes of
       nid : _ -> do
@@ -1836,7 +1856,11 @@ spawnReplicas k cPersisDirectory nodes = callLocal $ do
         let GroupConfig sdict1 sdict2 cConfig cLog =
               decode bs :: GroupConfig a
         clone $ RemoteHandle sdict1 sdict2 cConfig cLog nodes
-      [] -> error "spawnReplicas: empty list of nodes"
+      [] -> logError "empty list of nodes"
+  where
+    logError s = do
+      say $ "Control.Distributed.Log.spawnReplicas: " ++ s
+      error s
 
 -- | Propose a reconfiguration according the given nomination policy. Note that
 -- in general, it is only safe to remove replicas if they are /certainly/ dead.
@@ -1847,21 +1871,10 @@ reconfigure :: Typeable a
             => Handle a
             -> Closure NominationPolicy
             -> Process ()
-reconfigure (Handle _ _ _ _ μ) cpolicy = callLocal $ do
+reconfigure (Handle _ _ _ _ omchan μ) cpolicy = callLocal $ do
     self <- getSelfPid
-    -- TODO: use a channel to communicate with the ambassador
-    --
-    -- If we are interrupted, because the request is abandoned, we want to
-    -- yield control back only after the ambassador acknowledges reception of
-    -- the request. Thus we preserve the arrival order of requests. We cannot
-    -- use uninterruptibleMask_ because of DP-105.
-    withMonitor μ $ mask_ $ do
-      usend μ $ Helo self cpolicy
-      let loopingWait = receiveWait
-            [ match return
-            , match $ \(ProcessMonitorNotification _ _ _) -> return ()
-            ] `onException` loopingWait
-      loopingWait
+    liftIO $ atomically $ writeTChan omchan $ OMHelo $ Helo self cpolicy
+    when schedulerIsEnabled $ usend μ ()
     expect
 
 -- ^ @recover h newMembership@
@@ -1874,21 +1887,10 @@ reconfigure (Handle _ _ _ _ μ) cpolicy = callLocal $ do
 -- replicas in the old membership).
 --
 recover :: Handle a -> [NodeId] -> Process ()
-recover (Handle _ _ _ _ μ) ρs = callLocal $ do
+recover (Handle _ _ _ _ omchan μ) ρs = callLocal $ do
     self <- getSelfPid
-    -- TODO: use a channel to communicate with the ambassador
-    --
-    -- If we are interrupted, because the request is abandoned, we want to
-    -- yield control back only after the ambassador acknowledges reception of
-    -- the request. Thus we preserve the arrival order of requests. We cannot
-    -- use uninterruptibleMask_ because of DP-105.
-    withMonitor μ $ mask_ $ do
-      usend μ $ Recover self ρs
-      let loopingWait = receiveWait
-            [ match return
-            , match $ \(ProcessMonitorNotification _ _ _) -> return ()
-            ] `onException` loopingWait
-      loopingWait
+    liftIO $ atomically $ writeTChan omchan $ OMRecover $ Recover self ρs
+    when schedulerIsEnabled $ usend μ ()
     expect
 
 -- | Start a new replica on the given node, adding it to the group pointed to by
@@ -1903,7 +1905,7 @@ addReplica :: Typeable a
            => Handle a
            -> NodeId
            -> Process ()
-addReplica h@(Handle _ _ cConfig _ α) nid = callLocal $ do
+addReplica h@(Handle _ _ cConfig _ _ α) nid = callLocal $ do
     -- Get the group configuration
     self <- getSelfPid
     usend α $ ConfigQuery self
@@ -1914,7 +1916,7 @@ addReplica h@(Handle _ _ cConfig _ α) nid = callLocal $ do
     -- Store the configuration in the remote node.
     _ <- spawnAsync nid $ $(mkClosure 'storeConf)
            (self, (ssdict, gcbs, mship) :: StoredGroupConfig)
-    receiveWait [ match error, match (\() -> return ()) ]
+    receiveWait [ match logError, match (\() -> return ()) ]
 
     -- Spawn the replica.
     --
@@ -1928,18 +1930,22 @@ addReplica h@(Handle _ _ cConfig _ α) nid = callLocal $ do
       $(mkClosure 'spawnLocalReplica) (logId config, self, now)
         `closureApply`
           ($(mkClosure 'persistDirectoryClosure) () `closureApply` cConfig)
-    receiveWait [ match error, match (\() -> return ()) ]
+    receiveWait [ match logError, match (\() -> return ()) ]
 
     -- Add the node to the group
     reconfigure h $ $(mkStaticClosure 'Policy.orpn)
         `closureApply` nodeIdClosure nid
+  where
+    logError s = do
+      say $ "Control.Distributed.Log.addReplica: " ++ s
+      error s
 
 -- | Kill the replica and acceptor.
 killReplica :: Typeable a
               => Handle a
               -> NodeId
               -> Process ()
-killReplica (Handle _ _ config _ _) nid = do
+killReplica (Handle _ _ config _ _ _) nid = do
     conf <- unClosure config
     whereisRemoteAsync nid (acceptorLabel $ logId conf)
     whereisRemoteAsync nid (replicaLabel $ logId conf)
@@ -1967,5 +1973,6 @@ clone :: Typeable a => RemoteHandle a -> Process (Handle a)
 clone (RemoteHandle sdict1 sdict2 cConfig log nodes) = do
     dict2 <- unStatic sdict2
     config <- unClosure cConfig
-    Handle sdict1 sdict2 cConfig log <$>
-      spawnLocal (ambassador dict2 config nodes)
+    omchan <- liftIO newTChanIO
+    Handle sdict1 sdict2 cConfig log omchan <$>
+      spawnLocal (ambassador dict2 config omchan nodes)

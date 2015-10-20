@@ -46,8 +46,7 @@ ut transport = return $
           HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
       , testGroup "Autoboot" $
           HA.Autoboot.Tests.tests transport
-        -- TODO: fails very often
-      , testCase "RCToleratesDisconnections [disabled]" $ const (return ()) $
+      , testCase "RCToleratesDisconnections" $
           HA.Test.Disconnect.testDisconnect
             transport (error "breakConnection not supplied in test")
       ]

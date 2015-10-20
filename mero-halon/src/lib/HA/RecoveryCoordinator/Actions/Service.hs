@@ -35,14 +35,13 @@ import HA.Service
 
 import Control.Category ((>>>))
 import Control.Distributed.Process
-  ( DidSpawn(..)
-  , NodeId
+  ( NodeId
   , Process
   , closure
   , exit
+  , expectTimeout
   , getSelfNode
-  , matchIf
-  , receiveTimeout
+  , getSelfPid
   , spawnAsync
   , spawnLocal
   )
@@ -219,20 +218,18 @@ _startService :: forall a. Configuration a
              -> G.Graph
              -> Process ()
 _startService node svc cfg _ = void $ spawnLocal $ do
-    spawnRef <- spawnAsync node $
-              $(mkClosure 'remoteStartService) (serviceName svc)
+    self <- getSelfPid
+    _ <- spawnAsync node $
+              $(mkClosure 'remoteStartService) (self, serviceName svc)
             `closureApply`
               (serviceProcess svc
                  `closureApply` closure (staticDecode sDict) (encode cfg))
-    mpid <- receiveTimeout 1000000
-              [ matchIf (\(DidSpawn r _) -> r == spawnRef)
-                        (\(DidSpawn _ pid) -> return pid)
-              ]
+    mpid <- expectTimeout 1000000
     mynid <- getSelfNode
     case mpid of
-      Nothing -> do
+      Nothing ->
         void . promulgateEQ [mynid] . encodeP $
           ServiceCouldNotStart (Node node) svc cfg
-      Just pid -> do
+      Just pid ->
         void . promulgateEQ [mynid] . encodeP $
           ServiceStarted (Node node) svc cfg (ServiceProcess pid)

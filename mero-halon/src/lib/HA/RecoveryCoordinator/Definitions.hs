@@ -6,6 +6,7 @@
 -- * Recovery coordinator definitions
 module HA.RecoveryCoordinator.Definitions
     ( HA.RecoveryCoordinator.Definitions.__remoteTable
+    , IgnitionArguments
     , ignitionArguments
     , ignitionArguments__sdict
     , ignitionArguments__static
@@ -34,13 +35,12 @@ recoveryCoordinator :: IgnitionArguments
 recoveryCoordinator argv eq mm =
     makeRecoveryCoordinator mm $ rcRules argv eq []
 
-recoveryCoordinatorEx :: IgnitionArguments
-                      -> (Static [Definitions LoopState ()])
+recoveryCoordinatorEx :: () -> [Definitions LoopState ()]
+                      -> IgnitionArguments
                       -> ProcessId
                       -> ProcessId
                       -> Process ()
-recoveryCoordinatorEx argv cdefs eq mm = do
-  rules <- unStatic cdefs
+recoveryCoordinatorEx _ rules argv eq mm = do
   makeRecoveryCoordinator mm $ rcRules argv eq rules
 
 remotable [ 'ignitionArguments, 'recoveryCoordinator, 'recoveryCoordinatorEx ]
