@@ -830,10 +830,16 @@ replica Dict
                         -- incoming legislature to deal with teleportation of
                         -- decrees. See Note [Teleportation].
                         di < max w w{decreeLegislatureId = decreeLegislatureId di}) $ {-# SCC "go/Decree/Value" #-}
-                       \(Decree _ di _) -> do
+                       \(Decree locale di _) -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
                   logTrace $ "Skipping decree: " ++ show (w, di)
+
+                  case locale of
+                      -- Ack back to the batcher. It may be waiting on the
+                      -- decree to be handled.
+                      Local _ pids -> forM_ pids $ flip usend ()
+                      _ -> return ()
 
                   -- Advertise our configuration to other replicas if we are
                   -- getting old decrees.
@@ -850,7 +856,8 @@ replica Dict
                   liftIO $ insertInLog ph (decreeNumber di) (v :: Value a)
                   case locale of
                       -- Ack back to the client.
-                      Local κs -> forM_ κs $ flip usend ()
+                      Local κs pids -> do forM_ κs $ flip usend ()
+                                          forM_ pids $ flip usend ()
                       _ -> return ()
                   usend self $ Decree Stored di v
                   go st
@@ -1089,9 +1096,8 @@ replica Dict
                   -- If the passed decree accepted other value than our
                   -- client's, don't treat it as local (ie. do not report back
                   -- to the client yet).
-                  let κs' | isNothing rLease = bpid : κs
-                          | otherwise        = κs
-                      locale = if v == vi then Local κs' else Remote
+                  let pids = maybe [bpid] (const []) rLease
+                      locale = if v == vi then Local κs pids else Remote
                   usend self $ Decree locale di vi
                   forM_ others $ \ρ -> do
                     sendReplicaAsync sendPool logId ρ $ Decree Remote di vi

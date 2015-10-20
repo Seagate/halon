@@ -49,7 +49,10 @@ instance Binary Recover
 
 -- | Ack to clients local decrees, don't ack remote decrees. Since each decree
 -- is local to at least one replica, the clients will get at least one ack.
-data Locale = Local [ProcessId] | Remote | Stored
+--
+-- 'Local' carries the list of client pids to ack and the pids of internal
+-- processes to ack as well.
+data Locale = Local [ProcessId] [ProcessId] | Remote | Stored
     deriving (Eq, Show, Typeable, Generic)
 
 -- | Signal other replicas that consensus has just been reached on a decree.
