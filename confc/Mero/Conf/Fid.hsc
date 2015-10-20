@@ -18,6 +18,7 @@ module Mero.Conf.Fid
 #include "confc_helpers.h"
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
 
+import Data.Aeson (FromJSON)
 import Control.Monad ( liftM2 )
 import Data.Binary (Binary)
 import Data.Data (Data)
@@ -40,6 +41,7 @@ instance Show Fid where
 
 instance Binary Fid
 instance Hashable Fid
+instance FromJSON Fid
 
 instance Storable Fid where
   sizeOf    _           = #{size struct m0_fid}

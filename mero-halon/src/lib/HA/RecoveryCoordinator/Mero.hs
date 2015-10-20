@@ -81,9 +81,6 @@ import Data.Dynamic
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as S
 import Data.Maybe (fromMaybe)
-#ifdef USE_RPC
-import Data.Maybe (isJust)
-#endif
 import Data.UUID (UUID)
 import Data.Word
 
@@ -165,6 +162,7 @@ rcInitRule argv eq = do
     directly boot $ do
       h   <- liftIO getHostName
       nid <- liftProcess getSelfNode
+      liftProcess . sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
       let node = Node nid
           host = Host h
       liftProcess . sayRC $ "Executing on node: " ++ show nid
