@@ -109,6 +109,10 @@ timeout t action
 paxosTrace :: String -> Process ()
 paxosTrace _ = return ()
 -- paxosTrace msg = say $ "[paxos] " ++ msg
+-- paxosTrace msg = do
+--     self <- getSelfPid
+--     liftIO $ hPutStrLn stderr $ show self ++ ": [paxos] " ++ msg
+
 
 scout :: Serializable a
       => (forall b. Serializable b => n -> b -> Process ())

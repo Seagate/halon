@@ -490,6 +490,9 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
 logTrace :: String -> Process ()
 logTrace _ = return ()
 -- logTrace msg = say $ "[replicated-log] " ++ msg
+-- logTrace msg = do
+--    self <- getSelfPid
+--    liftIO $ hPutStrLn stderr $ show self ++ ": [replicated-log] " ++ msg
 
 -- | One replica of the log. All incoming values to add to the log are submitted
 -- for consensus. A replica does not acknowledge values being appended to the
@@ -584,7 +587,9 @@ replica Dict
     (timerSP, timerRP) <- newChan
     timerPid <- spawnLocal $ link self >> timer
     leaseStart0' <- setLeaseTimer timerPid timerSP leaseStart0 replicas
-    bpid <- spawnLocal $ link self >> batcher (sendBatch self)
+    bpid <- spawnLocal $ do
+              logTrace "spawned batcher"
+              link self >> batcher (sendBatch self)
     ppid <- spawnLocal $ do
               logTrace "spawned proposer"
               link self >> proposer self bpid Bottom replicas
@@ -708,7 +713,7 @@ replica Dict
             -- write the code to handle that case.
             mv <- liftIO newEmptyMVar
             pid <- spawnLocal $ do
-                     logTrace "spawned proposal"
+                     logTrace $ "spawned proposal for " ++ show d
                      link self
                      result <- runPropose'
                                  (prl_propose (sendAcceptor logId) αs d v) s
@@ -730,6 +735,7 @@ replica Dict
                           -- reconfiguration of the proposer
                           (,) αs' <$> clearNotifications
                       ]
+            logTrace $ "proposer: proposal stopped " ++ show (d, blocked)
             if blocked then do
               exit pid "proposer reconfiguration"
               -- If the leader loses the lease, resending the request will cause
@@ -1039,6 +1045,7 @@ replica Dict
                              let updateLeg (Reconf t _ ρs') =
                                   Reconf t (succ $ decreeLegislatureId legD) ρs'
                                  updateLeg v = v
+                             logTrace "replica: Sending batch to proposer."
                              usend ppid
                                ( cd
                                , if isReconf $ requestValue r
@@ -1089,6 +1096,8 @@ replica Dict
                   forM_ others $ \ρ -> do
                     sendReplicaAsync sendPool logId ρ $ Decree Remote di vi
 
+                  logTrace $ "replica: proposal result " ++
+                             show (di, v == vi, isNothing rLease)
                   when (v /= vi && isNothing rLease) $
                     -- Send rejection ack.
                     usend bpid ()

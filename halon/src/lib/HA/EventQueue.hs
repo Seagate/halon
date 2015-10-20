@@ -81,6 +81,9 @@ eventQueueLabel = "HA.EventQueue"
 eqTrace :: String -> Process ()
 eqTrace _ = return ()
 -- eqTrace = say . ("[EQ] " ++)
+-- eqTrace msg = do
+--     self <- getSelfPid
+--     liftIO $ hPutStrLn stderr $ show self ++ ": [EQ] " ++ msg
 
 -- | State of the event queue.
 --
@@ -194,6 +197,7 @@ recordEvent rg sender ev = void $ liftProcess $ do
       eqTrace $ "EQ: Recording event " ++ show (persistEventId ev)
       retry requestTimeout $
         updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+      eqTrace $ "EQ: Recorded event " ++ show (persistEventId ev)
       usend self (RecordAck sender ev)
 
 trim :: RGroup g => g EventQueue -> UUID -> PhaseM s l ()
