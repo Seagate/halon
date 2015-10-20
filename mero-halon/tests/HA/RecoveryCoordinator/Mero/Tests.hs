@@ -23,6 +23,7 @@ module HA.RecoveryCoordinator.Mero.Tests
 #ifdef USE_MERO
   , testRCsyncToConfd
 #endif
+  , emptyRules__static
   ) where
 
 import Prelude hiding ((<$>), (<*>))
@@ -143,10 +144,10 @@ remotableDecl [ [d|
 runRC :: (ProcessId, IgnitionArguments)
       -> MC_RG TestReplicatedState
       -> Process ((ProcessId, ProcessId)) -- ^ MM, RC
-runRC (eq, args) rGroup = runRCEx (eq, args) $(mkStatic 'emptyRules) rGroup
+runRC (eq, args) rGroup = runRCEx (eq, args) emptyRules rGroup
 
 runRCEx :: (ProcessId, IgnitionArguments)
-        -> Static [Definitions LoopState ()]
+        -> [Definitions LoopState ()]
         -> MC_RG TestReplicatedState
         -> Process ((ProcessId, ProcessId)) -- ^ MM, RC
 runRCEx (eq, args) rules rGroup = do
@@ -157,7 +158,7 @@ runRCEx (eq, args) rules rGroup = do
                         multimap (viewRState $(mkStatic 'multimapView) rGroup))
                   <*> (spawnLocal $ do
                         () <- expect
-                        recoveryCoordinatorEx args rules eq mm)
+                        recoveryCoordinatorEx () rules args eq mm)
   usend eq rc
   forM_ [mm, rc] $ \them -> usend them ()
   return (mm, rc)
