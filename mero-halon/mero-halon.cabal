@@ -126,7 +126,8 @@ Library
                    random,
                    yaml,
                    hostname,
-                   multimap
+                   multimap,
+                   wl-pprint
 
   if flag(mero)
       Exposed-Modules: Mero.Epoch
