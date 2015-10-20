@@ -71,24 +71,19 @@ import Control.Distributed.Process.Closure ( remotableDecl, mkStatic )
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Internal.Types (nullProcessId)
-import qualified Control.Distributed.Process.Scheduler as Scheduler
 import Network.Transport (Transport(..))
-import Network.Transport.InMemory (createTransport)
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ( first, second )
-import qualified Control.Exception as E
 import Control.Monad (forM_, void, join)
 
 import Data.Defaultable
 import Data.List (isInfixOf)
 import Data.Proxy (Proxy(..))
 import Network.CEP (Published(..), Logs(..), subscribe)
-import System.IO
-import System.Random
-import System.Timeout
-import System.Environment
 import Test.Tasty.HUnit (assertBool)
+
+import TestRunner
 
 type TestReplicatedState = (EventQueue, Multimap)
 
@@ -567,41 +562,3 @@ testNodeUpRace transport = do
 testRemoteTable :: RemoteTable
 testRemoteTable = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
                   remoteTable
-
-
-withLocalNode :: Transport -> RemoteTable -> (LocalNode -> IO a) -> IO a
-withLocalNode t rt = E.bracket  (newLocalNode t rt) closeLocalNode
-
-withLocalNodes :: Int
-               -> Transport
-               -> RemoteTable
-               -> ([LocalNode] -> IO a)
-               -> IO a
-withLocalNodes 0 _t _rt f = f []
-withLocalNodes n t rt f = withLocalNode t rt $ \node ->
-    withLocalNodes (n - 1) t rt (f . (node :))
-
-runTest :: Int -> Int -> Int -> Transport -> RemoteTable
-        -> ([LocalNode] -> Process ()) -> IO ()
-runTest numNodes numReps _t tr rt action
-    | Scheduler.schedulerIsEnabled = do
-        (s,numReps') <- lookupEnv "DP_SCHEDULER_SEED" >>= \mx -> case mx of
-          Nothing -> (,numReps) <$> randomIO
-          Just s  -> return (read s,1)
-        -- TODO: Fix leaks in n-t-inmemory and use the same transport for all
-        -- tests, maybe.
-        forM_ [1..numReps'] $ \i ->  withTmpDirectory $
-          E.bracket createTransport closeTransport $
-          \tr' -> do
-            m <- timeout (7 * 60 * 1000000) $
-              Scheduler.withScheduler (s + i) 1000 numNodes tr' rt' action
-            maybe (error "Timeout") return m
-          `E.onException`
-            liftIO (hPutStrLn stderr $ "Failed with seed: " ++ show (s + i, i))
-    | otherwise =
-        withTmpDirectory $ withLocalNodes numNodes tr rt' $
-          \(n : ns) -> do
-            m <- timeout (7 * 60 * 1000000) $ runProcess n (action ns)
-            maybe (error "Timeout") return m
-  where
-    rt' = Scheduler.__remoteTable rt
