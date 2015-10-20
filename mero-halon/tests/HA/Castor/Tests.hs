@@ -98,10 +98,10 @@ rGroupTest transport p =
         (\e -> liftIO $ print (e :: SomeException))
       p mmpid
 
-tests :: Transport -> [TestTree]
-tests transport = map (localOption (mkTimeout $ 60*1000000))
+tests :: String -> Transport -> [TestTree]
+tests host transport = map (localOption (mkTimeout $ 60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport
-  , testSuccess "initial-data-doesn't-error" $ loadInitialData transport
+  , testSuccess "initial-data-doesn't-error" $ loadInitialData host transport
   ]
 
 fsSize :: FailureSet -> Int
@@ -130,11 +130,15 @@ testFailureSets transport = rGroupTest transport $ \pid -> do
     assertMsg "Next smallest failure set has one disk (200)"
       $ fsSize (Set.elemAt 1 failureSets2) == 1
 
-loadInitialData :: Transport -> IO ()
-loadInitialData transport = rGroupTest transport $ \pid -> do
+loadInitialData :: String -> Transport -> IO ()
+loadInitialData host transport = rGroupTest transport $ \pid -> do
     ls <- emptyLoopState pid
     (ls', _) <- run ls $ do
-      mapM_ goRack (CI.id_racks initialData)
+      -- TODO: the interface address is hard-coded here: currently we
+      -- don't use it so it doesn't impact us but in the future we
+      -- should also take it as a parameter to the test, just like the
+      -- host
+      mapM_ goRack (CI.id_racks (initialDataAddr host "192.0.2.2"))
       filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals initialData)
       loadMeroServers filesystem (CI.id_m0_servers initialData)
@@ -142,7 +146,7 @@ loadInitialData transport = rGroupTest transport $ \pid -> do
       createPoolVersions filesystem failureSets
     -- Verify that everything is set up correctly
     bmc <- runGet ls' $ findBMCAddress myHost
-    assertMsg "Get BMC Address." $ bmc == Just "192.0.2.1"
+    assertMsg "Get BMC Address." $ bmc == Just host
     hosts <- runGet ls' $ findHosts ".*"
     assertMsg "Find correct hosts." $ hosts == [myHost]
     hostAttrs <- runGet ls' $ findHostAttrs myHost
