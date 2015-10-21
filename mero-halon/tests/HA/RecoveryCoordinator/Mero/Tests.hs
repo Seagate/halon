@@ -214,7 +214,7 @@ testServiceRestarting transport = do
 
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
-            (Dummy.DummyConf $ Configured "Test 1")
+            (Dummy.DummyConf $ Configured "Test 1") []
 
         "Starting service dummy" :: String <- expect
         say $ "dummy service started successfully."
@@ -252,7 +252,7 @@ testServiceNotRestarting transport = do
 
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
-            (Dummy.DummyConf $ Configured "Test 1")
+            (Dummy.DummyConf $ Configured "Test 1") []
 
         "Starting service dummy" :: String <- expect
         say $ "dummy service started successfully."
@@ -287,7 +287,7 @@ testEQTrimming transport = do
         Published (TrimDone _) _ <- expect
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
-            (Dummy.DummyConf $ Configured "Test 1")
+            (Dummy.DummyConf $ Configured "Test 1") []
 
         Published (TrimDone _) _ <- expect
 
@@ -460,7 +460,7 @@ testServiceStopped transport = do
 
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
-            (Dummy.DummyConf $ Configured "Test 1")
+            (Dummy.DummyConf $ Configured "Test 1") []
 
         "Starting service dummy" :: String <- expect
         say $ "dummy service started successfully."
@@ -505,7 +505,7 @@ serviceStart :: Configuration a => Service a -> a -> Process ()
 serviceStart svc conf = do
     nid <- getSelfNode
     let node = Node nid
-    _   <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest Start node svc conf
+    _   <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest Start node svc conf []
     return ()
 
 getNodeMonitor :: ProcessId -> Process ProcessId
