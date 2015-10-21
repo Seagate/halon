@@ -26,7 +26,6 @@ module HA.Services.SSPL
   , HA.Services.SSPL.__remoteTableDecl
   ) where
 
-import HA.NodeAgent.Messages
 import HA.EventQueue.Producer (promulgate)
 import HA.RecoveryCoordinator.Mero (LoopState)
 import HA.Service
@@ -41,7 +40,6 @@ import Control.Distributed.Process
   ( Process
   , ProcessId
   , ProcessMonitorNotification(..)
-  , catchExit
   , expectTimeout
   , getSelfPid
   , getSelfNode
@@ -53,6 +51,7 @@ import Control.Distributed.Process
   , spawnChannelLocal
   , spawnLocal
   , unmonitor
+  , link
   )
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
@@ -169,9 +168,6 @@ remotableDecl [ [d|
   ssplProcess :: SSPLConf -> Process ()
   ssplProcess (SSPLConf{..}) = let
 
-    onExit _ Shutdown = say $ "SSPLService stopped."
-    onExit _ Reconfigure = say $ "SSPLService stopping for reconfiguration."
-
     connectRetry lock = do
       me <- getSelfPid
       pid <- spawnLocal $ connectSSPL lock me
@@ -187,10 +183,11 @@ remotableDecl [ [d|
       chan <- liftIO $ openChannel conn
       startSensors chan scSensorConf
       startActuators chan scActuatorConf pid
+      link pid
       () <- liftIO $ takeMVar lock
       liftIO $ closeConnection conn
       say "Connection closed."
-    in (`catchExit` onExit) $ do
+    in do
       say $ "Starting service sspl"
       lock <- liftIO newEmptyMVar
       connectRetry lock
