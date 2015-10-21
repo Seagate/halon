@@ -87,6 +87,7 @@ import Options.Schema
 
 import HA.ResourceGraph
 import HA.Resources
+import HA.NodeAgent.Messages
 
 --------------------------------------------------------------------------------
 -- Configuration                                                              --
@@ -288,7 +289,12 @@ remoteStartService (caller, sn) p = do
                 whereis label >>= maybe whereisOrRegister return
     pid <- whereisOrRegister
     usend caller pid
-    when (pid == self) p
+    when (pid == self) $
+      p `catchExit` onExit
+  where
+    onExit _ Shutdown = say $ "[Service " ++ snString sn ++ "] stopped."
+    onExit _ Reconfigure = say $ "[Service " ++ snString sn ++ "] reconfigured."
+    onExit _ UserStop = say $ "[Service " ++ snString sn ++ "] user required service stop."
 
 remotable
   [ 'remoteStartService
