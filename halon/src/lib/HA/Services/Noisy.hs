@@ -21,7 +21,6 @@ module HA.Services.Noisy
   ) where
 
 import HA.EventQueue.Producer
-import HA.NodeAgent.Messages
 import HA.ResourceGraph
 import HA.Service
 import HA.Service.TH
@@ -98,14 +97,11 @@ remotableDecl [ [d|
                 `staticApply` $(mkStatic 'configDictNoisyConf))
 
   noisyProcess :: NoisyConf -> Process ()
-  noisyProcess (NoisyConf hw) = (`catchExit` onExit) $ do
+  noisyProcess (NoisyConf hw) = do
       say $ "Starting service noisy"
       say $ fromDefault hw
       forM_ [1 .. read (fromDefault hw)] $ \i ->
         promulgate $ DummyEvent $ show (i :: Int)
       never
-    where
-      onExit _ Shutdown = say $ "NoisyService stopped."
-      onExit _ Reconfigure = say $ "NoisyService reconfigured."
 
   |] ]

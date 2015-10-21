@@ -18,7 +18,6 @@ module HA.Services.Ping
   ) where
 
 import HA.EventQueue.Producer
-import HA.NodeAgent.Messages
 import HA.Service
 import HA.Service.TH
 
@@ -57,11 +56,8 @@ remotableDecl [ [d|
                 `staticApply` $(mkStatic 'configDictPingConf))
 
   pingProcess :: PingConf -> Process ()
-  pingProcess PingConf = (`catchExit` onExit) $ do
+  pingProcess PingConf = do
       say $ "Starting service ping"
       forever $ expect >>= promulgate . DummyEvent
-    where
-      onExit _ Shutdown = say $ "PingService stopped."
-      onExit _ Reconfigure = say $ "PingService reconfigured."
 
   |] ]
