@@ -224,7 +224,7 @@ standardService nids sso svc = case sso of
   StartCmd (StartCmdOptions t eqAddrs a) -> getEQAddrs t eqAddrs >>= \eqs ->
                                             mapM_ (start t svc a eqs) nids
   ReconfCmd (ReconfCmdOptions t eqAddrs a) -> getEQAddrs t eqAddrs >>= \eqs ->
-                                              mapM_ (reconf svc a eqs) nids
+                                              mapM_ (reconf t svc a eqs) nids
   StopCmd (StopCmdOptions t eqAddrs) -> getEQAddrs t eqAddrs >>= \eqs ->
                                         mapM_ (stop svc eqs) nids
   where
@@ -267,20 +267,31 @@ start t s c eqnids nid = do
       liftIO . putStrLn $ case stat of
         Just AlreadyRunning -> "Service already running."
         Just AttemptingToStart -> "Trying to start " ++ (show $ serviceName s)
+        Just NodeUnknown -> "Cannot start service on unknown node " ++ show nid
+        Just x -> "error: " ++ show x
         Nothing -> "No contact from RC after " ++ show t ++ " milliseconds."
 
 -- | Reconfigure a service
 reconf :: Configuration a
-       => Service a -- ^ Service to reconfigure.
+       => Int
+       -> Service a -- ^ Service to reconfigure.
        -> a -- ^ Configuration.
        -> [NodeId] -- ^ EQ Nodes to contact.
        -> NodeId -- ^ Node to reconfigure.
        -> Process ()
-reconf s c eqnids nid = promulgateEQ eqnids msg
+reconf t s c eqnids nid = promulgateEQ eqnids msg
     >>= \pid -> withMonitor pid wait
   where
     msg = encodeP $ ServiceStartRequest Restart (Node nid) s c []
-    wait = void (expect :: Process ProcessMonitorNotification)
+    wait = do
+      _ <- expect :: Process ProcessMonitorNotification
+      stat <- expectTimeout t
+      liftIO . putStrLn $ case stat of
+        Just NotAlreadyRunning -> "No service running to restart."
+        Just AttemptingToRestart -> "Trying to restart " ++ (show $ serviceName s)
+        Just NodeUnknown -> "Cannot restart service on unknown node " ++ show nid
+        Just x -> "error: " ++ show x
+        Nothing -> "No contact from RC after " ++ show t ++ " milliseconds."
 
 -- | Stop a given service on a single node.
 stop :: Configuration a

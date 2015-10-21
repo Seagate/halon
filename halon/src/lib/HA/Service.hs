@@ -350,7 +350,10 @@ instance ProcessEncode ServiceStartRequest where
 -- | Repsonse from RC to any processes interested in service start.
 data ServiceStartResponse =
       AttemptingToStart
+    | AttemptingToRestart
     | AlreadyRunning
+    | NotAlreadyRunning
+    | NodeUnknown
   deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable ServiceStartResponse

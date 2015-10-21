@@ -173,11 +173,25 @@ serviceRules argv eq = do
           writeConfiguration sp conf Intended
           bounceServiceTo Intended n svc
           switch [ph2, ph3, timeout timeup ph4]
-        _ -> do
+        (True, Just _, HA.Service.Start) -> do
           phaseLog "info" $ unwords [ snString $ serviceName svc
                                     , "already running on"
                                     , show nid]
           liftProcess $ mapM_ (flip usend AlreadyRunning) lis
+          finishProcessingMsg uuid
+          sendMsg eq uuid
+        (True, Nothing, HA.Service.Restart) -> do
+          phaseLog "info" $ unwords [ snString $ serviceName svc
+                                    , "not already running on"
+                                    , show nid]
+          liftProcess $ mapM_ (flip usend NotAlreadyRunning) lis
+          finishProcessingMsg uuid
+          sendMsg eq uuid
+        (False, _, _) -> do
+          phaseLog "info" $ unwords [ "Cannot start service on unknown node:"
+                                    , show nid
+                                    ]
+          liftProcess $ mapM_ (flip usend NodeUnknown) lis
           finishProcessingMsg uuid
           sendMsg eq uuid
 
