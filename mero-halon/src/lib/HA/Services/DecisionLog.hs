@@ -18,6 +18,7 @@ module HA.Services.DecisionLog
     , decisionLogService__sdict
     , decisionLogService__tdict
     , decisionLog__static
+    , printLogs
     ) where
 
 import Control.Distributed.Process

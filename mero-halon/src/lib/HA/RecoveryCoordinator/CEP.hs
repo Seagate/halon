@@ -29,6 +29,7 @@ import           HA.RecoveryCoordinator.Rules.Service
 import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Service
+import           HA.Services.DecisionLog (printLogs)
 import qualified HA.EQTracker as EQT
 #ifdef USE_MERO
 import           HA.Services.Mero (meroRules)
@@ -163,5 +164,6 @@ rcRules argv eq additionalRules = do
 sendLogs :: Logs -> LoopState -> Process ()
 sendLogs logs ls = do
     nid <- getSelfNode
-    for_ (lookupDLogServiceProcess nid ls) $ \(ServiceProcess pid) ->
-      usend pid logs
+    case lookupDLogServiceProcess nid ls of
+        Just (ServiceProcess pid) -> usend pid logs
+        _ -> printLogs logs

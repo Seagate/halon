@@ -124,3 +124,6 @@ newWriteLogs tpe = WriteLogs $ handleLogs tpe
 
 writeLogs :: WriteLogs -> Logs -> Process ()
 writeLogs (WriteLogs k) logs = k logs
+
+printLogs :: Logs -> Process ()
+printLogs = handleLogs StandardOutput
