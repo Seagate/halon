@@ -45,10 +45,10 @@ int main(int argc,char **argv) {
          .ha_state_set = hs_set
     };
 
-    rc = rpc_init("");
-    printf("rpc_init: %d\n",rc);
     rc = ha_state_init(&cb);
     printf("ha_state_init: %d\n",rc);
+    rc = rpc_init("");
+    printf("rpc_init: %d\n",rc);
 
     rpc_receive_endpoint_t* re;
 

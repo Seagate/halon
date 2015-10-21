@@ -79,8 +79,10 @@ cbRefs = unsafePerformIO $ newIORef []
 --
 -- Registers callbacks to handle arriving requests.
 --
--- The calling process should be listening for incoming RPC connections
+-- The calling process should listen for incoming RPC connections
 -- (to be setup with rpclite or some other interface to RPC).
+--
+-- Must be called before calling m0_init.
 --
 initHAState :: (NVecRef -> IO ())
                -- ^ Called when a request to get the state of some objects is
@@ -111,23 +113,18 @@ initHAState ha_state_get ha_state_set =
       #{poke ha_state_callbacks_t, ha_state_set} pcbs wset
       modifyIORef cbRefs ((SomeFunPtr wget:) . (SomeFunPtr wset:))
 
-      -- TODO: ha_state_init hangs with mero from mid September 2015.
-      -- Investigate whether it still hangs with recent mero and
-      -- uncomment if possible. Currently nothing seems to depend on
-      -- its behaviour but this may change in the future. See relevant
-      -- Asana task.
-      -- rc <- ha_state_init pcbs
-      -- check_rc "initHAState" rc
+      rc <- ha_state_init pcbs
+      check_rc "initHAState" rc
   where
     wrapGetCB f = cwrapGetCB $ \note -> f note
     wrapSetCB f = cwrapSetCB $ \note ->
         readNVecRef note >>= fmap fromIntegral . f
-{-
+
 data HAStateCallbacksV
 
 foreign import ccall unsafe ha_state_init :: Ptr HAStateCallbacksV
                                           -> IO CInt
--}
+
 foreign import ccall "wrapper" cwrapGetCB :: (NVecRef -> IO ())
                                           -> IO (FunPtr (NVecRef -> IO ()))
 

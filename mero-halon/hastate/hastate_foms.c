@@ -5,7 +5,6 @@
 
 #include "hastate.h"
 #include "hastate_foms.h"
-#include "hastate_fops.h"
 
 #include "fop/fom.h"
 #include "fop/fom_generic.h"
@@ -22,8 +21,7 @@ extern ha_state_callbacks_t *ha_state_cbs;
 
 size_t ha_state_fom_locality(const struct m0_fom *fom)
 {
-    size_t seq = 0;
-    return ++seq;
+    return m0_fop_opcode(fom->fo_fop);
 }
 
 /*
@@ -103,7 +101,7 @@ int ha_state_get_fom_create(struct m0_fop *fop, struct m0_fom **m,
         return M0_ERR(-ENOMEM);
 
     fom = &fom_obj->fp_gen;
-    reply = m0_fop_reply_alloc(fop, &ha_state_get_rep_fopt);
+    reply = m0_fop_reply_alloc(fop, &m0_ha_state_get_rep_fopt);
     if (reply == NULL)
         return M0_ERR(-ENOMEM);
     m0_fom_init(fom, &fop->f_type->ft_fom_type, &ha_state_get_fom_ops,

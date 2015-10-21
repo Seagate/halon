@@ -143,7 +143,6 @@ Library
                      HA.Services.Mero.Types
       cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
       c-sources: hastate/hastate.c
-                 hastate/hastate_fops.c
                  hastate/hastate_foms.c
       include-dirs: hastate
       extra-libraries: mero

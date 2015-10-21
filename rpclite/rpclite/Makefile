@@ -4,7 +4,7 @@ $(error The variable MERO_ROOT is undefined. Please, make it point to the mero b
 endif
 
 RUNDIR=/var/mero/halon
-FF2C=$(MERO_ROOT)/xcode/ff2c/ff2c
+FF2C=$(MERO_ROOT)/xcode/ff2c/m0ff2c
 CC=gcc
 CFLAGS=-c -I$(MERO_ROOT) -I$(MERO_ROOT)/extra-libs/galois/include \
 	   -Wno-attributes -Werror -g -DM0_INTERNAL='' -DM0_EXTERN=extern

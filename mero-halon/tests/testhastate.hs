@@ -24,7 +24,7 @@ import Network.RPC.RPCLite
 import Control.Applicative ((<$>))
 import Control.Concurrent ( forkIO )
 import Control.Concurrent.MVar ( newEmptyMVar, takeMVar, putMVar, MVar )
-import Control.Exception ( bracket, bracket_ )
+import Control.Exception ( bracket, bracket_, catch, SomeException, throwIO )
 import Control.Monad ( when, void )
 import Data.Bits ( (.|.), shiftL )
 import Data.ByteString ( ByteString )
@@ -95,30 +95,29 @@ main =
   delete "--noscript" <$> getArgs >>= (\args -> case args of
     [] -> return [ halonAddress, dummyMeroAddress ]
     _ -> return args)
-  >>= \[ localAddress , meroAddress ] -> withM0 $
+  >>= \[ localAddress , meroAddress ] ->
+  -- The literal below comes from mero-halon/hastate/dummy_mero.c
+  let node_fid = Fid (fromIntegral (fromEnum 'n') `shiftL` (64 - 8) .|. 1) 1
+   in bracket_ (initHAState (\nvecr -> void $ forkIO $ do
+                          updateNVecRef nvecr
+                            [ Note node_fid M0_NC_ONLINE ]
+                          doneGet nvecr 0
+                        )
+                        (\nvecs -> do
+                          putMVar mv' nvecs
+                          return 0
+                        )
+           ) finiHAState $ withM0 $
   bracket_ initRPC finalizeRPC $
   bracket (listen (rpcAddress localAddress)$ ListenCallbacks
               { receive_callback = \it _ ->
                   getFragments it >>= putMVar mv >> return True
               }
           )
-          stopListening $ \se ->
-  -- The literal below comes from mero-halon/hastate/dummy_mero.c
-  let node_fid = Fid (fromIntegral (fromEnum 'n') `shiftL` (64 - 8) .|. 1) 1
-   in
-  bracket_ (initHAState (\nvecr -> void $ forkIO $ do
-                           updateNVecRef nvecr
-                             [ Note node_fid M0_NC_ONLINE ]
-                           doneGet nvecr 0
-                         )
-                         (\nvecs -> do
-                               putMVar mv' nvecs
-                               return 0
-                         )
-           ) finiHAState $ do
-
-    c <- connect_se se (rpcAddress meroAddress) 5
-    sendBlocking c [] 5
+          (\se -> stopListening se) $ \se ->
+    bracket (connect_se se (rpcAddress meroAddress) 5)
+            (flip disconnect 5) $ \c -> do
+    sendBlocking c [] 5 `catch` \e -> print (e :: SomeException) >> throwIO e
     -- check output of m0_ha_state_get
     takeMVar mv >>= \bss ->
       when ([[1]] /= map B.unpack bss) $ do
@@ -145,15 +144,15 @@ main =
     notify se (rpcAddress meroAddress)
            [ Note root_fid M0_NC_TRANSIENT ] 5
     sendBlocking c [] 5
-    disconnect c 5
     -- check output of m0_ha_state_accept
     --
     -- Dummy mero sends a bytestring with the state of root confc
     -- object.
-    takeMVar mv >>= \bss ->
-      when (map (fromIntegral . fromEnum) [ M0_NC_TRANSIENT ]
-             /= B.unpack (B.concat bss)
-           ) $ do
-        putStrLn $ "m0_ha_state_accept produced a bad result "
-                   ++ show (B.unpack (B.concat bss))
+    takeMVar mv >>= \bss -> do
+      let expected = map (fromIntegral . fromEnum) [ M0_NC_TRANSIENT ]
+      when (expected /= B.unpack (B.concat bss)) $ do
+        putStrLn $ "m0_ha_state_accept produced an unexpected result "
+                   ++ show (B.unpack (B.concat bss)) ++ " but expected "
+                   ++ show expected
         exitFailure
+    putStrLn "SUCCESS"

@@ -49,8 +49,9 @@ void ha_state_get_done(struct m0_ha_nvec *note,int rc);
 
 /**
  * Registers ha_state_callbacks so they are used when requests arrive.
+ * This must be called before m0_init.
  *
- * This call only has an effect if the calling process is listening for
+ * This call only has an effect if the calling process is going to listening for
  * incoming RPC connections (to be setup with rpclite or some other
  * interface to RPC).
  * */

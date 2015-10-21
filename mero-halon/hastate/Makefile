@@ -29,7 +29,6 @@ SOURCES=$(RPCLITE_PREFIX)/rpclite_fop_ff.c \
 		$(RPCLITE_PREFIX)/rpclite_fop.c \
 		$(RPCLITE_PREFIX)/rpclite_fom.c \
         hastate.c \
-        hastate_fops.c \
         hastate_foms.c
 OBJECTS=$(SOURCES:.c=.o)
 
