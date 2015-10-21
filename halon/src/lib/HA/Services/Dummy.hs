@@ -18,7 +18,6 @@ module HA.Services.Dummy
   , HA.Services.Dummy.__remoteTableDecl
   ) where
 
-import HA.NodeAgent.Messages
 import HA.Service
 import HA.Service.TH
 
@@ -68,12 +67,9 @@ remotableDecl [ [d|
                 `staticApply` $(mkStatic 'configDictDummyConf))
 
   dummyProcess :: DummyConf -> Process ()
-  dummyProcess (DummyConf hw) = (`catchExit` onExit) $ do
+  dummyProcess (DummyConf hw) = do
       say $ "Starting service dummy"
       say . fromDefault $ hw
       never
-    where
-      onExit _ Shutdown = say $ "DummyService stopped."
-      onExit _ Reconfigure = say $ "DummyService reconfigured."
 
   |] ]
