@@ -67,7 +67,7 @@ testServiceStop transport = runTest 2 10 1000000 transport remoteTable $ \[n] ->
 
   _ <- promulgateEQ [localNodeId n] . encodeP $
          ServiceStartRequest Start (Node $ localNodeId n) DLog.decisionLog
-          (DLog.processOutput self)
+          (DLog.processOutput self) []
   "Test 1" :: String <- expect
   _ <- promulgateEQ [localNodeId n] . encodeP $
          ServiceStopRequest (Node $ localNodeId n) DLog.decisionLog
