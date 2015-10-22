@@ -61,7 +61,11 @@ WORKDIR /h
 RUN git clone git@github.com:tweag/halon.git
 
 WORKDIR /h/halon
-RUN git checkout rpm/build-with-rich
+
+# If you want to build from a different branch,
+# this is the place to switch branches:
+# RUN git checkout rpm/build-with-rich
+
 RUN git submodule update --init --recursive
 ENV HALONSRC /h/halon
 
@@ -76,19 +80,6 @@ RUN ./bootstrap-build-tools.sh
 # RUN mv /h/cabal-installers/cabal-installers/bin/* /h/cabal-installers/bin/
 
 ENV WORKDIR /h
-
-# we're using ghc 7.8.4 but the halon repo is set for 7.8.3
-# which has a slightly different base constraint.
-# RUN sed -i 's/base ==4.7.0.1/base ==4.7.0.2/' /h/halon/cabal.config
-
-# this is a version pin that comes from an ansi-terminal
-# conflict that does not always show up (perhaps because
-# of non-deterministic dependency build order)
-# RUN echo "   , tasty ==0.10.0.3" >> /h/halon/cabal.config
-
-
-# the packages neeed to be built in approximately
-# this order
 
 RUN yum install -y autoconf
 
