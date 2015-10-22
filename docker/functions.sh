@@ -1,6 +1,19 @@
 GHCVERSION=7.10.2
 CABALVERSION=1.22.4.0
 
+# retry n t cmd...
+#
+# executes cmd... a maximum of n times in sequence until it succeeds
+# waiting time t between retries. t is whatever sleep understands.
+# 
+function retry {
+  for((i=0;i<$1;i++)) do
+      echo retry $i of ${@:3}
+      ${@:3} && break
+      sleep $2
+  done
+}
+
 function build-if-needed {
 
 BASE=$1
@@ -19,7 +32,7 @@ docker --host=localhost:5555 history $TAG
 if [ "$?" == "0" ] ; then
   echo pulled OK - do not need to rebuild
   docker --host=localhost:5555 tag -f ${TAG} ${LATESTTAG}
-  docker --host=localhost:5555 push $LATESTTAG || exit 1
+  retry 10 1m docker --host=localhost:5555 push $LATESTTAG || exit 1
   exit 0
 fi
 
@@ -34,8 +47,8 @@ cat docker/${DOCKERDIR}/Dockerfile.in \
   > docker/${DOCKERDIR}/Dockerfile
 docker --host=localhost:5555 build -t ${TAG} docker/${DOCKERDIR}/ || exit 1
 docker --host=localhost:5555 tag -f ${TAG} ${LATESTTAG}
-docker --host=localhost:5555 push $TAG || exit 1
-docker --host=localhost:5555 push $LATESTTAG || exit 1
+retry 10 1m docker --host=localhost:5555 push $TAG || exit 1
+retry 10 1m docker --host=localhost:5555 push $LATESTTAG || exit 1
 
 echo Docker tags pushed:
 echo Docker image ${BASE}
