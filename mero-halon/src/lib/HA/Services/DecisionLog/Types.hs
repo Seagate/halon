@@ -35,6 +35,8 @@ data DecisionLogOutput
       -- ^ Sends any log to the specified 'Process'.
     | StandardOutput
       -- ^ Writes to stdout.
+    | StandardError
+      -- ^ Writes to stderr.
     deriving (Eq, Show, Generic)
 
 instance Binary DecisionLogOutput
@@ -114,6 +116,9 @@ handleLogs (ProcessOutput pid) logs = usend pid logs
 handleLogs StandardOutput logs = liftIO $ do
     putDoc $ ppLogs logs
     putStr "\n"
+handleLogs StandardError logs = liftIO $ do
+    hPutDoc stderr $ ppLogs logs
+    hPutStr stderr "\n"
 handleLogs (FileOutput path) logs =
     bracket (openLogFile path) cleanupHandle $ \h -> liftIO $ do
       hPutDoc h $ ppLogs logs
@@ -126,4 +131,4 @@ writeLogs :: WriteLogs -> Logs -> Process ()
 writeLogs (WriteLogs k) logs = k logs
 
 printLogs :: Logs -> Process ()
-printLogs = handleLogs StandardOutput
+printLogs = handleLogs StandardError
