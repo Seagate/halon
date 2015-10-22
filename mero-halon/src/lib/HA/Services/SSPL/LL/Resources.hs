@@ -36,6 +36,7 @@ import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
 import Data.Typeable (Typeable)
+import Data.UUID (UUID)
 
 import GHC.Generics (Generic)
 
@@ -84,16 +85,70 @@ ipmiOpString IPMI_OFF = "off"
 ipmiOpString IPMI_CYCLE = "cycle"
 ipmiOpString IPMI_STATUS = "status"
 
-data NodeCmd =
-    IPMICmd IPMIOp T.Text -- ^ IP address
+parseIPMIOp :: T.Text -> Maybe IPMIOp
+parseIPMIOp t = case (T.toLower t) of
+  "on"     -> Just IPMI_ON
+  "off"    -> Just IPMI_OFF
+  "cycle"  -> Just IPMI_CYCLE
+  "status" -> Just IPMI_STATUS
+  _        -> Nothing
+
+data NodeCmd
+  = IPMICmd IPMIOp T.Text -- ^ IP address
+  | DriveReset T.Text     -- ^ Reset drive
+  | SmartTest  T.Text     -- ^ SMART drive test
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary NodeCmd
 instance Hashable NodeCmd
 
+-- | Convert @NodeCmd@ to text represetnation.
 nodeCmdString :: NodeCmd -> T.Text
 nodeCmdString (IPMICmd op ip) = T.intercalate " "
   [ "IPMI:", ip, ipmiOpString op ]
+nodeCmdString (DriveReset drive) = T.intercalate " "
+  [ "DRIVE_RESET:", drive ]
+nodeCmdString (SmartTest drive) = T.intercalate " "
+  [ "SMART_TEST:", drive ]
+
+-- | Convert @NodeCmd@ back from a text representation.
+parseNodeCmd :: T.Text -> Maybe NodeCmd
+parseNodeCmd t =
+    case cmd of
+      "IPMI:"        -> do [ip, opt] <- return rest
+                           op <- parseIPMIOp opt
+                           return $ IPMICmd op ip
+      "DRIVE_RESET:" -> return $ DriveReset (head rest)
+      "SMART_TEST:"  -> return $ SmartTest (head rest)
+      _ -> Nothing
+  where
+    (cmd:rest) = T.words t
+
+-- | Actuator reply.
+data AckReply = AckReplyPassed       -- ^ Request succesfully processed.
+              | AckReplyFailed       -- ^ Request failed.
+              | AckReplyError T.Text -- ^ Error while processing request.
+              deriving (Eq, Show, Generic, Typeable)
+
+instance Binary AckReply
+
+-- | Parse text representation of the @AckReply@
+parseAckReply :: T.Text -> AckReply
+parseAckReply "Passed" = AckReplyPassed
+parseAckReply "Failed" = AckReplyFailed
+parseAckReply t
+  | errmsg `T.isPrefixOf` t = AckReplyError $ T.drop (T.length errmsg) t
+  | otherwise               = error $ "parseAckReply: unknown reply (" ++ T.unpack t ++ ")"
+  where errmsg = "Error: "
+
+-- | Reply over 'CommandAck' channel.
+data CommandAck = CommandAck
+  { commandAckUUID :: Maybe UUID    -- ^ Unique identifier.
+  , commandAckType :: Maybe NodeCmd -- ^ Command text message.
+  , commandAck     :: AckReply      -- ^ Command result.
+  } deriving (Eq, Show, Generic, Typeable)
+
+instance Binary CommandAck
 
 emptyActuatorMsg :: ActuatorRequestMessageActuator_request_type
 emptyActuatorMsg = ActuatorRequestMessageActuator_request_type
@@ -124,7 +179,7 @@ makeNodeMsg nc = emptyActuatorMsg {
 -- | Actuator channel list
 data ActuatorChannels = ActuatorChannels
     { iemPort :: SendPort InterestingEventMessage
-    , systemdPort :: SendPort ActuatorRequestMessageActuator_request_type
+    , systemdPort :: SendPort (Maybe UUID, ActuatorRequestMessageActuator_request_type)
     }
   deriving (Generic, Typeable)
 
@@ -163,34 +218,42 @@ instance Hashable CommandChannel
 --------------------------------------------------------------------------------
 
 iemSchema :: Schema Rabbit.BindConf
-iemSchema = let
-    en = defaultable "sspl_iem" . strOption
-        $ long "iem_exchange"
-        <> metavar "EXCHANGE_NAME"
-    rk = defaultable "sspl_ll" . strOption
-          $ long "iem_routingKey"
-          <> metavar "ROUTING_KEY"
-    qn = defaultable "sspl_iem" . strOption
-          $ long "dcs_queue"
-          <> metavar "QUEUE_NAME"
-  in Rabbit.BindConf <$> en <*> rk <*> qn
+iemSchema = genericBindConf ("sspl_iem", "iem_exchange")
+                            ("sspl_ll",  "iem_routingKey")
+                            ("sspl_iem", "dcs_queue")
 
 commandSchema :: Schema Rabbit.BindConf
-commandSchema = let
-    en = defaultable "sspl_halon" . strOption
-        $ long "systemd_exchange"
-        <> metavar "EXCHANGE_NAME"
-    rk = defaultable "sspl_ll" . strOption
-          $ long "systemd_routingKey"
-          <> metavar "ROUTING_KEY"
-    qn = defaultable "sspl_halon" . strOption
-          $ long "systemd_queue"
-          <> metavar "QUEUE_NAME"
-  in Rabbit.BindConf <$> en <*> rk <*> qn
+commandSchema = genericBindConf ("sspl_halon","systemd_exchange")
+                                ("sspl_ll", "systemd_routingKey")
+                                ("sspl_halon", "systemd_queue")
+
+commandAckSchema :: Schema Rabbit.BindConf
+commandAckSchema = genericBindConf ("sspl_command_ack", "command_ack_exchange")
+                                   ("sspl_ll",      "command_ack_routing_key")
+                                   ("sspl_command_ack", "command_ack_queue")
+
+genericBindConf :: (String, String) -> (String,String) -> (String,String)
+                -> Schema Rabbit.BindConf
+{-# INLINE genericBindConf #-}
+genericBindConf (exchange,exchangeLong)
+                (routingKey,routingKeyLong)
+                (queue, queueLong) = Rabbit.BindConf <$> en <*> rk <*> qn
+  where
+    en = defaultable exchange . strOption
+       $ long exchangeLong
+       <> metavar "EXCHANGE_NAME"
+    rk = defaultable routingKey . strOption
+       $ long routingKeyLong
+       <> metavar "ROUTING_KEY"
+    qn = defaultable queue . strOption
+       $ long queueLong
+       <> metavar "QUEUE_NAME"
+
 
 data ActuatorConf = ActuatorConf {
     acIEM :: Rabbit.BindConf
   , acSystemd :: Rabbit.BindConf
+  , acCommandAck :: Rabbit.BindConf
   , acDeclareChanTimeout :: Defaultable Int
 } deriving (Eq, Generic, Show, Typeable)
 
@@ -202,7 +265,7 @@ actuatorSchema = compositeOption subOpts
                   $ long "actuator"
                   <> summary "Actuator configuration."
   where
-    subOpts = ActuatorConf <$> iemSchema <*> commandSchema <*> timeout
+    subOpts = ActuatorConf <$> iemSchema <*> commandSchema <*> commandAckSchema <*> timeout
     timeout = defaultable 5000000 . intOption
                 $ long "declareChannelsTimeout"
                 <> summary "Timeout to use when declaring channels to the RC."
@@ -258,7 +321,7 @@ ssplSchema = SSPLConf
 resourceDictChannelIEM :: Dict (Resource (Channel InterestingEventMessage))
 resourceDictChannelIEM = Dict
 
-resourceDictChannelSystemd :: Dict (Resource (Channel ActuatorRequestMessageActuator_request_type))
+resourceDictChannelSystemd :: Dict (Resource (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)))
 resourceDictChannelSystemd = Dict
 
 relationDictIEMChannelServiceProcessChannel :: Dict (
@@ -267,7 +330,7 @@ relationDictIEMChannelServiceProcessChannel :: Dict (
 relationDictIEMChannelServiceProcessChannel = Dict
 
 relationDictCommandChannelServiceProcessChannel :: Dict (
-    Relation CommandChannel (ServiceProcess SSPLConf) (Channel ActuatorRequestMessageActuator_request_type)
+    Relation CommandChannel (ServiceProcess SSPLConf) (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type))
   )
 relationDictCommandChannelServiceProcessChannel = Dict
 
@@ -281,7 +344,7 @@ $(deriveService ''SSPLConf 'ssplSchema [ 'resourceDictChannelIEM
 instance Resource (Channel InterestingEventMessage) where
   resourceDict = $(mkStatic 'resourceDictChannelIEM)
 
-instance Resource (Channel ActuatorRequestMessageActuator_request_type) where
+instance Resource (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)) where
   resourceDict = $(mkStatic 'resourceDictChannelSystemd)
 
 instance Relation IEMChannel
@@ -291,7 +354,7 @@ instance Relation IEMChannel
 
 instance Relation CommandChannel
                   (ServiceProcess SSPLConf)
-                  (Channel ActuatorRequestMessageActuator_request_type) where
+                  (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)) where
   relationDict = $(mkStatic 'relationDictCommandChannelServiceProcessChannel)
 --------------------------------------------------------------------------------
 -- End Dictionaries                                                           --

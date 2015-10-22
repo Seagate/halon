@@ -35,6 +35,7 @@ import Data.Maybe (catMaybes, listToMaybe)
 import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
 import Data.UUID.V4 (nextRandom)
+import Data.UUID (UUID)
 
 import Network.CEP
 
@@ -74,13 +75,17 @@ sendSystemdCmd nid req = do
       sp <- runningService node s rg
       listToMaybe $ connectedTo sp CommandChannel rg
   case chanm of
-    Just (Channel chan) -> liftProcess $ sendChan chan (makeSystemdMsg req)
+    Just (Channel chan) -> liftProcess $ sendChan chan (Nothing :: Maybe UUID, makeSystemdMsg req)
     _ -> liftProcess $ sayRC "Cannot find systemd channel!"
 
+-- | Send command to nodecontroller. Reply will be received as a
+-- HAEvent CommandAck. Where UUID will be set to UUID value if passed, and
+-- any random value otherwise.
 sendNodeCmd :: NodeId
+            -> Maybe UUID
             -> NodeCmd
             -> PhaseM LoopState l ()
-sendNodeCmd nid req = do
+sendNodeCmd nid muuid req = do
   liftProcess . say $ "Sending node actuator request" ++ show req
   rg <- getLocalGraph
   let
@@ -90,7 +95,7 @@ sendNodeCmd nid req = do
       sp <- runningService node s rg
       listToMaybe $ connectedTo sp CommandChannel rg
   case chanm of
-    Just (Channel chan) -> liftProcess $ sendChan chan (makeNodeMsg req)
+    Just (Channel chan) -> liftProcess $ sendChan chan (muuid, makeNodeMsg req)
     _ -> liftProcess $ sayRC "Cannot find command channel!"
 
 registerChannels :: ServiceProcess SSPLConf
@@ -123,6 +128,18 @@ registerChannels svc acs = modifyLocalGraph $ \rg -> do
 
 promptRGSync :: PhaseM LoopState l ()
 promptRGSync = modifyLocalGraph (liftProcess . sync)
+
+
+findActuationNode :: Configuration a => Service a
+                  -> PhaseM LoopState l NodeId
+findActuationNode sspl = do
+    (Node actuationNode) <- fmap head
+        $ findHosts ".*"
+      >>= filterM (hasHostAttr HA_POWERED)
+      >>= mapM nodesOnHost
+      >>= return . join
+      >>= filterM (\a -> isServiceRunning a sspl)
+    return actuationNode
 
 --------------------------------------------------------------------------------
 -- Rules                                                                      --
@@ -262,12 +279,7 @@ ssplRulesF sspl = do
           Just foo -> T.unpack foo
           Nothing -> "."
       in do
-        (Node actuationNode) <- fmap head
-            $ findHosts ".*"
-          >>= filterM (hasHostAttr HA_POWERED)
-          >>= mapM nodesOnHost
-          >>= return . join
-          >>= filterM (\a -> isServiceRunning a sspl)
+        actuationNode <- findActuationNode sspl
         hosts <- fmap catMaybes
                 $ findHosts nodeFilter
               >>= mapM findBMCAddress
@@ -275,11 +287,11 @@ ssplRulesF sspl = do
           Aeson.String "poweroff" -> do
             phaseLog "action" $ "Powering off hosts " ++ (show hosts)
             forM_ hosts $ \(nodeIp) -> do
-              sendNodeCmd actuationNode $ IPMICmd IPMI_OFF (T.pack nodeIp)
+              sendNodeCmd actuationNode Nothing $ IPMICmd IPMI_OFF (T.pack nodeIp)
           Aeson.String "poweron" -> do
             phaseLog "action" $ "Powering on hosts " ++ (show hosts)
             forM_ hosts $ \(nodeIp) -> do
-              sendNodeCmd actuationNode $ IPMICmd IPMI_ON (T.pack nodeIp)
+              sendNodeCmd actuationNode Nothing $ IPMICmd IPMI_ON (T.pack nodeIp)
           x -> liftProcess . say $ "Unsupported node command: " ++ show x
 
   defineSimple "clustermap" $ \(HAEvent _
