@@ -5,9 +5,10 @@ After=network.target
 
 [Service]
 EnvironmentFile=/etc/sysconfig/halond
-ExecStart=/usr/bin/halond -l $HALOND_LISTEN
+ExecStart=/usr/local/bin/halond -l $HALOND_LISTEN
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
+WorkingDirectory=/var/lib
 
 [Install]
 WantedBy=multi-user.target

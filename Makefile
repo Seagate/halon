@@ -214,7 +214,7 @@ rpm: build
 	cp .cabal-sandbox/bin/halonctl rpmbuild/SOURCES/
 	cp systemd/halond.service rpmbuild/SOURCES/
 	cp mero-halon/scripts/localcluster rpmbuild/SOURCES/halon-simplelocalcluster
-	rpmbuild --define "_topdir ${PWD}/rpmbuild" -ba rpmbuild/SPECS/halon.spec
+	rpmbuild --define "_topdir ${PWD}/rpmbuild" -ba rpmbuild/SPECS/halon-make.spec
 
 .PHONY: coverage
 coverage:

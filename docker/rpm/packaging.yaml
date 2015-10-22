@@ -1,0 +1,17 @@
+prefix: halon
+
+libraries:
+ mero: mero-devel
+
+packages:
+  leveldb-haskell:
+    dependencies: 
+      - halon-async-devel
+
+  rpclite:
+    configure: --extra-include-dirs=/usr/include/mero
+    data-dir: /usr/include
+
+  mero-halon:
+    configure: --extra-include-dirs=/usr/include/rpclite
+
