@@ -6,6 +6,7 @@
 
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module HA.Services.SSPL.Rabbit where
 
@@ -15,20 +16,34 @@ import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Distributed.Process
   ( Process
+  , ProcessId
   , getSelfPid
   , liftIO
   , link
   , spawnLocal
   , finally
   , bracket
+  , sendChan
+  , receiveWait
+  , match
+  , matchChan
+  , usend
   )
+import qualified Control.Distributed.Process as DP
 import Control.Monad (forever)
 
+import Data.Maybe
 import Data.Binary (Binary)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as LBS
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
+import Data.Foldable
+import qualified Data.Set as Set
+import qualified Data.Map as Map
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -163,3 +178,91 @@ receiveAck chan exchange queue routingKey handle = bracket
   (\(_,(mbox,mdone)) -> forever $ do
      handle =<< liftIO (takeMVar mbox)
      liftIO $ putMVar mdone ())
+
+-- | Publish message
+data MQPublish = MQPublish
+       { publishExchange :: ByteString
+       , publishKey      :: ByteString
+       , publishBody     :: ByteString
+       } deriving (Generic)
+
+instance Binary MQPublish
+
+-- | Subscribe to the queue
+data MQSubscribe = MQSubscribe
+      { subQueue   :: ByteString
+      , subProcess :: ProcessId
+      } deriving (Generic)
+
+instance Binary MQSubscribe
+
+data MQMessage = MQMessage
+      { mqQueue :: ByteString
+      , mqMessage :: ByteString
+      } deriving (Generic)
+
+instance Binary MQMessage
+
+data MQBind = MQBind
+      { mqBindExchange :: ByteString
+      , mqBindQueue    :: ByteString
+      , mqBindKey      :: ByteString
+      } deriving (Generic)
+
+instance Binary MQBind
+
+-- | Creates Mock RabbitMQ Proxy.
+rabbitMQProxy :: ConnectionConf -> Process ()
+rabbitMQProxy conf = run
+  where
+    run = bracket (liftIO $ HA.Services.SSPL.Rabbit.openConnection conf)
+                  (liftIO . closeConnection) $ \connection ->
+            bracket (liftIO $ openChannel connection)
+                    (liftIO . closeChannel) go
+    go chan = do
+      tags <- liftIO $ newMVar []
+      self <- getSelfPid
+      iochan <- liftIO newChan
+      (sendPort, receivePort) <- DP.newChan
+      _ <- spawnLocal $ do
+        link self
+        forever $ sendChan sendPort =<< liftIO (readChan iochan)
+      let exchangesIfMissing exchanges name
+            | Set.notMember name exchanges = do
+                liftIO $ declareExchange chan newExchange
+                           { exchangeName = name
+                           , exchangeType = "topic"
+                           , exchangeDurable = False
+                           }
+                return (Set.insert name exchanges)
+            | otherwise = return exchanges
+          queuesIfMissing queues name
+            | Set.notMember name queues = do
+                _ <- liftIO $ declareQueue chan newQueue{queueName = name}
+                return (Set.insert name queues)
+            | otherwise = return queues
+          loop queues subscribers exchanges = receiveWait
+            [ match $ \(MQSubscribe k@(T.decodeUtf8 -> key) pid) -> do
+                queues' <- queuesIfMissing queues key
+                tag <- liftIO $ consumeMsgs chan key NoAck $ \(msg, _env) -> do
+                   writeChan iochan (T.encodeUtf8 key, msgBody msg)
+                liftIO $ modifyMVar_ tags (return .(tag:))
+                let subscribers' = Map.insertWith (<>) k [pid] subscribers
+                loop queues' subscribers' exchanges
+            , match $ \(MQBind (T.decodeUtf8 -> exch) (T.decodeUtf8 -> que) (T.decodeUtf8 -> key)) -> do
+                exchanges' <- exchangesIfMissing exchanges exch
+                queues'    <- queuesIfMissing queues que
+                liftIO $ bindQueue chan que exch key
+                loop queues' subscribers exchanges'
+            , match $ \(MQPublish (T.decodeUtf8 -> exch) (T.decodeUtf8 -> key) (LBS.fromStrict -> msg)) -> do
+                exchanges' <- exchangesIfMissing exchanges exch
+                liftIO $ publishMsg chan exch key newMsg{msgBody = msg}
+                loop queues subscribers exchanges'
+            , matchChan receivePort $ \(key, msg) -> do
+                let msg' = LBS.toStrict msg
+                for_ (fromMaybe [] $ Map.lookup key subscribers) $ \p ->
+                  usend p $ MQMessage key msg'
+                loop queues subscribers exchanges
+            ]
+      (loop Set.empty Map.empty Set.empty)
+          `DP.finally` (liftIO $ takeMVar tags >>= mapM (cancelConsumer chan))

@@ -75,7 +75,10 @@ Library
                    HA.Services.Frontier
                    HA.Services.Monitor
                    HA.Services.SSPL
+                   HA.Services.SSPL.Rabbit
+                   HA.Services.SSPL.CEP
                    HA.Services.SSPLHL
+                   HA.Services.SSPL.LL.Resources
                    HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
@@ -92,9 +95,6 @@ Library
                    HA.Services.Frontier.Command
                    HA.Services.Monitor.CEP
                    HA.Services.Monitor.Types
-                   HA.Services.SSPL.CEP
-                   HA.Services.SSPL.Rabbit
-                   HA.Services.SSPL.LL.Resources
                    HA.Services.SSPL.HL.Resources
                    HA.Services.SSPL.HL.StatusHandler
 
@@ -707,12 +707,14 @@ Test-Suite unit-tests
                     containers,
                     directory,
                     filepath,
-                    process
-
+                    process,
+                    amqp,
+                    text,
+                    aeson,
+                    uuid
   if flag(mero)
       Build-Depends: rpclite, syb
       CPP-Options:    -DUSE_MERO
-
 
   if flag(rpc)
       Build-Depends: network-transport-rpc
@@ -768,8 +770,11 @@ Test-Suite integration-tests
                     containers,
                     directory,
                     filepath,
-                    process
-
+                    process,
+                    amqp,
+                    text,
+                    aeson,
+                    uuid
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
