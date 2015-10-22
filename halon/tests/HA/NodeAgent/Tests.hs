@@ -131,12 +131,10 @@ naTest transport action = withTmpDirectory $ E.bracket
         action nids
 
 expectEventOnNode :: NodeId -> Process ProcessId
-expectEventOnNode n = do
-    (n', (sender, PersistMessage _ _)) <- expect :: Process (NodeId, (ProcessId, PersistMessage))
-    say $ "n is " ++ show n
-    say $ "n' is " ++ show n'
-    True <- return $ n == n'
-    return sender
+expectEventOnNode n = receiveWait
+    [ matchIf (\(n', (_sender, PersistMessage _ _)) -> n' == n)
+              (return . fst . snd)
+    ]
 
 tests :: Transport -> IO [TestTree]
 tests transport = do
