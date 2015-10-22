@@ -223,7 +223,7 @@ testDelivery transport = runSSPLTest transport interseptor test
     interseptor self string
       | "TEST-CA " `isInfixOf` string =
         usend self (drop (length ("TEST-CA "::String)) string)
-    interseptor self _ = return ()
+    interseptor _ _ = return ()
     test pid n = do
       _ <- promulgateEQ [localNodeId n] (TestSmartCmd (localNodeId n) "foo")
       MQMessage _ bs <- expect
