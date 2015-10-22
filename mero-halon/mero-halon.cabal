@@ -122,7 +122,6 @@ Library
                    unordered-containers,
                    cep,
                    netwire,
-                   uuid,
                    random,
                    yaml,
                    hostname,
@@ -709,8 +708,7 @@ Test-Suite unit-tests
                     process,
                     amqp,
                     text,
-                    aeson,
-                    uuid
+                    aeson
   if flag(mero)
       Build-Depends: rpclite, syb
       CPP-Options:    -DUSE_MERO
@@ -772,8 +770,7 @@ Test-Suite integration-tests
                     process,
                     amqp,
                     text,
-                    aeson,
-                    uuid
+                    aeson
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC

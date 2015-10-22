@@ -40,6 +40,8 @@ Library
                    Control.Distributed.Process.Serializable
                    Control.Distributed.Process.Trans
                    Control.Distributed.Process.Scheduler
+                   Data.UUID
+                   Data.UUID.V4
                    System.Clock
   Other-Modules:   Control.Distributed.Process.Scheduler.Internal
   Build-Depends:   base
@@ -55,6 +57,7 @@ Library
                    ,random
                    ,stm
                    ,unix
+                   ,uuid
 
 Test-Suite unit-tests-with-scheduler
   Type:             exitcode-stdio-1.0
