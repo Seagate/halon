@@ -28,7 +28,7 @@
 #    USE_TCP              -- use TCP communication (default)
 #
 #    NO_TESTS             -- do not run tests while building packages
-#    NO_COVERAGE          -- do not gather coverage stats (implied by NO_TESTS)
+#    WITH_COVERAGE        -- do gather coverage stats (disabled by NO_TESTS)
 #    PACKAGES             -- sub-projects to work with (see README.md!)
 #    CABAL_FLAGS          -- common flags that are passed to all invocations of cabal the cabal
 #    VENDOR_CABAL_FLAGS   -- provide a way to pass flags when installing vendor packages
@@ -130,8 +130,7 @@ export GENDERS
 ifndef NO_TESTS
 CABAL_BUILD_JOBS = --jobs=1
 override HALON_CABAL_FLAGS += --run-tests
-else
-NO_COVERAGE = 1
+unexport WITH_COVERAGE
 endif
 
 # This option is needed to make GHC keep silence when unexisting functions
@@ -139,7 +138,7 @@ endif
 # Applicative exported from prelude.
 override CABAL_FLAGS += --ghc-options='-fno-warn-dodgy-imports'
 
-ifndef NO_COVERAGE
+ifdef WITH_COVERAGE
 override HALON_CABAL_FLAGS += --ghc-options='-fhpc'
 endif
 
