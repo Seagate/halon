@@ -17,6 +17,7 @@ echo DOCKER_HOST=${DOCKER_HOST}
 
 # Start rabbitmq that is used in tests.
 /usr/sbin/rabbitmq-server -detached >> /var/log/rabbitmq/startup.log 2>> /var/log/rabbitmq/startup.err
+export WITH_COVERAGE=yes
 make
 RC=$?
 # save the exit code in $RC so that
