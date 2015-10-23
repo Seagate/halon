@@ -7,7 +7,7 @@ import Distribution.Verbosity (normal)
 import System.Environment
 
 main = defaultMainWithHooks $ simpleUserHooks {
-    hookedPrograms = [simpleProgram "ff2c"]
+    hookedPrograms = [simpleProgram "m0ff2c"]
   , buildHook = rpclite_build
 }
 
