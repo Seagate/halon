@@ -111,7 +111,6 @@ import qualified Data.Map as Map
 import Data.Set ( Set )
 import qualified Data.Set as Set
 import Data.Typeable ( Typeable )
-import Data.UUID ( UUID )
 import GHC.Generics ( Generic )
 import Network.Transport (Transport)
 import System.Posix.Env ( getEnv )
@@ -168,7 +167,6 @@ data SchedulerMsg
     | Unmonitor DP.MonitorRef
     | Unlink ProcessId DP.Identifier -- ^ @Unlink who whom@
     | GetTime ProcessId -- ^ A process wants to know the time.
-    | NextRandom ProcessId -- ^ A process wants to get a random UUID.
     | AddFailures [((NodeId, NodeId), Double)]
     | RemoveFailures [(NodeId, NodeId)]
   deriving (Generic, Typeable, Show)
@@ -483,10 +481,6 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
       DP.receiveWait
         [ DP.match $ \m -> case m of
         GetTime pid -> DP.send pid clock >> go st
-        NextRandom pid -> do
-          let (uuid, s') = random $ stateSeed st
-          DP.send pid (uuid :: UUID)
-          go st { stateSeed = s' }
         -- a process is sending a message
         Send source pid msg ->
           handleSend st (source, pid, msg) >>= go

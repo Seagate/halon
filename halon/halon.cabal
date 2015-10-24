@@ -105,7 +105,8 @@ Library
                    cep,
                    netwire,
                    template-haskell,
-                   hostname
+                   hostname,
+                   uuid
 
   if flag(rpc)
     Build-Depends: rpclite,
@@ -165,6 +166,7 @@ Test-Suite unit-tests
                     tasty-files,
                     tasty-hunit,
                     cep,
+                    uuid,
                     containers,
                     stm
   if flag(rpc)
@@ -217,6 +219,7 @@ Test-Suite integration-tests
                     tasty-files,
                     tasty-hunit,
                     cep,
+                    uuid,
                     containers,
                     stm
   if flag(rpc)
@@ -269,6 +272,7 @@ Test-Suite scheduler-tests
                     tasty-files,
                     tasty-hunit,
                     cep,
+                    uuid,
                     containers,
                     stm,
                     unix
