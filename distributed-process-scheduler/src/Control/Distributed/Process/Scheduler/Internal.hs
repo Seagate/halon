@@ -366,6 +366,9 @@ remotableDecl [ [d|
 -- particular attributes may spoil the test. See the limitation in the README
 -- file.
 --
+-- Warning: This call sets the value of the global random generator to that of
+-- the provided seed.
+--
 startScheduler :: Int -- ^ seed
                -> Int -- ^ microseconds to increase the clock in every
                       -- transition
@@ -374,6 +377,10 @@ startScheduler :: Int -- ^ seed
                -> DP.RemoteTable -- ^ RemoteTable to use for the nodes.
                -> IO [LocalNode]
 startScheduler seed0 clockDelta numNodes transport rtable = do
+    -- Setting the global random generator will make deterministic the behavior
+    -- of any library which depends on it. In the case of d-p this is necessary
+    -- to have ProcessIds generated with the same uniques.
+    setStdGen $ mkStdGen seed0
     modifyMVar schedulerLock
       $ \initialized -> do
         if initialized
