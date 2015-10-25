@@ -127,8 +127,8 @@ naTest transport action = withTmpDirectory $ E.bracket
                    >>= usend self . (,) (nids !! 1)
           register eventQueueLabel eq2
         eqt <- startEQTracker nids
-        link eqt
-        action nids
+        bracket_ (link eqt) (unlink eqt) $
+          action nids
 
 expectEventOnNode :: NodeId -> Process ProcessId
 expectEventOnNode n = receiveWait
