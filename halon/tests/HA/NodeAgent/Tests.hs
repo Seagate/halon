@@ -36,7 +36,7 @@ import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Data.List (find, isPrefixOf, nub, (\\))
 import Control.Concurrent ( threadDelay )
 import Control.Concurrent.MVar (newEmptyMVar,putMVar,takeMVar,MVar)
-import Control.Monad ( replicateM, forM_, forever )
+import Control.Monad ( replicateM, forM_, forever, void )
 import Control.Exception ( SomeException )
 import Control.Exception as E ( bracket )
 import Network.Transport ( Transport )
@@ -78,35 +78,28 @@ eqSDict = SerializableDict
 remotable [ 'eqSDict, 'dummyRC ]
 
 naTestWithEQ :: Transport -> ([LocalNode] -> Process ()) -> IO ()
-naTestWithEQ transport action = withTmpDirectory $ do
-  nodes <- replicateM 3 newNode
-  let nids = map localNodeId nodes
-  mapM_ (initialize nids) nodes
-
-  mdone <- newEmptyMVar
-  tryRunProcess (head nodes) $ do
-    cRGroup <- newRGroup $(mkStatic 'eqSDict) 20 1000000 nids (Nothing,[])
+naTestWithEQ transport action = withTmpDirectory $ E.bracket
+  (replicateM 3 $ newLocalNode transport $ __remoteTable remoteTable)
+  (mapM_ closeLocalNode) $ \nodes -> do
+    let nids = map localNodeId nodes
+    forM_ nodes $ flip tryRunProcess $ void $ startEQTracker nids
+    mdone <- newEmptyMVar
+    tryRunProcess (head nodes) $ do
+      cRGroup <- newRGroup $(mkStatic 'eqSDict) 20 1000000 nids (Nothing,[])
 #ifdef USE_MOCK_REPLICATOR
-    rGroup <- unClosure cRGroup >>= id
-    forM_ nids $ const $ spawnLocal $ dummyRC' rGroup
+      rGroup <- unClosure cRGroup >>= id
+      forM_ nids $ const $ spawnLocal $ dummyRC' rGroup
 #else
-    forM_ nids $ flip spawn $ $(mkClosure 'dummyRC) ()
-                               `closureApply` cRGroup
+      forM_ nids $ flip spawn $ $(mkClosure 'dummyRC) ()
+                                 `closureApply` cRGroup
 #endif
-    action nodes
-    liftIO $ putMVar mdone ()
-  takeMVar mdone
-  -- Exit after transport stops being used.
-  -- TODO: fix closeTransport and call it here (see ticket #211).
-  -- TODO: implement closing RGroups and call it here.
-  threadDelay 2000000
-  mapM_ closeLocalNode nodes
-  where
-    newNode = newLocalNode transport
-                       $ __remoteTable remoteTable
-    initialize nids node = tryRunProcess node $ do
-      eqt <- startEQTracker nids
-      link eqt
+      action nodes
+      liftIO $ putMVar mdone ()
+    takeMVar mdone
+    -- Exit after transport stops being used.
+    -- TODO: fix closeTransport and call it here (see ticket #211).
+    -- TODO: implement closing RGroups and call it here.
+    threadDelay 2000000
 
 naTest :: Transport -> ([NodeId] -> Process ()) -> IO ()
 naTest transport action = withTmpDirectory $ E.bracket
