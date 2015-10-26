@@ -31,6 +31,7 @@ import Control.Distributed.Static ( closureCompose )
 #ifdef USE_MERO
 import Mero
 import Mero.M0Worker
+import qualified Control.Exception as Exception
 #endif
 import System.Environment
 import System.IO ( hFlush, stdout , hSetBuffering, BufferMode(..))
@@ -52,8 +53,9 @@ myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 main :: IO ()
 #ifdef USE_MERO
-main = withM0 $ do
-    startGlobalWorker
+main = withM0 $ Exception.bracket_ startGlobalWorker
+                        (getGlobalWorker >>= terminateM0Worker)
+                        $ do
 #else
 main = do
 #endif
@@ -76,7 +78,7 @@ main = do
     lnid <- newLocalNode transport myRemoteTable
     printHeader (localEndpoint config)
     runProcess lnid sendSelfNode
-    tryRunProcess lnid $ startupHalonNode rcClosure >> receiveWait []
+    (tryRunProcess lnid $ startupHalonNode rcClosure >> receiveWait [])
   where
     rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
                   $(mkStaticClosure 'ignitionArguments)
