@@ -9,8 +9,7 @@
 
 module HA.NodeAgent.Tests ( tests, dummyRC__static, dummyRC__sdict) where
 
-import HA.EventQueue ( EventQueue, eventQueueLabel )
-import HA.EventQueue.Definitions (eventQueue)
+import HA.EventQueue ( EventQueue, eventQueueLabel, startEventQueue )
 import HA.EventQueue.Producer (expiate)
 import HA.EventQueue.Types (PersistMessage(..), HAEvent(..))
 import HA.Process
@@ -52,7 +51,7 @@ dummyRC' :: RG -> Process ()
 dummyRC' rGroup =
   flip catch (\e -> say $ show (e :: SomeException)) $ do
       self <- getSelfPid
-      eq <- spawnLocal (eventQueue rGroup)
+      eq <- startEventQueue rGroup
       usend eq self -- Report me as the RC.
 
       let loop = do

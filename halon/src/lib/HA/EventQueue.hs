@@ -33,21 +33,8 @@ module HA.EventQueue
   , RCDied(..)
   , RCLost(..)
   , TrimDone(..)
-  , TrimAck(..)
-  , RecordAck(..)
   , EventQueueState
-  , setRC
-  , recordNewRC
-  , recordRCDied
-  , recordEvent
-  , sendEventsToRC
-  , sendEventToRC
-  , trim
-  , lookupRC
-  , sendOwnNode
-  , makeEventQueueFromRules
-  , getRC
-  , clearRC
+  , startEventQueue
   ) where
 
 import Prelude hiding ((.), id)
@@ -63,6 +50,7 @@ import Control.Distributed.Process hiding (newChan)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Timeout ( retry )
 
+import Control.Monad (when)
 import Data.Binary (Binary)
 import Data.Foldable (for_, traverse_)
 import Data.Functor (void)
@@ -123,8 +111,10 @@ remotable [ 'addSerializedEvent
 requestTimeout :: Int
 requestTimeout = 1000 * 1000
 
--- | @eventQueue rg@ starts an event queue. @rg@ is the replicator group used to
--- store the events until RC handles them.
+-- | @startsEventQueue rg@ starts an event queue.
+--
+-- @rg@ is the replicator group used to store the events until RC handles them.
+-- Returns the process identifier of the event queue.
 --
 -- When an RC is spawned, its pid should be sent to the colocated EQ which will
 -- record the pid in the replicated state so it is available to other EQs.
@@ -133,19 +123,63 @@ requestTimeout = 1000 * 1000
 -- back to the reporter, and report it to the RC. If the EQ doesn't know where
 -- the RC is, it will try to learn it from the replicated state.
 --
-makeEventQueueFromRules :: RGroup g
-                        => g EventQueue
-                        -> Definitions (Maybe EventQueueState) ()
-                        -> Process ()
-makeEventQueueFromRules rg rm = do
-    self <- getSelfPid
-    register eventQueueLabel self
-    (mRC,_) <- retry requestTimeout $ getState rg
-    -- The EQ must monitor the RC or it will never realize when the RC stops
-    -- responding and won't ever care of checking the replicated state to learn
-    -- of new RCs
-    st <- for mRC $ \pid -> fmap (EventQueueState pid) $ monitor pid
-    execute st rm
+startEventQueue :: RGroup g => g EventQueue -> Process ProcessId
+startEventQueue rg = do
+    eq <- spawnLocal $ do
+      (mRC,_) <- retry requestTimeout $ getState rg
+      -- The EQ must monitor the RC or it will never realize when the RC stops
+      -- responding and won't ever care of checking the replicated state to learn
+      -- of new RCs
+      st <- for mRC $ \pid -> fmap (EventQueueState pid) $ monitor pid
+      execute st $ eqRules rg
+    register eventQueueLabel eq
+    return eq
+
+eqRules :: RGroup g => g EventQueue -> Definitions (Maybe EventQueueState) ()
+eqRules rg = do
+    defineSimple "rc-spawned" $ \rc -> do
+      recordNewRC rg rc
+      setRC rc
+      sendEventsToRC rg rc
+
+    defineSimple "monitoring" $ \(ProcessMonitorNotification _ pid reason) -> do
+      mRC <- getRC
+      -- Check the identity of the process in case the
+      -- notifications get mixed for old and new RCs.
+      when (Just pid == mRC) $
+        case reason of
+          -- The connection to the RC failed.
+          DiedDisconnect -> do
+            publish RCLost
+          -- The RC died.
+          _              -> do recordRCDied rg
+                               publish RCDied
+                               clearRC
+
+    defineSimple "trimming" (trim rg)
+
+    defineSimple "ha-event" $ \(sender, ev) -> do
+      mRC  <- lookupRC rg
+      here <- liftProcess getSelfNode
+      case mRC of
+        Just rc | here /= processNodeId rc
+          -> -- Delegate on the colocated EQ.
+             -- The colocated EQ learns immediately of the RC death. This
+             -- ensures events are not sent to a defunct RC rather than to a
+             -- live one.
+             liftProcess $ do
+               nsendRemote (processNodeId rc) eventQueueLabel
+                           (sender, ev)
+        _ -> -- Record the event if there is no known RC or if it is colocated.
+             recordEvent rg sender ev
+
+    defineSimple "trim-ack" $ \(TrimAck eid) -> publish (TrimDone eid)
+
+    defineSimple "record-ack" $ \(RecordAck sender ev) -> do
+      mRC <- lookupRC rg
+      case mRC of
+        Just rc -> sendEventToRC rc sender ev
+        Nothing -> sendOwnNode sender
 
 setRC :: ProcessId -> PhaseM (Maybe EventQueueState) l ()
 setRC rc = do

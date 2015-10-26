@@ -12,8 +12,7 @@
 module HA.Startup where
 
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
-import HA.EventQueue ( EventQueue, eventQueueLabel )
-import HA.EventQueue.Definitions (eventQueue)
+import HA.EventQueue ( EventQueue, eventQueueLabel, startEventQueue )
 import qualified HA.EQTracker as EQT
 import HA.Multimap.Implementation ( Multimap, fromList )
 import HA.Multimap.Process ( multimap )
@@ -139,7 +138,7 @@ remotableDecl [ [d|
      recoveryCoordinator <- unClosure rcClosure
      maybe (return ()) (updateRGroup rGroup) mlocalReplica
      putGlobalRGroup cRGroup
-     eqpid <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+     eqpid <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
      rspid <- spawnLocal $ do
        -- Killing RS when EQ dies, helps cleaning up in tests.
        link eqpid

@@ -12,8 +12,7 @@ import Prelude hiding ((<$>))
 import Test.Framework
 import Test.Transport
 
-import HA.EventQueue hiding (trim)
-import HA.EventQueue.Definitions
+import HA.EventQueue
 import HA.EventQueue.Producer
 import HA.EventQueue.Types (newPersistMessage, PersistMessage(..), HAEvent(..))
 import HA.NodeAgent.Messages
@@ -83,7 +82,7 @@ tests (AbstractTransport transport breakConnection _) = do
             cRGroup <- newRGroup $(mkStatic 'eqSDict) 20 1000000 nodes
                                  (Nothing,[])
             rGroup <- unClosure cRGroup >>= id
-            eq <- spawnLocal (eventQueue rGroup)
+            eq <- startEventQueue rGroup
             na <- startEQTracker []
             assertBool "update-eq-nodes-works"
               =<< updateEQNodes na nodes
@@ -209,7 +208,7 @@ tests (AbstractTransport transport breakConnection _) = do
                       liftIO $ runProcess ln1 $ do
                         pid <- spawnLocal $ remoteRC self
                         -- spawn a colocated EQ
-                        _ <- spawnLocal (eventQueue rGroup)
+                        _ <- startEventQueue rGroup
                         usend self pid
                       expect
                   )

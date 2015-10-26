@@ -34,7 +34,6 @@ import HA.Resources.Castor
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue
-import HA.EventQueue.Definitions
 import HA.EventQueue.Types (HAEvent(..))
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.Multimap.Implementation
@@ -209,7 +208,7 @@ testServiceRestarting transport = do
                   join $ unClosure cRGroup
               )
               (flip killReplica nid) $ \rGroup -> do
-        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
         _ <- promulgateEQ [nid] . encodeP $
@@ -247,7 +246,7 @@ testServiceNotRestarting transport = do
                   join $ unClosure cRGroup
               )
               (flip killReplica nid) $ \rGroup -> do
-        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
         _ <- promulgateEQ [nid] . encodeP $
@@ -280,7 +279,7 @@ testEQTrimming transport = do
                   join $ unClosure cRGroup
               )
               (flip killReplica nid) $ \rGroup -> do
-        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
         subscribe eq (Proxy :: Proxy TrimDone)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
@@ -334,7 +333,7 @@ testHostAddition transport = do
                   join $ unClosure cRGroup
               )
               (flip killReplica nid) $ \rGroup -> do
-        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
         -- Send host update message to the RC
@@ -390,7 +389,7 @@ testDriveAddition transport = do
                   join $ unClosure cRGroup
               )
               (flip killReplica nid) $ \rGroup -> do
-        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
         -- Send host update message to the RC
@@ -455,7 +454,7 @@ testServiceStopped transport = do
                   join $ unClosure cRGroup
               )
               (flip killReplica nid) $ \rGroup -> do
-        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
         _ <- promulgateEQ [nid] . encodeP $
@@ -498,7 +497,7 @@ launchRC action = do
                 join $ unClosure cRGroup
             )
             (flip killReplica nid) $ \rGroup -> do
-      eq      <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+      eq      <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
       runRC (eq, IgnitionArguments [nid]) rGroup >>= action
 
 serviceStart :: Configuration a => Service a -> a -> Process ()
@@ -571,7 +570,7 @@ testNodeUpRace transport = do
               )
               (flip killReplica nid) $ \rGroup -> do
 
-        eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+        eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
         subscribe eq (Proxy :: Proxy TrimDone)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
 
@@ -624,7 +623,7 @@ testRCsyncToConfd host transport = do
                        [nid] ((Nothing,[]), fromList [])
   pRGroup <- unClosure cRGroup
   rGroup <- pRGroup
-  eq <- spawnLocal $ eventQueue (viewRState $(mkStatic 'eqView) rGroup)
+  eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
   _ <- runRCEx (eq, IgnitionArguments [nid]) testSyncRules rGroup
 
   promulgateEQ [nid] (initialDataAddr host host) >>= (`withMonitor` wait)
