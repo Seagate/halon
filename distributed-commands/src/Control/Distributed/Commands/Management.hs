@@ -29,8 +29,11 @@ import Control.Exception (bracket, throwIO)
 import Control.Monad
 import System.Exit (ExitCode (ExitFailure, ExitSuccess))
 import Data.Either (lefts)
+import Data.Function (fix)
 import Data.List (isPrefixOf)
 import Network (HostName)
+import System.IO
+
 
 -- | Interface to a provider of hosts in the cloud.
 newtype Provider = Provider
@@ -89,10 +92,14 @@ systemThere' muser ips cmd = bracket
     (forM ips $ \h -> async $
       (maybe C.systemThere C.systemThereAsUser (muser `mplus` host_user h)
                                                h cmd
-      ) >>= C.waitForCommand_ >>= \case
-          ExitSuccess -> return ()
-          ExitFailure ec -> throwIO $ userError $
-            "Command " ++ (show cmd) ++ " failed with exit code " ++ (show ec)
+      ) >>= \cmd_getLine -> fix $ \loop ->
+        cmd_getLine >>= \case
+          Left ExitSuccess -> return ()
+          Left ec ->
+            throwIO $ userError $
+              "Command " ++ (show cmd) ++ " failed with exit code " ++ (show ec)
+          Right line ->
+            hPutStrLn stderr line >> loop
     )
     (mapM_ waitCatch)
     (mapM waitCatch) >>= mapM_ throwIO . lefts
