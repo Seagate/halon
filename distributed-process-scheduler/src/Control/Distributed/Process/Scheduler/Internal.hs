@@ -48,6 +48,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , spawn
   , spawnAsync
   , spawnChannelLocal
+  , spawnMonitor
   , callLocal
   , whereis
   , register
@@ -1143,6 +1144,14 @@ spawnAsync nid cp = do
     SpawnAck <- DP.expect
     usend self (DP.DidSpawn ref child)
     return ref
+
+-- | Like 'DP.spawnLink', but monitor the spawned process.
+spawnMonitor :: NodeId -> Closure (Process ())
+             -> Process (ProcessId, DP.MonitorRef)
+spawnMonitor nid cp = do
+    pid <- spawn nid cp
+    mref <- monitor pid
+    return (pid, mref)
 
 -- | Notifies the scheduler of a new process. When acknowledged, starts the new
 -- process and notifies again the scheduler when the process terminates. Returns
