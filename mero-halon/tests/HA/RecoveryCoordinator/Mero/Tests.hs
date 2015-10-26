@@ -94,8 +94,7 @@ import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import HA.Castor.Tests (initialDataAddr)
 import HA.RecoveryCoordinator.Actions.Mero (syncToConfd)
-import Mero (m0_init)
-import Mero.M0Worker
+import Mero
 import Mero.Notification (finalize)
 import Network.CEP (defineSimple, liftProcess)
 import System.IO.Unsafe
@@ -639,8 +638,7 @@ testRCsyncToConfd host transport = do
 
   where
     wait = void (expect :: Process ProcessMonitorNotification)
-    startM0 x = m0_init >> startGlobalWorker >> x
-    withTestEnv = withTmpDirectory . startM0 . tryWithTimeout transport testRemoteTable 15000000
+    withTestEnv = withTmpDirectory . withM0Deferred . tryWithTimeout transport testRemoteTable 15000000
 #endif
 
 testRemoteTable :: RemoteTable
