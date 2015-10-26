@@ -316,7 +316,7 @@ dumpDebuggingInfo m loop (RunInfo total rres) = do
                 SuccessExe pif p_buf buf -> do
                   putStrLn $ "<" ++ pif ++ ">"
                   putStrLn "___ Execution result: SUCCESS"
-                  case p_buf == buf of
+                  case p_buf `merelyEqual` buf of
                     True  -> putStrLn "___ Buffer is untounched"
                     False -> do
                       putStrLn $ "___ Previous buffer: " ++ show p_buf
