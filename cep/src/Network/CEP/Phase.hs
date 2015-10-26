@@ -81,7 +81,7 @@ extractMatchMsg p g l buf = go (-1)
   where
     go lastIdx =
         case bufferGetWithIndex lastIdx buf of
-          (Just (newIdx, a), newBuf) -> do
+          Just (newIdx, a, newBuf) -> do
             res <- p a g l
             case res of
               Nothing -> go newIdx
@@ -100,7 +100,7 @@ extractNormalMsg :: forall a. Serializable a
                  -> Process (Maybe (Extraction a))
 extractNormalMsg _ buf =
     case bufferGet buf of
-      (Just a, buf') ->
+      Just (a, buf') ->
         let ext = Extraction
                   { _extractBuf = buf'
                   , _extractMsg = a
@@ -114,8 +114,8 @@ extractSeqMsg s sbuf = go (-1) sbuf s
   where
     go lastIdx buf (Await k) =
         case bufferGetWithIndex lastIdx buf of
-          (Just (idx, i), buf') -> go idx buf' $ k i
-          _                     -> return Nothing
+          Just (idx, i, buf') -> go idx buf' $ k i
+          _                   -> return Nothing
     go _ buf (Emit b) =
         let ext = Extraction
                   { _extractBuf = buf
@@ -217,5 +217,5 @@ runPhaseM pname subs plogs pg pl pb action = do
             Just r  -> go g l lgs buf $ k r
         inner (Shift idx :>>= k) =
             case bufferGetWithIndex idx buf of
-              (Nothing, _)   -> return (g,(buf, SM_Suspend lgs),[])
-              (Just r, buf') -> go g l lgs buf' $ k r
+              Nothing   -> return (g,(buf, SM_Suspend lgs),[])
+              Just (r, z, buf') -> go g l lgs buf' $ k (r,z)
