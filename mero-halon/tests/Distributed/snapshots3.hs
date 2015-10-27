@@ -122,12 +122,7 @@ main = (>>= maybe (error "test timed out") return) $ timeout (60 * 1000000) $ do
                      ++ "-t " ++ m1 ++ ":9000 2>&1"
                        )
 
-      systemThere [m1] ("./halonctl"
-                     ++ " -l " ++ halonctlloc m1
-                     ++ " -a " ++ m1 ++ ":9000 bootstrap"
-                     ++ " station -n " ++
-                        show snapshotThreshold ++ " 2>&1"
-                       )
+      say "Waiting for RC to restart ..."
       logSize <- expectLogInt [nid1'] "Log size of replica: "
       noisyCount <- expectLogInt [nid1'] "Recovery Coordinator: Noisy ping count: "
 
