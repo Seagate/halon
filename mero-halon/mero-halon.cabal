@@ -25,6 +25,10 @@ Flag distributed-tests
   Description: Enables distributed tests.
   Default: False
 
+Flag distributed-benchmarks
+  Description: Enables distributed benchmarks.
+  Default: False
+
 Flag rpc
   Description: Build with the RPC backend instead of TCP.
   Default: False
@@ -79,6 +83,7 @@ Library
                    HA.Services.SSPL.CEP
                    HA.Services.SSPLHL
                    HA.Services.SSPL.LL.Resources
+                   HA.Stats
                    HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
@@ -885,3 +890,27 @@ Test-Suite test-stha-local
                    unix
   else
       Buildable: False
+
+benchmark halonpings
+  Type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs:  benchmarks
+  Main-Is:         halonpings.hs
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  if flag(distributed-benchmarks)
+    Build-Depends: distributed-process,
+                   base,
+                   clock,
+                   filepath,
+                   halon,
+                   mero-halon,
+                   network-transport,
+                   network-transport-tcp,
+                   distributed-commands
+  else
+    Buildable:     False

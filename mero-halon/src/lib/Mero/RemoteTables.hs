@@ -18,6 +18,7 @@ import HA.Services.Frontier ( __remoteTable, __remoteTableDecl )
 import HA.Services.Monitor ( __remoteTable, __remoteTableDecl )
 import HA.Services.SSPL ( __remoteTable, __remoteTableDecl )
 import HA.Services.SSPLHL ( __remoteTable, __remoteTableDecl )
+import HA.Stats ( __remoteTable )
 import HA.RecoveryCoordinator.Definitions ( __remoteTable )
 
 import Control.Distributed.Process (RemoteTable)
@@ -41,5 +42,6 @@ meroRemoteTable next =
    HA.Services.DecisionLog.__remoteTableDecl $
    HA.Services.Monitor.__remoteTable $
    HA.Services.Monitor.__remoteTableDecl $
+   HA.Stats.__remoteTable $
    HA.RecoveryCoordinator.Definitions.__remoteTable $
    next
