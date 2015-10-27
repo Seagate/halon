@@ -218,7 +218,8 @@ serviceRules argv eq = do
     -- best we could do is to consult resource graph and check if we need
     -- this service running or not and proceed evaluation.
     setPhaseIf ph2' notHandled $ \(HAEvent uuid msg _) -> do
-      ServiceStarted n@(Node nodeId) svc cfg sp <- decodeMsg msg
+      ServiceStarted n@(Node nodeId) svc cfg sp@(ServiceProcess spid)
+        <- decodeMsg msg
       phaseLog "input" $ unwords [ "ServiceStarted:"
                                  , "name=" ++ (snString $ serviceName svc)
                                  , "nid=" ++ show nodeId
@@ -243,12 +244,14 @@ serviceRules argv eq = do
                               ++ " started"
                              )
           liftProcess $ sayRC $
-            "started " ++ snString (serviceName svc) ++ " service"
+            "started " ++ snString (serviceName svc) ++ " service on " ++
+            show (processNodeId spid)
           sendMsg eq uuid
         else sendMsg eq uuid
 
     setPhaseIf ph2 serviceStarted $ \(HAEvent uuid msg _) -> do
-      ServiceStarted n@(Node nodeId) svc cfg sp <- decodeMsg msg
+      ServiceStarted n@(Node nodeId) svc cfg sp@(ServiceProcess spid)
+        <- decodeMsg msg
       Just (thread, _, _, _) <- get Local
       phaseLog "input" $ unwords [ "ServiceStarted:"
                                  , "name=" ++ (snString $ serviceName svc)
@@ -279,7 +282,8 @@ serviceRules argv eq = do
       sendMsg eq uuid
       sendMsg eq thread
       liftProcess $ sayRC $
-        "started " ++ snString (serviceName svc) ++ " service"
+        "started " ++ snString (serviceName svc) ++ " service on " ++
+        show (processNodeId spid)
 
     setPhaseIf ph3 serviceCouldNotStart $ \(HAEvent uuid msg _) -> do
       ServiceCouldNotStart (Node nid) svc cfg <- decodeMsg msg
