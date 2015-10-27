@@ -85,7 +85,6 @@ Test-Suite tests
 
   Build-Depends:    base >= 4.7,
                     binary >= 0.6,
-                    Cabal >= 1.16,
                     consensus,
                     consensus-paxos,
                     constraints >= 0.4,
@@ -125,7 +124,6 @@ Test-Suite tests-scheduler
 
   Build-Depends:    base >= 4.7,
                     binary >= 0.6,
-                    Cabal >= 1.16,
                     consensus,
                     consensus-paxos,
                     constraints >= 0.4,
