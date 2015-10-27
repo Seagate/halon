@@ -52,4 +52,7 @@ dataLoad eqnids (ClusterOptions cf verify) = do
     Right datum | verify -> liftIO $ do
       putStrLn "Initial data file parsed successfully."
       print datum
-    Right (datum :: CI.InitialData) -> void $ promulgateEQ eqnids datum
+    Right (datum :: CI.InitialData) -> promulgateEQ eqnids datum
+        >>= \pid -> withMonitor pid wait
+      where
+        wait = void (expect :: Process ProcessMonitorNotification)
