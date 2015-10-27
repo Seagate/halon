@@ -6,7 +6,6 @@
 {-# LANGUAGE CPP #-}
 module Main (main) where
 
-import Prelude hiding ((<$>))
 import Flags
 import Lookup
 
@@ -26,9 +25,11 @@ import HA.Network.Transport (writeTransportGlobalIVar)
 import Network.Transport.TCP as TCP
 #endif
 
-import Control.Applicative ((<$>))
 import Control.Distributed.Process
+import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node (initRemoteTable, newLocalNode)
+import Data.Traversable
+import Data.Maybe (fromMaybe)
 
 buildType :: String
 #ifdef USE_RPC
@@ -68,8 +69,28 @@ run (Options { .. }) = do
   let rnids = fmap conjureRemoteNodeId optTheirAddress
   tryRunProcess lnid $ do
     liftIO $ printHeader
-    case optCommand of
-      Bootstrap bs -> bootstrap rnids bs
-      Service bs   -> service rnids bs
-      Cluster bs -> dataLoad rnids bs
+    replies <- forM rnids $ \nid -> do
+      (_, mref) <- spawnMonitor nid (returnCP sdictUnit ())
+      let mkErrorMsg msg = "Error connecting to " ++ show nid ++ ": " ++ msg
+      fromMaybe [mkErrorMsg "connect timeout"] <$> receiveTimeout 5000000
+        [ matchIf (\(ProcessMonitorNotification ref _ _) -> ref == mref)
+                  (\(ProcessMonitorNotification _ _ dr) -> do
+                      return $ case dr of
+                        DiedException e -> [mkErrorMsg $ "got exception (" ++ e ++ ")."]
+                        DiedDisconnect -> [mkErrorMsg  "node disconnected."]
+                        DiedNodeDown -> [mkErrorMsg "node is down."]
+                        _ -> []
+                  )
+        ]
+    if (null $ concat replies)
+      then case optCommand of
+          Bootstrap bs -> bootstrap rnids bs
+          Service bs   -> service rnids bs
+          Cluster bs -> dataLoad rnids bs
+      else do
+        say "Failed to connect to controlled nodes: "
+        liftIO $ mapM_ putStrLn $ concat replies
+        _ <- receiveTimeout 1000000 [] -- XXX: give a time to output logs
+        return ()
+
   return ()

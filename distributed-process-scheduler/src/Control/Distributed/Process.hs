@@ -36,6 +36,7 @@ module Control.Distributed.Process
   , spawnAsync
   , DidSpawn(..)
   , spawnChannelLocal
+  , spawnMonitor
   , callLocal
   , whereis
   , register
@@ -133,6 +134,7 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , spawn
   , spawnAsync
   , spawnChannelLocal
+  , spawnMonitor
   , callLocal
   , whereis
   , register
@@ -238,6 +240,9 @@ spawnChannelLocal :: Serializable a
                   -> Process (SendPort a)
 spawnChannelLocal = ifSchedulerIsEnabled Internal.spawnChannelLocal
                                          DP.spawnChannelLocal
+spawnMonitor :: NodeId -> Closure (Process ())
+             -> Process (ProcessId, DP.MonitorRef)
+spawnMonitor = ifSchedulerIsEnabled Internal.spawnMonitor DP.spawnMonitor
 
 {-# NOINLINE callLocal #-}
 callLocal :: Process a -> Process a
