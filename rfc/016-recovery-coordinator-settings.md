@@ -20,7 +20,8 @@ API that makes it easy to keep track options and update them.
         should not be updated.
      b. Messages or actions should not be lost in option update arrive in the
         middle of the transaction.
-  2. Rules update should be visible in (....).
+  2. Rules update should be visible as soon as possible (this contraint should
+      be better formulated by actual requirement, or remove if there is no such)
   3. Settings should have the same liveness as cluster has.
 
 ## Description
@@ -48,34 +49,29 @@ RFC.
 
 #### File format
 
-File has is INI format (format could be changed if there are better
-candidates). It should be structured as follows:
+File has is yaml format. It should be structured as follows:
 
-  # Option description (default value1)
-  globalOptionName = optionValue1
-
-  [Rule Name]
-  # Option description (default value2)
-  optionName = optionValue2
-
-  [Rule2 Name]
-  # Option description (default value3)
-  optionName = optionValue3
+group:
+  subgroup:
+    - option: value
 
 Example:
 
+```yaml
+global:
   # Timeout that is used in rules (9000000000000)
-  defaultTimeout = 100000
+  defaultTimeout: 100000
   # Email that is used to send alerts ()
-  administrator.email = internal-support@seagate.com
+  administrator.email: internal-support@seagate.com
 
-  [service-start]
+"service-start":
   # Number of attempts to start a service (3)
-  failure.attempts = 7
+  failure_attempts: 7
 
-  [buggy rule]
+"buggy_rule"
   # If rule should be enabled
-  enabled = False
+  enabled: False
+```
 
 #### Partial modification
 
@@ -98,16 +94,70 @@ do not need any special functionality from CEP.
 Engine rules modify how engine process rules. Such options (command) could
 require special functionality in CEP. Examples: if rule should be enabled or not.
 
-We could store all setting in the global state in a special data structure.
-When rule reads a setting it receives most recent setting from that structure.
-If rule need to keep the same value during transaction it should store it in
-immutable storage. It could be:
+#### Transactional options
+
+Halon store all setting in the global state in a special data structure.
+When rule performs an option lookup it receives most recent setting from
+that structure. If rule need to keep the same value during transaction it
+should store it in immutable storage. It could be:
 
   1. Local state - value in local state is the fastest way. However such value
       will not survive RC restart and will be lost.
 
   2. RG - value stored in resource graph as a part of the state update
       is relatevely slow.
+
+As a result multistep rule may we written as follows:
+
+```
+  opt1 <- declareOption "example-rule" "hello" Just id "Hello"
+  directly $ do
+    option <- readOpiton opt1
+    put Local option -- store option in a local storage
+    continue ph1
+
+  definePhase ph1 $ \(ExampleEvent pid name) -> do
+    hello <- get Local -- read local version of the option
+    liftProcess $ usend pid $ hello ++ ", " ++ name
+```
+
+#### Multivariant rules
+
+If we need a list of the same rules, that run with a different option
+we could do following trick:
+
+```
+  opt1 <- declareOption "example-rule" "hello" read print ["A"]
+  directly $ do
+    values <- readOption opt1
+    forM values $ \value ->
+      put Local value
+      fork ph1
+    stop
+  definePhase ph1 $ ...
+```
+
+#### Engine rules
+
+In order to support engine rules CEP shoud provide a number of callbacks,
+that will modify engine.
+
+Interesting callbacks are:
+
+  - Disable rules by name:
+
+    Disabling a rule is actually removal a rule from a lists of running
+    rules and suspended rules.
+
+  - Enable rules by name:
+
+    Move rule from saved rules to running. Actually this rule will start
+    a new rule with the given name.
+
+Current rules are not serializable, so it's not possible to store a rule
+to persistent storage. And this is a requirement for suspending and
+restarting rules based on configuration settings.
+
 
 #### Rules data structure
 
@@ -150,6 +200,12 @@ Data structure should support following options:
   writeOptionMap :: SettingsDescription -> Section -> Name -> Settings
                  -> a -> Settings
     -- write option to storage
+
+  readOption :: Option  a -> PhaseM ... a
+    -- read option value inside the rule
+
+  writeOption :: Option a -> a -> PhaseM .. ()
+    -- write new option value inside the rule
 
 Inside RC engine user carry an data structure for options presented
 as follows:
@@ -194,4 +250,3 @@ if so it stores option in replicated storage and locally and goes to the next
 step. This event is acknowledged to EQ only when it was stored, i.e. on the
 second step of the CEP rule. This guarantee that setting update will be processed
 even in presence of network failures.
-
