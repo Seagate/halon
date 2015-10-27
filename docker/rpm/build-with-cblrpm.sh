@@ -29,8 +29,10 @@ ${CBLRPM} srpms ${HALONSRC}/vendor/distributed-static || exit 6
 ${CBLRPM} srpms ${HALONSRC}/vendor/distributed-process || exit 6
 ${CBLRPM} srpms ${HALONSRC}/vendor/distributed-process-extras || exit 6
 ${CBLRPM} srpms ${HALONSRC}/vendor/distributed-process-async || exit 6
+${CBLRPM} srpms ${HALONSRC}/network-transport-controlled || exit 6
 ${CBLRPM} srpms ${HALONSRC}/distributed-process-trans || exit 6
 ${CBLRPM} srpms ${HALONSRC}/distributed-process-scheduler || exit 6
+${CBLRPM} srpms ${HALONSRC}/distributed-process-test || exit 6
 ${CBLRPM} srpms ${HALONSRC}/cep/cep || exit 6
 ${CBLRPM} srpms ${HALONSRC}/consensus || exit 6
 ${CBLRPM} srpms ${HALONSRC}/consensus-paxos || exit 6
