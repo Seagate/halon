@@ -6,7 +6,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Main (main) where
 
-import Prelude hiding ((<$>))
 import Flags
 import HA.Network.RemoteTables (haRemoteTable)
 import Mero.RemoteTables (meroRemoteTable)
@@ -21,7 +20,6 @@ import HA.Process (tryRunProcess)
 import HA.RecoveryCoordinator.Definitions
 import HA.Startup (startupHalonNode)
 
-import Control.Applicative ((<$>))
 import Control.Distributed.Commands.Process (sendSelfNode)
 import Control.Distributed.Process hiding (catch)
 import Control.Distributed.Process.Closure ( mkStaticClosure )
@@ -31,7 +29,6 @@ import Control.Distributed.Static ( closureCompose )
 #ifdef USE_MERO
 import Mero
 import Mero.M0Worker
-import qualified Control.Exception as Exception
 #endif
 import System.Environment
 import System.IO ( hFlush, stdout , hSetBuffering, BufferMode(..))
@@ -53,9 +50,7 @@ myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 main :: IO ()
 #ifdef USE_MERO
-main = withM0 $ Exception.bracket_ startGlobalWorker
-                        (getGlobalWorker >>= terminateM0Worker)
-                        $ do
+main = withM0Deferred $ do
 #else
 main = do
 #endif
@@ -78,7 +73,7 @@ main = do
     lnid <- newLocalNode transport myRemoteTable
     printHeader (localEndpoint config)
     runProcess lnid sendSelfNode
-    (tryRunProcess lnid $ startupHalonNode rcClosure >> receiveWait [])
+    tryRunProcess lnid $ startupHalonNode rcClosure >> receiveWait []
   where
     rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
                   $(mkStaticClosure 'ignitionArguments)

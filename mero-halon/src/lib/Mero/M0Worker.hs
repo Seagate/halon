@@ -10,9 +10,6 @@ module Mero.M0Worker
     , terminateM0Worker
     , queueM0Worker
     , runOnM0Worker
-    , startGlobalWorker
-    , getGlobalWorker
-    , runOnGlobalM0Worker
     , liftM0
     ) where
 
@@ -21,10 +18,9 @@ import Control.Concurrent.MVar
 import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.IORef
 import Mero.Concurrent
-import System.IO.Unsafe
 
+import Mero
 
 data M0Worker = M0Worker
     { m0WorkerChan   :: Chan (IO ())
@@ -35,7 +31,7 @@ data M0Worker = M0Worker
 newM0Worker :: IO M0Worker
 newM0Worker = do
     c <- newChan
-    fmap (M0Worker c) $ forkM0OS (worker c)
+    sendM0Task $ M0Worker c <$> forkM0OS (worker c)
   where
     worker c = forever $ join $ readChan c
 
@@ -58,25 +54,8 @@ runOnM0Worker w task = do
     queueM0Worker w $ try task >>= putMVar mv
     takeMVar mv >>= either (throwIO :: SomeException -> IO a) return
 
-{-# NOINLINE globalWorkerRef #-}
-globalWorkerRef :: IORef (Maybe M0Worker)
-globalWorkerRef = unsafePerformIO $ newIORef Nothing
-
--- | Starts a new worker and makes it globally available with 'getGlobalWorker'.
--- Call this from an m0_thread.
-startGlobalWorker :: IO ()
-startGlobalWorker = newM0Worker >>= writeIORef globalWorkerRef . Just
-
--- | Yields the global worker. Call 'startGlobalWorker' first.
-getGlobalWorker :: IO M0Worker
-getGlobalWorker = readIORef globalWorkerRef
-                    >>= maybe (error "getGlobalWorker: not initialized") return
-
--- | Runs a task in the global worker.
-runOnGlobalM0Worker :: IO a -> IO a
-runOnGlobalM0Worker task = getGlobalWorker >>= flip runOnM0Worker task
 
 -- | Runs the given action in the global mero worker and lifts the
 -- operation into the desired monad.
 liftM0 :: MonadIO m => IO a -> m a
-liftM0 = liftIO . runOnGlobalM0Worker
+liftM0 = liftIO . sendM0Task
