@@ -41,7 +41,7 @@ newM0Worker = do
 
 -- | Terminates a worker. Waits for all queued tasks to be executed.
 terminateM0Worker :: M0Worker -> IO ()
-terminateM0Worker M0Worker {..} =
+terminateM0Worker M0Worker {..} = do
     writeChan m0WorkerChan $ error "terminated by terminateM0Worker"
     joinM0OS m0WorkerThread
 
