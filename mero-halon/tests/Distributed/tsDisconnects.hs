@@ -24,7 +24,6 @@ import Control.Distributed.Commands.Process
   , systemThere
   , spawnNode
   , NodeHandle(..)
-  , redirectLogsHere
   , copyLog
   , expectLog
   , __remoteTable
@@ -93,11 +92,6 @@ main = (>>= maybe (error "test timed out") return) $
         case e of
           Left rc -> putStrLn $ show (handleGetNodeId nh) ++ ": terminated " ++ show rc
           Right s -> putStrLn (show (handleGetNodeId nh) ++ ": " ++ s) >> loop
-      say $ "Redirecting logs ..."
-      redirectLogsHere nid0
-      redirectLogsHere nid1
-      redirectLogsHere nid2
-      redirectLogsHere nid3
 
       say "Spawning the tracking station ..."
       systemThere [m0] ("./halonctl"

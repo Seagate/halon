@@ -68,11 +68,6 @@ main = (>>= maybe (error "test timed out") return) $
       nhs <- forM (zip ms [m0loc, m1loc, m2loc, m3loc]) $ \(m, mloc) ->
                spawnNode m ("./halond -l " ++ mloc ++ " 2>&1")
       let [nid0, nid1, nid2, nid3] = map handleGetNodeId nhs
-      say $ "Redirecting logs ..."
-      redirectLogsHere nid0
-      redirectLogsHere nid1
-      redirectLogsHere nid2
-      redirectLogsHere nid3
 
       say "Spawning the tracking station ..."
       systemThere [m0] ("./halonctl"
@@ -124,8 +119,7 @@ main = (>>= maybe (error "test timed out") return) $
 
       forM_ [m0, m1, m2] $ \m -> do
         say $ "Restarting ts node " ++ m ++ " ..."
-        nid <- spawnNode_ m ("./halond -l " ++ m ++ ":9000" ++ " 2>&1")
-        redirectLogsHere nid
+        spawnNode_ m ("./halond -l " ++ m ++ ":9000" ++ " 2>&1")
 
       send pingPid "2"
       expectLog tsNodes $ isInfixOf $ "received DummyEvent 2"

@@ -16,7 +16,6 @@ import Control.Distributed.Commands.Process
   ( copyFiles
   , systemThere
   , spawnNode
-  , redirectLogsHere
   , copyLog
   , expectLog
   )
@@ -106,12 +105,8 @@ main =
         copyLog (const True) self
 
         say "Spawning halond on cluster nodes from test control node"
-        nid0 <- spawnNode m0 ("./halond -l " ++ m0loc ++ " 2>&1")
-        nid1 <- spawnNode m1 ("./halond -l " ++ m1loc ++ " 2>&1")
-        say $ "Redirecting logs from " ++ show nid0 ++ " to test control node"
-        redirectLogsHere nid0
-        say $ "Redirecting logs from " ++ show nid1 ++ " to test control node"
-        redirectLogsHere nid1
+        _ <- spawnNode m0 ("./halond -l " ++ m0loc ++ " 2>&1")
+        _ <- spawnNode m1 ("./halond -l " ++ m1loc ++ " 2>&1")
 
         say "Spawning tracking station ..."
         systemThere [m0] ("./halonctl"

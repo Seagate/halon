@@ -20,7 +20,6 @@ import Control.Distributed.Commands.Process
   , systemThere
   , spawnNode
   , spawnNode_
-  , redirectLogsHere
   , copyLog
   , expectLog
   , expectTimeoutLog
@@ -86,11 +85,6 @@ main =
       nid0 <- spawnNode_ m0 ("./halond -l " ++ m0loc ++ " 2>&1")
       nh1  <- spawnNode m1 ("./halond -l " ++ m1loc ++ " 2>&1")
       let nid1 = handleGetNodeId nh1
-
-      say $ "Redirecting logs from " ++ show nid0 ++ " ..."
-      redirectLogsHere nid0
-      say $ "Redirecting logs from " ++ show nid1 ++ " ..."
-      redirectLogsHere nid1
 
       say "Spawning the tracking station ..."
       systemThere [m0] ("./halonctl"

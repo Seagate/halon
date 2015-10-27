@@ -78,7 +78,6 @@ import Control.Distributed.Commands.Management
 import Control.Distributed.Commands.Process
     ( spawnNode
     , __remoteTable
-    , redirectLogsHere
     , printNodeId
     )
 import Control.Distributed.Commands.Providers
@@ -393,7 +392,6 @@ setup transport tsNodes clientNodes action = do
       let tsNids = catMaybes $ map (`Prelude.lookup` nidPairs) tsNodes
           clientNids = catMaybes $ map (`Prelude.lookup` nidPairs) clientNodes
           nids = map snd nidPairs
-      mapM_ redirectLogsHere nids
       liftIO . putMVar box =<<
         call $(mkStatic 'dictDouble)
              (head nids)

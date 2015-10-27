@@ -10,7 +10,6 @@ import Control.Distributed.Commands.Process
   , systemThere
   , spawnNode
   , spawnNode_
-  , redirectLogsHere
   , copyLog
   , expectLog
   , __remoteTable
@@ -69,10 +68,8 @@ main = (>>= maybe (error "test timed out") return) $ timeout (60 * 1000000) $ do
                              )
 
       say "Spawning halond ..."
-      [nh0, nh1] <- forM ms $ \m -> do
-          n <- spawnNode m ("./halond -l " ++ m ++ ":9000 2>&1")
-          redirectLogsHere $ handleGetNodeId n
-          return n
+      [nh0, nh1] <- forM ms $ \m ->
+        spawnNode m ("./halond -l " ++ m ++ ":9000 2>&1")
 
       let nid0 = handleGetNodeId nh0
           nid1 = handleGetNodeId nh1
@@ -117,8 +114,8 @@ main = (>>= maybe (error "test timed out") return) $ timeout (60 * 1000000) $ do
       systemThere [m1] "pkill halond; true"
       _ <- liftIO $ waitForCommand_ $ handleGetInput nh1
 
+      say "Respawning halond ..."
       nid1' <- spawnNode_ m1 ("./halond -l " ++ m1 ++ ":9000 2>&1")
-      redirectLogsHere nid1'
       systemThere [m0] ("./halonctl"
                      ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m0 ++ ":9000 bootstrap satellite "

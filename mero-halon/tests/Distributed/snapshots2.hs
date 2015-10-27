@@ -16,7 +16,6 @@ import Control.Distributed.Commands.Process
   ( copyFiles
   , systemThere
   , spawnNode_
-  , redirectLogsHere
   , copyLog
   , expectLog
   , __remoteTable
@@ -72,10 +71,8 @@ main =
                              )
 
       say "Spawning halond ..."
-      (nid0 : nidss) <- forM ms $ \m -> do
-                n <- spawnNode_ m ("./halond -l " ++ m ++ ":9000 2>&1")
-                redirectLogsHere n
-                return n
+      (nid0 : nidss) <- forM ms $ flip
+        spawnNode_ ("./halond -l " ++ m ++ ":9000 2>&1")
 
       say "Spawning satellites ..."
       systemThere [m0] ("./halonctl"

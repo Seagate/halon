@@ -15,7 +15,6 @@
 import Control.Distributed.Commands.Process
   ( systemLocal
   , spawnLocalNode
-  , redirectLogsHere
   , copyLog
   , expectLog
   , __remoteTable
@@ -124,10 +123,6 @@ main =
       say "Spawning halond ..."
       nid0 <- spawnLocalNode (halond1 ++ " -l " ++ m0loc ++ " > /tmp/halond1 2>&1")
       nid1 <- spawnLocalNode (halond2 ++ " -l " ++ m1loc ++ " > /tmp/halond2 2>&1")
-      say $ "Redirecting logs from " ++ show nid0 ++ " ..."
-      redirectLogsHere nid0
-      say $ "Redirecting logs from " ++ show nid1 ++ " ..."
-      redirectLogsHere nid1
 
       say "Spawning tracking station ..."
       systemLocal (halonctl

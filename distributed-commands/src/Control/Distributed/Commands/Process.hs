@@ -4,6 +4,7 @@
 --
 -- Distributed commands for distributed-process.
 --
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
@@ -61,8 +62,40 @@ import Data.IORef (newIORef, readIORef, modifyIORef')
 import Data.List (isPrefixOf, isSuffixOf)
 import Data.Foldable (forM_)
 import Data.Typeable (Typeable)
+import GHC.Generics (Generic)
 import System.Exit (ExitCode(..))
 import System.Environment (lookupEnv, getEnvironment, setEnv)
+
+
+-- | Sends all log messages in the local node to the given process.
+redirectLogsThere :: ProcessId -> Process ()
+redirectLogsThere pid = do
+    Just logger <- whereis "logger"
+
+    let loop = receiveWait
+            [ match $ \msg -> do
+                  send pid (msg :: (String, ProcessId, String))
+                  loop
+            , matchAny $ \amsg -> do
+                  forward amsg logger
+                  loop ]
+
+    reregister "logger" =<< spawnLocal loop
+
+remotable [ 'redirectLogsThere ]
+
+-- | @redirectLogs n to@ has all log messages produced by @n@ sent to the
+-- process with the given identifier @to@.
+--
+redirectLogs :: NodeId -> ProcessId -> Process ()
+redirectLogs n to = call sdictUnit n $ $(mkClosure 'redirectLogsThere) to
+
+-- | @redirectLogsHere n@ has all log messages produced by @n@ sent to the
+-- logger of the local node.
+--
+redirectLogsHere :: NodeId -> Process ()
+redirectLogsHere n = whereis "logger" >>=
+    maybe (die "redirectLogsHere: unkown local logger") (redirectLogs n)
 
 -- | Used when calling 'spawnNode', it gathers the resulted 'NodeId' and
 --   the action used to read input from the process.
@@ -73,14 +106,19 @@ data NodeHandle =
       -- ^ Reads input from the process.
     }
 
-newtype SpawnNodeId = SpawnNodeId NodeId
-  deriving (Typeable, Binary)
+data SpawnNodeId = SpawnNodeId ProcessId NodeId
+  deriving (Typeable, Generic)
+
+instance Binary SpawnNodeId
 
 -- | @spawnNode h command@ launches @command@ on the host @h@.
 --
 -- @command@ is expected to spawn a Cloud Haskell node, and it
 -- should send its 'NodeId' back to the caller with 'sendSelfNode' at the very
 -- start.
+--
+-- All log messages are redirected to the node of the caller.
+--
 spawnNode :: HostName -> String -> Process NodeHandle
 spawnNode h cmd =
     spawnNodeWith (maybe C.systemThere C.systemThereAsUser muser h) cmd
@@ -102,7 +140,9 @@ sendSelfNode = do
       pid <- liftIO $ evaluate
                        (decode $ either error id $ B64.decode $ C8.pack epid)
                `E.onException` putStrLn "failed decoding spawnNode pid"
-      getSelfNode >>= send pid . SpawnNodeId
+      self <- getSelfPid
+      getSelfNode >>= send pid . SpawnNodeId self
+      expect
 
 -- | Like 'spawnNode' but takes as argument the IO command used to spawn the
 -- node.
@@ -123,7 +163,9 @@ spawnNodeWith ioSpawn cmd = do
         loop
         putStrLn $ "The command \"" ++ cmd ++ "\" did not sent a NodeId."
         throwIO (e :: SomeException)
-      Right (SpawnNodeId nid) ->
+      Right (SpawnNodeId sender nid) -> do
+        redirectLogsHere nid
+        usend sender ()
         return $ NodeHandle nid getLine_cmd
 
 isLocalHost :: String -> Bool
@@ -153,39 +195,6 @@ registerLogHook hook = do
                   loop ]
 
     reregister "logger" =<< spawnLocal loop
-
--- | Sends all log messages in the local node to the given process.
-redirectLogsThere :: ProcessId -> Process ()
-redirectLogsThere pid = do
-    Just logger <- whereis "logger"
-
-    let loop = receiveWait
-            [ match $ \msg -> do
-                  send pid (msg :: (String, ProcessId, String))
-                  loop
-            , matchAny $ \amsg -> do
-                  forward amsg logger
-                  loop ]
-
-    reregister "logger" =<< spawnLocal loop
-
-
-remotable [ 'redirectLogsThere ]
-
-
--- | @redirectLogsHere n to@ has all log messages produced by @n@ sent to the
--- process with the given identifier @to@.
---
-redirectLogs :: NodeId -> ProcessId -> Process ()
-redirectLogs n to = call sdictUnit n $ $(mkClosure 'redirectLogsThere) to
-
--- | @redirectLogsHere n@ has all log messages produced by @n@ sent to the
--- logger of the local node.
---
-redirectLogsHere :: NodeId -> Process ()
-redirectLogsHere n = whereis "logger" >>=
-    maybe (die "redirectLogsHere: unkown local logger") (redirectLogs n)
-
 
 -- | @copyLog p pid@ copies local log messages satisfying predicate @p@ to
 -- to the process with identifier @pid@.
