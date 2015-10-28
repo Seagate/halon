@@ -710,7 +710,8 @@ Test-Suite unit-tests
                     amqp,
                     text,
                     aeson,
-                    uuid
+                    uuid,
+                    time
   if flag(mero)
       Build-Depends: rpclite, syb
       CPP-Options:    -DUSE_MERO
@@ -773,7 +774,8 @@ Test-Suite integration-tests
                     amqp,
                     text,
                     aeson,
-                    uuid
+                    uuid,
+                    time
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
@@ -832,7 +834,8 @@ Test-Suite scheduler-tests
                     unix,
                     cep,
                     attoparsec,
-                    containers
+                    containers,
+                    time
 
 Test-Suite test-start-service-local
   Type:             exitcode-stdio-1.0

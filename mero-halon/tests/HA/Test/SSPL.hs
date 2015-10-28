@@ -55,6 +55,7 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text.Encoding as T
 import Data.List (isInfixOf)
 import Data.Maybe (fromJust)
+import Data.Time
 import Data.Typeable
 import qualified Data.UUID as UUID
 import Network.AMQP
@@ -238,10 +239,11 @@ testDelivery transport = runSSPLTest transport interseptor test
                 }} = decodeStrict bs
       Just (SmartTest "foo") <- return $ parseNodeCmd cmd
 
+      msgTime <- liftIO $ getCurrentTime
       let uuid = fromJust $ UUID.fromString "c2cc10e1-57d6-4b6f-9899-38d972112d8c"
       let msg = ActuatorResponse
                   { actuatorResponseSignature = "auth_sig"
-                  , actuatorResponseTime      = "msg_time"
+                  , actuatorResponseTime      = formatTimeSSPL msgTime
                   , actuatorResponseExpires   = Nothing
                   , actuatorResponseUsername  = "ssplll"
                   , actuatorResponseMessage   =
