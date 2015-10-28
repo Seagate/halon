@@ -16,7 +16,6 @@ import HA.Network.Transport (writeTransportGlobalIVar)
 #else
 import Network.Transport.TCP as TCP
 #endif
-import HA.Process (tryRunProcess)
 import HA.RecoveryCoordinator.Definitions
 import HA.Startup (startupHalonNode)
 
@@ -73,7 +72,7 @@ main = do
     lnid <- newLocalNode transport myRemoteTable
     printHeader (localEndpoint config)
     runProcess lnid sendSelfNode
-    tryRunProcess lnid $ startupHalonNode rcClosure >> receiveWait []
+    runProcess lnid $ startupHalonNode rcClosure >> receiveWait []
   where
     rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
                   $(mkStaticClosure 'ignitionArguments)

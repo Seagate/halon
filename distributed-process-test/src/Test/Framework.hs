@@ -22,13 +22,7 @@ module Test.Framework
   , terminateLocalProcesses
   ) where
 
-import Control.Concurrent
-  ( forkIO
-  , killThread
-  , myThreadId
-  , threadDelay
-  , throwTo
-  )
+import Control.Concurrent ( killThread )
 import Control.Distributed.Process hiding
   ( bracket
   , finally
@@ -64,6 +58,7 @@ import Control.Exception
   , bracket
   , finally
   , throw
+  , throwIO
   , try
   )
 import qualified Control.Exception as E
@@ -82,6 +77,7 @@ import System.Directory
   , setCurrentDirectory
   )
 import System.Posix.Temp (mkdtemp)
+import System.Timeout
 import Test.Tasty hiding (Timeout)
 import Test.Tasty.HUnit hiding (assert)
 
@@ -131,21 +127,15 @@ tryWithTimeout ::
     -> Int         -- ^ Timeout value in nanoseconds.
     -> Process ()  -- ^ Process to run.
     -> IO ()
-tryWithTimeout transport rtable timeout p = do
-    tid <- liftIO myThreadId
-    bracket
-      -- Resource aquire
-      (forkIO $ threadDelay timeout >> throwTo tid Timeout)
-      -- Resource release
-      killThread
-      $ const $ bracket
-          -- Resource aquire
-          (newLocalNode transport rtable)
-          -- Resource release
-          closeLocalNode
-          -- Action
-          $ flip runProcess $
-                 catch p (\(e :: SomeException) -> liftIO $ throwTo tid e)
+tryWithTimeout transport rtable t p =
+    (maybe (throwIO Timeout) return =<<) $ timeout t $
+      bracket
+        -- Resource aquire
+        (newLocalNode transport rtable)
+        -- Resource release
+        closeLocalNode
+        -- Action
+        $ flip runProcess p
 
 -- | Throws 'AssertionFailed' exception when given value is 'False'.
 assert :: Bool -> Process ()
@@ -201,8 +191,8 @@ terminateLocalProcesses node mtimeout = do
       mapM_ monitor pids
       mapM_ (flip exit "closing node") pids
       case mtimeout of
-        Just timeout -> do
-          timer <- spawnLocal $ void $ receiveTimeout timeout []
+        Just t -> do
+          timer <- spawnLocal $ void $ receiveTimeout t []
           void $ monitor timer
           let loop 0 = do
                 exit timer "all process were terminated"

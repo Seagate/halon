@@ -16,7 +16,6 @@ module HA.Multimap.ProcessTests where
 import HA.Multimap.Process ( multimap )
 import HA.Multimap ( StoreUpdate(..), updateStore, getKeyValuePairs )
 import HA.Multimap.Implementation ( fromList, Multimap )
-import HA.Process
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
@@ -36,7 +35,7 @@ import Control.Distributed.Process
   , unClosure
   )
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
-import Control.Distributed.Process.Node ( newLocalNode, closeLocalNode )
+import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
 import Control.Concurrent ( MVar, newEmptyMVar, putMVar, takeMVar, threadDelay )
@@ -79,7 +78,7 @@ tests :: Transport -> TestTree
 tests transport = testSuccess "multimap" . withTmpDirectory $ do
     lnid <- newLocalNode transport
             $ __remoteTable remoteTable
-    tryRunProcess lnid $ do
+    runProcess lnid $ do
         nid <- getSelfNode
         cRGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
         pRGroup <- unClosure cRGroup

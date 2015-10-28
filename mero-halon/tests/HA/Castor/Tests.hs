@@ -33,7 +33,6 @@ import Network.CEP.Testing (runPhase, runPhaseGet)
 
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (multimap)
-import HA.Process
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Rules.Mero
@@ -79,12 +78,11 @@ withLocalNode transport action =
     (const (return ()))
     action
 
--- | FIXME: Why do we need tryRunProcess?
 tryRunProcessLocal :: Transport -> Process () -> IO ()
 tryRunProcessLocal transport process =
   withTmpDirectory $
     withLocalNode transport $ \node ->
-      tryRunProcess node process
+      runProcess node process
 
 rGroupTest :: Transport -> (ProcessId -> Process ()) -> IO ()
 rGroupTest transport p =

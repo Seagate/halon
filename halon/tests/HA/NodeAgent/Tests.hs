@@ -12,7 +12,6 @@ module HA.NodeAgent.Tests ( tests, dummyRC__static, dummyRC__sdict) where
 import HA.EventQueue ( EventQueue, eventQueueLabel, startEventQueue )
 import HA.EventQueue.Producer (expiate)
 import HA.EventQueue.Types (PersistMessage(..), HAEvent(..))
-import HA.Process
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
@@ -29,7 +28,7 @@ import Control.Distributed.Static ( closureApply )
 import Control.Distributed.Process.Closure ( mkClosure )
 #endif
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
-import Control.Distributed.Process.Node ( LocalNode, localNodeId, newLocalNode, closeLocalNode )
+import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
 import Data.List (find, isPrefixOf, nub, (\\))
@@ -81,9 +80,9 @@ naTestWithEQ transport action = withTmpDirectory $ E.bracket
   (replicateM 3 $ newLocalNode transport $ __remoteTable remoteTable)
   (mapM_ closeLocalNode) $ \nodes -> do
     let nids = map localNodeId nodes
-    forM_ nodes $ flip tryRunProcess $ void $ startEQTracker nids
+    forM_ nodes $ flip runProcess $ void $ startEQTracker nids
     mdone <- newEmptyMVar
-    tryRunProcess (head nodes) $ do
+    runProcess (head nodes) $ do
       cRGroup <- newRGroup $(mkStatic 'eqSDict) 20 1000000 nids (Nothing,[])
 #ifdef USE_MOCK_REPLICATOR
       rGroup <- unClosure cRGroup >>= id
@@ -107,13 +106,13 @@ naTest transport action = withTmpDirectory $ E.bracket
     (mapM closeLocalNode)
     $ \nodes -> do
       let nids = map localNodeId nodes
-      tryRunProcess (nodes !! 0) $ do
+      runProcess (nodes !! 0) $ do
         self <- getSelfPid
         eq1 <- spawnLocal $ forever $
                  (expect :: Process (ProcessId, PersistMessage))
                  >>= usend self . (,) (nids !! 0)
         register eventQueueLabel eq1
-        liftIO $ tryRunProcess (nodes !! 1) $ do
+        liftIO $ runProcess (nodes !! 1) $ do
           eq2 <- spawnLocal $ forever $
                    (expect :: Process (ProcessId, PersistMessage))
                    >>= usend self . (,) (nids !! 1)

@@ -20,8 +20,7 @@ import Control.Distributed.Process
   , unClosure
   )
 import Control.Distributed.Process.Closure (mkStatic, remotable)
-import Control.Distributed.Process.Internal.Types (LocalNode)
-import Control.Distributed.Process.Node (newLocalNode)
+import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable (SerializableDict(..))
 
 import Control.Exception (SomeException, bracket)
@@ -36,7 +35,6 @@ import Network.Transport (Transport)
 import HA.Multimap (getKeyValuePairs)
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (multimap)
-import HA.Process
 import HA.Replicator (RGroup(..))
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock (MC_RG)
@@ -123,12 +121,11 @@ withLocalNode transport action =
       (const (return ()))
       action
 
--- | FIXME: Why do we need tryRunProcess?
 tryRunProcessLocal :: Transport -> Process () -> IO ()
 tryRunProcessLocal transport process =
     withTmpDirectory $
       withLocalNode transport $ \node ->
-        tryRunProcess node process
+        runProcess node process
 
 rGroupTest :: (RGroup g, Typeable g)
            => Transport -> g Multimap -> (ProcessId -> Process ()) -> IO ()

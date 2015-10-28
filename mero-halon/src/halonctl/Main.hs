@@ -10,7 +10,6 @@ import Flags
 import Lookup
 
 import HA.Network.RemoteTables (haRemoteTable)
-import HA.Process
 
 import Handler.Bootstrap
 import Handler.Cluster
@@ -27,7 +26,11 @@ import Network.Transport.TCP as TCP
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Node (initRemoteTable, newLocalNode)
+import Control.Distributed.Process.Node
+  ( initRemoteTable
+  , newLocalNode
+  , runProcess
+  )
 import Data.Traversable
 import Data.Maybe (fromMaybe)
 
@@ -67,7 +70,7 @@ run (Options { .. }) = do
 #endif
   lnid <- newLocalNode transport myRemoteTable
   let rnids = fmap conjureRemoteNodeId optTheirAddress
-  tryRunProcess lnid $ do
+  runProcess lnid $ do
     liftIO $ printHeader
     replies <- forM rnids $ \nid -> do
       (_, mref) <- spawnMonitor nid (returnCP sdictUnit ())

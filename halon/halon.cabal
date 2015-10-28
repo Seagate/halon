@@ -48,7 +48,6 @@ Library
     Ghc-Options: -Werror
 
   Exposed-Modules: HA.CallTimeout
-                   HA.Process
                    HA.Resources
                    HA.EventQueue
                    HA.EventQueue.Producer
