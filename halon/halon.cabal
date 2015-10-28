@@ -142,7 +142,6 @@ Test-Suite unit-tests
                       ScopedTypeVariables
   Build-Depends:    halon,
                     base >= 4.5,
-                    Cabal >= 1.16,
                     binary >= 0.6.4,
                     bytestring,
                     distributed-process-scheduler,
@@ -196,7 +195,6 @@ Test-Suite integration-tests
                     base >= 4.5,
                     binary >= 0.6.4,
                     bytestring,
-                    Cabal >= 1.16,
                     distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static,
@@ -249,7 +247,6 @@ Test-Suite scheduler-tests
                     base >= 4.5,
                     binary >= 0.6.4,
                     bytestring,
-                    Cabal >= 1.16,
                     distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static,
