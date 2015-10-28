@@ -145,7 +145,7 @@ startActuators chan ac pid = do
       (muuid, cmd) <- receiveChan rp
       uuid <- liftIO $ maybe randomIO return muuid
       let msg = encode $ ActuatorRequest {
-          actuatorRequestSignature = ""
+          actuatorRequestSignature = "Signature-is-not-implemented-yet"
         , actuatorRequestTime = ""
         , actuatorRequestExpires = Nothing
         , actuatorRequestUsername = "halon"
