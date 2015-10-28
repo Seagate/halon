@@ -101,6 +101,7 @@ tests :: String -> Transport -> [TestTree]
 tests host transport = map (localOption (mkTimeout $ 60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport
   , testSuccess "initial-data-doesn't-error" $ loadInitialData host transport
+  , testSuccess "large-data" $ largeInitialData host transport
   ]
 
 fsSize :: FailureSet -> Int
@@ -139,7 +140,7 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
       -- don't use it so it doesn't impact us but in the future we
       -- should also take it as a parameter to the test, just like the
       -- host
-      mapM_ goRack (CI.id_racks (initialDataAddr host "192.0.2.2"))
+      mapM_ goRack (CI.id_racks (initialDataAddr host "192.0.2.2" 8))
       filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals initialData)
       loadMeroServers filesystem (CI.id_m0_servers initialData)
@@ -189,6 +190,56 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
   where
     myHost = Host "primus.example.com"
 
+largeInitialData :: String -> Transport -> IO ()
+largeInitialData host transport = let
+    let numDisks = 579
+    let initD = (initialDataAddr host "192.0.2.2" numDisks)
+    myHost = Host "primus.example.com"
+  in rGroupTest transport $ \pid -> do
+    ls <- emptyLoopState pid
+    (ls', _) <- run ls $ do
+      -- TODO: the interface address is hard-coded here: currently we
+      -- don't use it so it doesn't impact us but in the future we
+      -- should also take it as a parameter to the test, just like the
+      -- host
+      mapM_ goRack (CI.id_racks initD)
+      filesystem <- initialiseConfInRG
+      loadMeroGlobals (CI.id_m0_globals initD)
+      loadMeroServers filesystem (CI.id_m0_servers initD)
+      failureSets <- generateFailureSets 2 2 1
+      createPoolVersions filesystem failureSets
+    -- Verify that everything is set up correctly
+    bmc <- runGet ls' $ findBMCAddress myHost
+    assertMsg "Get BMC Address." $ bmc == Just host
+    hosts <- runGet ls' $ findHosts ".*"
+    assertMsg "Find correct hosts." $ hosts == [myHost]
+    hostAttrs <- runGet ls' $ findHostAttrs myHost
+    assertMsg "Host attributes"
+      $ sort hostAttrs == sort [HA_MEMSIZE_MB 4096, HA_CPU_COUNT 8]
+    (Just fs) <- runGet ls' getFilesystem
+    let pool = M0.Pool (M0.f_mdpool_fid fs)
+    assertMsg "MDPool is stored in RG"
+      $ memberResource pool (lsGraph ls')
+    mdpool <- runGet ls' $ lookupConfObjByFid (M0.f_mdpool_fid fs)
+    assertMsg "MDPool is findable by Fid"
+      $ mdpool == Just pool
+
+    let g = lsGraph ls'
+        racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
+        encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
+        ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
+        disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
+
+        sdevs = join $ fmap (\r -> connectedTo r Has g :: [StorageDevice]) hosts
+        disksByHost = join $ fmap (\r -> connectedFrom M0.At r g :: [M0.Disk]) sdevs
+
+    assertMsg "Number of racks" $ length racks == 1
+    assertMsg "Number of enclosures" $ length encls == 1
+    assertMsg "Number of controllers" $ length ctrls == 1
+    assertMsg "Number of storage devices" $ length sdevs == numDisks
+    assertMsg "Number of disks (reached by host)" $ length disksByHost == numDisks
+    assertMsg "Number of disks" $ length disks == numDisks
+
 run :: forall g. g
     -> PhaseM g Int ()
     -> Process (g, [(Buffer, Int)])
@@ -225,8 +276,8 @@ goHost enc (CI.Host{..}) = let
     mapM_ (setHostAttr host) attrs
     mapM_ (registerInterface host) h_interfaces
 
-initialDataAddr :: String -> String -> CI.InitialData
-initialDataAddr host ifaddr = CI.InitialData {
+initialDataAddr :: String -> String -> Int -> CI.InitialData
+initialDataAddr host ifaddr n = CI.InitialData {
   CI.id_racks = [
     CI.Rack {
       CI.rack_idx = 1
@@ -298,7 +349,7 @@ initialDataAddr host ifaddr = CI.InitialData {
       ]
     , CI.m0h_devices = fmap
         (\i -> CI.M0Device ("wwn" ++ show i) 4 64000 ("/dev/loop" ++ show i))
-        [(0:: Int) ..7]
+        [(1 :: Int) .. n]
     }
   ]
 }
@@ -306,4 +357,4 @@ initialDataAddr host ifaddr = CI.InitialData {
 
 -- | Sample initial data for test purposes
 initialData :: CI.InitialData
-initialData = initialDataAddr "192.0.2.1" "192.0.2.2"
+initialData = initialDataAddr "192.0.2.1" "192.0.2.2" 8

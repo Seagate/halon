@@ -625,7 +625,7 @@ testRCsyncToConfd host transport = do
   eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
   _ <- runRCEx (eq, IgnitionArguments [nid]) testSyncRules rGroup
 
-  promulgateEQ [nid] (initialDataAddr host host) >>= (`withMonitor` wait)
+  promulgateEQ [nid] (initialDataAddr host host 8) >>= (`withMonitor` wait)
   "InitialLoad" :: String <- expect
 
   liftIO $ appendFile "/tmp/strlog" "about to syncToConfd\n"
