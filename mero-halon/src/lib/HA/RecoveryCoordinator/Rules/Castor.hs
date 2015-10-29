@@ -29,9 +29,11 @@ import HA.Resources.Mero hiding (Process, Enclosure, Rack)
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.Services.Mero
-
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState
+import HA.Services.SSPL
+import SSPL.Bindings
+#endif
 
 import Control.Monad
 
@@ -306,6 +308,35 @@ castorRules = do
         stop
 
       start home Nothing
+
+#ifdef USE_MERO
+    define "disk-removed" $ do
+      home <- phaseHandle "home"
+
+      setPhase home $ \(HAEvent _ (nid :: NodeId, st :: SensorResponseMessageSensor_response_type) _) -> do
+        let status = sensorResponseMessageSensor_response_typeDisk_status_hpi st
+            sn     = sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber status
+            wwn    = sensorResponseMessageSensor_response_typeDisk_status_hpiWwn status
+            ident  = sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId status
+            dev_id = DeviceIdentifier (unpack sn) (IdentString $ unpack ident)
+
+        sds <- findEnclosureStorageDevices $ Enclosure $ unpack sn
+        fin_sds <- filterM (\sd -> hasStorageDeviceIdentifier sd dev_id) sds
+        rg <- getLocalGraph
+        let action =
+              [ dev | sd  <- fin_sds
+                    , dev <- G.connectedFrom At sd :: [Disk]
+                    ]
+        case action of
+          Nothing -> return ()
+          Just dev -> do
+            sdev <- getDiskParent dev
+            let nxt_dev = sdev { diskStatus = DiskRemovedTmp }
+            putDisk dev nxt_dev
+            notifyMero [AnyConfObj nxt_dev] M0_NC_DEGRATED
+
+      start home ()
+#endif
   where
     goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
       registerRack rack

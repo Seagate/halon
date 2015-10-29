@@ -266,6 +266,26 @@ instance ConfObj DiskV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (DiskV f) = f
 
+-- | Main 'Disk' status.
+data DiskStatus
+    = DiskOn
+    | DiskFailure
+    | DiskTransient
+    | DiskRemovedTmp
+    deriving (Eq, Ord, Generic, Show)
+
+instance Binary DiskStatus
+
+instance Hashable DiskStatus
+
+isFailed :: DiskStatus -> Bool
+isFailed DiskFailure = True
+isFailed _            = False
+
+isTransient :: DiskStatus -> Bool
+isTransient DiskTransient = True
+isTransient _              = False
+
 $(mkDicts
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
