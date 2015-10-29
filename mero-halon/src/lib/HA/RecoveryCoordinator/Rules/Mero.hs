@@ -11,9 +11,12 @@
 
 module HA.RecoveryCoordinator.Rules.Mero where
 
-import HA.RecoveryCoordinator.Actions.Mero (getFilesystem)
+import HA.EventQueue.Types
+
+import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Mero
 import HA.Resources.Castor
+import HA.Resources.Mero (SyncToConfd(..), SpielAddress(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Castor.Initial as CI
 import HA.Resources
@@ -36,6 +39,23 @@ import Data.Word ( Word32, Word64 )
 import Network.CEP
 
 import Prelude hiding (id)
+
+meroRules :: Definitions LoopState ()
+meroRules = do
+  defineSimple "Sync-to-confd" $ \(HAEvent _ sync _) -> case sync of
+    SyncToConfdServersInRG -> do
+      phaseLog "info" "Syncing RG to confd servers in RG."
+      msa <- getSpielAddress
+      case msa of
+        Nothing -> phaseLog "warning" $ "No spiel address found in RG."
+        Just sa -> syncToConfd sa
+    SyncToTheseServers (SpielAddress [] _) ->
+      phaseLog "warning"
+         $ "Requested to sync to specific list of confd servers, "
+        ++ "but that list was empty."
+    SyncToTheseServers sa -> do
+      phaseLog "info" $ "Syncing RG to these confd servers: " ++ show sa
+      syncToConfd sa
 
 -- | Atomically fetch a FID sequence number of increment the sequence count.
 newFidSeq :: PhaseM LoopState l Word64

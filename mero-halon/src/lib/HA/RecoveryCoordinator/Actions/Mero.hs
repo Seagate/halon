@@ -13,6 +13,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   , getM0Globals
   , lookupConfObjByFid
   , syncToConfd
+  , getSpielAddress
   , withRootRC
   , withSpielRC
   )
@@ -80,13 +81,13 @@ getM0Globals = getLocalGraph >>= \rg -> do
 -- Splicing configuration trees                              --
 ---------------------------------------------------------------
 
-syncToConfd :: PhaseM LoopState l ()
-syncToConfd = do
+syncToConfd :: M0.SpielAddress -> PhaseM LoopState l ()
+syncToConfd sa = do
   g <- getLocalGraph
   (Just CI.M0Globals{..}) <- getM0Globals
   (Just (M0.Profile pfid)) <- getProfile
   (Just fs@(M0.Filesystem{..})) <- getFilesystem
-  void . withSpielRC $ \sc -> do
+  void . withSpielRC sa $ \sc -> do
     t <- liftM0 $ openTransaction sc
     -- Profile, FS, pool
     liftM0 $ do
@@ -197,12 +198,19 @@ getM0Services = getLocalGraph >>= \g ->
             ]
   in return svs
 
+getSpielAddress :: PhaseM LoopState l (Maybe M0.SpielAddress)
+getSpielAddress = do
+  phaseLog "rg-query" "Looking up confd and RM services for spiel address."
+  svs <- getM0Services
+  let confds = nub $ concat
+        [ eps | (M0.Service { s_type = CST_MGS, s_endpoints = eps }) <- svs ]
+      mrm = listToMaybe . nub $ concat
+        [ eps | (M0.Service { s_type = CST_MDS, s_endpoints = eps }) <- svs ]
+  return $ fmap (\rm -> M0.SpielAddress confds rm) mrm
+
 -- | List of addresses to known confd servers on the cluster.
 getConfdServers :: PhaseM LoopState l [String]
-getConfdServers = do
-  svs <- getM0Services
-  return . nub $ concat
-    [ eps | (M0.Service { s_type = CST_MGS, s_endpoints = eps }) <- svs ]
+getConfdServers = getSpielAddress >>= return . maybe [] M0.sa_confds
 
 -- | Find a confd server in the cluster and run the given function on
 -- the configuration tree. Returns no result if no confd servers are
@@ -224,16 +232,12 @@ withRootRC f = do
 --
 -- The user is responsible for making sure that inner 'IO' actions run
 -- on the global m0 worker if needed.
-withSpielRC :: (SpielContext -> PhaseM LoopState l a)
+withSpielRC :: M0.SpielAddress
+            -> (SpielContext -> PhaseM LoopState l a)
             -> PhaseM LoopState l (Maybe a)
-withSpielRC f = do
+withSpielRC (M0.SpielAddress confds rm) f = do
   rpca <- liftProcess getRPCAddress
-  confds <- getConfdServers
-  svs <- getM0Services
-  case nub . concat $ [ eps | (M0.Service { s_type = CST_MDS, s_endpoints = eps }) <- svs ] of
-    [] -> return Nothing
-    rm:_ -> do
-     withServerEndpoint rpca $ \se -> do
-      sc <- liftM0 $ getRPCMachine_se se >>= \rpcm ->
-                       Mero.Spiel.start rpcm confds rm
-      f sc >>= \v -> liftM0 (Mero.Spiel.stop sc) >> return (Just v)
+  withServerEndpoint rpca $ \se -> do
+    sc <- liftM0 $ getRPCMachine_se se >>= \rpcm ->
+                   Mero.Spiel.start rpcm confds rm
+    f sc >>= \v -> liftM0 (Mero.Spiel.stop sc) >> return (Just v)

@@ -34,6 +34,7 @@ import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
 #ifdef USE_MERO
 import           HA.Services.Mero (meroRules)
+import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 #endif
 import           HA.Services.Monitor (SaveProcesses(..), regularMonitor)
 import           HA.Services.SSPL (ssplRules)
@@ -159,7 +160,8 @@ rcRules argv additionalRules = do
     ssplRules
     castorRules
 #ifdef USE_MERO
-    meroRules
+    HA.Services.Mero.meroRules
+    HA.RecoveryCoordinator.Rules.Mero.meroRules
 #endif
     sequence_ additionalRules
 
