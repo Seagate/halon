@@ -89,11 +89,10 @@ run (Options { .. }) = do
       then case optCommand of
           Bootstrap bs -> bootstrap rnids bs
           Service bs   -> service rnids bs
-          Cluster bs -> dataLoad rnids bs
+          Cluster bs   -> cluster rnids bs
       else do
         say "Failed to connect to controlled nodes: "
         liftIO $ mapM_ putStrLn $ concat replies
         _ <- receiveTimeout 1000000 [] -- XXX: give a time to output logs
         return ()
-
   return ()
