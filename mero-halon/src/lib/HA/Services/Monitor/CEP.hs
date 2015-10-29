@@ -66,7 +66,9 @@ nodeIds = fmap (S.toList . foldMap go . M.keys . msMap) $ get Global
 monitorState :: Processes -> Process MonitorState
 monitorState (Processes ps) = do
     st <- fmap fromMonitoreds $ traverse deserializedMonitored ps
-    forM_ (M.elems $ msMap st) $ \(Monitored pid _) -> monitor pid
+    forM_ (M.elems $ msMap st) $ \(Monitored pid _) -> do
+      traceMonitor $ "start monitoring " ++ show pid
+      monitor pid
     return st
 
 fromMonitoreds :: [Monitored] -> MonitorState
@@ -98,6 +100,7 @@ monitoring :: Configuration a
 monitoring svc (ServiceProcess pid) = do
     ms <- get Global
     _  <- liftProcess $ monitor pid
+    sayMonitor $ "start monitoring " ++ show pid
     let m' = M.insert pid (Monitored pid svc) (msMap ms)
 
     put Global ms { msMap = m' }
@@ -132,9 +135,11 @@ sendToRC a = do
     _ <- liftProcess $ promulgate a
     return ()
 
+traceMonitor :: String -> Process ()
+traceMonitor s = say $ "[Monitor]: " ++ s
+
 sayMonitor :: String -> PhaseM g l ()
-sayMonitor s = liftProcess $ do
-    say $ "[Monitor]: " ++ s
+sayMonitor = liftProcess . traceMonitor
 
 -- | Notifies the RC that a monitored service has died.
 reportFailure :: Monitored -> PhaseM g l ()
@@ -155,9 +160,12 @@ monitorRules = do
       \(ProcessMonitorNotification _ pid reason) -> do
           case reason of
             DiedNormal -> do
+              sayMonitor $ "notification about normal death " ++ show pid
               _ <- takeMonitored pid
               return ()
-            _ -> traverse_ reportFailure =<< takeMonitored pid
+            _ -> do
+              sayMonitor $ "notification about death " ++ show pid ++ "(" ++ show reason ++ ")"
+              traverse_ reportFailure =<< takeMonitored pid
 
     defineSimple "link-to" $ liftProcess . link
 
