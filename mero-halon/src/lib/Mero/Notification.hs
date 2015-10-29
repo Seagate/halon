@@ -162,7 +162,7 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \case
     lnode <- fmap processNode ask
     self <- getSelfPid
     say $ "listening at " ++ show addr
-    liftIO $ runOnGlobalM0Worker $ do
+    liftM0 $ do
       initRPC
       ep <- listen addr listenCallbacks
       initHAState (ha_state_get self lnode) (ha_state_set lnode)
@@ -204,7 +204,7 @@ initialize adr = do
 -- | Internal initialization routine, should not be called by external
 -- users. Only to be called when the lock on the lock is already held.
 finalizeInternal :: MVar EndpointRef -> IO ()
-finalizeInternal m = runOnGlobalM0Worker $ do
+finalizeInternal m = sendM0Task $ do
   finiHAState
   -- XXX finalizeRPC hangs
   -- finalizeRPC
@@ -229,4 +229,4 @@ notifyMero :: ServerEndpoint
            -> Set
            -> Process ()
 notifyMero ep mero (Set nvec) = liftIO $
-    runOnGlobalM0Worker (notify ep mero nvec 5)
+    sendM0Task (notify ep mero nvec 5)

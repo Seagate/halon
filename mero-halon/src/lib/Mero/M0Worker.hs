@@ -11,6 +11,7 @@ module Mero.M0Worker
     , queueM0Worker
     , runOnM0Worker
     , liftM0
+    , sendM0Task
     ) where
 
 import Control.Concurrent.Chan

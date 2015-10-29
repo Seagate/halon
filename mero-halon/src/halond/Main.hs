@@ -27,7 +27,6 @@ import Control.Distributed.Static ( closureCompose )
 
 #ifdef USE_MERO
 import Mero
-import Mero.M0Worker
 #endif
 import System.Environment
 import System.IO ( hFlush, stdout , hSetBuffering, BufferMode(..))
