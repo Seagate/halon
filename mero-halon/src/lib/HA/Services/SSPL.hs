@@ -73,6 +73,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.UUID as UID
 import qualified Data.HashMap.Strict as HM
+import Data.Time (getCurrentTime)
 
 import Network.AMQP
 import Network.CEP (Definitions)
@@ -144,9 +145,10 @@ startActuators chan ac pid = do
     commandProcess Rabbit.BindConf{..} rp = forever $ do
       (muuid, cmd) <- receiveChan rp
       uuid <- liftIO $ maybe randomIO return muuid
+      msgTime <- liftIO getCurrentTime
       let msg = encode $ ActuatorRequest {
           actuatorRequestSignature = "Signature-is-not-implemented-yet"
-        , actuatorRequestTime = ""
+        , actuatorRequestTime = formatTimeSSPL msgTime
         , actuatorRequestExpires = Nothing
         , actuatorRequestUsername = "halon"
         , actuatorRequestMessage = ActuatorRequestMessage {

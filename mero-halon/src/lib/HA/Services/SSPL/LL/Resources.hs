@@ -34,6 +34,7 @@ import Data.Binary (Binary)
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
+import Data.Time
 import qualified Data.Text as T
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
@@ -314,6 +315,9 @@ ssplSchema = SSPLConf
             <$> Rabbit.connectionSchema
             <*> sensorSchema
             <*> actuatorSchema
+
+formatTimeSSPL :: UTCTime -> T.Text
+formatTimeSSPL = T.pack . formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S%Q"
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
