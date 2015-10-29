@@ -51,7 +51,9 @@ promulgateEQ :: Serializable a
              -> Process ProcessId -- ^ PID of the spawned process. This can
                                   --   be used to verify receipt.
 promulgateEQ eqnids x = spawnLocal $ do
-    newPersistMessage x >>= go
+    m <- newPersistMessage x
+    producerTrace $ "promulgateEQ: " ++ show (typeOf x, persistEventId m)
+    go m
   where
     go evt = do
       res <- promulgateHAEvent eqnids evt
@@ -64,7 +66,9 @@ promulgateEQPref :: Serializable a
                  -> a -- ^ Event to send.
                  -> Process ProcessId
 promulgateEQPref peqnids eqnids x = spawnLocal $ do
-    newPersistMessage x >>= go
+    m <- newPersistMessage x
+    producerTrace $ "promulgateEQPref: " ++ show (typeOf x, persistEventId m)
+    go m
   where
     go evt = do
       res <- promulgateHAEventPref peqnids eqnids evt
@@ -76,7 +80,7 @@ promulgateEQPref peqnids eqnids x = spawnLocal $ do
 promulgate :: Serializable a => a -> Process ProcessId
 promulgate x = do
     m <- newPersistMessage x
-    producerTrace $ "Promulgating: " ++ show (typeOf x, persistEventId m)
+    producerTrace $ "promulgate: " ++ show (typeOf x, persistEventId m)
     promulgateEvent m
 
 -- | Add an event to the event queue. This form takes the HAEvent directly.
@@ -111,6 +115,7 @@ promulgateHAEvent eqnids msg = do
   result <- callLocal $
     ncallRemoteAnyTimeout
       promulgateTimeout eqnids eventQueueLabel msg
+  producerTrace $ "promulgateHAEvent: " ++ show (result, persistEventId msg)
   case result :: Maybe (NodeId, NodeId) of
     Nothing -> return Failure
     Just (rnid, pnid) -> do
@@ -133,6 +138,7 @@ promulgateHAEventPref peqnids eqnids msg = do
       softTimeout promulgateTimeout
       peqnids (eqnids \\ peqnids)
       eventQueueLabel msg
+  producerTrace $ "promulgateHAEventPref: " ++ show (result, persistEventId msg)
   case result :: Maybe (NodeId, NodeId) of
     Nothing -> return Failure
     Just (rnid, pnid) -> do
