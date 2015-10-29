@@ -33,7 +33,7 @@ recoveryCoordinator :: IgnitionArguments
                     -> ProcessId
                     -> Process ()
 recoveryCoordinator argv eq mm =
-    makeRecoveryCoordinator mm $ rcRules argv eq []
+    makeRecoveryCoordinator mm eq $ rcRules argv []
 
 recoveryCoordinatorEx :: () -> [Definitions LoopState ()]
                       -> IgnitionArguments
@@ -41,6 +41,6 @@ recoveryCoordinatorEx :: () -> [Definitions LoopState ()]
                       -> ProcessId
                       -> Process ()
 recoveryCoordinatorEx _ rules argv eq mm = do
-  makeRecoveryCoordinator mm $ rcRules argv eq rules
+  makeRecoveryCoordinator mm eq $ rcRules argv rules
 
 remotable [ 'ignitionArguments, 'recoveryCoordinator, 'recoveryCoordinatorEx ]

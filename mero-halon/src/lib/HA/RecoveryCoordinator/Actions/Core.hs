@@ -13,6 +13,7 @@ module HA.RecoveryCoordinator.Actions.Core
   , putLocalGraph
   , modifyGraph
   , modifyLocalGraph
+  , messageProcessed
   ) where
 
 import qualified HA.ResourceGraph as G
@@ -27,7 +28,10 @@ import HA.Service (ServiceName)
 
 
 import Control.Category ((>>>))
-import Control.Distributed.Process (ProcessId)
+import Control.Distributed.Process
+  ( ProcessId
+  , usend
+  )
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set        as S
@@ -39,6 +43,7 @@ data LoopState = LoopState {
   , lsFailMap  :: Map.Map (ServiceName, Node) Int
     -- ^ Failed reconfiguration count
   , lsMMPid    :: ProcessId -- ^ Replicated Multimap pid
+  , lsEQPid    :: ProcessId -- ^ EQ pid
   , lsHandled  :: S.Set UUID
     -- ^ Set of HAEvent uuid we've already handled.
 }
@@ -71,3 +76,11 @@ modifyLocalGraph k = do
     rg  <- getLocalGraph
     rg' <- k rg
     putLocalGraph rg'
+
+-- | Declare that we have finished handling a message to the EQ, meaning it can
+--   delete it.
+messageProcessed :: UUID -> PhaseM LoopState l ()
+messageProcessed uuid = do
+  phaseLog "eq" $ unwords ["Removing message", show uuid, "from EQ."]
+  eqPid <- lsEQPid <$> get Global
+  liftProcess $ usend eqPid uuid

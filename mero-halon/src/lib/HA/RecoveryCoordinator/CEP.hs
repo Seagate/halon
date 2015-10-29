@@ -39,9 +39,10 @@ import           HA.Services.Monitor (SaveProcesses(..), regularMonitor)
 import           HA.Services.SSPL (ssplRules)
 
 
-rcRules :: IgnitionArguments -> ProcessId -> [Definitions LoopState ()] -> Definitions LoopState ()
-rcRules argv eq additionalRules = do
-    initRule $ rcInitRule argv eq
+rcRules :: IgnitionArguments -> [Definitions LoopState ()] -> Definitions LoopState ()
+rcRules argv additionalRules = do
+
+    initRule $ rcInitRule argv
 
     define "node-up" $ do
       nodeup      <- phaseHandle "nodeup"
@@ -78,7 +79,7 @@ rcRules argv eq additionalRules = do
                 continue nodeup
               Just _  -> do liftProcess . sayRC $ "node is already provisioned: " ++ show nid
                             ack pid
-                            sendMsg eq uuid
+                            messageProcessed uuid
                             finishProcessingMsg uuid
                             continue nodeup
 
@@ -102,8 +103,8 @@ rcRules argv eq additionalRules = do
         liftProcess $ sayRC $ "Sending ack to " ++ show npid
         ack npid
         liftProcess $ sayRC $ "Ack sent to " ++ show npid
-        sendMsg eq msgid
-        sendMsg eq uuid
+        messageProcessed msgid
+        messageProcessed uuid
         finishProcessingMsg uuid
         continue end
 
@@ -112,7 +113,7 @@ rcRules argv eq additionalRules = do
         ServiceCouldNotStart n svc _ <- decodeMsg msg
         liftProcess $ sayRC $
           "failed " ++ snString (serviceName svc) ++ " service on the node " ++ show n
-        sendMsg eq msgid
+        messageProcessed msgid
         Starting uuid _ _ _ _ <- get Local
         finishProcessingMsg uuid
         continue end
@@ -126,35 +127,35 @@ rcRules argv eq additionalRules = do
       \(HAEvent uuid (EpochRequest pid) _) -> do
       resp <- prepareEpochResponse
       sendMsg pid resp
-      sendMsg eq uuid
+      messageProcessed uuid
 
     defineSimple "mm-pid" $
       \(HAEvent uuid (GetMultimapProcessId sender) _) -> do
          mmid <- getMultimapProcessId
          sendMsg sender mmid
-         sendMsg eq uuid
+         messageProcessed uuid
 
     defineSimple "dummy-event" $
       \(HAEvent uuid (DummyEvent str) _) -> do
         i <- getNoisyPingCount
         liftProcess $ sayRC $ "received DummyEvent " ++ str
         liftProcess $ sayRC $ "Noisy ping count: " ++ show i
-        sendMsg eq uuid
+        messageProcessed uuid
 
     defineSimple "stop-request" $ \(HAEvent uuid msg _) -> do
       ServiceStopRequest node svc <- decodeMsg msg
       res                         <- lookupRunningService node svc
       for_ res $ \sp ->
         killService sp UserStop
-      sendMsg eq uuid
+      messageProcessed uuid
 
     defineSimple "save-processes" $
       \(HAEvent uuid (SaveProcesses sp ps) _) -> do
        writeConfiguration sp ps Current
-       sendMsg eq uuid
+       messageProcessed uuid
 
     setLogger sendLogs
-    serviceRules argv eq
+    serviceRules argv
     ssplRules
     castorRules
 #ifdef USE_MERO
