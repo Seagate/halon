@@ -20,7 +20,7 @@ module Control.Distributed.Process.Consensus.Paxos
     , Trim(..)
     ) where
 
-import Prelude hiding ((<$>), (<*>))
+import Prelude hiding ((<*>))
 import Control.Distributed.Process.Consensus
 import Control.Distributed.Process.Consensus.Paxos.Types
 import qualified Control.Distributed.Process.Consensus.Paxos.Messages as Msg
@@ -38,6 +38,8 @@ import Data.Maybe (isJust)
 import Data.List (maximumBy)
 import Data.Function (on)
 import GHC.Generics (Generic)
+import System.Environment (lookupEnv)
+import System.IO.Unsafe (unsafePerformIO)
 
 
 -- Note [Naming]
@@ -129,8 +131,12 @@ instance Binary Trim
 
 -- | A tracing function for debugging purposes.
 paxosTrace :: String -> Process ()
-paxosTrace _ = return ()
--- paxosTrace msg = say $ "[paxos] " ++ msg
+-- paxosTrace _ = return ()
+paxosTrace msg = do
+    let b = unsafePerformIO $
+              maybe False (elem "consensus-paxos" . words)
+                <$> lookupEnv "HALON_TRACING"
+    when b $ say $ "[paxos] " ++ msg
 
 -- | Acceptor process.
 --

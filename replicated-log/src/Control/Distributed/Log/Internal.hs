@@ -103,6 +103,8 @@ import Prelude hiding (init, log)
 import System.Clock
 import System.FilePath ((</>))
 import System.Directory (doesDirectoryExist)
+import System.Environment (lookupEnv)
+import System.IO.Unsafe (unsafePerformIO)
 
 
 deriving instance Typeable Eq
@@ -488,8 +490,12 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
 
 -- | A tracing function for debugging purposes.
 logTrace :: String -> Process ()
-logTrace _ = return ()
--- logTrace msg = say $ "[replicated-log] " ++ msg
+-- logTrace _ = return ()
+logTrace msg = do
+    let b = unsafePerformIO $
+              maybe False (elem "replicated-log" . words)
+                <$> lookupEnv "HALON_TRACING"
+    when b $ say $ "[replicated-log] " ++ msg
 -- logTrace msg = do
 --    self <- getSelfPid
 --    liftIO $ hPutStrLn stderr $ show self ++ ": [replicated-log] " ++ msg

@@ -60,3 +60,5 @@ VENDOR_PACKAGES = distributed-process \
 CEP_DIR = $(ROOT_DIR)/cep/
 
 CEP_PACKAGES := cep
+
+export HALON_TRACING = consensus-paxos replicated-log

@@ -53,6 +53,13 @@ main = withM0Deferred $ do
 #else
 main = do
 #endif
+    -- TODO: Implement a mechanism to propagate env vars in distributed tests.
+    -- Perhaps an env var like
+    -- DC_PROPAGATE_ENV="HALON_TRACING DISTRIBUTED_PROCESS_TRACE_FILE"
+    -- which enumerates the environment variables that must be propagated when
+    -- spawning remote processes.
+    whenTestIsDistributed $
+      setEnvIfUnset "HALON_TRACING" "consensus-paxos replicated-log"
     config <- parseArgs <$> getArgs
 #ifdef USE_RPC
     rpcTransport <- RPC.createTransport "s1"
@@ -76,3 +83,8 @@ main = do
   where
     rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
                   $(mkStaticClosure 'ignitionArguments)
+
+    whenTestIsDistributed action = do
+      lookupEnv "DC_CALLER_PID" >>= maybe (return ()) (const action)
+
+    setEnvIfUnset v x = lookupEnv v >>= maybe (setEnv v x) (const $ return ())
