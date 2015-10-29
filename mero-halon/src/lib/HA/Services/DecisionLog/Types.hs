@@ -37,6 +37,8 @@ data DecisionLogOutput
       -- ^ Writes to stdout.
     | StandardError
       -- ^ Writes to stderr.
+    | DPLogger
+      -- ^ Sends logs to the logger of d-p in the local node.
     deriving (Eq, Show, Generic)
 
 instance Binary DecisionLogOutput
@@ -119,6 +121,8 @@ handleLogs StandardOutput logs = liftIO $ do
 handleLogs StandardError logs = liftIO $ do
     hPutDoc stderr $ ppLogs logs
     hPutStr stderr "\n"
+handleLogs DPLogger logs =
+    say $ displayS (renderPretty 0.4 80 $ ppLogs logs) ""
 handleLogs (FileOutput path) logs =
     bracket (openLogFile path) cleanupHandle $ \h -> liftIO $ do
       hPutDoc h $ ppLogs logs
@@ -131,4 +135,4 @@ writeLogs :: WriteLogs -> Logs -> Process ()
 writeLogs (WriteLogs k) logs = k logs
 
 printLogs :: Logs -> Process ()
-printLogs = handleLogs StandardError
+printLogs = handleLogs DPLogger
