@@ -26,10 +26,18 @@ import Control.Monad (when, void)
 
 import Data.List ((\\))
 import Data.Typeable
+import System.Environment (lookupEnv)
+import System.IO.Unsafe (unsafePerformIO)
+
 
 producerTrace :: String -> Process ()
 -- producerTrace _ = return ()
-producerTrace = say . ("[EQ.producer] " ++)
+-- producerTrace = say . ("[EQ.producer] " ++)
+producerTrace msg = do
+    let b = unsafePerformIO $
+              maybe False (elem "EQ.producer" . words)
+                <$> lookupEnv "HALON_TRACING"
+    when b $ say $ "[EQ.producer] " ++ msg
 
 data Result = Success | Failure
   deriving (Eq, Show)

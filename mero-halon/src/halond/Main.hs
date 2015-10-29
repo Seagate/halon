@@ -59,7 +59,8 @@ main = do
     -- which enumerates the environment variables that must be propagated when
     -- spawning remote processes.
     whenTestIsDistributed $
-      setEnvIfUnset "HALON_TRACING" "consensus-paxos replicated-log"
+      setEnvIfUnset "HALON_TRACING"
+        "consensus-paxos replicated-log EQ EQ.producer"
     config <- parseArgs <$> getArgs
 #ifdef USE_RPC
     rpcTransport <- RPC.createTransport "s1"
