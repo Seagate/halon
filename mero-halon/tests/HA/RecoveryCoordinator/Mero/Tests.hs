@@ -93,7 +93,7 @@ import Data.Hashable (Hashable)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import HA.Castor.Tests (initialDataAddr)
-import HA.RecoveryCoordinator.Actions.Mero (syncToConfd)
+import HA.RecoveryCoordinator.Actions.Mero (getSpielAddress, syncToConfd)
 import Mero
 import Mero.Notification (finalize)
 import Network.CEP (defineSimple, liftProcess)
@@ -130,7 +130,8 @@ remotableDecl [ [d|
 #ifdef USE_MERO
 testSyncRules :: [Definitions LoopState ()]
 testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent _ SpielSync _) -> do
-  syncToConfd
+  Just sa <- getSpielAddress
+  syncToConfd sa
   liftProcess $ say "Finished sync to confd"
 #endif
 
