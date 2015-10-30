@@ -48,7 +48,6 @@ module Network.CEP
     , phaseLog
     , peek
     , shift
-    , liftProcess
     , define
     , initRule
     , defineSimple
