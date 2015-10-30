@@ -27,6 +27,12 @@ import Data.IORef
 import qualified Data.Map.Strict as Map
 import Data.Word ( Word32, Word64 )
 
+import Foreign.C.Error
+  ( Errno(..)
+  , eOK
+  , eBUSY
+  , eNOENT
+  )
 import Foreign.C.String
   ( newCString
   , withCString
@@ -131,13 +137,24 @@ commitTransactionForced (SpielTransaction ptr) forced ver quorum =
     $ withForeignPtr ptr $ \c_ptr ->
       c_spiel_tx_commit_forced c_ptr forced ver quorum
 
-
 withTransaction :: SpielContext
                 -> (SpielTransaction -> IO a)
                 -> IO a
 withTransaction sc = bracket
   (openTransaction sc)
   (\t -> commitTransaction t >> closeTransaction t)
+
+dumpTransaction :: SpielTransaction
+                -> FilePath
+                -> IO ()
+dumpTransaction (SpielTransaction ptr) fp = withForeignPtr ptr $ \c_ptr -> do
+  valid <- Errno . negate <$> c_spiel_tx_validate c_ptr
+  case valid of
+    x | x == eOK -> throwIfNonZero_ (\rc -> "Cannot dump Spiel transaction: " ++ show rc)
+      $ withCString fp $ \c_fp -> c_spiel_tx_dump c_ptr c_fp
+    x | x == eBUSY -> error "Not all objects are ready."
+    x | x == eNOENT -> error "Not all objects have a parent."
+    (Errno x) -> error $ "Unknown error return: " ++ show x
 
 addProfile :: SpielTransaction
            -> Fid

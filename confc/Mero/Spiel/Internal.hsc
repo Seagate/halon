@@ -99,6 +99,15 @@ foreign import ccall "spiel.h m0_spiel_tx_commit_forced"
                            -> Word32 -- ^ Quorum
                            -> IO CInt
 
+foreign import ccall "spiel.h m0_spiel_tx_validate"
+  c_spiel_tx_validate :: Ptr SpielTransactionV
+                      -> IO CInt
+
+foreign import ccall "spiel.h m0_spiel_tx_dump"
+  c_spiel_tx_dump :: Ptr SpielTransactionV
+                  -> CString
+                  -> IO CInt
+
 ---------------------------------------------------------------
 -- Configuration management                                  --
 ---------------------------------------------------------------
