@@ -46,6 +46,7 @@ import qualified Control.Distributed.Commands as C
     )
 import qualified Control.Distributed.Commands.Management as M
 
+import Control.Concurrent as C (forkIO, newChan, writeChan, readChan)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
     ( remotable
@@ -58,13 +59,16 @@ import Control.Monad.Reader (ask, when)
 import qualified Data.ByteString.Base64.Lazy as B64
 import Data.Binary (decode, encode, Binary)
 import qualified Data.ByteString.Lazy.Char8 as C8 (pack, unpack)
-import Data.IORef (newIORef, readIORef, modifyIORef')
+import Data.Function (fix)
+import Data.IORef
 import Data.List (isPrefixOf, isSuffixOf)
 import Data.Foldable (forM_)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import System.Exit (ExitCode(..))
 import System.Environment (lookupEnv, getEnvironment, setEnv)
+import System.IO
+import System.IO.Unsafe (unsafePerformIO)
 
 
 -- | Sends all log messages in the local node to the given process.
@@ -144,6 +148,10 @@ sendSelfNode = do
       getSelfNode >>= send pid . SpawnNodeId self
       expect
 
+{-# NOINLINE spawnIdGen #-}
+spawnIdGen :: IORef Int
+spawnIdGen = unsafePerformIO $ newIORef 0
+
 -- | Like 'spawnNode' but takes as argument the IO command used to spawn the
 -- node.
 spawnNodeWith :: (String -> IO (IO (Either ExitCode String)))
@@ -157,16 +165,25 @@ spawnNodeWith ioSpawn cmd = do
     -- The following try handles the exception that would result when the caller
     -- interrupts the call because it takes too long.
     enid <- try expect
+    spawnId <- liftIO $ atomicModifyIORef' spawnIdGen $ \i -> (i + 1, i)
+    let spawnLog = hPutStrLn stderr . (++) ("spawnNode(" ++ show spawnId ++ ")")
     case enid of
       Left e -> liftIO $ do
-        let loop = getLine_cmd >>= either print (\x -> putStrLn x >> loop)
-        loop
-        putStrLn $ "The command \"" ++ cmd ++ "\" did not sent a NodeId."
+        fix $ \loop -> getLine_cmd >>= either print (\x -> putStrLn x >> loop)
+        spawnLog $ ": The command " ++ show cmd ++ " did not sent a NodeId."
         throwIO (e :: SomeException)
       Right (SpawnNodeId sender nid) -> do
         redirectLogsHere nid
         usend sender ()
-        return $ NodeHandle nid getLine_cmd
+        liftIO $ spawnLog $ " started: " ++ cmd
+        dup <- liftIO $ C.newChan
+        _ <- liftIO $ forkIO $ fix $ \loop -> do
+          eline <- getLine_cmd
+          writeChan dup eline
+          case eline of
+            Left ec -> spawnLog $ " terminated: " ++ show ec
+            Right line -> spawnLog (": " ++ line) >> loop
+        return $ NodeHandle nid (readChan dup)
 
 isLocalHost :: String -> Bool
 isLocalHost h = h == "localhost" || "127." `isPrefixOf` h
