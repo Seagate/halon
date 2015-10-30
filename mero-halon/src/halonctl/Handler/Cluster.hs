@@ -35,6 +35,7 @@ data ClusterOptions =
     LoadData LoadOptions
 #ifdef USE_MERO
   | Sync SyncOptions
+  | Dump DumpOptions
 #endif
   deriving (Eq, Show)
 
@@ -45,12 +46,15 @@ parseCluster =
 #ifdef USE_MERO
   <|> ( Sync <$> Opt.subparser ( Opt.command "sync" (Opt.withDesc parseSyncOptions
         "Force synchronisation of RG to confd servers." )))
+  <|> ( Dump <$> Opt.subparser ( Opt.command "dump" (Opt.withDesc parseDumpOptions
+        "Dump embedded confd database to file." )))
 #endif
 
 cluster :: [NodeId] -> ClusterOptions -> Process ()
 cluster nids (LoadData l) = dataLoad nids l
 #ifdef USE_MERO
 cluster nids (Sync s) = syncToConfd nids s
+cluster nids (Dump s) = dumpConfd nids s
 #endif
 
 data LoadOptions = LoadOptions
@@ -89,10 +93,8 @@ dataLoad eqnids (LoadOptions cf verify) = do
 
 #ifdef USE_MERO
 
-data SyncOptions = SyncOptions {
-    so_confds :: [String]
-  , so_rm :: Maybe String
-} deriving (Eq, Show)
+data SyncOptions = SyncOptions [String] (Maybe String)
+  deriving (Eq, Show)
 
 parseSyncOptions :: Opt.Parser SyncOptions
 parseSyncOptions = SyncOptions
@@ -121,6 +123,27 @@ syncToConfd eqnids so = promulgateEQ eqnids msg
       SyncOptions confds@(_:_) (Just rm) ->
         SyncToTheseServers $ SpielAddress confds rm
       _ -> SyncToConfdServersInRG
+    wait = void (expect :: Process ProcessMonitorNotification)
+
+newtype DumpOptions = DumpOptions FilePath
+  deriving (Eq, Show)
+
+parseDumpOptions :: Opt.Parser DumpOptions
+parseDumpOptions = DumpOptions <$>
+  Opt.strOption
+    ( Opt.long "filename"
+    <> Opt.short 'f'
+    <> Opt.help "File to dump confd database to."
+    <> Opt.metavar "FILENAME"
+    )
+
+dumpConfd :: [NodeId]
+          -> DumpOptions
+          -> Process ()
+dumpConfd eqnids (DumpOptions fn) = promulgateEQ eqnids msg
+        >>= \pid -> withMonitor pid wait
+  where
+    msg = SyncDumpToFile fn
     wait = void (expect :: Process ProcessMonitorNotification)
 
 #endif

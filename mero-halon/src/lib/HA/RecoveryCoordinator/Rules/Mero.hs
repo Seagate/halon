@@ -58,6 +58,10 @@ meroRules = do
       SyncToTheseServers sa -> do
         phaseLog "info" $ "Syncing RG to these confd servers: " ++ show sa
         syncToConfd sa
+      SyncDumpToFile filename -> do
+        phaseLog "info" $ "Dumping conf in RG to this file: " ++ show filename
+        phaseLog "error" "Not yet implemented!"
+
     messageProcessed eid
 
 -- | Atomically fetch a FID sequence number of increment the sequence count.
