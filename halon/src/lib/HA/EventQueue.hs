@@ -42,6 +42,7 @@ import Prelude hiding ((.), id)
 import GHC.Generics
 
 import HA.EventQueue.Types
+import HA.Logger
 import HA.Replicator ( RGroup, updateStateWith, getState)
 import Control.SpineSeq (spineSeq)
 import FRP.Netwire hiding (Last(..), when, for)
@@ -58,9 +59,6 @@ import Data.Traversable (for)
 import Data.Typeable
 
 import Network.CEP
-import System.Environment (lookupEnv)
-import System.IO.Unsafe (unsafePerformIO)
-
 
 -- | Since there is at most one Event Queue per tracking station node,
 -- the @eventQueueLabel@ is used to register and lookup the Event Queue of a
@@ -69,16 +67,7 @@ eventQueueLabel :: String
 eventQueueLabel = "HA.EventQueue"
 
 eqTrace :: String -> Process ()
--- eqTrace _ = return ()
-eqTrace msg = do
-    let b = unsafePerformIO $
-              maybe False (elem "EQ" . words)
-                <$> lookupEnv "HALON_TRACING"
-    when b $ say $ "[EQ] " ++ msg
--- eqTrace = say . ("[EQ] " ++)
--- eqTrace msg = do
---     self <- getSelfPid
---     liftIO $ hPutStrLn stderr $ show self ++ ": [EQ] " ++ msg
+eqTrace = mkHalonTracer "EQ"
 
 -- | State of the event queue.
 --
