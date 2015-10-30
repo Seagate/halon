@@ -17,6 +17,7 @@ import HA.Services.OCF ( __remoteTableDecl )
 import HA.Startup ( __remoteTable, __remoteTableDecl )
 import HA.RecoverySupervisor ( __remoteTable )
 import HA.EventQueue ( __remoteTable )
+import HA.EQTracker ( __remoteTable )
 import HA.Multimap.Process ( __remoteTable )
 import HA.Replicator.Log (__remoteTable, __remoteTableDecl)
 
@@ -49,6 +50,7 @@ haRemoteTable next =
    HA.Startup.__remoteTableDecl $
    HA.RecoverySupervisor.__remoteTable $
    HA.EventQueue.__remoteTable $
+   HA.EQTracker.__remoteTable $
    HA.Multimap.Process.__remoteTable $
    HA.Replicator.Log.__remoteTable $
    HA.Replicator.Log.__remoteTableDecl $

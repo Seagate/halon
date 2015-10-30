@@ -25,12 +25,18 @@ module HA.EQTracker
   , PreferReplicas(..)
   , startEQTracker
   , name
+  , updateEQNodes
+  , updateEQNodes__static
+  , updateEQNodes__sdict
+  , __remoteTable
   ) where
 
 import HA.NodeAgent.Messages (ServiceMessage(UpdateEQNodes))
 
 import Control.SpineSeq (spineSeq)
 import Control.Distributed.Process
+import Control.Distributed.Process.Closure
+import Control.Distributed.Process.Internal.Types (nullProcessId)
 
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
@@ -70,6 +76,20 @@ newtype ReplicaReply = ReplicaReply ReplicaLocation
 
 name :: String
 name = "HA.EQTracker"
+
+-- | Update EQ tracker of the node, first it checks, if
+-- tracker is registered and after it's registered sends
+-- a request to the node
+updateEQNodes :: [NodeId] -> Process ()
+updateEQNodes ns = do
+  mt <- whereis name
+  case mt of
+    Nothing -> receiveTimeout 100000 [] >> updateEQNodes ns
+    Just pid -> do
+      nid <- getSelfNode
+      usend pid (nullProcessId nid, UpdateEQNodes ns)
+
+remotable [ 'updateEQNodes ]
 
 -- | Run Event Queue process.
 --

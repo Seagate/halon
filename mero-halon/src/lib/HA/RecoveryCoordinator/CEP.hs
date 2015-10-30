@@ -9,6 +9,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE TemplateHaskell           #-}
 
 module HA.RecoveryCoordinator.CEP where
 
@@ -17,7 +18,7 @@ import Control.Category
 import Data.Foldable (for_)
 
 import           Control.Distributed.Process
-import           Control.Distributed.Process.Internal.Types (nullProcessId)
+import           Control.Distributed.Process.Closure (mkClosure)
 import           Network.CEP
 
 import           HA.EventQueue.Types
@@ -30,6 +31,7 @@ import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Service
 import           HA.Services.DecisionLog (printLogs)
+import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
 #ifdef USE_MERO
 import           HA.Services.Mero (meroRules)
@@ -83,8 +85,8 @@ rcRules argv eq additionalRules = do
 
       directly nm_start $ do
         Starting _ nid conf svc _ <- get Local
-        liftProcess $ nsendRemote nid EQT.name
-          (nullProcessId nid, UpdateEQNodes $ stationNodes argv)
+        _ <- liftProcess $ spawnAsync nid $
+          $(mkClosure 'EQT.updateEQNodes) (UpdateEQNodes $ stationNodes argv)
         registerService svc
         startService nid svc conf
         switch [nm_started, nm_failed]
