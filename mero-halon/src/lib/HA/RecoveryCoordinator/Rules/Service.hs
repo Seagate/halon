@@ -20,7 +20,6 @@ import           Control.Distributed.Process.Closure (mkClosure)
 import           Network.CEP
 
 import           HA.EventQueue.Types
-import           HA.NodeAgent.Messages
 import           HA.RecoveryCoordinator.Mero
 import           HA.Resources
 import           HA.Service
@@ -275,7 +274,7 @@ serviceRules argv eq = do
       if vitalService
         then do sendToMasterMonitor msg
                 _ <- liftProcess $ spawnAsync nodeId $
-                       $(mkClosure 'EQT.updateEQNodes) (UpdateEQNodes $ stationNodes argv)
+                       $(mkClosure 'EQT.updateEQNodes) (stationNodes argv)
                 return ()
         else sendToMonitor n msg
 

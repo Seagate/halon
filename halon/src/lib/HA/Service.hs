@@ -62,6 +62,7 @@ module HA.Service
   , ServiceUncaughtException(..)
   , ServiceStopRequest(..)
   , ServiceStopRequestMsg
+  , ExitReason(..)
    -- * CH Paraphenalia
   , HA.Service.__remoteTable
 ) where
@@ -88,7 +89,6 @@ import Options.Schema
 
 import HA.ResourceGraph
 import HA.Resources
-import HA.NodeAgent.Messages
 
 --------------------------------------------------------------------------------
 -- Configuration                                                              --
@@ -270,6 +270,13 @@ resourceDictServiceName = Dict
 --------------------------------------------------------------------------------
 -- Service messages                                                           --
 --------------------------------------------------------------------------------
+
+data ExitReason = Shutdown     -- ^ Internal shutdown, for example bouncing service.
+                | Reconfigure  -- ^ Service reconfiguration.
+                | UserStop     -- ^ Shutdown requested by user.
+                deriving (Eq, Show, Generic, Typeable)
+
+instance Binary ExitReason
 
 -- | Label used to register a service.
 serviceLabel :: ServiceName -> String

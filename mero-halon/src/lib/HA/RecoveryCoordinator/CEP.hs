@@ -22,7 +22,6 @@ import           Control.Distributed.Process.Closure (mkClosure)
 import           Network.CEP
 
 import           HA.EventQueue.Types
-import           HA.NodeAgent.Messages
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Rules.Castor
@@ -86,7 +85,7 @@ rcRules argv eq additionalRules = do
       directly nm_start $ do
         Starting _ nid conf svc _ <- get Local
         _ <- liftProcess $ spawnAsync nid $
-          $(mkClosure 'EQT.updateEQNodes) (UpdateEQNodes $ stationNodes argv)
+          $(mkClosure 'EQT.updateEQNodes) (stationNodes argv)
         registerService svc
         startService nid svc conf
         switch [nm_started, nm_failed]

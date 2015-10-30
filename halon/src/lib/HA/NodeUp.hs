@@ -24,7 +24,6 @@ where
 
 import HA.EventQueue.Producer (promulgate)
 import qualified HA.EQTracker as EQT
-import HA.NodeAgent.Messages (ServiceMessage(..))
 
 import Control.Distributed.Process
   ( NodeId
@@ -75,7 +74,7 @@ nodeUp (eqs, _delay) = do
     self <- getSelfPid
     fix $ \loop ->
       whereis EQT.name >>= maybe (receiveTimeout 100000 [] >> loop)
-                                 (\ps -> do usend ps (self, UpdateEQNodes eqs)
+                                 (\ps -> do usend ps (self, EQT.UpdateEQNodes eqs)
                                             mt <- expectTimeout 1000000
                                             unless (mt == Just True) loop
                                  )

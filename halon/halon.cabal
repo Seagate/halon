@@ -63,7 +63,6 @@ Library
                    HA.Replicator.Mock
                    HA.RecoverySupervisor
                    HA.Storage
-                   HA.NodeAgent.Messages
                    HA.NodeUp
                    HA.Network.RemoteTables
                    HA.Network.Socket

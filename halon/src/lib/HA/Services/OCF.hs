@@ -13,7 +13,6 @@ module HA.Services.OCF
     , HA.Services.OCF.__remoteTableDecl ) where
 
 import HA.EventQueue.Producer (expiate)
-import HA.NodeAgent.Messages
 import HA.Service
 import HA.Services.Empty
 import HA.Resources
