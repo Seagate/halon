@@ -75,6 +75,7 @@ Library
                    HA.Services.OCF
                    HA.Services.Ping
                    HA.Startup
+                   HA.Logger
                    Control.SpineSeq
   Build-Depends:   base,
                    binary >= 0.6,
