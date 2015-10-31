@@ -15,7 +15,6 @@ import Test.Transport
 import HA.EventQueue
 import HA.EventQueue.Producer
 import HA.EventQueue.Types (newPersistMessage, PersistMessage(..), HAEvent(..))
-import HA.NodeAgent.Messages
 import HA.EQTracker
 import HA.Replicator
 #ifdef USE_MOCK_REPLICATOR
@@ -84,8 +83,7 @@ tests (AbstractTransport transport breakConnection _) = do
             rGroup <- unClosure cRGroup >>= id
             eq <- startEventQueue rGroup
             na <- startEQTracker []
-            assertBool "update-eq-nodes-works"
-              =<< updateEQNodes na nodes
+            updateEQNodes nodes
             mapM_ link [eq, na]
 
             action eq na rGroup

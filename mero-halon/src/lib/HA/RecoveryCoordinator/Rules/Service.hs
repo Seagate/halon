@@ -8,6 +8,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE TemplateHaskell           #-}
 
 module HA.RecoveryCoordinator.Rules.Service where
 
@@ -15,14 +16,14 @@ import Prelude hiding ((.), id)
 import Control.Category
 
 import           Control.Distributed.Process
-import           Control.Distributed.Process.Internal.Types (nullProcessId)
+import           Control.Distributed.Process.Closure (mkClosure)
 import           Network.CEP
 
 import           HA.EventQueue.Types
-import           HA.NodeAgent.Messages
 import           HA.RecoveryCoordinator.Mero
 import           HA.Resources
 import           HA.Service
+import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
 import           HA.Services.Monitor (regularMonitor)
 
@@ -236,8 +237,11 @@ serviceRules argv eq = do
           let vitalService = serviceName regularMonitor == serviceName svc
           if vitalService
             then do sendToMasterMonitor msg
-                    liftProcess $
-                      nsendRemote nodeId EQT.name (nullProcessId nodeId, UpdateEQNodes (stationNodes argv))
+                    -- EQT may not be spawn at the moment so we create a special
+                    -- process that will update EQT as soon as it will see that.
+                    _ <- liftProcess $ spawnAsync nodeId $
+                        $(mkClosure 'EQT.updateEQNodes) (stationNodes argv)
+                    return ()
             else sendToMonitor n msg
           phaseLog "info" ("Service "
                               ++ (snString . serviceName $ svc)
@@ -269,8 +273,9 @@ serviceRules argv eq = do
 
       if vitalService
         then do sendToMasterMonitor msg
-                liftProcess $ do
-                  nsendRemote nodeId EQT.name (nullProcessId nodeId, UpdateEQNodes (stationNodes argv))
+                _ <- liftProcess $ spawnAsync nodeId $
+                       $(mkClosure 'EQT.updateEQNodes) (stationNodes argv)
+                return ()
         else sendToMonitor n msg
 
       phaseLog "info" ("Service "

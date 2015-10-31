@@ -18,7 +18,7 @@ import HA.Replicator.Mock ( MC_RG )
 #else
 import HA.Replicator.Log ( MC_RG )
 #endif
-import HA.EQTracker
+import HA.EQTracker hiding (__remoteTable)
 import RemoteTables ( remoteTable )
 
 

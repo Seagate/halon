@@ -23,15 +23,20 @@ module HA.EQTracker
   , ReplicaRequest(..)
   , ReplicaReply(..)
   , PreferReplicas(..)
+  , ServiceMessage(..)
   , startEQTracker
   , name
+  , updateEQNodes
+  , updateEQNodes__static
+  , updateEQNodes__sdict
+  , __remoteTable
   ) where
-
-import HA.NodeAgent.Messages (ServiceMessage(UpdateEQNodes))
 
 import Control.SpineSeq (spineSeq)
 import Control.Distributed.Process
+import Control.Distributed.Process.Closure
 
+import Control.Monad (unless)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.List (intersect, sort, union)
@@ -39,6 +44,13 @@ import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
 
+data ServiceMessage =
+    -- | Update the nids of the EQs, for example, in the event of the
+    -- RC restarting on a different node.
+    UpdateEQNodes [NodeId]
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary ServiceMessage
 
 -- | Loop state for the tracker. We store a list of preferred replicas as
 --   well as the full list of known replicas. None of these are guaranteed
@@ -70,6 +82,22 @@ newtype ReplicaReply = ReplicaReply ReplicaLocation
 
 name :: String
 name = "HA.EQTracker"
+
+-- | Updates EQ tracker of the node. First it waits until the EQ tracker
+-- is registered and then it sends the request to update the list of
+-- EQ nodes
+updateEQNodes :: [NodeId] -> Process ()
+updateEQNodes ns = do
+  mt <- whereis name
+  case mt of
+    Nothing -> receiveTimeout 100000 [] >> updateEQNodes ns
+    Just pid -> do
+      self <- getSelfPid
+      usend pid (self, UpdateEQNodes ns)
+      result <- expectTimeout 1000000
+      unless (result == Just True) $ updateEQNodes ns
+
+remotable [ 'updateEQNodes ]
 
 -- | Run Event Queue process.
 --

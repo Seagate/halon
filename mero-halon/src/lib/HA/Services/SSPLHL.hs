@@ -13,7 +13,6 @@ module HA.Services.SSPLHL where
 
 import Prelude hiding ((<$>), (<*>), id, mapM_)
 import HA.EventQueue.Producer (promulgate)
-import HA.NodeAgent.Messages
 import HA.Service
 import HA.Service.TH
 import qualified HA.Services.SSPL.HL.StatusHandler as StatusHandler

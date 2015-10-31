@@ -26,7 +26,6 @@ module HA.RecoveryCoordinator.Actions.Service
   ) where
 
 import HA.EventQueue.Producer (promulgateEQ)
-import HA.NodeAgent.Messages (ExitReason(..))
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware (nodesOnHost)
 import qualified HA.ResourceGraph as G

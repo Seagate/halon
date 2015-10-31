@@ -53,7 +53,6 @@ module HA.RecoveryCoordinator.Mero
 
 import Prelude hiding ((.), id, mapM_)
 import HA.EventQueue.Types (HAEvent(..))
-import HA.NodeAgent.Messages
 import HA.Resources
 import HA.Resources.Castor (Host(..))
 import HA.Service
@@ -70,7 +69,6 @@ import qualified HA.ResourceGraph as G
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
-import Control.Distributed.Process.Internal.Types (nullProcessId)
 
 import Control.Monad
 import Control.Wire hiding (when)
@@ -169,7 +167,7 @@ rcInitRule argv eq = do
       registerNode node
       registerHost host
       locateNodeOnHost node host
-      liftProcess $ nsend EQT.name (nullProcessId nid, UpdateEQNodes $ stationNodes argv)
+      liftProcess $ EQT.updateEQNodes $ stationNodes argv
       continue start_mm
 
     directly start_mm $ do
