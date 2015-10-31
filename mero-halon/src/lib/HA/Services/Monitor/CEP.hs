@@ -20,6 +20,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.Set        as S
 
 import HA.EventQueue.Producer (promulgate)
+import HA.Logger
 import HA.Resources
 import HA.Service
 import HA.Services.Monitor.Types
@@ -136,7 +137,7 @@ sendToRC a = do
     return ()
 
 traceMonitor :: String -> Process ()
-traceMonitor s = say $ "[Monitor]: " ++ s
+traceMonitor = mkHalonTracer "monitor-service"
 
 sayMonitor :: String -> PhaseM g l ()
 sayMonitor = liftProcess . traceMonitor

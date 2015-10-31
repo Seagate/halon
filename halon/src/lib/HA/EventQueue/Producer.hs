@@ -18,6 +18,7 @@ import HA.CallTimeout
   )
 import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types
+import HA.Logger
 import qualified HA.EQTracker as EQT
 
 import Control.Distributed.Process
@@ -26,18 +27,9 @@ import Control.Monad (when, void)
 
 import Data.List ((\\))
 import Data.Typeable
-import System.Environment (lookupEnv)
-import System.IO.Unsafe (unsafePerformIO)
-
 
 producerTrace :: String -> Process ()
--- producerTrace _ = return ()
--- producerTrace = say . ("[EQ.producer] " ++)
-producerTrace msg = do
-    let b = unsafePerformIO $
-              maybe False (elem "EQ.producer" . words)
-                <$> lookupEnv "HALON_TRACING"
-    when b $ say $ "[EQ.producer] " ++ msg
+producerTrace = mkHalonTracer "EQ.producer"
 
 data Result = Success | Failure
   deriving (Eq, Show)
@@ -138,7 +130,7 @@ promulgateHAEventPref :: [NodeId] -- ^ Preferred EQ nodes.
                       -> PersistMessage
                       -> Process Result
 promulgateHAEventPref peqnids eqnids msg = do
-  say $ "Sending " ++ show (persistEventId msg)
+  producerTrace $ "Sending " ++ show (persistEventId msg)
                    ++ " to " ++ show peqnids
                    ++ " and then to " ++ show (eqnids \\ peqnids)
   result <- callLocal $
