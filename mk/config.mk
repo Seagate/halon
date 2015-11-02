@@ -52,6 +52,7 @@ VENDOR_PACKAGES = distributed-process \
                   leveldb-haskell \
                   tasty-files \
                   options-schema \
+                  netwire \
                   network-transport-tcp \
                   network-transport-inmemory \
                   network-transport \
