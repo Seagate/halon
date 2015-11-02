@@ -23,7 +23,7 @@ library
   hs-source-dirs:      src
   build-depends:       base >=4.7,
                        aeson,
-                       aeson-schema,
+                       aeson-schema >= 0.4,
                        binary,
                        containers,
                        ghc-prim,
