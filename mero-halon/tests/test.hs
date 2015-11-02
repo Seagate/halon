@@ -150,6 +150,7 @@ main :: IO ()
 main = do
   args <- getArgs
   prog <- getExecutablePath
+#ifdef USE_MERO
   -- test if we have root privileges
   ((userid, _): _ ) <- reads <$> readProcess "id" ["-u"] ""
   when (userid /= (0 :: Int)) $ do
@@ -167,3 +168,6 @@ main = do
     exitSuccess
   when (userid == (0 :: Int)) $ do
     runTests ut
+#else
+  runTests ut
+#endif
