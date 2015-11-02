@@ -23,12 +23,6 @@
 [submodule "vendor/rank1dynamic"]
 	path = vendor/rank1dynamic
 	url = git@github.com:haskell-distributed/rank1dynamic.git
-[submodule "vendor/distributed-process-extras"]
-	path = vendor/distributed-process-extras
-	url = git@github.com:tweag/distributed-process-extras.git
-[submodule "vendor/distributed-process-async"]
-	path = vendor/distributed-process-async
-	url = git@github.com:tweag/distributed-process-async.git
 [submodule "vendor/leveldb-haskell"]
 	path = vendor/leveldb-haskell
 	url = git://github.com/kim/leveldb-haskell.git

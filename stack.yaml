@@ -14,10 +14,6 @@ packages:
 # vendor packages
 - location: vendor/distributed-process
   extra-dep: true
-- location: vendor/distributed-process-async
-  extra-dep: true
-- location: vendor/distributed-process-extras
-  extra-dep: true
 - location: vendor/distributed-static
   extra-dep: true
 - location: vendor/netwire
