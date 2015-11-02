@@ -23,9 +23,5 @@ instance (Eq k, Hashable k, Binary k, Binary v) => Binary (HashMap k v) where
   put x = put (Data.HashMap.Lazy.toList x)
   get = Data.HashMap.Lazy.fromList <$> get
 
-instance Binary Scientific where
-  put x = put $ toRational x
-  get = fromRational <$> get
-
 deriving instance Generic Value
 instance Binary Value

@@ -31,7 +31,7 @@ library
                        regex-base,
                        regex-compat,
                        regex-pcre,
-                       scientific,
+                       scientific >= 0.3.4.0,
                        text,
                        text-binary,
                        unordered-containers,
