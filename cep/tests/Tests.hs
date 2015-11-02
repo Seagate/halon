@@ -559,7 +559,9 @@ forkDontCopyOtherRules = do
 
 testsInit :: (Process () -> IO ()) -> TestTree
 testsInit launch = testGroup "Init"
-  [ testCase "Init rule is working" $ launch initRuleIsWorking ]
+  [ testCase "Init rule is working" $ launch initRuleIsWorking
+  , testCase "Init rule forwards processed messages" $ launch initRuleForward
+  ]
 
 initRuleIsWorking :: Process ()
 initRuleIsWorking = do
@@ -598,6 +600,22 @@ initRuleIsWorking = do
     usend pid donut
     Res (i :: Int) <- expect
     assert $ i == 7
+
+initRuleForward :: Process ()
+initRuleForward = do
+    self <- getSelfPid
+    pid <- spawnLocal $ execute (1 :: Int) $ do
+      initRule $ do
+        home <- phaseHandle "home"
+
+        setPhase home $ \(Donut _) -> return ()
+
+        start home ()
+
+      defineSimple "forwarded" $ \(Donut _) -> liftProcess $ usend self ()
+
+    usend pid donut
+    expect
 
 testsPeekShift :: (Process () -> IO ()) -> TestTree
 testsPeekShift launch = testGroup "Buffer"
