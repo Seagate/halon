@@ -219,6 +219,7 @@ Executable halonctl
 Executable halond
   Hs-Source-Dirs:     src/halond
   Main-Is:            Main.hs
+  Other-Modules:      Flags
 
   Ghc-Options: -threaded -Wall
 
@@ -673,7 +674,12 @@ Test-Suite unit-tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
+                    HA.Autoboot.Tests
+                    HA.Test.Cluster
+                    HA.Test.Disconnect
+                    HA.Test.SSPL
                     RemoteTables
+                    TestRunner
 
   Ghc-Options: -threaded -Wall
 
@@ -739,7 +745,12 @@ Test-Suite integration-tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
+                    HA.Autoboot.Tests
+                    HA.Test.Cluster
+                    HA.Test.Disconnect
+                    HA.Test.SSPL
                     RemoteTables
+                    TestRunner
   Main-Is:          test.hs
 
   Ghc-Options: -threaded -Wall
@@ -804,7 +815,10 @@ Test-Suite scheduler-tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
+                    HA.Autoboot.Tests
+                    HA.Test.Disconnect
                     RemoteTables
+                    TestRunner
   Main-Is:          scheduler-tests.hs
 
   Ghc-Options: -threaded -Wall

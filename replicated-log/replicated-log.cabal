@@ -77,6 +77,8 @@ Test-Suite tests
   Main-Is:          ut.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
+  Other-Modules:    Test
+                    Transport
 
   Ghc-Options: -Wall -threaded -eventlog -debug -with-rtsopts=-l-au
 
@@ -116,6 +118,8 @@ Test-Suite tests-scheduler
   Main-Is:          tests-scheduler.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
+  Other-Modules:    Test
+                    Transport
 
   Ghc-Options: -Wall -threaded -eventlog -debug -with-rtsopts=-l-au
 
@@ -171,6 +175,8 @@ Test-Suite random
   Main-Is:          random.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
+  Other-Modules:    Test
+                    Transport
 
   Ghc-Options:      -Wall -threaded
 

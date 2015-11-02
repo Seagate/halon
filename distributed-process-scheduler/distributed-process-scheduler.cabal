@@ -61,6 +61,7 @@ Test-Suite unit-tests-with-scheduler
   Main-Is:          with_scheduler.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
+  Other-Modules:    Tests
 
   Ghc-Options: -Wall
 
@@ -80,6 +81,7 @@ Test-Suite unit-tests-wo-scheduler
   Main-Is:          wo_scheduler.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
+  Other-Modules:    Tests
 
   Ghc-Options: -threaded -Wall
 

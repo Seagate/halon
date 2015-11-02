@@ -55,6 +55,7 @@ Test-Suite tests
   Main-Is:          ut.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
+  Other-Modules:    Test
 
   Ghc-Options: -threaded -Wall
 

@@ -118,14 +118,19 @@ Test-Suite unit-tests
   Main-Is:          ut.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
-  Other-Modules:    Test.Unit
-                    Test.Run
+  Other-Modules:    Control.SpineSeq.Tests
                     HA.EventQueue.Tests
-                    HA.Multimap.Tests
                     HA.Multimap.ProcessTests
+                    HA.Multimap.Tests
+                    HA.NodeAgent.Tests
                     HA.RecoverySupervisor.Tests
                     HA.ResourceGraph.Tests
+                    HA.Storage.Tests
                     RemoteTables
+                    Test.Helpers
+                    Test.Run
+                    Test.Transport
+                    Test.Unit
 
   Ghc-Options: -threaded -Wall
 
@@ -177,6 +182,18 @@ Test-Suite integration-tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Main-Is:          it.hs
+  Other-Modules:    HA.Autoboot.Tests
+                    HA.EventQueue.Tests
+                    HA.Multimap.ProcessTests
+                    HA.Multimap.Tests
+                    HA.NodeAgent.Tests
+                    HA.RecoverySupervisor.Tests
+                    HA.ResourceGraph.Tests
+                    RemoteTables
+                    Test.Helpers
+                    Test.Integration
+                    Test.Run
+                    Test.Transport
 
   Ghc-Options: -threaded -Wall
 
@@ -229,6 +246,11 @@ Test-Suite scheduler-tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Main-Is:          scheduler-tests.hs
+  Other-Modules:    HA.Autoboot.Tests
+                    HA.RecoverySupervisor.Tests
+                    RemoteTables
+                    Test.Run
+                    Test.Transport
 
   Ghc-Options: -threaded -Wall
 
