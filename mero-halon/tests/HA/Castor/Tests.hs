@@ -53,6 +53,7 @@ import Mero.ConfC (ServiceParams(..), ServiceType(..))
 import RemoteTables (remoteTable)
 
 import Test.Framework
+import System.IO
 
 mmSDict :: SerializableDict Multimap
 mmSDict = SerializableDict
@@ -87,14 +88,13 @@ tryRunProcessLocal transport process =
 rGroupTest :: Transport -> (ProcessId -> Process ()) -> IO ()
 rGroupTest transport p =
   tryRunProcessLocal transport $
-    flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
-      nid <- getSelfNode
-      rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
-                  >>= unClosure
-                  >>= (`asTypeOf` return (undefined :: MC_RG Multimap))
-      mmpid <- spawnLocal $ catch (multimap rGroup) $
-        (\e -> liftIO $ print (e :: SomeException))
-      p mmpid
+    nid <- getSelfNode
+    rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
+                >>= unClosure
+                >>= (`asTypeOf` return (undefined :: MC_RG Multimap))
+    mmpid <- spawnLocal $ catch (multimap rGroup) $
+      (\e -> liftIO $ hPutStrLn stderr (show (e :: SomeException)))
+    p mmpid
 
 tests :: String -> Transport -> [TestTree]
 tests host transport = map (localOption (mkTimeout $ 60*1000000))
