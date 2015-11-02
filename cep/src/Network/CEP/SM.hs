@@ -18,6 +18,7 @@ module Network.CEP.SM
 import Data.Foldable (toList)
 import Data.Typeable
 
+import           Control.Monad.Identity (runIdentity)
 import qualified Control.Monad.State.Strict as State
 import           Control.Distributed.Process
 import qualified Data.Map.Strict as M
@@ -37,7 +38,7 @@ data SMIn g a where
               -> SMIn g (Process (g, [(SMResult, SM g)]))
     -- ^ Execute a single step of the 'SM'. Where subscribers is the list of
     -- the current 'Subscribers' and g is current Global State.
-    SMMessage :: Monad m => TypeInfo -> Message -> SMIn g (m (SM g))
+    SMMessage :: TypeInfo -> Message -> SMIn g (SM g)
     -- ^ Feed a new message into state machine.
 
 -- | Create CEP state machine
@@ -52,9 +53,9 @@ newSM key startPhase rn ps initialBuffer initialL =
     SM $ bootstrap initialBuffer
   where
     bootstrap :: Buffer -> SMIn g a -> a
-    bootstrap b (SMMessage (TypeInfo _ (_ :: Proxy e)) msg) = do
-      Just (a :: e) <- unwrapMessage msg
-      return $ SM (bootstrap (bufferInsert a b))
+    bootstrap b (SMMessage (TypeInfo _ (_ :: Proxy e)) msg) =
+      let Just (a :: e) = runIdentity $ unwrapMessage msg in
+      SM (bootstrap (bufferInsert a b))
     bootstrap b i@(SMExecute _ _ _) = do
         ph <- jumpEmitTimeout key startPhase
         interpretInput initialL b [ph] i
@@ -64,9 +65,9 @@ newSM key startPhase rn ps initialBuffer initialL =
                    -> [Jump (Phase g l)]
                    -> SMIn g a
                    -> a
-    interpretInput l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) = do
-      Just (a :: e) <- unwrapMessage msg
-      return $ SM (interpretInput l (bufferInsert a b) phs)
+    interpretInput l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) =
+      let Just (a :: e) = runIdentity $ unwrapMessage msg in
+      SM (interpretInput l (bufferInsert a b) phs)
     interpretInput l b phs (SMExecute logs subs g) =
       executeStack logs subs g l b id id phs
 
