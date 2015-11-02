@@ -239,12 +239,10 @@ runItForever start_eng = do
               when (init_done && debug_mode) $ liftIO $ do
                 putStrLn "<~~~~~~~~~~ INIT RULE FINISHED ~~~~~~~~~~>"
               if init_done
-                then if null ms
-                  then cruise debug_mode (succ loop) nxt_eng
-                  else
-                    let lefts = reverse ms in
-                    forwardLeftOvers debug_mode (succ loop) nxt_eng lefts
-                else bootstrap debug_mode ms (succ loop) nxt_eng
+                then
+                  let lefts = reverse (m:ms) in
+                  forwardLeftOvers debug_mode (succ loop) nxt_eng lefts
+                else bootstrap debug_mode (m:ms) (succ loop) nxt_eng
     forwardLeftOvers debug_mode loop eng [] =
       cruise debug_mode loop eng
     forwardLeftOvers debug_mode loop eng (x:xs) = do
