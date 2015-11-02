@@ -1,34 +1,45 @@
 packages:
+- cep/cep
 - consensus
 - consensus-paxos
 - distributed-commands
 - distributed-process-scheduler
 - distributed-process-test
 - distributed-process-trans
-- genders
 - halon
 - mero-halon
+- network-transport-controlled
 - replicated-log
 - sspl
-- cep
-- clock
-- distributed-process
-- distributed-process-async
-- distributed-process-extras
-- distributed/distributed-process-tests
-- distributed-static
-- network-transport
-- network-transport-tcp
-- distributed/network-transport-tests
-- options-schema
-- rank1dynamic
-- tasty-files
+# vendor packages
+- location: vendor/distributed-process
+  extra-dep: true
+- location: vendor/distributed-process-async
+  extra-dep: true
+- location: vendor/distributed-process-extras
+  extra-dep: true
+- location: vendor/distributed-static
+  extra-dep: true
+- location: vendor/netwire
+  extra-dep: true
+- location: vendor/network-transport
+  extra-dep: true
+- location: vendor/network-transport-inmemory
+  extra-dep: true
+- location: vendor/network-transport-tcp
+  extra-dep: true
+- location: vendor/options-schema
+  extra-dep: true
+- location: vendor/rank1dynamic
+  extra-dep: true
+- location: vendor/tasty-files
+  extra-dep: true
 
 extra-deps:
+- aeson-schema-0.4.0.0
+- distributed-process-tests-0.4.3.2
 - leveldb-haskell-0.6.3
-- netwire-5.0.1
-- network-2.6.2.0
+- network-transport-tests-0.2.2.0
 - rematch-0.2.0.0
-- tasty-program-1.0.3
 
-resolver: nightly-2015-06-05
+resolver: lts-3.11
