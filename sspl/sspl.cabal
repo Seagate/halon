@@ -1,12 +1,9 @@
 name:                sspl
 version:             0.1.0.0
 synopsis:            SSPL Bindings for Halon.
--- description:
 license:             AllRightsReserved
 copyright:           (c) 2014 Seagate Technology LLC
--- category:
 build-type:          Simple
--- extra-source-files:
 cabal-version:       >=1.10
 
 Flag maintainer
