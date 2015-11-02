@@ -48,6 +48,8 @@ Test-Suite unit-tests
   default-language: Haskell2010
   Hs-Source-Dirs: tests
   Main-Is: UnitTests.hs
+  Other-Modules:       CEP.Settings.Tests
+                       Tests
 
   Ghc-Options: -threaded -Wall
 
@@ -73,6 +75,8 @@ Test-Suite unit-tests-scheduler
   default-language: Haskell2010
   Hs-Source-Dirs: tests
   Main-Is: unit-tests-scheduler.hs
+  Other-Modules:       CEP.Settings.Tests
+                       Tests
 
   Ghc-Options: -threaded -Wall
 
