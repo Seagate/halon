@@ -1,5 +1,6 @@
 packages:
 - cep/cep
+- confc
 - consensus
 - consensus-paxos
 - distributed-commands
@@ -10,6 +11,7 @@ packages:
 - mero-halon
 - network-transport-controlled
 - replicated-log
+- rpclite
 - sspl
 # vendor packages
 - location: vendor/distributed-process
@@ -34,6 +36,7 @@ packages:
 extra-deps:
 - aeson-schema-0.4.0.0
 - distributed-process-tests-0.4.3.2
+- inline-c-0.5.5.1
 - leveldb-haskell-0.6.3
 - network-transport-tests-0.2.2.0
 - rematch-0.2.0.0
