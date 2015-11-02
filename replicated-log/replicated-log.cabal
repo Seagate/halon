@@ -47,7 +47,7 @@ Library
                     distributed-process-scheduler,
                     distributed-static >= 0.2,
                     filepath >= 1.4.0,
-                    leveldb-haskell >= 0.6.1,
+                    leveldb-haskell >= 0.6.3,
                     mtl >= 2.0,
                     network-transport >= 0.3,
                     syb >= 0.3,

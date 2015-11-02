@@ -49,7 +49,6 @@ VENDOR_PACKAGES = distributed-process \
                   distributed-static \
                   distributed-process-extras \
                   distributed-process-async \
-                  leveldb-haskell \
                   tasty-files \
                   options-schema \
                   network-transport-tcp \
