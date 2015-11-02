@@ -49,6 +49,7 @@ runTest numNodes numReps _t tr rt action
         forM_ [1..numReps'] $ \i ->  withTmpDirectory $
           E.bracket createTransport closeTransport $
           \tr' -> do
+            hPutStrLn stderr $ "Testing with seed: " ++ show (s + i, i)
             m <- timeout (7 * 60 * 1000000) $
               Scheduler.withScheduler (s + i) 1000 numNodes tr' rt' $ \nodes ->
                 action nodes `DP.finally` stopHalon nodes
