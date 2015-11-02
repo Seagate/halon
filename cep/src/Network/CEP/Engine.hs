@@ -207,6 +207,9 @@ defaultHandler st _ (Query (GetSetting s)) =
 interestingMsg :: (Fingerprint -> Bool) -> Message -> Bool
 interestingMsg k msg = k $ messageFingerprint msg
 
+foreach :: Functor f => f a -> (a -> b) -> f b
+foreach xs f = fmap f xs
+
 cepInitRule :: InitRule g -> Machine g -> Request m a -> a
 cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
     case i of
@@ -224,9 +227,9 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
       _ -> defaultHandler st (cepInitRule ir) req
   where
     go (GotMessage ty m) msg_count = do
-      stack' <- runSM (_ruleStack rd) (SMMessage ty m)
-      -- XXX: update runinfo
-      let rinfo = RunInfo 0 (RulesBeenTriggered [])
+      let stack' = runSM (_ruleStack rd) (SMMessage ty m)
+          -- XXX: update runinfo
+          rinfo = RunInfo 0 (RulesBeenTriggered [])
       return (rinfo, Engine $ cepInitRule (InitRule rd{_ruleStack=stack'} typs)
                                           st{ _machTotalProcMsgs = msg_count })
     go NoMessage msg_count = do
@@ -272,20 +275,21 @@ cepCruise st req@(Run t) =
       Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
         let fpt = messageFingerprint m
             keyInfos = MM.lookup fpt $ _machTypeMap st
-        running' <- for (_machRunningSM st) $ \(key, rd) -> do
-          case key `lookup` keyInfos of
-            Just info -> do
-              stack' <- runSM (_ruleStack rd) (SMMessage info m)
-              return (key, rd{_ruleStack=stack'})
-            Nothing   -> return (key,rd)
-        (susp,running) <- partitionEithers <$> (for (_machSuspendedSM st) $ \(key, rd) -> do
-                   case key `lookup` keyInfos of
-                     Just info -> do
-                       stack' <- runSM (_ruleStack rd) (SMMessage info m)
-                       return (Right (key, rd{_ruleStack=stack'}))
-                     Nothing   -> return (Left (key, rd)))
+            running' = foreach (_machRunningSM st) $ \(key, rd) ->
+              case key `lookup` keyInfos of
+                Just info ->
+                  let stack' = runSM (_ruleStack rd) (SMMessage info m) in
+                  (key, rd{_ruleStack=stack'})
+                Nothing   -> (key,rd)
+            splitted = foreach (_machSuspendedSM st) $ \(key, rd) ->
+              case key `lookup` keyInfos of
+                Just info ->
+                  let stack' = runSM (_ruleStack rd) (SMMessage info m) in
+                  Right (key, rd{_ruleStack=stack'})
+                Nothing   -> Left (key, rd)
+            (susp,running) = partitionEithers splitted
         -- XXX: update runinfo
-        let rinfo = RunInfo 1 (RulesBeenTriggered [])
+            rinfo = RunInfo 1 (RulesBeenTriggered [])
         return (rinfo, Engine $ cepCruise st{_machRunningSM   = running' ++ running
                                             ,_machSuspendedSM = susp
                                             })
