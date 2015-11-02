@@ -165,6 +165,14 @@ Library
 Executable halonctl
   Hs-Source-Dirs:     src/halonctl
   Main-Is:            Main.hs
+  Other-Modules:      Flags
+                      Handler.Bootstrap
+                      Handler.Bootstrap.Satellite
+                      Handler.Bootstrap.TrackingStation
+                      Handler.Cluster
+                      Handler.Service
+                      Lookup
+                      Options.Applicative.Extras
 
   Ghc-Options: -threaded -Wall
 
