@@ -12,14 +12,14 @@ Flag maintainer
 
 library
   exposed-modules:     SSPL.Bindings
-  other-modules:       SSPL.Bindings.ActuatorRequest
+                       SSPL.Bindings.ActuatorRequest
                        SSPL.Bindings.ActuatorResponse
                        SSPL.Bindings.ClusterMap
                        SSPL.Bindings.CommandRequest
                        SSPL.Bindings.CommandResponse
                        SSPL.Bindings.SensorRequest
                        SSPL.Bindings.SensorResponse
-                       SSPL.Bindings.Instances
+  other-modules:       SSPL.Bindings.Instances
   hs-source-dirs:      src
   build-depends:       base >=4.7,
                        aeson,
