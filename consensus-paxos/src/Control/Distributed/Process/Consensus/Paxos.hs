@@ -201,6 +201,7 @@ acceptor sendA _ startDecree0 config name =
                     usend λ $ Msg.Nack $ fromValue b
                     loop sd b
               , match $ \(Trim d) -> do
+                  paxosTrace $ "Trimming " ++ show d
                   liftIO $ storeTrim d
                   loop (max d sd) b
 
