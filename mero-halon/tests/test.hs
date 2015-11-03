@@ -30,13 +30,14 @@ import Control.Concurrent (threadDelay, forkIO)
 import Control.Concurrent.MVar
 import Control.Exception
 
-
+#ifdef USE_MERO
 import Control.Monad (when)
 import Data.Maybe (catMaybes)
 import System.Directory
 import System.Exit
 import System.FilePath
 import System.Process
+#endif
 
 #ifdef USE_RPC
 import qualified Network.Transport.RPC as RPC
@@ -148,9 +149,9 @@ runTests tests = do
 
 main :: IO ()
 main = do
+#ifdef USE_MERO
   args <- getArgs
   prog <- getExecutablePath
-#ifdef USE_MERO
   -- test if we have root privileges
   ((userid, _): _ ) <- reads <$> readProcess "id" ["-u"] ""
   when (userid /= (0 :: Int)) $ do
