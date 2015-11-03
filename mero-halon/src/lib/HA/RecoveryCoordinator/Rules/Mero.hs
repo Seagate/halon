@@ -215,16 +215,16 @@ initialiseConfInRG = getFilesystem >>= \case
 
 -- ^ Allowed failures in each failure domain
 data Failures = Failures {
-    f_pool :: Word32
-  , f_rack :: Word32
-  , f_encl :: Word32
-  , f_ctrl :: Word32
-  , f_disk :: Word32
+    f_pool :: !Word32
+  , f_rack :: !Word32
+  , f_encl :: !Word32
+  , f_ctrl :: !Word32
+  , f_disk :: !Word32
 } deriving (Eq, Ord, Show)
 
 data FailureSet = FailureSet
-    (S.Set Fid) -- ^ Set of Fids
-    Failures -- ^ Allowable failures in each failure domain.
+    !(S.Set Fid) -- ^ Set of Fids
+    !Failures -- ^ Allowable failures in each failure domain.
   deriving (Eq, Ord, Show)
 
 failureSetToArray :: Failures -> [Word32]
