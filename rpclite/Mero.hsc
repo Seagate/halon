@@ -5,14 +5,17 @@
 -- Initialization and finalization calls of mero.
 --
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE ForeignFunctionInterface   #-}
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE ForeignFunctionInterface  #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE DeriveDataTypeable        #-}
+{-# LANGUAGE LambdaCase                #-}
 module Mero
   ( m0_init
   , m0_fini
   , withM0
   , withM0Deferred
   , sendM0Task
+  , sendM0Task_
   , M0InitException(..)
   ) where
 
@@ -27,8 +30,7 @@ import Control.Concurrent
     , MVar
     , newEmptyMVar
     , putMVar
-    , takeMVar
-    , killThread)
+    , takeMVar)
 import Control.Exception
     ( Exception
     , bracket_
@@ -37,8 +39,10 @@ import Control.Exception
     , try
     , SomeException(..)
     , throwIO)
-import Control.Monad (when, join, forever)
+import Control.Monad (when)
+import Data.IORef
 import Data.Typeable
+import Data.Foldable
 import Foreign.C.Types (CInt(..))
 import System.IO.Unsafe
 
@@ -52,57 +56,76 @@ m0_init = do
 -- | Encloses an action with calls to 'm0_init' and 'm0_fini'.
 -- Run m0 worker in parrallel, it's possible to send tasks to worker
 -- using 'sendM0Task' primitive.
+--
+-- This method should be called from the bound thread.
 withM0 :: IO a -> IO a
 withM0 = bracket_ m0_init m0_fini . bracket runworker stopworker . const
   where
-    runworker = forkM0OS $ forever $ do
-      Task f b <- readChan globalM0Chan
-      putMVar b =<< try f
+    runworker = forkM0OS $
+      let loop = do
+           mt <- readChan globalM0Chan
+           forM_ mt $ \(Task f b) -> f >>= putMVar b >> loop
+      in loop
     stopworker mid = do
-      killThread $ m0ThreadId mid
+      writeChan globalM0Chan Nothing
       joinM0OS mid
 
 newtype M0InitException = M0InitException CInt deriving (Show, Typeable)
 
 instance Exception M0InitException
 
-globalM0Chan :: Chan Task
+globalM0Chan :: Chan (Maybe Task)
 {-# NOINLINE globalM0Chan #-}
 globalM0Chan = unsafePerformIO newChan
 
-data Task = forall a . Task (IO a) (MVar (Either SomeException a))
+data Task = forall a . Task (IO (Either SomeException a)) (MVar (Either SomeException a))
 
 -- | Send task to M0 worker, may throw 'M0InitException' if mero worker
 -- failed to initialize mero.
 sendM0Task :: IO a -> IO a
 sendM0Task f = do
     box <- newEmptyMVar
-    writeChan globalM0Chan (Task f box)
+    writeChan globalM0Chan . Just $ Task (try f) box
     either throwIO return =<< takeMVar box
 
--- | Sends task to M0 worker, do not wait for task completion.
+-- | Sends task to M0 worker, do not wait for task completion, this call is
+-- completelly asynchronous.
 sendM0Task_ :: IO () -> IO ()
 sendM0Task_ f = do
   box <- newEmptyMVar
-  writeChan globalM0Chan (Task f box)
+  writeChan globalM0Chan . Just $ Task (try f) box
 
 -- | Spawns a deferred worker thread in parrallel to main. New deferred
 -- thread will be initialized as m0 thread only when first task will
 -- arrive.
 withM0Deferred :: IO a -> IO a
-withM0Deferred = bracket init killThread . const
+withM0Deferred f = do
+    cont <- newIORef True
+    end  <- newEmptyMVar
+    bracket_ (initialize cont end)
+             (finalize cont end)
+             f
   where
-    init = forkOS $ do
+    initialize cont end = forkOS $ do
         let initloop = do
-              t@(Task cmd b) <- readChan globalM0Chan
-              rc <- m0_init_wrapper
-              if (rc == 0)
-                 then mainloop t `finally` m0_fini
-                 else do putMVar b (Left (SomeException (M0InitException rc)))
-                         initloop
-            mainloop (Task cmd b) =
-              try cmd >>= putMVar b >> readChan globalM0Chan >>= mainloop
+              shouldContinue <- readIORef cont
+              when shouldContinue $ do
+                mt <- readChan globalM0Chan
+                forM_ mt $ \t@(Task _ b) -> do
+                  rc <- m0_init_wrapper
+                  if (rc == 0)
+                    then mainloop t `finally` m0_fini
+                    else do putMVar b (Left (SomeException (M0InitException rc)))
+                            initloop
+            mainloop (Task cmd b) = do
+                cmd >>= putMVar b
+                readChan globalM0Chan >>= traverse_ mainloop
         initloop
+        putMVar end ()
+    finalize cont end = do
+        writeIORef cont False
+        writeChan globalM0Chan Nothing
+        takeMVar end
 
 foreign import ccall m0_init_wrapper :: IO CInt
 
