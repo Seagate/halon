@@ -30,7 +30,7 @@ castorRules = do
       filesystem <- initialiseConfInRG
       loadMeroGlobals id_m0_globals
       loadMeroServers filesystem id_m0_servers
-      failureSets <- generateFailureSets 2 2 1 -- TODO real values
+      failureSets <- generateFailureSets 0 1 0 -- TODO real values
       createPoolVersions filesystem failureSets
 #endif
       liftProcess $ say "Loaded initial data"
