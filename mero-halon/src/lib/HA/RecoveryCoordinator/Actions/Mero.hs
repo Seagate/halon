@@ -83,17 +83,20 @@ getM0Globals = getLocalGraph >>= \rg -> do
 
 syncToConfd :: M0.SpielAddress -> PhaseM LoopState l ()
 syncToConfd sa = do
+  phaseLog "info" $ "Starting sync to confd at " ++ show sa
   g <- getLocalGraph
   (Just CI.M0Globals{..}) <- getM0Globals
   (Just (M0.Profile pfid)) <- getProfile
   (Just fs@(M0.Filesystem{..})) <- getFilesystem
   void . withSpielRC sa $ \sc -> do
     t <- liftM0 $ openTransaction sc
+    phaseLog "spiel" $ "Opened transaction."
     -- Profile, FS, pool
     liftM0 $ do
       addProfile t pfid
       addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid []
       addPool t f_mdpool_fid f_fid 0
+    phaseLog "spiel" "Added profile, filesystem, mdpool objects."
     -- Racks, encls, controllers, disks
     let racks = G.connectedTo fs M0.IsParentOf g :: [M0.Rack]
     forM_ racks $ \rack -> do
@@ -141,6 +144,7 @@ syncToConfd sa = do
                             $ (G.connectedTo sdev M0.IsOnHardware g :: [M0.Disk])
             liftM0 $ addDevice t d_fid s_fid (M0.fid disk) M0_CFG_DEVICE_INTERFACE_SATA
                         M0_CFG_DEVICE_MEDIA_DISK d_bsize d_size 0 0 d_path
+    phaseLog "spiel" "Finished adding concrete entities."
     -- Pool versions
     (Just (pool :: M0.Pool)) <- lookupConfObjByFid f_mdpool_fid
     let pdca = PDClustAttr {
@@ -175,7 +179,9 @@ syncToConfd sa = do
 
               liftM0 $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
       liftM0 $ poolVersionDone t (M0.fid pver)
+    phaseLog "spiel" "Finished adding virtual entities."
     liftM0 $ commitTransaction t >> closeTransaction t
+    phaseLog "spiel" "Transaction committed."
 
 -- | Creates an RPCAddress suitable for 'withServerEndpoint'
 -- and friends. 'getSelfNode' is used and endpoint of
