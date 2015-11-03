@@ -19,13 +19,10 @@ export PATH=$PATH:${WORKDIR}/cabal-installers/cabal-build/bin
 
 mkdir -p ~/rpmbuild/SOURCES
 ${CBLRPM} srpm ${HALONSRC}/vendor/clock || exit 5
-${CBLRPM} srpm ${HALONSRC}/vendor/rank1dynamic || exit 6
 ${CBLRPM} srpm ${HALONSRC}/vendor/options-schema || exit 6
 ${CBLRPM} srpm ${HALONSRC}/vendor/tasty-files || exit 6
 ${CBLRPM} srpm ${HALONSRC}/vendor/network || exit 6
-${CBLRPM} srpm ${HALONSRC}/vendor/network-transport || exit 6
 ${CBLRPM} srpm ${HALONSRC}/vendor/network-transport-tcp || exit 6
-${CBLRPM} srpm ${HALONSRC}/vendor/distributed-static || exit 6
 ${CBLRPM} srpm ${HALONSRC}/vendor/distributed-process || exit 6
 ${CBLRPM} srpm ${HALONSRC}/cep/cep || exit 6
 ${CBLRPM} srpm ${HALONSRC}/distributed-process-trans || exit 6

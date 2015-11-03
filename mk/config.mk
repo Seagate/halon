@@ -46,14 +46,11 @@ PACKAGES += network-transport-rpc
 endif
 
 VENDOR_PACKAGES = distributed-process \
-                  distributed-static \
                   tasty-files \
                   options-schema \
                   netwire \
                   network-transport-tcp \
-                  network-transport-inmemory \
-                  network-transport \
-                  rank1dynamic
+                  network-transport-inmemory
 
 CEP_DIR = $(ROOT_DIR)/cep/
 
