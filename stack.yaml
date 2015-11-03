@@ -1,0 +1,44 @@
+packages:
+- cep/cep
+- confc
+- consensus
+- consensus-paxos
+- distributed-commands
+- distributed-process-scheduler
+- distributed-process-test
+- distributed-process-trans
+- halon
+- mero-halon
+- network-transport-controlled
+- replicated-log
+- rpclite
+- sspl
+# vendor packages
+- location: vendor/distributed-process
+  extra-dep: true
+- location: vendor/distributed-static
+  extra-dep: true
+- location: vendor/netwire
+  extra-dep: true
+- location: vendor/network-transport
+  extra-dep: true
+- location: vendor/network-transport-inmemory
+  extra-dep: true
+- location: vendor/network-transport-tcp
+  extra-dep: true
+- location: vendor/options-schema
+  extra-dep: true
+- location: vendor/rank1dynamic
+  extra-dep: true
+- location: vendor/tasty-files
+  extra-dep: true
+
+extra-deps:
+- aeson-schema-0.4.0.0
+- distributed-process-tests-0.4.3.2
+- inline-c-0.5.5.1
+- leveldb-haskell-0.6.3
+- network-transport-tests-0.2.2.0
+- rematch-0.2.0.0
+
+resolver: lts-3.11

@@ -47,10 +47,9 @@ endif
 
 VENDOR_PACKAGES = distributed-process \
                   distributed-static \
-                  distributed-process-extras \
-                  distributed-process-async \
                   tasty-files \
                   options-schema \
+                  netwire \
                   network-transport-tcp \
                   network-transport-inmemory \
                   network-transport \

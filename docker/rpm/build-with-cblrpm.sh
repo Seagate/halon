@@ -27,8 +27,6 @@ ${CBLRPM} srpms ${HALONSRC}/vendor/network-transport || exit 6
 ${CBLRPM} srpms ${HALONSRC}/vendor/network-transport-tcp || exit 6
 ${CBLRPM} srpms ${HALONSRC}/vendor/distributed-static || exit 6
 ${CBLRPM} srpms ${HALONSRC}/vendor/distributed-process || exit 6
-${CBLRPM} srpms ${HALONSRC}/vendor/distributed-process-extras || exit 6
-${CBLRPM} srpms ${HALONSRC}/vendor/distributed-process-async || exit 6
 ${CBLRPM} srpms ${HALONSRC}/network-transport-controlled || exit 6
 ${CBLRPM} srpms ${HALONSRC}/distributed-process-trans || exit 6
 ${CBLRPM} srpms ${HALONSRC}/distributed-process-scheduler || exit 6
