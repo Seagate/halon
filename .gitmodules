@@ -1,9 +1,6 @@
 [submodule "vendor/distributed-process"]
 	path = vendor/distributed-process
 	url = https://github.com/tweag/distributed-process.git
-[submodule "vendor/distributed-static"]
-	path = vendor/distributed-static
-	url = git@github.com:haskell-distributed/distributed-static.git
 [submodule "vendor/tasty-files"]
 	path = vendor/tasty-files
 	url = git@github.com:tweag/tasty-files.git
@@ -17,12 +14,6 @@
 [submodule "cep"]
 	path = cep
 	url = git@github.com:tweag/cep.git
-[submodule "vendor/network-transport"]
-	path = vendor/network-transport
-	url = git@github.com:tweag/network-transport.git
-[submodule "vendor/rank1dynamic"]
-	path = vendor/rank1dynamic
-	url = git@github.com:haskell-distributed/rank1dynamic.git
 [submodule "vendor/network-transport-inmemory"]
 	path = vendor/network-transport-inmemory
 	url = https://github.com/haskell-distributed/network-transport-inmemory.git

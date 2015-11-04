@@ -16,11 +16,7 @@ packages:
 # vendor packages
 - location: vendor/distributed-process
   extra-dep: true
-- location: vendor/distributed-static
-  extra-dep: true
 - location: vendor/netwire
-  extra-dep: true
-- location: vendor/network-transport
   extra-dep: true
 - location: vendor/network-transport-inmemory
   extra-dep: true
@@ -28,17 +24,17 @@ packages:
   extra-dep: true
 - location: vendor/options-schema
   extra-dep: true
-- location: vendor/rank1dynamic
-  extra-dep: true
 - location: vendor/tasty-files
   extra-dep: true
 
 extra-deps:
 - aeson-schema-0.4.0.0
 - distributed-process-tests-0.4.3.2
+- distributed-static-0.3.2.0
 - inline-c-0.5.5.1
 - leveldb-haskell-0.6.3
 - network-transport-tests-0.2.2.0
+- rank1dynamic-0.3.1.0
 - rematch-0.2.0.0
 
 resolver: lts-3.11
