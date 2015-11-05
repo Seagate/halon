@@ -27,7 +27,7 @@ import Mero.ConfC (Bitmap(..), Fid, ServiceType(..))
 
 import Control.Category (id, (>>>))
 import Control.Distributed.Process (liftIO)
-import Control.Monad (forM_)
+import Control.Monad (forM_, void)
 
 import Data.Foldable (foldl')
 import qualified Data.HashMap.Strict as M
@@ -50,18 +50,19 @@ meroRules = do
         msa <- getSpielAddress
         case msa of
           Nothing -> phaseLog "warning" $ "No spiel address found in RG."
-          Just sa -> syncToConfd sa
+          Just sa -> void $ withSpielRC sa $ \sc -> do
+                       txOpenContext sc >>= txPopulate >>= txSyncToConfd
       SyncToTheseServers (SpielAddress [] _) ->
         phaseLog "warning"
            $ "Requested to sync to specific list of confd servers, "
           ++ "but that list was empty."
       SyncToTheseServers sa -> do
         phaseLog "info" $ "Syncing RG to these confd servers: " ++ show sa
-        syncToConfd sa
+        void $ withSpielRC sa $ \sc -> do
+          txOpenContext sc >>= txPopulate >>= txSyncToConfd
       SyncDumpToFile filename -> do
         phaseLog "info" $ "Dumping conf in RG to this file: " ++ show filename
-        phaseLog "error" "Not yet implemented!"
-
+        txOpen >>= txPopulate >>= txDumpToFile filename
     messageProcessed eid
 
 -- | Atomically fetch a FID sequence number of increment the sequence count.

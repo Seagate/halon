@@ -58,7 +58,8 @@ import Foreign.Marshal.Error
   , throwIfNull
   )
 import Foreign.Marshal.Utils
-  ( with
+  ( fillBytes
+  , with
   , withMany
   )
 import Foreign.Ptr
@@ -108,13 +109,25 @@ withSpiel rpcmach eps rm_ep = bracket (start rpcmach eps rm_ep) stop
 
 newtype SpielTransaction = SpielTransaction (ForeignPtr SpielTransactionV)
 
-openTransaction :: SpielContext
-                -> IO (SpielTransaction)
-openTransaction (SpielContext fsc) = withForeignPtr fsc $ \sc -> do
+openTransactionContext :: SpielContext
+                      -> IO (SpielTransaction)
+openTransactionContext (SpielContext fsc) = withForeignPtr fsc $ \sc -> do
   st <- mallocForeignPtrBytes m0_spiel_tx_size
   void $ throwIfNull "Cannot open Spiel transaction."
                       $ withForeignPtr st
                         $ \ptr -> c_spiel_tx_open sc ptr
+  return $ SpielTransaction st
+
+openTransaction :: IO SpielTransaction
+openTransaction = do
+  sc <- mallocForeignPtrBytes m0_spiel_size
+  st <- mallocForeignPtrBytes m0_spiel_tx_size
+  void $ throwIfNull "Cannot open Spiel transaction."
+        $ withForeignPtr sc
+          $ \sc_ptr -> withForeignPtr st
+            $ \ptr -> do
+              fillBytes sc_ptr 0 m0_spiel_size
+              c_spiel_tx_open sc_ptr ptr
   return $ SpielTransaction st
 
 closeTransaction :: SpielTransaction
@@ -141,7 +154,7 @@ withTransaction :: SpielContext
                 -> (SpielTransaction -> IO a)
                 -> IO a
 withTransaction sc = bracket
-  (openTransaction sc)
+  (openTransactionContext sc)
   (\t -> commitTransaction t >> closeTransaction t)
 
 dumpTransaction :: SpielTransaction
