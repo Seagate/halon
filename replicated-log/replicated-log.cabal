@@ -105,6 +105,7 @@ Test-Suite tests
                     rank1dynamic >= 0.1,
                     replicated-log,
                     tasty,
+                    tasty-files,
                     unix
   Default-Extensions: DeriveDataTypeable
                       DeriveGeneric
