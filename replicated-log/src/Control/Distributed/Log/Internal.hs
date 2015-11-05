@@ -839,7 +839,7 @@ replica Dict
                        \(Decree locale di _) -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
-                  logTrace $ "Skipping decree: " ++ show (w, di)
+                  logTrace $ "Skipping decree: " ++ show (w, di, locale)
 
                   case locale of
                       -- Ack back to the batcher. It may be waiting on the
@@ -906,7 +906,7 @@ replica Dict
                     -- configuration.
                     | decreeLegislatureId d < leg' -> {-# SCC "Execute/Reconf" #-} do
                       logTrace $ "Reconfiguring: " ++
-                                 show (w, di, d, leg', cd, ρs')
+                                 show (di, w, d, leg', cd, ρs')
                       let d' = w' { decreeNumber = max (decreeNumber d) (decreeNumber w') }
                           cd' = w' { decreeNumber = max (decreeNumber cd) (decreeNumber w') }
                           w' = succ w{decreeLegislatureId = leg'}
@@ -938,7 +938,7 @@ replica Dict
                            }
                     | otherwise -> {-# SCC "Execute/otherwise" #-} do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
-                      say $ "Not executing " ++ show di
+                      say $ "Not executing " ++ show (di, w, d, leg', cd)
                       (w0', msref') <- maybeTakeSnapshot w' s
                       go st{ stateSnapshotRef       = msref'
                            , stateSnapshotWatermark = w0'
@@ -984,7 +984,8 @@ replica Dict
                         && isJust (requestForLease r) -- This is a lease request.
                       ) $ {-# SCC "go/lease" #-}
                        \(request :: Request a) -> do
-                  logTrace $ "Lease request: " ++ show (w, d, cd)
+                  logTrace $ "Lease request: " ++
+                    show (w, d, cd, requestForLease request)
                   cd' <- case requestForLease request of
                     -- Discard the lease request if it corresponds to an old
                     -- legislature.
@@ -1013,6 +1014,8 @@ replica Dict
               -- XXX The guard avoids proposing values for unreachable decrees.
             , matchIf (\_ -> cd == w) $ {-# SCC "go/batcher" #-} \(rs :: [BatcherMsg a]) -> do
                   mLeader <- liftIO getLeader
+                  logTrace $ "replica: request from batcher "
+                             ++ show (cd, mLeader, ρs)
                   (s', cd') <- case mLeader of
                      -- Drop the request and ask for the lease.
                      Nothing | elem here ρs -> do
@@ -1031,6 +1034,7 @@ replica Dict
                             ((Nullipotent ==) . requestHint . batcherMsgRequest)
                             rs
                        then do
+                         logTrace "replica: nullipotent requests"
                          -- Serve nullipotent requests from the local state.
                          s' <- foldM stLogNextState s $
                                  concatMap
@@ -1045,6 +1049,7 @@ replica Dict
                            flip usend ()
                          return (s', cd)
                        else do
+                         logTrace $ "replica: non-nullipotent requests. " ++ show (length rs)
                          let (rs', old) =
                                partition ((epoch <=) . batcherMsgEpoch) rs
                          -- Notify the ambassadors of old requests.
@@ -1052,8 +1057,10 @@ replica Dict
                            flip usend (epoch, ρs)
                          case rs' of
                            -- Notify the batcher.
-                           [] -> do usend bpid ()
-                                    return (s, cd)
+                           [] -> do
+                             usend bpid ()
+                             logTrace "replica: no non-nullipotent requests."
+                             return (s, cd)
                            BatcherMsg { batcherMsgRequest = r } : _ -> do
                              let updateLeg (Reconf t _ ρs') =
                                   Reconf t (succ $ decreeLegislatureId legD) ρs'
@@ -1783,6 +1790,7 @@ append (Handle _ _ _ _ omchan μ) hint x = callLocal $ do
         , requestHint     = hint
         , requestForLease = Nothing
         }
+    logTrace $ "append: sending request to ambassador " ++ show μ
     when schedulerIsEnabled $ usend μ ()
     expect
 
