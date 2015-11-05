@@ -1676,7 +1676,10 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
        -> [NodeId]      -- ^ The other replicas
        -> MonitorRef       -- ^ The monitor ref of a replica we are contacting
        -> Process b
-    go epoch mLeader ρs ref = receiveWait $
+    go epoch mLeader ρs ref = do
+     _ <- receiveTimeout 0
+       [ matchSTM (readTChan omchan) $ handleRequest epoch mLeader ]
+     receiveWait $
       (if schedulerIsEnabled
        then [match $ \() -> go epoch mLeader ρs ref]
        else []
@@ -1744,32 +1747,31 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
                                         (cq :: ConfigQuery)
           go epoch mLeader ρs ref
 
-      , matchSTM (readTChan omchan) $ \case
-          -- A request
-          OMRequest a -> do
-            self <- getSelfPid
-            logTrace $ "ambassador: sending request to " ++ show mLeader
-            Foldable.forM_ mLeader $ flip (sendReplica logId)
-                                          (self, epoch, a :: Request a)
-            go epoch mLeader ρs ref
-
-          -- A reconfiguration request
-          OMHelo m -> do
-            self <- getSelfPid
-            Foldable.forM_ mLeader $ flip (sendReplica logId)
-                                          (self, epoch, m)
-            go epoch mLeader ρs ref
-
-          -- A recovery request
-          OMRecover m@(Recover _ ρs') -> do
-            self <- getSelfPid
-            -- A recovery request does not need to go necessarily to the leader.
-            -- The replicas might have lost quorum and could be unable to elect
-            -- a new leader.
-            let ρ  : _ = ρs'
-            sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
-            go epoch mLeader ρs ref
+      , matchSTM (readTChan omchan) $ \om -> do
+          handleRequest epoch mLeader om
+          go epoch mLeader ρs ref
       ]
+
+    handleRequest epoch mLeader = \case
+      -- A request
+      OMRequest a -> do
+        self <- getSelfPid
+        logTrace $ "ambassador: sending request to " ++ show mLeader
+        Foldable.forM_ mLeader $ flip (sendReplica logId)
+                                      (self, epoch, a :: Request a)
+      -- A reconfiguration request
+      OMHelo m -> do
+        self <- getSelfPid
+        Foldable.forM_ mLeader $ flip (sendReplica logId)
+                                      (self, epoch, m)
+      -- A recovery request
+      OMRecover m@(Recover _ ρs') -> do
+        self <- getSelfPid
+        -- A recovery request does not need to go necessarily to the leader.
+        -- The replicas might have lost quorum and could be unable to elect
+        -- a new leader.
+        let ρ  : _ = ρs'
+        sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
 
     monitorReplica ρ = do
       whereisRemoteAsync ρ (replicaLabel logId)
