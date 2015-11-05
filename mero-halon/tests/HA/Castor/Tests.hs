@@ -87,7 +87,7 @@ tryRunProcessLocal transport process =
 
 rGroupTest :: Transport -> (ProcessId -> Process ()) -> IO ()
 rGroupTest transport p =
-  tryRunProcessLocal transport $
+  tryRunProcessLocal transport $ do
     nid <- getSelfNode
     rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
                 >>= unClosure
