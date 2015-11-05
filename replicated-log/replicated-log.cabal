@@ -201,13 +201,13 @@ Test-Suite random
                     network,
                     replicated-log
 
-Benchmark bench-suite
+Benchmark state
   Type:             exitcode-stdio-1.0
   Main-is:          state.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   benchmarks
 
-  Ghc-Options: -Wall -threaded
+  Ghc-Options: -Wall -threaded -with-rtsopts=-N
 
   if flag(maintainer)
     Ghc-Options: -Werror
@@ -227,8 +227,7 @@ Benchmark bench-suite
                     network-transport,
                     network-transport-tcp,
                     directory,
-                    stm,
-                    criterion
+                    stm
 
 Benchmark state-distributed
   Type:             exitcode-stdio-1.0
@@ -236,7 +235,7 @@ Benchmark state-distributed
   Default-Language: Haskell2010
   Hs-Source-Dirs:   benchmarks
 
-  Ghc-Options: -Wall
+  Ghc-Options: -Wall -threaded
 
   if flag(maintainer)
     Ghc-Options: -Werror
@@ -254,7 +253,6 @@ Benchmark state-distributed
                     distributed-process-scheduler,
                     distributed-commands,
                     network-transport,
-                    network-transport-tcp,
-                    criterion
+                    network-transport-tcp
   else
     Buildable:      False

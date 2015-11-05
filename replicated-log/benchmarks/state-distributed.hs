@@ -4,60 +4,22 @@
 --
 -- This program benchmarks groups of replicas on various hosts.
 --
--- The program starts by creating 5 droplets in Digital Ocean. Then it copies
--- itself to these droplets, then it runs a series of benchmarks, and then it
--- destroys the droplets.
---
--- Executing the benchmark requires defining in the environment variables
--- DO_CLIENT_ID and DO_API_KEY with your Digital Ocean credentials. Because
--- the program copies itself, the host where the program is first run has
--- to be the same platform as the one used on the droplets.
---
--- For the time being, the program uses a hardcoded image to create the
--- droplets. The image is provisioned with halon from an ubuntu system. It
--- has a user dev with halon built in its home folder. The image also has
--- /etc/ssh/ssh_config tweaked so copying files from remote to remote machine
--- does not store hosts in known_hosts.
---
--- Each benchmark has a setup phase in which Cloud Haskell nodes are started
--- on the droplets by calling this program passing the --slave command line
--- argument. Then files that could have been left by a previous benchmark are
--- deleted. After the benchmark, the processes are killed and when they die
--- the program proceeds.
---
--- The benchmarks are as follows:
---
--- * Run a group of three replicas and measure how long it takes to serve 30
--- read requests from a single client.
---
--- * Run a group of three replicas and measure how long it takes to serve 30
--- update requests from a single client.
---
--- * Run a group of three replicas and measure how long it takes to serve 10
--- read requests sent from each of three clients.
---
--- * Run a group of three replicas and measure how long it takes to serve 10
--- update requests sent from each of three clients.
---
--- The benchmarks are then repeated with 5 replicas while maintaining the total
--- amount of requests at 30 per benchmark.
---
--- In all cases the clients are colocated with the replicas.
+-- The program creates 50 satellites and 5 tracking station nodes.
+-- The satellites are then used to deliver some 1200 requests to the tracking
+-- station.
 --
 
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-import Criterion.Measurement (getTime, secs)
 import Control.Concurrent.MVar
 
 import Control.Distributed.Process.Consensus
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
-import Control.Distributed.Process.Consensus.Paxos
 import qualified Control.Distributed.Log as Log
 import Control.Distributed.Log (Config(..))
 import Control.Distributed.Log.Snapshot
@@ -66,10 +28,12 @@ import Control.Distributed.State
     ( Command
     , commandEqDict__static
     , commandSerializableDict__static )
-import Control.Distributed.Log.Persistence as P
 import Control.Distributed.Log.Persistence.LevelDB
+import Control.Distributed.Log.Persistence.Paxos (acceptorStore)
 import qualified Control.Distributed.Log.Policy as Policy
+import Test.Framework (withTmpDirectory)
 
+import Control.Distributed.Commands (waitForCommand_)
 import Control.Distributed.Commands.Management
     ( HostName
     , withHostNames
@@ -78,41 +42,67 @@ import Control.Distributed.Commands.Management
 import Control.Distributed.Commands.Process
     ( spawnNode
     , __remoteTable
-    , printNodeId
+    , sendSelfNode
+    , NodeHandle(..)
     )
 import Control.Distributed.Commands.Providers
 import Control.Distributed.Process
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Closure
+import Control.Distributed.Process.Timeout
 import Control.Distributed.Static
 import Network.Transport ( Transport )
 import Network.Transport.TCP
-import Test.Framework (withTmpDirectory)
 
-import Control.Concurrent (threadDelay)
+import Control.Concurrent (threadDelay, readChan, writeChan)
+import qualified Control.Concurrent as C
 import Data.Constraint (Dict(..))
 import Data.IORef
 import Data.List (nub)
-import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Ratio ((%))
-import Data.String (fromString)
-import Data.Typeable (Typeable)
-import System.Environment (getArgs)
+import Data.Typeable (Typeable, Proxy(..))
+import System.Clock
+import System.Environment
 import System.FilePath
 import System.IO
-import Control.Monad (replicateM_, forM_, forM, void)
+import System.IO.Unsafe
+import Control.Monad
+import Text.Printf
 
 
 type State = Int
 
 time_ :: Process () -> Process Double
 time_ act = do
-  start <- liftIO getTime
+  start <- liftIO $ getTime Monotonic
   act
-  end <- liftIO getTime
-  let !delta = end - start
-  return delta
+  end <- liftIO $ getTime Monotonic
+  let !delta = diffTimeSpec end start
+  return $ fromIntegral (timeSpecAsNanoSecs delta) / 10^(9 :: Int)
+
+-- | Convert a number of seconds to a string.  The string will consist
+-- of four decimal places, followed by a short description of the time
+-- units.
+--
+-- Taken from the criterion package from the module Criterion.Measurements
+secs :: Double -> String
+secs k
+    | k < 0      = '-' : secs (-k)
+    | k >= 1     = k        `with` "s"
+    | k >= 1e-3  = (k*1e3)  `with` "ms"
+    | k >= 1e-6  = (k*1e6)  `with` "μs"
+    | k >= 1e-9  = (k*1e9)  `with` "ns"
+    | k >= 1e-12 = (k*1e12) `with` "ps"
+    | k >= 1e-15 = (k*1e15) `with` "fs"
+    | k >= 1e-18 = (k*1e18) `with` "as"
+    | otherwise  = printf "%g s" k
+     where with t u
+               | t >= 1e9  = printf "%.4g %s" t u
+               | t >= 1e3  = printf "%.0f %s" t u
+               | t >= 1e2  = printf "%.1f %s" t u
+               | t >= 1e1  = printf "%.2f %s" t u
+               | otherwise = printf "%.3f %s" t u
 
 state0 :: State
 state0 = 0
@@ -123,8 +113,15 @@ snapshotServerLbl = "snapshot-server"
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
 
-snapshotThreashold :: Int
-snapshotThreashold = 10000
+snapshotThreshold :: Int
+snapshotThreshold = 10000
+
+testLogId :: Log.LogId
+testLogId = Log.toLogId "test-log"
+
+{-# NOINLINE globalCount #-}
+globalCount :: IORef Int
+globalCount = unsafePerformIO $ newIORef 1
 
 remotableDecl [ [d|
 
@@ -134,49 +131,30 @@ remotableDecl [ [d|
   dictState :: Dict (Typeable State)
   dictState = Dict
 
+  testPersistDirectory :: NodeId -> FilePath
+  testPersistDirectory = filepath "replicas"
+
   testConfig :: Log.Config
   testConfig = Log.Config
-      { logName = "test-log"
-      , consensusProtocol = \dict ->
-               BasicPaxos.protocol dict 1000000
-                 (\n -> do
-                    mref <- newIORef Map.empty
-                    let dToPair (DecreeId l dn) = (fromEnum l, dn)
-                    ps <- openPersistentStore (filepath "acceptors" n)
-                    pm <- P.getMap ps $ fromString "decrees"
-                    pv <- P.getMap ps $ fromString "values"
-                    vref <- P.lookup pv 0 >>= newIORef
-                    return AcceptorStore
-                      { storeInsert = \d v -> do
-                          modifyIORef mref $ Map.insert d v
-                          P.atomically ps [ P.Insert pm (dToPair d) v ]
-                      , storeLookup = \d -> do
-                          r <- readIORef mref
-                          return $ maybe (Left False) Right $ Map.lookup d r
-                      , storePut = \v -> do
-                          writeIORef vref $ Just v
-                          P.atomically ps [ P.Insert pv (0 :: Int) v ]
-                      , storeGet = readIORef vref
-                      , storeTrim = const $ return ()
-                      , storeClose = return ()
-                      }
+    { logId = testLogId
+    , consensusProtocol = \dict ->
+               BasicPaxos.protocol dict 3000000
+                 (\n -> openPersistentStore (filepath "acceptors" n) >>=
+                          acceptorStore
                  )
-      , persistDirectory  = filepath "replicas"
-      , leaseTimeout      = 3000000
-      , leaseRenewTimeout = 1000000
-      , driftSafetyFactor = 11 % 10
-      , snapshotPolicy    = return . (>= snapshotThreashold)
-      , snapshotRestoreTimeout = 10000
-      }
-
-  sdictInt :: Static (SerializableDict Int)
-  sdictInt = $(mkStatic 'dictInt)
+    , persistDirectory  = testPersistDirectory
+    , leaseTimeout      = 4000000
+    , leaseRenewTimeout = 2000000
+    , driftSafetyFactor = 11 % 10
+    , snapshotPolicy    = return . (>= snapshotThreshold)
+    , snapshotRestoreTimeout = 1000000
+    }
 
   dictInt :: SerializableDict Int
   dictInt = SerializableDict
 
-  dictDouble :: SerializableDict Double
-  dictDouble = SerializableDict
+  sdictInt :: Static (SerializableDict Int)
+  sdictInt = $(mkStatic 'dictInt)
 
   increment :: State -> Process State
   increment x = return $ x + 1
@@ -191,10 +169,17 @@ remotableDecl [ [d|
     port <- State.newPort h
     self <- getSelfPid
     replicateM_ iters $ do
-      replicateM_ updNo $ spawnLocal $
-        State.update port incrementCP >> send self ()
-      replicateM_ readNo $ spawnLocal $
-        State.select sdictInt port readCP >> send self ()
+      replicateM_ updNo $ spawnLocal $ do
+        retry 6000000 $
+          State.update port incrementCP
+        i <- liftIO $ atomicModifyIORef' globalCount $ \i -> (i + 1, i)
+        when (i `mod` 10 == 0) $
+          liftIO $ hPutStrLn stderr $ "Count: " ++ show i
+        usend self ()
+      replicateM_ readNo $ spawnLocal $ do
+        _ <- retry 6000000 $
+          State.select sdictInt port readCP
+        usend self ()
       replicateM_ (updNo + readNo) (expect :: Process ())
     sendChan sp ()
 
@@ -208,27 +193,48 @@ remotableDecl [ [d|
   snapshotServer = void $ serializableSnapshotServer
                     snapshotServerLbl
                     (filepath "replica-snapshots")
-                    state0
+                    (Proxy :: Proxy State)
 
  |] ]
 
-setupRemote :: ([NodeId], [NodeId])
+setupRemote :: (ProcessId, [NodeId], [NodeId])
             -> (  Log.Handle (Command State)
                -> [NodeId]
                -> State.CommandPort State
                -> Process Double
                )
-      -> Process Double
-setupRemote (tsNodes, clientNodes) action = do
-    forM_ tsNodes $ flip spawn $(mkStaticClosure 'snapshotServer)
-    h <- Log.new $(mkStatic 'State.commandEqDict)
-                 ($(mkStatic 'State.commandSerializableDict)
-                   `staticApply` sdictState)
-                 (staticClosure $(mkStatic 'testConfig))
-                 (staticClosure $(mkStatic 'testLog))
-                 tsNodes
-    port <- State.newPort h
-    action h clientNodes port
+      -> Process ()
+setupRemote (caller, tsNodes, clientNodes) action =
+    bracket (forM tsNodes $ flip
+                 spawn $(mkStaticClosure 'snapshotServer)
+              )
+              (mapM_ $ \pid -> exit pid "setup" >> waitFor pid) $
+              const $
+    bracket (do
+                forM_ tsNodes $ flip spawn $(mkStaticClosure 'snapshotServer)
+                Log.new
+                  $(mkStatic 'State.commandEqDict)
+                  ($(mkStatic 'State.commandSerializableDict)
+                    `staticApply` sdictState)
+                  (staticClosure $(mkStatic 'testConfig))
+                  (staticClosure $(mkStatic 'testLog))
+                  tsNodes
+                Log.spawnReplicas
+                  testLogId
+                  $(mkStaticClosure 'testPersistDirectory)
+                  tsNodes
+            )
+            (\h -> forM_ tsNodes (\n -> Log.killReplica h n))
+            $ \h -> do
+      port <- State.newPort h
+      action h clientNodes port >>= usend caller
+  where
+    waitFor pid = monitor pid >> receiveWait
+                    [ matchIf (\(ProcessMonitorNotification _ pid' _) ->
+                                   pid == pid'
+                              )
+                              $ const $ return ()
+                    ]
 
 multiBenchAction :: (Int, Int, Int)
                  -> Log.Handle (Command State)
@@ -242,8 +248,11 @@ multiBenchAction (iters, updNo, readNo) = \h nodes _port -> do
                                     (iters,updNo, readNo, sp)
                                  )
                 ) nodes
+    -- Make an update to ensure the replicas are ready before starting.
+    port <- State.newPort h
+    State.update port incrementCP
     time_ $ do
-      mapM_ (\p -> send p rh) pds
+      mapM_ (\p -> usend p rh) pds
       replicateM_ (length nodes) $ (receiveChan rp :: Process ())
 
 benchAction :: (Int, Int, Int)
@@ -255,10 +264,14 @@ benchAction (iters, updNo, readNo) = \_ _ port -> do
     time_ $ replicateM_ iters $ do
       self <- getSelfPid
       replicateM_ iters $ do
-        replicateM_ updNo $ spawnLocal $
-          State.update port incrementCP >> send self ()
-        replicateM_ readNo $ spawnLocal $
-          State.select sdictInt port readCP >> send self ()
+        replicateM_ updNo $ spawnLocal $ do
+          retry 6000000 $
+            State.update port incrementCP
+          usend self ()
+        replicateM_ readNo $ spawnLocal $ do
+          _ <- retry 6000000 $
+            State.select sdictInt port readCP
+          usend self ()
         replicateM_ (updNo + readNo) (expect :: Process ())
 
 sdictState :: Static (Dict (Typeable State))
@@ -275,7 +288,6 @@ remoteTables =
   Control.Distributed.Process.Consensus.__remoteTable $
   BasicPaxos.__remoteTable $
   Log.__remoteTable $
-  Log.__remoteTableDecl $
   Policy.__remoteTable $
   State.__remoteTable $
   Control.Distributed.Process.Node.initRemoteTable
@@ -285,13 +297,14 @@ main :: IO ()
 main =
     hSetBuffering stdout LineBuffering >>
     hSetBuffering stderr LineBuffering >>
+    -- setEnv "HALON_TRACING" "replicated-log consensus-paxos" >>
     getArgs >>= \args ->
     case args of
       ["--slave", ip_addr] -> withTmpDirectory $ do
          Right transport <- createTransport ip_addr "9090" defaultTCPParameters
          n <- newLocalNode transport remoteTables
-         printNodeId $ localNodeId n
          runProcess n $ do
+           sendSelfNode
            getSelfPid >>= register "finalizer"
            expect :: Process () -- wait for death
       _ -> do
@@ -299,14 +312,14 @@ main =
         cp <- getProvider
         ip <- getHostAddress
         Right transport <- createTransport ip "8035" defaultTCPParameters
-        let numNodes = 100 + 5
-        withHostNames cp numNodes $ \ms20 -> do
-          let ms3 = take 3 ms20
-              ms5 = take 5 ms20
-              ms = drop 5 ms20
+        let numNodes = 50 + 5
+        withHostNames cp numNodes $ \msAll -> do
+          let -- ms3 = take 3 msAll
+              ms5 = take 5 msAll
+              ms = drop 5 msAll
 
           copyFiles "localhost"
-                    ms20
+                    msAll
                     [ ( "dist/build/state-distributed/state-distributed"
                       , "/tmp/state-distributed"
                       )
@@ -325,12 +338,8 @@ main =
           -- runMultiBench transport ms5 1 120   0
 
           forM_ [10,20..(numNodes - 5)] $ \i -> do
-            let n    = length ms
-                nRqs = 1200 `div` i
-            -- runMultiBench' transport ms5 (take i ms)    0 nRqs
-            -- threadDelay 1000000
+            let nRqs = 1200 `div` i
             runMultiBench' transport ms5 (take i ms) nRqs    0
-            threadDelay 2000000
 
   where
     -- | @runBench transport ms iters updNo readNo@ creates replicas on
@@ -357,8 +366,10 @@ main =
       r <- setup transport
                  ms ms
                  ($(mkClosure 'multiBenchAction) (iters, updNo, readNo))
-      putStrLn $ "Replicas: " ++ show repNo ++ ", Clients: " ++ show repNo ++
-                 ", Updates: " ++ show updNo ++ ", Selects: " ++ show readNo ++
+      putStrLn $ "Replicas: " ++ show repNo ++
+                 ", Clients: " ++ show repNo ++
+                 ", Updates: " ++ show (updNo * repNo) ++
+                 ", Selects: " ++ show (readNo * repNo) ++
                  ": " ++ secs (r / fromIntegral iters)
 
     runMultiBench' :: Transport -> [HostName] -> [HostName] -> Int -> Int -> IO ()
@@ -371,7 +382,8 @@ main =
                  ($(mkClosure 'multiBenchAction) (1 :: Int, updNo, readNo))
       putStrLn $ "Replicas: " ++ show (length tsNodes) ++
                  ", Clients: " ++ show cliNo ++
-                 ", Updates: " ++ show updNo ++ ", Selects: " ++ show readNo ++
+                 ", Updates: " ++ show (updNo * cliNo) ++
+                 ", Selects: " ++ show (readNo * cliNo) ++
                  ": " ++ secs r
 
 setup :: Transport
@@ -387,17 +399,24 @@ setup transport tsNodes clientNodes action = do
     nd <- newLocalNode transport remoteTables
     box <- newEmptyMVar
     runProcess nd $ do
-      nidPairs <- forM (nub $ tsNodes ++ clientNodes) $ \m -> fmap ((,) m) $
-                spawnNode m $ "/tmp/state-distributed --slave " ++ m ++ " 2>&1"
-      let tsNids = catMaybes $ map (`Prelude.lookup` nidPairs) tsNodes
-          clientNids = catMaybes $ map (`Prelude.lookup` nidPairs) clientNodes
-          nids = map snd nidPairs
-      liftIO . putMVar box =<<
-        call $(mkStatic 'dictDouble)
-             (head nids)
-             ($(mkClosure 'setupRemote) (tsNids, clientNids)
-                 `closureApply` action)
+      chan <- liftIO C.newChan
+      forM_ (nub $ tsNodes ++ clientNodes) $ \m ->
+        spawnLocal $ do
+          nh <- spawnNode m $ "/tmp/state-distributed --slave " ++ m ++ " 2>&1"
+          liftIO $ writeChan chan (m, nh)
+      nidPairs <- forM (nub $ tsNodes ++ clientNodes) $ const $
+                    liftIO $ readChan chan
+      let tsNhs = catMaybes $ map (`Prelude.lookup` nidPairs) tsNodes
+          clientNhs = catMaybes $ map (`Prelude.lookup` nidPairs) clientNodes
+          nids = map (handleGetNodeId . snd) nidPairs
+      self <- getSelfPid
+      liftIO . putMVar box =<< do
+        _ <- spawn (head nids)
+              ($(mkClosure 'setupRemote)
+                (self, map handleGetNodeId tsNhs, map handleGetNodeId clientNhs)
+               `closureApply` action)
+        expect :: Process Double
       mapM_ monitorNode nids
       forM_ nids $ \n -> nsendRemote n "finalizer" ()
-      replicateM_ (length nids) (expect :: Process NodeMonitorNotification)
+      liftIO $ forM_ nidPairs $ \(_, nh) -> waitForCommand_ (handleGetInput nh)
     takeMVar box
