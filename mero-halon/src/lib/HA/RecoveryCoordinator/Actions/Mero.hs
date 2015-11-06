@@ -20,6 +20,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   , getSpielAddress
   , withRootRC
   , withSpielRC
+  , syncToConfd
   )
 where
 
@@ -271,3 +272,8 @@ withSpielRC (M0.SpielAddress confds rm) f = do
     sc <- liftM0 $ getRPCMachine_se se >>= \rpcm ->
                    Mero.Spiel.start rpcm confds rm
     f sc >>= \v -> liftM0 (Mero.Spiel.stop sc) >> return (Just v)
+
+-- | Helper functions for 
+syncToConfd :: M0.SpielAddress -> PhaseM LoopState l (Maybe ())
+syncToConfd sa = withSpielRC sa $ \sc -> do
+  txOpenContext sc >>= txPopulate >>= txSyncToConfd
