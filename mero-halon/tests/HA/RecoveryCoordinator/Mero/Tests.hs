@@ -131,7 +131,7 @@ remotableDecl [ [d|
 testSyncRules :: [Definitions LoopState ()]
 testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent _ SpielSync _) -> do
   Just sa <- getSpielAddress
-  syncToConfd sa
+  Just _ <- syncToConfd sa
   liftProcess $ say "Finished sync to confd"
 #endif
 

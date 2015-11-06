@@ -18,6 +18,9 @@ import qualified HA.Resources.Castor.Initial as CI
 import HA.Resources.Mero (SpielAddress(..), SyncToConfd(..))
 
 import Control.Applicative (many, optional)
+import Options.Applicative ((<>), (<|>))
+#else
+import Options.Applicative ((<>))
 #endif
 
 import Control.Distributed.Process
@@ -27,7 +30,6 @@ import Data.Yaml
   ( decodeFileEither
   , prettyPrintParseException
   )
-import Options.Applicative ((<>), (<|>))
 import qualified Options.Applicative as Opt
 import qualified Options.Applicative.Extras as Opt
 

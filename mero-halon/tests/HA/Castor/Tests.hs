@@ -26,7 +26,7 @@ import qualified Data.Set as Set
 
 import Network.Transport (Transport)
 import Network.CEP
-  ( Buffer(..)
+  ( Buffer
   , PhaseM
   , emptyFifoBuffer
   )

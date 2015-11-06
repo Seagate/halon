@@ -36,6 +36,7 @@ import qualified Control.Distributed.Process as DP
 import Control.Monad (forM_)
 import Control.Applicative
 
+import Data.Foldable (traverse_)
 import Data.Maybe (catMaybes, listToMaybe)
 import Data.Typeable (cast)
 
@@ -210,7 +211,7 @@ txPopulate (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) 
                                          $ G.connectedFrom M0.IsRealOf diskv g
 
             liftM0 $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
-      liftM0 $ poolVersionDone t (M0.fid pver)
+    liftM0 $ poolVersionDone t (M0.fid pver)
     phaseLog "spiel" "Finished adding virtual entities."
   return t
 
@@ -279,7 +280,7 @@ withSpielRC (M0.SpielAddress confds rm) f = do
                    Mero.Spiel.start rpcm confds rm
     f sc >>= \v -> liftM0 (Mero.Spiel.stop sc) >> return (Just v)
 
--- | Helper functions for 
+-- | Helper functions for backward compatibility.
 syncToConfd :: M0.SpielAddress -> PhaseM LoopState l (Maybe ())
 syncToConfd sa = withSpielRC sa $ \sc -> do
-  txOpenContext sc >>= txPopulate >>= txSyncToConfd
+  loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
