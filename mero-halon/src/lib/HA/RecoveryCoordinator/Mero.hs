@@ -128,12 +128,12 @@ notHandled evt@(HAEvent eid _ _) ls _
     | S.member eid $ lsHandled ls = return Nothing
     | otherwise                   = return $ Just evt
 
-handled :: ProcessId -> HAEvent a -> PhaseM LoopState l ()
-handled eq (HAEvent eid _ _) = do
+handled :: HAEvent a -> PhaseM LoopState l ()
+handled (HAEvent eid _ _) = do
     ls <- get Global
     let ls' = ls { lsHandled = S.insert eid $ lsHandled ls }
     put Global ls'
-    sendMsg eq eid
+    sendMsg (lsEQPid ls) eid
 
 finishProcessingMsg :: UUID -> PhaseM LoopState l ()
 finishProcessingMsg eid = do
@@ -148,9 +148,8 @@ startProcessingMsg eid = do
     put Global ls'
 
 rcInitRule :: IgnitionArguments
-           -> ProcessId
            -> RuleM LoopState (Maybe ProcessId) (Started LoopState (Maybe ProcessId))
-rcInitRule argv eq = do
+rcInitRule argv = do
     boot        <- phaseHandle "boot"
     start_mm    <- phaseHandle "start_master_monitor"
     mm_started  <- phaseHandle "master_monitor_started"
@@ -177,7 +176,7 @@ rcInitRule argv eq = do
       continue mm_started
 
     setPhaseIf mm_started (waitServiceToStart masterMonitor) $ \evt -> do
-      handled eq evt
+      handled evt
       ServiceStarted _ _ _ (ServiceProcess mpid) <- decodeMsg (eventPayload evt)
       liftProcess $ link mpid
       continue mm_conf
@@ -186,7 +185,7 @@ rcInitRule argv eq = do
         \evt@(HAEvent _ (SetMasterMonitor sp@(ServiceProcess pid)) _) -> do
       liftProcess $ usend pid =<< getSelfPid
       registerMasterMonitor sp
-      handled eq evt
+      handled evt
       liftProcess $ sayRC $ "started master-monitor service"
       -- We start a new monitor for any node that's started
       registerService regularMonitor
@@ -201,7 +200,7 @@ rcInitRule argv eq = do
         registerServiceName svc
         registerServiceProcess n svc cfg sp
         sendToMasterMonitor msg
-        handled eq evt
+        handled evt
         liftProcess $ do
           sayRC $ "started " ++ snString (serviceName svc) ++ " service"
           sayRC $ "continuing in normal mode"
@@ -347,12 +346,13 @@ getMultimapProcessId = fmap lsMMPid $ get Global
 -- done automatically if 'HA.Network.Address.startNetwork' is used to create
 -- the transport.
 makeRecoveryCoordinator :: ProcessId -- ^ pid of the replicated multimap
+                        -> ProcessId -- ^ pid of the EQ
                         -> Definitions LoopState ()
                         -> Process ()
-makeRecoveryCoordinator mm rm = do
+makeRecoveryCoordinator mm eq rm = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
     startRG <- G.sync rg
-    execute (LoopState startRG Map.empty mm S.empty) $ do
+    execute (LoopState startRG Map.empty mm eq S.empty) $ do
       rm
       setRuleFinalizer $ \ls -> do
         newGraph <- G.sync $ lsGraph ls
