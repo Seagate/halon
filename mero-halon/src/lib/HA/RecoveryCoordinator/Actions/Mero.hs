@@ -11,6 +11,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   ( getFilesystem
   , getProfile
   , getM0Globals
+  , loadConfData
   , lookupConfObjByFid
   , txOpen
   , txOpenContext
@@ -33,6 +34,7 @@ import qualified HA.Resources.Mero as M0
 
 import qualified Control.Distributed.Process as DP
 import Control.Monad (forM_)
+import Control.Applicative
 
 import Data.Maybe (catMaybes, listToMaybe)
 import Data.Typeable (cast)
@@ -110,13 +112,17 @@ txDumpToFile fp t = do
   liftM0 $ closeTransaction t
   phaseLog "spiel" "Transaction closed."
 
-txPopulate :: SpielTransaction -> PhaseM LoopState l SpielTransaction
-txPopulate t = do
-  phaseLog "info" $ "Populating spiel transaction from resource graph."
+data TxConfData = TxConfData M0.M0Globals M0.Profile M0.Filesystem
+
+loadConfData :: PhaseM LoopState l (Maybe TxConfData)
+loadConfData = liftA3 TxConfData
+            <$> getM0Globals
+            <*> getProfile
+            <*> getFilesystem
+
+txPopulate :: TxConfData -> SpielTransaction -> PhaseM LoopState l SpielTransaction
+txPopulate (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) t = do
   g <- getLocalGraph
-  (Just CI.M0Globals{..}) <- getM0Globals
-  (Just (M0.Profile pfid)) <- getProfile
-  (Just fs@(M0.Filesystem{..})) <- getFilesystem
   -- Profile, FS, pool
   liftM0 $ do
     addProfile t pfid
@@ -204,7 +210,7 @@ txPopulate t = do
                                          $ G.connectedFrom M0.IsRealOf diskv g
 
             liftM0 $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
-    liftM0 $ poolVersionDone t (M0.fid pver)
+      liftM0 $ poolVersionDone t (M0.fid pver)
     phaseLog "spiel" "Finished adding virtual entities."
   return t
 

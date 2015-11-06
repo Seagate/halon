@@ -29,7 +29,7 @@ import Control.Category (id, (>>>))
 import Control.Distributed.Process (liftIO)
 import Control.Monad (forM_, void)
 
-import Data.Foldable (foldl')
+import Data.Foldable (foldl', traverse_)
 import qualified Data.HashMap.Strict as M
 import Data.List (sort, (\\))
 import Data.Proxy
@@ -51,7 +51,7 @@ meroRules = do
         case msa of
           Nothing -> phaseLog "warning" $ "No spiel address found in RG."
           Just sa -> void $ withSpielRC sa $ \sc -> do
-                       txOpenContext sc >>= txPopulate >>= txSyncToConfd
+            loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
       SyncToTheseServers (SpielAddress [] _) ->
         phaseLog "warning"
            $ "Requested to sync to specific list of confd servers, "
@@ -59,10 +59,10 @@ meroRules = do
       SyncToTheseServers sa -> do
         phaseLog "info" $ "Syncing RG to these confd servers: " ++ show sa
         void $ withSpielRC sa $ \sc -> do
-          txOpenContext sc >>= txPopulate >>= txSyncToConfd
+          loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
       SyncDumpToFile filename -> do
         phaseLog "info" $ "Dumping conf in RG to this file: " ++ show filename
-        txOpen >>= txPopulate >>= txDumpToFile filename
+        loadConfData >>= traverse_ (\x -> txOpen >>= txPopulate x >>= txDumpToFile filename)
     messageProcessed eid
 
 -- | Atomically fetch a FID sequence number of increment the sequence count.
