@@ -53,6 +53,7 @@ tests launch =
   , testsExecution launch
   , testSubscriptions launch
   , testsTimeout launch
+  , testsFinalizer launch
   ]
 
 testsGlobal :: (Process () -> IO ()) -> TestTree
@@ -855,7 +856,24 @@ testsTimeout launch = testGroup "Timeout properties"
   , testCase "Start timeout should work" $ launch testStartTimeout
   , testCase "SetPhase timeout should work" $ launch testSetPhaseTimeout
   , testCase "All timeout reverse should work" $ launch testAllReverseTimeout
+  , testCase "Timout works for fork" $ launch testForkTimeout
   ]
+
+testForkTimeout :: Process ()
+testForkTimeout = do
+    self <- getSelfPid
+    let specs = do
+          define "timeout" $ do
+            ph2 <- phaseHandle "ph2"
+            ph0 <- phaseHandle "ph0"
+            ph1 <- phaseHandle "ph1"
+            setPhase ph2 $ \Donut{} -> continue ph0
+            directly ph0 $ fork NoBuffer $ continue (timeout 1 ph1)
+            directly ph1 $ liftProcess (usend self ()) >> stop
+            start ph2 ()
+    pid <- spawnLocal $ execute () specs
+    usend pid donut
+    expect
 
 testSimpleTimeout :: Process ()
 testSimpleTimeout = do
@@ -994,3 +1012,25 @@ testAllReverseTimeout = do
 
     i <- expect
     assertEqual "Ph2 should fire first" (2 :: Int) i
+
+testsFinalizer :: (Process () -> IO ()) -> TestTree
+testsFinalizer launch = testGroup "Finalizer"
+  [ testCase "Finalizer is triggered each phase transition"  $ launch testFinalizerDirectly
+  ]
+
+testFinalizerDirectly :: Process ()
+testFinalizerDirectly = do
+  self <- getSelfPid
+  let specs = define "finalizer-directly" $ do
+        ph0 <- phaseHandle "ph0"
+        ph1 <- phaseHandle "ph1"
+        setPhase ph0 $ \(Donut _) -> liftProcess (usend self (Foo 1)) >> continue ph1
+        directly ph1 $ liftProcess $ usend self (Foo 2)
+        start ph0 ()
+  pid <- spawnLocal $ execute () $ do
+          specs
+          setRuleFinalizer $ \s -> usend self (Foo 0) >> return s
+
+  usend pid donut
+  assertEqual "event should be handled" [0,1,0]
+    . map unFoo =<< replicateM 3 expect
