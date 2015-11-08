@@ -104,6 +104,7 @@ import System.Clock
 import System.FilePath ((</>))
 import System.Directory (doesDirectoryExist)
 import System.Environment (lookupEnv)
+import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 
 
@@ -495,7 +496,11 @@ logTrace msg = do
     let b = unsafePerformIO $
               maybe False (elem "replicated-log" . words)
                 <$> lookupEnv "HALON_TRACING"
-    when b $ say $ "[replicated-log] " ++ msg
+    when b $ if schedulerIsEnabled
+      then do self <- getSelfPid
+              liftIO $ hPutStrLn stderr $
+                show self ++ ": [replicated-log] " ++ msg
+      else say $ "[replicated-log] " ++ msg
 -- logTrace msg = do
 --    self <- getSelfPid
 --    liftIO $ hPutStrLn stderr $ show self ++ ": [replicated-log] " ++ msg

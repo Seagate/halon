@@ -25,6 +25,7 @@ import Control.Distributed.Process.Consensus
 import Control.Distributed.Process.Consensus.Paxos.Types
 import qualified Control.Distributed.Process.Consensus.Paxos.Messages as Msg
 import Control.Distributed.Process
+import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Control.Distributed.Process.Serializable
 
 import Data.Binary (Binary, encode, decode)
@@ -39,6 +40,7 @@ import Data.List (maximumBy)
 import Data.Function (on)
 import GHC.Generics (Generic)
 import System.Environment (lookupEnv)
+import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 
 
@@ -136,7 +138,10 @@ paxosTrace msg = do
     let b = unsafePerformIO $
               maybe False (elem "consensus-paxos" . words)
                 <$> lookupEnv "HALON_TRACING"
-    when b $ say $ "[paxos] " ++ msg
+    when b $ if schedulerIsEnabled
+      then do self <- getSelfPid
+              liftIO $ hPutStrLn stderr $ show self ++ ": [paxos] " ++ msg
+      else say $ "[paxos] " ++ msg
 
 -- | Acceptor process.
 --

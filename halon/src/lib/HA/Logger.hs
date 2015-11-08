@@ -6,8 +6,10 @@ module HA.Logger
   ) where
 
 import Control.Distributed.Process
+import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 
 import Data.Char
+import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe
 import System.Environment
 
@@ -27,7 +29,7 @@ import System.Environment
 -- HALON_TRACING="EQ.producer smth-else" ./program-name
 -- @@
 -- and get logging enabled, it's possible to use @*@ in
--- @HALON_TRACING@ variable, then all subsystemd will be enabled
+-- @HALON_TRACING@ variable, then all subsystems will be enabled
 mkHalonTracer :: String
               -> (String -> Process ())
 mkHalonTracer subsystem = unsafePerformIO $ do
@@ -37,7 +39,10 @@ mkHalonTracer subsystem = unsafePerformIO $ do
       Just ss -> do
         let subsystems = words $ map toLower ss
         if (map toLower subsystem) `elem` subsystems || "*" `elem` subsystems
-           then return logger
-           else return $ const $ return ()
-  where
-    logger s = say $ "[" ++ subsystem ++ "] " ++ s
+          then return $ \msg -> do
+            let tagged = "[" ++ subsystem ++ "] " ++ msg
+            if schedulerIsEnabled
+              then do self <- getSelfPid
+                      liftIO $ hPutStrLn stderr $ show self ++ ": " ++ tagged
+              else say tagged
+          else return $ const $ return ()

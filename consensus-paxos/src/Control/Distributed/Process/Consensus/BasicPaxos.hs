@@ -44,6 +44,7 @@ import Data.Maybe ( catMaybes )
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
 import System.Environment (lookupEnv)
+import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Random ( randomRIO )
 import qualified System.Timeout as T ( timeout )
@@ -114,7 +115,10 @@ paxosTrace msg = do
     let b = unsafePerformIO $
               maybe False (elem "consensus-paxos" . words)
                 <$> lookupEnv "HALON_TRACING"
-    when b $ say $ "[paxos] " ++ msg
+    when b $ if schedulerIsEnabled
+      then do self <- getSelfPid
+              liftIO $ hPutStrLn stderr $ show self ++ ": [paxos] " ++ msg
+      else say $ "[paxos] " ++ msg
 -- paxosTrace msg = do
 --     self <- getSelfPid
 --     liftIO $ hPutStrLn stderr $ show self ++ ": [paxos] " ++ msg
