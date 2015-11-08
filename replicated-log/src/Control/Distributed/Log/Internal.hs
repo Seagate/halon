@@ -805,33 +805,25 @@ replica Dict
                 , requestForLease = Just l
                 }
 
-        receiveWait
+            cond b t f = if b then t else f
+
+        receiveWait $ cond (w /= cd) []
             [ -- The lease is about to expire or it has already.
               matchChan timerRP $ \LeaseRenewalTime -> do
                   mLeader <- liftIO $ getLeader
                   logTrace $ "LeaseRenewalTime: " ++ show (w, cd, mLeader)
-                  cd' <- if Just here == mLeader
-                            || w == cd && isNothing mLeader then do
+                  cd' <- if Just here == mLeader || isNothing mLeader then do
                       leaseRequest <-
                         mkLeaseRequest (decreeLegislatureId d) [] ρs
-                      -- If 'mLeader == Just here' we might produce an
-                      -- unreachable decree. This can happen if legislature
-                      -- changes before the in-flight proposals are passed
-                      -- (maybe because there are already reconfiguration
-                      -- requests in-flight or because of transient network
-                      -- failures and some other replica becomes the leader).
                       usend ppid (cd, leaseRequest)
-                      -- We don't want to move the current decree to unreachable
-                      -- positions, otherwise the replica may think there is a
-                      -- gap if the legislature moves forward and the current
-                      -- decree is not reset to the watermark.
-                      return $ if w == cd then succ cd else cd
+                      return $ succ cd
                     else
                       return cd
                   usend timerPid (timerSP, leaseTimeout, LeaseRenewalTime)
                   go st{ stateCurrentDecree = cd' }
 
-            , matchIf (\(Decree _ di _ :: Decree (Value a)) ->
+            ] ++
+            [ matchIf (\(Decree _ di _ :: Decree (Value a)) ->
                         -- Take the max of the watermark legislature and the
                         -- incoming legislature to deal with teleportation of
                         -- decrees. See Note [Teleportation].
