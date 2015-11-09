@@ -31,6 +31,7 @@ import Control.Distributed.Process.Node
   , runProcess
   )
 
+import Data.Function (fix)
 import Data.List (isInfixOf)
 
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
@@ -107,6 +108,12 @@ main =
 
       -- Restart the satellite and wait for the RC to ack the service restart.
       say "Restart satellite ..."
-      _ <- spawnNode_ m1 ("./halond -l " ++ m1loc ++ " 2>&1")
-      expectLog [nid1] (isInfixOf "Hello World!")
+      nid1' <- spawnNode_ m1 ("./halond -l " ++ m1loc ++ " 2>&1")
+
+      -- Wait until the dummy service is registered.
+      fix $ \loop -> do
+        whereisRemoteAsync nid1' "service.dummy"
+        WhereIsReply "service.dummy" m <- expect
+        maybe (receiveTimeout 10000 [] >> loop) (const $ return ()) m
+
       expectLog [nid0] (isInfixOf "started dummy service")
