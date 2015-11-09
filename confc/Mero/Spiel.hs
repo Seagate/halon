@@ -21,7 +21,6 @@ import Control.Exception
   ( bracket
   , mask
   )
-import Control.Monad ( void )
 
 import Data.IORef
 import qualified Data.Map.Strict as Map
@@ -53,10 +52,7 @@ import Foreign.Marshal.Array
   , withArray0
   , withArrayLen
   )
-import Foreign.Marshal.Error
-  ( throwIfNeg
-  , throwIfNull
-  )
+import Foreign.Marshal.Error (throwIfNeg)
 import Foreign.Marshal.Utils
   ( fillBytes
   , with
@@ -113,21 +109,18 @@ openTransactionContext :: SpielContext
                       -> IO (SpielTransaction)
 openTransactionContext (SpielContext fsc) = withForeignPtr fsc $ \sc -> do
   st <- mallocForeignPtrBytes m0_spiel_tx_size
-  void $ throwIfNull "Cannot open Spiel transaction."
-                      $ withForeignPtr st
-                        $ \ptr -> c_spiel_tx_open sc ptr
+  withForeignPtr st $ \ptr -> c_spiel_tx_open sc ptr
   return $ SpielTransaction st
 
 openTransaction :: IO SpielTransaction
 openTransaction = do
   sc <- mallocForeignPtrBytes m0_spiel_size
   st <- mallocForeignPtrBytes m0_spiel_tx_size
-  void $ throwIfNull "Cannot open Spiel transaction."
-        $ withForeignPtr sc
-          $ \sc_ptr -> withForeignPtr st
-            $ \ptr -> do
-              fillBytes sc_ptr 0 m0_spiel_size
-              c_spiel_tx_open sc_ptr ptr
+  withForeignPtr sc
+    $ \sc_ptr -> withForeignPtr st
+      $ \ptr -> do
+        fillBytes sc_ptr 0 m0_spiel_size
+        c_spiel_tx_open sc_ptr ptr
   return $ SpielTransaction st
 
 closeTransaction :: SpielTransaction

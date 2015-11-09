@@ -1,3 +1,4 @@
+{-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -79,10 +80,10 @@ data SpielTransactionV
 m0_spiel_tx_size :: Int
 m0_spiel_tx_size = #{size struct m0_spiel_tx}
 
-foreign import ccall "spiel.h m0_spiel_tx_open"
+foreign import capi "spiel/spiel.h m0_spiel_tx_open"
   c_spiel_tx_open :: Ptr SpielContextV
                   -> Ptr SpielTransactionV
-                  -> IO (Ptr SpielTransactionV)
+                  -> IO ()
 
 foreign import ccall "spiel.h m0_spiel_tx_close"
   c_spiel_tx_close :: Ptr SpielTransactionV
