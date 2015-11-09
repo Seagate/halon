@@ -39,9 +39,18 @@ import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.Services.Monitor (SaveProcesses(..), regularMonitor)
 import           HA.Services.SSPL (ssplRules)
 
+import           System.Environment
+import           System.IO.Unsafe (unsafePerformIO)
+
+enableRCDebug :: Definitions LoopState ()
+enableRCDebug = unsafePerformIO $ do
+     mt <- lookupEnv "HALON_DEBUG_RC"
+     return $ maybe (return ()) (const enableDebugMode) mt
 
 rcRules :: IgnitionArguments -> [Definitions LoopState ()] -> Definitions LoopState ()
 rcRules argv additionalRules = do
+
+    enableRCDebug
 
     initRule $ rcInitRule argv
 
