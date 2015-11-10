@@ -219,15 +219,18 @@ addProcess :: SpielTransaction
            -> Word64 -- ^ memlimit_rss
            -> Word64 -- ^ memlimit_stack
            -> Word64 -- ^ memlimit_memlock
+           -> String -- ^ Process endpoint
            -> IO ()
 addProcess (SpielTransaction fsc) fid nodeFid bitmap memlimit_as memlimit_rss
-            memlimit_stack memlimit_memlock =
+            memlimit_stack memlimit_memlock endpoint =
   withForeignPtr fsc $ \sc ->
     withMany with [fid, nodeFid] $ \[fid_ptr, fs_ptr] ->
       with bitmap $ \bm_ptr ->
-        throwIfNonZero_ (\rc -> "Cannot add process: " ++ show rc)
-          $ c_spiel_process_add sc fid_ptr fs_ptr bm_ptr memlimit_as
-                                memlimit_rss memlimit_stack memlimit_memlock
+        withCString endpoint $ \c_ep ->
+          throwIfNonZero_ (\rc -> "Cannot add process: " ++ show rc)
+            $ c_spiel_process_add sc fid_ptr fs_ptr bm_ptr memlimit_as
+                                  memlimit_rss memlimit_stack memlimit_memlock
+                                  c_ep
 
 addService :: SpielTransaction
            -> Fid
@@ -492,7 +495,7 @@ instance Spliceable DiskV where
 instance Spliceable Process where
   splice t p o = addProcess t (pc_fid o) p (pc_cores o) (pc_memlimit_as o)
                               (pc_memlimit_rss o) (pc_memlimit_stack o)
-                              (pc_memlimit_memlock o)
+                              (pc_memlimit_memlock o) (pc_endpoint o)
   spliceTree t p o = do
     splice t p o
     kids <- children o :: IO [Service]

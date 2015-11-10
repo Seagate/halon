@@ -265,6 +265,7 @@ data Process = Process
   , pc_memlimit_rss :: Word64
   , pc_memlimit_stack :: Word64
   , pc_memlimit_memlock :: Word64
+  , pc_endpoint :: String
   } deriving Show
 
 getProcess :: Ptr Obj -> IO Process
@@ -277,6 +278,7 @@ getProcess po = do
           <*> (#{peek struct m0_conf_process, pc_memlimit_rss} pp)
           <*> (#{peek struct m0_conf_process, pc_memlimit_stack} pp)
           <*> (#{peek struct m0_conf_process, pc_memlimit_memlock} pp)
+          <*> (#{peek struct m0_conf_process, pc_endpoint} pp >>= peekCString)
 
 -- | Representation of `m0_conf_service_type`.
 data ServiceType

@@ -107,7 +107,7 @@ loadMeroServers fs = mapM_ goHost where
       host = Host m0h_fqdn
       mkProc fid = M0.Process fid m0h_mem_as m0h_mem_rss
                               m0h_mem_stack m0h_mem_memlock
-                              (Bitmap m0h_cores)
+                              (Bitmap m0h_cores) m0h_endpoint
 
     in do
       ctrl <- M0.Controller <$> newFid (Proxy :: Proxy M0.Controller)

@@ -350,6 +350,7 @@ initialDataAddr host ifaddr n = CI.InitialData {
     , CI.m0h_devices = fmap
         (\i -> CI.M0Device ("wwn" ++ show i) 4 64000 ("/dev/loop" ++ show i))
         [(1 :: Int) .. n]
+    , CI.m0h_endpoint = host ++ "@tcp:12345:41:901"
     }
   ]
 }

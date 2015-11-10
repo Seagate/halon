@@ -148,6 +148,7 @@ foreign import ccall "spiel.h m0_spiel_process_add"
                       -> Word64
                       -> Word64
                       -> Word64
+                      -> CString -- ^ Process endpoint
                       -> IO CInt
 
 foreign import ccall "spiel.h m0_spiel_service_add"

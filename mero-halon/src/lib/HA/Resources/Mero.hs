@@ -170,6 +170,7 @@ data Process = Process {
   , r_mem_stack :: Word64
   , r_mem_memlock :: Word64
   , r_cores :: Bitmap
+  , r_endpoint :: String
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary Process

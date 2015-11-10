@@ -168,6 +168,7 @@ txPopulate (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) 
     forM_ procs $ \(proc@M0.Process{..}) -> do
       liftM0 $ addProcess t r_fid (M0.fid node) r_cores
                             r_mem_as r_mem_rss r_mem_stack r_mem_memlock
+                            r_endpoint
       let servs = G.connectedTo proc M0.IsParentOf g :: [M0.Service]
       forM_ servs $ \(serv@M0.Service{..}) -> do
         liftM0 $ addService t s_fid r_fid (ServiceInfo s_type s_endpoints s_params)
