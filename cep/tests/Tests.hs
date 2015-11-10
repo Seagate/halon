@@ -2,8 +2,9 @@
 
 module Tests where
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (catch)
 import Control.Monad (replicateM, replicateM_)
+import Control.Monad.Catch (SomeException, catch)
 import Data.Binary (Binary)
 import Data.Typeable
 import Data.List (sort)
@@ -54,6 +55,7 @@ tests launch =
   , testSubscriptions launch
   , testsTimeout launch
   , testsFinalizer launch
+  , testsException launch
   ]
 
 testsGlobal :: (Process () -> IO ()) -> TestTree
@@ -1052,3 +1054,25 @@ testFinalizerDirectly = do
   usend pid donut
   assertEqual "event should be handled" [0,1,0]
     . map unFoo =<< replicateM 3 expect
+
+testsException :: (Process () -> IO ()) -> TestTree
+testsException launch = testGroup "Exception"
+  [ testCase "Exception can be handled" $ launch exceptionWorks
+  ]
+
+exceptionWorks :: Process ()
+exceptionWorks = do
+    self <- getSelfPid
+
+    let specs = define "exception-handling" $ do
+          ph0 <- phaseHandle "ph0"
+          setPhase ph0 $ \(Donut _) ->
+            (liftProcess $ error "foo") `catch`
+              (\e -> liftProcess $ usend self (show (e::SomeException)))
+          start ph0 ()
+
+    pid <- spawnLocal $ execute () specs
+    usend pid donut
+
+    i <- expect
+    assertEqual "Ph2 should fire first" "foo" i

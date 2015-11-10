@@ -16,6 +16,7 @@ module Network.CEP
     -- * Specification API
       PhaseM
     , RuleM
+    , MonadProcess(..)
     , Definitions
     , Specification
     , Token
@@ -47,7 +48,6 @@ module Network.CEP
     , phaseLog
     , peek
     , shift
-    , liftProcess
     , define
     , initRule
     , defineSimple

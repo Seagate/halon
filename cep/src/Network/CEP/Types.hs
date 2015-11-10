@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE Rank2Types                 #-}
@@ -14,9 +15,11 @@ import Data.ByteString (ByteString)
 import Data.Dynamic
 import GHC.Generics
 
-import           Control.Distributed.Process
+import           Control.Distributed.Process hiding (catch)
 import           Control.Distributed.Process.Serializable
 import           Control.Monad.Operational
+import           Control.Exception (Exception, throwIO)
+import           Control.Monad.Catch
 import           Control.Wire hiding ((.), loop)
 import           Data.Binary hiding (get, put)
 import qualified Data.MultiMap as MM
@@ -149,6 +152,27 @@ data Jump a
 instance Functor Jump where
     fmap f (NormalJump a)       = NormalJump $ f a
     fmap f (ReactiveJump c w a) = ReactiveJump c w $ f a
+
+-- | Just like 'MonadIO', 'MonadProcess' should satisfy the following
+-- laws:
+--
+-- * @'liftProcess' . 'return' = 'return'@
+-- * @'liftProcess' (m >>= f) = 'liftProcess' m >>= ('liftProcess' . f)@
+class MonadProcess m where
+  -- | Lifts a 'Process' computation in the state machine.
+  liftProcess  :: Process a -> m a
+
+instance MonadProcess Process where
+  liftProcess = Prelude.id
+
+instance MonadProcess (ProgramT (PhaseInstr g l) Process) where
+  liftProcess = singleton . Lift
+
+instance MonadThrow (ProgramT (PhaseInstr g l) Process) where
+  throwM = liftProcess . liftIO . throwIO
+
+instance MonadCatch (ProgramT (PhaseInstr g l) Process) where
+  catch f h = singleton $ Catch f h
 
 normalJump :: a -> Jump a
 normalJump = NormalJump
@@ -439,6 +463,9 @@ data PhaseInstr g l a where
     Shift :: Serializable a => Index -> PhaseInstr g l (Index, a)
     -- ^ Consumes a message from the 'Buffer' given a minimun 'Index'. The
     --   'Buffer' is altered.
+    Catch :: Exception e => (PhaseM g l a) -> (e -> PhaseM g l a) -> PhaseInstr g l a
+    -- ^ Exception handler.
+
 
 -- | Gets scoped state from memory.
 get :: Scope g l a -> PhaseM g l a
@@ -464,10 +491,6 @@ continue p = singleton $ Continue p
 --     adding back the current state machine to the list of alternatives.
 stop :: PhaseM g l a
 stop = singleton $ Stop
-
--- | Lifts a 'Process' computation in the state machine.
-liftProcess :: Process a -> PhaseM g l a
-liftProcess m = singleton $ Lift m
 
 -- | Stops the state machine. Has different behavior depending on the context
 --   of the state machine.
