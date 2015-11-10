@@ -113,6 +113,7 @@ Library
                    distributed-process-scheduler,
                    distributed-static,
                    hashable,
+                   exceptions,
                    mtl,
                    options-schema,
                    process,
