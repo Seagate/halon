@@ -18,7 +18,7 @@ import GHC.Generics
 import           Control.Distributed.Process hiding (catch)
 import           Control.Distributed.Process.Serializable
 import           Control.Monad.Operational
-import           Control.Exception (Exception, throwIO)
+import           Control.Exception (throwIO)
 import           Control.Monad.Catch
 import           Control.Wire hiding ((.), loop)
 import           Data.Binary hiding (get, put)
