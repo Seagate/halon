@@ -15,6 +15,7 @@ module HA.RecoveryCoordinator.Actions.Core
   , modifyLocalGraph
   , syncGraph
   , messageProcessed
+  , sayRC
   ) where
 
 import qualified HA.ResourceGraph as G
@@ -31,7 +32,9 @@ import HA.Service (ServiceName)
 import Control.Category ((>>>))
 import Control.Distributed.Process
   ( ProcessId
+  , Process
   , usend
+  , say
   )
 
 import qualified Data.Map.Strict as Map
@@ -89,3 +92,6 @@ messageProcessed uuid = do
   phaseLog "eq" $ unwords ["Removing message", show uuid, "from EQ."]
   eqPid <- lsEQPid <$> get Global
   liftProcess $ usend eqPid uuid
+
+sayRC :: String -> Process ()
+sayRC s = say $ "Recovery Coordinator: " ++ s

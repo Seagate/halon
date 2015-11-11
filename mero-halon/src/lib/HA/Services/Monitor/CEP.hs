@@ -64,23 +64,6 @@ nodeIds = fmap (S.toList . foldMap go . M.keys . msMap) $ get Global
   where
     go pid = S.singleton $ processNodeId pid
 
-monitorState :: Processes -> Process MonitorState
-monitorState (Processes ps) = do
-    st <- fmap fromMonitoreds $ traverse deserializedMonitored ps
-    forM_ (M.elems $ msMap st) $ \(Monitored pid _) -> do
-      traceMonitor $ "start monitoring " ++ show pid
-      monitor pid
-    return st
-
-fromMonitoreds :: [Monitored] -> MonitorState
-fromMonitoreds = MonitorState . M.fromList . fmap go
-  where
-    go m@(Monitored pid _) = (pid, m)
-
--- | Serializes a monitor state to 'Processes'.
-toProcesses :: MonitorState -> Processes
-toProcesses = Processes . fmap encodeMonitored . M.elems . msMap
-
 -- | Simple process that sends 'Heartbeat' event to main monitor thread every
 --   'heartbeatDelay'.
 heartbeatProcess :: ProcessId -> Process ()
@@ -91,22 +74,6 @@ heartbeatProcess mainpid = forever $ do
 decodeMsg :: ProcessEncode a => BinRep a -> PhaseM g l a
 decodeMsg = liftProcess . decodeP
 
--- | By monitoring a service, we mean calling `monitor` with its `ProcessId`,
---   regitered it into monitor internal state and then persists that into
---   ReplicatedGraph.
-monitoring :: Configuration a
-           => Service a
-           -> ServiceProcess a
-           -> PhaseM MonitorState l ()
-monitoring svc (ServiceProcess pid) = do
-    ms <- get Global
-    _  <- liftProcess $ monitor pid
-    sayMonitor $ "start monitoring " ++ show pid
-    let m' = M.insert pid (Monitored pid svc) (msMap ms)
-
-    put Global ms { msMap = m' }
-    sendSaveRequest
-
 -- | Get a 'Monitored' from monitor internal state. That 'Monitored' will no
 --   longer be accessible from monitor state after.
 takeMonitored :: ProcessId -> PhaseM MonitorState l (Maybe Monitored)
@@ -114,20 +81,8 @@ takeMonitored pid = do
     ms <- get Global
     let mon = M.lookup pid $ msMap ms
         m'  = M.delete pid $ msMap ms
-
     put Global ms { msMap = m' }
-    sendSaveRequest
     return mon
-
--- | Asks kindly the RC to persist the list of monitored services in the
---   ReplicatedGraph.
-sendSaveRequest :: PhaseM MonitorState l ()
-sendSaveRequest = do
-    ms   <- get Global
-    self <- liftProcess getSelfPid
-    let ps = toProcesses ms
-
-    sendToRC $ SaveProcesses (ServiceProcess self) (MonitorConf ps)
 
 -- | Sends a message to the RC. Strictly speaking, it sends the message to EQ,
 --   through the 'EQTracker', which forwards it to the RC.
@@ -142,9 +97,9 @@ traceMonitor = mkHalonTracer "monitor-service"
 sayMonitor :: String -> PhaseM g l ()
 sayMonitor = liftProcess . traceMonitor
 
--- | Notifies the RC that a monitored service has died.
+-- | Notifies the RC that a monitored service has died.
 reportFailure :: Monitored -> PhaseM g l ()
-reportFailure (Monitored pid svc) = do
+reportFailure (Monitored pid svc _) = do
     sayMonitor $ "Notify death for " ++ show (serviceName svc) ++ " at " ++ show pid
     let node = Node $ processNodeId pid
         msg  = encodeP $ ServiceFailed node svc pid
@@ -160,7 +115,7 @@ monitorRules = do
     defineSimple "monitor-notification" $
       \(ProcessMonitorNotification _ pid reason) -> do
           case reason of
-            DiedNormal -> do
+            DiedNormal -> do -- XXX: Notify RC
               sayMonitor $ "notification about normal death " ++ show pid
               _ <- takeMonitored pid
               return ()
@@ -170,9 +125,17 @@ monitorRules = do
 
     defineSimple "link-to" $ liftProcess . link
 
-    defineSimple "service-started" $ \msg -> do
-      ServiceStarted _ svc _ sp <- decodeMsg msg
-      monitoring svc sp
+    defineSimple "service-started" $ \(StartMonitoringRequest caller msg) -> do
+      forM_ msg $ \m -> do
+        ServiceStarted _ svc _ (ServiceProcess pid) <- decodeMsg m
+        ms <- get Global
+        case M.lookup pid (msMap ms) of
+          Just{} ->  sayMonitor $ "already monitoring " ++ show pid
+          Nothing -> do ref  <- liftProcess $ monitor pid
+                        sayMonitor $ "start monitoring " ++ show pid
+                        let m' = M.insert pid (Monitored pid svc ref) (msMap ms)
+                        put Global ms { msMap = m' }
+      liftProcess $ usend caller StartMonitoringReply
 
     defineSimple "heartbeat" $ \Heartbeat -> do
       traverse_ nodeHeartbeatRequest =<< nodeIds
