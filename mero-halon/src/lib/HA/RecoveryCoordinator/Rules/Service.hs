@@ -14,6 +14,7 @@ module HA.RecoveryCoordinator.Rules.Service where
 
 import Prelude hiding ((.), id)
 import Control.Category
+import Data.Foldable (traverse_)
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
@@ -241,7 +242,7 @@ serviceRules argv = do
                     -- process that will update EQT as soon as it will see that.
                     _ <- liftProcess $ spawnAsync nodeId $
                         $(mkClosure 'EQT.updateEQNodes) (stationNodes argv)
-                    return ()
+                    traverse_ (sendToMonitor n) =<< getRunningServices n
             else sendToMonitor n msg
           phaseLog "info" ("Service "
                               ++ (snString . serviceName $ svc)
