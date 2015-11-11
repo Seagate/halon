@@ -81,6 +81,7 @@ import qualified Data.Set as S
 import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
 import Data.Word
+import Data.Foldable (traverse_)
 
 import GHC.Generics (Generic)
 
@@ -186,6 +187,7 @@ rcInitRule argv = do
       liftProcess $ usend pid =<< getSelfPid
       registerMasterMonitor sp
       handled evt
+      traverse_ sendToMasterMonitor =<< getNodeRegularMonitors
       liftProcess $ sayRC $ "started master-monitor service"
       -- We start a new monitor for any node that's started
       registerService regularMonitor

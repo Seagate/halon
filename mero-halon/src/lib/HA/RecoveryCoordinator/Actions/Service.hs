@@ -15,6 +15,7 @@ module HA.RecoveryCoordinator.Actions.Service
   , isServiceRunning
   , findRunningServiceProcesses
   , getRunningServices
+  , getNodeRegularMonitors
     -- * Registering services in the graph
   , registerService
   , registerServiceName
@@ -33,6 +34,7 @@ import HA.RecoveryCoordinator.Actions.Hardware (nodesOnHost)
 import qualified HA.ResourceGraph as G
 import HA.Resources
 import HA.Service
+import HA.Services.Monitor (MonitorConf)
 
 import Control.Category ((>>>))
 import Control.Distributed.Process
@@ -195,6 +197,18 @@ getRunningServices node = do
     let mcfg  = listToMaybe $ G.anyConnectedTo dsp HasConf rg
         msrv  = listToMaybe $ G.anyConnectedFrom InstanceOf dsp rg
     in (join $ dynMkMessage r <$> mcfg <*> msrv :: Maybe ServiceStartedMsg)
+
+
+-- | Get Monitor Service for each running node.
+getNodeRegularMonitors :: PhaseM LoopState l [ServiceStartedMsg]
+getNodeRegularMonitors = do
+  rg <- getLocalGraph
+  return [ encodeP (ServiceStarted node srv cfg sp)
+         | node <- G.connectedTo Cluster Has rg
+         , sp   <- G.connectedTo node Runs rg :: [ServiceProcess MonitorConf]
+         , Just cfg <- return $ listToMaybe $ G.connectedTo sp HasConf rg
+         , Just srv <- return $ listToMaybe $ G.connectedFrom InstanceOf sp rg
+         ]
 
 ----------------------------------------------------------
 -- Controlling services                                 --
