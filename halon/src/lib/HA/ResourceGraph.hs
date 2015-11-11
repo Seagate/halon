@@ -60,6 +60,8 @@ module HA.ResourceGraph
     , edgesToDst
     , connectedFrom
     , connectedTo
+    , anyConnectedFrom
+    , anyConnectedTo
     , isConnected
     , __remoteTable
     , getGraphResources
@@ -381,17 +383,27 @@ edgesToDst x0 g =
 -- | List of all nodes connected through a given relation with a provided source
 -- resource.
 connectedTo :: forall a r b . Relation r a b => a -> r -> Graph -> [b]
-connectedTo x0 _ g =
-    let f (OutRel r _ y) = maybe Nothing (const $ cast y) (cast r :: Maybe r)
+connectedTo a r g = mapMaybe (\(Res x) -> cast x) $ anyConnectedTo a r g
+
+-- | List of all nodes connected through a given relation with a provided
+--   destination resource.
+connectedFrom :: forall a r b . Relation r a b => r -> b -> Graph -> [a]
+connectedFrom r b g = mapMaybe (\(Res x) -> cast x) $ anyConnectedFrom r b g
+
+-- | List of all nodes connected through a given relation with a provided source
+-- resource.
+anyConnectedTo :: forall a r . (Resource a, Typeable r) => a -> r -> Graph -> [Res]
+anyConnectedTo x0 _ g =
+    let f (OutRel r _ y) = Just (Res y) <* (cast r :: Maybe r)
         f _ = Nothing
     in maybe [] (catMaybes . map f . S.toList)
         $ M.lookup (Res x0) $ grGraph g
 
 -- | List of all nodes connected through a given relation with a provided
 --   destination resource.
-connectedFrom :: forall a r b . Relation r a b => r -> b -> Graph -> [a]
-connectedFrom _ x0 g =
-    let f (InRel r x _) = maybe Nothing (const $ cast x) (cast r :: Maybe r)
+anyConnectedFrom :: forall r b . (Typeable r, Resource b) => r -> b -> Graph -> [Res]
+anyConnectedFrom _ x0 g =
+    let f (InRel r x _) = Just (Res x) <* (cast r :: Maybe r)
         f _ = Nothing
     in maybe [] (catMaybes . map f . S.toList)
         $ M.lookup (Res x0) $ grGraph g
