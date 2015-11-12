@@ -134,10 +134,9 @@ rcInitRule argv = do
     directly boot $ do
       h   <- liftIO getHostName
       nid <- liftProcess getSelfNode
-      liftProcess . sayRC $
-         unlines [ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
-                 , "Executing on node: " ++ show nid
-                 ]
+      liftProcess $ do
+         sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
+         sayRC $ "Executing on node: " ++ show nid
       ms   <- getNodeRegularMonitors
       liftProcess $ do
         self <- getSelfPid

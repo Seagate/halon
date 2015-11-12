@@ -14,7 +14,6 @@ module HA.RecoveryCoordinator.Rules.Service where
 
 import Prelude hiding ((.), id)
 import Control.Category
-import Data.Foldable (traverse_)
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)

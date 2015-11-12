@@ -143,7 +143,7 @@ runRC (eq, args) rGroup = runRCEx (eq, args) emptyRules rGroup
 runRCEx :: (ProcessId, IgnitionArguments)
         -> [Definitions LoopState ()]
         -> MC_RG TestReplicatedState
-        -> Process ((ProcessId, ProcessId)) -- ^ MM, RC
+        -> Process (ProcessId, ProcessId) -- ^ MM, RC
 runRCEx (eq, args) rules rGroup = do
   rec (mm, rc) <- (,)
                   <$> (spawnLocal $ do
@@ -210,6 +210,7 @@ testServiceRestarting transport = do
               (flip killReplica nid) $ \rGroup -> do
         eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        nodeUp ([nid], 1000000)
 
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
@@ -248,6 +249,7 @@ testServiceNotRestarting transport = do
               (flip killReplica nid) $ \rGroup -> do
         eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        nodeUp ([nid], 1000000)
 
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
@@ -282,6 +284,7 @@ testEQTrimming transport = do
         eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
         subscribe eq (Proxy :: Proxy TrimDone)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        nodeUp ([nid], 1000000)
 
         Published (TrimDone _) _ <- expect
         _ <- promulgateEQ [nid] . encodeP $
@@ -335,6 +338,7 @@ testHostAddition transport = do
               (flip killReplica nid) $ \rGroup -> do
         eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        nodeUp ([nid], 1000000)
 
         -- Send host update message to the RC
         promulgateEQ [nid] (nid, mockEvent) >>= (flip withMonitor) wait
@@ -391,6 +395,7 @@ testDriveAddition transport = do
               (flip killReplica nid) $ \rGroup -> do
         eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        nodeUp ([nid], 1000000)
 
         -- Send host update message to the RC
         promulgateEQ [nid] (nid, mockEvent "online") >>= (flip withMonitor) wait
@@ -420,7 +425,8 @@ testDecisionLog :: Transport -> IO ()
 testDecisionLog transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
       self <- getSelfPid
-      launchRC $ \(mm, rc) -> do
+      launchRC $ \(mm, rc, eq) -> do
+        nodeUp ([processNodeId eq], 1000000)
         -- Awaits the node local monitor to be up.
         _ <- getNodeMonitor mm
 
@@ -456,6 +462,7 @@ testServiceStopped transport = do
               (flip killReplica nid) $ \rGroup -> do
         eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
         (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+        nodeUp ([nid], 1000000)
 
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
@@ -486,7 +493,7 @@ serviceStarted svname = do
           usend self mp
           serviceStarted svname
 
-launchRC :: ((ProcessId, ProcessId) -> Process a) -> Process a
+launchRC :: ((ProcessId, ProcessId, ProcessId) -> Process a) -> Process a
 launchRC action = do
     nid <- getSelfNode
     void $ startEQTracker [nid]
@@ -498,7 +505,8 @@ launchRC action = do
             )
             (flip killReplica nid) $ \rGroup -> do
       eq      <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
-      runRC (eq, IgnitionArguments [nid]) rGroup >>= action
+      (rg, mm) <- runRC (eq, IgnitionArguments [nid]) rGroup
+      action (rg, mm, eq)
 
 serviceStart :: Configuration a => Service a -> a -> Process ()
 serviceStart svc conf = do
@@ -515,7 +523,7 @@ getNodeMonitor mm = do
     case runningService n regularMonitor rg of
       Just (ServiceProcess pid) -> return pid
       _  -> do
-        _ <- receiveTimeout 100000 []
+        _ <- receiveTimeout 100 []
         getNodeMonitor mm
 
 -- | Make sure that when a Service died, the node-local monitor detects it
@@ -523,7 +531,8 @@ getNodeMonitor mm = do
 testMonitorManagement :: Transport -> IO ()
 testMonitorManagement transport = do
     runTest 1 20 15000000 transport testRemoteTable $ \_ ->
-      launchRC $ \(mm, rc) -> do
+      launchRC $ \(mm, rc, eq) -> do
+        nodeUp ([processNodeId eq], 1000000)
         -- Awaits the node local monitor to be up.
         _ <- getNodeMonitor mm
 
@@ -541,7 +550,8 @@ testMonitorManagement transport = do
 testMasterMonitorManagement :: Transport -> IO ()
 testMasterMonitorManagement transport = do
     runTest 1 20 15000000 transport testRemoteTable $ \_ ->
-      launchRC $ \(mm, rc) -> do
+      launchRC $ \(mm, rc, eq) -> do
+        nodeUp ([processNodeId eq], 1000000)
 
         -- Awaits the node local monitor to be up.
         mpid <- getNodeMonitor mm
@@ -588,7 +598,6 @@ testNodeUpRace transport = do
         ((), ()) <- expect
         _ <- receiveTimeout 1000000 []
 
-        True <- serviceProcessStillAlive mm (Node nid) Monitor.regularMonitor
         nn <- expect
         pr <- expect
         rg <- G.getGraph mm
