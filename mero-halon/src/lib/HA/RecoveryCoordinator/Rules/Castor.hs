@@ -34,6 +34,7 @@ castorRules = do
       createPoolVersions filesystem failureSets
 #endif
       liftProcess $ say "Loaded initial data"
+      syncGraph
       messageProcessed eid
   where
     goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
