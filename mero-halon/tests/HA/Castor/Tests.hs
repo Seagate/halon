@@ -14,6 +14,7 @@ import Control.Distributed.Process
   , say
   , unClosure
   )
+import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Exception (SomeException, bracket)
@@ -61,10 +62,10 @@ mmSDict = SerializableDict
 remotable
   [ 'mmSDict ]
 
-emptyLoopState :: ProcessId -> Process LoopState
-emptyLoopState pid = do
+emptyLoopState :: ProcessId -> ProcessId -> Process LoopState
+emptyLoopState pid mmpid = do
   g <- getGraph pid
-  return $ LoopState g Map.empty pid Set.empty
+  return $ LoopState g Map.empty pid mmpid Set.empty
 
 myRemoteTable :: RemoteTable
 myRemoteTable = HA.Castor.Tests.__remoteTable remoteTable
@@ -107,7 +108,8 @@ fsSize (FailureSet a _) = Set.size a
 
 testFailureSets :: Transport -> IO ()
 testFailureSets transport = rGroupTest transport $ \pid -> do
-    ls <- emptyLoopState pid
+    me <- getSelfNode
+    ls <- emptyLoopState pid (nullProcessId me)
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks initialData)
       filesystem <- initialiseConfInRG
@@ -130,7 +132,8 @@ testFailureSets transport = rGroupTest transport $ \pid -> do
 
 loadInitialData :: String -> Transport -> IO ()
 loadInitialData host transport = rGroupTest transport $ \pid -> do
-    ls <- emptyLoopState pid
+    me <- getSelfNode
+    ls <- emptyLoopState pid (nullProcessId me)
     (ls', _) <- run ls $ do
       -- TODO: the interface address is hard-coded here: currently we
       -- don't use it so it doesn't impact us but in the future we
