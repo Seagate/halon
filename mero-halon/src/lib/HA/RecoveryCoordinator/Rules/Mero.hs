@@ -11,9 +11,13 @@
 
 module HA.RecoveryCoordinator.Rules.Mero where
 
-import HA.RecoveryCoordinator.Actions.Mero (getFilesystem)
+import HA.EventQueue.Types
+
+import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Mero
 import HA.Resources.Castor
+import HA.Resources.Mero (SyncToConfd(..), SpielAddress(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Castor.Initial as CI
 import HA.Resources
@@ -23,9 +27,10 @@ import Mero.ConfC (Bitmap(..), Fid, ServiceType(..))
 
 import Control.Category (id, (>>>))
 import Control.Distributed.Process (liftIO)
-import Control.Monad (forM_)
+import Control.Monad (forM_, void)
+import Control.Monad.Catch (catch, SomeException)
 
-import Data.Foldable (foldl')
+import Data.Foldable (foldl', traverse_)
 import qualified Data.HashMap.Strict as M
 import Data.List (sort, (\\))
 import Data.Proxy
@@ -36,6 +41,32 @@ import Data.Word ( Word32, Word64 )
 import Network.CEP
 
 import Prelude hiding (id)
+
+meroRules :: Definitions LoopState ()
+meroRules = do
+  defineSimple "Sync-to-confd" $ \(HAEvent eid sync _) -> catch
+    (do case sync of
+          SyncToConfdServersInRG -> do
+            phaseLog "info" "Syncing RG to confd servers in RG."
+            msa <- getSpielAddress
+            case msa of
+              Nothing -> phaseLog "warning" $ "No spiel address found in RG."
+              Just sa -> void $ withSpielRC sa $ \sc -> do
+                loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
+          SyncToTheseServers (SpielAddress [] _) ->
+            phaseLog "warning"
+               $ "Requested to sync to specific list of confd servers, "
+              ++ "but that list was empty."
+          SyncToTheseServers sa -> do
+            phaseLog "info" $ "Syncing RG to these confd servers: " ++ show sa
+            void $ withSpielRC sa $ \sc -> do
+              loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
+          SyncDumpToFile filename -> do
+            phaseLog "info" $ "Dumping conf in RG to this file: " ++ show filename
+            loadConfData >>= traverse_ (\x -> txOpen >>= txPopulate x >>= txDumpToFile filename)
+        messageProcessed eid)
+    (\e -> do phaseLog "error" $ "Exception during synchronization: " ++ show (e::SomeException)
+              messageProcessed eid)
 
 -- | Atomically fetch a FID sequence number of increment the sequence count.
 newFidSeq :: PhaseM LoopState l Word64
@@ -79,7 +110,7 @@ loadMeroServers fs = mapM_ goHost where
       host = Host m0h_fqdn
       mkProc fid = M0.Process fid m0h_mem_as m0h_mem_rss
                               m0h_mem_stack m0h_mem_memlock
-                              (Bitmap m0h_cores)
+                              (Bitmap m0h_cores) m0h_endpoint
 
     in do
       ctrl <- M0.Controller <$> newFid (Proxy :: Proxy M0.Controller)
@@ -188,16 +219,16 @@ initialiseConfInRG = getFilesystem >>= \case
 
 -- ^ Allowed failures in each failure domain
 data Failures = Failures {
-    f_pool :: Word32
-  , f_rack :: Word32
-  , f_encl :: Word32
-  , f_ctrl :: Word32
-  , f_disk :: Word32
+    f_pool :: !Word32
+  , f_rack :: !Word32
+  , f_encl :: !Word32
+  , f_ctrl :: !Word32
+  , f_disk :: !Word32
 } deriving (Eq, Ord, Show)
 
 data FailureSet = FailureSet
-    (S.Set Fid) -- ^ Set of Fids
-    Failures -- ^ Allowable failures in each failure domain.
+    !(S.Set Fid) -- ^ Set of Fids
+    !Failures -- ^ Allowable failures in each failure domain.
   deriving (Eq, Ord, Show)
 
 failureSetToArray :: Failures -> [Word32]

@@ -21,12 +21,17 @@ import Control.Exception
   ( bracket
   , mask
   )
-import Control.Monad ( void )
 
 import Data.IORef
 import qualified Data.Map.Strict as Map
 import Data.Word ( Word32, Word64 )
 
+import Foreign.C.Error
+  ( Errno(..)
+  , eOK
+  , eBUSY
+  , eNOENT
+  )
 import Foreign.C.String
   ( newCString
   , withCString
@@ -47,12 +52,10 @@ import Foreign.Marshal.Array
   , withArray0
   , withArrayLen
   )
-import Foreign.Marshal.Error
-  ( throwIfNeg
-  , throwIfNull
-  )
+import Foreign.Marshal.Error (throwIfNeg)
 import Foreign.Marshal.Utils
-  ( with
+  ( fillBytes
+  , with
   , withMany
   )
 import Foreign.Ptr
@@ -102,13 +105,22 @@ withSpiel rpcmach eps rm_ep = bracket (start rpcmach eps rm_ep) stop
 
 newtype SpielTransaction = SpielTransaction (ForeignPtr SpielTransactionV)
 
-openTransaction :: SpielContext
-                -> IO (SpielTransaction)
-openTransaction (SpielContext fsc) = withForeignPtr fsc $ \sc -> do
+openTransactionContext :: SpielContext
+                      -> IO (SpielTransaction)
+openTransactionContext (SpielContext fsc) = withForeignPtr fsc $ \sc -> do
   st <- mallocForeignPtrBytes m0_spiel_tx_size
-  void $ throwIfNull "Cannot open Spiel transaction."
-                      $ withForeignPtr st
-                        $ \ptr -> c_spiel_tx_open sc ptr
+  withForeignPtr st $ \ptr -> c_spiel_tx_open sc ptr
+  return $ SpielTransaction st
+
+openTransaction :: IO SpielTransaction
+openTransaction = do
+  sc <- mallocForeignPtrBytes m0_spiel_size
+  st <- mallocForeignPtrBytes m0_spiel_tx_size
+  withForeignPtr sc
+    $ \sc_ptr -> withForeignPtr st
+      $ \ptr -> do
+        fillBytes sc_ptr 0 m0_spiel_size
+        c_spiel_tx_open sc_ptr ptr
   return $ SpielTransaction st
 
 closeTransaction :: SpielTransaction
@@ -128,16 +140,28 @@ commitTransactionForced :: SpielTransaction
                         -> IO ()
 commitTransactionForced (SpielTransaction ptr) forced ver quorum =
   throwIfNonZero_ (\rc -> "Cannot commmit Spiel transaction: " ++ show rc)
-    $ withForeignPtr ptr $ \c_ptr ->
-      c_spiel_tx_commit_forced c_ptr forced ver quorum
-
+    $ withForeignPtr ptr $ \c_ptr -> alloca $ \q_ptr -> do
+      poke q_ptr quorum
+      c_spiel_tx_commit_forced c_ptr forced ver q_ptr
 
 withTransaction :: SpielContext
                 -> (SpielTransaction -> IO a)
                 -> IO a
 withTransaction sc = bracket
-  (openTransaction sc)
+  (openTransactionContext sc)
   (\t -> commitTransaction t >> closeTransaction t)
+
+dumpTransaction :: SpielTransaction
+                -> FilePath
+                -> IO ()
+dumpTransaction (SpielTransaction ptr) fp = withForeignPtr ptr $ \c_ptr -> do
+  valid <- Errno . negate <$> c_spiel_tx_validate c_ptr
+  case valid of
+    x | x == eOK -> throwIfNonZero_ (\rc -> "Cannot dump Spiel transaction: " ++ show rc)
+      $ withCString fp $ \c_fp -> c_spiel_tx_dump c_ptr c_fp
+    x | x == eBUSY -> error "Not all objects are ready."
+    x | x == eNOENT -> error "Not all objects have a parent."
+    (Errno x) -> error $ "Unknown error return: " ++ show x
 
 addProfile :: SpielTransaction
            -> Fid
@@ -196,15 +220,18 @@ addProcess :: SpielTransaction
            -> Word64 -- ^ memlimit_rss
            -> Word64 -- ^ memlimit_stack
            -> Word64 -- ^ memlimit_memlock
+           -> String -- ^ Process endpoint
            -> IO ()
 addProcess (SpielTransaction fsc) fid nodeFid bitmap memlimit_as memlimit_rss
-            memlimit_stack memlimit_memlock =
+            memlimit_stack memlimit_memlock endpoint =
   withForeignPtr fsc $ \sc ->
     withMany with [fid, nodeFid] $ \[fid_ptr, fs_ptr] ->
       with bitmap $ \bm_ptr ->
-        throwIfNonZero_ (\rc -> "Cannot add process: " ++ show rc)
-          $ c_spiel_process_add sc fid_ptr fs_ptr bm_ptr memlimit_as
-                                memlimit_rss memlimit_stack memlimit_memlock
+        withCString endpoint $ \c_ep ->
+          throwIfNonZero_ (\rc -> "Cannot add process: " ++ show rc)
+            $ c_spiel_process_add sc fid_ptr fs_ptr bm_ptr memlimit_as
+                                  memlimit_rss memlimit_stack memlimit_memlock
+                                  c_ep
 
 addService :: SpielTransaction
            -> Fid
@@ -469,7 +496,7 @@ instance Spliceable DiskV where
 instance Spliceable Process where
   splice t p o = addProcess t (pc_fid o) p (pc_cores o) (pc_memlimit_as o)
                               (pc_memlimit_rss o) (pc_memlimit_stack o)
-                              (pc_memlimit_memlock o)
+                              (pc_memlimit_memlock o) (pc_endpoint o)
   spliceTree t p o = do
     splice t p o
     kids <- children o :: IO [Service]

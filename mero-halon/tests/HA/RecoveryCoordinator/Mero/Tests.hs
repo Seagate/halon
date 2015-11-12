@@ -93,7 +93,7 @@ import Data.Hashable (Hashable)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import HA.Castor.Tests (initialDataAddr)
-import HA.RecoveryCoordinator.Actions.Mero (syncToConfd)
+import HA.RecoveryCoordinator.Actions.Mero (getSpielAddress, syncToConfd)
 import Mero
 import Mero.Notification (finalize)
 import Network.CEP (defineSimple, liftProcess)
@@ -130,7 +130,8 @@ remotableDecl [ [d|
 #ifdef USE_MERO
 testSyncRules :: [Definitions LoopState ()]
 testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent _ SpielSync _) -> do
-  syncToConfd
+  Just sa <- getSpielAddress
+  Just _ <- syncToConfd sa
   liftProcess $ say "Finished sync to confd"
 #endif
 
@@ -625,7 +626,7 @@ testRCsyncToConfd host transport = do
   eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
   _ <- runRCEx (eq, IgnitionArguments [nid]) testSyncRules rGroup
 
-  promulgateEQ [nid] (initialDataAddr host host) >>= (`withMonitor` wait)
+  promulgateEQ [nid] (initialDataAddr host host 8) >>= (`withMonitor` wait)
   "InitialLoad" :: String <- expect
 
   liftIO $ appendFile "/tmp/strlog" "about to syncToConfd\n"

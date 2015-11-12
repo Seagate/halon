@@ -1,3 +1,4 @@
+{-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -43,7 +44,7 @@ import System.IO.Unsafe (unsafePerformIO)
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
 
 -- | m0_reqh
-data ReqHV
+data {-# CTYPE "rpc/rpc_machine.h" "struct m0_reqh" #-} ReqHV
 
 -- | Extract the request handler from RPC machine
 rm_reqh :: RPCMachine -> Ptr ReqHV
@@ -51,20 +52,21 @@ rm_reqh (RPCMachine rpcmach) = unsafePerformIO $
   #{peek struct m0_rpc_machine, rm_reqh} rpcmach
 
 -- | m0_spiel
-data SpielContextV
+data {-# CTYPE "spiel/spiel.h" "struct m0_spiel" #-} SpielContextV
 
 -- | Size of m0_spiel struct for allocation
 m0_spiel_size :: Int
 m0_spiel_size = #{size struct m0_spiel}
 
-foreign import ccall "spiel.h m0_spiel_start"
+-- XXX FIXME: ccall/capi const
+foreign import ccall "spiel/spiel.h m0_spiel_start"
   c_spiel_start :: Ptr SpielContextV
                 -> Ptr ReqHV
                 -> Ptr CString
                 -> CString
                 -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_stop"
+foreign import capi "spiel/spiel.h m0_spiel_stop"
   c_spiel_stop :: Ptr SpielContextV
                -> IO ()
 
@@ -73,42 +75,52 @@ foreign import ccall "spiel.h m0_spiel_stop"
 ---------------------------------------------------------------
 
 -- | m0_spiel_tx
-data SpielTransactionV
+data {-# CTYPE "spiel/spiel.h" "struct m0_spiel_tx" #-} SpielTransactionV
 
 -- | Size of m0_spiel_tx struct for allocation
 m0_spiel_tx_size :: Int
 m0_spiel_tx_size = #{size struct m0_spiel_tx}
 
-foreign import ccall "spiel.h m0_spiel_tx_open"
+foreign import capi "spiel/spiel.h m0_spiel_tx_open"
   c_spiel_tx_open :: Ptr SpielContextV
                   -> Ptr SpielTransactionV
-                  -> IO (Ptr SpielTransactionV)
+                  -> IO ()
 
-foreign import ccall "spiel.h m0_spiel_tx_close"
+foreign import capi "spiel/spiel.h m0_spiel_tx_close"
   c_spiel_tx_close :: Ptr SpielTransactionV
                    -> IO ()
 
-foreign import ccall "spiel.h m0_spiel_tx_commit"
+foreign import capi "spiel/spiel.h m0_spiel_tx_commit"
   c_spiel_tx_commit :: Ptr SpielTransactionV
                     -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_tx_commit_forced"
+foreign import capi "spiel/spiel.h m0_spiel_tx_commit_forced"
   c_spiel_tx_commit_forced :: Ptr SpielTransactionV
                            -> Bool -- ^ Forced - used as bool
                            -> Word64 -- ^ ver_forced
-                           -> Word32 -- ^ Quorum
+                           -> Ptr Word32 -- ^ Quorum
                            -> IO CInt
+
+foreign import capi "spiel/spiel.h m0_spiel_tx_validate"
+  c_spiel_tx_validate :: Ptr SpielTransactionV
+                      -> IO CInt
+
+foreign import capi "spiel/spiel.h m0_spiel_tx_dump"
+  c_spiel_tx_dump :: Ptr SpielTransactionV
+                  -> CString
+                  -> IO CInt
 
 ---------------------------------------------------------------
 -- Configuration management                                  --
 ---------------------------------------------------------------
 
-foreign import ccall "spiel.h m0_spiel_profile_add"
+foreign import capi "spiel/spiel.h m0_spiel_profile_add"
   c_spiel_profile_add :: Ptr SpielTransactionV
                       -> Ptr Fid
                       -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_filesystem_add"
+-- XXX FIXME: ccall/capi const
+foreign import ccall "spiel/spiel.h m0_spiel_filesystem_add"
   c_spiel_filesystem_add :: Ptr SpielTransactionV
                          -> Ptr Fid -- ^ fid of the filesystem
                          -> Ptr Fid -- ^ fid of the parent profile
@@ -118,7 +130,7 @@ foreign import ccall "spiel.h m0_spiel_filesystem_add"
                          -> Ptr (Ptr CChar) -- ^ NULL-terminated array of command-line like parameters
                          -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_node_add"
+foreign import capi "spiel/spiel.h m0_spiel_node_add"
   c_spiel_node_add :: Ptr SpielTransactionV
                    -> Ptr Fid -- ^ fid of the filesystem
                    -> Ptr Fid -- ^ fid of the parent profile
@@ -129,7 +141,7 @@ foreign import ccall "spiel.h m0_spiel_node_add"
                    -> Ptr Fid -- ^ Pool fid
                    -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_process_add"
+foreign import capi "spiel/spiel.h m0_spiel_process_add"
   c_spiel_process_add :: Ptr SpielTransactionV
                       -> Ptr Fid -- ^ fid of the filesystem
                       -> Ptr Fid -- ^ fid of the parent profile
@@ -138,16 +150,17 @@ foreign import ccall "spiel.h m0_spiel_process_add"
                       -> Word64
                       -> Word64
                       -> Word64
+                      -> CString -- ^ Process endpoint
                       -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_service_add"
+foreign import capi "spiel/spiel.h m0_spiel_service_add"
   c_spiel_service_add :: Ptr SpielTransactionV
                       -> Ptr Fid -- ^ fid of the filesystem
                       -> Ptr Fid -- ^ fid of the parent profile
                       -> Ptr ServiceInfo
                       -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_device_add"
+foreign import capi "spiel/spiel.h m0_spiel_device_add"
   c_spiel_device_add :: Ptr SpielTransactionV
                      -> Ptr Fid -- ^ fid of the filesystem
                      -> Ptr Fid -- ^ fid of the parent service
@@ -161,28 +174,28 @@ foreign import ccall "spiel.h m0_spiel_device_add"
                      -> CString
                      -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_pool_add"
+foreign import capi "spiel/spiel.h m0_spiel_pool_add"
   c_spiel_pool_add :: Ptr SpielTransactionV
                    -> Ptr Fid -- ^ fid of the pool
                    -> Ptr Fid -- ^ fid of the parent filesystem
                    -> Word32  -- ^ pool order
                    -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_rack_add"
+foreign import capi "spiel/spiel.h m0_spiel_rack_add"
   c_spiel_rack_add :: Ptr SpielTransactionV
                    -> Ptr Fid -- ^ fid of the rack
                    -> Ptr Fid -- ^ fid of the parent filesystem
                    -> IO CInt
 
 
-foreign import ccall "spiel.h m0_spiel_enclosure_add"
+foreign import capi "spiel/spiel.h m0_spiel_enclosure_add"
   c_spiel_enclosure_add :: Ptr SpielTransactionV
                         -> Ptr Fid -- ^ fid of the enclosure
                         -> Ptr Fid -- ^ fid of the parent rack
                         -> IO CInt
 
 
-foreign import ccall "spiel.h m0_spiel_pool_version_add"
+foreign import capi "spiel/spiel.h m0_spiel_pool_version_add"
   c_spiel_pool_version_add :: Ptr SpielTransactionV
                            -> Ptr Fid -- ^ fid of the pver
                            -> Ptr Fid -- ^ fid of the parent pool
@@ -191,53 +204,53 @@ foreign import ccall "spiel.h m0_spiel_pool_version_add"
                            -> Ptr PDClustAttr
                            -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_rack_v_add"
+foreign import capi "spiel/spiel.h m0_spiel_rack_v_add"
   c_spiel_rack_v_add :: Ptr SpielTransactionV
                      -> Ptr Fid -- ^ fid of the filesystem
                      -> Ptr Fid -- ^ fid of the parent profile
                      -> Ptr Fid -- ^ Node
                      -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_enclosure_v_add"
+foreign import capi "spiel/spiel.h m0_spiel_enclosure_v_add"
   c_spiel_enclosure_v_add :: Ptr SpielTransactionV
                           -> Ptr Fid -- ^ fid of the filesystem
                           -> Ptr Fid -- ^ fid of the parent profile
                           -> Ptr Fid -- ^ Node
                           -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_controller_v_add"
+foreign import capi "spiel/spiel.h m0_spiel_controller_v_add"
   c_spiel_controller_v_add :: Ptr SpielTransactionV
                            -> Ptr Fid -- ^ fid of the filesystem
                            -> Ptr Fid -- ^ fid of the parent profile
                            -> Ptr Fid -- ^ Node
                            -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_disk_v_add"
+foreign import capi "spiel/spiel.h m0_spiel_disk_v_add"
   c_spiel_disk_v_add :: Ptr SpielTransactionV
                      -> Ptr Fid -- ^ fid of the disk_v
                      -> Ptr Fid -- ^ fid of the parent controller_v
                      -> Ptr Fid -- ^ Real
                      -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_pool_version_done"
+foreign import capi "spiel/spiel.h m0_spiel_pool_version_done"
   c_spiel_pool_version_done :: Ptr SpielTransactionV
                             -> Ptr Fid -- ^ fid of the filesystem
                             -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_controller_add"
+foreign import capi "spiel/spiel.h m0_spiel_controller_add"
   c_spiel_controller_add :: Ptr SpielTransactionV
                          -> Ptr Fid -- ^ fid of the filesystem
                          -> Ptr Fid -- ^ fid of the parent profile
                          -> Ptr Fid -- ^ Node
                          -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_disk_add"
+foreign import capi "spiel/spiel.h m0_spiel_disk_add"
   c_spiel_disk_add :: Ptr SpielTransactionV
                    -> Ptr Fid -- ^ fid of the filesystem
                    -> Ptr Fid -- ^ fid of the parent profile
                    -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_element_del"
+foreign import capi "spiel/spiel.h m0_spiel_element_del"
   c_spiel_element_del :: Ptr SpielTransactionV
                       -> Ptr Fid -- ^ fid of the filesystem
                       -> IO CInt
@@ -255,88 +268,88 @@ newtype ServiceHealth = ServiceHealth CInt
   , _sh_unknown = M0_HEALTH_UNKNOWN
  }
 
-foreign import ccall "spiel.h m0_spiel_service_init"
+foreign import capi "spiel/spiel.h m0_spiel_service_init"
   c_spiel_service_init :: Ptr SpielContextV
                        -> Ptr Fid
                        -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_service_start"
+foreign import capi "spiel/spiel.h m0_spiel_service_start"
   c_spiel_service_start :: Ptr SpielContextV
                         -> Ptr Fid
                         -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_service_stop"
+foreign import capi "spiel/spiel.h m0_spiel_service_stop"
   c_spiel_service_stop :: Ptr SpielContextV
                        -> Ptr Fid
                        -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_service_health"
+foreign import capi "spiel/spiel.h m0_spiel_service_health"
   c_spiel_service_health :: Ptr SpielContextV
                          -> Ptr Fid
                          -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_service_quiesce"
+foreign import capi "spiel/spiel.h m0_spiel_service_quiesce"
   c_spiel_service_quiesce :: Ptr SpielContextV
                           -> Ptr Fid
                           -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_device_attach"
+foreign import capi "spiel/spiel.h m0_spiel_device_attach"
   c_spiel_device_attach :: Ptr SpielContextV
                         -> Ptr Fid
                         -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_device_detach"
+foreign import capi "spiel/spiel.h m0_spiel_device_detach"
   c_spiel_device_detach :: Ptr SpielContextV
                         -> Ptr Fid
                         -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_device_format"
+foreign import capi "spiel/spiel.h m0_spiel_device_format"
   c_spiel_device_format :: Ptr SpielContextV
                         -> Ptr Fid
                         -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_process_stop"
+foreign import capi "spiel/spiel.h m0_spiel_process_stop"
   c_spiel_process_stop :: Ptr SpielContextV
                        -> Ptr Fid
                        -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_process_reconfig"
+foreign import capi "spiel/spiel.h m0_spiel_process_reconfig"
   c_spiel_process_reconfig :: Ptr SpielContextV
                            -> Ptr Fid
                            -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_process_health"
+foreign import capi "spiel/spiel.h m0_spiel_process_health"
   c_spiel_process_health :: Ptr SpielContextV
                          -> Ptr Fid
                          -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_process_quiesce"
+foreign import capi "spiel/spiel.h m0_spiel_process_quiesce"
   c_spiel_process_quiesce :: Ptr SpielContextV
                           -> Ptr Fid
                           -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_process_list_services"
+foreign import capi "spiel/spiel.h m0_spiel_process_list_services"
   c_spiel_process_list_services :: Ptr SpielContextV
                                 -> Ptr Fid
                                 -> Ptr (Ptr RunningService)
                                 -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_pool_repair_start"
+foreign import capi "spiel/spiel.h m0_spiel_pool_repair_start"
   c_spiel_pool_repair_start :: Ptr SpielContextV
                             -> Ptr Fid
                             -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_pool_repair_quiesce"
+foreign import capi "spiel/spiel.h m0_spiel_pool_repair_quiesce"
   c_spiel_pool_repair_quiesce :: Ptr SpielContextV
                               -> Ptr Fid
                               -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_pool_rebalance_start"
+foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_start"
   c_spiel_pool_rebalance_start :: Ptr SpielContextV
                                -> Ptr Fid
                                -> IO CInt
 
-foreign import ccall "spiel.h m0_spiel_pool_rebalance_quiesce"
+foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_quiesce"
   c_spiel_pool_rebalance_quiesce :: Ptr SpielContextV
                                  -> Ptr Fid
                                  -> IO CInt

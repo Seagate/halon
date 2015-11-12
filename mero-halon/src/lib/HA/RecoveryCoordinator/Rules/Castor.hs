@@ -12,6 +12,7 @@ module HA.RecoveryCoordinator.Rules.Castor where
 
 import Control.Distributed.Process (say)
 import HA.EventQueue.Types
+import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Mero
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
@@ -23,16 +24,18 @@ import Network.CEP
 
 castorRules :: Definitions LoopState ()
 castorRules = do
-    defineSimple "Initial-data-load" $ \(HAEvent _ CI.InitialData{..} _) -> do
+    defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
       mapM_ goRack id_racks
 #ifdef USE_MERO
       filesystem <- initialiseConfInRG
       loadMeroGlobals id_m0_globals
       loadMeroServers filesystem id_m0_servers
-      failureSets <- generateFailureSets 2 2 1 -- TODO real values
+      failureSets <- generateFailureSets 0 1 0 -- TODO real values
       createPoolVersions filesystem failureSets
 #endif
       liftProcess $ say "Loaded initial data"
+      syncGraph
+      messageProcessed eid
   where
     goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
       registerRack rack

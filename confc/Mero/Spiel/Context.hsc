@@ -52,16 +52,17 @@ import System.IO.Unsafe ( unsafePerformIO )
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
 
 -- | @schema.h m0_cfg_storage_device_interface_type@
-data StorageDeviceInterfaceType =
-    M0_CFG_DEVICE_INTERFACE_ATA
-  | M0_CFG_DEVICE_INTERFACE_SATA
-  | M0_CFG_DEVICE_INTERFACE_SCSI
-  | M0_CFG_DEVICE_INTERFACE_SATA2
-  | M0_CFG_DEVICE_INTERFACE_SCSI2
-  | M0_CFG_DEVICE_INTERFACE_SAS
-  | M0_CFG_DEVICE_INTERFACE_SAS2
-  | M0_CFG_DEVICE_INTERFACE_UNKNOWN Int
-  deriving (Eq, Show)
+data {-# CTYPE "conf/schema.h" "struct m0_cfg_storage_device_interface_type" #-}
+  StorageDeviceInterfaceType =
+      M0_CFG_DEVICE_INTERFACE_ATA
+    | M0_CFG_DEVICE_INTERFACE_SATA
+    | M0_CFG_DEVICE_INTERFACE_SCSI
+    | M0_CFG_DEVICE_INTERFACE_SATA2
+    | M0_CFG_DEVICE_INTERFACE_SCSI2
+    | M0_CFG_DEVICE_INTERFACE_SAS
+    | M0_CFG_DEVICE_INTERFACE_SAS2
+    | M0_CFG_DEVICE_INTERFACE_UNKNOWN Int
+    deriving (Eq, Show)
 
 instance Enum StorageDeviceInterfaceType where
   toEnum #{const M0_CFG_DEVICE_INTERFACE_ATA} = M0_CFG_DEVICE_INTERFACE_ATA
@@ -89,13 +90,14 @@ instance Storable StorageDeviceInterfaceType where
   poke p s = poke (castPtr p) $ fromEnum s
 
 -- | @schema.h m0_cfg_storage_device_media_type@
-data StorageDeviceMediaType =
-    M0_CFG_DEVICE_MEDIA_DISK
-  | M0_CFG_DEVICE_MEDIA_SSD
-  | M0_CFG_DEVICE_MEDIA_TAPE
-  | M0_CFG_DEVICE_MEDIA_ROM
-  | M0_CFG_DEVICE_MEDIA_UNKNOWN Int
-  deriving (Eq, Show)
+data {-# CTYPE "conf/schema.h" "struct m0_cfg_storage_device_media_type" #-}
+  StorageDeviceMediaType =
+      M0_CFG_DEVICE_MEDIA_DISK
+    | M0_CFG_DEVICE_MEDIA_SSD
+    | M0_CFG_DEVICE_MEDIA_TAPE
+    | M0_CFG_DEVICE_MEDIA_ROM
+    | M0_CFG_DEVICE_MEDIA_UNKNOWN Int
+    deriving (Eq, Show)
 
 instance Enum StorageDeviceMediaType where
   toEnum #{const M0_CFG_DEVICE_MEDIA_DISK} = M0_CFG_DEVICE_MEDIA_DISK
@@ -117,10 +119,11 @@ instance Storable StorageDeviceMediaType where
   poke p s = poke (castPtr p) $ fromEnum s
 
 -- | @spiel.h m0_spiel_running_svc@
-data RunningService = RunningService {
-    _rs_fid :: Fid
-  , _rs_name :: String
-} deriving (Eq, Show)
+data {-# CTYPE "spiel/spiel.h" "struct m0_spiel_running_svc" #-} RunningService =
+  RunningService {
+      _rs_fid :: Fid
+    , _rs_name :: String
+  } deriving (Eq, Show)
 
 instance Storable RunningService where
   sizeOf _ = #{size struct m0_spiel_running_svc}
@@ -135,11 +138,12 @@ instance Storable RunningService where
     #{poke struct m0_spiel_running_svc, spls_name} p c_name
 
 -- @spiel.h m0_spiel_service_info@
-data ServiceInfo = ServiceInfo {
-    _svi_type :: ServiceType
-  , _svi_endpoints :: [String]
-  , _svi_u :: ServiceParams
-} deriving (Eq, Show)
+data {-# CTYPE "spiel/spiel.h" "struct m0_spiel_service_info" #-} ServiceInfo =
+  ServiceInfo {
+      _svi_type :: ServiceType
+    , _svi_endpoints :: [String]
+    , _svi_u :: ServiceParams
+  } deriving (Eq, Show)
 
 instance Storable ServiceInfo where
   sizeOf _ = #{size struct m0_spiel_service_info}

@@ -67,6 +67,23 @@ class ConfObj a where
 
 data AnyConfObj = forall a. ConfObj a => AnyConfObj a
 
+data SpielAddress = SpielAddress {
+    sa_confds :: [String]
+  , sa_rm :: String
+}  deriving (Eq, Generic, Show, Typeable)
+
+instance Binary SpielAddress
+instance Hashable SpielAddress
+
+data SyncToConfd =
+      SyncToConfdServersInRG
+    | SyncToTheseServers SpielAddress
+    | SyncDumpToFile FilePath
+  deriving (Eq, Generic, Show, Typeable)
+
+instance Binary SyncToConfd
+instance Hashable SyncToConfd
+
 --------------------------------------------------------------------------------
 -- Conf tree in the resource graph
 --------------------------------------------------------------------------------
@@ -153,6 +170,7 @@ data Process = Process {
   , r_mem_stack :: Word64
   , r_mem_memlock :: Word64
   , r_cores :: Bitmap
+  , r_endpoint :: String
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary Process

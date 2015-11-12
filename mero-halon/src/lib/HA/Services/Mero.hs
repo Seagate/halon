@@ -53,7 +53,7 @@ import Control.Distributed.Process.Closure
   )
 import Control.Distributed.Static
   ( staticApply )
-import Control.Distributed.Process hiding (send)
+import Control.Distributed.Process
 import Control.Monad (forever, when, void)
 import Data.ByteString (ByteString)
 import Data.Maybe (listToMaybe)

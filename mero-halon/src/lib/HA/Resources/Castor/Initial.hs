@@ -127,6 +127,7 @@ data M0Host = M0Host {
     -- ^ Treated as a bitmap of length (no_cpu) indicating which CPUs to use
   , m0h_services :: [M0Service]
   , m0h_devices :: [M0Device]
+  , m0h_endpoint :: String
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Binary M0Host

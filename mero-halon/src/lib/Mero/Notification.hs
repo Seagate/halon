@@ -49,6 +49,8 @@ import qualified Control.Distributed.Process.Node as CH ( runProcess )
 import Control.Monad ( void )
 import Control.Monad.Trans (MonadIO)
 import Control.Monad.Reader ( ask )
+import Control.Monad.Catch (MonadCatch, SomeException)
+import qualified Control.Monad.Catch as Catch
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.Typeable (Typeable)
@@ -114,19 +116,23 @@ globalEndpointRef = unsafePerformIO $ newMVar emptyEndpointRef
 -- concurrently by other callers at the same time. For this reason you
 -- should not use any sort of finalizers on it here: use 'finalize'
 -- instead.
-withServerEndpoint :: forall m a. (MonadIO m, MonadProcess m)
+--
+-- 
+withServerEndpoint :: forall m a. (MonadIO m, MonadProcess m, MonadCatch m)
                    => RPCAddress
                    -> (ServerEndpoint -> m a)
                    -> m a
 withServerEndpoint addr f = liftProcess (initializeInternal addr)
                             >>= (`withMVarProcess` f)
   where
+    trySome :: MonadCatch m => m a -> m (Either SomeException a)
+    trySome = Catch.try
     withMVarProcess :: (MVar EndpointRef, EndpointRef, ServerEndpoint)
                     -> (ServerEndpoint -> m a) -> m a
     withMVarProcess (m, ref, ep) p = do
       -- Increase the refcount and run the process with the lock released
       void . liftIO $ putMVar m (ref { _erRefCount = _erRefCount ref + 1 })
-      v <- p ep
+      ev <- trySome $ p ep
       -- Get the possibly updated endpoint reference after our process
       -- has finished and decrease the count
       newRef <- liftIO $ takeMVar m >>= \x ->
@@ -139,9 +145,7 @@ withServerEndpoint addr f = liftProcess (initializeInternal addr)
         -- We're the last worker, someone wanted to finalize and we
         -- have the lock: just call 'finalizeInternal'.
         True -> finalizeInternal m
-
-      -- no matter what happened with the endpoint, return the result
-      return v
+      either Catch.throwM return ev
 
 -- | Initialiazes the 'EndpointRef' subsystem.
 --
@@ -153,8 +157,8 @@ withServerEndpoint addr f = liftProcess (initializeInternal addr)
 -- 'withServerEndpoint'.
 initializeInternal :: RPCAddress -- ^ Listen address.
                    -> Process (MVar EndpointRef, EndpointRef, ServerEndpoint)
-initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \case
-  ref@(EndpointRef { _erServerEndpoint = Just ep }) -> do
+initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case ref of
+  EndpointRef { _erServerEndpoint = Just ep } -> do
     say "initializeInternal: using existing endpoint"
     return (globalEndpointRef, ref, ep)
   EndpointRef { _erServerEndpoint = Nothing } -> do
@@ -162,12 +166,14 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \case
     lnode <- fmap processNode ask
     self <- getSelfPid
     say $ "listening at " ++ show addr
-    liftM0 $ do
-      initRPC
-      ep <- listen addr listenCallbacks
-      initHAState (ha_state_get self lnode) (ha_state_set lnode)
-      let ref = emptyEndpointRef { _erServerEndpoint = Just ep }
-      return (globalEndpointRef, ref, ep)
+    onException 
+      (liftM0 $ do
+        initRPC
+        ep <- listen addr listenCallbacks
+        initHAState (ha_state_get self lnode) (ha_state_set lnode)
+        let ref' = emptyEndpointRef { _erServerEndpoint = Just ep }
+        return (globalEndpointRef, ref', ep))
+      (liftIO $ putMVar globalEndpointRef ref)
   where
     listenCallbacks = ListenCallbacks {
       receive_callback = \_ _ -> return False

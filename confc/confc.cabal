@@ -33,7 +33,10 @@ Library
                      , inline-c
                      , rpclite
 
-  ghc-options:  -Wall -fprof-auto -fprof-auto-calls -fPIC
+  -- cc-options aren't used when compiling Haskell files, and this is necessary
+  -- for using CApiFFI, thus we need to pass those options here as well
+  ghc-options:  -Wall -fprof-auto -fprof-auto-calls -fPIC -optc-Wno-attributes
+                -optc-Werror -optc-g -optc-DM0_INTERNAL= -optc-DM0_EXTERN=extern
   default-extensions:  CPP
   if flag(maintainer)
     ghc-options: -Werror
