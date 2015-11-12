@@ -33,7 +33,6 @@ import Control.Distributed.Process
   ( ProcessId
   , usend
   )
-import Control.Monad (void)
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set        as S
@@ -81,7 +80,7 @@ modifyLocalGraph k = do
 
 -- | Explicitly syncs the graph to all replicas
 syncGraph :: PhaseM LoopState l ()
-syncGraph = void . liftProcess . G.sync =<< getLocalGraph
+syncGraph = modifyLocalGraph $ liftProcess . G.sync
 
 -- | Declare that we have finished handling a message to the EQ, meaning it can
 --   delete it.
