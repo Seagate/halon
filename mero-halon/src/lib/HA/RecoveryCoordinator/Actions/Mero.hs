@@ -40,28 +40,23 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 
-import qualified Control.Distributed.Process as DP
-import Control.Monad (forM_)
-import Control.Applicative
-
-import Data.Foldable (traverse_)
-
-import Control.Monad (void)
-import Data.Foldable
-import Data.Maybe (catMaybes, listToMaybe)
-import Data.Typeable (cast)
-
-import Network.CEP
-
-import Data.List (nub)
 import Mero.ConfC (Fid, PDClustAttr(..), Word128(..), withConf, Root, ServiceType(..))
 import Mero.M0Worker (liftM0)
 import Mero.Notification
 import Mero.Spiel hiding (start)
-import Network.RPC.RPCLite (getRPCMachine_se, rpcAddress, RPCAddress(..))
-import Mero.Spiel hiding (start)
 import qualified Mero.Spiel
 
+import qualified Control.Distributed.Process as DP
+import Control.Monad (forM_, void)
+import Control.Applicative
+
+import Data.Foldable (traverse_)
+import Data.List (nub)
+import Data.Maybe (catMaybes, listToMaybe)
+import Data.Typeable (cast)
+
+import Network.CEP
+import Network.RPC.RPCLite (getRPCMachine_se, rpcAddress, RPCAddress(..))
 
 lookupConfObjByFid :: (G.Resource a, M0.ConfObj a)
                    => Fid

@@ -38,7 +38,7 @@ import Control.Monad
 
 import Data.Binary (Binary)
 import Data.Foldable
-import Data.Maybe (catMaybes, listToMaybe)
+import Data.Maybe (catMaybes)
 import Data.Text (Text, pack)
 
 import Network.CEP
@@ -78,7 +78,7 @@ onCommandAck :: (Text -> NodeCmd)
            -> Maybe (StorageDevice, String)
            -> Process (Maybe CommandAck)
 onCommandAck _ _ _ Nothing = return Nothing
-onCommandAck k (HAEvent _ cmd _) _ (Just (sdev, path)) =
+onCommandAck k (HAEvent _ cmd _) _ (Just (_, path)) =
   case commandAckType cmd of
     Just x | (k . pack $ path) == x -> return $ Just cmd
            | otherwise      -> return Nothing
@@ -209,7 +209,7 @@ castorRules = do
       directly smart $ switch [smartSuccess, smartFailure]
 
       setPhaseIf smartSuccess onSmartSuccess $ \_ -> do
-        Just (sdev, path) <- get Local
+        Just (sdev, _) <- get Local
         markResetComplete sdev
         markSMARTTestComplete sdev
         markResetComplete sdev
@@ -221,7 +221,7 @@ castorRules = do
         put Local Nothing
 
       setPhaseIf smartFailure onSmartFailure $ \_ -> do
-        Just (sdev, path) <- get Local
+        Just (sdev, _) <- get Local
         markResetComplete sdev
         markSMARTTestComplete sdev
         markResetComplete sdev
