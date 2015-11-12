@@ -1,3 +1,4 @@
+{-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE EmptyDataDecls #-}
@@ -77,7 +78,7 @@ import System.IO.Unsafe ( unsafePerformIO )
 -- Generic Configuration
 --------------------------------------------------------------------------------
 
-data Obj
+data {-# CTYPE "conf/obj.h" "struct m0_conf_obj" #-} Obj
 
 --------------------------------------------------------------------------------
 -- Conf objects
@@ -198,7 +199,7 @@ data ObjV = ObjV
   } deriving (Show)
 
 -- | Temporary workaround for MERO-1088
-foreign import ccall "confc_helpers.h cv_real_fid"
+foreign import capi "confc_helpers.h cv_real_fid"
   c_cv_real_fid :: Ptr ObjV
                 -> IO (Ptr Fid)
 
@@ -234,7 +235,7 @@ data Node = Node
   } deriving (Show)
 
 -- | Temporary workaround for MERO-1088
-foreign import ccall "confc_helpers.h cn_pool_fid"
+foreign import capi "confc_helpers.h cn_pool_fid"
   c_cn_pool_fid :: Ptr Node
                 -> IO (Ptr Fid)
 
@@ -397,7 +398,7 @@ data Controller = Controller
   } deriving Show
 
 -- | Temporary workaround for MERO-1088
-foreign import ccall "confc_helpers.h cc_node_fid"
+foreign import capi "confc_helpers.h cc_node_fid"
   c_cc_node_fid :: Ptr Controller
                 -> IO (Ptr Fid)
 
@@ -444,7 +445,7 @@ getSdev po = do
            }
 
 -- | Temporary workaround for MERO-1094
-foreign import ccall "confc_helpers.h ck_sdev_fid"
+foreign import capi "confc_helpers.h ck_sdev_fid"
   c_ck_sdev_fid :: Ptr Disk
                 -> IO (Ptr Fid)
 
@@ -464,34 +465,42 @@ getDisk po =
 -- Casting helpers
 --------------------------------------------------------------------------------
 
-foreign import ccall unsafe confc_cast_root :: Ptr Obj
-                                            -> IO (Ptr Root)
--- foreign import ccall unsafe confc_cast_profile :: Ptr Obj
+foreign import capi unsafe "confc_helpers.h confc_cast_root"
+  confc_cast_root :: Ptr Obj -> IO (Ptr Root)
+-- foreign import capi unsafe confc_cast_profile :: Ptr Obj
 --                                                -> IO (Ptr Profile)
-foreign import ccall unsafe confc_cast_sdev :: Ptr Obj
-                                            -> IO (Ptr Service)
-foreign import ccall unsafe confc_cast_service :: Ptr Obj
-                                               -> IO (Ptr Service)
-foreign import ccall unsafe confc_cast_node :: Ptr Obj
-                                            -> IO (Ptr Node)
-foreign import ccall unsafe confc_cast_pool :: Ptr Obj
-                                            -> IO (Ptr Pool)
-foreign import ccall unsafe confc_cast_pver :: Ptr Obj
-                                            -> IO (Ptr PVer)
-foreign import ccall unsafe confc_cast_objv :: Ptr Obj
-                                            -> IO (Ptr ObjV)
-foreign import ccall unsafe confc_cast_filesystem :: Ptr Obj
-                                                  -> IO (Ptr Filesystem)
-foreign import ccall unsafe confc_cast_disk :: Ptr Obj
-                                            -> IO (Ptr Disk)
-foreign import ccall unsafe confc_cast_process :: Ptr Obj
-                                               -> IO (Ptr Process)
--- foreign import ccall unsafe confc_cast_rack :: Ptr Obj
+foreign import capi unsafe "confc_helpers.h confc_cast_sdev"
+  confc_cast_sdev :: Ptr Obj -> IO (Ptr Service)
+
+foreign import capi unsafe "confc_helpers.h confc_cast_service"
+  confc_cast_service :: Ptr Obj -> IO (Ptr Service)
+
+foreign import capi unsafe "confc_helpers.h confc_cast_node"
+  confc_cast_node :: Ptr Obj -> IO (Ptr Node)
+
+foreign import capi unsafe "confc_helpers.h confc_cast_pool"
+  confc_cast_pool :: Ptr Obj -> IO (Ptr Pool)
+
+foreign import capi unsafe "confc_helpers.h confc_cast_pver"
+  confc_cast_pver :: Ptr Obj -> IO (Ptr PVer)
+
+foreign import capi unsafe "confc_helpers.h confc_cast_objv"
+  confc_cast_objv :: Ptr Obj -> IO (Ptr ObjV)
+
+foreign import capi unsafe "confc_helpers.h confc_cast_filesystem"
+  confc_cast_filesystem :: Ptr Obj -> IO (Ptr Filesystem)
+
+foreign import capi unsafe "confc_helpers.h confc_cast_disk"
+  confc_cast_disk :: Ptr Obj -> IO (Ptr Disk)
+
+foreign import capi unsafe "confc_helpers.h confc_cast_process"
+  confc_cast_process :: Ptr Obj -> IO (Ptr Process)
+-- foreign import capi unsafe confc_cast_rack :: Ptr Obj
 --                                             -> IO (Ptr Rack)
--- foreign import ccall unsafe confc_cast_enclosure :: Ptr Obj
+-- foreign import capi unsafe confc_cast_enclosure :: Ptr Obj
 --                                                  -> IO (Ptr Enclosure)
-foreign import ccall unsafe confc_cast_controller :: Ptr Obj
-                                                  -> IO (Ptr Controller)
+foreign import capi unsafe "confc_helpers.h confc_cast_controller"
+  confc_cast_controller :: Ptr Obj -> IO (Ptr Controller)
 
 --------------------------------------------------------------------------------
 -- Utility

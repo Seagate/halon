@@ -1,3 +1,4 @@
+{-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE EmptyDataDecls #-}
@@ -68,7 +69,8 @@ import Foreign.Storable ( Storable(..) )
 initConfC :: IO ()
 initConfC = confc_init >>= check_rc "initConfC"
 
-foreign import ccall unsafe confc_init :: IO CInt
+foreign import capi unsafe "confc_helpers.h confc_init"
+  confc_init :: IO CInt
 
 -- | Call 'Network.Transport.RPC.RPCLite.finalizeRPC' after calling
 -- 'finalizeConfC'. Or otherwise, close the 'Network.Transport.RPC.RPCTransport'
@@ -77,7 +79,8 @@ foreign import ccall unsafe confc_init :: IO CInt
 finalizeConfC :: IO ()
 finalizeConfC = confc_finalize
 
-foreign import ccall unsafe confc_finalize :: IO ()
+foreign import capi unsafe "confc_helpers.h confc_finalize"
+  confc_finalize :: IO ()
 
 -- | Wraps an IO action with calls to 'initConfC' and 'finalizeConfC'.
 withConfC :: IO a -> IO a
@@ -113,55 +116,58 @@ openRoot (RPCMachine pm) (RPCAddress addr) fid = alloca $ \ppc ->
     pc <- peek ppc
     fmap (,confc_destroy pc) $ #{peek struct m0_confc, cc_root} pc >>= getConfObj
 
-data ConfCV
+data {-# CTYPE "conf/confc.h" "struct m0_confc" #-} ConfCV
 
-foreign import ccall confc_create :: Ptr (Ptr ConfCV) -> Ptr Fid -> CString
-                                  -> Ptr RPCMachineV -> IO CInt
+foreign import capi "confc_helpers.h confc_create"
+  confc_create :: Ptr (Ptr ConfCV) -> Ptr Fid -> CString
+               -> Ptr RPCMachineV -> IO CInt
 
-foreign import ccall confc_destroy :: Ptr ConfCV -> IO ()
+foreign import capi "confc_helpers.h confc_destroy"
+  confc_destroy :: Ptr ConfCV -> IO ()
 
 -- | Root of the configuration tree. Defined in conf/obj.h
-foreign import ccall "&M0_CONF_ROOT_FID" rootFid :: Ptr Fid
+foreign import capi "&M0_CONF_ROOT_FID" rootFid :: Ptr Fid
 
 --------------------------------------------------------------------------------
 -- Generic Configuration
 --------------------------------------------------------------------------------
 
-data ObjType
+data {-# CTYPE "conf/obj.h" "struct m0_conf_obj_type" #-} ObjType
 
-foreign import ccall unsafe  "&M0_CONF_DIR_TYPE"
+foreign import capi unsafe  "&M0_CONF_DIR_TYPE"
                              m0_CONF_DIR_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_ROOT_TYPE"
+foreign import capi unsafe  "&M0_CONF_ROOT_TYPE"
                              m0_CONF_ROOT_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_PROFILE_TYPE"
+foreign import capi unsafe  "&M0_CONF_PROFILE_TYPE"
                              m0_CONF_PROFILE_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_FILESYSTEM_TYPE"
+foreign import capi unsafe  "&M0_CONF_FILESYSTEM_TYPE"
                              m0_CONF_FILESYSTEM_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_POOL_TYPE"
+foreign import capi unsafe  "&M0_CONF_POOL_TYPE"
                              m0_CONF_POOL_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_PVER_TYPE"
+foreign import capi unsafe  "&M0_CONF_PVER_TYPE"
                              m0_CONF_PVER_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_OBJV_TYPE"
+foreign import capi unsafe  "&M0_CONF_OBJV_TYPE"
                              m0_CONF_OBJV_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_NODE_TYPE"
+foreign import capi unsafe  "&M0_CONF_NODE_TYPE"
                              m0_CONF_NODE_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_PROCESS_TYPE"
+foreign import capi unsafe  "&M0_CONF_PROCESS_TYPE"
                              m0_CONF_PROCESS_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_SERVICE_TYPE"
+foreign import capi unsafe  "&M0_CONF_SERVICE_TYPE"
                              m0_CONF_SERVICE_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_SDEV_TYPE"
+foreign import capi unsafe  "&M0_CONF_SDEV_TYPE"
                              m0_CONF_SDEV_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_RACK_TYPE"
+foreign import capi unsafe  "&M0_CONF_RACK_TYPE"
                              m0_CONF_RACK_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_ENCLOSURE_TYPE"
+foreign import capi unsafe  "&M0_CONF_ENCLOSURE_TYPE"
                              m0_CONF_ENCLOSURE_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_CONTROLLER_TYPE"
+foreign import capi unsafe  "&M0_CONF_CONTROLLER_TYPE"
                              m0_CONF_CONTROLLER_TYPE :: Ptr ObjType
-foreign import ccall unsafe  "&M0_CONF_DISK_TYPE"
+foreign import capi unsafe  "&M0_CONF_DISK_TYPE"
                              m0_CONF_DISK_TYPE :: Ptr ObjType
 
 -- | Get the object type for a configuration object.
-foreign import ccall unsafe m0_conf_obj_type :: Ptr Obj -> IO (Ptr ObjType)
+foreign import ccall unsafe "conf/obj.h m0_conf_obj_type"
+  m0_conf_obj_type :: Ptr Obj -> IO (Ptr ObjType)
 
 -- | Data type to wrap around casted configuration data.
 --
@@ -258,8 +264,8 @@ getDir po = return Dir
         )
   }
 
-foreign import ccall m0_confc_readdir_sync :: Ptr Obj -> Ptr (Ptr Obj)
-                                           -> IO CInt
+foreign import capi "conf/confc.h m0_confc_readdir_sync"
+  m0_confc_readdir_sync :: Ptr Obj -> Ptr (Ptr Obj) -> IO CInt
 
 -- * Low level operations
 
@@ -271,15 +277,16 @@ type RelationFid = Ptr Fid
 
 open_sync :: Ptr Obj -> RelationFid -> IO (Ptr Obj)
 open_sync po fid = alloca $ \ppc ->
-  confc_open_sync ppc po fid >>= check_rc  "open_sync" >> peek ppc
+  confc_open_sync ppc po fid >>= check_rc "open_sync" >> peek ppc
 
-foreign import ccall confc_open_sync :: Ptr (Ptr Obj) -> Ptr Obj -> RelationFid
-                                     -> IO CInt
+foreign import capi "confc_helpers.h confc_open_sync"
+  confc_open_sync :: Ptr (Ptr Obj) -> Ptr Obj -> RelationFid -> IO CInt
 
 close :: Ptr Obj -> IO ()
 close = m0_confc_close
 
-foreign import ccall m0_confc_close :: Ptr Obj -> IO ()
+foreign import capi "conf/confc.h m0_confc_close"
+  m0_confc_close :: Ptr Obj -> IO ()
 
 --------------------------------------------------------------------------------
 -- Utility

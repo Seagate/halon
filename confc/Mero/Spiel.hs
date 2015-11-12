@@ -140,8 +140,9 @@ commitTransactionForced :: SpielTransaction
                         -> IO ()
 commitTransactionForced (SpielTransaction ptr) forced ver quorum =
   throwIfNonZero_ (\rc -> "Cannot commmit Spiel transaction: " ++ show rc)
-    $ withForeignPtr ptr $ \c_ptr ->
-      c_spiel_tx_commit_forced c_ptr forced ver quorum
+    $ withForeignPtr ptr $ \c_ptr -> alloca $ \q_ptr -> do
+      poke q_ptr quorum
+      c_spiel_tx_commit_forced c_ptr forced ver q_ptr
 
 withTransaction :: SpielContext
                 -> (SpielTransaction -> IO a)
