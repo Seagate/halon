@@ -38,7 +38,6 @@ module HA.RecoveryCoordinator.Mero
        , decodeMsg
        , lookupDLogServiceProcess
        , sendToMonitor
-       , registerMasterMonitor
        , getMultimapProcessId
        , getNoisyPingCount
        , sendToMasterMonitor
@@ -53,7 +52,6 @@ module HA.RecoveryCoordinator.Mero
 import Prelude hiding ((.), id, mapM_)
 import HA.EventQueue.Types (HAEvent(..))
 import HA.Resources
-import HA.Resources.Castor (Host(..))
 import HA.Service
 import HA.Services.DecisionLog
 import HA.Services.Monitor
@@ -104,23 +102,6 @@ data GetMultimapProcessId =
 
 instance Binary GetMultimapProcessId
 
-waitServiceToStart :: Service a
-                   -> HAEvent ServiceStartedMsg
-                   -> LoopState
-                   -> l
-                   -> Process (Maybe (HAEvent ServiceStartedMsg))
-waitServiceToStart s evt@(HAEvent _ msg _) g l = do
-    res <- notHandled evt g l
-    case res of
-      Nothing -> return Nothing
-      Just _  -> do
-        ServiceStarted n svc _ _ <- decodeP msg
-        snid                     <- getSelfNode
-        let Node nid = n
-        if serviceName svc == (serviceName s) && nid == snid
-          then return $ Just evt
-          else return Nothing
-
 notHandled :: HAEvent a -> LoopState -> l -> Process (Maybe (HAEvent a))
 notHandled evt@(HAEvent eid _ _) ls _
     | S.member eid $ lsHandled ls = return Nothing
@@ -149,48 +130,27 @@ rcInitRule :: IgnitionArguments
            -> RuleM LoopState (Maybe ProcessId) (Started LoopState (Maybe ProcessId))
 rcInitRule argv = do
     boot        <- phaseHandle "boot"
-    start_mm    <- phaseHandle "start_master_monitor"
-    mm_started  <- phaseHandle "master_monitor_started"
-    mm_conf     <- phaseHandle "master_monitor_conf"
-    nm_started  <- phaseHandle "node_monitor_started"
 
     directly boot $ do
       h   <- liftIO getHostName
       nid <- liftProcess getSelfNode
-      liftProcess . sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
-      let node = Node nid
-          host = Host h
-      liftProcess . sayRC $ "Executing on node: " ++ show nid
-      registerNode node
-      registerHost host
-      locateNodeOnHost node host
-      liftProcess $ EQT.updateEQNodes $ stationNodes argv
-      continue start_mm
-
-    directly start_mm $ do
-      nid  <- liftProcess getSelfNode
-      conf <- stealMasterMonitorConf
-      _    <- startService nid masterMonitor conf
-      continue mm_started
-
-    setPhaseIf mm_started (waitServiceToStart masterMonitor) $ \evt -> do
-      handled evt
-      ServiceStarted _ _ _ (ServiceProcess mpid) <- decodeMsg (eventPayload evt)
-      liftProcess $ link mpid
-      continue mm_conf
-
-    setPhase mm_conf $
-        \evt@(HAEvent _ (SetMasterMonitor sp@(ServiceProcess pid)) _) -> do
-      liftProcess $ usend pid =<< getSelfPid
-      registerMasterMonitor sp
-      handled evt
-      liftProcess $ sayRC $ "started master-monitor service"
-      startNodesMonitoring =<< getNodeRegularMonitors
-      continue nm_started
-
-    setPhase nm_started $ \StartMonitoringReply -> liftProcess $ do
-      sayRC $ "started monitoring nodes"
-      sayRC $ "continuing in normal mode"
+      liftProcess . sayRC $
+         unlines [ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
+                 , "Executing on node: " ++ show nid
+                 ]
+      ms   <- getNodeRegularMonitors
+      liftProcess $ do
+        self <- getSelfPid
+        EQT.updateEQNodes $ stationNodes argv
+        mpid <- spawnLocal $ do
+           link self
+           monitorProcess Master
+        link mpid
+        register masterMonitorName mpid
+        usend mpid $ StartMonitoringRequest self ms
+        _ <- expect :: Process StartMonitoringReply
+        sayRC $ "started monitoring nodes"
+        sayRC $ "continue in normal mode"
 
     start boot Nothing
 

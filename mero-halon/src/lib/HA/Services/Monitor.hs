@@ -29,6 +29,9 @@ module HA.Services.Monitor
     , regularMonitor__static
     , masterMonitor__static
     , emptyMonitorConf
+    -- * Internal
+    , monitorProcess
+    , MonitorType(..)
     ) where
 
 import Control.Distributed.Process hiding (monitor)
@@ -59,7 +62,7 @@ monitorProcess typ = run `finally` logDeath
     logDeath = do
       say $ show typ ++ " Monitor exit."
 
-bootstrapMonitor :: MonitorType -> Process ()
+bootstrapMonitor :: MonitorType -> Process ()
 bootstrapMonitor Regular = return ()
 bootstrapMonitor Master  = do
     pid <- getSelfPid
