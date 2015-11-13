@@ -21,6 +21,7 @@ import           Network.CEP
 
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Mero
+import           HA.RecoveryCoordinator.Actions.Monitor
 import           HA.Resources
 import           HA.Service
 import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
@@ -236,13 +237,13 @@ serviceRules argv = do
           registerServiceProcess n svc cfg sp
           let vitalService = serviceName regularMonitor == serviceName svc
           if vitalService
-            then do sendToMasterMonitor msg
+            then do startNodesMonitoring [msg]
                     -- EQT may not be spawn at the moment so we create a special
                     -- process that will update EQT as soon as it will see that.
                     _ <- liftProcess $ spawnAsync nodeId $
                         $(mkClosure 'EQT.updateEQNodes) (stationNodes argv)
-                    return ()
-            else sendToMonitor n msg
+                    startProcessMonitoring n =<< getRunningServices n
+            else startProcessMonitoring n [msg]
           phaseLog "info" ("Service "
                               ++ (snString . serviceName $ svc)
                               ++ " started"
@@ -272,11 +273,11 @@ serviceRules argv = do
       let vitalService = serviceName regularMonitor == serviceName svc
 
       if vitalService
-        then do sendToMasterMonitor msg
+        then do startNodesMonitoring [msg]
                 _ <- liftProcess $ spawnAsync nodeId $
                        $(mkClosure 'EQT.updateEQNodes) (stationNodes argv)
-                return ()
-        else sendToMonitor n msg
+                startProcessMonitoring n =<< getRunningServices n
+        else startProcessMonitoring n [msg]
 
       phaseLog "info" ("Service "
                           ++ (snString . serviceName $ svc)

@@ -17,7 +17,6 @@
 -- bootstrapped.
 module HA.Services.Monitor
     ( MonitorConf
-    , Processes
     , SaveProcesses(..)
     , SetMasterMonitor(..)
     , MasterMonitor(..)
@@ -30,7 +29,9 @@ module HA.Services.Monitor
     , regularMonitor__static
     , masterMonitor__static
     , emptyMonitorConf
-    , monitorConf
+    -- * Internal
+    , monitorProcess
+    , MonitorType(..)
     ) where
 
 import Control.Distributed.Process hiding (monitor)
@@ -49,22 +50,19 @@ spawnHeartbeatProcess = do
     _    <- spawnLocal $ link self >> heartbeatProcess self
     return ()
 
-monitorProcess :: MonitorType -> Processes -> Process ()
-monitorProcess typ ps@(Processes xs) = run `finally` logDeath
+monitorProcess :: MonitorType -> Process ()
+monitorProcess typ = run `finally` logDeath
   where
     run = do
       self <- getSelfPid
-      let len = show $ length xs
-      say $ show typ ++ " Monitor started on " ++ show self ++ " monitoring "
-          ++ len ++ " service(s) already"
-      st <- monitorState ps
+      say $ show typ ++ " Monitor started on " ++ show self
       spawnHeartbeatProcess
       bootstrapMonitor typ
-      execute st monitorRules
+      execute emptyMonitorState monitorRules
     logDeath = do
       say $ show typ ++ " Monitor exit."
 
-bootstrapMonitor :: MonitorType -> Process ()
+bootstrapMonitor :: MonitorType -> Process ()
 bootstrapMonitor Regular = return ()
 bootstrapMonitor Master  = do
     pid <- getSelfPid
@@ -74,10 +72,10 @@ bootstrapMonitor Master  = do
 remotableDecl [ [d|
 
     _monitorService :: MonitorConf -> Process ()
-    _monitorService (MonitorConf ps) = monitorProcess Regular ps
+    _monitorService MonitorConf = monitorProcess Regular
 
     _masterMonitorService :: MonitorConf -> Process ()
-    _masterMonitorService (MonitorConf ps) = monitorProcess Master ps
+    _masterMonitorService MonitorConf = monitorProcess Master
 
     regularMonitor :: Service MonitorConf
     regularMonitor = Service

@@ -7,12 +7,15 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeOperators              #-}
 
 module HA.RecoveryCoordinator.Actions.Service
   ( -- * Querying services
     lookupRunningService
   , isServiceRunning
   , findRunningServiceProcesses
+  , getRunningServices
+  , getNodeRegularMonitors
     -- * Registering services in the graph
   , registerService
   , registerServiceName
@@ -31,6 +34,7 @@ import HA.RecoveryCoordinator.Actions.Hardware (nodesOnHost)
 import qualified HA.ResourceGraph as G
 import HA.Resources
 import HA.Service
+import HA.Services.Monitor (MonitorConf)
 
 import Control.Category ((>>>))
 import Control.Distributed.Process
@@ -45,10 +49,14 @@ import Control.Distributed.Process
   , spawnLocal
   )
 import Control.Distributed.Process.Closure ( mkClosure, staticDecode )
-import Control.Distributed.Static (closureApply)
-import Control.Monad (void)
+import Control.Distributed.Process.Internal.Types as DP ( remoteTable, processNode )
+import Control.Distributed.Static (closureApply, unstatic)
+import Control.Monad (void, join)
+import Control.Monad.Reader (asks)
+
 import Data.Binary (encode)
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, mapMaybe, listToMaybe)
+import Data.Typeable (Typeable, cast, gcast)
 
 
 import Network.CEP hiding (get, put)
@@ -155,6 +163,52 @@ writeConfiguration sp c role = modifyLocalGraph $ \rg -> do
               writeConfig sp c role $ rg
 
     return rg'
+
+-- | Get all services running on a node, for each service create
+-- a 'ServiceStartedMsg' that could be sent further to monitor.
+getRunningServices :: Node -> PhaseM LoopState l [ServiceStartedMsg]
+getRunningServices node = do
+  rg <- getLocalGraph
+  rt <- liftProcess $ asks (remoteTable . processNode)
+
+  let spMatch :: (Typeable a, Typeable b) => a -> b -> Maybe (ServiceProcess a)
+      spMatch _ = cast
+
+      srvMatch :: (Typeable a, Typeable b) => a -> b -> Maybe (Service a)
+      srvMatch _ = cast
+
+      dictMatch :: (Typeable a, Typeable b) => a -> G.Dict (Configuration b)
+                -> Maybe (G.Dict (Configuration a))
+      dictMatch _ = gcast
+
+      dynMkMessage :: G.Res -> G.Res -> G.Res -> Maybe ServiceStartedMsg
+      dynMkMessage (G.Res dsp) (G.Res cfg) (G.Res srv) = join $
+        mkMessage cfg <$> (spMatch cfg dsp) <*> (srvMatch cfg srv)
+
+      mkMessage :: Typeable a => a -> ServiceProcess a -> Service a
+                -> Maybe ServiceStartedMsg
+      mkMessage cfg sp srv = case unstatic rt (configDict srv) of
+        Right (SomeConfigurationDict d@G.Dict) ->
+          (\G.Dict -> encodeP (ServiceStarted node srv cfg sp))
+             <$> (dictMatch cfg d)
+        Left _ -> Nothing
+
+  return $ flip mapMaybe (G.anyConnectedTo node Runs rg) $ \r@(G.Res dsp) ->
+    let mcfg  = listToMaybe $ G.anyConnectedTo dsp HasConf rg
+        msrv  = listToMaybe $ G.anyConnectedFrom InstanceOf dsp rg
+    in (join $ dynMkMessage r <$> mcfg <*> msrv :: Maybe ServiceStartedMsg)
+
+
+-- | Get Monitor Service for each running node.
+getNodeRegularMonitors :: PhaseM LoopState l [ServiceStartedMsg]
+getNodeRegularMonitors = do
+  rg <- getLocalGraph
+  return [ encodeP (ServiceStarted node srv cfg sp)
+         | node <- G.connectedTo Cluster Has rg
+         , sp   <- G.connectedTo node Runs rg :: [ServiceProcess MonitorConf]
+         , Just cfg <- return $ listToMaybe $ G.connectedTo sp HasConf rg
+         , Just srv <- return $ listToMaybe $ G.connectedFrom InstanceOf sp rg
+         ]
 
 ----------------------------------------------------------
 -- Controlling services                                 --

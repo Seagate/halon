@@ -95,6 +95,7 @@ Library
   Other-Modules:   HA.RecoveryCoordinator.Actions.Core
                    HA.RecoveryCoordinator.Actions.Hardware
                    HA.RecoveryCoordinator.Actions.Service
+                   HA.RecoveryCoordinator.Actions.Monitor
                    HA.Services.DecisionLog.CEP
                    HA.Services.DecisionLog.Types
                    HA.Services.Frontier.Command

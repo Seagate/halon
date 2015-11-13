@@ -26,6 +26,7 @@ import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Rules.Castor
 import           HA.RecoveryCoordinator.Rules.Service
+import           HA.RecoveryCoordinator.Actions.Monitor
 import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Service
@@ -36,7 +37,7 @@ import qualified HA.EQTracker as EQT
 import           HA.Services.Mero (meroRules)
 import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 #endif
-import           HA.Services.Monitor (SaveProcesses(..), regularMonitor)
+import           HA.Services.Monitor (regularMonitor)
 import           HA.Services.SSPL (ssplRules)
 
 import           System.Environment
@@ -59,6 +60,8 @@ rcRules argv additionalRules = do
       nm_started  <- phaseHandle "node_monitor_started"
       nm_start    <- phaseHandle "node_monitor_start"
       nm_failed   <- phaseHandle "node_monitor_could_not_start"
+      mm_reply    <- phaseHandle "master_monitor_reply"
+      nm_reply    <- phaseHandle "regular_monitor_reply"
       end         <- phaseHandle "end"
 
       setPhaseIf nodeup notHandled $ \(HAEvent uuid (NodeUp h pid) _) -> do
@@ -106,14 +109,22 @@ rcRules argv additionalRules = do
         ServiceStarted n svc cfg sp <- decodeMsg msg
         liftProcess $ sayRC $
           "started " ++ snString (serviceName svc) ++ " service on " ++ show sp
-        Starting uuid _ _ _ npid <- get Local
         registerServiceName svc
         registerServiceProcess n svc cfg sp
-        sendToMasterMonitor msg
+        startNodesMonitoring [msg]
+        messageProcessed msgid
+        continue mm_reply  -- XXX: retry on timeout from nm start
+
+      setPhase mm_reply $ \StartMonitoringReply -> do
+        Starting _ n _ _ _ <- get Local
+        startProcessMonitoring (Node n) =<< getRunningServices (Node n)
+        continue nm_reply -- XXX: retry on timeout from nm start
+
+      setPhase nm_reply $ \StartMonitoringReply -> do
+        Starting uuid _ _ _ npid <- get Local
         liftProcess $ sayRC $ "Sending ack to " ++ show npid
         ack npid
         liftProcess $ sayRC $ "Ack sent to " ++ show npid
-        messageProcessed msgid
         messageProcessed uuid
         finishProcessingMsg uuid
         continue end
@@ -126,7 +137,7 @@ rcRules argv additionalRules = do
         messageProcessed msgid
         Starting uuid _ _ _ _ <- get Local
         finishProcessingMsg uuid
-        continue end
+        continue end  -- XXX: retry on timeout from nm start
 
       directly end stop
 
@@ -158,11 +169,6 @@ rcRules argv additionalRules = do
       for_ res $ \sp ->
         killService sp UserStop
       messageProcessed uuid
-
-    defineSimple "save-processes" $
-      \(HAEvent uuid (SaveProcesses sp ps) _) -> do
-       writeConfiguration sp ps Current
-       messageProcessed uuid
 
     setLogger sendLogs
     serviceRules argv

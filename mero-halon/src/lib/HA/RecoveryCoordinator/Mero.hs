@@ -29,7 +29,6 @@ module HA.RecoveryCoordinator.Mero
        , module HA.RecoveryCoordinator.Actions.Service
        , IgnitionArguments(..)
        , GetMultimapProcessId(..)
-       , sayRC
        , ack
        , getSelfProcessId
        , sendMsg
@@ -39,7 +38,6 @@ module HA.RecoveryCoordinator.Mero
        , decodeMsg
        , lookupDLogServiceProcess
        , sendToMonitor
-       , registerMasterMonitor
        , getMultimapProcessId
        , getNoisyPingCount
        , sendToMasterMonitor
@@ -54,7 +52,6 @@ module HA.RecoveryCoordinator.Mero
 import Prelude hiding ((.), id, mapM_)
 import HA.EventQueue.Types (HAEvent(..))
 import HA.Resources
-import HA.Resources.Castor (Host(..))
 import HA.Service
 import HA.Services.DecisionLog
 import HA.Services.Monitor
@@ -65,12 +62,12 @@ import qualified HA.EQTracker as EQT
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Service
+import HA.RecoveryCoordinator.Actions.Monitor
 import qualified HA.ResourceGraph as G
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 
-import Control.Monad
 import Control.Wire hiding (when)
 
 import Data.Binary (Binary)
@@ -78,7 +75,6 @@ import Data.ByteString (ByteString)
 import Data.Dynamic
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as S
-import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
 import Data.Word
 
@@ -105,23 +101,6 @@ data GetMultimapProcessId =
     GetMultimapProcessId ProcessId deriving (Typeable, Generic)
 
 instance Binary GetMultimapProcessId
-
-waitServiceToStart :: Service a
-                   -> HAEvent ServiceStartedMsg
-                   -> LoopState
-                   -> l
-                   -> Process (Maybe (HAEvent ServiceStartedMsg))
-waitServiceToStart s evt@(HAEvent _ msg _) g l = do
-    res <- notHandled evt g l
-    case res of
-      Nothing -> return Nothing
-      Just _  -> do
-        ServiceStarted n svc _ _ <- decodeP msg
-        snid                     <- getSelfNode
-        let Node nid = n
-        if serviceName svc == (serviceName s) && nid == snid
-          then return $ Just evt
-          else return Nothing
 
 notHandled :: HAEvent a -> LoopState -> l -> Process (Maybe (HAEvent a))
 notHandled evt@(HAEvent eid _ _) ls _
@@ -151,95 +130,28 @@ rcInitRule :: IgnitionArguments
            -> RuleM LoopState (Maybe ProcessId) (Started LoopState (Maybe ProcessId))
 rcInitRule argv = do
     boot        <- phaseHandle "boot"
-    start_mm    <- phaseHandle "start_master_monitor"
-    mm_started  <- phaseHandle "master_monitor_started"
-    mm_conf     <- phaseHandle "master_monitor_conf"
-    nm_started  <- phaseHandle "node_monitor_started"
 
     directly boot $ do
       h   <- liftIO getHostName
       nid <- liftProcess getSelfNode
-      liftProcess . sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
-      let node = Node nid
-          host = Host h
-      liftProcess . sayRC $ "Executing on node: " ++ show nid
-      registerNode node
-      registerHost host
-      locateNodeOnHost node host
-      liftProcess $ EQT.updateEQNodes $ stationNodes argv
-      continue start_mm
-
-    directly start_mm $ do
-      nid  <- liftProcess getSelfNode
-      conf <- stealMasterMonitorConf
-      _    <- startService nid masterMonitor conf
-      continue mm_started
-
-    setPhaseIf mm_started (waitServiceToStart masterMonitor) $ \evt -> do
-      handled evt
-      ServiceStarted _ _ _ (ServiceProcess mpid) <- decodeMsg (eventPayload evt)
-      liftProcess $ link mpid
-      continue mm_conf
-
-    setPhase mm_conf $
-        \evt@(HAEvent _ (SetMasterMonitor sp@(ServiceProcess pid)) _) -> do
-      liftProcess $ usend pid =<< getSelfPid
-      registerMasterMonitor sp
-      handled evt
-      liftProcess $ sayRC $ "started master-monitor service"
-      -- We start a new monitor for any node that's started
-      registerService regularMonitor
-      nid  <- liftProcess getSelfNode
-      conf <- loadNodeMonitorConf (Node nid)
-      startService nid regularMonitor conf
-      continue nm_started
-
-    setPhaseIf nm_started (waitServiceToStart regularMonitor) $
-      \evt@(HAEvent _ msg _) -> do
-        ServiceStarted n svc cfg sp <- decodeMsg msg
-        registerServiceName svc
-        registerServiceProcess n svc cfg sp
-        sendToMasterMonitor msg
-        handled evt
-        liftProcess $ do
-          sayRC $ "started " ++ snString (serviceName svc) ++ " service"
-          sayRC $ "continuing in normal mode"
+      liftProcess $ do
+         sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
+         sayRC $ "Executing on node: " ++ show nid
+      ms   <- getNodeRegularMonitors
+      liftProcess $ do
+        self <- getSelfPid
+        EQT.updateEQNodes $ stationNodes argv
+        mpid <- spawnLocal $ do
+           link self
+           monitorProcess Master
+        link mpid
+        register masterMonitorName mpid
+        usend mpid $ StartMonitoringRequest self ms
+        _ <- expect :: Process StartMonitoringReply
+        sayRC $ "started monitoring nodes"
+        sayRC $ "continue in normal mode"
 
     start boot Nothing
-
-stealMasterMonitorConf :: PhaseM LoopState l MonitorConf
-stealMasterMonitorConf = do
-    rg <- getLocalGraph
-    let action = do
-          sp   <- lookupMasterMonitor rg
-          conf <- readConfig sp Current rg
-          return (sp, conf)
-    case action of
-      Nothing         -> return emptyMonitorConf
-      Just (sp, conf) -> do
-        let rg' = disconnectConfig sp Current >>>
-                  G.disconnect Cluster MasterMonitor sp $ rg
-        putLocalGraph rg'
-        return conf
-
-loadNodeMonitorConf :: Node -> PhaseM LoopState l MonitorConf
-loadNodeMonitorConf node = do
-    res <- lookupRunningService node regularMonitor
-    rg  <- getLocalGraph
-    let action = do
-          sp <- res
-          readConfig sp Current rg
-    return $ fromMaybe emptyMonitorConf action
-
-registerMasterMonitor :: ServiceProcess MonitorConf -> PhaseM LoopState l ()
-registerMasterMonitor sp = modifyLocalGraph $ \rg ->
-    return $ G.connect Cluster MasterMonitor sp rg
-
-lookupMasterMonitor :: G.Graph -> Maybe (ServiceProcess MonitorConf)
-lookupMasterMonitor rg =
-    case G.connectedTo Cluster MasterMonitor rg of
-      [sp] -> Just sp
-      _    -> Nothing
 
 ack :: ProcessId -> PhaseM LoopState l ()
 ack pid = liftProcess $ usend pid ()
@@ -269,29 +181,6 @@ getNoisyPingCount = do
 lookupDLogServiceProcess :: NodeId -> LoopState -> Maybe (ServiceProcess DecisionLogConf)
 lookupDLogServiceProcess nid ls =
     runningService (Node nid) decisionLog $ lsGraph ls
-
-sendToMonitor :: Serializable a => Node -> a -> PhaseM LoopState l ()
-sendToMonitor node a = do
-    res <- lookupRunningService node regularMonitor
-    forM_ res $ \(ServiceProcess pid) ->
-      liftProcess $ do
-        sayRC $ "Sent to Monitor on " ++ show node ++ " to " ++ show pid
-        usend pid a
-
--- | Sends a message to the Master Monitor.
-sendToMasterMonitor :: Serializable a => a -> PhaseM LoopState l ()
-sendToMasterMonitor a = do
-    self <- liftProcess getSelfNode
-    spm  <- fmap lookupMasterMonitor getLocalGraph
-    -- In case the `MasterMonitor` link is not established, look for a
-    -- local instance
-    spm' <- lookupRunningService (Node self) masterMonitor
-    forM_ (spm <|> spm') $ \(ServiceProcess mpid) -> liftProcess $ do
-      sayRC "Sent to Master monitor"
-      usend mpid a
-
-sayRC :: String -> Process ()
-sayRC s = say $ "Recovery Coordinator: " ++ s
 
 sendMsg :: Serializable a => ProcessId -> a -> PhaseM g l ()
 sendMsg pid a = liftProcess $ usend pid a
