@@ -14,7 +14,8 @@ module HA.Services.Mero.CEP
   ) where
 
 import HA.EventQueue.Types (HAEvent(..))
-import HA.RecoveryCoordinator.Mero
+import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Mero (lookupConfObjByFid)
 import HA.ResourceGraph
 import HA.Resources
 import HA.Service

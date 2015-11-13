@@ -6,6 +6,7 @@
 --
 
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE TemplateHaskell           #-}
@@ -14,11 +15,13 @@ module HA.RecoveryCoordinator.Rules.Service where
 
 import Prelude hiding ((.), id)
 import Control.Category
+import Control.Monad (void)
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
 import           Network.CEP
 
+import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Actions.Monitor
@@ -324,7 +327,8 @@ serviceRules argv = do
                       ++ show count
                       ++ " attempts."
                        )
-      finishProcessingMsg uuid
-      messageProcessed uuid
+      self <- liftProcess getSelfNode
+      void . liftProcess $ promulgateEQ [self] $ RecoverNode uuid n1
+      -- Message announced as processed inside RecoverNode handler
 
     start ph0 Nothing

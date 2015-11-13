@@ -22,8 +22,8 @@ import HA.Resources
 import qualified HA.Resources.Castor.Initial as MI
 import HA.Resources.TH
 
-import Data.Hashable (Hashable)
-import Data.Binary (Binary)
+import Data.Hashable (Hashable(..))
+import Data.Binary (Binary(..))
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
 import GHC.Generics (Generic)
@@ -54,6 +54,10 @@ data HostAttr =
   | HA_M0SERVER
   | HA_MEMSIZE_MB Int
   | HA_CPU_COUNT Int
+  | HA_DOWN
+    -- ^ The host is marked as down. This is a simple indication that
+    -- we should try to reach the node and have it announce itself to
+    -- the RC.
   deriving (Eq, Ord, Show, Generic, Typeable)
 
 instance Binary HostAttr

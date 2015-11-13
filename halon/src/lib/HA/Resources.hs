@@ -18,6 +18,7 @@ import Data.ByteString (ByteString)
 import Data.Function (on)
 import Data.Hashable (Hashable(..))
 import Data.Typeable (Typeable)
+import Data.UUID (UUID)
 import GHC.Generics (Generic)
 
 import HA.Resources.TH
@@ -129,3 +130,9 @@ data EpochTransition a = EpochTransition
   } deriving (Typeable, Generic)
 
 instance Binary a => Binary (EpochTransition a)
+
+-- | Sent when a node goes down and we need to try to recover it
+data RecoverNode = RecoverNode UUID Node
+  deriving (Typeable, Generic, Show, Eq)
+
+instance Binary RecoverNode

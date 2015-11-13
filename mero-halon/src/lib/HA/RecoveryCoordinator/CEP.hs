@@ -7,6 +7,7 @@
 
 {-# LANGUAGE CPP                       #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE TemplateHaskell           #-}
@@ -16,9 +17,12 @@ module HA.RecoveryCoordinator.CEP where
 import Prelude hiding ((.), id)
 import Control.Category
 import Data.Foldable (for_)
+import Data.Maybe (listToMaybe)
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
+import           Control.Monad (void)
+import           Data.UUID (nil, null)
 import           Network.CEP
 
 import           HA.EventQueue.Types
@@ -27,15 +31,19 @@ import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Rules.Castor
 import           HA.RecoveryCoordinator.Rules.Service
 import           HA.RecoveryCoordinator.Actions.Monitor
+import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Service
 import           HA.Services.DecisionLog (printLogs)
 import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
+import qualified HA.Resources.Castor as M0
 #ifdef USE_MERO
-import           HA.Services.Mero (meroRules)
 import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
+import qualified HA.Resources.Mero as M0
+import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_ONLINE, M0_NC_TRANSIENT))
+import           HA.Services.Mero (meroRules, notifyMero)
 #endif
 import           HA.Services.Monitor (regularMonitor)
 import           HA.Services.SSPL (ssplRules)
@@ -69,8 +77,23 @@ rcRules argv additionalRules = do
         let nid  = processNodeId pid
             node = Node nid
         liftProcess . sayRC $ "New node contacted: " ++ show nid
-        known <- knownResource node
-        conf <- loadNodeMonitorConf (Node nid)
+        known <- hasHostAttr HA_DOWN (Host h) >>= \case
+          False -> do
+            liftProcess . sayRC $ "Potentially new node, no revival: " ++ show node
+            knownResource node
+          True -> do
+            liftProcess . sayRC $ "Reviving old node: " ++ show node
+            unsetHostAttr (Host h) HA_DOWN
+#ifdef USE_MERO
+            g <- getLocalGraph
+            let nodes = [ M0.AnyConfObj n
+                        | (c :: M0.Controller) <- G.connectedFrom M0.At (Host h) g
+                        , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c g
+                        ]
+            notifyMero nodes M0_NC_ONLINE
+#endif
+            return True
+        conf <- loadNodeMonitorConf node
         if not known
           then do
             let host = Host h
@@ -169,6 +192,88 @@ rcRules argv additionalRules = do
       for_ res $ \sp ->
         killService sp UserStop
       messageProcessed uuid
+
+    -- A rule which tries to contact a node multiple times in specific
+    -- time intervals, asking it to announce itself back to the TS
+    -- (NodeUp) so that we may handle it again.
+    --
+    -- This rule uses RecoverNode message. This message is sent from two places:
+
+    -- - when the RC starts up, it checks whether we have any nodes in
+    -- RG marked with HA_DOWN and if yes, it fires the message for
+    -- each and tries to recover. This is in case RC dies
+    -- mid-recovery.
+    --
+    -- - when a service dies on a node: we always have a monitor
+    -- service running on nodes so if a service fails, we know we
+    -- potentially have a problem and try to recover, so we send
+    -- RecoverNode from service failure rule. This is the usual case.
+    define "recover-node" $ do
+      let expirySeconds = 300
+          maxRetries = 5
+      start_recover <- phaseHandle "start_recover"
+      try_recover <- phaseHandle "try_recover"
+      timeout_host <- phaseHandle "timeout_host"
+
+      setPhase start_recover $ \(HAEvent uuid (RecoverNode uuid' n1) _) -> do
+        startProcessingMsg uuid
+        g <- getLocalGraph
+
+        case listToMaybe (G.connectedFrom Runs n1 g) of
+          Nothing -> return ()
+          Just host -> hasHostAttr M0.HA_DOWN host >>= \case
+            -- Node not already marked as down so mark it as such and
+            -- notify mero
+            False -> do
+              setHostAttr host M0.HA_DOWN
+#ifdef USE_MERO
+              let nodes = [ M0.AnyConfObj n
+                          | (c :: M0.Controller) <- G.connectedFrom M0.At host g
+                          , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c g
+                          ]
+              notifyMero nodes M0_NC_TRANSIENT
+#endif
+              put Local (uuid, uuid', Just (n1, host, 0))
+            -- Node already marked as down, probably the RC died. Do
+            -- the simple thing and start the recovery all over: as
+            -- long as the RC doesn't die more often than a full node
+            -- timeout happens, we'll finish the recovery eventually
+            True -> put Local (uuid, uuid', Just (n1, host, 0))
+        liftProcess $ sayRC $ "Marked node down: " ++ show n1
+
+        continue try_recover
+
+      directly try_recover $ do
+        get Local >>= \case
+          (uuid, uuid', Just (Node nid, h, i)) | i >= maxRetries -> continue timeout_host
+                                               | otherwise -> do
+            hasHostAttr M0.HA_DOWN h >>= \case
+              False -> return ()
+              True -> do
+                liftProcess $ sayRC "Inside try_recover"
+                put Local (uuid, uuid', Just (Node nid, h, i + 1))
+                void . liftProcess . callLocal . spawnAsync nid $
+                  $(mkClosure 'nodeUp) ((stationNodes argv), (100 :: Int))
+                let t' = expirySeconds `div` maxRetries
+                liftProcess $ sayRC $ "try_recover again in " ++ show t' ++ " seconds for " ++ show h
+                continue $ timeout t' try_recover
+          _ -> return ()
+
+      directly timeout_host $ do
+        let log' = liftProcess . sayRC
+        (uuid, uuid', st) <- get Local
+        case st of
+          Just (n1, h, i) -> do
+            log' $ "timeout_host Just " ++ show (n1, h, i)
+            timeoutHost h
+            put Local (nil, nil, Nothing)
+          _ -> log' "timeout_host nothing" >> return ()
+        let ackMsg m = if Data.UUID.null m
+                       then return ()
+                       else finishProcessingMsg m >> messageProcessed m
+        ackMsg uuid'
+        ackMsg uuid
+      start start_recover (nil, nil, Nothing)
 
     setLogger sendLogs
     serviceRules argv

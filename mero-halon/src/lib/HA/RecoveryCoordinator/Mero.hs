@@ -48,6 +48,7 @@ module HA.RecoveryCoordinator.Mero
        , loadNodeMonitorConf
        , notHandled
        , buildRCState
+       , timeoutHost
        ) where
 
 import Prelude hiding ((.), id, mapM_)
@@ -64,6 +65,12 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Service
 import HA.RecoveryCoordinator.Actions.Monitor
+import qualified HA.Resources.Castor as M0
+#ifdef USE_MERO
+import qualified HA.Resources.Mero as M0
+import HA.Resources.Mero.Note (ConfObjectState(..))
+import HA.Services.Mero (notifyMero)
+#endif
 import qualified HA.ResourceGraph as G
 
 import Control.Distributed.Process
@@ -131,6 +138,9 @@ rcInitRule :: IgnitionArguments
            -> RuleM LoopState (Maybe ProcessId) (Started LoopState (Maybe ProcessId))
 rcInitRule argv = do
     boot        <- phaseHandle "boot"
+    dispatch_node_recovery <- phaseHandle "dispatch_node_recovery"
+    init_finaliser <- phaseHandle "init_finaliser"
+
 
     directly boot $ do
       h   <- liftIO getHostName
@@ -149,10 +159,52 @@ rcInitRule argv = do
         register masterMonitorName mpid
         usend mpid $ StartMonitoringRequest self ms
         _ <- expect :: Process StartMonitoringReply
-        sayRC $ "started monitoring nodes"
-        sayRC $ "continue in normal mode"
+        return ()
+      continue dispatch_node_recovery
+
+    -- the RC is may be recovering from failure so we may have some
+    -- nodes marked as down already: fork off the rules that time
+    -- those nodes down as needed
+    directly dispatch_node_recovery $ do
+      g <- getLocalGraph
+      let ns = [ node :: Node
+               | host@(M0.Host {}) <- G.connectedTo Cluster Has g
+               , (M0.HA_DOWN {}) <- G.connectedTo host Has g
+               , node <- G.connectedTo host Runs g
+               ]
+
+      liftProcess . sayRC $ "dispatch_node_recovery: " ++ show ns
+      {-
+      self <- liftProcess getSelfNode
+      forM_ ns $ \n ->
+        liftProcess . promulgateEQ [self] $ RecoverNode nil n
+      -}
+      continue init_finaliser
+
+    directly init_finaliser . liftProcess $ do
+      sayRC $ "started monitoring nodes"
+      sayRC $ "continue in normal mode"
 
     start boot Nothing
+
+-- | Remove the given 'Host' from the RG and notify mero about it
+timeoutHost :: M0.Host -> PhaseM LoopState g ()
+timeoutHost h = hasHostAttr M0.HA_DOWN h >>= \case
+  False -> return ()
+  True -> do
+    liftProcess . sayRC $ "Disconnecting " ++ show h ++ " due to timeout"
+#ifdef USE_MERO
+    g <- getLocalGraph
+    let nodes = [ n
+                | (c :: M0.Controller) <- G.connectedFrom M0.At h g
+                , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c g
+                ]
+    notifyMero (M0.AnyConfObj <$> nodes) M0_NC_FAILED
+    -- TODO: do we also have to tell mero about things connected to
+    -- the nodes being down?
+#endif
+    -- putLocalGraph $ G.disconnect Cluster Has h g
+    return ()
 
 ack :: ProcessId -> PhaseM LoopState l ()
 ack pid = liftProcess $ usend pid ()
