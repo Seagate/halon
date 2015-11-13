@@ -192,12 +192,13 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
 
 largeInitialData :: String -> Transport -> IO ()
 largeInitialData host transport = let
-    let numDisks = 579
-    let initD = (initialDataAddr host "192.0.2.2" numDisks)
+    numDisks = 579
+    initD = (initialDataAddr host "192.0.2.2" numDisks)
     myHost = Host "primus.example.com"
   in
     rGroupTest transport $ \pid -> do
-      ls <- emptyLoopState pid
+      me <- getSelfNode
+      ls <- emptyLoopState pid (nullProcessId me)
       (ls', _) <- run ls $ do
         -- TODO: the interface address is hard-coded here: currently we
         -- don't use it so it doesn't impact us but in the future we
