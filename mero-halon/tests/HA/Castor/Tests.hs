@@ -119,17 +119,17 @@ testFailureSets transport = rGroupTest transport $ \pid -> do
     -- 8 disks, tolerating one disk failure at a time
     failureSets <- runGet ls' $ generateFailureSets 1 0 0
     say $ show failureSets
-    assertMsg "Number of failure sets (100)" $ Set.size failureSets == 9
+    assertMsg "Number of failure sets (100)" $ length failureSets == 9
     assertMsg "Smallest failure set is empty (100)"
-      $ fsSize (Set.elemAt 0 failureSets) == 0
+      $ fsSize (head failureSets) == 0
 
     -- 8 disks, two failures at a time
     failureSets2 <- runGet ls' $ generateFailureSets 2 0 0
-    assertMsg "Number of failure sets (200)" $ Set.size failureSets2 == 37
+    assertMsg "Number of failure sets (200)" $ length failureSets2 == 37
     assertMsg "Smallest failure set is empty (200)"
-      $ fsSize (Set.elemAt 0 failureSets2) == 0
+      $ fsSize (head failureSets2) == 0
     assertMsg "Next smallest failure set has one disk (200)"
-      $ fsSize (Set.elemAt 1 failureSets2) == 1
+      $ fsSize (failureSets2 !! 1) == 1
 
 loadInitialData :: String -> Transport -> IO ()
 loadInitialData host transport = rGroupTest transport $ \pid -> do

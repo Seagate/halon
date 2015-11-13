@@ -18,9 +18,12 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 #ifdef USE_MERO
 import HA.RecoveryCoordinator.Rules.Mero
+import Data.List (unfoldr)
+import Control.Monad (forM_)
 #endif
 
 import Network.CEP
+
 
 castorRules :: Definitions LoopState ()
 castorRules = do
@@ -31,10 +34,15 @@ castorRules = do
       loadMeroGlobals id_m0_globals
       loadMeroServers filesystem id_m0_servers
       failureSets <- generateFailureSets 0 1 0 -- TODO real values
-      createPoolVersions filesystem failureSets
+      let chunks = flip unfoldr failureSets $ \xs ->
+            case xs of
+              [] -> Nothing
+              _  -> Just $ splitAt 50 xs
+      forM_ chunks $ \chunk -> do
+        createPoolVersions filesystem chunk
+        syncGraph
 #endif
       liftProcess $ say "Loaded initial data"
-      syncGraph
       messageProcessed eid
   where
     goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
