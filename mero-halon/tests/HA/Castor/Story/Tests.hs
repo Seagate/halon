@@ -9,6 +9,7 @@ import HA.EventQueue.Producer
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Service
   ( registerServiceProcess )
+import HA.RecoveryCoordinator.Events.Drive
 import HA.RecoveryCoordinator.Mero (LoopState)
 import HA.RecoveryCoordinator.Rules.Castor
 import qualified HA.ResourceGraph as G
@@ -37,13 +38,14 @@ import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Node
 import Control.Exception as E hiding (assert)
 
-import Data.Aeson (decode)
+import Data.Aeson (decode, encode)
 import Data.Binary (Binary)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Hashable (Hashable)
 import Data.Typeable
 import Data.Text (pack)
 import Data.Defaultable
+import qualified Data.List as List
 
 import GHC.Generics (Generic)
 
@@ -54,6 +56,7 @@ import Network.Transport
 import Test.Framework
 import Test.Tasty.HUnit (Assertion, assertEqual)
 import TestRunner
+import Helper.SSPL
 
 debug :: String -> Process ()
 debug = liftIO . appendFile "/tmp/halon.debug" . (++ "\n")
@@ -106,6 +109,8 @@ mkTests = do
           testPowerupNoResponse transport
         , testSuccess "No response from SMART test" $
           testSMARTNoResponse transport
+        , testSuccess "Drive failure removal reported by SSPL" $
+          testDriveRemovedBySSPL transport
         ]
 
 run :: Transport
@@ -214,6 +219,17 @@ devAttrs sdev rg =
          , attr <- G.connectedTo sd Has rg :: [StorageDeviceAttr]
          ]
 
+-- | Check if specified device have RemovedAt attribute.
+checkStorageDeviceRemoved :: String -> Int -> G.Graph -> Bool
+checkStorageDeviceRemoved enc idx rg = not . Prelude.null $
+  [ () | host <- G.connectedTo (Enclosure enc) Has rg :: [Host]
+       , dev  <- G.connectedTo host Has rg :: [StorageDevice]
+       , any (==(DIIndexInEnclosure idx)) 
+             (G.connectedTo dev Has rg :: [DeviceIdentifier])
+       , any (==SDRemovedAt) 
+             (G.connectedTo dev Has rg :: [StorageDeviceAttr])
+       ]
+
 isPowered :: StorageDeviceAttr -> Bool
 isPowered SDPowered = True
 isPowered _         = False
@@ -245,7 +261,7 @@ prepareSubscriptions rc rmq = do
 
 loadInitialData :: Process ()
 loadInitialData = let
-    init_msg = initialDataAddr "192.0.2.1" "192.0.2.2" 8
+    init_msg = initialDataAddr "10.0.2.15" "10.0.2.15" 8
   in do
     nid <- getSelfNode
     -- We populate the graph with confc context.
@@ -472,7 +488,6 @@ testSMARTNoResponse transport = run transport interceptor test where
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
     loadInitialData
-
     sdev <- G.getGraph mm >>= findSDev
     failDrive recv sdev
     powerdownComplete mm sdev
@@ -488,3 +503,31 @@ testSMARTNoResponse transport = run transport interceptor test where
     powerdownComplete mm sdev
     poweronComplete mm sdev
     smartTestComplete recv AckReplyPassed sdev
+    return ()
+
+-- | SSPL emits unused_ok event for one of the drives.
+testDriveRemovedBySSPL :: Transport -> IO ()
+testDriveRemovedBySSPL transport = run transport interceptor test where
+  interceptor rc str
+    | any (("Cannot detach device"::String) `List.isPrefixOf`) (List.tails str) = usend rc ("Detached"::String)
+    | otherwise = return ()
+  test (TestArgs _ mm rc) rmq recv = do
+    prepareSubscriptions rc rmq
+    loadInitialData
+    subscribe rc (Proxy :: Proxy DriveRemoved)
+    let enclosure = "enclosure1"
+        host      = "primus.example.com"
+        devIdx    = 1
+        message0 = LBS.toStrict $ encode
+                                $ mkSensorResponse
+                                $ mkResponseHPI host (fromIntegral devIdx) "/dev/loop1" "wwn1"
+        message = LBS.toStrict $ encode 
+                               $ mkSensorResponse
+                               $ mkResponseDriveManager (pack enclosure) devIdx "unused_ok"
+    usend rmq $ MQPublish "sspl_halon" "sspl_ll" message0
+    usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
+    _ <- expect :: Process (Published DriveRemoved)
+    True <- checkStorageDeviceRemoved enclosure devIdx <$> G.getGraph mm
+    Set [Note _ M0_NC_TRANSIENT] <- receiveChan recv
+    "Detached" <- expect :: Process String
+    return ()

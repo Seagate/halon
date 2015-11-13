@@ -18,6 +18,7 @@ module HA.RecoveryCoordinator.Actions.Core
   , sayRC
   , unlessM
   , whenM
+  , selfMessage
   ) where
 
 import qualified HA.ResourceGraph as G
@@ -37,8 +38,10 @@ import Control.Distributed.Process
   , Process
   , usend
   , say
+  , getSelfPid
   )
 import Control.Monad (when, unless)
+import Control.Distributed.Process.Serializable
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set        as S
@@ -104,3 +107,13 @@ whenM cond act = cond >>= flip when act
 
 unlessM :: Monad m => m Bool -> m () -> m ()
 unlessM cond act = cond >>= flip unless act
+
+-- | Send message to RC. This message is sent bypassing event queue, this means
+-- that message will be receive by RC as soon as possible without any overhead.
+-- However such messages are not persisted thus will not be resend upon RC failure.
+-- N.B. Because messages are send bypassing replicated storage they do not have 'HAEvent'
+-- wrapper around them so rules should catch pure types, not 'HAEvent'.
+selfMessage :: Serializable a => a -> PhaseM LoopState l ()
+selfMessage msg = liftProcess $ do 
+  pid <- getSelfPid
+  usend pid msg

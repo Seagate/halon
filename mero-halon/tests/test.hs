@@ -9,6 +9,9 @@ module Main where
 import qualified HA.RecoveryCoordinator.Mero.Tests
 import qualified HA.Autoboot.Tests
 #ifdef USE_MERO
+#ifdef USE_MOCK_REPLICATOR
+import qualified HA.RecoveryCoordinator.SSPL.Tests
+#endif
 import qualified HA.Castor.Tests
 import qualified HA.Castor.Story.Tests
 #endif
@@ -32,6 +35,7 @@ import Control.Concurrent.MVar
 import Control.Exception
 
 #ifdef USE_MERO
+import Mero
 import Control.Monad (when)
 import Data.Maybe (catMaybes)
 import System.Directory
@@ -100,9 +104,13 @@ ut _host transport breakConnection = do
           HA.Test.Disconnect.testRejoin _host transport breakConnection
       , testCase "RCToleratesRejoinsTimeout" $
           HA.Test.Disconnect.testRejoinTimeout _host transport breakConnection
+#ifdef USE_MOCK_REPLICATOR
+      , HA.RecoveryCoordinator.SSPL.Tests.utTests transport
+#else
       , testCase "RCToleratesRejoinsWithDeath" $
           HA.Test.Disconnect.testRejoinRCDeath
             _host transport (error "breakConnection not supplied in test")
+#endif
 #endif
 #if !defined(USE_RPC) && !defined(USE_MOCK_REPLICATOR)
       , testCase "RCToleratesDisconnections" $
@@ -181,7 +189,7 @@ main = do
     callProcess "sudo" $ catMaybes [mld, mtl] ++ prog : args
     exitSuccess
   when (userid == (0 :: Int)) $ do
-    runTests ut
+    withM0 $ runTests ut
 #else
   runTests ut
 #endif

@@ -77,6 +77,7 @@ Library
                    HA.Network.Transport
                    HA.Services.DecisionLog
                    HA.Services.Frontier
+                   HA.Services.Frontier.Command
                    HA.Services.Monitor
                    HA.Services.SSPL
                    HA.Services.SSPL.Rabbit
@@ -92,13 +93,14 @@ Library
                    HA.RecoveryCoordinator.Actions.Service
                    HA.RecoveryCoordinator.Rules.Castor
                    HA.RecoveryCoordinator.Rules.Service
+                   HA.RecoveryCoordinator.Events.Drive
+                   HA.RecoveryCoordinator.Events.Mero
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
 
   Other-Modules:   HA.RecoveryCoordinator.Actions.Monitor
                    HA.Services.DecisionLog.CEP
                    HA.Services.DecisionLog.Types
-                   HA.Services.Frontier.Command
                    HA.Services.Monitor.CEP
                    HA.Services.Monitor.Types
                    HA.Services.SSPL.HL.Resources
@@ -134,7 +136,8 @@ Library
                    yaml,
                    hostname,
                    multimap,
-                   wl-pprint
+                   wl-pprint,
+                   transformers
 
   if flag(mero)
       Exposed-Modules: Mero.Epoch
@@ -676,6 +679,7 @@ Test-Suite unit-tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
+                    HA.RecoveryCoordinator.SSPL.Tests
                     HA.Autoboot.Tests
                     HA.Test.Cluster
                     HA.Test.Disconnect
@@ -799,7 +803,8 @@ Test-Suite integration-tests
                     text,
                     aeson,
                     uuid,
-                    time
+                    time,
+                    text
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
@@ -861,7 +866,8 @@ Test-Suite scheduler-tests
                     cep,
                     attoparsec,
                     containers,
-                    time
+                    time,
+                    text
 
   if flag(mero)
     CPP-Options:    -DUSE_MERO

@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE CPP                        #-}
 
 module HA.Services.Mero.CEP
   ( meroRulesF
@@ -15,7 +16,6 @@ module HA.Services.Mero.CEP
 
 import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Mero (lookupConfObjByFid)
 import HA.ResourceGraph
 import HA.Resources
 import HA.Service

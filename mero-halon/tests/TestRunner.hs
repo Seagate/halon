@@ -12,6 +12,7 @@ module TestRunner
   , TestReplicatedState
   , runRCEx
   , runTest
+  , tryRunProcessLocal
   , withLocalNode
   , withLocalNodes
   , withTrackingStation
@@ -199,3 +200,9 @@ startMockEventQueue listener = do
     Nothing -> register  eventQueueLabel pid
     Just{}  -> reregister eventQueueLabel pid
   return pid
+
+tryRunProcessLocal :: Transport -> RemoteTable -> Process () -> IO ()
+tryRunProcessLocal transport rt process =
+  withTmpDirectory $
+    withLocalNode transport rt $ \node ->
+      runProcess node process

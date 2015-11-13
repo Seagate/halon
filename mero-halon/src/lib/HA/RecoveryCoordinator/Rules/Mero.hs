@@ -15,6 +15,7 @@ import HA.EventQueue.Types
 
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero
+import HA.RecoveryCoordinator.Events.Mero
 import HA.RecoveryCoordinator.Mero
 import HA.Resources.Castor
 import HA.Resources.Mero (SyncToConfd(..), SpielAddress(..))
@@ -24,8 +25,7 @@ import HA.Resources
 import qualified HA.ResourceGraph as G
 
 import Mero.ConfC
-  ( Bitmap(..)
-  , Fid
+  ( Fid
   , ServiceType(..)
   , bitmapFromArray
   )
@@ -49,29 +49,37 @@ import Prelude hiding (id)
 
 meroRules :: Definitions LoopState ()
 meroRules = do
-  defineSimple "Sync-to-confd" $ \(HAEvent eid sync _) -> catch
-    (do case sync of
-          SyncToConfdServersInRG -> do
-            phaseLog "info" "Syncing RG to confd servers in RG."
-            msa <- getSpielAddress
-            case msa of
-              Nothing -> phaseLog "warning" $ "No spiel address found in RG."
-              Just sa -> void $ withSpielRC sa $ \sc -> do
-                loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
-          SyncToTheseServers (SpielAddress [] _) ->
-            phaseLog "warning"
-               $ "Requested to sync to specific list of confd servers, "
-              ++ "but that list was empty."
-          SyncToTheseServers sa -> do
-            phaseLog "info" $ "Syncing RG to these confd servers: " ++ show sa
-            void $ withSpielRC sa $ \sc -> do
-              loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
-          SyncDumpToFile filename -> do
-            phaseLog "info" $ "Dumping conf in RG to this file: " ++ show filename
-            loadConfData >>= traverse_ (\x -> txOpen >>= txPopulate x >>= txDumpToFile filename)
-        messageProcessed eid)
+  defineSimple "Sync-to-confd" $ \(HAEvent eid sync _) ->
+    syncAction (Just eid) sync `catch`
     (\e -> do phaseLog "error" $ "Exception during synchronization: " ++ show (e::SomeException)
               messageProcessed eid)
+  defineSimple "Sync-to-confd-local" $ \(uuid, sync) -> do
+    syncAction Nothing sync `catch`
+       (\e -> do phaseLog "error" $ "Exception during synchronization: " ++ show (e::SomeException))
+    selfMessage (SyncComplete uuid)
+
+syncAction :: Maybe UUID -> SyncToConfd -> PhaseM LoopState l ()
+syncAction meid sync = do 
+  case sync of
+    SyncToConfdServersInRG -> do
+      phaseLog "info" "Syncing RG to confd servers in RG."
+      msa <- getSpielAddress
+      case msa of
+        Nothing -> phaseLog "warning" $ "No spiel address found in RG."
+        Just sa -> void $ withSpielRC sa $ \sc -> do
+          loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
+    SyncToTheseServers (SpielAddress [] _) ->
+      phaseLog "warning"
+         $ "Requested to sync to specific list of confd servers, "
+        ++ "but that list was empty."
+    SyncToTheseServers sa -> do
+      phaseLog "info" $ "Syncing RG to these confd servers: " ++ show sa
+      void $ withSpielRC sa $ \sc -> do
+        loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
+    SyncDumpToFile filename -> do
+      phaseLog "info" $ "Dumping conf in RG to this file: " ++ show filename
+      loadConfData >>= traverse_ (\x -> txOpen >>= txPopulate x >>= txDumpToFile filename)
+  traverse_ messageProcessed meid
 
 -- | Atomically fetch a FID sequence number of increment the sequence count.
 newFidSeq :: PhaseM LoopState l Word64
