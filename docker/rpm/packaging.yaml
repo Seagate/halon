@@ -11,18 +11,18 @@ packages:
   rpclite:
     configure: --extra-include-dirs=/usr/include/mero
     data-dir: /usr/include
-    testable: true
+    testable: false
 
   mero-halon:
     configure: --extra-include-dirs=/usr/include/rpclite
-    testable: true
+    testable: false
 
   halon:
-    testable: true
+    testable: false
 
   confc:
-    testable: true
+    testable: false
 
   replicated-log:
-    testable: true
+    testable: false
 
