@@ -7,7 +7,10 @@ module HA.Castor.Story.Tests (mkTests) where
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Mero
-    ( rgGetAllSDevs )
+  ( rgGetAllSDevs )
+import HA.RecoveryCoordinator.Actions.Service
+  ( registerServiceProcess )
+import HA.RecoveryCoordinator.Mero (LoopState)
 import HA.RecoveryCoordinator.Rules.Castor
 import qualified HA.ResourceGraph as G
 import HA.Castor.Tests (initialDataAddr)
@@ -29,15 +32,19 @@ import RemoteTables (remoteTable)
 
 import SSPL.Bindings
 
-import Control.Monad (join, when, replicateM_)
+import Control.Monad (join, when, replicateM_, void)
 import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Node
 import Control.Exception as E hiding (assert)
 
 import Data.Aeson (decode)
+import Data.Binary (Binary)
+import Data.Hashable (Hashable)
 import Data.Typeable
 import Data.Text (pack)
 import Data.Defaultable
+
+import GHC.Generics (Generic)
 
 import Network.AMQP
 import Network.CEP
@@ -48,20 +55,32 @@ import Test.Tasty.HUnit (Assertion)
 import TestRunner
 
 debug :: String -> Process ()
-debug = liftIO . appendFile "/tmp/halon.debug"
+debug = liftIO . appendFile "/tmp/halon.debug" . (++ "\n")
 
 myRemoteTable :: RemoteTable
 myRemoteTable = TestRunner.__remoteTableDecl remoteTable
 
-meroServiceProcess :: ProcessId -> ServiceProcess MeroConf
-meroServiceProcess = ServiceProcess
+newtype MockM0 = MockM0 DeclareMeroChannel
+  deriving (Binary, Generic, Hashable, Typeable)
 
-newMeroChannel :: ProcessId -> Process (ReceivePort Set, DeclareMeroChannel)
+mockMeroConf :: MeroConf
+mockMeroConf = MeroConf "" ""
+
+newMeroChannel :: ProcessId -> Process (ReceivePort Set, MockM0)
 newMeroChannel pid = do
   (sd, recv) <- newChan
   let sdChan   = TypedChannel sd
-      meroChan = DeclareMeroChannel (meroServiceProcess pid) sdChan
-  return (recv, meroChan)
+      notify = MockM0
+              $ DeclareMeroChannel (ServiceProcess pid) sdChan
+  return (recv, notify)
+
+testRules :: Definitions LoopState ()
+testRules = do
+  defineSimple "register-mock-service" $
+    \(HAEvent _ (MockM0 dc@(DeclareMeroChannel sp _)) _) -> do
+      nid <- liftProcess $ getSelfNode
+      registerServiceProcess (Node nid) m0d mockMeroConf sp
+      void . liftProcess $ promulgateEQ [nid] dc
 
 mkTests :: IO (Transport -> [TestTree])
 mkTests = do
@@ -93,18 +112,22 @@ run :: Transport
        ) -- actual test
     -> Assertion
 run transport interceptor test =
-  runTest 1 20 15000000 transport myRemoteTable $ \[n] -> do
+  runTest 2 20 15000000 transport myRemoteTable $ \[n] -> do
     self <- getSelfPid
-    withTrackingStation emptyRules $ \ta -> do
+    withTrackingStation [testRules] $ \ta -> do
       registerInterceptor $ \string ->
         case string of
           str@"Starting service sspl"   -> usend self str
           x -> interceptor self x
 
       startSSPLService
-      meroRP <- startMeroServiceMock
+      debug "Started SSPL service"
+      meroRP <- startMeroServiceMock (ta_rc ta)
+      debug "Started Mero mock service"
       rmq <- spawnMockRabbitMQ
+      debug "Started mock RabbitMQ service."
       -- Run the test
+      debug "About to run the test"
 
       test ta rmq meroRP
 
@@ -143,13 +166,15 @@ run transport interceptor test =
 
       return ()
 
-    startMeroServiceMock :: Process (ReceivePort Set)
-    startMeroServiceMock = do
-        nid <- getSelfNode
-        pid <- getSelfPid
-        (recv, channel) <- newMeroChannel pid
-        _ <- promulgateEQ [nid] channel
-        return recv
+    startMeroServiceMock :: ProcessId -> Process (ReceivePort Set)
+    startMeroServiceMock rc = do
+      subscribe rc (Proxy :: Proxy (HAEvent DeclareMeroChannel))
+      nid <- getSelfNode
+      pid <- getSelfPid
+      (recv, channel) <- newMeroChannel pid
+      _ <- promulgateEQ [nid] channel
+      _ <- expect :: Process (Published (HAEvent DeclareMeroChannel))
+      return recv
 
     spawnMockRabbitMQ :: Process ProcessId
     spawnMockRabbitMQ = do
@@ -289,24 +314,20 @@ testDiskFailureBase (TestArgs _ mm rc) rmq recv = do
 testDiskFailure :: Transport -> IO ()
 testDiskFailure transport = run transport interceptor test where
   interceptor _ _ = return ()
-  test ta@(TestArgs _ mm rc) rmq recv = do
-    debug "335"
+  test ta@(TestArgs _ _ rc) rmq recv = do
     nid <- getSelfNode
     let init_msg = initialDataAddr "192.0.2.1" "192.0.2.2" 8
-    debug "338"
     subscribe rc (Proxy :: Proxy (HAEvent InitialData))
     -- We populate the graph with confc context.
     _ <- promulgateEQ [nid] init_msg
-    debug "342"
     -- We wait the RC finished to populate the RC.
     _ <- expect :: Process (Published (HAEvent InitialData))
-    debug "345"
     testDiskFailureBase ta rmq recv
 
 testHitResetLimit :: Transport -> IO ()
 testHitResetLimit transport = run transport interceptor test where
   interceptor _ _ = return ()
-  test ta@(TestArgs _ mm rc) rmq recv = do
+  test ta@(TestArgs _ _ rc) rmq recv = do
     nid <- getSelfNode
     let init_msg = initialDataAddr "192.0.2.1" "192.0.2.2" 8
 
@@ -328,7 +349,7 @@ testHitResetLimit transport = run transport interceptor test where
 testFailedSMART :: Transport -> IO ()
 testFailedSMART transport = run transport interceptor test where
   interceptor _ _ = return ()
-  test ta@(TestArgs _ mm rc) rmq recv = do
+  test (TestArgs _ mm rc) rmq recv = do
     nid <- getSelfNode
 
     subscribe rc (Proxy :: Proxy (HAEvent CommandAck))

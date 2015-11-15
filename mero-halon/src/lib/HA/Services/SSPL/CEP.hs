@@ -49,7 +49,7 @@ sendInterestingEvent :: NodeId
                      -> InterestingEventMessage
                      -> PhaseM LoopState l ()
 sendInterestingEvent nid msg = do
-  liftProcess . say $ "Sending InterestingEventMessage"
+  phaseLog "action" $ "Sending InterestingEventMessage."
   rg <- getLocalGraph
   let
     node = Node nid
@@ -60,13 +60,13 @@ sendInterestingEvent nid msg = do
 
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan msg
-    _ -> liftProcess $ sayRC "Cannot find IEM channel!"
+    _ -> phaseLog "warning" "Cannot find IEM channel!"
 
 sendSystemdCmd :: NodeId
                -> SystemdCmd
                -> PhaseM LoopState l ()
 sendSystemdCmd nid req = do
-  liftProcess . say $ "Sending Systemd request" ++ show req
+  phaseLog "action" $ "Sending Systemd request" ++ show req
   rg <- getLocalGraph
   let
     node = Node nid
@@ -76,7 +76,7 @@ sendSystemdCmd nid req = do
       listToMaybe $ connectedTo sp CommandChannel rg
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan (Nothing :: Maybe UUID, makeSystemdMsg req)
-    _ -> liftProcess $ sayRC "Cannot find systemd channel!"
+    _ -> phaseLog "warning" "Cannot find systemd channel!"
 
 -- | Send command to nodecontroller. Reply will be received as a
 -- HAEvent CommandAck. Where UUID will be set to UUID value if passed, and
@@ -86,7 +86,7 @@ sendNodeCmd :: NodeId
             -> NodeCmd
             -> PhaseM LoopState l ()
 sendNodeCmd nid muuid req = do
-  liftProcess . say $ "Sending node actuator request" ++ show req
+  phaseLog "action" $ "Sending node actuator request" ++ show req
   rg <- getLocalGraph
   let
     node = Node nid
@@ -96,13 +96,13 @@ sendNodeCmd nid muuid req = do
       listToMaybe $ connectedTo sp CommandChannel rg
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan (muuid, makeNodeMsg req)
-    _ -> liftProcess $ sayRC "Cannot find command channel!"
+    _ -> phaseLog "warning" "Cannot find command channel!"
 
 registerChannels :: ServiceProcess SSPLConf
                  -> ActuatorChannels
                  -> PhaseM LoopState l ()
 registerChannels svc acs = modifyLocalGraph $ \rg -> do
-    liftProcess . say $ "Register channels"
+    phaseLog "rg" "Registering SSPL actuator channels."
     let rg' =   registerChannel IEMChannel (iemPort acs)
             >>> registerChannel CommandChannel (systemdPort acs)
             $   rg
@@ -115,15 +115,9 @@ registerChannels svc acs = modifyLocalGraph $ \rg -> do
                     -> Graph
     registerChannel r sp =
         newResource svc >>>
-        removeOldChan >>>
         newResource chan >>>
-        connect svc r chan
+        connectUnique svc r chan
       where
-        oldChan :: Graph -> [Channel b]
-        oldChan rg = connectedTo svc r rg
-        removeOldChan = \rg -> case oldChan rg of
-          [a] -> disconnect svc r a rg
-          _ -> rg
         chan = Channel sp
 
 promptRGSync :: PhaseM LoopState l ()
@@ -202,7 +196,7 @@ ssplRulesF sspl = do
       registerHost host
       locateNodeOnHost node host
       promptRGSync
-      liftProcess . sayRC $ "Registered host: " ++ show host
+      phaseLog "rg" $ "Registered host: " ++ show host
 
   -- SSPL Monitor interface data
   -- defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum) _) _ ->

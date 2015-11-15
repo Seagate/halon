@@ -87,15 +87,15 @@ Library
                    HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
+                   HA.RecoveryCoordinator.Actions.Core
+                   HA.RecoveryCoordinator.Actions.Hardware
+                   HA.RecoveryCoordinator.Actions.Service
                    HA.RecoveryCoordinator.Rules.Castor
                    HA.RecoveryCoordinator.Rules.Service
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
 
-  Other-Modules:   HA.RecoveryCoordinator.Actions.Core
-                   HA.RecoveryCoordinator.Actions.Hardware
-                   HA.RecoveryCoordinator.Actions.Service
-                   HA.RecoveryCoordinator.Actions.Monitor
+  Other-Modules:   HA.RecoveryCoordinator.Actions.Monitor
                    HA.Services.DecisionLog.CEP
                    HA.Services.DecisionLog.Types
                    HA.Services.Frontier.Command

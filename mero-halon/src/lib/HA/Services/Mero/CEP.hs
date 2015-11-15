@@ -36,8 +36,6 @@ import Network.CEP
 
 import Prelude hiding (id)
 
-
-
 registerChannel :: ServiceProcess MeroConf
                 -> TypedChannel Set
                 -> PhaseM LoopState l ()
@@ -71,6 +69,7 @@ meroRulesF m0d = do
   defineSimple "mero-set" $ \(HAEvent _ (Set nvec) _) -> let
       setStatus (Note oid st) = do
         mco <- lookupConfObjByFid oid
+        phaseLog "rg-query" $ "Found " ++ show mco
         case (mco :: Maybe SDev) of
           Just co -> modifyLocalGraph
             $ return . connectUniqueFrom co Is st
@@ -79,4 +78,5 @@ meroRulesF m0d = do
       mapM_ setStatus nvec
       rg <- getLocalGraph
       for_ (meroChannels m0d rg) $ \(TypedChannel chan) -> do
+        phaseLog "action" "Notifying mero process"
         liftProcess $ sendChan chan (Set nvec)
