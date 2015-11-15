@@ -354,4 +354,4 @@ getPools dev = do
     return ps
 
 startRepairOperation :: M0.Disk -> M0.Pool -> PhaseM LoopState l ()
-startRepairOperation _ _ = error "not implemeted"
+startRepairOperation _ _ = phaseLog "error" "Start repair not implemeted"
