@@ -55,6 +55,9 @@ import System.Environment
 ut :: String -> Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
 ut _host transport breakConnection = do
   ssplTest <- HA.Test.SSPL.mkTests
+#ifdef USE_MERO
+  driveFailureTests <- HA.Castor.Story.Tests.mkTests
+#endif
   return $
 #ifdef USE_MOCK_REPLICATOR
     testGroup "ut"
@@ -91,8 +94,8 @@ ut _host transport breakConnection = do
         HA.Castor.Tests.tests _host transport
       , testCase "RCsyncToConfd" $
           HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd _host transport
-      , testGroup "Castor stories" $
-        HA.Castor.Story.Tests.tests transport
+      , testGroup "DriveFailure" $
+        driveFailureTests transport
 #endif
 #if !defined(USE_RPC) && !defined(USE_MOCK_REPLICATOR)
       , testCase "RCToleratesDisconnections" $

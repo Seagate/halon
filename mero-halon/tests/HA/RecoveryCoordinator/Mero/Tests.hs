@@ -37,7 +37,6 @@ import HA.EventQueue
 import HA.EventQueue.Types (HAEvent(..))
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.Multimap.Implementation
-import HA.Multimap.Process
 import HA.Replicator
 import HA.EQTracker
 #ifdef USE_MOCK_REPLICATOR
@@ -71,15 +70,12 @@ import RemoteTables ( remoteTable )
 import qualified SSPL.Bindings as SSPL
 
 import Control.Distributed.Process
-import Control.Distributed.Process.Closure ( remotableDecl, mkStatic )
-import Control.Distributed.Process.Serializable ( SerializableDict(..) )
+import Control.Distributed.Process.Closure ( mkStatic )
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Network.Transport (Transport(..))
 
-import Control.Applicative ((<$>), (<*>))
-import Control.Arrow ( first, second )
-import Control.Monad (forM_, void, join)
+import Control.Monad (void, join)
 import Data.Defaultable
 import Data.List (isInfixOf)
 import Data.Proxy (Proxy(..))
@@ -100,8 +96,6 @@ import Network.CEP (defineSimple, liftProcess)
 import System.IO.Unsafe
 #endif
 
-type TestReplicatedState = (EventQueue, Multimap)
-
 #ifdef USE_MERO
 -- | label used to test spiel sync through a rule
 data SpielSync = SpielSync
@@ -110,22 +104,6 @@ data SpielSync = SpielSync
 instance Binary SpielSync
 instance Hashable SpielSync
 #endif
-
-
-remotableDecl [ [d|
-  eqView :: RStateView TestReplicatedState EventQueue
-  eqView = RStateView fst first
-
-  multimapView :: RStateView TestReplicatedState Multimap
-  multimapView = RStateView snd second
-
-  testDict :: SerializableDict TestReplicatedState
-  testDict = SerializableDict
-
-  emptyRules :: [Definitions LoopState ()]
-  emptyRules = []
-
-  |]]
 
 #ifdef USE_MERO
 testSyncRules :: [Definitions LoopState ()]
@@ -139,24 +117,6 @@ runRC :: (ProcessId, IgnitionArguments)
       -> MC_RG TestReplicatedState
       -> Process ((ProcessId, ProcessId)) -- ^ MM, RC
 runRC (eq, args) rGroup = runRCEx (eq, args) emptyRules rGroup
-
-runRCEx :: (ProcessId, IgnitionArguments)
-        -> [Definitions LoopState ()]
-        -> MC_RG TestReplicatedState
-        -> Process (ProcessId, ProcessId) -- ^ MM, RC
-runRCEx (eq, args) rules rGroup = do
-  rec (mm, rc) <- (,)
-                  <$> (spawnLocal $ do
-                        () <- expect
-                        link rc
-                        multimap (viewRState $(mkStatic 'multimapView) rGroup))
-                  <*> (spawnLocal $ do
-                        () <- expect
-                        recoveryCoordinatorEx () rules args eq mm)
-  usend eq rc
-  forM_ [mm, rc] $ \them -> usend them ()
-  return (mm, rc)
-
 
 getServiceProcessPid :: Configuration a
                      => ProcessId
@@ -197,21 +157,13 @@ testServiceRestarting transport = do
     runTest 1 20 15000000 transport rt $ \_ -> do
       nid <- getSelfNode
       self <- getSelfPid
-      void $ startEQTracker [nid]
       registerInterceptor $ \string -> case string of
           str@"Starting service dummy"   -> usend self str
           _ -> return ()
 
       say $ "tests node: " ++ show nid
-      bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
-                             [nid] ((Nothing,[]), fromList [])
-                  join $ unClosure cRGroup
-              )
-              (flip killReplica nid) $ \rGroup -> do
-        eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+      withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
         nodeUp ([nid], 1000000)
-
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
             (Dummy.DummyConf $ Configured "Test 1") []
@@ -225,7 +177,7 @@ testServiceRestarting transport = do
         "Starting service dummy" :: String <- expect
         say $ "dummy service restarted successfully."
   where
-    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+    rt = TestRunner.__remoteTableDecl $
          remoteTable
 
 -- | This test verifies that no service is killed when we send a `ServiceFailed`
@@ -235,22 +187,14 @@ testServiceNotRestarting transport = do
     runTest 1 20 15000000 transport rt $ \_ -> do
       nid <- getSelfNode
       self <- getSelfPid
-      void $ startEQTracker [nid]
 
       registerInterceptor $ \string -> case string of
           str@"Starting service dummy"   -> usend self str
           _ -> return ()
 
       say $ "tests node: " ++ show nid
-      bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
-                             [nid] ((Nothing,[]), fromList [])
-                  join $ unClosure cRGroup
-              )
-              (flip killReplica nid) $ \rGroup -> do
-        eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+      withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
         nodeUp ([nid], 1000000)
-
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
             (Dummy.DummyConf $ Configured "Test 1") []
@@ -265,7 +209,7 @@ testServiceNotRestarting transport = do
         True <- serviceProcessStillAlive mm (Node nid) Dummy.dummy
         say $ "dummy service hasn't been killed."
   where
-    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+    rt = TestRunner.__remoteTableDecl $
          remoteTable
 
 -- | This test verifies that every `HAEvent` sent to the RC is trimmed by the EQ
@@ -273,19 +217,11 @@ testEQTrimming :: Transport -> IO ()
 testEQTrimming transport = do
     runTest 1 20 15000000 transport rt $ \_ -> do
       nid <- getSelfNode
-      void $ startEQTracker [nid]
 
       say $ "tests node: " ++ show nid
-      bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
-                             [nid] ((Nothing,[]), fromList [])
-                  join $ unClosure cRGroup
-              )
-              (flip killReplica nid) $ \rGroup -> do
-        eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        subscribe eq (Proxy :: Proxy TrimDone)
-        (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+      withTrackingStation emptyRules $ \(TestArgs eq mm _) -> do
         nodeUp ([nid], 1000000)
-
+        subscribe eq (Proxy :: Proxy TrimDone)
         Published (TrimDone _) _ <- expect
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
@@ -300,7 +236,7 @@ testEQTrimming transport = do
         Published (TrimDone _) _ <- expect
         say $ "Everything got trimmed"
   where
-    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+    rt = TestRunner.__remoteTableDecl $
          remoteTable
 
 emptySensorMessage :: SSPL.SensorResponseMessageSensor_response_type
@@ -322,7 +258,6 @@ testHostAddition transport = do
     runTest 1 20 15000000 transport rt $ \_ -> do
       nid <- getSelfNode
       self <- getSelfPid
-      void $ startEQTracker [nid]
 
       registerInterceptor $ \string -> case string of
           str@"Starting service dummy"   -> usend self str
@@ -331,15 +266,8 @@ testHostAddition transport = do
           _ -> return ()
 
       say $ "tests node: " ++ show nid
-      bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
-                             [nid] ((Nothing,[]), fromList [])
-                  join $ unClosure cRGroup
-              )
-              (flip killReplica nid) $ \rGroup -> do
-        eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
+      withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
         nodeUp ([nid], 1000000)
-
         -- Send host update message to the RC
         promulgateEQ [nid] (nid, mockEvent) >>= (flip withMonitor) wait
         "Host" :: String <- expect
@@ -355,7 +283,7 @@ testHostAddition transport = do
 
   where
     wait = void (expect :: Process ProcessMonitorNotification)
-    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+    rt = TestRunner.__remoteTableDecl $
          remoteTable
     mockEvent = emptySensorMessage { SSPL.sensorResponseMessageSensor_response_typeHost_update =
       Just $ SSPL.SensorResponseMessageSensor_response_typeHost_update
@@ -379,7 +307,6 @@ testDriveAddition transport = do
     runTest 1 20 15000000 transport rt $ \_ -> do
       nid <- getSelfNode
       self <- getSelfPid
-      void $ startEQTracker [nid]
 
       registerInterceptor $ \string -> case string of
           str@"Starting service dummy"   -> usend self str
@@ -388,15 +315,8 @@ testDriveAddition transport = do
           _ -> return ()
 
       say $ "tests node: " ++ show nid
-      bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
-                             [nid] ((Nothing,[]), fromList [])
-                  join $ unClosure cRGroup
-              )
-              (flip killReplica nid) $ \rGroup -> do
-        eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        (mm, _) <- runRC (eq, IgnitionArguments [nid]) rGroup
+      withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
         nodeUp ([nid], 1000000)
-
         -- Send host update message to the RC
         promulgateEQ [nid] (nid, mockEvent "online") >>= (flip withMonitor) wait
         "Drive" :: String <- expect
@@ -411,7 +331,7 @@ testDriveAddition transport = do
         assert $ G.memberEdge (G.Edge enc Has drive) graph
   where
     wait = void (expect :: Process ProcessMonitorNotification)
-    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+    rt = TestRunner.__remoteTableDecl $
          remoteTable
     mockEvent status = emptySensorMessage { SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
       Just $ SSPL.SensorResponseMessageSensor_response_typeDisk_status_drivemanager
@@ -425,8 +345,9 @@ testDecisionLog :: Transport -> IO ()
 testDecisionLog transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
       self <- getSelfPid
-      launchRC $ \(mm, rc, eq) -> do
-        nodeUp ([processNodeId eq], 1000000)
+
+      withTrackingStation emptyRules $ \(TestArgs _ mm rc) -> do
+
         -- Awaits the node local monitor to be up.
         _ <- getNodeMonitor mm
 
@@ -440,7 +361,7 @@ testDecisionLog transport = do
         (_ :: Logs) <- expect
         return ()
   where
-    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+    rt = TestRunner.__remoteTableDecl $
          remoteTable
 
 testServiceStopped :: Transport -> IO ()
@@ -448,22 +369,14 @@ testServiceStopped transport = do
     runTest 1 20 15000000 transport rt $ \_ -> do
       nid <- getSelfNode
       self <- getSelfPid
-      void $ startEQTracker [nid]
 
       registerInterceptor $ \string -> case string of
           str@"Starting service dummy"   -> usend self str
           _ -> return ()
 
       say $ "tests node: " ++ show nid
-      bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
-                             [nid] ((Nothing,[]), fromList [])
-                  join $ unClosure cRGroup
-              )
-              (flip killReplica nid) $ \rGroup -> do
-        eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
-        (mm,_) <- runRC (eq, IgnitionArguments [nid]) rGroup
+      withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
         nodeUp ([nid], 1000000)
-
         _ <- promulgateEQ [nid] . encodeP $
           ServiceStartRequest Start (Node nid) Dummy.dummy
             (Dummy.DummyConf $ Configured "Test 1") []
@@ -479,7 +392,7 @@ testServiceStopped transport = do
         (_ :: ProcessMonitorNotification) <- expect
         say $ "dummy service stopped."
   where
-    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+    rt = TestRunner.__remoteTableDecl $
          remoteTable
 
 serviceStarted :: ServiceName -> Process ProcessId
@@ -492,21 +405,6 @@ serviceStarted svname = do
           self <- getSelfPid
           usend self mp
           serviceStarted svname
-
-launchRC :: ((ProcessId, ProcessId, ProcessId) -> Process a) -> Process a
-launchRC action = do
-    nid <- getSelfNode
-    void $ startEQTracker [nid]
-
-    say $ "tests node: " ++ show nid
-    bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
-                           [nid] ((Nothing,[]), fromList [])
-                join $ unClosure cRGroup
-            )
-            (flip killReplica nid) $ \rGroup -> do
-      eq      <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
-      (rg, mm) <- runRC (eq, IgnitionArguments [nid]) rGroup
-      action (rg, mm, eq)
 
 serviceStart :: Configuration a => Service a -> a -> Process ()
 serviceStart svc conf = do
@@ -531,8 +429,8 @@ getNodeMonitor mm = do
 testMonitorManagement :: Transport -> IO ()
 testMonitorManagement transport = do
     runTest 1 20 15000000 transport testRemoteTable $ \_ ->
-      launchRC $ \(mm, rc, eq) -> do
-        nodeUp ([processNodeId eq], 1000000)
+      withTrackingStation emptyRules $ \(TestArgs _ mm rc) -> do
+        nodeUp ([nid], 1000000)
         -- Awaits the node local monitor to be up.
         _ <- getNodeMonitor mm
 
@@ -550,7 +448,7 @@ testMonitorManagement transport = do
 testMasterMonitorManagement :: Transport -> IO ()
 testMasterMonitorManagement transport = do
     runTest 1 20 15000000 transport testRemoteTable $ \_ ->
-      launchRC $ \(mm, rc, eq) -> do
+      withTrackingStation emptyRules $ \(TestArgs _ mm rc) -> do
         nodeUp ([processNodeId eq], 1000000)
 
         -- Awaits the node local monitor to be up.
@@ -607,7 +505,7 @@ testNodeUpRace transport = do
           Nothing -> return ()
 
   where
-    rt = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+    rt = TestRunner.__remoteTableDecl $
          remoteTable
 
 #ifdef USE_MERO
@@ -622,27 +520,21 @@ testRCsyncToConfd host transport = do
   liftIO $ writeFile "/tmp/strlog" ""
   nid <- getSelfNode
   self <- getSelfPid
-  void $ startEQTracker [nid]
   registerInterceptor $ \case
     str' | unsafePerformIO (appendFile "/tmp/strlog" (str' ++ "\n") >> return False) -> undefined
     str' | "Finished sync to confd" `isInfixOf` str' -> usend self ("SyncOK" :: String)
     str' | "Loaded initial data" `isInfixOf` str' -> usend self ("InitialLoad" :: String)
     _ -> return ()
-  cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
-                       [nid] ((Nothing,[]), fromList [])
-  pRGroup <- unClosure cRGroup
-  rGroup <- pRGroup
-  eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
-  _ <- runRCEx (eq, IgnitionArguments [nid]) testSyncRules rGroup
+  withTrackingStation testSyncRules $ \_ -> do
 
-  promulgateEQ [nid] (initialDataAddr host host 8) >>= (`withMonitor` wait)
-  "InitialLoad" :: String <- expect
+    promulgateEQ [nid] (initialDataAddr host host 8) >>= (`withMonitor` wait)
+    "InitialLoad" :: String <- expect
 
-  liftIO $ appendFile "/tmp/strlog" "about to syncToConfd\n"
-  promulgateEQ [nid] SpielSync >>= (flip withMonitor) wait
-  "SyncOK" :: String <- expect
+    liftIO $ appendFile "/tmp/strlog" "about to syncToConfd\n"
+    promulgateEQ [nid] SpielSync >>= (flip withMonitor) wait
+    "SyncOK" :: String <- expect
 
-  finalize
+    finalize
 
   -- XXX m0_fini
 
@@ -652,5 +544,5 @@ testRCsyncToConfd host transport = do
 #endif
 
 testRemoteTable :: RemoteTable
-testRemoteTable = HA.RecoveryCoordinator.Mero.Tests.__remoteTableDecl $
+testRemoteTable = TestRunner.__remoteTableDecl $
                   remoteTable

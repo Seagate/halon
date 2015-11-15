@@ -1,34 +1,127 @@
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE CPP #-}
 module TestRunner
-  ( runTest
+  ( TestArgs(..)
+  , TestReplicatedState
+  , runRCEx
+  , runTest
   , withLocalNode
   , withLocalNodes
+  , withTrackingStation
+  , eqView
+  , eqView__static
+  , multimapView
+  , multimapView__static
+  , testDict
+  , testDict__static
+  , emptyRules
+  , emptyRules__static
+  , __remoteTableDecl
   ) where
 
-import HA.Startup
+import qualified HA.EQTracker as EQT
+import HA.EventQueue
+import HA.Multimap.Implementation
+import HA.Multimap.Process
+import HA.RecoveryCoordinator.Definitions
+import HA.RecoveryCoordinator.Mero
+import HA.Replicator
+#ifdef USE_MOCK_REPLICATOR
+import HA.Replicator.Mock ( MC_RG )
+#else
+import HA.Replicator.Log ( MC_RG )
+#endif
+import HA.Startup (stopHalonNode)
 
+import Control.Arrow (first, second)
 import Control.Exception as E
 import Control.Distributed.Process
+import Control.Distributed.Process.Closure
 import qualified Control.Distributed.Process as DP
 import Control.Distributed.Process.Node
 import qualified Control.Distributed.Process.Scheduler as Scheduler
+import Control.Monad (join, void)
+
+import Data.Foldable
+
+import Network.CEP hiding (timeout)
 import Network.Transport (Transport(..))
 import Network.Transport.InMemory (createTransport)
 
-
-import Data.Foldable
 import System.Environment (lookupEnv)
 import System.Random (randomIO)
 import System.IO (stderr, hPutStrLn)
 import System.Timeout (timeout)
+
 import Test.Framework
+
+type TestReplicatedState = (EventQueue, Multimap)
+
+remotableDecl [ [d|
+  eqView :: RStateView TestReplicatedState EventQueue
+  eqView = RStateView fst first
+
+  multimapView :: RStateView TestReplicatedState Multimap
+  multimapView = RStateView snd second
+
+  testDict :: SerializableDict TestReplicatedState
+  testDict = SerializableDict
+
+  emptyRules :: [Definitions LoopState ()]
+  emptyRules = []
+
+  |]]
+
+data TestArgs = TestArgs {
+    ta_eq :: ProcessId
+  , ta_mm :: ProcessId
+  , ta_rc :: ProcessId
+} deriving (Eq, Show)
+
+runRCEx :: (ProcessId, IgnitionArguments)
+        -> [Definitions LoopState ()]
+        -> MC_RG TestReplicatedState
+        -> Process ((ProcessId, ProcessId)) -- ^ MM, RC
+runRCEx (eq, args) rules rGroup = do
+  rec (mm, rc) <- (,)
+                  <$> (spawnLocal $ do
+                        () <- expect
+                        link rc
+                        multimap (viewRState $(mkStatic 'multimapView) rGroup))
+                  <*> (spawnLocal $ do
+                        () <- expect
+                        recoveryCoordinatorEx () rules args eq mm)
+  usend eq rc
+  forM_ [mm, rc] $ \them -> usend them ()
+  return (mm, rc)
+
+-- | Wrapper to start a test with a Halon tracking station running. Returns
+--   handles to the recovery co-ordinator, multimap and event queue.
+withTrackingStation :: [Definitions LoopState ()]
+                    -> (TestArgs -> Process ())  -- ^ Test contents.
+                    -> Process ()
+withTrackingStation testRules action = do
+  nid <- getSelfNode
+  DP.bracket
+    (do
+      void $ EQT.startEQTracker [nid]
+      cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
+                         [nid] ((Nothing,[]), fromList [])
+      join $ unClosure cRGroup
+    )
+    (flip killReplica nid)
+    (\rGroup -> do
+      eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
+      (mm, rc) <- runRCEx (eq, IgnitionArguments [nid]) testRules rGroup
+      action $ TestArgs eq mm rc
+    )
 
 -- | Implement a wrapper to start a test, checks current environment
 -- runs a test and perform a cleanup.
