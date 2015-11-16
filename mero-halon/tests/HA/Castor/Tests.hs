@@ -18,9 +18,9 @@ import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Exception (SomeException, bracket)
-import Control.Monad (join)
+import Control.Monad (forM_, join)
 
-import Data.List (sort)
+import Data.List (sort, unfoldr)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
@@ -208,8 +208,15 @@ largeInitialData host transport = let
         filesystem <- initialiseConfInRG
         loadMeroGlobals (CI.id_m0_globals initD)
         loadMeroServers filesystem (CI.id_m0_servers initD)
-        failureSets <- generateFailureSets 2 2 1
-        createPoolVersions filesystem failureSets
+        failureSets <- generateFailureSets 0 2 0
+        let chunks = flip unfoldr failureSets $ \xs ->
+              case xs of
+                [] -> Nothing
+                _  -> Just $ splitAt 50 xs
+        forM_ chunks $ \chunk -> do
+          createPoolVersions filesystem chunk
+          syncGraph
+ 
       -- Verify that everything is set up correctly
       bmc <- runGet ls' $ findBMCAddress myHost
       assertMsg "Get BMC Address." $ bmc == Just host
@@ -226,8 +233,8 @@ largeInitialData host transport = let
       assertMsg "MDPool is findable by Fid"
         $ mdpool == Just pool
 
-      let g = lsGraph ls'
-          racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
+      g <- getGraph pid
+      let racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
           encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
           ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
           disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
