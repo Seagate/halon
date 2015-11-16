@@ -63,20 +63,3 @@ meroRulesF m0d = do
   defineSimple "declare-mero-channel" $
     \(HAEvent _ (DeclareMeroChannel sp c) _) -> do
       registerChannel sp c
-
--- TODO at the moment we assume this is an SDev - needs to be revisited
--- when we get updates for things other than disks.
-  defineSimple "mero-set" $ \(HAEvent _ (Set nvec) _) -> let
-      setStatus (Note oid st) = do
-        mco <- lookupConfObjByFid oid
-        phaseLog "rg-query" $ "Found " ++ show mco
-        case (mco :: Maybe SDev) of
-          Just co -> modifyLocalGraph
-            $ return . connectUniqueFrom co Is st
-          _ -> return ()
-    in do
-      mapM_ setStatus nvec
-      rg <- getLocalGraph
-      for_ (meroChannels m0d rg) $ \(TypedChannel chan) -> do
-        phaseLog "action" "Notifying mero process"
-        liftProcess $ sendChan chan (Set nvec)

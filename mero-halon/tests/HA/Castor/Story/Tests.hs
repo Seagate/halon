@@ -1,7 +1,8 @@
-{-# LANGUAGE CPP             #-}
+{-# LANGUAGE CPP               #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecursiveDo     #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE RecursiveDo       #-}
+{-# LANGUAGE TemplateHaskell   #-}
 module HA.Castor.Story.Tests (mkTests) where
 
 import HA.EventQueue.Producer
@@ -39,6 +40,7 @@ import Control.Exception as E hiding (assert)
 
 import Data.Aeson (decode)
 import Data.Binary (Binary)
+import qualified Data.ByteString.Lazy as LBS
 import Data.Hashable (Hashable)
 import Data.Typeable
 import Data.Text (pack)
@@ -120,11 +122,11 @@ run transport interceptor test =
           str@"Starting service sspl"   -> usend self str
           x -> interceptor self x
 
-      startSSPLService
+      startSSPLService (ta_rc ta)
       debug "Started SSPL service"
       meroRP <- startMeroServiceMock (ta_rc ta)
       debug "Started Mero mock service"
-      rmq <- spawnMockRabbitMQ
+      rmq <- spawnMockRabbitMQ self
       debug "Started mock RabbitMQ service."
       -- Run the test
       debug "About to run the test"
@@ -137,8 +139,9 @@ run transport interceptor test =
       _ <- receiveTimeout 1000000 []
       kill rmq "end of game"
   where
-    startSSPLService :: Process ()
-    startSSPLService = do
+    startSSPLService :: ProcessId -> Process ()
+    startSSPLService rc = do
+      subscribe rc (Proxy :: Proxy (HAEvent DeclareMeroChannel))
       nid <- getSelfNode
       let conf =
             SSPLConf (ConnectionConf (Configured "localhost")
@@ -151,9 +154,9 @@ run transport interceptor test =
                      (ActuatorConf (BindConf (Configured "sspl_iem")
                                                 (Configured "sspl_ll")
                                                 (Configured "sspl_iem"))
-                                   (BindConf (Configured "sspl_halon")
+                                   (BindConf (Configured "halon_sspl")
                                                 (Configured "sspl_ll")
-                                                (Configured "sspl_halon"))
+                                                (Configured "halon_sspl"))
                                    (BindConf (Configured "sspl_command_ack")
                                                 (Configured "halon_ack")
                                                 (Configured "sspl_command_ack"))
@@ -168,20 +171,22 @@ run transport interceptor test =
 
     startMeroServiceMock :: ProcessId -> Process (ReceivePort Set)
     startMeroServiceMock rc = do
-      subscribe rc (Proxy :: Proxy (HAEvent DeclareMeroChannel))
+      subscribe rc (Proxy :: Proxy (HAEvent DeclareChannels))
       nid <- getSelfNode
       pid <- getSelfPid
       (recv, channel) <- newMeroChannel pid
       _ <- promulgateEQ [nid] channel
-      _ <- expect :: Process (Published (HAEvent DeclareMeroChannel))
+      _ <- expect :: Process (Published (HAEvent DeclareChannels))
       return recv
 
-    spawnMockRabbitMQ :: Process ProcessId
-    spawnMockRabbitMQ = do
-      pid <- spawnLocal $ rabbitMQProxy $ ConnectionConf (Configured "localhost")
-             (Configured "/")
-             ("guest")
-             ("guest")
+    spawnMockRabbitMQ :: ProcessId -> Process ProcessId
+    spawnMockRabbitMQ self = do
+      pid <- spawnLocal $ do
+        link self
+        rabbitMQProxy $ ConnectionConf (Configured "localhost")
+                                       (Configured "/")
+                                       ("guest")
+                                       ("guest")
       link pid
       return pid
 
@@ -212,14 +217,16 @@ ongoingReset :: StorageDeviceAttr -> Bool
 ongoingReset SDOnGoingReset = True
 ongoingReset _              = False
 
-expectNodeMsg :: Process (Maybe ActuatorRequestMessageActuator_request_typeNode_controller)
-expectNodeMsg = do
-  msg <- return . decode =<< expect
-  return . join
-    $ actuatorRequestMessageActuator_request_typeNode_controller
-    . actuatorRequestMessageActuator_request_type
-    . actuatorRequestMessage
-    <$> msg
+expectNodeMsg :: Int -> Process (Maybe ActuatorRequestMessageActuator_request_typeNode_controller)
+expectNodeMsg timeout = do
+  expectTimeout timeout >>= \case
+    Just (MQMessage _ msg) ->
+      return . join
+        $ actuatorRequestMessageActuator_request_typeNode_controller
+        . actuatorRequestMessageActuator_request_type
+        . actuatorRequestMessage
+        <$> (decode . LBS.fromStrict $ msg)
+    Nothing -> error "No message delivered to SSPL."
 
 testDiskFailureBase :: TestArgs
                     -> ProcessId -- ^ RabbitMQ Proxy
@@ -232,8 +239,8 @@ testDiskFailureBase (TestArgs _ mm rc) rmq recv = do
     subscribe rc (Proxy :: Proxy (HAEvent CommandAck))
     subscribe rc (Proxy :: Proxy ResetAttempt)
     -- Subscribe to SSPL channels
-    usend rmq . MQSubscribe "sspl_halon" =<< getSelfPid
-    usend rmq . MQSubscribe "sspl_iem" =<< getSelfPid
+    usend rmq . MQSubscribe "halon_sspl" =<< getSelfPid
+    usend rmq $ MQBind "halon_sspl" "sspl_ll" "halon_sspl"
 
     debug "251"
     sdev <- G.getGraph mm >>= findSDev
@@ -250,7 +257,9 @@ testDiskFailureBase (TestArgs _ mm rc) rmq recv = do
     -- The RC should issue a 'ResetAttempt' and should be handled.
     _ <- expect :: Process (Published ResetAttempt)
     -- We should see `ResetAttempt` from SSPL
-    msg <- expectNodeMsg
+    debug "post ResetAttempt"
+    msg <- expectNodeMsg 1000000
+    debug $ "257: " ++ show msg
     assert $ msg
             == Just (ActuatorRequestMessageActuator_request_typeNode_controller
                       (nodeCmdString (DrivePowerdown sdev_path))
@@ -272,7 +281,8 @@ testDiskFailureBase (TestArgs _ mm rc) rmq recv = do
       fail "false_dev should be power off"
 
     -- RC should now issue power on instruction
-    msg <- expectNodeMsg
+    msg <- expectNodeMsg 1000000
+    debug $ "279: " ++ show msg
     assert $ msg
             == Just (ActuatorRequestMessageActuator_request_typeNode_controller
                       (nodeCmdString (DrivePoweron sdev_path))
@@ -293,7 +303,7 @@ testDiskFailureBase (TestArgs _ mm rc) rmq recv = do
       fail "false_dev should be power on"
 
     -- RC should now issue power on instruction
-    msg <- expectNodeMsg
+    msg <- expectNodeMsg 1000000
     assert $ msg
             == Just (ActuatorRequestMessageActuator_request_typeNode_controller
                       (nodeCmdString (SmartTest sdev_path))

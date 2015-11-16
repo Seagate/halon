@@ -426,13 +426,13 @@ updateDriveStatus dev status = modifyLocalGraph $ \rg -> do
 
 setStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM LoopState l ()
 setStorageDeviceAttr sd attr  = do
-    phaseLog "rg" $ "Setting disk attribute " ++ show attr ++ "on " ++ show sd
+    phaseLog "rg" $ "Setting disk attribute " ++ show attr ++ " on " ++ show sd
     modifyGraph (G.newResource attr >>> G.connect sd Has attr)
 
 unsetStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM LoopState l ()
 unsetStorageDeviceAttr sd attr = do
     phaseLog "rg" $ "Unsetting disk attribute "
-                  ++ show attr ++ "on " ++ show sd
+                  ++ show attr ++ " on " ++ show sd
     modifyGraph (G.disconnect sd Has attr)
 
 findStorageDeviceAttr :: (StorageDeviceAttr -> Bool)

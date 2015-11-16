@@ -136,7 +136,7 @@ castorRules = do
       messageProcessed eid
 
 #ifdef USE_MERO
-    defineSimple "mero-note-set" $ \(Set ns) ->
+    defineSimple "mero-note-set" $ \(HAEvent _ (Set ns) _) ->
       for_ ns $ \(Note mfid tpe) ->
         case tpe of
           M0_NC_FAILED -> do
