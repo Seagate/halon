@@ -142,9 +142,10 @@ findActuationNode sspl = do
 ssplRulesF :: Service SSPLConf -> Definitions LoopState ()
 ssplRulesF sspl = do
   defineSimple "declare-channels" $
-      \(HAEvent _ (DeclareChannels pid svc acs) _) -> do
+      \(HAEvent uuid (DeclareChannels pid svc acs) _) -> do
           registerChannels svc acs
           ack pid
+          messageProcessed uuid
 
   -- SSPL Monitor drivemanager
   defineSimpleIf "monitor-drivemanager" (\(HAEvent _ (nid, mrm) _) _ ->
