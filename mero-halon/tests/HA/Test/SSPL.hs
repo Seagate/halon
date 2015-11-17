@@ -34,7 +34,7 @@ import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.Startup (startupHalonNode, ignition)
 import HA.NodeUp  (nodeUp)
-import Network.CEP (Definitions, defineSimple, liftProcess)
+import Network.CEP (subscribe, Definitions, defineSimple, liftProcess, Published)
 import SSPL.Bindings
 
 import RemoteTables ( remoteTable )
@@ -76,6 +76,10 @@ data TestSmartCmd = TestSmartCmd NodeId ByteString deriving (Generic, Typeable)
 
 instance Binary TestSmartCmd
 
+data WhoAmI = WhoAmI deriving (Generic, Typeable)
+
+instance Binary WhoAmI
+
 testRules :: ProcessId ->  [Definitions LoopState ()]
 testRules pid =
   [ defineSimple "sspl-test-send" $ \(HAEvent _ (TestSmartCmd nid t) _) ->
@@ -84,6 +88,8 @@ testRules pid =
       liftProcess $ say $ "TEST-CA " ++ show s
   , defineSimple "sspl-test-sensor" $ \(HAEvent _ (_::NodeId, s) _) ->
       liftProcess $ usend pid (SChan s)
+  , defineSimple "who-am-i" $ \(HAEvent _ WhoAmI _) ->
+      liftProcess $ usend pid =<< getSelfPid
   ]
 
 unit :: ()
@@ -159,8 +165,11 @@ runSSPLTest transport interseptor test =
     _ <- liftIO $ forkProcess n $ registerInterceptor $ \string ->
       case string of
         str@"Starting service sspl"   -> usend self str
-        str@"Register channels"       -> usend self (RChan str)
+        -- str@"Register channels"       -> usend self (RChan str)
         x -> interseptor self x
+    _ <- promulgateEQ [localNodeId n] WhoAmI
+    rc <- expect
+    subscribe rc (Proxy :: Proxy (HAEvent DeclareChannels))
     _ <- promulgateEQ [localNodeId n] $ encodeP $
       ServiceStartRequest Start (Node (localNodeId n)) sspl
           (SSPLConf (ConnectionConf (Configured "127.0.0.1")
@@ -182,7 +191,7 @@ runSSPLTest transport interseptor test =
                                   (Configured 1000000)))
           []
     ("Starting service sspl" :: String) <- expect
-    RChan "Register channels" <- expect
+    _ <- expect :: Process (Published (HAEvent DeclareChannels))
     pid <- spawnLocal $ do
       link self
       rabbitMQProxy $ ConnectionConf (Configured "localhost")
