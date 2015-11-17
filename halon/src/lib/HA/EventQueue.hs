@@ -51,6 +51,7 @@ import Control.Distributed.Process hiding (newChan)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Timeout ( retry )
 
+import Control.Exception (SomeException, throwIO)
 import Control.Monad (when)
 import Data.Binary (Binary)
 import Data.Foldable (for_, traverse_)
@@ -128,6 +129,10 @@ startEventQueue rg = do
       -- of new RCs
       st <- for mRC $ \pid -> fmap (EventQueueState pid) $ monitor pid
       execute st $ eqRules rg
+      eqTrace "Terminated"
+     `catch` \e -> do
+      eqTrace $ "Dying with " ++ show e
+      liftIO $ throwIO (e :: SomeException)
     register eventQueueLabel eq
     return eq
 
