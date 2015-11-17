@@ -69,6 +69,7 @@ module HA.RecoverySupervisor
     , timeSpecToMicro
     ) where
 
+import HA.Logger
 import HA.Replicator ( RGroup, updateStateWith, getState )
 
 import Control.Distributed.Process
@@ -85,6 +86,9 @@ import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
 import System.Clock
 
+
+rsTrace :: String -> Process ()
+rsTrace = mkHalonTracer "RS"
 
 -- | State of the recovery supervisor
 data RSState = RSState { rsLeader :: Maybe ProcessId
@@ -121,6 +125,10 @@ recoverySupervisor :: RGroup g
 recoverySupervisor rg rcP = do
     rst <- retry 1000000 (getState rg)
     go (Left $ rsLeasePeriod rst) rst
+    rsTrace $ "Terminated"
+   `catch` \e -> do
+    rsTrace $ "Dying with " ++ show e
+    liftIO $ throwIO (e :: SomeException)
   where
     -- Takes the pid of the Recovery Coordinator, the remaining amount of
     -- microseconds of the current lease and the last observed state. If the pid
@@ -206,10 +214,15 @@ recoverySupervisor rg rcP = do
     -- there has not been updates since the state was last observed.
     rsUpdate rst = do
       self <- getSelfPid
+      rsTrace "Competing for the lease"
       void $ timeout (pollingPeriod $ rsLeasePeriod rst) $
         updateStateWith rg $
           $(mkClosure 'setLeader) (self, rsLeaseCount rst)
-      retry (pollingPeriod $ rsLeasePeriod rst) $ getState rg
+      rst' <- retry (pollingPeriod $ rsLeasePeriod rst) $ do
+        rsTrace "Reading the lease"
+        getState rg
+      rsTrace $ "Read the lease: " ++ show rst'
+      return rst'
 
     -- | Yields @True@ iff a notification about RC death has arrived.
     rcHasDied rc = do
