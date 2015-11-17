@@ -132,6 +132,7 @@ startActuators chan ac pid = do
     informRC sp chans = do
       mypid <- getSelfPid
       _ <- promulgate $ DeclareChannels mypid sp chans
+      _ <- expect :: Process ProcessMonitorNotification
       msg <- expectTimeout (fromDefault . acDeclareChanTimeout $ ac)
       case msg of
         Nothing -> informRC sp chans
