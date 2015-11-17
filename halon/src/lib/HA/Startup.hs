@@ -163,8 +163,8 @@ remotableDecl [ [d|
   where
      handleMessages refmapper =
        receiveWait [
-         match (\(ProcessMonitorNotification ref _ _) ->
-           liftIO (hPutStrLn stderr (refmapper ref)) >>
+         match (\pmn@(ProcessMonitorNotification ref _ _) ->
+           liftIO (hPutStrLn stderr (refmapper ref ++ " " ++ show pmn)) >>
            return ())
        ] >> handleMessages refmapper
 
