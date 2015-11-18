@@ -33,6 +33,7 @@ import RemoteTables (remoteTable)
 
 import SSPL.Bindings
 
+import Control.Concurrent (threadDelay)
 import Control.Monad (join, when, replicateM_, void)
 import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Node
@@ -53,7 +54,7 @@ import Network.CEP
 import Network.Transport
 
 import Test.Framework
-import Test.Tasty.HUnit (Assertion)
+import Test.Tasty.HUnit (Assertion, assertEqual)
 import TestRunner
 
 debug :: String -> Process ()
@@ -72,9 +73,9 @@ newMeroChannel :: ProcessId -> Process (ReceivePort Set, MockM0)
 newMeroChannel pid = do
   (sd, recv) <- newChan
   let sdChan   = TypedChannel sd
-      notify = MockM0
+      notfication = MockM0
               $ DeclareMeroChannel (ServiceProcess pid) sdChan
-  return (recv, notify)
+  return (recv, notfication)
 
 testRules :: Definitions LoopState ()
 testRules = do
@@ -101,8 +102,12 @@ mkTests = do
           testFailedSMART transport
         , testSuccess "Drive failure, second drive fails whilst handling to reset attempt" $
           testSecondReset transport
-        , testSuccess "Drive failure, reset attempt, no reponse from SSPL" $
-          testSSPLNoResponse transport
+        , testSuccess "No response from powerdown" $
+          testPowerdownNoResponse transport
+        , testSuccess "No response from powerup" $
+          testPowerupNoResponse transport
+        , testSuccess "No response from SMART test" $
+          testSMARTNoResponse transport
         ]
 
 run :: Transport
@@ -213,13 +218,9 @@ isPowered :: StorageDeviceAttr -> Bool
 isPowered SDPowered = True
 isPowered _         = False
 
-ongoingReset :: StorageDeviceAttr -> Bool
-ongoingReset SDOnGoingReset = True
-ongoingReset _              = False
-
 expectNodeMsg :: Int -> Process (Maybe ActuatorRequestMessageActuator_request_typeNode_controller)
-expectNodeMsg timeout = do
-  expectTimeout timeout >>= \case
+expectNodeMsg t = do
+  expectTimeout t >>= \case
     Just (MQMessage _ msg) ->
       return . join
         $ actuatorRequestMessageActuator_request_typeNode_controller
@@ -228,130 +229,162 @@ expectNodeMsg timeout = do
         <$> (decode . LBS.fromStrict $ msg)
     Nothing -> error "No message delivered to SSPL."
 
-testDiskFailureBase :: TestArgs
-                    -> ProcessId -- ^ RabbitMQ Proxy
-                    -> ReceivePort Set
-                    -> Process ()
-testDiskFailureBase (TestArgs _ mm rc) rmq recv = do
-    debug "244"
+--------------------------------------------------------------------------------
+-- Test primitives
+--------------------------------------------------------------------------------
+
+prepareSubscriptions :: ProcessId -> ProcessId -> Process ()
+prepareSubscriptions rc rmq = do
+  subscribe rc (Proxy :: Proxy (HAEvent InitialData))
+  subscribe rc (Proxy :: Proxy CommandAck)
+  subscribe rc (Proxy :: Proxy ResetAttempt)
+
+  -- Subscribe to SSPL channels
+  usend rmq . MQSubscribe "halon_sspl" =<< getSelfPid
+  usend rmq $ MQBind "halon_sspl" "halon_sspl" "sspl_ll"
+
+loadInitialData :: Process ()
+loadInitialData = let
+    init_msg = initialDataAddr "192.0.2.1" "192.0.2.2" 8
+  in do
     nid <- getSelfNode
+    -- We populate the graph with confc context.
+    _ <- promulgateEQ [nid] init_msg
+    _ <- expect :: Process (Published (HAEvent InitialData))
+    return ()
 
-    subscribe rc (Proxy :: Proxy (HAEvent CommandAck))
-    subscribe rc (Proxy :: Proxy ResetAttempt)
-    -- Subscribe to SSPL channels
-    usend rmq . MQSubscribe "halon_sspl" =<< getSelfPid
-    usend rmq $ MQBind "halon_sspl" "sspl_ll" "halon_sspl"
-
-    debug "251"
-    sdev <- G.getGraph mm >>= findSDev
-
-    let fail_evt = Set [Note (M0.d_fid sdev) M0_NC_FAILED]
-        sdev_path = pack $ M0.d_path sdev
-
+failDrive :: ReceivePort Set -> M0.SDev -> Process ()
+failDrive recv sdev = let
+    fail_evt = Set [Note (M0.d_fid sdev) M0_NC_FAILED]
+    sdev_path = pack $ M0.d_path sdev
+  in do
+    debug "failDrive"
+    nid <- getSelfNode
     -- We a drive failure note to the RC.
     _ <- promulgateEQ [nid] fail_evt
-    debug "260"
     -- Mero should be notified that the drive should be transient.
     Set [Note _ M0_NC_TRANSIENT] <- receiveChan recv
-    debug "263"
+    debug "failDrive: Transient state set"
     -- The RC should issue a 'ResetAttempt' and should be handled.
     _ <- expect :: Process (Published ResetAttempt)
     -- We should see `ResetAttempt` from SSPL
-    debug "post ResetAttempt"
     msg <- expectNodeMsg 1000000
-    debug $ "257: " ++ show msg
+    debug $ "failDrive: Msg: " ++ show msg
     assert $ msg
             == Just (ActuatorRequestMessageActuator_request_typeNode_controller
                       (nodeCmdString (DrivePowerdown sdev_path))
                     )
-    debug "272"
-    -- TODO send this from SSPL side
-    let downComplete = CommandAck Nothing
-                                  (Just $ DrivePowerdown sdev_path)
-                                  AckReplyPassed
 
+powerdownComplete :: ProcessId -> M0.SDev -> Process ()
+powerdownComplete mm sdev = let
+    sdev_path = pack $ M0.d_path sdev
+    downComplete = CommandAck Nothing
+                                (Just $ DrivePowerdown sdev_path)
+                                AckReplyPassed
+  in do
+    debug "powerdownComplete"
+    nid <- getSelfNode
     -- Confirms that the disk powerdown operation has occured.
     _ <- promulgateEQ [nid] downComplete
-
-    _ <- expect :: Process (Published (HAEvent CommandAck))
-    tmp2_rg <- G.getGraph mm
+    _ <- expect :: Process (Published CommandAck)
+    rg <- G.getGraph mm
 
     -- The drive should be marked power off.
-    when (any isPowered $ devAttrs sdev tmp2_rg) $
+    when (any isPowered $ devAttrs sdev rg) $
       fail "false_dev should be power off"
-
     -- RC should now issue power on instruction
     msg <- expectNodeMsg 1000000
-    debug $ "279: " ++ show msg
+    debug $ "powerdownComplete: Msg: " ++ show msg
     assert $ msg
             == Just (ActuatorRequestMessageActuator_request_typeNode_controller
                       (nodeCmdString (DrivePoweron sdev_path))
                     )
 
-    -- TODO send this from SSPL side
-    let onComplete = CommandAck Nothing
-                     (Just $ DrivePoweron sdev_path)
-                     AckReplyPassed
-
-    -- Confirms that the disk poweron operation has occured.
+poweronComplete :: ProcessId -> M0.SDev -> Process ()
+poweronComplete mm sdev = let
+    sdev_path = pack $ M0.d_path sdev
+    onComplete = CommandAck Nothing
+                            (Just $ DrivePoweron sdev_path)
+                            AckReplyPassed
+  in do
+    debug "poweronComplete"
+    nid <- getSelfNode
+    -- Confirms that the disk powerdown operation has occured.
     _ <- promulgateEQ [nid] onComplete
-    _ <- expect :: Process (Published (HAEvent CommandAck))
-    tmp3_rg <- G.getGraph mm
+    _ <- expect :: Process (Published CommandAck)
+    debug "poweronComplete: Command acknowledged"
+    rg <- G.getGraph mm
 
     -- The drive should be marked power on.
-    when (not $ any isPowered $ devAttrs sdev tmp3_rg) $
+    when (not $ any isPowered $ devAttrs sdev rg) $
       fail "false_dev should be power on"
-
     -- RC should now issue power on instruction
     msg <- expectNodeMsg 1000000
+    debug $ "poweronComplete: Msg: " ++ show msg
     assert $ msg
             == Just (ActuatorRequestMessageActuator_request_typeNode_controller
                       (nodeCmdString (SmartTest sdev_path))
                     )
 
-    let smartComplete = CommandAck Nothing
+smartTestComplete :: ReceivePort Set -> AckReply -> M0.SDev -> Process ()
+smartTestComplete recv success sdev = let
+    sdev_path = pack $ M0.d_path sdev
+    smartComplete = CommandAck Nothing
                         (Just $ SmartTest sdev_path)
-                        AckReplyPassed
-
-    -- Confirms that the disk smart test operation has been completed.
+                        success
+    status = case success of
+      AckReplyPassed -> M0_NC_ONLINE
+      AckReplyFailed -> M0_NC_FAILED
+      AckReplyError _ -> M0_NC_FAILED
+  in do
+    debug "smartTestComplete"
+    nid <- getSelfNode
+    -- Confirms that the disk powerdown operation has occured.
     _ <- promulgateEQ [nid] smartComplete
+    Set [Note fid stat] <- receiveChan recv
+    debug "smartTestComplete: Mero notification received"
+    liftIO $ assertEqual
+      "Smart test succeeded. Drive fids and status should match."
+      (M0.d_fid sdev, status)
+      (fid, stat)
 
-    -- Mero should be notified that the drive should be online.
-    Set [Note _ M0_NC_ONLINE] <- receiveChan recv
-
-    return ()
+--------------------------------------------------------------------------------
+-- Actual tests
+--------------------------------------------------------------------------------
 
 testDiskFailure :: Transport -> IO ()
 testDiskFailure transport = run transport interceptor test where
   interceptor _ _ = return ()
-  test ta@(TestArgs _ _ rc) rmq recv = do
-    nid <- getSelfNode
-    let init_msg = initialDataAddr "192.0.2.1" "192.0.2.2" 8
-    subscribe rc (Proxy :: Proxy (HAEvent InitialData))
-    -- We populate the graph with confc context.
-    _ <- promulgateEQ [nid] init_msg
-    -- We wait the RC finished to populate the RC.
-    _ <- expect :: Process (Published (HAEvent InitialData))
-    testDiskFailureBase ta rmq recv
+  test (TestArgs _ mm rc) rmq recv = do
+    prepareSubscriptions rc rmq
+    loadInitialData
+
+    sdev <- G.getGraph mm >>= findSDev
+    failDrive recv sdev
+    powerdownComplete mm sdev
+    poweronComplete mm sdev
+    smartTestComplete recv AckReplyPassed sdev
 
 testHitResetLimit :: Transport -> IO ()
 testHitResetLimit transport = run transport interceptor test where
   interceptor _ _ = return ()
-  test ta@(TestArgs _ _ rc) rmq recv = do
+  test (TestArgs _ mm rc) rmq recv = do
+    prepareSubscriptions rc rmq
+    loadInitialData
+
+    sdev <- G.getGraph mm >>= findSDev
+
+    replicateM_ (resetAttemptThreshold + 1) $ do
+      failDrive recv sdev
+      powerdownComplete mm sdev
+      poweronComplete mm sdev
+      smartTestComplete recv AckReplyPassed sdev
+
+    -- Fail the drive one more time
+    let fail_evt = Set [Note (M0.d_fid sdev) M0_NC_FAILED]
     nid <- getSelfNode
-    let init_msg = initialDataAddr "192.0.2.1" "192.0.2.2" 8
-
-    subscribe rc (Proxy :: Proxy (HAEvent InitialData))
-    -- We populate the graph with confc context.
-    _ <- promulgateEQ [nid] init_msg
-
-    -- We wait the RC finished to populate the RC.
-    _ <- expect :: Process (Published (HAEvent InitialData))
-
-    replicateM_ (resetAttemptThreshold + 1) $
-      testDiskFailureBase ta rmq recv
-
-    -- Mero should be notified that the drive should be transient.
+    void $ promulgateEQ [nid] fail_evt
+    -- Mero should be notified that the drive should be failed.
     Set [Note _ M0_NC_FAILED] <- receiveChan recv
 
     return ()
@@ -360,141 +393,98 @@ testFailedSMART :: Transport -> IO ()
 testFailedSMART transport = run transport interceptor test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
-    nid <- getSelfNode
-
-    subscribe rc (Proxy :: Proxy (HAEvent CommandAck))
-    subscribe rc (Proxy :: Proxy ResetAttempt)
+    prepareSubscriptions rc rmq
+    loadInitialData
 
     sdev <- G.getGraph mm >>= findSDev
-
-    let fail_evt = Set [Note (M0.d_fid sdev) M0_NC_FAILED]
-        sdev_path = pack $ M0.d_path sdev
-
-    -- We a drive failure note to the RC.
-    _ <- promulgateEQ [nid] fail_evt
-
-    -- Mero should be notified that the drive should be transient.
-    Set [Note _ M0_NC_TRANSIENT] <- receiveChan recv
-
-    -- The RC should issue a 'ResetAttempt' and should be handled.
-    _ <- expect :: Process (Published ResetAttempt)
-
-    let downComplete = CommandAck Nothing
-                                  (Just $ DrivePowerdown sdev_path)
-                                  AckReplyPassed
-
-    -- Confirms that the disk powerdown operation has occured.
-    _ <- promulgateEQ [nid] downComplete
-
-    _ <- expect :: Process (Published (HAEvent CommandAck))
-    tmp2_rg <- G.getGraph mm
-
-    -- The drive should be marked power off.
-    when (any isPowered $ devAttrs sdev tmp2_rg) $
-      fail "false_dev should be power off"
-
-    let onComplete = CommandAck Nothing
-                     (Just $ DrivePoweron sdev_path)
-                     AckReplyPassed
-
-    -- Confirms that the disk poweron operation has occured.
-    _ <- promulgateEQ [nid] onComplete
-    _ <- expect :: Process (Published (HAEvent CommandAck))
-    tmp3_rg <- G.getGraph mm
-
-    -- The drive should be marked power on.
-    when (not $ any isPowered $ devAttrs sdev tmp3_rg) $
-      fail "false_dev should be power on"
-
-    let smartComplete = CommandAck Nothing
-                        (Just $ SmartTest sdev_path)
-                        AckReplyFailed
-
-    -- Confirms that the disk smart test operation has been completed.
-    _ <- promulgateEQ [nid] smartComplete
-
-    -- Mero should be notified that the drive should be in failure state.
-    Set [Note _ M0_NC_FAILED] <- receiveChan recv
-
-    return ()
+    failDrive recv sdev
+    powerdownComplete mm sdev
+    poweronComplete mm sdev
+    smartTestComplete recv AckReplyFailed sdev
 
 testSecondReset :: Transport -> IO ()
 testSecondReset transport = run transport interceptor test where
   interceptor _ _ = return ()
-  test ta@(TestArgs _ mm rc) rmq recv = do
-    nid <- getSelfNode
-
-    subscribe rc (Proxy :: Proxy ResetAttempt)
+  test (TestArgs _ mm rc) rmq recv = do
+    prepareSubscriptions rc rmq
+    loadInitialData
 
     sdev <- G.getGraph mm >>= findSDev
     sdev2 <- G.getGraph mm >>= find2SDev
 
-    let fail_evt = Set [Note (M0.d_fid sdev) M0_NC_FAILED]
-        fail2_evt = Set [Note (M0.d_fid sdev2) M0_NC_FAILED]
+    failDrive recv sdev
+    failDrive recv sdev2
+    powerdownComplete mm sdev
+    powerdownComplete mm sdev2
+    poweronComplete mm sdev2
+    smartTestComplete recv AckReplyPassed sdev2
+    poweronComplete mm sdev
+    smartTestComplete recv AckReplyPassed sdev
 
-    -- We a drive failure note to the RC.
-    _ <- promulgateEQ [nid] fail_evt
-
-    -- Waits 'ResetAttempt' has been handle for the first 'M0.SDev'.
-    _ <- expect :: Process (Published ResetAttempt)
-
-    -- Reports M0.SDev 2 has failed too.
-    _ <- promulgateEQ [nid] fail2_evt
-
-    -- Proves that the RC handles multiple drive failures and reset attempts at
-    -- the same time.
-    _ <- expect :: Process (Published ResetAttempt)
-
-    return ()
-
-testSSPLNoResponse :: Transport -> IO ()
-testSSPLNoResponse transport = run transport interceptor test where
+testPowerdownNoResponse :: Transport -> IO ()
+testPowerdownNoResponse transport = run transport interceptor test where
   interceptor _ _ = return ()
-  test ta@(TestArgs _ mm rc) rmq recv = do
-    nid <- getSelfNode
-
-    subscribe rc (Proxy :: Proxy (HAEvent CommandAck))
-    subscribe rc (Proxy :: Proxy ResetAttempt)
+  test (TestArgs _ mm rc) rmq recv = do
+    prepareSubscriptions rc rmq
+    loadInitialData
 
     sdev <- G.getGraph mm >>= findSDev
+    failDrive recv sdev
+    -- No response to powerdown command, should try again
+    liftIO $ threadDelay 1000001
+    let sdev_path = pack $ M0.d_path sdev
+    msg <- expectNodeMsg 1000000
+    assert $ msg
+            == Just (ActuatorRequestMessageActuator_request_typeNode_controller
+                      (nodeCmdString (DrivePowerdown sdev_path))
+                    )
+    -- This time, we get a response
+    powerdownComplete mm sdev
+    poweronComplete mm sdev
+    smartTestComplete recv AckReplyPassed sdev
 
-    let fail_evt = Set [Note (M0.d_fid sdev) M0_NC_FAILED]
-        sdev_path = pack $ M0.d_path sdev
 
-    -- We a drive failure note to the RC.
-    _ <- promulgateEQ [nid] fail_evt
+testPowerupNoResponse :: Transport -> IO ()
+testPowerupNoResponse transport = run transport interceptor test where
+  interceptor _ _ = return ()
+  test (TestArgs _ mm rc) rmq recv = do
+    prepareSubscriptions rc rmq
+    loadInitialData
 
-    -- Mero should be notified that the drive should be transient.
-    Set [Note _ M0_NC_TRANSIENT] <- receiveChan recv
+    sdev <- G.getGraph mm >>= findSDev
+    failDrive recv sdev
+    powerdownComplete mm sdev
+    -- No response to poweron command, should try again
+    liftIO $ threadDelay 1000001
+    let sdev_path = pack $ M0.d_path sdev
+    msg <- expectNodeMsg 1000000
+    assert $ msg
+            == Just (ActuatorRequestMessageActuator_request_typeNode_controller
+                      (nodeCmdString (DrivePoweron sdev_path))
+                    )
+    -- This time, we get a response
+    poweronComplete mm sdev
+    smartTestComplete recv AckReplyPassed sdev
 
-    -- The RC should issue a 'ResetAttempt' and should be handled.
-    _ <- expect :: Process (Published ResetAttempt)
+testSMARTNoResponse :: Transport -> IO ()
+testSMARTNoResponse transport = run transport interceptor test where
+  interceptor _ _ = return ()
+  test (TestArgs _ mm rc) rmq recv = do
+    prepareSubscriptions rc rmq
+    loadInitialData
 
-    let downComplete = CommandAck Nothing
-                                  (Just $ DrivePowerdown sdev_path)
-                                  AckReplyPassed
-
-    -- Confirms that the disk powerdown operation has occured.
-    _ <- promulgateEQ [nid] downComplete
-
-    _ <- expect :: Process (Published (HAEvent CommandAck))
-    tmp2_rg <- G.getGraph mm
-
-    -- The drive should be marked power off.
-    when (any isPowered $ devAttrs sdev tmp2_rg) $
-      fail "false_dev should be power off"
-
-    let onComplete = CommandAck Nothing
-                     (Just $ DrivePoweron sdev_path)
-                     AckReplyPassed
-
-    -- Confirms that the disk poweron operation has occured.
-    _ <- promulgateEQ [nid] onComplete
-    _ <- expect :: Process (Published (HAEvent CommandAck))
-    tmp3_rg <- G.getGraph mm
-
-    -- The drive should be marked power on.
-    when (not $ any isPowered $ devAttrs sdev tmp3_rg) $
-      fail "false_dev should be power on"
-
-    return ()
+    sdev <- G.getGraph mm >>= findSDev
+    failDrive recv sdev
+    powerdownComplete mm sdev
+    poweronComplete mm sdev
+    -- No response to SMART test, should try power cycle again
+    liftIO $ threadDelay 1000001
+    let sdev_path = pack $ M0.d_path sdev
+    msg <- expectNodeMsg 1000000
+    assert $ msg
+            == Just (ActuatorRequestMessageActuator_request_typeNode_controller
+                      (nodeCmdString (DrivePowerdown sdev_path))
+                    )
+    powerdownComplete mm sdev
+    poweronComplete mm sdev
+    smartTestComplete recv AckReplyPassed sdev

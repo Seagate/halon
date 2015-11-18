@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DoAndIfThenElse       #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
@@ -173,22 +174,23 @@ castorRules = do
           _ -> return ()
 #endif
 
+    let ssplTimeout = 1
+
     define "reset-attempt" $ do
       home         <- phaseHandle "home"
       down         <- phaseHandle "powerdown"
+      downComplete <- phaseHandle "powerdown-complete"
       on           <- phaseHandle "poweron"
+      onComplete   <- phaseHandle "poweron-complete"
       smart        <- phaseHandle "smart"
       smartSuccess <- phaseHandle "smart-success"
       smartFailure <- phaseHandle "smart-failure"
       end          <- phaseHandle "end"
 
       setPhase home $ \(ResetAttempt sdev uid) -> fork NoBuffer $ do
-        nid <- liftProcess getSelfNode
         paths <- lookupStorageDevicePaths sdev
         case paths of
           path:_ -> do
-            incrDiskPowerOffAttempts sdev
-            sendNodeCmd nid Nothing (DrivePowerdown $ pack path)
             put Local (Just (sdev, path, uid))
             continue down
           [] -> do
@@ -196,15 +198,48 @@ castorRules = do
                               ++ show sdev
                               ++ " as it has no device paths associated."
 
-      setPhaseIf down (onCommandAck DrivePowerdown) $ \_ -> do
+      directly down $ do
         Just (sdev, path, _) <- get Local
         nid <- liftProcess getSelfNode
-        sendNodeCmd nid Nothing (DrivePoweron $ pack path)
-        incrDiskPowerOnAttempts sdev
+        i <- getDiskPowerOffAttempts sdev
+        if i <= resetAttemptThreshold
+        then do
+          incrDiskPowerOffAttempts sdev
+          sendNodeCmd nid Nothing (DrivePowerdown $ pack path)
+          switch [downComplete, timeout ssplTimeout down]
+        else do
+          markResetComplete sdev
+#ifdef USE_MERO
+          sd <- lookupStorageDeviceSDev sdev
+          forM_ sd $ \m0sdev ->
+            notifyMero [AnyConfObj m0sdev] M0_NC_FAILED
+#endif
+          continue end
+
+      setPhaseIf downComplete (onCommandAck DrivePowerdown) $ \_ -> do
+        Just (sdev, _, _) <- get Local
         markDiskPowerOff sdev
         continue on
 
-      setPhaseIf on (onCommandAck DrivePoweron) $ \_ -> do
+      directly on $ do
+        Just (sdev, path, _) <- get Local
+        nid <- liftProcess getSelfNode
+        i <- getDiskPowerOnAttempts sdev
+        if i <= resetAttemptThreshold
+        then do
+          incrDiskPowerOnAttempts sdev
+          sendNodeCmd nid Nothing (DrivePoweron $ pack path)
+          switch [onComplete, timeout ssplTimeout on]
+        else do
+          markResetComplete sdev
+#ifdef USE_MERO
+          sd <- lookupStorageDeviceSDev sdev
+          forM_ sd $ \m0sdev ->
+            notifyMero [AnyConfObj m0sdev] M0_NC_FAILED
+#endif
+          continue end
+
+      setPhaseIf onComplete (onCommandAck DrivePoweron) $ \_ -> do
         nid <- liftProcess getSelfNode
         Just (sdev, path, _) <- get Local
         markDiskPowerOn sdev
@@ -213,7 +248,8 @@ castorRules = do
         sendNodeCmd nid Nothing (SmartTest $ pack path)
         continue smart
 
-      directly smart $ switch [smartSuccess, smartFailure]
+      directly smart $ switch
+        [smartSuccess, smartFailure, timeout ssplTimeout down]
 
       setPhaseIf smartSuccess onSmartSuccess $ \_ -> do
         Just (sdev, _, _) <- get Local
@@ -240,7 +276,9 @@ castorRules = do
         continue end
 
       directly end $ do
-        Just (_, _, uid) <- get Local
+        Just (sdev, _, uid) <- get Local
+        setDiskPowerOffAttempts sdev 0
+        setDiskPowerOnAttempts sdev 0
         messageProcessed uid
         stop
 
