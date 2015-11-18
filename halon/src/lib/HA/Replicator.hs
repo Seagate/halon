@@ -116,6 +116,9 @@ class RGroup g where
   -- | Yields the local copy of the replicated state.
   getState :: g st -> Process st
 
+  -- | Reads the replicated state using the given function.
+  getStateWith :: g st -> Closure (st -> Process ()) -> Process ()
+
   -- | Sets the view of the replicated state.
   viewRState :: Typeable v => Static (RStateView st v) -> g st -> g v
 

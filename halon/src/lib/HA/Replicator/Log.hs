@@ -149,6 +149,9 @@ rgroupConfig (snapshotThreshold, snapshotTimeout) = Log.Config
     , snapshotRestoreTimeout = snapshotTimeout
     }
 
+composeM :: (a -> Process b) -> (b -> Process c) -> a -> Process c
+composeM f g x = f x >>= g
+
 remotable [ 'composeSV
           , 'updateProc
           , 'idRStateView
@@ -161,6 +164,7 @@ remotable [ 'composeSV
           , 'rgroupConfig
           , 'snapshotServer
           , 'halonPersistDirectory
+          , 'composeM
           ]
 
 fromPort :: Typeable st
@@ -256,6 +260,12 @@ instance RGroup RLogGroup where
 
   getState (RLogGroup sdict _ _ port rv) =
     select sdict port $ staticClosure $ queryStatic rv
+
+  getStateWith (RLogGroup _ _ _ port rv) cRd =
+    select sdictUnit port $
+      $(mkStaticClosure 'composeM)
+        `closureApply` staticClosure (queryStatic rv)
+        `closureApply` cRd
 
   viewRState rv (RLogGroup _ sdq h port rv') =
       RLogGroup ($(mkStatic 'rvDict) `staticApply` rv) sdq h port $

@@ -18,9 +18,9 @@ import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Exception (SomeException, bracket)
-import Control.Monad (join)
+import Control.Monad (forM_, join)
 
-import Data.List (sort)
+import Data.List (sort, unfoldr)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
@@ -119,17 +119,17 @@ testFailureSets transport = rGroupTest transport $ \pid -> do
     -- 8 disks, tolerating one disk failure at a time
     failureSets <- runGet ls' $ generateFailureSets 1 0 0
     say $ show failureSets
-    assertMsg "Number of failure sets (100)" $ Set.size failureSets == 9
+    assertMsg "Number of failure sets (100)" $ length failureSets == 9
     assertMsg "Smallest failure set is empty (100)"
-      $ fsSize (Set.elemAt 0 failureSets) == 0
+      $ fsSize (head failureSets) == 0
 
     -- 8 disks, two failures at a time
     failureSets2 <- runGet ls' $ generateFailureSets 2 0 0
-    assertMsg "Number of failure sets (200)" $ Set.size failureSets2 == 37
+    assertMsg "Number of failure sets (200)" $ length failureSets2 == 37
     assertMsg "Smallest failure set is empty (200)"
-      $ fsSize (Set.elemAt 0 failureSets2) == 0
+      $ fsSize (head failureSets2) == 0
     assertMsg "Next smallest failure set has one disk (200)"
-      $ fsSize (Set.elemAt 1 failureSets2) == 1
+      $ fsSize (failureSets2 !! 1) == 1
 
 loadInitialData :: String -> Transport -> IO ()
 loadInitialData host transport = rGroupTest transport $ \pid -> do
@@ -208,8 +208,15 @@ largeInitialData host transport = let
         filesystem <- initialiseConfInRG
         loadMeroGlobals (CI.id_m0_globals initD)
         loadMeroServers filesystem (CI.id_m0_servers initD)
-        failureSets <- generateFailureSets 2 2 1
-        createPoolVersions filesystem failureSets
+        failureSets <- generateFailureSets 0 2 0
+        let chunks = flip unfoldr failureSets $ \xs ->
+              case xs of
+                [] -> Nothing
+                _  -> Just $ splitAt 50 xs
+        forM_ chunks $ \chunk -> do
+          createPoolVersions filesystem chunk
+          syncGraph
+ 
       -- Verify that everything is set up correctly
       bmc <- runGet ls' $ findBMCAddress myHost
       assertMsg "Get BMC Address." $ bmc == Just host
@@ -226,8 +233,8 @@ largeInitialData host transport = let
       assertMsg "MDPool is findable by Fid"
         $ mdpool == Just pool
 
-      let g = lsGraph ls'
-          racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
+      g <- getGraph pid
+      let racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
           encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
           ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
           disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls

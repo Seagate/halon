@@ -239,9 +239,9 @@ mapFS f (FailureSet a b) = FailureSet (f a) b
 
 -- | Create pool versions based upon failure sets.
 createPoolVersions :: M0.Filesystem
-                   -> S.Set FailureSet
+                   -> [FailureSet]
                    -> PhaseM LoopState l ()
-createPoolVersions fs = mapM_ createPoolVersion . S.toList
+createPoolVersions fs = mapM_ createPoolVersion
   where
     pool = M0.Pool (M0.f_mdpool_fid fs)
     createPoolVersion :: FailureSet -> PhaseM LoopState l ()
@@ -289,7 +289,7 @@ createPoolVersions fs = mapM_ createPoolVersion . S.toList
 generateFailureSets :: Word32 -- ^ No. of disk failures to tolerate
                     -> Word32 -- ^ No. of controller failures to tolerate
                     -> Word32 -- ^ No. of disk failures equivalent to ctrl failure
-                    -> PhaseM LoopState l (S.Set FailureSet)
+                    -> PhaseM LoopState l [FailureSet]
 generateFailureSets df cf cfe = do
   rg <- getLocalGraph
   -- Look up all disks and the controller they are attached to
@@ -348,4 +348,5 @@ generateFailureSets df cf cfe = do
       choose _ [] = []
       choose n (x:xs) = ((x:) <$> choose (n-1) xs) ++ choose n xs
 
-  return $ S.unions $ fmap (\j -> buildCtrlFailureSet j allDisks) [0 .. cf]
+  return $ S.toList $ S.unions $
+    fmap (\j -> buildCtrlFailureSet j allDisks) [0 .. cf]

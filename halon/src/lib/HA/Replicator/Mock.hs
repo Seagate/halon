@@ -110,5 +110,11 @@ instance RGroup RLocalGroup where
   getState (RLocalGroup r rv) = unStatic rv
     >>= \rgv -> fmap (prj rgv) $ liftIO $ readIORef r
 
+  getStateWith (RLocalGroup r rv) cRd = do
+    rgv <- unStatic rv
+    s <- fmap (prj rgv) $ liftIO $ readIORef r
+    f <- unClosure cRd
+    f s
+
   viewRState rv (RLocalGroup st rv') = RLocalGroup st $
     $(mkStatic 'composeRP) `staticApply` rv' `staticApply` rv
