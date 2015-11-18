@@ -23,11 +23,13 @@ module TestRunner
   , testDict__static
   , emptyRules
   , emptyRules__static
+  , startMockEventQueue
   , __remoteTableDecl
   ) where
 
 import qualified HA.EQTracker as EQT
 import HA.EventQueue
+import HA.EventQueue.Types (PersistMessage)
 import HA.Multimap.Implementation
 import HA.Multimap.Process
 import HA.RecoveryCoordinator.Definitions
@@ -47,7 +49,7 @@ import Control.Distributed.Process.Closure
 import qualified Control.Distributed.Process as DP
 import Control.Distributed.Process.Node
 import qualified Control.Distributed.Process.Scheduler as Scheduler
-import Control.Monad (join, void)
+import Control.Monad (join, void, forever)
 
 import Data.Foldable
 
@@ -179,3 +181,21 @@ withLocalNodes :: Int
 withLocalNodes 0 _t _rt f = f []
 withLocalNodes n t rt f = withLocalNode t rt $ \node ->
     withLocalNodes (n - 1) t rt (f . (node :))
+
+
+-- | Creates mock event queue, this event queue only resends all events
+-- to predefined process. This function should only be used when there is
+-- no real RC running, because normal EQ will override this one, also Mock
+-- EQ do not use persistent layer and doesn't support RC restarts.
+startMockEventQueue :: ProcessId -> Process ProcessId
+startMockEventQueue listener = do
+  pid <- spawnLocal $ forever $
+           receiveWait
+             [ match $ \(sender, ev) ->
+                 usend listener (sender::ProcessId, ev::PersistMessage)
+             ]
+  mp <- whereis eventQueueLabel  
+  case mp of
+    Nothing -> register  eventQueueLabel pid
+    Just{}  -> reregister eventQueueLabel pid
+  return pid
