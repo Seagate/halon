@@ -1707,7 +1707,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
               getSelfPid >>= sendReplica logId ρ''
             go epoch mLeader ρs ref
 
-      , match $ \(ProcessMonitorNotification ref' pid _) -> do
+      , match $ \pmn@(ProcessMonitorNotification ref' pid _) -> do
           if ref == ref' then do
             -- Give some time to other replicas to elect a leader.
             _ <- receiveTimeout leaseTimeout []
@@ -1715,7 +1715,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
             -- are no more replicas.
             let ρ : ρss = maybe ρs (: ρs) mLeader
                 ρs'@(ρ' : _) = ρss ++ [ρ]
-            logTrace $ "ambassador: Replica disconnected or died " ++ show pid
+            logTrace $ "ambassador: Replica disconnected or died " ++ show pmn
                        ++ ". Trying " ++ show ρ' ++ "."
             ref'' <- monitorReplica ρ'
             -- Ask the head replica for the new leader.
