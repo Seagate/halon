@@ -20,7 +20,7 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 import Control.Exception (throwIO, Exception)
 import qualified Control.Exception as E (bracket)
-import Control.Monad (forever)
+import Control.Monad
 import Data.Binary (encode, decode)
 import qualified Data.ByteString.Lazy as BSL (ByteString)
 import Data.String (fromString)
@@ -66,9 +66,11 @@ serializableSnapshot serverLbl s0 = LogSnapshot
           (d, s) <- callWait pid i >>=
                       maybe (liftIO $ throwIO (NoSnapshot (nid, i)))
                             return
-          -- Dump the snapshot locally so it is available at a
-          -- later time.
-          _ <- apiLogSnapshotDump d s
+          here <- getSelfNode
+          when (nid /= here) $
+            -- Dump the snapshot locally so it is available at a
+            -- later time.
+            void $ apiLogSnapshotDump d s
           return $! decode s
 
     , logSnapshotDump = \d s -> apiLogSnapshotDump d (encode s)
