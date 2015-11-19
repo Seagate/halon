@@ -40,11 +40,17 @@ import Data.Binary (Binary)
 import Data.Foldable
 import Data.Maybe (catMaybes)
 import Data.Text (Text, pack)
+import Data.Typeable (Typeable)
+
+import GHC.Generics (Generic)
 
 import Network.CEP
 
 -- | Event sent when to many failures has been sent for a 'Disk'.
-newtype ResetAttempt = ResetAttempt StorageDevice deriving (Eq, Show, Binary)
+data ResetAttempt = ResetAttempt StorageDevice UUID
+  deriving (Eq, Generic, Show, Typeable)
+
+instance Binary ResetAttempt
 
 -- | Event sent when a ResetAttempt were successful.
 newtype ResetSuccess =
@@ -75,10 +81,10 @@ data TimeoutState = TimeoutNormal | ResetAttemptSent
 onCommandAck :: (Text -> NodeCmd)
            -> HAEvent CommandAck
            -> g
-           -> Maybe (StorageDevice, String)
+           -> Maybe (StorageDevice, String, UUID)
            -> Process (Maybe CommandAck)
 onCommandAck _ _ _ Nothing = return Nothing
-onCommandAck k (HAEvent _ cmd _) _ (Just (_, path)) =
+onCommandAck k (HAEvent _ cmd _) _ (Just (_, path, _)) =
   case commandAckType cmd of
     Just x | (k . pack $ path) == x -> return $ Just cmd
            | otherwise      -> return Nothing
@@ -86,9 +92,9 @@ onCommandAck k (HAEvent _ cmd _) _ (Just (_, path)) =
 
 onSmartSuccess :: HAEvent CommandAck
                -> g
-               -> Maybe (StorageDevice, String)
+               -> Maybe (StorageDevice, String, UUID)
                -> Process (Maybe ())
-onSmartSuccess (HAEvent _ cmd _) _ (Just (_, path)) =
+onSmartSuccess (HAEvent _ cmd _) _ (Just (_, path, _)) =
     case commandAckType cmd of
       Just (SmartTest x)
         | pack path == x ->
@@ -101,9 +107,9 @@ onSmartSuccess _ _ _ = return Nothing
 
 onSmartFailure :: HAEvent CommandAck
                -> g
-               -> Maybe (StorageDevice, String)
+               -> Maybe (StorageDevice, String, UUID)
                -> Process (Maybe (Maybe Text))
-onSmartFailure (HAEvent _ cmd _) _ (Just (_, path)) =
+onSmartFailure (HAEvent _ cmd _) _ (Just (_, path, _)) =
     case commandAckType cmd of
       Just (SmartTest x)
         | pack path == x ->
@@ -136,7 +142,7 @@ castorRules = do
       messageProcessed eid
 
 #ifdef USE_MERO
-    defineSimple "mero-note-set" $ \(HAEvent _ (Set ns) _) ->
+    defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) ->
       for_ ns $ \(Note mfid tpe) ->
         case tpe of
           M0_NC_FAILED -> do
@@ -163,7 +169,7 @@ castorRules = do
                   markOnGoingReset sdev
                   liftProcess $ do
                     self <- getSelfPid
-                    usend self $ ResetAttempt sdev
+                    usend self $ ResetAttempt sdev uid
           _ -> return ()
 #endif
 
@@ -174,15 +180,16 @@ castorRules = do
       smart        <- phaseHandle "smart"
       smartSuccess <- phaseHandle "smart-success"
       smartFailure <- phaseHandle "smart-failure"
+      end          <- phaseHandle "end"
 
-      setPhase home $ \(ResetAttempt sdev) -> fork NoBuffer $ do
+      setPhase home $ \(ResetAttempt sdev uid) -> fork NoBuffer $ do
         nid <- liftProcess getSelfNode
         paths <- lookupStorageDevicePaths sdev
         case paths of
           path:_ -> do
             incrDiskPowerOffAttempts sdev
             sendNodeCmd nid Nothing (DrivePowerdown $ pack path)
-            put Local (Just (sdev, path))
+            put Local (Just (sdev, path, uid))
             continue down
           [] -> do
             phaseLog "warning" $ "Cannot perform reset attempt for drive "
@@ -190,7 +197,7 @@ castorRules = do
                               ++ " as it has no device paths associated."
 
       setPhaseIf down (onCommandAck DrivePowerdown) $ \_ -> do
-        Just (sdev, path) <- get Local
+        Just (sdev, path, _) <- get Local
         nid <- liftProcess getSelfNode
         sendNodeCmd nid Nothing (DrivePoweron $ pack path)
         incrDiskPowerOnAttempts sdev
@@ -199,7 +206,7 @@ castorRules = do
 
       setPhaseIf on (onCommandAck DrivePoweron) $ \_ -> do
         nid <- liftProcess getSelfNode
-        Just (sdev, path) <- get Local
+        Just (sdev, path, _) <- get Local
         markDiskPowerOn sdev
         incrDiskResetAttempts sdev
         markSMARTTestIsRunning sdev
@@ -209,7 +216,7 @@ castorRules = do
       directly smart $ switch [smartSuccess, smartFailure]
 
       setPhaseIf smartSuccess onSmartSuccess $ \_ -> do
-        Just (sdev, _) <- get Local
+        Just (sdev, _, _) <- get Local
         markResetComplete sdev
         markSMARTTestComplete sdev
         markResetComplete sdev
@@ -218,10 +225,10 @@ castorRules = do
         forM_ sd $ \m0sdev ->
           notifyMero [AnyConfObj m0sdev] M0_NC_ONLINE
 #endif
-        put Local Nothing
+        continue end
 
       setPhaseIf smartFailure onSmartFailure $ \_ -> do
-        Just (sdev, _) <- get Local
+        Just (sdev, _, _) <- get Local
         markResetComplete sdev
         markSMARTTestComplete sdev
         markResetComplete sdev
@@ -230,7 +237,12 @@ castorRules = do
         forM_ sd $ \m0sdev ->
           notifyMero [AnyConfObj m0sdev] M0_NC_FAILED
 #endif
-        put Local Nothing
+        continue end
+
+      directly end $ do
+        Just (_, _, uid) <- get Local
+        messageProcessed uid
+        stop
 
       start home Nothing
   where
