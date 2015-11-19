@@ -23,13 +23,11 @@ module HA.RecoveryCoordinator.Actions.Mero
   , withSpielRC
   , syncToConfd
   , rgLookupConfObjByFid
-  , getSDevDisk
   , getPools
   , startRepairOperation
-  , rgGetAllSDevs
   , lookupStorageDevice
   , lookupStorageDeviceSDev
-  , getStorageDevice
+  , lookupSDevDisk
   )
 where
 
@@ -47,13 +45,12 @@ import Mero.Spiel hiding (start)
 import qualified Mero.Spiel
 
 import qualified Control.Distributed.Process as DP
-import Control.Monad (forM_, void)
+import Control.Monad (forM_)
 import Control.Applicative
 
 import Data.Foldable (traverse_)
 import Data.List (nub)
 import Data.Maybe (catMaybes, listToMaybe)
-import Data.Typeable (cast)
 
 import Network.CEP
 import Network.RPC.RPCLite (getRPCMachine_se, rpcAddress, RPCAddress(..))
@@ -70,19 +67,10 @@ rgLookupConfObjByFid :: forall a. (G.Resource a, M0.ConfObj a)
                      => Fid
                      -> G.Graph
                      -> Maybe a
-rgLookupConfObjByFid f rg = listToMaybe . filter ((== f) . M0.fid) $ allObjs
-  where
-    allObjs = catMaybes
-              . fmap (\(G.Res x) -> cast x :: Maybe a)
-              . fst . unzip
-              $ G.getGraphResources rg
-
-rgGetAllSDevs :: G.Graph -> [M0.SDev]
-rgGetAllSDevs rg =
-    catMaybes
-    . fmap (\(G.Res x) -> cast x :: Maybe M0.SDev)
-    . fst . unzip
-    $ G.getGraphResources rg
+rgLookupConfObjByFid f =
+    listToMaybe
+  . filter ((== f) . M0.fid)
+  . G.getResourcesOfType
 
 getProfile :: PhaseM LoopState l (Maybe M0.Profile)
 getProfile = getLocalGraph >>= \rg -> do
@@ -305,13 +293,6 @@ syncToConfd :: M0.SpielAddress -> PhaseM LoopState l (Maybe ())
 syncToConfd sa = withSpielRC sa $ \sc -> do
   loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
 
-getSDevDisk :: M0.SDev -> PhaseM LoopState l M0.Disk
-getSDevDisk sdev = do
-    rg <- getLocalGraph
-    case G.connectedTo sdev M0.IsOnHardware rg of
-      dev:_ -> return dev
-      _     -> liftProcess $ fail $ "No Disk associated to " ++ show sdev
-
 lookupStorageDevice :: M0.SDev -> PhaseM LoopState l (Maybe StorageDevice)
 lookupStorageDevice sdev = do
     rg <- getLocalGraph
@@ -331,13 +312,11 @@ lookupStorageDeviceSDev sdev = do
              ]
   return $ listToMaybe sds
 
-getStorageDevice :: M0.SDev -> PhaseM LoopState l StorageDevice
-getStorageDevice sdev = do
-    m <- lookupStorageDevice sdev
-    case m of
-      Just sd -> return sd
-      _       -> liftProcess $ fail $ "Given sdev " ++ show sdev
-                                    ++ " doesn't have an attached StorageDevice"
+lookupSDevDisk :: M0.SDev -> PhaseM LoopState l (Maybe M0.Disk)
+lookupSDevDisk sdev = do
+  phaseLog "rg" $ "Looking up M0.Disk objects attached to sdev " ++ show sdev
+  rg <- getLocalGraph
+  return . listToMaybe $ G.connectedTo sdev M0.IsOnHardware rg
 
 getPools :: M0.Disk -> PhaseM LoopState l [M0.Pool]
 getPools dev = do

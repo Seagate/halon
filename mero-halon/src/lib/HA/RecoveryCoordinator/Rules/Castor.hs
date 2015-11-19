@@ -39,7 +39,7 @@ import Control.Monad
 
 import Data.Binary (Binary)
 import Data.Foldable
-import Data.Maybe (catMaybes)
+import Data.Maybe (mapMaybe)
 import Data.Text (Text, pack)
 import Data.Typeable (Typeable)
 
@@ -65,7 +65,7 @@ newtype ResetFailure =
 
 lookupStorageDevicePathsInGraph :: StorageDevice -> G.Graph -> [String]
 lookupStorageDevicePathsInGraph sd g =
-    catMaybes . map extractPath $ ids
+    mapMaybe extractPath $ ids
   where
     ids = G.connectedTo sd Has g
     extractPath (DIPath x) = Just x
@@ -75,6 +75,10 @@ lookupStorageDevicePathsInGraph sd g =
 --   should be in 'DiskFailure' status.
 resetAttemptThreshold :: Int
 resetAttemptThreshold = 10
+
+-- | Time to allow for SSPL to reply.
+ssplTimeout :: Int
+ssplTimeout = 1
 
 -- | States of the Timeout rule.OB
 data TimeoutState = TimeoutNormal | ResetAttemptSent
@@ -149,32 +153,42 @@ castorRules = do
           M0_NC_FAILED -> do
             sdevm <- lookupConfObjByFid mfid
             for_ sdevm $ \m0sdev -> do
-              dev <- getSDevDisk m0sdev
-              sdev <- getStorageDevice m0sdev
-              ongoing <- hasOngoingReset sdev
-              when (not ongoing) $ do
-                ratt <- getDiskResetAttempts sdev
-                let status = if ratt <= resetAttemptThreshold
-                             then M0_NC_TRANSIENT
-                             else M0_NC_FAILED
-                notifyMero [AnyConfObj m0sdev] status
+              mdev <- lookupSDevDisk m0sdev
+              msdev <- lookupStorageDevice m0sdev
+              case (mdev, msdev) of
+                (Just dev, Just sdev) -> do
+                  ongoing <- hasOngoingReset sdev
+                  when (not ongoing) $ do
+                    ratt <- getDiskResetAttempts sdev
+                    let status = if ratt <= resetAttemptThreshold
+                                 then M0_NC_TRANSIENT
+                                 else M0_NC_FAILED
+                    notifyMero [AnyConfObj m0sdev] status
 
-                when (status == M0_NC_FAILED) $ do
-                  nid <- liftProcess getSelfNode
-                  let iem = InterestingEventMessage "m0_nc_failed"
-                  sendInterestingEvent nid iem
-                  pools <- getPools dev
-                  traverse_ (startRepairOperation dev) pools
+                    when (status == M0_NC_FAILED) $ do
+                      nid <- liftProcess getSelfNode
+                      diskids <- findStorageDeviceIdentifiers sdev
+                      let iem = InterestingEventMessage . pack . unwords $ [
+                                    "M0_NC_FAILED reported."
+                                  , "fid=" ++ show mfid
+                                ] ++ map show diskids
+                      sendInterestingEvent nid iem
+                      pools <- getPools dev
+                      traverse_ (startRepairOperation dev) pools
 
-                when (status == M0_NC_TRANSIENT) $ do
-                  markOnGoingReset sdev
-                  liftProcess $ do
-                    self <- getSelfPid
-                    usend self $ ResetAttempt sdev uid
+                    when (status == M0_NC_TRANSIENT) $ do
+                      markOnGoingReset sdev
+                      liftProcess $ do
+                        self <- getSelfPid
+                        usend self $ ResetAttempt sdev uid
+                _ -> do
+                  phaseLog "warning" $ "Cannot find all entities attached to M0"
+                                    ++ " storage device: "
+                                    ++ show m0sdev
+                                    ++ ": "
+                                    ++ show (mdev, msdev)
           _ -> return ()
 #endif
-
-    let ssplTimeout = 1
 
     define "reset-attempt" $ do
       home         <- phaseHandle "home"
@@ -197,6 +211,7 @@ castorRules = do
             phaseLog "warning" $ "Cannot perform reset attempt for drive "
                               ++ show sdev
                               ++ " as it has no device paths associated."
+            messageProcessed uid
 
       directly down $ do
         Just (sdev, path, _) <- get Local

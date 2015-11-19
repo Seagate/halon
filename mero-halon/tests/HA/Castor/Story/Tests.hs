@@ -7,8 +7,6 @@ module HA.Castor.Story.Tests (mkTests) where
 
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
-import HA.RecoveryCoordinator.Actions.Mero
-  ( rgGetAllSDevs )
 import HA.RecoveryCoordinator.Actions.Service
   ( registerServiceProcess )
 import HA.RecoveryCoordinator.Mero (LoopState)
@@ -197,13 +195,13 @@ run transport interceptor test =
 
 findSDev :: G.Graph -> Process M0.SDev
 findSDev rg =
-  case rgGetAllSDevs rg of
+  case G.getResourcesOfType rg of
     sdev:_ -> return sdev
     _      -> fail "Can't find a M0.SDev"
 
 find2SDev :: G.Graph -> Process M0.SDev
 find2SDev rg =
-  case rgGetAllSDevs rg of
+  case G.getResourcesOfType rg of
     _:sdev:_ -> return sdev
     _        -> fail "Can't find more than 2 SDevs"
 

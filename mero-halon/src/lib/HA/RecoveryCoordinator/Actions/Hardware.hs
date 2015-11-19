@@ -66,7 +66,7 @@ import HA.Resources.Castor
 import Control.Category ((>>>))
 import Control.Distributed.Process (liftIO)
 
-import Data.Maybe (catMaybes, listToMaybe)
+import Data.Maybe (listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
@@ -341,10 +341,10 @@ identifyStorageDevice ld di = modifyLocalGraph $ \rg -> do
 
   return rg'
 
--- | Lookup filesystem
+-- | Lookup filesystem paths for storage devices (e.g. /dev/sda1)
 lookupStorageDevicePaths :: StorageDevice -> PhaseM LoopState l [String]
 lookupStorageDevicePaths sd =
-  catMaybes . map extractPath <$> findStorageDeviceIdentifiers sd
+    mapMaybe extractPath <$> findStorageDeviceIdentifiers sd
   where
     extractPath (DIPath x) = Just x
     extractPath _ = Nothing
@@ -428,20 +428,23 @@ updateDriveStatus dev status = modifyLocalGraph $ \rg -> do
           $ rg
   return rg'
 
+-- | Set an attribute on a storage device.
 setStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM LoopState l ()
 setStorageDeviceAttr sd attr  = do
     phaseLog "rg" $ "Setting disk attribute " ++ show attr ++ " on " ++ show sd
     modifyGraph (G.newResource attr >>> G.connect sd Has attr)
 
+-- | Unset an attribute on a storage device.
 unsetStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM LoopState l ()
 unsetStorageDeviceAttr sd attr = do
     phaseLog "rg" $ "Unsetting disk attribute "
                   ++ show attr ++ " on " ++ show sd
     modifyGraph (G.disconnect sd Has attr)
 
+-- | Find (an) attribute matching the given filter on a storage device.
 findStorageDeviceAttr :: (StorageDeviceAttr -> Bool)
-             -> StorageDevice
-             -> PhaseM LoopState l (Maybe StorageDeviceAttr)
+                      -> StorageDevice
+                      -> PhaseM LoopState l (Maybe StorageDeviceAttr)
 findStorageDeviceAttr k sdev = do
     rg <- getLocalGraph
     let attrs =
@@ -450,6 +453,7 @@ findStorageDeviceAttr k sdev = do
                  ]
     return $ listToMaybe attrs
 
+-- | Test whether a given device is currently undergoing a reset operation.
 hasOngoingReset :: StorageDevice -> PhaseM LoopState l Bool
 hasOngoingReset =
     fmap (maybe False (const True)) . findStorageDeviceAttr go
@@ -457,6 +461,25 @@ hasOngoingReset =
     go SDOnGoingReset = True
     go _              = False
 
+-- | Mark that a storage device is undergoing reset.
+markOnGoingReset :: StorageDevice -> PhaseM LoopState l ()
+markOnGoingReset sdev = do
+    let _F SDOnGoingReset = True
+        _F _                 = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Nothing -> setStorageDeviceAttr sdev SDOnGoingReset
+      _       -> return ()
+
+-- | Mark that a storage device has completed reset.
+markResetComplete :: StorageDevice -> PhaseM LoopState l ()
+markResetComplete sdev = do
+    let _F SDOnGoingReset = True
+        _F _                 = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Nothing  -> return ()
+      Just old -> unsetStorageDeviceAttr sdev old
 
 incrDiskPowerOnAttempts :: StorageDevice -> PhaseM LoopState l ()
 incrDiskPowerOnAttempts sdev = do
@@ -490,24 +513,6 @@ incrDiskResetAttempts sdev = do
         unsetStorageDeviceAttr sdev old
         setStorageDeviceAttr sdev (SDResetAttempts (i+1))
       _ -> setStorageDeviceAttr sdev (SDResetAttempts 1)
-
-markOnGoingReset :: StorageDevice -> PhaseM LoopState l ()
-markOnGoingReset sdev = do
-    let _F SDOnGoingReset = True
-        _F _                 = False
-    m <- findStorageDeviceAttr _F sdev
-    case m of
-      Nothing -> setStorageDeviceAttr sdev SDOnGoingReset
-      _       -> return ()
-
-markResetComplete :: StorageDevice -> PhaseM LoopState l ()
-markResetComplete sdev = do
-    let _F SDOnGoingReset = True
-        _F _                 = False
-    m <- findStorageDeviceAttr _F sdev
-    case m of
-      Nothing  -> return ()
-      Just old -> unsetStorageDeviceAttr sdev old
 
 markDiskPowerOn :: StorageDevice -> PhaseM LoopState l ()
 markDiskPowerOn sdev = do

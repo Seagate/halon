@@ -14,22 +14,16 @@ module HA.Services.Mero.CEP
   ) where
 
 import HA.EventQueue.Types (HAEvent(..))
-import HA.RecoveryCoordinator.Actions.Mero (lookupConfObjByFid)
 import HA.RecoveryCoordinator.Mero
 import HA.ResourceGraph
 import HA.Resources
-import HA.Resources.Castor
-import HA.Resources.Mero (SDev(..))
 import HA.Service
 import HA.Services.Mero.Types
 
 import Mero.Notification (Set(..))
-import Mero.Notification.HAState
 
 import Control.Category ((>>>))
-import Control.Distributed.Process
 
-import Data.Foldable (for_)
 import Data.Maybe (isJust)
 
 import Network.CEP
@@ -59,7 +53,7 @@ meroChannels m0d rg = [ chan | node <- connectedTo Cluster Has rg
                              , chan <- connectedTo sp MeroChannel rg ]
 
 meroRulesF :: Service MeroConf -> Definitions LoopState ()
-meroRulesF m0d = do
+meroRulesF _ = do
   defineSimple "declare-mero-channel" $
     \(HAEvent _ (DeclareMeroChannel sp c) _) -> do
       registerChannel sp c
