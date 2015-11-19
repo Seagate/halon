@@ -90,7 +90,9 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
           str' | t `isInfixOf` str' -> usend self $ Dummy (drop (length t) str')
           _ -> return ()
       usend self ((), ())
-    ((), ()) <- expect
+    forM_ [m0, m1, m2] $ \_ -> do
+      ((), ()) <- expect
+      return ()
     bracket_ (do liftIO $ forM_ [m0, m1, m2, m3] $ \m -> forkProcess m $ do
                    startupHalonNode rcClosure
                    usend self ((), ())
