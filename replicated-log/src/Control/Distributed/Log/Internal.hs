@@ -195,6 +195,8 @@ data Log a = forall s ref. Serializable ref => Log
       -- After a succesful call, the dumped snapshot or a newer snapshot must
       -- appear listed in @logGetAvailableSnapshots@.
       --
+      -- The replica may interrupt this call if it takes too long.
+      --
     , logDump :: !(DecreeId -> s -> Process ref)
 
       -- | State transition callback.
@@ -401,6 +403,8 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
     -- Invariant: @stateUnconfirmedDecree <= stateCurrentDecree@
     --
   , stateCurrentDecree     :: !DecreeId
+    -- | The pid of the process dumping the latest snapshot
+  , stateSnapshotDumper    :: !(Maybe ProcessId)
     -- | The reference to the last snapshot saved.
   , stateSnapshotRef       :: !(Maybe ref)
     -- | The watermark of the lastest snapshot
@@ -613,6 +617,7 @@ replica Dict
          , stateReplicas = replicas
          , stateUnconfirmedDecree = d
          , stateCurrentDecree = d
+         , stateSnapshotDumper = Nothing
          , stateSnapshotRef   = Nothing
          , stateSnapshotWatermark = w0
          , stateWatermark = w0
@@ -766,7 +771,7 @@ replica Dict
         ]
 
     go :: ReplicaState s ref a -> Process b
-    go st@(ReplicaState ppid timerPid ph leaseStart ρs d cd msref w0 w s
+    go st@(ReplicaState ppid timerPid ph leaseStart ρs d cd mdumper msref w0 w s
                         epoch legD bpid timerSP timerRP sendPool
                         stLogRestore stLogDump stLogNextState
           ) =
@@ -874,15 +879,15 @@ replica Dict
                                         (decreeNumber w' - decreeNumber w0)
                       if takeSnapshot then do
                         say $ "Log size when trimming: " ++ show (Map.size log)
-                        -- First trim the log and only then save the snapshot.
-                        -- This guarantees that if later operation fails the
-                        -- latest membership can still be recovered from disk.
-                        liftIO $ trimTheLog ph (decreeNumber w0)
-                        sref' <- stLogDump w' s'
-                        prl_releaseDecreesBelow (sendAcceptor logId) here w0
-                        return (w', Just sref')
+                        forM_ mdumper $ flip kill "saving a newer snapshot"
+                        -- dump the snapshot asynchronously
+                        dumper <- spawnLocal $ do
+                                    dumper <- getSelfPid
+                                    sref' <- stLogDump w' s'
+                                    usend self (w', sref', dumper)
+                        return $ Just dumper
                       else
-                        return (w0, msref)
+                        return mdumper
                 case v of
                   Values xs -> {-# SCC "Execute/Values" #-} do
                       logTrace $ "Executing decree: " ++ show (w, di, d, cd)
@@ -890,11 +895,10 @@ replica Dict
                       let d'  = max d w'
                           cd' = max cd w'
                           w'  = succ w
-                      (w0', msref') <- maybeTakeSnapshot w' s'
+                      mdumper' <- maybeTakeSnapshot w' s'
                       go st{ stateUnconfirmedDecree = d'
                            , stateCurrentDecree     = cd'
-                           , stateSnapshotRef       = msref'
-                           , stateSnapshotWatermark = w0'
+                           , stateSnapshotDumper    = mdumper'
                            , stateWatermark         = w'
                            , stateLogState          = s'
                            }
@@ -911,7 +915,7 @@ replica Dict
                       -- Update the list of acceptors of the proposer...
                       updateAcceptors ρs'
 
-                      (w0', msref') <- maybeTakeSnapshot w' s
+                      mdumper' <- maybeTakeSnapshot w' s
 
                       -- Tick.
                       usend self Status
@@ -929,18 +933,33 @@ replica Dict
                            , stateCurrentDecree = cd'
                            , stateEpoch = epoch'
                            , stateReconfDecree = legD'
-                           , stateSnapshotRef       = msref'
-                           , stateSnapshotWatermark = w0'
+                           , stateSnapshotDumper = mdumper'
                            , stateWatermark = w'
                            }
                     | otherwise -> {-# SCC "Execute/otherwise" #-} do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
                       say $ "Not executing " ++ show (di, w, d, leg', cd)
-                      (w0', msref') <- maybeTakeSnapshot w' s
-                      go st{ stateSnapshotRef       = msref'
-                           , stateSnapshotWatermark = w0'
+                      mdumper' <- maybeTakeSnapshot w' s
+                      go st{ stateSnapshotDumper    = mdumper'
                            , stateWatermark = w'
                            }
+
+              -- Dumping a snapshot finished.
+            , match $ \(w0', sref', dumper') -> do
+                -- Only heed if the notification comes from the last dumper we
+                -- spawned.
+                logTrace $ "Response from dumper " ++
+                           show (w0', dumper', mdumper)
+                if Just dumper' == mdumper then do
+                  say "Trimming log."
+                  liftIO $ trimTheLog ph (decreeNumber w0)
+                  prl_releaseDecreesBelow (sendAcceptor logId) here w0
+                  go st{ stateSnapshotDumper    = Nothing
+                       , stateSnapshotRef       = Just sref'
+                       , stateSnapshotWatermark = w0'
+                       }
+                else
+                  go st
 
               -- If we get here, it's because there's a gap in the decrees we
               -- have received so far.

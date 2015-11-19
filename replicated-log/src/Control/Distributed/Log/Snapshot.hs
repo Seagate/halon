@@ -75,10 +75,19 @@ serializableSnapshot serverLbl s0 = LogSnapshot
 
   where
 
-    apiLogSnapshotDump d s = do
+    apiLogSnapshotDump d s = callLocal $ do
         here <- getSelfNode
         pid <- getSnapshotServer Nothing
-        () <- callWait pid (d, s)
+        link pid
+        -- Place the write request in the mailbox of the server.
+        self <- getSelfPid
+        usend pid (self, (d, s))
+        worker <- expect
+        -- Answer the ping of the server to test if we are still interested.
+        -- With big snapshots we might be interrupted before the server can
+        -- handle our request.
+        usend worker ()
+        () <- expect
         return (here, decreeNumber d)
 
     -- Retrieves the ProcessId of the snapshot server on a given node.
@@ -144,10 +153,21 @@ serializableSnapshotServer serverLbl snapshotDirectory _s0 = do
               Just (d, s) | decreeNumber d == i -> Just (d, s :: s)
               _                                 -> Nothing
 
-        , match $ \(pid, (d :: DecreeId, s :: s)) -> do
-            liftIO $ withPersistentStore here $ \ps pm -> do
-              P.atomically ps [ Insert pm 0 (encode d), Insert pm 1 (encode s) ]
-            usend pid ()
+        , match $ \(pid, (d :: DecreeId, s :: s)) -> callLocal $ do
+            ref <- monitor pid
+            -- Test if the client is still there. The message could have been
+            -- resting in our mailbox for a while.
+            getSelfPid >>= usend pid
+            receiveWait
+              [ match $ \() -> do
+                  liftIO $ withPersistentStore here $ \ps pm -> do
+                    P.atomically ps [ Insert pm 0 (encode d)
+                                    , Insert pm 1 (encode s)
+                                    ]
+                  usend pid ()
+              , matchIf (\(ProcessMonitorNotification ref' _ _) -> ref' == ref)
+                        (\_ -> return ())
+              ]
         ]
     register serverLbl pid
     return pid

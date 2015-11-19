@@ -511,6 +511,7 @@ tests argv = do
                 let logSizePfx = "Log size when trimming: "
                     interceptor :: NodeId -> String -> Process ()
                     interceptor _ "Increment." = usend self ()
+                    interceptor _ msg@"Trimming log." = usend self msg
                     interceptor nid s | logSizePfx `isPrefixOf` s =
                       usend self ( nid
                                  , Prelude.read $ drop (length logSizePfx) s
@@ -528,6 +529,8 @@ tests argv = do
                     retry retryTimeout $
                       State.update port incrementCP
                     expect :: Process ()
+                  receiveWait
+                    [ matchIf (\s -> s == "Trimming log.") (const $ return ()) ]
                   getSelfNode >>= expectIntFrom
 
                 say $ show logSizes
@@ -565,6 +568,8 @@ tests argv = do
                     -- it as part of a snapshot.
                     void (expectTimeout 1000000 :: Process (Maybe ()))
                   here <- getSelfNode
+                  replicateM_ 2 $ receiveWait
+                    [ matchIf (\s -> s == "Trimming log.") (const $ return ()) ]
                   liftM2 (,) (expectIntFrom here)
                              (expectIntFrom $ localNodeId node1)
 
