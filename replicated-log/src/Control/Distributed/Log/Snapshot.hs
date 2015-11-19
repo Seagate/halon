@@ -22,6 +22,7 @@ import Control.Exception (throwIO, Exception)
 import qualified Control.Exception as E (bracket)
 import Control.Monad (forever)
 import Data.Binary (encode, decode)
+import qualified Data.ByteString.Lazy as BSL (ByteString)
 import Data.String (fromString)
 import Data.Typeable
 
@@ -68,13 +69,14 @@ serializableSnapshot serverLbl s0 = LogSnapshot
           -- Dump the snapshot locally so it is available at a
           -- later time.
           _ <- apiLogSnapshotDump d s
-          return s
+          return $! decode s
 
-    , logSnapshotDump = apiLogSnapshotDump
+    , logSnapshotDump = \d s -> apiLogSnapshotDump d (encode s)
     }
 
   where
 
+    apiLogSnapshotDump :: DecreeId -> BSL.ByteString -> Process (NodeId, Int)
     apiLogSnapshotDump d s = callLocal $ do
         here <- getSelfNode
         pid <- getSnapshotServer Nothing
@@ -129,16 +131,13 @@ serializableSnapshot serverLbl s0 = LogSnapshot
         usend pid (self, a)
         expect
 
--- | Takes the snapshots server label, the filepath for saving snapshots
--- and a proxy argument indicating the type of the state.
+-- | Takes the snapshots server label and the filepath for saving snapshots.
 --
 -- It spawns the snapshot server and returns its pid.
-serializableSnapshotServer :: forall s . Serializable s
-                           => String
+serializableSnapshotServer :: String
                            -> (NodeId -> FilePath)
-                           -> Proxy s
                            -> Process ProcessId
-serializableSnapshotServer serverLbl snapshotDirectory _s0 = do
+serializableSnapshotServer serverLbl snapshotDirectory = do
     here <- getSelfNode
     pid <- spawnLocal $ forever $ receiveWait
         [ match $ \(pid, ()) -> do
@@ -149,11 +148,11 @@ serializableSnapshotServer serverLbl snapshotDirectory _s0 = do
         , match $ \(pid, i) -> do
             (md, ms) <- liftIO $ withPersistentStore here $ \_ pm ->
               liftA2 (,) (P.lookup pm 0) (P.lookup pm 1)
-            usend pid $ case liftA2 (,) (fmap decode md) (fmap decode ms) of
-              Just (d, s) | decreeNumber d == i -> Just (d, s :: s)
+            usend pid $ case liftA2 (,) (fmap decode md) ms of
+              Just (d, s) | decreeNumber d == i -> Just (d, s)
               _                                 -> Nothing
 
-        , match $ \(pid, (d :: DecreeId, s :: s)) -> callLocal $ do
+        , match $ \(pid, (d :: DecreeId, s)) -> callLocal $ do
             ref <- monitor pid
             -- Test if the client is still there. The message could have been
             -- resting in our mailbox for a while.
@@ -162,7 +161,7 @@ serializableSnapshotServer serverLbl snapshotDirectory _s0 = do
               [ match $ \() -> do
                   liftIO $ withPersistentStore here $ \ps pm -> do
                     P.atomically ps [ Insert pm 0 (encode d)
-                                    , Insert pm 1 (encode s)
+                                    , Insert pm 1 s
                                     ]
                   usend pid ()
               , matchIf (\(ProcessMonitorNotification ref' _ _) -> ref' == ref)

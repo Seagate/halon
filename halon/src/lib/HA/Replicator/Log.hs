@@ -46,7 +46,6 @@ import qualified Control.Distributed.State as State ( update, log )
 import Control.Distributed.Process
   ( Process
   , Static
-  , unStatic
   , Closure
   , liftIO
   , say
@@ -72,7 +71,7 @@ import Control.Monad ( when, forM, void, forM_ )
 import Data.Binary ( decode, encode, Binary )
 import Data.ByteString.Lazy ( ByteString )
 import Data.Ratio ( (%) )
-import Data.Typeable ( Typeable, Proxy(..) )
+import Data.Typeable ( Typeable )
 
 -- | Implementation of RGroups on top of "Control.Distributed.State".
 data RLogGroup st where
@@ -117,11 +116,10 @@ rgroupLog SerializableDict bs =
 snapshotServerLbl :: String
 snapshotServerLbl = "snapshot-server"
 
-snapshotServer :: forall st . SerializableDict st -> Process ()
-snapshotServer SerializableDict = void $ serializableSnapshotServer
+snapshotServer :: Process ()
+snapshotServer = void $ serializableSnapshotServer
                     snapshotServerLbl
                     (filepath $ storageDir </> "replica-snapshots")
-                    (Proxy :: Proxy st)
 
 storageDir :: FilePath
 storageDir = "halon-persistence"
@@ -213,8 +211,7 @@ instance RGroup RLogGroup where
     let cmSDictState = staticApply $(mkStatic 'commandSerializableDict)
                      $ staticApply $(mkStatic 'mstateTypeableDict) sdictState
         est = encode st
-    forM_ nodes $ \n -> spawn n $
-      staticClosure ($(mkStatic 'snapshotServer) `staticApply` sdictState)
+    forM_ nodes $ \n -> spawn n $ staticClosure $(mkStatic 'snapshotServer)
     Log.new
          $(mkStatic 'commandEqDict)
          cmSDictState
@@ -230,8 +227,7 @@ instance RGroup RLogGroup where
                         `closureApply` staticClosure sdictState
 
   spawnReplica (sdictState :: Static (SerializableDict s)) nid = do
-    _ <- spawn nid $
-           staticClosure ($(mkStatic 'snapshotServer) `staticApply` sdictState)
+    _ <- spawn nid $ staticClosure $(mkStatic 'snapshotServer)
     h <- Log.spawnReplicas halonLogId
                            $(mkStaticClosure 'halonPersistDirectory)
                            [nid]
@@ -244,12 +240,10 @@ instance RGroup RLogGroup where
 
   getRGroupMembers (RLogGroup _ _ h _ _) = Log.getMembership h
 
-  setRGroupMembers (RLogGroup _ sdq h _ _) ns inGroup = do
+  setRGroupMembers (RLogGroup _ _ h _ _) ns inGroup = do
     Log.reconfigure h $ $(mkClosure 'removeNodes) () `closureApply` inGroup
-    SerializableDict <- unStatic sdq
     forM ns $ \nid -> do
-      _ <- spawn nid $ staticClosure
-             ($(mkStatic 'snapshotServer) `staticApply` sdq)
+      _ <- spawn nid $ staticClosure $(mkStatic 'snapshotServer)
       Log.addReplica h nid
       return $ Replica nid
 

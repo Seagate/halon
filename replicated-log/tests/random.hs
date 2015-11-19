@@ -29,7 +29,7 @@ import Control.Exception ( bracket, throwIO, SomeException )
 import Control.Monad ( when, forM_, replicateM, foldM_, void )
 import Data.Constraint (Dict(..))
 import qualified Data.Map as Map
-import Data.Typeable (Typeable, Proxy(..))
+import Data.Typeable (Typeable)
 import Data.IORef
 import Data.List ( isPrefixOf )
 import Data.Ratio ((%))
@@ -59,7 +59,6 @@ snapshotServer :: Process ()
 snapshotServer = void $
     serializableSnapshotServer snapshotServerLbl
                                (filepath "replica-snapshots")
-                               (Proxy :: Proxy State)
 
 testLogId :: LogId
 testLogId = toLogId "test-log"

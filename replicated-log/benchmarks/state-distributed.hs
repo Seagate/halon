@@ -193,7 +193,6 @@ remotableDecl [ [d|
   snapshotServer = void $ serializableSnapshotServer
                     snapshotServerLbl
                     (filepath "replica-snapshots")
-                    (Proxy :: Proxy State)
 
  |] ]
 

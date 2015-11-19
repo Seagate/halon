@@ -43,7 +43,7 @@ import Data.Binary (Binary)
 import Data.List (isPrefixOf)
 import Data.Ratio ((%))
 import Data.String (fromString)
-import Data.Typeable (Typeable, Proxy(..))
+import Data.Typeable (Typeable)
 import System.Directory (renameDirectory)
 import System.IO
 import System.FilePath ((</>))
@@ -125,7 +125,6 @@ snapshotServer :: Process ()
 snapshotServer = void $ serializableSnapshotServer
                     snapshotServerLbl
                     (filepath "replica-snapshots")
-                    (Proxy :: Proxy State)
 
 remotable [ 'dictInt, 'dictState, 'testLog, 'testConfig, 'snapshotServer
           , 'testPersistDirectory
