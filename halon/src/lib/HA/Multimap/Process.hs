@@ -13,7 +13,7 @@
 module HA.Multimap.Process
     ( multimap, __remoteTable ) where
 
-import HA.Multimap (Key, Value, StoreUpdate(..))
+import HA.Multimap (StoreUpdate(..))
 import HA.Multimap.Implementation
             ( Multimap, insertMany, deleteValues, deleteKeys, toList )
 import HA.Replicator
@@ -26,8 +26,9 @@ import Control.Distributed.Process.Timeout ( retry, timeout )
 import Control.Concurrent.MVar
 import Control.Exception ( SomeException )
 import Control.Monad ( when, void )
-import Data.Binary ( encode, decode )
+import Data.Binary ( encode )
 import Data.ByteString ( ByteString )
+import qualified Data.ByteString.Lazy as BSL ( ByteString )
 import Data.ByteString.Lazy ( toChunks, fromChunks )
 import Data.Function ( fix )
 import Data.List ( foldl' )
@@ -110,8 +111,8 @@ multimap rg = fix $ \go -> receiveWait
                 -- Reading the response timed out. Resend the read
                 -- request.
                 Nothing -> retryLoop
-                Just bs -> usend caller $ Just (decode bs :: [(Key,[Value])])
+                Just bs -> usend caller $ Just bs
       `catch` \e -> do
-        usend caller (Nothing :: Maybe [(Key,[Value])])
+        usend caller (Nothing :: Maybe BSL.ByteString)
         say ("MM: Reading failed: " ++ show (e :: SomeException))
     ] >> go

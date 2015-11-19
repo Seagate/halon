@@ -20,7 +20,7 @@ import Prelude hiding ((<$>))
 import Control.Distributed.Process
 
 import Data.ByteString ( ByteString )
-import Data.Binary ( Binary )
+import Data.Binary ( Binary, decode )
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
 
@@ -86,7 +86,7 @@ getKeyValuePairs mmPid = do
     -- FIXME: Don't contact the local multimap but query the replicas directly
     self <- getSelfPid
     usend mmPid (self, ())
-    expect
+    expect >>= maybe (return Nothing) (\x -> return $! Just $! decode x)
 
 -- | The type of @updateStore@. It updates the store with a batch of operations.
 --
