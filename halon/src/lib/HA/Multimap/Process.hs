@@ -58,64 +58,60 @@ requestTimeout = 4 * 1000 * 1000
 -- | Starts a loop which listens for incoming rpc calls
 -- to query and modify the 'Multimap' in the replicated state.
 multimap :: RGroup g => g Multimap -> Process ()
-multimap rg = go
-  where
-    go = receiveWait
-        [ match $ \(caller, upds) -> do
-              retry requestTimeout $
-                updateStateWith rg $
-                  $(mkClosure 'updateStore) (upds :: [StoreUpdate])
-              usend caller (Just ())
-            `catch` \e -> do
-              usend caller (Nothing :: Maybe ())
-              say ("MM: Writing failed: " ++ show (e :: SomeException))
-        , match $ \(caller, ()) -> mask_ $ do
-              -- Read the multimap from the replicated state.
-              -- We need to handle here the case when the read request to
-              -- replicas is lost and the case where the connection fails
-              -- when the response is being sent.
-              fix $ \retryLoop -> do
-                mvRes <- liftIO newEmptyMVar
-                readDone <- liftIO newEmptyMVar
-                parent <- getSelfPid
-                worker <- spawnLocal $ do
-                  getSelfPid >>= getStateWith rg . $(mkClosure 'readStore)
-                  -- Signal that the read request was served.
+multimap rg = fix $ \go -> receiveWait
+    [ match $ \(caller, upds) -> do
+        retry requestTimeout $
+          updateStateWith rg $
+            $(mkClosure 'updateStore) (upds :: [StoreUpdate])
+        usend caller (Just ())
+      `catch` \e -> do
+        usend caller (Nothing :: Maybe ())
+        say ("MM: Writing failed: " ++ show (e :: SomeException))
+    , match $ \(caller, ()) -> mask_ $ do
+        -- Read the multimap from the replicated state.
+        -- We need to handle here the case when the read request to
+        -- replicas is lost and the case where the connection fails
+        -- when the response is being sent.
+        fix $ \retryLoop -> do
+          mvRes <- liftIO newEmptyMVar
+          readDone <- liftIO newEmptyMVar
+          parent <- getSelfPid
+          worker <- spawnLocal $ do
+            getSelfPid >>= getStateWith rg . $(mkClosure 'readStore)
+            -- Signal that the read request was served.
+            when schedulerIsEnabled $ usend parent ()
+            liftIO $ putMVar readDone ()
+            -- Read the response. If any chunks takes more than a given
+            -- amount of time to arrive consider the attempt failed and
+            -- resend the read request.
+            flip fix [] $ \loop xs -> receiveTimeout 500000
+              [ match $ \() -> do
                   when schedulerIsEnabled $ usend parent ()
-                  liftIO $ putMVar readDone ()
-                  -- Read the response. If any chunks takes more than a given
-                  -- amount of time to arrive consider the attempt failed and
-                  -- resent the read request.
-                  flip fix [] $ \loop xs -> receiveTimeout 500000
-                    [ match $ \() -> do
-                        when schedulerIsEnabled $ usend parent ()
-                        return $ liftIO $ putMVar mvRes $ Just $ fromChunks $
-                          reverse xs
-                    , match $ \bs ->
-                        return $ loop (bs : xs :: [ByteString])
-                    ] >>= maybe (do when schedulerIsEnabled $ usend parent ()
-                                    liftIO $ putMVar mvRes Nothing
-                                )
-                                id
-                m <- if schedulerIsEnabled
-                  then expectTimeout requestTimeout
-                  else timeout requestTimeout $ liftIO $ takeMVar readDone
-                case m of
-                  -- The read request timed out. Kill the worker and resend it.
-                  Nothing -> do
-                    blocked <- liftIO (tryPutMVar readDone ())
-                    when blocked $ exit worker "multimap retry" >> retryLoop
-                  Just () -> do
-                    when schedulerIsEnabled expect
-                    m' <- liftIO (takeMVar mvRes)
-                    case m' of
-                      -- Reading the response timed out. Resend the read
-                      -- request.
-                      Nothing ->
-                        retryLoop
-                      Just bs ->
-                        usend caller $ Just (decode bs :: [(Key,[Value])])
-            `catch` \e -> do
-              usend caller (Nothing :: Maybe [(Key,[Value])])
-              say ("MM: Reading failed: " ++ show (e :: SomeException))
-        ] >> go
+                  return $ liftIO $ putMVar mvRes $ Just $ fromChunks $
+                    reverse xs
+              , match $ \bs ->
+                  return $ loop (bs : xs :: [ByteString])
+              ] >>= maybe (do when schedulerIsEnabled $ usend parent ()
+                              liftIO $ putMVar mvRes Nothing
+                          )
+                          id
+          m <- if schedulerIsEnabled
+            then expectTimeout requestTimeout
+            else timeout requestTimeout $ liftIO $ takeMVar readDone
+          case m of
+            -- The read request timed out. Kill the worker and resend it.
+            Nothing -> do
+              blocked <- liftIO (tryPutMVar readDone ())
+              when blocked $ exit worker "multimap retry" >> retryLoop
+            Just () -> do
+              when schedulerIsEnabled expect
+              m' <- liftIO (takeMVar mvRes)
+              case m' of
+                -- Reading the response timed out. Resend the read
+                -- request.
+                Nothing -> retryLoop
+                Just bs -> usend caller $ Just (decode bs :: [(Key,[Value])])
+      `catch` \e -> do
+        usend caller (Nothing :: Maybe [(Key,[Value])])
+        say ("MM: Reading failed: " ++ show (e :: SomeException))
+    ] >> go
