@@ -86,7 +86,11 @@ getKeyValuePairs mmPid = do
     -- FIXME: Don't contact the local multimap but query the replicas directly
     self <- getSelfPid
     usend mmPid (self, ())
-    expect >>= maybe (return Nothing) (\x -> return $! Just $! decode x)
+    -- Decoding is forced to get any related errors at this point.
+    expect >>= maybe (return Nothing)
+                     (\x -> let xs = decode x
+                             in seq (length xs) $ return $ Just xs
+                     )
 
 -- | The type of @updateStore@. It updates the store with a batch of operations.
 --

@@ -46,8 +46,14 @@ updateStore = flip $ foldl' $ flip applyUpdate
 -- | Sends the multimap in chunks to the given process.
 readStore :: ProcessId -> Multimap -> Process ()
 readStore caller mmap = void $ spawnLocal $ do
+    link caller
+    getSelfPid >>= usend caller
     mapM_ (usend caller) $ toChunks $ encode $ toList mmap
     usend caller ()
+    -- We wait for the caller to finish reading the chunks,
+    -- otherwise it may receive prematurely a notification of
+    -- our death.
+    expect
 
 remotable [ 'updateStore, 'readStore ]
 
@@ -79,23 +85,26 @@ multimap rg = fix $ \go -> receiveWait
           parent <- getSelfPid
           worker <- spawnLocal $ do
             getSelfPid >>= getStateWith rg . $(mkClosure 'readStore)
+            reader <- expect
+            ref <- monitor reader
             -- Signal that the read request was served.
             when schedulerIsEnabled $ usend parent ()
             liftIO $ putMVar readDone ()
-            -- Read the response. If any chunks takes more than a given
-            -- amount of time to arrive consider the attempt failed and
-            -- resend the read request.
-            flip fix [] $ \loop xs -> receiveTimeout 500000
+            -- Read the response. If we get disconnected from the process which
+            -- sends the chunks, consider the attempt failed and resend the read
+            -- request.
+            flip fix [] $ \loop xs -> receiveWait
               [ match $ \() -> do
                   when schedulerIsEnabled $ usend parent ()
-                  return $ liftIO $ putMVar mvRes $ Just $ fromChunks $
-                    reverse xs
+                  liftIO $ putMVar mvRes $ Just $ fromChunks $ reverse xs
               , match $ \bs ->
-                  return $ loop (bs : xs :: [ByteString])
-              ] >>= maybe (do when schedulerIsEnabled $ usend parent ()
-                              liftIO $ putMVar mvRes Nothing
-                          )
-                          id
+                  loop (bs : xs :: [ByteString])
+              , matchIf (\(ProcessMonitorNotification ref' _ _)
+                          -> ref == ref') $
+                  \_ -> do when schedulerIsEnabled $ usend parent ()
+                           liftIO $ putMVar mvRes Nothing
+              ]
+            usend reader ()
           m <- if schedulerIsEnabled
             then expectTimeout requestTimeout
             else timeout requestTimeout $ liftIO $ takeMVar readDone
@@ -108,8 +117,8 @@ multimap rg = fix $ \go -> receiveWait
               when schedulerIsEnabled expect
               m' <- liftIO (takeMVar mvRes)
               case m' of
-                -- Reading the response timed out. Resend the read
-                -- request.
+                -- We were disconnected while reading the response. Resend the
+                -- read request.
                 Nothing -> retryLoop
                 Just bs -> usend caller $ Just bs
       `catch` \e -> do
