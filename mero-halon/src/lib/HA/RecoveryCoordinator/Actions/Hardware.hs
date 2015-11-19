@@ -47,6 +47,10 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , markDiskPowerOn
   , markSMARTTestIsRunning
   , getDiskResetAttempts
+  , getDiskPowerOnAttempts
+  , setDiskPowerOnAttempts
+  , getDiskPowerOffAttempts
+  , setDiskPowerOffAttempts
   , markDiskPowerOff
   , markSMARTTestComplete
   , hasOngoingReset
@@ -549,3 +553,43 @@ getDiskResetAttempts sdev = do
     case m of
       Just (SDResetAttempts i) -> return i
       _                             -> return 0
+
+getDiskPowerOnAttempts :: StorageDevice -> PhaseM LoopState l Int
+getDiskPowerOnAttempts sdev = do
+    let _F (SDPowerOnAttempts _) = True
+        _F _                        = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Just (SDPowerOnAttempts i) -> return i
+      _                          -> return 0
+
+setDiskPowerOnAttempts :: StorageDevice -> Int -> PhaseM LoopState l ()
+setDiskPowerOnAttempts sdev i = do
+    let _F (SDPowerOnAttempts _) = True
+        _F _                      = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Just old@(SDPowerOnAttempts _) -> do
+        unsetStorageDeviceAttr sdev old
+        setStorageDeviceAttr sdev (SDPowerOnAttempts i)
+      _ -> setStorageDeviceAttr sdev (SDPowerOnAttempts i)
+
+getDiskPowerOffAttempts :: StorageDevice -> PhaseM LoopState l Int
+getDiskPowerOffAttempts sdev = do
+    let _F (SDPowerOffAttempts _) = True
+        _F _                        = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Just (SDPowerOffAttempts i) -> return i
+      _                          -> return 0
+
+setDiskPowerOffAttempts :: StorageDevice -> Int -> PhaseM LoopState l ()
+setDiskPowerOffAttempts sdev i = do
+    let _F (SDPowerOffAttempts _) = True
+        _F _                      = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Just old@(SDPowerOffAttempts _) -> do
+        unsetStorageDeviceAttr sdev old
+        setStorageDeviceAttr sdev (SDPowerOffAttempts i)
+      _ -> setStorageDeviceAttr sdev (SDPowerOffAttempts i)
