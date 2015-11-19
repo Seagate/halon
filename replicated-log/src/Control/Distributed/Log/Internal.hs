@@ -1707,7 +1707,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
               getSelfPid >>= sendReplica logId ρ''
             go epoch mLeader ρs ref
 
-      , match $ \pmn@(ProcessMonitorNotification ref' pid _) -> do
+      , match $ \pmn@(ProcessMonitorNotification ref' _ _) -> do
           if ref == ref' then do
             -- Give some time to other replicas to elect a leader.
             _ <- receiveTimeout leaseTimeout []
