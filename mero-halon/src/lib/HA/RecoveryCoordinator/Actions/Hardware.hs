@@ -47,11 +47,13 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , markDiskPowerOn
   , markSMARTTestIsRunning
   , getDiskResetAttempts
+  , isStorageDevicePowered
   , getDiskPowerOnAttempts
   , setDiskPowerOnAttempts
   , getDiskPowerOffAttempts
   , setDiskPowerOffAttempts
   , markDiskPowerOff
+  , isStorageDeviceRunningSmartTest
   , markSMARTTestComplete
   , hasOngoingReset
   , markOnGoingReset
@@ -514,87 +516,104 @@ incrDiskResetAttempts sdev = do
         setStorageDeviceAttr sdev (SDResetAttempts (i+1))
       _ -> setStorageDeviceAttr sdev (SDResetAttempts 1)
 
+isStorageDevicePowered :: StorageDevice -> PhaseM LoopState l Bool
+isStorageDevicePowered sdev = do
+    phaseLog "rg" $ "Checking power status for storage device: " ++ show sdev
+    fmap (maybe False (const True)) . findStorageDeviceAttr go $ sdev
+  where
+    go SDPowered = True
+    go _         = False
+
 markDiskPowerOn :: StorageDevice -> PhaseM LoopState l ()
 markDiskPowerOn sdev = do
-    let _F SDPowered = True
-        _F _              = False
-    m <- findStorageDeviceAttr _F sdev
-    case m of
-      Nothing -> setStorageDeviceAttr sdev SDPowered
-      _       -> return ()
-
-markSMARTTestIsRunning :: StorageDevice -> PhaseM LoopState l ()
-markSMARTTestIsRunning sdev = do
-    let _F SDSMARTRunning = True
-        _F _                   = False
-    m <- findStorageDeviceAttr _F sdev
-    case m of
-      Nothing -> setStorageDeviceAttr sdev SDSMARTRunning
-      _       -> return ()
+  let _F SDPowered = True
+      _F _         = False
+  m <- findStorageDeviceAttr _F sdev
+  case m of
+    Nothing -> setStorageDeviceAttr sdev SDPowered
+    _       -> return ()
 
 markDiskPowerOff :: StorageDevice -> PhaseM LoopState l ()
 markDiskPowerOff sdev = do
-    let _F SDPowered = True
-        _F _              = False
-    m <- findStorageDeviceAttr _F sdev
-    case m of
-      Nothing  -> return ()
-      Just old -> unsetStorageDeviceAttr sdev old
+  let _F SDPowered = True
+      _F _              = False
+  m <- findStorageDeviceAttr _F sdev
+  case m of
+    Nothing  -> return ()
+    Just old -> unsetStorageDeviceAttr sdev old
+
+isStorageDeviceRunningSmartTest :: StorageDevice -> PhaseM LoopState l Bool
+isStorageDeviceRunningSmartTest sdev = do
+    phaseLog "rg"
+          $ "Checking SMART test status for storage device: " ++ show sdev
+    fmap (maybe False (const True)) . findStorageDeviceAttr go $ sdev
+  where
+    go SDSMARTRunning = True
+    go _              = False
+
+markSMARTTestIsRunning :: StorageDevice -> PhaseM LoopState l ()
+markSMARTTestIsRunning sdev = do
+  let _F SDSMARTRunning = True
+      _F _              = False
+  m <- findStorageDeviceAttr _F sdev
+  case m of
+    Nothing -> setStorageDeviceAttr sdev SDSMARTRunning
+    _       -> return ()
 
 markSMARTTestComplete :: StorageDevice -> PhaseM LoopState l ()
 markSMARTTestComplete sdev = do
-    let _F SDSMARTRunning = True
-        _F _                   = False
-    m <- findStorageDeviceAttr _F sdev
-    case m of
-      Nothing  -> return ()
-      Just old -> unsetStorageDeviceAttr sdev old
+  let _F SDSMARTRunning = True
+      _F _              = False
+  m <- findStorageDeviceAttr _F sdev
+  case m of
+    Nothing  -> return ()
+    Just old -> unsetStorageDeviceAttr sdev old
 
 getDiskResetAttempts :: StorageDevice -> PhaseM LoopState l Int
 getDiskResetAttempts sdev = do
-    let _F (SDResetAttempts _) = True
-        _F _                        = False
-    m <- findStorageDeviceAttr _F sdev
-    case m of
-      Just (SDResetAttempts i) -> return i
-      _                             -> return 0
+  let _F (SDResetAttempts _) = True
+      _F _                   = False
+  m <- findStorageDeviceAttr _F sdev
+  case m of
+    Just (SDResetAttempts i) -> return i
+    _                        -> return 0
 
 getDiskPowerOnAttempts :: StorageDevice -> PhaseM LoopState l Int
 getDiskPowerOnAttempts sdev = do
-    let _F (SDPowerOnAttempts _) = True
-        _F _                        = False
-    m <- findStorageDeviceAttr _F sdev
-    case m of
-      Just (SDPowerOnAttempts i) -> return i
-      _                          -> return 0
+  let _F (SDPowerOnAttempts _) = True
+      _F _                     = False
+  m <- findStorageDeviceAttr _F sdev
+  case m of
+    Just (SDPowerOnAttempts i) -> return i
+    _                          -> return 0
 
 setDiskPowerOnAttempts :: StorageDevice -> Int -> PhaseM LoopState l ()
 setDiskPowerOnAttempts sdev i = do
-    let _F (SDPowerOnAttempts _) = True
-        _F _                      = False
-    m <- findStorageDeviceAttr _F sdev
-    case m of
-      Just old@(SDPowerOnAttempts _) -> do
-        unsetStorageDeviceAttr sdev old
-        setStorageDeviceAttr sdev (SDPowerOnAttempts i)
-      _ -> setStorageDeviceAttr sdev (SDPowerOnAttempts i)
+  let _F (SDPowerOnAttempts _) = True
+      _F _                     = False
+  m <- findStorageDeviceAttr _F sdev
+  case m of
+    Just old@(SDPowerOnAttempts _) -> do
+      unsetStorageDeviceAttr sdev old
+      setStorageDeviceAttr sdev (SDPowerOnAttempts i)
+    _ -> setStorageDeviceAttr sdev (SDPowerOnAttempts i)
 
 getDiskPowerOffAttempts :: StorageDevice -> PhaseM LoopState l Int
 getDiskPowerOffAttempts sdev = do
-    let _F (SDPowerOffAttempts _) = True
-        _F _                        = False
-    m <- findStorageDeviceAttr _F sdev
-    case m of
-      Just (SDPowerOffAttempts i) -> return i
-      _                          -> return 0
+  let _F (SDPowerOffAttempts _) = True
+      _F _                      = False
+  m <- findStorageDeviceAttr _F sdev
+  case m of
+    Just (SDPowerOffAttempts i) -> return i
+    _                          -> return 0
 
 setDiskPowerOffAttempts :: StorageDevice -> Int -> PhaseM LoopState l ()
 setDiskPowerOffAttempts sdev i = do
-    let _F (SDPowerOffAttempts _) = True
-        _F _                      = False
-    m <- findStorageDeviceAttr _F sdev
-    case m of
-      Just old@(SDPowerOffAttempts _) -> do
-        unsetStorageDeviceAttr sdev old
-        setStorageDeviceAttr sdev (SDPowerOffAttempts i)
-      _ -> setStorageDeviceAttr sdev (SDPowerOffAttempts i)
+  let _F (SDPowerOffAttempts _) = True
+      _F _                      = False
+  m <- findStorageDeviceAttr _F sdev
+  case m of
+    Just old@(SDPowerOffAttempts _) -> do
+      unsetStorageDeviceAttr sdev old
+      setStorageDeviceAttr sdev (SDPowerOffAttempts i)
+    _ -> setStorageDeviceAttr sdev (SDPowerOffAttempts i)

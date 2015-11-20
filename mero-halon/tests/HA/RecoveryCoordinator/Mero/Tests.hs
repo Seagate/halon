@@ -79,7 +79,7 @@ import Control.Monad (void, join)
 import Data.Defaultable
 import Data.List (isInfixOf)
 import Data.Proxy (Proxy(..))
-import Network.CEP (Published(..), Logs(..), subscribe, Definitions)
+import Network.CEP (Published(..), Logs(..), subscribe)
 import Test.Tasty.HUnit (assertBool)
 import TestRunner
 
@@ -92,7 +92,7 @@ import HA.Castor.Tests (initialDataAddr)
 import HA.RecoveryCoordinator.Actions.Mero (getSpielAddress, syncToConfd)
 import Mero
 import Mero.Notification (finalize)
-import Network.CEP (defineSimple, liftProcess)
+import Network.CEP (defineSimple, liftProcess, Definitions)
 import System.IO.Unsafe
 #endif
 

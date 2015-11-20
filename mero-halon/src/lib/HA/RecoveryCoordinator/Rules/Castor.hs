@@ -206,6 +206,10 @@ castorRules = do
         case paths of
           path:_ -> do
             put Local (Just (sdev, path, uid))
+            unlessM (isStorageDevicePowered sdev) $
+              continue on
+            whenM (isStorageDeviceRunningSmartTest sdev) $
+              switch [smartSuccess, smartFailure, timeout ssplTimeout down]
             continue down
           [] -> do
             phaseLog "warning" $ "Cannot perform reset attempt for drive "

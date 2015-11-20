@@ -164,6 +164,7 @@ ssplRulesF sspl = do
       locateStorageDeviceInEnclosure enc disk
       identifyStorageDevice disk $ DIIndexInEnclosure diskNum
       updateDriveStatus disk $ T.unpack disk_status
+      markDiskPowerOn disk
       mapM_ (\h -> do
             locateHostInEnclosure h enc
             -- Find any existing (logical) devices and link them

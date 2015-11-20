@@ -161,6 +161,7 @@ loadMeroServers fs = mapM_ goHost where
       sdev <- StorageDevice <$> liftIO nextRandom
       mapM_ (identifyStorageDevice sdev) devIds
       locateStorageDeviceOnHost host sdev
+      markDiskPowerOn sdev
       modifyGraph
           $ G.newResource m0sdev
         >>> G.newResource m0disk
