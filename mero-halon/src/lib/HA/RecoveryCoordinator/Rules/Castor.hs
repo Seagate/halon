@@ -23,6 +23,7 @@ import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.ResourceGraph as G
 import HA.Services.SSPL
 #ifdef USE_MERO
+import HA.EventQueue.Producer
 import HA.RecoveryCoordinator.Rules.Mero
 import HA.Resources.Mero hiding (Process, Enclosure, Rack)
 import HA.Resources.Mero.Note
@@ -32,13 +33,14 @@ import HA.Services.Mero
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState
 
+import Control.Monad
+
+import Data.Foldable
 import Data.List (unfoldr)
 #endif
 
-import Control.Monad
 
 import Data.Binary (Binary)
-import Data.Foldable
 import Data.Maybe (mapMaybe)
 import Data.Text (Text, pack)
 import Data.Typeable (Typeable)
@@ -48,7 +50,7 @@ import GHC.Generics (Generic)
 import Network.CEP
 
 -- | Event sent when to many failures has been sent for a 'Disk'.
-data ResetAttempt = ResetAttempt StorageDevice UUID
+data ResetAttempt = ResetAttempt StorageDevice
   deriving (Eq, Generic, Show, Typeable)
 
 instance Binary ResetAttempt
@@ -147,7 +149,7 @@ castorRules = do
       messageProcessed eid
 
 #ifdef USE_MERO
-    defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) ->
+    defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> do
       for_ ns $ \(Note mfid tpe) ->
         case tpe of
           M0_NC_FAILED -> do
@@ -178,9 +180,9 @@ castorRules = do
 
                     when (status == M0_NC_TRANSIENT) $ do
                       markOnGoingReset sdev
-                      liftProcess $ do
-                        self <- getSelfPid
-                        usend self $ ResetAttempt sdev uid
+                      nid <- liftProcess getSelfNode
+                      liftProcess . void . promulgateEQ [nid]
+                        $ ResetAttempt sdev
                 _ -> do
                   phaseLog "warning" $ "Cannot find all entities attached to M0"
                                     ++ " storage device: "
@@ -188,6 +190,8 @@ castorRules = do
                                     ++ ": "
                                     ++ show (mdev, msdev)
           _ -> return ()
+      messageProcessed uid
+
 #endif
 
     define "reset-attempt" $ do
@@ -201,7 +205,7 @@ castorRules = do
       smartFailure <- phaseHandle "smart-failure"
       end          <- phaseHandle "end"
 
-      setPhase home $ \(ResetAttempt sdev uid) -> fork NoBuffer $ do
+      setPhase home $ \(HAEvent uid (ResetAttempt sdev) _) -> fork NoBuffer $ do
         paths <- lookupStorageDevicePaths sdev
         case paths of
           path:_ -> do

@@ -20,7 +20,6 @@ import HA.Resources.Castor.Initial (InitialData)
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
-
 import HA.Service
 import HA.Services.Mero
 import HA.Services.SSPL
@@ -235,7 +234,7 @@ prepareSubscriptions :: ProcessId -> ProcessId -> Process ()
 prepareSubscriptions rc rmq = do
   subscribe rc (Proxy :: Proxy (HAEvent InitialData))
   subscribe rc (Proxy :: Proxy CommandAck)
-  subscribe rc (Proxy :: Proxy ResetAttempt)
+  subscribe rc (Proxy :: Proxy (HAEvent ResetAttempt))
 
   -- Subscribe to SSPL channels
   usend rmq . MQSubscribe "halon_sspl" =<< getSelfPid
@@ -264,7 +263,7 @@ failDrive recv sdev = let
     Set [Note _ M0_NC_TRANSIENT] <- receiveChan recv
     debug "failDrive: Transient state set"
     -- The RC should issue a 'ResetAttempt' and should be handled.
-    _ <- expect :: Process (Published ResetAttempt)
+    _ <- expect :: Process (Published (HAEvent ResetAttempt))
     -- We should see `ResetAttempt` from SSPL
     msg <- expectNodeMsg 1000000
     debug $ "failDrive: Msg: " ++ show msg
