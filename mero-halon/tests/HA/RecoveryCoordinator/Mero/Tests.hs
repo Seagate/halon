@@ -344,10 +344,11 @@ testDriveAddition transport = do
 testDecisionLog :: Transport -> IO ()
 testDecisionLog transport = do
     withTmpDirectory $ tryWithTimeout transport rt 15000000 $ do
+      nid <- getSelfNode
       self <- getSelfPid
 
       withTrackingStation emptyRules $ \(TestArgs _ mm rc) -> do
-
+        nodeUp ([nid], 1000000)
         -- Awaits the node local monitor to be up.
         _ <- getNodeMonitor mm
 
@@ -430,6 +431,7 @@ testMonitorManagement :: Transport -> IO ()
 testMonitorManagement transport = do
     runTest 1 20 15000000 transport testRemoteTable $ \_ ->
       withTrackingStation emptyRules $ \(TestArgs _ mm rc) -> do
+        nid <- getSelfNode
         nodeUp ([nid], 1000000)
         -- Awaits the node local monitor to be up.
         _ <- getNodeMonitor mm
@@ -448,7 +450,7 @@ testMonitorManagement transport = do
 testMasterMonitorManagement :: Transport -> IO ()
 testMasterMonitorManagement transport = do
     runTest 1 20 15000000 transport testRemoteTable $ \_ ->
-      withTrackingStation emptyRules $ \(TestArgs _ mm rc) -> do
+      withTrackingStation emptyRules $ \(TestArgs eq mm rc) -> do
         nodeUp ([processNodeId eq], 1000000)
 
         -- Awaits the node local monitor to be up.

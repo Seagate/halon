@@ -13,6 +13,7 @@ import HA.RecoveryCoordinator.Mero (LoopState)
 import HA.RecoveryCoordinator.Rules.Castor
 import qualified HA.ResourceGraph as G
 import HA.Castor.Tests (initialDataAddr)
+import HA.NodeUp (nodeUp)
 import Mero.Notification
 import Mero.Notification.HAState
 import HA.Resources
@@ -118,7 +119,9 @@ run :: Transport
 run transport interceptor test =
   runTest 2 20 15000000 transport myRemoteTable $ \[n] -> do
     self <- getSelfPid
+    nid <- getSelfNode
     withTrackingStation [testRules] $ \ta -> do
+      nodeUp ([nid], 1000000)
       registerInterceptor $ \string ->
         case string of
           str@"Starting service sspl"   -> usend self str
