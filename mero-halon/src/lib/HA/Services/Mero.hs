@@ -16,6 +16,7 @@
 module HA.Services.Mero
     ( MeroChannel(..)
     , TypedChannel(..)
+    , DeclareMeroChannel(..)
     , m0d
     , HA.Services.Mero.__remoteTableDecl
     , HA.Services.Mero.Types.__remoteTable

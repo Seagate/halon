@@ -216,7 +216,7 @@ largeInitialData host transport = let
         forM_ chunks $ \chunk -> do
           createPoolVersions filesystem chunk
           syncGraph
- 
+
       -- Verify that everything is set up correctly
       bmc <- runGet ls' $ findBMCAddress myHost
       assertMsg "Get BMC Address." $ bmc == Just host
@@ -233,8 +233,9 @@ largeInitialData host transport = let
       assertMsg "MDPool is findable by Fid"
         $ mdpool == Just pool
 
-      g <- getGraph pid
-      let racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
+
+      let g = lsGraph ls'
+          racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
           encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
           ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
           disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls

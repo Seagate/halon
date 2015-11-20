@@ -22,6 +22,12 @@ module HA.RecoveryCoordinator.Actions.Mero
   , withRootRC
   , withSpielRC
   , syncToConfd
+  , rgLookupConfObjByFid
+  , getPools
+  , startRepairOperation
+  , lookupStorageDevice
+  , lookupStorageDeviceSDev
+  , lookupSDevDisk
   )
 where
 
@@ -32,38 +38,39 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 
+import Mero.ConfC (Fid, PDClustAttr(..), Word128(..), withConf, Root, ServiceType(..))
+import Mero.M0Worker (liftM0)
+import Mero.Notification
+import Mero.Spiel hiding (start)
+import qualified Mero.Spiel
+
 import qualified Control.Distributed.Process as DP
 import Control.Monad (forM_)
 import Control.Applicative
 
 import Data.Foldable (traverse_)
+import Data.List (nub)
 import Data.Maybe (catMaybes, listToMaybe)
-import Data.Typeable (cast)
 
 import Network.CEP
-
-import Data.List (nub)
-import Mero.ConfC (Fid, PDClustAttr(..), Word128(..), withConf, Root, ServiceType(..))
-import Mero.M0Worker (liftM0)
-import Mero.Notification (withServerEndpoint)
 import Network.RPC.RPCLite (getRPCMachine_se, rpcAddress, RPCAddress(..))
-import Mero.Spiel hiding (start)
-import qualified Mero.Spiel
 
-
-lookupConfObjByFid :: forall a l. (G.Resource a, M0.ConfObj a)
+lookupConfObjByFid :: (G.Resource a, M0.ConfObj a)
                    => Fid
                    -> PhaseM LoopState l (Maybe a)
 lookupConfObjByFid f = do
     phaseLog "rg-query" $ "Looking for conf objects with FID "
                         ++ show f
-    rg <- getLocalGraph
-    return . listToMaybe . filter ((== f) . M0.fid) $ allObjs rg
-  where
-    allObjs rg = catMaybes
-               . fmap (\(G.Res x) -> cast x :: Maybe a)
-               . fst . unzip
-               $ G.getGraphResources rg
+    fmap (rgLookupConfObjByFid f) getLocalGraph
+
+rgLookupConfObjByFid :: forall a. (G.Resource a, M0.ConfObj a)
+                     => Fid
+                     -> G.Graph
+                     -> Maybe a
+rgLookupConfObjByFid f =
+    listToMaybe
+  . filter ((== f) . M0.fid)
+  . G.getResourcesOfType
 
 getProfile :: PhaseM LoopState l (Maybe M0.Profile)
 getProfile = getLocalGraph >>= \rg -> do
@@ -285,3 +292,45 @@ withSpielRC (M0.SpielAddress confds rm) f = do
 syncToConfd :: M0.SpielAddress -> PhaseM LoopState l (Maybe ())
 syncToConfd sa = withSpielRC sa $ \sc -> do
   loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
+
+lookupStorageDevice :: M0.SDev -> PhaseM LoopState l (Maybe StorageDevice)
+lookupStorageDevice sdev = do
+    rg <- getLocalGraph
+    let sds =
+          [ sd | dev  <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
+               , sd   <- G.connectedTo dev M0.At rg :: [StorageDevice]
+               ]
+    return $ listToMaybe sds
+
+-- | Return the Mero SDev associated with the given storage device
+lookupStorageDeviceSDev :: StorageDevice -> PhaseM LoopState l (Maybe M0.SDev)
+lookupStorageDeviceSDev sdev = do
+  rg <- getLocalGraph
+  let sds =
+        [ sd | disk <- G.connectedFrom M0.At sdev rg :: [M0.Disk]
+             , sd <- G.connectedFrom M0.IsOnHardware disk rg :: [M0.SDev]
+             ]
+  return $ listToMaybe sds
+
+lookupSDevDisk :: M0.SDev -> PhaseM LoopState l (Maybe M0.Disk)
+lookupSDevDisk sdev = do
+  phaseLog "rg" $ "Looking up M0.Disk objects attached to sdev " ++ show sdev
+  rg <- getLocalGraph
+  return . listToMaybe $ G.connectedTo sdev M0.IsOnHardware rg
+
+getPools :: M0.Disk -> PhaseM LoopState l [M0.Pool]
+getPools dev = do
+    rg <- getLocalGraph
+    let ps =
+          [ p | dv <- G.connectedTo dev M0.IsRealOf rg :: [M0.DiskV]
+              , ct <- G.connectedFrom M0.IsParentOf dv rg :: [M0.ControllerV]
+              , ev <- G.connectedFrom M0.IsParentOf ct rg :: [M0.EnclosureV]
+              , rv <- G.connectedFrom M0.IsParentOf ev rg :: [M0.RackV]
+              , pv <- G.connectedFrom M0.IsParentOf rv rg :: [M0.PVer]
+              , p  <- G.connectedFrom M0.IsRealOf pv rg :: [M0.Pool]
+              ]
+
+    return ps
+
+startRepairOperation :: M0.Disk -> M0.Pool -> PhaseM LoopState l ()
+startRepairOperation _ _ = phaseLog "error" "Start repair not implemeted"

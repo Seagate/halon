@@ -5,7 +5,6 @@
 module SSPL.Bindings
   ( module SSPL.Bindings.ActuatorRequest
   , module SSPL.Bindings.ActuatorResponse
-  , module SSPL.Bindings.ClusterMap
   , module SSPL.Bindings.CommandRequest
   , module SSPL.Bindings.CommandResponse
   , module SSPL.Bindings.SensorRequest
@@ -15,7 +14,6 @@ module SSPL.Bindings
 
 import SSPL.Bindings.ActuatorRequest hiding (graph)
 import SSPL.Bindings.ActuatorResponse hiding (graph)
-import SSPL.Bindings.ClusterMap
 import SSPL.Bindings.CommandRequest hiding (graph)
 import SSPL.Bindings.CommandResponse hiding (graph)
 import SSPL.Bindings.SensorRequest hiding (graph)

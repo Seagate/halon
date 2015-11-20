@@ -42,14 +42,14 @@ import Network.CEP
 import Prelude hiding (id, mapM_)
 
 --------------------------------------------------------------------------------
--- Primitives                                                                 --
+-- Primitives
 --------------------------------------------------------------------------------
 
 sendInterestingEvent :: NodeId
                      -> InterestingEventMessage
                      -> PhaseM LoopState l ()
 sendInterestingEvent nid msg = do
-  liftProcess . say $ "Sending InterestingEventMessage"
+  phaseLog "action" $ "Sending InterestingEventMessage."
   rg <- getLocalGraph
   let
     node = Node nid
@@ -60,13 +60,13 @@ sendInterestingEvent nid msg = do
 
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan msg
-    _ -> liftProcess $ sayRC "Cannot find IEM channel!"
+    _ -> phaseLog "warning" "Cannot find IEM channel!"
 
 sendSystemdCmd :: NodeId
                -> SystemdCmd
                -> PhaseM LoopState l ()
 sendSystemdCmd nid req = do
-  liftProcess . say $ "Sending Systemd request" ++ show req
+  phaseLog "action" $ "Sending Systemd request" ++ show req
   rg <- getLocalGraph
   let
     node = Node nid
@@ -76,7 +76,7 @@ sendSystemdCmd nid req = do
       listToMaybe $ connectedTo sp CommandChannel rg
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan (Nothing :: Maybe UUID, makeSystemdMsg req)
-    _ -> liftProcess $ sayRC "Cannot find systemd channel!"
+    _ -> phaseLog "warning" "Cannot find systemd channel!"
 
 -- | Send command to nodecontroller. Reply will be received as a
 -- HAEvent CommandAck. Where UUID will be set to UUID value if passed, and
@@ -86,7 +86,7 @@ sendNodeCmd :: NodeId
             -> NodeCmd
             -> PhaseM LoopState l ()
 sendNodeCmd nid muuid req = do
-  liftProcess . say $ "Sending node actuator request" ++ show req
+  phaseLog "action" $ "Sending node actuator request" ++ show req
   rg <- getLocalGraph
   let
     node = Node nid
@@ -96,13 +96,13 @@ sendNodeCmd nid muuid req = do
       listToMaybe $ connectedTo sp CommandChannel rg
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan (muuid, makeNodeMsg req)
-    _ -> liftProcess $ sayRC "Cannot find command channel!"
+    _ -> phaseLog "warning" "Cannot find command channel!"
 
 registerChannels :: ServiceProcess SSPLConf
                  -> ActuatorChannels
                  -> PhaseM LoopState l ()
 registerChannels svc acs = modifyLocalGraph $ \rg -> do
-    liftProcess . say $ "Register channels"
+    phaseLog "rg" "Registering SSPL actuator channels."
     let rg' =   registerChannel IEMChannel (iemPort acs)
             >>> registerChannel CommandChannel (systemdPort acs)
             $   rg
@@ -115,15 +115,9 @@ registerChannels svc acs = modifyLocalGraph $ \rg -> do
                     -> Graph
     registerChannel r sp =
         newResource svc >>>
-        removeOldChan >>>
         newResource chan >>>
-        connect svc r chan
+        connectUnique svc r chan
       where
-        oldChan :: Graph -> [Channel b]
-        oldChan rg = connectedTo svc r rg
-        removeOldChan = \rg -> case oldChan rg of
-          [a] -> disconnect svc r a rg
-          _ -> rg
         chan = Channel sp
 
 promptRGSync :: PhaseM LoopState l ()
@@ -148,9 +142,10 @@ findActuationNode sspl = do
 ssplRulesF :: Service SSPLConf -> Definitions LoopState ()
 ssplRulesF sspl = do
   defineSimple "declare-channels" $
-      \(HAEvent _ (DeclareChannels pid svc acs) _) -> do
+      \(HAEvent uuid (DeclareChannels pid svc acs) _) -> do
           registerChannels svc acs
           ack pid
+          messageProcessed uuid
 
   -- SSPL Monitor drivemanager
   defineSimpleIf "monitor-drivemanager" (\(HAEvent _ (nid, mrm) _) _ ->
@@ -167,14 +162,15 @@ ssplRulesF sspl = do
           disk = StorageDevice diskUUID
 
       locateStorageDeviceInEnclosure enc disk
-      identifyStorageDevice disk $ DeviceIdentifier "slot" (IdentInt diskNum)
+      identifyStorageDevice disk $ DIIndexInEnclosure diskNum
       updateDriveStatus disk $ T.unpack disk_status
+      markDiskPowerOn disk
       mapM_ (\h -> do
             locateHostInEnclosure h enc
             -- Find any existing (logical) devices and link them
             hostDevs <- findHostStorageDevices h
                       >>= filterM (flip hasStorageDeviceIdentifier
-                                  (DeviceIdentifier "slot" (IdentInt diskNum)))
+                                  (DIIndexInEnclosure diskNum))
             mapM_ (\d -> mergeStorageDevices [d,disk]) hostDevs
             ) host
 
@@ -202,7 +198,7 @@ ssplRulesF sspl = do
       registerHost host
       locateNodeOnHost node host
       promptRGSync
-      liftProcess . sayRC $ "Registered host: " ++ show host
+      phaseLog "rg" $ "Registered host: " ++ show host
 
   -- SSPL Monitor interface data
   -- defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum) _) _ ->
@@ -293,28 +289,3 @@ ssplRulesF sspl = do
             forM_ hosts $ \(nodeIp) -> do
               sendNodeCmd actuationNode Nothing $ IPMICmd IPMI_ON (T.pack nodeIp)
           x -> liftProcess . say $ "Unsupported node command: " ++ show x
-
-  defineSimple "clustermap" $ \(HAEvent _
-                                        (Devices devs)
-                                        _
-                                      ) ->
-    mapM_ addDev devs
-    where
-      addDev (DevId mid fn sl hn) = do
-          diskUUID <- liftIO $ nextRandom
-          let dev = StorageDevice diskUUID
-          locateStorageDeviceOnHost host dev
-          identifyStorageDevice dev (DeviceIdentifier "iosid" (IdentInt mid))
-          identifyStorageDevice dev (DeviceIdentifier "slot" (IdentInt sl))
-          identifyStorageDevice dev (DeviceIdentifier "filename" (IdentString fn))
-          -- | Find existing storage devices and link them
-          menc <- findHostEnclosure host
-          mapM_ (\enc -> do
-                  drives <- findEnclosureStorageDevices enc
-                        >>= filterM (flip hasStorageDeviceIdentifier $
-                                      DeviceIdentifier "slot" (IdentInt sl)
-                                    )
-                  mapM_ (\d -> mergeStorageDevices [dev, d]) drives
-                ) menc
-        where
-          host = Host hn

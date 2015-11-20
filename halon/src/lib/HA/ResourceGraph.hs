@@ -65,6 +65,7 @@ module HA.ResourceGraph
     , isConnected
     , __remoteTable
     , getGraphResources
+    , getResourcesOfType
     ) where
 
 import HA.Multimap
@@ -486,3 +487,12 @@ decodeRel rt bs = case runGetOrFail get $ fromStrict bs of
 
 getGraphResources :: Graph -> [(Res, [Rel])]
 getGraphResources = fmap (second S.toList) . M.toList . grGraph
+
+-- | Get all resources in the graph of a particular type.
+getResourcesOfType :: forall a. Resource a
+                   => Graph
+                   -> [a]
+getResourcesOfType =
+    mapMaybe (\(Res x) -> cast x :: Maybe a)
+  . fst . unzip
+  . getGraphResources

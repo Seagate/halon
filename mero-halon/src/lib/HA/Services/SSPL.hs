@@ -21,11 +21,15 @@ module HA.Services.SSPL
   , InterestingEventMessage(..)
   , SSPLConf(..)
   , IEMChannel(..)
+  , NodeCmd(..)
+  , CommandAck(..)
+  , AckReply(..)
   , HA.Services.SSPL.LL.Resources.Channel(..)
   , HA.Services.SSPL.LL.Resources.__remoteTable
   , HA.Services.SSPL.__remoteTableDecl
   , sendNodeCmd
   , header
+  , sendInterestingEvent
   ) where
 
 import HA.EventQueue.Producer (promulgate)
@@ -128,6 +132,7 @@ startActuators chan ac pid = do
     informRC sp chans = do
       mypid <- getSelfPid
       _ <- promulgate $ DeclareChannels mypid sp chans
+      _ <- expect :: Process ProcessMonitorNotification
       msg <- expectTimeout (fromDefault . acDeclareChanTimeout $ ac)
       case msg of
         Nothing -> informRC sp chans

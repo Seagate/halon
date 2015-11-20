@@ -16,6 +16,8 @@ module HA.RecoveryCoordinator.Actions.Core
   , syncGraph
   , messageProcessed
   , sayRC
+  , unlessM
+  , whenM
   ) where
 
 import qualified HA.ResourceGraph as G
@@ -36,6 +38,7 @@ import Control.Distributed.Process
   , usend
   , say
   )
+import Control.Monad (when, unless)
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set        as S
@@ -95,3 +98,9 @@ messageProcessed uuid = do
 
 sayRC :: String -> Process ()
 sayRC s = say $ "Recovery Coordinator: " ++ s
+
+whenM :: Monad m => m Bool -> m () -> m ()
+whenM cond act = cond >>= flip when act
+
+unlessM :: Monad m => m Bool -> m () -> m ()
+unlessM cond act = cond >>= flip unless act

@@ -152,13 +152,16 @@ loadMeroServers fs = mapM_ goHost where
 
   goDev host ctrl CI.M0Device{..} = let
       mkSDev fid = M0.SDev fid m0d_size m0d_bsize m0d_path
-      devId = DeviceIdentifier "wwn" $ IdentString m0d_wwn
+      devIds = [ DIWWN m0d_wwn
+               , DIPath m0d_path
+               ]
     in do
       m0sdev <- mkSDev <$> newFid (Proxy :: Proxy M0.SDev)
       m0disk <- M0.Disk <$> newFid (Proxy :: Proxy M0.Disk)
       sdev <- StorageDevice <$> liftIO nextRandom
-      identifyStorageDevice sdev devId
+      mapM_ (identifyStorageDevice sdev) devIds
       locateStorageDeviceOnHost host sdev
+      markDiskPowerOn sdev
       modifyGraph
           $ G.newResource m0sdev
         >>> G.newResource m0disk

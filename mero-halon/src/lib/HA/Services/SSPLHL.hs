@@ -56,7 +56,6 @@ import qualified Data.Text as T
 import Data.Typeable (Typeable)
 import Data.UUID (toString)
 import Data.UUID.V4 (nextRandom)
-import qualified Data.Yaml as Yaml
 
 import GHC.Generics (Generic)
 
@@ -98,24 +97,10 @@ responseSchema = let
           <> summary "Queue to bind command responses to."
   in Rabbit.BindConf <$> en <*> rk <*> qn
 
-clusterMapSchema :: Schema Rabbit.BindConf
-clusterMapSchema = let
-    en = defaultable "cluster_map" . strOption
-        $ long "cm_exchange"
-        <> metavar "EXCHANGE_NAME"
-    rk = defaultable "cluster_map" . strOption
-          $ long "cm_routingKey"
-          <> metavar "ROUTING_KEY"
-    qn = defaultable "cluster_map" . strOption
-          $ long "cm_queue"
-          <> metavar "QUEUE_NAME"
-  in Rabbit.BindConf <$> en <*> rk <*> qn
-
 data SSPLHLConf = SSPLHLConf {
     scConnectionConf :: Rabbit.ConnectionConf
   , scCommandConf :: Rabbit.BindConf
   , scResponseConf :: Rabbit.BindConf
-  , scClustermapConf :: Rabbit.BindConf
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary SSPLHLConf
@@ -125,7 +110,6 @@ ssplhlSchema :: Schema SSPLHLConf
 ssplhlSchema = SSPLHLConf <$> Rabbit.connectionSchema
                           <*> commandSchema
                           <*> responseSchema
-                          <*> clusterMapSchema
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
@@ -159,14 +143,6 @@ cmdHandler statusHandler responseChan msg = case decode (msgBody msg) of
   Nothing -> say $ "Unable to decode command request: "
                       ++ (BL.unpack $ msgBody msg)
 
-cmHandler :: Network.AMQP.Message
-          -> Process ()
-cmHandler msg = case Yaml.decode (BL.toStrict $ msgBody msg) :: Maybe Devices of
-  Just d -> do
-    void $ promulgate d
-  Nothing -> say $ "Unable to decode cluster map: "
-                    ++ (BL.unpack $ msgBody msg)
-
 remotableDecl [ [d|
 
   ssplProcess :: SSPLHLConf -> Process ()
@@ -190,7 +166,6 @@ remotableDecl [ [d|
         responseChan <- spawnChannelLocal (responseProcess chan scResponseConf)
         statusHandler <- StatusHandler.start responseChan
         Rabbit.receive chan scCommandConf (cmdHandler statusHandler responseChan)
-        Rabbit.receive chan scClustermapConf cmHandler
         () <- liftIO $ takeMVar lock
         liftIO $ closeConnection conn
         say "Connection closed."

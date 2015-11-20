@@ -47,6 +47,7 @@ module HA.RecoveryCoordinator.Mero
        , finishProcessingMsg
        , loadNodeMonitorConf
        , notHandled
+       , buildRCState
        ) where
 
 import Prelude hiding ((.), id, mapM_)
@@ -228,6 +229,12 @@ getMultimapProcessId = fmap lsMMPid $ get Global
 -- Recovery Co-ordinator                                --
 ----------------------------------------------------------
 
+buildRCState :: ProcessId -> ProcessId -> Process LoopState
+buildRCState mm eq = do
+    rg      <- HA.RecoveryCoordinator.Mero.initialize mm
+    startRG <- G.sync rg
+    return $ LoopState startRG Map.empty mm eq S.empty
+
 -- | The entry point for the RC.
 --
 -- Before evaluating 'recoveryCoordinator', the global network variable needs
@@ -239,9 +246,8 @@ makeRecoveryCoordinator :: ProcessId -- ^ pid of the replicated multimap
                         -> Definitions LoopState ()
                         -> Process ()
 makeRecoveryCoordinator mm eq rm = do
-    rg      <- HA.RecoveryCoordinator.Mero.initialize mm
-    startRG <- G.sync rg
-    execute (LoopState startRG Map.empty mm eq S.empty) $ do
+    init_st <- buildRCState mm eq
+    execute init_st $ do
       rm
       setRuleFinalizer $ \ls -> do
         newGraph <- G.sync $ lsGraph ls
