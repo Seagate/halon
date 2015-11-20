@@ -28,6 +28,7 @@ import Control.Exception ( SomeException )
 import Control.Monad ( when, void )
 import Data.Binary ( encode )
 import Data.ByteString ( ByteString )
+import Data.ByteString.Builder ( lazyByteString, toLazyByteString )
 import qualified Data.ByteString.Lazy as BSL ( ByteString )
 import Data.ByteString.Lazy ( toChunks, fromChunks )
 import Data.Function ( fix )
@@ -48,7 +49,11 @@ readStore :: ProcessId -> Multimap -> Process ()
 readStore caller mmap = void $ spawnLocal $ do
     link caller
     getSelfPid >>= usend caller
-    mapM_ (usend caller) $ toChunks $ encode $ toList mmap
+    -- For some reason, 'encode' from binary does not care to conflate the
+    -- small bytestrings in the multimap. We merge these into reasonably
+    -- sized chunks by using 'Data.ByteString.Builder.Builder'.
+    mapM_ (usend caller) $ toChunks $
+      toLazyByteString $ lazyByteString $ encode $ toList mmap
     usend caller ()
     -- We wait for the caller to finish reading the chunks,
     -- otherwise it may receive prematurely a notification of
