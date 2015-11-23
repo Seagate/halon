@@ -100,6 +100,9 @@ ut _host transport breakConnection = do
           HA.Test.Disconnect.testRejoin _host transport breakConnection
       , testCase "RCToleratesRejoinsTimeout" $
           HA.Test.Disconnect.testRejoinTimeout _host transport breakConnection
+      , testCase "RCToleratesRejoinsWithDeath" $
+          HA.Test.Disconnect.testRejoinRCDeath
+            _host transport (error "breakConnection not supplied in test")
 #endif
 #if !defined(USE_RPC) && !defined(USE_MOCK_REPLICATOR)
       , testCase "RCToleratesDisconnections" $

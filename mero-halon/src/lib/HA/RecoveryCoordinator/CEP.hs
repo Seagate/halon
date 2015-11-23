@@ -77,13 +77,15 @@ rcRules argv additionalRules = do
         let nid  = processNodeId pid
             node = Node nid
         liftProcess . sayRC $ "New node contacted: " ++ show nid
-        known <- hasHostAttr HA_DOWN (Host h) >>= \case
+        known <- hasHostAttr HA_TRANSIENT (Host h) >>= \case
           False -> do
             liftProcess . sayRC $ "Potentially new node, no revival: " ++ show node
             knownResource node
           True -> do
             liftProcess . sayRC $ "Reviving old node: " ++ show node
+            unsetHostAttr (Host h) HA_TRANSIENT
             unsetHostAttr (Host h) HA_DOWN
+            syncGraph
 #ifdef USE_MERO
             g <- getLocalGraph
             let nodes = [ M0.AnyConfObj n
@@ -197,17 +199,11 @@ rcRules argv additionalRules = do
     -- time intervals, asking it to announce itself back to the TS
     -- (NodeUp) so that we may handle it again.
     --
-    -- This rule uses RecoverNode message. This message is sent from two places:
-
-    -- - when the RC starts up, it checks whether we have any nodes in
-    -- RG marked with HA_DOWN and if yes, it fires the message for
-    -- each and tries to recover. This is in case RC dies
-    -- mid-recovery.
-    --
-    -- - when a service dies on a node: we always have a monitor
-    -- service running on nodes so if a service fails, we know we
-    -- potentially have a problem and try to recover, so we send
-    -- RecoverNode from service failure rule. This is the usual case.
+    -- This rule uses RecoverNode message. This rule is sent service
+    -- fails on a node: we always have a monitor service running on
+    -- nodes so if a service fails, we know we potentially have a
+    -- problem and try to recover, so we send RecoverNode from service
+    -- failure rule.
     define "recover-node" $ do
       let expirySeconds = 300
           maxRetries = 5
@@ -221,11 +217,11 @@ rcRules argv additionalRules = do
 
         case listToMaybe (G.connectedFrom Runs n1 g) of
           Nothing -> return ()
-          Just host -> hasHostAttr M0.HA_DOWN host >>= \case
+          Just host -> hasHostAttr M0.HA_TRANSIENT host >>= \case
             -- Node not already marked as down so mark it as such and
             -- notify mero
             False -> do
-              setHostAttr host M0.HA_DOWN
+              setHostAttr host M0.HA_TRANSIENT
 #ifdef USE_MERO
               let nodes = [ M0.AnyConfObj n
                           | (c :: M0.Controller) <- G.connectedFrom M0.At host g
@@ -239,16 +235,20 @@ rcRules argv additionalRules = do
             -- long as the RC doesn't die more often than a full node
             -- timeout happens, we'll finish the recovery eventually
             True -> put Local (uuid, uuid', Just (n1, host, 0))
-        liftProcess $ sayRC $ "Marked node down: " ++ show n1
+        liftProcess $ sayRC $ "Marked node transient: " ++ show n1
 
         continue try_recover
+
+      let ackMsg m = if Data.UUID.null m
+                     then return ()
+                     else finishProcessingMsg m >> messageProcessed m
 
       directly try_recover $ do
         get Local >>= \case
           (uuid, uuid', Just (Node nid, h, i)) | i >= maxRetries -> continue timeout_host
                                                | otherwise -> do
-            hasHostAttr M0.HA_DOWN h >>= \case
-              False -> return ()
+            hasHostAttr M0.HA_TRANSIENT h >>= \case
+              False -> ackMsg uuid' >> ackMsg uuid
               True -> do
                 liftProcess $ sayRC "Inside try_recover"
                 put Local (uuid, uuid', Just (Node nid, h, i + 1))
@@ -268,9 +268,7 @@ rcRules argv additionalRules = do
             timeoutHost h
             put Local (nil, nil, Nothing)
           _ -> log' "timeout_host nothing" >> return ()
-        let ackMsg m = if Data.UUID.null m
-                       then return ()
-                       else finishProcessingMsg m >> messageProcessed m
+        syncGraph
         ackMsg uuid'
         ackMsg uuid
       start start_recover (nil, nil, Nothing)

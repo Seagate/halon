@@ -54,10 +54,14 @@ data HostAttr =
   | HA_M0SERVER
   | HA_MEMSIZE_MB Int
   | HA_CPU_COUNT Int
+  | HA_TRANSIENT
+    -- ^ The host is marked as transient. This is a simple indication
+    -- that we should try to reach the node and have it announce
+    -- itself to the RC.
   | HA_DOWN
-    -- ^ The host is marked as down. This is a simple indication that
-    -- we should try to reach the node and have it announce itself to
-    -- the RC.
+    -- ^ Node has been marked as down. We have tried to recover from
+    -- the node failure in the past ('HA_TRANSIENT') but have failed
+    -- to do so in timely manner.
   deriving (Eq, Ord, Show, Generic, Typeable)
 
 instance Binary HostAttr

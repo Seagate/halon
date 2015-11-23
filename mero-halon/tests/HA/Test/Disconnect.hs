@@ -64,13 +64,16 @@ remotableDecl [ [d|
   rcWithDeath = recoveryCoordinatorEx () rcDeathRules
     where
       rcDeathRules :: [Definitions LoopState ()]
-      rcDeathRules = return $ defineSimple "rc-with-death" $ \(HAEvent _ KillRC _) -> do
+      rcDeathRules = return $ defineSimple "rc-with-death" $ \(HAEvent uuid KillRC _) -> do
+        startProcessingMsg uuid
         liftProcess $ say "RC death requested from Disconnect.hs:rcDeathRules"
+        finishProcessingMsg uuid
+        messageProcessed uuid
         error "RC death requested from Disconnect.hs:rcDeathRules"
   |]]
 
 myRemoteTable :: RemoteTable
-myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
+myRemoteTable = HA.Test.Disconnect.__remoteTableDecl . haRemoteTable $ meroRemoteTable initRemoteTable
 
 rcClosure :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
 rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
@@ -183,11 +186,11 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
       say "Test complete"
 
 -- | Tests that:
---  * nodes are removed from the RG when disconnected for long enough.
---  * nodes can rejoin after they were removed.
+--  * nodes are timed out when disconnected for long enough
+--  * nodes can rejoin after they were timed out
 --
--- Spawn TS with one node. Bring up a satellite. Disconnect it. Wait until RC
--- removes it from the RG. Check that we can rejoin the node.
+-- Spawn TS with one node. Bring up a satellite. Disconnect it. Wait
+-- until RC enters timeout routine. Check that we can rejoin the node.
 testRejoinTimeout :: String -- ^ Host used for initial data
                   -> Transport
                   -> (EndPointAddress -> EndPointAddress -> IO ())
@@ -211,7 +214,7 @@ testRejoinTimeout _host baseTransport connectionBreak = withTmpDirectory $ do
         let t = "Recovery Coordinator: received DummyEvent "
         case string of
           str' | t `isInfixOf` str' -> usend self $ Dummy (drop (length t) str')
-          str' | "Marked node down: " `isInfixOf` str' -> usend self "NodeDown"
+          str' | "Marked node transient: " `isInfixOf` str' -> usend self "NodeTransient"
           str' | "timeout_host Just" `isInfixOf` str' -> usend self "timeout_host"
           str' | "Loaded initial data" `isInfixOf` str' -> usend self "InitialLoad"
           str' | "Reviving old node" `isInfixOf` str' -> usend self "ReviveNode"
@@ -255,14 +258,14 @@ testRejoinTimeout _host baseTransport connectionBreak = withTmpDirectory $ do
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
-      receiveWait [ matchIf (== "NodeDown") (void . return) ]
+      receiveWait [ matchIf (== "NodeTransient") (void . return) ]
       -- wait until timeout happens
       receiveWait [ matchIf (== "timeout_host") (void . return) ]
       -- then bring it back up
       restoreNet (map localNodeId [m0, m1])
       -- and make bring it back up
       void $ liftIO $ forkProcess m0 $ nodeUp ([localNodeId m1], 1000000)
-
+      receiveWait [ matchIf (== "NewNode") (void . return) ]
       say "testRejoinTimeout complete"
 
 -- | Tests that:
@@ -271,10 +274,6 @@ testRejoinTimeout _host baseTransport connectionBreak = withTmpDirectory $ do
 -- Spawn TS with one node. Bring up a satellite. Disconnect it. Kill
 -- the RC. Wait until we see recovery process continue and reconnect
 -- satellite.
---
--- This test currently is not complete (messages after RC comes back
--- up likely to be in the wrong order) and does not work (RC seems to
--- not see the death message).
 testRejoinRCDeath :: String -- ^ Host used for initial data
                   -> Transport
                   -> (EndPointAddress -> EndPointAddress -> IO ())
@@ -293,16 +292,16 @@ testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
                , 8*1000000 :: Int
                )
     self <- getSelfPid
-    liftIO $ forM_ [m0, m1] $ \m -> forkProcess m $ do
+    void . liftIO . forkProcess m1 $ do
       registerInterceptor $ \string -> do
         let t = "Recovery Coordinator: received DummyEvent "
         case string of
           str' | t `isInfixOf` str' -> usend self $ Dummy (drop (length t) str')
-          str' | "Marked node down: " `isInfixOf` str' -> usend self "NodeDown"
-          str' | "timeout_host Just" `isInfixOf` str' -> usend self "timeout_host"
+          str' | "Marked node transient: " `isInfixOf` str' -> usend self "NodeTransient"
           str' | "Loaded initial data" `isInfixOf` str' -> usend self "InitialLoad"
           str' | "Reviving old node" `isInfixOf` str' -> usend self "ReviveNode"
-          str' | "New node contacted" `isInfixOf` str' -> usend self "NewNode"
+          str' | "Inside try_recover" `isInfixOf` str' -> usend self "RecoverNode"
+          str' | "started monitor service on nid" `isInfixOf` str' -> usend self "MonitorStarted"
           _ -> return ()
       usend self ((), ())
     ((), ()) <- expect
@@ -331,9 +330,7 @@ testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
         nodeUp ([localNodeId m1], 1000000)
-
-      "NewNode" :: String <- expect
-
+      "MonitorStarted" <- expect
 
 #ifdef USE_MERO
       let wait = void (expect :: Process ProcessMonitorNotification)
@@ -344,20 +341,24 @@ testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
-      ("NodeDown" :: String) <- expect
+      "NodeTransient" :: String <- expect
+      -- wait until recovery starts
+      "RecoverNode" <- expect
       _ <- promulgateEQ [localNodeId m1] KillRC
-      -- wait until timeout happens
-      ("timeout_host" :: String) <- expect
+      -- RC restarts but the node is still down
+      "NodeTransient" <- expect
+      -- recovery starts
+      "RecoverNode" <- expect
       -- then bring it back up
       restoreNet (map localNodeId [m0, m1])
       -- and make sure it did come back up
-      void $ liftIO $ forkProcess m0 $ nodeUp ([localNodeId m1], 1000000)
-      receiveWait [ matchIf (== "NewNode") (void . return) ]
+      receiveWait [ matchIf (\msg -> msg == "NodeTransient" || msg == "ReviveNode")
+                   (void . return) ]
       say "testRejoinRCDeath complete"
 
 -- | Tests that:
 -- * The RC detects when a node disconnects.
--- * Nodes can rejoin before the RC removes them from the RG.
+-- * Nodes can rejoin before we time them out and mark as down.
 --
 -- Spawn TS with one node. Bring up a satellite. Disconnect it. Wait until RC
 -- detects the node is disconnected. Reconnect the node. Check that RC marks the
@@ -385,7 +386,7 @@ testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
         let t = "Recovery Coordinator: received DummyEvent "
         case string of
           str' | t `isInfixOf` str' -> usend self $ Dummy (drop (length t) str')
-          str' | "Marked node down: " `isInfixOf` str' -> usend self "NodeDown"
+          str' | "Marked node transient: " `isInfixOf` str' -> usend self "NodeTransient"
           str' | "Loaded initial data" `isInfixOf` str' -> usend self "InitialLoad"
           str' | "Reviving old node" `isInfixOf` str' -> usend self "ReviveNode"
           str' | "Inside try_recover" `isInfixOf` str' -> usend self "RecoverNode"
@@ -415,6 +416,7 @@ testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
       ((), ()) <- expect
 
       say "running NodeUp"
+
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
         nodeUp ([localNodeId m1], 1000000)
@@ -430,7 +432,7 @@ testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
-      receiveWait [ matchIf (== "NodeDown") (void . return) ]
+      receiveWait [ matchIf (== "NodeTransient") (void . return) ]
       -- Wait until recovery starts
       receiveWait [ matchIf (== "RecoverNode") (void . return) ]
       -- Bring one node back up straight away…

@@ -60,11 +60,9 @@ ut _host transport = return $
       , testCase "RCToleratesRejoinsTimeout" $
           HA.Test.Disconnect.testRejoinTimeout
             _host transport (error "breakConnection not supplied in test")
-{-
-      testCase "RCToleratesRejoinsWithDeath" $
+      , testCase "RCToleratesRejoinsWithDeath" $
           HA.Test.Disconnect.testRejoinRCDeath
-            host transport (error "breakConnection not supplied in test")
--}
+            _host transport (error "breakConnection not supplied in test")
 #endif
       ]
 
