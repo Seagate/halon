@@ -23,7 +23,12 @@ import qualified HA.Resources.Castor.Initial as CI
 import HA.Resources
 import qualified HA.ResourceGraph as G
 
-import Mero.ConfC (Bitmap(..), Fid, ServiceType(..))
+import Mero.ConfC
+  ( Bitmap(..)
+  , Fid
+  , ServiceType(..)
+  , bitmapFromArray
+  )
 
 import Control.Category (id, (>>>))
 import Control.Distributed.Process (liftIO)
@@ -108,9 +113,12 @@ loadMeroServers :: M0.Filesystem
 loadMeroServers fs = mapM_ goHost where
   goHost CI.M0Host{..} = let
       host = Host m0h_fqdn
+      cores = bitmapFromArray
+        . fmap (\i -> if i > 0 then True else False)
+        $ m0h_cores
       mkProc fid = M0.Process fid m0h_mem_as m0h_mem_rss
                               m0h_mem_stack m0h_mem_memlock
-                              (Bitmap m0h_cores) m0h_endpoint
+                              cores m0h_endpoint
 
     in do
       ctrl <- M0.Controller <$> newFid (Proxy :: Proxy M0.Controller)

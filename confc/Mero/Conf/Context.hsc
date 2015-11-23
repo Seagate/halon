@@ -15,8 +15,13 @@ module Mero.Conf.Context where
 import Mero.Conf.Fid ( Fid(..) )
 
 import Data.Binary (Binary)
-import Data.Bits (shiftR)
+import Data.Bits
+  ( setBit
+  , shiftR
+  , zeroBits
+  )
 import Data.Hashable (Hashable)
+import qualified Data.List as List
 import qualified Data.Map as Map
 import Data.Word ( Word32, Word64 )
 
@@ -59,6 +64,19 @@ instance Storable Bitmap where
       -- TODO This memory is never freed
       words_ptr <- newArray b
       #{poke struct m0_bitmap, b_words} p words_ptr
+
+bitmapFromArray :: [Bool] -> Bitmap
+bitmapFromArray = Bitmap . go [] where
+  go acc arr = case List.splitAt 64 arr of
+    ([], _) -> acc
+    (x, xs) -> bits2word x : go acc xs
+  bits2word xs = List.foldl'
+    (\bm (idx, a) -> case a of
+      False -> bm
+      True -> setBit bm idx
+    )
+    zeroBits
+    (zip [0 .. length xs - 1] xs)
 
 -- @types.h m0_unit128@
 data Word128 = Word128 {-# UNPACK #-} !Word64 {-# UNPACK #-} !Word64
