@@ -147,9 +147,10 @@ commitTransactionForced (SpielTransaction ptr) forced ver quorum =
 withTransaction :: SpielContext
                 -> (SpielTransaction -> IO a)
                 -> IO a
-withTransaction sc = bracket
+withTransaction sc f = bracket
   (openTransactionContext sc)
-  (\t -> commitTransaction t >> closeTransaction t)
+  (closeTransaction)
+  (\t -> f t >>= \x -> commitTransaction t >> return x)
 
 dumpTransaction :: SpielTransaction
                 -> FilePath
