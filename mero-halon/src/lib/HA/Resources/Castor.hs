@@ -22,8 +22,8 @@ import HA.Resources
 import qualified HA.Resources.Castor.Initial as MI
 import HA.Resources.TH
 
-import Data.Hashable (Hashable)
-import Data.Binary (Binary)
+import Data.Hashable (Hashable(..))
+import Data.Binary (Binary(..))
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
 import GHC.Generics (Generic)
@@ -54,6 +54,14 @@ data HostAttr =
   | HA_M0SERVER
   | HA_MEMSIZE_MB Int
   | HA_CPU_COUNT Int
+  | HA_TRANSIENT
+    -- ^ The host is marked as transient. This is a simple indication
+    -- that we should try to reach the node and have it announce
+    -- itself to the RC.
+  | HA_DOWN
+    -- ^ Node has been marked as down. We have tried to recover from
+    -- the node failure in the past ('HA_TRANSIENT') but have failed
+    -- to do so in timely manner.
   deriving (Eq, Ord, Show, Generic, Typeable)
 
 instance Binary HostAttr

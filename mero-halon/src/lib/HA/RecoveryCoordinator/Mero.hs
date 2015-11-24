@@ -48,6 +48,7 @@ module HA.RecoveryCoordinator.Mero
        , loadNodeMonitorConf
        , notHandled
        , buildRCState
+       , timeoutHost
        ) where
 
 import Prelude hiding ((.), id, mapM_)
@@ -64,6 +65,12 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Service
 import HA.RecoveryCoordinator.Actions.Monitor
+import qualified HA.Resources.Castor as M0
+#ifdef USE_MERO
+import qualified HA.Resources.Mero as M0
+import HA.Resources.Mero.Note (ConfObjectState(..))
+import HA.Services.Mero (notifyMero)
+#endif
 import qualified HA.ResourceGraph as G
 
 import Control.Distributed.Process
@@ -153,6 +160,26 @@ rcInitRule argv = do
         sayRC $ "continue in normal mode"
 
     start boot Nothing
+
+-- | Notify mero about the node being considered down and set the
+-- appropriate host attributes.
+timeoutHost :: M0.Host -> PhaseM LoopState g ()
+timeoutHost h = hasHostAttr M0.HA_TRANSIENT h >>= \case
+  False -> return ()
+  True -> do
+    liftProcess . sayRC $ "Disconnecting " ++ show h ++ " due to timeout"
+#ifdef USE_MERO
+    g <- getLocalGraph
+    let nodes = [ n
+                | (c :: M0.Controller) <- G.connectedFrom M0.At h g
+                , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c g
+                ]
+    notifyMero (M0.AnyConfObj <$> nodes) M0_NC_FAILED
+    -- TODO: do we also have to tell mero about things connected to
+    -- the nodes being down?
+#endif
+    unsetHostAttr h M0.HA_TRANSIENT
+    setHostAttr h M0.HA_DOWN
 
 ack :: ProcessId -> PhaseM LoopState l ()
 ack pid = liftProcess $ usend pid ()

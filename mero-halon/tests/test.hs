@@ -92,10 +92,17 @@ ut _host transport breakConnection = do
 #ifdef USE_MERO
       , testGroup "Castor" $
         HA.Castor.Tests.tests _host transport
-      , testCase "RCsyncToConfd" $
-          HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd _host transport
       , testGroup "DriveFailure" $
         driveFailureTests transport
+      , testCase "RCsyncToConfd" $
+          HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd _host transport
+      , testCase "RCToleratesRejoins" $
+          HA.Test.Disconnect.testRejoin _host transport breakConnection
+      , testCase "RCToleratesRejoinsTimeout" $
+          HA.Test.Disconnect.testRejoinTimeout _host transport breakConnection
+      , testCase "RCToleratesRejoinsWithDeath" $
+          HA.Test.Disconnect.testRejoinRCDeath
+            _host transport (error "breakConnection not supplied in test")
 #endif
 #if !defined(USE_RPC) && !defined(USE_MOCK_REPLICATOR)
       , testCase "RCToleratesDisconnections" $
