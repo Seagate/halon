@@ -293,7 +293,7 @@ createPoolVersions fs = mapM_ createPoolVersion
                   $ \disk -> do
               diskv <- M0.DiskV <$> newFid (Proxy :: Proxy M0.DiskV)
               modifyGraph
-                  $ G.newResource ctrlv
+                  $ G.newResource diskv
                 >>> G.connect ctrlv M0.IsParentOf diskv
                 >>> G.connect disk M0.IsRealOf diskv
 
