@@ -17,11 +17,11 @@ Library
   Default-Language:    Haskell2010
   exposed-modules:     Mero.ConfC
                      , Mero.Spiel
-                     , Mero.Conf.Context
   other-modules:       Mero.Conf.Fid
                      , Mero.Conf.Internal
                      , Mero.Conf.Obj
                      , Mero.Conf.Tree
+                     , Mero.Conf.Context
                      , Mero.Spiel.Context
                      , Mero.Spiel.Internal
   build-depends:       base
@@ -38,6 +38,7 @@ Library
   ghc-options:  -Wall -fprof-auto -fprof-auto-calls -fPIC -optc-Wno-attributes
                 -optc-Werror -optc-g -optc-DM0_INTERNAL= -optc-DM0_EXTERN=extern
   default-extensions:  CPP
+  other-extensions:    TemplateHaskell, QuasiQuotes, CApiFFI
   if flag(maintainer)
     ghc-options: -Werror
 

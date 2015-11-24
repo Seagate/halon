@@ -13,6 +13,7 @@ module Mero.ConfC
   , module Mero.Conf.Obj
   , module Mero.Conf.Tree
   , withConf
+  , withBitmap
   ) where
 
 import Mero.Conf.Context
@@ -26,6 +27,11 @@ import Network.RPC.RPCLite
   , RPCAddress
   )
 
+import Control.Exception (bracket_)
+import Foreign.Ptr (Ptr)
+import Foreign.Marshal.Alloc (alloca)
+import Foreign.Storable (poke)
+
 -- | Open a configuration tree at the root. Note that while the type
 --   signatures of the functions to explore confc do not require so,
 --   all other confc calls must be made within this scope or fail.
@@ -34,3 +40,13 @@ withConf :: RPCMachine
          -> (Root -> IO a)
          -> IO a
 withConf m a f = withConfC $ withRoot m a f
+
+-- | Allocates and populates bitmap representation for mero.
+withBitmap :: Bitmap -> (Ptr Bitmap -> IO a) -> IO a
+withBitmap bm@(Bitmap n _) f = alloca $ \bm_ptr ->
+  bracket_ (do bitmapInit bm_ptr ns
+               poke bm_ptr bm)
+           (bitmapFini bm_ptr)
+           (f bm_ptr)
+  where
+    ns = fromIntegral n

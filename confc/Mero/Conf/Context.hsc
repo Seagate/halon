@@ -3,6 +3,8 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE CApiFFI #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
 
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
@@ -15,6 +17,7 @@ module Mero.Conf.Context where
 
 import Mero.Conf.Fid ( Fid(..) )
 
+import Control.Monad (when)
 import Data.Binary (Binary)
 import Data.Bits
   ( setBit
@@ -28,10 +31,12 @@ import Data.Word ( Word32, Word64 )
 
 import Foreign.Marshal.Array
   ( peekArray
-  , newArray
+  , pokeArray
   )
 import Foreign.Ptr
-  ( plusPtr )
+  ( Ptr
+  , nullPtr
+  )
 import Foreign.Storable
   ( Storable(..) )
 import GHC.Generics
@@ -54,6 +59,10 @@ data Bitmap = Bitmap Int [Word64]
 instance Binary Bitmap
 instance Hashable Bitmap
 
+-- | Bitmap structure is complex, so in order to poke
+-- value to the memory, that memory should be prepared first.
+-- This could be done my invoking 'm0_bitmap_init' and providing
+-- correct size. It's better to use withBitmap wrapper for that.
 instance Storable Bitmap where
   sizeOf _ = #{size struct m0_bitmap}
   alignment _ = #{alignment struct m0_bitmap}
@@ -67,13 +76,25 @@ instance Storable Bitmap where
       bits2words bits = (bits + 63) `shiftR` 6
 
   poke p (Bitmap nr b) = do
-      #{poke struct m0_bitmap, b_nr} p nr
-      -- TODO This memory is never freed
-      words_ptr <- newArray b
-      #{poke struct m0_bitmap, b_words} p words_ptr
+      pr <- #{peek struct m0_bitmap, b_nr} p
+      when (pr /= nr) $ error $ "bitmap structure was not prepared to store bitmap" ++ show (pr, nr)
+      ptr <- #{peek struct m0_bitmap, b_words} p
+      when (ptr == nullPtr) $ error "bitmap array was not allocated"
+      pokeArray ptr b
+
+bitmapInit :: Ptr Bitmap -> Int -> IO ()
+bitmapInit bmptr sz = do
+  rc <- c_bitmap_init bmptr (fromIntegral sz)
+  when (rc /= 0) $ error "Bitmap can't be allocated"
+
+foreign import capi unsafe "lib/bitmap.h m0_bitmap_init"
+   c_bitmap_init :: Ptr Bitmap -> C.CInt -> IO C.CInt
+
+foreign import capi unsafe "lib/bitmap.h m0_bitmap_fini"
+   bitmapFini :: Ptr Bitmap -> IO ()
 
 bitmapFromArray :: [Bool] -> Bitmap
-bitmapFromArray = Bitmap . go [] where
+bitmapFromArray bs = Bitmap n $ go [] bs where
   go acc arr = case List.splitAt 64 arr of
     ([], _) -> acc
     (x, xs) -> bits2word x : go acc xs
@@ -84,6 +105,7 @@ bitmapFromArray = Bitmap . go [] where
     )
     zeroBits
     (zip [0 .. length xs - 1] xs)
+  n = length bs
 
 -- @types.h m0_unit128@
 data Word128 = Word128 {-# UNPACK #-} !Word64 {-# UNPACK #-} !Word64

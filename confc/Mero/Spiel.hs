@@ -227,7 +227,7 @@ addProcess (SpielTransaction fsc) fid nodeFid bitmap memlimit_as memlimit_rss
             memlimit_stack memlimit_memlock endpoint =
   withForeignPtr fsc $ \sc ->
     withMany with [fid, nodeFid] $ \[fid_ptr, fs_ptr] ->
-      with bitmap $ \bm_ptr ->
+      withBitmap bitmap $ \bm_ptr ->
         withCString endpoint $ \c_ep ->
           throwIfNonZero_ (\rc -> "Cannot add process: " ++ show rc)
             $ c_spiel_process_add sc fid_ptr fs_ptr bm_ptr memlimit_as

@@ -10,7 +10,7 @@ import Data.Monoid
 import Foreign
 
 import Mero
-import Mero.Conf.Context
+import Mero.ConfC
 import qualified Language.C.Inline as C
 
 C.context (C.baseCtx <> confCtx)
@@ -23,6 +23,7 @@ tests :: TestTree
 tests = testGroup "ut"
   [ testGroup "bitmap" 
       [ testCase "peek-poke == id" testPeekPoke
+      , testCase "withBitmap works" testWithBitmap
       ]
   ]
 
@@ -58,3 +59,20 @@ testPeekPoke = alloca $ \bm_ptr -> do
           return ret;
         }|]
   assertEqual "Bitmap data after poke is correct" 3 i
+
+testWithBitmap :: Assertion
+testWithBitmap = withBitmap (bitmapFromArray [True, False]) $ \bm_ptr -> do
+  cN    <- [C.exp| size_t { $(struct m0_bitmap* bm_ptr)->b_nr } |]
+  assertEqual "Bitmap has correct size" 2 cN
+  i <- [C.block| int {
+          struct m0_bitmap * bm = $(struct m0_bitmap* bm_ptr);
+          bool b=0;
+          int ret=0;
+          b = m0_bitmap_get(bm, 0);
+          ret += b?1:0;
+          b = m0_bitmap_get(bm, 0);
+          ret += b?2:0;
+          return ret;
+        }|]
+  assertEqual "Bitmap data is correct" 3 i
+   
