@@ -198,7 +198,7 @@ testRejoinTimeout :: String -- ^ Host used for initial data
 testRejoinTimeout _host baseTransport connectionBreak = withTmpDirectory $ do
   (transport, controlled) <- Controlled.createTransport baseTransport
                                                         connectionBreak
-  testSplit transport controlled 2 1 $ \[m0,m1]
+  testSplit transport controlled 2 5 $ \[m0,m1]
                                         splitNet restoreNet -> do
     let args = ( False :: Bool
                , map localNodeId [m1]
@@ -281,7 +281,7 @@ testRejoinRCDeath :: String -- ^ Host used for initial data
 testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
   (transport, controlled) <- Controlled.createTransport baseTransport
                                                         connectionBreak
-  testSplit transport controlled 2 1 $ \[m0,m1]
+  testSplit transport controlled 2 5 $ \[m0,m1]
                                         splitNet restoreNet -> do
     let args = ( False :: Bool
                , [localNodeId m1]
@@ -370,7 +370,7 @@ testRejoin :: String -- ^ Host used for initial data
 testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
   (transport, controlled) <- Controlled.createTransport baseTransport
                                                         connectionBreak
-  testSplit transport controlled 2 1 $ \[m0,m1]
+  testSplit transport controlled 2 10 $ \[m0,m1]
                                         splitNet restoreNet -> do
     let args = ( False :: Bool
                , map localNodeId [m1]
