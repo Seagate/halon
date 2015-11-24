@@ -403,8 +403,8 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
     -- Invariant: @stateUnconfirmedDecree <= stateCurrentDecree@
     --
   , stateCurrentDecree     :: !DecreeId
-    -- | The pid of the process dumping the latest snapshot
-  , stateSnapshotDumper    :: !(Maybe ProcessId)
+    -- | The pid of the process dumping the latest snapshot and its watermark.
+  , stateSnapshotDumper    :: !(Maybe (DecreeId, ProcessId))
     -- | The reference to the last snapshot saved.
   , stateSnapshotRef       :: !(Maybe ref)
     -- | The watermark of the lastest snapshot
@@ -875,17 +875,18 @@ replica Dict
                         locale == Stored && w <= di && decreeNumber di == decreeNumber w) $ {-# SCC "go/Decree/Execute" #-}
                        \(Decree _ di v) -> do
                 let maybeTakeSnapshot w' s' = do
+                      let w0' = maybe w0 fst mdumper
                       takeSnapshot <- snapshotPolicy
-                                        (decreeNumber w' - decreeNumber w0)
-                      if takeSnapshot then do
+                                        (decreeNumber w' - decreeNumber w0')
+                      if takeSnapshot && isNothing mdumper then do
                         say $ "Log size when trimming: " ++ show (Map.size log)
-                        forM_ mdumper $ flip kill "saving a newer snapshot"
+                        forM_ mdumper $ flip kill "saving a newer snapshot" . snd
                         -- dump the snapshot asynchronously
                         dumper <- spawnLocal $ do
                                     dumper <- getSelfPid
                                     sref' <- stLogDump w' s'
                                     usend self (w', sref', dumper)
-                        return $ Just dumper
+                        return $ Just (w', dumper)
                       else
                         return mdumper
                 case v of
@@ -950,7 +951,7 @@ replica Dict
                 -- spawned.
                 logTrace $ "Response from dumper " ++
                            show (w0', dumper', mdumper)
-                if Just dumper' == mdumper then do
+                if Just dumper' == fmap snd mdumper then do
                   say "Trimming log."
                   liftIO $ trimTheLog ph (decreeNumber w0)
                   prl_releaseDecreesBelow (sendAcceptor logId) here w0
