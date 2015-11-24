@@ -157,10 +157,9 @@ castorRules = do
           M0_NC_FAILED -> do
             sdevm <- lookupConfObjByFid mfid
             for_ sdevm $ \m0sdev -> do
-              mdev <- lookupSDevDisk m0sdev
               msdev <- lookupStorageDevice m0sdev
-              case (mdev, msdev) of
-                (Just dev, Just sdev) -> do
+              case msdev of
+                Just sdev -> do
                   ongoing <- hasOngoingReset sdev
                   when (not ongoing) $ do
                     ratt <- getDiskResetAttempts sdev
@@ -177,8 +176,8 @@ castorRules = do
                                   , "fid=" ++ show mfid
                                 ] ++ map show diskids
                       sendInterestingEvent nid iem
-                      pools <- getPools dev
-                      traverse_ (startRepairOperation dev) pools
+                      pools <- getSDevPools m0sdev
+                      traverse_ startRepairOperation pools
 
                     when (status == M0_NC_TRANSIENT) $ do
                       markOnGoingReset sdev
@@ -190,7 +189,7 @@ castorRules = do
                                     ++ " storage device: "
                                     ++ show m0sdev
                                     ++ ": "
-                                    ++ show (mdev, msdev)
+                                    ++ show msdev
           _ -> return ()
       messageProcessed uid
 
@@ -236,8 +235,10 @@ castorRules = do
           markResetComplete sdev
 #ifdef USE_MERO
           sd <- lookupStorageDeviceSDev sdev
-          forM_ sd $ \m0sdev ->
+          forM_ sd $ \m0sdev -> do
             notifyMero [AnyConfObj m0sdev] M0_NC_FAILED
+            pools <- getSDevPools m0sdev
+            traverse_ startRepairOperation pools
 #endif
           continue end
 
@@ -259,8 +260,10 @@ castorRules = do
           markResetComplete sdev
 #ifdef USE_MERO
           sd <- lookupStorageDeviceSDev sdev
-          forM_ sd $ \m0sdev ->
+          forM_ sd $ \m0sdev -> do
             notifyMero [AnyConfObj m0sdev] M0_NC_FAILED
+            pools <- getSDevPools m0sdev
+            traverse_ startRepairOperation pools
 #endif
           continue end
 
@@ -295,8 +298,10 @@ castorRules = do
         markResetComplete sdev
 #ifdef USE_MERO
         sd <- lookupStorageDeviceSDev sdev
-        forM_ sd $ \m0sdev ->
+        forM_ sd $ \m0sdev -> do
           notifyMero [AnyConfObj m0sdev] M0_NC_FAILED
+          pools <- getSDevPools m0sdev
+          traverse_ startRepairOperation pools
 #endif
         continue end
 

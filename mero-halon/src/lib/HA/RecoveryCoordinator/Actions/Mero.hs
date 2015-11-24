@@ -23,8 +23,9 @@ module HA.RecoveryCoordinator.Actions.Mero
   , withSpielRC
   , syncToConfd
   , rgLookupConfObjByFid
-  , getPools
+  , getSDevPools
   , startRepairOperation
+  , startRebalanceOperation
   , lookupStorageDevice
   , lookupStorageDeviceSDev
   , lookupSDevDisk
@@ -321,11 +322,12 @@ lookupSDevDisk sdev = do
   rg <- getLocalGraph
   return . listToMaybe $ G.connectedTo sdev M0.IsOnHardware rg
 
-getPools :: M0.Disk -> PhaseM LoopState l [M0.Pool]
-getPools dev = do
+getSDevPools :: M0.SDev -> PhaseM LoopState l [M0.Pool]
+getSDevPools sdev = do
     rg <- getLocalGraph
     let ps =
-          [ p | dv <- G.connectedTo dev M0.IsRealOf rg :: [M0.DiskV]
+          [ p | d  <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
+              , dv <- G.connectedTo d M0.IsRealOf rg :: [M0.DiskV]
               , ct <- G.connectedFrom M0.IsParentOf dv rg :: [M0.ControllerV]
               , ev <- G.connectedFrom M0.IsParentOf ct rg :: [M0.EnclosureV]
               , rv <- G.connectedFrom M0.IsParentOf ev rg :: [M0.RackV]
@@ -334,9 +336,6 @@ getPools dev = do
               ]
 
     return ps
-
-startRepairOperation :: M0.Disk -> M0.Pool -> PhaseM LoopState l ()
-startRepairOperation _ _ = phaseLog "error" "Start repair not implemeted"
 
 -- | Replace storage device node with its new version.
 actualizeStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l ()
@@ -363,3 +362,17 @@ actualizeStorageDeviceReplacement sdev = do
                 >>> G.disconnect dev Has SDRemovedAt
                   $ rg
           return rg'
+
+startRepairOperation :: M0.Pool -> PhaseM LoopState l ()
+startRepairOperation pool = getSpielAddress >>= traverse_ go
+  where
+    go sa = do
+      phaseLog "spiel" $ "Starting repair on pool " ++ show pool
+      withSpielRC sa $ \sc -> liftM0 $ poolRepairStart sc (M0.fid pool)
+
+startRebalanceOperation :: M0.Pool -> PhaseM LoopState l ()
+startRebalanceOperation pool = getSpielAddress >>= traverse_ go
+  where
+    go sa = do
+      phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool
+      withSpielRC sa $ \sc -> liftM0 $ poolRebalanceStart sc (M0.fid pool)

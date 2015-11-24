@@ -667,33 +667,33 @@ processListServices (SpielContext fsc) pc = mask $ \restore ->
           return services
 
 poolRepairStart :: SpielContext
-                -> Pool
+                -> Fid
                 -> IO ()
-poolRepairStart (SpielContext fsc) pl = withForeignPtr fsc $ \sc ->
-  with (pl_fid pl) $ \fid_ptr ->
+poolRepairStart (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
+  with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot start pool repair: " ++ show rc)
       $ c_spiel_pool_repair_start sc fid_ptr
 
 poolRepairQuiesce :: SpielContext
-                  -> Pool
+                  -> Fid
                   -> IO ()
-poolRepairQuiesce (SpielContext fsc) pl = withForeignPtr fsc $ \sc ->
-  with (pl_fid pl) $ \fid_ptr ->
+poolRepairQuiesce (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
+  with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot quiesce pool repair: " ++ show rc)
       $ c_spiel_pool_repair_quiesce sc fid_ptr
 
 poolRebalanceStart :: SpielContext
-                   -> Pool
+                   -> Fid
                    -> IO ()
-poolRebalanceStart (SpielContext fsc) pl = withForeignPtr fsc $ \sc ->
-  with (pl_fid pl) $ \fid_ptr ->
+poolRebalanceStart (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
+  with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot start pool rebalance: " ++ show rc)
       $ c_spiel_pool_rebalance_start sc fid_ptr
 
 poolRebalanceQuiesce :: SpielContext
-                     -> Pool
+                     -> Fid
                      -> IO ()
-poolRebalanceQuiesce (SpielContext fsc) pl = withForeignPtr fsc $ \sc ->
-  with (pl_fid pl) $ \fid_ptr ->
+poolRebalanceQuiesce (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
+  with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot quiesce pool rebalance: " ++ show rc)
       $ c_spiel_pool_rebalance_quiesce sc fid_ptr
