@@ -667,7 +667,7 @@ processListServices (SpielContext fsc) pc = mask $ \restore ->
           return services
 
 poolRepairStart :: SpielContext
-                -> Fid
+                -> Fid -- ^ Pool Fid
                 -> IO ()
 poolRepairStart (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
   with fid $ \fid_ptr ->
@@ -675,7 +675,7 @@ poolRepairStart (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
       $ c_spiel_pool_repair_start sc fid_ptr
 
 poolRepairQuiesce :: SpielContext
-                  -> Fid
+                  -> Fid -- ^ Pool Fid
                   -> IO ()
 poolRepairQuiesce (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
   with fid $ \fid_ptr ->
@@ -683,7 +683,7 @@ poolRepairQuiesce (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
       $ c_spiel_pool_repair_quiesce sc fid_ptr
 
 poolRebalanceStart :: SpielContext
-                   -> Fid
+                   -> Fid -- ^ Pool Fid
                    -> IO ()
 poolRebalanceStart (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
   with fid $ \fid_ptr ->
@@ -691,7 +691,7 @@ poolRebalanceStart (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
       $ c_spiel_pool_rebalance_start sc fid_ptr
 
 poolRebalanceQuiesce :: SpielContext
-                     -> Fid
+                     -> Fid -- ^ Pool Fid
                      -> IO ()
 poolRebalanceQuiesce (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
   with fid $ \fid_ptr ->
