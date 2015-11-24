@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
@@ -33,6 +34,7 @@ import Foreign.Ptr
   ( plusPtr )
 import Foreign.Storable
   ( Storable(..) )
+import GHC.Generics
 
 import qualified Language.C.Inline as C
 import qualified Language.C.Inline.Context as C
@@ -46,21 +48,26 @@ import qualified Language.C.Types as C
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
 
 -- @bitmap.h m0_bitmap@
-newtype Bitmap = Bitmap [Word64]
-  deriving (Binary, Eq, Hashable, Show)
+data Bitmap = Bitmap Int [Word64]
+  deriving (Eq, Show, Generic)
+
+instance Binary Bitmap
+instance Hashable Bitmap
 
 instance Storable Bitmap where
   sizeOf _ = #{size struct m0_bitmap}
   alignment _ = #{alignment struct m0_bitmap}
   peek p = do
-      nr <- bits2words <$> (#{peek struct m0_bitmap, b_nr} p)
-      w <- (peekArray nr (#{ptr struct m0_bitmap, b_words} p) :: IO [Word64])
-      return $ Bitmap w
+      nr <- (#{peek struct m0_bitmap, b_nr} p)
+      let wordsn = bits2words nr
+      ptr <- #{peek struct m0_bitmap, b_words} p
+      w <- (peekArray wordsn ptr :: IO [Word64])
+      return $ Bitmap nr w
     where
       bits2words bits = (bits + 63) `shiftR` 6
 
-  poke p (Bitmap b) = do
-      #{poke struct m0_bitmap, b_nr} p $ 64 * length b
+  poke p (Bitmap nr b) = do
+      #{poke struct m0_bitmap, b_nr} p nr
       -- TODO This memory is never freed
       words_ptr <- newArray b
       #{poke struct m0_bitmap, b_words} p words_ptr
