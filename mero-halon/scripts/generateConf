@@ -1,0 +1,38 @@
+#!/bin/bash -e
+
+IP=127.0.0.1
+
+TS=$IP:9010
+HCTL=$IP:9001
+
+cd /tmp
+rm -rf halon-persistence
+
+if [ -z "$HALON_ROOT" ]; then
+  export HALON_ROOT=/usr/bin
+fi
+
+HALOND="$HALON_ROOT/halond +RTS $HALON_RTS_OPTS -RTS"
+HALONCTL="$HALON_ROOT/halonctl"
+
+# Clean up anything currently running
+pkill halond || /bin/true
+
+# Start halond
+$HALOND -l $TS 2>&1 > /tmp/generateConf.log 2>&1 &
+
+sleep 1
+
+$HALONCTL -a $TS -l $HCTL bootstrap station
+$HALONCTL -a $TS -l $HCTL bootstrap satellite
+
+sleep 3
+
+# Start decision log
+$HALONCTL -a $TS -l $HCTL service decision-log start -f /tmp/decision.log --eqt-timeout 0
+
+$HALONCTL -a $TS -l $HCTL cluster load -f $1
+
+sleep 3
+
+$HALONCTL -a $TS -l $HCTL cluster dump -f $2
