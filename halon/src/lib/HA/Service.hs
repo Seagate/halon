@@ -62,6 +62,10 @@ module HA.Service
   , ServiceUncaughtException(..)
   , ServiceStopRequest(..)
   , ServiceStopRequestMsg
+  , ServiceStatusRequest(..)
+  , ServiceStatusRequestMsg
+  , ServiceStatusResponse(..)
+  , ServiceStatusResponseMsg
   , ExitReason(..)
    -- * CH Paraphenalia
   , HA.Service.__remoteTable
@@ -117,6 +121,7 @@ class
   , Relation Runs Node (ServiceProcess a)
   , Relation InstanceOf (Service a) (ServiceProcess a)
   , Relation Owns (ServiceProcess a) ServiceName
+  , Show a
   ) => Configuration a where
 
     -- | Dictionary providing evidence of the serializability of a
@@ -511,3 +516,83 @@ instance ProcessEncode ServiceStopRequest where
                    (svc :: Service s) <- get
                    return $ ServiceStopRequest node svc
               Left err -> error $ "decode ServiceStopRequest: " ++ err
+
+-- | A request to query the status of service.
+data ServiceStatusRequest =
+    forall a. Configuration a =>
+      ServiceStatusRequest Node (Service a) [ProcessId]
+    deriving Typeable
+
+newtype ServiceStatusRequestMsg = ServiceStatusRequestMsg BS.ByteString
+  deriving (Typeable, Binary)
+
+instance ProcessEncode ServiceStatusRequest where
+    type BinRep ServiceStatusRequest = ServiceStatusRequestMsg
+
+    encodeP (ServiceStatusRequest node svc@(Service _ _ d) lis) =
+        ServiceStatusRequestMsg $ runPut $ do
+          put d
+          put node
+          put svc
+          put lis
+
+    decodeP (ServiceStatusRequestMsg bs) = do
+        rt <- asks (remoteTable . processNode)
+        return $ runGet (action rt) bs
+      where
+        action rt = do
+            d <- get
+            case unstatic rt d of
+              Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) ->
+                do node               <- get
+                   (svc :: Service s) <- get
+                   lis                <- get
+                   return $ ServiceStatusRequest node svc lis
+              Left err -> error $ "decode ServiceStatusRequest: " ++ err
+
+data ServiceStatusResponse =
+    SrvStatNotRunning
+  | forall a. Configuration a =>
+      SrvStatRunning (Static SomeConfigurationDict) ProcessId a
+  | forall a. Configuration a =>
+      SrvStatRestarting (Static SomeConfigurationDict) ProcessId a a
+  | SrvStatError String
+  deriving Typeable
+
+newtype ServiceStatusResponseMsg = ServiceStatusResponseMsg BS.ByteString
+  deriving (Typeable, Binary)
+
+instance ProcessEncode ServiceStatusResponse where
+    type BinRep ServiceStatusResponse = ServiceStatusResponseMsg
+
+    encodeP SrvStatNotRunning = ServiceStatusResponseMsg . runPut $
+      put (0 :: Int)
+    encodeP (SrvStatRunning d pid a) = ServiceStatusResponseMsg . runPut $
+      put (1 :: Int) >> put d >> put pid >> put a
+    encodeP (SrvStatRestarting d pid a b) = ServiceStatusResponseMsg . runPut $
+      put (2 :: Int) >> put d >> put pid >> put a >> put b
+    encodeP (SrvStatError s) = ServiceStatusResponseMsg . runPut $
+      put (3 :: Int) >> put s
+
+    decodeP (ServiceStatusResponseMsg bs) = do
+        rt <- asks (remoteTable . processNode)
+        return $ runGet (action rt) bs
+      where
+        action rt = do
+          cstr <- get
+          case cstr of
+            (0 :: Int) -> return SrvStatNotRunning
+            (3 :: Int) -> get >>= return . SrvStatError
+            x | x > 3 -> error $ "decode ServiceStatusResponse: invalid "
+                              ++ "constructor value: " ++ show x
+            x -> do
+              d <- get
+              case unstatic rt d of
+                Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) ->
+                  do
+                    pid        <- get
+                    (cfg :: s) <- get
+                    case x of
+                      1 -> return $ SrvStatRunning d pid cfg
+                      2 -> get >>= return . SrvStatRestarting d pid cfg
+                Left err -> error $ "decode ServiceStatusResponse: " ++ err
