@@ -88,6 +88,7 @@ data StandardServiceOptions a =
       StartCmd (StartCmdOptions a) -- ^ Start an instance of the service.
     | ReconfCmd (ReconfCmdOptions a)
     | StopCmd (StopCmdOptions a)
+    | StatusCmd (StatusCmdOptions)
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary a => Binary (StandardServiceOptions a)
@@ -120,6 +121,13 @@ data StopCmdOptions a =
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary a => Binary (StopCmdOptions a)
+
+data StatusCmdOptions = StatusCmdOptions
+    Int -- ^ EQT query timeout
+    [String] -- ^ EQ nodes
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary (StatusCmdOptions)
 
 -- | Construct a command for a 'standard' service, consisting of the usual
 --   start, stop and status subcommands.
@@ -158,11 +166,18 @@ mkStandardServiceCmd svc = let
                     <$> eqtTimeout
                     <*> tsNodes)
                 "Stop the service on a node.")
+    statusCmd = O.command "status" $ StatusCmd <$>
+              (O.withDesc
+                (StatusCmdOptions
+                    <$> eqtTimeout
+                    <*> tsNodes)
+                "Query the status of a service on a node.")
   in O.command (snString . serviceName $ svc) (O.withDesc
       ( O.subparser
       $  startCmd
       <> reconfCmd
       <> stopCmd
+      <> statusCmd
       )
       ("Control the " ++ (snString . serviceName $ svc) ++ " service."))
 
@@ -227,10 +242,27 @@ standardService nids sso svc = case sso of
                                               mapM_ (reconf t svc a eqs) nids
   StopCmd (StopCmdOptions t eqAddrs) -> getEQAddrs t eqAddrs >>= \eqs ->
                                         mapM_ (stop svc eqs) nids
+  StatusCmd (StatusCmdOptions t eqAddrs) -> do
+    eqs <- getEQAddrs t eqAddrs
+    resp <- mapM (status t svc eqs) nids
+    let stat = zip nids resp
+    mapM_ (liftIO . putStrLn . showStatus) stat
   where
     getEQAddrs timeout eqs = case eqs of
       [] -> findEQFromNodes timeout nids
       _ -> return $ fmap conjureRemoteNodeId eqs
+    showStatus (nid, Nothing) = show nid ++ ": No reply."
+    showStatus (nid, Just SrvStatNotRunning) =
+      show nid ++ ": Service not running."
+    showStatus (nid, Just (SrvStatError msg)) =
+      show nid ++ ": Error: " ++ msg
+    showStatus (nid, Just (SrvStatRunning _ pid a)) =
+      show nid ++ ": Running on PID " ++ show pid
+                ++ " with config:\n\t" ++ show a
+    showStatus (nid, Just (SrvStatRestarting _ pid a b)) =
+      show nid ++ ": Running on PID " ++ show pid
+                ++ " with config:\n\t" ++ show a
+                ++ "\nRestart requested to new config:\n\t" ++ show b
 
 -- | Look up the location of the EQ by querying the EQTracker(s) on the
 --   provided node(s)
@@ -304,3 +336,18 @@ stop s eqnids nid = promulgateEQ eqnids ssrm
   where
     ssrm = encodeP $ ServiceStopRequest (Node nid) s
     wait = void (expect :: Process ProcessMonitorNotification)
+
+status :: Configuration a
+       => Int
+       -> Service a
+       -> [NodeId]
+       -> NodeId
+       -> Process (Maybe ServiceStatusResponse)
+status t s eqnids nid = do
+    self <- getSelfPid
+    promulgateEQ eqnids (msg self) >>= \pid -> withMonitor pid wait
+  where
+    msg self = encodeP $ ServiceStatusRequest (Node nid) s [self]
+    wait = do
+      _ <- expect :: Process ProcessMonitorNotification
+      expectTimeout t >>= mapM decodeP

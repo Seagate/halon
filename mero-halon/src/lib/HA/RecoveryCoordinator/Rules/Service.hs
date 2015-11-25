@@ -332,3 +332,18 @@ serviceRules argv = do
       -- Message announced as processed inside RecoverNode handler
 
     start ph0 Nothing
+
+  defineSimple "service-status" $ \(HAEvent uuid msg _) -> do
+    ServiceStatusRequest node svc@(Service _ _ d) listeners <- decodeMsg msg
+    response <- lookupRunningService node svc >>= \case
+      Nothing -> return SrvStatNotRunning
+      Just sp@(ServiceProcess pid) -> do
+        rg <- getLocalGraph
+        let currentConf = readConfig sp Current rg
+            wantsConf = readConfig sp Intended rg
+        return $ case (currentConf, wantsConf) of
+          (Just a, Nothing) -> SrvStatRunning d pid a
+          (Just a, Just b) -> SrvStatRestarting d pid a b
+          _ -> SrvStatError $ "Wrong config profiles found."
+    liftProcess $ mapM_ (flip usend (encodeP response)) listeners
+    messageProcessed uuid
