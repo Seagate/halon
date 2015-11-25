@@ -947,15 +947,17 @@ replica Dict
 
               -- Dumping a snapshot finished.
             , match $ \(w0', sref', dumper') -> do
-                -- Only heed if the notification comes from the last dumper we
-                -- spawned.
+                -- Only heed if the snapshot is newer than our last known
+                -- snapshot.
                 logTrace $ "Response from dumper " ++
                            show (w0', dumper', mdumper)
-                if Just dumper' == fmap snd mdumper then do
+                if w0' > w0 then do
                   say "Trimming log."
                   liftIO $ trimTheLog ph (decreeNumber w0)
                   prl_releaseDecreesBelow (sendAcceptor logId) here w0
-                  go st{ stateSnapshotDumper    = Nothing
+                  go st{ stateSnapshotDumper    =
+                           if Just dumper' == fmap snd mdumper then Nothing
+                             else mdumper
                        , stateSnapshotRef       = Just sref'
                        , stateSnapshotWatermark = w0'
                        }
