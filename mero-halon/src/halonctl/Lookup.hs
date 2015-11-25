@@ -4,7 +4,12 @@
 
 {-# LANGUAGE CPP #-}
 
-module Lookup (conjureRemoteNodeId) where
+module Lookup
+  ( conjureRemoteNodeId
+  , findEQFromNodes
+  ) where
+
+import qualified HA.EQTracker          as EQT
 
 import Control.Distributed.Process
 
@@ -24,3 +29,19 @@ conjureRemoteNodeId addr =
   where
     (host, _:port) = break (== ':') addr
 #endif
+
+-- | Look up the location of the EQ by querying the EQTracker(s) on the
+--   provided node(s)
+findEQFromNodes :: Int -- ^ Timeout
+                -> [NodeId]
+                -> Process [NodeId]
+findEQFromNodes t n = go t n [] where
+  go 0 [] nids = go 0 (reverse nids) []
+  go _ [] _ = error "Failed to query EQ location from any node."
+  go timeout (x:xs) done = do
+    self <- getSelfPid
+    nsendRemote x EQT.name $ EQT.ReplicaRequest self
+    rl <- expectTimeout timeout
+    case rl of
+      Just (EQT.ReplicaReply (EQT.ReplicaLocation _ rest@(_:_))) -> return rest
+      _ -> go timeout xs (x : done)

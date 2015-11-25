@@ -28,6 +28,7 @@ import           Network.CEP
 import           HA.EventQueue.Types
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
+import           HA.RecoveryCoordinator.Events.Status
 import           HA.RecoveryCoordinator.Rules.Castor
 import           HA.RecoveryCoordinator.Rules.Service
 import           HA.RecoveryCoordinator.Actions.Monitor
@@ -174,6 +175,16 @@ rcRules argv additionalRules = do
       resp <- prepareEpochResponse
       sendMsg pid resp
       messageProcessed uuid
+
+    defineSimple "node-status" $
+      \(HAEvent uuid (NodeStatusRequest n@(Node nid) lis) _) -> do
+        rg <- getLocalGraph
+        let
+          isStation = nid `elem` (stationNodes argv)
+          isSatellite = G.memberResource n rg
+          response = NodeStatusResponse n isStation isSatellite
+        liftProcess $ mapM_ (flip usend response) lis
+        messageProcessed uuid
 
     defineSimple "mm-pid" $
       \(HAEvent uuid (GetMultimapProcessId sender) _) -> do
