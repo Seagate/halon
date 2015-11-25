@@ -583,8 +583,9 @@ instance ProcessEncode ServiceStatusResponse where
           case cstr of
             (0 :: Int) -> return SrvStatNotRunning
             (3 :: Int) -> get >>= return . SrvStatError
-            x | x > 3 -> error $ "decode ServiceStatusResponse: invalid "
-                              ++ "constructor value: " ++ show x
+            x | x > 3 || x < 0 -> error
+              $ "decode ServiceStatusResponse: invalid "
+                ++ "constructor value: " ++ show x
             x -> do
               d <- get
               case unstatic rt d of
@@ -595,4 +596,5 @@ instance ProcessEncode ServiceStatusResponse where
                     case x of
                       1 -> return $ SrvStatRunning d pid cfg
                       2 -> get >>= return . SrvStatRestarting d pid cfg
+                      _ -> error "impossible"
                 Left err -> error $ "decode ServiceStatusResponse: " ++ err
