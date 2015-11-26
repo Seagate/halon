@@ -273,19 +273,8 @@ testHostAddition transport = do
     wait = void (expect :: Process ProcessMonitorNotification)
     rt = TestRunner.__remoteTableDecl $
          remoteTable
-    mockEvent = emptySensorMessage { SSPL.sensorResponseMessageSensor_response_typeHost_update =
-      Just $ SSPL.SensorResponseMessageSensor_response_typeHost_update
-        { SSPL.sensorResponseMessageSensor_response_typeHost_updateRunningProcessCount = Nothing
-        , SSPL.sensorResponseMessageSensor_response_typeHost_updateUname               = Just "mockhost"
-        , SSPL.sensorResponseMessageSensor_response_typeHost_updateHostId              = "mockhost"
-        , SSPL.sensorResponseMessageSensor_response_typeHost_updateLocaltime           = ""
-        , SSPL.sensorResponseMessageSensor_response_typeHost_updateUpTime              = Nothing
-        , SSPL.sensorResponseMessageSensor_response_typeHost_updateFreeMem             = Nothing
-        , SSPL.sensorResponseMessageSensor_response_typeHost_updateLoggedInUsers       = Nothing
-        , SSPL.sensorResponseMessageSensor_response_typeHost_updateTotalMem            = Nothing
-        , SSPL.sensorResponseMessageSensor_response_typeHost_updateProcessCount        = Nothing
-        , SSPL.sensorResponseMessageSensor_response_typeHost_updateBootTime            = Nothing
-        }
+    mockEvent = (emptyHostUpdate "mockhost")
+      { SSPL.sensorResponseMessageSensor_response_typeHost_updateUname = Just "mockhost"
       }
 
 -- | Test that the recovery co-ordinator successfully adds a drive to the RG,

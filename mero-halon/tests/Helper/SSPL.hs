@@ -2,6 +2,7 @@
 module Helper.SSPL 
   ( emptySensorMessage
   , emptyHPIMessage
+  , emptyHostUpdate
   , mkSensorResponse
   , mkResponseDriveManager
   , mkResponseHPI
@@ -47,20 +48,32 @@ emptyHPIMessage = SSPL.SensorResponseMessageSensor_response_typeDisk_status_hpi
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiProductVersion = "0.0.1"
   }
 
+emptyHostUpdate :: Text -> SSPL.SensorResponseMessageSensor_response_typeHost_update
+emptyHostUpdate hostid = 
+  SSPL.SensorResponseMessageSensor_response_typeHost_update
+    { SSPL.sensorResponseMessageSensor_response_typeHost_updateRunningProcessCount = Nothing
+    , SSPL.sensorResponseMessageSensor_response_typeHost_updateUname               = Nothing
+    , SSPL.sensorResponseMessageSensor_response_typeHost_updateHostId              = hostid
+    , SSPL.sensorResponseMessageSensor_response_typeHost_updateLocaltime           = ""
+    , SSPL.sensorResponseMessageSensor_response_typeHost_updateUpTime              = Nothing
+    , SSPL.sensorResponseMessageSensor_response_typeHost_updateFreeMem             = Nothing
+    , SSPL.sensorResponseMessageSensor_response_typeHost_updateLoggedInUsers       = Nothing
+    , SSPL.sensorResponseMessageSensor_response_typeHost_updateTotalMem            = Nothing
+    , SSPL.sensorResponseMessageSensor_response_typeHost_updateProcessCount        = Nothing
+    , SSPL.sensorResponseMessageSensor_response_typeHost_updateBootTime            = Nothing
+    }
+
 -- | Create drive manager message
 mkResponseDriveManager :: Text -- ^ Enclosure SN
                        -> Int  -- ^ Disk Num
                        -> Text -- ^ Status
-                       -> SSPL.SensorResponseMessageSensor_response_type
+                       -> SSPL.SensorResponseMessageSensor_response_typeDisk_status_drivemanager
 mkResponseDriveManager enclosure idx status =
-   emptySensorMessage
-     { SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
-         Just $ SSPL.SensorResponseMessageSensor_response_typeDisk_status_drivemanager
-           { SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN = enclosure
-           , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum     = fromIntegral idx
-           , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus  = status
-           }
-     }
+  SSPL.SensorResponseMessageSensor_response_typeDisk_status_drivemanager
+    { SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN = enclosure
+    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum     = fromIntegral idx
+    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus  = status
+    }
 
 mkResponseHPI :: Text -- ^ Host ID of node
               -> Integer -- ^ Location number of drive
