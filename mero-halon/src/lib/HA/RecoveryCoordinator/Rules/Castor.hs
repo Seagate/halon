@@ -16,7 +16,9 @@ import Control.Distributed.Process
 
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Mero
+import HA.RecoveryCoordinator.Actions.Hardware
+import HA.RecoveryCoordinator.Events.Drive
+import HA.RecoveryCoordinator.Events.Mero
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
@@ -24,24 +26,24 @@ import qualified HA.ResourceGraph as G
 import HA.Services.SSPL
 #ifdef USE_MERO
 import HA.EventQueue.Producer
+import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Rules.Mero
 import HA.Resources.Mero hiding (Process, Enclosure, Rack)
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.Services.Mero
-
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState
-
-import Control.Monad
-
+import Control.Exception (SomeException)
 import Data.Foldable
 import Data.List (unfoldr)
+import Data.UUID.V4 (nextRandom)
 #endif
 
-
-import Data.Binary (Binary)
+import Control.Monad
 import Data.Maybe (mapMaybe)
+import Data.Binary (Binary)
+import Data.Monoid ((<>))
 import Data.Text (Text, pack)
 import Data.Typeable (Typeable)
 
@@ -306,6 +308,84 @@ castorRules = do
         stop
 
       start home Nothing
+
+    -- Removing drive:
+    -- We need to notify mero about drive state change and then send event to the logger.
+    defineSimple "drive-removed" $ \(DriveRemoved uuid (HA.Resources.Node nid) enc disk) -> do
+      let msg = InterestingEventMessage
+              $  "Drive was removed: \n\t"
+               <> pack (show enc)
+               <> "\n\t"
+               <> pack (show disk)
+      markStorageDeviceRemoved disk
+#ifdef USE_MERO
+      sd <- lookupStorageDeviceSDev disk
+      forM_ sd $ \m0sdev -> do
+        notifyMero [AnyConfObj m0sdev] M0_NC_TRANSIENT
+        phaseLog "debug" "spiel-0"
+        msa <- getSpielAddress
+        phaseLog "debug" "spiel-1"
+        forM_ msa $ \sa ->
+          (void $ withSpielRC sa $ \sp -> 
+             liftIO $ Spiel.deviceDetach sp (d_fid m0sdev))
+            `catch` (\e -> phaseLog "mero" $ "failure in spiel: " ++ show (e::SomeException))
+        phaseLog "debug" "spiel-2"
+#endif
+      sendInterestingEvent nid msg
+      messageProcessed uuid
+
+    -- Inserting new drive
+    define "drive-inserted" $ do
+      handle <- phaseHandle "drive-inserted"
+      format_add <- phaseHandle "handle-sync"
+
+      setPhase handle $ \(DriveInserted uuid disk) -> do
+        mcandidate <- lookupStorageDeviceReplacement disk
+        case mcandidate of
+          Nothing -> do
+            phaseLog "warning" "No PHI information about new drive, skipping request for now"
+            messageProcessed uuid
+          Just _cand -> do
+#ifdef USE_MERO
+            actualizeStorageDeviceReplacement _cand
+            syncGraph
+            -- XXX: implement internal notification mechanism about
+            -- end of the sync. It's also nice to not redo this operation
+            -- if possible.
+            request <- liftIO $ nextRandom
+            put Local $ Just (uuid, request, disk)
+            selfMessage (request, SyncToConfdServersInRG)
+            continue format_add
+#else
+            messageProcessed uuid
+#endif
+
+      setPhase format_add $ \(SyncComplete request) -> do
+        Just (uuid, req, _disk) <- get Local
+        when (req /= request) $ continue format_add
+#ifdef USE_MERO
+        sd <- lookupStorageDeviceSDev _disk
+        forM_ sd $ \m0sdev -> do
+          msa <- getSpielAddress
+          forM_ msa $ \sa -> do
+            _ <- withSpielRC sa $ \sp ->
+               liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
+            notifyMero [AnyConfObj m0sdev] M0_NC_ONLINE
+#endif
+        messageProcessed uuid
+        
+      start handle Nothing
+
+    -- Mark drive as failed
+    defineSimple "drive-failed" $ \(DriveFailed uuid (HA.Resources.Node nid) enc disk) -> do
+      let msg = InterestingEventMessage
+              $  "Drive powered off: \n\t"
+               <> pack (show enc)
+               <> "\n\t"
+               <> pack (show disk)
+      sendInterestingEvent nid msg
+      messageProcessed uuid
+
   where
     goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
       registerRack rack

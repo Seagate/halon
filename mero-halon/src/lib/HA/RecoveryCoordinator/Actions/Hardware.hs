@@ -5,6 +5,7 @@
 
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE CPP                        #-}
 
 module HA.RecoveryCoordinator.Actions.Hardware
   ( -- * Infrastructure functions
@@ -30,23 +31,26 @@ module HA.RecoveryCoordinator.Actions.Hardware
     -- * Interface related functions
   , registerInterface
     -- * Drive related functions
-  , driveStatus
+    -- ** Searching devices
   , findEnclosureStorageDevices
   , findHostStorageDevices
+  , lookupStorageDeviceInEnclosure
+    -- ** Querying device properties
   , findStorageDeviceIdentifiers
   , hasStorageDeviceIdentifier
-  , identifyStorageDevice
+  , driveStatus
   , lookupStorageDevicePaths
-  , locateStorageDeviceInEnclosure
-  , locateStorageDeviceOnHost
-  , mergeStorageDevices
+  , getDiskResetAttempts
+  , hasOngoingReset
+  , isStorageDriveRemoved
+    -- ** Change State
+  , identifyStorageDevice
   , updateDriveStatus
   , incrDiskPowerOnAttempts
   , incrDiskPowerOffAttempts
   , incrDiskResetAttempts
   , markDiskPowerOn
   , markSMARTTestIsRunning
-  , getDiskResetAttempts
   , isStorageDevicePowered
   , getDiskPowerOnAttempts
   , setDiskPowerOnAttempts
@@ -55,9 +59,16 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , markDiskPowerOff
   , isStorageDeviceRunningSmartTest
   , markSMARTTestComplete
-  , hasOngoingReset
   , markOnGoingReset
   , markResetComplete
+  , markStorageDeviceRemoved
+    -- ** Drive candidates
+  , attachStorageDeviceReplacement
+  , lookupStorageDeviceReplacement
+    -- ** Creating new devices
+  , locateStorageDeviceInEnclosure
+  , locateStorageDeviceOnHost
+  , mergeStorageDevices
 ) where
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -70,10 +81,12 @@ import Control.Distributed.Process (liftIO)
 
 import Data.Maybe (listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
+import Data.Foldable
 
 import Network.CEP
 
 import Text.Regex.TDFA ((=~))
+import qualified Data.List as List
 
 -- | Register a new rack in the system.
 registerRack :: Rack
@@ -326,6 +339,11 @@ hasStorageDeviceIdentifier ld di = do
   ids <- findStorageDeviceIdentifiers ld
   return $ elem di ids
 
+isStorageDriveRemoved :: StorageDevice -> PhaseM LoopState l Bool
+isStorageDriveRemoved sd = do
+  rg <- getLocalGraph
+  return $ not . null $ [ () | SDRemovedAt{} <- G.connectedTo sd Has rg ]
+
 -- | Add an additional identifier to a logical storage device.
 identifyStorageDevice :: StorageDevice
                       -> DeviceIdentifier
@@ -350,6 +368,19 @@ lookupStorageDevicePaths sd =
   where
     extractPath (DIPath x) = Just x
     extractPath _ = Nothing
+
+-- | Lookup a storage device in given enclosure at given position.
+lookupStorageDeviceInEnclosure :: Enclosure
+                               -> DeviceIdentifier
+                               -> PhaseM LoopState l (Maybe StorageDevice)
+lookupStorageDeviceInEnclosure enc ident = do
+    rg <- getLocalGraph 
+    let devicesA = [ device
+                   | host   <- G.connectedTo  enc  Has rg :: [Host]
+                   , device <- G.connectedTo  host Has rg :: [StorageDevice]
+                   ]
+        devicesB = G.connectedFrom Has ident rg :: [StorageDevice]
+    return $ listToMaybe $ devicesA `List.intersect` devicesB
 
 -- | Register a new drive in the system.
 locateStorageDeviceInEnclosure :: Enclosure
@@ -429,6 +460,22 @@ updateDriveStatus dev status = modifyLocalGraph $ \rg -> do
         >>> removeOldNode
           $ rg
   return rg'
+
+-- | Attach new version of 'StorageDevice'
+attachStorageDeviceReplacement :: StorageDevice -> [DeviceIdentifier] -> PhaseM LoopState l StorageDevice
+attachStorageDeviceReplacement dev dis = do
+  phaseLog "rg" $ "Inserting new device candidate to " ++ show dev
+  uuid <- liftProcess . liftIO $ nextRandom
+  let newDev = StorageDevice uuid
+  forM_ dis $ identifyStorageDevice newDev 
+  modifyLocalGraph $ return . G.connect dev ReplacedBy newDev
+  return newDev
+
+-- | Find if storage device has replacement and return new drive if this is a case. 
+lookupStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l (Maybe StorageDevice)
+lookupStorageDeviceReplacement sdev = do
+    gr <- getLocalGraph
+    return $ listToMaybe $ G.connectedTo sdev ReplacedBy gr
 
 -- | Set an attribute on a storage device.
 setStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM LoopState l ()
@@ -523,6 +570,15 @@ isStorageDevicePowered sdev = do
   where
     go SDPowered = True
     go _         = False
+
+markStorageDeviceRemoved :: StorageDevice -> PhaseM LoopState l ()
+markStorageDeviceRemoved sdev = do
+    let _F SDRemovedAt = True
+        _F _           = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Nothing -> setStorageDeviceAttr sdev SDRemovedAt
+      _       -> return ()
 
 markDiskPowerOn :: StorageDevice -> PhaseM LoopState l ()
 markDiskPowerOn sdev = do

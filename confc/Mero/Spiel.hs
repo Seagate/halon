@@ -592,18 +592,18 @@ serviceQuiesce (SpielContext fsc) cs = withForeignPtr fsc $ \sc ->
       $ c_spiel_service_quiesce sc fid_ptr
 
 deviceAttach :: SpielContext
-             -> Disk
+             -> Fid  -- ^ Disk
              -> IO ()
-deviceAttach (SpielContext fsc) ck = withForeignPtr fsc $ \sc ->
-  with (ck_fid ck) $ \fid_ptr ->
+deviceAttach (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
+  with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot attach device: " ++ show rc)
       $ c_spiel_device_attach sc fid_ptr
 
 deviceDetach :: SpielContext
-             -> Disk
+             -> Fid -- ^ Disk
              -> IO ()
-deviceDetach (SpielContext fsc) ck = withForeignPtr fsc $ \sc ->
-  with (ck_fid ck) $ \fid_ptr ->
+deviceDetach (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
+  with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot detach device: " ++ show rc)
       $ c_spiel_device_detach sc fid_ptr
 

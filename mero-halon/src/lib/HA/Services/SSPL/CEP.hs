@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE CPP                 #-}
 
 module HA.Services.SSPL.CEP where
 
@@ -14,9 +15,15 @@ import HA.EventQueue.Types (HAEvent(..))
 import HA.Service hiding (configDict)
 import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
+import HA.RecoveryCoordinator.Events.Drive
 import HA.ResourceGraph
 import HA.Resources (Cluster(..), Node(..))
 import HA.Resources.Castor
+-- import HA.Resources.Mero hiding (Node,Service, Process, Enclosure, Rack)
+-- import HA.Resources.Mero.Note
+#ifdef USE_MERO
+import Mero.Notification
+#endif
 
 import SSPL.Bindings
 
@@ -32,6 +39,7 @@ import Control.Monad.Trans
 
 import qualified Data.Aeson as Aeson
 import Data.Maybe (catMaybes, listToMaybe)
+import Data.Monoid ((<>))
 import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
 import Data.UUID.V4 (nextRandom)
@@ -148,44 +156,107 @@ ssplRulesF sspl = do
           messageProcessed uuid
 
   -- SSPL Monitor drivemanager
-  defineSimpleIf "monitor-drivemanager" (\(HAEvent _ (nid, mrm) _) _ ->
-    return $ sensorResponseMessageSensor_response_typeDisk_status_drivemanager mrm
-         >>= return . (nid,)
-    ) $ \(nid, mrm) -> do
-      host <- findNodeHost (Node nid)
-      diskUUID <- liftIO $ nextRandom
-      let disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus mrm
-          encName = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN mrm
-          diskNum = floor . (toRealFloat :: Scientific -> Double) $
-                  sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum mrm
-          enc = Enclosure $ T.unpack encName
-          disk = StorageDevice diskUUID
-
-      locateStorageDeviceInEnclosure enc disk
-      identifyStorageDevice disk $ DIIndexInEnclosure diskNum
+  defineSimpleIf "monitor-drivemanager" (\(HAEvent uuid (nid, mrm) _) _ ->
+    forM (sensorResponseMessageSensor_response_typeDisk_status_drivemanager mrm) $ \m ->
+      pure ( uuid
+           , nid
+           , sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus m
+           , Enclosure . T.unpack
+               $ sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN m
+           , floor . (toRealFloat :: Scientific -> Double) $
+               sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum m
+           )
+    ) $ \(uuid, nid, disk_status, enc, diskNum) -> do
+      phaseLog "sspl-service" "monitor-drivemanager request received"
+      mdisk <- lookupStorageDeviceInEnclosure enc $ DIIndexInEnclosure diskNum
+      disk <- case mdisk of
+        Nothing -> do
+          phaseLog "sspl-service"
+              $ "Cant find disk in " ++ show enc ++ " at " ++ show diskNum ++ " creating new entry."
+          diskUUID <- liftIO $ nextRandom
+          let disk = StorageDevice diskUUID
+          locateStorageDeviceInEnclosure enc disk
+          mhost <- findNodeHost (Node nid)
+          forM_ mhost $ \host -> locateHostInEnclosure host enc
+          _ <- identifyStorageDevice disk $ DIIndexInEnclosure diskNum
+          syncGraph
+          return disk
+        Just st -> return st
       updateDriveStatus disk $ T.unpack disk_status
-      markDiskPowerOn disk
-      mapM_ (\h -> do
-            locateHostInEnclosure h enc
-            -- Find any existing (logical) devices and link them
-            hostDevs <- findHostStorageDevices h
-                      >>= filterM (flip hasStorageDeviceIdentifier
-                                  (DIIndexInEnclosure diskNum))
-            mapM_ (\d -> mergeStorageDevices [d,disk]) hostDevs
-            ) host
+      isDriveRemoved <- isStorageDriveRemoved disk
+      phaseLog "sspl-service"
+        $ "Drive in " ++ show enc ++ " at " ++ show diskNum ++ " marked as "
+           ++ (if isDriveRemoved then "removed" else "active")
+      case disk_status of
+        "unused_ok"
+           | isDriveRemoved -> do phaseLog "sspl-service" "already removed"
+                                  messageProcessed uuid
+           | otherwise      -> selfMessage $ DriveRemoved uuid (Node nid) enc disk
+        "failed_smart"
+           | isDriveRemoved -> messageProcessed uuid
+           | otherwise      -> selfMessage $ DriveFailed uuid (Node nid) enc disk
+        "inuse_ok"
+           | isDriveRemoved -> selfMessage $ DriveInserted uuid disk
+           | otherwise      -> messageProcessed uuid
+        s -> do let msg = InterestingEventMessage
+                        $ "Error processing drive manager response: drive status "
+                        <> s <> " is not known"
+                sendInterestingEvent nid msg
+                messageProcessed uuid
 
-      promptRGSync
-      liftProcess . sayRC $ "Registered drive"
-      when (disk_status == "inuse_removed") $ do
-        let msg = InterestingEventMessage "Bunnies, bunnies it must be bunnies."
-        sendInterestingEvent nid msg
-      when (disk_status == "unused_ok") $ do
-        let msg = InterestingEventMessage . T.pack
-                  $  "Drive powered off: \n\t"
-                  ++ show enc
-                  ++ "\n\t"
-                  ++ show disk
-        sendInterestingEvent nid msg
+  -- Handle information messages about drive changes from HPI system.
+  defineSimpleIf "monitor-status-hpi" (\(HAEvent uuid (nid, spt) _) _ ->
+    forM (sensorResponseMessageSensor_response_typeDisk_status_hpi spt) $ \status ->
+      pure ( uuid
+           , Node nid
+           , DIOther . T.unpack
+               $ sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber status
+           , DIWWN . T.unpack
+               $ sensorResponseMessageSensor_response_typeDisk_status_hpiWwn status
+           , DIUUID . T.unpack
+               $ sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId status
+           , DIIndexInEnclosure . fromInteger
+               $ sensorResponseMessageSensor_response_typeDisk_status_hpiLocation status
+           , Host . T.unpack
+               $ sensorResponseMessageSensor_response_typeDisk_status_hpiHostId status)
+    ) $ \(uuid, nid, sn, wwn, ident, loc, host) -> do
+      menc <- findHostEnclosure host
+      case menc of
+        Nothing -> do
+          phaseLog "error" $ "can't find enclosure for node " ++ show nid
+          messageProcessed uuid
+        Just enc -> do
+          mdev <- lookupStorageDeviceInEnclosure enc loc
+          msd <- case mdev of
+             Nothing -> do
+               mwsd <- lookupStorageDeviceInEnclosure enc wwn
+               case mwsd of
+                 Just sd -> do
+                   -- We have disk in RG, but we didn't know it's index in enclosure
+                   identifyStorageDevice sd loc
+                   return Nothing
+                 Nothing -> do
+                   -- We don't have information about interted disk in this slot yet, this could
+                   -- mean two different things: either this is completely new disk or for some
+                   -- reason we miss actual information.
+                   diskUUID <- liftIO $ nextRandom
+                   let disk = StorageDevice diskUUID
+                   locateStorageDeviceInEnclosure enc disk
+                   identifyStorageDevice disk loc
+                   return (Just disk)
+             Just sd -> do
+               mident <- listToMaybe . filter (\x -> case x of DIWWN{} -> True ; _ -> False)
+                           <$> findStorageDeviceIdentifiers sd
+               liftProcess $ say $ show (mident, wwn)
+               case mident of
+                 Just wwn' | wwn' == wwn -> return Nothing
+                 _ -> return (Just sd)
+          case msd of
+            Just sd -> do
+              _ <- attachStorageDeviceReplacement sd [sn, wwn, ident, loc]
+              syncGraph
+              selfMessage $ DriveRemoved uuid nid enc sd
+            Nothing -> messageProcessed uuid
 
   -- SSPL Monitor host_update
   defineSimpleIf "monitor-host-update" (\(HAEvent _ (nid, hum) _) _ ->

@@ -28,10 +28,12 @@ module HA.RecoveryCoordinator.Actions.Mero
   , lookupStorageDevice
   , lookupStorageDeviceSDev
   , lookupSDevDisk
+  , actualizeStorageDeviceReplacement
   )
 where
 
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Hardware
 import qualified HA.ResourceGraph as G
 import HA.Resources (Cluster(..), Has(..))
 import HA.Resources.Castor
@@ -47,6 +49,7 @@ import qualified Mero.Spiel
 import qualified Control.Distributed.Process as DP
 import Control.Monad (forM_)
 import Control.Applicative
+import Control.Category ((>>>))
 
 import Data.Foldable (traverse_)
 import Data.List (nub)
@@ -334,3 +337,29 @@ getPools dev = do
 
 startRepairOperation :: M0.Disk -> M0.Pool -> PhaseM LoopState l ()
 startRepairOperation _ _ = phaseLog "error" "Start repair not implemeted"
+
+-- | Replace storage device node with its new version.
+actualizeStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l ()
+actualizeStorageDeviceReplacement sdev = do
+    phaseLog "rg" "Set disk candidate as an active disk"
+    idents <- filter (\i -> case i of DIWWN{} -> True ; _ -> False)
+                <$> findStorageDeviceIdentifiers sdev
+    modifyLocalGraph $ \rg -> do
+      let mr = do DIWWN wwn <- listToMaybe idents
+                  (dev  :: StorageDevice) <- listToMaybe $ G.connectedFrom ReplacedBy sdev rg
+                  (disk :: M0.Disk) <- listToMaybe $ G.connectedFrom M0.At dev rg
+                  (mdev :: M0.SDev) <- listToMaybe $ G.connectedFrom M0.IsOnHardware disk rg
+                  return (dev, disk, mdev, wwn)
+          mkPathByWWN :: String -> String
+          mkPathByWWN wwn = "/dev/disk/by-uuid/" ++ wwn
+      case mr of
+        Nothing -> do
+          phaseLog "rg" "failed to find disk that was attached"
+          return rg
+        Just (dev, disk, mdev, wwn) -> do
+          let mdev' = mdev{M0.d_path=mkPathByWWN wwn}
+              rg' = G.mergeResources (const mdev') [mdev]
+                >>> G.disconnect dev ReplacedBy sdev
+                >>> G.disconnect dev Has SDRemovedAt
+                  $ rg
+          return rg'

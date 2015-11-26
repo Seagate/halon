@@ -16,8 +16,7 @@ import Control.Distributed.Process
   )
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Node
-import Control.Exception (SomeException, bracket)
+import Control.Exception (SomeException)
 import Control.Monad (forM_, join)
 
 import Data.List (sort, unfoldr)
@@ -34,7 +33,9 @@ import Network.CEP.Testing (runPhase, runPhaseGet)
 
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (multimap)
+#ifdef USE_MERO
 import HA.RecoveryCoordinator.Actions.Mero
+#endif
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Rules.Mero
 import HA.Replicator (RGroup(..))
@@ -52,6 +53,7 @@ import HA.ResourceGraph hiding (__remoteTable)
 import Mero.ConfC (ServiceParams(..), ServiceType(..))
 
 import RemoteTables (remoteTable)
+import TestRunner
 
 import Test.Framework
 import System.IO
@@ -70,25 +72,9 @@ emptyLoopState pid mmpid = do
 myRemoteTable :: RemoteTable
 myRemoteTable = HA.Castor.Tests.__remoteTable remoteTable
 
--- | Run the given action on a newly created local node.
-withLocalNode :: Transport -> (LocalNode -> IO a) -> IO a
-withLocalNode transport action =
-  bracket
-    (newLocalNode transport (myRemoteTable))
-    -- FIXME: Why does this cause gibberish to be output?
-    -- closeLocalNode
-    (const (return ()))
-    action
-
-tryRunProcessLocal :: Transport -> Process () -> IO ()
-tryRunProcessLocal transport process =
-  withTmpDirectory $
-    withLocalNode transport $ \node ->
-      runProcess node process
-
 rGroupTest :: Transport -> (ProcessId -> Process ()) -> IO ()
 rGroupTest transport p =
-  tryRunProcessLocal transport $ do
+  tryRunProcessLocal transport myRemoteTable $ do
     nid <- getSelfNode
     rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
                 >>= unClosure

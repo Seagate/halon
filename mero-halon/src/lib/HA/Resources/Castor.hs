@@ -79,6 +79,7 @@ data StorageDeviceAttr
     | SDPowered
     | SDSMARTRunning
     | SDOnGoingReset
+    | SDRemovedAt
     deriving (Eq, Ord, Show, Generic)
 
 instance Binary StorageDeviceAttr
@@ -91,7 +92,7 @@ data DeviceIdentifier =
     | DIWWN String
     | DIUUID String
     | DIOther String
-  deriving (Eq, Show, Generic, Typeable)
+  deriving (Eq, Show, Ord, Generic, Typeable)
 
 instance Binary DeviceIdentifier
 instance Hashable DeviceIdentifier
@@ -112,6 +113,11 @@ data Is = Is
 instance Binary Is
 instance Hashable Is
 
+-- | The relation between a storage device and it's new version.
+data ReplacedBy = ReplacedBy deriving (Eq, Show, Generic, Typeable)
+
+instance Hashable ReplacedBy
+instance Binary ReplacedBy
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
@@ -139,6 +145,8 @@ $(mkDicts
   , (''StorageDevice, ''Has, ''StorageDeviceStatus)
   , (''StorageDevice, ''Has, ''DeviceIdentifier)
   , (''StorageDevice, ''Has, ''StorageDeviceAttr)
+    -- StorageDevice
+  , (''StorageDevice, ''ReplacedBy, ''StorageDevice)
   ]
   )
 
@@ -163,6 +171,8 @@ $(mkResRel
   , (''StorageDevice, ''Has, ''StorageDeviceStatus)
   , (''StorageDevice, ''Has, ''DeviceIdentifier)
   , (''StorageDevice, ''Has, ''StorageDeviceAttr)
+    -- StorageDevice
+  , (''StorageDevice, ''ReplacedBy, ''StorageDevice)
   ]
   []
   )

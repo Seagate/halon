@@ -82,6 +82,7 @@ import Data.Proxy (Proxy(..))
 import Network.CEP (Published(..), Logs(..), subscribe)
 import Test.Tasty.HUnit (assertBool)
 import TestRunner
+import Helper.SSPL
 
 #ifdef USE_MERO
 import Data.Binary (Binary)
@@ -90,7 +91,6 @@ import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import HA.Castor.Tests (initialDataAddr)
 import HA.RecoveryCoordinator.Actions.Mero (getSpielAddress, syncToConfd)
-import Mero
 import Mero.Notification (finalize)
 import Network.CEP (defineSimple, liftProcess, Definitions)
 import System.IO.Unsafe
@@ -239,18 +239,6 @@ testEQTrimming transport = do
     rt = TestRunner.__remoteTableDecl $
          remoteTable
 
-emptySensorMessage :: SSPL.SensorResponseMessageSensor_response_type
-emptySensorMessage = SSPL.SensorResponseMessageSensor_response_type
-  { SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpi = Nothing
-  , SSPL.sensorResponseMessageSensor_response_typeIf_data = Nothing
-  , SSPL.sensorResponseMessageSensor_response_typeHost_update = Nothing
-  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanager = Nothing
-  , SSPL.sensorResponseMessageSensor_response_typeService_watchdog = Nothing
-  , SSPL.sensorResponseMessageSensor_response_typeLocal_mount_data = Nothing
-  , SSPL.sensorResponseMessageSensor_response_typeCpu_data = Nothing
-  , SSPL.sensorResponseMessageSensor_response_typeRaid_data = Nothing
-  }
-
 -- | Test that the recovery co-ordinator successfully adds a host to the
 --   resource graph.
 testHostAddition :: Transport -> IO ()
@@ -310,7 +298,7 @@ testDriveAddition transport = do
 
       registerInterceptor $ \string -> case string of
           str@"Starting service dummy"   -> usend self str
-          str' | "Registered drive" `isInfixOf` str' ->
+          str' | "Registering storage device" `isInfixOf` str' ->
             usend self ("Drive" :: String)
           _ -> return ()
 
@@ -333,13 +321,7 @@ testDriveAddition transport = do
     wait = void (expect :: Process ProcessMonitorNotification)
     rt = TestRunner.__remoteTableDecl $
          remoteTable
-    mockEvent status = emptySensorMessage { SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
-      Just $ SSPL.SensorResponseMessageSensor_response_typeDisk_status_drivemanager
-        { SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN = "enc1"
-        , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum = 1
-        , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus = status
-        }
-    }
+    mockEvent = mkResponseDriveManager "enc1" 1
 
 testDecisionLog :: Transport -> IO ()
 testDecisionLog transport = do
@@ -535,14 +517,11 @@ testRCsyncToConfd host transport = do
     liftIO $ appendFile "/tmp/strlog" "about to syncToConfd\n"
     promulgateEQ [nid] SpielSync >>= (flip withMonitor) wait
     "SyncOK" :: String <- expect
-
     finalize
-
-  -- XXX m0_fini
 
   where
     wait = void (expect :: Process ProcessMonitorNotification)
-    withTestEnv = withTmpDirectory . withM0Deferred . tryWithTimeout transport testRemoteTable 15000000
+    withTestEnv = withTmpDirectory . tryWithTimeout transport testRemoteTable 15000000
 #endif
 
 testRemoteTable :: RemoteTable
