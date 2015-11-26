@@ -1,19 +1,39 @@
 machine:
   services:
+    - docker
+  environment:
+    STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero
+
+checkout:
+  post:
+    - git submodule sync
+    - git submodule update --depth 1 --init
+    - cd vendor/mero; git submodule init
+    - cd vendor/mero; git config submodule.extra-libs/galois.url git@github.com:tweag/mero-galois
+    - cd vendor/mero; git config submodule.extra-libs/gf-complete.url git@github.com:tweag/mero-gf-complete
+    - cd vendor/mero; git config submodule.extra-libs/yaml.url git@github.com:tweag/mero-yaml
+    - cd vendor/mero; git submodule update --depth 1
 
 dependencies:
   pre:
-    - "sudo docker -d -e lxc -s btrfs -H 0.0.0.0:5555":
-        background: true
-
+    - curl -LO https://github.com/commercialhaskell/stack/releases/download/v0.1.8.0/stack-0.1.8.0-linux-x86_64.tar.gz
+    - tar xf stack-0.1.8.0-linux-x86_64.tar.gz
+    - mkdir -p ~/.local/bin
+    - cp stack-0.1.8.0-linux-x86_64/stack ~/.local/bin
   override:
-    - docker --host=localhost:5555 info
-    - docker/1-haskell-env-on-centos-7/build-template
-    - cp /home/ubuntu/.ssh/id_circleci_github docker/2-halon-deps/id_rsa
-    - docker/2-halon-deps/build-template
+    - echo | stack $STACK_FLAGS --docker-registry-username $DOCKER_REGISTRY_USERNAME --docker-registry-password $DOCKER_REGISTRY_PASSWORD docker pull
+    - stack $STACK_FLAGS setup
+    # Build Mero.
+    - cd vendor/mero; stack $STACK_FLAGS exec -- ./autogen.sh
+    - cd vendor/mero; stack $STACK_FLAGS exec -- ./configure '--with-linux=/usr/src/kernels/*/'
+    - cd vendor/mero; stack $STACK_FLAGS exec -- make
+    # Build stack-managed halon dependencies.
+    - stack $STACK_FLAGS build --only-snapshot --prefetch --test --bench
+
+  cache_directories:
+    - ~/.stack/
 
 test:
   override:
-    - cp /home/ubuntu/.ssh/id_circleci_github docker/3-halon/id_rsa
-    - docker/3-halon/build-template:
+    - stack $STACK_FLAGS build --test --bench --haddock --no-haddock-deps:
         timeout: 3600
