@@ -16,10 +16,11 @@ import Control.Distributed.Process
   )
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
+import Control.Distributed.Process.Node
 import Control.Exception (SomeException)
 import Control.Monad (forM_, join)
 
-import Data.List (sort, unfoldr)
+import Data.List (sort, unfoldr, isPrefixOf, findIndex)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
@@ -28,6 +29,7 @@ import Network.CEP
   ( Buffer
   , PhaseM
   , emptyFifoBuffer
+  , liftProcess
   )
 import Network.CEP.Testing (runPhase, runPhaseGet)
 
@@ -57,6 +59,8 @@ import TestRunner
 
 import Test.Framework
 import System.IO
+import System.Mem
+import GHC.Stats
 
 mmSDict :: SerializableDict Multimap
 mmSDict = SerializableDict
@@ -74,9 +78,12 @@ myRemoteTable = HA.Castor.Tests.__remoteTable remoteTable
 
 rGroupTest :: Transport -> (ProcessId -> Process ()) -> IO ()
 rGroupTest transport p =
+  withLocalNode transport myRemoteTable $ \lnid2 ->
+  withLocalNode transport myRemoteTable $ \lnid3 ->
   tryRunProcessLocal transport myRemoteTable $ do
     nid <- getSelfNode
-    rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
+    rGroup <- newRGroup $(mkStatic 'mmSDict) 30 1000000
+                [nid, localNodeId lnid2, localNodeId lnid3] (fromList [])
                 >>= unClosure
                 >>= (`asTypeOf` return (undefined :: MC_RG Multimap))
     mmpid <- spawnLocal $ catch (multimap rGroup) $
@@ -84,7 +91,7 @@ rGroupTest transport p =
     p mmpid
 
 tests :: String -> Transport -> [TestTree]
-tests host transport = map (localOption (mkTimeout $ 60*1000000))
+tests host transport = map (localOption (mkTimeout $ 10*60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport
   , testSuccess "initial-data-doesn't-error" $ loadInitialData host transport
   , testSuccess "large-data" $ largeInitialData host transport
@@ -176,9 +183,22 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
   where
     myHost = Host "primus.example.com"
 
+printMem :: IO ()
+printMem = do
+  performGC
+  readFile "/proc/self/status" >>=
+    hPutStr stderr . unlines . filter (\x -> any (`isPrefixOf` x) ["VmHWM", "VmRSS"])
+                   . lines
+  stats <- getGCStats
+  hPutStrLn stderr $ "In use according to GC stats: " ++
+    show (currentBytesUsed stats `div` (1024 * 1024)) ++ " MB"
+  hPutStrLn stderr $ "HWM according the GC stats: " ++
+    show (maxBytesUsed stats `div` (1024 * 1024)) ++ " MB"
+  hPutStrLn stderr ""
+
 largeInitialData :: String -> Transport -> IO ()
 largeInitialData host transport = let
-    numDisks = 579
+    numDisks = 300
     initD = (initialDataAddr host "192.0.2.2" numDisks)
     myHost = Host "primus.example.com"
   in
@@ -194,13 +214,22 @@ largeInitialData host transport = let
         filesystem <- initialiseConfInRG
         loadMeroGlobals (CI.id_m0_globals initD)
         loadMeroServers filesystem (CI.id_m0_servers initD)
-        failureSets <- generateFailureSets 0 2 0
+        failureSets <- generateFailureSets 1 0 0
         let chunks = flip unfoldr failureSets $ \xs ->
               case xs of
                 [] -> Nothing
-                _  -> Just $ splitAt 50 xs
-        forM_ chunks $ \chunk -> do
+                _  -> case findIndex (>2000) $ scanl1 (+) $
+                             map ((numDisks -) . fsSize) xs of
+                  -- put all sets in one chunk
+                  Nothing -> Just (xs, [])
+                  -- ensure at most one set is in the chunk
+                  -- TODO: split failure sets which are too big.
+                  Just i -> Just $ splitAt (max 1 i) xs
+        liftProcess $ liftIO $ hPutStrLn stderr $ "have " ++ show (length chunks) ++
+                      " chunks for " ++ show (length failureSets) ++ " failure sets."
+        forM_ (zip [0..] chunks) $ \(i, chunk) -> do
           createPoolVersions filesystem chunk
+          liftProcess $ liftIO $ hPutStrLn stderr $ "submitting chunk " ++ show (i :: Int)
           syncGraph
 
       -- Verify that everything is set up correctly
@@ -219,9 +248,10 @@ largeInitialData host transport = let
       assertMsg "MDPool is findable by Fid"
         $ mdpool == Just pool
 
-
-      let g = lsGraph ls'
-          racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
+      liftIO printMem
+      -- let g = lsGraph ls'
+      g <- getGraph pid
+      let racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
           encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
           ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
           disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
@@ -229,6 +259,7 @@ largeInitialData host transport = let
           sdevs = join $ fmap (\r -> connectedTo r Has g :: [StorageDevice]) hosts
           disksByHost = join $ fmap (\r -> connectedFrom M0.At r g :: [M0.Disk]) sdevs
 
+      liftIO printMem
       assertMsg "Number of racks" $ length racks == 1
       assertMsg "Number of enclosures" $ length encls == 1
       assertMsg "Number of controllers" $ length ctrls == 1

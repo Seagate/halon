@@ -75,6 +75,7 @@ import HA.Multimap
   , updateStore
   , getKeyValuePairs
   )
+import HA.Multimap.Implementation
 
 import Control.Distributed.Process ( ProcessId, Process )
 import Control.Distributed.Process.Internal.Types
@@ -190,12 +191,51 @@ isIn (OutRel _ _ _) = False
 isOut :: Rel -> Bool
 isOut = not . isIn
 
+-- | A change log for graph updates.
+--
+-- Has a multimap with insertions of nodes and edges, a multimap with removals
+-- of edges and a set of removals of nodes.
+--
+-- The structure must preserve the following invariants:
+-- * Edges in the insertion multimap are not present in the removal multimap.
+-- * Nodes in the insertion multimap are not present in the removal set.
+-- * Nodes in the removal multimap are not present in removal set.
+data ChangeLog = ChangeLog !Multimap !Multimap !(HashSet Key)
+  deriving Typeable
+
+-- | Gets a list of updates and produces a possibly shorter equivalent list.
+--
+-- The updates are compressed by merging the multiple updates that could be
+-- found for a given key.
+updateChangeLog :: StoreUpdate -> ChangeLog -> ChangeLog
+updateChangeLog x (ChangeLog is dvs dks) = case x of
+    InsertMany kvs ->
+       ChangeLog (insertMany kvs is) (deleteValues kvs dvs)
+                 (foldr S.delete dks $ map fst kvs)
+    DeleteValues kvs ->
+      let kvs' = filter (not . flip S.member dks . fst) kvs
+       in ChangeLog (deleteValues kvs is) (insertMany kvs' dvs) dks
+    DeleteKeys ks ->
+      ChangeLog (deleteKeys ks is) (deleteKeys ks dvs) (foldr S.insert dks ks)
+
+-- | Gets the list of updates from the changelog.
+fromChangeLog :: ChangeLog -> [StoreUpdate]
+fromChangeLog (ChangeLog is dvs dks) =
+    [ InsertMany   $ toList is
+    , DeleteValues $ toList dvs
+    , DeleteKeys   $ S.toList dks
+    ]
+
+-- | An empty changelog
+emptyChangeLog :: ChangeLog
+emptyChangeLog = ChangeLog empty empty S.empty
+
 -- | The graph
 data Graph = Graph
   { -- | Pid of the multimap which replicates the graph.
     grMMId :: ProcessId
     -- | Changes in the graph with respect to the version stored in the multimap.
-  , grChangeLog :: [StoreUpdate]
+  , grChangeLog :: !ChangeLog
     -- | The graph.
   , grGraph :: HashMap Res (HashSet Rel)
   } deriving (Typeable)
@@ -232,7 +272,8 @@ inFromEdge Edge{..} = InRel edgeRelation edgeSrc edgeDst
 -- change and lives forever.
 newResource :: Resource a => a -> Graph -> Graph
 newResource x g =
-    g { grChangeLog = InsertMany [ (encodeRes (Res x),[]) ] : grChangeLog g
+    g { grChangeLog = updateChangeLog (InsertMany [ (encodeRes (Res x),[]) ])
+                                      (grChangeLog g)
       , grGraph = M.insertWith combineRes (Res x) S.empty $ grGraph g
       }
   where
@@ -245,11 +286,10 @@ insertEdge Edge{..} = connect edgeSrc edgeRelation edgeDst
 -- | Delete an edge from the graph.
 deleteEdge :: Relation r a b => Edge a r b -> Graph -> Graph
 deleteEdge e@Edge{..} g =
-    g { grChangeLog =
+    g { grChangeLog = flip updateChangeLog (grChangeLog g) $
             DeleteValues [ (encodeRes (Res edgeSrc), [ encodeRel $ outFromEdge e ])
                          , (encodeRes (Res edgeDst), [ encodeRel $ inFromEdge e ])
                          ]
-            : grChangeLog g
       , grGraph = M.adjust (S.delete $ outFromEdge e) (Res edgeSrc)
                 . M.adjust (S.delete $ inFromEdge e) (Res edgeDst)
                 $ grGraph g
@@ -258,10 +298,10 @@ deleteEdge e@Edge{..} g =
 -- | Adds a relation without making a conversion from 'Edge'.
 connect :: Relation r a b => a -> r -> b -> Graph -> Graph
 connect x r y g =
-   g { grChangeLog =
+   g { grChangeLog = flip updateChangeLog (grChangeLog g) $
          InsertMany [ (encodeRes (Res x),[ encodeRel $ OutRel r x y ])
                     , (encodeRes (Res y),[ encodeRel $ InRel r x y ])
-                    ] : grChangeLog g
+                    ]
      , grGraph = M.insertWith S.union (Res x) (S.singleton $ OutRel r x y)
                . M.insertWith S.union (Res y) (S.singleton $ InRel r x y)
                $ grGraph g
@@ -289,11 +329,10 @@ connectUniqueTo x r y = connect x r y
 -- | Removes a relation.
 disconnect :: Relation r a b => a -> r -> b -> Graph -> Graph
 disconnect x r y g =
-    g { grChangeLog =
+    g { grChangeLog = flip updateChangeLog (grChangeLog g) $
             DeleteValues [ (encodeRes (Res x), [ encodeRel $ OutRel r x y ])
                          , (encodeRes (Res y), [ encodeRel $ InRel r x y ])
                          ]
-            : grChangeLog g
       , grGraph = M.adjust (S.delete $ OutRel r x y) (Res x)
                 . M.adjust (S.delete $ InRel r x y) (Res y)
                 $ grGraph g
@@ -328,11 +367,12 @@ mergeResources f xs g@Graph{..} = let
     adjustments = M.insert newRes oldRels
                 : map (M.delete . Res) xs
   in g {
-          grChangeLog = (InsertMany [ (encodeRes newRes
+          grChangeLog = updateChangeLog
+                       (InsertMany [ (encodeRes newRes
                                     , S.toList . S.map encodeRel $ oldRels)
                                     ])
-                      : (DeleteKeys (map (encodeRes . Res) xs))
-                      : grChangeLog
+                      $ updateChangeLog
+                          (DeleteKeys (map (encodeRes . Res) xs)) grChangeLog
         , grGraph = foldr (.) id adjustments grGraph
        }
 
@@ -346,8 +386,8 @@ garbageCollect rootSet g@Graph{..} = go S.empty initWhite initGrey
     initWhite = (S.fromList $ M.keys grGraph) `S.difference` initGrey
     initGrey = S.fromList $ map Res rootSet
     go _ white (S.null -> True) = g {
-        grChangeLog = (DeleteKeys (map encodeRes whiteList))
-                    : grChangeLog
+        grChangeLog = updateChangeLog (DeleteKeys $ map encodeRes whiteList)
+                        grChangeLog
       , grGraph = foldl' (>>>) id adjustments grGraph
     } where
       adjustments = (map M.delete whiteList)
@@ -415,23 +455,25 @@ isConnected x r y g = memberEdge (Edge x r y) g
 
 -- | Yields the change log of modifications done to the graph, and the graph
 -- with the change log removed.
-takeChangeLog :: Graph -> ([StoreUpdate],Graph)
-takeChangeLog g = (reverse $ grChangeLog g, g { grChangeLog = [] })
+takeChangeLog :: Graph -> (ChangeLog, Graph)
+takeChangeLog g = ( grChangeLog g
+                  , g { grChangeLog = emptyChangeLog }
+                  )
 
 -- | Creates a graph from key value pairs.
 -- No key is duplicated in the input and no value appears twice for a given key.
 buildGraph :: ProcessId -> RemoteTable -> [(Key,[Value])] -> Graph
-buildGraph mmpid rt = Graph mmpid []
+buildGraph mmpid rt = Graph mmpid emptyChangeLog
     . M.fromList
     . map (decodeRes rt *** S.fromList . map (decodeRel rt))
 
 -- | Updates the multimap store with the latest changes to the graph.
 sync :: Graph -> Process Graph
 sync g =
-    updateStore (grMMId g) upds
+    updateStore (grMMId g) (fromChangeLog cl)
       >>= return . maybe (error "sync: updating the multimap store") (const g')
   where
-    (upds,g') = takeChangeLog g
+    (cl, g') = takeChangeLog g
 
 -- | Retrieves the graph from the multimap store.
 getGraph :: ProcessId -> Process Graph

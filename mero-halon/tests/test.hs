@@ -38,6 +38,7 @@ import Control.Exception
 import Mero
 import Control.Monad (when)
 import Data.Maybe (catMaybes)
+import GHC.Environment (getFullArgs)
 import System.Directory
 import System.Exit
 import System.FilePath
@@ -171,7 +172,7 @@ runTests tests = do
 main :: IO ()
 main = do
 #ifdef USE_MERO
-  args <- getArgs
+  args <- getFullArgs
   prog <- getExecutablePath
   -- test if we have root privileges
   ((userid, _): _ ) <- reads <$> readProcess "id" ["-u"] ""
@@ -186,6 +187,7 @@ main = do
     putStrLn $ "Calling test with sudo ..."
     mld <- fmap ("LD_LIBRARY_PATH=" ++) <$> lookupEnv "LD_LIBRARY_PATH"
     mtl <- fmap ("TEST_LISTEN=" ++) <$> lookupEnv "TEST_LISTEN"
+    putStrLn $ show $ "sudo" : catMaybes [mld, mtl] ++ prog : args
     callProcess "sudo" $ catMaybes [mld, mtl] ++ prog : args
     exitSuccess
   when (userid == (0 :: Int)) $ do

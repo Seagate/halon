@@ -142,7 +142,9 @@ castorRules = do
       let chunks = flip unfoldr failureSets $ \xs ->
             case xs of
               [] -> Nothing
-              _  -> Just $ splitAt 50 xs
+              _  -> -- TODO: Take into account the size of failure sets to do
+                    -- the spliting.
+                    Just $ splitAt 5 xs
       forM_ chunks $ \chunk -> do
         createPoolVersions filesystem chunk
         syncGraph

@@ -760,7 +760,7 @@ Test-Suite integration-tests
                     TestRunner
   Main-Is:          test.hs
 
-  Ghc-Options: -threaded -Wall
+  Ghc-Options: -threaded -Wall -rtsopts
 
   if flag(maintainer)
     Ghc-Options: -Werror
