@@ -56,6 +56,7 @@ tests launch =
   , testsTimeout launch
   , testsFinalizer launch
   , testsException launch
+  , testsDefaultHandler launch
   ]
 
 testsGlobal :: (Process () -> IO ()) -> TestTree
@@ -1076,3 +1077,26 @@ exceptionWorks = do
 
     i <- expect
     assertEqual "Ph2 should fire first" "foo" i
+
+
+testsDefaultHandler :: (Process () -> IO ()) -> TestTree
+testsDefaultHandler launch = testGroup "State"
+  [ testCase "Default handler works"  $ launch defaultHandlerWorks ]
+
+defaultHandlerWorks :: Process ()
+defaultHandlerWorks = do
+    self <- getSelfPid
+
+    let specs = do
+          setDefaultHandler $ \_ _ -> do
+            liftProcess $ usend self ("default"::String)
+          defineSimple "defaultHandler" $ \(Donut _) -> do
+            liftProcess $ usend self ("rule"::String)
+
+    pid <- spawnLocal $ execute () specs
+    usend pid donut
+    assertEqual "rule handled" ("rule"::String) =<< expect
+    usend pid donut
+    assertEqual "rule handled" ("rule"::String) =<< expect
+    usend pid (3::Int)
+    assertEqual "default handler" ("default"::String) =<< expect
