@@ -23,7 +23,6 @@ import HA.EventQueue.Producer (promulgateEQ)
 import HA.Resources
   ( Node(..) )
 import HA.Service
-import qualified HA.EQTracker            as EQT
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy       as Dummy
 import qualified HA.Services.Frontier    as Frontier
@@ -35,7 +34,7 @@ import qualified HA.Services.Ping        as Ping
 import qualified HA.Services.SSPL        as SSPL
 import qualified HA.Services.SSPLHL      as SSPLHL
 
-import Lookup (conjureRemoteNodeId)
+import Lookup
 
 import Control.Applicative ((<|>))
 import Control.Distributed.Process
@@ -45,7 +44,6 @@ import Control.Distributed.Process
   , expect
   , expectTimeout
   , getSelfPid
-  , nsendRemote
   , withMonitor
   , liftIO
   )
@@ -263,22 +261,6 @@ standardService nids sso svc = case sso of
       show nid ++ ": Running on PID " ++ show pid
                 ++ " with config:\n\t" ++ show a
                 ++ "\nRestart requested to new config:\n\t" ++ show b
-
--- | Look up the location of the EQ by querying the EQTracker(s) on the
---   provided node(s)
-findEQFromNodes :: Int -- ^ Timeout
-                -> [NodeId]
-                -> Process [NodeId]
-findEQFromNodes t n = go t n [] where
-  go 0 [] nids = go 0 (reverse nids) []
-  go _ [] _ = error "Failed to query EQ location from any node."
-  go timeout (x:xs) done = do
-    self <- getSelfPid
-    nsendRemote x EQT.name $ EQT.ReplicaRequest self
-    rl <- expectTimeout timeout
-    case rl of
-      Just (EQT.ReplicaReply (EQT.ReplicaLocation _ rest@(_:_))) -> return rest
-      _ -> go timeout xs (x : done)
 
 -- | Start a given service on a single node.
 start :: Configuration a

@@ -14,6 +14,7 @@ import HA.Network.RemoteTables (haRemoteTable)
 import Handler.Bootstrap
 import Handler.Cluster
 import Handler.Service
+import Handler.Status
 
 import Mero.RemoteTables (meroRemoteTable)
 
@@ -90,6 +91,7 @@ run (Options { .. }) = do
           Bootstrap bs -> bootstrap rnids bs
           Service bs   -> service rnids bs
           Cluster bs   -> cluster rnids bs
+          Status  bs   -> status rnids bs
       else do
         say "Failed to connect to controlled nodes: "
         liftIO $ mapM_ putStrLn $ concat replies
