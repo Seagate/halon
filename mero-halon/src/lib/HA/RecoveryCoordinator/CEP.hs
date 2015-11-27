@@ -26,6 +26,7 @@ import           Data.UUID (nil, null)
 import           Network.CEP
 
 import           HA.EventQueue.Types
+import           HA.EventQueue (TrimUnknown(..))
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Status
@@ -61,6 +62,11 @@ rcRules :: IgnitionArguments -> [Definitions LoopState ()] -> Definitions LoopSt
 rcRules argv additionalRules = do
 
     enableRCDebug
+
+    -- Forward all messages that no rule is interested in back to EQ,
+    -- so EQ could delete them.
+    setDefaultHandler $ \msg s ->
+      liftProcess $ usend (lsEQPid s) (TrimUnknown msg)
 
     initRule $ rcInitRule argv
 

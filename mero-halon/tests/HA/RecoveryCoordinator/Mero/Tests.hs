@@ -15,6 +15,7 @@ module HA.RecoveryCoordinator.Mero.Tests
   , testServiceRestarting
   , testServiceNotRestarting
   , testEQTrimming
+  , testEQTrimUnknown
   , testDecisionLog
   , testServiceStopped
   , testMonitorManagement
@@ -78,10 +79,12 @@ import Network.Transport (Transport(..))
 import Control.Monad (void, join)
 import Data.Defaultable
 import Data.List (isInfixOf)
-import Data.Proxy (Proxy(..))
 import Network.CEP (Published(..), Logs(..), subscribe)
 import Test.Tasty.HUnit (assertBool)
 import TestRunner
+import Data.Binary
+import Data.Typeable
+import GHC.Generics
 import Helper.SSPL
 
 #ifdef USE_MERO
@@ -234,6 +237,26 @@ testEQTrimming transport = do
                                                           pid
 
         Published (TrimDone _) _ <- expect
+        say $ "Everything got trimmed"
+  where
+    rt = TestRunner.__remoteTableDecl $
+         remoteTable
+
+data AbraCadabra = AbraCadabra deriving (Typeable, Generic)
+instance Binary AbraCadabra
+
+-- | This test verifies that every `HAEvent` sent to the RC is trimmed by the EQ
+testEQTrimUnknown :: Transport -> IO ()
+testEQTrimUnknown transport = do
+    runTest 1 20 15000000 transport rt $ \_ -> do
+      nid <- getSelfNode
+
+      say $ "tests node: " ++ show nid
+      withTrackingStation emptyRules $ \(TestArgs eq _ _) -> do
+        nodeUp ([nid], 1000000)
+        subscribe eq (Proxy :: Proxy TrimUnknown)
+        _ <- promulgateEQ [nid] AbraCadabra
+        Published (TrimUnknown _) _ <- expect
         say $ "Everything got trimmed"
   where
     rt = TestRunner.__remoteTableDecl $
