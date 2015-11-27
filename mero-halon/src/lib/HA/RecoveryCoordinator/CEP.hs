@@ -66,7 +66,7 @@ rcRules argv additionalRules = do
     -- Forward all messages that no rule is interested in back to EQ,
     -- so EQ could delete them.
     setDefaultHandler $ \msg s ->
-      liftProcess $ usend (lsEQPid s) (TrimUnknown msg)
+      liftProcess $ usend (lsEQPid s) (DoTrimUnknown msg)
 
     initRule $ rcInitRule argv
 
