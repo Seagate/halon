@@ -26,7 +26,6 @@ import           Data.UUID (nil, null)
 import           Network.CEP
 
 import           HA.EventQueue.Types
-import           HA.EventQueue (TrimUnknown(..))
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Status
