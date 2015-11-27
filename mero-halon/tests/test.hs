@@ -78,6 +78,8 @@ ut _host transport breakConnection = do
           HA.RecoveryCoordinator.Mero.Tests.testEQTrimming transport
       , testCase "RGHostResources" $
           HA.RecoveryCoordinator.Mero.Tests.testHostAddition transport
+      , testCase "RGTrimUnknownMessage" $
+          HA.RecoveryCoordinator.Mero.Tests.testEQTrimUnknown transport
       , testCase "RGDriveResources" $
           HA.RecoveryCoordinator.Mero.Tests.testDriveAddition transport
       , testCase "uncleanRPCClose" $ threadDelay 2000000
