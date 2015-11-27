@@ -1,8 +1,13 @@
+-- |
+-- Copyright : (C) 2015 Seagate Technology Limited.
+-- License   : All rights reserved.
+--
 module HA.EventQueue.Types
     ( HAEvent(..)
     , UUID
     , PersistMessage(..)
     , newPersistMessage
+    , DoTrimUnknown(..)
     ) where
 
 import Control.Distributed.Process
@@ -55,3 +60,8 @@ newPersistMessage msg = liftIO $ do
            { persistEventId = uuid
            , persistMsg     = wrapMessage evt
            }
+
+-- | Request EQ to remove message of type that is unknown.
+data DoTrimUnknown = DoTrimUnknown Message deriving (Typeable, Generic)
+
+instance Binary DoTrimUnknown

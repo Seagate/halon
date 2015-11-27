@@ -33,6 +33,7 @@ module HA.EventQueue
   , RCDied(..)
   , RCLost(..)
   , TrimDone(..)
+  , TrimUnknown(..)
   , EventQueueState
   , startEventQueue
   ) where
@@ -49,13 +50,15 @@ import FRP.Netwire hiding (Last(..), when, for)
 
 import Control.Distributed.Process hiding (newChan)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
+import Control.Distributed.Process.Internal.Types (Message(..))
 import Control.Distributed.Process.Timeout ( retry )
 
 import Control.Exception (SomeException, throwIO)
 import Control.Monad (when)
-import Data.Binary (Binary)
+import Data.Binary (Binary, encode)
 import Data.Foldable (for_, traverse_)
 import Data.Functor (void)
+import Data.Maybe (mapMaybe)
 import Data.Traversable (for)
 import Data.Typeable
 
@@ -97,10 +100,29 @@ compareAndSwapRC (expected, new) = first $ \current ->
 filterEvent :: UUID -> EventQueue -> EventQueue
 filterEvent eid = second $ spineSeq . filter (\(PersistMessage uuid _) -> eid /= uuid)
 
+-- | Filter all occurences of the given message inside event queue.
+filterMessage :: Message -> EventQueue -> EventQueue
+filterMessage msg = second $ spineSeq . mapMaybe checkEquality
+  where
+    (bfgp,benc) = case msg of
+       EncodedMessage f e -> (f,e)
+       UnencodedMessage f p -> (f, encode p)
+    checkEquality m@(PersistMessage uuid msg') = 
+      case msg' of
+        EncodedMessage f e
+           | f == bfgp && e == benc -> Nothing
+           | otherwise -> Just m
+        UnencodedMessage f p -> 
+           let enc = encode p
+           in if f == bfgp && enc == benc
+                then Nothing
+                else Just (PersistMessage uuid (EncodedMessage f enc))
+
 remotable [ 'addSerializedEvent
           , 'eqSetRC
           , 'compareAndSwapRC
           , 'filterEvent
+          , 'filterMessage
           ]
 
 -- | Amount of microseconds between retries of requests for the replicated
@@ -158,6 +180,7 @@ eqRules rg = do
                                clearRC
 
     defineSimple "trimming" (trim rg)
+    defineSimple "trimming-unknown" $ \(DoTrimUnknown msg) -> trimMsg rg msg
 
     defineSimple "ha-event" $ \(sender, ev) -> do
       mRC  <- lookupRC rg
@@ -175,6 +198,7 @@ eqRules rg = do
              recordEvent rg sender ev
 
     defineSimple "trim-ack" $ \(TrimAck eid) -> publish (TrimDone eid)
+    defineSimple "trim-ack-unknown" $ \(TrimUnknown msg) -> publish (TrimUnknown msg)
 
     defineSimple "record-ack" $ \(RecordAck sender ev) -> do
       mRC <- lookupRC rg
@@ -245,6 +269,19 @@ trim rg eid =
         usend self (TrimAck eid)
       return ()
 
+-- | Remove message of unknown type. It's important that all
+-- messages with similar layout (fingerprint and encoding) will
+-- be removed.
+trimMsg :: RGroup g => g EventQueue -> Message -> PhaseM s l ()
+trimMsg rg msg =
+    liftProcess $ do
+      _ <- spawnLocal $ do
+        self <- getSelfPid
+        retry requestTimeout $ do
+          updateStateWith rg $ $(mkClosure 'filterMessage) msg
+          usend self (TrimUnknown msg)
+      return ()
+
 sendEventToRC :: ProcessId -> ProcessId -> PersistMessage -> PhaseM s l ()
 sendEventToRC rc sender (PersistMessage mid ev) =
     liftProcess $ do
@@ -296,3 +333,8 @@ data RecordAck = RecordAck ProcessId PersistMessage
                  deriving (Typeable, Generic)
 
 instance Binary RecordAck
+
+-- | Request EQ to remove message of type that is unknown.
+data TrimUnknown = TrimUnknown Message deriving (Typeable, Generic)
+
+instance Binary TrimUnknown
