@@ -23,8 +23,9 @@ module HA.RecoveryCoordinator.Actions.Mero
   , withSpielRC
   , syncToConfd
   , rgLookupConfObjByFid
-  , getPools
+  , getSDevPools
   , startRepairOperation
+  , startRebalanceOperation
   , lookupStorageDevice
   , lookupStorageDeviceSDev
   , lookupSDevDisk
@@ -47,7 +48,9 @@ import Mero.Spiel hiding (start)
 import qualified Mero.Spiel
 
 import qualified Control.Distributed.Process as DP
+import Control.Exception (SomeException)
 import Control.Monad (forM_)
+import Control.Monad.Catch (catch)
 import Control.Applicative
 import Control.Category ((>>>))
 
@@ -321,11 +324,12 @@ lookupSDevDisk sdev = do
   rg <- getLocalGraph
   return . listToMaybe $ G.connectedTo sdev M0.IsOnHardware rg
 
-getPools :: M0.Disk -> PhaseM LoopState l [M0.Pool]
-getPools dev = do
+getSDevPools :: M0.SDev -> PhaseM LoopState l [M0.Pool]
+getSDevPools sdev = do
     rg <- getLocalGraph
     let ps =
-          [ p | dv <- G.connectedTo dev M0.IsRealOf rg :: [M0.DiskV]
+          [ p | d  <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
+              , dv <- G.connectedTo d M0.IsRealOf rg :: [M0.DiskV]
               , ct <- G.connectedFrom M0.IsParentOf dv rg :: [M0.ControllerV]
               , ev <- G.connectedFrom M0.IsParentOf ct rg :: [M0.EnclosureV]
               , rv <- G.connectedFrom M0.IsParentOf ev rg :: [M0.RackV]
@@ -334,9 +338,6 @@ getPools dev = do
               ]
 
     return ps
-
-startRepairOperation :: M0.Disk -> M0.Pool -> PhaseM LoopState l ()
-startRepairOperation _ _ = phaseLog "error" "Start repair not implemeted"
 
 -- | Replace storage device node with its new version.
 actualizeStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l ()
@@ -356,10 +357,38 @@ actualizeStorageDeviceReplacement sdev = do
         Nothing -> do
           phaseLog "rg" "failed to find disk that was attached"
           return rg
-        Just (dev, disk, mdev, wwn) -> do
+        Just (dev, _, mdev, wwn) -> do
           let mdev' = mdev{M0.d_path=mkPathByWWN wwn}
               rg' = G.mergeResources (const mdev') [mdev]
                 >>> G.disconnect dev ReplacedBy sdev
                 >>> G.disconnect dev Has SDRemovedAt
                   $ rg
           return rg'
+
+startRepairOperation :: M0.Pool -> PhaseM LoopState l ()
+startRepairOperation pool = catch
+    (getSpielAddress >>= traverse_ go)
+    (\e -> do
+      phaseLog "error" $ "Error starting repair operation: "
+                      ++ show (e :: SomeException)
+                      ++ " on pool "
+                      ++ show (M0.fid pool)
+    )
+  where
+    go sa = do
+      phaseLog "spiel" $ "Starting repair on pool " ++ show pool
+      withSpielRC sa $ \sc -> liftM0 $ poolRepairStart sc (M0.fid pool)
+
+startRebalanceOperation :: M0.Pool -> PhaseM LoopState l ()
+startRebalanceOperation pool = catch
+    (getSpielAddress >>= traverse_ go)
+    (\e -> do
+      phaseLog "error" $ "Error starting rebalance operation: "
+                      ++ show (e :: SomeException)
+                      ++ " on pool "
+                      ++ show (M0.fid pool)
+    )
+  where
+    go sa = do
+      phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool
+      withSpielRC sa $ \sc -> liftM0 $ poolRebalanceStart sc (M0.fid pool)
