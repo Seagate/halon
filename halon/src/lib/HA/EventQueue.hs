@@ -198,8 +198,7 @@ eqRules rg = do
              recordEvent rg sender ev
 
     defineSimple "trim-ack" $ \(TrimAck eid) -> publish (TrimDone eid)
-    defineSimple "trim-ack-unknown" $ \(TrimUnknown msg) -> publish (TrimUnknown msg)
-
+    defineSimple "trim-ack-unknown" $ \(TrimUnknown _) -> return ()
     defineSimple "record-ack" $ \(RecordAck sender ev) -> do
       mRC <- lookupRC rg
       case mRC of
@@ -275,8 +274,8 @@ trim rg eid =
 trimMsg :: RGroup g => g EventQueue -> Message -> PhaseM s l ()
 trimMsg rg msg =
     liftProcess $ do
+      self <- getSelfPid
       _ <- spawnLocal $ do
-        self <- getSelfPid
         retry requestTimeout $ do
           updateStateWith rg $ $(mkClosure 'filterMessage) msg
           usend self (TrimUnknown msg)

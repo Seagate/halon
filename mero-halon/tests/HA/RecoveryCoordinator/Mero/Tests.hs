@@ -253,8 +253,8 @@ testEQTrimUnknown transport = do
 
       say $ "tests node: " ++ show nid
       withTrackingStation emptyRules $ \(TestArgs eq _ _) -> do
-        nodeUp ([nid], 1000000)
         subscribe eq (Proxy :: Proxy TrimUnknown)
+        nodeUp ([nid], 1000000)
         _ <- promulgateEQ [nid] AbraCadabra
         Published (TrimUnknown _) _ <- expect
         say $ "Everything got trimmed"
