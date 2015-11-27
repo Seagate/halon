@@ -48,7 +48,9 @@ import Mero.Spiel hiding (start)
 import qualified Mero.Spiel
 
 import qualified Control.Distributed.Process as DP
+import Control.Exception (SomeException)
 import Control.Monad (forM_)
+import Control.Monad.Catch (catch)
 import Control.Applicative
 import Control.Category ((>>>))
 
@@ -355,7 +357,7 @@ actualizeStorageDeviceReplacement sdev = do
         Nothing -> do
           phaseLog "rg" "failed to find disk that was attached"
           return rg
-        Just (dev, disk, mdev, wwn) -> do
+        Just (dev, _, mdev, wwn) -> do
           let mdev' = mdev{M0.d_path=mkPathByWWN wwn}
               rg' = G.mergeResources (const mdev') [mdev]
                 >>> G.disconnect dev ReplacedBy sdev
@@ -364,14 +366,28 @@ actualizeStorageDeviceReplacement sdev = do
           return rg'
 
 startRepairOperation :: M0.Pool -> PhaseM LoopState l ()
-startRepairOperation pool = getSpielAddress >>= traverse_ go
+startRepairOperation pool = catch
+    (getSpielAddress >>= traverse_ go)
+    (\e -> do
+      phaseLog "error" $ "Error starting repair operation: "
+                      ++ show (e :: SomeException)
+                      ++ " on pool "
+                      ++ show (M0.fid pool)
+    )
   where
     go sa = do
       phaseLog "spiel" $ "Starting repair on pool " ++ show pool
       withSpielRC sa $ \sc -> liftM0 $ poolRepairStart sc (M0.fid pool)
 
 startRebalanceOperation :: M0.Pool -> PhaseM LoopState l ()
-startRebalanceOperation pool = getSpielAddress >>= traverse_ go
+startRebalanceOperation pool = catch
+    (getSpielAddress >>= traverse_ go)
+    (\e -> do
+      phaseLog "error" $ "Error starting rebalance operation: "
+                      ++ show (e :: SomeException)
+                      ++ " on pool "
+                      ++ show (M0.fid pool)
+    )
   where
     go sa = do
       phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool
