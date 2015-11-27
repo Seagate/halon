@@ -82,6 +82,7 @@ import Data.Binary (Binary)
 import Data.ByteString (ByteString)
 import Data.Dynamic
 import qualified Data.Map.Strict as Map
+import qualified Data.HashSet as HS
 import qualified Data.Set as S
 import Data.UUID (UUID)
 import Data.Word
@@ -225,7 +226,10 @@ initialize mm = do
     let rg' | G.null rg =
             G.newResource Cluster >>>
             G.newResource (Epoch 0 "y = x^2" :: Epoch ByteString) >>>
-            G.connect Cluster Has (Epoch 0 "y = x^2" :: Epoch ByteString) $ rg
+            G.connect Cluster Has (Epoch 0 "y = x^2" :: Epoch ByteString) >>>
+            (\g -> g { G.grRootNodes =
+                       G.grRootNodes g <> HS.singleton (G.Res Cluster) })
+            $ rg
             | otherwise = rg
     return rg'
 

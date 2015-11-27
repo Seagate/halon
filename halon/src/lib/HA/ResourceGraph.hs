@@ -32,7 +32,7 @@ module HA.ResourceGraph
     ( -- * Types
       Resource(..)
     , Relation(..)
-    , Graph
+    , Graph(grSinceGC, grGCThreshold, grRootNodes)
     , Edge(..)
     , Dict(..)
     , Res(..)
@@ -52,6 +52,7 @@ module HA.ResourceGraph
     , sync
     , getGraph
     , garbageCollect
+    , garbageCollectRoot
     -- * Queries
     , null
     , memberResource
@@ -238,6 +239,20 @@ data Graph = Graph
   , grChangeLog :: !ChangeLog
     -- | The graph.
   , grGraph :: HashMap Res (HashSet Rel)
+    -- | Number of times we disconnected resources in the graph. Used
+    -- to determine whether we should run GC or not. Note that this is
+    -- only a heuristic, not an /accurate/ number of resources we have
+    -- actually disconnected. Disconnecting the same resource multiple
+    -- times will have no effect but will increase 'grSinceGC'.
+  , grSinceGC :: Int
+    -- | The set of resources used by default for
+    -- periodically-triggered major GC.
+  , grRootNodes :: HashSet Res
+    -- | Amount of disconnects after which the GC should be ran. There
+    -- is no guarantee that GC will run after precisely after this
+    -- many. If the value is not a positive integer, the automatic GC
+    -- won't be ran at all. Defaults to @100@.
+  , grGCThreshold :: Int
   } deriving (Typeable)
 
 -- | Edges between resources. Edge types are called relations. An edge is an
@@ -293,6 +308,9 @@ deleteEdge e@Edge{..} g =
       , grGraph = M.adjust (S.delete $ outFromEdge e) (Res edgeSrc)
                 . M.adjust (S.delete $ inFromEdge e) (Res edgeDst)
                 $ grGraph g
+      -- When deleting an edge, we are potentially cutting off
+      -- resource(s) so count it as disconnect.
+      , grSinceGC = grSinceGC g + 1
       }
 
 -- | Adds a relation without making a conversion from 'Edge'.
@@ -336,6 +354,7 @@ disconnect x r y g =
       , grGraph = M.adjust (S.delete $ OutRel r x y) (Res x)
                 . M.adjust (S.delete $ InRel r x y) (Res y)
                 $ grGraph g
+      , grSinceGC = grSinceGC g + 1
       }
 
 -- | Remove all outgoing edges of the given relation type.
@@ -375,16 +394,18 @@ mergeResources f xs g@Graph{..} = let
                           (DeleteKeys (map (encodeRes . Res) xs)) grChangeLog
         , grGraph = foldr (.) id adjustments grGraph
        }
-
 -- | Remove all resources that are not connected to the rest of the graph,
 -- starting from the given root set. This cleans up resources that are no
 -- longer participating in the graph since they are not connected to the rest
 -- and can hence safely be discarded.
-garbageCollect :: Resource a => [a] -> Graph -> Graph
-garbageCollect rootSet g@Graph{..} = go S.empty initWhite initGrey
+--
+-- This does __not__ reset 'grSinceGC': if you are manually invoking
+-- 'garbageCollect' with your own set of nodes, you may not want to
+-- stop the major GC from happening anyway.
+garbageCollect :: HashSet Res -> Graph -> Graph
+garbageCollect initGrey g@Graph{..} = go S.empty initWhite initGrey
   where
     initWhite = (S.fromList $ M.keys grGraph) `S.difference` initGrey
-    initGrey = S.fromList $ map Res rootSet
     go _ white (S.null -> True) = g {
         grChangeLog = updateChangeLog (DeleteKeys $ map encodeRes whiteList)
                         grChangeLog
@@ -402,6 +423,14 @@ garbageCollect rootSet g@Graph{..} = go S.empty initWhite initGrey
       f (OutRel _ _ y) = Res y
       f (InRel _ x _) =  Res x
     go _ _ _ = error "garbageCollect: Impossible."
+
+-- | Runs 'garbageCollect' with 'grRootNodes' of the given graph.
+-- Resets 'grSinceGC'.
+garbageCollectRoot :: Graph -> Graph
+garbageCollectRoot g@Graph{..} =
+  resetGCCount $ garbageCollect grRootNodes g
+  where
+    resetGCCount g' = g' { grSinceGC = 0 }
 
 -- | List of all edges of a given relation stemming from the provided source
 -- resource to destination resources of the given type.
@@ -463,7 +492,7 @@ takeChangeLog g = ( grChangeLog g
 -- | Creates a graph from key value pairs.
 -- No key is duplicated in the input and no value appears twice for a given key.
 buildGraph :: ProcessId -> RemoteTable -> [(Key,[Value])] -> Graph
-buildGraph mmpid rt = Graph mmpid emptyChangeLog
+buildGraph mmpid rt = (\hm -> Graph mmpid emptyChangeLog hm 0 S.empty 100)
     . M.fromList
     . map (decodeRes rt *** S.fromList . map (decodeRel rt))
 
@@ -473,7 +502,12 @@ sync g =
     updateStore (grMMId g) (fromChangeLog cl)
       >>= return . maybe (error "sync: updating the multimap store") (const g')
   where
-    (cl, g') = takeChangeLog g
+    runGC :: Graph -> Graph
+    runGC gr = if grGCThreshold gr > 0
+                  && grSinceGC gr >= grGCThreshold gr
+               then garbageCollectRoot gr
+               else gr
+    (cl, g') = takeChangeLog $ runGC g
 
 -- | Retrieves the graph from the multimap store.
 getGraph :: ProcessId -> Process Graph

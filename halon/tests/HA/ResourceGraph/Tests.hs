@@ -26,6 +26,7 @@ import Control.Distributed.Process.Serializable (SerializableDict(..))
 import Control.Exception (SomeException, bracket)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
+import qualified Data.HashSet as S
 import Data.List (sort, (\\))
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
@@ -202,10 +203,10 @@ tests transport = do
 
       , testSuccess "garbage-collection" $ rGroupTest transport g $ \pid -> do
           g1 <- sync . sampleGraph =<< getGraph pid
-          g2 <- sync $ garbageCollect [NodeB 2] g1
+          g2 <- sync $ garbageCollect (S.singleton . Res $ NodeB 2) g1
           -- NodeB 1 never connected to root set
           assert $ memberResource (NodeB 1) g2 == False
-          g3 <- sync $ garbageCollect [NodeB 2]
+          g3 <- sync $ garbageCollect (S.singleton . Res $ NodeB 2)
                      . disconnect (NodeB 2) HasA (NodeA 1)
                      . disconnect (NodeB 2) HasA (NodeA 2)
                      $ g2
@@ -221,12 +222,37 @@ tests transport = do
                      . newResource (NodeB 3)
                      . newResource (NodeB 4)
                      $ g3
-          let g5 = garbageCollect [NodeB 2] g4
-              g6 = garbageCollect [NodeA 3] g4
+          let g5 = garbageCollect (S.singleton . Res $ NodeB 2) g4
+              g6 = garbageCollect (S.singleton . Res $ NodeA 3) g4
           assert $ memberResource (NodeA 3) g5 == False
           assert $ memberResource (NodeA 3) g6 == True
           assert $ memberResource (NodeB 2) g6 == False
           assert $ memberResource (NodeB 2) g5 == True
+
+      , testSuccess "garbage-collection-auto" $ rGroupTest transport g $ \pid -> do
+          g1 <- sync . sampleGraph =<< getGraph pid
+          assert $ grSinceGC g1 == 0
+          assert $ grGCThreshold g1 == 100
+          assert $ grRootNodes g1 == S.empty
+          let g2 = disconnect (NodeB 2) HasA (NodeA 2) g1
+          assert $ grSinceGC g2 == 1
+          g3 <- sync g2
+          assert $ grSinceGC g3 == 1
+          g4 <- sync $ g3 { grRootNodes = S.singleton . Res $ NodeB 2 }
+          -- Just disconnect same thing 100 times to meet threshold
+          -- and ramp up the disconnect amounts.
+          let dcs = replicate 100 (disconnect (NodeB 2) HasA (NodeA 1))
+              g5 = foldr ($) g4 dcs
+          -- Make sure everything is still around and ready
+          assert $ memberResource (NodeA 1) g5 == True
+          assert $ memberResource (NodeA 2) g5 == True
+          assert $ grSinceGC g5 == 101
+          g6 <- sync g5
+          -- Make sure GC happened
+          assert $ grSinceGC g6 == 0
+          assert $ memberResource (NodeA 1) g6 == True
+          assert $ memberResource (NodeA 2) g6 == False
+
       , testSuccess "merge-resources" $ rGroupTest transport g $ \pid -> do
           g1 <- sync . sampleGraph =<< getGraph pid
           g2 <- sync $ mergeResources head [NodeA 1, NodeA 2] g1
