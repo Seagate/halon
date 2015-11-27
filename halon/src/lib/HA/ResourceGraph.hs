@@ -394,7 +394,6 @@ mergeResources f xs g@Graph{..} = let
                           (DeleteKeys (map (encodeRes . Res) xs)) grChangeLog
         , grGraph = foldr (.) id adjustments grGraph
        }
-
 -- | Remove all resources that are not connected to the rest of the graph,
 -- starting from the given root set. This cleans up resources that are no
 -- longer participating in the graph since they are not connected to the rest
@@ -403,14 +402,8 @@ mergeResources f xs g@Graph{..} = let
 -- This does __not__ reset 'grSinceGC': if you are manually invoking
 -- 'garbageCollect' with your own set of nodes, you may not want to
 -- stop the major GC from happening anyway.
-garbageCollect :: Resource a => [a] -> Graph -> Graph
-garbageCollect rootSet = garbageCollectRes (S.fromList $ map Res rootSet)
-
-
--- | A version of 'garbageCollect' that works directly on a set of
--- 'Res'. See comment on 'garbageCollect' for documentation.
-garbageCollectRes :: HashSet Res -> Graph -> Graph
-garbageCollectRes initGrey g@Graph{..} = go S.empty initWhite initGrey
+garbageCollect :: HashSet Res -> Graph -> Graph
+garbageCollect initGrey g@Graph{..} = go S.empty initWhite initGrey
   where
     initWhite = (S.fromList $ M.keys grGraph) `S.difference` initGrey
     go _ white (S.null -> True) = g {
@@ -435,7 +428,7 @@ garbageCollectRes initGrey g@Graph{..} = go S.empty initWhite initGrey
 -- Resets 'grSinceGC'.
 garbageCollectRoot :: Graph -> Graph
 garbageCollectRoot g@Graph{..} =
-  resetGCCount $ garbageCollectRes grRootNodes g
+  resetGCCount $ garbageCollect grRootNodes g
   where
     resetGCCount g' = g' { grSinceGC = 0 }
 

@@ -203,10 +203,10 @@ tests transport = do
 
       , testSuccess "garbage-collection" $ rGroupTest transport g $ \pid -> do
           g1 <- sync . sampleGraph =<< getGraph pid
-          g2 <- sync $ garbageCollect [NodeB 2] g1
+          g2 <- sync $ garbageCollect (S.singleton . Res $ NodeB 2) g1
           -- NodeB 1 never connected to root set
           assert $ memberResource (NodeB 1) g2 == False
-          g3 <- sync $ garbageCollect [NodeB 2]
+          g3 <- sync $ garbageCollect (S.singleton . Res $ NodeB 2)
                      . disconnect (NodeB 2) HasA (NodeA 1)
                      . disconnect (NodeB 2) HasA (NodeA 2)
                      $ g2
@@ -222,14 +222,14 @@ tests transport = do
                      . newResource (NodeB 3)
                      . newResource (NodeB 4)
                      $ g3
-          let g5 = garbageCollect [NodeB 2] g4
-              g6 = garbageCollect [NodeA 3] g4
+          let g5 = garbageCollect (S.singleton . Res $ NodeB 2) g4
+              g6 = garbageCollect (S.singleton . Res $ NodeA 3) g4
           assert $ memberResource (NodeA 3) g5 == False
           assert $ memberResource (NodeA 3) g6 == True
           assert $ memberResource (NodeB 2) g6 == False
           assert $ memberResource (NodeB 2) g5 == True
 
-      , testSuccess "garbage-collection-auto-WIP" $ rGroupTest transport g $ \pid -> do
+      , testSuccess "garbage-collection-auto" $ rGroupTest transport g $ \pid -> do
           g1 <- sync . sampleGraph =<< getGraph pid
           assert $ grSinceGC g1 == 0
           assert $ grGCThreshold g1 == 100
