@@ -39,5 +39,5 @@ test:
     - stack $STACK_FLAGS build --haddock --no-haddock-deps --flag mero-halon:mero mero-halon
     - stack $STACK_FLAGS build --haddock --no-haddock-deps mero-halon
     # Only test mero-halon and deps, without USE_MERO.
-    - stack $STACK_FLAGS build --test --bench --haddock --no-haddock-deps mero-halon:
+    - stack $STACK_FLAGS build --test --bench mero-halon:
         timeout: 3600
