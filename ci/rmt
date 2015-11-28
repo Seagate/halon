@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# Usage: rmt [-k] <WORKDIR> <COMMAND>
+#
+#   -k    keep going on failure.
+
+if [ $1 = "-k" ]; then KEEP_GOING=true; shift; else KEEP_GOING=false; fi
+dir=$1
+shift
+# Pipe echo to ensure stdin is empty.
+echo | ssh -F ssh.config aws "cd /vagrant/$dir; $@"
+rc=$?
+if [ $rc != 0 ] && [ $KEEP_GOING != true ]
+then
+    vagrant destroy -f
+    rm ssh.config
+fi
+exit $rc

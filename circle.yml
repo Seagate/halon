@@ -2,7 +2,9 @@ machine:
   services:
     - docker
   environment:
-      STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero
+    STACK_FLAGS: --no-terminal --docker-mount /vagrant/vendor/mero:/mero
+    # To pickup rmt script.
+    PATH: ci:$PATH
 
 checkout:
   post:
@@ -17,29 +19,41 @@ checkout:
 
 dependencies:
   pre:
-    - curl -LO https://github.com/commercialhaskell/stack/releases/download/v0.1.8.0/stack-0.1.8.0-linux-x86_64.tar.gz
-    - tar xf stack-0.1.8.0-linux-x86_64.tar.gz
-    - mkdir -p ~/.local/bin
-    - cp stack-0.1.8.0-linux-x86_64/stack ~/.local/bin
+    - curl https://releases.hashicorp.com/vagrant/1.7.4/vagrant_1.7.4_x86_64.deb > /tmp/vagrant.deb
+    - sudo dpkg -i /tmp/vagrant.deb
+    - vagrant plugin install vagrant-aws
+    - vagrant up --provider=aws
+    - vagrant ssh-config --host aws > ssh.config
+    # Safety hatch: self destruct instance after 1h if still alive.
+    - rmt . "echo sudo halt | at now + 1 hour"
+    # Manually restore cache on remote machine.
+    - rsync -az --delete -e "ssh -F ssh.config" ~/.stack/ aws:.stack/ || true
   override:
-    - echo | stack $STACK_FLAGS --docker-registry-username $DOCKER_REGISTRY_USERNAME --docker-registry-password $DOCKER_REGISTRY_PASSWORD docker pull
-    - stack $STACK_FLAGS setup
+    - rmt . stack $STACK_FLAGS --docker-registry-username $DOCKER_REGISTRY_USERNAME --docker-registry-password $DOCKER_REGISTRY_PASSWORD docker pull
+    - rmt . stack $STACK_FLAGS setup
     # Build Mero.
-    - cd vendor/mero; stack $STACK_FLAGS exec -- ./autogen.sh
-    - cd vendor/mero; stack $STACK_FLAGS exec -- ./configure '--with-linux=/usr/src/kernels/*/'
-    - cd vendor/mero; stack $STACK_FLAGS exec -- make
+    - rmt vendor/mero stack $STACK_FLAGS exec -- ./autogen.sh
+    - rmt vendor/mero stack $STACK_FLAGS exec -- ./configure '--with-linux=/usr/src/kernels/*/'
+    - rmt vendor/mero stack $STACK_FLAGS exec -- make -j4
     # Build stack-managed halon dependencies.
-    - stack $STACK_FLAGS build --only-snapshot --prefetch --test --bench
+    - rmt . stack $STACK_FLAGS build --only-snapshot --prefetch --test --bench
+  post:
+    # Save cache.
+    - rsync -az --delete -e "ssh -F ssh.config" aws:.stack/ ~/.stack/ || true
 
   cache_directories:
     - ~/.stack/
 
 test:
   override:
+    # Keep going on failure to emulate default CircleCI.
+
     # Build with USE_MERO and then without.
-    - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero
-    - stack $STACK_FLAGS build --test --no-run-tests
+    - rmt -k . stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero
+    - rmt -k . stack $STACK_FLAGS build --test --no-run-tests
     # Only test mero-halon and deps, without USE_MERO.
-    - stack $STACK_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer RS' build --test:
+    - rmt -k . stack $STACK_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer RS' build --test:
         timeout: 3600
     - scripts/circleci_copy_artifacts.sh
+  post:
+    - vagrant destroy -f
