@@ -46,6 +46,7 @@ docker:
   env:
   - LD_LIBRARY_PATH=/mero/mero/.libs
   - MERO_ROOT=/mero
+  - USER=stack # for m0 script
 
 extra-include-dirs:
 - /mero
