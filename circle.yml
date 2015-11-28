@@ -7,12 +7,13 @@ machine:
 checkout:
   post:
     - git submodule sync
-    - git submodule update --depth 1 --init
+    # No need to prune git history using --depth, because circleci caches git.
+    - git submodule update --init
     - cd vendor/mero; git submodule init
     - cd vendor/mero; git config submodule.extra-libs/galois.url git@github.com:tweag/mero-galois
     - cd vendor/mero; git config submodule.extra-libs/gf-complete.url git@github.com:tweag/mero-gf-complete
     - cd vendor/mero; git config submodule.extra-libs/yaml.url git@github.com:tweag/mero-yaml
-    - cd vendor/mero; git submodule update --depth 1
+    - cd vendor/mero; git submodule update
 
 dependencies:
   pre:
