@@ -1,5 +1,5 @@
-High-level design: Replication subsystem
-========================================
+High-level design: Replication
+==============================
 
 Introduction
 ------------
@@ -25,7 +25,8 @@ event is deemed complete, the RC checkpoints its state and repeats the
 cycle with the next failure event.
 
 .. figure:: fig1.png
-   :alt:
+   :width: 50 %
+   :align: center
 
 State checkpointing involves broadcasting all changes compared to the
 previous checkpoint to all replicas. However, one particular difficulty
@@ -227,11 +228,10 @@ including but not limited to state transitions and sending messages to
 arbitrary recipients on the network.
 
 .. figure:: fig2.png
-   :alt: Sequence diagram of the interaction between a client and a set
-   of replicas
-
-   Sequence diagram of the interaction between a client and a set of
-   replicas
+   :width: 75 %
+   :align: center
+   :alt: Sequence diagram of the interaction between a client and
+	 a set of replicas
 
 A client is normally aware of several of the replicas. In this way, if
 sending a request to one replica is deemed by the client to have failed
@@ -312,14 +312,14 @@ agreed upon without its assent [1]_. A log is defined as follows:
 
 (Replicated) Request log
     abstractly speaking, a request log is a partial function
-    :math:`\mathds{N} \to \mathit{Req}` where :math:`\mathds{N}` is the
+    :math:`\mathbb{N} \to \mathit{Req}` where :math:`\mathbb{N}` is the
     set of natural numbers and :math:`\mathit{Req}` is the set of all
     possible requests. We define the following operations on the graph
     of a log:
 
     -  :math:`\mathrm{append}(L,i,\mathit{req}) = L \cup \{(i, \mathit{req})\} \text{ if } i\not\in \mathrm{dom}(L)`.
 
-    The set :math:`\mathds{N}` is also called the set of *slots* of the
+    The set :math:`\mathbb{N}` is also called the set of *slots* of the
     log.
 
 Request stream
@@ -344,7 +344,8 @@ Layered subsystem view
 The Replication Subsystem is subdivided into three layers:
 
 .. figure:: fig3.png
-   :alt:
+   :width: 33 %
+   :align: center
 
 1. **consensus**: the lowest layer provides mechanisms for replicas to
    propose a given request for a given slot in the log, and ensure that
@@ -546,7 +547,8 @@ Write requests
 ~~~~~~~~~~~~~~
 
 .. figure:: fig4.png
-   :alt:
+   :width: 75 %
+   :align: center
 
 A request identified as ``i`` sent to a replica using the ``update``
 action is considered a write request and can modify the replicated state
@@ -569,7 +571,8 @@ Read requests
 ~~~~~~~~~~~~~
 
 .. figure:: fig5.png
-   :alt:
+   :width: 75 %
+   :align: center
 
 A request sent to a replica using ``select`` is a special case. Because
 such a request is known to have no effect on the state, the replicated
@@ -607,23 +610,29 @@ The Paxos algorithm segregates processes into a number of roles. Since
 the names of each of these roles differ in the literature, we review
 them here:
 
--  **clients**: these are the processes that are asking for state
-   changes to be made.
--  **proposers**: the processes that propose state changes on behalf of
-   clients. Clients do not propose changes directly because clients do
-   not participate in the distributed consensus algorithm. In fact they
-   should be oblivious to its very existence.
--  **acceptors**: these are the passive agents, which never make any
-   proposals of their own but remember proposals of concurrent
-   proposers.
--  **ambassador**: an ambassador is a process on a client node that
-   abstracts away the fact that there are many replicas each running one
-   or more acceptors and/or proposers. Any message sent to an ambassador
-   is non-deterministically forwarded to one or more proposers. In this
-   manner, to the client, the group of replicas looks like it *is* one
-   single process, to which one can *send* messages. An ambassador is
-   local to a client node. Each node has its own ambassador that it does
-   not share with other nodes.
+**clients:**
+    these are the processes that are asking for state
+    changes to be made.
+
+**proposers:**
+    the processes that propose state changes on behalf of clients.
+    Clients do not propose changes directly because clients do not
+    participate in the distributed consensus algorithm. In fact they
+    should be oblivious to its very existence.
+
+**acceptors:**
+    these are the passive agents, which never make any proposals of
+    their own but remember proposals of concurrent proposers.
+
+**ambassador:**
+    an ambassador is a process on a client node that abstracts away
+    the fact that there are many replicas each running one or more
+    acceptors and/or proposers. Any message sent to an ambassador is
+    non-deterministically forwarded to one or more proposers. In this
+    manner, to the client, the group of replicas looks like it *is*
+    one single process, to which one can *send* messages. An
+    ambassador is local to a client node. Each node has its own
+    ambassador that it does not share with other nodes.
 
 This design maps acceptors to separate processes and proposers to
 replica processes.
@@ -679,10 +688,8 @@ destination.
 
 Default Paxos can get stuck forever in a chain of competing proposers
 vying for their proposal to get accepted by a majority. But this problem
-can be solved in practice by using adaptive timeouts[^4], by further
+can be solved in practice by using adaptive timeouts [4]_, by further
 assuming that clock drift on nodes is also bounded.
-
-[^4:] See Section 3 of “Paxos made moderately complex”.
 
 Replicated log
 --------------
@@ -730,7 +737,10 @@ A replica that successfully passes a decree sends the decree to itself,
 for committing, as well as to other replicas. Any new decree normally
 goes through the following states before finally being committed:
 
-                                |image0|
+
+.. figure:: fig6.png
+   :width: 50 %
+   :align: center
 
 Upon receiving decree, a replica determines whether it is local (a
 decree originating from the replica itself) or remote. If the decree is
@@ -823,7 +833,8 @@ all its ability to pass them.
 replica on each:
 
 .. figure:: fig7.png
-   :alt:
+   :width: 33 %
+   :align: center
 
 Say A passes :math:`a` decree d reconfiguring the group to contain just
 A and B, using {A, B, C} as quorum. Say D didn't learn about the
@@ -966,135 +977,74 @@ Use cases
 
 **[UC.RL.CREATE]**:
 
-.. raw:: latex
-
-   \begin{tabular}{|>{\bfseries}p{3.2cm}|p{12cm}|}
-   % <pre>
-   \hline %----------------------------------------------------------------------
-   Description           & Operator creates a new replicated group.             \\
-   \hline %----------------------------------------------------------------------
-   References            &                                                      \\
-   \hline %----------------------------------------------------------------------
-   Actors                & Operator                                             \\
-   \hline %----------------------------------------------------------------------
-   Prerequisites \&\newline
-   Assumptions           & \begin{enumerate}[noitemsep,nolistsep]
-                             \item Target nodes are not in a crashed state.
-                             \item Operator's node can connect to all target nodes.
-                           \end{enumerate}                                      \\
-   \hline %----------------------------------------------------------------------
-   Steps                 & \begin{enumerate}[noitemsep,nolistsep]
-                             \item Operator calls \texttt{new}.
-                             \item Replicas and associated acceptors spawned on each node.
-                             \item Call to \texttt{new} returns.
-                           \end{enumerate}                                      \\
-   \hline %----------------------------------------------------------------------
-   Variations \newline
-   (optional)            & Ignore failing to spawn a replica on any given node. \\
-   \hline %----------------------------------------------------------------------
-   Quality \newline
-   Attributes            & performance, reliability                             \\
-   \hline %----------------------------------------------------------------------
-   Issues                & N/A                                                  \\
-   \hline %----------------------------------------------------------------------
-   % </pre>
-   \end{tabular}
+=====================  ==========
+Description            Operator creates a new replicated group.
+References
+Actors                 Operator
+Prerequisites
+Assumptions            - Target nodes are not in a crashed state.
+                       - Operator's node can connect to all target nodes.
+Steps                  #. Operator calls ``new``.
+                       #. Replicas and associated acceptors spawned on each node.
+                       #. Call to ``new`` returns.
+Variations (optional)  Ignore failing to spawn a replica on any given node.
+Quality Attributes     performance, reliability
+Issues                 N/A
+=====================  ==========
 
 **[UC.RL.REQUEST]**:
 
-.. raw:: latex
-
-   \begin{tabular}{|>{\bfseries}p{3.2cm}|p{12cm}|}
-   % <pre>
-   \hline %----------------------------------------------------------------------
-   Description           & Client sends a request to the replicated state.      \\
-   \hline %----------------------------------------------------------------------
-   References            &                                                      \\
-   \hline %----------------------------------------------------------------------
-   Actors                & Client                                               \\
-   \hline %----------------------------------------------------------------------
-   Prerequisites \&\newline
-   Assumptions           & \begin{enumerate}[noitemsep,nolistsep]
-                             \item Replicated group has been created.
-                             \item Client has a handle to the replicated group.
-                           \end{enumerate}                                      \\
-   \hline %----------------------------------------------------------------------
-   Steps                 & \begin{enumerate}[noitemsep,nolistsep]
-                             \item Client calls \texttt{append} providing no hint.
-                             \item Ambassador submits request to one or more
-                                   replicas, according to some configurable policy.
-                             \item If acknowledgement not received within set
-                                   timeout by ambassador, then go to 2. using
-                                   different replicas.
-                             \item Request is passed as a decree through consensus.
-                             \item Decree is broadcast to all replicas.
-                             \item Decree is stored to disk on all replicas.
-                             \item Request is acknowledged to the ambassador.
-                             \item Request is executed on all replicas.
-                             \item Call to \texttt{append} returns.
-                           \end{enumerate}                                      \\
-   \hline %----------------------------------------------------------------------
-   Variations \newline
-   (optional)            & If request is nullipotent, then execute only on one
-                           replica and don't store to disk.                     \\
-   \hline %----------------------------------------------------------------------
-   Quality \newline
-   Attributes            & performance, reliability                             \\
-   \hline %----------------------------------------------------------------------
-   Issues                & N/A                                                  \\
-   \hline %----------------------------------------------------------------------
-   % </pre>
-   \end{tabular}
-
-.. raw:: latex
-
-   \newpage
+=====================  ==========
+Description            Client sends a request to the replicated state.
+References
+Actors                 Client
+Prerequisites
+Assumptions            - Replicated group has been created.
+                       - Client has a handle to the replicated group.
+Steps                  #. Client calls ``append`` providing no hint.
+                       #. Ambassador submits request to one or more
+                          replicas, according to some configurable policy.
+                       #. If acknowledgement not received within set
+                          timeout by ambassador, then go to 2. using
+                          different replicas.
+                       #. Request is passed as a decree through consensus.
+                       #. Decree is broadcast to all replicas.
+                       #. Decree is stored to disk on all replicas.
+                       #. Request is acknowledged to the ambassador.
+                       #. Request is executed on all replicas.
+                       #. Call to ``append`` returns.
+Variations (optional)  If request is nullipotent, then execute only on one
+                       replica and don't store to disk.
+Quality Attributes     performance, reliability
+Issues                 N/A
+=====================  ==========
 
 **[UC.RL.RECONFIGURE]**:
 
-.. raw:: latex
-
-   \begin{tabular}{|>{\bfseries}p{3.2cm}|p{12cm}|}
-   % <pre>
-   \hline %----------------------------------------------------------------------
-   Description           & Operator adds/removes a replica from replication group. \\
-   \hline %----------------------------------------------------------------------
-   References            &                                                      \\
-   \hline %----------------------------------------------------------------------
-   Actors                & Operator                                             \\
-   \hline %----------------------------------------------------------------------
-   Prerequisites \&\newline
-   Assumptions           & \begin{enumerate}[noitemsep,nolistsep]
-                             \item Replicated group has been created.
-                             \item Operator has a handle to the replicated group.
-                           \end{enumerate}                                      \\
-   \hline %----------------------------------------------------------------------
-   Steps                 & \begin{enumerate}[noitemsep,nolistsep]
-                             \item Operator calls \texttt{reconfigure}.
-                             \item Ambassador sends a reconfiguration request to
-                                 one or more replicas, according to some configurable
-                                 policy.
-                             \item If acknowledgement not received within set
-                                   timeout by ambassador, then go to 2. using
-                                   different replicas.
-                             \item Request is passed as a decree through consensus.
-                             \item Decree is broadcast to all replicas.
-                             \item Decree is stored to disk on all replicas.
-                             \item Request is acknowledged to the ambassador.
-                             \item Request is executed on all replicas.
-                             \item Call to \texttt{append} returns.
-                           \end{enumerate}                                      \\
-   \hline %----------------------------------------------------------------------
-   Variations \newline
-   (optional)            &                                                      \\
-   \hline %----------------------------------------------------------------------
-   Quality \newline
-   Attributes            & performance, reliability                             \\
-   \hline %----------------------------------------------------------------------
-   Issues                & N/A                                                  \\
-   \hline %----------------------------------------------------------------------
-   % </pre>
-   \end{tabular}
+=====================  ==========
+Description            Operator adds/removes a replica from replication group.
+References
+Actors                 Operator
+Prerequisites
+Assumptions            - Replicated group has been created.
+                       - Operator has a handle to the replicated group.
+Steps                  #. Operator calls ``reconfigure``.
+                       #. Ambassador sends a reconfiguration request to
+                          one or more replicas, according to some configurable
+                          policy.
+                       #. If acknowledgement not received within set
+                          timeout by ambassador, then go to 2. using
+                          different replicas.
+                       #. Request is passed as a decree through consensus.
+                       #. Decree is broadcast to all replicas.
+                       #. Decree is stored to disk on all replicas.
+                       #. Request is acknowledged to the ambassador.
+                       #. Request is executed on all replicas.
+                       #. Call to ``append`` returns.
+Variations (optional)
+Quality Attributes     performance, reliability
+Issues                 N/A
+=====================  ==========
 
 References
 ==========
@@ -1121,4 +1071,5 @@ TODO: links here
    So named after the similar connect(2) system call of the BSD sockets
    API.
 
-.. |image0| image:: fig6.png
+.. [4]
+   See Section 3 of “Paxos made moderately complex”.
