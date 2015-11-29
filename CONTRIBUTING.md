@@ -2,28 +2,20 @@
 
 Contributions are most welcome.
 
-When reviewing pull requests we usually check that tests still pass
+Before submitting pull requests for review we usually check that tests
+still pass:
  
-	make clean
-	make build
+	stack test
 
-and that the code follows our [style guide]. More information on using the
-build system can be found in the [README.md](README.md) file.
+and that the code follows our [style guide]. More information on using
+the build system can be found in the [README.md](README.md) file.
 
-Halon builds against a fixed set of versions for its dependencies. This set
-is contained in `cabal.config` at the root of the repository. It can be
-updated using
+We have a [review checklist] that helps spotting issues in the code.
 
-	make freeze
-
-We have a [review guide] that also could help spotting issues in the code.
-
-When debugging halon, the [debugging facilities] of distributed-process could
-be helpful.
+When debugging halon, the [debugging facilities] of the
+`distributed-process` package can be helpful.
 
 [style guide]: https://github.com/tweag/guides/blob/master/style/Haskell.md
-
-[review guide]: https://github.com/tweag/guides/blob/master/review/Haskell.md
-
-[debugging facilities]: http://hackage.haskell.org/package/distributed-process-0.5.1/docs/Control-Distributed-Process-Debug.html
+[review checklist]: https://github.com/tweag/guides/blob/master/review/Haskell.md
+[debugging facilities]: http://hackage.haskell.org/package/distributed-process/docs/Control-Distributed-Process-Debug.html
 
