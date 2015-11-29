@@ -60,6 +60,11 @@ enableRCDebug = unsafePerformIO $ do
 rcRules :: IgnitionArguments -> [Definitions LoopState ()] -> Definitions LoopState ()
 rcRules argv additionalRules = do
 
+    -- XXX: we don't have any callback when buffer is full, so we will just
+    -- remove oldest messages out of the buffer, this may not be good, and
+    -- ideally we want something that is more clever.
+    setBuffer $ fifoBuffer (Bounded 4096)
+
     enableRCDebug
 
     -- Forward all messages that no rule is interested in back to EQ,
