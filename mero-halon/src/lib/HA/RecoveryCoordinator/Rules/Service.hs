@@ -310,7 +310,7 @@ serviceRules argv = do
                       , show nid ++ ".", "Retrying another"
                       , show (4 - count) , "times."
                       ]
-          -- | Increment the failure count
+          -- Increment the failure count
           put Local $ Just (thread, n1, s1, count+1)
           startService nid svc cfg
           switch [ph2, ph3, timeout timeup ph4]
