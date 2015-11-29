@@ -37,8 +37,8 @@ dependencies:
 test:
   override:
     # Build with USE_MERO and then without.
-    - stack $STACK_FLAGS build --haddock --no-haddock-deps --flag mero-halon:mero mero-halon
-    - stack $STACK_FLAGS build --haddock --no-haddock-deps mero-halon
+    - stack $STACK_FLAGS build --flag mero-halon:mero mero-halon
+    - stack $STACK_FLAGS build mero-halon
     # Only test mero-halon and deps, without USE_MERO.
     - stack $STACK_FLAGS build --test --bench mero-halon:
         timeout: 3600
