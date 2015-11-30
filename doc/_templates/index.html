@@ -1,0 +1,38 @@
+{% extends "defindex.html" %}
+{% block tables %}
+  <p><strong>Parts of the documentation:</strong></p>
+  <table class="contentstable" align="center"><tr>
+    <td width="50%">
+      <p class="biglink"><a class="biglink" href="{{ pathto("tutorial") }}">Tutorial</a><br/>
+         <span class="linkdescr">start here</span></p>
+      <p class="biglink"><a class="biglink" href="{{ pathto("user/index") }}">User Guide</a><br/>
+         <span class="linkdescr">for system administrators</span></p>
+      <p class="biglink"><a class="biglink" href="{{ pathto("man/index") }}">Command Reference</a><br/>
+         <span class="linkdescr">Command-line usage (man pages)</span></p>
+      <p class="biglink"><a class="biglink" href="{{ pathto("faq") }}">FAQs</a><br/>
+         <span class="linkdescr">frequently asked questions</span></p>
+    </td><td width="50%">
+      <p class="biglink"><a class="biglink" href="{{ pathto("architecture/index") }}">Architecture overview</a><br/>
+         <span class="linkdescr">a description of the overall architecture</span></p>
+      <p class="biglink"><a class="biglink" href="{{ pathto("design/index") }}">Design</a><br/>
+         <span class="linkdescr">in-depth design documents for specific subsystems</span></p>
+      <p class="biglink"><a class="biglink" href="{{ pathto("library") }}">Library Reference</a><br/>
+         <span class="linkdescr">API reference for Halon developers and plugin authors</span></p>
+    </td></tr>
+  </table>
+
+  <p><strong>Indices and tables:</strong></p>
+  <table class="contentstable" align="center"><tr>
+    <td width="50%">
+      <p class="biglink"><a class="biglink" href="{{ pathto("genindex") }}">General Index</a><br/>
+	<span class="linkdescr">concepts, components, terms, ...</span></p>
+      <p class="biglink"><a class="biglink" href="{{ pathto("glossary") }}">Glossary</a><br/>
+         <span class="linkdescr">the most important terms explained</span></p>
+    </td><td width="50%">
+      <p class="biglink"><a class="biglink" href="{{ pathto("search") }}">Search page</a><br/>
+         <span class="linkdescr">search this documentation</span></p>
+      <p class="biglink"><a class="biglink" href="{{ pathto("contents") }}">Complete Table of Contents</a><br/>
+         <span class="linkdescr">lists all sections and subsections</span></p>
+    </td></tr>
+  </table>
+{% endblock %}
