@@ -16,11 +16,13 @@ module HA.RecoveryCoordinator.CEP where
 
 import Prelude hiding ((.), id)
 import Control.Category
+import Data.Binary (encode)
 import Data.Foldable (for_)
 import Data.Maybe (listToMaybe)
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
+import           Control.Distributed.Process.Internal.Types (Message(..))
 import           Control.Monad (void)
 import           Data.UUID (nil, null)
 import           Network.CEP
@@ -69,7 +71,13 @@ rcRules argv additionalRules = do
 
     -- Forward all messages that no rule is interested in back to EQ,
     -- so EQ could delete them.
-    setDefaultHandler $ \msg s ->
+    setDefaultHandler $ \msg s -> do
+      let smsg = case msg of
+            EncodedMessage f e -> "{ fingerprint = " ++ show f 
+              ++ ", encoding " ++ show e ++ " }"
+            UnencodedMessage f b -> "{ fingerprint = " ++ show f
+              ++ ", encoding " ++ show (encode b) ++ " }"
+      liftProcess $ sayRC $ "unhandled message " ++ smsg
       liftProcess $ usend (lsEQPid s) (DoTrimUnknown msg)
 
     initRule $ rcInitRule argv
