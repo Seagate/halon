@@ -2,7 +2,7 @@ machine:
   services:
     - docker
   environment:
-    STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero --docker-env TEST_LISTEN=127.0.0.1:8090
+    STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero
 
 checkout:
   post:

@@ -47,6 +47,7 @@ docker:
   - LD_LIBRARY_PATH=/mero/mero/.libs
   - MERO_ROOT=/mero
   - USER=stack # for m0 script
+  - TEST_LISTEN=127.0.0.1:8090
 
 extra-include-dirs:
 - /mero
