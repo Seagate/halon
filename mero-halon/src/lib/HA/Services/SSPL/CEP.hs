@@ -156,17 +156,14 @@ ssplRulesF sspl = do
           messageProcessed uuid
 
   -- SSPL Monitor drivemanager
-  defineSimpleIf "monitor-drivemanager" (\(HAEvent uuid (nid, mrm) _) _ ->
-    forM (sensorResponseMessageSensor_response_typeDisk_status_drivemanager mrm) $ \m ->
-      pure ( uuid
-           , nid
-           , sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus m
-           , Enclosure . T.unpack
-               $ sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN m
-           , floor . (toRealFloat :: Scientific -> Double) $
-               sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum m
-           )
-    ) $ \(uuid, nid, disk_status, enc, diskNum) -> do
+  defineSimple "monitor-drivemanager" $ \(HAEvent uuid (nid, srdm) _) -> do
+      let enc = Enclosure . T.unpack
+                          . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
+                          $ srdm
+          diskNum = floor . (toRealFloat :: Scientific -> Double) 
+                          . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum
+                          $ srdm
+          disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus srdm
       phaseLog "sspl-service" "monitor-drivemanager request received"
       mdisk <- lookupStorageDeviceInEnclosure enc $ DIIndexInEnclosure diskNum
       disk <- case mdisk of
@@ -205,21 +202,23 @@ ssplRulesF sspl = do
                 messageProcessed uuid
 
   -- Handle information messages about drive changes from HPI system.
-  defineSimpleIf "monitor-status-hpi" (\(HAEvent uuid (nid, spt) _) _ ->
-    forM (sensorResponseMessageSensor_response_typeDisk_status_hpi spt) $ \status ->
-      pure ( uuid
-           , Node nid
-           , DIOther . T.unpack
-               $ sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber status
-           , DIWWN . T.unpack
-               $ sensorResponseMessageSensor_response_typeDisk_status_hpiWwn status
-           , DIUUID . T.unpack
-               $ sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId status
-           , DIIndexInEnclosure . fromInteger
-               $ sensorResponseMessageSensor_response_typeDisk_status_hpiLocation status
-           , Host . T.unpack
-               $ sensorResponseMessageSensor_response_typeDisk_status_hpiHostId status)
-    ) $ \(uuid, nid, sn, wwn, ident, loc, host) -> do
+  defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeId, srphi) _) -> do
+      let nid = Node nodeId
+          sn  = DIOther . T.unpack 
+                        . sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber
+                        $ srphi
+          wwn = DIWWN   . T.unpack
+                        . sensorResponseMessageSensor_response_typeDisk_status_hpiWwn
+                        $ srphi
+          ident = DIUUID . T.unpack
+                         . sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId
+                         $ srphi
+          loc   = DIIndexInEnclosure . fromInteger
+                         . sensorResponseMessageSensor_response_typeDisk_status_hpiLocation
+                         $ srphi
+          host  = Host . T.unpack 
+                       . sensorResponseMessageSensor_response_typeDisk_status_hpiHostId
+                       $ srphi
       menc <- findHostEnclosure host
       case menc of
         Nothing -> do
@@ -259,17 +258,15 @@ ssplRulesF sspl = do
             Nothing -> messageProcessed uuid
 
   -- SSPL Monitor host_update
-  defineSimpleIf "monitor-host-update" (\(HAEvent _ (nid, hum) _) _ ->
-      return $ sensorResponseMessageSensor_response_typeHost_update hum
-           >>= return . (nid,)
-                . sensorResponseMessageSensor_response_typeHost_updateHostId
-    ) $ \(nid, a) -> do
-      let host = Host $ T.unpack a
+  defineSimple "monitor-host-update" $ \(HAEvent uuid (nid, srhu) _) -> do
+      let host = Host . T.unpack
+                     $ sensorResponseMessageSensor_response_typeHost_updateHostId srhu
           node = Node nid
       registerHost host
       locateNodeOnHost node host
       promptRGSync
       phaseLog "rg" $ "Registered host: " ++ show host
+      messageProcessed uuid
 
   -- SSPL Monitor interface data
   -- defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum) _) _ ->
@@ -285,17 +282,17 @@ ssplRulesF sspl = do
   --       forM_ ifs addIf
 
   -- Dummy rule for handling SSPL HL commands
-  defineSimpleIf "systemd-cmd" (\(HAEvent _ cr _ ) _ ->
-    return $ commandRequestMessageServiceRequest
+  defineSimpleIf "systemd-cmd" (\(HAEvent uuid cr _ ) _ ->
+    return . fmap (uuid,) . commandRequestMessageServiceRequest
               . commandRequestMessage
               $ cr
-    ) $ \sr ->
+    ) $ \(uuid,sr) -> do
       let
         serviceName = commandRequestMessageServiceRequestServiceName sr
         command = commandRequestMessageServiceRequestCommand sr
         nodeFilter = case commandRequestMessageServiceRequestNodes sr of
           Just foo -> T.unpack foo
-          Nothing -> "." in
+          Nothing -> "."
       case command of
         Aeson.String "start" -> do
           nodes <- findHosts nodeFilter
@@ -334,12 +331,13 @@ ssplRulesF sspl = do
         -- Aeson.String "disable" -> liftProcess $ say "Unsupported."
         -- Aeson.String "status" -> liftProcess $ say "Unsupported."
         x -> liftProcess . say $ "Unsupported service command: " ++ show x
+      messageProcessed uuid
 
-  defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent _ cr _ ) _ ->
-    return $ commandRequestMessageNodeStatusChangeRequest
+  defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr _ ) _ ->
+    return . fmap (uuid,) .  commandRequestMessageNodeStatusChangeRequest
               . commandRequestMessage
               $ cr
-    ) $ \sr ->
+    ) $ \(uuid,sr) ->
       let
         command = commandRequestMessageNodeStatusChangeRequestCommand sr
         nodeFilter = case commandRequestMessageNodeStatusChangeRequestNodes sr of
@@ -360,3 +358,4 @@ ssplRulesF sspl = do
             forM_ hosts $ \(nodeIp) -> do
               sendNodeCmd actuationNode Nothing $ IPMICmd IPMI_ON (T.pack nodeIp)
           x -> liftProcess . say $ "Unsupported node command: " ++ show x
+        messageProcessed uuid

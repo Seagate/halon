@@ -68,7 +68,7 @@ data RChan = RChan String deriving (Generic, Typeable)
 
 instance Binary RChan
 
-data SChan = SChan SensorResponseMessageSensor_response_type deriving (Generic, Typeable)
+data SChan = SChan SensorResponseMessageSensor_response_typeHost_update deriving (Generic, Typeable)
 
 instance Binary SChan
 
@@ -220,7 +220,8 @@ testSensor transport = runSSPLTest transport interseptor test
             , ", \"time\": \"2015-10-19 11:49:34.706694\""
             , ", \"message\": {\"sspl_ll_msg_header\": {\"msg_version\": \"1.0.0\", \"schema_version\": \"1.0.0\", \"sspl_version\": \"1.0.0\"}, \"sensor_response_type\": {\"host_update\": {\"loggedInUsers\": [\"vagrant\"], \"runningProcessCount\": 2, \"hostId\": \"devvm.seagate.com\", \"totalMem\": {\"units\": \"MB\", \"value\": 1930}, \"upTime\": 1445251379, \"uname\": \"Linux devvm.seagate.com 3.10.0-229.7.2.el7.x86_64 #1 SMP Tue Jun 23 22:06:11 UTC 2015 x86_64\", \"bootTime\": \"2015-10-19 10:42:59 \", \"processCount\": 126, \"freeMem\": {\"units\": \"MB\", \"value\": 142}, \"localtime\": \"2015-10-19 11:49:34 \"}}}}"
             ] :: ByteString
-          Just msg = sensorResponseMessageSensor_response_type
+          Just (Just msg) = sensorResponseMessageSensor_response_typeHost_update
+            . sensorResponseMessageSensor_response_type
             . sensorResponseMessage <$> decodeStrict rawmsg
       say "sending command"
       usend pid $ MQPublish "sspl_halon" "sspl_ll" rawmsg

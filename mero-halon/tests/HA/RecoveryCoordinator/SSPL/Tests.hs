@@ -98,7 +98,7 @@ utTests transport = testGroup "Service-SSPL"
    $ testDMRequest transport 
    ]
 
-dmRequest :: Text -> Int -> SensorResponseMessageSensor_response_type
+dmRequest :: Text -> Int -> SensorResponseMessageSensor_response_typeDisk_status_drivemanager
 dmRequest status num = mkResponseDriveManager "enclosure1" (fromIntegral num) status
 
 mkHpiTest :: (ProcessId -> Definitions LoopState b)

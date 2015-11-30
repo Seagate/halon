@@ -5,7 +5,7 @@
 -- Service responsible for communication with a local SSPL instance on a node.
 -- This service is used to collect low-level sensor data and to carry out
 -- SSPL-mediated actions.
-
+--
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -103,12 +103,18 @@ msgHandler msg = do
   nid <- getSelfNode
   case decode (msgBody msg) :: Maybe SensorResponse of
     Just mr -> do
-      say $ show mr
-      void $ promulgate
-        ( nid
-        , sensorResponseMessageSensor_response_type
-            . sensorResponseMessage $ mr
-        )
+      -- XXX: check that message was sent by sspl service
+      -- XXX: check that message was not expired yet
+      let srms = sensorResponseMessageSensor_response_type . sensorResponseMessage $ mr
+          sendMessage f = forM_ (f srms) $ \x -> promulgate (nid, x)
+      sendMessage sensorResponseMessageSensor_response_typeDisk_status_hpi
+      sendMessage sensorResponseMessageSensor_response_typeIf_data
+      sendMessage sensorResponseMessageSensor_response_typeHost_update 
+      sendMessage sensorResponseMessageSensor_response_typeDisk_status_drivemanager
+      sendMessage sensorResponseMessageSensor_response_typeService_watchdog
+      sendMessage sensorResponseMessageSensor_response_typeLocal_mount_data
+      sendMessage sensorResponseMessageSensor_response_typeCpu_data
+      sendMessage sensorResponseMessageSensor_response_typeRaid_data 
     Nothing ->
       say $ "Unable to decode JSON message: " ++ (BL.unpack $ msgBody msg)
 
