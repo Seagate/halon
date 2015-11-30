@@ -5,6 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE LambdaCase            #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
@@ -15,8 +16,8 @@
 module HA.RecoveryCoordinator.Rules.Castor where
 
 import Control.Distributed.Process
-
 import HA.EventQueue.Types
+
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Events.Drive
@@ -26,30 +27,50 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.ResourceGraph as G
 import HA.Services.SSPL
-#ifdef USE_MERO
 import HA.EventQueue.Producer
+#ifdef USE_MERO
+import Control.Category (id, (>>>))
+import HA.Service
+import HA.Services.Mero
+import Mero.ConfC (ServiceType(..), ServiceParams(..), bitmapFromArray)
 import qualified Mero.Spiel as Spiel
-import HA.Resources.Mero hiding (Process, Enclosure, Rack)
+import HA.RecoveryCoordinator.Rules.Mero
+import HA.Resources.Mero hiding (Node, Process, Enclosure, Rack)
+import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Actions.Mero
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState
 import Control.Exception (SomeException)
-import Data.Foldable
 import Data.List (unfoldr)
 import Data.UUID.V4 (nextRandom)
+import Data.Proxy (Proxy(..))
 #endif
+import Data.Foldable
 
+import Control.Distributed.Process.Closure (mkClosure)
+
+import Control.Applicative (liftA2)
 import Control.Monad
-import Data.Maybe (mapMaybe)
+import Data.Maybe (mapMaybe, listToMaybe)
 import Data.Binary (Binary)
 import Data.Monoid ((<>))
 import Data.Text (Text, pack)
 import Data.Typeable (Typeable)
+import System.Posix.SysInfo
 
 import GHC.Generics (Generic)
 
 import Network.CEP
+import Prelude hiding (id)
+
+-- | RMS service address.
+rmsAddress :: String
+rmsAddress = "@tcp:12345:41:301"
+
+-- | Halon service addres.
+haAddress :: String
+haAddress = "@tcp:12345:35:101"
 
 -- | Event sent when to many failures has been sent for a 'Disk'.
 data ResetAttempt = ResetAttempt StorageDevice
@@ -155,6 +176,15 @@ castorRules = do
         syncGraph
 #endif
       liftProcess $ say "Loaded initial data"
+      rg <- getLocalGraph
+      let hosts = [ host | host <- G.getResourcesOfType rg    :: [Host] -- all hosts
+                         , not  $ G.isConnected host Has HA_M0CLIENT rg -- and not already a client
+                         , not  $ G.isConnected host Has HA_M0SERVER rg -- and not already a server
+                         ]
+          nodes = mapMaybe (\host -> case G.connectedTo host Runs rg of
+                               (n:_) -> Just n
+                               _     -> Nothing) hosts
+      forM_ nodes $ liftProcess . promulgateWait . NewMeroClient
       messageProcessed eid
 
 #ifdef USE_MERO
@@ -414,6 +444,156 @@ castorRules = do
                <> pack (show disk)
       sendInterestingEvent nid msg
       messageProcessed uuid
+
+    -- Handle new mero node connection and try to start mero service on that node.
+    -- Once mero service is started we add relevant information to RG and sync confd.
+    -- If there is not enough information in place to proceed (for example there is
+    -- no confd host information, or there is no Halon node running on that code),
+    -- then message got discarded. Each entity that could add that information should
+    -- emit 'NewMeroClient' event.
+    define "new-mero-client" $ do
+      new_client  <- phaseHandle "initial"
+      client_info <- phaseHandle "update-client-info"
+      sync_client <- phaseHandle "sync-client"
+
+      -- Check if host is already provisioned and just ack message in that case.
+      let provisionMeroClient eid host f =
+           liftA2 (||) (hasHostAttr HA_M0CLIENT host)
+                       (hasHostAttr HA_M0SERVER host) >>= \case
+              True -> do phaseLog "info" $ show host ++ " is already processed."
+                         messageProcessed eid
+              False -> f
+
+      -- Receive event about new client that have connected to cluster.
+      -- Check if we need to continue provision process.
+      setPhase new_client $ \(HAEvent eid (NewMeroClient node) _) -> do
+         host <- do 
+           mhost <- findNodeHost node
+           case mhost of
+             Just host -> return host
+             Nothing -> do
+               -- impossible path, as RC setup host in
+               -- prior to sending NewMeroClient, we can't do
+               -- much about it - just send log and process message.
+               phaseLog "error" $ "Can't find host for node " ++ show node
+               messageProcessed eid
+               continue new_client
+         provisionMeroClient eid host $ do
+           rg <- getLocalGraph
+           let attrs = G.connectedTo host Has rg
+               memsize = listToMaybe 
+                 $ mapMaybe (\x -> case x of HA_MEMSIZE_MB m -> Just m ; _ -> Nothing)
+                 $ attrs
+               cpucount = listToMaybe
+                 $ mapMaybe (\x -> case x of HA_CPU_COUNT m -> Just m ; _ -> Nothing)
+                 $ attrs
+           put Local $ Just (eid, host, node, liftA2 (,) memsize cpucount)
+           continue sync_client
+
+      setPhase client_info $ \(HAEvent uuid (ClientInfo nid memsize cpucnt) _) -> do
+        Just (eid, host, node, _) <- get Local
+        messageProcessed uuid
+        provisionMeroClient eid host $ do
+          setHostAttr host $ HA_MEMSIZE_MB memsize
+          setHostAttr host $ HA_CPU_COUNT cpucnt
+          put Local $ Just (eid, host, node, Just (memsize, cpucnt))
+          if nid == node
+             then continue sync_client
+             else continue client_info
+      
+      directly sync_client $ do
+        Just (eid, host, node@(Node nid), minfo) <- get Local
+        -- Check that we have loaded all required node information.
+        _meminfo <- case minfo of
+           Nothing -> do
+             liftProcess $ void $ spawnLocal $ do
+               _ <- spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
+               return ()
+             continue client_info
+           Just mc -> return mc
+        -- Check that we have loaded initial configuration.
+#ifdef USE_MERO
+        let (Host ip) = host
+        fs <- getFilesystem >>= \case
+                Nothing -> do
+                  phaseLog "warning" "Configuration data was not loaded yet, skipping"
+                  messageProcessed eid
+                  continue new_client
+                Just fs -> return fs
+        -- Start mero service
+        liftProcess $
+          promulgateWait $ encodeP $ ServiceStartRequest Start (Node nid) m0d
+            (MeroConf (ip ++ haAddress) (ip ++ rmsAddress)) []
+#endif
+        -- Update RG
+        modifyLocalGraph $ \rg -> do
+#ifdef USE_MERO
+          let (memsize, cpucnt) = _meminfo
+              memsize' = fromIntegral memsize
+          -- Check if node is already defined in RG
+          m0node <- case listToMaybe [ n | (c :: M0.Controller) <- G.connectedFrom M0.At host rg
+                                         , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
+                                         ] of
+            Just nd -> return nd
+            Nothing -> M0.Node <$> newFid (Proxy :: Proxy M0.Node)
+          -- Check if process is already defined in RG
+          let mprocess = listToMaybe
+                $ filter (\(M0.Process _ _ _ _ _ _ a) -> a == ip ++ rmsAddress)
+                $ G.connectedTo m0node M0.IsParentOf rg
+          process <- case mprocess of
+            Just process -> return process
+            Nothing -> M0.Process <$> newFid (Proxy :: Proxy M0.Process)
+                                  <*> pure memsize'
+                                  <*> pure memsize'
+                                  <*> pure memsize'
+                                  <*> pure memsize'
+                                  <*> pure (bitmapFromArray (replicate cpucnt True))
+                                  <*> pure (ip ++ rmsAddress)
+          -- Check if RMS service is already defined in RG
+          let mrmsService = listToMaybe
+                $ filter (\(M0.Service _ x _ _) -> x == CST_RMS)
+                $ G.connectedTo process M0.IsParentOf rg
+          rmsService <- case mrmsService of
+            Just service -> return service
+            Nothing -> M0.Service <$> newFid (Proxy :: Proxy M0.Service)
+                                  <*> pure CST_RMS
+                                  <*> pure [ip ++ rmsAddress]
+                                  <*> pure SPUnused
+          -- Check if HA service is already defined in RG
+          let mhaService = listToMaybe
+                $ filter (\(M0.Service _ x _ _) -> x == CST_HA)
+                $ G.connectedTo process M0.IsParentOf rg
+          haService <- case mhaService of
+            Just service -> return service
+            Nothing -> M0.Service <$> newFid (Proxy :: Proxy M0.Service)
+                                  <*> pure CST_HA
+                                  <*> pure [ip ++ haAddress]
+                                  <*> pure SPUnused
+          -- Create graph
+          let rg' = G.newResource m0node
+                >>> G.newResource process
+                >>> G.newResource rmsService
+                >>> G.newResource haService
+                >>> G.connect m0node M0.IsParentOf process
+                >>> G.connect process M0.IsParentOf rmsService
+                >>> G.connect process M0.IsParentOf haService
+                >>> G.connect fs M0.IsParentOf m0node
+                >>> G.connect host Has HA_M0CLIENT 
+                  $ rg
+#else
+          let rg' = G.connect host Has HA_M0CLIENT rg
+#endif
+          return rg'
+        syncGraph
+        -- It's on if we will never receive reply, we already know that
+        -- graph was synchronized and we will eventually sync to confd
+#ifdef USE_MERO
+        liftProcess $ promulgateWait SyncToConfdServersInRG
+#endif
+        messageProcessed eid
+        publish $ NewMeroClientProcessed host
+
+      start new_client Nothing
 
   where
     goRack (CI.Rack{..}) = let rack = Rack rack_idx in do

@@ -8,6 +8,9 @@ module Main where
 
 import qualified HA.RecoveryCoordinator.Mero.Tests
 import qualified HA.Autoboot.Tests
+#ifdef USE_MOCK_REPLICATOR
+import qualified HA.Castor.Story.NonMero
+#endif
 #ifdef USE_MERO
 #ifdef USE_MOCK_REPLICATOR
 import qualified HA.RecoveryCoordinator.SSPL.Tests
@@ -99,6 +102,9 @@ ut _host transport breakConnection = do
       , testGroup "Autoboot" $
         HA.Autoboot.Tests.tests transport
       , HA.Test.Cluster.tests transport
+#ifdef USE_MOCK_REPLICATOR
+      , HA.Castor.Story.NonMero.tests transport
+#endif
 #ifdef USE_MERO
       , testGroup "Castor" $
         HA.Castor.Tests.tests _host transport

@@ -32,6 +32,7 @@ import           HA.EventQueue.Types
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Status
+import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Castor
 import           HA.RecoveryCoordinator.Rules.Service
 import           HA.RecoveryCoordinator.Actions.Monitor
@@ -40,6 +41,7 @@ import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Service
 import           HA.Services.DecisionLog (decisionLog, printLogs)
+import           HA.EventQueue.Producer (promulgateWait)
 import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
 import qualified HA.Resources.Castor as M0
@@ -166,11 +168,12 @@ rcRules argv additionalRules = do
         continue nm_reply -- XXX: retry on timeout from nm start
 
       setPhase nm_reply $ \StartMonitoringReply -> do
-        Starting uuid _ _ _ npid <- get Local
+        Starting uuid nid _ _ npid <- get Local
         liftProcess $ sayRC $ "Sending ack to " ++ show npid
         ack npid
         liftProcess $ sayRC $ "Ack sent to " ++ show npid
         messageProcessed uuid
+        liftProcess $ promulgateWait $ NewMeroClient (Node nid)
         finishProcessingMsg uuid
         continue end
 
