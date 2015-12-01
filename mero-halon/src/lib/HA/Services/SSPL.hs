@@ -106,17 +106,29 @@ msgHandler msg = do
       -- XXX: check that message was sent by sspl service
       -- XXX: check that message was not expired yet
       let srms = sensorResponseMessageSensor_response_type . sensorResponseMessage $ mr
-          sendMessage f = forM_ (f srms) $ \x -> promulgate (nid, x)
-      sendMessage sensorResponseMessageSensor_response_typeDisk_status_hpi
-      sendMessage sensorResponseMessageSensor_response_typeIf_data
-      sendMessage sensorResponseMessageSensor_response_typeHost_update 
-      sendMessage sensorResponseMessageSensor_response_typeDisk_status_drivemanager
-      sendMessage sensorResponseMessageSensor_response_typeService_watchdog
-      sendMessage sensorResponseMessageSensor_response_typeLocal_mount_data
-      sendMessage sensorResponseMessageSensor_response_typeCpu_data
-      sendMessage sensorResponseMessageSensor_response_typeRaid_data 
-    Nothing ->
-      say $ "Unable to decode JSON message: " ++ (BL.unpack $ msgBody msg)
+          sendMessage s f = forM_ (f srms) $ \x -> do
+            say $ "[SSPL-Service] received " ++ s
+            promulgate (nid, x)
+      sendMessage "SensorResponse.HPI"
+        sensorResponseMessageSensor_response_typeDisk_status_hpi
+      sendMessage "SensorResponse.IF"
+        sensorResponseMessageSensor_response_typeIf_data
+      sendMessage "SensorResponse.Host"
+        sensorResponseMessageSensor_response_typeHost_update 
+      sendMessage "SensorResponse.DriveManager"
+         sensorResponseMessageSensor_response_typeDisk_status_drivemanager
+      sendMessage "SensorResponse.Watchdog"
+         sensorResponseMessageSensor_response_typeService_watchdog
+      sendMessage "SensorResponse.MountData"
+         sensorResponseMessageSensor_response_typeLocal_mount_data
+      sendMessage "SensorResponse.CPU"
+         sensorResponseMessageSensor_response_typeCpu_data
+      sendMessage "SensorResponse.Raid"
+         sensorResponseMessageSensor_response_typeRaid_data 
+
+    Nothing -> case decode (msgBody msg) :: Maybe ActuatorResponse of
+      Just mr -> say $ "Ignoring acutator response: " ++ show mr
+      Nothing -> say $ "Unable to decode JSON message: " ++ (BL.unpack $ msgBody msg)
 
 startSensors :: Network.AMQP.Channel -- ^ AMQP Channel
              -> SensorConf -- ^ Sensor configuration.
