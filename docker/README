@@ -21,7 +21,7 @@
 
     [Service]
     ExecStart=
-    ExecStart=/usr/bin/docker -d -H 172.17.42.1:5555
+    ExecStart=/usr/bin/docker -d -H fd:// -H 172.17.42.1:5555
 
   * On NixOS, in your configuration.nix you'll need
 
