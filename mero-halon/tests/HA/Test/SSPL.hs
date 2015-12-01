@@ -277,3 +277,5 @@ testDelivery transport = runSSPLTest transport interseptor test
                   ++ ", commandAckType = Just (SmartTest \"foo\"), commandAck = AckReplyPassed}" :: String
       s <- expect
       liftIO $ assertEqual "Correct command received" scmd s
+      _ <- receiveTimeout 500000 []
+      return ()
