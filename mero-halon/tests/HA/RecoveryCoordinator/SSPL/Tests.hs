@@ -19,9 +19,9 @@ import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (multimap)
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Hardware
+import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Events.Drive
-import HA.RecoveryCoordinator.Rules.Mero
 import HA.Replicator (RGroup(..))
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock (MC_RG)
@@ -95,7 +95,7 @@ utTests transport = testGroup "Service-SSPL"
        $ testHpiUpdatedWWN transport
        ]
    , testSuccess "drive-manager-works"
-   $ testDMRequest transport 
+   $ testDMRequest transport
    ]
 
 dmRequest :: Text -> Text -> Int -> SensorResponseMessageSensor_response_typeDisk_status_drivemanager
@@ -136,14 +136,14 @@ testHpiExistingWWN = mkHpiTest rules test
       me <- getSelfNode
       usend rc ()  -- Prepare graph test
       let request = mkResponseHPI "primus.example.com" 1 "loop1" "wwn1"
-      uuid <- liftIO $ nextRandom 
+      uuid <- liftIO $ nextRandom
       usend rc $ HAEvent uuid (me, request) [] -- send request
       receiveWait [ matchIf (\u -> u == uuid) (\_ -> return ()) ] -- check that it was processed
       usend rc ()
       -- We may add new field (drive_status)
       False <- expect
       usend rc ()  -- Prepare graph test
-      uuid1 <- liftIO $ nextRandom 
+      uuid1 <- liftIO $ nextRandom
       usend rc $ HAEvent uuid1 (me, request) [] -- send request
       receiveWait [ matchIf (\u -> u == uuid1) (\_ -> return ()) ] -- check that it was processed
       usend rc ()
@@ -181,7 +181,7 @@ testHpiUpdatedWWN = mkHpiTest rules test
         forM_ msd $ \sd -> do
           mc <- lookupStorageDeviceReplacement sd
           forM_ mc $ \c -> do
-            is <- findStorageDeviceIdentifiers c 
+            is <- findStorageDeviceIdentifiers c
             liftProcess $ usend self is
       defineSimple "disk-failed" $ \(DriveRemoved uuid _ enc _) ->
         liftProcess $ usend self (uuid, enc)
@@ -193,7 +193,7 @@ testHpiUpdatedWWN = mkHpiTest rules test
       let request = mkResponseHPI "primus.example.com" 0 "loop1" "wwn10"
       uuid <- liftIO $ nextRandom
       usend rc $ HAEvent uuid (me, request) []
-      enc <- receiveWait [ matchIf (\(u, _) -> u == uuid) 
+      enc <- receiveWait [ matchIf (\(u, _) -> u == uuid)
                                    (\(_,enc) -> return enc) ]
       usend rc (enc :: Enclosure, 0::Int)
       is   <- expect
@@ -213,11 +213,11 @@ testDMRequest = mkHpiTest rules test
         Just sd1 <- lookupStorageDeviceInEnclosure (Enclosure "enclosure1") (DIIndexInEnclosure 1)
         markStorageDeviceRemoved sd1
         liftProcess $ usend self ()
-      defineSimple "drive-failed" $ \(DriveFailed uuid _ _ _) -> 
+      defineSimple "drive-failed" $ \(DriveFailed uuid _ _ _) ->
         liftProcess $ usend self (uuid, "drive-failed"::String)
       defineSimple "drive-inserted" $ \(DriveInserted uuid _ _) ->
         liftProcess $ usend self (uuid, "drive-inserted"::String)
-      defineSimple "drive-removed" $ \(DriveRemoved uuid _ _ _) -> 
+      defineSimple "drive-removed" $ \(DriveRemoved uuid _ _ _) ->
         liftProcess $ usend self (uuid, "drive-removed"::String)
     test rc = do
         me <- getSelfNode
@@ -342,6 +342,7 @@ initialDataAddr host ifaddr n = CI.InitialData {
   , CI.m0_lnet_nid = "auto"
   , CI.m0_be_segment_size = 536870912
   , CI.m0_md_redundancy = 2
+  , CI.m0_failure_set_gen = CI.Preloaded 0 1 0
   }
 , CI.id_m0_servers = [
     CI.M0Host {

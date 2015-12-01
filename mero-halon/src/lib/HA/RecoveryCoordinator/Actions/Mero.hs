@@ -40,6 +40,9 @@ module HA.RecoveryCoordinator.Actions.Mero
   , syncAction
   , confInitialised
   , initialiseConfInRG
+  , findCurrentPVer
+  , failureSetToPoolVersion
+  , createPVerIfNotExists
   )
 where
 
@@ -51,6 +54,7 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import HA.Resources.Mero (SyncToConfd(..), SpielAddress(..))
 import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
 
 import Mero.ConfC
   ( Fid
@@ -74,7 +78,7 @@ import Control.Exception (SomeException)
 import Control.Monad (forM_, void)
 import Control.Monad.Catch (catch)
 
-import Data.Foldable (foldl', traverse_)
+import Data.Foldable (find, foldl', traverse_)
 import qualified Data.HashMap.Strict as M
 import Data.List (nub, sort, (\\))
 import Data.Maybe (catMaybes, listToMaybe)
@@ -308,7 +312,7 @@ initialiseConfInRG = getFilesystem >>= \case
                        . (G.newResource m0r >>> G.connectUnique m0r M0.At r)
       return m0r
 
--- ^ Allowed failures in each failure domain
+-- | Allowed failures in each failure domain
 data Failures = Failures {
     f_pool :: !Word32
   , f_rack :: !Word32
@@ -323,35 +327,144 @@ data FailureSet = FailureSet !(S.Set Fid) !Failures
                   -- failrue domain.
   deriving (Eq, Ord, Show)
 
-failureSetToArray :: Failures -> [Word32]
-failureSetToArray f = [f_pool f, f_rack f, f_encl f, f_ctrl f, f_disk f]
+failuresToArray :: Failures -> [Word32]
+failuresToArray f = [f_pool f, f_rack f, f_encl f, f_ctrl f, f_disk f]
 
 mapFS :: (S.Set Fid -> S.Set Fid) -> FailureSet -> FailureSet
 mapFS f (FailureSet a b) = FailureSet (f a) b
 
+-- |  Completely isomorphic to pool version
+data PoolVersion = PoolVersion
+    !(S.Set Fid) -- ^ Set of Fids
+    !Failures -- ^ Allowable failures in each failure domain.
+  deriving (Eq, Ord, Show)
+
+-- | Convert from failure set representation to pool version representation.
+--   These representations are complementary within the context of a fixed
+--   set of objects.
+failureSetToPoolVersion :: G.Graph
+                        -> M0.Filesystem
+                        -> FailureSet
+                        -> PoolVersion
+failureSetToPoolVersion rg fs (FailureSet badFids failures) = let
+    allFids = findFailableObjs rg fs
+    goodFids = allFids `S.difference` badFids
+  in PoolVersion goodFids failures
+
+-- | Find the FIDs corresponding to real objects existing in a pool
+--   version.
+findRealObjsInPVer :: G.Graph -> M0.PVer -> S.Set Fid
+findRealObjsInPVer rg pver = let
+    rackvs = G.connectedTo pver M0.IsParentOf rg :: [M0.RackV]
+    racks  = rackvs >>= \x -> (G.connectedFrom M0.IsRealOf x rg :: [M0.Rack])
+    enclvs = rackvs >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.EnclosureV])
+    encls  = enclvs >>= \x -> (G.connectedFrom M0.IsRealOf x rg :: [M0.Enclosure])
+    ctrlvs = enclvs >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.ControllerV])
+    ctrls  = ctrlvs >>= \x -> (G.connectedFrom M0.IsRealOf x rg :: [M0.Controller])
+    diskvs = ctrlvs >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.DiskV])
+    disks  = diskvs >>= \x -> (G.connectedFrom M0.IsRealOf x rg :: [M0.Disk])
+  in S.unions . fmap S.fromList $
+      [ fmap M0.fid racks
+      , fmap M0.fid encls
+      , fmap M0.fid ctrls
+      , fmap M0.fid disks
+      ]
+
+-- | Fetch the set of all FIDs corresponding to real (failable)
+--   objects in the filesystem.
+findFailableObjs :: G.Graph -> M0.Filesystem -> S.Set Fid
+findFailableObjs rg fs = let
+    racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
+    encls = racks >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure])
+    ctrls = encls >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.Controller])
+    disks = ctrls >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.Disk])
+  in S.unions . fmap S.fromList $
+    [ fmap M0.fid racks
+    , fmap M0.fid encls
+    , fmap M0.fid ctrls
+    , fmap M0.fid disks
+    ]
+
+findAllPVerFids :: G.Graph -> M0.PVer -> S.Set Fid
+findAllPVerFids rg pver = let
+    racks = G.connectedTo pver M0.IsParentOf rg :: [M0.RackV]
+    encls = racks >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.EnclosureV])
+    ctrls = encls >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.ControllerV])
+    disks = ctrls >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.DiskV])
+  in S.unions . fmap S.fromList $
+    [ [M0.fid pver]
+    , fmap M0.fid racks
+    , fmap M0.fid encls
+    , fmap M0.fid ctrls
+    , fmap M0.fid disks
+    ]
+
+findCurrentFailedDevices :: G.Graph -> M0.Filesystem -> S.Set Fid
+findCurrentFailedDevices rg fs = let
+    isFailedDisk disk =
+      case [stat | sdev <- G.connectedFrom M0.IsOnHardware disk rg :: [M0.SDev]
+                 , stat <- G.connectedTo sdev Is  rg :: [M0.ConfObjectState]] of
+        [M0.M0_NC_ONLINE] -> False
+        [M0.M0_NC_UNKNOWN] -> False
+        [_] -> True
+        _ -> False -- Maybe? This shouldn't happen...
+    racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
+    encls = racks >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure])
+    ctrls = encls >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.Controller])
+    disks = ctrls >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.Disk])
+    -- Note that currently, only SDEVs can fail. Which is kind of weird...
+  in S.fromList . fmap M0.fid . filter isFailedDisk $ disks
+
+-- | Attempt to find a pool version matching the current set of failed
+--   devices.
+findCurrentPVer :: G.Graph -> M0.Filesystem -> S.Set Fid -> Maybe M0.PVer
+findCurrentPVer rg fs failedDevs = let
+    allPvers = [ (pver, findRealObjsInPVer rg pver)
+                  | pool <- G.connectedTo fs M0.IsParentOf rg :: [M0.Pool]
+                  , pver <- G.connectedTo pool M0.IsRealOf rg :: [M0.PVer]
+                  ]
+  in fst <$> find (\(_, x) -> x == failedDevs) allPvers
+
+createPVerIfNotExists :: PhaseM LoopState l ()
+createPVerIfNotExists = do
+  rg <- getLocalGraph
+  (Just fs) <- getFilesystem
+  let failedDevs = findCurrentFailedDevices rg fs
+      mcur = findCurrentPVer rg fs failedDevs
+      allDrives = G.getResourcesOfType rg :: [M0.Disk]
+      failures = Failures 0 0 0 1 (fromIntegral $ length allDrives - S.size failedDevs)
+  case mcur of
+    Just _ -> return ()
+    Nothing -> let
+        failureSet = FailureSet failedDevs failures
+        pv = failureSetToPoolVersion rg fs failureSet
+      in createPoolVersions fs [pv]
+
 -- | Create pool versions based upon failure sets.
 createPoolVersions :: M0.Filesystem
-                   -> [FailureSet]
+                   -> [PoolVersion]
                    -> PhaseM LoopState l ()
 createPoolVersions fs = mapM_ createPoolVersion
   where
     pool = M0.Pool (M0.f_mdpool_fid fs)
-    createPoolVersion :: FailureSet -> PhaseM LoopState l ()
-    createPoolVersion (FailureSet failset failures) = do
+    createPoolVersion :: PoolVersion -> PhaseM LoopState l ()
+    createPoolVersion (PoolVersion failset failures) = do
       pver <- M0.PVer <$> newFid (Proxy :: Proxy M0.PVer)
-                      <*> return (failureSetToArray failures)
+                      <*> return (failuresToArray failures)
       modifyGraph
           $ G.newResource pver
         >>> G.connect pool M0.IsRealOf pver
       rg <- getLocalGraph
-      forM_ (G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]) $ \rack -> do
+      forM_ (filter (\x -> M0.fid x `S.member` failset)
+              $ G.connectedTo fs M0.IsParentOf rg :: [M0.Rack])
+            $ \rack -> do
         rackv <- M0.RackV <$> newFid (Proxy :: Proxy M0.RackV)
         modifyGraph
             $ G.newResource rackv
           >>> G.connect pver M0.IsParentOf rackv
           >>> G.connect rack M0.IsRealOf rackv
         rg1 <- getLocalGraph
-        forM_ (filter (\x -> not $ M0.fid x `S.member` failset)
+        forM_ (filter (\x -> M0.fid x `S.member` failset)
                 $ G.connectedTo rack M0.IsParentOf rg1 :: [M0.Enclosure])
               $ \encl -> do
           enclv <- M0.EnclosureV <$> newFid (Proxy :: Proxy M0.EnclosureV)
@@ -360,7 +473,7 @@ createPoolVersions fs = mapM_ createPoolVersion
             >>> G.connect rackv M0.IsParentOf enclv
             >>> G.connect encl M0.IsRealOf enclv
           rg2 <- getLocalGraph
-          forM_ (filter (\x -> not $ M0.fid x `S.member` failset)
+          forM_ (filter (\x -> M0.fid x `S.member` failset)
                   $ G.connectedTo encl M0.IsParentOf rg2 :: [M0.Controller])
                 $ \ctrl -> do
             ctrlv <- M0.ControllerV <$> newFid (Proxy :: Proxy M0.ControllerV)
@@ -369,7 +482,7 @@ createPoolVersions fs = mapM_ createPoolVersion
               >>> G.connect enclv M0.IsParentOf ctrlv
               >>> G.connect ctrl M0.IsRealOf ctrlv
             rg3 <- getLocalGraph
-            forM_ (filter (\x -> not $ M0.fid x `S.member` failset)
+            forM_ (filter (\x -> M0.fid x `S.member` failset)
                     $ G.connectedTo ctrl M0.IsParentOf rg3 :: [M0.Disk])
                   $ \disk -> do
               diskv <- M0.DiskV <$> newFid (Proxy :: Proxy M0.DiskV)

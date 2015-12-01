@@ -85,6 +85,15 @@ instance FromJSON Rack
 
 #ifdef USE_MERO
 
+data FailureSetScheme =
+    Preloaded Word32 Word32 Word32
+  | Dynamic
+  deriving (Eq, Data, Generic, Show, Typeable)
+
+instance Binary FailureSetScheme
+instance Hashable FailureSetScheme
+instance FromJSON FailureSetScheme
+
 data M0Globals = M0Globals {
     m0_datadir :: String
   , m0_t1fs_mount :: String
@@ -97,6 +106,7 @@ data M0Globals = M0Globals {
   , m0_min_rpc_recvq_len :: Word32
   , m0_lnet_nid :: String
   , m0_be_segment_size :: Word32
+  , m0_failure_set_gen :: FailureSetScheme
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Binary M0Globals

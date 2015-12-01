@@ -39,7 +39,6 @@ import HA.Multimap.Process (multimap)
 import HA.RecoveryCoordinator.Actions.Mero
 #endif
 import HA.RecoveryCoordinator.Mero
-import HA.RecoveryCoordinator.Rules.Mero
 import HA.Replicator (RGroup(..))
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock (MC_RG)
@@ -343,6 +342,7 @@ initialDataAddr host ifaddr n = CI.InitialData {
   , CI.m0_lnet_nid = "auto"
   , CI.m0_be_segment_size = 536870912
   , CI.m0_md_redundancy = 2
+  , CI.m0_failure_set_gen = CI.Preloaded 0 1 0
   }
 , CI.id_m0_servers = [
     CI.M0Host {

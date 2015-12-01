@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DoAndIfThenElse       #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
@@ -28,7 +29,6 @@ import HA.Services.SSPL
 #ifdef USE_MERO
 import HA.EventQueue.Producer
 import qualified Mero.Spiel as Spiel
-import HA.RecoveryCoordinator.Rules.Mero
 import HA.Resources.Mero hiding (Process, Enclosure, Rack)
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Actions.Mero
@@ -136,16 +136,21 @@ castorRules = do
     defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
       mapM_ goRack id_racks
 #ifdef USE_MERO
+      rg <- getLocalGraph
       filesystem <- initialiseConfInRG
       loadMeroGlobals id_m0_globals
       loadMeroServers filesystem id_m0_servers
-      failureSets <- generateFailureSets 0 1 0 -- TODO real values
-      let chunks = flip unfoldr failureSets $ \xs ->
-            case xs of
-              [] -> Nothing
-              _  -> -- TODO: Take into account the size of failure sets to do
-                    -- the spliting.
-                    Just $ splitAt 5 xs
+      failureSets <- case (CI.m0_failure_set_gen id_m0_globals) of
+        CI.Dynamic -> return []
+        CI.Preloaded x y z -> generateFailureSets x y z
+      let
+        poolVersions = fmap (failureSetToPoolVersion rg filesystem) failureSets
+        chunks = flip unfoldr poolVersions $ \xs ->
+          case xs of
+            [] -> Nothing
+            _  -> -- TODO: Take into account the size of failure sets to do
+                  -- the spliting.
+                  Just $ splitAt 5 xs
       forM_ chunks $ \chunk -> do
         createPoolVersions filesystem chunk
         syncGraph
@@ -169,11 +174,11 @@ castorRules = do
                     let status = if ratt <= resetAttemptThreshold
                                  then M0_NC_TRANSIENT
                                  else M0_NC_FAILED
-                    notifyMero [AnyConfObj m0sdev] status
 
                     when (status == M0_NC_FAILED) $ do
                       nid <- liftProcess getSelfNode
                       diskids <- findStorageDeviceIdentifiers sdev
+                      notifyMero [AnyConfObj m0sdev] status
                       let iem = InterestingEventMessage . pack . unwords $ [
                                     "M0_NC_FAILED reported."
                                   , "fid=" ++ show mfid
@@ -183,6 +188,12 @@ castorRules = do
                       traverse_ startRepairOperation pools
 
                     when (status == M0_NC_TRANSIENT) $ do
+                      getM0Globals >>= \case
+                        Just x | CI.m0_failure_set_gen x == CI.Dynamic -> do
+                          createPVerIfNotExists
+                          syncAction Nothing SyncToConfdServersInRG
+                        _ -> return ()
+                      notifyMero [AnyConfObj m0sdev] status
                       markOnGoingReset sdev
                       nid <- liftProcess getSelfNode
                       liftProcess . void . promulgateEQ [nid]
@@ -329,12 +340,17 @@ castorRules = do
 #ifdef USE_MERO
       sd <- lookupStorageDeviceSDev disk
       forM_ sd $ \m0sdev -> do
+        getM0Globals >>= \case
+          Just x | CI.m0_failure_set_gen x == CI.Dynamic -> do
+            createPVerIfNotExists
+            syncAction Nothing SyncToConfdServersInRG
+          _ -> return ()
         notifyMero [AnyConfObj m0sdev] M0_NC_TRANSIENT
         phaseLog "debug" "spiel-0"
         msa <- getSpielAddress
         phaseLog "debug" "spiel-1"
         forM_ msa $ \sa ->
-          (void $ withSpielRC sa $ \sp -> 
+          (void $ withSpielRC sa $ \sp ->
              liftIO $ Spiel.deviceDetach sp (d_fid m0sdev))
             `catch` (\e -> phaseLog "mero" $ "failure in spiel: " ++ show (e::SomeException))
         phaseLog "debug" "spiel-2"
@@ -397,7 +413,7 @@ castorRules = do
         unmarkStorageDeviceRemoved disk 
         syncGraph
         messageProcessed uuid
-        
+
       start handle Nothing
 
     -- Mark drive as failed
