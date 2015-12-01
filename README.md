@@ -54,13 +54,29 @@ project's root directory):
 
 ```
 # Implicitly mount Mero source as a volume inside container.
-$ alias stack=stack --docker-mount `pwd`/vendor/mero:/mero
+$ alias stack="stack --docker-mount `pwd`/vendor/mero:/mero"
 $ stack docker pull
-$ stack exec ./vendor/mero/scripts/m0 rebuild            # Build Mero.
 $ stack setup                           # Download compiler toolchain.
 ```
 
-Building is then simply:
+You need to build Mero first. If your host's kernel version matches
+that expected by mero, you can configure and build in a single
+command:
+
+```
+$ stack exec ./vendor/mero/scripts/m0 rebuild
+```
+
+Otherwise try the following:
+
+```
+$ cd vendor/mero
+$ stack exec -- ./autogen.sh
+$ stack exec -- ./configure --with-linux="/usr/src/kernels/*"
+$ stack exec -- make
+```
+
+Building Halon is then simply:
 
 ```
 $ stack build
