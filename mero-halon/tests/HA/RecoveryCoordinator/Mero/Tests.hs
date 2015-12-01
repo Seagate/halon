@@ -96,7 +96,6 @@ import HA.Castor.Tests (initialDataAddr)
 import HA.RecoveryCoordinator.Actions.Mero (getSpielAddress, syncToConfd)
 import Mero.Notification (finalize)
 import Network.CEP (defineSimple, liftProcess, Definitions)
-import System.IO.Unsafe
 #endif
 
 #ifdef USE_MERO
@@ -513,21 +512,20 @@ testRCsyncToConfd :: String -- ^ IP we're listening on, used in this
                   -> Transport -> IO ()
 testRCsyncToConfd host transport = do
  withTestEnv $ do
-  liftIO $ writeFile "/tmp/strlog" ""
   nid <- getSelfNode
   self <- getSelfPid
+
   registerInterceptor $ \case
-    str' | unsafePerformIO (appendFile "/tmp/strlog" (str' ++ "\n") >> return False) -> undefined
     str' | "Finished sync to confd" `isInfixOf` str' -> usend self ("SyncOK" :: String)
-    str' | "Loaded initial data" `isInfixOf` str' -> usend self ("InitialLoad" :: String)
-    _ -> return ()
+         | "Loaded initial data" `isInfixOf` str' -> usend self ("InitialLoad" :: String)
+         | otherwise -> return ()
+
   withTrackingStation testSyncRules $ \_ -> do
 
-    promulgateEQ [nid] (initialDataAddr host host 8) >>= (`withMonitor` wait)
+    promulgateEQ [nid] (initialDataAddr host host 8) >>= flip withMonitor wait
     "InitialLoad" :: String <- expect
 
-    liftIO $ appendFile "/tmp/strlog" "about to syncToConfd\n"
-    promulgateEQ [nid] SpielSync >>= (flip withMonitor) wait
+    promulgateEQ [nid] SpielSync >>= flip withMonitor wait
     "SyncOK" :: String <- expect
     finalize
 
