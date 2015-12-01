@@ -77,6 +77,7 @@ Test-Suite unit-tests
     Ghc-Options: -Werror
   Build-Depends:    base
                    ,distributed-commands
+  Buildable:        True
 
 Test-Suite digitalocean
   Type:             exitcode-stdio-1.0

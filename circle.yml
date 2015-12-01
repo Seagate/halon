@@ -37,8 +37,8 @@ dependencies:
 test:
   override:
     # Build with USE_MERO and then without.
-    - stack $STACK_FLAGS build --test --no-run-tests --flag rpclite:mero --flag mero-halon:mero
+    - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero
     - stack $STACK_FLAGS build --test --no-run-tests
     # Only test mero-halon and deps, without USE_MERO.
-    - stack $STACK_FLAGS build --test mero-halon:
+    - stack $STACK_FLAGS build --test:
         timeout: 3600
