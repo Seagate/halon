@@ -15,6 +15,10 @@ Flag maintainer
   Description: Enforce strict code quality checks (-Werror, etc)
   Default: False
 
+Flag mero
+  Description: Assume Mero is fully functional, so run tests.
+  Default: False
+
 library
   exposed-modules:     Mero
                        Mero.Concurrent
@@ -61,3 +65,6 @@ Test-Suite testrpclite
                 , rpclite
                 , filepath
                 , rpclite
+
+  if !flag(mero)
+    Buildable: False

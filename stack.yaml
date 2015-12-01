@@ -1,3 +1,4 @@
+resolver: lts-3.11
 packages:
 - cep/cep
 - confc
@@ -37,4 +38,20 @@ extra-deps:
 - rank1dynamic-0.3.1.0
 - rematch-0.2.0.0
 
-resolver: lts-3.11
+docker:
+  enable: true
+  repo: quay.io/tweag/halon:latest
+  registry-login: true
+  # XXX To route around GHC bug #11042
+  env:
+  - LD_LIBRARY_PATH=/mero/mero/.libs
+  - MERO_ROOT=/mero
+  - USER=stack # for m0 script
+  - TEST_LISTEN=127.0.0.1:8090
+
+extra-include-dirs:
+- /mero
+- /mero/extra-libs/galois/include
+- ../rpclite/rpclite
+extra-lib-dirs:
+- /mero/mero/.libs

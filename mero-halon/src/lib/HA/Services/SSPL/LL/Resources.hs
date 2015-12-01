@@ -197,9 +197,9 @@ instance Hashable ActuatorChannels
 
 -- | Message to the RC advertising which channels to talk on.
 data DeclareChannels = DeclareChannels
-    ProcessId -- ^ Identity of reporting process
-    (ServiceProcess SSPLConf) -- ^ Identity of the service process
-    ActuatorChannels -- ^ Relevant channels
+    ProcessId -- Identity of reporting process
+    (ServiceProcess SSPLConf) -- Identity of the service process
+    ActuatorChannels -- Relevant channels
   deriving (Generic, Typeable)
 
 instance Binary DeclareChannels

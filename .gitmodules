@@ -17,3 +17,6 @@
 [submodule "vendor/network-transport-inmemory"]
 	path = vendor/network-transport-inmemory
 	url = https://github.com/haskell-distributed/network-transport-inmemory.git
+[submodule "vendor/mero"]
+	path = vendor/mero
+	url = git@github.com:tweag/mero
