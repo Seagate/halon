@@ -68,6 +68,8 @@ module HA.RecoveryCoordinator.Actions.Hardware
     -- ** Drive candidates
   , attachStorageDeviceReplacement
   , lookupStorageDeviceReplacement
+  , wantsStorageDeviceReplacement
+  , markStorageDeviceWantsReplacement
     -- ** Creating new devices
   , locateStorageDeviceInEnclosure
   , locateStorageDeviceOnHost
@@ -495,7 +497,21 @@ attachStorageDeviceReplacement dev dis = do
   modifyLocalGraph $ return . G.connect dev ReplacedBy newDev
   return newDev
 
--- | Find if storage device has replacement and return new drive if this is a case.
+-- | Check if we are waiting for StorageDevice identifier update.
+wantsStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l (Maybe DeviceIdentifier)
+wantsStorageDeviceReplacement sdev = do
+   phaseLog "rg" $ "Checking if we need to know storage device replacement " ++ show sdev
+   rg <- getLocalGraph
+   return $ listToMaybe $ G.connectedTo sdev WantsReplacement rg
+
+-- | Mark that storage device will be replaced by another one, that we do not have
+-- information about.
+markStorageDeviceWantsReplacement :: StorageDevice -> DeviceIdentifier -> PhaseM LoopState l ()
+markStorageDeviceWantsReplacement sdev ident = do
+   phaseLog "rg" $ "Checking if we need to know storage device replacement " ++ show sdev
+   modifyGraph $ G.connectUnique sdev WantsReplacement ident
+
+-- | Find if storage device has replacement and return new drive if this is a case. 
 lookupStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l (Maybe StorageDevice)
 lookupStorageDeviceReplacement sdev = do
     gr <- getLocalGraph
