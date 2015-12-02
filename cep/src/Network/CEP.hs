@@ -55,6 +55,7 @@ module Network.CEP
     , setLogger
     , setRuleFinalizer
     , setBuffer
+    , setDefaultHandler
     , enableDebugMode
     , timeout
     -- * Buffer
@@ -156,6 +157,9 @@ buildMachine s defs = go (emptyMachine s) $ view defs
         go st' $ view $ k ()
     go st (SetSetting DebugMode b :>>= k) =
         let st' = st { _machDebugMode = b } in
+        go st' $ view $ k ()
+    go st (SetSetting DefaultHandler f :>>= k) =
+        let st' = st { _machDefaultHandler = Just f } in
         go st' $ view $ k ()
 
 -- | Main CEP state-machine
@@ -273,6 +277,11 @@ runItForever start_eng = do
                     SomeMsg x    -> rawIncoming x
                     _            -> error "impossible: runItForever"
           (ri, nxt_eng) <- stepForward m inner
+          case runResult ri of
+            MsgIgnored -> case other of
+              SomeMsg x -> stepForward (runDefaultHandler x) nxt_eng
+              _ -> return ()
+            _ -> return ()
           let act = requestAction m
           when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
           go nxt_eng Nothing

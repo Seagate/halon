@@ -551,6 +551,7 @@ data Setting s a where
     -- ^ Sets the default message 'Buffer'.
     DebugMode :: Setting s Bool
     -- ^ Sets debug mode.
+    DefaultHandler :: Setting s (Message -> s -> Process ())
 
 -- | Definition state machine.
 data Declare g a where
@@ -608,3 +609,8 @@ setBuffer b = singleton $ SetSetting PhaseBuffer b
 -- | Enables debug mode.
 enableDebugMode :: Specification s ()
 enableDebugMode = singleton $ SetSetting DebugMode True
+
+-- | Set a handler for messages that were not consumed by any other rules.
+-- This method works only in cruise mode.
+setDefaultHandler :: (Message -> s -> Process ()) -> Specification s ()
+setDefaultHandler = singleton . SetSetting DefaultHandler

@@ -24,6 +24,8 @@ import qualified Data.MultiMap       as MM
 import qualified Data.Map.Strict     as M
 import qualified Data.Sequence       as S
 import qualified Data.Set            as Set
+import           Data.Traversable (mapAccumL)
+import           Data.Foldable (forM_)
 
 import Network.CEP.Buffer
 import Network.CEP.Execution
@@ -47,7 +49,7 @@ data RuleData g =
       --   'buildMachine'.
     }
 
-data Mode = Read | Write
+data Mode = Read | Write | Execute
 
 -- | Represents the type of request a CEP 'Engine' can handle.
 data Request :: Mode -> * -> * where
@@ -55,6 +57,8 @@ data Request :: Mode -> * -> * where
     -- ^ Read request that doesn't update CEP 'Engine' internal state.
     Run :: Action a -> Request 'Write (Process (a, Engine))
     -- ^ Write request that might update CEP 'Engine' internal state.
+    DefaultAction :: Message -> Request 'Execute (Process ())
+    -- ^ Run default handler for unprocessed message.
 
 data Select a where
     GetSetting :: EngineSetting a -> Select a
@@ -94,6 +98,10 @@ timeoutMsg = Run . TimeoutArrived
 
 requestAction :: Request 'Write (Process (a, Engine)) -> Action a
 requestAction (Run a) = a
+
+runDefaultHandler :: Message -> Request 'Execute (Process ())
+runDefaultHandler = DefaultAction
+
 
 -- CEP Engine finit state machine represented as a Mealy machine.
 newtype Engine = Engine { _unE :: forall a m. Request m a -> a }
@@ -144,6 +152,7 @@ data Machine s =
       -- ^ List of SM that is in a runnable state
     , _machSuspendedSM :: [(RuleKey, RuleData s)]
       -- ^ List of SM that are in suspended state
+    , _machDefaultHandler :: !(Maybe (Message -> s -> Process ()))
     }
 
 -- | Creates CEP engine state with default properties.
@@ -164,6 +173,7 @@ emptyMachine s =
     , _machInitRulePassed = False
     , _machRunningSM      = []
     , _machSuspendedSM    = []
+    , _machDefaultHandler = Nothing
     }
 
 newEngine :: Machine s -> Engine
@@ -198,6 +208,8 @@ defaultHandler st next (Run (Incoming _)) =
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
 defaultHandler st next (Run (TimeoutArrived _)) =
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
+defaultHandler st _ (DefaultAction msg) =
+    forM_ (_machDefaultHandler st) $ \f -> f msg (_machState st)
 defaultHandler st _ (Query (GetSetting s)) =
     case s of
       EngineDebugMode      -> _machDebugMode st
@@ -275,12 +287,12 @@ cepCruise st req@(Run t) =
       Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
         let fpt = messageFingerprint m
             keyInfos = MM.lookup fpt $ _machTypeMap st
-            running' = foreach (_machRunningSM st) $ \(key, rd) ->
-              case key `lookup` keyInfos of
-                Just info ->
-                  let stack' = runSM (_ruleStack rd) (SMMessage info m) in
-                  (key, rd{_ruleStack=stack'})
-                Nothing   -> (key,rd)
+            (upd,running') = mapAccumL
+              (\u (key, rd) -> case key `lookup` keyInfos of
+                 Just info ->
+                   let stack' = runSM (_ruleStack rd) (SMMessage info m) in
+                   (u+1, (key, rd{_ruleStack=stack'}))
+                 Nothing   -> (u,(key,rd))) 0 (_machRunningSM st)
             splitted = foreach (_machSuspendedSM st) $ \(key, rd) ->
               case key `lookup` keyInfos of
                 Just info ->
@@ -288,8 +300,10 @@ cepCruise st req@(Run t) =
                   Right (key, rd{_ruleStack=stack'})
                 Nothing   -> Left (key, rd)
             (susp,running) = partitionEithers splitted
-        -- XXX: update runinfo
-            rinfo = RunInfo 1 (RulesBeenTriggered [])
+            rinfo = RunInfo (upd+length running)
+              $ if upd+length running == 0
+                  then MsgIgnored
+                  else RulesBeenTriggered []
         return (rinfo, Engine $ cepCruise st{_machRunningSM   = running' ++ running
                                             ,_machSuspendedSM = susp
                                             })
