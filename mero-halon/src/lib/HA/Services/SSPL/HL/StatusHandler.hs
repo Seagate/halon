@@ -11,6 +11,7 @@
 
 module HA.Services.SSPL.HL.StatusHandler where
 
+import Data.Maybe (fromMaybe, listToMaybe)
 import Prelude hiding ((<$>), (<*>), id, mapM_)
 import HA.EventQueue.Producer (promulgate)
 import HA.RecoveryCoordinator.Mero (GetMultimapProcessId(..))
@@ -67,10 +68,15 @@ start sp = spawnLocal $ do
 
 -- | Calculate the cluster status from the resource graph.
 clusterStatus :: G.Graph -> [CommandResponseMessageStatusResponseItem]
-clusterStatus _ = CommandResponseMessageStatusResponseItem {
+clusterStatus g = CommandResponseMessageStatusResponseItem {
     commandResponseMessageStatusResponseItemEntityId = "cluster"
-  , commandResponseMessageStatusResponseItemStatus = "ok"
+  , commandResponseMessageStatusResponseItemStatus = formatStatus status
   } : []
+  where
+    status = fromMaybe ONLINE . listToMaybe $ G.connectedTo Cluster Has g
+
+    formatStatus :: ClusterStatus -> T.Text
+    formatStatus = T.pack . show
 
 -- | Calculate the node status for specified nodes from the resource graph.
 hostStatus :: G.Graph

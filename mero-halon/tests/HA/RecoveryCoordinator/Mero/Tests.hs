@@ -10,7 +10,8 @@
 {-# LANGUAGE LambdaCase #-}
 
 module HA.RecoveryCoordinator.Mero.Tests
-  ( testDriveAddition
+  ( testClusterStatus
+  , testDriveAddition
   , testHostAddition
   , testServiceRestarting
   , testServiceNotRestarting
@@ -79,7 +80,7 @@ import Network.Transport (Transport(..))
 import Control.Monad (void, join)
 import Data.Defaultable
 import Data.List (isInfixOf)
-import Network.CEP (Published(..), Logs(..), subscribe)
+import Network.CEP (defineSimple, liftProcess, subscribe, Definitions , Published(..), Logs(..))
 import Test.Tasty.HUnit (assertBool)
 import TestRunner
 import Data.Binary
@@ -88,14 +89,9 @@ import GHC.Generics
 import Helper.SSPL
 
 #ifdef USE_MERO
-import Data.Binary (Binary)
-import Data.Hashable (Hashable)
-import Data.Typeable (Typeable)
-import GHC.Generics (Generic)
 import HA.Castor.Tests (initialDataAddr)
 import HA.RecoveryCoordinator.Actions.Mero (getSpielAddress, syncToConfd)
 import Mero.Notification (finalize)
-import Network.CEP (defineSimple, liftProcess, Definitions)
 #endif
 
 #ifdef USE_MERO
@@ -104,7 +100,6 @@ data SpielSync = SpielSync
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary SpielSync
-instance Hashable SpielSync
 #endif
 
 #ifdef USE_MERO
@@ -333,6 +328,73 @@ testDriveAddition transport = do
     rt = TestRunner.__remoteTableDecl $
          remoteTable
     mockEvent = mkResponseDriveManager "enc1" 1
+
+-- | Message used by 'testClusterStatus'.
+data MsgClusterStatus = ClusterSet ClusterStatus
+                      | ClusterGet
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary MsgClusterStatus
+
+clusterStatusRules :: [Definitions LoopState ()]
+clusterStatusRules = return $ defineSimple "cluster-status" $ \(HAEvent _ cmsg _) -> case cmsg of
+    ClusterGet -> do
+      cs <- getClusterStatus
+      liftProcess . say $ "Cluster status is " ++ show cs
+    ClusterSet cs -> do
+      setClusterStatus cs
+      liftProcess . say $ "Set cluster status to " ++ show cs
+
+-- | Test that we can set and query 'ClusterStatus' through a rule.
+testClusterStatus :: Transport -> IO ()
+testClusterStatus transport = do
+  runTest 1 20 15000000 transport testRemoteTable $ \_ -> do
+    nid <- getSelfNode
+    self <- getSelfPid
+    let sendSelf :: String -> Process ()
+        sendSelf = usend self
+
+    registerInterceptor $ \case
+      str | "Cluster status is ONLINE" `isInfixOf` str ->
+              sendSelf "OnlineGet"
+          | "Set cluster status to ONLINE" `isInfixOf` str ->
+              sendSelf "OnlineSet"
+          | "Cluster status is QUIESCING" `isInfixOf` str ->
+              sendSelf "QuiescingGet"
+          | "Set cluster status to QUIESCING" `isInfixOf` str ->
+              sendSelf "QuiescingSet"
+          | "Cluster status is RECOVERING" `isInfixOf` str ->
+              sendSelf "RecoveringGet"
+          | "Set cluster status to RECOVERING" `isInfixOf` str ->
+              sendSelf "RecoveringSet"
+          | "Node succesfully joined the cluster" `isInfixOf` str ->
+              sendSelf "NodeUp"
+          | otherwise -> return ()
+
+    withTrackingStation clusterStatusRules $ \_ -> do
+      nodeUp ([nid], 1000000)
+      -- wait for node to come up
+      "NodeUp" :: String <- expect
+      let sendCluster msg = promulgateEQ [nid] msg >>= flip withMonitor wait
+      -- Check that we're ONLINE even though we haven't set it
+      sendCluster ClusterGet
+      "OnlineGet" :: String <- expect
+      -- then just set and get a bunch and make sure things happen
+      sendCluster (ClusterSet QUIESCING)
+      "QuiescingSet" :: String <- expect
+      sendCluster ClusterGet
+      "QuiescingGet" :: String <- expect
+      sendCluster (ClusterSet RECOVERING)
+      "RecoveringSet" :: String <- expect
+      sendCluster ClusterGet
+      "RecoveringGet" :: String <- expect
+      sendCluster (ClusterSet ONLINE)
+      "OnlineSet" :: String <- expect
+      sendCluster ClusterGet
+      "OnlineGet" :: String <- expect
+      return ()
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
 
 testDecisionLog :: Transport -> IO ()
 testDecisionLog transport = do
