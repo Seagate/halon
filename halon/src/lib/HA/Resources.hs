@@ -34,6 +34,24 @@ data Cluster = Cluster
 instance Binary Cluster
 instance Hashable Cluster
 
+-- | Status of the 'Cluster'.
+data ClusterStatus =
+  -- | Filesystem is running even if partially degraded
+  ONLINE
+  -- | Filesystem has experienced failures beyond its tolerance but
+  -- may still recover.
+  | RECOVERING
+  -- | Filesystem has experienced failures beyond its tolerance and
+  -- can no longer automatically recover.
+  | UNRECOVERABLE
+  -- | Halon is instructing the system to quiesce due to a user power
+  -- down command.
+  | QUIESCING
+  deriving (Eq, Ord, Show, Typeable, Generic)
+
+instance Binary ClusterStatus
+instance Hashable ClusterStatus
+
 -- | A resource graph representation for nodes.
 data Node = Node NodeId
   deriving (Eq, Ord, Show, Typeable, Generic)
@@ -89,14 +107,16 @@ instance Hashable Runs
 type EpochByteString = Epoch ByteString
 
 $(mkDicts
-  [''Cluster, ''Node, ''EpochByteString]
+  [''Cluster, ''Node, ''EpochByteString, ''ClusterStatus]
   [ (''Cluster, ''Has, ''Node)
   , (''Cluster, ''Has, ''EpochByteString)
+  , (''Cluster, ''Has, ''ClusterStatus)
   ])
 $(mkResRel
-  [''Cluster, ''Node, ''EpochByteString]
+  [''Cluster, ''Node, ''EpochByteString, ''ClusterStatus]
   [ (''Cluster, ''Has, ''Node)
   , (''Cluster, ''Has, ''EpochByteString)
+  , (''Cluster, ''Has, ''ClusterStatus)
   ]
   []
   )

@@ -28,6 +28,9 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , findHostsByAttributeFilter
   , findHostsByAttr
   , findHostAttrs
+    -- * Cluster status functions
+  , setClusterStatus
+  , getClusterStatus
     -- * Interface related functions
   , registerInterface
     -- * Drive related functions
@@ -79,7 +82,7 @@ import HA.Resources.Castor
 import Control.Category ((>>>))
 import Control.Distributed.Process (liftIO)
 
-import Data.Maybe (listToMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 import Data.Foldable
 
@@ -286,6 +289,27 @@ findHostAttrs host = do
   g <- getLocalGraph
   return $ G.connectedTo host Has g
 
+
+----------------------------------------------------------
+-- Cluster status functions                             --
+----------------------------------------------------------
+
+-- | Obtain the current 'ClusterStatus' of the 'Cluster'. If the
+-- status has not been set, it is assumed to be 'ONLINE'.
+getClusterStatus :: PhaseM LoopState l ClusterStatus
+getClusterStatus = do
+  phaseLog "rg-query" "Looking up cluster status"
+  getLocalGraph >>= \g ->
+    return . fromMaybe ONLINE . listToMaybe $ G.connectedTo Cluster Has g
+
+-- | Set the 'ClusterStatus' for a 'Cluster'. Any other status that
+-- has been previously set is overwritten.
+setClusterStatus :: ClusterStatus -> PhaseM LoopState l ()
+setClusterStatus cs = do
+  phaseLog "rg" $ "Setting cluster status to " ++ show cs
+  modifyLocalGraph $ \g -> do
+    return $ G.newResource cs >>> G.connectUnique Cluster Has cs $ g
+
 ----------------------------------------------------------
 -- Interface related functions                          --
 ----------------------------------------------------------
@@ -374,7 +398,7 @@ lookupStorageDeviceInEnclosure :: Enclosure
                                -> DeviceIdentifier
                                -> PhaseM LoopState l (Maybe StorageDevice)
 lookupStorageDeviceInEnclosure enc ident = do
-    rg <- getLocalGraph 
+    rg <- getLocalGraph
     let devicesA = [ device
                    | host   <- G.connectedTo  enc  Has rg :: [Host]
                    , device <- G.connectedTo  host Has rg :: [StorageDevice]
@@ -467,11 +491,11 @@ attachStorageDeviceReplacement dev dis = do
   phaseLog "rg" $ "Inserting new device candidate to " ++ show dev
   uuid <- liftProcess . liftIO $ nextRandom
   let newDev = StorageDevice uuid
-  forM_ dis $ identifyStorageDevice newDev 
+  forM_ dis $ identifyStorageDevice newDev
   modifyLocalGraph $ return . G.connect dev ReplacedBy newDev
   return newDev
 
--- | Find if storage device has replacement and return new drive if this is a case. 
+-- | Find if storage device has replacement and return new drive if this is a case.
 lookupStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l (Maybe StorageDevice)
 lookupStorageDeviceReplacement sdev = do
     gr <- getLocalGraph

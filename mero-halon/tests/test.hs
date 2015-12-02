@@ -78,6 +78,8 @@ ut _host transport breakConnection = do
           HA.RecoveryCoordinator.Mero.Tests.testEQTrimming transport
       , testCase "RGHostResources" $
           HA.RecoveryCoordinator.Mero.Tests.testHostAddition transport
+      , testCase "RGClusterStatus" $
+          HA.RecoveryCoordinator.Mero.Tests.testClusterStatus transport
       , testCase "RGTrimUnknownMessage" $
           HA.RecoveryCoordinator.Mero.Tests.testEQTrimUnknown transport
       , testCase "RGDriveResources" $
