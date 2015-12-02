@@ -164,20 +164,30 @@ ssplRulesF sspl = do
                           . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum
                           $ srdm
           disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus srdm
+          sn = DISerialNumber . T.unpack
+                 . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber
+                 $ srdm
       phaseLog "sspl-service" "monitor-drivemanager request received"
       mdisk <- lookupStorageDeviceInEnclosure enc $ DIIndexInEnclosure diskNum
       disk <- case mdisk of
         Nothing -> do
-          phaseLog "sspl-service"
-              $ "Cant find disk in " ++ show enc ++ " at " ++ show diskNum ++ " creating new entry."
-          diskUUID <- liftIO $ nextRandom
-          let disk = StorageDevice diskUUID
-          locateStorageDeviceInEnclosure enc disk
-          mhost <- findNodeHost (Node nid)
-          forM_ mhost $ \host -> locateHostInEnclosure host enc
-          _ <- identifyStorageDevice disk $ DIIndexInEnclosure diskNum
-          syncGraph
-          return disk
+          -- Try to check if we have device with known serial number, just without location.
+          mdisksn <- lookupStorageDeviceInEnclosure enc sn
+          case mdisksn of
+            Just disksn -> do
+              identifyStorageDevice disksn sn
+              return disksn
+            Nothing -> do
+              phaseLog "sspl-service"
+                  $ "Cant find disk in " ++ show enc ++ " at " ++ show diskNum ++ " creating new entry."
+              diskUUID <- liftIO $ nextRandom
+              let disk = StorageDevice diskUUID
+              locateStorageDeviceInEnclosure enc disk
+              mhost <- findNodeHost (Node nid)
+              forM_ mhost $ \host -> locateHostInEnclosure host enc
+              _ <- identifyStorageDevice disk $ DIIndexInEnclosure diskNum
+              syncGraph
+              return disk
         Just st -> return st
       updateDriveStatus disk $ T.unpack disk_status
       isDriveRemoved <- isStorageDriveRemoved disk
@@ -193,7 +203,7 @@ ssplRulesF sspl = do
            | isDriveRemoved -> messageProcessed uuid
            | otherwise      -> selfMessage $ DriveFailed uuid (Node nid) enc disk
         "inuse_ok"
-           | isDriveRemoved -> selfMessage $ DriveInserted uuid disk
+           | isDriveRemoved -> selfMessage $ DriveInserted uuid disk sn
            | otherwise      -> messageProcessed uuid
         s -> do let msg = InterestingEventMessage
                         $ "Error processing drive manager response: drive status "
@@ -229,12 +239,12 @@ ssplRulesF sspl = do
            mwsd <- lookupStorageDeviceInEnclosure enc wwn
            case mwsd of
              Just sd -> do
-               -- We have disk in RG, but we didn't know it's index in enclosure, this happens
+               -- We have disk in RG, but we didn't know its index in enclosure, this happens
                -- when we loaded initial data that have no information about indices.
                identifyStorageDevice sd loc
                return Nothing
              Nothing -> do
-               -- We don't have information about interted disk in this slot yet, this could
+               -- We don't have information about inserted disk in this slot yet, this could
                -- mean two different things:
                --   1. either this is completely new disk.
                --   2. we have no initial data loaded yet (currently having initial data loaded
@@ -262,7 +272,7 @@ ssplRulesF sspl = do
           -- if it was a case or not.
           mwantUpdate <- wantsStorageDeviceReplacement sd
           case mwantUpdate of
-            Just wsn | wsn == sn -> selfMessage $ DriveInserted uuid sd
+            Just wsn | wsn == sn -> selfMessage $ DriveInserted uuid sd sn
             _   -> selfMessage $ DriveRemoved uuid nid enc sd
         Nothing -> messageProcessed uuid
 

@@ -29,7 +29,7 @@ instance Binary DriveRemoved
 
 -- | 'DriveInsted' event should be emitted in order to trigger
 -- drive insertion rule.
-data DriveInserted = DriveInserted UUID StorageDevice
+data DriveInserted = DriveInserted UUID StorageDevice DeviceIdentifier
        deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveInserted
