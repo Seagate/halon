@@ -42,3 +42,4 @@ test:
     # Only test mero-halon and deps, without USE_MERO.
     - stack $STACK_FLAGS build --test:
         timeout: 3600
+    - scripts/circleci_copy_artifacts.sh
