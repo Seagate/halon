@@ -219,43 +219,52 @@ ssplRulesF sspl = do
           host  = Host . T.unpack 
                        . sensorResponseMessageSensor_response_typeDisk_status_hpiHostId
                        $ srphi
-      menc <- findHostEnclosure host
-      case menc of
-        Nothing -> do
-          phaseLog "error" $ "can't find enclosure for node " ++ show nid
-          messageProcessed uuid
-        Just enc -> do
-          mdev <- lookupStorageDeviceInEnclosure enc loc
-          msd <- case mdev of
-             Nothing -> do
-               mwsd <- lookupStorageDeviceInEnclosure enc wwn
-               case mwsd of
-                 Just sd -> do
-                   -- We have disk in RG, but we didn't know it's index in enclosure
-                   identifyStorageDevice sd loc
-                   return Nothing
-                 Nothing -> do
-                   -- We don't have information about interted disk in this slot yet, this could
-                   -- mean two different things: either this is completely new disk or for some
-                   -- reason we miss actual information.
-                   diskUUID <- liftIO $ nextRandom
-                   let disk = StorageDevice diskUUID
-                   locateStorageDeviceInEnclosure enc disk
-                   identifyStorageDevice disk loc
-                   return (Just disk)
+          enc   = Enclosure . T.unpack
+                       . sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN
+                       $ srphi
+      mdev <- lookupStorageDeviceInEnclosure enc loc
+      locateHostInEnclosure host enc -- XXX: do we need to do that on each query?
+      msd <- case mdev of
+         Nothing -> do
+           mwsd <- lookupStorageDeviceInEnclosure enc wwn
+           case mwsd of
              Just sd -> do
-               mident <- listToMaybe . filter (\x -> case x of DIWWN{} -> True ; _ -> False)
-                           <$> findStorageDeviceIdentifiers sd
-               liftProcess $ say $ show (mident, wwn)
-               case mident of
-                 Just wwn' | wwn' == wwn -> return Nothing
-                 _ -> return (Just sd)
-          case msd of
-            Just sd -> do
-              _ <- attachStorageDeviceReplacement sd [sn, wwn, ident, loc]
-              syncGraph
-              selfMessage $ DriveRemoved uuid nid enc sd
-            Nothing -> messageProcessed uuid
+               -- We have disk in RG, but we didn't know it's index in enclosure, this happens
+               -- when we loaded initial data that have no information about indices.
+               identifyStorageDevice sd loc
+               return Nothing
+             Nothing -> do
+               -- We don't have information about interted disk in this slot yet, this could
+               -- mean two different things:
+               --   1. either this is completely new disk.
+               --   2. we have no initial data loaded yet (currently having initial data loaded
+               --      is a requirement for a service)
+               -- In this case we insert new disk based on the information provided by HPI message.
+               diskUUID <- liftIO $ nextRandom
+               let disk = StorageDevice diskUUID
+               locateStorageDeviceInEnclosure enc disk
+               identifyStorageDevice disk loc
+               return (Just disk)
+         Just sd -> do
+           -- We have information about disk in slot.
+           mident <- listToMaybe . filter (\x -> case x of DIWWN{} -> True ; _ -> False)
+                       <$> findStorageDeviceIdentifiers sd
+           case mident of
+             Just wwn' | wwn' == wwn -> return Nothing
+             _ -> return (Just sd)
+      case msd of
+        Just sd -> do
+          _ <- attachStorageDeviceReplacement sd [sn, wwn, ident, loc]
+          syncGraph
+          -- It may happen that we have already received inuse_ok status from drive manager, but
+          -- for completely new device, in this case device was not attached to mero because it
+          -- halon still required HPI information before processing event. So we are checking
+          -- if it was a case or not.
+          mwantUpdate <- wantsStorageDeviceReplacement sd
+          case mwantUpdate of
+            Just wsn | wsn == sn -> selfMessage $ DriveInserted uuid sd
+            _   -> selfMessage $ DriveRemoved uuid nid enc sd
+        Nothing -> messageProcessed uuid
 
   -- SSPL Monitor host_update
   defineSimple "monitor-host-update" $ \(HAEvent uuid (nid, srhu) _) -> do
