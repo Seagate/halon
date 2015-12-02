@@ -2,7 +2,7 @@ machine:
   services:
     - docker
   environment:
-    STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero
+      STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero
 
 checkout:
   post:
@@ -40,6 +40,6 @@ test:
     - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero
     - stack $STACK_FLAGS build --test --no-run-tests
     # Only test mero-halon and deps, without USE_MERO.
-    - stack $STACK_FLAGS build --test:
+    - stack $STACK_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer RS' build --test:
         timeout: 3600
     - scripts/circleci_copy_artifacts.sh
