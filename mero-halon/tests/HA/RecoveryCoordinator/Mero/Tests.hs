@@ -327,7 +327,7 @@ testDriveAddition transport = do
     wait = void (expect :: Process ProcessMonitorNotification)
     rt = TestRunner.__remoteTableDecl $
          remoteTable
-    mockEvent = mkResponseDriveManager "enc1" 1
+    mockEvent = mkResponseDriveManager "enc1" "serial1" 1
 
 -- | Message used by 'testClusterStatus'.
 data MsgClusterStatus = ClusterSet ClusterStatus
