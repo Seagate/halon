@@ -91,7 +91,8 @@ data DeviceIdentifier =
     | DIIndexInEnclosure Int
     | DIWWN String
     | DIUUID String
-    | DIOther String
+    | DISerialNumber String
+    | DIOther String String
   deriving (Eq, Show, Ord, Generic, Typeable)
 
 instance Binary DeviceIdentifier

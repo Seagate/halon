@@ -204,7 +204,7 @@ ssplRulesF sspl = do
   -- Handle information messages about drive changes from HPI system.
   defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeId, srphi) _) -> do
       let nid = Node nodeId
-          sn  = DIOther . T.unpack 
+          sn  = DISerialNumber . T.unpack 
                         . sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber
                         $ srphi
           wwn = DIWWN   . T.unpack

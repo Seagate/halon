@@ -201,7 +201,7 @@ testHpiUpdatedWWN = mkHpiTest rules test
                  (Set.fromList [DIIndexInEnclosure 0
                                , DIWWN "wwn10"
                                , DIUUID "loop1"
-                               , DIOther "serial"
+                               , DISerialNumber "serial"
                                ])
                  (Set.fromList is)
 
