@@ -46,6 +46,7 @@ emptyHPIMessage = SSPL.SensorResponseMessageSensor_response_typeDisk_status_hpi
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber = "serial"
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = "wwn"
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiProductVersion = "0.0.1"
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN = "ENCLOSURE"
   }
 
 emptyHostUpdate :: Text -> SSPL.SensorResponseMessageSensor_response_typeHost_update
