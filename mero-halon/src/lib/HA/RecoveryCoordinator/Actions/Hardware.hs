@@ -65,6 +65,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , markOnGoingReset
   , markResetComplete
   , markStorageDeviceRemoved
+  , unmarkStorageDeviceRemoved
     -- ** Drive candidates
   , attachStorageDeviceReplacement
   , lookupStorageDeviceReplacement
@@ -619,6 +620,15 @@ markStorageDeviceRemoved sdev = do
     case m of
       Nothing -> setStorageDeviceAttr sdev SDRemovedAt
       _       -> return ()
+
+unmarkStorageDeviceRemoved :: StorageDevice -> PhaseM LoopState l ()
+unmarkStorageDeviceRemoved sdev = do
+    let _F SDRemovedAt = True
+        _F _           = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Nothing  -> return ()
+      Just old -> unsetStorageDeviceAttr sdev old
 
 markDiskPowerOn :: StorageDevice -> PhaseM LoopState l ()
 markDiskPowerOn sdev = do
