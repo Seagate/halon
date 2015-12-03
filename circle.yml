@@ -2,7 +2,7 @@ machine:
   services:
     - docker
   environment:
-      STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero
+      STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero --docker-mount $HOME/halon/docker/tweagremote:/root/.ssh
 
 checkout:
   post:
@@ -21,6 +21,10 @@ dependencies:
     - tar xf stack-0.1.8.0-linux-x86_64.tar.gz
     - mkdir -p ~/.local/bin
     - cp stack-0.1.8.0-linux-x86_64/stack ~/.local/bin
+    - sudo apt-get install socat
+    # Make the docker socket available on a port.
+    - "socat TCP-LISTEN:5555,reuseaddr,fork UNIX-CLIENT:/var/run/docker.sock":
+        background: true
   override:
     - echo | stack $STACK_FLAGS --docker-registry-username $DOCKER_REGISTRY_USERNAME --docker-registry-password $DOCKER_REGISTRY_PASSWORD docker pull
     - stack $STACK_FLAGS setup
@@ -30,6 +34,7 @@ dependencies:
     - cd vendor/mero; stack $STACK_FLAGS exec -- make
     # Build stack-managed halon dependencies.
     - stack $STACK_FLAGS build --only-snapshot --prefetch --test --bench
+    - docker build --tag=tweagremote docker/tweagremote
 
   cache_directories:
     - ~/.stack/
@@ -38,8 +43,8 @@ test:
   override:
     # Build with USE_MERO and then without.
     - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero --haddock --no-haddock-deps
-    - stack $STACK_FLAGS build --test --no-run-tests --haddock --no-haddock-deps
+    - stack $STACK_FLAGS build --flag mero-halon:distributed-tests --test --no-run-tests --haddock --no-haddock-deps
     # Only test mero-halon and deps, without USE_MERO.
-    - stack $STACK_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer RS' build  --haddock --no-haddock-deps --test:
+    - stack $STACK_FLAGS --no-docker-set-user --docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1 --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer RS' build --flag mero-halon:distributed-tests --haddock --no-haddock-deps --test:
         timeout: 3600
     - scripts/circleci_copy_artifacts.sh

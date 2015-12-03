@@ -1,69 +1,60 @@
---
+-- |
 -- Copyright : (C) 2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
--- Tests that RC insist in restarting the service if it cannot contact the
--- satellite
+-- Tests that the RC successfully restarts all running services on
+-- a killed node when it comes back up.
 --
--- * Start a satellite and a tracking station node.
--- * Start a service in the satellite.
--- * Kill the satellite.
--- * Send a ServiceFailed message to the RC.
--- * Wait for the RC to retry starting the service a few times.
--- * Restart the satellite.
--- * Wait for the RC to get the ServiceStarted message
---
+module HA.Test.Distributed.NodeDeath where
 
+import qualified Control.Exception as IO (bracket)
 import Control.Distributed.Commands.Management (withHostNames)
 import Control.Distributed.Commands.Process
   ( copyFiles
+  , handleGetInput
+  , handleGetNodeId
   , systemThere
   , spawnNode
   , spawnNode_
   , copyLog
   , expectLog
-  , expectTimeoutLog
   , __remoteTable
-  , handleGetNodeId
-  , handleGetInput
   )
 import Control.Distributed.Commands (waitForCommand_)
 import Control.Distributed.Commands.Providers
   ( getHostAddress
   , getProvider
   )
-import HA.Service hiding (__remoteTable)
-import qualified HA.Services.Dummy as Dummy
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Node
   ( initRemoteTable
-  , newLocalNode
   , runProcess
   )
 
+import Data.Function (fix)
 import Data.List (isInfixOf)
 
+import Network.Transport (closeTransport)
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
 
-import System.Environment (getExecutablePath)
-import System.FilePath ((</>), takeDirectory)
+import Test.Framework (withLocalNode, getBuildPath)
+import Test.Tasty (TestTree)
+import Test.Tasty.HUnit (testCase)
+import System.FilePath ((</>))
 import System.Timeout
 
 
-getBuildPath :: IO FilePath
-getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
-
-main :: IO ()
-main =
-  (>>= maybe (error "test timed out") return) $ timeout (120 * 1000000) $ do
+test :: TestTree
+test = testCase "NodeDeath" $
+  (>>= maybe (error "test timed out") return) $ timeout (120 * 1000000) $
+  getHostAddress >>= \ip ->
+  IO.bracket (do Right nt <- createTransport ip "4000" defaultTCPParameters
+                 return nt
+             ) closeTransport $ \nt ->
+  withLocalNode nt (__remoteTable initRemoteTable) $ \n0 -> do
     cp <- getProvider
-
     buildPath <- getBuildPath
-
-    ip <- getHostAddress
-    Right nt <- createTransport ip "4000" defaultTCPParameters
-    n0 <- newLocalNode nt (__remoteTable initRemoteTable)
 
     withHostNames cp 2 $  \ms@[m0, m1] ->
      runProcess n0 $ do
@@ -83,7 +74,7 @@ main =
 
       say "Spawning halond ..."
       nid0 <- spawnNode_ m0 ("./halond -l " ++ m0loc ++ " 2>&1")
-      nh1  <- spawnNode m1 ("./halond -l " ++ m1loc ++ " 2>&1")
+      nh1 <- spawnNode m1 ("./halond -l " ++ m1loc ++ " 2>&1")
       let nid1 = handleGetNodeId nh1
 
       say "Spawning the tracking station ..."
@@ -109,20 +100,21 @@ main =
                      ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m1loc
                      ++ " service dummy start -t " ++ m0loc)
-      expectLog [nid0] (isInfixOf "started dummy service")
       expectLog [nid1] (isInfixOf "Hello World!")
+      expectLog [nid0] (isInfixOf "started dummy service")
 
       say "Killing satellite ..."
-      whereisRemoteAsync nid1 $ serviceLabel $ serviceName Dummy.dummy
-      WhereIsReply _ (Just _) <- expect
       systemThere [m1] "pkill halond; true"
       _ <- liftIO $ waitForCommand_ $ handleGetInput nh1
 
-      say "sending service failed"
-      False <- expectTimeoutLog 1000000 [nid0]
-                                (isInfixOf "started dummy service")
-
       -- Restart the satellite and wait for the RC to ack the service restart.
       say "Restart satellite ..."
-      _ <- spawnNode m1 ("./halond -l " ++ m1loc ++ " 2>&1")
+      nid1' <- spawnNode_ m1 ("./halond -l " ++ m1loc ++ " 2>&1")
+
+      -- Wait until the dummy service is registered.
+      fix $ \loop -> do
+        whereisRemoteAsync nid1' "service.dummy"
+        WhereIsReply "service.dummy" m <- expect
+        maybe (receiveTimeout 10000 [] >> loop) (const $ return ()) m
+
       expectLog [nid0] (isInfixOf "started dummy service")

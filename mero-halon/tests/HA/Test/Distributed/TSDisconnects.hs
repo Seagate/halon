@@ -1,4 +1,4 @@
---
+-- |
 -- Copyright : (C) 2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
@@ -15,7 +15,9 @@
 -- * Isolate another TS node.
 -- * Wait for the RC to report events produced by the service.
 --
+module HA.Test.Distributed.TSDisconnects where
 
+import qualified Control.Exception as IO (bracket)
 import Control.Concurrent (forkIO)
 import Control.Distributed.Commands.IPTables
 import Control.Distributed.Commands.Management (withHostNames)
@@ -38,7 +40,6 @@ import qualified HA.Services.Ping as Ping
 import Control.Distributed.Process
 import Control.Distributed.Process.Node
   ( initRemoteTable
-  , newLocalNode
   , runProcess
   )
 
@@ -46,29 +47,26 @@ import Control.Monad
 import Data.Function (fix)
 import Data.List (isInfixOf)
 
+import Network.Transport (closeTransport)
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
 
-import System.Environment (getExecutablePath)
-import System.FilePath ((</>), takeDirectory)
-import System.IO
+import Test.Framework (withLocalNode, getBuildPath)
+import Test.Tasty (TestTree)
+import Test.Tasty.HUnit (testCase)
+import System.FilePath ((</>))
 import System.Timeout (timeout)
 
 
-getBuildPath :: IO FilePath
-getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
-
-main :: IO ()
-main = (>>= maybe (error "test timed out") return) $
-       timeout (6 * 60 * 1000000) $ do
-    hSetBuffering stdout LineBuffering
-    hSetBuffering stderr LineBuffering
+test :: TestTree
+test = testCase "TSDisconnects" $
+  (>>= maybe (error "test timed out") return) $ timeout (6 * 60 * 1000000) $
+  getHostAddress >>= \ip ->
+  IO.bracket (do Right nt <- createTransport ip "4000" defaultTCPParameters
+                 return nt
+             ) closeTransport $ \nt ->
+  withLocalNode nt (__remoteTable initRemoteTable) $ \n0 -> do
     cp <- getProvider
-
     buildPath <- getBuildPath
-
-    ip <- getHostAddress
-    Right nt <- createTransport ip "4000" defaultTCPParameters
-    n0 <- newLocalNode nt (__remoteTable initRemoteTable)
 
     withHostNames cp 4 $  \ms@[m0, m1, m2, m3] ->
      runProcess n0 $ do

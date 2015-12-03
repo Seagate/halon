@@ -1,21 +1,17 @@
---
--- Copyright : (C) 2014 Xyratex Technology Limited.
+-- |
+-- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
--- Tests that tracking station failures allow the cluster to proceed.
+-- Tests that the tracking station recovers when all replicas are isolated and
+-- then a quorum is recovered.
 --
 -- * Start a satellite and three tracking station nodes.
--- * Start the noisy service in the satellite.
--- * Kill a tracking station node.
--- * Wait for the RC to report events produced by the service.
--- * Restart the tracking station node.
--- * Kill another TS node.
--- * Wait for the RC to report events produced by the service.
--- * Restart the TS node.
--- * Kill another TS node.
--- * Wait for the RC to report events produced by the service.
+-- * Kill all TS nodes.
+-- * Restart two TS nodes.
 --
+module HA.Test.Distributed.TSTotalIsolation2 where
 
+import qualified Control.Exception as IO (bracket)
 import Control.Distributed.Commands (waitForCommand_)
 import Control.Distributed.Commands.Management (withHostNames)
 import Control.Distributed.Commands.Process hiding (withHostNames)
@@ -29,33 +25,32 @@ import qualified HA.Services.Ping as Ping
 import Control.Distributed.Process
 import Control.Distributed.Process.Node
   ( initRemoteTable
-  , newLocalNode
   , runProcess
   )
 
 import Control.Monad
 import Data.List (isInfixOf)
 
+import Network.Transport (closeTransport)
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
 
-import System.Environment (getExecutablePath)
-import System.FilePath ((</>), takeDirectory)
+import Test.Framework (withLocalNode, getBuildPath)
+import Test.Tasty (TestTree)
+import Test.Tasty.HUnit (testCase)
+import System.FilePath ((</>))
 import System.Timeout (timeout)
 
 
-getBuildPath :: IO FilePath
-getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
-
-main :: IO ()
-main = (>>= maybe (error "test timed out") return) $
-       timeout (6 * 60 * 1000000) $ do
+test :: TestTree
+test = testCase "TSTotalIsolation2" $
+  (>>= maybe (error "test timed out") return) $ timeout (6 * 60 * 1000000) $
+  getHostAddress >>= \ip ->
+  IO.bracket (do Right nt <- createTransport ip "4000" defaultTCPParameters
+                 return nt
+             ) closeTransport $ \nt ->
+  withLocalNode nt (__remoteTable initRemoteTable) $ \n0 -> do
     cp <- getProvider
-
     buildPath <- getBuildPath
-
-    ip <- getHostAddress
-    Right nt <- createTransport ip "4000" defaultTCPParameters
-    n0 <- newLocalNode nt (__remoteTable initRemoteTable)
 
     withHostNames cp 4 $  \ms@[m0, m1, m2, m3] ->
      runProcess n0 $ do
@@ -113,14 +108,19 @@ main = (>>= maybe (error "test timed out") return) $
       send pingPid "0"
       expectLog tsNodes $ isInfixOf "received DummyEvent 0"
 
-      forM_ (zip3 [1,3..] [m0, m1, m2] nhs) $ \(i, m, nh) -> do
+      forM_ (zip [m0, m1, m2] nhs) $ \(m, nh) -> do
         say $ "killing ts node " ++ m ++ " ..."
         systemThere [m] "pkill halond; true"
-        _ <- liftIO $ waitForCommand_ $ handleGetInput nh
-        send pingPid $ show (i :: Int)
-        expectLog tsNodes $ isInfixOf $ "received DummyEvent " ++ show i
+        void $ liftIO $ waitForCommand_ $ handleGetInput nh
 
+      send pingPid "1"
+      -- TS shouldn't be able to process the event
+      False <- expectTimeoutLog 1000000 tsNodes $ isInfixOf $
+        "received DummyEvent 1"
+
+      forM_ [m0, m1, m2] $ \m -> do
         say $ "Restarting ts node " ++ m ++ " ..."
-        _ <- spawnNode_ m ("./halond -l " ++ m ++ ":9000" ++ " 2>&1")
-        send pingPid $ show (i + 1)
-        expectLog tsNodes $ isInfixOf $ "received DummyEvent " ++ show (i + 1)
+        spawnNode_ m ("./halond -l " ++ m ++ ":9000" ++ " 2>&1")
+
+      send pingPid "2"
+      expectLog tsNodes $ isInfixOf $ "received DummyEvent 2"

@@ -264,288 +264,47 @@ Executable halond
       Build-Depends: network >= 2.4,
                      network-transport-tcp >= 0.3.1
 
-Test-Suite startService
+Test-Suite distributed-tests
   Type:             exitcode-stdio-1.0
   default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         startService.hs
+  Hs-Source-Dirs:  tests
+  Main-Is:         distributed-tests.hs
 
   Ghc-Options: -threaded -Wall
+
+  Other-Modules:
+      HA.Test.Distributed.Autoboot
+      HA.Test.Distributed.ClusterDeath
+      HA.Test.Distributed.ConfigureServices
+      HA.Test.Distributed.NodeDeath
+      HA.Test.Distributed.RCInsists
+      HA.Test.Distributed.RCInsists2
+      HA.Test.Distributed.Snapshot3
+      HA.Test.Distributed.StartService
+      HA.Test.Distributed.TSDisconnects
+      HA.Test.Distributed.TSDisconnects2
+      HA.Test.Distributed.TSRecovers
+      HA.Test.Distributed.TSRecovers2
+      HA.Test.Distributed.TSTotalIsolation
+      HA.Test.Distributed.TSTotalIsolation2
 
   if flag(maintainer)
     Ghc-Options: -Werror
 
   Build-Depends:   distributed-process,
                    base,
-                   filepath,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands,
-                   process
-  if !flag(distributed-tests)
-    Buildable:     False
-
-Test-Suite autoboot
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         autoboot.hs
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands,
-                   process
-  if !flag(distributed-tests)
-    Buildable:     False
-
-
-Test-Suite rcInsists
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         rcInsists.hs
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
+                   distributed-process-test,
                    filepath,
                    halon,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands,
-                   process
-  if !flag(distributed-tests)
-    Buildable:     False
-
-Test-Suite rcInsists2
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         rcInsists2.hs
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
-                   halon,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands,
-                   process
-  if !flag(distributed-tests)
-    Buildable:     False
-
-Test-Suite tsDisconnects
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         tsDisconnects.hs
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
-                   halon,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands,
-                   replicated-log
-  if !flag(distributed-tests)
-    Buildable:     False
-
-Test-Suite tsDisconnects2
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         tsDisconnects2.hs
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
-                   halon,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands
-  if !flag(distributed-tests)
-    Buildable:     False
-
-Test-Suite tsRecovers
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         tsRecovers.hs
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
-                   halon,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands,
-                   replicated-log
-  if !flag(distributed-tests)
-    Buildable:     False
-
-Test-Suite tsRecovers2
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         tsRecovers2.hs
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
-                   halon,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands
-  if !flag(distributed-tests)
-    Buildable:     False
-
-Test-Suite tsTotalIsolation
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         tsTotalIsolation.hs
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
-                   halon,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands,
-                   replicated-log
-  if !flag(distributed-tests)
-    Buildable:     False
-
-Test-Suite tsTotalIsolation2
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         tsTotalIsolation2.hs
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
-                   halon,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands
-  if !flag(distributed-tests)
-    Buildable:     False
-
-Test-Suite nodeDeath
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         nodeDeath.hs
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
-                   halon,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands,
-                   process
-  if !flag(distributed-tests)
-    Buildable:     False
-
-Test-Suite clusterDeath
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         clusterDeath.hs
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
-                   halon,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands,
-                   process
-  if !flag(distributed-tests)
-    Buildable:     False
-
-Test-Suite configureServices
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         configureServices.hs
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
                    network-transport,
                    network-transport-tcp,
                    distributed-commands,
                    process,
-                   transformers
+                   tasty,
+                   tasty-files,
+                   tasty-hunit
   if !flag(distributed-tests)
     Buildable:     False
-
 
 Test-Suite testsnapshot2
   Type:             exitcode-stdio-1.0
@@ -566,29 +325,6 @@ Test-Suite testsnapshot2
                    distributed-commands,
                    process
   if !(flag(distributed-tests) && flag(long-tests))
-    Buildable:     False
-
-
-Test-Suite testsnapshot3
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         snapshots3.hs
-
-  Ghc-Options:     -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands,
-                   distributed-process-test,
-                   process
-  if !(flag(distributed-tests))
     Buildable:     False
 
 
