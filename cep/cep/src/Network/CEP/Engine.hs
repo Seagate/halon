@@ -52,17 +52,20 @@ data RuleData g =
 data Mode = Read | Write | Execute
 
 -- | Represents the type of request a CEP 'Engine' can handle.
+--
+-- 'Query': Read request that doesn't update CEP 'Engine' internal
+-- state.
+--
+-- 'Run': Write request that might update CEP 'Engine' internal state.
+--
+-- 'DefaultAction': Run default handler for unprocessed message.
 data Request :: Mode -> * -> * where
     Query :: Select a -> Request 'Read a
-    -- ^ Read request that doesn't update CEP 'Engine' internal state.
     Run :: Action a -> Request 'Write (Process (a, Engine))
-    -- ^ Write request that might update CEP 'Engine' internal state.
     DefaultAction :: Message -> Request 'Execute (Process ())
-    -- ^ Run default handler for unprocessed message.
 
-data Select a where
-    GetSetting :: EngineSetting a -> Select a
-    -- ^ Get CEP 'Engine' internal setting.
+data Select a = GetSetting (EngineSetting a)
+                -- ^ Get CEP 'Engine' internal setting.
 
 data Action a where
     Tick           :: Action RunInfo

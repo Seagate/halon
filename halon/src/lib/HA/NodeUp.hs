@@ -56,9 +56,9 @@ import System.IO
 
 
 -- | NodeUp message sent to the RC (via EQ) when a node starts.
-data NodeUp = NodeUp
-              String -- ^ Node hostname
-              ProcessId
+data NodeUp =
+  -- | 'NodeUp' @nodeHostname@ @nodePid@
+  NodeUp String ProcessId
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary NodeUp
@@ -66,9 +66,11 @@ instance Hashable NodeUp
 
 -- | Process which setup EQT and then repeatedly sends 'NodeUp' messages
 --   to the EQ, until one is acknowledged with a '()' reply.
-nodeUp :: ( [NodeId] -- ^ Set of EQ nodes to contact
-          , Int -- ^ Interval between sending messages (ms)
+nodeUp :: ( [NodeId]
+          , Int
           )
+        -- ^ @(eqs, delay)@: set of EQ nodes to contant and the
+        -- interval between sending messages in milliseconds.
        -> Process ()
 nodeUp (eqs, _delay) = do
     self <- getSelfPid

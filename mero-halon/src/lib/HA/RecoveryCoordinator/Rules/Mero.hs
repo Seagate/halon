@@ -59,7 +59,7 @@ meroRules = do
     selfMessage (SyncComplete uuid)
 
 syncAction :: Maybe UUID -> SyncToConfd -> PhaseM LoopState l ()
-syncAction meid sync = do 
+syncAction meid sync = do
   case sync of
     SyncToConfdServersInRG -> do
       phaseLog "info" "Syncing RG to confd servers in RG."
@@ -245,9 +245,10 @@ data Failures = Failures {
   , f_disk :: !Word32
 } deriving (Eq, Ord, Show)
 
-data FailureSet = FailureSet
-    !(S.Set Fid) -- ^ Set of Fids
-    !Failures -- ^ Allowable failures in each failure domain.
+data FailureSet = FailureSet !(S.Set Fid) !Failures
+                  -- ^ @FailureSet fids fs@ where @fids@ is a set of
+                  -- fids and @fs@ are allowable failures in each
+                  -- failrue domain.
   deriving (Eq, Ord, Show)
 
 failureSetToArray :: Failures -> [Word32]

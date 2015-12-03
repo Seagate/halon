@@ -31,15 +31,18 @@ import Network.CEP.Types
 newtype SM g = SM { runSM :: forall a. SMIn g a -> a }
 
 -- | Input to 'SM' (Stack Machine).
+--
+-- 'SMExecute': Execute a single step of the 'SM'. Where subscribers
+-- is the list of the current 'Subscribers' and g is current Global
+-- State.
+--
+-- 'SMMessage': Feed a new message into state machine.
 data SMIn g a where
     SMExecute :: Maybe SMLogs
               -> Subscribers
               -> g
               -> SMIn g (Process (g, [(SMResult, SM g)]))
-    -- ^ Execute a single step of the 'SM'. Where subscribers is the list of
-    -- the current 'Subscribers' and g is current Global State.
     SMMessage :: TypeInfo -> Message -> SMIn g (SM g)
-    -- ^ Feed a new message into state machine.
 
 -- | Create CEP state machine
 newSM :: forall g l. RuleKey

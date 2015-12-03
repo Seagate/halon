@@ -23,13 +23,17 @@ import qualified Data.Sequence as S
 import Network.CEP.Buffer
 import Network.CEP.Types
 
+-- | 'SM_Complete': The phase has finished processing, yielding a new
+-- set of SMs to run.
+--
+-- 'SM_Suspend': The phase has stopped temporarily, and should be
+-- invoked again.
+--
+-- 'SM_Stop': The phase has stopped, and should not be executed again.
 data PhaseOut l where
     SM_Complete :: l -> [Jump PhaseHandle] -> Maybe SMLogs -> PhaseOut l
-    -- ^ The phase has finished processing, yielding a new set of SMs to run.
     SM_Suspend  :: Maybe SMLogs -> PhaseOut l
-    -- ^ The phase has stopped temporarily, and should be invoked again.
     SM_Stop     :: Maybe SMLogs -> PhaseOut l
-    -- ^ The phase has stopped, and should not be executed again.
 
 -- | Notifies every subscriber that a message those are interested in has
 --   arrived.
