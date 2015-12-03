@@ -1,0 +1,7 @@
+.cabal-sandbox
+cabal.sandbox.config
+dist
+*_flymake.hs
+*_flymake.lhs
+*~
+test_output/

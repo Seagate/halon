@@ -1,0 +1,102 @@
+name:                cep
+version:             0.1.0.0
+synopsis:            A Complex Event Processing framework.
+-- description:
+license:             AllRightsReserved
+copyright:           (C) 2014 Seagate Technology Limited.
+category:            Network
+build-type:          Simple
+-- extra-source-files:
+cabal-version:       >=1.10
+
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Network.CEP
+                       Network.CEP.Testing
+  other-modules:       Network.CEP.Buffer
+                       Network.CEP.Engine
+                       Network.CEP.Execution
+                       Network.CEP.Phase
+                       Network.CEP.SM
+                       Network.CEP.Types
+                       Network.CEP.Utils
+
+  other-extensions:    DeriveDataTypeable
+                       GeneralizedNewtypeDeriving
+                       DeriveGeneric
+  build-depends:       base >=4.6 && <5,
+                       distributed-process-scheduler,
+                       binary==0.7.*,
+                       bytestring,
+                       mtl,
+                       multimap==1.2.*,
+                       containers==0.5.*,
+                       netwire,
+                       operational,
+                       exceptions
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+Test-Suite unit-tests
+  Type: exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs: tests
+  Main-Is: UnitTests.hs
+  Other-Modules:       CEP.Settings.Tests
+                       Tests
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  Build-Depends: base,
+                 mtl,
+                 network-transport,
+                 network-transport-tcp,
+                 distributed-process-scheduler,
+                 cep,
+                 binary,
+                 containers,
+                 netwire,
+                 random,
+                 tasty,
+                 tasty-hunit,
+                 tasty-files,
+                 exceptions
+
+Test-Suite unit-tests-scheduler
+  Type: exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs: tests
+  Main-Is: unit-tests-scheduler.hs
+  Other-Modules:       CEP.Settings.Tests
+                       Tests
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  Build-Depends: base,
+                 mtl,
+                 network-transport-inmemory,
+                 distributed-process-scheduler,
+                 cep,
+                 binary,
+                 containers,
+                 netwire,
+                 random,
+                 tasty,
+                 tasty-hunit,
+                 tasty-files,
+                 unix,
+                 time,
+                 exceptions
