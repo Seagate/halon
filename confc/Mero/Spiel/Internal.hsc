@@ -110,6 +110,11 @@ foreign import capi "spiel/spiel.h m0_spiel_tx_dump"
                   -> CString
                   -> IO CInt
 
+foreign import capi "spiel/spiel.h m0_spiel_cmd_profile_set"
+  c_spiel_cmd_profile_set :: Ptr SpielContextV
+                          -> CString
+                          -> IO CInt
+
 ---------------------------------------------------------------
 -- Configuration management                                  --
 ---------------------------------------------------------------

@@ -33,6 +33,7 @@ testMain localAddress confdAddress rmAddress =
     rpcMach <- getRPCMachine_se ep
     withConf rpcMach (rpcAddress confdAddress) $ \rootNode -> do
       profiles <- (children rootNode :: IO [Profile])
+      print profiles
       fs <- join <$> mapM (children :: Profile -> IO [Filesystem]) profiles
       nodes <- join <$> mapM (children :: Filesystem -> IO [Node]) fs
       processes <- join <$> mapM (children :: Node -> IO [Process]) nodes
@@ -40,6 +41,7 @@ testMain localAddress confdAddress rmAddress =
         print processes
         services <- join <$> mapM (children :: Process -> IO [Service]) processes
         print services
+        setCmdProfile spiel Nothing
         runningServices <- join <$> mapM (processListServices spiel) processes
         print runningServices
 
