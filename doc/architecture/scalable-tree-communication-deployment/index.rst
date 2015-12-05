@@ -76,6 +76,8 @@ N/A
 Architecture background
 -----------------------
 
+.. _scalable-tree-communication-rationale:
+
 Rationale
 ~~~~~~~~~
 
@@ -129,6 +131,3 @@ Assumptions
 ~~~~~~~~~~~
 
 N/A
-
-
-

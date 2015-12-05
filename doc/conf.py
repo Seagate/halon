@@ -40,7 +40,7 @@ todo_include_todos = True
 
 # -- Options for HTML output ----------------------------------------------
 
-html_theme = 'alabaster'
+html_theme = 'sphinx_rtd_theme'
 html_additional_pages = {
     'index': 'index.html',
 }

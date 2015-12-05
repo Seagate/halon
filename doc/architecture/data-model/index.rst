@@ -14,12 +14,11 @@ Element catalog
 Elements and their properties
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-This view, on the left hand side, is a logical data model. The elements
-on the left hand side all appear in `layered abstract structures`_.
-We focus here on the properties of each element and comment on the entity
-relationship model.
-
-.. _layered abstract structures: ../layered-abstract-structures/index.html
+This view, on the left hand side, is a logical data model. The
+elements on the left hand side all appear
+in :doc:`../layered-abstract-structures/index`. We focus here on the
+properties of each element and comment on the entity relationship
+model.
 
 Furthermore, the right hand side introduces a meta-logical data model:
 we model data entities, instances of which can be seen on the left hand
@@ -83,14 +82,12 @@ the number of nodes.
 Node
 ++++
 
-A *node* does not have any intrinsic properties associated with it beyond its
-network address. Though some higher-level subsystems (see
-`Subsystems layered view`_) might choose to
-maintain additional information about a node as part of their state, e.g.
-pertaining to various health metrics. Halon expects clusters to scale out
-to up to 100K nodes.
-
-.. _Subsystems layered view: ../subsystems-uses/index.html
+A *node* does not have any intrinsic properties associated with it
+beyond its network address. Though some higher-level subsystems
+(see :doc:`../subsystems-uses/index`) might choose to maintain
+additional information about a node as part of their state, e.g.
+pertaining to various health metrics. Halon expects clusters to scale
+out to up to 100K nodes.
 
 Connection
 ++++++++++

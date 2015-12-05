@@ -1,9 +1,9 @@
-Architecture: Table of Contents
-===============================
+Architecture overview: Table of Contents
+========================================
 
 .. toctree::
 
-   ./index.rst
+   index.rst
    communicating-processes/index.rst
    data-model/index.rst
    layered-abstract-structures/index.rst

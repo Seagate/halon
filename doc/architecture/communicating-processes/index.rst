@@ -73,14 +73,12 @@ every recovery action would be taken in duplicate.
 Satellite
 +++++++++
 
-**Functionality**: A satellite is a stateless component whose sole purpose
-is to facilitate scalable communication between the tracking station and
-all other nodes in the cluster. See the Rationale section in
-`architecture documentation index`_. Connections between the tracking station and
-the transponder are called *uplinks*. Connections between the transponder
-and worker nodes are called *downlinks*.
-
-.. _architecture documentation index: ../index.html
+**Functionality**: A satellite is a stateless component whose sole
+purpose is to facilitate scalable communication between the tracking
+station and all other nodes in the cluster
+(see :ref:`architecture-rationale`). Connections between the tracking
+station and the transponder are called *uplinks*. Connections between
+the transponder and worker nodes are called *downlinks*.
 
 **Cardinality**: any number of instances.
 

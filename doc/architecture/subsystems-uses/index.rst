@@ -32,10 +32,8 @@ Deployment
 ++++++++++
 
 The deployment subsystem is that which concerns itself with
-effectuating the orders received during recovery. See
-`communicating processes`_ for possible orders.
-
-.. _communicating processes: ../communicating-processes/index.html
+effectuating the orders received during recovery.
+See :doc:`../communicating-processes/index` for possible orders.
 
 Monitoring
 ++++++++++

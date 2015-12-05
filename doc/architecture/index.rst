@@ -7,9 +7,7 @@ Architecture documentation
    This documentation follows a standard format published by the SEI,
    that of the “Views and beyond” methodology [1]_.
 
-`Table of contents`_
-
-.. _Table of contents: contents.html
+:doc:`contents`
 
 Documentation roadmap
 ---------------------
@@ -36,14 +34,12 @@ in parts fixes their behaviour. In general, we aim to provide mechanism, not
 policy.
 
 The layered architecture is reflected in two views, one that shows the
-relationships between the various `abstract structures`_ that we introduce and
-the other between `subsystems`_. The former are the objects that are manipulated
-by the operations of the latter. Within each view, we order each view packet to 
-match that of the layer it pertains to.
-
-.. _abstract structures: layered-abstract-structures/index.html
-
-.. _subsystems: subsystems-uses/index.html
+relationships between the various :doc:`abstract structures
+<layered-abstract-structures/index>` that we introduce and the other
+between :doc:`subsystems <subsystems-uses/index>`. The former are the
+objects that are manipulated by the operations of the latter. Within
+each view, we order each view packet to match that of the layer it
+pertains to.
 
 Layered abstract structures
 +++++++++++++++++++++++++++
@@ -208,6 +204,8 @@ Mapping between views
 
 TODO
 
+.. _architecture-rationale:
+
 Rationale
 ---------
 
@@ -319,7 +317,8 @@ This architectural pattern is the topic of the next section.
 Scalable tree communication
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-See Rationale section in `Scalable tree communication deployment`_.
+See :ref:`scalable-tree-communication-rationale` section
+in :doc:`scalable-tree-communication-deployment/index`.
 
 Directory
 ---------
@@ -359,8 +358,6 @@ Acronym list
        May 30, 2008.
 
 .. [6] TODO: missing footnote in original document.
-
-.. _Scalable tree communication deployment: scalable-tree-communication-deployment/index.html
 
 .. _Hardware Components Failures — Survey Results: http://www.pythian.com/blog/hardware-components-failures-survey-results/
 

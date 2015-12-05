@@ -109,10 +109,7 @@ N/A
 Related view packets
 --------------------
 
-See `Data model`_.
-
-.. _Data model: ../data-model/index.html
-
+See :doc:`../data-model/index`.
 
 
 
