@@ -87,7 +87,7 @@ A *node* does not have any intrinsic properties associated with it beyond its
 network address. Though some higher-level subsystems (see
 `Subsystems layered view`_) might choose to
 maintain additional information about a node as part of their state, e.g.
-pertaining to various health metrics. HAMS-Cabal expects clusters to scale out
+pertaining to various health metrics. Halon expects clusters to scale out
 to up to 100K nodes.
 
 .. _Subsystems layered view: ../subsystems-uses/index.html

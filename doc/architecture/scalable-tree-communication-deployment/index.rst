@@ -44,7 +44,7 @@ User node
 +++++++++
 
 **Services**: any deployment specific services whose availability is
-the responsibility of HAMS-Cabal.
+the responsibility of Halon.
 
 **Number of nodes**: anywhere from a handful of nodes to 100K.
 

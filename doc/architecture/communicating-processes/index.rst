@@ -43,7 +43,7 @@ See `Variability guide`_ section below.
 Tracking Station
 ++++++++++++++++
 
-**Functionality**: The recovery coordinator is the “brain” of HAMS-Cabal.
+**Functionality**: The recovery coordinator is the “brain” of Halon.
 It sits in the tracking station, which is a set of nodes whose stateful
 services are all replicated, so as to tolerate one or more node and 
 communication failures.

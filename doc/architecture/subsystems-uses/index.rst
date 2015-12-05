@@ -40,9 +40,9 @@ effectuating the orders received during recovery. See
 Monitoring
 ++++++++++
 
-The core function of HAMS-Cabal is to recover from failures.
+The core function of Halon is to recover from failures.
 The *monitoring subsystem* concerns itself with detecting them.
-This is achieved through deploying a set of core HAMS-Cabal monitors,
+This is achieved through deploying a set of core Halon monitors,
 which is typically augmented with deployment specific, user provided
 monitors.
 
@@ -69,10 +69,10 @@ Context diagram
    :width: 60%
    :align: center
 
-HAMS-Cabal sits atop the networking components of the cluster to
+Halon sits atop the networking components of the cluster to
 provide interconnect between nodes, layering a mechanism for scalable
-communication on top. HAMS-Cabal manages user services, but the user
-services do not interact with HAMS-Cabal in anyway, except user supplied
+communication on top. Halon manages user services, but the user
+services do not interact with Halon in anyway, except user supplied
 monitors, which interact with the HAMS using the monitoring API.
 
 Variability guide

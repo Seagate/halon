@@ -3,7 +3,7 @@ Architecture documentation
 
 *Copyright © 2013 Parallel Scientific. All rights reserved.*
 
-*This document forms a part of HAMS-Cabal architecture documentation.
+*This document forms a part of Halon architecture documentation.
 This documentation follows a standard format published by the SEI, that
 of the “Views and beyond” methodology* [1]_.
 
@@ -18,7 +18,7 @@ Scope and summary
 ~~~~~~~~~~~~~~~~~
 
 The documentation that this document accompanies provides an overview of
-the architecture of HAMS-Cabal, which is a software solution to make 
+the architecture of Halon, which is a software solution to make 
 applications in a compute cluster or data center highly-available. This
 set of documents is intended as a reference for architecture, a starting
 point for high-level design (HLD) documents and detailed level design (DLD)
@@ -39,7 +39,7 @@ View overview
 ~~~~~~~~~~~~~
 
 The System Overview section explains that one of the key quality attributes of
-HAMS-Cabal is reuse. We address this quality attribute with a layered
+Halon is reuse. We address this quality attribute with a layered
 architecture. Lower layers present entities in a way that allows for a wide
 variety of behaviours. Higher layers add substructure to these entities that
 in parts fixes their behaviour. In general, we aim to provide mechanism, not
@@ -63,14 +63,14 @@ Layered abstract structures
 - **Properties**: name, definition.
 
 This view depicts the “thing”-like structures that the various subsystems that
-make up HAMS-Cabal manipulate. The abstract structures are arranged in layers.
+make up Halon manipulate. The abstract structures are arranged in layers.
 A lower-level abstract structure can be defined independently of the higher
 level abstract structures. Conversely, defining a higher-level abstract
 structure is only possible once the lower-level ones are defined.
 
 These abstract structures serve to *stereotype* many of the runtime components
-of HAMS-Cabal. This view only mentions core abstract structures that are
-common to all deployments of HAMS-Cabal, but one is free to additionally
+of Halon. This view only mentions core abstract structures that are
+common to all deployments of Halon, but one is free to additionally
 define deployment specific abstract structures, such as disk drives, epoch
 numbers, etc.
 
@@ -87,9 +87,9 @@ Subsystem uses
 This view depicts the “systems” that act, manipulate and transform the
 “thing”-like structures in the previous view. In order to satisfy the
 reusability, modifiability and variability quality attributes, the subsystems
-of HAMS-Cabal are organized as a hierarchy of layers.
+of Halon are organized as a hierarchy of layers.
 
-These subsystems serve to *colour* many of the runtime components of HAMS-Cabal.
+These subsystems serve to *colour* many of the runtime components of Halon.
 
 Communicating processes
 +++++++++++++++++++++++
@@ -154,7 +154,7 @@ System overview
 High-availability management systems
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-HAMS-Cabal is a high-availability management systems (HAMS). This system
+Halon is a high-availability management systems (HAMS). This system
 is meant to manage deployments of processes in a cluster making up a
 distributed application in such a way as to make the distributed
 application highly available.
@@ -169,7 +169,7 @@ node, and notifying all other nodes to take appropriate corrective
 measures in response to a failure.
 
 High-availability is often baked in to some applications in a monolithic
-fashion. In contrast, HAMS-Cabal is intended as a modular and reusable
+fashion. In contrast, Halon is intended as a modular and reusable
 component, acceding to the high-availability needs of many different
 applications in a variety of contexts. This is achieved through
 (i) simple interaction in a uniform way with all processes making up
@@ -224,7 +224,7 @@ Rationale
 Centralized coordinator
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-The principal architecture pattern of HAMS-Cabal is that at its core
+The principal architecture pattern of Halon is that at its core
 lies a centralized coordination service for the entire cluster. This
 HA coordinator is made to be “immortal”, in the sense that debilitating 
 failure that would make any kind of progress of the coordinator
