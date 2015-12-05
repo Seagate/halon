@@ -26,12 +26,12 @@ defects.
 View overview
 ~~~~~~~~~~~~~
 
-The System Overview section explains that one of the key quality attributes of
-Halon is reuse. We address this quality attribute with a layered
-architecture. Lower layers present entities in a way that allows for a wide
-variety of behaviours. Higher layers add substructure to these entities that
-in parts fixes their behaviour. In general, we aim to provide mechanism, not
-policy.
+The System Overview section explains that one of the key quality
+attributes of Halon is reusability. We address this quality attribute
+with a layered architecture. Lower layers present entities in a way
+that allows for a wide variety of behaviours. Higher layers add
+substructure to these entities that in parts fixes their behaviour. In
+general, we aim to provide mechanism, not policy.
 
 The layered architecture is reflected in two views, one that shows the
 relationships between the various :doc:`abstract structures
@@ -214,13 +214,13 @@ Centralized coordinator
 
 The principal architecture pattern of Halon is that at its core
 lies a centralized coordination service for the entire cluster. This
-HA coordinator is made to be “immortal”, in the sense that debilitating 
+HA coordinator is made to be “immortal”, in the sense that debilitating
 failure that would make any kind of progress of the coordinator
 impossible is exceedingly unlikely. In other words, the HA coordinator
-is highly tolerant to failures and highly available. The existence of 
+is highly tolerant to failures and highly available. The existence of
 such a resilient service that is unique for all the cluster nodes that
 it manages greatly simplifies the architecture. Indeed, a great many
-complications in a distributed setting find an easy solution given a 
+complications in a distributed setting find an easy solution given a
 single point of coordination that we can assume to be highly available.
 
 Note, however, that a centralized coordination service is certainly not
@@ -246,7 +246,7 @@ magnitude higher replacement rates have been observed.
 We wish to scale all the way up to clusters storing 10EB. This would imply
 the presence of up to approximately 1M disks. For a cluster with this many
 disks, the data of Schroeder and Gibson suggests that disk failures are
-normally expected to happen 1 times/hour on average when the observed MTTF 
+normally expected to happen 1 times/hour on average when the observed MTTF
 is close to that of the vendor supplied rating. If the observed MTTF happens
 to diverge significantly, this would still only imply an expected failure
 rate of about 10 times/hour, i.e. from once every 6 minutes to once every
@@ -270,7 +270,7 @@ Other hardware components failure
 Other hardware components that are likely to fail include network cards,
 CPUs, DRAM, motherboards and other components internal to a node, as well
 as network switches, power distribution units, cables and other components
-that make up the cluster infrastructure. Any internal component can cause a 
+that make up the cluster infrastructure. Any internal component can cause a
 node failure, while infrastructure failure can bring down many nodes at once.
 
 Anecdotal evidence [3]_, data reported by Schroeder and Gibson as well as
