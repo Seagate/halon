@@ -326,17 +326,44 @@ Directory
 Glossary
 ~~~~~~~~
 
-- **dependent entity**: see weak entity.
-- **identifying relationship**: an identifying relationship from A to B means
-  the existence of B depends on the existence of A; that is, the primary
-  key of B contains the primary key of A.
-- **weak entity**: depends on the existence of another entity to exist.
+.. glossary::
+   :sorted:
+
+   dependent entity
+
+   weak entity
+
+      Depends on the existence of another entity to exist.
+
+   identifying relationship
+
+      An identifying relationship from A to B means the existence of
+      B depends on the existence of A; that is, the primary key of
+      B contains the primary key of A.
 
 Acronym list
 ~~~~~~~~~~~~
 
-- **GUID**: globally unique identifier.
-- **HAMS**: high availability management system.
+.. glossary::
+   :sorted:
+
+   GUID
+
+      globally unique identifier
+
+   HAMS
+
+      high availability management system
+
+   HLD
+
+      high-level design document
+
+   DLD
+
+      detailed-level design document
+
+.. rubric:: Footnotes
 
 .. [1] Clements, Paul, et al. *Documenting software architectures: views
        and beyond.* Addison-Wesley Professional, 2010.
@@ -362,7 +389,3 @@ Acronym list
 .. _Hardware Components Failures — Survey Results: http://www.pythian.com/blog/hardware-components-failures-survey-results/
 
 .. _Google spotlights data center inner workings: http://news.cnet.com/8301-10784_3-9955184-7.html?part=rss&tag=feed&subj=NewsBlog
-
-
-
-
