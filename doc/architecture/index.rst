@@ -41,8 +41,8 @@ objects that are manipulated by the operations of the latter. Within
 each view, we order each view packet to match that of the layer it
 pertains to.
 
-Layered abstract structures
-+++++++++++++++++++++++++++
+:doc:`layered-abstract-structures/index`
+++++++++++++++++++++++++++++++++++++++++
 
 - **Element type**: abstract structure.
 - **Relation type**: "definition depends on".
@@ -63,8 +63,8 @@ numbers, etc.
 Abstract structures correspond to resource types in the resource graph that
 makes up the namespace.
 
-Subsystem uses
-++++++++++++++
+:doc:`subsystems-uses/index`
+++++++++++++++++++++++++++++
 
 - **Element type**: subsystem.
 - **Relation type**: “uses”.
@@ -77,8 +77,8 @@ of Halon are organized as a hierarchy of layers.
 
 These subsystems serve to *colour* many of the runtime components of Halon.
 
-Communicating processes
-+++++++++++++++++++++++
+:doc:`communicating-processes/index`
+++++++++++++++++++++++++++++++++++++
 
 - **Element type**: process.
 - **Relation types**: “sends messages to”.
@@ -88,8 +88,8 @@ The constituent parts of the each subsystem in the previous view are processes,
 i.e. runtime components. This view shows each component of each subsystem and
 how they communicate with each other.
 
-Data model
-++++++++++
+:doc:`data-model/index`
++++++++++++++++++++++++
 
 - **Element type**: data entity.
 - **Relation types**: “has one”, “has at least one”, “has many”.
@@ -101,8 +101,8 @@ Also lists the attributes of each abstract structure along with the properties
 of each attribute. Finally, provides a meta-model of data entities in the
 cluster as resources, as present in the namespace.
 
-Scalable communication tree deployment
-++++++++++++++++++++++++++++++++++++++
+:doc:`scalable-tree-deployment/index`
++++++++++++++++++++++++++++++++++++++
 
 - **Element type**: node.
 - **Relation types**: “sends message to”.
@@ -113,8 +113,8 @@ other. A node is named according to the services that it hosts. Depicts the
 flow of information in the cluster and discusses how the number of nodes of each
 type may change over time.
 
-Tracking station deployment
-+++++++++++++++++++++++++++
+:doc:`tracking-station-deployment/index`
+++++++++++++++++++++++++++++++++++++++++
 
 - **Software element type**: process from communicating processes view.
 - **Environment element type**: node.

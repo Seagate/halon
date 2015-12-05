@@ -1,5 +1,5 @@
-Data model
-==========
+View: Data model
+================
 
 Primary presentation
 --------------------

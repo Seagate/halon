@@ -1,5 +1,5 @@
-Communicating processes
-=======================
+View: Communicating processes
+=============================
 
 Primary presentation
 --------------------

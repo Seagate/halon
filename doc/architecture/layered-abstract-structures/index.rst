@@ -1,5 +1,5 @@
-Layered abstract structures
-===========================
+View: Layered abstract structures
+=================================
 
 Primary presentation
 --------------------

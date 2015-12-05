@@ -1,5 +1,5 @@
-Tracking station deployment
-===========================
+View: Tracking station deployment
+=================================
 
 Primary presentation
 --------------------
