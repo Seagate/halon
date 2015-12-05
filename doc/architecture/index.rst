@@ -1,11 +1,11 @@
 Architecture documentation
 ==========================
 
-*Copyright © 2013 Parallel Scientific. All rights reserved.*
+.. Note::
 
-*This document forms a part of Halon architecture documentation.
-This documentation follows a standard format published by the SEI, that
-of the “Views and beyond” methodology* [1]_.
+   This document forms a part of the Halon architecture documentation.
+   This documentation follows a standard format published by the SEI,
+   that of the “Views and beyond” methodology [1]_.
 
 `Table of contents`_
 
@@ -17,23 +17,13 @@ Documentation roadmap
 Scope and summary
 ~~~~~~~~~~~~~~~~~
 
-The documentation that this document accompanies provides an overview of
-the architecture of Halon, which is a software solution to make 
-applications in a compute cluster or data center highly-available. This
-set of documents is intended as a reference for architecture, a starting
-point for high-level design (HLD) documents and detailed level design (DLD)
-documents, and to be inspected by architects and peer designers for the
-presence of any defects.
-
-The intended audience consists of the architects and other stakeholders of
-Xyratex and the architects, designers and developers of Parallel Scientific.
-
-How the documentation is organized
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-This document is organized according to the `Toplevel documentation template`_.
-
-.. _Toplevel documentation template: https://docs.google.com/a/parsci.com/document/d/1e39Gb1qr1wiYlbyK3W7DSWQqzaEAewlFjI2BHawQ1QQ/edit
+This documentation provides an overview of the architecture of Halon,
+a software solution for high-availability of large clusters and
+real-time automated repairs. This set of documents is intended as
+a reference for architecture, a starting point for high-level design
+(HLD) documents and detailed level design (DLD) documents, and to be
+inspected by architects and peer designers for the presence of any
+defects.
 
 View overview
 ~~~~~~~~~~~~~
@@ -151,12 +141,12 @@ nodes of a cluster.
 System overview
 ---------------
 
-High-availability management systems
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+High-availability management system
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Halon is a high-availability management systems (HAMS). This system
-is meant to manage deployments of processes in a cluster making up a
-distributed application in such a way as to make the distributed
+Halon is a high-availability management system (HAMS). This system is
+meant to manage deployments of processes in a cluster making up
+a distributed application in such a way as to make the distributed
 application highly available.
 
 A distributed application is highly available when an agreed procedure
@@ -350,19 +340,20 @@ Acronym list
 - **HAMS**: high availability management system.
 
 .. [1] Clements, Paul, et al. *Documenting software architectures: views
-	   and beyond.* Addison-Wesley Professional, 2010.
+       and beyond.* Addison-Wesley Professional, 2010.
 
-.. [2] Schroeder, Bianca, and Garth A. Gibson. "Disk failures in the real
-	   world: What does an MTTF of 1,000,000 hours mean to you."
-	   *Proceedings of the 5th USENIX Conference on File and Storage
-	   Technologies (FAST)*. 2007.
+.. [2] Schroeder, Bianca, and Garth A. Gibson. "Disk failures in the
+       real world: What does an MTTF of 1,000,000 hours mean to you."
+       *Proceedings of the 5th USENIX Conference on File and Storage
+       Technologies (FAST)*. 2007.
 
 .. [3] Alex Gorbatchev. `Hardware Components Failures — Survey Results`_.
-	   May 10, 2012.
+       May 10, 2012.
 
-.. [4] Schroeder, Bianca, and Garth A. Gibson.
-	   "A large-scale study of failures in high-performance computing systems."
-	   *Dependable and Secure Computing, IEEE Transactions on* 7.4 (2010): 337-350.
+.. [4] Schroeder, Bianca, and Garth A. Gibson. "A large-scale study of
+       failures in high-performance computing systems." *Dependable
+       and Secure Computing, IEEE Transactions on* 7.4 (2010):
+       337-350.
 
 .. [5] Steven Shankland. `Google spotlights data center inner workings`_.
        May 30, 2008.
