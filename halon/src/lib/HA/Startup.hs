@@ -102,9 +102,9 @@ remotableDecl [ [d|
  isNodeInGroup :: [NodeId] -> NodeId -> Bool
  isNodeInGroup = flip elem
 
- addNodes :: ( ProcessId -- ^ Caller
+ addNodes :: ( ProcessId
              , [NodeId]
-             , [NodeId] -- ^ (New nodes, existing trackers)
+             , [NodeId]
              , Closure (ProcessId -> ProcessId -> Process ())
              )
           -> Process ()
@@ -168,7 +168,7 @@ remotableDecl [ [d|
            return ())
        ] >> handleMessages refmapper
 
- -- | Start the RC and EQ.
+ -- Start the RC and EQ.
  --
  -- Takes a tuple
  -- @(update, trackers, snapshotThreashold,

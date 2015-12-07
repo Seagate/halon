@@ -275,29 +275,36 @@ data Seq
 
 -- | Little state machine. It's mainly used to implement combinator like
 --   'sequenceIf' for instance.
-data PhaseStep a b where
-    Await :: Serializable i => (i -> PhaseStep a b) -> PhaseStep a b
-    -- ^ Awaits for more input in order to produce the next state of the state
-    --   machine.
-    Emit  :: b -> PhaseStep a b
-    -- ^ State machine successfully produces a final value.
-    Error :: PhaseStep a b
-    -- ^ Informs the state machine is in error state. It's mainly used to
-    --   implement predicate logic for instance.
+data PhaseStep a b =
+  forall i. Serializable i => Await (i -> PhaseStep a b)
+  -- ^ Awaits for more input in order to produce the next state of the
+  -- state machine.
+  | Emit b
+  -- ^ State machine successfully produces a final value.
+  | Error
+  -- ^ Informs the state machine is in error state. It's mainly used
+  -- to implement predicate logic for instance.
 
 -- | When defining a phase that need some type of message in order to proceed,
 --   there are several type strategy that will produce that type.
+--
+-- 'PhaseWire': Await for a message of type @a@ then apply it to
+-- Netwire state machine to produce a @b@. This allows to have time
+-- varying logic.
+--
+-- 'PhaseMatch': Await for a @a@ message, if the given predicate
+-- returns 'True', pass it to the continuation in order to produce a
+-- @b@.
+--
+-- 'PhaseNone': Simply awaits for a message.
+--
+-- 'PhaseSeq': Uses 'PhaseStep' state machine in order to produce a
+-- @b@ message.
 data PhaseType g l a b where
     PhaseWire  :: CEPWire a b -> PhaseType g l a b
-    -- ^ Await for a message of type `a` then apply it to Netwire state machine
-    --   to produce a `b`. This allows to have time varying logic.
     PhaseMatch :: (a -> g -> l ->  Process (Maybe b)) -> PhaseType g l a b
-    -- ^ Await for a `a` message, if the given predicate returns 'True',
-    --   pass it to the continuation in order to produce a `b`.
     PhaseNone  :: PhaseType g l a a
-    -- ^ Simply awaits for a message.
     PhaseSeq   :: Seq -> PhaseStep a b -> PhaseType g l a b
-    -- ^ Uses 'PhaseStep' state machine in order to produce a `b` message.
 
 -- | 'Phase' state machine type. Either it's a 'ContCall', it needs a message
 --   in order to proceed. If it's a 'DirectCall', it can be started right away
@@ -310,16 +317,20 @@ data PhaseCall g l
 data Token a = Token
 
 -- | Rule state machine.
+--
+-- 'Start': Starts the rule given a phase and an inital local state value.
+--
+-- 'NewHandle': Defines a phase handle. By default, that handle would
+-- reference a 'Phase' state machine that will ask and do nothing.
+--
+-- 'SetPhase': Assignes a 'Phase' state machine to the handle.
+--
+-- 'Wants': Indicates that rule is interested in a particular message.
 data RuleInstr g l a where
     Start     :: Jump PhaseHandle -> l -> RuleInstr g l (Started g l)
-    -- ^ Starts the rule given a phase and an inital local state value.
     NewHandle :: String -> RuleInstr g l (Jump PhaseHandle)
-    -- ^ Defines a phase handle. By default, that handle would reference a
-    --   'Phase' state machine that will ask and do nothing.
     SetPhase  :: Jump PhaseHandle -> (PhaseCall g l) -> RuleInstr g l ()
-    -- ^ Assignes a 'Phase' state machine to the handle.
     Wants :: Serializable a => Proxy a -> RuleInstr g l (Token a)
-    -- ^ Indicates that rule is interested in a particular message.
 
 type RuleM g l a = Program (RuleInstr g l) a
 
@@ -432,40 +443,53 @@ data Scope g l a where
 data ForkType = NoBuffer | CopyBuffer
 
 -- | 'Phase' state machine.
+--
+-- 'Continue': Jumps to 'Phase' referenced by that handle.
+--
+-- 'Get': Gets scoped state from memory.
+--
+-- 'Put': Updates scoped state in memory.
+--
+-- 'Stop': Stops the state machine. Has different behavior depending
+-- on the the context of the state machine.
+--
+-- 'Fork': Forks a new 'Phase' state machine.
+--
+-- 'Lift': Lifts a 'Process' computation in the state machine.
+--
+-- 'Suspend': Parks the current state machine. Has different behavior
+-- depending on state machine context.
+--
+-- 'Publish': Pushes message to subscribers.
+--
+-- 'PhaseLog': Simple log. First parameter is the context and the last
+-- one is the log.
+--
+-- 'Switch': Changes state machine context. Given the list of
+-- 'PhaseHandle', switch to the first 'Phase' that's successfully
+-- executed.
+--
+-- 'Peek': Peeks a message from the 'Buffer' given a minimun 'Index'.
+-- The 'Buffer' is not altered.
+--
+-- 'Shift': Consumes a message from the 'Buffer' given a minimun
+-- 'Index'. The 'Buffer' is altered.
+--
+-- 'Catch': Exception handler.
 data PhaseInstr g l a where
     Continue :: Jump PhaseHandle -> PhaseInstr g l ()
-    -- ^ Jumps to 'Phase' referenced by that handle.
     Get :: Scope g l a -> PhaseInstr g l a
-    -- ^ Gets scoped state from memory.
     Put :: Scope g l a -> a -> PhaseInstr g l ()
-    -- ^ Updates scoped state in memory.
     Stop :: PhaseInstr g l a
-    -- ^ Stops the state machine. Has different behavior depending on the
-    --   the context of the state machine.
     Fork :: ForkType -> PhaseM g l () -> PhaseInstr g l ()
-    -- ^ Forks a new 'Phase' state machine.
     Lift :: Process a -> PhaseInstr g l a
-    -- ^ Lifts a 'Process' computation in the state machine.
     Suspend :: PhaseInstr g l ()
-    -- ^ Parks the current state machine. Has different behavior depending on
-    --   state machine context.
     Publish :: Serializable e => e -> PhaseInstr g l ()
-    -- ^ Pushes message to subscribers.
     PhaseLog :: String -> String -> PhaseInstr g l ()
-    -- ^ Simple log. First parameter is the context and the last one is the
-    --   log.
     Switch :: [Jump PhaseHandle] -> PhaseInstr g l ()
-    -- ^ Changes state machine context. Given the list of 'PhaseHandle', switch
-    --   to the first 'Phase' that's successfully executed.
     Peek :: Serializable a => Index -> PhaseInstr g l (Index, a)
-    -- ^ Peeks a message from the 'Buffer' given a minimun 'Index'. The 'Buffer'
-    --   is not altered.
     Shift :: Serializable a => Index -> PhaseInstr g l (Index, a)
-    -- ^ Consumes a message from the 'Buffer' given a minimun 'Index'. The
-    --   'Buffer' is altered.
     Catch :: Exception e => (PhaseM g l a) -> (e -> PhaseM g l a) -> PhaseInstr g l a
-    -- ^ Exception handler.
-
 
 -- | Gets scoped state from memory.
 get :: Scope g l a -> PhaseM g l a
@@ -542,25 +566,35 @@ data Logs =
 instance Binary Logs
 
 -- | Settings that change CEP engine execution.
+--
+-- 'Logger': Enables logging.
+--
+-- 'RuleFinalizer': Sets a rule finalizer.
+--
+-- 'PhaseBuffer': Sets the default message 'Buffer'.
+--
+-- 'DebugMode': Sets debug mode.
+--
+-- 'DefaultHandler': Sets the default handler for 'Message's.
 data Setting s a where
     Logger :: Setting s (Logs -> s -> Process ())
-    -- ^ Enables logging.
     RuleFinalizer :: Setting s (s -> Process s)
-    -- ^ Sets a rule finalizer.
     PhaseBuffer :: Setting s Buffer
-    -- ^ Sets the default message 'Buffer'.
     DebugMode :: Setting s Bool
-    -- ^ Sets debug mode.
     DefaultHandler :: Setting s (Message -> s -> Process ())
 
 -- | Definition state machine.
+--
+-- 'DefineRule': Defines a new rule.
+--
+-- 'SetSetting: Set a CEP engine setting.
+--
+-- 'Init': Set a rule to execute before proceeding regular CEP engine
+-- execution.
 data Declare g a where
     DefineRule :: String -> RuleM g l (Started g l) -> Declare g ()
-    -- ^ Defines a new rule.
     SetSetting :: Setting g a -> a -> Declare g ()
-    -- ^ Set a CEP engine setting.
     Init :: RuleM g l (Started g l) -> Declare g ()
-    -- ^ Set a rule to execute before proceeding regular CEP engine execution.
 
 -- | Defines a new rule.
 define :: String -> RuleM g l (Started g l) -> Specification g ()
@@ -581,8 +615,8 @@ defineSimple :: Serializable a
 defineSimple n k = defineSimpleIf n (\e _ -> return $ Just e) k
 
 -- | Shorthand to define a simple rule with a single phase. It defines
---   'PhaseHandle' named `phase-1`, calls 'setPhaseIf' with that handle
---   and then call `start` with a '()' local state initial value.
+--   'PhaseHandle' named @phase-1@, calls 'setPhaseIf' with that handle
+--   and then call 'start' with a '()' local state initial value.
 defineSimpleIf :: (Serializable a, Serializable b)
                => String
                -> (a -> g -> Process (Maybe b))

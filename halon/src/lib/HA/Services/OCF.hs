@@ -39,7 +39,7 @@ remotableDecl [ [d|
                   ($(mkStatic 'someConfigDict)
                     `staticApply` $(mkStatic 'configDictEmptyConf))
 
-    -- | Pacemaker / RH Cluster Suite SysV init-like service script.
+    -- Pacemaker / RH Cluster Suite SysV init-like service script.
     ocfProcess :: FilePath -> EmptyConf -> Process ()
     ocfProcess script _ = do
         node <- getSelfNode

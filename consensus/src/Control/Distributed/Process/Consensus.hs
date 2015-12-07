@@ -126,6 +126,9 @@ setState x' = Propose $ modify check
 -- state is kept abstract, through existential quantification, but since this
 -- internal state is lifted, we know how to provide the initial state: it's
 -- 'Bottom'.
+--
+-- All fields take a function to use to send a message to acceptors
+-- and one or more acceptors.
 data Protocol n a = forall s. Protocol
     { -- | An acceptor is spawned once on each replica, and survives until the
       -- replica fails.
@@ -139,21 +142,18 @@ data Protocol n a = forall s. Protocol
       -- This function produces an error if the decree @d@ has been garbage
       -- collected. Garbage collection can be requested by the client with an
       -- as yet to be defined method.
-    , prl_propose  :: (forall b. Serializable b => n -> b -> Process ())
-                                   -- ^ A function to send messages to acceptors
-                   -> [n]          -- Acceptors.
-                   -> DecreeId
-                   -> a
-                   -> Propose s a
+    , prl_propose
+           :: (forall b. Serializable b => n -> b -> Process ())
+           -> [n]
+           -> DecreeId
+           -> a
+           -> Propose s a
 
       -- | Release decrees below a given decree. No call of 'prl_propose' should
       -- be done with these decrees afterwards.
     , prl_releaseDecreesBelow
-           :: -- | A function to send messages to acceptors
-              (forall b. Serializable b => n -> b -> Process ())
-              -- | The acceptor to contact
+           :: (forall b. Serializable b => n -> b -> Process ())
            -> n
-              -- | The decree below which all other decrees should be released
            -> DecreeId
            -> Process ()
 
@@ -178,7 +178,6 @@ data Protocol n a = forall s. Protocol
       -- define the valid resizings.
       --
     , prl_sync :: (forall b. Serializable b => n -> b -> Process ())
-                  -- ^ The function to use to send messages to acceptors
                -> [n] -> Process ()
 
       -- | @prl_query acceptors d@ yields the values accepted by the given
@@ -186,9 +185,7 @@ data Protocol n a = forall s. Protocol
       --
       -- It is up to the implementation to decide how many acceptors need to
       -- be online for the call to succeed.
-      --
     , prl_query :: (forall b. Serializable b => n -> b -> Process ())
-                   -- ^ The function to use to send messages to acceptors
                 -> [n] -> DecreeId -> Process [(DecreeId, a)]
 
     } deriving (Typeable)

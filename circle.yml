@@ -37,9 +37,9 @@ dependencies:
 test:
   override:
     # Build with USE_MERO and then without.
-    - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero
-    - stack $STACK_FLAGS build --test --no-run-tests
+    - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero --haddock --no-haddock-deps
+    - stack $STACK_FLAGS build --test --no-run-tests --haddock --no-haddock-deps
     # Only test mero-halon and deps, without USE_MERO.
-    - stack $STACK_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer RS' build --test:
+    - stack $STACK_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer RS' build  --haddock --no-haddock-deps --test:
         timeout: 3600
     - scripts/circleci_copy_artifacts.sh
