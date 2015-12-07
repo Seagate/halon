@@ -459,7 +459,6 @@ Glossary
    :sorted:
 
    dependent entity
-
    weak entity
 
       Depends on the existence of another entity to exist.
