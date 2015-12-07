@@ -20,6 +20,7 @@ module Test.Framework
   , assertMsg
   , registerInterceptor
   , terminateLocalProcesses
+  , getBuildPath
   ) where
 
 import Control.Concurrent ( killThread )
@@ -76,6 +77,8 @@ import System.Directory
   , removeDirectory
   , setCurrentDirectory
   )
+import System.Environment (getExecutablePath)
+import System.FilePath (takeDirectory)
 import System.Posix.Temp (mkdtemp)
 import System.Timeout
 import Test.Tasty hiding (Timeout)
@@ -213,3 +216,8 @@ terminateLocalProcesses node mtimeout = do
             [ match $ \(ProcessMonitorNotification _ _ _) -> return () ]
           return True
     terminateProcesses _ = return True
+
+-- | Gets the path to the build folder inside the dist folder when called
+-- by a program which resides there.
+getBuildPath :: IO FilePath
+getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
