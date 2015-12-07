@@ -24,7 +24,8 @@ main = do
   _ <- forkIO $ do threadDelay (30 * 60 * 1000000)
                    forever $ do threadDelay 100000
                                 throwTo tid (ErrorCall "Timeout")
-  runTests $ \transport -> testGroup "scheduler" <$> sequence
+  runTests $ \transport ->
+    (testGroup "halon" . (:[]) . testGroup "scheduler") <$> sequence
       [ testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests transport
       , testGroup "AB" <$> HA.Autoboot.Tests.tests transport
       ]

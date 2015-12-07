@@ -21,7 +21,7 @@ import Test.Transport
 
 tests :: AbstractTransport -> IO TestTree
 tests transport = do
-    fmap (testGroup "ut") $ sequence
+    fmap (testGroup "halon" . (:[]) . testGroup "it") $ sequence
         [
           testGroup "EQ" <$> HA.EventQueue.Tests.tests transport
         , testGroup "MM" <$> return
