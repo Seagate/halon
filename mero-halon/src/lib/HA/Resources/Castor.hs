@@ -92,7 +92,6 @@ data DeviceIdentifier =
     | DIWWN String
     | DIUUID String
     | DISerialNumber String
-    | DIOther String String
   deriving (Eq, Show, Ord, Generic, Typeable)
 
 instance Binary DeviceIdentifier

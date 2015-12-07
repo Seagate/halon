@@ -82,6 +82,9 @@ import HA.RecoveryCoordinator.Actions.Core
 import qualified HA.ResourceGraph as G
 import HA.Resources
 import HA.Resources.Castor
+#ifdef USE_MERO
+import qualified HA.Resources.Mero as M0
+#endif
 
 import Control.Category ((>>>))
 import Control.Distributed.Process (liftIO)
@@ -495,12 +498,7 @@ actualizeStorageDeviceReplacement sdev = do
       let mr = do (dev  :: StorageDevice) <- listToMaybe $ G.connectedFrom ReplacedBy sdev rg
                   let (mwr  :: Maybe DeviceIdentifier) = listToMaybe $ G.connectedTo sdev WantsReplacement rg
 #ifdef USE_MERO
-                  let idents = [ ident
-                               | ident <- G.connectedTo sd Has rg 
-                               , case ident of 
-                                   DIWWN{} -> True
-                                   _       -> False
-                               ]
+                  let idents = [ i | i@(DIWWN{}) <- G.connectedTo dev Has rg ]
                   DIWWN wwn <- listToMaybe idents
                   (disk :: M0.Disk) <- listToMaybe $ G.connectedFrom M0.At dev rg
                   (mdev :: M0.SDev) <- listToMaybe $ G.connectedFrom M0.IsOnHardware disk rg

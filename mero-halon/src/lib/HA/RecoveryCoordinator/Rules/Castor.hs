@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE LambdaCase            #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -350,14 +351,12 @@ castorRules = do
       setPhase handle $ \(DriveInserted uuid disk sn) -> do
         -- Check if we already have device that was inserted.
         -- In case it this is the same device, then we do not need to update confd.
-        thisDevice <- hasStorageDeviceIdentifier disk sn
-        if thisDevice
-           then do
+        hasStorageDeviceIdentifier disk sn >>= \case
+           True -> do
              put Local $ Just (uuid, uuid, disk)
              continue commit
-           else do 
-             mcandidate <- lookupStorageDeviceReplacement disk
-             case mcandidate of
+           False -> do
+             lookupStorageDeviceReplacement disk >>= \case
                Nothing -> do
                  phaseLog "warning" "No PHI information about new drive, skipping request for now"
                  markStorageDeviceWantsReplacement disk sn

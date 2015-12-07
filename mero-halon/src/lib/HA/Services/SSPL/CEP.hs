@@ -168,15 +168,13 @@ ssplRulesF sspl = do
                  . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber
                  $ srdm
       phaseLog "sspl-service" "monitor-drivemanager request received"
-      mdisk <- lookupStorageDeviceInEnclosure enc $ DIIndexInEnclosure diskNum
-      disk <- case mdisk of
-        Nothing -> do
+      disk <- lookupStorageDeviceInEnclosure enc (DIIndexInEnclosure diskNum) >>= \case
+        Nothing -> 
           -- Try to check if we have device with known serial number, just without location.
-          mdisksn <- lookupStorageDeviceInEnclosure enc sn
-          case mdisksn of
-            Just disksn -> do
-              identifyStorageDevice disksn sn
-              return disksn
+          lookupStorageDeviceInEnclosure enc sn >>= \case
+            Just disk -> do
+              identifyStorageDevice disk (DIIndexInEnclosure diskNum)
+              return disk
             Nothing -> do
               phaseLog "sspl-service"
                   $ "Cant find disk in " ++ show enc ++ " at " ++ show diskNum ++ " creating new entry."
@@ -185,7 +183,7 @@ ssplRulesF sspl = do
               locateStorageDeviceInEnclosure enc disk
               mhost <- findNodeHost (Node nid)
               forM_ mhost $ \host -> locateHostInEnclosure host enc
-              _ <- identifyStorageDevice disk $ DIIndexInEnclosure diskNum
+              mapM_ (identifyStorageDevice disk) [ DIIndexInEnclosure diskNum, sn]
               syncGraph
               return disk
         Just st -> return st
@@ -229,6 +227,9 @@ ssplRulesF sspl = do
           host  = Host . T.unpack 
                        . sensorResponseMessageSensor_response_typeDisk_status_hpiHostId
                        $ srphi
+          serial = DISerialNumber . T.unpack
+                       . sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber
+                       $ srphi
           enc   = Enclosure . T.unpack
                        . sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN
                        $ srphi
@@ -242,6 +243,7 @@ ssplRulesF sspl = do
                -- We have disk in RG, but we didn't know its index in enclosure, this happens
                -- when we loaded initial data that have no information about indices.
                identifyStorageDevice sd loc
+               identifyStorageDevice sd serial
                return Nothing
              Nothing -> do
                -- We don't have information about inserted disk in this slot yet, this could
@@ -266,10 +268,10 @@ ssplRulesF sspl = do
         Just sd -> do
           _ <- attachStorageDeviceReplacement sd [sn, wwn, ident, loc]
           syncGraph
-          -- It may happen that we have already received inuse_ok status from drive manager, but
-          -- for completely new device, in this case device was not attached to mero because it
-          -- halon still required HPI information before processing event. So we are checking
-          -- if it was a case or not.
+          -- It may happen that we have already received "inuse_ok" status from drive manager
+          -- but for a completely new device. In this case, the device has not yet been
+          -- attached to mero because halon still needed the HPI information before processing
+          -- the event. Check whether that was actually the case here.
           mwantUpdate <- wantsStorageDeviceReplacement sd
           case mwantUpdate of
             Just wsn | wsn == sn -> selfMessage $ DriveInserted uuid sd sn

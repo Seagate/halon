@@ -52,7 +52,6 @@ import Control.Exception (SomeException)
 import Control.Monad (forM_)
 import Control.Monad.Catch (catch)
 import Control.Applicative
-import Control.Category ((>>>))
 
 import Data.Foldable (traverse_)
 import Data.List (nub)
