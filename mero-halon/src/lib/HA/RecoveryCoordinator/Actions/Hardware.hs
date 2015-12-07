@@ -92,7 +92,6 @@ import Data.Foldable
 import Network.CEP
 
 import Text.Regex.TDFA ((=~))
-import qualified Data.List as List
 
 -- | Register a new rack in the system.
 registerRack :: Rack
@@ -402,12 +401,11 @@ lookupStorageDeviceInEnclosure :: Enclosure
                                -> PhaseM LoopState l (Maybe StorageDevice)
 lookupStorageDeviceInEnclosure enc ident = do
     rg <- getLocalGraph
-    let devicesA = [ device
-                   | host   <- G.connectedTo  enc  Has rg :: [Host]
-                   , device <- G.connectedTo  host Has rg :: [StorageDevice]
-                   ]
-        devicesB = G.connectedFrom Has ident rg :: [StorageDevice]
-    return $ listToMaybe $ devicesA `List.intersect` devicesB
+    return $ listToMaybe 
+           [ device
+           | device <- G.connectedTo  enc  Has rg :: [StorageDevice]
+           , G.isConnected device Has ident rg :: Bool
+           ]
 
 -- | Register a new drive in the system.
 locateStorageDeviceInEnclosure :: Enclosure
