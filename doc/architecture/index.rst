@@ -517,7 +517,8 @@ Acronym list
 
       software architecture documentation
 
-.. rubric:: Footnotes
+References
+~~~~~~~~~~
 
 .. [1] Clements, Paul, et al. *Documenting software architectures: views
        and beyond.* Addison-Wesley Professional, 2010.
