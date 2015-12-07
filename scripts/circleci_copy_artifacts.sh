@@ -1,7 +1,7 @@
 #!/bin/bash
 
 find . -name test_output | while read file; do
-    cp -rv "$file/*" ${CIRCLE_ARTIFACTS}
+    cp -rv "$file"/* ${CIRCLE_ARTIFACTS}
 done
 
 find . -type f -name \*.log | while read file; do
