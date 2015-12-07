@@ -37,7 +37,7 @@ data Fid = Fid { f_container :: {-# UNPACK #-} !Word64
   deriving (Eq, Data, Ord, Typeable, Generic)
 
 instance Show Fid where
-  show (Fid c k) = printf "Fid {f_container = 0x%08x, f_key = %d}" c k
+  show (Fid c k) = printf "<0x%x:%d>" c k
 
 instance Binary Fid
 instance Hashable Fid

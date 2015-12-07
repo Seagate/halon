@@ -164,6 +164,17 @@ dumpTransaction (SpielTransaction ptr) fp = withForeignPtr ptr $ \c_ptr -> do
     x | x == eNOENT -> error "Not all objects have a parent."
     (Errno x) -> error $ "Unknown error return: " ++ show x
 
+setCmdProfile :: SpielContext
+              -> Maybe String
+              -> IO ()
+setCmdProfile (SpielContext sc) ms =
+  throwIfNonZero_ (\rc -> "Cannot set cmd profile: " ++ show rc) $
+    withForeignPtr sc $ \sc_ptr -> case ms of
+      Nothing -> c_spiel_cmd_profile_set sc_ptr nullPtr
+      Just s  -> withCString s $ \cs ->
+        c_spiel_cmd_profile_set sc_ptr cs
+
+
 addProfile :: SpielTransaction
            -> Fid
            -> IO ()

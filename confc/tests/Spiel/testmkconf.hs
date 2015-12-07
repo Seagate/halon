@@ -132,6 +132,7 @@ main = do
               M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop2"
             addDevice tx (fids "sdev3") (fids "ios") (fids "disk3") M0_CFG_DEVICE_INTERFACE_SCSI 
               M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop3"
+    finalizeRPC 
      
 withEndpoint :: RPCAddress -> (ServerEndpoint -> IO a) -> IO a
 withEndpoint addr = bracket
