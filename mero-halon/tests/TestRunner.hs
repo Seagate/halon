@@ -167,23 +167,6 @@ runTest numNodes numReps _t tr rt action
         usend self ((), ())
       forM_ nodes $ const (expect :: Process ((), ()))
 
--- | Bracket-like function for local node, it starts a node, performs
--- computation and closes node at the end.
-withLocalNode :: Transport -> RemoteTable -> (LocalNode -> IO a) -> IO a
-withLocalNode t rt = E.bracket  (newLocalNode t rt) closeLocalNode
-
--- | Bracket-like function for starting test on many nodes, it starts
--- nodes, performs computations and stops them at the end.
-withLocalNodes :: Int
-               -> Transport
-               -> RemoteTable
-               -> ([LocalNode] -> IO a)
-               -> IO a
-withLocalNodes 0 _t _rt f = f []
-withLocalNodes n t rt f = withLocalNode t rt $ \node ->
-    withLocalNodes (n - 1) t rt (f . (node :))
-
-
 -- | Creates mock event queue, this event queue only resends all events
 -- to predefined process. This function should only be used when there is
 -- no real RC running, because normal EQ will override this one, also Mock

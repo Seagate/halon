@@ -23,7 +23,7 @@ import Control.Distributed.Process.Closure (mkStatic, remotable)
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable (SerializableDict(..))
 
-import Control.Exception (SomeException, bracket)
+import Control.Exception (SomeException)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import qualified Data.HashSet as S
@@ -112,20 +112,10 @@ instance Relation HasA NodeB NodeA where
 -- Test helpers                                                               --
 --------------------------------------------------------------------------------
 
--- | Run the given action on a newly created local node.
-withLocalNode :: Transport -> (LocalNode -> IO a) -> IO a
-withLocalNode transport action =
-    bracket
-      (newLocalNode transport (__remoteTable remoteTable))
-      -- FIXME: Why does this cause gibberish to be output?
-      -- closeLocalNode
-      (const (return ()))
-      action
-
 tryRunProcessLocal :: Transport -> Process () -> IO ()
 tryRunProcessLocal transport process =
     withTmpDirectory $
-      withLocalNode transport $ \node ->
+      withLocalNode transport (__remoteTable remoteTable) $ \node ->
         runProcess node process
 
 rGroupTest :: (RGroup g, Typeable g)

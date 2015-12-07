@@ -197,18 +197,6 @@ testIgnition transport step =
         assertFailure $ "replicas should be contain all of the " ++ show trackers ++
                         ", but got " ++ actual
 
-withLocalNode :: Transport -> RemoteTable -> (LocalNode -> IO a) -> IO a
-withLocalNode t rt = E.bracket  (newLocalNode t rt) closeLocalNode
-
-withLocalNodes :: Int
-               -> Transport
-               -> RemoteTable
-               -> ([LocalNode] -> IO a)
-               -> IO a
-withLocalNodes 0 _t _rt f = f []
-withLocalNodes n t rt f = withLocalNode t rt $ \node ->
-    withLocalNodes (n - 1) t rt (f . (node :))
-
 runTest :: Int -> Int -> Transport -> RemoteTable
         -> ([LocalNode] -> Process ()) -> IO ()
 runTest numNodes numReps tr rt action

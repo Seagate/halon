@@ -32,7 +32,6 @@ import Control.Distributed.Process.Internal.Types (processNode)
 import Control.Distributed.Process.Scheduler
 import Control.Distributed.Static
 import Data.Rank1Dynamic
-import Network.Transport (Transport)
 
 import qualified Control.Exception as E (bracket, catch)
 import Control.Exception as E (SomeException, throwIO)
@@ -747,11 +746,3 @@ tests argv = do
                   `catchExit` \_ "test interruption" -> return ()
             ]
     return [ timeoutTests, ut ]
-
-withLocalNodes :: Int -> Transport -> RemoteTable -> ([LocalNode] -> IO a)
-               -> IO a
-withLocalNodes n t rt action = go [] 0
-  where
-    go acc i | i == n = action acc
-             | otherwise = E.bracket (newLocalNode t rt) closeLocalNode $ \ln ->
-                             go (ln : acc) (i + 1)

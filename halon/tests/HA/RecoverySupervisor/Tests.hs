@@ -332,18 +332,6 @@ testTimerConcurrentCancel transport = do
          assertBool "we missed timeout"
                     (tf'-tf >= fromIntegral delay)
 
-withLocalNode :: Transport -> RemoteTable -> (LocalNode -> IO a) -> IO a
-withLocalNode t rt = E.bracket  (newLocalNode t rt) closeLocalNode
-
-withLocalNodes :: Int
-               -> Transport
-               -> RemoteTable
-               -> ([LocalNode] -> IO a)
-               -> IO a
-withLocalNodes 0 _t _rt f = f []
-withLocalNodes n t rt f = withLocalNode t rt $ \node ->
-    withLocalNodes (n - 1) t rt (f . (node :))
-
 runTest :: Transport -> Process () -> IO ()
 runTest tr action = runTest' 1 200 tr $ const action
 
