@@ -539,8 +539,6 @@ References
 .. [5] Steven Shankland. `Google spotlights data center inner workings`_.
        May 30, 2008.
 
-.. [6] TODO: missing footnote in original document.
-
 .. _Hardware Components Failures — Survey Results: http://www.pythian.com/blog/hardware-components-failures-survey-results/
 
 .. _Google spotlights data center inner workings: http://news.cnet.com/8301-10784_3-9955184-7.html?part=rss&tag=feed&subj=NewsBlog
