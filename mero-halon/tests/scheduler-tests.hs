@@ -26,6 +26,7 @@ import System.IO
 
 ut :: String -> Transport -> IO TestTree
 ut _host transport = return $
+    testGroup "mero-halon" $ (:[]) $
     testGroup "scheduler"
       [ testCase "RCServiceRestarting" $
           HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport

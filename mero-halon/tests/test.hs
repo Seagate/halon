@@ -64,6 +64,7 @@ ut _host transport breakConnection = do
   driveFailureTests <- HA.Castor.Story.Tests.mkTests
 #endif
   return $
+    testGroup "mero-halon" $ (:[]) $
 #ifdef USE_MOCK_REPLICATOR
     testGroup "ut"
 #else
