@@ -19,7 +19,7 @@ import Prelude
 
 tests :: AbstractTransport -> IO TestTree
 tests transport = fmap (localOption (mkTimeout (7*60*1000000))) $
-    testGroup "it" <$> sequence
+    (testGroup "halon" . (:[]) . testGroup "it") <$> sequence
       [
         testGroup "EQ" <$> HA.EventQueue.Tests.tests transport
       , testGroup "MM-process-tests" <$> return
