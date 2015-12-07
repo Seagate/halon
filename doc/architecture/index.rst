@@ -405,8 +405,8 @@ Also lists the attributes of each abstract structure along with the properties
 of each attribute. Finally, provides a meta-model of data entities in the
 cluster as resources, as present in the namespace.
 
-:doc:`scalable-tree-deployment/index`
-+++++++++++++++++++++++++++++++++++++
+:doc:`scalable-tree-communication-deployment/index`
++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 - **Element type**: node.
 - **Relation types**: “sends message to”.
