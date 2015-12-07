@@ -363,10 +363,10 @@ castorRules = do
                  markStorageDeviceWantsReplacement disk sn
                  syncGraph
                  messageProcessed uuid
-               Just _cand -> do
-#ifdef USE_MERO
-                 actualizeStorageDeviceReplacement _cand
+               Just cand -> do
+                 actualizeStorageDeviceReplacement cand
                  syncGraph
+#ifdef USE_MERO
                  -- XXX: implement internal notification mechanism about
                  -- end of the sync. It's also nice to not redo this operation
                  -- if possible.

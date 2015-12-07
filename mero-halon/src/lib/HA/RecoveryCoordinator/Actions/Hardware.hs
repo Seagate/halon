@@ -71,6 +71,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , lookupStorageDeviceReplacement
   , wantsStorageDeviceReplacement
   , markStorageDeviceWantsReplacement
+  , actualizeStorageDeviceReplacement
     -- ** Creating new devices
   , locateStorageDeviceInEnclosure
   , locateStorageDeviceOnHost
@@ -485,6 +486,47 @@ updateDriveStatus dev status = modifyLocalGraph $ \rg -> do
         >>> removeOldNode
           $ rg
   return rg'
+
+-- | Replace storage device node with its new version.
+actualizeStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l ()
+actualizeStorageDeviceReplacement sdev = do
+    phaseLog "rg" "Set disk candidate as an active disk"
+    modifyLocalGraph $ \rg -> do
+      let mr = do (dev  :: StorageDevice) <- listToMaybe $ G.connectedFrom ReplacedBy sdev rg
+                  let (mwr  :: Maybe DeviceIdentifier) = listToMaybe $ G.connectedTo sdev WantsReplacement rg
+#ifdef USE_MERO
+                  let idents = [ ident
+                               | ident <- G.connectedTo sd Has rg 
+                               , case ident of 
+                                   DIWWN{} -> True
+                                   _       -> False
+                               ]
+                  DIWWN wwn <- listToMaybe idents
+                  (disk :: M0.Disk) <- listToMaybe $ G.connectedFrom M0.At dev rg
+                  (mdev :: M0.SDev) <- listToMaybe $ G.connectedFrom M0.IsOnHardware disk rg
+                  let mdev'  = mdev{M0.d_path = mkPathByWWN wwn}
+                      action = G.mergeResources (const mdev') [mdev]
+                      mkPathByWWN :: String -> String
+                      mkPathByWWN wwn = "/dev/disk/by-id/" ++ wwn
+#else
+                  let action = id
+#endif
+                  return (dev, mwr, action)
+      case mr of
+        Nothing -> do
+          phaseLog "rg" "failed to find disk that was attached"
+          return rg
+        Just (dev, mwr, updateResources) -> do
+          let rwm = case mwr of
+                Nothing -> id
+                Just wr -> G.disconnect dev WantsReplacement wr
+              rg' = updateResources
+                >>> G.mergeResources (const dev) [sdev]
+                >>> G.disconnect sdev ReplacedBy dev
+                >>> G.disconnect sdev Has SDRemovedAt
+                >>> rwm
+                  $ rg
+          return rg'
 
 -- | Attach new version of 'StorageDevice'
 attachStorageDeviceReplacement :: StorageDevice -> [DeviceIdentifier] -> PhaseM LoopState l StorageDevice
