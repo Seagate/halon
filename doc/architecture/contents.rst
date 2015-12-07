@@ -1,5 +1,5 @@
-Architecture overview: Table of Contents
-========================================
+Architecture Overview: Full Table of Contents
+=============================================
 
 .. toctree::
 
