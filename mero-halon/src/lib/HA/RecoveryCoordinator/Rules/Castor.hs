@@ -442,6 +442,7 @@ castorRules = do
                <> pack (show enc)
                <> "\n\t"
                <> pack (show disk)
+      updateDriveManagerWithFailure disk
       sendInterestingEvent nid msg
       messageProcessed uuid
 

@@ -12,6 +12,7 @@
 module HA.RecoveryCoordinator.Mero.Tests
   ( testClusterStatus
   , testDriveAddition
+  , testDriveManagerUpdate
   , testHostAddition
   , testServiceRestarting
   , testServiceNotRestarting
@@ -47,6 +48,7 @@ import HA.Replicator.Mock ( MC_RG )
 import HA.Replicator.Log ( MC_RG )
 #endif
 import qualified HA.ResourceGraph as G
+import qualified HA.Resources.Castor.Initial as CI
 import HA.Service
   ( Configuration
   , Service(..)
@@ -85,6 +87,7 @@ import Test.Tasty.HUnit (assertBool)
 import TestRunner
 import Data.Binary
 import Data.Typeable
+import qualified Data.Text as T
 import GHC.Generics
 import Helper.SSPL
 
@@ -93,6 +96,8 @@ import HA.Castor.Tests (initialDataAddr)
 import HA.RecoveryCoordinator.Actions.Mero (getSpielAddress, syncToConfd)
 import Mero.Notification (finalize)
 #endif
+
+import System.Directory (createDirectoryIfMissing, removeDirectoryRecursive)
 
 #ifdef USE_MERO
 -- | label used to test spiel sync through a rule
@@ -328,6 +333,120 @@ testDriveAddition transport = do
     rt = TestRunner.__remoteTableDecl $
          remoteTable
     mockEvent = mkResponseDriveManager "enc1" "serial1" 1
+
+-- | Update receiving a drive failure from SSPL, we're required to
+-- update a file for DCS drive manager so that it can reflect on the
+-- changes in the file system. This test is unsophisticated in that it
+-- only tests that the change to the file is made when event is
+-- received and not that the drive manager does something sensible
+-- with it.
+--
+-- * Write out a mock @drive_manager.json@ to have something to update
+-- * Insert a drive into RG along with its serial number
+-- * Send disk failure event to RC
+-- * Wait for RC to say update notification message
+testDriveManagerUpdate :: Transport -> IO ()
+testDriveManagerUpdate transport = runTest 1 20 15000000 transport testRemoteTable $ \_ -> do
+  nid <- getSelfNode
+  self <- getSelfPid
+  registerInterceptor $ \case
+    str | "drive_manager.json updated successfully" `isInfixOf` str ->
+            usend self ("DMUpdated" :: String)
+        | "Node succesfully joined the cluster" `isInfixOf` str ->
+            usend self  ("NodeUp" :: String)
+        | "Loaded initial data" `isInfixOf` str ->
+            usend self  ("InitialData" :: String)
+        | "at 1 marked as active" `isInfixOf` str ->
+            usend self  ("DriveActive" :: String)
+        | otherwise -> return ()
+  liftIO $ createDirectoryIfMissing True "/tmp/drivemanager"
+  say $ "Writing drive_manager.json with:\n" ++ mockFile
+  liftIO $ writeFile "/tmp/drivemanager/drive_manager.json" mockFile
+  withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
+    nodeUp ([nid], 1000000)
+    "NodeUp" :: String <- expect
+    promulgateEQ [nid] initialData >>= flip withMonitor wait
+    "InitialData" :: String <- expect
+
+    say "Sending online message"
+    promulgateEQ [nid] (nid, respDM "online") >>= flip withMonitor wait
+    "DriveActive" :: String <- expect
+
+    say "Checking drive status anity"
+    graph <- G.getGraph mm
+    let [drive] = [ d | d <- G.connectedTo (Enclosure enc) Has graph :: [StorageDevice]
+                      , DISerialNumber sn <- G.connectedTo d Has graph
+                      , sn == interestingSN
+                  ]
+    assert $ G.memberResource drive graph
+    assert $ G.memberResource (StorageDeviceStatus "online") graph
+
+    say "Sending failed_smart"
+    promulgateEQ [nid] (nid, respDM "failed_smart") >>= flip withMonitor wait
+    "DriveActive" :: String <- expect
+    "DMUpdated" :: String <- expect
+    content <- liftIO $ readFile "/tmp/drivemanager/drive_manager.json"
+    say $ "drive_manager.json content: \n" ++ content
+    assert $ "Failed" `isInfixOf` content
+    liftIO $ removeDirectoryRecursive "/tmp/drivemanager"
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
+    enc :: String
+    enc = "enclosure1"
+    interestingSN :: String
+    interestingSN = "Z8407MGP"
+    respDM = mkResponseDriveManager (T.pack enc) (T.pack interestingSN) 1
+    initialData = CI.InitialData {
+      CI.id_racks = [
+        CI.Rack {
+          CI.rack_idx = 1
+        , CI.rack_enclosures = [
+            CI.Enclosure {
+              CI.enc_idx = 1
+            , CI.enc_id = enc
+            , CI.enc_bmc = [CI.BMC "192.0.2.1" "admin" "admin"]
+            , CI.enc_hosts = [
+                CI.Host {
+                  CI.h_fqdn = "primus.example.com"
+                , CI.h_memsize = 4096
+                , CI.h_cpucount = 8
+                , CI.h_interfaces = [
+                    CI.Interface {
+                      CI.if_macAddress = "10-00-00-00-00"
+                    , CI.if_network = CI.Data
+                    , CI.if_ipAddrs = ["192.0.2.2"]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+#ifdef USE_MERO
+      , CI.id_m0_servers = CI.id_m0_servers initialData
+      , CI.id_m0_globals = CI.id_m0_globals initialData
+#endif
+      }
+    mockFile = unlines
+      [ "{"
+      , "\"drive_manager_version\": 0,"
+      , "\"drives\": ["
+      , "  {"
+      , "    \"reason\": \"None\","
+      , "    \"serial_number\": \"" ++ interestingSN ++ "\","
+      , "    \"status\": \"OK\""
+      , "  },"
+      , "  {"
+      , "    \"reason\": \"None\","
+      , "    \"serial_number\": \"SOMEUNKNOWNDRIVE\","
+      , "    \"status\": \"OK\""
+      , "  }"
+      , "],"
+      , "\"format_version\": 0,"
+      , "\"last_update_time\": \"1448638074.41\""
+      , "}"
+      ]
 
 -- | Message used by 'testClusterStatus'.
 data MsgClusterStatus = ClusterSet ClusterStatus
