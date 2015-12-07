@@ -101,6 +101,24 @@ with a kernel suitable for this.
 [seagate-boxes]: https://github.com/tweag/seagate-boxes
 [stack-doc]: http://docs.haskellstack.org/en/stable/README.html
 
+# Documentation
+
+The full documentation for Halon is kept in the `doc/` directory. To
+build the documentation and view it in your browser:
+
+```
+$ cd doc
+$ stack exec make html
+```
+
+You can also generate PDF's for each document in the set, as well as
+the man pages for user commands:
+
+```
+$ stack exec make latexpdf
+$ stack exec make man
+```
+
 # Running
 
 There is an example script in `mero-halon/scripts/simplecluster.sh`
