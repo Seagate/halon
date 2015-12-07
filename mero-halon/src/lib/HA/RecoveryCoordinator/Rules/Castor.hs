@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE LambdaCase            #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -343,35 +344,49 @@ castorRules = do
 
     -- Inserting new drive
     define "drive-inserted" $ do
-      handle <- phaseHandle "drive-inserted"
+      handle     <- phaseHandle "drive-inserted"
       format_add <- phaseHandle "handle-sync"
+      commit     <- phaseHandle "commit"
 
-      setPhase handle $ \(DriveInserted uuid disk) -> do
-        mcandidate <- lookupStorageDeviceReplacement disk
-        case mcandidate of
-          Nothing -> do
-            phaseLog "warning" "No PHI information about new drive, skipping request for now"
-            messageProcessed uuid
-          Just _cand -> do
+      setPhase handle $ \(DriveInserted uuid disk sn) -> do
+        -- Check if we already have device that was inserted.
+        -- In case it this is the same device, then we do not need to update confd.
+        hasStorageDeviceIdentifier disk sn >>= \case
+           True -> do
+             put Local $ Just (uuid, uuid, disk)
+             continue commit
+           False -> do
+             lookupStorageDeviceReplacement disk >>= \case
+               Nothing -> do
+                 phaseLog "warning" "No PHI information about new drive, skipping request for now"
+                 markStorageDeviceWantsReplacement disk sn
+                 syncGraph
+                 messageProcessed uuid
+               Just cand -> do
+                 actualizeStorageDeviceReplacement cand
+                 syncGraph
 #ifdef USE_MERO
-            actualizeStorageDeviceReplacement _cand
-            syncGraph
-            -- XXX: implement internal notification mechanism about
-            -- end of the sync. It's also nice to not redo this operation
-            -- if possible.
-            request <- liftIO $ nextRandom
-            put Local $ Just (uuid, request, disk)
-            selfMessage (request, SyncToConfdServersInRG)
-            continue format_add
+                 -- XXX: implement internal notification mechanism about
+                 -- end of the sync. It's also nice to not redo this operation
+                 -- if possible.
+                 request <- liftIO $ nextRandom
+                 put Local $ Just (uuid, request, disk)
+                 selfMessage (request, SyncToConfdServersInRG)
+                 continue format_add
 #else
-            messageProcessed uuid
+                 continue commit
 #endif
 
       setPhase format_add $ \(SyncComplete request) -> do
-        Just (uuid, req, _disk) <- get Local
+        Just (_, req, _disk) <- get Local
         when (req /= request) $ continue format_add
+        continue commit
+
+      directly commit $ do
+        Just (uuid, _, disk) <- get Local
 #ifdef USE_MERO
-        sd <- lookupStorageDeviceSDev _disk
+        -- XXX: if mero is not ready then we should not unmark disk, I suppose?
+        sd <- lookupStorageDeviceSDev disk
         forM_ sd $ \m0sdev -> do
           msa <- getSpielAddress
           forM_ msa $ \sa -> do
@@ -379,6 +394,8 @@ castorRules = do
                liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
             notifyMero [AnyConfObj m0sdev] M0_NC_ONLINE
 #endif
+        unmarkStorageDeviceRemoved disk 
+        syncGraph
         messageProcessed uuid
         
       start handle Nothing

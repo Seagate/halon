@@ -164,20 +164,28 @@ ssplRulesF sspl = do
                           . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum
                           $ srdm
           disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus srdm
+          sn = DISerialNumber . T.unpack
+                 . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber
+                 $ srdm
       phaseLog "sspl-service" "monitor-drivemanager request received"
-      mdisk <- lookupStorageDeviceInEnclosure enc $ DIIndexInEnclosure diskNum
-      disk <- case mdisk of
-        Nothing -> do
-          phaseLog "sspl-service"
-              $ "Cant find disk in " ++ show enc ++ " at " ++ show diskNum ++ " creating new entry."
-          diskUUID <- liftIO $ nextRandom
-          let disk = StorageDevice diskUUID
-          locateStorageDeviceInEnclosure enc disk
-          mhost <- findNodeHost (Node nid)
-          forM_ mhost $ \host -> locateHostInEnclosure host enc
-          _ <- identifyStorageDevice disk $ DIIndexInEnclosure diskNum
-          syncGraph
-          return disk
+      disk <- lookupStorageDeviceInEnclosure enc (DIIndexInEnclosure diskNum) >>= \case
+        Nothing -> 
+          -- Try to check if we have device with known serial number, just without location.
+          lookupStorageDeviceInEnclosure enc sn >>= \case
+            Just disk -> do
+              identifyStorageDevice disk (DIIndexInEnclosure diskNum)
+              return disk
+            Nothing -> do
+              phaseLog "sspl-service"
+                  $ "Cant find disk in " ++ show enc ++ " at " ++ show diskNum ++ " creating new entry."
+              diskUUID <- liftIO $ nextRandom
+              let disk = StorageDevice diskUUID
+              locateStorageDeviceInEnclosure enc disk
+              mhost <- findNodeHost (Node nid)
+              forM_ mhost $ \host -> locateHostInEnclosure host enc
+              mapM_ (identifyStorageDevice disk) [ DIIndexInEnclosure diskNum, sn]
+              syncGraph
+              return disk
         Just st -> return st
       updateDriveStatus disk $ T.unpack disk_status
       isDriveRemoved <- isStorageDriveRemoved disk
@@ -193,7 +201,7 @@ ssplRulesF sspl = do
            | isDriveRemoved -> messageProcessed uuid
            | otherwise      -> selfMessage $ DriveFailed uuid (Node nid) enc disk
         "inuse_ok"
-           | isDriveRemoved -> selfMessage $ DriveInserted uuid disk
+           | isDriveRemoved -> selfMessage $ DriveInserted uuid disk sn
            | otherwise      -> messageProcessed uuid
         s -> do let msg = InterestingEventMessage
                         $ "Error processing drive manager response: drive status "
@@ -204,7 +212,7 @@ ssplRulesF sspl = do
   -- Handle information messages about drive changes from HPI system.
   defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeId, srphi) _) -> do
       let nid = Node nodeId
-          sn  = DIOther . T.unpack 
+          sn  = DISerialNumber . T.unpack 
                         . sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber
                         $ srphi
           wwn = DIWWN   . T.unpack
@@ -219,43 +227,56 @@ ssplRulesF sspl = do
           host  = Host . T.unpack 
                        . sensorResponseMessageSensor_response_typeDisk_status_hpiHostId
                        $ srphi
-      menc <- findHostEnclosure host
-      case menc of
-        Nothing -> do
-          phaseLog "error" $ "can't find enclosure for node " ++ show nid
-          messageProcessed uuid
-        Just enc -> do
-          mdev <- lookupStorageDeviceInEnclosure enc loc
-          msd <- case mdev of
-             Nothing -> do
-               mwsd <- lookupStorageDeviceInEnclosure enc wwn
-               case mwsd of
-                 Just sd -> do
-                   -- We have disk in RG, but we didn't know it's index in enclosure
-                   identifyStorageDevice sd loc
-                   return Nothing
-                 Nothing -> do
-                   -- We don't have information about interted disk in this slot yet, this could
-                   -- mean two different things: either this is completely new disk or for some
-                   -- reason we miss actual information.
-                   diskUUID <- liftIO $ nextRandom
-                   let disk = StorageDevice diskUUID
-                   locateStorageDeviceInEnclosure enc disk
-                   identifyStorageDevice disk loc
-                   return (Just disk)
+          serial = DISerialNumber . T.unpack
+                       . sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber
+                       $ srphi
+          enc   = Enclosure . T.unpack
+                       . sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN
+                       $ srphi
+      mdev <- lookupStorageDeviceInEnclosure enc loc
+      locateHostInEnclosure host enc -- XXX: do we need to do that on each query?
+      msd <- case mdev of
+         Nothing -> do
+           mwsd <- lookupStorageDeviceInEnclosure enc wwn
+           case mwsd of
              Just sd -> do
-               mident <- listToMaybe . filter (\x -> case x of DIWWN{} -> True ; _ -> False)
-                           <$> findStorageDeviceIdentifiers sd
-               liftProcess $ say $ show (mident, wwn)
-               case mident of
-                 Just wwn' | wwn' == wwn -> return Nothing
-                 _ -> return (Just sd)
-          case msd of
-            Just sd -> do
-              _ <- attachStorageDeviceReplacement sd [sn, wwn, ident, loc]
-              syncGraph
-              selfMessage $ DriveRemoved uuid nid enc sd
-            Nothing -> messageProcessed uuid
+               -- We have disk in RG, but we didn't know its index in enclosure, this happens
+               -- when we loaded initial data that have no information about indices.
+               identifyStorageDevice sd loc
+               identifyStorageDevice sd serial
+               return Nothing
+             Nothing -> do
+               -- We don't have information about inserted disk in this slot yet, this could
+               -- mean two different things:
+               --   1. either this is completely new disk.
+               --   2. we have no initial data loaded yet (currently having initial data loaded
+               --      is a requirement for a service)
+               -- In this case we insert new disk based on the information provided by HPI message.
+               diskUUID <- liftIO $ nextRandom
+               let disk = StorageDevice diskUUID
+               locateStorageDeviceInEnclosure enc disk
+               identifyStorageDevice disk loc
+               return (Just disk)
+         Just sd -> do
+           -- We have information about disk in slot.
+           mident <- listToMaybe . filter (\x -> case x of DIWWN{} -> True ; _ -> False)
+                       <$> findStorageDeviceIdentifiers sd
+           case mident of
+             Just wwn' | wwn' == wwn -> return Nothing
+             _ -> return (Just sd)
+      case msd of
+        Just sd -> do
+          _ <- attachStorageDeviceReplacement sd [sn, wwn, ident, loc]
+          syncGraph
+          -- It may happen that we have already received "inuse_ok" status from drive manager
+          -- but for a completely new device. In this case, the device has not yet been
+          -- attached to mero because halon still needed the HPI information before processing
+          -- the event. Check whether that was actually the case here.
+          mwantUpdate <- wantsStorageDeviceReplacement sd
+          case mwantUpdate of
+            Just wsn | wsn == sn -> selfMessage $ DriveInserted uuid sd sn
+            _   -> selfMessage $ DriveRemoved uuid nid enc sd
+        Nothing -> messageProcessed uuid
 
   -- SSPL Monitor host_update
   defineSimple "monitor-host-update" $ \(HAEvent uuid (nid, srhu) _) -> do

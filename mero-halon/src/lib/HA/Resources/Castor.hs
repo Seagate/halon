@@ -91,7 +91,7 @@ data DeviceIdentifier =
     | DIIndexInEnclosure Int
     | DIWWN String
     | DIUUID String
-    | DIOther String
+    | DISerialNumber String
   deriving (Eq, Show, Ord, Generic, Typeable)
 
 instance Binary DeviceIdentifier
@@ -118,6 +118,13 @@ data ReplacedBy = ReplacedBy deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable ReplacedBy
 instance Binary ReplacedBy
+
+-- | Mark that we need to wait for storage device update.
+data WantsReplacement = WantsReplacement deriving (Eq, Show, Generic, Typeable)
+
+instance Hashable WantsReplacement
+instance Binary   WantsReplacement
+
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
@@ -145,8 +152,8 @@ $(mkDicts
   , (''StorageDevice, ''Has, ''StorageDeviceStatus)
   , (''StorageDevice, ''Has, ''DeviceIdentifier)
   , (''StorageDevice, ''Has, ''StorageDeviceAttr)
-    -- StorageDevice
   , (''StorageDevice, ''ReplacedBy, ''StorageDevice)
+  , (''StorageDevice, ''WantsReplacement, ''DeviceIdentifier)
   ]
   )
 
@@ -171,8 +178,8 @@ $(mkResRel
   , (''StorageDevice, ''Has, ''StorageDeviceStatus)
   , (''StorageDevice, ''Has, ''DeviceIdentifier)
   , (''StorageDevice, ''Has, ''StorageDeviceAttr)
-    -- StorageDevice
   , (''StorageDevice, ''ReplacedBy, ''StorageDevice)
+  , (''StorageDevice, ''WantsReplacement, ''DeviceIdentifier)
   ]
   []
   )

@@ -88,6 +88,11 @@ schema = [schemaQQ|
                   "description" : "Disk Status",
                   "type" : "string",
                   "required" : true
+                },
+                "serialNumber" : {
+                  "description" : "Disk Serial Number",
+                  "type" : "string",
+                  "required" : true
                 }
               }
             },
@@ -139,7 +144,13 @@ schema = [schemaQQ|
                   "description" : "wwn of the drive",
                   "type" : "string",
                   "required" : true
+                },
+                "enclosureSN" : {
+                  "description" : "Enclosure Serial Number",
+                  "type" : "string",
+                  "required" : true
                 }
+
               }
             },
 

@@ -46,6 +46,7 @@ emptyHPIMessage = SSPL.SensorResponseMessageSensor_response_typeDisk_status_hpi
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber = "serial"
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = "wwn"
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiProductVersion = "0.0.1"
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN = "ENCLOSURE"
   }
 
 emptyHostUpdate :: Text -> SSPL.SensorResponseMessageSensor_response_typeHost_update
@@ -65,14 +66,16 @@ emptyHostUpdate hostid =
 
 -- | Create drive manager message
 mkResponseDriveManager :: Text -- ^ Enclosure SN
+                       -> Text -- ^ Serial number
                        -> Int  -- ^ Disk Num
                        -> Text -- ^ Status
                        -> SSPL.SensorResponseMessageSensor_response_typeDisk_status_drivemanager
-mkResponseDriveManager enclosure idx status =
+mkResponseDriveManager enclosure serial idx status =
   SSPL.SensorResponseMessageSensor_response_typeDisk_status_drivemanager
     { SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN = enclosure
     , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum     = fromIntegral idx
     , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus  = status
+    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber = serial
     }
 
 mkResponseHPI :: Text -- ^ Host ID of node

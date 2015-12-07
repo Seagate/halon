@@ -65,9 +65,13 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , markOnGoingReset
   , markResetComplete
   , markStorageDeviceRemoved
+  , unmarkStorageDeviceRemoved
     -- ** Drive candidates
   , attachStorageDeviceReplacement
   , lookupStorageDeviceReplacement
+  , wantsStorageDeviceReplacement
+  , markStorageDeviceWantsReplacement
+  , actualizeStorageDeviceReplacement
     -- ** Creating new devices
   , locateStorageDeviceInEnclosure
   , locateStorageDeviceOnHost
@@ -78,6 +82,9 @@ import HA.RecoveryCoordinator.Actions.Core
 import qualified HA.ResourceGraph as G
 import HA.Resources
 import HA.Resources.Castor
+#ifdef USE_MERO
+import qualified HA.Resources.Mero as M0
+#endif
 
 import Control.Category ((>>>))
 import Control.Distributed.Process (liftIO)
@@ -89,7 +96,6 @@ import Data.Foldable
 import Network.CEP
 
 import Text.Regex.TDFA ((=~))
-import qualified Data.List as List
 
 -- | Register a new rack in the system.
 registerRack :: Rack
@@ -399,12 +405,11 @@ lookupStorageDeviceInEnclosure :: Enclosure
                                -> PhaseM LoopState l (Maybe StorageDevice)
 lookupStorageDeviceInEnclosure enc ident = do
     rg <- getLocalGraph
-    let devicesA = [ device
-                   | host   <- G.connectedTo  enc  Has rg :: [Host]
-                   , device <- G.connectedTo  host Has rg :: [StorageDevice]
-                   ]
-        devicesB = G.connectedFrom Has ident rg :: [StorageDevice]
-    return $ listToMaybe $ devicesA `List.intersect` devicesB
+    return $ listToMaybe 
+           [ device
+           | device <- G.connectedTo  enc  Has rg :: [StorageDevice]
+           , G.isConnected device Has ident rg :: Bool
+           ]
 
 -- | Register a new drive in the system.
 locateStorageDeviceInEnclosure :: Enclosure
@@ -485,6 +490,42 @@ updateDriveStatus dev status = modifyLocalGraph $ \rg -> do
           $ rg
   return rg'
 
+-- | Replace storage device node with its new version.
+actualizeStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l ()
+actualizeStorageDeviceReplacement sdev = do
+    phaseLog "rg" "Set disk candidate as an active disk"
+    modifyLocalGraph $ \rg -> do
+      let mr = do (dev  :: StorageDevice) <- listToMaybe $ G.connectedFrom ReplacedBy sdev rg
+                  let (mwr  :: Maybe DeviceIdentifier) = listToMaybe $ G.connectedTo sdev WantsReplacement rg
+#ifdef USE_MERO
+                  let idents = [ i | i@(DIWWN{}) <- G.connectedTo dev Has rg ]
+                  DIWWN wwn <- listToMaybe idents
+                  (disk :: M0.Disk) <- listToMaybe $ G.connectedFrom M0.At dev rg
+                  (mdev :: M0.SDev) <- listToMaybe $ G.connectedFrom M0.IsOnHardware disk rg
+                  let mdev'  = mdev{M0.d_path = mkPathByWWN wwn}
+                      action = G.mergeResources (const mdev') [mdev]
+                      mkPathByWWN :: String -> String
+                      mkPathByWWN wwn = "/dev/disk/by-id/" ++ wwn
+#else
+                  let action = id
+#endif
+                  return (dev, mwr, action)
+      case mr of
+        Nothing -> do
+          phaseLog "rg" "failed to find disk that was attached"
+          return rg
+        Just (dev, mwr, updateResources) -> do
+          let rwm = case mwr of
+                Nothing -> id
+                Just wr -> G.disconnect dev WantsReplacement wr
+              rg' = updateResources
+                >>> G.mergeResources (const dev) [sdev]
+                >>> G.disconnect sdev ReplacedBy dev
+                >>> G.disconnect sdev Has SDRemovedAt
+                >>> rwm
+                  $ rg
+          return rg'
+
 -- | Attach new version of 'StorageDevice'
 attachStorageDeviceReplacement :: StorageDevice -> [DeviceIdentifier] -> PhaseM LoopState l StorageDevice
 attachStorageDeviceReplacement dev dis = do
@@ -495,7 +536,21 @@ attachStorageDeviceReplacement dev dis = do
   modifyLocalGraph $ return . G.connect dev ReplacedBy newDev
   return newDev
 
--- | Find if storage device has replacement and return new drive if this is a case.
+-- | Check if we are waiting for StorageDevice identifier update.
+wantsStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l (Maybe DeviceIdentifier)
+wantsStorageDeviceReplacement sdev = do
+   phaseLog "rg" $ "Checking if we need to know storage device replacement " ++ show sdev
+   rg <- getLocalGraph
+   return $ listToMaybe $ G.connectedTo sdev WantsReplacement rg
+
+-- | Mark that storage device will be replaced by another one, that we do not have
+-- information about.
+markStorageDeviceWantsReplacement :: StorageDevice -> DeviceIdentifier -> PhaseM LoopState l ()
+markStorageDeviceWantsReplacement sdev ident = do
+   phaseLog "rg" $ "Checking if we need to know storage device replacement " ++ show sdev
+   modifyGraph $ G.connectUnique sdev WantsReplacement ident
+
+-- | Find if storage device has replacement and return new drive if this is a case. 
 lookupStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l (Maybe StorageDevice)
 lookupStorageDeviceReplacement sdev = do
     gr <- getLocalGraph
@@ -603,6 +658,15 @@ markStorageDeviceRemoved sdev = do
     case m of
       Nothing -> setStorageDeviceAttr sdev SDRemovedAt
       _       -> return ()
+
+unmarkStorageDeviceRemoved :: StorageDevice -> PhaseM LoopState l ()
+unmarkStorageDeviceRemoved sdev = do
+    let _F SDRemovedAt = True
+        _F _           = False
+    m <- findStorageDeviceAttr _F sdev
+    case m of
+      Nothing  -> return ()
+      Just old -> unsetStorageDeviceAttr sdev old
 
 markDiskPowerOn :: StorageDevice -> PhaseM LoopState l ()
 markDiskPowerOn sdev = do
