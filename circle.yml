@@ -49,8 +49,8 @@ test:
     # Keep going on failure to emulate default CircleCI.
 
     # Build with USE_MERO and then without.
-    - rmt -k . stack $STACK_FLAGS build --test --no-run-tests --bench --no-run-benchmarks --flag mero-halon:mero
-    - rmt -k . stack $STACK_FLAGS build --test --no-run-tests --bench --no-run-benchmarks
+    - rmt -k . stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero
+    - rmt -k . stack $STACK_FLAGS build --test --no-run-tests
     # Only test mero-halon and deps, without USE_MERO.
     - rmt -k . stack $STACK_FLAGS --docker-env HALON_TRACING='"consensus-paxos replicated-log EQ EQ.producer RS"' test:
         timeout: 3600
