@@ -19,6 +19,7 @@ import Network.RPC.RPCLite
 
 import Control.Exception
   ( bracket
+  , bracket_
   , mask
   )
 
@@ -67,35 +68,55 @@ import Foreign.Storable
 
 newtype SpielContext = SpielContext (ForeignPtr SpielContextV)
 
--- | Open a Spiel context
+spielInit :: RPCMachine
+          -> IO SpielContext
+spielInit rpcmach = do
+    sc <- mallocForeignPtrBytes m0_spiel_size
+    throwIfNonZero_ (\rc -> "Cannot initialize Spiel context: " ++ show rc)
+      $ withForeignPtr sc $ \ptr -> c_spiel_init ptr reqh
+    return $ SpielContext sc
+  where reqh = rm_reqh rpcmach
+
+spielFini :: SpielContext
+     -> IO ()
+spielFini (SpielContext ptr) = withForeignPtr ptr c_spiel_fini
+
+rconfStart :: SpielContext -> IO ()
+rconfStart (SpielContext sc) =
+  throwIfNonZero_ (\rc -> "Cannot start spiel command interface: " ++ show rc)
+    $ withForeignPtr sc $ \ptr -> c_spiel_rconfc_start ptr nullPtr
+
+rconfStop :: SpielContext -> IO ()
+rconfStop (SpielContext sc) = withForeignPtr sc c_spiel_rconfc_stop
+
+-------------------------------------------------------------------------------
+-- Backcompatibility functions
+-------------------------------------------------------------------------------
+
+-- | Open a Spiel context with command interface support.
+-- If you don't need commands interface, use 'spielInit' instead.
 start :: RPCMachine -- ^ Request handler
-      -> [String] -- ^ Confd endpoints
-      -> String -- ^ Network endpoint of Resource Manager service.
       -> IO SpielContext
-start rpcmach eps rm_ep = withCString rm_ep $ \c_rm_ep -> do
-  let reqh = rm_reqh rpcmach
-  bracket
-    (mapM newCString eps)
-    (mapM_ free)
-    (\eps_arr -> withArray0 nullPtr eps_arr $ \c_eps -> do
-      sc <- mallocForeignPtrBytes m0_spiel_size
-      throwIfNonZero_ (\rc -> "Cannot initialize Spiel context: " ++ show rc)
-                      $ withForeignPtr sc
-                        $ \ptr -> c_spiel_start ptr reqh c_eps c_rm_ep
-      return $ SpielContext sc
-    )
+start rpcmach = do
+  sc <- spielInit rpcmach
+  rconfStart sc
+  return sc
 
 -- | Close a Spiel context
 stop :: SpielContext
      -> IO ()
-stop (SpielContext ptr) = withForeignPtr ptr c_spiel_stop
+stop sc = do rconfStop sc
+             spielFini sc
 
-withSpiel :: RPCMachine -- ^ Request handler
-          -> [String] -- ^ Confd endpoints
-          -> String -- ^ Network endpoint of Resource Manager service.
-          -> (SpielContext -> IO a) -- ^ Action to undertake with Spiel
+withRConf :: SpielContext
+          -> IO a       -- ^ Action to undertake with configuration manager
           -> IO a
-withSpiel rpcmach eps rm_ep = bracket (start rpcmach eps rm_ep) stop
+withRConf spiel = bracket_ (rconfStart spiel) (rconfStop spiel)
+
+withSpiel :: RPCMachine 
+          -> (SpielContext -> IO a)
+          -> IO a
+withSpiel rpcmach = bracket (spielInit rpcmach) spielFini
 
 ---------------------------------------------------------------
 -- Configuration management                                  --
