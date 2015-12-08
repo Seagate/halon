@@ -21,6 +21,8 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     aws.security_groups = ["continuous-integration"]
     aws.instance_type = "c4.xlarge"
     aws.keypair_name = "ci"
+    # AMI produced by packer applied to
+    # https://github.com/tweag/seagate-images/blob/master/packer.json
     aws.ami = "ami-2d377447"
     aws.block_device_mapping =
       [{ 'DeviceName' => '/dev/xvda',
