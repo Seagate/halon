@@ -504,6 +504,10 @@ Test-Suite integration-tests
                     Helper.SSPL
                     RemoteTables
                     TestRunner
+                    HA.Castor.Story.Tests
+                    HA.Castor.Tests
+                    Helper.SSPL
+
   Main-Is:          test.hs
 
   Ghc-Options: -threaded -Wall -rtsopts

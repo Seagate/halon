@@ -5,21 +5,19 @@
 -- Test is based on the test in spiel/st in mero sources.
 -- If this script will start failing, first check that spiel/st run
 -- correctly and then see if something changed there
-module Main where
+module Test.MakeConf (name, test) where
 
 import Mero (withM0)
 import Mero.ConfC
 import Mero.Spiel
 
 import Network.RPC.RPCLite
-import Control.Exception (bracket)
-import Control.Monad (when)
-import System.Environment ( getArgs )
 
 import Data.Map (Map)
 import Data.Word
 import qualified Data.Map as Map
-import System.Process
+
+import Helper
 
 mfids :: Map String Fid
 mfids = Map.fromList
@@ -66,20 +64,21 @@ fids s = mfids Map.! s
 devSize :: Word64
 devSize = 1024*1024
 
-main :: IO ()
-main = do
-  i <- read <$> readCreateProcess (shell "id -u") ""
-  when (i /= (0::Int)) $ error "Must be run by superuser"
-  lnet_nid <- readCreateProcess (shell "lctl list_nids | head -1") ""
-  let server1_endpoint = lnet_nid ++ ":12345:34:1001"
-      server2_endpoint = lnet_nid ++ ":12345:34:1002"
-  [localAddress, confdAddress, rmAddress] <- getArgs 
+name :: String
+name = "copy-configuration-db-back"
+
+test :: IO ()
+test = do
+  server1_endpoint <- getConfdEndpoint 
+  server2_endpoint <- getConfd2Endpoint
+  let confdAddress = server1_endpoint
+  localAddress <- getHalonEndpoint
   withM0 $ do
     initRPC
     withEndpoint (rpcAddress localAddress) $ \ep -> do
       rpcMach <- getRPCMachine_se ep
-      withConf rpcMach (rpcAddress confdAddress) $ \_ -> do
-        withSpiel rpcMach [confdAddress] rmAddress $ \spiel -> do
+      withConf rpcMach (rpcAddress confdAddress) $ \_ -> withHASession ep (rpcAddress confdAddress) $ do 
+        withSpiel rpcMach $ \spiel -> do
           withTransaction spiel $ \tx -> do
             addProfile tx (fids "profile")
             addFilesystem tx (fids "fs") (fids "profile") 10 (fids "profile") (fids "pool") ["4 2 1"]
@@ -103,7 +102,7 @@ main = do
             addDiskV tx (fids "diskv3") (fids "ctrlv") (fids "disk3")
             poolVersionDone tx (fids "pver")
             addProcess tx (fids "process")  (fids "node") (Bitmap 2 [3]) 0 0 0 0 server1_endpoint
-            addProcess tx (fids "process2") (fids "node") (Bitmap 2 [3]) 0 0 0 0 server2_endpoint
+            addProcess tx (fids "process2") (fids "node") (Bitmap 2 [3]) 0 0 0 0 server1_endpoint
             addService tx (fids "confd")    (fids "process") 
               $ ServiceInfo  CST_MGS [server1_endpoint] (SPConfDBPath server1_endpoint)
             addService tx (fids "confd2")   (fids "process2")
@@ -133,15 +132,3 @@ main = do
             addDevice tx (fids "sdev3") (fids "ios") (Just $ fids "disk3") M0_CFG_DEVICE_INTERFACE_SCSI 
               M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop3"
     finalizeRPC 
-     
-withEndpoint :: RPCAddress -> (ServerEndpoint -> IO a) -> IO a
-withEndpoint addr = bracket
-    (listen addr listenCallbacks)
-    stopListening
-  where
-    listenCallbacks = ListenCallbacks
-      { receive_callback = \it _ ->  putStr "Received: "
-                                      >> unsafeGetFragments it
-                                      >>= print
-                                      >> return True
-      }
