@@ -52,7 +52,7 @@ test:
     - rmt -k . stack $STACK_FLAGS build --test --no-run-tests --bench --no-run-benchmarks --flag mero-halon:mero
     - rmt -k . stack $STACK_FLAGS build --test --no-run-tests --bench --no-run-benchmarks
     # Only test mero-halon and deps, without USE_MERO.
-    - rmt -k . stack $STACK_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer RS' test:
+    - rmt -k . stack $STACK_FLAGS --docker-env HALON_TRACING='"consensus-paxos replicated-log EQ EQ.producer RS"' test:
         timeout: 3600
     - scripts/circleci_copy_artifacts.sh
   post:
