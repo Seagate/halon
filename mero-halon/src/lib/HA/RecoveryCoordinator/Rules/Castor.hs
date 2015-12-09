@@ -194,7 +194,6 @@ castorRules = do
                           syncAction Nothing SyncToConfdServersInRG
                         _ -> return ()
                       notifyMero [AnyConfObj m0sdev] status
-                      markOnGoingReset sdev
                       nid <- liftProcess getSelfNode
                       liftProcess . void . promulgateEQ [nid]
                         $ ResetAttempt sdev
@@ -221,6 +220,7 @@ castorRules = do
       end          <- phaseHandle "end"
 
       setPhase home $ \(HAEvent uid (ResetAttempt sdev) _) -> fork NoBuffer $ do
+        markOnGoingReset sdev
         paths <- lookupStorageDevicePaths sdev
         case paths of
           path:_ -> do
@@ -410,7 +410,7 @@ castorRules = do
                liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
             notifyMero [AnyConfObj m0sdev] M0_NC_ONLINE
 #endif
-        unmarkStorageDeviceRemoved disk 
+        unmarkStorageDeviceRemoved disk
         syncGraph
         messageProcessed uuid
 
