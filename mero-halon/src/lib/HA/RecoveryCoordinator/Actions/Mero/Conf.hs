@@ -377,7 +377,8 @@ findMatchingPVer rg fs failedDevs = let
                   ]
   in fst <$> find (\(_, x) -> x == failedDevs) allPvers
 
-createPVerIfNotExists :: PhaseM LoopState l ()
+-- | Returns true if a PVer was created.
+createPVerIfNotExists :: PhaseM LoopState l Bool
 createPVerIfNotExists = do
   rg <- getLocalGraph
   (Just fs) <- getFilesystem
@@ -386,11 +387,11 @@ createPVerIfNotExists = do
       allDrives = G.getResourcesOfType rg :: [M0.Disk]
       failures = Failures 0 0 0 1 (fromIntegral $ length allDrives - S.size failedDevs)
   case mcur of
-    Just _ -> return ()
+    Just _ -> return False
     Nothing -> let
         failureSet = FailureSet failedDevs failures
         pv = failureSetToPoolVersion rg fs failureSet
-      in createPoolVersions fs [pv]
+      in createPoolVersions fs [pv] >> return True
 
 -- | Create pool versions based upon failure sets.
 createPoolVersions :: M0.Filesystem

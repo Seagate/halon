@@ -32,7 +32,6 @@ import qualified Mero.Spiel as Spiel
 import HA.Resources.Mero hiding (Process, Enclosure, Rack)
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Actions.Mero
-import HA.Services.Mero
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState
 import Control.Exception (SomeException)
@@ -175,10 +174,11 @@ castorRules = do
                                  then M0_NC_TRANSIENT
                                  else M0_NC_FAILED
 
+                    updateDriveState m0sdev status
+
                     when (status == M0_NC_FAILED) $ do
                       nid <- liftProcess getSelfNode
                       diskids <- findStorageDeviceIdentifiers sdev
-                      notifyMero [AnyConfObj m0sdev] status
                       let iem = InterestingEventMessage . pack . unwords $ [
                                     "M0_NC_FAILED reported."
                                   , "fid=" ++ show mfid
@@ -188,12 +188,6 @@ castorRules = do
                       traverse_ startRepairOperation pools
 
                     when (status == M0_NC_TRANSIENT) $ do
-                      getM0Globals >>= \case
-                        Just x | CI.m0_failure_set_gen x == CI.Dynamic -> do
-                          createPVerIfNotExists
-                          syncAction Nothing SyncToConfdServersInRG
-                        _ -> return ()
-                      notifyMero [AnyConfObj m0sdev] status
                       nid <- liftProcess getSelfNode
                       liftProcess . void . promulgateEQ [nid]
                         $ ResetAttempt sdev
@@ -250,7 +244,7 @@ castorRules = do
 #ifdef USE_MERO
           sd <- lookupStorageDeviceSDev sdev
           forM_ sd $ \m0sdev -> do
-            notifyMero [AnyConfObj m0sdev] M0_NC_FAILED
+            updateDriveState m0sdev M0_NC_FAILED
             pools <- getSDevPools m0sdev
             traverse_ startRepairOperation pools
 #endif
@@ -275,7 +269,7 @@ castorRules = do
 #ifdef USE_MERO
           sd <- lookupStorageDeviceSDev sdev
           forM_ sd $ \m0sdev -> do
-            notifyMero [AnyConfObj m0sdev] M0_NC_FAILED
+            updateDriveState m0sdev M0_NC_FAILED
             pools <- getSDevPools m0sdev
             traverse_ startRepairOperation pools
 #endif
@@ -301,7 +295,7 @@ castorRules = do
 #ifdef USE_MERO
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev ->
-          notifyMero [AnyConfObj m0sdev] M0_NC_ONLINE
+          updateDriveState m0sdev M0_NC_ONLINE
 #endif
         continue end
 
@@ -313,7 +307,7 @@ castorRules = do
 #ifdef USE_MERO
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
-          notifyMero [AnyConfObj m0sdev] M0_NC_FAILED
+          updateDriveState m0sdev M0_NC_FAILED
           pools <- getSDevPools m0sdev
           traverse_ startRepairOperation pools
 #endif
@@ -340,12 +334,7 @@ castorRules = do
 #ifdef USE_MERO
       sd <- lookupStorageDeviceSDev disk
       forM_ sd $ \m0sdev -> do
-        getM0Globals >>= \case
-          Just x | CI.m0_failure_set_gen x == CI.Dynamic -> do
-            createPVerIfNotExists
-            syncAction Nothing SyncToConfdServersInRG
-          _ -> return ()
-        notifyMero [AnyConfObj m0sdev] M0_NC_TRANSIENT
+        updateDriveState m0sdev M0_NC_TRANSIENT
         phaseLog "debug" "spiel-0"
         msa <- getSpielAddress
         phaseLog "debug" "spiel-1"
@@ -408,7 +397,7 @@ castorRules = do
           forM_ msa $ \sa -> do
             _ <- withSpielRC sa $ \sp ->
                liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
-            notifyMero [AnyConfObj m0sdev] M0_NC_ONLINE
+            updateDriveState m0sdev M0_NC_ONLINE
 #endif
         unmarkStorageDeviceRemoved disk
         syncGraph

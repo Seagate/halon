@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP               #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo       #-}
@@ -22,7 +21,11 @@ import HA.NodeUp (nodeUp)
 import Mero.Notification
 import Mero.Notification.HAState
 import HA.Resources
-import HA.Resources.Castor.Initial (InitialData)
+import HA.Resources.Castor.Initial
+  ( InitialData(..)
+  , M0Globals(..)
+  , FailureSetScheme(Dynamic)
+  )
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
@@ -269,6 +272,17 @@ prepareSubscriptions rc rmq = do
 loadInitialData :: Process ()
 loadInitialData = let
     init_msg = initialDataAddr "10.0.2.15" "10.0.2.15" 8
+  in do
+    nid <- getSelfNode
+    -- We populate the graph with confc context.
+    _ <- promulgateEQ [nid] init_msg
+    _ <- expect :: Process (Published (HAEvent InitialData))
+    return ()
+
+loadInitialDataMod :: (InitialData -> InitialData)
+                   -> Process ()
+loadInitialDataMod f = let
+    init_msg = f $ initialDataAddr "10.0.2.15" "10.0.2.15" 8
   in do
     nid <- getSelfNode
     -- We populate the graph with confc context.
@@ -557,7 +571,9 @@ testDynamicPVer transport = run transport interceptor test where
       assertMsg "Pool version should exist" $ elem pverFids pvFids
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
-    loadInitialData
+    loadInitialDataMod $ \x -> x {
+        id_m0_globals = (id_m0_globals x) { m0_failure_set_gen = Dynamic }
+      }
 
     rg <- G.getGraph mm
     sdev <- findSDev rg
