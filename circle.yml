@@ -2,7 +2,7 @@ machine:
   services:
     - docker
   environment:
-      STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero --docker-mount $HOME/halon/docker/tweagremote:/root/.ssh
+      STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero
 
 checkout:
   post:
@@ -34,7 +34,9 @@ dependencies:
     - cd vendor/mero; stack $STACK_FLAGS exec -- make
     # Build stack-managed halon dependencies.
     - stack $STACK_FLAGS build --only-snapshot --prefetch --test --bench
+    # Build tweagremote image for distributed tests and copy the ssh key to access it.
     - docker build --tag=tweagremote docker/tweagremote
+    - stack $STACK_FLAGS exec bash -- -c 'mkdir ~/.ssh; cp -v docker/tweagremote/id_rsa ~/.ssh/ && chmod go-rwx ~/.ssh/id_rsa'
 
   cache_directories:
     - ~/.stack/
@@ -45,6 +47,6 @@ test:
     - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero --haddock --no-haddock-deps
     - stack $STACK_FLAGS build --flag mero-halon:distributed-tests --test --no-run-tests --haddock --no-haddock-deps
     # Only test mero-halon and deps, without USE_MERO.
-    - stack $STACK_FLAGS --no-docker-set-user --docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1 --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer RS' build --flag mero-halon:distributed-tests --haddock --no-haddock-deps --test:
+    - stack $STACK_FLAGS --docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1 --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer RS' build --flag mero-halon:distributed-tests --haddock --no-haddock-deps --test:
         timeout: 3600
     - scripts/circleci_copy_artifacts.sh
