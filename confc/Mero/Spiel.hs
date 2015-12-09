@@ -22,8 +22,6 @@ import Control.Exception
   , mask
   )
 
-import Data.IORef
-import qualified Data.Map.Strict as Map
 import Data.Word ( Word32, Word64 )
 
 import Foreign.C.Error
@@ -57,6 +55,7 @@ import Foreign.Marshal.Utils
   ( fillBytes
   , with
   , withMany
+  , maybeWith
   )
 import Foreign.Ptr
   ( nullPtr )
@@ -64,8 +63,6 @@ import Foreign.Storable
   ( peek
   , poke
   )
-
-import System.IO.Unsafe (unsafePerformIO)
 
 newtype SpielContext = SpielContext (ForeignPtr SpielContextV)
 
@@ -260,7 +257,7 @@ addService (SpielTransaction fsc) fid processFid serviceInfo =
 addDevice :: SpielTransaction
           -> Fid
           -> Fid -- ^ Service
-          -> Fid -- ^ Disk
+          -> Maybe Fid -- ^ Disk
           -> StorageDeviceInterfaceType
           -> StorageDeviceMediaType
           -> Word32 -- ^ block size in bytes
@@ -269,17 +266,18 @@ addDevice :: SpielTransaction
           -> Word64 -- ^ different flags (bitmask of m0_cfg_flag_bit)
           -> String -- ^ device filename
           -> IO ()
-addDevice (SpielTransaction fsc) fid parentFid diskFid ifType medType
+addDevice (SpielTransaction fsc) fid parentFid mdiskFid ifType medType
             bsize size lastState flags filename =
   withForeignPtr fsc $ \sc ->
-    withMany with [fid, parentFid, diskFid] $ \[fid_ptr, fs_ptr, disk_ptr] ->
-      withCString filename $ \ c_filename ->
-        throwIfNonZero_ (\rc -> "Cannot add device: " ++ show rc)
-          $ c_spiel_device_add sc fid_ptr fs_ptr disk_ptr
-                                (fromIntegral . fromEnum $ ifType)
-                                (fromIntegral . fromEnum $ medType)
-                                bsize size lastState flags
-                                c_filename
+    maybeWith with (mdiskFid) $ \disk_ptr ->
+      withMany with [fid, parentFid] $ \[fid_ptr, fs_ptr] ->
+        withCString filename $ \ c_filename ->
+          throwIfNonZero_ (\rc -> "Cannot add device: " ++ show rc)
+            $ c_spiel_device_add sc fid_ptr fs_ptr disk_ptr
+                                  (fromIntegral . fromEnum $ ifType)
+                                  (fromIntegral . fromEnum $ medType)
+                                  bsize size lastState flags
+                                  c_filename
 
 addPool :: SpielTransaction
         -> Fid
@@ -403,11 +401,6 @@ deleteElement (SpielTransaction fsc) fid = withForeignPtr fsc $ \sc ->
 -- Splicing configuration trees                              --
 ---------------------------------------------------------------
 
--- Temporary workaround for MERO-1094
-{-# NOINLINE sdevDiskMap #-}
-sdevDiskMap :: IORef (Map.Map Fid Fid)
-sdevDiskMap = unsafePerformIO $ newIORef $ Map.empty
-
 -- | A type providing an instance of Splicable may be spliced into a
 --   configuration database, given an open Spiel Transaction.
 class Spliceable a where
@@ -429,7 +422,6 @@ class Spliceable a where
 instance Spliceable Profile where
   splice t _ o = addProfile t (cp_fid o)
   spliceTree t p o = do
-    writeIORef sdevDiskMap Map.empty -- YUCK
     splice t p o
     fs <- children o :: IO [Filesystem]
     mapM_ (spliceTree t (cp_fid o)) fs
@@ -525,16 +517,12 @@ instance Spliceable Service where
 
 instance Spliceable Sdev where
   splice t p o = do
-    mdisk <- fmap (Map.lookup (sd_fid o)) $ readIORef sdevDiskMap
-    case mdisk of
-      Just disk ->
-        addDevice t (sd_fid o) p disk
+     addDevice t (sd_fid o) p (sd_disk o)
                (toEnum . fromIntegral $ sd_iface o)
                (toEnum . fromIntegral $ sd_media o)
                (sd_bsize o) (sd_size o)
                (sd_last_state o) (sd_flags o)
                (sd_filename o)
-      Nothing -> error "Problem building reverse map needed until MERO-1094"
   spliceTree = splice
 
 instance Spliceable Enclosure where
@@ -553,9 +541,7 @@ instance Spliceable Controller where
 
 instance Spliceable Disk where
   splice t p o = addDisk t (ck_fid o) p
-  spliceTree t p o = do
-    modifyIORef' sdevDiskMap $ Map.insert (ck_dev o) (ck_fid o)
-    splice t p o
+  spliceTree t p o = splice t p o
 
 ---------------------------------------------------------------
 -- Command interface                                         --

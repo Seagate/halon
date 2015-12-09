@@ -418,11 +418,14 @@ Test-Suite unit-tests
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
                     HA.RecoveryCoordinator.SSPL.Tests
                     HA.Autoboot.Tests
+                    HA.Castor.Story.Tests
+                    HA.Castor.Tests
                     HA.Test.Cluster
                     HA.Test.Disconnect
                     HA.Test.SSPL
                     RemoteTables
                     TestRunner
+                    Helper.SSPL
 
   Ghc-Options: -threaded -Wall
 
@@ -560,9 +563,11 @@ Test-Suite scheduler-tests
   Hs-Source-Dirs:   tests
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
                     HA.Autoboot.Tests
+                    HA.Castor.Tests
                     HA.Test.Disconnect
                     RemoteTables
                     TestRunner
+                    Helper.SSP
   Main-Is:          scheduler-tests.hs
 
   Ghc-Options: -threaded -Wall

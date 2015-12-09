@@ -124,13 +124,13 @@ main = do
               $ ServiceInfo CST_MDS [server1_endpoint] SPUnused
             addService tx (fids "mds2") (fids "process2")
               $ ServiceInfo CST_MDS [server2_endpoint] SPUnused 
-            addDevice tx (fids "sdev0") (fids "mds2") (fids "disk0") M0_CFG_DEVICE_INTERFACE_SCSI 
+            addDevice tx (fids "sdev0") (fids "mds2") (Just $ fids "disk0") M0_CFG_DEVICE_INTERFACE_SCSI 
               M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop0"
-            addDevice tx (fids "sdev1") (fids "ios") (fids "disk1") M0_CFG_DEVICE_INTERFACE_SCSI 
+            addDevice tx (fids "sdev1") (fids "ios") (Just $ fids "disk1") M0_CFG_DEVICE_INTERFACE_SCSI 
               M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop1"
-            addDevice tx (fids "sdev2") (fids "ios") (fids "disk2") M0_CFG_DEVICE_INTERFACE_SCSI 
+            addDevice tx (fids "sdev2") (fids "ios") (Just $ fids "disk2") M0_CFG_DEVICE_INTERFACE_SCSI 
               M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop2"
-            addDevice tx (fids "sdev3") (fids "ios") (fids "disk3") M0_CFG_DEVICE_INTERFACE_SCSI 
+            addDevice tx (fids "sdev3") (fids "ios") (Just $ fids "disk3") M0_CFG_DEVICE_INTERFACE_SCSI 
               M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop3"
     finalizeRPC 
      
