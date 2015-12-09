@@ -8,7 +8,7 @@ module HA.Castor.Story.Tests (mkTests) where
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Mero
-  ( findAllPVerFids
+  ( findRealObjsInPVer
   , findFailableObjs
   )
 import HA.RecoveryCoordinator.Actions.Service
@@ -550,7 +550,7 @@ testDynamicPVer transport = run transport interceptor test where
                  , x <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
                  ]
       pv1 = G.getResourcesOfType rg :: [M0.PVer]
-      pvFids = fmap (findAllPVerFids rg) pv1
+      pvFids = fmap (findRealObjsInPVer rg) pv1
       allFids = findFailableObjs rg fs
       pverFids = allFids `S.difference` fids
     in
