@@ -567,7 +567,7 @@ Test-Suite scheduler-tests
                     HA.Test.Disconnect
                     RemoteTables
                     TestRunner
-                    Helper.SSP
+                    Helper.SSPL
   Main-Is:          scheduler-tests.hs
 
   Ghc-Options: -threaded -Wall
