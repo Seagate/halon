@@ -57,6 +57,7 @@ import Foreign.Marshal.Utils
   ( fillBytes
   , with
   , withMany
+  , maybeWith
   )
 import Foreign.Ptr
   ( nullPtr )
@@ -260,7 +261,7 @@ addService (SpielTransaction fsc) fid processFid serviceInfo =
 addDevice :: SpielTransaction
           -> Fid
           -> Fid -- ^ Service
-          -> Fid -- ^ Disk
+          -> Maybe Fid -- ^ Disk
           -> StorageDeviceInterfaceType
           -> StorageDeviceMediaType
           -> Word32 -- ^ block size in bytes
@@ -269,17 +270,18 @@ addDevice :: SpielTransaction
           -> Word64 -- ^ different flags (bitmask of m0_cfg_flag_bit)
           -> String -- ^ device filename
           -> IO ()
-addDevice (SpielTransaction fsc) fid parentFid diskFid ifType medType
+addDevice (SpielTransaction fsc) fid parentFid mdiskFid ifType medType
             bsize size lastState flags filename =
   withForeignPtr fsc $ \sc ->
-    withMany with [fid, parentFid, diskFid] $ \[fid_ptr, fs_ptr, disk_ptr] ->
-      withCString filename $ \ c_filename ->
-        throwIfNonZero_ (\rc -> "Cannot add device: " ++ show rc)
-          $ c_spiel_device_add sc fid_ptr fs_ptr disk_ptr
-                                (fromIntegral . fromEnum $ ifType)
-                                (fromIntegral . fromEnum $ medType)
-                                bsize size lastState flags
-                                c_filename
+    maybeWith with (mdiskFid) $ \disk_ptr ->
+      withMany with [fid, parentFid] $ \[fid_ptr, fs_ptr] ->
+        withCString filename $ \ c_filename ->
+          throwIfNonZero_ (\rc -> "Cannot add device: " ++ show rc)
+            $ c_spiel_device_add sc fid_ptr fs_ptr disk_ptr
+                                  (fromIntegral . fromEnum $ ifType)
+                                  (fromIntegral . fromEnum $ medType)
+                                  bsize size lastState flags
+                                  c_filename
 
 addPool :: SpielTransaction
         -> Fid
@@ -525,16 +527,12 @@ instance Spliceable Service where
 
 instance Spliceable Sdev where
   splice t p o = do
-    mdisk <- fmap (Map.lookup (sd_fid o)) $ readIORef sdevDiskMap
-    case mdisk of
-      Just disk ->
-        addDevice t (sd_fid o) p disk
+     addDevice t (sd_fid o) p (sd_disk o)
                (toEnum . fromIntegral $ sd_iface o)
                (toEnum . fromIntegral $ sd_media o)
                (sd_bsize o) (sd_size o)
                (sd_last_state o) (sd_flags o)
                (sd_filename o)
-      Nothing -> error "Problem building reverse map needed until MERO-1094"
   spliceTree = splice
 
 instance Spliceable Enclosure where

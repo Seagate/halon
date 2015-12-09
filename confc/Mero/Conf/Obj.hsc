@@ -69,6 +69,7 @@ import Data.Typeable ( Typeable )
 import Foreign.C.String ( CString, peekCString )
 import Foreign.C.Types ( CInt(..) )
 import Foreign.Marshal.Array ( advancePtr, peekArray )
+import Foreign.Marshal.Utils ( maybePeek )
 import Foreign.Ptr ( Ptr, nullPtr, plusPtr )
 import Foreign.Storable ( Storable(..) )
 import GHC.Generics (Generic)
@@ -412,6 +413,7 @@ getController po =
 data Sdev = Sdev
   { sd_ptr        :: Ptr Obj
   , sd_fid        :: Fid
+  , sd_disk       :: Maybe Fid
   , sd_iface      :: Word32
   , sd_media      :: Word32
   , sd_bsize      :: Word32
@@ -424,7 +426,8 @@ data Sdev = Sdev
 getSdev :: Ptr Obj -> IO Sdev
 getSdev po = do
   ps <- confc_cast_sdev po
-  fid <- #{peek struct m0_conf_obj, co_id} po
+  fid   <- #{peek struct m0_conf_obj, co_id} po
+  mdisk <- maybePeek #{peek struct m0_conf_sdev, sd_disk} po
   iface <- #{peek struct m0_conf_sdev, sd_iface} ps
   media <- #{peek struct m0_conf_sdev, sd_media} ps
   bsize <- #{peek struct m0_conf_sdev, sd_bsize} ps
@@ -435,6 +438,7 @@ getSdev po = do
   return Sdev
            { sd_ptr = po
            , sd_fid = fid
+           , sd_disk = mdisk
            , sd_iface = iface
            , sd_media = media
            , sd_bsize = bsize
