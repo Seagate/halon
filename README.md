@@ -95,6 +95,32 @@ enabled, requires Mero kernel modules to be loadable in the host
 kernel. See [tweag/seagate-boxes][seagate-boxes] to construct a VM
 with a kernel suitable for this.
 
+To run mero-enabled tests, you have to prepare your machine and start
+mero itself. From inside the mero directory, execute the
+following.
+
+```
+# After mero builds, create service symlinks back to the service
+# files so systemd can start services
+sudo ./scripts/install-mero-service -l
+
+# Create loop-back devices, genders file &c.
+sudo ./utils/m0setup
+
+# Start up the services preparing then running mero. This is probably
+# best done after everything builds, right before testing otherwise
+# mero will hog resources and make the build slower.
+sudo systemctl start mero-mkfs
+sudo systemctl start mero
+
+# Nothing special should be needed to run the USE_MERO tests
+# themselves. Make sure TEST_LISTEN is set: the 127.0.0.1 address in
+# stack.yml might not be good enough as IIRC mero (or RPClite?) is
+# unhappy with it. 'stack test --flag mero:mero-halon' should be
+# enough to run things. If you're using stack + docker, you may need
+# ‘--docker-persist’ flag for the above commands.
+```
+
 [docker]: https://www.docker.com/
 [haskell-stack]: https://github.com/commercialhaskell/stack
 [quay]: https://quay.io
