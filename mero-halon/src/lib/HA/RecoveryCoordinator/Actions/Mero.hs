@@ -41,6 +41,8 @@ module HA.RecoveryCoordinator.Actions.Mero
   , confInitialised
   , initialiseConfInRG
   , findCurrentPVer
+  , findAllPVerFids
+  , findFailableObjs
   , failureSetToPoolVersion
   , createPVerIfNotExists
   )
