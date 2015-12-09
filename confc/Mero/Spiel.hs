@@ -22,8 +22,6 @@ import Control.Exception
   , mask
   )
 
-import Data.IORef
-import qualified Data.Map.Strict as Map
 import Data.Word ( Word32, Word64 )
 
 import Foreign.C.Error
@@ -65,8 +63,6 @@ import Foreign.Storable
   ( peek
   , poke
   )
-
-import System.IO.Unsafe (unsafePerformIO)
 
 newtype SpielContext = SpielContext (ForeignPtr SpielContextV)
 
@@ -405,11 +401,6 @@ deleteElement (SpielTransaction fsc) fid = withForeignPtr fsc $ \sc ->
 -- Splicing configuration trees                              --
 ---------------------------------------------------------------
 
--- Temporary workaround for MERO-1094
-{-# NOINLINE sdevDiskMap #-}
-sdevDiskMap :: IORef (Map.Map Fid Fid)
-sdevDiskMap = unsafePerformIO $ newIORef $ Map.empty
-
 -- | A type providing an instance of Splicable may be spliced into a
 --   configuration database, given an open Spiel Transaction.
 class Spliceable a where
@@ -431,7 +422,6 @@ class Spliceable a where
 instance Spliceable Profile where
   splice t _ o = addProfile t (cp_fid o)
   spliceTree t p o = do
-    writeIORef sdevDiskMap Map.empty -- YUCK
     splice t p o
     fs <- children o :: IO [Filesystem]
     mapM_ (spliceTree t (cp_fid o)) fs
@@ -551,9 +541,7 @@ instance Spliceable Controller where
 
 instance Spliceable Disk where
   splice t p o = addDisk t (ck_fid o) p
-  spliceTree t p o = do
-    modifyIORef' sdevDiskMap $ Map.insert (ck_dev o) (ck_fid o)
-    splice t p o
+  spliceTree t p o = splice t p o
 
 ---------------------------------------------------------------
 -- Command interface                                         --
