@@ -405,7 +405,7 @@ lookupStorageDeviceInEnclosure :: Enclosure
                                -> PhaseM LoopState l (Maybe StorageDevice)
 lookupStorageDeviceInEnclosure enc ident = do
     rg <- getLocalGraph
-    return $ listToMaybe 
+    return $ listToMaybe
            [ device
            | device <- G.connectedTo  enc  Has rg :: [StorageDevice]
            , G.isConnected device Has ident rg :: Bool
@@ -505,7 +505,7 @@ actualizeStorageDeviceReplacement sdev = do
                   let mdev'  = mdev{M0.d_path = mkPathByWWN wwn}
                       action = G.mergeResources (const mdev') [mdev]
                       mkPathByWWN :: String -> String
-                      mkPathByWWN wwn = "/dev/disk/by-id/" ++ wwn
+                      mkPathByWWN = (++) "/dev/disk/by-id/"
 #else
                   let action = id
 #endif
@@ -550,7 +550,7 @@ markStorageDeviceWantsReplacement sdev ident = do
    phaseLog "rg" $ "Checking if we need to know storage device replacement " ++ show sdev
    modifyGraph $ G.connectUnique sdev WantsReplacement ident
 
--- | Find if storage device has replacement and return new drive if this is a case. 
+-- | Find if storage device has replacement and return new drive if this is a case.
 lookupStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l (Maybe StorageDevice)
 lookupStorageDeviceReplacement sdev = do
     gr <- getLocalGraph

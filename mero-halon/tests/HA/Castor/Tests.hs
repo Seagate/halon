@@ -39,7 +39,6 @@ import HA.Multimap.Process (multimap)
 import HA.RecoveryCoordinator.Actions.Mero
 #endif
 import HA.RecoveryCoordinator.Mero
-import HA.RecoveryCoordinator.Rules.Mero
 import HA.Replicator (RGroup(..))
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock (MC_RG)
@@ -137,8 +136,10 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
       filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals initialData)
       loadMeroServers filesystem (CI.id_m0_servers initialData)
+      rg <- getLocalGraph
       failureSets <- generateFailureSets 2 2 1
-      createPoolVersions filesystem failureSets
+      let pvers = failureSetToPoolVersion rg filesystem <$> failureSets
+      createPoolVersions filesystem pvers
     -- Verify that everything is set up correctly
     bmc <- runGet ls' $ findBMCAddress myHost
     assertMsg "Get BMC Address." $ bmc == Just host
@@ -206,6 +207,7 @@ largeInitialData host transport = let
       me <- getSelfNode
       ls <- emptyLoopState pid (nullProcessId me)
       (ls', _) <- run ls $ do
+        rg <- getLocalGraph
         -- TODO: the interface address is hard-coded here: currently we
         -- don't use it so it doesn't impact us but in the future we
         -- should also take it as a parameter to the test, just like the
@@ -228,7 +230,8 @@ largeInitialData host transport = let
         liftProcess $ liftIO $ hPutStrLn stderr $ "have " ++ show (length chunks) ++
                       " chunks for " ++ show (length failureSets) ++ " failure sets."
         forM_ (zip [0..] chunks) $ \(i, chunk) -> do
-          createPoolVersions filesystem chunk
+          let pvers = failureSetToPoolVersion rg filesystem <$> chunk
+          createPoolVersions filesystem pvers
           liftProcess $ liftIO $ hPutStrLn stderr $ "submitting chunk " ++ show (i :: Int)
           syncGraph
 
@@ -343,6 +346,7 @@ initialDataAddr host ifaddr n = CI.InitialData {
   , CI.m0_lnet_nid = "auto"
   , CI.m0_be_segment_size = 536870912
   , CI.m0_md_redundancy = 2
+  , CI.m0_failure_set_gen = CI.Preloaded 0 1 0
   }
 , CI.id_m0_servers = [
     CI.M0Host {

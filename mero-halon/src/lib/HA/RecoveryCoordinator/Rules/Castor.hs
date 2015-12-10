@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DoAndIfThenElse       #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
@@ -28,11 +29,9 @@ import HA.Services.SSPL
 #ifdef USE_MERO
 import HA.EventQueue.Producer
 import qualified Mero.Spiel as Spiel
-import HA.RecoveryCoordinator.Rules.Mero
 import HA.Resources.Mero hiding (Process, Enclosure, Rack)
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Actions.Mero
-import HA.Services.Mero
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState
 import Control.Exception (SomeException)
@@ -136,16 +135,21 @@ castorRules = do
     defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
       mapM_ goRack id_racks
 #ifdef USE_MERO
+      rg <- getLocalGraph
       filesystem <- initialiseConfInRG
       loadMeroGlobals id_m0_globals
       loadMeroServers filesystem id_m0_servers
-      failureSets <- generateFailureSets 0 1 0 -- TODO real values
-      let chunks = flip unfoldr failureSets $ \xs ->
-            case xs of
-              [] -> Nothing
-              _  -> -- TODO: Take into account the size of failure sets to do
-                    -- the spliting.
-                    Just $ splitAt 5 xs
+      failureSets <- case (CI.m0_failure_set_gen id_m0_globals) of
+        CI.Dynamic -> return []
+        CI.Preloaded x y z -> generateFailureSets x y z
+      let
+        poolVersions = fmap (failureSetToPoolVersion rg filesystem) failureSets
+        chunks = flip unfoldr poolVersions $ \xs ->
+          case xs of
+            [] -> Nothing
+            _  -> -- TODO: Take into account the size of failure sets to do
+                  -- the spliting.
+                  Just $ splitAt 5 xs
       forM_ chunks $ \chunk -> do
         createPoolVersions filesystem chunk
         syncGraph
@@ -169,7 +173,8 @@ castorRules = do
                     let status = if ratt <= resetAttemptThreshold
                                  then M0_NC_TRANSIENT
                                  else M0_NC_FAILED
-                    notifyMero [AnyConfObj m0sdev] status
+
+                    updateDriveState m0sdev status
 
                     when (status == M0_NC_FAILED) $ do
                       nid <- liftProcess getSelfNode
@@ -183,7 +188,6 @@ castorRules = do
                       traverse_ startRepairOperation pools
 
                     when (status == M0_NC_TRANSIENT) $ do
-                      markOnGoingReset sdev
                       nid <- liftProcess getSelfNode
                       liftProcess . void . promulgateEQ [nid]
                         $ ResetAttempt sdev
@@ -210,6 +214,7 @@ castorRules = do
       end          <- phaseHandle "end"
 
       setPhase home $ \(HAEvent uid (ResetAttempt sdev) _) -> fork NoBuffer $ do
+        markOnGoingReset sdev
         paths <- lookupStorageDevicePaths sdev
         case paths of
           path:_ -> do
@@ -239,7 +244,7 @@ castorRules = do
 #ifdef USE_MERO
           sd <- lookupStorageDeviceSDev sdev
           forM_ sd $ \m0sdev -> do
-            notifyMero [AnyConfObj m0sdev] M0_NC_FAILED
+            updateDriveState m0sdev M0_NC_FAILED
             pools <- getSDevPools m0sdev
             traverse_ startRepairOperation pools
 #endif
@@ -264,7 +269,7 @@ castorRules = do
 #ifdef USE_MERO
           sd <- lookupStorageDeviceSDev sdev
           forM_ sd $ \m0sdev -> do
-            notifyMero [AnyConfObj m0sdev] M0_NC_FAILED
+            updateDriveState m0sdev M0_NC_FAILED
             pools <- getSDevPools m0sdev
             traverse_ startRepairOperation pools
 #endif
@@ -290,7 +295,7 @@ castorRules = do
 #ifdef USE_MERO
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev ->
-          notifyMero [AnyConfObj m0sdev] M0_NC_ONLINE
+          updateDriveState m0sdev M0_NC_ONLINE
 #endif
         continue end
 
@@ -302,7 +307,7 @@ castorRules = do
 #ifdef USE_MERO
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
-          notifyMero [AnyConfObj m0sdev] M0_NC_FAILED
+          updateDriveState m0sdev M0_NC_FAILED
           pools <- getSDevPools m0sdev
           traverse_ startRepairOperation pools
 #endif
@@ -329,12 +334,12 @@ castorRules = do
 #ifdef USE_MERO
       sd <- lookupStorageDeviceSDev disk
       forM_ sd $ \m0sdev -> do
-        notifyMero [AnyConfObj m0sdev] M0_NC_TRANSIENT
+        updateDriveState m0sdev M0_NC_TRANSIENT
         phaseLog "debug" "spiel-0"
         msa <- getSpielAddress
         phaseLog "debug" "spiel-1"
         forM_ msa $ \sa ->
-          (void $ withSpielRC sa $ \sp -> 
+          (void $ withSpielRC sa $ \sp ->
              liftIO $ Spiel.deviceDetach sp (d_fid m0sdev))
             `catch` (\e -> phaseLog "mero" $ "failure in spiel: " ++ show (e::SomeException))
         phaseLog "debug" "spiel-2"
@@ -392,12 +397,12 @@ castorRules = do
           forM_ msa $ \sa -> do
             _ <- withSpielRC sa $ \sp ->
                liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
-            notifyMero [AnyConfObj m0sdev] M0_NC_ONLINE
+            updateDriveState m0sdev M0_NC_ONLINE
 #endif
-        unmarkStorageDeviceRemoved disk 
+        unmarkStorageDeviceRemoved disk
         syncGraph
         messageProcessed uuid
-        
+
       start handle Nothing
 
     -- Mark drive as failed

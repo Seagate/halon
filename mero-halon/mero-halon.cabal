@@ -150,8 +150,11 @@ Library
                        HA.Resources.Mero
                        HA.Resources.Mero.Note
                        HA.Services.Mero
-      Other-Modules: HA.Services.Mero.CEP
-                     HA.Services.Mero.Types
+      Other-Modules:  HA.RecoveryCoordinator.Actions.Mero.Conf
+                      HA.RecoveryCoordinator.Actions.Mero.Core
+                      HA.RecoveryCoordinator.Actions.Mero.Spiel
+                      HA.Services.Mero.CEP
+                      HA.Services.Mero.Types
       cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
       c-sources: hastate/hastate.c
                  hastate/hastate_foms.c
@@ -177,6 +180,7 @@ Executable halonctl
                       Handler.Bootstrap.TrackingStation
                       Handler.Cluster
                       Handler.Service
+                      Handler.Status
                       Lookup
                       Options.Applicative.Extras
 
@@ -423,9 +427,9 @@ Test-Suite unit-tests
                     HA.Test.Cluster
                     HA.Test.Disconnect
                     HA.Test.SSPL
+                    Helper.SSPL
                     RemoteTables
                     TestRunner
-                    Helper.SSPL
 
   Ghc-Options: -threaded -Wall
 
@@ -492,9 +496,12 @@ Test-Suite integration-tests
   Hs-Source-Dirs:   tests
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
                     HA.Autoboot.Tests
+                    HA.Castor.Tests
+                    HA.Castor.Story.Tests
                     HA.Test.Cluster
                     HA.Test.Disconnect
                     HA.Test.SSPL
+                    Helper.SSPL
                     RemoteTables
                     TestRunner
   Main-Is:          test.hs
@@ -565,9 +572,9 @@ Test-Suite scheduler-tests
                     HA.Autoboot.Tests
                     HA.Castor.Tests
                     HA.Test.Disconnect
+                    Helper.SSPL
                     RemoteTables
                     TestRunner
-                    Helper.SSPL
   Main-Is:          scheduler-tests.hs
 
   Ghc-Options: -threaded -Wall

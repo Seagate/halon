@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP               #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo       #-}
@@ -7,6 +6,10 @@ module HA.Castor.Story.Tests (mkTests) where
 
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
+import HA.RecoveryCoordinator.Actions.Mero
+  ( findRealObjsInPVer
+  , findFailableObjs
+  )
 import HA.RecoveryCoordinator.Actions.Service
   ( registerServiceProcess )
 import HA.RecoveryCoordinator.Events.Drive
@@ -18,7 +21,11 @@ import HA.NodeUp (nodeUp)
 import Mero.Notification
 import Mero.Notification.HAState
 import HA.Resources
-import HA.Resources.Castor.Initial (InitialData)
+import HA.Resources.Castor.Initial
+  ( InitialData(..)
+  , M0Globals(..)
+  , FailureSetScheme(Dynamic)
+  )
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
@@ -42,6 +49,7 @@ import Data.Aeson (decode, encode)
 import Data.Binary (Binary)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Hashable (Hashable)
+import qualified Data.Set as S
 import Data.Typeable
 import Data.Text (pack)
 import Data.Defaultable
@@ -111,6 +119,8 @@ mkTests = do
           testSMARTNoResponse transport
         , testSuccess "Drive failure removal reported by SSPL" $
           testDriveRemovedBySSPL transport
+        , testSuccess "Drive failure, dynamic PVer generation" $
+          testDynamicPVer transport
         ]
 
 run :: Transport
@@ -224,9 +234,9 @@ checkStorageDeviceRemoved :: String -> Int -> G.Graph -> Bool
 checkStorageDeviceRemoved enc idx rg = not . Prelude.null $
   [ () | host <- G.connectedTo (Enclosure enc) Has rg :: [Host]
        , dev  <- G.connectedTo host Has rg :: [StorageDevice]
-       , any (==(DIIndexInEnclosure idx)) 
+       , any (==(DIIndexInEnclosure idx))
              (G.connectedTo dev Has rg :: [DeviceIdentifier])
-       , any (==SDRemovedAt) 
+       , any (==SDRemovedAt)
              (G.connectedTo dev Has rg :: [StorageDeviceAttr])
        ]
 
@@ -262,6 +272,17 @@ prepareSubscriptions rc rmq = do
 loadInitialData :: Process ()
 loadInitialData = let
     init_msg = initialDataAddr "10.0.2.15" "10.0.2.15" 8
+  in do
+    nid <- getSelfNode
+    -- We populate the graph with confc context.
+    _ <- promulgateEQ [nid] init_msg
+    _ <- expect :: Process (Published (HAEvent InitialData))
+    return ()
+
+loadInitialDataMod :: (InitialData -> InitialData)
+                   -> Process ()
+loadInitialDataMod f = let
+    init_msg = f $ initialDataAddr "10.0.2.15" "10.0.2.15" 8
   in do
     nid <- getSelfNode
     -- We populate the graph with confc context.
@@ -532,3 +553,46 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
     Set [Note _ M0_NC_TRANSIENT] <- receiveChan recv
     "Detached" <- expect :: Process String
     return ()
+
+-- | Test that we generate an appropriate pool version in response to
+--   failure of a drive, when using 'Dynamic' strategy.
+testDynamicPVer :: Transport -> IO ()
+testDynamicPVer transport = run transport interceptor test where
+  interceptor _ _ = return ()
+  checkPVerExistence rg fids yes = let
+      msg = if yes
+            then "Pool version should exist"
+            else "Pool version should not exist"
+      check = if yes then elem else \a -> not . elem a
+      [fs] = [ x | p <- G.connectedTo Cluster Has rg :: [M0.Profile]
+                 , x <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
+                 ]
+      pv1 = G.getResourcesOfType rg :: [M0.PVer]
+      pvFids = fmap (findRealObjsInPVer rg) pv1
+      allFids = findFailableObjs rg fs
+      pverFids = allFids `S.difference` fids
+    in
+      assertMsg msg $ check pverFids pvFids
+  test (TestArgs _ mm rc) rmq recv = do
+    prepareSubscriptions rc rmq
+    loadInitialDataMod $ \x -> x {
+        id_m0_globals = (id_m0_globals x) { m0_failure_set_gen = Dynamic }
+      }
+
+    rg <- G.getGraph mm
+    sdev <- findSDev rg
+    failDrive recv sdev
+    -- Should now have a pool version corresponding to single failed drive
+    rg1 <- G.getGraph mm
+    let [disk] = G.connectedTo sdev M0.IsOnHardware rg1 :: [M0.Disk]
+    checkPVerExistence rg (S.singleton (M0.fid disk)) False
+    checkPVerExistence rg1 (S.singleton (M0.fid disk)) True
+
+
+    sdev2 <- find2SDev rg
+    failDrive recv sdev2
+    -- Should now have a pool version corresponding to two failed drives
+    rg2 <- G.getGraph mm
+    let [disk2] = G.connectedTo sdev2 M0.IsOnHardware rg2 :: [M0.Disk]
+    checkPVerExistence rg1 (S.fromList . fmap M0.fid $ [disk, disk2]) False
+    checkPVerExistence rg2 (S.fromList . fmap M0.fid $ [disk, disk2]) True
