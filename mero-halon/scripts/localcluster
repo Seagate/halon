@@ -28,7 +28,7 @@ HALOND="$HALON_ROOT/halond +RTS $HALON_RTS_OPTS -RTS"
 HALONCTL="$HALON_ROOT/halonctl"
 
 # Clean up anything currently running
-pkill halond || /bin/true 
+pkill halond || /bin/true
 
 # Build the arrays of addresses
 i=0

@@ -15,15 +15,16 @@
 module HA.RecoveryCoordinator.CEP where
 
 import Prelude hiding ((.), id)
+import Control.Applicative ((<|>))
 import Control.Category
+import Control.Monad (void)
 import Data.Binary (encode)
 import Data.Foldable (for_)
-import Data.Maybe (listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe)
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
 import           Control.Distributed.Process.Internal.Types (Message(..))
-import           Control.Monad (void)
 import           Data.UUID (nil, null)
 import           Network.CEP
 
@@ -38,7 +39,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Service
-import           HA.Services.DecisionLog (printLogs)
+import           HA.Services.DecisionLog (decisionLog, printLogs)
 import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
 import qualified HA.Resources.Castor as M0
@@ -73,7 +74,7 @@ rcRules argv additionalRules = do
     -- so EQ could delete them.
     setDefaultHandler $ \msg s -> do
       let smsg = case msg of
-            EncodedMessage f e -> "{ fingerprint = " ++ show f 
+            EncodedMessage f e -> "{ fingerprint = " ++ show f
               ++ ", encoding " ++ show e ++ " }"
             UnencodedMessage f b -> "{ fingerprint = " ++ show f
               ++ ", encoding " ++ show (encode b) ++ " }"
@@ -312,9 +313,19 @@ rcRules argv additionalRules = do
 #endif
     sequence_ additionalRules
 
+-- | Send 'Logs' to decision-log service. First it tries to send to
+-- decision-log on own node. If service is not found, it tries to find
+-- the service on another node and send the logs there. If no service
+-- is found across all nodes, just defaults to 'printLogs'.
 sendLogs :: Logs -> LoopState -> Process ()
 sendLogs logs ls = do
-    nid <- getSelfNode
-    case lookupDLogServiceProcess nid ls of
-        Just (ServiceProcess pid) -> usend pid logs
-        _ -> printLogs logs
+  nid <- getSelfNode
+  case lookupDLogServiceProcess nid ls <|> svc of
+    Just (ServiceProcess pid) -> usend pid logs
+    Nothing -> printLogs logs
+  where
+    rg = lsGraph ls
+    nodes = [ n | host <- G.connectedTo Cluster Has rg :: [Host]
+                , n <- G.connectedTo host Runs rg ]
+    svc = listToMaybe . catMaybes $
+          map (\n -> runningService n decisionLog rg) nodes
