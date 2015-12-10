@@ -79,11 +79,10 @@ withRootRC f = do
 withSpielRC :: M0.SpielAddress
             -> (SpielContext -> PhaseM LoopState l a)
             -> PhaseM LoopState l (Maybe a)
-withSpielRC (M0.SpielAddress confds rm) f = do
+withSpielRC (M0.SpielAddress _confds _rm) f = do
   rpca <- liftProcess getRPCAddress
   withServerEndpoint rpca $ \se -> do
-    sc <- liftM0 $ getRPCMachine_se se >>= \rpcm ->
-                   Mero.Spiel.start rpcm confds rm
+    sc <- liftM0 $ getRPCMachine_se se >>= \rpcm -> Mero.Spiel.start rpcm
     f sc >>= \v -> liftM0 (Mero.Spiel.stop sc) >> return (Just v)
 
 startRepairOperation :: M0.Pool -> PhaseM LoopState l ()
