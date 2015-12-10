@@ -353,9 +353,7 @@ findCurrentFailedDevices rg fs = let
     isFailedDisk disk =
       case [stat | sdev <- G.connectedFrom M0.IsOnHardware disk rg :: [M0.SDev]
                  , stat <- G.connectedTo sdev Is  rg :: [M0.ConfObjectState]] of
-        [M0.M0_NC_ONLINE] -> False
-        [M0.M0_NC_UNKNOWN] -> False
-        [_] -> True
+        [M0.M0_NC_TRANSIENT] -> True
         _ -> False -- Maybe? This shouldn't happen...
     racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
     encls = racks >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure])
@@ -371,11 +369,12 @@ findMatchingPVer :: G.Graph
                 -> S.Set Fid -- ^ Set of failed devices
                 -> Maybe M0.PVer
 findMatchingPVer rg fs failedDevs = let
+    onlineDevs = (findFailableObjs rg fs) `S.difference` failedDevs
     allPvers = [ (pver, findRealObjsInPVer rg pver)
                   | pool <- G.connectedTo fs M0.IsParentOf rg :: [M0.Pool]
                   , pver <- G.connectedTo pool M0.IsRealOf rg :: [M0.PVer]
                   ]
-  in fst <$> find (\(_, x) -> x == failedDevs) allPvers
+  in fst <$> find (\(_, x) -> x == onlineDevs) allPvers
 
 -- | Returns true if a PVer was created.
 createPVerIfNotExists :: PhaseM LoopState l Bool
