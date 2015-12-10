@@ -334,6 +334,12 @@ testDriveAddition transport = do
          remoteTable
     mockEvent = mkResponseDriveManager "enc1" "serial1" 1
 
+-- | Used by 'testDriveManagerUpdate'
+data RunDriveManagerFailure = RunDriveManagerFailure
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary RunDriveManagerFailure
+
 -- | Update receiving a drive failure from SSPL, we're required to
 -- update a file for DCS drive manager so that it can reflect on the
 -- changes in the file system. This test is unsophisticated in that it
@@ -343,8 +349,13 @@ testDriveAddition transport = do
 --
 -- * Write out a mock @drive_manager.json@ to have something to update
 -- * Insert a drive into RG along with its serial number
--- * Send disk failure event to RC
--- * Wait for RC to say update notification message
+-- * Trigger a test rule that calls 'driveManagerUpdateWithFailure'
+-- * Check that the failure is now present in the relevant file
+--
+-- For the sake of testing this, we cheat a bit by triggering it with
+-- our own rule. The alternative would be to simulate all kinds of
+-- responses from SSPL which aren't central to the feature and are
+-- tested separately elsewhere.
 testDriveManagerUpdate :: Transport -> IO ()
 testDriveManagerUpdate transport = runTest 1 20 15000000 transport testRemoteTable $ \_ -> do
   nid <- getSelfNode
@@ -362,7 +373,7 @@ testDriveManagerUpdate transport = runTest 1 20 15000000 transport testRemoteTab
   liftIO $ createDirectoryIfMissing True "/tmp/drivemanager"
   say $ "Writing drive_manager.json with:\n" ++ mockFile
   liftIO $ writeFile "/tmp/drivemanager/drive_manager.json" mockFile
-  withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
+  withTrackingStation testRules $ \(TestArgs _ mm _) -> do
     nodeUp ([nid], 1000000)
     "NodeUp" :: String <- expect
     promulgateEQ [nid] initialData >>= flip withMonitor wait
@@ -372,7 +383,7 @@ testDriveManagerUpdate transport = runTest 1 20 15000000 transport testRemoteTab
     promulgateEQ [nid] (nid, respDM "online") >>= flip withMonitor wait
     "DriveActive" :: String <- expect
 
-    say "Checking drive status anity"
+    say "Checking drive status sanity"
     graph <- G.getGraph mm
     let [drive] = [ d | d <- G.connectedTo (Enclosure enc) Has graph :: [StorageDevice]
                       , DISerialNumber sn <- G.connectedTo d Has graph
@@ -381,15 +392,22 @@ testDriveManagerUpdate transport = runTest 1 20 15000000 transport testRemoteTab
     assert $ G.memberResource drive graph
     assert $ G.memberResource (StorageDeviceStatus "online") graph
 
-    say "Sending failed_smart"
-    promulgateEQ [nid] (nid, respDM "failed_smart") >>= flip withMonitor wait
-    "DriveActive" :: String <- expect
+    say "Sending RunDriveManagerFailure"
+    promulgateEQ [nid] RunDriveManagerFailure >>= flip withMonitor wait
     "DMUpdated" :: String <- expect
     content <- liftIO $ readFile "/tmp/drivemanager/drive_manager.json"
     say $ "drive_manager.json content: \n" ++ content
     assert $ "Failed" `isInfixOf` content
     liftIO $ removeDirectoryRecursive "/tmp/drivemanager"
   where
+    testRules :: [Definitions LoopState ()]
+    testRules = return $ defineSimple "dmwf-trigger" $ \(HAEvent _ RunDriveManagerFailure _) -> do
+      -- Find what should be the only SD in the enclosure and trigger
+      -- repair on it
+      graph <- getLocalGraph
+      let [sd] = G.connectedTo (Enclosure enc) Has graph
+      updateDriveManagerWithFailure sd
+
     wait = void (expect :: Process ProcessMonitorNotification)
     enc :: String
     enc = "enclosure1"

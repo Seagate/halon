@@ -814,7 +814,6 @@ instance A.ToJSON DriveManagerStatus where
 updateDriveManagerWithFailure :: forall l. StorageDevice
                               -> PhaseM LoopState l ()
 updateDriveManagerWithFailure disk = flip catch ioHandler $ do
-  sayDM "Entering updateDriveManagerWithFailure"
   dis <- findStorageDeviceIdentifiers disk
   case listToMaybe [ sn' | DISerialNumber sn' <- dis ] of
     Nothing -> sayDM $ "Unable to find serial number for " ++ show disk
@@ -828,7 +827,6 @@ updateDriveManagerWithFailure disk = flip catch ioHandler $ do
                          , _dms_last_update_time = show t }
           liftIO . BSL.writeFile dmFile $ A.encode dms'
           sayDM "drive_manager.json updated successfully"
-  sayDM "Leaving updateDriveManagerWithFailure"
   where
     sayDM = liftProcess . say . ("updateDriveManagerWithFailure: " ++)
 
