@@ -35,6 +35,7 @@ dependencies:
     - rmt vendor/mero stack $STACK_FLAGS exec -- ./autogen.sh
     - rmt vendor/mero stack $STACK_FLAGS exec -- ./configure '--with-linux=/usr/src/kernels/*/'
     - rmt vendor/mero stack $STACK_FLAGS exec -- make -j4
+    - rmt vendor/mero stack $STACK_FLAGS exec -- sudo ./scripts/install-mero-service -l
     # Build stack-managed halon dependencies.
     - rmt . stack $STACK_FLAGS build --only-snapshot --prefetch --test --bench
   post:
@@ -51,8 +52,12 @@ test:
     # Build with USE_MERO and then without.
     - rmt -k . stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero
     - rmt -k . stack $STACK_FLAGS build --test --no-run-tests
-    # Only test mero-halon and deps, without USE_MERO.
-    - rmt -k . stack $STACK_FLAGS --docker-env HALON_TRACING='"consensus-paxos replicated-log EQ EQ.producer RS"' test:
+    # Prepare mero
+    - rmt vendor/mero stack $STACK_FLAGS exec -- sudo ./utils/m0setup
+    - rmt vendor/mero stack $STACK_FLAGS exec -- sudo systemctl start mero-mkfs
+    - rmt vendor/mero stack $STACK_FLAGS exec -- sudo systemctl start mero
+    # Only test mero-halon and deps, with USE_MERO.
+    - rmt -k . stack $STACK_FLAGS --docker-env HALON_TRACING='"consensus-paxos replicated-log EQ EQ.producer RS"' --flag mero-halon:mero test:
         timeout: 3600
     - scripts/circleci_copy_artifacts.sh
   post:
