@@ -36,7 +36,6 @@ import Foreign.C.String
   )
 import Foreign.C.Types
   ( CUInt(..) )
-import Foreign.Ptr (Ptr)
 import Foreign.ForeignPtr
   ( ForeignPtr
   , mallocForeignPtrBytes
