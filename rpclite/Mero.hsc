@@ -52,6 +52,7 @@ import System.IO.Unsafe
 -- | Initializes mero.
 m0_init :: IO ()
 m0_init = do
+    setNodeUUID Nothing
     rc <- m0_init_wrapper
     when (rc /= 0) $
       fail $ "m0_init: failed with " ++ show rc
