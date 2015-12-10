@@ -413,7 +413,7 @@ getController po =
 data Sdev = Sdev
   { sd_ptr        :: Ptr Obj
   , sd_fid        :: Fid
-  , sd_disk       :: Maybe Fid
+  , sd_disk       :: Ptr Fid
   , sd_iface      :: Word32
   , sd_media      :: Word32
   , sd_bsize      :: Word32
@@ -427,7 +427,7 @@ getSdev :: Ptr Obj -> IO Sdev
 getSdev po = do
   ps <- confc_cast_sdev po
   fid   <- #{peek struct m0_conf_obj, co_id} po
-  mdisk <- maybePeek #{peek struct m0_conf_sdev, sd_disk} po
+  mdisk <- #{peek struct m0_conf_sdev, sd_disk} ps
   iface <- #{peek struct m0_conf_sdev, sd_iface} ps
   media <- #{peek struct m0_conf_sdev, sd_media} ps
   bsize <- #{peek struct m0_conf_sdev, sd_bsize} ps

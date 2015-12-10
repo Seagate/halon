@@ -36,6 +36,7 @@ import Foreign.C.String
   )
 import Foreign.C.Types
   ( CUInt(..) )
+import Foreign.Ptr (Ptr)
 import Foreign.ForeignPtr
   ( ForeignPtr
   , mallocForeignPtrBytes
@@ -56,6 +57,7 @@ import Foreign.Marshal.Utils
   , with
   , withMany
   , maybeWith
+  , maybePeek
   )
 import Foreign.Ptr
   ( nullPtr )
@@ -517,7 +519,8 @@ instance Spliceable Service where
 
 instance Spliceable Sdev where
   splice t p o = do
-     addDevice t (sd_fid o) p (sd_disk o)
+     msd <- maybePeek peek (sd_disk o)
+     addDevice t (sd_fid o) p msd
                (toEnum . fromIntegral $ sd_iface o)
                (toEnum . fromIntegral $ sd_media o)
                (sd_bsize o) (sd_size o)
