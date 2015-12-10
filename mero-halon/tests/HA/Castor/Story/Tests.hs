@@ -559,7 +559,11 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
 testDynamicPVer :: Transport -> IO ()
 testDynamicPVer transport = run transport interceptor test where
   interceptor _ _ = return ()
-  checkPVerExistence rg fids = let
+  checkPVerExistence rg fids yes = let
+      msg = if yes
+            then "Pool version should exist"
+            else "Pool version should not exist"
+      check = if yes then elem else \a -> not . elem a
       [fs] = [ x | p <- G.connectedTo Cluster Has rg :: [M0.Profile]
                  , x <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
                  ]
@@ -568,7 +572,7 @@ testDynamicPVer transport = run transport interceptor test where
       allFids = findFailableObjs rg fs
       pverFids = allFids `S.difference` fids
     in
-      assertMsg "Pool version should exist" $ elem pverFids pvFids
+      assertMsg msg $ check pverFids pvFids
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
     loadInitialDataMod $ \x -> x {
@@ -581,7 +585,8 @@ testDynamicPVer transport = run transport interceptor test where
     -- Should now have a pool version corresponding to single failed drive
     rg1 <- G.getGraph mm
     let [disk] = G.connectedTo sdev M0.IsOnHardware rg1 :: [M0.Disk]
-    checkPVerExistence rg1 (S.singleton (M0.fid disk))
+    checkPVerExistence rg (S.singleton (M0.fid disk)) False
+    checkPVerExistence rg1 (S.singleton (M0.fid disk)) True
 
 
     sdev2 <- find2SDev rg
@@ -589,4 +594,5 @@ testDynamicPVer transport = run transport interceptor test where
     -- Should now have a pool version corresponding to two failed drives
     rg2 <- G.getGraph mm
     let [disk2] = G.connectedTo sdev2 M0.IsOnHardware rg2 :: [M0.Disk]
-    checkPVerExistence rg2 (S.fromList . fmap M0.fid $ [disk, disk2])
+    checkPVerExistence rg1 (S.fromList . fmap M0.fid $ [disk, disk2]) False
+    checkPVerExistence rg2 (S.fromList . fmap M0.fid $ [disk, disk2]) True
