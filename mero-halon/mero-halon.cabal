@@ -513,7 +513,7 @@ Test-Suite integration-tests
 
   Main-Is:          test.hs
 
-  Ghc-Options: -threaded -Wall -rtsopts
+  Ghc-Options: -threaded -Wall -rtsopts -with-rtsopts=-T
 
   if flag(maintainer)
     Ghc-Options: -Werror
