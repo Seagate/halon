@@ -607,7 +607,7 @@ replica Dict
               link self >> batcher (sendBatch self)
     ppid <- spawnLocal $ do
               logTrace "spawned proposer"
-              link self >> proposer self bpid Bottom replicas
+              link self >> proposer self bpid w0 Bottom replicas
 
     go ReplicaState
          { stateProposerPid = ppid
@@ -633,6 +633,8 @@ replica Dict
          , stateLogNextState = logNextState
          }
   where
+    cond b t f = if b then t else f
+
     -- Restores a snapshot with the given operation and returns @Nothing@ if an
     -- exception is thrown or if the operation times-out.
     restoreSnapshot :: Process s -> Process (Maybe s)
@@ -716,10 +718,12 @@ replica Dict
           expectTimeout t >>= maybe (logTrace "timer expired" >> sendChan sp msg >> timer) wait
 
     -- The proposer process makes consensus proposals.
-    -- Proposals are aborted when a reconfiguration occurs.
-    proposer ρ bpid s αs =
+    -- Proposals are aborted when a reconfiguration occurs or when the
+    -- watermark increases beyond the proposed decree.
+    proposer ρ bpid w s αs =
       receiveWait
-        [ match $ \r@(d , request@(Request {requestValue = v :: Value a})) -> do
+        [ match $ \r@(d , request@(Request {requestValue = v :: Value a})) ->
+           cond (d < w) (usend ρ r >> proposer ρ bpid w s αs) $ do
             self <- getSelfPid
             -- The MVar stores the result of the proposal.
             -- With an MVar we can ensure that:
@@ -745,11 +749,15 @@ replica Dict
                   -- consume the final () if not blocked
                   when (not blocked) expect
                   return blocked
-            (αs', blocked) <- receiveWait
-                      [ match $ \() -> return (αs, False)
+            (αs', w', blocked) <- fix $ \loop -> receiveWait
+                      [ match $ \() -> return (αs, w, False)
                       , match $ \αs' -> do
                           -- reconfiguration of the proposer
-                          (,) αs' <$> clearNotifications
+                          (,,) αs' w <$> clearNotifications
+                      , match $ \w' -> if w' <= d then loop
+                          else -- the watermark increased beyond the proposed
+                               -- decree
+                            (,,) αs w' <$> clearNotifications
                       ]
             logTrace $ "proposer: proposal stopped " ++ show (d, blocked)
             if blocked then do
@@ -760,14 +768,16 @@ replica Dict
               --
               -- TODO: Consider if there is a way to avoid competition of
               -- proposers here.
-              usend self r
-              proposer ρ bpid s αs'
+              if w' <= d then usend self r
+                else usend ρ r
+              proposer ρ bpid w' s αs'
             else do
               (v',s') <- liftIO $ takeMVar mv
               usend ρ (d, v', request)
-              proposer ρ bpid s' αs'
+              proposer ρ bpid w' s' αs'
 
-        , match $ proposer ρ bpid s
+        , match $ proposer ρ bpid w s
+        , match $ \w' -> proposer ρ bpid (max w w') s αs
         ]
 
     go :: ReplicaState s ref a -> Process b
@@ -784,6 +794,8 @@ replica Dict
             -- Updates the membership list of the proposer if it has changed.
             updateAcceptors ρs' = if ρs == ρs' then return ()
                                     else usend ppid ρs'
+            -- Updates the watermark of the proposer if it has changed.
+            updateWatermark w' = usend ppid w'
 
             -- Returns the leader if the lease has not expired.
             getLeader :: IO (Maybe NodeId)
@@ -814,8 +826,6 @@ replica Dict
                 , requestHint     = None
                 , requestForLease = Just l
                 }
-
-            cond b t f = if b then t else f
 
         receiveWait $ cond (w /= cd) []
             [ -- The lease is about to expire or it has already.
@@ -897,6 +907,7 @@ replica Dict
                           cd' = max cd w'
                           w'  = succ w
                       mdumper' <- maybeTakeSnapshot w' s'
+                      updateWatermark w'
                       go st{ stateUnconfirmedDecree = d'
                            , stateCurrentDecree     = cd'
                            , stateSnapshotDumper    = mdumper'
@@ -928,6 +939,7 @@ replica Dict
                                      else epoch
                           legD' = DecreeId leg' $ decreeNumber di
 
+                      updateWatermark w'
                       go st{ stateLeaseStart = leaseStart'
                            , stateReplicas = ρs'
                            , stateUnconfirmedDecree = d'
@@ -941,6 +953,7 @@ replica Dict
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
                       say $ "Not executing " ++ show (di, w, d, leg', cd)
                       mdumper' <- maybeTakeSnapshot w' s
+                      updateWatermark w'
                       go st{ stateSnapshotDumper    = mdumper'
                            , stateWatermark = w'
                            }
@@ -1144,6 +1157,15 @@ replica Dict
                   let d' = if d == cd then d else min cd (max d (succ di))
                   go st{ stateUnconfirmedDecree = d' }
 
+              -- Message from the proposer process
+              --
+              -- The proposer rejected or aborted the request.
+            , match $ {-# SCC "go/ProposerRejected" #-}
+                  \(_ :: DecreeId, Request _ (_ :: Value a) _ rLease) -> do
+                  when (isNothing rLease) $
+                    usend bpid ()
+                  go st
+
               -- Try to service a query if the requested decree is not too old.
             , matchIf (\(Query _ n) -> fst (Map.findMin log) <= n) $ {-# SCC "go/Query" #-}
                        \(Query ρ n) -> do
@@ -1193,7 +1215,9 @@ replica Dict
                     -- TODO: get the snapshot asynchronously
                     st' <- restoreSnapshot (stLogRestore sref') >>= \case
                              Nothing -> return st
-                             Just s' -> return st
+                             Just s' -> do
+                               updateWatermark w0'
+                               return st
                                          { stateSnapshotRef       = Just sref'
                                          , stateWatermark         = w0'
                                          , stateSnapshotWatermark = w0'
