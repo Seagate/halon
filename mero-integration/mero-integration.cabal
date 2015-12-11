@@ -20,10 +20,6 @@ source-repository master
   Location:          git@github.com:tweag/halon.git
   Subdir:            mero-integration
 
-Flag mero
-  Description:       Build using the real rather than fake Mero.
-  Default:           False
-
 -- executable mero-integration
 --   main-is:             Main.hs
 --   -- other-modules:       
@@ -39,17 +35,14 @@ executable test-stha-local
 
   Ghc-Options: -threaded -Wall
 
-  if flag(mero)
-    Build-Depends: distributed-process,
-                   base,
-                   filepath,
-                   directory,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands,
-                   distributed-process-test,
-                   process,
-                   unix,
-                   mero-halon
-  else
-      Buildable: False
+  Build-Depends: distributed-process,
+                 base,
+                 filepath,
+                 directory,
+                 network-transport,
+                 network-transport-tcp,
+                 distributed-commands,
+                 distributed-process-test,
+                 process,
+                 unix,
+                 mero-halon
