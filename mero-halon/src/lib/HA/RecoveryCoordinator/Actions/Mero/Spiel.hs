@@ -25,7 +25,7 @@ import qualified HA.ResourceGraph as G
 import HA.Resources (Has(..))
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
-import HA.Resources.Mero (SyncToConfd(..), SpielAddress(..))
+import HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
 
 import Mero.ConfC
@@ -122,23 +122,15 @@ syncAction meid sync = do
         Nothing -> phaseLog "warning" $ "No spiel address found in RG."
         Just{}  -> void $ withSpielRC $ \sc -> do
           loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
-    SyncToTheseServers (SpielAddress [] _) ->
-      phaseLog "warning"
-         $ "Requested to sync to specific list of confd servers, "
-        ++ "but that list was empty."
-    SyncToTheseServers sa -> do
-      phaseLog "info" $ "Syncing RG to these confd servers: " ++ show sa
-      void $ withSpielRC $ \sc -> do
-        loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
     SyncDumpToFile filename -> do
       phaseLog "info" $ "Dumping conf in RG to this file: " ++ show filename
       void $ withSpielRC $ \sc -> do
-      	loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txDumpToFile filename)
+        loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txDumpToFile filename)
   traverse_ messageProcessed meid
 
 -- | Helper functions for backward compatibility.
 syncToConfd :: M0.SpielAddress -> PhaseM LoopState l (Maybe ())
-syncToConfd sa = withSpielRC $ \sc -> do
+syncToConfd _ = withSpielRC $ \sc -> do
   loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
 
 -- | Open a transaction. Ultimately this should not need a
