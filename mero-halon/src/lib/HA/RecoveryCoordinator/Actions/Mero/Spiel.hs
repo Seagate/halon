@@ -124,8 +124,7 @@ syncAction meid sync = do
           loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
     SyncDumpToFile filename -> do
       phaseLog "info" $ "Dumping conf in RG to this file: " ++ show filename
-      void $ withSpielRC $ \sc -> do
-        loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txDumpToFile filename)
+      loadConfData >>= traverse_ (\x -> txOpenLocalContext >>= txPopulate x >>= txDumpToFile filename)
   traverse_ messageProcessed meid
 
 -- | Helper functions for backward compatibility.
@@ -137,6 +136,9 @@ syncToConfd _ = withSpielRC $ \sc -> do
 --   spiel context.
 txOpenContext :: SpielContext -> PhaseM LoopState l SpielTransaction
 txOpenContext = liftM0 . openTransaction
+
+txOpenLocalContext :: PhaseM LoopState l SpielTransaction
+txOpenLocalContext = liftM0 openLocalTransaction
 
 txSyncToConfd :: SpielTransaction -> PhaseM LoopState l ()
 txSyncToConfd t = do

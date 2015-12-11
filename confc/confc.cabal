@@ -9,10 +9,6 @@ Category:      Network
 Build-Type:    Custom
 Cabal-Version: >= 1.10
 
-Flag maintainer
-  Description: Enforce strict code quality checks (-Werror, etc)
-  Default: False
-
 Flag mero
   Description: Assume Mero is fully functional, so run tests.
   Default: False
@@ -43,8 +39,6 @@ Library
                 -optc-Werror -optc-g -optc-DM0_INTERNAL= -optc-DM0_EXTERN=extern
   default-extensions:  CPP
   other-extensions:    TemplateHaskell, QuasiQuotes, CApiFFI
-  if flag(maintainer)
-    ghc-options: -Werror
 
   cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
   include-dirs: .
@@ -75,10 +69,6 @@ Test-Suite integration-tests
                 , tasty-files
                 , tasty-hunit
                 , containers
-
-  if flag(maintainer)
-    ghc-options: -Werror
-
   if !flag(mero)
     Buildable: False
 
@@ -90,8 +80,6 @@ Test-Suite unit-tests
   c-sources:        tests/unit-tests.c
   cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
   Ghc-Options: -threaded -Wall
-  if flag(maintainer)
-    Ghc-Options: -Werror
   Build-Depends:   confc >= 0.0.3,
                    base >= 4.5,
                    inline-c,
@@ -100,5 +88,18 @@ Test-Suite unit-tests
                    rpclite
   extra-libraries: mero
 
-  if !flag(mero)
-    Buildable: False
+Test-Suite test-dump-transaction
+  Type:           exitcode-stdio-1.0
+  main-is:        test-dump-transaction.hs
+  Default-Language: Haskell2010
+  hs-source-dirs: tests
+  ghc-options:     -Wall -idist/build -threaded -fno-warn-unused-do-bind
+  other-extensions:  LambdaCase
+  other-modules:  Test.MakeConf
+                  Helper
+  build-depends:  base >= 4.3
+                , confc
+                , rpclite
+                , unix
+                , process
+                , containers

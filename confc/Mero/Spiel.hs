@@ -53,7 +53,8 @@ import Foreign.Marshal.Array
   )
 import Foreign.Marshal.Error (throwIfNeg)
 import Foreign.Marshal.Utils
-  ( with
+  ( fillBytes
+  , with
   , withMany
   , maybeWith
   , maybePeek
@@ -166,6 +167,32 @@ dumpTransaction (SpielTransaction ptr) fp = withForeignPtr ptr $ \c_ptr -> do
     x | x == eBUSY -> error "Not all objects are ready."
     x | x == eNOENT -> error "Not all objects have a parent."
     (Errno x) -> error $ "Unknown error return: " ++ show x
+
+-- | Dump transaction to file, this call is required to be running in m0thread,
+-- but it's possible to run it without setting rpc server, creating confd connection,
+-- or spiel context. Usafe of 'commitTransaction' functions will lead to undefined
+-- behavior.
+withTransactionDump :: FilePath -> (SpielTransaction -> IO a) -> IO a
+withTransactionDump fp transaction = bracket 
+  openLocalTransaction
+  closeTransaction
+  $ \t -> transaction t >>= \x -> dumpTransaction t fp >> return x
+
+-- | Open transaction that doesn't require communication with conf or rms service.
+-- Such transaction can be run in non privileged mode without prior creation of
+-- the spiel context. However it's illegal to commit such transactions and that
+-- could lead to undefined behaviour, use should only verify or dump such transactions.
+openLocalTransaction :: IO SpielTransaction
+openLocalTransaction = do
+  sc <- mallocForeignPtrBytes m0_spiel_size
+  st <- mallocForeignPtrBytes m0_spiel_tx_size
+  withForeignPtr sc
+    $ \sc_ptr -> withForeignPtr st
+    $ \ptr -> do
+       fillBytes sc_ptr 0 m0_spiel_size
+       c_spiel_tx_open sc_ptr ptr
+  return $ SpielTransaction st
+
 
 setCmdProfile :: SpielContext
               -> Maybe String
