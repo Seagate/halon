@@ -96,16 +96,12 @@ rconfStop (SpielContext sc) = withForeignPtr sc c_spiel_rconfc_stop
 -- If you don't need commands interface, use 'spielInit' instead.
 start :: RPCMachine -- ^ Request handler
       -> IO SpielContext
-start rpcmach = do
-  sc <- spielInit rpcmach
-  rconfStart sc
-  return sc
+start rpcmach = spielInit rpcmach
 
 -- | Close a Spiel context
 stop :: SpielContext
      -> IO ()
-stop sc = do rconfStop sc
-             spielFini sc
+stop sc = spielFini sc
 
 withRConf :: SpielContext
           -> IO a       -- ^ Action to undertake with configuration manager
