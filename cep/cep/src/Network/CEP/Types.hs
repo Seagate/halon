@@ -477,7 +477,7 @@ data ForkType = NoBuffer | CopyBuffer
 --
 -- 'Catch': Exception handler.
 data PhaseInstr g l a where
-    Continue :: Jump PhaseHandle -> PhaseInstr g l ()
+    Continue :: Jump PhaseHandle -> PhaseInstr g l a
     Get :: Scope g l a -> PhaseInstr g l a
     Put :: Scope g l a -> a -> PhaseInstr g l ()
     Stop :: PhaseInstr g l a
@@ -504,7 +504,7 @@ modify :: Scope g l a -> (a -> a) -> PhaseM g l ()
 modify s k = put s . k =<< get s
 
 -- | Jumps to 'Phase' referenced by given 'PhaseHandle'
-continue :: Jump PhaseHandle -> PhaseM g l ()
+continue :: Jump PhaseHandle -> PhaseM g l a
 continue p = singleton $ Continue p
 
 -- | Stops the state machine. Depending the current state machine context:

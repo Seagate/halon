@@ -20,6 +20,7 @@ import HA.Services.SSPL ( __remoteTable, __remoteTableDecl )
 import HA.Services.SSPLHL ( __remoteTable, __remoteTableDecl )
 import HA.Stats ( __remoteTable )
 import HA.RecoveryCoordinator.Definitions ( __remoteTable )
+import System.Posix.SysInfo ( __remoteTable )
 
 import Control.Distributed.Process (RemoteTable)
 
@@ -44,4 +45,5 @@ meroRemoteTable next =
    HA.Services.Monitor.__remoteTableDecl $
    HA.Stats.__remoteTable $
    HA.RecoveryCoordinator.Definitions.__remoteTable $
+   System.Posix.SysInfo.__remoteTable $
    next

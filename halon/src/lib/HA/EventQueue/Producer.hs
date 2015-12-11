@@ -8,6 +8,7 @@ module HA.EventQueue.Producer
   ( promulgateEQ
   , promulgateEQPref
   , promulgate
+  , promulgateWait
   , promulgateEvent
   , expiate
   ) where
@@ -82,6 +83,17 @@ promulgate x = do
     m <- newPersistMessage x
     producerTrace $ "promulgate: " ++ show (typeOf x, persistEventId m)
     promulgateEvent m
+
+-- | Send message and wait until it will be acknowledged, this method is
+-- blocking.
+promulgateWait :: Serializable a => a -> Process ()
+promulgateWait x = do
+   sender <- promulgate x
+   mref <- monitor sender
+   receiveWait [matchIf (\(ProcessMonitorNotification p _ _) -> p == mref) 
+                        (const $ return ())
+               ]
+   
 
 -- | Add an event to the event queue. This form takes the HAEvent directly.
 promulgateEvent :: PersistMessage -> Process ProcessId

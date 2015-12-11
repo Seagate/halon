@@ -98,6 +98,7 @@ Library
                    HA.RecoveryCoordinator.Events.Mero
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
+                   System.Posix.SysInfo
 
   Other-Modules:   HA.RecoveryCoordinator.Actions.Monitor
                    HA.Services.DecisionLog.CEP
@@ -427,6 +428,7 @@ Test-Suite unit-tests
                     HA.Test.Cluster
                     HA.Test.Disconnect
                     HA.Test.SSPL
+                    HA.Castor.Story.NonMero
                     Helper.SSPL
                     RemoteTables
                     TestRunner
