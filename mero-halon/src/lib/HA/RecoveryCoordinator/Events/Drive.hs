@@ -27,7 +27,7 @@ data DriveRemoved = DriveRemoved UUID Node Enclosure StorageDevice
 instance Hashable DriveRemoved
 instance Binary DriveRemoved
 
--- | 'DriveInsted' event should be emitted in order to trigger
+-- | 'DriveInserted' event should be emitted in order to trigger
 -- drive insertion rule.
 data DriveInserted = DriveInserted UUID StorageDevice DeviceIdentifier
        deriving (Eq, Show, Typeable, Generic)
@@ -35,8 +35,9 @@ data DriveInserted = DriveInserted UUID StorageDevice DeviceIdentifier
 instance Hashable DriveInserted
 instance Binary DriveInserted
 
+-- | 'DriveFailed' event emitted in order to trigger drive failure rule.
 data DriveFailed = DriveFailed UUID Node Enclosure StorageDevice
-       deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveFailed
 instance Binary DriveFailed

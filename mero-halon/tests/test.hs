@@ -99,6 +99,8 @@ ut _host transport breakConnection = do
         HA.RecoveryCoordinator.Mero.Tests.testMasterMonitorManagement transport
       , testCase "RCNodeUpRace" $
         HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
+      , testCase "RCDriveManagerUpdate" $
+        HA.RecoveryCoordinator.Mero.Tests.testDriveManagerUpdate transport
       , testGroup "Autoboot" $
         HA.Autoboot.Tests.tests transport
       , HA.Test.Cluster.tests transport

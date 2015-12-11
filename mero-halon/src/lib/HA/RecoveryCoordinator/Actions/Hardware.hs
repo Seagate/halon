@@ -3,9 +3,11 @@
 -- License   : All rights reserved.
 --
 
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module HA.RecoveryCoordinator.Actions.Hardware
   ( -- * Infrastructure functions
@@ -65,6 +67,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , markOnGoingReset
   , markResetComplete
   , markStorageDeviceRemoved
+  , updateDriveManagerWithFailure
   , unmarkStorageDeviceRemoved
     -- ** Drive candidates
   , attachStorageDeviceReplacement
@@ -87,11 +90,18 @@ import qualified HA.Resources.Mero as M0
 #endif
 
 import Control.Category ((>>>))
-import Control.Distributed.Process (liftIO)
+import Control.Distributed.Process (liftIO, say)
+import Control.Monad.Catch (catch)
 
+import qualified Data.Aeson as A
+import qualified Data.Aeson.Types as A
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
+import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.UUID.V4 (nextRandom)
 import Data.Foldable
+import GHC.Generics (Generic)
 
 import Network.CEP
 
@@ -761,3 +771,76 @@ setDiskPowerOffAttempts sdev i = do
       unsetStorageDeviceAttr sdev old
       setStorageDeviceAttr sdev (SDPowerOffAttempts i)
     _ -> setStorageDeviceAttr sdev (SDPowerOffAttempts i)
+
+-- | Drive information structure used by DCS drive manager.
+data DMSDrive = DMSDrive
+  { _dmsd_reason :: String
+  , _dmsd_serial_number :: String
+  , _dmsd_status :: String
+  } deriving (Show, Eq, Generic)
+
+dmsDriveJSONOptions :: A.Options
+dmsDriveJSONOptions = A.defaultOptions
+  { A.fieldLabelModifier = drop (length ("_dmsd_" :: String)) }
+
+instance A.FromJSON DMSDrive where
+  parseJSON = A.genericParseJSON dmsDriveJSONOptions
+
+instance A.ToJSON DMSDrive where
+  toJSON = A.genericToJSON dmsDriveJSONOptions
+
+-- | The structured storing information about status of drives, used by DCS
+-- drive manager.
+data DriveManagerStatus = DriveManagerStatus
+  { _dms_drive_manager_version :: Int
+  , _dms_drives :: [DMSDrive]
+  , _dms_format_version :: Int
+  , _dms_last_update_time :: String
+  } deriving (Show, Eq, Generic)
+
+dmsJSONOptions :: A.Options
+dmsJSONOptions = A.defaultOptions
+  { A.fieldLabelModifier = drop (length ("_dms_" :: String)) }
+
+instance A.FromJSON DriveManagerStatus where
+  parseJSON = A.genericParseJSON dmsJSONOptions
+
+instance A.ToJSON DriveManagerStatus where
+  toJSON = A.genericToJSON dmsJSONOptions
+
+-- | Mark given the given 'StorageDevice' as failed in
+-- @/tmp/drivemanager/drive_manager.json@ so the DCS drive manager
+-- plugin can update the filesystem.
+updateDriveManagerWithFailure :: forall l. StorageDevice
+                              -> PhaseM LoopState l ()
+updateDriveManagerWithFailure disk = flip catch ioHandler $ do
+  dis <- findStorageDeviceIdentifiers disk
+  case listToMaybe [ sn' | DISerialNumber sn' <- dis ] of
+    Nothing -> sayDM $ "Unable to find serial number for " ++ show disk
+    Just sn -> do
+      dmf <- liftIO $ BS.readFile dmFile
+      case A.eitherDecodeStrict dmf of
+        Left msg -> sayDM $ "Failed to parse drive_manager.json: " ++ show msg
+        Right dms -> do
+          t :: Int <- liftIO $ floor <$> getPOSIXTime
+          let dms' = dms { _dms_drives = map (setFailed sn) $ _dms_drives dms
+                         , _dms_last_update_time = show t }
+          liftIO . BSL.writeFile dmFile $ A.encode dms'
+          sayDM "drive_manager.json updated successfully"
+  where
+    sayDM = liftProcess . say . ("updateDriveManagerWithFailure: " ++)
+
+    dmFile :: FilePath
+    dmFile = "/tmp/drivemanager/drive_manager.json"
+    -- Do we need to handle the ‘if the drive is subsequently powered
+    -- down’ case somehow?
+    setFailed :: String -> DMSDrive -> DMSDrive
+    setFailed sn d = if _dmsd_serial_number d == sn
+                     then d { _dmsd_status = "Failed" }
+                     else d
+
+    -- We might fail to read/write the drive manager file for whatever
+    -- reason. Maybe depending on the type of failure we should do
+    -- something more sensible.
+    ioHandler :: IOError -> PhaseM LoopState l ()
+    ioHandler e = sayDM $ "Received IOError: " ++ show e

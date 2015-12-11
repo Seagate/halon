@@ -160,7 +160,7 @@ ssplRulesF sspl = do
       let enc = Enclosure . T.unpack
                           . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
                           $ srdm
-          diskNum = floor . (toRealFloat :: Scientific -> Double) 
+          diskNum = floor . (toRealFloat :: Scientific -> Double)
                           . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum
                           $ srdm
           disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus srdm
@@ -169,7 +169,7 @@ ssplRulesF sspl = do
                  $ srdm
       phaseLog "sspl-service" "monitor-drivemanager request received"
       disk <- lookupStorageDeviceInEnclosure enc (DIIndexInEnclosure diskNum) >>= \case
-        Nothing -> 
+        Nothing ->
           -- Try to check if we have device with known serial number, just without location.
           lookupStorageDeviceInEnclosure enc sn >>= \case
             Just disk -> do
@@ -183,7 +183,7 @@ ssplRulesF sspl = do
               locateStorageDeviceInEnclosure enc disk
               mhost <- findNodeHost (Node nid)
               forM_ mhost $ \host -> locateHostInEnclosure host enc
-              mapM_ (identifyStorageDevice disk) [ DIIndexInEnclosure diskNum, sn]
+              mapM_ (identifyStorageDevice disk) [DIIndexInEnclosure diskNum, sn]
               syncGraph
               return disk
         Just st -> return st
@@ -212,7 +212,7 @@ ssplRulesF sspl = do
   -- Handle information messages about drive changes from HPI system.
   defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeId, srphi) _) -> do
       let nid = Node nodeId
-          sn  = DISerialNumber . T.unpack 
+          sn  = DISerialNumber . T.unpack
                         . sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber
                         $ srphi
           wwn = DIWWN   . T.unpack
@@ -224,7 +224,7 @@ ssplRulesF sspl = do
           loc   = DIIndexInEnclosure . fromInteger
                          . sensorResponseMessageSensor_response_typeDisk_status_hpiLocation
                          $ srphi
-          host  = Host . T.unpack 
+          host  = Host . T.unpack
                        . sensorResponseMessageSensor_response_typeDisk_status_hpiHostId
                        $ srphi
           serial = DISerialNumber . T.unpack

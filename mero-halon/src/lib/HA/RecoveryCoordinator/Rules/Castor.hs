@@ -207,6 +207,7 @@ castorRules = do
                     updateDriveState m0sdev status
 
                     when (status == M0_NC_FAILED) $ do
+                      updateDriveManagerWithFailure sdev
                       nid <- liftProcess getSelfNode
                       diskids <- findStorageDeviceIdentifiers sdev
                       let iem = InterestingEventMessage . pack . unwords $ [
@@ -275,6 +276,7 @@ castorRules = do
           sd <- lookupStorageDeviceSDev sdev
           forM_ sd $ \m0sdev -> do
             updateDriveState m0sdev M0_NC_FAILED
+            updateDriveManagerWithFailure sdev
             pools <- getSDevPools m0sdev
             traverse_ startRepairOperation pools
 #endif
@@ -300,6 +302,7 @@ castorRules = do
           sd <- lookupStorageDeviceSDev sdev
           forM_ sd $ \m0sdev -> do
             updateDriveState m0sdev M0_NC_FAILED
+            updateDriveManagerWithFailure sdev
             pools <- getSDevPools m0sdev
             traverse_ startRepairOperation pools
 #endif
@@ -338,6 +341,7 @@ castorRules = do
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           updateDriveState m0sdev M0_NC_FAILED
+          updateDriveManagerWithFailure sdev
           pools <- getSDevPools m0sdev
           traverse_ startRepairOperation pools
 #endif
@@ -467,7 +471,7 @@ castorRules = do
       -- Receive event about new client that have connected to cluster.
       -- Check if we need to continue provision process.
       setPhase new_client $ \(HAEvent eid (NewMeroClient node) _) -> do
-         host <- do 
+         host <- do
            mhost <- findNodeHost node
            case mhost of
              Just host -> return host
@@ -481,7 +485,7 @@ castorRules = do
          provisionMeroClient eid host $ do
            rg <- getLocalGraph
            let attrs = G.connectedTo host Has rg
-               memsize = listToMaybe 
+               memsize = listToMaybe
                  $ mapMaybe (\x -> case x of HA_MEMSIZE_MB m -> Just m ; _ -> Nothing)
                  $ attrs
                cpucount = listToMaybe
@@ -500,7 +504,7 @@ castorRules = do
           if nid == node
              then continue sync_client
              else continue client_info
-      
+
       directly sync_client $ do
         Just (eid, host, node@(Node nid), minfo) <- get Local
         -- Check that we have loaded all required node information.
@@ -578,7 +582,7 @@ castorRules = do
                 >>> G.connect process M0.IsParentOf rmsService
                 >>> G.connect process M0.IsParentOf haService
                 >>> G.connect fs M0.IsParentOf m0node
-                >>> G.connect host Has HA_M0CLIENT 
+                >>> G.connect host Has HA_M0CLIENT
                   $ rg
 #else
           let rg' = G.connect host Has HA_M0CLIENT rg
