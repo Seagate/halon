@@ -76,10 +76,9 @@ withRootRC f = do
 --
 -- The user is responsible for making sure that inner 'IO' actions run
 -- on the global m0 worker if needed.
-withSpielRC :: M0.SpielAddress
-            -> (SpielContext -> PhaseM LoopState l a)
+withSpielRC :: (SpielContext -> PhaseM LoopState l a)
             -> PhaseM LoopState l (Maybe a)
-withSpielRC (M0.SpielAddress _confds _rm) f = do
+withSpielRC f = do
   rpca <- liftProcess getRPCAddress
   withServerEndpoint rpca $ \se -> do
     sc <- liftM0 $ getRPCMachine_se se >>= \rpcm -> Mero.Spiel.start rpcm
@@ -87,7 +86,7 @@ withSpielRC (M0.SpielAddress _confds _rm) f = do
 
 startRepairOperation :: M0.Pool -> PhaseM LoopState l ()
 startRepairOperation pool = catch
-    (getSpielAddress >>= traverse_ go)
+    (getSpielAddress >>= traverse_ (const go))
     (\e -> do
       phaseLog "error" $ "Error starting repair operation: "
                       ++ show (e :: SomeException)
@@ -95,13 +94,13 @@ startRepairOperation pool = catch
                       ++ show (M0.fid pool)
     )
   where
-    go sa = do
+    go = do
       phaseLog "spiel" $ "Starting repair on pool " ++ show pool
-      withSpielRC sa $ \sc -> liftM0 $ poolRepairStart sc (M0.fid pool)
+      withSpielRC $ \sc -> liftM0 $ poolRepairStart sc (M0.fid pool)
 
 startRebalanceOperation :: M0.Pool -> PhaseM LoopState l ()
 startRebalanceOperation pool = catch
-    (getSpielAddress >>= traverse_ go)
+    (getSpielAddress >>= traverse_ (const go))
     (\e -> do
       phaseLog "error" $ "Error starting rebalance operation: "
                       ++ show (e :: SomeException)
@@ -109,9 +108,9 @@ startRebalanceOperation pool = catch
                       ++ show (M0.fid pool)
     )
   where
-    go sa = do
+    go = do
       phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool
-      withSpielRC sa $ \sc -> liftM0 $ poolRebalanceStart sc (M0.fid pool)
+      withSpielRC $ \sc -> liftM0 $ poolRebalanceStart sc (M0.fid pool)
 
 syncAction :: Maybe UUID -> SyncToConfd -> PhaseM LoopState l ()
 syncAction meid sync = do
@@ -121,7 +120,7 @@ syncAction meid sync = do
       msa <- getSpielAddress
       case msa of
         Nothing -> phaseLog "warning" $ "No spiel address found in RG."
-        Just sa -> void $ withSpielRC sa $ \sc -> do
+        Just{}  -> void $ withSpielRC $ \sc -> do
           loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
     SyncToTheseServers (SpielAddress [] _) ->
       phaseLog "warning"
@@ -129,25 +128,23 @@ syncAction meid sync = do
         ++ "but that list was empty."
     SyncToTheseServers sa -> do
       phaseLog "info" $ "Syncing RG to these confd servers: " ++ show sa
-      void $ withSpielRC sa $ \sc -> do
+      void $ withSpielRC $ \sc -> do
         loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
     SyncDumpToFile filename -> do
       phaseLog "info" $ "Dumping conf in RG to this file: " ++ show filename
-      loadConfData >>= traverse_ (\x -> txOpen >>= txPopulate x >>= txDumpToFile filename)
+      void $ withSpielRC $ \sc -> do
+      	loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txDumpToFile filename)
   traverse_ messageProcessed meid
 
 -- | Helper functions for backward compatibility.
 syncToConfd :: M0.SpielAddress -> PhaseM LoopState l (Maybe ())
-syncToConfd sa = withSpielRC sa $ \sc -> do
+syncToConfd sa = withSpielRC $ \sc -> do
   loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
 
 -- | Open a transaction. Ultimately this should not need a
 --   spiel context.
 txOpenContext :: SpielContext -> PhaseM LoopState l SpielTransaction
-txOpenContext = liftM0 . openTransactionContext
-
-txOpen :: PhaseM LoopState l SpielTransaction
-txOpen = liftM0 openTransaction
+txOpenContext = liftM0 . openTransaction
 
 txSyncToConfd :: SpielTransaction -> PhaseM LoopState l ()
 txSyncToConfd t = do

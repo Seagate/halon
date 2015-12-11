@@ -338,8 +338,8 @@ castorRules = do
         phaseLog "debug" "spiel-0"
         msa <- getSpielAddress
         phaseLog "debug" "spiel-1"
-        forM_ msa $ \sa ->
-          (void $ withSpielRC sa $ \sp ->
+        forM_ msa $ \_ -> -- verify that info about mero exists.
+          (void $ withSpielRC $ \sp ->
              liftIO $ Spiel.deviceDetach sp (d_fid m0sdev))
             `catch` (\e -> phaseLog "mero" $ "failure in spiel: " ++ show (e::SomeException))
         phaseLog "debug" "spiel-2"
@@ -394,8 +394,8 @@ castorRules = do
         sd <- lookupStorageDeviceSDev disk
         forM_ sd $ \m0sdev -> do
           msa <- getSpielAddress
-          forM_ msa $ \sa -> do
-            _ <- withSpielRC sa $ \sp ->
+          forM_ msa $ \_ -> do
+            _ <- withSpielRC $ \sp ->
                liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
             updateDriveState m0sdev M0_NC_ONLINE
 #endif
