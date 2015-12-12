@@ -87,6 +87,8 @@ Test-Suite unit-tests
                    tasty-hunit,
                    rpclite
   extra-libraries: mero
+  if !flag(mero)
+    Buildable: False
 
 Test-Suite test-dump-transaction
   Type:           exitcode-stdio-1.0
@@ -103,3 +105,5 @@ Test-Suite test-dump-transaction
                 , unix
                 , process
                 , containers
+  if !flag(mero)
+    Buildable: False
