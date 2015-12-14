@@ -6,7 +6,7 @@ ENV HOME /root
 
 ENV LANG en_GB.UTF-8
 
-RUN yum install --assumeyes openssh-server initscripts
+RUN yum install --assumeyes openssh-server
 RUN yum install --assumeyes passwd
 RUN yum install --assumeyes openssh-clients
 RUN yum install --assumeyes hostname
