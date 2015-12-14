@@ -77,7 +77,6 @@ instance Hashable SpielAddress
 
 data SyncToConfd =
       SyncToConfdServersInRG
-    | SyncToTheseServers SpielAddress
     | SyncDumpToFile FilePath
   deriving (Eq, Generic, Show, Typeable)
 

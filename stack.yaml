@@ -10,6 +10,7 @@ packages:
 - distributed-process-trans
 - halon
 - mero-halon
+- mero-integration
 - network-transport-controlled
 - replicated-log
 - rpclite

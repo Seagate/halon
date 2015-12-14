@@ -19,6 +19,7 @@ import Network.RPC.RPCLite
 
 import Control.Exception
   ( bracket
+  , bracket_
   , mask
   )
 
@@ -67,35 +68,51 @@ import Foreign.Storable
 
 newtype SpielContext = SpielContext (ForeignPtr SpielContextV)
 
--- | Open a Spiel context
+spielInit :: RPCMachine
+          -> IO SpielContext
+spielInit rpcmach = do
+    sc <- mallocForeignPtrBytes m0_spiel_size
+    throwIfNonZero_ (\rc -> "Cannot initialize Spiel context: " ++ show rc)
+      $ withForeignPtr sc $ \ptr -> c_spiel_init ptr reqh
+    return $ SpielContext sc
+  where reqh = rm_reqh rpcmach
+
+spielFini :: SpielContext
+     -> IO ()
+spielFini (SpielContext ptr) = withForeignPtr ptr c_spiel_fini
+
+rconfStart :: SpielContext -> IO ()
+rconfStart (SpielContext sc) =
+  throwIfNonZero_ (\rc -> "Cannot start spiel command interface: " ++ show rc)
+    $ withForeignPtr sc $ \ptr -> c_spiel_rconfc_start ptr nullPtr
+
+rconfStop :: SpielContext -> IO ()
+rconfStop (SpielContext sc) = withForeignPtr sc c_spiel_rconfc_stop
+
+-------------------------------------------------------------------------------
+-- Backcompatibility functions
+-------------------------------------------------------------------------------
+
+-- | Open a Spiel context with command interface support.
+-- If you don't need commands interface, use 'spielInit' instead.
 start :: RPCMachine -- ^ Request handler
-      -> [String] -- ^ Confd endpoints
-      -> String -- ^ Network endpoint of Resource Manager service.
       -> IO SpielContext
-start rpcmach eps rm_ep = withCString rm_ep $ \c_rm_ep -> do
-  let reqh = rm_reqh rpcmach
-  bracket
-    (mapM newCString eps)
-    (mapM_ free)
-    (\eps_arr -> withArray0 nullPtr eps_arr $ \c_eps -> do
-      sc <- mallocForeignPtrBytes m0_spiel_size
-      throwIfNonZero_ (\rc -> "Cannot initialize Spiel context: " ++ show rc)
-                      $ withForeignPtr sc
-                        $ \ptr -> c_spiel_start ptr reqh c_eps c_rm_ep
-      return $ SpielContext sc
-    )
+start rpcmach = spielInit rpcmach
 
 -- | Close a Spiel context
 stop :: SpielContext
      -> IO ()
-stop (SpielContext ptr) = withForeignPtr ptr c_spiel_stop
+stop sc = spielFini sc
 
-withSpiel :: RPCMachine -- ^ Request handler
-          -> [String] -- ^ Confd endpoints
-          -> String -- ^ Network endpoint of Resource Manager service.
-          -> (SpielContext -> IO a) -- ^ Action to undertake with Spiel
+withRConf :: SpielContext
+          -> IO a       -- ^ Action to undertake with configuration manager
           -> IO a
-withSpiel rpcmach eps rm_ep = bracket (start rpcmach eps rm_ep) stop
+withRConf spiel = bracket_ (rconfStart spiel) (rconfStop spiel)
+
+withSpiel :: RPCMachine 
+          -> (SpielContext -> IO a)
+          -> IO a
+withSpiel rpcmach = bracket (spielInit rpcmach) spielFini
 
 ---------------------------------------------------------------
 -- Configuration management                                  --
@@ -103,22 +120,11 @@ withSpiel rpcmach eps rm_ep = bracket (start rpcmach eps rm_ep) stop
 
 newtype SpielTransaction = SpielTransaction (ForeignPtr SpielTransactionV)
 
-openTransactionContext :: SpielContext
+openTransaction :: SpielContext
                       -> IO (SpielTransaction)
-openTransactionContext (SpielContext fsc) = withForeignPtr fsc $ \sc -> do
+openTransaction (SpielContext fsc) = withForeignPtr fsc $ \sc -> do
   st <- mallocForeignPtrBytes m0_spiel_tx_size
   withForeignPtr st $ \ptr -> c_spiel_tx_open sc ptr
-  return $ SpielTransaction st
-
-openTransaction :: IO SpielTransaction
-openTransaction = do
-  sc <- mallocForeignPtrBytes m0_spiel_size
-  st <- mallocForeignPtrBytes m0_spiel_tx_size
-  withForeignPtr sc
-    $ \sc_ptr -> withForeignPtr st
-      $ \ptr -> do
-        fillBytes sc_ptr 0 m0_spiel_size
-        c_spiel_tx_open sc_ptr ptr
   return $ SpielTransaction st
 
 closeTransaction :: SpielTransaction
@@ -146,7 +152,7 @@ withTransaction :: SpielContext
                 -> (SpielTransaction -> IO a)
                 -> IO a
 withTransaction sc f = bracket
-  (openTransactionContext sc)
+  (openTransaction sc)
   (closeTransaction)
   (\t -> f t >>= \x -> commitTransaction t >> return x)
 
@@ -161,6 +167,32 @@ dumpTransaction (SpielTransaction ptr) fp = withForeignPtr ptr $ \c_ptr -> do
     x | x == eBUSY -> error "Not all objects are ready."
     x | x == eNOENT -> error "Not all objects have a parent."
     (Errno x) -> error $ "Unknown error return: " ++ show x
+
+-- | Dump transaction to file, this call is required to be running in m0thread,
+-- but it's possible to run it without setting rpc server, creating confd connection,
+-- or spiel context. Usafe of 'commitTransaction' functions will lead to undefined
+-- behavior.
+withTransactionDump :: FilePath -> (SpielTransaction -> IO a) -> IO a
+withTransactionDump fp transaction = bracket 
+  openLocalTransaction
+  closeTransaction
+  $ \t -> transaction t >>= \x -> dumpTransaction t fp >> return x
+
+-- | Open transaction that doesn't require communication with conf or rms service.
+-- Such transaction can be run in non privileged mode without prior creation of
+-- the spiel context. However it's illegal to commit such transactions and that
+-- could lead to undefined behaviour, use should only verify or dump such transactions.
+openLocalTransaction :: IO SpielTransaction
+openLocalTransaction = do
+  sc <- mallocForeignPtrBytes m0_spiel_size
+  st <- mallocForeignPtrBytes m0_spiel_tx_size
+  withForeignPtr sc
+    $ \sc_ptr -> withForeignPtr st
+    $ \ptr -> do
+       fillBytes sc_ptr 0 m0_spiel_size
+       c_spiel_tx_open sc_ptr ptr
+  return $ SpielTransaction st
+
 
 setCmdProfile :: SpielContext
               -> Maybe String

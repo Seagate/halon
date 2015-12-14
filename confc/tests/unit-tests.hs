@@ -17,7 +17,9 @@ C.context (C.baseCtx <> confCtx)
 C.include "lib/bitmap.h"
 
 main :: IO ()
-main = withM0 $ defaultMain tests
+main = do
+  setNodeUUID Nothing
+  withM0 $ defaultMain tests
 
 tests :: TestTree
 tests = testGroup "ut"

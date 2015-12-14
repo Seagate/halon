@@ -46,7 +46,7 @@ parseCluster =
       ( LoadData <$> Opt.subparser ( Opt.command "load" (Opt.withDesc parseLoadOptions
         "Load initial data into the system." )))
 #ifdef USE_MERO
-  <|> ( Sync <$> Opt.subparser ( Opt.command "sync" (Opt.withDesc parseSyncOptions
+  <|> ( Sync <$> Opt.subparser ( Opt.command "sync" (Opt.withDesc (pure SyncOptions)
         "Force synchronisation of RG to confd servers." )))
   <|> ( Dump <$> Opt.subparser ( Opt.command "dump" (Opt.withDesc parseDumpOptions
         "Dump embedded confd database to file." )))
@@ -55,7 +55,7 @@ parseCluster =
 cluster :: [NodeId] -> ClusterOptions -> Process ()
 cluster nids (LoadData l) = dataLoad nids l
 #ifdef USE_MERO
-cluster nids (Sync s) = syncToConfd nids s
+cluster nids (Sync _) = syncToConfd nids
 cluster nids (Dump s) = dumpConfd nids s
 #endif
 
@@ -95,37 +95,15 @@ dataLoad eqnids (LoadOptions cf verify) = do
 
 #ifdef USE_MERO
 
-data SyncOptions = SyncOptions [String] (Maybe String)
-  deriving (Eq, Show)
-
-parseSyncOptions :: Opt.Parser SyncOptions
-parseSyncOptions = SyncOptions
-  <$> ( many $ Opt.strOption
-         ( Opt.long "confd"
-        <> Opt.short 'c'
-        <> Opt.help "Address of confd endpoint to push conf to."
-        <> Opt.metavar "ENDPOINT"
-         )
-      )
-  <*> ( optional $ Opt.strOption
-         ( Opt.long "rm"
-        <> Opt.short 'r'
-        <> Opt.help "Address of RM controlling confd lock."
-        <> Opt.metavar "ENDPOINT"
-         )
-      )
-
 syncToConfd :: [NodeId]
-            -> SyncOptions
             -> Process ()
-syncToConfd eqnids so = promulgateEQ eqnids msg
+syncToConfd eqnids = promulgateEQ eqnids SyncToConfdServersInRG
         >>= \pid -> withMonitor pid wait
   where
-    msg = case so of
-      SyncOptions confds@(_:_) (Just rm) ->
-        SyncToTheseServers $ SpielAddress confds rm
-      _ -> SyncToConfdServersInRG
     wait = void (expect :: Process ProcessMonitorNotification)
+
+data SyncOptions = SyncOptions
+  deriving (Eq, Show)
 
 newtype DumpOptions = DumpOptions FilePath
   deriving (Eq, Show)

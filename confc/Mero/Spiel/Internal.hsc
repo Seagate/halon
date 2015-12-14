@@ -58,17 +58,26 @@ data {-# CTYPE "spiel/spiel.h" "struct m0_spiel" #-} SpielContextV
 m0_spiel_size :: Int
 m0_spiel_size = #{size struct m0_spiel}
 
--- XXX FIXME: ccall/capi const
-foreign import ccall "spiel/spiel.h m0_spiel_start"
-  c_spiel_start :: Ptr SpielContextV
-                -> Ptr ReqHV
-                -> Ptr CString
-                -> CString
-                -> IO CInt
+foreign import capi "spiel/spiel.h m0_spiel_init"
+  c_spiel_init :: Ptr SpielContextV
+               -> Ptr ReqHV
+               -> IO CInt 
 
-foreign import capi "spiel/spiel.h m0_spiel_stop"
-  c_spiel_stop :: Ptr SpielContextV
+foreign import capi "spiel/spiel.h m0_spiel_fini"
+  c_spiel_fini :: Ptr SpielContextV
                -> IO ()
+
+-- Start spiel instance
+foreign import ccall "spiel/spiel.h m0_spiel_rconfc_start"
+  c_spiel_rconfc_start :: Ptr SpielContextV
+                       -> Ptr ()                          -- XXX: really this should be pointer to function
+                                                          -- that will have configuration client info
+                       -> IO CInt
+
+-- Stop spiel instance
+foreign import capi "spiel/spiel.h m0_spiel_rconfc_stop"
+  c_spiel_rconfc_stop :: Ptr SpielContextV
+                      -> IO ()
 
 ---------------------------------------------------------------
 -- Transactions                                              --

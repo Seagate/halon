@@ -33,6 +33,9 @@ module Network.RPC.RPCLite
     , RPCMachine(..)
     , RPCMachineV
     , getRPCMachine_se
+    , Session(..)
+    , SessionV
+    , getConnectionSession
     -- * Server side API
     , ServerEndpoint(se_ptr)
     , ListenCallbacks(..)
@@ -259,6 +262,8 @@ foreign import ccall unsafe rpc_get_fragment :: Ptr ItemV -> CInt -> IO CString
 getConnectionId :: Item -> IO WordPtr
 getConnectionId (Item p) = fmap ptrToWordPtr (rpc_get_connection_id p)
 
+
+
 foreign import ccall unsafe rpc_get_connection_id :: Ptr ItemV -> IO (Ptr ())
 
 -- | Type for RPC machines. These are the artifacts of mero used to create
@@ -400,3 +405,14 @@ sendEpochBlocking (Connection pc) epoch timeout_s =
                   || err == (- #{const EHOSTUNREACH})
                   || err == (- #{const EHOSTDOWN}) = return Nothing
                 | otherwise = throwIO $ RPCException $ toEnum $ fromIntegral err
+
+
+newtype Session = Session (Ptr SessionV)
+data SessionV
+
+foreign import ccall "<rpclite.h> rpc_get_session"
+  c_rpc_get_session :: Ptr ConnectionV -> IO (Ptr SessionV)
+
+-- | Yeilds the rpc session used by a connection.
+getConnectionSession :: Connection -> IO Session
+getConnectionSession (Connection v) = fmap Session (c_rpc_get_session v)

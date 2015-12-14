@@ -116,6 +116,7 @@ withM0Deferred f = do
               when shouldContinue $ do
                 mt <- readChan globalM0Chan
                 forM_ mt $ \t@(Task _ b) -> do
+                  setNodeUUID Nothing
                   rc <- m0_init_wrapper
                   if (rc == 0)
                     then mainloop t `finally` m0_fini

@@ -4,6 +4,7 @@
 --
 -- This program prints in stdout the contents of the configuration in confd.
 -- Call as: ./testconfc local_rpc_address confd_rpc_address
+module Test.ConfRead (test, name) where
 
 import Mero (withM0)
 import Mero.Concurrent
@@ -11,71 +12,62 @@ import Mero.ConfC
 
 import Network.RPC.RPCLite
 
-import Control.Exception (bracket)
 import Control.Monad (join)
+import System.IO
 
-import System.Environment ( getArgs )
+import Helper
 
-withEndpoint :: RPCAddress -> (ServerEndpoint -> IO a) -> IO a
-withEndpoint addr = bracket
-    (listen addr listenCallbacks)
-    stopListening
-  where
-    listenCallbacks = ListenCallbacks
-      { receive_callback = \it _ ->  putStr "Received: "
-                                      >> unsafeGetFragments it
-                                      >>= print
-                                      >> return True
-      }
+name :: String 
+name = "read-configuration-db"
 
 printConf :: String -> String -> IO ()
 printConf localAddress confdAddress =
   withEndpoint (rpcAddress localAddress) $ \ep -> do
-    putStrLn "Opened endpoint"
+    hPutStrLn stderr "Opened endpoint"
     rpcMach <- getRPCMachine_se ep
     withConf rpcMach (rpcAddress confdAddress) $ \rootNode -> do
-      putStrLn "Opened confc"
-      print rootNode
+      hPutStrLn stderr "Opened confc"
+      printErr rootNode
       profiles <- (children :: Root -> IO [Profile]) rootNode
-      print profiles
+      printErr profiles
       fs <- join <$> mapM (children :: Profile -> IO [Filesystem]) profiles
-      print fs
+      printErr fs
       nodes <- join <$> mapM (children :: Filesystem -> IO [Node]) fs
-      print nodes
+      printErr nodes
       pools <- join <$> mapM (children :: Filesystem -> IO [Pool]) fs
-      print pools
+      printErr pools
       racks <- join <$> mapM (children :: Filesystem -> IO [Rack]) fs
-      print racks
+      printErr racks
       pver <- join <$> mapM (children :: Pool -> IO [PVer]) pools
-      print pver
+      printErr pver
       rackv <- join <$> mapM (children :: PVer -> IO [RackV]) pver
-      print rackv
+      printErr rackv
       enclv <- join <$> mapM (children :: RackV -> IO [EnclV]) rackv
-      print enclv
+      printErr enclv
       ctrlv <- join <$> mapM (children :: EnclV -> IO [CtrlV]) enclv
-      print ctrlv
+      printErr ctrlv
       diskv <- join <$> mapM (children :: CtrlV -> IO [DiskV]) ctrlv
-      print diskv
+      printErr diskv
       processes <- join <$> mapM (children :: Node -> IO [Process]) nodes
-      print processes
+      printErr processes
       services <- join <$> mapM (children :: Process -> IO [Service]) processes
-      print services
+      printErr services
       sdevs <- join <$> mapM (children :: Service -> IO [Sdev]) services
-      print sdevs
+      printErr sdevs
       encls <- join <$> mapM (children :: Rack -> IO [Enclosure]) racks
-      print encls
+      printErr encls
       ctrls <- join <$> mapM (children :: Enclosure -> IO [Controller]) encls
-      print ctrls
+      printErr ctrls
       disks <- join <$> mapM (children :: Controller -> IO [Disk]) ctrls
-      print disks
+      printErr disks
       desv2 <- join <$> mapM (children :: Disk -> IO [Sdev]) disks
-      print desv2
-    putStrLn "Closed confc"
+      printErr desv2
+    hPutStrLn stderr "Closed confc"
 
-main :: IO ()
-main = withM0 $ do
-  initRPC
-  m0t <- forkM0OS $ do
-    getArgs >>= \[ l , c ] -> printConf l c
-  joinM0OS m0t
-  finalizeRPC
+test :: IO ()
+test = withM0 $ do
+    initRPC
+    m0t <- forkM0OS $ join $ printConf <$> getHalonEndpoint 
+                                       <*> getConfdEndpoint
+    joinM0OS m0t
+    finalizeRPC
