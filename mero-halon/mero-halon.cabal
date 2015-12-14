@@ -433,7 +433,7 @@ Test-Suite unit-tests
                     RemoteTables
                     TestRunner
 
-  Ghc-Options: -threaded -Wall
+  Ghc-Options: -threaded -Wall -rtsopts -with-rtsopts=-T
 
   if flag(maintainer)
     Ghc-Options: -Werror
