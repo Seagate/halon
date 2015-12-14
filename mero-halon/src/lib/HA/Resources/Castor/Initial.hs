@@ -129,20 +129,28 @@ instance FromJSON M0Device
 --   processes.
 data M0Host = M0Host {
     m0h_fqdn :: String -- ^ FQDN of host this server is running on
-  , m0h_mem_as :: Word64
-  , m0h_mem_rss :: Word64
-  , m0h_mem_stack :: Word64
-  , m0h_mem_memlock :: Word64
-  , m0h_cores :: [Word64]
-    -- ^ Treated as a bitmap of length (no_cpu) indicating which CPUs to use
-  , m0h_services :: [M0Service]
+  , m0h_processes :: [M0Process]
   , m0h_devices :: [M0Device]
-  , m0h_endpoint :: String
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Binary M0Host
 instance Hashable M0Host
 instance FromJSON M0Host
+
+data M0Process = M0Process {
+    m0p_endpoint :: String
+  , m0p_mem_as :: Word64
+  , m0p_mem_rss :: Word64
+  , m0p_mem_stack :: Word64
+  , m0p_mem_memlock :: Word64
+  , m0p_cores :: [Word64]
+    -- ^ Treated as a bitmap of length (no_cpu) indicating which CPUs to use
+  , m0p_services :: [M0Service]
+} deriving (Eq, Data, Generic, Show, Typeable)
+
+instance Binary M0Process
+instance Hashable M0Process
+instance FromJSON M0Process
 
 data M0Service = M0Service {
     m0s_type :: ServiceType -- ^ e.g. ioservice, haservice

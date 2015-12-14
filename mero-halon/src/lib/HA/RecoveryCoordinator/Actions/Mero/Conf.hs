@@ -126,20 +126,12 @@ loadMeroServers :: M0.Filesystem
 loadMeroServers fs = mapM_ goHost where
   goHost CI.M0Host{..} = let
       host = Host m0h_fqdn
-      cores = bitmapFromArray
-        . fmap (\i -> if i > 0 then True else False)
-        $ m0h_cores
-      mkProc fid = M0.Process fid m0h_mem_as m0h_mem_rss
-                              m0h_mem_stack m0h_mem_memlock
-                              cores m0h_endpoint
-
     in do
       ctrl <- M0.Controller <$> newFid (Proxy :: Proxy M0.Controller)
       node <- M0.Node <$> newFid (Proxy :: Proxy M0.Node)
-      proc <- mkProc <$> newFid (Proxy :: Proxy M0.Process)
 
       devs <- mapM (goDev host ctrl) m0h_devices
-      mapM_ (goSrv proc devs) m0h_services
+      mapM_ (goProc node devs) m0h_processes
 
       rg <- getLocalGraph
       let enc = head $ [ e | e1 <- G.connectedFrom Has host rg :: [Enclosure]
@@ -149,12 +141,25 @@ loadMeroServers fs = mapM_ goHost where
       modifyGraph $ G.newResource host
                 >>> G.newResource ctrl
                 >>> G.newResource node
-                >>> G.newResource proc
                 >>> G.connect Cluster Has host
                 >>> G.connect fs M0.IsParentOf node
                 >>> G.connect enc M0.IsParentOf ctrl
                 >>> G.connect ctrl M0.At host
                 >>> G.connect node M0.IsOnHardware ctrl
+
+  goProc node devs CI.M0Process{..} = let
+      cores = bitmapFromArray
+        . fmap (> 0)
+        $ m0p_cores
+      mkProc fid = M0.Process fid m0p_mem_as m0p_mem_rss
+                              m0p_mem_stack m0p_mem_memlock
+                              cores m0p_endpoint
+    in do
+      proc <- mkProc <$> newFid (Proxy :: Proxy M0.Process)
+      mapM_ (goSrv proc devs) m0p_services
+
+      modifyGraph $ G.newResource proc
+                >>> G.newResource proc
                 >>> G.connect node M0.IsParentOf proc
 
   goSrv proc devs CI.M0Service{..} = let
