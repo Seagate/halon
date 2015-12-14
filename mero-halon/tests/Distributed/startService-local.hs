@@ -58,17 +58,18 @@ import System.Timeout
 getBuildPath :: IO FilePath
 getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
 
-redirectToFile :: Handle -> FilePath -> IO a -> IO a
-redirectToFile h fn action = E.bracket
-    (do fh <- openFile fn WriteMode
-        hFlush h
-        h' <- hDuplicate h
-        hDuplicateTo fh h
-        return (fh, h')
+-- | @hRedirect hFrom hTo action@ redirects handle @hFrom@ to handle @hTo@
+-- for the execution of @action@.
+hRedirect :: Handle -> Handle -> IO a -> IO a
+hRedirect hFrom hTo action = E.bracket
+    (do hFlush hFrom
+        h' <- hDuplicate hFrom
+        hDuplicateTo hTo hFrom
+        return h'
     )
-    (\(fh, h') -> do
-      hClose fh
-      hDuplicateTo h' h
+    (\h' -> do
+      hDuplicateTo h' hFrom
+      hClose h'
     )
     (const action)
 
@@ -79,7 +80,7 @@ main =
   progName <- getProgName
   let fn = progName ++ ".stderr.log"
   putStrLn $ "Redirecting stderr to " ++ fn
-  redirectToFile stderr fn $ do
+  withFile fn WriteMode $ \fh -> hRedirect stderr fh $ do
     hSetBuffering stderr LineBuffering
 
     buildPath <- getBuildPath
