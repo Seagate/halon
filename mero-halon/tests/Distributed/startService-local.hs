@@ -46,6 +46,7 @@ import Network.Transport.TCP (createTransport, defaultTCPParameters)
 #endif
 
 import qualified Control.Exception as E (bracket, catch, SomeException)
+import GHC.IO.Handle (hDuplicateTo, hDuplicate)
 import System.Directory (setCurrentDirectory, createDirectoryIfMissing, getTemporaryDirectory)
 import System.Environment
 import System.IO
@@ -57,14 +58,31 @@ import System.Timeout
 getBuildPath :: IO FilePath
 getBuildPath = fmap (takeDirectory . takeDirectory) getExecutablePath
 
+redirectToFile :: Handle -> FilePath -> IO a -> IO a
+redirectToFile h fn action = E.bracket
+    (do fh <- openFile fn WriteMode
+        hFlush h
+        h' <- hDuplicate h
+        hDuplicateTo fh h
+        return (fh, h')
+    )
+    (\(fh, h') -> do
+      hClose fh
+      hDuplicateTo h' h
+    )
+    (const action)
+
 main :: IO ()
 main =
   (>>= maybe (error "test timed out") return) $ timeout (120 * 1000000) $ do
-    hSetBuffering stdout LineBuffering
+  hSetBuffering stdout LineBuffering
+  progName <- getProgName
+  let fn = progName ++ ".stderr.log"
+  putStrLn $ "Redirecting stderr to " ++ fn
+  redirectToFile stderr fn $ do
     hSetBuffering stderr LineBuffering
 
     buildPath <- getBuildPath
-    progName <- getProgName
 
     tmpDir <- getTemporaryDirectory
     let testDir = tmpDir </> "test" </> progName
@@ -149,3 +167,4 @@ main =
                         " service dummy start -t " ++ m0loc)
       expectLog [nid1] (isInfixOf "Starting service dummy")
       expectLog [nid1] (isInfixOf "Hello World!")
+      liftIO $ putStrLn "SUCCESS!"
