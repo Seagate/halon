@@ -170,7 +170,7 @@ notifyMero cs st = do
     setEvent = Mero.Notification.Set $ map (flip Note st . getFid) cs
 
     sendSetEvent rg p = do
-      liftProcess $ case listToMaybe $ G.connectedTo p MeroChannel rg of
-        Just (TypedChannel chan) -> sendChan chan setEvent
-        _ -> say $
+      case listToMaybe $ G.connectedTo p MeroChannel rg of
+        Just (TypedChannel chan) -> liftProcess $ sendChan chan setEvent
+        _ -> phaseLog "error" $
           "HA.Services.Mero.notifyMero: Cannot find MeroChanel for " ++ show p

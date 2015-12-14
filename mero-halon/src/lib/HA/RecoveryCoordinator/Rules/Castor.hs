@@ -368,15 +368,13 @@ castorRules = do
       sd <- lookupStorageDeviceSDev disk
       forM_ sd $ \m0sdev -> do
         updateDriveState m0sdev M0_NC_TRANSIENT
-        phaseLog "debug" "spiel-0"
         msa <- getSpielAddress
-        phaseLog "debug" "spiel-1"
         forM_ msa $ \_ -> -- verify that info about mero exists.
           (void $ withSpielRC $ \sp ->
              liftIO $ Spiel.deviceDetach sp (d_fid m0sdev))
             `catch` (\e -> phaseLog "mero" $ "failure in spiel: " ++ show (e::SomeException))
-        phaseLog "debug" "spiel-2"
 #endif
+      syncGraph
       sendInterestingEvent nid msg
       messageProcessed uuid
 
