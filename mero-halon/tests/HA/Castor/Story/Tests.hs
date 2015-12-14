@@ -2,7 +2,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo       #-}
 {-# LANGUAGE TemplateHaskell   #-}
-module HA.Castor.Story.Tests (mkTests) where
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+module HA.Castor.Story.Tests (mkTests, testDynamicPVer) where
 
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
@@ -53,7 +56,6 @@ import qualified Data.Set as S
 import Data.Typeable
 import Data.Text (pack)
 import Data.Defaultable
-import qualified Data.List as List
 
 import GHC.Generics (Generic)
 
@@ -119,8 +121,6 @@ mkTests = do
           testSMARTNoResponse transport
         , testSuccess "Drive failure removal reported by SSPL" $
           testDriveRemovedBySSPL transport
-        , testSuccess "Drive failure, dynamic PVer generation" $
-          testDynamicPVer transport
         ]
 
 run :: Transport
@@ -528,7 +528,7 @@ testSMARTNoResponse transport = run transport interceptor test where
 -- | SSPL emits unused_ok event for one of the drives.
 testDriveRemovedBySSPL :: Transport -> IO ()
 testDriveRemovedBySSPL transport = run transport interceptor test where
-  interceptor rc str = return ()
+  interceptor _rc _str = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
     loadInitialData
