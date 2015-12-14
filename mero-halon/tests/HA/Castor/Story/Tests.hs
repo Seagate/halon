@@ -232,8 +232,7 @@ devAttrs sdev rg =
 -- | Check if specified device have RemovedAt attribute.
 checkStorageDeviceRemoved :: String -> Int -> G.Graph -> Bool
 checkStorageDeviceRemoved enc idx rg = not . Prelude.null $
-  [ () | host <- G.connectedTo (Enclosure enc) Has rg :: [Host]
-       , dev  <- G.connectedTo host Has rg :: [StorageDevice]
+  [ () | dev  <- G.connectedTo (Enclosure enc) Has rg :: [StorageDevice]
        , any (==(DIIndexInEnclosure idx))
              (G.connectedTo dev Has rg :: [DeviceIdentifier])
        , any (==SDRemovedAt)
@@ -529,9 +528,7 @@ testSMARTNoResponse transport = run transport interceptor test where
 -- | SSPL emits unused_ok event for one of the drives.
 testDriveRemovedBySSPL :: Transport -> IO ()
 testDriveRemovedBySSPL transport = run transport interceptor test where
-  interceptor rc str
-    | any (("Cannot detach device"::String) `List.isPrefixOf`) (List.tails str) = usend rc ("Detached"::String)
-    | otherwise = return ()
+  interceptor rc str = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
     loadInitialData
@@ -541,18 +538,20 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
         devIdx    = 1
         message0 = LBS.toStrict $ encode
                                 $ mkSensorResponse
-                                $ mkResponseHPI host (fromIntegral devIdx) "/dev/loop1" "wwn1"
+                                $ mkResponseHPI host (pack enclosure) (fromIntegral devIdx) "/dev/loop1" "wwn1"
         message = LBS.toStrict $ encode $ mkSensorResponse
            $ emptySensorMessage
               { sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
                 Just $ mkResponseDriveManager (pack enclosure) "serial1" devIdx "unused_ok" }
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message0
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
-    _ <- expect :: Process (Published DriveRemoved)
+    Just{} <- expectTimeout 1000000 :: Process (Maybe (Published DriveRemoved))
+    _ <- receiveTimeout 1000000 []
+    say "Check drive removed"
     True <- checkStorageDeviceRemoved enclosure devIdx <$> G.getGraph mm
-    Set [Note _ M0_NC_TRANSIENT] <- receiveChan recv
-    "Detached" <- expect :: Process String
-    return ()
+    say "Check notification"
+    Set [Note _ st] <- receiveChan recv
+    liftIO $ assertEqual "drive is in transient state" M0_NC_TRANSIENT st
 
 -- | Test that we generate an appropriate pool version in response to
 --   failure of a drive, when using 'Dynamic' strategy.
