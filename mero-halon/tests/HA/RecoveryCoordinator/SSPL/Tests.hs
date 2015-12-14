@@ -347,40 +347,45 @@ initialDataAddr host ifaddr n = CI.InitialData {
 , CI.id_m0_servers = [
     CI.M0Host {
       CI.m0h_fqdn = "primus.example.com"
-    , CI.m0h_mem_as = 1
-    , CI.m0h_mem_rss = 1
-    , CI.m0h_mem_stack = 1
-    , CI.m0h_mem_memlock = 1
-    , CI.m0h_cores = [1]
-    , CI.m0h_services = [
-        CI.M0Service {
-          CI.m0s_type = CST_MGS
-        , CI.m0s_endpoints = [host ++ "@tcp:12345:44:101"]
-        , CI.m0s_params = SPConfDBPath "/var/mero/confd"
+    , CI.m0h_processes = [
+        CI.M0Process {
+          CI.m0p_endpoint = host ++ "@tcp:12345:41:901"
+        , CI.m0p_mem_as = 1
+        , CI.m0p_mem_rss = 1
+        , CI.m0p_mem_stack = 1
+        , CI.m0p_mem_memlock = 1
+        , CI.m0p_cores = [1]
+        , CI.m0p_services = [
+            CI.M0Service {
+              CI.m0s_type = CST_MGS
+            , CI.m0s_endpoints = [host ++ "@tcp:12345:44:101"]
+            , CI.m0s_params = SPConfDBPath "/var/mero/confd"
+            }
+          , CI.M0Service {
+              CI.m0s_type = CST_RMS
+            , CI.m0s_endpoints = [host ++ "@tcp:12345:41:301"]
+            , CI.m0s_params = SPUnused
+            }
+          , CI.M0Service {
+              CI.m0s_type = CST_MDS
+            , CI.m0s_endpoints = [host ++ "@tcp:12345:41:201"]
+            , CI.m0s_params = SPUnused
+            }
+          , CI.M0Service {
+              CI.m0s_type = CST_IOS
+            , CI.m0s_endpoints = [host ++ "@tcp:12345:41:401"]
+            , CI.m0s_params = SPUnused
+            }
+          ]
         }
-      , CI.M0Service {
-          CI.m0s_type = CST_RMS
-        , CI.m0s_endpoints = [host ++ "@tcp:12345:41:301"]
-        , CI.m0s_params = SPUnused
-        }
-      , CI.M0Service {
-          CI.m0s_type = CST_MDS
-        , CI.m0s_endpoints = [host ++ "@tcp:12345:41:201"]
-        , CI.m0s_params = SPUnused
-        }
-      , CI.M0Service {
-          CI.m0s_type = CST_IOS
-        , CI.m0s_endpoints = [host ++ "@tcp:12345:41:401"]
-        , CI.m0s_params = SPUnused
-        }
-      ]
+    ]
     , CI.m0h_devices = fmap
         (\i -> CI.M0Device ("wwn" ++ show i) 4 64000 ("/dev/loop" ++ show i))
         [(1 :: Int) .. n]
-    , CI.m0h_endpoint = host ++ "@tcp:12345:41:901"
     }
   ]
 }
+
 
 
 -- | Sample initial data for test purposes

@@ -29,12 +29,11 @@ import qualified HA.ResourceGraph as G
 import HA.Services.SSPL
 import HA.EventQueue.Producer
 #ifdef USE_MERO
-import Control.Category (id, (>>>))
+import Control.Category ((>>>))
 import HA.Service
 import HA.Services.Mero
 import Mero.ConfC (ServiceType(..), ServiceParams(..), bitmapFromArray)
 import qualified Mero.Spiel as Spiel
-import HA.RecoveryCoordinator.Rules.Mero
 import HA.Resources.Mero hiding (Node, Process, Enclosure, Rack)
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
@@ -176,12 +175,12 @@ castorRules = do
         syncGraph
 #endif
       liftProcess $ say "Loaded initial data"
-      rg <- getLocalGraph
-      let hosts = [ host | host <- G.getResourcesOfType rg    :: [Host] -- all hosts
-                         , not  $ G.isConnected host Has HA_M0CLIENT rg -- and not already a client
-                         , not  $ G.isConnected host Has HA_M0SERVER rg -- and not already a server
+      rg' <- getLocalGraph
+      let hosts = [ host | host <- G.getResourcesOfType rg'    :: [Host] -- all hosts
+                         , not  $ G.isConnected host Has HA_M0CLIENT rg' -- and not already a client
+                         , not  $ G.isConnected host Has HA_M0SERVER rg' -- and not already a server
                          ]
-          nodes = mapMaybe (\host -> case G.connectedTo host Runs rg of
+          nodes = mapMaybe (\host -> case G.connectedTo host Runs rg' of
                                (n:_) -> Just n
                                _     -> Nothing) hosts
       forM_ nodes $ liftProcess . promulgateWait . NewMeroClient
