@@ -35,7 +35,7 @@ updateDriveState :: M0.SDev -- ^ Drive to update state
 -- | For transient failures, we may need to create a new pool version.
 updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
   -- Update state in RG
-  modifyGraph $ G.connect m0sdev Is M0.M0_NC_TRANSIENT
+  modifyGraph $ G.connectUnique m0sdev Is M0.M0_NC_TRANSIENT
   syncGraph
   -- If using dynamic failure sets, generate failure set
   getM0Globals >>= \case
