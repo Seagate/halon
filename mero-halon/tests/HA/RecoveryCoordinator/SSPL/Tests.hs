@@ -135,7 +135,7 @@ testHpiExistingWWN = mkHpiTest rules test
     test rc = do
       me <- getSelfNode
       usend rc ()  -- Prepare graph test
-      let request = mkResponseHPI "primus.example.com" 1 "loop1" "wwn1"
+      let request = mkResponseHPI "primus.example.com" "enclosure1" 1 "loop1" "wwn1"
       uuid <- liftIO $ nextRandom
       usend rc $ HAEvent uuid (me, request) [] -- send request
       receiveWait [ matchIf (\u -> u == uuid) (\_ -> return ()) ] -- check that it was processed
@@ -163,7 +163,7 @@ testHpiNewWWN = mkHpiTest rules test
         liftProcess $ usend self (uuid,"message-processed"::String)
     test rc = do
       me <- getSelfNode
-      let request = mkResponseHPI "primus.example.com" 10 "loop10" "wwn10"
+      let request = mkResponseHPI "primus.example.com" "enclosure1" 10 "loop10" "wwn10"
       uuid <- liftIO $ nextRandom
       usend rc $ HAEvent uuid (me, request) []
       receiveWait [ matchIf (\(u,"message-processed"::String) -> u == uuid) (\_ -> return ()) ]
@@ -188,9 +188,9 @@ testHpiUpdatedWWN = mkHpiTest rules test
     test rc = do
       me   <- getSelfNode
       uuid0 <- liftIO $ nextRandom
-      let request0 = mkResponseHPI "primus.example.com" 0 "loop1" "wwn1"
+      let request0 = mkResponseHPI "primus.example.com" "enclosure1" 0 "loop1" "wwn1"
       usend rc $ HAEvent uuid0 (me, request0) []
-      let request = mkResponseHPI "primus.example.com" 0 "loop1" "wwn10"
+      let request = mkResponseHPI "primus.example.com" "enclosure1" 0 "loop1" "wwn10"
       uuid <- liftIO $ nextRandom
       usend rc $ HAEvent uuid (me, request) []
       enc <- receiveWait [ matchIf (\(u, _) -> u == uuid)
@@ -221,10 +221,10 @@ testDMRequest = mkHpiTest rules test
         liftProcess $ usend self (uuid, "drive-removed"::String)
     test rc = do
         me <- getSelfNode
-        let requestA = mkResponseHPI "primus.example.com" 0 "loop1" "wwn1"
+        let requestA = mkResponseHPI "primus.example.com" "enclosure1" 0 "loop1" "wwn1"
         uuidA <- liftIO $ nextRandom
         usend rc $ HAEvent uuidA (me, requestA) []
-        let requestB = mkResponseHPI "primus.example.com" 1 "loop2" "wwn2"
+        let requestB = mkResponseHPI "primus.example.com" "enclosure1" 1 "loop2" "wwn2"
         uuidB <- liftIO $ nextRandom
         usend rc $ HAEvent uuidB (me, requestB) []
         --  0  -- active drive
