@@ -62,6 +62,7 @@ import System.Mem
 import GHC.Stats
 
 import Helper.InitialData
+import Helper.Environment (systemHostname)
 
 mmSDict :: SerializableDict Multimap
 mmSDict = SerializableDict
@@ -184,7 +185,7 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
 
 
   where
-    myHost = Host "primus.example.com"
+    myHost = Host systemHostname
 
 printMem :: IO ()
 printMem = do
@@ -203,7 +204,7 @@ largeInitialData :: String -> Transport -> IO ()
 largeInitialData host transport = let
     numDisks = 300
     initD = (initialDataAddr host "192.0.2.2" numDisks)
-    myHost = Host "primus.example.com"
+    myHost = Host systemHostname
   in
     rGroupTest transport $ \pid -> do
       me <- getSelfNode

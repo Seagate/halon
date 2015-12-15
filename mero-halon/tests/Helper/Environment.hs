@@ -15,6 +15,7 @@ module Helper.Environment
   , getConfd2Endpoint
   , getHalonEndpoint
   , getLnetNid
+  , systemHostname
   ) where
 
 import Network.RPC.RPCLite
@@ -25,12 +26,14 @@ import Control.Monad (when)
 import Data.Maybe (catMaybes)
 import Foreign.C
 import Foreign.Ptr
+import Network.BSD
 import System.Environment
     ( lookupEnv
     , setEnv
     , getExecutablePath)
 import System.Exit (exitSuccess)
 import System.IO
+import System.IO.Unsafe
 import System.Posix.User (getEffectiveUserID)
 import System.Process (readProcess, callProcess, callCommand)
 import GHC.Environment (getFullArgs)
@@ -131,3 +134,6 @@ withEndpoint addr = bracket
           print =<< unsafeGetFragments it
           return True
       }
+
+systemHostname :: String
+systemHostname = unsafePerformIO getHostName

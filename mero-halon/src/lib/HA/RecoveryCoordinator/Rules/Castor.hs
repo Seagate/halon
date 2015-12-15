@@ -581,10 +581,10 @@ castorRules = do
                 >>> G.connect process M0.IsParentOf rmsService
                 >>> G.connect process M0.IsParentOf haService
                 >>> G.connect fs M0.IsParentOf m0node
-                >>> G.connect host Has HA_M0CLIENT
+                >>> G.connect host Has HA_M0SERVER
                   $ rg
 #else
-          let rg' = G.connect host Has HA_M0CLIENT rg
+          let rg' = G.connect host Has HA_M0SERVER rg
 #endif
           return rg'
         syncGraph

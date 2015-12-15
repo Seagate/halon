@@ -102,13 +102,9 @@ ut _host transport breakConnection = do
 #endif
 #ifdef USE_MERO
       , testGroup "Castor" $ HA.Castor.Tests.tests _host transport
+                             ++ driveFailureTests transport
 #else
       , testGroup "Castor [disabled by compilation flags]" []
-#endif
-#ifdef USE_MERO
-      , testGroup "DriveFailure" $ driveFailureTests transport
-#else
-      , testGroup "DriveFailure [disabled by compilation flags]" []
 #endif
 #ifdef USE_MERO
       , testCase "RCToleratesRejoinsTimeout" $

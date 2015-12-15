@@ -51,6 +51,7 @@ import Data.Defaultable
 import Data.Binary (Binary)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text.Encoding as T
 import Data.List (isInfixOf)
@@ -62,6 +63,7 @@ import Network.AMQP
 import GHC.Generics
 
 
+import Helper.Environment (systemHostname)
 import TestRunner
 
 data RChan = RChan String deriving (Generic, Typeable)
@@ -218,7 +220,11 @@ testSensor transport = runSSPLTest transport interseptor test
             , ", \"title\": \"SSPL-LL Sensor Response\""
             , ", \"expires\": 3600, \"signature\": \"None\""
             , ", \"time\": \"2015-10-19 11:49:34.706694\""
-            , ", \"message\": {\"sspl_ll_msg_header\": {\"msg_version\": \"1.0.0\", \"schema_version\": \"1.0.0\", \"sspl_version\": \"1.0.0\"}, \"sensor_response_type\": {\"host_update\": {\"loggedInUsers\": [\"vagrant\"], \"runningProcessCount\": 2, \"hostId\": \"devvm.seagate.com\", \"totalMem\": {\"units\": \"MB\", \"value\": 1930}, \"upTime\": 1445251379, \"uname\": \"Linux devvm.seagate.com 3.10.0-229.7.2.el7.x86_64 #1 SMP Tue Jun 23 22:06:11 UTC 2015 x86_64\", \"bootTime\": \"2015-10-19 10:42:59 \", \"processCount\": 126, \"freeMem\": {\"units\": \"MB\", \"value\": 142}, \"localtime\": \"2015-10-19 11:49:34 \"}}}}"
+            , ", \"message\": {\"sspl_ll_msg_header\": {\"msg_version\": \"1.0.0\", \"schema_version\": \"1.0.0\", \"sspl_version\": \"1.0.0\"}, \"sensor_response_type\": {\"host_update\": {\"loggedInUsers\": [\"vagrant\"], \"runningProcessCount\": 2, \"hostId\": \""
+            , BS8.pack systemHostname
+            , "\", \"totalMem\": {\"units\": \"MB\", \"value\": 1930}, \"upTime\": 1445251379, \"uname\": \"Linux "
+            , BS8.pack systemHostname
+            , " 3.10.0-229.7.2.el7.x86_64 #1 SMP Tue Jun 23 22:06:11 UTC 2015 x86_64\", \"bootTime\": \"2015-10-19 10:42:59 \", \"processCount\": 126, \"freeMem\": {\"units\": \"MB\", \"value\": 142}, \"localtime\": \"2015-10-19 11:49:34 \"}}}}"
             ] :: ByteString
           Just (Just msg) = sensorResponseMessageSensor_response_typeHost_update
             . sensorResponseMessageSensor_response_type
