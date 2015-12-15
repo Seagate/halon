@@ -370,7 +370,7 @@ castorRules = do
         updateDriveState m0sdev M0_NC_TRANSIENT
         msa <- getSpielAddress
         forM_ msa $ \_ -> -- verify that info about mero exists.
-          (void $ withSpielRC $ \sp ->
+          (void $ withSpielRC $ \sp -> withRConfRC sp $
              liftIO $ Spiel.deviceDetach sp (d_fid m0sdev))
             `catch` (\e -> phaseLog "mero" $ "failure in spiel: " ++ show (e::SomeException))
 #endif
@@ -426,7 +426,7 @@ castorRules = do
         forM_ sd $ \m0sdev -> do
           msa <- getSpielAddress
           forM_ msa $ \_ -> do
-            _ <- withSpielRC $ \sp ->
+            _ <- withSpielRC $ \sp -> withRConfRC sp $
                liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
             updateDriveState m0sdev M0_NC_ONLINE
 #endif
