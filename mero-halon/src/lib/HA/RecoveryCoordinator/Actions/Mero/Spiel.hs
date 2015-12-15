@@ -12,6 +12,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Spiel
   ( getSpielAddress
   , withRootRC
   , withSpielRC
+  , withRConfRC
   , startRepairOperation
   , startRebalanceOperation
   , syncAction
@@ -44,7 +45,7 @@ import Control.Applicative
 import qualified Control.Distributed.Process as DP
 import Control.Exception (SomeException)
 import Control.Monad (forM_, void)
-import Control.Monad.Catch (catch)
+import Control.Monad.Catch (catch, throwM)
 
 import Data.Foldable (traverse_)
 import Data.List (nub)
@@ -84,6 +85,24 @@ withSpielRC f = do
     sc <- liftM0 $ getRPCMachine_se se >>= \rpcm -> Mero.Spiel.start rpcm
     f sc >>= \v -> liftM0 (Mero.Spiel.stop sc) >> return (Just v)
 
+-- | Try to start rconf sesion and run 'PhaseM' on the 'SpielContext' this
+-- call is required for running management commands.
+--
+-- The user is responsible for making sure that inner 'IO' actions run
+-- on the global m0 worker if needed.
+withRConfRC :: SpielContext -> PhaseM LoopState l a -> PhaseM LoopState l a
+withRConfRC spiel action = do
+  rg <- getLocalGraph
+  let mp = listToMaybe $ G.getResourcesOfType rg :: Maybe M0.Profile
+  liftProcess $ liftM0 $ do 
+     Mero.Spiel.rconfStart spiel
+     Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
+  x <- action `catch` (\e -> liftProcess $ do
+         liftM0 $ Mero.Spiel.rconfStop spiel
+         throwM (e::SomeException))
+  liftProcess (liftM0 $ Mero.Spiel.rconfStop spiel)
+  return x
+
 startRepairOperation :: M0.Pool -> PhaseM LoopState l ()
 startRepairOperation pool = catch
     (getSpielAddress >>= traverse_ (const go))
@@ -96,7 +115,7 @@ startRepairOperation pool = catch
   where
     go = do
       phaseLog "spiel" $ "Starting repair on pool " ++ show pool
-      withSpielRC $ \sc -> liftM0 $ poolRepairStart sc (M0.fid pool)
+      withSpielRC $ \sc -> withRConfRC sc $ liftM0 $ poolRepairStart sc (M0.fid pool)
 
 startRebalanceOperation :: M0.Pool -> PhaseM LoopState l ()
 startRebalanceOperation pool = catch
@@ -110,7 +129,7 @@ startRebalanceOperation pool = catch
   where
     go = do
       phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool
-      withSpielRC $ \sc -> liftM0 $ poolRebalanceStart sc (M0.fid pool)
+      withSpielRC $ \sc -> withRConfRC sc $ liftM0 $ poolRebalanceStart sc (M0.fid pool)
 
 syncAction :: Maybe UUID -> SyncToConfd -> PhaseM LoopState l ()
 syncAction meid sync = do
