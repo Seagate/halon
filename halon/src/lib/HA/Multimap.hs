@@ -14,10 +14,20 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 module HA.Multimap
-    ( Key, Value, StoreUpdate(..), getKeyValuePairs, updateStore )where
+    ( Key
+    , Value
+    , StoreUpdate(..)
+    , StoreChan(..)
+    , getKeyValuePairs
+    , updateStore
+    ) where
 
 import Prelude hiding ((<$>))
+import Control.Concurrent.STM.TChan
 import Control.Distributed.Process
+import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
+import Control.Monad (when)
+import Control.Monad.STM
 
 import Data.ByteString ( ByteString )
 import Data.Binary ( Binary, decode )
@@ -73,36 +83,40 @@ data StoreUpdate =
 
 instance Binary StoreUpdate
 
--- | @getKeyValuePairs multimapPid@ yields all the keys and values in the store.
+-- | Channel to read and write the store.
+data StoreChan =
+    StoreChan ProcessId -- Multimap process pid. It is only used to signal to
+                        -- the scheduler that messages are available in the
+                        -- following TChans.
+              (TChan ProcessId) -- Read requests. They carry the pid of the
+                                -- requestor.
+              (TChan ([StoreUpdate], Process ())) -- Update requests. They
+                        -- carry the updates plus a callback to execute when
+                        -- the update has been replicated.
+
+-- | @getKeyValuePairs mmChan@ yields all the keys and values in the store.
 --
--- @multimapPid@ is the pid of the process running
--- 'HA.Replicator.Multimap.Process.multimap'.
+-- @mmChan@ is the channel to the store.
 --
--- This may change to a streaming interface if the store turns out to be too big
--- to transfer in one piece.
---
-getKeyValuePairs :: ProcessId -> Process (Maybe [(Key,[Value])])
-getKeyValuePairs mmPid = do
+getKeyValuePairs :: StoreChan -> Process [(Key,[Value])]
+getKeyValuePairs (StoreChan mmpid rchan _) = do
     -- FIXME: Don't contact the local multimap but query the replicas directly
     self <- getSelfPid
-    usend mmPid (self, ())
+    liftIO $ atomically $ writeTChan rchan self
+    when schedulerIsEnabled $ usend mmpid ()
+    x <- expect
     -- Decoding is forced to get any related errors at this point.
-    expect >>= maybe (return Nothing)
-                     (\x -> let xs = decode x
-                             in seq (length xs) $ return $ Just xs
-                     )
+    let xs = decode x
+    seq (length xs) $ return xs
 
 -- | The type of @updateStore@. It updates the store with a batch of operations.
 --
--- The Replicator component finishes the RPC after the updates
--- have been performed.
+-- The update is asynchronous. The given callback is executed when the update
+-- completes. Only fast calls that do not throw exceptions should be used there.
 --
 -- More formally: @updateStore xs store = foldr ($) store xs@
 --
-updateStore :: ProcessId -> [StoreUpdate] -> Process (Maybe ())
-updateStore _ []       = return $ Just ()
-updateStore mmPid upds = do
-    -- FIXME: Don't contact the local multimap but query the replicas directly
-    self <- getSelfPid
-    usend mmPid (self, upds)
-    expect
+updateStore :: StoreChan -> [StoreUpdate] -> Process () -> Process ()
+updateStore (StoreChan mmpid _ wchan) upds cb = do
+    liftIO $ atomically $ writeTChan wchan (upds, cb)
+    when schedulerIsEnabled $ usend mmpid ()

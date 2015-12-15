@@ -148,7 +148,13 @@ lookupDLogServiceProcess :: NodeId -> LoopState -> Maybe (ServiceProcess Decisio
 lookupDLogServiceProcess nid ls =
     runningService (Node nid) decisionLog $ lsGraph ls
 
-initialize :: ProcessId -> Process G.Graph
+sendMsg :: Serializable a => ProcessId -> a -> PhaseM g l ()
+sendMsg pid a = liftProcess $ usend pid a
+
+decodeMsg :: ProcessEncode a => BinRep a -> PhaseM g l a
+decodeMsg = liftProcess . decodeP
+
+initialize :: StoreChan -> Process G.Graph
 initialize mm = do
     rg <- G.getGraph mm
     if G.null rg then say "Starting from empty graph."
@@ -166,7 +172,7 @@ initialize mm = do
 -- Recovery Co-ordinator                                --
 ----------------------------------------------------------
 
-buildRCState :: ProcessId -> ProcessId -> Process LoopState
+buildRCState :: StoreChan -> ProcessId -> Process LoopState
 buildRCState mm eq = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
     startRG <- G.sync rg
@@ -178,7 +184,7 @@ buildRCState mm eq = do
 -- to be initialized with 'HA.Network.Address.writeNetworkGlobalIVar'. This is
 -- done automatically if 'HA.Network.Address.startNetwork' is used to create
 -- the transport.
-makeRecoveryCoordinator :: ProcessId -- ^ pid of the replicated multimap
+makeRecoveryCoordinator :: StoreChan -- ^ channel to the replicated multimap
                         -> ProcessId -- ^ pid of the EQ
                         -> Definitions LoopState ()
                         -> Process ()

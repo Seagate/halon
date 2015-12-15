@@ -73,12 +73,13 @@ import HA.Multimap
   ( Key
   , Value
   , StoreUpdate(..)
+  , StoreChan
   , updateStore
   , getKeyValuePairs
   )
 import HA.Multimap.Implementation
 
-import Control.Distributed.Process ( ProcessId, Process )
+import Control.Distributed.Process ( Process )
 import Control.Distributed.Process.Internal.Types
     ( remoteTable, processNode )
 import Control.Distributed.Process.Serializable ( Serializable )
@@ -233,8 +234,9 @@ emptyChangeLog = ChangeLog empty empty S.empty
 
 -- | The graph
 data Graph = Graph
-  { -- | Pid of the multimap which replicates the graph.
-    grMMId :: ProcessId
+  { -- | Channel used to communicate with the multimap which replicates the
+    -- graph.
+    grMMChan :: StoreChan
     -- | Changes in the graph with respect to the version stored in the multimap.
   , grChangeLog :: !ChangeLog
     -- | The graph.
@@ -491,34 +493,35 @@ takeChangeLog g = ( grChangeLog g
 
 -- | Creates a graph from key value pairs.
 -- No key is duplicated in the input and no value appears twice for a given key.
-buildGraph :: ProcessId -> RemoteTable -> [(Key,[Value])] -> Graph
-buildGraph mmpid rt = (\hm -> Graph mmpid emptyChangeLog hm 0 S.empty 100)
+buildGraph :: StoreChan -> RemoteTable -> [(Key,[Value])] -> Graph
+buildGraph mmchan rt = (\hm -> Graph mmchan emptyChangeLog hm 0 S.empty 100)
     . M.fromList
     . map (decodeRes rt *** S.fromList . map (decodeRel rt))
 
 -- | Updates the multimap store with the latest changes to the graph.
 --
+-- Runs the given callback after the changes are replicated.
+-- Only fast calls that do not throw exceptions should be used there.
+--
 -- Runs 'garbageCollectRoot' if the 'grSinceGC' meets or passes the
 -- 'grGCThreshold' value.
-sync :: Graph -> Process Graph
-sync g =
-    updateStore (grMMId g) (fromChangeLog cl)
-      >>= return . maybe (error "sync: updating the multimap store") (const g')
+sync :: Graph -> Process () -> Process Graph
+sync g cb = do
+    let (cl, g') = takeChangeLog $ runGCIfThresholdMet g
+    updateStore (grMMChan g) (fromChangeLog cl) cb
+    return g'
   where
     runGCIfThresholdMet :: Graph -> Graph
     runGCIfThresholdMet gr = if grGCThreshold gr > 0
                                 && grSinceGC gr >= grGCThreshold gr
                              then garbageCollectRoot gr
                              else gr
-    (cl, g') = takeChangeLog $ runGCIfThresholdMet g
 
 -- | Retrieves the graph from the multimap store.
-getGraph :: ProcessId -> Process Graph
-getGraph mmpid = do
+getGraph :: StoreChan -> Process Graph
+getGraph mmchan = do
   rt <- fmap (remoteTable . processNode) ask
-  getKeyValuePairs mmpid
-    >>= maybe (error "getGraph: retriving pairs from store")
-              (return . buildGraph mmpid rt)
+  buildGraph mmchan rt <$> getKeyValuePairs mmchan
 
 fromStrict :: ByteString -> Lazy.ByteString
 fromStrict = fromChunks . (:[])

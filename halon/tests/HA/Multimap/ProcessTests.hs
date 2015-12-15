@@ -13,8 +13,8 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module HA.Multimap.ProcessTests where
 
-import HA.Multimap.Process ( multimap )
-import HA.Multimap ( StoreUpdate(..), updateStore, getKeyValuePairs )
+import HA.Multimap.Process ( startMultimap )
+import HA.Multimap ( StoreUpdate(..), updateStore, getKeyValuePairs, StoreChan )
 import HA.Multimap.Implementation ( fromList, Multimap )
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR
@@ -25,15 +25,6 @@ import HA.Replicator.Log ( MC_RG )
 import RemoteTables ( remoteTable )
 
 import Control.Distributed.Process
-  ( Process
-  , spawnLocal
-  , getSelfPid
-  , liftIO
-  , link
-  , getSelfNode
-  , catch
-  , unClosure
-  )
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
@@ -45,25 +36,35 @@ import Network.Transport ( Transport )
 import System.IO.Unsafe ( unsafePerformIO )
 import Test.Framework
 
+updateStoreWait :: StoreChan -> [StoreUpdate] -> Process ()
+updateStoreWait mm upds = do
+    (sp, rp) <- newChan
+    updateStore mm upds (sendChan sp ())
+    receiveChan rp
+
 testMultimap :: MC_RG Multimap -> Process ()
 testMultimap rGroup =
   flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
-      mm <- spawnLocalAndLink (multimap rGroup)
-      Just [] <- getKeyValuePairs mm
-      Just () <- updateStore mm []
-      Just [] <- getKeyValuePairs mm
-      Just () <- updateStore mm [ InsertMany [(b0,[b1]),(b1,[b2,b3])]
-                                , DeleteValues [(b1,[b3])]
-                                ]
-      Just kvs <- getKeyValuePairs mm
+      self <- getSelfPid
+      (mmpid, mm) <- startMultimap rGroup $ \loop -> link self >> loop
+      link mmpid
+      [] <- getKeyValuePairs mm
+      updateStoreWait mm []
+      [] <- getKeyValuePairs mm
+      (sp, rp) <- newChan
+      updateStore mm [ InsertMany [(b0,[b1]),(b1,[b2,b3,b4])]
+                     , DeleteValues [(b1,[b3])]
+                     ] $ sendChan sp ()
+      updateStore mm [ DeleteValues [(b1,[b4])] ] $ sendChan sp ()
+      receiveChan rp
+      receiveChan rp
+      kvs <- getKeyValuePairs mm
       assert $ fromList kvs == fromList [(b0,[b1]),(b1,[b2])]
       liftIO $ putMVar mdone ()
 
   where
 
-    spawnLocalAndLink p = getSelfPid >>= spawnLocal . (>>p) . link
-
-    b0:b1:b2:b3:_ = map (pack . ('b':) . show) [(0::Int)..]
+    b0:b1:b2:b3:b4:_ = map (pack . ('b':) . show) [(0::Int)..]
 
 {-# NOINLINE mdone #-}
 mdone :: MVar ()

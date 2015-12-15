@@ -30,6 +30,7 @@ module HA.RecoveryCoordinator.Actions.Core
   , whenM
   ) where
 
+import HA.Multimap (StoreChan)
 import qualified HA.ResourceGraph as G
 import HA.Resources
   ( Cluster(..)
@@ -65,7 +66,7 @@ data LoopState = LoopState {
     lsGraph    :: G.Graph -- ^ Graph
   , lsFailMap  :: Map.Map (ServiceName, Node) Int
     -- ^ Failed reconfiguration count
-  , lsMMPid    :: ProcessId -- ^ Replicated Multimap pid
+  , lsMMChan   :: StoreChan -- ^ Replicated Multimap channel
   , lsEQPid    :: ProcessId -- ^ EQ pid
   , lsHandled  :: S.Set UUID
     -- ^ Set of HAEvent uuid we've already handled.
