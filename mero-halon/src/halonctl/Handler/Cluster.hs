@@ -15,9 +15,8 @@ import HA.EventQueue.Producer (promulgateEQ)
 import qualified HA.Resources.Castor.Initial as CI
 
 #ifdef USE_MERO
-import HA.Resources.Mero (SpielAddress(..), SyncToConfd(..))
+import HA.Resources.Mero (SyncToConfd(..))
 
-import Control.Applicative (many, optional)
 import Options.Applicative ((<>), (<|>))
 #else
 import Options.Applicative ((<>))
