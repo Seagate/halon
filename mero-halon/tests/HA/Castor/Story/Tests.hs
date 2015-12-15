@@ -54,7 +54,8 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Hashable (Hashable)
 import qualified Data.Set as S
 import Data.Typeable
-import Data.Text (pack)
+import Data.Text (append, pack)
+import Data.Text.Encoding (decodeUtf8)
 import Data.Defaultable
 
 import GHC.Generics (Generic)
@@ -121,6 +122,8 @@ mkTests = do
           testSMARTNoResponse transport
         , testSuccess "Drive failure removal reported by SSPL" $
           testDriveRemovedBySSPL transport
+        , testSuccess "Metadata drive failure reported by IEM" $
+          testMetadataDriveFailed transport
         ]
 
 run :: Transport
@@ -595,3 +598,33 @@ testDynamicPVer transport = run transport interceptor test where
     let [disk2] = G.connectedTo sdev2 M0.IsOnHardware rg2 :: [M0.Disk]
     checkPVerExistence rg1 (S.fromList . fmap M0.fid $ [disk, disk2]) False
     checkPVerExistence rg2 (S.fromList . fmap M0.fid $ [disk, disk2]) True
+
+-- | Test that we respond correctly to a notification that a RAID device
+--   has failed by sending an IEM.
+testMetadataDriveFailed :: Transport -> IO ()
+testMetadataDriveFailed transport = run transport interceptor test where
+  interceptor _rc _str = return ()
+  test (TestArgs _ _ rc) rmq _ = do
+    usend rmq $ MQBind "halon_sspl" "halon_sspl" "sspl_ll"
+    usend rmq $ MQBind "sspl_iem" "sspl_iem" "sspl_ll"
+    usend rmq . MQSubscribe "sspl_iem" =<< getSelfPid
+    subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data)))
+
+    let
+      host = "primus.example.com"
+      raidData = mkResponseRaidData host "U_"
+      message = LBS.toStrict $ encode
+                               $ mkSensorResponse
+                               $ emptySensorMessage {
+                                  sensorResponseMessageSensor_response_typeRaid_data = Just raidData
+                                }
+    usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
+    Just{} <- expectTimeout 1000000 :: Process (Maybe (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data))))
+    debug "Raid_data message processed by RC"
+    expectTimeout 1000000 >>= \case
+      Just (MQMessage _ msg) ->
+        liftIO $ assertEqual "IEM should be correct"
+                             ("Metadata drive failure on host " `append` host)
+                             (decodeUtf8 msg)
+      Nothing -> error "No message delivered to SSPL."
+
