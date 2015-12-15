@@ -507,6 +507,7 @@ castorRules = do
         -- Check that we have loaded all required node information.
         _meminfo <- case minfo of
            Nothing -> do
+             phaseLog "debug" "no information about host stats - loading"
              liftProcess $ void $ spawnLocal $ do
                _ <- spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
                return ()
@@ -522,6 +523,7 @@ castorRules = do
                   continue new_client
                 Just fs -> return fs
         -- Start mero service
+        phaseLog "debug" $ "starting m0 process on " ++ show node
         liftProcess $
           promulgateWait $ encodeP $ ServiceStartRequest Start (Node nid) m0d
             (MeroConf (ip ++ haAddress) (ip ++ rmsAddress)) []
@@ -595,7 +597,6 @@ castorRules = do
         publish $ NewMeroClientProcessed host
 
       start new_client Nothing
-
   where
     goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
       registerRack rack
