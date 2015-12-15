@@ -92,7 +92,11 @@ withSpielRC f = do
 -- on the global m0 worker if needed.
 withRConfRC :: SpielContext -> PhaseM LoopState l a -> PhaseM LoopState l a
 withRConfRC spiel action = do
-  liftProcess (liftM0 $ Mero.Spiel.rconfStart spiel)
+  rg <- getLocalGraph
+  let mp = listToMaybe $ G.getResourcesOfType rg :: Maybe M0.Profile
+  liftProcess $ liftM0 $ do 
+     Mero.Spiel.rconfStart spiel
+     Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
   x <- action `catch` (\e -> liftProcess $ do
          liftM0 $ Mero.Spiel.rconfStop spiel
          throwM (e::SomeException))
