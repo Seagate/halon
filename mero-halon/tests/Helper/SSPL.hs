@@ -6,6 +6,7 @@ module Helper.SSPL
   , mkSensorResponse
   , mkResponseDriveManager
   , mkResponseHPI
+  , mkHpiMessage
   ) where
 
 import Data.Text (Text)
@@ -79,11 +80,12 @@ mkResponseDriveManager enclosure serial idx status =
     }
 
 mkResponseHPI :: Text -- ^ Host ID of node
+              -> Text -- ^ Enclosure name
               -> Integer -- ^ Location number of drive
               -> Text -- ^ Drive identifier (UUID)
               -> Text -- ^ wwn of the drive
               -> SSPL.SensorResponseMessageSensor_response_type
-mkResponseHPI hostid location uuid wwn =
+mkResponseHPI hostid enclosure location uuid wwn =
    emptySensorMessage
      { SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpi =
          Just $ emptyHPIMessage
@@ -91,5 +93,20 @@ mkResponseHPI hostid location uuid wwn =
            , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiLocation = location
            , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId = uuid
            , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = wwn
+           , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN = enclosure
            }
      }
+
+mkHpiMessage :: Text -- ^ Host ID of node
+             -> Text -- ^ Enclosure name
+             -> Integer -- ^ Location number of drive
+             -> Text -- ^ Drive identifier (UUID)
+             -> Text -- ^ wwn of the drive
+             -> SSPL.SensorResponseMessageSensor_response_typeDisk_status_hpi
+mkHpiMessage hostid enclosure location uuid wwn = emptyHPIMessage
+  { SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiHostId = hostid
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiLocation = location
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId = uuid
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = wwn
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN = enclosure
+  }

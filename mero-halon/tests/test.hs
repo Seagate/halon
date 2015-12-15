@@ -39,13 +39,6 @@ import Control.Exception
 
 #ifdef USE_MERO
 import Mero
-import Control.Monad (when)
-import Data.Maybe (catMaybes)
-import GHC.Environment (getFullArgs)
-import System.Directory
-import System.Exit
-import System.FilePath
-import System.Process
 #endif
 
 #ifdef USE_RPC
@@ -108,23 +101,39 @@ ut _host transport breakConnection = do
       , HA.Castor.Story.NonMero.tests transport
 #endif
 #ifdef USE_MERO
-      , testGroup "Castor" $
-        HA.Castor.Tests.tests _host transport
-      , testGroup "DriveFailure" $
-        driveFailureTests transport
-      , testCase "RCsyncToConfd" $
-          HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd _host transport
-      , testCase "RCToleratesRejoins" $
-          HA.Test.Disconnect.testRejoin _host transport breakConnection
+      , testGroup "Castor" $ HA.Castor.Tests.tests _host transport
+#else
+      , testGroup "Castor [disabled by compilation flags]" []
+#endif
+#ifdef USE_MERO
+      , testGroup "DriveFailure" $ driveFailureTests transport
+#else
+      , testGroup "DriveFailure [disabled by compilation flags]" []
+#endif
+#ifdef USE_MERO
       , testCase "RCToleratesRejoinsTimeout" $
           HA.Test.Disconnect.testRejoinTimeout _host transport breakConnection
-#ifdef USE_MOCK_REPLICATOR
-      , HA.RecoveryCoordinator.SSPL.Tests.utTests transport
 #else
-      , testCase "RCToleratesRejoinsWithDeath" $
-          HA.Test.Disconnect.testRejoinRCDeath
-            _host transport (error "breakConnection not supplied in test")
+      , testCase "RCToleratesRejoinsTimeout [disabled by compilation flags]" $
+          const (return ()) $ HA.Test.Disconnect.testRejoinTimeout _host transport breakConnection
 #endif
+#ifdef USE_MERO
+      , testCase "RCToleratesRejoins" $
+          HA.Test.Disconnect.testRejoin _host transport breakConnection
+#else 
+      , testCase "RCToleratesRejoins [disabled by compilation clags]" $
+          const (return ()) $ HA.Test.Disconnect.testRejoin _host transport breakConnection
+#endif
+#if defined(USE_MERO) && defined(USE_MOCK_REPLICATOR)
+      , HA.RecoveryCoordinator.SSPL.Tests.utTests transport
+#endif
+#if defined(USE_MERO) && defined(USE_MOCK_REPLICATOR)
+      , testCase "RCToleratesRejoinsWithDeath" $
+          HA.Test.Disconnect.testRejoinRCDeath _host transport breakConnection
+#else
+      , testCase "RCToleratesRejoinsWithDeath [disabled by compilation flags]" $
+          const (return ()) $
+            HA.Test.Disconnect.testRejoinRCDeath _host transport (error "breakConnection not supplied in test")
 #endif
 #if !defined(USE_RPC) && !defined(USE_MOCK_REPLICATOR)
       , testCase "RCToleratesDisconnections" $
@@ -183,28 +192,9 @@ runTests tests = do
         =<< tests host0 transport connectionBreak
 
 main :: IO ()
-main = do
+main = prepare $ runTests ut where
 #ifdef USE_MERO
-  args <- getFullArgs
-  prog <- getExecutablePath
-  -- test if we have root privileges
-  ((userid, _): _ ) <- reads <$> readProcess "id" ["-u"] ""
-  when (userid /= (0 :: Int)) $ do
-    -- change directory so mero files are produced under the dist folder
-    let testDir = takeDirectory (takeDirectory $ takeDirectory prog)
-                </> "test"
-    createDirectoryIfMissing True testDir
-    setCurrentDirectory testDir
-    putStrLn $ "Changed directory to: " ++ testDir
-    -- Invoke again with root privileges
-    putStrLn $ "Calling test with sudo ..."
-    mld <- fmap ("LD_LIBRARY_PATH=" ++) <$> lookupEnv "LD_LIBRARY_PATH"
-    mtl <- fmap ("TEST_LISTEN=" ++) <$> lookupEnv "TEST_LISTEN"
-    putStrLn $ show $ "sudo" : catMaybes [mld, mtl] ++ prog : args
-    callProcess "sudo" $ catMaybes [mld, mtl] ++ prog : args
-    exitSuccess
-  when (userid == (0 :: Int)) $ do
-    withM0 $ runTests ut
+  prepare = withM0
 #else
-  runTests ut
+  prepare = id
 #endif

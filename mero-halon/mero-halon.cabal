@@ -430,10 +430,12 @@ Test-Suite unit-tests
                     HA.Test.SSPL
                     HA.Castor.Story.NonMero
                     Helper.SSPL
+                    Helper.Environment
+                    Helper.InitialData
                     RemoteTables
                     TestRunner
 
-  Ghc-Options: -threaded -Wall
+  Ghc-Options: -threaded -Wall -rtsopts -with-rtsopts=-T
 
   if flag(maintainer)
     Ghc-Options: -Werror
@@ -484,7 +486,7 @@ Test-Suite unit-tests
                     uuid,
                     time
   if flag(mero)
-      Build-Depends: rpclite, syb
+      Build-Depends: rpclite, syb, unix, process
       CPP-Options:    -DUSE_MERO
 
   if flag(rpc)
@@ -510,10 +512,12 @@ Test-Suite integration-tests
                     HA.Castor.Story.Tests
                     HA.Castor.Tests
                     Helper.SSPL
+                    Helper.Environment
+                    Helper.InitialData
 
   Main-Is:          test.hs
 
-  Ghc-Options: -threaded -Wall -rtsopts
+  Ghc-Options: -threaded -Wall -rtsopts -with-rtsopts=-T
 
   if flag(maintainer)
     Ghc-Options: -Werror
@@ -569,7 +573,9 @@ Test-Suite integration-tests
   if flag(mero)
       Build-Depends:  confc,
                       rpclite,
-                      syb
+                      syb,
+                      unix,
+                      process
       CPP-Options:    -DUSE_MERO
 
 Test-Suite scheduler-tests
@@ -581,6 +587,8 @@ Test-Suite scheduler-tests
                     HA.Castor.Tests
                     HA.Test.Disconnect
                     Helper.SSPL
+                    Helper.Environment
+                    Helper.InitialData
                     RemoteTables
                     TestRunner
   Main-Is:          scheduler-tests.hs
@@ -630,7 +638,8 @@ Test-Suite scheduler-tests
   if flag(mero)
     CPP-Options:    -DUSE_MERO
     Build-Depends:  confc,
-                    rpclite
+                    rpclite,
+                    process
 
 Test-Suite test-start-service-local
   Type:             exitcode-stdio-1.0
@@ -682,3 +691,71 @@ benchmark halonpings
                    distributed-commands
   else
     Buildable:     False
+
+Test-Suite tests-mero-integration
+  Type:             exitcode-stdio-1.0
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   tests
+  Main-Is:          tests-mero-integration.hs
+  Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
+                    HA.Castor.Story.Tests
+                    HA.Castor.Tests
+                    Helper.Environment
+                    Helper.SSPL
+                    TestRunner
+                    RemoteTables
+
+  Ghc-Options:      -threaded -Wall -rtsopts
+  CPP-Options:      -DMC_RG=RLogGroup
+  Other-extensions:   RankNTypes
+                      RecordWildCards
+                      CPP
+                      TemplateHaskell
+                      ScopedTypeVariables
+                      RecursiveDo
+                      LambdaCase
+                      TupleSections
+                      OverloadedStrings
+                      DeriveGeneric
+                      GeneralizedNewtypeDeriving
+  if flag(debug)
+    Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
+
+  if flag(mero)
+      Build-Depends:    base >= 4.5,
+                        halon,
+                        mero-halon,
+                        distributed-process-scheduler,
+                        distributed-process-test,
+                        network-transport,
+                        network-transport-inmemory,
+                        cep,
+                        confc,
+                        rpclite,
+                        sspl,
+                        aeson,
+                        amqp,
+                        binary,
+                        bytestring,
+                        containers,
+                        hashable,
+                        options-schema,
+                        process,
+                        random,
+                        network,
+                        syb,
+                        text,
+                        tasty,
+                        tasty-files,
+                        tasty-hunit,
+                        unix,
+                        directory
+      CPP-Options:    -DUSE_MERO
+  else
+      Buildable:        False
+                    
+  if flag(rpc)
+      Build-Depends: network-transport-rpc
+      CPP-Options:    -DUSE_RPC
+  else
+      Build-Depends: network-transport-tcp >= 0.3

@@ -444,16 +444,22 @@ locateStorageDeviceOnHost :: Host
                           -> StorageDevice
                           -> PhaseM LoopState l ()
 locateStorageDeviceOnHost host dev = modifyLocalGraph $ \rg -> do
+  let menc = listToMaybe (G.connectedFrom Has host rg :: [Enclosure])
   phaseLog "rg" $ "Registering storage device: "
               ++ show dev
               ++ " on host "
               ++ show host
+              ++ (case menc of 
+                    Nothing -> ""
+                    Just e  -> " (" ++ show e ++ ")")
 
   let rg' = G.newResource host
         >>> G.newResource dev
         >>> G.connect Cluster Has host
         >>> G.connect host Has dev
-          $ rg
+        $ case menc of
+            Nothing -> rg
+            Just e  -> G.connect e Has dev rg 
 
   return rg'
 
