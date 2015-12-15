@@ -40,6 +40,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , findEnclosureStorageDevices
   , findHostStorageDevices
   , lookupStorageDeviceInEnclosure
+  , lookupStorageDeviceOnHost
     -- ** Querying device properties
   , findStorageDeviceIdentifiers
   , hasStorageDeviceIdentifier
@@ -418,6 +419,17 @@ lookupStorageDeviceInEnclosure enc ident = do
     return $ listToMaybe
            [ device
            | device <- G.connectedTo  enc  Has rg :: [StorageDevice]
+           , G.isConnected device Has ident rg :: Bool
+           ]
+
+lookupStorageDeviceOnHost :: Host
+                          -> DeviceIdentifier
+                          -> PhaseM LoopState l (Maybe StorageDevice)
+lookupStorageDeviceOnHost host ident = do
+    rg <- getLocalGraph
+    return $ listToMaybe
+           [ device
+           | device <- G.connectedTo  host Has rg :: [StorageDevice]
            , G.isConnected device Has ident rg :: Bool
            ]
 

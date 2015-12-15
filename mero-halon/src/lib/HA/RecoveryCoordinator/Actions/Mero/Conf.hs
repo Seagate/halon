@@ -101,11 +101,13 @@ initialiseConfInRG = getFilesystem >>= \case
         >>> ( foldl' (.) id
               $ fmap (G.connect m0r M0.IsParentOf) m0e)
     mirrorEncl :: Enclosure -> PhaseM LoopState l M0.Enclosure
-    mirrorEncl r = do
-      m0r <- M0.Enclosure <$> newFid (Proxy :: Proxy M0.Enclosure)
-      modifyLocalGraph $ return
-                       . (G.newResource m0r >>> G.connectUnique m0r M0.At r)
-      return m0r
+    mirrorEncl r = lookupEnclosureM0 r >>= \case
+      Just r -> return r
+      Nothing -> do
+         m0r <- M0.Enclosure <$> newFid (Proxy :: Proxy M0.Enclosure)
+         modifyLocalGraph $ return
+           . (G.newResource m0r >>> G.connectUnique m0r M0.At r)
+         return m0r
 
 -- | Load Mero servers (e.g. Nodes, Processes, Services, Drives) into conf
 --   tree.
@@ -182,11 +184,19 @@ loadMeroServers fs = mapM_ goHost where
                , DIPath m0d_path
                ]
     in do
-      m0sdev <- mkSDev <$> newFid (Proxy :: Proxy M0.SDev)
-      m0disk <- M0.Disk <$> newFid (Proxy :: Proxy M0.Disk)
-      sdev <- StorageDevice <$> liftIO nextRandom
-      mapM_ (identifyStorageDevice sdev) devIds
-      locateStorageDeviceOnHost host sdev
+      sdev <- lookupStorageDeviceOnHost host (DIWWN m0d_wwn) >>= \case
+        Just sdev -> return sdev
+        Nothing -> do
+          sdev <- StorageDevice <$> liftIO nextRandom
+          mapM_ (identifyStorageDevice sdev) devIds
+          locateStorageDeviceOnHost host sdev
+          return sdev
+      m0sdev <- lookupStorageDeviceSDev sdev >>= \case
+        Just m0sdev -> return m0sdev
+        Nothing -> mkSDev <$> newFid (Proxy :: Proxy M0.SDev)
+      m0disk <- lookupSDevDisk m0sdev >>= \case
+        Just m0disk -> return m0disk
+        Nothing -> M0.Disk <$> newFid (Proxy :: Proxy M0.Disk)
       markDiskPowerOn sdev
       modifyGraph
           $ G.newResource m0sdev
@@ -273,6 +283,10 @@ getSDevPools sdev = do
               ]
 
     return ps
+
+lookupEnclosureM0 :: Enclosure -> PhaseM LoopState l (Maybe M0.Enclosure)
+lookupEnclosureM0 enc =
+  listToMaybe . G.connectedFrom M0.At enc <$> getLocalGraph
 
 --------------------------------------------------------------------------------
 -- Pool versions and failure sets
