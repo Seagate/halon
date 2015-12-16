@@ -15,7 +15,7 @@ import Control.Distributed.Process.Closure (mkStatic, remotable)
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable (SerializableDict(..))
 
-import Control.Exception (SomeException, throwIO)
+import Control.Exception (SomeException, AsyncException(..), fromException)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import qualified Data.HashSet as S
@@ -118,9 +118,13 @@ rGroupTest transport g p =
       rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
                   >>= unClosure >>= (`asTypeOf` return g)
       (mmpid, mmchan) <- startMultimap rGroup $ \loop -> do
-        catch loop $ \e -> liftIO (print (e :: SomeException) >> throwIO e)
+        catch loop (liftIO . handler)
       link mmpid
       p mmchan
+  where
+    handler :: SomeException -> IO ()
+    handler e | Just ThreadKilled <- fromException e = return ()
+              | otherwise = print e
 
 --
 -- NodeA 1       NodeA 2
