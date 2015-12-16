@@ -84,7 +84,7 @@ import Network.Transport (Transport(..))
 import Control.Monad (void, join)
 import Data.Defaultable
 import Data.List (isInfixOf)
-import Network.CEP (defineSimple, liftProcess, subscribe, Definitions , Published(..), Logs(..), phaseLog)
+import Network.CEP (defineSimple, liftProcess, subscribe, Definitions , Published(..), Logs(..))
 import Test.Tasty.HUnit (assertBool)
 import TestRunner
 import Data.Binary
