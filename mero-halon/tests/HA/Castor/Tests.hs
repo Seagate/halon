@@ -23,7 +23,9 @@ import Control.Monad (forM_, join)
 
 import Data.List (sort, unfoldr, isPrefixOf, findIndex)
 import qualified Data.Map.Strict as Map
+import Data.Monoid ((<>))
 import qualified Data.Set as Set
+import qualified Data.HashSet as HS
 
 import Network.Transport (Transport)
 import Network.CEP
@@ -210,6 +212,8 @@ largeInitialData host transport = let
       me <- getSelfNode
       ls <- emptyLoopState pid (nullProcessId me)
       (ls', _) <- run ls $ do
+        modifyLocalGraph $ \g ->
+          return (g { grRootNodes = grRootNodes g <> HS.singleton (Res Cluster) })
         rg <- getLocalGraph
         -- TODO: the interface address is hard-coded here: currently we
         -- don't use it so it doesn't impact us but in the future we

@@ -497,17 +497,20 @@ buildGraph mmpid rt = (\hm -> Graph mmpid emptyChangeLog hm 0 S.empty 100)
     . map (decodeRes rt *** S.fromList . map (decodeRel rt))
 
 -- | Updates the multimap store with the latest changes to the graph.
+--
+-- Runs 'garbageCollectRoot' if the 'grSinceGC' meets or passes the
+-- 'grGCThreshold' value.
 sync :: Graph -> Process Graph
 sync g =
     updateStore (grMMId g) (fromChangeLog cl)
       >>= return . maybe (error "sync: updating the multimap store") (const g')
   where
-    runGC :: Graph -> Graph
-    runGC gr = if grGCThreshold gr > 0
-                  && grSinceGC gr >= grGCThreshold gr
-               then garbageCollectRoot gr
-               else gr
-    (cl, g') = takeChangeLog $ runGC g
+    runGCIfThresholdMet :: Graph -> Graph
+    runGCIfThresholdMet gr = if grGCThreshold gr > 0
+                                && grSinceGC gr >= grGCThreshold gr
+                             then garbageCollectRoot gr
+                             else gr
+    (cl, g') = takeChangeLog $ runGCIfThresholdMet g
 
 -- | Retrieves the graph from the multimap store.
 getGraph :: ProcessId -> Process Graph
