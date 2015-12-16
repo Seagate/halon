@@ -130,3 +130,8 @@ By default, `halonctl` attempts to listen on the local hostname. This
 will fail if there is not an entry for the FQDN in `/etc/hosts`. In
 this case, you can either add such an entry or use the `-l` option to
 specify an alternate listen address.
+
+Also by default, Halon attempts to verify that it is running against the
+same version of the Mero library that it was built with. This check can
+prevent unexpected bugs, but may occasionally inhibit testing. You can disable
+this check by setting the `DISABLE_MERO_COMPAT_CHECK` environment variable.
