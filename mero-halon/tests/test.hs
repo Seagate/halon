@@ -97,8 +97,10 @@ ut _host transport breakConnection = do
       , testGroup "Autoboot" $
         HA.Autoboot.Tests.tests transport
       , HA.Test.Cluster.tests transport
-#ifdef USE_MOCK_REPLICATOR
+#if defined(USE_MOCK_REPLICATOR) && !defined(USE_MERO)
       , HA.Castor.Story.NonMero.tests transport
+#else
+      , testCase "Castor story non mero tests are disabled" $ return ()
 #endif
 #ifdef USE_MERO
       , testGroup "Castor" $ HA.Castor.Tests.tests _host transport
