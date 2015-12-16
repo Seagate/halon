@@ -47,7 +47,7 @@ cutLinksAsUser :: String -> [HostName] -> [HostName] -> IO ()
 cutLinksAsUser user from to = do
     systemThereAsUser user to $
       "for h in " ++ unwords from ++
-        "; do iptables -I INPUT -s $h -j DROP; done"
+        "; do iptables -I INPUT -s $h -j DROP; done 2>&1"
 
 -- | Recover communications from some hosts to others, undoing the effect of
 -- 'cutLinksAsUser'.
@@ -55,4 +55,4 @@ reenableLinksAsUser :: String -> [HostName] -> [HostName] -> IO ()
 reenableLinksAsUser user from to =
     systemThereAsUser user to $
       "for h in " ++ unwords from ++
-        "; do iptables -D INPUT -s $h -p all -j DROP; true; done"
+        "; do iptables -D INPUT -s $h -p all -j DROP; true; done 2>&1"
