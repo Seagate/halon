@@ -7,6 +7,7 @@
 module Main where
 
 import qualified HA.RecoveryCoordinator.Mero.Tests
+import qualified HA.RecoveryCoordinator.Tests
 import qualified HA.Autoboot.Tests
 #ifdef USE_MERO
 #ifdef USE_MOCK_REPLICATOR
@@ -67,37 +68,13 @@ ut _host transport breakConnection = do
 #else
     testGroup "it"
 #endif
-      [ testCase "RCServiceRestarting" $
-          HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport
-
-      , testCase "RCServiceNOTRestarting" $
-          HA.RecoveryCoordinator.Mero.Tests.testServiceNotRestarting transport
-      , testCase "RCHAEventsGotTrimmed" $
-          HA.RecoveryCoordinator.Mero.Tests.testEQTrimming transport
-      , testCase "RGHostResources" $
-          HA.RecoveryCoordinator.Mero.Tests.testHostAddition transport
-      , testCase "RGClusterStatus" $
-          HA.RecoveryCoordinator.Mero.Tests.testClusterStatus transport
-      , testCase "RGTrimUnknownMessage" $
-          HA.RecoveryCoordinator.Mero.Tests.testEQTrimUnknown transport
-      , testCase "RGDriveResources" $
-          HA.RecoveryCoordinator.Mero.Tests.testDriveAddition transport
-      , testCase "uncleanRPCClose" $ threadDelay 2000000
-      , testCase "RCDecisionLogOutput" $
-        HA.RecoveryCoordinator.Mero.Tests.testDecisionLog transport
-      , testCase "RCServiceStopped" $
-        HA.RecoveryCoordinator.Mero.Tests.testServiceStopped transport
-      , testCase "RCNodeLocalMonitor" $
-        HA.RecoveryCoordinator.Mero.Tests.testMonitorManagement transport
-      , testCase "RCMasterMonitor" $
-        HA.RecoveryCoordinator.Mero.Tests.testMasterMonitorManagement transport
-      , testCase "RCNodeUpRace" $
-        HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
-      , testCase "RCDriveManagerUpdate" $
-        HA.RecoveryCoordinator.Mero.Tests.testDriveManagerUpdate transport
+      [ testCase "uncleanRPCClose" $ threadDelay 2000000
+      , testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport
       , testGroup "Autoboot" $
         HA.Autoboot.Tests.tests transport
       , HA.Test.Cluster.tests transport
+      , testGroup "mero" $
+          HA.RecoveryCoordinator.Mero.Tests.tests _host transport
 #if defined(USE_MOCK_REPLICATOR) && !defined(USE_MERO)
       , HA.Castor.Story.NonMero.tests transport
 #else
@@ -119,8 +96,8 @@ ut _host transport breakConnection = do
 #ifdef USE_MERO
       , testCase "RCToleratesRejoins" $
           HA.Test.Disconnect.testRejoin _host transport breakConnection
-#else 
-      , testCase "RCToleratesRejoins [disabled by compilation clags]" $
+#else
+      , testCase "RCToleratesRejoins [disabled by compilation flags]" $
           const (return ()) $ HA.Test.Disconnect.testRejoin _host transport breakConnection
 #endif
 #if defined(USE_MERO) && defined(USE_MOCK_REPLICATOR)

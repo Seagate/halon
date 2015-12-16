@@ -438,6 +438,8 @@ Test-Suite unit-tests
                     Helper.RC
                     RemoteTables
                     TestRunner
+                    HA.RecoveryCoordinator.Helpers
+                    HA.RecoveryCoordinator.Tests
 
   Ghc-Options: -threaded -Wall -rtsopts -with-rtsopts=-T
 
@@ -507,6 +509,8 @@ Test-Suite integration-tests
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
+                    HA.RecoveryCoordinator.Helpers
+                    HA.RecoveryCoordinator.Tests
                     HA.Autoboot.Tests
                     HA.Castor.Tests
                     HA.Castor.Story.Tests
@@ -599,6 +603,8 @@ Test-Suite scheduler-tests
                     Helper.RC
                     RemoteTables
                     TestRunner
+                    HA.RecoveryCoordinator.Helpers
+                    HA.RecoveryCoordinator.Tests
   Main-Is:          scheduler-tests.hs
 
   Ghc-Options: -threaded -Wall
@@ -706,6 +712,7 @@ Test-Suite tests-mero-integration
   Hs-Source-Dirs:   tests
   Main-Is:          tests-mero-integration.hs
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
+                    HA.RecoveryCoordinator.Helpers
                     HA.Castor.Story.Tests
                     HA.Castor.Tests
                     Helper.Environment

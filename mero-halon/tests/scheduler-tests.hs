@@ -7,6 +7,7 @@
 module Main where
 
 import qualified HA.Autoboot.Tests
+import qualified HA.RecoveryCoordinator.Tests
 import qualified HA.RecoveryCoordinator.Mero.Tests
 import qualified HA.Test.Disconnect
 
@@ -29,24 +30,24 @@ ut _host transport = return $
     testGroup "mero-halon" $ (:[]) $
     testGroup "scheduler"
       [ testCase "RCServiceRestarting" $
-          HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport
+          HA.RecoveryCoordinator.Tests.testServiceRestarting transport
       , testCase "RCServiceNOTRestarting" $
-          HA.RecoveryCoordinator.Mero.Tests.testServiceNotRestarting transport
+          HA.RecoveryCoordinator.Tests.testServiceNotRestarting transport
       , testCase "RCHAEventsGotTrimmed" $
-          HA.RecoveryCoordinator.Mero.Tests.testEQTrimming transport
+          HA.RecoveryCoordinator.Tests.testEQTrimming transport
       , testCase "RGHostResources" $
           HA.RecoveryCoordinator.Mero.Tests.testHostAddition transport
       , testCase "RGDriveResources" $
           HA.RecoveryCoordinator.Mero.Tests.testDriveAddition transport
       , testCase "RCServiceStopped" $
-          HA.RecoveryCoordinator.Mero.Tests.testServiceStopped transport
+          HA.RecoveryCoordinator.Tests.testServiceStopped transport
       , testCase "RCNodeLocalMonitor" $
-          HA.RecoveryCoordinator.Mero.Tests.testMonitorManagement transport
+          HA.RecoveryCoordinator.Tests.testMonitorManagement transport
       , testCase "RCMasterMonitor" $
-          HA.RecoveryCoordinator.Mero.Tests.testMasterMonitorManagement
+          HA.RecoveryCoordinator.Tests.testMasterMonitorManagement
             transport
       , testCase "RCNodeUpRace" $
-          HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
+          HA.RecoveryCoordinator.Tests.testNodeUpRace transport
       , testGroup "Autoboot" $
           HA.Autoboot.Tests.tests transport
       , testCase "RCToleratesDisconnections" $

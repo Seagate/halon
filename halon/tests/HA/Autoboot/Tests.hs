@@ -58,8 +58,7 @@ remotable [ 'dummyRC, 'rcClosure ]
 tests :: AbstractTransport -> IO [TestTree]
 tests transport =
   return [ testSuccess "autoboot-simple" $ mkAutobootTest (getTransport transport)
-         , testCaseSteps  "ignition"
-             $ testIgnition (getTransport transport)
+         , testCase  "ignition" $ testIgnition (getTransport transport)
          ]
 
 -- | Test that cluster could be automatically booted after a failure
@@ -132,9 +131,8 @@ autobootCluster sp nids = do
 
 -- | Test that ignition call will retrn supposed result.
 testIgnition :: Transport
-              -> (String -> IO ())
-              -> IO ()
-testIgnition transport step =
+             -> IO ()
+testIgnition transport =
     runTest 6 20 transport (__remoteTable $ haRemoteTable $ initRemoteTable) $
       \nids -> do
       (sp :: SendPort (), rp) <- newChan
@@ -148,24 +146,19 @@ testIgnition transport step =
                        )
           args = mkArgs False nids1
       lproc <- ask
-      liftIO $ do
-        step "autobooting cluster"
       autobootCluster sp (processNode lproc: nids)
 
       self <- getSelfPid
-      liftIO $ step "call initial ignition"
       _ <- liftIO $ forkProcess (head nids1) $ ignition args >>= usend self
       Nothing <- expect :: Process IgnitionResult
       receiveChan rp
 
-      liftIO $ step "call ignition while changing TS nodes"
       _ <- liftIO $ forkProcess (head nids1) $
              ignition (mkArgs True (head nids1: nids2)) >>= usend self
       Just (added, trackers, members, newNodes) <-
         expect :: Process IgnitionResult
 
       liftIO $ do
-        step "kill nodes in the cluster that we will remove TS from"
         forM_ (tail nids1) $ \nid -> do
           forkProcess nid $ do
             stopHalonNode
@@ -185,7 +178,6 @@ testIgnition transport step =
         assertEqual "trackers should be equal to the new set of trackers"
                     (Set.fromList (map localNodeId $ head nids1:nids2))
                     (Set.fromList trackers)
-      liftIO $ step "check replica Info Status"
       _ <- liftIO $ forkProcess (head nids1) $ do
         let t = "\treplicas:           "
         registerInterceptor $ \string -> case last $ lines string of
