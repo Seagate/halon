@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Helper.SSPL 
+module Helper.SSPL
   ( emptySensorMessage
   , emptyHPIMessage
   , emptyHostUpdate
@@ -7,6 +7,7 @@ module Helper.SSPL
   , mkResponseDriveManager
   , mkResponseHPI
   , mkHpiMessage
+  , mkResponseRaidData
   ) where
 
 import Data.Text (Text)
@@ -42,7 +43,7 @@ emptyHPIMessage = SSPL.SensorResponseMessageSensor_response_typeDisk_status_hpi
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDrawer = 42
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiManufacturer = "seagate"
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiHostId = "SOMEHOST"
-  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiLocation = 0 
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiLocation = 0
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId = "deviceId"
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber = "serial"
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = "wwn"
@@ -51,7 +52,7 @@ emptyHPIMessage = SSPL.SensorResponseMessageSensor_response_typeDisk_status_hpi
   }
 
 emptyHostUpdate :: Text -> SSPL.SensorResponseMessageSensor_response_typeHost_update
-emptyHostUpdate hostid = 
+emptyHostUpdate hostid =
   SSPL.SensorResponseMessageSensor_response_typeHost_update
     { SSPL.sensorResponseMessageSensor_response_typeHost_updateRunningProcessCount = Nothing
     , SSPL.sensorResponseMessageSensor_response_typeHost_updateUname               = Nothing
@@ -110,3 +111,11 @@ mkHpiMessage hostid enclosure location uuid wwn = emptyHPIMessage
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = wwn
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN = enclosure
   }
+
+mkResponseRaidData :: Text -- ^ Host ID of node
+                   -> Text -- ^ Contents of /proc/mdstat
+                   -> SSPL.SensorResponseMessageSensor_response_typeRaid_data
+mkResponseRaidData host mdstat = SSPL.SensorResponseMessageSensor_response_typeRaid_data {
+    SSPL.sensorResponseMessageSensor_response_typeRaid_dataHostId = host
+  , SSPL.sensorResponseMessageSensor_response_typeRaid_dataMdstat = Just mdstat
+}

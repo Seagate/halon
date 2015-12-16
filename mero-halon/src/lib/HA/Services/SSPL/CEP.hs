@@ -289,6 +289,18 @@ ssplRulesF sspl = do
       phaseLog "rg" $ "Registered host: " ++ show host
       messageProcessed uuid
 
+  defineSimple "monitor-raid-data" $ \(HAEvent uuid (nid, srrd) _) -> let
+      host = sensorResponseMessageSensor_response_typeRaid_dataHostId srrd
+    in do
+      case sensorResponseMessageSensor_response_typeRaid_dataMdstat srrd of
+        Just x | x == "U_" || x == "_U" -> do
+          sendInterestingEvent nid $ InterestingEventMessage (
+            "Metadata drive failure on host " `T.append` host
+            )
+          phaseLog "action" $ "Sending IEM for metadata drive failure."
+        _ -> return ()
+      messageProcessed uuid
+
   -- SSPL Monitor interface data
   -- defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum) _) _ ->
   --     return $ sensorResponseMessageSensor_response_typeIf_data hum
