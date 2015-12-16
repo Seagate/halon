@@ -6,11 +6,7 @@ ENV HOME /root
 
 ENV LANG en_GB.UTF-8
 
-RUN yum install --assumeyes openssh-server
-RUN yum install --assumeyes passwd
-RUN yum install --assumeyes openssh-clients
-RUN yum install --assumeyes hostname
-RUN yum install --assumeyes psmisc
+RUN yum install --assumeyes openssh-server passwd openssh-clients hostname psmisc iptables
 
 RUN curl -O http://www.mirrorservice.org/sites/dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm
 RUN rpm --install epel-release-7-5.noarch.rpm
