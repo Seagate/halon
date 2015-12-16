@@ -74,8 +74,9 @@ remotable
 
 emptyLoopState :: ProcessId -> ProcessId -> Process LoopState
 emptyLoopState pid mmpid = do
-  g <- getGraph pid
-  return $ LoopState g Map.empty pid mmpid Set.empty
+  g' <- getGraph pid >>= \g ->
+    return (g { grRootNodes = grRootNodes g <> HS.singleton (Res Cluster) })
+  return $ LoopState g' Map.empty pid mmpid Set.empty
 
 myRemoteTable :: RemoteTable
 myRemoteTable = HA.Castor.Tests.__remoteTable remoteTable
@@ -212,8 +213,6 @@ largeInitialData host transport = let
       me <- getSelfNode
       ls <- emptyLoopState pid (nullProcessId me)
       (ls', _) <- run ls $ do
-        modifyLocalGraph $ \g ->
-          return (g { grRootNodes = grRootNodes g <> HS.singleton (Res Cluster) })
         rg <- getLocalGraph
         -- TODO: the interface address is hard-coded here: currently we
         -- don't use it so it doesn't impact us but in the future we
