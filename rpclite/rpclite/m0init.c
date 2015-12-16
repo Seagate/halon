@@ -18,7 +18,9 @@ int m0_init_wrapper () {
                     , bi->bi_git_rev_id
                     , M0_VERSION_GIT_REV_ID
              );
-      exit(1);
+      if (getenv("DISABLE_MERO_COMPAT_CHECK") == NULL) {
+        exit(1);
+      }
     }
     M0_SET0(&instance);
     return m0_init(&instance);
