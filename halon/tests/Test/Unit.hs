@@ -26,8 +26,8 @@ tests transport = do
           testGroup "EQ" <$> HA.EventQueue.Tests.tests transport
         , testGroup "MM" <$> return
             [ testGroup "pure" HA.Multimap.Tests.tests
-            , testGroup "process"
-              [ HA.Multimap.ProcessTests.tests (getTransport transport) ]
+            , testGroup "process" $
+                HA.Multimap.ProcessTests.tests (getTransport transport)
             ]
         , testGroup "RS" <$> HA.RecoverySupervisor.Tests.tests transport
         , testGroup "RG" <$> HA.ResourceGraph.Tests.tests (getTransport transport)

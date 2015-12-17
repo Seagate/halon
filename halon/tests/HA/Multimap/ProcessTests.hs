@@ -29,11 +29,8 @@ import Control.Distributed.Process.Closure ( mkStatic, remotable )
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
-import Control.Concurrent ( MVar, newEmptyMVar, putMVar, takeMVar, threadDelay )
-import Control.Exception ( SomeException )
 import Data.ByteString.Char8 ( pack )
 import Network.Transport ( Transport )
-import System.IO.Unsafe ( unsafePerformIO )
 import Test.Framework
 
 updateStoreWait :: StoreChan -> [StoreUpdate] -> Process ()
@@ -42,52 +39,55 @@ updateStoreWait mm upds = do
     updateStore mm upds (sendChan sp ())
     receiveChan rp
 
-testMultimap :: MC_RG Multimap -> Process ()
-testMultimap rGroup =
-  flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
-      self <- getSelfPid
-      (mmpid, mm) <- startMultimap rGroup $ \loop -> link self >> loop
-      link mmpid
-      [] <- getKeyValuePairs mm
-      updateStoreWait mm []
-      [] <- getKeyValuePairs mm
-      (sp, rp) <- newChan
-      updateStore mm [ InsertMany [(b0,[b1]),(b1,[b2,b3,b4])]
-                     , DeleteValues [(b1,[b3])]
-                     ] $ sendChan sp ()
-      updateStore mm [ DeleteValues [(b1,[b4])] ] $ sendChan sp ()
-      receiveChan rp
-      receiveChan rp
-      kvs <- getKeyValuePairs mm
-      assert $ fromList kvs == fromList [(b0,[b1]),(b1,[b2])]
-      liftIO $ putMVar mdone ()
+testMultimapEmpty :: StoreChan -> Process ()
+testMultimapEmpty mm = do
+    [] <- getKeyValuePairs mm
+    updateStoreWait mm []
+    [] <- getKeyValuePairs mm
+    return ()
 
+testMultimapOrder :: StoreChan -> Process ()
+testMultimapOrder mm = do
+    updateStoreWait mm [ InsertMany [(b0,[b1]),(b1,[b2,b3])]
+                       , DeleteValues [(b1,[b3])]
+                       ]
+    kvs <- getKeyValuePairs mm
+    assert $ fromList kvs == fromList [(b0,[b1]),(b1,[b2])]
   where
+    b0:b1:b2:b3:_ = map (pack . ('b':) . show) [(0::Int)..]
 
-    b0:b1:b2:b3:b4:_ = map (pack . ('b':) . show) [(0::Int)..]
-
-{-# NOINLINE mdone #-}
-mdone :: MVar ()
-mdone = unsafePerformIO $ newEmptyMVar
+testMultimapAsync :: StoreChan -> Process ()
+testMultimapAsync mm = do
+    (sp, rp) <- newChan
+    updateStore mm [ InsertMany [(b0,[b1]),(b1,[b2,b3])] ] $ sendChan sp ()
+    updateStore mm [ DeleteValues [(b1,[b3])] ] $ sendChan sp ()
+    receiveChan rp
+    receiveChan rp
+    kvs <- getKeyValuePairs mm
+    assert $ fromList kvs == fromList [(b0,[b1]),(b1,[b2])]
+  where
+    b0:b1:b2:b3:_ = map (pack . ('b':) . show) [(0::Int)..]
 
 mmSDict :: SerializableDict Multimap
 mmSDict = SerializableDict
 
 remotable [ 'mmSDict ]
 
-tests :: Transport -> TestTree
-tests transport = testSuccess "multimap" . withTmpDirectory $ do
-    lnid <- newLocalNode transport
-            $ __remoteTable remoteTable
-    runProcess lnid $ do
-        nid <- getSelfNode
-        cRGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
-        pRGroup <- unClosure cRGroup
-        rGroup <- pRGroup
-        testMultimap rGroup
-    takeMVar mdone
-    -- Exit after transport stops being used.
-    -- TODO: fix closeTransport and call it here (see ticket #211).
-    -- TODO: implement closing RGroups and call it here.
-    threadDelay 2000000
-    closeLocalNode lnid
+tests :: Transport -> [TestTree]
+tests transport =
+    [ testSuccess "multimap-empty" $ setup testMultimapEmpty
+    , testSuccess "multimap-order" $ setup testMultimapOrder
+    , testSuccess "multimap-async" $ setup testMultimapAsync
+    ]
+  where
+    setup action = withTmpDirectory $
+      withLocalNode transport (__remoteTable remoteTable) $ \lnid -> do
+        runProcess lnid $ do
+          nid <- getSelfNode
+          cRGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
+          pRGroup <- unClosure cRGroup
+          rGroup <- pRGroup :: Process (MC_RG Multimap)
+          self <- getSelfPid
+          (mmpid, mmchan) <- startMultimap rGroup $ \loop -> link self >> loop
+          link mmpid
+          action mmchan
