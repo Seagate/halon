@@ -16,6 +16,7 @@ RUN /usr/sbin/sshd-keygen
 ADD authorized_keys /root/.ssh/
 RUN chown root.root /root/.ssh/authorized_keys
 RUN chmod go-w /root/.ssh/authorized_keys
+RUN passwd -fu root
 
 RUN sed -i 's/UsePAM yes/UsePAM no/' /etc/ssh/sshd_config
 
