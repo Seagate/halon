@@ -180,6 +180,8 @@ rcRules argv additionalRules = do
              phaseLog "info" "Configuration data was not loaded yet, skipping"
            Just{} ->
              liftProcess $ promulgateWait $ NewMeroClient (Node nid)
+#else
+        liftProcess $ promulgateWait $ NewMeroClient (Node nid)
 #endif
         finishProcessingMsg uuid
         continue end
