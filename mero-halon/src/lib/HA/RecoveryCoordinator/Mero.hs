@@ -27,6 +27,7 @@ module HA.RecoveryCoordinator.Mero
        ( module HA.RecoveryCoordinator.Actions.Core
        , module HA.RecoveryCoordinator.Actions.Hardware
        , module HA.RecoveryCoordinator.Actions.Service
+       , module HA.RecoveryCoordinator.Actions.Test
        , IgnitionArguments(..)
        , GetMultimapProcessId(..)
        , ack
@@ -39,7 +40,6 @@ module HA.RecoveryCoordinator.Mero
        , lookupDLogServiceProcess
        , sendToMonitor
        , getMultimapProcessId
-       , getNoisyPingCount
        , sendToMasterMonitor
        , rcInitRule
        , handled
@@ -57,7 +57,6 @@ import HA.Resources
 import HA.Service
 import HA.Services.DecisionLog
 import HA.Services.Monitor
-import HA.Services.Noisy
 
 import qualified HA.EQTracker as EQT
 
@@ -65,6 +64,7 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Service
 import HA.RecoveryCoordinator.Actions.Monitor
+import HA.RecoveryCoordinator.Actions.Test
 import qualified HA.Resources.Castor as M0
 #ifdef USE_MERO
 import qualified HA.Resources.Mero as M0
@@ -187,25 +187,6 @@ ack pid = liftProcess $ usend pid ()
 
 getSelfProcessId :: PhaseM g l ProcessId
 getSelfProcessId = liftProcess getSelfPid
-
-getNoisyPingCount :: PhaseM LoopState l Int
-getNoisyPingCount = do
-    phaseLog "rg-query" "Querying noisy ping count."
-    rg <- getLocalGraph
-    let (rg', i) =
-          case G.connectedTo noisy HasPingCount rg of
-            [] ->
-              let nrg = G.connect noisy HasPingCount (NoisyPingCount 0) $
-                        G.newResource (NoisyPingCount 0) rg in
-              (nrg, 0)
-            pc@(NoisyPingCount iPc) : _ ->
-              let newPingCount = NoisyPingCount (iPc + 1)
-                  nrg = G.connect noisy HasPingCount newPingCount $
-                        G.newResource newPingCount $
-                        G.disconnect noisy HasPingCount pc rg in
-              (nrg, iPc)
-    putLocalGraph rg'
-    return i
 
 lookupDLogServiceProcess :: NodeId -> LoopState -> Maybe (ServiceProcess DecisionLogConf)
 lookupDLogServiceProcess nid ls =
