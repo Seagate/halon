@@ -121,14 +121,13 @@ tryRunProcessLocal transport process =
 rGroupTest :: (RGroup g, Typeable g)
            => Transport -> g Multimap -> (ProcessId -> Process ()) -> IO ()
 rGroupTest transport g p =
-    tryRunProcessLocal transport $
-      flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
-        nid <- getSelfNode
-        rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
-                    >>= unClosure >>= (`asTypeOf` return g)
-        mmpid <- spawnLocal $ catch (multimap rGroup) $
-          (\e -> liftIO $ print (e :: SomeException))
-        p mmpid
+    tryRunProcessLocal transport $ do
+      nid <- getSelfNode
+      rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
+                  >>= unClosure >>= (`asTypeOf` return g)
+      mmpid <- spawnLocal $ catch (multimap rGroup) $
+        (\e -> liftIO $ print (e :: SomeException))
+      p mmpid
 
 sampleGraph :: Graph -> Graph
 sampleGraph =
