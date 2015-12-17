@@ -200,13 +200,6 @@ rcRules argv additionalRules = do
 
       start nodeup None
 
-    -- EpochRequest
-    defineSimple "epoch-request" $
-      \(HAEvent uuid (EpochRequest pid) _) -> do
-      resp <- prepareEpochResponse
-      sendMsg pid resp
-      messageProcessed uuid
-
     defineSimple "node-status" $
       \(HAEvent uuid (NodeStatusRequest n@(Node nid) lis) _) -> do
         rg <- getLocalGraph

@@ -206,33 +206,11 @@ initialize mm = do
     -- Empty graph means cluster initialization.
     let rg' | G.null rg =
             G.newResource Cluster >>>
-            G.newResource (Epoch 0 "y = x^2" :: Epoch ByteString) >>>
-            G.connect Cluster Has (Epoch 0 "y = x^2" :: Epoch ByteString) >>>
             (\g -> g { G.grRootNodes =
                        G.grRootNodes g <> HS.singleton (G.Res Cluster) })
             $ rg
             | otherwise = rg
     return rg'
-
-prepareEpochResponse :: PhaseM LoopState l EpochResponse
-prepareEpochResponse = do
-    rg <- getLocalGraph
-
-    let edges :: [G.Edge Cluster Has (Epoch ByteString)]
-        edges = G.edgesFromSrc Cluster rg
-        G.Edge _ Has target = head edges
-
-    return $ EpochResponse $ epochId target
-
-getEpochId :: PhaseM LoopState l Word64
-getEpochId = do
-    rg <- getLocalGraph
-
-    let edges :: [G.Edge Cluster Has (Epoch ByteString)]
-        edges = G.edgesFromSrc Cluster rg
-        G.Edge _ Has target = head edges
-
-    return $ epochId target
 
 getMultimapProcessId :: PhaseM LoopState l ProcessId
 getMultimapProcessId = fmap lsMMPid $ get Global
