@@ -84,6 +84,31 @@ data Dummy = Dummy String deriving (Typeable,Generic)
 
 instance Binary Dummy
 
+withHalonNodes :: ProcessId -> [LocalNode] -> Process a -> Process a
+withHalonNodes self ms act = bracket_ startNodes stopNodes act
+  where
+    startNodes = do
+      liftIO $ forM_ ms $ \m -> forkProcess m $ do
+        startupHalonNode rcClosure
+        usend self ((), ())
+      forM_ ms $ \_ -> do
+        ((), ()) <- expect
+        return ()
+
+    stopNodes = do
+      liftIO $ forM_ ms $ \m -> forkProcess m $ do
+        stopHalonNode
+        usend self ((), ())
+      forM_ ms $ \_ -> do
+        ((), ()) <- expect
+        return ()
+mkIgnitionArgs :: [LocalNode]
+               -> (IgnitionArguments -> Closure (ProcessId -> ProcessId -> Process ()))
+               -> (Bool, [NodeId], Int, Int, Closure (ProcessId -> ProcessId -> Process ()), Int)
+mkIgnitionArgs ns rc =
+  ( False, map localNodeId ns , 1000, 1000000
+  , rc $ IgnitionArguments (map localNodeId ns), 8*1000000 )
+
 -- | Tests that tracking station failures allow the cluster to proceed.
 --
 -- * Start a satellite and three tracking station nodes.
@@ -104,14 +129,7 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
                                                         connectionBreak
   testSplit transport controlled 4 10 $ \[m0,m1,m2,m3]
                                          splitNet restoreNet -> do
-    let args = ( False :: Bool
-               , map localNodeId [m0,m1,m2]
-               , 1000 :: Int
-               , 1000000 :: Int
-               , $(mkClosure 'recoveryCoordinator) $
-                   IgnitionArguments (map localNodeId [m0,m1,m2])
-               , 8*1000000 :: Int
-               )
+    let args = mkIgnitionArgs [m0, m1, m2] $(mkClosure 'recoveryCoordinator)
     self <- getSelfPid
 
     liftIO $ forM_ [m0, m1, m2] $ \m -> forkProcess m $ do
@@ -124,20 +142,7 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
     forM_ [m0, m1, m2] $ \_ -> do
       ((), ()) <- expect
       return ()
-    bracket_ (do liftIO $ forM_ [m0, m1, m2, m3] $ \m -> forkProcess m $ do
-                   startupHalonNode rcClosure
-                   usend self ((), ())
-                 forM_ [m0, m1, m2, m3] $ \_ -> do
-                   ((), ()) <- expect
-                   return ()
-             )
-             (do liftIO $ forM_ [m0, m1, m2, m3] $ \m -> forkProcess m $ do
-                   stopHalonNode
-                   usend self ((), ())
-                 forM_ [m0, m1, m2, m3] $ \_ -> do
-                   ((), ()) <- expect
-                   return ()
-             ) $ do
+    withHalonNodes self [m0, m1, m2, m3] $ do
       let nids = map localNodeId [m0, m1, m2]
       -- ignition on 3 nodes
       void $ liftIO $ forkProcess m1 $ do
@@ -201,14 +206,7 @@ testRejoinTimeout _host baseTransport connectionBreak = withTmpDirectory $ do
                                                         connectionBreak
   testSplit transport controlled 2 5 $ \[m0,m1]
                                         splitNet restoreNet -> do
-    let args = ( False :: Bool
-               , map localNodeId [m1]
-               , 1000 :: Int
-               , 1000000 :: Int
-               , $(mkClosure 'recoveryCoordinator) $
-                   IgnitionArguments [localNodeId m1]
-               , 8*1000000 :: Int
-               )
+    let args = mkIgnitionArgs [m1] $(mkClosure 'recoveryCoordinator)
     self <- getSelfPid
     void . liftIO . forkProcess m1 $ do
       registerInterceptor $ \string -> do
@@ -224,21 +222,7 @@ testRejoinTimeout _host baseTransport connectionBreak = withTmpDirectory $ do
       usend self ((), ())
     ((), ()) <- expect
 
-    bracket_ (do liftIO $ forM_ [m0, m1] $ \m -> forkProcess m $ do
-                   startupHalonNode rcClosure
-                   usend self ((), ())
-                 forM_ [m0, m1] $ \_ -> do
-                   ((), ()) <- expect
-                   return ()
-             )
-             (do liftIO $ forM_ [m0, m1] $ \m -> forkProcess m $ do
-                   stopHalonNode
-                   usend self ((), ())
-                 forM_ [m0, m1] $ \_ -> do
-                   ((), ()) <- expect
-                   return ()
-             ) $ do
-
+    withHalonNodes self [m0, m1] $ do
       void $ liftIO $ forkProcess m1 $ do
         Nothing <- ignition args
         usend self ((), ())
@@ -284,14 +268,7 @@ testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
                                                         connectionBreak
   testSplit transport controlled 2 5 $ \[m0,m1]
                                         splitNet restoreNet -> do
-    let args = ( False :: Bool
-               , [localNodeId m1]
-               , 1000 :: Int
-               , 1000000 :: Int
-               , $(mkClosure 'rcWithDeath) $
-                   IgnitionArguments [localNodeId m1]
-               , 8*1000000 :: Int
-               )
+    let args = mkIgnitionArgs [m1] $(mkClosure 'rcWithDeath)
     self <- getSelfPid
     void . liftIO . forkProcess m1 $ do
       registerInterceptor $ \string -> do
@@ -307,21 +284,7 @@ testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
       usend self ((), ())
     ((), ()) <- expect
 
-    bracket_ (do liftIO $ forM_ [m0, m1] $ \m -> forkProcess m $ do
-                   startupHalonNode rcClosure
-                   usend self ((), ())
-                 forM_ [m0, m1] $ \_ -> do
-                   ((), ()) <- expect
-                   return ()
-             )
-             (do liftIO $ forM_ [m0, m1] $ \m -> forkProcess m $ do
-                   stopHalonNode
-                   usend self ((), ())
-                 forM_ [m0, m1] $ \_ -> do
-                   ((), ()) <- expect
-                   return ()
-             ) $ do
-
+    withHalonNodes self [m0, m1] $ do
       void $ liftIO $ forkProcess m1 $ do
         Nothing <- ignition args
         usend self ((), ())
@@ -373,14 +336,7 @@ testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
                                                         connectionBreak
   testSplit transport controlled 2 10 $ \[m0,m1]
                                         splitNet restoreNet -> do
-    let args = ( False :: Bool
-               , map localNodeId [m1]
-               , 1000 :: Int
-               , 1000000 :: Int
-               , $(mkClosure 'recoveryCoordinator) $
-                   IgnitionArguments [localNodeId m1]
-               , 8*1000000 :: Int
-               )
+    let args = mkIgnitionArgs [m1] $(mkClosure 'recoveryCoordinator)
     self <- getSelfPid
     void . liftIO . forkProcess m1 $ do
       registerInterceptor $ \string -> do
@@ -396,21 +352,7 @@ testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
       usend self ((), ())
     ((), ()) <- expect
 
-    bracket_ (do liftIO $ forM_ [m0, m1] $ \m -> forkProcess m $ do
-                   startupHalonNode rcClosure
-                   usend self ((), ())
-                 forM_ [m0, m1] $ \_ -> do
-                   ((), ()) <- expect
-                   return ()
-             )
-             (do liftIO $ forM_ [m0, m1] $ \m -> forkProcess m $ do
-                   stopHalonNode
-                   usend self ((), ())
-                 forM_ [m0, m1] $ \_ -> do
-                   ((), ()) <- expect
-                   return ()
-             ) $ do
-
+    withHalonNodes self [m0, m1] $ do
       void $ liftIO $ forkProcess m1 $ do
         Nothing <- ignition args
         usend self ((), ())
