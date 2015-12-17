@@ -27,6 +27,7 @@ import           Control.Distributed.Process.Closure (mkClosure)
 import           Control.Distributed.Process.Internal.Types (Message(..))
 import           Data.UUID (nil, null)
 import           Network.CEP
+import           Network.HostName
 
 import           HA.EventQueue.Types
 import           HA.NodeUp
@@ -41,6 +42,7 @@ import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Service
 import           HA.Services.DecisionLog (decisionLog, printLogs)
+import           HA.Services.Monitor
 import           HA.EventQueue.Producer (promulgateWait)
 import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
@@ -52,7 +54,6 @@ import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_ONLINE, M0_NC_TRANSIENT))
 import           HA.Services.Mero (meroRules, notifyMero)
 #endif
-import           HA.Services.Monitor (regularMonitor)
 import           HA.Services.SSPL (ssplRules)
 
 import           System.Environment
@@ -62,6 +63,33 @@ enableRCDebug :: Definitions LoopState ()
 enableRCDebug = unsafePerformIO $ do
      mt <- lookupEnv "HALON_DEBUG_RC"
      return $ maybe (return ()) (const enableDebugMode) mt
+
+rcInitRule :: IgnitionArguments
+           -> RuleM LoopState (Maybe ProcessId) (Started LoopState (Maybe ProcessId))
+rcInitRule argv = do
+    boot        <- phaseHandle "boot"
+
+    directly boot $ do
+      h   <- liftIO getHostName
+      nid <- liftProcess getSelfNode
+      liftProcess $ do
+         sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
+         sayRC $ "Executing on node: " ++ show nid
+      ms   <- getNodeRegularMonitors
+      liftProcess $ do
+        self <- getSelfPid
+        EQT.updateEQNodes $ stationNodes argv
+        mpid <- spawnLocal $ do
+           link self
+           monitorProcess Master
+        link mpid
+        register masterMonitorName mpid
+        usend mpid $ StartMonitoringRequest self ms
+        _ <- expect :: Process StartMonitoringReply
+        sayRC $ "started monitoring nodes"
+        sayRC $ "continue in normal mode"
+
+    start boot Nothing
 
 rcRules :: IgnitionArguments -> [Definitions LoopState ()] -> Definitions LoopState ()
 rcRules argv additionalRules = do

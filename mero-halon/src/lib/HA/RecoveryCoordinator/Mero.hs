@@ -35,7 +35,6 @@ module HA.RecoveryCoordinator.Mero
        , lookupDLogServiceProcess
        , sendToMonitor
        , sendToMasterMonitor
-       , rcInitRule
        , handled
        , startProcessingMsg
        , finishProcessingMsg
@@ -50,9 +49,6 @@ import HA.EventQueue.Types (HAEvent(..))
 import HA.Resources
 import HA.Service
 import HA.Services.DecisionLog
-import HA.Services.Monitor
-
-import qualified HA.EQTracker as EQT
 
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
@@ -81,7 +77,6 @@ import Data.UUID (UUID)
 import GHC.Generics (Generic)
 
 import Network.CEP
-import Network.HostName
 
 -- | Initial configuration data.
 data IgnitionArguments = IgnitionArguments
@@ -125,33 +120,6 @@ startProcessingMsg eid = do
     ls <- get Global
     let ls' = ls { lsHandled = S.insert eid $ lsHandled ls }
     put Global ls'
-
-rcInitRule :: IgnitionArguments
-           -> RuleM LoopState (Maybe ProcessId) (Started LoopState (Maybe ProcessId))
-rcInitRule argv = do
-    boot        <- phaseHandle "boot"
-
-    directly boot $ do
-      h   <- liftIO getHostName
-      nid <- liftProcess getSelfNode
-      liftProcess $ do
-         sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
-         sayRC $ "Executing on node: " ++ show nid
-      ms   <- getNodeRegularMonitors
-      liftProcess $ do
-        self <- getSelfPid
-        EQT.updateEQNodes $ stationNodes argv
-        mpid <- spawnLocal $ do
-           link self
-           monitorProcess Master
-        link mpid
-        register masterMonitorName mpid
-        usend mpid $ StartMonitoringRequest self ms
-        _ <- expect :: Process StartMonitoringReply
-        sayRC $ "started monitoring nodes"
-        sayRC $ "continue in normal mode"
-
-    start boot Nothing
 
 -- | Notify mero about the node being considered down and set the
 -- appropriate host attributes.
