@@ -23,7 +23,9 @@ import Control.Monad (forM_, join)
 
 import Data.List (sort, unfoldr, isPrefixOf, findIndex)
 import qualified Data.Map.Strict as Map
+import Data.Monoid ((<>))
 import qualified Data.Set as Set
+import qualified Data.HashSet as HS
 
 import Network.Transport (Transport)
 import Network.CEP
@@ -72,8 +74,9 @@ remotable
 
 emptyLoopState :: ProcessId -> ProcessId -> Process LoopState
 emptyLoopState pid mmpid = do
-  g <- getGraph pid
-  return $ LoopState g Map.empty pid mmpid Set.empty
+  g' <- getGraph pid >>= \g ->
+    return (g { grRootNodes = grRootNodes g <> HS.singleton (Res Cluster) })
+  return $ LoopState g' Map.empty pid mmpid Set.empty
 
 myRemoteTable :: RemoteTable
 myRemoteTable = HA.Castor.Tests.__remoteTable remoteTable

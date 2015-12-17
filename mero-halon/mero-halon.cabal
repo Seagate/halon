@@ -487,6 +487,7 @@ Test-Suite unit-tests
                     time,
                     unix,
                     process
+
   if flag(mero)
       Build-Depends: rpclite, syb
       CPP-Options:    -DUSE_MERO
@@ -512,7 +513,6 @@ Test-Suite integration-tests
                     RemoteTables
                     TestRunner
                     HA.Castor.Story.Tests
-                    HA.Castor.Tests
                     Helper.SSPL
                     Helper.Environment
                     Helper.InitialData
@@ -752,11 +752,13 @@ Test-Suite tests-mero-integration
                         tasty-files,
                         tasty-hunit,
                         unix,
-                        directory
+                        directory,
+                        unordered-containers
+
       CPP-Options:    -DUSE_MERO
   else
       Buildable:        False
-                    
+
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
