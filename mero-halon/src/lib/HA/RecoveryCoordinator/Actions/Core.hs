@@ -6,19 +6,28 @@
 {-# LANGUAGE OverloadedStrings          #-}
 
 module HA.RecoveryCoordinator.Actions.Core
-  ( LoopState(..)
-  , knownResource
-  , registerNode
+  ( -- * Manipulating LoopState
+    LoopState(..)
   , getLocalGraph
   , putLocalGraph
   , modifyGraph
   , modifyLocalGraph
+    -- * Operating on the graph
+  , getMultimapProcessId
   , syncGraph
+  , knownResource
+  , registerNode
+    -- * Communication with the EQ
   , messageProcessed
+  , selfMessage
+    -- * Lifted functions in PhaseM
+  , decodeMsg
+  , getSelfProcessId
   , sayRC
+  , sendMsg
+    -- * Utility functions
   , unlessM
   , whenM
-  , selfMessage
   ) where
 
 import qualified HA.ResourceGraph as G
@@ -29,7 +38,11 @@ import HA.Resources
   )
 
 import HA.EventQueue.Types
-import HA.Service (ServiceName)
+import HA.Service
+  ( ProcessEncode(..)
+  , ServiceName(..)
+  , decodeP
+  )
 
 
 import Control.Category ((>>>))
@@ -114,6 +127,21 @@ unlessM cond act = cond >>= flip unless act
 -- N.B. Because messages are send bypassing replicated storage they do not have 'HAEvent'
 -- wrapper around them so rules should catch pure types, not 'HAEvent'.
 selfMessage :: Serializable a => a -> PhaseM LoopState l ()
-selfMessage msg = liftProcess $ do 
+selfMessage msg = liftProcess $ do
   pid <- getSelfPid
   usend pid msg
+
+-- | Lifted version of @send@ to @PhaseM@.
+sendMsg :: Serializable a => ProcessId -> a -> PhaseM g l ()
+sendMsg pid a = liftProcess $ usend pid a
+
+-- | Lifted version of @decodeP@
+decodeMsg :: ProcessEncode a => BinRep a -> PhaseM g l a
+decodeMsg = liftProcess . decodeP
+
+getSelfProcessId :: PhaseM g l ProcessId
+getSelfProcessId = liftProcess getSelfPid
+
+-- | Get the process ID for the multimap replicating the graph.
+getMultimapProcessId :: PhaseM LoopState l ProcessId
+getMultimapProcessId = fmap lsMMPid $ get Global

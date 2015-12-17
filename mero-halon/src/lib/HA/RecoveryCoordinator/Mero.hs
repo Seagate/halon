@@ -31,15 +31,9 @@ module HA.RecoveryCoordinator.Mero
        , IgnitionArguments(..)
        , GetMultimapProcessId(..)
        , ack
-       , getSelfProcessId
-       , sendMsg
        , makeRecoveryCoordinator
-       , prepareEpochResponse
-       , getEpochId
-       , decodeMsg
        , lookupDLogServiceProcess
        , sendToMonitor
-       , getMultimapProcessId
        , sendToMasterMonitor
        , rcInitRule
        , handled
@@ -74,18 +68,15 @@ import HA.Services.Mero (notifyMero)
 import qualified HA.ResourceGraph as G
 
 import Control.Distributed.Process
-import Control.Distributed.Process.Serializable
 
 import Control.Wire hiding (when)
 
 import Data.Binary (Binary)
-import Data.ByteString (ByteString)
 import Data.Dynamic
 import qualified Data.Map.Strict as Map
 import qualified Data.HashSet as HS
 import qualified Data.Set as S
 import Data.UUID (UUID)
-import Data.Word
 
 import GHC.Generics (Generic)
 
@@ -185,18 +176,9 @@ timeoutHost h = hasHostAttr M0.HA_TRANSIENT h >>= \case
 ack :: ProcessId -> PhaseM LoopState l ()
 ack pid = liftProcess $ usend pid ()
 
-getSelfProcessId :: PhaseM g l ProcessId
-getSelfProcessId = liftProcess getSelfPid
-
 lookupDLogServiceProcess :: NodeId -> LoopState -> Maybe (ServiceProcess DecisionLogConf)
 lookupDLogServiceProcess nid ls =
     runningService (Node nid) decisionLog $ lsGraph ls
-
-sendMsg :: Serializable a => ProcessId -> a -> PhaseM g l ()
-sendMsg pid a = liftProcess $ usend pid a
-
-decodeMsg :: ProcessEncode a => BinRep a -> PhaseM g l a
-decodeMsg = liftProcess . decodeP
 
 initialize :: ProcessId -> Process G.Graph
 initialize mm = do
@@ -211,9 +193,6 @@ initialize mm = do
             $ rg
             | otherwise = rg
     return rg'
-
-getMultimapProcessId :: PhaseM LoopState l ProcessId
-getMultimapProcessId = fmap lsMMPid $ get Global
 
 ----------------------------------------------------------
 -- Recovery Co-ordinator                                --
