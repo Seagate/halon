@@ -20,6 +20,7 @@ module Mero.Notification
     ( Set(..)
     , Get(..)
     , GetReply(..)
+    , initialize_pre_m0_init
     , initialize
     , finalize
     , notifyMero
@@ -45,11 +46,10 @@ import Network.RPC.RPCLite
   , listen
   )
 import Control.Concurrent.MVar
-import Control.Distributed.Process.Internal.Types ( processNode, LocalNode )
+import Control.Distributed.Process.Internal.Types ( LocalNode )
 import qualified Control.Distributed.Process.Node as CH ( runProcess )
 import Control.Monad ( void )
 import Control.Monad.Trans (MonadIO)
-import Control.Monad.Reader ( ask )
 import Control.Monad.Catch (MonadCatch, SomeException)
 import qualified Control.Monad.Catch as Catch
 import Data.Binary (Binary)
@@ -148,6 +148,10 @@ withServerEndpoint addr f = liftProcess (initializeInternal addr)
         True -> finalizeInternal m
       either Catch.throwM return ev
 
+-- | Label of the process serving configuration object states.
+notificationHandlerLabel :: String
+notificationHandlerLabel = "mero-halon.notification.interface.handler"
+
 -- | Initialiazes the 'EndpointRef' subsystem.
 --
 -- An important thing to notice is that this function takes the lock
@@ -164,14 +168,13 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
     return (globalEndpointRef, ref, ep)
   EndpointRef { _erServerEndpoint = Nothing } -> do
     say "initializeInternal: making new endpoint"
-    lnode <- fmap processNode ask
-    self <- getSelfPid
     say $ "listening at " ++ show addr
+    self <- getSelfPid
+    register notificationHandlerLabel self
     onException 
       (liftM0 $ do
         initRPC
         ep <- listen addr listenCallbacks
-        initHAState (ha_state_get self lnode) (ha_state_set lnode)
         let ref' = emptyEndpointRef { _erServerEndpoint = Just ep }
         return (globalEndpointRef, ref', ep))
       (liftIO $ putMVar globalEndpointRef ref)
@@ -179,18 +182,30 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
     listenCallbacks = ListenCallbacks {
       receive_callback = \_ _ -> return False
     }
-    ha_state_get :: ProcessId -> LocalNode -> NVecRef -> IO ()
-    ha_state_get parent lnode nvecr =
-      CH.runProcess lnode $ void $ spawnLocal $ do
-        link parent
-        self <- getSelfPid
-        _ <- liftIO (readNVecRef nvecr) >>= promulgate . Get self . map no_id
-        GetReply nvec <- expect
-        liftIO $ updateNVecRef nvecr nvec
-        liftIO $ doneGet nvecr 0
 
-    ha_state_set :: LocalNode -> NVec -> IO Int
-    ha_state_set lnode nvec = do
+-- | Initializes the hastate interface in the node where it will be
+-- used. Call it before @m0_init@ and before 'initialize'.
+initialize_pre_m0_init :: LocalNode -> IO ()
+initialize_pre_m0_init lnode = initHAState ha_state_get
+                                           ha_state_set
+  where
+    ha_state_get :: NVecRef -> IO ()
+    ha_state_get nvecr =
+      CH.runProcess lnode $ void $ spawnLocal $ do
+        mrc <- whereis notificationHandlerLabel
+        case mrc of
+          Just rc -> do
+            link rc
+            self <- getSelfPid
+            _ <- liftIO (readNVecRef nvecr) >>= promulgate . Get self . map no_id
+            GetReply nvec <- expect
+            liftIO $ updateNVecRef nvecr nvec
+            liftIO $ doneGet nvecr 0
+          Nothing ->
+            say "notification interface callbacks: unknown RC."
+
+    ha_state_set :: NVec -> IO Int
+    ha_state_set nvec = do
       CH.runProcess lnode $ do
         say $ "m0d: received state vector " ++ show nvec
         void $ promulgate $ Set nvec

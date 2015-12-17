@@ -3,6 +3,7 @@
 -- License   : All rights reserved.
 
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Main (main) where
 
@@ -27,6 +28,7 @@ import Control.Distributed.Static ( closureCompose )
 
 #ifdef USE_MERO
 import Mero
+import Mero.Notification (initialize_pre_m0_init)
 #endif
 import System.Environment
 import System.IO ( hFlush, stdout , hSetBuffering, BufferMode(..))
@@ -48,7 +50,8 @@ myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 main :: IO ()
 #ifdef USE_MERO
-main = withM0Deferred $ do
+main = withM0Deferred $ mdo
+    initialize_pre_m0_init lnid
 #else
 main = do
 #endif
