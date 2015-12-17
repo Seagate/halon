@@ -92,11 +92,13 @@ import Data.Typeable
 import qualified Data.Text as T
 import GHC.Generics
 import Helper.SSPL
+import Helper.Environment (systemHostname)
 
 #ifdef USE_MERO
 import HA.Castor.Tests (initialDataAddr)
 import HA.RecoveryCoordinator.Actions.Mero (getSpielAddress, syncToConfd)
 import Mero.Notification (finalize)
+import qualified Helper.InitialData
 #endif
 
 import System.Directory (createDirectoryIfMissing, removeDirectoryRecursive)
@@ -404,10 +406,11 @@ testDriveManagerUpdate transport = runTest 1 20 15000000 transport testRemoteTab
   where
     testRules :: [Definitions LoopState ()]
     testRules = return $ defineSimple "dmwf-trigger" $ \(HAEvent _ RunDriveManagerFailure _) -> do
+      liftProcess $ say "test rule triggered"
       -- Find what should be the only SD in the enclosure and trigger
       -- repair on it
       graph <- getLocalGraph
-      let [sd] = G.connectedTo (Enclosure enc) Has graph
+      let [sd]  = G.connectedTo (Enclosure enc) Has graph
       updateDriveManagerWithFailure sd
 
     wait = void (expect :: Process ProcessMonitorNotification)
@@ -427,7 +430,7 @@ testDriveManagerUpdate transport = runTest 1 20 15000000 transport testRemoteTab
             , CI.enc_bmc = [CI.BMC "192.0.2.1" "admin" "admin"]
             , CI.enc_hosts = [
                 CI.Host {
-                  CI.h_fqdn = "primus.example.com"
+                  CI.h_fqdn = systemHostname
                 , CI.h_memsize = 4096
                 , CI.h_cpucount = 8
                 , CI.h_interfaces = [
@@ -444,8 +447,10 @@ testDriveManagerUpdate transport = runTest 1 20 15000000 transport testRemoteTab
         }
       ]
 #ifdef USE_MERO
-      , CI.id_m0_servers = CI.id_m0_servers initialData
-      , CI.id_m0_globals = CI.id_m0_globals initialData
+      , CI.id_m0_servers = fmap (\s -> s{CI.m0h_devices = []})
+                                (CI.id_m0_servers Helper.InitialData.initialData)
+      , CI.id_m0_globals = (CI.id_m0_globals Helper.InitialData.initialData)
+                            { CI.m0_failure_set_gen  = CI.Dynamic }
 #endif
       }
     mockFile = unlines

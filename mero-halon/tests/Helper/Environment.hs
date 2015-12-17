@@ -3,34 +3,43 @@
 -- 
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE CPP #-}
 module Helper.Environment
   ( withSudo
   , withMeroRoot
   , withMeroEnvironment
+#ifdef USE_MERO
   , withHASession
   , withEndpoint
+#endif
   , confdEndpoint
   , confd2Endpoint
   , getConfdEndpoint
   , getConfd2Endpoint
   , getHalonEndpoint
   , getLnetNid
+  , systemHostname
   ) where
 
+#ifdef USE_MERO
 import Network.RPC.RPCLite
+import Control.Exception (bracket)
+import Foreign.C
+import Foreign.Ptr
+import System.IO
+#endif
 
-import Control.Exception (bracket, bracket_, onException, IOException, try)
+import Control.Exception (bracket_, onException, IOException, try)
 import Control.Concurrent (threadDelay)
 import Control.Monad (when)
 import Data.Maybe (catMaybes)
-import Foreign.C
-import Foreign.Ptr
+import Network.BSD
 import System.Environment
     ( lookupEnv
     , setEnv
     , getExecutablePath)
 import System.Exit (exitSuccess)
-import System.IO
+import System.IO.Unsafe
 import System.Posix.User (getEffectiveUserID)
 import System.Process (readProcess, callProcess, callCommand)
 import GHC.Environment (getFullArgs)
@@ -103,6 +112,7 @@ withMeroEnvironment router wrapper = withMeroRoot $ \meroRoot ->
 tryIO :: IO a -> IO (Either IOException a)
 tryIO = try
 
+#ifdef USE_MERO
 foreign import ccall "<ha/note.h> m0_ha_state_init"
   c_ha_state_init :: Ptr SessionV -> IO CInt
 
@@ -131,3 +141,7 @@ withEndpoint addr = bracket
           print =<< unsafeGetFragments it
           return True
       }
+#endif
+
+systemHostname :: String
+systemHostname = unsafePerformIO getHostName

@@ -484,9 +484,11 @@ Test-Suite unit-tests
                     text,
                     aeson,
                     uuid,
-                    time
+                    time,
+                    unix,
+                    process
   if flag(mero)
-      Build-Depends: rpclite, syb, unix, process
+      Build-Depends: rpclite, syb
       CPP-Options:    -DUSE_MERO
 
   if flag(rpc)
@@ -563,7 +565,9 @@ Test-Suite integration-tests
                     aeson,
                     uuid,
                     time,
-                    text
+                    text,
+                    unix,
+                    process
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
@@ -573,9 +577,7 @@ Test-Suite integration-tests
   if flag(mero)
       Build-Depends:  confc,
                       rpclite,
-                      syb,
-                      unix,
-                      process
+                      syb
       CPP-Options:    -DUSE_MERO
 
 Test-Suite scheduler-tests
@@ -633,13 +635,13 @@ Test-Suite scheduler-tests
                     attoparsec,
                     containers,
                     time,
-                    text
+                    text,
+                    process
 
   if flag(mero)
     CPP-Options:    -DUSE_MERO
     Build-Depends:  confc,
-                    rpclite,
-                    process
+                    rpclite
 
 Test-Suite test-start-service-local
   Type:             exitcode-stdio-1.0

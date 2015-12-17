@@ -24,7 +24,7 @@ initialDataAddr host ifaddr n = CI.InitialData {
         , CI.enc_bmc = [CI.BMC host "admin" "admin"]
         , CI.enc_hosts = [
             CI.Host {
-              CI.h_fqdn = "primus.example.com"
+              CI.h_fqdn = systemHostname
             , CI.h_memsize = 4096
             , CI.h_cpucount = 8
             , CI.h_interfaces = [
@@ -56,7 +56,7 @@ initialDataAddr host ifaddr n = CI.InitialData {
   }
 , CI.id_m0_servers = [
     CI.M0Host {
-      CI.m0h_fqdn = "primus.example.com"
+      CI.m0h_fqdn = systemHostname
     , CI.m0h_processes = [ 
         CI.M0Process { 
           CI.m0p_endpoint = host ++ "@tcp:12345:41:901"

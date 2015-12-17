@@ -47,6 +47,7 @@ import qualified HA.EQTracker as EQT
 import qualified HA.Resources.Castor as M0
 #ifdef USE_MERO
 import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
+import           HA.RecoveryCoordinator.Actions.Mero.Conf (getFilesystem)
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_ONLINE, M0_NC_TRANSIENT))
 import           HA.Services.Mero (meroRules, notifyMero)
@@ -173,7 +174,13 @@ rcRules argv additionalRules = do
         ack npid
         liftProcess $ sayRC $ "Ack sent to " ++ show npid
         messageProcessed uuid
-        liftProcess $ promulgateWait $ NewMeroClient (Node nid)
+#ifdef USE_MERO
+        getFilesystem >>= \case
+           Nothing ->
+             phaseLog "info" "Configuration data was not loaded yet, skipping"
+           Just{} ->
+             liftProcess $ promulgateWait $ NewMeroClient (Node nid)
+#endif
         finishProcessingMsg uuid
         continue end
 

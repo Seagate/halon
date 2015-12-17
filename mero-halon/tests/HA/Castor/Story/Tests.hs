@@ -56,6 +56,7 @@ import qualified Data.Set as S
 import Data.Typeable
 import Data.Text (append, pack)
 import Data.Text.Encoding (decodeUtf8)
+import Data.Maybe (isNothing)
 import Data.Defaultable
 
 import GHC.Generics (Generic)
@@ -68,6 +69,7 @@ import Test.Framework
 import Test.Tasty.HUnit (Assertion, assertEqual)
 import TestRunner
 import Helper.SSPL
+import Helper.Environment (systemHostname)
 
 debug :: String -> Process ()
 debug = liftIO . appendFile "/tmp/halon.debug" . (++ "\n")
@@ -537,7 +539,7 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
     loadInitialData
     subscribe rc (Proxy :: Proxy DriveRemoved)
     let enclosure = "enclosure1"
-        host      = "primus.example.com"
+        host      = pack systemHostname
         devIdx    = 1
         message0 = LBS.toStrict $ encode
                                 $ mkSensorResponse
@@ -611,7 +613,7 @@ testMetadataDriveFailed transport = run transport interceptor test where
     subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data)))
 
     let
-      host = "primus.example.com"
+      host = pack systemHostname
       raidData = mkResponseRaidData host "U_"
       message = LBS.toStrict $ encode
                                $ mkSensorResponse
@@ -621,10 +623,8 @@ testMetadataDriveFailed transport = run transport interceptor test where
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
     Just{} <- expectTimeout 1000000 :: Process (Maybe (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data))))
     debug "Raid_data message processed by RC"
-    expectTimeout 1000000 >>= \case
-      Just (MQMessage _ msg) ->
-        liftIO $ assertEqual "IEM should be correct"
-                             ("Metadata drive failure on host " `append` host)
-                             (decodeUtf8 msg)
-      Nothing -> error "No message delivered to SSPL."
-
+    mx <- receiveTimeout 1000000 
+            [ matchIf (\(MQMessage _ msg) ->
+                         "Metadata drive failure on host " `append` host == decodeUtf8 msg) 
+                      (const $ return ())]
+    when (isNothing mx) $ error "No message delivered to SSPL."
