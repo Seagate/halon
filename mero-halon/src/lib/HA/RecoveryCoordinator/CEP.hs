@@ -18,9 +18,11 @@ import Prelude hiding ((.), id)
 import Control.Applicative ((<|>))
 import Control.Category
 import Control.Monad (void)
-import Data.Binary (encode)
+import Data.Binary (Binary, encode)
 import Data.Foldable (for_)
 import Data.Maybe (catMaybes, listToMaybe)
+import Data.Typeable (Typeable)
+import GHC.Generics
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
@@ -55,6 +57,8 @@ import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_ONLINE, M0_NC_TRA
 import           HA.Services.Mero (meroRules, notifyMero)
 #endif
 import           HA.Services.SSPL (ssplRules)
+import           HA.Services.SSPL.HL.CEP (ssplHLRules)
+import           HA.Services.Frontier.CEP (frontierRules)
 
 import           System.Environment
 import           System.IO.Unsafe (unsafePerformIO)
@@ -113,8 +117,27 @@ rcRules argv additionalRules = do
       liftProcess $ usend (lsEQPid s) (DoTrimUnknown msg)
 
     initRule $ rcInitRule argv
+    sequence_ [ ruleNodeUp argv
+              , ruleNodeStatus argv
+              , ruleRecoverNode argv
+              , ruleDummyEvent
+              , ruleStopRequest
+              ]
+    setLogger sendLogs
+    serviceRules argv
+    ssplRules
+    castorRules
+    frontierRules
+    ssplHLRules
+#ifdef USE_MERO
+    HA.Services.Mero.meroRules
+    HA.RecoveryCoordinator.Rules.Mero.meroRules
+#endif
+    sequence_ additionalRules
 
-    define "node-up" $ do
+
+ruleNodeUp :: IgnitionArguments -> Definitions LoopState ()
+ruleNodeUp argv = define "node-up" $ do
       nodeup      <- phaseHandle "nodeup"
       nm_started  <- phaseHandle "node_monitor_started"
       nm_start    <- phaseHandle "node_monitor_start"
@@ -136,7 +159,7 @@ rcRules argv additionalRules = do
             liftProcess . sayRC $ "Reviving old node: " ++ show node
             unsetHostAttr (Host h) HA_TRANSIENT
             unsetHostAttr (Host h) HA_DOWN
-            syncGraph
+            syncGraph $ return () -- XXX: maybe we need barrier here
 #ifdef USE_MERO
             g <- getLocalGraph
             let nodes = [ M0.AnyConfObj n
@@ -228,7 +251,8 @@ rcRules argv additionalRules = do
 
       start nodeup None
 
-    defineSimple "node-status" $
+ruleNodeStatus :: IgnitionArguments -> Definitions LoopState ()
+ruleNodeStatus argv = defineSimple "node-status" $
       \(HAEvent uuid (NodeStatusRequest n@(Node nid) lis) _) -> do
         rg <- getLocalGraph
         let
@@ -238,41 +262,44 @@ rcRules argv additionalRules = do
         liftProcess $ mapM_ (flip usend response) lis
         messageProcessed uuid
 
-    defineSimple "mm-pid" $
-      \(HAEvent uuid (GetMultimapProcessId sender) _) -> do
-         mmid <- getMultimapProcessId
-         sendMsg sender mmid
-         messageProcessed uuid
-
-    defineSimple "dummy-event" $
+ruleDummyEvent :: Definitions LoopState ()
+ruleDummyEvent = defineSimple "dummy-event" $
       \(HAEvent uuid (DummyEvent str) _) -> do
         i <- getNoisyPingCount
         liftProcess $ sayRC $ "received DummyEvent " ++ str
         liftProcess $ sayRC $ "Noisy ping count: " ++ show i
         messageProcessed uuid
 
-    defineSimple "stop-request" $ \(HAEvent uuid msg _) -> do
+ruleStopRequest :: Definitions LoopState ()
+ruleStopRequest = defineSimple "stop-request" $ \(HAEvent uuid msg _) -> do
       ServiceStopRequest node svc <- decodeMsg msg
       res                         <- lookupRunningService node svc
       for_ res $ \sp ->
         killService sp UserStop
       messageProcessed uuid
 
-    -- A rule which tries to contact a node multiple times in specific
-    -- time intervals, asking it to announce itself back to the TS
-    -- (NodeUp) so that we may handle it again.
-    --
-    -- This rule uses RecoverNode message. This rule is sent service
-    -- fails on a node: we always have a monitor service running on
-    -- nodes so if a service fails, we know we potentially have a
-    -- problem and try to recover, so we send RecoverNode from service
-    -- failure rule.
-    define "recover-node" $ do
+data RecoverNodeAck = RecoverNodeAck UUID UUID
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary RecoverNodeAck
+
+-- | A rule which tries to contact a node multiple times in specific
+-- time intervals, asking it to announce itself back to the TS
+-- (NodeUp) so that we may handle it again.
+--
+-- This rule uses RecoverNode message. This rule is sent service
+-- fails on a node: we always have a monitor service running on
+-- nodes so if a service fails, we know we potentially have a
+-- problem and try to recover, so we send RecoverNode from service
+-- failure rule.
+ruleRecoverNode :: IgnitionArguments -> Definitions LoopState ()
+ruleRecoverNode argv = define "recover-node" $ do
       let expirySeconds = 300
           maxRetries = 5
       start_recover <- phaseHandle "start_recover"
       try_recover <- phaseHandle "try_recover"
       timeout_host <- phaseHandle "timeout_host"
+      finalize_rule <- phaseHandle "finalize_rule"
 
       setPhase start_recover $ \(HAEvent uuid (RecoverNode uuid' n1) _) -> do
         startProcessingMsg uuid
@@ -331,20 +358,15 @@ rcRules argv additionalRules = do
             timeoutHost h
             put Local (nil, nil, Nothing)
           _ -> log' "timeout_host nothing" >> return ()
-        syncGraph
+        syncGraphProcess $ \self -> usend self $ RecoverNodeAck uuid' uuid
+        continue finalize_rule
+
+      setPhase finalize_rule $ \(RecoverNodeAck uuid' uuid) -> do
         ackMsg uuid'
         ackMsg uuid
+
       start start_recover (nil, nil, Nothing)
 
-    setLogger sendLogs
-    serviceRules argv
-    ssplRules
-    castorRules
-#ifdef USE_MERO
-    HA.Services.Mero.meroRules
-    HA.RecoveryCoordinator.Rules.Mero.meroRules
-#endif
-    sequence_ additionalRules
 
 -- | Send 'Logs' to decision-log service. First it tries to send to
 -- decision-log on own node. If service is not found, it tries to find

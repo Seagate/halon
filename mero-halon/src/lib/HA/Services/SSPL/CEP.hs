@@ -33,6 +33,7 @@ import Control.Distributed.Process
   , SendPort
   , sendChan
   , say
+  , usend
   )
 import Control.Monad
 import Control.Monad.Trans
@@ -44,8 +45,11 @@ import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
 import Data.UUID.V4 (nextRandom)
 import Data.UUID (UUID)
+import Data.Binary (Binary)
+import Data.Typeable (Typeable)
 
 import Network.CEP
+import GHC.Generics
 
 import Prelude hiding (id, mapM_)
 
@@ -128,10 +132,6 @@ registerChannels svc acs = modifyLocalGraph $ \rg -> do
       where
         chan = Channel sp
 
-promptRGSync :: PhaseM LoopState l ()
-promptRGSync = modifyLocalGraph (liftProcess . sync)
-
-
 findActuationNode :: Configuration a => Service a
                   -> PhaseM LoopState l NodeId
 findActuationNode sspl = do
@@ -148,69 +148,96 @@ findActuationNode sspl = do
 --------------------------------------------------------------------------------
 
 ssplRulesF :: Service SSPLConf -> Definitions LoopState ()
-ssplRulesF sspl = do
-  defineSimple "declare-channels" $
+ssplRulesF sspl = sequence_
+  [ ruleDeclareChannels 
+  , ruleMonitorDriveManager
+  , ruleMonitorStatusHpi
+  , ruleMonitorHostUpdate
+  , ruleMonitorRaidData
+  , ruleSystemdCmd sspl
+  , ruleHlNodeCmd sspl
+  ]
+
+ruleDeclareChannels :: Definitions LoopState ()
+ruleDeclareChannels = defineSimple "declare-channels" $
       \(HAEvent uuid (DeclareChannels pid svc acs) _) -> do
           registerChannels svc acs
           ack pid
           messageProcessed uuid
 
-  -- SSPL Monitor drivemanager
-  defineSimple "monitor-drivemanager" $ \(HAEvent uuid (nid, srdm) _) -> do
-      let enc = Enclosure . T.unpack
-                          . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
-                          $ srdm
-          diskNum = floor . (toRealFloat :: Scientific -> Double)
-                          . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum
-                          $ srdm
-          disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus srdm
-          sn = DISerialNumber . T.unpack
-                 . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber
-                 $ srdm
-      phaseLog "sspl-service" "monitor-drivemanager request received"
-      disk <- lookupStorageDeviceInEnclosure enc (DIIndexInEnclosure diskNum) >>= \case
-        Nothing ->
-          -- Try to check if we have device with known serial number, just without location.
-          lookupStorageDeviceInEnclosure enc sn >>= \case
-            Just disk -> do
-              identifyStorageDevice disk (DIIndexInEnclosure diskNum)
-              return disk
-            Nothing -> do
-              phaseLog "sspl-service"
-                  $ "Cant find disk in " ++ show enc ++ " at " ++ show diskNum ++ " creating new entry."
-              diskUUID <- liftIO $ nextRandom
-              let disk = StorageDevice diskUUID
-              locateStorageDeviceInEnclosure enc disk
-              mhost <- findNodeHost (Node nid)
-              forM_ mhost $ \host -> locateHostInEnclosure host enc
-              mapM_ (identifyStorageDevice disk) [DIIndexInEnclosure diskNum, sn]
-              syncGraph
-              return disk
-        Just st -> return st
-      updateDriveStatus disk $ T.unpack disk_status
-      isDriveRemoved <- isStorageDriveRemoved disk
-      phaseLog "sspl-service"
-        $ "Drive in " ++ show enc ++ " at " ++ show diskNum ++ " marked as "
-           ++ (if isDriveRemoved then "removed" else "active")
-      case disk_status of
-        "unused_ok"
-           | isDriveRemoved -> do phaseLog "sspl-service" "already removed"
-                                  messageProcessed uuid
-           | otherwise      -> selfMessage $ DriveRemoved uuid (Node nid) enc disk
-        "failed_smart"
-           | isDriveRemoved -> messageProcessed uuid
-           | otherwise      -> selfMessage $ DriveFailed uuid (Node nid) enc disk
-        "inuse_ok"
-           | isDriveRemoved -> selfMessage $ DriveInserted uuid disk sn
-           | otherwise      -> messageProcessed uuid
-        s -> do let msg = InterestingEventMessage
-                        $ "Error processing drive manager response: drive status "
-                        <> s <> " is not known"
-                sendInterestingEvent nid msg
-                messageProcessed uuid
+data RuleDriveManagerDisk = RuleDriveManagerDisk StorageDevice
+  deriving (Eq,Show,Generic,Typeable)
 
-  -- Handle information messages about drive changes from HPI system.
-  defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeId, srphi) _) -> do
+instance Binary RuleDriveManagerDisk
+
+-- | SSPL Monitor drivemanager
+ruleMonitorDriveManager :: Definitions LoopState ()
+ruleMonitorDriveManager = define "monitor-drivemanager" $ do
+   pinit  <- phaseHandle "init"
+   pcommit <- phaseHandle "commit"
+
+   setPhase pinit $ \(HAEvent uuid (nid, srdm) _) -> do
+     let enc = Enclosure . T.unpack
+                         . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
+                         $ srdm
+         diskNum = floor . (toRealFloat :: Scientific -> Double)
+                         . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum
+                         $ srdm
+         disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus srdm
+         sn = DISerialNumber . T.unpack
+                . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber
+                $ srdm
+     phaseLog "sspl-service" "monitor-drivemanager request received"
+     put Local $ Just (uuid, nid, enc, diskNum, disk_status, sn)
+     lookupStorageDeviceInEnclosure enc (DIIndexInEnclosure diskNum) >>= \case
+       Nothing ->
+         -- Try to check if we have device with known serial number, just without location.
+         lookupStorageDeviceInEnclosure enc sn >>= \case
+           Just disk -> do
+             identifyStorageDevice disk (DIIndexInEnclosure diskNum)
+             selfMessage (RuleDriveManagerDisk disk)
+           Nothing -> do
+             phaseLog "sspl-service"
+                 $ "Cant find disk in " ++ show enc ++ " at " ++ show diskNum ++ " creating new entry."
+             diskUUID <- liftIO $ nextRandom
+             let disk = StorageDevice diskUUID
+             locateStorageDeviceInEnclosure enc disk
+             mhost <- findNodeHost (Node nid)
+             forM_ mhost $ \host -> locateHostInEnclosure host enc
+             mapM_ (identifyStorageDevice disk) [DIIndexInEnclosure diskNum, sn]
+             
+             syncGraphProcess $ \self -> usend self (RuleDriveManagerDisk disk)
+       Just st -> selfMessage (RuleDriveManagerDisk st)
+     continue pcommit
+
+   setPhase pcommit $ \(RuleDriveManagerDisk disk) -> do
+     Just (uuid, nid, enc, diskNum, disk_status, sn) <- get Local
+     updateDriveStatus disk $ T.unpack disk_status
+     isDriveRemoved <- isStorageDriveRemoved disk
+     phaseLog "sspl-service"
+       $ "Drive in " ++ show enc ++ " at " ++ show diskNum ++ " marked as "
+          ++ (if isDriveRemoved then "removed" else "active")
+     case disk_status of
+       "unused_ok"
+          | isDriveRemoved -> do phaseLog "sspl-service" "already removed"
+                                 messageProcessed uuid
+          | otherwise      -> selfMessage $ DriveRemoved uuid (Node nid) enc disk
+       "failed_smart"
+          | isDriveRemoved -> messageProcessed uuid
+          | otherwise      -> selfMessage $ DriveFailed uuid (Node nid) enc disk
+       "inuse_ok"
+          | isDriveRemoved -> selfMessage $ DriveInserted uuid disk sn
+          | otherwise      -> messageProcessed uuid
+       s -> do let msg = InterestingEventMessage
+                       $ "Error processing drive manager response: drive status "
+                       <> s <> " is not known"
+               sendInterestingEvent nid msg
+               messageProcessed uuid
+   start pinit Nothing
+
+-- | Handle information messages about drive changes from HPI system.
+ruleMonitorStatusHpi :: Definitions LoopState ()
+ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeId, srphi) _) -> do
       let nid = Node nodeId
           sn  = DISerialNumber . T.unpack
                         . sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber
@@ -267,29 +294,31 @@ ssplRulesF sspl = do
       case msd of
         Just sd -> do
           _ <- attachStorageDeviceReplacement sd [sn, wwn, ident, loc]
-          syncGraph
           -- It may happen that we have already received "inuse_ok" status from drive manager
           -- but for a completely new device. In this case, the device has not yet been
           -- attached to mero because halon still needed the HPI information before processing
           -- the event. Check whether that was actually the case here.
           mwantUpdate <- wantsStorageDeviceReplacement sd
           case mwantUpdate of
-            Just wsn | wsn == sn -> selfMessage $ DriveInserted uuid sd sn
-            _   -> selfMessage $ DriveRemoved uuid nid enc sd
+            Just wsn | wsn == sn ->
+              syncGraphProcess $ \self -> usend self $ DriveInserted uuid sd sn
+            _   ->
+              syncGraphProcess $ \self -> usend self $ DriveRemoved uuid nid enc sd
         Nothing -> messageProcessed uuid
 
-  -- SSPL Monitor host_update
-  defineSimple "monitor-host-update" $ \(HAEvent uuid (nid, srhu) _) -> do
+-- | SSPL Monitor host_update
+ruleMonitorHostUpdate :: Definitions LoopState ()
+ruleMonitorHostUpdate = defineSimple "monitor-host-update" $ \(HAEvent uuid (nid, srhu) _) -> do
       let host = Host . T.unpack
                      $ sensorResponseMessageSensor_response_typeHost_updateHostId srhu
           node = Node nid
       registerHost host
       locateNodeOnHost node host
-      promptRGSync
       phaseLog "rg" $ "Registered host: " ++ show host
-      messageProcessed uuid
+      syncGraphProcessMsg uuid
 
-  defineSimple "monitor-raid-data" $ \(HAEvent uuid (nid, srrd) _) -> let
+ruleMonitorRaidData :: Definitions LoopState ()
+ruleMonitorRaidData = defineSimple "monitor-raid-data" $ \(HAEvent uuid (nid, srrd) _) -> let
       host = sensorResponseMessageSensor_response_typeRaid_dataHostId srrd
     in do
       case sensorResponseMessageSensor_response_typeRaid_dataMdstat srrd of
@@ -315,7 +344,8 @@ ssplRulesF sspl = do
   --       forM_ ifs addIf
 
   -- Dummy rule for handling SSPL HL commands
-  defineSimpleIf "systemd-cmd" (\(HAEvent uuid cr _ ) _ ->
+ruleSystemdCmd :: Service SSPLConf -> Definitions LoopState ()
+ruleSystemdCmd sspl = defineSimpleIf "systemd-cmd" (\(HAEvent uuid cr _ ) _ ->
     return . fmap (uuid,) . commandRequestMessageServiceRequest
               . commandRequestMessage
               $ cr
@@ -366,7 +396,8 @@ ssplRulesF sspl = do
         x -> liftProcess . say $ "Unsupported service command: " ++ show x
       messageProcessed uuid
 
-  defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr _ ) _ ->
+ruleHlNodeCmd :: Service SSPLConf -> Definitions LoopState ()
+ruleHlNodeCmd sspl = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr _ ) _ ->
     return . fmap (uuid,) .  commandRequestMessageNodeStatusChangeRequest
               . commandRequestMessage
               $ cr

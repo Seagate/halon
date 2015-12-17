@@ -20,6 +20,7 @@ import HA.Network.RemoteTables (haRemoteTable)
 import Mero.RemoteTables (meroRemoteTable)
 
 import qualified HA.EQTracker as EQT
+import HA.Multimap
 import HA.NodeUp ( nodeUp )
 import HA.Startup hiding (__remoteTable)
 import Test.Framework
@@ -97,7 +98,7 @@ bootupCluster = \(node : nids) -> do
       Nothing -> return ()
 
 -- | Start dummy recovery coordinator
-rcClosure :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
+rcClosure :: Closure ([NodeId] -> ProcessId -> StoreChan -> Process ())
 rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
                $(mkStaticClosure 'ignitionArguments)
 

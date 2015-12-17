@@ -15,8 +15,9 @@ import Network.Transport (Transport)
 import Network.CEP
 import Network.CEP.Testing (runPhase)
 
+import HA.Multimap
 import HA.Multimap.Implementation (Multimap, fromList)
-import HA.Multimap.Process (multimap)
+import HA.Multimap.Process (startMultimap)
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero
@@ -64,24 +65,23 @@ mmSDict = SerializableDict
 remotable
   [ 'mmSDict ]
 
-emptyLoopState :: ProcessId -> ProcessId -> Process LoopState
-emptyLoopState mmpid pid = do
-  g <- getGraph mmpid
-  return $ LoopState g Map.empty mmpid pid Set.empty
+emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
+emptyLoopState mmchan pid = do
+  g <- getGraph mmchan
+  return $ LoopState g Map.empty mmchan pid Set.empty
 
 myRemoteTable :: RemoteTable
 myRemoteTable = HA.RecoveryCoordinator.SSPL.Tests.__remoteTable remoteTable
 
-rGroupTest :: Transport -> (ProcessId -> Process ()) -> IO ()
+rGroupTest :: Transport -> (StoreChan -> Process ()) -> IO ()
 rGroupTest transport p =
   tryRunProcessLocal transport myRemoteTable $ do
     nid <- getSelfNode
     rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
                 >>= unClosure
                 >>= (`asTypeOf` return (undefined :: MC_RG Multimap))
-    mmpid <- spawnLocal $ catch (multimap rGroup) $
-      (\e -> liftIO $ hPutStrLn stderr (show (e :: SomeException)))
-    p mmpid
+    (_,mmchan) <- startMultimap rGroup id
+    p mmchan
 
 -- List of unit tests
 utTests :: Transport -> TestTree

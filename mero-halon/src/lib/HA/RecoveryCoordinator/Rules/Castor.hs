@@ -151,8 +151,25 @@ onSmartFailure (HAEvent _ cmd _) _ (Just (_, path, _)) =
 onSmartFailure _ _ _ = return Nothing
 
 castorRules :: Definitions LoopState ()
-castorRules = do
-    defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
+castorRules = sequence_
+  [ ruleInitialDataLoad
+#ifdef USE_MERO
+  , ruleMeroNoteSet
+#endif
+  , ruleResetAttempt
+  , ruleDriveFailed
+  , ruleDriveRemoved
+  , ruleDriveInserted
+  , ruleNewMeroClient
+  ]
+
+data InitialDataChunk = InitialDataChunk
+  deriving (Eq,Show,Typeable,Generic)
+
+instance Binary InitialDataChunk
+
+ruleInitialDataLoad :: Definitions LoopState ()
+ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
       mapM_ goRack id_racks
 #ifdef USE_MERO
       rg <- getLocalGraph
@@ -172,7 +189,8 @@ castorRules = do
                   Just $ splitAt 5 xs
       forM_ chunks $ \chunk -> do
         createPoolVersions filesystem chunk
-        syncGraph
+        syncGraphProcess $ \self -> usend self InitialDataChunk
+        liftProcess $ expect >>= \InitialDataChunk -> return ()
 #endif
       liftProcess $ say "Loaded initial data"
       rg' <- getLocalGraph
@@ -186,7 +204,10 @@ castorRules = do
       forM_ nodes $ liftProcess . promulgateWait . NewMeroClient
       messageProcessed eid
 
+
 #ifdef USE_MERO
+ruleMeroNoteSet :: Definitions LoopState ()
+ruleMeroNoteSet = 
     defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> do
       for_ ns $ \(Note mfid tpe) ->
         case tpe of
@@ -229,10 +250,10 @@ castorRules = do
                                     ++ show msdev
           _ -> return ()
       messageProcessed uid
-
 #endif
 
-    define "reset-attempt" $ do
+ruleResetAttempt :: Definitions LoopState ()
+ruleResetAttempt = define "reset-attempt" $ do
       home         <- phaseHandle "home"
       down         <- phaseHandle "powerdown"
       downComplete <- phaseHandle "powerdown-complete"
@@ -355,9 +376,19 @@ castorRules = do
 
       start home Nothing
 
-    -- Removing drive:
-    -- We need to notify mero about drive state change and then send event to the logger.
-    defineSimple "drive-removed" $ \(DriveRemoved uuid (HA.Resources.Node nid) enc disk) -> do
+
+data CommitDriveRemoved = CommitDriveRemoved NodeId InterestingEventMessage UUID
+  deriving (Typeable, Generic)
+
+instance Binary CommitDriveRemoved
+
+-- | Removing drive:
+-- We need to notify mero about drive state change and then send event to the logger.
+ruleDriveRemoved :: Definitions LoopState ()
+ruleDriveRemoved = define "drive-removed" $ do
+   pinit   <- phaseHandle "init"
+   pcommit <- phaseHandle "commit"
+   setPhase pinit $ \(DriveRemoved uuid (HA.Resources.Node nid) enc disk) -> do
       let msg = InterestingEventMessage
               $  "Drive was removed: \n\t"
                <> pack (show enc)
@@ -374,12 +405,17 @@ castorRules = do
              liftIO $ Spiel.deviceDetach sp (d_fid m0sdev))
             `catch` (\e -> phaseLog "mero" $ "failure in spiel: " ++ show (e::SomeException))
 #endif
-      syncGraph
+      syncGraphProcess $ \self -> do
+        usend self (CommitDriveRemoved nid msg uuid)
+
+   setPhase pcommit $ \(CommitDriveRemoved nid msg uuid) -> do
       sendInterestingEvent nid msg
       messageProcessed uuid
+   start pinit ()
 
-    -- Inserting new drive
-    define "drive-inserted" $ do
+-- | Inserting new drive
+ruleDriveInserted :: Definitions LoopState ()
+ruleDriveInserted = define "drive-inserted" $ do
       handle     <- phaseHandle "drive-inserted"
       format_add <- phaseHandle "handle-sync"
       commit     <- phaseHandle "commit"
@@ -396,20 +432,20 @@ castorRules = do
                Nothing -> do
                  phaseLog "warning" "No PHI information about new drive, skipping request for now"
                  markStorageDeviceWantsReplacement disk sn
-                 syncGraph
-                 messageProcessed uuid
+                 syncGraphProcessMsg uuid
                Just cand -> do
                  actualizeStorageDeviceReplacement cand
-                 syncGraph
 #ifdef USE_MERO
                  -- XXX: implement internal notification mechanism about
                  -- end of the sync. It's also nice to not redo this operation
                  -- if possible.
                  request <- liftIO $ nextRandom
                  put Local $ Just (uuid, request, disk)
-                 selfMessage (request, SyncToConfdServersInRG)
+                 syncGraphProcess $ \self -> do
+                   usend self (request, SyncToConfdServersInRG)
                  continue format_add
 #else
+                 syncGraph $ return ()
                  continue commit
 #endif
 
@@ -431,13 +467,13 @@ castorRules = do
             updateDriveState m0sdev M0_NC_ONLINE
 #endif
         unmarkStorageDeviceRemoved disk
-        syncGraph
-        messageProcessed uuid
+        syncGraphProcessMsg uuid
 
       start handle Nothing
 
-    -- Mark drive as failed
-    defineSimple "drive-failed" $ \(DriveFailed uuid (HA.Resources.Node nid) enc disk) -> do
+-- | Mark drive as failed
+ruleDriveFailed :: Definitions LoopState ()
+ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid (HA.Resources.Node nid) enc disk) -> do
       let msg = InterestingEventMessage
               $  "Drive powered off: \n\t"
                <> pack (show enc)
@@ -446,16 +482,24 @@ castorRules = do
       sendInterestingEvent nid msg
       messageProcessed uuid
 
-    -- Handle new mero node connection and try to start mero service on that node.
-    -- Once mero service is started we add relevant information to RG and sync confd.
-    -- If there is not enough information in place to proceed (for example there is
-    -- no confd host information, or there is no Halon node running on that code),
-    -- then message got discarded. Each entity that could add that information should
-    -- emit 'NewMeroClient' event.
-    define "new-mero-client" $ do
+
+data CommitNewMeroClient = CommitNewMeroClient Host UUID
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary CommitNewMeroClient
+
+-- Handle new mero node connection and try to start mero service on that node.
+-- Once mero service is started we add relevant information to RG and sync confd.
+-- If there is not enough information in place to proceed (for example there is
+-- no confd host information, or there is no Halon node running on that code),
+-- then message got discarded. Each entity that could add that information should
+-- emit 'NewMeroClient' event.
+ruleNewMeroClient :: Definitions LoopState ()
+ruleNewMeroClient = define "new-mero-client" $ do
       new_client  <- phaseHandle "initial"
       client_info <- phaseHandle "update-client-info"
       sync_client <- phaseHandle "sync-client"
+      finish      <- phaseHandle "finish"
 
       -- Check if host is already provisioned and just ack message in that case.
       let provisionMeroClient eid host f =
@@ -508,9 +552,10 @@ castorRules = do
         _meminfo <- case minfo of
            Nothing -> do
              phaseLog "debug" "no information about host stats - loading"
-             liftProcess $ void $ spawnLocal $ do
-               _ <- spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
-               return ()
+             liftProcess $ promulgate (ClientInfo node 1024 1024)
+             -- liftProcess $ void $ spawnLocal $ do
+             --  _ <- spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
+             --  return ()
              continue client_info
            Just mc -> return mc
         -- Check that we have loaded initial configuration.
@@ -587,7 +632,10 @@ castorRules = do
           let rg' = G.connect host Has HA_M0SERVER rg
 #endif
           return rg'
-        syncGraph
+        syncGraphProcess $ \self -> usend self $ CommitNewMeroClient host eid
+        continue finish
+
+      setPhase finish $ \(CommitNewMeroClient host eid) -> do
         -- It's on if we will never receive reply, we already know that
         -- graph was synchronized and we will eventually sync to confd
 #ifdef USE_MERO
@@ -597,23 +645,28 @@ castorRules = do
         publish $ NewMeroClientProcessed host
 
       start new_client Nothing
-  where
-    goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
-      registerRack rack
-      mapM_ (goEnc rack) rack_enclosures
-    goEnc rack (CI.Enclosure{..}) = let
-        enclosure = Enclosure enc_id
-      in do
-        registerEnclosure rack enclosure
-        mapM_ (registerBMC enclosure) enc_bmc
-        mapM_ (goHost enclosure) enc_hosts
-    goHost enc (CI.Host{..}) = let
-        host = Host h_fqdn
-        mem = fromIntegral h_memsize
-        cpucount = fromIntegral h_cpucount
-        attrs = [HA_MEMSIZE_MB mem, HA_CPU_COUNT cpucount]
-      in do
-        registerHost host
-        locateHostInEnclosure host enc
-        mapM_ (setHostAttr host) attrs
-        mapM_ (registerInterface host) h_interfaces
+
+goRack :: CI.Rack -> PhaseM LoopState l ()
+goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
+  registerRack rack
+  mapM_ (goEnc rack) rack_enclosures
+
+goEnc :: Rack -> CI.Enclosure -> PhaseM LoopState l ()
+goEnc rack (CI.Enclosure{..}) = let
+    enclosure = Enclosure enc_id
+  in do
+    registerEnclosure rack enclosure
+    mapM_ (registerBMC enclosure) enc_bmc
+    mapM_ (goHost enclosure) enc_hosts
+
+goHost :: Enclosure -> CI.Host -> PhaseM LoopState l ()
+goHost enc (CI.Host{..}) = let
+    host = Host h_fqdn
+    mem = fromIntegral h_memsize
+    cpucount = fromIntegral h_cpucount
+    attrs = [HA_MEMSIZE_MB mem, HA_CPU_COUNT cpucount]
+  in do
+    registerHost host
+    locateHostInEnclosure host enc
+    mapM_ (setHostAttr host) attrs
+    mapM_ (registerInterface host) h_interfaces

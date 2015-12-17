@@ -36,7 +36,8 @@ updateDriveState :: M0.SDev -- ^ Drive to update state
 updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
   -- Update state in RG
   modifyGraph $ G.connectUnique m0sdev Is M0.M0_NC_TRANSIENT
-  syncGraph
+  syncGraph (return ()) -- possibly we need to wait here, but I see no good
+                        -- reason for that.
   -- If using dynamic failure sets, generate failure set
   getM0Globals >>= \case
     Just x | CI.m0_failure_set_gen x == CI.Dynamic -> do
@@ -50,6 +51,10 @@ updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
 updateDriveState m0sdev x = do
   -- Update state in RG
   modifyGraph $ G.connect m0sdev Is x
-  syncGraph
+  -- Quite possibly we need to wait for synchronization result here, because
+  -- otherwise we may notifyMero multiple times (if consesus will be lost).
+  -- however in opposite case we may never notify mero if RC will die after
+  -- sync, but before it notified mero.
+  syncGraph (return ()) 
   -- Notify Mero
   notifyMero [M0.AnyConfObj m0sdev] x

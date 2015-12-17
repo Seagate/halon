@@ -8,7 +8,6 @@ import Control.Distributed.Process
   ( Process
   , ProcessId
   , RemoteTable
-  , spawnLocal
   , liftIO
   , catch
   , getSelfNode
@@ -18,7 +17,6 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
-import Control.Exception (SomeException)
 import Control.Monad (forM_, join)
 
 import Data.List (sort, unfoldr, isPrefixOf, findIndex)
@@ -36,8 +34,9 @@ import Network.CEP
   )
 import Network.CEP.Testing (runPhase, runPhaseGet)
 
+import HA.Multimap
 import HA.Multimap.Implementation (Multimap, fromList)
-import HA.Multimap.Process (multimap)
+import HA.Multimap.Process (startMultimap)
 #ifdef USE_MERO
 import HA.RecoveryCoordinator.Actions.Mero
 #endif
@@ -72,16 +71,16 @@ mmSDict = SerializableDict
 remotable
   [ 'mmSDict ]
 
-emptyLoopState :: ProcessId -> ProcessId -> Process LoopState
-emptyLoopState pid mmpid = do
-  g' <- getGraph pid >>= \g ->
+emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
+emptyLoopState mmchan pid = do
+  g' <- getGraph mmchan >>= \g ->
     return (g { grRootNodes = grRootNodes g <> HS.singleton (Res Cluster) })
-  return $ LoopState g' Map.empty pid mmpid Set.empty
+  return $ LoopState g' Map.empty mmchan pid Set.empty
 
 myRemoteTable :: RemoteTable
 myRemoteTable = HA.Castor.Tests.__remoteTable remoteTable
 
-rGroupTest :: Transport -> (ProcessId -> Process ()) -> IO ()
+rGroupTest :: Transport -> (StoreChan -> Process ()) -> IO ()
 rGroupTest transport p =
   withLocalNode transport myRemoteTable $ \lnid2 ->
   withLocalNode transport myRemoteTable $ \lnid3 ->
@@ -91,9 +90,8 @@ rGroupTest transport p =
                 [nid, localNodeId lnid2, localNodeId lnid3] (fromList [])
                 >>= unClosure
                 >>= (`asTypeOf` return (undefined :: MC_RG Multimap))
-    mmpid <- spawnLocal $ catch (multimap rGroup) $
-      (\e -> liftIO $ hPutStrLn stderr (show (e :: SomeException)))
-    p mmpid
+    (_, mmchan) <- startMultimap rGroup id
+    p mmchan
 
 tests :: String -> Transport -> [TestTree]
 tests host transport = map (localOption (mkTimeout $ 10*60*1000000))
@@ -239,7 +237,7 @@ largeInitialData host transport = let
           let pvers = failureSetToPoolVersion rg filesystem <$> chunk
           createPoolVersions filesystem pvers
           liftProcess $ liftIO $ hPutStrLn stderr $ "submitting chunk " ++ show (i :: Int)
-          syncGraph
+          syncGraph (return ())
 
       -- Verify that everything is set up correctly
       bmc <- runGet ls' $ findBMCAddress myHost

@@ -49,6 +49,7 @@ import HA.EventQueue.Types (HAEvent(..))
 import HA.Resources
 import HA.Service
 import HA.Services.DecisionLog
+import HA.Multimap
 
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
@@ -148,12 +149,6 @@ lookupDLogServiceProcess :: NodeId -> LoopState -> Maybe (ServiceProcess Decisio
 lookupDLogServiceProcess nid ls =
     runningService (Node nid) decisionLog $ lsGraph ls
 
-sendMsg :: Serializable a => ProcessId -> a -> PhaseM g l ()
-sendMsg pid a = liftProcess $ usend pid a
-
-decodeMsg :: ProcessEncode a => BinRep a -> PhaseM g l a
-decodeMsg = liftProcess . decodeP
-
 initialize :: StoreChan -> Process G.Graph
 initialize mm = do
     rg <- G.getGraph mm
@@ -175,7 +170,7 @@ initialize mm = do
 buildRCState :: StoreChan -> ProcessId -> Process LoopState
 buildRCState mm eq = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
-    startRG <- G.sync rg
+    startRG <- G.sync rg (return ())
     return $ LoopState startRG Map.empty mm eq S.empty
 
 -- | The entry point for the RC.
@@ -193,7 +188,7 @@ makeRecoveryCoordinator mm eq rm = do
     execute init_st $ do
       rm
       setRuleFinalizer $ \ls -> do
-        newGraph <- G.sync $ lsGraph ls
+        newGraph <- G.sync (lsGraph ls) (return ())
         return ls { lsGraph = newGraph }
 
 -- remotable [ 'recoveryCoordinator ]

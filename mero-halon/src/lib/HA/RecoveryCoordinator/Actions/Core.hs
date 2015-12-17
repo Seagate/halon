@@ -13,8 +13,10 @@ module HA.RecoveryCoordinator.Actions.Core
   , modifyGraph
   , modifyLocalGraph
     -- * Operating on the graph
-  , getMultimapProcessId
+  , getMultimapChan
   , syncGraph
+  , syncGraphProcess
+  , syncGraphProcessMsg
   , knownResource
   , registerNode
     -- * Communication with the EQ
@@ -101,9 +103,29 @@ modifyLocalGraph k = do
     rg' <- k rg
     putLocalGraph rg'
 
--- | Explicitly syncs the graph to all replicas
-syncGraph :: PhaseM LoopState l ()
-syncGraph = modifyLocalGraph $ liftProcess . G.sync
+-- | Explicitly syncs the graph to all replicas. When graph will be
+-- synchronized callback will be called.
+-- Callback will block multimap process so only fast calls, that do
+-- not throw exceptions should be used there.
+syncGraph :: Process () -> PhaseM LoopState l ()
+syncGraph callback = modifyLocalGraph $ \rg ->
+  liftProcess $ G.sync rg callback
+
+-- | 'syncGraph' wrapper that will notify EQ about message beign processed.
+-- This wrapper could be used then graph synchronization is a last command
+-- before commiting a graph.
+syncGraphProcessMsg :: UUID -> PhaseM LoopState l ()
+syncGraphProcessMsg uuid = do
+  eqPid <- lsEQPid <$> get Global
+  syncGraph $ liftProcess (usend eqPid uuid)
+
+-- | 'syncGraph' helper that passes current process id to the callback.
+-- This method could be used when you want to send message to itself
+-- in a callback.
+syncGraphProcess :: (ProcessId -> Process ()) -> PhaseM LoopState l ()
+syncGraphProcess action = do
+  self <- liftProcess $ getSelfPid
+  syncGraph $ liftProcess (action self)
 
 -- | Declare that we have finished handling a message to the EQ, meaning it can
 --   delete it.
@@ -143,6 +165,6 @@ decodeMsg = liftProcess . decodeP
 getSelfProcessId :: PhaseM g l ProcessId
 getSelfProcessId = liftProcess getSelfPid
 
--- | Get the process ID for the multimap replicating the graph.
-getMultimapProcessId :: PhaseM LoopState l ProcessId
-getMultimapProcessId = fmap lsMMPid $ get Global
+-- | Get the 'StoreChan' for the multimap replicating the graph.
+getMultimapChan :: PhaseM LoopState l StoreChan
+getMultimapChan = fmap lsMMChan $ get Global
