@@ -92,6 +92,7 @@ Library
                    HA.RecoveryCoordinator.Actions.Core
                    HA.RecoveryCoordinator.Actions.Hardware
                    HA.RecoveryCoordinator.Actions.Service
+                   HA.RecoveryCoordinator.Actions.Test
                    HA.RecoveryCoordinator.Rules.Castor
                    HA.RecoveryCoordinator.Rules.Service
                    HA.RecoveryCoordinator.Events.Drive

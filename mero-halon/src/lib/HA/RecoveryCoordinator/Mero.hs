@@ -27,21 +27,14 @@ module HA.RecoveryCoordinator.Mero
        ( module HA.RecoveryCoordinator.Actions.Core
        , module HA.RecoveryCoordinator.Actions.Hardware
        , module HA.RecoveryCoordinator.Actions.Service
+       , module HA.RecoveryCoordinator.Actions.Test
        , IgnitionArguments(..)
        , GetMultimapProcessId(..)
        , ack
-       , getSelfProcessId
-       , sendMsg
        , makeRecoveryCoordinator
-       , prepareEpochResponse
-       , getEpochId
-       , decodeMsg
        , lookupDLogServiceProcess
        , sendToMonitor
-       , getMultimapProcessId
-       , getNoisyPingCount
        , sendToMasterMonitor
-       , rcInitRule
        , handled
        , startProcessingMsg
        , finishProcessingMsg
@@ -56,15 +49,12 @@ import HA.EventQueue.Types (HAEvent(..))
 import HA.Resources
 import HA.Service
 import HA.Services.DecisionLog
-import HA.Services.Monitor
-import HA.Services.Noisy
-
-import qualified HA.EQTracker as EQT
 
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Service
 import HA.RecoveryCoordinator.Actions.Monitor
+import HA.RecoveryCoordinator.Actions.Test
 import qualified HA.Resources.Castor as M0
 #ifdef USE_MERO
 import qualified HA.Resources.Mero as M0
@@ -74,23 +64,19 @@ import HA.Services.Mero (notifyMero)
 import qualified HA.ResourceGraph as G
 
 import Control.Distributed.Process
-import Control.Distributed.Process.Serializable
 
 import Control.Wire hiding (when)
 
 import Data.Binary (Binary)
-import Data.ByteString (ByteString)
 import Data.Dynamic
 import qualified Data.Map.Strict as Map
 import qualified Data.HashSet as HS
 import qualified Data.Set as S
 import Data.UUID (UUID)
-import Data.Word
 
 import GHC.Generics (Generic)
 
 import Network.CEP
-import Network.HostName
 
 -- | Initial configuration data.
 data IgnitionArguments = IgnitionArguments
@@ -135,33 +121,6 @@ startProcessingMsg eid = do
     let ls' = ls { lsHandled = S.insert eid $ lsHandled ls }
     put Global ls'
 
-rcInitRule :: IgnitionArguments
-           -> RuleM LoopState (Maybe ProcessId) (Started LoopState (Maybe ProcessId))
-rcInitRule argv = do
-    boot        <- phaseHandle "boot"
-
-    directly boot $ do
-      h   <- liftIO getHostName
-      nid <- liftProcess getSelfNode
-      liftProcess $ do
-         sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
-         sayRC $ "Executing on node: " ++ show nid
-      ms   <- getNodeRegularMonitors
-      liftProcess $ do
-        self <- getSelfPid
-        EQT.updateEQNodes $ stationNodes argv
-        mpid <- spawnLocal $ do
-           link self
-           monitorProcess Master
-        link mpid
-        register masterMonitorName mpid
-        usend mpid $ StartMonitoringRequest self ms
-        _ <- expect :: Process StartMonitoringReply
-        sayRC $ "started monitoring nodes"
-        sayRC $ "continue in normal mode"
-
-    start boot Nothing
-
 -- | Notify mero about the node being considered down and set the
 -- appropriate host attributes.
 timeoutHost :: M0.Host -> PhaseM LoopState g ()
@@ -185,37 +144,9 @@ timeoutHost h = hasHostAttr M0.HA_TRANSIENT h >>= \case
 ack :: ProcessId -> PhaseM LoopState l ()
 ack pid = liftProcess $ usend pid ()
 
-getSelfProcessId :: PhaseM g l ProcessId
-getSelfProcessId = liftProcess getSelfPid
-
-getNoisyPingCount :: PhaseM LoopState l Int
-getNoisyPingCount = do
-    phaseLog "rg-query" "Querying noisy ping count."
-    rg <- getLocalGraph
-    let (rg', i) =
-          case G.connectedTo noisy HasPingCount rg of
-            [] ->
-              let nrg = G.connect noisy HasPingCount (NoisyPingCount 0) $
-                        G.newResource (NoisyPingCount 0) rg in
-              (nrg, 0)
-            pc@(NoisyPingCount iPc) : _ ->
-              let newPingCount = NoisyPingCount (iPc + 1)
-                  nrg = G.connect noisy HasPingCount newPingCount $
-                        G.newResource newPingCount $
-                        G.disconnect noisy HasPingCount pc rg in
-              (nrg, iPc)
-    putLocalGraph rg'
-    return i
-
 lookupDLogServiceProcess :: NodeId -> LoopState -> Maybe (ServiceProcess DecisionLogConf)
 lookupDLogServiceProcess nid ls =
     runningService (Node nid) decisionLog $ lsGraph ls
-
-sendMsg :: Serializable a => ProcessId -> a -> PhaseM g l ()
-sendMsg pid a = liftProcess $ usend pid a
-
-decodeMsg :: ProcessEncode a => BinRep a -> PhaseM g l a
-decodeMsg = liftProcess . decodeP
 
 initialize :: ProcessId -> Process G.Graph
 initialize mm = do
@@ -225,36 +156,11 @@ initialize mm = do
     -- Empty graph means cluster initialization.
     let rg' | G.null rg =
             G.newResource Cluster >>>
-            G.newResource (Epoch 0 "y = x^2" :: Epoch ByteString) >>>
-            G.connect Cluster Has (Epoch 0 "y = x^2" :: Epoch ByteString) >>>
             (\g -> g { G.grRootNodes =
                        G.grRootNodes g <> HS.singleton (G.Res Cluster) })
             $ rg
             | otherwise = rg
     return rg'
-
-prepareEpochResponse :: PhaseM LoopState l EpochResponse
-prepareEpochResponse = do
-    rg <- getLocalGraph
-
-    let edges :: [G.Edge Cluster Has (Epoch ByteString)]
-        edges = G.edgesFromSrc Cluster rg
-        G.Edge _ Has target = head edges
-
-    return $ EpochResponse $ epochId target
-
-getEpochId :: PhaseM LoopState l Word64
-getEpochId = do
-    rg <- getLocalGraph
-
-    let edges :: [G.Edge Cluster Has (Epoch ByteString)]
-        edges = G.edgesFromSrc Cluster rg
-        G.Edge _ Has target = head edges
-
-    return $ epochId target
-
-getMultimapProcessId :: PhaseM LoopState l ProcessId
-getMultimapProcessId = fmap lsMMPid $ get Global
 
 ----------------------------------------------------------
 -- Recovery Co-ordinator                                --
