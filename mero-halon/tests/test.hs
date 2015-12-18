@@ -108,9 +108,6 @@ ut _host transport breakConnection = do
 #endif
         ]
       , MOCK_TEST(testGroup,"Service-SSPL",HA.RecoveryCoordinator.SSPL.Tests.utTests transport, [])
-#ifdef USE_MOCK_REPLICATOR
-      , HA.Castor.Story.NonMero.tests transport
-#endif
       , ssplTest transport
       ]
 

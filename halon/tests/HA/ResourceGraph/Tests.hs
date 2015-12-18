@@ -15,7 +15,7 @@ import Control.Distributed.Process.Closure (mkStatic, remotable)
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable (SerializableDict(..))
 
-import Control.Exception (SomeException, AsyncException(..), fromException)
+import Control.Exception (SomeException, AsyncException(..), fromException, throwIO)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import qualified Data.HashSet as S
@@ -122,9 +122,9 @@ rGroupTest transport g p =
       link mmpid
       p mmchan
   where
-    handler :: SomeException -> IO ()
-    handler e | Just ThreadKilled <- fromException e = return ()
-              | otherwise = print e
+    handler :: SomeException -> IO a
+    handler e | Just ThreadKilled <- fromException e = return () >> throwIO e
+              | otherwise = print e >> throwIO e
 
 --
 -- NodeA 1       NodeA 2

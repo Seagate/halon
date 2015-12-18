@@ -22,7 +22,6 @@ import Control.Exception
 import Control.Monad
 import Network.Transport (Transport)
 import Network.Transport.InMemory
-import System.Environment hiding (setEnv)
 import System.Posix.Env (setEnv)
 import System.IO
 

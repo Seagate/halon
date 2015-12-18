@@ -24,6 +24,7 @@ module HA.RecoveryCoordinator.Mero.Tests
   ) where
 
 import           Control.Distributed.Process
+import           Control.Distributed.Process.Node (runProcess)
 import           Control.Monad (void)
 import           Data.Binary
 import           Data.List (isInfixOf)
@@ -52,7 +53,7 @@ import           Helper.Environment (systemHostname)
 #ifdef USE_MERO
 import qualified Helper.InitialData
 import           HA.Castor.Tests (initialDataAddr)
-import           HA.RecoveryCoordinator.Actions.Mero (getSpielAddress, syncToConfd)
+import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd)
 import           Mero.Notification (initialize_pre_m0_init)
 import           Network.CEP (liftProcess)
 #endif
@@ -62,11 +63,6 @@ tests _host transport =
   [ testCase "testHostAddition" $ testHostAddition transport
   , testCase "testDriveAddition" $ testDriveAddition transport
   , testCase "testDriveManagerUpdate" $ testDriveManagerUpdate transport
-#ifdef USE_MERO
-  , testCase "testRCsyncToConfd" $ testRCsyncToConfd _host transport
-#else
-  , testCase "testRCsyncToConfd [disabled due to unset USE_MERO]" $ return ()
-#endif
   ]
 
 #ifdef USE_MERO

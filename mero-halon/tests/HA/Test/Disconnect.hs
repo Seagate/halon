@@ -106,8 +106,8 @@ withHalonNodes self ms act = bracket_ startNodes stopNodes act
 
 -- | Make the tuple of arguments required by 'ignition' with some default values.
 mkIgnitionArgs :: [LocalNode]
-               -> (IgnitionArguments -> Closure (ProcessId -> ProcessId -> Process ()))
-               -> (Bool, [NodeId], Int, Int, Closure (ProcessId -> ProcessId -> Process ()), Int)
+               -> (IgnitionArguments -> Closure (ProcessId -> StoreChan -> Process ()))
+               -> (Bool, [NodeId], Int, Int, Closure (ProcessId -> StoreChan -> Process ()), Int)
 mkIgnitionArgs ns rc =
   ( False, map localNodeId ns , 1000, 1000000
   , rc $ IgnitionArguments (map localNodeId ns), 8*1000000 )

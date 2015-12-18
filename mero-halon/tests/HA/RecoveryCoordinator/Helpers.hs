@@ -10,6 +10,7 @@ module HA.RecoveryCoordinator.Helpers where
 import           Control.Distributed.Process
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
+import           HA.Multimap
 #ifdef USE_MOCK_REPLICATOR
 import           HA.Replicator.Mock ( MC_RG )
 #else
@@ -45,6 +46,8 @@ testRemoteTable :: RemoteTable
 testRemoteTable = TestRunner.__remoteTableDecl $
                   remoteTable
 
+-- | Awaits a message about the start of the given service. Waits
+-- until the right message is received.
 serviceStarted :: ServiceName -> Process ProcessId
 serviceStarted svname = do
     mp@(Published (HAEvent _ msg _) _)          <- expect
@@ -56,6 +59,7 @@ serviceStarted svname = do
           usend self mp
           serviceStarted svname
 
+-- | Start the given 'Service' on the current node.
 serviceStart :: Configuration a => Service a -> a -> Process ()
 serviceStart svc conf = do
     nid <- getSelfNode
@@ -63,7 +67,8 @@ serviceStart svc conf = do
     _   <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest Start node svc conf []
     return ()
 
-getNodeMonitor :: ProcessId -> Process ProcessId
+-- | Get the regular monitor pid of the current node.
+getNodeMonitor :: StoreChan -> Process ProcessId
 getNodeMonitor mm = do
     nid <- getSelfNode
     rg  <- G.getGraph mm
@@ -74,9 +79,10 @@ getNodeMonitor mm = do
         _ <- receiveTimeout 100 []
         getNodeMonitor mm
 
-
+-- | Gets the pid of the given service on the given node. It blocks
+-- until the service actually starts.
 getServiceProcessPid :: Configuration a
-                     => ProcessId
+                     => StoreChan
                      -> Node
                      -> Service a
                      -> Process ProcessId
@@ -88,8 +94,10 @@ getServiceProcessPid mm n sc = do
         _ <- receiveTimeout 500000 []
         getServiceProcessPid mm n sc
 
+-- | Tests that the given service is still alive. Tries 3 times and
+-- then gives up.
 serviceProcessStillAlive :: Configuration a
-                         => ProcessId
+                         => StoreChan
                          -> Node
                          -> Service a
                          -> Process Bool
@@ -104,7 +112,9 @@ serviceProcessStillAlive mm n sc = loop (1 :: Int)
                      loop (i + 1)
                    _ -> return False
 
-runRC :: (ProcessId, IgnitionArguments)
+-- | Start the RC without any extra rules. For custom rules, see
+-- 'runRCEx'.
+runRC :: (ProcessId, IgnitionArguments) -- ^ (EQ, ignition arguments)
       -> MC_RG TestReplicatedState
-      -> Process ((ProcessId, ProcessId)) -- ^ MM, RC
+      -> Process ((StoreChan, ProcessId)) -- ^ MM, RC
 runRC (eq, args) rGroup = runRCEx (eq, args) emptyRules rGroup
