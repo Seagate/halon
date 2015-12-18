@@ -42,7 +42,7 @@ import Network.RPC.RPCLite
   , RPCAddress
   , ServerEndpoint
   , initRPC
-  -- , finalizeRPC
+  , finalizeRPC
   , listen
   )
 import Control.Concurrent.MVar
@@ -228,8 +228,7 @@ initialize adr = do
 finalizeInternal :: MVar EndpointRef -> IO ()
 finalizeInternal m = sendM0Task $ do
   finiHAState
-  -- XXX finalizeRPC hangs
-  -- finalizeRPC
+  finalizeRPC
   putMVar m emptyEndpointRef
 
 -- | Finalize the Notification subsystem. We make an assumption that
