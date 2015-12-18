@@ -26,6 +26,7 @@ import qualified Data.Set as Set
 
 import qualified Control.Exception as E
 import Control.Monad.Reader
+import HA.Multimap (StoreChan)
 import HA.Network.RemoteTables (haRemoteTable)
 import HA.Startup hiding (__remoteTable)
 import Test.Transport
@@ -42,12 +43,12 @@ data IgnitionArguments = IgnitionArguments
 
 instance Binary IgnitionArguments
 
-dummyRC :: SendPort () -> ProcessId -> ProcessId -> Process ()
+dummyRC :: SendPort () -> ProcessId -> StoreChan -> Process ()
 dummyRC sp _eq _mm = do
   sendChan sp ()
   receiveWait []
 
-rcClosure :: SendPort () -> [NodeId] -> ProcessId -> ProcessId -> Process ()
+rcClosure :: SendPort () -> [NodeId] -> ProcessId -> StoreChan -> Process ()
 rcClosure sp _ = dummyRC sp
 
 type IgnitionResult = Maybe (Bool,[NodeId],[NodeId],[NodeId])

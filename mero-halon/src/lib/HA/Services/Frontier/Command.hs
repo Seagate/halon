@@ -4,9 +4,11 @@
 --
 module HA.Services.Frontier.Command
     ( Command(..)
-    , Response(..)
+    , MultimapGetKeyValuePairs(..)
+    , ReadResourceGraph(..)
     , parseCommand
-    , respond
+    , mmKeyValues
+    , dumpGraph
     ) where
 
 import qualified Data.ByteString as B
@@ -14,31 +16,35 @@ import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as LB
 import           Data.Foldable
 
+import Data.Binary (Binary)
 import Data.Binary.Put
 import Data.Hashable
 import Data.Maybe (catMaybes)
+import Data.Typeable (Typeable)
 
 import HA.Multimap
 import HA.ResourceGraph hiding (null)
 
+import GHC.Generics
+
 data Command
-    = MultimapGetKeyValuePairs
-    | ReadResourceGraph
+    = CM MultimapGetKeyValuePairs
+    | CR ReadResourceGraph
     | Quit
 
-data Response
-    = ServeMultimapKeyValues (Maybe [(Key, [Value])])
-    | ServeResources [(Res, [Rel])]
+data MultimapGetKeyValuePairs = MultimapGetKeyValuePairs
+  deriving (Eq, Show, Typeable, Generic)
+instance Binary MultimapGetKeyValuePairs
+
+data ReadResourceGraph = ReadResourceGraph
+  deriving (Eq, Show, Typeable, Generic)
+instance Binary ReadResourceGraph
 
 parseCommand :: B.ByteString -> Maybe Command
-parseCommand "mmvalues\r" = Just MultimapGetKeyValuePairs
-parseCommand "graph\r"    = Just ReadResourceGraph
+parseCommand "mmvalues\r" = Just $ CM MultimapGetKeyValuePairs
+parseCommand "graph\r"    = Just $ CR ReadResourceGraph
 parseCommand "quit\r"     = Just Quit
 parseCommand _            = Nothing
-
-respond :: Response -> ByteString
-respond (ServeMultimapKeyValues mxs) = mmKeyValues mxs
-respond (ServeResources xs)          = dumpGraph xs
 
 mmKeyValues :: Maybe ([(Key, [Value])]) -> ByteString
 mmKeyValues = runPut . mmKeyValuesPut

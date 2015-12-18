@@ -14,8 +14,9 @@ module HA.Startup where
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
 import HA.EventQueue ( EventQueue, eventQueueLabel, startEventQueue )
 import qualified HA.EQTracker as EQT
+import HA.Multimap ( StoreChan )
 import HA.Multimap.Implementation ( Multimap, fromList )
-import HA.Multimap.Process ( multimap )
+import HA.Multimap.Process ( startMultimap )
 import HA.Replicator ( RGroup(..), RStateView(..) )
 import HA.Replicator.Log ( RLogGroup )
 import qualified HA.Storage as Storage
@@ -105,7 +106,7 @@ remotableDecl [ [d|
  addNodes :: ( ProcessId
              , [NodeId]
              , [NodeId]
-             , Closure (ProcessId -> ProcessId -> Process ())
+             , Closure (ProcessId -> StoreChan -> Process ())
              )
           -> Process ()
  addNodes (caller, newNodes, trackers, rcClosure) = do
@@ -129,7 +130,7 @@ remotableDecl [ [d|
 
  startRS :: ( Closure (Process (RLogGroup HAReplicatedState))
             , Maybe (Replica RLogGroup)
-            , Closure (ProcessId -> ProcessId -> Process ())
+            , Closure (ProcessId -> StoreChan -> Process ())
             , SendPort ()
             )
             -> Process ()
@@ -145,11 +146,12 @@ remotableDecl [ [d|
        recoverySupervisor (viewRState $(mkStatic 'rsView) rGroup) $
          mask_ $ do
            rcpid <- getSelfPid
-           mmpid <- spawnLocal $ do
-             link rcpid
-             multimap (viewRState $(mkStatic 'multimapView) rGroup)
+           (mmpid, mmchan) <- startMultimap
+             (viewRState $(mkStatic 'multimapView) rGroup)
+             $ \loop -> link rcpid >> loop
            usend eqpid rcpid
-           recoveryCoordinator eqpid mmpid
+           link mmpid
+           recoveryCoordinator eqpid mmchan
 
      -- monitoring processes is okay, since these
      -- processes are on the same node, we're not
@@ -193,7 +195,7 @@ remotableDecl [ [d|
              , [NodeId]
              , Int
              , Int
-             , Closure (ProcessId -> ProcessId -> Process ())
+             , Closure (ProcessId -> StoreChan -> Process ())
              , Int
              )
           -> Process (Maybe (Bool,[NodeId],[NodeId],[NodeId]))
@@ -238,7 +240,7 @@ remotableDecl [ [d|
             expect
         return $ map snd *** map snd $ partition fst $ zip bs nids
 
- autoboot :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
+ autoboot :: Closure ([NodeId] -> ProcessId -> StoreChan -> Process ())
           -> Process ()
  autoboot rcClosure = do
     nid <- getSelfNode
@@ -262,7 +264,7 @@ remotableDecl [ [d|
 
 -- | Startup Halon node. This method run autoboot and starts all
 -- processes that are required for halon node functionality.
-startupHalonNode :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
+startupHalonNode :: Closure ([NodeId] -> ProcessId -> StoreChan -> Process ())
                  -> Process ()
 startupHalonNode rcClosure = do
     p <- Storage.runStorage

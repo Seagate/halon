@@ -25,6 +25,7 @@ import qualified Data.ByteString      as B
 import qualified Data.ByteString.Lazy as BL
 import           Data.Monoid ((<>))
 import           Data.Typeable
+import           Control.Monad.Fix (fix)
 import           GHC.Generics
 import           System.IO
 
@@ -38,9 +39,7 @@ import Options.Schema.Builder
 import Network hiding (Service)
 
 import HA.EventQueue.Producer (promulgate)
-import HA.Multimap
 import HA.RecoveryCoordinator.Mero
-import HA.ResourceGraph
 import HA.Service hiding (configDict)
 import HA.Service.TH
 import HA.Services.Frontier.Command
@@ -73,22 +72,28 @@ tcpServerLoop mmid sock = do
     tcpServerLoop mmid sock
 
 dialog :: ProcessId -> Handle -> Process ()
-dialog mmid h = loop
+dialog _mmid h = loop
   where
     loop = hReadCommand h >>= \case
-        MultimapGetKeyValuePairs -> do
-          mkv <- getKeyValuePairs mmid
-          let resp = respond (ServeMultimapKeyValues mkv)
-          liftIO $ do
-            BL.hPut h resp
-            hFlush h
+        CM r -> do
+          self <- getSelfPid
+          _ <- promulgate (r, self)
+          fix $ \go -> receiveWait
+            [ match $ \resp -> do
+                liftIO $ BL.hPut h resp >> hFlush h
+                go
+            , match return
+            ] :: Process ()
           loop
-        ReadResourceGraph -> do
-          rg <- getGraph mmid
-          let resp = respond (ServeResources $ getGraphResources rg)
-          liftIO $ do
-            BL.hPut h resp
-            hFlush h
+        CR r -> do
+          self <- getSelfPid
+          _ <- promulgate (r, self)
+          fix $ \go -> receiveWait
+            [ match $ \resp -> do
+                liftIO $ BL.hPut h resp >> hFlush h
+                go
+            , match return
+            ] :: Process ()
           loop
         Quit -> return ()
 

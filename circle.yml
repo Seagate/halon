@@ -47,6 +47,6 @@ test:
     - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero --haddock --no-haddock-deps
     - stack $STACK_FLAGS build --flag mero-halon:distributed-tests --test --no-run-tests --haddock --no-haddock-deps
     # Only test mero-halon and deps, without USE_MERO.
-    - stack $STACK_FLAGS --docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1 --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer RS' build --flag mero-halon:distributed-tests --haddock --no-haddock-deps --test:
+    - stack $STACK_FLAGS --docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1 --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS' build --flag mero-halon:distributed-tests --haddock --no-haddock-deps --test:
         timeout: 3600
     - scripts/circleci_copy_artifacts.sh

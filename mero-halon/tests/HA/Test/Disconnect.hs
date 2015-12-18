@@ -27,6 +27,7 @@ import Data.Hashable (Hashable)
 
 import Network.Transport (Transport, EndPointAddress)
 
+import HA.Multimap
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue.Producer
@@ -60,7 +61,7 @@ instance Binary KillRC
 instance Hashable KillRC
 
 remotableDecl [ [d|
-  rcWithDeath :: IgnitionArguments -> ProcessId -> ProcessId -> Process ()
+  rcWithDeath :: IgnitionArguments -> ProcessId -> StoreChan -> Process ()
   rcWithDeath = recoveryCoordinatorEx () rcDeathRules
     where
       rcDeathRules :: [Definitions LoopState ()]
@@ -75,7 +76,7 @@ remotableDecl [ [d|
 myRemoteTable :: RemoteTable
 myRemoteTable = HA.Test.Disconnect.__remoteTableDecl . haRemoteTable $ meroRemoteTable initRemoteTable
 
-rcClosure :: Closure ([NodeId] -> ProcessId -> ProcessId -> Process ())
+rcClosure :: Closure ([NodeId] -> ProcessId -> StoreChan -> Process ())
 rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
                $(mkStaticClosure 'ignitionArguments)
 

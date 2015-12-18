@@ -49,6 +49,7 @@ import HA.EventQueue.Types (HAEvent(..))
 import HA.Resources
 import HA.Service
 import HA.Services.DecisionLog
+import HA.Multimap
 
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
@@ -148,7 +149,7 @@ lookupDLogServiceProcess :: NodeId -> LoopState -> Maybe (ServiceProcess Decisio
 lookupDLogServiceProcess nid ls =
     runningService (Node nid) decisionLog $ lsGraph ls
 
-initialize :: ProcessId -> Process G.Graph
+initialize :: StoreChan -> Process G.Graph
 initialize mm = do
     rg <- G.getGraph mm
     if G.null rg then say "Starting from empty graph."
@@ -166,10 +167,10 @@ initialize mm = do
 -- Recovery Co-ordinator                                --
 ----------------------------------------------------------
 
-buildRCState :: ProcessId -> ProcessId -> Process LoopState
+buildRCState :: StoreChan -> ProcessId -> Process LoopState
 buildRCState mm eq = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
-    startRG <- G.sync rg
+    startRG <- G.sync rg (return ())
     return $ LoopState startRG Map.empty mm eq S.empty
 
 -- | The entry point for the RC.
@@ -178,7 +179,7 @@ buildRCState mm eq = do
 -- to be initialized with 'HA.Network.Address.writeNetworkGlobalIVar'. This is
 -- done automatically if 'HA.Network.Address.startNetwork' is used to create
 -- the transport.
-makeRecoveryCoordinator :: ProcessId -- ^ pid of the replicated multimap
+makeRecoveryCoordinator :: StoreChan -- ^ channel to the replicated multimap
                         -> ProcessId -- ^ pid of the EQ
                         -> Definitions LoopState ()
                         -> Process ()
@@ -187,7 +188,7 @@ makeRecoveryCoordinator mm eq rm = do
     execute init_st $ do
       rm
       setRuleFinalizer $ \ls -> do
-        newGraph <- G.sync $ lsGraph ls
+        newGraph <- G.sync (lsGraph ls) (return ())
         return ls { lsGraph = newGraph }
 
 -- remotable [ 'recoveryCoordinator ]

@@ -62,7 +62,7 @@ main = do
     -- spawning remote processes.
     whenTestIsDistributed $
       setEnvIfUnset "HALON_TRACING"
-        "consensus-paxos replicated-log EQ EQ.producer RS"
+        "consensus-paxos replicated-log EQ EQ.producer MM RS"
     config <- parseArgs <$> getArgs
 #ifdef USE_RPC
     rpcTransport <- RPC.createTransport "s1"

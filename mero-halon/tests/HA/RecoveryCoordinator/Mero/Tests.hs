@@ -41,6 +41,7 @@ import HA.RecoveryCoordinator.Mero
 import HA.EventQueue
 import HA.EventQueue.Types (HAEvent(..))
 import HA.EventQueue.Producer (promulgateEQ)
+import HA.Multimap
 import HA.Multimap.Implementation
 import HA.Replicator
 import HA.EQTracker
@@ -121,11 +122,11 @@ testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent _ SpielSync _) ->
 
 runRC :: (ProcessId, IgnitionArguments)
       -> MC_RG TestReplicatedState
-      -> Process ((ProcessId, ProcessId)) -- ^ MM, RC
+      -> Process ((StoreChan, ProcessId)) -- ^ MM, RC
 runRC (eq, args) rGroup = runRCEx (eq, args) emptyRules rGroup
 
 getServiceProcessPid :: Configuration a
-                     => ProcessId
+                     => StoreChan
                      -> Node
                      -> Service a
                      -> Process ProcessId
@@ -138,7 +139,7 @@ getServiceProcessPid mm n sc = do
         getServiceProcessPid mm n sc
 
 serviceProcessStillAlive :: Configuration a
-                         => ProcessId
+                         => StoreChan
                          -> Node
                          -> Service a
                          -> Process Bool
@@ -282,10 +283,11 @@ testHostAddition transport = do
       say $ "tests node: " ++ show nid
       withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
         nodeUp ([nid], 1000000)
-        -- Send host update message to the RC
+        say "Send host update message to the RC"
         promulgateEQ [nid] (nid, mockEvent) >>= (flip withMonitor) wait
         "Host" :: String <- expect
 
+        say "Load graph"
         graph <- G.getGraph mm
         let host = Host "mockhost"
             node = Node nid
@@ -313,7 +315,7 @@ testDriveAddition transport = do
 
       registerInterceptor $ \string -> case string of
           str@"Starting service dummy"   -> usend self str
-          str' | "Registering storage device" `isInfixOf` str' ->
+          str' | "Updating status for device StorageDevice" `isInfixOf` str' ->
             usend self ("Drive" :: String)
           _ -> return ()
 
@@ -328,10 +330,11 @@ testDriveAddition transport = do
         let enc = Enclosure "enc1"
             drive = head $ (G.connectedTo enc Has graph :: [StorageDevice])
             status = StorageDeviceStatus "online"
-        assert $ G.memberResource enc graph
-        assert $ G.memberResource drive graph
-        assert $ G.memberResource status graph
-        assert $ G.memberEdge (G.Edge enc Has drive) graph
+        liftIO $ do
+          assertBool "Enclosure exists in a graph"  $ G.memberResource enc graph
+          assertBool "Drive exists in a graph"      $ G.memberResource drive graph
+          assertBool "Status exists in a graph"     $ G.memberResource status graph
+          assertBool "Enclosure connected to drive" $ G.memberEdge (G.Edge enc Has drive) graph
   where
     wait = void (expect :: Process ProcessMonitorNotification)
     rt = TestRunner.__remoteTableDecl $
@@ -613,7 +616,7 @@ serviceStart svc conf = do
     _   <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest Start node svc conf []
     return ()
 
-getNodeMonitor :: ProcessId -> Process ProcessId
+getNodeMonitor :: StoreChan -> Process ProcessId
 getNodeMonitor mm = do
     nid <- getSelfNode
     rg  <- G.getGraph mm

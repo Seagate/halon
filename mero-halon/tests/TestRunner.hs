@@ -33,6 +33,7 @@ import HA.EventQueue
 import HA.EventQueue.Types (PersistMessage)
 import HA.Multimap.Implementation
 import HA.Multimap.Process
+import HA.Multimap
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.Replicator
@@ -84,26 +85,27 @@ remotableDecl [ [d|
 
 data TestArgs = TestArgs {
     ta_eq :: ProcessId
-  , ta_mm :: ProcessId
+  , ta_mm :: StoreChan
   , ta_rc :: ProcessId
-} deriving (Eq, Show)
+}
 
 runRCEx :: (ProcessId, IgnitionArguments)
         -> [Definitions LoopState ()]
         -> MC_RG TestReplicatedState
-        -> Process ((ProcessId, ProcessId)) -- ^ MM, RC
+        -> Process (StoreChan, ProcessId) -- ^ MM, RC
 runRCEx (eq, args) rules rGroup = do
-  rec (mm, rc) <- (,)
-                  <$> (spawnLocal $ do
-                        () <- expect
-                        link rc
-                        multimap (viewRState $(mkStatic 'multimapView) rGroup))
+  rec ((mm,cchan), rc) <- (,)
+                  <$> (startMultimap (viewRState $(mkStatic 'multimapView) rGroup)
+                                     (\go -> do
+                                        () <- expect
+                                        link rc
+                                        go))
                   <*> (spawnLocal $ do
                         () <- expect
-                        recoveryCoordinatorEx () rules args eq mm)
+                        recoveryCoordinatorEx () rules args eq cchan)
   usend eq rc
-  forM_ [mm, rc] $ \them -> usend them ()
-  return (mm, rc)
+  forM_ [mm::ProcessId, rc] $ \them -> usend them ()
+  return (cchan, rc)
 
 -- | Wrapper to start a test with a Halon tracking station running. Returns
 --   handles to the recovery co-ordinator, multimap and event queue.
@@ -122,8 +124,8 @@ withTrackingStation testRules action = do
     (flip killReplica nid)
     (\rGroup -> do
       eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
-      (mm, rc) <- runRCEx (eq, IgnitionArguments [nid]) testRules rGroup
-      action $ TestArgs eq mm rc
+      (chan, rc) <- runRCEx (eq, IgnitionArguments [nid]) testRules rGroup
+      action $ TestArgs eq chan rc
     )
 
 -- | Implement a wrapper to start a test, checks current environment

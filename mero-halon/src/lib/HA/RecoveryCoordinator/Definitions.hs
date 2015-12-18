@@ -22,6 +22,7 @@ import Network.CEP (Definitions)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 
+import HA.Multimap
 import HA.RecoveryCoordinator.CEP
 import HA.RecoveryCoordinator.Mero
 
@@ -30,7 +31,7 @@ ignitionArguments = IgnitionArguments
 
 recoveryCoordinator :: IgnitionArguments
                     -> ProcessId
-                    -> ProcessId
+                    -> StoreChan
                     -> Process ()
 recoveryCoordinator argv eq mm =
     makeRecoveryCoordinator mm eq $ rcRules argv []
@@ -38,7 +39,7 @@ recoveryCoordinator argv eq mm =
 recoveryCoordinatorEx :: () -> [Definitions LoopState ()]
                       -> IgnitionArguments
                       -> ProcessId
-                      -> ProcessId
+                      -> StoreChan
                       -> Process ()
 recoveryCoordinatorEx _ rules argv eq mm = do
   makeRecoveryCoordinator mm eq $ rcRules argv rules

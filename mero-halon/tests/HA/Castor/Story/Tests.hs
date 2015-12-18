@@ -32,6 +32,7 @@ import HA.Resources.Castor.Initial
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
+import HA.Multimap
 import HA.Service
 import HA.Services.Mero
 import HA.Services.SSPL
@@ -316,7 +317,7 @@ failDrive recv sdev = let
                       (nodeCmdString (DrivePowerdown sdev_path))
                     )
 
-powerdownComplete :: ProcessId -> M0.SDev -> Process ()
+powerdownComplete :: StoreChan -> M0.SDev -> Process ()
 powerdownComplete mm sdev = let
     sdev_path = pack $ M0.d_path sdev
     downComplete = CommandAck Nothing
@@ -341,7 +342,7 @@ powerdownComplete mm sdev = let
                       (nodeCmdString (DrivePoweron sdev_path))
                     )
 
-poweronComplete :: ProcessId -> M0.SDev -> Process ()
+poweronComplete :: StoreChan -> M0.SDev -> Process ()
 poweronComplete mm sdev = let
     sdev_path = pack $ M0.d_path sdev
     onComplete = CommandAck Nothing
