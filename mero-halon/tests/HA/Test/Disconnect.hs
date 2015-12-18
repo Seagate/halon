@@ -84,6 +84,7 @@ data Dummy = Dummy String deriving (Typeable,Generic)
 
 instance Binary Dummy
 
+-- | Wrap the given action in startup and stop of halon nodes.
 withHalonNodes :: ProcessId -> [LocalNode] -> Process a -> Process a
 withHalonNodes self ms act = bracket_ startNodes stopNodes act
   where
@@ -102,6 +103,8 @@ withHalonNodes self ms act = bracket_ startNodes stopNodes act
       forM_ ms $ \_ -> do
         ((), ()) <- expect
         return ()
+
+-- | Make the tuple of arguments required by 'ignition' with some default values.
 mkIgnitionArgs :: [LocalNode]
                -> (IgnitionArguments -> Closure (ProcessId -> ProcessId -> Process ()))
                -> (Bool, [NodeId], Int, Int, Closure (ProcessId -> ProcessId -> Process ()), Int)

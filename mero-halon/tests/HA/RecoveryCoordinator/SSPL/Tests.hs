@@ -77,8 +77,8 @@ rGroupTest transport p =
     p mmchan
 
 -- List of unit tests
-utTests :: Transport -> TestTree
-utTests transport = testGroup "Service-SSPL"
+utTests :: Transport -> [TestTree]
+utTests transport =
    [ testGroup "hpi-requests"
        [ testSuccess "hpi request with existing WWN"
        $ testHpiExistingWWN transport

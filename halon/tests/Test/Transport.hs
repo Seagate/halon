@@ -19,6 +19,7 @@ import qualified Network.Transport.TCP as TCP
 import qualified Network.Transport.InMemory as InMemory
 import qualified Network.Transport.Controlled as Controlled
 #ifdef USE_RPC
+import Helper.Environment
 import Test.Framework (testSuccess)
 import Test.Tasty (testGroup)
 import Control.Monad (when)
@@ -87,10 +88,7 @@ mkRPCTransport argv = do
       mtl <- fmap ("TEST_LISTEN=" ++) <$> lookupEnv "TEST_LISTEN"
       callProcess "sudo" $ catMaybes [mld, mtl] ++ prog : argv
       exitSuccess
-    addr <- case argv of
-            a0:_ -> return a0
-            _    ->
-                    maybe (error "TEST_LISTEN environment variable is not set") id <$> lookupEnv "TEST_LISTEN"
+    addr <- getTestListen
     rpcTransport <- RPC.createTransport "s1"
                                         (RPC.rpcAddress addr)
                                         RPC.defaultRPCParameters

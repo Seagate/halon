@@ -44,10 +44,11 @@ import           Network.CEP (defineSimple, Definitions)
 import           Network.Transport (Transport(..))
 import           Prelude hiding ((<$>), (<*>))
 import qualified SSPL.Bindings as SSPL
-import           System.Directory (createDirectoryIfMissing, removeDirectoryRecursive)
+import           System.Directory (removeFile)
 import           Test.Framework
 import           Test.Tasty.HUnit (assertBool, testCase)
 import           TestRunner
+import           Helper.Environment (systemHostname)
 #ifdef USE_MERO
 import qualified Helper.InitialData
 import           HA.Castor.Tests (initialDataAddr)
@@ -76,8 +77,8 @@ data SpielSync = SpielSync
 instance Binary SpielSync
 #endif
 
-
 #ifdef USE_MERO
+-- | Used in 'testRCsyncToConfd'.
 testSyncRules :: [Definitions LoopState ()]
 testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent _ SpielSync _) -> do
   result <- syncToConfd
@@ -190,9 +191,8 @@ testDriveManagerUpdate transport = runDefaultTest transport $ do
         | "at 1 marked as active" `isInfixOf` str ->
             usend self  ("DriveActive" :: String)
         | otherwise -> return ()
-  liftIO $ createDirectoryIfMissing True "/tmp/drivemanager"
   say $ "Writing drive_manager.json with:\n" ++ mockFile
-  liftIO $ writeFile "/tmp/drivemanager/drive_manager.json" mockFile
+  liftIO $ writeFile "drive_manager.json" mockFile
   withTrackingStation testRules $ \(TestArgs _ mm _) -> do
     nodeUp ([nid], 1000000)
     "NodeUp" :: String <- expect
@@ -215,19 +215,18 @@ testDriveManagerUpdate transport = runDefaultTest transport $ do
     say "Sending RunDriveManagerFailure"
     promulgateEQ [nid] RunDriveManagerFailure >>= flip withMonitor wait
     "DMUpdated" :: String <- expect
-    content <- liftIO $ readFile "/tmp/drivemanager/drive_manager.json"
+    content <- liftIO $ readFile "drive_manager.json"
     say $ "drive_manager.json content: \n" ++ content
     assert $ "Failed" `isInfixOf` content
-    liftIO $ removeDirectoryRecursive "/tmp/drivemanager"
+    liftIO $ removeFile "drive_manager.json"
   where
     testRules :: [Definitions LoopState ()]
     testRules = return $ defineSimple "dmwf-trigger" $ \(HAEvent _ RunDriveManagerFailure _) -> do
-      liftProcess $ say "test rule triggered"
       -- Find what should be the only SD in the enclosure and trigger
       -- repair on it
       graph <- getLocalGraph
-      let [sd]  = G.connectedTo (Enclosure enc) Has graph
-      updateDriveManagerWithFailure sd
+      let [sd] = G.connectedTo (Enclosure enc) Has graph
+      updateDriveManagerWithFailure (Just "drive_manager.json") sd
 
     wait = void (expect :: Process ProcessMonitorNotification)
     enc :: String

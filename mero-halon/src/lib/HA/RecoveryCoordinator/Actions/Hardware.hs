@@ -461,7 +461,7 @@ locateStorageDeviceOnHost host dev = modifyLocalGraph $ \rg -> do
               ++ show dev
               ++ " on host "
               ++ show host
-              ++ (case menc of 
+              ++ (case menc of
                     Nothing -> ""
                     Just e  -> " (" ++ show e ++ ")")
 
@@ -471,7 +471,7 @@ locateStorageDeviceOnHost host dev = modifyLocalGraph $ \rg -> do
         >>> G.connect host Has dev
         $ case menc of
             Nothing -> rg
-            Just e  -> G.connect e Has dev rg 
+            Just e  -> G.connect e Has dev rg
 
   return rg'
 
@@ -828,10 +828,12 @@ instance A.ToJSON DriveManagerStatus where
 
 -- | Mark given the given 'StorageDevice' as failed in
 -- @/tmp/drivemanager/drive_manager.json@ so the DCS drive manager
--- plugin can update the filesystem.
-updateDriveManagerWithFailure :: forall l. StorageDevice
+-- plugin can update the filesystem. An alternative file path can be
+-- passed in.
+updateDriveManagerWithFailure :: forall l. Maybe FilePath
+                              -> StorageDevice
                               -> PhaseM LoopState l ()
-updateDriveManagerWithFailure disk = flip catch ioHandler $ do
+updateDriveManagerWithFailure fp disk = flip catch ioHandler $ do
   dis <- findStorageDeviceIdentifiers disk
   case listToMaybe [ sn' | DISerialNumber sn' <- dis ] of
     Nothing -> sayDM $ "Unable to find serial number for " ++ show disk
@@ -849,7 +851,7 @@ updateDriveManagerWithFailure disk = flip catch ioHandler $ do
     sayDM = liftProcess . say . ("updateDriveManagerWithFailure: " ++)
 
     dmFile :: FilePath
-    dmFile = "/tmp/drivemanager/drive_manager.json"
+    dmFile = fromMaybe "/tmp/drivemanager/drive_manager.json" fp
     -- Do we need to handle the ‘if the drive is subsequently powered
     -- down’ case somehow?
     setFailed :: String -> DMSDrive -> DMSDrive
