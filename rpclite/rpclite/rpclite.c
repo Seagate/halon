@@ -476,7 +476,6 @@ int rpc_send(rpc_connection_t* c,struct iovec* segments,int segment_count,void (
 	if (msg != NULL) {
 		msg->ctime = m0_time_now();
 		m0_fop_init(&msg->fop, &m0_fop_rpclite_fopt, NULL, rpclite_senderside_free_nonuser_memory);
-		msg->fop.f_item.ri_nr_sent_max = CONNECT_TIMEOUT;
 		msg->fop.f_item.ri_session = &c->session;
 		msg->fop.f_item.ri_deadline = m0_time_from_now(0,1*1000*1000);
 		msg->fop.f_item.ri_nr_sent_max = 1;
