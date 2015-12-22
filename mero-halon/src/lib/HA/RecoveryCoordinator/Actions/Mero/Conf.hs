@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE LambdaCase                 #-}
 
 module HA.RecoveryCoordinator.Actions.Mero.Conf where
@@ -33,10 +34,11 @@ import Control.Monad (forM_)
 
 import Data.Foldable (find, foldl')
 import qualified Data.HashMap.Strict as M
-import Data.List (sort, (\\))
-import Data.Maybe (listToMaybe)
+import Data.List (sort, (\\), nubBy)
+import Data.Maybe (listToMaybe, catMaybes, isJust)
 import Data.Proxy
 import qualified Data.Set as S
+import Data.Typeable (cast, eqT, (:~:))
 import Data.UUID.V4 (nextRandom)
 import Data.Word ( Word32 )
 
@@ -61,6 +63,26 @@ rgLookupConfObjByFid f =
     listToMaybe
   . filter ((== f) . M0.fid)
   . G.getResourcesOfType
+
+-- | Lookup the configuration object states of objects with the given FIDs.
+rgLookupConfObjectStates :: [Fid] -> G.Graph -> [(Fid, M0.ConfObjectState)]
+rgLookupConfObjectStates fids g =
+    [ (fid, state)
+    | (res, rels) <- G.getGraphResources g
+    , fid : _     <- [catMaybes $ map (tryGetFid res) fidDicts]
+    , elem fid fids
+    , state : _   <- [catMaybes $ map findConfObjectState rels]
+    ]
+  where
+    fidDicts = nubBy sameDicts $ catMaybes $ map M0.fidConfObjDict fids
+    sameDicts (M0.SomeConfObjDict (_ :: Proxy ct0))
+              (M0.SomeConfObjDict (_ :: Proxy ct1)) =
+      isJust (eqT :: Maybe (ct0 :~: ct1))
+
+    tryGetFid (G.Res x) (M0.SomeConfObjDict (_ :: Proxy ct)) =
+        M0.fid <$> (cast x :: Maybe ct)
+    findConfObjectState (G.OutRel x _ b) | Just Is <- cast x = cast b
+    findConfObjectState _                                    = Nothing
 
 -- | Initialise a reflection of the Mero configuration in the resource graph.
 --   This does the following:

@@ -26,7 +26,7 @@ import Data.Binary (Binary)
 import Data.Bits
 import Data.Char (ord)
 import Data.Hashable (Hashable)
-import Data.Proxy (Proxy)
+import Data.Proxy (Proxy(..))
 import Data.Typeable (Typeable)
 import Data.Word ( Word32, Word64 )
 import GHC.Generics (Generic)
@@ -349,3 +349,34 @@ $(mkResRel
   ]
   []
   )
+
+-- A dictionary wrapper for configuration objects
+data SomeConfObjDict = forall x. (Typeable x, ConfObj x) =>
+    SomeConfObjDict (Proxy x)
+
+-- Yields the ConfObj dictionary of the object with the given Fid.
+--
+-- TODO: Generate this with TH.
+fidConfObjDict :: Fid -> Maybe SomeConfObjDict
+fidConfObjDict f = lookup (f_container f `shiftR` (64 - 8))
+    [ mkTypePair (Proxy :: Proxy Profile)
+    , mkTypePair (Proxy :: Proxy Filesystem)
+    , mkTypePair (Proxy :: Proxy Node)
+    , mkTypePair (Proxy :: Proxy Rack)
+    , mkTypePair (Proxy :: Proxy Pool)
+    , mkTypePair (Proxy :: Proxy Process)
+    , mkTypePair (Proxy :: Proxy Service)
+    , mkTypePair (Proxy :: Proxy SDev)
+    , mkTypePair (Proxy :: Proxy Enclosure)
+    , mkTypePair (Proxy :: Proxy Controller)
+    , mkTypePair (Proxy :: Proxy Disk)
+    , mkTypePair (Proxy :: Proxy PVer)
+    , mkTypePair (Proxy :: Proxy RackV)
+    , mkTypePair (Proxy :: Proxy EnclosureV)
+    , mkTypePair (Proxy :: Proxy ControllerV)
+    , mkTypePair (Proxy :: Proxy DiskV)
+    ]
+  where
+    mkTypePair :: forall a. (Typeable a, ConfObj a)
+               => Proxy a -> (Word64, SomeConfObjDict)
+    mkTypePair a = (fidType a, SomeConfObjDict (Proxy :: Proxy a))
