@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo       #-}
@@ -5,14 +6,20 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module HA.Castor.Story.Tests (mkTests, testDynamicPVer) where
+module HA.Castor.Story.Tests (mkTests
+#ifdef USE_MERO
+ , testDynamicPVer
+#endif
+ ) where
 
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
-import HA.RecoveryCoordinator.Actions.Mero
-  ( findRealObjsInPVer
-  , findFailableObjs
-  )
+#ifdef USE_MERO
+import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
+   ( findRealObjsInPVer
+   , findFailableObjs
+   )
+#endif
 import HA.RecoveryCoordinator.Actions.Service
   ( registerServiceProcess )
 import HA.RecoveryCoordinator.Events.Drive
@@ -73,7 +80,7 @@ import Helper.SSPL
 import Helper.Environment (systemHostname)
 
 debug :: String -> Process ()
-debug = liftIO . appendFile "/tmp/halon.debug" . (++ "\n")
+debug = say
 
 myRemoteTable :: RemoteTable
 myRemoteTable = TestRunner.__remoteTableDecl remoteTable
@@ -97,8 +104,12 @@ testRules = do
   defineSimple "register-mock-service" $
     \(HAEvent _ (MockM0 dc@(DeclareMeroChannel sp _)) _) -> do
       nid <- liftProcess $ getSelfNode
+      liftProcess $ say "here-1" 
       registerServiceProcess (Node nid) m0d mockMeroConf sp
+      liftProcess $ say "here-2" 
       void . liftProcess $ promulgateEQ [nid] dc
+      liftProcess $ say "here-3" 
+      phaseLog "debug" "here am i"
 
 mkTests :: IO (Transport -> [TestTree])
 mkTests = do
@@ -158,6 +169,7 @@ run transport interceptor test =
       debug "About to run the test"
 
       test ta rmq meroRP
+      say "Test finished"
 
       -- Tear down the test
       _ <- promulgateEQ [localNodeId n] $ encodeP $
@@ -560,6 +572,7 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
     Set [Note _ st] <- receiveChan recv
     liftIO $ assertEqual "drive is in transient state" M0_NC_TRANSIENT st
 
+#ifdef USE_MERO
 -- | Test that we generate an appropriate pool version in response to
 --   failure of a drive, when using 'Dynamic' strategy.
 testDynamicPVer :: Transport -> IO ()
@@ -594,7 +607,6 @@ testDynamicPVer transport = run transport interceptor test where
     checkPVerExistence rg (S.singleton (M0.fid disk)) False
     checkPVerExistence rg1 (S.singleton (M0.fid disk)) True
 
-
     sdev2 <- find2SDev rg
     failDrive recv sdev2
     -- Should now have a pool version corresponding to two failed drives
@@ -602,6 +614,7 @@ testDynamicPVer transport = run transport interceptor test where
     let [disk2] = G.connectedTo sdev2 M0.IsOnHardware rg2 :: [M0.Disk]
     checkPVerExistence rg1 (S.fromList . fmap M0.fid $ [disk, disk2]) False
     checkPVerExistence rg2 (S.fromList . fmap M0.fid $ [disk, disk2]) True
+#endif
 
 -- | Test that we respond correctly to a notification that a RAID device
 --   has failed by sending an IEM.

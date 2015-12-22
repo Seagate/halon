@@ -20,7 +20,13 @@ import HA.Resources.TH
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
 
-import Mero.ConfC (Bitmap, Fid(..), ServiceParams, ServiceType)
+import Mero.ConfC
+  ( Bitmap
+  , Fid(..)
+  , PDClustAttr(..)
+  , ServiceParams
+  , ServiceType
+  )
 
 import Data.Binary (Binary)
 import Data.Bits
@@ -39,6 +45,10 @@ import Mero.ConfC ( ServiceType(..) )
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
+
+-- | Fid type mask
+typMask :: Word64
+typMask = 0x00ffffffffffffff
 
 -- | Fid generation sequence number
 newtype FidSeq = FidSeq Word64
@@ -63,12 +73,18 @@ class ConfObj a where
     where
       -- The top 8 bits of f_container specify the object type.
       typ = fidType p
-      typMask = 0x00ffffffffffffff
       container = (typ `shiftL` (64 - 8)) .|. (cont .&. typMask)
 
   -- | Return the Mero fid for the given conf object
   fid :: a -> Fid
   {-# MINIMAL fidType, fid #-}
+
+-- | Test if a given fid corresponds to the given type.
+fidIsType :: ConfObj a
+          => Proxy a
+          -> Fid
+          -> Bool
+fidIsType p (Fid ctr _) = (ctr .&. typMask) == fidType p
 
 data AnyConfObj = forall a. ConfObj a => AnyConfObj a
 
@@ -242,6 +258,7 @@ instance ConfObj Disk where
 data PVer = PVer {
     v_fid :: Fid
   , v_failures :: [Word32]
+  , v_attrs :: PDClustAttr
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary PVer
@@ -287,7 +304,7 @@ $(mkDicts
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
-  , (''Root, ''IsParentOf, ''Profile) 
+  , (''Root, ''IsParentOf, ''Profile)
   , (''R.Cluster, ''R.Has, ''Profile)
   , (''Controller, ''At, ''R.Host)
   , (''Rack, ''At, ''R.Rack)
@@ -330,9 +347,9 @@ $(mkResRel
   , ''DiskV, ''CI.M0Globals, ''Root
   ]
   [ -- Relationships connecting conf with other resources
-    (''R.Cluster, ''R.Has, ''Profile)
-  , (''R.Cluster, ''R.Has, ''Root)
+    (''R.Cluster, ''R.Has, ''Root)
   , (''Root, ''IsParentOf, ''Profile)
+  , (''R.Cluster, ''R.Has, ''Profile)
   , (''Controller, ''At, ''R.Host)
   , (''Rack, ''At, ''R.Rack)
   , (''Enclosure, ''At, ''R.Enclosure)
@@ -413,7 +430,7 @@ getM0Services g =
 
 -- | Load an entry point for spiel transaction.
 getSpielAddress :: G.Graph -> Maybe SpielAddress
-getSpielAddress g = 
+getSpielAddress g =
    let svs = getM0Services g
        (confdsFid,confdsEps) = nub *** nub . concat $ unzip
          [ (fd, eps) | (Service { s_fid = fd, s_type = CST_MGS, s_endpoints = eps }) <- svs ]
@@ -421,4 +438,4 @@ getSpielAddress g =
          [ (fd, eps) | (Service { s_fid = fd, s_type = CST_MDS, s_endpoints = eps }) <- svs ]
        mrmFid = listToMaybe $ nub rmFids
        mrmEp  = listToMaybe $ nub $ concat rmEps
-  in (\rmFid rmEp -> SpielAddress confdsFid confdsEps rmFid rmEp) <$> mrmFid <*> mrmEp
+  in (SpielAddress confdsFid confdsEps) <$> mrmFid <*> mrmEp

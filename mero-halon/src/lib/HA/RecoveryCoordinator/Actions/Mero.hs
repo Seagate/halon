@@ -16,15 +16,14 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero.Conf
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
+import HA.RecoveryCoordinator.Actions.Mero.Failure
 
 import HA.Resources.Castor (Is(..))
-import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 import HA.Services.Mero (notifyMero)
-
-import Control.Monad (when)
+import Data.Foldable (forM_)
 
 import Network.CEP
 
@@ -39,11 +38,12 @@ updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
   syncGraph (return ()) -- possibly we need to wait here, but I see no good
                         -- reason for that.
   -- If using dynamic failure sets, generate failure set
-  getM0Globals >>= \case
-    Just x | CI.m0_failure_set_gen x == CI.Dynamic -> do
-      syncNeeded <- createPVerIfNotExists
-      when syncNeeded $ syncAction Nothing M0.SyncToConfdServersInRG
-    _ -> return ()
+  graph <- getLocalGraph
+  mstrategy <- getCurrentStrategy
+  forM_ mstrategy $ \strategy ->
+    forM_ (onFailure strategy graph) $ \graph' -> do
+      putLocalGraph graph'
+      syncAction Nothing M0.SyncToConfdServersInRG
   -- Notify Mero
   notifyMero [M0.AnyConfObj m0sdev] M0.M0_NC_TRANSIENT
 

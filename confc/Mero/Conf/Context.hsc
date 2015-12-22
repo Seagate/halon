@@ -109,8 +109,10 @@ bitmapFromArray bs = Bitmap n $ go [] bs where
 
 -- @types.h m0_unit128@
 data Word128 = Word128 {-# UNPACK #-} !Word64 {-# UNPACK #-} !Word64
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
+instance Binary Word128
+instance Hashable Word128
 instance Storable Word128 where
   sizeOf _ = #{size struct m0_uint128}
   alignment _ = #{alignment struct m0_uint128}
@@ -128,8 +130,10 @@ data PDClustAttr = PDClustAttr {
   , _pa_P :: Word32
   , _pa_unit_size :: Word64
   , _pa_seed :: Word128
-} deriving (Eq, Show)
+} deriving (Eq, Generic, Show)
 
+instance Binary PDClustAttr
+instance Hashable PDClustAttr
 instance Storable PDClustAttr where
   sizeOf _ = #{size struct m0_pdclust_attr}
   alignment _ = #{alignment struct m0_pdclust_attr}

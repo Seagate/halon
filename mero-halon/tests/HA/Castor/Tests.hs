@@ -9,15 +9,18 @@ import Control.Distributed.Process
   , RemoteTable
   , liftIO
   , getSelfNode
-  , say
   , unClosure
+  , say
+  , usend
+  , expect
+  , getSelfPid
   )
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
-import Control.Monad (forM_, join)
+import Control.Monad (join)
 
-import Data.List (sort, unfoldr, isPrefixOf, findIndex)
+import Data.List (sort, isPrefixOf)
 import qualified Data.Set as Set
 
 import Network.Transport (Transport)
@@ -34,7 +37,9 @@ import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (startMultimap)
 #ifdef USE_MERO
 import HA.RecoveryCoordinator.Actions.Mero
+import HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
 #endif
+import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
 import HA.RecoveryCoordinator.Mero
 import HA.Replicator (RGroup(..))
 #ifdef USE_MOCK_REPLICATOR
@@ -53,7 +58,7 @@ import RemoteTables (remoteTable)
 import TestRunner
 
 import Test.Framework
-import System.IO
+import qualified Test.Tasty.HUnit as Tasty
 import System.Mem
 import GHC.Stats
 
@@ -90,8 +95,8 @@ tests host transport = map (localOption (mkTimeout $ 10*60*1000000))
   , testSuccess "large-data" $ largeInitialData host transport
   ]
 
-fsSize :: FailureSet -> Int
-fsSize (FailureSet a _) = Set.size a
+fsSize :: (a, Set.Set b) -> Int
+fsSize (_, a) = Set.size a
 
 testFailureSets :: Transport -> IO ()
 testFailureSets transport = rGroupTest transport $ \pid -> do
@@ -103,14 +108,14 @@ testFailureSets transport = rGroupTest transport $ \pid -> do
       loadMeroGlobals (CI.id_m0_globals initialData)
       loadMeroServers filesystem (CI.id_m0_servers initialData)
     -- 8 disks, tolerating one disk failure at a time
-    failureSets <- runGet ls' $ generateFailureSets 1 0 0
-    say $ show failureSets
+    let g = lsGraph ls'
+        failureSets = generateFailureSets 1 0 0 g (CI.id_m0_globals initialData)
     assertMsg "Number of failure sets (100)" $ length failureSets == 9
     assertMsg "Smallest failure set is empty (100)"
       $ fsSize (head failureSets) == 0
 
     -- 8 disks, two failures at a time
-    failureSets2 <- runGet ls' $ generateFailureSets 2 0 0
+    let failureSets2 = generateFailureSets 2 0 0 g (CI.id_m0_globals initialData)
     assertMsg "Number of failure sets (200)" $ length failureSets2 == 37
     assertMsg "Smallest failure set is empty (200)"
       $ fsSize (head failureSets2) == 0
@@ -131,9 +136,8 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
       loadMeroGlobals (CI.id_m0_globals initialData)
       loadMeroServers filesystem (CI.id_m0_servers initialData)
       rg <- getLocalGraph
-      failureSets <- generateFailureSets 2 2 1
-      let pvers = failureSetToPoolVersion rg filesystem <$> failureSets
-      createPoolVersions filesystem pvers
+      let Just rg' = onInit (simpleStrategy 2 2 1) rg
+      putLocalGraph rg'
     -- Verify that everything is set up correctly
     bmc <- runGet ls' $ findBMCAddress myHost
     assertMsg "Get BMC Address." $ bmc == Just host
@@ -178,18 +182,15 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
   where
     myHost = Host systemHostname
 
-printMem :: IO ()
+printMem :: IO String
 printMem = do
   performGC
-  readFile "/proc/self/status" >>=
-    hPutStr stderr . unlines . filter (\x -> any (`isPrefixOf` x) ["VmHWM", "VmRSS"])
-                   . lines
+  l1 <- fmap (unlines . filter (\x -> any (`isPrefixOf` x) ["VmHWM", "VmRSS"])
+                      . lines) (readFile "/proc/self/status")
   stats <- getGCStats
-  hPutStrLn stderr $ "In use according to GC stats: " ++
-    show (currentBytesUsed stats `div` (1024 * 1024)) ++ " MB"
-  hPutStrLn stderr $ "HWM according the GC stats: " ++
-    show (maxBytesUsed stats `div` (1024 * 1024)) ++ " MB"
-  hPutStrLn stderr ""
+  let l2 = "In use according to GC stats: " ++ show (currentBytesUsed stats `div` (1024 * 1024)) ++ " MB"
+      l3 = "HWM according the GC stats: " ++ show (maxBytesUsed stats `div` (1024 * 1024)) ++ " MB"
+  return $ unlines [l1,l2,l3]
 
 largeInitialData :: String -> Transport -> IO ()
 largeInitialData host transport = let
@@ -201,7 +202,6 @@ largeInitialData host transport = let
       me <- getSelfNode
       ls <- emptyLoopState pid (nullProcessId me)
       (ls', _) <- run ls $ do
-        rg <- getLocalGraph
         -- TODO: the interface address is hard-coded here: currently we
         -- don't use it so it doesn't impact us but in the future we
         -- should also take it as a parameter to the test, just like the
@@ -210,6 +210,10 @@ largeInitialData host transport = let
         filesystem <- initialiseConfInRG
         loadMeroGlobals (CI.id_m0_globals initD)
         loadMeroServers filesystem (CI.id_m0_servers initD)
+        self <- liftProcess $ getSelfPid
+        syncGraph $ usend self ()
+        liftProcess (expect :: Process ())
+{-
         failureSets <- generateFailureSets 1 0 0
         let chunks = flip unfoldr failureSets $ \xs ->
               case xs of
@@ -228,6 +232,7 @@ largeInitialData host transport = let
           createPoolVersions filesystem pvers
           liftProcess $ liftIO $ hPutStrLn stderr $ "submitting chunk " ++ show (i :: Int)
           syncGraph (return ())
+-}
 
       -- Verify that everything is set up correctly
       bmc <- runGet ls' $ findBMCAddress myHost
@@ -245,7 +250,7 @@ largeInitialData host transport = let
       assertMsg "MDPool is findable by Fid"
         $ mdpool == Just pool
 
-      liftIO printMem
+      say =<< liftIO printMem
       -- let g = lsGraph ls'
       g <- getGraph pid
       let racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
@@ -256,8 +261,8 @@ largeInitialData host transport = let
           sdevs = join $ fmap (\r -> connectedTo r Has g :: [StorageDevice]) hosts
           disksByHost = join $ fmap (\r -> connectedFrom M0.At r g :: [M0.Disk]) sdevs
 
-      liftIO printMem
-      assertMsg "Number of racks" $ length racks == 1
+      say =<< liftIO printMem
+      liftIO $ Tasty.assertEqual "Numbe of racks" 1 (length racks)
       assertMsg "Number of enclosures" $ length encls == 1
       assertMsg "Number of controllers" $ length ctrls == 1
       assertMsg "Number of storage devices" $ length sdevs == numDisks

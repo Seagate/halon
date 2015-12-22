@@ -28,7 +28,6 @@ import Network.RPC.RPCLite
 import Control.Exception (bracket)
 import Foreign.C
 import Foreign.Ptr
-import System.IO
 #endif
 
 import Control.Arrow (second)
@@ -160,7 +159,7 @@ withEndpoint addr = bracket
   where
     listenCallbacks = ListenCallbacks
       { receive_callback = \it _ -> do
-          hPutStr stderr "Received: "
+          -- hPutStr stderr "Received: "
           print =<< unsafeGetFragments it
           return True
       }
