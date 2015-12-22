@@ -50,6 +50,12 @@ docker:
   - USER=stack # for m0 script
   - TEST_LISTEN=127.0.0.1:8090
 
+nix:
+  packages: [ leveldb
+            , libiconv
+            , pcre
+            ]
+
 extra-include-dirs:
 - /mero
 - /mero/extra-libs/galois/include
