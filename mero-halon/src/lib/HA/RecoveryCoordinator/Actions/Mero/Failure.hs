@@ -63,7 +63,7 @@ data Strategy = Strategy {
 -- | Allow combining strategies.
 --   The 'empty' strategy generates no pool versions.
 --   Combining strategies will generate pool versions when either strategy
---   enerates them.
+--   generates them.
 instance Monoid Strategy where
   mempty = Strategy { onInit = const Nothing, onFailure = const Nothing }
   (Strategy i1 f1) `mappend` (Strategy i2 f2) = Strategy {
