@@ -2,15 +2,23 @@
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-module HA.RecoveryCoordinator.Actions.Failure.Dynamic where
+{-# LANGUAGE FlexibleContexts #-}
+module HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic where
 
-import HA.RecoveryCoordinator.Actions.Failure
+import HA.RecoveryCoordinator.Actions.Mero.Failure
 import qualified HA.ResourceGraph as G
+import           HA.Resources
+import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
+import Mero.ConfC (Fid(..))
 
+import Data.Word
 import Data.Maybe (listToMaybe)
+import Data.List (find)
+import Data.Ratio
+import Data.Proxy (Proxy(..))
 import qualified Data.Set as S
 
 -- | Dynamic failure set generation strategy. In this case, we generate a
@@ -20,11 +28,11 @@ dynamicStrategy :: Word32 -- ^ No. of disk failures to tolerate
                 -> Word32 -- ^ No. of controller failures to tolerate
                 -> Word32 -- ^ No. of disk failures equivalent to ctrl failure
                 -> Strategy
-dynamicStrategy df cf cfe = Strategy {
-  , onInit = const Nothing
-  , onFailure rg = do
+dynamicStrategy _df _cf _cfe = Strategy { -- XXX: WHY IT'S NOT USED ??
+    onInit = const Nothing
+  , onFailure = \rg -> do
       fs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Filesystem
-      globs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Globals
+      globs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
       createPVerIfNotExists rg fs globs
 }
 
@@ -105,14 +113,14 @@ createPVerIfNotExists rg fs globs = let
   in case mcur of
     Just _ -> Nothing
     Nothing -> let
-        allDrives = G.getResourcesOfType rg :: [M0.Disk]
+        _allDrives = G.getResourcesOfType rg :: [M0.Disk] -- XXX: why it's not used
         n = CI.m0_data_units globs
         k = CI.m0_parity_units globs
         pvObjs = (failableObjs `S.difference` failedDevs)
         noCtlrs = S.size $ S.filter
-                          (fidIsType (Proxy :: Proxy M0.Controller))
+                          (M0.fidIsType (Proxy :: Proxy M0.Controller))
                           pvObjs
-        ctrlFailures = floor $ noCtlrs / (n+k)
+        ctrlFailures = floor $ noCtlrs % (fromIntegral $ n+k)
         failures = Failures 0 0 0 ctrlFailures k
         pv = PoolVersion pvObjs failures
       in return $ createPoolVersions fs [pv] False rg

@@ -2,7 +2,7 @@
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-module HA.RecoveryCoordinator.Actions.Failure
+module HA.RecoveryCoordinator.Actions.Mero.Failure
   ( Failures(..)
   , PoolVersion(..)
   , Strategy(..)
@@ -10,9 +10,18 @@ module HA.RecoveryCoordinator.Actions.Failure
   ) where
 
 import qualified HA.ResourceGraph as G
+import qualified HA.Resources.Mero as M0
+import HA.RecoveryCoordinator.Actions.Mero.Core
+import Mero.ConfC (Fid(..), PDClustAttr(..))
 
+import Control.Category
 import Control.Monad ((>=>))
 import qualified Control.Monad.State.Lazy as S
+import qualified Data.Set as Set
+import Data.Foldable (forM_)
+import Data.Word
+import Data.Proxy (Proxy(..))
+import Prelude hiding (id, (.))
 
 -- | Failure tolerance vector. For a given pool version, the failure
 --   tolerance vector reflects how many objects in each level can be expected
@@ -37,7 +46,7 @@ failuresToArray :: Failures -> [Word32]
 failuresToArray f = [f_pool f, f_rack f, f_encl f, f_ctrl f, f_disk f]
 
 -- |  Minimal representation of a pool version for generation.
-data PoolVersion = PoolVersion !(S.Set Fid) !Failures
+data PoolVersion = PoolVersion !(Set.Set Fid) !Failures
                   -- ^ @PoolVersion fids fs@ where @fids@ is a set of
                   -- fids and @fs@ are allowable failures in each
                   -- failure domain.
@@ -82,19 +91,24 @@ createPoolVersions fs pvers invert rg =
     S.execState (mapM_ createPoolVersion pvers) rg
   where
     pool = M0.Pool (M0.f_mdpool_fid fs)
-    test failset x = (if invert then not else id) $ M0.fid x `S.member` failset
-    createPoolVersion :: PoolVersion -> S.State G.Graph
+    test failset x = (if invert then not else id) $ M0.fid x `Set.member` failset
+    createPoolVersion :: PoolVersion -> S.State G.Graph ()
     createPoolVersion (PoolVersion failset failures) = do
-      pver <- M0.PVer <$> newFid (Proxy :: Proxy M0.PVer)
-                      <*> return (failuresToArray failures)
+      pver <- M0.PVer <$> S.state (newFid (Proxy :: Proxy M0.PVer))
+                      <*> pure (failuresToArray failures)
+                      <*> pure (PDClustAttr (error "number of disks")
+                                            (error "global setting")
+                                            (error "global setting")
+                                            (error "unit size")
+                                            (error "seed"))
       S.modify'
           $ G.newResource pver
         >>> G.connect pool M0.IsRealOf pver
-      rg <- S.get
+      rg0 <- S.get
       forM_ (filter (test failset)
-              $ G.connectedTo fs M0.IsParentOf rg :: [M0.Rack])
+              $ G.connectedTo fs M0.IsParentOf rg0 :: [M0.Rack])
             $ \rack -> do
-        rackv <- M0.RackV <$> newFid (Proxy :: Proxy M0.RackV)
+        rackv <- M0.RackV <$> S.state (newFid (Proxy :: Proxy M0.RackV))
         S.modify'
             $ G.newResource rackv
           >>> G.connect pver M0.IsParentOf rackv
@@ -103,7 +117,7 @@ createPoolVersions fs pvers invert rg =
         forM_ (filter (test failset)
                 $ G.connectedTo rack M0.IsParentOf rg1 :: [M0.Enclosure])
               $ \encl -> do
-          enclv <- M0.EnclosureV <$> newFid (Proxy :: Proxy M0.EnclosureV)
+          enclv <- M0.EnclosureV <$> S.state (newFid (Proxy :: Proxy M0.EnclosureV))
           S.modify'
               $ G.newResource enclv
             >>> G.connect rackv M0.IsParentOf enclv
@@ -112,7 +126,7 @@ createPoolVersions fs pvers invert rg =
           forM_ (filter (test failset)
                   $ G.connectedTo encl M0.IsParentOf rg2 :: [M0.Controller])
                 $ \ctrl -> do
-            ctrlv <- M0.ControllerV <$> newFid (Proxy :: Proxy M0.ControllerV)
+            ctrlv <- M0.ControllerV <$> S.state (newFid (Proxy :: Proxy M0.ControllerV))
             S.modify'
                 $ G.newResource ctrlv
               >>> G.connect enclv M0.IsParentOf ctrlv
@@ -121,7 +135,7 @@ createPoolVersions fs pvers invert rg =
             forM_ (filter (test failset)
                     $ G.connectedTo ctrl M0.IsParentOf rg3 :: [M0.Disk])
                   $ \disk -> do
-              diskv <- M0.DiskV <$> newFid (Proxy :: Proxy M0.DiskV)
+              diskv <- M0.DiskV <$> S.state (newFid (Proxy :: Proxy M0.DiskV))
               S.modify'
                   $ G.newResource diskv
                 >>> G.connect ctrlv M0.IsParentOf diskv

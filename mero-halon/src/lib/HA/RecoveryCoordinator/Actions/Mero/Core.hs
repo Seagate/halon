@@ -26,31 +26,29 @@ import Network.CEP
 
 import Prelude hiding (id)
 
-newFidSeq_unlifted :: Graph -> (Graph, Word64)
-newFidSeq_unlifted rg = case G.connectedTo Cluster Has rg of
-    ((M0.FidSeq w):_) -> go rg w
-    [] -> go rg 0
+newFidSeq :: G.Graph -> (Word64, G.Graph)
+newFidSeq rg = case G.connectedTo Cluster Has rg of
+    ((M0.FidSeq w):_) -> go w
+    [] -> go 0
   where
-    go rg w = let
-        w' = w + 1
-        rg' = G.connectUniqueFrom Cluster Has (M0.FidSeq w') $ rg
-      -- We start counting form zero because otherwise root object will be
-      -- out of sync with mero
-      in (rg', w)
+    go w = let w' = w + 1
+               rg' = G.connectUniqueFrom Cluster Has (M0.FidSeq w') $ rg
+           in (w, rg')
 
 -- | Atomically fetch a FID sequence number of increment the sequence count.
-newFidSeq :: PhaseM LoopState l Word64
-newFidSeq = getLocalGraph >>= \rg ->
-    putLocalGraph rg' >> return w'
-  where
-    (rg', w') = newFidSeq_unlifted rg
+newFidSeqRC :: PhaseM LoopState l Word64
+newFidSeqRC = do
+  rg <- getLocalGraph
+  let (w, rg') = newFidSeq rg
+  putLocalGraph rg'
+  return w
 
-newFid_unlifted :: M0.ConfObj a => Proxy a -> Graph -> (Graph, Fid)
-newFid_unlifted p rg = (rg', M0.fidInit p 1 w) where
-  (rg', w) = newFidSeq_unlifted rg
+newFid :: M0.ConfObj a => Proxy a -> G.Graph -> (Fid, G.Graph)
+newFid p rg = (M0.fidInit p 1 w, rg') where
+  (w, rg') = newFidSeq rg
 
-newFid :: M0.ConfObj a => Proxy a -> PhaseM LoopState l Fid
-newFid p = newFidSeq >>= return . M0.fidInit p 1
+newFidRC :: M0.ConfObj a => Proxy a -> PhaseM LoopState l Fid
+newFidRC p = M0.fidInit p 1 <$> newFidSeqRC
 
 --------------------------------------------------------------------------------
 -- Core configuration

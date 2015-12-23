@@ -304,7 +304,7 @@ $(mkDicts
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
-  , (''Root, ''IsParentOf, ''Profile) 
+  , (''Root, ''IsParentOf, ''Profile)
   , (''R.Cluster, ''R.Has, ''Profile)
   , (''Controller, ''At, ''R.Host)
   , (''Rack, ''At, ''R.Rack)
@@ -347,9 +347,9 @@ $(mkResRel
   , ''DiskV, ''CI.M0Globals, ''Root
   ]
   [ -- Relationships connecting conf with other resources
-    (''R.Cluster, ''R.Has, ''Profile)
-  , (''R.Cluster, ''R.Has, ''Root)
+    (''R.Cluster, ''R.Has, ''Root)
   , (''Root, ''IsParentOf, ''Profile)
+  , (''R.Cluster, ''R.Has, ''Profile)
   , (''Controller, ''At, ''R.Host)
   , (''Rack, ''At, ''R.Rack)
   , (''Enclosure, ''At, ''R.Enclosure)
@@ -430,7 +430,7 @@ getM0Services g =
 
 -- | Load an entry point for spiel transaction.
 getSpielAddress :: G.Graph -> Maybe SpielAddress
-getSpielAddress g = 
+getSpielAddress g =
    let svs = getM0Services g
        (confdsFid,confdsEps) = nub *** nub . concat $ unzip
          [ (fd, eps) | (Service { s_fid = fd, s_type = CST_MGS, s_endpoints = eps }) <- svs ]
@@ -438,4 +438,4 @@ getSpielAddress g =
          [ (fd, eps) | (Service { s_fid = fd, s_type = CST_MDS, s_endpoints = eps }) <- svs ]
        mrmFid = listToMaybe $ nub rmFids
        mrmEp  = listToMaybe $ nub $ concat rmEps
-  in (\rmFid rmEp -> SpielAddress confdsFid confdsEps rmFid rmEp) <$> mrmFid <*> mrmEp
+  in (SpielAddress confdsFid confdsEps) <$> mrmFid <*> mrmEp

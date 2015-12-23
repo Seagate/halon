@@ -19,7 +19,6 @@ import HA.Resources (Cluster(..), Has(..))
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
-import qualified HA.Resources.Mero.Note as M0
 
 import Mero.ConfC
   ( Fid
@@ -30,16 +29,11 @@ import Mero.ConfC
 import Control.Applicative
 import Control.Category (id, (>>>))
 import Control.Distributed.Process (liftIO)
-import Control.Monad (forM_)
 
-import Data.Foldable (find, foldl')
-import qualified Data.HashMap.Strict as M
-import Data.List (sort, (\\))
+import Data.Foldable (foldl')
 import Data.Maybe (listToMaybe)
 import Data.Proxy
-import qualified Data.Set as S
 import Data.UUID.V4 (nextRandom)
-import Data.Word ( Word32 )
 
 import Network.CEP
 
@@ -73,10 +67,10 @@ initialiseConfInRG = getFilesystem >>= \case
     Just fs -> return fs
     Nothing -> do
       rg <- getLocalGraph
-      root    <- M0.Root    <$> newFid (Proxy :: Proxy M0.Root)
-      profile <- M0.Profile <$> newFid (Proxy :: Proxy M0.Profile)
-      pool <- M0.Pool <$> newFid (Proxy :: Proxy M0.Pool)
-      fs <- M0.Filesystem <$> newFid (Proxy :: Proxy M0.Filesystem)
+      root    <- M0.Root    <$> newFidRC (Proxy :: Proxy M0.Root)
+      profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
+      pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
+      fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem)
                           <*> return (M0.fid pool)
       modifyGraph
           $ G.newResource root
@@ -97,7 +91,7 @@ initialiseConfInRG = getFilesystem >>= \case
   where
     mirrorRack :: M0.Filesystem -> (Rack, [Enclosure]) -> PhaseM LoopState l ()
     mirrorRack fs (r, encls) = do
-      m0r <- M0.Rack <$> newFid (Proxy :: Proxy M0.Rack)
+      m0r <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
       m0e <- mapM mirrorEncl encls
       modifyGraph
           $ G.newResource m0r
@@ -109,7 +103,7 @@ initialiseConfInRG = getFilesystem >>= \case
     mirrorEncl r = lookupEnclosureM0 r >>= \case
       Just k -> return k
       Nothing -> do
-         m0r <- M0.Enclosure <$> newFid (Proxy :: Proxy M0.Enclosure)
+         m0r <- M0.Enclosure <$> newFidRC (Proxy :: Proxy M0.Enclosure)
          modifyLocalGraph $ return
            . (G.newResource m0r >>> G.connectUnique m0r M0.At r)
          return m0r
@@ -134,8 +128,8 @@ loadMeroServers fs = mapM_ goHost where
   goHost CI.M0Host{..} = let
       host = Host m0h_fqdn
     in do
-      ctrl <- M0.Controller <$> newFid (Proxy :: Proxy M0.Controller)
-      node <- M0.Node <$> newFid (Proxy :: Proxy M0.Node)
+      ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
+      node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
 
       devs <- mapM (goDev host ctrl) m0h_devices
       mapM_ (goProc node devs) m0h_processes
@@ -162,7 +156,7 @@ loadMeroServers fs = mapM_ goHost where
                               m0p_mem_stack m0p_mem_memlock
                               cores m0p_endpoint
     in do
-      proc <- mkProc <$> newFid (Proxy :: Proxy M0.Process)
+      proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
       mapM_ (goSrv proc devs) m0p_services
 
       modifyGraph $ G.newResource proc
@@ -176,7 +170,7 @@ loadMeroServers fs = mapM_ goHost where
                     $ fmap (G.connect svc M0.IsParentOf) devs
         _ -> id
     in do
-      svc <- mkSrv <$> newFid (Proxy :: Proxy M0.Service)
+      svc <- mkSrv <$> newFidRC (Proxy :: Proxy M0.Service)
       modifyLocalGraph $ return
                        . (    G.newResource svc
                           >>> G.connect proc M0.IsParentOf svc
@@ -198,10 +192,10 @@ loadMeroServers fs = mapM_ goHost where
           return sdev
       m0sdev <- lookupStorageDeviceSDev sdev >>= \case
         Just m0sdev -> return m0sdev
-        Nothing -> mkSDev <$> newFid (Proxy :: Proxy M0.SDev)
+        Nothing -> mkSDev <$> newFidRC (Proxy :: Proxy M0.SDev)
       m0disk <- lookupSDevDisk m0sdev >>= \case
         Just m0disk -> return m0disk
-        Nothing -> M0.Disk <$> newFid (Proxy :: Proxy M0.Disk)
+        Nothing -> M0.Disk <$> newFidRC (Proxy :: Proxy M0.Disk)
       markDiskPowerOn sdev
       modifyGraph
           $ G.newResource m0sdev

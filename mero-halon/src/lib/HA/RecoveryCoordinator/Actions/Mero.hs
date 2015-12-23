@@ -16,6 +16,8 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero.Conf
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
+import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
+  (createPVerIfNotExists)
 
 import HA.Resources.Castor (Is(..))
 import qualified HA.Resources.Castor.Initial as CI
