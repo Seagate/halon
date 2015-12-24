@@ -5,14 +5,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module HA.Castor.Story.Tests (mkTests, testDynamicPVer) where
+module HA.Castor.Story.Tests (mkTests, {-testDynamicPVer-}) where
 
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
-import HA.RecoveryCoordinator.Actions.Mero
-  ( findRealObjsInPVer
-  , findFailableObjs
-  )
+-- import HA.RecoveryCoordinator.Actions.Mero
+--   ( findRealObjsInPVer
+--   , findFailableObjs
+--   )
 import HA.RecoveryCoordinator.Actions.Service
   ( registerServiceProcess )
 import HA.RecoveryCoordinator.Events.Drive
@@ -559,6 +559,7 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
     Set [Note _ st] <- receiveChan recv
     liftIO $ assertEqual "drive is in transient state" M0_NC_TRANSIENT st
 
+{-
 -- | Test that we generate an appropriate pool version in response to
 --   failure of a drive, when using 'Dynamic' strategy.
 testDynamicPVer :: Transport -> IO ()
@@ -601,6 +602,7 @@ testDynamicPVer transport = run transport interceptor test where
     let [disk2] = G.connectedTo sdev2 M0.IsOnHardware rg2 :: [M0.Disk]
     checkPVerExistence rg1 (S.fromList . fmap M0.fid $ [disk, disk2]) False
     checkPVerExistence rg2 (S.fromList . fmap M0.fid $ [disk, disk2]) True
+-}
 
 -- | Test that we respond correctly to a notification that a RAID device
 --   has failed by sending an IEM.

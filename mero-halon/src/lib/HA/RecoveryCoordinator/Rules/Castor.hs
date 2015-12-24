@@ -38,10 +38,11 @@ import HA.Resources.Mero hiding (Node, Process, Enclosure, Rack)
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Actions.Mero
+import HA.RecoveryCoordinator.Actions.Mero.Failure
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState
 import Control.Exception (SomeException)
-import Data.List (unfoldr)
+--import Data.List (unfoldr)
 import Data.UUID.V4 (nextRandom)
 import Data.Proxy (Proxy(..))
 #endif
@@ -173,10 +174,17 @@ ruleInitialDataLoad :: Definitions LoopState ()
 ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
       mapM_ goRack id_racks
 #ifdef USE_MERO
-      rg <- getLocalGraph
+      -- rg <- getLocalGraph
       filesystem <- initialiseConfInRG
       loadMeroGlobals id_m0_globals
       loadMeroServers filesystem id_m0_servers
+      graph <- getLocalGraph
+      Just strategy <- getCurrentStrategy
+      forM_ (onInit strategy graph) $ \graph' -> do
+        putLocalGraph graph'
+        -- TODO sync graph in a nice way
+        syncAction Nothing M0.SyncToConfdServersInRG
+{-
       failureSets <- case (CI.m0_failure_set_gen id_m0_globals) of
         CI.Dynamic -> return []
         CI.Preloaded x y z -> generateFailureSets x y z
@@ -191,7 +199,7 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
       forM_ chunks $ \chunk -> do
         createPoolVersions filesystem chunk
         syncGraphProcess $ \self -> usend self InitialDataChunk
-        liftProcess $ expect >>= \InitialDataChunk -> return ()
+        liftProcess $ expect >>= \InitialDataChunk -> return () -}
 #endif
       liftProcess $ say "Loaded initial data"
       rg' <- getLocalGraph
@@ -208,7 +216,7 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
 
 #ifdef USE_MERO
 ruleMeroNoteSet :: Definitions LoopState ()
-ruleMeroNoteSet = 
+ruleMeroNoteSet =
     defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> do
       for_ ns $ \(Note mfid tpe) ->
         case tpe of
@@ -583,14 +591,14 @@ ruleNewMeroClient = define "new-mero-client" $ do
                                          , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
                                          ] of
             Just nd -> return nd
-            Nothing -> M0.Node <$> newFid (Proxy :: Proxy M0.Node)
+            Nothing -> M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
           -- Check if process is already defined in RG
           let mprocess = listToMaybe
                 $ filter (\(M0.Process _ _ _ _ _ _ a) -> a == ip ++ rmsAddress)
                 $ G.connectedTo m0node M0.IsParentOf rg
           process <- case mprocess of
             Just process -> return process
-            Nothing -> M0.Process <$> newFid (Proxy :: Proxy M0.Process)
+            Nothing -> M0.Process <$> newFidRC (Proxy :: Proxy M0.Process)
                                   <*> pure memsize'
                                   <*> pure memsize'
                                   <*> pure memsize'
@@ -603,7 +611,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
                 $ G.connectedTo process M0.IsParentOf rg
           rmsService <- case mrmsService of
             Just service -> return service
-            Nothing -> M0.Service <$> newFid (Proxy :: Proxy M0.Service)
+            Nothing -> M0.Service <$> newFidRC (Proxy :: Proxy M0.Service)
                                   <*> pure CST_RMS
                                   <*> pure [ip ++ rmsAddress]
                                   <*> pure SPUnused
@@ -613,7 +621,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
                 $ G.connectedTo process M0.IsParentOf rg
           haService <- case mhaService of
             Just service -> return service
-            Nothing -> M0.Service <$> newFid (Proxy :: Proxy M0.Service)
+            Nothing -> M0.Service <$> newFidRC (Proxy :: Proxy M0.Service)
                                   <*> pure CST_HA
                                   <*> pure [ip ++ haAddress]
                                   <*> pure SPUnused

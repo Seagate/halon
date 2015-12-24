@@ -7,6 +7,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE CPP                        #-}
 
 module HA.RecoveryCoordinator.Actions.Mero.Core where
 
@@ -43,12 +44,14 @@ newFidSeqRC = do
   putLocalGraph rg'
   return w
 
+#ifdef USE_MERO
 newFid :: M0.ConfObj a => Proxy a -> G.Graph -> (Fid, G.Graph)
 newFid p rg = (M0.fidInit p 1 w, rg') where
   (w, rg') = newFidSeq rg
 
 newFidRC :: M0.ConfObj a => Proxy a -> PhaseM LoopState l Fid
 newFidRC p = M0.fidInit p 1 <$> newFidSeqRC
+#endif
 
 --------------------------------------------------------------------------------
 -- Core configuration

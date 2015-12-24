@@ -19,8 +19,6 @@ import HA.RecoveryCoordinator.Events.Drive
 import HA.ResourceGraph
 import HA.Resources (Cluster(..), Node(..))
 import HA.Resources.Castor
--- import HA.Resources.Mero hiding (Node,Service, Process, Enclosure, Rack)
--- import HA.Resources.Mero.Note
 #ifdef USE_MERO
 import Mero.Notification
 #endif

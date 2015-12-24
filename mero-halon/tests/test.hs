@@ -119,7 +119,7 @@ ut _host transport breakConnection = do
 #ifdef USE_MERO
       , testCase "RCToleratesRejoins" $
           HA.Test.Disconnect.testRejoin _host transport breakConnection
-#else 
+#else
       , testCase "RCToleratesRejoins [disabled by compilation clags]" $
           const (return ()) $ HA.Test.Disconnect.testRejoin _host transport breakConnection
 #endif

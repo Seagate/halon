@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP                        #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.

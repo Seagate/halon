@@ -5,7 +5,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 module HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic where
 
-import HA.RecoveryCoordinator.Actions.Mero.Failure
+import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
@@ -14,7 +14,6 @@ import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import Mero.ConfC (Fid(..))
 
-import Data.Word
 import Data.Maybe (listToMaybe)
 import Data.List (find)
 import Data.Ratio
@@ -24,11 +23,8 @@ import qualified Data.Set as S
 -- | Dynamic failure set generation strategy. In this case, we generate a
 --   new pool version when a device fails iff we do not have an existing pool
 --   version matching the set of failed devices.
-dynamicStrategy :: Word32 -- ^ No. of disk failures to tolerate
-                -> Word32 -- ^ No. of controller failures to tolerate
-                -> Word32 -- ^ No. of disk failures equivalent to ctrl failure
-                -> Strategy
-dynamicStrategy _df _cf _cfe = Strategy { -- XXX: WHY IT'S NOT USED ??
+dynamicStrategy :: Strategy
+dynamicStrategy = Strategy {
     onInit = const Nothing
   , onFailure = \rg -> do
       fs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Filesystem
