@@ -97,6 +97,12 @@ int main(int argc,char** argv) {
         return 1;
     }
 
+    rc = m0_ha_client_add(&reqh->rh_confc);
+    if (rc) {
+        fprintf(stderr,"m0_ha_client_add: %d %s\n",rc,strerror(-rc));
+        return 1;
+    }
+
     printf("ready\n");
 
     // Wait for HA side to report itself.
@@ -198,6 +204,12 @@ int main(int argc,char** argv) {
     m0_ha_state_fini();
 
     rpc_disconnect(c,5);
+
+    rc = m0_ha_client_del(&reqh->rh_confc);
+    if (rc) {
+        fprintf(stderr,"m0_ha_client_del: %d %s\n",rc,strerror(-rc));
+        return 1;
+    }
 
     m0_confc_fini(&reqh->rh_confc);
 
