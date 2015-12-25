@@ -237,16 +237,9 @@ txPopulate (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) 
   phaseLog "spiel" "Finished adding concrete entities."
   -- Pool versions
   (Just (pool :: M0.Pool)) <- lookupConfObjByFid f_mdpool_fid
-  let pdca = PDClustAttr {
-          _pa_N = m0_data_units
-        , _pa_K = m0_parity_units
-        , _pa_P = m0_pool_width
-        , _pa_unit_size = 4096
-        , _pa_seed = Word128 123 456
-      }
-      pvers = G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
+  let pvers = G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
   forM_ pvers $ \pver -> do
-    liftM0RC $ addPVer t (M0.fid pver) f_mdpool_fid (M0.v_failures pver) pdca
+    liftM0RC $ addPVer t (M0.fid pver) f_mdpool_fid (M0.v_failures pver) (M0.v_attrs pver)
     let rackvs = G.connectedTo pver M0.IsParentOf g :: [M0.RackV]
     forM_ rackvs $ \rackv -> do
       let (Just (rack :: M0.Rack)) = listToMaybe
