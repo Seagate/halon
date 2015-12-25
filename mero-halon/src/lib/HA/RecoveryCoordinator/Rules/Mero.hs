@@ -20,7 +20,6 @@ import Mero.Notification (Get(..), GetReply(..))
 import Mero.Notification.HAState (Note(..))
 
 import Control.Distributed.Process (usend)
-import Control.Monad.Catch (catch, SomeException)
 
 import Network.CEP
 

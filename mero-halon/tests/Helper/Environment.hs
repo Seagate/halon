@@ -26,7 +26,6 @@ import Network.RPC.RPCLite
 import Control.Exception (bracket)
 import Foreign.C
 import Foreign.Ptr
-import System.IO
 #endif
 
 import Control.Exception (bracket_, onException, IOException, try)

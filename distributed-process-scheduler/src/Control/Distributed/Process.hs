@@ -41,6 +41,7 @@ module Control.Distributed.Process
   , whereis
   , register
   , reregister
+  , unregister
   , whereisRemoteAsync
   , registerRemoteAsync
 --  , module DPEtc

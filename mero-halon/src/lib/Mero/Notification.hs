@@ -192,15 +192,15 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
     say "initializeInternal: making new endpoint"
     say $ "listening at " ++ show addr
     self <- getSelfPid
-    register notificationHandlerLabel self
     onException
-      (liftGlobalM0 $ do
+      (register notificationHandlerLabel self >> liftGlobalM0 $ do
         initRPC
         ep <- listen addr listenCallbacks
         addM0Finalizer $ finalizeInternal globalEndpointRef
         let ref' = emptyEndpointRef { _erServerEndpoint = Just ep }
         return (globalEndpointRef, ref', ep))
-      (liftIO $ putMVar globalEndpointRef ref)
+      (do unregister notificationHandlerLabel
+          liftIO $ putMVar globalEndpointRef ref)
   where
     listenCallbacks = ListenCallbacks {
       receive_callback = \_ _ -> return False

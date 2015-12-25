@@ -18,9 +18,9 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
-import Control.Monad (forM_, join)
+import Control.Monad (join)
 
-import Data.List (sort, unfoldr, isPrefixOf, findIndex)
+import Data.List (sort, isPrefixOf)
 import qualified Data.Set as Set
 
 import Network.Transport (Transport)
@@ -59,7 +59,6 @@ import TestRunner
 
 import Test.Framework
 import qualified Test.Tasty.HUnit as Tasty
-import System.IO
 import System.Mem
 import GHC.Stats
 
@@ -203,7 +202,6 @@ largeInitialData host transport = let
       me <- getSelfNode
       ls <- emptyLoopState pid (nullProcessId me)
       (ls', _) <- run ls $ do
-        rg <- getLocalGraph
         -- TODO: the interface address is hard-coded here: currently we
         -- don't use it so it doesn't impact us but in the future we
         -- should also take it as a parameter to the test, just like the

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo       #-}
@@ -5,14 +6,20 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module HA.Castor.Story.Tests (mkTests, {-testDynamicPVer-}) where
+module HA.Castor.Story.Tests (mkTests
+#ifdef USE_MERO
+ , testDynamicPVer
+#endif
+ ) where
 
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
--- import HA.RecoveryCoordinator.Actions.Mero
---   ( findRealObjsInPVer
---   , findFailableObjs
---   )
+#ifdef USE_MERO
+import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
+   ( findRealObjsInPVer
+   , findFailableObjs
+   )
+#endif
 import HA.RecoveryCoordinator.Actions.Service
   ( registerServiceProcess )
 import HA.RecoveryCoordinator.Events.Drive
@@ -117,18 +124,18 @@ mkTests = do
           testDiskFailure transport
         , testSuccess "Drive failure, repeated attempts to reset, hitting reset limit" $
           testHitResetLimit transport
-        -- , testSuccess "Drive failure, successful reset, failed smart test" $
-        --   testFailedSMART transport
-        --, testSuccess "Drive failure, second drive fails whilst handling to reset attempt" $
-        --  testSecondReset transport
-        -- , testSuccess "No response from powerdown" $
-        --   testPowerdownNoResponse transport
-        -- , testSuccess "No response from powerup" $
-        --   testPowerupNoResponse transport
-        -- , testSuccess "No response from SMART test" $
-        --   testSMARTNoResponse transport
-        -- , testSuccess "Drive failure removal reported by SSPL" $
-        --   testDriveRemovedBySSPL transport
+        , testSuccess "Drive failure, successful reset, failed smart test" $
+          testFailedSMART transport
+        , testSuccess "Drive failure, second drive fails whilst handling to reset attempt" $
+          testSecondReset transport
+        , testSuccess "No response from powerdown" $
+          testPowerdownNoResponse transport
+        , testSuccess "No response from powerup" $
+          testPowerupNoResponse transport
+        , testSuccess "No response from SMART test" $
+          testSMARTNoResponse transport
+        , testSuccess "Drive failure removal reported by SSPL" $
+          testDriveRemovedBySSPL transport
         , testSuccess "Metadata drive failure reported by IEM" $
           testMetadataDriveFailed transport
         ]
@@ -408,7 +415,6 @@ testDiskFailure transport = run transport interceptor test where
 
     sdev <- G.getGraph mm >>= findSDev
     failDrive recv sdev
-    error "hi"
     powerdownComplete mm sdev
     poweronComplete mm sdev
     smartTestComplete recv AckReplyPassed sdev
@@ -565,7 +571,7 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
     Set [Note _ st] <- receiveChan recv
     liftIO $ assertEqual "drive is in transient state" M0_NC_TRANSIENT st
 
-{-
+#ifdef USE_MERO
 -- | Test that we generate an appropriate pool version in response to
 --   failure of a drive, when using 'Dynamic' strategy.
 testDynamicPVer :: Transport -> IO ()
@@ -600,7 +606,6 @@ testDynamicPVer transport = run transport interceptor test where
     checkPVerExistence rg (S.singleton (M0.fid disk)) False
     checkPVerExistence rg1 (S.singleton (M0.fid disk)) True
 
-
     sdev2 <- find2SDev rg
     failDrive recv sdev2
     -- Should now have a pool version corresponding to two failed drives
@@ -608,7 +613,7 @@ testDynamicPVer transport = run transport interceptor test where
     let [disk2] = G.connectedTo sdev2 M0.IsOnHardware rg2 :: [M0.Disk]
     checkPVerExistence rg1 (S.fromList . fmap M0.fid $ [disk, disk2]) False
     checkPVerExistence rg2 (S.fromList . fmap M0.fid $ [disk, disk2]) True
--}
+#endif
 
 -- | Test that we respond correctly to a notification that a RAID device
 --   has failed by sending an IEM.
