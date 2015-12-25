@@ -142,7 +142,7 @@ withEndpoint addr = bracket
   where
     listenCallbacks = ListenCallbacks
       { receive_callback = \it _ -> do
-          hPutStr stderr "Received: "
+          -- hPutStr stderr "Received: "
           print =<< unsafeGetFragments it
           return True
       }

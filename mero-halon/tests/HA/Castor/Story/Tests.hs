@@ -73,7 +73,7 @@ import Helper.SSPL
 import Helper.Environment (systemHostname)
 
 debug :: String -> Process ()
-debug = liftIO . appendFile "/tmp/halon.debug" . (++ "\n")
+debug = say
 
 myRemoteTable :: RemoteTable
 myRemoteTable = TestRunner.__remoteTableDecl remoteTable
@@ -97,8 +97,12 @@ testRules = do
   defineSimple "register-mock-service" $
     \(HAEvent _ (MockM0 dc@(DeclareMeroChannel sp _)) _) -> do
       nid <- liftProcess $ getSelfNode
+      liftProcess $ say "here-1" 
       registerServiceProcess (Node nid) m0d mockMeroConf sp
+      liftProcess $ say "here-2" 
       void . liftProcess $ promulgateEQ [nid] dc
+      liftProcess $ say "here-3" 
+      phaseLog "debug" "here am i"
 
 mkTests :: IO (Transport -> [TestTree])
 mkTests = do
@@ -113,18 +117,18 @@ mkTests = do
           testDiskFailure transport
         , testSuccess "Drive failure, repeated attempts to reset, hitting reset limit" $
           testHitResetLimit transport
-        , testSuccess "Drive failure, successful reset, failed smart test" $
-          testFailedSMART transport
-        , testSuccess "Drive failure, second drive fails whilst handling to reset attempt" $
-          testSecondReset transport
-        , testSuccess "No response from powerdown" $
-          testPowerdownNoResponse transport
-        , testSuccess "No response from powerup" $
-          testPowerupNoResponse transport
-        , testSuccess "No response from SMART test" $
-          testSMARTNoResponse transport
-        , testSuccess "Drive failure removal reported by SSPL" $
-          testDriveRemovedBySSPL transport
+        -- , testSuccess "Drive failure, successful reset, failed smart test" $
+        --   testFailedSMART transport
+        --, testSuccess "Drive failure, second drive fails whilst handling to reset attempt" $
+        --  testSecondReset transport
+        -- , testSuccess "No response from powerdown" $
+        --   testPowerdownNoResponse transport
+        -- , testSuccess "No response from powerup" $
+        --   testPowerupNoResponse transport
+        -- , testSuccess "No response from SMART test" $
+        --   testSMARTNoResponse transport
+        -- , testSuccess "Drive failure removal reported by SSPL" $
+        --   testDriveRemovedBySSPL transport
         , testSuccess "Metadata drive failure reported by IEM" $
           testMetadataDriveFailed transport
         ]
@@ -158,6 +162,7 @@ run transport interceptor test =
       debug "About to run the test"
 
       test ta rmq meroRP
+      say "Test finished"
 
       -- Tear down the test
       _ <- promulgateEQ [localNodeId n] $ encodeP $
@@ -403,6 +408,7 @@ testDiskFailure transport = run transport interceptor test where
 
     sdev <- G.getGraph mm >>= findSDev
     failDrive recv sdev
+    error "hi"
     powerdownComplete mm sdev
     poweronComplete mm sdev
     smartTestComplete recv AckReplyPassed sdev

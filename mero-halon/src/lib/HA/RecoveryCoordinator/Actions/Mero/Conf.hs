@@ -66,7 +66,6 @@ initialiseConfInRG :: PhaseM LoopState l M0.Filesystem
 initialiseConfInRG = getFilesystem >>= \case
     Just fs -> return fs
     Nothing -> do
-      rg <- getLocalGraph
       root    <- M0.Root    <$> newFidRC (Proxy :: Proxy M0.Root)
       profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
       pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
@@ -78,11 +77,13 @@ initialiseConfInRG = getFilesystem >>= \case
         >>> G.newResource fs
         >>> G.newResource pool
         >>> G.connectUniqueFrom Cluster Has profile
+        >>> G.connectUniqueFrom Cluster Has fs
         >>> G.connectUniqueFrom profile M0.IsParentOf fs
         >>> G.connect fs M0.IsParentOf pool
         >>> G.connectUniqueFrom Cluster Has root
         >>> G.connect root M0.IsParentOf profile
 
+      rg <- getLocalGraph
       let re = [ (r, G.connectedTo r Has rg)
                | r <- G.connectedTo Cluster Has rg
                ]

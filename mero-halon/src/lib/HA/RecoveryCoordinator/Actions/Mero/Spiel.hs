@@ -98,7 +98,7 @@ withRConfRC spiel action = do
   liftM0RC $ do
      Mero.Spiel.rconfStart spiel
      Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
-  x <- action `sfinally` (liftM0RC $ Mero.Spiel.rconfStop spiel)
+  x <- action `sfinally` liftM0RC (Mero.Spiel.rconfStop spiel)
   liftM0RC $ Mero.Spiel.rconfStop spiel
   return x
 
@@ -128,16 +128,22 @@ startRebalanceOperation pool = (void go) `catch`
       phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool
       withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRebalanceStart sc (M0.fid pool)
 
+-- | Synchronize graph to confd.
+-- Currently all Exceptions during this operation are caught, this is required in because
+-- there is no good exception handling in RC and uncaught exception will lead to RC failure.
+-- Also it's behaviour of RC in case of mero exceptions is not specified.
 syncAction :: Maybe UUID -> SyncToConfd -> PhaseM LoopState l ()
-syncAction meid sync = do
-  case sync of
-    SyncToConfdServersInRG -> do
-      phaseLog "info" "Syncing RG to confd servers in RG."
-      void $ syncToConfd
-    SyncDumpToFile filename -> do
-      phaseLog "info" $ "Dumping conf in RG to this file: " ++ show filename
-      loadConfData >>= traverse_ (\x -> txOpenLocalContext >>= txPopulate x >>= txDumpToFile filename)
-  traverse_ messageProcessed meid
+syncAction meid sync =
+   flip catch (\e -> phaseLog "error" $ "Exception during sync: "++show (e::SomeException))
+       $ do
+    case sync of
+      SyncToConfdServersInRG -> do
+        phaseLog "info" "Syncing RG to confd servers in RG."
+        void $ syncToConfd
+      SyncDumpToFile filename -> do
+        phaseLog "info" $ "Dumping conf in RG to this file: " ++ show filename
+        loadConfData >>= traverse_ (\x -> txOpenLocalContext >>= txPopulate x >>= txDumpToFile filename)
+    traverse_ messageProcessed meid
 
 -- | Helper functions for backward compatibility.
 syncToConfd :: PhaseM LoopState l (Either SomeException ())
