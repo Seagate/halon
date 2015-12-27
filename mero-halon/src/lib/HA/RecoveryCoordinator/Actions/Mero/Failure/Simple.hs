@@ -30,7 +30,8 @@ simpleStrategy :: Word32 -- ^ No. of disk failures to tolerate
                -> Strategy
 simpleStrategy df cf cfe = Strategy {
     onInit = \rg -> do
-      fs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Filesystem
+      prof <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Profile
+      fs <- listToMaybe $ G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
       globs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
       let fsets = generateFailureSets df cf cfe rg globs
           pvs = fmap (\(fs', fids) -> PoolVersion fids fs') fsets

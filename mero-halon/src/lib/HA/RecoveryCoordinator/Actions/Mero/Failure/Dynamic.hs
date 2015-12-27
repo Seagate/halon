@@ -27,7 +27,8 @@ dynamicStrategy :: Strategy
 dynamicStrategy = Strategy {
     onInit = const Nothing
   , onFailure = \rg -> do
-      fs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Filesystem
+      prof <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Profile
+      fs   <- listToMaybe $ G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem 
       globs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
       createPVerIfNotExists rg fs globs
 }

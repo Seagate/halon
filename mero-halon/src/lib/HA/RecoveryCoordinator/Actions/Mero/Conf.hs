@@ -77,7 +77,6 @@ initialiseConfInRG = getFilesystem >>= \case
         >>> G.newResource fs
         >>> G.newResource pool
         >>> G.connectUniqueFrom Cluster Has profile
-        >>> G.connectUniqueFrom Cluster Has fs
         >>> G.connectUniqueFrom profile M0.IsParentOf fs
         >>> G.connect fs M0.IsParentOf pool
         >>> G.connectUniqueFrom Cluster Has root
