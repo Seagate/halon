@@ -7,7 +7,6 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE CPP                        #-}
 
 module HA.RecoveryCoordinator.Actions.Mero.Core where
 
