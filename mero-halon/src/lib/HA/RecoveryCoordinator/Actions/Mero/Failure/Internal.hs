@@ -2,6 +2,7 @@
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
+{-# LANGUAGE Rank2Types #-}
 module HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
   ( Strategy(..)
   , Failures(..)
@@ -62,10 +63,11 @@ failuresToArray f = [f_pool f, f_rack f, f_encl f, f_ctrl f, f_disk f]
 data Strategy = Strategy {
 
     -- | Initial set of pool versions created at the start of the system,
-    --   or when the cluster configuration changes.
-    onInit :: G.Graph
-           -> Maybe (G.Graph) -- ^ Returns `Nothing` if the graph is unmodified,
-                              --   else the updated graph.
+    --   or when the cluster configuration changes. Returns all updates
+    --   in chunks so caller can synchronize and stream graph updates
+    --   in chunks of reasonable size.
+    onInit :: forall m . Monad m => G.Graph
+           -> Maybe ((G.Graph -> m G.Graph) -> m G.Graph)
 
     -- | Action to take on failure
   , onFailure :: G.Graph
@@ -80,7 +82,11 @@ data Strategy = Strategy {
 instance Monoid Strategy where
   mempty = Strategy { onInit = const Nothing, onFailure = const Nothing }
   (Strategy i1 f1) `mappend` (Strategy i2 f2) = Strategy {
-      onInit = i1 >=> i2
+      onInit = \g -> case i1 g of
+                       Nothing -> i2 g
+                       Just l  -> Just $ \u -> do g' <- l u
+                                                  maybe (return g') ($u) (i2 g')
+
     , onFailure = f1 >=> f2
   }
 

@@ -16,7 +16,7 @@ import           Mero.ConfC (Fid)
 import           Data.Ratio
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.List ((\\), sort)
+import           Data.List ((\\), sort, unfoldr)
 import           Data.Maybe (listToMaybe)
 import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
@@ -29,13 +29,27 @@ simpleStrategy :: Word32 -- ^ No. of disk failures to tolerate
                -> Word32 -- ^ No. of disk failures equivalent to ctrl failure
                -> Strategy
 simpleStrategy df cf cfe = Strategy {
-    onInit = \rg -> do
-      prof <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Profile
-      fs <- listToMaybe $ G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
-      globs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
-      let fsets = generateFailureSets df cf cfe rg globs
-          pvs = fmap (\(fs', fids) -> PoolVersion fids fs') fsets
-      Just $ createPoolVersions fs pvs True rg
+    onInit = \rg ->
+      let mchunks = do
+            prof <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Profile
+            fs <- listToMaybe $ G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
+            globs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
+            let fsets = generateFailureSets df cf cfe rg globs
+                -- update chunks
+            return (flip unfoldr fsets $ \xs ->
+                    case xs of
+                      [] -> Nothing
+                      _  -> Just $ splitAt 5 xs
+                    , fs)
+      in case mchunks of 
+           Nothing -> Nothing
+           Just (chunks,fs) -> Just $ \sync ->
+             let go g [] = return g
+                 go g (c:cs) = 
+                    let pvs = fmap (\(fs', fids) -> PoolVersion fids fs') c
+                    in do g' <- sync $ createPoolVersions fs pvs True g
+                          go g' cs
+             in go rg chunks
   , onFailure = const Nothing
 }
 
