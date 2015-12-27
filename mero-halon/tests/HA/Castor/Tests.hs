@@ -136,7 +136,8 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
       loadMeroGlobals (CI.id_m0_globals initialData)
       loadMeroServers filesystem (CI.id_m0_servers initialData)
       rg <- getLocalGraph
-      let Just rg' = onInit (simpleStrategy 2 2 1) rg
+      let Just updateGraph = onInit (simpleStrategy 2 2 1) rg
+      rg' <- updateGraph return
       putLocalGraph rg'
     -- Verify that everything is set up correctly
     bmc <- runGet ls' $ findBMCAddress myHost
@@ -213,26 +214,14 @@ largeInitialData host transport = let
         self <- liftProcess $ getSelfPid
         syncGraph $ usend self ()
         liftProcess (expect :: Process ())
-{-
-        failureSets <- generateFailureSets 1 0 0
-        let chunks = flip unfoldr failureSets $ \xs ->
-              case xs of
-                [] -> Nothing
-                _  -> case findIndex (>2000) $ scanl1 (+) $
-                             map ((numDisks -) . fsSize) xs of
-                  -- put all sets in one chunk
-                  Nothing -> Just (xs, [])
-                  -- ensure at most one set is in the chunk
-                  -- TODO: split failure sets which are too big.
-                  Just i -> Just $ splitAt (max 1 i) xs
-        liftProcess $ liftIO $ hPutStrLn stderr $ "have " ++ show (length chunks) ++
-                      " chunks for " ++ show (length failureSets) ++ " failure sets."
-        forM_ (zip [0..] chunks) $ \(i, chunk) -> do
-          let pvers = failureSetToPoolVersion rg filesystem <$> chunk
-          createPoolVersions filesystem pvers
-          liftProcess $ liftIO $ hPutStrLn stderr $ "submitting chunk " ++ show (i :: Int)
+        rg <- getLocalGraph
+        let Just updateGraph = onInit (simpleStrategy 1 0 0) rg
+        rg' <- updateGraph $ \g -> do
+          putLocalGraph g
           syncGraph (return ())
--}
+          getLocalGraph
+        putLocalGraph rg'
+        
 
       -- Verify that everything is set up correctly
       bmc <- runGet ls' $ findBMCAddress myHost

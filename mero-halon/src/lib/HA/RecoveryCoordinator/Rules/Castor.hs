@@ -179,33 +179,14 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
       loadMeroServers filesystem id_m0_servers
       graph <- getLocalGraph
       Just strategy <- getCurrentStrategy
-      forM_ (onInit strategy graph) $ \graph' -> do
+      forM_ (onInit strategy graph) $ \updateGraph -> do
+        graph' <- updateGraph $ \rg -> do
+          putLocalGraph rg
+          syncGraphProcess $ \self -> usend self InitialDataChunk
+          liftProcess $ expect >>= \InitialDataChunk -> return ()
+          getLocalGraph
         putLocalGraph graph'
-        -- TODO sync graph in a nice way
         syncAction Nothing M0.SyncToConfdServersInRG
-{-
-      failureSets <- case (CI.m0_failure_set_gen id_m0_globals) of
-        CI.Dynamic -> return []
-        CI.Preloaded x y z -> generateFailureSets x y z
-      let
-        poolVersions = fmap (failureSetToPoolVersion rg filesystem) failureSets
-        chunks = flip unfoldr poolVersions $ \xs ->
-          case xs of
-            [] -> Nothing
-            _  -> -- TODO: Take into account the size of failure sets to do
-                  -- the spliting.
-                  Just $ splitAt 5 xs
-      forM_ chunks $ \chunk -> do
-        createPoolVersions filesystem chunk
-        syncGraphProcess $ \self -> usend self InitialDataChunk
-        liftProcess $ expect >>= \InitialDataChunk -> return ()
-      -- We make sure that the next message is emitted only when the
-      -- graph has been synchronized.
-      (if null chunks then syncGraph else liftProcess) $
-        say "Loaded initial data"
--}
-#else
-      syncGraph $ say "Loaded initial data"
 #endif
       rg' <- getLocalGraph
       let hosts = [ host | host <- G.getResourcesOfType rg'    :: [Host] -- all hosts
