@@ -172,7 +172,7 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
     self <- getSelfPid
     register notificationHandlerLabel self
     onException 
-      (liftM0 $ do
+      (liftGlobalM0 $ do
         initRPC
         ep <- listen addr listenCallbacks
         addM0Finalizer $ finalizeInternal globalEndpointRef
@@ -227,7 +227,7 @@ initialize adr = do
 -- | Internal initialization routine, should not be called by external
 -- users. Only to be called when the lock on the lock is already held.
 finalizeInternal :: MVar EndpointRef -> IO ()
-finalizeInternal m = sendM0Task $ do
+finalizeInternal m = do
   finiHAState
   finalizeRPC
   putMVar m emptyEndpointRef

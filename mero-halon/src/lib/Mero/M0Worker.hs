@@ -10,7 +10,7 @@ module Mero.M0Worker
     , terminateM0Worker
     , queueM0Worker
     , runOnM0Worker
-    , liftM0
+    , liftGlobalM0
     , sendM0Task
     ) where
 
@@ -58,5 +58,8 @@ runOnM0Worker w task = do
 
 -- | Runs the given action in the global mero worker and lifts the
 -- operation into the desired monad.
-liftM0 :: MonadIO m => IO a -> m a
-liftM0 = liftIO . sendM0Task
+--
+-- The operations should be non-blocking and short-lived, otherwise consider moving
+-- them to other threads.
+liftGlobalM0 :: MonadIO m => IO a -> m a
+liftGlobalM0 = liftIO . sendM0Task

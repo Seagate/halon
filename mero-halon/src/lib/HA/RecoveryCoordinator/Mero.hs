@@ -61,6 +61,7 @@ import qualified HA.Resources.Castor as M0
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState(..))
 import HA.Services.Mero (notifyMero)
+import Mero.M0Worker
 #endif
 import qualified HA.ResourceGraph as G
 
@@ -167,11 +168,19 @@ initialize mm = do
 -- Recovery Co-ordinator                                --
 ----------------------------------------------------------
 
+#ifdef USE_MERO
+buildRCState :: StoreChan -> ProcessId -> M0Worker -> Process LoopState
+buildRCState mm eq wrk = do
+    rg      <- HA.RecoveryCoordinator.Mero.initialize mm
+    startRG <- G.sync rg (return ())
+    return $ LoopState startRG Map.empty mm eq S.empty wrk
+#else
 buildRCState :: StoreChan -> ProcessId -> Process LoopState
 buildRCState mm eq = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
     startRG <- G.sync rg (return ())
     return $ LoopState startRG Map.empty mm eq S.empty
+#endif
 
 -- | The entry point for the RC.
 --
@@ -184,11 +193,18 @@ makeRecoveryCoordinator :: StoreChan -- ^ channel to the replicated multimap
                         -> Definitions LoopState ()
                         -> Process ()
 makeRecoveryCoordinator mm eq rm = do
-    init_st <- buildRCState mm eq
-    execute init_st $ do
-      rm
-      setRuleFinalizer $ \ls -> do
-        newGraph <- G.sync (lsGraph ls) (return ())
-        return ls { lsGraph = newGraph }
+#ifdef USE_MERO
+    bracket (liftIO newM0Worker)
+            (liftIO . terminateM0Worker)
+      $ \worker -> do
+        init_st <- buildRCState mm eq worker
+#else
+        init_st <- buildRCState mm eq
+#endif
+        execute init_st $ do
+          rm
+          setRuleFinalizer $ \ls -> do
+            newGraph <- G.sync (lsGraph ls) (return ())
+            return ls { lsGraph = newGraph }
 
 -- remotable [ 'recoveryCoordinator ]
