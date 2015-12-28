@@ -37,6 +37,11 @@ typedef struct ha_state_callbacks {
 	 * */
 	int (*ha_state_set)(struct m0_ha_nvec *note);
 
+        /**
+         * Called when a request to read confd and rm service state is received.
+         * \return 0 if the request was accepted negative value otherwise
+         */
+	int (*ha_state_entrypoint)(struct m0_fom *fom, struct m0_ha_entrypoint_rep *rep_fop);
 } ha_state_callbacks_t;
 
 /**
@@ -65,3 +70,14 @@ int ha_state_notify( rpc_endpoint_t *ep, char *remote_address
                    , struct m0_ha_nvec *note, int timeout_s
                    );
 
+// Populates m0_ha_entrypoint_rep structure by values from haskell world.
+void ha_entrypoint_reply_wakeup( struct m0_fom               *fom
+                               , struct m0_ha_entrypoint_rep *rep_fop
+                               , const int                    rc
+                               , const int                    confd_fid_size
+                               , const struct m0_fid         *confd_fid_data
+                               , const int                    confd_eps_size
+                               , const char *                *confd_eps_data
+                               , const struct m0_fid         *rm_fid
+                               , const char *                 rm_eps
+                               );

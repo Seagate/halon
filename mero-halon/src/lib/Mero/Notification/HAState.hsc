@@ -20,6 +20,10 @@ module Mero.Notification.HAState
   , notify
   , readNVecRef
   , updateNVecRef
+  , EntryPointRepV
+  , FomV
+  , entrypointReplyWakeup
+  , entrypointNoReplyWakeup
   ) where
 
 import HA.Resources.Mero.Note
@@ -40,10 +44,11 @@ import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef
 import Data.List              ( find )
 import Data.Word              ( Word32, Word8 )
 import Foreign.C.Types        ( CInt(..) )
-import Foreign.C.String       ( CString )
+import Foreign.C.String       ( CString, withCString )
 import Foreign.Marshal.Alloc  ( allocaBytesAligned )
-import Foreign.Marshal.Array  ( peekArray, pokeArray, withArray )
-import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr )
+import Foreign.Marshal.Array  ( peekArray, pokeArray, withArray, withArrayLen, withArrayLen0 )
+import Foreign.Marshal.Utils  ( with, withMany )
+import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr, nullPtr )
 import Foreign.Storable       ( Storable(..) )
 import GHC.Generics           ( Generic )
 import System.IO.Unsafe       ( unsafePerformIO )
@@ -103,15 +108,20 @@ initHAState :: (NVecRef -> IO ())
                --
                -- Returns 0 if the request was accepted or an error code
                -- otherwise.
+            -> (Ptr FomV -> Ptr EntryPointRepV -> IO ())
+               -- ^ Called when a request to read current confd and rm endpoints
+               -- is received.
             -> IO ()
-initHAState ha_state_get ha_state_set =
+initHAState ha_state_get ha_state_set ha_state_entry =
     allocaBytesAligned #{size ha_state_callbacks_t}
                        #{alignment ha_state_callbacks_t}$ \pcbs -> do
       wget <- wrapGetCB ha_state_get
       wset <- wrapSetCB ha_state_set
+      wentry <- wrapEntryCB ha_state_entry
       #{poke ha_state_callbacks_t, ha_state_get} pcbs wget
       #{poke ha_state_callbacks_t, ha_state_set} pcbs wset
-      modifyIORef cbRefs ((SomeFunPtr wget:) . (SomeFunPtr wset:))
+      #{poke ha_state_callbacks_t, ha_state_entrypoint} pcbs wentry
+      modifyIORef cbRefs ((SomeFunPtr wget:) . (SomeFunPtr wset:) . (SomeFunPtr wentry:))
 
       rc <- ha_state_init pcbs
       check_rc "initHAState" rc
@@ -119,6 +129,7 @@ initHAState ha_state_get ha_state_set =
     wrapGetCB f = cwrapGetCB $ \note -> f note
     wrapSetCB f = cwrapSetCB $ \note ->
         readNVecRef note >>= fmap fromIntegral . f
+    wrapEntryCB f = cwrapEntryCB f
 
 data HAStateCallbacksV
 
@@ -130,6 +141,10 @@ foreign import ccall "wrapper" cwrapGetCB :: (NVecRef -> IO ())
 
 foreign import ccall "wrapper" cwrapSetCB :: (NVecRef -> IO CInt)
                                           -> IO (FunPtr (NVecRef -> IO CInt))
+
+foreign import ccall "wrapper" cwrapEntryCB ::
+    (Ptr FomV -> Ptr EntryPointRepV -> IO ())
+      -> IO (FunPtr (Ptr FomV -> Ptr EntryPointRepV -> IO ()))
 
 instance Storable Note where
 
@@ -217,3 +232,29 @@ instance Exception HAStateException
 check_rc :: String -> CInt -> IO ()
 check_rc _ 0 = return ()
 check_rc msg i = throwIO $ HAStateException msg $ fromIntegral i
+
+data EntryPointRepV
+data FomV
+
+foreign import ccall unsafe ha_entrypoint_reply_wakeup
+  :: Ptr FomV -> Ptr EntryPointRepV -> CInt
+  -> CInt -> Ptr Fid
+  -> CInt -> Ptr CString
+  -> Ptr Fid -> CString
+  -> IO ()
+
+-- | Fill 'EntryPointRepV' structure.
+entrypointReplyWakeup :: Ptr FomV -> Ptr EntryPointRepV -> [Fid] -> [String] -> Fid -> String -> IO ()
+entrypointReplyWakeup fom eprv confdFids epNames rmFid rmEp =
+  withMany (withCString) epNames $ \cnames ->
+    withArrayLen0 nullPtr cnames $ \ceps_len ceps_ptr ->
+      withArrayLen confdFids $ \cfids_len cfids_ptr ->
+        withCString rmEp $ \crm_ep ->
+          with rmFid $ \crmfid ->
+            ha_entrypoint_reply_wakeup fom eprv 0 (fromIntegral cfids_len) cfids_ptr
+                                       (fromIntegral ceps_len) ceps_ptr crmfid crm_ep
+
+
+entrypointNoReplyWakeup :: Ptr FomV -> Ptr EntryPointRepV -> IO ()
+entrypointNoReplyWakeup fom eprv =
+  ha_entrypoint_reply_wakeup fom eprv (-1) 0 nullPtr 0 nullPtr nullPtr nullPtr
