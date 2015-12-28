@@ -23,6 +23,8 @@ module Mero.Conf.Internal
     initConfC
   , finalizeConfC
   , withConfC
+    -- * HA Session interface
+    -- $ha-session
   , withHASession
   , initHASession
   , finiHASession
@@ -301,12 +303,30 @@ check_rc :: String -> CInt -> IO ()
 check_rc _ 0 = return ()
 check_rc msg i = throwIO $ ConfCException msg $ fromIntegral i
 
+--------------------------------------------------------------------------------
+-- HASession interface
+--------------------------------------------------------------------------------
+
+-- $ha-session
+-- HASession is a special session that could be used by confc and spiel libraries
+-- in order to get information about current active confd and RM services from
+-- HA service. Rconfc queries this information on startup using HASession.
+-- HA Session should implement FOMs for the following FOPs:
+--
+--  * M0_HA_NOTE_GET
+--  * M0_HA_ENTRYPOINT
+-- 
+-- for further information refer to the mero sources /ha\/note_fops.h/, /spiel\/spiel.h/.
+
 foreign import ccall "<ha/note.h> m0_ha_state_init"
   c_ha_state_init :: Ptr SessionV -> IO CInt
 
 foreign import ccall "<ha/note.h> m0_ha_state_fini"
   c_ha_state_fini :: IO ()
 
+-- | Initialize connection from current 'ServerEndpoint' to the service at 'RPCAddress',
+-- that implements HA Session interface. Newly created connection is returned.
+-- For additional information see @ha_state_init@ in mero sources.
 initHASession :: ServerEndpoint -> RPCAddress -> IO Connection
 initHASession sep addr = do
   conn <- connect_se sep addr 2
@@ -315,11 +335,15 @@ initHASession sep addr = do
   when (rc /= 0) $ error "failed to initialize ha_state"
   return conn
 
+-- | Finalize connection and unmark current connection from beign an HA session.
+-- If connection that is not a HA Session is passed then implementation is undefined.
+-- For additional information see @ha_state_fini@ in mero.
 finiHASession :: Connection -> IO ()
 finiHASession conn = do
   c_ha_state_fini
   disconnect conn 0
 
+-- | Convenient wrapper for 'initHASession' and 'finiHASession'.
 withHASession :: ServerEndpoint -> RPCAddress -> IO a -> IO a
 withHASession sep addr f =
    bracket (connect_se sep addr 2)
