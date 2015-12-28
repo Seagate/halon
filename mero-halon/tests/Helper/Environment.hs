@@ -97,7 +97,10 @@ withMeroEnvironment router wrapper = withMeroRoot $ \meroRoot ->
       Just test -> test
       Nothing -> bracket_
         (do setEnv "SANDBOX_DIR" "/var/mero/sandbox.mero-halon-st"
-            callCommand $ meroRoot ++ "/conf/st sstart")
+            callCommand $ meroRoot ++ "/conf/st sstart"
+            callCommand $ "ulimit -c unlimited"
+            )
+
         (do threadDelay $ 3*1000000
             _ <- tryIO $ callCommand $ meroRoot ++ "/conf/st sstop"
             threadDelay $ 3*1000000
