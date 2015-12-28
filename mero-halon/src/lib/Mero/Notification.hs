@@ -175,6 +175,7 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
       (liftM0 $ do
         initRPC
         ep <- listen addr listenCallbacks
+        addM0Finalizer $ finalizeInternal globalEndpointRef
         let ref' = emptyEndpointRef { _erServerEndpoint = Just ep }
         return (globalEndpointRef, ref', ep))
       (liftIO $ putMVar globalEndpointRef ref)
