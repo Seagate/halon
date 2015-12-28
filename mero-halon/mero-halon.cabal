@@ -435,6 +435,7 @@ Test-Suite unit-tests
                     Helper.SSPL
                     Helper.Environment
                     Helper.InitialData
+                    Helper.RC
                     RemoteTables
                     TestRunner
 
@@ -519,6 +520,7 @@ Test-Suite integration-tests
                     Helper.SSPL
                     Helper.Environment
                     Helper.InitialData
+                    Helper.RC
 
   Main-Is:          test.hs
 
@@ -594,6 +596,7 @@ Test-Suite scheduler-tests
                     Helper.SSPL
                     Helper.Environment
                     Helper.InitialData
+                    Helper.RC
                     RemoteTables
                     TestRunner
   Main-Is:          scheduler-tests.hs
@@ -708,6 +711,7 @@ Test-Suite tests-mero-integration
                     HA.Castor.Tests
                     Helper.Environment
                     Helper.SSPL
+                    Helper.RC
                     TestRunner
                     RemoteTables
 

@@ -6,9 +6,7 @@ module HA.RecoveryCoordinator.SSPL.Tests
   ) where
 
 import Control.Distributed.Process.Closure
-import Control.Exception (SomeException)
 
-import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
 import Network.Transport (Transport)
@@ -36,6 +34,7 @@ import HA.ResourceGraph hiding (__remoteTable)
 import HA.Services.SSPL
 import SSPL.Bindings
 import Helper.SSPL
+import Helper.RC
 
 import Mero.ConfC (ServiceParams(..), ServiceType(..))
 
@@ -52,7 +51,6 @@ import Data.Text (Text)
 import Test.Tasty
 import Test.Tasty.HUnit (assertEqual)
 import Test.Framework
-import System.IO
 import Control.Distributed.Process
 
 data GetGraph = GetGraph ProcessId deriving (Eq,Show, Typeable, Generic)
@@ -64,11 +62,6 @@ mmSDict = SerializableDict
 
 remotable
   [ 'mmSDict ]
-
-emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
-emptyLoopState mmchan pid = do
-  g <- getGraph mmchan
-  return $ LoopState g Map.empty mmchan pid Set.empty
 
 myRemoteTable :: RemoteTable
 myRemoteTable = HA.RecoveryCoordinator.SSPL.Tests.__remoteTable remoteTable

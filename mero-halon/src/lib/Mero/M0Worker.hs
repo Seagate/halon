@@ -12,8 +12,10 @@ module Mero.M0Worker
     , runOnM0Worker
     , liftGlobalM0
     , sendM0Task
+    , dummyM0Worker
     ) where
 
+import Control.Concurrent (forkIO)
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Exception
@@ -43,6 +45,18 @@ newM0Worker = do
                 [ Handler $ \StopWorker -> return ()
                 , Handler $ \ThreadKilled -> return ()
                 ]
+
+-- | Simulates a worker behaviour when no m0d and kernel modules are
+-- not loaded. Sending messages to that worker will have same behaviour
+-- as using 'liftGlobalM0' when there is no mero running in system.
+dummyM0Worker :: IO M0Worker
+dummyM0Worker = do
+    c <- newChan
+    t <- forkIO (worker c)
+    return $ M0Worker c (error "unsafeCoerce" t)
+  where
+    worker c = do _ <- readChan c
+                  throwIO $ M0InitException (-2)
 
 -- | Terminates a worker. Waits for all queued tasks to be executed.
 terminateM0Worker :: M0Worker -> IO ()
