@@ -33,12 +33,16 @@ main = withMeroEnvironment router wrapper where
     minfo <- liftM2 (,) <$> lookupEnv "MERO_TEST"
                         <*> lookupEnv "TEST_LISTEN"
     case minfo of
-      Just ("RCSyncToConfd", host) ->
-        Just . withM0Deferred .
-          HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd host <$> mkTransport 
-      Just ("DriveFailurePVer", _host) -> 
-        Just . withM0Deferred .
-          HA.Castor.Story.Tests.testDynamicPVer <$> mkTransport
+      Just ("RCSyncToConfd", host) -> do
+        transport <- mkTransport
+        return $ Just $ withM0Deferred $ do
+          HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd host transport
+          threadDelay 1000000
+      Just ("DriveFailurePVer", _host) -> do
+        transport <- mkTransport
+        return $ Just $ withM0Deferred $ do
+          HA.Castor.Story.Tests.testDynamicPVer transport
+          threadDelay 1000000
       _ -> return Nothing
   wrapper = do
     maddr <- lookupEnv "TEST_LISTEN"
@@ -49,7 +53,6 @@ main = withMeroEnvironment router wrapper where
         [ runExternalTest "RCSyncToConfd"
         -- , runExternalTest "DriveFailurePVer" -- Disabled until strategy based generation will arrive
         ]
-    threadDelay 1000000
 
 runExternalTest :: TestName -> TestTree
 runExternalTest name = testCase name $ do
