@@ -20,6 +20,7 @@ import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Mero.Concurrent
+import System.IO
 
 import Mero
 
@@ -28,18 +29,25 @@ data M0Worker = M0Worker
     , m0WorkerThread :: M0Thread
     }
 
+data StopWorker = StopWorker deriving (Eq,Show)
+
+instance Exception StopWorker
+
 -- | Creates a new worker.
 newM0Worker :: IO M0Worker
 newM0Worker = do
     c <- newChan
     sendM0Task $ M0Worker c <$> forkM0OS (worker c)
   where
-    worker c = forever $ join $ readChan c
+    worker c = (forever $ join $ readChan c) `catches`
+                [ Handler $ \StopWorker -> return ()
+                , Handler $ \ThreadKilled -> return ()
+                ]
 
 -- | Terminates a worker. Waits for all queued tasks to be executed.
 terminateM0Worker :: M0Worker -> IO ()
 terminateM0Worker M0Worker {..} = do
-    writeChan m0WorkerChan $ error "terminated by terminateM0Worker"
+    writeChan m0WorkerChan $ throwIO StopWorker
     joinM0OS m0WorkerThread
 
 -- | Queues a new task for the worker.
