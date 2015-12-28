@@ -173,11 +173,15 @@ instance Binary InitialDataChunk
 ruleInitialDataLoad :: Definitions LoopState ()
 ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
       mapM_ goRack id_racks
+      syncGraphProcess $ \self -> usend self InitialDataChunk
+      liftProcess $ expect >>= \InitialDataChunk -> return ()
 #ifdef USE_MERO
       filesystem <- initialiseConfInRG
       loadMeroGlobals id_m0_globals
       loadMeroServers filesystem id_m0_servers
       graph <- getLocalGraph
+      syncGraphProcess $ \self -> usend self InitialDataChunk
+      liftProcess $ expect >>= \InitialDataChunk -> return ()
       Just strategy <- getCurrentStrategy
       forM_ (onInit strategy graph) $ \updateGraph -> do
         graph' <- updateGraph $ \rg -> do
@@ -186,7 +190,8 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
           liftProcess $ expect >>= \InitialDataChunk -> return ()
           getLocalGraph
         putLocalGraph graph'
-        syncAction Nothing M0.SyncToConfdServersInRG
+        syncGraphProcess $ \self -> usend self InitialDataChunk
+        liftProcess $ expect >>= \InitialDataChunk -> return ()
 #endif
       rg' <- getLocalGraph
       let hosts = [ host | host <- G.getResourcesOfType rg'    :: [Host] -- all hosts
