@@ -14,11 +14,14 @@ module Mero.ConfC
   , module Mero.Conf.Tree
   , withConf
   , withBitmap
+  , withHASession
+  , initHASession
+  , finiHASession
   ) where
 
 import Mero.Conf.Context
 import Mero.Conf.Fid
-import Mero.Conf.Internal (withConfC)
+import Mero.Conf.Internal (withConfC, withHASession, initHASession, finiHASession)
 import Mero.Conf.Obj
 import Mero.Conf.Tree
 

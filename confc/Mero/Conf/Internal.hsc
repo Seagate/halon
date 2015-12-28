@@ -23,6 +23,9 @@ module Mero.Conf.Internal
     initConfC
   , finalizeConfC
   , withConfC
+  , withHASession
+  , initHASession
+  , finiHASession
     -- * Fetching operations
   , Dir(..)
   , Iterator(..)
@@ -43,10 +46,6 @@ import Mero.Conf.Fid
 import Mero.Conf.Obj
 
 import Network.RPC.RPCLite
-  ( RPCAddress(..)
-  , RPCMachine(..)
-  , RPCMachineV
-  )
 
 import Control.Exception ( Exception, throwIO, bracket_, bracket )
 import Control.Monad ( when )
@@ -301,3 +300,33 @@ instance Exception ConfCException
 check_rc :: String -> CInt -> IO ()
 check_rc _ 0 = return ()
 check_rc msg i = throwIO $ ConfCException msg $ fromIntegral i
+
+foreign import ccall "<ha/note.h> m0_ha_state_init"
+  c_ha_state_init :: Ptr SessionV -> IO CInt
+
+foreign import ccall "<ha/note.h> m0_ha_state_fini"
+  c_ha_state_fini :: IO ()
+
+initHASession :: ServerEndpoint -> RPCAddress -> IO Connection
+initHASession sep addr = do
+  conn <- connect_se sep addr 2
+  Session s <- getConnectionSession conn
+  rc <- c_ha_state_init s
+  when (rc /= 0) $ error "failed to initialize ha_state"
+  return conn
+
+finiHASession :: Connection -> IO ()
+finiHASession conn = do
+  c_ha_state_fini
+  disconnect conn 0
+
+withHASession :: ServerEndpoint -> RPCAddress -> IO a -> IO a
+withHASession sep addr f =
+   bracket (connect_se sep addr 2)
+           (`disconnect` 2)
+     $ \conn -> do
+        bracket_ (do Session s <- getConnectionSession conn
+                     rc <- c_ha_state_init s
+                     when (rc /= 0) $ error "failed to initialize ha_state")
+                 c_ha_state_fini
+                 f

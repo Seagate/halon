@@ -18,13 +18,12 @@ module Helper
   , printErr
   ) where
 
-import Network.RPC.RPCLite
 
-import Control.Exception (bracket, bracket_, onException)
+import Mero.ConfC (withHASession)
+import Control.Exception (bracket, onException)
 import Control.Monad (when)
 import Data.Maybe (catMaybes)
-import Foreign.C
-import Foreign.Ptr
+import Network.RPC.RPCLite
 import System.Environment
     ( lookupEnv
     , getExecutablePath)
@@ -93,20 +92,3 @@ withEndpoint addr = bracket
 
 printErr :: Show a => a -> IO ()
 printErr = hPutStrLn stderr . show
-
-foreign import ccall "<ha/note.h> m0_ha_state_init"
-  c_ha_state_init :: Ptr SessionV -> IO CInt
-
-foreign import ccall "<ha/note.h> m0_ha_state_fini"
-  c_ha_state_fini :: IO ()
-
-withHASession :: ServerEndpoint -> RPCAddress -> IO a -> IO a
-withHASession sep addr f =
-   bracket (connect_se sep addr 2)
-           (`disconnect` 2)
-     $ \conn -> do
-        bracket_ (do Session s <- getConnectionSession conn
-                     rc <- c_ha_state_init s
-                     when (rc /= 0) $ error "failed to initialize ha_state")
-                 c_ha_state_fini
-                 f
