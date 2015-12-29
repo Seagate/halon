@@ -46,8 +46,8 @@ main = withMeroEnvironment router wrapper where
          (error "environment variable TEST_LISTEN is not set; example: 192.0.2.1:0")
     defaultMainWithIngredients [fileTestReporter [consoleTestReporter]] $
       testGroup "mero-integration-tests"
-        [ runExternalTest "DriveFailurePVer"
-        , runExternalTest "RCSyncToConfd"
+        [ runExternalTest "RCSyncToConfd"
+        -- , runExternalTest "DriveFailurePVer" -- Disabled until strategy based generation will arrive
         ]
     threadDelay 1000000
 
