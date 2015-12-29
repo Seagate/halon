@@ -35,11 +35,9 @@ import Network.CEP.Testing (runPhase, runPhaseGet)
 import HA.Multimap
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (startMultimap)
-#ifdef USE_MERO
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
 import Mero.ConfC (PDClustAttr(..))
-#endif
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
 import HA.RecoveryCoordinator.Mero
 import HA.Replicator (RGroup(..))
@@ -179,7 +177,6 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
     assertMsg "Number of disks (reached by host)" $ length disksByHost == 8
     assertMsg "Number of disks" $ length disks == 8
     assertMsg "Number of disk versions" $ length dvers1 == 29
-#ifdef USE_MERO
     forM_ (getResourcesOfType g :: [M0.PVer]) $ \pver -> do
       let PDClustAttr { _pa_N = paN
                       , _pa_K = paK
@@ -192,7 +189,6 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
                          , cntrv <- connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
                          , diskv <- connectedTo cntrv M0.IsParentOf g :: [M0.DiskV]]
       liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
-#endif
   where
     myHost = Host systemHostname
 
