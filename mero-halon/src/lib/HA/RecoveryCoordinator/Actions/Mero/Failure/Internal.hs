@@ -103,61 +103,62 @@ createPoolVersions fs pvers invert rg =
       _  -> S.execState (mapM_ createPoolVersion pvers) rg
   where
     pool = M0.Pool (M0.f_mdpool_fid fs)
-    test failset x = (if invert then not else id) $ M0.fid x `Set.member` failset
+    test failset x = (if invert then Set.notMember else Set.member) (M0.fid x) failset
     allDrives = G.getResourcesOfType rg :: [M0.Disk] -- XXX: multiprofile is not supported
     xs   = G.connectedTo Cluster Has rg
     ~(globals:_) = xs
     
     createPoolVersion :: PoolVersion -> S.State G.Graph ()
     createPoolVersion (PoolVersion failset failures) = do
-      pver <- M0.PVer <$> S.state (newFid (Proxy :: Proxy M0.PVer))
-                      <*> pure (failuresToArray failures)
-                      <*> pure (PDClustAttr
-                                  { _pa_N = CI.m0_data_units globals
-                                  , _pa_K = CI.m0_parity_units globals
-                                  , _pa_P = fromIntegral $ 
-                                      if invert 
-                                         then length allDrives - Set.size failset -- TODO: check this
-                                         else Set.size failset
-                                  , _pa_unit_size = 4096
-                                  , _pa_seed = Word128 123 456
-                                  })
-      S.modify'
-          $ G.newResource pver
-        >>> G.connect pool M0.IsRealOf pver
-      rg0 <- S.get
-      forM_ (filter (test failset)
-              $ G.connectedTo fs M0.IsParentOf rg0 :: [M0.Rack])
-            $ \rack -> do
-        rackv <- M0.RackV <$> S.state (newFid (Proxy :: Proxy M0.RackV))
+      let width = if invert 
+                  then length allDrives - Set.size failset -- TODO: check this
+                  else Set.size failset
+      S.when (width > 0) $ do
+        pver <- M0.PVer <$> S.state (newFid (Proxy :: Proxy M0.PVer))
+                        <*> pure (failuresToArray failures)
+                        <*> pure (PDClustAttr
+                                    { _pa_N = CI.m0_data_units globals
+                                    , _pa_K = CI.m0_parity_units globals
+                                    , _pa_P = fromIntegral width
+                                    , _pa_unit_size = 4096
+                                    , _pa_seed = Word128 123 456
+                                    })
         S.modify'
-            $ G.newResource rackv
-          >>> G.connect pver M0.IsParentOf rackv
-          >>> G.connect rack M0.IsRealOf rackv
-        rg1 <- S.get
+            $ G.newResource pver
+          >>> G.connect pool M0.IsRealOf pver
+        rg0 <- S.get
         forM_ (filter (test failset)
-                $ G.connectedTo rack M0.IsParentOf rg1 :: [M0.Enclosure])
-              $ \encl -> do
-          enclv <- M0.EnclosureV <$> S.state (newFid (Proxy :: Proxy M0.EnclosureV))
+                $ G.connectedTo fs M0.IsParentOf rg0 :: [M0.Rack])
+              $ \rack -> do
+          rackv <- M0.RackV <$> S.state (newFid (Proxy :: Proxy M0.RackV))
           S.modify'
-              $ G.newResource enclv
-            >>> G.connect rackv M0.IsParentOf enclv
-            >>> G.connect encl M0.IsRealOf enclv
-          rg2 <- S.get
+              $ G.newResource rackv
+            >>> G.connect pver M0.IsParentOf rackv
+            >>> G.connect rack M0.IsRealOf rackv
+          rg1 <- S.get
           forM_ (filter (test failset)
-                  $ G.connectedTo encl M0.IsParentOf rg2 :: [M0.Controller])
-                $ \ctrl -> do
-            ctrlv <- M0.ControllerV <$> S.state (newFid (Proxy :: Proxy M0.ControllerV))
+                  $ G.connectedTo rack M0.IsParentOf rg1 :: [M0.Enclosure])
+                $ \encl -> do
+            enclv <- M0.EnclosureV <$> S.state (newFid (Proxy :: Proxy M0.EnclosureV))
             S.modify'
-                $ G.newResource ctrlv
-              >>> G.connect enclv M0.IsParentOf ctrlv
-              >>> G.connect ctrl M0.IsRealOf ctrlv
-            rg3 <- S.get
+                $ G.newResource enclv
+              >>> G.connect rackv M0.IsParentOf enclv
+              >>> G.connect encl M0.IsRealOf enclv
+            rg2 <- S.get
             forM_ (filter (test failset)
-                    $ G.connectedTo ctrl M0.IsParentOf rg3 :: [M0.Disk])
-                  $ \disk -> do
-              diskv <- M0.DiskV <$> S.state (newFid (Proxy :: Proxy M0.DiskV))
+                    $ G.connectedTo encl M0.IsParentOf rg2 :: [M0.Controller])
+                  $ \ctrl -> do
+              ctrlv <- M0.ControllerV <$> S.state (newFid (Proxy :: Proxy M0.ControllerV))
               S.modify'
-                  $ G.newResource diskv
-                >>> G.connect ctrlv M0.IsParentOf diskv
-                >>> G.connect disk M0.IsRealOf diskv
+                  $ G.newResource ctrlv
+                >>> G.connect enclv M0.IsParentOf ctrlv
+                >>> G.connect ctrl M0.IsRealOf ctrlv
+              rg3 <- S.get
+              forM_ (filter (test failset)
+                      $ G.connectedTo ctrl M0.IsParentOf rg3 :: [M0.Disk])
+                    $ \disk -> do
+                diskv <- M0.DiskV <$> S.state (newFid (Proxy :: Proxy M0.DiskV))
+                S.modify'
+                    $ G.newResource diskv
+                  >>> G.connect ctrlv M0.IsParentOf diskv
+                  >>> G.connect disk M0.IsRealOf diskv
