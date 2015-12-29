@@ -38,6 +38,7 @@ import HA.Multimap.Process (startMultimap)
 #ifdef USE_MERO
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
+import Mero.ConfC (PDClustAttr(..))
 #endif
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
 import HA.RecoveryCoordinator.Mero
@@ -178,8 +179,20 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
     assertMsg "Number of disks (reached by host)" $ length disksByHost == 8
     assertMsg "Number of disks" $ length disks == 8
     assertMsg "Number of disk versions" $ length dvers1 == 29
-
-
+#ifdef USE_MERO
+    forM_ (getResourcesOfType g :: [M0.PVer]) $ \pver -> do
+      let PDClustAttr { _pa_N = paN
+                      , _pa_K = paK
+                      , _pa_P = paP
+                      } = M0.v_attrs pver
+      assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals initialData) == paN
+      assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals initialData) == paK
+      let dver = [ diskv | rackv <- connectedTo  pver M0.IsParentOf g :: [M0.RackV]
+                         , enclv <- connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
+                         , cntrv <- connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
+                         , diskv <- connectedTo cntrv M0.IsParentOf g :: [M0.DiskV]]
+      liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
+#endif
   where
     myHost = Host systemHostname
 
@@ -221,7 +234,7 @@ largeInitialData host transport = let
           syncGraph (return ())
           getLocalGraph
         putLocalGraph rg'
-        
+
 
       -- Verify that everything is set up correctly
       bmc <- runGet ls' $ findBMCAddress myHost
@@ -240,13 +253,11 @@ largeInitialData host transport = let
         $ mdpool == Just pool
 
       say =<< liftIO printMem
-      -- let g = lsGraph ls'
       g <- getGraph pid
       let racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
           encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
           ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
           disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
-
           sdevs = join $ fmap (\r -> connectedTo r Has g :: [StorageDevice]) hosts
           disksByHost = join $ fmap (\r -> connectedFrom M0.At r g :: [M0.Disk]) sdevs
 
