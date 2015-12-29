@@ -4,6 +4,7 @@
 --
 
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE CPP                        #-}
 
 module HA.RecoveryCoordinator.Actions.Core
   ( -- * Manipulating LoopState
@@ -30,6 +31,10 @@ module HA.RecoveryCoordinator.Actions.Core
     -- * Utility functions
   , unlessM
   , whenM
+#ifdef USE_MERO
+    -- * M0 related core actions.
+  , liftM0RC
+#endif
   ) where
 
 import HA.Multimap (StoreChan)
@@ -55,9 +60,15 @@ import Control.Distributed.Process
   , usend
   , say
   , getSelfPid
+#ifdef USE_MERO
+  , liftIO
+#endif
   )
 import Control.Monad (when, unless)
 import Control.Distributed.Process.Serializable
+#ifdef USE_MERO
+import Mero.M0Worker
+#endif
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set        as S
@@ -72,6 +83,9 @@ data LoopState = LoopState {
   , lsEQPid    :: ProcessId -- ^ EQ pid
   , lsHandled  :: S.Set UUID
     -- ^ Set of HAEvent uuid we've already handled.
+#ifdef USE_MERO
+  , lsWorker   :: M0Worker  -- ^ M0 worker thread attached to RC.
+#endif
 }
 
 -- | Is a given resource existent in the RG?
@@ -168,3 +182,16 @@ getSelfProcessId = liftProcess getSelfPid
 -- | Get the 'StoreChan' for the multimap replicating the graph.
 getMultimapChan :: PhaseM LoopState l StoreChan
 getMultimapChan = fmap lsMMChan $ get Global
+
+#ifdef USE_MERO
+-- | Run the given computation in the m0 thread dedicated to the RC.
+--
+-- Some operations the RC submits cannot use the global m0 worker ('liftGlobalM0') because
+-- they would require grabbing the global m0 worker a second time thus blocking the application.
+-- Currently, these are spiel operations which use the notification interface before returning
+-- control to the caller.
+liftM0RC :: IO a -> PhaseM LoopState l a
+liftM0RC task = do
+  worker <- fmap lsWorker (get Global)
+  liftIO $ runOnM0Worker worker task
+#endif

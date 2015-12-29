@@ -8,15 +8,16 @@ module Main where
 
 import qualified HA.RecoveryCoordinator.Mero.Tests
 import qualified HA.Autoboot.Tests
-#ifdef USE_MOCK_REPLICATOR
-import qualified HA.Castor.Story.NonMero
-#endif
 #ifdef USE_MERO
 #ifdef USE_MOCK_REPLICATOR
 import qualified HA.RecoveryCoordinator.SSPL.Tests
 #endif
 import qualified HA.Castor.Tests
 import qualified HA.Castor.Story.Tests
+#else
+#ifdef USE_MOCK_REPLICATOR
+import qualified HA.Castor.Story.NonMero
+#endif
 #endif
 import qualified HA.Test.Disconnect
 import qualified HA.Test.Cluster

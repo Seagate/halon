@@ -7,11 +7,14 @@ module HA.RecoveryCoordinator.Events.Mero
    ( SyncComplete(..)
    , NewMeroClient(..)
    , NewMeroClientProcessed(..)
+   -- * Requests 
+   , GetSpielAddress(..)
    )
    where
 
 import HA.Resources
 import HA.Resources.Castor
+import Control.Distributed.Process (ProcessId)
 
 import Data.Binary (Binary)
 import Data.Typeable
@@ -35,3 +38,7 @@ data NewMeroClientProcessed = NewMeroClientProcessed Host
        deriving (Eq, Show, Typeable, Generic)
 
 instance Binary NewMeroClientProcessed
+
+data GetSpielAddress = GetSpielAddress ProcessId
+       deriving (Eq, Show, Typeable, Generic)
+instance Binary GetSpielAddress

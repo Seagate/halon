@@ -15,6 +15,10 @@ extern const struct m0_fom_type_ops ha_state_get_fom_type_ops;
 extern const struct m0_fom_ops ha_state_set_fom_ops;
 extern const struct m0_fom_type_ops ha_state_set_fom_type_ops;
 
+// in ha/note.h
+extern const struct m0_fom_ops ha_entrypoint_get_ops;
+extern const struct m0_fom_type_ops ha_entrypoint_fom_type_ops;
+
 /**
  * Foms for ha_state_get requests.
  * 

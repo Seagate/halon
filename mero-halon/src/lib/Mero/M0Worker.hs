@@ -10,16 +10,19 @@ module Mero.M0Worker
     , terminateM0Worker
     , queueM0Worker
     , runOnM0Worker
-    , liftM0
+    , liftGlobalM0
     , sendM0Task
+    , dummyM0Worker
     ) where
 
+import Control.Concurrent (forkIO)
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Mero.Concurrent
+import System.IO
 
 import Mero
 
@@ -28,18 +31,37 @@ data M0Worker = M0Worker
     , m0WorkerThread :: M0Thread
     }
 
+data StopWorker = StopWorker deriving (Eq,Show)
+
+instance Exception StopWorker
+
 -- | Creates a new worker.
 newM0Worker :: IO M0Worker
 newM0Worker = do
     c <- newChan
     sendM0Task $ M0Worker c <$> forkM0OS (worker c)
   where
-    worker c = forever $ join $ readChan c
+    worker c = (forever $ join $ readChan c) `catches`
+                [ Handler $ \StopWorker -> return ()
+                , Handler $ \ThreadKilled -> return ()
+                ]
+
+-- | Simulates a worker behaviour when no m0d and kernel modules are
+-- not loaded. Sending messages to that worker will have same behaviour
+-- as using 'liftGlobalM0' when there is no mero running in system.
+dummyM0Worker :: IO M0Worker
+dummyM0Worker = do
+    c <- newChan
+    t <- forkIO (worker c)
+    return $ M0Worker c (error "unsafeCoerce" t)
+  where
+    worker c = do _ <- readChan c
+                  throwIO $ M0InitException (-2)
 
 -- | Terminates a worker. Waits for all queued tasks to be executed.
 terminateM0Worker :: M0Worker -> IO ()
 terminateM0Worker M0Worker {..} = do
-    writeChan m0WorkerChan $ error "terminated by terminateM0Worker"
+    writeChan m0WorkerChan $ throwIO StopWorker
     joinM0OS m0WorkerThread
 
 -- | Queues a new task for the worker.
@@ -58,5 +80,8 @@ runOnM0Worker w task = do
 
 -- | Runs the given action in the global mero worker and lifts the
 -- operation into the desired monad.
-liftM0 :: MonadIO m => IO a -> m a
-liftM0 = liftIO . sendM0Task
+--
+-- The operations should be non-blocking and short-lived, otherwise consider moving
+-- them to other threads.
+liftGlobalM0 :: MonadIO m => IO a -> m a
+liftGlobalM0 = liftIO . sendM0Task

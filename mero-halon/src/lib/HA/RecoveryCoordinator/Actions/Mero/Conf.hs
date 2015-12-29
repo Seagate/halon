@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE LambdaCase                 #-}
 
 module HA.RecoveryCoordinator.Actions.Mero.Conf where
@@ -72,17 +73,21 @@ initialiseConfInRG = getFilesystem >>= \case
     Just fs -> return fs
     Nothing -> do
       rg <- getLocalGraph
+      root    <- M0.Root    <$> newFid (Proxy :: Proxy M0.Root)
       profile <- M0.Profile <$> newFid (Proxy :: Proxy M0.Profile)
       pool <- M0.Pool <$> newFid (Proxy :: Proxy M0.Pool)
       fs <- M0.Filesystem <$> newFid (Proxy :: Proxy M0.Filesystem)
                           <*> return (M0.fid pool)
       modifyGraph
-          $ G.newResource profile
+          $ G.newResource root
+        >>> G.newResource profile
         >>> G.newResource fs
         >>> G.newResource pool
         >>> G.connectUniqueFrom Cluster Has profile
         >>> G.connectUniqueFrom profile M0.IsParentOf fs
         >>> G.connect fs M0.IsParentOf pool
+        >>> G.connectUniqueFrom Cluster Has root
+        >>> G.connect root M0.IsParentOf profile
 
       let re = [ (r, G.connectedTo r Has rg)
                | r <- G.connectedTo Cluster Has rg
@@ -102,7 +107,7 @@ initialiseConfInRG = getFilesystem >>= \case
               $ fmap (G.connect m0r M0.IsParentOf) m0e)
     mirrorEncl :: Enclosure -> PhaseM LoopState l M0.Enclosure
     mirrorEncl r = lookupEnclosureM0 r >>= \case
-      Just r -> return r
+      Just k -> return k
       Nothing -> do
          m0r <- M0.Enclosure <$> newFid (Proxy :: Proxy M0.Enclosure)
          modifyLocalGraph $ return
@@ -232,17 +237,11 @@ getFilesystem = getLocalGraph >>= \rg -> do
            , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
       ]
 
--- | Get all 'M0.Service' running on the 'Cluster', starting at
--- 'M0.Profile's.
-getM0Services :: PhaseM LoopState l [M0.Service]
-getM0Services = getLocalGraph >>= \g ->
-  let svs = [ sv | (prof :: M0.Profile) <- G.connectedTo Cluster Has g
-                   , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf g
-                   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf g
-                   , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf g
-                   , sv <- G.connectedTo p M0.IsParentOf g
-            ]
-  in return svs
+-- | RC wrapper for 'getM0Services'.
+getM0ServicesRC :: PhaseM LoopState l [M0.Service]
+getM0ServicesRC = do
+  phaseLog "rg-query" "Looking for Mero services."
+  M0.getM0Services <$> getLocalGraph
 
 lookupStorageDevice :: M0.SDev -> PhaseM LoopState l (Maybe StorageDevice)
 lookupStorageDevice sdev = do

@@ -1,0 +1,37 @@
+-- |
+-- Copyright : (C) 2015 Seagate Technology Limited.
+--
+{-# LANGUAGE CPP #-}
+module Helper.RC
+  ( emptyLoopState
+  ) where
+
+import HA.RecoveryCoordinator.Actions.Core
+import Control.Distributed.Process
+import HA.Resources
+import HA.Multimap
+import HA.ResourceGraph
+#if USE_MERO
+import Mero.M0Worker
+#endif
+
+import Data.Monoid
+import qualified Data.Set as Set
+import qualified Data.Map as Map
+import qualified Data.HashSet as HS
+
+-- | Create initial 'LoopState' structure.
+#if USE_MERO
+emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
+emptyLoopState mmchan pid = do
+  wrk <- liftIO $ dummyM0Worker
+  g' <- getGraph mmchan >>= \g ->
+    return (g { grRootNodes = grRootNodes g <> HS.singleton (Res Cluster) })
+  return $ LoopState g' Map.empty mmchan pid Set.empty wrk
+#else
+emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
+emptyLoopState mmchan pid = do
+  g' <- getGraph mmchan >>= \g ->
+    return (g { grRootNodes = grRootNodes g <> HS.singleton (Res Cluster) })
+  return $ LoopState g' Map.empty mmchan pid Set.empty
+#endif

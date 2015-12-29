@@ -97,7 +97,7 @@ import Helper.Environment (systemHostname)
 
 #ifdef USE_MERO
 import HA.Castor.Tests (initialDataAddr)
-import HA.RecoveryCoordinator.Actions.Mero (getSpielAddress, syncToConfd)
+import HA.RecoveryCoordinator.Actions.Mero (syncToConfd)
 import Mero.Notification (finalize)
 import qualified Helper.InitialData
 #endif
@@ -115,9 +115,10 @@ instance Binary SpielSync
 #ifdef USE_MERO
 testSyncRules :: [Definitions LoopState ()]
 testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent _ SpielSync _) -> do
-  Just sa <- getSpielAddress
-  Just _ <- syncToConfd sa
-  liftProcess $ say "Finished sync to confd"
+  result <- syncToConfd
+  case result of
+    Left e -> liftProcess $ say $ "Exceptions during sync: "++ show e
+    Right{} -> liftProcess $ say "Finished sync to confd"
 #endif
 
 runRC :: (ProcessId, IgnitionArguments)

@@ -26,11 +26,16 @@ import Data.Binary (Binary)
 import Data.Bits
 import Data.Char (ord)
 import Data.Hashable (Hashable)
-import Data.Proxy (Proxy)
+import Data.Proxy (Proxy(..))
 import Data.Typeable (Typeable)
 import Data.Word ( Word32, Word64 )
 import GHC.Generics (Generic)
 
+import Control.Arrow ((***))
+import Data.List (nub)
+import Data.Maybe (listToMaybe)
+import qualified HA.ResourceGraph as G
+import Mero.ConfC ( ServiceType(..) )
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
@@ -68,8 +73,10 @@ class ConfObj a where
 data AnyConfObj = forall a. ConfObj a => AnyConfObj a
 
 data SpielAddress = SpielAddress {
-    sa_confds :: [String]
-  , sa_rm :: String
+    sa_confds_fid :: [Fid]
+  , sa_confds_ep :: [String]
+  , sa_rm_fid :: Fid
+  , sa_rm_ep :: String
 }  deriving (Eq, Generic, Show, Typeable)
 
 instance Binary SpielAddress
@@ -121,6 +128,13 @@ data IsOnHardware = IsOnHardware
 
 instance Binary IsOnHardware
 instance Hashable IsOnHardware
+
+newtype Root = Root Fid
+  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+
+instance ConfObj Root where
+   fidType _ = fromIntegral . ord $ 't'
+   fid (Root f) = f
 
 newtype Profile = Profile Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
@@ -269,10 +283,12 @@ $(mkDicts
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals
+  , ''DiskV, ''CI.M0Globals, ''Root
   ]
   [ -- Relationships connecting conf with other resources
-    (''R.Cluster, ''R.Has, ''Profile)
+    (''R.Cluster, ''R.Has, ''Root)
+  , (''Root, ''IsParentOf, ''Profile) 
+  , (''R.Cluster, ''R.Has, ''Profile)
   , (''Controller, ''At, ''R.Host)
   , (''Rack, ''At, ''R.Rack)
   , (''Enclosure, ''At, ''R.Enclosure)
@@ -311,10 +327,12 @@ $(mkResRel
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals
+  , ''DiskV, ''CI.M0Globals, ''Root
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Profile)
+  , (''R.Cluster, ''R.Has, ''Root)
+  , (''Root, ''IsParentOf, ''Profile)
   , (''Controller, ''At, ''R.Host)
   , (''Rack, ''At, ''R.Rack)
   , (''Enclosure, ''At, ''R.Enclosure)
@@ -349,3 +367,58 @@ $(mkResRel
   ]
   []
   )
+
+-- A dictionary wrapper for configuration objects
+data SomeConfObjDict = forall x. (Typeable x, ConfObj x) =>
+    SomeConfObjDict (Proxy x)
+
+-- Yields the ConfObj dictionary of the object with the given Fid.
+--
+-- TODO: Generate this with TH.
+fidConfObjDict :: Fid -> Maybe SomeConfObjDict
+fidConfObjDict f = lookup (f_container f `shiftR` (64 - 8))
+    [ mkTypePair (Proxy :: Proxy Root)
+    , mkTypePair (Proxy :: Proxy Profile)
+    , mkTypePair (Proxy :: Proxy Filesystem)
+    , mkTypePair (Proxy :: Proxy Node)
+    , mkTypePair (Proxy :: Proxy Rack)
+    , mkTypePair (Proxy :: Proxy Pool)
+    , mkTypePair (Proxy :: Proxy Process)
+    , mkTypePair (Proxy :: Proxy Service)
+    , mkTypePair (Proxy :: Proxy SDev)
+    , mkTypePair (Proxy :: Proxy Enclosure)
+    , mkTypePair (Proxy :: Proxy Controller)
+    , mkTypePair (Proxy :: Proxy Disk)
+    , mkTypePair (Proxy :: Proxy PVer)
+    , mkTypePair (Proxy :: Proxy RackV)
+    , mkTypePair (Proxy :: Proxy EnclosureV)
+    , mkTypePair (Proxy :: Proxy ControllerV)
+    , mkTypePair (Proxy :: Proxy DiskV)
+    ]
+  where
+    mkTypePair :: forall a. (Typeable a, ConfObj a)
+               => Proxy a -> (Word64, SomeConfObjDict)
+    mkTypePair a = (fidType a, SomeConfObjDict (Proxy :: Proxy a))
+
+-- | Get all 'M0.Service' running on the 'Cluster', starting at
+-- 'M0.Profile's.
+getM0Services :: G.Graph -> [Service]
+getM0Services g =
+  [ sv | (prof :: Profile) <- G.connectedTo R.Cluster R.Has g
+       , (fs :: Filesystem) <- G.connectedTo prof IsParentOf g
+       , (node :: Node) <- G.connectedTo fs IsParentOf g
+       , (p :: Process) <- G.connectedTo node IsParentOf g
+       , sv <- G.connectedTo p IsParentOf g
+  ]
+
+-- | Load an entry point for spiel transaction.
+getSpielAddress :: G.Graph -> Maybe SpielAddress
+getSpielAddress g = 
+   let svs = getM0Services g
+       (confdsFid,confdsEps) = nub *** nub . concat $ unzip
+         [ (fd, eps) | (Service { s_fid = fd, s_type = CST_MGS, s_endpoints = eps }) <- svs ]
+       (rmFids, rmEps) = unzip
+         [ (fd, eps) | (Service { s_fid = fd, s_type = CST_MDS, s_endpoints = eps }) <- svs ]
+       mrmFid = listToMaybe $ nub rmFids
+       mrmEp  = listToMaybe $ nub $ concat rmEps
+  in (\rmFid rmEp -> SpielAddress confdsFid confdsEps rmFid rmEp) <$> mrmFid <*> mrmEp

@@ -6,10 +6,8 @@ module HA.Castor.Tests (tests, initialData, initialDataAddr) where
 
 import Control.Distributed.Process
   ( Process
-  , ProcessId
   , RemoteTable
   , liftIO
-  , catch
   , getSelfNode
   , say
   , unClosure
@@ -20,10 +18,7 @@ import Control.Distributed.Process.Node
 import Control.Monad (forM_, join)
 
 import Data.List (sort, unfoldr, isPrefixOf, findIndex)
-import qualified Data.Map.Strict as Map
-import Data.Monoid ((<>))
 import qualified Data.Set as Set
-import qualified Data.HashSet as HS
 
 import Network.Transport (Transport)
 import Network.CEP
@@ -64,18 +59,13 @@ import GHC.Stats
 
 import Helper.InitialData
 import Helper.Environment (systemHostname)
+import Helper.RC
 
 mmSDict :: SerializableDict Multimap
 mmSDict = SerializableDict
 
 remotable
   [ 'mmSDict ]
-
-emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
-emptyLoopState mmchan pid = do
-  g' <- getGraph mmchan >>= \g ->
-    return (g { grRootNodes = grRootNodes g <> HS.singleton (Res Cluster) })
-  return $ LoopState g' Map.empty mmchan pid Set.empty
 
 myRemoteTable :: RemoteTable
 myRemoteTable = HA.Castor.Tests.__remoteTable remoteTable

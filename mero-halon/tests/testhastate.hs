@@ -107,6 +107,7 @@ main =
                           putMVar mv' nvecs
                           return 0
                         )
+                        (error "not used in this test")
            ) finiHAState $ withM0 $
   bracket_ initRPC finalizeRPC $
   bracket (listen (rpcAddress localAddress)$ ListenCallbacks
