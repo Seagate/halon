@@ -28,7 +28,6 @@ import Data.Word
 import Data.Typeable
 import Prelude hiding (id, (.))
 
-
 -- | Failure tolerance vector. For a given pool version, the failure
 --   tolerance vector reflects how many objects in each level can be expected
 --   to fail whilst still allowing objects in that pool version to be read. For
@@ -103,18 +102,18 @@ createPoolVersions fs pvers invert rg =
       _  -> S.execState (mapM_ createPoolVersion pvers) rg
   where
     pool = M0.Pool (M0.f_mdpool_fid fs)
-    test failset x = (if invert then Set.notMember else Set.member) (M0.fid x) failset
+    test fids x = (if invert then Set.notMember else Set.member) (M0.fid x) fids
     allDrives = G.getResourcesOfType rg :: [M0.Disk] -- XXX: multiprofile is not supported
     xs   = G.connectedTo Cluster Has rg
     ~(globals:_) = xs
 
     createPoolVersion :: PoolVersion -> S.State G.Graph ()
-    createPoolVersion (PoolVersion failset failures) = do
+    createPoolVersion (PoolVersion fids failures) = do
       let
-        failset_drv = Set.filter (M0.fidIsType (Proxy :: Proxy M0.Disk)) failset
+        fids_drv = Set.filter (M0.fidIsType (Proxy :: Proxy M0.Disk)) fids
         width = if invert
-                then length allDrives - Set.size failset_drv -- TODO: check this
-                else Set.size failset_drv
+                then length allDrives - Set.size fids_drv -- TODO: check this
+                else Set.size fids_drv
       S.when (width > 0) $ do
         pver <- M0.PVer <$> S.state (newFid (Proxy :: Proxy M0.PVer))
                         <*> pure (failuresToArray failures)
@@ -129,7 +128,7 @@ createPoolVersions fs pvers invert rg =
             $ G.newResource pver
           >>> G.connect pool M0.IsRealOf pver
         rg0 <- S.get
-        forM_ (filter (test failset)
+        forM_ (filter (test fids)
                 $ G.connectedTo fs M0.IsParentOf rg0 :: [M0.Rack])
               $ \rack -> do
           rackv <- M0.RackV <$> S.state (newFid (Proxy :: Proxy M0.RackV))
@@ -138,7 +137,7 @@ createPoolVersions fs pvers invert rg =
             >>> G.connect pver M0.IsParentOf rackv
             >>> G.connect rack M0.IsRealOf rackv
           rg1 <- S.get
-          forM_ (filter (test failset)
+          forM_ (filter (test fids)
                   $ G.connectedTo rack M0.IsParentOf rg1 :: [M0.Enclosure])
                 $ \encl -> do
             enclv <- M0.EnclosureV <$> S.state (newFid (Proxy :: Proxy M0.EnclosureV))
@@ -147,7 +146,7 @@ createPoolVersions fs pvers invert rg =
               >>> G.connect rackv M0.IsParentOf enclv
               >>> G.connect encl M0.IsRealOf enclv
             rg2 <- S.get
-            forM_ (filter (test failset)
+            forM_ (filter (test fids)
                     $ G.connectedTo encl M0.IsParentOf rg2 :: [M0.Controller])
                   $ \ctrl -> do
               ctrlv <- M0.ControllerV <$> S.state (newFid (Proxy :: Proxy M0.ControllerV))
@@ -156,7 +155,7 @@ createPoolVersions fs pvers invert rg =
                 >>> G.connect enclv M0.IsParentOf ctrlv
                 >>> G.connect ctrl M0.IsRealOf ctrlv
               rg3 <- S.get
-              forM_ (filter (test failset)
+              forM_ (filter (test fids)
                       $ G.connectedTo ctrl M0.IsParentOf rg3 :: [M0.Disk])
                     $ \disk -> do
                 diskv <- M0.DiskV <$> S.state (newFid (Proxy :: Proxy M0.DiskV))
