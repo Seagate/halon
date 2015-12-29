@@ -268,7 +268,7 @@ txPopulate (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) 
 
             liftM0RC $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
     liftM0RC $ poolVersionDone t (M0.fid pver)
-    phaseLog "spiel" "Finished adding virtual entities."
+  phaseLog "spiel" "Finished adding virtual entities."
   return t
 
 -- | Creates an RPCAddress suitable for 'withServerEndpoint'

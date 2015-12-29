@@ -92,6 +92,7 @@ tests host transport = map (localOption (mkTimeout $ 10*60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport
   , testSuccess "initial-data-doesn't-error" $ loadInitialData host transport
   , testSuccess "large-data" $ largeInitialData host transport
+  , testSuccess "controller-failure" $ testControllerFailureDomain transport
   ]
 
 fsSize :: (a, Set.Set b) -> Int
@@ -191,6 +192,67 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
       liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
   where
     myHost = Host systemHostname
+
+-- | Test that failure domain logic works correctly when we are
+testControllerFailureDomain :: Transport -> IO ()
+testControllerFailureDomain transport = rGroupTest transport $ \pid -> do
+    me <- getSelfNode
+    ls <- emptyLoopState pid (nullProcessId me)
+    (ls', _) <- run ls $ do
+      mapM_ goRack (CI.id_racks iData)
+      filesystem <- initialiseConfInRG
+      loadMeroGlobals (CI.id_m0_globals iData)
+      loadMeroServers filesystem (CI.id_m0_servers iData)
+      rg <- getLocalGraph
+      let Just updateGraph = onInit (simpleStrategy 0 1 0) rg
+      rg' <- updateGraph return
+      putLocalGraph rg'
+    -- Verify that everything is set up correctly
+    (Just fs) <- runGet ls' getFilesystem
+    let pool = M0.Pool (M0.f_mdpool_fid fs)
+    assertMsg "MDPool is stored in RG"
+      $ memberResource pool (lsGraph ls')
+    mdpool <- runGet ls' $ lookupConfObjByFid (M0.f_mdpool_fid fs)
+    assertMsg "MDPool is findable by Fid"
+      $ mdpool == Just pool
+    -- We have 4 disks in 4 enclosures.
+    hosts <- runGet ls' $ findHosts ".*"
+    let g = lsGraph ls'
+        racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
+        encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
+        ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
+        disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
+
+        sdevs = join $ fmap (\r -> connectedTo r Has g :: [StorageDevice]) hosts
+        disksByHost = join $ fmap (\r -> connectedFrom M0.At r g :: [M0.Disk]) sdevs
+
+        disk1 = head disks
+        dvers1 = connectedTo disk1 M0.IsRealOf g :: [M0.DiskV]
+
+
+    assertMsg "Number of racks" $ length racks == 1
+    assertMsg "Number of enclosures" $ length encls == 4
+    assertMsg "Number of controllers" $ length ctrls == 4
+    assertMsg "Number of storage devices" $ length sdevs == 16
+    assertMsg "Number of disks (reached by host)" $ length disksByHost == 16
+    assertMsg "Number of disks" $ length disks == 16
+    assertMsg "Number of disk versions" $ length dvers1 == 4
+    forM_ (getResourcesOfType g :: [M0.PVer]) $ \pver -> do
+      let PDClustAttr { _pa_N = paN
+                      , _pa_K = paK
+                      , _pa_P = paP
+                      } = M0.v_attrs pver
+      assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals iData) == paN
+      assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals iData) == paK
+      let dver = [ diskv | rackv <- connectedTo  pver M0.IsParentOf g :: [M0.RackV]
+                         , enclv <- connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
+                         , cntrv <- connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
+                         , diskv <- connectedTo cntrv M0.IsParentOf g :: [M0.DiskV]]
+      liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
+  where
+    myHost = Host systemHostname
+    iData = initialDataGen systemHostname "192.0.2" 4 4 $ CI.Preloaded 0 1 0
+
 
 printMem :: IO String
 printMem = do
