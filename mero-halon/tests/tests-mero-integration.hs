@@ -7,7 +7,6 @@ module Main
   ( main ) where
 
 import Mero
-import Network.RPC.RPCLite
 import qualified HA.Castor.Story.Tests
 import qualified HA.RecoveryCoordinator.Mero.Tests
 
@@ -34,13 +33,6 @@ main = withMeroEnvironment router wrapper where
     minfo <- liftM2 (,) <$> lookupEnv "MERO_TEST"
                         <*> lookupEnv "TEST_LISTEN"
     case minfo of
-      Just ("DUMMY_HALON", _host) -> return $ Just $ withM0Deferred $ do
-        confdAddress <- getConfdEndpoint
-        addr         <- getLnetNid
-        initRPC
-        _ <- withEndpoint (rpcAddress $ addr ++ ":12345:35:497") $ \ep ->
-          withHASession ep (rpcAddress confdAddress) $ forever $ return ()
-        finalizeRPC
       Just ("RCSyncToConfd", host) ->
         Just . withM0Deferred .
           HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd host <$> mkTransport 
