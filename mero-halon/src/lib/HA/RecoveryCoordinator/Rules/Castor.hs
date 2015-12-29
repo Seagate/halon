@@ -155,6 +155,7 @@ castorRules = sequence_
   [ ruleInitialDataLoad
 #ifdef USE_MERO
   , ruleMeroNoteSet
+  , ruleGetEntryPoint
 #endif
   , ruleResetAttempt
   , ruleDriveFailed
@@ -399,7 +400,7 @@ ruleDriveRemoved = define "drive-removed" $ do
       sd <- lookupStorageDeviceSDev disk
       forM_ sd $ \m0sdev -> do
         updateDriveState m0sdev M0_NC_TRANSIENT
-        msa <- getSpielAddress
+        msa <- getSpielAddressRC
         forM_ msa $ \_ -> -- verify that info about mero exists.
           (void $ withSpielRC $ \sp -> withRConfRC sp $
              liftIO $ Spiel.deviceDetach sp (d_fid m0sdev))
@@ -460,7 +461,7 @@ ruleDriveInserted = define "drive-inserted" $ do
         -- XXX: if mero is not ready then we should not unmark disk, I suppose?
         sd <- lookupStorageDeviceSDev disk
         forM_ sd $ \m0sdev -> do
-          msa <- getSpielAddress
+          msa <- getSpielAddressRC
           forM_ msa $ \_ -> do
             _ <- withSpielRC $ \sp -> withRConfRC sp $
                liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
@@ -552,10 +553,9 @@ ruleNewMeroClient = define "new-mero-client" $ do
         _meminfo <- case minfo of
            Nothing -> do
              phaseLog "debug" "no information about host stats - loading"
-             liftProcess $ promulgate (ClientInfo node 1024 1024)
-             -- liftProcess $ void $ spawnLocal $ do
-             --  _ <- spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
-             --  return ()
+             _ <- liftProcess $ promulgate (ClientInfo node 1024 1024)
+             liftProcess $ void $ spawnLocal $
+               void $ spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
              continue client_info
            Just mc -> return mc
         -- Check that we have loaded initial configuration.
@@ -646,6 +646,17 @@ ruleNewMeroClient = define "new-mero-client" $ do
 
       start new_client Nothing
 
+#ifdef USE_MERO
+-- | Load information that is required to complete transaction from
+-- resource graph.
+ruleGetEntryPoint :: Definitions LoopState ()
+ruleGetEntryPoint = defineSimple "castor-entry-point-request" $
+  \(HAEvent uuid (GetSpielAddress pid) _) -> do
+    phaseLog "info" $ "Spiel Address requested by " ++ show pid
+    liftProcess . usend pid =<< getSpielAddressRC
+    messageProcessed uuid
+#endif
+
 goRack :: CI.Rack -> PhaseM LoopState l ()
 goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
   registerRack rack
@@ -664,7 +675,7 @@ goHost enc (CI.Host{..}) = let
     host = Host h_fqdn
     mem = fromIntegral h_memsize
     cpucount = fromIntegral h_cpucount
-    attrs = [HA_MEMSIZE_MB mem, HA_CPU_COUNT cpucount]
+    attrs = [HA_MEMSIZE_MB mem, HA_CPU_COUNT cpucount, HA_M0SERVER]
   in do
     registerHost host
     locateHostInEnclosure host enc

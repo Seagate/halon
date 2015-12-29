@@ -20,7 +20,6 @@ import Network.CEP
 import Control.Distributed.Process
 
 import Data.ByteString.Builder (toLazyByteString, lazyByteString)
-import Data.Foldable (forM_)
 import qualified Data.ByteString.Lazy as BL
 
 -- | Merged frontiner rules. Indended to be used in RC.

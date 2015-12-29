@@ -38,7 +38,9 @@ newFidSeq = getLocalGraph >>= \rg ->
         rg' = G.connectUniqueFrom Cluster Has (M0.FidSeq w') $ rg
       in do
         putLocalGraph rg'
-        return w'
+        -- We start counting form zero because otherwise root object will be
+        -- out of sync with mero
+        return w
 
 newFid :: M0.ConfObj a => Proxy a -> PhaseM LoopState l Fid
 newFid p = newFidSeq >>= return . M0.fidInit p 1

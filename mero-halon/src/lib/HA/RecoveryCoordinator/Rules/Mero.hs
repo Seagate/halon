@@ -15,6 +15,7 @@ import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Events.Mero
+import HA.Resources.Mero.Note
 import Mero.Notification (Get(..), GetReply(..))
 import Mero.Notification.HAState (Note(..))
 

@@ -9,7 +9,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 
 module HA.RecoveryCoordinator.Actions.Mero.Spiel
-  ( getSpielAddress
+  ( getSpielAddressRC
   , withRootRC
   , withSpielRC
   , withRConfRC
@@ -33,8 +33,9 @@ import Mero.ConfC
   ( PDClustAttr(..)
   , Word128(..)
   , Root
-  , ServiceType(..)
   , withConf
+  , initHASession
+  , finiHASession
   )
 import Mero.Notification
 import Mero.Spiel hiding (start)
@@ -46,13 +47,14 @@ import Control.Monad (forM_, void)
 import Control.Monad.Catch
 
 import Data.Foldable (traverse_)
-import Data.List (nub)
+import Data.IORef (writeIORef)
 import Data.Maybe (catMaybes, listToMaybe)
 import Data.UUID (UUID)
 
 import Network.CEP
 import Network.RPC.RPCLite (getRPCMachine_se, rpcAddress, RPCAddress(..))
 
+import System.IO
 import Prelude hiding (id)
 
 -- | Find a confd server in the cluster and run the given function on
@@ -76,12 +78,13 @@ withRootRC f = do
 -- The user is responsible for making sure that inner 'IO' actions run
 -- on the global m0 worker if needed.
 withSpielRC :: (SpielContext -> PhaseM LoopState l a)
-            -> PhaseM LoopState l (Maybe a)
-withSpielRC f = do
+            -> PhaseM LoopState l (Either SomeException a)
+withSpielRC f = withResourceGraphCache $ do
   rpca <- liftProcess getRPCAddress
-  withServerEndpoint rpca $ \se -> do
-    sc <- liftM0RC $ getRPCMachine_se se >>= \rpcm -> Mero.Spiel.start rpcm
-    f sc >>= \v -> liftM0RC (Mero.Spiel.stop sc) >> return (Just v)
+  try $ withServerEndpoint rpca $ \se -> do
+     conn <- liftM0RC $ initHASession se rpca
+     sc <- liftM0RC $ getRPCMachine_se se >>= \rpcm -> Mero.Spiel.start rpcm
+     f sc `sfinally`  liftM0RC (Mero.Spiel.stop sc >> finiHASession conn)
 
 -- | Try to start rconf sesion and run 'PhaseM' on the 'SpielContext' this
 -- call is required for running management commands.
@@ -100,8 +103,7 @@ withRConfRC spiel action = do
   return x
 
 startRepairOperation :: M0.Pool -> PhaseM LoopState l ()
-startRepairOperation pool = catch
-    (getSpielAddress >>= traverse_ (const go))
+startRepairOperation pool = (void go) `catch`
     (\e -> do
       phaseLog "error" $ "Error starting repair operation: "
                       ++ show (e :: SomeException)
@@ -114,8 +116,7 @@ startRepairOperation pool = catch
       withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStart sc (M0.fid pool)
 
 startRebalanceOperation :: M0.Pool -> PhaseM LoopState l ()
-startRebalanceOperation pool = catch
-    (getSpielAddress >>= traverse_ (const go))
+startRebalanceOperation pool = (void go) `catch`
     (\e -> do
       phaseLog "error" $ "Error starting rebalance operation: "
                       ++ show (e :: SomeException)
@@ -132,20 +133,17 @@ syncAction meid sync = do
   case sync of
     SyncToConfdServersInRG -> do
       phaseLog "info" "Syncing RG to confd servers in RG."
-      msa <- getSpielAddress
-      case msa of
-        Nothing -> phaseLog "warning" $ "No spiel address found in RG."
-        Just{}  -> void $ withSpielRC $ \sc -> do
-          loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
+      void $ syncToConfd
     SyncDumpToFile filename -> do
       phaseLog "info" $ "Dumping conf in RG to this file: " ++ show filename
       loadConfData >>= traverse_ (\x -> txOpenLocalContext >>= txPopulate x >>= txDumpToFile filename)
   traverse_ messageProcessed meid
 
 -- | Helper functions for backward compatibility.
-syncToConfd :: M0.SpielAddress -> PhaseM LoopState l (Maybe ())
-syncToConfd _ = withSpielRC $ \sc -> do
-  loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
+syncToConfd :: PhaseM LoopState l (Either SomeException ())
+syncToConfd = do
+  withSpielRC $ \sc -> do
+     loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
 
 -- | Open a transaction. Ultimately this should not need a
 --   spiel context.
@@ -283,19 +281,30 @@ getRPCAddress = rpcAddress . mkAddress <$> DP.getSelfNode
     mkAddress = (++ "@tcp:12345:34:100") . takeWhile (/= ':')
                 . drop (length ("nid://" :: String)) . show
 
-getSpielAddress :: PhaseM LoopState l (Maybe M0.SpielAddress)
-getSpielAddress = do
+-- | RC wrapper for 'getSpielAddress'.
+getSpielAddressRC :: PhaseM LoopState l (Maybe M0.SpielAddress)
+getSpielAddressRC = do
   phaseLog "rg-query" "Looking up confd and RM services for spiel address."
-  svs <- getM0Services
-  let confds = nub $ concat
-        [ eps | (M0.Service { s_type = CST_MGS, s_endpoints = eps }) <- svs ]
-      mrm = listToMaybe . nub $ concat
-        [ eps | (M0.Service { s_type = CST_MDS, s_endpoints = eps }) <- svs ]
-  return $ fmap (\rm -> M0.SpielAddress confds rm) mrm
+  M0.getSpielAddress <$> getLocalGraph
 
 -- | List of addresses to known confd servers on the cluster.
 getConfdServers :: PhaseM LoopState l [String]
-getConfdServers = getSpielAddress >>= return . maybe [] M0.sa_confds
+getConfdServers = getSpielAddressRC >>= return . maybe [] M0.sa_confds_ep
+
+-- | Store 'ResourceGraph' in 'globalResourceGraphCache' in order to avoid dead
+-- lock conditions. RC performing all queries sequentially, thus it can't reply
+-- to the newly arrived queries to 'ResourceGraph'. This opens a possiblity of
+-- a deadlock if some internal operation that RC is performing creates a query
+-- to RC, and such deadlock happens in spiel operations.
+-- For this reason we store a graph projection in a variable and methods that
+-- could be blocked should first query this cached value first.
+withResourceGraphCache :: PhaseM LoopState l a -> PhaseM LoopState l a
+withResourceGraphCache action = do
+  g <- getLocalGraph
+  liftProcess $ DP.liftIO $ writeIORef globalResourceGraphCache (Just g)
+  x <- action
+  liftProcess $ DP.liftIO $ writeIORef globalResourceGraphCache Nothing
+  return x
 
 sfinally :: forall m a b. (MonadProcess m, MonadThrow m, MonadCatch m) => m a -> m b -> m a
 sfinally action finalizer = do

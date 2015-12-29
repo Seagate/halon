@@ -26,6 +26,7 @@ module Mero.Notification
     , notifyMero
     , withServerEndpoint
     , MonadProcess(..)
+    , globalResourceGraphCache
     ) where
 
 import Control.Distributed.Process
@@ -37,6 +38,9 @@ import Mero.ConfC (Fid)
 import Mero.Notification.HAState
 import Mero.M0Worker
 import HA.EventQueue.Producer (promulgate)
+import HA.ResourceGraph (Graph)
+import HA.Resources.Mero (SpielAddress(..), getSpielAddress)
+import HA.Resources.Mero.Note (rgLookupConfObjectStates)
 import Network.RPC.RPCLite
   ( ListenCallbacks(..)
   , RPCAddress
@@ -44,19 +48,25 @@ import Network.RPC.RPCLite
   , initRPC
   , finalizeRPC
   , listen
+  , stopListening
   )
+import HA.RecoveryCoordinator.Events.Mero (GetSpielAddress(..))
 import Control.Concurrent.MVar
 import Control.Distributed.Process.Internal.Types ( LocalNode )
-import qualified Control.Distributed.Process.Node as CH ( runProcess )
-import Control.Monad ( void )
+import qualified Control.Distributed.Process.Node as CH ( runProcess, forkProcess )
+import Control.Monad ( void, join )
 import Control.Monad.Trans (MonadIO)
 import Control.Monad.Catch (MonadCatch, SomeException)
 import qualified Control.Monad.Catch as Catch
+import Data.Foldable (forM_)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.Typeable (Typeable)
+import Data.IORef  (IORef, newIORef, readIORef)
+import Foreign.Ptr (Ptr)
 import GHC.Generics (Generic)
 import System.IO.Unsafe (unsafePerformIO)
+
 
 -- | This message is sent to the RC when Mero informs of a state change.
 --
@@ -106,6 +116,20 @@ globalEndpointRef :: MVar EndpointRef
 globalEndpointRef = unsafePerformIO $ newMVar emptyEndpointRef
 {-# NOINLINE globalEndpointRef #-}
 
+-- | Global cache of the 'ResourceGraph'. This graph is used for read
+-- queries from HA Note callbacks. Such graph have the same guarantees
+-- as queriyng using RC but is much faster as such queries are not persisted.
+-- RC is capable of updating this cache on each step, and clearing that
+-- when it's no longer an RC.
+-- This variable is intended to be used as follows:
+-- 1. Before RC is running an operation that could send requests to 
+--    RG via RC, it should put current graph into the variable
+-- 2. After RC have finished running this operation RC should put @Nothing@
+--    into cache variable
+globalResourceGraphCache :: IORef (Maybe Graph)
+globalResourceGraphCache = unsafePerformIO $ newIORef Nothing
+{-# NOINLINE globalResourceGraphCache #-}
+
 -- | Grab hold of a 'ServerEndpoint' and run the action on it. You
 -- are required to pass in an 'RPCAddress' in case the endpoint is not
 -- initialized already. Note that if the endpoint is already
@@ -117,8 +141,6 @@ globalEndpointRef = unsafePerformIO $ newMVar emptyEndpointRef
 -- concurrently by other callers at the same time. For this reason you
 -- should not use any sort of finalizers on it here: use 'finalize'
 -- instead.
---
--- 
 withServerEndpoint :: forall m a. (MonadIO m, MonadProcess m, MonadCatch m)
                    => RPCAddress
                    -> (ServerEndpoint -> m a)
@@ -143,9 +165,9 @@ withServerEndpoint addr f = liftProcess (initializeInternal addr)
         -- There's either more workers or we don't want to finalize,
         -- just put the endpoint with decreased refcount back
         False -> putMVar m newRef
-        -- We're the last worker, someone wanted to finalize and we
-        -- have the lock: just call 'finalizeInternal'.
-        True -> finalizeInternal m
+        -- We are not finalizing endpoint here, because it may be not
+        -- safe to do, because RC may still be using endpoint.
+        True -> return ()
       either Catch.throwM return ev
 
 -- | Label of the process serving configuration object states.
@@ -184,26 +206,42 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
       receive_callback = \_ _ -> return False
     }
 
+-- | Timeout before handler will decide that it's impossible to find entrypoint
+entryPointTimeout :: Int
+entryPointTimeout = 10000000
+
+
+-- | Get information about Fid states from local graph.
+getNVec :: [Fid] -> Graph -> [Note]
+getNVec fids = fmap (uncurry Note) . rgLookupConfObjectStates fids
+
 -- | Initializes the hastate interface in the node where it will be
 -- used. Call it before @m0_init@ and before 'initialize'.
 initialize_pre_m0_init :: LocalNode -> IO ()
 initialize_pre_m0_init lnode = initHAState ha_state_get
                                            ha_state_set
+                                           ha_entrypoint
   where
     ha_state_get :: NVecRef -> IO ()
-    ha_state_get nvecr =
-      CH.runProcess lnode $ void $ spawnLocal $ do
-        mrc <- whereis notificationHandlerLabel
-        case mrc of
-          Just rc -> do
-            link rc
-            self <- getSelfPid
-            _ <- liftIO (readNVecRef nvecr) >>= promulgate . Get self . map no_id
-            GetReply nvec <- expect
-            liftIO $ updateNVecRef nvecr nvec
-            liftIO $ doneGet nvecr 0
-          Nothing ->
-            say "notification interface callbacks: unknown RC."
+    ha_state_get nvecr = void $ CH.forkProcess lnode $ do
+      whereis notificationHandlerLabel >>= \case
+        Just rc -> do
+          link rc
+          self <- getSelfPid
+          fids <- fmap no_id <$> liftIO (readNVecRef nvecr)
+          liftIO (fmap (getNVec fids) <$> readIORef globalResourceGraphCache)
+             >>= \case
+                   Just nvec -> return nvec
+                   Nothing   -> do
+                     _ <- promulgate (Get self fids)
+                     GetReply nvec <- expect
+                     return nvec
+             >>= \nvec -> do
+                    liftIO $ updateNVecRef nvecr nvec
+                    liftGlobalM0 $ doneGet nvecr 0
+        Nothing -> do
+          say "notification interface callbacks: unknown RC."
+          liftGlobalM0 $ doneGet nvecr (-1)
 
     ha_state_set :: NVec -> IO Int
     ha_state_set nvec = do
@@ -211,6 +249,26 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
         say $ "m0d: received state vector " ++ show nvec
         void $ promulgate $ Set nvec
       return 0
+
+    ha_entrypoint :: Ptr FomV -> Ptr EntryPointRepV -> IO ()
+    ha_entrypoint fom crep = void $ CH.forkProcess lnode $ do
+      say "ha_entrypoint: try to read values from cache."
+      self <- getSelfPid
+      liftIO ( (getSpielAddress =<<) <$> readIORef globalResourceGraphCache) 
+        >>= \case 
+               Just ep -> return $ Just ep
+               Nothing -> do
+                 say "ha_entrypoint: request adderess from RC."
+                 void $ promulgate $ GetSpielAddress self
+                 fmap join $ expectTimeout entryPointTimeout
+        >>= \case 
+                 Just ep -> do
+                   liftGlobalM0 $
+                     entrypointReplyWakeup fom crep (sa_confds_fid ep)
+                                                    (sa_confds_ep  ep)
+                                                    (sa_rm_fid     ep)
+                                                    (sa_rm_ep      ep)
+                 Nothing -> liftGlobalM0 $ entrypointNoReplyWakeup fom crep
 
 -- | Initialiazes the 'EndpointRef' subsystem.
 --
@@ -229,17 +287,18 @@ initialize adr = do
 finalizeInternal :: MVar EndpointRef -> IO ()
 finalizeInternal m = do
   finiHAState
+  EndpointRef mep _ _ <- swapMVar m emptyEndpointRef
+  forM_ mep stopListening
   finalizeRPC
-  putMVar m emptyEndpointRef
 
 -- | Finalize the Notification subsystem. We make an assumption that
 -- if 'globalEndpointRef' is empty, we have already finalized before
 -- and do nothing.
 finalize :: Process ()
 finalize = liftIO $ takeMVar globalEndpointRef >>= \case
-  -- if we have no further workers active, just finalize and fill the
-  -- MVar with 'emptyEndpointRef'
-  ref | _erRefCount ref <= 0 -> finalizeInternal globalEndpointRef
+  -- We can't finalize EndPoint here, because it may be unsafe to do so
+  -- as RC could use that.
+  ref | _erRefCount ref <= 0 -> return ()
   -- There are some workers active so just signal that we want to
   -- finalize and put the MVar back. Once the last worker finishes, it
   -- will check this flag and run the finalization itself

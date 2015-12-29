@@ -23,8 +23,6 @@ import Data.Maybe (fromMaybe, listToMaybe)
 import qualified Data.Aeson as Aeson
 import qualified Data.Text as T
 import Data.UUID (toString)
-import Data.UUID.V4 (nextRandom)
-import Control.Monad.State.Strict hiding (mapM_)
 import Control.Distributed.Process (usend)
 import Text.Regex.TDFA ((=~))
 
