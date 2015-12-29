@@ -732,7 +732,7 @@ testRCsyncToConfd host transport = do
 
   withTrackingStation testSyncRules $ \_ -> do
 
-    promulgateEQ [nid] (initialDataAddr host host 2) >>= flip withMonitor wait
+    promulgateEQ [nid] (initialDataAddr host host 8) >>= flip withMonitor wait
     "InitialLoad" :: String <- expect
 
     promulgateEQ [nid] SpielSync >>= flip withMonitor wait
