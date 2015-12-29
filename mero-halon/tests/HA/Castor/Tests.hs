@@ -65,6 +65,9 @@ import Helper.InitialData
 import Helper.Environment (systemHostname)
 import Helper.RC
 
+debug :: String -> Process ()
+debug = liftIO . appendFile "/tmp/halon.debug" . (++ "\n")
+
 mmSDict :: SerializableDict Multimap
 mmSDict = SerializableDict
 
@@ -90,6 +93,7 @@ rGroupTest transport p =
 tests :: String -> Transport -> [TestTree]
 tests host transport = map (localOption (mkTimeout $ 10*60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport
+  , testSuccess "failure-sets-2" $ testFailureSets2 transport
   , testSuccess "initial-data-doesn't-error" $ loadInitialData host transport
   , testSuccess "large-data" $ largeInitialData host transport
   , testSuccess "controller-failure" $ testControllerFailureDomain transport
@@ -121,6 +125,48 @@ testFailureSets transport = rGroupTest transport $ \pid -> do
       $ fsSize (head failureSets2) == 0
     assertMsg "Next smallest failure set has one disk (200)"
       $ fsSize (failureSets2 !! 1) == 1
+
+testFailureSets2 :: Transport -> IO ()
+testFailureSets2 transport = rGroupTest transport $ \pid -> do
+    me <- getSelfNode
+    ls <- emptyLoopState pid (nullProcessId me)
+    (ls', _) <- run ls $ do
+      mapM_ goRack (CI.id_racks iData)
+      filesystem <- initialiseConfInRG
+      loadMeroGlobals (CI.id_m0_globals iData)
+      loadMeroServers filesystem (CI.id_m0_servers iData)
+    -- 16 disks, tolerating one disk failure at a time
+    let g = lsGraph ls'
+        failureSets = generateFailureSets 1 0 0 g (CI.id_m0_globals iData)
+    assertMsg "Number of failure sets (100)" $ length failureSets == 17
+    assertMsg "Smallest failure set is empty (100)"
+      $ fsSize (head failureSets) == 0
+
+    -- 16 disks, two failures at a time
+    let failureSets2 = generateFailureSets 2 0 0 g (CI.id_m0_globals iData)
+    assertMsg "Number of failure sets (200)" $ length failureSets2 == 137
+    assertMsg "Smallest failure set is empty (200)"
+      $ fsSize (head failureSets2) == 0
+    assertMsg "Next smallest failure set has one disk (200)"
+      $ fsSize (failureSets2 !! 1) == 1
+
+    let failureSets010 = generateFailureSets 0 1 0 g (CI.id_m0_globals iData)
+    debug . show $ failureSets010
+    assertMsg "Number of failure sets (010)" $ length failureSets010 == 5
+    assertMsg "Smallest failure set is empty (010)"
+      $ fsSize (head failureSets010) == 0
+    assertMsg "Next smallest failure set has 4 disks and one controller (010)"
+      $ fsSize (failureSets010 !! 1) == 5
+
+    let failureSets110 = generateFailureSets 1 1 0 g (CI.id_m0_globals iData)
+    debug . show $ failureSets110
+    assertMsg "Number of failure sets (110)" $ length failureSets110 == 69
+    assertMsg "Smallest failure set is empty (110)"
+      $ fsSize (head failureSets110) == 0
+    assertMsg "Next smallest failure set has 1 disk and zero controllers (110)"
+      $ fsSize (failureSets110 !! 1) == 1
+  where
+    iData = initialDataGen systemHostname "192.0.2" 4 4 $ CI.Dynamic
 
 loadInitialData :: String -> Transport -> IO ()
 loadInitialData host transport = rGroupTest transport $ \pid -> do
@@ -218,6 +264,7 @@ testControllerFailureDomain transport = rGroupTest transport $ \pid -> do
     -- We have 4 disks in 4 enclosures.
     hosts <- runGet ls' $ findHosts ".*"
     let g = lsGraph ls'
+        pvers = connectedTo pool M0.IsRealOf g :: [M0.PVer]
         racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
         encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
         ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
@@ -229,7 +276,7 @@ testControllerFailureDomain transport = rGroupTest transport $ \pid -> do
         disk1 = head disks
         dvers1 = connectedTo disk1 M0.IsRealOf g :: [M0.DiskV]
 
-
+    assertMsg "Number of pvers" $ length pvers == 5
     assertMsg "Number of racks" $ length racks == 1
     assertMsg "Number of enclosures" $ length encls == 4
     assertMsg "Number of controllers" $ length ctrls == 4
@@ -250,7 +297,6 @@ testControllerFailureDomain transport = rGroupTest transport $ \pid -> do
                          , diskv <- connectedTo cntrv M0.IsParentOf g :: [M0.DiskV]]
       liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
   where
-    myHost = Host systemHostname
     iData = initialDataGen systemHostname "192.0.2" 4 4 $ CI.Preloaded 0 1 0
 
 
