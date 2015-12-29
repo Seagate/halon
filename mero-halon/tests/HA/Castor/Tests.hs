@@ -65,9 +65,6 @@ import Helper.InitialData
 import Helper.Environment (systemHostname)
 import Helper.RC
 
-debug :: String -> Process ()
-debug = liftIO . appendFile "/tmp/halon.debug" . (++ "\n")
-
 mmSDict :: SerializableDict Multimap
 mmSDict = SerializableDict
 
@@ -151,7 +148,6 @@ testFailureSets2 transport = rGroupTest transport $ \pid -> do
       $ fsSize (failureSets2 !! 1) == 1
 
     let failureSets010 = generateFailureSets 0 1 0 g (CI.id_m0_globals iData)
-    debug . show $ failureSets010
     assertMsg "Number of failure sets (010)" $ length failureSets010 == 5
     assertMsg "Smallest failure set is empty (010)"
       $ fsSize (head failureSets010) == 0
@@ -159,7 +155,6 @@ testFailureSets2 transport = rGroupTest transport $ \pid -> do
       $ fsSize (failureSets010 !! 1) == 5
 
     let failureSets110 = generateFailureSets 1 1 0 g (CI.id_m0_globals iData)
-    debug . show $ failureSets110
     assertMsg "Number of failure sets (110)" $ length failureSets110 == 69
     assertMsg "Smallest failure set is empty (110)"
       $ fsSize (head failureSets110) == 0

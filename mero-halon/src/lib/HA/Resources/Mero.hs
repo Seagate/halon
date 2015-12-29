@@ -84,7 +84,8 @@ fidIsType :: ConfObj a
           => Proxy a
           -> Fid
           -> Bool
-fidIsType p (Fid ctr _) = (ctr .&. typMask) == fidType p
+fidIsType p (Fid ctr _) =
+  (ctr .&. (complement typMask)) == (fidType p `shiftL` (64 - 8))
 
 data AnyConfObj = forall a. ConfObj a => AnyConfObj a
 
