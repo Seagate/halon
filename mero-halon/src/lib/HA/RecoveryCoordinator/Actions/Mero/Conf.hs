@@ -73,17 +73,21 @@ initialiseConfInRG = getFilesystem >>= \case
     Just fs -> return fs
     Nothing -> do
       rg <- getLocalGraph
+      root    <- M0.Root    <$> newFid (Proxy :: Proxy M0.Root)
       profile <- M0.Profile <$> newFid (Proxy :: Proxy M0.Profile)
       pool <- M0.Pool <$> newFid (Proxy :: Proxy M0.Pool)
       fs <- M0.Filesystem <$> newFid (Proxy :: Proxy M0.Filesystem)
                           <*> return (M0.fid pool)
       modifyGraph
-          $ G.newResource profile
+          $ G.newResource root
+        >>> G.newResource profile
         >>> G.newResource fs
         >>> G.newResource pool
         >>> G.connectUniqueFrom Cluster Has profile
         >>> G.connectUniqueFrom profile M0.IsParentOf fs
         >>> G.connect fs M0.IsParentOf pool
+        >>> G.connectUniqueFrom Cluster Has root
+        >>> G.connect root M0.IsParentOf profile
 
       let re = [ (r, G.connectedTo r Has rg)
                | r <- G.connectedTo Cluster Has rg
