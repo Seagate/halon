@@ -18,6 +18,7 @@ module Mero
   , sendM0Task_
   , M0InitException(..)
   , setNodeUUID
+  , addM0Finalizer
   ) where
 
 import Mero.Concurrent
@@ -135,7 +136,10 @@ withM0Deferred f = do
 foreign import ccall m0_init_wrapper :: IO CInt
 
 -- | Finalizes mero.
-foreign import ccall m0_fini :: IO ()
+foreign import ccall "m0_fini" c_m0_fini :: IO ()
+
+m0_fini :: IO ()
+m0_fini = finalizeM0 >> c_m0_fini
 
 foreign import ccall "<lib/uuid.h> m0_node_uuid_string_set"
   c_node_uuid_string_set  :: CString -> IO ()
