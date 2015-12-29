@@ -7,7 +7,6 @@ module Main
   ( main ) where
 
 import Mero
-import Network.RPC.RPCLite
 import qualified HA.Castor.Story.Tests
 import qualified HA.RecoveryCoordinator.Mero.Tests
 
@@ -34,19 +33,16 @@ main = withMeroEnvironment router wrapper where
     minfo <- liftM2 (,) <$> lookupEnv "MERO_TEST"
                         <*> lookupEnv "TEST_LISTEN"
     case minfo of
-      Just ("DUMMY_HALON", _host) -> return $ Just $ withM0Deferred $ do
-        confdAddress <- getConfdEndpoint
-        addr         <- getLnetNid
-        initRPC
-        _ <- withEndpoint (rpcAddress $ addr ++ ":12345:35:497") $ \ep ->
-          withHASession ep (rpcAddress confdAddress) $ forever $ return ()
-        finalizeRPC
-      Just ("RCSyncToConfd", host) ->
-        Just . withM0Deferred .
-          HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd host <$> mkTransport 
-      Just ("DriveFailurePVer", _host) -> 
-        Just . withM0Deferred .
-          HA.Castor.Story.Tests.testDynamicPVer <$> mkTransport
+      Just ("RCSyncToConfd", host) -> do
+        transport <- mkTransport
+        return $ Just $ withM0Deferred $ do
+          HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd host transport
+          threadDelay 1000000
+      Just ("DriveFailurePVer", _host) -> do
+        transport <- mkTransport
+        return $ Just $ withM0Deferred $ do
+          HA.Castor.Story.Tests.testDynamicPVer transport
+          threadDelay 1000000
       _ -> return Nothing
   wrapper = do
     maddr <- lookupEnv "TEST_LISTEN"
@@ -54,10 +50,9 @@ main = withMeroEnvironment router wrapper where
          (error "environment variable TEST_LISTEN is not set; example: 192.0.2.1:0")
     defaultMainWithIngredients [fileTestReporter [consoleTestReporter]] $
       testGroup "mero-integration-tests"
-        [ runExternalTest "DriveFailurePVer"
-        , runExternalTest "RCSyncToConfd"
+        [ runExternalTest "RCSyncToConfd"
+        -- , runExternalTest "DriveFailurePVer" -- Disabled until strategy based generation will arrive
         ]
-    threadDelay 1000000
 
 runExternalTest :: TestName -> TestTree
 runExternalTest name = testCase name $ do

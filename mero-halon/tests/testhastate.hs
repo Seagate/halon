@@ -47,7 +47,7 @@ main =
   (take 1 . lines <$> readProcess "sudo" ["lctl", "list_nids"] "")
   >>= \[testNid] ->
   let dummyMeroAddress = testNid ++ ":12345:34:2"
-      confdAddress = testNid ++ ":12345:44:101"
+      confdAddress = testNid ++ ":12345:34:1001"
       halonAddress = testNid ++ ":12345:34:3"
   in
   (do

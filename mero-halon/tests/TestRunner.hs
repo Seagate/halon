@@ -43,6 +43,9 @@ import HA.Replicator.Mock ( MC_RG )
 import HA.Replicator.Log ( MC_RG )
 #endif
 import HA.Startup (stopHalonNode)
+#ifdef USE_MERO
+import Mero.Notification
+#endif
 
 import Control.Arrow (first, second)
 import Control.Exception as E
@@ -189,5 +192,8 @@ startMockEventQueue listener = do
 tryRunProcessLocal :: Transport -> RemoteTable -> Process () -> IO ()
 tryRunProcessLocal transport rt process =
   withTmpDirectory $
-    withLocalNode transport rt $ \node ->
+    withLocalNode transport rt $ \node -> do
+#ifdef USE_MERO
+      initialize_pre_m0_init node
+#endif
       runProcess node process
