@@ -13,6 +13,8 @@ import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           Mero.ConfC (Fid)
 
+import           Control.Monad (join)
+
 import           Data.Ratio
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -41,11 +43,11 @@ simpleStrategy df cf cfe = Strategy {
                       [] -> Nothing
                       _  -> Just $ splitAt 5 xs
                     , fs)
-      in case mchunks of 
+      in case mchunks of
            Nothing -> Nothing
            Just (chunks,fs) -> Just $ \sync ->
              let go g [] = return g
-                 go g (c:cs) = 
+                 go g (c:cs) =
                     let pvs = fmap (\(fs', fids) -> PoolVersion fids fs') c
                     in do g' <- sync $ createPoolVersions fs pvs True g
                           go g' cs
@@ -118,5 +120,5 @@ generateFailureSets df cf cfe rg globs = let
     choose _ [] = []
     choose z (x:xs) = ((x:) <$> choose (z-1) xs) ++ choose z xs
 
-  in Set.toList . Set.unions $
-    fmap (\j -> buildCtrlFailureSet j allDisks) [0 .. cf]
+  in join $
+    fmap (\j -> Set.toList $ buildCtrlFailureSet j allDisks) [0 .. cf]
