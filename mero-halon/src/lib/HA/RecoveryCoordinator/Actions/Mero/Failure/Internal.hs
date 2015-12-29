@@ -107,12 +107,14 @@ createPoolVersions fs pvers invert rg =
     allDrives = G.getResourcesOfType rg :: [M0.Disk] -- XXX: multiprofile is not supported
     xs   = G.connectedTo Cluster Has rg
     ~(globals:_) = xs
-    
+
     createPoolVersion :: PoolVersion -> S.State G.Graph ()
     createPoolVersion (PoolVersion failset failures) = do
-      let width = if invert 
-                  then length allDrives - Set.size failset -- TODO: check this
-                  else Set.size failset
+      let
+        failset_drv = Set.filter (M0.fidIsType (Proxy :: Proxy M0.Disk)) failset
+        width = if invert
+                then length allDrives - Set.size failset_drv -- TODO: check this
+                else Set.size failset_drv
       S.when (width > 0) $ do
         pver <- M0.PVer <$> S.state (newFid (Proxy :: Proxy M0.PVer))
                         <*> pure (failuresToArray failures)
