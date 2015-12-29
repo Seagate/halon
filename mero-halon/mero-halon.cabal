@@ -703,6 +703,7 @@ benchmark halonpings
 Test-Suite tests-mero-integration
   Type:             exitcode-stdio-1.0
   Default-Language: Haskell2010
+  Buildable:        False
   Hs-Source-Dirs:   tests
   Main-Is:          tests-mero-integration.hs
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
@@ -710,7 +711,6 @@ Test-Suite tests-mero-integration
                     HA.Castor.Tests
                     Helper.Environment
                     Helper.SSPL
-                    Helper.InitialData
                     Helper.RC
                     TestRunner
                     RemoteTables

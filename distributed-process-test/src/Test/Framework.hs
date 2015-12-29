@@ -16,7 +16,6 @@ module Test.Framework
   , Timeout(..)
   , defaultTimeout
   , tryWithTimeout
-  , tryWithTimeoutIO
   , assert
   , assertMsg
   , registerInterceptor
@@ -59,6 +58,7 @@ import Control.Exception
   ( AssertionFailed(..)
   , Exception
   , SomeException
+  , bracket
   , finally
   , throw
   , throwIO
@@ -125,8 +125,7 @@ instance Exception Timeout
 defaultTimeout :: Int
 defaultTimeout = 5000000
 
--- | Runs the given 'Process' and throws a 'Timeout' exception if it does not
--- complete within the given timeout.
+-- | Run given 'Process' in a bracket throwing 'Timeout' exception.
 tryWithTimeout ::
     Transport      -- ^ Transport for running given Process.
     -> RemoteTable -- ^ RemoteTable for running given Process.
@@ -134,20 +133,14 @@ tryWithTimeout ::
     -> Process ()  -- ^ Process to run.
     -> IO ()
 tryWithTimeout transport rtable t p =
-   tryWithTimeoutIO transport rtable t (flip runProcess p)
-
--- | Runs the given 'IO' action and throws a 'Timeout' exception if it does not
--- complete within the given timeout.
-tryWithTimeoutIO ::
-    Transport      -- ^ Transport for running given Process.
-    -> RemoteTable -- ^ RemoteTable for running given Process.
-    -> Int         -- ^ Timeout value in nanoseconds.
-    -> (LocalNode -> IO ())  -- ^ Action to run. It takes a newly created node
-                             -- as argument.
-    -> IO ()
-tryWithTimeoutIO transport rtable t action =
     (maybe (throwIO Timeout) return =<<) $ timeout t $
-      withLocalNode transport rtable action
+      bracket
+        -- Resource aquire
+        (newLocalNode transport rtable)
+        -- Resource release
+        closeLocalNode
+        -- Action
+        $ flip runProcess p
 
 -- | Throws 'AssertionFailed' exception when given value is 'False'.
 assert :: Bool -> Process ()

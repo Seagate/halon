@@ -98,7 +98,7 @@ import Helper.Environment (systemHostname)
 #ifdef USE_MERO
 import HA.Castor.Tests (initialDataAddr)
 import HA.RecoveryCoordinator.Actions.Mero (syncToConfd)
-import Mero.Notification (initialize_pre_m0_init)
+import Mero.Notification (finalize)
 import qualified Helper.InitialData
 #endif
 
@@ -737,14 +737,11 @@ testRCsyncToConfd host transport = do
 
     promulgateEQ [nid] SpielSync >>= flip withMonitor wait
     "SyncOK" :: String <- expect
-    return ()
+    finalize
+
   where
     wait = void (expect :: Process ProcessMonitorNotification)
-    withTestEnv f = withTmpDirectory $ tryWithTimeoutIO transport testRemoteTable (3*60*1000000)
-                  $ \lnid -> do
-      initialize_pre_m0_init lnid
-      runProcess lnid f
-
+    withTestEnv = withTmpDirectory . tryWithTimeout transport testRemoteTable 15000000
 #endif
 
 testRemoteTable :: RemoteTable

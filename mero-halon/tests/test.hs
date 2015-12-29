@@ -19,7 +19,6 @@ import qualified HA.Castor.Story.Tests
 import qualified HA.Castor.Story.NonMero
 #endif
 #endif
-
 import qualified HA.Test.Disconnect
 import qualified HA.Test.Cluster
 import qualified HA.Test.SSPL
