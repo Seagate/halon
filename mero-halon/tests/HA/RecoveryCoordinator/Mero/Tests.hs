@@ -51,10 +51,16 @@ import           Test.Tasty.HUnit (assertBool, testCase)
 import           TestRunner
 import           Helper.Environment (systemHostname)
 #ifdef USE_MERO
-import qualified Helper.InitialData
+import           Control.Monad (when)
+import           Data.Function (on)
+import           Data.List (sortBy)
 import           HA.Castor.Tests (initialDataAddr)
 import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd)
-import           Mero.Notification (initialize_pre_m0_init)
+import           HA.Resources.Mero.Note
+import qualified Helper.InitialData
+import           Mero.ConfC (Fid(..))
+import           Mero.Notification
+import           Mero.Notification.HAState
 import           Network.CEP (liftProcess)
 #endif
 
@@ -63,6 +69,13 @@ tests _host transport =
   [ testCase "testHostAddition" $ testHostAddition transport
   , testCase "testDriveAddition" $ testDriveAddition transport
   , testCase "testDriveManagerUpdate" $ testDriveManagerUpdate transport
+#ifdef USE_MERO
+  , testCase "testConfObjectStateQuery" $
+      testConfObjectStateQuery _host transport
+#else
+  , testCase "testConfObjectStateQuery [disabled by compilation flags]" $
+      return ()
+#endif
   ]
 
 #ifdef USE_MERO
@@ -316,4 +329,54 @@ testRCsyncToConfd host transport = do
       initialize_pre_m0_init lnid
       runProcess lnid f
 
+-- | Test that the recovery coordinator answers queries of configuration object
+-- states.
+testConfObjectStateQuery :: String -> Transport -> IO ()
+testConfObjectStateQuery host transport =
+    runTest 1 20 15000000 transport testRemoteTable $ \_ -> do
+      nid <- getSelfNode
+      self <- getSelfPid
+
+      registerInterceptor $ \string -> do
+        when ("Loaded initial data" `isInfixOf` string) $
+          usend self ("Loaded initial data" :: String)
+        when ("mero-note-set synchronized" `isInfixOf` string) $
+          usend self ("mero-note-set synchronized" :: String)
+
+      say $ "tests node: " ++ show nid
+      withTrackingStation emptyRules $ \(TestArgs _ _ _) -> do
+        nodeUp ([nid], 1000000)
+        say "Loading graph."
+        void $ promulgateEQ [nid] $
+          Helper.InitialData.initialDataAddr host "192.0.2.2" 8
+        "Loaded initial data" :: String <- expect
+        let fids = [ Fid 0x7000000000000001 1
+                   , Fid 0x6f00000000000001 2
+                   , Fid 0x6600000000000001 3
+                   , Fid 0x6100000000000001 4
+                   , Fid 0x6500000000000001 5
+                   , Fid 0x6300000000000001 6
+                   , Fid 0x6e00000000000001 7
+                   , Fid 0x6400000000000001 8
+                   , Fid 0x6b00000000000001 9
+                   , Fid 0x6b00000000000001 11
+                   , Fid 0x7200000000000001 24
+                   , Fid 0x7300000000000001 27
+                   , Fid 0x7600000000000001 30
+                   , Fid 0x6400000000000001 10
+                   ]
+        say "Set to failed one of the objects"
+        void $ promulgateEQ [nid] (Set [Note (Fid 0x6400000000000001 10) M0_NC_FAILED])
+        "mero-note-set synchronized" :: String <- expect
+
+        say "Send Get message to the RC"
+        void $ promulgateEQ [nid] (Get self fids)
+        GetReply notes <- expect
+        let expected = map (flip Note M0_NC_ONLINE) (init fids)
+              ++ [Note (Fid 0x6400000000000001 10) M0_NC_TRANSIENT]
+        liftIO $ assertBool
+          ("The result (" ++ show notes ++ ") is not the expected one ("
+            ++ show expected ++ ")."
+          ) $ sortBy (compare `on` no_id) expected
+              == sortBy (compare `on` no_id) notes
 #endif

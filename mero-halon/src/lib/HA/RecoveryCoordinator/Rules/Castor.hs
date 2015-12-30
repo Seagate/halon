@@ -243,6 +243,8 @@ ruleMeroNoteSet =
                       nid <- liftProcess getSelfNode
                       liftProcess . void . promulgateEQ [nid]
                         $ ResetAttempt sdev
+
+                    syncGraph $ say "mero-note-set synchronized"
                 _ -> do
                   phaseLog "warning" $ "Cannot find all entities attached to M0"
                                     ++ " storage device: "
