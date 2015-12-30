@@ -193,12 +193,14 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
     say $ "listening at " ++ show addr
     self <- getSelfPid
     onException
-      (register notificationHandlerLabel self >> liftGlobalM0 $ do
-        initRPC
-        ep <- listen addr listenCallbacks
-        addM0Finalizer $ finalizeInternal globalEndpointRef
-        let ref' = emptyEndpointRef { _erServerEndpoint = Just ep }
-        return (globalEndpointRef, ref', ep))
+      (do
+        register notificationHandlerLabel self
+        liftGlobalM0 $ do
+          initRPC
+          ep <- listen addr listenCallbacks
+          addM0Finalizer $ finalizeInternal globalEndpointRef
+          let ref' = emptyEndpointRef { _erServerEndpoint = Just ep }
+          return (globalEndpointRef, ref', ep))
       (do unregister notificationHandlerLabel
           liftIO $ putMVar globalEndpointRef ref)
   where

@@ -18,7 +18,7 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
-import Control.Monad (join)
+import Control.Monad (forM_, join)
 
 import Data.List (sort, isPrefixOf)
 import qualified Data.Set as Set
