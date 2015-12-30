@@ -192,8 +192,13 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
         createPoolVersions filesystem chunk
         syncGraphProcess $ \self -> usend self InitialDataChunk
         liftProcess $ expect >>= \InitialDataChunk -> return ()
+      -- We make sure that the next message is emitted only when the
+      -- graph has been synchronized.
+      (if null chunks then syncGraph else liftProcess) $
+        say "Loaded initial data"
+#else
+      syncGraph $ say "Loaded initial data"
 #endif
-      liftProcess $ say "Loaded initial data"
       rg' <- getLocalGraph
       let hosts = [ host | host <- G.getResourcesOfType rg'    :: [Host] -- all hosts
                          , not  $ G.isConnected host Has HA_M0CLIENT rg' -- and not already a client
