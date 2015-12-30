@@ -38,6 +38,7 @@ import HA.ResourceGraph hiding (__remoteTable)
 
 import RemoteTables (remoteTable)
 import Test.Framework
+import Test.Helpers (assertBool)
 
 --------------------------------------------------------------------------------
 -- Types                                                                      --
@@ -270,7 +271,24 @@ tests transport = do
           assert $ grSinceGC g6 == 0
           assert $ memberResource (NodeA 1) g6 == True
           assert $ memberResource (NodeA 2) g6 == False
-
+      , testSuccess "garbage-collection-meta-persists" $ rGroupTest transport g $ \mm -> do
+          g1 <- syncWait . sampleGraph =<< getGraph mm
+          assertBool "Default grSinceGC" $ grSinceGC g1 == 0
+          assertBool "Default grGCThreshold" $ grGCThreshold g1 == 100
+          assertBool "Default grRootNodes" $ grRootNodes g1 == S.empty
+          -- Set custom GC meta
+          let cmeta@(sinceGC, thres, roots) = (1, 50
+                                              , S.singleton . Res $ NodeB 2)
+              meta rg = (grSinceGC rg, grGCThreshold rg, grRootNodes rg)
+          g2 <- syncWait $ g1 { grSinceGC = sinceGC
+                              , grGCThreshold = thres
+                              , grRootNodes = roots }
+          assertBool "Synced meta matches" $ cmeta == meta g2
+          g2' <- getGraph mm
+          -- The meta information from mm should be the same as the
+          -- one we synced
+          assertBool "Meta not default" $ meta g1 /= meta g2'
+          assertBool "Same meta" $ meta g2 == meta g2'
       , testSuccess "merge-resources" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
           g2 <- syncWait $ mergeResources head [NodeA 1, NodeA 2] g1
