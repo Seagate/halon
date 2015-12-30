@@ -507,16 +507,15 @@ buildGraph mmchan rt = (\hm -> Graph mmchan emptyChangeLog hm 0 S.empty 100)
 -- 'grGCThreshold' value.
 sync :: Graph -> Process () -> Process Graph
 sync g cb = do
-    let (cl, g') = takeChangeLog $ {-runGCIfThresholdMet-} g
+    let (cl, g') = takeChangeLog $ runGCIfThresholdMet g
     updateStore (grMMChan g) (fromChangeLog cl) cb
     return g'
-{-
   where
     runGCIfThresholdMet :: Graph -> Graph
     runGCIfThresholdMet gr = if grGCThreshold gr > 0
                                 && grSinceGC gr >= grGCThreshold gr
                              then garbageCollectRoot gr
-                             else gr -}
+                             else gr
 
 -- | Retrieves the graph from the multimap store.
 getGraph :: StoreChan -> Process Graph
