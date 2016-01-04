@@ -19,8 +19,10 @@
 
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -32,11 +34,13 @@ module HA.ResourceGraph
     ( -- * Types
       Resource(..)
     , Relation(..)
-    , Graph(grSinceGC, grGCThreshold, grRootNodes)
+    , Graph
     , Edge(..)
     , Dict(..)
     , Res(..)
     , Rel(..)
+    , GraphGCInfo
+    , Roots
     -- * Operations
     , newResource
     , insertEdge
@@ -51,6 +55,7 @@ module HA.ResourceGraph
     , mergeResources
     , sync
     , getGraph
+    , HA.ResourceGraph.getKeyValuePairs
     , garbageCollect
     , garbageCollectRoot
     -- * Queries
@@ -67,6 +72,17 @@ module HA.ResourceGraph
     , __remoteTable
     , getGraphResources
     , getResourcesOfType
+    -- * GC control
+    , addRootNode
+    , getGCThreshold
+    , getRootNodes
+    , getSinceGC
+    , isRootNode
+    , modifyGCThreshold
+    , modifySinceGC
+    , removeRootNode
+    , setGCThreshold
+    , setSinceGC
     ) where
 
 import HA.Multimap
@@ -79,7 +95,7 @@ import HA.Multimap
   )
 import HA.Multimap.Implementation
 
-import Control.Distributed.Process ( Process )
+import Control.Distributed.Process ( Process, say, liftIO )
 import Control.Distributed.Process.Internal.Types
     ( remoteTable, processNode )
 import Control.Distributed.Process.Serializable ( Serializable )
@@ -112,6 +128,7 @@ import Data.Maybe
 import Data.Proxy
 import Data.Typeable ( Typeable, cast )
 import Data.Word (Word8)
+import GHC.Generics (Generic)
 
 -- | A type can be declared as modeling a resource by making it an instance of
 -- this class.
@@ -174,6 +191,49 @@ data SomeResourceDict = forall a. SomeResourceDict (Dict (Resource a))
 data SomeRelationDict = forall r a b. SomeRelationDict (Dict (Relation r a b))
     deriving Typeable
 
+-- | Information about graph garbage collection. This is an internal
+-- structure which is hidden away from the user in the graph itself,
+-- allowing it to persist through multimap updates. This structure
+-- shouldn't be exposed to the user through any exported functions to
+-- prevent them from disconnecting the info and losing any settings.
+--
+-- When this structure is updated in the graph ('modifyGCInfo'), care
+-- is taken to not increase 'grSinceGC' or in cases where we
+-- disconnect other (through modification or otherwise), we would end
+-- up with 2 increments: one for the resource and one for info. If
+-- 'GraphGCInfo' changes often, that means the user is modifying the
+-- graph anyway and the GC will happen regardless. The only exception
+-- is frequent modification of 'grGCThreshold' for which we manually
+-- increment 'grSinceGC' in 'modifyGCThreshold'.
+--
+-- TODO: As we need to expose this type and 'Roots' to the user so
+-- they can write relation instances, consider moving it into an
+-- internal module: beyond writing the instance, they should never use
+-- the type themselves.
+data GraphGCInfo = GraphGCInfo
+  { -- | Number of times we disconnected resources in the graph. Used
+    -- to determine whether we should run GC or not. Note that this is
+    -- only a heuristic, not an /accurate/ number of resources we have
+    -- actually disconnected. Disconnecting the same resource multiple
+    -- times will have no effect but will increase 'grSinceGC'.
+    grSinceGC :: Int
+    -- | Amount of disconnects after which the GC should be ran. There
+    -- is no guarantee that GC will run after precisely after this
+    -- many. If the value is not a positive integer, the automatic GC
+    -- won't be ran at all. Defaults to @100@.
+  , grGCThreshold :: Int
+  } deriving (Eq, Typeable, Generic, Show)
+
+instance Hashable GraphGCInfo
+instance Binary GraphGCInfo
+
+-- | Used to connect resources to a ‘master’ root node.
+data Roots = Roots
+  deriving (Eq, Typeable, Generic, Show)
+
+instance Hashable Roots
+instance Binary Roots
+
 -- XXX Wrapper functions because 'remotable' doesn't like constructors names.
 
 someResourceDict :: Dict (Resource a) -> SomeResourceDict
@@ -182,7 +242,13 @@ someResourceDict = SomeResourceDict
 someRelationDict :: Dict (Relation r a b) -> SomeRelationDict
 someRelationDict = SomeRelationDict
 
-remotable ['someResourceDict, 'someRelationDict]
+resourceDictGraphGCInfo :: Dict (Resource GraphGCInfo)
+resourceDictGraphGCInfo = Dict
+
+remotable ['someResourceDict, 'someRelationDict, 'resourceDictGraphGCInfo]
+
+instance Resource GraphGCInfo where
+  resourceDict = $(mkStatic 'resourceDictGraphGCInfo)
 
 -- | Predicate to select 'in' edges.
 isIn :: Rel -> Bool
@@ -241,20 +307,6 @@ data Graph = Graph
   , grChangeLog :: !ChangeLog
     -- | The graph.
   , grGraph :: HashMap Res (HashSet Rel)
-    -- | Number of times we disconnected resources in the graph. Used
-    -- to determine whether we should run GC or not. Note that this is
-    -- only a heuristic, not an /accurate/ number of resources we have
-    -- actually disconnected. Disconnecting the same resource multiple
-    -- times will have no effect but will increase 'grSinceGC'.
-  , grSinceGC :: Int
-    -- | The set of resources used by default for
-    -- periodically-triggered major GC.
-  , grRootNodes :: HashSet Res
-    -- | Amount of disconnects after which the GC should be ran. There
-    -- is no guarantee that GC will run after precisely after this
-    -- many. If the value is not a positive integer, the automatic GC
-    -- won't be ran at all. Defaults to @100@.
-  , grGCThreshold :: Int
   } deriving (Typeable)
 
 -- | Edges between resources. Edge types are called relations. An edge is an
@@ -266,9 +318,11 @@ data Edge a r b =
          , edgeDst      :: !b }
   deriving Eq
 
--- | Returns @True@ iff the graph is empty.
+-- | Returns @True@ iff the graph is empty, with the exception of
+-- 'GraphGCInfo' resources which are filtered out before making the
+-- check.
 null :: Graph -> Bool
-null = M.null . grGraph
+null = M.null . M.filterWithKey (\k _ -> not $ resIsGCInfo k) . grGraph
 
 -- | Tests whether a given resource is a vertex in a given graph.
 memberResource :: Resource a => a -> Graph -> Bool
@@ -302,7 +356,7 @@ insertEdge Edge{..} = connect edgeSrc edgeRelation edgeDst
 
 -- | Delete an edge from the graph.
 deleteEdge :: Relation r a b => Edge a r b -> Graph -> Graph
-deleteEdge e@Edge{..} g =
+deleteEdge e@Edge{..} g = modifySinceGC (+ 1) $
     g { grChangeLog = flip updateChangeLog (grChangeLog g) $
             DeleteValues [ (encodeRes (Res edgeSrc), [ encodeRel $ outFromEdge e ])
                          , (encodeRes (Res edgeDst), [ encodeRel $ inFromEdge e ])
@@ -310,9 +364,6 @@ deleteEdge e@Edge{..} g =
       , grGraph = M.adjust (S.delete $ outFromEdge e) (Res edgeSrc)
                 . M.adjust (S.delete $ inFromEdge e) (Res edgeDst)
                 $ grGraph g
-      -- When deleting an edge, we are potentially cutting off
-      -- resource(s) so count it as disconnect.
-      , grSinceGC = grSinceGC g + 1
       }
 
 -- | Adds a relation without making a conversion from 'Edge'.
@@ -348,7 +399,7 @@ connectUniqueTo x r y = connect x r y
 
 -- | Removes a relation.
 disconnect :: Relation r a b => a -> r -> b -> Graph -> Graph
-disconnect x r y g =
+disconnect x r y g = modifySinceGC (+ 1) $
     g { grChangeLog = flip updateChangeLog (grChangeLog g) $
             DeleteValues [ (encodeRes (Res x), [ encodeRel $ OutRel r x y ])
                          , (encodeRes (Res y), [ encodeRel $ InRel r x y ])
@@ -356,7 +407,6 @@ disconnect x r y g =
       , grGraph = M.adjust (S.delete $ OutRel r x y) (Res x)
                 . M.adjust (S.delete $ InRel r x y) (Res y)
                 $ grGraph g
-      , grSinceGC = grSinceGC g + 1
       }
 
 -- | Remove all outgoing edges of the given relation type.
@@ -401,9 +451,9 @@ mergeResources f xs g@Graph{..} = let
 -- longer participating in the graph since they are not connected to the rest
 -- and can hence safely be discarded.
 --
--- This does __not__ reset 'grSinceGC': if you are manually invoking
--- 'garbageCollect' with your own set of nodes, you may not want to
--- stop the major GC from happening anyway.
+-- This does __not__ reset garbage collection counter: if you are
+-- manually invoking 'garbageCollect' with your own set of nodes, you
+-- may not want to stop the major GC from happening anyway.
 garbageCollect :: HashSet Res -> Graph -> Graph
 garbageCollect initGrey g@Graph{..} = go S.empty initWhite initGrey
   where
@@ -426,13 +476,12 @@ garbageCollect initGrey g@Graph{..} = go S.empty initWhite initGrey
       f (InRel _ x _) =  Res x
     go _ _ _ = error "garbageCollect: Impossible."
 
--- | Runs 'garbageCollect' with 'grRootNodes' of the given graph.
--- Resets 'grSinceGC'.
+-- | Runs 'garbageCollect' preserving anything connected to root nodes
+-- ('getRootNodes').
 garbageCollectRoot :: Graph -> Graph
-garbageCollectRoot g@Graph{..} =
-  resetGCCount $ garbageCollect grRootNodes g
+garbageCollectRoot g = setSinceGC 0 $ garbageCollect (S.fromList roots) g
   where
-    resetGCCount g' = g' { grSinceGC = 0 }
+    roots = Res (getGCInfo g) : getRootNodes g
 
 -- | List of all edges of a given relation stemming from the provided source
 -- resource to destination resources of the given type.
@@ -494,34 +543,68 @@ takeChangeLog g = ( grChangeLog g
 -- | Creates a graph from key value pairs.
 -- No key is duplicated in the input and no value appears twice for a given key.
 buildGraph :: StoreChan -> RemoteTable -> [(Key,[Value])] -> Graph
-buildGraph mmchan rt = (\hm -> Graph mmchan emptyChangeLog hm 0 S.empty 100)
+buildGraph mmchan rt = possiblyConnectGCInfo
+    . (\hm -> Graph mmchan emptyChangeLog hm)
     . M.fromList
     . map (decodeRes rt *** S.fromList . map (decodeRel rt))
+  where
+    -- If we don't have GraphGCInfo in the retrieved graph, insert it
+    -- now. This may happen when the graph was empty.
+    possiblyConnectGCInfo :: Graph -> Graph
+    possiblyConnectGCInfo g = case listToMaybe $ getResourcesOfType g of
+      Nothing -> newResource defaultGraphGCInfo g
+      Just (_ :: GraphGCInfo) -> g
 
 -- | Updates the multimap store with the latest changes to the graph.
 --
 -- Runs the given callback after the changes are replicated.
 -- Only fast calls that do not throw exceptions should be used there.
 --
--- Runs 'garbageCollectRoot' if the 'grSinceGC' meets or passes the
--- 'grGCThreshold' value.
+-- Runs 'garbageCollectRoot' if the garbage collection counter
+-- ('getSinceGC') passes the GC meets or passes the GC threshold value
+-- ('getGCThreshold').
 sync :: Graph -> Process () -> Process Graph
 sync g cb = do
-    let (cl, g') = takeChangeLog $ runGCIfThresholdMet g
+    (cl, g') <- takeChangeLog <$> runGCIfThresholdMet g
     updateStore (grMMChan g) (fromChangeLog cl) cb
     return g'
   where
-    runGCIfThresholdMet :: Graph -> Graph
-    runGCIfThresholdMet gr = if grGCThreshold gr > 0
-                                && grSinceGC gr >= grGCThreshold gr
-                             then garbageCollectRoot gr
-                             else gr
+    shouldGC :: Graph -> Bool
+    shouldGC gr = let gi = getGCInfo gr
+                  in grGCThreshold gi > 0 && grSinceGC gi >= grGCThreshold gi
+
+    runGCIfThresholdMet :: Graph -> Process Graph
+    runGCIfThresholdMet gr =
+      if shouldGC gr
+      then do let gr' = garbageCollectRoot gr
+              -- TODO: Here be dragons. During debugging the graph was
+              -- being written out to files on each GC and everything
+              -- worked. Upon removing that part of debugging, things
+              -- weren't working as they should be anymore. The line
+              -- below makes it work but *why* it works is mysterious.
+              -- The first guess was strictness but strangely if we
+              -- for example run the below directly in Process without
+              -- 'liftIO'ing it, things no longer work. There may be
+              -- some race condition here that we should still
+              -- investigate.
+              liftIO $ M.size (grGraph gr') `seq` return gr'
+      else return gr
 
 -- | Retrieves the graph from the multimap store.
 getGraph :: StoreChan -> Process Graph
 getGraph mmchan = do
   rt <- fmap (remoteTable . processNode) ask
-  buildGraph mmchan rt <$> getKeyValuePairs mmchan
+  buildGraph mmchan rt <$> HA.Multimap.getKeyValuePairs mmchan
+
+-- | Like 'HA.Multimap.getKeyValuePairs' but filters out 'GraphGCInfo' from the
+-- result list.
+getKeyValuePairs :: StoreChan -> Process [(Key, [Value])]
+getKeyValuePairs mmchan = do
+  rt <- fmap (remoteTable . processNode) ask
+  removeGCInfo rt <$> HA.Multimap.getKeyValuePairs mmchan
+  where
+    removeGCInfo rt kvs =
+      filter (\(k, _) -> not . resIsGCInfo $ decodeRes rt k) kvs
 
 fromStrict :: ByteString -> Lazy.ByteString
 fromStrict = fromChunks . (:[])
@@ -578,3 +661,71 @@ getResourcesOfType =
     mapMaybe (\(Res x) -> cast x :: Maybe a)
   . fst . unzip
   . getGraphResources
+
+-- * GC control
+
+-- | Defaults for 'GraphGCInfo'.
+defaultGraphGCInfo :: GraphGCInfo
+defaultGraphGCInfo = GraphGCInfo 0 100
+
+-- | Modify the 'GraphGCInfo' in the given graph. As it uses a merge,
+-- 'grSinceGC' is preserved.
+modifyGCInfo :: (GraphGCInfo -> GraphGCInfo) -> Graph -> Graph
+modifyGCInfo f g = mergeResources (const newGI) (getResourcesOfType g) g
+  where
+    newGI = f $ getGCInfo g
+
+resIsGCInfo :: Res -> Bool
+resIsGCInfo (Res (cast -> Just GraphGCInfo{})) = True
+resIsGCInfo _ = False
+
+-- | Retrieve the 'GraphGCInfo' from the given graph.
+getGCInfo :: Graph -> GraphGCInfo
+getGCInfo g = fromMaybe defaultGraphGCInfo (listToMaybe $ getResourcesOfType g)
+
+-- | Modifies the count of disconnects since the last time automatic
+-- major GC was ran.
+modifySinceGC :: (Int -> Int) -> Graph -> Graph
+modifySinceGC f = modifyGCInfo (\gi -> gi { grSinceGC = f $ grSinceGC gi })
+
+-- | Gets the rough number of disconnects since the last time
+-- automatic major GC was ran.
+getSinceGC :: Graph -> Int
+getSinceGC = grSinceGC . getGCInfo
+
+-- | Sets the rough number of disconnects since the last time
+-- automatic major GC was ran.
+setSinceGC :: Int -> Graph -> Graph
+setSinceGC i = modifySinceGC (const i)
+
+-- | Adds the given resource to the set of root nodes used during GC.
+addRootNode :: Relation Roots GraphGCInfo a => a -> Graph -> Graph
+addRootNode res g = connect (getGCInfo g) Roots res . newResource res $ g
+
+-- | Removes the given node from the root list used during GC.
+removeRootNode :: Relation Roots GraphGCInfo a => a -> Graph -> Graph
+removeRootNode res g = disconnect (getGCInfo g) Roots res g
+
+-- | Checks if the given node is rooted.
+isRootNode :: Relation Roots GraphGCInfo a => a -> Graph -> Bool
+isRootNode res g = isConnected (getGCInfo g) Roots res g
+
+-- | Retrieve root nodes of the given graph.
+getRootNodes :: Graph -> [Res]
+getRootNodes g = anyConnectedTo (getGCInfo g) Roots g
+
+-- | Modify the disconnect threshold at which the automatic GC runs
+-- upon sync. If the value is @<= 0@, the GC is disabled.
+modifyGCThreshold :: (Int -> Int) -> Graph -> Graph
+modifyGCThreshold f =
+  modifyGCInfo (\gi -> gi { grGCThreshold = f $ grGCThreshold gi })
+
+-- | Get the disconnect threshold at which the automatic GC runs
+-- upon sync. If the value is @<= 0@, the GC is disabled.
+getGCThreshold :: Graph -> Int
+getGCThreshold = grGCThreshold . getGCInfo
+
+-- | Set the disconnect threshold at which the automatic GC runs
+-- upon sync. Set the value to @<= 0@ in order to disable the GC.
+setGCThreshold :: Int -> Graph -> Graph
+setGCThreshold i = modifyGCThreshold (const i)

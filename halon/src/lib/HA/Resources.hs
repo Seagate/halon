@@ -21,6 +21,7 @@ import Data.Typeable (Typeable)
 import Data.UUID (UUID)
 import GHC.Generics (Generic)
 
+import HA.ResourceGraph (GraphGCInfo, Roots)
 import HA.Resources.TH
 
 --------------------------------------------------------------------------------
@@ -111,12 +112,14 @@ $(mkDicts
   [ (''Cluster, ''Has, ''Node)
   , (''Cluster, ''Has, ''EpochByteString)
   , (''Cluster, ''Has, ''ClusterStatus)
+  , (''GraphGCInfo, ''Roots, ''Cluster)
   ])
 $(mkResRel
   [''Cluster, ''Node, ''EpochByteString, ''ClusterStatus]
   [ (''Cluster, ''Has, ''Node)
   , (''Cluster, ''Has, ''EpochByteString)
   , (''Cluster, ''Has, ''ClusterStatus)
+  , (''GraphGCInfo, ''Roots, ''Cluster)
   ]
   []
   )

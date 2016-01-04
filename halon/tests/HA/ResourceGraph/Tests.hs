@@ -15,6 +15,7 @@ import Control.Distributed.Process.Closure (mkStatic, remotable)
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable (SerializableDict(..))
 
+import Control.Arrow ((>>>))
 import Control.Exception (SomeException, throwIO)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
@@ -25,7 +26,7 @@ import GHC.Generics (Generic)
 
 import Network.Transport (Transport)
 
-import HA.Multimap (getKeyValuePairs, StoreChan)
+import HA.Multimap (StoreChan)
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (startMultimap)
 import HA.Replicator (RGroup(..))
@@ -76,9 +77,11 @@ resourceDictNodeB = Dict
 
 relationDictHasBNodeANodeB :: Dict (Relation HasB NodeA NodeB)
 relationDictHasANodeBNodeA :: Dict (Relation HasA NodeB NodeA)
+relationDictRootsGraphGCInfoNodeB :: Dict (Relation Roots GraphGCInfo NodeB)
 
 relationDictHasBNodeANodeB = Dict
 relationDictHasANodeBNodeA = Dict
+relationDictRootsGraphGCInfoNodeB = Dict
 
 mmSDict :: SerializableDict Multimap
 mmSDict = SerializableDict
@@ -88,6 +91,7 @@ remotable
   , 'resourceDictNodeB
   , 'relationDictHasBNodeANodeB
   , 'relationDictHasANodeBNodeA
+  , 'relationDictRootsGraphGCInfoNodeB
   , 'mmSDict
   ]
 
@@ -100,6 +104,8 @@ instance Relation HasB NodeA NodeB where
   relationDict = $(mkStatic 'relationDictHasBNodeANodeB)
 instance Relation HasA NodeB NodeA where
   relationDict = $(mkStatic 'relationDictHasANodeBNodeA)
+instance Relation Roots GraphGCInfo NodeB where
+  relationDict = $(mkStatic 'relationDictRootsGraphGCInfoNodeB)
 
 --------------------------------------------------------------------------------
 -- Test helpers                                                               --
@@ -162,13 +168,14 @@ tests transport = do
       [ testSuccess "initial-graph" $ rGroupTest transport g $ \mm -> do
           _g <- syncWait =<< getGraph mm
           ns <- getKeyValuePairs mm
-          assert $ ns == []
+          assertBool "getKeyValuePairsWithoutGCInfo is empty" $ ns == []
 
       , testSuccess "kv-length" $ rGroupTest transport g $ \mm -> do
           _g <- syncWait . sampleGraph =<< getGraph mm
           kvs <- getKeyValuePairs mm
-          assert $ 4 == length kvs
-          assert $ [0, 1, 2, 3] == sort (map (length . snd) kvs)
+          assertBool "there are 4 keys" $ 4 == length kvs
+          assertBool "the values are sane"
+            $ [0, 1, 2, 3] == sort (map (length . snd) kvs)
 
       , testSuccess "edge-nodeA-1" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
@@ -246,14 +253,14 @@ tests transport = do
 
       , testSuccess "garbage-collection-auto" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
-          assert $ grSinceGC g1 == 0
-          assert $ grGCThreshold g1 == 100
-          assert $ grRootNodes g1 == S.empty
+          assert $ getSinceGC g1 == 0
+          assert $ getGCThreshold g1 == 100
+          assert $ getRootNodes g1 == []
           let g2 = disconnect (NodeB 2) HasA (NodeA 2) g1
-          assert $ grSinceGC g2 == 1
+          assert $ getSinceGC g2 == 1
           g3 <- syncWait g2
-          assert $ grSinceGC g3 == 1
-          g4 <- syncWait $ g3 { grRootNodes = S.singleton . Res $ NodeB 2 }
+          assert $ getSinceGC g3 == 1
+          g4 <- syncWait $ addRootNode (NodeB 2) g3
           -- Just disconnect same thing 100 times to meet threshold
           -- and ramp up the disconnect amounts.
           let dcs = replicate 100 (disconnect (NodeB 2) HasA (NodeA 1))
@@ -261,30 +268,34 @@ tests transport = do
           -- Make sure everything is still around and ready
           assert $ memberResource (NodeA 1) g5 == True
           assert $ memberResource (NodeA 2) g5 == True
-          assert $ grSinceGC g5 == 101
+          assert $ getSinceGC g5 == 101
           g6 <- syncWait g5
           -- Make sure GC happened
-          assert $ grSinceGC g6 == 0
+          assert $ getSinceGC g6 == 0
           assert $ memberResource (NodeA 1) g6 == True
           assert $ memberResource (NodeA 2) g6 == False
       , testSuccess "garbage-collection-meta-persists" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
-          assertBool "Default grSinceGC" $ grSinceGC g1 == 0
-          assertBool "Default grGCThreshold" $ grGCThreshold g1 == 100
-          assertBool "Default grRootNodes" $ grRootNodes g1 == S.empty
+          assertBool "Default getSinceGC" $ getSinceGC g1 == 0
+          assertBool "Default getGCThreshold" $ getGCThreshold g1 == 100
+          assertBool "Default getRootNodes" $ getRootNodes g1 == []
           -- Set custom GC meta
-          let cmeta@(sinceGC, thres, roots) = (1, 50
-                                              , S.singleton . Res $ NodeB 2)
-              meta rg = (grSinceGC rg, grGCThreshold rg, grRootNodes rg)
-          g2 <- syncWait $ g1 { grSinceGC = sinceGC
-                              , grGCThreshold = thres
-                              , grRootNodes = roots }
+          let root = NodeB 2
+              cmeta@(sinceGC, thres, _) = (1, 50, [Res root])
+              meta rg = (getSinceGC rg, getGCThreshold rg, getRootNodes rg)
+          g2 <- syncWait $ setSinceGC sinceGC
+                       >>> setGCThreshold thres
+                       >>> addRootNode root
+                         $ g1
           assertBool "Synced meta matches" $ cmeta == meta g2
           g2' <- getGraph mm
           -- The meta information from mm should be the same as the
           -- one we synced
           assertBool "Meta not default" $ meta g1 /= meta g2'
           assertBool "Same meta" $ meta g2 == meta g2'
+      , testSuccess "gc-info-graph-still-null" $ rGroupTest transport g $ \mm -> do
+         g1 <- syncWait =<< getGraph mm
+         assertBool "fresh graph is null" $ HA.ResourceGraph.null g1
       , testSuccess "merge-resources" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
           g2 <- syncWait $ mergeResources head [NodeA 1, NodeA 2] g1
