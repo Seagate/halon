@@ -14,12 +14,15 @@ module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , withSpielRC
   , withRConfRC
   , startRepairOperation
+  , statusOfRepairOperation
   , startRebalanceOperation
+  , statusOfRebalanceOperation
   , syncAction
   , syncToConfd
   ) where
 
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Hardware (setPoolRepairStatus)
 import HA.RecoveryCoordinator.Actions.Mero.Conf
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import qualified HA.ResourceGraph as G
@@ -28,6 +31,8 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
+import HA.Resources.Mero.Note (ConfObjectState(..))
+import HA.Services.Mero (notifyMero)
 
 import Mero.ConfC
   ( Root
@@ -35,7 +40,7 @@ import Mero.ConfC
   , initHASession
   , finiHASession
   )
-import Mero.Notification
+import Mero.Notification hiding (notifyMero)
 import Mero.Spiel hiding (start)
 import qualified Mero.Spiel
 
@@ -100,8 +105,10 @@ withRConfRC spiel action = do
   liftM0RC $ Mero.Spiel.rconfStop spiel
   return x
 
+-- | Start the repair operation on the given 'M0.Pool'. Notifies mero
+-- with the 'M0_NC_REPAIRING' status.
 startRepairOperation :: M0.Pool -> PhaseM LoopState l ()
-startRepairOperation pool = (void go) `catch`
+startRepairOperation pool = go `catch`
     (\e -> do
       phaseLog "error" $ "Error starting repair operation: "
                       ++ show (e :: SomeException)
@@ -111,10 +118,31 @@ startRepairOperation pool = (void go) `catch`
   where
     go = do
       phaseLog "spiel" $ "Starting repair on pool " ++ show pool
-      withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStart sc (M0.fid pool)
+      notifyMero [M0.AnyConfObj pool] M0_NC_REPAIRING
+      _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStart sc (M0.fid pool)
+      setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure Nothing
 
+-- | Retrieves the repair 'SnsStatus' of the given 'M0.Pool'.
+statusOfRepairOperation :: M0.Pool
+                        -> PhaseM LoopState l (Either SomeException [SnsStatus])
+statusOfRepairOperation pool = catch go
+  (\e -> do
+    phaseLog "error" $ "Error in pool status repair operation: "
+                    ++ show e
+                    ++ " on pool "
+                    ++ show (M0.fid pool)
+    return $ Left e
+  )
+  where
+    go :: PhaseM LoopState l (Either SomeException [SnsStatus])
+    go = do
+      phaseLog "spiel" $ "Starting status on pool " ++ show pool
+      withSpielRC $ \sc -> liftM0RC $ poolRepairStatus sc (M0.fid pool)
+
+-- | Starts a rebalance operation on the given 'M0.Pool'. Notifies
+-- mero with the 'M0_NC_FAILED' status.
 startRebalanceOperation :: M0.Pool -> PhaseM LoopState l ()
-startRebalanceOperation pool = (void go) `catch`
+startRebalanceOperation pool = catch go
     (\e -> do
       phaseLog "error" $ "Error starting rebalance operation: "
                       ++ show (e :: SomeException)
@@ -124,7 +152,27 @@ startRebalanceOperation pool = (void go) `catch`
   where
     go = do
       phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool
-      withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRebalanceStart sc (M0.fid pool)
+      -- Is this notifyMero needed?
+      notifyMero [M0.AnyConfObj pool] M0_NC_FAILED
+      _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRebalanceStart sc (M0.fid pool)
+      setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Rebalance Nothing
+
+-- | Retrieves the rebalance 'SnsStatus' of the given pool.
+statusOfRebalanceOperation :: M0.Pool
+                           -> PhaseM LoopState l (Either SomeException [SnsStatus])
+statusOfRebalanceOperation pool = catch go
+  (\e -> do
+    phaseLog "error" $ "Error in pool status rebalance operation: "
+                    ++ show e
+                    ++ " on pool "
+                    ++ show (M0.fid pool)
+    return $ Left e
+  )
+  where
+    go :: PhaseM LoopState l (Either SomeException [SnsStatus])
+    go = do
+      phaseLog "spiel" $ "Starting status on pool " ++ show pool
+      withSpielRC $ \sc -> liftM0RC $ poolRebalanceStatus sc (M0.fid pool)
 
 -- | Synchronize graph to confd.
 -- Currently all Exceptions during this operation are caught, this is required in because

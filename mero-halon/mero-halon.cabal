@@ -161,6 +161,7 @@ Library
       Other-Modules:  HA.RecoveryCoordinator.Actions.Mero.Conf
                       HA.RecoveryCoordinator.Actions.Mero.Core
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
+                      HA.RecoveryCoordinator.Rules.Castor.SpielQuery
                       HA.Services.Mero.CEP
                       HA.Services.Mero.Types
       cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern

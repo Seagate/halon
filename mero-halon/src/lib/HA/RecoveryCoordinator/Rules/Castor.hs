@@ -33,13 +33,14 @@ import HA.Service
 import HA.Services.Mero
 import Mero.ConfC (ServiceType(..), ServiceParams(..), bitmapFromArray)
 import qualified Mero.Spiel as Spiel
-import HA.Resources.Mero hiding (Node, Process, Enclosure, Rack)
-import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
+import HA.RecoveryCoordinator.Rules.Castor.SpielQuery
+import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
+import HA.Resources.Mero.Note
+import qualified HA.Resources.Mero as M0
 import Mero.Notification hiding (notifyMero)
-import Mero.Notification.HAState
+import Mero.Notification.HAState (Note(..))
 import Control.Exception (SomeException)
 --import Data.List (unfoldr)
 import Data.UUID.V4 (nextRandom)
@@ -202,7 +203,7 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
 
 #ifdef USE_MERO
 ruleMeroNoteSet :: Definitions LoopState ()
-ruleMeroNoteSet =
+ruleMeroNoteSet = do
     defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> do
       for_ ns $ \(Note mfid tpe) ->
         case tpe of
@@ -244,8 +245,18 @@ ruleMeroNoteSet =
                                     ++ show m0sdev
                                     ++ ": "
                                     ++ show msdev
+          M0_NC_ONLINE -> lookupConfObjByFid mfid >>= \case
+            Nothing -> return ()
+            Just pool -> getPoolRepairStatus pool >>= \case
+              Nothing -> phaseLog "warning" $ "Got M0_NC_ONLINE for a pool but "
+                                           ++ "no pool repair status was found."
+              Just (M0.PoolRepairStatus prt _) -> queryStartHandling pool prt
+
           _ -> return ()
       messageProcessed uid
+
+    querySpiel
+    querySpielHourly
 #endif
 
 ruleResetAttempt :: Definitions LoopState ()
@@ -460,7 +471,8 @@ ruleDriveInserted = define "drive-inserted" $ do
           forM_ msa $ \_ -> do
             _ <- withSpielRC $ \sp -> withRConfRC sp $
                liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
-            updateDriveState m0sdev M0_NC_ONLINE
+            pools <- getSDevPools m0sdev
+            traverse_ startRebalanceOperation pools
 #endif
         unmarkStorageDeviceRemoved disk
         syncGraphProcessMsg uuid
@@ -543,7 +555,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
              else continue client_info
 
       directly sync_client $ do
-        Just (eid, host, node@(Node nid), minfo) <- get Local
+        Just (eid, host, node@(HA.Resources.Node nid), minfo) <- get Local
         -- Check that we have loaded all required node information.
         _meminfo <- case minfo of
            Nothing -> do
@@ -563,7 +575,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
                 Just fs -> return fs
         -- Start mero service
         phaseLog "debug" $ "starting m0 process on " ++ show node
-        promulgateRC $ encodeP $ ServiceStartRequest Start (Node nid) m0d
+        promulgateRC $ encodeP $ ServiceStartRequest Start (HA.Resources.Node nid) m0d
             (MeroConf (ip ++ haAddress) (ip ++ rmsAddress)) []
 #endif
         -- Update RG
