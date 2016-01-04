@@ -18,20 +18,17 @@ import Mero.M0Worker
 import Data.Monoid
 import qualified Data.Set as Set
 import qualified Data.Map as Map
-import qualified Data.HashSet as HS
 
 -- | Create initial 'LoopState' structure.
 #if USE_MERO
 emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
 emptyLoopState mmchan pid = do
   wrk <- liftIO $ dummyM0Worker
-  g' <- getGraph mmchan >>= \g ->
-    return (g { grRootNodes = grRootNodes g <> HS.singleton (Res Cluster) })
+  g' <- getGraph mmchan >>= return . addRootNode Cluster
   return $ LoopState g' Map.empty mmchan pid Set.empty wrk
 #else
 emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
 emptyLoopState mmchan pid = do
-  g' <- getGraph mmchan >>= \g ->
-    return (g { grRootNodes = grRootNodes g <> HS.singleton (Res Cluster) })
+  g' <- getGraph mmchan >>= return . addRootNode Cluster
   return $ LoopState g' Map.empty mmchan pid Set.empty
 #endif

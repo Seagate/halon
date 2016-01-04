@@ -65,7 +65,7 @@ import Helper.InitialData
 import Helper.Environment (systemHostname)
 import Helper.RC
 
-mmSDict :: SerializableDict Multimap
+mmSDict :: SerializableDict (MetaInfo, Multimap)
 mmSDict = SerializableDict
 
 remotable
@@ -81,9 +81,9 @@ rGroupTest transport p =
   tryRunProcessLocal transport myRemoteTable $ do
     nid <- getSelfNode
     rGroup <- newRGroup $(mkStatic 'mmSDict) 30 1000000
-                [nid, localNodeId lnid2, localNodeId lnid3] (fromList [])
+                [nid, localNodeId lnid2, localNodeId lnid3] (defaultMetaInfo, fromList [])
                 >>= unClosure
-                >>= (`asTypeOf` return (undefined :: MC_RG Multimap))
+                >>= (`asTypeOf` return (undefined :: MC_RG (MetaInfo, Multimap)))
     (_, mmchan) <- startMultimap rGroup id
     p mmchan
 

@@ -18,8 +18,8 @@ module TestRunner
   , withTrackingStation
   , eqView
   , eqView__static
-  , multimapView
-  , multimapView__static
+  , multimapMIView
+  , multimapMIView__static
   , testDict
   , testDict__static
   , emptyRules
@@ -69,14 +69,14 @@ import System.Timeout (timeout)
 
 import Test.Framework
 
-type TestReplicatedState = (EventQueue, Multimap)
+type TestReplicatedState = (EventQueue, (MetaInfo, Multimap))
 
 remotableDecl [ [d|
   eqView :: RStateView TestReplicatedState EventQueue
   eqView = RStateView fst first
 
-  multimapView :: RStateView TestReplicatedState Multimap
-  multimapView = RStateView snd second
+  multimapMIView :: RStateView TestReplicatedState (MetaInfo, Multimap)
+  multimapMIView = RStateView snd second
 
   testDict :: SerializableDict TestReplicatedState
   testDict = SerializableDict
@@ -98,7 +98,7 @@ runRCEx :: (ProcessId, IgnitionArguments)
         -> Process (StoreChan, ProcessId) -- ^ MM, RC
 runRCEx (eq, args) rules rGroup = do
   rec ((mm,cchan), rc) <- (,)
-                  <$> (startMultimap (viewRState $(mkStatic 'multimapView) rGroup)
+                  <$> (startMultimap (viewRState $(mkStatic 'multimapMIView) rGroup)
                                      (\go -> do
                                         () <- expect
                                         link rc
@@ -121,7 +121,7 @@ withTrackingStation testRules action = do
     (do
       void $ EQT.startEQTracker [nid]
       cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
-                         [nid] ((Nothing,[]), fromList [])
+                         [nid] ((Nothing,[]), (defaultMetaInfo, fromList []))
       join $ unClosure cRGroup
     )
     (flip killReplica nid)
@@ -183,7 +183,7 @@ startMockEventQueue listener = do
              [ match $ \(sender, ev) ->
                  usend listener (sender::ProcessId, ev::PersistMessage)
              ]
-  mp <- whereis eventQueueLabel  
+  mp <- whereis eventQueueLabel
   case mp of
     Nothing -> register  eventQueueLabel pid
     Just{}  -> reregister eventQueueLabel pid
