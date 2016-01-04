@@ -357,8 +357,8 @@ testConfObjectStateQuery host transport =
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Controller])
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Disk])
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Process])
-            failFid = head sdevFids
-            okayFids = tail sdevFids ++ otherFids
+            failFid : okSDevFids = sdevFids
+            okayFids = okSDevFids ++ otherFids
 
         say "Set to failed one of the objects"
         void $ promulgateEQ [nid] (Set [Note failFid M0_NC_FAILED])
