@@ -2,9 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
@@ -56,12 +54,11 @@ import           Data.Function (on)
 import           Data.List (sortBy)
 import           HA.Castor.Tests (initialDataAddr)
 import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd)
+import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import qualified Helper.InitialData
-import           Mero.ConfC (Fid(..))
 import           Mero.Notification
 import           Mero.Notification.HAState
-import           Network.CEP (liftProcess)
 #endif
 
 tests :: String -> Transport -> [TestTree]
@@ -153,7 +150,7 @@ testDriveAddition transport = runDefaultTest transport $ do
 
     graph <- G.getGraph mm
     let enc = Enclosure "enc1"
-        drive = head $ (G.connectedTo enc Has graph :: [StorageDevice])
+        drive = head (G.connectedTo enc Has graph :: [StorageDevice])
         status = StorageDeviceStatus "online"
     liftIO $ do
       assertBool "Enclosure exists in a graph"  $ G.memberResource enc graph
@@ -344,36 +341,34 @@ testConfObjectStateQuery host transport =
           usend self ("mero-note-set synchronized" :: String)
 
       say $ "tests node: " ++ show nid
-      withTrackingStation emptyRules $ \(TestArgs _ _ _) -> do
+      withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
         nodeUp ([nid], 1000000)
         say "Loading graph."
         void $ promulgateEQ [nid] $
           Helper.InitialData.initialDataAddr host "192.0.2.2" 8
         "Loaded initial data" :: String <- expect
-        let fids = [ Fid 0x7000000000000001 1
-                   , Fid 0x6f00000000000001 2
-                   , Fid 0x6600000000000001 3
-                   , Fid 0x6100000000000001 4
-                   , Fid 0x6500000000000001 5
-                   , Fid 0x6300000000000001 6
-                   , Fid 0x6e00000000000001 7
-                   , Fid 0x6400000000000001 8
-                   , Fid 0x6b00000000000001 9
-                   , Fid 0x6b00000000000001 11
-                   , Fid 0x7200000000000001 24
-                   , Fid 0x7300000000000001 27
-                   , Fid 0x7600000000000001 30
-                   , Fid 0x6400000000000001 10
-                   ]
+        graph <- G.getGraph mm
+        let sdevFids = fmap M0.fid (G.getResourcesOfType graph :: [M0.SDev])
+            otherFids =
+                 fmap M0.fid (G.getResourcesOfType graph :: [M0.Profile])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Filesystem])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Rack])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Enclosure])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Controller])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Disk])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Process])
+            failFid = head sdevFids
+            okayFids = tail sdevFids ++ otherFids
+
         say "Set to failed one of the objects"
-        void $ promulgateEQ [nid] (Set [Note (Fid 0x6400000000000001 10) M0_NC_FAILED])
+        void $ promulgateEQ [nid] (Set [Note failFid M0_NC_FAILED])
         "mero-note-set synchronized" :: String <- expect
 
         say "Send Get message to the RC"
-        void $ promulgateEQ [nid] (Get self fids)
+        void $ promulgateEQ [nid] (Get self (failFid : okayFids))
         GetReply notes <- expect
-        let expected = map (flip Note M0_NC_ONLINE) (init fids)
-              ++ [Note (Fid 0x6400000000000001 10) M0_NC_TRANSIENT]
+        let expected = map (flip Note M0_NC_ONLINE) (okayFids)
+              ++ [Note failFid M0_NC_TRANSIENT]
         liftIO $ assertBool
           ("The result (" ++ show notes ++ ") is not the expected one ("
             ++ show expected ++ ")."
