@@ -92,7 +92,7 @@ tests host transport = map (localOption (mkTimeout $ 10*60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport
   , testSuccess "failure-sets-2" $ testFailureSets2 transport
   , testSuccess "initial-data-doesn't-error" $ loadInitialData host transport
-  , testSuccess "large-data" $ largeInitialData host transport
+  -- , testSuccess "large-data" $ largeInitialData host transport
   , testSuccess "controller-failure" $ testControllerFailureDomain transport
   ]
 

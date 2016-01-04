@@ -6,7 +6,6 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE LambdaCase            #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -52,7 +51,7 @@ import Control.Distributed.Process.Closure (mkClosure)
 
 import Control.Applicative (liftA2)
 import Control.Monad
-import Data.Maybe (mapMaybe, listToMaybe)
+import Data.Maybe (isJust, mapMaybe, listToMaybe)
 import Data.Binary (Binary)
 import Data.Monoid ((<>))
 import Data.Text (Text, pack)
@@ -176,13 +175,16 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
       graph <- getLocalGraph
       syncGraphBlocking
       Just strategy <- getCurrentStrategy
-      forM_ (onInit strategy graph) $ \updateGraph -> do
+      let update = onInit strategy graph
+      forM_ update $ \updateGraph -> do
         graph' <- updateGraph $ \rg -> do
           putLocalGraph rg
           syncGraphBlocking
           getLocalGraph
         putLocalGraph graph'
         syncGraphBlocking
+      (if isJust update then liftProcess else syncGraph) $
+        say "Loaded initial data"
 #else
       syncGraph $ say "Loaded initial data"
 #endif
