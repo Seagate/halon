@@ -2,9 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
@@ -51,11 +49,16 @@ import           Test.Tasty.HUnit (assertBool, testCase)
 import           TestRunner
 import           Helper.Environment (systemHostname)
 #ifdef USE_MERO
-import qualified Helper.InitialData
+import           Control.Monad (when)
+import           Data.Function (on)
+import           Data.List (sortBy)
 import           HA.Castor.Tests (initialDataAddr)
 import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd)
-import           Mero.Notification (initialize_pre_m0_init)
-import           Network.CEP (liftProcess)
+import qualified HA.Resources.Mero as M0
+import           HA.Resources.Mero.Note
+import qualified Helper.InitialData
+import           Mero.Notification
+import           Mero.Notification.HAState
 #endif
 
 tests :: String -> Transport -> [TestTree]
@@ -63,6 +66,13 @@ tests _host transport =
   [ testCase "testHostAddition" $ testHostAddition transport
   , testCase "testDriveAddition" $ testDriveAddition transport
   , testCase "testDriveManagerUpdate" $ testDriveManagerUpdate transport
+#ifdef USE_MERO
+  , testCase "testConfObjectStateQuery" $
+      testConfObjectStateQuery _host transport
+#else
+  , testCase "testConfObjectStateQuery [disabled by compilation flags]" $
+      return ()
+#endif
   ]
 
 #ifdef USE_MERO
@@ -140,7 +150,7 @@ testDriveAddition transport = runDefaultTest transport $ do
 
     graph <- G.getGraph mm
     let enc = Enclosure "enc1"
-        drive = head $ (G.connectedTo enc Has graph :: [StorageDevice])
+        drive = head (G.connectedTo enc Has graph :: [StorageDevice])
         status = StorageDeviceStatus "online"
     liftIO $ do
       assertBool "Enclosure exists in a graph"  $ G.memberResource enc graph
@@ -316,4 +326,52 @@ testRCsyncToConfd host transport = do
       initialize_pre_m0_init lnid
       runProcess lnid f
 
+-- | Test that the recovery coordinator answers queries of configuration object
+-- states.
+testConfObjectStateQuery :: String -> Transport -> IO ()
+testConfObjectStateQuery host transport =
+    runTest 1 20 15000000 transport testRemoteTable $ \_ -> do
+      nid <- getSelfNode
+      self <- getSelfPid
+
+      registerInterceptor $ \string -> do
+        when ("Loaded initial data" `isInfixOf` string) $
+          usend self ("Loaded initial data" :: String)
+        when ("mero-note-set synchronized" `isInfixOf` string) $
+          usend self ("mero-note-set synchronized" :: String)
+
+      say $ "tests node: " ++ show nid
+      withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
+        nodeUp ([nid], 1000000)
+        say "Loading graph."
+        void $ promulgateEQ [nid] $
+          Helper.InitialData.initialDataAddr host "192.0.2.2" 8
+        "Loaded initial data" :: String <- expect
+        graph <- G.getGraph mm
+        let sdevFids = fmap M0.fid (G.getResourcesOfType graph :: [M0.SDev])
+            otherFids =
+                 fmap M0.fid (G.getResourcesOfType graph :: [M0.Profile])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Filesystem])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Rack])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Enclosure])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Controller])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Disk])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Process])
+            failFid : okSDevFids = sdevFids
+            okayFids = okSDevFids ++ otherFids
+
+        say "Set to failed one of the objects"
+        void $ promulgateEQ [nid] (Set [Note failFid M0_NC_FAILED])
+        "mero-note-set synchronized" :: String <- expect
+
+        say "Send Get message to the RC"
+        void $ promulgateEQ [nid] (Get self (failFid : okayFids))
+        GetReply notes <- expect
+        let expected = map (flip Note M0_NC_ONLINE) (okayFids)
+              ++ [Note failFid M0_NC_TRANSIENT]
+        liftIO $ assertBool
+          ("The result (" ++ show notes ++ ") is not the expected one ("
+            ++ show expected ++ ")."
+          ) $ sortBy (compare `on` no_id) expected
+              == sortBy (compare `on` no_id) notes
 #endif
