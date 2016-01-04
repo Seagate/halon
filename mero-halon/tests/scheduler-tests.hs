@@ -7,9 +7,11 @@
 module Main where
 
 import qualified HA.Autoboot.Tests
+import qualified HA.RecoveryCoordinator.Tests
 import qualified HA.RecoveryCoordinator.Mero.Tests
 import qualified HA.Test.Disconnect
 
+import Helper.Environment
 import Test.Tasty (TestTree, defaultMainWithIngredients, testGroup)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
 import Test.Tasty.Ingredients.FileReporter (fileTestReporter)
@@ -20,7 +22,6 @@ import Control.Exception
 import Control.Monad
 import Network.Transport (Transport)
 import Network.Transport.InMemory
-import System.Environment hiding (setEnv)
 import System.Posix.Env (setEnv)
 import System.IO
 
@@ -28,40 +29,40 @@ ut :: String -> Transport -> IO TestTree
 ut _host transport = return $
     testGroup "mero-halon" $ (:[]) $
     testGroup "scheduler"
-      [ testCase "RCServiceRestarting" $
-          HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport
-      , testCase "RCServiceNOTRestarting" $
-          HA.RecoveryCoordinator.Mero.Tests.testServiceNotRestarting transport
-      , testCase "RCHAEventsGotTrimmed" $
-          HA.RecoveryCoordinator.Mero.Tests.testEQTrimming transport
-      , testCase "RGHostResources" $
+      [ testCase "testServiceRestarting" $
+          HA.RecoveryCoordinator.Tests.testServiceRestarting transport
+      , testCase "testServiceNotRestarting" $
+          HA.RecoveryCoordinator.Tests.testServiceNotRestarting transport
+      , testCase "testEQTrimming" $
+          HA.RecoveryCoordinator.Tests.testEQTrimming transport
+      , testCase "testHostAddition" $
           HA.RecoveryCoordinator.Mero.Tests.testHostAddition transport
-      , testCase "RGDriveResources" $
+      , testCase "testDriveAddition" $
           HA.RecoveryCoordinator.Mero.Tests.testDriveAddition transport
-      , testCase "RCServiceStopped" $
-          HA.RecoveryCoordinator.Mero.Tests.testServiceStopped transport
-      , testCase "RCNodeLocalMonitor" $
-          HA.RecoveryCoordinator.Mero.Tests.testMonitorManagement transport
-      , testCase "RCMasterMonitor" $
-          HA.RecoveryCoordinator.Mero.Tests.testMasterMonitorManagement
+      , testCase "testServiceStopped" $
+          HA.RecoveryCoordinator.Tests.testServiceStopped transport
+      , testCase "testMonitorManagement" $
+          HA.RecoveryCoordinator.Tests.testMonitorManagement transport
+      , testCase "testMasterMonitorManagement" $
+          HA.RecoveryCoordinator.Tests.testMasterMonitorManagement
             transport
-      , testCase "RCNodeUpRace" $
-          HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
+      , testCase "testNodeUpRace" $
+          HA.RecoveryCoordinator.Tests.testNodeUpRace transport
       , testGroup "Autoboot" $
           HA.Autoboot.Tests.tests transport
-      , testCase "RCToleratesDisconnections" $
+      , testCase "testDisconnect" $
           HA.Test.Disconnect.testDisconnect
             transport (error "breakConnection not supplied in test")
 #ifdef USE_MERO
         -- Run these two only if we have USE_MERO as we needed some initial
         -- data preloaded
-      , testCase "RCToleratesRejoins" $
+      , testCase "testRejoin" $
           HA.Test.Disconnect.testRejoin
             _host transport (error "breakConnection not supplied in test")
-      , testCase "RCToleratesRejoinsTimeout" $
+      , testCase "testRejoinTimeout" $
           HA.Test.Disconnect.testRejoinTimeout
             _host transport (error "breakConnection not supplied in test")
-      , testCase "RCToleratesRejoinsWithDeath" $
+      , testCase "testRejoinRCDeath" $
           HA.Test.Disconnect.testRejoinRCDeath
             _host transport (error "breakConnection not supplied in test")
 #endif
@@ -79,13 +80,7 @@ main = do
     hSetBuffering stderr LineBuffering
     setEnv "DP_SCHEDULER_ENABLED" "1" True
     tid <- myThreadId
-    argv <- getArgs
-    (host0, _) <- case drop 1 $ dropWhile ("--" /=) argv of
-      a0:_ -> return $ break (== ':') a0
-      _ ->
-        maybe (error "environment variable TEST_LISTEN is not set; example: 192.0.2.1:0")
-              (break (== ':'))
-              <$> lookupEnv "TEST_LISTEN"
+    (host0, _) <- getTestListenSplit
 
     _ <- forkIO $ do threadDelay (30 * 60 * 1000000)
                      forever $ do threadDelay 100000

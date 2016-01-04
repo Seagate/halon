@@ -228,7 +228,7 @@ ruleMeroNoteSet =
                     updateDriveState m0sdev status
 
                     when (status == M0_NC_FAILED) $ do
-                      updateDriveManagerWithFailure sdev
+                      updateDriveManagerWithFailure Nothing sdev
                       nid <- liftProcess getSelfNode
                       diskids <- findStorageDeviceIdentifiers sdev
                       let iem = InterestingEventMessage . pack . unwords $ [
@@ -297,7 +297,7 @@ ruleResetAttempt = define "reset-attempt" $ do
           sd <- lookupStorageDeviceSDev sdev
           forM_ sd $ \m0sdev -> do
             updateDriveState m0sdev M0_NC_FAILED
-            updateDriveManagerWithFailure sdev
+            updateDriveManagerWithFailure Nothing sdev
             pools <- getSDevPools m0sdev
             traverse_ startRepairOperation pools
 #endif
@@ -323,7 +323,7 @@ ruleResetAttempt = define "reset-attempt" $ do
           sd <- lookupStorageDeviceSDev sdev
           forM_ sd $ \m0sdev -> do
             updateDriveState m0sdev M0_NC_FAILED
-            updateDriveManagerWithFailure sdev
+            updateDriveManagerWithFailure Nothing sdev
             pools <- getSDevPools m0sdev
             traverse_ startRepairOperation pools
 #endif
@@ -362,7 +362,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           updateDriveState m0sdev M0_NC_FAILED
-          updateDriveManagerWithFailure sdev
+          updateDriveManagerWithFailure Nothing sdev
           pools <- getSDevPools m0sdev
           traverse_ startRepairOperation pools
 #endif

@@ -7,6 +7,7 @@
 module Main where
 
 import qualified HA.RecoveryCoordinator.Mero.Tests
+import qualified HA.RecoveryCoordinator.Tests
 import qualified HA.Autoboot.Tests
 #ifdef USE_MERO
 #ifdef USE_MOCK_REPLICATOR
@@ -31,6 +32,7 @@ import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
 
 import Network.Transport (Transport, EndPointAddress)
 
+import Helper.Environment
 import Test.Tasty (testGroup)
 import Test.Tasty.HUnit (testCase)
 
@@ -51,7 +53,18 @@ import qualified Network.Socket as TCP
 import qualified Network.Transport.TCP as TCP
 #endif
 import Prelude
-import System.Environment
+
+#ifdef USE_MERO
+#define MERO_TEST(K, S, X, D) (K (S) (X))
+#else
+#define MERO_TEST(K, S, X, D) (K (S ++ " [disabled due to unset USE_MERO]") (D))
+#endif
+
+#ifdef USE_MOCK_REPLICATOR
+#define MOCK_TEST(K, S, X, D) MERO_TEST(K, S, X, D)
+#else
+#define MOCK_TEST(K, S, X, D) MERO_TEST(K, (S ++ " [disabled due to unset USE_MOCK_REPLICATOR]"), D, D)
+#endif
 
 
 ut :: String -> Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
@@ -63,101 +76,50 @@ ut _host transport breakConnection = do
   return $
     testGroup "mero-halon" $ (:[]) $
 #ifdef USE_MOCK_REPLICATOR
-    testGroup "ut"
+    testGroup "integration-tests with mock-replicator"
 #else
-    testGroup "it"
+    testGroup "integration-tests without mock replicator"
 #endif
-      [ testCase "RCServiceRestarting" $
-          HA.RecoveryCoordinator.Mero.Tests.testServiceRestarting transport
-
-      , testCase "RCServiceNOTRestarting" $
-          HA.RecoveryCoordinator.Mero.Tests.testServiceNotRestarting transport
-      , testCase "RCHAEventsGotTrimmed" $
-          HA.RecoveryCoordinator.Mero.Tests.testEQTrimming transport
-      , testCase "RGHostResources" $
-          HA.RecoveryCoordinator.Mero.Tests.testHostAddition transport
-      , testCase "RGClusterStatus" $
-          HA.RecoveryCoordinator.Mero.Tests.testClusterStatus transport
-      , testCase "RGTrimUnknownMessage" $
-          HA.RecoveryCoordinator.Mero.Tests.testEQTrimUnknown transport
-      , testCase "RGDriveResources" $
-          HA.RecoveryCoordinator.Mero.Tests.testDriveAddition transport
-      , testCase "uncleanRPCClose" $ threadDelay 2000000
-      , testCase "RCDecisionLogOutput" $
-        HA.RecoveryCoordinator.Mero.Tests.testDecisionLog transport
-      , testCase "RCServiceStopped" $
-        HA.RecoveryCoordinator.Mero.Tests.testServiceStopped transport
-      , testCase "RCNodeLocalMonitor" $
-        HA.RecoveryCoordinator.Mero.Tests.testMonitorManagement transport
-      , testCase "RCMasterMonitor" $
-        HA.RecoveryCoordinator.Mero.Tests.testMasterMonitorManagement transport
-      , testCase "RCNodeUpRace" $
-        HA.RecoveryCoordinator.Mero.Tests.testNodeUpRace transport
-      , testCase "RCDriveManagerUpdate" $
-        HA.RecoveryCoordinator.Mero.Tests.testDriveManagerUpdate transport
+      [ testCase "uncleanRPCClose" $ threadDelay 2000000
+      , testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport
       , testGroup "Autoboot" $
         HA.Autoboot.Tests.tests transport
       , HA.Test.Cluster.tests transport
+      , testGroup "mero" $
+          HA.RecoveryCoordinator.Mero.Tests.tests _host transport
 #if defined(USE_MOCK_REPLICATOR) && !defined(USE_MERO)
       , HA.Castor.Story.NonMero.tests transport
 #else
       , testCase "Castor story non mero tests are disabled" $ return ()
 #endif
-#ifdef USE_MERO
-      , testGroup "Castor" $ HA.Castor.Tests.tests _host transport
-                             ++ driveFailureTests transport
-#else
-      , testGroup "Castor [disabled by compilation flags]" []
-#endif
-#ifdef USE_MERO
-      , testCase "RCToleratesRejoinsTimeout" $
-          HA.Test.Disconnect.testRejoinTimeout _host transport breakConnection
-#else
-      , testCase "RCToleratesRejoinsTimeout [disabled by compilation flags]" $
-          const (return ()) $ HA.Test.Disconnect.testRejoinTimeout _host transport breakConnection
-#endif
-#ifdef USE_MERO
-      , testCase "RCToleratesRejoins" $
-          HA.Test.Disconnect.testRejoin _host transport breakConnection
-#else 
-      , testCase "RCToleratesRejoins [disabled by compilation clags]" $
-          const (return ()) $ HA.Test.Disconnect.testRejoin _host transport breakConnection
-#endif
-#if defined(USE_MERO) && defined(USE_MOCK_REPLICATOR)
-      , HA.RecoveryCoordinator.SSPL.Tests.utTests transport
-#endif
-#if defined(USE_MERO) && defined(USE_MOCK_REPLICATOR)
-      , testCase "RCToleratesRejoinsWithDeath" $
-          HA.Test.Disconnect.testRejoinRCDeath _host transport breakConnection
-#else
-      , testCase "RCToleratesRejoinsWithDeath [disabled by compilation flags]" $
-          const (return ()) $
-            HA.Test.Disconnect.testRejoinRCDeath _host transport (error "breakConnection not supplied in test")
-#endif
+      , MERO_TEST(testGroup,"Castor",HA.Castor.Tests.tests _host transport, [])
+      , MERO_TEST(testGroup, "DriveFailure", driveFailureTests transport, [])
+      , testGroup "disconnect" $
+        [ MERO_TEST(testCase, "testRejoinTimeout", HA.Test.Disconnect.testRejoinTimeout _host transport breakConnection, return ())
+        , MERO_TEST(testCase, "testRejoin", HA.Test.Disconnect.testRejoin _host transport breakConnection, return ())
+        , MOCK_TEST(testCase, "testRejoinRCDeath", HA.Test.Disconnect.testRejoinRCDeath _host transport breakConnection, return ())
 #if !defined(USE_RPC) && !defined(USE_MOCK_REPLICATOR)
-      , testCase "RCToleratesDisconnections" $
-          HA.Test.Disconnect.testDisconnect transport breakConnection
-#else
-      , testCase "RCToleratesDisconnections [disabled by compilation flags]" $
-          const (return ()) $
+        , testCase "testDisconnect" $
             HA.Test.Disconnect.testDisconnect transport breakConnection
+#else
+        , testCase "testDisconnect [disabled by compilation flags]" $
+            const (return ()) $
+              HA.Test.Disconnect.testDisconnect transport breakConnection
 #endif
+        ]
+      , MOCK_TEST(testGroup,"Service-SSPL",HA.RecoveryCoordinator.SSPL.Tests.utTests transport, [])
       , ssplTest transport
       ]
 
+-- | Set up a 'Transport' and a way to break connections before
+-- passing it off to the given test tree.
 runTests :: (String -> Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree) -> IO ()
 runTests tests = do
     -- TODO: Remove threadDelay after RPC transport closes cleanly
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
-    argv  <- getArgs
-    (host0, p0) <- case drop 1 $ dropWhile ("--" /=) argv of
-               a0:_ -> return $ break (== ':') a0
-               _ ->
-                 maybe (error "environement variable TEST_LISTEN is not set; example: 192.0.2.1:0")
-                       (break (== ':'))
-                       <$> lookupEnv "TEST_LISTEN"
-    let addr0 = host0 ++ p0
+    (host0, p0)<- getTestListenSplit
+    let addr0 = host0 ++ ":" ++ p0
 #ifdef USE_RPC
     rpcTransport <- RPC.createTransport "s1"
                        (RPC.rpcAddress addr0) RPC.defaultRPCParameters
@@ -186,9 +148,8 @@ runTests tests = do
           ignoreSyncExceptions $
             TCP.socketBetween internals there here >>= TCP.close
 #endif
-    withArgs (takeWhile ("--" /=) argv) $
-      defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
-        =<< tests host0 transport connectionBreak
+    defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
+      =<< tests host0 transport connectionBreak
 
 main :: IO ()
 main = prepare $ runTests ut where

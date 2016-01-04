@@ -22,7 +22,6 @@ import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Mero.Concurrent
-import System.IO
 
 import Mero
 

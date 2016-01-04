@@ -135,7 +135,6 @@ multimap (StoreChan _ rchan wchan) rg =
           (sp, rp) <- newChan
           mvRes <- liftIO newEmptyMVar
           readDone <- liftIO newEmptyMVar
-          parent <- getSelfPid
           worker <- spawnLocal $ do
             getSelfPid >>= getStateWith rg . $(mkClosure 'readStore)
             reader <- expect

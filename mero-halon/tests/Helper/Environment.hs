@@ -1,6 +1,6 @@
--- | 
+-- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
--- 
+--
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE CPP #-}
@@ -18,6 +18,8 @@ module Helper.Environment
   , getConfd2Endpoint
   , getHalonEndpoint
   , getLnetNid
+  , getTestListen
+  , getTestListenSplit
   , systemHostname
   ) where
 
@@ -29,6 +31,7 @@ import Foreign.Ptr
 import System.IO
 #endif
 
+import Control.Arrow (second)
 import Control.Exception (bracket_, onException, IOException, try)
 import Control.Concurrent (threadDelay)
 import Control.Monad (when)
@@ -69,7 +72,7 @@ getLnetNid = head . lines <$> readProcess "lctl" ["list_nids"] ""
 confdEndpoint, confd2Endpoint, halonEndpoint :: String
 confdEndpoint = "SERVER1_ENDPOINT"
 confd2Endpoint = "SERVER2_ENDPOINT"
-halonEndpoint = "HALON_ENDPOINT" 
+halonEndpoint = "HALON_ENDPOINT"
 
 -- | Get confd endpoint address.
 getConfdEndpoint :: IO String
@@ -93,7 +96,7 @@ withMeroEnvironment :: IO (Maybe (IO ())) -> IO () -> IO ()
 withMeroEnvironment router wrapper = withMeroRoot $ \meroRoot ->
   withSudo ["LD_LIBRARY_PATH", "MERO_ROOT", "TASTY_PATTERN", "TEST_LISTEN"] $ do
     mtest <- router
-    case mtest of 
+    case mtest of
       Just test -> test
       Nothing -> bracket_
         (do setEnv "SANDBOX_DIR" "/var/mero/sandbox.mero-halon-st"
@@ -107,7 +110,7 @@ withMeroEnvironment router wrapper = withMeroRoot $ \meroRoot ->
             _ <- tryIO $ callCommand $ "killall -9 lt-m0d"
             threadDelay $ 2*1000000
             _ <- tryIO $ callCommand $ meroRoot ++ "/conf/st rmmod"
-            return ()) 
+            return ())
         (do nid <- getLnetNid
             setEnv confdEndpoint  $ nid ++ ":12345:34:1001"
             setEnv confd2Endpoint $ nid ++ ":12345:34:1002"
@@ -116,6 +119,21 @@ withMeroEnvironment router wrapper = withMeroRoot $ \meroRoot ->
 
 tryIO :: IO a -> IO (Either IOException a)
 tryIO = try
+
+-- | Return the value of the @TEST_LISTEN@ environment variable.
+-- Error out if the variable is not set.
+getTestListen :: IO String
+getTestListen = lookupEnv "TEST_LISTEN" >>= \case
+  Nothing ->
+    error "environment variable TEST_LISTEN is not set; example: 192.0.2.1:0"
+  Just str -> return str
+
+-- | Return the value of the @TEST_LISTEN@ environment variable split
+-- into host and port. Error out if the variable is not set. Also see
+-- 'getTestListen'.
+getTestListenSplit :: IO (String, String)
+getTestListenSplit = second (drop 1) . break (== ':') <$> getTestListen
+
 
 #ifdef USE_MERO
 foreign import ccall "<ha/note.h> m0_ha_state_init"
