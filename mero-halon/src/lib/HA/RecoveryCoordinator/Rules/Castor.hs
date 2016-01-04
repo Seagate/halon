@@ -165,33 +165,26 @@ castorRules = sequence_
   , ruleNewMeroClient
   ]
 
-data InitialDataChunk = InitialDataChunk
-  deriving (Eq,Show,Typeable,Generic)
-
-instance Binary InitialDataChunk
-
 ruleInitialDataLoad :: Definitions LoopState ()
 ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
       mapM_ goRack id_racks
-      syncGraphProcess $ \self -> usend self InitialDataChunk
-      liftProcess $ expect >>= \InitialDataChunk -> return ()
+      syncGraphBlocking
 #ifdef USE_MERO
       filesystem <- initialiseConfInRG
       loadMeroGlobals id_m0_globals
       loadMeroServers filesystem id_m0_servers
       graph <- getLocalGraph
-      syncGraphProcess $ \self -> usend self InitialDataChunk
-      liftProcess $ expect >>= \InitialDataChunk -> return ()
+      syncGraphBlocking
       Just strategy <- getCurrentStrategy
       forM_ (onInit strategy graph) $ \updateGraph -> do
         graph' <- updateGraph $ \rg -> do
           putLocalGraph rg
-          syncGraphProcess $ \self -> usend self InitialDataChunk
-          liftProcess $ expect >>= \InitialDataChunk -> return ()
+          syncGraphBlocking
           getLocalGraph
         putLocalGraph graph'
-        syncGraphProcess $ \self -> usend self InitialDataChunk
-        liftProcess $ expect >>= \InitialDataChunk -> return ()
+        syncGraphBlocking
+#else
+      syncGraph $ say "Loaded initial data"
 #endif
       rg' <- getLocalGraph
       let hosts = [ host | host <- G.getResourcesOfType rg'    :: [Host] -- all hosts
