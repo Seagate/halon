@@ -163,6 +163,7 @@ run transport interceptor test =
       _ <- promulgateEQ [localNodeId n] $ encodeP $
             ServiceStopRequest (Node $ localNodeId n) sspl
       _ <- receiveTimeout 1000000 []
+      unlink rmq
       kill rmq "end of game"
   where
     startSSPLService :: ProcessId -> Process ()
