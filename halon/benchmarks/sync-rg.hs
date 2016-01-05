@@ -9,34 +9,34 @@
 import Control.DeepSeq (NFData(rnf))
 import Control.Distributed.Process
   ( Process
-  , ProcessId
-  , spawnLocal
   , liftIO
   , catch
   , getSelfNode
   , unClosure
+  , newChan
+  , receiveChan
+  , sendChan
+  , link
   )
-import Control.Distributed.Process.Closure (mkStatic, remotable)
-import Control.Distributed.Process.Internal.Types (LocalNode)
-import Control.Distributed.Process.Node (newLocalNode)
+import Control.Distributed.Process.Closure (mkStatic)
+import Control.Distributed.Process.Node (runProcess)
 import Control.Distributed.Process.Serializable (SerializableDict(..))
-import Control.Exception (SomeException, bracket)
+import Control.Exception (SomeException, throwIO)
 import Control.Monad (void)
 import Criterion.Main
 
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
-import Data.List (foldl', sort, (\\))
+import Data.List (foldl')
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
 
 import Network.Transport (Transport)
 
-import HA.Multimap (getKeyValuePairs)
+import HA.Multimap (defaultMetaInfo, MetaInfo, StoreChan)
 import HA.Multimap.Implementation (Multimap, fromList)
-import HA.Multimap.Process (multimap)
-import HA.Process
+import HA.Multimap.Process (startMultimap)
 import HA.Replicator (RGroup(..))
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock (MC_RG)
@@ -48,7 +48,9 @@ import HA.Resources.TH
 
 import RemoteTables (remoteTable)
 import Test.Framework hiding (defaultMain)
-import Test.Transport
+import Test.Transport (mkInMemoryTransport, getTransport)
+
+import HA.ResourceGraph.Tests (rGroupTest)
 
 --------------------------------------------------------------------------------
 -- Types                                                                      --
@@ -57,7 +59,7 @@ import Test.Transport
 instance NFData Transport where
   rnf a = seq a ()
 
-mmSDict :: SerializableDict Multimap
+mmSDict :: SerializableDict (MetaInfo, Multimap)
 mmSDict = SerializableDict
 
 data NodeA = NodeA Int
@@ -90,34 +92,23 @@ $(mkResRel
 makeTransport :: IO Transport
 makeTransport = mkInMemoryTransport >>= return . getTransport
 
--- | Run the given action on a newly created local node.
-withLocalNode :: Transport -> (LocalNode -> IO a) -> IO a
-withLocalNode transport action =
-    bracket
-      (newLocalNode transport (__remoteTable remoteTable))
-      -- FIXME: Why does this cause gibberish to be output?
-      -- closeLocalNode
-      (const (return ()))
-      action
-
--- | FIXME: Why do we need tryRunProcess?
 tryRunProcessLocal :: Transport -> Process () -> IO ()
 tryRunProcessLocal transport process =
     withTmpDirectory $
-      withLocalNode transport $ \node ->
-        tryRunProcess node process
+      withLocalNode transport (__remoteTable remoteTable) $ \node ->
+        runProcess node process
 
 rGroupTest :: (RGroup g, Typeable g)
-           => Transport -> g Multimap -> (ProcessId -> Process ()) -> IO ()
-rGroupTest transport g p =
-    tryRunProcessLocal transport $
-      flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
-        nid <- getSelfNode
-        rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
-                    >>= unClosure >>= (`asTypeOf` return g)
-        mmpid <- spawnLocal $ catch (multimap rGroup) $
-          (\e -> liftIO $ print (e :: SomeException))
-        p mmpid
+           => Transport -> g (MetaInfo, Multimap)
+           -> (StoreChan -> Process ()) -> IO ()
+rGroupTest transport g p = tryRunProcessLocal transport $ do
+  nid <- getSelfNode
+  rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (defaultMetaInfo, fromList [])
+              >>= unClosure >>= (`asTypeOf` return g)
+  (mmpid, mmchan) <- startMultimap rGroup $ \loop -> do
+    catch loop $ \e -> liftIO (print (e :: SomeException) >> throwIO e)
+  link mmpid
+  p mmchan
 
 --------------------------------------------------------------------------------
 -- Tests                                                                      --
@@ -127,11 +118,14 @@ main :: IO ()
 main = defaultMain [
     env makeTransport $ \ t -> bgroup "small" [
       bench "1" $ whnfIO $ testSyncLarge t 1
+{-
     , bench "3" $ whnfIO $ testSyncLarge t 3
     , bench "5" $ whnfIO $ testSyncLarge t 5
     , bench "7" $ whnfIO $ testSyncLarge t 7
     , bench "9" $ whnfIO $ testSyncLarge t 9
+-}
     ]
+{-
   , env makeTransport $ \ t -> bgroup "medium" [
       bench "10" $ whnfIO $ testSyncLarge t 10
     , bench "30" $ whnfIO $ testSyncLarge t 30
@@ -146,16 +140,25 @@ main = defaultMain [
     , bench "700" $ whnfIO $ testSyncLarge t 700
     , bench "900" $ whnfIO $ testSyncLarge t 900
     ]
+-}
   ]
 
 
 testSyncLarge :: Transport -> Int -> IO ()
-testSyncLarge t n = rGroupTest t g $ \pid -> do
-    g1 <- sync =<< getGraph pid
+testSyncLarge t n = HA.ResourceGraph.Tests.rGroupTest t g $ \mm -> do
+    return ()
+{-
+    g1 <- syncWait =<< getGraph mm
     let g2 = buildCompleteGraph n g1
-    void $ sync g2
+    void $ syncWait g2
+-}
   where
-    g = undefined :: MC_RG Multimap
+    g = undefined :: MC_RG (MetaInfo, Multimap)
+
+syncWait :: Graph -> Process Graph
+syncWait g = do
+    (sp, rp) <- newChan
+    sync g (sendChan sp ()) <* receiveChan rp
 
 buildCompleteGraph :: Int -> Graph -> Graph
 buildCompleteGraph n = addResources . addEdges where

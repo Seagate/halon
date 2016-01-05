@@ -117,7 +117,9 @@ Benchmark sync-rg
   Type:             exitcode-stdio-1.0
   Main-Is:          sync-rg.hs
   Default-Language: Haskell2010
-  Hs-Source-Dirs:   benchmarks
+  Hs-Source-Dirs:   benchmarks, tests
+  Other-Modules:    RemoteTables
+                    Test.Transport
 
   Ghc-Options: -threaded -Wall
 
