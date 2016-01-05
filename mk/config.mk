@@ -56,4 +56,4 @@ CEP_DIR = $(ROOT_DIR)/cep/
 
 CEP_PACKAGES := cep
 
-export HALON_TRACING = consensus-paxos replicated-log EQ EQ.producer MM RS
+export HALON_TRACING = consensus-paxos replicated-log EQ EQ.producer MM RS RG

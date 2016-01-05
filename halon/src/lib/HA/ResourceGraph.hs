@@ -83,6 +83,7 @@ module HA.ResourceGraph
     , setSinceGC
     ) where
 
+import HA.Logger
 import HA.Multimap
   ( Key
   , Value
@@ -95,7 +96,7 @@ import HA.Multimap
   )
 import HA.Multimap.Implementation
 
-import Control.Distributed.Process ( Process, say, liftIO )
+import Control.Distributed.Process ( Process )
 import Control.Distributed.Process.Internal.Types
     ( remoteTable, processNode )
 import Control.Distributed.Process.Serializable ( Serializable )
@@ -129,6 +130,10 @@ import Data.Proxy
 import Data.Typeable ( Typeable, cast )
 import Data.Word (Word8)
 import GHC.Generics (Generic)
+
+
+rgTrace :: String -> Process ()
+rgTrace = mkHalonTracer "RG"
 
 -- | A type can be declared as modeling a resource by making it an instance of
 -- this class.
@@ -549,19 +554,15 @@ sync g cb = do
 
     runGCIfThresholdMet :: Graph -> Process Graph
     runGCIfThresholdMet gr =
-      if shouldGC gr
-      then do let gr' = garbageCollectRoot gr
-              -- TODO: Here be dragons. During debugging the graph was
-              -- being written out to files on each GC and everything
-              -- worked. Upon removing that part of debugging, things
-              -- weren't working as they should be anymore. The line
-              -- below makes it work but *why* it works is mysterious.
-              -- The first guess was strictness but strangely if we
-              -- for example run the below directly in Process without
-              -- 'liftIO'ing it, things no longer work. There may be
-              -- some race condition here that we should still
-              -- investigate.
-              liftIO $ M.size (grGraph gr') `seq` return gr'
+      if shouldGC gr then do
+        let gr' = garbageCollectRoot gr
+            beforeGCSize = M.size (grGraph gr)
+        seq beforeGCSize $ rgTrace $ "Garbage collecting " ++ show beforeGCSize
+                                     ++ " nodes ..."
+        let afterGCSize = M.size (grGraph gr')
+        seq afterGCSize $ rgTrace $ "After GC, " ++ show afterGCSize
+                                    ++ " nodes remain."
+        return gr'
       else return gr
 
 -- | Retrieves the graph from the multimap store.
