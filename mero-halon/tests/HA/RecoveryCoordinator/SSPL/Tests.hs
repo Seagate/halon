@@ -57,7 +57,7 @@ data GetGraph = GetGraph ProcessId deriving (Eq,Show, Typeable, Generic)
 
 instance Binary GetGraph
 
-mmSDict :: SerializableDict Multimap
+mmSDict :: SerializableDict (MetaInfo, Multimap)
 mmSDict = SerializableDict
 
 remotable
@@ -70,9 +70,9 @@ rGroupTest :: Transport -> (StoreChan -> Process ()) -> IO ()
 rGroupTest transport p =
   tryRunProcessLocal transport myRemoteTable $ do
     nid <- getSelfNode
-    rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
+    rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (defaultMetaInfo, fromList [])
                 >>= unClosure
-                >>= (`asTypeOf` return (undefined :: MC_RG Multimap))
+                >>= (`asTypeOf` return (undefined :: MC_RG (MetaInfo, Multimap)))
     (_,mmchan) <- startMultimap rGroup id
     p mmchan
 

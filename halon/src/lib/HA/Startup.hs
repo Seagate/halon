@@ -14,7 +14,7 @@ module HA.Startup where
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
 import HA.EventQueue ( EventQueue, eventQueueLabel, startEventQueue )
 import qualified HA.EQTracker as EQT
-import HA.Multimap ( StoreChan )
+import HA.Multimap ( MetaInfo, defaultMetaInfo, StoreChan )
 import HA.Multimap.Implementation ( Multimap, fromList )
 import HA.Multimap.Process ( startMultimap )
 import HA.Replicator ( RGroup(..), RStateView(..) )
@@ -56,7 +56,7 @@ putGlobalRGroup :: Closure (Process (RLogGroup HAReplicatedState))
 putGlobalRGroup = Storage.put "global-rgroup"
 
 -- | Replicated state of the HA
-type HAReplicatedState = (RSState,(EventQueue,Multimap))
+type HAReplicatedState = (RSState,(EventQueue,(MetaInfo,Multimap)))
 
 rsView :: RStateView HAReplicatedState RSState
 rsView = RStateView fst first
@@ -64,8 +64,8 @@ rsView = RStateView fst first
 eqView :: RStateView HAReplicatedState EventQueue
 eqView = RStateView (fst . snd) (second . first)
 
-multimapView :: RStateView HAReplicatedState Multimap
-multimapView = RStateView (snd . snd) (second . second)
+multimapMIView :: RStateView HAReplicatedState (MetaInfo, Multimap)
+multimapMIView = RStateView (snd . snd) (second . second)
 
 rsDict :: SerializableDict HAReplicatedState
 rsDict = SerializableDict
@@ -73,7 +73,7 @@ rsDict = SerializableDict
 decodeNids :: ByteString -> [NodeId]
 decodeNids = decode
 
-remotable [ 'rsView, 'eqView, 'multimapView, 'rsDict, 'decodeNids ]
+remotable [ 'rsView, 'eqView, 'multimapMIView, 'rsDict, 'decodeNids ]
 
 -- | Closes all transport connections from the current node.
 --
@@ -147,7 +147,7 @@ remotableDecl [ [d|
          mask_ $ do
            rcpid <- getSelfPid
            (mmpid, mmchan) <- startMultimap
-             (viewRState $(mkStatic 'multimapView) rGroup)
+             (viewRState $(mkStatic 'multimapMIView) rGroup)
              $ \loop -> link rcpid >> loop
            usend eqpid rcpid
            link mmpid
@@ -220,7 +220,7 @@ remotableDecl [ [d|
       cRGroup <- newRGroup $(mkStatic 'rsDict) snapshotThreshold snapshotTimeout
                            trackers
                            ( RSState Nothing 0 rsLeaderLease
-                           , ((Nothing,[]),fromList [])
+                           , ((Nothing,[]),(defaultMetaInfo, fromList []))
                            )
       (sp, rp) <- newChan
       forM_ trackers $ flip spawn $ $(mkClosure 'startRS)

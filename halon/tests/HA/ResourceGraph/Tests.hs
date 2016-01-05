@@ -26,7 +26,7 @@ import GHC.Generics (Generic)
 
 import Network.Transport (Transport)
 
-import HA.Multimap (StoreChan)
+import HA.Multimap (defaultMetaInfo, MetaInfo, StoreChan)
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (startMultimap)
 import HA.Replicator (RGroup(..))
@@ -77,13 +77,11 @@ resourceDictNodeB = Dict
 
 relationDictHasBNodeANodeB :: Dict (Relation HasB NodeA NodeB)
 relationDictHasANodeBNodeA :: Dict (Relation HasA NodeB NodeA)
-relationDictRootsGraphGCInfoNodeB :: Dict (Relation Roots GraphGCInfo NodeB)
 
 relationDictHasBNodeANodeB = Dict
 relationDictHasANodeBNodeA = Dict
-relationDictRootsGraphGCInfoNodeB = Dict
 
-mmSDict :: SerializableDict Multimap
+mmSDict :: SerializableDict (MetaInfo, Multimap)
 mmSDict = SerializableDict
 
 remotable
@@ -91,7 +89,6 @@ remotable
   , 'resourceDictNodeB
   , 'relationDictHasBNodeANodeB
   , 'relationDictHasANodeBNodeA
-  , 'relationDictRootsGraphGCInfoNodeB
   , 'mmSDict
   ]
 
@@ -104,8 +101,6 @@ instance Relation HasB NodeA NodeB where
   relationDict = $(mkStatic 'relationDictHasBNodeANodeB)
 instance Relation HasA NodeB NodeA where
   relationDict = $(mkStatic 'relationDictHasANodeBNodeA)
-instance Relation Roots GraphGCInfo NodeB where
-  relationDict = $(mkStatic 'relationDictRootsGraphGCInfoNodeB)
 
 --------------------------------------------------------------------------------
 -- Test helpers                                                               --
@@ -118,11 +113,12 @@ tryRunProcessLocal transport process =
         runProcess node process
 
 rGroupTest :: (RGroup g, Typeable g)
-           => Transport -> g Multimap -> (StoreChan -> Process ()) -> IO ()
+           => Transport -> g (MetaInfo, Multimap)
+           -> (StoreChan -> Process ()) -> IO ()
 rGroupTest transport g p =
     tryRunProcessLocal transport $ do
       nid <- getSelfNode
-      rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
+      rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (defaultMetaInfo, fromList [])
                   >>= unClosure >>= (`asTypeOf` return g)
       (mmpid, mmchan) <- startMultimap rGroup $ \loop -> do
         catch loop $ \e -> liftIO (print (e :: SomeException) >> throwIO e)
@@ -163,7 +159,7 @@ syncWait g = do
 
 tests :: Transport -> IO [TestTree]
 tests transport = do
-    let g = undefined :: MC_RG Multimap
+    let g = undefined :: MC_RG (MetaInfo, Multimap)
     return
       [ testSuccess "initial-graph" $ rGroupTest transport g $ \mm -> do
           _g <- syncWait =<< getGraph mm

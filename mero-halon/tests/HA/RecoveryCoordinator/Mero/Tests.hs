@@ -678,7 +678,7 @@ testNodeUpRace transport = do
 
       say $ "tests node: " ++ show nid
       bracket (do cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
-                             [nid] ((Nothing,[]), fromList [])
+                             [nid] ((Nothing,[]), (defaultMetaInfo, fromList []))
                   join $ unClosure cRGroup
               )
               (flip killReplica nid) $ \rGroup -> do
