@@ -35,6 +35,8 @@ module HA.ResourceGraph
       Resource(..)
     , Relation(..)
     , Graph
+    , grChangeLog
+    , fromChangeLog
     , Edge(..)
     , Dict(..)
     , Res(..)
@@ -52,6 +54,7 @@ module HA.ResourceGraph
     , disconnectAllTo
     , mergeResources
     , sync
+    , emptyGraph
     , getGraph
     , garbageCollect
     , garbageCollectRoot
@@ -92,10 +95,11 @@ import HA.Multimap
   , getKeyValuePairs
   , MetaInfo(..)
   , getStoreValue
+  , defaultMetaInfo
   )
 import HA.Multimap.Implementation
 
-import Control.Distributed.Process ( Process )
+import Control.Distributed.Process ( Process, liftIO )
 import Control.Distributed.Process.Internal.Types
     ( remoteTable, processNode )
 import Control.Distributed.Process.Serializable ( Serializable )
@@ -110,14 +114,15 @@ import Data.Constraint ( Dict(..) )
 
 import Prelude hiding (null)
 import Control.Arrow ( (***), (>>>), second )
-import Control.Monad ( liftM3 )
+import Control.Monad ( liftM3, when )
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary(..), decode, encode )
 import Data.Binary.Get ( runGetOrFail )
 import qualified Data.ByteString as Strict ( concat )
 import Data.ByteString ( ByteString )
-import Data.ByteString.Lazy as Lazy ( fromChunks, toChunks, append )
+import Data.ByteString.Lazy as Lazy ( fromChunks, toChunks, append, length )
 import qualified Data.ByteString.Lazy as Lazy ( ByteString )
+import qualified Data.ByteString.Lazy as BSL
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as M
 import Data.HashSet (HashSet)
@@ -130,6 +135,7 @@ import Data.Typeable ( Typeable, cast )
 import Data.Word (Word8)
 import GHC.Generics (Generic)
 
+import System.Directory (doesFileExist)
 
 rgTrace :: String -> Process ()
 rgTrace = mkHalonTracer "RG"
@@ -532,6 +538,9 @@ buildGraph mmchan rt (mi, kvs) = (\hm -> Graph mmchan emptyChangeLog hm gcInfo)
                          (_miGCThreshold mi)
                          (map (decodeRes rt) (_miRootNodes mi))
 
+-- | Builds an empty 'Graph' with the given 'StoreChan'.
+emptyGraph :: StoreChan -> Graph
+emptyGraph mmchan = Graph mmchan emptyChangeLog M.empty defaultGraphGCInfo
 
 -- | Updates the multimap store with the latest changes to the graph.
 --
@@ -544,12 +553,20 @@ buildGraph mmchan rt (mi, kvs) = (\hm -> Graph mmchan emptyChangeLog hm gcInfo)
 sync :: Graph -> Process () -> Process Graph
 sync g cb = do
     (cl, g') <- takeChangeLog <$> runGCIfThresholdMet g
+
+    when (shouldGC g) $
+      rgTrace . ("[StoreUpdate] size " ++) . show . Lazy.length . encode $ fromChangeLog cl
     updateStore (grMMChan g) (fromChangeLog cl) cb
     return g'
   where
     shouldGC :: Graph -> Bool
     shouldGC gr = let gi = grGraphGCInfo gr
                   in grGCThreshold gi > 0 && grSinceGC gi >= grGCThreshold gi
+
+    getFN i = do
+      b <- doesFileExist ("/tmp/pregc" ++ show i)
+      if b then getFN $ i + 1
+           else return ("/tmp/pregc" ++ show i)
 
     runGCIfThresholdMet :: Graph -> Process Graph
     runGCIfThresholdMet gr =
@@ -561,6 +578,13 @@ sync g cb = do
         let afterGCSize = M.size (grGraph gr')
         seq afterGCSize $ rgTrace $ "After GC, " ++ show afterGCSize
                                     ++ " nodes remain."
+        -- Serialize the old graph to a file for use in benchmarks later
+        let serialized = map (\(k, vs) -> (encodeRes k, map encodeRel vs)) $ getGraphResources gr
+        fn <- liftIO $ do
+          fn <- getFN 0
+          BSL.writeFile fn (encode serialized)
+          return fn
+        rgTrace $ "Wrote out pre-GC info to " ++ show fn
         return gr'
       else return gr
 
@@ -628,8 +652,7 @@ getResourcesOfType =
 
 -- * GC control
 
--- | Modify the 'GraphGCInfo' in the given graph. As it uses a merge,
--- 'grSinceGC' is preserved.
+-- | Modify the 'GraphGCInfo' in the given graph.
 modifyGCInfo :: (GraphGCInfo -> GraphGCInfo) -> Graph -> Graph
 modifyGCInfo f g = g
   { grGraphGCInfo = newGI
@@ -691,3 +714,10 @@ getGCThreshold = grGCThreshold . grGraphGCInfo
 -- upon sync. Set the value to @<= 0@ in order to disable the GC.
 setGCThreshold :: Int -> Graph -> Graph
 setGCThreshold i = modifyGCThreshold (const i)
+
+-- | Internally used default 'GraphGCInfo'. It is just like
+-- 'defaultMetaInfo' but sets the (empty) list of root nodes directly.
+defaultGraphGCInfo :: GraphGCInfo
+defaultGraphGCInfo = GraphGCInfo (_miSinceGC mi) (_miGCThreshold mi) []
+  where
+    mi = defaultMetaInfo

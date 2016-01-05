@@ -119,6 +119,8 @@ Benchmark sync-rg
   Default-Language: Haskell2010
   Hs-Source-Dirs:   benchmarks
 
+  Buildable:        False
+
   Ghc-Options: -threaded -Wall
 
   if flag(maintainer)
@@ -162,6 +164,41 @@ Benchmark sync-rg
                     stm
   Build-Depends:    network-transport-tcp >= 0.3,
                     network-transport-inmemory >= 0.5
+
+Benchmark gc-rg
+  Type:             exitcode-stdio-1.0
+  Main-Is:          gc-rg.hs
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   benchmarks
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
+  if flag(debug)
+    Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
+  Default-Extensions: DeriveDataTypeable
+                      DeriveGeneric
+                      GeneralizedNewtypeDeriving
+                      RecordWildCards NamedFieldPuns
+                      ScopedTypeVariables
+  Build-Depends:    halon,
+                    base >= 4.5,
+                    Cabal >= 1.16,
+                    criterion,
+                    binary >= 0.6.4,
+                    bytestring,
+                    deepseq,
+                    directory,
+                    filepath,
+                    hashable,
+                    unordered-containers,
+                    options-schema >= 0.1.1.0,
+                    random,
+                    containers
+
 
 Test-Suite unit-tests
   Type:             exitcode-stdio-1.0
