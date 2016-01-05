@@ -30,9 +30,7 @@ import HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
 
 import Mero.ConfC
-  ( PDClustAttr(..)
-  , Word128(..)
-  , Root
+  ( Root
   , withConf
   , initHASession
   , finiHASession
