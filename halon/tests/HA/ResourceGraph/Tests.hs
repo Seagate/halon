@@ -16,7 +16,12 @@ import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable (SerializableDict(..))
 
 import Control.Arrow ((>>>))
-import Control.Exception (SomeException, fromException, throwIO)
+import Control.Exception
+  ( AsyncException(..)
+  , SomeException
+  , fromException
+  , throwIO
+  )
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import qualified Data.HashSet as S
