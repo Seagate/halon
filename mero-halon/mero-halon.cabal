@@ -239,7 +239,10 @@ Executable halond
   Main-Is:            Main.hs
   Other-Modules:      Flags
 
-  Ghc-Options: -threaded -Wall
+  -- Reduce the context-switch interval to improve sharing
+  -- of the CPU when there are CPU-intensive computations
+  -- in the RC.
+  Ghc-Options: -threaded -Wall -with-rtsopts=-C0
 
   if flag(maintainer)
     Ghc-Options: -Werror
@@ -726,7 +729,7 @@ Test-Suite tests-mero-integration
                     TestRunner
                     RemoteTables
 
-  Ghc-Options:      -threaded -Wall -rtsopts
+  Ghc-Options:      -threaded -Wall -rtsopts -with-rtsopts=-C0
   CPP-Options:      -DMC_RG=RLogGroup
   Other-extensions:   RankNTypes
                       RecordWildCards
