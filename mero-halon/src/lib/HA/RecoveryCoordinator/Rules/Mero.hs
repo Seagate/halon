@@ -20,7 +20,6 @@ import Mero.Notification (Get(..), GetReply(..))
 import Mero.Notification.HAState (Note(..))
 
 import Control.Distributed.Process (usend)
-import Control.Monad.Catch (catch, SomeException)
 
 import Network.CEP
 
@@ -29,13 +28,11 @@ import Prelude hiding (id)
 
 meroRules :: Definitions LoopState ()
 meroRules = do
-  defineSimple "Sync-to-confd" $ \(HAEvent eid sync _) ->
-    syncAction (Just eid) sync `catch`
-    (\e -> do phaseLog "error" $ "Exception during synchronization: " ++ show (e::SomeException)
-              messageProcessed eid)
+  defineSimple "Sync-to-confd" $ \(HAEvent eid sync _) -> do
+    syncAction (Just eid) sync
+    messageProcessed eid
   defineSimple "Sync-to-confd-local" $ \(uuid, sync) -> do
-    syncAction Nothing sync `catch`
-       (\e -> do phaseLog "error" $ "Exception during synchronization: " ++ show (e::SomeException))
+    syncAction Nothing sync
     selfMessage (SyncComplete uuid)
 
   -- This rule answers to the notification interface when it wants to get the

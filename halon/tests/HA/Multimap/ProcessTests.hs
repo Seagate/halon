@@ -14,7 +14,8 @@
 module HA.Multimap.ProcessTests where
 
 import HA.Multimap.Process ( startMultimap )
-import HA.Multimap ( StoreUpdate(..), updateStore, getKeyValuePairs, StoreChan )
+import HA.Multimap ( MetaInfo, StoreUpdate(..), defaultMetaInfo, updateStore
+                   , getKeyValuePairs, StoreChan )
 import HA.Multimap.Implementation ( fromList, Multimap )
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR
@@ -68,7 +69,7 @@ testMultimapAsync mm = do
   where
     b0:b1:b2:b3:_ = map (pack . ('b':) . show) [(0::Int)..]
 
-mmSDict :: SerializableDict Multimap
+mmSDict :: SerializableDict (MetaInfo, Multimap)
 mmSDict = SerializableDict
 
 remotable [ 'mmSDict ]
@@ -84,9 +85,9 @@ tests transport =
       withLocalNode transport (__remoteTable remoteTable) $ \lnid -> do
         runProcess lnid $ do
           nid <- getSelfNode
-          cRGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (fromList [])
+          cRGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (defaultMetaInfo, fromList [])
           pRGroup <- unClosure cRGroup
-          rGroup <- pRGroup :: Process (MC_RG Multimap)
+          rGroup <- pRGroup :: Process (MC_RG (MetaInfo, Multimap))
           self <- getSelfPid
           (mmpid, mmchan) <- startMultimap rGroup $ \loop -> link self >> loop
           link mmpid

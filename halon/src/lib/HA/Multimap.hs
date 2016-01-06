@@ -20,9 +20,11 @@ module HA.Multimap
     , StoreChan(..)
     , getKeyValuePairs
     , updateStore
+    , MetaInfo(..)
+    , getStoreValue
+    , defaultMetaInfo
     ) where
 
-import Prelude hiding ((<$>))
 import Control.Concurrent.STM.TChan
 import Control.Distributed.Process
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
@@ -33,7 +35,6 @@ import Data.ByteString ( ByteString )
 import Data.Binary ( Binary, decode )
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
-
 
 -- | Types of keys
 type Key = ByteString
@@ -78,6 +79,8 @@ data StoreUpdate =
     -- >  DeleteKeys xs store = { (k,s) | (k,s)<-store, k `notMember` xs }
     --
   | DeleteKeys [Key]
+    -- | Sets the graph meta information, overwriting any old value
+  | SetMetaInfo MetaInfo
 
  deriving (Generic,Typeable)
 
@@ -94,20 +97,44 @@ data StoreChan =
                         -- carry the updates plus a callback to execute when
                         -- the update has been replicated.
 
+-- | Replicated metainfo used by RG GC.
+data MetaInfo = MetaInfo
+  { -- | Graph disconnects since last major GC.
+    _miSinceGC :: Int
+    -- | Disconnect threshold after which we should perform major GC.
+  , _miGCThreshold :: Int
+    -- | List of root nodes that should be considered by the GC. These
+    -- are later deserialised to @Res@ in RG module.
+  , _miRootNodes :: [ByteString]
+  } deriving (Generic, Typeable)
+
+instance Binary MetaInfo
+
+-- | Default value for 'MetaInfo'.
+defaultMetaInfo :: MetaInfo
+defaultMetaInfo = MetaInfo 0 100 []
+
+-- | @getStoreValue mmChan@ yields graph 'MetaInfo' along with all the
+-- keys and values in the store.
+--
+-- @mmChan@ is the channel to the store.
+getStoreValue :: StoreChan -> Process (MetaInfo, [(Key,[Value])])
+getStoreValue (StoreChan mmpid rchan _) = do
+    -- FIXME: Don't contact the local multimap but query the replicas directly
+    self <- getSelfPid
+    liftIO $ atomically $ writeTChan rchan self
+    when schedulerIsEnabled $ usend mmpid ()
+    (mi, x) <- expect
+    -- Decoding is forced to get any related errors at this point.
+    let xs = decode x
+    length (_miRootNodes mi) `seq` length xs `seq` return (mi, xs)
+
 -- | @getKeyValuePairs mmChan@ yields all the keys and values in the store.
 --
 -- @mmChan@ is the channel to the store.
 --
 getKeyValuePairs :: StoreChan -> Process [(Key,[Value])]
-getKeyValuePairs (StoreChan mmpid rchan _) = do
-    -- FIXME: Don't contact the local multimap but query the replicas directly
-    self <- getSelfPid
-    liftIO $ atomically $ writeTChan rchan self
-    when schedulerIsEnabled $ usend mmpid ()
-    x <- expect
-    -- Decoding is forced to get any related errors at this point.
-    let xs = decode x
-    seq (length xs) $ return xs
+getKeyValuePairs = fmap snd . getStoreValue
 
 -- | The type of @updateStore@. It updates the store with a batch of operations.
 --

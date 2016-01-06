@@ -9,15 +9,18 @@ import Control.Distributed.Process
   , RemoteTable
   , liftIO
   , getSelfNode
-  , say
   , unClosure
+  , say
+  , usend
+  , expect
+  , getSelfPid
   )
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Monad (forM_, join)
 
-import Data.List (sort, unfoldr, isPrefixOf, findIndex)
+import Data.List (sort, isPrefixOf)
 import qualified Data.Set as Set
 
 import Network.Transport (Transport)
@@ -32,9 +35,10 @@ import Network.CEP.Testing (runPhase, runPhaseGet)
 import HA.Multimap
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (startMultimap)
-#ifdef USE_MERO
 import HA.RecoveryCoordinator.Actions.Mero
-#endif
+import HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
+import Mero.ConfC (PDClustAttr(..))
+import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
 import HA.RecoveryCoordinator.Mero
 import HA.Replicator (RGroup(..))
 #ifdef USE_MOCK_REPLICATOR
@@ -53,7 +57,7 @@ import RemoteTables (remoteTable)
 import TestRunner
 
 import Test.Framework
-import System.IO
+import qualified Test.Tasty.HUnit as Tasty
 import System.Mem
 import GHC.Stats
 
@@ -61,7 +65,7 @@ import Helper.InitialData
 import Helper.Environment (systemHostname)
 import Helper.RC
 
-mmSDict :: SerializableDict Multimap
+mmSDict :: SerializableDict (MetaInfo, Multimap)
 mmSDict = SerializableDict
 
 remotable
@@ -77,21 +81,23 @@ rGroupTest transport p =
   tryRunProcessLocal transport myRemoteTable $ do
     nid <- getSelfNode
     rGroup <- newRGroup $(mkStatic 'mmSDict) 30 1000000
-                [nid, localNodeId lnid2, localNodeId lnid3] (fromList [])
+                [nid, localNodeId lnid2, localNodeId lnid3] (defaultMetaInfo, fromList [])
                 >>= unClosure
-                >>= (`asTypeOf` return (undefined :: MC_RG Multimap))
+                >>= (`asTypeOf` return (undefined :: MC_RG (MetaInfo, Multimap)))
     (_, mmchan) <- startMultimap rGroup id
     p mmchan
 
 tests :: String -> Transport -> [TestTree]
 tests host transport = map (localOption (mkTimeout $ 10*60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport
+  , testSuccess "failure-sets-2" $ testFailureSets2 transport
   , testSuccess "initial-data-doesn't-error" $ loadInitialData host transport
-  , testSuccess "large-data" $ largeInitialData host transport
+  -- , testSuccess "large-data" $ largeInitialData host transport
+  , testSuccess "controller-failure" $ testControllerFailureDomain transport
   ]
 
-fsSize :: FailureSet -> Int
-fsSize (FailureSet a _) = Set.size a
+fsSize :: (a, Set.Set b) -> Int
+fsSize (_, a) = Set.size a
 
 testFailureSets :: Transport -> IO ()
 testFailureSets transport = rGroupTest transport $ \pid -> do
@@ -103,19 +109,59 @@ testFailureSets transport = rGroupTest transport $ \pid -> do
       loadMeroGlobals (CI.id_m0_globals initialData)
       loadMeroServers filesystem (CI.id_m0_servers initialData)
     -- 8 disks, tolerating one disk failure at a time
-    failureSets <- runGet ls' $ generateFailureSets 1 0 0
-    say $ show failureSets
+    let g = lsGraph ls'
+        failureSets = generateFailureSets 1 0 0 g (CI.id_m0_globals initialData)
     assertMsg "Number of failure sets (100)" $ length failureSets == 9
     assertMsg "Smallest failure set is empty (100)"
       $ fsSize (head failureSets) == 0
 
     -- 8 disks, two failures at a time
-    failureSets2 <- runGet ls' $ generateFailureSets 2 0 0
+    let failureSets2 = generateFailureSets 2 0 0 g (CI.id_m0_globals initialData)
     assertMsg "Number of failure sets (200)" $ length failureSets2 == 37
     assertMsg "Smallest failure set is empty (200)"
       $ fsSize (head failureSets2) == 0
     assertMsg "Next smallest failure set has one disk (200)"
       $ fsSize (failureSets2 !! 1) == 1
+
+testFailureSets2 :: Transport -> IO ()
+testFailureSets2 transport = rGroupTest transport $ \pid -> do
+    me <- getSelfNode
+    ls <- emptyLoopState pid (nullProcessId me)
+    (ls', _) <- run ls $ do
+      mapM_ goRack (CI.id_racks iData)
+      filesystem <- initialiseConfInRG
+      loadMeroGlobals (CI.id_m0_globals iData)
+      loadMeroServers filesystem (CI.id_m0_servers iData)
+    -- 16 disks, tolerating one disk failure at a time
+    let g = lsGraph ls'
+        failureSets = generateFailureSets 1 0 0 g (CI.id_m0_globals iData)
+    assertMsg "Number of failure sets (100)" $ length failureSets == 17
+    assertMsg "Smallest failure set is empty (100)"
+      $ fsSize (head failureSets) == 0
+
+    -- 16 disks, two failures at a time
+    let failureSets2 = generateFailureSets 2 0 0 g (CI.id_m0_globals iData)
+    assertMsg "Number of failure sets (200)" $ length failureSets2 == 137
+    assertMsg "Smallest failure set is empty (200)"
+      $ fsSize (head failureSets2) == 0
+    assertMsg "Next smallest failure set has one disk (200)"
+      $ fsSize (failureSets2 !! 1) == 1
+
+    let failureSets010 = generateFailureSets 0 1 0 g (CI.id_m0_globals iData)
+    assertMsg "Number of failure sets (010)" $ length failureSets010 == 5
+    assertMsg "Smallest failure set is empty (010)"
+      $ fsSize (head failureSets010) == 0
+    assertMsg "Next smallest failure set has 4 disks and one controller (010)"
+      $ fsSize (failureSets010 !! 1) == 5
+
+    let failureSets110 = generateFailureSets 1 1 0 g (CI.id_m0_globals iData)
+    assertMsg "Number of failure sets (110)" $ length failureSets110 == 69
+    assertMsg "Smallest failure set is empty (110)"
+      $ fsSize (head failureSets110) == 0
+    assertMsg "Next smallest failure set has 1 disk and zero controllers (110)"
+      $ fsSize (failureSets110 !! 1) == 1
+  where
+    iData = initialDataGen systemHostname "192.0.2" 4 4 $ CI.Dynamic
 
 loadInitialData :: String -> Transport -> IO ()
 loadInitialData host transport = rGroupTest transport $ \pid -> do
@@ -131,9 +177,9 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
       loadMeroGlobals (CI.id_m0_globals initialData)
       loadMeroServers filesystem (CI.id_m0_servers initialData)
       rg <- getLocalGraph
-      failureSets <- generateFailureSets 2 2 1
-      let pvers = failureSetToPoolVersion rg filesystem <$> failureSets
-      createPoolVersions filesystem pvers
+      let Just updateGraph = onInit (simpleStrategy 2 2 1) rg
+      rg' <- updateGraph return
+      putLocalGraph rg'
     -- Verify that everything is set up correctly
     bmc <- runGet ls' $ findBMCAddress myHost
     assertMsg "Get BMC Address." $ bmc == Just host
@@ -173,23 +219,91 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
     assertMsg "Number of disks (reached by host)" $ length disksByHost == 8
     assertMsg "Number of disks" $ length disks == 8
     assertMsg "Number of disk versions" $ length dvers1 == 29
-
-
+    forM_ (getResourcesOfType g :: [M0.PVer]) $ \pver -> do
+      let PDClustAttr { _pa_N = paN
+                      , _pa_K = paK
+                      , _pa_P = paP
+                      } = M0.v_attrs pver
+      assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals initialData) == paN
+      assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals initialData) == paK
+      let dver = [ diskv | rackv <- connectedTo  pver M0.IsParentOf g :: [M0.RackV]
+                         , enclv <- connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
+                         , cntrv <- connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
+                         , diskv <- connectedTo cntrv M0.IsParentOf g :: [M0.DiskV]]
+      liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
   where
     myHost = Host systemHostname
 
-printMem :: IO ()
+-- | Test that failure domain logic works correctly when we are
+testControllerFailureDomain :: Transport -> IO ()
+testControllerFailureDomain transport = rGroupTest transport $ \pid -> do
+    me <- getSelfNode
+    ls <- emptyLoopState pid (nullProcessId me)
+    (ls', _) <- run ls $ do
+      mapM_ goRack (CI.id_racks iData)
+      filesystem <- initialiseConfInRG
+      loadMeroGlobals (CI.id_m0_globals iData)
+      loadMeroServers filesystem (CI.id_m0_servers iData)
+      rg <- getLocalGraph
+      let Just updateGraph = onInit (simpleStrategy 0 1 0) rg
+      rg' <- updateGraph return
+      putLocalGraph rg'
+    -- Verify that everything is set up correctly
+    (Just fs) <- runGet ls' getFilesystem
+    let pool = M0.Pool (M0.f_mdpool_fid fs)
+    assertMsg "MDPool is stored in RG"
+      $ memberResource pool (lsGraph ls')
+    mdpool <- runGet ls' $ lookupConfObjByFid (M0.f_mdpool_fid fs)
+    assertMsg "MDPool is findable by Fid"
+      $ mdpool == Just pool
+    -- We have 4 disks in 4 enclosures.
+    hosts <- runGet ls' $ findHosts ".*"
+    let g = lsGraph ls'
+        pvers = connectedTo pool M0.IsRealOf g :: [M0.PVer]
+        racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
+        encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
+        ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
+        disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
+
+        sdevs = join $ fmap (\r -> connectedTo r Has g :: [StorageDevice]) hosts
+        disksByHost = join $ fmap (\r -> connectedFrom M0.At r g :: [M0.Disk]) sdevs
+
+        disk1 = head disks
+        dvers1 = connectedTo disk1 M0.IsRealOf g :: [M0.DiskV]
+
+    assertMsg "Number of pvers" $ length pvers == 5
+    assertMsg "Number of racks" $ length racks == 1
+    assertMsg "Number of enclosures" $ length encls == 4
+    assertMsg "Number of controllers" $ length ctrls == 4
+    assertMsg "Number of storage devices" $ length sdevs == 16
+    assertMsg "Number of disks (reached by host)" $ length disksByHost == 16
+    assertMsg "Number of disks" $ length disks == 16
+    assertMsg "Number of disk versions" $ length dvers1 == 4
+    forM_ (getResourcesOfType g :: [M0.PVer]) $ \pver -> do
+      let PDClustAttr { _pa_N = paN
+                      , _pa_K = paK
+                      , _pa_P = paP
+                      } = M0.v_attrs pver
+      assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals iData) == paN
+      assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals iData) == paK
+      let dver = [ diskv | rackv <- connectedTo  pver M0.IsParentOf g :: [M0.RackV]
+                         , enclv <- connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
+                         , cntrv <- connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
+                         , diskv <- connectedTo cntrv M0.IsParentOf g :: [M0.DiskV]]
+      liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
+  where
+    iData = initialDataGen systemHostname "192.0.2" 4 4 $ CI.Preloaded 0 1 0
+
+
+printMem :: IO String
 printMem = do
   performGC
-  readFile "/proc/self/status" >>=
-    hPutStr stderr . unlines . filter (\x -> any (`isPrefixOf` x) ["VmHWM", "VmRSS"])
-                   . lines
+  l1 <- fmap (unlines . filter (\x -> any (`isPrefixOf` x) ["VmHWM", "VmRSS"])
+                      . lines) (readFile "/proc/self/status")
   stats <- getGCStats
-  hPutStrLn stderr $ "In use according to GC stats: " ++
-    show (currentBytesUsed stats `div` (1024 * 1024)) ++ " MB"
-  hPutStrLn stderr $ "HWM according the GC stats: " ++
-    show (maxBytesUsed stats `div` (1024 * 1024)) ++ " MB"
-  hPutStrLn stderr ""
+  let l2 = "In use according to GC stats: " ++ show (currentBytesUsed stats `div` (1024 * 1024)) ++ " MB"
+      l3 = "HWM according the GC stats: " ++ show (maxBytesUsed stats `div` (1024 * 1024)) ++ " MB"
+  return $ unlines [l1,l2,l3]
 
 largeInitialData :: String -> Transport -> IO ()
 largeInitialData host transport = let
@@ -201,7 +315,6 @@ largeInitialData host transport = let
       me <- getSelfNode
       ls <- emptyLoopState pid (nullProcessId me)
       (ls', _) <- run ls $ do
-        rg <- getLocalGraph
         -- TODO: the interface address is hard-coded here: currently we
         -- don't use it so it doesn't impact us but in the future we
         -- should also take it as a parameter to the test, just like the
@@ -210,24 +323,17 @@ largeInitialData host transport = let
         filesystem <- initialiseConfInRG
         loadMeroGlobals (CI.id_m0_globals initD)
         loadMeroServers filesystem (CI.id_m0_servers initD)
-        failureSets <- generateFailureSets 1 0 0
-        let chunks = flip unfoldr failureSets $ \xs ->
-              case xs of
-                [] -> Nothing
-                _  -> case findIndex (>2000) $ scanl1 (+) $
-                             map ((numDisks -) . fsSize) xs of
-                  -- put all sets in one chunk
-                  Nothing -> Just (xs, [])
-                  -- ensure at most one set is in the chunk
-                  -- TODO: split failure sets which are too big.
-                  Just i -> Just $ splitAt (max 1 i) xs
-        liftProcess $ liftIO $ hPutStrLn stderr $ "have " ++ show (length chunks) ++
-                      " chunks for " ++ show (length failureSets) ++ " failure sets."
-        forM_ (zip [0..] chunks) $ \(i, chunk) -> do
-          let pvers = failureSetToPoolVersion rg filesystem <$> chunk
-          createPoolVersions filesystem pvers
-          liftProcess $ liftIO $ hPutStrLn stderr $ "submitting chunk " ++ show (i :: Int)
+        self <- liftProcess $ getSelfPid
+        syncGraph $ usend self ()
+        liftProcess (expect :: Process ())
+        rg <- getLocalGraph
+        let Just updateGraph = onInit (simpleStrategy 1 0 0) rg
+        rg' <- updateGraph $ \g -> do
+          putLocalGraph g
           syncGraph (return ())
+          getLocalGraph
+        putLocalGraph rg'
+
 
       -- Verify that everything is set up correctly
       bmc <- runGet ls' $ findBMCAddress myHost
@@ -245,19 +351,17 @@ largeInitialData host transport = let
       assertMsg "MDPool is findable by Fid"
         $ mdpool == Just pool
 
-      liftIO printMem
-      -- let g = lsGraph ls'
+      say =<< liftIO printMem
       g <- getGraph pid
       let racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
           encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
           ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
           disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
-
           sdevs = join $ fmap (\r -> connectedTo r Has g :: [StorageDevice]) hosts
           disksByHost = join $ fmap (\r -> connectedFrom M0.At r g :: [M0.Disk]) sdevs
 
-      liftIO printMem
-      assertMsg "Number of racks" $ length racks == 1
+      say =<< liftIO printMem
+      liftIO $ Tasty.assertEqual "Numbe of racks" 1 (length racks)
       assertMsg "Number of enclosures" $ length encls == 1
       assertMsg "Number of controllers" $ length ctrls == 1
       assertMsg "Number of storage devices" $ length sdevs == numDisks

@@ -16,6 +16,7 @@ module HA.RecoveryCoordinator.Actions.Core
     -- * Operating on the graph
   , getMultimapChan
   , syncGraph
+  , syncGraphBlocking
   , syncGraphProcess
   , syncGraphProcessMsg
   , knownResource
@@ -58,7 +59,10 @@ import Control.Distributed.Process
   ( ProcessId
   , Process
   , usend
+  , newChan
+  , receiveChan
   , say
+  , sendChan
   , getSelfPid
 #ifdef USE_MERO
   , liftIO
@@ -124,6 +128,13 @@ modifyLocalGraph k = do
 syncGraph :: Process () -> PhaseM LoopState l ()
 syncGraph callback = modifyLocalGraph $ \rg ->
   liftProcess $ G.sync rg callback
+
+-- | Sync the graph and block the caller until this is complete. This
+--   internally uses a wait for a hidden message type.
+syncGraphBlocking :: PhaseM LoopState l ()
+syncGraphBlocking = modifyLocalGraph $ \rg -> liftProcess $ do
+  (sp, rp) <- newChan
+  G.sync rg (sendChan sp ()) <* receiveChan rp
 
 -- | 'syncGraph' wrapper that will notify EQ about message beign processed.
 -- This wrapper could be used then graph synchronization is a last command

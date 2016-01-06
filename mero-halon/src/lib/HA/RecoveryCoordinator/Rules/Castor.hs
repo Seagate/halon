@@ -6,7 +6,6 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE LambdaCase            #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -38,10 +37,11 @@ import HA.Resources.Mero hiding (Node, Process, Enclosure, Rack)
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Actions.Mero
+import HA.RecoveryCoordinator.Actions.Mero.Failure
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState
 import Control.Exception (SomeException)
-import Data.List (unfoldr)
+--import Data.List (unfoldr)
 import Data.UUID.V4 (nextRandom)
 import Data.Proxy (Proxy(..))
 #endif
@@ -51,7 +51,7 @@ import Control.Distributed.Process.Closure (mkClosure)
 
 import Control.Applicative (liftA2)
 import Control.Monad
-import Data.Maybe (mapMaybe, listToMaybe)
+import Data.Maybe (isJust, mapMaybe, listToMaybe)
 import Data.Binary (Binary)
 import Data.Monoid ((<>))
 import Data.Text (Text, pack)
@@ -164,37 +164,26 @@ castorRules = sequence_
   , ruleNewMeroClient
   ]
 
-data InitialDataChunk = InitialDataChunk
-  deriving (Eq,Show,Typeable,Generic)
-
-instance Binary InitialDataChunk
-
 ruleInitialDataLoad :: Definitions LoopState ()
 ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
       mapM_ goRack id_racks
+      syncGraphBlocking
 #ifdef USE_MERO
-      rg <- getLocalGraph
       filesystem <- initialiseConfInRG
       loadMeroGlobals id_m0_globals
       loadMeroServers filesystem id_m0_servers
-      failureSets <- case (CI.m0_failure_set_gen id_m0_globals) of
-        CI.Dynamic -> return []
-        CI.Preloaded x y z -> generateFailureSets x y z
-      let
-        poolVersions = fmap (failureSetToPoolVersion rg filesystem) failureSets
-        chunks = flip unfoldr poolVersions $ \xs ->
-          case xs of
-            [] -> Nothing
-            _  -> -- TODO: Take into account the size of failure sets to do
-                  -- the spliting.
-                  Just $ splitAt 5 xs
-      forM_ chunks $ \chunk -> do
-        createPoolVersions filesystem chunk
-        syncGraphProcess $ \self -> usend self InitialDataChunk
-        liftProcess $ expect >>= \InitialDataChunk -> return ()
-      -- We make sure that the next message is emitted only when the
-      -- graph has been synchronized.
-      (if null chunks then syncGraph else liftProcess) $
+      graph <- getLocalGraph
+      syncGraphBlocking
+      Just strategy <- getCurrentStrategy
+      let update = onInit strategy graph
+      forM_ update $ \updateGraph -> do
+        graph' <- updateGraph $ \rg -> do
+          putLocalGraph rg
+          syncGraphBlocking
+          getLocalGraph
+        putLocalGraph graph'
+        syncGraphBlocking
+      (if isJust update then liftProcess else syncGraph) $
         say "Loaded initial data"
 #else
       syncGraph $ say "Loaded initial data"
@@ -213,7 +202,7 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
 
 #ifdef USE_MERO
 ruleMeroNoteSet :: Definitions LoopState ()
-ruleMeroNoteSet = 
+ruleMeroNoteSet =
     defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> do
       for_ ns $ \(Note mfid tpe) ->
         case tpe of
@@ -590,14 +579,14 @@ ruleNewMeroClient = define "new-mero-client" $ do
                                          , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
                                          ] of
             Just nd -> return nd
-            Nothing -> M0.Node <$> newFid (Proxy :: Proxy M0.Node)
+            Nothing -> M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
           -- Check if process is already defined in RG
           let mprocess = listToMaybe
                 $ filter (\(M0.Process _ _ _ _ _ _ a) -> a == ip ++ rmsAddress)
                 $ G.connectedTo m0node M0.IsParentOf rg
           process <- case mprocess of
             Just process -> return process
-            Nothing -> M0.Process <$> newFid (Proxy :: Proxy M0.Process)
+            Nothing -> M0.Process <$> newFidRC (Proxy :: Proxy M0.Process)
                                   <*> pure memsize'
                                   <*> pure memsize'
                                   <*> pure memsize'
@@ -610,7 +599,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
                 $ G.connectedTo process M0.IsParentOf rg
           rmsService <- case mrmsService of
             Just service -> return service
-            Nothing -> M0.Service <$> newFid (Proxy :: Proxy M0.Service)
+            Nothing -> M0.Service <$> newFidRC (Proxy :: Proxy M0.Service)
                                   <*> pure CST_RMS
                                   <*> pure [ip ++ rmsAddress]
                                   <*> pure SPUnused
@@ -620,7 +609,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
                 $ G.connectedTo process M0.IsParentOf rg
           haService <- case mhaService of
             Just service -> return service
-            Nothing -> M0.Service <$> newFid (Proxy :: Proxy M0.Service)
+            Nothing -> M0.Service <$> newFidRC (Proxy :: Proxy M0.Service)
                                   <*> pure CST_HA
                                   <*> pure [ip ++ haAddress]
                                   <*> pure SPUnused

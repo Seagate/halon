@@ -122,7 +122,7 @@ globalEndpointRef = unsafePerformIO $ newMVar emptyEndpointRef
 -- RC is capable of updating this cache on each step, and clearing that
 -- when it's no longer an RC.
 -- This variable is intended to be used as follows:
--- 1. Before RC is running an operation that could send requests to 
+-- 1. Before RC is running an operation that could send requests to
 --    RG via RC, it should put current graph into the variable
 -- 2. After RC have finished running this operation RC should put @Nothing@
 --    into cache variable
@@ -192,15 +192,17 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
     say "initializeInternal: making new endpoint"
     say $ "listening at " ++ show addr
     self <- getSelfPid
-    register notificationHandlerLabel self
-    onException 
-      (liftGlobalM0 $ do
-        initRPC
-        ep <- listen addr listenCallbacks
-        addM0Finalizer $ finalizeInternal globalEndpointRef
-        let ref' = emptyEndpointRef { _erServerEndpoint = Just ep }
-        return (globalEndpointRef, ref', ep))
-      (liftIO $ putMVar globalEndpointRef ref)
+    onException
+      (do
+        register notificationHandlerLabel self
+        liftGlobalM0 $ do
+          initRPC
+          ep <- listen addr listenCallbacks
+          addM0Finalizer $ finalizeInternal globalEndpointRef
+          let ref' = emptyEndpointRef { _erServerEndpoint = Just ep }
+          return (globalEndpointRef, ref', ep))
+      (do unregister notificationHandlerLabel
+          liftIO $ putMVar globalEndpointRef ref)
   where
     listenCallbacks = ListenCallbacks {
       receive_callback = \_ _ -> return False
@@ -254,14 +256,14 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
     ha_entrypoint fom crep = void $ CH.forkProcess lnode $ do
       say "ha_entrypoint: try to read values from cache."
       self <- getSelfPid
-      liftIO ( (getSpielAddress =<<) <$> readIORef globalResourceGraphCache) 
-        >>= \case 
+      liftIO ( (getSpielAddress =<<) <$> readIORef globalResourceGraphCache)
+        >>= \case
                Just ep -> return $ Just ep
                Nothing -> do
                  say "ha_entrypoint: request adderess from RC."
                  void $ promulgate $ GetSpielAddress self
                  fmap join $ expectTimeout entryPointTimeout
-        >>= \case 
+        >>= \case
                  Just ep -> do
                    liftGlobalM0 $
                      entrypointReplyWakeup fom crep (sa_confds_fid ep)

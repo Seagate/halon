@@ -158,8 +158,7 @@ initialize mm = do
     -- Empty graph means cluster initialization.
     let rg' | G.null rg =
             G.newResource Cluster >>>
-            (\g -> g { G.grRootNodes =
-                       G.grRootNodes g <> HS.singleton (G.Res Cluster) })
+            G.addRootNode Cluster
             $ rg
             | otherwise = rg
     return rg'

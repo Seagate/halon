@@ -16,7 +16,7 @@ module HA.Multimap.Process
     ( startMultimap, __remoteTable ) where
 
 import HA.Logger (mkHalonTracer)
-import HA.Multimap (StoreUpdate(..), StoreChan(..))
+import HA.Multimap ( StoreUpdate(..), StoreChan(..), MetaInfo(..) )
 import HA.Multimap.Implementation
             ( Multimap, insertMany, deleteValues, deleteKeys, toList )
 import HA.Replicator
@@ -36,24 +36,27 @@ import Data.ByteString ( ByteString )
 import Data.ByteString.Builder ( lazyByteString, toLazyByteString )
 import Data.ByteString.Lazy ( toChunks, fromChunks )
 import Data.Function ( fix )
+import Data.Maybe ( fromMaybe, listToMaybe )
 import Data.List ( foldl' )
-
 
 mmTrace :: String -> Process ()
 mmTrace = mkHalonTracer "MM"
 
 -- | The update function of the Multimap.
-updateStore :: [StoreUpdate] -> Multimap -> Multimap
-updateStore = flip $ foldl' $ flip applyUpdate
+updateStore :: [StoreUpdate] -> (MetaInfo, Multimap) -> (MetaInfo, Multimap)
+updateStore su (mi, mm) = (newMI, foldl' (flip applyUpdate) mm su)
   where
     applyUpdate :: StoreUpdate -> Multimap -> Multimap
     applyUpdate (InsertMany kvs) = insertMany kvs
     applyUpdate (DeleteValues kvs) = deleteValues kvs
     applyUpdate (DeleteKeys ks) = deleteKeys ks
+    applyUpdate (SetMetaInfo{}) = id
+
+    newMI = fromMaybe mi $ listToMaybe [ m | SetMetaInfo m <- su ]
 
 -- | Sends the multimap in chunks to the given process.
-readStore :: ProcessId -> Multimap -> Process ()
-readStore caller mmap = void $ spawnLocal $ do
+readStore :: ProcessId -> (MetaInfo, Multimap) -> Process ()
+readStore caller (mi, mmap) = void $ spawnLocal $ do
     link caller
     getSelfPid >>= usend caller
     -- For some reason, 'encode' from binary does not care to conflate the
@@ -61,11 +64,13 @@ readStore caller mmap = void $ spawnLocal $ do
     -- sized chunks by using 'Data.ByteString.Builder.Builder'.
     mapM_ (usend caller) $ toChunks $
       toLazyByteString $ lazyByteString $ encode $ toList mmap
-    usend caller ()
+    -- Send metainfo in the end, also marking the end of the MM stream
+    usend caller mi
     -- We wait for the caller to finish reading the chunks,
     -- otherwise it may receive prematurely a notification of
     -- our death.
     expect
+
 
 remotable [ 'updateStore, 'readStore ]
 
@@ -80,7 +85,7 @@ requestTimeout = 4 * 1000 * 1000
 -- The given function is used to setup the multimap process. It takes the main
 -- loop as argument and it offers an oportunity to run a custom setup before
 -- entering the loop.
-startMultimap :: RGroup g => g Multimap
+startMultimap :: RGroup g => g (MetaInfo, Multimap)
                           -> (forall a. Process a -> Process a)
                           -> Process (ProcessId, StoreChan)
 startMultimap rg f = mdo
@@ -93,7 +98,7 @@ startMultimap rg f = mdo
 --
 -- All updates to the replicated state are queued in the mailbox
 -- and replicated together.
-multimap :: RGroup g => StoreChan -> g Multimap -> Process ()
+multimap :: RGroup g => StoreChan -> g (MetaInfo, Multimap) -> Process ()
 multimap (StoreChan _ rchan wchan) rg =
     flip finally (mmTrace "terminated") $
     flip catch (\e -> do mmTrace $ "exception " ++ show (e :: SomeException)
@@ -146,9 +151,9 @@ multimap (StoreChan _ rchan wchan) rg =
             -- sends the chunks, consider the attempt failed and resend the read
             -- request.
             flip fix [] $ \loop xs -> receiveWait
-              [ match $ \() -> do
+              [ match $ \(mi :: MetaInfo) -> do
                   when schedulerIsEnabled $ sendChan sp ()
-                  liftIO $ putMVar mvRes $ Just $ fromChunks $ reverse xs
+                  liftIO $ putMVar mvRes $ Just (mi, fromChunks $ reverse xs)
               , match $ \bs ->
                   loop (bs : xs :: [ByteString])
               , matchIf (\(ProcessMonitorNotification ref' _ _)
@@ -174,5 +179,5 @@ multimap (StoreChan _ rchan wchan) rg =
                 -- We were disconnected while reading the response. Resend the
                 -- read request.
                 Nothing -> retryLoop
-                Just bs -> mmTrace "finished reading" >> usend caller bs
+                Just mibs -> mmTrace "finished reading" >> usend caller mibs
     ) >> go
