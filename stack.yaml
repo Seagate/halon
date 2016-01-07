@@ -51,6 +51,7 @@ docker:
   - TEST_LISTEN=127.0.0.1:8090
 
 nix:
+  enable: false
   packages: [ leveldb
             , libiconv
             , pcre
