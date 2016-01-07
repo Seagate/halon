@@ -150,6 +150,7 @@ startEventQueue rg = do
       -- responding and won't ever care of checking the replicated state to learn
       -- of new RCs
       st <- for mRC $ \pid -> fmap (EventQueueState pid) $ monitor pid
+      eqTrace "Started"
       execute st $ eqRules rg
       eqTrace "Terminated"
      `catch` \e -> do
