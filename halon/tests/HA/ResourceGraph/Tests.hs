@@ -31,7 +31,7 @@ import GHC.Generics (Generic)
 
 import Network.Transport (Transport)
 
-import HA.Multimap (defaultMetaInfo, MetaInfo, StoreChan)
+import HA.Multimap (defaultMetaInfo, getKeyValuePairs, MetaInfo, StoreChan)
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (startMultimap)
 import HA.Replicator (RGroup(..))
@@ -173,15 +173,16 @@ tests transport = do
       [ testSuccess "initial-graph" $ rGroupTest transport g $ \mm -> do
           _g <- syncWait =<< getGraph mm
           ns <- getKeyValuePairs mm
-          assertBool "getKeyValuePairsWithoutGCInfo is empty" $ ns == []
-
+          assertBool "getKeyValuePairs is empty" $ ns == []
+      , testSuccess "gc-info-graph-still-null" $ rGroupTest transport g $ \mm -> do
+         g1 <- syncWait =<< getGraph mm
+         assertBool "fresh graph is null" $ HA.ResourceGraph.null g1
       , testSuccess "kv-length" $ rGroupTest transport g $ \mm -> do
           _g <- syncWait . sampleGraph =<< getGraph mm
           kvs <- getKeyValuePairs mm
           assertBool "there are 4 keys" $ 4 == length kvs
           assertBool "the values are sane"
             $ [0, 1, 2, 3] == sort (map (length . snd) kvs)
-
       , testSuccess "edge-nodeA-1" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
           let es0 = edgesFromSrc (NodeA 1) g1
@@ -298,9 +299,6 @@ tests transport = do
           -- one we synced
           assertBool "Meta not default" $ meta g1 /= meta g2'
           assertBool "Same meta" $ meta g2 == meta g2'
-      , testSuccess "gc-info-graph-still-null" $ rGroupTest transport g $ \mm -> do
-         g1 <- syncWait =<< getGraph mm
-         assertBool "fresh graph is null" $ HA.ResourceGraph.null g1
       , testSuccess "merge-resources" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
           g2 <- syncWait $ mergeResources head [NodeA 1, NodeA 2] g1

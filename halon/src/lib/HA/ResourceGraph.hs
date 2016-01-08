@@ -53,7 +53,6 @@ module HA.ResourceGraph
     , mergeResources
     , sync
     , getGraph
-    , HA.ResourceGraph.getKeyValuePairs
     , garbageCollect
     , garbageCollectRoot
     -- * Queries
@@ -303,7 +302,7 @@ data Edge a r b =
 -- 'GraphGCInfo' resources which are filtered out before making the
 -- check.
 null :: Graph -> Bool
-null = M.null . M.filterWithKey (\k _ -> not $ resIsGCInfo k) . grGraph
+null = M.null . grGraph
 
 -- | Tests whether a given resource is a vertex in a given graph.
 memberResource :: Resource a => a -> Graph -> Bool
@@ -571,16 +570,6 @@ getGraph mmchan = do
   rt <- fmap (remoteTable . processNode) ask
   buildGraph mmchan rt <$> HA.Multimap.getStoreValue mmchan
 
--- | Like 'HA.Multimap.getKeyValuePairs' but filters out 'GraphGCInfo' from the
--- result list.
-getKeyValuePairs :: StoreChan -> Process [(Key, [Value])]
-getKeyValuePairs mmchan = do
-  rt <- fmap (remoteTable . processNode) ask
-  removeGCInfo rt <$> HA.Multimap.getKeyValuePairs mmchan
-  where
-    removeGCInfo rt kvs =
-      filter (\(k, _) -> not . resIsGCInfo $ decodeRes rt k) kvs
-
 fromStrict :: ByteString -> Lazy.ByteString
 fromStrict = fromChunks . (:[])
 
@@ -652,10 +641,6 @@ modifyGCInfo f g = g
     mi = MetaInfo (grSinceGC newGI)
                   (grGCThreshold newGI)
                   (map encodeRes $ grRootNodes newGI)
-
-resIsGCInfo :: Res -> Bool
-resIsGCInfo (Res (cast -> Just GraphGCInfo{})) = True
-resIsGCInfo _ = False
 
 -- | Modifies the count of disconnects since the last time automatic
 -- major GC was ran.

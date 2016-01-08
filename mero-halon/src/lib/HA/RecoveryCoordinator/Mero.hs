@@ -72,7 +72,6 @@ import Control.Wire hiding (when)
 import Data.Binary (Binary)
 import Data.Dynamic
 import qualified Data.Map.Strict as Map
-import qualified Data.HashSet as HS
 import qualified Data.Set as S
 import Data.UUID (UUID)
 
