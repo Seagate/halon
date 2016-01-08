@@ -35,8 +35,6 @@ module HA.ResourceGraph
       Resource(..)
     , Relation(..)
     , Graph
-    , grChangeLog
-    , fromChangeLog
     , Edge(..)
     , Dict(..)
     , Res(..)
@@ -92,14 +90,13 @@ import HA.Multimap
   , StoreUpdate(..)
   , StoreChan
   , updateStore
-  , getKeyValuePairs
   , MetaInfo(..)
   , getStoreValue
   , defaultMetaInfo
   )
 import HA.Multimap.Implementation
 
-import Control.Distributed.Process ( Process, liftIO )
+import Control.Distributed.Process ( Process )
 import Control.Distributed.Process.Internal.Types
     ( remoteTable, processNode )
 import Control.Distributed.Process.Serializable ( Serializable )
@@ -114,15 +111,14 @@ import Data.Constraint ( Dict(..) )
 
 import Prelude hiding (null)
 import Control.Arrow ( (***), (>>>), second )
-import Control.Monad ( liftM3, when )
+import Control.Monad ( liftM3 )
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary(..), decode, encode )
 import Data.Binary.Get ( runGetOrFail )
 import qualified Data.ByteString as Strict ( concat )
 import Data.ByteString ( ByteString )
-import Data.ByteString.Lazy as Lazy ( fromChunks, toChunks, append, length )
+import Data.ByteString.Lazy as Lazy ( fromChunks, toChunks, append )
 import qualified Data.ByteString.Lazy as Lazy ( ByteString )
-import qualified Data.ByteString.Lazy as BSL
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as M
 import Data.HashSet (HashSet)
@@ -134,8 +130,6 @@ import Data.Proxy
 import Data.Typeable ( Typeable, cast )
 import Data.Word (Word8)
 import GHC.Generics (Generic)
-
-import System.Directory (doesFileExist)
 
 rgTrace :: String -> Process ()
 rgTrace = mkHalonTracer "RG"
@@ -441,26 +435,24 @@ mergeResources f xs g@Graph{..} = let
 -- manually invoking 'garbageCollect' with your own set of nodes, you
 -- may not want to stop the major GC from happening anyway.
 garbageCollect :: HashSet Res -> Graph -> Graph
-garbageCollect initGrey g@Graph{..} = go S.empty initWhite initGrey
+garbageCollect initGrey g@Graph{..} = go initWhite initGrey
   where
-    initWhite = (S.fromList $ M.keys grGraph) `S.difference` initGrey
-    go _ white (S.null -> True) = g {
-        grChangeLog = updateChangeLog (DeleteKeys $ map encodeRes whiteList)
-                        grChangeLog
+    initWhite = S.fromList (M.keys grGraph) `S.difference` initGrey
+    go white (S.null -> True) = g {
+        grChangeLog = updateChangeLog (DeleteKeys $ map encodeRes whiteList) grChangeLog
       , grGraph = foldl' (>>>) id adjustments grGraph
     } where
-      adjustments = (map M.delete whiteList)
+      adjustments = map M.delete whiteList
       whiteList = S.toList white
+    go white grey = go white' grey' where
+      white' = white `S.difference` grey'
+      grey' = white `S.intersection` S.unions (catMaybes nextGreys)
 
-    go black white grey@(S.toList -> greyHead : _) = go black' white' grey' where
-      black' = S.insert greyHead black
-      white' = white `S.difference` newGrey
-      grey' = (S.delete greyHead grey) `S.union` newGrey
-      newGrey = white `S.intersection` (maybe S.empty (S.map f)
-                                    $ M.lookup greyHead grGraph)
+      nextGreys :: [Maybe (HashSet Res)]
+      nextGreys = map (fmap (S.map f) . flip M.lookup grGraph) (S.toList grey)
+
       f (OutRel _ _ y) = Res y
       f (InRel _ x _) =  Res x
-    go _ _ _ = error "garbageCollect: Impossible."
 
 -- | Runs 'garbageCollect' preserving anything connected to root nodes
 -- ('getRootNodes').
@@ -553,20 +545,12 @@ emptyGraph mmchan = Graph mmchan emptyChangeLog M.empty defaultGraphGCInfo
 sync :: Graph -> Process () -> Process Graph
 sync g cb = do
     (cl, g') <- takeChangeLog <$> runGCIfThresholdMet g
-
-    when (shouldGC g) $
-      rgTrace . ("[StoreUpdate] size " ++) . show . Lazy.length . encode $ fromChangeLog cl
     updateStore (grMMChan g) (fromChangeLog cl) cb
     return g'
   where
     shouldGC :: Graph -> Bool
     shouldGC gr = let gi = grGraphGCInfo gr
                   in grGCThreshold gi > 0 && grSinceGC gi >= grGCThreshold gi
-
-    getFN i = do
-      b <- doesFileExist ("/tmp/pregc" ++ show i)
-      if b then getFN $ i + 1
-           else return ("/tmp/pregc" ++ show i)
 
     runGCIfThresholdMet :: Graph -> Process Graph
     runGCIfThresholdMet gr =
@@ -578,13 +562,6 @@ sync g cb = do
         let afterGCSize = M.size (grGraph gr')
         seq afterGCSize $ rgTrace $ "After GC, " ++ show afterGCSize
                                     ++ " nodes remain."
-        -- Serialize the old graph to a file for use in benchmarks later
-        let serialized = map (\(k, vs) -> (encodeRes k, map encodeRel vs)) $ getGraphResources gr
-        fn <- liftIO $ do
-          fn <- getFN 0
-          BSL.writeFile fn (encode serialized)
-          return fn
-        rgTrace $ "Wrote out pre-GC info to " ++ show fn
         return gr'
       else return gr
 
