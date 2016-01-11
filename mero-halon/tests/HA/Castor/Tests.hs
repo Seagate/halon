@@ -174,7 +174,7 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
       -- don't use it so it doesn't impact us but in the future we
       -- should also take it as a parameter to the test, just like the
       -- host
-      mapM_ goRack (CI.id_racks (initialDataAddr host "192.0.2.2" 8))
+      mapM_ goRack (CI.id_racks (initialDataAddr host "192.0.2.2" 12))
       filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals initialData)
       loadMeroServers filesystem (CI.id_m0_servers initialData)

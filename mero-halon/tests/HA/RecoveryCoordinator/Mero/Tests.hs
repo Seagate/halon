@@ -313,7 +313,7 @@ testRCsyncToConfd host transport = do
 
   withTrackingStation testSyncRules $ \_ -> do
 
-    promulgateEQ [nid] (initialDataAddr host host 8) >>= flip withMonitor wait
+    promulgateEQ [nid] (initialDataAddr host host 12) >>= flip withMonitor wait
     "InitialLoad" :: String <- expect
 
     promulgateEQ [nid] SpielSync >>= flip withMonitor wait
@@ -345,7 +345,7 @@ testConfObjectStateQuery host transport =
         nodeUp ([nid], 1000000)
         say "Loading graph."
         void $ promulgateEQ [nid] $
-          Helper.InitialData.initialDataAddr host "192.0.2.2" 8
+          Helper.InitialData.initialDataAddr host "192.0.2.2" 12
         "Loaded initial data" :: String <- expect
         graph <- G.getGraph mm
         let sdevFids = fmap M0.fid (G.getResourcesOfType graph :: [M0.SDev])
