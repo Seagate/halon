@@ -270,7 +270,10 @@ _startService :: forall a. Configuration a
              -> a
              -> G.Graph
              -> Process ()
-_startService node svc cfg _ = void $ spawnLocal $ do
+_startService node svc cfg _ = void $ do
+  caller <- getSelfPid
+  spawnLocal $ do
+    link caller
     self <- getSelfPid
     _ <- spawnAsync node $
               $(mkClosure 'remoteStartService) (self, serviceName svc)
