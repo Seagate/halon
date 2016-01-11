@@ -317,9 +317,10 @@ main =
               ms5 = take 5 msAll
               ms = drop 5 msAll
 
+          exePath <- getExecutablePath
           copyFiles "localhost"
                     msAll
-                    [ ( "dist/build/state-distributed/state-distributed"
+                    [ ( exePath
                       , "/tmp/state-distributed"
                       )
                     ]
