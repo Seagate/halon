@@ -549,7 +549,6 @@ ruleNewMeroClient = define "new-mero-client" $ do
         _meminfo <- case minfo of
            Nothing -> do
              phaseLog "debug" "no information about host stats - loading"
-             _ <- liftProcess $ promulgate (ClientInfo node 1024 1024)
              liftProcess $ void $ spawnLocal $
                void $ spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
              continue client_info
