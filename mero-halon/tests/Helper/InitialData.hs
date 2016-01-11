@@ -187,8 +187,7 @@ initialDataAddr host ifaddr n = CI.InitialData {
       ]
     , CI.m0h_devices = fmap
         (\i -> CI.M0Device ("wwn" ++ show i) 4 64000 ("/dev/loop" ++ show i))
-        -- Mero wants no less devices than 2 * parity + data_units.
-        [(1 :: Int) .. max 12 n]
+        [(1 :: Int) .. n]
     }
   ]
 }
