@@ -47,6 +47,7 @@ import Control.Distributed.Process
   , getSelfPid
   , spawnAsync
   , spawnLocal
+  , link
   )
 import Control.Distributed.Process.Closure ( mkClosure, staticDecode )
 import Control.Distributed.Process.Internal.Types as DP ( remoteTable, processNode )
