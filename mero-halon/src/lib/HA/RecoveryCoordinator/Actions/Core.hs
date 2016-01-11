@@ -24,6 +24,8 @@ module HA.RecoveryCoordinator.Actions.Core
     -- * Communication with the EQ
   , messageProcessed
   , selfMessage
+  , promulgateRC
+  , unsafePromulgateRC
     -- * Lifted functions in PhaseM
   , decodeMsg
   , getSelfProcessId
@@ -47,6 +49,7 @@ import HA.Resources
   )
 
 import HA.EventQueue.Types
+import HA.EventQueue.Producer (promulgateWait)
 import HA.Service
   ( ProcessEncode(..)
   , ServiceName(..)
@@ -64,6 +67,8 @@ import Control.Distributed.Process
   , say
   , sendChan
   , getSelfPid
+  , spawnLocal
+  , link
 #ifdef USE_MERO
   , liftIO
 #endif
@@ -74,6 +79,7 @@ import Control.Distributed.Process.Serializable
 import Mero.M0Worker
 #endif
 
+import Data.Functor (void)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set        as S
 
@@ -206,3 +212,37 @@ liftM0RC task = do
   worker <- fmap lsWorker (get Global)
   liftIO $ runOnM0Worker worker task
 #endif
+
+
+-- | Lifted wrapper over 'HA.Event.Queue.Producer.promulgate' call. 'promulgateRC'
+-- should be called in case when RC should send a message to itself, but this message
+-- should be guaranteed to be persisted. This call is blocking RC, so if message can't
+-- be persisted then RC will not continue processing neither this nor other rules.
+-- However main EQ node should be collocated with RC, this means that the only case
+-- when 'promulgateRC' could be blocked is when there is no quorum. In such case RC
+-- anyway should be killed, and it's better to stop as soon as possible. 
+-- Promulgate call will be cancelled if RC thread will receive an exception.
+--
+-- However, 'promulgateRC' introduces additional synchronization overhead in normal
+-- case, so on a fast-path 'unsafePromulgateRC' could be used.
+promulgateRC :: Serializable msg => msg -> PhaseM LoopState l ()
+promulgateRC msg = liftProcess $ promulgateWait msg
+
+-- | Fast-path 'promulgateRC', this call is not blocking call, so there is no guarantees
+-- of message to be persisted when RC exit 'unsafePromulgateRC' call. This call is much
+-- more efficient in a normal case, because different promulgate calls could be run in
+-- parallel and make use of replicated-log batching, however in order to survive failures,
+-- programmer should handle those cases explicitly.
+--
+-- In order to provide an action that will be triggered after message was persisten 
+-- callback could be set.
+-- 
+-- Promulgate call will be cancelled if RC thread that emitted call will die.
+unsafePromulgateRC :: Serializable msg => msg -> Process () -> PhaseM LoopState l ()
+unsafePromulgateRC msg callback = liftProcess $ do
+   self <- getSelfPid
+   void $ spawnLocal $ do
+     link self
+     promulgateWait msg
+     callback
+   
