@@ -33,6 +33,7 @@ import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
 import Network.Transport (Transport, EndPointAddress)
 
 import Helper.Environment
+import Test.Framework
 import Test.Tasty (testGroup)
 import Test.Tasty.HUnit (testCase)
 
@@ -154,7 +155,7 @@ runTests tests = do
 main :: IO ()
 main = prepare $ runTests ut where
 #ifdef USE_MERO
-  prepare = withM0
+  prepare = withTmpDirectory . withM0
 #else
   prepare = id
 #endif
