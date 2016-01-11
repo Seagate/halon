@@ -104,24 +104,26 @@ testFailureSets transport = rGroupTest transport $ \pid -> do
     me <- getSelfNode
     ls <- emptyLoopState pid (nullProcessId me)
     (ls', _) <- run ls $ do
-      mapM_ goRack (CI.id_racks initialData)
+      mapM_ goRack (CI.id_racks iData)
       filesystem <- initialiseConfInRG
-      loadMeroGlobals (CI.id_m0_globals initialData)
-      loadMeroServers filesystem (CI.id_m0_servers initialData)
+      loadMeroGlobals (CI.id_m0_globals iData)
+      loadMeroServers filesystem (CI.id_m0_servers iData)
     -- 8 disks, tolerating one disk failure at a time
     let g = lsGraph ls'
-        failureSets = generateFailureSets 1 0 0 g (CI.id_m0_globals initialData)
+        failureSets = generateFailureSets 1 0 0 g (CI.id_m0_globals iData)
     assertMsg "Number of failure sets (100)" $ length failureSets == 9
     assertMsg "Smallest failure set is empty (100)"
       $ fsSize (head failureSets) == 0
 
     -- 8 disks, two failures at a time
-    let failureSets2 = generateFailureSets 2 0 0 g (CI.id_m0_globals initialData)
+    let failureSets2 = generateFailureSets 2 0 0 g (CI.id_m0_globals iData)
     assertMsg "Number of failure sets (200)" $ length failureSets2 == 37
     assertMsg "Smallest failure set is empty (200)"
       $ fsSize (head failureSets2) == 0
     assertMsg "Next smallest failure set has one disk (200)"
       $ fsSize (failureSets2 !! 1) == 1
+  where
+    iData = initialDataGen systemHostname "192.0.2" 1 8 $ CI.Dynamic
 
 testFailureSets2 :: Transport -> IO ()
 testFailureSets2 transport = rGroupTest transport $ \pid -> do
