@@ -8,7 +8,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module HA.ResourceGraph.Tests ( tests ) where
+module HA.ResourceGraph.Tests ( tests, rGroupTest, syncWait ) where
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure (mkStatic, remotable)

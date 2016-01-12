@@ -117,7 +117,11 @@ Benchmark sync-rg
   Type:             exitcode-stdio-1.0
   Main-Is:          sync-rg.hs
   Default-Language: Haskell2010
-  Hs-Source-Dirs:   benchmarks
+  Hs-Source-Dirs:   benchmarks, tests
+  Other-Modules:    HA.ResourceGraph.Tests,
+                    RemoteTables,
+                    Test.Helpers,
+                    Test.Transport
 
   Buildable:        False
 
@@ -161,8 +165,8 @@ Benchmark sync-rg
                     cep,
                     uuid,
                     containers,
-                    stm
-  Build-Depends:    network-transport-tcp >= 0.3,
+                    stm,
+                    network-transport-tcp >= 0.3,
                     network-transport-inmemory >= 0.5
 
 Benchmark gc-rg
