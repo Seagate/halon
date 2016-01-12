@@ -6,9 +6,7 @@
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE PackageImports             #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
 module HA.RecoveryCoordinator.Actions.Hardware
@@ -35,19 +33,6 @@ module HA.RecoveryCoordinator.Actions.Hardware
     -- * Cluster status functions
   , setClusterStatus
   , getClusterStatus
-#ifdef USE_MERO
-    -- * Pool repair information
-  , getPoolRepairInformation
-  , getPoolRepairStatus
-  , getTimeUntilQueryHourlyPRI
-  , incrementOnlinePRSResponse
-  , modifyPoolRepairInformation
-  , possiblyInitialisePRI
-  , setPoolRepairInformation
-  , setPoolRepairStatus
-  , unsetPoolRepairStatus
-  , updatePoolRepairStatusTime
-#endif
     -- * Interface related functions
   , registerInterface
     -- * Drive related functions
@@ -107,7 +92,6 @@ import qualified HA.Resources.Mero as M0
 
 import Control.Category ((>>>))
 import Control.Distributed.Process (liftIO, say)
-import Control.Monad (join)
 import Control.Monad.Catch (catch)
 
 import qualified Data.Aeson as A
@@ -115,7 +99,6 @@ import qualified Data.Aeson.Types as A
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
-import Data.Proxy (Proxy(..))
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.UUID.V4 (nextRandom)
 import Data.Foldable
@@ -124,7 +107,6 @@ import GHC.Generics (Generic)
 import Network.CEP
 
 import Text.Regex.TDFA ((=~))
--- import qualified "distributed-process-scheduler" System.Clock as C
 
 -- | Register a new rack in the system.
 registerRack :: Rack
@@ -345,111 +327,6 @@ setClusterStatus cs = do
   modifyLocalGraph $ \g -> do
     return $ G.newResource cs >>> G.connectUnique Cluster Has cs $ g
 
-#ifdef USE_MERO
-----------------------------------------------------------
--- Pool repair information functions                    --
-----------------------------------------------------------
-
--- | Return the 'M0.PoolRepairStatus' structure. If one is not in
--- the graph, it means no repairs are going on
-getPoolRepairStatus :: M0.Pool
-                    -> PhaseM LoopState l (Maybe M0.PoolRepairStatus)
-getPoolRepairStatus pool = do
-  phaseLog "rg-query" "Looking up pool repair information"
-  getLocalGraph >>= \g ->
-   return (listToMaybe [ p | p <- G.connectedTo pool Has g ])
-
--- | Set the given 'M0.PoolRepairStatus' in the graph. Any
--- previously connected @PRI@s are disconnected.
-setPoolRepairStatus :: M0.Pool -> M0.PoolRepairStatus -> PhaseM LoopState l ()
-setPoolRepairStatus pool prs =
-  modifyLocalGraph $ return . G.connectUniqueFrom pool Has prs
-
--- | Remove all 'M0.PoolRepairStatus' connections to the given 'M0.Pool'.
-unsetPoolRepairStatus :: M0.Pool -> PhaseM LoopState l ()
-unsetPoolRepairStatus pool =
-  modifyLocalGraph $ return . G.disconnectAllFrom pool Has (Proxy :: Proxy M0.PoolRepairStatus)
-
--- | Return the 'M0.PoolRepairInformation' structure. If one is not in
--- the graph, it means no repairs are going on.
-getPoolRepairInformation :: M0.Pool
-                         -> PhaseM LoopState l (Maybe M0.PoolRepairInformation)
-getPoolRepairInformation pool = do
-  phaseLog "rg-query" "Looking up pool repair information"
-  getLocalGraph >>= return . join . fmap M0.prsPri . listToMaybe . G.connectedTo pool Has
-
--- | Set the given 'M0.PoolRepairInformation' in the graph. Any
--- previously connected @PRI@s are disconnected.
---
--- Does nothing if we haven't at least set 'M0.PoolRepairType'
--- already.
-setPoolRepairInformation :: M0.Pool
-                         -> M0.PoolRepairInformation
-                         -> PhaseM LoopState l ()
-setPoolRepairInformation pool pri = getPoolRepairStatus pool >>= \case
-  Nothing -> return ()
-  Just (M0.PoolRepairStatus prt _) ->
-    modifyLocalGraph (return . G.connectUniqueFrom pool Has (M0.PoolRepairStatus prt $ Just pri))
-
--- | Initialise 'M0.PoolRepairInformation' with some default values.
---
--- Currently the values
-possiblyInitialisePRI :: M0.Pool
-                      -> PhaseM LoopState l ()
-possiblyInitialisePRI pool = getPoolRepairInformation pool >>= \case
-  Nothing -> setPoolRepairInformation pool M0.defaultPoolRepairInformation
-  Just _ -> return ()
-
--- | Modify the  'PoolRepairInformation' in the graph with the given function.
--- Any previously connected @PRI@s are disconnected.
-modifyPoolRepairInformation :: M0.Pool
-                            -> (M0.PoolRepairInformation -> M0.PoolRepairInformation)
-                            -> PhaseM LoopState l ()
-modifyPoolRepairInformation pool f = modifyLocalGraph $ \g ->
-  case listToMaybe . G.connectedTo pool Has $ g of
-    Just (M0.PoolRepairStatus prt (Just pri)) ->
-      return $ G.connectUniqueFrom pool Has (M0.PoolRepairStatus prt (Just $ f pri)) g
-    _ -> return g
-
-
--- | Increment 'priOnlineNotifications' field of the
--- 'PoolRepairInformation' in the graph. Also updates the
--- 'priTimeOfFirstCompletion' if it has not yet been set.
-incrementOnlinePRSResponse :: M0.Pool
-                           -> PhaseM LoopState l ()
-incrementOnlinePRSResponse pool =
-  liftIO M0.getTime >>= \tnow -> modifyPoolRepairInformation pool (go tnow)
-  where
-    go tnow pr = pr { M0.priOnlineNotifications = succ $ M0.priOnlineNotifications pr
-                    , M0.priTimeOfFirstCompletion =
-                      if M0.priOnlineNotifications pr > 0
-                      then M0.priTimeOfFirstCompletion pr
-                      else tnow
-                    , M0.priTimeLastHourlyRan =
-                      if M0.priTimeLastHourlyRan pr > 0
-                      then M0.priTimeOfFirstCompletion pr
-                      else tnow
-                    }
-
--- | Updates 'priTimeLastHourlyRan' to current time.
-updatePoolRepairStatusTime :: M0.Pool -> PhaseM LoopState l ()
-updatePoolRepairStatusTime pool = getPoolRepairStatus pool >>= \case
-  Nothing -> return ()
-  Just (M0.PoolRepairStatus prt' (Just pr)) -> do
-    t <- liftIO M0.getTime
-    setPoolRepairInformation pool $ pr { M0.priTimeLastHourlyRan = t }
-
--- | Returns number of seconds until we have to run the hourly PRI
--- query.
-getTimeUntilQueryHourlyPRI :: M0.Pool -> PhaseM LoopState l Int
-getTimeUntilQueryHourlyPRI pool = getPoolRepairInformation pool >>= \case
-  Nothing -> return 0
-  Just pri -> do
-    tn <- liftIO M0.getTime
-    let elapsed = tn - M0.priTimeLastHourlyRan pri
-        untilHourPasses = fromIntegral 3600 - elapsed
-    return $ M0.timeSpecToSeconds untilHourPasses
-#endif
 ----------------------------------------------------------
 -- Interface related functions                          --
 ----------------------------------------------------------

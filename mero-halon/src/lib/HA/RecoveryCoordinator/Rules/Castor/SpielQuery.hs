@@ -1,4 +1,5 @@
-{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiWayIf #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -35,10 +36,11 @@
 -- rules into one but it creates problems when RC restarts: oops,
 -- which query were we in again? If either rule gets restarted on its
 -- own, it should recover fine.
-module HA.RecoveryCoordinator.Rules.Castor.SpielQuery ( querySpiel
-                                                      , querySpielHourly
-                                                      , queryStartHandling
-                                                      ) where
+module HA.RecoveryCoordinator.Rules.Castor.SpielQuery
+  ( querySpiel
+  , querySpielHourly
+  , queryStartHandling
+  ) where
 
 import           Control.Distributed.Process
 import           Control.Exception (SomeException)
@@ -50,7 +52,6 @@ import           GHC.Generics (Generic)
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
-import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Mero
 import qualified HA.ResourceGraph as G
@@ -88,15 +89,18 @@ queryStartHandling pool prt = do
   incrementOnlinePRSResponse pool
   Just pri <- getPoolRepairInformation pool
   iosvs <- length <$> getIOServices pool
-  nid <- liftProcess getSelfNode
-  -- This is a first notification and we have more than
-  -- one ioserver to repair so potentially query spiel
-  if priOnlineNotifications pri == 1 && iosvs > 1
-  then liftProcess . void . promulgateEQ [nid] $ SpielQuery pool prt
-  -- We got one notification but it was also the only
-  -- one we were expecting, finish it here.
-  else do notifyMero [AnyConfObj pool] $ repairedNotificationMsg prt
-          unsetPoolRepairStatus pool
+  if -- This is the first and only notification, notify about finished
+     -- repairs and unset PRS
+    | priOnlineNotifications pri == 1 && iosvs == 1 -> do
+         notifyMero [AnyConfObj pool] $ repairedNotificationMsg prt
+         unsetPoolRepairStatus pool
+     -- This is the first of many notifications, start query in 5
+     -- minutes.
+     | priOnlineNotifications pri == 1 && iosvs > 1 ->
+         selfMessage $ SpielQuery pool prt
+     -- This is not the first notification so we have already
+     -- dispatched a query before, do nothing.
+     | otherwise -> return ()
 
 -- | This function does basic checking of whether we're done
 -- repairing/rebalancing as well as handling time related matters.
@@ -229,12 +233,8 @@ getIOServices pool = getLocalGraph >>= \g -> return
   [ svc | pv <- G.connectedTo pool IsRealOf g :: [PVer]
         , rv <- G.connectedTo pv IsParentOf g :: [RackV]
         , ev <- G.connectedTo rv IsParentOf g :: [EnclosureV]
-        -- TODO: Can we just go through controllerv to the controller
-        -- and node straight away?
         , cv <- G.connectedTo ev IsParentOf g :: [ControllerV]
-        , dv <- G.connectedTo cv IsParentOf g :: [DiskV]
-        , ds <- G.connectedFrom IsRealOf dv g :: [Disk]
-        , ct <- G.connectedFrom IsParentOf ds g:: [Controller]
+        , ct <- G.connectedFrom IsRealOf cv g :: [Controller]
         , nd <- G.connectedFrom IsOnHardware ct g :: [M0.Node]
         , pr <- G.connectedTo nd IsParentOf g :: [M0.Process]
         , svc@(M0.Service { M0.s_type = CST_IOS }) <- G.connectedTo pr IsParentOf g

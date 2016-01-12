@@ -29,9 +29,8 @@ import Mero.ConfC
   , ServiceType
   )
 
-import Data.Binary (Binary)
-import Data.Bits
 import Data.Binary (Binary(..))
+import Data.Bits
 import Data.Char (ord)
 import Data.Hashable (Hashable(..))
 import Data.Proxy (Proxy(..))
