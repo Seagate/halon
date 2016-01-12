@@ -79,14 +79,13 @@ makeGCBenchGroup s ns p = bgroup s $ map (flip mkGCBench p) ns
 
 -- | Create a benchmark using 'buildGraph'.
 mkGCBench :: Int -> ConnectFilter -> Benchmark
-mkGCBench i p = env (mkGCGraph mkGraph) $ \g ->
-  bench (show i) $ nf garbageCollectRoot g
+mkGCBench i p = bench (show i) $ nf garbageCollectRoot (mkGCGraph mkGraph)
   where
-    mkGraph = return . buildGraph i p
+    mkGraph = buildGraph i p
 
 -- | Creates a graph with @n@ unconnected vertices.
-mkGCGraph :: (Graph -> IO Graph)
-          -> IO Graph
+mkGCGraph :: (Graph -> Graph)
+          -> Graph
 mkGCGraph f = f $ emptyGraph mmchan
   where
     mmchan = error "gc-rg.hs: error, Graph's mmchan used in benchmark"
@@ -118,10 +117,7 @@ allConnected n = [ (a, b) | a <- [1 .. n], b <- [1 .. n] ]
 
 -- | All nodes connected in a line, @1 --> 2 --> … --> n - 1 --> n@
 linearConnectedAll :: ConnectFilter
-linearConnectedAll n = go [1 .. n - 1] []
-  where
-    go [] xs = xs
-    go (a:as) xs = go as $ (a, a + 1) : xs
+linearConnectedAll n = [ (i-1, i) | i <- [2 .. n]]
 
 -- | Like 'linearConnectedAll' but half the nodes are not connected at
 -- all.

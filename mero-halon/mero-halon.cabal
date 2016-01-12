@@ -713,6 +713,64 @@ benchmark halonpings
   else
     Buildable:     False
 
+Benchmark initial-data-gc
+  Type:             exitcode-stdio-1.0
+  Main-Is:          initial-data-gc.hs
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   benchmarks, tests
+  Other-Modules:    HA.Castor.Tests,
+                    Helper.Environment,
+                    Helper.InitialData,
+                    Helper.RC,
+                    RemoteTables,
+                    TestRunner
+
+
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
+  if flag(debug)
+    Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
+  Default-Extensions: DeriveDataTypeable
+                      DeriveGeneric
+                      GeneralizedNewtypeDeriving
+                      RecordWildCards NamedFieldPuns
+                      ScopedTypeVariables
+  Build-Depends:    halon,
+                    mero-halon,
+                    base >= 4.5,
+                    Cabal >= 1.16,
+                    binary >= 0.6.4,
+                    bytestring,
+                    cep,
+                    confc,
+                    containers,
+                    criterion,
+                    deepseq,
+                    directory,
+                    distributed-process-scheduler,
+                    distributed-process-test,
+                    filepath,
+                    hashable,
+                    network,
+                    network-transport,
+                    network-transport-inmemory,
+                    options-schema >= 0.1.1.0,
+                    process,
+                    random,
+                    rpclite,
+                    tasty-hunit,
+                    unix,
+                    unordered-containers
+  if !flag(mero)
+    Buildable:     False
+  else
+    CPP-Options:   -DUSE_MERO
+
 Test-Suite tests-mero-integration
   Type:             exitcode-stdio-1.0
   Default-Language: Haskell2010
