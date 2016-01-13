@@ -1,0 +1,2 @@
+# Address of the halond TCP endpoint.
+HALOND_LISTEN=127.0.0.1:9010

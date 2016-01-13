@@ -1,0 +1,4 @@
+# Address of the halonctl controller.
+HALONCTL_LISTEN=127.0.0.1:9001
+# List of tracker nodes, should be separated by -t
+HALON_TRACKERS=-t 127.0.0.1:9010
