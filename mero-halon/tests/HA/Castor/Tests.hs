@@ -1,9 +1,12 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes #-}
-module HA.Castor.Tests (tests, initialData, initialDataAddr) where
+module HA.Castor.Tests ( tests, initialData , initialDataAddr, loadInitialData
+                       ) where
 
+import Control.Concurrent.MVar
 import Control.Distributed.Process
   ( Process
   , RemoteTable
@@ -18,7 +21,7 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
-import Control.Monad (forM_, join)
+import Control.Monad (forM_, join, void)
 
 import Data.List (sort, isPrefixOf)
 import qualified Data.Set as Set
@@ -91,7 +94,7 @@ tests :: String -> Transport -> [TestTree]
 tests host transport = map (localOption (mkTimeout $ 10*60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport
   , testSuccess "failure-sets-2" $ testFailureSets2 transport
-  , testSuccess "initial-data-doesn't-error" $ loadInitialData host transport
+  , testSuccess "initial-data-doesn't-error" $ void (loadInitialData host transport)
   -- , testSuccess "large-data" $ largeInitialData host transport
   , testSuccess "controller-failure" $ testControllerFailureDomain transport
   ]
@@ -165,8 +168,13 @@ testFailureSets2 transport = rGroupTest transport $ \pid -> do
   where
     iData = initialDataGen systemHostname "192.0.2" 4 4 $ CI.Dynamic
 
-loadInitialData :: String -> Transport -> IO ()
-loadInitialData host transport = rGroupTest transport $ \pid -> do
+-- | Load the initial data into local RG and verify that it loads as expected.
+--
+-- Returns the loaded RG for use by others (@initial-data-gc@).
+loadInitialData :: String -> Transport -> IO Graph
+loadInitialData host transport = do
+  gmv <- newEmptyMVar
+  rGroupTest transport $ \pid -> do
     me <- getSelfNode
     ls <- emptyLoopState pid (nullProcessId me)
     (ls', _) <- run ls $ do
@@ -233,6 +241,10 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
                          , cntrv <- connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
                          , diskv <- connectedTo cntrv M0.IsParentOf g :: [M0.DiskV]]
       liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
+    liftIO $ putMVar gmv g
+  tryTakeMVar gmv >>= \case
+    Nothing -> error "HA.Castor.Tests.loadInitialData: gmv empty"
+    Just g -> return g
   where
     myHost = Host systemHostname
 

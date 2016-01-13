@@ -52,6 +52,7 @@ module HA.ResourceGraph
     , disconnectAllTo
     , mergeResources
     , sync
+    , emptyGraph
     , getGraph
     , garbageCollect
     , garbageCollectRoot
@@ -89,9 +90,9 @@ import HA.Multimap
   , StoreUpdate(..)
   , StoreChan
   , updateStore
-  , getKeyValuePairs
   , MetaInfo(..)
   , getStoreValue
+  , defaultMetaInfo
   )
 import HA.Multimap.Implementation
 
@@ -129,7 +130,6 @@ import Data.Proxy
 import Data.Typeable ( Typeable, cast )
 import Data.Word (Word8)
 import GHC.Generics (Generic)
-
 
 rgTrace :: String -> Process ()
 rgTrace = mkHalonTracer "RG"
@@ -435,26 +435,24 @@ mergeResources f xs g@Graph{..} = let
 -- manually invoking 'garbageCollect' with your own set of nodes, you
 -- may not want to stop the major GC from happening anyway.
 garbageCollect :: HashSet Res -> Graph -> Graph
-garbageCollect initGrey g@Graph{..} = go S.empty initWhite initGrey
+garbageCollect initGrey g@Graph{..} = go initWhite initGrey
   where
-    initWhite = (S.fromList $ M.keys grGraph) `S.difference` initGrey
-    go _ white (S.null -> True) = g {
-        grChangeLog = updateChangeLog (DeleteKeys $ map encodeRes whiteList)
-                        grChangeLog
+    initWhite = S.fromList (M.keys grGraph) `S.difference` initGrey
+    go white (S.null -> True) = g {
+        grChangeLog = updateChangeLog (DeleteKeys $ map encodeRes whiteList) grChangeLog
       , grGraph = foldl' (>>>) id adjustments grGraph
     } where
-      adjustments = (map M.delete whiteList)
+      adjustments = map M.delete whiteList
       whiteList = S.toList white
+    go white grey = go white' grey' where
+      white' = white `S.difference` grey'
+      grey' = white `S.intersection` S.unions (catMaybes nextGreys)
 
-    go black white grey@(S.toList -> greyHead : _) = go black' white' grey' where
-      black' = S.insert greyHead black
-      white' = white `S.difference` newGrey
-      grey' = (S.delete greyHead grey) `S.union` newGrey
-      newGrey = white `S.intersection` (maybe S.empty (S.map f)
-                                    $ M.lookup greyHead grGraph)
+      nextGreys :: [Maybe (HashSet Res)]
+      nextGreys = map (fmap (S.map f) . flip M.lookup grGraph) (S.toList grey)
+
       f (OutRel _ _ y) = Res y
       f (InRel _ x _) =  Res x
-    go _ _ _ = error "garbageCollect: Impossible."
 
 -- | Runs 'garbageCollect' preserving anything connected to root nodes
 -- ('getRootNodes').
@@ -532,6 +530,9 @@ buildGraph mmchan rt (mi, kvs) = (\hm -> Graph mmchan emptyChangeLog hm gcInfo)
                          (_miGCThreshold mi)
                          (map (decodeRes rt) (_miRootNodes mi))
 
+-- | Builds an empty 'Graph' with the given 'StoreChan'.
+emptyGraph :: StoreChan -> Graph
+emptyGraph mmchan = Graph mmchan emptyChangeLog M.empty defaultGraphGCInfo
 
 -- | Updates the multimap store with the latest changes to the graph.
 --
@@ -628,8 +629,7 @@ getResourcesOfType =
 
 -- * GC control
 
--- | Modify the 'GraphGCInfo' in the given graph. As it uses a merge,
--- 'grSinceGC' is preserved.
+-- | Modify the 'GraphGCInfo' in the given graph.
 modifyGCInfo :: (GraphGCInfo -> GraphGCInfo) -> Graph -> Graph
 modifyGCInfo f g = g
   { grGraphGCInfo = newGI
@@ -691,3 +691,10 @@ getGCThreshold = grGCThreshold . grGraphGCInfo
 -- upon sync. Set the value to @<= 0@ in order to disable the GC.
 setGCThreshold :: Int -> Graph -> Graph
 setGCThreshold i = modifyGCThreshold (const i)
+
+-- | Internally used default 'GraphGCInfo'. It is just like
+-- 'defaultMetaInfo' but sets the (empty) list of root nodes directly.
+defaultGraphGCInfo :: GraphGCInfo
+defaultGraphGCInfo = GraphGCInfo (_miSinceGC mi) (_miGCThreshold mi) []
+  where
+    mi = defaultMetaInfo
