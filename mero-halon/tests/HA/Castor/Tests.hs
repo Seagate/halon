@@ -174,7 +174,7 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
       -- don't use it so it doesn't impact us but in the future we
       -- should also take it as a parameter to the test, just like the
       -- host
-      mapM_ goRack (CI.id_racks (initialDataAddr host "192.0.2.2" 8))
+      mapM_ goRack (CI.id_racks (initialDataAddr host "192.0.2.2" 12))
       filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals initialData)
       loadMeroServers filesystem (CI.id_m0_servers initialData)
@@ -217,10 +217,10 @@ loadInitialData host transport = rGroupTest transport $ \pid -> do
     assertMsg "Number of racks" $ length racks == 1
     assertMsg "Number of enclosures" $ length encls == 1
     assertMsg "Number of controllers" $ length ctrls == 1
-    assertMsg "Number of storage devices" $ length sdevs == 8
-    assertMsg "Number of disks (reached by host)" $ length disksByHost == 8
-    assertMsg "Number of disks" $ length disks == 8
-    assertMsg "Number of disk versions" $ length dvers1 == 29
+    assertMsg "Number of storage devices" $ length sdevs == 12
+    assertMsg "Number of disks (reached by host)" $ length disksByHost == 12
+    assertMsg "Number of disks" $ length disks == 12
+    assertMsg "Number of disk versions" $ length dvers1 == 67
     forM_ (getResourcesOfType g :: [M0.PVer]) $ \pver -> do
       let PDClustAttr { _pa_N = paN
                       , _pa_K = paK

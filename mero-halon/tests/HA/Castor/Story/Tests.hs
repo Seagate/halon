@@ -289,7 +289,7 @@ prepareSubscriptions rc rmq = do
 
 loadInitialData :: Process ()
 loadInitialData = let
-    init_msg = initialDataAddr "10.0.2.15" "10.0.2.15" 8
+    init_msg = initialDataAddr "10.0.2.15" "10.0.2.15" 12
   in do
     nid <- getSelfNode
     -- We populate the graph with confc context.
@@ -300,7 +300,7 @@ loadInitialData = let
 loadInitialDataMod :: (InitialData -> InitialData)
                    -> Process ()
 loadInitialDataMod f = let
-    init_msg = f $ initialDataAddr systemHostname systemHostname 8
+    init_msg = f $ initialDataAddr systemHostname systemHostname 12
   in do
     nid <- getSelfNode
     -- We populate the graph with confc context.

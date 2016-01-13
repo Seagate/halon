@@ -109,6 +109,9 @@ initialDataGen host_pfx ifaddr_pfx n_srv n_drv scheme = CI.InitialData {
 }
 
 initialDataAddr :: String -> String -> Int -> CI.InitialData
+initialDataAddr host ifaddr n | n < 12 =
+     error $ "initialDataAddr: the given number of devices (" ++ show n
+             ++ ") is smaller than 2 * parity_units + data_units (= 12)."
 initialDataAddr host ifaddr n = CI.InitialData {
   CI.id_racks = [
     CI.Rack {
@@ -187,8 +190,7 @@ initialDataAddr host ifaddr n = CI.InitialData {
       ]
     , CI.m0h_devices = fmap
         (\i -> CI.M0Device ("wwn" ++ show i) 4 64000 ("/dev/loop" ++ show i))
-        -- Mero wants no less devices than 2 * parity + data_units.
-        [(1 :: Int) .. max 12 n]
+        [(1 :: Int) .. n]
     }
   ]
 }
@@ -205,7 +207,7 @@ iosEndpoint host = unsafePerformIO $
 
 -- | Sample initial data for test purposes
 initialData :: CI.InitialData
-initialData = initialDataAddr host host 8
+initialData = initialDataAddr host host 12
   where host = unsafePerformIO $ do
           mhost <- fmap (fst . (span (/=':'))) <$> lookupEnv "TEST_LISTEN"
           case mhost of
