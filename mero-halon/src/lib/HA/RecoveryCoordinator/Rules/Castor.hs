@@ -234,7 +234,6 @@ ruleMeroNoteSet =
                       traverse_ startRepairOperation pools
 
                     when (status == M0_NC_TRANSIENT) $ do
-                      nid <- liftProcess getSelfNode
                       promulgateRC $ ResetAttempt sdev
 
                     syncGraph $ say "mero-note-set synchronized"
