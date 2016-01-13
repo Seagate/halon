@@ -544,7 +544,7 @@ testSMARTNoResponse transport = run transport interceptor test where
     smartTestComplete recv AckReplyPassed sdev
     return ()
 
--- | SSPL emits unused_ok event for one of the drives.
+-- | SSPL emits EMPTY_None event for one of the drives.
 testDriveRemovedBySSPL :: Transport -> IO ()
 testDriveRemovedBySSPL transport = run transport interceptor test where
   interceptor _rc _str = return ()
@@ -561,7 +561,7 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
         message = LBS.toStrict $ encode $ mkSensorResponse
            $ emptySensorMessage
               { sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
-                Just $ mkResponseDriveManager (pack enclosure) "serial1" devIdx "unused_ok" }
+                Just $ mkResponseDriveManager (pack enclosure) "serial1" devIdx "EMPTY_None" }
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message0
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
     Just{} <- expectTimeout 1000000 :: Process (Maybe (Published DriveRemoved))
