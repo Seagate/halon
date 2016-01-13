@@ -47,6 +47,7 @@ import Control.Distributed.Process
   , getSelfPid
   , spawnAsync
   , spawnLocal
+  , link
   )
 import Control.Distributed.Process.Closure ( mkClosure, staticDecode )
 import Control.Distributed.Process.Internal.Types as DP ( remoteTable, processNode )
@@ -270,7 +271,10 @@ _startService :: forall a. Configuration a
              -> a
              -> G.Graph
              -> Process ()
-_startService node svc cfg _ = void $ spawnLocal $ do
+_startService node svc cfg _ = void $ do
+  caller <- getSelfPid
+  spawnLocal $ do
+    link caller
     self <- getSelfPid
     _ <- spawnAsync node $
               $(mkClosure 'remoteStartService) (self, serviceName svc)

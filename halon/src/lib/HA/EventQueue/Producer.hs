@@ -85,15 +85,19 @@ promulgate x = do
     promulgateEvent m
 
 -- | Send message and wait until it will be acknowledged, this method is
--- blocking.
+-- blocking. Main difference with non-blocking promulgate function is that
+-- 'promulgateWait' will cancel promulgate call in case if caller thread
+-- will receive an exception, if this is not desired behaviour - use
+-- 'promulgate' instead.
 promulgateWait :: Serializable a => a -> Process ()
-promulgateWait x = do
-   sender <- promulgate x
-   mref <- monitor sender
-   receiveWait [matchIf (\(ProcessMonitorNotification p _ _) -> p == mref) 
-                        (const $ return ())
-               ]
-   
+promulgateWait x =
+   bracket (promulgate x)
+           (flip kill "caller was killed")
+           $ \sender -> do
+     mref <- monitor sender
+     receiveWait [matchIf (\(ProcessMonitorNotification p _ _) -> p == mref) 
+                          (const $ return ())
+                 ]
 
 -- | Add an event to the event queue. This form takes the HAEvent directly.
 promulgateEvent :: PersistMessage -> Process ProcessId

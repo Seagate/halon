@@ -235,8 +235,7 @@ ruleMeroNoteSet =
 
                     when (status == M0_NC_TRANSIENT) $ do
                       nid <- liftProcess getSelfNode
-                      liftProcess . void . promulgateEQ [nid]
-                        $ ResetAttempt sdev
+                      promulgateRC $ ResetAttempt sdev
 
                     syncGraph $ say "mero-note-set synchronized"
                 _ -> do
@@ -549,7 +548,6 @@ ruleNewMeroClient = define "new-mero-client" $ do
         _meminfo <- case minfo of
            Nothing -> do
              phaseLog "debug" "no information about host stats - loading"
-             _ <- liftProcess $ promulgate (ClientInfo node 1024 1024)
              liftProcess $ void $ spawnLocal $
                void $ spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
              continue client_info
@@ -565,8 +563,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
                 Just fs -> return fs
         -- Start mero service
         phaseLog "debug" $ "starting m0 process on " ++ show node
-        liftProcess $
-          promulgateWait $ encodeP $ ServiceStartRequest Start (Node nid) m0d
+        promulgateRC $ encodeP $ ServiceStartRequest Start (Node nid) m0d
             (MeroConf (ip ++ haAddress) (ip ++ rmsAddress)) []
 #endif
         -- Update RG
@@ -635,7 +632,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
         -- It's on if we will never receive reply, we already know that
         -- graph was synchronized and we will eventually sync to confd
 #ifdef USE_MERO
-        liftProcess $ promulgateWait SyncToConfdServersInRG
+        promulgateRC SyncToConfdServersInRG
 #endif
         messageProcessed eid
         publish $ NewMeroClientProcessed host

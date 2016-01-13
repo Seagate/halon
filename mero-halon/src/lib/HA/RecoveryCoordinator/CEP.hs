@@ -45,7 +45,6 @@ import           HA.Resources.Castor
 import           HA.Service
 import           HA.Services.DecisionLog (decisionLog, printLogs)
 import           HA.Services.Monitor
-import           HA.EventQueue.Producer (promulgateWait)
 import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
 import qualified HA.Resources.Castor as M0
@@ -230,9 +229,9 @@ ruleNodeUp argv = define "node-up" $ do
            Nothing ->
              phaseLog "info" "Configuration data was not loaded yet, skipping"
            Just{} ->
-             liftProcess $ promulgateWait $ NewMeroClient (Node nid)
+             promulgateRC $ NewMeroClient (Node nid)
 #else
-        liftProcess $ promulgateWait $ NewMeroClient (Node nid)
+        promulgateRC $ NewMeroClient (Node nid)
 #endif
         finishProcessingMsg uuid
         continue end
@@ -278,7 +277,7 @@ ruleStopRequest = defineSimple "stop-request" $ \(HAEvent uuid msg _) -> do
         killService sp UserStop
       messageProcessed uuid
 
-data RecoverNodeAck = RecoverNodeAck UUID UUID
+data RecoverNodeAck = RecoverNodeAck UUID
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary RecoverNodeAck
@@ -301,7 +300,7 @@ ruleRecoverNode argv = define "recover-node" $ do
       timeout_host <- phaseHandle "timeout_host"
       finalize_rule <- phaseHandle "finalize_rule"
 
-      setPhase start_recover $ \(HAEvent uuid (RecoverNode uuid' n1) _) -> do
+      setPhase start_recover $ \(RecoverNode uuid n1) -> do
         startProcessingMsg uuid
         g <- getLocalGraph
 
@@ -319,12 +318,12 @@ ruleRecoverNode argv = define "recover-node" $ do
                           ]
               notifyMero nodes M0_NC_TRANSIENT
 #endif
-              put Local (uuid, uuid', Just (n1, host, 0))
+              put Local (uuid, Just (n1, host, 0))
             -- Node already marked as down, probably the RC died. Do
             -- the simple thing and start the recovery all over: as
             -- long as the RC doesn't die more often than a full node
             -- timeout happens, we'll finish the recovery eventually
-            True -> put Local (uuid, uuid', Just (n1, host, 0))
+            True -> put Local (uuid, Just (n1, host, 0))
         liftProcess $ sayRC $ "Marked node transient: " ++ show n1
 
         continue try_recover
@@ -335,13 +334,13 @@ ruleRecoverNode argv = define "recover-node" $ do
 
       directly try_recover $ do
         get Local >>= \case
-          (uuid, uuid', Just (Node nid, h, i)) | i >= maxRetries -> continue timeout_host
-                                               | otherwise -> do
+          (uuid, Just (Node nid, h, i)) | i >= maxRetries -> continue timeout_host
+                                        | otherwise -> do
             hasHostAttr M0.HA_TRANSIENT h >>= \case
-              False -> ackMsg uuid' >> ackMsg uuid
+              False -> ackMsg uuid
               True -> do
                 liftProcess $ sayRC "Inside try_recover"
-                put Local (uuid, uuid', Just (Node nid, h, i + 1))
+                put Local (uuid, Just (Node nid, h, i + 1))
                 void . liftProcess . callLocal . spawnAsync nid $
                   $(mkClosure 'nodeUp) ((stationNodes argv), (100 :: Int))
                 let t' = expirySeconds `div` maxRetries
@@ -351,21 +350,19 @@ ruleRecoverNode argv = define "recover-node" $ do
 
       directly timeout_host $ do
         let log' = liftProcess . sayRC
-        (uuid, uuid', st) <- get Local
+        (uuid, st) <- get Local
         case st of
           Just (n1, h, i) -> do
             log' $ "timeout_host Just " ++ show (n1, h, i)
             timeoutHost h
-            put Local (nil, nil, Nothing)
+            put Local (nil, Nothing)
           _ -> log' "timeout_host nothing" >> return ()
-        syncGraphProcess $ \self -> usend self $ RecoverNodeAck uuid' uuid
+        syncGraphProcess $ \self -> usend self $ RecoverNodeAck uuid
         continue finalize_rule
 
-      setPhase finalize_rule $ \(RecoverNodeAck uuid' uuid) -> do
-        ackMsg uuid'
-        ackMsg uuid
+      setPhase finalize_rule $ \(RecoverNodeAck uuid) -> ackMsg uuid
 
-      start start_recover (nil, nil, Nothing)
+      start start_recover (nil, Nothing)
 
 
 -- | Send 'Logs' to decision-log service. First it tries to send to
