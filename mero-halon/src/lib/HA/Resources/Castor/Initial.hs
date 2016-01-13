@@ -31,6 +31,7 @@ data Network = Data | Management | Local
 instance Binary Network
 instance Hashable Network
 instance FromJSON Network
+instance ToJSON Network
 
 data Interface = Interface {
     if_macAddress :: String
@@ -41,6 +42,7 @@ data Interface = Interface {
 instance Binary Interface
 instance Hashable Interface
 instance FromJSON Interface
+instance ToJSON Interface
 
 data Host = Host {
     h_fqdn :: String
@@ -52,6 +54,7 @@ data Host = Host {
 instance Binary Host
 instance Hashable Host
 instance FromJSON Host
+instance ToJSON Host
 
 data BMC = BMC {
     bmc_addr :: String
@@ -62,6 +65,7 @@ data BMC = BMC {
 instance Binary BMC
 instance Hashable BMC
 instance FromJSON BMC
+instance ToJSON BMC
 
 data Enclosure = Enclosure {
     enc_idx :: Int
@@ -73,6 +77,7 @@ data Enclosure = Enclosure {
 instance Binary Enclosure
 instance Hashable Enclosure
 instance FromJSON Enclosure
+instance ToJSON Enclosure
 
 data Rack = Rack {
     rack_idx :: Int
@@ -82,6 +87,7 @@ data Rack = Rack {
 instance Binary Rack
 instance Hashable Rack
 instance FromJSON Rack
+instance ToJSON Rack
 
 #ifdef USE_MERO
 
@@ -93,6 +99,7 @@ data FailureSetScheme =
 instance Binary FailureSetScheme
 instance Hashable FailureSetScheme
 instance FromJSON FailureSetScheme
+instance ToJSON FailureSetScheme
 
 data M0Globals = M0Globals {
     m0_datadir :: String
@@ -112,6 +119,7 @@ data M0Globals = M0Globals {
 instance Binary M0Globals
 instance Hashable M0Globals
 instance FromJSON M0Globals
+instance ToJSON M0Globals
 
 data M0Device = M0Device {
     m0d_wwn :: String
@@ -123,6 +131,7 @@ data M0Device = M0Device {
 instance Binary M0Device
 instance Hashable M0Device
 instance FromJSON M0Device
+instance ToJSON M0Device
 
 -- | Represents an aggregation of three Mero concepts, which we don't
 --   necessarily need for the castor implementation - nodes, controllers, and
@@ -136,6 +145,7 @@ data M0Host = M0Host {
 instance Binary M0Host
 instance Hashable M0Host
 instance FromJSON M0Host
+instance ToJSON M0Host
 
 data M0Process = M0Process {
     m0p_endpoint :: String
@@ -151,6 +161,7 @@ data M0Process = M0Process {
 instance Binary M0Process
 instance Hashable M0Process
 instance FromJSON M0Process
+instance ToJSON M0Process
 
 data M0Service = M0Service {
     m0s_type :: ServiceType -- ^ e.g. ioservice, haservice
@@ -161,6 +172,7 @@ data M0Service = M0Service {
 instance Binary M0Service
 instance Hashable M0Service
 instance FromJSON M0Service
+instance ToJSON M0Service
 
 #endif
 
@@ -175,3 +187,4 @@ data InitialData = InitialData {
 instance Binary InitialData
 instance Hashable InitialData
 instance FromJSON InitialData
+instance ToJSON InitialData
