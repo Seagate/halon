@@ -224,6 +224,7 @@ instance ConfObj Service where
 
 data SDev = SDev {
     d_fid :: Fid
+  , d_idx :: Word32 -- ^ Index of device in pool
   , d_size :: Word64 -- ^ Size in mb
   , d_bsize :: Word32 -- ^ Block size in mb
   , d_path :: String -- ^ Path to logical device
