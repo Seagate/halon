@@ -118,12 +118,11 @@ Benchmark sync-rg
   Main-Is:          sync-rg.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   benchmarks, tests
-  Other-Modules:    HA.ResourceGraph.Tests,
+  Other-Modules:    BenchHelpers,
+                    HA.ResourceGraph.Tests,
                     RemoteTables,
                     Test.Helpers,
                     Test.Transport
-
-  Buildable:        False
 
   Ghc-Options: -threaded -Wall
 
@@ -174,6 +173,7 @@ Benchmark gc-rg
   Main-Is:          gc-rg.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   benchmarks
+  Other-Modules:    BenchHelpers
 
   Ghc-Options: -threaded -Wall
 

@@ -34,7 +34,7 @@ module HA.ResourceGraph
     ( -- * Types
       Resource(..)
     , Relation(..)
-    , Graph
+    , Graph(grMMChan)
     , Edge(..)
     , Dict(..)
     , Res(..)
