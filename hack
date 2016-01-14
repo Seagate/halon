@@ -16,7 +16,7 @@ declare -a EXTRA_INCLUDE_DIRS
 declare -a FLAGS
 
 EXTRA_INCLUDE_DIRS=("$DIR/rpclite/rpclite")
-FLAGS=("--flag mero-halon:mero")
+FLAGS=("--flag *:mero")
 
 if [ $HALON_BUILD_ENV = "bare" ]; then
   FLAGS=("${FLAGS[@]}" "--no-docker")
