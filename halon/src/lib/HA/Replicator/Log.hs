@@ -134,14 +134,14 @@ rgroupConfig :: (Int, Int) -> Log.Config
 rgroupConfig (snapshotThreshold, snapshotTimeout) = Log.Config
     { logId             = halonLogId
     , consensusProtocol =
-          \dict -> BasicPaxos.protocol dict 3000000
+          \dict -> BasicPaxos.protocol dict 8000000
                  (\n -> openPersistentStore
                             (filepath (storageDir </> "acceptors") n) >>=
                         acceptorStore
                  )
     , persistDirectory  = halonPersistDirectory
-    , leaseTimeout      = 3000000
-    , leaseRenewTimeout = 1000000
+    , leaseTimeout      = 8000000
+    , leaseRenewTimeout = 6000000
     , driftSafetyFactor = 11 % 10
     , snapshotPolicy    = return . (>= snapshotThreshold)
     , snapshotRestoreTimeout = snapshotTimeout

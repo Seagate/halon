@@ -137,7 +137,7 @@ recoverySupervisor rg rcP = do
     go :: Either Int (ProcessId, Int) -> RSState -> Process ()
     -- I'm the leader
     go (Right (rc, remaining)) previousState = do
-      let leaseAllowance = rsLeasePeriod previousState `div` 3
+      let leaseAllowance = rsLeasePeriod previousState `div` 3 * 2
       leaseTimer <- newTimer remaining $ killRC rc
       void $ receiveTimeout (max 0 (remaining - leaseAllowance)) []
 

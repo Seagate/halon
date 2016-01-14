@@ -128,7 +128,7 @@ remotable [ 'addSerializedEvent
 -- | Amount of microseconds between retries of requests for the replicated
 -- state
 requestTimeout :: Int
-requestTimeout = 1000 * 1000
+requestTimeout = 5 * 1000 * 1000
 
 -- | @startsEventQueue rg@ starts an event queue.
 --
