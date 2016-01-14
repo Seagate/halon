@@ -15,16 +15,11 @@ import qualified HA.RecoveryCoordinator.SSPL.Tests
 #endif
 import qualified HA.Castor.Tests
 import qualified HA.Castor.Story.Tests
-#else
-#ifdef USE_MOCK_REPLICATOR
-import qualified HA.Castor.Story.NonMero
-#endif
 #endif
 import qualified HA.Test.Disconnect
 import qualified HA.Test.Cluster
 import qualified HA.Test.SSPL
 
-import Test.Tasty (TestTree, defaultMainWithIngredients)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
 import Test.Tasty.Ingredients.FileReporter (fileTestReporter)
 
@@ -34,7 +29,6 @@ import Network.Transport (Transport, EndPointAddress)
 
 import Helper.Environment
 import Test.Framework
-import Test.Tasty (testGroup)
 import Test.Tasty.HUnit (testCase)
 
 import Control.Concurrent (threadDelay, forkIO)
@@ -88,11 +82,6 @@ ut _host transport breakConnection = do
       , HA.Test.Cluster.tests transport
       , testGroup "mero" $
           HA.RecoveryCoordinator.Mero.Tests.tests _host transport
-#if defined(USE_MOCK_REPLICATOR) && !defined(USE_MERO)
-      , HA.Castor.Story.NonMero.tests transport
-#else
-      , testCase "Castor story non mero tests are disabled" $ return ()
-#endif
       , MERO_TEST(testGroup,"Castor",HA.Castor.Tests.tests _host transport, [])
       , MERO_TEST(testGroup, "DriveFailure", driveFailureTests transport, [])
       , testGroup "disconnect" $

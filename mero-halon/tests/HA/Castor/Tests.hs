@@ -13,17 +13,13 @@ import Control.Distributed.Process
   , liftIO
   , getSelfNode
   , unClosure
-  , say
-  , usend
-  , expect
-  , getSelfPid
   )
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Monad (forM_, join, void)
 
-import Data.List (sort, isPrefixOf)
+import Data.List (sort)
 import qualified Data.Set as Set
 
 import Network.Transport (Transport)
@@ -31,7 +27,6 @@ import Network.CEP
   ( Buffer
   , PhaseM
   , emptyFifoBuffer
-  , liftProcess
   )
 import Network.CEP.Testing (runPhase, runPhaseGet)
 
@@ -61,8 +56,6 @@ import TestRunner
 
 import Test.Framework
 import qualified Test.Tasty.HUnit as Tasty
-import System.Mem
-import GHC.Stats
 
 import Helper.InitialData
 import Helper.Environment (systemHostname)
@@ -309,6 +302,7 @@ testControllerFailureDomain transport = rGroupTest transport $ \pid -> do
     iData = initialDataGen systemHostname "192.0.2" 4 4 $ CI.Preloaded 0 1 0
 
 
+{-
 printMem :: IO String
 printMem = do
   performGC
@@ -381,6 +375,7 @@ largeInitialData host transport = let
       assertMsg "Number of storage devices" $ length sdevs == numDisks
       assertMsg "Number of disks (reached by host)" $ length disksByHost == numDisks
       assertMsg "Number of disks" $ length disks == numDisks
+-}
 
 run :: forall g. g
     -> PhaseM g Int ()

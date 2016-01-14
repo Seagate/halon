@@ -16,6 +16,7 @@ import Control.Distributed.Process.Closure
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
+import Data.UUID as UUID
 
 import HA.ResourceGraph
 import HA.Service
@@ -24,12 +25,33 @@ import Mero.Notification (Set)
 import Options.Schema
 import Options.Schema.Builder
 
-data MeroConf = MeroConf {
-    mcServerAddr :: String
-} deriving (Eq, Generic, Show, Typeable)
+-- | Mero kernel module configuration parameters
+data MeroKernelConf = MeroKernelConf
+       { mkcNodeUUID :: UUID    -- ^ Node UUID
+       } deriving (Eq, Generic, Show, Typeable)
+instance Binary MeroKernelConf
+instance Hashable MeroKernelConf
 
+-- | Mero service configuration
+data MeroConf = MeroConf
+       { mcHAAddress        :: String         -- ^ Address of the HA service endpoint
+       , mcProfile          :: String         -- ^ FID of the current profile
+       , mcKernelConfig     :: MeroKernelConf -- ^ Kernel configuration
+       , mcServiceConf      :: MeroNodeConf   -- ^ Node configuration
+       }
+   deriving (Eq, Generic, Show, Typeable)
 instance Binary MeroConf
 instance Hashable MeroConf
+
+-- | Node configuration
+data MeroNodeConf = MeroClientConf
+       { mccProcessFid :: String
+       , mccMeroEndpoint :: String
+       }
+  deriving (Eq, Generic, Show, Typeable)
+
+instance Binary MeroNodeConf
+instance Hashable MeroNodeConf
 
 newtype TypedChannel a = TypedChannel (SendPort a)
     deriving (Eq, Show, Typeable, Binary, Hashable)
@@ -66,11 +88,36 @@ relationDictMeroChanelServiceProcessChannel :: Dict (
 relationDictMeroChanelServiceProcessChannel = Dict
 
 meroSchema :: Schema MeroConf
-meroSchema = MeroConf <$> sa where
-  sa = strOption
-        $  long "listenAddr"
-        <> short 'l'
-        <> metavar "LISTEN_ADDRESS"
+meroSchema = MeroConf <$> ha <*> pr <*> ker <*> node
+  where
+    ha = strOption
+          $  long "listenAddr"
+          <> short 'l'
+          <> metavar "LISTEN_ADDRESS"
+          <> summary "HA service listen endpoint address"
+    pr = strOption
+          $  long "profile"
+          <> short 'p'
+          <> metavar "MERO_ADDRESS"
+          <> summary "confd profile"
+    ker = compositeOption kernelSchema $ long "kernel" <> summary "Kernel configuration"
+    node = oneOf [client]
+    client = compositeOption clientOpts $ long "client" <> summary "client node"
+    clientOpts = MeroClientConf <$> fid <*> mero
+    fid = strOption
+           $ long "fid"
+           <> metavar "FID"
+    mero = strOption
+            $ long "mero"
+            <> metavar "ENDPOINT"
+
+kernelSchema :: Schema MeroKernelConf
+kernelSchema = MeroKernelConf <$> uuid
+  where
+    uuid = option (maybe (fail "incorrect uuid format") return . UUID.fromString)
+            $ long "uuid"
+            <> short 'u'
+            <> metavar "UUID"
 
 $(generateDicts ''MeroConf)
 $(deriveService ''MeroConf 'meroSchema [ 'resourceDictMeroChannel

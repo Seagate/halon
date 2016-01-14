@@ -364,11 +364,20 @@ instance Hashable PoolRepairStatus
 newtype LNid = LNid String
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
 
+data HostHardwareInfo = HostHardwareInfo 
+       { hhMemorySize  :: Word64
+       , hhCpuCount    :: Int
+       , hhLNidAddress :: String
+       }
+   deriving (Eq, Show, Typeable, Generic)
+instance Binary HostHardwareInfo
+instance Hashable HostHardwareInfo
+
 $(mkDicts
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
+  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid, ''HostHardwareInfo
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -407,6 +416,7 @@ $(mkDicts
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
   , (''Pool, ''R.Has, ''PoolRepairStatus)
   , (''R.Host, ''R.Has, ''LNid)
+  , (''R.Host, ''R.Runs, ''Node)
   ]
   )
 
@@ -414,7 +424,7 @@ $(mkResRel
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
+  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid, ''HostHardwareInfo
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -453,6 +463,7 @@ $(mkResRel
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
   , (''Pool, ''R.Has, ''PoolRepairStatus)
   , (''R.Host, ''R.Has, ''LNid)
+  , (''R.Host, ''R.Runs, ''Node)
   ]
   []
   )

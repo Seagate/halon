@@ -22,7 +22,9 @@ module HA.RecoveryCoordinator.Mero.Tests
   ) where
 
 import           Control.Distributed.Process
+#ifdef USE_MERO
 import           Control.Distributed.Process.Node (runProcess)
+#endif
 import           Control.Monad (void)
 import           Data.Binary
 import           Data.List (isInfixOf)

@@ -100,7 +100,6 @@ Library
                    HA.RecoveryCoordinator.Events.Mero
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
-                   System.Posix.SysInfo
 
   Other-Modules:   HA.RecoveryCoordinator.Actions.Monitor
                    HA.Services.DecisionLog.CEP
@@ -164,6 +163,7 @@ Library
                       HA.RecoveryCoordinator.Rules.Castor.SpielQuery
                       HA.Services.Mero.CEP
                       HA.Services.Mero.Types
+                      System.Posix.SysInfo
       cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
       c-sources: hastate/hastate.c
                  hastate/hastate_foms.c
@@ -468,7 +468,6 @@ Test-Suite unit-tests
                     HA.Test.Cluster
                     HA.Test.Disconnect
                     HA.Test.SSPL
-                    HA.Castor.Story.NonMero
                     Helper.SSPL
                     Helper.Environment
                     Helper.InitialData

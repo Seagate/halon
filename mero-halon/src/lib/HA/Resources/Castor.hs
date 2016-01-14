@@ -135,7 +135,7 @@ $(mkDicts
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
-  , ''MI.BMC
+  , ''MI.BMC, ''UUID
   ]
   [ (''Cluster, ''Has, ''Rack)
   , (''Cluster, ''Has, ''Host)
@@ -154,6 +154,7 @@ $(mkDicts
   , (''StorageDevice, ''Has, ''StorageDeviceAttr)
   , (''StorageDevice, ''ReplacedBy, ''StorageDevice)
   , (''StorageDevice, ''WantsReplacement, ''DeviceIdentifier)
+  , (''Host, ''Has, ''UUID)
   ]
   )
 
@@ -161,13 +162,14 @@ $(mkResRel
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
-  , ''MI.BMC
+  , ''MI.BMC, ''UUID
   ]
   [ (''Cluster, ''Has, ''Rack)
   , (''Cluster, ''Has, ''Host)
   , (''Rack, ''Has, ''Enclosure)
   , (''Host, ''Has, ''MI.Interface)
   , (''Host, ''Has, ''HostAttr)
+  , (''Host, ''Has, ''UUID)
   , (''Cluster, ''Has, ''Enclosure)
   , (''Enclosure, ''Has, ''StorageDevice)
   , (''Enclosure, ''Has, ''Host)

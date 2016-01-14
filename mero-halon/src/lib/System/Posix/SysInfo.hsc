@@ -12,6 +12,7 @@ module System.Posix.SysInfo
   , getMemTotalMB
   , getUserSystemInfo
   , ClientInfo(..)
+  , HostHardwareInfo(..)
   , getUserSystemInfo__static
   , getUserSystemInfo__sdict
   , getUserSystemInfo__tdict
@@ -22,17 +23,18 @@ module System.Posix.SysInfo
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure (remotable)
-import HA.EventQueue.Producer (promulgate)
+import HA.EventQueue.Producer (promulgateWait)
 import HA.Resources (Node)
+import HA.Resources.Mero (HostHardwareInfo(..))
 
-import Control.Monad (unless)
+import Control.Monad (unless, (<=<))
 import Data.Binary (Binary)
-import Data.Functor (void)
 import Data.Typeable (Typeable)
 import GHC.Generics
 import System.SystemD.API
 import System.Process
 import System.Exit
+
 
 #ifdef _SC_NPROCESSORS_ONLN
 import Foreign.C
@@ -59,17 +61,17 @@ getMemTotalMB = do
   let (_:m:_) = words memtotal
   return $ floor $ (read m :: Double) / 1024
 
-data ClientInfo = ClientInfo Node Int Int String
+data ClientInfo = ClientInfo Node HostHardwareInfo
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ClientInfo
 
+
+-- | Load information about system hardware. Reply is sent via 'promulgate'.
 getUserSystemInfo :: Node -> Process ()
 getUserSystemInfo nid =
-  void $ promulgate =<< liftIO (ClientInfo nid <$> getMemTotalMB
-                                               <*> getProcessorCount
-                                               <*> getLNetID)
-
+  promulgateWait <=< liftIO $ ClientInfo nid <$> 
+    (HostHardwareInfo <$> fmap fromIntegral getMemTotalMB <*> getProcessorCount <*> getLNetID)
 
 getLNetID :: IO String
 getLNetID = do
@@ -78,8 +80,5 @@ getLNetID = do
   (nid:rest) <- lines <$> readProcess "lctl" ["list_nids"] ""
   unless (null rest) $ putStrLn "lctl reports many interfaces, but only fist will be used"
   return nid
-
-
-  
 
 remotable [ 'getUserSystemInfo ]

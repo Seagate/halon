@@ -101,7 +101,11 @@ initialDataGen host_pfx ifaddr_pfx n_srv n_drv scheme = CI.InitialData {
 }
 
 initialDataAddr :: String -> String -> Int -> CI.InitialData
+<<<<<<< HEAD
 initialDataAddr _ _ n | n < 12 =
+=======
+initialDataAddr _host _ifaddr n | n < 12 =
+>>>>>>> 4bc4368... Fix compilation warnings.
      error $ "initialDataAddr: the given number of devices (" ++ show n
              ++ ") is smaller than 2 * parity_units + data_units (= 12)."
 initialDataAddr host ifaddr n = CI.InitialData {

@@ -89,7 +89,15 @@ newtype MockM0 = MockM0 DeclareMeroChannel
   deriving (Binary, Generic, Hashable, Typeable)
 
 mockMeroConf :: MeroConf
+<<<<<<< HEAD
+<<<<<<< HEAD
 mockMeroConf = MeroConf ""
+=======
+mockMeroConf = MeroConf "" "" (MeroKernelConf (error "mock") "") (MeroClientConf "" "" )
+>>>>>>> 4bc4368... Fix compilation warnings.
+=======
+mockMeroConf = MeroConf "" "" (MeroKernelConf (error "mock")) (MeroClientConf "" "" )
+>>>>>>> 3ba8e24... Update to latest state.
 
 newMeroChannel :: ProcessId -> Process (ReceivePort NotificationMessage, MockM0)
 newMeroChannel pid = do
