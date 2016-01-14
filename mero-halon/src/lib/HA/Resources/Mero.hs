@@ -300,7 +300,6 @@ instance ConfObj DiskV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (DiskV f) = f
 
-
 -- | Wrapper for 'C.TimeSpec' providing 'Binary' and 'Hashable'
 -- instances.
 newtype TimeSpec = TimeSpec { _unTimeSpec :: C.TimeSpec }
@@ -362,11 +361,14 @@ data PoolRepairStatus = PoolRepairStatus
 instance Binary PoolRepairStatus
 instance Hashable PoolRepairStatus
 
+newtype LNid = LNid String
+  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+
 $(mkDicts
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus
+  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -404,6 +406,7 @@ $(mkDicts
   , (''R.Cluster, ''R.Has, ''FidSeq)
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
   , (''Pool, ''R.Has, ''PoolRepairStatus)
+  , (''R.Host, ''R.Has, ''LNid)
   ]
   )
 
@@ -411,7 +414,7 @@ $(mkResRel
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus
+  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -449,6 +452,7 @@ $(mkResRel
   , (''R.Cluster, ''R.Has, ''FidSeq)
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
   , (''Pool, ''R.Has, ''PoolRepairStatus)
+  , (''R.Host, ''R.Has, ''LNid)
   ]
   []
   )

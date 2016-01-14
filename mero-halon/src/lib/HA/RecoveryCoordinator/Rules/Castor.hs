@@ -52,7 +52,6 @@ import Data.Hashable
 
 import Control.Distributed.Process.Closure (mkClosure)
 
-import Control.Applicative (liftA2)
 import Control.Monad
 import Data.Maybe (isJust, mapMaybe, listToMaybe)
 import Data.Binary (Binary)
@@ -508,7 +507,6 @@ ruleNewMeroClient = define "new-mero-client" $ do
     msgClientInfo    <- phaseHandle "client-info-update"
     msgClientStoreInfo <- phaseHandle "client-store-update"
     msgClientNodeProvisioned <- phaseHandle "node-provisioned"
-    msgSyncComplete <- phaseHandle "sync-complete"
 
     directly mainloop $
       switch [ msgNewMeroClient
@@ -531,9 +529,8 @@ ruleNewMeroClient = define "new-mero-client" $ do
              Just (LNid ip)
                | isClient -> do
                    phaseLog "info" $ show host ++ " is mero client. Configuration was generated - starting mero service"
-                   uuid <- liftIO nextRandom
                    promulgateRC $ encodeP $ ServiceStartRequest Start (Node nid) m0d
-                     (MeroConf (ip ++ haAddress) (ip ++ rmsAddress)) []
+                     (MeroConf (ip ++ haAddress)) []
                    messageProcessed eid
              _  -> do
                    phaseLog "info" $ show host ++ " is mero client. No configuration - generating"
@@ -566,7 +563,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
           Just fs -> do
             (node:_) <- nodesOnHost host
             storeMeroClientNode fs host info
-            let conf = MeroConf (ip ++ haAddress) (ip ++ rmsAddress)
+            let conf = MeroConf (ip ++ haAddress)
             promulgateRC $ encodeP $ ServiceStartRequest Start node m0d conf []
               
     setPhase msgClientNodeProvisioned $ \(HAEvent eid (MeroHostProvisioned host) _) -> do

@@ -25,10 +25,14 @@ import Control.Distributed.Process.Closure (remotable)
 import HA.EventQueue.Producer (promulgate)
 import HA.Resources (Node)
 
+import Control.Monad (unless)
 import Data.Binary (Binary)
 import Data.Functor (void)
 import Data.Typeable (Typeable)
 import GHC.Generics
+import System.SystemD.API
+import System.Process
+import System.Exit
 
 #ifdef _SC_NPROCESSORS_ONLN
 import Foreign.C
@@ -55,13 +59,27 @@ getMemTotalMB = do
   let (_:m:_) = words memtotal
   return $ floor $ (read m :: Double) / 1024
 
-data ClientInfo = ClientInfo Node Int Int
+data ClientInfo = ClientInfo Node Int Int String
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ClientInfo
 
 getUserSystemInfo :: Node -> Process ()
 getUserSystemInfo nid =
-  void $ promulgate =<< liftIO (ClientInfo nid <$> getMemTotalMB <*> getProcessorCount)
+  void $ promulgate =<< liftIO (ClientInfo nid <$> getMemTotalMB
+                                               <*> getProcessorCount
+                                               <*> getLNetID)
+
+
+getLNetID :: IO String
+getLNetID = do
+  rc <- startService "lnet"
+  unless (rc == ExitSuccess) $ error "failed start lnet module"
+  (nid:rest) <- lines <$> readProcess "lctl" ["list_nids"] ""
+  unless (null rest) $ putStrLn "lctl reports many interfaces, but only fist will be used"
+  return nid
+
+
+  
 
 remotable [ 'getUserSystemInfo ]
