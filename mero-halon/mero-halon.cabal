@@ -294,8 +294,11 @@ Executable genders2yaml
   if !flag(mero)
     Buildable:        False
   Build-Depends:      base >= 4.8,
+                      binary,
                       bytestring,
                       confc,
+                      directory >= 1.2.5,
+                      filepath,
                       genders,
                       mero-halon,
                       vector,
