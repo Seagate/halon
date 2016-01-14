@@ -109,7 +109,7 @@ withRConf :: SpielContext
           -> IO a
 withRConf spiel = bracket_ (rconfStart spiel) (rconfStop spiel)
 
-withSpiel :: RPCMachine 
+withSpiel :: RPCMachine
           -> (SpielContext -> IO a)
           -> IO a
 withSpiel rpcmach = bracket (spielInit rpcmach) spielFini
@@ -173,7 +173,7 @@ dumpTransaction (SpielTransaction ptr) fp = withForeignPtr ptr $ \c_ptr -> do
 -- or spiel context. Usafe of 'commitTransaction' functions will lead to undefined
 -- behavior.
 withTransactionDump :: FilePath -> (SpielTransaction -> IO a) -> IO a
-withTransactionDump fp transaction = bracket 
+withTransactionDump fp transaction = bracket
   openLocalTransaction
   closeTransaction
   $ \t -> transaction t >>= \x -> dumpTransaction t fp >> return x
@@ -291,6 +291,7 @@ addDevice :: SpielTransaction
           -> Fid
           -> Fid -- ^ Service
           -> Maybe Fid -- ^ Disk
+          -> Word32 -- ^ Device index
           -> StorageDeviceInterfaceType
           -> StorageDeviceMediaType
           -> Word32 -- ^ block size in bytes
@@ -299,7 +300,7 @@ addDevice :: SpielTransaction
           -> Word64 -- ^ different flags (bitmask of m0_cfg_flag_bit)
           -> String -- ^ device filename
           -> IO ()
-addDevice (SpielTransaction fsc) fid parentFid mdiskFid ifType medType
+addDevice (SpielTransaction fsc) fid parentFid mdiskFid devIdx ifType medType
             bsize size lastState flags filename =
   withForeignPtr fsc $ \sc ->
     maybeWith with (mdiskFid) $ \disk_ptr ->
@@ -307,6 +308,7 @@ addDevice (SpielTransaction fsc) fid parentFid mdiskFid ifType medType
         withCString filename $ \ c_filename ->
           throwIfNonZero_ (\rc -> "Cannot add device: " ++ show rc)
             $ c_spiel_device_add sc fid_ptr fs_ptr disk_ptr
+                                  devIdx
                                   (fromIntegral . fromEnum $ ifType)
                                   (fromIntegral . fromEnum $ medType)
                                   bsize size lastState flags
@@ -551,7 +553,7 @@ instance Spliceable Service where
 instance Spliceable Sdev where
   splice t p o = do
      msd <- maybePeek peek (sd_disk o)
-     addDevice t (sd_fid o) p msd
+     addDevice t (sd_fid o) p msd (sd_dev_idx o)
                (toEnum . fromIntegral $ sd_iface o)
                (toEnum . fromIntegral $ sd_media o)
                (sd_bsize o) (sd_size o)
