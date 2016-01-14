@@ -57,7 +57,6 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process
-import Control.Applicative
 import Control.Monad (forever, void)
 import Data.Foldable (forM_)
 import Data.Maybe (listToMaybe)
