@@ -44,7 +44,7 @@ import HA.ResourceGraph hiding (__remoteTable)
 
 import RemoteTables (remoteTable)
 import Test.Framework
-import Test.Helpers (assertBool)
+import Test.Helpers (assertBool, assertEqual)
 
 --------------------------------------------------------------------------------
 -- Types                                                                      --
@@ -304,9 +304,21 @@ tests transport = do
           g2 <- syncWait $ mergeResources head [NodeA 1, NodeA 2] g1
           let es1 = connectedTo (NodeA 1) HasB g2 :: [NodeB]
               es2 = connectedFrom HasA (NodeA 1) g2 :: [NodeB]
+              es3 = connectedTo (NodeB 2) HasA g2 :: [NodeA]
           assert $ memberResource (NodeA 1) g2 == True
           assert $ memberResource (NodeA 2) g2 == False
           assert $ length es1 == 1
           assert $ length es2 == 2
-
+          assert $ elem (NodeA 1) es3
+          assert $ not $ elem (NodeA 2) es3
+      , testSuccess "isolateResource" $ rGroupTest transport g $ \mm -> do
+          g1 <- syncWait . sampleGraph =<< getGraph mm
+          g2 <- syncWait $ isolateResource (NodeB 2) g1
+          -- NodeB 2 connects everything - graph should now be totally disconnected
+          let es1 = connectedTo (NodeA 1) HasB g2 :: [NodeB]
+              es2 = connectedFrom HasA (NodeA 1) g2 :: [NodeB]
+              es3 = connectedTo (NodeB 2) HasA g2 :: [NodeA]
+          assertEqual "es1 is empty" [] es1
+          assertEqual "es2 is empty" [] es2
+          assertEqual "es3 is empty" [] es3
       ]

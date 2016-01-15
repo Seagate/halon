@@ -28,6 +28,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module HA.ResourceGraph
@@ -50,6 +51,7 @@ module HA.ResourceGraph
     , disconnect
     , disconnectAllFrom
     , disconnectAllTo
+    , isolateResource
     , mergeResources
     , sync
     , emptyGraph
@@ -127,7 +129,7 @@ import Data.Hashable
 import Data.List (foldl', delete)
 import Data.Maybe
 import Data.Proxy
-import Data.Typeable ( Typeable, cast )
+import Data.Typeable
 import Data.Word (Word8)
 import GHC.Generics (Generic)
 
@@ -235,6 +237,11 @@ isIn (OutRel _ _ _) = False
 -- | Predicate to select 'out' edges.
 isOut :: Rel -> Bool
 isOut = not . isIn
+
+-- | Invert a relation
+inverse :: Rel -> Rel
+inverse (OutRel a b c) = InRel a b c
+inverse (InRel a b c) = OutRel a b c
 
 -- | A change log for graph updates.
 --
@@ -403,29 +410,78 @@ disconnectAllTo _ _ b g = foldl' (.) id (fmap deleteEdge oldEdges) $ g
   where
     oldEdges = edgesToDst b g :: [Edge a r b]
 
+-- | Isolate a resource from the rest of the graph. This removes
+--   all relations from the node, regardless of type.
+isolateResource :: Resource a => a -> Graph -> Graph
+isolateResource r g@Graph{..} = g {
+      grGraph = M.delete (Res r)
+              . foldl' (.) id (fmap unhookG rels)
+              $ grGraph
+    , grChangeLog = updateChangeLog
+                    ( DeleteKeys [encodeRes (Res r)] )
+                  . updateChangeLog
+                    ( DeleteValues (fmap unhookCL rels))
+                  $ grChangeLog
+    }
+  where
+    rels = maybe [] S.toList $ M.lookup (Res r) grGraph
+    unhookCL rel@(InRel _ x _) = (encodeRes (Res x), [ encodeRel (inverse rel) ])
+    unhookCL rel@(OutRel _ _ y) = (encodeRes (Res y), [ encodeRel (inverse rel) ])
+    unhookG rel@(InRel _ x _) = M.adjust (S.delete (inverse rel)) (Res x)
+    unhookG rel@(OutRel _ _ y) = M.adjust (S.delete (inverse rel)) (Res y)
+
+
 -- | Merge a number of homogenously typed resources into a single
 --   resource. Incoming and outgoing edge sets are merged, whilst
 --   the specified combining function is used to merge the actual
 --   resources.
-mergeResources :: Resource a => ([a] -> a) -> [a] -> Graph -> Graph
+mergeResources :: forall a. Resource a => ([a] -> a) -> [a] -> Graph -> Graph
 mergeResources _ [] g = g
-mergeResources f xs g@Graph{..} = let
-    newRes = Res $ f xs
+mergeResources f xs g@Graph{..} = g
+    { grChangeLog = updateChangeLog
+                   (InsertMany [ (encodeRes newRes
+                                , S.toList . S.map encodeRel $ oldRels)
+                                ])
+                  . updateChangeLog
+                      (DeleteKeys (map (encodeRes . Res) xs))
+                  . foldr (.) id (fmap rehookCL $ S.toList oldRels)
+                  $ grChangeLog
+    , grGraph = foldr (.) id adjustments grGraph
+    }
+  where
+    newX = f xs
+    newRes = Res newX
     oldRels = foldl' S.union S.empty
             . catMaybes
             . map (\r -> M.lookup (Res r) grGraph)
             $ xs
     adjustments = M.insert newRes oldRels
-                : map (M.delete . Res) xs
-  in g {
-          grChangeLog = updateChangeLog
-                       (InsertMany [ (encodeRes newRes
-                                    , S.toList . S.map encodeRel $ oldRels)
-                                    ])
-                      $ updateChangeLog
-                          (DeleteKeys (map (encodeRes . Res) xs)) grChangeLog
-        , grGraph = foldr (.) id adjustments grGraph
-       }
+                : fmap rehookG (S.toList oldRels)
+                ++ map (M.delete . Res) xs
+    rehookG rel@(InRel _ x _) = M.adjust
+      ( S.insert (updateOtherEnd rel newX)
+      . S.delete (inverse rel)
+      ) (Res x)
+    rehookG rel@(OutRel _ _ y) = M.adjust
+      ( S.insert (updateOtherEnd rel newX)
+      . S.delete (inverse rel)
+      ) (Res y)
+    rehookCL rel@(InRel _ x _) = updateChangeLog
+        ( InsertMany [(encodeRes (Res x), [ encodeRel (updateOtherEnd rel newX) ])])
+      . updateChangeLog
+        ( DeleteValues [(encodeRes (Res x), [ encodeRel (inverse rel) ])])
+    rehookCL rel@(OutRel _ _ y) = updateChangeLog
+        ( InsertMany [(encodeRes (Res y), [ encodeRel (updateOtherEnd rel newX) ])])
+      . updateChangeLog
+        ( DeleteValues [(encodeRes (Res y), [ encodeRel (inverse rel) ])])
+    updateOtherEnd :: forall q. Resource q => Rel -> q -> Rel
+    updateOtherEnd rel@(InRel r x (_ :: b)) y' = case eqT :: Maybe (q :~: b) of
+      Just Refl -> OutRel r x y'
+      Nothing -> rel
+    updateOtherEnd rel@(OutRel r (_ :: b) y) x' = case eqT :: Maybe (q :~: b) of
+      Just Refl -> InRel r x' y
+      Nothing -> rel
+
 -- | Remove all resources that are not connected to the rest of the graph,
 -- starting from the given root set. This cleans up resources that are no
 -- longer participating in the graph since they are not connected to the rest
