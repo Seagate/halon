@@ -51,7 +51,7 @@ module HA.ResourceGraph
     , disconnect
     , disconnectAllFrom
     , disconnectAllTo
-    , isolateResource
+    , removeResource
     , mergeResources
     , sync
     , emptyGraph
@@ -412,8 +412,8 @@ disconnectAllTo _ _ b g = foldl' (.) id (fmap deleteEdge oldEdges) $ g
 
 -- | Isolate a resource from the rest of the graph. This removes
 --   all relations from the node, regardless of type.
-isolateResource :: Resource a => a -> Graph -> Graph
-isolateResource r g@Graph{..} = g {
+removeResource :: Resource a => a -> Graph -> Graph
+removeResource r g@Graph{..} = g {
       grGraph = M.delete (Res r)
               . foldl' (.) id (fmap unhookG rels)
               $ grGraph
@@ -458,22 +458,15 @@ mergeResources f xs g@Graph{..} = g
     adjustments = M.insert newRes oldRels
                 : fmap rehookG (S.toList oldRels)
                 ++ map (M.delete . Res) xs
-    rehookG rel@(InRel _ x _) = M.adjust
+    otherEnd = \case InRel _ x _  -> Res x ; OutRel _ _ y -> Res y
+    rehookG rel = M.adjust
       ( S.insert (updateOtherEnd rel newX)
       . S.delete (inverse rel)
-      ) (Res x)
-    rehookG rel@(OutRel _ _ y) = M.adjust
-      ( S.insert (updateOtherEnd rel newX)
-      . S.delete (inverse rel)
-      ) (Res y)
-    rehookCL rel@(InRel _ x _) = updateChangeLog
-        ( InsertMany [(encodeRes (Res x), [ encodeRel (updateOtherEnd rel newX) ])])
+      ) (otherEnd rel)
+    rehookCL rel = updateChangeLog
+        ( InsertMany [(encodeRes (otherEnd rel), [ encodeRel (updateOtherEnd rel newX) ])])
       . updateChangeLog
-        ( DeleteValues [(encodeRes (Res x), [ encodeRel (inverse rel) ])])
-    rehookCL rel@(OutRel _ _ y) = updateChangeLog
-        ( InsertMany [(encodeRes (Res y), [ encodeRel (updateOtherEnd rel newX) ])])
-      . updateChangeLog
-        ( DeleteValues [(encodeRes (Res y), [ encodeRel (inverse rel) ])])
+        ( DeleteValues [(encodeRes (otherEnd rel), [ encodeRel (inverse rel) ])])
     updateOtherEnd :: forall q. Resource q => Rel -> q -> Rel
     updateOtherEnd rel@(InRel r x (_ :: b)) y' = case eqT :: Maybe (q :~: b) of
       Just Refl -> OutRel r x y'

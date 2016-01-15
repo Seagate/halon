@@ -311,9 +311,9 @@ tests transport = do
           assert $ length es2 == 2
           assert $ elem (NodeA 1) es3
           assert $ not $ elem (NodeA 2) es3
-      , testSuccess "isolateResource" $ rGroupTest transport g $ \mm -> do
+      , testSuccess "removeResource" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
-          g2 <- syncWait $ isolateResource (NodeB 2) g1
+          g2 <- syncWait $ removeResource (NodeB 2) g1
           -- NodeB 2 connects everything - graph should now be totally disconnected
           let es1 = connectedTo (NodeA 1) HasB g2 :: [NodeB]
               es2 = connectedFrom HasA (NodeA 1) g2 :: [NodeB]
