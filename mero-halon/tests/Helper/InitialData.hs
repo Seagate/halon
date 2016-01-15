@@ -21,16 +21,8 @@ initialDataGen :: String -- ^ Hostname prefix
                -> CI.InitialData
 initialDataGen host_pfx ifaddr_pfx n_srv n_drv scheme = CI.InitialData {
     CI.id_m0_globals = CI.M0Globals {
-      CI.m0_datadir = "/var/mero"
-    , CI.m0_t1fs_mount = "/mnt/mero"
-    , CI.m0_data_units = 8
+      CI.m0_data_units = 8
     , CI.m0_parity_units = 2
-    , CI.m0_pool_width = fromIntegral $ n_srv * n_drv
-    , CI.m0_max_rpc_msg_size = 65536
-    , CI.m0_uuid = "096051ac-b79b-4045-a70b-1141ca4e4de1"
-    , CI.m0_min_rpc_recvq_len = 16
-    , CI.m0_lnet_nid = "auto"
-    , CI.m0_be_segment_size = 536870912
     , CI.m0_md_redundancy = 2
     , CI.m0_failure_set_gen = scheme
     }
@@ -109,7 +101,7 @@ initialDataGen host_pfx ifaddr_pfx n_srv n_drv scheme = CI.InitialData {
 }
 
 initialDataAddr :: String -> String -> Int -> CI.InitialData
-initialDataAddr host ifaddr n | n < 12 =
+initialDataAddr _ _ n | n < 12 =
      error $ "initialDataAddr: the given number of devices (" ++ show n
              ++ ") is smaller than 2 * parity_units + data_units (= 12)."
 initialDataAddr host ifaddr n = CI.InitialData {
@@ -140,16 +132,8 @@ initialDataAddr host ifaddr n = CI.InitialData {
     }
   ]
 , CI.id_m0_globals = CI.M0Globals {
-    CI.m0_datadir = "/var/mero"
-  , CI.m0_t1fs_mount = "/mnt/mero"
-  , CI.m0_data_units = 8
+    CI.m0_data_units = 8
   , CI.m0_parity_units = 2
-  , CI.m0_pool_width = 16
-  , CI.m0_max_rpc_msg_size = 65536
-  , CI.m0_uuid = "096051ac-b79b-4045-a70b-1141ca4e4de1"
-  , CI.m0_min_rpc_recvq_len = 16
-  , CI.m0_lnet_nid = "auto"
-  , CI.m0_be_segment_size = 536870912
   , CI.m0_md_redundancy = 2
   , CI.m0_failure_set_gen = CI.Preloaded 0 1 0
   }
