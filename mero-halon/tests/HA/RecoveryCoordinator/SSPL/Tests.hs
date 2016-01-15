@@ -225,32 +225,32 @@ testDMRequest = mkHpiTest rules test
         usend rc ()
         () <- expect
         say "Unused ok for good drive"
-        let request0 = dmRequest "unused_ok" "serial1" 0
+        let request0 = dmRequest "EMPTY_None" "serial1" 0
         uuid0 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid0 (me, request0) []
         "drive-removed" <- await uuid0
         say "Unused ok for removed drive"
-        let request1 = dmRequest "unused_ok" "serial1" 1
+        let request1 = dmRequest "EMPTY_None" "serial1" 1
         uuid1 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid1 (me, request1) []
         "nothing" <- await uuid1
         say "Failed smart for good drive"
-        let request2 = dmRequest "failed_smart" "serial1" 0
+        let request2 = dmRequest "FAILED_smart" "serial1" 0
         uuid2 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid2 (me, request2) []
         "drive-failed" <- await uuid2
         say "Failed smart for removed drive"
-        let request3 = dmRequest "failed_smart" "serial1" 1
+        let request3 = dmRequest "FAILED_smart" "serial1" 1
         uuid3 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid3 (me, request3) []
         "nothing" <- await uuid3
-        say "inuse_ok smart for good"
-        let request4 = dmRequest "inuse_ok" "serial1" 0
+        say "OK_None smart for good"
+        let request4 = dmRequest "FAILED_smart" "serial1" 0
         uuid4 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid4 (me, request4) []
         "nothing" <- await uuid4
-        say "inuse_ok smart for bad"
-        let request5 = dmRequest "inuse_ok" "serial1" 1
+        say "OK_None smart for bad"
+        let request5 = dmRequest "FAILED_smart" "serial1" 1
         uuid5 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid5 (me, request5) []
         "drive-inserted" <- await uuid5

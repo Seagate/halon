@@ -216,14 +216,14 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
        $ "Drive in " ++ show enc ++ " at " ++ show diskNum ++ " marked as "
           ++ (if isDriveRemoved then "removed" else "active")
      case disk_status of
-       "unused_ok"
+       "EMPTY_None"
           | isDriveRemoved -> do phaseLog "sspl-service" "already removed"
                                  messageProcessed uuid
           | otherwise      -> selfMessage $ DriveRemoved uuid (Node nid) enc disk
-       "failed_smart"
+       "FAILED_SMART"
           | isDriveRemoved -> messageProcessed uuid
           | otherwise      -> selfMessage $ DriveFailed uuid (Node nid) enc disk
-       "inuse_ok"
+       "OK_None"
           | isDriveRemoved -> selfMessage $ DriveInserted uuid disk sn
           | otherwise      -> messageProcessed uuid
        s -> do let msg = InterestingEventMessage
@@ -292,7 +292,7 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
       case msd of
         Just sd -> do
           _ <- attachStorageDeviceReplacement sd [sn, wwn, ident, loc]
-          -- It may happen that we have already received "inuse_ok" status from drive manager
+          -- It may happen that we have already received "OK_None" status from drive manager
           -- but for a completely new device. In this case, the device has not yet been
           -- attached to mero because halon still needed the HPI information before processing
           -- the event. Check whether that was actually the case here.
