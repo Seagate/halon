@@ -293,7 +293,8 @@ Executable genders2yaml
   default-language:  Haskell2010
   if !flag(mero)
     Buildable:        False
-  Build-Depends:      base >= 4.8,
+  Build-Depends:      aeson,
+                      base >= 4.8,
                       binary,
                       bytestring,
                       confc,

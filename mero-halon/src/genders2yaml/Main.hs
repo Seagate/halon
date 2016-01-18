@@ -20,6 +20,8 @@ import Control.Monad
   , join
   )
 
+import qualified Data.Aeson as A
+import qualified Data.Aeson.Types as A
 import Data.Binary (Binary)
 import qualified Data.ByteString.Char8 as BS
 import Database.Genders
@@ -46,16 +48,18 @@ import System.IO
   )
 
 data Device = Device
-    { d_id :: Integer
-    , d_filename :: String
+    { _d_id :: Integer
+    , _d_filename :: String
     }
   deriving (Eq, Show, Generic)
 
+deviceJSONOptions :: A.Options
+deviceJSONOptions = A.defaultOptions
+  { A.fieldLabelModifier = drop (length ("_d_" :: String)) }
+
 instance Binary Device
 instance FromJSON Device where
-  parseJSON (Object v) = Device <$> v .: "id"
-                                <*> v .: "filename"
-  parseJSON _ = error "Can't parse Device from Yaml"
+  parseJSON = A.genericParseJSON deviceJSONOptions
 
 newtype Devices = Devices { unDevices :: [Device] }
   deriving (Binary, Eq, Show, Generic)
@@ -74,7 +78,8 @@ main = getArgs >>= \case
     devs <- readDevsFromDir y
     BS.putStrLn . encode $ makeInitialData db devs
   _ -> getProgName >>= \name ->
-        hPutStrLn stderr $ "Usage: " ++ name ++ " <genders_file>"
+        hPutStrLn stderr $ "Usage: " ++ name ++ " <genders_file> "
+                                     ++ "[<disks_conf_dir>]"
 
 -- | Make initial data using details from the genders file
 makeInitialData :: DB -> [(String, Devices)] -> CI.InitialData
@@ -142,13 +147,14 @@ mkDevice (Device i fp) = CI.M0Device {
 
 readDevsFromDir :: FilePath -> IO [(String, Devices)]
 readDevsFromDir dir = do
-    files <- filter (isPrefixOf "disks-")
+    files <- filter (isPrefixOf prefix)
               <$> (filterM (doesFileExist . (dir </>))
               =<< listDirectory dir)
     return . catMaybes =<< mapM readDevs files
   where
+    prefix = "disks-"
     readDevs file = let
-        name = takeWhile (/= '.') . drop 6 $ file
+        name = takeWhile (/= '.') . drop (length prefix) $ file
       in decodeFile (dir </> file) >>= return . fmap (name,)
 
 -- | Take a named service from genders and convert it into a suitable
@@ -172,7 +178,7 @@ serviceProcess db host svcName = let
               , CI.m0p_services = [
                   CI.M0Service {
                     CI.m0s_type = CST_MGS
-                  , CI.m0s_endpoints = maybe [] (:[]) $ ep CST_MGS
+                  , CI.m0s_endpoints = maybeToList $ ep CST_MGS
                   , CI.m0s_params = SPConfDBPath "/var/mero/confd"
                   }
                 ]
@@ -187,7 +193,7 @@ serviceProcess db host svcName = let
               , CI.m0p_services = [
                   CI.M0Service {
                     CI.m0s_type = CST_MDS
-                  , CI.m0s_endpoints = maybe [] (:[]) $ ep CST_MDS
+                  , CI.m0s_endpoints = maybeToList $ ep CST_MDS
                   , CI.m0s_params = SPUnused
                   }
                 ]
@@ -202,7 +208,7 @@ serviceProcess db host svcName = let
               , CI.m0p_services = [
                   CI.M0Service {
                     CI.m0s_type = CST_HA
-                  , CI.m0s_endpoints = maybe [] (:[]) $ ep CST_HA
+                  , CI.m0s_endpoints = maybeToList $ ep CST_HA
                   , CI.m0s_params = SPUnused
                   }
                 ]
@@ -217,7 +223,7 @@ serviceProcess db host svcName = let
               , CI.m0p_services = [
                   CI.M0Service {
                     CI.m0s_type = CST_IOS
-                  , CI.m0s_endpoints = maybe [] (:[]) $ ep CST_IOS
+                  , CI.m0s_endpoints = maybeToList $ ep CST_IOS
                   , CI.m0s_params = SPUnused
                   }
                 ]
