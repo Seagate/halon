@@ -42,6 +42,7 @@ data ConfObjectState
     | M0_NC_FAILED
     | M0_NC_TRANSIENT
     | M0_NC_REPAIR
+    | M0_NC_REPAIRING
     | M0_NC_REBALANCE
     deriving (Eq, Show, Enum, Typeable, Generic)
 

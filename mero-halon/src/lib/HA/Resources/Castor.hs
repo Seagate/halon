@@ -23,7 +23,7 @@ import qualified HA.Resources.Castor.Initial as MI
 import HA.Resources.TH
 
 import Data.Hashable (Hashable(..))
-import Data.Binary (Binary(..))
+import Data.Binary (Binary)
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
 import GHC.Generics (Generic)

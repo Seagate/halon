@@ -713,6 +713,22 @@ poolRepairQuiesce (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
     throwIfNonZero_ (\rc -> "Cannot quiesce pool repair: " ++ show rc)
       $ c_spiel_pool_repair_quiesce sc fid_ptr
 
+poolRepairStatus :: SpielContext
+                 -> Fid
+                 -> IO [SnsStatus]
+poolRepairStatus (SpielContext fsc) fid = mask $ \restore ->
+  withForeignPtr fsc $ \sc ->
+    with fid $ \fid_ptr ->
+      alloca $ \arr_ptr -> do
+        poke fid_ptr fid
+        rc <- fmap fromIntegral . restore
+              $ c_spiel_pool_repair_status sc fid_ptr arr_ptr
+        if rc < 0
+        then error $ "Cannot retrieve pool repair status: " ++ show rc
+        else do
+          elt <- peek arr_ptr
+          peekArray rc elt
+
 poolRebalanceStart :: SpielContext
                    -> Fid -- ^ Pool Fid
                    -> IO ()
@@ -728,3 +744,19 @@ poolRebalanceQuiesce (SpielContext fsc) fid = withForeignPtr fsc $ \sc ->
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot quiesce pool rebalance: " ++ show rc)
       $ c_spiel_pool_rebalance_quiesce sc fid_ptr
+
+poolRebalanceStatus :: SpielContext
+                    -> Fid
+                    -> IO [SnsStatus]
+poolRebalanceStatus (SpielContext fsc) fid = mask $ \restore ->
+  withForeignPtr fsc $ \sc ->
+    with fid $ \fid_ptr ->
+      alloca $ \arr_ptr -> do
+        poke fid_ptr fid
+        rc <- fmap fromIntegral . restore
+              $ c_spiel_pool_rebalance_status sc fid_ptr arr_ptr
+        if rc < 0
+        then error $ "Cannot retrieve pool rebalance status: " ++ show rc
+        else do
+          elt <- peek arr_ptr
+          peekArray rc elt

@@ -18,7 +18,7 @@ import Mero.ConfC
   , ServiceType(..)
   )
 
-import Control.Monad (liftM2)
+import Control.Monad (liftM2, liftM3)
 
 import qualified Data.Map as Map
 
@@ -27,7 +27,7 @@ import Foreign.C.String
   , newCString
   , peekCString
   )
-import Foreign.C.Types ( CInt )
+import Foreign.C.Types ( CInt, CUInt )
 import Foreign.Marshal.Array
   ( advancePtr
   , newArray0
@@ -48,6 +48,7 @@ import qualified Language.C.Types as C
 import System.IO.Unsafe ( unsafePerformIO )
 
 #include "spiel/spiel.h"
+#include "sns/cm/cm.h"
 
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
 
@@ -170,11 +171,68 @@ instance Storable ServiceInfo where
                           #{poke struct m0_spiel_service_info, svi_u} p cs
       SPUnused -> return ()
 
+-- | @sns/cm/cm.h m0_sns_cm_status@
+data {-# CTYPE "sns/cm/cm.h" "struct m0_sns_cm_status" #-}
+  SnsCmStatus =
+      M0_SNS_CM_STATUS_INVALID
+    | M0_SNS_CM_STATUS_IDLE
+    | M0_SNS_CM_STATUS_STARTED
+    | M0_SNS_CM_STATUS_FAILED
+    | M0_SNS_CM_STATUS_PAUSED
+    | M0_SNS_CM_STATUS_UNKNOWN Int
+    deriving (Eq, Show)
+
+instance Enum SnsCmStatus where
+  toEnum #{const SNS_CM_STATUS_INVALID} = M0_SNS_CM_STATUS_INVALID
+  toEnum #{const SNS_CM_STATUS_IDLE} = M0_SNS_CM_STATUS_IDLE
+  toEnum #{const SNS_CM_STATUS_STARTED} = M0_SNS_CM_STATUS_STARTED
+  toEnum #{const SNS_CM_STATUS_FAILED} = M0_SNS_CM_STATUS_FAILED
+  toEnum #{const SNS_CM_STATUS_PAUSED} = M0_SNS_CM_STATUS_PAUSED
+  toEnum i = M0_SNS_CM_STATUS_UNKNOWN i
+
+  fromEnum M0_SNS_CM_STATUS_INVALID = #{const SNS_CM_STATUS_INVALID}
+  fromEnum M0_SNS_CM_STATUS_IDLE = #{const SNS_CM_STATUS_IDLE}
+  fromEnum M0_SNS_CM_STATUS_STARTED = #{const SNS_CM_STATUS_STARTED}
+  fromEnum M0_SNS_CM_STATUS_FAILED = #{const SNS_CM_STATUS_FAILED}
+  fromEnum M0_SNS_CM_STATUS_PAUSED = #{const SNS_CM_STATUS_PAUSED}
+  fromEnum (M0_SNS_CM_STATUS_UNKNOWN i) = i
+
+instance Storable SnsCmStatus where
+  sizeOf _ = sizeOf (undefined :: CInt)
+  alignment _ = alignment (undefined :: CInt)
+  peek p = fmap toEnum $ peek (castPtr p)
+  poke p s = poke (castPtr p) $ fromEnum s
+
+
+-- | @spiel.h m0_spiel_sns_status@
+data {-# CTYPE "spiel/spiel.h" "struct m0_spiel_sns_status" #-} SnsStatus =
+  SnsStatus {
+      _sss_fid :: Fid
+    , _sss_state :: SnsCmStatus
+    , _sss_progress :: CUInt
+  } deriving (Eq, Show)
+
+
+instance Storable SnsStatus where
+  sizeOf _ = #{size struct m0_spiel_sns_status}
+  alignment _ = #{alignment struct m0_spiel_sns_status}
+  peek p = liftM3 SnsStatus
+    (#{peek struct m0_spiel_sns_status, sss_fid} p)
+    (#{peek struct m0_spiel_sns_status, sss_state} p)
+    (#{peek struct m0_spiel_sns_status, sss_progress} p)
+
+  poke p (SnsStatus f st pr) = do
+    #{poke struct m0_spiel_sns_status, sss_fid} p f
+    #{poke struct m0_spiel_sns_status, sss_state} p st
+    #{poke struct m0_spiel_sns_status, sss_progress} p pr
+
+
 spielCtx :: C.Context
 spielCtx = mempty {
   C.ctxTypesTable = Map.fromList [
       (C.Struct "m0_spiel_running_svc", [t| RunningService |])
     , (C.Struct "m0_spiel_service_info", [t| ServiceInfo |])
+    , (C.Struct "m0_spiel_sns_status", [t| SnsStatus |])
   ]
 }
 
@@ -187,4 +245,3 @@ peekStringArray p = mapM peekCString
                   $ takeWhile (/=nullPtr)
                   $ map (unsafePerformIO . peek)
                   $ iterate (`advancePtr` 1) p
-

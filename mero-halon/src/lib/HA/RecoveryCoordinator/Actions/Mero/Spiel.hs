@@ -14,9 +14,22 @@ module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , withSpielRC
   , withRConfRC
   , startRepairOperation
+  , statusOfRepairOperation
   , startRebalanceOperation
+  , statusOfRebalanceOperation
   , syncAction
   , syncToConfd
+    -- * Pool repair information
+  , getPoolRepairInformation
+  , getPoolRepairStatus
+  , getTimeUntilQueryHourlyPRI
+  , incrementOnlinePRSResponse
+  , modifyPoolRepairInformation
+  , possiblyInitialisePRI
+  , setPoolRepairInformation
+  , setPoolRepairStatus
+  , unsetPoolRepairStatus
+  , updatePoolRepairStatusTime
   ) where
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -28,6 +41,8 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
+import HA.Resources.Mero.Note (ConfObjectState(..))
+import HA.Services.Mero (notifyMero)
 
 import Mero.ConfC
   ( Root
@@ -35,18 +50,19 @@ import Mero.ConfC
   , initHASession
   , finiHASession
   )
-import Mero.Notification
+import Mero.Notification hiding (notifyMero)
 import Mero.Spiel hiding (start)
 import qualified Mero.Spiel
 
 import Control.Applicative
 import qualified Control.Distributed.Process as DP
-import Control.Monad (forM_, void)
+import Control.Monad (forM_, void, join)
 import Control.Monad.Catch
 
 import Data.Foldable (traverse_)
 import Data.IORef (writeIORef)
 import Data.Maybe (catMaybes, listToMaybe)
+import Data.Proxy (Proxy(..))
 import Data.UUID (UUID)
 
 import Network.CEP
@@ -100,8 +116,10 @@ withRConfRC spiel action = do
   liftM0RC $ Mero.Spiel.rconfStop spiel
   return x
 
+-- | Start the repair operation on the given 'M0.Pool'. Notifies mero
+-- with the 'M0_NC_REPAIRING' status.
 startRepairOperation :: M0.Pool -> PhaseM LoopState l ()
-startRepairOperation pool = (void go) `catch`
+startRepairOperation pool = go `catch`
     (\e -> do
       phaseLog "error" $ "Error starting repair operation: "
                       ++ show (e :: SomeException)
@@ -111,10 +129,31 @@ startRepairOperation pool = (void go) `catch`
   where
     go = do
       phaseLog "spiel" $ "Starting repair on pool " ++ show pool
-      withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStart sc (M0.fid pool)
+      notifyMero [M0.AnyConfObj pool] M0_NC_REPAIRING
+      _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStart sc (M0.fid pool)
+      setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure Nothing
 
+-- | Retrieves the repair 'SnsStatus' of the given 'M0.Pool'.
+statusOfRepairOperation :: M0.Pool
+                        -> PhaseM LoopState l (Either SomeException [SnsStatus])
+statusOfRepairOperation pool = catch go
+  (\e -> do
+    phaseLog "error" $ "Error in pool status repair operation: "
+                    ++ show e
+                    ++ " on pool "
+                    ++ show (M0.fid pool)
+    return $ Left e
+  )
+  where
+    go :: PhaseM LoopState l (Either SomeException [SnsStatus])
+    go = do
+      phaseLog "spiel" $ "Starting status on pool " ++ show pool
+      withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStatus sc (M0.fid pool)
+
+-- | Starts a rebalance operation on the given 'M0.Pool'. Notifies
+-- mero with the 'M0_NC_FAILED' status.
 startRebalanceOperation :: M0.Pool -> PhaseM LoopState l ()
-startRebalanceOperation pool = (void go) `catch`
+startRebalanceOperation pool = catch go
     (\e -> do
       phaseLog "error" $ "Error starting rebalance operation: "
                       ++ show (e :: SomeException)
@@ -124,7 +163,27 @@ startRebalanceOperation pool = (void go) `catch`
   where
     go = do
       phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool
-      withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRebalanceStart sc (M0.fid pool)
+      -- Is this notifyMero needed?
+      notifyMero [M0.AnyConfObj pool] M0_NC_FAILED
+      _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRebalanceStart sc (M0.fid pool)
+      setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Rebalance Nothing
+
+-- | Retrieves the rebalance 'SnsStatus' of the given pool.
+statusOfRebalanceOperation :: M0.Pool
+                           -> PhaseM LoopState l (Either SomeException [SnsStatus])
+statusOfRebalanceOperation pool = catch go
+  (\e -> do
+    phaseLog "error" $ "Error in pool status rebalance operation: "
+                    ++ show e
+                    ++ " on pool "
+                    ++ show (M0.fid pool)
+    return $ Left e
+  )
+  where
+    go :: PhaseM LoopState l (Either SomeException [SnsStatus])
+    go = do
+      phaseLog "spiel" $ "Starting status on pool " ++ show pool
+      withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRebalanceStatus sc (M0.fid pool)
 
 -- | Synchronize graph to confd.
 -- Currently all Exceptions during this operation are caught, this is required in because
@@ -308,3 +367,107 @@ sfinally action finalizer = do
    ev <- try action
    _  <- finalizer
    either (throwM :: SomeException -> m a) return ev
+
+----------------------------------------------------------
+-- Pool repair information functions                    --
+----------------------------------------------------------
+
+-- | Return the 'M0.PoolRepairStatus' structure. If one is not in
+-- the graph, it means no repairs are going on
+getPoolRepairStatus :: M0.Pool
+                    -> PhaseM LoopState l (Maybe M0.PoolRepairStatus)
+getPoolRepairStatus pool = do
+  phaseLog "rg-query" "Looking up pool repair information"
+  getLocalGraph >>= \g ->
+   return (listToMaybe [ p | p <- G.connectedTo pool Has g ])
+
+-- | Set the given 'M0.PoolRepairStatus' in the graph. Any
+-- previously connected @PRI@s are disconnected.
+setPoolRepairStatus :: M0.Pool -> M0.PoolRepairStatus -> PhaseM LoopState l ()
+setPoolRepairStatus pool prs =
+  modifyLocalGraph $ return . G.connectUniqueFrom pool Has prs
+
+-- | Remove all 'M0.PoolRepairStatus' connections to the given 'M0.Pool'.
+unsetPoolRepairStatus :: M0.Pool -> PhaseM LoopState l ()
+unsetPoolRepairStatus pool =
+  modifyLocalGraph $ return . G.disconnectAllFrom pool Has (Proxy :: Proxy M0.PoolRepairStatus)
+
+-- | Return the 'M0.PoolRepairInformation' structure. If one is not in
+-- the graph, it means no repairs are going on.
+getPoolRepairInformation :: M0.Pool
+                         -> PhaseM LoopState l (Maybe M0.PoolRepairInformation)
+getPoolRepairInformation pool = do
+  phaseLog "rg-query" "Looking up pool repair information"
+  getLocalGraph >>= return . join . fmap M0.prsPri . listToMaybe . G.connectedTo pool Has
+
+-- | Set the given 'M0.PoolRepairInformation' in the graph. Any
+-- previously connected @PRI@s are disconnected.
+--
+-- Does nothing if we haven't at least set 'M0.PoolRepairType'
+-- already.
+setPoolRepairInformation :: M0.Pool
+                         -> M0.PoolRepairInformation
+                         -> PhaseM LoopState l ()
+setPoolRepairInformation pool pri = getPoolRepairStatus pool >>= \case
+  Nothing -> return ()
+  Just (M0.PoolRepairStatus prt _) ->
+    modifyLocalGraph (return . G.connectUniqueFrom pool Has (M0.PoolRepairStatus prt $ Just pri))
+
+-- | Initialise 'M0.PoolRepairInformation' with some default values.
+--
+-- Currently the values
+possiblyInitialisePRI :: M0.Pool
+                      -> PhaseM LoopState l ()
+possiblyInitialisePRI pool = getPoolRepairInformation pool >>= \case
+  Nothing -> setPoolRepairInformation pool M0.defaultPoolRepairInformation
+  Just _ -> return ()
+
+-- | Modify the  'PoolRepairInformation' in the graph with the given function.
+-- Any previously connected @PRI@s are disconnected.
+modifyPoolRepairInformation :: M0.Pool
+                            -> (M0.PoolRepairInformation -> M0.PoolRepairInformation)
+                            -> PhaseM LoopState l ()
+modifyPoolRepairInformation pool f = modifyLocalGraph $ \g ->
+  case listToMaybe . G.connectedTo pool Has $ g of
+    Just (M0.PoolRepairStatus prt (Just pri)) ->
+      return $ G.connectUniqueFrom pool Has (M0.PoolRepairStatus prt (Just $ f pri)) g
+    _ -> return g
+
+
+-- | Increment 'priOnlineNotifications' field of the
+-- 'PoolRepairInformation' in the graph. Also updates the
+-- 'priTimeOfFirstCompletion' if it has not yet been set.
+incrementOnlinePRSResponse :: M0.Pool
+                           -> PhaseM LoopState l ()
+incrementOnlinePRSResponse pool =
+  DP.liftIO M0.getTime >>= \tnow -> modifyPoolRepairInformation pool (go tnow)
+  where
+    go tnow pr = pr { M0.priOnlineNotifications = succ $ M0.priOnlineNotifications pr
+                    , M0.priTimeOfFirstCompletion =
+                      if M0.priOnlineNotifications pr > 0
+                      then M0.priTimeOfFirstCompletion pr
+                      else tnow
+                    , M0.priTimeLastHourlyRan =
+                      if M0.priTimeLastHourlyRan pr > 0
+                      then M0.priTimeOfFirstCompletion pr
+                      else tnow
+                    }
+
+-- | Updates 'priTimeLastHourlyRan' to current time.
+updatePoolRepairStatusTime :: M0.Pool -> PhaseM LoopState l ()
+updatePoolRepairStatusTime pool = getPoolRepairStatus pool >>= \case
+  Just (M0.PoolRepairStatus _ (Just pr)) -> do
+    t <- DP.liftIO M0.getTime
+    setPoolRepairInformation pool $ pr { M0.priTimeLastHourlyRan = t }
+  _ -> return ()
+
+-- | Returns number of seconds until we have to run the hourly PRI
+-- query.
+getTimeUntilQueryHourlyPRI :: M0.Pool -> PhaseM LoopState l Int
+getTimeUntilQueryHourlyPRI pool = getPoolRepairInformation pool >>= \case
+  Nothing -> return 0
+  Just pri -> do
+    tn <- DP.liftIO M0.getTime
+    let elapsed = tn - M0.priTimeLastHourlyRan pri
+        untilHourPasses = fromIntegral (3600 :: Integer) - elapsed
+    return $ M0.timeSpecToSeconds untilHourPasses

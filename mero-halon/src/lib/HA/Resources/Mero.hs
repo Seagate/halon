@@ -1,8 +1,9 @@
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE PackageImports             #-}
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
--- |
+
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
@@ -28,14 +29,15 @@ import Mero.ConfC
   , ServiceType
   )
 
-import Data.Binary (Binary)
+import Data.Binary (Binary(..))
 import Data.Bits
 import Data.Char (ord)
-import Data.Hashable (Hashable)
+import Data.Hashable (Hashable(..))
 import Data.Proxy (Proxy(..))
 import Data.Typeable (Typeable)
 import Data.Word ( Word32, Word64 )
 import GHC.Generics (Generic)
+import qualified "distributed-process-scheduler" System.Clock as C
 
 import Control.Arrow ((***))
 import Data.List (nub)
@@ -297,11 +299,73 @@ instance ConfObj DiskV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (DiskV f) = f
 
+
+-- | Wrapper for 'C.TimeSpec' providing 'Binary' and 'Hashable'
+-- instances.
+newtype TimeSpec = TimeSpec { _unTimeSpec :: C.TimeSpec }
+  deriving (Eq, Num, Ord, Read, Show, Generic, Typeable)
+
+-- | Extract the seconds value from a 'TimeSpec'
+--
+-- Warning: casts from 'Int64' to 'Int'.
+timeSpecToSeconds :: TimeSpec -> Int
+timeSpecToSeconds (TimeSpec (C.TimeSpec sec _)) = fromIntegral sec
+
+instance Hashable TimeSpec where
+  hashWithSalt s (TimeSpec (C.TimeSpec sec nsec)) = hashWithSalt s (sec, nsec)
+
+instance Binary TimeSpec where
+  put (TimeSpec (C.TimeSpec sec nsec)) = put (sec, nsec)
+  get = get >>= \(sec, nsec) -> return (TimeSpec $ C.TimeSpec sec nsec)
+
+-- | Get current time using a 'C.Monotonic' 'C.Clock'.
+getTime :: IO TimeSpec
+getTime = TimeSpec <$> C.getTime C.Monotonic
+
+-- | Classifies 'PoolRepairInformation'. By the time we get
+-- information back from mero about the status of the pool, we no
+-- longer know whether we have been recovering from failure or whether
+-- we're just rebalancing.
+--
+-- We use this as an indicator. The underlying assumption is that a
+-- repair and rebalance will never happen at the same time.
+data PoolRepairType = Failure | Rebalance
+  deriving (Eq, Show, Ord, Generic, Typeable)
+
+instance Binary PoolRepairType
+instance Hashable PoolRepairType
+
+-- | Information attached to 'PoolRepairStatus'.
+data PoolRepairInformation = PoolRepairInformation
+  { priOnlineNotifications :: Int
+  , priTimeOfFirstCompletion :: TimeSpec
+  , priTimeLastHourlyRan :: TimeSpec
+  } deriving (Eq, Show, Ord, Generic, Typeable)
+
+instance Binary PoolRepairInformation
+instance Hashable PoolRepairInformation
+
+-- | Sets default values for 'PoolRepairInformation'.
+--
+-- Number of received notifications is set to 0. The query times are
+-- set to 0 seconds after epoch ensuring they queries actually start
+-- on the first invocation.
+defaultPoolRepairInformation :: PoolRepairInformation
+defaultPoolRepairInformation = PoolRepairInformation 0 0 0
+
+data PoolRepairStatus = PoolRepairStatus
+  { prsType :: PoolRepairType
+  , prsPri :: Maybe PoolRepairInformation
+  } deriving (Eq, Show, Ord, Generic, Typeable)
+
+instance Binary PoolRepairStatus
+instance Hashable PoolRepairStatus
+
 $(mkDicts
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root
+  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -338,6 +402,7 @@ $(mkDicts
     -- Other things!
   , (''R.Cluster, ''R.Has, ''FidSeq)
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
+  , (''Pool, ''R.Has, ''PoolRepairStatus)
   ]
   )
 
@@ -345,7 +410,7 @@ $(mkResRel
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root
+  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -382,6 +447,7 @@ $(mkResRel
     -- Other things!
   , (''R.Cluster, ''R.Has, ''FidSeq)
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
+  , (''Pool, ''R.Has, ''PoolRepairStatus)
   ]
   []
   )
