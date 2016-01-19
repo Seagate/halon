@@ -245,15 +245,15 @@ testDMRequest = mkHpiTest rules test
         usend rc $ HAEvent uuid3 (me, request3) []
         "nothing" <- await uuid3
         say "OK_None smart for good"
-        let request4 = dmRequest "FAILED_smart" "serial1" 0
+        let request4 = dmRequest "OK_None" "serial1" 0
         uuid4 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid4 (me, request4) []
-        "nothing" <- await uuid4
+        await uuid4 >>= liftIO . assertEqual "OK_None smart for good" "nothing"
         say "OK_None smart for bad"
-        let request5 = dmRequest "FAILED_smart" "serial1" 1
+        let request5 = dmRequest "OK_None" "serial1" 1
         uuid5 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid5 (me, request5) []
-        "drive-inserted" <- await uuid5
+        await uuid5 >>= liftIO . assertEqual "OK_None smart for bad" "drive-inserted"
         return ()
       where
         await uuid = receiveWait

@@ -147,7 +147,7 @@ findActuationNode sspl = do
 
 ssplRulesF :: Service SSPLConf -> Definitions LoopState ()
 ssplRulesF sspl = sequence_
-  [ ruleDeclareChannels 
+  [ ruleDeclareChannels
   , ruleMonitorDriveManager
   , ruleMonitorStatusHpi
   , ruleMonitorHostUpdate
@@ -203,7 +203,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
              mhost <- findNodeHost (Node nid)
              forM_ mhost $ \host -> locateHostInEnclosure host enc
              mapM_ (identifyStorageDevice disk) [DIIndexInEnclosure diskNum, sn]
-             
+
              syncGraphProcess $ \self -> usend self (RuleDriveManagerDisk disk)
        Just st -> selfMessage (RuleDriveManagerDisk st)
      continue pcommit
@@ -215,15 +215,15 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
      phaseLog "sspl-service"
        $ "Drive in " ++ show enc ++ " at " ++ show diskNum ++ " marked as "
           ++ (if isDriveRemoved then "removed" else "active")
-     case disk_status of
-       "EMPTY_None"
+     case T.toUpper disk_status of
+       "EMPTY_NONE"
           | isDriveRemoved -> do phaseLog "sspl-service" "already removed"
                                  messageProcessed uuid
           | otherwise      -> selfMessage $ DriveRemoved uuid (Node nid) enc disk
        "FAILED_SMART"
           | isDriveRemoved -> messageProcessed uuid
           | otherwise      -> selfMessage $ DriveFailed uuid (Node nid) enc disk
-       "OK_None"
+       "OK_NONE"
           | isDriveRemoved -> selfMessage $ DriveInserted uuid disk sn
           | otherwise      -> messageProcessed uuid
        s -> do let msg = InterestingEventMessage
