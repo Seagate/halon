@@ -49,4 +49,4 @@ test:
     # Only test mero-halon and deps, without USE_MERO.
     - stack $STACK_FLAGS --docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1 --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS RG' build --flag mero-halon:distributed-tests --haddock --no-haddock-deps --test:
         timeout: 3600
-    - scripts/circleci_copy_artifacts.sh
+    - scripts/copy_artifacts.sh "${CIRCLE_ARTIFACTS}"
