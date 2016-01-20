@@ -61,7 +61,7 @@ m0_spiel_size = #{size struct m0_spiel}
 foreign import capi "spiel/spiel.h m0_spiel_init"
   c_spiel_init :: Ptr SpielContextV
                -> Ptr ReqHV
-               -> IO CInt 
+               -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_fini"
   c_spiel_fini :: Ptr SpielContextV
@@ -179,6 +179,7 @@ foreign import capi "spiel/spiel.h m0_spiel_device_add"
                      -> Ptr Fid -- ^ fid of the filesystem
                      -> Ptr Fid -- ^ fid of the parent service
                      -> Ptr Fid -- ^ fid of the parent disk
+                     -> Word32 -- ^ Device index
                      -> CInt -- ^ StorageDeviceInterfaceType
                      -> CInt -- ^ StorageDeviceMediaType
                      -> Word32

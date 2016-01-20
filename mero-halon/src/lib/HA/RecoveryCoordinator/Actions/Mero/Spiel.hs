@@ -295,7 +295,8 @@ txPopulate (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) 
         forM_ sdevs $ \(sdev@M0.SDev{..}) -> do
           let disk = listToMaybe
                    $ (G.connectedTo sdev M0.IsOnHardware g :: [M0.Disk])
-          liftM0RC $ addDevice t d_fid s_fid (fmap M0.fid disk) M0_CFG_DEVICE_INTERFACE_SATA
+          liftM0RC $ addDevice t d_fid s_fid (fmap M0.fid disk) d_idx
+                      M0_CFG_DEVICE_INTERFACE_SATA
                       M0_CFG_DEVICE_MEDIA_DISK d_bsize d_size 0 0 d_path
   phaseLog "spiel" "Finished adding concrete entities."
   -- Pool versions

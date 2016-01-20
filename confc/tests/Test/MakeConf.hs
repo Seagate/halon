@@ -69,7 +69,7 @@ name = "copy-configuration-db-back"
 
 test :: IO ()
 test = do
-  server1_endpoint <- getConfdEndpoint 
+  server1_endpoint <- getConfdEndpoint
   server2_endpoint <- getConfd2Endpoint
   let confdAddress = server1_endpoint
   localAddress <- getHalonEndpoint
@@ -77,9 +77,9 @@ test = do
     initRPC
     withEndpoint (rpcAddress localAddress) $ \ep -> do
       rpcMach <- getRPCMachine_se ep
-      withConf rpcMach (rpcAddress confdAddress) $ \_ -> withHASession ep (rpcAddress confdAddress) $ do 
+      withConf rpcMach (rpcAddress confdAddress) $ \_ -> withHASession ep (rpcAddress confdAddress) $ do
         withSpiel rpcMach $ \spiel -> withTransaction spiel $ transaction server1_endpoint server2_endpoint
-    finalizeRPC 
+    finalizeRPC
 
 transaction :: String -> String -> SpielTransaction -> IO ()
 transaction server1_endpoint server2_endpoint tx = do
@@ -94,7 +94,7 @@ transaction server1_endpoint server2_endpoint tx = do
   addDisk tx (fids "disk1") (fids "ctrl")
   addDisk tx (fids "disk2") (fids "ctrl")
   addDisk tx (fids "disk3") (fids "ctrl")
-  addPVer tx (fids "pver") (fids "pool") [0, 0, 0, 0, 1] 
+  addPVer tx (fids "pver") (fids "pool") [0, 0, 0, 0, 1]
     $ PDClustAttr 2 1 4 (1024*1024) (Word128 0x01 0x2)
   addRackV tx (fids "rackv") (fids "pver") (fids "rack")
   addEnclosureV tx (fids "enclv") (fids "rackv") (fids "encl")
@@ -106,7 +106,7 @@ transaction server1_endpoint server2_endpoint tx = do
   poolVersionDone tx (fids "pver")
   addProcess tx (fids "process")  (fids "node") (Bitmap 2 [3]) 0 0 0 0 server1_endpoint
   addProcess tx (fids "process2") (fids "node") (Bitmap 2 [3]) 0 0 0 0 server1_endpoint
-  addService tx (fids "confd")    (fids "process") 
+  addService tx (fids "confd")    (fids "process")
     $ ServiceInfo  CST_MGS [server1_endpoint] (SPConfDBPath server1_endpoint)
   addService tx (fids "confd2")   (fids "process2")
     $ ServiceInfo CST_MGS [server2_endpoint] (SPConfDBPath server1_endpoint)
@@ -125,12 +125,12 @@ transaction server1_endpoint server2_endpoint tx = do
   addService tx (fids "mds") (fids "process")
     $ ServiceInfo CST_MDS [server1_endpoint] SPUnused
   addService tx (fids "mds2") (fids "process2")
-    $ ServiceInfo CST_MDS [server2_endpoint] SPUnused 
-  addDevice tx (fids "sdev0") (fids "mds2") (Just $ fids "disk0") M0_CFG_DEVICE_INTERFACE_SCSI 
+    $ ServiceInfo CST_MDS [server2_endpoint] SPUnused
+  addDevice tx (fids "sdev0") (fids "mds2") (Just $ fids "disk0") 1 M0_CFG_DEVICE_INTERFACE_SCSI
     M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop0"
-  addDevice tx (fids "sdev1") (fids "ios") (Just $ fids "disk1") M0_CFG_DEVICE_INTERFACE_SCSI 
+  addDevice tx (fids "sdev1") (fids "ios") (Just $ fids "disk1") 2 M0_CFG_DEVICE_INTERFACE_SCSI
     M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop1"
-  addDevice tx (fids "sdev2") (fids "ios") (Just $ fids "disk2") M0_CFG_DEVICE_INTERFACE_SCSI 
+  addDevice tx (fids "sdev2") (fids "ios") (Just $ fids "disk2") 3 M0_CFG_DEVICE_INTERFACE_SCSI
     M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop2"
-  addDevice tx (fids "sdev3") (fids "ios") (Just $ fids "disk3") M0_CFG_DEVICE_INTERFACE_SCSI 
+  addDevice tx (fids "sdev3") (fids "ios") (Just $ fids "disk3") 4 M0_CFG_DEVICE_INTERFACE_SCSI 
     M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop3"

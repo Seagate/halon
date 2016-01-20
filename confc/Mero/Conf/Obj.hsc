@@ -415,6 +415,7 @@ data Sdev = Sdev
   { sd_ptr        :: Ptr Obj
   , sd_fid        :: Fid
   , sd_disk       :: Ptr Fid
+  , sd_dev_idx    :: Word32
   , sd_iface      :: Word32
   , sd_media      :: Word32
   , sd_bsize      :: Word32
@@ -428,6 +429,7 @@ getSdev :: Ptr Obj -> IO Sdev
 getSdev po = do
   ps <- confc_cast_sdev po
   fid   <- #{peek struct m0_conf_obj, co_id} po
+  devidx <- #{peek struct m0_conf_sdev, sd_dev_idx} ps
   mdisk <- #{peek struct m0_conf_sdev, sd_disk} ps
   iface <- #{peek struct m0_conf_sdev, sd_iface} ps
   media <- #{peek struct m0_conf_sdev, sd_media} ps
@@ -439,6 +441,7 @@ getSdev po = do
   return Sdev
            { sd_ptr = po
            , sd_fid = fid
+           , sd_dev_idx = devidx
            , sd_disk = mdisk
            , sd_iface = iface
            , sd_media = media

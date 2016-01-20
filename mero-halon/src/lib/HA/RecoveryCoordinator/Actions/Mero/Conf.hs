@@ -131,7 +131,7 @@ loadMeroServers fs = mapM_ goHost where
       ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
       node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
 
-      devs <- mapM (goDev host ctrl) m0h_devices
+      devs <- mapM (goDev host ctrl) (zip m0h_devices [1..length m0h_devices + 1])
       mapM_ (goProc node devs) m0h_processes
 
       rg <- getLocalGraph
@@ -177,8 +177,8 @@ loadMeroServers fs = mapM_ goHost where
                           >>> linkDrives svc
                          )
 
-  goDev host ctrl CI.M0Device{..} = let
-      mkSDev fid = M0.SDev fid m0d_size m0d_bsize m0d_path
+  goDev host ctrl (CI.M0Device{..}, idx) = let
+      mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size m0d_bsize m0d_path
       devIds = [ DIWWN m0d_wwn
                , DIPath m0d_path
                ]
