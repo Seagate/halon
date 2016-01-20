@@ -10,6 +10,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE LambdaCase            #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
@@ -56,10 +57,11 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process
+import Control.Applicative
 import Control.Monad (forever, when, void)
 import Data.Foldable (forM_)
 import Data.ByteString (ByteString)
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, fromMaybe)
 import qualified Data.Set as Set
 
 updateEpoch :: RPC.ServerEndpoint
@@ -169,12 +171,21 @@ notifyMero cs st = do
                    , CST_HA /= M0.s_type service
                    , endpoint <- M0.s_endpoints service 
                    ] 
-  -- XXX: try to load local channel
-  case listToMaybe $ G.getResourcesOfType rg of
-    Just (TypedChannel chan) -> liftProcess $
-      sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
-    Nothing -> phaseLog "error" $ "HA.Service.Mero.notifyMero: Cannot find any MeroChannel"
+  ( (<|> (listToMaybe $ G.getResourcesOfType rg)) <$> lookupLocalMeroChannel)
+    >>= \case 
+      Just (TypedChannel chan) -> liftProcess $
+        sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
+      Nothing -> phaseLog "error" $ "HA.Service.Mero.notifyMero: Cannot find any MeroChannel"
   where
     getFid (M0.AnyConfObj a) = M0.fid a
     setEvent :: Mero.Notification.Set
     setEvent = Mero.Notification.Set $ map (flip Note st . getFid) cs
+
+lookupLocalMeroChannel :: PhaseM LoopState l (Maybe (TypedChannel NotificationMessage))
+lookupLocalMeroChannel = do
+   node <- liftProcess $ getSelfNode
+   rg <- getLocalGraph
+   let mlchan = listToMaybe
+         [ chan | sp   <- G.connectedTo (Node node) Runs rg :: [ServiceProcess MeroConf]
+                , chan <- G.connectedTo sp MeroChannel rg ]
+   return mlchan
