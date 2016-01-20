@@ -43,18 +43,18 @@ instance Hashable MeroChannel
 data DeclareMeroChannel =
     DeclareMeroChannel
     { dmcPid     :: !(ServiceProcess MeroConf)
-    , dmcChannel :: !(TypedChannel Set)
+    , dmcChannel :: !(TypedChannel (Set,String))
     }
     deriving (Generic, Typeable)
 
 instance Binary DeclareMeroChannel
 instance Hashable DeclareMeroChannel
 
-resourceDictMeroChannel :: Dict (Resource (TypedChannel Set))
+resourceDictMeroChannel :: Dict (Resource (TypedChannel (Set,String)))
 resourceDictMeroChannel = Dict
 
 relationDictMeroChanelServiceProcessChannel :: Dict (
-    Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel Set)
+    Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel (Set,String))
   )
 relationDictMeroChanelServiceProcessChannel = Dict
 
@@ -74,10 +74,10 @@ $(deriveService ''MeroConf 'meroSchema [ 'resourceDictMeroChannel
                                        , 'relationDictMeroChanelServiceProcessChannel
                                        ])
 
-instance Resource (TypedChannel Set) where
+instance Resource (TypedChannel (Set,String)) where
     resourceDict = $(mkStatic 'resourceDictMeroChannel)
 
-instance Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel Set) where
+instance Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel (Set,String)) where
     relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessChannel)
 
 meroServiceName :: ServiceName

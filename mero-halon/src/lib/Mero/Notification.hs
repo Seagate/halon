@@ -307,6 +307,7 @@ finalize = liftIO $ takeMVar globalEndpointRef >>= \case
       | otherwise -> putMVar globalEndpointRef $ ref { _erWantsFinalize = True }
 
 
+-- | Send notification to mero address
 notifyMero :: ServerEndpoint
            -> RPCAddress
            -> Set

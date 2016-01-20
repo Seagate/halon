@@ -91,7 +91,7 @@ newtype MockM0 = MockM0 DeclareMeroChannel
 mockMeroConf :: MeroConf
 mockMeroConf = MeroConf "" ""
 
-newMeroChannel :: ProcessId -> Process (ReceivePort Set, MockM0)
+newMeroChannel :: ProcessId -> Process (ReceivePort (Set,String), MockM0)
 newMeroChannel pid = do
   (sd, recv) <- newChan
   let sdChan   = TypedChannel sd
@@ -144,7 +144,7 @@ run :: Transport
     -> (ProcessId -> String -> Process ()) -- interceptor callback
     -> (    TestArgs
          -> ProcessId
-         -> ReceivePort Set
+         -> ReceivePort (Set,String)
          -> Process ()
        ) -- actual test
     -> Assertion
@@ -208,7 +208,7 @@ run transport interceptor test =
 
       return ()
 
-    startMeroServiceMock :: ProcessId -> Process (ReceivePort Set)
+    startMeroServiceMock :: ProcessId -> Process (ReceivePort (Set, String))
     startMeroServiceMock rc = do
       subscribe rc (Proxy :: Proxy (HAEvent DeclareChannels))
       nid <- getSelfNode
@@ -308,7 +308,7 @@ loadInitialDataMod f = let
     _ <- expect :: Process (Published (HAEvent InitialData))
     return ()
 
-failDrive :: ReceivePort Set -> M0.SDev -> Process ()
+failDrive :: ReceivePort (Set, String) -> M0.SDev -> Process ()
 failDrive recv sdev = let
     fail_evt = Set [Note (M0.d_fid sdev) M0_NC_FAILED]
     sdev_path = pack $ M0.d_path sdev
@@ -318,7 +318,7 @@ failDrive recv sdev = let
     -- We a drive failure note to the RC.
     _ <- promulgateEQ [nid] fail_evt
     -- Mero should be notified that the drive should be transient.
-    Set [Note _ M0_NC_TRANSIENT] <- receiveChan recv
+    Set [Note _ M0_NC_TRANSIENT] <- fst <$> receiveChan recv
     debug "failDrive: Transient state set"
     -- The RC should issue a 'ResetAttempt' and should be handled.
     _ <- expect :: Process (Published (HAEvent ResetAttempt))
@@ -381,7 +381,7 @@ poweronComplete mm sdev = let
                       (nodeCmdString (SmartTest sdev_path))
                     )
 
-smartTestComplete :: ReceivePort Set -> AckReply -> M0.SDev -> Process ()
+smartTestComplete :: ReceivePort (Set, String) -> AckReply -> M0.SDev -> Process ()
 smartTestComplete recv success sdev = let
     sdev_path = pack $ M0.d_path sdev
     smartComplete = CommandAck Nothing
@@ -396,7 +396,7 @@ smartTestComplete recv success sdev = let
     nid <- getSelfNode
     -- Confirms that the disk powerdown operation has occured.
     _ <- promulgateEQ [nid] smartComplete
-    Set [Note fid stat] <- receiveChan recv
+    Set [Note fid stat] <- fst <$> receiveChan recv
     debug "smartTestComplete: Mero notification received"
     liftIO $ assertEqual
       "Smart test succeeded. Drive fids and status should match."
@@ -440,7 +440,7 @@ testHitResetLimit transport = run transport interceptor test where
     nid <- getSelfNode
     void $ promulgateEQ [nid] fail_evt
     -- Mero should be notified that the drive should be failed.
-    Set [Note _ M0_NC_FAILED] <- receiveChan recv
+    Set [Note _ M0_NC_FAILED] <- fst <$> receiveChan recv
 
     return ()
 
@@ -569,7 +569,7 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
     say "Check drive removed"
     True <- checkStorageDeviceRemoved enclosure devIdx <$> G.getGraph mm
     say "Check notification"
-    Set [Note _ st] <- receiveChan recv
+    Set [Note _ st] <- fst <$> receiveChan recv
     liftIO $ assertEqual "drive is in transient state" M0_NC_TRANSIENT st
 
 #ifdef USE_MERO
