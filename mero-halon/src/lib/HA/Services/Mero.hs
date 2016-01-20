@@ -17,6 +17,7 @@ module HA.Services.Mero
     ( MeroChannel(..)
     , TypedChannel(..)
     , DeclareMeroChannel(..)
+    , NotificationMessage(..)
     , m0d
     , HA.Services.Mero.__remoteTableDecl
     , HA.Services.Mero.Types.__remoteTable
@@ -73,7 +74,7 @@ updateEpoch ep m0addr epoch = do
     Nothing -> return 0
 
 -- | Store information about communication channel in resource graph.
-sendMeroChannel :: SendPort (Mero.Notification.Set, String) -> Process ()
+sendMeroChannel :: SendPort NotificationMessage -> Process ()
 sendMeroChannel c = do
   pid <- getSelfPid
   let chan = DeclareMeroChannel (ServiceProcess pid) (TypedChannel c)
@@ -81,11 +82,12 @@ sendMeroChannel c = do
 
 statusProcess :: RPC.ServerEndpoint
               -> ProcessId
-              -> ReceivePort (Mero.Notification.Set, String)
+              -> ReceivePort NotificationMessage
               -> Process ()
 statusProcess ep pid rp = link pid >> (forever $ do
-    (set, addr) <- receiveChan rp
-    Mero.Notification.notifyMero ep (RPC.rpcAddress addr) set
+    NotificationMessage set addrs <- receiveChan rp
+    forM_ addrs $ \addr -> 
+      Mero.Notification.notifyMero ep (RPC.rpcAddress addr) set
   )
 
 remotableDecl [ [d|
@@ -169,7 +171,8 @@ notifyMero cs st = do
                    ] 
   -- XXX: try to load local channel
   case listToMaybe $ G.getResourcesOfType rg of
-    Just (TypedChannel chan) -> liftProcess $ forM_ recipients $ sendChan chan . (setEvent,)
+    Just (TypedChannel chan) -> liftProcess $
+      sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
     Nothing -> phaseLog "error" $ "HA.Service.Mero.notifyMero: Cannot find any MeroChannel"
   where
     getFid (M0.AnyConfObj a) = M0.fid a
