@@ -40,21 +40,29 @@ data MeroChannel = MeroChannel deriving (Eq, Show, Typeable, Generic)
 instance Binary MeroChannel
 instance Hashable MeroChannel
 
+data NotificationMessage = NotificationMessage
+       { notificationMessage :: Set
+       , notificationRecipients :: [String]
+       }
+     deriving (Typeable, Generic)
+instance Binary NotificationMessage
+instance Hashable NotificationMessage
+
 data DeclareMeroChannel =
     DeclareMeroChannel
     { dmcPid     :: !(ServiceProcess MeroConf)
-    , dmcChannel :: !(TypedChannel Set)
+    , dmcChannel :: !(TypedChannel NotificationMessage)
     }
     deriving (Generic, Typeable)
 
 instance Binary DeclareMeroChannel
 instance Hashable DeclareMeroChannel
 
-resourceDictMeroChannel :: Dict (Resource (TypedChannel Set))
+resourceDictMeroChannel :: Dict (Resource (TypedChannel NotificationMessage))
 resourceDictMeroChannel = Dict
 
 relationDictMeroChanelServiceProcessChannel :: Dict (
-    Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel Set)
+    Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel NotificationMessage)
   )
 relationDictMeroChanelServiceProcessChannel = Dict
 
@@ -74,10 +82,10 @@ $(deriveService ''MeroConf 'meroSchema [ 'resourceDictMeroChannel
                                        , 'relationDictMeroChanelServiceProcessChannel
                                        ])
 
-instance Resource (TypedChannel Set) where
+instance Resource (TypedChannel NotificationMessage) where
     resourceDict = $(mkStatic 'resourceDictMeroChannel)
 
-instance Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel Set) where
+instance Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel NotificationMessage) where
     relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessChannel)
 
 meroServiceName :: ServiceName

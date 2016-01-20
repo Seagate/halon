@@ -10,6 +10,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE LambdaCase            #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
@@ -17,6 +18,7 @@ module HA.Services.Mero
     ( MeroChannel(..)
     , TypedChannel(..)
     , DeclareMeroChannel(..)
+    , NotificationMessage(..)
     , m0d
     , HA.Services.Mero.__remoteTableDecl
     , HA.Services.Mero.Types.__remoteTable
@@ -30,7 +32,6 @@ module HA.Services.Mero
 
 import HA.EventQueue.Producer (expiate, promulgate)
 import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Service
 import HA.Resources
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState)
@@ -42,6 +43,7 @@ import qualified HA.ResourceGraph as G
 import Mero.Epoch (sendEpochBlocking)
 import qualified Mero.Notification
 import Mero.Notification.HAState (Note(..))
+import Mero.ConfC (ServiceType(..))
 
 import Network.CEP
 import qualified Network.RPC.RPCLite as RPC
@@ -55,9 +57,12 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process
+import Control.Applicative
 import Control.Monad (forever, when, void)
+import Data.Foldable (forM_)
 import Data.ByteString (ByteString)
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, fromMaybe)
+import qualified Data.Set as Set
 
 updateEpoch :: RPC.ServerEndpoint
             -> RPC.RPCAddress
@@ -70,20 +75,21 @@ updateEpoch ep m0addr epoch = do
          return newepoch
     Nothing -> return 0
 
-sendMeroChannel :: SendPort Mero.Notification.Set -> Process ()
+-- | Store information about communication channel in resource graph.
+sendMeroChannel :: SendPort NotificationMessage -> Process ()
 sendMeroChannel c = do
   pid <- getSelfPid
   let chan = DeclareMeroChannel (ServiceProcess pid) (TypedChannel c)
   void $ promulgate chan
 
 statusProcess :: RPC.ServerEndpoint
-              -> RPC.RPCAddress
               -> ProcessId
-              -> ReceivePort Mero.Notification.Set
+              -> ReceivePort NotificationMessage
               -> Process ()
-statusProcess ep m0addr pid rp = link pid >> (forever $ do
-    set <- receiveChan rp
-    Mero.Notification.notifyMero ep m0addr set
+statusProcess ep pid rp = link pid >> (forever $ do
+    NotificationMessage set addrs <- receiveChan rp
+    forM_ addrs $ \addr -> 
+      Mero.Notification.notifyMero ep (RPC.rpcAddress addr) set
   )
 
 remotableDecl [ [d|
@@ -102,7 +108,7 @@ remotableDecl [ [d|
         (Mero.Notification.initialize haAddr)
         Mero.Notification.finalize $
         do
-          c <- withEp $ \ep -> spawnChannelLocal (statusProcess ep m0addr self)
+          c <- withEp $ \ep -> spawnChannelLocal (statusProcess ep self)
           sendMeroChannel c
           say $ "Starting service m0d"
           go 0
@@ -152,25 +158,34 @@ remotableDecl [ [d|
 meroRules :: Definitions LoopState ()
 meroRules = meroRulesF m0d
 
-
 -- | Combine @ConfObj@s and a @ConfObjectState@ into a 'Set' and
 -- send it to every mero service running on the cluster.
 notifyMero :: [M0.AnyConfObj] -- ^ List of resources (instance of @ConfObj@)
            -> ConfObjectState
            -> PhaseM LoopState l ()
 notifyMero cs st = do
-  pids <- findRunningServiceProcesses m0d
   phaseLog "action" "Sending configuration update to mero services"
   rg <- getLocalGraph
-  mapM_ (sendSetEvent rg) pids
+  let recipients = Set.fromList
+        [ endpoint | service :: M0.Service <- G.getResourcesOfType rg
+                   , CST_HA /= M0.s_type service
+                   , endpoint <- M0.s_endpoints service 
+                   ] 
+  ( (<|> (listToMaybe $ G.getResourcesOfType rg)) <$> lookupLocalMeroChannel)
+    >>= \case 
+      Just (TypedChannel chan) -> liftProcess $
+        sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
+      Nothing -> phaseLog "error" $ "HA.Service.Mero.notifyMero: Cannot find any MeroChannel"
   where
     getFid (M0.AnyConfObj a) = M0.fid a
-
     setEvent :: Mero.Notification.Set
     setEvent = Mero.Notification.Set $ map (flip Note st . getFid) cs
 
-    sendSetEvent rg p = do
-      case listToMaybe $ G.connectedTo p MeroChannel rg of
-        Just (TypedChannel chan) -> liftProcess $ sendChan chan setEvent
-        _ -> phaseLog "error" $
-          "HA.Services.Mero.notifyMero: Cannot find MeroChanel for " ++ show p
+lookupLocalMeroChannel :: PhaseM LoopState l (Maybe (TypedChannel NotificationMessage))
+lookupLocalMeroChannel = do
+   node <- liftProcess $ getSelfNode
+   rg <- getLocalGraph
+   let mlchan = listToMaybe
+         [ chan | sp   <- G.connectedTo (Node node) Runs rg :: [ServiceProcess MeroConf]
+                , chan <- G.connectedTo sp MeroChannel rg ]
+   return mlchan

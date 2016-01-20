@@ -32,7 +32,7 @@ import Network.CEP
 import Prelude hiding (id)
 
 registerChannel :: ServiceProcess MeroConf
-                -> TypedChannel Set
+                -> TypedChannel NotificationMessage
                 -> PhaseM LoopState l ()
 registerChannel sp chan = modifyLocalGraph $ \rg -> do
     phaseLog "rg" $ "Registering channel."
@@ -43,11 +43,11 @@ registerChannel sp chan = modifyLocalGraph $ \rg -> do
 
 removeOldChan :: ServiceProcess MeroConf -> Graph -> Graph
 removeOldChan sp rg =
-    case connectedTo sp MeroChannel rg :: [TypedChannel Set] of
+    case connectedTo sp MeroChannel rg :: [TypedChannel NotificationMessage] of
       [c] -> disconnect sp MeroChannel c rg
       _   -> rg
 
-meroChannels :: Service MeroConf -> Graph -> [TypedChannel Set]
+meroChannels :: Service MeroConf -> Graph -> [TypedChannel NotificationMessage]
 meroChannels m0d rg = [ chan | node <- connectedTo Cluster Has rg
                              , isJust $ runningService node m0d rg
                              , sp   <- connectedTo node Runs rg :: [ServiceProcess MeroConf]
