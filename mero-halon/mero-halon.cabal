@@ -294,7 +294,8 @@ Executable genders2yaml
   default-language:  Haskell2010
   if !flag(mero)
     Buildable:        False
-  Build-Depends:      aeson,
+  else
+    Build-Depends:    aeson,
                       base >= 4.8,
                       binary,
                       bytestring,
@@ -769,7 +770,8 @@ Benchmark initial-data-gc
                       GeneralizedNewtypeDeriving
                       RecordWildCards NamedFieldPuns
                       ScopedTypeVariables
-  Build-Depends:    halon,
+  if flag(mero)
+    Build-Depends:  halon,
                     mero-halon,
                     base >= 4.5,
                     Cabal >= 1.16,
@@ -795,10 +797,9 @@ Benchmark initial-data-gc
                     tasty-hunit,
                     unix,
                     unordered-containers
-  if !flag(mero)
-    Buildable:     False
-  else
     CPP-Options:   -DUSE_MERO
+  else
+    Buildable:     False
 
 Test-Suite tests-mero-integration
   Type:             exitcode-stdio-1.0
