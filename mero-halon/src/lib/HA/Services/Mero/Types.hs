@@ -26,7 +26,6 @@ import Options.Schema.Builder
 
 data MeroConf = MeroConf {
     mcServerAddr :: String
-  , mcMeroAddr :: String
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary MeroConf
@@ -67,15 +66,11 @@ relationDictMeroChanelServiceProcessChannel :: Dict (
 relationDictMeroChanelServiceProcessChannel = Dict
 
 meroSchema :: Schema MeroConf
-meroSchema = MeroConf <$> sa <*> ma where
+meroSchema = MeroConf <$> sa where
   sa = strOption
         $  long "listenAddr"
         <> short 'l'
         <> metavar "LISTEN_ADDRESS"
-  ma = strOption
-        $  long "meroAddr"
-        <> short 'm'
-        <> metavar "MERO_ADDRESS"
 
 $(generateDicts ''MeroConf)
 $(deriveService ''MeroConf 'meroSchema [ 'resourceDictMeroChannel

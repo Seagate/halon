@@ -21,8 +21,6 @@ import HA.Resources
 import HA.Service
 import HA.Services.Mero.Types
 
-import Mero.Notification (Set(..))
-
 import Control.Category ((>>>))
 
 import Data.Maybe (isJust)
