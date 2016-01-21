@@ -575,7 +575,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
         -- Start mero service
         phaseLog "debug" $ "starting m0 process on " ++ show node
         promulgateRC $ encodeP $ ServiceStartRequest Start (HA.Resources.Node nid) m0d
-            (MeroConf (ip ++ haAddress) (ip ++ rmsAddress)) []
+            (MeroConf (ip ++ haAddress)) []
 #endif
         -- Update RG
         modifyLocalGraph $ \rg -> do
