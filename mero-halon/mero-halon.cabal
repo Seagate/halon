@@ -158,6 +158,7 @@ Library
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
+                       HA.RecoveryCoordinator.Rules.Mero.Conf
       Other-Modules:  HA.RecoveryCoordinator.Actions.Mero.Conf
                       HA.RecoveryCoordinator.Actions.Mero.Core
                       HA.RecoveryCoordinator.Actions.Mero.Spiel

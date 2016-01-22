@@ -15,8 +15,6 @@ import HA.ResourceGraph
 import Mero.M0Worker
 #endif
 
-import Data.Monoid
-import qualified Data.Set as Set
 import qualified Data.Map as Map
 
 -- | Create initial 'LoopState' structure.
@@ -25,10 +23,10 @@ emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
 emptyLoopState mmchan pid = do
   wrk <- liftIO $ dummyM0Worker
   g' <- getGraph mmchan >>= return . addRootNode Cluster
-  return $ LoopState g' Map.empty mmchan pid Set.empty wrk
+  return $ LoopState g' Map.empty mmchan pid Map.empty wrk
 #else
 emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
 emptyLoopState mmchan pid = do
   g' <- getGraph mmchan >>= return . addRootNode Cluster
-  return $ LoopState g' Map.empty mmchan pid Set.empty
+  return $ LoopState g' Map.empty mmchan pid Map.empty
 #endif

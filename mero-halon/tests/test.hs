@@ -24,7 +24,6 @@ import qualified HA.Test.Disconnect
 import qualified HA.Test.Cluster
 import qualified HA.Test.SSPL
 
-import Test.Tasty (TestTree, defaultMainWithIngredients)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
 import Test.Tasty.Ingredients.FileReporter (fileTestReporter)
 
@@ -34,7 +33,6 @@ import Network.Transport (Transport, EndPointAddress)
 
 import Helper.Environment
 import Test.Framework
-import Test.Tasty (testGroup)
 import Test.Tasty.HUnit (testCase)
 
 import Control.Concurrent (threadDelay, forkIO)
