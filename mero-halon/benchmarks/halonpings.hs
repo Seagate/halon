@@ -106,7 +106,7 @@ main = (>>= maybe (error "test timed out") return) $
                      ++ " -l " ++ halonctlloc m0
                      ++ concatMap (\mloc -> " -a " ++ mloc) tsLocs
                      ++ " bootstrap station"
-                     ++ " -r 2000000"
+                     ++ " -r 8000000"
                      )
       forM_ tsNids $ \nid ->
         expectLog [nid] (isInfixOf "New replica started in legislature://0")
@@ -144,12 +144,13 @@ main = (>>= maybe (error "test timed out") return) $
         expectLog tsNids $ isInfixOf $ "received DummyEvent " ++ show pingPid
 
       say "Starting benchmark ..."
-      tsStats <- forM [1.. nPings `div` 10] $ \i -> do
+      let batchSize = 5
+      tsStats <- forM [1.. nPings `div` batchSize] $ \i -> do
         t0 <- liftIO $ getTime Monotonic
-        forM_ [1..10] $ \j ->
+        forM_ [1..batchSize] $ \j ->
           forM_ pingPids $ \pingPid ->
             send pingPid $ show (pingPid, i :: Int, j :: Int)
-        forM_ [1..10] $ \j ->
+        forM_ [1..batchSize] $ \j ->
           forM_ pingPids $ \pingPid ->
             expectLog tsNids $ isInfixOf $
               "received DummyEvent " ++ show (pingPid, i, j :: Int)
@@ -166,7 +167,7 @@ main = (>>= maybe (error "test timed out") return) $
 
       let (ts, mems) = unzip tsStats
       liftIO $ writeIORef statsRef $ Just $
-        zip3 (map (* nSat) [10 :: Int, 20..]) (scanl1 (+) ts) mems
+        zip3 (map (* (nSat * batchSize)) [1 :: Int, 2 ..]) (scanl1 (+) ts) mems
 
     Just tsStats <- readIORef statsRef
     putStrLn $ unlines $
