@@ -82,7 +82,7 @@ import Control.Concurrent.STM.TChan
 import Control.Exception (SomeException)
 import Control.Monad
 import Data.Binary (Binary, encode, decode)
-import qualified Data.ByteString.Lazy as BSL (ByteString)
+import qualified Data.ByteString.Lazy as BSL (ByteString, length)
 import Data.Constraint (Dict(..))
 import Data.Function (fix)
 import Data.Int (Int64)
@@ -647,9 +647,16 @@ replica Dict
 
     sendBatch :: ProcessId
               -> [(ProcessId, LegislatureId, Request a)]
-              -> Process ()
-    sendBatch ρ rs = do
-      let (nps, other0) =
+              -> Process [(ProcessId, LegislatureId, Request a)]
+    sendBatch ρ rs' = do
+      -- Pick requests until the size of the encoding exceeds a threshold.
+      -- Otherwise, creating too large batches would slow down replicas.
+      let (rs, rest) = -- ensure rs is not empty
+                       (\p -> if null (fst p) then splitAt 1 (snd p) else p) $
+                       (\(a, b) -> (map snd a, map snd b)) $
+                       break ((> 128 * 1024) . fst) $
+                       zip (scanl1 (+) $ map (BSL.length . encode) rs') rs'
+          (nps, other0) =
             partition ((Nullipotent ==) . requestHint . batcherMsgRequest) $
             map (\(a, e, r) -> BatcherMsg a e r) rs
           (rcfgs, other) =
@@ -660,7 +667,7 @@ replica Dict
         usend ρ [last rcfgs]
         expect
       -- Submit the non-nullipotent requests.
-      logTrace "batcher: non-nullipotent"
+      logTrace $ "batcher: non-nullipotent " ++ show (length other, length rest)
       unless (null other) $ do
         usend ρ other
         expect
@@ -670,6 +677,7 @@ replica Dict
         usend ρ nps
         expect
       logTrace "batcher: done"
+      return rest
 
     adjustForDrift :: Int -> Int
     adjustForDrift t = fromIntegral $

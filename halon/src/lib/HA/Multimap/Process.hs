@@ -35,6 +35,7 @@ import Data.Binary ( encode )
 import Data.ByteString ( ByteString )
 import Data.ByteString.Builder ( lazyByteString, toLazyByteString )
 import Data.ByteString.Lazy ( toChunks, fromChunks )
+import qualified Data.ByteString.Lazy as BSL ( length )
 import Data.Function ( fix )
 import Data.Maybe ( fromMaybe, listToMaybe )
 import Data.List ( foldl' )
@@ -119,8 +120,19 @@ multimap (StoreChan _ rchan wchan) rg =
             -- Replicate the updates we got.
             Nothing -> do
               mmTrace $ "replicating " ++ show (length acc) ++ " updates"
-              retry requestTimeout $ updateStateWith rg $
-                $(mkClosure 'updateStore) (concat $ reverse $ map fst acc)
+              flip fix (concat $ reverse $ map fst acc) $ \loop rs -> do
+                -- Pick updates until the size of the encoding exceeds a
+                -- threshold. Otherwise, creating too large batches would slow
+                -- down replicas.
+                let (rs', rest) =
+                       (\p -> if null (fst p) then splitAt 1 (snd p) else p) $
+                       (\(a, b) -> (map snd a, map snd b)) $
+                       break ((> 64 * 1024) . fst) $
+                       zip (scanl1 (+) $ map (BSL.length . encode) rs) rs
+                retry requestTimeout $ updateStateWith rg $
+                  $(mkClosure 'updateStore) rs'
+                when (not $ null rest) $ loop rest
+
               mmTrace "running callbacks"
               mapM_ snd acc
               mmTrace "finished running callbacks"
