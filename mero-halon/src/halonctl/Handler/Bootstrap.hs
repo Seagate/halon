@@ -66,5 +66,5 @@ bootstrap :: [NodeId] -- ^ NodeIds of the node to bootstrap
           -> BootstrapCmdOptions
           -> Process ()
 bootstrap nids opts = case opts of
-  BootstrapNode naConf -> mapM_ (\nid -> S.start nid naConf) nids
-  BootstrapStation tsConf ->TS.start nids tsConf
+  BootstrapNode naConf -> mapM_ (flip S.start naConf) nids
+  BootstrapStation tsConf -> TS.start nids tsConf
