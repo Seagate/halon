@@ -651,10 +651,11 @@ replica Dict
     sendBatch ρ rs' = do
       -- Pick requests until the size of the encoding exceeds a threshold.
       -- Otherwise, creating too large batches would slow down replicas.
-      let (rs, rest) = -- ensure rs is not empty
+      let maxBatchSize = 128 * 1024
+          (rs, rest) = -- ensure rs is not empty
                        (\p -> if null (fst p) then splitAt 1 (snd p) else p) $
                        (\(a, b) -> (map snd a, map snd b)) $
-                       break ((> 128 * 1024) . fst) $
+                       break ((> maxBatchSize) . fst) $
                        zip (scanl1 (+) $ map (BSL.length . encode) rs') rs'
           (nps, other0) =
             partition ((Nullipotent ==) . requestHint . batcherMsgRequest) $
