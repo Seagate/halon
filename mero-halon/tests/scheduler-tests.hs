@@ -25,6 +25,11 @@ import Network.Transport.InMemory
 import System.Posix.Env (setEnv)
 import System.IO
 
+#ifdef USE_MERO
+import Mero
+#endif
+
+
 ut :: String -> Transport -> IO TestTree
 ut _host transport = return $
     testGroup "mero-halon" $ (:[]) $
@@ -85,4 +90,10 @@ main = do
     _ <- forkIO $ do threadDelay (30 * 60 * 1000000)
                      forever $ do threadDelay 100000
                                   throwTo tid (ErrorCall "Timeout")
-    runTests (ut host0)
+    prepare $ runTests (ut host0)
+  where
+#ifdef USE_MERO
+    prepare = withM0
+#else
+    prepare = id
+#endif
