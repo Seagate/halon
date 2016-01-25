@@ -7,7 +7,8 @@ module HA.RecoveryCoordinator.Events.Mero
    ( SyncComplete(..)
    , NewMeroClient(..)
    , NewMeroClientProcessed(..)
-   -- * Requests 
+   , NewMeroServer(..)
+   -- * Requests
    , GetSpielAddress(..)
    )
    where
@@ -22,7 +23,7 @@ import Data.UUID
 import GHC.Generics
 
 data SyncComplete = SyncComplete UUID
-      deriving (Eq, Show, Typeable, Generic) 
+      deriving (Eq, Show, Typeable, Generic)
 
 instance Binary SyncComplete
 
@@ -32,6 +33,11 @@ data NewMeroClient = NewMeroClient Node
 
 instance Binary NewMeroClient
 
+-- | New mero server was connected.
+data NewMeroServer = NewMeroServer Node
+      deriving (Eq, Show, Typeable, Generic)
+
+instance Binary NewMeroServer
 
 -- | Event about processing 'NewMeroClient' event.
 data NewMeroClientProcessed = NewMeroClientProcessed Host

@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE TupleSections         #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -9,8 +10,9 @@ module HA.RecoveryCoordinator.Actions.Mero
   , module HA.RecoveryCoordinator.Actions.Mero.Core
   , module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , updateDriveState
-  , storeMeroClientNode
+  , storeMeroNodeInfo
   , startMeroClientService
+  , startMeroServerService
   )
 where
 
@@ -21,7 +23,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 
 import HA.Resources.Castor (Is(..))
-import HA.Resources (Has(..)) 
+import HA.Resources (Has(..))
 import qualified HA.Resources as Res
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Castor as Castor
@@ -33,9 +35,10 @@ import Mero.ConfC
 
 import Control.Category
 import Control.Monad.IO.Class
+import Data.ByteString (ByteString)
 import Data.Foldable (forM_)
 import Data.Proxy
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, isJust)
 import Data.UUID.V4 (nextRandom)
 import System.Posix.SysInfo
 import Network.CEP
@@ -69,7 +72,7 @@ updateDriveState m0sdev x = do
   -- otherwise we may notifyMero multiple times (if consesus will be lost).
   -- however in opposite case we may never notify mero if RC will die after
   -- sync, but before it notified mero.
-  syncGraph (return ()) 
+  syncGraph (return ())
   -- Notify Mero
   notifyMero [M0.AnyConfObj m0sdev] x
 
@@ -81,10 +84,14 @@ rmsAddress = ":12345:41:301"
 haAddress :: String
 haAddress = ":12345:35:101"
 
--- | Store information about mero client node in Resource Graph.
--- If Host already contains all required information - then no new information will be added.
-storeMeroClientNode :: M0.Filesystem -> Castor.Host -> HostHardwareInfo -> PhaseM LoopState a ()
-storeMeroClientNode fs host (HostHardwareInfo memsize cpucnt nid) =
+-- | Store information about mero host in Resource Graph.
+--
+-- If the 'Host' already contains all the required information, no new
+-- information will be added.
+storeMeroNodeInfo :: M0.Filesystem -> Castor.Host -> HostHardwareInfo
+                  -> Castor.HostAttr -- ^ Attribute to attach, client/server
+                  -> PhaseM LoopState a ()
+storeMeroNodeInfo fs host (HostHardwareInfo memsize cpucnt nid) hattr =
   modifyLocalGraph $ \rg -> do
     uuid <- liftIO nextRandom
     -- Check if node is already defined in RG
@@ -135,12 +142,42 @@ storeMeroClientNode fs host (HostHardwareInfo memsize cpucnt nid) =
           >>> G.connect process M0.IsParentOf rmsService
           >>> G.connect process M0.IsParentOf haService
           >>> G.connect fs M0.IsParentOf m0node
-          >>> G.connect host Has Castor.HA_M0CLIENT
+          >>> G.connect host Has hattr
           >>> G.connect host Has (M0.LNid nid)
           >>> G.connect host Runs m0node
           >>> G.connectUnique host Has uuid
             $ rg
     return rg'
+
+-- | Convert 'Fid' to 'String'. Strips the angled brackets around the
+-- fid that the 'Show' instance produces.
+fidToStr :: Fid -> String
+fidToStr = init . tail . show
+
+startMeroServerService :: Castor.Host -> Res.Node
+                       -> Maybe ByteString
+                       -> PhaseM LoopState a ()
+startMeroServerService host node confString = do
+  phaseLog "startMeroServerService"
+         $ "Trying to start mero service on " ++ show (host, node)
+  mprofile <- Conf.getProfile
+  rg <- getLocalGraph
+  let mmsg = do
+       M0.LNid lnid <- listToMaybe . G.connectedTo host Has $ rg
+       uuid <- listToMaybe $ G.connectedTo host Has rg
+       profileFid <- fidToStr . M0.fid <$> mprofile
+       (processId,endpoint) <-
+          listToMaybe [ (fidToStr $ M0.fid process, M0.r_endpoint process)
+                      | m0node <- G.connectedTo host Runs rg :: [M0.Node]
+                      , process <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
+                      ]
+       let servconf = fmap (,processId) confString
+       let conf = MeroConf (lnid ++ haAddress) profileFid
+                    (MeroKernelConf uuid)
+                    (MeroServerConf servconf endpoint)
+       return $ encodeP $ ServiceStartRequest Start node m0d conf []
+  phaseLog "startMeroServerService" $ "Got msg: " ++ show (isJust mmsg)
+  forM_ mmsg promulgateRC
 
 startMeroClientService :: Castor.Host -> Res.Node -> PhaseM LoopState a ()
 startMeroClientService host node = do
@@ -149,9 +186,9 @@ startMeroClientService host node = do
     let mmsg = do
          (M0.LNid lnid) <- listToMaybe . G.connectedTo host Has $ rg
          uuid <- listToMaybe . G.connectedTo host Has $ rg
-         profileFid <- sanitize . show . M0.fid <$> mprofile
-         (processId,endpoint) <- 
-            listToMaybe [ (sanitize . show $ M0.fid process, M0.r_endpoint process)
+         profileFid <- fidToStr . M0.fid <$> mprofile
+         (processId,endpoint) <-
+            listToMaybe [ (fidToStr $ M0.fid process, M0.r_endpoint process)
                         | m0node <- G.connectedTo host Runs rg :: [M0.Node]
                         , process <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
                         ]
@@ -160,6 +197,3 @@ startMeroClientService host node = do
                       (MeroClientConf processId endpoint)
          return $ encodeP $ ServiceStartRequest Start node m0d conf []
     forM_ mmsg promulgateRC
-  where
-    -- Show instance returns "<FID>" but we need to pass "FID"
-    sanitize = init . tail

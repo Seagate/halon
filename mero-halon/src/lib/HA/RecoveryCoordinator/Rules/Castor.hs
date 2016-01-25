@@ -21,6 +21,7 @@ import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Events.Drive
+
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
@@ -40,6 +41,7 @@ import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
 import HA.Resources.Mero.Note
 import qualified HA.Resources.Mero as M0
 import HA.RecoveryCoordinator.Events.Mero
+import HA.RecoveryCoordinator.Rules.Castor.Server
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState (Note(..))
 import Control.Exception (SomeException)
@@ -150,6 +152,7 @@ castorRules = sequence_
   , ruleMeroNoteSet
   , ruleGetEntryPoint
   , ruleNewMeroClient
+  , ruleNewMeroServer
 #endif
   , ruleResetAttempt
   , ruleDriveFailed
@@ -183,14 +186,22 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
 #endif
 #ifdef USE_MERO
       rg' <- getLocalGraph
-      let hosts = [ host | host <- G.getResourcesOfType rg'    :: [Host] -- all hosts
-                         , not  $ G.isConnected host Has HA_M0CLIENT rg' -- and not already a client
-                         , not  $ G.isConnected host Has HA_M0SERVER rg' -- and not already a server
-                         ]
-          nodes = mapMaybe (\host -> case G.connectedTo host Runs rg' of
-                               (n:_) -> Just n
-                               _     -> Nothing) hosts
-      forM_ nodes $ liftProcess . promulgateWait . NewMeroClient
+      let clientHosts =
+            [ host | host <- G.getResourcesOfType rg'    :: [Host] -- all hosts
+                   , not  $ G.isConnected host Has HA_M0CLIENT rg' -- and not already a client
+                   , not  $ G.isConnected host Has HA_M0SERVER rg' -- and not already a server
+                   ]
+
+          hostsToNodes = mapMaybe (\h -> listToMaybe $ G.connectedTo h Runs rg')
+          serverHosts = [ host | host <- G.getResourcesOfType rg' :: [Host]
+                               , G.isConnected host Has HA_M0SERVER rg' ]
+
+          serverNodes = hostsToNodes serverHosts
+          clientNodes = hostsToNodes clientHosts
+      phaseLog "post-initial-load" $ "Sending messages about these new mero nodes: "
+                                  ++ show ((clientNodes, clientHosts), (serverNodes, serverHosts))
+      forM_ clientNodes $ liftProcess . promulgateWait . NewMeroClient
+      forM_ serverNodes $ liftProcess . promulgateWait . NewMeroServer
 #endif
       messageProcessed eid
 
@@ -488,9 +499,9 @@ ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid (HA.Resources
       messageProcessed uuid
 
 #ifdef USE_MERO
--- | New mero client rule is capable provisioning new mero client. 
+-- | New mero client rule is capable provisioning new mero client.
 -- In order to do that following steps are applies:
---   1. for each new connected node 'NewMeroClient' message is emitted by 'ruleNodeUp'. 
+--   1. for each new connected node 'NewMeroClient' message is emitted by 'ruleNodeUp'.
 --   2. for each new client that is known to be mero-client, but have no confd information,
 --      that information is generated and synchronized with confd servers
 --   3. once confd have all required information available start mero service on the node,
@@ -515,7 +526,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
     setPhase msgNewMeroClient $ \(HAEvent eid (NewMeroClient node@(Node nid)) _) -> do
        mhost <- findNodeHost node
        case mhost of
-         Just host -> do 
+         Just host -> do
            isServer <- hasHostAttr HA_M0SERVER host
            isClient <- hasHostAttr HA_M0CLIENT host
            mlnid    <- listToMaybe . G.connectedTo host Has <$> getLocalGraph
@@ -534,7 +545,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
              _  -> do
                    phaseLog "info" $ show host ++ " is mero client. No configuration - generating"
                    startMeroClientProvisioning host eid
-                   getProvisionHardwareInfo host >>= \case 
+                   getProvisionHardwareInfo host >>= \case
                      Nothing -> do
                        liftProcess $ void $ spawnLocal $
                          void $ spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
@@ -543,7 +554,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
            phaseLog "error" $ "Can't find host for node " ++ show node
            messageProcessed eid
 
-    setPhase msgClientInfo $ \(HAEvent eid (ClientInfo nid info) _) -> do
+    setPhase msgClientInfo $ \(HAEvent eid (SystemInfo nid info) _) -> do
       phaseLog "info" $ "Recived information about " ++ show nid
       mhost <- findNodeHost nid
       case mhost of
@@ -561,9 +572,8 @@ ruleNewMeroClient = define "new-mero-client" $ do
             phaseLog "warning" "Configuration data was not loaded yet, skipping"
           Just fs -> do
             (node:_) <- nodesOnHost host
-            storeMeroClientNode fs host info
+            storeMeroNodeInfo fs host info HA_M0CLIENT
             startMeroClientService host node
-              
     setPhase msgClientNodeBootstrapped $ \(HAEvent eid (MeroClientBootstrapped host) _) -> do
        finishMeroClientProvisioning host
        messageProcessed eid
@@ -580,8 +590,8 @@ ruleNewMeroClient = define "new-mero-client" $ do
         return rg'
 
     finishMeroClientProvisioning lnid = do
-      rg <- getLocalGraph 
-      let mpp = listToMaybe 
+      rg <- getLocalGraph
+      let mpp = listToMaybe
                   [ pp | host <- G.connectedFrom Has (M0.LNid lnid) rg :: [Host]
                        , pp <- G.connectedFrom OnHost host rg :: [ProvisionProcess]
                        ]
@@ -593,7 +603,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
 
     getProvisionHardwareInfo host = do
        let pp = ProvisionProcess host
-       rg <- getLocalGraph 
+       rg <- getLocalGraph
        return . listToMaybe $ (G.connectedTo pp Has rg :: [HostHardwareInfo])
     putProvisionHardwareInfo host info = do
        let pp = ProvisionProcess host

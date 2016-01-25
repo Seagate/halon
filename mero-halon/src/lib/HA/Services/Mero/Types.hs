@@ -14,6 +14,7 @@ import GHC.Generics (Generic)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Data.Binary (Binary)
+import Data.ByteString (ByteString)
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
 import Data.UUID as UUID
@@ -44,10 +45,15 @@ instance Binary MeroConf
 instance Hashable MeroConf
 
 -- | Node configuration
-data MeroNodeConf = MeroClientConf
-       { mccProcessFid :: String
-       , mccMeroEndpoint :: String
-       }
+data MeroNodeConf = MeroClientConf { mccProcessFid :: String
+                                   , mccMeroEndpoint :: String
+                                   }
+                  | MeroServerConf { mscConfString :: Maybe (ByteString, String)
+                                   -- ^ If confd is meant to run on
+                                   -- the host, pass the conf file
+                                   -- content and process fid
+                                   , mscMeroEndpoint :: String
+                                   }
   deriving (Eq, Generic, Show, Typeable)
 
 instance Binary MeroNodeConf
@@ -118,6 +124,7 @@ kernelSchema = MeroKernelConf <$> uuid
             $ long "uuid"
             <> short 'u'
             <> metavar "UUID"
+
 
 $(generateDicts ''MeroConf)
 $(deriveService ''MeroConf 'meroSchema [ 'resourceDictMeroChannel

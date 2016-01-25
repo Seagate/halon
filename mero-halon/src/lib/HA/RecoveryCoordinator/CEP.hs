@@ -224,14 +224,22 @@ ruleNodeUp argv = define "node-up" $ do
         ack npid
         liftProcess $ sayRC $ "Ack sent to " ++ show npid
         messageProcessed uuid
+        sendNewMeroNodeMsg <- findNodeHost (Node nid) >>= return . \case
+          Nothing -> promulgateRC $ NewMeroClient (Node nid)
+          Just host -> do
+            g <- getLocalGraph
+            if G.isConnected host Has HA_M0SERVER g
+            then promulgateRC $ NewMeroServer (Node nid)
+            -- if we don't have the server label, assume mero client
+            -- even if no client label
+            else promulgateRC $ NewMeroClient (Node nid)
 #ifdef USE_MERO
         getFilesystem >>= \case
            Nothing ->
              phaseLog "info" "Configuration data was not loaded yet, skipping"
-           Just{} ->
-             promulgateRC $ NewMeroClient (Node nid)
+           Just{} -> sendNewMeroNodeMsg
 #else
-        promulgateRC $ NewMeroClient (Node nid)
+        sendNewMeroNodeMsg
 #endif
         finishProcessingMsg uuid
         continue end
