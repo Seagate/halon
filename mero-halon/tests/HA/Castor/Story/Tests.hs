@@ -104,11 +104,11 @@ testRules = do
   defineSimple "register-mock-service" $
     \(HAEvent _ (MockM0 dc@(DeclareMeroChannel sp _)) _) -> do
       nid <- liftProcess $ getSelfNode
-      liftProcess $ say "here-1" 
+      liftProcess $ say "here-1"
       registerServiceProcess (Node nid) m0d mockMeroConf sp
-      liftProcess $ say "here-2" 
+      liftProcess $ say "here-2"
       void . liftProcess $ promulgateEQ [nid] dc
-      liftProcess $ say "here-3" 
+      liftProcess $ say "here-3"
       phaseLog "debug" "here am i"
 
 mkTests :: IO (Transport -> [TestTree])
@@ -561,7 +561,7 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
         message = LBS.toStrict $ encode $ mkSensorResponse
            $ emptySensorMessage
               { sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
-                Just $ mkResponseDriveManager (pack enclosure) "serial1" devIdx "EMPTY_None" }
+                Just $ mkResponseDriveManager (pack enclosure) "serial1" devIdx "EMPTY" "None" }
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message0
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
     Just{} <- expectTimeout 1000000 :: Process (Maybe (Published DriveRemoved))
@@ -638,8 +638,8 @@ testMetadataDriveFailed transport = run transport interceptor test where
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
     Just{} <- expectTimeout 1000000 :: Process (Maybe (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data))))
     debug "Raid_data message processed by RC"
-    mx <- receiveTimeout 1000000 
+    mx <- receiveTimeout 1000000
             [ matchIf (\(MQMessage _ msg) ->
-                         "Metadata drive failure on host " `append` host == decodeUtf8 msg) 
+                         "Metadata drive failure on host " `append` host == decodeUtf8 msg)
                       (const $ return ())]
     when (isNothing mx) $ error "No message delivered to SSPL."

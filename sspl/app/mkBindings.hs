@@ -58,8 +58,10 @@ mkBindings name schema = do
                                      \n -> [ instanceD (cxt []) (conT ''Binary `appT` conT n) []
                                            , instanceD (cxt []) (conT ''Hashable `appT` conT n) []
                                            ]
-                               , _replaceModules = M.insert
-                                  "Data.Hashable.Class" "Data.Hashable"
-                                  (_replaceModules defaultOptions)
+                               , _replaceModules = M.fromList
+                                  [ ("Data.Hashable.Class", "Data.Hashable")
+                                  , ("Data.Text.Show", "Data.Text") ]
+                                  `M.union`
+                                  _replaceModules defaultOptions
                                })
   T.writeFile ("src/SSPL/Bindings/" ++ (T.unpack name) ++ ".hs")  code
