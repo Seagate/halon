@@ -62,7 +62,7 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process
-import Control.Monad (forever, when, void)
+import Control.Monad (forever, void)
 import Data.Foldable (forM_)
 import qualified Control.Monad.Catch as Catch
 import qualified Data.ByteString as BS
@@ -135,19 +135,21 @@ remotableDecl [ [d|
         case servconf of
           Just (conf, confdRmsFid) -> do
             let confdDir = "/var/mero/confd"
+                confdPath = confdDir </> "conf.xc"
             return ()
             void . liftIO $ do
               createDirectoryIfMissing True confdDir
-              BS.writeFile (confdDir </> "conf.xc") conf
+              BS.writeFile confdPath conf
             let (mkfs, m0ds) = ("mero-mkfs@" ++ confdRmsFid, "m0d@" ++ confdRmsFid)
-            say $ "Starting " ++ mkfs
-            mkfs_c <- liftIO $ SystemD.startService mkfs
             say $ "Writing out info for " ++ m0ds ++ " service"
             liftIO $ SystemD.sysctlFile ("m0d-" ++ confdRmsFid)
-              [ ("MERO_M0D_PROFILE_FID", mcProfile)
-              , ("MERO_M0D_EP", m0addr)
+              [ ("MERO_M0D_EP", m0addr)
               , ("MERO_HA_EP", mcHAAddress)
+              , ("MERO_PROFILE_FID", mcProfile)
+              , ("MERO_CONF_XC", confdPath)
               ]
+            say $ "Starting " ++ mkfs
+            mkfs_c <- liftIO $ SystemD.startService mkfs
             say $ "Starting " ++ m0ds
             m0d_c <- liftIO $ SystemD.startService m0ds
             say $ "Finished core boot services: " ++ show (mkfs_c, m0d_c)

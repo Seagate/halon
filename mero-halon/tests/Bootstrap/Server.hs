@@ -206,6 +206,7 @@ m0dAtUnitFile = unlines $
   , "After=mero-kernel.service"
   , ""
   , "[Service]"
+  , "EnvironmentFile=/etc/sysconf/m0d-%i"
   , "Type=oneshot"
   , "RemainAfterExit=yes"
   , "ExecStart=/bin/true"

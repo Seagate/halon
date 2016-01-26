@@ -35,10 +35,7 @@ import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Hardware
-import           HA.RecoveryCoordinator.Actions.Mero (startMeroServerService, storeMeroNodeInfo)
-import           HA.RecoveryCoordinator.Actions.Mero.Conf (getFilesystem)
-import           HA.RecoveryCoordinator.Actions.Mero.Spiel
-
+import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Events.Mero
 import qualified HA.ResourceGraph as G
 import           HA.Resources
@@ -47,12 +44,12 @@ import           HA.Resources.Castor.Initial (Network(Data))
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero hiding (Node, Process, Enclosure, Rack, fid)
 import           HA.Services.Mero
-import           Mero.ConfC (ServiceType(..), Fid)
+import           Mero.ConfC (ServiceType(..), Fid, fidToStr)
 import           Network.CEP
 import           Prelude
 import           System.Directory
 import           System.IO
-import           System.SystemD.API (startService)
+import           System.SystemD.API (startService, sysctlFile)
 
 -- | Mero server bootstrapping has finished all together.
 newtype ServerBootstrapFinished = ServerBootstrapFinished NodeId
@@ -67,14 +64,21 @@ instance Binary MeroServerStartRemainingServices
 
 -- | Start processes using the @m0d\@@ systemd service. These are the
 -- services that aren't part of the core bootstrap, i.e. not confd or RM.
-bootstrapMeroServerExtra :: [Fid]
+--
+-- Takes a list of fids (one per service), m0d endpoint address, halon
+-- endpoint address and the 'M0.Profile' 'Fid'.
+bootstrapMeroServerExtra :: ([Fid], String, String, Fid)
                             -- ^ Process fids of the services
                          -> Process ()
-bootstrapMeroServerExtra fids = do
+bootstrapMeroServerExtra (fids, m0addr, haAddr, profileFid) = do
   say "Bootstrapping extra services"
-  _ <- liftIO $ do
-    forM_ (map (init . tail . show) fids) $ \fid -> do
-      startService $ "m0d@" ++ fid
+  _ <- liftIO . forM_ (fidToStr <$> fids) $ \fid -> do
+    _ <- sysctlFile ("m0d-" ++ fid)
+      [ ("MERO_M0D_EP", m0addr)
+      , ("MERO_HA_EP", haAddr)
+      , ("MERO_PROFILE_FID", fidToStr profileFid)
+      ]
+    startService $ "m0d@" ++ fid
   getSelfNode >>= promulgateWait . ServerBootstrapFinished
 
 remotable [ 'bootstrapMeroServerExtra ]
@@ -214,11 +218,17 @@ ruleNewMeroServer = define "new-mero-server" $ do
              return . G.connect Cluster Runs (ServerBootstrapProcess nid False)
            syncGraphBlocking
            svs <- getServices (Node nid)
+
            let extraFids :: [Fid]
                extraFids = [ M0.r_fid p | (p, c) <- svs
                                         , s_type c /= CST_MGS && s_type c /= CST_RMS ]
-           liftProcess . void . spawnLocal . void $
-             spawnAsync nid $ $(mkClosure 'bootstrapMeroServerExtra) extraFids
+           mhost <- findNodeHost (Node nid)
+           maybe (return Nothing) getMeroServiceInfo mhost >>= \case
+             Nothing -> liftProcess $ getSelfNode >>= promulgateWait . ServerBootstrapFinished
+             Just (haAddr, profile, process) -> do
+               liftProcess . void . spawnLocal . void . spawnAsync nid $
+                 $(mkClosure 'bootstrapMeroServerExtra)
+                   (extraFids, haAddr, M0.r_endpoint process, M0.fid profile)
            continue finish_extra_bootstrap
 
   setPhase finish_extra_bootstrap $ \(HAEvent eid (ServerBootstrapFinished nid) _) -> do
@@ -256,10 +266,11 @@ ruleNewMeroServer = define "new-mero-server" $ do
 --
 -- In case that @failure@ is not 'Nothing', something has gone wrong
 -- with this worker so we shouldn't advance it to @phandle@ nor
--- consider it in @release@. Instead add 'BootstrapFailed' to the node
--- and advance to @failHandle@. If the failed worker is the last one
--- in the pool, it will still run @release@ before continuing to
--- @failHandle@.
+-- consider it in @release@. Instead, run @failure@ which should be
+-- used to mark failure for the rest of the system if necessary and
+-- then advance the worker to @failHandle@. If the failed worker is
+-- the last one in the pool, it will still run @release@ before
+-- continuing to @failHandle@.
 --
 -- @viewState . setState == id@
 barrier :: forall r a st l. G.Relation r a st
@@ -285,10 +296,10 @@ barrier hookPoint hookRel setState viewState phandle failHandle failure release 
   let finished, unfinished :: [st]
       (finished, unfinished) = partition viewState $ G.connectedTo hookPoint hookRel g
   when (null unfinished) $ do
-    modifyLocalGraph
+    modifyLocalGraph $ \g0 -> do
       -- Disconect all the state trackers from the RG, we no longer
       -- need them.
-      (\g0 -> return $ foldl' (\g' sp -> G.disconnect hookPoint hookRel sp g') g0 finished)
+      return $ foldl' (\g' sp -> G.disconnect hookPoint hookRel sp g') g0 finished
     mapM_ release finished
   continue $ if isJust failure then failHandle else phandle
   where

@@ -13,6 +13,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   , storeMeroNodeInfo
   , startMeroClientService
   , startMeroServerService
+  , getMeroServiceInfo
   )
 where
 
@@ -149,10 +150,23 @@ storeMeroNodeInfo fs host (HostHardwareInfo memsize cpucnt nid) hattr =
             $ rg
     return rg'
 
--- | Convert 'Fid' to 'String'. Strips the angled brackets around the
--- fid that the 'Show' instance produces.
-fidToStr :: Fid -> String
-fidToStr = init . tail . show
+-- | Query the RG to find the information needed by the various
+-- @m0d-<fid>@ services.
+--
+-- returns @(HA address, profile, service process of this host)@
+getMeroServiceInfo :: Castor.Host
+                   -> PhaseM LoopState l (Maybe (String, M0.Profile, M0.Process))
+getMeroServiceInfo host = do
+  mprofile <- Conf.getProfile
+  rg <- getLocalGraph
+  return $ do
+    M0.LNid lnid <- listToMaybe . G.connectedTo host Has $ rg
+    profileFid <- mprofile
+    process <- listToMaybe [ process
+                           | m0node <- G.connectedTo host Runs rg :: [M0.Node]
+                           , process <- G.connectedTo m0node M0.IsParentOf rg
+                           ]
+    return (lnid ++ haAddress, profileFid, process)
 
 startMeroServerService :: Castor.Host -> Res.Node
                        -> Maybe ByteString
@@ -160,40 +174,30 @@ startMeroServerService :: Castor.Host -> Res.Node
 startMeroServerService host node confString = do
   phaseLog "startMeroServerService"
          $ "Trying to start mero service on " ++ show (host, node)
-  mprofile <- Conf.getProfile
   rg <- getLocalGraph
+  minfo <- getMeroServiceInfo host
   let mmsg = do
-       M0.LNid lnid <- listToMaybe . G.connectedTo host Has $ rg
+       (fullHaAddr, profile, process) <- minfo
        uuid <- listToMaybe $ G.connectedTo host Has rg
-       profileFid <- fidToStr . M0.fid <$> mprofile
-       (processId,endpoint) <-
-          listToMaybe [ (fidToStr $ M0.fid process, M0.r_endpoint process)
-                      | m0node <- G.connectedTo host Runs rg :: [M0.Node]
-                      , process <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
-                      ]
-       let servconf = fmap (,processId) confString
-       let conf = MeroConf (lnid ++ haAddress) profileFid
+       let processId = fidToStr $ M0.fid process
+           servconf = fmap (,processId) confString
+           conf = MeroConf fullHaAddr (fidToStr $ M0.fid profile)
                     (MeroKernelConf uuid)
-                    (MeroServerConf servconf endpoint)
+                    (MeroServerConf servconf (M0.r_endpoint process))
        return $ encodeP $ ServiceStartRequest Start node m0d conf []
   phaseLog "startMeroServerService" $ "Got msg: " ++ show (isJust mmsg)
   forM_ mmsg promulgateRC
 
 startMeroClientService :: Castor.Host -> Res.Node -> PhaseM LoopState a ()
 startMeroClientService host node = do
-    mprofile <- Conf.getProfile
     rg <- getLocalGraph
+    minfo <- getMeroServiceInfo host
     let mmsg = do
-         (M0.LNid lnid) <- listToMaybe . G.connectedTo host Has $ rg
-         uuid <- listToMaybe . G.connectedTo host Has $ rg
-         profileFid <- fidToStr . M0.fid <$> mprofile
-         (processId,endpoint) <-
-            listToMaybe [ (fidToStr $ M0.fid process, M0.r_endpoint process)
-                        | m0node <- G.connectedTo host Runs rg :: [M0.Node]
-                        , process <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
-                        ]
-         let conf = MeroConf (lnid++haAddress) profileFid
+         (fullHaAddr, profile, process) <- minfo
+         uuid <- listToMaybe $ G.connectedTo host Has rg
+         let processId = fidToStr $ M0.fid process
+             conf = MeroConf fullHaAddr (fidToStr $ M0.fid profile)
                       (MeroKernelConf uuid)
-                      (MeroClientConf processId endpoint)
+                      (MeroClientConf processId (M0.r_endpoint process))
          return $ encodeP $ ServiceStartRequest Start node m0d conf []
     forM_ mmsg promulgateRC
