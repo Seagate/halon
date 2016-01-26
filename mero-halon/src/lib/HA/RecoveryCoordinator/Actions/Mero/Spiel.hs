@@ -45,7 +45,8 @@ import HA.Resources.Mero.Note (ConfObjectState(..))
 import HA.Services.Mero (notifyMero)
 
 import Mero.ConfC
-  ( Root
+  ( PDClustAttr(..)
+  , Root
   , withConf
   , initHASession
   , finiHASession
@@ -61,6 +62,7 @@ import Control.Monad.Catch
 
 import Data.Foldable (traverse_)
 import Data.IORef (writeIORef)
+import Data.List (sortOn)
 import Data.Maybe (catMaybes, listToMaybe)
 import Data.Proxy (Proxy(..))
 import Data.UUID (UUID)
@@ -301,7 +303,8 @@ txPopulate (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) 
   phaseLog "spiel" "Finished adding concrete entities."
   -- Pool versions
   (Just (pool :: M0.Pool)) <- lookupConfObjByFid f_mdpool_fid
-  let pvers = G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
+  let pvNegWidth = negate . _pa_P . M0.v_attrs
+      pvers = sortOn pvNegWidth $ G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
   forM_ pvers $ \pver -> do
     liftM0RC $ addPVer t (M0.fid pver) f_mdpool_fid (M0.v_failures pver) (M0.v_attrs pver)
     let rackvs = G.connectedTo pver M0.IsParentOf g :: [M0.RackV]
