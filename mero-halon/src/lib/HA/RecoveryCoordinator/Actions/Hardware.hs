@@ -827,7 +827,7 @@ instance A.ToJSON DriveManagerStatus where
   toJSON = A.genericToJSON dmsJSONOptions
 
 -- | Mark given the given 'StorageDevice' as failed in
--- @/tmp/drivemanager/drive_manager.json@ so the DCS drive manager
+-- @/tmp/dcs/drivemanager/drive_manager.json@ so the DCS drive manager
 -- plugin can update the filesystem. An alternative file path can be
 -- passed in.
 updateDriveManagerWithFailure :: forall l. Maybe FilePath
@@ -851,7 +851,7 @@ updateDriveManagerWithFailure fp disk = flip catch ioHandler $ do
     sayDM = liftProcess . say . ("updateDriveManagerWithFailure: " ++)
 
     dmFile :: FilePath
-    dmFile = fromMaybe "/tmp/drivemanager/drive_manager.json" fp
+    dmFile = fromMaybe "/tmp/dcs/drivemanager/drive_manager.json" fp
     -- Do we need to handle the ‘if the drive is subsequently powered
     -- down’ case somehow?
     setFailed :: String -> DMSDrive -> DMSDrive

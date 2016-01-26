@@ -145,7 +145,7 @@ testDriveAddition transport = runDefaultTest transport $ do
   withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
     nodeUp ([nid], 1000000)
     -- Send host update message to the RC
-    promulgateEQ [nid] (nid, mockEvent "online") >>= flip withMonitor wait
+    promulgateEQ [nid] (nid, mockEvent "online" "") >>= flip withMonitor wait
     "Drive" :: String <- expect
 
     graph <- G.getGraph mm
@@ -206,7 +206,7 @@ testDriveManagerUpdate transport = runDefaultTest transport $ do
     "InitialData" :: String <- expect
 
     say "Sending online message"
-    promulgateEQ [nid] (nid, respDM "online") >>= flip withMonitor wait
+    promulgateEQ [nid] (nid, respDM "online" "") >>= flip withMonitor wait
     "DriveActive" :: String <- expect
 
     say "Checking drive status sanity"
