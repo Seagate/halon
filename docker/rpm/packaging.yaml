@@ -2,6 +2,7 @@ prefix: halon
 
 libraries:
  mero: mero-devel
+ genders: libgenders-devel
 
 packages:
   leveldb-haskell:
