@@ -41,7 +41,9 @@ import qualified "distributed-process-scheduler" System.Clock as C
 
 import Control.Arrow ((***))
 import Data.List (nub)
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, fromMaybe)
+import qualified Data.Map as Map
+import Data.Monoid
 import qualified HA.ResourceGraph as G
 import Mero.ConfC ( ServiceType(..) )
 --------------------------------------------------------------------------------
@@ -460,8 +462,12 @@ data SomeConfObjDict = forall x. (Typeable x, ConfObj x) =>
 -- Yields the ConfObj dictionary of the object with the given Fid.
 --
 -- TODO: Generate this with TH.
-fidConfObjDict :: Fid -> Maybe SomeConfObjDict
-fidConfObjDict f = lookup (f_container f `shiftR` (64 - 8))
+fidConfObjDict :: Fid -> [SomeConfObjDict]
+fidConfObjDict f = fromMaybe [] $ Map.lookup (f_container f `shiftR` (64 - 8)) dictMap
+
+-- | Map of all dictionaries
+dictMap :: Map.Map Word64 [SomeConfObjDict]
+dictMap = Map.fromListWith (<>)
     [ mkTypePair (Proxy :: Proxy Root)
     , mkTypePair (Proxy :: Proxy Profile)
     , mkTypePair (Proxy :: Proxy Filesystem)
@@ -482,8 +488,8 @@ fidConfObjDict f = lookup (f_container f `shiftR` (64 - 8))
     ]
   where
     mkTypePair :: forall a. (Typeable a, ConfObj a)
-               => Proxy a -> (Word64, SomeConfObjDict)
-    mkTypePair a = (fidType a, SomeConfObjDict (Proxy :: Proxy a))
+               => Proxy a -> (Word64, [SomeConfObjDict])
+    mkTypePair a = (fidType a, [SomeConfObjDict (Proxy :: Proxy a)])
 
 -- | Get all 'M0.Service' running on the 'Cluster', starting at
 -- 'M0.Profile's.
