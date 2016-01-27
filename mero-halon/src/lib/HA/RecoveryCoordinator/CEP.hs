@@ -49,11 +49,15 @@ import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
 import qualified HA.Resources.Castor as M0
 #ifdef USE_MERO
-import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
+import           Control.Monad (forM_)
+import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Actions.Mero.Conf (getFilesystem)
+import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_ONLINE, M0_NC_TRANSIENT))
 import           HA.Services.Mero (meroRules, notifyMero)
+import           HA.Services.SSPL (sendNodeCmd)
+import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..))
 #endif
 import           HA.Services.SSPL (ssplRules)
 import           HA.Services.SSPL.HL.CEP (ssplHLRules)
@@ -306,17 +310,24 @@ ruleRecoverNode argv = define "recover-node" $ do
 
         case listToMaybe (G.connectedFrom Runs n1 g) of
           Nothing -> return ()
-          Just host -> hasHostAttr M0.HA_TRANSIENT host >>= \case
+          Just host@(Host _hst) -> hasHostAttr M0.HA_TRANSIENT host >>= \case
             -- Node not already marked as down so mark it as such and
             -- notify mero
             False -> do
               setHostAttr host M0.HA_TRANSIENT
 #ifdef USE_MERO
-              let nodes = [ M0.AnyConfObj n
+              let nodes = [ n
                           | (c :: M0.Controller) <- G.connectedFrom M0.At host g
                           , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c g
                           ]
-              notifyMero nodes M0_NC_TRANSIENT
+              notifyMero (M0.AnyConfObj <$> nodes) M0_NC_TRANSIENT
+              -- if the node is a mero server then power-cycle it.
+              -- Client nodes can run client-software that may not be
+              -- OK with reboots so we only reboot servers.
+              whenM (hasHostAttr M0.HA_M0SERVER host) $ do
+                ns <- nodesOnHost host
+                forM_ ns $ \(Node nid) ->
+                  sendNodeCmd nid Nothing (IPMICmd IPMI_CYCLE (T.pack _hst))
 #endif
               put Local (uuid, Just (n1, host, 0))
             -- Node already marked as down, probably the RC died. Do
