@@ -17,6 +17,7 @@ module Mero
   , sendM0Task
   , sendM0Task_
   , M0InitException(..)
+  , M0WorkerIsNotStarted(..)
   , setNodeUUID
   , addM0Finalizer
   ) where
@@ -25,6 +26,10 @@ import Mero.Concurrent
 
 import Control.Concurrent
     ( forkOS
+    , forkIO
+    , myThreadId
+    , killThread
+    , ThreadId
     , Chan
     , newChan
     , readChan
@@ -41,7 +46,7 @@ import Control.Exception
     , try
     , SomeException(..)
     , throwIO)
-import Control.Monad (when)
+import Control.Monad (when, forever)
 import Data.IORef
 import Data.Typeable
 import Data.Foldable
@@ -66,11 +71,12 @@ m0_init = do
 withM0 :: IO a -> IO a
 withM0 = bracket_ m0_init m0_fini . bracket runworker stopworker . const
   where
-    runworker = forkM0OS $
+    runworker = forkM0OS $ do
+      replaceGlobalWorker =<< myThreadId
       let loop = do
            mt <- readChan globalM0Chan
            forM_ mt $ \(Task f b) -> f >>= putMVar b >> loop
-      in loop
+      loop
     stopworker mid = do
       writeChan globalM0Chan Nothing
       joinM0OS mid
@@ -79,9 +85,32 @@ newtype M0InitException = M0InitException CInt deriving (Show, Typeable)
 
 instance Exception M0InitException
 
+-- | Exception means that 'withM0' or 'withM0Deferred' were not called, so
+-- there is no worker that could start mero or process query.
+data M0WorkerIsNotStarted = M0WorkerIsNotStarted deriving (Show, Typeable)
+
+instance Exception M0WorkerIsNotStarted
+
 globalM0Chan :: Chan (Maybe Task)
 {-# NOINLINE globalM0Chan #-}
 globalM0Chan = unsafePerformIO newChan
+
+globalM0Worker :: IORef ThreadId
+{-# NOINLINE globalM0Worker #-}
+globalM0Worker = unsafePerformIO $ do
+  tid <- forkIO $ forever $ do
+           mt <- readChan globalM0Chan
+           forM_ mt $ \(Task _ b) ->
+             putMVar b (Left (SomeException M0WorkerIsNotStarted))
+  newIORef tid
+
+replaceGlobalWorker :: ThreadId -> IO ()
+replaceGlobalWorker tid = do
+  wid <- readIORef globalM0Worker
+  killThread wid
+  writeIORef globalM0Worker tid
+  
+             
 
 data Task = forall a . Task (IO (Either SomeException a)) (MVar (Either SomeException a))
 
@@ -120,7 +149,7 @@ withM0Deferred f = do
                   setNodeUUID Nothing
                   rc <- m0_init_wrapper
                   if (rc == 0)
-                    then mainloop t `finally` m0_fini
+                    then (myThreadId >>= replaceGlobalWorker >> mainloop t) `finally` m0_fini
                     else do putMVar b (Left (SomeException (M0InitException rc)))
                             initloop
             mainloop (Task cmd b) = do
