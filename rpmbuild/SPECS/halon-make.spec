@@ -1,6 +1,6 @@
 Summary: halon
 Name: halon
-Version: 0.17
+Version: 0.20
 Release: 1
 License: All rights reserved
 Group: Development/Tools
@@ -44,4 +44,3 @@ rm -rf %{buildroot}
 /usr/local/bin/halonctl
 /usr/local/bin/halon-simplelocalcluster
 /usr/lib/systemd/system/halond.service
-
