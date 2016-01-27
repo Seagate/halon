@@ -23,6 +23,7 @@ module Network.CEP
     , Scope(..)
     , ForkType(..)
     , Logs(..)
+    , Jump
     , PhaseHandle
     , Started
     , wants

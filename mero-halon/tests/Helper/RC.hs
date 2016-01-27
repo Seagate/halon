@@ -15,7 +15,6 @@ import HA.ResourceGraph
 import Mero.M0Worker
 #endif
 
-import Data.Monoid
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 

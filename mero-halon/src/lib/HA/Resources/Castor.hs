@@ -18,6 +18,7 @@ module HA.Resources.Castor (
   , MI.Interface(..)
 ) where
 
+import Control.Distributed.Process.Internal.Types (NodeId)
 import HA.Resources
 import qualified HA.Resources.Castor.Initial as MI
 import HA.Resources.TH
@@ -62,6 +63,8 @@ data HostAttr =
     -- ^ Node has been marked as down. We have tried to recover from
     -- the node failure in the past ('HA_TRANSIENT') but have failed
     -- to do so in timely manner.
+  | HA_BOOTSTRAP_FAILED String
+    -- ^ Core bootstrapping procedure has failed on this host
   deriving (Eq, Ord, Show, Generic, Typeable)
 
 instance Binary HostAttr
@@ -102,6 +105,29 @@ instance Hashable DeviceIdentifier
 newtype StorageDeviceStatus = StorageDeviceStatus String
   deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
 
+-- | Resource indicating that core mero-server provisioning procedure
+-- is going happening on the node.
+--
+-- The 'Bool' indicates whether the core provisioning process for this
+-- node has finished.
+data ServerBootstrapCoreProcess = ServerBootstrapCoreProcess NodeId Bool
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary ServerBootstrapCoreProcess
+instance Hashable ServerBootstrapCoreProcess
+
+-- | Resource indicating that mero-server provisioning procedure
+-- is going happening on the node, though not the core bootstrap: this
+-- can mean extra services being started.
+--
+-- The 'Bool' indicates whether the provisioning process for this node
+-- has finished.
+data ServerBootstrapProcess = ServerBootstrapProcess NodeId Bool
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary ServerBootstrapProcess
+instance Hashable ServerBootstrapProcess
+
 --------------------------------------------------------------------------------
 -- Relations                                                                  --
 --------------------------------------------------------------------------------
@@ -135,10 +161,12 @@ $(mkDicts
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
-  , ''MI.BMC
+  , ''MI.BMC, ''UUID, ''ServerBootstrapProcess, ''ServerBootstrapCoreProcess
   ]
   [ (''Cluster, ''Has, ''Rack)
   , (''Cluster, ''Has, ''Host)
+  , (''Cluster, ''Runs, ''ServerBootstrapCoreProcess)
+  , (''Cluster, ''Runs, ''ServerBootstrapProcess)
   , (''Rack, ''Has, ''Enclosure)
   , (''Host, ''Has, ''MI.Interface)
   , (''Host, ''Has, ''HostAttr)
@@ -154,6 +182,7 @@ $(mkDicts
   , (''StorageDevice, ''Has, ''StorageDeviceAttr)
   , (''StorageDevice, ''ReplacedBy, ''StorageDevice)
   , (''StorageDevice, ''WantsReplacement, ''DeviceIdentifier)
+  , (''Host, ''Has, ''UUID)
   ]
   )
 
@@ -161,13 +190,16 @@ $(mkResRel
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
-  , ''MI.BMC
+  , ''MI.BMC, ''UUID, ''ServerBootstrapCoreProcess, ''ServerBootstrapProcess
   ]
   [ (''Cluster, ''Has, ''Rack)
   , (''Cluster, ''Has, ''Host)
+  , (''Cluster, ''Runs, ''ServerBootstrapCoreProcess)
+  , (''Cluster, ''Runs, ''ServerBootstrapProcess)
   , (''Rack, ''Has, ''Enclosure)
   , (''Host, ''Has, ''MI.Interface)
   , (''Host, ''Has, ''HostAttr)
+  , (''Host, ''Has, ''UUID)
   , (''Cluster, ''Has, ''Enclosure)
   , (''Enclosure, ''Has, ''StorageDevice)
   , (''Enclosure, ''Has, ''Host)

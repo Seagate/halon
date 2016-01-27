@@ -19,6 +19,9 @@ module HA.Services.Mero
     , TypedChannel(..)
     , DeclareMeroChannel(..)
     , NotificationMessage(..)
+    , MeroConf(..)
+    , MeroKernelConf(..)
+    , MeroNodeConf(..)
     , m0d
     , HA.Services.Mero.__remoteTableDecl
     , HA.Services.Mero.Types.__remoteTable
@@ -26,11 +29,13 @@ module HA.Services.Mero
     , m0dProcess__tdict
     , m0d__static
     , meroRules
-    , MeroConf(..)
     , notifyMero
+    -- * Events
+    , MeroClientBootstrapped(..)
+    , MeroServerCoreBootstrapped(..)
     ) where
 
-import HA.EventQueue.Producer (expiate, promulgate)
+import HA.EventQueue.Producer (expiate, promulgate, promulgateWait)
 import HA.RecoveryCoordinator.Actions.Core
 import HA.Resources
 import HA.Resources.Castor
@@ -57,11 +62,19 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process
-import Control.Applicative
 import Control.Monad (forever, void)
 import Data.Foldable (forM_)
+import qualified Control.Monad.Catch as Catch
+import qualified Data.ByteString as BS
 import Data.Maybe (listToMaybe)
 import qualified Data.Set as Set
+import Data.Binary (Binary)
+import Data.Typeable (Typeable)
+import GHC.Generics
+import qualified Data.UUID as UUID
+import System.FilePath
+import System.Directory
+import qualified System.SystemD.API as SystemD
 
 -- | Store information about communication channel in resource graph.
 sendMeroChannel :: SendPort NotificationMessage -> Process ()
@@ -76,9 +89,20 @@ statusProcess :: RPC.ServerEndpoint
               -> Process ()
 statusProcess ep pid rp = link pid >> (forever $ do
     NotificationMessage set addrs <- receiveChan rp
-    forM_ addrs $ \addr -> 
+    forM_ addrs $ \addr ->
       Mero.Notification.notifyMero ep (RPC.rpcAddress addr) set
   )
+
+data MeroClientBootstrapped = MeroClientBootstrapped String
+  deriving (Eq, Show, Typeable, Generic)
+instance Binary MeroClientBootstrapped
+
+-- | A reply about core mero server bootstraping being finished.
+data MeroServerCoreBootstrapped =
+  MeroServerCoreBootstrapped (Maybe String) NodeId
+  deriving (Show, Typeable, Generic)
+
+instance Binary MeroServerCoreBootstrapped
 
 remotableDecl [ [d|
 
@@ -90,24 +114,87 @@ remotableDecl [ [d|
               `staticApply` $(mkStatic 'configDictMeroConf))
 
   m0dProcess :: MeroConf -> Process ()
-  m0dProcess MeroConf{..} = do
+  m0dProcess MeroConf{..} = bracket_ startKernel stopKernel $ do
       self <- getSelfPid
-      bracket_
-        (Mero.Notification.initialize haAddr)
-        Mero.Notification.finalize $
-        do
+      case mcServiceConf of
+        MeroServerConf servconf mero -> server servconf mero
+        MeroClientConf fid mero -> client fid mero self
+    where
+      haAddr = RPC.rpcAddress mcHAAddress
+      withEp = Mero.Notification.withServerEndpoint haAddr
+      -- Kernel
+      startKernel = liftIO $ do
+        SystemD.sysctlFile "mero-kernel"
+          [ ("MERO_NODE_UUID", UUID.toString $ mkcNodeUUID mcKernelConfig)
+          ]
+        SystemD.startService "mero-kernel"
+      stopKernel = liftIO $ SystemD.stopService "mero-kernel"
+
+      server servconf m0addr = flip Catch.catch handler $ bracket_ bootstrap teardown $ do
+        say "Starting service m0d on mero server"
+        case servconf of
+          Just (conf, confdRmsFid) -> do
+            let confdDir = "/var/mero/confd"
+                confdPath = confdDir </> "conf.xc"
+            return ()
+            void . liftIO $ do
+              createDirectoryIfMissing True confdDir
+              BS.writeFile confdPath conf
+            let (mkfs, m0ds) = ("mero-mkfs@" ++ confdRmsFid, "m0d@" ++ confdRmsFid)
+            say $ "Writing out info for " ++ m0ds ++ " service"
+            liftIO $ SystemD.sysctlFile ("m0d-" ++ confdRmsFid)
+              [ ("MERO_M0D_EP", m0addr)
+              , ("MERO_HA_EP", mcHAAddress)
+              , ("MERO_PROFILE_FID", mcProfile)
+              , ("MERO_CONF_XC", confdPath)
+              ]
+            say $ "Starting " ++ mkfs
+            mkfs_c <- liftIO $ SystemD.startService mkfs
+            say $ "Starting " ++ m0ds
+            m0d_c <- liftIO $ SystemD.startService m0ds
+            say $ "Finished core boot services: " ++ show (mkfs_c, m0d_c)
+          Nothing -> say "No confd on this host"
+        nid <- getSelfNode
+        promulgateWait $ MeroServerCoreBootstrapped Nothing nid
+        go
+        where
+          bootstrap = Mero.Notification.initialize haAddr
+          teardown = Mero.Notification.finalize
+          handler :: Catch.SomeException -> Process ()
+          handler e = do
+            nid <- getSelfNode
+            say $ "Exception inside mero service: " ++ show e
+            promulgateWait $ MeroServerCoreBootstrapped (Just $ show e) nid
+
+      client m0t1fsFid m0addr self = do
+        bracket_ bootstrap
+                teardown
+                $ do
           c <- withEp $ \ep -> spawnChannelLocal (statusProcess ep self)
           sendMeroChannel c
-          say $ "Starting service m0d"
-          go 
-    where
-      haAddr = RPC.rpcAddress mcServerAddr
-      withEp = Mero.Notification.withServerEndpoint haAddr
+          say $ "Starting service m0d on mero client"
+          promulgateWait (MeroClientBootstrapped m0addr)
+          go
+        where
+          bootstrap = do
+            Mero.Notification.initialize haAddr
+            liftIO . void $ do
+              SystemD.sysctlFile ("m0t1fs-"++m0t1fsFid)
+                [ ("MERO_HA_EP", show haAddr)
+                , ("MERO_M0T1FS_EP", m0addr)
+                , ("MERO_PROFILE_FID", mcProfile)
+                ]
+              SystemD.startService ("m0t1fs@"++m0t1fsFid)
+          teardown = do
+            liftIO . void $ SystemD.stopService ("m0t1fs@"++m0t1fsFid)
+            Mero.Notification.finalize
+
+      -- mainloop
       go = do
           let shutdownAndTellThem = do
                 node <- getSelfNode
                 pid  <- getSelfPid
-                expiate . encodeP $ ServiceFailed (Node node) m0d pid -- XXX
+                expiate . encodeP $ ServiceFailed (Node node) m0d pid
           receiveWait $
             [ match $ \buf ->
                 case examine buf of
@@ -130,6 +217,7 @@ remotableDecl [ [d|
                      then head w == "error:" ||
                           last w == "FAILED"
                      else False
+
     |] ]
 
 meroRules :: Definitions LoopState ()
@@ -155,8 +243,8 @@ notifyMero cs st = do
                       , m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
                       , service <- G.connectedTo m0proc M0.IsParentOf rg :: [M0.Service]
                       , CST_HA /= M0.s_type service
-                      , endpoint <- M0.s_endpoints service 
-                      ] 
+                      , endpoint <- M0.s_endpoints service
+                      ]
      case mchan of
        Nothing -> phaseLog "error" $ "HA.Service.Mero.notifyMero: Cannot find MeroChannel on " ++ show host
        Just (TypedChannel chan) -> liftProcess $

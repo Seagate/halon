@@ -11,7 +11,8 @@ module System.Posix.SysInfo
   ( getProcessorCount
   , getMemTotalMB
   , getUserSystemInfo
-  , ClientInfo(..)
+  , SystemInfo(..)
+  , HostHardwareInfo(..)
   , getUserSystemInfo__static
   , getUserSystemInfo__sdict
   , getUserSystemInfo__tdict
@@ -22,13 +23,18 @@ module System.Posix.SysInfo
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure (remotable)
-import HA.EventQueue.Producer (promulgate)
+import HA.EventQueue.Producer (promulgateWait)
 import HA.Resources (Node)
+import HA.Resources.Mero (HostHardwareInfo(..))
 
+import Control.Monad (unless, (<=<))
 import Data.Binary (Binary)
-import Data.Functor (void)
 import Data.Typeable (Typeable)
 import GHC.Generics
+import System.SystemD.API
+import System.Process
+import System.Exit
+
 
 #ifdef _SC_NPROCESSORS_ONLN
 import Foreign.C
@@ -39,8 +45,8 @@ getProcessorCount :: IO Int
 foreign import ccall unsafe "sysconf"
   c_sysconf :: CInt -> IO CLong
 
-sysconf :: CInt -> IO Int 
-sysconf n = do 
+sysconf :: CInt -> IO Int
+sysconf n = do
   r <- throwErrnoIfMinus1 "sysconf" (c_sysconf n)
   return (fromIntegral r)
 
@@ -55,13 +61,31 @@ getMemTotalMB = do
   let (_:m:_) = words memtotal
   return $ floor $ (read m :: Double) / 1024
 
-data ClientInfo = ClientInfo Node Int Int
+data SystemInfo = SystemInfo Node HostHardwareInfo
   deriving (Eq, Show, Typeable, Generic)
 
-instance Binary ClientInfo
+instance Binary SystemInfo
 
+data ServerInfo = ServerInfo Node HostHardwareInfo
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary ServerInfo
+
+
+-- | Load information about system hardware. Reply is sent via 'promulgate'.
 getUserSystemInfo :: Node -> Process ()
-getUserSystemInfo nid =
-  void $ promulgate =<< liftIO (ClientInfo nid <$> getMemTotalMB <*> getProcessorCount)
+getUserSystemInfo nid = do
+  say "In getUserSystemInfo"
+  promulgateWait <=< liftIO $ SystemInfo nid <$>
+    (HostHardwareInfo <$> fmap fromIntegral getMemTotalMB <*> getProcessorCount <*> getLNetID)
+  say "Post getUserSystemInfo"
+
+getLNetID :: IO String
+getLNetID = do
+  rc <- startService "lnet"
+  unless (rc == ExitSuccess) $ error "failed start lnet module"
+  (nid:rest) <- lines <$> readProcess "lctl" ["list_nids"] ""
+  unless (null rest) $ putStrLn "lctl reports many interfaces, but only fist will be used"
+  return nid
 
 remotable [ 'getUserSystemInfo ]

@@ -100,7 +100,6 @@ Library
                    HA.RecoveryCoordinator.Events.Mero
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
-                   System.Posix.SysInfo
 
   Other-Modules:   HA.RecoveryCoordinator.Actions.Monitor
                    HA.Services.DecisionLog.CEP
@@ -142,7 +141,8 @@ Library
                    hostname,
                    multimap,
                    wl-pprint,
-                   transformers
+                   transformers,
+                   filepath
 
   if flag(mero)
       Exposed-Modules: Mero.Epoch
@@ -150,6 +150,7 @@ Library
                        Mero.Notification
                        Mero.Notification.HAState
                        HA.RecoveryCoordinator.Actions.Mero
+                       HA.RecoveryCoordinator.Rules.Castor.Server
                        HA.RecoveryCoordinator.Rules.Mero
                        HA.Resources.Mero
                        HA.Resources.Mero.Note
@@ -164,6 +165,7 @@ Library
                       HA.RecoveryCoordinator.Rules.Castor.SpielQuery
                       HA.Services.Mero.CEP
                       HA.Services.Mero.Types
+                      System.Posix.SysInfo
       cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
       c-sources: hastate/hastate.c
                  hastate/hastate_foms.c
@@ -468,7 +470,6 @@ Test-Suite unit-tests
                     HA.Test.Cluster
                     HA.Test.Disconnect
                     HA.Test.SSPL
-                    HA.Castor.Story.NonMero
                     Helper.SSPL
                     Helper.Environment
                     Helper.InitialData
@@ -873,3 +874,30 @@ Test-Suite tests-mero-integration
       CPP-Options:    -DUSE_RPC
   else
       Build-Depends: network-transport-tcp >= 0.3
+
+Test-Suite test-server-bootstrap-local
+  Type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  Hs-Source-Dirs:  tests/Bootstrap
+  Main-Is:         Server.hs
+
+  Ghc-Options: -threaded -Wall
+
+  if flag(maintainer)
+    Ghc-Options: -Werror
+
+  Build-Depends:   distributed-process,
+                   base,
+                   filepath,
+                   directory,
+                   network-transport,
+                   network-transport-tcp,
+                   distributed-commands,
+                   distributed-process-test,
+                   process,
+                   unix,
+                   halon,
+                   mero-halon,
+                   hostname
+  if !flag(mero)
+    Buildable:     False
