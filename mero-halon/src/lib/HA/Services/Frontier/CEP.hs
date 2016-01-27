@@ -53,12 +53,14 @@ ruleDumpKeyValues = defineSimple "frontiner-get-key-values" $
 -- This call marked as proccessed immediately and is not reprocessed if case
 -- of RC failure.
 ruleDumpGraph :: Definitions LoopState ()
-ruleDumpGraph = defineSimple "fontiner-dump-graph" $ 
+ruleDumpGraph = defineSimple "frontier-dump-graph" $ 
   \(HAEvent uuid (ReadResourceGraph, pid) _) -> do
       rg   <- getLocalGraph
       _ <- liftProcess $ spawnLocal $ do
              let reply = dumpGraph $ G.getGraphResources rg
+             say "start sending graph"
              mapM_ (usend pid) $ BL.toChunks 
                                $ toLazyByteString . lazyByteString $ reply
              usend pid ()
+             say "finished sending graph"
       messageProcessed uuid

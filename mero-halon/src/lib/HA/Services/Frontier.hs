@@ -25,6 +25,7 @@ import qualified Data.ByteString      as B
 import qualified Data.ByteString.Lazy as BL
 import           Data.Monoid ((<>))
 import           Data.Typeable
+import           Control.Monad (forever, void)
 import           Control.Monad.Fix (fix)
 import           GHC.Generics
 import           System.IO
@@ -65,14 +66,16 @@ $(deriveService ''FrontierConf 'frontierSchema [])
 createServerSocket :: Int -> Process Socket
 createServerSocket port = liftIO $ listenOn (PortNumber $ fromIntegral port)
 
-tcpServerLoop :: ProcessId -> Socket -> Process ()
-tcpServerLoop mmid sock = do
+tcpServerLoop :: Socket -> Process ()
+tcpServerLoop sock = forever $ do
     (h,_,_) <- liftIO $ accept sock
-    _       <- spawnLocal $ finally (dialog mmid h) (cleanupHandle h)
-    tcpServerLoop mmid sock
+    self <- getSelfPid
+    void $ spawnLocal $ do
+      link self
+      finally (dialog h) (cleanupHandle h)
 
-dialog :: ProcessId -> Handle -> Process ()
-dialog _mmid h = loop
+dialog :: Handle -> Process ()
+dialog h = loop
   where
     loop = hReadCommand h >>= \case
         CM r -> do
@@ -80,7 +83,7 @@ dialog _mmid h = loop
           _ <- promulgate (r, self)
           fix $ \go -> receiveWait
             [ match $ \resp -> do
-                liftIO $ BL.hPut h resp >> hFlush h
+                liftIO $ B.hPut h resp >> hFlush h
                 go
             , match return
             ] :: Process ()
@@ -90,7 +93,7 @@ dialog _mmid h = loop
           _ <- promulgate (r, self)
           fix $ \go -> receiveWait
             [ match $ \resp -> do
-                liftIO $ BL.hPut h resp >> hFlush h
+                liftIO $ B.hPut h resp >> hFlush h
                 go
             , match return
             ] :: Process ()
@@ -109,12 +112,10 @@ hReadCommand h = do
 
 remotableDecl [ [d|
     frontierService :: FrontierConf -> Process ()
-    frontierService (FrontierConf port) = do
-      sock <- createServerSocket port
-      self <- getSelfPid
-      _    <- promulgate (GetMultimapProcessId self)
-      mmid <- expect
-      tcpServerLoop mmid sock
+    frontierService (FrontierConf port) =
+      bracket (createServerSocket port)
+              (liftIO . sClose)
+              tcpServerLoop
 
     frontier :: Service FrontierConf
     frontier = Service
