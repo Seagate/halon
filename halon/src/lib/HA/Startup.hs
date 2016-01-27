@@ -12,7 +12,7 @@
 module HA.Startup where
 
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
-import HA.EventQueue ( EventQueue, eventQueueLabel, startEventQueue )
+import HA.EventQueue ( EventQueue, eventQueueLabel, startEventQueue, emptyEventQueue )
 import qualified HA.EQTracker as EQT
 import HA.Multimap ( MetaInfo, defaultMetaInfo, StoreChan )
 import HA.Multimap.Implementation ( Multimap, fromList )
@@ -220,7 +220,7 @@ remotableDecl [ [d|
       cRGroup <- newRGroup $(mkStatic 'rsDict) snapshotThreshold snapshotTimeout
                            trackers
                            ( RSState Nothing 0 rsLeaderLease
-                           , ((Nothing,[]),(defaultMetaInfo, fromList []))
+                           , (emptyEventQueue, (defaultMetaInfo, fromList []))
                            )
       (sp, rp) <- newChan
       forM_ trackers $ flip spawn $ $(mkClosure 'startRS)
