@@ -869,6 +869,8 @@ Test-Suite tests-mero-integration
                         unordered-containers
 
       CPP-Options:    -DUSE_MERO
+      -- bitrotten: disabled for now
+      Buildable:        False
   else
       Buildable:        False
 
