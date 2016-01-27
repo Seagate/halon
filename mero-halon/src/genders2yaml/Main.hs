@@ -232,7 +232,6 @@ serviceProcess db host svcName = let
                   , CI.m0s_params = SPUnused
                   }
                 ]
-                ]
               }
     _ -> Nothing
 
