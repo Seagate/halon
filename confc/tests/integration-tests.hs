@@ -22,11 +22,13 @@ import Test.Tasty.HUnit
 
 
 tests :: TestTree
-tests = testGroup "integration-tests" 
-  [ runTestCase Test.ConfRead.name
-  , runTestCase Test.MakeConf.name
-  , runTestCase Test.CopyConf.name
-  , runTestCase Test.Management.name
+tests = testGroup "confc"
+  [ testGroup "integration-tests" 
+      [ runTestCase Test.ConfRead.name
+      , runTestCase Test.MakeConf.name
+      , runTestCase Test.CopyConf.name
+      , runTestCase Test.Management.name
+      ]
   ]
 
 runTestCase :: String -> TestTree
