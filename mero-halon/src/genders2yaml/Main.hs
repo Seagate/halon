@@ -181,6 +181,11 @@ serviceProcess db host svcName = let
                   , CI.m0s_endpoints = maybeToList $ ep CST_MGS
                   , CI.m0s_params = SPConfDBPath "/var/mero/confd"
                   }
+                , CI.M0Service {
+                    CI.m0s_type = CST_RMS
+                  , CI.m0s_endpoints = maybeToList $ ep CST_MDS
+                  , CI.m0s_params = SPUnused
+                  }
                 ]
               }
     "mds" -> Just $ CI.M0Process {
@@ -226,6 +231,12 @@ serviceProcess db host svcName = let
                   , CI.m0s_endpoints = maybeToList $ ep CST_IOS
                   , CI.m0s_params = SPUnused
                   }
+                , CI.M0Service {
+                    CI.m0s_type = CST_RMS
+                  , CI.m0s_endpoints = maybeToList $ ep CST_IOS
+                  , CI.m0s_params = SPUnused
+                  }
+                ]
                 ]
               }
     _ -> Nothing
