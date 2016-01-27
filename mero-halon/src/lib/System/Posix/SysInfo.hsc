@@ -11,7 +11,7 @@ module System.Posix.SysInfo
   ( getProcessorCount
   , getMemTotalMB
   , getUserSystemInfo
-  , ClientInfo(..)
+  , SystemInfo(..)
   , HostHardwareInfo(..)
   , getUserSystemInfo__static
   , getUserSystemInfo__sdict
@@ -45,8 +45,8 @@ getProcessorCount :: IO Int
 foreign import ccall unsafe "sysconf"
   c_sysconf :: CInt -> IO CLong
 
-sysconf :: CInt -> IO Int 
-sysconf n = do 
+sysconf :: CInt -> IO Int
+sysconf n = do
   r <- throwErrnoIfMinus1 "sysconf" (c_sysconf n)
   return (fromIntegral r)
 
@@ -61,17 +61,24 @@ getMemTotalMB = do
   let (_:m:_) = words memtotal
   return $ floor $ (read m :: Double) / 1024
 
-data ClientInfo = ClientInfo Node HostHardwareInfo
+data SystemInfo = SystemInfo Node HostHardwareInfo
   deriving (Eq, Show, Typeable, Generic)
 
-instance Binary ClientInfo
+instance Binary SystemInfo
+
+data ServerInfo = ServerInfo Node HostHardwareInfo
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary ServerInfo
 
 
 -- | Load information about system hardware. Reply is sent via 'promulgate'.
 getUserSystemInfo :: Node -> Process ()
-getUserSystemInfo nid =
-  promulgateWait <=< liftIO $ ClientInfo nid <$> 
+getUserSystemInfo nid = do
+  say "In getUserSystemInfo"
+  promulgateWait <=< liftIO $ SystemInfo nid <$>
     (HostHardwareInfo <$> fmap fromIntegral getMemTotalMB <*> getProcessorCount <*> getLNetID)
+  say "Post getUserSystemInfo"
 
 getLNetID :: IO String
 getLNetID = do

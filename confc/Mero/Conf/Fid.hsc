@@ -13,7 +13,7 @@
 -- stored in the filesystem.
 --
 module Mero.Conf.Fid
-  ( Fid(..) ) where
+  ( Fid(..), fidToStr ) where
 
 #include "confc_helpers.h"
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
@@ -38,6 +38,11 @@ data Fid = Fid { f_container :: {-# UNPACK #-} !Word64
 
 instance Show Fid where
   show (Fid c k) = printf "<0x%x:%d>" c k
+
+-- | Convert a 'Fid' to 'String' in a format that is expected in
+-- various locations read by mero, such as part of filenames.
+fidToStr :: Fid -> String
+fidToStr (Fid c k) = printf "0x%x:%d" c k
 
 instance Binary Fid
 instance Hashable Fid
