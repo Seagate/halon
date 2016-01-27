@@ -90,7 +90,7 @@ rgLookupConfObjectStates fids g =
     , state : _   <- [(catMaybes $ map findConfObjectState rels)++[M0_NC_ONLINE]]
     ]
   where
-    fidDicts = nubBy sameDicts $ catMaybes $ map M0.fidConfObjDict fids
+    fidDicts = nubBy sameDicts $ concat $ map M0.fidConfObjDict fids
     sameDicts (M0.SomeConfObjDict (_ :: Proxy ct0))
               (M0.SomeConfObjDict (_ :: Proxy ct1)) =
       isJust (eqT :: Maybe (ct0 :~: ct1))
