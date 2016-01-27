@@ -43,7 +43,6 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable )
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Fix ( fix )
-import Control.Monad ( unless )
 
 import Control.Exception (SomeException, throwIO)
 import Data.Binary (Binary)

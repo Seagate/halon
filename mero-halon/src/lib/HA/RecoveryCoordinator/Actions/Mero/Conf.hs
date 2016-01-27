@@ -9,7 +9,27 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE LambdaCase                 #-}
 
-module HA.RecoveryCoordinator.Actions.Mero.Conf where
+module HA.RecoveryCoordinator.Actions.Mero.Conf
+  ( -- * Initialization
+    initialiseConfInRG
+    -- * Queries
+  , queryObjectStatus
+  , setObjectStatus
+    -- ** Get all objects of type
+  , getProfile
+  , getFilesystem 
+  , getSDevPools
+  , getM0ServicesRC
+  , getChildren
+  , getParents
+  , loadMeroServers
+    -- ** Lookup objects based on another
+  , lookupConfObjByFid
+  , lookupStorageDevice 
+  , lookupStorageDeviceSDev
+  , lookupStorageDeviceOnHost
+  , lookupEnclosureM0
+  ) where
 
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
@@ -19,6 +39,7 @@ import HA.Resources (Cluster(..), Has(..))
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
 
 import Mero.ConfC
   ( Fid
@@ -258,7 +279,7 @@ lookupStorageDeviceSDev sdev = do
 
 lookupSDevDisk :: M0.SDev -> PhaseM LoopState l (Maybe M0.Disk)
 lookupSDevDisk sdev = do
-  phaseLog "rg" $ "Looking up M0.Disk objects attached to sdev " ++ show sdev
+  phaseLog "rg-query" $ "Looking up M0.Disk objects attached to sdev " ++ show sdev
   rg <- getLocalGraph
   return . listToMaybe $ G.connectedTo sdev M0.IsOnHardware rg
 
@@ -280,3 +301,29 @@ getSDevPools sdev = do
 lookupEnclosureM0 :: Enclosure -> PhaseM LoopState l (Maybe M0.Enclosure)
 lookupEnclosureM0 enc =
   listToMaybe . G.connectedFrom M0.At enc <$> getLocalGraph
+
+-- | Get all children of the conf object.
+getChildren :: G.Relation M0.IsParentOf a b => a -> PhaseM LoopState l [b]
+getChildren obj = do
+  phaseLog "rg-query" $ "Get all children of the " ++ show obj ++ " holds."
+  G.connectedTo obj M0.IsParentOf <$> getLocalGraph
+
+-- | Get parrents of the conf objects.
+getParents :: G.Relation M0.IsParentOf a b => b -> PhaseM LoopState l [a]
+getParents obj = do
+  phaseLog "rg-query" $ "Get all parents of the " ++ show obj ++ " holds."
+  G.connectedFrom M0.IsParentOf obj <$> getLocalGraph
+
+-- | Query current status of the conf object.
+queryObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a 
+                  -> PhaseM LoopState l (Maybe M0.ConfObjectState)
+queryObjectStatus obj = do
+  phaseLog "rg-query" $ "Lookup status for " ++ show obj ++ " holds."
+  listToMaybe . G.connectedTo obj Is <$> getLocalGraph
+{-# INLINE queryObjectStatus #-}
+
+-- | Set object in a new state.
+setObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a 
+                -> M0.ConfObjectState
+                -> PhaseM LoopState l ()
+setObjectStatus obj state = modifyGraph $ G.connectUnique obj Is state

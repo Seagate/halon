@@ -71,8 +71,8 @@ import Control.Wire hiding (when)
 
 import Data.Binary (Binary)
 import Data.Dynamic
+import Data.Foldable (forM_)
 import qualified Data.Map.Strict as Map
-import qualified Data.Set as S
 import Data.UUID (UUID)
 
 import GHC.Generics (Generic)
@@ -100,27 +100,17 @@ instance Binary GetMultimapProcessId
 
 notHandled :: HAEvent a -> LoopState -> l -> Process (Maybe (HAEvent a))
 notHandled evt@(HAEvent eid _ _) ls _
-    | S.member eid $ lsHandled ls = return Nothing
-    | otherwise                   = return $ Just evt
+    | Map.member eid $ lsRefCount ls = return Nothing
+    | otherwise = return $ Just evt
 
 handled :: HAEvent a -> PhaseM LoopState l ()
-handled (HAEvent eid _ _) = do
-    ls <- get Global
-    let ls' = ls { lsHandled = S.insert eid $ lsHandled ls }
-    put Global ls'
-    sendMsg (lsEQPid ls) eid
+handled (HAEvent eid _ _) = done eid
 
 finishProcessingMsg :: UUID -> PhaseM LoopState l ()
-finishProcessingMsg eid = do
-    ls <- get Global
-    let ls' = ls { lsHandled = S.delete eid $ lsHandled ls }
-    put Global ls'
+finishProcessingMsg = done
 
 startProcessingMsg :: UUID -> PhaseM LoopState l ()
-startProcessingMsg eid = do
-    ls <- get Global
-    let ls' = ls { lsHandled = S.insert eid $ lsHandled ls }
-    put Global ls'
+startProcessingMsg = todo
 
 -- | Notify mero about the node being considered down and set the
 -- appropriate host attributes.
@@ -171,14 +161,17 @@ buildRCState :: StoreChan -> ProcessId -> M0Worker -> Process LoopState
 buildRCState mm eq wrk = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
     startRG <- G.sync rg (return ())
-    return $ LoopState startRG Map.empty mm eq S.empty wrk
+    return $ LoopState startRG Map.empty mm eq Map.empty wrk
 #else
 buildRCState :: StoreChan -> ProcessId -> Process LoopState
 buildRCState mm eq = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
     startRG <- G.sync rg (return ())
-    return $ LoopState startRG Map.empty mm eq S.empty
+    return $ LoopState startRG Map.empty mm eq Map.empty
 #endif
+
+msgProcessedGap :: Int
+msgProcessedGap = 10
 
 -- | The entry point for the RC.
 --
@@ -203,6 +196,17 @@ makeRecoveryCoordinator mm eq rm = do
           rm
           setRuleFinalizer $ \ls -> do
             newGraph <- G.sync (lsGraph ls) (return ())
-            return ls { lsGraph = newGraph }
+            -- We don't accept message as soon as ref count is zero, but
+            -- instead give 'msgProcessedGap' number of rounds, this way
+            -- we a trying to solve a case when more than one rule is interested
+            -- in particular message.
+            let refCnt = Map.map update (lsRefCount ls)  
+                update i
+                  | i < 0 = i-1
+                  | otherwise = i
+                (removed, newRefCnt) = Map.partition (<(-msgProcessedGap)) refCnt
+            forM_ removed $ usend (lsEQPid ls)
+ 
+            return ls { lsGraph = newGraph, lsRefCount = newRefCnt }
 
 -- remotable [ 'recoveryCoordinator ]

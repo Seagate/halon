@@ -4,6 +4,7 @@
 --
 
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE CPP                        #-}
 
 module HA.RecoveryCoordinator.Actions.Core
@@ -26,6 +27,11 @@ module HA.RecoveryCoordinator.Actions.Core
   , selfMessage
   , promulgateRC
   , unsafePromulgateRC
+    -- * Multi-receiver messages
+    -- $multi-receiver
+  , todo
+  , done
+  , defineSimpleTask
     -- * Lifted functions in PhaseM
   , decodeMsg
   , getSelfProcessId
@@ -81,7 +87,6 @@ import Mero.M0Worker
 
 import Data.Functor (void)
 import qualified Data.Map.Strict as Map
-import qualified Data.Set        as S
 
 import Network.CEP
 
@@ -91,7 +96,7 @@ data LoopState = LoopState {
     -- ^ Failed reconfiguration count
   , lsMMChan   :: StoreChan -- ^ Replicated Multimap channel
   , lsEQPid    :: ProcessId -- ^ EQ pid
-  , lsHandled  :: S.Set UUID
+  , lsRefCount :: Map.Map UUID Int
     -- ^ Set of HAEvent uuid we've already handled.
 #ifdef USE_MERO
   , lsWorker   :: M0Worker  -- ^ M0 worker thread attached to RC.
@@ -245,4 +250,47 @@ unsafePromulgateRC msg callback = liftProcess $ do
      link self
      promulgateWait msg
      callback
+
+-- $multi-receiver 
+-- Sometimes message may be wanted by many rules, in that case, it's not correct to
+-- acknowledge message processing until all rules have processed message. In order to
+-- solve that 'todo'/'done' framework was added. It allow to mark message as needed,
+-- and message will be acknowledged only when all rules have processed that message.
+--
+-- Currently there is a caveat because of possible race condition between rule marking
+-- message as 'done' and another 'rule' that is marking message as 'todo'. In order to
+-- make partially remove this race following rule was introduced: 
+--   * Message is acknowledged if no rule is interested in message (all rules that call
+--     'todo' called 'done' also) and there were enough steps done, currently 10.
+--
+-- This means that race is still possible and message can be already acknowledged if
+-- another rule read have to big gap befoe starting work with message.
+
+-- |
+-- Mark message as in process. This will guarantee that another rule will not
+-- process this message before current rule will call 'done'.
+todo :: UUID -> PhaseM LoopState l ()
+todo uuid = do
+  st <- get Global
+  put Global st{ lsRefCount = Map.insertWith add uuid 1 (lsRefCount st)}
+  where
+    add old new
+      | old < 0 = new
+      | otherwise = old + new
+
+-- |
+-- Mark message as being processed. After this call RC could acknowledge message.
+-- Mesage will be acknowledged only when there were same number of 'done's as
+-- were 'todo's, and some time gap was given.
+done :: UUID -> PhaseM LoopState l ()
+done uuid = do
+  st <- get Global
+  put Global st{ lsRefCount = Map.insertWith (flip (-)) uuid 1 (lsRefCount st)}
    
+-- | Wrap rule in 'todo' and 'done' calls
+defineSimpleTask :: Serializable a
+                 => String
+                 -> (forall l . HAEvent a -> PhaseM LoopState l ())
+                 -> Specification LoopState ()
+defineSimpleTask n f = defineSimple n $ \a@(HAEvent uuid _ _) ->
+   todo uuid >> f a >> done uuid

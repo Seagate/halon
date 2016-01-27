@@ -55,12 +55,28 @@ instance Hashable ConfObjectState
 
 $(mkDicts
   [ ''ConfObjectState ]
-  [ (''M0.SDev, ''Is, ''ConfObjectState) ]
+  [ (''R.Rack, ''Is, ''ConfObjectState)
+  , (''M0.Enclosure, ''Is, ''ConfObjectState)
+  , (''M0.Controller, ''Is, ''ConfObjectState)
+  , (''M0.Node, ''Is, ''ConfObjectState)
+  , (''M0.Process, ''Is, ''ConfObjectState)
+  , (''M0.Service, ''Is, ''ConfObjectState)
+  , (''M0.Disk, ''Is, ''ConfObjectState)
+  , (''M0.SDev, ''Is, ''ConfObjectState)
+  , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
   )
 
 $(mkResRel
   [ ''ConfObjectState ]
-  [ (''M0.SDev, ''Is, ''ConfObjectState) ]
+  [ (''R.Rack, ''Is, ''ConfObjectState)
+  , (''M0.Enclosure, ''Is, ''ConfObjectState)
+  , (''M0.Controller, ''Is, ''ConfObjectState)
+  , (''M0.Node, ''Is, ''ConfObjectState)
+  , (''M0.Process, ''Is, ''ConfObjectState)
+  , (''M0.Service, ''Is, ''ConfObjectState)
+  , (''M0.Disk, ''Is, ''ConfObjectState)
+  , (''M0.SDev, ''Is, ''ConfObjectState)
+  , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
   []
   )
 
