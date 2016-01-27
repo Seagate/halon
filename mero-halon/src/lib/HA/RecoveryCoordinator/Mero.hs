@@ -62,6 +62,8 @@ import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState(..))
 import HA.Services.Mero (notifyMero)
 import Mero.M0Worker
+import Mero.Notification (withServerEndpoint)
+import HA.RecoveryCoordinator.Actions.Mero
 #endif
 import qualified HA.ResourceGraph as G
 
@@ -188,6 +190,8 @@ makeRecoveryCoordinator mm eq rm = do
     bracket (liftIO newM0Worker)
             (liftIO . terminateM0Worker)
       $ \worker -> do
+        rpca <- getRPCAddress
+        withServerEndpoint rpca $ const $ return ()
         init_st <- buildRCState mm eq worker
 #else
         init_st <- buildRCState mm eq

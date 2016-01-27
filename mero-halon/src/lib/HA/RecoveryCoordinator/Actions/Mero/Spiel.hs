@@ -19,6 +19,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , statusOfRebalanceOperation
   , syncAction
   , syncToConfd
+  , getRPCAddress
     -- * Pool repair information
   , getPoolRepairInformation
   , getPoolRepairStatus
