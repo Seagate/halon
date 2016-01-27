@@ -422,8 +422,10 @@ Test-Suite testhastate
                      bytestring,
                      directory,
                      filepath,
+                     network,
                      rpclite,
-                     time >= 1.4
+                     time >= 1.4,
+                     unix
   else
     buildable: False
 

@@ -22,9 +22,10 @@ import Network.RPC.RPCLite
   )
 
 import Control.Applicative ((<$>))
-import Control.Concurrent ( forkIO )
+import Control.Concurrent ( forkIO, threadDelay )
 import Control.Concurrent.MVar ( newEmptyMVar, takeMVar, putMVar, MVar )
-import Control.Exception ( bracket, bracket_, catch, SomeException, throwIO )
+import Control.Exception
+  ( bracket, bracket_, catch, SomeException, throwIO, IOException, try)
 import Control.Monad ( when, void )
 import Data.Bits ( (.|.), shiftL )
 import Data.ByteString ( ByteString )
@@ -36,13 +37,32 @@ import System.Directory
     , setCurrentDirectory
     , createDirectoryIfMissing
     )
+import Helper.Environment (withMeroRoot)
 import System.Environment ( getArgs, getExecutablePath, lookupEnv )
 import System.Exit ( exitFailure, exitSuccess )
 import System.FilePath ( (</>), takeDirectory )
 import System.Process (readProcess, callProcess, callCommand)
 
+
+tryIO :: IO a -> IO (Either IOException a)
+tryIO = try
+
 main :: IO ()
-main =
+main = withMeroRoot $ \meroRoot -> getArgs >>= \args ->
+  let sbdir = "SANDBOX_DIR=/var/mero/sandbox.mero-halon-st" in
+  (if notElem "--noscript" args then
+    bracket_ (callCommand $ "sudo " ++ sbdir ++ " " ++ meroRoot ++ "/conf/st sstart")
+    (do threadDelay $ 2*1000000
+        _ <- tryIO $ callCommand $ "sudo " ++ sbdir ++ " " ++ meroRoot ++ "/conf/st sstop"
+        threadDelay $ 2*1000000
+        -- XXX: workaround for a bug in a mero test suite.
+        _ <- tryIO $ callCommand $ "killall -9 lt-m0d"
+        threadDelay $ 2*1000000
+        _ <- tryIO $ callCommand $ "sudo " ++ sbdir ++ " " ++ meroRoot ++ "/conf/st rmmod"
+        return ()
+    )
+    else id
+  ) $
   -- find the LNET NID
   (take 1 . lines <$> readProcess "sudo" ["lctl", "list_nids"] "")
   >>= \[testNid] ->
@@ -52,7 +72,6 @@ main =
   in
   (do
     prog <- getExecutablePath
-    args <- getArgs
     when (notElem "--noscript" args) $ do
       meroHalonTopDir <- getCurrentDirectory
       -- change directory so mero files are produced under the dist folder
@@ -87,12 +106,13 @@ main =
 
         -- Invoke again with root privileges
         putStrLn $ "Calling test with sudo ..."
-        callProcess "sudo" $ maybeToList mld ++ prog : "--noscript" : args
+        callProcess "sudo" $ ["MERO_ROOT=" ++ meroRoot] ++
+                             maybeToList mld ++ prog : "--noscript" : args
       exitSuccess
   ) >>
   (newEmptyMVar :: IO (MVar [ByteString])) >>= \mv ->
   (newEmptyMVar :: IO (MVar NVec)) >>= \mv' ->
-  delete "--noscript" <$> getArgs >>= (\args -> case args of
+  (case delete "--noscript" args of
     [] -> return [ halonAddress, dummyMeroAddress ]
     _ -> return args)
   >>= \[ localAddress , meroAddress ] ->
