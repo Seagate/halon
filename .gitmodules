@@ -3,10 +3,10 @@
 	url = https://github.com/tweag/distributed-process.git
 [submodule "vendor/tasty-files"]
 	path = vendor/tasty-files
-	url = git@github.com:tweag/tasty-files.git
+	url = ../tasty-files.git
 [submodule "options-schema"]
 	path = vendor/options-schema
-	url = git@github.com:tweag/options-schema.git
+	url = ../options-schema.git
 [submodule "network-transport-tcp"]
 	path = vendor/network-transport-tcp
 	url = git@github.com:tweag/network-transport-tcp.git
@@ -16,4 +16,4 @@
 	url = https://github.com/haskell-distributed/network-transport-inmemory.git
 [submodule "vendor/mero"]
 	path = vendor/mero
-	url = git@github.com:tweag/mero
+	url = ../mero
