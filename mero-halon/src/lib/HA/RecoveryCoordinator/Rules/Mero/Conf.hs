@@ -238,21 +238,6 @@ enclosureOnline = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_ONLINE)
 -- Helpers
 -------------------------------------------------------------------------------
 
--- | Run action iff entity is not in the online state.
-whenNotOnline :: G.Relation R.Is a M0.ConfObjectState
-              => a -> PhaseM LoopState l () -> PhaseM LoopState l ()
-whenNotOnline = whenNotState M0.M0_NC_ONLINE
-
--- | Run action iff entity is not in the transient state.
-whenNotTransient :: G.Relation R.Is a M0.ConfObjectState
-              => a -> PhaseM LoopState l () -> PhaseM LoopState l ()
-whenNotTransient = whenNotState M0.M0_NC_TRANSIENT
-
--- | Run action iff entity is not in the failed state.
-whenNotFailed :: G.Relation R.Is a M0.ConfObjectState
-              => a -> PhaseM LoopState l () -> PhaseM LoopState l ()
-whenNotFailed = whenNotState M0.M0_NC_FAILED
-
 -- | Run action iff entity is not in given state.
 whenNotState :: G.Relation R.Is a M0.ConfObjectState
               => M0.ConfObjectState -> a -> PhaseM LoopState l () -> PhaseM LoopState l ()
@@ -280,7 +265,7 @@ onStateChange :: (M0.ConfObj b, Show b, Serializable a, G.Relation R.Is b M0.Con
               -> (a -> b)           -- ^ Extract object from message.
               -> (forall l . [b -> PhaseM LoopState l ()]) -- ^ List of actions
               -> Specification LoopState ()
-onStateChange name st get actions = defineSimpleTask name $ \(HAEvent _ (get -> entity) _) ->
+onStateChange name st getE actions = defineSimpleTask name $ \(HAEvent _ (getE -> entity) _) ->
    whenNotState st entity $ do
      phaseLog "conf-obj" $ show entity ++ " becomes " ++ show st
      sequence_ $ map ($ entity) actions

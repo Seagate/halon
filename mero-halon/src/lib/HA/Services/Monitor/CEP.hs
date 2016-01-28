@@ -106,6 +106,15 @@ reportFailure (Monitored pid svc _) = do
     _ <- liftProcess $ promulgate msg
     return ()
 
+-- | Notifies the RC that monitored service exited normally.
+reportExitOk :: Monitored -> PhaseM g l ()
+reportExitOk (Monitored pid svc _) = do
+    sayMonitor $ "Notify normal exit for " ++ show (serviceName svc) ++ " at " ++ show pid
+    let node = Node $ processNodeId pid
+        msg  = encodeP $ ServiceExit node svc pid
+    _ <- liftProcess $ promulgate msg
+    return ()
+
 -- | Verifies that a node is still up.
 nodeHeartbeatRequest :: NodeId -> PhaseM g l ()
 nodeHeartbeatRequest nid = liftProcess $ nsendRemote nid "nonexistentprocess" ()
@@ -117,8 +126,7 @@ monitorRules = do
           case reason of
             DiedNormal -> do -- XXX: Notify RC
               sayMonitor $ "notification about normal death " ++ show pid
-              _ <- takeMonitored pid
-              return ()
+              traverse_ reportExitOk =<< takeMonitored pid
             _ -> do
               sayMonitor $ "notification about death " ++ show pid ++ "(" ++ show reason ++ ")"
               traverse_ reportFailure =<< takeMonitored pid

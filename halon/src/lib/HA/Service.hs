@@ -51,6 +51,8 @@ module HA.Service
   , DummyEvent(..)
   , ServiceFailed(..)
   , ServiceFailedMsg
+  , ServiceExit(..)
+  , ServiceExitMsg
   , ServiceStart(..)
   , ServiceStartRequest(..)
   , ServiceStartRequestMsg
@@ -408,6 +410,39 @@ instance ProcessEncode ServiceFailed where
 
   encodeP (ServiceFailed node svc@(Service _ _ d) pid) = ServiceFailedMsg . runPut $
     put d >> put (node, svc) >> put pid
+
+-- | A notification about service normal exit.
+data ServiceExit = forall a. Configuration a => ServiceExit Node (Service a) ProcessId
+  deriving (Typeable)
+
+newtype ServiceExitMsg = ServiceExitMsg BS.ByteString
+  deriving (Typeable, Binary)
+
+instance ProcessEncode ServiceExit where
+
+  type BinRep ServiceExit = ServiceExitMsg
+
+  decodeP (ServiceExitMsg bs) = let
+      get_ :: RemoteTable -> Get ServiceExit
+      get_ rt = do
+        d <- get
+        case unstatic rt d of
+          Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
+            rest <- get
+            pid  <- get
+            let (node, service) = extract rest
+                extract :: (Node, Service s)
+                        -> (Node, Service s)
+                extract = id
+            return $ ServiceExit node service pid
+          Left err -> error $ "decode ServiceExit: " ++ err
+    in do
+      rt <- fmap (remoteTable . processNode) ask
+      return $ runGet (get_ rt) bs
+
+  encodeP (ServiceExit node svc@(Service _ _ d) pid) = ServiceExitMsg . runPut $
+    put d >> put (node, svc) >> put pid
+
 
 -- | An event which produces no action in the RC. Used for testing.
 data DummyEvent = DummyEvent String

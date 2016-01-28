@@ -15,6 +15,7 @@ module HA.RecoveryCoordinator.Rules.Service where
 
 import Prelude hiding ((.), id)
 import Control.Category
+import Data.Foldable (traverse_)
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
@@ -343,3 +344,7 @@ serviceRules argv = do
           _ -> SrvStatError $ "Wrong config profiles found."
     liftProcess $ mapM_ (flip usend (encodeP response)) listeners
     messageProcessed uuid
+
+  defineSimpleTask "service-stopped" $ \(HAEvent _ msg _) -> do
+    ServiceExit node svc@(Service{}) _ <- decodeMsg msg
+    traverse_  (unregisterServiceProcess node svc) =<< lookupRunningService node svc 
