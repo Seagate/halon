@@ -77,19 +77,19 @@ test = testCase "Snapshot3" $
       let nid0 = handleGetNodeId nh0
           nid1 = handleGetNodeId nh1
 
-      say "Spawning satellites ..."
-      systemThere [m0] ("./halonctl"
-                     ++ " -l " ++ halonctlloc m0
-                     ++ " -a " ++ m0 ++ ":9000 bootstrap satellite "
-                     ++ "-t " ++ m1 ++ ":9000 2>&1"
-                       )
-
       say "Spawning tracking station ..."
       let snapshotThreshold = 10 :: Int
       systemThere [m1] ("./halonctl"
                      ++ " -l " ++ halonctlloc m1
                      ++ " -a " ++ m1 ++ ":9000 bootstrap"
                      ++ " station -n " ++ show snapshotThreshold ++ " 2>&1"
+                       )
+
+      say "Spawning satellites ..."
+      systemThere [m0] ("./halonctl"
+                     ++ " -l " ++ halonctlloc m0
+                     ++ " -a " ++ m0 ++ ":9000 bootstrap satellite "
+                     ++ "-t " ++ m1 ++ ":9000 2>&1"
                        )
 
       say "Waiting for RC to start ..."
