@@ -342,13 +342,13 @@ runTest' numNodes numReps tr action
         -- TODO: Fix leaks in n-t-inmemory and use the same transport for all
         -- tests, maybe.
         forM_ [1..numReps] $ \i ->  withTmpDirectory $
-          E.bracket createTransport closeTransport $
-          \tr' -> do
+          E.bracket createTransport closeTransport $ \tr' ->
+          let s' = s + i - 1 in do
             m <- timeout (7 * 60 * 1000000) $
-              Scheduler.withScheduler (s + i) 1000 numNodes tr' rt action
+              Scheduler.withScheduler s' 1000 numNodes tr' rt action
             maybe (error "Timeout") return m
           `E.onException`
-            liftIO (hPutStrLn stderr $ "Failed with seed: " ++ show (s + i))
+            liftIO (hPutStrLn stderr $ "Failed with seed: " ++ show s')
     | otherwise =
         withTmpDirectory $ withLocalNodes numNodes tr rt $
           \(n : ns) -> runProcess n (action ns)
