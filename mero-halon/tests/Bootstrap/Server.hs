@@ -72,6 +72,10 @@ main =
   argv <- getArgs
   prog <- getExecutablePath
   tmpDir <- getTemporaryDirectory
+  -- Creating @tmpDir </> "test"@ with the root user could interfere with other
+  -- tests using the same folder.
+  let testDir = tmpDir </> "test" </> progName
+  createDirectoryIfMissing True testDir
 
   ((userid, _): _ ) <- reads <$> readProcess "id" ["-u"] ""
   when (userid /= (0 :: Int)) $ do
@@ -93,10 +97,6 @@ main =
     hSetBuffering stderr LineBuffering
 
     buildPath <- getBuildPath
-
-
-    let testDir = tmpDir </> "test" </> progName
-    createDirectoryIfMissing True testDir
 
     setCurrentDirectory testDir
     putStrLn $ "Changed directory to: " ++ testDir
