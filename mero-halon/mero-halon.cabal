@@ -904,5 +904,5 @@ Test-Suite test-server-bootstrap-local
                    halon,
                    mero-halon,
                    hostname
-  if !flag(mero)
-    Buildable:     False
+  -- bitrotten: disabled for now
+  Buildable:     False
