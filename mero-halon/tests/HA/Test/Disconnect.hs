@@ -240,7 +240,7 @@ testRejoinTimeout _host baseTransport connectionBreak = withTmpDirectory $ do
 #ifdef USE_MERO
       let wait = void (expect :: Process ProcessMonitorNotification)
       promulgateEQ [localNodeId m1] (initialDataAddr _host _host 12) >>= (`withMonitor` wait)
-      "InitialLoad" :: String <- expect
+      receiveWait [ matchIf (("InitialLoad" :: String) ==) $ const $ return () ]
 #endif
 
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])
@@ -302,7 +302,7 @@ testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
 #ifdef USE_MERO
       let wait = void (expect :: Process ProcessMonitorNotification)
       promulgateEQ [localNodeId m1] (initialDataAddr _host _host 12) >>= (`withMonitor` wait)
-      "InitialLoad" :: String <- expect
+      receiveWait [ matchIf (("InitialLoad" :: String) ==) $ const $ return () ]
 #endif
 
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])
@@ -372,7 +372,7 @@ testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
 #ifdef USE_MERO
       let wait = void (expect :: Process ProcessMonitorNotification)
       promulgateEQ [localNodeId m1] (initialDataAddr _host _host 12) >>= (`withMonitor` wait)
-      "InitialLoad" :: String <- expect
+      receiveWait [ matchIf (("InitialLoad" :: String) ==) $ const $ return () ]
 #endif
 
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])
