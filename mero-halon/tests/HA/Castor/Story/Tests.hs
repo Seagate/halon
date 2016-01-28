@@ -20,6 +20,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
    , findFailableObjs
    )
 #endif
+import HA.RecoveryCoordinator.Actions.Core (messageProcessed)
 import HA.RecoveryCoordinator.Actions.Service
   ( registerServiceProcess )
 import HA.RecoveryCoordinator.Events.Drive
@@ -102,7 +103,7 @@ newMeroChannel pid = do
 testRules :: Definitions LoopState ()
 testRules = do
   defineSimple "register-mock-service" $
-    \(HAEvent _ (MockM0 dc@(DeclareMeroChannel sp _)) _) -> do
+    \(HAEvent eid (MockM0 dc@(DeclareMeroChannel sp _)) _) -> do
       nid <- liftProcess $ getSelfNode
       liftProcess $ say "here-1"
       registerServiceProcess (Node nid) m0d mockMeroConf sp
@@ -110,6 +111,7 @@ testRules = do
       void . liftProcess $ promulgateEQ [nid] dc
       liftProcess $ say "here-3"
       phaseLog "debug" "here am i"
+      messageProcessed eid
 
 mkTests :: IO (Transport -> [TestTree])
 mkTests = do

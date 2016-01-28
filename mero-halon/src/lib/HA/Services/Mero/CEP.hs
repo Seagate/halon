@@ -54,5 +54,6 @@ meroChannels m0d rg = [ chan | node <- connectedTo Cluster Has rg
 meroRulesF :: Service MeroConf -> Definitions LoopState ()
 meroRulesF _ = do
   defineSimple "declare-mero-channel" $
-    \(HAEvent _ (DeclareMeroChannel sp c) _) -> do
+    \(HAEvent eid (DeclareMeroChannel sp c) _) -> do
       registerChannel sp c
+      messageProcessed eid

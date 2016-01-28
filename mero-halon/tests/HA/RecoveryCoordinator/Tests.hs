@@ -237,13 +237,15 @@ testClusterStatus transport = runDefaultTest transport $ do
   where
     wait = void (expect :: Process ProcessMonitorNotification)
     clusterStatusRules :: [Definitions LoopState ()]
-    clusterStatusRules = return $ defineSimple "cluster-status" $ \(HAEvent _ cmsg _) -> case cmsg of
+    clusterStatusRules = return $ defineSimple "cluster-status" $ \(HAEvent eid cmsg _) -> case cmsg of
         ClusterGet -> do
           cs <- getClusterStatus
           liftProcess . say $ "Cluster status is " ++ show cs
+          messageProcessed eid
         ClusterSet cs -> do
           setClusterStatus cs
           liftProcess . say $ "Set cluster status to " ++ show cs
+          messageProcessed eid
 
 -- | Tests decision-log service by starting it and redirecting the logs to own
 --  process, then starting a dummy service and checking that logs were
