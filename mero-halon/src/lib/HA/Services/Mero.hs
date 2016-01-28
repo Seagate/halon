@@ -180,7 +180,7 @@ remotableDecl [ [d|
             Mero.Notification.initialize haAddr
             liftIO . void $ do
               SystemD.sysctlFile ("m0t1fs-"++m0t1fsFid)
-                [ ("MERO_HA_EP", show haAddr)
+                [ ("MERO_HA_EP", mcHAAddress)
                 , ("MERO_M0T1FS_EP", m0addr)
                 , ("MERO_PROFILE_FID", mcProfile)
                 ]
