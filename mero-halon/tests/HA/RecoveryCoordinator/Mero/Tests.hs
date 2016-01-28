@@ -88,11 +88,12 @@ instance Binary SpielSync
 #ifdef USE_MERO
 -- | Used in 'testRCsyncToConfd'.
 testSyncRules :: [Definitions LoopState ()]
-testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent _ SpielSync _) -> do
+testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent eid SpielSync _) -> do
   result <- syncToConfd
   case result of
     Left e -> liftProcess $ say $ "Exceptions during sync: "++ show e
     Right{} -> liftProcess $ say "Finished sync to confd"
+  messageProcessed eid
 #endif
 
 -- | Test that the recovery co-ordinator successfully adds a host to the
@@ -229,12 +230,13 @@ testDriveManagerUpdate transport = runDefaultTest transport $ do
     liftIO $ removeFile "drive_manager.json"
   where
     testRules :: [Definitions LoopState ()]
-    testRules = return $ defineSimple "dmwf-trigger" $ \(HAEvent _ RunDriveManagerFailure _) -> do
+    testRules = return $ defineSimple "dmwf-trigger" $ \(HAEvent eid RunDriveManagerFailure _) -> do
       -- Find what should be the only SD in the enclosure and trigger
       -- repair on it
       graph <- getLocalGraph
       let [sd] = G.connectedTo (Enclosure enc) Has graph
       updateDriveManagerWithFailure (Just "drive_manager.json") sd
+      messageProcessed eid
 
     wait = void (expect :: Process ProcessMonitorNotification)
     enc :: String
