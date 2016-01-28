@@ -286,7 +286,7 @@ ruleStopRequest = defineSimple "stop-request" $ \(HAEvent uuid msg _) -> do
       ServiceStopRequest node svc <- decodeMsg msg
       res                         <- lookupRunningService node svc
       for_ res $ \sp ->
-        killService sp UserStop
+        killService sp Shutdown
       messageProcessed uuid
 
 data RecoverNodeAck = RecoverNodeAck UUID

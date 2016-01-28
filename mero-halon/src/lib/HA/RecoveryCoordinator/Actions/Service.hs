@@ -248,7 +248,7 @@ bounceServiceTo role n@(Node nid) s = do
       where
         go sp = case readConfig sp role g of
           Just cfg -> do
-            killService sp Shutdown
+            killService sp Fail
             startService nid s cfg
           Nothing -> error "Cannot find specified configuation"
 
