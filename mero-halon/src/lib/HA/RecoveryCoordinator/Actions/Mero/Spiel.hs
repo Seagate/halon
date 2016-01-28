@@ -72,6 +72,9 @@ import Network.CEP
 import Network.RPC.RPCLite (getRPCMachine_se, rpcAddress, RPCAddress(..))
 
 import System.IO
+
+import Text.Printf (printf)
+
 import Prelude hiding (id)
 
 -- | Find a confd server in the cluster and run the given function on
@@ -247,9 +250,12 @@ txPopulate :: TxConfData -> SpielTransaction -> PhaseM LoopState l SpielTransact
 txPopulate (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) t = do
   g <- getLocalGraph
   -- Profile, FS, pool
+  -- Top-level pool width is number of devices in existence
+  let m0_pool_width = length (G.getResourcesOfType g :: [M0.Disk])
+      fsParams = printf "%d %d %d" m0_pool_width m0_data_units m0_parity_units
   liftM0RC $ do
     addProfile t pfid
-    addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid []
+    addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid [fsParams]
     addPool t f_mdpool_fid f_fid 0
   phaseLog "spiel" "Added profile, filesystem, mdpool objects."
   -- Racks, encls, controllers, disks
