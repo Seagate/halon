@@ -48,6 +48,9 @@ instance Binary PersistMessage
 instance Eq PersistMessage where
     (==) = (==) `on` persistEventId
 
+instance Ord PersistMessage where
+    compare = compare `on` persistEventId
+
 newPersistMessage :: (Serializable a, MonadIO m) => a -> m PersistMessage
 newPersistMessage msg = liftIO $ do
     uuid <- nextRandom

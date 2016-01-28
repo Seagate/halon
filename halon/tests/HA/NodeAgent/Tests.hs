@@ -9,7 +9,7 @@
 
 module HA.NodeAgent.Tests ( tests, dummyRC__static, dummyRC__sdict) where
 
-import HA.EventQueue ( EventQueue, eventQueueLabel, startEventQueue )
+import HA.EventQueue ( EventQueue, eventQueueLabel, startEventQueue, emptyEventQueue )
 import HA.EventQueue.Producer (expiate)
 import HA.EventQueue.Types (PersistMessage(..), HAEvent(..))
 import HA.Replicator ( RGroup(..) )
@@ -83,7 +83,7 @@ naTestWithEQ transport action = withTmpDirectory $ E.bracket
     forM_ nodes $ flip runProcess $ void $ startEQTracker nids
     mdone <- newEmptyMVar
     runProcess (head nodes) $ do
-      cRGroup <- newRGroup $(mkStatic 'eqSDict) 20 1000000 nids (Nothing,[])
+      cRGroup <- newRGroup $(mkStatic 'eqSDict) 20 1000000 nids emptyEventQueue
 #ifdef USE_MOCK_REPLICATOR
       rGroup <- unClosure cRGroup >>= id
       forM_ nids $ const $ spawnLocal $ dummyRC' rGroup

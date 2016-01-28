@@ -121,7 +121,7 @@ withTrackingStation testRules action = do
     (do
       void $ EQT.startEQTracker [nid]
       cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
-                         [nid] ((Nothing,[]), (defaultMetaInfo, fromList []))
+                         [nid] (emptyEventQueue, (defaultMetaInfo, fromList []))
       join $ unClosure cRGroup
     )
     (flip killReplica nid)
