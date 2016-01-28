@@ -228,7 +228,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
              Just (haAddr, profile, process) -> do
                liftProcess . void . spawnLocal . void . spawnAsync nid $
                  $(mkClosure 'bootstrapMeroServerExtra)
-                   (extraFids, haAddr, M0.r_endpoint process, M0.fid profile)
+                   (extraFids, M0.r_endpoint process, haAddr, M0.fid profile)
            continue finish_extra_bootstrap
 
   setPhase finish_extra_bootstrap $ \(HAEvent eid (ServerBootstrapFinished nid) _) -> do
