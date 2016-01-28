@@ -25,10 +25,14 @@ import qualified Data.Set as S
 --   version matching the set of failed devices.
 dynamicStrategy :: Strategy
 dynamicStrategy = Strategy {
-    onInit = const Nothing
+    onInit = \rg -> do
+      prof <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Profile
+      fs   <- listToMaybe $ G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
+      globs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
+      (\rg' -> \sync -> sync rg') <$> createTopLevelPVer fs globs rg
   , onFailure = \rg -> do
       prof <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Profile
-      fs   <- listToMaybe $ G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem 
+      fs   <- listToMaybe $ G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
       globs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
       createPVerIfNotExists rg fs globs
 }
@@ -95,6 +99,24 @@ findMatchingPVer rg fs failedDevs = let
                   , pver <- G.connectedTo pool M0.IsRealOf rg :: [M0.PVer]
                   ]
   in fst <$> find (\(_, x) -> x == onlineDevs) allPvers
+
+-- | Creates initial top level pver corresponding to no failed devices, if
+--   such does not already exist.
+createTopLevelPVer :: M0.Filesystem
+                   -> M0.M0Globals
+                   -> G.Graph
+                   -> Maybe G.Graph
+createTopLevelPVer fs globs rg = let
+    mcur = findMatchingPVer rg fs S.empty
+    n = CI.m0_data_units globs
+    k = CI.m0_parity_units globs
+    noCtlrs = length (G.getResourcesOfType rg :: [M0.Controller])
+    ctrlFailures = floor $ noCtlrs % (fromIntegral $ n+k)
+    failures = Failures 0 0 0 ctrlFailures k
+    pv = PoolVersion S.empty failures
+  in case mcur of
+    Nothing -> return $ createPoolVersions fs [pv] True rg
+    Just _ -> Nothing
 
 -- | Examines the current set of failed devices and existing pool versions.
 --   If a pool version exists matching the failed devices, returns Nothing.
