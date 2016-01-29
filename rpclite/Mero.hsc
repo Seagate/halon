@@ -183,13 +183,13 @@ foreign import ccall "<lib/uuid.h> m0_node_uuid_string_set"
 foreign import ccall "cm/cm.h m0_sns_cm_repair_trigger_fop_init"
    c_m0_sns_cm_repair_trigger_fop_init :: IO ()
 
-foreign import ccall "cm/cm.h m0_sns_cm_repair_trigger_fop_init"
+foreign import ccall "cm/cm.h m0_sns_cm_rebalance_trigger_fop_init"
    c_m0_sns_cm_rebalance_trigger_fop_init :: IO ()
 
 foreign import ccall "cm/cm.h m0_sns_cm_repair_trigger_fop_fini"
    c_m0_sns_cm_repair_trigger_fop_fini :: IO ()
 
-foreign import ccall "cm/cm.h m0_sns_cm_repair_trigger_fop_fini"
+foreign import ccall "cm/cm.h m0_sns_cm_rebalance_trigger_fop_fini"
    c_m0_sns_cm_rebalance_trigger_fop_fini :: IO ()
 
 initialize_fops :: IO ()
