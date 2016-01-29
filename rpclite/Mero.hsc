@@ -62,8 +62,7 @@ m0_init = do
     rc <- m0_init_wrapper
     when (rc /= 0) $
       fail $ "m0_init: failed with " ++ show rc
-    c_m0_sns_cm_repair_trigger_fop_init
-    c_m0_sns_cm_rebalance_trigger_fop_init
+    initialize_fops
 
 -- | Encloses an action with calls to 'm0_init' and 'm0_fini'.
 -- Run m0 worker in parrallel, it's possible to send tasks to worker
@@ -151,7 +150,9 @@ withM0Deferred f = do
                   setNodeUUID Nothing
                   rc <- m0_init_wrapper
                   if (rc == 0)
-                    then (myThreadId >>= replaceGlobalWorker >> mainloop t) `finally` m0_fini
+                    then (do initialize_fops
+                             myThreadId >>= replaceGlobalWorker
+                             mainloop t) `finally` m0_fini
                     else do putMVar b (Left (SomeException (M0InitException rc)))
                             initloop
             mainloop (Task cmd b) = do
@@ -190,6 +191,11 @@ foreign import ccall "cm/cm.h m0_sns_cm_repair_trigger_fop_fini"
 
 foreign import ccall "cm/cm.h m0_sns_cm_repair_trigger_fop_fini"
    c_m0_sns_cm_rebalance_trigger_fop_fini :: IO ()
+
+initialize_fops :: IO ()
+initialize_fops = do
+   c_m0_sns_cm_repair_trigger_fop_init
+   c_m0_sns_cm_rebalance_trigger_fop_init
 
 -- | Unset node uuid, so library will be able to work without connection to mero instance.
 setNodeUUID :: Maybe String -> IO ()
