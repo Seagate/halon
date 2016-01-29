@@ -47,6 +47,8 @@ test:
     - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero --haddock --no-haddock-deps
     - stack $STACK_FLAGS build --flag mero-halon:distributed-tests --test --no-run-tests --haddock --no-haddock-deps
     # Only test mero-halon and deps, without USE_MERO.
+    # Testing with USE_MERO is not possible since m0_init fails when some cpus
+    # on the host are forbidden via cpusets as circleci does.
     - stack $STACK_FLAGS --docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1 --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS RG' build --flag mero-halon:distributed-tests --haddock --no-haddock-deps --test:
         timeout: 3600
     - scripts/copy_artifacts.sh "${CIRCLE_ARTIFACTS}"
