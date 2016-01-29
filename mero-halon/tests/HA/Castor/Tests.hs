@@ -85,10 +85,10 @@ rGroupTest transport p =
     p mmchan
 
 tests :: String -> Transport -> [TestTree]
-tests host transport = map (localOption (mkTimeout $ 10*60*1000000))
+tests _host transport = map (localOption (mkTimeout $ 10*60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport
   , testSuccess "failure-sets-2" $ testFailureSets2 transport
-  , testSuccess "initial-data-doesn't-error" $ void (loadInitialData host transport)
+  , testSuccess "initial-data-doesn't-error" $ void (loadInitialData transport)
   -- , testSuccess "large-data" $ largeInitialData host transport
   , testSuccess "controller-failure" $ testControllerFailureDomain transport
   ]
@@ -168,8 +168,8 @@ testFailureSets2 transport = rGroupTest transport $ \pid -> do
 -- | Load the initial data into local RG and verify that it loads as expected.
 --
 -- Returns the loaded RG for use by others (@initial-data-gc@).
-loadInitialData :: String -> Transport -> IO Graph
-loadInitialData host transport = do
+loadInitialData :: Transport -> IO Graph
+loadInitialData transport = do
   gmv <- newEmptyMVar
   rGroupTest transport $ \pid -> do
     me <- getSelfNode

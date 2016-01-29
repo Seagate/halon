@@ -11,6 +11,7 @@
 
 module HA.Services.Mero.CEP
   ( meroRulesF
+  , meroChannel
   , meroChannels
   ) where
 
@@ -23,28 +24,33 @@ import HA.Services.Mero.Types
 
 import Control.Category ((>>>))
 
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, listToMaybe)
 
 import Network.CEP
 
 import Prelude hiding (id)
 
-registerChannel :: ServiceProcess MeroConf
-                -> TypedChannel NotificationMessage
+registerChannel :: ( Resource (TypedChannel a)
+                   , Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel a)
+                   )
+                => ServiceProcess MeroConf
+                -> TypedChannel a
                 -> PhaseM LoopState l ()
 registerChannel sp chan = modifyLocalGraph $ \rg -> do
-    phaseLog "rg" $ "Registering channel."
+    phaseLog "rg" $ "Registering m0d channel."
     return $  newResource sp   >>>
-              removeOldChan sp >>>
               newResource chan >>>
-              connect sp MeroChannel chan $ rg
+              connectUniqueTo sp MeroChannel chan $ rg
 
-removeOldChan :: ServiceProcess MeroConf -> Graph -> Graph
-removeOldChan sp rg =
-    case connectedTo sp MeroChannel rg :: [TypedChannel NotificationMessage] of
-      [c] -> disconnect sp MeroChannel c rg
-      _   -> rg
+meroChannel :: ( Resource (TypedChannel a)
+               , Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel a)
+               )
+            => Graph
+            -> ServiceProcess MeroConf
+            -> Maybe (TypedChannel a)
+meroChannel rg sp = listToMaybe [ chan | chan <- connectedTo sp MeroChannel rg ]
 
+-- | Fetch all Mero notification channels.
 meroChannels :: Service MeroConf -> Graph -> [TypedChannel NotificationMessage]
 meroChannels m0d rg = [ chan | node <- connectedTo Cluster Has rg
                              , isJust $ runningService node m0d rg
@@ -54,6 +60,7 @@ meroChannels m0d rg = [ chan | node <- connectedTo Cluster Has rg
 meroRulesF :: Service MeroConf -> Definitions LoopState ()
 meroRulesF _ = do
   defineSimple "declare-mero-channel" $
-    \(HAEvent eid (DeclareMeroChannel sp c) _) -> do
+    \(HAEvent eid (DeclareMeroChannel sp c cc) _) -> do
       registerChannel sp c
+      registerChannel sp cc
       messageProcessed eid

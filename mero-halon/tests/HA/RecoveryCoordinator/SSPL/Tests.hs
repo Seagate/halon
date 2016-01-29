@@ -38,8 +38,6 @@ import Helper.InitialData
 import Helper.SSPL
 import Helper.RC
 
-import Mero.ConfC (ServiceParams(..), ServiceType(..))
-
 import RemoteTables (remoteTable)
 import TestRunner
 import Data.Binary

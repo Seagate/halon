@@ -17,7 +17,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , setObjectStatus
     -- ** Get all objects of type
   , getProfile
-  , getFilesystem 
+  , getFilesystem
   , getSDevPools
   , getM0ServicesRC
   , getChildren
@@ -25,7 +25,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , loadMeroServers
     -- ** Lookup objects based on another
   , lookupConfObjByFid
-  , lookupStorageDevice 
+  , lookupStorageDevice
   , lookupStorageDeviceSDev
   , lookupStorageDeviceOnHost
   , lookupEnclosureM0
@@ -35,7 +35,7 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import qualified HA.ResourceGraph as G
-import HA.Resources (Cluster(..), Has(..))
+import HA.Resources (Cluster(..), Has(..), Runs(..))
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
@@ -168,6 +168,7 @@ loadMeroServers fs = mapM_ goHost where
                 >>> G.connect enc M0.IsParentOf ctrl
                 >>> G.connect ctrl M0.At host
                 >>> G.connect node M0.IsOnHardware ctrl
+                >>> G.connect host Runs node
 
   goProc node devs CI.M0Process{..} = let
       cores = bitmapFromArray
@@ -176,13 +177,19 @@ loadMeroServers fs = mapM_ goHost where
       mkProc fid = M0.Process fid m0p_mem_as m0p_mem_rss
                               m0p_mem_stack m0p_mem_memlock
                               cores m0p_endpoint
+      procLabel = if
+          elem CST_MGS $ fmap CI.m0s_type m0p_services
+        then M0.PLConfdBoot
+        else M0.PLRegularBoot
     in do
       proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
       mapM_ (goSrv proc devs) m0p_services
 
       modifyGraph $ G.newResource proc
                 >>> G.newResource proc
+                >>> G.newResource procLabel
                 >>> G.connect node M0.IsParentOf proc
+                >>> G.connectUniqueFrom proc Has procLabel
 
   goSrv proc devs CI.M0Service{..} = let
       mkSrv fid = M0.Service fid m0s_type m0s_endpoints m0s_params
@@ -315,7 +322,7 @@ getParents obj = do
   G.connectedFrom M0.IsParentOf obj <$> getLocalGraph
 
 -- | Query current status of the conf object.
-queryObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a 
+queryObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a
                   -> PhaseM LoopState l (Maybe M0.ConfObjectState)
 queryObjectStatus obj = do
   phaseLog "rg-query" $ "Lookup status for " ++ show obj ++ " holds."
@@ -323,7 +330,7 @@ queryObjectStatus obj = do
 {-# INLINE queryObjectStatus #-}
 
 -- | Set object in a new state.
-setObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a 
+setObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a
                 -> M0.ConfObjectState
                 -> PhaseM LoopState l ()
 setObjectStatus obj state = modifyGraph $ G.connectUnique obj Is state

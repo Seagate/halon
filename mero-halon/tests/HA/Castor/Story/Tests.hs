@@ -90,20 +90,22 @@ newtype MockM0 = MockM0 DeclareMeroChannel
   deriving (Binary, Generic, Hashable, Typeable)
 
 mockMeroConf :: MeroConf
-mockMeroConf = MeroConf "" "" (MeroKernelConf (error "mock")) (MeroClientConf "" "" )
+mockMeroConf = MeroConf "" "" (MeroKernelConf (error "mock"))
 
 newMeroChannel :: ProcessId -> Process (ReceivePort NotificationMessage, MockM0)
 newMeroChannel pid = do
   (sd, recv) <- newChan
+  (blah, _) <- newChan
   let sdChan   = TypedChannel sd
+      connChan = TypedChannel blah
       notfication = MockM0
-              $ DeclareMeroChannel (ServiceProcess pid) sdChan
+              $ DeclareMeroChannel (ServiceProcess pid) sdChan connChan
   return (recv, notfication)
 
 testRules :: Definitions LoopState ()
 testRules = do
   defineSimple "register-mock-service" $
-    \(HAEvent eid (MockM0 dc@(DeclareMeroChannel sp _)) _) -> do
+    \(HAEvent eid (MockM0 dc@(DeclareMeroChannel sp _ _)) _) -> do
       nid <- liftProcess $ getSelfNode
       liftProcess $ say "here-1"
       registerServiceProcess (Node nid) m0d mockMeroConf sp
