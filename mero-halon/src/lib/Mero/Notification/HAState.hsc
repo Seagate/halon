@@ -52,6 +52,7 @@ import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr, nullPtr )
 import Foreign.Storable       ( Storable(..) )
 import GHC.Generics           ( Generic )
 import System.IO.Unsafe       ( unsafePerformIO )
+import System.IO              ( hPutStrLn )
 
 #include "hastate.h"
 #include "conf/obj.h"
