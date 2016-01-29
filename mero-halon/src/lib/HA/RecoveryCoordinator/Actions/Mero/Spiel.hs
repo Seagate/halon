@@ -119,7 +119,6 @@ withRConfRC spiel action = do
      Mero.Spiel.rconfStart spiel
      Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
   x <- action `sfinally` liftM0RC (Mero.Spiel.rconfStop spiel)
-  liftM0RC $ Mero.Spiel.rconfStop spiel
   return x
 
 -- | Start the repair operation on the given 'M0.Pool'. Notifies mero
