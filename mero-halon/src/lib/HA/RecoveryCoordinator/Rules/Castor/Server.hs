@@ -131,7 +131,8 @@ ruleNewMeroServer = define "new-mero-server" $ do
         Nothing -> continue finish
         Just host -> do
           svs <- getServices node
-          case null [ () | (_, M0.Service{ M0.s_type = CST_MGS }) <- svs ] of
+          case null [ () | M0.Service{ M0.s_type = CST_MGS }
+                            <- concat . fmap snd $ svs ] of
             True -> do
               phaseLog "info" $ "No confd service on " ++ show host
               startMeroServerService host node Nothing
@@ -218,10 +219,12 @@ ruleNewMeroServer = define "new-mero-server" $ do
              return . G.connect Cluster Runs (ServerBootstrapProcess nid False)
            syncGraphBlocking
            svs <- getServices (Node nid)
-
+           phaseLog "debug" $ "Processes/services: " ++ show svs
            let extraFids :: [Fid]
                extraFids = [ M0.r_fid p | (p, c) <- svs
-                                        , s_type c /= CST_MGS && s_type c /= CST_RMS ]
+                                        , notElem CST_MGS $ s_type <$> c
+                                        ]
+           phaseLog "debug" $ "Non MGS process fids: " ++ show extraFids
            mhost <- findNodeHost (Node nid)
            maybe (return Nothing) getMeroServiceInfo mhost >>= \case
              Nothing -> liftProcess $ getSelfNode >>= promulgateWait . ServerBootstrapFinished
@@ -312,12 +315,12 @@ barrier hookPoint hookRel setState viewState phandle failHandle failure release 
              >>> return . G.connect hookPoint hookRel (setState True)
       Just h -> h
 
-getServices :: Node -> PhaseM LoopState l [(M0.Process, M0.Service)]
+getServices :: Node -> PhaseM LoopState l [(M0.Process, [M0.Service])]
 getServices node = do
   Just host <- findNodeHost node
   g <- getLocalGraph
-  let svs = [ (p, c) | ctl :: M0.Controller <- G.connectedFrom M0.At host g
-                     , m0node :: M0.Node <- G.connectedFrom M0.IsOnHardware ctl g
-                     , p :: M0.Process <- G.connectedTo m0node IsParentOf g
-                     , c <- G.connectedTo p IsParentOf g ]
-  return svs
+  return [ (p, G.connectedTo p IsParentOf g)
+         | ctl :: M0.Controller <- G.connectedFrom M0.At host g
+         , m0node :: M0.Node <- G.connectedFrom M0.IsOnHardware ctl g
+         , p :: M0.Process <- G.connectedTo m0node IsParentOf g
+         ]
