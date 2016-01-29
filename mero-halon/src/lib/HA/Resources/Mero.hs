@@ -366,7 +366,7 @@ instance Hashable PoolRepairStatus
 newtype LNid = LNid String
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
 
-data HostHardwareInfo = HostHardwareInfo 
+data HostHardwareInfo = HostHardwareInfo
        { hhMemorySize  :: Word64
        , hhCpuCount    :: Int
        , hhLNidAddress :: String
@@ -375,11 +375,20 @@ data HostHardwareInfo = HostHardwareInfo
 instance Binary HostHardwareInfo
 instance Hashable HostHardwareInfo
 
+-- | Label to attach to a Mero process providing extra context about how
+--   it should run.
+data ProcessLabel =
+    PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space
+  deriving (Eq, Show, Typeable, Generic)
+instance Binary ProcessLabel
+instance Hashable ProcessLabel
+
 $(mkDicts
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid, ''HostHardwareInfo
+  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
+  , ''HostHardwareInfo, ''ProcessLabel
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -419,6 +428,7 @@ $(mkDicts
   , (''Pool, ''R.Has, ''PoolRepairStatus)
   , (''R.Host, ''R.Has, ''LNid)
   , (''R.Host, ''R.Runs, ''Node)
+  , (''Process, ''R.Has, ''ProcessLabel)
   ]
   )
 
@@ -426,7 +436,8 @@ $(mkResRel
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid, ''HostHardwareInfo
+  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
+  , ''HostHardwareInfo, ''ProcessLabel
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -466,6 +477,7 @@ $(mkResRel
   , (''Pool, ''R.Has, ''PoolRepairStatus)
   , (''R.Host, ''R.Has, ''LNid)
   , (''R.Host, ''R.Runs, ''Node)
+  , (''Process, ''R.Has, ''ProcessLabel)
   ]
   []
   )
