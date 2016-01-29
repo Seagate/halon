@@ -63,17 +63,20 @@ schema = let
 self :: String
 self = "HA.Satellite"
 
-start :: NodeId -> Config -> Process ()
+start :: NodeId -> Config -> Process (Maybe String)
 start nid Config{..} = do
     say $ "This is " ++ self
-    _ <- spawn nid $ $(mkClosure 'nodeUp) (
-                          trackers
-                        , fromDefault configDelay)
+    (_, mref) <- spawnMonitor nid $ $(mkClosure 'nodeUp)
+                   (trackers, fromDefault configDelay)
 #ifdef USE_RPC
     -- The RPC transport triggers a bug in spawn where the action never
     -- executes.
     _ <- receiveTimeout 1000000 [] :: Process (Maybe ())
 #endif
-    return ()
+    receiveWait
+      [ matchIf (\(ProcessMonitorNotification ref _ _) -> ref == mref) handler ]
   where
     trackers = fmap conjureRemoteNodeId (fromDefault configTrackers)
+    handler (ProcessMonitorNotification _ _ dr) = return $ case dr of
+      DiedException e -> Just e
+      _ -> Nothing

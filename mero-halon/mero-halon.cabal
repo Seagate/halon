@@ -231,7 +231,8 @@ Executable halonctl
                       options-schema >= 0.2,
                       optparse-applicative >= 0.11,
                       process,
-                      yaml
+                      yaml,
+                      mtl
   if flag(rpc)
       Build-Depends: network-transport-rpc >= 0.0.1
   else

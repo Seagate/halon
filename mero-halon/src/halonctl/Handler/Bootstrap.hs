@@ -8,6 +8,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE TupleSections #-}
 
 module Handler.Bootstrap
   ( BootstrapCmdOptions
@@ -18,26 +19,24 @@ where
 
 import Prelude hiding ((<$>))
 import Control.Distributed.Process
-  ( NodeId
-  , Process
-  )
+import Control.Distributed.Process.Node (forkProcess)
+import Control.Distributed.Process.Internal.Types
 
-import Data.Binary
-  ( Binary )
-import Data.Typeable
-  ( Typeable )
-import GHC.Generics
-  ( Generic )
-
-import Options.Applicative
-    ( (<$>)
-    , (<>)
-    )
+import Control.Monad
+import Control.Monad.Reader (ask)
+import Data.Binary ( Binary )
+import Data.Maybe (catMaybes)
+import Data.Typeable ( Typeable )
+import GHC.Generics ( Generic )
+import Options.Applicative ((<$>) , (<>))
 import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
 
 import qualified Handler.Bootstrap.Satellite as S
 import qualified Handler.Bootstrap.TrackingStation as TS
+
+import System.Exit (exitFailure)
+import System.IO
 
 --------------------------------------------------------------------------------
 
@@ -66,5 +65,22 @@ bootstrap :: [NodeId] -- ^ NodeIds of the node to bootstrap
           -> BootstrapCmdOptions
           -> Process ()
 bootstrap nids opts = case opts of
-  BootstrapNode naConf -> mapM_ (flip S.start naConf) nids
+  BootstrapNode naConf -> startSatellitesAsync naConf >>= \case
+    [] -> return ()
+    failures -> liftIO $ do
+      hPutStrLn stderr $ "nodeUp failed on following nodes: " ++ show failures
+      exitFailure
   BootstrapStation tsConf -> TS.start nids tsConf
+
+  where
+    -- Fork start process, wait for results from each, output
+    -- information about any failures.
+    startSatellitesAsync :: S.Config -> Process [(NodeId, String)]
+    startSatellitesAsync conf = do
+      self <- getSelfPid
+      localNode <- fmap processNode ask
+      liftIO . forM_ nids $ \nid -> do
+        forkProcess localNode $ do
+          res <- S.start nid conf
+          usend self $ (nid,) <$> res
+      catMaybes <$> forM nids (const expect)
