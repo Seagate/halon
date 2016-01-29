@@ -48,12 +48,11 @@ instance Hashable MeroConf
 data MeroNodeConf = MeroClientConf { mccProcessFid :: String
                                    , mccMeroEndpoint :: String
                                    }
-                  | MeroServerConf { mscConfString :: Maybe (ByteString, String)
-                                   -- ^ If confd is meant to run on
-                                   -- the host, pass the conf file
-                                   -- content and process fid
+                  | MeroConfdConf  { mscConfString :: ByteString
+                                   , mcsProcessFid :: String
                                    , mscMeroEndpoint :: String
                                    }
+                  | MeroServerConf
   deriving (Eq, Generic, Show, Typeable)
 
 instance Binary MeroNodeConf

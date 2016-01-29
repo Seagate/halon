@@ -163,30 +163,23 @@ ruleNewMeroServer = define "new-mero-server" $ do
     findNodeHost node >>= \case
       Just host -> alreadyBootstrapping nid <$> getLocalGraph >>= \case
         True -> continue finish
-        False -> getFilesystem >>= \case
-          Just fs -> do
-            let pcore = ServerBootstrapCoreProcess nid False
-            phaseLog "info" "Starting core bootstrap"
-            modifyLocalGraph $
-              return . G.connect Cluster Runs pcore . G.newResource pcore
-            hatrs <- findHostAttrs host
-            g <- getLocalGraph
-            let lnid = listToMaybe $ [ ip | Interface { if_network = Data, if_ipAddrs = ip:_ }
-                                              <- G.connectedTo host Has g ]
-                memsize = listToMaybe $ [ fromIntegral m | HA_MEMSIZE_MB m <- hatrs ]
-                cpucnt = listToMaybe $ [ cnt | HA_CPU_COUNT cnt <- hatrs ]
-            case HostHardwareInfo <$> memsize <*> cpucnt <*> lnid of
-              Nothing -> do
-                phaseLog "warn" $ "HostHardwareInfo couldn't be constructed: "
-                               ++ show (lnid, memsize, cpucnt)
-                continue finish
-              Just info -> do
-                storeMeroNodeInfo fs host info HA_M0SERVER
-                startMeroService node
-                continue core_bootstrapped
-          Nothing -> do
-            phaseLog "warn" "Couldn't getFilesystem"
-            continue finish
+        False -> do
+          let pcore = ServerBootstrapCoreProcess nid False
+          phaseLog "info" "Starting core bootstrap"
+          modifyLocalGraph $
+            return . G.connect Cluster Runs pcore . G.newResource pcore
+          g <- getLocalGraph
+          let mlnid = listToMaybe $ [ ip | Interface { if_network = Data, if_ipAddrs = ip:_ }
+                                            <- G.connectedTo host Has g ]
+          case mlnid of
+            Nothing -> do
+              phaseLog "warn" $ "Unable to find Data IP addr for host "
+                              ++ show host
+              continue finish
+            Just lnid -> do
+              createMeroKernelConfig host lnid
+              startMeroService node
+              continue core_bootstrapped
       Nothing -> do
         phaseLog "error" $ "Can't find host for node " ++ show node
         continue finish

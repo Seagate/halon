@@ -118,8 +118,9 @@ remotableDecl [ [d|
   m0dProcess MeroConf{..} = bracket_ startKernel stopKernel $ do
       self <- getSelfPid
       case mcServiceConf of
-        MeroServerConf servconf mero -> server servconf mero
+        MeroConfdConf conf procFid mero -> confd conf procFid mero
         MeroClientConf fid mero -> client fid mero self
+        MeroServerConf -> server
     where
       haAddr = RPC.rpcAddress mcHAAddress
       withEp = Mero.Notification.withServerEndpoint haAddr
@@ -131,30 +132,27 @@ remotableDecl [ [d|
         SystemD.startService "mero-kernel"
       stopKernel = liftIO $ SystemD.stopService "mero-kernel"
 
-      server servconf m0addr = flip Catch.catch handler $ bracket_ bootstrap teardown $ do
+      confd conf procFid m0addr = flip Catch.catch handler $ bracket_ bootstrap teardown $ do
         say "Starting service m0d on mero server"
-        case servconf of
-          Just (conf, confdRmsFid) -> do
-            let confdDir = "/var/mero/confd"
-                confdPath = confdDir </> "conf.xc"
-            return ()
-            void . liftIO $ do
-              createDirectoryIfMissing True confdDir
-              BS.writeFile confdPath conf
-            let (mkfs, m0ds) = ("mero-mkfs@" ++ confdRmsFid, "m0d@" ++ confdRmsFid)
-            say $ "Writing out info for " ++ m0ds ++ " service"
-            liftIO $ SystemD.sysctlFile ("m0d-" ++ confdRmsFid)
-              [ ("MERO_M0D_EP", m0addr)
-              , ("MERO_HA_EP", mcHAAddress)
-              , ("MERO_PROFILE_FID", mcProfile)
-              , ("MERO_CONF_XC", confdPath)
-              ]
-            say $ "Starting " ++ mkfs
-            mkfs_c <- liftIO $ SystemD.startService mkfs
-            say $ "Starting " ++ m0ds
-            m0d_c <- liftIO $ SystemD.startService m0ds
-            say $ "Finished core boot services: " ++ show (mkfs_c, m0d_c)
-          Nothing -> say "No confd on this host"
+        let confdDir = "/var/mero/confd"
+            confdPath = confdDir </> "conf.xc"
+        return ()
+        void . liftIO $ do
+          createDirectoryIfMissing True confdDir
+          BS.writeFile confdPath conf
+        let (mkfs, m0ds) = ("mero-mkfs@" ++ procFid, "m0d@" ++ procFid)
+        say $ "Writing out info for " ++ m0ds ++ " service"
+        liftIO $ SystemD.sysctlFile ("m0d-" ++ procFid)
+          [ ("MERO_M0D_EP", m0addr)
+          , ("MERO_HA_EP", mcHAAddress)
+          , ("MERO_PROFILE_FID", mcProfile)
+          , ("MERO_CONF_XC", confdPath)
+          ]
+        say $ "Starting " ++ mkfs
+        mkfs_c <- liftIO $ SystemD.startService mkfs
+        say $ "Starting " ++ m0ds
+        m0d_c <- liftIO $ SystemD.startService m0ds
+        say $ "Finished core boot services: " ++ show (mkfs_c, m0d_c)
         nid <- getSelfNode
         promulgateWait $ MeroServerCoreBootstrapped Nothing nid
         go
@@ -166,6 +164,14 @@ remotableDecl [ [d|
             nid <- getSelfNode
             say $ "Exception inside mero service: " ++ show e
             promulgateWait $ MeroServerCoreBootstrapped (Just $ show e) nid
+
+      server = bracket_ bootstrap teardown $ do
+          nid <- getSelfNode
+          promulgateWait $ MeroServerCoreBootstrapped Nothing nid
+          go
+        where
+          bootstrap = Mero.Notification.initialize haAddr
+          teardown = Mero.Notification.finalize
 
       client m0t1fsFid m0addr self = do
         bracket_ bootstrap

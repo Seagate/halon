@@ -572,7 +572,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
             phaseLog "warning" "Configuration data was not loaded yet, skipping"
           Just fs -> do
             (node:_) <- nodesOnHost host
-            storeMeroNodeInfo fs host info HA_M0CLIENT
+            createMeroClientConfig fs host info
             startMeroClientService host node
     setPhase msgClientNodeBootstrapped $ \(HAEvent eid (MeroClientBootstrapped host) _) -> do
        finishMeroClientProvisioning host
