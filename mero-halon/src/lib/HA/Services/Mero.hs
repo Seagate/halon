@@ -66,6 +66,7 @@ import Control.Monad (forever, void)
 import Data.Foldable (forM_)
 import qualified Control.Monad.Catch as Catch
 import qualified Data.ByteString as BS
+import Data.List (partition)
 import Data.Maybe (listToMaybe)
 import qualified Data.Set as Set
 import Data.Binary (Binary)
@@ -237,14 +238,16 @@ notifyMero cs st = do
            [ chan | node <- G.connectedTo host Runs rg :: [Node]
                   , sp   <- G.connectedTo node Runs rg :: [ServiceProcess MeroConf]
                   , chan <- G.connectedTo sp MeroChannel rg ]
-         recipients = Set.fromList
-           [ endpoint | m0cont <- G.connectedFrom M0.At host rg :: [M0.Controller]
-                      , m0node <- G.connectedFrom M0.IsOnHardware m0cont rg :: [M0.Node]
-                      , m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
-                      , service <- G.connectedTo m0proc M0.IsParentOf rg :: [M0.Service]
-                      , CST_HA /= M0.s_type service
-                      , endpoint <- M0.s_endpoints service
-                      ]
+         recipients = Set.fromList (fst <$> nha) Set.\\ Set.fromList (fst <$> ha)
+         (nha, ha) = partition ((/=) CST_HA . snd)
+                   [ (endpoint, st)
+                   | m0cont <- G.connectedFrom M0.At host rg :: [M0.Controller]
+                   , m0node <- G.connectedFrom M0.IsOnHardware m0cont rg :: [M0.Node]
+                   , m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
+                   , service <- G.connectedTo m0proc M0.IsParentOf rg :: [M0.Service]
+                   , let st = M0.s_type service
+                   , endpoint <- M0.s_endpoints service
+                   ] 
      case mchan of
        Nothing -> phaseLog "error" $ "HA.Service.Mero.notifyMero: Cannot find MeroChannel on " ++ show host
        Just (TypedChannel chan) -> liftProcess $
