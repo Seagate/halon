@@ -52,7 +52,7 @@ import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr, nullPtr )
 import Foreign.Storable       ( Storable(..) )
 import GHC.Generics           ( Generic )
 import System.IO.Unsafe       ( unsafePerformIO )
-import System.IO              ( hPutStrLn )
+import System.IO              ( hPutStrLn, stderr )
 
 #include "hastate.h"
 #include "conf/obj.h"
@@ -209,7 +209,7 @@ foreign import ccall unsafe ha_state_get_done :: NVecRef -> CInt -> IO ()
 -- changed.
 notify :: ServerEndpoint -> RPCAddress -> NVec -> Int -> IO ()
 notify se (RPCAddress rpcAddr) nvec timeout_s = do
-  hPutStrLn stderr $ unwords ["sending notification to", rpcAddr, "=>", show nvec, "timeout", show timeout_s]
+  hPutStrLn stderr $ unwords ["sending notification to", show rpcAddr, "=>", show nvec, "timeout", show timeout_s]
   useAsCString rpcAddr $ \caddr -> withArray nvec $ \pnote ->
     allocaBytesAligned #{size struct m0_ha_nvec}
                        #{alignment struct m0_ha_nvec}$ \pnvec -> do
