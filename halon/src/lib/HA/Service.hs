@@ -278,9 +278,8 @@ resourceDictServiceName = Dict
 -- Service messages                                                           --
 --------------------------------------------------------------------------------
 
-data ExitReason = Shutdown     -- ^ Internal shutdown, for example bouncing service.
-                | Reconfigure  -- ^ Service reconfiguration.
-                | UserStop     -- ^ Shutdown requested by user.
+data ExitReason = Shutdown     -- ^ Shutdown service, interpreted like normal exit.
+                | Fail         -- ^ Fail service.
                 deriving (Eq, Show, Generic, Typeable)
 
 instance Binary ExitReason
@@ -308,8 +307,9 @@ remoteStartService (caller, sn) p = do
       p `catchExit` onExit
   where
     onExit _ Shutdown = say $ "[Service " ++ snString sn ++ "] stopped."
-    onExit _ Reconfigure = say $ "[Service " ++ snString sn ++ "] reconfigured."
-    onExit _ UserStop = say $ "[Service " ++ snString sn ++ "] user required service stop."
+    onExit _ Fail = do
+      say $ "[Service " ++ snString sn ++ "] user required service stop."
+      die Fail
 
 remotable
   [ 'remoteStartService

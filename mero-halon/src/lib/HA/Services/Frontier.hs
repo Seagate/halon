@@ -22,7 +22,6 @@ module HA.Services.Frontier
 import           Prelude hiding ((<$>))
 import           Control.Applicative ((<$>))
 import qualified Data.ByteString      as B
-import qualified Data.ByteString.Lazy as BL
 import           Data.Monoid ((<>))
 import           Data.Typeable
 import           Control.Monad (forever, void)
@@ -40,7 +39,6 @@ import Options.Schema.Builder
 import Network hiding (Service)
 
 import HA.EventQueue.Producer (promulgate)
-import HA.RecoveryCoordinator.Mero
 import HA.Service hiding (configDict)
 import HA.Service.TH
 import HA.Services.Frontier.Command

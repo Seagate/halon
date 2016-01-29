@@ -28,7 +28,6 @@ import Control.Distributed.Process
   , ProcessId
   , ProcessMonitorNotification(..)
   , SendPort
-  , catchExit
   , match
   , monitor
   , receiveChan
@@ -148,9 +147,6 @@ remotableDecl [ [d|
   ssplProcess :: SSPLHLConf -> Process ()
   ssplProcess (SSPLHLConf{..}) = let
 
-      onExit _ Shutdown = say $ "SSPLHLService stopped."
-      onExit _ Reconfigure = say $ "SSPLHLService stopping for reconfiguration."
-
       connectRetry lock = do
         pid <- spawnLocal $ connectSSPL lock
         mref <- monitor pid
@@ -188,7 +184,7 @@ remotableDecl [ [d|
                   }
           )
 
-    in (`catchExit` onExit) $ do
+    in do
       say $ "Starting service sspl-hl"
       lock <- liftIO newEmptyMVar
       connectRetry lock
