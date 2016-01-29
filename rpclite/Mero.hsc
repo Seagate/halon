@@ -62,6 +62,8 @@ m0_init = do
     rc <- m0_init_wrapper
     when (rc /= 0) $
       fail $ "m0_init: failed with " ++ show rc
+    c_m0_sns_cm_repair_trigger_fop_init
+    c_m0_sns_cm_rebalance_trigger_fop_init
 
 -- | Encloses an action with calls to 'm0_init' and 'm0_fini'.
 -- Run m0 worker in parrallel, it's possible to send tasks to worker
@@ -168,10 +170,26 @@ foreign import ccall m0_init_wrapper :: IO CInt
 foreign import ccall "m0_fini" c_m0_fini :: IO ()
 
 m0_fini :: IO ()
-m0_fini = finalizeM0 >> c_m0_fini
+m0_fini = do
+  finalizeM0
+  c_m0_sns_cm_rebalance_trigger_fop_init
+  c_m0_sns_cm_repair_trigger_fop_init
+  c_m0_fini
 
 foreign import ccall "<lib/uuid.h> m0_node_uuid_string_set"
   c_node_uuid_string_set  :: CString -> IO ()
+
+foreign import ccall "cm/cm.h m0_sns_cm_repair_trigger_fop_init"
+   c_m0_sns_cm_repair_trigger_fop_init :: IO ()
+
+foreign import ccall "cm/cm.h m0_sns_cm_repair_trigger_fop_init"
+   c_m0_sns_cm_rebalance_trigger_fop_init :: IO ()
+
+foreign import ccall "cm/cm.h m0_sns_cm_repair_trigger_fop_fini"
+   c_m0_sns_cm_repair_trigger_fop_fini :: IO ()
+
+foreign import ccall "cm/cm.h m0_sns_cm_repair_trigger_fop_fini"
+   c_m0_sns_cm_rebalance_trigger_fop_fini :: IO ()
 
 -- | Unset node uuid, so library will be able to work without connection to mero instance.
 setNodeUUID :: Maybe String -> IO ()
