@@ -208,8 +208,7 @@ foreign import ccall unsafe ha_state_get_done :: NVecRef -> CInt -> IO ()
 -- | Notifies mero at the remote address that the state of some objects has
 -- changed.
 notify :: ServerEndpoint -> RPCAddress -> NVec -> Int -> IO ()
-notify se (RPCAddress rpcAddr) nvec timeout_s = do
-  hPutStrLn stderr $ unwords ["sending notification to", show rpcAddr, "=>", show nvec, "timeout", show timeout_s]
+notify se (RPCAddress rpcAddr) nvec timeout_s =
   useAsCString rpcAddr $ \caddr -> withArray nvec $ \pnote ->
     allocaBytesAligned #{size struct m0_ha_nvec}
                        #{alignment struct m0_ha_nvec}$ \pnvec -> do
