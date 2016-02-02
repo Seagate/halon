@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes #-}
-module HA.Castor.Tests ( tests, initialData , initialDataAddr, loadInitialData
+module HA.Castor.Tests ( tests, loadInitialData
                        ) where
 
 import Control.Concurrent.MVar
@@ -12,6 +12,7 @@ import Control.Distributed.Process
   , RemoteTable
   , liftIO
   , getSelfNode
+  , say
   , unClosure
   )
 import Control.Distributed.Process.Internal.Types (nullProcessId)
@@ -119,7 +120,9 @@ testFailureSets transport = rGroupTest transport $ \pid -> do
     assertMsg "Next smallest failure set has one disk (200)"
       $ fsSize (failureSets2 !! 1) == 1
   where
-    iData = initialDataGen systemHostname "192.0.2" 1 8 $ CI.Dynamic
+    iData = initialData systemHostname "192.0.2" 1 8
+            $ defaultGlobals { CI.m0_data_units = 4
+                             , CI.m0_failure_set_gen = CI.Dynamic }
 
 testFailureSets2 :: Transport -> IO ()
 testFailureSets2 transport = rGroupTest transport $ \pid -> do
@@ -159,7 +162,8 @@ testFailureSets2 transport = rGroupTest transport $ \pid -> do
     assertMsg "Next smallest failure set has 1 disk and zero controllers (110)"
       $ fsSize (failureSets110 !! 1) == 1
   where
-    iData = initialDataGen systemHostname "192.0.2" 4 4 $ CI.Dynamic
+    iData = initialData systemHostname "192.0.2" 4 4
+            $ defaultGlobals { CI.m0_failure_set_gen = CI.Dynamic }
 
 -- | Load the initial data into local RG and verify that it loads as expected.
 --
@@ -175,17 +179,18 @@ loadInitialData host transport = do
       -- don't use it so it doesn't impact us but in the future we
       -- should also take it as a parameter to the test, just like the
       -- host
-      mapM_ goRack (CI.id_racks (initialDataAddr host "192.0.2.2" 12))
+      mapM_ goRack (CI.id_racks iData)
       filesystem <- initialiseConfInRG
-      loadMeroGlobals (CI.id_m0_globals initialData)
-      loadMeroServers filesystem (CI.id_m0_servers initialData)
+      loadMeroGlobals (CI.id_m0_globals iData)
+      loadMeroServers filesystem (CI.id_m0_servers iData)
       rg <- getLocalGraph
       let Just updateGraph = onInit (simpleStrategy 2 2 1) rg
       rg' <- updateGraph return
       putLocalGraph rg'
     -- Verify that everything is set up correctly
     bmc <- runGet ls' $ findBMCAddress myHost
-    assertMsg "Get BMC Address." $ bmc == Just host
+    say $ "BMC: " ++ show bmc
+    assertMsg "Get BMC Address." $ bmc == Just "192.0.2.1"
     hosts <- runGet ls' $ findHosts ".*"
     assertMsg "Find correct hosts." $ hosts == [myHost]
     hostAttrs <- runGet ls' $ findHostAttrs myHost
@@ -227,8 +232,8 @@ loadInitialData host transport = do
                       , _pa_K = paK
                       , _pa_P = paP
                       } = M0.v_attrs pver
-      assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals initialData) == paN
-      assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals initialData) == paK
+      assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals iData) == paN
+      assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals iData) == paK
       let dver = [ diskv | rackv <- connectedTo  pver M0.IsParentOf g :: [M0.RackV]
                          , enclv <- connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
                          , cntrv <- connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
@@ -240,6 +245,7 @@ loadInitialData host transport = do
     Just g -> return g
   where
     myHost = Host systemHostname
+    iData = initialData systemHostname "192.0.2" 1 12 defaultGlobals
 
 -- | Test that failure domain logic works correctly when we are
 testControllerFailureDomain :: Transport -> IO ()
@@ -299,7 +305,7 @@ testControllerFailureDomain transport = rGroupTest transport $ \pid -> do
                          , diskv <- connectedTo cntrv M0.IsParentOf g :: [M0.DiskV]]
       liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
   where
-    iData = initialDataGen systemHostname "192.0.2" 4 4 $ CI.Preloaded 0 1 0
+    iData = initialData systemHostname "192.0.2" 4 4 defaultGlobals
 
 
 {-

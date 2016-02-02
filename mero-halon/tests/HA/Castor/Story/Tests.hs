@@ -27,7 +27,6 @@ import HA.RecoveryCoordinator.Events.Drive
 import HA.RecoveryCoordinator.Mero (LoopState)
 import HA.RecoveryCoordinator.Rules.Castor
 import qualified HA.ResourceGraph as G
-import HA.Castor.Tests (initialDataAddr)
 import HA.NodeUp (nodeUp)
 import Mero.Notification
 import Mero.Notification.HAState
@@ -77,6 +76,7 @@ import Network.Transport
 import Test.Framework
 import Test.Tasty.HUnit (Assertion, assertEqual)
 import TestRunner
+import Helper.InitialData
 import Helper.SSPL
 import Helper.Environment (systemHostname)
 
@@ -291,8 +291,9 @@ prepareSubscriptions rc rmq = do
 
 loadInitialData :: Process ()
 loadInitialData = let
-    init_msg = initialDataAddr "10.0.2.15" "10.0.2.15" 12
+    init_msg = initialData "10.0.2.15" "10.0.2.15" 1 12 defaultGlobals
   in do
+    debug "loadInitialData"
     nid <- getSelfNode
     -- We populate the graph with confc context.
     _ <- promulgateEQ [nid] init_msg
@@ -302,7 +303,7 @@ loadInitialData = let
 loadInitialDataMod :: (InitialData -> InitialData)
                    -> Process ()
 loadInitialDataMod f = let
-    init_msg = f $ initialDataAddr systemHostname systemHostname 12
+    init_msg = f $ defaultInitialData
   in do
     nid <- getSelfNode
     -- We populate the graph with confc context.

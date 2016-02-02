@@ -54,7 +54,6 @@ import           Helper.Environment (systemHostname)
 import           Control.Monad (when)
 import           Data.Function (on)
 import           Data.List (sortBy)
-import           HA.Castor.Tests (initialDataAddr)
 import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd)
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
@@ -272,9 +271,10 @@ testDriveManagerUpdate transport = runDefaultTest transport $ do
         }
       ]
 #ifdef USE_MERO
-      , CI.id_m0_servers = fmap (\s -> s{CI.m0h_devices = []})
-                                (CI.id_m0_servers Helper.InitialData.initialData)
-      , CI.id_m0_globals = (CI.id_m0_globals Helper.InitialData.initialData)
+      , CI.id_m0_servers =
+          fmap (\s -> s{CI.m0h_devices = []})
+               (CI.id_m0_servers $ Helper.InitialData.initialData systemHostname "192.0.2" 1 12 Helper.InitialData.defaultGlobals)
+      , CI.id_m0_globals = Helper.InitialData.defaultGlobals
                             { CI.m0_failure_set_gen  = CI.Dynamic }
 #endif
       }
@@ -317,7 +317,8 @@ testRCsyncToConfd host transport = do
 
   withTrackingStation testSyncRules $ \_ -> do
 
-    promulgateEQ [nid] (initialDataAddr host host 12) >>= flip withMonitor wait
+    promulgateEQ [nid] Helper.InitialData.defaultInitialData
+      >>= flip withMonitor wait
     "InitialLoad" :: String <- expect
 
     promulgateEQ [nid] SpielSync >>= flip withMonitor wait
@@ -349,7 +350,7 @@ testConfObjectStateQuery host transport =
         nodeUp ([nid], 1000000)
         say "Loading graph."
         void $ promulgateEQ [nid] $
-          Helper.InitialData.initialDataAddr host "192.0.2.2" 12
+          Helper.InitialData.initialData host "192.0.2.2" 1 12 Helper.InitialData.defaultGlobals
         "Loaded initial data" :: String <- expect
         graph <- G.getGraph mm
         let sdevFids = fmap M0.fid (G.getResourcesOfType graph :: [M0.SDev])
