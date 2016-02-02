@@ -410,7 +410,9 @@ ruleDriveRemoved = define "drive-removed" $ do
       markStorageDeviceRemoved disk
 #ifdef USE_MERO
       sd <- lookupStorageDeviceSDev disk
+      phaseLog "debug" $ "Associated storage device: " ++ show sd
       forM_ sd $ \m0sdev -> do
+        phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for device."
         updateDriveState m0sdev M0_NC_TRANSIENT
         msa <- getSpielAddressRC
         forM_ msa $ \_ -> -- verify that info about mero exists.
@@ -420,6 +422,7 @@ ruleDriveRemoved = define "drive-removed" $ do
 #endif
       syncGraphProcess $ \self -> do
         usend self (CommitDriveRemoved nid msg uuid)
+      continue pcommit
 
    setPhase pcommit $ \(CommitDriveRemoved nid msg uuid) -> do
       sendInterestingEvent nid msg
