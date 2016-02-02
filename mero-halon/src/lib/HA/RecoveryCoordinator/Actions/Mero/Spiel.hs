@@ -121,7 +121,7 @@ withRConfRC spiel action = do
   return x
 
 -- | Start the repair operation on the given 'M0.Pool'. Notifies mero
--- with the 'M0_NC_REPAIRING' status.
+-- with the 'M0_NC_REPAIR' status.
 startRepairOperation :: M0.Pool -> PhaseM LoopState l ()
 startRepairOperation pool = go `catch`
     (\e -> do
@@ -133,7 +133,7 @@ startRepairOperation pool = go `catch`
   where
     go = do
       phaseLog "spiel" $ "Starting repair on pool " ++ show pool
-      notifyMero [M0.AnyConfObj pool] M0_NC_REPAIRING
+      notifyMero [M0.AnyConfObj pool] M0_NC_REPAIR
       _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStart sc (M0.fid pool)
       setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure Nothing
 

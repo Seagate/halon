@@ -36,14 +36,34 @@ import GHC.Generics (Generic)
 
 -- | Configuration object states. See "Requirements: Mero failure notification"
 -- document for the semantics of each state.
+--
+-- See @mero/ha/note.h:m0_ha_obj_state@ for the mero definition of
+-- this structure
 data ConfObjectState
     = M0_NC_UNKNOWN
+      -- ^ Object state unknown
     | M0_NC_ONLINE
+      -- ^ Object can be used normally
     | M0_NC_FAILED
+      -- ^ Object has experienced a permanent failure and cannot be
+      -- recovered.
     | M0_NC_TRANSIENT
+      -- ^ Object is experiencing a temporary failure. Halon will
+      -- notify Mero when the object is available for use again.
     | M0_NC_REPAIR
-    | M0_NC_REPAIRING
+      -- ^ This state is only applicable to the pool objects. In this
+      -- state, the pool is undergoing repair, i.e., the process of
+      -- reconstructing data lost due to a failure and storing them in
+      -- spare space.
+    | M0_NC_REPAIRED
+      -- ^ This state is only applicable to the pool objects. In this
+      -- state, the pool device has completed sns repair. Its data is
+      -- re-constructed on its corresponding spare space.
     | M0_NC_REBALANCE
+      -- ^ This state is only applicable to the pool objects.
+      -- Rebalance process is complementary to repair: previously
+      -- reconstructed data is being copied from spare space to the
+      -- replacement storage.
     deriving (Eq, Show, Enum, Typeable, Generic)
 
 instance Binary ConfObjectState

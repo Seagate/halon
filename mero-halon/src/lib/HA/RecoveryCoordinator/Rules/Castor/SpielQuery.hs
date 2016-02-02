@@ -217,7 +217,7 @@ withRepairStatus prt pool uid f = repairStatus prt pool >>= \case
 -- repairing.
 repairedNotificationMsg :: M0.PoolRepairType -> ConfObjectState
 repairedNotificationMsg M0.Rebalance = M0_NC_ONLINE
-repairedNotificationMsg M0.Failure = M0_NC_REPAIR
+repairedNotificationMsg M0.Failure = M0_NC_REPAIRED
 
 -- | Just like 'repairedNotificationMessage', dispatch the appropriate
 -- status checking routine depending on whether we're rebalancing or
