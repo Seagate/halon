@@ -27,3 +27,5 @@ packages:
   replicated-log:
     testable: false
 
+  aeson-pretty:
+    configure: --flags="-lib-only"
