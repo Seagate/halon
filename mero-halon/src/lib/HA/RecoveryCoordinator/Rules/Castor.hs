@@ -254,7 +254,21 @@ ruleMeroNoteSet = do
             Just pool -> getPoolRepairStatus pool >>= \case
               Nothing -> phaseLog "warning" $ "Got M0_NC_ONLINE for a pool but "
                                            ++ "no pool repair status was found."
-              Just (M0.PoolRepairStatus prt _) -> queryStartHandling pool prt
+              Just (M0.PoolRepairStatus prt _)
+                | prt == M0.Rebalance -> do
+                phaseLog "repair" $ "Got M0_NC_ONLINE for a pool that is rebalancing."
+                queryStartHandling pool prt
+              _ -> phaseLog "repair" $ "Got M0_NC_ONLINE but pool is repairing now."
+          M0_NC_REPAIRED -> lookupConfObjByFid mfid >>= \case
+            Nothing -> return ()
+            Just pool -> getPoolRepairStatus pool >>= \case
+              Nothing -> phaseLog "warning" $ "Got M0_NC_REPAIRED for a pool but "
+                                           ++ "no pool repair status was found."
+              Just (M0.PoolRepairStatus prt _)
+                | prt == M0.Failure -> do
+                phaseLog "repair" $ "Got M0_NC_REPAIRED for a pool that is repairing."
+                queryStartHandling pool prt
+              _ -> phaseLog "repair" $ "Got M0_NC_REPAIRED but pool is rebalancing now."
 
           _ -> return ()
       messageProcessed uid
