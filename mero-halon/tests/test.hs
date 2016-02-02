@@ -82,8 +82,10 @@ ut _host transport breakConnection = do
       , HA.Test.Cluster.tests transport
       , testGroup "mero" $
           HA.RecoveryCoordinator.Mero.Tests.tests _host transport
-      , MERO_TEST(testGroup,"Castor",HA.Castor.Tests.tests _host transport, [])
-      , MERO_TEST(testGroup, "DriveFailure", driveFailureTests transport, [])
+      , MERO_TEST(testGroup,"Castor",HA.Castor.Tests.tests _host transport
+                 , [testCase "Ignore me" $ return ()])
+      , MERO_TEST( testGroup, "DriveFailure", driveFailureTests transport
+                 , [testCase "Ignore me" $ return ()])
       , testGroup "disconnect" $
         [ MERO_TEST(testCase, "testRejoinTimeout", HA.Test.Disconnect.testRejoinTimeout _host transport breakConnection, return ())
         , MERO_TEST(testCase, "testRejoin", HA.Test.Disconnect.testRejoin _host transport breakConnection, return ())
@@ -97,7 +99,10 @@ ut _host transport breakConnection = do
               HA.Test.Disconnect.testDisconnect transport breakConnection
 #endif
         ]
-      , MOCK_TEST(testGroup,"Service-SSPL",HA.RecoveryCoordinator.SSPL.Tests.utTests transport, [])
+      , MOCK_TEST( testGroup, "Service-SSPL"
+                 , HA.RecoveryCoordinator.SSPL.Tests.utTests transport
+                 , [testCase "Ignore me" $ return ()]
+                 )
       , ssplTest transport
       ]
 
