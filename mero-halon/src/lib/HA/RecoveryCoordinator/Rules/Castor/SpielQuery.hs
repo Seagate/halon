@@ -48,6 +48,7 @@ import           Control.Monad
 import           Data.Binary (Binary)
 import           Data.Foldable
 import           Data.Typeable (Typeable)
+import qualified Data.UUID as UUID
 import           GHC.Generics (Generic)
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
@@ -85,22 +86,42 @@ instance Binary SpielQueryHourly
 -- to help us out.
 queryStartHandling :: M0.Pool -> M0.PoolRepairType -> PhaseM LoopState l ()
 queryStartHandling pool prt = do
+  phaseLog "repair" $ show prt ++ " on pool " ++ show pool
   possiblyInitialisePRI pool
-  incrementOnlinePRSResponse pool
-  Just pri <- getPoolRepairInformation pool
   iosvs <- length <$> getIOServices pool
-  if -- This is the first and only notification, notify about finished
-     -- repairs and unset PRS
-    | priOnlineNotifications pri == 1 && iosvs == 1 -> do
-         notifyMero [AnyConfObj pool] $ repairedNotificationMsg prt
-         unsetPoolRepairStatus pool
-     -- This is the first of many notifications, start query in 5
-     -- minutes.
-     | priOnlineNotifications pri == 1 && iosvs > 1 ->
-         selfMessage $ SpielQuery pool prt
-     -- This is not the first notification so we have already
-     -- dispatched a query before, do nothing.
-     | otherwise -> return ()
+  phaseLog "repair" $ "IO services count: " ++ show iosvs
+  case prt of
+    M0.Failure -> do -- repair
+      withRepairStatus prt pool UUID.nil $ \sts -> do
+        let onlines = length $ filterCompletedRepairs sts
+        modifyPoolRepairInformation pool $ \pri ->
+          pri { priOnlineNotifications = onlines }
+        Just pri <- getPoolRepairInformation pool
+        if priOnlineNotifications pri >= iosvs 
+           then do
+             unsetPoolRepairStatus pool
+             notifyMero [AnyConfObj pool] $ repairedNotificationMsg prt
+           else do
+             updatePoolRepairStatusTime pool
+             selfMessage $ SpielQuery pool prt
+    M0.Rebalance -> do
+      incrementOnlinePRSResponse pool
+      Just pri <- getPoolRepairInformation pool
+      -- XXX: old procedure
+      if -- This is the first and only notification, notify about finished
+         -- repairs and unset PRS
+        | priOnlineNotifications pri == 1 && iosvs == 1 -> do
+             -- we don't know if this notification is from right repair or not
+             notifyMero [AnyConfObj pool] $ repairedNotificationMsg prt
+             unsetPoolRepairStatus pool
+         -- This is the first of many notifications, start query in 5
+         -- minutes.
+         | priOnlineNotifications pri == 1 && iosvs > 1 -> do
+             phaseLog "repair" "we were waiting only for one notification, waiting for other IO services."
+             selfMessage $ SpielQuery pool prt
+         -- This is not the first notification so we have already
+         -- dispatched a query before, do nothing.
+         | otherwise -> return ()
 
 -- | This function does basic checking of whether we're done
 -- repairing/rebalancing as well as handling time related matters.
@@ -127,6 +148,7 @@ querySpiel = define "query-spiel" $ do
   runQuery <- phaseHandle "run-query"
 
   setPhase dispatchQuery $ \(HAEvent uid (SpielQuery pool prt) _) -> do
+    phaseLog "DEBUG" "request status"
     startProcessingMsg uid
     put Local $ Just (uid, pool, prt)
     getPoolRepairInformation pool >>= \case
@@ -136,7 +158,7 @@ querySpiel = define "query-spiel" $ do
       Just pri -> do
         timeNow <- liftIO getTime
         let elapsed = timeNow - priTimeOfFirstCompletion pri
-            untilTimeout = 300 - elapsed
+            untilTimeout = 20 - elapsed
         iosvs <- length <$> getIOServices pool
         if priOnlineNotifications pri < iosvs
         then switch [timeout (timeSpecToSeconds untilTimeout) runQuery]
@@ -145,6 +167,7 @@ querySpiel = define "query-spiel" $ do
                 messageProcessed uid
 
   directly runQuery $ do
+    phaseLog "DEBUG" "request status"
     Just (uid, pool, prt) <- get Local
     iosvs <- length <$> getIOServices pool
     withRepairStatus prt pool uid $ \sts -> do
@@ -181,11 +204,13 @@ querySpielHourly = define "query-spiel-hourly" $ do
     iosvs <- length <$> getIOServices pool
     Just pri <- getPoolRepairInformation pool
     let completeRepair = do notifyMero [AnyConfObj pool] $ repairedNotificationMsg prt
+                            phaseLog "DEBUG" "complete repair"
                             unsetPoolRepairStatus pool
                             messageProcessed uid
     case priOnlineNotifications pri < iosvs of
       False -> completeRepair
       True -> withRepairStatus prt pool uid $ \sts -> do
+        phaseLog "DEBUG" "request status"
         -- is 'filterCompletedRepairs' relevant for rebalancing too?
         -- If not, how do we handle this query?
         let onlines = length $ filterCompletedRepairs sts

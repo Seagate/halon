@@ -249,7 +249,9 @@ ruleMeroNoteSet = do
             Just pool -> getPoolRepairStatus pool >>= \case
               Nothing -> phaseLog "warning" $ "Got M0_NC_ONLINE for a pool but "
                                            ++ "no pool repair status was found."
-              Just (M0.PoolRepairStatus prt _) -> queryStartHandling pool prt
+              Just (M0.PoolRepairStatus prt _) -> do
+                phaseLog "repair" $ "Got M0_NC_INLINE for a pool that is repairing."
+                queryStartHandling pool prt
 
           _ -> return ()
       messageProcessed uid
