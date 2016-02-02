@@ -66,6 +66,7 @@ import Data.Text (append, pack)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Maybe (isNothing)
 import Data.Defaultable
+import qualified Data.UUID as UUID
 
 import GHC.Generics (Generic)
 
@@ -81,7 +82,7 @@ import Helper.SSPL
 import Helper.Environment (systemHostname)
 
 debug :: String -> Process ()
-debug = say
+debug = liftIO . appendFile "/tmp/debug.log" . (++ "\n")
 
 myRemoteTable :: RemoteTable
 myRemoteTable = TestRunner.__remoteTableDecl remoteTable
@@ -90,7 +91,7 @@ newtype MockM0 = MockM0 DeclareMeroChannel
   deriving (Binary, Generic, Hashable, Typeable)
 
 mockMeroConf :: MeroConf
-mockMeroConf = MeroConf "" "" (MeroKernelConf (error "mock"))
+mockMeroConf = MeroConf "" "" (MeroKernelConf UUID.nil)
 
 newMeroChannel :: ProcessId -> Process (ReceivePort NotificationMessage, MockM0)
 newMeroChannel pid = do
