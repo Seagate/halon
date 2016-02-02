@@ -33,6 +33,8 @@ import qualified HA.Resources.Castor.Initial as CI
 import HA.ResourceGraph hiding (__remoteTable)
 import HA.Services.SSPL
 import SSPL.Bindings
+
+import Helper.InitialData
 import Helper.SSPL
 import Helper.RC
 
@@ -102,10 +104,10 @@ mkHpiTest mkTestRule test transport = rGroupTest transport $ \pid -> do
     self <- getSelfPid
     ls <- emptyLoopState pid self
     (ls',_)  <- run ls $ do
-            mapM_ goRack (CI.id_racks initialData)
+            mapM_ goRack (CI.id_racks myInitialData)
             filesystem <- initialiseConfInRG
-            loadMeroGlobals (CI.id_m0_globals initialData)
-            loadMeroServers filesystem (CI.id_m0_servers initialData)
+            loadMeroGlobals (CI.id_m0_globals myInitialData)
+            loadMeroServers filesystem (CI.id_m0_servers myInitialData)
     let testRule = mkTestRule self
     rc <- spawnLocal $ execute ls' (testRule >> ssplRules)
     test rc
@@ -295,84 +297,6 @@ run :: forall g. g
     -> Process (g, [(Buffer, Int)])
 run ls = runPhase ls (0 :: Int) emptyFifoBuffer
 
-initialDataAddr :: String -> String -> Int -> CI.InitialData
-initialDataAddr host ifaddr n = CI.InitialData {
-  CI.id_racks = [
-    CI.Rack {
-      CI.rack_idx = 1
-    , CI.rack_enclosures = [
-        CI.Enclosure {
-          CI.enc_idx = 1
-        , CI.enc_id = "enclosure1"
-        , CI.enc_bmc = [CI.BMC host "admin" "admin"]
-        , CI.enc_hosts = [
-            CI.Host {
-              CI.h_fqdn = "primus.example.com"
-            , CI.h_memsize = 4096
-            , CI.h_cpucount = 8
-            , CI.h_interfaces = [
-                CI.Interface {
-                  CI.if_macAddress = "10-00-00-00-00"
-                , CI.if_network = CI.Data
-                , CI.if_ipAddrs = [ifaddr]
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    }
-  ]
-, CI.id_m0_globals = CI.M0Globals {
-    CI.m0_data_units = 8
-  , CI.m0_parity_units = 2
-  , CI.m0_md_redundancy = 2
-  , CI.m0_failure_set_gen = CI.Preloaded 0 1 0
-  }
-, CI.id_m0_servers = [
-    CI.M0Host {
-      CI.m0h_fqdn = "primus.example.com"
-    , CI.m0h_processes = [
-        CI.M0Process {
-          CI.m0p_endpoint = host ++ "@tcp:12345:41:901"
-        , CI.m0p_mem_as = 1
-        , CI.m0p_mem_rss = 1
-        , CI.m0p_mem_stack = 1
-        , CI.m0p_mem_memlock = 1
-        , CI.m0p_cores = [1]
-        , CI.m0p_services = [
-            CI.M0Service {
-              CI.m0s_type = CST_MGS
-            , CI.m0s_endpoints = [host ++ "@tcp:12345:44:101"]
-            , CI.m0s_params = SPConfDBPath "/var/mero/confd"
-            }
-          , CI.M0Service {
-              CI.m0s_type = CST_RMS
-            , CI.m0s_endpoints = [host ++ "@tcp:12345:41:301"]
-            , CI.m0s_params = SPUnused
-            }
-          , CI.M0Service {
-              CI.m0s_type = CST_MDS
-            , CI.m0s_endpoints = [host ++ "@tcp:12345:41:201"]
-            , CI.m0s_params = SPUnused
-            }
-          , CI.M0Service {
-              CI.m0s_type = CST_IOS
-            , CI.m0s_endpoints = [host ++ "@tcp:12345:41:401"]
-            , CI.m0s_params = SPUnused
-            }
-          ]
-        }
-    ]
-    , CI.m0h_devices = fmap
-        (\i -> CI.M0Device ("wwn" ++ show i) 4 64000 ("/dev/loop" ++ show i))
-        [(1 :: Int) .. n]
-    }
-  ]
-}
-
-
-
 -- | Sample initial data for test purposes
-initialData :: CI.InitialData
-initialData = initialDataAddr "192.0.2.1" "192.0.2.2" 8
+myInitialData :: CI.InitialData
+myInitialData = initialData "192.0.2.1" "192.0.2.2" 1 12 defaultGlobals

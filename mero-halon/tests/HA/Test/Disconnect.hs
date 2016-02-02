@@ -50,7 +50,7 @@ import GHC.Generics
 import TestRunner
 
 #ifdef USE_MERO
-import HA.Castor.Tests (initialDataAddr)
+import Helper.InitialData (defaultInitialData)
 #endif
 
 -- | message used to tell the RC to die, used in 'testRejoinRCDeath'
@@ -239,7 +239,7 @@ testRejoinTimeout _host baseTransport connectionBreak = withTmpDirectory $ do
 
 #ifdef USE_MERO
       let wait = void (expect :: Process ProcessMonitorNotification)
-      promulgateEQ [localNodeId m1] (initialDataAddr _host _host 12) >>= (`withMonitor` wait)
+      promulgateEQ [localNodeId m1] defaultInitialData >>= (`withMonitor` wait)
       receiveWait [ matchIf (("InitialLoad" :: String) ==) $ const $ return () ]
 #endif
 
@@ -301,7 +301,7 @@ testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
 
 #ifdef USE_MERO
       let wait = void (expect :: Process ProcessMonitorNotification)
-      promulgateEQ [localNodeId m1] (initialDataAddr _host _host 12) >>= (`withMonitor` wait)
+      promulgateEQ [localNodeId m1] defaultInitialData >>= (`withMonitor` wait)
       receiveWait [ matchIf (("InitialLoad" :: String) ==) $ const $ return () ]
 #endif
 
@@ -371,7 +371,7 @@ testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
 
 #ifdef USE_MERO
       let wait = void (expect :: Process ProcessMonitorNotification)
-      promulgateEQ [localNodeId m1] (initialDataAddr _host _host 12) >>= (`withMonitor` wait)
+      promulgateEQ [localNodeId m1] defaultInitialData >>= (`withMonitor` wait)
       receiveWait [ matchIf (("InitialLoad" :: String) ==) $ const $ return () ]
 #endif
 
