@@ -44,6 +44,9 @@ import HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState(..))
 import HA.Services.Mero (notifyMero)
+import HA.EventQueue.Producer (promulgate)
+import Mero.Notification (Set(..))
+import Mero.Notification.HAState (Note(..), NVec) 
 
 import Mero.ConfC
   ( PDClustAttr(..)
@@ -137,6 +140,15 @@ startRepairOperation pool = go `catch`
       notifyMero [M0.AnyConfObj pool] M0_NC_REPAIR
       _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStart sc (M0.fid pool)
       setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure Nothing
+      -- XXX: This is a workaround until mero will implement online notification for
+      --      pool after repair/rebalance. This code should never hit the master
+      --      branch.
+      liftProcess $ DP.spawnLocal $ do
+        DP.receiveTimeout (60*1000000) []
+        promulgate $ Set [Note (M0.fid pool) M0_NC_REPAIRED]
+        return ()
+      return ()
+      -- END of XXX
 
 -- | Retrieves the repair 'SnsStatus' of the given 'M0.Pool'.
 statusOfRepairOperation :: M0.Pool
