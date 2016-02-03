@@ -155,18 +155,19 @@ writeSysconfig :: MeroConf
                -> Maybe String -- ^ Confd address?
                -> IO String
 writeSysconfig MeroConf{..} run procFid m0addr confdPath = do
-    putStrLn $ "m0d: Writing sysctlFile: " ++ prefix ++ fidToStr procFid
-    _ <- SystemD.sysctlFile (prefix ++ fidToStr procFid) $
+    putStrLn $ "m0d: Writing sysctlFile: " ++ fileName
+    _ <- SystemD.sysctlFile fileName $
       [ ("MERO_" ++ fmap toUpper prefix ++ "_EP", m0addr)
       , ("MERO_HA_EP", mcHAAddress)
       , ("MERO_PROFILE_FID", mcProfile)
       ] ++ maybeToList (("MERO_CONF_XC",) <$> confdPath)
     return $ unit
   where
+    fileName = prefix ++ "-" ++ fidToStr procFid
     (prefix, unit) = case run of
-      M0T1FS -> ("m0t1fs-", "m0t1fs@")
-      M0D -> ("m0d-", "m0d@")
-      M0MKFS -> ("m0d-", "mero-mkfs@")
+      M0T1FS -> ("m0t1fs", "m0t1fs@")
+      M0D -> ("m0d", "m0d@")
+      M0MKFS -> ("m0d", "mero-mkfs@")
 
 remotableDecl [ [d|
 
