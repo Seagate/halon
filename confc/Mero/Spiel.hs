@@ -164,13 +164,14 @@ withTransaction sc f = bracket
   (\t -> f t >>= \x -> commitTransaction t >> return x)
 
 dumpTransaction :: SpielTransaction
-                -> FilePath
+                -> Word64 -- ^ Version number
+                -> FilePath -- ^ File to dump to
                 -> IO ()
-dumpTransaction (SpielTransaction ptr) fp = withForeignPtr ptr $ \c_ptr -> do
+dumpTransaction (SpielTransaction ptr) verno fp = withForeignPtr ptr $ \c_ptr -> do
   valid <- Errno . negate <$> c_spiel_tx_validate c_ptr
   case valid of
     x | x == eOK -> throwIfNonZero_ (\rc -> "Cannot dump Spiel transaction: " ++ show rc)
-      $ withCString fp $ \c_fp -> c_spiel_tx_dump c_ptr c_fp
+      $ withCString fp $ \c_fp -> c_spiel_tx_dump c_ptr verno c_fp
     x | x == eBUSY -> error "Not all objects are ready."
     x | x == eNOENT -> error "Not all objects have a parent."
     (Errno x) -> error $ "Unknown error return: " ++ show x
@@ -179,11 +180,11 @@ dumpTransaction (SpielTransaction ptr) fp = withForeignPtr ptr $ \c_ptr -> do
 -- but it's possible to run it without setting rpc server, creating confd connection,
 -- or spiel context. Usafe of 'commitTransaction' functions will lead to undefined
 -- behavior.
-withTransactionDump :: FilePath -> (SpielTransaction -> IO a) -> IO a
-withTransactionDump fp transaction = bracket
+withTransactionDump :: FilePath -> Word64 -> (SpielTransaction -> IO a) -> IO a
+withTransactionDump fp verno transaction = bracket
   openLocalTransaction
   closeTransaction
-  $ \t -> transaction t >>= \x -> dumpTransaction t fp >> return x
+  $ \t -> transaction t >>= \x -> dumpTransaction t verno fp >> return x
 
 -- | Open transaction that doesn't require communication with conf or rms service.
 -- Such transaction can be run in non privileged mode without prior creation of

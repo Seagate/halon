@@ -385,17 +385,24 @@ data ProcessLabel =
 instance Binary ProcessLabel
 instance Hashable ProcessLabel
 
+newtype ConfUpdateVersion = ConfUpdateVersion Word64
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary ConfUpdateVersion
+instance Hashable ConfUpdateVersion
+
 $(mkDicts
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
-  , ''HostHardwareInfo, ''ProcessLabel
+  , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
   , (''Root, ''IsParentOf, ''Profile)
   , (''R.Cluster, ''R.Has, ''Profile)
+  , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
   , (''Controller, ''At, ''R.Host)
   , (''Rack, ''At, ''R.Rack)
   , (''Enclosure, ''At, ''R.Enclosure)
@@ -439,12 +446,13 @@ $(mkResRel
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
-  , ''HostHardwareInfo, ''ProcessLabel
+  , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
   , (''Root, ''IsParentOf, ''Profile)
   , (''R.Cluster, ''R.Has, ''Profile)
+  , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
   , (''Controller, ''At, ''R.Host)
   , (''Rack, ''At, ''R.Rack)
   , (''Enclosure, ''At, ''R.Enclosure)
