@@ -8,21 +8,25 @@
 --
 module HA.Services.Mero.Types where
 
-import Data.Typeable (Typeable)
-import GHC.Generics (Generic)
+import HA.ResourceGraph
+import HA.Service
+import HA.Service.TH
+
+import Mero.ConfC (Fid)
+import Mero.Notification (Set)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
+
 import Data.Binary (Binary)
 import Data.ByteString (ByteString)
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
+import Data.Typeable (Typeable)
 import Data.UUID as UUID
 
-import HA.ResourceGraph
-import HA.Service
-import HA.Service.TH
-import Mero.Notification (Set)
+import GHC.Generics (Generic)
+
 import Options.Schema
 import Options.Schema.Builder
 
@@ -38,26 +42,10 @@ data MeroConf = MeroConf
        { mcHAAddress        :: String         -- ^ Address of the HA service endpoint
        , mcProfile          :: String         -- ^ FID of the current profile
        , mcKernelConfig     :: MeroKernelConf -- ^ Kernel configuration
-       , mcServiceConf      :: MeroNodeConf   -- ^ Node configuration
        }
    deriving (Eq, Generic, Show, Typeable)
 instance Binary MeroConf
 instance Hashable MeroConf
-
--- | Node configuration
-data MeroNodeConf = MeroClientConf { mccProcessFid :: String
-                                   , mccMeroEndpoint :: String
-                                   }
-                  | MeroServerConf { mscConfString :: Maybe (ByteString, String)
-                                   -- ^ If confd is meant to run on
-                                   -- the host, pass the conf file
-                                   -- content and process fid
-                                   , mscMeroEndpoint :: String
-                                   }
-  deriving (Eq, Generic, Show, Typeable)
-
-instance Binary MeroNodeConf
-instance Hashable MeroNodeConf
 
 newtype TypedChannel a = TypedChannel (SendPort a)
     deriving (Eq, Show, Typeable, Binary, Hashable)
@@ -75,10 +63,49 @@ data NotificationMessage = NotificationMessage
 instance Binary NotificationMessage
 instance Hashable NotificationMessage
 
+-- | How to run a particular Mero Process. Processes can be hosted
+--   in three ways:
+--   - As part of the kernel (m0t1fs)
+--   - As an ephemeral 'mkfs' process (mkfs)
+--   - As a regular user-space m0d process (m0d)
+data ProcessRunType =
+    M0D -- ^ Run 'm0d' service.
+  | M0T1FS -- ^ Run 'm0t1fs' service.
+  | M0MKFS -- ^ Run 'mero-mkfs' service.
+  deriving (Eq, Show, Typeable, Generic)
+instance Binary ProcessRunType
+instance Hashable ProcessRunType
+
+-- | m0d Process configuration type.
+--   A process may either fetch its configuration from local conf.xc file,
+--   or it may connect to a confd server.
+data ProcessConfig =
+    ProcessConfigLocal Fid String ByteString -- ^ Process fid, endpoint, conf.xc
+  | ProcessConfigRemote Fid String -- ^ Process fid, endpoint
+  deriving (Eq, Show, Typeable, Generic)
+instance Binary ProcessConfig
+instance Hashable ProcessConfig
+
+-- | Control system level m0d processes.
+data ProcessControlMsg =
+    StartProcesses [(ProcessRunType, ProcessConfig)]
+  deriving (Eq, Show, Typeable, Generic)
+instance Binary ProcessControlMsg
+instance Hashable ProcessControlMsg
+
+-- | Result of a process control invocation. Either it succeeded, or
+--   it failed with a message.
+data ProcessControlResultMsg =
+    ProcessControlResultMsg NodeId [Either Fid (Fid, String)]
+  deriving (Eq, Generic, Show, Typeable)
+instance Binary ProcessControlResultMsg
+instance Hashable ProcessControlResultMsg
+
 data DeclareMeroChannel =
     DeclareMeroChannel
     { dmcPid     :: !(ServiceProcess MeroConf)
     , dmcChannel :: !(TypedChannel NotificationMessage)
+    , dmcCtrlChannel :: !(TypedChannel ProcessControlMsg)
     }
     deriving (Generic, Typeable)
 
@@ -88,13 +115,21 @@ instance Hashable DeclareMeroChannel
 resourceDictMeroChannel :: Dict (Resource (TypedChannel NotificationMessage))
 resourceDictMeroChannel = Dict
 
+resourceDictControlChannel :: Dict (Resource (TypedChannel ProcessControlMsg))
+resourceDictControlChannel = Dict
+
 relationDictMeroChanelServiceProcessChannel :: Dict (
     Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel NotificationMessage)
   )
 relationDictMeroChanelServiceProcessChannel = Dict
 
+relationDictMeroChanelServiceProcessControlChannel :: Dict (
+    Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel ProcessControlMsg)
+  )
+relationDictMeroChanelServiceProcessControlChannel = Dict
+
 meroSchema :: Schema MeroConf
-meroSchema = MeroConf <$> ha <*> pr <*> ker <*> node
+meroSchema = MeroConf <$> ha <*> pr <*> ker
   where
     ha = strOption
           $  long "listenAddr"
@@ -107,15 +142,6 @@ meroSchema = MeroConf <$> ha <*> pr <*> ker <*> node
           <> metavar "MERO_ADDRESS"
           <> summary "confd profile"
     ker = compositeOption kernelSchema $ long "kernel" <> summary "Kernel configuration"
-    node = oneOf [client]
-    client = compositeOption clientOpts $ long "client" <> summary "client node"
-    clientOpts = MeroClientConf <$> fid <*> mero
-    fid = strOption
-           $ long "fid"
-           <> metavar "FID"
-    mero = strOption
-            $ long "mero"
-            <> metavar "ENDPOINT"
 
 kernelSchema :: Schema MeroKernelConf
 kernelSchema = MeroKernelConf <$> uuid
@@ -125,17 +151,24 @@ kernelSchema = MeroKernelConf <$> uuid
             <> short 'u'
             <> metavar "UUID"
 
-
 $(generateDicts ''MeroConf)
 $(deriveService ''MeroConf 'meroSchema [ 'resourceDictMeroChannel
+                                       , 'resourceDictControlChannel
                                        , 'relationDictMeroChanelServiceProcessChannel
+                                       , 'relationDictMeroChanelServiceProcessControlChannel
                                        ])
 
 instance Resource (TypedChannel NotificationMessage) where
     resourceDict = $(mkStatic 'resourceDictMeroChannel)
 
+instance Resource (TypedChannel ProcessControlMsg) where
+    resourceDict = $(mkStatic 'resourceDictControlChannel)
+
 instance Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel NotificationMessage) where
     relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessChannel)
+
+instance Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel ProcessControlMsg) where
+    relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessControlChannel)
 
 meroServiceName :: ServiceName
 meroServiceName = ServiceName "m0d"

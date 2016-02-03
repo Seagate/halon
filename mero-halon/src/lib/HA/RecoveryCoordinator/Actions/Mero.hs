@@ -1,5 +1,7 @@
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NoMonomorphismRestriction  #-}
+{-# LANGUAGE TupleSections              #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -10,10 +12,10 @@ module HA.RecoveryCoordinator.Actions.Mero
   , module HA.RecoveryCoordinator.Actions.Mero.Core
   , module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , updateDriveState
-  , storeMeroNodeInfo
-  , startMeroClientService
-  , startMeroServerService
-  , getMeroServiceInfo
+  , createMeroKernelConfig
+  , createMeroClientConfig
+  , startMeroService
+  , startNodeProcesses
   )
 where
 
@@ -35,14 +37,22 @@ import HA.Services.Mero
 import Mero.ConfC
 
 import Control.Category
-import Control.Monad.IO.Class
+import Control.Distributed.Process
+import Control.Monad (forM, join)
+
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import Data.Foldable (forM_)
 import Data.Proxy
-import Data.Maybe (listToMaybe, isJust)
+import Data.Maybe (listToMaybe)
 import Data.UUID.V4 (nextRandom)
-import System.Posix.SysInfo
+
 import Network.CEP
+
+import System.Directory
+import System.IO
+import System.Posix.SysInfo
+
 import Prelude hiding ((.))
 
 updateDriveState :: M0.SDev -- ^ Drive to update state
@@ -85,16 +95,31 @@ rmsAddress = ":12345:41:301"
 haAddress :: String
 haAddress = ":12345:35:101"
 
--- | Store information about mero host in Resource Graph.
+-- | Create the necessary configuration in the resource graph to support
+--   loading the Mero kernel. Currently this consists of creating a unique node
+--   UUID and storing the LNet nid.
+createMeroKernelConfig :: Castor.Host
+                       -> String -- ^ LNet interface address
+                       -> PhaseM LoopState a ()
+createMeroKernelConfig host lnid = modifyLocalGraph $ \rg -> do
+  uuid <- liftIO nextRandom
+  return  $ G.newResource uuid
+        >>> G.newResource (M0.LNid lnid)
+        >>> G.connect host Has (M0.LNid lnid)
+        >>> G.connectUnique host Has uuid
+          $ rg
+
+-- | Create relevant configuration for a mero client in the RG.
 --
 -- If the 'Host' already contains all the required information, no new
 -- information will be added.
-storeMeroNodeInfo :: M0.Filesystem -> Castor.Host -> HostHardwareInfo
-                  -> Castor.HostAttr -- ^ Attribute to attach, client/server
-                  -> PhaseM LoopState a ()
-storeMeroNodeInfo fs host (HostHardwareInfo memsize cpucnt nid) hattr =
+createMeroClientConfig :: M0.Filesystem
+                        -> Castor.Host
+                        -> HostHardwareInfo
+                        -> PhaseM LoopState a ()
+createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
+  createMeroKernelConfig host nid
   modifyLocalGraph $ \rg -> do
-    uuid <- liftIO nextRandom
     -- Check if node is already defined in RG
     m0node <- case listToMaybe [ n | (c :: M0.Controller) <- G.connectedFrom M0.At host rg
                                    , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
@@ -142,62 +167,72 @@ storeMeroNodeInfo fs host (HostHardwareInfo memsize cpucnt nid) hattr =
           >>> G.connect m0node M0.IsParentOf process
           >>> G.connect process M0.IsParentOf rmsService
           >>> G.connect process M0.IsParentOf haService
+          >>> G.connect process Has M0.PLM0t1fs
           >>> G.connect fs M0.IsParentOf m0node
-          >>> G.connect host Has hattr
-          >>> G.connect host Has (M0.LNid nid)
+          >>> G.connect host Has Castor.HA_M0CLIENT
           >>> G.connect host Runs m0node
-          >>> G.connectUnique host Has uuid
             $ rg
     return rg'
 
--- | Query the RG to find the information needed by the various
--- @m0d-<fid>@ services.
---
--- returns @(HA address, profile, service process of this host)@
-getMeroServiceInfo :: Castor.Host
-                   -> PhaseM LoopState l (Maybe (String, M0.Profile, M0.Process))
-getMeroServiceInfo host = do
-  mprofile <- Conf.getProfile
-  rg <- getLocalGraph
-  return $ do
-    M0.LNid lnid <- listToMaybe . G.connectedTo host Has $ rg
-    profileFid <- mprofile
-    process <- listToMaybe [ process
-                           | m0node <- G.connectedTo host Runs rg :: [M0.Node]
-                           , process <- G.connectedTo m0node M0.IsParentOf rg
-                           ]
-    return (lnid ++ haAddress, profileFid, process)
+-- | Retrieve the conf file contents so they can be sent to the nodes
+-- and stored there before confd and RM are brought up.
+syncConfToBS :: PhaseM LoopState l ByteString
+syncConfToBS = do
+  fp <- liftIO $ do
+    tmpdir <- getTemporaryDirectory
+    (fp, h) <- openTempFile tmpdir "conf.xc"
+    hClose h >> return fp
+  syncAction Nothing $ M0.SyncDumpToFile fp
+  conf <- liftIO $ BS.readFile fp
+  liftIO $ BS.length conf `seq` removeFile fp
+  return conf
 
-startMeroServerService :: Castor.Host -> Res.Node
-                       -> Maybe ByteString
-                       -> PhaseM LoopState a ()
-startMeroServerService host node confString = do
-  phaseLog "startMeroServerService"
-         $ "Trying to start mero service on " ++ show (host, node)
-  rg <- getLocalGraph
-  minfo <- getMeroServiceInfo host
-  let mmsg = do
-       (fullHaAddr, profile, process) <- minfo
-       uuid <- listToMaybe $ G.connectedTo host Has rg
-       let processId = fidToStr $ M0.fid process
-           servconf = fmap (,processId) confString
-           conf = MeroConf fullHaAddr (fidToStr $ M0.fid profile)
-                    (MeroKernelConf uuid)
-                    (MeroServerConf servconf (M0.r_endpoint process))
-       return $ encodeP $ ServiceStartRequest Start node m0d conf []
-  phaseLog "startMeroServerService" $ "Got msg: " ++ show (isJust mmsg)
-  forM_ mmsg promulgateRC
-
-startMeroClientService :: Castor.Host -> Res.Node -> PhaseM LoopState a ()
-startMeroClientService host node = do
+-- | Start all Mero processes labelled with the specified process label on
+--   a given node.
+startNodeProcesses :: Castor.Host
+                   -> (TypedChannel ProcessControlMsg)
+                   -> M0.ProcessLabel
+                   -> Bool -- ^ Run mkfs? Ignored for m0t1fs processes.
+                   -> PhaseM LoopState a ()
+startNodeProcesses host (TypedChannel chan) label mkfs = do
+    phaseLog "action" $ "Trying to start all processes with label "
+                      ++ show label
+                      ++ " on host "
+                      ++ show host
     rg <- getLocalGraph
-    minfo <- getMeroServiceInfo host
-    let mmsg = do
-         (fullHaAddr, profile, process) <- minfo
-         uuid <- listToMaybe $ G.connectedTo host Has rg
-         let processId = fidToStr $ M0.fid process
-             conf = MeroConf fullHaAddr (fidToStr $ M0.fid profile)
-                      (MeroKernelConf uuid)
-                      (MeroClientConf processId (M0.r_endpoint process))
-         return $ encodeP $ ServiceStartRequest Start node m0d conf []
-    forM_ mmsg promulgateRC
+    let procs =  [ p
+                 | m0node <- G.connectedTo host Runs rg :: [M0.Node]
+                 , p <- G.connectedTo m0node M0.IsParentOf rg
+                 , G.isConnected p Has label rg
+                 ]
+    msg <- StartProcesses <$> case (label, mkfs) of
+            (M0.PLM0t1fs, _) -> forM procs $ (\proc -> (M0T1FS,) <$> runConfig proc rg)
+            (_, True) -> join <$> forM procs
+                          (\proc -> (\x -> [(M0MKFS,x), (M0D, x)])
+                            <$> runConfig proc rg)
+            (_, False) -> forM procs $ (\proc -> (M0D,) <$> runConfig proc rg)
+    liftProcess $ sendChan chan msg
+  where
+    runConfig proc rg = case runsMgs proc rg of
+      True -> syncConfToBS >>= \bs -> return $
+                ProcessConfigLocal (M0.fid proc) (M0.r_endpoint proc) bs
+      False -> return $ ProcessConfigRemote (M0.fid proc) (M0.r_endpoint proc)
+    runsMgs proc rg =
+      not . null $ [ () | M0.Service{ M0.s_type = CST_MGS }
+                          <- G.connectedTo proc M0.IsParentOf rg
+                   ]
+
+startMeroService :: Castor.Host -> Res.Node -> PhaseM LoopState a ()
+startMeroService host node = do
+  phaseLog "action" $ "Trying to start mero service on "
+                    ++ show (host, node)
+  rg <- getLocalGraph
+  mprofile <- Conf.getProfile
+  mapM_ promulgateRC $ do
+    profile <- mprofile
+    M0.LNid lnid <- listToMaybe . G.connectedTo host Has $ rg
+    uuid <- listToMaybe $ G.connectedTo host Has rg
+    -- TODO Use the proper HA address
+    let conf = MeroConf (lnid ++ haAddress) (fidToStr $ M0.fid profile)
+                (MeroKernelConf uuid)
+    return $ encodeP $ ServiceStartRequest Start node m0d conf []

@@ -14,18 +14,13 @@
 -- Rules specific to mero server Castor install of Mero.
 
 module HA.RecoveryCoordinator.Rules.Castor.Server
-  ( ruleNewMeroServer
-  , HA.RecoveryCoordinator.Rules.Castor.Server.__remoteTable
-  , bootstrapMeroServerExtra__tdict
-  ) where
+  ( ruleNewMeroServer ) where
 
 import           Control.Category ((>>>))
 import           Control.Distributed.Process
-import           Control.Distributed.Process.Closure (mkClosure)
-import           Control.Distributed.Process.Closure (remotable)
 import           Control.Monad
 import           Data.Binary (Binary)
-import qualified Data.ByteString as BS
+import           Data.Either (rights)
 import           Data.Foldable
 import           Data.List (partition)
 import           Data.Maybe (listToMaybe, isJust)
@@ -36,20 +31,17 @@ import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Events.Mero
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Resources.Castor.Initial (Network(Data))
-import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero hiding (Node, Process, Enclosure, Rack, fid)
 import           HA.Services.Mero
-import           Mero.ConfC (ServiceType(..), Fid, fidToStr)
+import           HA.Services.Mero.CEP (meroChannel)
 import           Network.CEP
 import           Prelude
-import           System.Directory
-import           System.IO
-import           System.SystemD.API (startService, sysctlFile)
 
 -- | Mero server bootstrapping has finished all together.
 newtype ServerBootstrapFinished = ServerBootstrapFinished NodeId
@@ -61,40 +53,6 @@ newtype MeroServerStartRemainingServices = MeroServerStartRemainingServices Node
   deriving (Typeable, Generic)
 
 instance Binary MeroServerStartRemainingServices
-
--- | Start processes using the @m0d\@@ systemd service. These are the
--- services that aren't part of the core bootstrap, i.e. not confd or RM.
---
--- Takes a list of fids (one per service), m0d endpoint address, halon
--- endpoint address and the 'M0.Profile' 'Fid'.
-bootstrapMeroServerExtra :: ([Fid], String, String, Fid)
-                            -- ^ Process fids of the services
-                         -> Process ()
-bootstrapMeroServerExtra (fids, m0addr, haAddr, profileFid) = do
-  say "Bootstrapping extra services"
-  _ <- liftIO . forM_ (fidToStr <$> fids) $ \fid -> do
-    _ <- sysctlFile ("m0d-" ++ fid)
-      [ ("MERO_M0D_EP", m0addr)
-      , ("MERO_HA_EP", haAddr)
-      , ("MERO_PROFILE_FID", fidToStr profileFid)
-      ]
-    startService $ "m0d@" ++ fid
-  getSelfNode >>= promulgateWait . ServerBootstrapFinished
-
-remotable [ 'bootstrapMeroServerExtra ]
-
--- | Retrieve the conf file contents so they can be sent to the nodes
--- and stored there before confd and RM are brought up.
-syncConfToBS :: PhaseM LoopState l BS.ByteString
-syncConfToBS = do
-  fp <- liftIO $ do
-    tmpdir <- getTemporaryDirectory
-    (fp, h) <- openTempFile tmpdir "conf.xc"
-    hClose h >> return fp
-  syncAction Nothing $ SyncDumpToFile fp
-  conf <- liftIO $ BS.readFile fp
-  liftIO $ BS.length conf `seq` removeFile fp
-  return conf
 
 -- | Bootstrap a new mero server.
 --
@@ -118,6 +76,8 @@ syncConfToBS = do
 ruleNewMeroServer :: Definitions LoopState ()
 ruleNewMeroServer = define "new-mero-server" $ do
   new_server <- phaseHandle "initial"
+  svc_up_now <- phaseHandle "svc_up_now"
+  svc_up_already <- phaseHandle "svc_up_already"
   core_bootstrapped <- phaseHandle "core-bootstrapped"
   start_remaining_services <- phaseHandle "start-remaining-services"
   finish_extra_bootstrap <- phaseHandle "finish-extra-bootstrap"
@@ -125,20 +85,6 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
   let alreadyBootstrapping n g = G.isConnected Cluster Runs (ServerBootstrapCoreProcess n False) g
                                 || G.isConnected Cluster Runs (ServerBootstrapProcess n False) g
-
-      startMeroService :: Node -> PhaseM LoopState l ()
-      startMeroService node = findNodeHost node >>= \case
-        Nothing -> continue finish
-        Just host -> do
-          svs <- getServices node
-          case null [ () | (_, M0.Service{ M0.s_type = CST_MGS }) <- svs ] of
-            True -> do
-              phaseLog "info" $ "No confd service on " ++ show host
-              startMeroServerService host node Nothing
-            False -> do
-              conf <- syncConfToBS
-              startMeroServerService host node $ Just conf
-          continue core_bootstrapped
 
       ackingLast handle newMsgEid newNid phase = do
         Just (Node nid, eid) <- get Local
@@ -148,51 +94,80 @@ ruleNewMeroServer = define "new-mero-server" $ do
                 put Local $ Just (Node nid, newMsgEid)
                 phase
 
-      failureHandler e nid = case e of
-        Nothing -> Nothing
-        Just ex -> Just $ do
-          phaseLog "warn" $ "Core bootstrapping failed on " ++ show nid
+      failureHandler e nid = case rights e of
+        [] -> Nothing
+        xs -> Just $ do
+          forM_ xs $ \(fid, ex) -> do
+            phaseLog "warn" $ "Core bootstrapping of process "
+                            ++ (show fid)
+                            ++ " failed on "
+                            ++ (show nid)
+            phaseLog "warn" ex
           findNodeHost (Node nid) >>= \case
             Nothing -> return ()
-            Just host -> setHostAttr host (HA_BOOTSTRAP_FAILED ex)
+            Just host ->
+              setHostAttr host (HA_BOOTSTRAP_FAILED $ fmap snd xs)
 
+      onNode :: HAEvent DeclareMeroChannel
+             -> LoopState
+             -> Maybe (Node, y)
+             -> Process (Maybe (Host, TypedChannel ProcessControlMsg))
+      onNode _ _ Nothing = return Nothing
+      onNode (HAEvent _ (DeclareMeroChannel sp _ cc) _) ls (Just (node, _)) =
+        let
+          rg = lsGraph ls
+          mhost = G.connectedFrom Runs node rg :: [Host]
+          rightNode = G.isConnected node Runs sp rg
+        in case (rightNode, mhost) of
+          (True, [host]) -> return $ Just (host, cc)
+          (_, _) -> return Nothing
 
   setPhase new_server $ \(HAEvent eid (NewMeroServer node@(Node nid)) _) -> do
     put Local $ Just (node, eid)
     findNodeHost node >>= \case
       Just host -> alreadyBootstrapping nid <$> getLocalGraph >>= \case
         True -> continue finish
-        False -> getFilesystem >>= \case
-          Just fs -> do
-            let pcore = ServerBootstrapCoreProcess nid False
-            phaseLog "info" "Starting core bootstrap"
-            modifyLocalGraph $
-              return . G.connect Cluster Runs pcore . G.newResource pcore
-            hatrs <- findHostAttrs host
-            g <- getLocalGraph
-            let lnid = listToMaybe $ [ ip | Interface { if_network = Data, if_ipAddrs = ip:_ }
-                                              <- G.connectedTo host Has g ]
-                memsize = listToMaybe $ [ fromIntegral m | HA_MEMSIZE_MB m <- hatrs ]
-                cpucnt = listToMaybe $ [ cnt | HA_CPU_COUNT cnt <- hatrs ]
-            case HostHardwareInfo <$> memsize <*> cpucnt <*> lnid of
-              Nothing -> do
-                phaseLog "warn" $ "HostHardwareInfo couldn't be constructed: "
-                               ++ show (lnid, memsize, cpucnt)
-                continue finish
-              Just info -> do
-                storeMeroNodeInfo fs host info HA_M0SERVER
-                startMeroService node
-                continue core_bootstrapped
-          Nothing -> do
-            phaseLog "warn" "Couldn't getFilesystem"
-            continue finish
+        False -> do
+          let pcore = ServerBootstrapCoreProcess nid False
+          phaseLog "info" "Starting core bootstrap"
+          modifyLocalGraph $
+            return . G.connect Cluster Runs pcore . G.newResource pcore
+          g <- getLocalGraph
+          let mlnid = listToMaybe $ [ ip | Interface { if_network = Data, if_ipAddrs = ip:_ }
+                                            <- G.connectedTo host Has g ]
+          case mlnid of
+            Nothing -> do
+              phaseLog "warn" $ "Unable to find Data IP addr for host "
+                              ++ show host
+              continue finish
+            Just lnid -> do
+              createMeroKernelConfig host lnid
+              startMeroService host node
+              switch [svc_up_now, timeout 5000000 svc_up_already]
       Nothing -> do
         phaseLog "error" $ "Can't find host for node " ++ show node
         continue finish
 
+  setPhaseIf svc_up_now onNode $ \(host, chan) -> do
+    -- Legitimate to avoid the event id as it should be handled by the default
+    -- 'declare-mero-channel' rule.
+    startNodeProcesses host chan PLConfdBoot True
+    continue core_bootstrapped
+
+  -- Service is already up
+  directly svc_up_already $ do
+    Just (node, _) <- get Local
+    rg <- getLocalGraph
+    m0svc <- lookupRunningService node m0d
+    mhost <- findNodeHost node
+    case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
+      Just (host, chan) -> do
+        startNodeProcesses host chan PLConfdBoot True
+        continue core_bootstrapped
+      Nothing -> switch [svc_up_now, timeout 5000000 finish]
 
   -- Wait until every process comes back as finished bootstrapping
-  setPhase core_bootstrapped $ \(HAEvent eid (MeroServerCoreBootstrapped e nid) _) -> do
+  setPhase core_bootstrapped $ \(HAEvent eid (ProcessControlResultMsg nid e) _) -> do
     ackingLast core_bootstrapped eid nid $
       barrier
         Cluster Runs
@@ -202,9 +177,8 @@ ruleNewMeroServer = define "new-mero-server" $ do
         (\(ServerBootstrapCoreProcess nid' _) ->
           liftProcess . promulgateWait $ MeroServerStartRemainingServices nid')
 
-
   setPhase start_remaining_services $ \(HAEvent eid (MeroServerStartRemainingServices nid) _) -> do
-    Just (Node nid', eid') <- get Local
+    Just (node@(Node nid'), eid') <- get Local
     g <- getLocalGraph
     case () of
       _ | (nid /= nid') -> continue start_remaining_services
@@ -217,21 +191,17 @@ ruleNewMeroServer = define "new-mero-server" $ do
            modifyLocalGraph $
              return . G.connect Cluster Runs (ServerBootstrapProcess nid False)
            syncGraphBlocking
-           svs <- getServices (Node nid)
-
-           let extraFids :: [Fid]
-               extraFids = [ M0.r_fid p | (p, c) <- svs
-                                        , s_type c /= CST_MGS && s_type c /= CST_RMS ]
+           m0svc <- lookupRunningService node m0d
            mhost <- findNodeHost (Node nid)
-           maybe (return Nothing) getMeroServiceInfo mhost >>= \case
-             Nothing -> liftProcess $ getSelfNode >>= promulgateWait . ServerBootstrapFinished
-             Just (haAddr, profile, process) -> do
-               liftProcess . void . spawnLocal . void . spawnAsync nid $
-                 $(mkClosure 'bootstrapMeroServerExtra)
-                   (extraFids, M0.r_endpoint process, haAddr, M0.fid profile)
-           continue finish_extra_bootstrap
+           case (,) <$> mhost <*> (m0svc >>= meroChannel g) of
+             Just (host, chan) -> do
+               startNodeProcesses host chan PLRegularBoot True
+               continue finish_extra_bootstrap
+             Nothing -> do
+               phaseLog "error" $ "Can't find host for node " ++ show node
+               continue finish
 
-  setPhase finish_extra_bootstrap $ \(HAEvent eid (ServerBootstrapFinished nid) _) -> do
+  setPhase finish_extra_bootstrap $ \(HAEvent eid (ProcessControlResultMsg nid _) _) -> do
     ackingLast finish_extra_bootstrap eid nid $
       barrier
         Cluster Runs
@@ -311,13 +281,3 @@ barrier hookPoint hookRel setState viewState phandle failHandle failure release 
                 $ G.newResource (setState True)
              >>> return . G.connect hookPoint hookRel (setState True)
       Just h -> h
-
-getServices :: Node -> PhaseM LoopState l [(M0.Process, M0.Service)]
-getServices node = do
-  Just host <- findNodeHost node
-  g <- getLocalGraph
-  let svs = [ (p, c) | ctl :: M0.Controller <- G.connectedFrom M0.At host g
-                     , m0node :: M0.Node <- G.connectedFrom M0.IsOnHardware ctl g
-                     , p :: M0.Process <- G.connectedTo m0node IsParentOf g
-                     , c <- G.connectedTo p IsParentOf g ]
-  return svs

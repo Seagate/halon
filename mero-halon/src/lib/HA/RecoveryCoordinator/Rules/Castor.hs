@@ -20,6 +20,7 @@ import HA.EventQueue.Types
 
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
+import HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import HA.RecoveryCoordinator.Events.Drive
 
 import HA.Resources
@@ -33,6 +34,7 @@ import Control.Category ((>>>))
 import HA.Resources.TH
 import HA.EventQueue.Producer
 import HA.Services.Mero
+import HA.Services.Mero.CEP (meroChannel)
 import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
@@ -515,6 +517,8 @@ ruleNewMeroClient = define "new-mero-client" $ do
     msgClientInfo    <- phaseHandle "client-info-update"
     msgClientStoreInfo <- phaseHandle "client-store-update"
     msgClientNodeBootstrapped <- phaseHandle "node-provisioned"
+    svc_up_now <- phaseHandle "svc_up_now"
+    svc_up_already <- phaseHandle "svc_up_already"
 
     directly mainloop $
       switch [ msgNewMeroClient
@@ -539,7 +543,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
              Just LNid{}
                | isClient -> do
                    phaseLog "info" $ show host ++ " is mero client. Configuration was generated - starting mero service"
-                   startMeroClientService host node
+                   startMeroService host node
                    messageProcessed eid
              -- Host is client but not all information was loaded.
              _  -> do
@@ -572,13 +576,33 @@ ruleNewMeroClient = define "new-mero-client" $ do
             phaseLog "warning" "Configuration data was not loaded yet, skipping"
           Just fs -> do
             (node:_) <- nodesOnHost host
-            storeMeroNodeInfo fs host info HA_M0CLIENT
-            startMeroClientService host node
-    setPhase msgClientNodeBootstrapped $ \(HAEvent eid (MeroClientBootstrapped host) _) -> do
-       finishMeroClientProvisioning host
+            createMeroClientConfig fs host info
+            startMeroService host node
+            -- TODO start m0t1fs
+            put Local $ Just (node, host)
+            switch [svc_up_now, timeout 5000000 svc_up_already]
+
+    setPhaseIf svc_up_now onNode $ \(host, chan) -> do
+      -- Legitimate to avoid the event id as it should be handled by the default
+      -- 'declare-mero-channel' rule.
+      startNodeProcesses host chan PLM0t1fs False
+
+    -- Service is already up
+    directly svc_up_already $ do
+      Just (node, _) <- get Local
+      rg <- getLocalGraph
+      m0svc <- lookupRunningService node m0d
+      mhost <- findNodeHost node
+      case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
+        Just (host, chan) -> do
+          startNodeProcesses host chan PLConfdBoot True
+        Nothing -> switch [svc_up_now, timeout 5000000 svc_up_already]
+
+    setPhase msgClientNodeBootstrapped $ \(HAEvent eid (ProcessControlResultMsg node _) _) -> do
+       finishMeroClientProvisioning node
        messageProcessed eid
 
-    start mainloop ()
+    start mainloop Nothing
   where
     startMeroClientProvisioning host uuid =
       modifyLocalGraph $ \rg -> do
@@ -589,10 +613,10 @@ ruleNewMeroClient = define "new-mero-client" $ do
                 $ rg
         return rg'
 
-    finishMeroClientProvisioning lnid = do
+    finishMeroClientProvisioning nid = do
       rg <- getLocalGraph
       let mpp = listToMaybe
-                  [ pp | host <- G.connectedFrom Has (M0.LNid lnid) rg :: [Host]
+                  [ pp | host <- G.connectedFrom Runs (Node nid) rg :: [Host]
                        , pp <- G.connectedFrom OnHost host rg :: [ProvisionProcess]
                        ]
       forM_ mpp $ \pp -> do
@@ -609,6 +633,16 @@ ruleNewMeroClient = define "new-mero-client" $ do
        let pp = ProvisionProcess host
        modifyGraph $ G.connectUnique pp Has (info :: HostHardwareInfo)
        publish $ NewMeroClientProcessed host
+
+    onNode _ _ Nothing = return Nothing
+    onNode (HAEvent _ (DeclareMeroChannel sp _ cc) _) ls (Just (node, _)) =
+      let
+        rg = lsGraph ls
+        mhost = G.connectedFrom Runs node rg
+        rightNode = G.isConnected node Runs sp rg
+      in case (rightNode, mhost) of
+        (True, [host]) -> return $ Just (host, cc)
+        (_, _) -> return Nothing
 #endif
 
 #ifdef USE_MERO

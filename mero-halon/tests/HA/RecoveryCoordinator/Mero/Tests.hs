@@ -305,7 +305,7 @@ testRCsyncToConfd :: String -- ^ IP we're listening on, used in this
                             -- test to assume confd server is on the
                             -- same host
                   -> Transport -> IO ()
-testRCsyncToConfd host transport = do
+testRCsyncToConfd _host transport = do
  withTestEnv $ do
   nid <- getSelfNode
   self <- getSelfPid

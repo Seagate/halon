@@ -45,7 +45,7 @@ import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 import Mero.ConfC (ServiceType(..))
 import Data.Foldable (forM_, traverse_)
-import Control.Monad (when, unless)
+import Control.Monad (when)
 import Network.CEP
 import Control.Distributed.Process.Serializable
 
@@ -81,7 +81,7 @@ ruleService = defaultActions "service"
   where
     tryRecoverService _ = return ()
     rmsServiceFailure srv = when (M0.s_type srv == CST_RMS) $ return ()
-    
+
 -- | Mark 'M0.Service' as failed. This message will be sent via EQ,
 -- so may be processed only when the message will be back from EQ.
 serviceFailed :: M0.Service -> PhaseM LoopState l ()
@@ -189,7 +189,7 @@ ruleController = defaultActions "controller"
     escalateToNode action cntr = do
       rg <- getLocalGraph
       traverse_ action (G.connectedFrom M0.IsOnHardware cntr rg)
-      
+
 -- | Mark 'M0.Controller' as failed. This message will be sent via EQ,
 -- so may be processed only when the message will be back from EQ.
 controllerFailed :: M0.Controller -> PhaseM LoopState l ()
@@ -222,17 +222,17 @@ ruleEnclosure = defaultActions "enclosure"
 -- | Mark 'M0.Enclosure' as failed. This message will be sent via EQ,
 -- so may be processed only when the message will be back from EQ.
 enclosureFailed :: M0.Enclosure -> PhaseM LoopState l ()
-enclosureFailed = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_FAILED) 
+enclosureFailed = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_FAILED)
 
 -- | Mark 'M0.Enclosure' as transient. This message will be sent via EQ,
 -- so may be processed only then message will be back from EQ.
 enclosureTransient :: M0.Enclosure -> PhaseM LoopState l ()
-enclosureTransient = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_TRANSIENT) 
+enclosureTransient = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_TRANSIENT)
 
 -- | Mark 'M0.Enclosure' as online. This message will be sent via EQ,
 -- so may be processed only then message will be back from EQ.
 enclosureOnline :: M0.Enclosure -> PhaseM LoopState l ()
-enclosureOnline = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_ONLINE) 
+enclosureOnline = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_ONLINE)
 
 -------------------------------------------------------------------------------
 -- Helpers
@@ -259,7 +259,7 @@ stateChange _ = StateChangeEvent
 
 -- | Helper for writing state change function. It run simple one step action, calls 'todo'
 -- and 'done', add logs and notify mero about changed state.
-onStateChange :: (M0.ConfObj b, Show b, Serializable a, G.Relation R.Is b M0.ConfObjectState) 
+onStateChange :: (M0.ConfObj b, Show b, Serializable a, G.Relation R.Is b M0.ConfObjectState)
               => String             -- ^ Rule name.
               -> M0.ConfObjectState -- ^ New object state.
               -> (a -> b)           -- ^ Extract object from message.
@@ -273,7 +273,7 @@ onStateChange name st getE actions = defineSimpleTask name $ \(HAEvent _ (getE -
 {-# INLINE onStateChange #-}
 
 -- | Structure for keeping event handlers.
-data EventHandlers a = EventHandlers 
+data EventHandlers a = EventHandlers
   { onFailure   :: (forall l . [a -> PhaseM LoopState l ()])
   , onTransient :: (forall l . [a -> PhaseM LoopState l ()])
   , onOnline    :: (forall l . [a -> PhaseM LoopState l ()])
