@@ -66,6 +66,7 @@ import Data.Text (append, pack)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Maybe (isNothing)
 import Data.Defaultable
+import qualified Data.UUID as UUID
 
 import GHC.Generics (Generic)
 
@@ -90,7 +91,7 @@ newtype MockM0 = MockM0 DeclareMeroChannel
   deriving (Binary, Generic, Hashable, Typeable)
 
 mockMeroConf :: MeroConf
-mockMeroConf = MeroConf "" "" (MeroKernelConf (error "mock"))
+mockMeroConf = MeroConf "" "" (MeroKernelConf UUID.nil)
 
 newMeroChannel :: ProcessId -> Process (ReceivePort NotificationMessage, MockM0)
 newMeroChannel pid = do
@@ -557,12 +558,12 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
     prepareSubscriptions rc rmq
     loadInitialData
     subscribe rc (Proxy :: Proxy DriveRemoved)
-    let enclosure = "enclosure1"
+    let enclosure = "enclosure_2"
         host      = pack systemHostname
         devIdx    = 1
         message0 = LBS.toStrict $ encode
                                 $ mkSensorResponse
-                                $ mkResponseHPI host (pack enclosure) (fromIntegral devIdx) "/dev/loop1" "wwn1"
+                                $ mkResponseHPI host (pack enclosure) (fromIntegral devIdx) "/dev/loop21" "wwn21"
         message = LBS.toStrict $ encode $ mkSensorResponse
            $ emptySensorMessage
               { sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
@@ -571,9 +572,9 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
     Just{} <- expectTimeout 1000000 :: Process (Maybe (Published DriveRemoved))
     _ <- receiveTimeout 1000000 []
-    say "Check drive removed"
+    debug "Check drive removed"
     True <- checkStorageDeviceRemoved enclosure devIdx <$> G.getGraph mm
-    say "Check notification"
+    debug "Check notification"
     Set [Note _ st] <- notificationMessage <$> receiveChan recv
     liftIO $ assertEqual "drive is in transient state" M0_NC_TRANSIENT st
 
