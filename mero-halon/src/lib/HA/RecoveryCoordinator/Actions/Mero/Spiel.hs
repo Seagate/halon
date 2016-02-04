@@ -244,7 +244,7 @@ txSyncToConfd t = do
 txDumpToFile :: FilePath -> SpielTransaction -> PhaseM LoopState l ()
 txDumpToFile fp t = do
   phaseLog "spiel" $ "Writing transaction to " ++ fp
-  liftM0RC $ dumpTransaction t fp
+  liftM0RC $ dumpTransaction t 42 fp
   phaseLog "spiel" "Transaction written."
   liftM0RC $ closeTransaction t
   phaseLog "spiel" "Transaction closed."
