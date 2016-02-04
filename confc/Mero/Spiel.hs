@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -34,9 +35,11 @@ import Foreign.C.Error
 import Foreign.C.String
   ( newCString
   , withCString
+  , peekCString
   )
 import Foreign.C.Types
-  ( CUInt(..) )
+  ( CUInt(..)
+  , CSize(..) )
 import Foreign.ForeignPtr
   ( ForeignPtr
   , mallocForeignPtrBytes
@@ -132,10 +135,14 @@ closeTransaction :: SpielTransaction
 closeTransaction (SpielTransaction ptr) = withForeignPtr ptr c_spiel_tx_close
 
 commitTransaction :: SpielTransaction
-                  -> IO ()
-commitTransaction (SpielTransaction ptr) =
-  throwIfNonZero_ (\rc -> "Cannot commit Spiel transaction: " ++ show rc)
-                  $ withForeignPtr ptr c_spiel_tx_commit
+                  -> IO (Maybe String)
+commitTransaction tx@(SpielTransaction ptr) =
+  txValidateTransactionCache tx >>= \case
+    Nothing -> do
+      throwIfNonZero_ (\rc -> "Cannot commit Spiel transaction: " ++ show rc)
+        $ withForeignPtr ptr c_spiel_tx_commit
+      return Nothing
+    Just err -> return $ Just err
 
 commitTransactionForced :: SpielTransaction
                         -> Bool
@@ -192,6 +199,20 @@ openLocalTransaction = do
        fillBytes sc_ptr 0 m0_spiel_size
        c_spiel_tx_open sc_ptr ptr
   return $ SpielTransaction st
+
+txValidateTransactionCache :: SpielTransaction
+                           -> IO (Maybe String)
+txValidateTransactionCache (SpielTransaction ftx) = withForeignPtr ftx $ \tx -> do
+  res <- c_confc_validate_cache_of_tx tx buflen
+  case () of
+    _ | res == nullPtr -> return Nothing
+      | otherwise -> do
+          str <- peekCString res
+          free res
+          return $ Just str
+  where
+    buflen :: CSize
+    buflen = 128
 
 
 setCmdProfile :: SpielContext

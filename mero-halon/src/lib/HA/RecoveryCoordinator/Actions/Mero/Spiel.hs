@@ -19,6 +19,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , statusOfRebalanceOperation
   , syncAction
   , syncToConfd
+  , validateTransactionCache
     -- * Pool repair information
   , getPoolRepairInformation
   , getPoolRepairStatus
@@ -223,8 +224,10 @@ txOpenLocalContext = liftM0RC openLocalTransaction
 txSyncToConfd :: SpielTransaction -> PhaseM LoopState l ()
 txSyncToConfd t = do
   phaseLog "spiel" "Committing transaction to confd"
-  liftM0RC $ commitTransaction t
-  phaseLog "spiel" "Transaction committed."
+  liftM0RC (commitTransaction t) >>= \case
+    Nothing -> phaseLog "spiel" "Transaction committed."
+    Just err ->
+      phaseLog "spiel" $ "Transaction commit failed with cache failure:" ++ err
   liftM0RC $ closeTransaction t
   phaseLog "spiel" "Transaction closed."
 
@@ -336,6 +339,17 @@ txPopulate (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) 
     liftM0RC $ poolVersionDone t (M0.fid pver)
   phaseLog "spiel" "Finished adding virtual entities."
   return t
+
+-- | Load the current conf data, create a transaction that we would
+-- send to spiel and ask mero if the transaction cache is valid.
+validateTransactionCache :: PhaseM LoopState l (Either SomeException (Maybe String))
+validateTransactionCache = withSpielRC $ \sc -> loadConfData >>= \case
+  Nothing -> do
+    phaseLog "spiel" "validateTransactionCache: loadConfData failed"
+    return Nothing
+  Just x -> do
+    phaseLog "spiel" "validateTransactionCache: validating context"
+    txOpenContext sc >>= txPopulate x >>= DP.liftIO . txValidateTransactionCache
 
 -- | Creates an RPCAddress suitable for 'withServerEndpoint'
 -- and friends. 'getSelfNode' is used and endpoint of

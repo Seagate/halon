@@ -16,6 +16,8 @@ module HA.RecoveryCoordinator.Mero.Tests
   , testHostAddition
 #ifdef USE_MERO
   , testRCsyncToConfd
+  , testGoodConfValidates
+  , testBadConfDoesNotValidate
 #endif
   , tests
   , emptyRules__static
@@ -54,7 +56,7 @@ import           Helper.Environment (systemHostname)
 import           Control.Monad (when)
 import           Data.Function (on)
 import           Data.List (sortBy)
-import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd)
+import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd, validateTransactionCache)
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import qualified Helper.InitialData
@@ -70,8 +72,15 @@ tests _host transport =
 #ifdef USE_MERO
   , testCase "testConfObjectStateQuery" $
       testConfObjectStateQuery _host transport
+  , testCase "good-conf-validates [disabled by TODO]" $
+      when False (testGoodConfValidates transport)
+  , testCase "bad-conf-does-not-validate [disabled by TODO]" $
+      when False (testBadConfDoesNotValidate transport)
 #else
   , testCase "testConfObjectStateQuery [disabled by compilation flags]" $
+      return ()
+  , testCase "good-conf-validates [disabled by compilation flags]" $ return ()
+  , testCase "bad-conf-does-not-validate [disabled by compilation flags]" $
       return ()
 #endif
   ]
@@ -379,4 +388,72 @@ testConfObjectStateQuery host transport =
             ++ show expected ++ ")."
           ) $ sortBy (compare `on` no_id) expected
               == sortBy (compare `on` no_id) notes
+#endif
+
+#ifdef USE_MERO
+-- | Validation query. Reply sent to the given process id.
+newtype ValidateCache = ValidateCache ProcessId
+  deriving (Eq, Show, Ord, Generic)
+
+instance Binary ValidateCache
+
+-- | Validation result used for validation tests
+newtype ValidateCacheResult = ValidateCacheResult (Maybe String)
+  deriving (Eq, Show, Ord, Generic)
+
+instance Binary ValidateCacheResult
+
+-- | Helper for conf validation tests.
+--
+-- Requires mero running.
+testConfValidates :: CI.InitialData -> Transport -> Process () -> IO ()
+testConfValidates iData transport act =
+  runTest 1 20 15000000 transport testRemoteTable $ \_ -> do
+    nid <- getSelfNode
+    self <- getSelfPid
+
+    registerInterceptor $ \string -> do
+      when ("Loaded initial data" `isInfixOf` string) $
+        usend self ("Loaded initial data" :: String)
+
+    say $ "tests node: " ++ show nid
+    withTrackingStation validateCacheRules $ \(TestArgs _ _ _) -> do
+      nodeUp ([nid], 1000000)
+      say "Loading graph."
+      void $ promulgateEQ [nid] iData
+
+      "Loaded initial data" :: String <- expect
+      say "Sending validate"
+      void . promulgateEQ [nid] $ ValidateCache self
+      act
+  where
+    validateCacheRules :: [Definitions LoopState ()]
+    validateCacheRules = return $ defineSimple "validate-cache" $ \(HAEvent eid (ValidateCache sender) _) -> do
+      liftProcess $ say "validating cache"
+      Right res <- validateTransactionCache
+      liftProcess . say $ "validated cache: " ++ show res
+      liftProcess . usend sender $ ValidateCacheResult res
+      messageProcessed eid
+
+-- | Check that we can validate conf string for sample initial data
+testGoodConfValidates :: Transport -> IO ()
+testGoodConfValidates transport = testConfValidates iData transport $ do
+  ValidateCacheResult Nothing <- expect
+  return ()
+  where
+    iData = Helper.InitialData.defaultInitialData
+
+-- | Check that we can detect a bad conf
+--
+-- TODO find initial data that will produce invalid conf string.
+testBadConfDoesNotValidate :: Transport -> IO ()
+testBadConfDoesNotValidate transport = testConfValidates iData transport $ do
+  ValidateCacheResult (Just _) <- expect
+  return ()
+  where
+    -- TODO manipulate initial data in a way that produces invalid
+    -- context that we can then test against. Unfortunately even in
+    -- mero the test for this does not yet exist so we can't steal any
+    -- ideas.
+    iData = Helper.InitialData.defaultInitialData
 #endif
