@@ -160,10 +160,24 @@ notifyMero cs st = do
                    , endpoint <- M0.s_endpoints service
                    ] 
      case mchan of
-       Nothing -> phaseLog "error" $ "HA.Service.Mero.notifyMero: Cannot find MeroChannel on " ++ show host
+       Nothing -> do
+         lookupLocalMeroChannel >>= \case
+            Just (TypedChannel chan) -> do
+               phaseLog "warning" $ "HA.Service.Mero.notifyMero: can't find remote service for" ++ show host ++ ", sending from local"
+               liftProcess $ sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
+            Nothing -> phaseLog "error" $ "HA.Service.Mero.notifyMero: Cannot find MeroChannel on " ++ show host
        Just (TypedChannel chan) -> liftProcess $
          sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
   where
     getFid (M0.AnyConfObj a) = M0.fid a
     setEvent :: Mero.Notification.Set
     setEvent = Mero.Notification.Set $ map (flip Note st . getFid) cs
+
+lookupLocalMeroChannel :: PhaseM LoopState l (Maybe (TypedChannel NotificationMessage))
+lookupLocalMeroChannel = do
+   node <- liftProcess $ getSelfNode
+   rg <- getLocalGraph
+   let mlchan = listToMaybe
+         [ chan | sp   <- G.connectedTo (Node node) Runs rg :: [ServiceProcess MeroConf]
+                , chan <- G.connectedTo sp MeroChannel rg ]
+   return mlchan 
