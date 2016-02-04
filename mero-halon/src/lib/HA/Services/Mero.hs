@@ -166,8 +166,10 @@ notifyMero cs st = do
                phaseLog "warning" $ "HA.Service.Mero.notifyMero: can't find remote service for" ++ show host ++ ", sending from local"
                liftProcess $ sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
             Nothing -> phaseLog "error" $ "HA.Service.Mero.notifyMero: Cannot find MeroChannel on " ++ show host
-       Just (TypedChannel chan) -> liftProcess $
-         sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
+       Just (TypedChannel chan) -> do
+         phaseLog "debug" $ "HA.Service.Mero.notifyMero: set state on to " ++ show st
+         liftProcess $
+           sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
   where
     getFid (M0.AnyConfObj a) = M0.fid a
     setEvent :: Mero.Notification.Set

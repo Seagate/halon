@@ -43,6 +43,8 @@ import TestRunner
 import Data.Binary
 import Data.Typeable
 import Data.Foldable
+import qualified Data.Aeson as JSON
+import qualified Data.ByteString.Lazy as BS
 import GHC.Generics
 
 import Data.UUID.V4 (nextRandom)
@@ -216,8 +218,10 @@ testDMRequest = mkHpiTest rules test
         me <- getSelfNode
         let requestA = mkHpiMessage "primus.example.com" "enclosure1" 0 "loop1" "wwn1"
         uuidA <- liftIO $ nextRandom
+        liftIO $ BS.writeFile "/tmp/message.json" $ JSON.encode $ requestA
         usend rc $ HAEvent uuidA (me, requestA) []
         let requestB = mkHpiMessage "primus.example.com" "enclosure1" 1 "loop2" "wwn2"
+        liftIO $ BS.writeFile "/tmp/message2.json" $ JSON.encode $ requestB
         uuidB <- liftIO $ nextRandom
         usend rc $ HAEvent uuidB (me, requestB) []
         --  0  -- active drive
@@ -226,6 +230,7 @@ testDMRequest = mkHpiTest rules test
         () <- expect
         say "Unused ok for good drive"
         let request0 = dmRequest "EMPTY" "None" "serial1" 0
+        liftIO $ BS.writeFile "/tmp/message3.json" $ JSON.encode $ request0
         uuid0 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid0 (me, request0) []
         "drive-removed" <- await uuid0
@@ -246,6 +251,7 @@ testDMRequest = mkHpiTest rules test
         "nothing" <- await uuid3
         say "OK_None smart for good"
         let request4 = dmRequest "OK" "None" "serial1" 0
+        liftIO $ BS.writeFile "/tmp/message4.json" $ JSON.encode $ request4
         uuid4 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid4 (me, request4) []
         await uuid4 >>= liftIO . assertEqual "OK_None smart for good" "nothing"

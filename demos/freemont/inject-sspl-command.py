@@ -23,17 +23,17 @@ msg_init = ('"disk_status_hpi":{"productName":"seagate-dh"'
             ',"hostId":"devvm.seagate.com\"'
             ',"location":1'
             ',"deviceId":"loop1\"'
-            ',"serialNumber":"serial1\"'
-            ',"wwn":"wwn1"'
+            ',"serialNumber":"serial3\"'
+            ',"wwn":"wwn3"'
             ',"productVersion":"0.0.1"}')
 
 msg_removal = ('"disk_status_drivemanager":{"serial_number":"serial1"'
                ',"status":"EMPTY"'
-	       ',"disk":1"'
+	       ',"disk":1'
                ',"reason":"None"'
                ',"enclosure_serial_number":"enclosure1"}')
 
-msg_insertion = ('"disk_status_drivemanager":{"serial_number":"serial1"'
+msg_insertion = ('"disk_status_drivemanager":{"serial_number":"serial3"'
                  ',"status":"OK"'
 	         ',"disk":1'
                  ',"reason":"None"'
