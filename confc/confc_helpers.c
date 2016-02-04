@@ -8,6 +8,8 @@
 #include <string.h>
 #include <errno.h>
 #include "conf/confc.h"
+#include "conf/validation.h"
+#include "spiel/spiel.h"
 
 static struct m0_sm_group g_grp;
 
@@ -153,4 +155,20 @@ struct m0_fid *cv_real_fid(struct m0_conf_objv *obj) {
 // Workaround for MERO-1094
 struct m0_fid *ck_sdev_fid(struct m0_conf_disk *disk) {
     return &(disk->ck_dev->sd_obj.co_id);
+}
+
+// Skip the hoops we'd have to jump in capi and just use a helper to
+// validate cache stashed in m0_spiel_tx .
+// Caller should free the resulting string
+char *confc_validate_cache_of_tx(struct m0_spiel_tx *tx, size_t buflen) {
+  char *buf = (char *) malloc(buflen);
+  const struct m0_conf_cache *conf_cache = (const struct m0_conf_cache *) &(tx->spt_cache);
+  char *result = m0_conf_validation_error(conf_cache, buf, buflen);
+
+  if (result == NULL) {
+    free(buf);
+    return NULL;
+  } else {
+    return buf;
+  }
 }

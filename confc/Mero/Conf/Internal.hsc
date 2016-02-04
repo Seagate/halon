@@ -315,7 +315,7 @@ check_rc msg i = throwIO $ ConfCException msg $ fromIntegral i
 --
 --  * M0_HA_NOTE_GET
 --  * M0_HA_ENTRYPOINT
--- 
+--
 -- for further information refer to the mero sources /ha\/note_fops.h/, /spiel\/spiel.h/.
 
 foreign import ccall "<ha/note.h> m0_ha_state_init"

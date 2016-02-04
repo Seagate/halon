@@ -8,6 +8,7 @@
 
 #include "conf/confc.h"
 #include "conf/obj.h"
+#include "spiel/spiel.h"
 
 
 /// Call rpc_init() before calling confc_init.
@@ -70,3 +71,7 @@ struct m0_fid *cc_node_fid(struct m0_conf_controller *cont);
 struct m0_fid *cv_real_fid(struct m0_conf_objv *obj);
 // Workaround for MERO-1094
 struct m0_fid *ck_sdev_fid(struct m0_conf_disk *disk);
+
+// Skip the hoops we'd have to jump in capi and just use a helper to
+// validate cache stashed in m0_spiel_tx
+char *confc_validate_cache_of_tx(struct m0_spiel_tx *tx, size_t buflen);

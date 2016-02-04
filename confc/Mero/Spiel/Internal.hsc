@@ -38,6 +38,7 @@ import Foreign.Storable
 
 import System.IO.Unsafe (unsafePerformIO)
 
+#include "confc_helpers.h"
 #include "spiel/spiel.h"
 #include "rpc/rpc_machine.h"
 
@@ -401,3 +402,13 @@ foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_status"
 
 throwIfNonZero_ :: (Eq a, Num a) => (a -> String) -> IO a -> IO ()
 throwIfNonZero_ = throwIf_ (/= 0)
+
+
+---------------------------------------------------------------
+-- Cache validation                                          --
+---------------------------------------------------------------
+
+foreign import capi "confc_helpers.h confc_validate_cache_of_tx"
+  c_confc_validate_cache_of_tx :: Ptr SpielTransactionV
+                               -> CSize
+                               -> IO CString
