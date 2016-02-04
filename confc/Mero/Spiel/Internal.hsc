@@ -116,6 +116,7 @@ foreign import capi "spiel/spiel.h m0_spiel_tx_validate"
 
 foreign import capi "spiel/spiel.h m0_spiel_tx_dump"
   c_spiel_tx_dump :: Ptr SpielTransactionV
+                  -> Word64
                   -> CString
                   -> IO CInt
 
