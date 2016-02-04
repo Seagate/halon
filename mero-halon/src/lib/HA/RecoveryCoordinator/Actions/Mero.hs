@@ -24,6 +24,7 @@ import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 import HA.Services.Mero (notifyMero)
 import Data.Foldable (forM_)
+import Data.Maybe (listToMaybe)
 
 import Network.CEP
 
@@ -44,8 +45,11 @@ updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
     forM_ (onFailure strategy graph) $ \graph' -> do
       putLocalGraph graph'
       syncAction Nothing M0.SyncToConfdServersInRG
-  -- Notify Mero
-  notifyMero [M0.AnyConfObj m0sdev] M0.M0_NC_TRANSIENT
+  case listToMaybe $ G.connectedTo m0sdev M0.IsOnHardware graph of
+    Nothing -> phaseLog "error" "Can't find Disk corresponding to sdev"
+    Just m0disk ->
+      -- Notify Mero
+      notifyMero [M0.AnyConfObj (m0disk :: M0.Disk)] M0.M0_NC_TRANSIENT
 
 -- | For all other states, we simply update in the RG and notify Mero.
 updateDriveState m0sdev x = do
@@ -57,4 +61,9 @@ updateDriveState m0sdev x = do
   -- sync, but before it notified mero.
   syncGraph (return ()) 
   -- Notify Mero
-  notifyMero [M0.AnyConfObj m0sdev] x
+  graph <- getLocalGraph
+  case listToMaybe $ G.connectedTo m0sdev M0.IsOnHardware graph of
+    Nothing -> phaseLog "error" "Can't find Disk corresponding to sdev"
+    Just m0disk ->
+      -- Notify Mero
+      notifyMero [M0.AnyConfObj (m0disk::M0.Disk)] x
