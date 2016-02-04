@@ -19,8 +19,11 @@ import           System.IO
 
 import Control.Distributed.Process
 import Data.Binary
+import Data.Function (on)
+import Data.List (groupBy)
 import Data.Defaultable
 import Data.Hashable
+import Data.Maybe (catMaybes)
 import Options.Schema
 import Options.Schema.Builder
 import Network.CEP
@@ -96,13 +99,22 @@ ppLogs logs =
     entries = logsPhaseEntries logs
 
 ppEntries :: [(String, String, String)] -> Doc
-ppEntries xs = indent 2 (vsep $ fmap ppEntry xs)
+ppEntries xs = indent 2 (vsep $ fmap ppShortEntry shortEntries)
+  where
+    shortEntries :: [(String, [(String, String)])]
+    shortEntries = catMaybes $ map (joinGroup . map collapseEntry) groups
 
-ppEntry :: (String, String, String) -> Doc
-ppEntry (pname, ctx, str) =
-    vsep [ text pname
-         , indent 2 (text ctx <+> hcat [equals, rangle] <+> text str)
-         ]
+    joinGroup [] = Nothing
+    joinGroup gr@((pn, _) : _) = Just (pn, map snd gr)
+
+    collapseEntry (pn, ctx, str) = (pn, (ctx, str))
+
+    groups = groupBy ((==) `on` (\(pn, _, _) -> pn)) xs
+
+ppShortEntry :: (String, [(String, String)]) -> Doc
+ppShortEntry (pname, vals) = vsep $ text pname : map ppV vals
+  where
+    ppV (ctx, str) = indent 2 (text ctx <+> hcat [equals, rangle] <+> text str)
 
 openLogFile :: FilePath -> Process Handle
 openLogFile path = liftIO $ do
