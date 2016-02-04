@@ -18,6 +18,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , startRebalanceOperation
   , statusOfRebalanceOperation
   , syncAction
+  , syncToBS
   , syncToConfd
   , validateTransactionCache
     -- * Pool repair information
@@ -61,6 +62,7 @@ import qualified Control.Distributed.Process as DP
 import Control.Monad (forM_, void, join)
 import Control.Monad.Catch
 
+import qualified Data.ByteString as BS
 import Data.Foldable (traverse_)
 import Data.IORef (writeIORef)
 import Data.List (sortOn)
@@ -72,6 +74,7 @@ import Network.CEP
 import Network.RPC.RPCLite (getRPCMachine_se, rpcAddress, RPCAddress(..))
 
 import System.IO
+import System.Directory
 
 import Text.Printf (printf)
 
@@ -199,13 +202,41 @@ syncAction meid sync =
    flip catch (\e -> phaseLog "error" $ "Exception during sync: "++show (e::SomeException))
        $ do
     case sync of
-      SyncToConfdServersInRG -> do
+      SyncToConfdServersInRG -> flip catch (handler (const $ return ())) $ do
         phaseLog "info" "Syncing RG to confd servers in RG."
         void $ syncToConfd
-      SyncDumpToFile filename -> do
-        phaseLog "info" $ "Dumping conf in RG to this file: " ++ show filename
-        loadConfData >>= traverse_ (\x -> txOpenLocalContext >>= txPopulate x >>= txDumpToFile filename)
+      SyncDumpToBS pid -> flip catch (handler $ failToBS pid) $ do
+        bs <- syncToBS
+        liftProcess . DP.usend pid . M0.SyncDumpToBSReply $ Right bs
     traverse_ messageProcessed meid
+  where
+    failToBS :: DP.ProcessId -> SomeException -> DP.Process ()
+    failToBS pid = DP.usend pid . M0.SyncDumpToBSReply . Left . show
+
+    handler :: (SomeException -> DP.Process ())
+            -> SomeException
+            -> PhaseM LoopState l ()
+    handler act e = do
+      phaseLog "error" $ "Exception during sync: " ++ show e
+      liftProcess $ act e
+
+-- | Dump the conf into a file, read it back and return the conf in
+-- form of a 'BS.ByteString'. Users which want this config but aren't
+-- the RC should use 'syncAction' with 'M0.SyncDumpToBS' instead which
+-- will catch exceptions and forward the result to the given
+-- 'DP.ProcessId'.
+syncToBS :: PhaseM LoopState l BS.ByteString
+syncToBS = do
+  fp <- DP.liftIO $ do
+    tmpdir <- getTemporaryDirectory
+    (fp, h) <- openTempFile tmpdir "conf.xc"
+    hClose h >> return fp
+  phaseLog "info" $ "Dumping conf in RG to: " ++ show fp
+  loadConfData >>= traverse_ (\x -> txOpenLocalContext >>= txPopulate x
+                                    >>= txDumpToFile fp)
+  bs <- DP.liftIO $ BS.readFile fp
+  DP.liftIO $ removeFile fp
+  return bs
 
 -- | Helper functions for backward compatibility.
 syncToConfd :: PhaseM LoopState l (Either SomeException ())
