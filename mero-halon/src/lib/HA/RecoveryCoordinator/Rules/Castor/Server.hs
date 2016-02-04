@@ -141,7 +141,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
                               ++ show host
               continue finish
             Just lnid -> do
-              createMeroKernelConfig host lnid
+              createMeroKernelConfig host $ lnid ++ "@tcp"
               startMeroService host node
               switch [svc_up_now, timeout 5000000 svc_up_already]
       Nothing -> do

@@ -53,7 +53,7 @@ import System.Directory
 import System.IO
 import System.Posix.SysInfo
 
-import Prelude hiding ((.))
+import Prelude hiding ((.), id)
 
 updateDriveState :: M0.SDev -- ^ Drive to update state
                  -> M0.ConfObjectState -- ^ State to update to
@@ -228,11 +228,12 @@ startMeroService host node = do
                     ++ show (host, node)
   rg <- getLocalGraph
   mprofile <- Conf.getProfile
+  mHaAddr <- Conf.lookupHostHAAddress host
   mapM_ promulgateRC $ do
     profile <- mprofile
     M0.LNid lnid <- listToMaybe . G.connectedTo host Has $ rg
     uuid <- listToMaybe $ G.connectedTo host Has rg
-    -- TODO Use the proper HA address
-    let conf = MeroConf (lnid ++ haAddress) (fidToStr $ M0.fid profile)
+    let haAddr = maybe (lnid ++ haAddress) id mHaAddr
+        conf = MeroConf haAddr (fidToStr $ M0.fid profile)
                 (MeroKernelConf uuid)
     return $ encodeP $ ServiceStartRequest Start node m0d conf []

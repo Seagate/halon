@@ -29,6 +29,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , lookupStorageDeviceSDev
   , lookupStorageDeviceOnHost
   , lookupEnclosureM0
+  , lookupHostHAAddress
   ) where
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -308,6 +309,19 @@ getSDevPools sdev = do
 lookupEnclosureM0 :: Enclosure -> PhaseM LoopState l (Maybe M0.Enclosure)
 lookupEnclosureM0 enc =
   listToMaybe . G.connectedFrom M0.At enc <$> getLocalGraph
+
+-- | Lookup the HA endpoint to be used for the node. This is stored as the
+--   endpoint for the HA service hosted by processes on that node. Whilst in
+--   theory different processes might have different HA endpoints, in
+--   practice this should not happen.
+lookupHostHAAddress :: Host -> PhaseM LoopState l (Maybe String)
+lookupHostHAAddress host = getLocalGraph >>= \rg -> return $ listToMaybe
+  [ ep | node <- G.connectedTo host Runs rg :: [M0.Node]
+        , ps <- G.connectedTo node M0.IsParentOf rg :: [M0.Process]
+        , svc <- G.connectedTo ps M0.IsParentOf rg ::[M0.Service]
+        , M0.s_type svc == CST_HA
+        , ep <- M0.s_endpoints svc
+        ]
 
 -- | Get all children of the conf object.
 getChildren :: G.Relation M0.IsParentOf a b => a -> PhaseM LoopState l [b]
