@@ -220,7 +220,7 @@ ruleMeroNoteSet = do
                                  then M0_NC_TRANSIENT
                                  else M0_NC_FAILED
 
-                    when (ratt <= resetAttemptThreshold) 
+                    when (ratt > resetAttemptThreshold) 
                       $ updateDriveState m0sdev status
 
                     when (status == M0_NC_FAILED) $ do
