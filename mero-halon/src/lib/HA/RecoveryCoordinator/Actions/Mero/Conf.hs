@@ -210,6 +210,7 @@ loadMeroServers fs = mapM_ goHost where
       mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size m0d_bsize m0d_path
       devIds = [ DIWWN m0d_wwn
                , DIPath m0d_path
+               , DISerialNumber m0d_serial
                ]
     in do
       sdev <- lookupStorageDeviceOnHost host (DIWWN m0d_wwn) >>= \case
