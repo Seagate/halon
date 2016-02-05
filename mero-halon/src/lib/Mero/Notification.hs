@@ -256,11 +256,14 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
     ha_entrypoint fom crep = void $ CH.forkProcess lnode $ do
       say "ha_entrypoint: try to read values from cache."
       self <- getSelfPid
-      liftIO ( (getSpielAddress =<<) <$> readIORef globalResourceGraphCache)
+      liftIO ( (fmap getSpielAddress) <$> readIORef globalResourceGraphCache)
         >>= \case
-               Just ep -> return $ Just ep
-               Nothing -> do
-                 say "ha_entrypoint: request adderess from RC."
+               Just (Just ep) -> return $ Just ep
+               Just Nothing   -> do
+                 say "ha_entrypoint: No spiel address. Is RM service defined?"
+                 return Nothing
+               Nothing        -> do
+                 say "ha_entrypoint: request address from RC."
                  void $ promulgate $ GetSpielAddress self
                  fmap join $ expectTimeout entryPointTimeout
         >>= \case
