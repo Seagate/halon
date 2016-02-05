@@ -9,7 +9,8 @@
 {-# LANGUAGE LambdaCase                 #-}
 
 module HA.RecoveryCoordinator.Actions.Mero.Spiel
-  ( getSpielAddressRC
+  ( haAddress
+  , getSpielAddressRC
   , withRootRC
   , withSpielRC
   , withRConfRC
@@ -76,6 +77,11 @@ import System.IO
 import Text.Printf (printf)
 
 import Prelude hiding (id)
+
+
+-- | Halon service address suffix. Should be appended to the LNID.
+haAddress :: String
+haAddress = ":12345:35:101"
 
 -- | Find a confd server in the cluster and run the given function on
 -- the configuration tree. Returns no result if no confd servers are
@@ -353,11 +359,11 @@ validateTransactionCache = withSpielRC $ \sc -> loadConfData >>= \case
 
 -- | Creates an RPCAddress suitable for 'withServerEndpoint'
 -- and friends. 'getSelfNode' is used and endpoint of
--- @tcp:12345:34:100@ is assumed.
+-- 'haAddress' is assumed.
 getRPCAddress :: DP.Process RPCAddress
 getRPCAddress = rpcAddress . mkAddress <$> DP.getSelfNode
   where
-    mkAddress = (++ "@tcp:12345:34:100") . takeWhile (/= ':')
+    mkAddress = (++ "@tcp" ++ haAddress) . takeWhile (/= ':')
                 . drop (length ("nid://" :: String)) . show
 
 -- | RC wrapper for 'getSpielAddress'.
