@@ -64,9 +64,11 @@ int ha_state_notify( rpc_endpoint_t *ep, char *remote_address
     M0_ASSERT(fop != NULL);
     m0_fop_init(fop, &m0_ha_state_set_fopt, note, notify_fop_release);
 
+    M0_LOG(M0_ALWAYS, "sending notification so endpoint=%s", remote_address);
     rc = rpc_send_fop_blocking_and_release(c,fop,timeout_s);
 
     rpc_disconnect(c,timeout_s);
+    M0_LOG(M0_ALWAYS, "sent    notification so endpoint=%s", remote_address);
     return rc;
 }
 
