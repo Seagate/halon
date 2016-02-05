@@ -49,6 +49,7 @@ import           Data.Binary (Binary)
 import           Data.Foldable
 import           Data.Typeable (Typeable)
 import qualified Data.UUID as UUID
+import           Data.List (nub)
 import           GHC.Generics (Generic)
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
@@ -254,7 +255,7 @@ repairStatus M0.Failure = statusOfRepairOperation
 
 -- | Given a 'Pool', retrieve all associated IO services ('CST_IOS').
 getIOServices :: Pool -> PhaseM LoopState l [M0.Service]
-getIOServices pool = getLocalGraph >>= \g -> return
+getIOServices pool = getLocalGraph >>= \g -> return (nub 
   [ svc | pv <- G.connectedTo pool IsRealOf g :: [PVer]
         , rv <- G.connectedTo pv IsParentOf g :: [RackV]
         , ev <- G.connectedTo rv IsParentOf g :: [EnclosureV]
@@ -263,7 +264,7 @@ getIOServices pool = getLocalGraph >>= \g -> return
         , nd <- G.connectedFrom IsOnHardware ct g :: [M0.Node]
         , pr <- G.connectedTo nd IsParentOf g :: [M0.Process]
         , svc@(M0.Service { M0.s_type = CST_IOS }) <- G.connectedTo pr IsParentOf g
-        ]
+        ])
 
 -- | Find only those services that are in a state of finished (or not
 -- started) repair.
