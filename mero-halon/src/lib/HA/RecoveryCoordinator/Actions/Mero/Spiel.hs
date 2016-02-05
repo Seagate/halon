@@ -138,6 +138,7 @@ startRepairOperation pool = go `catch`
     go = do
       phaseLog "spiel" $ "Starting repair on pool " ++ show pool
       notifyMero [M0.AnyConfObj pool] M0_NC_REPAIR
+      _ <- liftProcess $ DP.receiveTimeout 500000 []
       _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStart sc (M0.fid pool)
       setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure Nothing
       -- XXX: This is a workaround until mero will implement online notification for
