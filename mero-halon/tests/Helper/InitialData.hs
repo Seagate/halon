@@ -108,7 +108,11 @@ initialData host_pfx ifaddr_pfx n_srv n_drv globs = CI.InitialData {
               }
             ]
           , CI.m0h_devices = fmap
-              (\j -> CI.M0Device ("wwn" ++ show i ++ show j) 4 64000 ("/dev/loop" ++ show i ++ show j))
+              (\j -> CI.M0Device
+                      ("wwn" ++ show i ++ show j)
+                      ("serial" ++ show i ++ show j)
+                      4 64000
+                      ("/dev/loop" ++ show i ++ show j))
               [(1 :: Int) .. n_drv]
           })
       [(2 :: Int) .. n_srv + 1]

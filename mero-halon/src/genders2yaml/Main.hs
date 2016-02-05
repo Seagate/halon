@@ -140,6 +140,7 @@ makeInitialData db devs = CI.InitialData {
 mkDevice :: Device -> CI.M0Device
 mkDevice (Device i fp) = CI.M0Device {
     CI.m0d_wwn = "wwn-" ++ show i
+  , CI.m0d_serial = "serial-" ++ show i
   , CI.m0d_bsize = 4096
   , CI.m0d_size = 8192
   , CI.m0d_path = fp
