@@ -268,12 +268,15 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
                  fmap join $ expectTimeout entryPointTimeout
         >>= \case
                  Just ep -> do
+                   say "ha_entrypoint: succeeded."
                    liftGlobalM0 $
                      entrypointReplyWakeup fom crep (sa_confds_fid ep)
                                                     (sa_confds_ep  ep)
                                                     (sa_rm_fid     ep)
                                                     (sa_rm_ep      ep)
-                 Nothing -> liftGlobalM0 $ entrypointNoReplyWakeup fom crep
+                 Nothing -> do
+                   say "ha_entrypoint: failed."
+                   liftGlobalM0 $ entrypointNoReplyWakeup fom crep
 
 -- | Initialiazes the 'EndpointRef' subsystem.
 --
