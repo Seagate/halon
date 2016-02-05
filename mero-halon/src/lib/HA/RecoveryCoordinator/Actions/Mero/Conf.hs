@@ -53,6 +53,7 @@ import Control.Category (id, (>>>))
 import Control.Distributed.Process (liftIO)
 
 import Data.Foldable (foldl')
+import Data.List (scanl')
 import Data.Maybe (listToMaybe)
 import Data.Proxy
 import Data.UUID.V4 (nextRandom)
@@ -146,14 +147,16 @@ initialiseConfInRG = getFilesystem >>= \case
 loadMeroServers :: M0.Filesystem
                 -> [CI.M0Host]
                 -> PhaseM LoopState l ()
-loadMeroServers fs = mapM_ goHost where
-  goHost CI.M0Host{..} = let
+loadMeroServers fs = mapM_ goHost . offsetHosts where
+  offsetHosts hosts = zip hosts
+    (scanl' (\acc h -> acc + (length $ CI.m0h_devices h)) (1 :: Int) hosts)
+  goHost (CI.M0Host{..}, hostIdx) = let
       host = Host m0h_fqdn
     in do
       ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
       node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
 
-      devs <- mapM (goDev host ctrl) (zip m0h_devices [1..length m0h_devices + 1])
+      devs <- mapM (goDev host ctrl) (zip m0h_devices [hostIdx..length m0h_devices + hostIdx])
       mapM_ (goProc node devs) m0h_processes
 
       rg <- getLocalGraph
