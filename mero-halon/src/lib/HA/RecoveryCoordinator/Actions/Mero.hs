@@ -91,10 +91,6 @@ updateDriveState m0sdev x = do
 rmsAddress :: String
 rmsAddress = ":12345:41:301"
 
--- | Halon service addres.
-haAddress :: String
-haAddress = ":12345:35:101"
-
 -- | Create the necessary configuration in the resource graph to support
 --   loading the Mero kernel. Currently this consists of creating a unique node
 --   UUID and storing the LNet nid.

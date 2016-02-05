@@ -867,11 +867,10 @@ Test-Suite tests-mero-integration
                         tasty-hunit,
                         unix,
                         directory,
-                        unordered-containers
+                        unordered-containers,
+                        uuid
 
       CPP-Options:    -DUSE_MERO
-      -- bitrotten: disabled for now
-      Buildable:        False
   else
       Buildable:        False
 

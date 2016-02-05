@@ -19,6 +19,7 @@ import Control.Monad
 import Control.Concurrent
 import System.Environment (lookupEnv, getExecutablePath)
 import System.Process
+import System.IO
 
 import Helper.Environment
 import Test.Tasty (TestTree, TestName, defaultMainWithIngredients, testGroup)
@@ -30,6 +31,8 @@ import Test.Tasty.Ingredients.FileReporter (fileTestReporter)
 main :: IO ()
 main = withMeroEnvironment router wrapper where
   router = do
+    hSetBuffering stdout LineBuffering
+    hSetBuffering stderr LineBuffering
     minfo <- liftM2 (,) <$> lookupEnv "MERO_TEST"
                         <*> lookupEnv "TEST_LISTEN"
     case minfo of
