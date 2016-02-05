@@ -546,7 +546,7 @@ getSpielAddress g =
        (confdsFid,confdsEps) = nub *** nub . concat $ unzip
          [ (fd, eps) | (Service { s_fid = fd, s_type = CST_MGS, s_endpoints = eps }) <- svs ]
        (rmFids, rmEps) = unzip
-         [ (fd, eps) | (Service { s_fid = fd, s_type = CST_MDS, s_endpoints = eps }) <- svs ]
+         [ (fd, eps) | (Service { s_fid = fd, s_type = CST_RMS, s_endpoints = eps }) <- svs ]
        mrmFid = listToMaybe $ nub rmFids
        mrmEp  = listToMaybe $ nub $ concat rmEps
   in (SpielAddress confdsFid confdsEps) <$> mrmFid <*> mrmEp
