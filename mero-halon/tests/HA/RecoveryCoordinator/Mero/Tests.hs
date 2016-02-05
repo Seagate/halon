@@ -32,6 +32,7 @@ import           Data.Binary
 import           Data.List (isInfixOf)
 import qualified Data.Text as T
 import           Data.Typeable
+import           Data.Yaml (decodeFileEither)
 import           GHC.Generics
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
@@ -322,13 +323,22 @@ testRCsyncToConfd _host transport = do
   registerInterceptor $ \case
     str' | "Finished sync to confd" `isInfixOf` str' -> usend self ("SyncOK" :: String)
          | "Loaded initial data" `isInfixOf` str' -> usend self ("InitialLoad" :: String)
+         | "Finished bootstrapping mero server" `isInfixOf` str' ->
+             usend self ("ServerBootstrap" :: String)
          | otherwise -> return ()
 
   withTrackingStation testSyncRules $ \_ -> do
 
-    promulgateEQ [nid] Helper.InitialData.defaultInitialData
-      >>= flip withMonitor wait
+    nodeUp ([nid], 5000000)
+    say "Reading yaml."
+    r <- liftIO $ decodeFileEither "/home/vagrant/halon/halon-facts-mod.yml"
+    either (say . show) (const $ return ()) r
+    Right initData <- return r
+    say "Loading initial data..."
+    promulgateEQ [nid] (initData :: CI.InitialData) >>= flip withMonitor wait
     "InitialLoad" :: String <- expect
+
+    "ServerBootstrap" :: String <- expect
 
     promulgateEQ [nid] SpielSync >>= flip withMonitor wait
     "SyncOK" :: String <- expect

@@ -260,7 +260,7 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
         >>= \case
                Just (Just ep) -> return $ Just ep
                Just Nothing   -> do
-                 say "ha_entrypoint: No spiel address. Is RM service defined?"
+                 say $ "ha_entrypoint: No spiel address. Is RM service defined?"
                  return Nothing
                Nothing        -> do
                  say "ha_entrypoint: request address from RC."

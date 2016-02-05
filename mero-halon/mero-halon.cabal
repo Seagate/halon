@@ -534,7 +534,8 @@ Test-Suite unit-tests
                     uuid,
                     time,
                     unix,
-                    process
+                    process,
+                    yaml
 
   if flag(mero)
       Build-Depends: rpclite, syb
@@ -868,7 +869,8 @@ Test-Suite tests-mero-integration
                         unix,
                         directory,
                         unordered-containers,
-                        uuid
+                        uuid,
+                        yaml
 
       CPP-Options:    -DUSE_MERO
   else

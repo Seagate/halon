@@ -1,6 +1,6 @@
-#!/bin/bash -e
+#!/bin/bash -ex
 
-IP=127.0.0.1
+IP=10.0.2.15
 
 TS=$IP:9010
 HCTL=$IP:9001
@@ -24,6 +24,7 @@ $HALOND -l $TS 2>&1 > /tmp/generateConf.log 2>&1 &
 sleep 1
 
 $HALONCTL -a $TS -l $HCTL bootstrap station
+sleep 3
 $HALONCTL -a $TS -l $HCTL bootstrap satellite
 
 sleep 3

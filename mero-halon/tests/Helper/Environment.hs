@@ -99,16 +99,18 @@ withMeroEnvironment router wrapper = withMeroRoot $ \meroRoot ->
       Just test -> test
       Nothing -> bracket_
         (do setEnv "SANDBOX_DIR" "/var/mero/sandbox.mero-halon-st"
-            callCommand $ meroRoot ++ "/conf/st sstart"
+            _ <- tryIO $ callCommand "modprobe lnet"
+            _ <- tryIO $ callCommand "lctl network up"
+            return ()
             )
 
         (do threadDelay $ 2*1000000
-            _ <- tryIO $ callCommand $ meroRoot ++ "/conf/st sstop"
-            threadDelay $ 2*1000000
             -- XXX: workaround for a bug in a mero test suite.
             _ <- tryIO $ callCommand $ "killall -9 lt-m0d"
             threadDelay $ 2*1000000
             _ <- tryIO $ callCommand $ meroRoot ++ "/conf/st rmmod"
+            _ <- tryIO $ callCommand "lctl network down"
+            _ <- tryIO $ callCommand "modprobe -r lnet"
             return ())
         (do nid <- getLnetNid
             setEnv confdEndpoint  $ nid ++ ":12345:34:1001"

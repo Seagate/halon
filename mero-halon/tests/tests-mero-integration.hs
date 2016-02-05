@@ -48,7 +48,7 @@ main = withMeroEnvironment router wrapper where
           threadDelay 1000000
       _ -> return Nothing
   wrapper = do
-    defaultMainWithIngredients [fileTestReporter [consoleTestReporter]] $
+    defaultMainWithIngredients [consoleTestReporter] $
       testGroup "mero-integration-tests"
         [ runExternalTest "RCSyncToConfd"
         -- , runExternalTest "DriveFailurePVer" -- Disabled until strategy based generation will arrive

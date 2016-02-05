@@ -247,8 +247,18 @@ syncToBS = do
 -- | Helper functions for backward compatibility.
 syncToConfd :: PhaseM LoopState l (Either SomeException ())
 syncToConfd = do
-  withSpielRC $ \sc -> do
-     loadConfData >>= traverse_ (\x -> txOpenContext sc >>= txPopulate x >>= txSyncToConfd)
+  r <- withSpielRC $ \sc -> do
+     liftProcess $ DP.say "syncToConfd: loadConfData"
+     loadConfData >>= traverse_ (\x -> do
+       liftProcess $ DP.say "syncToConfd: txOpenContext"
+       c <- txOpenContext sc
+       liftProcess $ DP.say "syncToConfd: txPopulate"
+       t <- txPopulate x c
+       liftProcess $ DP.say "syncToConfd: txSyncToConfd"
+       txSyncToConfd t)
+     liftProcess $ DP.say "syncToConfd: withSpielRC completed"
+  liftProcess $ DP.say "syncToConfd: completed"
+  return r
 
 -- | Open a transaction. Ultimately this should not need a
 --   spiel context.
@@ -261,10 +271,12 @@ txOpenLocalContext = liftM0RC openLocalTransaction
 txSyncToConfd :: SpielTransaction -> PhaseM LoopState l ()
 txSyncToConfd t = do
   phaseLog "spiel" "Committing transaction to confd"
-  liftM0RC (commitTransaction t) >>= \case
+  liftProcess $ DP.say "syncToConfd: commitTransaction"
+  liftM0RC (commitTransaction t) `sfinally` (liftProcess $ DP.say "txSyncToConfd: commitTransaction terminated") >>= \case
     Nothing -> phaseLog "spiel" "Transaction committed."
     Just err ->
       phaseLog "spiel" $ "Transaction commit failed with cache failure:" ++ err
+  liftProcess $ DP.say "syncToConfd: closeTransaction"
   liftM0RC $ closeTransaction t
   phaseLog "spiel" "Transaction closed."
 
