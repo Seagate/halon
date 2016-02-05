@@ -174,19 +174,6 @@ createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
             $ rg
     return rg'
 
--- | Retrieve the conf file contents so they can be sent to the nodes
--- and stored there before confd and RM are brought up.
-syncConfToBS :: PhaseM LoopState l ByteString
-syncConfToBS = do
-  fp <- liftIO $ do
-    tmpdir <- getTemporaryDirectory
-    (fp, h) <- openTempFile tmpdir "conf.xc"
-    hClose h >> return fp
-  syncAction Nothing $ M0.SyncDumpToFile fp
-  conf <- liftIO $ BS.readFile fp
-  liftIO $ BS.length conf `seq` removeFile fp
-  return conf
-
 -- | Start all Mero processes labelled with the specified process label on
 --   a given node.
 startNodeProcesses :: Castor.Host
@@ -214,7 +201,7 @@ startNodeProcesses host (TypedChannel chan) label mkfs = do
     liftProcess $ sendChan chan msg
   where
     runConfig proc rg = case runsMgs proc rg of
-      True -> syncConfToBS >>= \bs -> return $
+      True -> syncToBS >>= \bs -> return $
                 ProcessConfigLocal (M0.fid proc) (M0.r_endpoint proc) bs
       False -> return $ ProcessConfigRemote (M0.fid proc) (M0.r_endpoint proc)
     runsMgs proc rg =

@@ -1,4 +1,5 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP        #-}
+{-# LANGUAGE LambdaCase #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -15,7 +16,7 @@ import HA.EventQueue.Producer (promulgateEQ)
 import qualified HA.Resources.Castor.Initial as CI
 
 #ifdef USE_MERO
-import HA.Resources.Mero (SyncToConfd(..))
+import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 
 import Options.Applicative ((<>), (<|>))
 #else
@@ -24,6 +25,7 @@ import Options.Applicative ((<>))
 
 import Control.Distributed.Process
 import Control.Monad (void)
+import qualified Data.ByteString as BS
 
 import Data.Yaml
   ( decodeFileEither
@@ -119,10 +121,16 @@ parseDumpOptions = DumpOptions <$>
 dumpConfd :: [NodeId]
           -> DumpOptions
           -> Process ()
-dumpConfd eqnids (DumpOptions fn) = promulgateEQ eqnids msg
-        >>= \pid -> withMonitor pid wait
+dumpConfd eqnids (DumpOptions fn) = do
+  self <- getSelfPid
+  promulgateEQ eqnids (SyncDumpToBS self) >>= flip withMonitor wait
+  expect >>= \case
+    SyncDumpToBSReply (Left err) ->
+      say $ "Dumping conf to " ++ fn ++ " failed with " ++ err
+    SyncDumpToBSReply (Right bs) -> do
+      liftIO $ BS.writeFile fn bs
+      say $ "Dumped conf in RG to this file " ++ fn
   where
-    msg = SyncDumpToFile fn
     wait = void (expect :: Process ProcessMonitorNotification)
 
 #endif

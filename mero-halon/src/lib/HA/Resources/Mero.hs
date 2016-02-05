@@ -16,6 +16,7 @@ module HA.Resources.Mero
   , CI.M0Globals
   ) where
 
+import Control.Distributed.Process (ProcessId)
 import qualified HA.Resources as R
 import HA.Resources.TH
 import qualified HA.Resources.Castor as R
@@ -31,6 +32,7 @@ import Mero.ConfC
 
 import Data.Binary (Binary(..))
 import Data.Bits
+import qualified Data.ByteString as BS
 import Data.Char (ord)
 import Data.Hashable (Hashable(..))
 import Data.Proxy (Proxy(..))
@@ -105,11 +107,17 @@ instance Hashable SpielAddress
 
 data SyncToConfd =
       SyncToConfdServersInRG
-    | SyncDumpToFile FilePath
+    | SyncDumpToBS ProcessId
   deriving (Eq, Generic, Show, Typeable)
 
 instance Binary SyncToConfd
 instance Hashable SyncToConfd
+
+newtype SyncDumpToBSReply = SyncDumpToBSReply (Either String BS.ByteString)
+  deriving (Eq, Generic, Show, Typeable)
+
+instance Binary SyncDumpToBSReply
+instance Hashable SyncDumpToBSReply
 
 --------------------------------------------------------------------------------
 -- Conf tree in the resource graph
