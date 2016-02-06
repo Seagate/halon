@@ -97,7 +97,7 @@ queryStartHandling pool prt = do
      -- This is the first of many notifications, start query in 5
      -- minutes.
      | priOnlineNotifications pri == 1 && iosvs > 1 ->
-         selfMessage $ SpielQuery pool prt
+         promulgateRC $ SpielQuery pool prt
      -- This is not the first notification so we have already
      -- dispatched a query before, do nothing.
      | otherwise -> return ()
