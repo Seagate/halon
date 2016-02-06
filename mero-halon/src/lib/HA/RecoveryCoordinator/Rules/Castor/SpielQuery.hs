@@ -105,7 +105,7 @@ queryStartHandling pool prt = do
              notifyMero [AnyConfObj pool] $ repairedNotificationMsg prt
            else do
              updatePoolRepairStatusTime pool
-             selfMessage $ SpielQuery pool prt
+             promulgateRC $ SpielQuery pool prt
     M0.Rebalance -> do
       incrementOnlinePRSResponse pool
       Just pri <- getPoolRepairInformation pool
