@@ -43,6 +43,7 @@ import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef
                               )
 import Data.List              ( find )
 import Data.Word              ( Word32, Word8 )
+import Data.Int               ( Int32 )
 import Foreign.C.Types        ( CInt(..) )
 import Foreign.C.String       ( CString, withCString )
 import Foreign.Marshal.Alloc  ( allocaBytesAligned )
@@ -155,20 +156,20 @@ instance Storable Note where
   peek p = liftM2 Note
       (#{peek struct m0_ha_note, no_id} p)
       (fmap (toEnum . fromIntegral)
-          (#{peek struct m0_ha_note, no_state} p :: IO Word8)
+          (#{peek struct m0_ha_note, no_state} p :: IO Word32)
       )
 
   poke p (Note o s) = do
       #{poke struct m0_ha_note, no_id} p o
       #{poke struct m0_ha_note, no_state} p
-          (fromIntegral $ fromEnum s :: Word8)
+          (fromIntegral $ fromEnum s :: Word32)
 
 -- | Reads the list of notes from a reference.
 readNVecRef :: NVecRef -> IO NVec
 readNVecRef (NVecRef pnvec) = do
-  nr <- #{peek struct m0_ha_nvec, nv_nr} pnvec
+  nr <- #{peek struct m0_ha_nvec, nv_nr} pnvec :: IO Int32
   notes <- #{peek struct m0_ha_nvec, nv_note} pnvec
-  peekArray nr notes
+  peekArray (fromIntegral nr) notes
 
 -- | @updateNVecRef ref news@ updates the states of the
 -- notes in @ref@ with the states contained in @news@.
@@ -212,7 +213,7 @@ notify se (RPCAddress rpcAddr) nvec timeout_s =
     allocaBytesAligned #{size struct m0_ha_nvec}
                        #{alignment struct m0_ha_nvec}$ \pnvec -> do
       #{poke struct m0_ha_nvec, nv_nr} pnvec
-          (fromIntegral $ length nvec :: Word32)
+          (fromIntegral $ length nvec :: Int32)
       #{poke struct m0_ha_nvec, nv_note} pnvec pnote
       ha_state_notify (se_ptr se) caddr (NVecRef pnvec) (fromIntegral timeout_s)
         >>= check_rc "notify"
