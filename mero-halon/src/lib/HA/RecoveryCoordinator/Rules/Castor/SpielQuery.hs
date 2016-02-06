@@ -98,6 +98,7 @@ queryStartHandling pool prt = do
         modifyPoolRepairInformation pool $ \pri ->
           pri { priOnlineNotifications = onlines }
         Just pri <- getPoolRepairInformation pool
+        phaseLog "repair" $ "IO services done: " ++ show (priOnlineNotifications pri)
         if priOnlineNotifications pri >= iosvs 
            then do
              unsetPoolRepairStatus pool
@@ -159,8 +160,9 @@ querySpiel = define "query-spiel" $ do
       Just pri -> do
         timeNow <- liftIO getTime
         let elapsed = timeNow - priTimeOfFirstCompletion pri
-            untilTimeout = 20 - elapsed
+            untilTimeout = 60 - elapsed
         iosvs <- length <$> getIOServices pool
+        phaseLog "repair" $ "IO services: " ++ show iosvs ++ " done: " ++ (show $ priOnlineNotifications pri)
         if priOnlineNotifications pri < iosvs
         then switch [timeout (timeSpecToSeconds untilTimeout) runQuery]
         else do notifyMero [AnyConfObj pool] $ repairedNotificationMsg prt
@@ -177,8 +179,9 @@ querySpiel = define "query-spiel" $ do
         pri { priOnlineNotifications = onlines }
       updatePoolRepairStatusTime pool
       nid <- liftProcess getSelfNode
+      phaseLog "repair" $ "IO services: " ++ (show iosvs) ++ " done: " ++ (show onlines)
       if onlines < iosvs
-      then liftProcess . void . promulgateEQ [nid] $ SpielQueryHourly pool prt
+      then continue $ timeout 60 runQuery  -- liftProcess . void . promulgateEQ [nid] $ SpielQueryHourly pool prt
       else do notifyMero [AnyConfObj pool] $ repairedNotificationMsg prt
               unsetPoolRepairStatus pool
     messageProcessed uid
