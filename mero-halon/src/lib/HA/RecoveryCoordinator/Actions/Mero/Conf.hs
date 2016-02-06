@@ -52,7 +52,7 @@ import Control.Category (id, (>>>))
 import Control.Distributed.Process (liftIO)
 
 import Data.Foldable (foldl')
-import Data.List (scanl')
+import Data.List (scanl', nub)
 import Data.Maybe (listToMaybe)
 import Data.Proxy
 import Data.UUID.V4 (nextRandom)
@@ -299,7 +299,7 @@ getSDevPools sdev = do
               , p  <- G.connectedFrom M0.IsRealOf pv rg :: [M0.Pool]
               ]
 
-    return ps
+    return $ nub ps
 
 lookupEnclosureM0 :: Enclosure -> PhaseM LoopState l (Maybe M0.Enclosure)
 lookupEnclosureM0 enc =
