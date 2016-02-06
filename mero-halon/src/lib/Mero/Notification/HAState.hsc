@@ -162,7 +162,7 @@ instance Storable Note where
   poke p (Note o s) = do
       #{poke struct m0_ha_note, no_id} p o
       #{poke struct m0_ha_note, no_state} p
-          (fromIntegral $ fromEnum s :: Word8)
+          (fromIntegral $ fromEnum s :: Word32)
 
 -- | Reads the list of notes from a reference.
 readNVecRef :: NVecRef -> IO NVec
