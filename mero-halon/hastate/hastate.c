@@ -54,6 +54,7 @@ int ha_state_notify( rpc_endpoint_t *ep, char *remote_address
                    , struct m0_ha_nvec *note, int timeout_s
                    ) {
     int rc;
+    int i;
     struct m0_fop *fop;
     rpc_connection_t *c;
     rc = rpc_connect(ep,remote_address,timeout_s,&c);
@@ -64,7 +65,13 @@ int ha_state_notify( rpc_endpoint_t *ep, char *remote_address
     M0_ASSERT(fop != NULL);
     m0_fop_init(fop, &m0_ha_state_set_fopt, note, notify_fop_release);
 
-    M0_LOG(M0_ALWAYS, "sending notification so endpoint=%s", remote_address);
+    M0_LOG(M0_ALWAYS, "sending notification so endpoint=%s note->nv_nr=%"PRIi32,
+	   remote_address, note->nv_nr);
+    for (i = 0; i < note->nv_nr; ++i) {
+	    M0_LOG(M0_ALWAYS, "note->nv_note[%d] no_id="FID_F" no_state=%u",
+	           i, FID_P(&note->nv_note[i].no_id),
+	           note->nv_note[i].no_state);
+    }
     rc = rpc_send_fop_blocking_and_release(c,fop,timeout_s);
 
     rpc_disconnect(c,timeout_s);
