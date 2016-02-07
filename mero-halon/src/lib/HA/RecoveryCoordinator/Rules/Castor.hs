@@ -221,7 +221,8 @@ ruleMeroNoteSet = do
                                  else M0_NC_FAILED
 
                     when (ratt > resetAttemptThreshold) 
-                      $ updateDriveState m0sdev status
+                      $ do updateDriveState m0sdev status
+                           notifyMero [M0.AnyConfObj m0sdev] M0_NC_FAILED
 
                     when (status == M0_NC_FAILED) $ do
                       updateDriveManagerWithFailure Nothing sdev
@@ -317,6 +318,7 @@ ruleResetAttempt = define "reset-attempt" $ do
           sd <- lookupStorageDeviceSDev sdev
           forM_ sd $ \m0sdev -> do
             updateDriveState m0sdev M0_NC_FAILED
+            notifyMero [M0.AnyConfObj m0sdev] M0_NC_FAILED
             updateDriveManagerWithFailure Nothing sdev
             pools <- getSDevPools m0sdev
             traverse_ startRepairOperation pools
@@ -343,6 +345,7 @@ ruleResetAttempt = define "reset-attempt" $ do
           sd <- lookupStorageDeviceSDev sdev
           forM_ sd $ \m0sdev -> do
             updateDriveState m0sdev M0_NC_FAILED
+            notifyMero [M0.AnyConfObj m0sdev] M0_NC_FAILED
             updateDriveManagerWithFailure Nothing sdev
             pools <- getSDevPools m0sdev
             traverse_ startRepairOperation pools
@@ -382,6 +385,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           updateDriveState m0sdev M0_NC_FAILED
+          notifyMero [M0.AnyConfObj m0sdev] M0_NC_FAILED
           updateDriveManagerWithFailure Nothing sdev
           pools <- getSDevPools m0sdev
           traverse_ startRepairOperation pools
