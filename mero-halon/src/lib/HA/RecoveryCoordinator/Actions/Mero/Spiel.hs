@@ -145,7 +145,7 @@ startRepairOperation pool = go `catch`
       --      pool after repair/rebalance. This code should never hit the master
       --      branch.
       liftProcess $ DP.spawnLocal $ do
-        DP.receiveTimeout (60*1000000) []
+        DP.receiveTimeout (10*1000000) []
         promulgate $ Set [Note (M0.fid pool) M0_NC_REPAIRED]
         return ()
       return ()
