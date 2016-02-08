@@ -49,10 +49,11 @@ import           Prelude hiding ((<$>), (<*>))
 import qualified SSPL.Bindings as SSPL
 import           System.Directory (removeFile)
 import           Test.Framework
-import           Test.Tasty.HUnit (assertBool, testCase)
+import           Test.Tasty.HUnit (assertBool, assertEqual, testCase)
 import           TestRunner
 import           Helper.Environment (systemHostname)
 #ifdef USE_MERO
+import           Control.Category ((>>>))
 import           Control.Monad (when)
 import           Data.Function (on)
 import           Data.List (sortBy)
@@ -76,6 +77,7 @@ tests _host transport =
       when False (testGoodConfValidates transport)
   , testCase "bad-conf-does-not-validate [disabled by TODO]" $
       when False (testBadConfDoesNotValidate transport)
+  , testCase "RG can load different fids with the same type" $ testFidsLoad
 #else
   , testCase "testConfObjectStateQuery [disabled by compilation flags]" $
       return ()
@@ -456,4 +458,16 @@ testBadConfDoesNotValidate transport = testConfValidates iData transport $ do
     -- mero the test for this does not yet exist so we can't steal any
     -- ideas.
     iData = Helper.InitialData.defaultInitialData
+#endif
+
+#ifdef USE_MERO
+testFidsLoad = do
+  let mmchan = error "Graph mmchan is not used in this test"
+      fids = [ M0.fidInit (Proxy :: Proxy M0.RackV) 1 1
+             , M0.fidInit (Proxy :: Proxy M0.DiskV) 2 3
+             ]
+  let g  = G.newResource (M0.RackV (fids !! 0))
+       >>> G.newResource (M0.DiskV (fids !! 1))
+         $ G.emptyGraph mmchan
+  liftIO $ assertEqual "all objects should be found" 2 (length $ rgLookupConfObjectStates fids g)
 #endif
