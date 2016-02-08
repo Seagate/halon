@@ -203,7 +203,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
 
   goDev host ctrl (CI.M0Device{..}, idx) = let
       mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size m0d_bsize m0d_path
-      devIds = [ DIWWN m0d_wwn
+      devIds = [ DIWWN (drop 2 m0d_wwn)
                , DIPath m0d_path
                ]
     in do
