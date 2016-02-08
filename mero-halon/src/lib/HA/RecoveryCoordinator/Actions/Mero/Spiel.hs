@@ -39,7 +39,7 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero.Conf
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import qualified HA.ResourceGraph as G
-import HA.Resources (Has(..))
+import HA.Resources (Has(..), Cluster(..))
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import HA.Resources.Mero (SyncToConfd(..))
@@ -59,6 +59,7 @@ import Mero.Spiel hiding (start)
 import qualified Mero.Spiel
 
 import Control.Applicative
+import Control.Category ((>>>))
 import qualified Control.Distributed.Process as DP
 import Control.Monad (forM_, void, join)
 import Control.Monad.Catch
@@ -262,7 +263,11 @@ txSyncToConfd :: SpielTransaction -> PhaseM LoopState l ()
 txSyncToConfd t = do
   phaseLog "spiel" "Committing transaction to confd"
   liftM0RC (commitTransaction t) >>= \case
-    Nothing -> phaseLog "spiel" "Transaction committed."
+    Nothing -> do
+      -- spiel increases conf version here so we should too; alternative
+      -- would be querying spiel after transaction for the new version
+      modifyConfUpdateVersion (\(M0.ConfUpdateVersion i) -> M0.ConfUpdateVersion $ i + 1)
+      phaseLog "spiel" "Transaction committed."
     Just err ->
       phaseLog "spiel" $ "Transaction commit failed with cache failure:" ++ err
   liftM0RC $ closeTransaction t
@@ -270,11 +275,13 @@ txSyncToConfd t = do
 
 txDumpToFile :: FilePath -> SpielTransaction -> PhaseM LoopState l ()
 txDumpToFile fp t = do
-  phaseLog "spiel" $ "Writing transaction to " ++ fp
-  liftM0RC $ dumpTransaction t fp
+  M0.ConfUpdateVersion ver <- getConfUpdateVersion
+  phaseLog "spiel" $ "Writing transaction to " ++ fp ++ " with ver " ++ show ver
+  liftM0RC $ dumpTransaction t ver fp
   phaseLog "spiel" "Transaction written."
   liftM0RC $ closeTransaction t
   phaseLog "spiel" "Transaction closed."
+  modifyConfUpdateVersion $ const (M0.ConfUpdateVersion $ ver + 1)
 
 data TxConfData = TxConfData M0.M0Globals M0.Profile M0.Filesystem
 
@@ -283,6 +290,27 @@ loadConfData = liftA3 TxConfData
             <$> getM0Globals
             <*> getProfile
             <*> getFilesystem
+
+-- | Gets the current 'ConfUpdateVersion' used when dumping
+-- 'SpielTransaction' out. If this is not set, it's set to the default of @1@.
+getConfUpdateVersion :: PhaseM LoopState l M0.ConfUpdateVersion
+getConfUpdateVersion = do
+  phaseLog "rg-query" "Looking for ConfUpdateVersion"
+  g <- getLocalGraph
+  case listToMaybe $ G.connectedTo Cluster Has g of
+    Just ver -> return ver
+    Nothing -> do
+      let csu = M0.ConfUpdateVersion 1
+      modifyLocalGraph $ G.newResource csu >>> return . G.connect Cluster Has csu
+      return csu
+
+modifyConfUpdateVersion :: (M0.ConfUpdateVersion -> M0.ConfUpdateVersion)
+                        -> PhaseM LoopState l ()
+modifyConfUpdateVersion f = do
+  csu <- getConfUpdateVersion
+  let fcsu = f csu
+  phaseLog "rg" $ "Setting ConfUpdateVersion to " ++ show fcsu
+  modifyLocalGraph $ return . G.connectUniqueFrom Cluster Has fcsu
 
 txPopulate :: TxConfData -> SpielTransaction -> PhaseM LoopState l SpielTransaction
 txPopulate (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) t = do
