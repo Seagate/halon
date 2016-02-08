@@ -176,18 +176,18 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
 
    setPhase pinit $ \(HAEvent uuid (nid, srdm) _) -> do
      let enc = Enclosure . T.unpack
-                         . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosure_serial_number
+                         . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
                          $ srdm
          diskNum = floor . (toRealFloat :: Scientific -> Double)
-                         . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDisk
+                         . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum
                          $ srdm
-         disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerStatus srdm
-         reason = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerReason srdm
+         disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus srdm
+         -- reason = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerReason srdm
          sn = DISerialNumber . T.unpack
-                . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerial_number
+                . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber
                 $ srdm
      phaseLog "sspl-service" "monitor-drivemanager request received"
-     put Local $ Just (uuid, nid, enc, diskNum, disk_status, reason, sn)
+     put Local $ Just (uuid, nid, enc, diskNum, disk_status, sn)
      lookupStorageDeviceInEnclosure enc (DIIndexInEnclosure diskNum) >>= \case
        Nothing ->
          -- Try to check if we have device with known serial number, just without location.
@@ -210,26 +210,26 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
      continue pcommit
 
    setPhase pcommit $ \(RuleDriveManagerDisk disk) -> do
-     Just (uuid, nid, enc, diskNum, disk_status, reason, sn) <- get Local
+     Just (uuid, nid, enc, diskNum, disk_status, sn) <- get Local
      updateDriveStatus disk $ T.unpack disk_status
      isDriveRemoved <- isStorageDriveRemoved disk
      phaseLog "sspl-service"
        $ "Drive in " ++ show enc ++ " at " ++ show diskNum ++ " marked as "
           ++ (if isDriveRemoved then "removed" else "active")
-     case (T.toUpper disk_status, T.toUpper reason) of
-       ("EMPTY", "NONE")
+     case T.toUpper disk_status of
+       "UNUSED_OK"
           | isDriveRemoved -> do phaseLog "sspl-service" "already removed"
                                  messageProcessed uuid
           | otherwise      -> selfMessage $ DriveRemoved uuid (Node nid) enc disk
-       ("FAILED", "SMART")
+       "FAILED_SMART"
           | isDriveRemoved -> messageProcessed uuid
           | otherwise      -> selfMessage $ DriveFailed uuid (Node nid) enc disk
-       ("OK", "NONE")
+       "INUSE_OK"
           | isDriveRemoved -> selfMessage $ DriveInserted uuid disk sn
           | otherwise      -> messageProcessed uuid
        s -> do let msg = InterestingEventMessage
                        $ "Error processing drive manager response: drive status "
-                       <> fst s <> "_" <> snd s <> " is not known"
+                       <> s <> " is not known"
                sendInterestingEvent nid msg
                messageProcessed uuid
    start pinit Nothing
