@@ -74,22 +74,27 @@ schema = [schemaQQ|
             "disk_status_drivemanager": {
               "type" : "object",
               "properties": {
-                "diskNum" : {
+                "disk" : {
                   "description" : "Drive Number within the enclosure",
                   "type" : "number",
                   "required" : true
                 },
-                "enclosureSN" : {
+                "enclosure_serial_number" : {
                   "description" : "Enclosure Serial Number",
                   "type" : "string",
                   "required" : true
                 },
-                "diskStatus" : {
+                "status" : {
                   "description" : "Disk Status",
                   "type" : "string",
                   "required" : true
                 },
-                "serialNumber" : {
+                "reason" : {
+                  "description" : "Reason for disk status",
+                  "type" : "string",
+                  "required" : true
+                },
+                "serial_number" : {
                   "description" : "Disk Serial Number",
                   "type" : "string",
                   "required" : true
