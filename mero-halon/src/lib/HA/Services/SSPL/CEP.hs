@@ -216,15 +216,15 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
      phaseLog "sspl-service"
        $ "Drive in " ++ show enc ++ " at " ++ show diskNum ++ " marked as "
           ++ (if isDriveRemoved then "removed" else "active")
-     case (T.toUpper disk_status, T.toUpper reason) of
-       ("EMPTY", "NONE")
+     case T.toUpper disk_status of
+       "EMPTY_NONE"
           | isDriveRemoved -> do phaseLog "sspl-service" "already removed"
                                  messageProcessed uuid
           | otherwise      -> selfMessage $ DriveRemoved uuid (Node nid) enc disk
-       ("FAILED", "SMART")
+       "FAILED_SMART"
           | isDriveRemoved -> messageProcessed uuid
           | otherwise      -> selfMessage $ DriveFailed uuid (Node nid) enc disk
-       ("OK", "NONE")
+       "OK_NONE"
           | isDriveRemoved -> selfMessage $ DriveInserted uuid disk sn
           | otherwise      -> messageProcessed uuid
        s -> do let msg = InterestingEventMessage
