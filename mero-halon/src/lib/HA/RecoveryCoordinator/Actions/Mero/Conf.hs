@@ -207,7 +207,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
                , DIPath m0d_path
                ]
     in do
-      sdev <- lookupStorageDeviceOnHost host (DIWWN m0d_wwn) >>= \case
+      sdev <- lookupStorageDeviceOnHost host (DIWWN (drop 2 m0d_wwn)) >>= \case
         Just sdev -> return sdev
         Nothing -> do
           sdev <- StorageDevice <$> liftIO nextRandom

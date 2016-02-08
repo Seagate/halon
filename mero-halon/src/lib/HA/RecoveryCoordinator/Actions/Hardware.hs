@@ -533,7 +533,7 @@ actualizeStorageDeviceReplacement sdev = do
                   let mdev'  = mdev{M0.d_path = mkPathByWWN wwn}
                       action = G.mergeResources (const mdev') [mdev]
                       mkPathByWWN :: String -> String
-                      mkPathByWWN = (++) "/dev/disk/by-id/"
+                      mkPathByWWN = (++) "/dev/disk/by-id/wwn-0x"
 #else
                   let action = id
 #endif
