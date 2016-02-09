@@ -62,9 +62,10 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process
 import Control.Monad (forever, void)
-import Data.Foldable (forM_)
+import Data.Foldable (forM_, asum)
 import qualified Control.Monad.Catch as Catch
 
+import Control.Monad.Trans.Maybe
 import qualified Data.ByteString as BS
 import Data.Char (toUpper)
 import Data.List (partition)
@@ -246,11 +247,8 @@ notifyMero cs st = do
   rg <- getLocalGraph
   let hosts = G.getResourcesOfType rg :: [Host]
   forM_ hosts $ \host -> do
-     let mchan = listToMaybe
-           [ chan | node <- G.connectedTo host Runs rg :: [Node]
-                  , sp   <- G.connectedTo node Runs rg :: [ServiceProcess MeroConf]
-                  , chan <- G.connectedTo sp MeroChannel rg ]
-         recipients = Set.fromList (fst <$> nha) Set.\\ Set.fromList (fst <$> ha)
+     mchan <- runMaybeT $ asum (MaybeT . lookupMeroChannelByNode <$> G.connectedTo host Runs rg)
+     let recipients = Set.fromList (fst <$> nha) Set.\\ Set.fromList (fst <$> ha)
          (nha, ha) = partition ((/=) CST_HA . snd)
                    [ (endpoint, stype)
                    | m0cont <- G.connectedFrom M0.At host rg :: [M0.Controller]
@@ -261,10 +259,28 @@ notifyMero cs st = do
                    , endpoint <- M0.s_endpoints service
                    ]
      case mchan of
-       Nothing -> phaseLog "error" $ "HA.Service.Mero.notifyMero: Cannot find MeroChannel on " ++ show host
+       Nothing -> do
+         node <- liftProcess getSelfNode
+         lookupMeroChannelByNode (Node node) >>= \case
+            Just (TypedChannel chan) -> do
+               phaseLog "warning" $ "HA.Service.Mero.notifyMero: can't find remote service for"
+                                  ++ show host
+                                  ++ ", sending from local"
+               liftProcess $ sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
+            Nothing -> phaseLog "error" $ "HA.Service.Mero.notifyMero: cannot neither MeroChannel on "
+                                      ++ show host
+                                      ++ " nor local channel."
        Just (TypedChannel chan) -> liftProcess $
          sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
   where
     getFid (M0.AnyConfObj a) = M0.fid a
     setEvent :: Mero.Notification.Set
     setEvent = Mero.Notification.Set $ map (flip Note st . getFid) cs
+
+lookupMeroChannelByNode :: Node -> PhaseM LoopState l (Maybe (TypedChannel NotificationMessage))
+lookupMeroChannelByNode node = do
+   rg <- getLocalGraph
+   let mlchan = listToMaybe
+         [ chan | sp   <- G.connectedTo node Runs rg :: [ServiceProcess MeroConf]
+                , chan <- G.connectedTo sp MeroChannel rg ]
+   return mlchan 
