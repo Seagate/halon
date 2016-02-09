@@ -217,11 +217,11 @@ notify se (RPCAddress rpcAddr) nvec timeout_s =
       ha_state_notify (se_ptr se) caddr (NVecRef pnvec) (fromIntegral timeout_s)
         >>= check_rc "notify"
 
-foreign import ccall unsafe ha_state_notify :: Ptr ClientEndpointV
-                                            -> CString
-                                            -> NVecRef
-                                            -> CInt
-                                            -> IO CInt
+foreign import ccall ha_state_notify :: Ptr ClientEndpointV
+                                     -> CString
+                                     -> NVecRef
+                                     -> CInt
+                                     -> IO CInt
 
 -- | Type of exceptions that HAState calls can produce.
 data HAStateException = HAStateException String Int
