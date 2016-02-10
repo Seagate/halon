@@ -200,8 +200,8 @@ instance Enum SnsCmStatus where
 instance Storable SnsCmStatus where
   sizeOf _ = sizeOf (undefined :: CInt)
   alignment _ = alignment (undefined :: CInt)
-  peek p = fmap toEnum $ peek (castPtr p)
-  poke p s = poke (castPtr p) $ fromEnum s
+  peek p = fmap (toEnum . fromIntegral) $ peek (castPtr p :: Ptr CInt)
+  poke p s = poke (castPtr p :: Ptr CInt) . fromIntegral $ fromEnum s
 
 
 -- | @spiel.h m0_spiel_sns_status@
