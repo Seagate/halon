@@ -63,7 +63,10 @@ monitorProcess typ = run `finally` logDeath
       say $ show typ ++ " Monitor exit."
 
 bootstrapMonitor :: MonitorType -> Process ()
-bootstrapMonitor Regular = return ()
+bootstrapMonitor Regular = do
+  -- TODO: hack until we can sanely use sendToMonitor in ….Monitor.CEP
+  let ServiceName mname = monitorServiceName
+  getSelfPid >>= register mname
 bootstrapMonitor Master  = do
     pid <- getSelfPid
     _   <- promulgate $ SetMasterMonitor (ServiceProcess pid)

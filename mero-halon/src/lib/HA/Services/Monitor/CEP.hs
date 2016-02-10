@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE OverloadedStrings  #-}
+
 -- |
 -- Copyright: (C) 2015 Seagate LLC
 --
@@ -16,6 +18,8 @@ import GHC.Generics
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Serializable
 import           Data.Binary (Binary)
+import           Data.UUID (UUID)
+import           Data.UUID.V4 (nextRandom)
 import qualified Data.Map.Strict as M
 import qualified Data.Set        as S
 
@@ -32,6 +36,18 @@ newtype MonitorState = MonitorState { msMap :: M.Map ProcessId Monitored }
 data Heartbeat = Heartbeat deriving (Typeable, Generic)
 
 instance Binary Heartbeat
+
+-- | Sent to the monitor as a check for node connectivity
+data HeartbeatAckRequest = HeartbeatAckRequest ProcessId UUID
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary HeartbeatAckRequest
+
+-- | Response to 'HeartbeatAckRequest'.
+data HeartbeatAck = HeartbeatAck UUID
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary HeartbeatAck
 
 -- | Sent by a monitor process to the RC.
 data SaveProcesses =
@@ -69,6 +85,7 @@ nodeIds = fmap (S.toList . foldMap go . M.keys . msMap) $ get Global
 heartbeatProcess :: ProcessId -> Process ()
 heartbeatProcess mainpid = forever $ do
     _ <- receiveTimeout heartbeatDelay []
+    traceMonitor $ "Sending heartbeat to " ++ show mainpid
     usend mainpid Heartbeat
 
 decodeMsg :: ProcessEncode a => BinRep a -> PhaseM g l a
@@ -91,9 +108,11 @@ sendToRC a = do
     _ <- liftProcess $ promulgate a
     return ()
 
+-- | Monitor trace process
 traceMonitor :: String -> Process ()
 traceMonitor = mkHalonTracer "monitor-service"
 
+-- | Send a message from the monitor trace process
 sayMonitor :: String -> PhaseM g l ()
 sayMonitor = liftProcess . traceMonitor
 
@@ -115,21 +134,52 @@ reportExitOk (Monitored pid svc _) = do
     _ <- liftProcess $ promulgate msg
     return ()
 
+-- | Time to wait for a heartbeat response. If the response doesn't
+-- come back on time, the node is assumed to have disconnected.
+heartbeatTimeout :: Int
+heartbeatTimeout = 10 * 1000000
+
+failServiceAbnormal :: ProcessId -> String -> PhaseM MonitorState l ()
+failServiceAbnormal pid reason = do
+  sayMonitor $ "notification about death " ++ show pid ++ "(" ++ reason ++ ")"
+  traverse_ reportFailure =<< takeMonitored pid
+
 -- | Verifies that a node is still up.
-nodeHeartbeatRequest :: NodeId -> PhaseM g l ()
-nodeHeartbeatRequest nid = liftProcess $ nsendRemote nid "nonexistentprocess" ()
+nodeHeartbeatRequest :: NodeId -> PhaseM MonitorState l ()
+nodeHeartbeatRequest nid = do
+  self <- liftProcess getSelfPid
+  localNid <- liftProcess getSelfNode
+  case nid == localNid of
+    True -> sayMonitor $ "Heartbeat request to local node, doing nothing"
+    False -> do
+      -- TODO use sendToMonitor instead of nsendRemote
+      let ServiceName mname = monitorServiceName
+      uuid <- liftIO nextRandom
+      let req = HeartbeatAckRequest self uuid
+      liftProcess $ nsendRemote nid mname req
+      sayMonitor $ "Sending " ++ show req ++ " request to " ++ show nid
+      let uuidMatches = matchIf (\(HeartbeatAck uuid') -> uuid == uuid')
+      liftProcess (receiveTimeout heartbeatTimeout [ uuidMatches return ]) >>= \case
+        Nothing -> do
+          sayMonitor $ "Heartbeat " ++ show req ++ " timed out for " ++ show nid
+          sendToRC $ GetServicePids (Node nid) self
+          liftProcess (expectTimeout heartbeatTimeout) >>= \case
+            Nothing -> phaseLog "warn" $
+              "RC didn't return failed services for " ++ show nid ++ " on time"
+            Just (RunningServicePids pids) -> forM_ pids $ \pid ->
+              failServiceAbnormal pid "ExplicitHeartbeatTimeout"
+        Just ack@(HeartbeatAck _) -> do
+          sayMonitor $ "Got heartbeat ack " ++ show ack ++ " from " ++ show nid
 
 monitorRules :: Definitions MonitorState ()
 monitorRules = do
     defineSimple "monitor-notification" $
       \(ProcessMonitorNotification _ pid reason) -> do
           case reason of
-            DiedNormal -> do -- XXX: Notify RC
+            DiedNormal -> do
               sayMonitor $ "notification about normal death " ++ show pid
               traverse_ reportExitOk =<< takeMonitored pid
-            _ -> do
-              sayMonitor $ "notification about death " ++ show pid ++ "(" ++ show reason ++ ")"
-              traverse_ reportFailure =<< takeMonitored pid
+            _ -> failServiceAbnormal pid $ show reason
 
     defineSimple "link-to" $ liftProcess . link
 
@@ -146,4 +196,12 @@ monitorRules = do
       liftProcess $ usend caller StartMonitoringReply
 
     defineSimple "heartbeat" $ \Heartbeat -> do
-      traverse_ nodeHeartbeatRequest =<< nodeIds
+      nids <- nodeIds
+      sayMonitor $ "Got heartbeat, pinging nodes " ++ show nids
+      traverse_ nodeHeartbeatRequest nids -- =<< nodeIds
+
+    defineSimple "heartbeat-request" $ \msg@(HeartbeatAckRequest caller uuid) -> do
+      let reply = HeartbeatAck uuid
+      pid <- liftProcess getSelfPid
+      sayMonitor $ "Got " ++ show msg ++ ", sending back " ++ show reply ++ " PID " ++ show pid
+      liftProcess $ usend caller reply

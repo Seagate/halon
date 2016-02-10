@@ -26,6 +26,7 @@ module HA.RecoveryCoordinator.Actions.Service
   , startService
   , bounceServiceTo
   , killService
+  , getServicePids
   ) where
 
 import HA.EventQueue.Producer (promulgateEQ)
@@ -34,7 +35,7 @@ import HA.RecoveryCoordinator.Actions.Hardware (nodesOnHost)
 import qualified HA.ResourceGraph as G
 import HA.Resources
 import HA.Service
-import HA.Services.Monitor (MonitorConf)
+import HA.Services.Monitor.Types (MonitorConf)
 
 import Control.Category ((>>>))
 import Control.Distributed.Process
@@ -50,9 +51,9 @@ import Control.Distributed.Process
   , link
   )
 import Control.Distributed.Process.Closure ( mkClosure, staticDecode )
-import Control.Distributed.Process.Internal.Types as DP ( remoteTable, processNode )
+import Control.Distributed.Process.Internal.Types as DP ( remoteTable, processNode, ProcessId )
 import Control.Distributed.Static (closureApply, unstatic)
-import Control.Monad (void, join)
+import Control.Monad (forM, void, join)
 import Control.Monad.Reader (asks)
 
 import Data.Binary (encode)
@@ -260,6 +261,26 @@ killService (ServiceProcess pid) reason = do
   phaseLog "action" $ "Killing service with pid " ++ show pid
                   ++ " because of " ++ show reason
   liftProcess $ exit pid reason
+
+-- | get 'DP.ProcessId's of running services
+getServicePids :: Node -> PhaseM LoopState l [DP.ProcessId]
+getServicePids node = do
+  rg <- getLocalGraph
+
+  let spMatch :: (Typeable a, Typeable b) => a -> b -> Maybe (ServiceProcess a)
+      spMatch _ = cast
+
+      killServiceProcess :: G.Res -> Maybe G.Res -> Maybe DP.ProcessId
+      killServiceProcess (G.Res dsp) (Just (G.Res cfg)) =
+        maybe Nothing (\(ServiceProcess pid) -> Just pid) (spMatch cfg dsp)
+      killServiceProcess _ _ = Nothing
+
+
+  return . flip mapMaybe (G.anyConnectedTo node Runs rg) $ \r@(G.Res dsp) ->
+    let mcfg  = listToMaybe $ G.anyConnectedTo dsp HasConf rg
+--        msrv  = listToMaybe $ G.anyConnectedFrom InstanceOf dsp rg
+    in killServiceProcess r mcfg
+
 
 ----------------------------------------------------------
 -- Utility functions (unexported)                       --

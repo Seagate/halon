@@ -345,6 +345,11 @@ serviceRules argv = do
     liftProcess $ mapM_ (flip usend (encodeP response)) listeners
     messageProcessed uuid
 
+  defineSimple "all-running-service-pids" $ \(HAEvent uuid (GetServicePids node caller) _) -> do
+    servicePids <- getServicePids node
+    liftProcess . usend caller $ RunningServicePids servicePids
+    messageProcessed uuid
+
   defineSimpleTask "service-stopped" $ \(HAEvent _ msg _) -> do
     ServiceExit node svc@(Service{}) _ <- decodeMsg msg
-    traverse_  (unregisterServiceProcess node svc) =<< lookupRunningService node svc 
+    traverse_  (unregisterServiceProcess node svc) =<< lookupRunningService node svc

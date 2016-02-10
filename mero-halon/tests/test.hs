@@ -98,6 +98,8 @@ ut _host transport breakConnection = do
             const (return ()) $
               HA.Test.Disconnect.testDisconnect transport breakConnection
 #endif
+        , testCase "testExplicitHeartbeat" $
+            HA.Test.Disconnect.testExplicitHeartbeat transport breakConnection
         ]
       , MOCK_TEST( testGroup, "Service-SSPL"
                  , HA.RecoveryCoordinator.SSPL.Tests.utTests transport

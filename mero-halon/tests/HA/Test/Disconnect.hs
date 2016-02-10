@@ -13,6 +13,7 @@ module HA.Test.Disconnect
   , testRejoin
   , testRejoinTimeout
   , testRejoinRCDeath
+  , testExplicitHeartbeat
   ) where
 
 import Control.Distributed.Process
@@ -23,17 +24,20 @@ import Control.Distributed.Static ( closureCompose )
 import Control.Monad
 import Data.List
 import Data.Binary
+import Data.Defaultable
 import Data.Hashable (Hashable)
 
 import Network.Transport (Transport, EndPointAddress)
 
 import HA.Multimap
+import HA.RecoveryCoordinator.Helpers
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.EventQueue.Producer
 import HA.EventQueue.Types (HAEvent(..))
 import HA.Resources
 import HA.Service hiding (__remoteTable)
+import qualified HA.Services.Dummy as Dummy
 import qualified HA.Services.Ping as Ping
 import HA.Network.RemoteTables (haRemoteTable)
 import Mero.RemoteTables (meroRemoteTable)
@@ -388,6 +392,52 @@ testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
       receiveWait [ matchIf (== "ReviveNode") (void . return) ]
 
       say "testRejoin complete"
+
+-- | This test verifies that explicit monitor heartbeat works.
+testExplicitHeartbeat :: Transport
+                      -> (EndPointAddress -> EndPointAddress -> IO ())
+                      -> IO ()
+testExplicitHeartbeat baseTransport connectionBreak = withTmpDirectory $ do
+  (transport, controlled) <- Controlled.createTransport baseTransport
+                                                        connectionBreak
+  testSplit transport controlled 2 10 $ \[m0,m1]
+                                        splitNet restoreNet -> do
+    let args = mkIgnitionArgs [m0] $(mkClosure 'recoveryCoordinator)
+    self <- getSelfPid
+    void . liftIO . forkProcess m0 $ do
+      registerInterceptor $ \string -> do
+        let t = "Recovery Coordinator: received DummyEvent "
+        case string of
+          str' | t `isInfixOf` str' -> usend self $ Dummy (drop (length t) str')
+          str' | "Marked node transient: " `isInfixOf` str' -> usend self "NodeTransient"
+          str' | "Loaded initial data" `isInfixOf` str' -> usend self "InitialLoad"
+          str' | "Reviving old node" `isInfixOf` str' -> usend self "ReviveNode"
+          str' | "Inside try_recover" `isInfixOf` str' -> usend self "RecoverNode"
+          str' | "New node contacted" `isInfixOf` str' -> usend self "NewNode"
+          _ -> return ()
+      usend self ((), ())
+    ((), ()) <- expect
+
+    withHalonNodes self [m0, m1] $ do
+      void $ liftIO $ forkProcess m0 $ do
+        Nothing <- ignition args
+        usend self ((), (), ())
+      ((), (), ()) <- expect
+
+      say "running NodeUp"
+
+      void $ liftIO $ forkProcess m1 $ do
+        -- wait until the EQ tracker is registered
+        nodeUp ([localNodeId m0], 1000000)
+--        serviceStart Dummy.dummy (Dummy.DummyConf $ Configured "Test 1")
+
+      "NewNode" :: String <- expect
+--      say $ "isolating nodes"
+--      splitNet [[localNodeId m0], [localNodeId m1]]
+
+      _ <- receiveTimeout 5000000 []
+      return ()
+
 
 testSplit :: Transport
           -> Controlled.Controlled

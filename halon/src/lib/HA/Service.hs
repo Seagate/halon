@@ -69,6 +69,8 @@ module HA.Service
   , ServiceStatusResponse(..)
   , ServiceStatusResponseMsg
   , ExitReason(..)
+  , GetServicePids(..)
+  , RunningServicePids(..)
    -- * CH Paraphenalia
   , HA.Service.__remoteTable
 ) where
@@ -633,3 +635,15 @@ instance ProcessEncode ServiceStatusResponse where
                       2 -> get >>= return . SrvStatRestarting d pid cfg
                       _ -> error "impossible"
                 Left err -> error $ "decode ServiceStatusResponse: " ++ err
+
+-- | Request that all the services on the given node are kill
+data GetServicePids = GetServicePids Node ProcessId
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary GetServicePids
+
+-- | Message sent back to monitor
+newtype RunningServicePids = RunningServicePids [ProcessId]
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary RunningServicePids
