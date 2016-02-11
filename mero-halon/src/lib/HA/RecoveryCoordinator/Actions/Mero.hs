@@ -42,7 +42,7 @@ import Control.Monad (forM, join)
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Foldable (forM_)
+import Data.Foldable (forM_, traverse_)
 import Data.Proxy
 import Data.Maybe (listToMaybe)
 import Data.UUID.V4 (nextRandom)
@@ -63,29 +63,38 @@ updateDriveState :: M0.SDev -- ^ Drive to update state
 updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
   -- Update state in RG
   modifyGraph $ G.connectUnique m0sdev Is M0.M0_NC_TRANSIENT
+  graph <- getLocalGraph
+  let m0disks = G.connectedTo m0sdev M0.IsOnHardware graph :: [M0.Disk]
+  traverse_ (\m0disk -> modifyGraph $ G.connectUnique m0disk Is M0.M0_NC_TRANSIENT)
+            m0disks
   syncGraph (return ()) -- possibly we need to wait here, but I see no good
                         -- reason for that.
   -- If using dynamic failure sets, generate failure set
-  graph <- getLocalGraph
+  sgraph <- getLocalGraph
   mstrategy <- getCurrentStrategy
   forM_ mstrategy $ \strategy ->
-    forM_ (onFailure strategy graph) $ \graph' -> do
+    forM_ (onFailure strategy sgraph) $ \graph' -> do
       putLocalGraph graph'
       syncAction Nothing M0.SyncToConfdServersInRG
   -- Notify Mero
-  notifyMero [M0.AnyConfObj m0sdev] M0.M0_NC_TRANSIENT
+  let m0objs = M0.AnyConfObj <$> m0disks
+  notifyMero (M0.AnyConfObj m0sdev:m0objs) M0.M0_NC_TRANSIENT
 
 -- | For all other states, we simply update in the RG and notify Mero.
 updateDriveState m0sdev x = do
   -- Update state in RG
   modifyGraph $ G.connect m0sdev Is x
+  graph <- getLocalGraph
+  let m0disks = G.connectedTo m0sdev M0.IsOnHardware graph :: [M0.Disk]
+  traverse_ (\m0disk -> modifyGraph $ G.connect m0disk Is x) m0disks
   -- Quite possibly we need to wait for synchronization result here, because
   -- otherwise we may notifyMero multiple times (if consesus will be lost).
   -- however in opposite case we may never notify mero if RC will die after
   -- sync, but before it notified mero.
   syncGraph (return ())
   -- Notify Mero
-  notifyMero [M0.AnyConfObj m0sdev] x
+  let m0objs = M0.AnyConfObj <$> m0disks
+  notifyMero (M0.AnyConfObj m0sdev:m0objs) x
 
 -- | RMS service address.
 rmsAddress :: String
