@@ -73,14 +73,16 @@ mkResponseDriveManager :: Text -- ^ Enclosure SN
                        -> Int  -- ^ Disk Num
                        -> Text -- ^ Status
                        -> Text -- ^ Reason
+                       -> Text -- ^ Path
                        -> SSPL.SensorResponseMessageSensor_response_typeDisk_status_drivemanager
-mkResponseDriveManager enclosure serial idx status reason =
+mkResponseDriveManager enclosure serial idx status reason path =
   SSPL.SensorResponseMessageSensor_response_typeDisk_status_drivemanager
-    { SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosure_serial_number = enclosure
-    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDisk     = fromIntegral idx
-    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerStatus  = status
-    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerReason  = reason
-    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerial_number = serial
+    { SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN = enclosure
+    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum     = fromIntegral idx
+    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus  = status
+    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber = serial
+    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerPathID      = path 
+    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskReason  = reason
     }
 
 mkResponseHPI :: Text -- ^ Host ID of node
