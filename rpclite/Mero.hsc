@@ -132,12 +132,14 @@ sendM0Task_ f = do
 -- | Spawns a deferred worker thread in parrallel to main. New deferred
 -- thread will be initialized as m0 thread only when first task will
 -- arrive.
-withM0Deferred :: IO a -> IO a
-withM0Deferred f = do
+withM0Deferred :: IO () -- ^ Environment initialization.
+               -> IO () -- ^ Environment finalization
+               -> IO a -> IO a
+withM0Deferred envInit envFini f = do
     cont <- newIORef True
     end  <- newEmptyMVar
-    bracket_ (initialize cont end)
-             (finalize cont end)
+    bracket_ (initialize cont end >> sendM0Task_ envInit)
+             (sendM0Task_ envFini >> finalize cont end)
              f
   where
     initialize cont end = forkOS $ do
