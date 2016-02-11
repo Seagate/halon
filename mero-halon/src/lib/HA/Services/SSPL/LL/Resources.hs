@@ -20,6 +20,7 @@ import SSPL.Bindings
   ( ActuatorRequestMessageActuator_request_type (..)
   , ActuatorRequestMessageActuator_request_typeService_controller (..)
   , ActuatorRequestMessageActuator_request_typeNode_controller (..)
+  , ActuatorRequestMessageActuator_request_typeLogging (..)
   )
 
 import Control.Applicative ((<$>), (<*>))
@@ -133,6 +134,12 @@ parseNodeCmd t =
   where
     (cmd:rest) = T.words t
 
+data LoggerCmd = LoggerCmd 
+       { lcMsg :: T.Text
+       , lcLevel :: T.Text
+       , lcType  :: T.Text
+       } deriving (Eq, Show, Generic, Typeable)
+
 -- | Actuator reply.
 data AckReply = AckReplyPassed       -- ^ Request succesfully processed.
               | AckReplyFailed       -- ^ Request failed.
@@ -183,6 +190,17 @@ makeNodeMsg nc = emptyActuatorMsg {
     ActuatorRequestMessageActuator_request_typeNode_controller
       (nodeCmdString nc)
 }
+
+makeLoggerMsg :: LoggerCmd -> ActuatorRequestMessageActuator_request_type
+makeLoggerMsg lc = emptyActuatorMsg {
+  actuatorRequestMessageActuator_request_typeLogging = Just $
+    ActuatorRequestMessageActuator_request_typeLogging
+      { actuatorRequestMessageActuator_request_typeLoggingLog_msg = lcMsg lc
+      , actuatorRequestMessageActuator_request_typeLoggingLog_level = Just (lcLevel lc)
+      , actuatorRequestMessageActuator_request_typeLoggingLog_type = lcType lc
+      }
+  }
+   
 --------------------------------------------------------------------------------
 -- Channels                                                                   --
 --------------------------------------------------------------------------------
