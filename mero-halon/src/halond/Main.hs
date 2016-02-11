@@ -28,6 +28,7 @@ import Control.Distributed.Static ( closureCompose )
 
 #ifdef USE_MERO
 import Mero
+import Mero.Environment
 import Mero.Notification (initialize_pre_m0_init)
 #endif
 import System.Environment
@@ -50,7 +51,7 @@ myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 main :: IO ()
 #ifdef USE_MERO
-main = withM0Deferred $ mdo
+main = withM0Deferred initializeFOPs deinitializeFOPs $ mdo
     initialize_pre_m0_init lnid
 #else
 main = do

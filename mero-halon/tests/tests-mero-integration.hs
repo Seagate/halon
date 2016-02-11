@@ -7,6 +7,7 @@ module Main
   ( main ) where
 
 import Mero
+import Mero.Environment
 import qualified HA.Castor.Story.Tests
 import qualified HA.RecoveryCoordinator.Mero.Tests
 
@@ -38,12 +39,12 @@ main = withMeroEnvironment router wrapper where
     case minfo of
       Just ("RCSyncToConfd", host) -> do
         transport <- mkTransport
-        return $ Just $ withM0Deferred $ do
+        return $ Just $ withM0Deferred initializeFOPs deinitializeFOPs $ do
           HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd host transport
           threadDelay 1000000
       Just ("DriveFailurePVer", _host) -> do
         transport <- mkTransport
-        return $ Just $ withM0Deferred $ do
+        return $ Just $ withM0Deferred initializeFOPs deinitializeFOPs $ do
           HA.Castor.Story.Tests.testDynamicPVer transport
           threadDelay 1000000
       _ -> return Nothing
