@@ -14,8 +14,8 @@ initializeFOPs = do
 
 deinitializeFOPs :: IO ()
 deinitializeFOPs = do
-  c_m0_sns_cm_rebalance_trigger_fop_init
-  c_m0_sns_cm_repair_trigger_fop_init
+  c_m0_sns_cm_rebalance_trigger_fop_fini
+  c_m0_sns_cm_repair_trigger_fop_fini
 
 foreign import ccall "cm/cm.h m0_sns_cm_repair_trigger_fop_init"
   c_m0_sns_cm_repair_trigger_fop_init :: IO ()
