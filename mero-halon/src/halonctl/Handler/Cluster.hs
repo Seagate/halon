@@ -16,6 +16,7 @@ import HA.EventQueue.Producer (promulgateEQ)
 import qualified HA.Resources.Castor.Initial as CI
 
 #ifdef USE_MERO
+import qualified Data.ByteString as BS
 import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 
 import Options.Applicative ((<>), (<|>))
@@ -25,11 +26,9 @@ import Options.Applicative ((<>))
 
 import Control.Distributed.Process
 import Control.Monad (void)
-import qualified Data.ByteString as BS
 
 import Data.Yaml
-  ( decodeFileEither
-  , prettyPrintParseException
+  ( prettyPrintParseException
   )
 import qualified Options.Applicative as Opt
 import qualified Options.Applicative.Extras as Opt
@@ -61,7 +60,8 @@ cluster nids (Dump s) = dumpConfd nids s
 #endif
 
 data LoadOptions = LoadOptions
-    FilePath
+    FilePath -- ^ Facts file
+    FilePath -- ^ Roles file
     Bool -- ^ validate only
   deriving (Eq, Show)
 
@@ -73,6 +73,14 @@ parseLoadOptions = LoadOptions
      <> Opt.help "File containing JSON-encoded configuration."
      <> Opt.metavar "FILEPATH"
       )
+  <*> Opt.strOption
+      ( Opt.long "rolesfile"
+     <> Opt.short 'r'
+     <> Opt.help "File containing template file with role mappings."
+     <> Opt.metavar "FILEPATH"
+     <> Opt.showDefaultWith id
+     <> Opt.value "/etc/halon/mero_role_mappings"
+      )
   <*> Opt.switch
       ( Opt.long "verify"
      <> Opt.short 'v'
@@ -82,8 +90,8 @@ parseLoadOptions = LoadOptions
 dataLoad :: [NodeId] -- ^ EQ nodes to send data to
          -> LoadOptions
          -> Process ()
-dataLoad eqnids (LoadOptions cf verify) = do
-  initData <- liftIO $ decodeFileEither cf
+dataLoad eqnids (LoadOptions cf maps verify) = do
+  initData <- liftIO $ CI.parseInitialData cf maps
   case initData of
     Left err -> liftIO . putStrLn $ prettyPrintParseException err
     Right datum | verify -> liftIO $ do

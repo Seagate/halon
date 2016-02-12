@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP                        #-}
+{-# LANGUAGE LambdaCase                 #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -24,6 +25,18 @@ import Data.Word
   )
 
 import GHC.Generics (Generic)
+
+#ifdef USE_MERO
+import qualified Data.Aeson as A
+import qualified Data.Aeson.Types as A
+import           Data.Either (partitionEithers)
+import qualified Data.HashMap.Lazy as M
+import           Data.List (find, intercalate, isPrefixOf)
+import qualified Data.Text.Encoding as T
+import qualified Data.Text.Lazy as T (toStrict)
+import qualified Text.EDE as EDE
+#endif
+import qualified Data.Yaml as Y
 
 data Network = Data | Management | Local
   deriving (Eq, Data, Generic, Show, Typeable)
@@ -149,6 +162,7 @@ data M0Process = M0Process {
   , m0p_cores :: [Word64]
     -- ^ Treated as a bitmap of length (no_cpu) indicating which CPUs to use
   , m0p_services :: [M0Service]
+  , m0p_boot_level :: Word64
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Binary M0Process
@@ -181,3 +195,153 @@ instance Binary InitialData
 instance Hashable InitialData
 instance FromJSON InitialData
 instance ToJSON InitialData
+
+#ifdef USE_MERO
+-- | Handy synonym for role names
+type RoleName = String
+
+-- | A single parsed role, ready to be used for building 'InitialData'
+data Role = Role
+  { _role_name :: RoleName
+  , _role_content :: [M0Process]
+  } deriving (Eq, Data, Generic, Show, Typeable)
+
+roleJSONOptions :: A.Options
+roleJSONOptions = A.defaultOptions
+  { A.fieldLabelModifier = drop (length ("_role_" :: String)) }
+
+instance A.FromJSON Role where
+  parseJSON = A.genericParseJSON roleJSONOptions
+
+instance A.ToJSON Role where
+  toJSON = A.genericToJSON roleJSONOptions
+
+-- | Used as list of roles in halon_facts: the user can optionally
+-- give a map overriding the environment in which the template file is
+-- expanded.
+data RoleSpec = RoleSpec
+  { _rolespec_name :: RoleName
+  , _rolespec_overrides :: Maybe Y.Object
+  } deriving (Eq, Data, Generic, Show, Typeable)
+
+rolespecJSONOptions :: A.Options
+rolespecJSONOptions = A.defaultOptions
+  { A.fieldLabelModifier = drop (length ("_rolespec_" :: String)) }
+
+instance A.FromJSON RoleSpec where
+  parseJSON = A.genericParseJSON rolespecJSONOptions
+
+instance A.ToJSON RoleSpec where
+  toJSON = A.genericToJSON rolespecJSONOptions
+
+
+-- | Parse a halon_facts file into a structure indicating roles for
+-- each given host
+data InitialWithRoles = InitialWithRoles
+  { _rolesinit_id_racks :: [Rack]
+  , _rolesinit_id_m0_servers :: [UnexpandedHost]
+  , _rolesinit_id_m0_globals :: M0Globals
+  } deriving (Eq, Data, Generic, Show, Typeable)
+
+initialWithRolesJSONOptions :: A.Options
+initialWithRolesJSONOptions = A.defaultOptions
+  { A.fieldLabelModifier = drop (length ("_rolesinit_" :: String)) }
+
+instance A.FromJSON InitialWithRoles where
+  parseJSON = A.genericParseJSON initialWithRolesJSONOptions
+
+instance A.ToJSON InitialWithRoles where
+  toJSON = A.genericToJSON initialWithRolesJSONOptions
+
+-- | Hosts section of halon_facts
+--
+-- XXX: Perhaps we shouldn't have this structure or part of this
+-- structure and simply use 'Y.Object'. That will allow us to easily
+-- let the user specify any fields they want, including the ones we
+-- don't have present and use them in their roles, without updating
+-- the source here.
+data UnexpandedHost = UnexpandedHost
+  { _uhost_m0h_fqdn :: String
+  , _uhost_m0h_roles :: [RoleSpec]
+  , _uhost_m0h_devices :: [M0Device]
+  , _uhost_host_mem :: Word64
+  , _uhost_host_mem_rss :: Word64
+  , _uhost_host_mem_stack :: Word64
+  , _uhost_host_mem_memlock :: Word64
+  , _uhost_host_cores :: [Word64]
+  , _uhost_lnid :: String
+  } deriving (Eq, Data, Generic, Show, Typeable)
+
+unexpandedHostJSONOptions :: A.Options
+unexpandedHostJSONOptions = A.defaultOptions
+  { A.fieldLabelModifier = drop (length ("_uhost_" :: String)) }
+
+instance A.FromJSON UnexpandedHost where
+  parseJSON = A.genericParseJSON unexpandedHostJSONOptions
+
+instance A.ToJSON UnexpandedHost where
+  toJSON = A.genericToJSON unexpandedHostJSONOptions
+
+-- | Having parsed the facts file, expand the roles for each host to
+-- provide full 'InitialData'.
+resolveRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts
+             -> FilePath -- ^ Role map file
+             -> IO (Either Y.ParseException InitialData)
+resolveRoles InitialWithRoles{..} cf = EDE.eitherResult <$> EDE.parseFile cf >>= \case
+  Left err -> return $ mkExc err
+  Right template -> do
+    let allHosts :: [[Either String M0Host]]
+        allHosts = flip map _rolesinit_id_m0_servers $ \uh -> case Y.toJSON uh of
+          Y.Object env ->
+            let eHosts :: [Either String M0Host]
+                eHosts = map (fmap (mkHost uh) . mkProc template env) (_uhost_m0h_roles uh)
+            in eHosts
+          v -> [Left $ "Couldn't get the expected environment from " ++ show v]
+    case partitionEithers $ concat allHosts of
+      ([], hosts) -> return $ Right $
+        InitialData { id_racks = _rolesinit_id_racks
+                    , id_m0_servers = hosts
+                    , id_m0_globals = _rolesinit_id_m0_globals
+                    }
+      (errs, _) -> return . mkExc $ intercalate "," errs
+  where
+    mkProc :: EDE.Template -> Y.Object -> RoleSpec -> Either String [M0Process]
+    mkProc template env role = case EDE.eitherResult $ EDE.render template env' of
+      Left err -> Left err
+      Right roleText -> case Y.decodeEither . T.encodeUtf8 $ T.toStrict roleText of
+        Left err -> Left err
+        Right roles -> findRoleProcess (normaliseRole $ _rolespec_name role) roles
+      where
+        env' = maybe env (`M.union` env) (_rolespec_overrides role)
+
+    normaliseRole :: RoleName -> RoleName
+    normaliseRole x | "ios" `isPrefixOf` x = "ios"
+                    | otherwise = x
+
+    mkHost :: UnexpandedHost -> [M0Process] -> M0Host
+    mkHost uh procs = M0Host { m0h_fqdn = _uhost_m0h_fqdn uh
+                             , m0h_processes = procs
+                             , m0h_devices = _uhost_m0h_devices uh
+                             }
+    findRoleProcess :: RoleName -> [Role] -> Either String [M0Process]
+    findRoleProcess rn roles = case find (\r -> _role_name r == rn) roles of
+      Nothing ->
+        Left $ "resolveRoles: role " ++ show rn ++ " not found in map file"
+      Just r -> Right $ _role_content r
+
+-- | Helper for exception creation
+mkExc :: String -> Either Y.ParseException a
+mkExc = Left . Y.AesonException . ("resolveRoles: " ++)
+#endif
+
+-- | Entry point into 'InitialData' parsing.
+parseInitialData :: FilePath -- ^ Halon facts
+                 -> FilePath -- ^ Role map file
+                 -> IO (Either Y.ParseException InitialData)
+#ifdef USE_MERO
+parseInitialData facts maps = Y.decodeFileEither facts >>= \case
+  Left err -> return $ Left err
+  Right initialWithRoles -> resolveRoles initialWithRoles maps
+#else
+parseInitialData facts _ = Y.decodeFileEither facts
+#endif

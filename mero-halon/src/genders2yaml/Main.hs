@@ -13,8 +13,6 @@ import Prelude hiding (lookup)
 
 import qualified HA.Resources.Castor.Initial as CI
 
-import Mero.ConfC (ServiceParams(..), ServiceType(..))
-
 import Control.Monad
   ( filterM
   , join
@@ -82,15 +80,15 @@ main = getArgs >>= \case
                                      ++ "[<disks_conf_dir>]"
 
 -- | Make initial data using details from the genders file
-makeInitialData :: DB -> [(String, Devices)] -> CI.InitialData
-makeInitialData db devs = CI.InitialData {
-    CI.id_m0_globals = CI.M0Globals {
+makeInitialData :: DB -> [(String, Devices)] -> CI.InitialWithRoles
+makeInitialData db devs = CI.InitialWithRoles {
+    CI._rolesinit_id_m0_globals = CI.M0Globals {
       CI.m0_data_units = 2
     , CI.m0_parity_units = 1
     , CI.m0_md_redundancy = 2
     , CI.m0_failure_set_gen = CI.Dynamic
     }
-  , CI.id_racks = [
+  , CI._rolesinit_id_racks = [
       CI.Rack {
         CI.rack_idx = 1
       , CI.rack_enclosures = [
@@ -120,7 +118,7 @@ makeInitialData db devs = CI.InitialData {
         ]
       }
     ]
-  , CI.id_m0_servers = fmap
+  , CI._rolesinit_id_m0_servers = fmap
       (\host -> let
           attrs = attributesByNode host db
           svcs = maybe [] id
@@ -128,11 +126,20 @@ makeInitialData db devs = CI.InitialData {
             . lookup "m0_services"
             $ attrs
         in
-          CI.M0Host {
-            CI.m0h_fqdn = BS.unpack host
-          , CI.m0h_processes = catMaybes $ fmap (serviceProcess db host) svcs
-          , CI.m0h_devices = fmap mkDevice . nub . join
-                              . fmap (unDevices . snd) $ devs
+          CI.UnexpandedHost {
+            CI._uhost_m0h_fqdn = BS.unpack host
+          , CI._uhost_m0h_roles = fmap (\s -> CI.RoleSpec {
+              CI._rolespec_name = BS.unpack s
+            , CI._rolespec_overrides = Nothing }) svcs
+          , CI._uhost_m0h_devices = fmap mkDevice . nub . join
+                                  . fmap (unDevices . snd) $ devs
+          , CI._uhost_host_mem = 1
+          , CI._uhost_host_mem_rss = 1
+          , CI._uhost_host_mem_stack = 1
+          , CI._uhost_host_mem_memlock = 1
+          , CI._uhost_host_cores = [1]
+          , CI._uhost_lnid =
+              fromJust . fmap BS.unpack $ lookup "m0_lnet_nid" attrs
           })
       (V.toList $ nodes db)
     }
@@ -157,90 +164,3 @@ readDevsFromDir dir = do
     readDevs file = let
         name = takeWhile (/= '.') . drop (length prefix) $ file
       in decodeFile (dir </> file) >>= return . fmap (name,)
-
--- | Take a named service from genders and convert it into a suitable
---   process.
-serviceProcess :: DB
-               -> BS.ByteString -- ^ Host
-               -> BS.ByteString
-               -> Maybe CI.M0Process
-serviceProcess db host svcName = let
-    attrs = attributesByNode host db
-    lnet_nid = fmap BS.unpack $ lookup "m0_lnet_nid" attrs
-    ep st = fmap (++ (epAddress st)) lnet_nid
-  in case svcName of
-    "confd" -> Just $ CI.M0Process {
-                CI.m0p_endpoint = fromJust $ ep CST_MGS
-              , CI.m0p_mem_as = 1
-              , CI.m0p_mem_rss = 1
-              , CI.m0p_mem_stack = 1
-              , CI.m0p_mem_memlock = 1
-              , CI.m0p_cores = [1]
-              , CI.m0p_services = [
-                  CI.M0Service {
-                    CI.m0s_type = CST_MGS
-                  , CI.m0s_endpoints = maybeToList $ ep CST_MGS
-                  , CI.m0s_params = SPConfDBPath "/var/mero/confd"
-                  }
-                , CI.M0Service {
-                    CI.m0s_type = CST_RMS
-                  , CI.m0s_endpoints = maybeToList $ ep CST_MGS
-                  , CI.m0s_params = SPUnused
-                  }
-                ]
-              }
-    "mds" -> Just $ CI.M0Process {
-                CI.m0p_endpoint = fromJust $ ep CST_MDS
-              , CI.m0p_mem_as = 1
-              , CI.m0p_mem_rss = 1
-              , CI.m0p_mem_stack = 1
-              , CI.m0p_mem_memlock = 1
-              , CI.m0p_cores = [1]
-              , CI.m0p_services = [
-                  CI.M0Service {
-                    CI.m0s_type = CST_MDS
-                  , CI.m0s_endpoints = maybeToList $ ep CST_MDS
-                  , CI.m0s_params = SPUnused
-                  }
-                ]
-              }
-    "ha" -> Just $ CI.M0Process {
-                CI.m0p_endpoint = fromJust $ ep CST_HA
-              , CI.m0p_mem_as = 1
-              , CI.m0p_mem_rss = 1
-              , CI.m0p_mem_stack = 1
-              , CI.m0p_mem_memlock = 1
-              , CI.m0p_cores = [1]
-              , CI.m0p_services = [
-                  CI.M0Service {
-                    CI.m0s_type = CST_HA
-                  , CI.m0s_endpoints = maybeToList $ ep CST_HA
-                  , CI.m0s_params = SPUnused
-                  }
-                ]
-              }
-    x | "ios" `BS.isPrefixOf` x -> Just $ CI.M0Process {
-                CI.m0p_endpoint = fromJust $ ep CST_IOS
-              , CI.m0p_mem_as = 1
-              , CI.m0p_mem_rss = 1
-              , CI.m0p_mem_stack = 1
-              , CI.m0p_mem_memlock = 1
-              , CI.m0p_cores = [1]
-              , CI.m0p_services = [
-                  CI.M0Service {
-                    CI.m0s_type = CST_IOS
-                  , CI.m0s_endpoints = maybeToList $ ep CST_IOS
-                  , CI.m0s_params = SPUnused
-                  }
-                ]
-              }
-    _ -> Nothing
-
--- | Default endpoints for services in initscripts.
-epAddress :: ServiceType -> String
-epAddress CST_MGS = ":12345:44:101"
-epAddress CST_RMS = ":12345:41:301"
-epAddress CST_MDS = ":12345:41:201"
-epAddress CST_IOS = ":12345:41:401"
-epAddress CST_HA  = ":12345:34:101"
-epAddress _       = ":12345:41:901"
