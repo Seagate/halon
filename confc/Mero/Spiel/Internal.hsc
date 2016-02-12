@@ -55,17 +55,22 @@ rm_reqh (RPCMachine rpcmach) = unsafePerformIO $
 -- | m0_spiel
 data {-# CTYPE "spiel/spiel.h" "struct m0_spiel" #-} SpielContextV
 
+-- | m0_reqh_service
+data {-# CTYPE "reqh/reqh_service.h" "struct m0_reqh_service" #-} ReqHServiceV
+
 -- | Size of m0_spiel struct for allocation
 m0_spiel_size :: Int
 m0_spiel_size = #{size struct m0_spiel}
 
-foreign import capi "spiel/spiel.h m0_spiel_init"
-  c_spiel_init :: Ptr SpielContextV
+foreign import capi "confc_helpers.h spiel_init"
+  c_spiel_init :: Ptr (Ptr SpielContextV)
+               -> Ptr (Ptr ReqHServiceV)
                -> Ptr ReqHV
                -> IO CInt
 
-foreign import capi "spiel/spiel.h m0_spiel_fini"
+foreign import capi "confc_helpers.h spiel_fini"
   c_spiel_fini :: Ptr SpielContextV
+               -> Ptr ReqHServiceV
                -> IO ()
 
 -- Start spiel instance
