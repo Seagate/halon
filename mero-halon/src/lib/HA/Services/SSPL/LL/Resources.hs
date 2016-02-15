@@ -147,8 +147,10 @@ parseAckReply "Passed" = AckReplyPassed
 parseAckReply "Failed" = AckReplyFailed
 parseAckReply t
   | errmsg `T.isPrefixOf` t = AckReplyError $ T.drop (T.length errmsg) t
+  | success `T.isPrefixOf` t = AckReplyPassed
   | otherwise               = error $ "parseAckReply: unknown reply (" ++ T.unpack t ++ ")"
   where errmsg = "Error: "
+        success = "Success"
 
 -- | Reply over 'CommandAck' channel.
 data CommandAck = CommandAck

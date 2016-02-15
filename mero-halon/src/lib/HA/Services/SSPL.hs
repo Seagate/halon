@@ -78,6 +78,7 @@ import qualified Data.Text.Encoding as T
 import qualified Data.UUID as UID
 import qualified Data.HashMap.Strict as HM
 import Data.Time (getCurrentTime)
+import Control.Monad.Catch (catch, SomeException)
 
 import Network.AMQP
 import Network.CEP (Definitions)
@@ -94,6 +95,8 @@ header uuid = Aeson.Object $ M.fromList [
   , ("uuid", Aeson.String . T.decodeUtf8 . UID.toASCIIBytes $ uuid)
   ]
 
+saySSPL :: String -> Process ()
+saySSPL msg = say $ "[Service:SSPL] " ++ msg
 
 -- | Internal 'listen' handler. This is needed because AMQP runs in the
 --   IO monad, so we cannot directly handle messages using `Process` actions.
@@ -194,10 +197,15 @@ startActuators chan ac pid = do
       (cmdAckQueueName)
       (T.pack . fromDefault $ bcRoutingKey)
       (\msg -> for_ (decode $ msgBody msg) $ \response -> do
-          let uuid = (\(Aeson.Object hm) -> (\(Aeson.String s) -> s) <$> "uuid" `HM.lookup` hm)
-                   . actuatorResponseMessageSspl_ll_msg_header
-                   . actuatorResponseMessage $ response :: Maybe T.Text
-              Just (ActuatorResponseMessageActuator_response_typeAck mmsg mtype)
+          uuid <- case (actuatorResponseMessageSspl_ll_msg_header $ actuatorResponseMessage $ response) of
+             Aeson.Object hm ->  case "uuid" `HM.lookup` hm of
+                                   Just (Aeson.String s) -> return (Just s)
+                                   Just Aeson.Null -> return Nothing
+                                   _ -> do saySSPL $ "Unexpected structure in message header: " ++ show hm
+                                           return Nothing
+             _ -> do saySSPL $ "Unexpected structure in reply " ++ show response
+                     return Nothing
+          let Just (ActuatorResponseMessageActuator_response_typeAck mmsg mtype)
                    = actuatorResponseMessageActuator_response_typeAck
                    . actuatorResponseMessageActuator_response_type
                    . actuatorResponseMessage $ response
