@@ -72,6 +72,7 @@ sendInterestingEvent nid msg = do
     Just (Channel chan) -> liftProcess $ sendChan chan msg
     _ -> phaseLog "warning" "Cannot find IEM channel!"
 
+-- | Send command for system on remove node.
 sendSystemdCmd :: NodeId
                -> SystemdCmd
                -> PhaseM LoopState l ()
@@ -204,7 +205,6 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
              mhost <- findNodeHost (Node nid)
              forM_ mhost $ \host -> locateHostInEnclosure host enc
              mapM_ (identifyStorageDevice disk) [DIIndexInEnclosure diskNum, sn]
-
              syncGraphProcess $ \self -> usend self (RuleDriveManagerDisk disk)
        Just st -> selfMessage (RuleDriveManagerDisk st)
      continue pcommit
@@ -263,13 +263,14 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
       locateHostInEnclosure host enc -- XXX: do we need to do that on each query?
       msd <- case mdev of
          Nothing -> do
-           mwsd <- lookupStorageDeviceInEnclosure enc wwn
-           case mwsd of
+           msnd <- lookupStorageDeviceInEnclosure enc serial
+           case msnd of
              Just sd -> do
                -- We have disk in RG, but we didn't know its index in enclosure, this happens
                -- when we loaded initial data that have no information about indices.
                identifyStorageDevice sd loc
                identifyStorageDevice sd serial
+               identifyStorageDevice sd ident
                return Nothing
              Nothing -> do
                -- We don't have information about inserted disk in this slot yet, this could
@@ -284,11 +285,11 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
                identifyStorageDevice disk loc
                return (Just disk)
          Just sd -> do
-           -- We have information about disk in slot.
-           mident <- listToMaybe . filter (\x -> case x of DIWWN{} -> True ; _ -> False)
+           -- We have information about disk in slot, check whether this is same disk or not.
+           mident <- listToMaybe . filter (\x -> case x of DISerialNumber{} -> True ; _ -> False)
                        <$> findStorageDeviceIdentifiers sd
            case mident of
-             Just wwn' | wwn' == wwn -> return Nothing
+             Just serial' | serial' == serial -> return Nothing
              _ -> return (Just sd)
       case msd of
         Just sd -> do
