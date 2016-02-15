@@ -78,6 +78,7 @@ import qualified Data.Text.Encoding as T
 import qualified Data.UUID as UID
 import qualified Data.HashMap.Strict as HM
 import Data.Time (getCurrentTime)
+import Control.Monad.Catch (catch, SomeException)
 
 import Network.AMQP
 import Network.CEP (Definitions)
@@ -194,10 +195,14 @@ startActuators chan ac pid = do
       (cmdAckQueueName)
       (T.pack . fromDefault $ bcRoutingKey)
       (\msg -> for_ (decode $ msgBody msg) $ \response -> do
-          let uuid = (\(Aeson.Object hm) -> (\(Aeson.String s) -> s) <$> "uuid" `HM.lookup` hm)
-                   . actuatorResponseMessageSspl_ll_msg_header
-                   . actuatorResponseMessage $ response :: Maybe T.Text
-              Just (ActuatorResponseMessageActuator_response_typeAck mmsg mtype)
+          uuid <- case (actuatorResponseMessageSspl_ll_msg_header $ actuatorResponseMessage $ response) of
+             Aeson.Object hm ->  case "uuid" `HM.lookup` hm of
+                                   Just (Aeson.String s) -> return (Just s)
+                                   _ -> do say $ "1.unexpected structure in " ++ show response
+                                           return Nothing
+             _ -> do say $ "unexpected structure in" ++ show response
+                     return Nothing
+          let Just (ActuatorResponseMessageActuator_response_typeAck mmsg mtype)
                    = actuatorResponseMessageActuator_response_typeAck
                    . actuatorResponseMessageActuator_response_type
                    . actuatorResponseMessage $ response
