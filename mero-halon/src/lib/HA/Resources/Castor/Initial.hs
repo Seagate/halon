@@ -1,5 +1,7 @@
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TupleSections              #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -13,6 +15,7 @@ module HA.Resources.Castor.Initial where
 import Mero.ConfC (ServiceParams, ServiceType)
 #endif
 
+import Control.Monad (forM)
 import Data.Aeson
 import Data.Binary (Binary)
 import Data.Data
@@ -31,7 +34,7 @@ import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
 import           Data.Either (partitionEithers)
 import qualified Data.HashMap.Lazy as M
-import           Data.List (find, intercalate, isPrefixOf)
+import           Data.List (find, intercalate)
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as T (toStrict)
 import qualified Text.EDE as EDE
@@ -226,7 +229,9 @@ data RoleSpec = RoleSpec
 
 rolespecJSONOptions :: A.Options
 rolespecJSONOptions = A.defaultOptions
-  { A.fieldLabelModifier = drop (length ("_rolespec_" :: String)) }
+  { A.fieldLabelModifier = drop (length ("_rolespec_" :: String))
+  , A.omitNothingFields = True
+  }
 
 instance A.FromJSON RoleSpec where
   parseJSON = A.genericParseJSON rolespecJSONOptions
@@ -239,19 +244,38 @@ instance A.ToJSON RoleSpec where
 -- each given host
 data InitialWithRoles = InitialWithRoles
   { _rolesinit_id_racks :: [Rack]
-  , _rolesinit_id_m0_servers :: [UnexpandedHost]
+  , _rolesinit_id_m0_servers :: [(UnexpandedHost, Y.Object)]
+    -- ^ The list of unexpanded host as well as the full object that
+    -- the host was parsed out from, used as environment given during
+    -- template expansion.
   , _rolesinit_id_m0_globals :: M0Globals
   } deriving (Eq, Data, Generic, Show, Typeable)
 
-initialWithRolesJSONOptions :: A.Options
-initialWithRolesJSONOptions = A.defaultOptions
-  { A.fieldLabelModifier = drop (length ("_rolesinit_" :: String)) }
-
 instance A.FromJSON InitialWithRoles where
-  parseJSON = A.genericParseJSON initialWithRolesJSONOptions
+  parseJSON (A.Object v) = InitialWithRoles <$>
+                           v A..: "id_racks" <*>
+                           parseServers <*>
+                           v A..: "id_m0_globals"
+
+    where
+      parseServers :: A.Parser [(UnexpandedHost, Y.Object)]
+      parseServers = do
+        objs <- v A..: "id_m0_servers"
+        forM objs $ \obj -> (,obj) <$> A.parseJSON (A.Object obj)
+
+  parseJSON invalid = A.typeMismatch "InitialWithRoles" invalid
+
 
 instance A.ToJSON InitialWithRoles where
-  toJSON = A.genericToJSON initialWithRolesJSONOptions
+  toJSON InitialWithRoles{..} = A.object
+    [ "id_racks" A..= _rolesinit_id_racks
+    -- Dump out the full object into the file rather than our parsed
+    -- and trimmed structure. This means we won't lose any information
+    -- with @fromJSON . toJSON@
+    , "id_m0_servers" A..= map snd _rolesinit_id_m0_servers
+    , "id_m0_globals" A..= _rolesinit_id_m0_globals
+    ]
+
 
 -- | Hosts section of halon_facts
 --
@@ -264,12 +288,6 @@ data UnexpandedHost = UnexpandedHost
   { _uhost_m0h_fqdn :: String
   , _uhost_m0h_roles :: [RoleSpec]
   , _uhost_m0h_devices :: [M0Device]
-  , _uhost_host_mem :: Word64
-  , _uhost_host_mem_rss :: Word64
-  , _uhost_host_mem_stack :: Word64
-  , _uhost_host_mem_memlock :: Word64
-  , _uhost_host_cores :: [Word64]
-  , _uhost_lnid :: String
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 unexpandedHostJSONOptions :: A.Options
@@ -291,12 +309,9 @@ resolveRoles InitialWithRoles{..} cf = EDE.eitherResult <$> EDE.parseFile cf >>=
   Left err -> return $ mkExc err
   Right template -> do
     let allHosts :: [[Either String M0Host]]
-        allHosts = flip map _rolesinit_id_m0_servers $ \uh -> case Y.toJSON uh of
-          Y.Object env ->
-            let eHosts :: [Either String M0Host]
-                eHosts = map (fmap (mkHost uh) . mkProc template env) (_uhost_m0h_roles uh)
-            in eHosts
-          v -> [Left $ "Couldn't get the expected environment from " ++ show v]
+        allHosts = flip map _rolesinit_id_m0_servers $ \(uh, env) ->
+                     map (fmap (mkHost uh) . mkProc template env)
+                         (_uhost_m0h_roles uh)
     case partitionEithers $ concat allHosts of
       ([], hosts) -> return $ Right $
         InitialData { id_racks = _rolesinit_id_racks
@@ -310,13 +325,9 @@ resolveRoles InitialWithRoles{..} cf = EDE.eitherResult <$> EDE.parseFile cf >>=
       Left err -> Left err
       Right roleText -> case Y.decodeEither . T.encodeUtf8 $ T.toStrict roleText of
         Left err -> Left err
-        Right roles -> findRoleProcess (normaliseRole $ _rolespec_name role) roles
+        Right roles -> findRoleProcess (_rolespec_name role) roles
       where
         env' = maybe env (`M.union` env) (_rolespec_overrides role)
-
-    normaliseRole :: RoleName -> RoleName
-    normaliseRole x | "ios" `isPrefixOf` x = "ios"
-                    | otherwise = x
 
     mkHost :: UnexpandedHost -> [M0Process] -> M0Host
     mkHost uh procs = M0Host { m0h_fqdn = _uhost_m0h_fqdn uh

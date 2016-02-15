@@ -23,9 +23,11 @@ import qualified Data.Aeson.Types as A
 import Data.Binary (Binary)
 import qualified Data.ByteString.Char8 as BS
 import Database.Genders
+import qualified Data.HashMap.Lazy as M
 import Data.List (isPrefixOf, nub)
 import Data.Maybe (catMaybes, fromJust, maybeToList)
 import qualified Data.Vector as V
+import Data.Word (Word64)
 import Data.Yaml
 
 import GHC.Generics (Generic)
@@ -125,24 +127,35 @@ makeInitialData db devs = CI.InitialWithRoles {
             . fmap (BS.split ';')
             . lookup "m0_services"
             $ attrs
-        in
-          CI.UnexpandedHost {
-            CI._uhost_m0h_fqdn = BS.unpack host
-          , CI._uhost_m0h_roles = fmap (\s -> CI.RoleSpec {
-              CI._rolespec_name = BS.unpack s
-            , CI._rolespec_overrides = Nothing }) svcs
-          , CI._uhost_m0h_devices = fmap mkDevice . nub . join
-                                  . fmap (unDevices . snd) $ devs
-          , CI._uhost_host_mem = 1
-          , CI._uhost_host_mem_rss = 1
-          , CI._uhost_host_mem_stack = 1
-          , CI._uhost_host_mem_memlock = 1
-          , CI._uhost_host_cores = [1]
-          , CI._uhost_lnid =
-              fromJust . fmap BS.unpack $ lookup "m0_lnet_nid" attrs
-          })
+          -- Our default roles expect some host attributes to be
+          -- pre-defined. Create them here.
+          lnid = fromJust . fmap BS.unpack $ lookup "m0_lnet_nid" attrs
+          A.Object hostInfo = A.object [
+                                "host_mem" A..= (1 :: Word64)
+                              , "host_mem_rss" A..= (1 :: Word64)
+                              , "host_mem_stack" A..= (1 :: Word64)
+                              , "host_mem_memlock" A..= (1 :: Word64)
+                              , "host_cores" A..= [(1 :: Word64)]
+                              , "lnid" A..= lnid
+                              ]
+
+          uh = CI.UnexpandedHost {
+                 CI._uhost_m0h_fqdn = BS.unpack host
+               , CI._uhost_m0h_roles = fmap (\s -> CI.RoleSpec {
+                   CI._rolespec_name = normaliseRole $ BS.unpack s
+                 , CI._rolespec_overrides = Nothing }) svcs
+               , CI._uhost_m0h_devices = fmap mkDevice . nub . join
+                                       . fmap (unDevices . snd) $ devs
+               }
+        in (uh, (\(A.Object obj) -> obj `M.union` hostInfo) $ A.toJSON uh)
+
+      )
       (V.toList $ nodes db)
     }
+
+normaliseRole :: CI.RoleName -> CI.RoleName
+normaliseRole x | "ios" `isPrefixOf` x = "ios"
+                | otherwise = x
 
 mkDevice :: Device -> CI.M0Device
 mkDevice (Device i fp) = CI.M0Device {
