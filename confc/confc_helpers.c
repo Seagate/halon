@@ -9,6 +9,9 @@
 #include <errno.h>
 #include "conf/confc.h"
 #include "conf/validation.h"
+#include "fid/fid.h"
+#include "reqh/reqh_service.h"
+#include "rm/rm_service.h"
 #include "spiel/spiel.h"
 
 static struct m0_sm_group g_grp;
@@ -171,4 +174,28 @@ char *confc_validate_cache_of_tx(struct m0_spiel_tx *tx, size_t buflen) {
   } else {
     return buf;
   }
+}
+
+int spiel_init( struct m0_spiel** out_spiel
+              , struct m0_reqh_service** out_service
+              , struct m0_reqh* reqh
+              ) {
+    struct m0_fid fid;
+    int rc;
+    m0_fid_tgenerate(&fid, M0_CONF_SERVICE_TYPE.cot_ftype.ft_id);
+    rc = m0_reqh_service_setup(out_service, &m0_rms_type, reqh, NULL, &fid);
+    if (rc)
+      return rc;
+
+    M0_ALLOC_PTR(*out_spiel);
+    rc = m0_spiel_init(*out_spiel, reqh);
+    if (rc)
+      m0_reqh_service_quit(*out_service);
+    return rc;
+}
+
+void spiel_fini(struct m0_spiel* spiel, struct m0_reqh_service* service) {
+    m0_spiel_fini(spiel);
+    m0_free(spiel);
+    m0_reqh_service_quit(service);
 }
