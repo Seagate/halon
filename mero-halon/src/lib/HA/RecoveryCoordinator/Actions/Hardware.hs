@@ -530,8 +530,11 @@ actualizeStorageDeviceReplacement sdev = do
                   DIWWN wwn <- listToMaybe idents
                   (disk :: M0.Disk) <- listToMaybe $ G.connectedFrom M0.At dev rg
                   (mdev :: M0.SDev) <- listToMaybe $ G.connectedFrom M0.IsOnHardware disk rg
-                  let mdev'  = mdev{M0.d_path = mkPathByWWN wwn}
+                  let mdev'  = mdev{M0.d_path = dev_path}
                       action = G.mergeResources (const mdev') [mdev]
+                      dev_path = case [ i | i@(DIPath{}) <- G.connectedTo dev Has rg ] of
+                                   (DIPath path:_) -> path
+                                   _ -> mkPathByWWN wwn
                       mkPathByWWN :: String -> String
                       mkPathByWWN = (++) "/dev/disk/by-id/"
 #else
