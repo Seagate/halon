@@ -142,7 +142,8 @@ Library
                    multimap,
                    wl-pprint,
                    transformers,
-                   filepath
+                   filepath,
+                   ede
 
   if flag(mero)
       Exposed-Modules: Mero.Epoch
@@ -176,7 +177,8 @@ Library
       Build-Depends: rpclite,
                      confc,
                      inline-c,
-                     transformers
+                     transformers,
+                     vector
   if flag(rpc)
       Build-Depends: rpclite,
                      network-transport-rpc
@@ -309,6 +311,7 @@ Executable genders2yaml
                       filepath,
                       genders,
                       mero-halon,
+                      unordered-containers,
                       vector,
                       yaml
 
