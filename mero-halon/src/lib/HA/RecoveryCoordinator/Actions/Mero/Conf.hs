@@ -182,9 +182,9 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
                               m0p_mem_stack m0p_mem_memlock
                               cores m0p_endpoint
       procLabel = if
-          elem CST_MGS $ fmap CI.m0s_type m0p_services
-        then M0.PLConfdBoot
-        else M0.PLRegularBoot
+          m0p_boot_level < 0
+        then M0.PLNoBoot
+        else M0.PLBootLevel (fromIntegral m0p_boot_level)
     in do
       proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
       mapM_ (goSrv proc devs) m0p_services

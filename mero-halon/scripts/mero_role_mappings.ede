@@ -9,7 +9,7 @@
 {% for core in host_cores %}
        - {{ core.value }}
 {% endfor %}
-      m0p_boot_level: 1
+      m0p_boot_level: 0
       m0p_services:
         - m0s_type:
             tag: CST_MGS
@@ -81,7 +81,7 @@
 {% for core in host_cores %}
        - {{ core.value }}
 {% endfor %}
-      m0p_boot_level: 1
+      m0p_boot_level: -1
       m0p_services:
       - m0s_type:
           tag: CST_HA

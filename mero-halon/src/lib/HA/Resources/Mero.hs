@@ -387,8 +387,8 @@ instance Hashable HostHardwareInfo
 --   it should run.
 data ProcessLabel =
     PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space
-  | PLConfdBoot -- ^ Process which should be started as part of confd boot
-  | PLRegularBoot -- ^ Processes which should be started as part of regular boot
+  | PLBootLevel Int -- ^ Process boot level. Currently 0 = confd, 1 = other0
+  | PLNoBoot  -- ^ Tag processes which should not boot.
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ProcessLabel
 instance Hashable ProcessLabel

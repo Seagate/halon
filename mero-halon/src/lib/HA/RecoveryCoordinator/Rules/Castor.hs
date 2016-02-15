@@ -612,7 +612,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
       mhost <- findNodeHost node
       case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
         Just (host, chan) -> do
-          startNodeProcesses host chan PLConfdBoot True
+          startNodeProcesses host chan (PLBootLevel 0) True
         Nothing -> switch [svc_up_now, timeout 5000000 svc_up_already]
 
     setPhase msgClientNodeBootstrapped $ \(HAEvent eid (ProcessControlResultMsg node _) _) -> do

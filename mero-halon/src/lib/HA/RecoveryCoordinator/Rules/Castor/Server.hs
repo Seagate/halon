@@ -151,7 +151,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
   setPhaseIf svc_up_now onNode $ \(host, chan) -> do
     -- Legitimate to avoid the event id as it should be handled by the default
     -- 'declare-mero-channel' rule.
-    startNodeProcesses host chan PLConfdBoot True
+    startNodeProcesses host chan (PLBootLevel 0) True
     continue core_bootstrapped
 
   -- Service is already up
@@ -162,7 +162,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
     mhost <- findNodeHost node
     case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
       Just (host, chan) -> do
-        startNodeProcesses host chan PLConfdBoot True
+        startNodeProcesses host chan (PLBootLevel 0) True
         continue core_bootstrapped
       Nothing -> switch [svc_up_now, timeout 5000000 finish]
 
@@ -195,7 +195,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
            mhost <- findNodeHost (Node nid)
            case (,) <$> mhost <*> (m0svc >>= meroChannel g) of
              Just (host, chan) -> do
-               startNodeProcesses host chan PLRegularBoot True
+               startNodeProcesses host chan (PLBootLevel 1) True
                continue finish_extra_bootstrap
              Nothing -> do
                phaseLog "error" $ "Can't find host for node " ++ show node
