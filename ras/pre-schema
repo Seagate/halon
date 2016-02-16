@@ -1,0 +1,123 @@
+UUID = String
+
+Message = {
+  Message UUID : UUID
+  Session UUID : UUID
+  Send timestamp : String
+  Content : Content
+}
+
+Content = Ping | Pong | Failure
+
+Ping = {
+  PingRequest : ()
+}
+
+-- UUID of a message we're acking: this message may be a ping or other
+-- messages that are otherwise without a reply.
+MessageAck = {
+  AckingUUID : UUID
+}
+
+ReasonClass = Broken | WrongType | Teapot | …
+
+DiskInfo = {
+  Index : Number
+  Drawer : Number
+}
+
+ControllerInfo = {
+  Index : Number
+  Controller serial number : String
+  Hostname : String
+}
+
+Device = ControllerInfo | DiskInfo
+
+RootCause = Direct | TriggeredBy Device
+
+Failure = {
+  Enclosure serial number : String
+  Failure timestamp : String
+  State of object : String
+  Reason class : ReasonClass
+  Reason description : String
+  Failed object : Device
+  Root cause : RootCause
+}
+
+FailureSetRequest = {
+  FailureSetRequest : ()
+}
+
+FailureSetReply = {
+  FailureSetReply : UUID
+  FailureSet : [SomeFailure]
+}
+
+ReplacementInterlock = {
+  Locking device : Device
+  Lock request : Lock | Unlock
+}
+
+DisableRequest = {
+  Disable device : Device
+  Disable status : Disable | Enable
+}
+
+ProcessingError = {
+  MessageUUID : UUID
+  Error reason : String
+}
+
+-------------------
+
+Usecases from https://docs.google.com/document/d/1z2qiI1vCmCW4q1KLA4H-XcqfCu34C64eLN88XjvygNo
+
+let E = HA | RAS
+
+! _ : E -> E
+! HA = RAS
+! RAS = HA
+
+FOO --- MSG ---> BAR   = MSG is sent from FOO to BAR
+
+- Replacement interlock:
+
+  E --- ReplacementInterlock ---> !E
+  !E --- MessageAck ---> E
+
+- Halon notification of hardware failure
+
+
+  HA --- Failure ---> RAS
+  RAS --- MessageAck ---> HA
+
+- RAS notification to Halon of failures
+
+  RAS --- Failure ---> HA
+  HA --- MessageAck ---> RAS
+
+- RAS may need to 'disable' parts of the system to allow for servicing
+
+  RAS --- DisableRequest ---> HA
+  HA --- MessageAck ---> RAS
+
+- RAS ability to 'configure' Halon rule processing
+
+  undefined -- halon currently doesn't support configuration updates
+
+- RAS needs to 'query' current set of failures from Halon
+
+  RAS --- FailureSetRequest ---> HA
+  HA --- FailureSetReply ---> RAS
+
+- Handle error cases
+
+  E --- ∀ msg. msg ---> !E
+  !E --- ProcessingError ---> E
+
+- Ping message
+
+  E --- Ping ---> !E
+  !E --- MessageAck ---> E

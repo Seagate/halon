@@ -124,6 +124,7 @@ Library
                    mtl,
                    options-schema,
                    process,
+                   ras,
                    regex-tdfa,
                    scientific,
                    sspl,
