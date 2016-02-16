@@ -1,7 +1,7 @@
 - name: "confd"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:43:101"
-      m0p_mem_as: {{ host_mem }}
+      m0p_mem_as: {{ host_mem_as }}
       m0p_mem_rss: {{ host_mem_rss }}
       m0p_mem_stack: {{ host_mem_stack }}
       m0p_mem_memlock: {{ host_mem_memlock }}
@@ -26,7 +26,7 @@
             tag: SPUnused
             contents: []
     - m0p_endpoint: "{{ lnid }}:12345:43:101"
-      m0p_mem_as: {{ host_mem }}
+      m0p_mem_as: {{ host_mem_as }}
       m0p_mem_rss: {{ host_mem_rss }}
       m0p_mem_stack: {{ host_mem_stack }}
       m0p_mem_memlock: {{ host_mem_memlock }}
@@ -53,7 +53,7 @@
 - name: "mds"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:41:201"
-      m0p_mem_as: {{ host_mem }}
+      m0p_mem_as: {{ host_mem_as }}
       m0p_mem_rss: {{ host_mem_rss }}
       m0p_mem_stack: {{ host_mem_stack }}
       m0p_mem_memlock: {{ host_mem_memlock }}
@@ -73,7 +73,7 @@
 - name: "ha"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:34:101"
-      m0p_mem_as: {{ host_mem }}
+      m0p_mem_as: {{ host_mem_as }}
       m0p_mem_rss: {{ host_mem_rss }}
       m0p_mem_stack: {{ host_mem_stack }}
       m0p_mem_memlock: {{ host_mem_memlock }}
@@ -93,7 +93,7 @@
 - name: "ios"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:41:401"
-      m0p_mem_as: {{ host_mem }}
+      m0p_mem_as: {{ host_mem_as }}
       m0p_mem_rss: {{ host_mem_rss }}
       m0p_mem_stack: {{ host_mem_stack }}
       m0p_mem_memlock: {{ host_mem_memlock }}
