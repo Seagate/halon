@@ -47,12 +47,12 @@ main = withMeroRoot $ \meroRoot -> withSudo ["LD_LIBRARY_PATH", "MERO_ROOT"] $ d
       | test == Test.Management.name -> Test.Management.test
     _ -> bracket_
       (do setEnv "SANDBOX_DIR" "/var/mero/sandbox.conf-st"
-          callCommand $ meroRoot ++ "/conf/st sstart")
+          callCommand "systemctl start mero")
       (do threadDelay $ 3*1000000
-          tryIO $ callCommand $ meroRoot ++ "/conf/st sstop"
-          tryIO $ callCommand $ meroRoot ++ "/conf/st rmmod") 
+          tryIO $ callCommand "systemctl stop mero"
+          )
       (do nid <- getLnetNid
-          setEnv confdEndpoint $ nid ++ ":12345:34:1001"
+          setEnv confdEndpoint $ nid ++ ":12345:44:101"
           setEnv confd2Endpoint $ nid ++ ":12345:34:1002"
           setEnv halonEndpoint  $ nid ++ ":12345:35:401"
           defaultMainWithIngredients  [fileTestReporter [consoleTestReporter]] tests)
