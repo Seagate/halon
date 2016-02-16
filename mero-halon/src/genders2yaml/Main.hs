@@ -131,7 +131,7 @@ makeInitialData db devs = CI.InitialWithRoles {
           -- pre-defined. Create them here.
           lnid = fromJust . fmap BS.unpack $ lookup "m0_lnet_nid" attrs
           A.Object hostInfo = A.object [
-                                "host_mem" A..= (1 :: Word64)
+                                "host_mem_as" A..= (1 :: Word64)
                               , "host_mem_rss" A..= (1 :: Word64)
                               , "host_mem_stack" A..= (1 :: Word64)
                               , "host_mem_memlock" A..= (1 :: Word64)
