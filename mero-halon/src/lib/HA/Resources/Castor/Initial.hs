@@ -308,17 +308,18 @@ resolveRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts
 resolveRoles InitialWithRoles{..} cf = EDE.eitherResult <$> EDE.parseFile cf >>= \case
   Left err -> return $ mkExc err
   Right template -> do
-    let allHosts :: [[Either String M0Host]]
+    let allHosts :: [Either [String] M0Host]
         allHosts = flip map _rolesinit_id_m0_servers $ \(uh, env) ->
-                     map (fmap (mkHost uh) . mkProc template env)
-                         (_uhost_m0h_roles uh)
-    case partitionEithers $ concat allHosts of
+                     case partitionEithers $ map (mkProc template env) (_uhost_m0h_roles uh) of
+                       ([], procs) -> Right $ mkHost uh (concat procs)
+                       (errs, _) -> Left errs
+    case partitionEithers allHosts of
       ([], hosts) -> return $ Right $
         InitialData { id_racks = _rolesinit_id_racks
                     , id_m0_servers = hosts
                     , id_m0_globals = _rolesinit_id_m0_globals
                     }
-      (errs, _) -> return . mkExc $ intercalate "," errs
+      (errs, _) -> return . mkExc . intercalate ", " $ concat errs
   where
     mkProc :: EDE.Template -> Y.Object -> RoleSpec -> Either String [M0Process]
     mkProc template env role = case EDE.eitherResult $ EDE.render template env' of
