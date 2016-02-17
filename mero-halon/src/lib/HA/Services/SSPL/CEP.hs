@@ -244,12 +244,22 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
           wwn = DIWWN   . T.unpack
                         . sensorResponseMessageSensor_response_typeDisk_status_hpiWwn
                         $ srphi
-          ident = DIUUID . T.unpack
+          idx   = DIIndexInEnclosure . fromInteger
+                  . sensorResponseMessageSensor_response_typeDisk_status_hpiDiskNum
+                  $ srphi
+{-
+          -- XXX: currently halon do not store additional information about drives, but this
+          -- may be changed in future.
+          _ident = DIUUID . T.unpack
                          . sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId
                          $ srphi
-          loc   = DIIndexInEnclosure . fromInteger
+          _loc  = DIIndexInEnclosure . fromInteger
                          . sensorResponseMessageSensor_response_typeDisk_status_hpiLocation
                          $ srphi
+          _drawer = DIIndexInEnclosure . fromInteger
+                      . sensorResponseMessageSensor_response_typeDisk_status_hpiDrawer
+                      $ srphi
+-}
           host  = Host . T.unpack
                        . sensorResponseMessageSensor_response_typeDisk_status_hpiHostId
                        $ srphi
@@ -259,7 +269,7 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
           enc   = Enclosure . T.unpack
                        . sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN
                        $ srphi
-      mdev <- lookupStorageDeviceInEnclosure enc loc
+      mdev <- lookupStorageDeviceInEnclosure enc idx
       locateHostInEnclosure host enc -- XXX: do we need to do that on each query?
       msd <- case mdev of
          Nothing -> do
@@ -268,9 +278,8 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
              Just sd -> do
                -- We have disk in RG, but we didn't know its index in enclosure, this happens
                -- when we loaded initial data that have no information about indices.
-               identifyStorageDevice sd loc
+               identifyStorageDevice sd idx
                identifyStorageDevice sd serial
-               identifyStorageDevice sd ident
                return Nothing
              Nothing -> do
                -- We don't have information about inserted disk in this slot yet, this could
@@ -282,7 +291,7 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
                diskUUID <- liftIO $ nextRandom
                let disk = StorageDevice diskUUID
                locateStorageDeviceInEnclosure enc disk
-               identifyStorageDevice disk loc
+               identifyStorageDevice disk idx
                return (Just disk)
          Just sd -> do
            -- We have information about disk in slot, check whether this is same disk or not.
@@ -293,7 +302,7 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
              _ -> return (Just sd)
       case msd of
         Just sd -> do
-          _ <- attachStorageDeviceReplacement sd [sn, wwn, ident, loc]
+          _ <- attachStorageDeviceReplacement sd [sn, wwn, idx]
           -- It may happen that we have already received "OK_None" status from drive manager
           -- but for a completely new device. In this case, the device has not yet been
           -- attached to mero because halon still needed the HPI information before processing
