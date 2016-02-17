@@ -125,6 +125,11 @@ schema = [schemaQQ|
                   "type" : "integer",
                   "required" : true
                 },
+                "diskNum": {
+                  "description" : "Index of the drive in enclosure",
+                  "type" : "integer",
+                  "required": true
+                },
                 "manufacturer" : {
                   "description" : "Manufacturer of the drive",
                   "type" : "string",
