@@ -50,7 +50,6 @@ import RemoteTables (remoteTable)
 
 import SSPL.Bindings
 
-import Control.Concurrent (threadDelay)
 import Control.Monad (join, when, replicateM_, void)
 import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Node
@@ -75,7 +74,7 @@ import Network.CEP
 import Network.Transport
 
 import Test.Framework
-import Test.Tasty.HUnit (Assertion, assertEqual)
+import Test.Tasty.HUnit (Assertion, assertEqual, assertBool, assertFailure)
 import TestRunner
 import Helper.InitialData
 import Helper.SSPL
@@ -133,12 +132,12 @@ mkTests = do
           testFailedSMART transport
         , testSuccess "Drive failure, second drive fails whilst handling to reset attempt" $
           testSecondReset transport
-        , testSuccess "No response from powerdown" $
-          testPowerdownNoResponse transport
-        , testSuccess "No response from powerup" $
-          testPowerupNoResponse transport
-        , testSuccess "No response from SMART test" $
-          testSMARTNoResponse transport
+--        , testSuccess "No response from powerdown" $
+--          testPowerdownNoResponse transport
+--        , testSuccess "No response from powerup" $
+--          testPowerupNoResponse transport
+--        , testSuccess "No response from SMART test" $
+--          testSMARTNoResponse transport
         , testSuccess "Drive failure removal reported by SSPL" $
           testDriveRemovedBySSPL transport
         , testSuccess "Metadata drive failure reported by IEM" $
@@ -234,17 +233,27 @@ run transport interceptor test =
       link pid
       return pid
 
-findSDev :: G.Graph -> Process M0.SDev
+findSDev :: G.Graph -> Process (M0.SDev,String)
 findSDev rg =
-  case G.getResourcesOfType rg of
-    sdev:_ -> return sdev
-    _      -> fail "Can't find a M0.SDev"
+  let dvs = [ (sdev, serial) | sdev <- G.getResourcesOfType rg :: [M0.SDev]
+                             , disk <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
+                             , storage <- G.connectedTo disk M0.At rg :: [StorageDevice]
+                             , DISerialNumber serial <- G.connectedTo storage Has rg
+                             ]
+  in case dvs of
+    dv:_ -> return dv
+    _    -> do liftIO $ assertFailure "Can't find a M0.SDev or it's serial number"
+               undefined
 
-find2SDev :: G.Graph -> Process M0.SDev
+find2SDev :: G.Graph -> Process (M0.SDev, String)
 find2SDev rg =
   case G.getResourcesOfType rg of
-    _:sdev:_ -> return sdev
-    _        -> fail "Can't find more than 2 SDevs"
+    _:sdev:_ -> case [ (sdev, serial) | DISerialNumber serial <- devDI sdev rg ] of
+                  sd:_ -> return sd
+                  _  -> do liftIO $ assertFailure "Can't find serial number."
+                           undefined
+    _        -> do liftIO $ assertFailure "Can't find more than 2 SDevs"
+                   undefined
 
 devAttrs :: M0.SDev -> G.Graph -> [StorageDeviceAttr]
 devAttrs sdev rg =
@@ -252,6 +261,15 @@ devAttrs sdev rg =
          , sd   <- G.connectedTo dev M0.At rg :: [StorageDevice]
          , attr <- G.connectedTo sd Has rg :: [StorageDeviceAttr]
          ]
+
+devDI :: M0.SDev -> G.Graph -> [DeviceIdentifier]
+devDI sdev rg =
+  [ attr | dev  <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
+         , sd   <- G.connectedTo dev M0.At rg :: [StorageDevice]
+         , attr <- G.connectedTo sd Has rg :: [DeviceIdentifier]
+         ]
+
+
 
 -- | Check if specified device have RemovedAt attribute.
 checkStorageDeviceRemoved :: String -> Int -> G.Graph -> Bool
@@ -314,10 +332,10 @@ loadInitialDataMod f = let
     _ <- expect :: Process (Published (HAEvent InitialData))
     return ()
 
-failDrive :: ReceivePort NotificationMessage -> M0.SDev -> Process ()
-failDrive recv sdev = let
+failDrive :: ReceivePort NotificationMessage -> (M0.SDev,String) -> Process ()
+failDrive recv (sdev, serial) = let
     fail_evt = Set [Note (M0.d_fid sdev) M0_NC_FAILED]
-    sdev_path = pack $ M0.d_path sdev
+    tserial = pack serial
   in do
     debug "failDrive"
     nid <- getSelfNode
@@ -329,76 +347,42 @@ failDrive recv sdev = let
     -- The RC should issue a 'ResetAttempt' and should be handled.
     _ <- expect :: Process (Published (HAEvent ResetAttempt))
     -- We should see `ResetAttempt` from SSPL
-    msg <- expectNodeMsg 1000000
-    debug $ "failDrive: Msg: " ++ show msg
-    assert $ msg
-            == Just (ActuatorRequestMessageActuator_request_typeNode_controller
-                      (nodeCmdString (DrivePowerdown sdev_path))
-                    )
+    let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+            $ nodeCmdString (DriveReset tserial)
+    liftIO . assertEqual "drive reset command is issued"  (Just cmd) =<< expectNodeMsg 1000000
+    debug "failDrive: OK"
 
-powerdownComplete :: StoreChan -> M0.SDev -> Process ()
-powerdownComplete mm sdev = let
-    sdev_path = pack $ M0.d_path sdev
-    downComplete = CommandAck Nothing
-                                (Just $ DrivePowerdown sdev_path)
-                                AckReplyPassed
+resetComplete :: StoreChan -> (M0.SDev, String) -> Process ()
+resetComplete mm (sdev, serial) = let
+    tserial = pack serial
+    resetCmd = CommandAck Nothing (Just $ DriveReset tserial) AckReplyPassed
   in do
-    debug "powerdownComplete"
+    debug "resetComplete"
     nid <- getSelfNode
-    -- Confirms that the disk powerdown operation has occured.
-    _ <- promulgateEQ [nid] downComplete
-    _ <- expect :: Process (Published CommandAck)
     rg <- G.getGraph mm
+    liftIO . assertBool "false_dev should we power off"
+           . not . any isPowered $ devAttrs sdev rg
+    _ <- promulgateEQ [nid] resetCmd
+    let smartTestRequest = ActuatorRequestMessageActuator_request_typeNode_controller
+                         $ nodeCmdString (SmartTest tserial)
+    debug "resetComplete: waiting smart request."
+    liftIO . assertEqual "RC requested smart test." (Just smartTestRequest)
+                =<< expectNodeMsg 1000000
+    debug "resetComplete: finished"
 
-    -- The drive should be marked power off.
-    when (any isPowered $ devAttrs sdev rg) $
-      fail "false_dev should be power off"
-    -- RC should now issue power on instruction
-    msg <- expectNodeMsg 1000000
-    debug $ "powerdownComplete: Msg: " ++ show msg
-    assert $ msg
-            == Just (ActuatorRequestMessageActuator_request_typeNode_controller
-                      (nodeCmdString (DrivePoweron sdev_path))
-                    )
 
-poweronComplete :: StoreChan -> M0.SDev -> Process ()
-poweronComplete mm sdev = let
-    sdev_path = pack $ M0.d_path sdev
-    onComplete = CommandAck Nothing
-                            (Just $ DrivePoweron sdev_path)
-                            AckReplyPassed
-  in do
-    debug "poweronComplete"
-    nid <- getSelfNode
-    -- Confirms that the disk powerdown operation has occured.
-    _ <- promulgateEQ [nid] onComplete
-    _ <- expect :: Process (Published CommandAck)
-    debug "poweronComplete: Command acknowledged"
-    rg <- G.getGraph mm
-
-    -- The drive should be marked power on.
-    when (not $ any isPowered $ devAttrs sdev rg) $
-      fail "false_dev should be power on"
-    -- RC should now issue power on instruction
-    msg <- expectNodeMsg 1000000
-    debug $ "poweronComplete: Msg: " ++ show msg
-    assert $ msg
-            == Just (ActuatorRequestMessageActuator_request_typeNode_controller
-                      (nodeCmdString (SmartTest sdev_path))
-                    )
-
-smartTestComplete :: ReceivePort NotificationMessage -> AckReply -> M0.SDev -> Process ()
-smartTestComplete recv success sdev = let
-    sdev_path = pack $ M0.d_path sdev
+smartTestComplete :: ReceivePort NotificationMessage -> AckReply -> (M0.SDev,String) -> Process ()
+smartTestComplete recv success (sdev,serial) = let
+    tserial = pack serial
     smartComplete = CommandAck Nothing
-                        (Just $ SmartTest sdev_path)
+                        (Just $ SmartTest tserial)
                         success
     status = case success of
       AckReplyPassed -> M0_NC_ONLINE
       AckReplyFailed -> M0_NC_FAILED
       AckReplyError _ -> M0_NC_FAILED
   in do
-    debug "smartTestComplete"
+    debug $ "smartTestComplete: " ++ show smartComplete
     nid <- getSelfNode
     -- Confirms that the disk powerdown operation has occured.
     _ <- promulgateEQ [nid] smartComplete
@@ -422,8 +406,7 @@ testDiskFailure transport = run transport interceptor test where
 
     sdev <- G.getGraph mm >>= findSDev
     failDrive recv sdev
-    powerdownComplete mm sdev
-    poweronComplete mm sdev
+    resetComplete mm sdev
     smartTestComplete recv AckReplyPassed sdev
 
 testHitResetLimit :: Transport -> IO ()
@@ -437,12 +420,11 @@ testHitResetLimit transport = run transport interceptor test where
 
     replicateM_ (resetAttemptThreshold + 1) $ do
       failDrive recv sdev
-      powerdownComplete mm sdev
-      poweronComplete mm sdev
+      resetComplete mm sdev
       smartTestComplete recv AckReplyPassed sdev
 
     -- Fail the drive one more time
-    let fail_evt = Set [Note (M0.d_fid sdev) M0_NC_FAILED]
+    let fail_evt = Set [Note (M0.d_fid $ fst sdev) M0_NC_FAILED]
     nid <- getSelfNode
     void $ promulgateEQ [nid] fail_evt
     -- Mero should be notified that the drive should be failed.
@@ -459,8 +441,7 @@ testFailedSMART transport = run transport interceptor test where
 
     sdev <- G.getGraph mm >>= findSDev
     failDrive recv sdev
-    powerdownComplete mm sdev
-    poweronComplete mm sdev
+    resetComplete mm sdev
     smartTestComplete recv AckReplyFailed sdev
 
 testSecondReset :: Transport -> IO ()
@@ -475,13 +456,12 @@ testSecondReset transport = run transport interceptor test where
 
     failDrive recv sdev
     failDrive recv sdev2
-    powerdownComplete mm sdev
-    powerdownComplete mm sdev2
-    poweronComplete mm sdev2
+    resetComplete mm sdev2
     smartTestComplete recv AckReplyPassed sdev2
-    poweronComplete mm sdev
+    resetComplete mm sdev
     smartTestComplete recv AckReplyPassed sdev
 
+{-
 testPowerdownNoResponse :: Transport -> IO ()
 testPowerdownNoResponse transport = run transport interceptor test where
   interceptor _ _ = return ()
@@ -549,6 +529,7 @@ testSMARTNoResponse transport = run transport interceptor test where
     poweronComplete mm sdev
     smartTestComplete recv AckReplyPassed sdev
     return ()
+-}
 
 -- | SSPL emits EMPTY_None event for one of the drives.
 testDriveRemovedBySSPL :: Transport -> IO ()
@@ -609,7 +590,7 @@ testDynamicPVer transport = run transport interceptor test where
     failDrive recv sdev
     -- Should now have a pool version corresponding to single failed drive
     rg1 <- G.getGraph mm
-    let [disk] = G.connectedTo sdev M0.IsOnHardware rg1 :: [M0.Disk]
+    let [disk] = G.connectedTo (fst sdev) M0.IsOnHardware rg1 :: [M0.Disk]
     checkPVerExistence rg (S.singleton (M0.fid disk)) False
     checkPVerExistence rg1 (S.singleton (M0.fid disk)) True
 
@@ -617,7 +598,7 @@ testDynamicPVer transport = run transport interceptor test where
     failDrive recv sdev2
     -- Should now have a pool version corresponding to two failed drives
     rg2 <- G.getGraph mm
-    let [disk2] = G.connectedTo sdev2 M0.IsOnHardware rg2 :: [M0.Disk]
+    let [disk2] = G.connectedTo (fst sdev2) M0.IsOnHardware rg2 :: [M0.Disk]
     checkPVerExistence rg1 (S.fromList . fmap M0.fid $ [disk, disk2]) False
     checkPVerExistence rg2 (S.fromList . fmap M0.fid $ [disk, disk2]) True
 #endif
