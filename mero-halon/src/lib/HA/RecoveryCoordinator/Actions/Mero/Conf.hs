@@ -149,7 +149,7 @@ loadMeroServers :: M0.Filesystem
                 -> PhaseM LoopState l ()
 loadMeroServers fs = mapM_ goHost . offsetHosts where
   offsetHosts hosts = zip hosts
-    (scanl' (\acc h -> acc + (length $ CI.m0h_devices h)) (1 :: Int) hosts)
+    (scanl' (\acc h -> acc + (length $ CI.m0h_devices h)) (0 :: Int) hosts)
   goHost (CI.M0Host{..}, hostIdx) = let
       host = Host m0h_fqdn
     in do
