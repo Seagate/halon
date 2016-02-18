@@ -29,7 +29,7 @@ import           Control.Distributed.Process.Node (runProcess)
 #endif
 import           Control.Monad (void)
 import           Data.Binary
-import           Data.List (isInfixOf)
+import           Data.List (isInfixOf, sort)
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics
@@ -371,8 +371,8 @@ testConfObjectStateQuery host transport =
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Rack])
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Enclosure])
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Controller])
-              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Disk])
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Process])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Root])
             failFid : okSDevFids = sdevFids
             okayFids = okSDevFids ++ otherFids
 
@@ -383,13 +383,13 @@ testConfObjectStateQuery host transport =
         say "Send Get message to the RC"
         void $ promulgateEQ [nid] (Get self (failFid : okayFids))
         GetReply notes <- expect
+        let resultFids = fmap no_id notes
+        liftIO $ assertEqual "Fids should be equal" (sort $ failFid:okayFids) (sort resultFids)
         let expected = map (flip Note M0_NC_ONLINE) (okayFids)
               ++ [Note failFid M0_NC_TRANSIENT]
-        liftIO $ assertBool
-          ("The result (" ++ show notes ++ ") is not the expected one ("
-            ++ show expected ++ ")."
-          ) $ sortBy (compare `on` no_id) expected
-              == sortBy (compare `on` no_id) notes
+        liftIO $ assertEqual "result is expected"
+                   (sortBy (compare `on` no_id) expected)
+                   (sortBy (compare `on` no_id) notes)
 #endif
 
 #ifdef USE_MERO
@@ -461,6 +461,7 @@ testBadConfDoesNotValidate transport = testConfValidates iData transport $ do
 #endif
 
 #ifdef USE_MERO
+testFidsLoad :: IO ()
 testFidsLoad = do
   let mmchan = error "Graph mmchan is not used in this test"
       fids = [ M0.fidInit (Proxy :: Proxy M0.RackV) 1 1

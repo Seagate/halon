@@ -42,7 +42,7 @@ import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef
                               , newIORef
                               )
 import Data.List              ( find )
-import Data.Word              ( Word32, Word8 )
+import Data.Word              ( Word32 )
 import Data.Int               ( Int32 )
 import Foreign.C.Types        ( CInt(..) )
 import Foreign.C.String       ( CString, withCString )

@@ -266,6 +266,7 @@ notifyMero cs st = do
                phaseLog "warning" $ "HA.Service.Mero.notifyMero: can't find remote service for"
                                   ++ show host
                                   ++ ", sending from local"
+               phaseLog "debug" $ show setEvent
                liftProcess $ sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
             Nothing -> phaseLog "error" $ "HA.Service.Mero.notifyMero: cannot neither MeroChannel on "
                                       ++ show host

@@ -68,6 +68,8 @@ import GHC.Generics (Generic)
 import Network.CEP
 import Prelude hiding (id)
 
+import System.IO
+
 -- | Event sent when to many failures has been sent for a 'Disk'.
 data ResetAttempt = ResetAttempt StorageDevice
   deriving (Eq, Generic, Show, Typeable)
@@ -120,7 +122,8 @@ onSmartSuccess :: HAEvent CommandAck
                -> g
                -> Maybe (StorageDevice, String, UUID)
                -> Process (Maybe ())
-onSmartSuccess (HAEvent _ cmd _) _ (Just (_, path, _)) =
+onSmartSuccess (HAEvent _ cmd _) _ (Just (_, path, _)) = do
+    liftIO $ hPutStrLn stderr $ show cmd
     case commandAckType cmd of
       Just (SmartTest x)
         | pack path == x ->
@@ -368,6 +371,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         [smartSuccess, smartFailure, timeout ssplTimeout down]
 
       setPhaseIf smartSuccess onSmartSuccess $ \_ -> do
+        liftProcess $ say "debug: here"
         Just (sdev, _, _) <- get Local
         markResetComplete sdev
         markSMARTTestComplete sdev
@@ -380,6 +384,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         continue end
 
       setPhaseIf smartFailure onSmartFailure $ \_ -> do
+        liftProcess $ say "debug: there"
         Just (sdev, _, _) <- get Local
         markResetComplete sdev
         markSMARTTestComplete sdev

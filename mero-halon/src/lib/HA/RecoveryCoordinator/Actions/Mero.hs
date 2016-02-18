@@ -40,8 +40,6 @@ import Control.Category
 import Control.Distributed.Process
 import Control.Monad (forM, join)
 
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import Data.Foldable (forM_, traverse_)
 import Data.Proxy
 import Data.Maybe (listToMaybe)
@@ -49,8 +47,6 @@ import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
 
-import System.Directory
-import System.IO
 import System.Posix.SysInfo
 
 import Prelude hiding ((.), id)
@@ -82,6 +78,7 @@ updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
 
 -- | For all other states, we simply update in the RG and notify Mero.
 updateDriveState m0sdev x = do
+  liftProcess $ say $ "updating to " ++ show x
   -- Update state in RG
   modifyGraph $ G.connect m0sdev Is x
   graph <- getLocalGraph
@@ -93,6 +90,7 @@ updateDriveState m0sdev x = do
   -- sync, but before it notified mero.
   syncGraph (return ())
   -- Notify Mero
+  liftProcess $ say $ show (m0sdev, m0disks, x)
   let m0objs = M0.AnyConfObj <$> m0disks
   notifyMero (M0.AnyConfObj m0sdev:m0objs) x
 

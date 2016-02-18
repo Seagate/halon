@@ -21,6 +21,7 @@ module Helper.Environment
   , getTestListen
   , getTestListenSplit
   , systemHostname
+  , testListenName
   ) where
 
 #ifdef USE_MERO
@@ -167,3 +168,10 @@ withEndpoint addr = bracket
 
 systemHostname :: String
 systemHostname = unsafePerformIO getHostName
+
+testListenName :: String
+testListenName = unsafePerformIO $ do
+  mhost <- fmap (fst . (span (/=':'))) <$> lookupEnv "TEST_LISTEN"
+  case mhost of
+    Nothing -> getLnetNid
+    Just h  -> return h

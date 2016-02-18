@@ -78,7 +78,6 @@ import qualified Data.Text.Encoding as T
 import qualified Data.UUID as UID
 import qualified Data.HashMap.Strict as HM
 import Data.Time (getCurrentTime)
-import Control.Monad.Catch (catch, SomeException)
 
 import Network.AMQP
 import Network.CEP (Definitions)
