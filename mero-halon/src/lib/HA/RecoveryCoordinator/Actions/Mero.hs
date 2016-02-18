@@ -195,6 +195,7 @@ startNodeProcesses host (TypedChannel chan) label mkfs = do
                  , p <- G.connectedTo m0node M0.IsParentOf rg
                  , G.isConnected p Has label rg
                  ]
+    phaseLog "processes" $ show (fmap M0.fid (procs :: [M0.Process]))
     msg <- StartProcesses <$> case (label, mkfs) of
             (M0.PLM0t1fs, _) -> forM procs $ (\proc -> (M0T1FS,) <$> runConfig proc rg)
             (_, True) -> join <$> forM procs

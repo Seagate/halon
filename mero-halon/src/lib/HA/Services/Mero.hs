@@ -123,7 +123,6 @@ startProcess :: MeroConf
 startProcess mc run conf = flip Catch.catch handler $ do
     putStrLn $ "m0d: startProcess: " ++ show procFid
             ++ " with type " ++ show run
-            ++ " and config " ++ show conf
     confXC <- maybeWriteConfXC conf
     unit <- writeSysconfig mc run procFid m0addr confXC
     _ <- SystemD.startService $ unit ++ fidToStr procFid
@@ -284,4 +283,4 @@ lookupMeroChannelByNode node = do
    let mlchan = listToMaybe
          [ chan | sp   <- G.connectedTo node Runs rg :: [ServiceProcess MeroConf]
                 , chan <- G.connectedTo sp MeroChannel rg ]
-   return mlchan 
+   return mlchan
