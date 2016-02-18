@@ -46,12 +46,13 @@ import Data.Foldable
 import GHC.Generics
 
 import Data.UUID.V4 (nextRandom)
-import Data.Text (Text)
+import Data.Text (Text, pack)
 
 import Test.Tasty
 import Test.Tasty.HUnit (assertEqual)
 import Test.Framework
 import Control.Distributed.Process
+import Helper.Environment
 
 data GetGraph = GetGraph ProcessId deriving (Eq,Show, Typeable, Generic)
 
@@ -99,7 +100,9 @@ mkHpiTest :: (ProcessId -> Definitions LoopState b)
           -> Transport
           -> IO ()
 mkHpiTest mkTestRule test transport = rGroupTest transport $ \pid -> do
+    say "start HPI test"
     self <- getSelfPid
+    say "load data"
     ls <- emptyLoopState pid self
     (ls',_)  <- run ls $ do
             mapM_ goRack (CI.id_racks myInitialData)
@@ -107,7 +110,13 @@ mkHpiTest mkTestRule test transport = rGroupTest transport $ \pid -> do
             loadMeroGlobals (CI.id_m0_globals myInitialData)
             loadMeroServers filesystem (CI.id_m0_servers myInitialData)
     let testRule = mkTestRule self
-    rc <- spawnLocal $ execute ls' (testRule >> ssplRules)
+    say "run RC"
+    rc <- spawnLocal $ execute ls' $ do
+            setLogger $ \l _ -> say (show l)
+            _ <- testRule
+            _ <- ssplRules
+            return ()
+    say "start HPI test"
     test rc
 
 testHpiExistingWWN :: Transport -> IO ()
@@ -127,19 +136,25 @@ testHpiExistingWWN = mkHpiTest rules test
       start ph0 Nothing
     test rc = do
       me <- getSelfNode
+      say "prepare"
       usend rc ()  -- Prepare graph test
-      let request = mkHpiMessage "primus.example.com" "enclosure1" 1 "loop1" "wwn1"
+      let request = mkHpiMessage (pack systemHostname) "enclosure_2" "serial21" 1 "loop21" "wwn21"
       uuid <- liftIO $ nextRandom
+      say "send HPI message"
       usend rc $ HAEvent uuid (me, request) [] -- send request
+      say "await for reply"
       receiveWait [ matchIf (\u -> u == uuid) (\_ -> return ()) ] -- check that it was processed
       usend rc ()
       -- We may add new field (drive_status)
+      say "check that graph did change"
       False <- expect
       usend rc ()  -- Prepare graph test
       uuid1 <- liftIO $ nextRandom
+      say "send message again"
       usend rc $ HAEvent uuid1 (me, request) [] -- send request
       receiveWait [ matchIf (\u -> u == uuid1) (\_ -> return ()) ] -- check that it was processed
       usend rc ()
+      say "check that graph didn't change"
       True <- expect
       return ()
 
@@ -156,7 +171,7 @@ testHpiNewWWN = mkHpiTest rules test
         liftProcess $ usend self (uuid,"message-processed"::String)
     test rc = do
       me <- getSelfNode
-      let request = mkHpiMessage "primus.example.com" "enclosure1" 10 "loop10" "wwn10"
+      let request = mkHpiMessage (pack systemHostname) "enclosure_2" "serial310" 10 "loop10" "wwn10"
       uuid <- liftIO $ nextRandom
       usend rc $ HAEvent uuid (me, request) []
       receiveWait [ matchIf (\(u,"message-processed"::String) -> u == uuid) (\_ -> return ()) ]
@@ -169,8 +184,10 @@ testHpiUpdatedWWN = mkHpiTest rules test
   where
     rules self = do
       defineSimple "check-test" $ \(enc, l) -> do
+        phaseLog "debug" $ show (enc,l)
         let d = DIIndexInEnclosure l
         msd <- lookupStorageDeviceInEnclosure enc d
+        phaseLog "debug" $ show msd
         forM_ msd $ \sd -> do
           mc <- lookupStorageDeviceReplacement sd
           forM_ mc $ \c -> do
@@ -181,20 +198,19 @@ testHpiUpdatedWWN = mkHpiTest rules test
     test rc = do
       me   <- getSelfNode
       uuid0 <- liftIO $ nextRandom
-      let request0 = mkHpiMessage "primus.example.com" "enclosure1" 0 "loop1" "wwn1"
+      let request0 = mkHpiMessage (pack systemHostname) "enclosure_2" "serial21" 1 "loop1" "wwn1"
       usend rc $ HAEvent uuid0 (me, request0) []
-      let request = mkHpiMessage "primus.example.com" "enclosure1" 0 "loop1" "wwn10"
+      let request = mkHpiMessage (pack systemHostname) "enclosure_2" "serial31" 1 "loop1" "wwn10"
       uuid <- liftIO $ nextRandom
       usend rc $ HAEvent uuid (me, request) []
       enc <- receiveWait [ matchIf (\(u, _) -> u == uuid)
                                    (\(_,enc) -> return enc) ]
-      usend rc (enc :: Enclosure, 0::Int)
+      usend rc (enc :: Enclosure, 1::Int)
       is   <- expect
       liftIO $ assertEqual "Indentifiers matches"
-                 (Set.fromList [DIIndexInEnclosure 0
+                 (Set.fromList [DIIndexInEnclosure 1
                                , DIWWN "wwn10"
-                               , DIUUID "loop1"
-                               , DISerialNumber "serial"
+                               , DISerialNumber "serial31"
                                ])
                  (Set.fromList is)
 
@@ -214,10 +230,10 @@ testDMRequest = mkHpiTest rules test
         liftProcess $ usend self (uuid, "drive-removed"::String)
     test rc = do
         me <- getSelfNode
-        let requestA = mkHpiMessage "primus.example.com" "enclosure1" 0 "loop1" "wwn1"
+        let requestA = mkHpiMessage "primus.example.com" "enclosure1" "serial1" 0 "loop1" "wwn1"
         uuidA <- liftIO $ nextRandom
         usend rc $ HAEvent uuidA (me, requestA) []
-        let requestB = mkHpiMessage "primus.example.com" "enclosure1" 1 "loop2" "wwn2"
+        let requestB = mkHpiMessage "primus.example.com" "enclosure1" "serial2" 1 "loop2" "wwn2"
         uuidB <- liftIO $ nextRandom
         usend rc $ HAEvent uuidB (me, requestB) []
         --  0  -- active drive
@@ -297,4 +313,4 @@ run ls = runPhase ls (0 :: Int) emptyFifoBuffer
 
 -- | Sample initial data for test purposes
 myInitialData :: CI.InitialData
-myInitialData = initialData "192.0.2.1" "192.0.2.2" 1 12 defaultGlobals
+myInitialData = initialData systemHostname testListenName 1 12 defaultGlobals

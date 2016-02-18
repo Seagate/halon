@@ -43,6 +43,7 @@ emptyHPIMessage = SSPL.SensorResponseMessageSensor_response_typeDisk_status_hpi
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDrawer = 42
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiManufacturer = "seagate"
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiHostId = "SOMEHOST"
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskNum = 0
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiLocation = 0
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId = "deviceId"
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber = "serial"
@@ -84,32 +85,36 @@ mkResponseDriveManager enclosure serial idx status reason =
 
 mkResponseHPI :: Text -- ^ Host ID of node
               -> Text -- ^ Enclosure name
+              -> Text -- ^ Serial number
               -> Integer -- ^ Location number of drive
               -> Text -- ^ Drive identifier (UUID)
               -> Text -- ^ wwn of the drive
               -> SSPL.SensorResponseMessageSensor_response_type
-mkResponseHPI hostid enclosure location uuid wwn =
+mkResponseHPI hostid enclosure serial location uuid wwn =
    emptySensorMessage
      { SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpi =
          Just $ emptyHPIMessage
            { SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiHostId = hostid
-           , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiLocation = location
+           , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskNum = location
            , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId = uuid
            , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = wwn
            , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN = enclosure
+           , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber = serial 
            }
      }
 
 mkHpiMessage :: Text -- ^ Host ID of node
              -> Text -- ^ Enclosure name
+             -> Text -- ^ Serial
              -> Integer -- ^ Location number of drive
              -> Text -- ^ Drive identifier (UUID)
              -> Text -- ^ wwn of the drive
              -> SSPL.SensorResponseMessageSensor_response_typeDisk_status_hpi
-mkHpiMessage hostid enclosure location uuid wwn = emptyHPIMessage
+mkHpiMessage hostid enclosure serial location uuid wwn = emptyHPIMessage
   { SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiHostId = hostid
-  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiLocation = location
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskNum = location
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId = uuid
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber = serial
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = wwn
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN = enclosure
   }

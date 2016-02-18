@@ -79,7 +79,7 @@ import Test.Tasty.HUnit (Assertion, assertEqual)
 import TestRunner
 import Helper.InitialData
 import Helper.SSPL
-import Helper.Environment (systemHostname)
+import Helper.Environment (systemHostname, testListenName)
 
 debug :: String -> Process ()
 debug = say
@@ -294,7 +294,7 @@ prepareSubscriptions rc rmq = do
 
 loadInitialData :: Process ()
 loadInitialData = let
-    init_msg = initialData "10.0.2.15" "10.0.2.15" 1 12 defaultGlobals
+    init_msg = initialData systemHostname testListenName 1 12 defaultGlobals
   in do
     debug "loadInitialData"
     nid <- getSelfNode
@@ -324,7 +324,7 @@ failDrive recv sdev = let
     -- We a drive failure note to the RC.
     _ <- promulgateEQ [nid] fail_evt
     -- Mero should be notified that the drive should be transient.
-    Set [Note _ M0_NC_TRANSIENT] <- notificationMessage <$> receiveChan recv
+    Set [Note _ M0_NC_TRANSIENT, Note _ M0_NC_TRANSIENT] <- notificationMessage <$> receiveChan recv
     debug "failDrive: Transient state set"
     -- The RC should issue a 'ResetAttempt' and should be handled.
     _ <- expect :: Process (Published (HAEvent ResetAttempt))
@@ -402,7 +402,7 @@ smartTestComplete recv success sdev = let
     nid <- getSelfNode
     -- Confirms that the disk powerdown operation has occured.
     _ <- promulgateEQ [nid] smartComplete
-    Set [Note fid stat] <- notificationMessage  <$> receiveChan recv
+    Set [Note fid stat, Note _ _] <- notificationMessage  <$> receiveChan recv
     debug "smartTestComplete: Mero notification received"
     liftIO $ assertEqual
       "Smart test succeeded. Drive fids and status should match."
@@ -446,7 +446,7 @@ testHitResetLimit transport = run transport interceptor test where
     nid <- getSelfNode
     void $ promulgateEQ [nid] fail_evt
     -- Mero should be notified that the drive should be failed.
-    Set [Note _ M0_NC_FAILED] <- notificationMessage <$> receiveChan recv
+    Set [Note _ M0_NC_FAILED, Note _ M0_NC_FAILED] <- notificationMessage <$> receiveChan recv
 
     return ()
 
@@ -563,11 +563,11 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
         devIdx    = 1
         message0 = LBS.toStrict $ encode
                                 $ mkSensorResponse
-                                $ mkResponseHPI host (pack enclosure) (fromIntegral devIdx) "/dev/loop21" "wwn21"
+                                $ mkResponseHPI host (pack enclosure) "serial21" (fromIntegral devIdx) "/dev/loop21" "wwn21"
         message = LBS.toStrict $ encode $ mkSensorResponse
            $ emptySensorMessage
               { sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
-                Just $ mkResponseDriveManager (pack enclosure) "serial1" devIdx "EMPTY" "None" }
+                Just $ mkResponseDriveManager (pack enclosure) "serial21" devIdx "EMPTY" "None" }
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message0
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
     Just{} <- expectTimeout 1000000 :: Process (Maybe (Published DriveRemoved))
@@ -575,7 +575,7 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
     debug "Check drive removed"
     True <- checkStorageDeviceRemoved enclosure devIdx <$> G.getGraph mm
     debug "Check notification"
-    Set [Note _ st] <- notificationMessage <$> receiveChan recv
+    Set [Note _ st, Note _ _] <- notificationMessage <$> receiveChan recv
     liftIO $ assertEqual "drive is in transient state" M0_NC_TRANSIENT st
 
 #ifdef USE_MERO
