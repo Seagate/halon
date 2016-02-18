@@ -24,7 +24,7 @@ $HALOND -l $TS 2>&1 > /tmp/generateConf.log 2>&1 &
 sleep 1
 
 $HALONCTL -a $TS -l $HCTL bootstrap station
-$HALONCTL -a $TS -l $HCTL bootstrap satellite
+$HALONCTL -a $TS -l $HCTL bootstrap satellite -t $TS
 
 sleep 3
 
