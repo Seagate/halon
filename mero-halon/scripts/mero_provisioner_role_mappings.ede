@@ -12,7 +12,7 @@
       m0p_boot_level: -1
       m0p_services:
         - m0s_type:
-            tag: CST_MGS
+            tag: CST_HA
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:34:101"]
           m0s_params:
