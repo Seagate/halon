@@ -18,6 +18,8 @@ export NTR_DB_DIR = $(shell pwd)/testdb
 
 GHC_VERSION = $(shell ghc --numeric-version)
 
+VERSION = $(shell git describe --long --always | tr '-' '_')
+
 PACKAGE_DIR = $(ROOT_DIR)/
 VENDOR_DIR = $(ROOT_DIR)/vendor/
 

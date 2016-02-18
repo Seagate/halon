@@ -1,6 +1,6 @@
 Summary: halon
 Name: halon
-Version: 0.23
+Version: %{_gitversion}
 Release: 1
 License: All rights reserved
 Group: Development/Tools

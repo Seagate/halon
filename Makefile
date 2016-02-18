@@ -212,7 +212,7 @@ rpm:
 	cp mero-halon/scripts/localcluster rpmbuild/SOURCES/halon-simplelocalcluster
 	cp mero-halon/scripts/mero_role_mappings.ede rpmbuild/SOURCES/role_maps/genders.ede
 	cp mero-halon/scripts/mero_provisioner_role_mappings.ede rpmbuild/SOURCES/role_maps/prov.ede
-	rpmbuild --define "_topdir ${PWD}/rpmbuild" -ba rpmbuild/SPECS/halon-make.spec
+	rpmbuild --define "_topdir ${PWD}/rpmbuild" --define "_gitversion ${VERSION}" -ba rpmbuild/SPECS/halon-make.spec
 
 .PHONY: coverage
 coverage:
