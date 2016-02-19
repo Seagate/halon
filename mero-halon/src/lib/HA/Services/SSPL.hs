@@ -209,12 +209,15 @@ startActuators chan ac pid = do
                    . actuatorResponseMessageActuator_response_type
                    . actuatorResponseMessage $ response
           -- XXX: uuid-1.3.10 has UID.fromText primitive
-          ppid <- promulgate $ CommandAck (UID.fromString =<< T.unpack <$> uuid)
-                                          (parseNodeCmd  mtype)
-                                          (parseAckReply mmsg)
-          ProcessMonitorNotification _ _ _ <-
-            withMonitor ppid $ expect
-          return ())
+          case tryParseAckReply mmsg of
+            Left t -> saySSPL $ "Failed to parse SSPL reply: " ++ T.unpack mmsg
+            Right reply -> do
+               ppid <- promulgate $ CommandAck (UID.fromString =<< T.unpack <$> uuid)
+                                               (parseNodeCmd  mtype)
+                                               reply
+               ProcessMonitorNotification _ _ _ <-
+                 withMonitor ppid $ expect
+               return ())
 
 remotableDecl [ [d|
 
