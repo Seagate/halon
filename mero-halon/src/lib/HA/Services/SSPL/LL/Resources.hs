@@ -142,13 +142,13 @@ data AckReply = AckReplyPassed       -- ^ Request succesfully processed.
 instance Binary AckReply
 
 -- | Parse text representation of the @AckReply@
-parseAckReply :: T.Text -> AckReply
-parseAckReply "Passed" = AckReplyPassed
-parseAckReply "Failed" = AckReplyFailed
-parseAckReply t
-  | errmsg `T.isPrefixOf` t = AckReplyError $ T.drop (T.length errmsg) t
-  | success `T.isPrefixOf` t = AckReplyPassed
-  | otherwise               = error $ "parseAckReply: unknown reply (" ++ T.unpack t ++ ")"
+tryParseAckReply :: T.Text -> Either String AckReply
+tryParseAckReply "Passed" = Right AckReplyPassed
+tryParseAckReply "Failed" = Right AckReplyFailed
+tryParseAckReply t
+  | errmsg `T.isPrefixOf` t = Right $ AckReplyError $ T.drop (T.length errmsg) t
+  | success `T.isPrefixOf` t = Right AckReplyPassed
+  | otherwise               = Left $ "parseAckReply: unknown reply (" ++ T.unpack t ++ ")"
   where errmsg = "Error: "
         success = "Success"
 
