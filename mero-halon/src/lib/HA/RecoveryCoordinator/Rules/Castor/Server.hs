@@ -84,6 +84,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
   core_bootstrapped <- phaseHandle "core-bootstrapped"
   start_remaining_services <- phaseHandle "start-remaining-services"
   finish_extra_bootstrap <- phaseHandle "finish-extra-bootstrap"
+  start_clients <- phaseHandle "start_clients"
   finish <- phaseHandle "finish"
 
   let alreadyBootstrapping n g = G.isConnected Cluster Runs (ServerBootstrapCoreProcess n False) g
@@ -226,8 +227,19 @@ ruleNewMeroServer = define "new-mero-server" $ do
         Cluster Runs
         (ServerBootstrapProcess nid)
         (\(ServerBootstrapProcess _ b) -> b)
-        finish finish Nothing
+        start_clients finish Nothing
         (\_ -> return ())
+
+  directly start_clients $ do
+    Just (node@(Node _), _) <- get Local
+    rg <- getLocalGraph
+    m0svc <- lookupRunningService node m0d
+    mhost <- findNodeHost node
+    case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
+      Just (host, chan) -> do
+        startNodeProcesses host chan PLM0t1fs False
+        continue finish
+      Nothing -> continue finish
 
   directly finish $ do
     Just (n, eid) <- get Local
