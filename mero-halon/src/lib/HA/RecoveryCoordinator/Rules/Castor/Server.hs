@@ -20,10 +20,10 @@ import           Control.Category ((>>>))
 import           Control.Distributed.Process
 import           Control.Monad
 import           Data.Binary (Binary)
-import           Data.Either (rights)
+import           Data.Either (lefts, rights)
 import           Data.Foldable
 import           Data.List (partition)
-import           Data.Maybe (listToMaybe, isJust)
+import           Data.Maybe (catMaybes, listToMaybe, isJust)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           HA.EventQueue.Producer
@@ -38,8 +38,11 @@ import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Resources.Castor.Initial (Network(Data))
 import           HA.Resources.Mero hiding (Node, Process, Enclosure, Rack, fid)
+import qualified HA.Resources.Mero as M0
+import           HA.Resources.Mero.Note (ConfObjectState(..))
 import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
+import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 import           Prelude
 
@@ -168,6 +171,14 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
   -- Wait until every process comes back as finished bootstrapping
   setPhase core_bootstrapped $ \(HAEvent eid (ProcessControlResultMsg nid e) _) -> do
+    -- Update services per node
+    (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
+    (rms, svcs) <- partition (\s -> M0.s_type s == CST_RMS) . join
+                <$> mapM getChildren procs
+    mapM_ (flip setObjectStatus $ M0_NC_ONLINE) procs
+    mapM_ (flip setObjectStatus $ M0_NC_ONLINE) svcs
+    mapM_ (flip setObjectStatus $ M0_NC_TRANSIENT) rms
+    _ <- setActiveRM
     ackingLast core_bootstrapped eid nid $
       barrier
         Cluster Runs
@@ -201,7 +212,15 @@ ruleNewMeroServer = define "new-mero-server" $ do
                phaseLog "error" $ "Can't find host for node " ++ show node
                continue finish
 
-  setPhase finish_extra_bootstrap $ \(HAEvent eid (ProcessControlResultMsg nid _) _) -> do
+  setPhase finish_extra_bootstrap $ \(HAEvent eid (ProcessControlResultMsg nid e) _) -> do
+    -- Update services per node
+    (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
+    (rms, svcs) <- partition (\s -> M0.s_type s == CST_RMS) . join
+                <$> mapM getChildren procs
+    mapM_ (flip setObjectStatus $ M0_NC_ONLINE) procs
+    mapM_ (flip setObjectStatus $ M0_NC_ONLINE) svcs
+    mapM_ (flip setObjectStatus $ M0_NC_TRANSIENT) rms
+    _ <- setActiveRM
     ackingLast finish_extra_bootstrap eid nid $
       barrier
         Cluster Runs

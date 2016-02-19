@@ -41,9 +41,7 @@ import Data.Word ( Word32, Word64 )
 import GHC.Generics (Generic)
 import qualified "distributed-process-scheduler" System.Clock as C
 
-import Control.Arrow ((***))
-import Data.List (nub)
-import Data.Maybe (listToMaybe, fromMaybe)
+import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
 import Data.Monoid
 import qualified HA.ResourceGraph as G
@@ -546,15 +544,3 @@ getM0Services g =
        , (p :: Process) <- G.connectedTo node IsParentOf g
        , sv <- G.connectedTo p IsParentOf g
   ]
-
--- | Load an entry point for spiel transaction.
-getSpielAddress :: G.Graph -> Maybe SpielAddress
-getSpielAddress g =
-   let svs = getM0Services g
-       (confdsFid,confdsEps) = nub *** nub . concat $ unzip
-         [ (fd, eps) | (Service { s_fid = fd, s_type = CST_MGS, s_endpoints = eps }) <- svs ]
-       (rmFids, rmEps) = unzip
-         [ (fd, eps) | (Service { s_fid = fd, s_type = CST_RMS, s_endpoints = eps }) <- svs ]
-       mrmFid = listToMaybe $ nub rmFids
-       mrmEp  = listToMaybe $ nub $ concat rmEps
-  in (SpielAddress confdsFid confdsEps) <$> mrmFid <*> mrmEp

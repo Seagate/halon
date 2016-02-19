@@ -30,6 +30,8 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , lookupStorageDeviceOnHost
   , lookupEnclosureM0
   , lookupHostHAAddress
+    -- ** Other things
+  , setActiveRM
   ) where
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -191,9 +193,11 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
 
       modifyGraph $ G.newResource proc
                 >>> G.newResource proc
+                >>> G.newResource M0.M0_NC_FAILED
                 >>> G.newResource procLabel
                 >>> G.connect node M0.IsParentOf proc
                 >>> G.connectUniqueFrom proc Has procLabel
+                >>> G.connectUniqueFrom proc Is M0.M0_NC_FAILED
 
   goSrv proc devs CI.M0Service{..} = let
       mkSrv fid = M0.Service fid m0s_type m0s_endpoints m0s_params
@@ -206,6 +210,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
       modifyLocalGraph $ return
                        . (    G.newResource svc
                           >>> G.connect proc M0.IsParentOf svc
+                          >>> G.connectUniqueFrom svc Is M0.M0_NC_FAILED
                           >>> linkDrives svc
                          )
 
@@ -351,4 +356,23 @@ queryObjectStatus obj = do
 setObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a
                 -> M0.ConfObjectState
                 -> PhaseM LoopState l ()
-setObjectStatus obj state = modifyGraph $ G.connectUnique obj Is state
+setObjectStatus obj state = do
+  phaseLog "rg" $ "Setting " ++ show obj ++ " to state " ++ show state
+  modifyGraph $ G.connectUniqueFrom obj Is state
+
+-- | Set an active RM service
+setActiveRM :: PhaseM LoopState l (Maybe M0.Service) -- ^ Returns the active service
+setActiveRM = do
+    rms <- (filter (\s -> M0.s_type s == CST_RMS) <$> getM0ServicesRC)
+        >>= mapM (\rm -> (rm,) . maybe M0.M0_NC_UNKNOWN id
+                    <$> queryObjectStatus rm)
+    case filter (\(_,b) -> b == M0.M0_NC_ONLINE) rms of
+      [(x, _)] -> return (Just x)
+      [] -> selectNewRM $ fst <$> filter (\(_,b) -> b == M0.M0_NC_TRANSIENT) rms
+      xs -> selectNewRM $ fst <$> xs ++ filter (\(_,b) -> b == M0.M0_NC_TRANSIENT) rms
+  where
+    selectNewRM (t1:transients) = do
+      setObjectStatus t1 M0.M0_NC_ONLINE
+      mapM_ (flip setObjectStatus $ M0.M0_NC_TRANSIENT) transients
+      return (Just t1)
+    selectNewRM _ = return Nothing
