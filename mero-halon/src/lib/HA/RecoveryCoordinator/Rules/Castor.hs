@@ -99,9 +99,14 @@ lookupStorageDevicePathsInGraph sd g =
 resetAttemptThreshold :: Int
 resetAttemptThreshold = 10
 
--- | Time to allow for SSPL to reply.
-ssplTimeout :: Int
-ssplTimeout = 1
+-- | Time to allow for SSPL to reply on a reset request.
+driveResetTimeout :: Int
+driveResetTimeout = 5*60
+
+-- | Time to allow for SSPL reply on a smart test request.
+smartTestTimeout :: Int
+smartTestTimeout = 15*60
+
 
 -- | States of the Timeout rule.OB
 data TimeoutState = TimeoutNormal | ResetAttemptSent
@@ -109,25 +114,25 @@ data TimeoutState = TimeoutNormal | ResetAttemptSent
 onCommandAck :: (Text -> NodeCmd)
            -> HAEvent CommandAck
            -> g
-           -> Maybe (StorageDevice, String, UUID)
-           -> Process (Maybe CommandAck)
+           -> Maybe (StorageDevice, Text, Node, UUID)
+           -> Process (Maybe UUID)
 onCommandAck _ _ _ Nothing = return Nothing
-onCommandAck k (HAEvent _ cmd _) _ (Just (_, path, _)) =
+onCommandAck k (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
   case commandAckType cmd of
-    Just x | (k . pack $ path) == x -> return $ Just cmd
-           | otherwise      -> return Nothing
+    Just x | (k serial) == x -> return $ Just eid
+           | otherwise       -> return Nothing
     _ -> return Nothing
 
 onSmartSuccess :: HAEvent CommandAck
                -> g
-               -> Maybe (StorageDevice, String, UUID)
-               -> Process (Maybe ())
-onSmartSuccess (HAEvent _ cmd _) _ (Just (_, path, _)) = do
+               -> Maybe (StorageDevice, Text, Node, UUID)
+               -> Process (Maybe UUID)
+onSmartSuccess (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
     case commandAckType cmd of
       Just (SmartTest x)
-        | pack path == x ->
+        | serial == x ->
           case commandAck cmd of
-            AckReplyPassed -> return $ Just ()
+            AckReplyPassed -> return $ Just eid
             _              -> return Nothing
         | otherwise -> return Nothing
       _ -> return Nothing
@@ -135,15 +140,15 @@ onSmartSuccess _ _ _ = return Nothing
 
 onSmartFailure :: HAEvent CommandAck
                -> g
-               -> Maybe (StorageDevice, String, UUID)
-               -> Process (Maybe (Maybe Text))
-onSmartFailure (HAEvent _ cmd _) _ (Just (_, path, _)) =
+               -> Maybe (StorageDevice, Text, Node, UUID)
+               -> Process (Maybe UUID)
+onSmartFailure (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
     case commandAckType cmd of
       Just (SmartTest x)
-        | pack path == x ->
+        | serial == x ->
           case commandAck cmd of
-            AckReplyFailed  -> return $ Just Nothing
-            AckReplyError e -> return $ Just $ Just e
+            AckReplyFailed  -> return $ Just eid
+            AckReplyError _ -> return $ Just eid
             _               -> return Nothing
         | otherwise -> return Nothing
       _ -> return Nothing
@@ -283,125 +288,97 @@ ruleMeroNoteSet = do
 
 ruleResetAttempt :: Definitions LoopState ()
 ruleResetAttempt = define "reset-attempt" $ do
-      home         <- phaseHandle "home"
-      down         <- phaseHandle "powerdown"
-      downComplete <- phaseHandle "powerdown-complete"
-      on           <- phaseHandle "poweron"
-      onComplete   <- phaseHandle "poweron-complete"
-      smart        <- phaseHandle "smart"
-      smartSuccess <- phaseHandle "smart-success"
-      smartFailure <- phaseHandle "smart-failure"
-      end          <- phaseHandle "end"
+      home          <- phaseHandle "home"
+      reset         <- phaseHandle "reset"
+      resetComplete <- phaseHandle "reset-complete"
+      smart         <- phaseHandle "smart"
+      smartSuccess  <- phaseHandle "smart-success"
+      smartFailure  <- phaseHandle "smart-failure"
+      failure       <- phaseHandle "failure"
+      end           <- phaseHandle "end"
 
       setPhase home $ \(HAEvent uid (ResetAttempt sdev) _) -> fork NoBuffer $ do
-        markOnGoingReset sdev
-        paths <- lookupStorageDevicePaths sdev
-        case paths of
-          path:_ -> do
-            put Local (Just (sdev, path, uid))
-            unlessM (isStorageDevicePowered sdev) $
-              continue on
-            whenM (isStorageDeviceRunningSmartTest sdev) $
-              switch [smartSuccess, smartFailure, timeout ssplTimeout down]
-            continue down
+        nodes <- getSDevNode sdev
+        node <- case nodes of
+          node:_ -> return node
           [] -> do
+             -- XXX: send IEM message
+             phaseLog "warning" $ "Can't perform query to SSPL as node can't be found"
+             messageProcessed uid
+             stop
+        paths <- lookupStorageDeviceSerial sdev
+        case paths of
+          serial:_ -> do
+            put Local (Just (sdev, pack serial, node, uid))
+            unlessM (isStorageDevicePowered sdev) $
+              switch [resetComplete, timeout driveResetTimeout failure]
+            whenM (isStorageDeviceRunningSmartTest sdev) $
+              switch [smartSuccess, smartFailure, timeout smartTestTimeout failure]
+            markOnGoingReset sdev
+            continue reset
+          [] -> do
+            -- XXX: send IEM message
             phaseLog "warning" $ "Cannot perform reset attempt for drive "
                               ++ show sdev
                               ++ " as it has no device paths associated."
             messageProcessed uid
+            stop
 
-      directly down $ do
-        Just (sdev, path, _) <- get Local
-        nid <- liftProcess getSelfNode
-        i <- getDiskPowerOffAttempts sdev
+      directly reset $ do
+        Just (sdev, serial, Node nid, _) <- get Local
+        i <- getDiskResetAttempts sdev
         if i <= resetAttemptThreshold
         then do
-          incrDiskPowerOffAttempts sdev
-          sendNodeCmd nid Nothing (DrivePowerdown $ pack path)
-          switch [downComplete, timeout ssplTimeout down]
-        else do
-          markResetComplete sdev
-#ifdef USE_MERO
-          sd <- lookupStorageDeviceSDev sdev
-          forM_ sd $ \m0sdev -> do
-            updateDriveState m0sdev M0_NC_FAILED
-            updateDriveManagerWithFailure sdev "FAILED" (Just "unable to reset drive")
-            pools <- getSDevPools m0sdev
-            traverse_ startRepairOperation pools
-#endif
-          continue end
+          incrDiskResetAttempts sdev
+          sendNodeCmd nid Nothing (DriveReset serial)
+          markDiskPowerOff sdev
+          switch [resetComplete, timeout driveResetTimeout failure]
+        else continue failure
 
-      setPhaseIf downComplete (onCommandAck DrivePowerdown) $ \_ -> do
-        Just (sdev, _, _) <- get Local
-        markDiskPowerOff sdev
-        continue on
-
-      directly on $ do
-        Just (sdev, path, _) <- get Local
-        nid <- liftProcess getSelfNode
-        i <- getDiskPowerOnAttempts sdev
-        if i <= resetAttemptThreshold
-        then do
-          incrDiskPowerOnAttempts sdev
-          sendNodeCmd nid Nothing (DrivePoweron $ pack path)
-          switch [onComplete, timeout ssplTimeout on]
-        else do
-          markResetComplete sdev
-#ifdef USE_MERO
-          sd <- lookupStorageDeviceSDev sdev
-          forM_ sd $ \m0sdev -> do
-            updateDriveState m0sdev M0_NC_FAILED
-            updateDriveManagerWithFailure sdev "FAILED" (Just "unable to reset drive")
-            pools <- getSDevPools m0sdev
-            traverse_ startRepairOperation pools
-#endif
-          continue end
-
-      setPhaseIf onComplete (onCommandAck DrivePoweron) $ \_ -> do
-        nid <- liftProcess getSelfNode
-        Just (sdev, path, _) <- get Local
+      setPhaseIf resetComplete (onCommandAck DriveReset) $ \eid -> do
+        Just (sdev, _, _, _) <- get Local
         markDiskPowerOn sdev
-        incrDiskResetAttempts sdev
-        markSMARTTestIsRunning sdev
-        sendNodeCmd nid Nothing (SmartTest $ pack path)
+        markResetComplete sdev
+        messageProcessed eid
         continue smart
 
-      directly smart $ switch
-        [smartSuccess, smartFailure, timeout ssplTimeout down]
+      directly smart $ do
+        Just (sdev, serial, Node nid, _) <- get Local
+        markSMARTTestIsRunning sdev
+        sendNodeCmd nid Nothing (SmartTest serial)
+        switch [smartSuccess, smartFailure, timeout smartTestTimeout failure]
 
-      setPhaseIf smartSuccess onSmartSuccess $ \_ -> do
-        liftProcess $ say "debug: here"
-        Just (sdev, _, _) <- get Local
-        markResetComplete sdev
+      setPhaseIf smartSuccess onSmartSuccess $ \eid -> do
+        Just (sdev, _, _, _) <- get Local
         markSMARTTestComplete sdev
-        markResetComplete sdev
 #ifdef USE_MERO
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev ->
           updateDriveState m0sdev M0_NC_ONLINE
 #endif
+        messageProcessed eid
         continue end
 
-      setPhaseIf smartFailure onSmartFailure $ \_ -> do
-        liftProcess $ say "debug: there"
-        Just (sdev, _, _) <- get Local
-        markResetComplete sdev
+      setPhaseIf smartFailure onSmartFailure $ \eid -> do
+        Just (sdev, _, _, _) <- get Local
         markSMARTTestComplete sdev
-        markResetComplete sdev
+        messageProcessed eid
+        continue failure
+
+      directly failure $ do
+        Just (sdev, _, _, _) <- get Local
 #ifdef USE_MERO
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           updateDriveState m0sdev M0_NC_FAILED
-          updateDriveManagerWithFailure sdev "FAILED" (Just "SMART failure")
+          updateDriveManagerWithFailure sdev "FAILED" (Just "unable to reset drive")
           pools <- getSDevPools m0sdev
           traverse_ startRepairOperation pools
 #endif
         continue end
 
       directly end $ do
-        Just (sdev, _, uid) <- get Local
-        setDiskPowerOffAttempts sdev 0
-        setDiskPowerOnAttempts sdev 0
+        Just (_, _, _, uid) <- get Local
         messageProcessed uid
         stop
 

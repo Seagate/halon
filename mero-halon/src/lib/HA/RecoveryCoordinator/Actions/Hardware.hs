@@ -42,10 +42,12 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , lookupStorageDeviceInEnclosure
   , lookupStorageDeviceOnHost
     -- ** Querying device properties
+  , getSDevNode
   , findStorageDeviceIdentifiers
   , hasStorageDeviceIdentifier
   , driveStatus
   , lookupStorageDevicePaths
+  , lookupStorageDeviceSerial
   , getDiskResetAttempts
   , hasOngoingReset
   , isStorageDriveRemoved
@@ -401,6 +403,14 @@ lookupStorageDevicePaths sd =
   where
     extractPath (DIPath x) = Just x
     extractPath _ = Nothing
+
+-- | Lookup serial number of the storage device
+lookupStorageDeviceSerial :: StorageDevice -> PhaseM LoopState l [String]
+lookupStorageDeviceSerial sd =
+    mapMaybe extractSerial <$> findStorageDeviceIdentifiers sd
+  where
+    extractSerial (DISerialNumber x) = Just x
+    extractSerial _ = Nothing
 
 -- | Lookup a storage device in given enclosure at given position.
 lookupStorageDeviceInEnclosure :: Enclosure
@@ -785,3 +795,12 @@ setDiskPowerOffAttempts sdev i = do
       setStorageDeviceAttr sdev (SDPowerOffAttempts i)
     _ -> setStorageDeviceAttr sdev (SDPowerOffAttempts i)
 
+
+getSDevNode :: StorageDevice -> PhaseM LoopState l [Node]
+getSDevNode sdev = do
+  rg <- getLocalGraph
+  let nds = [ node | encl <- G.connectedFrom Has sdev rg :: [Enclosure]
+                   , host <- G.connectedTo encl Has rg :: [Host]
+                   , node <- G.connectedTo host Runs rg :: [Node]
+            ]
+  return nds

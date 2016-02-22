@@ -111,7 +111,7 @@ nodeCmdString :: NodeCmd -> T.Text
 nodeCmdString (IPMICmd op ip) = T.intercalate " "
   [ "IPMI:", ip, ipmiOpString op ]
 nodeCmdString (DriveReset drive) = T.intercalate " "
-  [ "DRIVE_RESET:", drive ]
+  [ "RESET_DRIVE:", drive ]
 nodeCmdString (DrivePowerdown drive) = T.intercalate " "
   [ "DRIVE_POWERDOWN:", drive ]
 nodeCmdString (DrivePoweron drive) = T.intercalate " "
@@ -126,7 +126,7 @@ parseNodeCmd t =
       "IPMI:"        -> do [ip, opt] <- return rest
                            op <- parseIPMIOp opt
                            return $ IPMICmd op ip
-      "DRIVE_RESET:" -> return $ DriveReset (head rest)
+      "RESET_DRIVE:" -> return $ DriveReset (head rest)
       "DRIVE_POWERDOWN:" -> return $ DrivePowerdown (head rest)
       "DRIVE_POWERON:" -> return $ DrivePoweron (head rest)
       "SMART_TEST:"  -> return $ SmartTest (head rest)
