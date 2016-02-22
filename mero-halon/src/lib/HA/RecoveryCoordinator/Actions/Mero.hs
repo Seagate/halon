@@ -38,7 +38,7 @@ import Mero.ConfC
 
 import Control.Category
 import Control.Distributed.Process
-import Control.Monad (forM, join)
+import Control.Monad (forM)
 
 import Data.Foldable (forM_, traverse_)
 import Data.Proxy
@@ -197,11 +197,9 @@ startNodeProcesses host (TypedChannel chan) label mkfs = do
                  ]
     phaseLog "processes" $ show (fmap M0.fid (procs :: [M0.Process]))
     msg <- StartProcesses <$> case (label, mkfs) of
-            (M0.PLM0t1fs, _) -> forM procs $ (\proc -> (M0T1FS,) <$> runConfig proc rg)
-            (_, True) -> join <$> forM procs
-                          (\proc -> (\x -> [(M0MKFS,x), (M0D, x)])
-                            <$> runConfig proc rg)
-            (_, False) -> forM procs $ (\proc -> (M0D,) <$> runConfig proc rg)
+            (M0.PLM0t1fs, _) -> forM procs $ (\proc -> ([M0T1FS],) <$> runConfig proc rg)
+            (_, True) -> forM procs (\proc -> ([M0MKFS,M0D],) <$> runConfig proc rg)
+            (_, False) -> forM procs $ (\proc -> ([M0D],) <$> runConfig proc rg)
     liftProcess $ sendChan chan msg
   where
     runConfig proc rg = case runsMgs proc rg of

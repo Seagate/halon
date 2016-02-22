@@ -45,7 +45,6 @@ import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
 import Data.Monoid
 import qualified HA.ResourceGraph as G
-import Mero.ConfC ( ServiceType(..) )
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
