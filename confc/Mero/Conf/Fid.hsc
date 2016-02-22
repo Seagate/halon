@@ -42,7 +42,7 @@ instance Show Fid where
 -- | Convert a 'Fid' to 'String' in a format that is expected in
 -- various locations read by mero, such as part of filenames.
 fidToStr :: Fid -> String
-fidToStr (Fid c k) = printf "0x%x:%d" c k
+fidToStr (Fid c k) = printf "0x%x:0x%x" c k
 
 instance Binary Fid
 instance Hashable Fid
