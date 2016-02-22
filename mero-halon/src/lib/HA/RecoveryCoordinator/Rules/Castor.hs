@@ -35,6 +35,7 @@ import HA.Resources.TH
 import HA.EventQueue.Producer
 import HA.Services.Mero
 import HA.Services.Mero.CEP (meroChannel)
+import HA.Services.SSPL.CEP (updateDriveManagerWithFailure)
 import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
@@ -68,7 +69,6 @@ import GHC.Generics (Generic)
 import Network.CEP
 import Prelude hiding (id)
 
-import System.IO
 
 -- | Event sent when to many failures has been sent for a 'Disk'.
 data ResetAttempt = ResetAttempt StorageDevice
@@ -123,7 +123,6 @@ onSmartSuccess :: HAEvent CommandAck
                -> Maybe (StorageDevice, String, UUID)
                -> Process (Maybe ())
 onSmartSuccess (HAEvent _ cmd _) _ (Just (_, path, _)) = do
-    liftIO $ hPutStrLn stderr $ show cmd
     case commandAckType cmd of
       Just (SmartTest x)
         | pack path == x ->
@@ -233,7 +232,7 @@ ruleMeroNoteSet = do
                     updateDriveState m0sdev status
 
                     when (status == M0_NC_FAILED) $ do
-                      updateDriveManagerWithFailure Nothing sdev
+                      updateDriveManagerWithFailure sdev "FAILED" (Just "mero failure")
                       nid <- liftProcess getSelfNode
                       diskids <- findStorageDeviceIdentifiers sdev
                       let iem = InterestingEventMessage . pack . unwords $ [
@@ -326,7 +325,7 @@ ruleResetAttempt = define "reset-attempt" $ do
           sd <- lookupStorageDeviceSDev sdev
           forM_ sd $ \m0sdev -> do
             updateDriveState m0sdev M0_NC_FAILED
-            updateDriveManagerWithFailure Nothing sdev
+            updateDriveManagerWithFailure sdev "FAILED" (Just "unable to reset drive")
             pools <- getSDevPools m0sdev
             traverse_ startRepairOperation pools
 #endif
@@ -352,7 +351,7 @@ ruleResetAttempt = define "reset-attempt" $ do
           sd <- lookupStorageDeviceSDev sdev
           forM_ sd $ \m0sdev -> do
             updateDriveState m0sdev M0_NC_FAILED
-            updateDriveManagerWithFailure Nothing sdev
+            updateDriveManagerWithFailure sdev "FAILED" (Just "unable to reset drive")
             pools <- getSDevPools m0sdev
             traverse_ startRepairOperation pools
 #endif
@@ -393,7 +392,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           updateDriveState m0sdev M0_NC_FAILED
-          updateDriveManagerWithFailure Nothing sdev
+          updateDriveManagerWithFailure sdev "FAILED" (Just "SMART failure")
           pools <- getSDevPools m0sdev
           traverse_ startRepairOperation pools
 #endif

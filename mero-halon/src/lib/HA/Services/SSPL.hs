@@ -210,7 +210,7 @@ startActuators chan ac pid = do
                    . actuatorResponseMessage $ response
           -- XXX: uuid-1.3.10 has UID.fromText primitive
           case tryParseAckReply mmsg of
-            Left t -> saySSPL $ "Failed to parse SSPL reply: " ++ T.unpack mmsg
+            Left _ -> saySSPL $ "Failed to parse SSPL reply: " ++ T.unpack mmsg
             Right reply -> do
                ppid <- promulgate $ CommandAck (UID.fromString =<< T.unpack <$> uuid)
                                                (parseNodeCmd  mtype)

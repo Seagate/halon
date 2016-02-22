@@ -17,7 +17,7 @@ import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Events.Drive
 import HA.ResourceGraph
-import HA.Resources (Cluster(..), Node(..))
+import HA.Resources (Cluster(..), Node(..), Has(..))
 import HA.Resources.Castor
 #ifdef USE_MERO
 import Mero.Notification
@@ -37,7 +37,7 @@ import Control.Monad
 import Control.Monad.Trans
 
 import qualified Data.Aeson as Aeson
-import Data.Maybe (catMaybes, listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe, maybeToList)
 import Data.Monoid ((<>))
 import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
@@ -88,6 +88,31 @@ sendSystemdCmd nid req = do
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan (Nothing :: Maybe UUID, makeSystemdMsg req)
     _ -> phaseLog "warning" "Cannot find systemd channel!"
+
+-- | Send command to logger actuator.
+sendLoggingCmd :: Host
+               -> LoggerCmd 
+               -> PhaseM LoopState l ()
+sendLoggingCmd host req = do
+  phaseLog "action" $ "Sending Logger request" ++ show req
+  rg <- getLocalGraph
+  let mchan = listToMaybe $ do
+        s    <- connectedTo Cluster Supports rg
+        node <- connectedTo host Runs rg
+        sp   <- maybeToList $ runningService (node::Node) (s::Service SSPLConf) rg
+        connectedTo sp CommandChannel rg
+  case mchan of
+    Just (Channel chan) -> liftProcess $ sendChan chan (Nothing :: Maybe UUID, makeLoggerMsg req)
+    _ -> phaseLog "error" "Cannot find sspl channel!"
+
+mkDiskLoggingCmd :: T.Text -- ^ Status
+                 -> T.Text -- ^ Serial Number
+                 -> T.Text -- ^ Reason
+                 -> LoggerCmd 
+mkDiskLoggingCmd st serial reason = LoggerCmd 
+  ("IEC: 038001001: Halon Disk Status: "
+           <> "{'status': '" <> st <> "', 'reason': '" <> reason <> "', 'serial_number': '" <> serial <> "'}")
+  "LOG_WARNING" "HDS"
 
 -- | Send command to nodecontroller. Reply will be received as a
 -- HAEvent CommandAck. Where UUID will be set to UUID value if passed, and
@@ -432,3 +457,26 @@ ruleHlNodeCmd sspl = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr _ ) _ 
               sendNodeCmd actuationNode Nothing $ IPMICmd IPMI_ON (T.pack nodeIp)
           x -> liftProcess . say $ "Unsupported node command: " ++ show x
         messageProcessed uuid
+
+-- | Send update to SSPL that the given 'StorageDevice' changed its status.
+updateDriveManagerWithFailure :: StorageDevice
+                              -> String
+                              -> Maybe String
+                              -> PhaseM LoopState l ()
+updateDriveManagerWithFailure disk st reason = do
+  dis <- findStorageDeviceIdentifiers disk
+  case listToMaybe [ sn' | DISerialNumber sn' <- dis ] of
+    Nothing -> phaseLog "error" $ "Unable to find serial number for " ++ show disk
+    Just sn -> do
+      rg <- getLocalGraph
+      withHost rg disk $ \host ->
+        sendLoggingCmd host $ mkDiskLoggingCmd (T.pack st) 
+                                               (T.pack sn)
+                                               (maybe "unknown reason" T.pack reason)
+  where
+    withHost rg d f =
+      case listToMaybe $ connectedFrom Has d rg of
+        Nothing -> phaseLog "error" $ "Unable to find enclosure for " ++ show d
+        Just e -> case listToMaybe $ connectedTo (e::Enclosure) Has rg of
+          Nothing -> phaseLog "error" $ "Unable to find host for " ++ show e 
+          Just h -> f (h::Host)

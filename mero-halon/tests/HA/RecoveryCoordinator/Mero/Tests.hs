@@ -12,7 +12,6 @@
 -- mero or its components.
 module HA.RecoveryCoordinator.Mero.Tests
   ( testDriveAddition
-  , testDriveManagerUpdate
   , testHostAddition
 #ifdef USE_MERO
   , testRCsyncToConfd
@@ -27,9 +26,9 @@ import           Control.Distributed.Process
 #ifdef USE_MERO
 import           Control.Distributed.Process.Node (runProcess)
 #endif
-import           Control.Monad (void)
+import           Control.Monad (when, void)
 import           Data.Binary
-import           Data.List (isInfixOf, sort)
+import           Data.List (isInfixOf, isPrefixOf, tails, sort)
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics
@@ -42,19 +41,18 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
+import           HA.Services.SSPL.CEP
 import           Helper.SSPL
 import           Network.CEP (defineSimple, Definitions)
 import           Network.Transport (Transport(..))
 import           Prelude hiding ((<$>), (<*>))
 import qualified SSPL.Bindings as SSPL
-import           System.Directory (removeFile)
 import           Test.Framework
 import           Test.Tasty.HUnit (assertBool, assertEqual, testCase)
 import           TestRunner
 import           Helper.Environment (systemHostname)
 #ifdef USE_MERO
 import           Control.Category ((>>>))
-import           Control.Monad (when)
 import           Data.Function (on)
 import           Data.List (sortBy)
 import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd, validateTransactionCache)
@@ -180,38 +178,22 @@ data RunDriveManagerFailure = RunDriveManagerFailure
 
 instance Binary RunDriveManagerFailure
 
--- | Update receiving a drive failure from SSPL, we're required to
--- update a file for DCS drive manager so that it can reflect on the
--- changes in the file system. This test is unsophisticated in that it
--- only tests that the change to the file is made when event is
--- received and not that the drive manager does something sensible
--- with it.
---
--- * Write out a mock @drive_manager.json@ to have something to update
--- * Insert a drive into RG along with its serial number
--- * Trigger a test rule that calls 'driveManagerUpdateWithFailure'
--- * Check that the failure is now present in the relevant file
---
--- For the sake of testing this, we cheat a bit by triggering it with
--- our own rule. The alternative would be to simulate all kinds of
--- responses from SSPL which aren't central to the feature and are
--- tested separately elsewhere.
+-- | Update receiving a drive failure from SSPL, 
 testDriveManagerUpdate :: Transport -> IO ()
 testDriveManagerUpdate transport = runDefaultTest transport $ do
   nid <- getSelfNode
   self <- getSelfPid
   registerInterceptor $ \case
-    str | "drive_manager.json updated successfully" `isInfixOf` str ->
-            usend self ("DMUpdated" :: String)
-        | "Node succesfully joined the cluster" `isInfixOf` str ->
+    str | "Node succesfully joined the cluster" `isInfixOf` str ->
             usend self  ("NodeUp" :: String)
         | "Loaded initial data" `isInfixOf` str ->
             usend self  ("InitialData" :: String)
         | "at 1 marked as active" `isInfixOf` str ->
             usend self  ("DriveActive" :: String)
+        | "lcType = \"HDS\"}" `isInfixOf` str ->
+            when (any (interestingSN `isPrefixOf`) (tails str)) $
+              usend self ("OK" :: String)
         | otherwise -> return ()
-  say $ "Writing drive_manager.json with:\n" ++ mockFile
-  liftIO $ writeFile "drive_manager.json" mockFile
   withTrackingStation testRules $ \(TestArgs _ mm _) -> do
     nodeUp ([nid], 1000000)
     "NodeUp" :: String <- expect
@@ -233,19 +215,15 @@ testDriveManagerUpdate transport = runDefaultTest transport $ do
 
     say "Sending RunDriveManagerFailure"
     promulgateEQ [nid] RunDriveManagerFailure >>= flip withMonitor wait
-    "DMUpdated" :: String <- expect
-    content <- liftIO $ readFile "drive_manager.json"
-    say $ "drive_manager.json content: \n" ++ content
-    assert $ "Failed" `isInfixOf` content
-    liftIO $ removeFile "drive_manager.json"
+    liftIO . assertEqual "Drive should be found" ("OK"::String) =<< expect
   where
     testRules :: [Definitions LoopState ()]
-    testRules = return $ defineSimple "dmwf-trigger" $ \(HAEvent eid RunDriveManagerFailure _) -> do
+    testRules = pure $ defineSimple "dmwf-trigger" $ \(HAEvent eid RunDriveManagerFailure _) -> do
       -- Find what should be the only SD in the enclosure and trigger
       -- repair on it
       graph <- getLocalGraph
       let [sd] = G.connectedTo (Enclosure enc) Has graph
-      updateDriveManagerWithFailure (Just "drive_manager.json") sd
+      updateDriveManagerWithFailure sd "FAILED" (Just "injected failure") 
       messageProcessed eid
 
     wait = void (expect :: Process ProcessMonitorNotification)
@@ -289,25 +267,6 @@ testDriveManagerUpdate transport = runDefaultTest transport $ do
                             { CI.m0_failure_set_gen  = CI.Dynamic }
 #endif
       }
-    mockFile = unlines
-      [ "{"
-      , "\"drive_manager_version\": 0,"
-      , "\"drives\": ["
-      , "  {"
-      , "    \"reason\": \"None\","
-      , "    \"serial_number\": \"" ++ interestingSN ++ "\","
-      , "    \"status\": \"OK\""
-      , "  },"
-      , "  {"
-      , "    \"reason\": \"None\","
-      , "    \"serial_number\": \"SOMEUNKNOWNDRIVE\","
-      , "    \"status\": \"OK\""
-      , "  }"
-      , "],"
-      , "\"format_version\": 0,"
-      , "\"last_update_time\": \"1448638074.41\""
-      , "}"
-      ]
 
 #ifdef USE_MERO
 -- | Sends a message to the RC with Confd addition message and tests
