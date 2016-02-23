@@ -123,7 +123,7 @@ startProcesses :: MeroConf
                -> ProcessConfig
                -> IO [Either Fid (Fid, String)]
 startProcesses _ [] _ = error "No processes to start."
-startProcesses mc [x] pc = startProcess mc x pc >>= return . (:[])
+startProcesses mc [x] pc = (:[]) <$> startProcess mc x pc
 startProcesses mc (x:xc) pc = do
   res <- startProcess mc x pc
   case res of
