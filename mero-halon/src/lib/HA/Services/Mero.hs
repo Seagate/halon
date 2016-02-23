@@ -61,7 +61,7 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process
-import Control.Monad (forever, void)
+import Control.Monad (forever, join, void)
 import Data.Foldable (forM_, asum)
 import qualified Control.Monad.Catch as Catch
 
@@ -105,7 +105,7 @@ controlProcess :: MeroConf
 controlProcess mc pid rp = link pid >> (forever $ receiveChan rp >>= \case
     StartProcesses procs -> do
       nid <- getSelfNode
-      results <- liftIO $ mapM (uncurry $ startProcess mc) procs
+      results <- liftIO $ join <$> mapM (uncurry $ startProcesses mc) procs
       promulgateWait $ ProcessControlResultMsg nid results
   )
 
@@ -116,13 +116,27 @@ controlProcess mc pid rp = link pid >> (forever $ receiveChan rp >>= \case
 confXCPath :: FilePath
 confXCPath = "/var/mero/confd/conf.xc"
 
+-- | Start multiple processes in a chain. If earlier processes fail,
+--   subsequent ones will not be run.
+startProcesses :: MeroConf
+               -> [ProcessRunType]
+               -> ProcessConfig
+               -> IO [Either Fid (Fid, String)]
+startProcesses _ [] _ = error "No processes to start."
+startProcesses mc [x] pc = (:[]) <$> startProcess mc x pc
+startProcesses mc (x:xc) pc = do
+  res <- startProcess mc x pc
+  case res of
+    Left _ -> startProcesses mc xc pc >>= return . (res:)
+    Right _ -> return $ [res]
+
 startProcess :: MeroConf
              -> ProcessRunType
              -> ProcessConfig
              -> IO (Either Fid (Fid, String))
 startProcess mc run conf = flip Catch.catch handler $ do
     putStrLn $ "m0d: startProcess: " ++ show procFid
-            ++ " with type " ++ show run
+            ++ " with type(s) " ++ show run
     confXC <- maybeWriteConfXC conf
     unit <- writeSysconfig mc run procFid m0addr confXC
     _ <- SystemD.startService $ unit ++ fidToStr procFid

@@ -429,7 +429,7 @@ getRPCAddress = rpcAddress . mkAddress <$> DP.getSelfNode
 getSpielAddressRC :: PhaseM LoopState l (Maybe M0.SpielAddress)
 getSpielAddressRC = do
   phaseLog "rg-query" "Looking up confd and RM services for spiel address."
-  M0.getSpielAddress <$> getLocalGraph
+  getSpielAddress <$> getLocalGraph
 
 -- | List of addresses to known confd servers on the cluster.
 getConfdServers :: PhaseM LoopState l [String]

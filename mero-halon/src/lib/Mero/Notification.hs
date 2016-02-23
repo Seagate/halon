@@ -27,6 +27,7 @@ module Mero.Notification
     , withServerEndpoint
     , MonadProcess(..)
     , globalResourceGraphCache
+    , getSpielAddress
     ) where
 
 import Control.Distributed.Process
@@ -34,13 +35,17 @@ import Control.Distributed.Process
 import Network.CEP (liftProcess, MonadProcess)
 
 import Mero
-import Mero.ConfC (Fid)
+import Mero.ConfC (Fid, ServiceType(..))
 import Mero.Notification.HAState
 import Mero.M0Worker
 import HA.EventQueue.Producer (promulgate)
 import HA.ResourceGraph (Graph)
-import HA.Resources.Mero (SpielAddress(..), getSpielAddress)
+import qualified HA.ResourceGraph as G
+import qualified HA.Resources.Castor as R
+import HA.Resources.Mero (Service(..), SpielAddress(..))
+import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (rgLookupConfObjectStates)
+import qualified HA.Resources.Mero.Note as M0
 import Network.RPC.RPCLite
   ( ListenCallbacks(..)
   , RPCAddress
@@ -51,6 +56,8 @@ import Network.RPC.RPCLite
   , stopListening
   )
 import HA.RecoveryCoordinator.Events.Mero (GetSpielAddress(..))
+
+import Control.Arrow ((***))
 import Control.Concurrent.MVar
 import Control.Distributed.Process.Internal.Types ( LocalNode )
 import qualified Control.Distributed.Process.Node as CH ( runProcess, forkProcess )
@@ -61,6 +68,8 @@ import qualified Control.Monad.Catch as Catch
 import Data.Foldable (forM_)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
+import Data.List (nub)
+import Data.Maybe (listToMaybe)
 import Data.Typeable (Typeable)
 import Data.IORef  (IORef, newIORef, readIORef)
 import Foreign.Ptr (Ptr)
@@ -268,7 +277,7 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
                  fmap join $ expectTimeout entryPointTimeout
         >>= \case
                  Just ep -> do
-                   say "ha_entrypoint: succeeded."
+                   say $ "ha_entrypoint: succeeded: " ++ show ep
                    liftGlobalM0 $
                      entrypointReplyWakeup fom crep (sa_confds_fid ep)
                                                     (sa_confds_ep  ep)
@@ -312,7 +321,6 @@ finalize = liftIO $ takeMVar globalEndpointRef >>= \case
   -- will check this flag and run the finalization itself
       | otherwise -> putMVar globalEndpointRef $ ref { _erWantsFinalize = True }
 
-
 -- | Send notification to mero address
 notifyMero :: ServerEndpoint
            -> RPCAddress
@@ -320,3 +328,17 @@ notifyMero :: ServerEndpoint
            -> Process ()
 notifyMero ep mero (Set nvec) = liftIO $
     sendM0Task (notify ep mero nvec 5)
+
+-- | Load an entry point for spiel transaction.
+getSpielAddress :: G.Graph -> Maybe SpielAddress
+getSpielAddress g =
+   let svs = M0.getM0Services g
+       (confdsFid,confdsEps) = nub *** nub . concat $ unzip
+         [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_MGS, s_endpoints = eps }) <- svs
+                     , G.isConnected svc R.Is M0.M0_NC_ONLINE g]
+       (rmFids, rmEps) = unzip
+         [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_RMS, s_endpoints = eps }) <- svs
+                     , G.isConnected svc R.Is M0.M0_NC_ONLINE g]
+       mrmFid = listToMaybe $ nub rmFids
+       mrmEp  = listToMaybe $ nub $ concat rmEps
+  in (SpielAddress confdsFid confdsEps) <$> mrmFid <*> mrmEp

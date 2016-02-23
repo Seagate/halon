@@ -88,7 +88,7 @@ instance Hashable ProcessConfig
 
 -- | Control system level m0d processes.
 data ProcessControlMsg =
-    StartProcesses [(ProcessRunType, ProcessConfig)]
+    StartProcesses [([ProcessRunType], ProcessConfig)]
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ProcessControlMsg
 instance Hashable ProcessControlMsg

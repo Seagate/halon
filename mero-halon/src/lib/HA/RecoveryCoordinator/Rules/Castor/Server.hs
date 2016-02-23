@@ -20,10 +20,10 @@ import           Control.Category ((>>>))
 import           Control.Distributed.Process
 import           Control.Monad
 import           Data.Binary (Binary)
-import           Data.Either (rights)
+import           Data.Either (lefts, rights)
 import           Data.Foldable
 import           Data.List (partition)
-import           Data.Maybe (listToMaybe, isJust)
+import           Data.Maybe (catMaybes, listToMaybe, isJust)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           HA.EventQueue.Producer
@@ -38,8 +38,11 @@ import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Resources.Castor.Initial (Network(Data))
 import           HA.Resources.Mero hiding (Node, Process, Enclosure, Rack, fid)
+import qualified HA.Resources.Mero as M0
+import           HA.Resources.Mero.Note (ConfObjectState(..))
 import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
+import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 import           Prelude
 
@@ -81,6 +84,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
   core_bootstrapped <- phaseHandle "core-bootstrapped"
   start_remaining_services <- phaseHandle "start-remaining-services"
   finish_extra_bootstrap <- phaseHandle "finish-extra-bootstrap"
+  start_clients <- phaseHandle "start_clients"
   finish <- phaseHandle "finish"
 
   let alreadyBootstrapping n g = G.isConnected Cluster Runs (ServerBootstrapCoreProcess n False) g
@@ -168,6 +172,14 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
   -- Wait until every process comes back as finished bootstrapping
   setPhase core_bootstrapped $ \(HAEvent eid (ProcessControlResultMsg nid e) _) -> do
+    -- Update services per node
+    (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
+    (rms, svcs) <- partition (\s -> M0.s_type s == CST_RMS) . join
+                <$> mapM getChildren procs
+    mapM_ (flip setObjectStatus $ M0_NC_ONLINE) procs
+    mapM_ (flip setObjectStatus $ M0_NC_ONLINE) svcs
+    mapM_ (flip setObjectStatus $ M0_NC_TRANSIENT) rms
+    _ <- setActiveRM
     ackingLast core_bootstrapped eid nid $
       barrier
         Cluster Runs
@@ -201,14 +213,33 @@ ruleNewMeroServer = define "new-mero-server" $ do
                phaseLog "error" $ "Can't find host for node " ++ show node
                continue finish
 
-  setPhase finish_extra_bootstrap $ \(HAEvent eid (ProcessControlResultMsg nid _) _) -> do
+  setPhase finish_extra_bootstrap $ \(HAEvent eid (ProcessControlResultMsg nid e) _) -> do
+    -- Update services per node
+    (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
+    (rms, svcs) <- partition (\s -> M0.s_type s == CST_RMS) . join
+                <$> mapM getChildren procs
+    mapM_ (flip setObjectStatus $ M0_NC_ONLINE) procs
+    mapM_ (flip setObjectStatus $ M0_NC_ONLINE) svcs
+    mapM_ (flip setObjectStatus $ M0_NC_TRANSIENT) rms
+    _ <- setActiveRM
     ackingLast finish_extra_bootstrap eid nid $
       barrier
         Cluster Runs
         (ServerBootstrapProcess nid)
         (\(ServerBootstrapProcess _ b) -> b)
-        finish finish Nothing
+        start_clients finish Nothing
         (\_ -> return ())
+
+  directly start_clients $ do
+    Just (node@(Node _), _) <- get Local
+    rg <- getLocalGraph
+    m0svc <- lookupRunningService node m0d
+    mhost <- findNodeHost node
+    case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
+      Just (host, chan) -> do
+        startNodeProcesses host chan PLM0t1fs False
+        continue finish
+      Nothing -> continue finish
 
   directly finish $ do
     Just (n, eid) <- get Local
