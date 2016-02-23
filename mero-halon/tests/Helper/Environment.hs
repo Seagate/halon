@@ -100,6 +100,8 @@ withMeroEnvironment router wrapper = withMeroRoot $ \meroRoot ->
       Just test -> test
       Nothing -> bracket_
         (do setEnv "SANDBOX_DIR" "/var/mero/sandbox.mero-halon-st"
+            putStrLn "Calling rmmod just in case, ignore error message if any"
+            _ <- tryIO . callCommand $ meroRoot ++ "/conf/st rmmod"
             callCommand $ meroRoot ++ "/conf/st sstart"
             )
 

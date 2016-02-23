@@ -418,6 +418,9 @@ Test-Suite testhastate
     Ghc-Options: -Werror
 
   if flag(mero)
+    -- HALON-151
+    Buildable:       False
+
     Build-Depends:   halon,
                      confc,
                      mero-halon,

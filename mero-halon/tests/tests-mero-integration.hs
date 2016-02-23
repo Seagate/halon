@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 --
@@ -18,6 +19,7 @@ import Network.Transport (Transport)
 
 import Control.Monad
 import Control.Concurrent
+import Data.List (isPrefixOf, isSuffixOf)
 import System.Environment (lookupEnv, getExecutablePath)
 import System.Process
 import System.IO
@@ -37,10 +39,10 @@ main = withMeroEnvironment router wrapper where
     minfo <- liftM2 (,) <$> lookupEnv "MERO_TEST"
                         <*> lookupEnv "TEST_LISTEN"
     case minfo of
-      Just ("RCSyncToConfd", host) -> do
+      Just ("RCSyncToConfd", _host) -> do
         transport <- mkTransport
         return $ Just $ withM0Deferred initializeFOPs deinitializeFOPs $ do
-          HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd host transport
+          HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd transport
           threadDelay 1000000
       Just ("DriveFailurePVer", _host) -> do
         transport <- mkTransport
@@ -55,10 +57,31 @@ main = withMeroEnvironment router wrapper where
         -- , runExternalTest "DriveFailurePVer" -- Disabled until strategy based generation will arrive
         ]
 
+-- RPC can't listen on 127.0.0.1: if we detect that it's what the user
+-- asked for, we notify the user and get an IP it's more likely to be
+-- happy with from lnet
+fixTestListen :: IO (Maybe String)
+fixTestListen = lookupEnv "TEST_LISTEN" >>= \case
+  Nothing -> return Nothing
+  Just _ -> getTestListenSplit >>= \(addr, port) -> do
+    if "127.0.0.1" `isPrefixOf` addr
+    then getLNetIP >>= \addr' -> return (Just $ addr' ++ ":" ++ port)
+    else return Nothing
+  where
+    getLNetIP = getLnetNid >>= \addr ->
+      if "@tcp" `isSuffixOf` addr
+      then return $ take (length addr - length "@tcp") addr
+      else return addr
+
 runExternalTest :: TestName -> TestTree
 runExternalTest name = testCase name $ do
   prog <- getExecutablePath
-  callCommand $ "MERO_TEST=" ++ name ++ " " ++ prog
+  listenAddr <- fixTestListen >>= \case
+    Nothing -> return ""
+    Just tl -> do
+      putStrLn $ "Replacing TEST_LISTEN content with " ++ show tl
+      return $ "TEST_LISTEN=" ++ tl
+  callCommand $ listenAddr ++ " MERO_TEST=" ++ name ++ " " ++ prog
 
 mkTransport :: IO Transport
 mkTransport = do
