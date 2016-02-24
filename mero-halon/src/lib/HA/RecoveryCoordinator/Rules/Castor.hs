@@ -227,31 +227,33 @@ ruleMeroNoteSet = do
               msdev <- lookupStorageDevice m0sdev
               case msdev of
                 Just sdev -> do
-                  ongoing <- hasOngoingReset sdev
-                  when (not ongoing) $ do
-                    ratt <- getDiskResetAttempts sdev
-                    let status = if ratt <= resetAttemptThreshold
-                                 then M0_NC_TRANSIENT
-                                 else M0_NC_FAILED
+                  mst <- getDriveState sdev
+                  unless (msg == Just M0_NC_FAILED) $ do
+                    ongoing <- hasOngoingReset sdev
+                    when (not ongoing) $ do
+                      ratt <- getDiskResetAttempts sdev
+                      let status = if ratt <= resetAttemptThreshold
+                                   then M0_NC_TRANSIENT
+                                   else M0_NC_FAILED
 
-                    updateDriveState m0sdev status
+                      updateDriveState m0sdev status
 
-                    when (status == M0_NC_FAILED) $ do
-                      updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
-                      nid <- liftProcess getSelfNode
-                      diskids <- findStorageDeviceIdentifiers sdev
-                      let iem = InterestingEventMessage . pack . unwords $ [
-                                    "M0_NC_FAILED reported."
-                                  , "fid=" ++ show mfid
-                                ] ++ map show diskids
-                      sendInterestingEvent nid iem
-                      pools <- getSDevPools m0sdev
-                      traverse_ startRepairOperation pools
+                      when (status == M0_NC_FAILED) $ do
+                        updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
+                        nid <- liftProcess getSelfNode
+                        diskids <- findStorageDeviceIdentifiers sdev
+                        let iem = InterestingEventMessage . pack . unwords $ [
+                                      "M0_NC_FAILED reported."
+                                    , "fid=" ++ show mfid
+                                  ] ++ map show diskids
+                        sendInterestingEvent nid iem
+                        pools <- getSDevPools m0sdev
+                        traverse_ startRepairOperation pools
 
-                    when (status == M0_NC_TRANSIENT) $ do
-                      promulgateRC $ ResetAttempt sdev
+                      when (status == M0_NC_TRANSIENT) $ do
+                        promulgateRC $ ResetAttempt sdev
 
-                    syncGraph $ say "mero-note-set synchronized"
+                      syncGraph $ say "mero-note-set synchronized"
                 _ -> do
                   phaseLog "warning" $ "Cannot find all entities attached to M0"
                                     ++ " storage device: "

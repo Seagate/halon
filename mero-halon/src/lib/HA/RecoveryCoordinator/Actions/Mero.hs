@@ -12,6 +12,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   , module HA.RecoveryCoordinator.Actions.Mero.Core
   , module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , updateDriveState
+  , getDriveState
   , createMeroKernelConfig
   , createMeroClientConfig
   , startMeroService
@@ -93,6 +94,11 @@ updateDriveState m0sdev x = do
   liftProcess $ say $ show (m0sdev, m0disks, x)
   let m0objs = M0.AnyConfObj <$> m0disks
   notifyMero (M0.AnyConfObj m0sdev:m0objs) x
+
+getDriveState :: M0.SDev -> PhaseM LoopState l (Maybe M0.ConfObjectState)
+getDriveState m0sdev = do
+  rg <- getLocalGraph
+  return $ listToMaybe $ G.connectedTo m0sdev Is rg
 
 -- | RMS service address.
 rmsAddress :: String
