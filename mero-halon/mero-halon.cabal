@@ -508,6 +508,7 @@ Test-Suite unit-tests
                     mero-halon,
                     base >= 4.5,
                     binary >= 0.6.4,
+                    aeson,
                     bytestring,
                     directory,
                     distributed-process-scheduler,
@@ -589,6 +590,7 @@ Test-Suite integration-tests
                       ScopedTypeVariables
   Build-Depends:    halon,
                     mero-halon,
+                    aeson,
                     base >= 4.5,
                     binary >= 0.6.4,
                     bytestring,
@@ -668,6 +670,7 @@ Test-Suite scheduler-tests
                       ScopedTypeVariables
   Build-Depends:    halon,
                     mero-halon,
+                    aeson,
                     base >= 4.5,
                     binary >= 0.6.4,
                     bytestring,
@@ -850,6 +853,7 @@ Test-Suite tests-mero-integration
                         distributed-process-test,
                         network-transport,
                         network-transport-inmemory,
+                        aeson,
                         cep,
                         confc,
                         rpclite,

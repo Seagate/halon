@@ -102,8 +102,14 @@ instance Hashable DeviceIdentifier
 
 -- | Representation of storage device status. Currently this just mirrors
 --   the status we get from OpenHPI.
-newtype StorageDeviceStatus = StorageDeviceStatus String
-  deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
+data StorageDeviceStatus = StorageDeviceStatus
+    { sdsStatus :: String
+    , sdsReason :: String
+    }
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary StorageDeviceStatus
+instance Hashable StorageDeviceStatus
 
 -- | Resource indicating that core mero-server provisioning procedure
 -- is going happening on the node.

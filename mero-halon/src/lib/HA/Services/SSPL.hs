@@ -127,9 +127,18 @@ msgHandler msg = do
          sensorResponseMessageSensor_response_typeCpu_data
       sendMessage "SensorResponse.Raid"
          sensorResponseMessageSensor_response_typeRaid_data 
+      sendMessage "ActuatorResponse.ThreadController"
+         sensorResponseMessageSensor_response_typeRaid_data 
+
 
     Nothing -> case decode (msgBody msg) :: Maybe ActuatorResponse of
-      Just mr -> say $ "Ignoring acutator response: " ++ show mr
+      Just ar -> do 
+        let arms = actuatorResponseMessageActuator_response_type . actuatorResponseMessage $ ar
+            sendMessage s f = forM_ (f arms) $ \x -> do
+              saySSPL $ "received " ++ s
+              promulgate (nid, x)
+        sendMessage "ActuatorResponse.ThreadController"
+          actuatorResponseMessageActuator_response_typeThread_controller
       Nothing -> say $ "Unable to decode JSON message: " ++ (BL.unpack $ msgBody msg)
 
 startSensors :: Network.AMQP.Channel -- ^ AMQP Channel

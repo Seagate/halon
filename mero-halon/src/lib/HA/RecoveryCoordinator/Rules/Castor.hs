@@ -237,7 +237,7 @@ ruleMeroNoteSet = do
                     updateDriveState m0sdev status
 
                     when (status == M0_NC_FAILED) $ do
-                      updateDriveManagerWithFailure sdev "FAILED" (Just "mero failure")
+                      updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
                       nid <- liftProcess getSelfNode
                       diskids <- findStorageDeviceIdentifiers sdev
                       let iem = InterestingEventMessage . pack . unwords $ [
@@ -371,7 +371,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           updateDriveState m0sdev M0_NC_FAILED
-          updateDriveManagerWithFailure sdev "FAILED" (Just "unable to reset drive")
+          updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
           pools <- getSDevPools m0sdev
           traverse_ startRepairOperation pools
 #endif

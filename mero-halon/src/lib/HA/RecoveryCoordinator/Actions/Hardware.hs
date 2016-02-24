@@ -504,13 +504,14 @@ driveStatus dev = do
 
 -- | Update the status of a storage device.
 updateDriveStatus :: StorageDevice
-                  -> String
+                  -> String -- ^ Status.
+                  -> String -- ^ Reason.
                   -> PhaseM LoopState l ()
-updateDriveStatus dev status = modifyLocalGraph $ \rg -> do
-  phaseLog "rg" $ "Updating status for device " ++ show dev ++ " to " ++ status
+updateDriveStatus dev status reason = modifyLocalGraph $ \rg -> do
+  phaseLog "rg" $ "Updating status for device " ++ show dev ++ " to " ++ status ++ "("++reason++")"
   ds <- driveStatus dev
   phaseLog "rg" $ "Old status was " ++ show ds
-  let statusNode = StorageDeviceStatus status
+  let statusNode = StorageDeviceStatus status reason
       removeOldNode = case ds of
         Just f -> G.disconnect dev Is f
         Nothing -> id

@@ -5,6 +5,7 @@
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module HA.Castor.Story.Tests (mkTests
 #ifdef USE_MERO
@@ -20,11 +21,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
    , findFailableObjs
    )
 #endif
-import HA.RecoveryCoordinator.Actions.Core (messageProcessed)
-import HA.RecoveryCoordinator.Actions.Service
-  ( registerServiceProcess )
 import HA.RecoveryCoordinator.Events.Drive
-import HA.RecoveryCoordinator.Mero (LoopState)
 import HA.RecoveryCoordinator.Rules.Castor
 import qualified HA.ResourceGraph as G
 import HA.NodeUp (nodeUp)
@@ -45,18 +42,20 @@ import HA.Services.Mero
 import HA.Services.SSPL
 import HA.Services.SSPL.Rabbit
 import HA.Services.SSPL.LL.Resources
+import HA.RecoveryCoordinator.Mero
 
 import RemoteTables (remoteTable)
 
 import SSPL.Bindings
 
-import Control.Monad (join, when, replicateM_, void)
+import Control.Monad (when, replicateM_, void)
 import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Node
 import Control.Exception as E hiding (assert)
 
 import Data.Aeson (decode, encode)
 import Data.Binary (Binary)
+import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
 import Data.Hashable (Hashable)
 import qualified Data.Set as S
@@ -92,6 +91,9 @@ newtype MockM0 = MockM0 DeclareMeroChannel
 mockMeroConf :: MeroConf
 mockMeroConf = MeroConf "" "" (MeroKernelConf UUID.nil)
 
+data MarkDriveFailed = MarkDriveFailed deriving (Generic, Typeable)
+instance Binary MarkDriveFailed
+
 newMeroChannel :: ProcessId -> Process (ReceivePort NotificationMessage, MockM0)
 newMeroChannel pid = do
   (sd, recv) <- newChan
@@ -107,12 +109,14 @@ testRules = do
   defineSimple "register-mock-service" $
     \(HAEvent eid (MockM0 dc@(DeclareMeroChannel sp _ _)) _) -> do
       nid <- liftProcess $ getSelfNode
-      liftProcess $ say "here-1"
       registerServiceProcess (Node nid) m0d mockMeroConf sp
-      liftProcess $ say "here-2"
       void . liftProcess $ promulgateEQ [nid] dc
-      liftProcess $ say "here-3"
-      phaseLog "debug" "here am i"
+      messageProcessed eid
+  defineSimple "mark-disk-failed" $ \(HAEvent eid MarkDriveFailed _) -> do
+      rg <- getLocalGraph
+      case G.getResourcesOfType rg of
+        (sd:_) -> updateDriveStatus sd "HALON-FAILED" "MERO-Timeout"
+        [] -> return ()
       messageProcessed eid
 
 mkTests :: IO (Transport -> [TestTree])
@@ -142,6 +146,8 @@ mkTests = do
           testDriveRemovedBySSPL transport
         , testSuccess "Metadata drive failure reported by IEM" $
           testMetadataDriveFailed transport
+        , testSuccess "Halon sends list of failed drives at SSPL start" $
+          testGreeting transport
         ]
 
 run :: Transport
@@ -286,15 +292,35 @@ isPowered SDPowered = True
 isPowered _         = False
 
 expectNodeMsg :: Int -> Process (Maybe ActuatorRequestMessageActuator_request_typeNode_controller)
-expectNodeMsg t = do
+expectNodeMsg = expectActuatorMsg
+  (actuatorRequestMessageActuator_request_typeNode_controller
+  . actuatorRequestMessageActuator_request_type
+  . actuatorRequestMessage
+  )
+
+expectLoggingMsg :: Int -> Process (Either String ActuatorRequestMessageActuator_request_typeLogging)
+expectLoggingMsg = expectActuatorMsg'
+  ( actuatorRequestMessageActuator_request_typeLogging
+  . actuatorRequestMessageActuator_request_type
+  . actuatorRequestMessage
+  )
+
+
+expectActuatorMsg :: (ActuatorRequest -> Maybe b) -> Int -> Process (Maybe b)
+expectActuatorMsg f t = do
   expectTimeout t >>= \case
-    Just (MQMessage _ msg) ->
-      return . join
-        $ actuatorRequestMessageActuator_request_typeNode_controller
-        . actuatorRequestMessageActuator_request_type
-        . actuatorRequestMessage
-        <$> (decode . LBS.fromStrict $ msg)
-    Nothing -> error "No message delivered to SSPL."
+    Just (MQMessage _ msg) -> return $ f =<< (decode . LBS.fromStrict $ msg)
+    Nothing -> do liftIO $ assertFailure "No message delivered to SSPL."
+                  undefined
+
+expectActuatorMsg' :: (ActuatorRequest -> Maybe b) -> Int -> Process (Either String b)
+expectActuatorMsg' f t = do
+  expectTimeout t >>= \case
+    Just (MQMessage _ msg) -> return $ case f =<< (decode . LBS.fromStrict $ msg) of
+         Nothing -> Left (BS8.unpack msg)
+         Just x  -> Right x
+    Nothing -> do liftIO $ assertFailure "No message delivered to SSPL."
+                  undefined
 
 --------------------------------------------------------------------------------
 -- Test primitives
@@ -630,3 +656,28 @@ testMetadataDriveFailed transport = run transport interceptor test where
                          "Metadata drive failure on host " `append` host == decodeUtf8 msg)
                       (const $ return ())]
     when (isNothing mx) $ error "No message delivered to SSPL."
+
+testGreeting :: Transport -> IO ()
+testGreeting transport = run transport interceptor test where
+  interceptor _rc _str = return ()
+  test (TestArgs _ _ rc) rmq _ = do
+    prepareSubscriptions rc rmq
+    loadInitialData
+
+    _ <- promulgate MarkDriveFailed
+    Nothing <- expectTimeout 1000000 :: Process (Maybe (Published (HAEvent MarkDriveFailed)))
+    let
+      message = LBS.toStrict $ encode
+                               $ mkActuatorResponse
+                               $ emptyActuatorMessage {
+                                  actuatorResponseMessageActuator_response_typeThread_controller = Just $
+                                    ActuatorResponseMessageActuator_response_typeThread_controller 
+                                      "ThreadController"
+                                      "SSPL-LL service has started successfully"
+                                }
+    usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
+    mmsg <- expectLoggingMsg 1000000
+    case mmsg of
+      Left s  -> liftIO $ assertFailure $ "wrong message received" ++ s
+      Right _  -> return ()
+

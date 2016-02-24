@@ -156,13 +156,13 @@ testDriveAddition transport = runDefaultTest transport $ do
   withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
     nodeUp ([nid], 1000000)
     -- Send host update message to the RC
-    promulgateEQ [nid] (nid, mockEvent "online" "" "/path") >>= flip withMonitor wait
+    promulgateEQ [nid] (nid, mockEvent "online" "NONE" "/path") >>= flip withMonitor wait
     "Drive" :: String <- expect
 
     graph <- G.getGraph mm
     let enc = Enclosure "enc1"
         drive = head (G.connectedTo enc Has graph :: [StorageDevice])
-        status = StorageDeviceStatus "online"
+        status = StorageDeviceStatus "online" "NONE"
     liftIO $ do
       assertBool "Enclosure exists in a graph"  $ G.memberResource enc graph
       assertBool "Drive exists in a graph"      $ G.memberResource drive graph
@@ -201,7 +201,7 @@ testDriveManagerUpdate transport = runDefaultTest transport $ do
     "InitialData" :: String <- expect
 
     say "Sending online message"
-    promulgateEQ [nid] (nid, respDM "online" "" "path") >>= flip withMonitor wait
+    promulgateEQ [nid] (nid, respDM "online" "NONE" "path") >>= flip withMonitor wait
     "DriveActive" :: String <- expect
 
     say "Checking drive status sanity"
@@ -211,7 +211,7 @@ testDriveManagerUpdate transport = runDefaultTest transport $ do
                       , sn == interestingSN
                   ]
     assert $ G.memberResource drive graph
-    assert $ G.memberResource (StorageDeviceStatus "online") graph
+    assert $ G.memberResource (StorageDeviceStatus "online" "NONE") graph
 
     say "Sending RunDriveManagerFailure"
     promulgateEQ [nid] RunDriveManagerFailure >>= flip withMonitor wait

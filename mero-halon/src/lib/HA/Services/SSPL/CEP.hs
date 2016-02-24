@@ -25,6 +25,7 @@ import Mero.Notification
 
 import SSPL.Bindings
 
+import Control.Applicative
 import Control.Arrow ((>>>))
 import Control.Distributed.Process
   ( NodeId
@@ -35,9 +36,10 @@ import Control.Distributed.Process
   )
 import Control.Monad
 import Control.Monad.Trans
+import Control.Monad.Trans.Maybe
 
 import qualified Data.Aeson as Aeson
-import Data.Maybe (catMaybes, listToMaybe, maybeToList)
+import Data.Maybe (catMaybes, listToMaybe, maybeToList, fromMaybe)
 import Data.Monoid ((<>))
 import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
@@ -180,6 +182,7 @@ ssplRulesF sspl = sequence_
   , ruleMonitorRaidData
   , ruleSystemdCmd sspl
   , ruleHlNodeCmd sspl
+  , ruleThreadController
   ]
 
 ruleDeclareChannels :: Definitions LoopState ()
@@ -236,7 +239,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
 
    setPhase pcommit $ \(RuleDriveManagerDisk disk) -> do
      Just (uuid, nid, enc, diskNum, disk_status, disk_reason, sn) <- get Local
-     updateDriveStatus disk $ T.unpack disk_status
+     updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
      isDriveRemoved <- isStorageDriveRemoved disk
      phaseLog "sspl-service"
        $ "Drive in " ++ show enc ++ " at " ++ show diskNum ++ " marked as "
@@ -364,6 +367,33 @@ ruleMonitorRaidData = defineSimple "monitor-raid-data" $ \(HAEvent uuid (nid, sr
         _ -> return ()
       messageProcessed uuid
 
+ruleThreadController :: Definitions LoopState ()
+ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid (nid, artc) _) -> let
+    module_name = actuatorResponseMessageActuator_response_typeThread_controllerModule_name artc
+    thread_response = actuatorResponseMessageActuator_response_typeThread_controllerThread_response artc
+  in do
+     case (T.toUpper module_name, T.toUpper thread_response) of
+       ("THREADCONTROLLER", "SSPL-LL SERVICE HAS STARTED SUCCESSFULLY") -> do
+         mhost <- findNodeHost (Node nid)
+         case mhost of
+           Nothing -> phaseLog "error" $ "can't find host for node " ++ show nid
+           Just host -> do
+             msds <- runMaybeT $ do
+               encl <- MaybeT $ findHostEnclosure host
+               lift $ findEnclosureStorageDevices encl >>=
+                        traverse (\x -> do
+                          liftA2 (x,,) <$> driveStatus x
+                                       <*> fmap listToMaybe (lookupStorageDeviceSerial x))
+             forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(_, status, serial) -> 
+               case status of
+                 StorageDeviceStatus "HALON-FAILED" reason -> do
+                   sendLoggingCmd host $ mkDiskLoggingCmd (T.pack "HALON-FAILED") 
+                                                          (T.pack serial)
+                                                          (T.pack reason)
+                 _ -> return ()
+       _ -> return ()
+     messageProcessed uuid 
+
   -- SSPL Monitor interface data
   -- defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum) _) _ ->
   --     return $ sensorResponseMessageSensor_response_typeIf_data hum
@@ -464,6 +494,7 @@ updateDriveManagerWithFailure :: StorageDevice
                               -> Maybe String
                               -> PhaseM LoopState l ()
 updateDriveManagerWithFailure disk st reason = do
+  updateDriveStatus disk st (fromMaybe "NONE" reason)
   dis <- findStorageDeviceIdentifiers disk
   case listToMaybe [ sn' | DISerialNumber sn' <- dis ] of
     Nothing -> phaseLog "error" $ "Unable to find serial number for " ++ show disk
