@@ -1,9 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Helper.SSPL
   ( emptySensorMessage
+  , emptyActuatorMessage
   , emptyHPIMessage
   , emptyHostUpdate
   , mkSensorResponse
+  , mkActuatorResponse
   , mkResponseDriveManager
   , mkResponseHPI
   , mkHpiMessage
@@ -11,6 +13,7 @@ module Helper.SSPL
   ) where
 
 import Data.Text (Text)
+import qualified Data.Aeson as Aeson
 import qualified SSPL.Bindings as SSPL
 
 emptySensorMessage :: SSPL.SensorResponseMessageSensor_response_type
@@ -25,6 +28,12 @@ emptySensorMessage = SSPL.SensorResponseMessageSensor_response_type
   , SSPL.sensorResponseMessageSensor_response_typeRaid_data = Nothing
   }
 
+emptyActuatorMessage :: SSPL.ActuatorResponseMessageActuator_response_type
+emptyActuatorMessage = SSPL.ActuatorResponseMessageActuator_response_type
+  { SSPL.actuatorResponseMessageActuator_response_typeAck = Nothing
+  , SSPL.actuatorResponseMessageActuator_response_typeThread_controller = Nothing
+  , SSPL.actuatorResponseMessageActuator_response_typeService_controller = Nothing
+  }
 
 -- | Create stub sensor response
 mkSensorResponse :: SSPL.SensorResponseMessageSensor_response_type -> SSPL.SensorResponse
@@ -34,6 +43,16 @@ mkSensorResponse rsp = SSPL.SensorResponse
   , SSPL.sensorResponseExpires   = Nothing
   , SSPL.sensorResponseUsername  = "sspl"
   , SSPL.sensorResponseMessage   = SSPL.SensorResponseMessage Nothing rsp
+  }
+
+-- | Create stub actuator response.
+mkActuatorResponse :: SSPL.ActuatorResponseMessageActuator_response_type -> SSPL.ActuatorResponse
+mkActuatorResponse rsp = SSPL.ActuatorResponse
+  { SSPL.actuatorResponseSignature = "not-yet-implemented"
+  , SSPL.actuatorResponseTime      = "YYYY-MM-DD HH:mm"
+  , SSPL.actuatorResponseExpires   = Nothing
+  , SSPL.actuatorResponseUsername  = "sspl"
+  , SSPL.actuatorResponseMessage   = SSPL.ActuatorResponseMessage rsp Aeson.Null
   }
 
 -- | Create default HPI message.
