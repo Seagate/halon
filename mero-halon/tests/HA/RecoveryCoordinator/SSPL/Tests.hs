@@ -92,8 +92,8 @@ utTests transport =
    $ testDMRequest transport
    ]
 
-dmRequest :: Text -> Text -> Text -> Int -> SensorResponseMessageSensor_response_typeDisk_status_drivemanager
-dmRequest status reason _serial num = mkResponseDriveManager "enclosure1" "serial1" (fromIntegral num) status reason
+dmRequest :: Text -> Text -> Text -> Int -> Text -> SensorResponseMessageSensor_response_typeDisk_status_drivemanager
+dmRequest status reason _serial num path = mkResponseDriveManager "enclosure1" "serial1" (fromIntegral num) status reason path
 
 mkHpiTest :: (ProcessId -> Definitions LoopState b)
           -> (ProcessId -> Process ())
@@ -241,32 +241,32 @@ testDMRequest = mkHpiTest rules test
         usend rc ()
         () <- expect
         say "Unused ok for good drive"
-        let request0 = dmRequest "EMPTY" "None" "serial1" 0
+        let request0 = dmRequest "EMPTY" "None" "serial1" 0 "path"
         uuid0 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid0 (me, request0) []
         "drive-removed" <- await uuid0
         say "Unused ok for removed drive"
-        let request1 = dmRequest "EMPTY" "None" "serial1" 1
+        let request1 = dmRequest "EMPTY" "None" "serial1" 1 "path"
         uuid1 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid1 (me, request1) []
         "nothing" <- await uuid1
         say "Failed smart for good drive"
-        let request2 = dmRequest "FAILED" "SMART" "serial1" 0
+        let request2 = dmRequest "FAILED" "SMART" "serial1" 0 "path"
         uuid2 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid2 (me, request2) []
         "drive-failed" <- await uuid2
         say "Failed smart for removed drive"
-        let request3 = dmRequest "FAILED" "SMART" "serial1" 1
+        let request3 = dmRequest "FAILED" "SMART" "serial1" 1 "path"
         uuid3 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid3 (me, request3) []
         "nothing" <- await uuid3
         say "OK_None smart for good"
-        let request4 = dmRequest "OK" "None" "serial1" 0
+        let request4 = dmRequest "OK" "None" "serial1" 0 "path"
         uuid4 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid4 (me, request4) []
         await uuid4 >>= liftIO . assertEqual "OK_None smart for good" "nothing"
         say "OK_None smart for bad"
-        let request5 = dmRequest "OK" "None" "serial1" 1
+        let request5 = dmRequest "OK" "None" "serial1" 1 "path"
         uuid5 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid5 (me, request5) []
         await uuid5 >>= liftIO . assertEqual "OK_None smart for bad" "drive-inserted"

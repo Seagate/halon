@@ -548,7 +548,7 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
         message = LBS.toStrict $ encode $ mkSensorResponse
            $ emptySensorMessage
               { sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
-                Just $ mkResponseDriveManager (pack enclosure) "serial21" devIdx "EMPTY" "None" }
+                Just $ mkResponseDriveManager (pack enclosure) "serial21" devIdx "EMPTY" "None" "/path" }
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message0
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
     Just{} <- expectTimeout 1000000 :: Process (Maybe (Published DriveRemoved))
