@@ -40,8 +40,9 @@ import System.Directory
 import Helper.Environment (withMeroRoot)
 import System.Environment ( getArgs, getExecutablePath, lookupEnv )
 import System.Exit ( exitFailure, exitSuccess )
-import System.FilePath ( (</>), takeDirectory )
+import System.FilePath ( (</>) )
 import System.Process (readProcess, callProcess, callCommand)
+import System.Posix.Temp (mkdtemp)
 
 
 tryIO :: IO a -> IO (Either IOException a)
@@ -74,9 +75,7 @@ main = withMeroRoot $ \meroRoot -> getArgs >>= \args ->
     prog <- getExecutablePath
     when (notElem "--noscript" args) $ do
       meroHalonTopDir <- getCurrentDirectory
-      -- change directory so mero files are produced under the dist folder
-      let testDir = takeDirectory (takeDirectory $ takeDirectory prog)
-                  </> "test"
+      testDir <- mkdtemp "/tmp/tmp-testhastate."
       createDirectoryIfMissing True testDir
       setCurrentDirectory testDir
       putStrLn $ "Changed directory to: " ++ testDir
@@ -141,7 +140,7 @@ main = withMeroRoot $ \meroRoot -> getArgs >>= \args ->
     sendBlocking c [] 5 `catch` \e -> print (e :: SomeException) >> throwIO e
     -- check output of m0_ha_state_get
     takeMVar mv >>= \bss ->
-      when ([[1]] /= map B.unpack bss) $ do
+      when ([[1, 0, 0, 0]] /= map B.unpack bss) $ do
         putStrLn $ "m0_ha_state_get yielded bad result: "
                    ++ show (map B.unpack bss)
         exitFailure

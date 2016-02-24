@@ -178,7 +178,7 @@ data RunDriveManagerFailure = RunDriveManagerFailure
 
 instance Binary RunDriveManagerFailure
 
--- | Update receiving a drive failure from SSPL, 
+-- | Update receiving a drive failure from SSPL,
 testDriveManagerUpdate :: Transport -> IO ()
 testDriveManagerUpdate transport = runDefaultTest transport $ do
   nid <- getSelfNode
@@ -223,7 +223,7 @@ testDriveManagerUpdate transport = runDefaultTest transport $ do
       -- repair on it
       graph <- getLocalGraph
       let [sd] = G.connectedTo (Enclosure enc) Has graph
-      updateDriveManagerWithFailure sd "FAILED" (Just "injected failure") 
+      updateDriveManagerWithFailure sd "FAILED" (Just "injected failure")
       messageProcessed eid
 
     wait = void (expect :: Process ProcessMonitorNotification)
@@ -271,11 +271,8 @@ testDriveManagerUpdate transport = runDefaultTest transport $ do
 #ifdef USE_MERO
 -- | Sends a message to the RC with Confd addition message and tests
 -- that it gets added to the resource graph.
-testRCsyncToConfd :: String -- ^ IP we're listening on, used in this
-                            -- test to assume confd server is on the
-                            -- same host
-                  -> Transport -> IO ()
-testRCsyncToConfd _host transport = do
+testRCsyncToConfd :: Transport -> IO ()
+testRCsyncToConfd transport = do
  withTestEnv $ do
   nid <- getSelfNode
   self <- getSelfPid

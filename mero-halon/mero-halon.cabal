@@ -430,7 +430,8 @@ Test-Suite testhastate
                      network,
                      rpclite,
                      time >= 1.4,
-                     unix
+                     unix,
+                     distributed-process-test
   else
     buildable: False
 
