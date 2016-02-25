@@ -11,6 +11,7 @@
 -- started on the satellite node.
 --
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE LambdaCase #-}
 
 import Control.Distributed.Commands.Process
   ( systemLocal
@@ -112,7 +113,22 @@ main =
            createTransport "s1" (rpcAddress $ m0 ++ ":100") defaultRPCParameters
 #else
     let m0 = "0.0.0.0"
-    Right nt <- createTransport m0 "4000" defaultTCPParameters
+        mkTransport p = do
+          putStrLn $ "startService-local: Trying to create a transport on "
+                  ++ m0 ++ ":" ++ show p
+          createTransport m0 (show p) defaultTCPParameters
+
+        -- Sometimes we fail to bind on the first port we ask for
+        -- (4000). Try some other ports before failing.
+        loop [] = error "no startService-local: no more ports to try"
+        loop [p] = mkTransport p
+        loop (p:ps) = mkTransport p >>= \case
+          Left _ -> do
+            putStrLn $ "Making transport on " ++ m0 ++ ":" ++ show p ++ " failed"
+            loop ps
+          Right t -> return $ Right t
+
+    Right nt <- loop [(4000 :: Int) .. 4005]
 #endif
     n0 <- newLocalNode nt (__remoteTable initRemoteTable)
     let killHalond = E.catch (readProcess "pkill" [ "halond" ] "" >> return ())
