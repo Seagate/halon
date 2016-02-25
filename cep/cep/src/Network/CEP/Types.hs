@@ -439,8 +439,9 @@ data Scope g l a where
     Local  :: Scope g l l
 
 -- | When forking a new 'Phase' state machine, it possible to either copy
---   parent 'Buffer' or starting with an empty one.
-data ForkType = NoBuffer | CopyBuffer
+--   parent 'Buffer' or starting with an empty one, another option is to drop
+--   all messages that are older than one you work with.
+data ForkType = NoBuffer | CopyBuffer | CopyNewerBuffer
 
 -- | 'Phase' state machine.
 --

@@ -447,6 +447,7 @@ testsFork launch = testGroup "Fork"
   , testCase "Service usecase-1" $ launch forkServiceUsecase
   , testCase "Fork increments number of SMs" $ launch forkIncrSMs
   , testCase "Fork consume message" $ launch forkConsumeMsgs
+  , testCase "Fork drop is working" $ launch forkDropIsWorking
   ]
 
 forkConsumeMsgs :: Process ()
@@ -502,6 +503,35 @@ forkServiceUsecase = do
       =<< replicateM 3 expect
 
 
+forkDropIsWorking :: Process ()
+forkDropIsWorking = do
+    self <- getSelfPid
+    pid  <- spawnLocal $ execute () $ do
+      define "rule" $ do
+        ph0 <- phaseHandle "state-1"
+        ph1 <- phaseHandle "state-2"
+        ph2 <- phaseHandle "state-3"
+        setPhase ph0 $ \(Donut _) -> do
+          continue ph1
+
+        setPhase ph1 $ \(Baz _) -> do
+          fork CopyNewerBuffer $ do
+            continue ph2
+          continue ph1
+
+        setPhase ph2 $ \(Foo i) -> do
+          liftProcess $ usend self (Foo i)
+          continue ph2
+
+        start ph0 ()
+
+    mapM_ (usend pid . Foo) [1,2,3]
+    usend pid donut
+    usend pid (Baz 4)
+    mapM_ (usend pid . Foo) [4,5,6]
+    
+    assertEqual "foo" [4,5,6] . map unFoo
+      =<< replicateM 3 expect
 
 forkIsWorking :: Process ()
 forkIsWorking = do

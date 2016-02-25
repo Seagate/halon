@@ -15,6 +15,7 @@ module Network.CEP.Buffer
     , bufferLength
     , bufferPeek
     , bufferEmpty
+    , bufferDrop
     , fifoBuffer
     , emptyFifoBuffer
     , merelyEqual
@@ -32,6 +33,7 @@ data Input a where
     Length  :: Input Int
     Display :: Input String
     Indexes :: Input [Index]
+    Drop    :: Index -> Input Buffer
 
 newtype Buffer = Buffer (forall a. Input a -> a)
 
@@ -82,6 +84,14 @@ fifoBuffer tpe = Buffer $ go empty 0
     go xs _ Length = length xs
     go xs _ Display = show $ toList xs
     go xs _ Indexes = toList $ fmap fst xs
+    go xs idx (Drop i) = 
+        let loop cur =
+              case viewl cur of
+                EmptyL -> Buffer $ go empty idx
+                elm@(ei,e) :< rest
+                  | ei < i -> loop rest
+                  | otherwise -> Buffer $ go (elm <| rest) idx in
+        loop xs
 
 instance Show Buffer where
     show (Buffer k) = k Display
@@ -103,15 +113,17 @@ bufferGetWithIndex idx (Buffer k) = k (Get idx)
 
 -- | Gets the first matching type message. Returned message is removed from the
 --   buffer.
-bufferGet :: Typeable a => Buffer -> Maybe (a, Buffer)
-bufferGet = fmap go . bufferGetWithIndex initIndex
-  where
-    go (_, a, buf) = (a, buf)
+bufferGet :: Typeable a => Buffer -> Maybe (Index, a, Buffer)
+bufferGet = bufferGetWithIndex initIndex
 
 bufferPeek :: Typeable a => Index -> Buffer -> Maybe (Index, a)
 bufferPeek idx = fmap go . bufferGetWithIndex idx
   where
     go (i, a, _) = (i, a)
+
+-- | Drop all messages with index lower then current.
+bufferDrop :: Index -> Buffer -> Buffer
+bufferDrop idx (Buffer k) = k (Drop idx)
 
 -- | Gets the buffer's length.
 bufferLength :: Buffer -> Int
