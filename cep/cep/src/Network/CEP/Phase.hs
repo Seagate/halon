@@ -50,6 +50,7 @@ data Extraction b =
       -- ^ The buffer we have minus the elements we extracted from it.
     , _extractMsg :: !b
       -- ^ The extracted message.
+    , _extractIndex :: !Index
     }
 
 -- | Extracts messages from a 'Buffer' based based on 'PhaseType' need.
@@ -94,6 +95,7 @@ extractMatchMsg p g l buf = go (-1)
                 let ext = Extraction
                           { _extractBuf = newBuf
                           , _extractMsg = b
+                          , _extractIndex = newIdx
                           } in
                 return $ Just ext
           _ -> return Nothing
@@ -105,10 +107,11 @@ extractNormalMsg :: forall a. Serializable a
                  -> Process (Maybe (Extraction a))
 extractNormalMsg _ buf =
     case bufferGet buf of
-      Just (a, buf') ->
+      Just (newIdx, a, buf') ->
         let ext = Extraction
                   { _extractBuf = buf'
                   , _extractMsg = a
+                  , _extractIndex = newIdx
                   } in
         return $ Just ext
       _ -> return Nothing
@@ -121,10 +124,11 @@ extractSeqMsg s sbuf = go (-1) sbuf s
         case bufferGetWithIndex lastIdx buf of
           Just (idx, i, buf') -> go idx buf' $ k i
           _                   -> return Nothing
-    go _ buf (Emit b) =
+    go lastIdx buf (Emit b) =
         let ext = Extraction
                   { _extractBuf = buf
                   , _extractMsg = b
+                  , _extractIndex = lastIdx
                   } in
         return $ Just ext
     go _ _ _ = return Nothing
@@ -146,12 +150,12 @@ runPhase :: Subscribers   -- ^ Subscribers.
          -> Process (g, [(Buffer,PhaseOut l)])
 runPhase subs logs g l buf ph =
     case _phCall ph of
-      DirectCall action -> runPhaseM pname subs logs g l buf action
+      DirectCall action -> runPhaseM pname subs logs g l Nothing buf action
       ContCall tpe k -> do
         res <- extractMsg tpe g l buf
         case res of
-          Just (Extraction new_buf b) -> do
-            result <- runPhaseM pname subs logs g l new_buf (k b)
+          Just (Extraction new_buf b idx) -> do
+            result <- runPhaseM pname subs logs g l (Just idx) new_buf (k b)
             for_ (snd result) $ \(_,out) ->
               case out of
                 SM_Complete{} -> notifySubscribers subs b
@@ -172,10 +176,11 @@ runPhaseM :: forall g l. String  -- ^ Process name.
           -> Maybe SMLogs        -- ^ Logs.
           -> g                   -- ^ Global state.
           -> l                   -- ^ Local state
+          -> Maybe Index         -- ^ Current index.
           -> Buffer              -- ^ Buffer
           -> PhaseM g l ()
           -> Process (g, [(Buffer, PhaseOut l)])
-runPhaseM pname subs plogs pg pl pb action = do
+runPhaseM pname subs plogs pg pl mindex pb action = do
     (g,t@(_,out), phases, _) <- go pg pl plogs pb action
     let g' = case out of
                 SM_Complete{} -> g
@@ -226,6 +231,7 @@ runPhaseM pname subs plogs pg pl pb action = do
           let buf' = case typ of
                       NoBuffer -> emptyFifoBuffer
                       CopyBuffer -> buf
+                      CopyNewerBuffer -> maybe buf (`bufferDrop` buf) mindex
           in do (g', (b', out), sm, s) <- go g l (fmap (const S.empty) lgs) buf (k ())
                 return (g', (b', out), (buf',l,naction):sm, s)
         inner (Lift m :>>= k) = do

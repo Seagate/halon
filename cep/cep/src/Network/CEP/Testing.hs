@@ -24,7 +24,7 @@ runPhase :: forall g l. g       -- ^ Global state.
          -> PhaseM g l ()       -- ^ Phase to exec
          -> Process (g, [(Buffer, l)])      -- ^ Updated global and local state
 runPhase g l b p = do
-    (g', xs) <- runPhaseM "testing" MM.empty Nothing g l b p
+    (g', xs) <- runPhaseM "testing" MM.empty Nothing g l Nothing b p
     return (g', catMaybes $ fmap extract xs)
   where
     extract (b', po) = case po of
