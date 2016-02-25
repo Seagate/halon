@@ -13,9 +13,9 @@ module HA.Resources.Castor.Initial where
 
 #ifdef USE_MERO
 import Mero.ConfC (ServiceParams, ServiceType)
+import Control.Monad (forM)
 #endif
 
-import Control.Monad (forM)
 import Data.Aeson
 import Data.Binary (Binary)
 import Data.Data

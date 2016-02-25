@@ -248,12 +248,12 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
        ("EMPTY", "NONE")
           | isDriveRemoved -> do phaseLog "sspl-service" "already removed"
                                  messageProcessed uuid
-          | otherwise      -> selfMessage $ DriveRemoved uuid (Node nid) enc disk
+          | otherwise      -> selfMessage $ DriveRemoved uuid (Node nid) enc disk diskNum
        ("FAILED", "SMART")
           | isDriveRemoved -> messageProcessed uuid
           | otherwise      -> selfMessage $ DriveFailed uuid (Node nid) enc disk
        ("OK", "NONE")
-          | isDriveRemoved -> selfMessage $ DriveInserted uuid disk sn
+          | isDriveRemoved -> selfMessage $ DriveInserted uuid disk sn diskNum
           | otherwise      -> messageProcessed uuid
        (s,r) -> do let msg = InterestingEventMessage
                            $ "Error processing drive manager response: drive status "
@@ -272,9 +272,10 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
           wwn = DIWWN   . T.unpack
                         . sensorResponseMessageSensor_response_typeDisk_status_hpiWwn
                         $ srphi
-          idx   = DIIndexInEnclosure . fromInteger
+          diskNum = fromInteger
                   . sensorResponseMessageSensor_response_typeDisk_status_hpiDiskNum
                   $ srphi
+          idx = DIIndexInEnclosure diskNum
 {-
           -- XXX: currently halon do not store additional information about drives, but this
           -- may be changed in future.
@@ -338,9 +339,9 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
           mwantUpdate <- wantsStorageDeviceReplacement sd
           case mwantUpdate of
             Just wsn | wsn == sn ->
-              syncGraphProcess $ \self -> usend self $ DriveInserted uuid sd sn
+              syncGraphProcess $ \self -> usend self $ DriveInserted uuid sd sn diskNum
             _   ->
-              syncGraphProcess $ \self -> usend self $ DriveRemoved uuid nid enc sd
+              syncGraphProcess $ \self -> usend self $ DriveRemoved uuid nid enc sd diskNum
         Nothing -> messageProcessed uuid
 
 -- | SSPL Monitor host_update
