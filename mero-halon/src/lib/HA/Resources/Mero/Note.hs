@@ -69,31 +69,40 @@ data ConfObjectState
 instance Binary ConfObjectState
 instance Hashable ConfObjectState
 
+-- | Marker for the principal RM service
+data PrincipalRM = PrincipalRM
+  deriving (Eq, Show, Enum, Typeable, Generic)
+
+instance Binary PrincipalRM
+instance Hashable PrincipalRM
+
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [ ''ConfObjectState ]
+  [ ''ConfObjectState, ''PrincipalRM]
   [ (''R.Rack, ''Is, ''ConfObjectState)
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
   , (''M0.Node, ''Is, ''ConfObjectState)
   , (''M0.Process, ''Is, ''ConfObjectState)
   , (''M0.Service, ''Is, ''ConfObjectState)
+  , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Disk, ''Is, ''ConfObjectState)
   , (''M0.SDev, ''Is, ''ConfObjectState)
   , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
   )
 
 $(mkResRel
-  [ ''ConfObjectState ]
+  [ ''ConfObjectState, ''PrincipalRM ]
   [ (''R.Rack, ''Is, ''ConfObjectState)
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
   , (''M0.Node, ''Is, ''ConfObjectState)
   , (''M0.Process, ''Is, ''ConfObjectState)
   , (''M0.Service, ''Is, ''ConfObjectState)
+  , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Disk, ''Is, ''ConfObjectState)
   , (''M0.SDev, ''Is, ''ConfObjectState)
   , (''R.StorageDevice, ''Is, ''ConfObjectState) ]

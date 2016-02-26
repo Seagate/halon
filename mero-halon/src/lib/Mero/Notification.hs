@@ -338,7 +338,7 @@ getSpielAddress g =
                      , G.isConnected svc R.Is M0.M0_NC_ONLINE g]
        (rmFids, rmEps) = unzip
          [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_RMS, s_endpoints = eps }) <- svs
-                     , G.isConnected svc R.Is M0.M0_NC_ONLINE g]
+                     , G.isConnected svc R.Is M0.PrincipalRM g]
        mrmFid = listToMaybe $ nub rmFids
        mrmEp  = listToMaybe $ nub $ concat rmEps
   in (SpielAddress confdsFid confdsEps) <$> mrmFid <*> mrmEp
