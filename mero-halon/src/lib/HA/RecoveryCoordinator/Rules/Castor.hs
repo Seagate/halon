@@ -20,7 +20,6 @@ import HA.EventQueue.Types
 
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
-import HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import HA.RecoveryCoordinator.Events.Drive
 
 import HA.Resources
@@ -36,6 +35,7 @@ import HA.EventQueue.Producer
 import HA.Services.Mero
 import HA.Services.Mero.CEP (meroChannel)
 import HA.Services.SSPL.CEP (updateDriveManagerWithFailure)
+import HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
@@ -47,7 +47,6 @@ import HA.RecoveryCoordinator.Events.Mero
 import HA.RecoveryCoordinator.Rules.Castor.Server
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState (Note(..))
-import Control.Exception (SomeException)
 import Data.UUID.V4 (nextRandom)
 import Data.Proxy (Proxy(..))
 import System.Posix.SysInfo
@@ -227,31 +226,33 @@ ruleMeroNoteSet = do
               msdev <- lookupStorageDevice m0sdev
               case msdev of
                 Just sdev -> do
-                  ongoing <- hasOngoingReset sdev
-                  when (not ongoing) $ do
-                    ratt <- getDiskResetAttempts sdev
-                    let status = if ratt <= resetAttemptThreshold
-                                 then M0_NC_TRANSIENT
-                                 else M0_NC_FAILED
+                  mst <- queryObjectStatus m0sdev
+                  unless (mst == Just M0_NC_FAILED) $ do
+                    ongoing <- hasOngoingReset sdev
+                    when (not ongoing) $ do
+                      ratt <- getDiskResetAttempts sdev
+                      let status = if ratt <= resetAttemptThreshold
+                                   then M0_NC_TRANSIENT
+                                   else M0_NC_FAILED
 
-                    updateDriveState m0sdev status
+                      updateDriveState m0sdev status
 
-                    when (status == M0_NC_FAILED) $ do
-                      updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
-                      nid <- liftProcess getSelfNode
-                      diskids <- findStorageDeviceIdentifiers sdev
-                      let iem = InterestingEventMessage . pack . unwords $ [
-                                    "M0_NC_FAILED reported."
-                                  , "fid=" ++ show mfid
-                                ] ++ map show diskids
-                      sendInterestingEvent nid iem
-                      pools <- getSDevPools m0sdev
-                      traverse_ startRepairOperation pools
+                      when (status == M0_NC_FAILED) $ do
+                        updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
+                        nid <- liftProcess getSelfNode
+                        diskids <- findStorageDeviceIdentifiers sdev
+                        let iem = InterestingEventMessage . pack . unwords $ [
+                                      "M0_NC_FAILED reported."
+                                    , "fid=" ++ show mfid
+                                  ] ++ map show diskids
+                        sendInterestingEvent nid iem
+                        pools <- getSDevPools m0sdev
+                        traverse_ startRepairOperation pools
 
-                    when (status == M0_NC_TRANSIENT) $ do
-                      promulgateRC $ ResetAttempt sdev
+                      when (status == M0_NC_TRANSIENT) $ do
+                        promulgateRC $ ResetAttempt sdev
 
-                    syncGraph $ say "mero-note-set synchronized"
+                      syncGraph $ say "mero-note-set synchronized"
                 _ -> do
                   phaseLog "warning" $ "Cannot find all entities attached to M0"
                                     ++ " storage device: "
@@ -366,8 +367,8 @@ ruleResetAttempt = define "reset-attempt" $ do
         continue failure
 
       directly failure $ do
-        Just (sdev, _, _, _) <- get Local
 #ifdef USE_MERO
+        Just (sdev, _, _, _) <- get Local
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           updateDriveState m0sdev M0_NC_FAILED
@@ -390,39 +391,74 @@ data CommitDriveRemoved = CommitDriveRemoved NodeId InterestingEventMessage UUID
 
 instance Binary CommitDriveRemoved
 
+driveRemovalTimeout :: Int
+driveRemovalTimeout = 60
+
 -- | Removing drive:
 -- We need to notify mero about drive state change and then send event to the logger.
 ruleDriveRemoved :: Definitions LoopState ()
 ruleDriveRemoved = define "drive-removed" $ do
    pinit   <- phaseHandle "init"
-   pcommit <- phaseHandle "commit"
-   setPhase pinit $ \(DriveRemoved uuid (HA.Resources.Node nid) enc disk) -> do
-      let msg = InterestingEventMessage
-              $  "Drive was removed: \n\t"
-               <> pack (show enc)
-               <> "\n\t"
-               <> pack (show disk)
+#ifdef USE_MERO
+   finish   <- phaseHandle "finish"
+   reinsert <- phaseHandle "reinsert"
+   removal  <- phaseHandle "removal"
+#endif
+
+   initWrapper pinit
+
+   setPhase pinit $ \(DriveRemoved uuid _ _enc disk _loc) -> do
       markStorageDeviceRemoved disk
 #ifdef USE_MERO
       sd <- lookupStorageDeviceSDev disk
       phaseLog "debug" $ "Associated storage device: " ++ show sd
       forM_ sd $ \m0sdev -> do
-        phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for device."
-        updateDriveState m0sdev M0_NC_TRANSIENT
-        msa <- getSpielAddressRC
-        forM_ msa $ \_ -> -- verify that info about mero exists.
-          (void $ withSpielRC $ \sp -> withRConfRC sp $
-             liftIO $ Spiel.deviceDetach sp (d_fid m0sdev))
-            `catch` (\e -> phaseLog "mero" $ "failure in spiel: " ++ show (e::SomeException))
-#endif
-      syncGraphProcess $ \self -> do
-        usend self (CommitDriveRemoved nid msg uuid)
-      continue pcommit
-
-   setPhase pcommit $ \(CommitDriveRemoved nid msg uuid) -> do
-      sendInterestingEvent nid msg
+        fork CopyNewerBuffer $ do
+          phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for device."
+          updateDriveState m0sdev M0_NC_TRANSIENT
+          put Local $ Just (uuid, _enc, disk, _loc, m0sdev)
+          switch [reinsert, timeout driveRemovalTimeout removal]
+#else
       messageProcessed uuid
-   start pinit ()
+#endif
+   
+#ifdef USE_MERO
+   setPhaseIf reinsert 
+     (\(DriveInserted _ disk _ loc) g (Just (uuid, enc', _, loc', _)) -> do
+        if G.isConnected enc' Has disk (lsGraph g) && loc == loc'
+           then return (Just uuid)
+           else return Nothing
+        )
+     $ \uuid -> do
+        phaseLog "debug" "cancel drive removal procedure"
+        messageProcessed uuid
+        continue finish
+
+   directly finish $ stop
+
+   directly removal $ do
+     Just (uuid, _, _, _, m0sdev) <- get Local
+     -- msa <- getSpielAddressRC
+     -- forM_ msa $ \_ -> -- verify that info about mero exists.
+     --   (void $ withSpielRC $ \sp -> withRConfRC sp $
+     --      liftIO $ Spiel.deviceDetach sp (d_fid m0sdev))
+     --     `catch` (\e -> phaseLog "mero" $ "failure in spiel: " ++ show (e::SomeException))
+     updateDriveState m0sdev M0_NC_FAILED
+     messageProcessed uuid
+     stop
+#endif
+
+   start pinit Nothing
+  where
+    initWrapper ginit = do
+       wrapper_init <- phaseHandle "wrapper_init"
+       wrapper_clear <- phaseHandle "wrapper_clear"
+       directly wrapper_init $ switch [ginit, wrapper_clear]
+    
+       directly wrapper_clear $ do
+         fork NoBuffer $ continue wrapper_init
+         stop
+     
 
 -- | Inserting new drive
 ruleDriveInserted :: Definitions LoopState ()
@@ -433,7 +469,7 @@ ruleDriveInserted = define "drive-inserted" $ do
 #endif
       commit     <- phaseHandle "commit"
 
-      setPhase handle $ \(DriveInserted uuid disk sn) -> do
+      setPhase handle $ \(DriveInserted uuid disk sn _) -> do
         -- Check if we already have device that was inserted.
         -- In case it this is the same device, then we do not need to update confd.
         hasStorageDeviceIdentifier disk sn >>= \case

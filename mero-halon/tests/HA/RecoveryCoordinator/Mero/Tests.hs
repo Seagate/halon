@@ -26,9 +26,9 @@ import           Control.Distributed.Process
 #ifdef USE_MERO
 import           Control.Distributed.Process.Node (runProcess)
 #endif
+import           Data.List (isInfixOf, isPrefixOf, tails)
 import           Control.Monad (when, void)
 import           Data.Binary
-import           Data.List (isInfixOf, isPrefixOf, tails, sort)
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics
@@ -54,7 +54,7 @@ import           Helper.Environment (systemHostname)
 #ifdef USE_MERO
 import           Control.Category ((>>>))
 import           Data.Function (on)
-import           Data.List (sortBy)
+import           Data.List (sortBy, sort)
 import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd, validateTransactionCache)
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
@@ -327,7 +327,6 @@ testConfObjectStateQuery host transport =
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Rack])
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Enclosure])
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Controller])
-              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Process])
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Root])
             failFid : okSDevFids = sdevFids
             okayFids = okSDevFids ++ otherFids

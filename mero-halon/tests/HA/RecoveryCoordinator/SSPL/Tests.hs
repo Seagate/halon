@@ -166,7 +166,7 @@ testHpiNewWWN = mkHpiTest rules test
         rg <- getLocalGraph
         let d = DIIndexInEnclosure 10
         liftProcess $ usend self $ Prelude.null $ (connectedFrom Has d rg :: [StorageDevice])
-      defineSimple "disk-failed" $ \d@(DriveRemoved uuid _ _ _) -> do
+      defineSimple "disk-failed" $ \d@(DriveRemoved uuid _ _ _ _) -> do
         liftProcess $ say $ show d
         liftProcess $ usend self (uuid,"message-processed"::String)
     test rc = do
@@ -193,7 +193,7 @@ testHpiUpdatedWWN = mkHpiTest rules test
           forM_ mc $ \c -> do
             is <- findStorageDeviceIdentifiers c
             liftProcess $ usend self is
-      defineSimple "disk-failed" $ \(DriveRemoved uuid _ enc _) ->
+      defineSimple "disk-failed" $ \(DriveRemoved uuid _ enc _ _) ->
         liftProcess $ usend self (uuid, enc)
     test rc = do
       me   <- getSelfNode
@@ -224,9 +224,9 @@ testDMRequest = mkHpiTest rules test
         liftProcess $ usend self ()
       defineSimple "drive-failed" $ \(DriveFailed uuid _ _ _) ->
         liftProcess $ usend self (uuid, "drive-failed"::String)
-      defineSimple "drive-inserted" $ \(DriveInserted uuid _ _) ->
+      defineSimple "drive-inserted" $ \(DriveInserted uuid _ _ _) ->
         liftProcess $ usend self (uuid, "drive-inserted"::String)
-      defineSimple "drive-removed" $ \(DriveRemoved uuid _ _ _) ->
+      defineSimple "drive-removed" $ \(DriveRemoved uuid _ _ _ _) ->
         liftProcess $ usend self (uuid, "drive-removed"::String)
     test rc = do
         me <- getSelfNode
