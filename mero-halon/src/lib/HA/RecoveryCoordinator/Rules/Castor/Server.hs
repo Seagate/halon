@@ -177,7 +177,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
               . join
               . filter (\s -> CST_MGS `elem` fmap M0.s_type s)
             <$> mapM getChildren procs
-    traverse_ setPrincipalRM rms
+    traverse_ setPrincipalRMIfUnset rms
     ackingLast core_bootstrapped eid nid $
       barrier
         Cluster Runs

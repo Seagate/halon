@@ -32,7 +32,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , lookupHostHAAddress
     -- ** Other things
   , isPrincipalRM
-  , setPrincipalRM
+  , setPrincipalRMIfUnset
   ) where
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -373,9 +373,9 @@ getPrincipalRM = getLocalGraph >>= \rg ->
     . filter (\x -> G.isConnected x Is M0.M0_NC_ONLINE rg)
     $ G.connectedFrom Is M0.PrincipalRM rg
 
-setPrincipalRM :: M0.Service
-               -> PhaseM LoopState l M0.Service
-setPrincipalRM svc = getPrincipalRM >>= \case
+setPrincipalRMIfUnset :: M0.Service
+                      -> PhaseM LoopState l M0.Service
+setPrincipalRMIfUnset svc = getPrincipalRM >>= \case
   Just rm -> return rm
   Nothing -> do
     modifyGraph $ G.connectUnique svc Is M0.PrincipalRM
