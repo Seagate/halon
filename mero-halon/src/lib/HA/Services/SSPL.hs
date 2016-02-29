@@ -65,6 +65,7 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Monad.State.Strict hiding (mapM_)
+import Control.Monad.Trans.Maybe
 import Data.Foldable (for_)
 
 import Data.Aeson (decode, encode)
@@ -77,7 +78,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.UUID as UID
 import qualified Data.HashMap.Strict as HM
-import Data.Time (getCurrentTime)
+import Data.Time (getCurrentTime, addUTCTime)
 
 import Network.AMQP
 import Network.CEP (Definitions)
@@ -104,14 +105,14 @@ msgHandler :: Network.AMQP.Message
 msgHandler msg = do
   nid <- getSelfNode
   case decode (msgBody msg) :: Maybe SensorResponse of
-    Just mr -> do
+    Just mr -> whenNotExpired mr $ do
       -- XXX: check that message was sent by sspl service
       -- XXX: check that message was not expired yet
       let srms = sensorResponseMessageSensor_response_type . sensorResponseMessage $ mr
           sendMessage s f = forM_ (f srms) $ \x -> do
             say $ "[SSPL-Service] received " ++ s
             promulgate (nid, x)
-          ignoreMessage s f = forM_ (f smrs) $ \x -> do
+          ignoreMessage s f = forM_ (f srms) $ \_ -> do
             saySSPL $ s ++ "is not used by RC, ignoring"
       sendMessage "SensorResponse.HPI"
         sensorResponseMessageSensor_response_typeDisk_status_hpi
@@ -139,6 +140,17 @@ msgHandler msg = do
         sendMessage "ActuatorResponse.ThreadController"
           actuatorResponseMessageActuator_response_typeThread_controller
       Nothing -> say $ "Unable to decode JSON message: " ++ (BL.unpack $ msgBody msg)
+   where
+     whenNotExpired s f = do
+      mte <- runMaybeT $ (,) <$> (parseTimeSSPL $ sensorResponseTime s)
+                             <*> (maybe mzero return $ sensorResponseExpires s)
+      case mte of
+        Nothing -> f
+        Just (t,e) -> do c <- liftIO $ getCurrentTime
+                         saySSPL $ show (t,e, fromIntegral e `addUTCTime` t, c)
+                         if fromIntegral e `addUTCTime` t < c
+                           then saySSPL $ "Message outdated: " ++ show s
+                           else f
 
 startSensors :: Network.AMQP.Channel -- ^ AMQP Channel
              -> SensorConf -- ^ Sensor configuration.

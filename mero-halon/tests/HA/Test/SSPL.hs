@@ -53,6 +53,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Data.List (isInfixOf)
 import Data.Maybe (fromJust)
@@ -213,13 +214,14 @@ testSensor transport = runSSPLTest transport interseptor test
   where
     interseptor _ _ = return ()
     test pid _ = do
+      t <- formatTimeSSPL <$> liftIO getCurrentTime
       -- Message was taken from the logs of the real SSPL service.
       let rawmsg = BS.concat
             [ "{\"username\": \"sspl-ll\""
             , ", \"description\": \"Seagate Storage Platform Library - Low Level - Sensor Response\""
             , ", \"title\": \"SSPL-LL Sensor Response\""
             , ", \"expires\": 3600, \"signature\": \"None\""
-            , ", \"time\": \"2015-10-19 11:49:34.706694\""
+            , ", \"time\": \"", BS8.pack (T.unpack t), "\""
             , ", \"message\": {\"sspl_ll_msg_header\": {\"msg_version\": \"1.0.0\", \"schema_version\": \"1.0.0\", \"sspl_version\": \"1.0.0\"}, \"sensor_response_type\": {\"host_update\": {\"loggedInUsers\": [\"vagrant\"], \"runningProcessCount\": 2, \"hostId\": \""
             , BS8.pack systemHostname
             , "\", \"totalMem\": {\"units\": \"MB\", \"value\": 1930}, \"upTime\": 1445251379, \"uname\": \"Linux "
