@@ -456,14 +456,10 @@ ruleDriveInserted = define "drive-inserted" $ do
           forM_ msa $ \_ -> do
             _ <- withSpielRC $ \sp -> withRConfRC sp $
                liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
-            -- TODO: ensure rebalance start happens at right place and
-            -- time: we have to make sure that repair has finished
-            -- properly and that repair is notified accordingly.
-
-            -- pool <- getSDevPool m0sdev
-            -- traverse_ startRebalanceOperation pool
-
-            return ()
+            -- Notify about drive coming up online: this will allow
+            -- any repair to continue and rebalance to eventually
+            -- start if nothing else goes wrong
+            notifyDriveStateChange m0sdev M0_NC_ONLINE
 #endif
         unmarkStorageDeviceRemoved disk
         syncGraphProcessMsg uuid

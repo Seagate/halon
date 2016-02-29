@@ -38,6 +38,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , setPoolRepairInformation
   , setPoolRepairStatus
   , unsetPoolRepairStatus
+  , unsetPoolRepairStatusWithUUID
   , updatePoolRepairStatusTime
   ) where
 
@@ -77,6 +78,7 @@ import Data.List (sortOn)
 import Data.Maybe (catMaybes, listToMaybe)
 import Data.Proxy (Proxy(..))
 import Data.UUID (UUID)
+import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
 import Network.RPC.RPCLite (getRPCMachine_se, rpcAddress, RPCAddress(..))
@@ -157,7 +159,8 @@ startRepairOperation pool = go `catch`
       let disks = M0.AnyConfObj <$> m0disks
       notifyMero (M0.AnyConfObj pool : disks) M0_NC_REPAIR
       _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStart sc (M0.fid pool)
-      setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure Nothing
+      uuid <- DP.liftIO nextRandom
+      setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure uuid Nothing
       phaseLog "spiel" $ "startRepairOperation for " ++ show pool ++ " done."
 
 -- | Retrieves the repair 'SnsStatus' of the given 'M0.Pool'.
@@ -240,10 +243,15 @@ startRebalanceOperation pool = catch go
   where
     go = do
       phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool
-      -- Is this notifyMero needed?
-      notifyMero [M0.AnyConfObj pool] M0_NC_FAILED
+      m0sdevsOnline <- getPoolSDevsWithState pool M0_NC_ONLINE
+      m0sdevsRepaired <- getPoolSDevsWithState pool M0_NC_REPAIRED
+      let m0sdevs = m0sdevsOnline ++ m0sdevsRepaired
+      m0disks <- catMaybes <$> mapM lookupSDevDisk m0sdevs
+      let disks = M0.AnyConfObj <$> m0disks
+      notifyMero (M0.AnyConfObj pool : disks) M0_NC_REBALANCE
       _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRebalanceStart sc (M0.fid pool)
-      setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Rebalance Nothing
+      uuid <- DP.liftIO nextRandom
+      setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Rebalance uuid Nothing
 
 -- | Retrieves the rebalance 'SnsStatus' of the given pool.
 statusOfRebalanceOperation :: M0.Pool
@@ -587,10 +595,19 @@ setPoolRepairStatus :: M0.Pool -> M0.PoolRepairStatus -> PhaseM LoopState l ()
 setPoolRepairStatus pool prs =
   modifyLocalGraph $ return . G.connectUniqueFrom pool Has prs
 
--- | Remove all 'M0.PoolRepairStatus' connections to the given 'M0.Pool'.
+-- | Remove all 'M0.PoolRepairStatus' connection to the given 'M0.Pool'.
 unsetPoolRepairStatus :: M0.Pool -> PhaseM LoopState l ()
 unsetPoolRepairStatus pool =
   modifyLocalGraph $ return . G.disconnectAllFrom pool Has (Proxy :: Proxy M0.PoolRepairStatus)
+
+-- | Remove 'M0.PoolRepairStatus' connection to the given 'M0.Pool' as
+-- long as it has the matching 'M0.prsRepairUUID'. This is useful if
+-- we want to clean up but we're not sure if the 'M0.PoolRepairStatus'
+-- belongs to the clean up handler.
+unsetPoolRepairStatusWithUUID :: M0.Pool -> UUID -> PhaseM LoopState l ()
+unsetPoolRepairStatusWithUUID pool uuid = getPoolRepairStatus pool >>= \case
+  Just prs | M0.prsRepairUUID prs == uuid -> unsetPoolRepairStatus pool
+  _ -> return ()
 
 -- | Return the 'M0.PoolRepairInformation' structure. If one is not in
 -- the graph, it means no repairs are going on.
@@ -612,16 +629,15 @@ setPoolRepairInformation :: M0.Pool
                          -> PhaseM LoopState l ()
 setPoolRepairInformation pool pri = getPoolRepairStatus pool >>= \case
   Nothing -> return ()
-  Just (M0.PoolRepairStatus prt _) ->
-    modifyLocalGraph (return . G.connectUniqueFrom pool Has (M0.PoolRepairStatus prt $ Just pri))
+  Just (M0.PoolRepairStatus prt uuid _) ->
+    let prs = M0.PoolRepairStatus prt uuid $ Just pri
+    in modifyLocalGraph $ return . G.connectUniqueFrom pool Has prs
 
 -- | Initialise 'M0.PoolRepairInformation' with some default values.
 possiblyInitialisePRI :: M0.Pool
                       -> PhaseM LoopState l ()
 possiblyInitialisePRI pool = getPoolRepairInformation pool >>= \case
-  Nothing -> do
-    defaultPRI <- DP.liftIO M0.defaultPoolRepairInformation
-    setPoolRepairInformation pool defaultPRI
+  Nothing -> setPoolRepairInformation pool M0.defaultPoolRepairInformation
   Just _ -> return ()
 
 -- | Modify the  'PoolRepairInformation' in the graph with the given function.
@@ -631,8 +647,8 @@ modifyPoolRepairInformation :: M0.Pool
                             -> PhaseM LoopState l ()
 modifyPoolRepairInformation pool f = modifyLocalGraph $ \g ->
   case listToMaybe . G.connectedTo pool Has $ g of
-    Just (M0.PoolRepairStatus prt (Just pri)) ->
-      return $ G.connectUniqueFrom pool Has (M0.PoolRepairStatus prt (Just $ f pri)) g
+    Just (M0.PoolRepairStatus prt uuid (Just pri)) ->
+      return $ G.connectUniqueFrom pool Has (M0.PoolRepairStatus prt uuid (Just $ f pri)) g
     _ -> return g
 
 
@@ -658,7 +674,7 @@ incrementOnlinePRSResponse pool =
 -- | Updates 'priTimeLastHourlyRan' to current time.
 updatePoolRepairStatusTime :: M0.Pool -> PhaseM LoopState l ()
 updatePoolRepairStatusTime pool = getPoolRepairStatus pool >>= \case
-  Just (M0.PoolRepairStatus _ (Just pr)) -> do
+  Just (M0.PoolRepairStatus _ _ (Just pr)) -> do
     t <- DP.liftIO M0.getTime
     setPoolRepairInformation pool $ pr { M0.priTimeLastHourlyRan = t }
   _ -> return ()

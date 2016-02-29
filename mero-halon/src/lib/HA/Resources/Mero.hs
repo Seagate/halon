@@ -45,7 +45,6 @@ import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
 import Data.Monoid
 import Data.UUID (UUID)
-import Data.UUID.V4 (nextRandom)
 import qualified HA.ResourceGraph as G
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -349,7 +348,6 @@ data PoolRepairInformation = PoolRepairInformation
   { priOnlineNotifications :: Int
   , priTimeOfFirstCompletion :: TimeSpec
   , priTimeLastHourlyRan :: TimeSpec
-  , priRepairUUID :: UUID
   } deriving (Eq, Show, Generic, Typeable)
 
 instance Binary PoolRepairInformation
@@ -360,13 +358,12 @@ instance Hashable PoolRepairInformation
 -- Number of received notifications is set to 0. The query times are
 -- set to 0 seconds after epoch ensuring they queries actually start
 -- on the first invocation.
-defaultPoolRepairInformation :: IO PoolRepairInformation
-defaultPoolRepairInformation = do
-  uuid <- nextRandom
-  return $ PoolRepairInformation 0 0 0 uuid
+defaultPoolRepairInformation :: PoolRepairInformation
+defaultPoolRepairInformation = PoolRepairInformation 0 0 0
 
 data PoolRepairStatus = PoolRepairStatus
   { prsType :: PoolRepairType
+  , prsRepairUUID :: UUID
   , prsPri :: Maybe PoolRepairInformation
   } deriving (Eq, Show, Generic, Typeable)
 
