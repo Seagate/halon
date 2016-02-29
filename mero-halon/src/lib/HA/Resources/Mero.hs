@@ -44,6 +44,8 @@ import qualified "distributed-process-scheduler" System.Clock as C
 import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
 import Data.Monoid
+import Data.UUID (UUID)
+import Data.UUID.V4 (nextRandom)
 import qualified HA.ResourceGraph as G
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -196,7 +198,7 @@ instance ConfObj Rack where
   fid (Rack f) = f
 
 newtype Pool = Pool Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Binary, Eq, Generic, Hashable, Show, Typeable, Ord)
 
 instance ConfObj Pool where
   fidType _ = fromIntegral . ord $ 'o'
@@ -237,7 +239,7 @@ data SDev = SDev {
   , d_size :: Word64 -- ^ Size in mb
   , d_bsize :: Word32 -- ^ Block size in mb
   , d_path :: String -- ^ Path to logical device
-} deriving (Eq, Generic, Show, Typeable)
+} deriving (Eq, Generic, Show, Typeable, Ord)
 
 instance Binary SDev
 instance Hashable SDev
@@ -347,7 +349,8 @@ data PoolRepairInformation = PoolRepairInformation
   { priOnlineNotifications :: Int
   , priTimeOfFirstCompletion :: TimeSpec
   , priTimeLastHourlyRan :: TimeSpec
-  } deriving (Eq, Show, Ord, Generic, Typeable)
+  , priRepairUUID :: UUID
+  } deriving (Eq, Show, Generic, Typeable)
 
 instance Binary PoolRepairInformation
 instance Hashable PoolRepairInformation
@@ -357,13 +360,15 @@ instance Hashable PoolRepairInformation
 -- Number of received notifications is set to 0. The query times are
 -- set to 0 seconds after epoch ensuring they queries actually start
 -- on the first invocation.
-defaultPoolRepairInformation :: PoolRepairInformation
-defaultPoolRepairInformation = PoolRepairInformation 0 0 0
+defaultPoolRepairInformation :: IO PoolRepairInformation
+defaultPoolRepairInformation = do
+  uuid <- nextRandom
+  return $ PoolRepairInformation 0 0 0 uuid
 
 data PoolRepairStatus = PoolRepairStatus
   { prsType :: PoolRepairType
   , prsPri :: Maybe PoolRepairInformation
-  } deriving (Eq, Show, Ord, Generic, Typeable)
+  } deriving (Eq, Show, Generic, Typeable)
 
 instance Binary PoolRepairStatus
 instance Hashable PoolRepairStatus
@@ -395,6 +400,10 @@ newtype ConfUpdateVersion = ConfUpdateVersion Word64
 
 instance Binary ConfUpdateVersion
 instance Hashable ConfUpdateVersion
+
+--------------------------------------------------------------------------------
+-- Dictionaries                                                               --
+--------------------------------------------------------------------------------
 
 $(mkDicts
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool

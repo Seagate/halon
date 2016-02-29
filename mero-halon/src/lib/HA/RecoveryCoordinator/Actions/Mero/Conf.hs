@@ -18,7 +18,9 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
     -- ** Get all objects of type
   , getProfile
   , getFilesystem
-  , getSDevPools
+  , getSDevPool
+  , getPoolSDevs
+  , getPoolSDevsWithState
   , getM0ServicesRC
   , getChildren
   , getParents
@@ -30,6 +32,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , lookupStorageDeviceOnHost
   , lookupEnclosureM0
   , lookupHostHAAddress
+  , lookupSDevDisk
     -- ** Other things
   , isPrincipalRM
   , setPrincipalRMIfUnset
@@ -57,7 +60,7 @@ import Control.Distributed.Process (liftIO)
 
 import Data.Foldable (foldl')
 import Data.List (scanl')
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, catMaybes)
 import Data.Proxy
 import Data.UUID.V4 (nextRandom)
 
@@ -156,6 +159,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
   goHost (CI.M0Host{..}, hostIdx) = let
       host = Host m0h_fqdn
     in do
+
       ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
       node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
 
@@ -301,8 +305,8 @@ lookupSDevDisk sdev = do
   rg <- getLocalGraph
   return . listToMaybe $ G.connectedTo sdev M0.IsOnHardware rg
 
-getSDevPools :: M0.SDev -> PhaseM LoopState l [M0.Pool]
-getSDevPools sdev = do
+getSDevPool :: M0.SDev -> PhaseM LoopState l (Maybe M0.Pool)
+getSDevPool sdev = do
     rg <- getLocalGraph
     let ps =
           [ p | d  <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
@@ -314,7 +318,28 @@ getSDevPools sdev = do
               , p  <- G.connectedFrom M0.IsRealOf pv rg :: [M0.Pool]
               ]
 
-    return ps
+    return $ listToMaybe ps
+
+-- | Get all 'M0.SDev's that belong to the given 'M0.Pool'.
+getPoolSDevs :: M0.Pool -> PhaseM LoopState l [M0.SDev]
+getPoolSDevs pool = getLocalGraph >>= \rg -> do
+  return $ [ sd | pv <- G.connectedTo pool M0.IsRealOf rg :: [M0.PVer]
+                , rv <- G.connectedTo pv M0.IsParentOf rg :: [M0.RackV]
+                , ev <- G.connectedTo rv M0.IsParentOf rg :: [M0.EnclosureV]
+                , ct <- G.connectedTo ev M0.IsParentOf rg :: [M0.ControllerV]
+                , dv <- G.connectedTo ct M0.IsParentOf rg :: [M0.DiskV]
+                , d <- G.connectedFrom M0.IsRealOf dv rg :: [M0.Disk]
+                , sd <- G.connectedFrom M0.IsOnHardware d rg :: [M0.SDev]
+                ]
+
+-- | Get all 'M0.SDev's in the given 'M0.Pool' with the given
+-- 'M0.ConfObjState'.
+getPoolSDevsWithState :: M0.Pool -> M0.ConfObjectState
+                       -> PhaseM LoopState l [M0.SDev]
+getPoolSDevsWithState pool st = getPoolSDevs pool >>= \devs -> do
+  sts <- mapM (\d -> fmap (,d) <$> queryObjectStatus d) devs
+  return . map snd . filter ((== st) . fst) $ catMaybes sts
+
 
 lookupEnclosureM0 :: Enclosure -> PhaseM LoopState l (Maybe M0.Enclosure)
 lookupEnclosureM0 enc =

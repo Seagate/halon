@@ -83,7 +83,7 @@ import System.IO.Unsafe (unsafePerformIO)
 -- and the change has to be communicated to Mero.
 --
 newtype Set = Set NVec
-        deriving (Generic, Typeable, Binary, Hashable, Show)
+        deriving (Generic, Typeable, Binary, Hashable, Show, Eq)
 
 -- | This message is sent to the RC when Mero requests state data for some
 -- objects.

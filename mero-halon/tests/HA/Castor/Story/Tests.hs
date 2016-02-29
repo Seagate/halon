@@ -22,7 +22,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
    )
 #endif
 import HA.RecoveryCoordinator.Events.Drive
-import HA.RecoveryCoordinator.Rules.Castor
+import HA.RecoveryCoordinator.Rules.Castor.Reset
 import qualified HA.ResourceGraph as G
 import HA.NodeUp (nodeUp)
 import Mero.Notification
@@ -671,7 +671,7 @@ testGreeting transport = run transport interceptor test where
                                $ mkActuatorResponse
                                $ emptyActuatorMessage {
                                   actuatorResponseMessageActuator_response_typeThread_controller = Just $
-                                    ActuatorResponseMessageActuator_response_typeThread_controller 
+                                    ActuatorResponseMessageActuator_response_typeThread_controller
                                       "ThreadController"
                                       "SSPL-LL service has started successfully"
                                 }
@@ -680,4 +680,3 @@ testGreeting transport = run transport interceptor test where
     case mmsg of
       Left s  -> liftIO $ assertFailure $ "wrong message received" ++ s
       Right _  -> return ()
-

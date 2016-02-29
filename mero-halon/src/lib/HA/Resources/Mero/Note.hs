@@ -22,13 +22,13 @@ import qualified HA.Resources.Castor as R
 import HA.Resources.TH
 import Mero.ConfC (Fid(..))
 
-import Data.Hashable (Hashable)
 import Data.Binary (Binary)
+import Data.Hashable (Hashable)
+import GHC.Generics (Generic)
 import Data.List (nubBy)
 import Data.Maybe (catMaybes, isJust)
 import Data.Typeable (Typeable, cast, eqT, (:~:))
 import Data.Proxy (Proxy(..))
-import GHC.Generics (Generic)
 
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -64,7 +64,7 @@ data ConfObjectState
       -- Rebalance process is complementary to repair: previously
       -- reconstructed data is being copied from spare space to the
       -- replacement storage.
-    deriving (Eq, Show, Enum, Typeable, Generic)
+    deriving (Eq, Show, Enum, Typeable, Generic, Ord)
 
 instance Binary ConfObjectState
 instance Hashable ConfObjectState

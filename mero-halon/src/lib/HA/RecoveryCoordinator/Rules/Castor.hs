@@ -7,6 +7,8 @@
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -27,6 +29,7 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.ResourceGraph as G
 import HA.Services.SSPL
+import HA.RecoveryCoordinator.Rules.Castor.Reset
 #ifdef USE_MERO
 import Control.Applicative
 import Control.Category ((>>>))
@@ -39,10 +42,10 @@ import HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
-import HA.RecoveryCoordinator.Rules.Castor.SpielQuery
+import HA.RecoveryCoordinator.Rules.Castor.Repair
 import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
-import HA.Resources.Mero.Note
 import qualified HA.Resources.Mero as M0
+import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Events.Mero
 import HA.RecoveryCoordinator.Rules.Castor.Server
 import Mero.Notification hiding (notifyMero)
@@ -68,23 +71,6 @@ import GHC.Generics (Generic)
 import Network.CEP
 import Prelude hiding (id)
 
-
--- | Event sent when to many failures has been sent for a 'Disk'.
-data ResetAttempt = ResetAttempt StorageDevice
-  deriving (Eq, Generic, Show, Typeable)
-
-instance Binary ResetAttempt
-
--- | Event sent when a ResetAttempt were successful.
-newtype ResetSuccess =
-    ResetSuccess StorageDevice
-    deriving (Eq, Show, Binary)
-
--- | Event sent when a ResetAttempt failed.
-newtype ResetFailure =
-    ResetFailure StorageDevice
-    deriving (Eq, Show, Binary)
-
 lookupStorageDevicePathsInGraph :: StorageDevice -> G.Graph -> [String]
 lookupStorageDevicePathsInGraph sd g =
     mapMaybe extractPath $ ids
@@ -92,15 +78,6 @@ lookupStorageDevicePathsInGraph sd g =
     ids = G.connectedTo sd Has g
     extractPath (DIPath x) = Just x
     extractPath _ = Nothing
-
--- | When the number of reset attempts is greater than this threshold, a 'Disk'
---   should be in 'DiskFailure' status.
-resetAttemptThreshold :: Int
-resetAttemptThreshold = 10
-
--- | Time to allow for SSPL to reply on a reset request.
-driveResetTimeout :: Int
-driveResetTimeout = 5*60
 
 -- | Time to allow for SSPL reply on a smart test request.
 smartTestTimeout :: Int
@@ -213,78 +190,43 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
 #endif
       messageProcessed eid
 
-
 #ifdef USE_MERO
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do
-    defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> do
-      for_ ns $ \(Note mfid tpe) ->
-        case tpe of
-          M0_NC_FAILED -> do
-            sdevm <- lookupConfObjByFid mfid
-            for_ sdevm $ \m0sdev -> do
-              msdev <- lookupStorageDevice m0sdev
-              case msdev of
-                Just sdev -> do
-                  mst <- queryObjectStatus m0sdev
-                  unless (mst == Just M0_NC_FAILED) $ do
-                    ongoing <- hasOngoingReset sdev
-                    when (not ongoing) $ do
-                      ratt <- getDiskResetAttempts sdev
-                      let status = if ratt <= resetAttemptThreshold
-                                   then M0_NC_TRANSIENT
-                                   else M0_NC_FAILED
+  defineSimple "mero-note-set" $ \(HAEvent uid noteSet _) -> do
+    handleNotes noteSet
+    messageProcessed uid
 
-                      updateDriveState m0sdev status
+  querySpiel
+  querySpielHourly
 
-                      when (status == M0_NC_FAILED) $ do
-                        updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
-                        nid <- liftProcess getSelfNode
-                        diskids <- findStorageDeviceIdentifiers sdev
-                        let iem = InterestingEventMessage . pack . unwords $ [
-                                      "M0_NC_FAILED reported."
-                                    , "fid=" ++ show mfid
-                                  ] ++ map show diskids
-                        sendInterestingEvent nid iem
-                        pools <- getSDevPools m0sdev
-                        traverse_ startRepairOperation pools
+-- | Extract information about drives from the given set of
+-- notifications and update the state in RG accordingly.
+updateDriveStates :: Set -> PhaseM LoopState l ()
+updateDriveStates (Set ns) = catMaybes <$> mapM noteToSDev ns
+                             >>= mapM_ (\(typ, sd) -> updateDriveState sd typ)
 
-                      when (status == M0_NC_TRANSIENT) $ do
-                        promulgateRC $ ResetAttempt sdev
+handleNotes :: Set -> PhaseM LoopState l ()
+handleNotes noteSet = do
+  -- Before we do anything else, write the state of the drives into
+  -- the RG so that rest of the rule can query updated info
+  updateDriveStates noteSet
 
-                      syncGraph $ say "mero-note-set synchronized"
-                _ -> do
-                  phaseLog "warning" $ "Cannot find all entities attached to M0"
-                                    ++ " storage device: "
-                                    ++ show m0sdev
-                                    ++ ": "
-                                    ++ show msdev
-          M0_NC_ONLINE -> lookupConfObjByFid mfid >>= \case
-            Nothing -> return ()
-            Just pool -> getPoolRepairStatus pool >>= \case
-              Nothing -> phaseLog "warning" $ "Got M0_NC_ONLINE for a pool but "
-                                           ++ "no pool repair status was found."
-              Just (M0.PoolRepairStatus prt _)
-                | prt == M0.Rebalance -> do
-                phaseLog "repair" $ "Got M0_NC_ONLINE for a pool that is rebalancing."
-                queryStartHandling pool prt
-              _ -> phaseLog "repair" $ "Got M0_NC_ONLINE but pool is repairing now."
-          M0_NC_REPAIRED -> lookupConfObjByFid mfid >>= \case
-            Nothing -> return ()
-            Just pool -> getPoolRepairStatus pool >>= \case
-              Nothing -> phaseLog "warning" $ "Got M0_NC_REPAIRED for a pool but "
-                                           ++ "no pool repair status was found."
-              Just (M0.PoolRepairStatus prt _)
-                | prt == M0.Failure -> do
-                phaseLog "repair" $ "Got M0_NC_REPAIRED for a pool that is repairing."
-                queryStartHandling pool prt
-              _ -> phaseLog "repair" $ "Got M0_NC_REPAIRED but pool is rebalancing now."
+  -- Progress repair based on the messages
+  handleRepair noteSet
 
-          _ -> return ()
-      messageProcessed uid
-
-    querySpiel
-    querySpielHourly
+-- | Notify ourselves about a state change of the 'M0.SDev'.
+--
+-- Internally, build a note 'Set' and pass it it 'handleNotes' which
+-- will both set the new state and decide what to do with respect to
+-- repair and any other rules that need to act on state changes.
+--
+-- It's important to understand that this function does not replace
+-- 'updateDriveState' which performs the actual update, it simply
+-- tells 'handleNotes' to deal with it, which for 'M0.SDev' sets the
+-- state.
+notifyDriveStateChange :: M0.SDev -> ConfObjectState -> PhaseM LoopState l ()
+notifyDriveStateChange m0sdev st = handleNotes (Set [Note (M0.fid m0sdev) st])
 #endif
 
 ruleResetAttempt :: Definitions LoopState ()
@@ -355,7 +297,7 @@ ruleResetAttempt = define "reset-attempt" $ do
 #ifdef USE_MERO
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev ->
-          updateDriveState m0sdev M0_NC_ONLINE
+          notifyDriveStateChange m0sdev M0_NC_ONLINE
 #endif
         messageProcessed eid
         continue end
@@ -371,10 +313,9 @@ ruleResetAttempt = define "reset-attempt" $ do
         Just (sdev, _, _, _) <- get Local
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
-          updateDriveState m0sdev M0_NC_FAILED
           updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
-          pools <- getSDevPools m0sdev
-          traverse_ startRepairOperation pools
+          -- Let note handler deal with repair logic
+          notifyDriveStateChange m0sdev M0_NC_FAILED
 #endif
         continue end
 
@@ -415,15 +356,15 @@ ruleDriveRemoved = define "drive-removed" $ do
       forM_ sd $ \m0sdev -> do
         fork CopyNewerBuffer $ do
           phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for device."
-          updateDriveState m0sdev M0_NC_TRANSIENT
+          notifyDriveStateChange m0sdev M0_NC_TRANSIENT
           put Local $ Just (uuid, _enc, disk, _loc, m0sdev)
           switch [reinsert, timeout driveRemovalTimeout removal]
 #else
       messageProcessed uuid
 #endif
-   
+
 #ifdef USE_MERO
-   setPhaseIf reinsert 
+   setPhaseIf reinsert
      (\(DriveInserted _ disk _ loc) g (Just (uuid, enc', _, loc', _)) -> do
         if G.isConnected enc' Has disk (lsGraph g) && loc == loc'
            then return (Just uuid)
@@ -443,7 +384,7 @@ ruleDriveRemoved = define "drive-removed" $ do
      --   (void $ withSpielRC $ \sp -> withRConfRC sp $
      --      liftIO $ Spiel.deviceDetach sp (d_fid m0sdev))
      --     `catch` (\e -> phaseLog "mero" $ "failure in spiel: " ++ show (e::SomeException))
-     updateDriveState m0sdev M0_NC_FAILED
+     notifyDriveStateChange m0sdev M0_NC_FAILED
      messageProcessed uuid
      stop
 #endif
@@ -454,11 +395,11 @@ ruleDriveRemoved = define "drive-removed" $ do
        wrapper_init <- phaseHandle "wrapper_init"
        wrapper_clear <- phaseHandle "wrapper_clear"
        directly wrapper_init $ switch [ginit, wrapper_clear]
-    
+
        directly wrapper_clear $ do
          fork NoBuffer $ continue wrapper_init
          stop
-     
+
 
 -- | Inserting new drive
 ruleDriveInserted :: Definitions LoopState ()
@@ -515,8 +456,14 @@ ruleDriveInserted = define "drive-inserted" $ do
           forM_ msa $ \_ -> do
             _ <- withSpielRC $ \sp -> withRConfRC sp $
                liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
-            pools <- getSDevPools m0sdev
-            traverse_ startRebalanceOperation pools
+            -- TODO: ensure rebalance start happens at right place and
+            -- time: we have to make sure that repair has finished
+            -- properly and that repair is notified accordingly.
+
+            -- pool <- getSDevPool m0sdev
+            -- traverse_ startRebalanceOperation pool
+
+            return ()
 #endif
         unmarkStorageDeviceRemoved disk
         syncGraphProcessMsg uuid

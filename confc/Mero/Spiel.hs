@@ -724,6 +724,14 @@ poolRepairStart (SpielContext sc _) fid =
     throwIfNonZero_ (\rc -> "Cannot start pool repair: " ++ show rc)
       $ c_spiel_pool_repair_start sc fid_ptr
 
+poolRepairContinue :: SpielContext
+                     -> Fid -- ^ Pool Fid
+                     -> IO ()
+poolRepairContinue (SpielContext sc _) fid =
+  with fid $ \fid_ptr ->
+    throwIfNonZero_ (\rc -> "Cannot continue pool repair: " ++ show rc)
+      $ c_spiel_pool_repair_continue sc fid_ptr
+
 poolRepairQuiesce :: SpielContext
                   -> Fid -- ^ Pool Fid
                   -> IO ()
@@ -731,6 +739,16 @@ poolRepairQuiesce (SpielContext sc _) fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot quiesce pool repair: " ++ show rc)
       $ c_spiel_pool_repair_quiesce sc fid_ptr
+
+poolRepairAbort :: SpielContext
+                -> Fid
+                -> IO ()
+poolRepairAbort sc fid =
+  with fid $ \fid_ptr ->
+    throwIfNonZero_ (\rc -> "Cannot abort pool repair: " ++ show rc)
+      $ c_spiel_pool_repair_abort sc fid_ptr
+  where
+    c_spiel_pool_repair_abort = error "c_spiel_pool_repair_abort not implemented"
 
 poolRepairStatus :: SpielContext
                  -> Fid
@@ -755,6 +773,14 @@ poolRebalanceStart (SpielContext sc _) fid =
     throwIfNonZero_ (\rc -> "Cannot start pool rebalance: " ++ show rc)
       $ c_spiel_pool_rebalance_start sc fid_ptr
 
+poolRebalanceContinue :: SpielContext
+                     -> Fid -- ^ Pool Fid
+                     -> IO ()
+poolRebalanceContinue (SpielContext sc _) fid =
+  with fid $ \fid_ptr ->
+    throwIfNonZero_ (\rc -> "Cannot continue pool rebalance: " ++ show rc)
+      $ c_spiel_pool_rebalance_continue sc fid_ptr
+
 poolRebalanceQuiesce :: SpielContext
                      -> Fid -- ^ Pool Fid
                      -> IO ()
@@ -762,6 +788,16 @@ poolRebalanceQuiesce (SpielContext sc _) fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot quiesce pool rebalance: " ++ show rc)
       $ c_spiel_pool_rebalance_quiesce sc fid_ptr
+
+poolRebalanceAbort :: SpielContext
+                   -> Fid
+                   -> IO ()
+poolRebalanceAbort sc fid =
+  with fid $ \fid_ptr ->
+    throwIfNonZero_ (\rc -> "Cannot abort pool rebalance: " ++ show rc)
+      $ c_spiel_pool_rebalance_abort sc fid_ptr
+  where
+    c_spiel_pool_rebalance_abort = error "c_spiel_pool_rebalance_abort not implemented"
 
 poolRebalanceStatus :: SpielContext
                     -> Fid
