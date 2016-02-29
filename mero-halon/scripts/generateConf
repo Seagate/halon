@@ -31,7 +31,7 @@ sleep 3
 # Start decision log
 $HALONCTL -a $TS -l $HCTL service decision-log start -f /tmp/decision.log --eqt-timeout 0
 
-$HALONCTL -a $TS -l $HCTL cluster load -f $1
+$HALONCTL -a $TS -l $HCTL cluster load -f $1 -r $3
 
 sleep 3
 
