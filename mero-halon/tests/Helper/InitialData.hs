@@ -89,21 +89,25 @@ initialData host_pfx ifaddr_pfx n_srv n_drv globs = CI.InitialData {
                     CI.m0s_type = CST_MGS
                   , CI.m0s_endpoints = [mgsEndpoint host]
                   , CI.m0s_params = SPConfDBPath "/var/mero/confd"
+                  , CI.m0s_pathfilter = Nothing
                   }
                 , CI.M0Service {
                     CI.m0s_type = CST_RMS
                   , CI.m0s_endpoints = [rmsEndpoint host]
                   , CI.m0s_params = SPUnused
+                  , CI.m0s_pathfilter = Nothing
                     }
                 , CI.M0Service {
                     CI.m0s_type = CST_MDS
                   , CI.m0s_endpoints = [mdsEndpoint host]
                   , CI.m0s_params = SPUnused
+                  , CI.m0s_pathfilter = Nothing
                   }
                 , CI.M0Service {
                     CI.m0s_type = CST_IOS
                   , CI.m0s_endpoints = [iosEndpoint host]
                   , CI.m0s_params = SPUnused
+                  , CI.m0s_pathfilter = Nothing
                   }
                 ]
               }
