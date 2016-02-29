@@ -361,6 +361,12 @@ foreign import capi "spiel/spiel.h m0_spiel_pool_repair_start"
                             -> Ptr Fid
                             -> IO CInt
 
+
+foreign import capi "spiel/spiel.h m0_spiel_pool_repair_continue"
+  c_spiel_pool_repair_continue :: Ptr SpielContextV
+                               -> Ptr Fid
+                               -> IO CInt
+
 foreign import capi "spiel/spiel.h m0_spiel_pool_repair_quiesce"
   c_spiel_pool_repair_quiesce :: Ptr SpielContextV
                               -> Ptr Fid
@@ -377,6 +383,11 @@ foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_start"
   c_spiel_pool_rebalance_start :: Ptr SpielContextV
                                -> Ptr Fid
                                -> IO CInt
+
+foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_continue"
+  c_spiel_pool_rebalance_continue :: Ptr SpielContextV
+                                  -> Ptr Fid
+                                  -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_quiesce"
   c_spiel_pool_rebalance_quiesce :: Ptr SpielContextV

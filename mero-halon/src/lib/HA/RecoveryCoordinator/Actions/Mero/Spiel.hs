@@ -14,6 +14,12 @@ module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , withRootRC
   , withSpielRC
   , withRConfRC
+  , abortRebalanceOperation
+  , abortRepairOperation
+  , continueRebalanceOperation
+  , continueRepairOperation
+  , quiesceRebalanceOperation
+  , quiesceRepairOperation
   , startRepairOperation
   , statusOfRepairOperation
   , startRebalanceOperation
@@ -133,7 +139,9 @@ withRConfRC spiel action = do
 
 -- | Start the repair operation on the given 'M0.Pool'. Notifies mero
 -- with the 'M0_NC_REPAIR' status.
-startRepairOperation :: M0.Pool -> PhaseM LoopState l ()
+startRepairOperation :: M0.Pool
+                     -- ^ Disks in the pool to send info about too
+                     -> PhaseM LoopState l ()
 startRepairOperation pool = go `catch`
     (\e -> do
       phaseLog "error" $ "Error starting repair operation: "
@@ -144,9 +152,13 @@ startRepairOperation pool = go `catch`
   where
     go = do
       phaseLog "spiel" $ "Starting repair on pool " ++ show pool
-      notifyMero [M0.AnyConfObj pool] M0_NC_REPAIR
+      m0sdevs <- getPoolSDevsWithState pool M0_NC_FAILED
+      m0disks <- catMaybes <$> mapM lookupSDevDisk m0sdevs
+      let disks = M0.AnyConfObj <$> m0disks
+      notifyMero (M0.AnyConfObj pool : disks) M0_NC_REPAIR
       _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStart sc (M0.fid pool)
       setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure Nothing
+      phaseLog "spiel" $ "startRepairOperation for " ++ show pool ++ " done."
 
 -- | Retrieves the repair 'SnsStatus' of the given 'M0.Pool'.
 statusOfRepairOperation :: M0.Pool
@@ -164,6 +176,56 @@ statusOfRepairOperation pool = catch go
     go = do
       phaseLog "spiel" $ "Starting status on pool " ++ show pool
       withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStatus sc (M0.fid pool)
+
+-- | Continue the rebalance operation.
+continueRepairOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
+continueRepairOperation pool = catch go
+  (\e -> do
+    phaseLog "error" $ "Error in continue repair operation: "
+                    ++ show e
+                    ++ " on pool "
+                    ++ show (M0.fid pool)
+    return $ Just e
+  )
+  where
+    go = do
+      phaseLog "spiel" $ "Continuing repair on " ++ show pool
+      _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairContinue sc (M0.fid pool)
+      return Nothing
+
+-- | Quiesces the repair operation on the given pool
+quiesceRepairOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
+quiesceRepairOperation pool = catch go
+  (\e -> do
+    phaseLog "error" $ "Error in repair quiesce operation: "
+                    ++ show e
+                    ++ " on pool "
+                    ++ show (M0.fid pool)
+    return $ Just e
+  )
+  where
+    go :: PhaseM LoopState l (Maybe SomeException)
+    go = do
+      phaseLog "spiel" $ "Quiescing repair on pool " ++ show pool
+      _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairQuiesce sc (M0.fid pool)
+      return Nothing
+
+-- | Quiesces the repair operation on the given pool
+abortRepairOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
+abortRepairOperation pool = catch go
+  (\e -> do
+    phaseLog "error" $ "Error in repair abort operation: "
+                    ++ show e
+                    ++ " on pool "
+                    ++ show (M0.fid pool)
+    return $ Just e
+  )
+  where
+    go :: PhaseM LoopState l (Maybe SomeException)
+    go = do
+      phaseLog "spiel" $ "Aborting repair on pool " ++ show pool
+      _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairAbort sc (M0.fid pool)
+      return Nothing
 
 -- | Starts a rebalance operation on the given 'M0.Pool'. Notifies
 -- mero with the 'M0_NC_FAILED' status.
@@ -199,6 +261,56 @@ statusOfRebalanceOperation pool = catch go
     go = do
       phaseLog "spiel" $ "Starting status on pool " ++ show pool
       withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRebalanceStatus sc (M0.fid pool)
+
+-- | Continue the rebalance operation.
+continueRebalanceOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
+continueRebalanceOperation pool = catch go
+  (\e -> do
+    phaseLog "error" $ "Error in continue rebalance operation: "
+                    ++ show e
+                    ++ " on pool "
+                    ++ show (M0.fid pool)
+    return $ Just e
+  )
+  where
+    go = do
+      phaseLog "spiel" $ "Continuing rebalance on " ++ show pool
+      _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRebalanceContinue sc (M0.fid pool)
+      return Nothing
+
+-- | Quiesces the rebalance operation on the given pool
+quiesceRebalanceOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
+quiesceRebalanceOperation pool = catch go
+  (\e -> do
+    phaseLog "error" $ "Error in rebalance quiesce operation: "
+                    ++ show e
+                    ++ " on pool "
+                    ++ show (M0.fid pool)
+    return $ Just e
+  )
+  where
+    go :: PhaseM LoopState l (Maybe SomeException)
+    go = do
+      phaseLog "spiel" $ "Starting status on pool " ++ show pool
+      _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRebalanceQuiesce sc (M0.fid pool)
+      return Nothing
+
+-- | Quiesces the rebalance operation on the given pool
+abortRebalanceOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
+abortRebalanceOperation pool = catch go
+  (\e -> do
+    phaseLog "error" $ "Error in rebalance abort operation: "
+                    ++ show e
+                    ++ " on pool "
+                    ++ show (M0.fid pool)
+    return $ Just e
+  )
+  where
+    go :: PhaseM LoopState l (Maybe SomeException)
+    go = do
+      phaseLog "spiel" $ "Aborting rebalance on pool " ++ show pool
+      _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRebalanceAbort sc (M0.fid pool)
+      return Nothing
 
 -- | Synchronize graph to confd.
 -- Currently all Exceptions during this operation are caught, this is required in because
@@ -465,7 +577,7 @@ sfinally action finalizer = do
 getPoolRepairStatus :: M0.Pool
                     -> PhaseM LoopState l (Maybe M0.PoolRepairStatus)
 getPoolRepairStatus pool = do
-  phaseLog "rg-query" "Looking up pool repair information"
+  phaseLog "rg-query" "Looking up pool repair status"
   getLocalGraph >>= \g ->
    return (listToMaybe [ p | p <- G.connectedTo pool Has g ])
 
@@ -485,8 +597,10 @@ unsetPoolRepairStatus pool =
 getPoolRepairInformation :: M0.Pool
                          -> PhaseM LoopState l (Maybe M0.PoolRepairInformation)
 getPoolRepairInformation pool = do
-  phaseLog "rg-query" "Looking up pool repair information"
-  getLocalGraph >>= return . join . fmap M0.prsPri . listToMaybe . G.connectedTo pool Has
+  r <- getLocalGraph >>= return . join . fmap M0.prsPri . listToMaybe . G.connectedTo pool Has
+  phaseLog "rg-query" $
+    "Lookup up pool repair information for " ++ show pool ++ ", got " ++ show r
+  return r
 
 -- | Set the given 'M0.PoolRepairInformation' in the graph. Any
 -- previously connected @PRI@s are disconnected.
@@ -502,12 +616,12 @@ setPoolRepairInformation pool pri = getPoolRepairStatus pool >>= \case
     modifyLocalGraph (return . G.connectUniqueFrom pool Has (M0.PoolRepairStatus prt $ Just pri))
 
 -- | Initialise 'M0.PoolRepairInformation' with some default values.
---
--- Currently the values
 possiblyInitialisePRI :: M0.Pool
                       -> PhaseM LoopState l ()
 possiblyInitialisePRI pool = getPoolRepairInformation pool >>= \case
-  Nothing -> setPoolRepairInformation pool M0.defaultPoolRepairInformation
+  Nothing -> do
+    defaultPRI <- DP.liftIO M0.defaultPoolRepairInformation
+    setPoolRepairInformation pool defaultPRI
   Just _ -> return ()
 
 -- | Modify the  'PoolRepairInformation' in the graph with the given function.

@@ -327,6 +327,7 @@ testConfObjectStateQuery host transport =
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Rack])
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Enclosure])
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Controller])
+              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Process])
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Root])
             failFid : okSDevFids = sdevFids
             okayFids = okSDevFids ++ otherFids

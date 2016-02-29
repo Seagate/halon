@@ -95,6 +95,7 @@ Library
                    HA.RecoveryCoordinator.Actions.Service
                    HA.RecoveryCoordinator.Actions.Test
                    HA.RecoveryCoordinator.Rules.Castor
+                   HA.RecoveryCoordinator.Rules.Castor.Reset
                    HA.RecoveryCoordinator.Rules.Service
                    HA.RecoveryCoordinator.Events.Drive
                    HA.RecoveryCoordinator.Events.Mero
@@ -165,7 +166,8 @@ Library
       Other-Modules:  HA.RecoveryCoordinator.Actions.Mero.Conf
                       HA.RecoveryCoordinator.Actions.Mero.Core
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
-                      HA.RecoveryCoordinator.Rules.Castor.SpielQuery
+                      HA.RecoveryCoordinator.Rules.Castor.Repair
+                      HA.RecoveryCoordinator.Rules.Castor.Repair.Internal
                       HA.Services.Mero.CEP
                       HA.Services.Mero.Types
                       System.Posix.SysInfo
