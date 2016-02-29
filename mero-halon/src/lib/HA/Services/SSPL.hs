@@ -111,25 +111,24 @@ msgHandler msg = do
           sendMessage s f = forM_ (f srms) $ \x -> do
             say $ "[SSPL-Service] received " ++ s
             promulgate (nid, x)
+          ignoreMessage s f = forM_ (f smrs) $ \x -> do
+            saySSPL $ s ++ "is not used by RC, ignoring"
       sendMessage "SensorResponse.HPI"
         sensorResponseMessageSensor_response_typeDisk_status_hpi
-      sendMessage "SensorResponse.IF"
+      ignoreMessage "SensorResponse.IF"
         sensorResponseMessageSensor_response_typeIf_data
       sendMessage "SensorResponse.Host"
         sensorResponseMessageSensor_response_typeHost_update 
       sendMessage "SensorResponse.DriveManager"
          sensorResponseMessageSensor_response_typeDisk_status_drivemanager
-      sendMessage "SensorResponse.Watchdog"
+      ignoreMessage "SensorResponse.Watchdog"
          sensorResponseMessageSensor_response_typeService_watchdog
-      sendMessage "SensorResponse.MountData"
+      ignoreMessage "SensorResponse.MountData"
          sensorResponseMessageSensor_response_typeLocal_mount_data
       sendMessage "SensorResponse.CPU"
          sensorResponseMessageSensor_response_typeCpu_data
       sendMessage "SensorResponse.Raid"
          sensorResponseMessageSensor_response_typeRaid_data 
-      sendMessage "ActuatorResponse.ThreadController"
-         sensorResponseMessageSensor_response_typeRaid_data 
-
 
     Nothing -> case decode (msgBody msg) :: Maybe ActuatorResponse of
       Just ar -> do 
