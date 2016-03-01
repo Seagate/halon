@@ -91,6 +91,7 @@ $(mkDicts
   , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Disk, ''Is, ''ConfObjectState)
   , (''M0.SDev, ''Is, ''ConfObjectState)
+  , (''M0.Pool, ''Is, ''ConfObjectState)
   , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
   )
 
@@ -105,6 +106,7 @@ $(mkResRel
   , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Disk, ''Is, ''ConfObjectState)
   , (''M0.SDev, ''Is, ''ConfObjectState)
+  , (''M0.Pool, ''Is, ''ConfObjectState)
   , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
   []
   )

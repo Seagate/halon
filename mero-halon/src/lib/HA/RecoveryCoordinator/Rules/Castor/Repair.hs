@@ -68,11 +68,16 @@ instance B.Binary SpielQueryHourly
 -- 'querySpiel'. As we do not receive information as to what type of
 -- message this is about, we use previously stored 'M0.PoolRepairType'
 -- to help us out.
-queryStartHandling :: M0.Pool -> M0.PoolRepairType -> PhaseM LoopState l ()
-queryStartHandling pool prt = do
+queryStartHandling :: M0.Pool -> PhaseM LoopState l ()
+queryStartHandling pool = do
   possiblyInitialisePRI pool
   incrementOnlinePRSResponse pool
-  Just pri <- getPoolRepairInformation pool
+  M0.PoolRepairStatus prt ruuid (Just pri) <- getPoolRepairStatus pool >>= \case
+    Nothing -> do
+      let err = "In queryStartHandling for " ++ show pool ++ " without PRS set."
+      phaseLog "error" err
+      return $ error err
+    Just prs -> return prs
 
   iosvs <- length <$> R.getIOServices pool
 
@@ -80,26 +85,35 @@ queryStartHandling pool prt = do
   onlines <- R.repairStatus prt pool >>= \case
     Left e -> do
       phaseLog "warn" $ "repairStatus " ++ show prt ++ " failed: " ++ show e
-      -- use priOnlineNotifications as fallback but we may want to
-      -- consider removing it all together and doing something else if
-      -- repairStatus fails.
+      -- we use priOnlineNotifications as a fallback here and we may
+      -- want to do something better in case R.repairStatus fails but
+      -- priOnlineNotifications has one more use, see [Note multipleIOS]
       return $ priOnlineNotifications pri
     Right sts -> return . length $ R.filterCompletedRepairs sts
-  if -- This is the first and only notification, notify about finished
-     -- repairs and unset PRS
-    | onlines == 1 && iosvs == 1 -> do
-         disks <- fmap AnyConfObj <$> getPoolSDevs pool
-         notifyMero (AnyConfObj pool : disks) $ R.repairedNotificationMsg prt
-         unsetPoolRepairStatus pool
-     -- This is the first of many notifications, start query in 5
-     -- minutes.
-     | onlines == 1 && iosvs > 1 ->
-         promulgateRC $ SpielQuery pool prt (priRepairUUID pri)
-     -- Everything is repaired. Running timeouts keep running but
+  if -- Everything is repaired. Running timeouts keep running but
      -- 'completeRepair' will remove the repair information with given
      -- UUID they expect so they will simply die when it's their time
      -- to fire.
      | onlines == iosvs -> completeRepair pool prt Nothing
+     -- This is the first of many notifications, start query in 5
+     -- minutes.
+     --
+     -- [Note multipleIOS]
+     -- We don't use ‘onlines’ here: consider the case where we
+     -- receive our first notification and enter queryStartHandling
+     -- for the first time but in the meantime, more than one IOS has
+     -- finished repair. In this case ’onlines > 1’ and we can't
+     -- decide whether we have dispatched SpielQuery. The obvious
+     -- solution is to record in RG whether we have already started
+     -- the query and use that to decide. But we already do except not
+     -- explicitly: if we check ‘priOnlineNotifications’, we
+     -- effectively find out how many times we entered
+     -- queryStartHandling so we can determine when we have entered it
+     -- for the first time and therefore can decide if we should
+     -- dispatch a query.
+     | priOnlineNotifications pri == 1 && iosvs > 1 ->
+         promulgateRC $ SpielQuery pool prt ruuid
+
      -- This is not the first notification and also we haven't yet
      -- finished repair so do nothing and let the running queries or
      -- future notifications deal with it.
@@ -138,7 +152,7 @@ querySpiel = define "query-spiel" $ do
     put Local $ Just (uid, pool, prt, ruuid)
     getPoolRepairInformation pool >>= \case
       Nothing -> do
-        unsetPoolRepairStatus pool
+        unsetPoolRepairStatusWithUUID pool ruuid
         messageProcessed uid
       Just pri -> do
         timeNow <- liftIO getTime
@@ -147,16 +161,13 @@ querySpiel = define "query-spiel" $ do
         iosvs <- length <$> R.getIOServices pool
         if priOnlineNotifications pri < iosvs
         then switch [timeout (timeSpecToSeconds untilTimeout) runQuery]
-        else do ds <- fmap AnyConfObj <$> getPoolSDevs pool
-                notifyMero (AnyConfObj pool : ds) $ R.repairedNotificationMsg prt
-                unsetPoolRepairStatus pool
-                messageProcessed uid
+        else completeRepair pool prt $ Just uid
 
   directly runQuery $ do
     Just (uid, pool, prt, ruuid) <- get Local
-    keepRunning <- getPoolRepairInformation pool >>= return . \case
+    keepRunning <- getPoolRepairStatus pool >>= return . \case
       Nothing -> False
-      Just pri -> priRepairUUID pri == ruuid
+      Just prs -> prsRepairUUID prs == ruuid
 
     when keepRunning $ do
       iosvs <- length <$> R.getIOServices pool
@@ -167,10 +178,7 @@ querySpiel = define "query-spiel" $ do
         updatePoolRepairStatusTime pool
         if onlines < iosvs
         then liftProcess . promulgateWait $ SpielQueryHourly pool prt ruuid
-        else do disks <- fmap AnyConfObj <$> getPoolSDevs pool
-                notifyMero (AnyConfObj pool : disks) $ R.repairedNotificationMsg prt
-                unsetPoolRepairStatus pool
-    messageProcessed uid
+        else completeRepair pool prt $ Just uid
 
   start dispatchQuery Nothing
 
@@ -191,9 +199,9 @@ querySpielHourly = define "query-spiel-hourly" $ do
 
   directly runQueryHourly $ do
     Just (uid, pool, prt, ruuid) <- get Local
-    keepRunning <- getPoolRepairInformation pool >>= return . \case
+    keepRunning <- getPoolRepairStatus pool >>= return . \case
       Nothing -> False
-      Just pri -> priRepairUUID pri == ruuid
+      Just prs -> prsRepairUUID prs == ruuid
     when keepRunning $ do
       iosvs <- length <$> R.getIOServices pool
       Just pri <- getPoolRepairInformation pool
@@ -233,9 +241,9 @@ withRepairStatus prt pool uid f = R.repairStatus prt pool >>= \case
 
 -- | Continue a previously-quiesced repair.
 continueRepair :: M0.Pool
-                    -- ^ Pool under repair
-                    -> M0.PoolRepairType
-                    -> PhaseM LoopState l ()
+                  -- ^ Pool under repair
+               -> M0.PoolRepairType
+               -> PhaseM LoopState l ()
 continueRepair pool prt = repairHasQuiesced pool prt >>= \case
   Left e -> phaseLog "repair" $ "queryContinueRepair: failed repair status: "
                              ++ show e
@@ -257,10 +265,10 @@ continueRepair pool prt = repairHasQuiesced pool prt >>= \case
 -- we 'queryContinueRepair' and everything completes fine or something
 -- fails and we kill them during halt.
 quiesceRepair :: M0.Pool
-                   -- ^ Pool under repair
-                   -> M0.PoolRepairType
-                   -- ^ Rebalance/repair?
-                   -> PhaseM LoopState l ()
+              -- ^ Pool under repair
+              -> M0.PoolRepairType
+              -- ^ Rebalance/repair?
+              -> PhaseM LoopState l ()
 quiesceRepair pool prt = repairHasQuiesced pool prt >>= \case
   -- We may have quiesced before. We could check the stored disk map
   -- here but in case of RC death we might have quiesced but lost the
@@ -280,15 +288,15 @@ quiesceRepair pool prt = repairHasQuiesced pool prt >>= \case
 
 -- | Abort repair on the given pool.
 abortRepair :: M0.Pool
-                 -> PhaseM LoopState l ()
+            -> PhaseM LoopState l ()
 abortRepair pool = getPoolRepairStatus pool >>= \case
   Nothing -> phaseLog "repair" $ "Abort requested on " ++ show pool
                               ++ "but no repair seems to be happening."
-  Just (M0.PoolRepairStatus prt _) -> R.abortRepair prt pool >>= \case
+  Just (M0.PoolRepairStatus prt uuid _) -> R.abortRepair prt pool >>= \case
     -- Without the PRS on this pool, the queries will die. Even if new
-    -- repair starts, the new PRI will have a fresh UUID so the
+    -- repair starts, the new PRS will have a fresh UUID so the
     -- queries for old repair will die anyway.
-    Nothing -> unsetPoolRepairStatus pool
+    Nothing -> unsetPoolRepairStatusWithUUID pool uuid
     Just e -> phaseLog "repair" $ "Failed to abort repair on "
                                ++ show pool ++ ": " ++ show e
 
@@ -296,20 +304,41 @@ abortRepair pool = getPoolRepairStatus pool >>= \case
 
 -- | Complete the given pool repair by notifying mero about all the
 -- devices being repaired and marking the message as processed.
+--
+-- If the repair/rebalance has not finished on every device in the
+-- pool, will send information about devices that did complete and
+-- continue with the process.
+--
+-- Starts rebalance if we were repairing and have fully completed.
 completeRepair :: Pool -> PoolRepairType -> Maybe UUID -> PhaseM LoopState l ()
 completeRepair pool prt muid = do
   -- if not everything is repaired, we only report [repaired_disks],
   -- otherwise [pool, disks]
   sdevs <- getPoolSDevs pool
   sts <- catMaybes <$> mapM (\d -> fmap (,d) <$> queryObjectStatus d) sdevs
-  let repairedSDevs = AnyConfObj . snd <$>
-                      filter (\(typ, _) -> typ == M0_NC_REPAIRED) sts
+  let repairedSDevs = snd <$>
+                      filter (\(typ, _) -> typ == R.repairedNotificationMsg prt) sts
+  -- Always set pool type to the type of the repair we're [partially]
+  -- reporting
+  setObjectStatus pool $ R.repairedNotificationMsg prt
+  repairedDisks <- fmap AnyConfObj <$> mapMaybeM lookupSDevDisk repairedSDevs
   if length sdevs == length repairedSDevs
-    then notifyMero (AnyConfObj pool : repairedSDevs) $ R.repairedNotificationMsg prt
-    else notifyMero repairedSDevs $ R.repairedNotificationMsg prt
+    -- everything completed, if we were reparing, start rebalance and continue
+    then do notifyMero (AnyConfObj pool : repairedDisks) $ R.repairedNotificationMsg prt
+            unsetPoolRepairStatus pool
+            -- If we have just finished repair, start rebalance and
+            -- start queries.
+            when (prt == M0.Failure) $ do
+              -- Update pool and drive states, startRebalanceOperation
+              -- will notify mero
+              mapM_ (flip updateDriveState M0_NC_REBALANCE) sdevs
+              startRebalanceOperation pool
+              queryStartHandling pool
+    -- only notifying about partial repair, don't finish repairing
+    else do notifyMero repairedDisks $ R.repairedNotificationMsg prt
+            queryStartHandling pool
 
-  unsetPoolRepairStatus pool
-  case muid of { Nothing -> return () ; Just uid -> messageProcessed uid }
+  traverse_ messageProcessed muid
 
 --------------------------------------------------------------------------------
 -- Main handler                                                               --
@@ -382,7 +411,7 @@ handleRepair noteSet = processSet noteSet >>= \case
       -- have to either start a repair operation or if a repair
       -- has already been started, abort it.
       getPoolRepairStatus pool >>= \case
-        Just (M0.PoolRepairStatus prt _)
+        Just (M0.PoolRepairStatus prt _ _)
           -- Repair happening, device failed, abort
           | fa' <- getSDevs diskMap M0_NC_FAILED
           , _:_ <- S.toList fa' -> abortRepair pool
@@ -412,10 +441,11 @@ handleRepair noteSet = processSet noteSet >>= \case
              startRepairOperation pool
              m0sdevs <- getPoolSDevsWithState pool M0_NC_FAILED
              mapM_ (flip updateDriveState M0_NC_REPAIR) m0sdevs
-             queryStartHandling pool M0.Failure
+             queryStartHandling pool
 
   PoolInfo pool st m -> do
     phaseLog "repair" $ "Processed as PoolInfo " ++ show (pool, st, m)
+    setObjectStatus pool st
     processPoolInfo pool st m
   UnknownSet st -> phaseLog "warn" $ "Could not classify " ++ show st
 
@@ -433,36 +463,32 @@ processPoolInfo :: M0.Pool
                 -- notification. Note this may not be the full set of
                 -- disks belonging to the pool.
                 -> PhaseM LoopState l ()
--- We are rebalancing and have received ONLINE for the pool: rebalance
--- is finished so simply fall back to query handler which will query
--- the repair status and complete the procedure.
+
+-- We are rebalancing and have received ONLINE for the pool and all
+-- the devices: rebalance is finished so simply fall back to query
+-- handler which will query the repair status and complete the
+-- procedure.
 processPoolInfo pool M0_NC_ONLINE m
   | Just _ <- allWithState m M0_NC_ONLINE = getPoolRepairStatus pool >>= \case
       Nothing -> phaseLog "warning" $ "Got M0_NC_ONLINE for a pool but "
                                    ++ "no pool repair status was found."
-      Just (M0.PoolRepairStatus prt _)
-        | prt == M0.Rebalance -> do
+      Just (M0.PoolRepairStatus M0.Rebalance _ _) -> do
         phaseLog "repair" $ "Got M0_NC_ONLINE for a pool that is rebalancing."
-        -- will query spiel for repair status and complete the repair
-        queryStartHandling pool prt
+        -- Will query spiel for repair status and complete the repair
+        queryStartHandling pool
       _ -> phaseLog "repair" $ "Got M0_NC_ONLINE but pool is repairing now."
 
 -- We got a REPAIRED for a pool that was repairing before. Currently
 -- we simply fall back to queryStartHandling which should conclude the
 -- repair.
---
--- TODO: Currently we don't start rebalance anywhere. The only place
--- we started it at was in Rules/Castor after deviceAttach but it
--- requires extra work there to make sure any previous repairs were
--- properly cleaned up. Perhaps we should simply send a notification
--- to here and start rebalance from here.
 processPoolInfo pool M0_NC_REPAIRED _ = getPoolRepairStatus pool >>= \case
   Nothing -> phaseLog "warning" $ "Got M0_NC_REPAIRED for a pool but "
                                ++ "no pool repair status was found."
-  Just (M0.PoolRepairStatus prt _)
+  Just (M0.PoolRepairStatus prt _ _)
     | prt == M0.Failure -> do
-    phaseLog "repair" $ "Got M0_NC_REPAIRED for a pool that is repairing."
-    queryStartHandling pool prt
+    phaseLog "repair" $ "Got M0_NC_REPAIRED for a pool that is repairing, "
+                     ++ "calling completeRepair even if partial."
+    completeRepair pool prt Nothing
   _ -> phaseLog "repair" $ "Got M0_NC_REPAIRED but pool is rebalancing now."
 
 -- We got some pool state info but we don't care about what it is as
@@ -475,7 +501,7 @@ processPoolInfo pool _ m
 -- pool are transient.
   | Just ds <- allWithState m M0_NC_ONLINE
   , ds' <- S.toList ds = getPoolRepairStatus pool >>= \case
-      Just (M0.PoolRepairStatus prt _) -> do
+      Just (M0.PoolRepairStatus prt _ _) -> do
         sdevs <- filter (`notElem` ds') <$> getPoolSDevs pool
         sts <- mapMaybeM queryObjectStatus sdevs
         if null $ filter (== M0_NC_TRANSIENT) sts
@@ -488,7 +514,7 @@ processPoolInfo pool _ m
       Nothing -> do
         phaseLog "repair" $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
                          ++ " but no repair is on-going, doing nothing."
-      Just (M0.PoolRepairStatus prt _) -> do
+      Just (M0.PoolRepairStatus prt _ _) -> do
         phaseLog "repair" $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
                          ++ ", quescing repair."
         quiesceRepair pool prt
