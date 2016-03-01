@@ -146,10 +146,14 @@ setStateChangeHandlers :: Definitions LoopState ()
 setStateChangeHandlers = do
     define "set-state-change-handlers" $ do
       setThem <- phaseHandle "set"
+      finish <- phaseHandle "finish"
       directly setThem $ do
         ls <- get Global
         put Global $ ls { lsStateChangeHandlers = stateChangeHandlers }
-        stop
+        continue finish
+
+      directly finish stop
+
       start setThem Nothing
   where
     stateChangeHandlers = [
@@ -160,18 +164,18 @@ setStateChangeHandlers = do
 
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do
-    defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> let
-        resultState (Note f M0_NC_FAILED)
-          | fidIsType (Proxy :: Proxy M0.SDev) f = Note f M0_NC_TRANSIENT
-        resultState x = x
-        noteSet = Set (resultState <$> ns)
-      in do
-        stateChangeHandlers <- lsStateChangeHandlers <$> get Global
-        sequence_ $ (\x -> x noteSet) <$> stateChangeHandlers
-        messageProcessed uid
+  defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> let
+      resultState (Note f M0_NC_FAILED)
+        | fidIsType (Proxy :: Proxy M0.SDev) f = Note f M0_NC_TRANSIENT
+      resultState x = x
+      noteSet = Set (resultState <$> ns)
+    in do
+      stateChangeHandlers <- lsStateChangeHandlers <$> get Global
+      sequence_ $ (\x -> x noteSet) <$> stateChangeHandlers
+      messageProcessed uid
 
-    querySpiel
-    querySpielHourly
+  querySpiel
+  querySpielHourly
 
 #endif
 
