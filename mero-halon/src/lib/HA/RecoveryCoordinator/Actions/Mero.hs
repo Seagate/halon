@@ -58,10 +58,10 @@ updateDriveState :: M0.SDev -- ^ Drive to update state
 -- | For transient failures, we may need to create a new pool version.
 updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
   -- Update state in RG
-  modifyGraph $ G.connectUnique m0sdev Is M0.M0_NC_TRANSIENT
+  modifyGraph $ G.connectUniqueFrom m0sdev Is M0.M0_NC_TRANSIENT
   graph <- getLocalGraph
   let m0disks = G.connectedTo m0sdev M0.IsOnHardware graph :: [M0.Disk]
-  traverse_ (\m0disk -> modifyGraph $ G.connectUnique m0disk Is M0.M0_NC_TRANSIENT)
+  traverse_ (\m0disk -> modifyGraph $ G.connectUniqueFrom m0disk Is M0.M0_NC_TRANSIENT)
             m0disks
   syncGraph (return ()) -- possibly we need to wait here, but I see no good
                         -- reason for that.
@@ -80,10 +80,10 @@ updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
 updateDriveState m0sdev x = do
   liftProcess $ say $ "updating to " ++ show x
   -- Update state in RG
-  modifyGraph $ G.connect m0sdev Is x
+  modifyGraph $ G.connectUniqueFrom m0sdev Is x
   graph <- getLocalGraph
   let m0disks = G.connectedTo m0sdev M0.IsOnHardware graph :: [M0.Disk]
-  traverse_ (\m0disk -> modifyGraph $ G.connect m0disk Is x) m0disks
+  traverse_ (\m0disk -> modifyGraph $ G.connectUniqueFrom m0disk Is x) m0disks
   -- Quite possibly we need to wait for synchronization result here, because
   -- otherwise we may notifyMero multiple times (if consesus will be lost).
   -- however in opposite case we may never notify mero if RC will die after
