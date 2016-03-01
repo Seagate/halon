@@ -193,27 +193,23 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
 #ifdef USE_MERO
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do
-  defineSimple "mero-note-set" $ \(HAEvent uid noteSet _) -> do
-    handleNotes noteSet
-    messageProcessed uid
+    defineSimple "mero-note-set" $ \(HAEvent uid noteSet@(Set ns) _) -> do
+      updateDriveStates . Set $ (resultState <$> ns)
+      handleRepair noteSet
+      messageProcessed uid
 
-  querySpiel
-  querySpielHourly
+    querySpiel
+    querySpielHourly
+  where
+    resultState (Note f M0_NC_FAILED)
+      | fidIsType (Proxy :: Proxy M0.SDev) f = Note f M0_NC_TRANSIENT
+    resultState x = x
 
 -- | Extract information about drives from the given set of
 -- notifications and update the state in RG accordingly.
 updateDriveStates :: Set -> PhaseM LoopState l ()
 updateDriveStates (Set ns) = catMaybes <$> mapM noteToSDev ns
                              >>= mapM_ (\(typ, sd) -> updateDriveState sd typ)
-
-handleNotes :: Set -> PhaseM LoopState l ()
-handleNotes noteSet = do
-  -- Before we do anything else, write the state of the drives into
-  -- the RG so that rest of the rule can query updated info
-  updateDriveStates noteSet
-
-  -- Progress repair based on the messages
-  handleRepair noteSet
 
 -- | Notify ourselves about a state change of the 'M0.SDev'.
 --
@@ -226,7 +222,15 @@ handleNotes noteSet = do
 -- tells 'handleNotes' to deal with it, which for 'M0.SDev' sets the
 -- state.
 notifyDriveStateChange :: M0.SDev -> ConfObjectState -> PhaseM LoopState l ()
-notifyDriveStateChange m0sdev st = handleNotes (Set [Note (M0.fid m0sdev) st])
+notifyDriveStateChange m0sdev st = do
+    -- Before we do anything else, write the state of the drives into
+    -- the RG so that rest of the rule can query updated info
+    updateDriveStates ns
+
+    -- Progress repair based on the messages
+    handleRepair ns
+  where
+    ns = Set [Note (M0.fid m0sdev) st]
 #endif
 
 ruleResetAttempt :: Definitions LoopState ()
