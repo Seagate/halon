@@ -177,6 +177,7 @@ data M0Service = M0Service {
     m0s_type :: ServiceType -- ^ e.g. ioservice, haservice
   , m0s_endpoints :: [String]
   , m0s_params :: ServiceParams
+  , m0s_pathfilter :: Maybe String -- ^ For IOS, filter on disk WWN
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Binary M0Service

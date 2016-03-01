@@ -66,6 +66,8 @@ import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
 
+import Text.Regex.TDFA ((=~))
+
 import Prelude hiding (id)
 
 -- | Lookup a configuration object by its Mero FID.
@@ -205,10 +207,14 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
                 >>> G.connectUniqueFrom proc Is M0.M0_NC_ONLINE
 
   goSrv proc devs CI.M0Service{..} = let
+      filteredDevs = maybe
+        devs
+        (\x -> filter (\y -> M0.d_path y =~ x) devs)
+        m0s_pathfilter
       mkSrv fid = M0.Service fid m0s_type m0s_endpoints m0s_params
       linkDrives svc = case m0s_type of
         CST_IOS -> foldl' (.) id
-                    $ fmap (G.connect svc M0.IsParentOf) devs
+                    $ fmap (G.connect svc M0.IsParentOf) filteredDevs
         _ -> id
     in do
       svc <- mkSrv <$> newFidRC (Proxy :: Proxy M0.Service)
