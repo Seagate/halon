@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NoMonomorphismRestriction  #-}
 {-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE ImplicitParams             #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -11,7 +12,10 @@ module HA.RecoveryCoordinator.Actions.Mero
   ( module Conf
   , module HA.RecoveryCoordinator.Actions.Mero.Core
   , module HA.RecoveryCoordinator.Actions.Mero.Spiel
+  , notifyDriveStateChange
   , updateDriveState
+  , updateDriveStatesFromSet
+  , noteToSDev
   , createMeroKernelConfig
   , createMeroClientConfig
   , startMeroService
@@ -34,7 +38,10 @@ import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 import HA.Service
 import HA.Services.Mero
+
 import Mero.ConfC
+import Mero.Notification (Set(..))
+import Mero.Notification.HAState (Note(..))
 
 import Control.Category
 import Control.Distributed.Process
@@ -42,8 +49,10 @@ import Control.Monad (forM)
 
 import Data.Foldable (forM_, traverse_)
 import Data.Proxy
-import Data.Maybe (listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe)
 import Data.UUID.V4 (nextRandom)
+
+import GHC.Stack
 
 import Network.CEP
 
@@ -51,12 +60,42 @@ import System.Posix.SysInfo
 
 import Prelude hiding ((.), id)
 
-updateDriveState :: M0.SDev -- ^ Drive to update state
+-- TODO Generalise this
+-- | If the 'Note' is about an 'SDev', extract it and its state.
+noteToSDev :: Note -> PhaseM LoopState l (Maybe (M0.ConfObjectState, M0.SDev))
+noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= return . \case
+  Nothing -> Nothing
+  Just (sdev :: M0.SDev) -> Just (stType, sdev)
+
+-- | Extract information about drives from the given set of
+-- notifications and update the state in RG accordingly.
+updateDriveStatesFromSet :: Set -> PhaseM LoopState l ()
+updateDriveStatesFromSet (Set ns) = catMaybes <$> mapM noteToSDev ns
+                             >>= mapM_ (\(typ, sd) -> updateDriveState sd typ)
+
+-- | Notify ourselves about a state change of the 'M0.SDev'.
+--
+-- Internally, build a note 'Set' and pass it it 'handleNotes' which
+-- will both set the new state and decide what to do with respect to
+-- repair and any other rules that need to act on state changes.
+--
+-- It's important to understand that this function does not replace
+-- 'updateDriveState' which performs the actual update.
+notifyDriveStateChange :: M0.SDev -> M0.ConfObjectState -> PhaseM LoopState l ()
+notifyDriveStateChange m0sdev st = do
+    stateChangeHandlers <- lsStateChangeHandlers <$> get Global
+    sequence_ $ (\x -> x ns) <$> stateChangeHandlers
+ where
+   ns = Set [Note (M0.fid m0sdev) st]
+
+updateDriveState :: (?location :: CallStack)
+                 => M0.SDev -- ^ Drive to update state
                  -> M0.ConfObjectState -- ^ State to update to
                  -> PhaseM LoopState l ()
 
 -- | For transient failures, we may need to create a new pool version.
 updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
+  phaseLog "debug" $ show ?location
   -- Update state in RG
   modifyGraph $ G.connectUniqueFrom m0sdev Is M0.M0_NC_TRANSIENT
   graph <- getLocalGraph
@@ -78,6 +117,7 @@ updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
 
 -- | For all other states, we simply update in the RG and notify Mero.
 updateDriveState m0sdev x = do
+  phaseLog "debug" $ show ?location
   liftProcess $ say $ "updating to " ++ show x
   -- Update state in RG
   modifyGraph $ G.connectUniqueFrom m0sdev Is x

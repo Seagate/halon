@@ -93,7 +93,7 @@ sendSystemdCmd nid req = do
 
 -- | Send command to logger actuator.
 sendLoggingCmd :: Host
-               -> LoggerCmd 
+               -> LoggerCmd
                -> PhaseM LoopState l ()
 sendLoggingCmd host req = do
   phaseLog "action" $ "Sending Logger request" ++ show req
@@ -110,8 +110,8 @@ sendLoggingCmd host req = do
 mkDiskLoggingCmd :: T.Text -- ^ Status
                  -> T.Text -- ^ Serial Number
                  -> T.Text -- ^ Reason
-                 -> LoggerCmd 
-mkDiskLoggingCmd st serial reason = LoggerCmd 
+                 -> LoggerCmd
+mkDiskLoggingCmd st serial reason = LoggerCmd
   ("IEC: 038001001: Halon Disk Status: "
            <> "{'status': '" <> st <> "', 'reason': '" <> reason <> "', 'serial_number': '" <> serial <> "'}")
   "LOG_WARNING" "HDS"
@@ -154,7 +154,7 @@ registerChannels svc acs = modifyLocalGraph $ \rg -> do
     registerChannel r sp =
         newResource svc >>>
         newResource chan >>>
-        connectUnique svc r chan
+        connect svc r chan
       where
         chan = Channel sp
 
@@ -385,15 +385,15 @@ ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid
                         traverse (\x -> do
                           liftA2 (x,,) <$> driveStatus x
                                        <*> fmap listToMaybe (lookupStorageDeviceSerial x))
-             forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(_, status, serial) -> 
+             forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(_, status, serial) ->
                case status of
                  StorageDeviceStatus "HALON-FAILED" reason -> do
-                   sendLoggingCmd host $ mkDiskLoggingCmd (T.pack "HALON-FAILED") 
+                   sendLoggingCmd host $ mkDiskLoggingCmd (T.pack "HALON-FAILED")
                                                           (T.pack serial)
                                                           (T.pack reason)
                  _ -> return ()
        _ -> return ()
-     messageProcessed uuid 
+     messageProcessed uuid
 
   -- SSPL Monitor interface data
   -- defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum) _) _ ->
@@ -502,7 +502,7 @@ updateDriveManagerWithFailure disk st reason = do
     Just sn -> do
       rg <- getLocalGraph
       withHost rg disk $ \host ->
-        sendLoggingCmd host $ mkDiskLoggingCmd (T.pack st) 
+        sendLoggingCmd host $ mkDiskLoggingCmd (T.pack st)
                                                (T.pack sn)
                                                (maybe "unknown reason" T.pack reason)
   where
@@ -510,5 +510,5 @@ updateDriveManagerWithFailure disk st reason = do
       case listToMaybe $ connectedFrom Has d rg of
         Nothing -> phaseLog "error" $ "Unable to find enclosure for " ++ show d
         Just e -> case listToMaybe $ connectedTo (e::Enclosure) Has rg of
-          Nothing -> phaseLog "error" $ "Unable to find host for " ++ show e 
+          Nothing -> phaseLog "error" $ "Unable to find host for " ++ show e
           Just h -> f (h::Host)

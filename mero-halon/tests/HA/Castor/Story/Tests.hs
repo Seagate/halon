@@ -368,9 +368,14 @@ failDrive recv (sdev, serial) = let
     -- We a drive failure note to the RC.
     _ <- promulgateEQ [nid] fail_evt
     -- Mero should be notified that the drive should be transient.
-    Set [Note _ st1, Note _ st2] <- notificationMessage <$> receiveChan recv
-    liftIO $ assertEqual "Initial response to failed drive should be setting TRANSIENT"
-      (M0_NC_TRANSIENT, M0_NC_TRANSIENT) (st1, st2)
+    (Set msg) <- notificationMessage <$> receiveChan recv
+    debug $ show msg
+    liftIO $ do
+      assertEqual "Response to failed drive should have entries for disk and sdev"
+        2 (length msg)
+      let [Note _ st1, Note _ st2] = msg
+      assertEqual "Initial response to failed drive should be setting TRANSIENT"
+        (M0_NC_TRANSIENT, M0_NC_TRANSIENT) (st1, st2)
     debug "failDrive: Transient state set"
     -- The RC should issue a 'ResetAttempt' and should be handled.
     _ <- expect :: Process (Published (HAEvent ResetAttempt))

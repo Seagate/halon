@@ -1,4 +1,4 @@
-
+{-# LANGUAGE CPP                   #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -6,11 +6,64 @@
 -- Module containing some reset bits that multiple rules may want access to
 module HA.RecoveryCoordinator.Rules.Castor.Reset where
 
-import Data.Binary (Binary)
-import Data.Typeable (Typeable)
-import GHC.Generics (Generic)
+import HA.EventQueue.Types
+  ( HAEvent(..)
+  , UUID
+  )
+import HA.RecoveryCoordinator.Actions.Core
+  ( LoopState
+  , messageProcessed
+  , promulgateRC
+  , syncGraph
+  , unlessM
+  , whenM
+  )
+import HA.RecoveryCoordinator.Actions.Hardware
+import HA.RecoveryCoordinator.Actions.Mero (notifyDriveStateChange)
+import HA.RecoveryCoordinator.Actions.Mero.Conf
+  ( lookupConfObjByFid
+  , lookupStorageDevice
+  , lookupStorageDeviceSDev
+  , queryObjectStatus
+  )
+import HA.Resources (Node(..))
 import HA.Resources.Castor
+import HA.Resources.Mero.Note (ConfObjectState(..))
+import HA.Services.SSPL.CEP
+  ( sendNodeCmd
+  , sendInterestingEvent
+  , updateDriveManagerWithFailure
+  )
+import HA.Services.SSPL.LL.Resources
+  ( AckReply(..)
+  , CommandAck(..)
+  , InterestingEventMessage(..)
+  , NodeCmd(..)
+  , commandAck
+  )
 
+import Mero.Notification (Set(..))
+import Mero.Notification.HAState (Note(..))
+
+import Control.Distributed.Process
+  ( Process
+  , getSelfNode
+  , say
+  )
+import Control.Monad
+  ( forM_
+  , when
+  , unless
+  )
+
+import Data.Binary (Binary)
+import Data.Foldable (for_)
+import Data.Text (Text, pack)
+import Data.Typeable (Typeable)
+
+import GHC.Generics (Generic)
+
+import Network.CEP
 --------------------------------------------------------------------------------
 -- Reset bit                                                                  --
 --------------------------------------------------------------------------------
@@ -23,6 +76,10 @@ resetAttemptThreshold = 10
 -- | Time to allow for SSPL to reply on a reset request.
 driveResetTimeout :: Int
 driveResetTimeout = 5*60
+
+-- | Time to allow for SSPL reply on a smart test request.
+smartTestTimeout :: Int
+smartTestTimeout = 15*60
 
 -- | Event sent when to many failures has been sent for a 'Disk'.
 data ResetAttempt = ResetAttempt StorageDevice
@@ -39,3 +96,199 @@ newtype ResetSuccess =
 newtype ResetFailure =
     ResetFailure StorageDevice
     deriving (Eq, Show, Binary)
+
+-- | Drive state change handler for 'reset' functionality.
+--
+--   Called whenever a drive changes state. This function is
+--   responsible for potentially starting a reset attempt on
+--   one or more drives.
+handleReset :: Set -> PhaseM LoopState l ()
+handleReset (Set ns) = do
+  for_ ns $ \(Note mfid tpe) ->
+    case tpe of
+      M0_NC_TRANSIENT -> do
+        sdevm <- lookupConfObjByFid mfid
+        for_ sdevm $ \m0sdev -> do
+          msdev <- lookupStorageDevice m0sdev
+          case msdev of
+            Just sdev -> do
+              mst <- queryObjectStatus m0sdev
+              unless (mst == Just M0_NC_FAILED) $ do
+                ongoing <- hasOngoingReset sdev
+                when (not ongoing) $ do
+                  ratt <- getDiskResetAttempts sdev
+                  let status = if ratt <= resetAttemptThreshold
+                               then M0_NC_TRANSIENT
+                               else M0_NC_FAILED
+
+                  when (status == M0_NC_FAILED) $ do
+                    notifyDriveStateChange m0sdev status
+                    -- TODO Move this into its own handler.
+                    updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
+                    nid <- liftProcess getSelfNode
+                    diskids <- findStorageDeviceIdentifiers sdev
+                    let iem = InterestingEventMessage . pack . unwords $ [
+                                  "M0_NC_FAILED reported."
+                                , "fid=" ++ show mfid
+                              ] ++ map show diskids
+                    sendInterestingEvent nid iem
+
+                  when (status == M0_NC_TRANSIENT) $ do
+                    promulgateRC $ ResetAttempt sdev
+
+                  syncGraph $ say "handleReset synchronized"
+            _ -> do
+              phaseLog "warning" $ "Cannot find all entities attached to M0"
+                                ++ " storage device: "
+                                ++ show m0sdev
+                                ++ ": "
+                                ++ show msdev
+      _ -> return () -- Should we do anything here?
+
+ruleResetAttempt :: Definitions LoopState ()
+ruleResetAttempt = define "reset-attempt" $ do
+      home          <- phaseHandle "home"
+      reset         <- phaseHandle "reset"
+      resetComplete <- phaseHandle "reset-complete"
+      smart         <- phaseHandle "smart"
+      smartSuccess  <- phaseHandle "smart-success"
+      smartFailure  <- phaseHandle "smart-failure"
+      failure       <- phaseHandle "failure"
+      end           <- phaseHandle "end"
+
+      setPhase home $ \(HAEvent uid (ResetAttempt sdev) _) -> fork NoBuffer $ do
+        nodes <- getSDevNode sdev
+        node <- case nodes of
+          node:_ -> return node
+          [] -> do
+             -- XXX: send IEM message
+             phaseLog "warning" $ "Can't perform query to SSPL as node can't be found"
+             messageProcessed uid
+             stop
+        paths <- lookupStorageDeviceSerial sdev
+        case paths of
+          serial:_ -> do
+            put Local (Just (sdev, pack serial, node, uid))
+            unlessM (isStorageDevicePowered sdev) $
+              switch [resetComplete, timeout driveResetTimeout failure]
+            whenM (isStorageDeviceRunningSmartTest sdev) $
+              switch [smartSuccess, smartFailure, timeout smartTestTimeout failure]
+            markOnGoingReset sdev
+            continue reset
+          [] -> do
+            -- XXX: send IEM message
+            phaseLog "warning" $ "Cannot perform reset attempt for drive "
+                              ++ show sdev
+                              ++ " as it has no device paths associated."
+            messageProcessed uid
+            stop
+
+      directly reset $ do
+        Just (sdev, serial, Node nid, _) <- get Local
+        i <- getDiskResetAttempts sdev
+        if i <= resetAttemptThreshold
+        then do
+          incrDiskResetAttempts sdev
+          sendNodeCmd nid Nothing (DriveReset serial)
+          markDiskPowerOff sdev
+          switch [resetComplete, timeout driveResetTimeout failure]
+        else continue failure
+
+      setPhaseIf resetComplete (onCommandAck DriveReset) $ \eid -> do
+        Just (sdev, _, _, _) <- get Local
+        markDiskPowerOn sdev
+        markResetComplete sdev
+        messageProcessed eid
+        continue smart
+
+      directly smart $ do
+        Just (sdev, serial, Node nid, _) <- get Local
+        markSMARTTestIsRunning sdev
+        sendNodeCmd nid Nothing (SmartTest serial)
+        switch [smartSuccess, smartFailure, timeout smartTestTimeout failure]
+
+      setPhaseIf smartSuccess onSmartSuccess $ \eid -> do
+        Just (sdev, _, _, _) <- get Local
+        markSMARTTestComplete sdev
+#ifdef USE_MERO
+        sd <- lookupStorageDeviceSDev sdev
+        forM_ sd $ \m0sdev ->
+          notifyDriveStateChange m0sdev M0_NC_ONLINE
+#endif
+        messageProcessed eid
+        continue end
+
+      setPhaseIf smartFailure onSmartFailure $ \eid -> do
+        Just (sdev, _, _, _) <- get Local
+        markSMARTTestComplete sdev
+        messageProcessed eid
+        continue failure
+
+      directly failure $ do
+#ifdef USE_MERO
+        Just (sdev, _, _, _) <- get Local
+        sd <- lookupStorageDeviceSDev sdev
+        forM_ sd $ \m0sdev -> do
+          updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
+          -- Let note handler deal with repair logic
+          notifyDriveStateChange m0sdev M0_NC_FAILED
+#endif
+        continue end
+
+      directly end $ do
+        Just (_, _, _, uid) <- get Local
+        messageProcessed uid
+        stop
+
+      start home Nothing
+
+
+--------------------------------------------------------------------------------
+-- Helpers
+--------------------------------------------------------------------------------
+
+-- | States of the Timeout rule.OB
+data TimeoutState = TimeoutNormal | ResetAttemptSent
+
+onCommandAck :: (Text -> NodeCmd)
+           -> HAEvent CommandAck
+           -> g
+           -> Maybe (StorageDevice, Text, Node, UUID)
+           -> Process (Maybe UUID)
+onCommandAck _ _ _ Nothing = return Nothing
+onCommandAck k (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
+  case commandAckType cmd of
+    Just x | (k serial) == x -> return $ Just eid
+           | otherwise       -> return Nothing
+    _ -> return Nothing
+
+onSmartSuccess :: HAEvent CommandAck
+               -> g
+               -> Maybe (StorageDevice, Text, Node, UUID)
+               -> Process (Maybe UUID)
+onSmartSuccess (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
+    case commandAckType cmd of
+      Just (SmartTest x)
+        | serial == x ->
+          case commandAck cmd of
+            AckReplyPassed -> return $ Just eid
+            _              -> return Nothing
+        | otherwise -> return Nothing
+      _ -> return Nothing
+onSmartSuccess _ _ _ = return Nothing
+
+onSmartFailure :: HAEvent CommandAck
+               -> g
+               -> Maybe (StorageDevice, Text, Node, UUID)
+               -> Process (Maybe UUID)
+onSmartFailure (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
+    case commandAckType cmd of
+      Just (SmartTest x)
+        | serial == x ->
+          case commandAck cmd of
+            AckReplyFailed  -> return $ Just eid
+            AckReplyError _ -> return $ Just eid
+            _               -> return Nothing
+        | otherwise -> return Nothing
+      _ -> return Nothing
+onSmartFailure _ _ _ = return Nothing

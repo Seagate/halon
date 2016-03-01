@@ -79,61 +79,11 @@ lookupStorageDevicePathsInGraph sd g =
     extractPath (DIPath x) = Just x
     extractPath _ = Nothing
 
--- | Time to allow for SSPL reply on a smart test request.
-smartTestTimeout :: Int
-smartTestTimeout = 15*60
-
-
--- | States of the Timeout rule.OB
-data TimeoutState = TimeoutNormal | ResetAttemptSent
-
-onCommandAck :: (Text -> NodeCmd)
-           -> HAEvent CommandAck
-           -> g
-           -> Maybe (StorageDevice, Text, Node, UUID)
-           -> Process (Maybe UUID)
-onCommandAck _ _ _ Nothing = return Nothing
-onCommandAck k (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
-  case commandAckType cmd of
-    Just x | (k serial) == x -> return $ Just eid
-           | otherwise       -> return Nothing
-    _ -> return Nothing
-
-onSmartSuccess :: HAEvent CommandAck
-               -> g
-               -> Maybe (StorageDevice, Text, Node, UUID)
-               -> Process (Maybe UUID)
-onSmartSuccess (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
-    case commandAckType cmd of
-      Just (SmartTest x)
-        | serial == x ->
-          case commandAck cmd of
-            AckReplyPassed -> return $ Just eid
-            _              -> return Nothing
-        | otherwise -> return Nothing
-      _ -> return Nothing
-onSmartSuccess _ _ _ = return Nothing
-
-onSmartFailure :: HAEvent CommandAck
-               -> g
-               -> Maybe (StorageDevice, Text, Node, UUID)
-               -> Process (Maybe UUID)
-onSmartFailure (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
-    case commandAckType cmd of
-      Just (SmartTest x)
-        | serial == x ->
-          case commandAck cmd of
-            AckReplyFailed  -> return $ Just eid
-            AckReplyError _ -> return $ Just eid
-            _               -> return Nothing
-        | otherwise -> return Nothing
-      _ -> return Nothing
-onSmartFailure _ _ _ = return Nothing
-
 castorRules :: Definitions LoopState ()
 castorRules = sequence_
   [ ruleInitialDataLoad
 #ifdef USE_MERO
+  , setStateChangeHandlers
   , ruleMeroNoteSet
   , ruleGetEntryPoint
   , ruleNewMeroClient
@@ -191,6 +141,23 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
       messageProcessed eid
 
 #ifdef USE_MERO
+
+setStateChangeHandlers :: Definitions LoopState ()
+setStateChangeHandlers = do
+    define "set-state-change-handlers" $ do
+      setThem <- phaseHandle "set"
+      directly setThem $ do
+        ls <- get Global
+        put Global $ ls { lsStateChangeHandlers = stateChangeHandlers }
+        stop
+      start setThem Nothing
+  where
+    stateChangeHandlers = [
+        updateDriveStatesFromSet
+      , handleReset
+      , handleRepair
+      ]
+
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do
     defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> let
@@ -199,138 +166,14 @@ ruleMeroNoteSet = do
         resultState x = x
         noteSet = Set (resultState <$> ns)
       in do
-        updateDriveStates noteSet
-        handleRepair noteSet
+        stateChangeHandlers <- lsStateChangeHandlers <$> get Global
+        sequence_ $ (\x -> x noteSet) <$> stateChangeHandlers
         messageProcessed uid
 
     querySpiel
     querySpielHourly
 
--- | Extract information about drives from the given set of
--- notifications and update the state in RG accordingly.
-updateDriveStates :: Set -> PhaseM LoopState l ()
-updateDriveStates (Set ns) = catMaybes <$> mapM noteToSDev ns
-                             >>= mapM_ (\(typ, sd) -> updateDriveState sd typ)
-
--- | Notify ourselves about a state change of the 'M0.SDev'.
---
--- Internally, build a note 'Set' and pass it it 'handleNotes' which
--- will both set the new state and decide what to do with respect to
--- repair and any other rules that need to act on state changes.
---
--- It's important to understand that this function does not replace
--- 'updateDriveState' which performs the actual update, it simply
--- tells 'handleNotes' to deal with it, which for 'M0.SDev' sets the
--- state.
-notifyDriveStateChange :: M0.SDev -> ConfObjectState -> PhaseM LoopState l ()
-notifyDriveStateChange m0sdev st = do
-    -- Before we do anything else, write the state of the drives into
-    -- the RG so that rest of the rule can query updated info
-    updateDriveStates ns
-
-    -- Progress repair based on the messages
-    handleRepair ns
-  where
-    ns = Set [Note (M0.fid m0sdev) st]
 #endif
-
-ruleResetAttempt :: Definitions LoopState ()
-ruleResetAttempt = define "reset-attempt" $ do
-      home          <- phaseHandle "home"
-      reset         <- phaseHandle "reset"
-      resetComplete <- phaseHandle "reset-complete"
-      smart         <- phaseHandle "smart"
-      smartSuccess  <- phaseHandle "smart-success"
-      smartFailure  <- phaseHandle "smart-failure"
-      failure       <- phaseHandle "failure"
-      end           <- phaseHandle "end"
-
-      setPhase home $ \(HAEvent uid (ResetAttempt sdev) _) -> fork NoBuffer $ do
-        nodes <- getSDevNode sdev
-        node <- case nodes of
-          node:_ -> return node
-          [] -> do
-             -- XXX: send IEM message
-             phaseLog "warning" $ "Can't perform query to SSPL as node can't be found"
-             messageProcessed uid
-             stop
-        paths <- lookupStorageDeviceSerial sdev
-        case paths of
-          serial:_ -> do
-            put Local (Just (sdev, pack serial, node, uid))
-            unlessM (isStorageDevicePowered sdev) $
-              switch [resetComplete, timeout driveResetTimeout failure]
-            whenM (isStorageDeviceRunningSmartTest sdev) $
-              switch [smartSuccess, smartFailure, timeout smartTestTimeout failure]
-            markOnGoingReset sdev
-            continue reset
-          [] -> do
-            -- XXX: send IEM message
-            phaseLog "warning" $ "Cannot perform reset attempt for drive "
-                              ++ show sdev
-                              ++ " as it has no device paths associated."
-            messageProcessed uid
-            stop
-
-      directly reset $ do
-        Just (sdev, serial, Node nid, _) <- get Local
-        i <- getDiskResetAttempts sdev
-        if i <= resetAttemptThreshold
-        then do
-          incrDiskResetAttempts sdev
-          sendNodeCmd nid Nothing (DriveReset serial)
-          markDiskPowerOff sdev
-          switch [resetComplete, timeout driveResetTimeout failure]
-        else continue failure
-
-      setPhaseIf resetComplete (onCommandAck DriveReset) $ \eid -> do
-        Just (sdev, _, _, _) <- get Local
-        markDiskPowerOn sdev
-        markResetComplete sdev
-        messageProcessed eid
-        continue smart
-
-      directly smart $ do
-        Just (sdev, serial, Node nid, _) <- get Local
-        markSMARTTestIsRunning sdev
-        sendNodeCmd nid Nothing (SmartTest serial)
-        switch [smartSuccess, smartFailure, timeout smartTestTimeout failure]
-
-      setPhaseIf smartSuccess onSmartSuccess $ \eid -> do
-        Just (sdev, _, _, _) <- get Local
-        markSMARTTestComplete sdev
-#ifdef USE_MERO
-        sd <- lookupStorageDeviceSDev sdev
-        forM_ sd $ \m0sdev ->
-          notifyDriveStateChange m0sdev M0_NC_ONLINE
-#endif
-        messageProcessed eid
-        continue end
-
-      setPhaseIf smartFailure onSmartFailure $ \eid -> do
-        Just (sdev, _, _, _) <- get Local
-        markSMARTTestComplete sdev
-        messageProcessed eid
-        continue failure
-
-      directly failure $ do
-#ifdef USE_MERO
-        Just (sdev, _, _, _) <- get Local
-        sd <- lookupStorageDeviceSDev sdev
-        forM_ sd $ \m0sdev -> do
-          updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
-          -- Let note handler deal with repair logic
-          notifyDriveStateChange m0sdev M0_NC_FAILED
-#endif
-        continue end
-
-      directly end $ do
-        Just (_, _, _, uid) <- get Local
-        messageProcessed uid
-        stop
-
-      start home Nothing
-
 
 data CommitDriveRemoved = CommitDriveRemoved NodeId InterestingEventMessage UUID
   deriving (Typeable, Generic)
