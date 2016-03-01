@@ -344,8 +344,14 @@ ssplSchema = SSPLConf
             <*> sensorSchema
             <*> actuatorSchema
 
+ssplTimeFormatString :: String
+ssplTimeFormatString = "%Y-%m-%d %H:%M:%S%Q"
+
 formatTimeSSPL :: UTCTime -> T.Text
-formatTimeSSPL = T.pack . formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S%Q"
+formatTimeSSPL = T.pack . formatTime defaultTimeLocale ssplTimeFormatString
+
+parseTimeSSPL :: Monad m => T.Text -> m UTCTime
+parseTimeSSPL = parseTimeM True defaultTimeLocale ssplTimeFormatString . T.unpack
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
