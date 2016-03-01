@@ -45,32 +45,29 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , getSDevNode
   , findStorageDeviceIdentifiers
   , hasStorageDeviceIdentifier
-  , driveStatus
   , lookupStorageDevicePaths
   , lookupStorageDeviceSerial
-  , getDiskResetAttempts
-  , hasOngoingReset
-  , isStorageDriveRemoved
     -- ** Change State
   , identifyStorageDevice
   , updateDriveStatus
-  , incrDiskPowerOnAttempts
-  , incrDiskPowerOffAttempts
-  , incrDiskResetAttempts
-  , markDiskPowerOn
-  , markSMARTTestIsRunning
-  , isStorageDevicePowered
-  , getDiskPowerOnAttempts
-  , setDiskPowerOnAttempts
-  , getDiskPowerOffAttempts
-  , setDiskPowerOffAttempts
-  , markDiskPowerOff
-  , isStorageDeviceRunningSmartTest
+  , driveStatus
+    --- *** Smart
   , markSMARTTestComplete
+  , markSMARTTestIsRunning
+  , isStorageDeviceRunningSmartTest
+    --- *** Reset
   , markOnGoingReset
   , markResetComplete
+  , hasOngoingReset
+  , getDiskResetAttempts
+  , incrDiskResetAttempts
+    --- *** Power
+  , markDiskPowerOn
+  , markDiskPowerOff
+  , isStorageDevicePowered
   , markStorageDeviceRemoved
   , unmarkStorageDeviceRemoved
+  , isStorageDriveRemoved
     -- ** Drive candidates
   , attachStorageDeviceReplacement
   , lookupStorageDeviceReplacement
@@ -643,28 +640,6 @@ markResetComplete sdev = do
       Nothing  -> return ()
       Just old -> unsetStorageDeviceAttr sdev old
 
-incrDiskPowerOnAttempts :: StorageDevice -> PhaseM LoopState l ()
-incrDiskPowerOnAttempts sdev = do
-    let _F (SDPowerOnAttempts _) = True
-        _F _                     = False
-    m <- findStorageDeviceAttr _F sdev
-    case m of
-      Just old@(SDPowerOnAttempts i) -> do
-        unsetStorageDeviceAttr sdev old
-        setStorageDeviceAttr sdev (SDPowerOnAttempts (i+1))
-      _ -> setStorageDeviceAttr sdev (SDPowerOnAttempts 1)
-
-incrDiskPowerOffAttempts :: StorageDevice -> PhaseM LoopState l ()
-incrDiskPowerOffAttempts sdev = do
-    let _F (SDPowerOffAttempts _) = True
-        _F _                           = False
-    m <- findStorageDeviceAttr _F sdev
-    case m of
-      Just old@(SDPowerOffAttempts i) -> do
-        unsetStorageDeviceAttr sdev old
-        setStorageDeviceAttr sdev (SDPowerOffAttempts (i+1))
-      _ -> setStorageDeviceAttr sdev (SDPowerOffAttempts 1)
-
 incrDiskResetAttempts :: StorageDevice -> PhaseM LoopState l ()
 incrDiskResetAttempts sdev = do
     let _F (SDResetAttempts _) = True
@@ -755,47 +730,6 @@ getDiskResetAttempts sdev = do
   case m of
     Just (SDResetAttempts i) -> return i
     _                        -> return 0
-
-getDiskPowerOnAttempts :: StorageDevice -> PhaseM LoopState l Int
-getDiskPowerOnAttempts sdev = do
-  let _F (SDPowerOnAttempts _) = True
-      _F _                     = False
-  m <- findStorageDeviceAttr _F sdev
-  case m of
-    Just (SDPowerOnAttempts i) -> return i
-    _                          -> return 0
-
-setDiskPowerOnAttempts :: StorageDevice -> Int -> PhaseM LoopState l ()
-setDiskPowerOnAttempts sdev i = do
-  let _F (SDPowerOnAttempts _) = True
-      _F _                     = False
-  m <- findStorageDeviceAttr _F sdev
-  case m of
-    Just old@(SDPowerOnAttempts _) -> do
-      unsetStorageDeviceAttr sdev old
-      setStorageDeviceAttr sdev (SDPowerOnAttempts i)
-    _ -> setStorageDeviceAttr sdev (SDPowerOnAttempts i)
-
-getDiskPowerOffAttempts :: StorageDevice -> PhaseM LoopState l Int
-getDiskPowerOffAttempts sdev = do
-  let _F (SDPowerOffAttempts _) = True
-      _F _                      = False
-  m <- findStorageDeviceAttr _F sdev
-  case m of
-    Just (SDPowerOffAttempts i) -> return i
-    _                          -> return 0
-
-setDiskPowerOffAttempts :: StorageDevice -> Int -> PhaseM LoopState l ()
-setDiskPowerOffAttempts sdev i = do
-  let _F (SDPowerOffAttempts _) = True
-      _F _                      = False
-  m <- findStorageDeviceAttr _F sdev
-  case m of
-    Just old@(SDPowerOffAttempts _) -> do
-      unsetStorageDeviceAttr sdev old
-      setStorageDeviceAttr sdev (SDPowerOffAttempts i)
-    _ -> setStorageDeviceAttr sdev (SDPowerOffAttempts i)
-
 
 getSDevNode :: StorageDevice -> PhaseM LoopState l [Node]
 getSDevNode sdev = do

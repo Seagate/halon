@@ -77,8 +77,6 @@ newtype StorageDevice = StorageDevice
 
 data StorageDeviceAttr
     = SDResetAttempts !Int
-    | SDPowerOnAttempts !Int
-    | SDPowerOffAttempts !Int
     | SDPowered
     | SDSMARTRunning
     | SDOnGoingReset
