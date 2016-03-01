@@ -79,7 +79,7 @@ initialData host_pfx ifaddr_pfx n_srv n_drv globs = CI.InitialData {
               CI.M0Process {
                 CI.m0p_endpoint = host ++ "@tcp:12345:41:901"
               , CI.m0p_mem_as = 1
-              , CI.m0p_boot_level = 0
+              , CI.m0p_boot_level = -1
               , CI.m0p_mem_rss = 1
               , CI.m0p_mem_stack = 1
               , CI.m0p_mem_memlock = 1
