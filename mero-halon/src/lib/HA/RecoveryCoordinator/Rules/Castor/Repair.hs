@@ -381,7 +381,7 @@ handleRepair noteSet = processSet noteSet >>= \case
       -- finished reset procedure and should only be set to TRANSIENT
       -- and quiesce repair instead.
       fa <- mapMaybeM (\sd -> lookupStorageDevice sd >>= return . fmap (sd,))
-            . S.toList $ getSDevs diskMap M0_NC_FAILED
+            . S.toList $ getSDevs diskMap M0_NC_TRANSIENT
       for_ fa $ \(m0sdev, sdev) -> hasOngoingReset sdev >>= \case
         True -> return ()
         False -> do
@@ -390,9 +390,9 @@ handleRepair noteSet = processSet noteSet >>= \case
                        then M0_NC_TRANSIENT
                        else M0_NC_FAILED
 
-          updateDriveState m0sdev status
           case status of
             M0_NC_FAILED -> do
+              updateDriveState m0sdev status
               updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
               nid <- liftProcess getSelfNode
               diskids <- findStorageDeviceIdentifiers sdev

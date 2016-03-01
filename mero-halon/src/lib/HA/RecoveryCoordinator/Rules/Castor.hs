@@ -193,17 +193,18 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
 #ifdef USE_MERO
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do
-    defineSimple "mero-note-set" $ \(HAEvent uid noteSet@(Set ns) _) -> do
-      updateDriveStates . Set $ (resultState <$> ns)
-      handleRepair noteSet
-      messageProcessed uid
+    defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> let
+        resultState (Note f M0_NC_FAILED)
+          | fidIsType (Proxy :: Proxy M0.SDev) f = Note f M0_NC_TRANSIENT
+        resultState x = x
+        noteSet = Set (resultState <$> ns)
+      in do
+        updateDriveStates noteSet
+        handleRepair noteSet
+        messageProcessed uid
 
     querySpiel
     querySpielHourly
-  where
-    resultState (Note f M0_NC_FAILED)
-      | fidIsType (Proxy :: Proxy M0.SDev) f = Note f M0_NC_TRANSIENT
-    resultState x = x
 
 -- | Extract information about drives from the given set of
 -- notifications and update the state in RG accordingly.
