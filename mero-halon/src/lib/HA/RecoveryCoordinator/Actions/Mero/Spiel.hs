@@ -155,8 +155,7 @@ startRepairOperation pool = go `catch`
     go = do
       phaseLog "spiel" $ "Starting repair on pool " ++ show pool
       m0sdevs <- getPoolSDevsWithState pool M0_NC_FAILED
-      m0disks <- catMaybes <$> mapM lookupSDevDisk m0sdevs
-      let disks = M0.AnyConfObj <$> m0disks
+      disks <- fmap M0.AnyConfObj . catMaybes <$> mapM lookupSDevDisk m0sdevs
       notifyMero (M0.AnyConfObj pool : disks) M0_NC_REPAIR
       _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStart sc (M0.fid pool)
       uuid <- DP.liftIO nextRandom
@@ -243,11 +242,8 @@ startRebalanceOperation pool = catch go
   where
     go = do
       phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool
-      m0sdevsOnline <- getPoolSDevsWithState pool M0_NC_ONLINE
-      m0sdevsRepaired <- getPoolSDevsWithState pool M0_NC_REPAIRED
-      let m0sdevs = m0sdevsOnline ++ m0sdevsRepaired
-      m0disks <- catMaybes <$> mapM lookupSDevDisk m0sdevs
-      let disks = M0.AnyConfObj <$> m0disks
+      m0sdevs <- getPoolSDevsWithState pool M0_NC_REPAIRED
+      disks <- fmap M0.AnyConfObj . catMaybes <$> mapM lookupSDevDisk m0sdevs
       notifyMero (M0.AnyConfObj pool : disks) M0_NC_REBALANCE
       _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRebalanceStart sc (M0.fid pool)
       uuid <- DP.liftIO nextRandom

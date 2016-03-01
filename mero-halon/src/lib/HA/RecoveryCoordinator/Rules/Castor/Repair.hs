@@ -316,14 +316,15 @@ completeRepair pool prt muid = do
   -- otherwise [pool, disks]
   sdevs <- getPoolSDevs pool
   sts <- catMaybes <$> mapM (\d -> fmap (,d) <$> queryObjectStatus d) sdevs
-  let repairedSDevs = AnyConfObj . snd <$>
+  let repairedSDevs = snd <$>
                       filter (\(typ, _) -> typ == R.repairedNotificationMsg prt) sts
   -- Always set pool type to the type of the repair we're [partially]
   -- reporting
   setObjectStatus pool $ R.repairedNotificationMsg prt
+  repairedDisks <- fmap AnyConfObj <$> mapMaybeM lookupSDevDisk repairedSDevs
   if length sdevs == length repairedSDevs
     -- everything completed, if we were reparing, start rebalance and continue
-    then do notifyMero (AnyConfObj pool : repairedSDevs) $ R.repairedNotificationMsg prt
+    then do notifyMero (AnyConfObj pool : repairedDisks) $ R.repairedNotificationMsg prt
             unsetPoolRepairStatus pool
             -- If we have just finished repair, start rebalance and
             -- start queries.
@@ -334,7 +335,7 @@ completeRepair pool prt muid = do
               startRebalanceOperation pool
               queryStartHandling pool
     -- only notifying about partial repair, don't finish repairing
-    else do notifyMero repairedSDevs $ R.repairedNotificationMsg prt
+    else do notifyMero repairedDisks $ R.repairedNotificationMsg prt
             queryStartHandling pool
 
   traverse_ messageProcessed muid
