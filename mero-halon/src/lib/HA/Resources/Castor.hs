@@ -81,6 +81,7 @@ data StorageDeviceAttr
     | SDSMARTRunning
     | SDOnGoingReset
     | SDRemovedAt
+    | SDReplaced
     deriving (Eq, Ord, Show, Generic)
 
 instance Binary StorageDeviceAttr
@@ -149,12 +150,6 @@ data ReplacedBy = ReplacedBy deriving (Eq, Show, Generic, Typeable)
 instance Hashable ReplacedBy
 instance Binary ReplacedBy
 
--- | Mark that we need to wait for storage device update.
-data WantsReplacement = WantsReplacement deriving (Eq, Show, Generic, Typeable)
-
-instance Hashable WantsReplacement
-instance Binary   WantsReplacement
-
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
@@ -185,7 +180,6 @@ $(mkDicts
   , (''StorageDevice, ''Has, ''DeviceIdentifier)
   , (''StorageDevice, ''Has, ''StorageDeviceAttr)
   , (''StorageDevice, ''ReplacedBy, ''StorageDevice)
-  , (''StorageDevice, ''WantsReplacement, ''DeviceIdentifier)
   , (''Host, ''Has, ''UUID)
   ]
   )
@@ -215,7 +209,6 @@ $(mkResRel
   , (''StorageDevice, ''Has, ''DeviceIdentifier)
   , (''StorageDevice, ''Has, ''StorageDeviceAttr)
   , (''StorageDevice, ''ReplacedBy, ''StorageDevice)
-  , (''StorageDevice, ''WantsReplacement, ''DeviceIdentifier)
   ]
   []
   )

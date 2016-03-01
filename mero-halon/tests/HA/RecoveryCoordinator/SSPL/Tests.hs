@@ -224,7 +224,7 @@ testDMRequest = mkHpiTest rules test
         liftProcess $ usend self ()
       defineSimple "drive-failed" $ \(DriveFailed uuid _ _ _) ->
         liftProcess $ usend self (uuid, "drive-failed"::String)
-      defineSimple "drive-inserted" $ \(DriveInserted uuid _ _ _) ->
+      defineSimple "drive-inserted" $ \(DriveInserted uuid _ _ _ _ _) ->
         liftProcess $ usend self (uuid, "drive-inserted"::String)
       defineSimple "drive-removed" $ \(DriveRemoved uuid _ _ _ _) ->
         liftProcess $ usend self (uuid, "drive-removed"::String)

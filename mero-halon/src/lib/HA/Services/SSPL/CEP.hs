@@ -215,8 +215,11 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
          sn = DISerialNumber . T.unpack
                 . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber
                 $ srdm
+         path = DIPath . T.unpack
+                . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerPathID
+                $ srdm
      phaseLog "sspl-service" "monitor-drivemanager request received"
-     put Local $ Just (uuid, nid, enc, diskNum, disk_status, disk_reason, sn)
+     put Local $ Just (uuid, nid, enc, diskNum, disk_status, disk_reason, sn, path)
      lookupStorageDeviceInEnclosure enc (DIIndexInEnclosure diskNum) >>= \case
        Nothing ->
          -- Try to check if we have device with known serial number, just without location.
@@ -238,7 +241,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
      continue pcommit
 
    setPhase pcommit $ \(RuleDriveManagerDisk disk) -> do
-     Just (uuid, nid, enc, diskNum, disk_status, disk_reason, sn) <- get Local
+     Just (uuid, nid, enc, diskNum, disk_status, disk_reason, sn, path) <- get Local
      updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
      isDriveRemoved <- isStorageDriveRemoved disk
      phaseLog "sspl-service"
@@ -253,7 +256,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
           | isDriveRemoved -> messageProcessed uuid
           | otherwise      -> selfMessage $ DriveFailed uuid (Node nid) enc disk
        ("OK", "NONE")
-          | isDriveRemoved -> selfMessage $ DriveInserted uuid disk sn diskNum
+          | isDriveRemoved -> selfMessage $ DriveInserted uuid disk enc diskNum sn path
           | otherwise      -> messageProcessed uuid
        (s,r) -> do let msg = InterestingEventMessage
                            $ "Error processing drive manager response: drive status "
@@ -265,7 +268,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
 -- | Handle information messages about drive changes from HPI system.
 ruleMonitorStatusHpi :: Definitions LoopState ()
 ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeId, srphi) _) -> do
-      let nid = Node nodeId
+      let _nid = Node nodeId
           sn  = DISerialNumber . T.unpack
                         . sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber
                         $ srphi
@@ -329,20 +332,8 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
            case mident of
              Just serial' | serial' == serial -> return Nothing
              _ -> return (Just sd)
-      case msd of
-        Just sd -> do
-          _ <- attachStorageDeviceReplacement sd [sn, wwn, idx]
-          -- It may happen that we have already received "OK_None" status from drive manager
-          -- but for a completely new device. In this case, the device has not yet been
-          -- attached to mero because halon still needed the HPI information before processing
-          -- the event. Check whether that was actually the case here.
-          mwantUpdate <- wantsStorageDeviceReplacement sd
-          case mwantUpdate of
-            Just wsn | wsn == sn ->
-              syncGraphProcess $ \self -> usend self $ DriveInserted uuid sd sn diskNum
-            _   ->
-              syncGraphProcess $ \self -> usend self $ DriveRemoved uuid nid enc sd diskNum
-        Nothing -> messageProcessed uuid
+      forM_ msd $ \sd -> void $ attachStorageDeviceReplacement sd [sn, wwn, idx]
+      syncGraphProcessMsg uuid
 
 -- | SSPL Monitor host_update
 ruleMonitorHostUpdate :: Definitions LoopState ()
