@@ -64,13 +64,13 @@ import           Mero.Notification.HAState
 #endif
 
 tests :: String -> Transport -> [TestTree]
-tests _host transport =
+tests host transport =
   [ testCase "testHostAddition" $ testHostAddition transport
   , testCase "testDriveAddition" $ testDriveAddition transport
-  , testCase "testDriveManagerUpdate" $ testDriveManagerUpdate transport
+  , testCase "testDriveManagerUpdate" $ testDriveManagerUpdate host transport
 #ifdef USE_MERO
   , testCase "testConfObjectStateQuery" $
-      testConfObjectStateQuery _host transport
+      testConfObjectStateQuery host transport
   , testCase "good-conf-validates [disabled by TODO]" $
       when False (testGoodConfValidates transport)
   , testCase "bad-conf-does-not-validate [disabled by TODO]" $
@@ -179,8 +179,8 @@ data RunDriveManagerFailure = RunDriveManagerFailure
 instance Binary RunDriveManagerFailure
 
 -- | Update receiving a drive failure from SSPL,
-testDriveManagerUpdate :: Transport -> IO ()
-testDriveManagerUpdate transport = runDefaultTest transport $ do
+testDriveManagerUpdate :: String -> Transport -> IO ()
+testDriveManagerUpdate host transport = runDefaultTest transport $ do
   nid <- getSelfNode
   self <- getSelfPid
   registerInterceptor $ \case
@@ -250,7 +250,7 @@ testDriveManagerUpdate transport = runDefaultTest transport $ do
                     CI.Interface {
                       CI.if_macAddress = "10-00-00-00-00"
                     , CI.if_network = CI.Data
-                    , CI.if_ipAddrs = ["192.0.2.2"]
+                    , CI.if_ipAddrs = [ host ]
                     }
                   ]
                 }
