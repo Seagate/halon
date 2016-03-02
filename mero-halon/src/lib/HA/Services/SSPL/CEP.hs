@@ -69,7 +69,6 @@ sendInterestingEvent nid msg = do
       s <- listToMaybe $ (connectedTo Cluster Supports rg :: [Service SSPLConf])
       sp <- runningService node s rg
       listToMaybe $ connectedTo sp IEMChannel rg
-
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan msg
     _ -> phaseLog "warning" "Cannot find IEM channel!"
@@ -351,10 +350,7 @@ ruleMonitorRaidData = defineSimple "monitor-raid-data" $ \(HAEvent uuid (nid, sr
       host = sensorResponseMessageSensor_response_typeRaid_dataHostId srrd
     in do
       case sensorResponseMessageSensor_response_typeRaid_dataMdstat srrd of
-        Just x | x == "U_" || x == "_U" -> do
-          sendInterestingEvent nid $ InterestingEventMessage (
-            "Metadata drive failure on host " `T.append` host
-            )
+        Just x | x == "U_" || x == "_U" ->
           phaseLog "action" $ "Sending IEM for metadata drive failure."
         _ -> return ()
       messageProcessed uuid
@@ -422,8 +418,6 @@ ruleSystemdCmd sspl = defineSimpleIf "systemd-cmd" (\(HAEvent uuid cr _ ) _ ->
                           ++ " on nodes " ++ (show nodes)
           forM_ nodes $ \(Node nid) -> do
             sendSystemdCmd nid $ SystemdCmd serviceName SERVICE_START
-            sendInterestingEvent nid $
-              InterestingEventMessage ("Starting service " `T.append` serviceName)
         Aeson.String "stop" -> do
           nodes <- findHosts nodeFilter
                     >>= mapM nodesOnHost
@@ -433,8 +427,6 @@ ruleSystemdCmd sspl = defineSimpleIf "systemd-cmd" (\(HAEvent uuid cr _ ) _ ->
                           ++ " on nodes " ++ (show nodes)
           forM_ nodes $ \(Node nid) -> do
             sendSystemdCmd nid $ SystemdCmd serviceName SERVICE_STOP
-            sendInterestingEvent nid $
-              InterestingEventMessage ("Stopping service " `T.append` serviceName)
         Aeson.String "restart" -> do
           nodes <- findHosts nodeFilter
                     >>= mapM nodesOnHost
@@ -444,8 +436,6 @@ ruleSystemdCmd sspl = defineSimpleIf "systemd-cmd" (\(HAEvent uuid cr _ ) _ ->
                           ++ " on nodes " ++ (show nodes)
           forM_ nodes $ \(Node nid) -> do
             sendSystemdCmd nid $ SystemdCmd serviceName SERVICE_RESTART
-            sendInterestingEvent nid $
-              InterestingEventMessage ("Restarting service " `T.append` serviceName)
         -- Aeson.String "enable" -> liftProcess $ say "Unsupported."
         -- Aeson.String "disable" -> liftProcess $ say "Unsupported."
         -- Aeson.String "status" -> liftProcess $ say "Unsupported."

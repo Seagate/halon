@@ -85,6 +85,7 @@ Library
                    HA.Services.SSPL.CEP
                    HA.Services.SSPLHL
                    HA.Services.SSPL.LL.Resources
+                   HA.Services.SSPL.IEM
                    HA.Stats
                    HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.CEP
