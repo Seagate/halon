@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                   #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -210,11 +209,9 @@ ruleResetAttempt = define "reset-attempt" $ do
       setPhaseIf smartSuccess onSmartSuccess $ \eid -> do
         Just (sdev, _, _, _) <- get Local
         markSMARTTestComplete sdev
-#ifdef USE_MERO
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev ->
           notifyDriveStateChange m0sdev M0_NC_ONLINE
-#endif
         messageProcessed eid
         continue end
 
@@ -225,14 +222,12 @@ ruleResetAttempt = define "reset-attempt" $ do
         continue failure
 
       directly failure $ do
-#ifdef USE_MERO
         Just (sdev, _, _, _) <- get Local
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
           -- Let note handler deal with repair logic
           notifyDriveStateChange m0sdev M0_NC_FAILED
-#endif
         continue end
 
       directly end $ do

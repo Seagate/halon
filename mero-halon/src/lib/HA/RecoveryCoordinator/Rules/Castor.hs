@@ -29,7 +29,6 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.ResourceGraph as G
 import HA.Services.SSPL
-import HA.RecoveryCoordinator.Rules.Castor.Reset
 #ifdef USE_MERO
 import Control.Applicative
 import Control.Category ((>>>))
@@ -42,6 +41,7 @@ import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Rules.Castor.Repair
+import HA.RecoveryCoordinator.Rules.Castor.Reset
 import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
@@ -88,8 +88,8 @@ castorRules = sequence_
   , ruleGetEntryPoint
   , ruleNewMeroClient
   , ruleNewMeroServer
-#endif
   , ruleResetAttempt
+#endif
   , ruleDriveFailed
   , ruleDriveRemoved
   , ruleDriveInserted
@@ -239,9 +239,9 @@ ruleDriveRemoved = define "drive-removed" $ do
        directly wrapper_init $ switch [ginit, wrapper_clear]
 
        directly wrapper_clear $ do
-         fork NoBuffer $ continue ginit 
+         fork NoBuffer $ continue ginit
          stop
-       return wrapper_init 
+       return wrapper_init
 #else
 ruleDriveRemoved :: Definitions LoopState ()
 ruleDriveRemoved = defineSimple "drive-removed" $ \(DriveRemoved uuid _ _ disk _) -> do
@@ -257,16 +257,13 @@ driveInsertionTimeout = 10
 -- drive and prepares drives for Repair/rebalance procedure.
 -- This rule works as following:
 --
--- 1. Wait for some timeout, to check if new events about this drive will not 
+-- 1. Wait for some timeout, to check if new events about this drive will not
 --    arrive. If they do - cancel procedure.
 --
--- 2. If same drive was inserted back, then depending on status of the current one
---    do the following:
---      M0_NC_ONLINE  - continue normal process, as repair/rebalance didn't happen
---      M0_NC_TRANSIENT - continue normal process
---      M0_NC_FAILED, , M0_NC_REBALANCE  - trigger repair/rebalance start, mark drive as replaced
---                                         so rebalance will happen.
---      M0_NC_REPAIR, M0_NC_REPAIRED - mark drive as replaced
+-- 2. If this is a new device we update confd.
+--
+-- 3. Once confd is updated rule decide if we need to trigger repair/rebalance
+--    procedure and does that.
 ruleDriveInserted :: Definitions LoopState ()
 ruleDriveInserted = define "drive-inserted" $ do
       handler       <- phaseHandle "drive-inserted"
@@ -331,7 +328,7 @@ ruleDriveInserted = define "drive-inserted" $ do
                    let isMeroFailure (StorageDeviceStatus "MERO-FAILED" _) = True
                        isMeroFailure _ = False
                    meroFailure <- maybe False isMeroFailure <$> driveStatus disk
-                   if meroFailure 
+                   if meroFailure
                      then messageProcessed uuid
                      else markStorageDeviceReplaced disk
              unmarkStorageDeviceRemoved disk
@@ -344,8 +341,8 @@ ruleDriveInserted = define "drive-inserted" $ do
                    notifyDriveStateChange sdev M0_NC_ONLINE
                    messageProcessed uuid
                  M0_NC_FAILED -> do
-                   handleRepair $ Set [Note (fid sdev) M0_NC_FAILED]
                    markIfNotMeroFailure
+                   handleRepair $ Set [Note (fid sdev) M0_NC_FAILED]
                  M0_NC_REPAIRED -> do
                    markIfNotMeroFailure
                    handleRepair $ Set [Note (fid sdev) M0_NC_ONLINE]
@@ -371,7 +368,7 @@ ruleDriveInserted = define "drive-inserted" $ do
 
       setPhase sync_complete $ \(SyncComplete request) -> do
         Just (req, _) <- get Local
-        let next = if req == request 
+        let next = if req == request
                    then commit
                    else sync_complete
         continue next
@@ -391,7 +388,7 @@ ruleDriveInserted = define "drive-inserted" $ do
             -- Impossible cases
             M0_NC_UNKNOWN -> notifyDriveStateChange m0sdev M0_NC_FAILED
             M0_NC_ONLINE ->  notifyDriveStateChange m0sdev M0_NC_FAILED
-            M0_NC_REBALANCE -> notifyDriveStateChange m0sdev M0_NC_FAILED 
+            M0_NC_REBALANCE -> notifyDriveStateChange m0sdev M0_NC_FAILED
         unmarkStorageDeviceRemoved disk
         continue finish
 
@@ -408,7 +405,7 @@ ruleDriveInserted = define "drive-inserted" $ do
        directly wrapper_init $ switch [ginit, wrapper_clear]
 
        directly wrapper_clear $ do
-         fork NoBuffer $ continue ginit 
+         fork NoBuffer $ continue ginit
          stop
        return wrapper_init
 
@@ -417,15 +414,11 @@ ruleDriveInserted :: Definitions LoopState ()
 ruleDriveInserted = defineSimple "drive-inserted" $
   \(DriveInserted{diUUID=uuid,diDevice=disk,diSerial=sn,diPath=path}) -> do
     lookupStorageDeviceReplacement disk >>= \case
-      Nothing -> do
-        modifyGraph $ G.disconnectAllFrom disk Has (Proxy :: Proxy DeviceIdentifier)
-        identifyStorageDevice disk sn
-        identifyStorageDevice disk path
-      Just cand -> do
-        actualizeStorageDeviceReplacement cand
-        identifyStorageDevice disk sn
-        identifyStorageDevice disk path
-    syncGraphProcessMsg uuid 
+      Nothing -> modifyGraph $ G.disconnectAllFrom disk Has (Proxy :: Proxy DeviceIdentifier)
+      Just cand -> actualizeStorageDeviceReplacement cand
+    identifyStorageDevice disk sn
+    identifyStorageDevice disk path
+    syncGraphProcessMsg uuid
 #endif
 
 -- | Mark drive as failed

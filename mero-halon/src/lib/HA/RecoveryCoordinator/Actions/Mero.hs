@@ -72,16 +72,15 @@ updateDriveStatesFromSet (Set ns) = catMaybes <$> mapM noteToSDev ns
 
 -- | Notify ourselves about a state change of the 'M0.SDev'.
 --
--- Internally, build a note 'Set' and pass it it 'handleNotes' which
--- will both set the new state and decide what to do with respect to
--- repair and any other rules that need to act on state changes.
+-- Internally, build a note 'Set' and pass it to all registered
+-- stateChangeHandlers.
 --
 -- It's important to understand that this function does not replace
 -- 'updateDriveState' which performs the actual update.
 notifyDriveStateChange :: M0.SDev -> M0.ConfObjectState -> PhaseM LoopState l ()
 notifyDriveStateChange m0sdev st = do
     stateChangeHandlers <- lsStateChangeHandlers <$> get Global
-    sequence_ $ (\x -> x ns) <$> stateChangeHandlers
+    sequence_ $ ($ ns) <$> stateChangeHandlers
  where
    ns = Set [Note (M0.fid m0sdev) st]
 

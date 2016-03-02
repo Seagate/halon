@@ -526,6 +526,8 @@ updateStorageDeviceSDev sdev = do
   phaseLog "rg" $ "updating SDev that belongs to " ++ show sdev
   modifyGraph $ rgUpdateStorageDeviceSDev sdev 
 
+-- | Update mero device that correspong to storage device, by setting correct
+-- path to that.
 rgUpdateStorageDeviceSDev :: StorageDevice -> G.Graph -> G.Graph
 #ifdef USE_MERO
 rgUpdateStorageDeviceSDev sdev rg =
