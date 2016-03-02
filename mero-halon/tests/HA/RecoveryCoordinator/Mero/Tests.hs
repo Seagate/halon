@@ -315,7 +315,7 @@ testConfObjectStateQuery host transport =
       registerInterceptor $ \string -> do
         when ("Loaded initial data" `isInfixOf` string) $
           usend self ("Loaded initial data" :: String)
-        when ("mero-note-set synchronized" `isInfixOf` string) $
+        when ("handleReset synchronized" `isInfixOf` string) $
           usend self ("mero-note-set synchronized" :: String)
 
       say $ "tests node: " ++ show nid
