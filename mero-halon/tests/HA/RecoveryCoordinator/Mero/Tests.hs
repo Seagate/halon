@@ -67,7 +67,13 @@ tests :: String -> Transport -> [TestTree]
 tests host transport =
   [ testCase "testHostAddition" $ testHostAddition transport
   , testCase "testDriveAddition" $ testDriveAddition transport
+#if defined(USE_MOCK_REPLICATOR)
   , testCase "testDriveManagerUpdate" $ testDriveManagerUpdate host transport
+#else
+    -- Doesn't work in integration tests.
+  , testCase "testDriveManagerUpdate [disabled by compilation flags]" $
+      return ()
+#endif
 #ifdef USE_MERO
   , testCase "testConfObjectStateQuery" $
       testConfObjectStateQuery host transport
