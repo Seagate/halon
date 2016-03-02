@@ -23,23 +23,18 @@ import qualified Data.HashSet as S
 import qualified Data.Map as M
 import           Data.Maybe (catMaybes, fromMaybe)
 import           Data.Monoid ((<>))
-import           Data.Text (pack)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
-import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Mero
 import qualified HA.RecoveryCoordinator.Rules.Castor.Repair.Internal as R
-import           HA.RecoveryCoordinator.Rules.Castor.Reset
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero hiding (Enclosure, Process, Rack, Process)
 import           HA.Resources.Mero.Note
 import           HA.Services.Mero
-import           HA.Services.SSPL
-import           HA.Services.SSPL.CEP (updateDriveManagerWithFailure)
 import           Mero.Notification hiding (notifyMero)
 import           Mero.Notification.HAState (Note(..))
 import qualified Mero.Spiel as Spiel

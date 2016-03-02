@@ -37,7 +37,6 @@ import HA.Resources.TH
 import HA.EventQueue.Producer
 import HA.Services.Mero
 import HA.Services.Mero.CEP (meroChannel)
-import HA.Services.SSPL.CEP (updateDriveManagerWithFailure)
 import HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
@@ -64,7 +63,7 @@ import Control.Monad
 import Data.Maybe
 import Data.Binary (Binary)
 import Data.Monoid ((<>))
-import Data.Text (Text, pack)
+import Data.Text (pack)
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
