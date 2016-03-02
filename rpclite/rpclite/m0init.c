@@ -22,6 +22,17 @@ int m0_init_wrapper () {
         exit(1);
       }
     }
+    if (0 != strcmp(bi->bi_configure_opts, M0_VERSION_BUILD_CONFIGURE_OPTS)) {
+      fprintf(stderr, "m0_init_wrapper: the configuration options of the "
+                      "loaded mero library (%s) do not match the expected ones "
+                      "(%s)\n"
+                    , bi->bi_configure_opts
+                    , M0_VERSION_BUILD_CONFIGURE_OPTS
+             );
+      if (getenv("DISABLE_MERO_COMPAT_CHECK") == NULL) {
+        exit(1);
+      }
+    }
     M0_SET0(&instance);
     return m0_init(&instance);
 }
