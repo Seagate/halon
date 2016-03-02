@@ -46,12 +46,12 @@ main() {
 	sudo $HALONCTL -l $IP:9010 -a $IP:9000 cluster load -f $HALON_FACTS_YAML -r $HALON_SOURCES/mero-halon/scripts/mero_provisioner_role_mappings.ede
 
 	sleep 30; echo "Fail (start)"
-	sudo $MERO_ROOT/utils/m0console -f 116 -s 10.0.2.15@tcp:12345:34:101 -c 10.0.2.15@tcp:12345:31:100 -d '[6:(^d|1:8,1),(^d|1:10,1),(^d|1:12,1),(^d|1:14,1),(^d|1:16,1),(^d|1:18,2)]'
-	sleep 5; echo "Transient (halt)"
-	sudo $MERO_ROOT/utils/m0console -f 116 -s 10.0.2.15@tcp:12345:34:101 -c 10.0.2.15@tcp:12345:31:100 -d '[6:(^d|1:8,1),(^d|1:10,1),(^d|1:12,1),(^d|1:14,1),(^d|1:16,1),(^d|1:18,3)]'
-	sleep 5; echo "Online (continue)"
-	sudo $MERO_ROOT/utils/m0console -f 116 -s 10.0.2.15@tcp:12345:34:101 -c 10.0.2.15@tcp:12345:31:100 -d '[6:(^d|1:8,1),(^d|1:10,1),(^d|1:12,1),(^d|1:14,1),(^d|1:16,1),(^d|1:18,1)]'
-	sudo $MERO_ROOT/utils/m0console -f 116 -s 10.0.2.15@tcp:12345:34:101 -c 10.0.2.15@tcp:12345:31:100 -d '[7:(^d|1:8,5),(^d|1:10,5),(^d|1:12,5),(^d|1:14,5),(^d|1:16,5),(^d|1:18,5),(^o|1:2,5)]'
+	sudo $MERO_ROOT/utils/m0console -f 116 -s 10.0.2.15@tcp:12345:35:101 -c 10.0.2.15@tcp:12345:31:100 -d '[6:(^d|1:8,1),(^d|1:10,1),(^d|1:12,1),(^d|1:14,1),(^d|1:16,1),(^d|1:18,2)]'
+#	sleep 5; echo "Transient (halt)"
+#	sudo $MERO_ROOT/utils/m0console -f 116 -s 10.0.2.15@tcp:12345:35:101 -c 10.0.2.15@tcp:12345:31:100 -d '[6:(^d|1:8,1),(^d|1:10,1),(^d|1:12,1),(^d|1:14,1),(^d|1:16,1),(^d|1:18,3)]'
+#	sleep 5; echo "Online (continue)"
+#	sudo $MERO_ROOT/utils/m0console -f 116 -s 10.0.2.15@tcp:12345:35:101 -c 10.0.2.15@tcp:12345:31:100 -d '[6:(^d|1:8,1),(^d|1:10,1),(^d|1:12,1),(^d|1:14,1),(^d|1:16,1),(^d|1:18,1)]'
+#	sudo $MERO_ROOT/utils/m0console -f 116 -s 10.0.2.15@tcp:12345:35:101 -c 10.0.2.15@tcp:12345:31:100 -d '[7:(^d|1:8,5),(^d|1:10,5),(^d|1:12,5),(^d|1:14,5),(^d|1:16,5),(^d|1:18,5),(^o|1:2,5)]'
 
 
 }
