@@ -2,7 +2,6 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NoMonomorphismRestriction  #-}
 {-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE ImplicitParams             #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -52,8 +51,6 @@ import Data.Proxy
 import Data.Maybe (catMaybes, listToMaybe)
 import Data.UUID.V4 (nextRandom)
 
-import GHC.Stack
-
 import Network.CEP
 
 import System.Posix.SysInfo
@@ -88,14 +85,12 @@ notifyDriveStateChange m0sdev st = do
  where
    ns = Set [Note (M0.fid m0sdev) st]
 
-updateDriveState :: (?location :: CallStack)
-                 => M0.SDev -- ^ Drive to update state
+updateDriveState :: M0.SDev -- ^ Drive to update state
                  -> M0.ConfObjectState -- ^ State to update to
                  -> PhaseM LoopState l ()
 
 -- | For transient failures, we may need to create a new pool version.
 updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
-  phaseLog "debug" $ show ?location
   -- Update state in RG
   modifyGraph $ G.connectUniqueFrom m0sdev Is M0.M0_NC_TRANSIENT
   graph <- getLocalGraph
@@ -117,7 +112,6 @@ updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
 
 -- | For all other states, we simply update in the RG and notify Mero.
 updateDriveState m0sdev x = do
-  phaseLog "debug" $ show ?location
   phaseLog "rg" $ "Updating status of SDev "
                 ++ show m0sdev
                 ++ " to "
