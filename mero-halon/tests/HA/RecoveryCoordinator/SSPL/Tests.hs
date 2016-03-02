@@ -166,15 +166,13 @@ testHpiNewWWN = mkHpiTest rules test
         rg <- getLocalGraph
         let d = DIIndexInEnclosure 10
         liftProcess $ usend self $ Prelude.null $ (connectedFrom Has d rg :: [StorageDevice])
-      defineSimple "disk-failed" $ \d@(DriveRemoved uuid _ _ _ _) -> do
-        liftProcess $ say $ show d
-        liftProcess $ usend self (uuid,"message-processed"::String)
     test rc = do
       me <- getSelfNode
+      subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
       let request = mkHpiMessage (pack systemHostname) "enclosure_2" "serial310" 10 "loop10" "wwn10"
       uuid <- liftIO $ nextRandom
       usend rc $ HAEvent uuid (me, request) []
-      receiveWait [ matchIf (\(u,"message-processed"::String) -> u == uuid) (\_ -> return ()) ]
+      _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
       usend rc ()
       False <- expect
       return ()
@@ -198,14 +196,15 @@ testHpiUpdatedWWN = mkHpiTest rules test
     test rc = do
       me   <- getSelfNode
       uuid0 <- liftIO $ nextRandom
+      subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
       let request0 = mkHpiMessage (pack systemHostname) "enclosure_2" "serial21" 1 "loop1" "wwn1"
       usend rc $ HAEvent uuid0 (me, request0) []
       let request = mkHpiMessage (pack systemHostname) "enclosure_2" "serial31" 1 "loop1" "wwn10"
       uuid <- liftIO $ nextRandom
       usend rc $ HAEvent uuid (me, request) []
-      enc <- receiveWait [ matchIf (\(u, _) -> u == uuid)
-                                   (\(_,enc) -> return enc) ]
-      usend rc (enc :: Enclosure, 1::Int)
+      _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
+      _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
+      usend rc (Enclosure "enclosure_2", 1::Int)
       is   <- expect
       liftIO $ assertEqual "Indentifiers matches"
                  (Set.fromList [DIIndexInEnclosure 1
