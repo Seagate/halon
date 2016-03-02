@@ -118,7 +118,10 @@ updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
 -- | For all other states, we simply update in the RG and notify Mero.
 updateDriveState m0sdev x = do
   phaseLog "debug" $ show ?location
-  liftProcess $ say $ "updating to " ++ show x
+  phaseLog "rg" $ "Updating status of SDev "
+                ++ show m0sdev
+                ++ " to "
+                ++ show x
   -- Update state in RG
   modifyGraph $ G.connectUniqueFrom m0sdev Is x
   graph <- getLocalGraph
