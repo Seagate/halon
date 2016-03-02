@@ -80,7 +80,7 @@ import Data.Proxy (Proxy(..))
 import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
 
-import Network.CEP
+import Network.CEP hiding (phaseLog)
 import Network.RPC.RPCLite (getRPCMachine_se, rpcAddress, RPCAddress(..))
 
 import System.IO
@@ -89,6 +89,9 @@ import System.Directory
 import Text.Printf (printf)
 
 import Prelude hiding (id)
+
+phaseLog :: String -> String -> PhaseM g l ()
+phaseLog ph msg = liftProcess . DP.say $ ph ++ " => " ++ msg
 
 
 -- | Halon service address suffix. Should be appended to the LNID.
@@ -118,11 +121,22 @@ withRootRC f = do
 withSpielRC :: (SpielContext -> PhaseM LoopState l a)
             -> PhaseM LoopState l (Either SomeException a)
 withSpielRC f = withResourceGraphCache $ do
+  lg "DEBUG-withSpielRC" "0"
   rpca <- liftProcess getRPCAddress
-  try $ withServerEndpoint rpca $ \se -> do
+  lg "DEBUG-withSpielRC" $ "1: " ++ show rpca
+  r <- try $ withServerEndpoint rpca $ \se -> do
+     lg "DEBUG-withSpielRC" "2"
      conn <- liftM0RC $ initHASession se rpca
+     lg "DEBUG-withSpielRC" "3"
      sc <- liftM0RC $ getRPCMachine_se se >>= \rpcm -> Mero.Spiel.start rpcm
+     lg "DEBUG-withSpielRC" "4"
      f sc `sfinally`  liftM0RC (Mero.Spiel.stop sc >> finiHASession conn)
+  p r >> return r
+  where
+    lg ph x = liftProcess . DP.say $ ph ++ " => " ++ x
+    p x = lg "DEBUG-withSpielRC" $ case x of
+      Left e -> "Left " ++ show e
+      Right _ -> "Right _"
 
 -- | Try to start rconf sesion and run 'PhaseM' on the 'SpielContext' this
 -- call is required for running management commands.

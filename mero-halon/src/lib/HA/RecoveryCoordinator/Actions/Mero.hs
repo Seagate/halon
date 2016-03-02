@@ -93,6 +93,7 @@ updateDriveState m0sdev x = do
   liftProcess $ say $ show (m0sdev, m0disks, x)
   let m0objs = M0.AnyConfObj <$> m0disks
   notifyMero (M0.AnyConfObj m0sdev:m0objs) x
+  liftProcess . say $ "Updated with " ++ show (m0sdev, m0disks)
 
 -- | RMS service address.
 rmsAddress :: String
@@ -200,6 +201,7 @@ startNodeProcesses host (TypedChannel chan) label mkfs = do
             (M0.PLM0t1fs, _) -> forM procs $ (\proc -> ([M0T1FS],) <$> runConfig proc rg)
             (_, True) -> forM procs (\proc -> ([M0MKFS,M0D],) <$> runConfig proc rg)
             (_, False) -> forM procs $ (\proc -> ([M0D],) <$> runConfig proc rg)
+    liftProcess . say $ "DEBUG => Sending " ++ show msg
     liftProcess $ sendChan chan msg
   where
     runConfig proc rg = case runsMgs proc rg of

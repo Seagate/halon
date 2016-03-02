@@ -235,6 +235,8 @@ ruleNewMeroServer = define "new-mero-server" $ do
     Just (n, eid) <- get Local
     phaseLog "server-bootstrap" $ "Finished bootstrapping mero server at "
                                ++ show n
+    phaseLog "server-bootstrap" $ "Going to sync to confd for debug"
+    syncAction (Just eid) SyncToConfdServersInRG
     messageProcessed eid
 
   start new_server Nothing

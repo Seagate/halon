@@ -43,8 +43,11 @@ import           HA.Services.SSPL.CEP (updateDriveManagerWithFailure)
 import           Mero.Notification hiding (notifyMero)
 import           Mero.Notification.HAState (Note(..))
 import qualified Mero.Spiel as Spiel
-import           Network.CEP
+import           Network.CEP hiding (phaseLog)
 import           Prelude hiding (id)
+
+phaseLog :: String -> String -> PhaseM g l ()
+phaseLog ph msg = liftProcess . say $ ph ++ " => " ++ msg
 
 --------------------------------------------------------------------------------
 -- Queries                                                               --

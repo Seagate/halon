@@ -211,7 +211,7 @@ handleNotes noteSet = do
   -- Before we do anything else, write the state of the drives into
   -- the RG so that rest of the rule can query updated info
   updateDriveStates noteSet
-
+  liftProcess . say $ "Finished updates for " ++ show noteSet
   -- Progress repair based on the messages
   handleRepair noteSet
 
