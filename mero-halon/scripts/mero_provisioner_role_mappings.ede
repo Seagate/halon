@@ -1,6 +1,6 @@
 - name: "ha"
   content:
-    - m0p_endpoint: "{{ lnid }}:12345:34:101"
+    - m0p_endpoint: "{{ lnid }}:12345:35:101"
       m0p_mem_as: {{ host_mem_as }}
       m0p_mem_rss: {{ host_mem_rss }}
       m0p_mem_stack: {{ host_mem_stack }}
@@ -14,14 +14,14 @@
         - m0s_type:
             tag: CST_HA
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:34:101"]
+          m0s_endpoints: ["{{ lnid }}:12345:35:101"]
           m0s_params:
             tag: SPConfDBPath
             contents: "/var/mero/confd"
         - m0s_type:
             tag: CST_RMS
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:34:101"]
+          m0s_endpoints: ["{{ lnid }}:12345:35:101"]
           m0s_params:
             tag: SPUnused
             contents: []
