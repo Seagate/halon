@@ -179,12 +179,12 @@ startActuators chan ac pid = do
         Nothing -> informRC sp chans
         Just () -> return ()
     iemProcess Rabbit.BindConf{..} rp = forever $ do
-      iem <- receiveChan rp
+      InterestingEventMessage iem <- receiveChan rp
       liftIO $ publishMsg
         chan
         (T.pack . fromDefault $ bcExchangeName)
         (T.pack . fromDefault $ bcRoutingKey)
-        (newMsg { msgBody = eimToText iem 
+        (newMsg { msgBody = BL.fromChunks [iemToBytes iem]
                 , msgDeliveryMode = Just Persistent
                 }
         )

@@ -664,11 +664,6 @@ testMetadataDriveFailed transport = run transport interceptor test where
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
     Just{} <- expectTimeout 1000000 :: Process (Maybe (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data))))
     debug "Raid_data message processed by RC"
-    mx <- receiveTimeout 1000000
-            [ matchIf (\(MQMessage _ msg) ->
-                         "Metadata drive failure on host " `append` host == decodeUtf8 msg)
-                      (const $ return ())]
-    when (isNothing mx) $ error "No message delivered to SSPL."
 
 testGreeting :: Transport -> IO ()
 testGreeting transport = run transport interceptor test where
