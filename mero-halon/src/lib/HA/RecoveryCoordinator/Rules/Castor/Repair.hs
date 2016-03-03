@@ -23,23 +23,18 @@ import qualified Data.HashSet as S
 import qualified Data.Map as M
 import           Data.Maybe (catMaybes, fromMaybe)
 import           Data.Monoid ((<>))
-import           Data.Text (pack)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
-import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Mero
 import qualified HA.RecoveryCoordinator.Rules.Castor.Repair.Internal as R
-import           HA.RecoveryCoordinator.Rules.Castor.Reset
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero hiding (Enclosure, Process, Rack, Process)
 import           HA.Resources.Mero.Note
 import           HA.Services.Mero
-import           HA.Services.SSPL
-import           HA.Services.SSPL.CEP (updateDriveManagerWithFailure)
 import           Mero.Notification hiding (notifyMero)
 import           Mero.Notification.HAState (Note(..))
 import qualified Mero.Spiel as Spiel
@@ -372,52 +367,18 @@ handleRepair noteSet = processSet noteSet >>= \case
   DevicesOnly devices -> do
     phaseLog "repair" $ "Processed as " ++ show (DevicesOnly devices)
     for_ devices $ \(pool, diskMap) -> do
-      -- The rule containing handleRepair (handleNotes) already set
-      -- drive states. The only things we have to do extra processing
-      -- on straight away are failed devices: drive reset might be
-      -- happening in which case the state needs to change again
-      -- before we move on with processing repair. For example, we
-      -- don't want to abort a repair if a drive has FAILED but hasn't
-      -- finished reset procedure and should only be set to TRANSIENT
-      -- and quiesce repair instead.
-      fa <- mapMaybeM (\sd -> lookupStorageDevice sd >>= return . fmap (sd,))
-            . S.toList $ getSDevs diskMap M0_NC_FAILED
-      for_ fa $ \(m0sdev, sdev) -> hasOngoingReset sdev >>= \case
-        True -> return ()
-        False -> do
-          ratt <- getDiskResetAttempts sdev
-          let status = if ratt <= resetAttemptThreshold
-                       then M0_NC_TRANSIENT
-                       else M0_NC_FAILED
 
-          updateDriveState m0sdev status
-          case status of
-            M0_NC_FAILED -> do
-              updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
-              nid <- liftProcess getSelfNode
-              diskids <- findStorageDeviceIdentifiers sdev
-              let iem = InterestingEventMessage . pack . unwords $ [
-                            "M0_NC_FAILED reported."
-                          , "fid=" ++ show (M0.d_fid m0sdev)
-                        ] ++ map show diskids
-              sendInterestingEvent nid iem
+      tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
+      fa <- getPoolSDevsWithState pool M0_NC_FAILED
 
-            M0_NC_TRANSIENT -> promulgateRC $ ResetAttempt sdev
-            _ -> return ()
-
-          syncGraph $ say "mero-note-set synchronized"
-
-      -- We have processed all failed disks for this pool, now we
-      -- have to either start a repair operation or if a repair
-      -- has already been started, abort it.
       getPoolRepairStatus pool >>= \case
         Just (M0.PoolRepairStatus prt _ _)
           -- Repair happening, device failed, abort
           | fa' <- getSDevs diskMap M0_NC_FAILED
-          , _:_ <- S.toList fa' -> abortRepair pool
+          , not (S.null fa') -> abortRepair pool
           -- Repair happening, some devices are transient
-          | tr <- getSDevs diskMap M0_NC_TRANSIENT
-          , _:_ <- S.toList tr -> do
+          | tr' <- getSDevs diskMap M0_NC_TRANSIENT
+          , not (S.null tr') -> do
               phaseLog "repair" $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
                                ++ ", quescing repair."
               quiesceRepair pool prt
@@ -433,15 +394,14 @@ handleRepair noteSet = processSet noteSet >>= \case
           | otherwise -> phaseLog "repair" $
               "Repair on-going but don't know what to do with " ++ show diskMap
         Nothing
-         -- No repair, something is transient, do nothing
-         | tr <- getSDevs diskMap M0_NC_TRANSIENT
-         , _:_ <- S.toList tr -> return ()
-        -- No transients, no repair, failed devices, start repair
-         | otherwise -> do
+         -- No repair, devices have failed, no TRANSIENT devices; start repair
+         | null tr
+         , not (null fa) -> do
              startRepairOperation pool
-             m0sdevs <- getPoolSDevsWithState pool M0_NC_FAILED
-             mapM_ (flip updateDriveState M0_NC_REPAIR) m0sdevs
+             mapM_ (flip updateDriveState M0_NC_REPAIR) fa
              queryStartHandling pool
+        -- Do nothing
+         | otherwise -> return ()
 
   PoolInfo pool st m -> do
     phaseLog "repair" $ "Processed as PoolInfo " ++ show (pool, st, m)
@@ -580,12 +540,6 @@ processSet st@(Set ns) = do
           disks <- M.fromListWith (<>) . map (second S.singleton) <$> mapMaybeM noteToSDev ns
           return . Just . PoolInfo pool typ $ SDevStateMap disks
         _ -> return Nothing
-
--- | If the 'Note' is about an 'SDev', extract it and its state.
-noteToSDev :: Note -> PhaseM LoopState l (Maybe (ConfObjectState, SDev))
-noteToSDev (Note mfid stType)  = lookupConfObjByFid mfid >>= return . \case
-  Nothing -> Nothing
-  Just (sdev :: SDev) -> Just (stType, sdev)
 
 -- | A mapping of 'ConfObjectState's to 'M0.SDev's.
 newtype SDevStateMap = SDevStateMap (M.Map ConfObjectState (S.HashSet SDev))

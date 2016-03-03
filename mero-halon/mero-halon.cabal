@@ -95,7 +95,6 @@ Library
                    HA.RecoveryCoordinator.Actions.Service
                    HA.RecoveryCoordinator.Actions.Test
                    HA.RecoveryCoordinator.Rules.Castor
-                   HA.RecoveryCoordinator.Rules.Castor.Reset
                    HA.RecoveryCoordinator.Rules.Service
                    HA.RecoveryCoordinator.Events.Drive
                    HA.RecoveryCoordinator.Events.Mero
@@ -154,6 +153,7 @@ Library
                        Mero.Notification.HAState
                        HA.RecoveryCoordinator.Actions.Mero
                        HA.RecoveryCoordinator.Rules.Castor.Server
+                       HA.RecoveryCoordinator.Rules.Castor.Reset
                        HA.RecoveryCoordinator.Rules.Mero
                        HA.Resources.Mero
                        HA.Resources.Mero.Note

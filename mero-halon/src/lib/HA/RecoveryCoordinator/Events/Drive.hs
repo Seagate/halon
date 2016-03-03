@@ -36,9 +36,11 @@ instance Binary DriveRemoved
 -- drive insertion rule.
 data DriveInserted = DriveInserted
        { diUUID :: UUID -- ^ Event UUID.
-       , diDevice :: StorageDevice -- ^ Inserted device
-       , diSerial :: DeviceIdentifier -- ^ Serial drive of device
-       , diDiskNum :: Int -- ^ Unique location of device in enclosure
+       , diDevice :: StorageDevice -- ^ Inserted device.
+       , diEnclosure :: Enclosure -- ^ Enclosure where event happened.
+       , diDiskNum :: Int -- ^ Unique location of device in enclosure.
+       , diSerial :: DeviceIdentifier -- ^ Serial drive of device.
+       , diPath   :: DeviceIdentifier -- ^ Real path of the device.
        } deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveInserted

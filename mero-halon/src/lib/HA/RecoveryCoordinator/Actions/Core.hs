@@ -82,6 +82,7 @@ import Control.Distributed.Process
 import Control.Monad (when, unless)
 import Control.Distributed.Process.Serializable
 #ifdef USE_MERO
+import Mero.Notification (Set)
 import Mero.M0Worker
 #endif
 
@@ -99,6 +100,7 @@ data LoopState = LoopState {
   , lsRefCount :: Map.Map UUID Int
     -- ^ Set of HAEvent uuid we've already handled.
 #ifdef USE_MERO
+  , lsStateChangeHandlers :: forall l. [Set -> PhaseM LoopState l ()]
   , lsWorker   :: M0Worker  -- ^ M0 worker thread attached to RC.
 #endif
 }
@@ -225,7 +227,7 @@ liftM0RC task = do
 -- be persisted then RC will not continue processing neither this nor other rules.
 -- However main EQ node should be collocated with RC, this means that the only case
 -- when 'promulgateRC' could be blocked is when there is no quorum. In such case RC
--- anyway should be killed, and it's better to stop as soon as possible. 
+-- anyway should be killed, and it's better to stop as soon as possible.
 -- Promulgate call will be cancelled if RC thread will receive an exception.
 --
 -- However, 'promulgateRC' introduces additional synchronization overhead in normal
@@ -239,9 +241,9 @@ promulgateRC msg = liftProcess $ promulgateWait msg
 -- parallel and make use of replicated-log batching, however in order to survive failures,
 -- programmer should handle those cases explicitly.
 --
--- In order to provide an action that will be triggered after message was persisten 
+-- In order to provide an action that will be triggered after message was persisten
 -- callback could be set.
--- 
+--
 -- Promulgate call will be cancelled if RC thread that emitted call will die.
 unsafePromulgateRC :: Serializable msg => msg -> Process () -> PhaseM LoopState l ()
 unsafePromulgateRC msg callback = liftProcess $ do
@@ -251,7 +253,7 @@ unsafePromulgateRC msg callback = liftProcess $ do
      promulgateWait msg
      callback
 
--- $multi-receiver 
+-- $multi-receiver
 -- Sometimes message may be wanted by many rules, in that case, it's not correct to
 -- acknowledge message processing until all rules have processed message. In order to
 -- solve that 'todo'/'done' framework was added. It allow to mark message as needed,
@@ -259,7 +261,7 @@ unsafePromulgateRC msg callback = liftProcess $ do
 --
 -- Currently there is a caveat because of possible race condition between rule marking
 -- message as 'done' and another 'rule' that is marking message as 'todo'. In order to
--- make partially remove this race following rule was introduced: 
+-- make partially remove this race following rule was introduced:
 --   * Message is acknowledged if no rule is interested in message (all rules that call
 --     'todo' called 'done' also) and there were enough steps done, currently 10.
 --
@@ -286,7 +288,7 @@ done :: UUID -> PhaseM LoopState l ()
 done uuid = do
   st <- get Global
   put Global st{ lsRefCount = Map.insertWith (flip (-)) uuid 1 (lsRefCount st)}
-   
+
 -- | Wrap rule in 'todo' and 'done' calls
 defineSimpleTask :: Serializable a
                  => String

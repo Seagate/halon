@@ -161,7 +161,7 @@ buildRCState :: StoreChan -> ProcessId -> M0Worker -> Process LoopState
 buildRCState mm eq wrk = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
     startRG <- G.sync rg (return ())
-    return $ LoopState startRG Map.empty mm eq Map.empty wrk
+    return $ LoopState startRG Map.empty mm eq Map.empty [] wrk
 #else
 buildRCState :: StoreChan -> ProcessId -> Process LoopState
 buildRCState mm eq = do
@@ -200,13 +200,13 @@ makeRecoveryCoordinator mm eq rm = do
             -- instead give 'msgProcessedGap' number of rounds, this way
             -- we a trying to solve a case when more than one rule is interested
             -- in particular message.
-            let refCnt = Map.map update (lsRefCount ls)  
+            let refCnt = Map.map update (lsRefCount ls)
                 update i
                   | i < 0 = i-1
                   | otherwise = i
                 (removed, newRefCnt) = Map.partition (<(-msgProcessedGap)) refCnt
             forM_ removed $ usend (lsEQPid ls)
- 
+
             return ls { lsGraph = newGraph, lsRefCount = newRefCnt }
 
 -- remotable [ 'recoveryCoordinator ]

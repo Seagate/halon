@@ -93,7 +93,7 @@ sendSystemdCmd nid req = do
 
 -- | Send command to logger actuator.
 sendLoggingCmd :: Host
-               -> LoggerCmd 
+               -> LoggerCmd
                -> PhaseM LoopState l ()
 sendLoggingCmd host req = do
   phaseLog "action" $ "Sending Logger request" ++ show req
@@ -110,8 +110,8 @@ sendLoggingCmd host req = do
 mkDiskLoggingCmd :: T.Text -- ^ Status
                  -> T.Text -- ^ Serial Number
                  -> T.Text -- ^ Reason
-                 -> LoggerCmd 
-mkDiskLoggingCmd st serial reason = LoggerCmd 
+                 -> LoggerCmd
+mkDiskLoggingCmd st serial reason = LoggerCmd
   ("IEC: 038001001: Halon Disk Status: "
            <> "{'status': '" <> st <> "', 'reason': '" <> reason <> "', 'serial_number': '" <> serial <> "'}")
   "LOG_WARNING" "HDS"
@@ -154,7 +154,7 @@ registerChannels svc acs = modifyLocalGraph $ \rg -> do
     registerChannel r sp =
         newResource svc >>>
         newResource chan >>>
-        connectUnique svc r chan
+        connect svc r chan
       where
         chan = Channel sp
 
@@ -215,8 +215,11 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
          sn = DISerialNumber . T.unpack
                 . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber
                 $ srdm
+         path = DIPath . T.unpack
+                . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerPathID
+                $ srdm
      phaseLog "sspl-service" "monitor-drivemanager request received"
-     put Local $ Just (uuid, nid, enc, diskNum, disk_status, disk_reason, sn)
+     put Local $ Just (uuid, nid, enc, diskNum, disk_status, disk_reason, sn, path)
      lookupStorageDeviceInEnclosure enc (DIIndexInEnclosure diskNum) >>= \case
        Nothing ->
          -- Try to check if we have device with known serial number, just without location.
@@ -238,7 +241,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
      continue pcommit
 
    setPhase pcommit $ \(RuleDriveManagerDisk disk) -> do
-     Just (uuid, nid, enc, diskNum, disk_status, disk_reason, sn) <- get Local
+     Just (uuid, nid, enc, diskNum, disk_status, disk_reason, sn, path) <- get Local
      updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
      isDriveRemoved <- isStorageDriveRemoved disk
      phaseLog "sspl-service"
@@ -253,7 +256,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
           | isDriveRemoved -> messageProcessed uuid
           | otherwise      -> selfMessage $ DriveFailed uuid (Node nid) enc disk
        ("OK", "NONE")
-          | isDriveRemoved -> selfMessage $ DriveInserted uuid disk sn diskNum
+          | isDriveRemoved -> selfMessage $ DriveInserted uuid disk enc diskNum sn path
           | otherwise      -> messageProcessed uuid
        (s,r) -> do let msg = InterestingEventMessage
                            $ "Error processing drive manager response: drive status "
@@ -265,7 +268,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
 -- | Handle information messages about drive changes from HPI system.
 ruleMonitorStatusHpi :: Definitions LoopState ()
 ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeId, srphi) _) -> do
-      let nid = Node nodeId
+      let _nid = Node nodeId
           sn  = DISerialNumber . T.unpack
                         . sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber
                         $ srphi
@@ -329,20 +332,8 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
            case mident of
              Just serial' | serial' == serial -> return Nothing
              _ -> return (Just sd)
-      case msd of
-        Just sd -> do
-          _ <- attachStorageDeviceReplacement sd [sn, wwn, idx]
-          -- It may happen that we have already received "OK_None" status from drive manager
-          -- but for a completely new device. In this case, the device has not yet been
-          -- attached to mero because halon still needed the HPI information before processing
-          -- the event. Check whether that was actually the case here.
-          mwantUpdate <- wantsStorageDeviceReplacement sd
-          case mwantUpdate of
-            Just wsn | wsn == sn ->
-              syncGraphProcess $ \self -> usend self $ DriveInserted uuid sd sn diskNum
-            _   ->
-              syncGraphProcess $ \self -> usend self $ DriveRemoved uuid nid enc sd diskNum
-        Nothing -> messageProcessed uuid
+      forM_ msd $ \sd -> void $ attachStorageDeviceReplacement sd [sn, wwn, idx]
+      syncGraphProcessMsg uuid
 
 -- | SSPL Monitor host_update
 ruleMonitorHostUpdate :: Definitions LoopState ()
@@ -385,15 +376,15 @@ ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid
                         traverse (\x -> do
                           liftA2 (x,,) <$> driveStatus x
                                        <*> fmap listToMaybe (lookupStorageDeviceSerial x))
-             forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(_, status, serial) -> 
+             forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(_, status, serial) ->
                case status of
                  StorageDeviceStatus "HALON-FAILED" reason -> do
-                   sendLoggingCmd host $ mkDiskLoggingCmd (T.pack "HALON-FAILED") 
+                   sendLoggingCmd host $ mkDiskLoggingCmd (T.pack "HALON-FAILED")
                                                           (T.pack serial)
                                                           (T.pack reason)
                  _ -> return ()
        _ -> return ()
-     messageProcessed uuid 
+     messageProcessed uuid
 
   -- SSPL Monitor interface data
   -- defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum) _) _ ->
@@ -502,7 +493,7 @@ updateDriveManagerWithFailure disk st reason = do
     Just sn -> do
       rg <- getLocalGraph
       withHost rg disk $ \host ->
-        sendLoggingCmd host $ mkDiskLoggingCmd (T.pack st) 
+        sendLoggingCmd host $ mkDiskLoggingCmd (T.pack st)
                                                (T.pack sn)
                                                (maybe "unknown reason" T.pack reason)
   where
@@ -510,5 +501,5 @@ updateDriveManagerWithFailure disk st reason = do
       case listToMaybe $ connectedFrom Has d rg of
         Nothing -> phaseLog "error" $ "Unable to find enclosure for " ++ show d
         Just e -> case listToMaybe $ connectedTo (e::Enclosure) Has rg of
-          Nothing -> phaseLog "error" $ "Unable to find host for " ++ show e 
+          Nothing -> phaseLog "error" $ "Unable to find host for " ++ show e
           Just h -> f (h::Host)
