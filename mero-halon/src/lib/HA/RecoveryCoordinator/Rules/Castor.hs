@@ -39,6 +39,7 @@ import HA.Services.Mero.CEP (meroChannel)
 import HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
+import HA.RecoveryCoordinator.Actions.Mero.Conf (pickPrincipalRM)
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Rules.Castor.Repair
 import HA.RecoveryCoordinator.Rules.Castor.Reset
@@ -47,6 +48,7 @@ import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Events.Mero
 import HA.RecoveryCoordinator.Rules.Castor.Server
+import Mero.ConfC (ServiceType(..))
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState (Note(..))
 import Data.UUID.V4 (nextRandom)
@@ -103,6 +105,8 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
       loadMeroGlobals id_m0_globals
       loadMeroServers filesystem id_m0_servers
       graph <- getLocalGraph
+      -- Pick a principal RM
+      _ <- pickPrincipalRM
       syncGraphBlocking
       Just strategy <- getCurrentStrategy
       let update = onInit strategy graph
