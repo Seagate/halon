@@ -253,12 +253,18 @@ startMeroService host node = do
                     ++ show (host, node)
   rg <- getLocalGraph
   mprofile <- Conf.getProfile
-  mHaAddr <- Conf.lookupHostHAAddress host
+  mHaAddr <- Conf.lookupHostHAAddress host >>= \case
+    Just addr -> return $ Just addr
+    -- if there is no HA service running to give us an endpoint, pass
+    -- the lnid to mkHAAddress instead of the host address: trust user
+    -- setting
+    Nothing -> case listToMaybe . G.connectedTo host Has $ rg of
+      Just (M0.LNid lnid) -> return . Just $ lnid ++ haAddress
+      Nothing -> return Nothing
   mapM_ promulgateRC $ do
     profile <- mprofile
-    M0.LNid lnid <- listToMaybe . G.connectedTo host Has $ rg
+    haAddr <- mHaAddr
     uuid <- listToMaybe $ G.connectedTo host Has rg
-    let haAddr = maybe (lnid ++ haAddress) id mHaAddr
-        conf = MeroConf haAddr (fidToStr $ M0.fid profile)
+    let conf = MeroConf haAddr (fidToStr $ M0.fid profile)
                 (MeroKernelConf uuid)
     return $ encodeP $ ServiceStartRequest Start node m0d conf []
