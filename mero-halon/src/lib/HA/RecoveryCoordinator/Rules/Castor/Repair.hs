@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -27,10 +28,13 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
+import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Mero
 import qualified HA.RecoveryCoordinator.Rules.Castor.Repair.Internal as R
+import           HA.Resources
+import           HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero hiding (Enclosure, Process, Rack, Process)
 import           HA.Resources.Mero.Note
@@ -326,7 +330,9 @@ completeRepair pool prt muid = do
             when (prt == M0.Failure) $ do
               -- Update pool and drive states, startRebalanceOperation
               -- will notify mero
-              mapM_ (flip updateDriveState M0_NC_REBALANCE) sdevs
+              rg <- getLocalGraph
+              mapM_ (flip updateDriveState M0_NC_REBALANCE)
+                 $ filter (isReplaced rg) sdevs
               startRebalanceOperation pool
               queryStartHandling pool
     -- only notifying about partial repair, don't finish repairing
@@ -334,6 +340,12 @@ completeRepair pool prt muid = do
             queryStartHandling pool
 
   traverse_ messageProcessed muid
+  where
+    isReplaced :: G.Graph -> M0.SDev -> Bool
+    isReplaced rg s = not . null $
+      [ () | (disk :: M0.Disk) <- G.connectedTo s M0.IsOnHardware rg 
+           , (sd :: StorageDevice) <- G.connectedTo disk At rg
+           , G.isConnected sd Has SDReplaced rg]
 
 --------------------------------------------------------------------------------
 -- Main handler                                                               --
