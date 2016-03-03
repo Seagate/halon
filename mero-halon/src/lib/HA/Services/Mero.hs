@@ -62,16 +62,18 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process
 import Control.Monad (forever, join, void)
-import Data.Foldable (forM_, asum)
 import qualified Control.Monad.Catch as Catch
-
 import Control.Monad.Trans.Maybe
+
 import qualified Data.ByteString as BS
 import Data.Char (toUpper)
+import Data.Foldable (forM_, asum)
 import Data.List (partition)
 import Data.Maybe (listToMaybe, maybeToList)
 import qualified Data.Set as Set
 import qualified Data.UUID as UUID
+
+import System.Exit
 import System.FilePath
 import System.Directory
 import qualified System.SystemD.API as SystemD
@@ -139,8 +141,11 @@ startProcess mc run conf = flip Catch.catch handler $ do
             ++ " with type(s) " ++ show run
     confXC <- maybeWriteConfXC conf
     unit <- writeSysconfig mc run procFid m0addr confXC
-    _ <- SystemD.startService $ unit ++ fidToStr procFid
-    return $ Left procFid
+    ec <- SystemD.startService $ unit ++ fidToStr procFid
+    return $ case ec of
+      ExitSuccess -> Left procFid
+      ExitFailure x ->
+        Right (procFid, "Unit failed to start with exit code " ++ show x)
   where
     maybeWriteConfXC (ProcessConfigLocal _ _ bs) = do
       liftIO $ writeConfXC bs
