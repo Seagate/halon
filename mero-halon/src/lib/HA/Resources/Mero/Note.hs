@@ -15,6 +15,7 @@
 
 module HA.Resources.Mero.Note where
 
+import HA.Resources (Cluster, Has)
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import qualified HA.ResourceGraph as G
@@ -82,7 +83,8 @@ instance Hashable PrincipalRM
 
 $(mkDicts
   [ ''ConfObjectState, ''PrincipalRM]
-  [ (''R.Rack, ''Is, ''ConfObjectState)
+  [ (''Cluster, ''Has, ''PrincipalRM)
+  , (''R.Rack, ''Is, ''ConfObjectState)
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
   , (''M0.Node, ''Is, ''ConfObjectState)
@@ -97,7 +99,8 @@ $(mkDicts
 
 $(mkResRel
   [ ''ConfObjectState, ''PrincipalRM ]
-  [ (''R.Rack, ''Is, ''ConfObjectState)
+  [ (''Cluster, ''Has, ''PrincipalRM)
+  , (''R.Rack, ''Is, ''ConfObjectState)
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
   , (''M0.Node, ''Is, ''ConfObjectState)

@@ -411,7 +411,8 @@ setPrincipalRMIfUnset :: M0.Service
 setPrincipalRMIfUnset svc = getPrincipalRM >>= \case
   Just rm -> return rm
   Nothing -> do
-    modifyGraph $ G.connectUnique svc Is M0.PrincipalRM
+    modifyGraph $ G.connectUnique Cluster Has M0.PrincipalRM
+              >>> G.connectUnique svc Is M0.PrincipalRM
     return svc
 
 -- | Pick a Principal RM out of the available RM services.
