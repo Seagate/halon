@@ -162,13 +162,15 @@ data Rel = forall r a b. Relation r a b => InRel !r a b
          | forall r a b. Relation r a b => OutRel !r a b
 
 instance Hashable Res where
-    hashWithSalt s (Res x) = s `hashWithSalt` x
+    hashWithSalt s (Res x) = s `hashWithSalt` (typeOf x, x)
 
 instance Hashable Rel where
     hashWithSalt s (InRel r a b) =
-        s `hashWithSalt` (0 :: Int) `hashWithSalt` r `hashWithSalt` a `hashWithSalt` b
+        s `hashWithSalt` (0 :: Int) `hashWithSalt` (typeOf r, r)
+          `hashWithSalt` (typeOf a, a) `hashWithSalt` (typeOf b, b)
     hashWithSalt s (OutRel r a b) =
-        s `hashWithSalt` (1 :: Int) `hashWithSalt` r `hashWithSalt` a `hashWithSalt` b
+        s `hashWithSalt` (1 :: Int) `hashWithSalt` (typeOf r, r)
+          `hashWithSalt` (typeOf a, a) `hashWithSalt` (typeOf b, b)
 
 instance Eq Res where
     Res x == Res y = maybe False (x==) $ cast y

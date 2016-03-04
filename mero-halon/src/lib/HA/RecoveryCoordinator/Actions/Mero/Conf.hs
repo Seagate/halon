@@ -34,8 +34,10 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , lookupHostHAAddress
   , lookupSDevDisk
     -- ** Other things
+  , getPrincipalRM
   , isPrincipalRM
   , setPrincipalRMIfUnset
+  , pickPrincipalRM
   ) where
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -409,5 +411,23 @@ setPrincipalRMIfUnset :: M0.Service
 setPrincipalRMIfUnset svc = getPrincipalRM >>= \case
   Just rm -> return rm
   Nothing -> do
-    modifyGraph $ G.connectUnique svc Is M0.PrincipalRM
+    modifyGraph $ G.connectUnique Cluster Has M0.PrincipalRM
+              >>> G.connectUnique svc Is M0.PrincipalRM
     return svc
+
+-- | Pick a Principal RM out of the available RM services.
+pickPrincipalRM :: PhaseM LoopState l (Maybe M0.Service)
+pickPrincipalRM = getLocalGraph >>= \g ->
+  let rms = [ rm | (prof :: M0.Profile) <- G.connectedTo Cluster Has g
+                  , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf g
+                  , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf g
+                  , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf g
+                  , G.isConnected proc Is M0.M0_NC_ONLINE g
+                  , let srv_types = M0.s_type <$> G.connectedTo proc M0.IsParentOf g
+                  , CST_MGS `elem` srv_types
+                  , rm <- G.connectedTo proc M0.IsParentOf g :: [M0.Service]
+                  , G.isConnected proc Is M0.M0_NC_ONLINE g
+                  , M0.s_type rm == CST_RMS
+                  ]
+  in do
+    traverse setPrincipalRMIfUnset $ listToMaybe rms

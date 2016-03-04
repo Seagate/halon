@@ -544,6 +544,8 @@ getRPCAddress = rpcAddress . mkAddress <$> DP.getSelfNode
 -- | RC wrapper for 'getSpielAddress'.
 getSpielAddressRC :: PhaseM LoopState l (Maybe M0.SpielAddress)
 getSpielAddressRC = do
+  rm <- pickPrincipalRM
+  phaseLog "debug:pickPrincipalRM" $ show rm
   phaseLog "rg-query" "Looking up confd and RM services for spiel address."
   getSpielAddress <$> getLocalGraph
 

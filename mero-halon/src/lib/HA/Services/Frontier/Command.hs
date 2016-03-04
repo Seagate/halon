@@ -20,7 +20,7 @@ import Data.Binary (Binary)
 import Data.Binary.Put
 import Data.Hashable
 import Data.Maybe (catMaybes)
-import Data.Typeable (Typeable)
+import Data.Typeable (Typeable, typeOf)
 
 import HA.Multimap
 import HA.ResourceGraph hiding (null)
@@ -99,10 +99,10 @@ renderEdge _ = Nothing
 escapeQuote :: String -> String
 escapeQuote = map (\a -> if a == '"' then '\'' else a)
 
-mkId :: Hashable a => a -> String
+mkId :: (Hashable a, Typeable a) => a -> String
 mkId a = str
   where
-    hashCode = hash a
+    hashCode = hash (typeOf a, a)
     str = if hashCode < 0
           then "n" ++ (show $ abs hashCode)
           else show hashCode
