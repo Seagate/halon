@@ -120,7 +120,7 @@ mkDiskLoggingCmd st serial reason = LoggerCmd message "LOG_WARNING" "HDS" where
 sendNodeCmd :: NodeId
             -> Maybe UUID
             -> NodeCmd
-            -> PhaseM LoopState l ()
+            -> PhaseM LoopState l Bool
 sendNodeCmd nid muuid req = do
   phaseLog "action" $ "Sending node actuator request" ++ show req
   rg <- getLocalGraph
@@ -131,8 +131,10 @@ sendNodeCmd nid muuid req = do
       sp <- runningService node s rg
       listToMaybe $ connectedTo sp CommandChannel rg
   case chanm of
-    Just (Channel chan) -> liftProcess $ sendChan chan (muuid, makeNodeMsg req)
-    _ -> phaseLog "warning" "Cannot find command channel!"
+    Just (Channel chan) -> do liftProcess $ sendChan chan (muuid, makeNodeMsg req)
+                              return True
+    _ -> do phaseLog "warning" "Cannot find command channel!"
+            return False
 
 registerChannels :: ServiceProcess SSPLConf
                  -> ActuatorChannels
