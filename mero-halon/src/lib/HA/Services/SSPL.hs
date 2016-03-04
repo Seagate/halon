@@ -36,6 +36,7 @@ import HA.EventQueue.Producer (promulgate)
 import HA.RecoveryCoordinator.Mero (LoopState)
 import HA.Service
 import HA.Services.SSPL.CEP
+import HA.Services.SSPL.IEM
 import qualified HA.Services.SSPL.Rabbit as Rabbit
 import HA.Services.SSPL.LL.Resources
 
@@ -178,12 +179,12 @@ startActuators chan ac pid = do
         Nothing -> informRC sp chans
         Just () -> return ()
     iemProcess Rabbit.BindConf{..} rp = forever $ do
-      InterestingEventMessage foo <- receiveChan rp
+      InterestingEventMessage iem <- receiveChan rp
       liftIO $ publishMsg
         chan
         (T.pack . fromDefault $ bcExchangeName)
         (T.pack . fromDefault $ bcRoutingKey)
-        (newMsg { msgBody = BL.fromStrict $ T.encodeUtf8 foo
+        (newMsg { msgBody = BL.fromChunks [iemToBytes iem]
                 , msgDeliveryMode = Just Persistent
                 }
         )

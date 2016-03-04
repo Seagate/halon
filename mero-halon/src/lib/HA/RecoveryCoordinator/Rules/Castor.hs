@@ -62,7 +62,6 @@ import Data.Foldable
 import Control.Monad
 import Data.Maybe
 import Data.Binary (Binary)
-import Data.Monoid ((<>))
 import Data.Text (pack)
 import Data.Typeable (Typeable)
 
@@ -423,13 +422,11 @@ ruleDriveInserted = defineSimple "drive-inserted" $
 
 -- | Mark drive as failed
 ruleDriveFailed :: Definitions LoopState ()
-ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid (HA.Resources.Node nid) enc disk) -> do
-      let msg = InterestingEventMessage
-              $  "Drive powered off: \n\t"
-               <> pack (show enc)
-               <> "\n\t"
-               <> pack (show disk)
-      sendInterestingEvent nid msg
+ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid _ _ disk) -> do
+#ifdef USE_MERO
+      sd <- lookupStorageDeviceSDev disk
+      forM_ sd $ \m0sdev -> notifyDriveStateChange m0sdev M0_NC_FAILED
+#endif
       messageProcessed uuid
 
 #ifdef USE_MERO

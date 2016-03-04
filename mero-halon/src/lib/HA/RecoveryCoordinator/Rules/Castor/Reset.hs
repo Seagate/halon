@@ -124,13 +124,6 @@ handleReset (Set ns) = do
                     notifyDriveStateChange m0sdev status
                     -- TODO Move this into its own handler.
                     updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
-                    nid <- liftProcess getSelfNode
-                    diskids <- findStorageDeviceIdentifiers sdev
-                    let iem = InterestingEventMessage . pack . unwords $ [
-                                  "M0_NC_FAILED reported."
-                                , "fid=" ++ show mfid
-                              ] ++ map show diskids
-                    sendInterestingEvent nid iem
 
                   when (status == M0_NC_TRANSIENT) $ do
                     promulgateRC $ ResetAttempt sdev

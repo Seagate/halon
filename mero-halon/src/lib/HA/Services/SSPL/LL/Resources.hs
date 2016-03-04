@@ -13,6 +13,7 @@ module HA.Services.SSPL.LL.Resources where
 import Prelude hiding (id, mapM_, (<$>),(<*>))
 import HA.Service
 import HA.Service.TH
+import HA.Services.SSPL.IEM
 import qualified HA.Services.SSPL.Rabbit as Rabbit
 import HA.ResourceGraph
 
@@ -54,7 +55,7 @@ import System.Process (readProcess)
 
 -- | Interesting Event Message.
 --   TODO Make this more interesting.
-newtype InterestingEventMessage = InterestingEventMessage T.Text
+newtype InterestingEventMessage = InterestingEventMessage IEM
   deriving (Binary, Hashable, Typeable)
 
 data ServiceOp = SERVICE_START | SERVICE_STOP | SERVICE_RESTART | SERVICE_STATUS

@@ -13,6 +13,7 @@ module HA.Services.SSPL.CEP where
 
 import HA.EventQueue.Types (HAEvent(..))
 import HA.Service hiding (configDict)
+import HA.Services.SSPL.IEM
 import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Events.Drive
@@ -69,7 +70,6 @@ sendInterestingEvent nid msg = do
       s <- listToMaybe $ (connectedTo Cluster Supports rg :: [Service SSPLConf])
       sp <- runningService node s rg
       listToMaybe $ connectedTo sp IEMChannel rg
-
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan msg
     _ -> phaseLog "warning" "Cannot find IEM channel!"
@@ -110,11 +110,9 @@ sendLoggingCmd host req = do
 mkDiskLoggingCmd :: T.Text -- ^ Status
                  -> T.Text -- ^ Serial Number
                  -> T.Text -- ^ Reason
-                 -> LoggerCmd
-mkDiskLoggingCmd st serial reason = LoggerCmd
-  ("IEC: 038001001: Halon Disk Status: "
-           <> "{'status': '" <> st <> "', 'reason': '" <> reason <> "', 'serial_number': '" <> serial <> "'}")
-  "LOG_WARNING" "HDS"
+                 -> LoggerCmd 
+mkDiskLoggingCmd st serial reason = LoggerCmd message "LOG_WARNING" "HDS" where
+  message = "{'status': '" <> st <> "', 'reason': '" <> reason <> "', 'serial_number': '" <> serial <> "'}"
 
 -- | Send command to nodecontroller. Reply will be received as a
 -- HAEvent CommandAck. Where UUID will be set to UUID value if passed, and
@@ -258,9 +256,10 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
        ("OK", "NONE")
           | isDriveRemoved -> selfMessage $ DriveInserted uuid disk enc diskNum sn path
           | otherwise      -> messageProcessed uuid
-       (s,r) -> do let msg = InterestingEventMessage
-                           $ "Error processing drive manager response: drive status "
-                           <> s <> " reason " <> r <> " is not known"
+       (s,r) -> do let msg = InterestingEventMessage $ logSSPLUnknownMessage
+                         ( "{'type': 'actuatorRequest.manager_status', "
+                         <> "'reason': 'Error processing drive manager response: drive status "
+                         <> s <> " reason " <> r <> " is not known'}")
                    sendInterestingEvent nid msg
                    messageProcessed uuid
    start pinit Nothing
@@ -347,15 +346,10 @@ ruleMonitorHostUpdate = defineSimple "monitor-host-update" $ \(HAEvent uuid (nid
       syncGraphProcessMsg uuid
 
 ruleMonitorRaidData :: Definitions LoopState ()
-ruleMonitorRaidData = defineSimple "monitor-raid-data" $ \(HAEvent uuid (nid, srrd) _) -> let
-      host = sensorResponseMessageSensor_response_typeRaid_dataHostId srrd
-    in do
+ruleMonitorRaidData = defineSimple "monitor-raid-data" $ \(HAEvent uuid (nid::NodeId, srrd) _) -> do
       case sensorResponseMessageSensor_response_typeRaid_dataMdstat srrd of
-        Just x | x == "U_" || x == "_U" -> do
-          sendInterestingEvent nid $ InterestingEventMessage (
-            "Metadata drive failure on host " `T.append` host
-            )
-          phaseLog "action" $ "Sending IEM for metadata drive failure."
+        Just x | x == "U_" || x == "_U" ->
+          phaseLog "action" $ "Metadrive drive failed on " ++ show nid ++ "." 
         _ -> return ()
       messageProcessed uuid
 
@@ -422,8 +416,6 @@ ruleSystemdCmd sspl = defineSimpleIf "systemd-cmd" (\(HAEvent uuid cr _ ) _ ->
                           ++ " on nodes " ++ (show nodes)
           forM_ nodes $ \(Node nid) -> do
             sendSystemdCmd nid $ SystemdCmd serviceName SERVICE_START
-            sendInterestingEvent nid $
-              InterestingEventMessage ("Starting service " `T.append` serviceName)
         Aeson.String "stop" -> do
           nodes <- findHosts nodeFilter
                     >>= mapM nodesOnHost
@@ -433,8 +425,6 @@ ruleSystemdCmd sspl = defineSimpleIf "systemd-cmd" (\(HAEvent uuid cr _ ) _ ->
                           ++ " on nodes " ++ (show nodes)
           forM_ nodes $ \(Node nid) -> do
             sendSystemdCmd nid $ SystemdCmd serviceName SERVICE_STOP
-            sendInterestingEvent nid $
-              InterestingEventMessage ("Stopping service " `T.append` serviceName)
         Aeson.String "restart" -> do
           nodes <- findHosts nodeFilter
                     >>= mapM nodesOnHost
@@ -444,8 +434,6 @@ ruleSystemdCmd sspl = defineSimpleIf "systemd-cmd" (\(HAEvent uuid cr _ ) _ ->
                           ++ " on nodes " ++ (show nodes)
           forM_ nodes $ \(Node nid) -> do
             sendSystemdCmd nid $ SystemdCmd serviceName SERVICE_RESTART
-            sendInterestingEvent nid $
-              InterestingEventMessage ("Restarting service " `T.append` serviceName)
         -- Aeson.String "enable" -> liftProcess $ say "Unsupported."
         -- Aeson.String "disable" -> liftProcess $ say "Unsupported."
         -- Aeson.String "status" -> liftProcess $ say "Unsupported."
