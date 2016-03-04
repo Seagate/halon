@@ -85,6 +85,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
   finish_extra_bootstrap <- phaseHandle "finish-extra-bootstrap"
   start_clients <- phaseHandle "start_clients"
   finish <- phaseHandle "finish"
+  end <- phaseHandle "end"
 
   let alreadyBootstrapping n g = G.isConnected Cluster Runs (ServerBootstrapCoreProcess n False) g
                                 || G.isConnected Cluster Runs (ServerBootstrapProcess n False) g
@@ -125,7 +126,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
           (True, [host]) -> return $ Just (host, cc)
           (_, _) -> return Nothing
 
-  setPhase new_server $ \(HAEvent eid (NewMeroServer node@(Node nid)) _) -> do
+  setPhase new_server $ \(HAEvent eid (NewMeroServer node@(Node nid)) _) -> fork CopyNewerBuffer $ do
     put Local $ Just (node, eid)
     findNodeHost node >>= \case
       Just host -> alreadyBootstrapping nid <$> getLocalGraph >>= \case
@@ -236,8 +237,22 @@ ruleNewMeroServer = define "new-mero-server" $ do
     phaseLog "server-bootstrap" $ "Finished bootstrapping mero server at "
                                ++ show n
     messageProcessed eid
+    continue end
 
-  start new_server Nothing
+  directly end stop
+
+  winit <- initWrapper new_server
+  start winit Nothing
+  where
+  initWrapper rule = do
+     wrapper_init <- phaseHandle "wrapper_init"
+     wrapper_clear <- phaseHandle "wrapper_clear"
+     directly wrapper_init $ switch [rule, wrapper_clear]
+
+     directly wrapper_clear $ do
+       fork NoBuffer $ continue rule
+       stop
+     return wrapper_init
 
 -- |
 -- @
