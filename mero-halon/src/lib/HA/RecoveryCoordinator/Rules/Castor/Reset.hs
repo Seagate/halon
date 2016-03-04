@@ -181,9 +181,11 @@ ruleResetAttempt = define "reset-attempt" $ do
         if i <= resetAttemptThreshold
         then do
           incrDiskResetAttempts sdev
-          sendNodeCmd nid Nothing (DriveReset serial)
-          markDiskPowerOff sdev
-          switch [resetComplete, timeout driveResetTimeout failure]
+          sent <- sendNodeCmd nid Nothing (DriveReset serial)
+          if sent
+          then do markDiskPowerOff sdev
+                  switch [resetComplete, timeout driveResetTimeout failure]
+          else continue failure
         else continue failure
 
       setPhaseIf resetComplete (onCommandAck DriveReset) $ \eid -> do
@@ -195,9 +197,11 @@ ruleResetAttempt = define "reset-attempt" $ do
 
       directly smart $ do
         Just (sdev, serial, Node nid, _) <- get Local
-        markSMARTTestIsRunning sdev
-        sendNodeCmd nid Nothing (SmartTest serial)
-        switch [smartSuccess, smartFailure, timeout smartTestTimeout failure]
+        sent <- sendNodeCmd nid Nothing (SmartTest serial)
+        if sent
+        then do markSMARTTestIsRunning sdev
+                switch [smartSuccess, smartFailure, timeout smartTestTimeout failure]
+        else continue failure
 
       setPhaseIf smartSuccess onSmartSuccess $ \eid -> do
         Just (sdev, _, _, _) <- get Local

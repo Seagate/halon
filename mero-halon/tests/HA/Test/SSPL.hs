@@ -40,6 +40,7 @@ import SSPL.Bindings
 import RemoteTables ( remoteTable )
 
 import Control.Exception as E
+import Control.Monad (void)
 import Control.Distributed.Process
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Closure
@@ -86,7 +87,7 @@ instance Binary WhoAmI
 testRules :: ProcessId ->  [Definitions LoopState ()]
 testRules pid =
   [ defineSimple "sspl-test-send" $ \(HAEvent _ (TestSmartCmd nid t) _) ->
-      sendNodeCmd nid Nothing (SmartTest $ T.decodeUtf8 t)
+      void $ sendNodeCmd nid Nothing (SmartTest $ T.decodeUtf8 t)
   , defineSimple "sspl-test-reply" $ \(HAEvent _ s@CommandAck{} _) ->
       liftProcess $ say $ "TEST-CA " ++ show s
   , defineSimple "sspl-test-sensor" $ \(HAEvent _ (_::NodeId, s) _) ->
