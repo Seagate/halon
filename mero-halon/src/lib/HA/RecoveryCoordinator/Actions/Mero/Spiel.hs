@@ -81,6 +81,7 @@ import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
+import Network.HostName (getHostName)
 import Network.RPC.RPCLite (getRPCMachine_se, rpcAddress, RPCAddress(..))
 
 import System.IO
@@ -90,10 +91,8 @@ import Text.Printf (printf)
 
 import Prelude hiding (id)
 
-
--- | Halon service address suffix. Should be appended to the LNID.
 haAddress :: String
-haAddress = ":12345:35:101"
+haAddress = ":35:101"
 
 -- | Find a confd server in the cluster and run the given function on
 -- the configuration tree. Returns no result if no confd servers are
@@ -102,7 +101,7 @@ haAddress = ":12345:35:101"
 -- It does nothing if 'lsRPCAddress' has not been set.
 withRootRC :: (Root -> IO a) -> PhaseM LoopState l (Maybe a)
 withRootRC f = do
- rpca <- liftProcess getRPCAddress
+ rpca <- getRPCAddress
  getConfdServers >>= \case
   [] -> return Nothing
   confdServer:_ -> withServerEndpoint rpca $ \se ->
@@ -118,7 +117,7 @@ withRootRC f = do
 withSpielRC :: (SpielContext -> PhaseM LoopState l a)
             -> PhaseM LoopState l (Either SomeException a)
 withSpielRC f = withResourceGraphCache $ do
-  rpca <- liftProcess getRPCAddress
+  rpca <- getRPCAddress
   try $ withServerEndpoint rpca $ \se -> do
      conn <- liftM0RC $ initHASession se rpca
      sc <- liftM0RC $ getRPCMachine_se se >>= \rpcm -> Mero.Spiel.start rpcm
@@ -533,12 +532,19 @@ validateTransactionCache = withSpielRC $ \sc -> loadConfData >>= \case
     txOpenContext sc >>= txPopulate x >>= DP.liftIO . txValidateTransactionCache
 
 -- | Creates an RPCAddress suitable for 'withServerEndpoint'
--- and friends. 'getSelfNode' is used and endpoint of
--- 'haAddress' is assumed.
-getRPCAddress :: DP.Process RPCAddress
-getRPCAddress = rpcAddress . mkAddress <$> DP.getSelfNode
+-- and friends. If the information about the current node's endpoint
+-- is not found in the RG, we construct an address using the default
+-- 'haAddress'.
+getRPCAddress :: PhaseM LoopState l RPCAddress
+getRPCAddress = do
+  h <- DP.liftIO getHostName
+  lookupHostHAAddress (Host h) >>= \case
+    Just addr -> return $ rpcAddress addr
+    Nothing -> do
+      phaseLog "warn" $ "Using default HA endpoint for " ++ show h
+      liftProcess $ rpcAddress . mkAddress <$> DP.getSelfNode
   where
-    mkAddress = (++ "@tcp" ++ haAddress) . takeWhile (/= ':')
+    mkAddress = (++ haAddress) . (++ "@tcp") . takeWhile (/= ':')
                 . drop (length ("nid://" :: String)) . show
 
 -- | RC wrapper for 'getSpielAddress'.
