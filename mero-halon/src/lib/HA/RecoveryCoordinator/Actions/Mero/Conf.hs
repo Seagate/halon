@@ -30,6 +30,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , lookupStorageDevice
   , lookupStorageDeviceSDev
   , lookupStorageDeviceOnHost
+  , lookupDiskSDev
   , lookupEnclosureM0
   , lookupHostHAAddress
   , lookupSDevDisk
@@ -315,9 +316,14 @@ lookupStorageDeviceSDev sdev = do
 
 lookupSDevDisk :: M0.SDev -> PhaseM LoopState l (Maybe M0.Disk)
 lookupSDevDisk sdev = do
-  phaseLog "rg-query" $ "Looking up M0.Disk objects attached to sdev " ++ show sdev
   rg <- getLocalGraph
   return . listToMaybe $ G.connectedTo sdev M0.IsOnHardware rg
+
+-- | Given a 'M0.Disk', find the 'M0.SDev' attached to it.
+lookupDiskSDev :: M0.Disk -> PhaseM LoopState l (Maybe M0.SDev)
+lookupDiskSDev disk = do
+  rg <- getLocalGraph
+  return . listToMaybe $ G.connectedFrom M0.IsOnHardware disk rg
 
 getSDevPool :: M0.SDev -> PhaseM LoopState l (Maybe M0.Pool)
 getSDevPool sdev = do

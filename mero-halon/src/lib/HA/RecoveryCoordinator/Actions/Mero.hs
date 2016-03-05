@@ -58,11 +58,14 @@ import System.Posix.SysInfo
 import Prelude hiding ((.), id)
 
 -- TODO Generalise this
--- | If the 'Note' is about an 'SDev', extract it and its state.
+-- | If the 'Note' is about an 'SDev' or 'Disk', extract the 'SDev'
+-- and its 'M0.ConfObjectState'.
 noteToSDev :: Note -> PhaseM LoopState l (Maybe (M0.ConfObjectState, M0.SDev))
-noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= return . \case
-  Nothing -> Nothing
-  Just (sdev :: M0.SDev) -> Just (stType, sdev)
+noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= \case
+  Just sdev -> return $ Just (stType, sdev)
+  Nothing -> Conf.lookupConfObjByFid mfid >>= \case
+    Just disk -> fmap (stType,) <$> Conf.lookupDiskSDev disk
+    Nothing -> return Nothing
 
 -- | Extract information about drives from the given set of
 -- notifications and update the state in RG accordingly.
