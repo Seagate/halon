@@ -45,16 +45,11 @@ import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 import           Prelude
 
--- | Mero server bootstrapping has finished all together.
-newtype ServerBootstrapFinished = ServerBootstrapFinished NodeId
+-- | Event sent when proessing has finished for a boot level.
+data BootLevelComplete = BootLevelComplete NodeId ProcessLabel
   deriving (Typeable, Generic)
 
-instance Binary ServerBootstrapFinished
-
-newtype MeroServerStartRemainingServices = MeroServerStartRemainingServices NodeId
-  deriving (Typeable, Generic)
-
-instance Binary MeroServerStartRemainingServices
+instance Binary BootLevelComplete
 
 -- | Bootstrap a new mero server.
 --
@@ -186,9 +181,9 @@ ruleNewMeroServer = define "new-mero-server" $ do
         (\(ServerBootstrapCoreProcess _ b) -> b)
         start_remaining_services finish (failureHandler e nid)
         (\(ServerBootstrapCoreProcess nid' _) ->
-          liftProcess . promulgateWait $ MeroServerStartRemainingServices nid')
+          liftProcess . promulgateWait $ BootLevelComplete nid' (PLBootLevel 0))
 
-  setPhase start_remaining_services $ \(HAEvent eid (MeroServerStartRemainingServices nid) _) -> do
+  setPhase start_remaining_services $ \(HAEvent eid (BootLevelComplete nid _) _) -> do
     Just (node@(Node nid'), eid') <- get Local
     g <- getLocalGraph
     case () of
@@ -219,18 +214,24 @@ ruleNewMeroServer = define "new-mero-server" $ do
         (ServerBootstrapProcess nid)
         (\(ServerBootstrapProcess _ b) -> b)
         start_clients finish Nothing
-        (\_ -> return ())
+        (\(ServerBootstrapProcess nid' _) ->
+          liftProcess . promulgateWait $ BootLevelComplete nid' (PLBootLevel 1))
 
-  directly start_clients $ do
-    Just (node@(Node _), _) <- get Local
-    rg <- getLocalGraph
-    m0svc <- lookupRunningService node m0d
-    mhost <- findNodeHost node
-    case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
-      Just (host, chan) -> do
-        startNodeProcesses host chan PLM0t1fs False
-        continue finish
-      Nothing -> continue finish
+  setPhase start_clients $ \(HAEvent eid (BootLevelComplete nid' bl) _) -> do
+    Just (node@(Node nid), eid') <- get Local
+    if nid == nid' && bl == PLBootLevel 1 then do
+      messageProcessed eid'
+      put Local $ Just (node, eid)
+      rg <- getLocalGraph
+      m0svc <- lookupRunningService node m0d
+      mhost <- findNodeHost node
+      case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
+        Just (host, chan) -> do
+          startNodeProcesses host chan PLM0t1fs False
+          continue finish
+        Nothing -> continue finish
+    else
+      continue start_clients
 
   directly finish $ do
     Just (n, eid) <- get Local
