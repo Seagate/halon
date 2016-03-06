@@ -79,6 +79,13 @@
           m0s_params:
             tag: SPUnused
             contents: []
+        - m0s_type:
+            tag: CST_ADDB2
+            contents: []
+          m0s_endpoints: ["{{ lnid }}:12345:41:201"]
+          m0s_params:
+            tag: SPUnused
+            contents: []
 - name: "storage"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:41:401"
