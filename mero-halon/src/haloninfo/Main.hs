@@ -8,11 +8,11 @@ import HA.Services.SSPL.IEM (dumpCSV)
 
 data Commands = DumpIEM IEMOptions
 
-data IEMOptions = IEMOptions { iemFile :: String }
+data IEMOptions = IEMOptions { _iemFile :: String }
 
 commands :: Parser Commands
 commands = subparser (command "dump-iem" (info iemOptions (progDesc "dump IEM list")))
-  where iemOptions = DumpIEM . IEMOptions <$> 
+  where iemOptions = DumpIEM . IEMOptions <$>
           strOption (long "filename"
                       <> short 'f'
                       <> metavar "FILE"
