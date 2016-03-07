@@ -369,20 +369,17 @@ lookupHostHAAddress host = getLocalGraph >>= \rg -> return $ listToMaybe
 -- | Get all children of the conf object.
 getChildren :: G.Relation M0.IsParentOf a b => a -> PhaseM LoopState l [b]
 getChildren obj = do
-  phaseLog "rg-query" $ "Get all children of the " ++ show obj ++ " holds."
   G.connectedTo obj M0.IsParentOf <$> getLocalGraph
 
 -- | Get parrents of the conf objects.
 getParents :: G.Relation M0.IsParentOf a b => b -> PhaseM LoopState l [a]
 getParents obj = do
-  phaseLog "rg-query" $ "Get all parents of the " ++ show obj ++ " holds."
   G.connectedFrom M0.IsParentOf obj <$> getLocalGraph
 
 -- | Query current status of the conf object.
 queryObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a
                   -> PhaseM LoopState l (Maybe M0.ConfObjectState)
 queryObjectStatus obj = do
-  phaseLog "rg-query" $ "Lookup status for " ++ show obj ++ " holds."
   listToMaybe . G.connectedTo obj Is <$> getLocalGraph
 {-# INLINE queryObjectStatus #-}
 

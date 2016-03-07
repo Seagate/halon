@@ -30,13 +30,11 @@ import HA.Resources.Castor
 import HA.Resources.Mero.Note (ConfObjectState(..))
 import HA.Services.SSPL.CEP
   ( sendNodeCmd
-  , sendInterestingEvent
   , updateDriveManagerWithFailure
   )
 import HA.Services.SSPL.LL.Resources
   ( AckReply(..)
   , CommandAck(..)
-  , InterestingEventMessage(..)
   , NodeCmd(..)
   , commandAck
   )
@@ -46,7 +44,6 @@ import Mero.Notification.HAState (Note(..))
 
 import Control.Distributed.Process
   ( Process
-  , getSelfNode
   , say
   )
 import Control.Monad
