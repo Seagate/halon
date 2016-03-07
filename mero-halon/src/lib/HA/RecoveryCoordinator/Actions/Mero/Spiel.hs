@@ -133,8 +133,8 @@ withRConfRC spiel action = do
   rg <- getLocalGraph
   let mp = listToMaybe $ G.getResourcesOfType rg :: Maybe M0.Profile
   liftM0RC $ do
-     Mero.Spiel.rconfStart spiel
      Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
+     Mero.Spiel.rconfStart spiel
   x <- action `sfinally` liftM0RC (Mero.Spiel.rconfStop spiel)
   return x
 
