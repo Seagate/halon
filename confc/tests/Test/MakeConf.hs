@@ -78,7 +78,9 @@ test = do
     withEndpoint (rpcAddress localAddress) $ \ep -> do
       rpcMach <- getRPCMachine_se ep
       withConf rpcMach (rpcAddress confdAddress) $ \_ -> withHASession ep (rpcAddress confdAddress) $ do
-        withSpiel rpcMach $ \spiel -> withTransaction spiel $ transaction server1_endpoint server2_endpoint
+        withSpiel rpcMach $ \spiel -> do
+          setCmdProfile spiel $ Just $ show $ fids "profile"
+          withTransaction spiel $ transaction server1_endpoint server2_endpoint
     finalizeRPC
 
 transaction :: String -> String -> SpielTransaction -> IO ()
