@@ -185,12 +185,15 @@ ruleResetAttempt = define "reset-attempt" $ do
           else continue failure
         else continue failure
 
-      setPhaseIf resetComplete (onCommandAck DriveReset) $ \eid -> do
+      setPhaseIf resetComplete (onCommandAck DriveReset) $ \(result, eid) -> do
         Just (sdev, _, _, _) <- get Local
-        markDiskPowerOn sdev
         markResetComplete sdev
-        messageProcessed eid
-        continue smart
+        if result
+        then do markDiskPowerOn sdev
+                messageProcessed eid
+                continue smart
+        else do messageProcessed eid
+                continue failure
 
       directly smart $ do
         Just (sdev, serial, Node nid, _) <- get Local
@@ -243,11 +246,12 @@ onCommandAck :: (Text -> NodeCmd)
            -> HAEvent CommandAck
            -> g
            -> Maybe (StorageDevice, Text, Node, UUID)
-           -> Process (Maybe UUID)
+           -> Process (Maybe (Bool, UUID))
 onCommandAck _ _ _ Nothing = return Nothing
 onCommandAck k (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
   case commandAckType cmd of
-    Just x | (k serial) == x -> return $ Just eid
+    Just x | (k serial) == x -> return $ Just
+              (commandAck cmd == AckReplyPassed, eid)
            | otherwise       -> return Nothing
     _ -> return Nothing
 
