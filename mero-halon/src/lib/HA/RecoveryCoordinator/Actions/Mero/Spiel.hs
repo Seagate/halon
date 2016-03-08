@@ -52,7 +52,7 @@ import qualified HA.Resources.Castor.Initial as CI
 import HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState(..))
-import HA.Services.Mero (notifyMero)
+import HA.Services.Mero (notifyMero, notifyMeroBlocking)
 
 import Mero.ConfC
   ( PDClustAttr(..)
@@ -141,7 +141,6 @@ withRConfRC spiel action = do
 -- | Start the repair operation on the given 'M0.Pool'. Notifies mero
 -- with the 'M0_NC_REPAIR' status.
 startRepairOperation :: M0.Pool
-                     -- ^ Disks in the pool to send info about too
                      -> PhaseM LoopState l ()
 startRepairOperation pool = go `catch`
     (\e -> do
@@ -155,11 +154,15 @@ startRepairOperation pool = go `catch`
       phaseLog "spiel" $ "Starting repair on pool " ++ show pool
       m0sdevs <- getPoolSDevsWithState pool M0_NC_FAILED
       disks <- fmap M0.AnyConfObj . catMaybes <$> mapM lookupSDevDisk m0sdevs
-      notifyMero (M0.AnyConfObj pool : disks) M0_NC_REPAIR
-      _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStart sc (M0.fid pool)
-      uuid <- DP.liftIO nextRandom
-      setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure uuid Nothing
-      phaseLog "spiel" $ "startRepairOperation for " ++ show pool ++ " done."
+      res <- notifyMeroBlocking (M0.AnyConfObj pool : disks) M0_NC_REPAIR
+      case res of
+        True -> do
+          _ <- withSpielRC $ \sc -> withRConfRC sc $ liftM0RC $ poolRepairStart sc (M0.fid pool)
+          uuid <- DP.liftIO nextRandom
+          setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure uuid Nothing
+          phaseLog "spiel" $ "startRepairOperation for " ++ show pool ++ " done."
+        False -> do
+          phaseLog "error" $ "Unable to notify Mero; cannot start repair"
 
 -- | Retrieves the repair 'SnsStatus' of the given 'M0.Pool'.
 statusOfRepairOperation :: M0.Pool

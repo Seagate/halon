@@ -109,13 +109,13 @@ replaceGlobalWorker tid = do
   wid <- readIORef globalM0Worker
   killThread wid
   writeIORef globalM0Worker tid
-  
-             
+
+
 
 data Task = forall a . Task (IO (Either SomeException a)) (MVar (Either SomeException a))
 
 -- | Send task to M0 worker, may throw 'M0InitException' if mero worker
--- failed to initialize mero.
+-- failed to initialize mero. This call blocks until the task is completed.
 sendM0Task :: IO a -> IO a
 sendM0Task f = do
     box <- newEmptyMVar

@@ -133,6 +133,7 @@ Library
                    binary,
                    network >= 2.4,
                    network-transport,
+                   replicated-log,
                    unordered-containers,
                    cep,
                    netwire,
