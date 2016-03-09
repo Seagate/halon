@@ -47,12 +47,13 @@ import HA.Services.Mero.Types
 import qualified HA.ResourceGraph as G
 
 import qualified Mero.Notification
-import Mero.Notification.HAState (Note(..))
+import Mero.Notification.HAState (Note(..), HAStateException)
 import Mero.ConfC (Fid, ServiceType(..), fidToStr)
 
 import Network.CEP
 import qualified Network.RPC.RPCLite as RPC
 
+import Control.Exception (SomeException, IOException)
 import Control.Distributed.Process.Closure
   ( remotableDecl
   , mkStatic
@@ -92,11 +93,20 @@ statusProcess :: RPC.ServerEndpoint
               -> ProcessId
               -> ReceivePort NotificationMessage
               -> Process ()
-statusProcess ep pid rp = link pid >> (forever $ do
-    NotificationMessage set addrs <- receiveChan rp
-    forM_ addrs $ \addr ->
-      Mero.Notification.notifyMero ep (RPC.rpcAddress addr) set
-  )
+statusProcess ep pid rp = do
+    -- TODO: When mero can handle exceptions caught here, report them to the RC.
+    link pid
+    forever $ do
+      NotificationMessage set addrs <- receiveChan rp
+      forM_ addrs $ \addr ->
+        let logError e =
+              say $ "statusProcess: notifyMero failed: " ++ show (pid, addr, e)
+         in (Mero.Notification.notifyMero ep (RPC.rpcAddress addr) set
+              `catch` \(e :: IOException) -> logError e
+            ) `catch` \(e :: HAStateException) -> logError e
+   `catch` \(e :: SomeException) -> do
+      say $ "statusProcess terminated: " ++ show (pid, e)
+      Catch.throwM e
 
 -- | Process responsible for controlling the system level
 --   Mero processes running on this node.

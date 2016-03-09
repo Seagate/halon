@@ -24,6 +24,7 @@ module Mero.Notification.HAState
   , FomV
   , entrypointReplyWakeup
   , entrypointNoReplyWakeup
+  , HAStateException(..)
   ) where
 
 import HA.Resources.Mero.Note
