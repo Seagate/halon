@@ -8,6 +8,7 @@ import Test.Tasty
 import Test.Tasty.Ingredients.Basic
 import Test.Tasty.Ingredients.FileReporter
 import qualified CEP.Settings.Tests (tests)
+import qualified Regression (tests)
 
 import qualified Tests as Tests
 
@@ -25,7 +26,9 @@ ut = do
                     closeLocalNode $
                     flip runProcess action
         grp = testGroup "CEP - Unit tests" $
-              CEP.Settings.Tests.tests launch:Tests.tests launch
+                  Regression.tests launch
+                : CEP.Settings.Tests.tests launch
+                : Tests.tests launch
 
     return grp
 

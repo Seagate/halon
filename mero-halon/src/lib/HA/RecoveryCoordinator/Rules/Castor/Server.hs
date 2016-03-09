@@ -248,11 +248,15 @@ ruleNewMeroServer = define "new-mero-server" $ do
   initWrapper rule = do
      wrapper_init <- phaseHandle "wrapper_init"
      wrapper_clear <- phaseHandle "wrapper_clear"
+     wrapper_end <- phaseHandle "wrapper_end"
      directly wrapper_init $ switch [rule, wrapper_clear]
 
      directly wrapper_clear $ do
        fork NoBuffer $ continue rule
-       stop
+       continue wrapper_end
+
+     directly wrapper_end stop
+
      return wrapper_init
 
 -- |
