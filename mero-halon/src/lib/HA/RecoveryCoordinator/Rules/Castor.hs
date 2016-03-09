@@ -235,12 +235,15 @@ ruleDriveRemoved = define "drive-removed" $ do
     initWrapper ginit = do
        wrapper_init <- phaseHandle "wrapper_init"
        wrapper_clear <- phaseHandle "wrapper_clear"
+       wrapper_end <- phaseHandle "wrapper_end"
 
        directly wrapper_init $ switch [ginit, wrapper_clear]
 
        directly wrapper_clear $ do
          fork NoBuffer $ continue ginit
-         stop
+         continue wrapper_end
+
+       directly wrapper_end stop
        return wrapper_init
 #else
 ruleDriveRemoved :: Definitions LoopState ()
@@ -402,11 +405,14 @@ ruleDriveInserted = define "drive-inserted" $ do
     initWrapper ginit = do
        wrapper_init <- phaseHandle "wrapper_init"
        wrapper_clear <- phaseHandle "wrapper_clear"
+       wrapper_end   <- phaseHandle "wrapper_end"
        directly wrapper_init $ switch [ginit, wrapper_clear]
 
        directly wrapper_clear $ do
          fork NoBuffer $ continue ginit
-         stop
+         continue wrapper_end
+
+       directly wrapper_end stop
        return wrapper_init
 
 #else
