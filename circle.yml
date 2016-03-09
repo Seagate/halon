@@ -14,10 +14,9 @@ checkout:
 
 dependencies:
   pre:
-    - curl -LO https://github.com/commercialhaskell/stack/releases/download/v0.1.8.0/stack-0.1.8.0-linux-x86_64.tar.gz
-    - tar xf stack-0.1.8.0-linux-x86_64.tar.gz
     - mkdir -p ~/.local/bin
-    - cp stack-0.1.8.0-linux-x86_64/stack ~/.local/bin
+    - curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack';
+    - stack --version
     - sudo apt-get install socat
     # Make the docker socket available on a port.
     - "socat TCP-LISTEN:5555,reuseaddr,fork UNIX-CLIENT:/var/run/docker.sock":
