@@ -92,7 +92,7 @@ import Text.Printf (printf)
 import Prelude hiding (id)
 
 haAddress :: String
-haAddress = ":35:101"
+haAddress = ":12345:34:101"
 
 -- | Find a confd server in the cluster and run the given function on
 -- the configuration tree. Returns no result if no confd servers are
