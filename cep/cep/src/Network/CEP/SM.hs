@@ -27,6 +27,7 @@ import Network.CEP.Buffer
 import Network.CEP.Execution
 import Network.CEP.Phase
 import Network.CEP.Types
+import Debug.Trace
 
 newtype SM g = SM { runSM :: forall a. SMIn g a -> a }
 
@@ -83,8 +84,8 @@ newSM key startPhase rn ps initialBuffer initialL =
                  -> g
                  -> l
                  -> Buffer
-                 -> ([Jump (Phase g l)] -> [Jump (Phase g l)])
-                 -> ([ExecutionInfo] -> [ExecutionInfo])
+                 -> ([Jump (Phase g l)] -> [Jump (Phase g l)]) -- ^ Stack recreation.
+                 -> ([ExecutionInfo] -> [ExecutionInfo]) -- ^ Gather execution info.
                  -> [Jump (Phase g l)]
                  -> Process (g, [(SMResult, SM g)])
     executeStack _ _ g l b f info [] = case f [] of
@@ -104,19 +105,19 @@ newSM key startPhase rn ps initialBuffer initialL =
         next ph gNext (buffer, out) =
             case out of
               SM_Complete l' newPhases rlogs -> do
-                (result, phs') <- case newPhases of
+                let (result, phs') = case newPhases of
                            -- This branch is required if we want to rule to be restarted
                           -- once it finishes "normally".
-                          []  -> return ( SMResult SMFinished
-                                                  (info [SuccessExe pname b buffer])
-                                                  (mkLogs rn rlogs)
-                                        , [startPhase]
-                                        )
-                          ph' -> do let xs = fmap mkPhase ph'
-                                    return ( SMResult SMRunning
-                                                      (info [SuccessExe pname b buffer])
-                                                      (mkLogs rn rlogs)
-                                           , xs)
+                          []  -> ( SMResult SMFinished
+                                            (info [SuccessExe pname b buffer])
+                                            (mkLogs rn rlogs)
+                                 , [startPhase]
+                                 )
+                          ph' -> let xs = fmap mkPhase ph'
+                                 in ( SMResult SMRunning
+                                               (info [SuccessExe pname b buffer])
+                                               (mkLogs rn rlogs)
+                                    , xs)
                 fin_phs <- traverse (jumpEmitTimeout key) phs'
                 return (gNext, [(result, SM $ interpretInput l' buffer fin_phs)])
               SM_Suspend _ -> executeStack logs subs gNext l b
