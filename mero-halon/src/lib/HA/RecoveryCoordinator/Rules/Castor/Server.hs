@@ -122,6 +122,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
           (_, _) -> return Nothing
 
   setPhase new_server $ \(HAEvent eid (NewMeroServer node@(Node nid)) _) -> fork CopyNewerBuffer $ do
+    phaseLog "info" $ "NewMeroServer received for node " ++ show nid
     put Local $ Just (node, eid)
     findNodeHost node >>= \case
       Just host -> alreadyBootstrapping nid <$> getLocalGraph >>= \case

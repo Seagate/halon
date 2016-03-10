@@ -179,6 +179,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
                 >>> G.newResource ctrl
                 >>> G.newResource node
                 >>> G.connect Cluster Has host
+                >>> G.connect host Has HA_M0SERVER
                 >>> G.connect fs M0.IsParentOf node
                 >>> G.connect enc M0.IsParentOf ctrl
                 >>> G.connect ctrl M0.At host
