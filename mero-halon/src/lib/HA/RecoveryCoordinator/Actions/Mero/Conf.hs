@@ -201,7 +201,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
       procLabel = case m0p_boot_level of
          x | x < 0 -> M0.PLNoBoot
          99 -> M0.PLM0t1fs
-         x -> M0.PLBootLevel (fromIntegral x)
+         x -> M0.PLBootLevel $ M0.BootLevel (fromIntegral x)
     in do
       proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
       mapM_ (goSrv proc devs) m0p_services

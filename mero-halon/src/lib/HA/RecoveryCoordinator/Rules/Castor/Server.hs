@@ -151,7 +151,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
   setPhaseIf svc_up_now onNode $ \(host, chan) -> do
     -- Legitimate to avoid the event id as it should be handled by the default
     -- 'declare-mero-channel' rule.
-    startNodeProcesses host chan (PLBootLevel 0) True
+    startNodeProcesses host chan (PLBootLevel (BootLevel 0)) True
     continue core_bootstrapped
 
   -- Service is already up
@@ -162,7 +162,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
     mhost <- findNodeHost node
     case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
       Just (host, chan) -> do
-        startNodeProcesses host chan (PLBootLevel 0) True
+        startNodeProcesses host chan (PLBootLevel (BootLevel 0)) True
         continue core_bootstrapped
       Nothing -> switch [svc_up_now, timeout 5000000 finish]
 
@@ -182,7 +182,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
         (\(ServerBootstrapCoreProcess _ b) -> b)
         start_remaining_services finish (failureHandler e nid)
         (\(ServerBootstrapCoreProcess nid' _) ->
-          liftProcess . promulgateWait $ BootLevelComplete nid' (PLBootLevel 0))
+          liftProcess . promulgateWait $ BootLevelComplete nid' (PLBootLevel (BootLevel 0)))
 
   setPhase start_remaining_services $ \(HAEvent eid (BootLevelComplete nid _) _) -> do
     Just (node@(Node nid'), eid') <- get Local
@@ -202,7 +202,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
            mhost <- findNodeHost (Node nid)
            case (,) <$> mhost <*> (m0svc >>= meroChannel g) of
              Just (host, chan) -> do
-               startNodeProcesses host chan (PLBootLevel 1) True
+               startNodeProcesses host chan (PLBootLevel (BootLevel 1)) True
                continue finish_extra_bootstrap
              Nothing -> do
                phaseLog "error" $ "Can't find host for node " ++ show node
@@ -216,11 +216,11 @@ ruleNewMeroServer = define "new-mero-server" $ do
         (\(ServerBootstrapProcess _ b) -> b)
         start_clients finish Nothing
         (\(ServerBootstrapProcess nid' _) ->
-          liftProcess . promulgateWait $ BootLevelComplete nid' (PLBootLevel 1))
+          liftProcess . promulgateWait $ BootLevelComplete nid' (PLBootLevel (BootLevel 1)))
 
   setPhase start_clients $ \(HAEvent eid (BootLevelComplete nid' bl) _) -> do
     Just (node@(Node nid), eid') <- get Local
-    if nid == nid' && bl == PLBootLevel 1 then do
+    if nid == nid' && bl == PLBootLevel (BootLevel 1) then do
       messageProcessed eid'
       put Local $ Just (node, eid)
       rg <- getLocalGraph

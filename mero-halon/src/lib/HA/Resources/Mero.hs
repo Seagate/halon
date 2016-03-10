@@ -386,11 +386,27 @@ instance Hashable HostHardwareInfo
 --   it should run.
 data ProcessLabel =
     PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space
-  | PLBootLevel Int -- ^ Process boot level. Currently 0 = confd, 1 = other0
+  | PLBootLevel BootLevel -- ^ Process boot level. Currently 0 = confd, 1 = other0
   | PLNoBoot  -- ^ Tag processes which should not boot.
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ProcessLabel
 instance Hashable ProcessLabel
+
+-- | Process boot level.
+-- Currently:
+--   * 0 - confd
+--   * 1 - other
+newtype BootLevel = BootLevel Int
+  deriving (Eq, Show, Typeable, Generic, Binary, Hashable)
+
+data MeroClusterState = 
+    MeroClusterStopped -- ^ Cluster is not running.
+  | MeroClusterStarting BootLevel -- ^ Cluster is currently starting on a concrete bootlevel.
+  | MeroClusterStopping BootLevel -- ^ Cluster is currently stopping on a concrete bootlevel.
+  | MeroClusterRunning -- ^ Cluster is running succesfully.
+  deriving (Eq,Show, Typeable, Generic)
+instance Binary MeroClusterState
+instance Hashable MeroClusterState
 
 newtype ConfUpdateVersion = ConfUpdateVersion Word64
   deriving (Eq, Show, Typeable, Generic)
@@ -408,9 +424,11 @@ $(mkDicts
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
+  , ''MeroClusterState
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
+  , (''R.Cluster, ''R.Has, ''MeroClusterState)
   , (''Root, ''IsParentOf, ''Profile)
   , (''R.Cluster, ''R.Has, ''Profile)
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
@@ -458,9 +476,11 @@ $(mkResRel
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
+  , ''MeroClusterState
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
+  , (''R.Cluster, ''R.Has, ''MeroClusterState)
   , (''Root, ''IsParentOf, ''Profile)
   , (''R.Cluster, ''R.Has, ''Profile)
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
