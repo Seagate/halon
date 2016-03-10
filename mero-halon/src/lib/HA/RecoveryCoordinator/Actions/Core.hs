@@ -19,6 +19,7 @@ module HA.RecoveryCoordinator.Actions.Core
   , syncGraph
   , syncGraphBlocking
   , syncGraphProcess
+  , syncGraphCallback
   , syncGraphProcessMsg
   , knownResource
   , registerNode
@@ -164,6 +165,14 @@ syncGraphProcess :: (ProcessId -> Process ()) -> PhaseM LoopState l ()
 syncGraphProcess action = do
   self <- liftProcess $ getSelfPid
   syncGraph $ liftProcess (action self)
+
+-- | 'syncGraph' helper that passes current process id and action to process
+-- messages.
+syncGraphCallback :: (ProcessId -> (UUID -> Process ()) -> Process ()) -> PhaseM LoopState l ()
+syncGraphCallback action = do
+  self  <- liftProcess getSelfPid
+  eqPid <- lsEQPid <$> get Global
+  syncGraph $ action self (usend eqPid)
 
 -- | Declare that we have finished handling a message to the EQ, meaning it can
 --   delete it.
