@@ -194,8 +194,9 @@ loadInitialData transport = do
     hosts <- runGet ls' $ findHosts ".*"
     assertMsg "Find correct hosts." $ hosts == [myHost]
     hostAttrs <- runGet ls' $ findHostAttrs myHost
-    assertMsg "Host attributes"
-      $ sort hostAttrs == sort [HA_MEMSIZE_MB 4096, HA_CPU_COUNT 8]
+    liftIO $ Tasty.assertEqual "Host attributes"
+                               (sort [HA_MEMSIZE_MB 4096, HA_CPU_COUNT 8, HA_M0SERVER])
+                               (sort hostAttrs) 
     (Just fs) <- runGet ls' getFilesystem
     let pool = M0.Pool (M0.f_mdpool_fid fs)
     assertMsg "MDPool is stored in RG"
