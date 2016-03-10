@@ -121,32 +121,43 @@ ruleNewMeroServer = define "new-mero-server" $ do
           (True, [host]) -> return $ Just (host, cc)
           (_, _) -> return Nothing
 
-  setPhase new_server $ \(HAEvent eid (NewMeroServer node@(Node nid)) _) -> fork CopyNewerBuffer $ do
-    phaseLog "info" $ "NewMeroServer received for node " ++ show nid
-    put Local $ Just (node, eid)
-    findNodeHost node >>= \case
-      Just host -> alreadyBootstrapping nid <$> getLocalGraph >>= \case
-        True -> continue finish
-        False -> do
-          let pcore = ServerBootstrapCoreProcess nid False
-          phaseLog "info" "Starting core bootstrap"
-          modifyLocalGraph $
-            return . G.connect Cluster Runs pcore . G.newResource pcore
-          g <- getLocalGraph
-          let mlnid = listToMaybe $ [ ip | Interface { if_network = Data, if_ipAddrs = ip:_ }
-                                            <- G.connectedTo host Has g ]
-          case mlnid of
-            Nothing -> do
-              phaseLog "warn" $ "Unable to find Data IP addr for host "
-                              ++ show host
-              continue finish
-            Just lnid -> do
-              createMeroKernelConfig host $ lnid ++ "@tcp"
-              startMeroService host node
-              switch [svc_up_now, timeout 5000000 svc_up_already]
-      Nothing -> do
-        phaseLog "error" $ "Can't find host for node " ++ show node
+  setPhase new_server $ \(HAEvent eid (NewMeroServer node@(Node nid)) _) -> do
+    rg <- getLocalGraph
+    case listToMaybe $ G.connectedTo Cluster Has rg of
+      Just MeroClusterStopped -> do
+        phaseLog "info" "Cluster is not running skip node"
         continue finish
+      Just MeroClusterStopping{} -> do
+        phaseLog "info" "Cluster is not running skip node"
+        continue finish
+      _ -> return ()
+
+    fork CopyNewerBuffer $ do
+      phaseLog "info" $ "NewMeroServer received for node " ++ show nid
+      put Local $ Just (node, eid)
+      findNodeHost node >>= \case
+        Just host -> alreadyBootstrapping nid <$> getLocalGraph >>= \case
+          True -> continue finish
+          False -> do
+            let pcore = ServerBootstrapCoreProcess nid False
+            phaseLog "info" "Starting core bootstrap"
+            modifyLocalGraph $
+              return . G.connect Cluster Runs pcore . G.newResource pcore
+            g <- getLocalGraph
+            let mlnid = listToMaybe $ [ ip | Interface { if_network = Data, if_ipAddrs = ip:_ }
+                                              <- G.connectedTo host Has g ]
+            case mlnid of
+              Nothing -> do
+                phaseLog "warn" $ "Unable to find Data IP addr for host "
+                                ++ show host
+                continue finish
+              Just lnid -> do
+                createMeroKernelConfig host $ lnid ++ "@tcp"
+                startMeroService host node
+                switch [svc_up_now, timeout 5000000 svc_up_already]
+        Nothing -> do
+          phaseLog "error" $ "Can't find host for node " ++ show node
+          continue finish
 
   setPhaseIf svc_up_now onNode $ \(host, chan) -> do
     -- Legitimate to avoid the event id as it should be handled by the default

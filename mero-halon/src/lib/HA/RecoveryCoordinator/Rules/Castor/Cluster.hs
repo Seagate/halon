@@ -9,6 +9,7 @@ import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
 import HA.ResourceGraph as G
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Events.Castor.Cluster
 import Network.CEP
 
@@ -40,6 +41,7 @@ ruleClusterStart = defineSimple "cluster-start-request"
             Just st -> case st of
                M0.MeroClusterStopped    -> Right $ do
                   modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStarting (M0.BootLevel 0))
+                  announceMeroNodes
                   syncGraphCallback $ \pid proc -> do
                     sendChan ch (StateChangeStarted pid)
                     proc eid

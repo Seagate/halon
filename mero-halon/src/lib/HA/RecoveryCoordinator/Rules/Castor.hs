@@ -33,7 +33,6 @@ import HA.Services.SSPL
 import Control.Applicative
 import Control.Category ((>>>))
 import HA.Resources.TH
-import HA.EventQueue.Producer
 import HA.Services.Mero
 import HA.Services.Mero.CEP (meroChannel)
 import HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
@@ -117,26 +116,7 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
       (if isJust update then liftProcess else syncGraph) $
         say "Loaded initial data"
 #else
-      syncGraph $ say "Loaded initial data"
-#endif
-#ifdef USE_MERO
-      rg' <- getLocalGraph
-      let clientHosts =
-            [ host | host <- G.getResourcesOfType rg'    :: [Host] -- all hosts
-                   , not  $ G.isConnected host Has HA_M0CLIENT rg' -- and not already a client
-                   , not  $ G.isConnected host Has HA_M0SERVER rg' -- and not already a server
-                   ]
-
-          hostsToNodes = mapMaybe (\h -> listToMaybe $ G.connectedTo h Runs rg')
-          serverHosts = [ host | host <- G.getResourcesOfType rg' :: [Host]
-                               , G.isConnected host Has HA_M0SERVER rg' ]
-
-          serverNodes = hostsToNodes serverHosts
-          clientNodes = hostsToNodes clientHosts
-      phaseLog "post-initial-load" $ "Sending messages about these new mero nodes: "
-                                  ++ show ((clientNodes, clientHosts), (serverNodes, serverHosts))
-      forM_ clientNodes $ liftProcess . promulgateWait . NewMeroClient
-      forM_ serverNodes $ liftProcess . promulgateWait . NewMeroServer
+      liftProcess $ say "Loaded initial data"
 #endif
       messageProcessed eid
 

@@ -19,6 +19,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   , createMeroClientConfig
   , startMeroService
   , startNodeProcesses
+  , announceMeroNodes
   )
 where
 
@@ -27,6 +28,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Conf as Conf
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Actions.Mero.Failure
+import HA.RecoveryCoordinator.Events.Mero
 
 import HA.Resources.Castor (Is(..))
 import HA.Resources (Has(..))
@@ -48,7 +50,7 @@ import Control.Monad (forM)
 
 import Data.Foldable (forM_, traverse_)
 import Data.Proxy
-import Data.Maybe (catMaybes, listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
@@ -268,3 +270,24 @@ startMeroService host node = do
     let conf = MeroConf haAddr (fidToStr $ M0.fid profile)
                 (MeroKernelConf uuid)
     return $ encodeP $ ServiceStartRequest Start node m0d conf []
+
+-- | Send notifications about new mero nodes and new mero servers.
+announceMeroNodes :: PhaseM LoopState a ()
+announceMeroNodes = do
+  rg' <- getLocalGraph
+  let clientHosts =
+        [ host | host <- G.getResourcesOfType rg'    :: [Castor.Host] -- all hosts
+               , not  $ G.isConnected host Has Castor.HA_M0CLIENT rg' -- and not already a client
+               , not  $ G.isConnected host Has Castor.HA_M0SERVER rg' -- and not already a server
+               ]
+
+      hostsToNodes = mapMaybe (\h -> listToMaybe $ G.connectedTo h Runs rg')
+      serverHosts = [ host | host <- G.getResourcesOfType rg' :: [Castor.Host]
+                           , G.isConnected host Has Castor.HA_M0SERVER rg' ]
+
+      serverNodes = hostsToNodes serverHosts :: [Res.Node]
+      clientNodes = hostsToNodes clientHosts :: [Res.Node]
+  phaseLog "post-initial-load" $ "Sending messages about these new mero nodes: "
+                              ++ show ((clientNodes, clientHosts), (serverNodes, serverHosts))
+  forM_ clientNodes $ promulgateRC . NewMeroClient
+  forM_ serverNodes $ promulgateRC . NewMeroServer
