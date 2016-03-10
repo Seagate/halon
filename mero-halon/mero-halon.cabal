@@ -165,10 +165,12 @@ Library
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
                        HA.RecoveryCoordinator.Rules.Mero.Conf
+                       HA.RecoveryCoordinator.Events.Castor.Cluster
       Other-Modules:  HA.RecoveryCoordinator.Actions.Mero.Conf
                       HA.RecoveryCoordinator.Actions.Mero.Core
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
                       HA.RecoveryCoordinator.Rules.Castor.Repair
+                      HA.RecoveryCoordinator.Rules.Castor.Cluster
                       HA.RecoveryCoordinator.Rules.Castor.Repair.Internal
                       HA.Services.Mero.CEP
                       HA.Services.Mero.Types

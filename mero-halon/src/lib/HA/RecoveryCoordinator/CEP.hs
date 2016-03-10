@@ -53,6 +53,7 @@ import           Control.Monad (forM_)
 import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Actions.Mero.Conf (getFilesystem)
 import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
+import           HA.RecoveryCoordinator.Rules.Castor.Cluster (clusterRules)
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_ONLINE, M0_NC_TRANSIENT))
 import           HA.Services.Mero (meroRules, notifyMero)
@@ -135,6 +136,7 @@ rcRules argv additionalRules = do
 #ifdef USE_MERO
     HA.Services.Mero.meroRules
     HA.RecoveryCoordinator.Rules.Mero.meroRules
+    HA.RecoveryCoordinator.Rules.Castor.Cluster.clusterRules
 #endif
     sequence_ additionalRules
 
