@@ -61,6 +61,7 @@ import Control.Category (id, (>>>))
 import Control.Distributed.Process (liftIO)
 
 import Data.Foldable (foldl')
+import qualified Data.HashSet as S
 import Data.List (scanl')
 import Data.Maybe (listToMaybe, catMaybes)
 import Data.Proxy
@@ -330,16 +331,28 @@ getSDevPool sdev = do
     return $ listToMaybe ps
 
 -- | Get all 'M0.SDev's that belong to the given 'M0.Pool'.
+--
+-- Works on the assumption that every disk belonging to the pool
+-- appears in at least one pool version belonging to the pool. In
+-- other words,
+--
+-- "If pool doesn't contain a disk in some pool version => disk
+-- doesn't belong to the pool." See discussion at
+-- https://seagate.slack.com/archives/mero-halon/p1457632533003295 for
+-- details.
 getPoolSDevs :: M0.Pool -> PhaseM LoopState l [M0.SDev]
 getPoolSDevs pool = getLocalGraph >>= \rg -> do
-  return $ [ sd | pv <- G.connectedTo pool M0.IsRealOf rg :: [M0.PVer]
-                , rv <- G.connectedTo pv M0.IsParentOf rg :: [M0.RackV]
-                , ev <- G.connectedTo rv M0.IsParentOf rg :: [M0.EnclosureV]
-                , ct <- G.connectedTo ev M0.IsParentOf rg :: [M0.ControllerV]
-                , dv <- G.connectedTo ct M0.IsParentOf rg :: [M0.DiskV]
-                , d <- G.connectedFrom M0.IsRealOf dv rg :: [M0.Disk]
-                , sd <- G.connectedFrom M0.IsOnHardware d rg :: [M0.SDev]
-                ]
+  -- Find SDevs for every single pool version belonging to the disk.
+  let sdevs = [ sd | pv <- G.connectedTo pool M0.IsRealOf rg :: [M0.PVer]
+                   , rv <- G.connectedTo pv M0.IsParentOf rg :: [M0.RackV]
+                   , ev <- G.connectedTo rv M0.IsParentOf rg :: [M0.EnclosureV]
+                   , ct <- G.connectedTo ev M0.IsParentOf rg :: [M0.ControllerV]
+                   , dv <- G.connectedTo ct M0.IsParentOf rg :: [M0.DiskV]
+                   , d <- G.connectedFrom M0.IsRealOf dv rg :: [M0.Disk]
+                   , sd <- G.connectedFrom M0.IsOnHardware d rg :: [M0.SDev]
+                   ]
+  -- Find the largest sdev set, that is the set holding all disks.
+  return . S.toList . S.fromList $ sdevs
 
 -- | Get all 'M0.SDev's in the given 'M0.Pool' with the given
 -- 'M0.ConfObjState'.
