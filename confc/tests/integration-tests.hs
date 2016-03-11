@@ -25,11 +25,15 @@ tests :: TestTree
 tests = testGroup "confc"
   [ testGroup "integration-tests" 
       [ runTestCase Test.ConfRead.name
-      , runTestCase Test.MakeConf.name
-      , runTestCase Test.CopyConf.name
-      , runTestCase Test.Management.name
+      , disabled Test.MakeConf.name
+      , disabled Test.CopyConf.name
+      , disabled Test.Management.name
       ]
   ]
+ where
+  disabled name =
+    testCase (name ++ " [disabled until supported (at least MERO-1569)]")
+             $ const (return ()) $ runTestCase name
 
 runTestCase :: String -> TestTree
 runTestCase name = testCase name $ do
