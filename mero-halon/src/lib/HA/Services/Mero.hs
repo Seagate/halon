@@ -66,13 +66,14 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process
-import Control.Monad (forever, forM, join, void)
+import Control.Monad (forever, join, void)
 import qualified Control.Monad.Catch as Catch
 import Control.Monad.Trans.Maybe
 
 import qualified Data.ByteString as BS
 import Data.Char (toUpper)
 import Data.Foldable (forM_, asum, traverse_)
+import Data.Traversable (forM)
 import Data.List (partition)
 import Data.Maybe (catMaybes, listToMaybe, maybeToList)
 import qualified Data.Set as Set
@@ -125,7 +126,13 @@ controlProcess mc pid rp = link pid >> (forever $ receiveChan rp >>= \case
       nid <- getSelfNode
       results <- liftIO $ join <$> mapM (uncurry $ startProcesses mc) procs
       promulgateWait $ ProcessControlResultMsg nid results
+    StopProcesses procs -> do
+      nid <- getSelfNode
+      results <- liftIO $ fmap concat $ forM procs $ \(roles, conf) ->
+        forM (reverse roles) $ \role -> stopProcess role conf
+      promulgateWait $ ProcessControlResultMsg nid results
   )
+
 
 --------------------------------------------------------------------------------
 -- Mero Process control
@@ -173,6 +180,30 @@ startProcess mc run conf = flip Catch.catch handler $ do
     handler :: Catch.SomeException -> IO (Either Fid (Fid, String))
     handler e = return $
       Right (procFid, show e)
+
+-- | Stop running mero service.
+stopProcess :: ProcessRunType -> ProcessConfig -> IO (Either Fid (Fid,String))
+stopProcess run conf = flip Catch.catch handler $ do
+    putStrLn $ "m0d: stopProcess: " ++ show procFid
+             ++ " with type(s) " ++ show run
+    let munit = case run of
+          M0T1FS -> Just $ "m0t1fs@" ++ fidToStr procFid
+          M0D    -> Just $ "m0d@" ++ fidToStr procFid
+          M0MKFS  -> Nothing
+    case munit of
+      Just unit -> do ec <- SystemD.stopService $ unit ++ fidToStr procFid
+                      return $ case ec of
+                        ExitSuccess -> Left procFid
+                        ExitFailure x ->
+                          Right (procFid, "Unit failed to stop with exit code " ++ show x)
+      Nothing -> return (Left procFid) 
+    where
+      procFid = case conf of 
+        ProcessConfigLocal x _ _ -> x
+        ProcessConfigRemote x _  -> x
+      handler :: Catch.SomeException -> IO (Either Fid (Fid, String))
+      handler e = return $ Right (procFid, show e)
+
 
 -- | Write out the conf.xc file for a confd server.
 writeConfXC :: BS.ByteString -- ^ Contents of conf.xc file
