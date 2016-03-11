@@ -164,28 +164,32 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
   goHost (CI.M0Host{..}, hostIdx) = let
       host = Host m0h_fqdn
     in do
-
-      ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
       node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
 
-      devs <- mapM (goDev host ctrl) (zip m0h_devices [hostIdx..length m0h_devices + hostIdx])
-      mapM_ (goProc node devs) m0h_processes
-
-      rg <- getLocalGraph
-      let enc = head $ [ e | e1 <- G.connectedFrom Has host rg :: [Enclosure]
-                           , e <- G.connectedFrom M0.At e1 rg :: [M0.Enclosure]
-                           ]
-
       modifyGraph $ G.newResource host
-                >>> G.newResource ctrl
                 >>> G.newResource node
                 >>> G.connect Cluster Has host
                 >>> G.connect host Has HA_M0SERVER
                 >>> G.connect fs M0.IsParentOf node
-                >>> G.connect enc M0.IsParentOf ctrl
-                >>> G.connect ctrl M0.At host
-                >>> G.connect node M0.IsOnHardware ctrl
                 >>> G.connect host Runs node
+
+      if not (null m0h_devices) then do
+        ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
+        devs <- mapM (goDev host ctrl)
+                     (zip m0h_devices [hostIdx..length m0h_devices + hostIdx])
+        mapM_ (goProc node devs) m0h_processes
+
+        rg <- getLocalGraph
+        let enc = head $ [ e | e1 <- G.connectedFrom Has host rg :: [Enclosure]
+                             , e <- G.connectedFrom M0.At e1 rg :: [M0.Enclosure]
+                             ]
+
+        modifyGraph $ G.newResource ctrl
+                  >>> G.connect enc M0.IsParentOf ctrl
+                  >>> G.connect ctrl M0.At host
+                  >>> G.connect node M0.IsOnHardware ctrl
+      else
+        mapM_ (goProc node []) m0h_processes
 
   goProc node devs CI.M0Process{..} = let
       cores = bitmapFromArray
