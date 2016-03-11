@@ -90,14 +90,14 @@ int main(int argc,char** argv) {
 
     ast_thread_init();
     struct m0_reqh* reqh = rpc_get_rpc_machine(ep)->rm_reqh;
-    rc = m0_confc_init(&reqh->rh_confc, &g_grp
+    rc = m0_confc_init(m0_reqh2confc(reqh), &g_grp
                       ,argv[2],rpc_get_rpc_machine(ep), NULL);
     if (rc) {
         fprintf(stderr,"m0_confc_init: %d %s\n",rc,strerror(-rc));
         return 1;
     }
 
-    rc = m0_ha_client_add(&reqh->rh_confc);
+    rc = m0_ha_client_add(m0_reqh2confc(reqh));
     if (rc) {
         fprintf(stderr,"m0_ha_client_add: %d %s\n",rc,strerror(-rc));
         return 1;
@@ -153,11 +153,11 @@ int main(int argc,char** argv) {
     printf("m0_ha_state_get result sent\n");
 
     struct m0_conf_obj* r_obj;
-    printf("root fid: " FID_F "\n", FID_P(&reqh->rh_confc.cc_root->co_id));
+    printf("root fid: " FID_F "\n", FID_P(&m0_reqh2confc(reqh)->cc_root->co_id));
     // open the root fid so it is available in the cache and thus it is
     // modified by m0_ha_state_accept.
-    rc = m0_confc_open_by_fid_sync( &reqh->rh_confc
-                                  , &reqh->rh_confc.cc_root->co_id
+    rc = m0_confc_open_by_fid_sync( m0_reqh2confc(reqh)
+                                  , &m0_reqh2confc(reqh)->cc_root->co_id
                                   , &r_obj
                                   );
     if (rc) {
@@ -184,7 +184,7 @@ int main(int argc,char** argv) {
       continue;
     printf("confc was modified\n");
 
-    unsigned char state = reqh->rh_confc.cc_root->co_ha_state;
+    unsigned char state = m0_reqh2confc(reqh)->cc_root->co_ha_state;
     struct iovec segments2[] = { { .iov_base = (void*)&state, .iov_len = sizeof(state) }
                                };
 
@@ -205,13 +205,13 @@ int main(int argc,char** argv) {
 
     rpc_disconnect(c,5);
 
-    rc = m0_ha_client_del(&reqh->rh_confc);
+    rc = m0_ha_client_del(m0_reqh2confc(reqh));
     if (rc) {
         fprintf(stderr,"m0_ha_client_del: %d %s\n",rc,strerror(-rc));
         return 1;
     }
 
-    m0_confc_fini(&reqh->rh_confc);
+    m0_confc_fini(m0_reqh2confc(reqh));
 
     ast_thread_fini();
 
