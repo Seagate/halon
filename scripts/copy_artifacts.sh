@@ -8,6 +8,10 @@ find . -name test_output | while read file; do
     cp -rv "$file"/* "${DESTINATION}"
 done
 
+find /tmp -name test_output | while read file; do
+    cp -rv "$file"/* "${DESTINATION}"
+done
+
 mkdir "${DESTINATION}/logs"
 find . -type f -name \*.log | while read file; do
     cp -v "$file" "${DESTINATION}/logs"
