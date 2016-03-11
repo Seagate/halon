@@ -255,6 +255,7 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
           liftGlobalM0 $ doneGet nvecr (-1)
 
     ha_state_set :: NVec -> IO Int
+    ha_state_set [] = return 0
     ha_state_set nvec = do
       CH.runProcess lnode $ do
         say $ "m0d: received state vector " ++ show nvec

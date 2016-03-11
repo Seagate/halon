@@ -2,6 +2,8 @@
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
@@ -33,7 +35,7 @@ import Mero.ConfC (Fid)
 import Network.RPC.RPCLite
     ( ServerEndpoint(..), ClientEndpointV, RPCAddress(..) )
 
-import Control.Exception      ( Exception, throwIO )
+import Control.Exception      ( catch, Exception, throwIO )
 import Control.Monad          ( liftM2 )
 import Data.Binary            ( Binary )
 import Data.ByteString as B   ( useAsCString )
@@ -43,6 +45,7 @@ import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef
                               , newIORef
                               )
 import Data.List              ( find )
+import Data.Maybe             ( catMaybes )
 import Data.Word              ( Word32 )
 import Data.Int               ( Int32 )
 import Foreign.C.Types        ( CInt(..) )
@@ -50,9 +53,10 @@ import Foreign.C.String       ( CString, withCString )
 import Foreign.Marshal.Alloc  ( allocaBytesAligned )
 import Foreign.Marshal.Array  ( peekArray, pokeArray, withArray, withArrayLen, withArrayLen0 )
 import Foreign.Marshal.Utils  ( with, withMany )
-import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr, nullPtr )
+import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr, nullPtr, castPtr )
 import Foreign.Storable       ( Storable(..) )
 import GHC.Generics           ( Generic )
+import System.IO              ( hPutStrLn, stderr )
 import System.IO.Unsafe       ( unsafePerformIO )
 
 #include "hastate.h"
@@ -156,9 +160,7 @@ instance Storable Note where
 
   peek p = liftM2 Note
       (#{peek struct m0_ha_note, no_id} p)
-      (fmap (toEnum . fromIntegral)
-          (#{peek struct m0_ha_note, no_state} p :: IO Word32)
-      )
+      ((#{peek struct m0_ha_note, no_state} p :: IO Word32) >>= enumToObj)
 
   poke p (Note o s) = do
       #{poke struct m0_ha_note, no_id} p o
@@ -169,8 +171,11 @@ instance Storable Note where
 readNVecRef :: NVecRef -> IO NVec
 readNVecRef (NVecRef pnvec) = do
   nr <- #{peek struct m0_ha_nvec, nv_nr} pnvec :: IO Int32
+  -- Hack, we peek ‘Ptr (MaybeStorable a)’ from ‘Ptr a’ store which
+  -- lets peekArray use the MaybeStorable instance.
   notes <- #{peek struct m0_ha_nvec, nv_note} pnvec
-  peekArray (fromIntegral nr) notes
+  catMaybes . fmap _unMaybeStorable <$> peekArray (fromIntegral nr) notes
+
 
 -- | @updateNVecRef ref news@ updates the states of the
 -- notes in @ref@ with the states contained in @news@.
@@ -260,3 +265,46 @@ entrypointReplyWakeup fom eprv confdFids epNames rmFid rmEp =
 entrypointNoReplyWakeup :: Ptr FomV -> Ptr EntryPointRepV -> IO ()
 entrypointNoReplyWakeup fom eprv =
   ha_entrypoint_reply_wakeup fom eprv (-1) 0 nullPtr 0 nullPtr nullPtr nullPtr
+
+-- * Storable hack
+
+newtype EnumOutOfRange = EnumOutOfRange Int
+  deriving (Show, Typeable)
+
+instance Exception EnumOutOfRange
+
+-- | A hack for 'Storable' that can throw 'EnumOutOfRange' exceptions during
+-- 'peek'. Should not be 'poke'd.
+--
+-- The necessity for this type is to be able to abuse the 'Storable'
+-- instance for extra error-handling logic while allowing pre-defined
+-- functions such as 'peekArray' to still be used.
+newtype MaybeStorable a = MaybeStorable { _unMaybeStorable :: Maybe a }
+  deriving (Show, Eq, Ord, Generic)
+
+-- | A hack for 'Storable' that can catch 'EnumOutOfRange' exceptions during
+-- 'peek' which allows the caller to catch it. Should never be 'poke'd.
+instance forall a. Storable a => Storable (MaybeStorable a) where
+  sizeOf _ = sizeOf (error "sizeOf MaybeStorable" :: a)
+
+  alignment _ = alignment (error "alignment MaybeStorable" :: a)
+
+  poke p (MaybeStorable (Just x)) = poke (castPtr p) x
+  poke _ _ = error "poke MaybeStorable"
+
+  peek p = let peekBase :: IO a
+               peekBase = peek $ castPtr p
+           in flip catch handler $ peekBase >>= return . MaybeStorable . Just
+    where
+      handler :: EnumOutOfRange -> IO (MaybeStorable a)
+      handler e = do
+        hPutStrLn stderr $ "MaybeStorable peek failed: " ++ show e
+        return $ MaybeStorable Nothing
+
+-- | Converts the given number to the desired type using 'Enum'
+-- instance. Throws 'EnumOutOfRange' if the enum is out of range.
+enumToObj :: forall a b. (Integral a, Enum b, Bounded b) => a -> IO b
+enumToObj i = case fromIntegral i of
+  n | fromEnum (maxBound :: b) < n || fromEnum (minBound :: b) > n
+        -> throwIO $ EnumOutOfRange n
+    | otherwise -> return $ toEnum n
