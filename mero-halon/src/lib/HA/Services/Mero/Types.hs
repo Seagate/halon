@@ -55,9 +55,15 @@ data MeroChannel = MeroChannel deriving (Eq, Show, Typeable, Generic)
 instance Binary MeroChannel
 instance Hashable MeroChannel
 
+-- | Acknowledgement sent upon successfully calling m0_ha_state_set
+newtype NotificationAck = NotificationAck ()
+  deriving (Binary, Eq, Hashable, Generic, Typeable)
+
 data NotificationMessage = NotificationMessage
        { notificationMessage :: Set
-       , notificationRecipients :: [String]
+       , notificationRecipients :: [String] -- Endpoints
+       , notificationAckTo :: [ProcessId] -- Processes to send ack that
+                                          -- notification is complete.
        }
      deriving (Typeable, Generic)
 instance Binary NotificationMessage

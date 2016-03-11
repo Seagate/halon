@@ -33,6 +33,8 @@ module HA.Services.Mero
     , m0d__static
     , meroRules
     , notifyMero
+    , notifyMeroBlocking
+    , notifyMeroAndThen
     ) where
 
 import HA.EventQueue.Producer (expiate, promulgate, promulgateWait)
@@ -53,7 +55,9 @@ import Mero.ConfC (Fid, ServiceType(..), fidToStr)
 import Network.CEP
 import qualified Network.RPC.RPCLite as RPC
 
+import Control.Concurrent.MVar
 import Control.Exception (SomeException, IOException)
+import qualified Control.Distributed.Process.Timeout as PT (timeout)
 import Control.Distributed.Process.Closure
   ( remotableDecl
   , mkStatic
@@ -62,15 +66,15 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process
-import Control.Monad (forever, join, void)
+import Control.Monad (forever, forM, join, void)
 import qualified Control.Monad.Catch as Catch
 import Control.Monad.Trans.Maybe
 
 import qualified Data.ByteString as BS
 import Data.Char (toUpper)
-import Data.Foldable (forM_, asum)
+import Data.Foldable (forM_, asum, traverse_)
 import Data.List (partition)
-import Data.Maybe (listToMaybe, maybeToList)
+import Data.Maybe (catMaybes, listToMaybe, maybeToList)
 import qualified Data.Set as Set
 import qualified Data.UUID as UUID
 
@@ -97,13 +101,15 @@ statusProcess ep pid rp = do
     -- TODO: When mero can handle exceptions caught here, report them to the RC.
     link pid
     forever $ do
-      NotificationMessage set addrs <- receiveChan rp
+      NotificationMessage set addrs subs <- receiveChan rp
       forM_ addrs $ \addr ->
         let logError e =
               say $ "statusProcess: notifyMero failed: " ++ show (pid, addr, e)
-         in (Mero.Notification.notifyMero ep (RPC.rpcAddress addr) set
-              `catch` \(e :: IOException) -> logError e
+        in do
+          ( Mero.Notification.notifyMero ep (RPC.rpcAddress addr) set
+            `catch` \(e :: IOException) -> logError e
             ) `catch` \(e :: HAStateException) -> logError e
+          traverse_ (flip usend $ NotificationAck ()) subs
    `catch` \(e :: SomeException) -> do
       say $ "statusProcess terminated: " ++ show (pid, e)
       Catch.throwM e
@@ -265,16 +271,14 @@ remotableDecl [ [d|
 meroRules :: Definitions LoopState ()
 meroRules = meroRulesF m0d
 
--- | Combine @ConfObj@s and a @ConfObjectState@ into a 'Set' and
--- send it to every mero service running on the cluster.
-notifyMero :: [M0.AnyConfObj] -- ^ List of resources (instance of @ConfObj@)
-           -> ConfObjectState
-           -> PhaseM LoopState l ()
-notifyMero cs st = do
-  phaseLog "action" "Sending configuration update to mero services"
+-- | Return the set of notification channels available in the cluster.
+--   This function logs, but does not error, if it cannot find channels
+--   for every host in the cluster.
+getNotificationChannels :: PhaseM LoopState l [(SendPort NotificationMessage, [String])]
+getNotificationChannels = do
   rg <- getLocalGraph
   let hosts = G.getResourcesOfType rg :: [Host]
-  forM_ hosts $ \host -> do
+  things <- forM hosts $ \host -> do
      mchan <- runMaybeT $ asum (MaybeT . lookupMeroChannelByNode <$> G.connectedTo host Runs rg)
      let recipients = Set.fromList (fst <$> nha) Set.\\ Set.fromList (fst <$> ha)
          (nha, ha) = partition ((/=) CST_HA . snd)
@@ -286,7 +290,7 @@ notifyMero cs st = do
                    , let stype = M0.s_type service
                    , endpoint <- M0.s_endpoints service
                    ]
-     case mchan of
+     (fmap (,Set.toList recipients)) <$> case mchan of
        Nothing -> do
          node <- liftProcess getSelfNode
          lookupMeroChannelByNode (Node node) >>= \case
@@ -294,13 +298,63 @@ notifyMero cs st = do
                phaseLog "warning" $ "HA.Service.Mero.notifyMero: can't find remote service for"
                                   ++ show host
                                   ++ ", sending from local"
-               phaseLog "debug" $ show setEvent
-               liftProcess $ sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
-            Nothing -> phaseLog "error" $ "HA.Service.Mero.notifyMero: cannot neither MeroChannel on "
-                                      ++ show host
-                                      ++ " nor local channel."
-       Just (TypedChannel chan) -> liftProcess $
-         sendChan chan $ NotificationMessage setEvent (Set.toList recipients)
+               return $ Just chan
+            Nothing -> do
+              phaseLog "error" $ "HA.Service.Mero.notifyMero: cannot neither MeroChannel on "
+                              ++ show host
+                              ++ " nor local channel."
+              return Nothing
+       Just (TypedChannel chan) -> return $ Just chan
+  return $ catMaybes things
+
+notifyMeroBlocking :: [M0.AnyConfObj] -- ^ List of resources (instance of @ConfObj@)
+                   -> ConfObjectState
+                   -> PhaseM LoopState l Bool
+notifyMeroBlocking cs st = do
+  res <- liftIO $ newEmptyMVar
+  notifyMeroAndThen cs st
+    (liftIO $ putMVar res True)
+    (liftIO $ putMVar res False)
+  liftIO $ takeMVar res
+
+notifyMeroAndThen :: [M0.AnyConfObj] -- ^ List of resources (instance of @ConfObj@)
+                  -> ConfObjectState
+                  -> Process () -- ^ Action on success
+                  -> Process () -- ^ Action on failure
+                  -> PhaseM LoopState l ()
+notifyMeroAndThen cs st fsucc ffail = do
+    phaseLog "action" "Sending configuration update to mero services"
+    chans <- getNotificationChannels
+    liftProcess $ do
+      self <- getSelfPid
+      void $ spawnLocal $ do
+        link self
+        sendChansBlocking chans
+  where
+    getFid (M0.AnyConfObj a) = M0.fid a
+    setEvent :: Mero.Notification.Set
+    setEvent = Mero.Notification.Set $ map (flip Note st . getFid) cs
+    -- Send a message to all channels and block until each has replied
+    sendChansBlocking :: [(SendPort NotificationMessage, [String])] -> Process ()
+    sendChansBlocking chans =
+      ((callLocal $ PT.timeout 1000000 $ do
+          selfLocal <- getSelfPid
+          forM_ chans $ \(chan, recipients) ->
+            sendChan chan $ NotificationMessage setEvent recipients [selfLocal]
+          forM_ chans $ const (expect :: Process NotificationAck)
+       ) `onException` ffail)
+      >>= maybe ffail (const fsucc)
+
+-- | Combine @ConfObj@s and a @ConfObjectState@ into a 'Set' and
+-- send it to every mero service running on the cluster.
+notifyMero :: [M0.AnyConfObj] -- ^ List of resources (instance of @ConfObj@)
+           -> ConfObjectState
+           -> PhaseM LoopState l ()
+notifyMero cs st = do
+    phaseLog "action" "Sending configuration update to mero services"
+    chans <- getNotificationChannels
+    forM_ chans $ \(sp, recipients) -> liftProcess $
+        sendChan sp $ NotificationMessage setEvent recipients []
   where
     getFid (M0.AnyConfObj a) = M0.fid a
     setEvent :: Mero.Notification.Set
