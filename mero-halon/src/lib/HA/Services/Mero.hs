@@ -23,6 +23,7 @@ module HA.Services.Mero
     , ProcessConfig(..)
     , ProcessControlMsg(..)
     , ProcessControlResultMsg(..)
+    , ProcessControlResultStopMsg(..)
     , MeroConf(..)
     , MeroKernelConf(..)
     , m0d
@@ -130,7 +131,7 @@ controlProcess mc pid rp = link pid >> (forever $ receiveChan rp >>= \case
       nid <- getSelfNode
       results <- liftIO $ fmap concat $ forM procs $ \(roles, conf) ->
         forM (reverse roles) $ \role -> stopProcess role conf
-      promulgateWait $ ProcessControlResultMsg nid results
+      promulgateWait $ ProcessControlResultStopMsg nid results
   )
 
 
