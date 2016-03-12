@@ -7,6 +7,7 @@ module Helper.RC
   ) where
 
 import HA.RecoveryCoordinator.Actions.Core
+import qualified HA.RecoveryCoordinator.Actions.Storage as Storage
 import Control.Distributed.Process
 import HA.Resources
 import HA.Multimap
@@ -23,10 +24,10 @@ emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
 emptyLoopState mmchan pid = do
   wrk <- liftIO $ dummyM0Worker
   g' <- getGraph mmchan >>= return . addRootNode Cluster
-  return $ LoopState g' Map.empty mmchan pid Map.empty [] wrk
+  return $ LoopState g' Map.empty mmchan pid Map.empty [] wrk Storage.empty
 #else
 emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
 emptyLoopState mmchan pid = do
   g' <- getGraph mmchan >>= return . addRootNode Cluster
-  return $ LoopState g' Map.empty mmchan pid Map.empty
+  return $ LoopState g' Map.empty mmchan pid Map.empty Storage.empty
 #endif

@@ -92,6 +92,7 @@ Library
                    HA.RecoveryCoordinator.Definitions
                    HA.RecoveryCoordinator.Events.Status
                    HA.RecoveryCoordinator.Actions.Core
+                   HA.RecoveryCoordinator.Actions.Storage
                    HA.RecoveryCoordinator.Actions.Hardware
                    HA.RecoveryCoordinator.Actions.Service
                    HA.RecoveryCoordinator.Actions.Test

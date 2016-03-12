@@ -23,6 +23,10 @@ module HA.RecoveryCoordinator.Actions.Core
   , syncGraphProcessMsg
   , knownResource
   , registerNode
+    -- * Operations on ephimeral state
+  , putStorageRC
+  , getStorageRC
+  , deleteStorageRC
     -- * Communication with the EQ
   , messageProcessed
   , selfMessage
@@ -55,6 +59,7 @@ import HA.Resources
   , Node
   )
 
+import qualified HA.RecoveryCoordinator.Actions.Storage as Storage
 import HA.EventQueue.Types
 import HA.EventQueue.Producer (promulgateWait)
 import HA.Service
@@ -87,7 +92,9 @@ import Mero.Notification (Set)
 import Mero.M0Worker
 #endif
 
+import Data.Typeable (Typeable)
 import Data.Functor (void)
+import Data.Proxy
 import qualified Data.Map.Strict as Map
 
 import Network.CEP
@@ -104,7 +111,21 @@ data LoopState = LoopState {
   , lsStateChangeHandlers :: forall l. [Set -> PhaseM LoopState l ()]
   , lsWorker   :: M0Worker  -- ^ M0 worker thread attached to RC.
 #endif
+  , lsStorage :: !Storage.Storage -- ^ Global ephimeral storage.
 }
+
+-- | Get value from non-peristent global storage.
+getStorageRC :: Typeable a => PhaseM LoopState l (Maybe a)
+getStorageRC = Storage.get . lsStorage <$> get Global
+
+-- | Put value to non-persistent global storage. For entry is indexed by it's
+-- 'TypeRep' so it's possible to keep only one value of each type in storage.
+putStorageRC :: Typeable a => a -> PhaseM LoopState l ()
+putStorageRC x = modify Global $ \g -> g{lsStorage = Storage.put x $ lsStorage g}
+
+-- | Delete value from non-peristent global storage.
+deleteStorageRC :: Typeable a => Proxy a -> PhaseM LoopState l ()
+deleteStorageRC p = modify Global $ \g -> g{lsStorage = Storage.delete p $ lsStorage g}
 
 -- | Is a given resource existent in the RG?
 knownResource :: G.Resource a => a -> PhaseM LoopState l Bool

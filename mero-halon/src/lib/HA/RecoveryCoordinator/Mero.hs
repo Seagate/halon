@@ -52,6 +52,7 @@ import HA.Services.DecisionLog
 import HA.Multimap
 
 import HA.RecoveryCoordinator.Actions.Core
+import qualified HA.RecoveryCoordinator.Actions.Storage as Storage
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Service
 import HA.RecoveryCoordinator.Actions.Monitor
@@ -161,13 +162,13 @@ buildRCState :: StoreChan -> ProcessId -> M0Worker -> Process LoopState
 buildRCState mm eq wrk = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
     startRG <- G.sync rg (return ())
-    return $ LoopState startRG Map.empty mm eq Map.empty [] wrk
+    return $ LoopState startRG Map.empty mm eq Map.empty [] wrk Storage.empty
 #else
 buildRCState :: StoreChan -> ProcessId -> Process LoopState
 buildRCState mm eq = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
     startRG <- G.sync rg (return ())
-    return $ LoopState startRG Map.empty mm eq Map.empty
+    return $ LoopState startRG Map.empty mm eq Map.empty Storage.empty
 #endif
 
 msgProcessedGap :: Int
