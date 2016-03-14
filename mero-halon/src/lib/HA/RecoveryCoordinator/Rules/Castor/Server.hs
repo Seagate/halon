@@ -271,6 +271,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
      return wrapper_init
 
+
 -- |
 -- @
 -- 'barrier' hookPoint hookRel setState viewState phandle failHandle

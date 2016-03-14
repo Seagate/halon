@@ -19,7 +19,9 @@ module HA.RecoveryCoordinator.Actions.Mero
   , createMeroClientConfig
   , startMeroService
   , startNodeProcesses
+  , stopNodeProcesses
   , announceMeroNodes
+  , getLabeledNodeProcesses
   )
 where
 
@@ -248,6 +250,27 @@ startNodeProcesses host (TypedChannel chan) label mkfs = do
       not . null $ [ () | M0.Service{ M0.s_type = CST_MGS }
                           <- G.connectedTo proc M0.IsParentOf rg
                    ]
+
+stopNodeProcesses :: Castor.Host
+                  -> TypedChannel ProcessControlMsg
+                  -> [M0.Process]
+                  -> PhaseM LoopState a ()
+stopNodeProcesses host (TypedChannel chan) ps = do
+   rg <- getLocalGraph
+   let msg = StopProcesses $ map (go rg) ps
+   liftProcess $ sendChan chan msg
+   where
+     go rg p = case G.connectedTo p Has rg of
+        [M0.PLM0t1fs] -> ([M0T1FS], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))
+        _             -> ([M0D], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))
+
+getLabeledNodeProcesses :: Res.Node -> M0.ProcessLabel -> G.Graph -> [M0.Process]
+getLabeledNodeProcesses node label rg =
+   [ p | host <- G.connectedFrom Runs node rg :: [Castor.Host] 
+       , m0node <- G.connectedTo host Runs rg :: [M0.Node]
+       , p <- G.connectedTo m0node M0.IsParentOf rg
+       , G.isConnected p Has label rg
+   ] 
 
 startMeroService :: Castor.Host -> Res.Node -> PhaseM LoopState a ()
 startMeroService host node = do

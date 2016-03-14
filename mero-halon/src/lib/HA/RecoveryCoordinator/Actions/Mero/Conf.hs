@@ -26,6 +26,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , getParents
   , loadMeroServers
     -- ** Lookup objects based on another
+  , rgLookupConfObjByFid
   , lookupConfObjByFid
   , lookupStorageDevice
   , lookupStorageDeviceSDev

@@ -397,7 +397,7 @@ instance Hashable ProcessLabel
 --   * 0 - confd
 --   * 1 - other
 newtype BootLevel = BootLevel Int
-  deriving (Eq, Show, Typeable, Generic, Binary, Hashable)
+  deriving (Eq, Show, Typeable, Generic, Binary, Hashable, Ord)
 
 data MeroClusterState = 
     MeroClusterStopped -- ^ Cluster is not running.
@@ -407,6 +407,25 @@ data MeroClusterState =
   deriving (Eq,Show, Typeable, Generic)
 instance Binary MeroClusterState
 instance Hashable MeroClusterState
+
+instance Ord MeroClusterState where
+   compare MeroClusterRunning MeroClusterRunning = EQ
+   compare MeroClusterRunning _ = GT
+   compare (MeroClusterStarting i) (MeroClusterStarting j) = i `compare` j
+   compare MeroClusterStarting{} _ = GT
+   compare MeroClusterStopped MeroClusterStopped = EQ
+   compare MeroClusterStopped _ = GT
+   compare (MeroClusterStopping i) (MeroClusterStopping j) = j `compare` i -- !!!!!!
+   compare a b = case compare b a of
+                   GT -> LT
+                   LT -> GT
+                   EQ -> EQ
+
+-- | Relation that one object is waiting for another.
+data Pending = Pending deriving (Eq, Show, Typeable, Generic)
+
+instance Binary Pending
+instance Hashable Pending
 
 newtype ConfUpdateVersion = ConfUpdateVersion Word64
   deriving (Eq, Show, Typeable, Generic)
@@ -424,7 +443,7 @@ $(mkDicts
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
-  , ''MeroClusterState
+  , ''MeroClusterState, ''Pending
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -467,6 +486,7 @@ $(mkDicts
   , (''R.Host, ''R.Has, ''LNid)
   , (''R.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
+  , (''MeroClusterState, ''Pending, ''Process)
   ]
   )
 
@@ -476,7 +496,7 @@ $(mkResRel
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
-  , ''MeroClusterState
+  , ''MeroClusterState, ''Pending
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -519,6 +539,7 @@ $(mkResRel
   , (''R.Host, ''R.Has, ''LNid)
   , (''R.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
+  , (''MeroClusterState, ''Pending, ''Process)
   ]
   []
   )
