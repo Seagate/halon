@@ -121,37 +121,48 @@ ruleNewMeroServer = define "new-mero-server" $ do
           (True, [host]) -> return $ Just (host, cc)
           (_, _) -> return Nothing
 
-  setPhase new_server $ \(HAEvent eid (NewMeroServer node@(Node nid)) _) -> fork CopyNewerBuffer $ do
-    phaseLog "info" $ "NewMeroServer received for node " ++ show nid
-    put Local $ Just (node, eid)
-    findNodeHost node >>= \case
-      Just host -> alreadyBootstrapping nid <$> getLocalGraph >>= \case
-        True -> continue finish
-        False -> do
-          let pcore = ServerBootstrapCoreProcess nid False
-          phaseLog "info" "Starting core bootstrap"
-          modifyLocalGraph $
-            return . G.connect Cluster Runs pcore . G.newResource pcore
-          g <- getLocalGraph
-          let mlnid = listToMaybe $ [ ip | Interface { if_network = Data, if_ipAddrs = ip:_ }
-                                            <- G.connectedTo host Has g ]
-          case mlnid of
-            Nothing -> do
-              phaseLog "warn" $ "Unable to find Data IP addr for host "
-                              ++ show host
-              continue finish
-            Just lnid -> do
-              createMeroKernelConfig host $ lnid ++ "@tcp"
-              startMeroService host node
-              switch [svc_up_now, timeout 5000000 svc_up_already]
-      Nothing -> do
-        phaseLog "error" $ "Can't find host for node " ++ show node
+  setPhase new_server $ \(HAEvent eid (NewMeroServer node@(Node nid)) _) -> do
+    rg <- getLocalGraph
+    case listToMaybe $ G.connectedTo Cluster Has rg of
+      Just MeroClusterStopped -> do
+        phaseLog "info" "Cluster is not running skip node"
         continue finish
+      Just MeroClusterStopping{} -> do
+        phaseLog "info" "Cluster is not running skip node"
+        continue finish
+      _ -> return ()
+
+    fork CopyNewerBuffer $ do
+      phaseLog "info" $ "NewMeroServer received for node " ++ show nid
+      put Local $ Just (node, eid)
+      findNodeHost node >>= \case
+        Just host -> alreadyBootstrapping nid <$> getLocalGraph >>= \case
+          True -> continue finish
+          False -> do
+            let pcore = ServerBootstrapCoreProcess nid False
+            phaseLog "info" "Starting core bootstrap"
+            modifyLocalGraph $
+              return . G.connect Cluster Runs pcore . G.newResource pcore
+            g <- getLocalGraph
+            let mlnid = listToMaybe $ [ ip | Interface { if_network = Data, if_ipAddrs = ip:_ }
+                                              <- G.connectedTo host Has g ]
+            case mlnid of
+              Nothing -> do
+                phaseLog "warn" $ "Unable to find Data IP addr for host "
+                                ++ show host
+                continue finish
+              Just lnid -> do
+                createMeroKernelConfig host $ lnid ++ "@tcp"
+                startMeroService host node
+                switch [svc_up_now, timeout 5000000 svc_up_already]
+        Nothing -> do
+          phaseLog "error" $ "Can't find host for node " ++ show node
+          continue finish
 
   setPhaseIf svc_up_now onNode $ \(host, chan) -> do
     -- Legitimate to avoid the event id as it should be handled by the default
     -- 'declare-mero-channel' rule.
-    startNodeProcesses host chan (PLBootLevel 0) True
+    startNodeProcesses host chan (PLBootLevel (BootLevel 0)) True
     continue core_bootstrapped
 
   -- Service is already up
@@ -162,7 +173,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
     mhost <- findNodeHost node
     case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
       Just (host, chan) -> do
-        startNodeProcesses host chan (PLBootLevel 0) True
+        startNodeProcesses host chan (PLBootLevel (BootLevel 0)) True
         continue core_bootstrapped
       Nothing -> switch [svc_up_now, timeout 5000000 finish]
 
@@ -182,7 +193,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
         (\(ServerBootstrapCoreProcess _ b) -> b)
         start_remaining_services finish (failureHandler e nid)
         (\(ServerBootstrapCoreProcess nid' _) ->
-          liftProcess . promulgateWait $ BootLevelComplete nid' (PLBootLevel 0))
+          liftProcess . promulgateWait $ BootLevelComplete nid' (PLBootLevel (BootLevel 0)))
 
   setPhase start_remaining_services $ \(HAEvent eid (BootLevelComplete nid _) _) -> do
     Just (node@(Node nid'), eid') <- get Local
@@ -202,7 +213,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
            mhost <- findNodeHost (Node nid)
            case (,) <$> mhost <*> (m0svc >>= meroChannel g) of
              Just (host, chan) -> do
-               startNodeProcesses host chan (PLBootLevel 1) True
+               startNodeProcesses host chan (PLBootLevel (BootLevel 1)) True
                continue finish_extra_bootstrap
              Nothing -> do
                phaseLog "error" $ "Can't find host for node " ++ show node
@@ -216,11 +227,11 @@ ruleNewMeroServer = define "new-mero-server" $ do
         (\(ServerBootstrapProcess _ b) -> b)
         start_clients finish Nothing
         (\(ServerBootstrapProcess nid' _) ->
-          liftProcess . promulgateWait $ BootLevelComplete nid' (PLBootLevel 1))
+          liftProcess . promulgateWait $ BootLevelComplete nid' (PLBootLevel (BootLevel 1)))
 
   setPhase start_clients $ \(HAEvent eid (BootLevelComplete nid' bl) _) -> do
     Just (node@(Node nid), eid') <- get Local
-    if nid == nid' && bl == PLBootLevel 1 then do
+    if nid == nid' && bl == PLBootLevel (BootLevel 1) then do
       messageProcessed eid'
       put Local $ Just (node, eid)
       rg <- getLocalGraph
@@ -238,6 +249,10 @@ ruleNewMeroServer = define "new-mero-server" $ do
     Just (n, eid) <- get Local
     phaseLog "server-bootstrap" $ "Finished bootstrapping mero server at "
                                ++ show n
+
+    -- XXX: workaround, we set cluster to running when first server finished
+    -- bootstrapping, not when all of them finished.
+    modifyGraph $ G.connectUnique Cluster Has M0.MeroClusterRunning
     messageProcessed eid
     continue end
 
@@ -259,6 +274,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
      directly wrapper_end stop
 
      return wrapper_init
+
 
 -- |
 -- @

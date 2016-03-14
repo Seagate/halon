@@ -95,6 +95,7 @@ instance Hashable ProcessConfig
 -- | Control system level m0d processes.
 data ProcessControlMsg =
     StartProcesses [([ProcessRunType], ProcessConfig)]
+  | StopProcesses [([ProcessRunType], ProcessConfig)]
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ProcessControlMsg
 instance Hashable ProcessControlMsg
@@ -106,6 +107,12 @@ data ProcessControlResultMsg =
   deriving (Eq, Generic, Show, Typeable)
 instance Binary ProcessControlResultMsg
 instance Hashable ProcessControlResultMsg
+
+data ProcessControlResultStopMsg =
+      ProcessControlResultStopMsg NodeId [Either Fid (Fid,String)]
+  deriving (Eq, Generic, Show, Typeable)
+instance Binary ProcessControlResultStopMsg
+instance Hashable ProcessControlResultStopMsg
 
 data DeclareMeroChannel =
     DeclareMeroChannel

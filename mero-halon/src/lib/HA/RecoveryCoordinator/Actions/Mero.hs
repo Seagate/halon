@@ -19,6 +19,9 @@ module HA.RecoveryCoordinator.Actions.Mero
   , createMeroClientConfig
   , startMeroService
   , startNodeProcesses
+  , stopNodeProcesses
+  , announceMeroNodes
+  , getLabeledNodeProcesses
   )
 where
 
@@ -27,6 +30,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Conf as Conf
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Actions.Mero.Failure
+import HA.RecoveryCoordinator.Events.Mero
 
 import HA.Resources.Castor (Is(..))
 import HA.Resources (Has(..))
@@ -48,7 +52,7 @@ import Control.Monad (forM)
 
 import Data.Foldable (forM_, traverse_)
 import Data.Proxy
-import Data.Maybe (catMaybes, listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
@@ -247,6 +251,27 @@ startNodeProcesses host (TypedChannel chan) label mkfs = do
                           <- G.connectedTo proc M0.IsParentOf rg
                    ]
 
+stopNodeProcesses :: Castor.Host
+                  -> TypedChannel ProcessControlMsg
+                  -> [M0.Process]
+                  -> PhaseM LoopState a ()
+stopNodeProcesses host (TypedChannel chan) ps = do
+   rg <- getLocalGraph
+   let msg = StopProcesses $ map (go rg) ps
+   liftProcess $ sendChan chan msg
+   where
+     go rg p = case G.connectedTo p Has rg of
+        [M0.PLM0t1fs] -> ([M0T1FS], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))
+        _             -> ([M0D], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))
+
+getLabeledNodeProcesses :: Res.Node -> M0.ProcessLabel -> G.Graph -> [M0.Process]
+getLabeledNodeProcesses node label rg =
+   [ p | host <- G.connectedFrom Runs node rg :: [Castor.Host] 
+       , m0node <- G.connectedTo host Runs rg :: [M0.Node]
+       , p <- G.connectedTo m0node M0.IsParentOf rg
+       , G.isConnected p Has label rg
+   ] 
+
 startMeroService :: Castor.Host -> Res.Node -> PhaseM LoopState a ()
 startMeroService host node = do
   phaseLog "action" $ "Trying to start mero service on "
@@ -268,3 +293,24 @@ startMeroService host node = do
     let conf = MeroConf haAddr (fidToStr $ M0.fid profile)
                 (MeroKernelConf uuid)
     return $ encodeP $ ServiceStartRequest Start node m0d conf []
+
+-- | Send notifications about new mero nodes and new mero servers.
+announceMeroNodes :: PhaseM LoopState a ()
+announceMeroNodes = do
+  rg' <- getLocalGraph
+  let clientHosts =
+        [ host | host <- G.getResourcesOfType rg'    :: [Castor.Host] -- all hosts
+               , not  $ G.isConnected host Has Castor.HA_M0CLIENT rg' -- and not already a client
+               , not  $ G.isConnected host Has Castor.HA_M0SERVER rg' -- and not already a server
+               ]
+
+      hostsToNodes = mapMaybe (\h -> listToMaybe $ G.connectedTo h Runs rg')
+      serverHosts = [ host | host <- G.getResourcesOfType rg' :: [Castor.Host]
+                           , G.isConnected host Has Castor.HA_M0SERVER rg' ]
+
+      serverNodes = hostsToNodes serverHosts :: [Res.Node]
+      clientNodes = hostsToNodes clientHosts :: [Res.Node]
+  phaseLog "post-initial-load" $ "Sending messages about these new mero nodes: "
+                              ++ show ((clientNodes, clientHosts), (serverNodes, serverHosts))
+  forM_ clientNodes $ promulgateRC . NewMeroClient
+  forM_ serverNodes $ promulgateRC . NewMeroServer

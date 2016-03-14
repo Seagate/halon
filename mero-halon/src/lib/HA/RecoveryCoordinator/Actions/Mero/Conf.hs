@@ -26,6 +26,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , getParents
   , loadMeroServers
     -- ** Lookup objects based on another
+  , rgLookupConfObjByFid
   , lookupConfObjByFid
   , lookupStorageDevice
   , lookupStorageDeviceSDev
@@ -111,6 +112,7 @@ initialiseConfInRG = getFilesystem >>= \case
         >>> G.newResource fs
         >>> G.newResource pool
         >>> G.connectUniqueFrom Cluster Has profile
+        >>> G.connectUniqueFrom Cluster Has M0.MeroClusterStopped
         >>> G.connectUniqueFrom profile M0.IsParentOf fs
         >>> G.connect fs M0.IsParentOf pool
         >>> G.connectUniqueFrom Cluster Has root
@@ -201,7 +203,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
       procLabel = case m0p_boot_level of
          x | x < 0 -> M0.PLNoBoot
          99 -> M0.PLM0t1fs
-         x -> M0.PLBootLevel (fromIntegral x)
+         x -> M0.PLBootLevel $ M0.BootLevel (fromIntegral x)
     in do
       proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
       mapM_ (goSrv proc devs) m0p_services

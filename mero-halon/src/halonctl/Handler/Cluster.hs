@@ -19,12 +19,14 @@ import qualified HA.Resources.Castor.Initial as CI
 import qualified Data.ByteString as BS
 import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 
+import HA.RecoveryCoordinator.Events.Castor.Cluster
 import Options.Applicative ((<>), (<|>))
 #else
 import Options.Applicative ((<>))
 #endif
 
 import Control.Distributed.Process
+import Control.Distributed.Process.Serializable
 import Control.Monad (void)
 
 import Data.Yaml
@@ -38,6 +40,10 @@ data ClusterOptions =
 #ifdef USE_MERO
   | Sync SyncOptions
   | Dump DumpOptions
+  | Status StatusOptions
+  | Start StartOptions
+  | Stop  StopOptions
+
 #endif
   deriving (Eq, Show)
 
@@ -50,6 +56,12 @@ parseCluster =
         "Force synchronisation of RG to confd servers." )))
   <|> ( Dump <$> Opt.subparser ( Opt.command "dump" (Opt.withDesc parseDumpOptions
         "Dump embedded confd database to file." )))
+  <|> ( Status <$> Opt.subparser ( Opt.command "status" (Opt.withDesc (pure StatusOptions)
+        "Query mero-cluster status")))
+  <|> ( Start <$> Opt.subparser ( Opt.command "start" (Opt.withDesc (pure StartOptions)
+        "Start mero cluster")))
+  <|> ( Stop <$> Opt.subparser ( Opt.command "stop" (Opt.withDesc (pure StopOptions)
+        "Stop mero cluster")))
 #endif
 
 cluster :: [NodeId] -> ClusterOptions -> Process ()
@@ -57,6 +69,9 @@ cluster nids (LoadData l) = dataLoad nids l
 #ifdef USE_MERO
 cluster nids (Sync _) = syncToConfd nids
 cluster nids (Dump s) = dumpConfd nids s
+cluster nids (Status _) = clusterCommand nids ClusterStatusRequest
+cluster nids (Start _)  = clusterCommand nids ClusterStartRequest
+cluster nids (Stop  _)  = clusterCommand nids ClusterStopRequest
 #endif
 
 data LoadOptions = LoadOptions
@@ -117,6 +132,10 @@ data SyncOptions = SyncOptions
 newtype DumpOptions = DumpOptions FilePath
   deriving (Eq, Show)
 
+data StatusOptions = StatusOptions deriving (Eq, Show)
+data StartOptions  = StartOptions deriving (Eq, Show)
+data StopOptions   = StopOptions deriving (Eq, Show)
+
 parseDumpOptions :: Opt.Parser DumpOptions
 parseDumpOptions = DumpOptions <$>
   Opt.strOption
@@ -138,6 +157,17 @@ dumpConfd eqnids (DumpOptions fn) = do
     SyncDumpToBSReply (Right bs) -> do
       liftIO $ BS.writeFile fn bs
       say $ "Dumped conf in RG to this file " ++ fn
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
+
+clusterCommand :: (Serializable a, Serializable b, Show b)
+               => [NodeId]
+               -> (SendPort b -> a)
+               -> Process ()
+clusterCommand eqnids mk = do
+  (schan, rchan) <- newChan
+  promulgateEQ eqnids (mk schan) >>= flip withMonitor wait
+  liftIO . print =<< receiveChan rchan
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 

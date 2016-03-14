@@ -386,11 +386,46 @@ instance Hashable HostHardwareInfo
 --   it should run.
 data ProcessLabel =
     PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space
-  | PLBootLevel Int -- ^ Process boot level. Currently 0 = confd, 1 = other0
+  | PLBootLevel BootLevel -- ^ Process boot level. Currently 0 = confd, 1 = other0
   | PLNoBoot  -- ^ Tag processes which should not boot.
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ProcessLabel
 instance Hashable ProcessLabel
+
+-- | Process boot level.
+-- Currently:
+--   * 0 - confd
+--   * 1 - other
+newtype BootLevel = BootLevel Int
+  deriving (Eq, Show, Typeable, Generic, Binary, Hashable, Ord)
+
+data MeroClusterState = 
+    MeroClusterStopped -- ^ Cluster is not running.
+  | MeroClusterStarting BootLevel -- ^ Cluster is currently starting on a concrete bootlevel.
+  | MeroClusterStopping BootLevel -- ^ Cluster is currently stopping on a concrete bootlevel.
+  | MeroClusterRunning -- ^ Cluster is running succesfully.
+  deriving (Eq,Show, Typeable, Generic)
+instance Binary MeroClusterState
+instance Hashable MeroClusterState
+
+instance Ord MeroClusterState where
+   compare MeroClusterRunning MeroClusterRunning = EQ
+   compare MeroClusterRunning _ = GT
+   compare (MeroClusterStarting i) (MeroClusterStarting j) = i `compare` j
+   compare MeroClusterStarting{} _ = GT
+   compare MeroClusterStopped MeroClusterStopped = EQ
+   compare MeroClusterStopped _ = GT
+   compare (MeroClusterStopping i) (MeroClusterStopping j) = j `compare` i -- !!!!!!
+   compare a b = case compare b a of
+                   GT -> LT
+                   LT -> GT
+                   EQ -> EQ
+
+-- | Relation that one object is waiting for another.
+data Pending = Pending deriving (Eq, Show, Typeable, Generic)
+
+instance Binary Pending
+instance Hashable Pending
 
 newtype ConfUpdateVersion = ConfUpdateVersion Word64
   deriving (Eq, Show, Typeable, Generic)
@@ -408,9 +443,11 @@ $(mkDicts
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
+  , ''MeroClusterState, ''Pending
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
+  , (''R.Cluster, ''R.Has, ''MeroClusterState)
   , (''Root, ''IsParentOf, ''Profile)
   , (''R.Cluster, ''R.Has, ''Profile)
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
@@ -449,6 +486,7 @@ $(mkDicts
   , (''R.Host, ''R.Has, ''LNid)
   , (''R.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
+  , (''MeroClusterState, ''Pending, ''Process)
   ]
   )
 
@@ -458,9 +496,11 @@ $(mkResRel
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
+  , ''MeroClusterState, ''Pending
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
+  , (''R.Cluster, ''R.Has, ''MeroClusterState)
   , (''Root, ''IsParentOf, ''Profile)
   , (''R.Cluster, ''R.Has, ''Profile)
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
@@ -499,6 +539,7 @@ $(mkResRel
   , (''R.Host, ''R.Has, ''LNid)
   , (''R.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
+  , (''MeroClusterState, ''Pending, ''Process)
   ]
   []
   )

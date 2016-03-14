@@ -8,6 +8,7 @@ module HA.RecoveryCoordinator.Events.Mero
    , NewMeroClient(..)
    , NewMeroClientProcessed(..)
    , NewMeroServer(..)
+   , StopMeroServer(..)
    -- * Requests
    , GetSpielAddress(..)
    )
@@ -38,6 +39,10 @@ data NewMeroServer = NewMeroServer Node
       deriving (Eq, Show, Typeable, Generic)
 
 instance Binary NewMeroServer
+
+data StopMeroServer = StopMeroServer Node
+       deriving (Eq, Show, Typeable, Generic)
+instance Binary StopMeroServer
 
 -- | Event about processing 'NewMeroClient' event.
 data NewMeroClientProcessed = NewMeroClientProcessed Host
