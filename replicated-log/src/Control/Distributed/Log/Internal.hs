@@ -102,11 +102,10 @@ import GHC.Generics (Generic)
 import Prelude hiding (init, log)
 import System.Clock
 import System.FilePath ((</>))
-import System.Directory (doesDirectoryExist)
+import System.Directory (doesDirectoryExist, getCurrentDirectory)
 import System.Environment (lookupEnv)
 import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
-
 
 deriving instance Typeable Eq
 
@@ -1617,7 +1616,9 @@ spawnLocalReplica (k, caller, ts0) pDirectory = do
                 (ssdict2, bs, m) <- liftIO $ readGroupConfig ps
                 Some (SerializableDict :: SerializableDict a) <- unStatic ssdict2
                 spawnR (decode bs :: GroupConfig a) m
-              else error $ "no persisted storage found (" ++ show path ++ ")"
+              else do
+                cwd <- liftIO getCurrentDirectory
+                error $ "no persisted storage found (" ++ show (cwd, path) ++ ")"
     either (usend caller . ("spawnLocalReplica: " ++) . show)
            (usend caller)
            (r :: Either SomeException ())
