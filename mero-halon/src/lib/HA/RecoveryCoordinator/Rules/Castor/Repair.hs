@@ -396,11 +396,20 @@ handleRepair noteSet = processSet noteSet >>= \case
       tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
       fa <- getPoolSDevsWithState pool M0_NC_FAILED
 
+      -- If no devices are transient and something is failed, begin
+      -- repair. It's up to caller to ensure any previous repair has
+      -- been aborted/completed.
+      let maybeBeginRepair = when (null tr && not (null fa)) $ do
+            phaseLog "repair" $ "Starting repair operation on " ++ show pool
+            startRepairOperation pool
+            mapM_ (flip updateDriveState M0_NC_REPAIR) fa
+            queryStartHandling pool
+
       getPoolRepairStatus pool >>= \case
-        Just (M0.PoolRepairStatus prt _ _)
-          -- Repair happening, device failed, abort
+        Just (M0.PoolRepairStatus prt ruuid _)
+          -- Repair happening, device failed, restart repair
           | fa' <- getSDevs diskMap M0_NC_FAILED
-          , not (S.null fa') -> abortRepair pool
+          , not (S.null fa') -> abortRepair pool >> maybeBeginRepair
           -- Repair happening, some devices are transient
           | tr' <- getSDevs diskMap M0_NC_TRANSIENT
           , not (S.null tr') -> do
@@ -418,15 +427,8 @@ handleRepair noteSet = processSet noteSet >>= \case
               else phaseLog "repair" $ "Still some drives transient: " ++ show sts
           | otherwise -> phaseLog "repair" $
               "Repair on-going but don't know what to do with " ++ show diskMap
-        Nothing
-         -- No repair, devices have failed, no TRANSIENT devices; start repair
-         | null tr
-         , not (null fa) -> do
-             startRepairOperation pool
-             mapM_ (flip updateDriveState M0_NC_REPAIR) fa
-             queryStartHandling pool
-        -- Do nothing
-         | otherwise -> return ()
+        -- No repair, devices have failed, no TRANSIENT devices; start repair
+        Nothing -> maybeBeginRepair
 
   PoolInfo pool st m -> do
     phaseLog "repair" $ "Processed as PoolInfo " ++ show (pool, st, m)
@@ -480,7 +482,7 @@ processPoolInfo pool M0_NC_REPAIRED _ = getPoolRepairStatus pool >>= \case
 -- it seems some devices belonging to the pool failed, abort repair.
 processPoolInfo pool _ m
   | fa <- getSDevs m M0_NC_FAILED
-  , _:_ <- S.toList fa = abortRepair pool
+  , not (S.null fa) = abortRepair pool
 -- All the devices we were notified in the pool came up as ONLINE. In
 -- this case we may want to continue repair if no other devices in the
 -- pool are transient.
