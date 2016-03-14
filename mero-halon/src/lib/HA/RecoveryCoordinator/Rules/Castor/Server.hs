@@ -249,6 +249,10 @@ ruleNewMeroServer = define "new-mero-server" $ do
     Just (n, eid) <- get Local
     phaseLog "server-bootstrap" $ "Finished bootstrapping mero server at "
                                ++ show n
+
+    -- XXX: workaround, we set cluster to running when first server finished
+    -- bootstrapping, not when all of them finished.
+    modifyGraph $ G.connectUnique Cluster Has M0.MeroClusterRunning
     messageProcessed eid
     continue end
 
