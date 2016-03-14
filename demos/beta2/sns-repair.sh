@@ -19,33 +19,8 @@ HALON_FACTS_YAML=halon_facts.yaml
 HOSTNAME="`hostname`"
 
 main() {
-	sudo killall halond || true
-	sleep 1
-	sudo rm -rf halon-persistence
-	sudo systemctl stop mero-kernel
-	sudo killall -9 lt-m0d m0d lt-m0mkfs m0mkfs || true
-	wait
-
-	pushd $MERO_ROOT
-	sudo scripts/install-mero-service -u
-	sudo scripts/install-mero-service -l
-	sudo rm -rf /var/mero
-	sudo utils/m0setup -v -P 6 -N 2 -K 1 -i 1 -d /var/mero/img -s 128 -c
-	sudo utils/m0setup -v -P 6 -N 2 -K 1 -i 1 -d /var/mero/img -s 128
-	popd
-
-	sudo rm -vf /etc/mero/genders
-	sudo rm -vf /etc/mero/conf.xc
-	sudo rm -vf /etc/mero/disks*.conf
-
-	halon_facts_yaml > $HALON_FACTS_YAML
-
-	sudo $HALOND -l $IP:9000 >& /tmp/halond.log &
-	true
-	sleep 2
-	sudo $HALONCTL -l $IP:9010 -a $IP:9000 bootstrap station
-	sudo $HALONCTL -l $IP:9010 -a $IP:9000 bootstrap satellite -t $IP:9000
-	sudo $HALONCTL -l $IP:9010 -a $IP:9000 cluster load -f $HALON_FACTS_YAML -r $HALON_SOURCES/mero-halon/scripts/mero_provisioner_role_mappings.ede
+    IP=$IP HALONCTL=$HALONCTL $MERO_ROOT/st/bootstrap.sh -c cluster_stop
+    IP=$IP HALONCTL=$HALONCTL MERO_ROOT=$MERO_ROOT HALOND=$HALOND HALON_SOURCES=$HALON_SOURCES HOSTNAME=$HOSTNAME $MERO_ROOT/st/bootstrap.sh -c cluster_start
 
 	sleep 30; echo "Writing to m0t1fs to check things work (required)"
 	sudo dd if=/dev/urandom of=/mnt/m0t1fs/111:222 bs=4K count=100
