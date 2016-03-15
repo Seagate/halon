@@ -255,7 +255,6 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
     -- XXX: workaround, we set cluster to running when first server finished
     -- bootstrapping, not when all of them finished.
-    modifyGraph $ G.connectUnique Cluster Has M0.MeroClusterRunning
     messageProcessed eid
     continue end
 
