@@ -180,6 +180,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
   -- Wait until every process comes back as finished bootstrapping
   setPhase core_bootstrapped $ \(HAEvent eid (ProcessControlResultMsg nid e) _) -> do
     (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
+    forM_ procs $ \p -> modifyGraph $ G.connect p Is ProcessBootstrapped
     rms <- listToMaybe
               . filter (\s -> M0.s_type s == CST_RMS)
               . join
@@ -219,7 +220,9 @@ ruleNewMeroServer = define "new-mero-server" $ do
                phaseLog "error" $ "Can't find host for node " ++ show node
                continue finish
 
-  setPhase finish_extra_bootstrap $ \(HAEvent eid (ProcessControlResultMsg nid _) _) -> do
+  setPhase finish_extra_bootstrap $ \(HAEvent eid (ProcessControlResultMsg nid e) _) -> do
+    (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
+    forM_ procs $ \p -> modifyGraph $ G.connect p Is ProcessBootstrapped
     ackingLast finish_extra_bootstrap eid nid $
       barrier
         Cluster Runs
@@ -237,13 +240,13 @@ ruleNewMeroServer = define "new-mero-server" $ do
       rg <- getLocalGraph
       m0svc <- lookupRunningService node m0d
       mhost <- findNodeHost node
+      modifyGraph $ G.connectUnique Cluster Has M0.MeroClusterRunning
       case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
         Just (host, chan) -> do
           startNodeProcesses host chan PLM0t1fs False
           continue finish
         Nothing -> continue finish
-    else
-      continue start_clients
+    else continue start_clients
 
   directly finish $ do
     Just (n, eid) <- get Local
@@ -252,7 +255,6 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
     -- XXX: workaround, we set cluster to running when first server finished
     -- bootstrapping, not when all of them finished.
-    modifyGraph $ G.connectUnique Cluster Has M0.MeroClusterRunning
     messageProcessed eid
     continue end
 

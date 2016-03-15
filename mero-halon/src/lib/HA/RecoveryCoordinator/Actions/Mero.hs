@@ -230,16 +230,17 @@ startNodeProcesses host (TypedChannel chan) label mkfs = do
                       ++ " on host "
                       ++ show host
     rg <- getLocalGraph
-    let procs =  [ p
+    let procs =  [ (p,b)
                  | m0node <- G.connectedTo host Runs rg :: [M0.Node]
                  , p <- G.connectedTo m0node M0.IsParentOf rg
                  , G.isConnected p Has label rg
+                 , let b = not $ G.isConnected p Is M0.ProcessBootstrapped rg
                  ]
-    phaseLog "processes" $ show (fmap M0.fid (procs :: [M0.Process]))
+    phaseLog "processes" $ show (fmap (M0.fid.fst) (procs :: [(M0.Process, Bool)]))
     msg <- StartProcesses <$> case (label, mkfs) of
-            (M0.PLM0t1fs, _) -> forM procs $ (\proc -> ([M0T1FS],) <$> runConfig proc rg)
-            (_, True) -> forM procs (\proc -> ([M0MKFS,M0D],) <$> runConfig proc rg)
-            (_, False) -> forM procs $ (\proc -> ([M0D],) <$> runConfig proc rg)
+            (M0.PLM0t1fs, _) -> forM procs $ (\(proc,_) -> ([M0T1FS],) <$> runConfig proc rg)
+            (_, True) -> forM procs $ (\(proc,b) -> ((if b then (M0MKFS:) else id) [M0D],) <$> runConfig proc rg)
+            (_, False) -> forM procs $ (\(proc,_) -> ([M0D],) <$> runConfig proc rg)
     liftProcess $ sendChan chan msg
   where
     runConfig proc rg = case runsMgs proc rg of

@@ -185,18 +185,18 @@ startProcess mc run conf = flip Catch.catch handler $ do
 -- | Stop running mero service.
 stopProcess :: ProcessRunType -> ProcessConfig -> IO (Either Fid (Fid,String))
 stopProcess run conf = flip Catch.catch handler $ do
-    putStrLn $ "m0d: stopProcess: " ++ show procFid
-             ++ " with type(s) " ++ show run
     let munit = case run of
           M0T1FS -> Just $ "m0t1fs@" ++ fidToStr procFid
           M0D    -> Just $ "m0d@" ++ fidToStr procFid
           M0MKFS  -> Nothing
     case munit of
-      Just unit -> do ec <- SystemD.stopService $ unit ++ fidToStr procFid
-                      return $ case ec of
-                        ExitSuccess -> Left procFid
-                        ExitFailure x ->
-                          Right (procFid, "Unit failed to stop with exit code " ++ show x)
+      Just unit -> do putStrLn $ "m0d: stopProcess: " ++ unit ++ " with type(s) " ++ show run
+                      ec <- SystemD.stopService $ unit ++ ".service"
+                      case ec of
+                        ExitSuccess -> return $ Left procFid
+                        ExitFailure x -> do
+                          putStrLn $ "m0d: stopProcess failed."
+                          return $ Right (procFid, "Unit failed to stop with exit code " ++ show x)
       Nothing -> return (Left procFid) 
     where
       procFid = case conf of 
@@ -263,7 +263,9 @@ remotableDecl [ [d|
           [ ("MERO_NODE_UUID", UUID.toString $ mkcNodeUUID (mcKernelConfig conf))
           ]
         SystemD.startService "mero-kernel"
-      stopKernel = liftIO $ SystemD.stopService "mero-kernel"
+      -- XXX: halon uses mero kernel module so it's not possible to 
+      -- unload that.
+      stopKernel = return () -- liftIO $ SystemD.stopService "mero-kernel"
       bootstrap = do
         Mero.Notification.initialize haAddr
       teardown = do

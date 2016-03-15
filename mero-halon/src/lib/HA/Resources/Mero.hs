@@ -433,6 +433,15 @@ newtype ConfUpdateVersion = ConfUpdateVersion Word64
 instance Binary ConfUpdateVersion
 instance Hashable ConfUpdateVersion
 
+
+-- | Process property, that shows that process was already bootstrapped,
+-- and no mkfs is needed.
+data ProcessBootstrapped = ProcessBootstrapped
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary ProcessBootstrapped
+instance Hashable ProcessBootstrapped
+
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
@@ -443,7 +452,7 @@ $(mkDicts
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
-  , ''MeroClusterState, ''Pending
+  , ''MeroClusterState, ''Pending, ''ProcessBootstrapped
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -487,6 +496,7 @@ $(mkDicts
   , (''R.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
   , (''MeroClusterState, ''Pending, ''Process)
+  , (''Process, ''R.Is, ''ProcessBootstrapped)
   ]
   )
 
@@ -496,7 +506,7 @@ $(mkResRel
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
-  , ''MeroClusterState, ''Pending
+  , ''MeroClusterState, ''Pending, ''ProcessBootstrapped
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -540,6 +550,7 @@ $(mkResRel
   , (''R.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
   , (''MeroClusterState, ''Pending, ''Process)
+  , (''Process, ''R.Is, ''ProcessBootstrapped)
   ]
   []
   )
