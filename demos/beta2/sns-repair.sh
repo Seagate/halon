@@ -46,6 +46,7 @@ main() {
 	sudo $HALONCTL -l $IP:9010 -a $IP:9000 bootstrap station
 	sudo $HALONCTL -l $IP:9010 -a $IP:9000 bootstrap satellite -t $IP:9000
 	sudo $HALONCTL -l $IP:9010 -a $IP:9000 cluster load -f $HALON_FACTS_YAML -r $HALON_SOURCES/mero-halon/scripts/mero_provisioner_role_mappings.ede
+	sudo $HALONCTL -l $IP:9010 -a $IP:9000 cluster start
 
 	sleep 30; echo "Writing to m0t1fs to check things work (required)"
 	sudo dd if=/dev/urandom of=/mnt/m0t1fs/111:222 bs=4K count=100
