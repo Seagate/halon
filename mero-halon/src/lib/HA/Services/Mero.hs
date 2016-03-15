@@ -263,7 +263,9 @@ remotableDecl [ [d|
           [ ("MERO_NODE_UUID", UUID.toString $ mkcNodeUUID (mcKernelConfig conf))
           ]
         SystemD.startService "mero-kernel"
-      stopKernel = liftIO $ SystemD.stopService "mero-kernel"
+      -- XXX: halon uses mero kernel module so it's not possible to 
+      -- unload that.
+      stopKernel = return () -- liftIO $ SystemD.stopService "mero-kernel"
       bootstrap = do
         Mero.Notification.initialize haAddr
       teardown = do
