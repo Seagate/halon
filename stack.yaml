@@ -28,6 +28,10 @@ packages:
   extra-dep: true
 - location: vendor/tasty-files
   extra-dep: true
+- location:
+    git: https://github.com/nc6/gitrev.git
+    commit: 52f4c1c96c776ca74bf9f9b01808b0c1d5e0ac94
+  extra-dep: true
 
 extra-deps:
 - aeson-schema-0.4.0.0
