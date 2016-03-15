@@ -214,6 +214,9 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
          return (eid, lnode, lvl, results))
      $ \(eid, node, lvl, results) -> do
        phaseLog "info" $ printf "%s completed tearing down of level %s." (show node) (show lvl)
+       forM_ results $ \case 
+         Left x -> return ()
+         Right (x,s) -> phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
        -- XXX: mark failed services (?)
        let fids = map (\case Left x -> x ; Right (x,_) -> x) results
        modifyGraph $ \rg ->
