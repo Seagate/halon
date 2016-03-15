@@ -845,6 +845,7 @@ Test-Suite tests-mero-integration
   Main-Is:          tests-mero-integration.hs
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
                     HA.RecoveryCoordinator.Helpers
+                    HA.Castor.Story.Repair
                     HA.Castor.Story.Tests
                     HA.Castor.Tests
                     Helper.Environment

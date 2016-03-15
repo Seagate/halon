@@ -14,6 +14,7 @@ import qualified HA.Autoboot.Tests
 import qualified HA.RecoveryCoordinator.SSPL.Tests
 #endif
 import qualified HA.Castor.Tests
+import qualified HA.Castor.Story.Repair
 import qualified HA.Castor.Story.Tests
 #endif
 import qualified HA.Test.Disconnect
@@ -104,6 +105,7 @@ ut _host transport breakConnection = do
                  , [testCase "Ignore me" $ return ()]
                  )
       , ssplTest transport
+      , MERO_TEST(testGroup, "Repair", HA.Castor.Story.Repair.tests transport, return ())
       ]
 
 -- | Set up a 'Transport' and a way to break connections before
