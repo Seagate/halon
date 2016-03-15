@@ -290,12 +290,16 @@ Executable halond
                       StandaloneDeriving
   Other-Extensions:   CPP
   if flag(mero)
-    CPP-Options:    -DUSE_MERO
+    c-sources:        src/halond/Version.c
+    cc-options:       -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
+    CPP-Options:      -DUSE_MERO
   if flag(rpc)
       CPP-Options:    -DUSE_RPC
   Build-Depends:      halon,
                       binary,
                       directory,
+                      gitrev,
+                      inline-c,
                       mero-halon,
                       base >= 4.5,
                       distributed-commands,

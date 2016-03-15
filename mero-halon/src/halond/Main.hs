@@ -8,6 +8,8 @@
 module Main (main) where
 
 import Flags
+import Version
+
 import HA.Network.RemoteTables (haRemoteTable)
 import Mero.RemoteTables (meroRemoteTable)
 
@@ -53,40 +55,43 @@ myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 main :: IO ()
-#ifdef USE_MERO
-main = withM0Deferred initializeFOPs deinitializeFOPs $ mdo
-    initialize_pre_m0_init lnid
-#else
 main = do
+  config <- parseArgs <$> getArgs
+  case mode config of
+    Version -> versionString >>= putStrLn
+    Help -> putStrLn helpString
+    Run -> do
+#ifdef USE_MERO
+      withM0Deferred initializeFOPs deinitializeFOPs $ mdo
+        initialize_pre_m0_init lnid
 #endif
-    -- TODO: Implement a mechanism to propagate env vars in distributed tests.
-    -- Perhaps an env var like
-    -- DC_PROPAGATE_ENV="HALON_TRACING DISTRIBUTED_PROCESS_TRACE_FILE"
-    -- which enumerates the environment variables that must be propagated when
-    -- spawning remote processes.
-    whenTestIsDistributed $
-      setEnvIfUnset "HALON_TRACING"
-        "consensus-paxos replicated-log EQ EQ.producer MM RS RG"
-    config <- parseArgs <$> getArgs
+        -- TODO: Implement a mechanism to propagate env vars in distributed tests.
+        -- Perhaps an env var like
+        -- DC_PROPAGATE_ENV="HALON_TRACING DISTRIBUTED_PROCESS_TRACE_FILE"
+        -- which enumerates the environment variables that must be propagated when
+        -- spawning remote processes.
+        whenTestIsDistributed $
+          setEnvIfUnset "HALON_TRACING"
+            "consensus-paxos replicated-log EQ EQ.producer MM RS RG"
 #ifdef USE_RPC
-    rpcTransport <- RPC.createTransport "s1"
-                                        (RPC.rpcAddress $ localEndpoint config)
-                                        RPC.defaultRPCParameters
-    writeTransportGlobalIVar rpcTransport
-    let transport = RPC.networkTransport rpcTransport
+        rpcTransport <- RPC.createTransport "s1"
+                                            (RPC.rpcAddress $ localEndpoint config)
+                                            RPC.defaultRPCParameters
+        writeTransportGlobalIVar rpcTransport
+        let transport = RPC.networkTransport rpcTransport
 #else
-    let (hostname, _:port) = break (== ':') $ localEndpoint config
-    transport <- either (error . show) id <$>
-                 TCP.createTransport hostname port TCP.defaultTCPParameters
-                   { tcpUserTimeout = Just 2000
-                   , tcpNoDelay = True
-                   , transportConnectTimeout = Just 2000000
-                   }
+        let (hostname, _:port) = break (== ':') $ localEndpoint config
+        transport <- either (error . show) id <$>
+                     TCP.createTransport hostname port TCP.defaultTCPParameters
+                       { tcpUserTimeout = Just 2000
+                       , tcpNoDelay = True
+                       , transportConnectTimeout = Just 2000000
+                       }
 #endif
-    lnid <- newLocalNode transport myRemoteTable
-    printHeader (localEndpoint config)
-    runProcess lnid sendSelfNode
-    runProcess lnid $ startupHalonNode rcClosure >> receiveWait []
+        lnid <- newLocalNode transport myRemoteTable
+        printHeader (localEndpoint config)
+        runProcess lnid sendSelfNode
+        runProcess lnid $ startupHalonNode rcClosure >> receiveWait []
   where
     rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
                   $(mkStaticClosure 'ignitionArguments)
