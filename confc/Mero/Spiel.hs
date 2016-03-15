@@ -24,6 +24,7 @@ import Control.Exception
   , mask
   )
 
+import Data.Foldable (forM_)
 import Data.Word ( Word32, Word64 )
 
 import Foreign.C.Error
@@ -53,6 +54,7 @@ import Foreign.Marshal.Array
   ( peekArray
   , withArray0
   , withArrayLen
+  , advancePtr
   )
 import Foreign.Marshal.Error (throwIfNeg)
 import Foreign.Marshal.Utils
@@ -763,7 +765,9 @@ poolRepairStatus (SpielContext sc _) fid = mask $ \restore ->
         then error $ "Cannot retrieve pool repair status: " ++ show rc
         else do
           elt <- peek arr_ptr
-          peekArray rc elt
+          x <- peekArray rc elt
+          forM_ [0..rc] $ \i -> free (elt `advancePtr` i)
+          return x
 
 poolRebalanceStart :: SpielContext
                    -> Fid -- ^ Pool Fid
