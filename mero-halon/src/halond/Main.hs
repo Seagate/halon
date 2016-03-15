@@ -31,13 +31,16 @@ import Mero
 import Mero.Environment
 import Mero.Notification (initialize_pre_m0_init)
 #endif
+import System.Directory (getCurrentDirectory)
 import System.Environment
 import System.IO ( hFlush, stdout , hSetBuffering, BufferMode(..))
 
 printHeader :: String -> IO ()
 printHeader listen = do
+    cwd <- getCurrentDirectory
     hSetBuffering stdout LineBuffering
     putStrLn $ "This is halond/" ++ buildType ++ " listening on " ++ listen
+    putStrLn $ "Working directory: " ++ show cwd
     hFlush stdout
   where
 #ifdef USE_RPC

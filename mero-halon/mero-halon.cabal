@@ -295,6 +295,7 @@ Executable halond
       CPP-Options:    -DUSE_RPC
   Build-Depends:      halon,
                       binary,
+                      directory,
                       mero-halon,
                       base >= 4.5,
                       distributed-commands,
