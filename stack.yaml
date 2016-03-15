@@ -16,13 +16,19 @@ packages:
 - rpclite
 - sspl
 # vendor packages
-- location: vendor/distributed-process
+- location:
+    git: https://github.com/tweag/distributed-process.git
+    commit: c7e4652b5b6f9e1fff93a8768fef2114605b8c10
+  extra-dep: true
+- location:
+    git: https://github.com/haskell-distributed/network-transport-inmemory.git
+    commit: f70722138c7de0ceef0872eefca34a6e4437d552
+  extra-dep: true
+- location:
+    git: https://github.com/tweag/network-transport-tcp.git
+    commit: cf1cce0baf2b286f33330cf742a1f66de13cc16d
   extra-dep: true
 - location: vendor/netwire
-  extra-dep: true
-- location: vendor/network-transport-inmemory
-  extra-dep: true
-- location: vendor/network-transport-tcp
   extra-dep: true
 - location: vendor/options-schema
   extra-dep: true
