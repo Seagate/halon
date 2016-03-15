@@ -1,19 +1,9 @@
-[submodule "vendor/distributed-process"]
-	path = vendor/distributed-process
-	url = https://github.com/tweag/distributed-process.git
 [submodule "vendor/tasty-files"]
 	path = vendor/tasty-files
 	url = ../tasty-files.git
 [submodule "options-schema"]
 	path = vendor/options-schema
 	url = ../options-schema.git
-[submodule "network-transport-tcp"]
-	path = vendor/network-transport-tcp
-	url = git@github.com:tweag/network-transport-tcp.git
-	branch = fix-zero-port-patch
-[submodule "vendor/network-transport-inmemory"]
-	path = vendor/network-transport-inmemory
-	url = https://github.com/haskell-distributed/network-transport-inmemory.git
 [submodule "vendor/mero"]
 	path = vendor/mero
 	url = ../mero
