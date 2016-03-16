@@ -89,7 +89,7 @@ ruleClusterStop = defineSimple "cluster-stop-request"
                     sendChan ch (StateChangeStarted pid)
                     proc eid
                M0.MeroClusterStopping{} -> Left $ StateChangeOngoing st
-               M0.MeroClusterStarting{} -> Left $ StateChangeError $ "cluster is stopping: " ++ show st
+               M0.MeroClusterStarting{} -> Left $ StateChangeError $ "cluster is starting: " ++ show st
                M0.MeroClusterStopped    -> Left   StateChangeFinished
       case eresult of
         Left m -> liftProcess (sendChan ch m) >> messageProcessed eid
