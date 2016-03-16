@@ -66,7 +66,8 @@ import Control.Distributed.Process.Closure
   )
 import Control.Distributed.Static
   ( staticApply )
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (catch, onException, bracket_)
+import Control.Monad.Catch (catch, onException, bracket_)
 import Control.Monad (forever, join, void)
 import qualified Control.Monad.Catch as Catch
 import Control.Monad.Trans.Maybe

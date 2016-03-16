@@ -34,8 +34,9 @@ module HA.Services.Monitor
     , MonitorType(..)
     ) where
 
-import Control.Distributed.Process hiding (monitor)
+import Control.Distributed.Process hiding (monitor, finally)
 import Control.Distributed.Process.Closure
+import Control.Monad.Catch (finally)
 import Control.Distributed.Static
 import Network.CEP
 
