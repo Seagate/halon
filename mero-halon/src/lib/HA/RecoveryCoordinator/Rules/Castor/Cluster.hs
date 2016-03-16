@@ -9,6 +9,7 @@ import           HA.EventQueue.Types
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
 
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Actions.Core
@@ -22,6 +23,7 @@ import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
 import           Network.CEP
 
+import           Control.Category
 import           Control.Distributed.Process
 import           Control.Monad (guard, when, unless)
 import           Control.Monad.Trans.Maybe
@@ -31,6 +33,7 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Foldable
 import           Text.Printf
+import           Prelude hiding ((.), id)
 
 clusterRules :: Definitions LoopState ()
 clusterRules = sequence_
@@ -60,6 +63,14 @@ ruleClusterStart = defineSimple "cluster-start-request"
             (_, Just st) -> case st of
                M0.MeroClusterStopped    -> Right $ do
                   modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStarting (M0.BootLevel 0))
+                  -- Due to the mero requirements we should mark all services as running.
+                  -- We do not update sdev/disk state for now.
+                  modifyGraph $ \rg ->
+                     let procs = G.getResourcesOfType rg :: [M0.Process]
+                         srvs  = procs >>= \p -> G.connectedTo p M0.IsParentOf rg :: [M0.Service]
+                     in flip (foldr (\p -> G.connectUniqueFrom p R.Is M0.M0_NC_ONLINE)) procs
+                          >>> flip (foldr (\s -> G.connectUniqueFrom s R.Is M0.M0_NC_ONLINE)) srvs
+                              $ rg
                   announceMeroNodes
                   syncGraphCallback $ \pid proc -> do
                     sendChan ch (StateChangeStarted pid)
