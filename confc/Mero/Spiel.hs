@@ -766,7 +766,7 @@ poolRepairStatus (SpielContext sc _) fid = mask $ \restore ->
         else do
           elt <- peek arr_ptr
           x <- peekArray rc elt
-          forM_ [0..rc] $ \i -> free (elt `advancePtr` i)
+          forM_ [0..rc - 1] $ \i -> free (elt `advancePtr` i)
           return x
 
 poolRebalanceStart :: SpielContext

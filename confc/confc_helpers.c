@@ -165,7 +165,7 @@ struct m0_fid *ck_sdev_fid(struct m0_conf_disk *disk) {
 // Caller should free the resulting string
 char *confc_validate_cache_of_tx(struct m0_spiel_tx *tx, size_t buflen) {
   char *buf = (char *) malloc(buflen);
-  const struct m0_conf_cache *conf_cache = (const struct m0_conf_cache *) &(tx->spt_cache);
+  struct m0_conf_cache *conf_cache = (struct m0_conf_cache *) &(tx->spt_cache);
   char *result = m0_conf_validation_error(conf_cache, buf, buflen);
 
   if (result == NULL) {

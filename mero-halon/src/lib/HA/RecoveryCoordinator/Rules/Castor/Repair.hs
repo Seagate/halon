@@ -156,7 +156,7 @@ querySpiel = define "query-spiel" $ do
       Just pri -> do
         timeNow <- liftIO getTime
         let elapsed = timeNow - priTimeOfFirstCompletion pri
-            untilTimeout = 300 - elapsed
+            untilTimeout = M0.mkTimeSpec 300 - elapsed
         iosvs <- length <$> R.getIOServices pool
         if priOnlineNotifications pri < iosvs
         then switch [timeout (timeSpecToSeconds untilTimeout) runQuery]
@@ -178,6 +178,7 @@ querySpiel = define "query-spiel" $ do
         if onlines < iosvs
         then liftProcess . promulgateWait $ SpielQueryHourly pool prt ruuid
         else completeRepair pool prt $ Just uid
+    phaseLog "repair" $ "First query for pool " ++ show pool ++ " terminating."
 
   start dispatchQuery Nothing
 
@@ -194,6 +195,7 @@ querySpielHourly = define "query-spiel-hourly" $ do
   setPhase dispatchQueryHourly $ \(HAEvent uid (SpielQueryHourly pool prt ruuid) _) -> do
     t <- getTimeUntilQueryHourlyPRI pool
     put Local $ Just (uid, pool, prt, ruuid)
+    phaseLog "repair" $ "Running hourly query in " ++ show t ++ " seconds."
     switch [timeout t runQueryHourly]
 
   directly runQueryHourly $ do
@@ -217,6 +219,7 @@ querySpielHourly = define "query-spiel-hourly" $ do
           then do t <- getTimeUntilQueryHourlyPRI pool
                   switch [timeout t runQueryHourly]
           else completeRepair pool prt (Just uid)
+    phaseLog "repair" $ "Hourly query for pool " ++ show pool ++ " terminating."
     messageProcessed uid
 
   start dispatchQueryHourly Nothing
@@ -300,7 +303,6 @@ abortRepair pool = getPoolRepairStatus pool >>= \case
                                ++ show pool ++ ": " ++ show e
 
 
-
 -- | Complete the given pool repair by notifying mero about all the
 -- devices being repaired and marking the message as processed.
 --
@@ -311,39 +313,53 @@ abortRepair pool = getPoolRepairStatus pool >>= \case
 -- Starts rebalance if we were repairing and have fully completed.
 completeRepair :: Pool -> PoolRepairType -> Maybe UUID -> PhaseM LoopState l ()
 completeRepair pool prt muid = do
-  -- if not everything is repaired, we only report [repaired_disks],
-  -- otherwise [pool, disks]
+  -- if no status is found for SDev, assume M0_NC_ONLINE
+  let getSDevState :: M0.SDev -> PhaseM LoopState l' ConfObjectState
+      getSDevState d = fromMaybe M0_NC_ONLINE <$> queryObjectStatus d
+
   sdevs <- getPoolSDevs pool
-  sts <- catMaybes <$> mapM (\d -> fmap (,d) <$> queryObjectStatus d) sdevs
-  let repairedSDevs = snd <$>
-                      filter (\(typ, _) -> typ == R.repairedNotificationMsg prt) sts
+  sts <- mapM (\d -> (,d) <$> getSDevState d) sdevs
+
+  -- states that are considered as ‘OK, we can finish
+  -- repair/rebalance’ states for the drives
+  let okMessages = [R.repairedNotificationMsg prt, M0_NC_ONLINE]
+
+   -- list of devices in OK state
+      repairedSDevs = snd <$> filter (\(typ, _) -> typ == R.repairedNotificationMsg prt) sts
+      okObjects =  snd <$> filter (\(typ, _) -> typ `elem` okMessages) sts
   -- Always set pool type to the type of the repair we're [partially]
   -- reporting
   setObjectStatus pool $ R.repairedNotificationMsg prt
-  repairedDisks <- fmap AnyConfObj <$> mapMaybeM lookupSDevDisk repairedSDevs
-  if length sdevs == length repairedSDevs
+  repairedObjs <- fmap AnyConfObj <$> mapMaybeM lookupSDevDisk repairedSDevs
+  if length sdevs == length okObjects
     -- everything completed, if we were reparing, start rebalance and continue
-    then do notifyMero (AnyConfObj pool : repairedDisks) $ R.repairedNotificationMsg prt
+    then do phaseLog "info" $ "Full repair on " ++ show pool
+            notifyMero (AnyConfObj pool : repairedObjs) $ R.repairedNotificationMsg prt
             unsetPoolRepairStatus pool
             -- If we have just finished repair, start rebalance and
             -- start queries.
             when (prt == M0.Failure) $ do
-              -- Update pool and drive states, startRebalanceOperation
-              -- will notify mero
-              rg <- getLocalGraph
-              mapM_ (flip updateDriveState M0_NC_REBALANCE)
-                 $ filter (isReplaced rg) sdevs
-              startRebalanceOperation pool
-              queryStartHandling pool
+              phaseLog "info" $ "Repair on " ++ show pool
+                             ++ " complete, proceeding to rebalance [DISABLED]"
+
+              -- TODO XXX Duo to MERO-1569, we don't start rebalance.
+              when False $ do
+                -- Update pool and drive states, startRebalanceOperation
+                -- will notify mero
+                rg <- getLocalGraph
+                mapM_ (flip updateDriveState M0_NC_REBALANCE)
+                   $ filter (isReplaced rg) sdevs
+                startRebalanceOperation pool
+                queryStartHandling pool
     -- only notifying about partial repair, don't finish repairing
-    else do notifyMero repairedDisks $ R.repairedNotificationMsg prt
-            queryStartHandling pool
+    else do phaseLog "info" $ "Partial repair, notifying about " ++ show repairedSDevs
+            notifyMero repairedObjs $ R.repairedNotificationMsg prt
 
   traverse_ messageProcessed muid
   where
     isReplaced :: G.Graph -> M0.SDev -> Bool
     isReplaced rg s = not . null $
-      [ () | (disk :: M0.Disk) <- G.connectedTo s M0.IsOnHardware rg 
+      [ () | (disk :: M0.Disk) <- G.connectedTo s M0.IsOnHardware rg
            , (sd :: StorageDevice) <- G.connectedTo disk At rg
            , G.isConnected sd Has SDReplaced rg]
 
@@ -383,11 +399,20 @@ handleRepair noteSet = processSet noteSet >>= \case
       tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
       fa <- getPoolSDevsWithState pool M0_NC_FAILED
 
+      -- If no devices are transient and something is failed, begin
+      -- repair. It's up to caller to ensure any previous repair has
+      -- been aborted/completed.
+      let maybeBeginRepair = when (null tr && not (null fa)) $ do
+            phaseLog "repair" $ "Starting repair operation on " ++ show pool
+            startRepairOperation pool
+            mapM_ (flip updateDriveState M0_NC_REPAIR) fa
+            queryStartHandling pool
+
       getPoolRepairStatus pool >>= \case
-        Just (M0.PoolRepairStatus prt _ _)
-          -- Repair happening, device failed, abort
+        Just (M0.PoolRepairStatus prt ruuid _)
+          -- Repair happening, device failed, restart repair
           | fa' <- getSDevs diskMap M0_NC_FAILED
-          , not (S.null fa') -> abortRepair pool
+          , not (S.null fa') -> abortRepair pool >> maybeBeginRepair
           -- Repair happening, some devices are transient
           | tr' <- getSDevs diskMap M0_NC_TRANSIENT
           , not (S.null tr') -> do
@@ -405,15 +430,8 @@ handleRepair noteSet = processSet noteSet >>= \case
               else phaseLog "repair" $ "Still some drives transient: " ++ show sts
           | otherwise -> phaseLog "repair" $
               "Repair on-going but don't know what to do with " ++ show diskMap
-        Nothing
-         -- No repair, devices have failed, no TRANSIENT devices; start repair
-         | null tr
-         , not (null fa) -> do
-             startRepairOperation pool
-             mapM_ (flip updateDriveState M0_NC_REPAIR) fa
-             queryStartHandling pool
-        -- Do nothing
-         | otherwise -> return ()
+        -- No repair, devices have failed, no TRANSIENT devices; start repair
+        Nothing -> maybeBeginRepair
 
   PoolInfo pool st m -> do
     phaseLog "repair" $ "Processed as PoolInfo " ++ show (pool, st, m)
@@ -467,7 +485,7 @@ processPoolInfo pool M0_NC_REPAIRED _ = getPoolRepairStatus pool >>= \case
 -- it seems some devices belonging to the pool failed, abort repair.
 processPoolInfo pool _ m
   | fa <- getSDevs m M0_NC_FAILED
-  , _:_ <- S.toList fa = abortRepair pool
+  , not (S.null fa) = abortRepair pool
 -- All the devices we were notified in the pool came up as ONLINE. In
 -- this case we may want to continue repair if no other devices in the
 -- pool are transient.

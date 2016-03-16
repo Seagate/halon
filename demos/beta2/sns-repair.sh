@@ -1,58 +1,35 @@
 #!/bin/bash
 set -eux
 
-#IP=172.16.1.212
-#HALOND=/home/mask/.local/bin/halond
-#HALONCTL=/home/mask/.local/bin/halonctl
-#HALON_SOURCES=/work/halon
-#HALON_FACTS_YAML=halon_facts.yaml
+# TODO: this script should either live with st/bootstrap[-cluster].sh
+# or somehow use its functionality instead of copying for the most
+# part.
+
+# TODO: We could use something like ‘expect’ to know when to call
+# various commands instead of doing sleeps on a hard-coded timeout
 
 IP=10.0.2.15
-BIN_ROOT=/mnt/home/programming/halon-clean/.stack-work/install/x86_64-linux/lts-3.11/7.10.2/bin
+HALON_SOURCES=/mnt/home/programming/halon-clean
+BIN_ROOT=$HALON_SOURCES/.stack-work/install/x86_64-linux/lts-3.11/7.10.2/bin
 HALOND=$BIN_ROOT/halond
 HALONCTL=$BIN_ROOT/halonctl
-HALON_SOURCES=/mnt/home/programming/halon-clean
-MERO_ROOT=/mnt/home/programming/halon-clean/vendor/mero
+MERO_ROOT=$HALON_SOURCES/vendor/mero
 HALON_FACTS_YAML=halon_facts.yaml
 
 HOSTNAME="`hostname`"
 
 main() {
-	sudo killall halond || true
-	sleep 1
-	sudo rm -rf halon-persistence
-	sudo systemctl stop mero-kernel &
-	sudo killall -9 lt-m0d m0d lt-m0mkfs m0mkfs || true
-	wait
+    IP=$IP HALONCTL=$HALONCTL $MERO_ROOT/st/bootstrap.sh -c cluster_stop
+    IP=$IP HALONCTL=$HALONCTL MERO_ROOT=$MERO_ROOT HALOND=$HALOND HALON_SOURCES=$HALON_SOURCES HOSTNAME=$HOSTNAME $MERO_ROOT/st/bootstrap.sh -c cluster_start
 
-        pushd $MERO_ROOT
-	sudo scripts/install-mero-service -u
-	sudo scripts/install-mero-service -l
-	sudo utils/m0setup -v -P 6 -N 2 -K 1 -i 1 -d /var/mero/img -s 128 -c
-	sudo utils/m0setup -v -P 6 -N 2 -K 1 -i 1 -d /var/mero/img -s 128
-        popd
+	sleep 30; echo "Writing to m0t1fs to check things work (required)"
+	sudo dd if=/dev/urandom of=/mnt/m0t1fs/111:222 bs=4K count=100
 
-	sudo rm -vf /etc/mero/genders
-	sudo rm -vf /etc/mero/conf.xc
-	sudo rm -vf /etc/mero/disks*.conf
+	sleep 5; echo "Sending a drive failure notification to halon"
 
-	halon_facts_yaml > $HALON_FACTS_YAML
+	sudo $MERO_ROOT/utils/m0console -s $IP@tcp:12345:34:101 -c $IP@tcp:12345:34:1001 -f 116 -v -d "[1:(^d|1:10,2)]"
 
-	sudo $HALOND -l $IP:9000 >& /tmp/halond.log &
-	true
-	sleep 2
-	sudo $HALONCTL -l $IP:9010 -a $IP:9000 bootstrap station
-	sudo $HALONCTL -l $IP:9010 -a $IP:9000 bootstrap satellite -t $IP:9000
-	sudo $HALONCTL -l $IP:9010 -a $IP:9000 cluster load -f $HALON_FACTS_YAML -r $HALON_SOURCES/mero-halon/scripts/mero_provisioner_role_mappings.ede
-
-	sleep 30; echo "Fail (start)"
-	sudo $MERO_ROOT/utils/m0console -f 116 -s 10.0.2.15@tcp:12345:34:101 -c 10.0.2.15@tcp:12345:31:100 -d '[6:(^d|1:8,1),(^d|1:10,1),(^d|1:12,1),(^d|1:14,1),(^d|1:16,1),(^d|1:18,2)]'
-	sleep 5; echo "Transient (halt)"
-	sudo $MERO_ROOT/utils/m0console -f 116 -s 10.0.2.15@tcp:12345:34:101 -c 10.0.2.15@tcp:12345:31:100 -d '[6:(^d|1:8,1),(^d|1:10,1),(^d|1:12,1),(^d|1:14,1),(^d|1:16,1),(^d|1:18,3)]'
-	sleep 5; echo "Online (continue)"
-	sudo $MERO_ROOT/utils/m0console -f 116 -s 10.0.2.15@tcp:12345:34:101 -c 10.0.2.15@tcp:12345:31:100 -d '[6:(^d|1:8,1),(^d|1:10,1),(^d|1:12,1),(^d|1:14,1),(^d|1:16,1),(^d|1:18,1)]'
-	sudo $MERO_ROOT/utils/m0console -f 116 -s 10.0.2.15@tcp:12345:34:101 -c 10.0.2.15@tcp:12345:31:100 -d '[7:(^d|1:8,5),(^d|1:10,5),(^d|1:12,5),(^d|1:14,5),(^d|1:16,5),(^d|1:18,5),(^o|1:2,5)]'
-
+	echo "Look inside /tmp/halond.log for information on how things went!"
 
 }
 
@@ -127,8 +104,8 @@ id_m0_globals:
   m0_md_redundancy: 1
   m0_data_units: 2
   m0_failure_set_gen:
-    tag: Dynamic
-    contents: []
+    tag: Preloaded
+    contents: [0, 1, 0]
 EOF
 }
 

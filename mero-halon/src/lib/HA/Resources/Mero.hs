@@ -35,6 +35,7 @@ import Data.Bits
 import qualified Data.ByteString as BS
 import Data.Char (ord)
 import Data.Hashable (Hashable(..))
+import Data.Int (Int64)
 import Data.Proxy (Proxy(..))
 import Data.Typeable (Typeable)
 import Data.Word ( Word32, Word64 )
@@ -310,8 +311,14 @@ instance ConfObj DiskV where
 
 -- | Wrapper for 'C.TimeSpec' providing 'Binary' and 'Hashable'
 -- instances.
+--
+-- Normally you should use 'mkTimeSpec' to create these.
 newtype TimeSpec = TimeSpec { _unTimeSpec :: C.TimeSpec }
   deriving (Eq, Num, Ord, Read, Show, Generic, Typeable)
+
+-- | Create a 'TimeSpec' with the given number of seconds.
+mkTimeSpec :: Int64 -> TimeSpec
+mkTimeSpec sec = TimeSpec { _unTimeSpec = C.TimeSpec sec 0 }
 
 -- | Extract the seconds value from a 'TimeSpec'
 --
@@ -399,7 +406,7 @@ instance Hashable ProcessLabel
 newtype BootLevel = BootLevel Int
   deriving (Eq, Show, Typeable, Generic, Binary, Hashable, Ord)
 
-data MeroClusterState = 
+data MeroClusterState =
     MeroClusterStopped -- ^ Cluster is not running.
   | MeroClusterStarting BootLevel -- ^ Cluster is currently starting on a concrete bootlevel.
   | MeroClusterStopping BootLevel -- ^ Cluster is currently stopping on a concrete bootlevel.

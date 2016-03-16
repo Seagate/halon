@@ -150,6 +150,7 @@ ruleMeroNoteSet = do
       resultState x = x
       noteSet = Set (resultState <$> ns)
     in do
+      phaseLog "info" $ "Received " ++ show (Set ns)
       stateChangeHandlers <- lsStateChangeHandlers <$> get Global
       sequence_ $ (\x -> x noteSet) <$> stateChangeHandlers
       messageProcessed uid
@@ -340,8 +341,7 @@ ruleDriveInserted = define "drive-inserted" $ do
                Nothing -> modifyGraph $
                  G.disconnectAllFrom disk Has (Proxy :: Proxy DeviceIdentifier)
                Just cand -> actualizeStorageDeviceReplacement cand
-             identifyStorageDevice disk sn
-             identifyStorageDevice disk path
+             identifyStorageDevice disk [sn, path]
              updateStorageDeviceSDev disk
              markStorageDeviceReplaced disk
              request <- liftIO $ nextRandom
@@ -402,8 +402,7 @@ ruleDriveInserted = defineSimple "drive-inserted" $
     lookupStorageDeviceReplacement disk >>= \case
       Nothing -> modifyGraph $ G.disconnectAllFrom disk Has (Proxy :: Proxy DeviceIdentifier)
       Just cand -> actualizeStorageDeviceReplacement cand
-    identifyStorageDevice disk sn
-    identifyStorageDevice disk path
+    identifyStorageDevice disk [sn, path]
     syncGraphProcessMsg uuid
 #endif
 

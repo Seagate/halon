@@ -62,11 +62,14 @@ import System.Posix.SysInfo
 import Prelude hiding ((.), id)
 
 -- TODO Generalise this
--- | If the 'Note' is about an 'SDev', extract it and its state.
+-- | If the 'Note' is about an 'SDev' or 'Disk', extract the 'SDev'
+-- and its 'M0.ConfObjectState'.
 noteToSDev :: Note -> PhaseM LoopState l (Maybe (M0.ConfObjectState, M0.SDev))
-noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= return . \case
-  Nothing -> Nothing
-  Just (sdev :: M0.SDev) -> Just (stType, sdev)
+noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= \case
+  Just sdev -> return $ Just (stType, sdev)
+  Nothing -> Conf.lookupConfObjByFid mfid >>= \case
+    Just disk -> fmap (stType,) <$> Conf.lookupDiskSDev disk
+    Nothing -> return Nothing
 
 -- | Extract information about drives from the given set of
 -- notifications and update the state in RG accordingly.
@@ -130,7 +133,6 @@ updateDriveState m0sdev x = do
   -- sync, but before it notified mero.
   syncGraph (return ())
   -- Notify Mero
-  liftProcess $ say $ show (m0sdev, m0disks, x)
   let m0objs = M0.AnyConfObj <$> m0disks
   notifyMero (M0.AnyConfObj m0sdev:m0objs) x
 
@@ -267,11 +269,11 @@ stopNodeProcesses host (TypedChannel chan) ps = do
 
 getLabeledNodeProcesses :: Res.Node -> M0.ProcessLabel -> G.Graph -> [M0.Process]
 getLabeledNodeProcesses node label rg =
-   [ p | host <- G.connectedFrom Runs node rg :: [Castor.Host] 
+   [ p | host <- G.connectedFrom Runs node rg :: [Castor.Host]
        , m0node <- G.connectedTo host Runs rg :: [M0.Node]
        , p <- G.connectedTo m0node M0.IsParentOf rg
        , G.isConnected p Has label rg
-   ] 
+   ]
 
 startMeroService :: Castor.Host -> Res.Node -> PhaseM LoopState a ()
 startMeroService host node = do
