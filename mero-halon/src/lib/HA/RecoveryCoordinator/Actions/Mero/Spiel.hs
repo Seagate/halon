@@ -692,5 +692,5 @@ getTimeUntilQueryHourlyPRI pool = getPoolRepairInformation pool >>= \case
   Just pri -> do
     tn <- DP.liftIO M0.getTime
     let elapsed = tn - M0.priTimeLastHourlyRan pri
-        untilHourPasses = fromIntegral (3600 :: Integer) - elapsed
+        untilHourPasses = M0.mkTimeSpec 3600 - elapsed
     return $ M0.timeSpecToSeconds untilHourPasses

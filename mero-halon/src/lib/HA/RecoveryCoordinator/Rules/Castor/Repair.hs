@@ -156,7 +156,7 @@ querySpiel = define "query-spiel" $ do
       Just pri -> do
         timeNow <- liftIO getTime
         let elapsed = timeNow - priTimeOfFirstCompletion pri
-            untilTimeout = 300 - elapsed
+            untilTimeout = M0.mkTimeSpec 300 - elapsed
         iosvs <- length <$> R.getIOServices pool
         if priOnlineNotifications pri < iosvs
         then switch [timeout (timeSpecToSeconds untilTimeout) runQuery]
@@ -194,6 +194,7 @@ querySpielHourly = define "query-spiel-hourly" $ do
   setPhase dispatchQueryHourly $ \(HAEvent uid (SpielQueryHourly pool prt ruuid) _) -> do
     t <- getTimeUntilQueryHourlyPRI pool
     put Local $ Just (uid, pool, prt, ruuid)
+    phaseLog "repair" $ "Running hourly query in " ++ show t ++ " seconds."
     switch [timeout t runQueryHourly]
 
   directly runQueryHourly $ do
