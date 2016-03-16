@@ -21,8 +21,6 @@ import Control.Distributed.Process
   , liftIO
   , link
   , spawnLocal
-  , finally
-  , bracket
   , sendChan
   , receiveWait
   , match
@@ -31,6 +29,10 @@ import Control.Distributed.Process
   )
 import qualified Control.Distributed.Process as DP
 import Control.Monad (forever)
+import Control.Monad.Catch
+  ( finally
+  , bracket
+  )
 
 import Data.Maybe
 import Data.Binary (Binary)

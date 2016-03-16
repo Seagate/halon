@@ -17,7 +17,8 @@ import           Data.Typeable
 import           GHC.Generics
 import           System.IO
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (bracket)
+import Control.Monad.Catch (bracket)
 import Data.Binary
 import Data.Function (on)
 import Data.List (groupBy)
