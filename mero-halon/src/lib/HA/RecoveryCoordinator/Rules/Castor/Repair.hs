@@ -178,6 +178,7 @@ querySpiel = define "query-spiel" $ do
         if onlines < iosvs
         then liftProcess . promulgateWait $ SpielQueryHourly pool prt ruuid
         else completeRepair pool prt $ Just uid
+    phaseLog "repair" $ "First query for pool " ++ show pool ++ " terminating."
 
   start dispatchQuery Nothing
 
@@ -218,6 +219,7 @@ querySpielHourly = define "query-spiel-hourly" $ do
           then do t <- getTimeUntilQueryHourlyPRI pool
                   switch [timeout t runQueryHourly]
           else completeRepair pool prt (Just uid)
+    phaseLog "repair" $ "Hourly query for pool " ++ show pool ++ " terminating."
     messageProcessed uid
 
   start dispatchQueryHourly Nothing

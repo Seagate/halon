@@ -110,7 +110,7 @@ sendLoggingCmd host req = do
 mkDiskLoggingCmd :: T.Text -- ^ Status
                  -> T.Text -- ^ Serial Number
                  -> T.Text -- ^ Reason
-                 -> LoggerCmd 
+                 -> LoggerCmd
 mkDiskLoggingCmd st serial reason = LoggerCmd message "LOG_WARNING" "HDS" where
   message = "{'status': '" <> st <> "', 'reason': '" <> reason <> "', 'serial_number': '" <> serial <> "'}"
 
@@ -225,7 +225,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
          -- Try to check if we have device with known serial number, just without location.
          lookupStorageDeviceInEnclosure enc sn >>= \case
            Just disk -> do
-             identifyStorageDevice disk (DIIndexInEnclosure diskNum)
+             identifyStorageDevice disk [DIIndexInEnclosure diskNum]
              selfMessage (RuleDriveManagerDisk disk)
            Nothing -> do
              phaseLog "sspl-service"
@@ -235,7 +235,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
              locateStorageDeviceInEnclosure enc disk
              mhost <- findNodeHost (Node nid)
              forM_ mhost $ \host -> locateHostInEnclosure host enc
-             mapM_ (identifyStorageDevice disk) [DIIndexInEnclosure diskNum, sn]
+             identifyStorageDevice disk [DIIndexInEnclosure diskNum, sn]
              syncGraphProcess $ \self -> usend self (RuleDriveManagerDisk disk)
        Just st -> selfMessage (RuleDriveManagerDisk st)
      continue pcommit
@@ -311,8 +311,7 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
              Just sd -> do
                -- We have disk in RG, but we didn't know its index in enclosure, this happens
                -- when we loaded initial data that have no information about indices.
-               identifyStorageDevice sd idx
-               identifyStorageDevice sd serial
+               identifyStorageDevice sd [idx, serial]
                return Nothing
              Nothing -> do
                -- We don't have information about inserted disk in this slot yet, this could
@@ -324,7 +323,7 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
                diskUUID <- liftIO $ nextRandom
                let disk = StorageDevice diskUUID
                locateStorageDeviceInEnclosure enc disk
-               identifyStorageDevice disk idx
+               identifyStorageDevice disk [idx]
                return (Just disk)
          Just sd -> do
            -- We have information about disk in slot, check whether this is same disk or not.
@@ -351,7 +350,7 @@ ruleMonitorRaidData :: Definitions LoopState ()
 ruleMonitorRaidData = defineSimple "monitor-raid-data" $ \(HAEvent uuid (nid::NodeId, srrd) _) -> do
       case sensorResponseMessageSensor_response_typeRaid_dataMdstat srrd of
         Just x | x == "U_" || x == "_U" ->
-          phaseLog "action" $ "Metadrive drive failed on " ++ show nid ++ "." 
+          phaseLog "action" $ "Metadrive drive failed on " ++ show nid ++ "."
         _ -> return ()
       messageProcessed uuid
 

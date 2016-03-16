@@ -381,17 +381,17 @@ isStorageDriveRemoved sd = do
 
 -- | Add an additional identifier to a logical storage device.
 identifyStorageDevice :: StorageDevice
-                      -> DeviceIdentifier
+                      -> [DeviceIdentifier]
                       -> PhaseM LoopState l ()
-identifyStorageDevice ld di = modifyLocalGraph $ \rg -> do
-  phaseLog "rg" $ "Adding identifier "
-              ++ show di
+identifyStorageDevice ld dis = modifyLocalGraph $ \rg -> do
+  phaseLog "rg" $ "Adding identifiers "
+              ++ show dis
               ++ " to device "
               ++ show ld
 
-  let rg' = G.newResource ld
-        >>> G.newResource di
-        >>> G.connect ld Has di
+  let newRes g di = G.connect ld Has di . G.newResource di $ g
+      rg' = G.newResource ld
+        >>> (\g0 -> foldl' newRes g0 dis)
           $ rg
 
   return rg'
@@ -524,7 +524,7 @@ updateDriveStatus dev status reason = modifyLocalGraph $ \rg -> do
 updateStorageDeviceSDev :: StorageDevice -> PhaseM LoopState l ()
 updateStorageDeviceSDev sdev = do
   phaseLog "rg" $ "updating SDev that belongs to " ++ show sdev
-  modifyGraph $ rgUpdateStorageDeviceSDev sdev 
+  modifyGraph $ rgUpdateStorageDeviceSDev sdev
 
 -- | Update mero device that correspong to storage device, by setting correct
 -- path to that.
@@ -564,7 +564,7 @@ attachStorageDeviceReplacement dev dis = do
   phaseLog "rg" $ "Inserting new device candidate to " ++ show dev
   uuid <- liftProcess . liftIO $ nextRandom
   let newDev = StorageDevice uuid
-  forM_ dis $ identifyStorageDevice newDev
+  identifyStorageDevice newDev dis
   modifyLocalGraph $ return . G.connect dev ReplacedBy newDev
   return newDev
 

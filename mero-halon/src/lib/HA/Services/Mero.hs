@@ -198,9 +198,9 @@ stopProcess run conf = flip Catch.catch handler $ do
                         ExitFailure x -> do
                           putStrLn $ "m0d: stopProcess failed."
                           return $ Right (procFid, "Unit failed to stop with exit code " ++ show x)
-      Nothing -> return (Left procFid) 
+      Nothing -> return (Left procFid)
     where
-      procFid = case conf of 
+      procFid = case conf of
         ProcessConfigLocal x _ _ -> x
         ProcessConfigRemote x _  -> x
       handler :: Catch.SomeException -> IO (Either Fid (Fid, String))
@@ -264,7 +264,7 @@ remotableDecl [ [d|
           [ ("MERO_NODE_UUID", UUID.toString $ mkcNodeUUID (mcKernelConfig conf))
           ]
         SystemD.startService "mero-kernel"
-      -- XXX: halon uses mero kernel module so it's not possible to 
+      -- XXX: halon uses mero kernel module so it's not possible to
       -- unload that.
       stopKernel = return () -- liftIO $ SystemD.stopService "mero-kernel"
       bootstrap = do
@@ -386,7 +386,8 @@ notifyMero :: [M0.AnyConfObj] -- ^ List of resources (instance of @ConfObj@)
            -> ConfObjectState
            -> PhaseM LoopState l ()
 notifyMero cs st = do
-    phaseLog "action" "Sending configuration update to mero services"
+    phaseLog "action" $ "Sending configuration update to mero services: "
+                     ++ show setEvent
     chans <- getNotificationChannels
     forM_ chans $ \(sp, recipients) -> liftProcess $
         sendChan sp $ NotificationMessage setEvent recipients []

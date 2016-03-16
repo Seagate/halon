@@ -247,7 +247,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         Just sdev -> return sdev
         Nothing -> do
           sdev <- StorageDevice <$> liftIO nextRandom
-          mapM_ (identifyStorageDevice sdev) devIds
+          identifyStorageDevice sdev devIds
           locateStorageDeviceOnHost host sdev
           return sdev
       m0sdev <- lookupStorageDeviceSDev sdev >>= \case

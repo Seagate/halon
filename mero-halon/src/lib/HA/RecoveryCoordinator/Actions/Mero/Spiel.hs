@@ -590,9 +590,11 @@ sfinally action finalizer = do
 getPoolRepairStatus :: M0.Pool
                     -> PhaseM LoopState l (Maybe M0.PoolRepairStatus)
 getPoolRepairStatus pool = do
-  phaseLog "rg-query" "Looking up pool repair status"
-  getLocalGraph >>= \g ->
-   return (listToMaybe [ p | p <- G.connectedTo pool Has g ])
+  getLocalGraph >>= \g -> do
+   let prs = listToMaybe [ p | p <- G.connectedTo pool Has g ]
+   phaseLog "rg-query" $ "Looked up PRS for " ++ show pool ++ ", got "
+                      ++ show prs
+   return prs
 
 -- | Set the given 'M0.PoolRepairStatus' in the graph. Any
 -- previously connected @PRI@s are disconnected.
@@ -602,7 +604,8 @@ setPoolRepairStatus pool prs =
 
 -- | Remove all 'M0.PoolRepairStatus' connection to the given 'M0.Pool'.
 unsetPoolRepairStatus :: M0.Pool -> PhaseM LoopState l ()
-unsetPoolRepairStatus pool =
+unsetPoolRepairStatus pool = do
+  phaseLog "info" $ "Unsetting PRS from " ++ show pool
   modifyLocalGraph $ return . G.disconnectAllFrom pool Has (Proxy :: Proxy M0.PoolRepairStatus)
 
 -- | Remove 'M0.PoolRepairStatus' connection to the given 'M0.Pool' as
@@ -621,7 +624,7 @@ getPoolRepairInformation :: M0.Pool
 getPoolRepairInformation pool = do
   r <- getLocalGraph >>= return . join . fmap M0.prsPri . listToMaybe . G.connectedTo pool Has
   phaseLog "rg-query" $
-    "Lookup up pool repair information for " ++ show pool ++ ", got " ++ show r
+    "Looked up pool repair information for " ++ show pool ++ ", got " ++ show r
   return r
 
 -- | Set the given 'M0.PoolRepairInformation' in the graph. Any
@@ -634,9 +637,10 @@ setPoolRepairInformation :: M0.Pool
                          -> PhaseM LoopState l ()
 setPoolRepairInformation pool pri = getPoolRepairStatus pool >>= \case
   Nothing -> return ()
-  Just (M0.PoolRepairStatus prt uuid _) ->
+  Just (M0.PoolRepairStatus prt uuid _) -> do
     let prs = M0.PoolRepairStatus prt uuid $ Just pri
-    in modifyLocalGraph $ return . G.connectUniqueFrom pool Has prs
+    phaseLog "rg" $ "Setting PRR for " ++ show pool ++ " to " ++ show prs
+    modifyLocalGraph $ return . G.connectUniqueFrom pool Has prs
 
 -- | Initialise 'M0.PoolRepairInformation' with some default values.
 possiblyInitialisePRI :: M0.Pool
