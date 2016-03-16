@@ -396,7 +396,7 @@ data ProcessState =
   | PSStarting -- ^ Process is starting but we have not confirmed started.
   | PSOnline
   | PSStopping
-  | PSFailed -- ^ Process has failed.
+  | PSFailed String -- ^ Process has failed, with reason given
   | PSInhibited ProcessState -- ^ Process state is masked by a higher level
                              --   failure.
   deriving (Eq, Show, Typeable, Generic)

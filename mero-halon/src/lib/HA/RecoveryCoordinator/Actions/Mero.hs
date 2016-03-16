@@ -15,12 +15,14 @@ module HA.RecoveryCoordinator.Actions.Mero
   , updateDriveState
   , updateDriveStatesFromSet
   , noteToSDev
+  , calculateMeroClusterStatus
   , createMeroKernelConfig
   , createMeroClientConfig
   , startMeroService
   , startNodeProcesses
   , stopNodeProcesses
   , announceMeroNodes
+  , getLabeledProcesses
   , getLabeledNodeProcesses
   )
 where
@@ -52,7 +54,7 @@ import Control.Monad (forM)
 
 import Data.Foldable (forM_, traverse_)
 import Data.Proxy
-import Data.Maybe (catMaybes, listToMaybe, mapMaybe)
+import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
@@ -60,6 +62,15 @@ import Network.CEP
 import System.Posix.SysInfo
 
 import Prelude hiding ((.), id)
+
+-- | At what boot level do we start M0t1fs processes?
+m0t1fsBootLevel :: M0.BootLevel
+m0t1fsBootLevel = M0.BootLevel 3
+
+-- | At which boot level (after completion) do we consider the cluster started?
+clusterStartedBootLevel :: M0.BootLevel
+clusterStartedBootLevel = M0.BootLevel 3
+
 
 -- TODO Generalise this
 -- | If the 'Note' is about an 'SDev' or 'Disk', extract the 'SDev'
@@ -213,11 +224,51 @@ createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
           >>> G.connect process M0.IsParentOf rmsService
           >>> G.connect process M0.IsParentOf haService
           >>> G.connect process Has M0.PLM0t1fs
+          >>> G.connect process Is M0.PSUnknown
           >>> G.connect fs M0.IsParentOf m0node
           >>> G.connect host Has Castor.HA_M0CLIENT
           >>> G.connect host Runs m0node
             $ rg
     return rg'
+
+-- | Look at the current cluster status and current local status and
+--   calculate whether we should move to a new status.
+calculateMeroClusterStatus :: PhaseM LoopState l M0.MeroClusterState
+calculateMeroClusterStatus = do
+  -- Currently recorded status in the graph
+  recordedState <- fromMaybe M0.MeroClusterStopped . listToMaybe
+                    . G.connectedTo Res.Cluster Has <$> getLocalGraph
+  case recordedState of
+    M0.MeroClusterStopped -> return M0.MeroClusterStopped
+    M0.MeroClusterRunning -> return M0.MeroClusterRunning
+    M0.MeroClusterStarting bl@(M0.BootLevel i) -> getLocalGraph >>= \rg ->
+      let
+        lbl = case M0.BootLevel i of
+          x | x == m0t1fsBootLevel -> M0.PLM0t1fs
+          x -> M0.PLBootLevel x
+      in if null $ getLabeledProcesses lbl
+                  ( \proc g -> null $
+                    [ () | state <- G.connectedTo proc Is g
+                    , state == M0.PSOnline
+                    ] ) rg
+      then case i of
+        x | M0.BootLevel x == clusterStartedBootLevel -> return M0.MeroClusterRunning
+        _ -> return $ M0.MeroClusterStarting $ M0.BootLevel (i+1)
+      else return $ M0.MeroClusterStarting bl
+    M0.MeroClusterStopping bl@(M0.BootLevel i) -> getLocalGraph >>= \rg ->
+      let
+        lbl = case M0.BootLevel i of
+          x | x == m0t1fsBootLevel -> M0.PLM0t1fs
+          x -> M0.PLBootLevel x
+      in if null $ getLabeledProcesses lbl
+                ( \proc g -> not . null $
+                  [ () | state <- G.connectedTo proc Is g
+                  , state `elem` [M0.PSOnline, M0.PSStarting, M0.PSStopping]
+                  ] ) rg
+      then case i of
+        0 -> return M0.MeroClusterStopped
+        _ -> return $ M0.MeroClusterStopping $ M0.BootLevel (i-1)
+      else return $ M0.MeroClusterStopping bl
 
 -- | Start all Mero processes labelled with the specified process label on
 --   a given node.
@@ -232,18 +283,20 @@ startNodeProcesses host (TypedChannel chan) label mkfs = do
                       ++ " on host "
                       ++ show host
     rg <- getLocalGraph
-    let procs =  [ (p,b)
+    let procs =  [ (p :: M0.Process, b :: Bool)
                  | m0node <- G.connectedTo host Runs rg :: [M0.Node]
                  , p <- G.connectedTo m0node M0.IsParentOf rg
                  , G.isConnected p Has label rg
                  , let b = not $ G.isConnected p Is M0.ProcessBootstrapped rg
                  ]
-    phaseLog "processes" $ show (fmap (M0.fid.fst) (procs :: [(M0.Process, Bool)]))
+    phaseLog "processes" $ show (fmap (M0.fid.fst) procs)
     msg <- StartProcesses <$> case (label, mkfs) of
             (M0.PLM0t1fs, _) -> forM procs $ (\(proc,_) -> ([M0T1FS],) <$> runConfig proc rg)
             (_, True) -> forM procs $ (\(proc,b) -> ((if b then (M0MKFS:) else id) [M0D],) <$> runConfig proc rg)
             (_, False) -> forM procs $ (\(proc,_) -> ([M0D],) <$> runConfig proc rg)
     liftProcess $ sendChan chan msg
+    forM_ procs $ \(p, _) -> modifyGraph
+      $ G.connectUniqueFrom p Is M0.PSStarting
   where
     runConfig proc rg = case runsMgs proc rg of
       True -> syncToBS >>= \bs -> return $
@@ -258,14 +311,30 @@ stopNodeProcesses :: Castor.Host
                   -> TypedChannel ProcessControlMsg
                   -> [M0.Process]
                   -> PhaseM LoopState a ()
-stopNodeProcesses host (TypedChannel chan) ps = do
+stopNodeProcesses _ (TypedChannel chan) ps = do
    rg <- getLocalGraph
    let msg = StopProcesses $ map (go rg) ps
    liftProcess $ sendChan chan msg
+   forM_ ps $ \p -> modifyGraph
+     $ G.connectUniqueFrom p Is M0.PSStopping
    where
      go rg p = case G.connectedTo p Has rg of
         [M0.PLM0t1fs] -> ([M0T1FS], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))
         _             -> ([M0D], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))
+
+getLabeledProcesses :: M0.ProcessLabel
+                    -> (M0.Process -> G.Graph -> Bool)
+                    -> G.Graph
+                    -> [M0.Process]
+getLabeledProcesses label predicate rg =
+  [ proc
+  | (prof :: M0.Profile) <- G.connectedTo Res.Cluster Has rg
+  , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
+  , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
+  , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
+  , G.isConnected proc Has label rg
+  , predicate proc rg
+  ]
 
 getLabeledNodeProcesses :: Res.Node -> M0.ProcessLabel -> G.Graph -> [M0.Process]
 getLabeledNodeProcesses node label rg =
