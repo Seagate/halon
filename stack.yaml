@@ -18,7 +18,7 @@ packages:
 # vendor packages
 - location:
     git: https://github.com/tweag/distributed-process.git
-    commit: c7e4652b5b6f9e1fff93a8768fef2114605b8c10
+    commit: be85d412dcd41bd217a6485155d9cc2db7268579
   extra-dep: true
 - location:
     git: https://github.com/haskell-distributed/network-transport-inmemory.git
