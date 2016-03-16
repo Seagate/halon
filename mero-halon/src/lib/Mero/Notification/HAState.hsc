@@ -33,8 +33,9 @@ import Mero.ConfC (Fid)
 import Network.RPC.RPCLite
     ( ServerEndpoint(..), ClientEndpointV, RPCAddress(..) )
 
-import Control.Exception      ( Exception, throwIO )
+import Control.Exception      ( Exception, throwIO, SomeException, evaluate )
 import Control.Monad          ( liftM2 )
+import Control.Monad.Catch    ( catch )
 import Data.Binary            ( Binary )
 import Data.ByteString as B   ( useAsCString )
 import Data.Dynamic           ( Typeable )
@@ -53,6 +54,7 @@ import Foreign.Marshal.Utils  ( with, withMany )
 import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr, nullPtr )
 import Foreign.Storable       ( Storable(..) )
 import GHC.Generics           ( Generic )
+import System.IO              ( hPutStrLn, stderr )
 import System.IO.Unsafe       ( unsafePerformIO )
 
 #include "hastate.h"
@@ -128,9 +130,15 @@ initHAState ha_state_get ha_state_set ha_state_entry =
       rc <- ha_state_init pcbs
       check_rc "initHAState" rc
   where
-    wrapGetCB f = cwrapGetCB $ \note -> f note
-    wrapSetCB f = cwrapSetCB $ \note ->
-        readNVecRef note >>= fmap fromIntegral . f
+    wrapGetCB f = cwrapGetCB $ \note -> catch
+        (f note)
+        $ \e -> hPutStrLn stderr $
+                  "initHAState.wrapGetCB: " ++ show (e :: SomeException)
+    wrapSetCB f = cwrapSetCB $ \note -> catch
+        (readNVecRef note >>= fmap fromIntegral . f)
+        $ \e -> do hPutStrLn stderr $
+                     "initHAState.wrapSetCB: " ++ show (e :: SomeException)
+                   return (-1)
     wrapEntryCB f = cwrapEntryCB f
 
 data HAStateCallbacksV
