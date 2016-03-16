@@ -53,9 +53,11 @@ ruleClusterStart :: Definitions LoopState ()
 ruleClusterStart = defineSimple "cluster-start-request"
   $ \(HAEvent eid (ClusterStartRequest ch) _) -> do
       rg <- getLocalGraph
-      let eresult = case listToMaybe $ G.connectedTo R.Cluster R.Has rg of
-            Nothing -> Left $ StateChangeError "Unknown current state."
-            Just st -> case st of
+      fs <- getFilesystem
+      let eresult = case (fs, listToMaybe $ G.connectedTo R.Cluster R.Has rg) of
+            (Nothing, _) -> Left $ StateChangeError "Initial data not loaded."
+            (_, Nothing) -> Left $ StateChangeError "Unknown current state."
+            (_, Just st) -> case st of
                M0.MeroClusterStopped    -> Right $ do
                   modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStarting (M0.BootLevel 0))
                   announceMeroNodes
@@ -120,7 +122,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
    teardown_timeout  <- phaseHandle "teardown-timeout"
    await_barrier <- phaseHandle "await-barrier"
    stop_service <- phaseHandle "stop-service"
-   finish <- phaseHandle "finish" 
+   finish <- phaseHandle "finish"
 
    -- Continue process on the next boot level. This method include only
    -- numerical bootlevels.
@@ -135,7 +137,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
    -- all technical information in RG, then emit BarrierPassed function.
    let notifyBarrier meid = do
          Just (_,_,b) <- get Local
-         level@(M0.MeroClusterStopping (M0.BootLevel i)) <- 
+         level@(M0.MeroClusterStopping (M0.BootLevel i)) <-
             fromMaybe M0.MeroClusterStopped . listToMaybe . G.connectedTo R.Cluster R.Has <$> getLocalGraph
          rg <- getLocalGraph
          if null [ (srv :: M0.Process) |  srv   <- G.connectedTo level M0.Pending rg ] && b == (M0.BootLevel i)
@@ -144,7 +146,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
                            return M0.MeroClusterStopped
                    _ -> do let bl = M0.BootLevel (i-1)
                                lvl = M0.MeroClusterStopping bl
-                           modifyGraph $ 
+                           modifyGraph $
                               G.connectUnique R.Cluster R.Has lvl
                               . (\r -> foldr (\p x -> G.connect lvl M0.Pending (p::M0.Process) x) r
                                              (G.connectedFrom R.Has (M0.PLBootLevel bl) r)) -- TODO exclude nodes that failed to teardown?
@@ -152,11 +154,11 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
                  syncGraphCallback $ \self proc -> do
                    usend self (BarrierPass lvl)
                    forM_ meid proc
-         else do phaseLog "debug" $ "There are processes left:" ++ show 
+         else do phaseLog "debug" $ "There are processes left:" ++ show
                                     [ (srv :: M0.Process) |  srv   <- G.connectedTo level M0.Pending rg ]
                  forM_ meid syncGraphProcessMsg
-         
- 
+
+
    setPhase initialize $ \(HAEvent eid (StopMeroServer node) _) -> getStorageRC  >>= \nodes ->
      case Map.lookup node =<< nodes of
        Nothing -> do
@@ -171,11 +173,11 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
    directly teardown $ do
      Just (_, node, lvl@(M0.BootLevel i)) <- get Local
      when (i < 0)  $ continue stop_service
-     cluster_lvl <- fromMaybe M0.MeroClusterStopped 
+     cluster_lvl <- fromMaybe M0.MeroClusterStopped
                      . listToMaybe . G.connectedTo R.Cluster R.Has <$> getLocalGraph
      case cluster_lvl of
        M0.MeroClusterStopping s
-          | s < lvl -> do 
+          | s < lvl -> do
               phaseLog "debug" $ printf "%s is on %s while cluster is on %s - skipping"
                                         (show node) (show lvl) (show s)
               nextBootLevel
@@ -183,7 +185,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
           | otherwise -> do
               phaseLog "debug" $ printf "%s is on %s while cluster is on %s - waiting for barries."
                                         (show node) (show lvl) (show s)
-              continue await_barrier 
+              continue await_barrier
        _  -> continue finish
 
    directly teardown_exec $ do
@@ -214,13 +216,13 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
          return (eid, lnode, lvl, results))
      $ \(eid, node, lvl, results) -> do
        phaseLog "info" $ printf "%s completed tearing down of level %s." (show node) (show lvl)
-       forM_ results $ \case 
-         Left x -> return ()
+       forM_ results $ \case
+         Left _ -> return ()
          Right (x,s) -> phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
        -- XXX: mark failed services (?)
        let fids = map (\case Left x -> x ; Right (x,_) -> x) results
        modifyGraph $ \rg ->
-         foldr (G.disconnect (M0.MeroClusterStopping lvl) M0.Pending) 
+         foldr (G.disconnect (M0.MeroClusterStopping lvl) M0.Pending)
                rg
                (getProcessesByFid rg fids :: [M0.Process])
        notifyBarrier (Just eid)
@@ -244,7 +246,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
      ) $ \() -> nextBootLevel
 
    directly stop_service $ do
-     Just (_, node, _) <- get Local 
+     Just (_, node, _) <- get Local
      phaseLog "info" $ printf "%s stopped all mero services - stopping halon mero service."
                               (show node)
      promulgateRC $ encodeP $ ServiceStopRequest node m0d
@@ -253,7 +255,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
    directly finish $ do
      get Local >>= mapM_ (\(eid, node, _) -> do
         mh  <- getStorageRC
-        forM_ mh $ \(NodesRunningTeardown nodes) -> 
+        forM_ mh $ \(NodesRunningTeardown nodes) ->
           putStorageRC $ NodesRunningTeardown $ Map.delete  node nodes
         messageProcessed eid)
      stop
@@ -274,8 +276,8 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
      mkLabel bl@(M0.BootLevel l)
        | l == maxTeardownLevel = M0.PLM0t1fs
        | otherwise = M0.PLBootLevel bl
-       
+
      -- XXX: currently we don't mark node during this process, it seems that in
-     --      we should receive notification about node death by other means, 
+     --      we should receive notification about node death by other means,
      --      and treat that appropriatelly.
      markNodeFailedTeardown = const $ return ()
