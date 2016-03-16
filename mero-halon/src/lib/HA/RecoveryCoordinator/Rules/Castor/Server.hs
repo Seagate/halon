@@ -39,6 +39,7 @@ import           HA.Resources.Castor
 import           HA.Resources.Castor.Initial (Network(Data))
 import           HA.Resources.Mero hiding (Node, Process, Enclosure, Rack, fid)
 import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
 import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
 import           Mero.ConfC (ServiceType(..))
@@ -121,6 +122,12 @@ ruleNewMeroServer = define "new-mero-server" $ do
           (True, [host]) -> return $ Just (host, cc)
           (_, _) -> return Nothing
 
+      markProcessesFailed :: [M0.Process] -> PhaseM LoopState a ()
+      markProcessesFailed = traverse_ $ \p -> modifyGraph $ \rg ->
+         foldr (\(s::M0.Service) -> G.connectUniqueFrom s Is M0.M0_NC_FAILED)
+               (G.connectUniqueFrom p Is M0.M0_NC_FAILED rg)
+               (G.connectedTo p M0.IsParentOf rg)
+
   setPhase new_server $ \(HAEvent eid (NewMeroServer node@(Node nid)) _) -> do
     rg <- getLocalGraph
     case listToMaybe $ G.connectedTo Cluster Has rg of
@@ -179,6 +186,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
   -- Wait until every process comes back as finished bootstrapping
   setPhase core_bootstrapped $ \(HAEvent eid (ProcessControlResultMsg nid e) _) -> do
+    markProcessesFailed . catMaybes =<< mapM lookupConfObjByFid (map fst $ rights e)
     (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
     forM_ procs $ \p -> modifyGraph $ G.connect p Is ProcessBootstrapped
     rms <- listToMaybe
@@ -221,6 +229,12 @@ ruleNewMeroServer = define "new-mero-server" $ do
                continue finish
 
   setPhase finish_extra_bootstrap $ \(HAEvent eid (ProcessControlResultMsg nid e) _) -> do
+    markProcessesFailed . catMaybes =<< mapM lookupConfObjByFid (map fst $ rights e)
+    forM_ fprocs $ \p -> modifyGraph $ \rg ->
+       foldr (\(s::M0.Service) -> G.connectUniqueFrom s Is M0.M0_NC_FAILED)
+             (G.connectUniqueFrom p Is M0.M0_NC_FAILED rg)
+             (G.connectedTo p M0.IsParentOf rg)
+
     (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
     forM_ procs $ \p -> modifyGraph $ G.connect p Is ProcessBootstrapped
     ackingLast finish_extra_bootstrap eid nid $
