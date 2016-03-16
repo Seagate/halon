@@ -230,11 +230,6 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
   setPhase finish_extra_bootstrap $ \(HAEvent eid (ProcessControlResultMsg nid e) _) -> do
     markProcessesFailed . catMaybes =<< mapM lookupConfObjByFid (map fst $ rights e)
-    forM_ fprocs $ \p -> modifyGraph $ \rg ->
-       foldr (\(s::M0.Service) -> G.connectUniqueFrom s Is M0.M0_NC_FAILED)
-             (G.connectUniqueFrom p Is M0.M0_NC_FAILED rg)
-             (G.connectedTo p M0.IsParentOf rg)
-
     (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
     forM_ procs $ \p -> modifyGraph $ G.connect p Is ProcessBootstrapped
     ackingLast finish_extra_bootstrap eid nid $

@@ -141,6 +141,11 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
          Just (a,b, M0.BootLevel i) <- get Local
          put Local $ Just (a,b,M0.BootLevel (i-1))
          continue teardown
+       markProcessFailed lvl fids = modifyGraph $ \rg ->
+         foldr (\p -> G.disconnect (M0.MeroClusterStopping lvl) M0.Pending p
+                        >>> G.connectUniqueFrom p R.Is M0.M0_NC_FAILED) 
+               rg
+               (getProcessesByFid rg fids :: [M0.Process])
 
    -- Check if there are any processes left to be stopped on current bootlevel.
    -- If there are any process - then just process current message (meid),
@@ -227,24 +232,18 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
          return (eid, lnode, lvl, results))
      $ \(eid, node, lvl, results) -> do
        phaseLog "info" $ printf "%s completed tearing down of level %s." (show node) (show lvl)
-       forM_ results $ \case
+       forM_ results $ \case 
          Left _ -> return ()
          Right (x,s) -> phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
-       -- XXX: mark failed services (?)
-       let fids = map (\case Left x -> x ; Right (x,_) -> x) results
-       modifyGraph $ \rg ->
-         foldr (G.disconnect (M0.MeroClusterStopping lvl) M0.Pending)
-               rg
-               (getProcessesByFid rg fids :: [M0.Process])
+       markProcessFailed lvl $ map (\case Left x -> x ; Right (x,_) -> x) results
        notifyBarrier (Just eid)
        nextBootLevel
 
    directly teardown_timeout $ do
      Just (_, node, lvl) <- get Local
      phaseLog "warning" $ printf "%s failed to stop services (timeout)" (show node)
-     modifyGraph $ \rg -> foldr (G.disconnect (M0.MeroClusterStopping lvl) M0.Pending)
-                                rg
-                                (getLabeledNodeProcesses node (mkLabel lvl) rg)
+     rg <- getLocalGraph
+     markProcessFailed lvl $ map M0.fid $ getLabeledNodeProcesses node (mkLabel lvl) rg
      markNodeFailedTeardown node
      notifyBarrier Nothing
      continue finish
