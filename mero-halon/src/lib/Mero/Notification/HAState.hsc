@@ -164,7 +164,7 @@ instance Storable Note where
 
   peek p = liftM2 Note
       (#{peek struct m0_ha_note, no_id} p)
-      (fmap (toEnum . fromIntegral)
+      (evaluate =<< fmap (toEnum . fromIntegral)
           (#{peek struct m0_ha_note, no_state} p :: IO Word32)
       )
 
