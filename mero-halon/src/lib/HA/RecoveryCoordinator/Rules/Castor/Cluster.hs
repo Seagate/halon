@@ -9,6 +9,7 @@ import           HA.EventQueue.Types
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
 
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Actions.Core
@@ -22,6 +23,7 @@ import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
 import           Network.CEP
 
+import           Control.Category
 import           Control.Distributed.Process
 import           Control.Monad (guard, when, unless)
 import           Control.Monad.Trans.Maybe
@@ -31,6 +33,7 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Foldable
 import           Text.Printf
+import           Prelude hiding ((.), id)
 
 clusterRules :: Definitions LoopState ()
 clusterRules = sequence_
@@ -60,6 +63,14 @@ ruleClusterStart = defineSimple "cluster-start-request"
             (_, Just st) -> case st of
                M0.MeroClusterStopped    -> Right $ do
                   modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStarting (M0.BootLevel 0))
+                  -- Due to the mero requirements we should mark all services as running.
+                  -- We do not update sdev/disk state for now.
+                  modifyGraph $ \rg ->
+                     let procs = G.getResourcesOfType rg :: [M0.Process]
+                         srvs  = procs >>= \p -> G.connectedTo p M0.IsParentOf rg :: [M0.Service]
+                     in flip (foldr (\p -> G.connectUniqueFrom p R.Is M0.M0_NC_ONLINE)) procs
+                          >>> flip (foldr (\s -> G.connectUniqueFrom s R.Is M0.M0_NC_ONLINE)) srvs
+                              $ rg
                   announceMeroNodes
                   syncGraphCallback $ \pid proc -> do
                     sendChan ch (StateChangeStarted pid)
@@ -89,7 +100,7 @@ ruleClusterStop = defineSimple "cluster-stop-request"
                     sendChan ch (StateChangeStarted pid)
                     proc eid
                M0.MeroClusterStopping{} -> Left $ StateChangeOngoing st
-               M0.MeroClusterStarting{} -> Left $ StateChangeError $ "cluster is stopping: " ++ show st
+               M0.MeroClusterStarting{} -> Left $ StateChangeError $ "cluster is starting: " ++ show st
                M0.MeroClusterStopped    -> Left   StateChangeFinished
       case eresult of
         Left m -> liftProcess (sendChan ch m) >> messageProcessed eid
@@ -130,6 +141,11 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
          Just (a,b, M0.BootLevel i) <- get Local
          put Local $ Just (a,b,M0.BootLevel (i-1))
          continue teardown
+       markProcessFailed lvl fids = modifyGraph $ \rg ->
+         foldr (\p -> G.disconnect (M0.MeroClusterStopping lvl) M0.Pending p
+                        >>> G.connectUniqueFrom p R.Is M0.M0_NC_FAILED) 
+               rg
+               (getProcessesByFid rg fids :: [M0.Process])
 
    -- Check if there are any processes left to be stopped on current bootlevel.
    -- If there are any process - then just process current message (meid),
@@ -216,24 +232,18 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
          return (eid, lnode, lvl, results))
      $ \(eid, node, lvl, results) -> do
        phaseLog "info" $ printf "%s completed tearing down of level %s." (show node) (show lvl)
-       forM_ results $ \case
+       forM_ results $ \case 
          Left _ -> return ()
          Right (x,s) -> phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
-       -- XXX: mark failed services (?)
-       let fids = map (\case Left x -> x ; Right (x,_) -> x) results
-       modifyGraph $ \rg ->
-         foldr (G.disconnect (M0.MeroClusterStopping lvl) M0.Pending)
-               rg
-               (getProcessesByFid rg fids :: [M0.Process])
+       markProcessFailed lvl $ map (\case Left x -> x ; Right (x,_) -> x) results
        notifyBarrier (Just eid)
        nextBootLevel
 
    directly teardown_timeout $ do
      Just (_, node, lvl) <- get Local
      phaseLog "warning" $ printf "%s failed to stop services (timeout)" (show node)
-     modifyGraph $ \rg -> foldr (G.disconnect (M0.MeroClusterStopping lvl) M0.Pending)
-                                rg
-                                (getLabeledNodeProcesses node (mkLabel lvl) rg)
+     rg <- getLocalGraph
+     markProcessFailed lvl $ map M0.fid $ getLabeledNodeProcesses node (mkLabel lvl) rg
      markNodeFailedTeardown node
      notifyBarrier Nothing
      continue finish

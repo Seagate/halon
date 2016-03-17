@@ -272,6 +272,7 @@ getLabeledNodeProcesses node label rg =
    [ p | host <- G.connectedFrom Runs node rg :: [Castor.Host]
        , m0node <- G.connectedTo host Runs rg :: [M0.Node]
        , p <- G.connectedTo m0node M0.IsParentOf rg
+       , G.isConnected p Is M0.M0_NC_ONLINE rg
        , G.isConnected p Has label rg
    ]
 
