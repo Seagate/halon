@@ -389,6 +389,20 @@ data HostHardwareInfo = HostHardwareInfo
 instance Binary HostHardwareInfo
 instance Hashable HostHardwareInfo
 
+-- | Process state. This is a generalisation of what might be reported to Mero.
+data ProcessState =
+    PSUnknown -- ^ Process state is not known.
+  | PSOffline -- ^ Process is stopped.
+  | PSStarting -- ^ Process is starting but we have not confirmed started.
+  | PSOnline
+  | PSStopping
+  | PSFailed String -- ^ Process has failed, with reason given
+  | PSInhibited ProcessState -- ^ Process state is masked by a higher level
+                             --   failure.
+  deriving (Eq, Show, Typeable, Generic)
+instance Binary ProcessState
+instance Hashable ProcessState
+
 -- | Label to attach to a Mero process providing extra context about how
 --   it should run.
 data ProcessLabel =
@@ -460,6 +474,7 @@ $(mkDicts
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''MeroClusterState, ''Pending, ''ProcessBootstrapped
+  , ''ProcessState
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -504,6 +519,7 @@ $(mkDicts
   , (''Process, ''R.Has, ''ProcessLabel)
   , (''MeroClusterState, ''Pending, ''Process)
   , (''Process, ''R.Is, ''ProcessBootstrapped)
+  , (''Process, ''R.Is, ''ProcessState)
   ]
   )
 
@@ -514,6 +530,7 @@ $(mkResRel
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''MeroClusterState, ''Pending, ''ProcessBootstrapped
+  , ''ProcessState
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -558,6 +575,7 @@ $(mkResRel
   , (''Process, ''R.Has, ''ProcessLabel)
   , (''MeroClusterState, ''Pending, ''Process)
   , (''Process, ''R.Is, ''ProcessBootstrapped)
+  , (''Process, ''R.Is, ''ProcessState)
   ]
   []
   )
