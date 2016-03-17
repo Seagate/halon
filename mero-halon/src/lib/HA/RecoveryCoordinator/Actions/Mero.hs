@@ -50,7 +50,7 @@ import Mero.Notification.HAState (Note(..))
 
 import Control.Category
 import Control.Distributed.Process
-import Control.Monad (forM)
+import Control.Monad (forM, unless)
 
 import Data.Foldable (forM_, traverse_)
 import Data.Proxy
@@ -271,12 +271,12 @@ calculateMeroClusterStatus = do
       else return $ M0.MeroClusterStopping bl
 
 -- | Start all Mero processes labelled with the specified process label on
---   a given node.
+--   a given node. Returns all the processes which are being started.
 startNodeProcesses :: Castor.Host
                    -> (TypedChannel ProcessControlMsg)
                    -> M0.ProcessLabel
                    -> Bool -- ^ Run mkfs? Ignored for m0t1fs processes.
-                   -> PhaseM LoopState a ()
+                   -> PhaseM LoopState a [M0.Process]
 startNodeProcesses host (TypedChannel chan) label mkfs = do
     phaseLog "action" $ "Trying to start all processes with label "
                       ++ show label
@@ -290,13 +290,15 @@ startNodeProcesses host (TypedChannel chan) label mkfs = do
                  , let b = not $ G.isConnected p Is M0.ProcessBootstrapped rg
                  ]
     phaseLog "processes" $ show (fmap (M0.fid.fst) procs)
-    msg <- StartProcesses <$> case (label, mkfs) of
-            (M0.PLM0t1fs, _) -> forM procs $ (\(proc,_) -> ([M0T1FS],) <$> runConfig proc rg)
-            (_, True) -> forM procs $ (\(proc,b) -> ((if b then (M0MKFS:) else id) [M0D],) <$> runConfig proc rg)
-            (_, False) -> forM procs $ (\(proc,_) -> ([M0D],) <$> runConfig proc rg)
-    liftProcess $ sendChan chan msg
-    forM_ procs $ \(p, _) -> modifyGraph
-      $ G.connectUniqueFrom p Is M0.PSStarting
+    unless (null procs) $ do
+      msg <- StartProcesses <$> case (label, mkfs) of
+              (M0.PLM0t1fs, _) -> forM procs $ (\(proc,_) -> ([M0T1FS],) <$> runConfig proc rg)
+              (_, True) -> forM procs $ (\(proc,b) -> ((if b then (M0MKFS:) else id) [M0D],) <$> runConfig proc rg)
+              (_, False) -> forM procs $ (\(proc,_) -> ([M0D],) <$> runConfig proc rg)
+      liftProcess $ sendChan chan msg
+      forM_ procs $ \(p, _) -> modifyGraph
+        $ G.connectUniqueFrom p Is M0.PSStarting
+    return $ fst <$> procs
   where
     runConfig proc rg = case runsMgs proc rg of
       True -> syncToBS >>= \bs -> return $

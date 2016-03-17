@@ -500,7 +500,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
     setPhaseIf svc_up_now onNode $ \(host, chan) -> do
       -- Legitimate to avoid the event id as it should be handled by the default
       -- 'declare-mero-channel' rule.
-      startNodeProcesses host chan PLM0t1fs False
+      void $ startNodeProcesses host chan PLM0t1fs False
 
     -- Service is already up
     directly svc_up_already $ do
@@ -510,7 +510,7 @@ ruleNewMeroClient = define "new-mero-client" $ do
       mhost <- findNodeHost node
       case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
         Just (host, chan) -> do
-          startNodeProcesses host chan (PLBootLevel (BootLevel 0)) True
+          void $ startNodeProcesses host chan (PLBootLevel (BootLevel 0)) True
         Nothing -> switch [svc_up_now, timeout 5000000 svc_up_already]
 
     setPhase msgClientNodeBootstrapped $ \(HAEvent eid (ProcessControlResultMsg node _) _) -> do
