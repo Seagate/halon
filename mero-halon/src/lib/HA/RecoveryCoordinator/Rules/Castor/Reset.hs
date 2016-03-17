@@ -108,24 +108,32 @@ handleReset (Set ns) = do
           msdev <- lookupStorageDevice m0sdev
           case msdev of
             Just sdev -> do
-              mst <- queryObjectStatus m0sdev
-              unless (mst == Just M0_NC_FAILED) $ do
-                ongoing <- hasOngoingReset sdev
-                when (not ongoing) $ do
-                  ratt <- getDiskResetAttempts sdev
-                  let status = if ratt <= resetAttemptThreshold
-                               then M0_NC_TRANSIENT
-                               else M0_NC_FAILED
+              -- Drive reset rule may be triggered if drive is removed, we
+              -- can't do anything sane here, so skipping this rule.
+              mstatus <- driveStatus sdev
+              case (\(StorageDeviceStatus s _) -> s) <$> mstatus of
+                Just "EMPTY" -> do
+                   phaseLog "info" "drive is physically removed, skipping reset"
+                   return ()
+                _ -> do
+                  mst <- queryObjectStatus m0sdev
+                  unless (mst == Just M0_NC_FAILED) $ do
+                    ongoing <- hasOngoingReset sdev
+                    when (not ongoing) $ do
+                      ratt <- getDiskResetAttempts sdev
+                      let status = if ratt <= resetAttemptThreshold
+                                   then M0_NC_TRANSIENT
+                                   else M0_NC_FAILED
 
-                  when (status == M0_NC_FAILED) $ do
-                    notifyDriveStateChange m0sdev status
-                    -- TODO Move this into its own handler.
-                    updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
+                      when (status == M0_NC_FAILED) $ do
+                        notifyDriveStateChange m0sdev status
+                        -- TODO Move this into its own handler.
+                        updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
 
-                  when (status == M0_NC_TRANSIENT) $ do
-                    promulgateRC $ ResetAttempt sdev
+                      when (status == M0_NC_TRANSIENT) $ do
+                        promulgateRC $ ResetAttempt sdev
 
-                  syncGraph $ say "handleReset synchronized"
+                      syncGraph $ say "handleReset synchronized"
             _ -> do
               phaseLog "warning" $ "Cannot find all entities attached to M0"
                                 ++ " storage device: "
