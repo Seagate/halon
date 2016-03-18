@@ -19,6 +19,7 @@ import           System.IO
 
 import Control.Distributed.Process hiding (bracket)
 import Control.Monad.Catch (bracket)
+import Control.Monad (when)
 import Data.Binary
 import Data.Function (on)
 import Data.List (groupBy)
@@ -92,10 +93,9 @@ instance Binary EntriesLogged
 newtype WriteLogs = WriteLogs (Logs -> Process ())
 
 ppLogs :: Logs -> Doc
-ppLogs logs =
-    vsep [ text $ logsRuleName logs
-         , indent 2 $ ppEntries entries
-         ]
+ppLogs logs = vsep [ text $ logsRuleName logs
+                   , indent 2 $ ppEntries entries
+                   ]
   where
     entries = logsPhaseEntries logs
 
@@ -127,19 +127,19 @@ cleanupHandle :: Handle -> Process ()
 cleanupHandle h = liftIO $ hClose h
 
 handleLogs :: DecisionLogOutput -> Logs -> Process ()
-handleLogs (ProcessOutput pid) logs = usend pid logs
-handleLogs StandardOutput logs = liftIO $ do
-    putDoc $ ppLogs logs
-    putStr "\n"
-handleLogs StandardError logs = liftIO $ do
-    hPutDoc stderr $ ppLogs logs
-    hPutStr stderr "\n"
-handleLogs DPLogger logs =
-    say $ displayS (renderPretty 0.4 80 $ ppLogs logs) ""
-handleLogs (FileOutput path) logs =
-    bracket (openLogFile path) cleanupHandle $ \h -> liftIO $ do
-      hPutDoc h $ ppLogs logs
-      hPutStr h "\n"
+handleLogs dlo logs = when (not . null $ logsPhaseEntries logs) $ case dlo of
+    ProcessOutput pid -> usend pid logs
+    StandardOutput -> liftIO $ do
+      putDoc $ ppLogs logs
+      putStr "\n"
+    StandardError -> liftIO $ do
+      hPutDoc stderr $ ppLogs logs
+      hPutStr stderr "\n"
+    DPLogger -> say $ displayS (renderPretty 0.4 80 $ ppLogs logs) ""
+    FileOutput path ->
+      bracket (openLogFile path) cleanupHandle $ \h -> liftIO $ do
+        hPutDoc h $ ppLogs logs
+        hPutStr h "\n"
 
 newWriteLogs :: DecisionLogOutput -> WriteLogs
 newWriteLogs tpe = WriteLogs $ handleLogs tpe
