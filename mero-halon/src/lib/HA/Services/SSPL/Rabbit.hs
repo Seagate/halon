@@ -267,4 +267,4 @@ rabbitMQProxy conf = run
                 loop queues subscribers exchanges
             ]
       (loop Set.empty Map.empty Set.empty)
-          `DP.finally` (liftIO $ takeMVar tags >>= mapM (cancelConsumer chan))
+          `finally` (liftIO $ takeMVar tags >>= mapM (cancelConsumer chan))

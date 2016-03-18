@@ -9,8 +9,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
-
-{-# OPTIONS_GHC -fno-warn-unused-binds #-}
+{-# LANGUAGE LambdaCase #-}
 
 module HA.Services.SSPL
   ( sspl
@@ -32,13 +31,14 @@ module HA.Services.SSPL
   , sendInterestingEvent
   ) where
 
-import HA.EventQueue.Producer (promulgate)
+import HA.EventQueue.Producer (promulgate, promulgateWait)
 import HA.RecoveryCoordinator.Mero (LoopState)
 import HA.Service
 import HA.Services.SSPL.CEP
 import HA.Services.SSPL.IEM
 import qualified HA.Services.SSPL.Rabbit as Rabbit
 import HA.Services.SSPL.LL.Resources
+import qualified System.SystemD.API as SystemD
 
 import SSPL.Bindings
 
@@ -53,8 +53,10 @@ import Control.Distributed.Process
   , match
   , monitor
   , receiveChan
+  , receiveChanTimeout
   , receiveWait
   , say
+  , sendChan
   , spawnChannelLocal
   , spawnLocal
   , unmonitor
@@ -98,6 +100,10 @@ header uuid = Aeson.Object $ M.fromList [
 
 saySSPL :: String -> Process ()
 saySSPL msg = say $ "[Service:SSPL] " ++ msg
+
+-- | Maximum allowed timeout between any sspl messages.
+ssplMaxMessageTimeout :: Int
+ssplMaxMessageTimeout = 4*60*1000000
 
 -- | Internal 'listen' handler. This is needed because AMQP runs in the
 --   IO monad, so we cannot directly handle messages using `Process` actions.
@@ -164,9 +170,10 @@ startActuators :: Network.AMQP.Channel
                -> ProcessId -- ^ ProcessID of SSPL main process.
                -> Process ()
 startActuators chan ac pid = do
+    monitorChan <- spawnChannelLocal monitorProcess
     iemChan <- spawnChannelLocal (iemProcess $ acIEM ac)
     systemdChan <- spawnChannelLocal (commandProcess $ acSystemd ac)
-    _ <- spawnLocal $ replyProcess (acCommandAck ac)
+    _ <- spawnLocal $ replyProcess (acCommandAck ac) monitorChan
     informRC (ServiceProcess pid) (ActuatorChannels iemChan systemdChan)
   where
     cmdAckQueueName = T.pack . fromDefault . Rabbit.bcQueueName $ acCommandAck ac
@@ -212,7 +219,7 @@ startActuators chan ac pid = do
                 , msgDeliveryMode = Just Persistent
                 }
         )
-    replyProcess Rabbit.BindConf{..} = Rabbit.receiveAck chan
+    replyProcess Rabbit.BindConf{..} monitorChan = Rabbit.receiveAck chan
       (T.pack . fromDefault $ bcExchangeName)
       (cmdAckQueueName)
       (T.pack . fromDefault $ bcRoutingKey)
@@ -237,10 +244,12 @@ startActuators chan ac pid = do
                                                (parseNodeCmd  mtype)
                                                reply
                saySSPL $ "Sending reply: " ++ show ca
-               ppid <- promulgate ca
-               ProcessMonitorNotification _ _ _ <-
-                 withMonitor ppid $ expect
-               return ())
+               ppid <- promulgateWait  ca
+               sendChan monitorChan ())
+    monitorProcess rchan = forever $ receiveChanTimeout ssplMaxMessageTimeout rchan >>= \case
+      Nothing -> do node <- getSelfNode 
+                    promulgateWait (SSPLServiceTimeout node)
+      _ -> return ()
 
 remotableDecl [ [d|
 
@@ -258,12 +267,19 @@ remotableDecl [ [d|
       me <- getSelfPid
       pid <- spawnLocal $ connectSSPL lock me
       mref <- monitor pid
-      receiveWait [
-          match $ \(ProcessMonitorNotification _ _ r) -> do
-            say $ "SSPL Process died:\n\t" ++ show r
-            connectRetry lock
-        , match $ \() -> unmonitor mref >> (liftIO $ putMVar lock ())
-        ]
+      fix $ \loop -> 
+        receiveWait [
+            match $ \(ProcessMonitorNotification _ _ r) -> do
+              say $ "SSPL Process died:\n\t" ++ show r
+              connectRetry lock
+          , match $ \ResetSSPLService -> do
+              liftIO $ do
+                void $ SystemD.restartService "rabbitmq-server.service"
+                void $ SystemD.restartService "sspl-ll.service"
+                putMVar lock ()
+              loop
+          , match $ \() -> unmonitor mref >> (liftIO $ putMVar lock ())
+          ]
     connectSSPL lock pid = do
       conn <- liftIO $ Rabbit.openConnection scConnectionConf
       chan <- liftIO $ openChannel conn
