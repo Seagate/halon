@@ -17,7 +17,9 @@ import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 
 import Mero.ConfC ( Fid )
+import Mero.M0Worker
 
+import Control.Monad.IO.Class
 import Data.Maybe (listToMaybe)
 import Data.Proxy
 import Data.Word ( Word64 )
@@ -64,3 +66,14 @@ getM0Globals = getLocalGraph >>= \rg -> do
 loadMeroGlobals :: CI.M0Globals
                 -> PhaseM LoopState l ()
 loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
+
+-- | Run the given computation in the m0 thread dedicated to the RC.
+--
+-- Some operations the RC submits cannot use the global m0 worker ('liftGlobalM0') because
+-- they would require grabbing the global m0 worker a second time thus blocking the application.
+-- Currently, these are spiel operations which use the notification interface before returning
+-- control to the caller.
+liftM0RC :: IO a -> PhaseM LoopState l a
+liftM0RC task = do
+  worker <- fmap lsWorker (get Global)
+  liftIO $ runOnM0Worker worker task
