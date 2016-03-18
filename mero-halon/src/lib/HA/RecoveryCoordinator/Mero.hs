@@ -62,7 +62,6 @@ import qualified HA.Resources.Castor as M0
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState(..))
 import HA.Services.Mero (notifyMero)
-import Mero.M0Worker
 #endif
 import qualified HA.ResourceGraph as G
 

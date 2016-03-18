@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE LambdaCase                 #-}
 
@@ -73,7 +74,10 @@ loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
 -- they would require grabbing the global m0 worker a second time thus blocking the application.
 -- Currently, these are spiel operations which use the notification interface before returning
 -- control to the caller.
-liftM0RC :: IO a -> PhaseM LoopState l a
-liftM0RC task = do
-  worker <- fmap lsWorker (get Global)
-  liftIO $ runOnM0Worker worker task
+liftM0RC :: IO a -> PhaseM LoopState l (Maybe a)
+liftM0RC task = getStorageRC >>= traverse (\worker -> liftIO $ runOnM0Worker worker task)
+
+withM0RC :: ((forall a . IO a -> PhaseM LoopState l a) -> PhaseM LoopState l b) -> PhaseM LoopState l b
+withM0RC f = getStorageRC >>= \case
+  Nothing -> error "No worker loaded."
+  Just w  -> f (liftIO . runOnM0Worker w)
