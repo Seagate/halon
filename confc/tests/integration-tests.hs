@@ -23,11 +23,11 @@ import Test.Tasty.HUnit
 
 tests :: TestTree
 tests = testGroup "confc"
-  [ testGroup "integration-tests" 
-      [ runTestCase Test.ConfRead.name
-      , runTestCase Test.MakeConf.name
-      , disabled Test.CopyConf.name
-      , runTestCase Test.Management.name
+  [ testGroup "integration-tests"
+      [ disabled Test.ConfRead.name
+      , disabled Test.MakeConf.name
+      , runTestCase Test.CopyConf.name
+      , disabled Test.Management.name
       ]
   ]
  where
@@ -59,7 +59,7 @@ main = withMeroRoot $ \meroRoot -> withSudo ["LD_LIBRARY_PATH", "MERO_ROOT"] $ d
           setEnv confdEndpoint $ nid ++ ":12345:44:101"
           setEnv confd2Endpoint $ nid ++ ":12345:34:1002"
           setEnv halonEndpoint  $ nid ++ ":12345:35:401"
-          defaultMainWithIngredients  [fileTestReporter [consoleTestReporter]] tests)
+          defaultMainWithIngredients  [consoleTestReporter] tests)
 
 tryIO :: IO a -> IO (Either IOException a)
 tryIO = try
