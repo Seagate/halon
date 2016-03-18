@@ -82,7 +82,6 @@ import Control.Monad (when, unless)
 import Control.Distributed.Process.Serializable
 #ifdef USE_MERO
 import Mero.Notification (Set)
-import Mero.M0Worker
 #endif
 
 import Data.Typeable (Typeable)
@@ -102,7 +101,6 @@ data LoopState = LoopState {
     -- ^ Set of HAEvent uuid we've already handled.
 #ifdef USE_MERO
   , lsStateChangeHandlers :: forall l. [Set -> PhaseM LoopState l ()]
-  , lsWorker   :: M0Worker  -- ^ M0 worker thread attached to RC.
 #endif
   , lsStorage :: !Storage.Storage -- ^ Global ephimeral storage.
 }
