@@ -67,6 +67,7 @@ import Mero.M0Worker
 import qualified HA.ResourceGraph as G
 
 import Control.Distributed.Process
+import qualified Control.Monad.Catch as Catch
 
 import Control.Wire hiding (when)
 
@@ -186,7 +187,7 @@ makeRecoveryCoordinator :: StoreChan -- ^ channel to the replicated multimap
                         -> Process ()
 makeRecoveryCoordinator mm eq rm = do
 #ifdef USE_MERO
-    bracket (liftIO newM0Worker)
+    Catch.bracket (liftIO newM0Worker)
             (liftIO . terminateM0Worker)
       $ \worker -> do
         init_st <- buildRCState mm eq worker

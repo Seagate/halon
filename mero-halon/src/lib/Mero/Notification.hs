@@ -201,7 +201,7 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
     say "initializeInternal: making new endpoint"
     say $ "listening at " ++ show addr
     self <- getSelfPid
-    onException
+    Catch.onException
       (do
         register notificationHandlerLabel self
         liftGlobalM0 $ do
