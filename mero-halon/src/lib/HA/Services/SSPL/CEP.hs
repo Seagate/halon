@@ -183,6 +183,7 @@ ssplRulesF sspl = sequence_
   , ruleSystemdCmd sspl
   , ruleHlNodeCmd sspl
   , ruleThreadController
+  , ruleSSPLTimeout sspl
   ]
 
 ruleDeclareChannels :: Definitions LoopState ()
@@ -492,3 +493,12 @@ updateDriveManagerWithFailure disk st reason = do
         Just e -> case listToMaybe $ connectedTo (e::Enclosure) Has rg of
           Nothing -> phaseLog "error" $ "Unable to find host for " ++ show e
           Just h -> f (h::Host)
+
+ruleSSPLTimeout :: Service SSPLConf -> Definitions LoopState ()
+ruleSSPLTimeout sspl = defineSimple "sspl-service-timeout" $
+      \(HAEvent uuid (SSPLServiceTimeout node) _) -> do
+          phaseLog "warning" "SSPL didn't send any message withing timeout - restarting."
+          mservice <- lookupRunningService (Node node) sspl
+          forM_ mservice $ \(ServiceProcess pid) ->
+            liftProcess $ usend pid ResetSSPLService
+          messageProcessed uuid

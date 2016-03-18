@@ -10,12 +10,15 @@
 
 module HA.Services.SSPL.LL.Resources where
 
-import Prelude hiding (id, mapM_, (<$>),(<*>))
+import Control.Distributed.Process (NodeId)
+
 import HA.Service
 import HA.Service.TH
 import HA.Services.SSPL.IEM
 import qualified HA.Services.SSPL.Rabbit as Rabbit
 import HA.ResourceGraph
+
+import Prelude
 
 import SSPL.Bindings
   ( ActuatorRequestMessageActuator_request_type (..)
@@ -201,7 +204,21 @@ makeLoggerMsg lc = emptyActuatorMsg {
       , actuatorRequestMessageActuator_request_typeLoggingLog_type = lcType lc
       }
   }
+
+--------------------------------------------------------------------------------
+-- Events
+--------------------------------------------------------------------------------
+
+-- | Event that sspl service didn't receive any messages in time.
+newtype SSPLServiceTimeout = SSPLServiceTimeout NodeId
+  deriving (Eq, Show, Binary, Typeable)
    
+-- | Request hard SSPL service restart.
+data ResetSSPLService = ResetSSPLService
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary ResetSSPLService
+
 --------------------------------------------------------------------------------
 -- Channels                                                                   --
 --------------------------------------------------------------------------------

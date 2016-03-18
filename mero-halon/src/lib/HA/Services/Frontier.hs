@@ -29,7 +29,8 @@ import           Control.Monad.Fix (fix)
 import           GHC.Generics
 import           System.IO
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (finally, bracket)
+import Control.Monad.Catch (finally, bracket)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
 import Data.Binary
