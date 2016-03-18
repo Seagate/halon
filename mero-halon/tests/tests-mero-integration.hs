@@ -36,15 +36,15 @@ main = withMeroEnvironment router wrapper where
   router = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
-    minfo <- liftM2 (,) <$> lookupEnv "MERO_TEST"
-                        <*> lookupEnv "TEST_LISTEN"
-    case minfo of
-      Just ("RCSyncToConfd", _host) -> do
+    Just testListen <- lookupEnv "TEST_LISTEN"
+    minfo <- lookupEnv "MERO_TEST"
+    case (minfo, testListen) of
+      (Just "RCSyncToConfd", _host) -> do
         transport <- mkTransport
         return $ Just $ withM0Deferred initializeFOPs deinitializeFOPs $ do
           HA.RecoveryCoordinator.Mero.Tests.testRCsyncToConfd transport
           threadDelay 1000000
-      Just ("DriveFailurePVer", _host) -> do
+      (Just "DriveFailurePVer", _host) -> do
         transport <- mkTransport
         return $ Just $ withM0Deferred initializeFOPs deinitializeFOPs $ do
           HA.Castor.Story.Tests.testDynamicPVer transport
