@@ -25,17 +25,17 @@ C.include "mero/version.h"
 versionString :: IO String
 versionString = do
   mero_build_desc <-
-    peekCAString =<< [C.exp| const char* { m0_build_info_get()->bi_git_describe } |]
-  mero_runtime_desc <-
     peekCAString =<< [C.exp| const char* { M0_VERSION_GIT_DESCRIBE } |]
+  mero_runtime_desc <-
+    peekCAString =<< [C.exp| const char* { m0_build_info_get()->bi_git_describe } |]
   mero_build_version <-
-    peekCAString =<< [C.exp| const char* { m0_build_info_get()->bi_git_rev_id } |]
-  mero_runtime_version <-
     peekCAString =<< [C.exp| const char* { M0_VERSION_GIT_REV_ID } |]
+  mero_runtime_version <-
+    peekCAString =<< [C.exp| const char* { m0_build_info_get()->bi_git_rev_id } |]
   mero_build_opts <-
-    peekCAString =<< [C.exp| const char* { m0_build_info_get()->bi_configure_opts } |]
-  mero_runtime_opts <-
     peekCAString =<< [C.exp| const char* { M0_VERSION_BUILD_CONFIGURE_OPTS } |]
+  mero_runtime_opts <-
+    peekCAString =<< [C.exp| const char* { m0_build_info_get()->bi_configure_opts } |]
   return $ printf (intercalate "\n" [
         "Halon %s (Git revision: %s)"
       , "Built against:"
