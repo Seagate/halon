@@ -38,8 +38,8 @@ testMain localAddress confdAddress = do
            printErr processes
            services <- join <$> mapM (children :: Process -> IO [Service]) processes
            printErr services
+           setCmdProfile spiel (Just (show $ cp_fid p))
            withRConf spiel $ do
-             setCmdProfile spiel (Just (show $ cp_fid p))
              runningServices <- join <$> mapM (processListServices spiel) processes
              printErr runningServices
 

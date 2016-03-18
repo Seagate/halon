@@ -24,7 +24,8 @@ testMain localAddress confdAddress =
     rpcMach <- getRPCMachine_se ep
     withConf rpcMach (rpcAddress confdAddress) $ \rootNode ->
       withHASession ep (rpcAddress confdAddress) $
-        withSpiel rpcMach $ \spiel ->
+        withSpiel rpcMach $ \spiel -> do
+          setCmdProfile spiel $ Just $ show $ Fid 0x7000000000000001 0
           withTransaction spiel $ \transaction -> do
             profiles <- children rootNode :: IO [Profile]
             forM_ profiles $ \p ->
