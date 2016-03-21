@@ -62,6 +62,7 @@ import qualified HA.Resources.Castor as M0
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState(..))
 import HA.Services.Mero (notifyMero)
+import HA.RecoveryCoordinator.Actions.Mero.Core
 #endif
 import qualified HA.ResourceGraph as G
 
@@ -198,3 +199,4 @@ makeRecoveryCoordinator mm eq rm = do
        forM_ removed $ usend (lsEQPid ls)
 
        return ls { lsGraph = newGraph, lsRefCount = newRefCnt }
+       `finally` tryCloseMeroWorker
