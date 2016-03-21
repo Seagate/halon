@@ -7,7 +7,7 @@ function intercalate { local IFS="$1"; shift; echo "$*"; }
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 if [ -z "$HALON_BUILD_ENV" ]; then
-  HALON_BUILD_ENV=docker
+  HALON_BUILD_ENV=bare
 fi
 
 STACK=$(which stack)
@@ -19,9 +19,19 @@ EXTRA_INCLUDE_DIRS=("$DIR/rpclite/rpclite")
 FLAGS=("--flag *:mero")
 
 if [ $HALON_BUILD_ENV = "bare" ]; then
+  if [ -z "$MERO_ROOT" ]; then
+    echo "MERO_ROOT be defined and point to the Mero source directory."
+    exit 1
+  fi
   FLAGS=("${FLAGS[@]}" "--no-docker")
   EXTRA_LIB_DIRS=("${EXTRA_LIB_DIRS[@]}" "$MERO_ROOT/mero/.libs")
   EXTRA_INCLUDE_DIRS=("${EXTRA_INCLUDE_DIRS[@]}" "$MERO_ROOT" "$MERO_ROOT/extra-libs/galois/include")
+fi
+
+if [ $HALON_BUILD_ENV = "prod" ]; then
+  FLAGS=("${FLAGS[@]}" "--no-docker")
+  # EXTRA_LIB_DIRS=("${EXTRA_LIB_DIRS[@]}" "$MERO_ROOT/mero/.libs")
+  EXTRA_INCLUDE_DIRS=("${EXTRA_INCLUDE_DIRS[@]}" "/usr/lib/mero")
 fi
 
 if [ $HALON_BUILD_ENV = "docker" ]; then
