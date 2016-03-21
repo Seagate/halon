@@ -139,8 +139,11 @@ ruleNewMeroServer = define "new-mero-server" $ do
       -- Mark successful processes as online, and others as failed.
       forM_ procs $ \p -> modifyGraph $ G.connect p Is ProcessBootstrapped
                                     >>> G.connect p Is PSOnline
-      forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>=
-        traverse_ (\(p :: M0.Process) -> modifyGraph $ G.connect p Is (PSFailed r))
+      forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>= \mp -> do
+        phaseLog "warning" $ "Process " ++ show f
+                          ++ " failed to start: " ++ r
+        traverse_ (\(p :: M0.Process) ->
+          modifyGraph $ G.connect p Is (PSFailed r)) mp
       rms <- listToMaybe
                 . filter (\s -> M0.s_type s == CST_RMS)
                 . join
@@ -173,8 +176,11 @@ ruleNewMeroServer = define "new-mero-server" $ do
       -- Mark successful processes as online, and others as failed.
       forM_ procs $ \p -> modifyGraph $ G.connect p Is ProcessBootstrapped
                                     >>> G.connect p Is PSOnline
-      forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>=
-        traverse_ (\(p :: M0.Process) -> modifyGraph $ G.connect p Is (PSFailed r))
+      forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>= \mp -> do
+        phaseLog "warning" $ "Process " ++ show f
+                          ++ " failed to start: " ++ r
+        traverse_ (\(p :: M0.Process) ->
+          modifyGraph $ G.connect p Is (PSFailed r)) mp
       let state = MeroClusterStarting (BootLevel 2)
       notifyOnClusterTranstion state BarrierPass (Just eid)
       switch [start_clients, timeout 5000000 finish]
@@ -199,8 +205,11 @@ ruleNewMeroServer = define "new-mero-server" $ do
       -- Mark successful processes as online, and others as failed.
       forM_ procs $ \p -> modifyGraph $ G.connect p Is ProcessBootstrapped
                                     >>> G.connect p Is PSOnline
-      forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>=
-        traverse_ (\(p :: M0.Process) -> modifyGraph $ G.connect p Is (PSFailed r))
+      forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>= \mp -> do
+        phaseLog "warning" $ "Process " ++ show f
+                          ++ " failed to start: " ++ r
+        traverse_ (\(p :: M0.Process) ->
+          modifyGraph $ G.connect p Is (PSFailed r)) mp
       messageProcessed eid
       continue finish
 
