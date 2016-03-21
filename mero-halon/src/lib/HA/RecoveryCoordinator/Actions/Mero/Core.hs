@@ -95,11 +95,22 @@ loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
 -- Some operations the RC submits cannot use the global m0 worker ('liftGlobalM0') because
 -- they would require grabbing the global m0 worker a second time thus blocking the application.
 -- Currently, these are spiel operations which use the notification interface before returning
--- control to the caller.
+-- control to the caller. 
+-- This call will return Nothing if no RC worker was created.
 liftM0RC :: IO a -> PhaseM LoopState l (Maybe a)
 liftM0RC task = getStorageRC >>= traverse (\worker -> liftIO $ runOnM0Worker worker task)
 
-withM0RC :: ((forall a . IO a -> PhaseM LoopState l a) -> PhaseM LoopState l b) -> PhaseM LoopState l b
+-- | A operation with guarantee that mero worker is available. This call provide
+-- an operation for running 'IO' in m0 thread.
+--
+-- If worker is not yet ready it will be created.
+-- 
+-- @@@
+-- withM0RC $ \lift ->
+--    lift $ someOperationThatShouldBeRunningInM0Thread
+-- @@@
+withM0RC :: ((forall a . IO a -> PhaseM LoopState l a) -> PhaseM LoopState l b)
+         -> PhaseM LoopState l b
 withM0RC f = getStorageRC >>= \case
   Nothing -> do mworker <- createMeroWorker
                 case mworker of
