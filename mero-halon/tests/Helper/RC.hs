@@ -19,15 +19,11 @@ import Mero.M0Worker
 import qualified Data.Map as Map
 
 -- | Create initial 'LoopState' structure.
+emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
+emptyLoopState mmchan pid = do
+  g' <- getGraph mmchan >>= return . addRootNode Cluster
 #if USE_MERO
-emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
-emptyLoopState mmchan pid = do
-  wrk <- liftIO $ dummyM0Worker
-  g' <- getGraph mmchan >>= return . addRootNode Cluster
-  return $ LoopState g' Map.empty mmchan pid Map.empty [] wrk Storage.empty
+  return $ LoopState g' Map.empty mmchan pid Map.empty [] Storage.empty
 #else
-emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
-emptyLoopState mmchan pid = do
-  g' <- getGraph mmchan >>= return . addRootNode Cluster
   return $ LoopState g' Map.empty mmchan pid Map.empty Storage.empty
 #endif

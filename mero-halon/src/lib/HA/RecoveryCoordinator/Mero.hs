@@ -199,4 +199,6 @@ makeRecoveryCoordinator mm eq rm = do
        forM_ removed $ usend (lsEQPid ls)
 
        return ls { lsGraph = newGraph, lsRefCount = newRefCnt }
+#ifdef USE_MERO
        `finally` tryCloseMeroWorker
+#endif
