@@ -55,6 +55,11 @@ notifyOnClusterTranstion desiredState msg meid = do
   if newState == desiredState then do
     modifyGraph $ G.connectUnique Cluster Has newState
     syncGraphCallback $ \self proc -> do
+      -- HALON-197 workaround - systemctl comes back before services are
+      -- started, so it's possible to try to connect to RM/confd before they're
+      -- available. This should be removed when Mero correctly reports on
+      -- process/service starting to halon.
+      Nothing <- receiveTimeout 500000 [] :: Process (Maybe ())
       usend self (msg newState)
       forM_ meid proc
   else
