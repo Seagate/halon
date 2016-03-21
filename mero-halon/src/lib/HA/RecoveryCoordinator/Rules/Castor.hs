@@ -361,7 +361,7 @@ ruleDriveInserted = define "drive-inserted" $ do
         sdev <- lookupStorageDeviceSDev disk
         forM_ sdev $ \m0sdev -> do
           msa <- getSpielAddressRC
-          forM_ msa $ \_ -> void  $ withSpielRC $ \sp -> withRConfRC sp
+          forM_ msa $ \_ -> void  $ withSpielRC $ \sp _ -> withRConfRC sp
                     $ liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
           fmap (fromMaybe M0_NC_UNKNOWN) (queryObjectStatus m0sdev) >>= \case
             M0_NC_TRANSIENT -> notifyDriveStateChange m0sdev M0_NC_FAILED
