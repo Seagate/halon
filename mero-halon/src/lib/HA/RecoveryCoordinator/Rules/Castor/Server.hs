@@ -69,6 +69,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
     boot_level_1 <- phaseHandle "boot_level_1"
     boot_level_1_complete <- phaseHandle "boot_level_1_complete"
     start_clients <- phaseHandle "start_clients"
+    start_clients_complete <- phaseHandle "start_clients_complete"
     finish <- phaseHandle "finish"
     end <- phaseHandle "end"
 
@@ -186,9 +187,22 @@ ruleNewMeroServer = define "new-mero-server" $ do
       m0svc <- lookupRunningService node m0d
       case m0svc >>= meroChannel rg of
         Just chan -> do
-          startNodeProcesses host chan PLM0t1fs False
-          continue finish
+          procs <- startNodeProcesses host chan PLM0t1fs False
+          if null procs
+            then continue finish
+            else continue start_clients_complete
         Nothing -> continue finish
+
+    -- Mark clients as coming up successfully.
+    setPhaseIf start_clients_complete processControlOnNode $ \(eid, e) -> do
+      (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
+      -- Mark successful processes as online, and others as failed.
+      forM_ procs $ \p -> modifyGraph $ G.connect p Is ProcessBootstrapped
+                                    >>> G.connect p Is PSOnline
+      forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>=
+        traverse_ (\(p :: M0.Process) -> modifyGraph $ G.connect p Is (PSFailed r))
+      messageProcessed eid
+      continue finish
 
     directly finish $ do
       Just (n, _, eid) <- get Local
