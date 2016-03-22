@@ -62,7 +62,7 @@ import qualified HA.Resources.Castor as M0
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState(..))
 import HA.Services.Mero (notifyMero)
-import Mero.M0Worker
+import HA.RecoveryCoordinator.Actions.Mero.Core
 #endif
 import qualified HA.ResourceGraph as G
 
@@ -158,17 +158,13 @@ initialize mm = do
 -- Recovery Co-ordinator                                --
 ----------------------------------------------------------
 
-#ifdef USE_MERO
-buildRCState :: StoreChan -> ProcessId -> M0Worker -> Process LoopState
-buildRCState mm eq wrk = do
-    rg      <- HA.RecoveryCoordinator.Mero.initialize mm
-    startRG <- G.sync rg (return ())
-    return $ LoopState startRG Map.empty mm eq Map.empty [] wrk Storage.empty
-#else
 buildRCState :: StoreChan -> ProcessId -> Process LoopState
 buildRCState mm eq = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
     startRG <- G.sync rg (return ())
+#ifdef USE_MERO
+    return $ LoopState startRG Map.empty mm eq Map.empty [] Storage.empty
+#else
     return $ LoopState startRG Map.empty mm eq Map.empty Storage.empty
 #endif
 
@@ -186,29 +182,23 @@ makeRecoveryCoordinator :: StoreChan -- ^ channel to the replicated multimap
                         -> Definitions LoopState ()
                         -> Process ()
 makeRecoveryCoordinator mm eq rm = do
+   init_st <- buildRCState mm eq
+   execute init_st $ do
+     rm
+     setRuleFinalizer $ \ls -> do
+       newGraph <- G.sync (lsGraph ls) (return ())
+       -- We don't accept message as soon as ref count is zero, but
+       -- instead give 'msgProcessedGap' number of rounds, this way
+       -- we a trying to solve a case when more than one rule is interested
+       -- in particular message.
+       let refCnt = Map.map update (lsRefCount ls)
+           update i
+             | i < 0 = i-1
+             | otherwise = i
+           (removed, newRefCnt) = Map.partition (<(-msgProcessedGap)) refCnt
+       forM_ removed $ usend (lsEQPid ls)
+
+       return ls { lsGraph = newGraph, lsRefCount = newRefCnt }
 #ifdef USE_MERO
-    Catch.bracket (liftIO newM0Worker)
-            (liftIO . terminateM0Worker)
-      $ \worker -> do
-        init_st <- buildRCState mm eq worker
-#else
-        init_st <- buildRCState mm eq
+       `finally` tryCloseMeroWorker
 #endif
-        execute init_st $ do
-          rm
-          setRuleFinalizer $ \ls -> do
-            newGraph <- G.sync (lsGraph ls) (return ())
-            -- We don't accept message as soon as ref count is zero, but
-            -- instead give 'msgProcessedGap' number of rounds, this way
-            -- we a trying to solve a case when more than one rule is interested
-            -- in particular message.
-            let refCnt = Map.map update (lsRefCount ls)
-                update i
-                  | i < 0 = i-1
-                  | otherwise = i
-                (removed, newRefCnt) = Map.partition (<(-msgProcessedGap)) refCnt
-            forM_ removed $ usend (lsEQPid ls)
-
-            return ls { lsGraph = newGraph, lsRefCount = newRefCnt }
-
--- remotable [ 'recoveryCoordinator ]

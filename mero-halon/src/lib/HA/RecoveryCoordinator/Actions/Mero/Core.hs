@@ -5,20 +5,45 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE LambdaCase                 #-}
 
 module HA.RecoveryCoordinator.Actions.Mero.Core where
 
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Service
 import qualified HA.ResourceGraph as G
 import HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
+import qualified HA.Resources as R
+import HA.Services.Mero
+import HA.Service
 
 import Mero.ConfC ( Fid )
+import Mero.M0Worker
 
+import Control.Distributed.Process
+  ( getSelfNode
+  , getSelfPid
+  , register
+  , unregister
+  , monitor
+  , receiveWait
+  , matchIf
+  , kill
+  , expect
+  , spawnLocal
+  , whereis 
+  , Process
+  , ProcessMonitorNotification(..)
+  )
+import Control.Monad.IO.Class
+import Control.Monad.Catch (finally)
+import Data.Functor (void)
 import Data.Maybe (listToMaybe)
+import Data.Foldable
 import Data.Proxy
 import Data.Word ( Word64 )
 
@@ -64,3 +89,67 @@ getM0Globals = getLocalGraph >>= \rg -> do
 loadMeroGlobals :: CI.M0Globals
                 -> PhaseM LoopState l ()
 loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
+
+-- | Run the given computation in the m0 thread dedicated to the RC.
+--
+-- Some operations the RC submits cannot use the global m0 worker ('liftGlobalM0') because
+-- they would require grabbing the global m0 worker a second time thus blocking the application.
+-- Currently, these are spiel operations which use the notification interface before returning
+-- control to the caller. 
+-- This call will return Nothing if no RC worker was created.
+liftM0RC :: IO a -> PhaseM LoopState l (Maybe a)
+liftM0RC task = getStorageRC >>= traverse (\worker -> liftIO $ runOnM0Worker worker task)
+
+-- | A operation with guarantee that mero worker is available. This call provide
+-- an operation for running 'IO' in m0 thread.
+--
+-- If worker is not yet ready it will be created.
+-- 
+-- @@@
+-- withM0RC $ \lift ->
+--    lift $ someOperationThatShouldBeRunningInM0Thread
+-- @@@
+withM0RC :: ((forall a . IO a -> PhaseM LoopState l a) -> PhaseM LoopState l b)
+         -> PhaseM LoopState l b
+withM0RC f = getStorageRC >>= \case
+  Nothing -> do mworker <- createMeroWorker
+                case mworker of
+                  Nothing -> error "No worker loaded."
+                  Just w  -> f (liftIO . runOnM0Worker w)
+  Just w  -> f (liftIO . runOnM0Worker w)
+
+halonRCMeroWorkerLabel :: String
+halonRCMeroWorkerLabel = "halon:rc-mero-worker"
+
+-- | Creates a worker if m0d service is running on the node.
+-- This method registers accompaniment process "halon:rc-mero-worker"
+createMeroWorker :: PhaseM LoopState l (Maybe M0Worker)
+createMeroWorker = do
+  self <- liftProcess getSelfPid
+  node <- liftProcess getSelfNode
+  mprocess <- lookupRunningService (R.Node node) m0d
+  case mprocess of
+    Nothing -> do
+      phaseLog "error" "Mero service is not running on the node, can't create worker"
+      return Nothing
+    Just (ServiceProcess proc)  -> do 
+      worker <- liftIO newM0Worker
+      void $ liftProcess $ spawnLocal $ finally
+        (do register halonRCMeroWorkerLabel =<< getSelfPid
+            expect)
+        (liftGlobalM0 $ terminateM0Worker worker)
+      putStorageRC worker
+      return (Just worker)
+
+-- | Try to close mero worker process if it's running.
+-- Do nothing if no process is registered. Blocks until process exit otherwise.
+tryCloseMeroWorker :: Process ()
+tryCloseMeroWorker = do
+  mpid <- whereis "halon:rc-mero-worker"
+  forM_ mpid $ \pid -> do
+    unregister halonRCMeroWorkerLabel
+    mon <- monitor pid
+    kill pid "RC exit"
+    receiveWait [matchIf (\(ProcessMonitorNotification mref _ _) -> mref == mon)
+                         (\_ -> return ())
+                ]

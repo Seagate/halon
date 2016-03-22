@@ -45,10 +45,6 @@ module HA.RecoveryCoordinator.Actions.Core
     -- * Utility functions
   , unlessM
   , whenM
-#ifdef USE_MERO
-    -- * M0 related core actions.
-  , liftM0RC
-#endif
   ) where
 
 import HA.Multimap (StoreChan)
@@ -81,15 +77,11 @@ import Control.Distributed.Process
   , getSelfPid
   , spawnLocal
   , link
-#ifdef USE_MERO
-  , liftIO
-#endif
   )
 import Control.Monad (when, unless)
 import Control.Distributed.Process.Serializable
 #ifdef USE_MERO
 import Mero.Notification (Set)
-import Mero.M0Worker
 #endif
 
 import Data.Typeable (Typeable)
@@ -109,7 +101,6 @@ data LoopState = LoopState {
     -- ^ Set of HAEvent uuid we've already handled.
 #ifdef USE_MERO
   , lsStateChangeHandlers :: forall l. [Set -> PhaseM LoopState l ()]
-  , lsWorker   :: M0Worker  -- ^ M0 worker thread attached to RC.
 #endif
   , lsStorage :: !Storage.Storage -- ^ Global ephimeral storage.
 }
@@ -237,18 +228,6 @@ getSelfProcessId = liftProcess getSelfPid
 getMultimapChan :: PhaseM LoopState l StoreChan
 getMultimapChan = fmap lsMMChan $ get Global
 
-#ifdef USE_MERO
--- | Run the given computation in the m0 thread dedicated to the RC.
---
--- Some operations the RC submits cannot use the global m0 worker ('liftGlobalM0') because
--- they would require grabbing the global m0 worker a second time thus blocking the application.
--- Currently, these are spiel operations which use the notification interface before returning
--- control to the caller.
-liftM0RC :: IO a -> PhaseM LoopState l a
-liftM0RC task = do
-  worker <- fmap lsWorker (get Global)
-  liftIO $ runOnM0Worker worker task
-#endif
 
 
 -- | Lifted wrapper over 'HA.Event.Queue.Producer.promulgate' call. 'promulgateRC'
