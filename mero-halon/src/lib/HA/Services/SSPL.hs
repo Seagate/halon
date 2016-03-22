@@ -271,26 +271,31 @@ remotableDecl [ [d|
       me <- getSelfPid
       pid <- spawnLocal $ connectSSPL lock me
       mref <- monitor pid
-      fix $ \loop -> 
+      fix $ \loop -> do
         receiveWait [
             match $ \(ProcessMonitorNotification _ _ r) -> do
-              say $ "SSPL Process died:\n\t" ++ show r
+              saySSPL $ "SSPL Process died:" ++ show r
               _ <- receiveTimeout 2000000 []
               connectRetry lock
           , match $ \ResetSSPLService -> do
+              saySSPL "restarting RabbitMQ and sspl-ll."
               liftIO $ do
                 void $ SystemD.restartService "rabbitmq-server.service"
                 void $ SystemD.restartService "sspl-ll.service"
+                _ <- tryTakeMVar lock
                 putMVar lock ()
               loop
-          , match $ \() -> unmonitor mref >> (liftIO $ putMVar lock ())
+          , match $ \() -> do
+              saySSPL $ "tearing server down"
+              unmonitor mref >> (liftIO $ putMVar lock ())
           ]
     connectSSPL lock pid = do
       node <- getSelfNode
       -- In case if it's not possible to connect to rabbitmq service
       -- just exits.
       conn <- (liftIO $ Rabbit.openConnection scConnectionConf)
-                 `onException` (do usend pid ()
+                 `onException` (do saySSPL "Failed to connect to RabbitMQ"
+                                   usend pid ()
                                    promulgateWait $ SSPLConnectFailure node
                                )
       chan <- liftIO $ openChannel conn
@@ -299,7 +304,7 @@ remotableDecl [ [d|
       link pid
       () <- liftIO $ takeMVar lock
       liftIO $ closeConnection conn
-      say "Connection closed."
+      saySSPL "Connection closed."
     in do
       say $ "Starting service sspl"
       lock <- liftIO newEmptyMVar
