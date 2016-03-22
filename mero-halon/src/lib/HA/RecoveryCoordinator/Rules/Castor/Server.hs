@@ -190,9 +190,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
       notifyOnClusterTranstion state BarrierPass (Just eid)
       switch [start_clients, timeout 5000000 finish]
 
-    setPhaseIf start_clients (barrierPass (MeroClusterStarting (BootLevel 2))) $ \() -> do
-      -- Mark the cluster as running now
-      modifyGraph $ G.connectUnique Cluster Has M0.MeroClusterRunning
+    setPhaseIf start_clients (barrierPass MeroClusterRunning) $ \() -> do
       Just (node, host, _) <- get Local
       rg <- getLocalGraph
       m0svc <- lookupRunningService node m0d
