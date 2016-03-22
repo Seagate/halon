@@ -142,8 +142,8 @@ ruleNewMeroServer = define "new-mero-server" $ do
     setPhaseIf boot_level_0_complete processControlOnNode $ \(eid, e) -> do
       (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
       -- Mark successful processes as online, and others as failed.
-      forM_ procs $ \p -> modifyGraph $ G.connect p Is ProcessBootstrapped
-                                    >>> G.connect p Is PSOnline
+      forM_ procs $ \p -> modifyGraph $ G.connectUniqueFrom p Is ProcessBootstrapped
+                                    >>> G.connectUniqueFrom p Is PSOnline
       forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>= \mp -> do
         phaseLog "warning" $ "Process " ++ show f
                           ++ " failed to start: " ++ r
@@ -179,8 +179,8 @@ ruleNewMeroServer = define "new-mero-server" $ do
     setPhaseIf boot_level_1_complete processControlOnNode $ \(eid, e) -> do
       (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
       -- Mark successful processes as online, and others as failed.
-      forM_ procs $ \p -> modifyGraph $ G.connect p Is ProcessBootstrapped
-                                    >>> G.connect p Is PSOnline
+      forM_ procs $ \p -> modifyGraph $ G.connectUniqueFrom p Is ProcessBootstrapped
+                                    >>> G.connectUniqueFrom p Is PSOnline
       forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>= \mp -> do
         phaseLog "warning" $ "Process " ++ show f
                           ++ " failed to start: " ++ r
@@ -208,8 +208,8 @@ ruleNewMeroServer = define "new-mero-server" $ do
     setPhaseIf start_clients_complete processControlOnNode $ \(eid, e) -> do
       (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
       -- Mark successful processes as online, and others as failed.
-      forM_ procs $ \p -> modifyGraph $ G.connect p Is ProcessBootstrapped
-                                    >>> G.connect p Is PSOnline
+      forM_ procs $ \p -> modifyGraph $ G.connectUniqueFrom p Is ProcessBootstrapped
+                                    >>> G.connectUniqueFrom p Is PSOnline
       forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>= \mp -> do
         phaseLog "warning" $ "Process " ++ show f
                           ++ " failed to start: " ++ r
