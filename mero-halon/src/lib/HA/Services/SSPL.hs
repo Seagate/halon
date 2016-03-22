@@ -182,7 +182,8 @@ startActuators chan ac pid = do
     cmdAckQueueName = T.pack . fromDefault . Rabbit.bcQueueName $ acCommandAck ac
     informRC sp chans = do
       mypid <- getSelfPid
-      _ <- promulgate $ DeclareChannels mypid sp chans
+      mon <- promulgate $ DeclareChannels mypid sp chans
+      monitor mon
       _ <- expect :: Process ProcessMonitorNotification
       msg <- expectTimeout (fromDefault . acDeclareChanTimeout $ ac)
       case msg of
