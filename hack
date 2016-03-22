@@ -31,7 +31,7 @@ fi
 if [ $HALON_BUILD_ENV = "prod" ]; then
   FLAGS=("${FLAGS[@]}" "--no-docker")
   # EXTRA_LIB_DIRS=("${EXTRA_LIB_DIRS[@]}" "$MERO_ROOT/mero/.libs")
-  EXTRA_INCLUDE_DIRS=("${EXTRA_INCLUDE_DIRS[@]}" "/usr/lib/mero")
+  EXTRA_INCLUDE_DIRS=("${EXTRA_INCLUDE_DIRS[@]}" "/usr/include/mero")
 fi
 
 if [ $HALON_BUILD_ENV = "docker" ]; then
