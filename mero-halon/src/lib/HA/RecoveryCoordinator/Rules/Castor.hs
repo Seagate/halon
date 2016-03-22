@@ -207,9 +207,10 @@ ruleDriveRemoved = define "drive-removed" $ do
 
    directly removal $ do
      Just (uuid, _, _, _, m0sdev) <- get Local
+     phaseLog "debug" "Notify about drive state change"
      notifyDriveStateChange m0sdev M0_NC_FAILED
      messageProcessed uuid
-     stop
+     continue finish
 
    start run Nothing
   where
