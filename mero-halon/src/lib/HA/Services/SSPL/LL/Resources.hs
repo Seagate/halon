@@ -219,6 +219,10 @@ data ResetSSPLService = ResetSSPLService
 
 instance Binary ResetSSPLService
 
+-- | Event happens when SSPL can't connect to Rabbit-MQ broker
+newtype SSPLConnectFailure = SSPLConnectFailure NodeId
+   deriving (Eq, Show, Binary, Typeable)
+
 --------------------------------------------------------------------------------
 -- Channels                                                                   --
 --------------------------------------------------------------------------------
