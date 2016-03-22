@@ -143,7 +143,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
          continue teardown
        markProcessFailed lvl fids = modifyGraph $ \rg ->
          foldr (\p -> G.disconnect (M0.MeroClusterStopping lvl) M0.Pending p
-                        >>> G.connectUniqueFrom p R.Is M0.M0_NC_FAILED) 
+                        >>> G.connectUniqueFrom p R.Is M0.M0_NC_FAILED)
                rg
                (getProcessesByFid rg fids :: [M0.Process])
 
@@ -232,7 +232,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
          return (eid, lnode, lvl, results))
      $ \(eid, node, lvl, results) -> do
        phaseLog "info" $ printf "%s completed tearing down of level %s." (show node) (show lvl)
-       forM_ results $ \case 
+       forM_ results $ \case
          Left _ -> return ()
          Right (x,s) -> phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
        markProcessFailed lvl $ map (\case Left x -> x ; Right (x,_) -> x) results
@@ -270,18 +270,8 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
         messageProcessed eid)
      stop
 
-   (`start` Nothing) =<< initWrapper initialize
+   startFork initialize Nothing
    where
-     initWrapper rule = do
-       wrapper_init  <- phaseHandle "wrapper_init"
-       wrapper_clear <- phaseHandle "wrapper_clear"
-       wrapper_end   <- phaseHandle "wrapper_end"
-       directly wrapper_init $ switch [rule, wrapper_clear]
-       directly wrapper_clear $ do
-         fork NoBuffer $ continue rule
-         continue wrapper_end
-       directly wrapper_end stop
-       return wrapper_init
      getProcessesByFid rg = mapMaybe (`rgLookupConfObjByFid` rg)
      mkLabel bl@(M0.BootLevel l)
        | l == maxTeardownLevel = M0.PLM0t1fs

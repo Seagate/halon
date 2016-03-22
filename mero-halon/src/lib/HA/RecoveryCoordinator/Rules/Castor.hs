@@ -173,60 +173,44 @@ driveRemovalTimeout = 60
 -- We need to notify mero about drive state change and then send event to the logger.
 ruleDriveRemoved :: Definitions LoopState ()
 ruleDriveRemoved = define "drive-removed" $ do
-   pinit   <- phaseHandle "init"
-   finish   <- phaseHandle "finish"
-   reinsert <- phaseHandle "reinsert"
-   removal  <- phaseHandle "removal"
+  pinit   <- phaseHandle "init"
+  finish   <- phaseHandle "finish"
+  reinsert <- phaseHandle "reinsert"
+  removal  <- phaseHandle "removal"
 
-   run <- initWrapper pinit
+  setPhase pinit $ \(DriveRemoved uuid _ enc disk loc) -> do
+    markStorageDeviceRemoved disk
+    sd <- lookupStorageDeviceSDev disk
+    phaseLog "debug" $ "Associated storage device: " ++ show sd
+    forM_ sd $ \m0sdev -> do
+      fork CopyNewerBuffer $ do
+        phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for device."
+        notifyDriveStateChange m0sdev M0_NC_TRANSIENT
+        put Local $ Just (uuid, enc, disk, loc, m0sdev)
+        switch [reinsert, timeout driveRemovalTimeout removal]
+    messageProcessed uuid
 
-   setPhase pinit $ \(DriveRemoved uuid _ enc disk loc) -> do
-      markStorageDeviceRemoved disk
-      sd <- lookupStorageDeviceSDev disk
-      phaseLog "debug" $ "Associated storage device: " ++ show sd
-      forM_ sd $ \m0sdev -> do
-        fork CopyNewerBuffer $ do
-          phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for device."
-          notifyDriveStateChange m0sdev M0_NC_TRANSIENT
-          put Local $ Just (uuid, enc, disk, loc, m0sdev)
-          switch [reinsert, timeout driveRemovalTimeout removal]
+  setPhaseIf reinsert
+   (\(DriveInserted{diEnclosure=enc,diDiskNum=loc}) _ (Just (uuid, enc', _, loc', _)) -> do
+      if enc == enc' && loc == loc'
+         then return (Just uuid)
+         else return Nothing
+      )
+   $ \uuid -> do
+      phaseLog "debug" "cancel drive removal procedure"
       messageProcessed uuid
+      continue finish
 
-   setPhaseIf reinsert
-     (\(DriveInserted{diEnclosure=enc,diDiskNum=loc}) _ (Just (uuid, enc', _, loc', _)) -> do
-        if enc == enc' && loc == loc'
-           then return (Just uuid)
-           else return Nothing
-        )
-     $ \uuid -> do
-        phaseLog "debug" "cancel drive removal procedure"
-        messageProcessed uuid
-        continue finish
+  directly finish $ stop
 
-   directly finish $ stop
+  directly removal $ do
+    Just (uuid, _, _, _, m0sdev) <- get Local
+    phaseLog "debug" "Notify about drive state change"
+    notifyDriveStateChange m0sdev M0_NC_FAILED
+    messageProcessed uuid
+    continue finish
 
-   directly removal $ do
-     Just (uuid, _, _, _, m0sdev) <- get Local
-     phaseLog "debug" "Notify about drive state change"
-     notifyDriveStateChange m0sdev M0_NC_FAILED
-     messageProcessed uuid
-     continue finish
-
-   start run Nothing
-  where
-    initWrapper ginit = do
-       wrapper_init <- phaseHandle "wrapper_init"
-       wrapper_clear <- phaseHandle "wrapper_clear"
-       wrapper_end <- phaseHandle "wrapper_end"
-
-       directly wrapper_init $ switch [ginit, wrapper_clear]
-
-       directly wrapper_clear $ do
-         fork NoBuffer $ continue ginit
-         continue wrapper_end
-
-       directly wrapper_end stop
-       return wrapper_init
+  startFork pinit Nothing
 #else
 ruleDriveRemoved :: Definitions LoopState ()
 ruleDriveRemoved = defineSimple "drive-removed" $ \(DriveRemoved uuid _ _ disk _) -> do
@@ -251,150 +235,135 @@ driveInsertionTimeout = 10
 --    procedure and does that.
 ruleDriveInserted :: Definitions LoopState ()
 ruleDriveInserted = define "drive-inserted" $ do
-      handler       <- phaseHandle "drive-inserted"
-      removed       <- phaseHandle "removed"
-      inserted      <- phaseHandle "inserted"
-      main          <- phaseHandle "main"
-      sync_complete <- phaseHandle "handle-sync"
-      commit        <- phaseHandle "commit"
-      finish        <- phaseHandle "finish"
+  handler       <- phaseHandle "drive-inserted"
+  removed       <- phaseHandle "removed"
+  inserted      <- phaseHandle "inserted"
+  main          <- phaseHandle "main"
+  sync_complete <- phaseHandle "handle-sync"
+  commit        <- phaseHandle "commit"
+  finish        <- phaseHandle "finish"
 
-      pinit <- initWrapper handler
+  setPhase handler $ \di -> do
+    put Local $ Just (UUID.nil, di)
+    fork CopyNewerBuffer $
+       switch [ removed
+              , inserted
+              , timeout driveInsertionTimeout main]
 
-      setPhase handler $ \di -> do
-        put Local $ Just (UUID.nil, di)
-        fork CopyNewerBuffer $
-           switch [ removed
-                  , inserted
-                  , timeout driveInsertionTimeout main]
-
-      setPhaseIf removed
-        (\(DriveRemoved _ _ enc _ loc) _
-          (Just (_,DriveInserted{diUUID=uuid
-                                ,diEnclosure=enc'
-                                ,diDiskNum=loc'})) -> do
-           if enc == enc' && loc == loc'
-              then return (Just uuid)
-              else return Nothing)
-        $ \uuid -> do
-            phaseLog "debug" "cancel drive insertion procedure due to drive removal."
-            messageProcessed uuid
-            continue finish
-
-      -- If for some reason new Inserted event will be received during a timeout
-      -- we need to cancel current procedure and allow new procedure to continue.
-      -- Theoretically it's impossible case as before each insertion removal should
-      -- go. However we add this case to cover scenario when other subsystems do not
-      -- work perfectly and do not issue DriveRemoval first.
-      setPhaseIf inserted
-        (\(DriveInserted{diEnclosure=enc, diDiskNum=loc}) _
-          (Just (_, DriveInserted{ diUUID=uuid
-                                 , diEnclosure=enc'
-                                 , diDiskNum=loc'})) -> do
-            if enc == enc' && loc == loc'
-               then return (Just uuid)
-               else return Nothing)
-        $ \uuid -> do
-            phaseLog "info" "cancel drive insertion procedure due to new drive insertion."
-            messageProcessed uuid
-            continue finish
-
-      directly main $ do
-        Just (_, di@DriveInserted{ diUUID = uuid
-                                 , diDevice = disk
-                                 , diSerial = sn
-                                 , diPath = path
-                                 }) <- get Local
-        -- Check if we already have device that was inserted.
-        -- In case it this is the same device, then we do not need to update confd.
-        hasStorageDeviceIdentifier disk sn >>= \case
-           True -> do
-             let markIfNotMeroFailure = do
-                   let isMeroFailure (StorageDeviceStatus "MERO-FAILED" _) = True
-                       isMeroFailure _ = False
-                   meroFailure <- maybe False isMeroFailure <$> driveStatus disk
-                   if meroFailure
-                     then messageProcessed uuid
-                     else markStorageDeviceReplaced disk
-             unmarkStorageDeviceRemoved disk
-             msdev <- lookupStorageDeviceSDev disk
-             forM_ msdev $ \sdev -> do
-               fmap (fromMaybe M0_NC_UNKNOWN) (queryObjectStatus sdev) >>= \case
-                 M0_NC_UNKNOWN -> messageProcessed uuid
-                 M0_NC_ONLINE -> messageProcessed uuid
-                 M0_NC_TRANSIENT -> do
-                   notifyDriveStateChange sdev M0_NC_ONLINE
-                   messageProcessed uuid
-                 M0_NC_FAILED -> do
-                   markIfNotMeroFailure
-                   handleRepair $ Set [Note (fid sdev) M0_NC_FAILED]
-                 M0_NC_REPAIRED -> do
-                   markIfNotMeroFailure
-                   handleRepair $ Set [Note (fid sdev) M0_NC_ONLINE]
-                 M0_NC_REPAIR -> do
-                   markIfNotMeroFailure
-                   handleRepair $ Set [Note (fid sdev) M0_NC_ONLINE]
-                 M0_NC_REBALANCE ->  -- Impossible case
-                   messageProcessed uuid
-             continue finish
-           False -> do
-             lookupStorageDeviceReplacement disk >>= \case
-               Nothing -> modifyGraph $
-                 G.disconnectAllFrom disk Has (Proxy :: Proxy DeviceIdentifier)
-               Just cand -> actualizeStorageDeviceReplacement cand
-             identifyStorageDevice disk [sn, path]
-             updateStorageDeviceSDev disk
-             markStorageDeviceReplaced disk
-             request <- liftIO $ nextRandom
-             put Local $ Just (request, di)
-             syncGraphProcess $ \self -> usend self (request, SyncToConfdServersInRG)
-             continue sync_complete
-
-      setPhase sync_complete $ \(SyncComplete request) -> do
-        Just (req, _) <- get Local
-        let next = if req == request
-                   then commit
-                   else sync_complete
-        continue next
-
-      directly commit $ do
-        Just (_, DriveInserted{diDevice=disk}) <- get Local
-        sdev <- lookupStorageDeviceSDev disk
-        forM_ sdev $ \m0sdev -> do
-          msa <- getSpielAddressRC
-          forM_ msa $ \_ -> void  $ withSpielRC $ \sp _ -> withRConfRC sp
-                    $ liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
-          fmap (fromMaybe M0_NC_UNKNOWN) (queryObjectStatus m0sdev) >>= \case
-            M0_NC_TRANSIENT -> notifyDriveStateChange m0sdev M0_NC_FAILED
-            M0_NC_FAILED -> handleRepair $ Set [Note (fid m0sdev) M0_NC_FAILED]
-            M0_NC_REPAIRED -> handleRepair $ Set [Note (fid m0sdev) M0_NC_ONLINE]
-            M0_NC_REPAIR -> return ()
-            -- Impossible cases
-            M0_NC_UNKNOWN -> notifyDriveStateChange m0sdev M0_NC_FAILED
-            M0_NC_ONLINE ->  notifyDriveStateChange m0sdev M0_NC_FAILED
-            M0_NC_REBALANCE -> notifyDriveStateChange m0sdev M0_NC_FAILED
-        unmarkStorageDeviceRemoved disk
+  setPhaseIf removed
+    (\(DriveRemoved _ _ enc _ loc) _
+      (Just (_,DriveInserted{diUUID=uuid
+                            ,diEnclosure=enc'
+                            ,diDiskNum=loc'})) -> do
+       if enc == enc' && loc == loc'
+          then return (Just uuid)
+          else return Nothing)
+    $ \uuid -> do
+        phaseLog "debug" "cancel drive insertion procedure due to drive removal."
+        messageProcessed uuid
         continue finish
 
-      directly finish $ do
-        Just (_, DriveInserted{diUUID=uuid}) <- get Local
-        syncGraphProcessMsg uuid
-        stop
+  -- If for some reason new Inserted event will be received during a timeout
+  -- we need to cancel current procedure and allow new procedure to continue.
+  -- Theoretically it's impossible case as before each insertion removal should
+  -- go. However we add this case to cover scenario when other subsystems do not
+  -- work perfectly and do not issue DriveRemoval first.
+  setPhaseIf inserted
+    (\(DriveInserted{diEnclosure=enc, diDiskNum=loc}) _
+      (Just (_, DriveInserted{ diUUID=uuid
+                             , diEnclosure=enc'
+                             , diDiskNum=loc'})) -> do
+        if enc == enc' && loc == loc'
+           then return (Just uuid)
+           else return Nothing)
+    $ \uuid -> do
+        phaseLog "info" "cancel drive insertion procedure due to new drive insertion."
+        messageProcessed uuid
+        continue finish
 
-      start pinit Nothing
-  where
-    initWrapper ginit = do
-       wrapper_init <- phaseHandle "wrapper_init"
-       wrapper_clear <- phaseHandle "wrapper_clear"
-       wrapper_end   <- phaseHandle "wrapper_end"
-       directly wrapper_init $ switch [ginit, wrapper_clear]
+  directly main $ do
+    Just (_, di@DriveInserted{ diUUID = uuid
+                             , diDevice = disk
+                             , diSerial = sn
+                             , diPath = path
+                             }) <- get Local
+    -- Check if we already have device that was inserted.
+    -- In case it this is the same device, then we do not need to update confd.
+    hasStorageDeviceIdentifier disk sn >>= \case
+       True -> do
+         let markIfNotMeroFailure = do
+               let isMeroFailure (StorageDeviceStatus "MERO-FAILED" _) = True
+                   isMeroFailure _ = False
+               meroFailure <- maybe False isMeroFailure <$> driveStatus disk
+               if meroFailure
+                 then messageProcessed uuid
+                 else markStorageDeviceReplaced disk
+         unmarkStorageDeviceRemoved disk
+         msdev <- lookupStorageDeviceSDev disk
+         forM_ msdev $ \sdev -> do
+           fmap (fromMaybe M0_NC_UNKNOWN) (queryObjectStatus sdev) >>= \case
+             M0_NC_UNKNOWN -> messageProcessed uuid
+             M0_NC_ONLINE -> messageProcessed uuid
+             M0_NC_TRANSIENT -> do
+               notifyDriveStateChange sdev M0_NC_ONLINE
+               messageProcessed uuid
+             M0_NC_FAILED -> do
+               markIfNotMeroFailure
+               handleRepair $ Set [Note (fid sdev) M0_NC_FAILED]
+             M0_NC_REPAIRED -> do
+               markIfNotMeroFailure
+               handleRepair $ Set [Note (fid sdev) M0_NC_ONLINE]
+             M0_NC_REPAIR -> do
+               markIfNotMeroFailure
+               handleRepair $ Set [Note (fid sdev) M0_NC_ONLINE]
+             M0_NC_REBALANCE ->  -- Impossible case
+               messageProcessed uuid
+         continue finish
+       False -> do
+         lookupStorageDeviceReplacement disk >>= \case
+           Nothing -> modifyGraph $
+             G.disconnectAllFrom disk Has (Proxy :: Proxy DeviceIdentifier)
+           Just cand -> actualizeStorageDeviceReplacement cand
+         identifyStorageDevice disk [sn, path]
+         updateStorageDeviceSDev disk
+         markStorageDeviceReplaced disk
+         request <- liftIO $ nextRandom
+         put Local $ Just (request, di)
+         syncGraphProcess $ \self -> usend self (request, SyncToConfdServersInRG)
+         continue sync_complete
 
-       directly wrapper_clear $ do
-         fork NoBuffer $ continue ginit
-         continue wrapper_end
+  setPhase sync_complete $ \(SyncComplete request) -> do
+    Just (req, _) <- get Local
+    let next = if req == request
+               then commit
+               else sync_complete
+    continue next
 
-       directly wrapper_end stop
-       return wrapper_init
+  directly commit $ do
+    Just (_, DriveInserted{diDevice=disk}) <- get Local
+    sdev <- lookupStorageDeviceSDev disk
+    forM_ sdev $ \m0sdev -> do
+      msa <- getSpielAddressRC
+      forM_ msa $ \_ -> void  $ withSpielRC $ \sp _ -> withRConfRC sp
+                $ liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
+      fmap (fromMaybe M0_NC_UNKNOWN) (queryObjectStatus m0sdev) >>= \case
+        M0_NC_TRANSIENT -> notifyDriveStateChange m0sdev M0_NC_FAILED
+        M0_NC_FAILED -> handleRepair $ Set [Note (fid m0sdev) M0_NC_FAILED]
+        M0_NC_REPAIRED -> handleRepair $ Set [Note (fid m0sdev) M0_NC_ONLINE]
+        M0_NC_REPAIR -> return ()
+        -- Impossible cases
+        M0_NC_UNKNOWN -> notifyDriveStateChange m0sdev M0_NC_FAILED
+        M0_NC_ONLINE ->  notifyDriveStateChange m0sdev M0_NC_FAILED
+        M0_NC_REBALANCE -> notifyDriveStateChange m0sdev M0_NC_FAILED
+    unmarkStorageDeviceRemoved disk
+    continue finish
+
+  directly finish $ do
+    Just (_, DriveInserted{diUUID=uuid}) <- get Local
+    syncGraphProcessMsg uuid
+    stop
+
+  startFork handler Nothing
 
 #else
 ruleDriveInserted :: Definitions LoopState ()

@@ -14,7 +14,7 @@ assertEqual :: (Show a, Eq a) => String -> a -> a -> Process ()
 assertEqual s i r = liftIO $ HU.assertEqual s i r
 
 tests :: (Process () -> IO ()) -> TestTree
-tests launch = testGroup "regression" 
+tests launch = testGroup "regression"
   [ testCase "fork-remove-messages" $ launch testFork
   ]
 
@@ -40,8 +40,8 @@ testFork = do
       , "load"
       , "work5"
       ] =<< replicateM 6 expect
-  where 
-      
+  where
+
     rules sup = do
       enableDebugMode
       define "insert" $ do
@@ -60,20 +60,4 @@ testFork = do
           continue finish
 
         directly finish $ stop
-        run <- initWrapper handler
-        start run ()
-
-    initWrapper ginit = do
-       wrapper_init <- phaseHandle "wrapper_init"
-       wrapper_clear <- phaseHandle "wrapper_clear"
-       wrapper_stop  <- phaseHandle "wrapper_stop"
-       directly wrapper_init $ switch [ginit, wrapper_clear]
-
-       directly wrapper_clear $ do
-         fork NoBuffer $ continue ginit
-         continue wrapper_stop
-
-       directly wrapper_stop stop
-
-       return wrapper_init
-
+        startFork handler ()

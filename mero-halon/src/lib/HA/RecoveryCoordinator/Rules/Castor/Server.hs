@@ -225,23 +225,8 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
     directly end stop
 
-    winit <- initWrapper new_server
-    start winit Nothing
+    startFork new_server Nothing
   where
-    initWrapper rule = do
-      wrapper_init <- phaseHandle "wrapper_init"
-      wrapper_clear <- phaseHandle "wrapper_clear"
-      wrapper_end <- phaseHandle "wrapper_end"
-      directly wrapper_init $ switch [rule, wrapper_clear]
-
-      directly wrapper_clear $ do
-        fork NoBuffer $ continue rule
-        continue wrapper_end
-
-      directly wrapper_end stop
-
-      return wrapper_init
-
     -- Check if the barrier being passed is for the correct level
     barrierPass :: MeroClusterState
                 -> BarrierPass
