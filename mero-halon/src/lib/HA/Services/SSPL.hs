@@ -54,6 +54,7 @@ import Control.Distributed.Process
   , monitor
   , receiveChan
   , receiveChanTimeout
+  , receiveTimeout
   , receiveWait
   , say
   , sendChan
@@ -63,12 +64,14 @@ import Control.Distributed.Process
   , link
   , expect
   , withMonitor
+  , usend
   )
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Monad.State.Strict hiding (mapM_)
 import Control.Monad.Trans.Maybe
+import Control.Monad.Catch (onException)
 import Data.Foldable (for_)
 
 import Data.Aeson (decode, encode)
@@ -271,6 +274,7 @@ remotableDecl [ [d|
         receiveWait [
             match $ \(ProcessMonitorNotification _ _ r) -> do
               say $ "SSPL Process died:\n\t" ++ show r
+              _ <- receiveTimeout 2000000 []
               connectRetry lock
           , match $ \ResetSSPLService -> do
               liftIO $ do
@@ -281,7 +285,13 @@ remotableDecl [ [d|
           , match $ \() -> unmonitor mref >> (liftIO $ putMVar lock ())
           ]
     connectSSPL lock pid = do
-      conn <- liftIO $ Rabbit.openConnection scConnectionConf
+      node <- getSelfNode
+      -- In case if it's not possible to connect to rabbitmq service
+      -- just exits.
+      conn <- (liftIO $ Rabbit.openConnection scConnectionConf)
+                 `onException` (do usend pid ()
+                                   promulgateWait $ SSPLConnectFailure node
+                               )
       chan <- liftIO $ openChannel conn
       startSensors chan scSensorConf
       startActuators chan scActuatorConf pid

@@ -184,6 +184,7 @@ ssplRulesF sspl = sequence_
   , ruleHlNodeCmd sspl
   , ruleThreadController
   , ruleSSPLTimeout sspl
+  , ruleSSPLConnectFailure
   ]
 
 ruleDeclareChannels :: Definitions LoopState ()
@@ -501,4 +502,10 @@ ruleSSPLTimeout sspl = defineSimple "sspl-service-timeout" $
           mservice <- lookupRunningService (Node node) sspl
           forM_ mservice $ \(ServiceProcess pid) ->
             liftProcess $ usend pid ResetSSPLService
+          messageProcessed uuid
+
+ruleSSPLConnectFailure :: Definitions LoopState ()
+ruleSSPLConnectFailure = defineSimple "sspl-service-connect-failure" $
+      \(HAEvent uuid (SSPLConnectFailure nid) _) -> do
+          phaseLog "error" $ "SSPL service can't connect to rabbitmq on node: " ++ show nid
           messageProcessed uuid
