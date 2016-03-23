@@ -71,7 +71,7 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Monad.State.Strict hiding (mapM_)
 import Control.Monad.Trans.Maybe
-import Control.Monad.Catch (onException)
+import Control.Monad.Catch (onException, try, SomeException, MonadCatch)
 import Data.Foldable (for_)
 
 import Data.Aeson (decode, encode)
@@ -255,6 +255,9 @@ startActuators chan ac pid = do
                     promulgateWait (SSPLServiceTimeout node)
       _ -> return ()
 
+trySome :: MonadCatch m => m a -> m (Either SomeException a)
+trySome = try
+
 remotableDecl [ [d|
 
   sspl :: Service SSPLConf
@@ -293,11 +296,18 @@ remotableDecl [ [d|
       node <- getSelfNode
       -- In case if it's not possible to connect to rabbitmq service
       -- just exits.
-      conn <- (liftIO $ Rabbit.openConnection scConnectionConf)
-                 `onException` (do saySSPL "Failed to connect to RabbitMQ"
-                                   usend pid ()
-                                   promulgateWait $ SSPLConnectFailure node
-                               )
+      let failure = do saySSPL "Failed to connect to RabbitMQ"
+                       usend pid ()
+                       promulgateWait $ SSPLConnectFailure node
+      let retry 0 action = action `onException` failure
+          retry n action = do
+            ex <- trySome action
+            case ex of
+              Right x -> return x
+              Left _ -> do
+                _ <- receiveTimeout 1000000 []
+                retry (n-1) action 
+      conn <- retry 10 (liftIO $ Rabbit.openConnection scConnectionConf)
       chan <- liftIO $ openChannel conn
       startSensors chan scSensorConf
       startActuators chan scActuatorConf pid
