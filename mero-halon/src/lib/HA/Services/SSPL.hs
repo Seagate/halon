@@ -52,6 +52,9 @@ import Control.Distributed.Process
   , getSelfNode
   , match
   , monitor
+  , SendPort(..)
+  , ReceivePort(..)
+  , newChan
   , receiveChan
   , receiveChanTimeout
   , receiveTimeout
@@ -110,14 +113,15 @@ ssplMaxMessageTimeout = 4*60*1000000
 
 -- | Internal 'listen' handler. This is needed because AMQP runs in the
 --   IO monad, so we cannot directly handle messages using `Process` actions.
-msgHandler :: Network.AMQP.Message
+msgHandler :: SendPort () -- ^ Monitor channel.
+           -> Network.AMQP.Message
            -> Process ()
-msgHandler msg = do
+msgHandler chan msg = do
+  sendChan chan ()
   nid <- getSelfNode
   case decode (msgBody msg) :: Maybe SensorResponse of
     Just mr -> whenNotExpired mr $ do
       -- XXX: check that message was sent by sspl service
-      -- XXX: check that message was not expired yet
       let srms = sensorResponseMessageSensor_response_type . sensorResponseMessage $ mr
           sendMessage s f = forM_ (f srms) $ \x -> do
             say $ "[SSPL-Service] received " ++ s
@@ -161,21 +165,22 @@ msgHandler msg = do
                            then saySSPL $ "Message outdated: " ++ show s
                            else f
 
-startSensors :: Network.AMQP.Channel -- ^ AMQP Channel
+startSensors :: Network.AMQP.Channel -- ^ AMQP Channel.
+             -> SendPort () -- ^ Monitor channel.
              -> SensorConf -- ^ Sensor configuration.
              -> Process ()
-startSensors chan SensorConf{..} = do
-  Rabbit.receive chan scDCS msgHandler
+startSensors chan monChan SensorConf{..} = do
+  Rabbit.receive chan scDCS (msgHandler monChan)
 
 startActuators :: Network.AMQP.Channel
                -> ActuatorConf
                -> ProcessId -- ^ ProcessID of SSPL main process.
+               -> SendPort ()
                -> Process ()
-startActuators chan ac pid = do
-    monitorChan <- spawnChannelLocal $ \ch -> link pid >> monitorProcess ch
+startActuators chan ac pid monitorChan = do
     iemChan <- spawnChannelLocal $ \ch -> link pid >> (iemProcess $ acIEM ac) ch
     systemdChan <- spawnChannelLocal $ \ch -> link pid >> (commandProcess $ acSystemd ac) ch
-    _ <- spawnLocal $ link pid >> replyProcess (acCommandAck ac) monitorChan
+    _ <- spawnLocal $ link pid >> replyProcess (acCommandAck ac)
     informRC (ServiceProcess pid) (ActuatorChannels iemChan systemdChan)
   where
     cmdAckQueueName = T.pack . fromDefault . Rabbit.bcQueueName $ acCommandAck ac
@@ -222,7 +227,7 @@ startActuators chan ac pid = do
                 , msgDeliveryMode = Just Persistent
                 }
         )
-    replyProcess Rabbit.BindConf{..} monitorChan = Rabbit.receiveAck chan
+    replyProcess Rabbit.BindConf{..} = Rabbit.receiveAck chan
       (T.pack . fromDefault $ bcExchangeName)
       (cmdAckQueueName)
       (T.pack . fromDefault $ bcRoutingKey)
@@ -249,7 +254,10 @@ startActuators chan ac pid = do
                saySSPL $ "Sending reply: " ++ show ca
                ppid <- promulgateWait  ca
                sendChan monitorChan ())
-    monitorProcess rchan = forever $ receiveChanTimeout ssplMaxMessageTimeout rchan >>= \case
+
+-- | Test that messages are sent on a timely manner.
+monitorProcess :: ReceivePort () -> Process()
+monitorProcess rchan = forever $ receiveChanTimeout ssplMaxMessageTimeout rchan >>= \case
       Nothing -> do node <- getSelfNode 
                     promulgateWait (SSPLServiceTimeout node)
       _ -> return ()
@@ -298,8 +306,10 @@ remotableDecl [ [d|
                                    promulgateWait $ SSPLConnectFailure node
                                )
       chan <- liftIO $ openChannel conn
-      startSensors chan scSensorConf
-      startActuators chan scActuatorConf pid
+      (sendPort, receivePort) <- newChan
+      startSensors chan sendPort scSensorConf
+      startActuators chan scActuatorConf pid sendPort
+      _ <- spawnLocal $ link pid >> monitorProcess receivePort
       link pid
       () <- liftIO $ takeMVar lock
       liftIO $ closeConnection conn
