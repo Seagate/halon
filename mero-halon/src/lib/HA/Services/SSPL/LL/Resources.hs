@@ -27,8 +27,6 @@ import SSPL.Bindings
   , ActuatorRequestMessageActuator_request_typeLogging (..)
   )
 
-import Control.Applicative ((<$>), (<*>))
-
 import Control.Distributed.Process
   ( ProcessId
   , SendPort
@@ -138,7 +136,7 @@ parseNodeCmd t =
   where
     (cmd:rest) = T.words t
 
-data LoggerCmd = LoggerCmd 
+data LoggerCmd = LoggerCmd
        { lcMsg :: T.Text
        , lcLevel :: T.Text
        , lcType  :: T.Text
@@ -212,7 +210,7 @@ makeLoggerMsg lc = emptyActuatorMsg {
 -- | Event that sspl service didn't receive any messages in time.
 newtype SSPLServiceTimeout = SSPLServiceTimeout NodeId
   deriving (Eq, Show, Binary, Typeable)
-   
+
 -- | Request hard SSPL service restart.
 data ResetSSPLService = ResetSSPLService
   deriving (Eq, Show, Generic, Typeable)

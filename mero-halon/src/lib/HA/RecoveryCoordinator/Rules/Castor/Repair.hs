@@ -409,7 +409,7 @@ handleRepair noteSet = processSet noteSet >>= \case
             queryStartHandling pool
 
       getPoolRepairStatus pool >>= \case
-        Just (M0.PoolRepairStatus prt ruuid _)
+        Just (M0.PoolRepairStatus prt _ _)
           -- Repair happening, device failed, restart repair
           | fa' <- getSDevs diskMap M0_NC_FAILED
           , not (S.null fa') -> abortRepair pool >> maybeBeginRepair

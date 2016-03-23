@@ -200,5 +200,5 @@ makeRecoveryCoordinator mm eq rm = do
 
        return ls { lsGraph = newGraph, lsRefCount = newRefCnt }
 #ifdef USE_MERO
-       `finally` tryCloseMeroWorker
+       `Catch.finally` tryCloseMeroWorker
 #endif
