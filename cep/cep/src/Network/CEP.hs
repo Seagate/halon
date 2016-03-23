@@ -37,6 +37,7 @@ module Network.CEP
     , phaseHandle
     , start
     , start_
+    , startFork
     , get
     , put
     , modify

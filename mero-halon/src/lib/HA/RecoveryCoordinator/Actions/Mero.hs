@@ -69,7 +69,7 @@ m0t1fsBootLevel = M0.BootLevel 3
 
 -- | At which boot level (after completion) do we consider the cluster started?
 clusterStartedBootLevel :: M0.BootLevel
-clusterStartedBootLevel = M0.BootLevel 3
+clusterStartedBootLevel = M0.BootLevel 1
 
 
 -- TODO Generalise this

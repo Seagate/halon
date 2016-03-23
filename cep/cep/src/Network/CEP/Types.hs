@@ -430,6 +430,26 @@ start h l = singleton $ Start h l
 start_ :: Jump PhaseHandle -> RuleM g () (Started g ())
 start_ h = start h ()
 
+-- | Start a rule with an implicit fork
+startFork :: Jump PhaseHandle -> l -> RuleM g l (Started g l)
+startFork rule state = do
+    winit <- initWrapper
+    start winit state
+  where
+    initWrapper = do
+      wrapper_init <- phaseHandle "wrapper_init"
+      wrapper_clear <- phaseHandle "wrapper_clear"
+      wrapper_end <- phaseHandle "wrapper_end"
+      directly wrapper_init $ Network.CEP.Types.switch [rule, wrapper_clear]
+
+      directly wrapper_clear $ do
+        fork NoBuffer $ continue rule
+        continue wrapper_end
+
+      directly wrapper_end stop
+
+      return wrapper_init
+
 type PhaseM g l a = ProgramT (PhaseInstr g l) Process a
 
 -- | Type helper that either references the global or local state of a 'Phase'
