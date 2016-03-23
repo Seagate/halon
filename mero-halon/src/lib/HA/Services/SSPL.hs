@@ -157,7 +157,6 @@ msgHandler msg = do
       case mte of
         Nothing -> f
         Just (t,e) -> do c <- liftIO $ getCurrentTime
-                         saySSPL $ show (t,e, fromIntegral e `addUTCTime` t, c)
                          if fromIntegral e `addUTCTime` t < c
                            then saySSPL $ "Message outdated: " ++ show s
                            else f
@@ -173,10 +172,10 @@ startActuators :: Network.AMQP.Channel
                -> ProcessId -- ^ ProcessID of SSPL main process.
                -> Process ()
 startActuators chan ac pid = do
-    monitorChan <- spawnChannelLocal monitorProcess
-    iemChan <- spawnChannelLocal (iemProcess $ acIEM ac)
-    systemdChan <- spawnChannelLocal (commandProcess $ acSystemd ac)
-    _ <- spawnLocal $ replyProcess (acCommandAck ac) monitorChan
+    monitorChan <- spawnChannelLocal $ \ch -> link pid >> monitorProcess ch
+    iemChan <- spawnChannelLocal $ \ch -> link pid >> (iemProcess $ acIEM ac) ch
+    systemdChan <- spawnChannelLocal $ \ch -> link pid >> (commandProcess $ acSystemd ac) ch
+    _ <- spawnLocal $ link pid >> replyProcess (acCommandAck ac) monitorChan
     informRC (ServiceProcess pid) (ActuatorChannels iemChan systemdChan)
   where
     cmdAckQueueName = T.pack . fromDefault . Rabbit.bcQueueName $ acCommandAck ac
