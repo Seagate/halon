@@ -31,11 +31,6 @@ import qualified HA.ResourceGraph as G
 import HA.Services.SSPL
 #ifdef USE_MERO
 import Control.Applicative
-import Control.Category ((>>>))
-import HA.Resources.TH
-import HA.Services.Mero
-import HA.Services.Mero.CEP (meroChannel)
-import HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
@@ -45,14 +40,10 @@ import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Events.Mero
-import HA.RecoveryCoordinator.Rules.Castor.Server
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState (Note(..))
 import Data.UUID.V4 (nextRandom)
 import qualified Data.UUID as UUID
-import System.Posix.SysInfo
-import Data.Hashable
-import Control.Distributed.Process.Closure (mkClosure)
 #endif
 import Data.Proxy (Proxy(..))
 import Data.Foldable
@@ -83,8 +74,6 @@ castorRules = sequence_
   , setStateChangeHandlers
   , ruleMeroNoteSet
   , ruleGetEntryPoint
-  , ruleNewMeroClient
-  , ruleNewMeroServer
   , ruleResetAttempt
 #endif
   , ruleDriveFailed
@@ -386,151 +375,6 @@ ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid _ _ disk) -> 
       messageProcessed uuid
 
 #ifdef USE_MERO
--- | New mero client rule is capable provisioning new mero client.
--- In order to do that following steps are applies:
---   1. for each new connected node 'NewMeroClient' message is emitted by 'ruleNodeUp'.
---   2. for each new client that is known to be mero-client, but have no confd information,
---      that information is generated and synchronized with confd servers
---   3. once confd have all required information available start mero service on the node,
---      that will lead provision process.
---
--- Once host is provisioned 'NewMeroClient' event is published
-ruleNewMeroClient :: Definitions LoopState ()
-ruleNewMeroClient = define "new-mero-client" $ do
-    mainloop <- phaseHandle "mainloop"
-    msgNewMeroClient <- phaseHandle "new-mero-client"
-    msgClientInfo    <- phaseHandle "client-info-update"
-    msgClientStoreInfo <- phaseHandle "client-store-update"
-    msgClientNodeBootstrapped <- phaseHandle "node-provisioned"
-    svc_up_now <- phaseHandle "svc_up_now"
-    svc_up_already <- phaseHandle "svc_up_already"
-
-    directly mainloop $
-      switch [ msgNewMeroClient
-             , msgClientInfo
-             , msgClientStoreInfo
-             , msgClientNodeBootstrapped
-             ]
-
-    setPhase msgNewMeroClient $ \(HAEvent eid (NewMeroClient node@(Node nid)) _) -> do
-       mhost <- findNodeHost node
-       case mhost of
-         Just host -> do
-           isServer <- hasHostAttr HA_M0SERVER host
-           isClient <- hasHostAttr HA_M0CLIENT host
-           mlnid    <- listToMaybe . G.connectedTo host Has <$> getLocalGraph
-           case mlnid of
-             -- Host is a server, bootstrap is done in a separate procedure.
-             _ | isServer -> do
-                   phaseLog "info" $ show host ++ " is mero server, skipping provision"
-                   messageProcessed eid
-             -- Host is client with all required info beign loaded .
-             Just LNid{}
-               | isClient -> do
-                   phaseLog "info" $ show host ++ " is mero client. Configuration was generated - starting mero service"
-                   startMeroService host node
-                   messageProcessed eid
-             -- Host is client but not all information was loaded.
-             _  -> do
-                   phaseLog "info" $ show host ++ " is mero client. No configuration - generating"
-                   startMeroClientProvisioning host eid
-                   getProvisionHardwareInfo host >>= \case
-                     Nothing -> do
-                       liftProcess $ void $ spawnLocal $
-                         void $ spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
-                     Just info -> selfMessage (NewClientStoreInfo host info)
-         Nothing -> do
-           phaseLog "error" $ "Can't find host for node " ++ show node
-           messageProcessed eid
-
-    setPhase msgClientInfo $ \(HAEvent eid (SystemInfo nid info) _) -> do
-      phaseLog "info" $ "Recived information about " ++ show nid
-      mhost <- findNodeHost nid
-      case mhost of
-        Just host -> do
-          putProvisionHardwareInfo host info
-          syncGraphProcessMsg eid
-          selfMessage $ NewClientStoreInfo host info
-        Nothing -> do
-          phaseLog "error" $ "Received information from node on unknown host " ++ show nid
-          messageProcessed eid
-
-    setPhase msgClientStoreInfo $ \(NewClientStoreInfo host info) -> do
-       getFilesystem >>= \case
-          Nothing -> do
-            phaseLog "warning" "Configuration data was not loaded yet, skipping"
-          Just fs -> do
-            (node:_) <- nodesOnHost host
-            createMeroClientConfig fs host info
-            startMeroService host node
-            -- TODO start m0t1fs
-            put Local $ Just (node, host)
-            switch [svc_up_now, timeout 5000000 svc_up_already]
-
-    setPhaseIf svc_up_now onNode $ \(host, chan) -> do
-      -- Legitimate to avoid the event id as it should be handled by the default
-      -- 'declare-mero-channel' rule.
-      void $ startNodeProcesses host chan PLM0t1fs False
-
-    -- Service is already up
-    directly svc_up_already $ do
-      Just (node, _) <- get Local
-      rg <- getLocalGraph
-      m0svc <- lookupRunningService node m0d
-      mhost <- findNodeHost node
-      case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
-        Just (host, chan) -> do
-          void $ startNodeProcesses host chan (PLBootLevel (BootLevel 0)) True
-        Nothing -> switch [svc_up_now, timeout 5000000 svc_up_already]
-
-    setPhase msgClientNodeBootstrapped $ \(HAEvent eid (ProcessControlResultMsg node _) _) -> do
-       finishMeroClientProvisioning node
-       messageProcessed eid
-
-    start mainloop Nothing
-  where
-    startMeroClientProvisioning host uuid =
-      modifyLocalGraph $ \rg -> do
-        let pp  = ProvisionProcess host
-            rg' = G.newResource pp
-              >>> G.connect pp OnHost host
-              >>> G.connect pp TriggeredBy uuid
-                $ rg
-        return rg'
-
-    finishMeroClientProvisioning nid = do
-      rg <- getLocalGraph
-      let mpp = listToMaybe
-                  [ pp | host <- G.connectedFrom Runs (Node nid) rg :: [Host]
-                       , pp <- G.connectedFrom OnHost host rg :: [ProvisionProcess]
-                       ]
-      forM_ mpp $ \pp -> do
-        let uuids = G.connectedTo pp TriggeredBy rg :: [UUID]
-        forM_ uuids messageProcessed
-        modifyGraph $ G.disconnectAllFrom pp OnHost (Proxy :: Proxy Host)
-                  >>> G.disconnectAllFrom pp TriggeredBy (Proxy :: Proxy UUID)
-
-    getProvisionHardwareInfo host = do
-       let pp = ProvisionProcess host
-       rg <- getLocalGraph
-       return . listToMaybe $ (G.connectedTo pp Has rg :: [HostHardwareInfo])
-    putProvisionHardwareInfo host info = do
-       let pp = ProvisionProcess host
-       modifyGraph $ G.connectUnique pp Has (info :: HostHardwareInfo)
-       publish $ NewMeroClientProcessed host
-
-    onNode _ _ Nothing = return Nothing
-    onNode (HAEvent _ (DeclareMeroChannel sp _ cc) _) ls (Just (node, _)) =
-      let
-        rg = lsGraph ls
-        mhost = G.connectedFrom Runs node rg
-        rightNode = G.isConnected node Runs sp rg
-      in case (rightNode, mhost) of
-        (True, [host]) -> return $ Just (host, cc)
-        (_, _) -> return Nothing
-#endif
-
-#ifdef USE_MERO
 -- | Load information that is required to complete transaction from
 -- resource graph.
 ruleGetEntryPoint :: Definitions LoopState ()
@@ -565,43 +409,3 @@ goHost enc (CI.Host{..}) = let
     locateHostInEnclosure host enc
     mapM_ (setHostAttr host) attrs
     mapM_ (registerInterface host) h_interfaces
-
-#ifdef USE_MERO
-data CommitNewMeroClient = CommitNewMeroClient Host UUID
-  deriving (Eq, Show, Typeable, Generic)
-instance Binary CommitNewMeroClient
-
-data NewClientStoreInfo = NewClientStoreInfo Host HostHardwareInfo
-  deriving (Eq, Show, Typeable, Generic)
-instance Binary NewClientStoreInfo
-
-data OnHost = OnHost
-  deriving (Eq, Show, Typeable,Generic)
-instance Binary OnHost
-instance Hashable OnHost
-
-data TriggeredBy = TriggeredBy
-  deriving (Eq, Show, Typeable, Generic)
-instance Binary TriggeredBy
-instance Hashable TriggeredBy
-
-data ProvisionProcess = ProvisionProcess Host
-  deriving (Eq, Show, Typeable, Generic)
-instance Binary ProvisionProcess
-instance Hashable ProvisionProcess
-
-$(mkDicts
-  [ ''OnHost, ''ProvisionProcess ]
-  [ (''ProvisionProcess, ''OnHost, ''Host)
-  , (''ProvisionProcess, ''TriggeredBy, ''UUID)
-  , (''ProvisionProcess, ''Has, ''HostHardwareInfo)
-  ]
-  )
-
-$(mkResRel
-  [ ''OnHost, ''ProvisionProcess ]
-  [ (''ProvisionProcess, ''OnHost, ''Host)
-  , (''ProvisionProcess, ''TriggeredBy, ''UUID)
-  , (''ProvisionProcess, ''Has, ''HostHardwareInfo)
-  ] [])
-#endif

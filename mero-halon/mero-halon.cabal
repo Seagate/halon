@@ -155,7 +155,6 @@ Library
                        Mero.Notification
                        Mero.Notification.HAState
                        HA.RecoveryCoordinator.Actions.Mero
-                       HA.RecoveryCoordinator.Rules.Castor.Server
                        HA.RecoveryCoordinator.Rules.Castor.Reset
                        HA.RecoveryCoordinator.Rules.Mero
                        HA.Resources.Mero
