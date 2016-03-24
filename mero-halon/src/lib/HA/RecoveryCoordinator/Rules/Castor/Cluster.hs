@@ -608,15 +608,20 @@ ruleNewMeroClient = define "new-mero-client" $ do
 
     setPhaseIf start_clients (barrierPass M0.MeroClusterRunning) $ \() -> do
       Just (node, host, _) <- get Local
-      rg <- getLocalGraph
-      m0svc <- lookupRunningService node m0d
-      case m0svc >>= meroChannel rg of
-        Just chan -> do
-          procs <- startNodeProcesses host chan M0.PLM0t1fs False
-          if null procs
-            then return ()
-            else continue start_clients_complete
-        Nothing -> return ()
+      syncStat <- syncToConfd
+      case syncStat of
+        Right () -> do
+          rg <- getLocalGraph
+          m0svc <- lookupRunningService node m0d
+          case m0svc >>= meroChannel rg of
+            Just chan -> do
+              procs <- startNodeProcesses host chan M0.PLM0t1fs False
+              if null procs
+                then return ()
+                else continue start_clients_complete
+            Nothing -> return ()
+        Left ex -> do
+          phaseLog "error" $ "Failed to sync to confd: " ++ show ex
 
     -- Mark clients as coming up successfully.
     setPhaseIf start_clients_complete processControlOnNode $ \(eid, e) -> do
