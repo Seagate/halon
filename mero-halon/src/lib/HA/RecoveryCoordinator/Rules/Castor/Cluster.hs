@@ -144,6 +144,8 @@ notifyOnClusterTranstion :: (Binary a, Typeable a)
                          -> PhaseM LoopState l ()
 notifyOnClusterTranstion desiredState msg meid = do
   newState <- calculateMeroClusterStatus
+  phaseLog "notifyOnClusterTransition:desiredState" $ show newState
+  phaseLog "notifyOnClusterTransition:state" $ show newState
   if newState == desiredState then do
     modifyGraph $ G.connectUnique R.Cluster R.Has newState
     syncGraphCallback $ \self proc -> do
