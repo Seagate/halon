@@ -36,6 +36,7 @@ module Control.Distributed.Log.Internal
     , status
     , reconfigure
     , recover
+    , monitorLog
     , addReplica
     , killReplica
     , removeReplica
@@ -80,14 +81,15 @@ import Control.Arrow (second)
 import Control.Concurrent hiding (newChan)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TChan
-import Control.Monad
+import Control.Monad hiding (forM_)
 import Control.Monad.Catch
 import Data.Binary (Binary, encode, decode)
 import qualified Data.ByteString.Lazy as BSL (ByteString, length)
 import Data.Constraint (Dict(..))
+import Data.Foldable (forM_)
 import Data.Function (fix)
 import Data.Int (Int64)
-import Data.List (partition, sortBy, nub)
+import Data.List (partition, sortBy, nub, intersect)
 import qualified Data.Foldable as Foldable
 import Data.Function (on)
 import Data.IORef
@@ -291,7 +293,7 @@ instance Binary Status
 
 instance Binary TimeSpec
 
-data TimerMessage = LeaseRenewalTime
+data TimerMessage = LeaseRenewalTime | PeriodicTick
   deriving (Generic, Typeable)
 
 instance Binary TimerMessage
@@ -302,11 +304,23 @@ replicaLabel (LogId kstr) = kstr ++ ".replica"
 acceptorLabel :: LogId -> String
 acceptorLabel (LogId kstr) = kstr ++ ".acceptor"
 
+batcherLabel :: LogId -> String
+batcherLabel (LogId kstr) = kstr ++ ".batcher"
+
 sendReplica :: Serializable a => LogId -> NodeId -> a -> Process ()
 sendReplica name nid = nsendRemote nid $ replicaLabel name
 
 sendAcceptor :: Serializable a => LogId -> NodeId -> a -> Process ()
 sendAcceptor name nid = nsendRemote nid $ acceptorLabel name
+
+-- | Terminate the given process and wait until it dies.
+exitAndWait :: ProcessId -> Process ()
+exitAndWait p = callLocal $ bracket (monitor p) unmonitor $ \ref -> do
+    exit p "exitAndWait"
+    receiveWait
+      [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref' == ref)
+                (const $ return ())
+      ]
 
 sendReplicaAsync :: Serializable a
                  => ProcessPool NodeId -> LogId -> NodeId -> a -> Process ()
@@ -378,12 +392,16 @@ withPersistentStore fp =
    bracket (liftIO $ openPersistentStore fp)
            (liftIO . P.close)
 
+type Channel a = (SendPort a, ReceivePort a)
+
 -- | The internal state of a replica.
 data ReplicaState s ref a = Serializable ref => ReplicaState
   { -- | The pid of the proposer process.
     stateProposerPid       :: !ProcessId
-    -- | The pid of the timer process.
-  , stateTimerPid          :: !ProcessId
+    -- | The pid of the lease timer process.
+  , stateLeaseTimerPid          :: !ProcessId
+    -- | The pid of the periodic timer process.
+  , statePeriodicTimerPid          :: !ProcessId
     -- | Handle to persist the log.
   , statePersistenceHandle :: !(PersistenceHandle a)
     -- | The time at which the last lease started.
@@ -422,10 +440,10 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
   , stateReconfDecree      :: !DecreeId
     -- | Batcher of client requests
   , stateBatcher           :: !ProcessId
-    -- | A port used to send timeout notifications
-  , stateTimerSP           :: !(SendPort TimerMessage)
-    -- | A port used to receive timeout notifications
-  , stateTimerRP           :: !(ReceivePort TimerMessage)
+    -- | A channel to communicate lease timeout notifications
+  , stateLeaseTimerChan         :: !(Channel TimerMessage)
+    -- | A channel to communicate periodic timeout notifications
+  , statePeriodicTimerChan         :: !(Channel TimerMessage)
     -- | A pool of processes to send messages asynchronously
   , stateSendPool          :: !(ProcessPool NodeId)
 
@@ -602,16 +620,26 @@ replica Dict
     (timerSP, timerRP) <- newChan
     timerPid <- spawnLocal $ link self >> timer
     leaseStart0' <- setLeaseTimer timerPid timerSP leaseStart0 replicas
+    (ptimerSP, ptimerRP) <- newChan
+    ptimerPid <- spawnLocal $ link self >> timer
+    usend ptimerPid (ptimerSP, leaseTimeout, PeriodicTick)
+
+    -- Wait for any previously running batcher to die.
+    mbpid <- whereis (batcherLabel logId)
+    forM_ mbpid exitAndWait
     bpid <- spawnLocal $ do
-              logTrace "spawned batcher"
-              link self >> batcher (sendBatch self)
+      logTrace "spawned batcher"
+      link self >> batcher (sendBatch self)
+                     `finally` logTrace "batcher: process terminated"
+    register (batcherLabel logId) bpid
     ppid <- spawnLocal $ do
               logTrace "spawned proposer"
               link self >> proposer self bpid w0 Bottom replicas
 
     go ReplicaState
          { stateProposerPid = ppid
-         , stateTimerPid = timerPid
+         , stateLeaseTimerPid = timerPid
+         , statePeriodicTimerPid = ptimerPid
          , statePersistenceHandle = persistenceHandle
          , stateLeaseStart = leaseStart0'
          , stateReplicas = replicas
@@ -625,8 +653,8 @@ replica Dict
          , stateEpoch    = epoch
          , stateReconfDecree = legD
          , stateBatcher  = bpid
-         , stateTimerSP = timerSP
-         , stateTimerRP = timerRP
+         , stateLeaseTimerChan = (timerSP, timerRP)
+         , statePeriodicTimerChan = (ptimerSP, ptimerRP)
          , stateSendPool = sendPool
          , stateLogRestore = logRestore
          , stateLogDump = logDump
@@ -790,8 +818,9 @@ replica Dict
         ]
 
     go :: ReplicaState s ref a -> Process b
-    go st@(ReplicaState ppid timerPid ph leaseStart ρs d cd mdumper msref w0 w s
-                        epoch legD bpid timerSP timerRP sendPool
+    go st@(ReplicaState ppid timerPid ptimerPid ph leaseStart ρs d cd mdumper
+                        msref w0 w s epoch legD bpid (timerSP, timerRP)
+                        (ptimerSP, ptimerRP) sendPool
                         stLogRestore stLogDump stLogNextState
           ) =
      do
@@ -836,7 +865,7 @@ replica Dict
                 , requestForLease = Just l
                 }
 
-        receiveWait $ cond (w /= cd) []
+        receiveWait $ cond (w == cd)
             [ -- The lease is about to expire or it has already.
               matchChan timerRP $ \LeaseRenewalTime -> do
                   mLeader <- liftIO $ getLeader
@@ -850,7 +879,14 @@ replica Dict
                       return cd
                   usend timerPid (timerSP, leaseTimeout, LeaseRenewalTime)
                   go st{ stateCurrentDecree = cd' }
-
+            ]
+            [ -- The periodic timer ticked.
+              matchChan ptimerRP $ \PeriodicTick -> do
+                  mLeader <- liftIO getLeader
+                  logTrace $ "Periodic timer tick: " ++ show (w, cd, mLeader)
+                  when (mLeader /= Just here) $ exitAndWait bpid
+                  usend ptimerPid (ptimerSP, leaseTimeout, PeriodicTick)
+                  go st
             ] ++
             [ matchIf (\(Decree _ di _ :: Decree (Value a)) ->
                         -- Take the max of the watermark legislature and the
@@ -883,7 +919,7 @@ replica Dict
                   liftIO $ insertInLog ph (decreeNumber di) (v :: Value a)
                   case locale of
                       -- Ack back to the client.
-                      Local κs pids -> do forM_ κs $ flip usend ()
+                      Local κs pids -> do forM_ κs $ flip usend True
                                           forM_ pids $ flip usend ()
                       _ -> return ()
                   usend self $ Decree Stored di v
@@ -944,12 +980,24 @@ replica Dict
                       leaseStart' <-
                         setLeaseTimer timerPid timerSP requestStart ρs'
                       let epoch' = if take 1 ρs' /= take 1 ρs
-                                     then decreeLegislatureId d'
-                                     else epoch
+                                    then decreeLegislatureId d
+                                    else epoch
                           legD' = DecreeId leg' $ decreeNumber di
 
+                      mbpid <- whereis (batcherLabel logId)
+                      bpid' <- case mbpid of
+                        Nothing -> do
+                          bpid' <- spawnLocal $ do
+                            logTrace "respawned batcher"
+                            link self >> batcher (sendBatch self)
+                                `finally` logTrace "batcher: process terminated"
+                          register (batcherLabel logId) bpid'
+                          return bpid'
+                        Just bpid' -> return bpid'
+
                       updateWatermark w'
-                      go st{ stateLeaseStart = leaseStart'
+                      go st{ stateBatcher = bpid'
+                           , stateLeaseStart = leaseStart'
                            , stateReplicas = ρs'
                            , stateUnconfirmedDecree = d'
                            , stateCurrentDecree = cd'
@@ -1038,7 +1086,7 @@ replica Dict
                   go st{ stateCurrentDecree = cd' }
 
               -- Client requests.
-            , match $ {-# SCC "go/Request" #-} \request@(μ, e, _ :: Request a) -> do
+            , match $ {-# SCC "go/Request" #-} \request@(μ, e, r :: Request a) -> do
                   mLeader <- liftIO getLeader
                   if epoch <= e && mLeader == Just here then do
                     logTrace "replica: sending request to batcher"
@@ -1046,6 +1094,9 @@ replica Dict
                   else do
                     logTrace $ "replica: rejected client request " ++
                                show (e, epoch, mLeader)
+                    forM_ (requestSender r) $ flip usend False
+                    when (mLeader /= Just here) $
+                       exitAndWait bpid
                     when (e < epoch || isJust mLeader) $
                       when (elem here ρs) $ usend μ (epoch, ρs)
                   go st
@@ -1063,8 +1114,8 @@ replica Dict
                        leaseRequest <-
                          mkLeaseRequest (decreeLegislatureId d) [] ρs
                        usend ppid (cd, leaseRequest)
-                       -- Notify the batcher.
-                       usend bpid ()
+                       -- Kill the batcher.
+                       exitAndWait bpid
                        return (s, succ cd)
 
                      -- I'm the leader, so handle the request.
@@ -1087,7 +1138,7 @@ replica Dict
                          forM_ (concatMap
                                   (requestSender . batcherMsgRequest) rs
                                ) $
-                           flip usend ()
+                           flip usend True
                          return (s', cd)
                        else do
                          logTrace $ "replica: non-nullipotent requests. " ++ show (length rs)
@@ -1325,11 +1376,15 @@ replica Dict
 
                     -- Drop the request.
                     _ -> do
+                      exitAndWait bpid
+                      usend π False
                       when (elem here ρs) $ usend μ (epoch, ρs)
                       go st
 
-            , matchIf (\(_, e, _ :: Helo) -> e < epoch) $
-                      \(μ, _, _) -> do
+            , matchIf (\(_, e, _) -> e < epoch) $
+                      \(μ, e, Helo π _) -> do
+                  logTrace $ "Rejecting helo request " ++ show (e, epoch)
+                  usend π False
                   usend μ (epoch, ρs)
                   go st
 
@@ -1341,7 +1396,16 @@ replica Dict
                   let ρs'' | elem here ρs' = here : filter (/= here) ρs'
                            | otherwise     = ρs'
 
-                  mLeader <- liftIO getLeader
+                  mLeader <- liftIO getLeader >>= \case
+                    -- Accept the leader only if a quorum of the old membership
+                    -- is a quorum of the new membership.
+                    Just nid | elem nid ρs''
+                             , let li = length (intersect ρs ρs'')
+                             , li >= 1 + length ρs'' `div` 2
+                             , li >= 1 + length ρs `div` 2
+                      -> return $ Just nid
+                    _ -> return Nothing
+
                   logTrace $ "replica: Recover request from client " ++
                              show (π, mLeader, ρs'')
                   case mLeader of
@@ -1450,6 +1514,7 @@ replica Dict
 
                     -- Drop the request.
                     _ -> do
+                      usend π False
                       when (elem here ρs) $ usend μ (epoch, ρs)
                       go st
 
@@ -1469,8 +1534,11 @@ replica Dict
 
             , matchIf (\_ -> w == cd) $ \(μ, e, MembershipQuery sender) -> do
                 mLeader <- liftIO getLeader
-                when (mLeader == Just here) $
-                  usend sender (legD, ρs)
+                if mLeader == Just here then
+                  usend sender $ Just (legD, ρs)
+                else do
+                  usend sender (Nothing :: Maybe (DecreeId, [NodeId]))
+                  exitAndWait bpid
                 when (e < epoch || isJust mLeader) $
                   when (elem here ρs) $ usend μ (epoch, ρs)
                 go st
@@ -1808,6 +1876,11 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
                                         (cq :: ConfigQuery)
           go epoch mLeader ρs ref
 
+        -- A client wants to monitor the replicas
+      , match $ \pid -> do
+          usend pid mLeader
+          go epoch mLeader ρs ref
+
       , matchSTM (readTChan omchan) $ \om -> do
           handleRequest epoch mLeader om
           go epoch mLeader ρs ref
@@ -1845,9 +1918,21 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
 
     _ = $(functionTDict 'storeConf) -- stops unused warning
 
+-- | Throws an error if the handle is remote. This is useful mostly to catch
+-- mistakes in tests.
+checkHandle :: String -> Handle a -> Process ()
+checkHandle label (Handle _ _ _ _ _ μ) = do
+    here <- getSelfNode
+    when (here /= processNodeId μ) $ do
+      let msg = label ++ ": the handle is not local (" ++ show μ ++ ")."
+      say msg
+      die msg
+
 -- | Append an entry to the replicated log.
-append :: Serializable a => Handle a -> Hint -> a -> Process ()
-append (Handle _ _ _ _ omchan μ) hint x = callLocal $ do
+append :: Serializable a => Handle a -> Hint -> a -> Process Bool
+append h@(Handle _ _ _ _ omchan μ) hint x = callLocal $ do
+    checkHandle "Log.append" h
+    logTrace "append: start"
     self <- getSelfPid
     liftIO $ atomically $ writeTChan omchan $ OMRequest $ Request
         { requestSender   = [self]
@@ -1859,6 +1944,29 @@ append (Handle _ _ _ _ omchan μ) hint x = callLocal $ do
     when schedulerIsEnabled $ usend μ ()
     expect
 
+-- | Monitors the log. When connectivity to the log is lost a process monitor
+-- notification is sent to the caller. Lost connectivity could mean that there
+-- was a connection failure or that a request was dropped for internal reasons.
+monitorLog :: Handle a -> Process MonitorRef
+monitorLog h@(Handle _ _ cConfig _ _ μ) = do
+    checkHandle "Log.monitorLocal" h
+    (monitor =<<) $ callLocal $ do
+      getSelfPid >>= usend μ
+      mρ <- expect
+      logTrace $ "monitorLog: ambassador response " ++ show mρ
+      case mρ of
+        Nothing -> fmap nullProcessId getSelfNode
+        Just ρ  -> do
+          cc <- unClosure cConfig
+          whereisRemoteAsync ρ (batcherLabel $ logId cc)
+          mrep <- expectTimeout (leaseTimeout cc)
+          logTrace $ "monitorLog: wehereis response " ++ show mrep
+          case mrep of
+           Just (WhereIsReply _ mpid) ->
+             return $ maybe (nullProcessId ρ) id mpid
+           Nothing                    ->
+             return $ nullProcessId ρ
+
 -- | Make replicas advertize their status info.
 status :: Serializable a => Handle a -> Process ()
 status (Handle _ _ _ _ _ μ) = usend μ Status
@@ -1868,26 +1976,18 @@ updateHandle :: Handle a -> NodeId -> Process ()
 updateHandle (Handle _ _ _ _ _ α) = usend α
 
 remoteHandle :: Handle a -> Process (RemoteHandle a)
-remoteHandle (Handle sdict1 sdict2 config log _ α) = do
+remoteHandle h@(Handle sdict1 sdict2 config log _ α) = do
+    checkHandle "remoteHandle" h
     self <- getSelfPid
     usend α $ Clone self
     RemoteHandle sdict1 sdict2 config log <$> expect
 
 -- | Yields the latest known membership.
-getMembership :: Handle a -> Process [NodeId]
+getMembership :: Handle a -> Process (Maybe [NodeId])
 getMembership  (Handle _ _ _ _ _ α) = callLocal $ do
     self <- getSelfPid
     usend α $ MembershipQuery self
-    snd <$> (expect :: Process (DecreeId, [NodeId]))
-
--- | Terminate the given process and wait until it dies.
-exitAndWait :: ProcessId -> Process ()
-exitAndWait p = callLocal $ bracket (monitor p) unmonitor $ \ref -> do
-    exit p "exitAndWait"
-    receiveWait
-      [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref' == ref)
-                (const $ return ())
-      ]
+    fmap snd <$> (expect :: Process (Maybe (DecreeId, [NodeId])))
 
 -- | Permanently associate a log identity to a given config, log and initial
 -- membership.
@@ -1961,11 +2061,14 @@ spawnReplicas k cPersisDirectory nodes = callLocal $ do
 --
 -- Served only if the group has quorum.
 --
+-- Returns @True@ on success. The client can retry it if it returns @False@.
+--
 reconfigure :: Typeable a
             => Handle a
             -> Closure NominationPolicy
-            -> Process ()
-reconfigure (Handle _ _ _ _ omchan μ) cpolicy = callLocal $ do
+            -> Process Bool
+reconfigure h@(Handle _ _ _ _ omchan μ) cpolicy = callLocal $ do
+    checkHandle "Log.reconfigure" h
     self <- getSelfPid
     liftIO $ atomically $ writeTChan omchan $ OMHelo $ Helo self cpolicy
     when schedulerIsEnabled $ usend μ ()
@@ -1976,12 +2079,15 @@ reconfigure (Handle _ _ _ _ omchan μ) cpolicy = callLocal $ do
 -- Makes the given membership the current one. Completes only if all replicas
 -- are online.
 --
--- Recovering is safe only if at least half of the replicas of the current
+-- Recovering is safe only if at least half of the replicas of the old
 -- membership take part in the new membership (recovered replicas count as
 -- replicas in the old membership).
 --
-recover :: Handle a -> [NodeId] -> Process ()
-recover (Handle _ _ _ _ omchan μ) ρs = callLocal $ do
+-- Returns @True@ on success. The client can retry it if it returns @False@.
+--
+recover :: Handle a -> [NodeId] -> Process Bool
+recover h@(Handle _ _ _ _ omchan μ) ρs = callLocal $ do
+    checkHandle "Log.recover" h
     self <- getSelfPid
     logTrace $ "recover: sending request to ambassador " ++ show μ
     liftIO $ atomically $ writeTChan omchan $ OMRecover $ Recover self ρs
@@ -1996,17 +2102,22 @@ recover (Handle _ _ _ _ omchan μ) ρs = callLocal $ do
 -- Note that the new replica will block until it gets a Max broadcast by one of
 -- the existing replicas. In this way, the replica will not service any client
 -- requests until it has indeed been accepted into the group.
+--
+-- Returns @True@ on success. The client can retry it if it returns @False@.
+--
 addReplica :: Typeable a
            => Handle a
            -> NodeId
-           -> Process ()
+           -> Process Bool
 addReplica h@(Handle _ _ cConfig _ _ α) nid = callLocal $ do
     -- Get the group configuration
     self <- getSelfPid
     usend α $ ConfigQuery self
     usend α $ MembershipQuery self
     (ssdict, gcbs, _)  <- expect :: Process StoredGroupConfig
-    mship <- expect :: Process (DecreeId, [NodeId])
+    mship <- fix $ \loop ->
+      (expect :: Process (Maybe (DecreeId, [NodeId])))
+       >>= maybe loop return
 
     -- Store the configuration in the remote node.
     _ <- spawnAsync nid $ $(mkClosure 'storeConf)
@@ -2055,10 +2166,13 @@ killReplica (Handle _ _ config _ _ _) nid = do
       ]
 
 -- | Kill the replica and acceptor and remove it from the group.
+--
+-- Returns @True@ on success. The client can retry it if it returns @False@.
+--
 removeReplica :: Typeable a
               => Handle a
               -> NodeId
-              -> Process ()
+              -> Process Bool
 removeReplica h nid = do
     killReplica h nid
     reconfigure h $ staticClosure $(mkStatic 'Policy.notThem)

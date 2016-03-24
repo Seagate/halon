@@ -49,7 +49,7 @@ import Control.Distributed.Commands.Providers
 import Control.Distributed.Process
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Timeout
+import Control.Distributed.Process.Monitor
 import Control.Distributed.Static
 import Network.Transport ( Transport )
 import Network.Transport.TCP
@@ -70,6 +70,9 @@ import System.IO.Unsafe
 import Control.Monad
 import Text.Printf
 
+
+retryLog :: Log.Handle a -> Process b -> Process b
+retryLog h = retryMonitoring (Log.monitorLog h) 2000000
 
 type State = Int
 
@@ -170,14 +173,14 @@ remotableDecl [ [d|
     self <- getSelfPid
     replicateM_ iters $ do
       replicateM_ updNo $ spawnLocal $ do
-        retry 6000000 $
+        retryLog h $
           State.update port incrementCP
         i <- liftIO $ atomicModifyIORef' globalCount $ \i -> (i + 1, i)
         when (i `mod` 10 == 0) $
           liftIO $ hPutStrLn stderr $ "Count: " ++ show i
         usend self ()
       replicateM_ readNo $ spawnLocal $ do
-        _ <- retry 6000000 $
+        _ <- retryLog h $
           State.select sdictInt port readCP
         usend self ()
       replicateM_ (updNo + readNo) (expect :: Process ())
@@ -259,16 +262,16 @@ benchAction :: (Int, Int, Int)
             -> [NodeId]
             -> State.CommandPort State
             -> Process Double
-benchAction (iters, updNo, readNo) = \_ _ port -> do
+benchAction (iters, updNo, readNo) = \h _ port -> do
     time_ $ replicateM_ iters $ do
       self <- getSelfPid
       replicateM_ iters $ do
         replicateM_ updNo $ spawnLocal $ do
-          retry 6000000 $
+          retryLog h $
             State.update port incrementCP
           usend self ()
         replicateM_ readNo $ spawnLocal $ do
-          _ <- retry 6000000 $
+          _ <- retryLog h $
             State.select sdictInt port readCP
           usend self ()
         replicateM_ (updNo + readNo) (expect :: Process ())

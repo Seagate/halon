@@ -15,6 +15,7 @@
 -- to wrap each use of these functions with 'callLocal'.
 --
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE LambdaCase #-}
 #if __GLASGOW_HASKELL__ < 710
 {-# LANGUAGE OverlappingInstances #-}
 #endif
@@ -22,14 +23,28 @@
 module HA.CallTimeout
   ( callTimeout
     -- * Calling named processes
-  , ncallRemoteAnyTimeout
-  , ncallRemoteAnyPreferTimeout
+  , ncallRemoteSome
+  , ncallRemoteSomePrefer
+  , withLabeledProcesses
+  , receiveFrom
   ) where
+
+import HA.Logger (mkHalonTracer)
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable (Serializable)
-import Control.Monad (forM_, void)
 
+import Control.Distributed.Process.Timeout (timeout)
+
+import Control.Monad (forM_)
+import Data.Function (fix)
+import Data.IORef (newIORef, readIORef, modifyIORef)
+import Data.List (delete, partition)
+import Data.Maybe (catMaybes)
+
+
+callTrace :: String -> Process ()
+callTrace = mkHalonTracer "call"
 
 --------------------------------------------------------------------------------
 -- Calling processes
@@ -37,62 +52,141 @@ import Control.Monad (forM_, void)
 
 -- | Send @(self, msg)@ to @pid@ and wait for a reply.
 -- Returns @Just reply@, or @Nothing@ if no reply arrives within at least
--- @timeout@.
+-- @t@ microseconds.
 callTimeout :: (Serializable a, Serializable b) =>
      Int                -- ^ Timeout, in microseconds
   -> ProcessId          -- ^ Target process
   -> a                  -- ^ Message to send
   -> Process (Maybe b)  -- ^ Reply received, if any
-callTimeout timeout pid msg = do
+callTimeout t pid msg = do
     self <- getSelfPid
     usend pid (self, msg)
-    expectTimeout timeout
+    expectTimeout t
 
 --------------------------------------------------------------------------------
 -- Calling named processes
 --------------------------------------------------------------------------------
 
 -- | Send @(self, msg)@ to one or more named processes @label@ on @nodes@ and
--- wait for a reply.
--- Returns @Just reply@, @Nothing@ if no reply arrives within at least
--- @timeout@.
+-- wait for a reply satisfying the given predicate.
+--
+-- Returns a reply satisfying the predicate at the head of the resulting
+-- list if any, followed by other replies not satisfying the predicate.
+--
+-- Each reply must contain the NodeId of the replying node.
+--
 -- Messages are sent all at the same time.
-ncallRemoteAnyTimeout :: (Serializable a, Serializable b) =>
-     Int                -- ^ Timeout, in microseconds
+--
+ncallRemoteSome :: (Serializable a, Serializable b) =>
+     Int                -- ^ Timeout in microseconds to find pids
   -> [NodeId]           -- ^ Target nodes
   -> String             -- ^ Target process label
   -> a                  -- ^ Message to send
-  -> Process (Maybe b)  -- ^ Reply received, if any
-ncallRemoteAnyTimeout timeout nodes label msg = do
-    self <- getSelfPid
-    forM_ nodes $ \node -> nsendRemote node label (self, msg)
-    expectTimeout timeout
+  -> ((NodeId, b) -> Bool) -- ^ A predicate that indicates the desired answer in
+                           -- case multiple answers are received.
+  -> Process [(NodeId, b)]  -- ^ Replies received, if any
+ncallRemoteSome t nodes label msg p = withLabeledProcesses t nodes label $ \case
+    []   -> return []
+    pids -> do
+      self <- getSelfPid
+      forM_ pids $ \pid -> usend pid (self, msg)
+      receiveFrom p pids
+
+-- | Looks up the processes with the given labels in the given nodes.
+-- It calls the action with whatever processes where found within the given
+-- timeout.
+--
+withLabeledProcesses ::
+     Int                -- ^ Timeout in microseconds to find pids
+  -> [NodeId]           -- ^ Target nodes
+  -> String             -- ^ Target process label
+  -> ([ProcessId] -> Process a) -- ^ Action to perform
+  -> Process a
+withLabeledProcesses t nodes label action = (action =<<) $ callLocal $
+    bracket (mapM monitorNode nodes)
+            (mapM_ unmonitor)        $ \refs -> do
+    forM_ nodes $ \node -> whereisRemoteAsync node label
+    r <- liftIO $ newIORef []
+    _ <- timeout t (forM_ nodes $ const $ receiveWait
+      [ match $ \(_ :: ProcessMonitorNotification) -> return ()
+      , match $ \case
+          WhereIsReply _ (Just pid) -> liftIO $ modifyIORef r (pid:)
+          _                         -> return ()
+      ])
+    liftIO $ readIORef r
+
+-- | Expects a message of type @(NodeId, b)@ from the given list of pids,
+-- one pid is expected per node.
+--
+-- If a message satisfying the given predicate is received, then
+-- @(nid, b)@ is returned at the head of the resulting list, where @nid@ is the
+-- 'NodeId' of the node which replied. Other received messages not satisfying
+-- the predicate are returned as well.
+--
+-- The nodes are monitored so the function can return the empty list when nodes
+-- are unavailable or when all replies are rejected by the given predicate.
+--
+receiveFrom :: Serializable b
+             => ((NodeId, b) -> Bool)
+             -> [ProcessId]
+             -> Process [(NodeId, b)]
+receiveFrom p pids = bracket (mapM monitor pids) (mapM unmonitor) $ \refs -> do
+    callTrace $ "receiveFrom: " ++ show pids
+    (\a b c -> fix c a b) []  (zip (map processNodeId pids) refs) $ \loop
+                          acc nrefs                                       ->
+      case nrefs of
+        [] -> return acc
+        _  -> receiveWait
+          [ matchIf (\(ProcessMonitorNotification ref _ _) ->
+                        any ((== ref) . snd) nrefs
+                    )
+                    $ \pmn@(ProcessMonitorNotification ref pid _) -> do
+                        callTrace $ "receiveFrom: " ++ show pmn
+                        loop acc $ delete (processNodeId pid, ref) nrefs
+          , match $ \b -> if p b then do
+                              callTrace $ "receiveFrom: " ++ show (fst b, p b)
+                              return $ b : acc
+                            else do
+                              callTrace $ "receiveFrom: " ++ show (fst b, p b)
+                              loop (b : acc) $ filter ((fst b /=) . fst) nrefs
+          ]
 
 -- | Send @(self, msg)@ to one or more named processes @label@ on @preferNodes@
--- and @nodes@ and wait for a reply.
--- Returns @Just reply@, or @Nothing@ if no reply arrives within at least
--- @timeout@.
+-- and @nodes@ and wait for a reply satisfying the given predicate.
+--
+-- Returns a reply satisfying the predicate at the head of the resulting
+-- list if any, followed by other replies not satisfying the predicate.
+--
+-- Each reply must contain the NodeId of the replying node.
+--
 -- Two-stage version of 'ncallRemoteAnyTimeout'. Messages are first sent to all
 -- @preferNodes@ at the same time, then, if no reply arrives within at least
 -- @softTimeout@, to all @nodes@ at the same time.
-ncallRemoteAnyPreferTimeout :: (Serializable a, Serializable b) =>
+ncallRemoteSomePrefer :: (Serializable a, Serializable b) =>
      Int                -- ^ Soft timeout, in microseconds
-  -> Int                -- ^ Timeout, in microseconds
+  -> Int                -- ^ Timeout in microseconds to find pids
   -> [NodeId]           -- ^ Preferred target nodes
   -> [NodeId]           -- ^ Target nodes
   -> String             -- ^ Target process label
   -> a                  -- ^ Message to send
-  -> Process (Maybe b)  -- ^ Reply received, if any
-ncallRemoteAnyPreferTimeout softTimeout timeout preferNodes nodes label msg = do
-    self <- getSelfPid
-    sender <- spawnLocal $ do
-      link self
-      forM_ preferNodes $ \node -> nsendRemote node label (self, msg)
-      void $ receiveTimeout softTimeout []
-      forM_ nodes $ \node -> nsendRemote node label (self, msg)
-    result <- expectTimeout timeout
-    kill sender "done"
-    return result
+  -> ((NodeId, b) -> Bool) -- ^ A predicate that indicates the desired answer in
+                           -- case multiple answers are received.
+  -> Process [(NodeId, b)]  -- ^ Replies received, if any
+ncallRemoteSomePrefer softTimeout t preferNodes nodes label msg p =
+    withLabeledProcesses t (preferNodes ++ nodes) label $ \case
+      []   -> return []
+      pids -> do
+        let (preferred, rest) = partition ((`elem` preferNodes) . processNodeId)
+                                          pids
+        self <- getSelfPid
+        bracket (spawnLocal $ do
+            _ <- receiveTimeout softTimeout []
+            forM_ rest $ \pid -> usend pid (self, msg)
+          )
+          (`exit` "ncallRemoteAnyPreferTimeout terminated")
+          $ const $ do
+            forM_ preferred $ \pid -> usend pid (self, msg)
+            receiveFrom p pids
 
 -- [Removed Functonality]
 --

@@ -14,6 +14,7 @@ import qualified HA.Test.Distributed.RCInsists
 import qualified HA.Test.Distributed.RCInsists2
 import qualified HA.Test.Distributed.Snapshot3
 import qualified HA.Test.Distributed.StartService
+import qualified HA.Test.Distributed.StressRC
 import qualified HA.Test.Distributed.TSDisconnects
 import qualified HA.Test.Distributed.TSDisconnects2
 import qualified HA.Test.Distributed.TSRecovers
@@ -37,6 +38,7 @@ tests = testGroup "mero-halon" $ (:[]) $
       , HA.Test.Distributed.RCInsists.test
       , HA.Test.Distributed.RCInsists2.test
       , HA.Test.Distributed.Snapshot3.test
+      , HA.Test.Distributed.StressRC.test
       , HA.Test.Distributed.StartService.test
       , HA.Test.Distributed.TSDisconnects.test
       , HA.Test.Distributed.TSDisconnects2.test

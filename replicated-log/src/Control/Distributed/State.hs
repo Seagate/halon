@@ -134,21 +134,28 @@ nextCommandId (CommandPort ref _) = do
 
 -- | Query the replicated state. The provided closure tells the replicas how
 -- to create an answer from the current state.
+--
+-- Returns @Nothing@ if the request cannot be served. The client can retry it.
+--
 select :: (Typeable a, Typeable s)
        => Static (SerializableDict a)
        -> CommandPort s
        -> CP s a
-       -> Process a
+       -> Process (Maybe a)
 select sdict port@(CommandPort _ h) f = callLocal $ do
     SerializableDict <- unStatic sdict
     self <- getSelfPid
     cid <- nextCommandId port
-    Log.append h Log.Nullipotent $ Command cid $ cpSelectWrapper sdict self f
-    expect
+    b <- Log.append h Log.Nullipotent $ Command cid $
+           cpSelectWrapper sdict self f
+    if b then fmap Just expect else return Nothing
 
 -- | Update the replicated state. The provided closure tells the replicas what
 -- to do to the state at each site.
-update :: Typeable s => CommandPort s -> CP s s -> Process ()
+--
+-- Returns @True@ on success. The client can retry it if it returns @False@.
+--
+update :: Typeable s => CommandPort s -> CP s s -> Process Bool
 update port@(CommandPort _ h) f = do
     cid <- nextCommandId port
     Log.append h Log.None $ Command cid $ cpUpdateWrapper f

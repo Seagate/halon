@@ -45,13 +45,17 @@ import GHC.Generics
 
 import HA.EventQueue.Types
 import HA.Logger
-import HA.Replicator ( RGroup, updateStateWith, getState)
+import HA.Replicator ( RGroup
+                     , updateStateWith
+                     , getState
+                     , retryRGroup
+                     , withRGroupMonitoring
+                     )
 import FRP.Netwire hiding (Last(..), when, for)
 
 import Control.Distributed.Process hiding (newChan, catch)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Internal.Types (Message(..))
-import Control.Distributed.Process.Timeout ( retry )
 
 import Control.Monad (when)
 import Control.Monad.Catch
@@ -192,7 +196,7 @@ requestTimeout = 5 * 1000 * 1000
 startEventQueue :: RGroup g => g EventQueue -> Process ProcessId
 startEventQueue rg = do
     eq <- spawnLocal $ do
-      EventQueue { _eqRC = mRC } <- retry requestTimeout $ getState rg
+      EventQueue { _eqRC = mRC } <- retryRGroup rg requestTimeout $ getState rg
       -- The EQ must monitor the RC or it will never realize when the RC stops
       -- responding and won't ever care of checking the replicated state to learn
       -- of new RCs
@@ -230,44 +234,53 @@ eqRules rg = do
     defineSimple "trimming" (trim rg)
     defineSimple "trimming-unknown" $ \(DoTrimUnknown msg) -> trimMsg rg msg
 
-    defineSimple "ha-event" $ \(sender, ev) -> do
+    defineSimple "ha-event" $ \(sender, ev@(PersistMessage mid _)) -> do
       mRC  <- lookupRC rg
       liftProcess $ do
         here <- getSelfNode
         case mRC of
-          Just rc | here /= processNodeId rc -> do
+          Just (Just rc) | here /= processNodeId rc -> do
             -- Delegate on the colocated EQ.
             -- The colocated EQ learns immediately of the RC death. This
             -- ensures events are not sent to a defunct RC rather than to a
             -- live one.
+            eqTrace $ "EQ: Forwarding event " ++
+                      show (mid, processNodeId rc, sender)
             nsendRemote (processNodeId rc) eventQueueLabel
                         (sender, ev)
-          _ -> do
+            sendReply sender $ Left $ processNodeId rc
+          Just _ -> do
             -- Record the event if there is no known RC or if it is colocated.
             self <- getSelfPid
             void $ spawnLocal $ do
-              eqTrace $ "EQ: Recording event " ++ show (persistEventId ev)
-              retry requestTimeout $
+              eqTrace $ "EQ: Recording event " ++ show mid
+              res <- withRGroupMonitoring rg $
                 updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
-              eqTrace $ "EQ: Recorded event " ++ show (persistEventId ev)
-              usend self (RecordAck sender ev)
+              case res of
+                Just True -> do
+                  eqTrace $ "EQ: Recorded event " ++ show mid
+                  usend self (RecordAck sender ev)
+                _ -> do
+                  eqTrace $ "EQ: Recording event failed " ++ show (mid, sender)
+                  sendReply sender $ Left here
+          _ -> do
+            -- No quorum
+            eqTrace $ "EQ: No quorum " ++ show (mid, sender)
+            sendReply sender $ Left here
+
 
     defineSimple "trim-ack" $ \(TrimAck eid) -> publish (TrimDone eid)
     defineSimple "trim-ack-unknown" $ \(TrimUnknown _) -> return ()
     defineSimple "record-ack" $ \(RecordAck sender (PersistMessage mid ev)) ->
       do mRC <- lookupRC rg
          liftProcess $ case mRC of
-           Just rc -> do
-             self <- getSelfPid
-             eqTrace $ "EQ: Sending to RC (" ++ show rc ++"): " ++ show mid
-             usend sender (processNodeId self, processNodeId rc)
+           Just (Just rc) -> do
+             eqTrace $ "EQ: Sending to RC (" ++ show rc ++"): " ++ show (mid, sender)
+             sendReply sender $ Right $ processNodeId rc
              uforward ev rc
-           Nothing -> do
-             -- Send my own node when we don't know the RC location. Note that I
-             -- was able to read the replicated state so very likely there is no
-             -- RC.
-             n <- getSelfNode
-             usend sender (n, n)
+           _ -> do
+             -- Send my own node when we don't know the RC location.
+             getSelfNode >>= sendReply sender . Right
 
 setRC :: ProcessId -> PhaseM (Maybe EventQueueState) l ()
 setRC rc = do
@@ -290,33 +303,43 @@ recordNewRC :: RGroup g
             -> ProcessId
             -> PhaseM (Maybe EventQueueState) l ()
 recordNewRC rg rc = void $ liftProcess $ spawnLocal $
-    retry requestTimeout $ updateStateWith rg $ $(mkClosure 'eqSetRC) $ Just rc
+    retryRGroup rg requestTimeout $ fmap bToM $
+      updateStateWith rg $ $(mkClosure 'eqSetRC) $ Just rc
 
 -- | Send the pending events to the new RC.
 sendEventsToRC :: RGroup g => g EventQueue -> ProcessId -> PhaseM s l ()
 sendEventsToRC rg rc = liftProcess $ do
     eqTrace "sendEventsToRC"
-    EventQueue { _eqMap = evs } <- retry requestTimeout $ getState rg
+    EventQueue { _eqMap = evs } <- retryRGroup rg requestTimeout $ getState rg
     let pendingEvents = map fst . sortBy (compare `on` snd) $ M.elems evs
     eqTrace $ "sendEventsToRC: " ++ show (length pendingEvents)
     for_ pendingEvents $ \(PersistMessage mid ev) -> do
       eqTrace $ "EQ: Sending to RC: " ++ show mid
       uforward ev rc
 
+bToM :: Bool -> Maybe ()
+bToM True  = Just ()
+bToM False = Nothing
+
 recordRCDied :: RGroup g => g EventQueue -> PhaseM (Maybe EventQueueState) l ()
 recordRCDied rg = do
     mRC <- getRC
     -- We use compare and swap to make sure we don't overwrite
     -- the pid of a respawned RC
-    void $ liftProcess $ spawnLocal $ retry requestTimeout $
-      updateStateWith rg $ $(mkClosure 'compareAndSwapRC) (mRC, Nothing :: Maybe ProcessId)
+    void $ liftProcess $ spawnLocal $ retryRGroup rg requestTimeout $
+      fmap bToM $ updateStateWith rg $ $(mkClosure 'compareAndSwapRC)
+                                   (mRC, Nothing :: Maybe ProcessId)
+
+sendReply :: ProcessId -> Either NodeId NodeId -> Process ()
+sendReply sender reply = do here <- getSelfNode
+                            usend sender (here, reply)
 
 trim :: RGroup g => g EventQueue -> UUID -> PhaseM s l ()
 trim rg eid =
     liftProcess $ do
       self <- getSelfPid
       _ <- spawnLocal $ do
-        retry requestTimeout $
+        retryRGroup rg requestTimeout $ fmap bToM $
           updateStateWith rg $ $(mkClosure 'filterEvent) eid
         usend self (TrimAck eid)
       return ()
@@ -329,25 +352,31 @@ trimMsg rg msg =
     liftProcess $ do
       self <- getSelfPid
       _ <- spawnLocal $ do
-        retry requestTimeout $ do
+        retryRGroup rg requestTimeout $ fmap bToM $
           updateStateWith rg $ $(mkClosure 'filterMessage) msg
-          usend self (TrimUnknown msg)
+        usend self (TrimUnknown msg)
       return ()
 
 -- | Find the RC either in the local state or in the replicated state.
+--
+-- Returns @Nothing@ if we cannot read the replicated state.
+--
 lookupRC :: RGroup g
          => g EventQueue
-         -> PhaseM (Maybe EventQueueState) l (Maybe ProcessId)
+         -> PhaseM (Maybe EventQueueState) l (Maybe (Maybe ProcessId))
 lookupRC rg = do
     mRC <- getRC
     case mRC of
-      Just _ -> return mRC
+      Just _ -> return $ Just mRC
       Nothing -> do
         liftProcess $ eqTrace "lookupRC"
-        EventQueue { _eqRC = newMRC } <- liftProcess $ retry requestTimeout $ getState rg
-        liftProcess $ eqTrace $ "lookupRC: " ++ show newMRC
-        for_ newMRC setRC
-        return newMRC
+        mr <- liftProcess $ withRGroupMonitoring rg $ getState rg
+        liftProcess $ eqTrace $ "lookupRC: " ++ show (fmap (fmap _eqRC) mr)
+        case mr of
+          Just (Just (EventQueue { _eqRC = newMRC })) -> do
+            for_ newMRC setRC
+            return $ Just newMRC
+          _ -> return Nothing
 
 getRC :: PhaseM (Maybe EventQueueState) l (Maybe ProcessId)
 getRC = fmap (fmap _eqsRC) $ get Global

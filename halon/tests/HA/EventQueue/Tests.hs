@@ -27,7 +27,6 @@ import RemoteTables
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
-import Control.Distributed.Process.Timeout (retry)
 
 import Control.Applicative ((<$>))
 import Control.Monad
@@ -76,8 +75,18 @@ tests (AbstractTransport transport breakConnection _) = do
                 -- use me as the rc.
                 getSelfPid >>= usend eq >> action eq na rGroup
 
-        setup :: (ProcessId -> ProcessId -> MC_RG EventQueue -> Process ()) -> IO ()
-        setup action = withTmpDirectory $ tryWithTimeout transport rt (30 * secs) $ do
+        setup :: (ProcessId -> ProcessId -> MC_RG EventQueue -> Process ())
+              -> IO ()
+        setup action = setup' $ \a b c _ -> action a b c
+
+        setup' :: (  ProcessId
+                  -> ProcessId
+                  -> MC_RG EventQueue
+                  -> Closure (Process (MC_RG EventQueue))
+                  -> Process ()
+                  )
+                  -> IO ()
+        setup' action = withTmpDirectory $ tryWithTimeout transport rt (30 * secs) $ do
             self <- getSelfPid
             let nodes = [processNodeId self]
 
@@ -89,7 +98,7 @@ tests (AbstractTransport transport breakConnection _) = do
             updateEQNodes nodes
             mapM_ link [eq, na]
 
-            action eq na rGroup
+            action eq na rGroup cRGroup
 
 
         -- The tests below make assumptions on the implementation of
@@ -98,7 +107,7 @@ tests (AbstractTransport transport breakConnection _) = do
         -- repetition from the tests while it's at it.
         getMsgsAsList :: MC_RG EventQueue -> Process [PersistMessage]
         getMsgsAsList rGroup = do
-          evs <- _eqMap <$> retry requestTimeout (getState rGroup)
+          evs <- _eqMap <$> retryRGroup rGroup requestTimeout (getState rGroup)
           return . map fst . reverse . sortBy (compare `on` snd) $ elems evs
 
     return
@@ -196,7 +205,7 @@ tests (AbstractTransport transport breakConnection _) = do
           -- is implemented for it.
 #ifndef USE_RPC
         , testSuccess "eq-should-reconnect-to-rc" $
-              setup $ \eq _ rGroup ->
+              setup' $ \eq _ _ cRGroup ->
                 bracket
                   (liftIO $ newLocalNode transport rt)
                   (liftIO . closeLocalNode)
@@ -207,6 +216,7 @@ tests (AbstractTransport transport breakConnection _) = do
                       liftIO $ runProcess ln1 $ do
                         pid <- spawnLocal $ remoteRC self
                         -- spawn a colocated EQ
+                        rGroup <- unClosure cRGroup >>= id
                         _ <- startEventQueue rGroup
                         usend self pid
                       expect
@@ -215,8 +225,10 @@ tests (AbstractTransport transport breakConnection _) = do
                   $ \rc -> do
                 subscribe eq (Proxy :: Proxy RCLost)
                 usend eq rc
+                say "Event 1"
                 eid <- triggerEvent 1
                 -- The RC should forward the event to me.
+                say "Expecting event ..."
                 (expectTimeout defaultTimeout :: Process (Maybe (HAEvent Int))) >>=
                   \case
                     Just (HAEvent eid' _ _) | eid == eid' -> return ()
@@ -224,19 +236,22 @@ tests (AbstractTransport transport breakConnection _) = do
                     _ -> error "Wrong event received from first RC."
                 nid <- getSelfNode
                 -- Break the connection
+                say "Breaking connection"
                 liftIO $ breakConnection (nodeAddress nid) (nodeAddress $ localNodeId ln1)
                 -- Expect confirmation from the eq that the rc connection has broken.
                 expectTimeout defaultTimeout >>= \case
                   Just (Published RCLost _) -> return ()
                   Nothing -> error "No confirmation of broken connection from EQ."
+                say "Event 2"
                 eid2 <- triggerEvent 2
                 -- EQ should reconnect to the RC, and the RC should forward the
                 -- event to me.
-                (expectTimeout defaultTimeout :: Process (Maybe (HAEvent Int))) >>=
-                  \case
-                    Just (HAEvent eid' _ _) | eid2 == eid' -> return ()
+                receiveTimeout defaultTimeout
+                  [ matchIf (\(HAEvent eid' _ _ :: HAEvent Int) -> eid2 == eid')
+                            (const $ return ())
+                  ] >>= \case
+                    Just () -> return ()
                     Nothing -> error "No HA Event received from second RC."
-                    _ -> error "Wrong event received from second RC."
                 return ()
 #endif
         -- Test that until removed, messages in the EQ are sent at least once
@@ -266,16 +281,23 @@ tests (AbstractTransport transport breakConnection _) = do
             ProcessMonitorNotification _ _ _ <- expect
             pid <- promulgate (1::Int)
             _ <- monitor pid
+            say $ "Monitoring promulgate pid: " ++ show pid
             self <- getSelfPid
             eq1 <- spawnLocal $ do
                     -- ignore first message, promulgate should retry
                     _ <- expect :: Process (ProcessId, PersistMessage)
-                    (pidx, PersistMessage{}) <- expect
-                    n <- getSelfNode
-                    usend pidx (n, n)
-                    usend self ()
+                    say "First message ignored."
+                    eq2 <- spawnLocal $ do
+                      (pidx, PersistMessage{}) <- expect
+                      say $ "Second message received: " ++ show pidx
+                      n <- getSelfNode
+                      usend pidx (n, Right n :: Either NodeId NodeId)
+                      getSelfPid >>= usend self
+                      expect -- wait until the test finishes
+                    reregister eventQueueLabel eq2
+                    say "eq2 reregistered."
             register eventQueueLabel eq1
-            () <- expect
+            eq2 <- expect
             ProcessMonitorNotification _ _ _ <- expect
-            return ()
+            kill eq2 "test completed"
         ]

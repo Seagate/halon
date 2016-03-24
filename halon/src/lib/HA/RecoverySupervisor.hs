@@ -70,11 +70,16 @@ module HA.RecoverySupervisor
     ) where
 
 import HA.Logger
-import HA.Replicator ( RGroup, updateStateWith, getState )
+import HA.Replicator
+    ( RGroup
+    , updateStateWith
+    , getState
+    , withRGroupMonitoring
+    , retryRGroup
+    )
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
-import Control.Distributed.Process.Timeout ( retry, timeout )
 
 import Control.Exception ( SomeException, throwIO )
 import Control.Monad ( when, void )
@@ -124,7 +129,7 @@ recoverySupervisor :: RGroup g
                    -> Process ()
 recoverySupervisor rg rcP = do
     rsTrace "Starting"
-    rst <- retry 1000000 (getState rg)
+    rst <- retryRGroup rg 1000000 (getState rg)
     rsTrace "Got initial state"
     go (Left $ rsLeasePeriod rst) rst
     rsTrace "Terminated"
@@ -217,10 +222,10 @@ recoverySupervisor rg rcP = do
     rsUpdate rst = do
       self <- getSelfPid
       rsTrace "Competing for the lease"
-      void $ timeout (pollingPeriod $ rsLeasePeriod rst) $
+      void $ withRGroupMonitoring rg $
         updateStateWith rg $
           $(mkClosure 'setLeader) (self, rsLeaseCount rst)
-      rst' <- retry (pollingPeriod $ rsLeasePeriod rst) $ do
+      rst' <- retryRGroup rg (pollingPeriod $ rsLeasePeriod rst) $ do
         rsTrace "Reading the lease"
         getState rg
       rsTrace $ "Read the lease: " ++ show rst'

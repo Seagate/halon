@@ -17,7 +17,7 @@ import qualified HA.EQTracker as EQT
 import HA.Multimap ( MetaInfo, defaultMetaInfo, StoreChan )
 import HA.Multimap.Implementation ( Multimap, fromList )
 import HA.Multimap.Process ( startMultimap )
-import HA.Replicator ( RGroup(..), RStateView(..) )
+import HA.Replicator ( RGroup(..), RStateView(..), retryRGroup )
 import HA.Replicator.Log ( RLogGroup )
 import qualified HA.Storage as Storage
 
@@ -33,7 +33,6 @@ import qualified Control.Distributed.Process.Internal.StrictMVar as StrictMVar
     ( modifyMVar_ )
 import Control.Distributed.Process.Internal.Types
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
-import Control.Distributed.Process.Timeout ( retry )
 import Control.Distributed.Static ( closureApply )
 import Control.Exception (SomeException)
 
@@ -246,7 +245,7 @@ remotableDecl [ [d|
     nid <- getSelfNode
     cRGroup <- spawnReplica $(mkStatic 'rsDict) nid
     rGroup <- unClosure cRGroup >>= id
-    nids <- retry 1000000 $ getRGroupMembers rGroup
+    nids <- retryRGroup rGroup 1000000 $ getRGroupMembers rGroup
     let rcClosure' = rcClosure `closureApply` (closure
                                                 $(mkStatic 'decodeNids)
                                                 (encode nids)

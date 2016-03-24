@@ -29,6 +29,7 @@ Library
                     Control.Distributed.Log.Policy
                     Control.Distributed.Log.Snapshot
                     Control.Distributed.Process.Batcher
+                    Control.Distributed.Process.Monitor
                     Control.Distributed.Process.ProcessPool
                     Control.Distributed.Process.Timeout
                     Control.Distributed.State
@@ -96,6 +97,7 @@ Test-Suite tests
                     distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static >= 0.2.0,
+                    exceptions >= 0.8.0.2,
                     filepath >= 1.3,
                     mtl >= 2.0.0,
                     network >= 2.4.2.3,
@@ -138,6 +140,7 @@ Test-Suite scheduler-tests
                     distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static >= 0.2.0,
+                    exceptions >= 0.8.0.2,
                     filepath >= 1.3,
                     mtl >= 2.0.0,
                     network >= 2.4.2.3,
@@ -148,6 +151,7 @@ Test-Suite scheduler-tests
                     rank1dynamic >= 0.1,
                     replicated-log,
                     tasty,
+                    tasty-files,
                     unix
   Default-Extensions: DeriveDataTypeable
                       DeriveGeneric

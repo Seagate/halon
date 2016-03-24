@@ -16,12 +16,15 @@
 module HA.Replicator
   ( RGroup(..)
   , RStateView(..)
+  , retryRGroup
+  , withRGroupMonitoring
   ) where
 
 import Control.Distributed.Process
-           ( Process, Static, Closure, NodeId )
+           ( Process, Static, Closure, NodeId, MonitorRef )
 import Control.Distributed.Process.Serializable
            ( Serializable, SerializableDict )
+import Control.Distributed.Process.Monitor
 
 import Data.Typeable ( Typeable )
 
@@ -76,7 +79,7 @@ class RGroup g where
 
   -- | @getRGroupMembers ms@ queries the replicated state for info on the
   --   current members of the RGroup.
-  getRGroupMembers :: g st -> Process [NodeId]
+  getRGroupMembers :: g st -> Process (Maybe [NodeId])
 
   -- | @setRGroupMembers ns inGroup@ creates a new replica on every node in @ns@
   -- and adds it to the group, then it removes every replica running on a node
@@ -111,16 +114,29 @@ class RGroup g where
   -- May throw an exception if the replica is stopped before or during the call
   -- or if the replica is no longer in a group.
   --
-  updateStateWith :: g st -> Closure (st -> st) -> Process ()
+  updateStateWith :: g st -> Closure (st -> st) -> Process Bool
 
-  -- | Yields the local copy of the replicated state.
-  getState :: g st -> Process st
+  -- | Yields the replicated state.
+  getState :: g st -> Process (Maybe st)
 
   -- | Reads the replicated state using the given function.
-  getStateWith :: g st -> Closure (st -> Process ()) -> Process ()
+  getStateWith :: g st -> Closure (st -> Process ()) -> Process Bool
 
   -- | Sets the view of the replicated state.
   viewRState :: Typeable v => Static (RStateView st v) -> g st -> g v
+
+  -- | Monitors the group. When connectivity to the group is lost a process
+  -- monitor notification is sent to the caller. Lost connectivity could mean
+  -- that there was a connection failure or that a request was dropped for
+  -- internal reasons.
+  --
+  monitorRGroup :: g st -> Process MonitorRef
+
+retryRGroup :: RGroup g => g st -> Int -> Process (Maybe a) -> Process a
+retryRGroup = retryMonitoring . monitorRGroup
+
+withRGroupMonitoring :: RGroup g => g st -> Process a -> Process (Maybe a)
+withRGroupMonitoring = withMonitoring . monitorRGroup
 
 #if MIN_VERSION_base(4,7,0)
 deriving instance Typeable Replica

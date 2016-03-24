@@ -24,6 +24,7 @@ module Control.Distributed.Log
     , status
     , reconfigure
     , recover
+    , monitorLog
     , addReplica
     , killReplica
     , removeReplica

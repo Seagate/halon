@@ -12,7 +12,7 @@ import Transport
 import Control.Distributed.Process.Consensus
 import Control.Distributed.Process.Consensus.Paxos
 import Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
-import Control.Distributed.Process.Timeout (retry)
+import Control.Distributed.Process.Monitor (retryMonitoring)
 import Control.Distributed.Log as Log
 import Control.Distributed.Log.Snapshot
 import Control.Distributed.State as State
@@ -114,6 +114,10 @@ remotable [ 'dictState, 'testLog, 'ssdictState, 'testConfig, 'snapshotServer
           , 'testPersistDirectory
           ]
 
+boolToMaybe :: Bool -> Maybe ()
+boolToMaybe True  = Just ()
+boolToMaybe False = Nothing
+
 remotableDecl [ [d|
 
   consInt :: Int -> State -> Process State
@@ -124,10 +128,11 @@ remotableDecl [ [d|
 
   testReplica :: (ProcessId,Int,RemoteHandle (Command State)) -> Process ()
   testReplica (self,x,rHandle) = killOnError self $ do
-    port <- Log.clone rHandle >>= State.newPort :: Process (CommandPort State)
-    retry retryTimeout $
-      State.update port $ $(mkClosure 'consInt) x
-    newState <- retry retryTimeout $
+    h <- Log.clone rHandle
+    port <- State.newPort h
+    retryMonitoring (Log.monitorLog h) retryTimeout $
+      fmap boolToMaybe $ State.update port $ $(mkClosure 'consInt) x
+    newState <- retryMonitoring (Log.monitorLog h) retryTimeout $
       State.select $(mkStatic 'ssdictState) port $(mkStaticClosure 'readInts)
     usend self (x,reverse newState)
 

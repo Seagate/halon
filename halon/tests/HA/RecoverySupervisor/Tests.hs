@@ -11,7 +11,7 @@
 module HA.RecoverySupervisor.Tests ( tests ) where
 
 import HA.RecoverySupervisor hiding (__remoteTable)
-import HA.Replicator ( RGroup(..) )
+import HA.Replicator ( RGroup(..), retryRGroup )
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
 #else
@@ -25,7 +25,6 @@ import Control.Distributed.Process.Internal.Types ( ProcessExitException )
 import Control.Distributed.Process.Node
 import qualified Control.Distributed.Process.Scheduler as Scheduler
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
-import Control.Distributed.Process.Timeout (retry)
 import Network.Transport.Controlled ( Controlled, silenceBetween )
 import Network.Transport.InMemory (createTransport)
 
@@ -56,8 +55,8 @@ import System.Random
 import System.Timeout (timeout)
 
 
-requestTimeout :: Int
-requestTimeout = 1000000
+retryRG :: RGroup g => g st -> Process (Maybe a) -> Process a
+retryRG g = retryRGroup g 1000000
 
 pollingPeriod :: Int
 pollingPeriod = 2000000
@@ -114,13 +113,13 @@ tests abstractTransport = do
         _ <- receiveChan $ snd $ cStart events
         _ <- receiveChan $ snd $ cStop events
         rGroup <- join $ unClosure cRGroup
-        RSState (Just _) _ _<- retry requestTimeout $ getState rGroup
+        RSState (Just _) _ _<- retryRG rGroup $ getState rGroup
         return ()
 #ifndef USE_MOCK_REPLICATOR
     , testSuccess "rs-restart-if-node-silent" $ testSplit transport controlled 4 $
       \rc ns events splitNet cRGroup -> do
         rGroup <- join $ unClosure cRGroup
-        RSState (Just leader0) _ _ <- retry requestTimeout $ getState rGroup
+        RSState (Just leader0) _ _ <- retryRG rGroup $ getState rGroup
         liftIO $ assertBool ("the leader is not the expected one"
                              ++ show (rc, leader0)
                             )
@@ -143,7 +142,7 @@ tests abstractTransport = do
         self <- getSelfPid
         _ <- liftIO $ forkProcess (head rest) $ do
                rGroup' <- join $ unClosure cRGroup
-               retry requestTimeout (getState rGroup') >>= usend self
+               retryRG rGroup' (getState rGroup') >>= usend self
         RSState (Just leader1) _ _<- expect
         -- Verify that we have new leader
         liftIO $ assertBool ("the leader is not new " ++
@@ -153,7 +152,7 @@ tests abstractTransport = do
     , testSuccess "rs-rc-killed-if-quorum-is-lost" $
        testSplit transport controlled 4 $ \rc ns events splitNet cRGroup -> do
         rGroup <- join $ unClosure cRGroup
-        RSState (Just leader0) _ _ <- retry requestTimeout $ getState rGroup
+        RSState (Just leader0) _ _ <- retryRG rGroup $ getState rGroup
         liftIO $ assertBool ("the leader is not the expected one"
                              ++ show (rc, leader0)
                             )
@@ -195,7 +194,7 @@ tests abstractTransport = do
         self <- getSelfPid
         _ <- liftIO $ forkProcess (head as) $ do
                rGroup' <- join $ unClosure cRGroup
-               retry requestTimeout (getState rGroup') >>= usend self
+               retryRG rGroup' (getState rGroup') >>= usend self
         RSState (Just _) _ _<- expect
         return ()
     , testSuccess "rs-split-in-half"  $ testSplit transport controlled 5 $ \pid nodes events splitNet _ -> do
@@ -268,7 +267,7 @@ testSplit transport t amountOfReplicas action =
 
         pid0 <- receiveChan $ snd $ cStart events
         Nothing <- receiveChanTimeout 0 $ snd $ cStop events
-        RSState (Just _) _ _ <- retry requestTimeout $ getState rGroup
+        RSState (Just _) _ _ <- retryRG rGroup $ getState rGroup
         action pid0 ns events doSplit cRGroup
         -- TODO: implement closing RGroups and call it here.
 

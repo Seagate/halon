@@ -106,11 +106,16 @@ test = testCase "TSDisconnects2" $
       systemThere [m0] $ "./halonctl"
                       ++ " -l " ++ halonctlloc m0
                       ++ " -a " ++ m3loc
-                      ++ " service ping start -t " ++ m0loc ++ " 2>&1"
+                      ++ " service ping start"
+                      ++ " -t " ++ m0loc
+                      ++ " -t " ++ m1loc
+                      ++ " -t " ++ m2loc
+                      ++ " 2>&1"
       expectLog tsNodes (isInfixOf "started ping service")
 
       whereisRemoteAsync nid3 $ serviceLabel $ serviceName Ping.ping
       WhereIsReply _ (Just pingPid) <- expect
+      say "Testing ping service ..."
       send pingPid "0"
       expectLog tsNodes $ isInfixOf "received DummyEvent 0"
 

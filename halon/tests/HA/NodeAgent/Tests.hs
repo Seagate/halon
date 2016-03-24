@@ -34,7 +34,7 @@ import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 import Data.List (find, isPrefixOf, nub, (\\))
 import Control.Concurrent ( threadDelay )
 import Control.Concurrent.MVar (newEmptyMVar,putMVar,takeMVar,MVar)
-import Control.Monad ( replicateM, forM_, forever, void )
+import Control.Monad ( replicateM, forM_, void )
 import Control.Exception ( SomeException )
 import Control.Exception as E ( bracket )
 import Network.Transport ( Transport )
@@ -108,24 +108,33 @@ naTest transport action = withTmpDirectory $ E.bracket
       let nids = map localNodeId nodes
       runProcess (nodes !! 0) $ do
         self <- getSelfPid
-        eq1 <- spawnLocal $ forever $
-                 (expect :: Process (ProcessId, PersistMessage))
-                 >>= usend self . (,) (nids !! 0)
+        eq1 <- spawnLocal $ fakeEq (localNodeId $ nodes !! 0) self
         register eventQueueLabel eq1
         liftIO $ runProcess (nodes !! 1) $ do
-          eq2 <- spawnLocal $ forever $
-                   (expect :: Process (ProcessId, PersistMessage))
-                   >>= usend self . (,) (nids !! 1)
+          eq2 <- spawnLocal $ fakeEq (localNodeId $ nodes !! 1) self
           register eventQueueLabel eq2
         eqt <- startEQTracker nids
         bracket_ (link eqt) (unlink eqt) $
           action nids
+  where
+    fakeEq :: NodeId -> ProcessId -> Process ()
+    fakeEq eqNodeId controller = receiveWait
+      [ match $ \x -> do
+          usend controller (eqNodeId, x :: (ProcessId, PersistMessage))
+          fakeEq eqNodeId controller
+      , match $ \() -> do
+          eq' <- spawnLocal $ fakeEq eqNodeId controller
+          reregister eventQueueLabel eq'
+      ]
 
 expectEventOnNode :: NodeId -> Process ProcessId
 expectEventOnNode n = receiveWait
     [ matchIf (\(n', (_sender, PersistMessage _ _)) -> n' == n)
               (return . fst . snd)
     ]
+
+sendReply :: ProcessId -> (NodeId, Either NodeId NodeId) -> Process ()
+sendReply = usend
 
 tests :: Transport -> IO [TestTree]
 tests transport = do
@@ -157,25 +166,25 @@ tests transport = do
             _ <- spawnLocal $ expiate "hello1"
             sender0 <- expectEventOnNode $ nids !! 0
             _ <- expectEventOnNode $ nids !! 1
-            usend sender0 (nids !! 0, nids !! 0)
+            sendReply sender0 (nids !! 0, Right $ nids !! 0)
             () <- expect
 
             -- We still get an event on the first node and suggest NA to use the
             -- second node.
             _ <- spawnLocal $ expiate "hello2"
             sender1 <- expectEventOnNode $ nids !! 0
-            usend sender1 (nids !! 0, nids !! 1)
+            sendReply sender1 (nids !! 0, Right $ nids !! 1)
             () <- expect
 
             -- We get an event on the second node.
             _ <- spawnLocal $ expiate "hello3"
             sender2 <- expectEventOnNode $ nids !! 1
-            usend sender2 (nids !! 1, nids !! 1)
+            sendReply sender2 (nids !! 1, Right $ nids !! 1)
 
             -- We get the next event on the second node again.
             _ <- spawnLocal $ expiate "hello4"
             sender3 <- expectEventOnNode $ nids !! 1
-            usend sender3 (nids !! 1, nids !! 1)
+            sendReply sender3 (nids !! 1, Right $ nids !! 1)
 
       , testSuccess "na-should-compress-path-with-failures" $ naTest transport $ \nids -> do
 
@@ -189,23 +198,25 @@ tests transport = do
             _ <- spawnLocal $ expiate "hello1"
             sender0 <- expectEventOnNode $ nids !! 0
             _ <- expectEventOnNode $ nids !! 1
-            usend sender0 (nids !! 0, nids !! 0)
+            sendReply sender0 (nids !! 0, Right $ nids !! 0)
             () <- expect
 
             -- We still get an event on the first node and suggest NA to use the
             -- second node.
             _ <- spawnLocal $ expiate "hello2"
             sender1 <- expectEventOnNode $ nids !! 0
-            usend sender1 (nids !! 0, nids !! 1)
+            sendReply sender1 (nids !! 0, Right $ nids !! 1)
             () <- expect
 
             -- We get an event on the second node, but we are not going to
-            -- reply, so NA should resend to the first node.
+            -- reply, so NA should resend to the first node. We restart the
+            -- event queue so the NA notices the failure.
             _ <- spawnLocal $ expiate "hello3"
             _ <- expectEventOnNode $ nids !! 1
+            nsendRemote (nids !! 1) eventQueueLabel ()
 
             sender2 <- expectEventOnNode $ nids !! 0
-            usend sender2 (nids !! 0, nids !! 1)
+            sendReply sender2 (nids !! 0, Right $ nids !! 1)
             () <- expect
 
             -- We get an event on the second node and we reply. But because we
@@ -221,24 +232,24 @@ tests transport = do
             -- The event was sent to both nodes.
             True <- return $ length nids4 == 2
             True <- return $ null $ nids4 \\ nids
-            usend sender (nids !! 1, nids !! 1)
+            sendReply sender (nids !! 1, Right $ nids !! 1)
             () <- expect
 
             -- We get the next event on the second node again, and we suggest
             -- the first node.
             _ <- spawnLocal $ expiate "hello5"
             sender3 <- expectEventOnNode $ nids !! 1
-            usend sender3 (nids !! 1, nids !! 0)
+            sendReply sender3 (nids !! 1, Right $ nids !! 0)
             () <- expect
 
             -- We get the next event on the first node.
             _ <- spawnLocal $ expiate "hello6"
             sender4 <- expectEventOnNode $ nids !! 0
-            usend sender4 (nids !! 0, nids !! 0)
+            sendReply sender4 (nids !! 0, Right $ nids !! 0)
             () <- expect
 
             -- We get the next event on the first node again.
             _ <- spawnLocal $ expiate "hello7"
             sender5 <- expectEventOnNode $ nids !! 0
-            usend sender5 (nids !! 0, nids !! 0)
+            sendReply sender5 (nids !! 0, Right $ nids !! 0)
       ]

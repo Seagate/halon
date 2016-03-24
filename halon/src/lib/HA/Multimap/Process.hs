@@ -24,13 +24,13 @@ import HA.Replicator
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( mkClosure, remotable )
 import Control.Distributed.Process.Scheduler ( schedulerIsEnabled )
-import Control.Distributed.Process.Timeout ( retry, timeout )
+import Control.Distributed.Process.Timeout ( timeout )
 
 import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Exception (SomeException, throwIO)
 import Control.Monad ( when, void )
-import Control.Monad.STM hiding (retry)
+import Control.Monad.STM
 import Data.Binary ( encode )
 import Data.ByteString ( ByteString )
 import Data.ByteString.Builder ( lazyByteString, toLazyByteString )
@@ -79,6 +79,10 @@ remotable [ 'updateStore, 'readStore ]
 -- state
 requestTimeout :: Int
 requestTimeout = 4 * 1000 * 1000
+
+bToM :: Bool -> Maybe ()
+bToM True  = Just ()
+bToM False = Nothing
 
 -- | Starts a process which listens for incoming rpc calls
 -- to query and modify the 'Multimap' in the replicated state.
@@ -129,7 +133,7 @@ multimap (StoreChan _ rchan wchan) rg =
                        (\(a, b) -> (map snd a, map snd b)) $
                        break ((> 64 * 1024) . fst) $
                        zip (scanl1 (+) $ map (BSL.length . encode) rs) rs
-                retry requestTimeout $ updateStateWith rg $
+                retryRGroup rg requestTimeout $ fmap bToM $ updateStateWith rg $
                   $(mkClosure 'updateStore) rs'
                 when (not $ null rest) $ loop rest
 
@@ -153,7 +157,9 @@ multimap (StoreChan _ rchan wchan) rg =
           mvRes <- liftIO newEmptyMVar
           readDone <- liftIO newEmptyMVar
           worker <- spawnLocal $ do
-            getSelfPid >>= getStateWith rg . $(mkClosure 'readStore)
+            fix $ \loop ->
+              getSelfPid >>= getStateWith rg . $(mkClosure 'readStore)
+              >>= \b -> if b then return () else loop
             reader <- expect
             ref <- monitor reader
             -- Signal that the read request was served.

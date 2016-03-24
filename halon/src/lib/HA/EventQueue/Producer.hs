@@ -4,6 +4,7 @@
 --
 -- This is the Event Producer API, used by services.
 
+{-# LANGUAGE LambdaCase #-}
 module HA.EventQueue.Producer
   ( promulgateEQ
   , promulgateEQPref
@@ -14,8 +15,10 @@ module HA.EventQueue.Producer
   ) where
 
 import HA.CallTimeout
-  ( ncallRemoteAnyTimeout
-  , ncallRemoteAnyPreferTimeout
+  ( ncallRemoteSome
+  , ncallRemoteSomePrefer
+  , withLabeledProcesses
+  , receiveFrom
   )
 import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types
@@ -24,9 +27,11 @@ import qualified HA.EQTracker as EQT
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable (Serializable)
-import Control.Monad (when, void)
+import Control.Monad (when, void, (>=>))
 
-import Data.List ((\\))
+import Data.Either (isRight)
+import Data.Function (fix)
+import Data.List ((\\), nub)
 import Data.Typeable
 
 producerTrace :: String -> Process ()
@@ -41,7 +46,7 @@ softTimeout = 5000000
 -- This timeout needs to be higher than the staggering
 -- hard timeout.
 promulgateTimeout :: Int
-promulgateTimeout = 15000000
+promulgateTimeout = 5000000
 
 -- | Promulgate an event directly to an EQ node without indirection
 --   via the NodeAgent. Note that this spawns a local process in order
@@ -58,7 +63,7 @@ promulgateEQ eqnids x = spawnLocal $ do
   where
     go evt = do
       res <- promulgateHAEvent eqnids evt
-      when (res == Failure) $ go evt
+      when (res == Failure) $ receiveTimeout 1000000 [] >> go evt
 
 -- | Like 'promulgateEQ', but express a preference for certain EQ nodes.
 promulgateEQPref :: Serializable a
@@ -73,7 +78,7 @@ promulgateEQPref peqnids eqnids x = spawnLocal $ do
   where
     go evt = do
       res <- promulgateHAEventPref peqnids eqnids evt
-      when (res == Failure) $ go evt
+      when (res == Failure) $ receiveTimeout 1000000 [] >> go evt
 
 -- | Add an event to the event queue, and don't die yet. This uses the local
 --   event tracker to identify the list of EQ nodes.
@@ -114,12 +119,12 @@ promulgateEvent evt =
         Just (EQT.ReplicaReply (EQT.ReplicaLocation [] rest)) -> do
           res <- promulgateHAEvent rest evt
           producerTrace $ "promulgateEvent: " ++ show (res, persistEventId evt)
-          when (res == Failure) go
+          when (res == Failure) $ receiveTimeout 1000000 [] >> go
         Just (EQT.ReplicaReply (EQT.ReplicaLocation pref rest)) -> do
           res <- promulgateHAEventPref pref rest evt
           producerTrace $ "promulgateEvent: " ++ show (res, persistEventId evt)
-          when (res == Failure) go
-        Nothing -> go
+          when (res == Failure) $ receiveTimeout 1000000 [] >> go
+        Nothing -> receiveTimeout 1000000 [] >> go
 
 -- | Promulgate an HAEvent directly to EQ nodes. We also try to inform the
 --   local EQ tracker about preferred replicas, if available.
@@ -128,15 +133,21 @@ promulgateHAEvent :: [NodeId] -- ^ EQ nodes.
                   -> Process Result
 promulgateHAEvent eqnids msg = do
   producerTrace $ "Sending " ++ show (persistEventId msg) ++ " to " ++ show eqnids
-  result <- callLocal $
-    ncallRemoteAnyTimeout
-      promulgateTimeout eqnids eventQueueLabel msg
+  result <- callLocal $ do
+    rs0 <- ncallRemoteSome
+      promulgateTimeout eqnids eventQueueLabel msg (isRight . snd)
+    -- Continue waiting if EQs are forwarding the events to other nodes.
+    (\a b c -> fix c a b) eqnids rs0 $ \loop nids rs -> do
+      let nids' = nub (concatMap (either (:[]) (const []) . snd) rs) \\ nids
+      if null nids' || isRight (snd (head rs)) then return rs
+        else withLabeledProcesses promulgateTimeout nids' eventQueueLabel $
+               receiveFrom (isRight . snd) >=> loop (nids' ++ nids)
   producerTrace $ "promulgateHAEvent: " ++ show (result, persistEventId msg)
-  case result :: Maybe (NodeId, NodeId) of
-    Nothing -> return Failure
-    Just (rnid, pnid) -> do
+  case result :: [(NodeId, Either NodeId NodeId)] of
+    (rnid, Right pnid) : _ -> do
       nsend EQT.name $ EQT.PreferReplicas rnid pnid
       return Success
+    _ -> return Failure
 
 -- | Promulgate an HAEvent directly to EQ nodes, specifying a preference for
 --   certain nodes first. We also try to inform the local EQ tracker about
@@ -149,17 +160,24 @@ promulgateHAEventPref peqnids eqnids msg = do
   producerTrace $ "Sending " ++ show (persistEventId msg)
                    ++ " to " ++ show peqnids
                    ++ " and then to " ++ show (eqnids \\ peqnids)
-  result <- callLocal $
-    ncallRemoteAnyPreferTimeout
+  result <- callLocal $ do
+    rs0 <- ncallRemoteSomePrefer
       softTimeout promulgateTimeout
       peqnids (eqnids \\ peqnids)
       eventQueueLabel msg
+      (isRight . snd)
+    -- Continue waiting if EQs are forwarding the events to other nodes.
+    (\a b c -> fix c a b) eqnids rs0 $ \loop nids rs -> do
+      let nids' = nub (concatMap (either (:[]) (const []) . snd) rs) \\ nids
+      if null nids' || isRight (snd (head rs)) then return rs
+        else withLabeledProcesses promulgateTimeout nids' eventQueueLabel $
+               receiveFrom (isRight . snd) >=> loop (nids' ++ nids)
   producerTrace $ "promulgateHAEventPref: " ++ show (result, persistEventId msg)
-  case result :: Maybe (NodeId, NodeId) of
-    Nothing -> return Failure
-    Just (rnid, pnid) -> do
+  case result :: [(NodeId, Either NodeId NodeId)] of
+    (rnid, Right pnid) : _ -> do
       nsend EQT.name $ EQT.PreferReplicas rnid pnid
       return Success
+    _ -> return Failure
 
 -- | Add a new event to the event queue and then die.
 expiate :: Serializable a => a -> Process ()

@@ -22,7 +22,15 @@ module HA.Replicator.Mock
 import HA.Replicator ( RGroup(..), RStateView(..) )
 
 import Control.Distributed.Process
-    ( Static, Closure, unClosure, liftIO, unStatic, Process )
+    ( Static
+    , Closure
+    , unClosure
+    , liftIO
+    , unStatic
+    , Process
+    , monitor
+    , getSelfPid
+    )
 import Control.Distributed.Process.Closure
     ( remotable, mkStatic, remotableDecl )
 import Control.Distributed.Process.Serializable
@@ -105,16 +113,20 @@ instance RGroup RLocalGroup where
   updateRGroup _ Replica{} = return ()
 
   updateStateWith (RLocalGroup r rp) cUpd = unClosure (updateClosure rp cUpd)
-    >>= \upd -> liftIO $ atomicModifyIORef r $ \st -> seq st (upd st, ())
+    >>= \upd -> liftIO (atomicModifyIORef r $ \st -> seq st (upd st, ()))
+    >> return True
 
   getState (RLocalGroup r rv) = unStatic rv
-    >>= \rgv -> fmap (prj rgv) $ liftIO $ readIORef r
+    >>= \rgv -> fmap (Just . prj rgv) $ liftIO $ readIORef r
 
   getStateWith (RLocalGroup r rv) cRd = do
     rgv <- unStatic rv
     s <- fmap (prj rgv) $ liftIO $ readIORef r
     f <- unClosure cRd
     f s
+    return True
 
   viewRState rv (RLocalGroup st rv') = RLocalGroup st $
     $(mkStatic 'composeRP) `staticApply` rv' `staticApply` rv
+
+  monitorRGroup _ = getSelfPid >>= monitor

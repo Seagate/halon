@@ -70,6 +70,8 @@ import Control.Exception ( evaluate )
 import Control.Monad ( when, forM, void, forM_ )
 import Data.Binary ( decode, encode, Binary )
 import Data.ByteString.Lazy ( ByteString )
+import Data.Function (fix)
+import Data.Maybe (isJust)
 import Data.Ratio ( (%) )
 import Data.Typeable ( Typeable )
 
@@ -241,10 +243,13 @@ instance RGroup RLogGroup where
   getRGroupMembers (RLogGroup _ _ h _ _) = Log.getMembership h
 
   setRGroupMembers (RLogGroup _ _ h _ _) ns inGroup = do
-    Log.reconfigure h $ $(mkClosure 'removeNodes) () `closureApply` inGroup
+    fix $ \loop ->
+      Log.reconfigure h ($(mkClosure 'removeNodes) () `closureApply` inGroup)
+        >>= \b -> if b then return () else loop
     forM ns $ \nid -> do
       _ <- spawn nid $ staticClosure $(mkStatic 'snapshotServer)
-      Log.addReplica h nid
+      fix $ \loop -> Log.addReplica h nid >>= \b ->
+                       if b then return () else loop
       return $ Replica nid
 
   updateRGroup (RLogGroup _ _ h _ _) (Replica ρ) = Log.updateHandle h ρ
@@ -256,7 +261,7 @@ instance RGroup RLogGroup where
     select sdict port $ staticClosure $ queryStatic rv
 
   getStateWith (RLogGroup _ _ _ port rv) cRd =
-    select sdictUnit port $
+    fmap isJust $ select sdictUnit port $
       $(mkStaticClosure 'composeM)
         `closureApply` staticClosure (queryStatic rv)
         `closureApply` cRd
@@ -264,6 +269,8 @@ instance RGroup RLogGroup where
   viewRState rv (RLogGroup _ sdq h port rv') =
       RLogGroup ($(mkStatic 'rvDict) `staticApply` rv) sdq h port $
                 $(mkStatic 'composeSV) `staticApply` rv' `staticApply` rv
+
+  monitorRGroup (RLogGroup _ _ h _ _) = Log.monitorLog h
 
 #if ! MIN_VERSION_base(4,7,0)
 -- | The sole purpose of this type is to provide a typeable instance from

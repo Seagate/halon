@@ -364,6 +364,7 @@ Test-Suite distributed-tests
       HA.Test.Distributed.RCInsists2
       HA.Test.Distributed.Snapshot3
       HA.Test.Distributed.StartService
+      HA.Test.Distributed.StressRC
       HA.Test.Distributed.TSDisconnects
       HA.Test.Distributed.TSDisconnects2
       HA.Test.Distributed.TSRecovers
