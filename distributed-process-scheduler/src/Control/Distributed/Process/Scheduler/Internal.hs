@@ -544,17 +544,33 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
         -- the process who is monitoring whom
         Monitor who whom@(DP.ProcessIdentifier whomPid) isLink -> do
             let ref = DP.MonitorRef (DP.ProcessIdentifier who) mcounter
-            if Set.member whomPid alive then do
-              DP.send who ref
-              go st { stateMonitors =
-                        Map.insertWith (++) whom [(ref, isLink)] monitors
-                    , stateMonitorCounter = mcounter + 1
-                    }
-            else do
-              send who $
-                DP.ProcessMonitorNotification ref whomPid DP.DiedUnknownId
-              DP.send who ref
-              go st { stateMonitorCounter = mcounter + 1 }
+            DP.send who ref
+            let st' = st { stateMonitors =
+                             Map.insertWith (++) whom [(ref, isLink)] monitors
+                         , stateMonitorCounter = mcounter + 1
+                         }
+                f = Map.lookup (DP.processNodeId who, DP.processNodeId whomPid)
+                               (stateFailures st')
+                (v, seed') = randomR (0.0, 1.0) $ stateSeed st'
+                st'' = maybe st' (const $ st' {stateSeed = seed'}) f
+            case f of
+              Just p | v <= p -> do
+                let srcNid = DP.processNodeId who
+                notifyMonitors st'' (== srcNid)
+                               srcNid
+                               (DP.NodeIdentifier $ DP.processNodeId whomPid)
+                               DP.DiedDisconnect
+                  >>= go
+              _ ->
+                if Set.member whomPid alive then
+                  go st''
+                else
+                  notifyMonitors st'' (== DP.processNodeId who)
+                                 (DP.processNodeId whomPid)
+                                 (DP.ProcessIdentifier whomPid)
+                                 DP.DiedUnknownId
+                    >>= go
+
         -- monitoring a node
         Monitor who whom isLink -> do
             let ref = DP.MonitorRef (DP.ProcessIdentifier who) mcounter
