@@ -35,6 +35,7 @@ schedGetTime C.Monotonic = do
     sproc <- Internal.getScheduler
     _ <- DPN.forkProcess (processNode sproc) $ do
       self <- DP.getSelfPid
+      Internal.schedulerTrace "System.Clock.getTime"
       DP.send (processId sproc) $ Internal.GetTime self
       DP.expect >>= DP.liftIO . putMVar mv
     t <- takeMVar mv

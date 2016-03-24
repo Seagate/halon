@@ -54,7 +54,6 @@ Library
                    ,network-transport
                    ,random
                    ,stm
-                   ,unix
 
 Test-Suite unit-tests-with-scheduler
   Type:             exitcode-stdio-1.0

@@ -66,6 +66,7 @@ module Control.Distributed.Process.Scheduler.Internal
   -- * Internal communication with the scheduler
   , yield
   , getScheduler
+  , schedulerTrace
   , AbsentScheduler(..)
   , SchedulerMsg(..)
   , SchedulerResponse(..)
@@ -114,7 +115,8 @@ import qualified Data.Set as Set
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
 import Network.Transport (Transport)
-import System.Posix.Env ( getEnv )
+import System.Environment (lookupEnv)
+import System.IO
 import System.IO.Unsafe ( unsafePerformIO )
 import System.Mem.Weak (deRefWeak)
 import System.Random
@@ -126,7 +128,20 @@ import Unsafe.Coerce
 -- replaced with HFlags in the future).
 {-# NOINLINE schedulerIsEnabled #-}
 schedulerIsEnabled :: Bool
-schedulerIsEnabled = unsafePerformIO $ (== Just "1") <$> getEnv "DP_SCHEDULER_ENABLED"
+schedulerIsEnabled = unsafePerformIO $
+    maybe False (== "1") <$> lookupEnv "DP_SCHEDULER_ENABLED"
+
+-- | A tracing function for debugging purposes.
+schedulerTrace :: String -> Process ()
+schedulerTrace msg = do
+    let b = unsafePerformIO $
+              maybe False (elem "d-p-scheduler" . words)
+                <$> lookupEnv "HALON_TRACING"
+    when b $ if schedulerIsEnabled
+      then do self <- DP.getSelfPid
+              DP.liftIO $ hPutStrLn stderr $
+                show self ++ ": [d-p-scheduler] " ++ msg
+      else DP.say $ "[d-p-scheduler] " ++ msg
 
 -- | Tells if there is a scheduler running.
 {-# NOINLINE schedulerLock #-}
@@ -438,6 +453,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
         -- pick next transition
         let (r , st') = pickNextTransition $
                           if systemStuck then jumpToNextTimeout st else st
+        schedulerTrace $ "scheduler: " ++ show (stateSeed st, r)
         case r of
           PutMsg pid msg | isExceptionMsg msg -> do
              forwardSystemMsg msg
@@ -481,7 +497,8 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
         error $ "startScheduler: More than one process is alive: "
                 ++ show (alive, procs)
       DP.receiveWait
-        [ DP.match $ \m -> case m of
+        [ DP.match $ \m ->
+        (schedulerTrace $ "scheduler: " ++ show (stateSeed st, m)) >> case m of
         GetTime pid -> DP.send pid clock >> go st
         -- a process is sending a message
         Send source pid msg ->
@@ -588,7 +605,8 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
             go st { stateFailures = foldr Map.delete failures fls }
 
         -- a process has terminated
-        , DP.match $ \(DP.ProcessMonitorNotification _ pid reason) -> do
+        , DP.match $ \pmn@(DP.ProcessMonitorNotification _ pid reason) -> do
+            schedulerTrace $ "scheduler: " ++ show (stateSeed st, pmn)
             st' <- notifyMonitors st (const True) (DP.processNodeId pid)
                                   (DP.ProcessIdentifier pid) reason
             let (mt, revTimeouts') =
@@ -955,6 +973,7 @@ usend = send
 say :: String -> Process ()
 say string = do
     self <- DP.getSelfPid
+    schedulerTrace "say"
     sendS $ GetTime self
     now <- DP.expect
     nsend "logger" (show (now :: Int), self, string)
