@@ -419,7 +419,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
         Just chan -> do
           procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
           case procs of
-            [] -> let state = M0.MeroClusterStarting (M0.BootLevel 2) in do
+            [] -> let state = M0.MeroClusterRunning in do
               notifyOnClusterTranstion state BarrierPass Nothing
               switch [start_clients, timeout 5000000 finish]
             _ -> continue boot_level_1_complete
@@ -438,7 +438,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
                           ++ " failed to start: " ++ r
         traverse_ (\(p :: M0.Process) ->
           modifyGraph $ G.connect p R.Is (M0.PSFailed r)) mp
-      let state = M0.MeroClusterStarting (M0.BootLevel 2)
+      let state = M0.MeroClusterRunning
       notifyOnClusterTranstion state BarrierPass (Just eid)
       switch [start_clients, timeout 5000000 finish]
 
