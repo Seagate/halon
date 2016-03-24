@@ -592,14 +592,8 @@ ruleNewMeroClient = define "new-mero-client" $ do
 
     -- Service comes up as a result of this invocation
     setPhaseIf svc_up_now declareMeroChannelOnNode $ \chan -> do
-      Just (_, host, _) <- get Local
-      -- Legitimate to ignore the event id as it should be handled by the default
-      -- 'declare-mero-channel' rule.
-      procs <- startNodeProcesses host chan M0.PLM0t1fs False
-      case procs of
-        [] -> let state = M0.MeroClusterRunning in do
-          notifyOnClusterTranstion state BarrierPass Nothing
-        _ -> continue start_clients_complete
+      notifyOnClusterTranstion M0.MeroClusterRunning BarrierPass Nothing
+      continue start_clients
 
     -- Service is already up
     directly svc_up_already $ do
@@ -607,12 +601,9 @@ ruleNewMeroClient = define "new-mero-client" $ do
       rg <- getLocalGraph
       m0svc <- lookupRunningService node m0d
       case m0svc >>= meroChannel rg of
-        Just chan -> do
-          procs <- startNodeProcesses host chan M0.PLM0t1fs False
-          case procs of
-            [] -> let state = M0.MeroClusterRunning in do
-              notifyOnClusterTranstion state BarrierPass Nothing
-            _ -> continue start_clients_complete
+        Just (_ :: TypedChannel ProcessControlMsg) -> do
+          notifyOnClusterTranstion M0.MeroClusterRunning BarrierPass Nothing
+          continue start_clients
         Nothing -> switch [svc_up_now, timeout 5000000 svc_up_already]
 
     setPhaseIf start_clients (barrierPass M0.MeroClusterRunning) $ \() -> do
