@@ -80,12 +80,12 @@ ruleClusterStart = defineSimple "cluster-start-request"
                   modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStarting (M0.BootLevel 0))
                   -- Due to the mero requirements we should mark all services as running.
                   -- We do not update sdev/disk state for now.
-                  modifyGraph $ \rg ->
-                     let procs = G.getResourcesOfType rg :: [M0.Process]
-                         srvs  = procs >>= \p -> G.connectedTo p M0.IsParentOf rg :: [M0.Service]
+                  modifyGraph $ \g ->
+                     let procs = G.getResourcesOfType g :: [M0.Process]
+                         srvs  = procs >>= \p -> G.connectedTo p M0.IsParentOf g :: [M0.Service]
                      in flip (foldr (\p -> G.connectUniqueFrom p R.Is M0.M0_NC_ONLINE)) procs
                           >>> flip (foldr (\s -> G.connectUniqueFrom s R.Is M0.M0_NC_ONLINE)) srvs
-                              $ rg
+                              $ g
                   announceMeroNodes
                   syncGraphCallback $ \pid proc -> do
                     sendChan ch (StateChangeStarted pid)

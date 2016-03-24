@@ -29,6 +29,10 @@ module HA.Services.SSPL
   , sendNodeCmd
   , header
   , sendInterestingEvent
+    -- * Unused but defined
+  , ssplProcess__sdict
+  , ssplProcess__tdict
+  , sspl__static
   ) where
 
 import HA.EventQueue.Producer (promulgate, promulgateWait)
@@ -66,7 +70,6 @@ import Control.Distributed.Process
   , unmonitor
   , link
   , expect
-  , withMonitor
   , usend
   )
 import Control.Distributed.Process.Closure
@@ -133,7 +136,7 @@ msgHandler chan msg = do
       ignoreMessage "SensorResponse.IF"
         sensorResponseMessageSensor_response_typeIf_data
       sendMessage "SensorResponse.Host"
-        sensorResponseMessageSensor_response_typeHost_update 
+        sensorResponseMessageSensor_response_typeHost_update
       sendMessage "SensorResponse.DriveManager"
          sensorResponseMessageSensor_response_typeDisk_status_drivemanager
       ignoreMessage "SensorResponse.Watchdog"
@@ -143,10 +146,10 @@ msgHandler chan msg = do
       sendMessage "SensorResponse.CPU"
          sensorResponseMessageSensor_response_typeCpu_data
       sendMessage "SensorResponse.Raid"
-         sensorResponseMessageSensor_response_typeRaid_data 
+         sensorResponseMessageSensor_response_typeRaid_data
 
     Nothing -> case decode (msgBody msg) :: Maybe ActuatorResponse of
-      Just ar -> do 
+      Just ar -> do
         let arms = actuatorResponseMessageActuator_response_type . actuatorResponseMessage $ ar
             sendMessage s f = forM_ (f arms) $ \x -> do
               saySSPL $ "received " ++ s
@@ -187,7 +190,7 @@ startActuators chan ac pid monitorChan = do
     informRC sp chans = do
       mypid <- getSelfPid
       mon <- promulgate $ DeclareChannels mypid sp chans
-      monitor mon
+      _ <- monitor mon
       _ <- expect :: Process ProcessMonitorNotification
       msg <- expectTimeout (fromDefault . acDeclareChanTimeout $ ac)
       case msg of
@@ -252,13 +255,13 @@ startActuators chan ac pid monitorChan = do
                                                (parseNodeCmd  mtype)
                                                reply
                saySSPL $ "Sending reply: " ++ show ca
-               ppid <- promulgateWait  ca
+               _ <- promulgateWait ca
                sendChan monitorChan ())
 
 -- | Test that messages are sent on a timely manner.
 monitorProcess :: ReceivePort () -> Process()
 monitorProcess rchan = forever $ receiveChanTimeout ssplMaxMessageTimeout rchan >>= \case
-      Nothing -> do node <- getSelfNode 
+      Nothing -> do node <- getSelfNode
                     promulgateWait (SSPLServiceTimeout node)
       _ -> return ()
 
@@ -313,7 +316,7 @@ remotableDecl [ [d|
               Right x -> return x
               Left _ -> do
                 _ <- receiveTimeout 1000000 []
-                retry (n-1) action 
+                retry (n-1 :: Int) action
       conn <- retry 10 (liftIO $ Rabbit.openConnection scConnectionConf)
       chan <- liftIO $ openChannel conn
       (sendPort, receivePort) <- newChan
