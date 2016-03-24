@@ -157,6 +157,36 @@ notifyOnClusterTranstion desiredState msg meid = do
   else
     forM_ meid syncGraphProcessMsg
 
+-- | Message guard: Check if the barrier being passed is for the correct level
+barrierPass :: M0.MeroClusterState
+            -> BarrierPass
+            -> g
+            -> l
+            -> Process (Maybe ())
+barrierPass state (BarrierPass state') _ _ =
+  if state == state' then return (Just ()) else return Nothing
+
+-- | Message guard: Check if the service process is running on this node.
+declareMeroChannelOnNode :: HAEvent DeclareMeroChannel
+                         -> LoopState
+                         -> Maybe (R.Node, R.Host, y)
+                         -> Process (Maybe (TypedChannel ProcessControlMsg))
+declareMeroChannelOnNode _ _ Nothing = return Nothing
+declareMeroChannelOnNode (HAEvent _ (DeclareMeroChannel sp _ cc) _) ls (Just (node, _, _)) =
+  case G.isConnected node R.Runs sp $ lsGraph ls of
+    True -> return $ Just cc
+    False -> return Nothing
+
+-- | Message guard: Check if the process control message is from the right node.
+processControlOnNode :: HAEvent ProcessControlResultMsg
+                     -> LoopState
+                     -> Maybe (R.Node, R.Host, y)
+                     -> Process (Maybe (UUID, [Either Fid (Fid, String)]))
+processControlOnNode _ _ Nothing = return Nothing
+processControlOnNode (HAEvent eid (ProcessControlResultMsg nid r) _) _ (Just ((R.Node nid'), _, _)) =
+  if nid == nid' then return $ Just (eid, r) else return Nothing
+
+
 -- | Procedure for tearing down mero services.
 --
 ruleTearDownMeroNode :: Definitions LoopState ()
@@ -479,34 +509,6 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
     startFork new_server Nothing
   where
-    -- Check if the barrier being passed is for the correct level
-    barrierPass :: M0.MeroClusterState
-                -> BarrierPass
-                -> g
-                -> l
-                -> Process (Maybe ())
-    barrierPass state (BarrierPass state') _ _ =
-      if state == state' then return (Just ()) else return Nothing
-
-    -- Check if the service process is running on this node.
-    declareMeroChannelOnNode :: HAEvent DeclareMeroChannel
-                             -> LoopState
-                             -> Maybe (R.Node, R.Host, y)
-                             -> Process (Maybe (TypedChannel ProcessControlMsg))
-    declareMeroChannelOnNode _ _ Nothing = return Nothing
-    declareMeroChannelOnNode (HAEvent _ (DeclareMeroChannel sp _ cc) _) ls (Just (node, _, _)) =
-      case G.isConnected node R.Runs sp $ lsGraph ls of
-        True -> return $ Just cc
-        False -> return Nothing
-
-    -- Check if the process control message is from the right node.
-    processControlOnNode :: HAEvent ProcessControlResultMsg
-                         -> LoopState
-                         -> Maybe (R.Node, R.Host, y)
-                         -> Process (Maybe (UUID, [Either Fid (Fid, String)]))
-    processControlOnNode _ _ Nothing = return Nothing
-    processControlOnNode (HAEvent eid (ProcessControlResultMsg nid r) _) _ (Just ((R.Node nid'), _, _)) =
-      if nid == nid' then return $ Just (eid, r) else return Nothing
 
 -- | New mero client rule is capable provisioning new mero client.
 -- In order to do that following steps are applies:
@@ -523,15 +525,15 @@ ruleNewMeroClient = define "new-mero-client" $ do
     msgNewMeroClient <- phaseHandle "new-mero-client"
     msgClientInfo    <- phaseHandle "client-info-update"
     msgClientStoreInfo <- phaseHandle "client-store-update"
-    msgClientNodeBootstrapped <- phaseHandle "node-provisioned"
     svc_up_now <- phaseHandle "svc_up_now"
     svc_up_already <- phaseHandle "svc_up_already"
+    start_clients <- phaseHandle "start_clients"
+    start_clients_complete <- phaseHandle "start_clients_complete"
 
     directly mainloop $
       switch [ msgNewMeroClient
              , msgClientInfo
              , msgClientStoreInfo
-             , msgClientNodeBootstrapped
              ]
 
     setPhase msgNewMeroClient $ \(HAEvent eid (NewMeroClient node@(R.Node nid)) _) -> do
@@ -585,29 +587,60 @@ ruleNewMeroClient = define "new-mero-client" $ do
             (node:_) <- nodesOnHost host
             createMeroClientConfig fs host info
             startMeroService host node
-            -- TODO start m0t1fs
-            put Local $ Just (node, host)
+            put Local $ Just (node, host, ())
             switch [svc_up_now, timeout 5000000 svc_up_already]
 
-    setPhaseIf svc_up_now onNode $ \(host, chan) -> do
-      -- Legitimate to avoid the event id as it should be handled by the default
+    -- Service comes up as a result of this invocation
+    setPhaseIf svc_up_now declareMeroChannelOnNode $ \chan -> do
+      Just (_, host, _) <- get Local
+      -- Legitimate to ignore the event id as it should be handled by the default
       -- 'declare-mero-channel' rule.
-      void $ startNodeProcesses host chan M0.PLM0t1fs False
+      procs <- startNodeProcesses host chan M0.PLM0t1fs False
+      case procs of
+        [] -> let state = M0.MeroClusterRunning in do
+          notifyOnClusterTranstion state BarrierPass Nothing
+        _ -> continue start_clients_complete
 
     -- Service is already up
     directly svc_up_already $ do
-      Just (node, _) <- get Local
+      Just (node, host, _) <- get Local
       rg <- getLocalGraph
       m0svc <- lookupRunningService node m0d
-      mhost <- findNodeHost node
-      case (,) <$> mhost <*> (m0svc >>= meroChannel rg) of
-        Just (host, chan) -> do
-          void $ startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
+      case m0svc >>= meroChannel rg of
+        Just chan -> do
+          procs <- startNodeProcesses host chan M0.PLM0t1fs False
+          case procs of
+            [] -> let state = M0.MeroClusterRunning in do
+              notifyOnClusterTranstion state BarrierPass Nothing
+            _ -> continue start_clients_complete
         Nothing -> switch [svc_up_now, timeout 5000000 svc_up_already]
 
-    setPhase msgClientNodeBootstrapped $ \(HAEvent eid (ProcessControlResultMsg node _) _) -> do
-       finishMeroClientProvisioning node
-       messageProcessed eid
+    setPhaseIf start_clients (barrierPass M0.MeroClusterRunning) $ \() -> do
+      Just (node, host, _) <- get Local
+      rg <- getLocalGraph
+      m0svc <- lookupRunningService node m0d
+      case m0svc >>= meroChannel rg of
+        Just chan -> do
+          procs <- startNodeProcesses host chan M0.PLM0t1fs False
+          if null procs
+            then return ()
+            else continue start_clients_complete
+        Nothing -> return ()
+
+    -- Mark clients as coming up successfully.
+    setPhaseIf start_clients_complete processControlOnNode $ \(eid, e) -> do
+      Just (R.Node node, _, _) <- get Local
+      (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
+      -- Mark successful processes as online, and others as failed.
+      forM_ procs $ \p -> modifyGraph $ G.connectUniqueFrom p R.Is M0.ProcessBootstrapped
+                                    >>> G.connectUniqueFrom p R.Is M0.PSOnline
+      forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>= \mp -> do
+        phaseLog "warning" $ "Process " ++ show f
+                          ++ " failed to start: " ++ r
+        traverse_ (\(p :: M0.Process) ->
+          modifyGraph $ G.connect p R.Is (M0.PSFailed r)) mp
+        finishMeroClientProvisioning node
+        messageProcessed eid
 
     start mainloop Nothing
   where
@@ -640,16 +673,6 @@ ruleNewMeroClient = define "new-mero-client" $ do
        let pp = ProvisionProcess host
        modifyGraph $ G.connectUnique pp R.Has (info :: M0.HostHardwareInfo)
        publish $ NewMeroClientProcessed host
-
-    onNode _ _ Nothing = return Nothing
-    onNode (HAEvent _ (DeclareMeroChannel sp _ cc) _) ls (Just (node, _)) =
-      let
-        rg = lsGraph ls
-        mhost = G.connectedFrom R.Runs node rg
-        rightNode = G.isConnected node R.Runs sp rg
-      in case (rightNode, mhost) of
-        (True, [host]) -> return $ Just (host, cc)
-        (_, _) -> return Nothing
 
 data CommitNewMeroClient = CommitNewMeroClient R.Host UUID
   deriving (Eq, Show, Typeable, Generic)
