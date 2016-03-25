@@ -4,6 +4,7 @@
 
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Tests (main) where
 
@@ -120,10 +121,11 @@ run s = do
             execute "remoteChanTest" remoteChanTest 2 transport (s+i)
           checkInvariants res8
           res9 <- execute "sayTest" sayTest 2 transport (s+i)
+          res10 <- execute "linkTest" (const linkTest) 2 transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
           return $ res0 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6 ++ res7 ++
-                   res8 ++ res9
+                   res8 ++ res9 ++ res10
         else do
           res0 <- execute "receiveTest" (const receiveTest) 1 transport (s+i)
           checkInvariants res0
@@ -137,9 +139,11 @@ run s = do
           res5 <- execute "timeoutsTest" (const timeoutsTest) 1 transport (s+i)
           res6 <- execute "uforwardTest"  (const uforwardTest) 1 transport (s+i)
           res7 <- execute "sayTest" sayTest 2 transport (s+i)
+          res8 <- execute "linkTest" (const linkTest) 2 transport (s+i)
           when (i `mod` 10 == 0) $
             putStrLn $ show i ++ " iterations"
-          return $ res0 ++ res1 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6 ++ res7
+          return $ res0 ++ res1 ++ res2 ++ res3 ++ res4 ++ res5 ++ res6 ++
+                   res7 ++ res8
     putStrLn $ "Test passed with " ++ show (length res) ++ " different traces."
  where
    checkInvariants res = do
@@ -201,6 +205,18 @@ sayTest = \(n1 : _) -> do
     _ <- liftIO $ forkProcess n1 $ do
       say "hello"
     "hello" <- expect
+    return ()
+
+linkTest :: Process ()
+linkTest = do
+    pid <- spawnLocal (expect :: Process ())
+    link pid
+    _ :: Either ProcessLinkException () <- try $ do
+      exit pid "linkTest finished"
+      unlink pid
+    -- We test here that ProcessLinkException does not arrive after unlink
+    -- completes.
+    _ <- receiveTimeout 1000 []
     return ()
 
 receiveTest :: Process ()

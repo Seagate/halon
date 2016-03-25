@@ -177,6 +177,7 @@ data SchedulerResponse
     = Continue     -- ^ Pick a message from your mailbox.
     | Timeout      -- ^ Unblock by timing out.
     | SpawnAck     -- ^ Spawned process
+    | UnlinkAck    -- ^ Unlinked process
   deriving (Generic, Typeable, Show)
 
 -- | Transitions that the scheduler can choose to perform when all
@@ -550,15 +551,37 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                                   $ Map.map (filter ((ref /=) . fst)) monitors
                   }
         Unlink who whom -> do
-            let upd xs =
-                  case [ x | x@( DP.MonitorRef (DP.ProcessIdentifier who') _
-                               , True
-                               ) <- xs
-                           , who == who'
-                       ] of
-                    []  -> Nothing
-                    xs' -> Just xs'
-            go st { stateMonitors = Map.update upd whom monitors }
+            let nothingOn p x = if p x then Nothing else Just x
+                isTheLink (DP.MonitorRef (DP.ProcessIdentifier who') _, True) =
+                  who == who'
+                isTheLink _ = False
+            DP.send who UnlinkAck
+                    -- Remove the corresponding monitor.
+            go st { stateMonitors = Map.update
+                      (nothingOn null . filter (not . isTheLink)) whom monitors
+                    -- Remove any pending LinkExceptionMsg.
+                  , stateMessages =
+                      let whomNid = case whom of
+                            DP.ProcessIdentifier whomPid ->
+                              DP.processNodeId whomPid
+                            DP.NodeIdentifier nid        -> nid
+                            _                            ->
+                              error "d-p-scheduler: Unlink unexpected whom"
+                          isTheLinkMsg (LinkExceptionMsg source _ _)
+                                         = source == whom
+                          isTheLinkMsg _ = False
+                       in Map.update
+                            ( nothingOn Map.null
+                            . Map.update
+                                (nothingOn null . filter (not . isTheLinkMsg))
+                                (DP.nullProcessId $ DP.processNodeId who)
+                            . Map.update
+                                (nothingOn null . filter (not . isTheLinkMsg))
+                                (DP.nullProcessId whomNid)
+                            )
+                            who
+                            (stateMessages st)
+                  }
         AddFailures fls ->
             go st { stateFailures = foldr (uncurry Map.insert) failures fls }
         RemoveFailures fls ->
@@ -1006,9 +1029,9 @@ receiveTimeoutM mus ms = do
         case command of
           Continue -> go r Nothing ms'
           Timeout  -> return Nothing
-          SpawnAck -> do
-            DP.say "receiveTimeoutM: unexpected SpawnAck"
-            error "receiveTimeoutM: unexpected SpawnAck"
+          _ -> do
+            DP.say $ "receiveTimeoutM: unexpected " ++ show command
+            error $ "receiveTimeoutM: unexpected " ++ show command
 
 -- | Shorthand for @receiveWait [ match return ]@
 expect :: Serializable a => Process a
@@ -1089,6 +1112,8 @@ link pid = do self <- DP.getSelfPid
 unlink :: ProcessId -> Process ()
 unlink pid = do self <- DP.getSelfPid
                 sendS $ Unlink self $ DP.ProcessIdentifier pid
+                UnlinkAck <- DP.expect
+                return ()
 
 -- | Links a process, throwing to the caller a @ProcessLinkException@
 -- when the process dies.
