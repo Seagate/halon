@@ -56,9 +56,9 @@ Library
                    ,random
                    ,stm
 
-Test-Suite unit-tests-with-scheduler
+Test-Suite scheduler-tests
   Type:             exitcode-stdio-1.0
-  Main-Is:          with_scheduler.hs
+  Main-Is:          scheduler-tests.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Other-Modules:    Tests
@@ -77,9 +77,9 @@ Test-Suite unit-tests-with-scheduler
                     ,network-transport-inmemory
                     ,unix
 
-Test-Suite unit-tests-wo-scheduler
+Test-Suite tests
   Type:             exitcode-stdio-1.0
-  Main-Is:          wo_scheduler.hs
+  Main-Is:          tests.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Other-Modules:    Tests
