@@ -10,9 +10,10 @@ module Control.Distributed.Process.ProcessPool
   , ProcessPool
   ) where
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (onException)
 
 import Control.Monad
+import Control.Monad.Catch
 import Data.IORef
 import qualified Data.Map as Map
 

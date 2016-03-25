@@ -7,13 +7,13 @@
 module Control.Distributed.Process.Timeout (retry, timeout, callLocal) where
 
 import Control.Concurrent.MVar
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (mask, mask_, catch, Handler, catches)
 import Control.Distributed.Process.Internal.Types
   ( runLocalProcess
   , ProcessExitException(..)
   )
 import Control.Distributed.Process.Scheduler
-import Control.Exception (throwIO, SomeException)
+import Control.Monad.Catch
 import Control.Monad.Reader ( ask )
 import Data.Binary (Binary)
 import Data.Typeable (Typeable)
@@ -56,17 +56,17 @@ timeout t action
                       b <- liftIO $ tryPutMVar mv ()
                       if b then exit timerPid "timeout completed"
                       else waitTimeout
-                      liftIO $ throwIO e
+                      throwM e
                 , Handler $ \e -> do
                     b <- liftIO $ tryPutMVar mv ()
                     if b then exit timerPid "timeout completed"
                     else waitTimeout
-                    liftIO $ throwIO (e :: SomeException)
+                    throwM (e :: SomeException)
                 ]
               waitTimeout = uninterruptiblyMaskKnownExceptions_ $
                 catch (receiveWait []) $ \e@(ProcessExitException pid _) ->
                   if pid == timerPid then return ()
-                  else liftIO $ throwIO e
+                  else throwM e
           handleExceptions $ do
             r <- unmask action
             b <- liftIO $ tryPutMVar mv ()

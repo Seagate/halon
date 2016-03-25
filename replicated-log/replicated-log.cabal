@@ -46,6 +46,7 @@ Library
                     directory >= 1.2.1,
                     distributed-process-scheduler,
                     distributed-static >= 0.2,
+                    exceptions,
                     filepath >= 1.4.0,
                     leveldb-haskell >= 0.6.3,
                     mtl >= 2.0,

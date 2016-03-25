@@ -67,7 +67,8 @@ import Control.Distributed.Process.Timeout
 
 -- Preventing uses of spawn and call because of
 -- https://cloud-haskell.atlassian.net/browse/DP-104
-import Control.Distributed.Process hiding (spawn)
+import Control.Distributed.Process hiding
+    (spawn, bracket, mask, catch, try, finally)
 import Control.Distributed.Process.Serializable
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
@@ -79,8 +80,8 @@ import Control.Arrow (second)
 import Control.Concurrent hiding (newChan)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TChan
-import Control.Exception (SomeException)
 import Control.Monad
+import Control.Monad.Catch
 import Data.Binary (Binary, encode, decode)
 import qualified Data.ByteString.Lazy as BSL (ByteString, length)
 import Data.Constraint (Dict(..))

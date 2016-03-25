@@ -16,11 +16,11 @@ import Control.Distributed.Log () -- SafeCopy LegislatureId instance
 import Control.Distributed.Log.Persistence as P
 import Control.Distributed.Log.Persistence.LevelDB
 import Control.Distributed.Process.Consensus (DecreeId(..))
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Serializable
-import Control.Exception (throwIO, Exception)
 import qualified Control.Exception as E (bracket)
 import Control.Monad
+import Control.Monad.Catch
 import Data.Binary (encode, decode)
 import qualified Data.ByteString.Lazy as BSL (ByteString)
 import Data.String (fromString)
@@ -64,7 +64,7 @@ serializableSnapshot serverLbl s0 = LogSnapshot
     , logSnapshotRestore = \(nid, i) -> do
           pid <- getSnapshotServer $ Just nid
           (d, s) <- callWait pid i >>=
-                      maybe (liftIO $ throwIO (NoSnapshot (nid, i)))
+                      maybe (throwM (NoSnapshot (nid, i)))
                             return
           here <- getSelfNode
           when (nid /= here) $
@@ -108,14 +108,14 @@ serializableSnapshot serverLbl s0 = LogSnapshot
           whereisRemoteAsync nid serverLbl
           receiveWait
             [ match $ \(NodeMonitorNotification _ n r) ->
-                liftIO $ throwIO $ NodeLinkException n r
+                throwM $ NodeLinkException n r
             , match $ \(WhereIsReply _ mpid) ->
-                maybe (liftIO $ throwIO $ NoSnapshotServer nid) return mpid
+                maybe (throwM $ NoSnapshotServer nid) return mpid
             ]
 
         _ -> do
           whereis serverLbl >>=
-            maybe (liftIO $ throwIO $ NoSnapshotServer here) return
+            maybe (throwM $ NoSnapshotServer here) return
 
     -- @callWait pid a@ sends @(tmp,a)@ to @pid@ and waits for a reply of type
     -- @b@ sent to @tmp@. @tmp@ is the 'ProcessId' of a temporary process used
