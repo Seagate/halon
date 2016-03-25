@@ -115,9 +115,9 @@ Test-Suite tests
                       ScopedTypeVariables
                       CPP
 
-Test-Suite tests-scheduler
+Test-Suite scheduler-tests
   Type:             exitcode-stdio-1.0
-  Main-Is:          tests-scheduler.hs
+  Main-Is:          scheduler-tests.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Other-Modules:    Test
