@@ -92,15 +92,9 @@ import Control.Distributed.Process.Internal.Types (LocalProcess(..))
 
 import Control.Concurrent (myThreadId)
 import Control.Concurrent.MVar hiding (withMVar)
-import Control.Exception
-  ( SomeException
-  , throwIO
-  , bracket
-  , Exception
-  , throwTo
-  , throw
-  )
+import Control.Exception (throwTo)
 import Control.Monad
+import Control.Monad.Catch
 import Control.Monad.Reader ( ask )
 import Data.Accessor ((^.))
 import Data.Binary ( Binary(..), decode )
@@ -422,16 +416,16 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                         , stateReverseTimeouts = Map.empty
                         , stateFailures        = Map.empty
                         }
-                   `DP.finally` do
+                   `finally` do
                       DP.liftIO $ modifyMVar_ schedulerLock $
                           const $ return False
                   )
                   `DP.catchExit`
                     (\pid StopScheduler -> DP.send pid SchedulerTerminated))
-                  `DP.catch` (\e -> do
+                  `catch` (\e -> do
                      DP.liftIO $ do
                        putStrLn $ "scheduler died: " ++ show e
-                       throwIO (e :: SomeException)
+                       throwM (e :: SomeException)
                    )
                void $ DP.liftIO $ readMVar schedulerVar
                return (True, sortedLNodes)
@@ -929,11 +923,11 @@ withScheduler s clockDelta numNodes transport rtable p =
            Continue <- DP.expect
            p ns
            DP.unlink spid
-          `DP.finally` DP.liftIO stopScheduler
+          `finally` DP.liftIO stopScheduler
         DP.liftIO $ putMVar mv ()
-       `DP.catch` \e -> DP.liftIO $ do
+       `catch` \e -> DP.liftIO $ do
          throwTo tid (e :: SomeException)
-         throwIO e
+         throwM e
       takeMVar mv
 
 -- | Yields control to some other process.
@@ -953,7 +947,7 @@ instance Exception AbsentScheduler
 getScheduler :: IO LocalProcess
 getScheduler =
     tryReadMVar schedulerVar >>=
-      maybe (throwIO AbsentScheduler) return
+      maybe (throwM AbsentScheduler) return
 
 -- | Have messages between pairs of nodes drop with some probability.
 --
@@ -1248,21 +1242,21 @@ spawnChannelLocal proc = do
 -- or duplicate messages sent to the isolated process after it exits.
 -- Silently dropping messages may not always be the best approach.
 callLocal :: Process a -> Process a
-callLocal proc = DP.mask $ \release -> do
+callLocal proc = mask $ \release -> do
     mv    <- DP.liftIO newEmptyMVar :: Process (MVar (Either SomeException a))
     -- This is callLocal from d-p, with the addition of a c-h channel to signal
     -- to the scheduler that the mvar is filled.
     (sp, rp) <- DP.newChan
     (spInit, rpInit) <- DP.newChan -- TODO: Remove when spawnLocal inherits the
                                    -- masking state.
-    child <- spawnLocal $ DP.mask_ $ do
+    child <- spawnLocal $ mask_ $ do
                sendChan spInit ()
-               r <- DP.try (release proc)
+               r <- try (release proc)
                sendChan sp ()
                DP.liftIO $ putMVar mv r
     rs <- (do receiveChan rp
               DP.liftIO (takeMVar mv)
-            `DP.catch` \e ->
+            `catch` \e ->
              do -- Don't kill the child before knowing that it had a chance
                 -- to mask exceptions.
                 --
@@ -1274,9 +1268,9 @@ callLocal proc = DP.mask $ \release -> do
                 uninterruptiblyMaskKnownExceptions_ $ receiveChan rpInit
                 kill child ("exception in parent process " ++ show e)
                 uninterruptiblyMaskKnownExceptions_ $ receiveChan rp
-                DP.liftIO $ throwIO (e :: SomeException)
+                throwM (e :: SomeException)
           )
-    either throw return rs
+    either throwM return rs
 
 -- Evaluates the given closure. Whenever known exceptions are raised,
 -- the closure is retried and the exceptions are collected and rethrown after

@@ -20,10 +20,9 @@ import Control.Distributed.Process.Scheduler
   )
 import Control.Distributed.Process.Internal.Types (ProcessExitException(..))
 import Control.Distributed.Process.Trans
-import Control.Exception ( SomeException, throwIO )
-import qualified Control.Exception as E ( catch, bracket )
 import Control.Monad ( when, forM_, replicateM_, forM )
 import Control.Monad ( replicateM )
+import Control.Monad.Catch as C
 import Control.Monad.State ( execStateT, modify, StateT, lift )
 import Data.Int
 import Data.IORef
@@ -50,8 +49,8 @@ resetTraceR :: IO ()
 resetTraceR = writeIORef traceR []
 
 killOnError :: ProcessId -> Process a -> Process a
-killOnError pid p = catch p $ \e -> liftIO (print e) >>
-    exit pid (show (e :: SomeException)) >> liftIO (throwIO e)
+killOnError pid p = C.catch p $ \e -> liftIO (print e) >>
+    exit pid (show (e :: SomeException)) >> throwM e
 
 senderProcess0 :: ProcessId -> Process ()
 senderProcess0 self = do
@@ -85,7 +84,7 @@ run s = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
     res <- fmap nub $ forM [1..100] $ \i ->
-      E.bracket InMemory.createTransport
+      C.bracket InMemory.createTransport
                 NT.closeTransport
       $ \transport -> do
         if schedulerIsEnabled
@@ -185,10 +184,10 @@ execute :: String
         -> IO [String]
 execute label test numNodes transport seed = do
    resetTraceR
-   flip E.catch (\e -> do putStr (label ++ ".seed: ") >> print seed
+   flip C.catch (\e -> do putStr (label ++ ".seed: ") >> print seed
                           readIORef (traceR :: IORef [String]) >>= print
-                          throwIO (e :: SomeException)
-               ) $ do
+                          throwM (e :: SomeException)
+                 ) $ do
      withScheduler seed clockSpeed numNodes transport remoteTable test
      fmap reverse $ readIORef traceR
 
@@ -211,7 +210,7 @@ linkTest :: Process ()
 linkTest = do
     pid <- spawnLocal (expect :: Process ())
     link pid
-    _ :: Either ProcessLinkException () <- try $ do
+    _ :: Either ProcessLinkException () <- C.try $ do
       exit pid "linkTest finished"
       unlink pid
     -- We test here that ProcessLinkException does not arrive after unlink
@@ -254,8 +253,8 @@ registerTest = do
       () <- expect
       say' "s0: blocking"
       Left (ProcessExitException pid msg) <-
-        try $ do usend self ()
-                 receiveWait [] :: Process ()
+        C.try $ do usend self ()
+                   receiveWait [] :: Process ()
       True <- return $ self == pid
       Just True <- handleMessage msg (return . ("terminate" ==))
       say' "s0: terminated"
@@ -263,8 +262,8 @@ registerTest = do
       link s0
       say' "s1: blocking"
       Left (ProcessLinkException pid DiedNormal) <-
-        try $ do usend s0 ()
-                 receiveWait [] :: Process ()
+        C.try $ do usend s0 ()
+                   receiveWait [] :: Process ()
       True <- return $ s0 == pid
       say' "s1: terminated"
     whereisRemoteAsync here "s0"

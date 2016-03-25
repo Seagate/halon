@@ -145,6 +145,9 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   )
 import Control.Distributed.Process.Serializable ( Serializable )
 
+import qualified Control.Monad.Catch as C
+
+
 ifSchedulerIsEnabled :: a -> a -> a
 ifSchedulerIsEnabled a b
     | Internal.schedulerIsEnabled = a
@@ -202,7 +205,7 @@ unmonitor :: DP.MonitorRef -> Process ()
 unmonitor = ifSchedulerIsEnabled Internal.unmonitor DP.unmonitor
 
 withMonitor :: ProcessId -> Process a -> Process a
-withMonitor pid code = bracket (monitor pid) unmonitor (\_ -> code)
+withMonitor pid code = C.bracket (monitor pid) unmonitor (\_ -> code)
 
 {-# NOINLINE link #-}
 link :: ProcessId -> Process ()

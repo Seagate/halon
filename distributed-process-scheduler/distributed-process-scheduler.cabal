@@ -50,6 +50,7 @@ Library
                    ,data-accessor >= 0.2.2.6
                    ,distributed-process >= 0.4
                    ,distributed-process-trans
+                   ,exceptions
                    ,mtl
                    ,network-transport
                    ,random
@@ -70,6 +71,7 @@ Test-Suite unit-tests-with-scheduler
   Build-Depends:    distributed-process-scheduler
                     ,base >= 4.5
                     ,distributed-process-scheduler
+                    ,exceptions
                     ,mtl >= 2.0
                     ,network-transport
                     ,network-transport-inmemory
@@ -89,6 +91,7 @@ Test-Suite unit-tests-wo-scheduler
 
   Build-Depends:    base >= 4.5
                     ,distributed-process-scheduler
+                    ,exceptions
                     ,mtl >= 2.0
                     ,network-transport
                     ,network-transport-inmemory
