@@ -406,7 +406,6 @@ handleRepair noteSet = processSet noteSet >>= \case
       let maybeBeginRepair = when (null tr && not (null fa)) $ do
             phaseLog "repair" $ "Starting repair operation on " ++ show pool
             startRepairOperation pool
-            mapM_ (flip updateDriveState M0_NC_REPAIR) fa
             queryStartHandling pool
 
       getPoolRepairStatus pool >>= \case
