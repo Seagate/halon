@@ -28,11 +28,13 @@ import Control.Distributed.Process
   ( getSelfNode
   , getSelfPid
   , register
+  , reregister
   , unregister
   , monitor
   , receiveWait
   , matchIf
   , kill
+  , link
   , expect
   , spawnLocal
   , whereis
@@ -116,7 +118,10 @@ withM0RC f = getStorageRC >>= \case
                 case mworker of
                   Nothing -> error "No worker loaded."
                   Just w  -> f (liftIO . runOnM0Worker w)
-  Just w  -> f (liftIO . runOnM0Worker w)
+  Just w  -> liftProcess (whereis halonRCMeroWorkerLabel) >>= \case
+               Nothing -> do deleteStorageRC (Proxy :: Proxy M0Worker)
+                             withM0RC f
+               Just _  -> f (liftIO . runOnM0Worker w)
 
 halonRCMeroWorkerLabel :: String
 halonRCMeroWorkerLabel = "halon:rc-mero-worker"
@@ -125,6 +130,7 @@ halonRCMeroWorkerLabel = "halon:rc-mero-worker"
 -- This method registers accompaniment process "halon:rc-mero-worker"
 createMeroWorker :: PhaseM LoopState l (Maybe M0Worker)
 createMeroWorker = do
+  pid <- liftProcess getSelfPid
   node <- liftProcess getSelfNode
   mprocess <- lookupRunningService (R.Node node) m0d
   case mprocess of
@@ -133,10 +139,16 @@ createMeroWorker = do
       return Nothing
     Just (ServiceProcess _proc)  -> do
       worker <- liftIO newM0Worker
-      void $ liftProcess $ spawnLocal $ finally
-        (do register halonRCMeroWorkerLabel =<< getSelfPid
-            expect)
-        (liftGlobalM0 $ terminateM0Worker worker)
+      void $ liftProcess $ spawnLocal $ do
+        link pid
+        finally (do self <- getSelfPid
+                    whereis halonRCMeroWorkerLabel >>= \case
+                      Nothing -> register halonRCMeroWorkerLabel self
+                      Just q  -> do reregister halonRCMeroWorkerLabel self
+                                    kill q "exit"
+                    receiveWait [])
+                (do sayRC "worker-closed"
+                    liftGlobalM0 $ terminateM0Worker worker)
       putStorageRC worker
       return (Just worker)
 
@@ -144,7 +156,7 @@ createMeroWorker = do
 -- Do nothing if no process is registered. Blocks until process exit otherwise.
 tryCloseMeroWorker :: Process ()
 tryCloseMeroWorker = do
-  mpid <- whereis "halon:rc-mero-worker"
+  mpid <- whereis halonRCMeroWorkerLabel
   forM_ mpid $ \pid -> do
     unregister halonRCMeroWorkerLabel
     mon <- monitor pid

@@ -183,7 +183,7 @@ makeRecoveryCoordinator :: StoreChan -- ^ channel to the replicated multimap
                         -> Process ()
 makeRecoveryCoordinator mm eq rm = do
    init_st <- buildRCState mm eq
-   execute init_st $ do
+   (execute init_st $ do
      rm
      setRuleFinalizer $ \ls -> do
        newGraph <- G.sync (lsGraph ls) (return ())
@@ -198,7 +198,7 @@ makeRecoveryCoordinator mm eq rm = do
            (removed, newRefCnt) = Map.partition (<(-msgProcessedGap)) refCnt
        forM_ removed $ usend (lsEQPid ls)
 
-       return ls { lsGraph = newGraph, lsRefCount = newRefCnt }
+       return ls { lsGraph = newGraph, lsRefCount = newRefCnt })
 #ifdef USE_MERO
        `Catch.finally` tryCloseMeroWorker
 #endif
