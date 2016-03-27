@@ -16,6 +16,7 @@ import qualified HA.Resources.Mero.Note as M0
 import           Mero.ConfC (ServiceType(CST_IOS))
 import qualified Mero.Spiel as Spiel
 import           Network.CEP
+import           Data.List (nub)
 
 -- | Just like 'repairedNotificationMessage', dispatch the appropriate
 -- status checking routine depending on whether we're rebalancing or
@@ -53,7 +54,7 @@ repairedNotificationMsg M0.Failure = M0.M0_NC_REPAIRED
 
 -- | Given a 'Pool', retrieve all associated IO services ('CST_IOS').
 getIOServices :: M0.Pool -> PhaseM LoopState l [M0.Service]
-getIOServices pool = getLocalGraph >>= \g -> return
+getIOServices pool = getLocalGraph >>= \g -> return (nub
   [ svc | pv <- G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
         , rv <- G.connectedTo pv M0.IsParentOf g :: [M0.RackV]
         , ev <- G.connectedTo rv M0.IsParentOf g :: [M0.EnclosureV]
@@ -62,7 +63,7 @@ getIOServices pool = getLocalGraph >>= \g -> return
         , nd <- G.connectedFrom M0.IsOnHardware ct g :: [M0.Node]
         , pr <- G.connectedTo nd M0.IsParentOf g :: [M0.Process]
         , svc@(M0.Service { M0.s_type = CST_IOS }) <- G.connectedTo pr M0.IsParentOf g
-        ]
+        ])
 
 -- | Find only those services that are in a state of finished (or not
 -- started) repair.
