@@ -480,17 +480,18 @@ processPoolInfo pool M0_NC_REPAIRED _ = getPoolRepairStatus pool >>= \case
                      ++ "checking if other IOS completed."
     iosvs <- length <$> R.getIOServices pool
     Just pri <- getPoolRepairInformation pool
-    unless (priOnlineNotifications pri < iosvs) $
-      withRepairStatus prt pool nil $ \sts -> do
-        -- is 'filterCompletedRepairs' relevant for rebalancing too?
-        -- If not, how do we handle this query?
-        let onlines = length $ R.filterCompletedRepairs sts
-        modifyPoolRepairInformation pool $ \pri' ->
-            pri' { priOnlineNotifications = onlines }
-        updatePoolRepairStatusTime pool
-        unless (onlines < iosvs) $ do
-          phaseLog "repair" $ "All IOS have finished repair, moving to complete"
-          completeRepair pool prt Nothing
+    withRepairStatus prt pool nil $ \sts -> do
+      -- is 'filterCompletedRepairs' relevant for rebalancing too?
+      -- If not, how do we handle this query?
+      let onlines = length $ R.filterCompletedRepairs sts
+      modifyPoolRepairInformation pool $ \pri' ->
+          pri' { priOnlineNotifications = onlines }
+      updatePoolRepairStatusTime pool
+      if onlines >= iosvs
+      then do
+        phaseLog "repair" $ "All IOS have finished repair, moving to complete"
+        completeRepair pool prt Nothing
+      else phaseLog "repair" $ "Not all services completed repair: [" ++ show onlines ++"/"++show iosvs ++"]" ++ show sts
   _ -> phaseLog "repair" $ "Got M0_NC_REPAIRED but pool is rebalancing now."
 
 -- We got some pool state info but we don't care about what it is as
