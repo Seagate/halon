@@ -295,8 +295,10 @@ recordNewRC rg rc = void $ liftProcess $ spawnLocal $
 -- | Send the pending events to the new RC.
 sendEventsToRC :: RGroup g => g EventQueue -> ProcessId -> PhaseM s l ()
 sendEventsToRC rg rc = liftProcess $ do
+    eqTrace "sendEventsToRC"
     EventQueue { _eqMap = evs } <- retry requestTimeout $ getState rg
     let pendingEvents = map fst . sortBy (compare `on` snd) $ M.elems evs
+    eqTrace $ "sendEventsToRC: " ++ show (length pendingEvents)
     for_ pendingEvents $ \(PersistMessage mid ev) -> do
       eqTrace $ "EQ: Sending to RC: " ++ show mid
       uforward ev rc
@@ -341,7 +343,9 @@ lookupRC rg = do
     case mRC of
       Just _ -> return mRC
       Nothing -> do
+        liftProcess $ eqTrace "lookupRC"
         EventQueue { _eqRC = newMRC } <- liftProcess $ retry requestTimeout $ getState rg
+        liftProcess $ eqTrace $ "lookupRC: " ++ show newMRC
         for_ newMRC setRC
         return newMRC
 

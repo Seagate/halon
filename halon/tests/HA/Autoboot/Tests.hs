@@ -195,6 +195,7 @@ runTest :: Int -> Int -> Transport -> RemoteTable
 runTest numNodes numReps tr rt action
     | Scheduler.schedulerIsEnabled = do
         s <- randomIO
+        hPutStrLn stderr $ "Starting test with seed: " ++ show s
         -- TODO: Fix leaks in n-t-inmemory and use the same transport for all
         -- tests, maybe.
         forM_ [1..numReps] $ \i ->  withTmpDirectory $

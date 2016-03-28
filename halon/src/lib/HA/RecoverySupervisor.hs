@@ -123,9 +123,11 @@ recoverySupervisor :: RGroup g
                                  -- coordinator.
                    -> Process ()
 recoverySupervisor rg rcP = do
+    rsTrace "Starting"
     rst <- retry 1000000 (getState rg)
+    rsTrace "Got initial state"
     go (Left $ rsLeasePeriod rst) rst
-    rsTrace $ "Terminated"
+    rsTrace "Terminated"
    `catch` \e -> do
     rsTrace $ "Dying with " ++ show e
     liftIO $ throwIO (e :: SomeException)
