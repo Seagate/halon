@@ -41,7 +41,7 @@ data PersistMessage =
     PersistMessage
     { persistEventId :: !UUID
     , persistMsg     :: !Message
-    } deriving (Generic, Typeable)
+    } deriving (Generic, Show, Typeable)
 
 instance Binary PersistMessage
 
