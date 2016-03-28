@@ -22,6 +22,7 @@ import Data.Binary.Put (putWord64be)
 import Data.ByteString.Lazy as BS
 import qualified Data.ByteString as SBS
 import qualified Data.ByteString.Lazy.Char8 as C8
+import Data.Maybe (fromMaybe)
 import Data.String (fromString)
 import Data.Typeable
 import Database.LevelDB.Base hiding (get, put)
@@ -29,6 +30,7 @@ import qualified Database.LevelDB.Base as L (get)
 import Database.LevelDB.Internal (unsafeClose)
 import qualified Database.LevelDB.Streaming as S
 import System.Directory (createDirectoryIfMissing)
+import System.Environment (lookupEnv)
 
 newtype Key a = Key { fromKey :: a }
 
@@ -50,7 +52,9 @@ getIntKey = (get :: Get Bool) >> fmap fromIntegral getWord64be
 
 -- | Opens an existing store or creates a new one if such exists.
 openPersistentStore :: FilePath -> IO PersistentStore
-openPersistentStore fp = do
+openPersistentStore fp' = do
+    prefix <- maybe "" (++"/") <$> lookupEnv "HALON_PERSISTENCE"
+    let fp = prefix ++ fp'
     createDirectoryIfMissing True fp
     db <- open fp defaultOptions { createIfMissing = True }
     return $ PersistentStore
