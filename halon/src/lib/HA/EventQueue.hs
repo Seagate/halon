@@ -233,26 +233,42 @@ eqRules rg = do
 
     defineSimple "ha-event" $ \(sender, ev) -> do
       mRC  <- lookupRC rg
-      here <- liftProcess getSelfNode
-      case mRC of
-        Just rc | here /= processNodeId rc
-          -> -- Delegate on the colocated EQ.
-             -- The colocated EQ learns immediately of the RC death. This
-             -- ensures events are not sent to a defunct RC rather than to a
-             -- live one.
-             liftProcess $ do
-               nsendRemote (processNodeId rc) eventQueueLabel
-                           (sender, ev)
-        _ -> -- Record the event if there is no known RC or if it is colocated.
-             recordEvent rg sender ev
+      liftProcess $ do
+        here <- getSelfNode
+        case mRC of
+          Just rc | here /= processNodeId rc -> do
+            -- Delegate on the colocated EQ.
+            -- The colocated EQ learns immediately of the RC death. This
+            -- ensures events are not sent to a defunct RC rather than to a
+            -- live one.
+            nsendRemote (processNodeId rc) eventQueueLabel
+                        (sender, ev)
+          _ -> do
+            -- Record the event if there is no known RC or if it is colocated.
+            self <- getSelfPid
+            void $ spawnLocal $ do
+              eqTrace $ "EQ: Recording event " ++ show (persistEventId ev)
+              retry requestTimeout $
+                updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+              eqTrace $ "EQ: Recorded event " ++ show (persistEventId ev)
+              usend self (RecordAck sender ev)
 
     defineSimple "trim-ack" $ \(TrimAck eid) -> publish (TrimDone eid)
     defineSimple "trim-ack-unknown" $ \(TrimUnknown _) -> return ()
-    defineSimple "record-ack" $ \(RecordAck sender ev) -> do
-      mRC <- lookupRC rg
-      case mRC of
-        Just rc -> sendEventToRC rc sender ev
-        Nothing -> sendOwnNode sender
+    defineSimple "record-ack" $ \(RecordAck sender (PersistMessage mid ev)) ->
+      do mRC <- lookupRC rg
+         liftProcess $ case mRC of
+           Just rc -> do
+             self <- getSelfPid
+             eqTrace $ "EQ: Sending to RC (" ++ show rc ++"): " ++ show mid
+             usend sender (processNodeId self, processNodeId rc)
+             uforward ev rc
+           Nothing -> do
+             -- Send my own node when we don't know the RC location. Note that I
+             -- was able to read the replicated state so very likely there is no
+             -- RC.
+             n <- getSelfNode
+             usend sender (n, n)
 
 setRC :: ProcessId -> PhaseM (Maybe EventQueueState) l ()
 setRC rc = do
@@ -294,20 +310,6 @@ recordRCDied rg = do
     void $ liftProcess $ spawnLocal $ retry requestTimeout $
       updateStateWith rg $ $(mkClosure 'compareAndSwapRC) (mRC, Nothing :: Maybe ProcessId)
 
-recordEvent :: RGroup g
-            => g EventQueue
-            -> ProcessId
-            -> PersistMessage
-            -> PhaseM s l ()
-recordEvent rg sender ev = void $ liftProcess $ do
-    self <- getSelfPid
-    spawnLocal $ do
-      eqTrace $ "EQ: Recording event " ++ show (persistEventId ev)
-      retry requestTimeout $
-        updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
-      eqTrace $ "EQ: Recorded event " ++ show (persistEventId ev)
-      usend self (RecordAck sender ev)
-
 trim :: RGroup g => g EventQueue -> UUID -> PhaseM s l ()
 trim rg eid =
     liftProcess $ do
@@ -331,14 +333,6 @@ trimMsg rg msg =
           usend self (TrimUnknown msg)
       return ()
 
-sendEventToRC :: ProcessId -> ProcessId -> PersistMessage -> PhaseM s l ()
-sendEventToRC rc sender (PersistMessage mid ev) =
-    liftProcess $ do
-      self <- getSelfPid
-      eqTrace $ "EQ: Sending to RC (" ++ show rc ++"): " ++ show mid
-      usend sender (processNodeId self, processNodeId rc)
-      uforward ev rc
-
 -- | Find the RC either in the local state or in the replicated state.
 lookupRC :: RGroup g
          => g EventQueue
@@ -354,13 +348,6 @@ lookupRC rg = do
 
 getRC :: PhaseM (Maybe EventQueueState) l (Maybe ProcessId)
 getRC = fmap (fmap _eqsRC) $ get Global
-
--- | Send my own node when we don't know the RC location. Note that I was able
---   to read the replicated state so very likely there is no RC.
-sendOwnNode :: ProcessId -> PhaseM s l ()
-sendOwnNode sender = liftProcess $ do
-    n <- getSelfNode
-    usend sender (n, n)
 
 data RCDied = RCDied deriving (Show, Typeable, Generic)
 
