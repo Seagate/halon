@@ -46,16 +46,15 @@ import GHC.Generics
 import HA.EventQueue.Types
 import HA.Logger
 import HA.Replicator ( RGroup, updateStateWith, getState)
-import Control.SpineSeq (spineSeq)
 import FRP.Netwire hiding (Last(..), when, for)
 
-import Control.Distributed.Process hiding (newChan)
+import Control.Distributed.Process hiding (newChan, catch)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Internal.Types (Message(..))
 import Control.Distributed.Process.Timeout ( retry )
 
-import Control.Exception (SomeException, throwIO)
 import Control.Monad (when)
+import Control.Monad.Catch
 import Data.Binary (Binary, encode)
 import Data.Foldable (for_, traverse_)
 import Data.Function (on)
@@ -203,7 +202,7 @@ startEventQueue rg = do
       eqTrace "Terminated"
      `catch` \e -> do
       eqTrace $ "Dying with " ++ show e
-      liftIO $ throwIO (e :: SomeException)
+      throwM (e :: SomeException)
     register eventQueueLabel eq
     return eq
 

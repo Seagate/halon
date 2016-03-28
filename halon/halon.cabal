@@ -94,6 +94,7 @@ Library
                    distributed-static,
                    hashable,
                    directory,
+                   exceptions,
                    ghc-prim,
                    mtl >= 2.0,
                    process >= 1.1,
