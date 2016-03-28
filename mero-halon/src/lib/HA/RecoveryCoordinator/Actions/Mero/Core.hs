@@ -139,16 +139,19 @@ createMeroWorker = do
       return Nothing
     Just (ServiceProcess _proc)  -> do
       worker <- liftIO newM0Worker
-      void $ liftProcess $ spawnLocal $ do
-        link pid
-        finally (do self <- getSelfPid
-                    whereis halonRCMeroWorkerLabel >>= \case
-                      Nothing -> register halonRCMeroWorkerLabel self
-                      Just q  -> do reregister halonRCMeroWorkerLabel self
-                                    kill q "exit"
-                    receiveWait [])
-                (do sayRC "worker-closed"
-                    liftGlobalM0 $ terminateM0Worker worker)
+      liftProcess $ do
+        whereis halonRCMeroWorkerLabel >>= \case
+          Nothing -> return ()
+          Just q  -> do mref <- monitor q 
+                        kill q "exit"
+                        receiveWait [ matchIf (\(ProcessMonitorNotification m _ _) -> m == mref)
+                                              $ \_ -> return ()]
+        wrkPid <- liftProcess $ spawnLocal $ do
+          link pid
+          finally (receiveWait [])
+                  (do sayRC "worker-closed"
+                      liftGlobalM0 $ terminateM0Worker worker)
+        register halonRCMeroWorkerLabel wrkPid
       putStorageRC worker
       return (Just worker)
 
