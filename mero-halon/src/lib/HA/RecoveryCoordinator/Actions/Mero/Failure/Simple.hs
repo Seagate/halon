@@ -78,7 +78,7 @@ generateFailureSets df cf cfe rg globs = let
 
     buildCtrlFailureSet :: Word32 -> HashMap Fid (Set Fid) -> Set (Failures, Set Fid)
     buildCtrlFailureSet i fids = let
-        df' = df - (i * cfe) -- E.g. failures to support on top of ctrl failure
+        df' = if df > i * cfe then df - (i*cfe) else 0 -- E.g. failures to support on top of ctrl failure
         ctrlFailures = floor $ (fromIntegral (length allCtrls) -i) % (n+k)
         failures = Failures 0 0 0 ctrlFailures k
         keys = sort $ Map.keys fids
