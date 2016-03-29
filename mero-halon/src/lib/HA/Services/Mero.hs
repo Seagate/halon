@@ -321,6 +321,7 @@ getNotificationChannels = do
                    | m0cont <- G.connectedFrom M0.At host rg :: [M0.Controller]
                    , m0node <- G.connectedFrom M0.IsOnHardware m0cont rg :: [M0.Node]
                    , m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
+                   , G.isConnected m0proc Is M0.PSOnline rg
                    , service <- G.connectedTo m0proc M0.IsParentOf rg :: [M0.Service]
                    , let stype = M0.s_type service
                    , endpoint <- M0.s_endpoints service
