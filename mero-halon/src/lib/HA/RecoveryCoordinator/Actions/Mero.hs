@@ -85,8 +85,9 @@ noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= \case
 -- | Extract information about drives from the given set of
 -- notifications and update the state in RG accordingly.
 updateDriveStatesFromSet :: Set -> PhaseM LoopState l ()
-updateDriveStatesFromSet (Set ns) = catMaybes <$> mapM noteToSDev ns
+updateDriveStatesFromSet (Set ns) = f . catMaybes <$> mapM noteToSDev ns
                              >>= mapM_ (\(typ, sd) -> updateDriveState sd typ)
+  where f = filter ((`elem` [M0.M0_NC_ONLINE, M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT]).fst)
 
 -- | Notify ourselves about a state change of the 'M0.SDev'.
 --

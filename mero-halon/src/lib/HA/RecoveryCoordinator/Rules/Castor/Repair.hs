@@ -25,6 +25,7 @@ import qualified Data.Map as M
 import           Data.Maybe (catMaybes, fromMaybe)
 import           Data.Monoid ((<>))
 import           Data.Typeable (Typeable)
+import           Data.UUID (nil)
 import           GHC.Generics (Generic)
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
@@ -405,7 +406,6 @@ handleRepair noteSet = processSet noteSet >>= \case
       let maybeBeginRepair = when (null tr && not (null fa)) $ do
             phaseLog "repair" $ "Starting repair operation on " ++ show pool
             startRepairOperation pool
-            mapM_ (flip updateDriveState M0_NC_REPAIR) fa
             queryStartHandling pool
 
       getPoolRepairStatus pool >>= \case
@@ -474,11 +474,24 @@ processPoolInfo pool M0_NC_ONLINE m
 processPoolInfo pool M0_NC_REPAIRED _ = getPoolRepairStatus pool >>= \case
   Nothing -> phaseLog "warning" $ "Got M0_NC_REPAIRED for a pool but "
                                ++ "no pool repair status was found."
-  Just (M0.PoolRepairStatus prt _ _)
+  Just pri@(M0.PoolRepairStatus prt _ _)
     | prt == M0.Failure -> do
     phaseLog "repair" $ "Got M0_NC_REPAIRED for a pool that is repairing, "
-                     ++ "calling completeRepair even if partial."
-    completeRepair pool prt Nothing
+                     ++ "checking if other IOS completed."
+    iosvs <- length <$> R.getIOServices pool
+    Just pri <- getPoolRepairInformation pool
+    withRepairStatus prt pool nil $ \sts -> do
+      -- is 'filterCompletedRepairs' relevant for rebalancing too?
+      -- If not, how do we handle this query?
+      let onlines = length $ R.filterCompletedRepairs sts
+      modifyPoolRepairInformation pool $ \pri' ->
+          pri' { priOnlineNotifications = onlines }
+      updatePoolRepairStatusTime pool
+      if onlines >= iosvs
+      then do
+        phaseLog "repair" $ "All IOS have finished repair, moving to complete"
+        completeRepair pool prt Nothing
+      else phaseLog "repair" $ "Not all services completed repair: [" ++ show onlines ++"/"++show iosvs ++"]" ++ show sts
   _ -> phaseLog "repair" $ "Got M0_NC_REPAIRED but pool is rebalancing now."
 
 -- We got some pool state info but we don't care about what it is as
