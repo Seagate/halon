@@ -742,7 +742,7 @@ replica Dict
             -- write the code to handle that case.
             mv <- liftIO newEmptyMVar
             pid <- spawnLocal $ do
-                     logTrace $ "spawned proposal for " ++ show d
+                     logTrace $ "spawned proposal for " ++ show (d, αs)
                      link self
                      result <- runPropose'
                                  (prl_propose (sendAcceptor logId) αs d v) s
@@ -1300,6 +1300,8 @@ replica Dict
                            | otherwise     = ρs'
 
                   mLeader <- liftIO getLeader
+                  logTrace $ "replica: helo request from client " ++
+                             show (π, mLeader)
                   case mLeader of
                     -- I'm the leader, so handle the request.
                     Just leader | here == leader -> do
@@ -1340,6 +1342,8 @@ replica Dict
                            | otherwise     = ρs'
 
                   mLeader <- liftIO getLeader
+                  logTrace $ "replica: Recover request from client " ++
+                             show (π, mLeader, ρs'')
                   case mLeader of
                     -- Ask for the lease using the proposed membership.
                     -- Thus reconfiguration is possible even when the group has
@@ -1379,6 +1383,7 @@ replica Dict
                                        [decreeNumber w..]
                                      )
                             -> do
+                          logTrace $ "replica: recovery synchronized acceptors"
                           let trimUnreachable [] _ = []
                               trimUnreachable (p@(di, v) : ds) leg =
                                 if decreeLegislatureId di < leg
@@ -1418,7 +1423,9 @@ replica Dict
                                 }
 
                         -- Didn't catch up on time
-                        _ ->
+                        _ -> do
+                          logTrace $ "replica: recovery failed with " ++
+                                     show (fmap (map fst) edvs)
                           go st
 
                     -- I'm the leader, so handle the request.
@@ -1816,6 +1823,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
       -- A reconfiguration request
       OMHelo m -> do
         self <- getSelfPid
+        logTrace $ "ambassador: sending helo request to " ++ show mLeader
         Foldable.forM_ mLeader $ flip (sendReplica logId)
                                       (self, epoch, m)
       -- A recovery request
@@ -1825,6 +1833,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
         -- The replicas might have lost quorum and could be unable to elect
         -- a new leader.
         let ρ  : _ = ρs'
+        logTrace $ "ambassador: sending recover msg to " ++ show (ρ, mLeader)
         sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
 
     monitorReplica ρ = do
@@ -1974,6 +1983,7 @@ reconfigure (Handle _ _ _ _ omchan μ) cpolicy = callLocal $ do
 recover :: Handle a -> [NodeId] -> Process ()
 recover (Handle _ _ _ _ omchan μ) ρs = callLocal $ do
     self <- getSelfPid
+    logTrace $ "recover: sending request to ambassador " ++ show μ
     liftIO $ atomically $ writeTChan omchan $ OMRecover $ Recover self ρs
     when schedulerIsEnabled $ usend μ ()
     expect
