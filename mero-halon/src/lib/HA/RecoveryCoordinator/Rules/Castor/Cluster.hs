@@ -672,10 +672,6 @@ ruleNewMeroClient = define "new-mero-client" $ do
        modifyGraph $ G.connectUnique pp R.Has (info :: M0.HostHardwareInfo)
        publish $ NewMeroClientProcessed host
 
-data CommitNewMeroClient = CommitNewMeroClient R.Host UUID
-  deriving (Eq, Show, Typeable, Generic)
-instance Binary CommitNewMeroClient
-
 data NewClientStoreInfo = NewClientStoreInfo R.Host M0.HostHardwareInfo
   deriving (Eq, Show, Typeable, Generic)
 instance Binary NewClientStoreInfo
