@@ -28,14 +28,12 @@ import Control.Distributed.Process
   ( getSelfNode
   , getSelfPid
   , register
-  , reregister
   , unregister
   , monitor
   , receiveWait
   , matchIf
   , kill
   , link
-  , expect
   , spawnLocal
   , whereis
   , Process
@@ -43,7 +41,6 @@ import Control.Distributed.Process
   )
 import Control.Monad.IO.Class
 import Control.Monad.Catch (finally)
-import Data.Functor (void)
 import Data.Maybe (listToMaybe)
 import Data.Foldable
 import Data.Proxy

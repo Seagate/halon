@@ -56,8 +56,8 @@ import Control.Distributed.Process
   , getSelfNode
   , match
   , monitor
-  , SendPort(..)
-  , ReceivePort(..)
+  , SendPort
+  , ReceivePort
   , newChan
   , receiveChan
   , receiveChanTimeout
