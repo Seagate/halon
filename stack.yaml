@@ -50,6 +50,7 @@ extra-deps:
 - network-transport-tests-0.2.2.0
 - rank1dynamic-0.3.1.0
 - rematch-0.2.0.0
+- vinyl-0.5.2
 
 docker:
   enable: true

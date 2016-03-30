@@ -1,11 +1,13 @@
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeOperators         #-}
 module HA.RecoveryCoordinator.Rules.Castor.Cluster where
 
 import           HA.EventQueue.Types
@@ -32,8 +34,10 @@ import           Network.CEP
 import           Control.Category
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
+import           Control.Lens
 import           Control.Monad (guard, join, unless, when, void)
 import           Control.Monad.Trans.Maybe
+
 import           Data.Binary (Binary)
 import           Data.Either (lefts, rights)
 import           Data.Hashable (Hashable)
@@ -43,10 +47,18 @@ import qualified Data.Map as Map
 import           Data.Foldable
 import           Data.Proxy (Proxy(..))
 import           Data.Typeable (Typeable)
+import           Data.Vinyl
+import           Data.Vinyl.Derived
+import           Data.Vinyl.Functor
+
 import           GHC.Generics (Generic)
+
 import           System.Posix.SysInfo
+
 import           Text.Printf
 import           Prelude hiding ((.), id)
+
+type FldMaybeHostHardwareInfo = '("mhostHardwareInfo", Maybe HostHardwareInfo)
 
 clusterRules :: Definitions LoopState ()
 clusterRules = sequence_
@@ -671,6 +683,43 @@ ruleNewMeroClient = define "new-mero-client" $ do
        let pp = ProvisionProcess host
        modifyGraph $ G.connectUnique pp R.Has (info :: M0.HostHardwareInfo)
        publish $ NewMeroClientProcessed host
+
+-- | A fragment of a rule which can be mixed into an existing rule.
+queryHostInfo :: (FldMaybeHostHardwareInfo ∈ l)
+              => R.Node -- ^ Node to query info on
+              -> Jump PhaseHandle -- ^ Phase handle to jump to on completion
+              -> Jump PhaseHandle -- ^ Phase handle to jump to on failure.
+              -> RuleM LoopState (FieldRec l) (Jump PhaseHandle) -- ^ Handle to start on
+queryHostInfo node@(R.Node nid) andThen orFail = do
+    start <- phaseHandle "queryHostInfo::start"
+    info_returned <- phaseHandle "queryHostInfo::info_returned"
+
+    directly start $ liftProcess . void . spawnLocal . void
+      $ spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
+
+    setPhaseIf info_returned systemInfoOnNode $ \(eid,info) -> do
+      phaseLog "info" $ "Received information about " ++ show nid
+      mhost <- findNodeHost node
+      case mhost of
+        Just host -> do
+          modify Local $ over (rlens hhi) (const . Field $ Just info)
+          syncGraphProcessMsg eid
+          continue andThen
+        Nothing -> do
+          phaseLog "error" $ "Received information from node on unknown host " ++ show nid
+          messageProcessed eid
+          continue orFail
+
+    return start
+  where
+    hhi :: Proxy FldMaybeHostHardwareInfo
+    hhi = Proxy
+    systemInfoOnNode :: HAEvent SystemInfo
+                     -> g
+                     -> l
+                     -> Process (Maybe (UUID, HostHardwareInfo))
+    systemInfoOnNode (HAEvent eid (SystemInfo node' info) _) _ _ = return $
+      if node == node' then Just (eid, info) else Nothing
 
 data NewClientStoreInfo = NewClientStoreInfo R.Host M0.HostHardwareInfo
   deriving (Eq, Show, Typeable, Generic)
