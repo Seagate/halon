@@ -653,7 +653,8 @@ Test-Suite integration-tests
                     time,
                     text,
                     unix,
-                    process
+                    process,
+                    uuid
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
@@ -726,7 +727,8 @@ Test-Suite scheduler-tests
                     containers,
                     time,
                     text,
-                    process
+                    process,
+                    uuid
 
   if flag(mero)
     CPP-Options:    -DUSE_MERO
