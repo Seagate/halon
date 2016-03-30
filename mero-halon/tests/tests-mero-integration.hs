@@ -53,7 +53,8 @@ main = withMeroEnvironment router wrapper where
   wrapper = do
     defaultMainWithIngredients [fileTestReporter [consoleTestReporter]] $
       testGroup "mero-integration-tests"
-        [ runExternalTest "RCSyncToConfd"
+        [ testCase "RCSyncToConfd [disabled by HALON-204]" $ (const $ return ())
+        $ runExternalTest "RCSyncToConfd"
         -- , runExternalTest "DriveFailurePVer" -- Disabled until strategy based generation will arrive
         ]
 
