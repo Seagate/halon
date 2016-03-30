@@ -82,7 +82,8 @@ test = testCase "Autoboot" $
                      ++ " -a " ++ m1loc
                      ++ " bootstrap station"
                      )
-      expectLog [nid0, nid1] (isInfixOf "Recovery Coordinator: Executing on node:")
+      expectLog [nid0, nid1] $
+        isInfixOf "Recovery Coordinator: continue in normal mode"
 
       say "Killing halond"
       systemThere ms "pkill halond; true"
