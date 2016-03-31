@@ -30,6 +30,7 @@ import           HA.Services.Mero.CEP (meroChannel)
 import           Mero.ConfC (Fid(..), ServiceType(..))
 import           Network.CEP
 
+import           Control.Applicative ((<|>))
 import           Control.Category
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
@@ -404,8 +405,10 @@ ruleNewMeroServer = define "new-mero-server" $ do
           Just host -> do
             put Local $ Just (node, host, eid)
             phaseLog "info" "Starting core bootstrap"
-            let mlnid = listToMaybe $ [ ip | CI.Interface { CI.if_network = CI.Data, CI.if_ipAddrs = ip:_ }
-                                              <- G.connectedTo host R.Has rg ]
+            let mlnid =
+                      (listToMaybe [ ip | M0.LNid ip <- G.connectedTo host R.Has rg ])
+                  <|> (listToMaybe $ [ ip | CI.Interface { CI.if_network = CI.Data, CI.if_ipAddrs = ip:_ }
+                                          <- G.connectedTo host R.Has rg ])
             case mlnid of
               Nothing -> do
                 phaseLog "warn" $ "Unable to find Data IP addr for host "
