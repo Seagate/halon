@@ -176,6 +176,7 @@ data SchedulerMsg
         -- @isLink@ is @True@ when linking is intended.
     | Unmonitor DP.MonitorRef
     | Unlink ProcessId DP.Identifier -- ^ @Unlink who whom@
+    | WhereIs ProcessId NodeId String -- ^ @WhereIs caller nodeid label@
     | GetTime ProcessId -- ^ A process wants to know the time.
     | AddFailures [((NodeId, NodeId), Double)]
     | RemoveFailures [(NodeId, NodeId)]
@@ -609,6 +610,29 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                             who
                             (stateMessages st)
                   }
+        WhereIs pid nid label -> do
+            let f = Map.lookup (DP.processNodeId pid, nid) $ stateFailures st
+                (v, seed') = randomR (0.0, 1.0) $ stateSeed st
+                st' = maybe st (const $ st {stateSeed = seed'}) f
+            case f of
+              Just p | v <= p -> do
+                let srcNid = DP.processNodeId pid
+                notifyMonitors st' (== srcNid)
+                               srcNid
+                               (DP.NodeIdentifier nid)
+                               DP.DiedDisconnect
+                  >>= go
+              _ -> do
+                DP.whereisRemoteAsync nid label
+                rep <- DP.receiveWait
+                  [ DP.matchIf (\(DP.WhereIsReply lbl _) -> lbl == label)
+                               return
+                  ]
+                handleSend st' ( DP.nullProcessId nid
+                               , pid
+                               , MailboxMsg pid $ DP.createUnencodedMessage rep
+                               )
+                  >>= go
         AddFailures fls ->
             go st { stateFailures = foldr (uncurry Map.insert) failures fls }
         RemoveFailures fls ->
@@ -1316,11 +1340,7 @@ uninterruptiblyMaskKnownExceptions_ p = do
 
 -- | Looks up a process in the local registry.
 whereis :: String -> Process (Maybe ProcessId)
-whereis label = do
-    self <- DP.getSelfPid
-    sendS (Yield self)
-    Continue <- DP.expect
-    DP.whereis label
+whereis label = yield >> DP.whereis label
 
 -- | Registers a process in the local registry.
 register :: String -> ProcessId -> Process ()
@@ -1335,10 +1355,8 @@ reregister label p = yield >> DP.reregister label p
 whereisRemoteAsync :: NodeId -> String -> Process ()
 whereisRemoteAsync n label = do
     yield
-    DP.whereisRemoteAsync n label
-    reply <- DP.receiveWait
-      [ DP.matchIf (\(DP.WhereIsReply label' _) -> label == label') return ]
-    DP.getSelfPid >>= flip usend reply
+    self <- DP.getSelfPid
+    sendS (WhereIs self n label)
 
 -- | Registers a process in the registry of a node.
 registerRemoteAsync :: NodeId -> String -> ProcessId -> Process ()
