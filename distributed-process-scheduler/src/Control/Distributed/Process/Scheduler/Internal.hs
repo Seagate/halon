@@ -653,7 +653,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
           let srcNid = DP.processNodeId source
           notifyMonitors (st { stateSeed = seed' }) (== srcNid)
                          srcNid
-                         (DP.ProcessIdentifier pid)
+                         (DP.NodeIdentifier $ DP.processNodeId pid)
                          DP.DiedDisconnect
         -- deliver message
         _ -> return st
