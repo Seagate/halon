@@ -1,11 +1,13 @@
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeOperators         #-}
 module HA.RecoveryCoordinator.Rules.Castor.Cluster where
 
 import           HA.EventQueue.Types
@@ -14,7 +16,6 @@ import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import           HA.Resources.TH
 
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Actions.Core
@@ -29,24 +30,48 @@ import           HA.Services.Mero.CEP (meroChannel)
 import           Mero.ConfC (Fid(..), ServiceType(..))
 import           Network.CEP
 
+import           Control.Applicative ((<|>))
 import           Control.Category
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
+import           Control.Lens
 import           Control.Monad (guard, join, unless, when, void)
 import           Control.Monad.Trans.Maybe
+
 import           Data.Binary (Binary)
 import           Data.Either (lefts, rights)
-import           Data.Hashable (Hashable)
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, fromMaybe)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Foldable
 import           Data.Proxy (Proxy(..))
 import           Data.Typeable (Typeable)
-import           GHC.Generics (Generic)
+import           Data.Vinyl
+
 import           System.Posix.SysInfo
+
 import           Text.Printf
 import           Prelude hiding ((.), id)
+
+--------------------------------------------------------------------------------
+-- Extensible record fields
+--------------------------------------------------------------------------------
+
+type FldHostHardwareInfo = '("mhostHardwareInfo", Maybe HostHardwareInfo)
+fldHostHardwareInfo :: Proxy FldHostHardwareInfo
+fldHostHardwareInfo = Proxy
+
+type FldUUID = '("uuid", Maybe UUID)
+fldUUID :: Proxy FldUUID
+fldUUID = Proxy
+
+type FldHost = '("host", Maybe R.Host)
+fldHost :: Proxy FldHost
+fldHost = Proxy
+
+type FldNode = '("node", Maybe R.Node)
+fldNode :: Proxy FldNode
+fldNode = Proxy
 
 clusterRules :: Definitions LoopState ()
 clusterRules = sequence_
@@ -55,7 +80,7 @@ clusterRules = sequence_
   , ruleClusterStop
   , ruleTearDownMeroNode
   , ruleNewMeroServer
-  , ruleNewMeroClient
+  , ruleDynamicClient
   ]
 
 -- | Query mero cluster status.
@@ -144,6 +169,8 @@ notifyOnClusterTranstion :: (Binary a, Typeable a)
                          -> PhaseM LoopState l ()
 notifyOnClusterTranstion desiredState msg meid = do
   newState <- calculateMeroClusterStatus
+  phaseLog "notifyOnClusterTransition:desiredState" $ show newState
+  phaseLog "notifyOnClusterTransition:state" $ show newState
   if newState == desiredState then do
     modifyGraph $ G.connectUnique R.Cluster R.Has newState
     syncGraphCallback $ \self proc -> do
@@ -164,7 +191,7 @@ barrierPass :: M0.MeroClusterState
             -> l
             -> Process (Maybe ())
 barrierPass state (BarrierPass state') _ _ =
-  if state == state' then return (Just ()) else return Nothing
+  if state <= state' then return (Just ()) else return Nothing
 
 -- | Message guard: Check if the service process is running on this node.
 declareMeroChannelOnNode :: HAEvent DeclareMeroChannel
@@ -378,8 +405,10 @@ ruleNewMeroServer = define "new-mero-server" $ do
           Just host -> do
             put Local $ Just (node, host, eid)
             phaseLog "info" "Starting core bootstrap"
-            let mlnid = listToMaybe $ [ ip | CI.Interface { CI.if_network = CI.Data, CI.if_ipAddrs = ip:_ }
-                                              <- G.connectedTo host R.Has rg ]
+            let mlnid =
+                      (listToMaybe [ ip | M0.LNid ip <- G.connectedTo host R.Has rg ])
+                  <|> (listToMaybe $ [ ip | CI.Interface { CI.if_network = CI.Data, CI.if_ipAddrs = ip:_ }
+                                          <- G.connectedTo host R.Has rg ])
             case mlnid of
               Nothing -> do
                 phaseLog "warn" $ "Unable to find Data IP addr for host "
@@ -508,206 +537,123 @@ ruleNewMeroServer = define "new-mero-server" $ do
     directly end stop
 
     startFork new_server Nothing
-  where
 
--- | New mero client rule is capable provisioning new mero client.
--- In order to do that following steps are applies:
---   1. for each new connected node 'NewMeroClient' message is emitted by 'ruleNodeUp'.
---   2. for each new client that is known to be mero-client, but have no confd information,
---      that information is generated and synchronized with confd servers
---   3. once confd have all required information available start mero service on the node,
---      that will lead provision process.
---
--- Once R.Host is provisioned 'NewMeroClient' event is published
-ruleNewMeroClient :: Definitions LoopState ()
-ruleNewMeroClient = define "new-mero-client" $ do
-    mainloop <- phaseHandle "mainloop"
-    msgNewMeroClient <- phaseHandle "new-mero-client"
-    msgClientInfo    <- phaseHandle "client-info-update"
-    msgClientStoreInfo <- phaseHandle "client-store-update"
-    svc_up_now <- phaseHandle "svc_up_now"
-    svc_up_already <- phaseHandle "svc_up_already"
-    start_clients <- phaseHandle "start_clients"
-    start_clients_complete <- phaseHandle "start_clients_complete"
+-- | Rule handling dynamic client addition.
+ruleDynamicClient :: Definitions LoopState ()
+ruleDynamicClient =  define "dynamic-client-discovery" $ do
 
-    directly mainloop $
-      switch [ msgNewMeroClient
-             , msgClientInfo
-             , msgClientStoreInfo
-             ]
+  new_mero_client <- phaseHandle "new-mero-client"
+  end <- phaseHandle "end"
+  confd_running <- phaseHandle "confd-running"
+  config_created <- phaseHandle "client-config-created"
+  finish <- phaseProcessMessage end
+  query_host_info <- queryHostInfo config_created finish
 
-    setPhase msgNewMeroClient $ \(HAEvent eid (NewMeroClient node@(R.Node nid)) _) -> do
-       mhost <- findNodeHost node
-       case mhost of
-         Just host -> do
-           isServer <- hasHostAttr R.HA_M0SERVER host
-           isClient <- hasHostAttr R.HA_M0CLIENT host
-           mlnid    <- listToMaybe . G.connectedTo host R.Has <$> getLocalGraph
-           case mlnid of
-             -- Host is a server, bootstrap is done in a separate procedure.
-             _ | isServer -> do
-                   phaseLog "info" $ show host ++ " is mero server, skipping provision"
-                   messageProcessed eid
-             -- Host is client with all required info beign loaded .
-             Just M0.LNid{}
-               | isClient -> do
-                   phaseLog "info" $ show host ++ " is mero client. Configuration was generated - starting mero service"
-                   startMeroService host node
-                   messageProcessed eid
-             -- Host is client but not all information was loaded.
-             _  -> do
-                   phaseLog "info" $ show host ++ " is mero client. No configuration - generating"
-                   startMeroClientProvisioning host eid
-                   getProvisionHardwareInfo host >>= \case
-                     Nothing -> do
-                       liftProcess $ void $ spawnLocal $
-                         void $ spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
-                     Just info -> selfMessage (NewClientStoreInfo host info)
-         Nothing -> do
-           phaseLog "error" $ "Can't find host for node " ++ show node
-           messageProcessed eid
+  -- When we see a new client message, we check to see whether the filesystem
+  -- is loaded. If not, we mark it as an HA_M0CLIENT and wait for this function
+  -- to be called again. When the filesystem is loaded, we check whether this
+  -- has been marked as a client and, if so, continue with provisioning.
+  setPhase new_mero_client $ \(HAEvent eid (NewMeroClient node) _) -> do
+    modify Local $ over (rlens fldUUID) (const . Field $ Just eid)
+    modify Local $ over (rlens fldNode) (const . Field $ Just node)
+    getFilesystem >>= \case
+      Nothing -> findNodeHost node >>= \case
+        Just host -> do
+          phaseLog "info" $ "Configuration data not loaded. Marking "
+                          ++ show node
+                          ++ " as prospective HA_M0CLIENT."
+          modifyGraph $ G.connect host R.Has R.HA_M0CLIENT
+          continue finish
+        Nothing -> do
+          phaseLog "error" $ "NewMeroClient sent for node with no host: "
+                          ++ show node
+          continue finish
+      Just _ -> do
+        continue query_host_info
 
-    setPhase msgClientInfo $ \(HAEvent eid (SystemInfo nid info) _) -> do
-      phaseLog "info" $ "Recived information about " ++ show nid
-      mhost <- findNodeHost nid
+  directly config_created $ do
+    Just fs <- getFilesystem
+    Just host <- getField . rget fldHost
+                <$> get Local
+    Just hhi <- getField . rget fldHostHardwareInfo
+                <$> get Local
+    createMeroClientConfig fs host hhi
+    -- TODO better notify function which takes a comparator
+    notifyOnClusterTranstion (M0.MeroClusterStarting (M0.BootLevel 1)) BarrierPass Nothing
+    notifyOnClusterTranstion M0.MeroClusterRunning BarrierPass Nothing
+    continue confd_running
+
+  setPhaseIf confd_running (barrierPass (M0.MeroClusterStarting (M0.BootLevel 1))) $ \() -> do
+    syncStat <- syncToConfd
+    case syncStat of
+      Left err -> do
+        phaseLog "error" $ "Unable to sync new client to confd: " ++ show err
+      Right () -> do
+        Just node <- getField . rget fldNode
+                    <$> get Local
+        promulgateRC $ NewMeroServer node
+    continue finish
+
+  directly end stop
+
+  startFork new_mero_client $ (fldNode =: Nothing)
+                          <+> (fldUUID =: Nothing)
+                          <+> (fldHost =: Nothing)
+                          <+> (fldHostHardwareInfo =: Nothing)
+                          <+> RNil
+
+-- | Rule fragment: phase which ensures messages are processed.
+phaseProcessMessage :: (FldUUID ∈ l)
+                    => Jump PhaseHandle -- ^ On completion
+                    -> RuleM LoopState (FieldRec l) (Jump PhaseHandle)
+phaseProcessMessage andThen = do
+  ppm <- phaseHandle "phaseProcessMessage::ppm"
+
+  directly ppm $ do
+    meid <- getField . rget fldUUID <$> get Local
+    traverse_ messageProcessed meid
+    continue andThen
+
+  return ppm
+
+-- | Rule fragment: query node hardware information.
+queryHostInfo :: forall l. (FldHostHardwareInfo ∈ l, FldHost ∈ l, FldNode ∈ l)
+              => Jump PhaseHandle -- ^ Phase handle to jump to on completion
+              -> Jump PhaseHandle -- ^ Phase handle to jump to on failure.
+              -> RuleM LoopState (FieldRec l) (Jump PhaseHandle) -- ^ Handle to start on
+queryHostInfo andThen orFail = do
+    query_info <- phaseHandle "queryHostInfo::query_info"
+    info_returned <- phaseHandle "queryHostInfo::info_returned"
+
+    directly query_info $ do
+      Just node@(R.Node nid) <- getField . rget fldNode <$> get Local
+      phaseLog "info" $ "Querying system information from " ++ show node
+      liftProcess . void . spawnLocal . void
+        $ spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
+      continue info_returned
+
+    setPhaseIf info_returned systemInfoOnNode $ \(eid,info) -> do
+      Just node <- getField . rget fldNode <$> get Local
+      phaseLog "info" $ "Received system information about " ++ show node
+      mhost <- findNodeHost node
       case mhost of
         Just host -> do
-          putProvisionHardwareInfo host info
+          modify Local $ over (rlens fldHostHardwareInfo) (const . Field $ Just info)
+          modify Local $ over (rlens fldHost) (const . Field $ Just host)
           syncGraphProcessMsg eid
-          selfMessage $ NewClientStoreInfo host info
+          continue andThen
         Nothing -> do
-          phaseLog "error" $ "Received information from node on unknown host " ++ show nid
+          phaseLog "error" $ "Unknown host"
           messageProcessed eid
+          continue orFail
 
-    setPhase msgClientStoreInfo $ \(NewClientStoreInfo host info) -> do
-       getFilesystem >>= \case
-          Nothing -> do
-            phaseLog "warning" "Configuration data was not loaded yet, skipping"
-          Just fs -> do
-            (node:_) <- nodesOnHost host
-            createMeroClientConfig fs host info
-            startMeroService host node
-            put Local $ Just (node, host, ())
-            switch [svc_up_now, timeout 5000000 svc_up_already]
-
-    -- Service comes up as a result of this invocation
-    setPhaseIf svc_up_now declareMeroChannelOnNode $ \chan -> do
-      Just (_, host, _) <- get Local
-      -- Legitimate to ignore the event id as it should be handled by the default
-      -- 'declare-mero-channel' rule.
-      procs <- startNodeProcesses host chan M0.PLM0t1fs False
-      case procs of
-        [] -> let state = M0.MeroClusterRunning in do
-          notifyOnClusterTranstion state BarrierPass Nothing
-        _ -> continue start_clients_complete
-
-    -- Service is already up
-    directly svc_up_already $ do
-      Just (node, host, _) <- get Local
-      rg <- getLocalGraph
-      m0svc <- lookupRunningService node m0d
-      case m0svc >>= meroChannel rg of
-        Just chan -> do
-          procs <- startNodeProcesses host chan M0.PLM0t1fs False
-          case procs of
-            [] -> let state = M0.MeroClusterRunning in do
-              notifyOnClusterTranstion state BarrierPass Nothing
-            _ -> continue start_clients_complete
-        Nothing -> switch [svc_up_now, timeout 5000000 svc_up_already]
-
-    setPhaseIf start_clients (barrierPass M0.MeroClusterRunning) $ \() -> do
-      Just (node, host, _) <- get Local
-      rg <- getLocalGraph
-      m0svc <- lookupRunningService node m0d
-      case m0svc >>= meroChannel rg of
-        Just chan -> do
-          procs <- startNodeProcesses host chan M0.PLM0t1fs False
-          if null procs
-            then return ()
-            else continue start_clients_complete
-        Nothing -> return ()
-
-    -- Mark clients as coming up successfully.
-    setPhaseIf start_clients_complete processControlOnNode $ \(eid, e) -> do
-      Just (R.Node node, _, _) <- get Local
-      (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
-      -- Mark successful processes as online, and others as failed.
-      forM_ procs $ \p -> modifyGraph $ G.connectUniqueFrom p R.Is M0.ProcessBootstrapped
-                                    >>> G.connectUniqueFrom p R.Is M0.PSOnline
-      forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>= \mp -> do
-        phaseLog "warning" $ "Process " ++ show f
-                          ++ " failed to start: " ++ r
-        traverse_ (\(p :: M0.Process) ->
-          modifyGraph $ G.connect p R.Is (M0.PSFailed r)) mp
-        finishMeroClientProvisioning node
-        messageProcessed eid
-
-    start mainloop Nothing
+    return query_info
   where
-    startMeroClientProvisioning host uuid =
-      modifyLocalGraph $ \rg -> do
-        let pp  = ProvisionProcess host
-            rg' = G.newResource pp
-              >>> G.connect pp OnHost host
-              >>> G.connect pp TriggeredBy uuid
-                $ rg
-        return rg'
-
-    finishMeroClientProvisioning nid = do
-      rg <- getLocalGraph
-      let mpp = listToMaybe
-                  [ pp | host <- G.connectedFrom R.Runs (R.Node nid) rg :: [R.Host]
-                       , pp <- G.connectedFrom OnHost host rg :: [ProvisionProcess]
-                       ]
-      forM_ mpp $ \pp -> do
-        let uuids = G.connectedTo pp TriggeredBy rg :: [UUID]
-        forM_ uuids messageProcessed
-        modifyGraph $ G.disconnectAllFrom pp OnHost (Proxy :: Proxy R.Host)
-                  >>> G.disconnectAllFrom pp TriggeredBy (Proxy :: Proxy UUID)
-
-    getProvisionHardwareInfo host = do
-       let pp = ProvisionProcess host
-       rg <- getLocalGraph
-       return . listToMaybe $ (G.connectedTo pp R.Has rg :: [M0.HostHardwareInfo])
-    putProvisionHardwareInfo host info = do
-       let pp = ProvisionProcess host
-       modifyGraph $ G.connectUnique pp R.Has (info :: M0.HostHardwareInfo)
-       publish $ NewMeroClientProcessed host
-
-data CommitNewMeroClient = CommitNewMeroClient R.Host UUID
-  deriving (Eq, Show, Typeable, Generic)
-instance Binary CommitNewMeroClient
-
-data NewClientStoreInfo = NewClientStoreInfo R.Host M0.HostHardwareInfo
-  deriving (Eq, Show, Typeable, Generic)
-instance Binary NewClientStoreInfo
-
-data OnHost = OnHost
-  deriving (Eq, Show, Typeable,Generic)
-instance Binary OnHost
-instance Hashable OnHost
-
-data TriggeredBy = TriggeredBy
-  deriving (Eq, Show, Typeable, Generic)
-instance Binary TriggeredBy
-instance Hashable TriggeredBy
-
-data ProvisionProcess = ProvisionProcess R.Host
-  deriving (Eq, Show, Typeable, Generic)
-instance Binary ProvisionProcess
-instance Hashable ProvisionProcess
-
-$(mkDicts
-  [ ''OnHost, ''ProvisionProcess ]
-  [ (''ProvisionProcess, ''OnHost, ''R.Host)
-  , (''ProvisionProcess, ''TriggeredBy, ''UUID)
-  , (''ProvisionProcess, ''R.Has, ''M0.HostHardwareInfo)
-  ]
-  )
-
-$(mkResRel
-  [ ''OnHost, ''ProvisionProcess ]
-  [ (''ProvisionProcess, ''OnHost, ''R.Host)
-  , (''ProvisionProcess, ''TriggeredBy, ''UUID)
-  , (''ProvisionProcess, ''R.Has, ''M0.HostHardwareInfo)
-  ] [])
+    systemInfoOnNode :: HAEvent SystemInfo
+                     -> g
+                     -> FieldRec l
+                     -> Process (Maybe (UUID, HostHardwareInfo))
+    systemInfoOnNode (HAEvent eid (SystemInfo node' info) _) _ l = let
+        Just node = getField . rget fldNode $ l
+      in
+        return $ if node == node' then Just (eid, info) else Nothing

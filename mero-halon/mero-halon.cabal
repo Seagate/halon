@@ -146,7 +146,9 @@ Library
                    wl-pprint,
                    transformers,
                    filepath,
-                   ede
+                   ede,
+                   lens,
+                   vinyl
 
   if flag(mero)
       Exposed-Modules: Mero.Epoch

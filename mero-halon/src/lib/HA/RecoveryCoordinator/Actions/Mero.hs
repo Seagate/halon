@@ -227,7 +227,6 @@ createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
           >>> G.connect process Has M0.PLM0t1fs
           >>> G.connect process Is M0.PSUnknown
           >>> G.connect fs M0.IsParentOf m0node
-          >>> G.connect host Has Castor.HA_M0CLIENT
           >>> G.connect host Runs m0node
             $ rg
     return rg'
@@ -376,13 +375,14 @@ announceMeroNodes = do
   rg' <- getLocalGraph
   let clientHosts =
         [ host | host <- G.getResourcesOfType rg'    :: [Castor.Host] -- all hosts
-               , not  $ G.isConnected host Has Castor.HA_M0CLIENT rg' -- and not already a client
-               , not  $ G.isConnected host Has Castor.HA_M0SERVER rg' -- and not already a server
+               , G.isConnected host Has Castor.HA_M0CLIENT rg' -- which are clients
+               ]
+      serverHosts =
+        [ host | host <- G.getResourcesOfType rg' :: [Castor.Host]
+               , G.isConnected host Has Castor.HA_M0SERVER rg'
                ]
 
       hostsToNodes = mapMaybe (\h -> listToMaybe $ G.connectedTo h Runs rg')
-      serverHosts = [ host | host <- G.getResourcesOfType rg' :: [Castor.Host]
-                           , G.isConnected host Has Castor.HA_M0SERVER rg' ]
 
       serverNodes = hostsToNodes serverHosts :: [Res.Node]
       clientNodes = hostsToNodes clientHosts :: [Res.Node]
