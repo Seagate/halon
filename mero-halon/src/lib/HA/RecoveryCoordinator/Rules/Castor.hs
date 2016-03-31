@@ -195,6 +195,10 @@ ruleDriveRemoved = define "drive-removed" $ do
     Just (uuid, _, _, _, m0sdev) <- get Local
     phaseLog "debug" "Notify about drive state change"
     notifyDriveStateChange m0sdev M0_NC_FAILED
+    mdisk <- lookupSDevDisk m0sdev
+    forM_ mdisk $ \disk -> 
+      withSpielRC $ \sp m0 -> withRConfRC sp
+        $ m0 $ Spiel.deviceDetach sp (fid disk)
     messageProcessed uuid
     continue finish
 
@@ -300,9 +304,11 @@ ruleDriveInserted = define "drive-inserted" $ do
                handleRepair $ Set [Note (fid sdev) M0_NC_FAILED]
              M0_NC_REPAIRED -> do
                markIfNotMeroFailure
+               attachDisk sdev
                handleRepair $ Set [Note (fid sdev) M0_NC_ONLINE]
              M0_NC_REPAIR -> do
                markIfNotMeroFailure
+               attachDisk sdev
                handleRepair $ Set [Note (fid sdev) M0_NC_ONLINE]
              M0_NC_REBALANCE ->  -- Impossible case
                messageProcessed uuid
@@ -331,9 +337,7 @@ ruleDriveInserted = define "drive-inserted" $ do
     Just (_, DriveInserted{diDevice=disk}) <- get Local
     sdev <- lookupStorageDeviceSDev disk
     forM_ sdev $ \m0sdev -> do
-      msa <- getSpielAddressRC
-      forM_ msa $ \_ -> void  $ withSpielRC $ \sp _ -> withRConfRC sp
-                $ liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
+      attachDisk m0sdev
       fmap (fromMaybe M0_NC_UNKNOWN) (queryObjectStatus m0sdev) >>= \case
         M0_NC_TRANSIENT -> notifyDriveStateChange m0sdev M0_NC_FAILED
         M0_NC_FAILED -> handleRepair $ Set [Note (fid m0sdev) M0_NC_FAILED]
@@ -352,6 +356,14 @@ ruleDriveInserted = define "drive-inserted" $ do
     stop
 
   startFork handler Nothing
+
+attachDisk :: M0.SDev -> PhaseM LoopState a ()
+attachDisk sdev = do
+  mdisk <- lookupSDevDisk sdev
+  forM_ mdisk $ \d -> do
+    msa <- getSpielAddressRC
+    forM_ msa $ \_ -> void  $ withSpielRC $ \sp m0 -> withRConfRC sp
+      $ m0 $ Spiel.deviceAttach sp (fid d)
 
 #else
 ruleDriveInserted :: Definitions LoopState ()
