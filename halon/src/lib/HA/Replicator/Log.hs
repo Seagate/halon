@@ -20,7 +20,7 @@ module HA.Replicator.Log
   , __remoteTableDecl
   )  where
 
-import HA.Replicator ( RGroup(..), RStateView(..) )
+import HA.Replicator
 
 import qualified Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 import qualified Control.Distributed.Log as Log
@@ -70,7 +70,6 @@ import Control.Exception ( evaluate )
 import Control.Monad ( when, forM, void, forM_ )
 import Data.Binary ( decode, encode, Binary )
 import Data.ByteString.Lazy ( ByteString )
-import Data.Function (fix)
 import Data.Maybe (isJust)
 import Data.Ratio ( (%) )
 import Data.Typeable ( Typeable )
@@ -148,6 +147,10 @@ rgroupConfig (snapshotThreshold, snapshotTimeout) = Log.Config
     , snapshotPolicy    = return . (>= snapshotThreshold)
     , snapshotRestoreTimeout = snapshotTimeout
     }
+
+bToM :: Bool -> Maybe ()
+bToM True  = Just ()
+bToM False = Nothing
 
 composeM :: (a -> Process b) -> (b -> Process c) -> a -> Process c
 composeM f g x = f x >>= g
@@ -242,14 +245,15 @@ instance RGroup RLogGroup where
 
   getRGroupMembers (RLogGroup _ _ h _ _) = Log.getMembership h
 
-  setRGroupMembers (RLogGroup _ _ h _ _) ns inGroup = do
-    fix $ \loop ->
+  setRGroupMembers rg@(RLogGroup _ _ h _ _) ns inGroup = do
+    say $ "setRGroupMembers: " ++ show ns
+    retryRGroup rg 1000000 $ fmap bToM $
       Log.reconfigure h ($(mkClosure 'removeNodes) () `closureApply` inGroup)
-        >>= \b -> if b then return () else loop
+    say "setRGroupMembers: removed nodes"
     forM ns $ \nid -> do
+      say $ "setRGroupMembers: adding " ++ show nid
       _ <- spawn nid $ staticClosure $(mkStatic 'snapshotServer)
-      fix $ \loop -> Log.addReplica h nid >>= \b ->
-                       if b then return () else loop
+      retryRGroup rg 1000000 $ fmap bToM $ Log.addReplica h nid
       return $ Replica nid
 
   updateRGroup (RLogGroup _ _ h _ _) (Replica ρ) = Log.updateHandle h ρ

@@ -135,6 +135,7 @@ testIgnition :: Transport
 testIgnition transport =
     runTest 6 20 transport (__remoteTable $ haRemoteTable $ initRemoteTable) $
       \nids -> do
+      say $ "Starting test: " ++ show (map localNodeId nids)
       (sp :: SendPort (), rp) <- newChan
       let (nids1, nids2) = splitAt 3 nids
           mkArgs b ns  = ( b :: Bool
@@ -146,18 +147,22 @@ testIgnition transport =
                        )
           args = mkArgs False nids1
       lproc <- ask
+      say "Autobooting ..."
       autobootCluster sp (processNode lproc: nids)
 
+      say "Calling ignition ..."
       self <- getSelfPid
       _ <- liftIO $ forkProcess (head nids1) $ ignition args >>= usend self
       Nothing <- expect :: Process IgnitionResult
       receiveChan rp
 
+      say "Calling ignition for update ..."
       _ <- liftIO $ forkProcess (head nids1) $
              ignition (mkArgs True (head nids1: nids2)) >>= usend self
       Just (added, trackers, members, newNodes) <-
         expect :: Process IgnitionResult
 
+      say "Stopping cluster ..."
       liftIO $ do
         forM_ (tail nids1) $ \nid -> do
           forkProcess nid $ do
@@ -167,6 +172,7 @@ testIgnition transport =
         ((), ()) <- expect
         return ()
 
+      say "Assertions ..."
       liftIO $ do
         assertBool  "set of node changed" added
         assertEqual "nodes from new set added"
