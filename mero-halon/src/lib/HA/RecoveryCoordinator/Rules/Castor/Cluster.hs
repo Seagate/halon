@@ -108,7 +108,7 @@ ruleClusterStart = defineSimple "cluster-start-request"
                   modifyGraph $ \g ->
                      let procs = G.getResourcesOfType g :: [M0.Process]
                          srvs  = procs >>= \p -> G.connectedTo p M0.IsParentOf g :: [M0.Service]
-                     in flip (foldr (\p -> G.connectUniqueFrom p R.Is M0.M0_NC_ONLINE)) procs
+                     in flip (foldr (\p -> G.connectUniqueFrom p R.Is M0.PSOnline)) procs
                           >>> flip (foldr (\s -> G.connectUniqueFrom s R.Is M0.M0_NC_ONLINE)) srvs
                               $ g
                   announceMeroNodes
@@ -235,7 +235,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
          continue teardown
        markProcessFailed lvl fids = modifyGraph $ \rg ->
          foldr (\p -> G.disconnect (M0.MeroClusterStopping lvl) M0.Pending p
-                        >>> G.connectUniqueFrom p R.Is M0.M0_NC_FAILED)
+                        >>> G.connectUniqueFrom p R.Is M0.PSStopping)
                rg
                (getProcessesByFid rg fids :: [M0.Process])
 

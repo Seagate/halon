@@ -436,5 +436,5 @@ testFidsLoad = do
   let g  = G.newResource (M0.RackV (fids !! 0))
        >>> G.newResource (M0.DiskV (fids !! 1))
          $ G.emptyGraph mmchan
-  liftIO $ assertEqual "all objects should be found" 2 (length $ rgLookupConfObjectStates fids g)
+  liftIO $ assertEqual "all objects should be found" 2 (length $ lookupConfObjectStates fids g)
 #endif

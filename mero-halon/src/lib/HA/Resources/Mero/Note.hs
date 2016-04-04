@@ -94,7 +94,6 @@ $(mkDicts
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
   , (''M0.Node, ''Is, ''ConfObjectState)
-  , (''M0.Process, ''Is, ''ConfObjectState)
   , (''M0.Service, ''Is, ''ConfObjectState)
   , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Disk, ''Is, ''ConfObjectState)
@@ -110,7 +109,6 @@ $(mkResRel
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
   , (''M0.Node, ''Is, ''ConfObjectState)
-  , (''M0.Process, ''Is, ''ConfObjectState)
   , (''M0.Service, ''Is, ''ConfObjectState)
   , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Disk, ''Is, ''ConfObjectState)
@@ -191,5 +189,5 @@ lookupConfObjectState g fid = fidConfObjDict fid >>= \case
 -- | Lookup the configuration object states of objects with the given FIDs.
 lookupConfObjectStates :: [Fid] -> G.Graph -> [(Fid, ConfObjectState)]
 lookupConfObjectStates fids g = catMaybes
-    . fmap (uncurry ((<$>) . (,)))
+    . fmap (traverse id)
     $ zip fids (lookupConfObjectState g <$> fids)

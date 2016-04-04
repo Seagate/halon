@@ -202,10 +202,11 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
       modifyGraph $ G.newResource proc
                 >>> G.newResource proc
                 >>> G.newResource procLabel
-                >>> G.newResource M0.M0_NC_ONLINE
+                >>> G.newResource M0.PSOnline
                 >>> G.connect node M0.IsParentOf proc
                 >>> G.connectUniqueFrom proc Has procLabel
-                >>> G.connectUniqueFrom proc Is M0.M0_NC_ONLINE
+                -- TODO Remove this when we handle process state.
+                >>> G.connectUniqueFrom proc Is M0.PSOnline
 
   goSrv proc devs CI.M0Service{..} = let
       filteredDevs = maybe
@@ -435,11 +436,11 @@ pickPrincipalRM = getLocalGraph >>= \g ->
                   , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf g
                   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf g
                   , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf g
-                  , G.isConnected proc Is M0.M0_NC_ONLINE g
+                  , G.isConnected proc Is M0.PSOnline g
                   , let srv_types = M0.s_type <$> G.connectedTo proc M0.IsParentOf g
                   , CST_MGS `elem` srv_types
                   , rm <- G.connectedTo proc M0.IsParentOf g :: [M0.Service]
-                  , G.isConnected proc Is M0.M0_NC_ONLINE g
+                  , G.isConnected proc Is M0.PSOnline g
                   , M0.s_type rm == CST_RMS
                   ]
   in do
