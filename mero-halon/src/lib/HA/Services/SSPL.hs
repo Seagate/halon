@@ -113,7 +113,7 @@ saySSPL msg = say $ "[Service:SSPL] " ++ msg
 
 -- | Maximum allowed timeout between any sspl messages.
 ssplMaxMessageTimeout :: Int
-ssplMaxMessageTimeout = 4*60*1000000
+ssplMaxMessageTimeout = 10*60*1000000
 
 -- | Internal 'listen' handler. This is needed because AMQP runs in the
 --   IO monad, so we cannot directly handle messages using `Process` actions.
