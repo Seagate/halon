@@ -71,7 +71,7 @@ import Control.Monad
 import Text.Printf
 
 
-retryLog :: Log.Handle a -> Process b -> Process b
+retryLog :: Log.Handle a -> Process (Maybe b) -> Process b
 retryLog h = retryMonitoring (Log.monitorLog h) 2000000
 
 type State = Int
@@ -121,6 +121,10 @@ snapshotThreshold = 10000
 
 testLogId :: Log.LogId
 testLogId = Log.toLogId "test-log"
+
+bToM :: Bool -> Maybe ()
+bToM True  = Just ()
+bToM False = Nothing
 
 {-# NOINLINE globalCount #-}
 globalCount :: IORef Int
@@ -173,7 +177,7 @@ remotableDecl [ [d|
     self <- getSelfPid
     replicateM_ iters $ do
       replicateM_ updNo $ spawnLocal $ do
-        retryLog h $
+        retryLog h $ bToM <$>
           State.update port incrementCP
         i <- liftIO $ atomicModifyIORef' globalCount $ \i -> (i + 1, i)
         when (i `mod` 10 == 0) $
@@ -267,7 +271,7 @@ benchAction (iters, updNo, readNo) = \h _ port -> do
       self <- getSelfPid
       replicateM_ iters $ do
         replicateM_ updNo $ spawnLocal $ do
-          retryLog h $
+          retryLog h $ bToM <$>
             State.update port incrementCP
           usend self ()
         replicateM_ readNo $ spawnLocal $ do
