@@ -39,5 +39,5 @@ meroRules = do
   -- state of some configuration objects.
   defineSimple "ha-state-get" $ \(HAEvent uuid (Get client fids) _) -> do
       getLocalGraph >>= liftProcess . usend client .
-        GetReply . map (uncurry Note) . rgLookupConfObjectStates fids
+        GetReply . map (uncurry Note) . lookupConfObjectStates fids
       messageProcessed uuid

@@ -6,7 +6,9 @@
 
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TemplateHaskell            #-}
@@ -26,12 +28,14 @@ import HA.Resources.TH
 import Mero.ConfC (Fid(..))
 
 import Data.Binary (Binary)
+import Data.Bits (shiftR)
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
-import Data.List (nubBy)
-import Data.Maybe (catMaybes, fromMaybe, isJust, listToMaybe)
-import Data.Typeable (Typeable, cast, eqT, (:~:))
+import qualified Data.Map as Map
+import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
+import Data.Typeable (Typeable)
 import Data.Proxy (Proxy(..))
+import Data.Word ( Word64 )
 
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -86,7 +90,7 @@ instance Hashable PrincipalRM
 $(mkDicts
   [ ''ConfObjectState, ''PrincipalRM]
   [ (''Cluster, ''Has, ''PrincipalRM)
-  , (''R.Rack, ''Is, ''ConfObjectState)
+  , (''M0.Rack, ''Is, ''ConfObjectState)
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
   , (''M0.Node, ''Is, ''ConfObjectState)
@@ -102,7 +106,7 @@ $(mkDicts
 $(mkResRel
   [ ''ConfObjectState, ''PrincipalRM ]
   [ (''Cluster, ''Has, ''PrincipalRM)
-  , (''R.Rack, ''Is, ''ConfObjectState)
+  , (''M0.Rack, ''Is, ''ConfObjectState)
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
   , (''M0.Node, ''Is, ''ConfObjectState)
@@ -120,6 +124,56 @@ $(mkResRel
 -- Specific object state                                                      --
 --------------------------------------------------------------------------------
 
+instance HasConfObjectState M0.Rack
+instance HasConfObjectState M0.Enclosure
+instance HasConfObjectState M0.Controller
+instance HasConfObjectState M0.Node
+instance HasConfObjectState M0.Process where
+  getConfObjState x rg = case G.connectedTo x Is rg of
+      [y] -> ms y
+      _ -> M0_NC_ONLINE
+    where
+      ms M0.PSUnknown = M0_NC_UNKNOWN
+      ms (M0.PSFailed _) = M0_NC_FAILED
+      ms M0.PSOffline = M0_NC_FAILED
+      ms M0.PSStarting = M0_NC_FAILED
+      ms M0.PSStopping = M0_NC_FAILED
+      ms M0.PSOnline = M0_NC_ONLINE
+      ms (M0.PSInhibited M0.PSOnline) = M0_NC_TRANSIENT
+      ms (M0.PSInhibited y) = ms y
+instance HasConfObjectState M0.Service
+instance HasConfObjectState M0.Disk
+instance HasConfObjectState M0.SDev
+instance HasConfObjectState M0.Pool
+
+-- A dictionary wrapper for configuration objects
+data SomeConfObjDict = forall x. (Typeable x, M0.ConfObj x, HasConfObjectState x)
+  => SomeConfObjDict (Proxy x)
+
+-- Yields the ConfObj dictionary of the object with the given Fid.
+--
+-- TODO: Generate this with TH.
+fidConfObjDict :: Fid -> Maybe SomeConfObjDict
+fidConfObjDict f = Map.lookup (f_container f `shiftR` (64 - 8)) dictMap
+
+-- | Map of all dictionaries
+dictMap :: Map.Map Word64 SomeConfObjDict
+dictMap = Map.fromList
+    [ mkTypePair (Proxy :: Proxy M0.Node)
+    , mkTypePair (Proxy :: Proxy M0.Rack)
+    , mkTypePair (Proxy :: Proxy M0.Pool)
+    , mkTypePair (Proxy :: Proxy M0.Process)
+    , mkTypePair (Proxy :: Proxy M0.Service)
+    , mkTypePair (Proxy :: Proxy M0.SDev)
+    , mkTypePair (Proxy :: Proxy M0.Enclosure)
+    , mkTypePair (Proxy :: Proxy M0.Controller)
+    , mkTypePair (Proxy :: Proxy M0.Disk)
+    ]
+  where
+    mkTypePair :: forall a. (Typeable a, M0.ConfObj a, HasConfObjectState a)
+               => Proxy a -> (Word64, SomeConfObjDict)
+    mkTypePair a = (M0.fidType a, SomeConfObjDict (Proxy :: Proxy a))
+
 -- | Class to determine configuration object state from the resource graph.
 class (G.Resource a, M0.ConfObj a) => HasConfObjectState a where
   getConfObjState :: a -> G.Graph -> ConfObjectState
@@ -128,42 +182,14 @@ class (G.Resource a, M0.ConfObj a) => HasConfObjectState a where
   getConfObjState x rg = fromMaybe M0_NC_ONLINE
                           . listToMaybe $ G.connectedTo x Is rg
 
-instance HasConfObjectState M0.Enclosure
-instance HasConfObjectState M0.Controller
-instance HasConfObjectState M0.Node
-instance HasConfObjectState M0.Process where
-  getConfObjState x rg = case G.connectedTo x Is rg of
-      [x] -> ms x
-      _ -> M0_NC_ONLINE
-    where
-      ms M0.PSUnknown = M0_NC_UNKNOWN
-      ms (M0.PSFailed _) = M0_NC_FAILED
-      ms x | x `elem` [M0.PSOffline, M0.PSStarting, M0.PSStopping]
-        = M0_NC_FAILED
-      ms M0.PSOnline = M0_NC_ONLINE
-      ms (M0.PSInhibited M0.PSOnline) = M0_NC_TRANSIENT
-      ms (M0.PSInhibited x) = ms x
-instance HasConfObjectState M0.Service
-instance HasConfObjectState M0.Disk
-instance HasConfObjectState M0.SDev
-instance HasConfObjectState M0.Pool
+lookupConfObjectState :: G.Graph -> Fid -> Maybe ConfObjectState
+lookupConfObjectState g fid = fidConfObjDict fid >>= \case
+  SomeConfObjDict (_ :: Proxy ct0) -> do
+    obj <- M0.lookupConfObjByFid fid g :: Maybe ct0
+    return $ getConfObjState obj g
 
 -- | Lookup the configuration object states of objects with the given FIDs.
-rgLookupConfObjectStates :: [Fid] -> G.Graph -> [(Fid, ConfObjectState)]
-rgLookupConfObjectStates fids g =
-    [ (fid, state)
-    | (res, rels) <- G.getGraphResources g
-    , fid : _     <- [catMaybes $ map (tryGetFid res) fidDicts]
-    , elem fid fids
-    , state : _   <- [(catMaybes $ map findConfObjectState rels)++[M0_NC_ONLINE]]
-    ]
-  where
-    fidDicts = nubBy sameDicts $ concat $ map M0.fidConfObjDict fids
-    sameDicts (M0.SomeConfObjDict (_ :: Proxy ct0))
-              (M0.SomeConfObjDict (_ :: Proxy ct1)) =
-      isJust (eqT :: Maybe (ct0 :~: ct1))
-
-    tryGetFid (G.Res x) (M0.SomeConfObjDict (_ :: Proxy ct)) =
-        M0.fid <$> (cast x :: Maybe ct)
-    findConfObjectState (G.OutRel x _ b) | Just R.Is <- cast x = cast b
-    findConfObjectState _                                      = Nothing
+lookupConfObjectStates :: [Fid] -> G.Graph -> [(Fid, ConfObjectState)]
+lookupConfObjectStates fids g = catMaybes
+    . fmap (uncurry ((<$>) . (,)))
+    $ zip fids (lookupConfObjectState g <$> fids)
