@@ -71,6 +71,7 @@ import Control.Distributed.Process
   , link
   , expect
   , usend
+  , kill
   )
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
@@ -322,9 +323,10 @@ remotableDecl [ [d|
       (sendPort, receivePort) <- newChan
       startSensors chan sendPort scSensorConf
       startActuators chan scActuatorConf pid sendPort
-      _ <- spawnLocal $ link pid >> monitorProcess receivePort
+      rc <- spawnLocal $ link pid >> monitorProcess receivePort
       link pid
       () <- liftIO $ takeMVar lock
+      kill rc "restart"
       liftIO $ closeConnection conn
       saySSPL "Connection closed."
     in do
