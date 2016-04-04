@@ -26,7 +26,6 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , getParents
   , loadMeroServers
     -- ** Lookup objects based on another
-  , rgLookupConfObjByFid
   , lookupConfObjByFid
   , lookupStorageDevice
   , lookupStorageDeviceSDev
@@ -82,16 +81,7 @@ lookupConfObjByFid :: (G.Resource a, M0.ConfObj a)
 lookupConfObjByFid f = do
     phaseLog "rg-query" $ "Looking for conf objects with FID "
                         ++ show f
-    fmap (rgLookupConfObjByFid f) getLocalGraph
-
-rgLookupConfObjByFid :: forall a. (G.Resource a, M0.ConfObj a)
-                     => Fid
-                     -> G.Graph
-                     -> Maybe a
-rgLookupConfObjByFid f =
-    listToMaybe
-  . filter ((== f) . M0.fid)
-  . G.getResourcesOfType
+    fmap (M0.lookupConfObjByFid f) getLocalGraph
 
 -- | Initialise a reflection of the Mero configuration in the resource graph.
 --   This does the following:

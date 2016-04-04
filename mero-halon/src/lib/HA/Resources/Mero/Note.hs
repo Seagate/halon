@@ -5,6 +5,8 @@
 -- Mero notification specific resources.
 
 {-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TemplateHaskell            #-}
@@ -15,7 +17,7 @@
 
 module HA.Resources.Mero.Note where
 
-import HA.Resources (Cluster, Has)
+import HA.Resources (Cluster, Has(..))
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import qualified HA.ResourceGraph as G
@@ -27,7 +29,7 @@ import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 import Data.List (nubBy)
-import Data.Maybe (catMaybes, isJust)
+import Data.Maybe (catMaybes, fromMaybe, isJust, listToMaybe)
 import Data.Typeable (Typeable, cast, eqT, (:~:))
 import Data.Proxy (Proxy(..))
 
@@ -113,6 +115,38 @@ $(mkResRel
   , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
   []
   )
+
+--------------------------------------------------------------------------------
+-- Specific object state                                                      --
+--------------------------------------------------------------------------------
+
+-- | Class to determine configuration object state from the resource graph.
+class (G.Resource a, M0.ConfObj a) => HasConfObjectState a where
+  getConfObjState :: a -> G.Graph -> ConfObjectState
+  default getConfObjState :: G.Relation Is a ConfObjectState
+                          => a -> G.Graph -> ConfObjectState
+  getConfObjState x rg = fromMaybe M0_NC_ONLINE
+                          . listToMaybe $ G.connectedTo x Is rg
+
+instance HasConfObjectState M0.Enclosure
+instance HasConfObjectState M0.Controller
+instance HasConfObjectState M0.Node
+instance HasConfObjectState M0.Process where
+  getConfObjState x rg = case G.connectedTo x Is rg of
+      [x] -> ms x
+      _ -> M0_NC_ONLINE
+    where
+      ms M0.PSUnknown = M0_NC_UNKNOWN
+      ms (M0.PSFailed _) = M0_NC_FAILED
+      ms x | x `elem` [M0.PSOffline, M0.PSStarting, M0.PSStopping]
+        = M0_NC_FAILED
+      ms M0.PSOnline = M0_NC_ONLINE
+      ms (M0.PSInhibited M0.PSOnline) = M0_NC_TRANSIENT
+      ms (M0.PSInhibited x) = ms x
+instance HasConfObjectState M0.Service
+instance HasConfObjectState M0.Disk
+instance HasConfObjectState M0.SDev
+instance HasConfObjectState M0.Pool
 
 -- | Lookup the configuration object states of objects with the given FIDs.
 rgLookupConfObjectStates :: [Fid] -> G.Graph -> [(Fid, ConfObjectState)]

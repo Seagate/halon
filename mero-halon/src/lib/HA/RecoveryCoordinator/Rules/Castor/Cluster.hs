@@ -364,7 +364,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
 
    startFork initialize Nothing
    where
-     getProcessesByFid rg = mapMaybe (`rgLookupConfObjByFid` rg)
+     getProcessesByFid rg = mapMaybe (`M0.lookupConfObjByFid` rg)
      mkLabel bl@(M0.BootLevel l)
        | l == maxTeardownLevel = M0.PLM0t1fs
        | otherwise = M0.PLBootLevel bl

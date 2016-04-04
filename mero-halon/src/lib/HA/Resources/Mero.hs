@@ -42,7 +42,7 @@ import Data.Word ( Word32, Word64 )
 import GHC.Generics (Generic)
 import qualified "distributed-process-scheduler" System.Clock as C
 
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import qualified Data.Map as Map
 import Data.Monoid
 import Data.UUID (UUID)
@@ -626,3 +626,13 @@ getM0Services g =
        , (p :: Process) <- G.connectedTo node IsParentOf g
        , sv <- G.connectedTo p IsParentOf g
   ]
+
+-- | Lookup a configuration object in the resource graph.
+lookupConfObjByFid :: forall a. (G.Resource a, ConfObj a)
+                     => Fid
+                     -> G.Graph
+                     -> Maybe a
+lookupConfObjByFid f =
+    listToMaybe
+  . filter ((== f) . fid)
+  . G.getResourcesOfType
