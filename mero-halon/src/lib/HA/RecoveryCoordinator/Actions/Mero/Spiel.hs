@@ -368,6 +368,7 @@ syncToBS = withM0RC $ \lift -> do
 syncToConfd :: PhaseM LoopState l (Either SomeException ())
 syncToConfd = do
   withSpielRC $ \sc lift -> do
+     setProfileRC sc lift
      loadConfData >>= traverse_ (\x -> txOpenContext lift sc >>= txPopulate lift x >>= txSyncToConfd lift)
 
 -- | Open a transaction. Ultimately this should not need a
@@ -701,3 +702,11 @@ getTimeUntilQueryHourlyPRI pool = getPoolRepairInformation pool >>= \case
     let elapsed = tn - M0.priTimeLastHourlyRan pri
         untilHourPasses = M0.mkTimeSpec 3600 - elapsed
     return $ M0.timeSpecToSeconds untilHourPasses
+
+-- | Set profile in current thread.
+setProfileRC :: SpielContext -> (IO () -> PhaseM LoopState l ())  -> PhaseM LoopState l ()
+setProfileRC spiel lift = do
+  rg <- getLocalGraph
+  let mp = listToMaybe $ G.getResourcesOfType rg :: Maybe M0.Profile
+  phaseLog "spiel" $ "set command profile to" ++ show mp
+  lift $ Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
