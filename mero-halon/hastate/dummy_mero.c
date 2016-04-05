@@ -17,6 +17,7 @@
 #include "conf/confc.h"
 #include "ha/note.h"
 #include "reqh/reqh.h"
+#include "rpc/rpc_machine.h"
 
 static struct m0_sm_group g_grp;
 

@@ -13,7 +13,7 @@
 #include "ha/note_fops.h"
 #include "lib/errno.h"
 #include "lib/memory.h"
-#include "lib/trace.h"
+#include "rpc/rpc.h"
 
 extern ha_state_callbacks_t ha_state_cbs;
 
