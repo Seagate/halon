@@ -897,6 +897,7 @@ replica Dict
               matchChan ptimerRP $ \PeriodicTick -> do
                   mLeader <- liftIO getLeader
                   logTrace $ "Periodic timer tick: " ++ show (w, cd, mLeader)
+                  -- Kill the batcher if I'm not the leader.
                   when (mLeader /= Just here) $ exitAndWait bpid
                   usend ptimerPid (ptimerSP, leaseTimeout, PeriodicTick)
                   go st
@@ -998,6 +999,8 @@ replica Dict
                           legD' = DecreeId leg' $ decreeNumber di
 
                       mbpid <- whereis (batcherLabel logId)
+                      -- Update the epoch and membership of the batcher if there
+                      -- is any.
                       when (epoch /= epoch' || sort ρs /= sort ρs') $
                         forM_ mbpid $ flip usend (epoch', ρs')
                       bpid' <- case mbpid of
@@ -1910,6 +1913,9 @@ checkHandle label (Handle _ _ _ _ _ μ) = do
       die msg
 
 -- | Append an entry to the replicated log.
+--
+-- Returns @True@ on success. The client can retry it if it returns @False@.
+--
 append :: Serializable a => Handle a -> Hint -> a -> Process Bool
 append h@(Handle _ _ _ _ omchan μ) hint x = callLocal $ do
     checkHandle "Log.append" h
@@ -1924,6 +1930,25 @@ append h@(Handle _ _ _ _ omchan μ) hint x = callLocal $ do
     logTrace $ "append: sending request to ambassador " ++ show μ
     when schedulerIsEnabled $ usend μ ()
     expect
+
+-- Note [Log monitoring]
+-- ~~~~~~~~~~~~~~~~~~~~~
+--
+-- The batcher process of replicas is observed to detect failures in requests.
+--
+-- The batcher is killed as soon as the replica realizes it is no longer the
+-- leader replica. This means that after startup, only the leader replica has a
+-- batcher.
+--
+-- Any requests in the batcher mailbox are discarded when the batcher is killed.
+--
+-- A monitor notification of the batcher means that likely the request has been
+-- dropped; or that a connection failure to the node containing the leader
+-- replica failed, in which case the acknowledgement will be lost.
+--
+-- The various api calls could still return a failure result (@False@ or
+-- @Nothing@) even if there is not a monitor notification. This can happen when
+-- the request is rejected for other causes, like having an old epoch.
 
 -- | Monitors the log. When connectivity to the log is lost a process monitor
 -- notification is sent to the caller. Lost connectivity could mean that there
