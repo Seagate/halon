@@ -72,10 +72,10 @@ mkAutobootTest transport =
                  , 3*1000000 :: Int
                  )
 
-      -- 1. Autoboot cluster
+      say "Autoboot cluster"
       autobootCluster sp nids
 
-      -- 2. Run ignition once
+      say "Run ignition once"
       self <- getSelfPid
       _ <- liftIO $ forkProcess (head nids) $ ignition args >>= usend self
       result <- expect
@@ -91,10 +91,11 @@ mkAutobootTest transport =
           mapM_ print members
         Nothing -> return ()
 
-      -- 3. Wait RC to spawn.
+      say "Wait RC to spawn."
       receiveChan rp
 
-      -- 4. Instead of stopping the node we kill all processes. This is a way of
+      say "Kill all processes."
+      -- Instead of stopping the node we kill all processes. This is a way of
       -- simulating a node dying and coming back again without actually ending
       -- the unix process. Creating a new node on the same unix process would
       --  assign a different NodeId to it, and this in turn changes the location
@@ -106,10 +107,10 @@ mkAutobootTest transport =
         ((), ()) <- expect
         return ()
 
-      -- 5. run autoboot once again
+      say "Run autoboot once again."
       autobootCluster sp nids
 
-      -- 6. wait for RC to spawn
+      say "Wait for RC to spawn."
       receiveChan rp
 
 autobootCluster :: SendPort () -> [LocalNode] -> Process ()
