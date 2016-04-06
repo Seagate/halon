@@ -2157,7 +2157,7 @@ killReplica :: Typeable a
               => Handle a
               -> NodeId
               -> Process ()
-killReplica (Handle _ _ config _ _ _) nid = do
+killReplica (Handle _ _ config _ _ _) nid = callLocal $ do
     conf <- unClosure config
     whereisRemoteAsync nid (acceptorLabel $ logId conf)
     whereisRemoteAsync nid (replicaLabel $ logId conf)
