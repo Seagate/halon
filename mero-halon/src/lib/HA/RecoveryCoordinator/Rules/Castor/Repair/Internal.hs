@@ -7,7 +7,6 @@
 -- A helper module for repair process
 module HA.RecoveryCoordinator.Rules.Castor.Repair.Internal where
 
-import           Control.Applicative
 import           Control.Exception (SomeException)
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
@@ -82,3 +81,10 @@ filterCompletedRepairs = filter p
     p (Spiel.SnsStatus _ Spiel.M0_SNS_CM_STATUS_IDLE _) = True
     p (Spiel.SnsStatus _ Spiel.M0_SNS_CM_STATUS_FAILED _) = True
     p _ = False
+
+filterPausedRepairs :: [Spiel.SnsStatus] -> [Spiel.SnsStatus]
+filterPausedRepairs = filter p
+  where
+    p (Spiel.SnsStatus _ Spiel.M0_SNS_CM_STATUS_PAUSED _) = True
+    p _ = False
+
