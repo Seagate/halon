@@ -37,7 +37,8 @@ import qualified HA.RecoveryCoordinator.Rules.Castor.Repair.Internal as R
 import           HA.Resources
 import           HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
-import           HA.Resources.Mero hiding (Enclosure, Process, Rack, Process)
+import           HA.Resources.Mero
+  hiding (Enclosure, Process, Rack, Process, lookupConfObjByFid)
 import           HA.Resources.Mero.Note
 import           HA.Services.Mero
 import           Mero.Notification hiding (notifyMero)

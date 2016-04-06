@@ -44,7 +44,7 @@ import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Castor as R
 import HA.Resources.Mero (Service(..), SpielAddress(..))
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (rgLookupConfObjectStates)
+import HA.Resources.Mero.Note (lookupConfObjectStates)
 import qualified HA.Resources.Mero.Note as M0
 import Network.RPC.RPCLite
   ( ListenCallbacks(..)
@@ -224,7 +224,7 @@ entryPointTimeout = 10000000
 
 -- | Get information about Fid states from local graph.
 getNVec :: [Fid] -> Graph -> [Note]
-getNVec fids = fmap (uncurry Note) . rgLookupConfObjectStates fids
+getNVec fids = fmap (uncurry Note) . lookupConfObjectStates fids
 
 -- | Initializes the hastate interface in the node where it will be
 -- used. Call it before @m0_init@ and before 'initialize'.

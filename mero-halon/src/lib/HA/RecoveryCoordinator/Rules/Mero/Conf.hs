@@ -239,15 +239,12 @@ enclosureOnline = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_ONLINE)
 -------------------------------------------------------------------------------
 
 -- | Run action iff entity is not in given state.
-whenNotState :: G.Relation R.Is a M0.ConfObjectState
+whenNotState :: M0.HasConfObjectState a
               => M0.ConfObjectState -> a -> PhaseM LoopState l () -> PhaseM LoopState l ()
 whenNotState st obj cont = do
-  mst <- queryObjectStatus obj
-  case mst of
-    -- No state == Online.
-    Nothing | st == M0.M0_NC_ONLINE -> cont >> setObjectStatus obj st
-    Just ost | ost == st -> cont >> setObjectStatus obj st
-    _ -> return ()
+  rg <- getLocalGraph
+  when (M0.getConfObjState obj rg == st) $
+    cont -- >> setObjectStatus obj st
 {-# INLINE whenNotState #-}
 
 -- | Helper for creating 'StateChangeEvent'
@@ -259,7 +256,7 @@ stateChange _ = StateChangeEvent
 
 -- | Helper for writing state change function. It run simple one step action, calls 'todo'
 -- and 'done', add logs and notify mero about changed state.
-onStateChange :: (M0.ConfObj b, Show b, Serializable a, G.Relation R.Is b M0.ConfObjectState)
+onStateChange :: (M0.HasConfObjectState b, Show b, Serializable a)
               => String             -- ^ Rule name.
               -> M0.ConfObjectState -- ^ New object state.
               -> (a -> b)           -- ^ Extract object from message.
@@ -280,7 +277,7 @@ data EventHandlers a = EventHandlers
   }
 
 -- | Helper for implementing default action handlers, hiding some amount of boilerplate.
-defaultActions :: forall a . (G.Relation R.Is a M0.ConfObjectState, M0.ConfObj a)
+defaultActions :: forall a . M0.HasConfObjectState a
                => String  -- ^ Entity name.
                -> EventHandlers a -- ^ Event Handlers.
                -> Specification LoopState ()

@@ -42,7 +42,7 @@ import Data.Word ( Word32, Word64 )
 import GHC.Generics (Generic)
 import qualified "distributed-process-scheduler" System.Clock as C
 
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import qualified Data.Map as Map
 import Data.Monoid
 import Data.UUID (UUID)
@@ -580,42 +580,6 @@ $(mkResRel
   []
   )
 
--- A dictionary wrapper for configuration objects
-data SomeConfObjDict = forall x. (Typeable x, ConfObj x) =>
-    SomeConfObjDict (Proxy x)
-
--- Yields the ConfObj dictionary of the object with the given Fid.
---
--- TODO: Generate this with TH.
-fidConfObjDict :: Fid -> [SomeConfObjDict]
-fidConfObjDict f = fromMaybe [] $ Map.lookup (f_container f `shiftR` (64 - 8)) dictMap
-
--- | Map of all dictionaries
-dictMap :: Map.Map Word64 [SomeConfObjDict]
-dictMap = Map.fromListWith (<>)
-    [ mkTypePair (Proxy :: Proxy Root)
-    , mkTypePair (Proxy :: Proxy Profile)
-    , mkTypePair (Proxy :: Proxy Filesystem)
-    , mkTypePair (Proxy :: Proxy Node)
-    , mkTypePair (Proxy :: Proxy Rack)
-    , mkTypePair (Proxy :: Proxy Pool)
-    , mkTypePair (Proxy :: Proxy Process)
-    , mkTypePair (Proxy :: Proxy Service)
-    , mkTypePair (Proxy :: Proxy SDev)
-    , mkTypePair (Proxy :: Proxy Enclosure)
-    , mkTypePair (Proxy :: Proxy Controller)
-    , mkTypePair (Proxy :: Proxy Disk)
-    , mkTypePair (Proxy :: Proxy PVer)
-    , mkTypePair (Proxy :: Proxy RackV)
-    , mkTypePair (Proxy :: Proxy EnclosureV)
-    , mkTypePair (Proxy :: Proxy ControllerV)
-    , mkTypePair (Proxy :: Proxy DiskV)
-    ]
-  where
-    mkTypePair :: forall a. (Typeable a, ConfObj a)
-               => Proxy a -> (Word64, [SomeConfObjDict])
-    mkTypePair a = (fidType a, [SomeConfObjDict (Proxy :: Proxy a)])
-
 -- | Get all 'M0.Service' running on the 'Cluster', starting at
 -- 'M0.Profile's.
 getM0Services :: G.Graph -> [Service]
@@ -626,3 +590,13 @@ getM0Services g =
        , (p :: Process) <- G.connectedTo node IsParentOf g
        , sv <- G.connectedTo p IsParentOf g
   ]
+
+-- | Lookup a configuration object in the resource graph.
+lookupConfObjByFid :: forall a. (G.Resource a, ConfObj a)
+                     => Fid
+                     -> G.Graph
+                     -> Maybe a
+lookupConfObjByFid f =
+    listToMaybe
+  . filter ((== f) . fid)
+  . G.getResourcesOfType

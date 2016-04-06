@@ -26,7 +26,6 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , getParents
   , loadMeroServers
     -- ** Lookup objects based on another
-  , rgLookupConfObjByFid
   , lookupConfObjByFid
   , lookupStorageDevice
   , lookupStorageDeviceSDev
@@ -82,16 +81,7 @@ lookupConfObjByFid :: (G.Resource a, M0.ConfObj a)
 lookupConfObjByFid f = do
     phaseLog "rg-query" $ "Looking for conf objects with FID "
                         ++ show f
-    fmap (rgLookupConfObjByFid f) getLocalGraph
-
-rgLookupConfObjByFid :: forall a. (G.Resource a, M0.ConfObj a)
-                     => Fid
-                     -> G.Graph
-                     -> Maybe a
-rgLookupConfObjByFid f =
-    listToMaybe
-  . filter ((== f) . M0.fid)
-  . G.getResourcesOfType
+    fmap (M0.lookupConfObjByFid f) getLocalGraph
 
 -- | Initialise a reflection of the Mero configuration in the resource graph.
 --   This does the following:
@@ -212,10 +202,11 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
       modifyGraph $ G.newResource proc
                 >>> G.newResource proc
                 >>> G.newResource procLabel
-                >>> G.newResource M0.M0_NC_ONLINE
+                >>> G.newResource M0.PSOnline
                 >>> G.connect node M0.IsParentOf proc
                 >>> G.connectUniqueFrom proc Has procLabel
-                >>> G.connectUniqueFrom proc Is M0.M0_NC_ONLINE
+                -- TODO Remove this when we handle process state.
+                >>> G.connectUniqueFrom proc Is M0.PSOnline
 
   goSrv proc devs CI.M0Service{..} = let
       filteredDevs = maybe
@@ -445,11 +436,11 @@ pickPrincipalRM = getLocalGraph >>= \g ->
                   , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf g
                   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf g
                   , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf g
-                  , G.isConnected proc Is M0.M0_NC_ONLINE g
+                  , G.isConnected proc Is M0.PSOnline g
                   , let srv_types = M0.s_type <$> G.connectedTo proc M0.IsParentOf g
                   , CST_MGS `elem` srv_types
                   , rm <- G.connectedTo proc M0.IsParentOf g :: [M0.Service]
-                  , G.isConnected proc Is M0.M0_NC_ONLINE g
+                  , G.isConnected proc Is M0.PSOnline g
                   , M0.s_type rm == CST_RMS
                   ]
   in do
