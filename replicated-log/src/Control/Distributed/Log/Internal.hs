@@ -57,6 +57,7 @@ import Control.Distributed.Log.Policy as Policy
     , orpn
     , orpn__static
     )
+import Control.Distributed.Log.Trace
 import Control.Distributed.Process.Batcher
 import Control.Distributed.Process.Consensus hiding (Value)
 import Control.Distributed.Process.ProcessPool
@@ -514,22 +515,6 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
 -- epoch. For the leader, there is no way to know if a request from a previous
 -- epoch has been abandoned or not.
 
--- | A tracing function for debugging purposes.
-logTrace :: String -> Process ()
--- logTrace _ = return ()
-logTrace msg = do
-    let b = unsafePerformIO $
-              maybe False (elem "replicated-log" . words)
-                <$> lookupEnv "HALON_TRACING"
-    when b $ if schedulerIsEnabled
-      then do self <- getSelfPid
-              liftIO $ hPutStrLn stderr $
-                show self ++ ": [replicated-log] " ++ msg
-      else say $ "[replicated-log] " ++ msg
--- logTrace msg = do
---    self <- getSelfPid
---    liftIO $ hPutStrLn stderr $ show self ++ ": [replicated-log] " ++ msg
-
 -- | One replica of the log. All incoming values to add to the log are submitted
 -- for consensus. A replica does not acknowledge values being appended to the
 -- log until the replicas have reached consensus about the update, hence reached
@@ -565,6 +550,7 @@ replica Dict
         legD0
         replicas0 = do
 
+   say $ "Starting new replica for " ++ show logId
    self <- getSelfPid
    here <- getSelfNode
    -- 'withLogIdLock' makes sure that any running operation on the local state

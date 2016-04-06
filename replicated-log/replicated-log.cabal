@@ -35,6 +35,7 @@ Library
                     Control.Distributed.State
   Other-Modules:    Control.Distributed.Log.Internal
                     Control.Distributed.Log.Messages
+                    Control.Distributed.Log.Trace
   Hs-Source-Dirs:   src/
   Build-Depends:    base >= 4.7,
                     binary >= 0.6,
