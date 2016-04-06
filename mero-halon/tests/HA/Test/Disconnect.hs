@@ -15,11 +15,12 @@ module HA.Test.Disconnect
   , testRejoinRCDeath
   ) where
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (bracket_)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import qualified Control.Distributed.Process.Scheduler as Scheduler
 import Control.Monad
+import Control.Monad.Catch
 import Data.List
 import Data.Binary
 import Data.Hashable (Hashable)

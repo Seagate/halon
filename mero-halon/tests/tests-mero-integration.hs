@@ -17,7 +17,6 @@ import qualified Network.Socket as TCP
 import qualified Network.Transport.TCP as TCP
 import Network.Transport (Transport)
 
-import Control.Monad
 import Control.Concurrent
 import Data.List (isPrefixOf, isSuffixOf)
 import System.Environment (lookupEnv, getExecutablePath)

@@ -44,11 +44,11 @@ import HA.Startup (stopHalonNode)
 import Mero.Notification
 #endif
 
-import Control.Exception as E
-import Control.Distributed.Process
+import Control.Arrow (first, second)
+import Control.Distributed.Process hiding (bracket, finally, onException)
 import Control.Distributed.Process.Closure
-import qualified Control.Distributed.Process as DP
 import Control.Distributed.Process.Node
+import Control.Monad.Catch
 import qualified Control.Distributed.Process.Scheduler as Scheduler
 import Control.Monad (join, void, forever)
 
@@ -109,7 +109,7 @@ withTrackingStation :: [Definitions LoopState ()]
                     -> Process ()
 withTrackingStation testRules action = do
   nid <- getSelfNode
-  DP.bracket
+  bracket
     (do
       void $ EQT.startEQTracker [nid]
       cEQGroup <- newRGroup $(mkStatic 'eqDict) "eqtest" 1000 1000000
@@ -142,20 +142,20 @@ runTest numNodes numReps _t tr rt action
         -- TODO: Fix leaks in n-t-inmemory and use the same transport for all
         -- tests, maybe.
         forM_ [1..numReps'] $ \i ->  withTmpDirectory $
-          E.bracket createTransport closeTransport $ \tr' ->
+          bracket createTransport closeTransport $ \tr' ->
           let s' = s + i - 1 in do
             hPutStrLn stderr $ "Testing with seed: " ++ show (s', i)
             m <- timeout (7 * 60 * 1000000) $
               Scheduler.withScheduler s' 1000 numNodes tr' rt' $ \nodes ->
-                action nodes `DP.finally` stopHalon nodes
+                action nodes `finally` stopHalon nodes
             maybe (error "Timeout") return m
-          `E.onException`
+          `onException`
             liftIO (hPutStrLn stderr $ "Failed with seed: " ++ show (s', i))
     | otherwise =
         withTmpDirectory $ withLocalNodes numNodes tr rt' $
           \nodes@(n : ns) -> do
             m <- timeout (7 * 60 * 1000000) $ runProcess n $
-              action ns `DP.finally` stopHalon nodes
+              action ns `finally` stopHalon nodes
             maybe (error "Timeout") return m
   where
     rt' = Scheduler.__remoteTable rt

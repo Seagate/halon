@@ -12,9 +12,6 @@ import Control.Distributed.Process
 import HA.Resources
 import HA.Multimap
 import HA.ResourceGraph
-#if USE_MERO
-import Mero.M0Worker
-#endif
 
 import qualified Data.Map as Map
 
