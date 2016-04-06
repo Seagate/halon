@@ -229,7 +229,7 @@ int rpc_connect(rpc_endpoint_t* e, char* remote_address, int timeout_s,
 	CHECK_RESULT(rc, m0_net_end_point_create(&(*c)->remote_ep,&rpc_machine->rm_tm, (*c)->remote_address)
 			, return rc);
 
-	rc = m0_rpc_conn_create(&(*c)->connection, (*c)->remote_ep
+	rc = m0_rpc_conn_create(&(*c)->connection, NULL, (*c)->remote_ep
 				, rpc_machine,  MAX_RPCS_IN_FLIGHT, m0_time_from_now(timeout_s,0));
 	m0_net_end_point_put((*c)->remote_ep);
 
