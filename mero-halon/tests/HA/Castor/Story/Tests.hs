@@ -48,7 +48,7 @@ import RemoteTables (remoteTable)
 
 import SSPL.Bindings
 
-import Control.Monad (when, replicateM_, void)
+import Control.Monad (replicateM_, void)
 import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Node
 import Control.Exception as E hiding (assert)
@@ -60,9 +60,7 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Hashable (Hashable)
 import qualified Data.Set as S
 import Data.Typeable
-import Data.Text (append, pack)
-import Data.Text.Encoding (decodeUtf8)
-import Data.Maybe (isNothing)
+import Data.Text (pack)
 import Data.Defaultable
 import qualified Data.UUID as UUID
 
@@ -460,10 +458,7 @@ testHitResetLimit transport = run transport interceptor test where
     let fail_evt = Set [Note (M0.d_fid $ fst sdev) M0_NC_FAILED]
     nid <- getSelfNode
     void $ promulgateEQ [nid] fail_evt
-    -- Mero should be notified that the drive should be transient.
-    Set [Note _ st1, Note _ st2] <- notificationMessage <$> receiveChan recv
-    liftIO $ assertEqual "Mero should be notified that the drive should be transient."
-      (M0_NC_TRANSIENT, M0_NC_TRANSIENT) (st1, st2)
+
     -- Mero should be notified that the drive should be failed.
     Set [Note _ st3, Note _ st4] <- notificationMessage <$> receiveChan recv
     liftIO $ assertEqual "Mero should be notified that the drive should be failed."

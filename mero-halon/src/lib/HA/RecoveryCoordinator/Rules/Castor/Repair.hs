@@ -387,59 +387,61 @@ completeRepair pool prt muid = do
 -- TODO: Currently we don't handle a case where we have pool
 -- information in the message set but also some disks which belong to
 -- a different pool.
-handleRepair :: Set -> PhaseM LoopState l ()
-handleRepair noteSet = processSet noteSet >>= \case
-  -- Handle information from messages that didn't include pool
-  -- information. That is, DevicesOnly is a list of all devices and
-  -- their states that were reported in the given 'Set' message. Most
-  -- commonly we'll enter here when some device changes state and
-  -- RC is notified about the change.
-  DevicesOnly devices -> do
-    phaseLog "repair" $ "Processed as " ++ show (DevicesOnly devices)
-    for_ devices $ \(pool, diskMap) -> do
+handleRepair :: Set -> PhaseM LoopState l Set
+handleRepair noteSet = do
+  (unused, pset) <- processSet noteSet
+  case pset of
+    -- Handle information from messages that didn't include pool
+    -- information. That is, DevicesOnly is a list of all devices and
+    -- their states that were reported in the given 'Set' message. Most
+    -- commonly we'll enter here when some device changes state and
+    -- RC is notified about the change.
+    DevicesOnly devices -> do
+      phaseLog "repair" $ "Processed as " ++ show (DevicesOnly devices)
+      for_ devices $ \(pool, diskMap) -> do
+        tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
+        fa <- getPoolSDevsWithState pool M0_NC_FAILED
 
-      tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
-      fa <- getPoolSDevsWithState pool M0_NC_FAILED
+        -- If no devices are transient and something is failed, begin
+        -- repair. It's up to caller to ensure any previous repair has
+        -- been aborted/completed.
+        let maybeBeginRepair = when (null tr && not (null fa)) $ do
+              phaseLog "repair" $ "Starting repair operation on " ++ show pool
+              startRepairOperation pool
+              queryStartHandling pool
 
-      -- If no devices are transient and something is failed, begin
-      -- repair. It's up to caller to ensure any previous repair has
-      -- been aborted/completed.
-      let maybeBeginRepair = when (null tr && not (null fa)) $ do
-            phaseLog "repair" $ "Starting repair operation on " ++ show pool
-            startRepairOperation pool
-            queryStartHandling pool
+        getPoolRepairStatus pool >>= \case
+          Just (M0.PoolRepairStatus prt _ _)
+            -- Repair happening, device failed, restart repair
+            | fa' <- getSDevs diskMap M0_NC_FAILED
+            , not (S.null fa') -> abortRepair pool >> maybeBeginRepair
+            -- Repair happening, some devices are transient
+            | tr' <- getSDevs diskMap M0_NC_TRANSIENT
+            , not (S.null tr') -> do
+                phaseLog "repair" $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
+                                 ++ ", quescing repair."
+                quiesceRepair pool prt
+            -- Repair happening, something came online, check if
+            -- nothing is left transient and continue repair if possible
+            | Just ds <- allWithState diskMap M0_NC_ONLINE
+            , ds' <- S.toList ds -> do
+                sdevs <- filter (`notElem` ds') <$> getPoolSDevs pool
+                sts <- mapMaybeM queryObjectStatus sdevs
+                if null $ filter (== M0_NC_TRANSIENT) sts
+                then continueRepair pool prt
+                else phaseLog "repair" $ "Still some drives transient: " ++ show sts
+            | otherwise -> phaseLog "repair" $
+                "Repair on-going but don't know what to do with " ++ show diskMap
+          -- No repair, devices have failed, no TRANSIENT devices; start repair
+          Nothing -> maybeBeginRepair
 
-      getPoolRepairStatus pool >>= \case
-        Just (M0.PoolRepairStatus prt _ _)
-          -- Repair happening, device failed, restart repair
-          | fa' <- getSDevs diskMap M0_NC_FAILED
-          , not (S.null fa') -> abortRepair pool >> maybeBeginRepair
-          -- Repair happening, some devices are transient
-          | tr' <- getSDevs diskMap M0_NC_TRANSIENT
-          , not (S.null tr') -> do
-              phaseLog "repair" $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
-                               ++ ", quescing repair."
-              quiesceRepair pool prt
-          -- Repair happening, something came online, check if
-          -- nothing is left transient and continue repair if possible
-          | Just ds <- allWithState diskMap M0_NC_ONLINE
-          , ds' <- S.toList ds -> do
-              sdevs <- filter (`notElem` ds') <$> getPoolSDevs pool
-              sts <- mapMaybeM queryObjectStatus sdevs
-              if null $ filter (== M0_NC_TRANSIENT) sts
-              then continueRepair pool prt
-              else phaseLog "repair" $ "Still some drives transient: " ++ show sts
-          | otherwise -> phaseLog "repair" $
-              "Repair on-going but don't know what to do with " ++ show diskMap
-        -- No repair, devices have failed, no TRANSIENT devices; start repair
-        Nothing -> maybeBeginRepair
-
-  PoolInfo pool st m -> do
-    phaseLog "repair" $ "Processed as PoolInfo " ++ show (pool, st, m)
-    setObjectStatus pool st
-    processPoolInfo pool st m
-  UnknownSet st -> phaseLog "warn" $ "Could not classify " ++ show st
-
+    PoolInfo pool st m -> do
+      phaseLog "repair" $ "Processed as PoolInfo " ++ show (pool, st, m)
+      setObjectStatus pool st
+      processPoolInfo pool st m
+    UnknownSet st -> do
+      phaseLog "warn" $ "Could not classify " ++ show st
+  return unused
 
 -- | We have received information about a pool state change (as well
 -- as some devices) so handle this here. Such a notification is likely
@@ -535,6 +537,18 @@ processPoolInfo pool st m = phaseLog "warning" $ unwords
 mapMaybeM :: Monad m => (a -> m (Maybe b)) -> [a] -> m [b]
 mapMaybeM f xs = catMaybes <$> mapM f xs
 
+-- | Run a monadic action 'Maybe' returning a result over the given
+-- list of values. Collect the results of the actions returning 'Just'
+-- as well as remembering the values for which the action has failed.
+-- There is no guarantee about preservation of ordering.
+mapFilterM :: Monad m => (a -> (m (Maybe b))) -> [a] -> m ([a], [b])
+mapFilterM f vs' = go vs' ([], [])
+  where
+    go [] acc = return acc
+    go (v:vs) (xs, ys) = f v >>= \case
+      Nothing -> go vs (v:xs, ys)
+      Just r -> go vs (xs, r:ys)
+
 -- | Helper used by 'processSet'
 data ProcessedSet = DevicesOnly [(M0.Pool, SDevStateMap)]
                     -- ^ We got a set of sdevs but no pool info
@@ -547,30 +561,32 @@ data ProcessedSet = DevicesOnly [(M0.Pool, SDevStateMap)]
 -- | Given a 'Set', figure out what type of information we're getting
 -- so we can act accordingly: for example, we want to act differently
 -- if it's s a vector of failed drives from when it's a vector of
--- repaired pool and drives.
+-- repaired pool and drives. Return the 'ProcessedSet' and a 'Set' of
+-- any 'Note's that we're not interested in for the purpose of repair.
 --
 -- TODO: Currently we don't handle a case where we have pool
 -- information in the message set but also some disks which belong to
 -- a different pool. We should always check which SDevs belong to what
 -- pool instead of making an assumption that all sdevs in notification
 -- belong to the only pool in notification.
-processSet :: Set -> PhaseM LoopState l ProcessedSet
+processSet :: Set -> PhaseM LoopState l (Set, ProcessedSet)
 processSet st@(Set ns) = do
   -- Is it a set of failed drives so we should start repair?
   getDevicesOnly >>= \case
-    Just devs -> return $ DevicesOnly devs
+    Just (unused, devs) -> return (Set unused, DevicesOnly devs)
     Nothing -> getPoolInfo >>= \case
-      Just pinfo -> return pinfo
-      _ -> return $ UnknownSet st
+      Just (unused, pinfo) -> return (Set unused, pinfo)
+      _ -> return $ (st, UnknownSet st)
   where
     getDevicesOnly = mapMaybeM (\(Note fid' _) -> lookupConfObjByFid fid') ns >>= \case
       ([] :: [M0.Pool]) -> do
-        disks <- mapMaybeM noteToSDev ns
+        (unused, disks) <- mapFilterM noteToSDev ns
         pdisks <- mapMaybeM (\(stType, sdev) -> getSDevPool sdev
                                >>= return . fmap (,(stType, sdev)))
                             disks
 
-        return . Just . M.toList
+        return . Just . (,) unused
+                      . M.toList
                       . M.map (SDevStateMap . M.fromListWith (<>))
                       . M.fromListWith (<>)
                       . map (\(pool, (st', sdev)) -> (pool, [(st', S.singleton sdev)]))
@@ -579,10 +595,12 @@ processSet st@(Set ns) = do
       _ -> return Nothing
 
     getPoolInfo = do
-      mapMaybeM (\(Note fid' typ) -> fmap (typ,) <$> lookupConfObjByFid fid') ns >>= \case
-        [(typ, pool)] -> do
-          disks <- M.fromListWith (<>) . map (second S.singleton) <$> mapMaybeM noteToSDev ns
-          return . Just . PoolInfo pool typ $ SDevStateMap disks
+      mapFilterM (\(Note fid' typ) -> fmap (typ,) <$> lookupConfObjByFid fid') ns >>= \case
+        (unusedPools, [(typ, pool)]) -> do
+          (unusedDisks, disks') <- mapFilterM noteToSDev ns
+          let disks = M.fromListWith (<>) $ map (second S.singleton) disks'
+              unused = filter (`notElem` unusedPools) unusedDisks
+          return . Just . (,) unused . PoolInfo pool typ $ SDevStateMap disks
         _ -> return Nothing
 
 -- | A mapping of 'ConfObjectState's to 'M0.SDev's.
@@ -598,7 +616,6 @@ getSDevs (SDevStateMap m) st = fromMaybe mempty $ M.lookup st m
 allWithState :: SDevStateMap -> ConfObjectState -> Maybe (S.HashSet SDev)
 allWithState sm@(SDevStateMap m) st =
   if M.member st m && M.size m == 1 then Just $ getSDevs sm st else Nothing
-
 
 -- | Check if the repair is quiesced. Note that this function just
 -- checks if any SNS status comes back as

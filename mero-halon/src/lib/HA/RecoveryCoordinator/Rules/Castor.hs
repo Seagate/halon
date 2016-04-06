@@ -37,7 +37,6 @@ import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Rules.Castor.Repair
 import HA.RecoveryCoordinator.Rules.Castor.Reset
 import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
-import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Events.Mero
 import Mero.Notification hiding (notifyMero)
@@ -125,24 +124,21 @@ setStateChangeHandlers = do
 
       start setThem Nothing
   where
-    stateChangeHandlers = [
-        updateDriveStatesFromSet
-      , handleReset
-      , handleRepair
-      ]
+    stateChangeHandlers = [ handleReset
+                          , handleRepair
+                          , handleUnused
+                          ]
+    handleUnused :: Set -> PhaseM LoopState l Set
+    handleUnused set = do
+      phaseLog "handleUnused" $ "Unhandled Set messages: " ++ show set
+      return set
 
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do
-  defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> let
-      resultState (Note f M0_NC_FAILED)
-        | fidIsType (Proxy :: Proxy M0.SDev) f = Note f M0_NC_TRANSIENT
-      resultState x = x
-      noteSet = Set (resultState <$> ns)
-    in do
-      phaseLog "info" $ "Received " ++ show (Set ns)
-      stateChangeHandlers <- lsStateChangeHandlers <$> get Global
-      sequence_ $ (\x -> x noteSet) <$> stateChangeHandlers
-      messageProcessed uid
+  defineSimple "mero-note-set" $ \(HAEvent uid set@(Set _) _) -> do
+    phaseLog "info" $ "Received " ++ show set
+    _ <- runStateChangeHandlers set
+    messageProcessed uid
 
   querySpiel
   querySpielHourly
@@ -174,6 +170,7 @@ ruleDriveRemoved = define "drive-removed" $ do
     forM_ sd $ \m0sdev -> do
       fork CopyNewerBuffer $ do
         phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for device."
+        updateDriveState m0sdev M0_NC_TRANSIENT
         notifyDriveStateChange m0sdev M0_NC_TRANSIENT
         put Local $ Just (uuid, enc, disk, loc, m0sdev)
         switch [reinsert, timeout driveRemovalTimeout removal]
@@ -298,13 +295,13 @@ ruleDriveInserted = define "drive-inserted" $ do
                messageProcessed uuid
              M0_NC_FAILED -> do
                markIfNotMeroFailure
-               handleRepair $ Set [Note (fid sdev) M0_NC_FAILED]
+               void . handleRepair $ Set [Note (fid sdev) M0_NC_FAILED]
              M0_NC_REPAIRED -> do
                markIfNotMeroFailure
-               handleRepair $ Set [Note (fid sdev) M0_NC_ONLINE]
+               void . handleRepair $ Set [Note (fid sdev) M0_NC_ONLINE]
              M0_NC_REPAIR -> do
                markIfNotMeroFailure
-               handleRepair $ Set [Note (fid sdev) M0_NC_ONLINE]
+               void . handleRepair $ Set [Note (fid sdev) M0_NC_ONLINE]
              M0_NC_REBALANCE ->  -- Impossible case
                messageProcessed uuid
          continue finish
@@ -337,8 +334,8 @@ ruleDriveInserted = define "drive-inserted" $ do
                 $ liftIO $ Spiel.deviceAttach sp (d_fid m0sdev)
       fmap (fromMaybe M0_NC_UNKNOWN) (queryObjectStatus m0sdev) >>= \case
         M0_NC_TRANSIENT -> notifyDriveStateChange m0sdev M0_NC_FAILED
-        M0_NC_FAILED -> handleRepair $ Set [Note (fid m0sdev) M0_NC_FAILED]
-        M0_NC_REPAIRED -> handleRepair $ Set [Note (fid m0sdev) M0_NC_ONLINE]
+        M0_NC_FAILED -> void . handleRepair $ Set [Note (fid m0sdev) M0_NC_FAILED]
+        M0_NC_REPAIRED -> void . handleRepair $ Set [Note (fid m0sdev) M0_NC_ONLINE]
         M0_NC_REPAIR -> return ()
         -- Impossible cases
         M0_NC_UNKNOWN -> notifyDriveStateChange m0sdev M0_NC_FAILED

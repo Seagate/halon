@@ -13,7 +13,6 @@ module HA.RecoveryCoordinator.Actions.Mero
   , module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , notifyDriveStateChange
   , updateDriveState
-  , updateDriveStatesFromSet
   , noteToSDev
   , calculateMeroClusterStatus
   , createMeroKernelConfig
@@ -24,6 +23,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   , announceMeroNodes
   , getLabeledProcesses
   , getLabeledNodeProcesses
+  , runStateChangeHandlers
   )
 where
 
@@ -50,11 +50,11 @@ import Mero.Notification.HAState (Note(..))
 
 import Control.Category
 import Control.Distributed.Process
-import Control.Monad (forM, unless)
+import Control.Monad (forM, unless, void)
 
 import Data.Foldable (forM_, traverse_)
 import Data.Proxy
-import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
@@ -82,12 +82,16 @@ noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= \case
     Just disk -> fmap (stType,) <$> Conf.lookupDiskSDev disk
     Nothing -> return Nothing
 
--- | Extract information about drives from the given set of
--- notifications and update the state in RG accordingly.
-updateDriveStatesFromSet :: Set -> PhaseM LoopState l ()
-updateDriveStatesFromSet (Set ns) = f . catMaybes <$> mapM noteToSDev ns
-                             >>= mapM_ (\(typ, sd) -> updateDriveState sd typ)
-  where f = filter ((`elem` [M0.M0_NC_ONLINE, M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT]).fst)
+-- | Run currently registered 'lsStateChangeHandlers' on the given
+-- 'Set'. Returns the 'Set' with any remaining 'Note's.
+runStateChangeHandlers :: Set -> PhaseM LoopState l Set
+runStateChangeHandlers noteSet = do
+  stateChangeHandlers <- lsStateChangeHandlers <$> get Global
+  runM stateChangeHandlers noteSet
+  where
+    runM :: Monad m => [a -> m a] -> a -> m a
+    runM [] x = return x
+    runM (f:fs) x = f x >>= runM fs
 
 -- | Notify ourselves about a state change of the 'M0.SDev'.
 --
@@ -97,11 +101,8 @@ updateDriveStatesFromSet (Set ns) = f . catMaybes <$> mapM noteToSDev ns
 -- It's important to understand that this function does not replace
 -- 'updateDriveState' which performs the actual update.
 notifyDriveStateChange :: M0.SDev -> M0.ConfObjectState -> PhaseM LoopState l ()
-notifyDriveStateChange m0sdev st = do
-    stateChangeHandlers <- lsStateChangeHandlers <$> get Global
-    sequence_ $ ($ ns) <$> stateChangeHandlers
- where
-   ns = Set [Note (M0.fid m0sdev) st]
+notifyDriveStateChange m0sdev st =
+  void . runStateChangeHandlers $ Set [Note (M0.fid m0sdev) st]
 
 updateDriveState :: M0.SDev -- ^ Drive to update state
                  -> M0.ConfObjectState -- ^ State to update to

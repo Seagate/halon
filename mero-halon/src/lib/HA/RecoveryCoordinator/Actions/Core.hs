@@ -100,7 +100,7 @@ data LoopState = LoopState {
   , lsRefCount :: Map.Map UUID Int
     -- ^ Set of HAEvent uuid we've already handled.
 #ifdef USE_MERO
-  , lsStateChangeHandlers :: forall l. [Set -> PhaseM LoopState l ()]
+  , lsStateChangeHandlers :: forall l. [Set -> PhaseM LoopState l Set]
 #endif
   , lsStorage :: !Storage.Storage -- ^ Global ephimeral storage.
 }

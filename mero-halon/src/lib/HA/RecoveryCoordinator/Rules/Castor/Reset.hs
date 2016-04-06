@@ -18,7 +18,8 @@ import HA.RecoveryCoordinator.Actions.Core
   , whenM
   )
 import HA.RecoveryCoordinator.Actions.Hardware
-import HA.RecoveryCoordinator.Actions.Mero (notifyDriveStateChange)
+import HA.RecoveryCoordinator.Actions.Mero ( notifyDriveStateChange
+                                           , updateDriveState)
 import HA.RecoveryCoordinator.Actions.Mero.Conf
   ( lookupConfObjByFid
   , lookupStorageDevice
@@ -60,6 +61,7 @@ import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
 import Network.CEP
+
 --------------------------------------------------------------------------------
 -- Reset bit                                                                  --
 --------------------------------------------------------------------------------
@@ -98,11 +100,11 @@ newtype ResetFailure =
 --   Called whenever a drive changes state. This function is
 --   responsible for potentially starting a reset attempt on
 --   one or more drives.
-handleReset :: Set -> PhaseM LoopState l ()
+handleReset :: Set -> PhaseM LoopState l Set
 handleReset (Set ns) = do
-  for_ ns $ \(Note mfid tpe) ->
+  for_ ns $ \(Note mfid tpe) -> do
     case tpe of
-      M0_NC_TRANSIENT -> do
+      _ | tpe == M0_NC_FAILED || tpe == M0_NC_TRANSIENT -> do
         sdevm <- lookupConfObjByFid mfid
         for_ sdevm $ \m0sdev -> do
           msdev <- lookupStorageDevice m0sdev
@@ -125,6 +127,8 @@ handleReset (Set ns) = do
                                    then M0_NC_TRANSIENT
                                    else M0_NC_FAILED
 
+                      updateDriveState m0sdev status
+
                       when (status == M0_NC_FAILED) $ do
                         notifyDriveStateChange m0sdev status
                         -- TODO Move this into its own handler.
@@ -142,6 +146,10 @@ handleReset (Set ns) = do
                                 ++ show msdev
       _ -> return () -- Should we do anything here?
 
+  -- return the whole note 'Set': SNS repair is interested in the
+  -- messages we have received so don't consume anything here.
+  return $ Set ns
+
 ruleResetAttempt :: Definitions LoopState ()
 ruleResetAttempt = define "reset-attempt" $ do
       home          <- phaseHandle "home"
@@ -154,6 +162,7 @@ ruleResetAttempt = define "reset-attempt" $ do
       end           <- phaseHandle "end"
 
       setPhase home $ \(HAEvent uid (ResetAttempt sdev) _) -> fork NoBuffer $ do
+        phaseLog "info" $ "Trying to reset " ++ show sdev
         nodes <- getSDevNode sdev
         node <- case nodes of
           node:_ -> return node
@@ -215,7 +224,8 @@ ruleResetAttempt = define "reset-attempt" $ do
         Just (sdev, _, _, _) <- get Local
         markSMARTTestComplete sdev
         sd <- lookupStorageDeviceSDev sdev
-        forM_ sd $ \m0sdev ->
+        forM_ sd $ \m0sdev -> do
+          updateDriveState m0sdev M0_NC_ONLINE
           notifyDriveStateChange m0sdev M0_NC_ONLINE
         messageProcessed eid
         continue end
@@ -231,6 +241,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
+          updateDriveState m0sdev M0_NC_FAILED
           -- Let note handler deal with repair logic
           notifyDriveStateChange m0sdev M0_NC_FAILED
         continue end
