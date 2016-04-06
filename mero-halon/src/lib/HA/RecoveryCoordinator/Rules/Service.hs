@@ -243,7 +243,7 @@ serviceRules argv = do
                     -- EQT may not be spawn at the moment so we create a special
                     -- process that will update EQT as soon as it will see that.
                     _ <- liftProcess $ spawnAsync nodeId $
-                        $(mkClosure 'EQT.updateEQNodes) (stationNodes argv)
+                        $(mkClosure 'EQT.updateEQNodes) (eqNodes argv)
                     startProcessMonitoring n =<< getRunningServices n
             else startProcessMonitoring n [msg]
           phaseLog "info" ("Service "
@@ -277,7 +277,7 @@ serviceRules argv = do
       if vitalService
         then do startNodesMonitoring [msg]
                 _ <- liftProcess $ spawnAsync nodeId $
-                       $(mkClosure 'EQT.updateEQNodes) (stationNodes argv)
+                       $(mkClosure 'EQT.updateEQNodes) (eqNodes argv)
                 startProcessMonitoring n =<< getRunningServices n
         else startProcessMonitoring n [msg]
 

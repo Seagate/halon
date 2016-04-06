@@ -85,7 +85,8 @@ tests transport =
       withLocalNode transport (__remoteTable remoteTable) $ \lnid -> do
         runProcess lnid $ do
           nid <- getSelfNode
-          cRGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (defaultMetaInfo, fromList [])
+          cRGroup <- newRGroup $(mkStatic 'mmSDict) "mmtest" 20 1000000 [nid]
+                               (defaultMetaInfo, fromList [])
           pRGroup <- unClosure cRGroup
           rGroup <- pRGroup :: Process (MC_RG (MetaInfo, Multimap))
           self <- getSelfPid

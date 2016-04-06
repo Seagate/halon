@@ -14,6 +14,7 @@ module HA.Startup where
 import HA.RecoverySupervisor ( recoverySupervisor, RSState(..) )
 import HA.EventQueue ( EventQueue, eventQueueLabel, startEventQueue, emptyEventQueue )
 import qualified HA.EQTracker as EQT
+import HA.Logger
 import HA.Multimap ( MetaInfo, defaultMetaInfo, StoreChan )
 import HA.Multimap.Implementation ( Multimap, fromList )
 import HA.Multimap.Process ( startMultimap )
@@ -38,7 +39,7 @@ import Control.Exception (SomeException)
 
 import Data.Binary ( decode, encode )
 import Data.ByteString.Lazy (ByteString)
-import Data.List ( partition )
+import Data.List ( partition, zip4 )
 import Data.Maybe ( isJust )
 
 import qualified Network.Transport as NT
@@ -47,32 +48,37 @@ import Control.Monad.Reader
 import System.IO (hPutStrLn, stderr)
 
 
-getGlobalRGroup :: Process (Maybe (Closure (Process (RLogGroup HAReplicatedState))))
-getGlobalRGroup = either (const Nothing) Just <$> Storage.get "global-rgroup"
 
-putGlobalRGroup :: Closure (Process (RLogGroup HAReplicatedState))
-                -> Process ()
-putGlobalRGroup = Storage.put "global-rgroup"
+startupTrace :: String -> Process ()
+startupTrace = mkHalonTracer "startup"
 
--- | Replicated state of the HA
-type HAReplicatedState = (RSState,(EventQueue,(MetaInfo,Multimap)))
+getGlobalRGroups :: Process (Maybe
+    ( Closure (Process (RLogGroup RSState))
+    , Closure (Process (RLogGroup EventQueue))
+    , Closure (Process (RLogGroup (MetaInfo, Multimap)))
+    ))
+getGlobalRGroups = either (const Nothing) Just <$> Storage.get "global-rgroup"
 
-rsView :: RStateView HAReplicatedState RSState
-rsView = RStateView fst first
+putGlobalRGroups :: ( Closure (Process (RLogGroup RSState))
+                    , Closure (Process (RLogGroup EventQueue))
+                    , Closure (Process (RLogGroup (MetaInfo, Multimap)))
+                    )
+                 -> Process ()
+putGlobalRGroups = Storage.put "global-rgroup"
 
-eqView :: RStateView HAReplicatedState EventQueue
-eqView = RStateView (fst . snd) (second . first)
-
-multimapMIView :: RStateView HAReplicatedState (MetaInfo, Multimap)
-multimapMIView = RStateView (snd . snd) (second . second)
-
-rsDict :: SerializableDict HAReplicatedState
+rsDict :: SerializableDict RSState
 rsDict = SerializableDict
+
+eqDict :: SerializableDict EventQueue
+eqDict = SerializableDict
+
+mmDict :: SerializableDict (MetaInfo, Multimap)
+mmDict = SerializableDict
 
 decodeNids :: ByteString -> [NodeId]
 decodeNids = decode
 
-remotable [ 'rsView, 'eqView, 'multimapMIView, 'rsDict, 'decodeNids ]
+remotable [ 'rsDict, 'eqDict, 'mmDict, 'decodeNids ]
 
 -- | Closes all transport connections from the current node.
 --
@@ -96,7 +102,7 @@ remotableDecl [ [d|
 
  isSelfInGroup :: ProcessId -> Process ()
  isSelfInGroup caller = do
-   r <- isJust <$> getGlobalRGroup
+   r <- isJust <$> getGlobalRGroups
    usend caller r
 
  isNodeInGroup :: [NodeId] -> NodeId -> Bool
@@ -110,43 +116,63 @@ remotableDecl [ [d|
           -> Process ()
  addNodes (caller, newNodes, trackers, rcClosure) = do
      disconnectAllNodeConnections
-     mcRGroup <- getGlobalRGroup
+     mcRGroup <- getGlobalRGroups
      case mcRGroup of
-       Just cRGroup -> do
-         rGroup <- unClosure cRGroup >>= id
-         replicas <- setRGroupMembers rGroup newNodes $
-                          $(mkClosure 'isNodeInGroup) $ trackers
+       Just (cRSGroup, cEQGroup, cMMGroup) -> do
+         rsGroup <- unClosure cRSGroup >>= id
+         eqGroup <- unClosure cEQGroup >>= id
+         mmGroup <- unClosure cMMGroup >>= id
+         reps0 <- setRGroupMembers rsGroup newNodes $
+                      $(mkClosure 'isNodeInGroup) $ trackers
+         reps1 <- setRGroupMembers eqGroup newNodes $
+                      $(mkClosure 'isNodeInGroup) $ trackers
+         reps2 <- setRGroupMembers mmGroup newNodes $
+                      $(mkClosure 'isNodeInGroup) $ trackers
 
          (sp, rp) <- newChan
-         forM_ (zip newNodes replicas) $ \(n,replica) -> spawn
+         forM_ (zip4 newNodes reps0 reps1 reps2) $ \(n, r0, r1, r2) -> spawn
                   n
                   $ $(mkClosure 'startRS)
-                      (cRGroup, Just replica, rcClosure, sp :: SendPort ())
-         forM_ replicas $ \_ -> receiveChan rp
+                      ( cRSGroup, cEQGroup, cMMGroup
+                      , Just (r0, r1, r2)
+                      , rcClosure
+                      , sp :: SendPort ()
+                      )
+         forM_ newNodes $ \_ -> receiveChan rp
        Nothing -> return ()
      usend caller ()
 
 
- startRS :: ( Closure (Process (RLogGroup HAReplicatedState))
-            , Maybe (Replica RLogGroup)
+ startRS :: ( Closure (Process (RLogGroup RSState))
+            , Closure (Process (RLogGroup EventQueue))
+            , Closure (Process (RLogGroup (MetaInfo, Multimap)))
+            , Maybe (Replica RLogGroup, Replica RLogGroup, Replica RLogGroup)
             , Closure (ProcessId -> StoreChan -> Process ())
             , SendPort ()
             )
             -> Process ()
- startRS (cRGroup, mlocalReplica, rcClosure, sp) = do
-     rGroup <- unClosure cRGroup >>= id
+ startRS (cRSGroup, cEQGroup, cMMGroup, mlocalReplicas, rcClosure, sp) = do
+     startupTrace "startRS"
+     rsGroup <- join $ unClosure cRSGroup
+     eqGroup <- join $ unClosure cEQGroup
+     mmGroup <- join $ unClosure cMMGroup
      recoveryCoordinator <- unClosure rcClosure
-     maybe (return ()) (updateRGroup rGroup) mlocalReplica
-     putGlobalRGroup cRGroup
-     eqpid <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
+     startupTrace "startRS: updateRGroup"
+     forM_ mlocalReplicas $ \(r0, r1, r2) -> do
+       updateRGroup rsGroup r0
+       updateRGroup eqGroup r1
+       updateRGroup mmGroup r2
+     startupTrace "startRS: putGlobalRGroups"
+     putGlobalRGroups (cRSGroup, cEQGroup, cMMGroup)
+     startupTrace "startRS: startEventQueue"
+     eqpid <- startEventQueue eqGroup
      rspid <- spawnLocal $ do
        -- Killing RS when EQ dies, helps cleaning up in tests.
        link eqpid
-       recoverySupervisor (viewRState $(mkStatic 'rsView) rGroup) $
+       recoverySupervisor rsGroup $
          mask_ $ do
            rcpid <- getSelfPid
-           (mmpid, mmchan) <- startMultimap
-             (viewRState $(mkStatic 'multimapMIView) rGroup)
+           (mmpid, mmchan) <- startMultimap mmGroup
              $ \loop -> link rcpid >> loop
            usend eqpid rcpid
            link mmpid
@@ -161,6 +187,7 @@ remotableDecl [ [d|
                          | otherwise = "Unknown subprocess died"
        handleMessages refmapper
      sendChan sp ()
+     startupTrace "startRS: done"
   where
      handleMessages refmapper =
        receiveWait [
@@ -216,14 +243,19 @@ remotableDecl [ [d|
 
       return $ Just (added,trackers,members,newNodes)
     else do
-      cRGroup <- newRGroup $(mkStatic 'rsDict) snapshotThreshold snapshotTimeout
-                           trackers
-                           ( RSState Nothing 0 rsLeaderLease
-                           , (emptyEventQueue, (defaultMetaInfo, fromList []))
-                           )
+      cRSGroup <- newRGroup $(mkStatic 'rsDict) "rs" snapshotThreshold
+                            snapshotTimeout trackers
+                            (RSState Nothing 0 rsLeaderLease)
+      cEQGroup <- newRGroup $(mkStatic 'eqDict) "eq" snapshotThreshold
+                            snapshotTimeout trackers emptyEventQueue
+      cMMGroup <- newRGroup $(mkStatic 'mmDict) "mm" snapshotThreshold
+                            snapshotTimeout trackers
+                            (defaultMetaInfo, fromList [])
       (sp, rp) <- newChan
       forM_ trackers $ flip spawn $ $(mkClosure 'startRS)
-          ( cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
+          ( cRSGroup :: Closure (Process (RLogGroup RSState))
+          , cEQGroup :: Closure (Process (RLogGroup EventQueue))
+          , cMMGroup :: Closure (Process (RLogGroup (MetaInfo, Multimap)))
           , Nothing :: Maybe (Replica RLogGroup)
           , rcClosure
           , sp :: SendPort ()
@@ -243,21 +275,33 @@ remotableDecl [ [d|
           -> Process ()
  autoboot rcClosure = do
     nid <- getSelfNode
-    cRGroup <- spawnReplica $(mkStatic 'rsDict) nid
-    rGroup <- unClosure cRGroup >>= id
-    nids <- retryRGroup rGroup 1000000 $ getRGroupMembers rGroup
-    let rcClosure' = rcClosure `closureApply` (closure
-                                                $(mkStatic 'decodeNids)
-                                                (encode nids)
-                                              )
+    startupTrace "autoboot: spawnReplica rs"
+    cRSGroup <- spawnReplica $(mkStatic 'rsDict) "rs" nid
+    startupTrace "autoboot: spawnReplica eq"
+    cEQGroup <- spawnReplica $(mkStatic 'eqDict) "eq" nid
+    say "autoboot: spawnReplica mm"
+    cMMGroup <- spawnReplica $(mkStatic 'mmDict) "mm" nid
+    eqGroup <- join $ unClosure cEQGroup
+    mmGroup <- join $ unClosure cMMGroup
+    startupTrace "autoboot: getRGroupMembers eq"
+    eqNids <- retryRGroup eqGroup 1000000 $ getRGroupMembers eqGroup
+    startupTrace "autoboot: getRGroupMembers mm"
+    mmNids <- retryRGroup mmGroup 1000000 $ getRGroupMembers mmGroup
+    let rcClosure' = rcClosure `closureApply` closure $(mkStatic 'decodeNids)
+                                                      (encode mmNids)
     (sp, rp) <- newChan
+    startupTrace "autoboot: spawn startRS"
     void $ spawn nid $ $(mkClosure 'startRS)
-          ( cRGroup :: Closure (Process (RLogGroup HAReplicatedState))
+          ( cRSGroup :: Closure (Process (RLogGroup RSState))
+          , cEQGroup :: Closure (Process (RLogGroup EventQueue))
+          , cMMGroup :: Closure (Process (RLogGroup (MetaInfo, Multimap)))
           , Nothing :: Maybe (Replica RLogGroup)
           , rcClosure'
           , sp:: SendPort ()
           )
+    startupTrace "autoboot: waiting"
     receiveChan rp
+    startupTrace "autoboot: done"
 
  |] ]
 
@@ -301,12 +345,16 @@ stopHalonNode = do
     mst <- whereis Storage.name
     case mst of
       Just st -> do
-        -- kill replica
-        mcRGroup <- getGlobalRGroup
+        -- kill replicas
+        mcRGroup <- getGlobalRGroups
         case mcRGroup of
-          Just cRGroup -> do
-            rGroup <- join $ unClosure cRGroup
-            getSelfNode >>= killReplica rGroup
+          Just (cRSGroup, cEQGroup, cMMGroup) -> do
+            rsGroup <- join $ unClosure cRSGroup
+            eqGroup <- join $ unClosure cEQGroup
+            mmGroup <- join $ unClosure cMMGroup
+            getSelfNode >>= killReplica rsGroup
+            getSelfNode >>= killReplica eqGroup
+            getSelfNode >>= killReplica mmGroup
           Nothing -> return ()
         -- kill storage
         kill st "stopHalonNode called"

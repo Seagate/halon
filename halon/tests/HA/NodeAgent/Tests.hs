@@ -83,7 +83,8 @@ naTestWithEQ transport action = withTmpDirectory $ E.bracket
     forM_ nodes $ flip runProcess $ void $ startEQTracker nids
     mdone <- newEmptyMVar
     runProcess (head nodes) $ do
-      cRGroup <- newRGroup $(mkStatic 'eqSDict) 20 1000000 nids emptyEventQueue
+      cRGroup <- newRGroup $(mkStatic 'eqSDict) "eqtest" 20 1000000 nids
+                           emptyEventQueue
 #ifdef USE_MOCK_REPLICATOR
       rGroup <- unClosure cRGroup >>= id
       forM_ nids $ const $ spawnLocal $ dummyRC' rGroup

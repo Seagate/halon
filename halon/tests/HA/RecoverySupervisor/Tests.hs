@@ -241,7 +241,8 @@ testSplit transport t amountOfReplicas action =
       events    <- newCounters
       let nids = map localNodeId ns
       bracket (do
-                 cRGroup <- newRGroup $(mkStatic 'rsSDict) 20 pollingPeriod nids
+                 cRGroup <- newRGroup $(mkStatic 'rsSDict) "rstest" 20
+                                      pollingPeriod nids
                                       (RSState Nothing 0 pollingPeriod)
                  rGroup <- join $ unClosure cRGroup
                  return (cRGroup, rGroup)

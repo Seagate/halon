@@ -37,12 +37,6 @@ import System.Random
 import System.Timeout
 
 
-data IgnitionArguments = IgnitionArguments
-  { _stationNodes :: [NodeId]
-  } deriving (Generic, Typeable)
-
-instance Binary IgnitionArguments
-
 dummyRC :: SendPort () -> ProcessId -> StoreChan -> Process ()
 dummyRC sp _eq _mm = do
   sendChan sp ()

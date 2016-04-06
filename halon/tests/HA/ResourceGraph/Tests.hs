@@ -123,7 +123,8 @@ rGroupTest :: (RGroup g, Typeable g)
 rGroupTest transport g p =
     tryRunProcessLocal transport $ do
       nid <- getSelfNode
-      rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (defaultMetaInfo, fromList [])
+      rGroup <- newRGroup $(mkStatic 'mmSDict) "mmtest" 20 1000000 [nid]
+                          (defaultMetaInfo, fromList [])
                   >>= unClosure >>= (`asTypeOf` return g)
       (mmpid, mmchan) <- startMultimap rGroup $ \loop -> do
         catch loop (liftIO . handler)

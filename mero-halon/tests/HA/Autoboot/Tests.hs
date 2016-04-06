@@ -7,7 +7,6 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types
 import Control.Distributed.Process.Node
-import Control.Distributed.Static ( closureCompose )
 import Control.Monad.Reader ( ask )
 import Data.Foldable (forM_)
 import qualified Data.Set as Set
@@ -99,8 +98,7 @@ bootupCluster = \(node : nids) -> do
 
 -- | Start dummy recovery coordinator
 rcClosure :: Closure ([NodeId] -> ProcessId -> StoreChan -> Process ())
-rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
-               $(mkStaticClosure 'ignitionArguments)
+rcClosure = $(mkStaticClosure 'recoveryCoordinator)
 
 -- | Autoboot helper cluster
 autobootCluster :: [LocalNode] -> Process ()

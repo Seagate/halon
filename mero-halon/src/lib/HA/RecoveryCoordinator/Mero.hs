@@ -83,8 +83,8 @@ import Network.CEP
 
 -- | Initial configuration data.
 data IgnitionArguments = IgnitionArguments
-  { -- | The names of all tracking station nodes.
-    stationNodes :: [NodeId]
+  { -- | The names of all event queue nodes.
+    eqNodes :: [NodeId]
   } deriving (Generic,Typeable)
 
 instance Binary IgnitionArguments

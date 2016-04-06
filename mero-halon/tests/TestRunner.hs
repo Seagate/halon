@@ -9,19 +9,16 @@
 {-# LANGUAGE TupleSections #-}
 module TestRunner
   ( TestArgs(..)
-  , TestReplicatedState
   , runRCEx
   , runTest
   , tryRunProcessLocal
   , withLocalNode
   , withLocalNodes
   , withTrackingStation
-  , eqView
-  , eqView__static
-  , multimapMIView
-  , multimapMIView__static
-  , testDict
-  , testDict__static
+  , eqDict
+  , eqDict__static
+  , mmDict
+  , mmDict__static
   , emptyRules
   , emptyRules__static
   , startMockEventQueue
@@ -47,7 +44,6 @@ import HA.Startup (stopHalonNode)
 import Mero.Notification
 #endif
 
-import Control.Arrow (first, second)
 import Control.Exception as E
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
@@ -69,17 +65,13 @@ import System.Timeout (timeout)
 
 import Test.Framework
 
-type TestReplicatedState = (EventQueue, (MetaInfo, Multimap))
-
 remotableDecl [ [d|
-  eqView :: RStateView TestReplicatedState EventQueue
-  eqView = RStateView fst first
 
-  multimapMIView :: RStateView TestReplicatedState (MetaInfo, Multimap)
-  multimapMIView = RStateView snd second
+  eqDict :: SerializableDict EventQueue
+  eqDict = SerializableDict
 
-  testDict :: SerializableDict TestReplicatedState
-  testDict = SerializableDict
+  mmDict :: SerializableDict (MetaInfo, Multimap)
+  mmDict = SerializableDict
 
   emptyRules :: [Definitions LoopState ()]
   emptyRules = []
@@ -92,20 +84,20 @@ data TestArgs = TestArgs {
   , ta_rc :: ProcessId
 }
 
-runRCEx :: (ProcessId, IgnitionArguments)
+runRCEx :: (ProcessId, [NodeId])
         -> [Definitions LoopState ()]
-        -> MC_RG TestReplicatedState
+        -> MC_RG (MetaInfo, Multimap)
         -> Process (StoreChan, ProcessId) -- ^ MM, RC
-runRCEx (eq, args) rules rGroup = do
+runRCEx (eq, eqNids) rules rGroup = do
   rec ((mm,cchan), rc) <- (,)
-                  <$> (startMultimap (viewRState $(mkStatic 'multimapMIView) rGroup)
+                  <$> (startMultimap rGroup
                                      (\go -> do
                                         () <- expect
                                         link rc
                                         go))
                   <*> (spawnLocal $ do
                         () <- expect
-                        recoveryCoordinatorEx () rules args eq cchan)
+                        recoveryCoordinatorEx () rules eqNids eq cchan)
   usend eq rc
   forM_ [mm::ProcessId, rc] $ \them -> usend them ()
   return (cchan, rc)
@@ -120,14 +112,16 @@ withTrackingStation testRules action = do
   DP.bracket
     (do
       void $ EQT.startEQTracker [nid]
-      cRGroup <- newRGroup $(mkStatic 'testDict) 1000 1000000
-                         [nid] (emptyEventQueue, (defaultMetaInfo, fromList []))
-      join $ unClosure cRGroup
+      cEQGroup <- newRGroup $(mkStatic 'eqDict) "eqtest" 1000 1000000
+                         [nid] emptyEventQueue
+      cMMGroup <- newRGroup $(mkStatic 'mmDict) "mmtest" 1000 1000000
+                         [nid] (defaultMetaInfo, fromList [])
+      (,) <$> join (unClosure cEQGroup) <*> join (unClosure cMMGroup)
     )
-    (flip killReplica nid)
-    (\rGroup -> do
-      eq <- startEventQueue (viewRState $(mkStatic 'eqView) rGroup)
-      (chan, rc) <- runRCEx (eq, IgnitionArguments [nid]) testRules rGroup
+    (\(g0, g1) -> killReplica g0 nid >> killReplica g1 nid)
+    (\(eqGroup, mmGroup) -> do
+      eq <- startEventQueue (eqGroup :: MC_RG EventQueue)
+      (chan, rc) <- runRCEx (eq, [nid]) testRules mmGroup
       action $ TestArgs eq chan rc
     )
 

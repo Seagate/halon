@@ -26,7 +26,6 @@ import Control.Distributed.Commands.Process (sendSelfNode)
 import Control.Distributed.Process hiding (catch)
 import Control.Distributed.Process.Closure ( mkStaticClosure )
 import Control.Distributed.Process.Node
-import Control.Distributed.Static ( closureCompose )
 
 #ifdef USE_MERO
 import Mero
@@ -72,7 +71,7 @@ main = do
         -- spawning remote processes.
         whenTestIsDistributed $
           setEnvIfUnset "HALON_TRACING"
-            "consensus-paxos replicated-log EQ EQ.producer MM RS RG call"
+           "consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup"
 #ifdef USE_RPC
         rpcTransport <- RPC.createTransport "s1"
                                             (RPC.rpcAddress $ localEndpoint config)
@@ -93,8 +92,7 @@ main = do
         runProcess lnid sendSelfNode
         runProcess lnid $ startupHalonNode rcClosure >> receiveWait []
   where
-    rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
-                  $(mkStaticClosure 'ignitionArguments)
+    rcClosure = $(mkStaticClosure 'recoveryCoordinator)
 
     whenTestIsDistributed action = do
       lookupEnv "DC_CALLER_PID" >>= maybe (return ()) (const action)
