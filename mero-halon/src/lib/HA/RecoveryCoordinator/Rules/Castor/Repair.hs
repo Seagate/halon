@@ -227,6 +227,39 @@ querySpielHourly = define "query-spiel-hourly" $ do
 
   start dispatchQueryHourly Nothing
 
+rebalanceStart :: Specification LoopState ()
+rebalanceStart = defineSimple "castor-rebalance-start" $ \(HAEvent uuid (PoolRebalanceRequest pool) _) -> do
+    getPoolRepairInformation pool >>= \case
+      Nothing -> do
+       rg <- getLocalGraph
+       sdevs <- getPoolSDevs pool
+       sts <- mapM (\d -> (,d) <$> getSDevState d) sdevs
+       -- states that are considered as ‘OK, we can finish
+       -- repair/rebalance’ states for the drives
+       let okMessages = [M0_NC_REPAIRED, M0_NC_ONLINE]
+        -- list of devices in OK state
+           sdev_repaired = snd <$> filter (\(typ, _) -> typ == M0_NC_REPAIRED) sts
+           sdev_replaced = filter (isReplaced rg) sdev_repaired
+           sdev_broken   = snd <$> filter (\(typ, _) -> not $ typ `elem` okMessages) sts
+       if null sdev_broken
+       then if null sdev_replaced
+             then phaseLog "info" $ "Can't start rebalance, no drive to rebalance on"
+             else do 
+              disks <- catMaybes <$> mapM lookupSDevDisk sdev_replaced
+              startRebalanceOperation pool disks
+              queryStartHandling pool
+       else phaseLog "info" $ "Can't start rebalance, not all drives are ready: " ++ show sdev_broken
+      Just info -> phaseLog "info" $ "Pool Rep/Reb is already running: " ++ show info
+    messageProcessed uuid
+  where
+    isReplaced :: G.Graph -> M0.SDev -> Bool
+    isReplaced rg s = not . null $
+      [ () | (disk :: M0.Disk) <- G.connectedTo s M0.IsOnHardware rg
+           , (sd :: StorageDevice) <- G.connectedTo disk At rg
+           , G.isConnected sd Has SDReplaced rg]
+    getSDevState :: M0.SDev -> PhaseM LoopState l' ConfObjectState
+    getSDevState d = fromMaybe M0_NC_ONLINE <$> queryObjectStatus d
+
 -- | Try to fetch 'Spiel.SnsStatus' for the given 'Pool' and if that
 -- fails, unset the @PRS@ and ack the message. Otherwise run the
 -- user-supplied handler.
