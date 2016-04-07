@@ -75,6 +75,7 @@ castorRules = sequence_
   , ruleMeroNoteSet
   , ruleGetEntryPoint
   , ruleResetAttempt
+  , ruleRebalanceStart
 #endif
   , ruleDriveFailed
   , ruleDriveRemoved

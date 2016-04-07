@@ -8,6 +8,7 @@
 -- Module dealing with pool repair.
 module HA.RecoveryCoordinator.Rules.Castor.Repair
   ( handleRepair
+  , ruleRebalanceStart
   , noteToSDev
   , querySpiel
   , querySpielHourly
@@ -227,8 +228,8 @@ querySpielHourly = define "query-spiel-hourly" $ do
 
   start dispatchQueryHourly Nothing
 
-rebalanceStart :: Specification LoopState ()
-rebalanceStart = defineSimple "castor-rebalance-start" $ \(HAEvent uuid (PoolRebalanceRequest pool) _) -> do
+ruleRebalanceStart :: Specification LoopState ()
+ruleRebalanceStart = defineSimple "castor-rebalance-start" $ \(HAEvent uuid (PoolRebalanceRequest pool) _) -> do
     getPoolRepairInformation pool >>= \case
       Nothing -> do
        rg <- getLocalGraph
@@ -428,13 +429,19 @@ handleRepair noteSet = processSet noteSet >>= \case
       tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
       fa <- getPoolSDevsWithState pool M0_NC_FAILED
 
+      let maybeBeginRebalance = when (null tr) $ do
+            phaseLog "rebalanse" $ "Request rebalance procedure on " ++ show pool
+            promulgateRC (PoolRebalanceRequest pool)
+   
       -- If no devices are transient and something is failed, begin
       -- repair. It's up to caller to ensure any previous repair has
       -- been aborted/completed.
-      let maybeBeginRepair = when (null tr && not (null fa)) $ do
-            phaseLog "repair" $ "Starting repair operation on " ++ show pool
-            startRepairOperation pool
-            queryStartHandling pool
+      let maybeBeginRepair =
+            if (null tr && not (null fa))
+            then do phaseLog "repair" $ "Starting repair operation on " ++ show pool
+                    startRepairOperation pool
+                    queryStartHandling pool
+            else maybeBeginRebalance
 
       getPoolRepairStatus pool >>= \case
         Just (M0.PoolRepairStatus prt _ _)
