@@ -53,7 +53,7 @@ import Control.Monad (forM, unless)
 
 import Data.Foldable (forM_, traverse_)
 import Data.Proxy
-import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
