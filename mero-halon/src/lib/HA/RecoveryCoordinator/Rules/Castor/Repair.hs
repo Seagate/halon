@@ -414,7 +414,9 @@ handleRepair noteSet = do
           Just (M0.PoolRepairStatus prt _ _)
             -- Repair happening, device failed, restart repair
             | fa' <- getSDevs diskMap M0_NC_FAILED
-            , not (S.null fa') -> abortRepair pool >> maybeBeginRepair
+            , not (S.null fa') -> do
+                anySDevsFailed diskMap >>= flip when (abortRepair pool)
+                maybeBeginRepair
             -- Repair happening, some devices are transient
             | tr' <- getSDevs diskMap M0_NC_TRANSIENT
             , not (S.null tr') -> do
@@ -501,7 +503,7 @@ processPoolInfo pool M0_NC_REPAIRED _ = getPoolRepairStatus pool >>= \case
 -- it seems some devices belonging to the pool failed, abort repair.
 processPoolInfo pool _ m
   | fa <- getSDevs m M0_NC_FAILED
-  , not (S.null fa) = abortRepair pool
+  , not (S.null fa) = anySDevsFailed m >>= flip when (abortRepair pool)
 -- All the devices we were notified in the pool came up as ONLINE. In
 -- this case we may want to continue repair if no other devices in the
 -- pool are transient.
@@ -616,6 +618,17 @@ getSDevs (SDevStateMap m) st = fromMaybe mempty $ M.lookup st m
 allWithState :: SDevStateMap -> ConfObjectState -> Maybe (S.HashSet SDev)
 allWithState sm@(SDevStateMap m) st =
   if M.member st m && M.size m == 1 then Just $ getSDevs sm st else Nothing
+
+-- | Given a set of 'SDevStateMap', check if any devices marked with
+-- 'M0_NC_FAILED' have actually been marked as failed in the RG. This
+-- is necessary because we curretnly have no way to distinguish
+-- between 'M0_NC_FAILED' notifications coming from mero and those
+-- coming from drive reset but only a failed drive reset alters the
+-- RG.
+anySDevsFailed :: SDevStateMap -> PhaseM LoopState l Bool
+anySDevsFailed m = do
+  let sdevs = S.toList $ getSDevs m M0_NC_FAILED
+  any (== M0_NC_FAILED) . catMaybes <$> mapM queryObjectStatus sdevs
 
 -- | Check if the repair is quiesced. Note that this function just
 -- checks if any SNS status comes back as
