@@ -90,6 +90,7 @@ noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= \case
 -- 'updateDriveState' which performs the actual update.
 notifyDriveStateChange :: M0.SDev -> M0.ConfObjectState -> PhaseM LoopState l ()
 notifyDriveStateChange m0sdev st = do
+    updateDriveState m0sdev st
     stateChangeHandlers <- lsStateChangeHandlers <$> get Global
     sequence_ $ ($ ns) <$> stateChangeHandlers
  where
