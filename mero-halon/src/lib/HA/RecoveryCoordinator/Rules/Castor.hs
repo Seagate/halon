@@ -126,8 +126,7 @@ setStateChangeHandlers = do
       start setThem Nothing
   where
     stateChangeHandlers = [
-        updateDriveStatesFromSet
-      , handleReset
+        handleReset
       , handleRepair
       ]
 
