@@ -30,12 +30,13 @@ import Mero.ConfC (Fid(..))
 import Data.Binary (Binary)
 import Data.Bits (shiftR)
 import Data.Hashable (Hashable)
-import GHC.Generics (Generic)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
+import Data.Monoid ((<>))
 import Data.Typeable (Typeable)
 import Data.Proxy (Proxy(..))
 import Data.Word ( Word64 )
+import GHC.Generics (Generic)
 
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -122,6 +123,19 @@ $(mkResRel
 -- Specific object state                                                      --
 --------------------------------------------------------------------------------
 
+-- | Class to determine configuration object state from the resource graph.
+class (G.Resource a, M0.ConfObj a) => HasConfObjectState a where
+  getConfObjState :: a -> G.Graph -> ConfObjectState
+  default getConfObjState :: G.Relation Is a ConfObjectState
+                          => a -> G.Graph -> ConfObjectState
+  getConfObjState x rg = fromMaybe M0_NC_ONLINE
+                          . listToMaybe $ G.connectedTo x Is rg
+instance HasConfObjectState M0.Root where
+  getConfObjState _ _ = M0_NC_ONLINE
+instance HasConfObjectState M0.Profile where
+  getConfObjState _ _ = M0_NC_ONLINE
+instance HasConfObjectState M0.Filesystem where
+  getConfObjState _ _ = M0_NC_ONLINE
 instance HasConfObjectState M0.Rack
 instance HasConfObjectState M0.Enclosure
 instance HasConfObjectState M0.Controller
@@ -143,6 +157,16 @@ instance HasConfObjectState M0.Service
 instance HasConfObjectState M0.Disk
 instance HasConfObjectState M0.SDev
 instance HasConfObjectState M0.Pool
+instance HasConfObjectState M0.PVer where
+  getConfObjState _ _ = M0_NC_ONLINE
+instance HasConfObjectState M0.RackV where
+  getConfObjState _ _ = M0_NC_ONLINE
+instance HasConfObjectState M0.EnclosureV where
+  getConfObjState _ _ = M0_NC_ONLINE
+instance HasConfObjectState M0.ControllerV where
+  getConfObjState _ _ = M0_NC_ONLINE
+instance HasConfObjectState M0.DiskV where
+  getConfObjState _ _ = M0_NC_ONLINE
 
 -- A dictionary wrapper for configuration objects
 data SomeConfObjDict = forall x. (Typeable x, M0.ConfObj x, HasConfObjectState x)
@@ -151,13 +175,16 @@ data SomeConfObjDict = forall x. (Typeable x, M0.ConfObj x, HasConfObjectState x
 -- Yields the ConfObj dictionary of the object with the given Fid.
 --
 -- TODO: Generate this with TH.
-fidConfObjDict :: Fid -> Maybe SomeConfObjDict
+fidConfObjDict :: Fid -> Maybe [SomeConfObjDict]
 fidConfObjDict f = Map.lookup (f_container f `shiftR` (64 - 8)) dictMap
 
 -- | Map of all dictionaries
-dictMap :: Map.Map Word64 SomeConfObjDict
-dictMap = Map.fromList
-    [ mkTypePair (Proxy :: Proxy M0.Node)
+dictMap :: Map.Map Word64 [SomeConfObjDict]
+dictMap = Map.fromListWith (<>) . fmap (fmap (: [])) $ 
+    [ mkTypePair (Proxy :: Proxy M0.Root)
+    , mkTypePair (Proxy :: Proxy M0.Profile)
+    , mkTypePair (Proxy :: Proxy M0.Filesystem)
+    , mkTypePair (Proxy :: Proxy M0.Node)
     , mkTypePair (Proxy :: Proxy M0.Rack)
     , mkTypePair (Proxy :: Proxy M0.Pool)
     , mkTypePair (Proxy :: Proxy M0.Process)
@@ -166,25 +193,25 @@ dictMap = Map.fromList
     , mkTypePair (Proxy :: Proxy M0.Enclosure)
     , mkTypePair (Proxy :: Proxy M0.Controller)
     , mkTypePair (Proxy :: Proxy M0.Disk)
+    , mkTypePair (Proxy :: Proxy M0.PVer)
+    , mkTypePair (Proxy :: Proxy M0.RackV)
+    , mkTypePair (Proxy :: Proxy M0.EnclosureV)
+    , mkTypePair (Proxy :: Proxy M0.ControllerV)
+    , mkTypePair (Proxy :: Proxy M0.DiskV)
     ]
   where
     mkTypePair :: forall a. (Typeable a, M0.ConfObj a, HasConfObjectState a)
                => Proxy a -> (Word64, SomeConfObjDict)
     mkTypePair a = (M0.fidType a, SomeConfObjDict (Proxy :: Proxy a))
 
--- | Class to determine configuration object state from the resource graph.
-class (G.Resource a, M0.ConfObj a) => HasConfObjectState a where
-  getConfObjState :: a -> G.Graph -> ConfObjectState
-  default getConfObjState :: G.Relation Is a ConfObjectState
-                          => a -> G.Graph -> ConfObjectState
-  getConfObjState x rg = fromMaybe M0_NC_ONLINE
-                          . listToMaybe $ G.connectedTo x Is rg
-
 lookupConfObjectState :: G.Graph -> Fid -> Maybe ConfObjectState
-lookupConfObjectState g fid = fidConfObjDict fid >>= \case
-  SomeConfObjDict (_ :: Proxy ct0) -> do
-    obj <- M0.lookupConfObjByFid fid g :: Maybe ct0
-    return $ getConfObjState obj g
+lookupConfObjectState g fid = fidConfObjDict fid
+    >>= listToMaybe . catMaybes . map go
+  where
+    go scod = case scod of
+      SomeConfObjDict (_ :: Proxy ct0) -> do
+        obj <- M0.lookupConfObjByFid fid g :: Maybe ct0
+        return $ getConfObjState obj g
 
 -- | Lookup the configuration object states of objects with the given FIDs.
 lookupConfObjectStates :: [Fid] -> G.Graph -> [(Fid, ConfObjectState)]
