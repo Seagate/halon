@@ -95,7 +95,8 @@ rcInitRule argv = do
         usend mpid $ StartMonitoringRequest self ms
         _ <- expect :: Process StartMonitoringReply
         sayRC $ "started monitoring nodes"
-        sayRC $ "continue in normal mode"
+      syncGraphBlocking
+      liftProcess $ sayRC "continue in normal mode"
 
     start boot Nothing
 

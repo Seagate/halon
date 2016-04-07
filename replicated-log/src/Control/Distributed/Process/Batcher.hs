@@ -21,22 +21,17 @@ data Marker = Marker
 
 instance Binary Marker
 
--- | @batcher s0 handleBatch@ runs a process which accumulates requests of type
+-- | @batcher s0 handleBatch@ runs a process which accumulates messages of type
 -- @a@ and calls @handleBatch@ to handle the accumulated requests.
 --
--- The handler can return a list of non-processed events, which will be appended
--- to the list given to the next call.
---
-batcher :: Serializable a => ([a] -> Process [a]) -> Process b
-batcher handleBatch = flip fix [] $ \loop xs -> do
-    self <- getSelfPid
-    -- Wait for a message if there are no pending messages.
-    f <- if null xs then expect >>= return . (:) else return id
-    xs' <- fmap f $ usend self Marker >> collectUntilMarker xs
-    handleBatch xs' >>= loop
+batcher :: Serializable a => (s -> [a] -> Process s) -> s -> Process b
+batcher handleBatch s =
+    liftM2 (:) expect collectMailbox >>= handleBatch s >>= batcher handleBatch
   where
-    collectUntilMarker :: Serializable a => [a] -> Process [a]
-    collectUntilMarker xs = fix $ \loop -> receiveWait
-      [ match $ \a -> fmap (a :) loop
-      , match $ \Marker -> return xs
-      ]
+    collectMailbox :: Serializable a => Process [a]
+    collectMailbox = do
+      getSelfPid >>= flip usend Marker
+      flip fix [] $ \loop acc -> receiveWait
+        [ match $ \a -> loop (a : acc)
+        , match $ \Marker -> return $ reverse acc
+        ]

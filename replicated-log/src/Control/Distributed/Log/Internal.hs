@@ -89,7 +89,7 @@ import Data.Constraint (Dict(..))
 import Data.Foldable (forM_)
 import Data.Function (fix)
 import Data.Int (Int64)
-import Data.List (partition, sortBy, nub, intersect)
+import Data.List (partition, sortBy, nub, intersect, sort)
 import qualified Data.Foldable as Foldable
 import Data.Function (on)
 import Data.IORef
@@ -309,6 +309,9 @@ batcherLabel (LogId kstr) = kstr ++ ".batcher"
 
 sendReplica :: Serializable a => LogId -> NodeId -> a -> Process ()
 sendReplica name nid = nsendRemote nid $ replicaLabel name
+
+sendBatcher :: Serializable a => LogId -> NodeId -> a -> Process ()
+sendBatcher name nid = nsendRemote nid $ batcherLabel name
 
 sendAcceptor :: Serializable a => LogId -> NodeId -> a -> Process ()
 sendAcceptor name nid = nsendRemote nid $ acceptorLabel name
@@ -629,7 +632,7 @@ replica Dict
     forM_ mbpid exitAndWait
     bpid <- spawnLocal $ do
       logTrace "spawned batcher"
-      link self >> batcher (sendBatch self)
+      link self >> batcher (sendBatch self) (epoch, replicas)
                      `finally` logTrace "batcher: process terminated"
     register (batcherLabel logId) bpid
     ppid <- spawnLocal $ do
@@ -674,39 +677,49 @@ replica Dict
          Right ms -> return ms
 
     sendBatch :: ProcessId
+              -> (LegislatureId, [NodeId])
               -> [(ProcessId, LegislatureId, Request a)]
-              -> Process [(ProcessId, LegislatureId, Request a)]
-    sendBatch ρ rs' = do
-      -- Pick requests until the size of the encoding exceeds a threshold.
-      -- Otherwise, creating too large batches would slow down replicas.
-      let maxBatchSize = 128 * 1024
-          (rs, rest) = -- ensure rs is not empty
-                       (\p -> if null (fst p) then splitAt 1 (snd p) else p) $
-                       (\(a, b) -> (map snd a, map snd b)) $
-                       break ((> maxBatchSize) . fst) $
-                       zip (scanl1 (+) $ map (BSL.length . encode) rs') rs'
-          (nps, other0) =
-            partition ((Nullipotent ==) . requestHint . batcherMsgRequest) $
-            map (\(a, e, r) -> BatcherMsg a e r) rs
-          (rcfgs, other) =
-            partition (isReconf . requestValue . batcherMsgRequest) other0
-      logTrace "batcher: reconf"
-      -- Submit the last configuration request in the batch.
-      unless (null rcfgs) $ do
-        usend ρ [last rcfgs]
-        expect
-      -- Submit the non-nullipotent requests.
-      logTrace $ "batcher: non-nullipotent " ++ show (length other, length rest)
-      unless (null other) $ do
-        usend ρ other
-        expect
-      -- Send nullipotent requests after all other batched requests.
-      logTrace "batcher: nullipotent"
-      unless (null nps) $ do
-        usend ρ nps
-        expect
-      logTrace "batcher: done"
-      return rest
+              -> Process (LegislatureId, [NodeId])
+    sendBatch ρ s0 rs0 = do
+      s@(epoch, ρs) <- flip fix s0 $ \loop s -> expectTimeout 0
+                         >>= maybe (return s) loop
+      let (rs1, withOldEpoch) = partition (\(_, e, _) -> e >= epoch) rs0
+      forM_ (nub $ map (\(μ, _, _) -> μ) withOldEpoch) $ \μ -> do
+        logTrace $ "batcher: rejected client request " ++ show (μ, epoch)
+        usend μ (epoch, ρs)
+      forM_ withOldEpoch $ \(_, _, r) ->
+        forM_ (requestSender r) $ flip usend False
+      flip fix rs1 $ \loop rs2 -> if null rs2 then return s else do
+        let -- Pick requests until the size of the encoding exceeds a threshold.
+            -- Otherwise, creating too large batches would slow down replicas.
+            maxBatchSize = 128 * 1024
+            (rs, rest) = -- ensure rs is not empty
+                         (\p -> if null (fst p) then splitAt 1 (snd p) else p) $
+                         (\(a, b) -> (map snd a, map snd b)) $
+                         break ((> maxBatchSize) . fst) $
+                         zip (scanl1 (+) $ map (BSL.length . encode) rs2) rs2
+            (nps, other0) =
+              partition ((Nullipotent ==) . requestHint . batcherMsgRequest) $
+              map (\(a, e, r) -> BatcherMsg a e r) rs
+            (rcfgs, other) =
+              partition (isReconf . requestValue . batcherMsgRequest) other0
+        logTrace "batcher: reconf"
+        -- Submit the last configuration request in the batch.
+        unless (null rcfgs) $ do
+          usend ρ [last rcfgs]
+          expect
+        -- Submit the non-nullipotent requests.
+        logTrace $ "batcher: non-nullipotent " ++ show (length other, length rest)
+        unless (null other) $ do
+          usend ρ other
+          expect
+        -- Send nullipotent requests after all other batched requests.
+        logTrace "batcher: nullipotent"
+        unless (null nps) $ do
+          usend ρ nps
+          expect
+        logTrace "batcher: done"
+        loop rest
 
     adjustForDrift :: Int -> Int
     adjustForDrift t = fromIntegral $
@@ -884,6 +897,7 @@ replica Dict
               matchChan ptimerRP $ \PeriodicTick -> do
                   mLeader <- liftIO getLeader
                   logTrace $ "Periodic timer tick: " ++ show (w, cd, mLeader)
+                  -- Kill the batcher if I'm not the leader.
                   when (mLeader /= Just here) $ exitAndWait bpid
                   usend ptimerPid (ptimerSP, leaseTimeout, PeriodicTick)
                   go st
@@ -985,11 +999,15 @@ replica Dict
                           legD' = DecreeId leg' $ decreeNumber di
 
                       mbpid <- whereis (batcherLabel logId)
+                      -- Update the epoch and membership of the batcher if there
+                      -- is any.
+                      when (epoch /= epoch' || sort ρs /= sort ρs') $
+                        forM_ mbpid $ flip usend (epoch', ρs')
                       bpid' <- case mbpid of
                         Nothing -> do
                           bpid' <- spawnLocal $ do
                             logTrace "respawned batcher"
-                            link self >> batcher (sendBatch self)
+                            link self >> batcher (sendBatch self) (epoch', ρs')
                                 `finally` logTrace "batcher: process terminated"
                           register (batcherLabel logId) bpid'
                           return bpid'
@@ -1065,40 +1083,6 @@ replica Dict
                   -- more than once, but this is necessary while it is
                   -- possible for this decree to be unreachable.
                   usend self $ Decree locale di v
-                  go st
-
-              -- Lease requests.
-            , matchIf (\r -> cd == w     -- The log is up-to-date and fully
-                                         -- executed.
-                        && isJust (requestForLease r) -- This is a lease request.
-                      ) $ {-# SCC "go/lease" #-}
-                       \(request :: Request a) -> do
-                  logTrace $ "Lease request: " ++
-                    show (w, d, cd, requestForLease request)
-                  cd' <- case requestForLease request of
-                    -- Discard the lease request if it corresponds to an old
-                    -- legislature.
-                    Just l | l < decreeLegislatureId d -> return cd
-                    -- Send to the proposer otherwise.
-                    _ -> do
-                      usend ppid (cd, request)
-                      return $ succ cd
-                  go st{ stateCurrentDecree = cd' }
-
-              -- Client requests.
-            , match $ {-# SCC "go/Request" #-} \request@(μ, e, r :: Request a) -> do
-                  mLeader <- liftIO getLeader
-                  if epoch <= e && mLeader == Just here then do
-                    logTrace "replica: sending request to batcher"
-                    usend bpid request
-                  else do
-                    logTrace $ "replica: rejected client request " ++
-                               show (e, epoch, mLeader)
-                    forM_ (requestSender r) $ flip usend False
-                    when (mLeader /= Just here) $
-                       exitAndWait bpid
-                    when (e < epoch || isJust mLeader) $
-                      when (elem here ρs) $ usend μ (epoch, ρs)
                   go st
 
               -- Message from the batcher
@@ -1359,7 +1343,7 @@ replica Dict
 
                       requestStart <- liftIO $ getTime Monotonic
                       -- Get self to propose reconfiguration...
-                      usend self ( μ
+                      usend bpid ( μ
                                  , epoch
                                  , Request
                                      { requestSender   = [π]
@@ -1497,7 +1481,7 @@ replica Dict
 
                       requestStart <- liftIO $ getTime Monotonic
                       -- Get self to propose reconfiguration...
-                      usend self ( μ
+                      usend bpid ( μ
                                  , epoch
                                  , Request
                                      { requestSender   = [π]
@@ -1891,7 +1875,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
       OMRequest a -> do
         self <- getSelfPid
         logTrace $ "ambassador: sending request to " ++ show mLeader
-        Foldable.forM_ mLeader $ flip (sendReplica logId)
+        Foldable.forM_ mLeader $ flip (sendBatcher logId)
                                       (self, epoch, a :: Request a)
       -- A reconfiguration request
       OMHelo m -> do
@@ -1929,6 +1913,9 @@ checkHandle label (Handle _ _ _ _ _ μ) = do
       die msg
 
 -- | Append an entry to the replicated log.
+--
+-- Returns @True@ on success. The client can retry it if it returns @False@.
+--
 append :: Serializable a => Handle a -> Hint -> a -> Process Bool
 append h@(Handle _ _ _ _ omchan μ) hint x = callLocal $ do
     checkHandle "Log.append" h
@@ -1943,6 +1930,25 @@ append h@(Handle _ _ _ _ omchan μ) hint x = callLocal $ do
     logTrace $ "append: sending request to ambassador " ++ show μ
     when schedulerIsEnabled $ usend μ ()
     expect
+
+-- Note [Log monitoring]
+-- ~~~~~~~~~~~~~~~~~~~~~
+--
+-- The batcher process of replicas is observed to detect failures in requests.
+--
+-- The batcher is killed as soon as the replica realizes it is no longer the
+-- leader replica. This means that after startup, only the leader replica has a
+-- batcher.
+--
+-- Any requests in the batcher mailbox are discarded when the batcher is killed.
+--
+-- A monitor notification of the batcher means that likely the request has been
+-- dropped; or that a connection failure to the node containing the leader
+-- replica failed, in which case the acknowledgement will be lost.
+--
+-- The various api calls could still return a failure result (@False@ or
+-- @Nothing@) even if there is not a monitor notification. This can happen when
+-- the request is rejected for other causes, like having an old epoch.
 
 -- | Monitors the log. When connectivity to the log is lost a process monitor
 -- notification is sent to the caller. Lost connectivity could mean that there
