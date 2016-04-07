@@ -2,12 +2,12 @@
 
  * To configure docker for use in subsequent sections:
 
-  install docker from wherever you install your software from.
+  Install docker from wherever you install your software from.
 
-  configure docker to listen on a TCP port, but make sure it is
+  Configure docker to listen on a TCP port, but make sure it is
   one that is not available to the internet (or untrusted networks).
 
-  find out which IP address docker has configured for the docker0
+  Find out which IP address docker has configured for the docker0
   network interface - for example, by typing: ifconfig docker0.
   In the below notes, 172.17.42.1 will be used for that address.
 
@@ -37,20 +37,6 @@
 
     You'll need more recent nixpkgs if it complains about lack of postStart attribute.
 
- * To use a docker image for building in a development environment
-
-   This will pull the latest master base image from CI, mounting
-   ~/workspace/tweag/halon on your host system into the /halon
-   directory in the build container. This is so that you can
-   use your own editor, git security, etc.
-
-   docker --host=172.17.42.1:5555 pull tweag/haskell-env-on-centos-7:master
-   docker --host=172.17.42.1:5555 run -v ~/workspace/tweag/halon:/halon -t -i tweag/haskell-env-on-centos-7:master /bin/bash 
-
-   Once that shell appears, you can make a git checkout and
-   make dep; make build
-
-
  * To run distributed tests, set:
    DOCKER_HOST to the same parameter you used for --host aboe
    DC_PROVIDER=docker
@@ -67,14 +53,25 @@
    you will get messages like: "dev@1.2.3.4 password:" when
    running the tests below.
 
-   now run the distributed-commands tests, from the same build image
-   that you ran "make" above.
+   Now run the distributed-commands tests:
 
-   cabal install distributed-commands --reinstall --enable-tests --run-tests --flag="distributed-tests" --flag="docker-tests"
+     stack --docker-env DC_PROVIDER=docker --docker-env
+     DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1
+     build --flag distributed-commands:distributed-tests
+     --flag mero-halon:distributed-tests --test
 
-   or to run all the distributed tests,
-     $ export CABAL_FLAGS='--flag="maintainer" --flag="distributed-tests"'
-     $ make
+ * To use a docker image for building in a development environment (not needed
+   if using stack to build halon).
+
+   This will pull the latest master base image from CI, mounting
+   ~/workspace/tweag/halon on your host system into the /halon
+   directory in the build container. This is so that you can
+   use your own editor, git security, etc.
+
+   docker --host=172.17.42.1:5555 pull tweag/haskell-env-on-centos-7:master
+   docker --host=172.17.42.1:5555 run -v ~/workspace/tweag/halon:/halon -t -i tweag/haskell-env-on-centos-7:master /bin/bash
+
+   Once that shell appears, you can make a git checkout and build halon.
 
  * Overview of the subdirectories of docker/
 

@@ -1,48 +1,51 @@
-distributed-commands tests are not built/run by default in non-rpc mode.
+distributed-commands is a framework for writing tests which use multiple nodes.
 
-Environmental setup for tests:
+It offers primitives to create remote hosts, copy files between hosts, run
+commands in remote hosts, wait for specific console messages in remote hosts,
+and simulate connection failures between hosts.
 
-* To test using Digital Ocean:
-  * you need digital ocean credentials set in the environment
-    get these from Google Drive in a file called "Access Tokens"
-        export DO_CLIENT_ID=...
-        export DO_API_KEY=...
-  * you need to specify the image_id to use for tests in the environment
+A test written with distributed commands can be run in any of it backends.
+
+Currently there are two implemented backends. There is a backend for digital
+ocean and another backend using docker containers.
+
+The backend is selected with an environment variable DC_PROVIDER.
+
+To test using Digital Ocean:
+  * You need digital ocean credentials environment variables.
+    Get these from Google Drive in a file called "Access Tokens"
+        DO_CLIENT_ID=...
+        DO_API_KEY=...
+  * Tou need to specify the image_id to use for tests in the environment
     variable DC_DO_IMAGEID. It must have a user dev. And ssh must be
     configured to allow copying files from machine to machine without
     prompting the user with questions.
-  * if you use the droplet test snapshot you need an ssh key that is
+  * If you use the droplet test snapshot you need an ssh key that is
     known to it - ask someone like @facundo to give you such an ssh key
-  * export DC_PROVIDER=digital-ocean
+  * Set DC_PROVIDER=digital-ocean
 
 * To test using docker:
-  * export DOCKER_HOSTNAME=  <your docker API endpoint>
-  * export DC_PROVIDER=docker
+  * Follow directions in docker/README at the halon/ root directory to setup
+    docker and build the container image that the backend will use to create
+    hosts. Currently, the name of the image is hardcoded to tweagremote.
+  * Set
+    DOCKER_HOST= <docker API endpoint as configured according to docker/README>
+    DC_HOST_IP= <IP address of your build container (not the IP address of
+                 the host system)>
+    DC_PROVIDER=docker
 
-To build and run the tests:
-in halon/ root directory, after building halon ok, do this:
+To build and run the tests in distributed-commands/tests:
+in halon/ root directory, do this:
 
- cabal install --enable-tests --run-tests --flag="distributed-tests" --reinstall distributed-commands
+  stack --docker-env DC_PROVIDER=docker --docker-env
+  DOCKER_HOST=http://172.16.42.1:5555 --docker-env DC_HOST_IP=172.16.42.1
+  build --flag distributed-commands:distributed-tests distributed-commands
+  --test
 
-This command will build distributed-commands and run the tests
-against the chosen cloud provider.
+This command will build distributed-commands and run the tests against the
+docker cloud provider.
 
 If the tests fail or you kill them part way, you might find some
 processes left behind without a parent; these processes
 (for example, scp) might cause subsequent attempts to run the
 tests to fail by occupying port localhost:4000. Kill them manually.
-
-Tracing
-
-distributed-commands can enable tracing on all processes. This is done by
-propagating the trace-related environment variables to to the remote hosts
-and having them trace to a file. Then after the test completes, it can gather
-all the files that were created. See 'TraceEnv' and 'mkTraceEnv'.
-
-Tracing is enabled by setting the environment variables
-DISTRIBUTED_PROCESS_TRACE_FLAGS and DISTRIBUTED_PROCESS_TRACE_FILE as explained
-in
-
-http://hackage.haskell.org/package/distributed-process/docs/Control-Distributed-Process-Debug.html
-
-
