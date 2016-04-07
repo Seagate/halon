@@ -359,6 +359,7 @@ Test-Suite distributed-tests
       HA.Test.Distributed.Autoboot
       HA.Test.Distributed.ClusterDeath
       HA.Test.Distributed.ConfigureServices
+      HA.Test.Distributed.MoveState
       HA.Test.Distributed.NodeDeath
       HA.Test.Distributed.RCInsists
       HA.Test.Distributed.RCInsists2
