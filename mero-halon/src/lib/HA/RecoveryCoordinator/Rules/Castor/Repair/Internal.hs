@@ -7,9 +7,11 @@
 -- A helper module for repair process
 module HA.RecoveryCoordinator.Rules.Castor.Repair.Internal where
 
+import           Control.Applicative
 import           Control.Exception (SomeException)
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Events.Castor.Filesystem
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -30,13 +32,13 @@ repairStatus M0.Failure = statusOfRepairOperation
 -- happening.
 continueRepair :: M0.PoolRepairType -> M0.Pool
                -> PhaseM LoopState l (Maybe SomeException)
-continueRepair M0.Rebalance = continueRebalanceOperation
-continueRepair M0.Failure = continueRepairOperation
+continueRepair M0.Rebalance pool = pure Nothing <* promulgateRC (PoolRebalanceRequest pool)
+continueRepair M0.Failure pool = continueRepairOperation pool
 
 -- | Quiesces the current repair.
 quiesceRepair :: M0.PoolRepairType -> M0.Pool
               -> PhaseM LoopState l (Maybe SomeException)
-quiesceRepair M0.Rebalance = quiesceRebalanceOperation
+quiesceRepair M0.Rebalance = abortRebalanceOperation
 quiesceRepair M0.Failure = quiesceRepairOperation
 
 -- | Abort repair
