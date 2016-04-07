@@ -54,6 +54,13 @@ repairedNotificationMsg :: M0.PoolRepairType -> M0.ConfObjectState
 repairedNotificationMsg M0.Rebalance = M0.M0_NC_ONLINE
 repairedNotificationMsg M0.Failure = M0.M0_NC_REPAIRED
 
+-- | Covert 'M0.PoolRepairType' into a 'ConfObjectState' that mero
+-- expects: it's different depending on whether we are rebalancing or
+-- repairing.
+repairingNotificationMsg :: M0.PoolRepairType -> M0.ConfObjectState
+repairingNotificationMsg M0.Rebalance = M0.M0_NC_REBALANCE
+repairingNotificationMsg M0.Failure = M0.M0_NC_REPAIR
+
 -- | Given a 'Pool', retrieve all associated IO services ('CST_IOS').
 getIOServices :: M0.Pool -> PhaseM LoopState l [M0.Service]
 getIOServices pool = getLocalGraph >>= \g -> return $ nub
