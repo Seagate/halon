@@ -33,6 +33,7 @@ import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Mero
+import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import qualified HA.RecoveryCoordinator.Rules.Castor.Repair.Internal as R
 import           HA.Resources
 import           HA.Resources.Castor

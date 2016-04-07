@@ -2,16 +2,19 @@
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module HA.RecoveryCoordinator.Events.Castor.Cluster
   ( ClusterStatusRequest(..)
   , ClusterStartRequest(..)
   , ClusterStopRequest(..)
   , StateChangeResult(..)
+  , PoolRebalanceRequest(..)
   ) where
 
 import Control.Distributed.Process
 import qualified HA.Resources.Mero as M0
 import Data.Binary
+import Data.Typeable
 
 import GHC.Generics
 
@@ -32,3 +35,6 @@ data StateChangeResult
       deriving (Show, Generic, Eq)
 
 instance Binary StateChangeResult
+
+newtype PoolRebalanceRequest = PoolRebalanceRequest M0.Pool
+  deriving (Eq, Show, Binary, Typeable, Generic)

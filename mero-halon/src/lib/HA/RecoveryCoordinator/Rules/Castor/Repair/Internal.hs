@@ -11,7 +11,7 @@ import           Control.Applicative
 import           Control.Exception (SomeException)
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
-import           HA.RecoveryCoordinator.Events.Castor.Filesystem
+import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
