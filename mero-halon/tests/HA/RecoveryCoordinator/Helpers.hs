@@ -11,12 +11,12 @@ import           Control.Distributed.Process
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.Multimap
+import           HA.Multimap.Implementation
 #ifdef USE_MOCK_REPLICATOR
 import           HA.Replicator.Mock ( MC_RG )
 #else
 import           HA.Replicator.Log ( MC_RG )
 #endif
-import           HA.RecoveryCoordinator.Mero
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Service
@@ -114,7 +114,7 @@ serviceProcessStillAlive mm n sc = loop (1 :: Int)
 
 -- | Start the RC without any extra rules. For custom rules, see
 -- 'runRCEx'.
-runRC :: (ProcessId, IgnitionArguments) -- ^ (EQ, ignition arguments)
-      -> MC_RG TestReplicatedState
+runRC :: (ProcessId, [NodeId]) -- ^ (EQ, ignition arguments)
+      -> MC_RG (MetaInfo, Multimap)
       -> Process ((StoreChan, ProcessId)) -- ^ MM, RC
-runRC (eq, args) rGroup = runRCEx (eq, args) emptyRules rGroup
+runRC (eq, eqNids) rGroup = runRCEx (eq, eqNids) emptyRules rGroup

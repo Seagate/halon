@@ -19,7 +19,6 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import qualified Control.Distributed.Process.Scheduler as Scheduler
-import Control.Distributed.Static ( closureCompose )
 import Control.Monad
 import Data.List
 import Data.Binary
@@ -61,7 +60,7 @@ instance Binary KillRC
 instance Hashable KillRC
 
 remotableDecl [ [d|
-  rcWithDeath :: IgnitionArguments -> ProcessId -> StoreChan -> Process ()
+  rcWithDeath :: [NodeId] -> ProcessId -> StoreChan -> Process ()
   rcWithDeath = recoveryCoordinatorEx () rcDeathRules
     where
       rcDeathRules :: [Definitions LoopState ()]
@@ -77,8 +76,7 @@ myRemoteTable :: RemoteTable
 myRemoteTable = HA.Test.Disconnect.__remoteTableDecl . haRemoteTable $ meroRemoteTable initRemoteTable
 
 rcClosure :: Closure ([NodeId] -> ProcessId -> StoreChan -> Process ())
-rcClosure = $(mkStaticClosure 'recoveryCoordinator) `closureCompose`
-               $(mkStaticClosure 'ignitionArguments)
+rcClosure = $(mkStaticClosure 'recoveryCoordinator)
 
 data Dummy = Dummy String deriving (Typeable,Generic)
 

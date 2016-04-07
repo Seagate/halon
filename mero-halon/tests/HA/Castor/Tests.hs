@@ -77,7 +77,7 @@ rGroupTest transport p =
   withLocalNode transport myRemoteTable $ \lnid3 ->
   tryRunProcessLocal transport myRemoteTable $ do
     nid <- getSelfNode
-    rGroup <- newRGroup $(mkStatic 'mmSDict) 30 1000000
+    rGroup <- newRGroup $(mkStatic 'mmSDict) "mmtest" 30 1000000
                 [nid, localNodeId lnid2, localNodeId lnid3] (defaultMetaInfo, fromList [])
                 >>= unClosure
                 >>= (`asTypeOf` return (undefined :: MC_RG (MetaInfo, Multimap)))

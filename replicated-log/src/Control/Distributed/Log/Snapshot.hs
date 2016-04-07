@@ -15,8 +15,9 @@ import Control.Applicative (liftA2)
 import Control.Distributed.Log () -- SafeCopy LegislatureId instance
 import Control.Distributed.Log.Persistence as P
 import Control.Distributed.Log.Persistence.LevelDB
+import Control.Distributed.Log.Trace
 import Control.Distributed.Process.Consensus (DecreeId(..))
-import Control.Distributed.Process hiding (bracket)
+import Control.Distributed.Process hiding (bracket, catch)
 import Control.Distributed.Process.Serializable
 import qualified Control.Exception as E (bracket)
 import Control.Monad
@@ -139,9 +140,22 @@ serializableSnapshot serverLbl s0 = LogSnapshot
 serializableSnapshotServer :: String
                            -> (NodeId -> FilePath)
                            -> Process ProcessId
-serializableSnapshotServer serverLbl snapshotDirectory = do
+serializableSnapshotServer serverLbl snapshotDirectory =
+    flip catch (\e -> do
+      logTrace $ "serializableSnapshotServer: failed with " ++ show e
+      throwM (e :: SomeException)
+    ) $ do
     here <- getSelfNode
-    pid <- spawnLocal $ forever $ receiveWait
+    logTrace $ "serializableSnapshotServer: working on " ++
+               show (snapshotDirectory here)
+    pid <- spawnLocal $
+      (>> logTrace "serializableSnapshotServer: process terminated") $
+      flip catch (\e -> do
+        logTrace $ "serializableSnapshotServer: process terminated with " ++
+                   show e
+        throwM (e :: SomeException)
+      ) $
+      forever $ receiveWait
         [ match $ \(pid, ()) -> do
             md <- liftIO $ withPersistentStore here $ \_ pm ->
                     fmap (fmap decode) $ P.lookup pm 0

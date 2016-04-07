@@ -60,6 +60,7 @@ class RGroup g where
   --
   newRGroup :: Serializable st
             => Static (SerializableDict st)
+            -> String -- ^ name of the group
             -> Int
             -> Int
             -> [NodeId]
@@ -68,9 +69,12 @@ class RGroup g where
 
   -- | Like 'newRGroup' but only spawns a replica in the given node.
   --
-  -- If the node does not form part of a group this operation fails.
+  -- If the node does not form part of a group with the given name, this
+  -- operation fails.
+  --
   spawnReplica :: Serializable st
                => Static (SerializableDict st)
+               -> String  -- ^ Name of the group
                -> NodeId
                -> Process (Closure (Process (g st)))
 

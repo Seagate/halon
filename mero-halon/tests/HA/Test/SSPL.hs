@@ -25,6 +25,7 @@ import Test.Tasty.HUnit
 
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.EventQueue.Types (HAEvent(..))
+import HA.Multimap
 import HA.Service
 import HA.Services.SSPL
 import HA.Services.SSPL.Rabbit
@@ -99,8 +100,11 @@ testRules pid =
 unit :: ()
 unit = ()
 
+testRC :: (ProcessId, [NodeId]) -> ProcessId -> StoreChan -> Process ()
+testRC (pid, eqNids) = recoveryCoordinatorEx () (testRules pid) eqNids
+
 remotable
-  [ 'testRules, 'unit ]
+  [ 'testRC, 'testRules, 'unit ]
 
 -- | Create rabbit mq tests. This command checks if it's possible to connect
 -- to the system
@@ -144,9 +148,8 @@ runSSPLTest transport interseptor test =
   runTest 2 20 15000000 transport (HA.Test.SSPL.__remoteTable remoteTable) $ \[n] -> do
     self <- getSelfPid
     -- Startup halon
-    let rcClosure = ($(mkClosure 'recoveryCoordinatorEx) () `closureApply`
-                       ($(mkClosure 'testRules) self)) `closureCompose`
-                    $(mkStaticClosure 'ignitionArguments)
+    let rcClosure = $(mkClosure 'recoveryCoordinatorEx) () `closureApply`
+                       ($(mkClosure 'testRules) self)
     _ <- liftIO $ forkProcess n $ do
       startupHalonNode rcClosure
       usend self ()
@@ -155,9 +158,7 @@ runSSPLTest transport interseptor test =
                , [localNodeId n]
                , 1000 :: Int
                , 1000000 :: Int
-               , $(mkClosure 'recoveryCoordinatorEx) ()
-                   `closureApply` ($(mkClosure 'testRules) self)
-                   `closureApply` ($(mkClosure 'ignitionArguments) [localNodeId n])
+               , $(mkClosure 'testRC) (self, [localNodeId n])
                , 3*1000000 :: Int
                )
     _ <- liftIO $ forkProcess n $ ignition args >> usend self ()

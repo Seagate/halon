@@ -35,6 +35,7 @@ import qualified Data.Map as Map
 import Data.Typeable
 import Control.Monad
 
+import Control.Monad.Catch (throwM, SomeException)
 import Data.Maybe (isJust)
 import Data.List (maximumBy)
 import Data.Function (on)
@@ -156,7 +157,10 @@ acceptor :: forall a n. (Serializable a, Serializable n)
          => (forall b. Serializable b => n -> b -> Process ())
          -> a -> DecreeId -> (n -> IO AcceptorStore) -> n -> Process ()
 acceptor sendA _ startDecree0 config name =
-  flip finally (paxosTrace "Acceptor terminated") $
+  (>> paxosTrace "Acceptor terminated") $
+  flip catch (\e -> do paxosTrace $ "Acceptor terminated with " ++ show e
+                       throwM (e :: SomeException)
+             ) $
   bracket (liftIO $ config name) (liftIO . storeClose) $ \case
   AcceptorStore {..} -> do
        liftIO storeGet >>= loop startDecree0 . maybe Bottom (Value . decode)

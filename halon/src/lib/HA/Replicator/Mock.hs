@@ -94,7 +94,7 @@ instance RGroup RLocalGroup where
 
   data Replica RLocalGroup = Replica
 
-  newRGroup sd _snapshotThreashold _snapshotTimeout _ns st = do
+  newRGroup sd _ _snapshotThreashold _snapshotTimeout _ns st = do
     r <- liftIO $ newIORef st
     SerializableDict <- unStatic sd
     k <- liftIO $ atomicModifyIORef globalRLocalGroups $ \(i, m) ->
@@ -102,7 +102,7 @@ instance RGroup RLocalGroup where
             in ((i + 1, Map.insert i (Some rg) m), i)
     return $ closure $(mkStatic 'createRLocalGroup) (encode k)
 
-  spawnReplica _ _ = error "Mock.spawnReplica: unimplemented"
+  spawnReplica _ _ _ = error "Mock.spawnReplica: unimplemented"
 
   killReplica _ _ = return ()
 

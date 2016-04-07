@@ -86,7 +86,7 @@ rcInitRule argv = do
       ms   <- getNodeRegularMonitors
       liftProcess $ do
         self <- getSelfPid
-        EQT.updateEQNodes $ stationNodes argv
+        EQT.updateEQNodes $ eqNodes argv
         mpid <- spawnLocal $ do
            link self
            monitorProcess Master
@@ -204,7 +204,7 @@ ruleNodeUp argv = define "node-up" $ do
       directly nm_start $ do
         Starting _ nid conf svc _ <- get Local
         _ <- liftProcess $ spawnAsync nid $
-          $(mkClosure 'EQT.updateEQNodes) (stationNodes argv)
+          $(mkClosure 'EQT.updateEQNodes) (eqNodes argv)
         registerService svc
         startService nid svc conf
         switch [nm_started, nm_failed]
@@ -270,7 +270,7 @@ ruleNodeStatus argv = defineSimple "node-status" $
       \(HAEvent uuid (NodeStatusRequest n@(Node nid) lis) _) -> do
         rg <- getLocalGraph
         let
-          isStation = nid `elem` (stationNodes argv)
+          isStation = nid `elem` (eqNodes argv)
           isSatellite = G.memberResource n rg
           response = NodeStatusResponse n isStation isSatellite
         liftProcess $ mapM_ (flip usend response) lis
@@ -364,7 +364,7 @@ ruleRecoverNode argv = define "recover-node" $ do
                 liftProcess $ sayRC "Inside try_recover"
                 put Local (uuid, Just (Node nid, h, i + 1))
                 void . liftProcess . callLocal . spawnAsync nid $
-                  $(mkClosure 'nodeUp) ((stationNodes argv), (100 :: Int))
+                  $(mkClosure 'nodeUp) ((eqNodes argv), (100 :: Int))
                 let t' = expirySeconds `div` maxRetries
                 liftProcess $ sayRC $ "try_recover again in " ++ show t' ++ " seconds for " ++ show h
                 continue $ timeout t' try_recover

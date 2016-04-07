@@ -48,8 +48,8 @@ import System.Timeout
 
 
 test :: TestTree
-test = testCase "StressRC [disabled until fixed]" $ const (return ()) $
-  (>>= maybe (error "test timed out") return) $ timeout (120 * 1000000) $
+test = testCase "StressRC" $
+  (>>= maybe (error "test timed out") return) $ timeout (240 * 1000000) $
   getHostAddress >>= \ip ->
   IO.bracket (do Right nt <- createTransport ip "4000" defaultTCPParameters
                  return nt
@@ -111,7 +111,7 @@ test = testCase "StressRC [disabled until fixed]" $ const (return ()) $
       send pingPid "0"
       expectLog [nid0] $ isInfixOf "received DummyEvent 0"
 
-      let numPings = 2000 :: Int
+      let numPings = 500 :: Int
       say $ "Sending " ++ show numPings ++ " pings ..."
       forM_ [0..numPings] $ send pingPid . show
 

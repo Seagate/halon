@@ -79,6 +79,7 @@ data RLogGroup st where
   RLogGroup :: (Typeable q, Typeable st)
             => Static (SerializableDict st)
             -> Static (SerializableDict q)
+            -> String                       -- name of the group
             -> Log.Handle (Command q)
             -> CommandPort q
             -> Static (RStateView q st)
@@ -112,15 +113,16 @@ filepath prefix nid = prefix </> show (nodeAddress nid)
 
 rgroupLog :: SerializableDict st -> ByteString -> Log st
 rgroupLog SerializableDict bs =
-    State.log $ serializableSnapshot snapshotServerLbl (decode bs)
+    let (name, st0) = decode bs
+     in State.log $ serializableSnapshot (snapshotServerLbl name) st0
 
-snapshotServerLbl :: String
-snapshotServerLbl = "snapshot-server"
+snapshotServerLbl :: String -> String
+snapshotServerLbl = ("snapshot-server." ++)
 
-snapshotServer :: Process ()
-snapshotServer = void $ serializableSnapshotServer
-                    snapshotServerLbl
-                    (filepath $ storageDir </> "replica-snapshots")
+snapshotServer :: String -> Process ()
+snapshotServer name =
+    void $ serializableSnapshotServer (snapshotServerLbl name) $
+             filepath $ storageDir </> "replica-snapshots" </> name
 
 storageDir :: FilePath
 storageDir = "halon-persistence"
@@ -128,21 +130,21 @@ storageDir = "halon-persistence"
 halonPersistDirectory :: NodeId -> FilePath
 halonPersistDirectory = filepath $ storageDir </> "replicas"
 
-halonLogId :: Log.LogId
-halonLogId = Log.toLogId "halon-log"
+halonLogId :: String -> Log.LogId
+halonLogId = Log.toLogId . ("halon-log." ++)
 
-rgroupConfig :: (Int, Int) -> Log.Config
-rgroupConfig (snapshotThreshold, snapshotTimeout) = Log.Config
-    { logId             = halonLogId
+rgroupConfig :: (String, Int, Int) -> Log.Config
+rgroupConfig (name, snapshotThreshold, snapshotTimeout) = Log.Config
+    { logId             = halonLogId name
     , consensusProtocol =
-          \dict -> BasicPaxos.protocol dict 8000000
+          \dict -> BasicPaxos.protocol dict 3000000
                  (\n -> openPersistentStore
-                            (filepath (storageDir </> "acceptors") n) >>=
-                        acceptorStore
+                            (filepath (storageDir </> "acceptors" </> name) n)
+                          >>= acceptorStore
                  )
     , persistDirectory  = halonPersistDirectory
-    , leaseTimeout      = 8000000
-    , leaseRenewTimeout = 6000000
+    , leaseTimeout      = 4000000
+    , leaseRenewTimeout = 2000000
     , driftSafetyFactor = 11 % 10
     , snapshotPolicy    = return . (>= snapshotThreshold)
     , snapshotRestoreTimeout = snapshotTimeout
@@ -172,11 +174,12 @@ remotable [ 'composeSV
 
 fromPort :: Typeable st
          => Static (SerializableDict st)
+         -> String
          -> Log.Handle (Command st)
          -> CommandPort st
          -> Process (RLogGroup st)
-fromPort sdictState h port = do
-    return $ RLogGroup sdictState sdictState h port
+fromPort sdictState name h port = do
+    return $ RLogGroup sdictState sdictState name h port
                     ($(mkStatic 'idRStateView) `staticApply` sdictState)
   where
     _ = $(functionSDict 'halonPersistDirectory) -- avoids unused warning
@@ -187,9 +190,9 @@ remotableDecl [ [d|
                  -> SerializableDict st
                  -> Process (RLogGroup st)
  createRLogGroup bs SerializableDict = case decode bs of
-   (sdictState, rHandle) -> do
+   (sdictState, name, rHandle) -> do
       h <- Log.clone rHandle
-      newPort h >>= fromPort sdictState h
+      newPort h >>= fromPort sdictState name h
 
   |] ]
 
@@ -209,72 +212,73 @@ instance RGroup RLogGroup where
   newtype Replica RLogGroup = Replica NodeId
     deriving Binary
 
-  newRGroup sdictState snapshotThreshold snapshotTimeout nodes (st :: s) = do
+  newRGroup sdictState name snapshotThreshold snapshotTimeout nodes (st :: s)
+      = do
     when (null nodes) $ do
       say "RLogGroup: newRGroup was passed an empty list of nodes."
       die "RLogGroup: newRGroup was passed an empty list of nodes."
     let cmSDictState = staticApply $(mkStatic 'commandSerializableDict)
                      $ staticApply $(mkStatic 'mstateTypeableDict) sdictState
-        est = encode st
-    forM_ nodes $ \n -> spawn n $ staticClosure $(mkStatic 'snapshotServer)
+        est = encode (name, st)
+    forM_ nodes $ \n -> spawn n $ $(mkClosure 'snapshotServer) name
     Log.new
          $(mkStatic 'commandEqDict)
          cmSDictState
-         ($(mkClosure 'rgroupConfig) (snapshotThreshold, snapshotTimeout))
+         ($(mkClosure 'rgroupConfig) (name, snapshotThreshold, snapshotTimeout))
          (closure ($(mkStatic 'rgroupLog) `staticApply` sdictState) est)
          nodes
-    h <- Log.spawnReplicas halonLogId
+    h <- Log.spawnReplicas (halonLogId name)
                            $(mkStaticClosure 'halonPersistDirectory)
                            nodes
     rHandle <- Log.remoteHandle (h :: Log.Handle (Command s))
     return $ (closure $(mkStatic 'createRLogGroup)
-                                 $ encode (sdictState, rHandle))
+                                 $ encode (sdictState, name, rHandle))
                         `closureApply` staticClosure sdictState
 
-  spawnReplica (sdictState :: Static (SerializableDict s)) nid = do
-    _ <- spawn nid $ staticClosure $(mkStatic 'snapshotServer)
-    h <- Log.spawnReplicas halonLogId
+  spawnReplica (sdictState :: Static (SerializableDict s)) name nid = do
+    _ <- spawn nid $ $(mkClosure 'snapshotServer) name
+    h <- Log.spawnReplicas (halonLogId name)
                            $(mkStaticClosure 'halonPersistDirectory)
                            [nid]
     rHandle <- Log.remoteHandle (h :: Log.Handle (Command s))
     return $ (closure $(mkStatic 'createRLogGroup)
-                                 $ encode (sdictState, rHandle))
+                                 $ encode (sdictState, name, rHandle))
                         `closureApply` staticClosure sdictState
 
-  killReplica (RLogGroup _ _ h _ _) nid = Log.killReplica h nid
+  killReplica (RLogGroup _ _ _ h _ _) nid = Log.killReplica h nid
 
-  getRGroupMembers (RLogGroup _ _ h _ _) = Log.getMembership h
+  getRGroupMembers (RLogGroup _ _ _ h _ _) = Log.getMembership h
 
-  setRGroupMembers rg@(RLogGroup _ _ h _ _) ns inGroup = do
+  setRGroupMembers rg@(RLogGroup _ _ name h _ _) ns inGroup = do
     say $ "setRGroupMembers: " ++ show ns
     retryRGroup rg 1000000 $ fmap bToM $
       Log.reconfigure h ($(mkClosure 'removeNodes) () `closureApply` inGroup)
     say "setRGroupMembers: removed nodes"
     forM ns $ \nid -> do
       say $ "setRGroupMembers: adding " ++ show nid
-      _ <- spawn nid $ staticClosure $(mkStatic 'snapshotServer)
+      _ <- spawn nid $ $(mkClosure 'snapshotServer) name
       retryRGroup rg 1000000 $ fmap bToM $ Log.addReplica h nid
       return $ Replica nid
 
-  updateRGroup (RLogGroup _ _ h _ _) (Replica ρ) = Log.updateHandle h ρ
+  updateRGroup (RLogGroup _ _ _ h _ _) (Replica ρ) = Log.updateHandle h ρ
 
-  updateStateWith (RLogGroup _ _ _ port rp) cUpd =
+  updateStateWith (RLogGroup _ _ _ _ port rp) cUpd =
     State.update port $ updateClosure rp cUpd
 
-  getState (RLogGroup sdict _ _ port rv) =
+  getState (RLogGroup sdict _ _ _ port rv) =
     select sdict port $ staticClosure $ queryStatic rv
 
-  getStateWith (RLogGroup _ _ _ port rv) cRd =
+  getStateWith (RLogGroup _ _ _ _ port rv) cRd =
     fmap isJust $ select sdictUnit port $
       $(mkStaticClosure 'composeM)
         `closureApply` staticClosure (queryStatic rv)
         `closureApply` cRd
 
-  viewRState rv (RLogGroup _ sdq h port rv') =
-      RLogGroup ($(mkStatic 'rvDict) `staticApply` rv) sdq h port $
+  viewRState rv (RLogGroup _ sdq name h port rv') =
+      RLogGroup ($(mkStatic 'rvDict) `staticApply` rv) sdq name h port $
                 $(mkStatic 'composeSV) `staticApply` rv' `staticApply` rv
 
-  monitorRGroup (RLogGroup _ _ h _ _) = Log.monitorLog h
+  monitorRGroup (RLogGroup _ _ _ h _ _) = Log.monitorLog h
 
 #if ! MIN_VERSION_base(4,7,0)
 -- | The sole purpose of this type is to provide a typeable instance from

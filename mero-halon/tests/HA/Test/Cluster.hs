@@ -23,7 +23,6 @@ import Test.Framework
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
-import Control.Distributed.Static ( closureCompose )
 import Network.Transport
 import Data.List
 
@@ -41,7 +40,6 @@ testServiceStop transport = runTest 2 10 1000000 transport remoteTable $ \[n] ->
   self <- getSelfPid
   -- Startup halon
   let rcClosure = $(mkStaticClosure 'recoveryCoordinator)
-        `closureCompose` $(mkStaticClosure 'ignitionArguments)
   _ <- liftIO $ forkProcess n $ do
         startupHalonNode rcClosure
         usend self ()
@@ -51,7 +49,7 @@ testServiceStop transport = runTest 2 10 1000000 transport remoteTable $ \[n] ->
              , [localNodeId n]
              , 1000 :: Int
              , 1000000 :: Int
-             , $(mkClosure 'recoveryCoordinator) $ ignitionArguments [localNodeId n]
+             , $(mkClosure 'recoveryCoordinator) [localNodeId n]
              , 3*1000000 :: Int
              )
   _  <- liftIO $ forkProcess n $ ignition args >> usend self ()

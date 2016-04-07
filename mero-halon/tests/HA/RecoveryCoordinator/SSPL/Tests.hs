@@ -71,7 +71,8 @@ rGroupTest :: Transport -> (StoreChan -> Process ()) -> IO ()
 rGroupTest transport p =
   tryRunProcessLocal transport myRemoteTable $ do
     nid <- getSelfNode
-    rGroup <- newRGroup $(mkStatic 'mmSDict) 20 1000000 [nid] (defaultMetaInfo, fromList [])
+    rGroup <- newRGroup $(mkStatic 'mmSDict) "mmtest" 20 1000000 [nid]
+                        (defaultMetaInfo, fromList [])
                 >>= unClosure
                 >>= (`asTypeOf` return (undefined :: MC_RG (MetaInfo, Multimap)))
     (_,mmchan) <- startMultimap rGroup id

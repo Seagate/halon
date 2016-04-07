@@ -6,10 +6,6 @@
 -- * Recovery coordinator definitions
 module HA.RecoveryCoordinator.Definitions
     ( HA.RecoveryCoordinator.Definitions.__remoteTable
-    , IgnitionArguments
-    , ignitionArguments
-    , ignitionArguments__sdict
-    , ignitionArguments__static
     , recoveryCoordinator__sdict
     , recoveryCoordinator__static
     , recoveryCoordinator
@@ -26,22 +22,19 @@ import HA.Multimap
 import HA.RecoveryCoordinator.CEP
 import HA.RecoveryCoordinator.Mero
 
-ignitionArguments :: [NodeId] -> IgnitionArguments
-ignitionArguments = IgnitionArguments
-
-recoveryCoordinator :: IgnitionArguments
+recoveryCoordinator :: [NodeId]
                     -> ProcessId
                     -> StoreChan
                     -> Process ()
-recoveryCoordinator argv eq mm =
-    makeRecoveryCoordinator mm eq $ rcRules argv []
+recoveryCoordinator eqs eq mm =
+    makeRecoveryCoordinator mm eq $ rcRules (IgnitionArguments eqs) []
 
 recoveryCoordinatorEx :: () -> [Definitions LoopState ()]
-                      -> IgnitionArguments
+                      -> [NodeId]
                       -> ProcessId
                       -> StoreChan
                       -> Process ()
-recoveryCoordinatorEx _ rules argv eq mm = do
-  makeRecoveryCoordinator mm eq $ rcRules argv rules
+recoveryCoordinatorEx _ rules eqs eq mm = do
+  makeRecoveryCoordinator mm eq $ rcRules (IgnitionArguments eqs) rules
 
-remotable [ 'ignitionArguments, 'recoveryCoordinator, 'recoveryCoordinatorEx ]
+remotable [ 'recoveryCoordinator, 'recoveryCoordinatorEx ]
