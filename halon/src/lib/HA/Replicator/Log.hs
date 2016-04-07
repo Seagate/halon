@@ -65,14 +65,17 @@ import Control.Distributed.Static
 
 import Data.Constraint ( Dict(..) )
 
-import System.FilePath ((</>))
 import Control.Exception ( evaluate )
 import Control.Monad ( when, forM, void, forM_ )
 import Data.Binary ( decode, encode, Binary )
 import Data.ByteString.Lazy ( ByteString )
-import Data.Maybe (isJust)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Ratio ( (%) )
 import Data.Typeable ( Typeable )
+
+import System.Environment (lookupEnv)
+import System.FilePath ((</>))
+import System.IO.Unsafe (unsafePerformIO)
 
 -- | Implementation of RGroups on top of "Control.Distributed.State".
 data RLogGroup st where
@@ -124,8 +127,11 @@ snapshotServer name =
     void $ serializableSnapshotServer (snapshotServerLbl name) $
              filepath $ storageDir </> "replica-snapshots" </> name
 
+{-# NOINLINE storageDir #-}
 storageDir :: FilePath
-storageDir = "halon-persistence"
+storageDir = unsafePerformIO $ do
+  path <- fromMaybe "" <$> lookupEnv "HALON_PERSISTENCE"
+  return $ path </> "halon-persistence"
 
 halonPersistDirectory :: NodeId -> FilePath
 halonPersistDirectory = filepath $ storageDir </> "replicas"

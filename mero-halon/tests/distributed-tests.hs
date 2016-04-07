@@ -9,6 +9,7 @@ module Main where
 import qualified HA.Test.Distributed.Autoboot
 import qualified HA.Test.Distributed.ClusterDeath
 import qualified HA.Test.Distributed.ConfigureServices
+import qualified HA.Test.Distributed.MoveState
 import qualified HA.Test.Distributed.NodeDeath
 import qualified HA.Test.Distributed.RCInsists
 import qualified HA.Test.Distributed.RCInsists2
@@ -34,6 +35,7 @@ tests = testGroup "mero-halon" $ (:[]) $
       [ HA.Test.Distributed.Autoboot.test
       , HA.Test.Distributed.ClusterDeath.test
       , HA.Test.Distributed.ConfigureServices.test
+      , HA.Test.Distributed.MoveState.test
       , HA.Test.Distributed.NodeDeath.test
       , HA.Test.Distributed.RCInsists.test
       , HA.Test.Distributed.RCInsists2.test
