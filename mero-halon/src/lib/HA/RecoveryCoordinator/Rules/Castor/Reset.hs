@@ -12,6 +12,7 @@ import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
   ( LoopState
   , messageProcessed
+  , PendingNotification
   , promulgateRC
   , syncGraph
   , unlessM
@@ -50,12 +51,13 @@ import Control.Distributed.Process
 import Control.Monad
   ( forM_
   , when
-  , unless
+  , join
   )
 
 import Data.Binary (Binary)
-import Data.Foldable (for_)
+import Data.Maybe (catMaybes)
 import Data.Text (Text, pack)
+import Data.Traversable (for)
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -100,13 +102,14 @@ newtype ResetFailure =
 --   Called whenever a drive changes state. This function is
 --   responsible for potentially starting a reset attempt on
 --   one or more drives.
-handleReset :: Set -> PhaseM LoopState l Set
-handleReset (Set ns) = do
-  for_ ns $ \(Note mfid tpe) -> do
+handleReset :: ([PendingNotification], Set)
+            -> PhaseM LoopState l ([PendingNotification], Set)
+handleReset (pn, (Set ns)) = do
+  dns <- for ns $ \(Note mfid tpe) -> do
     case tpe of
       _ | tpe == M0_NC_FAILED || tpe == M0_NC_TRANSIENT -> do
         sdevm <- lookupConfObjByFid mfid
-        for_ sdevm $ \m0sdev -> do
+        mpending <- for sdevm $ \m0sdev -> do
           msdev <- lookupStorageDevice m0sdev
           case msdev of
             Just sdev -> do
@@ -116,18 +119,20 @@ handleReset (Set ns) = do
               case (\(StorageDeviceStatus s _) -> s) <$> mstatus of
                 Just "EMPTY" -> do
                    phaseLog "info" "drive is physically removed, skipping reset"
-                   return ()
+                   return Nothing
                 _ -> do
                   mst <- queryObjectStatus m0sdev
-                  unless (mst == Just M0_NC_FAILED) $ do
+                  if not $ mst == Just M0_NC_FAILED
+                  then do
                     ongoing <- hasOngoingReset sdev
-                    when (not ongoing) $ do
+                    if not ongoing
+                    then do
                       ratt <- getDiskResetAttempts sdev
                       let status = if ratt <= resetAttemptThreshold
                                    then M0_NC_TRANSIENT
                                    else M0_NC_FAILED
 
-                      updateDriveState m0sdev status
+                      pending <- updateDriveState (status == M0_NC_FAILED) m0sdev status
 
                       when (status == M0_NC_FAILED) $ do
                         notifyDriveStateChange m0sdev status
@@ -138,17 +143,22 @@ handleReset (Set ns) = do
                         promulgateRC $ ResetAttempt sdev
 
                       syncGraph $ say "handleReset synchronized"
+                      return pending
+                    else return Nothing
+                  else return Nothing
             _ -> do
               phaseLog "warning" $ "Cannot find all entities attached to M0"
                                 ++ " storage device: "
                                 ++ show m0sdev
                                 ++ ": "
                                 ++ show msdev
-      _ -> return () -- Should we do anything here?
-
+              return Nothing
+        return $ join mpending
+      _ -> return Nothing -- Should we do anything here?
+  let delayedNotifications = catMaybes dns
   -- return the whole note 'Set': SNS repair is interested in the
   -- messages we have received so don't consume anything here.
-  return $ Set ns
+  return $ (pn ++ reverse delayedNotifications, Set ns)
 
 ruleResetAttempt :: Definitions LoopState ()
 ruleResetAttempt = define "reset-attempt" $ do
@@ -225,7 +235,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         markSMARTTestComplete sdev
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
-          updateDriveState m0sdev M0_NC_ONLINE
+          _ <- updateDriveState True m0sdev M0_NC_ONLINE
           notifyDriveStateChange m0sdev M0_NC_ONLINE
         messageProcessed eid
         continue end
@@ -241,7 +251,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
-          updateDriveState m0sdev M0_NC_FAILED
+          _ <- updateDriveState True m0sdev M0_NC_FAILED
           -- Let note handler deal with repair logic
           notifyDriveStateChange m0sdev M0_NC_FAILED
         continue end

@@ -55,6 +55,7 @@ import Control.Monad (forM, unless, void)
 import Data.Foldable (forM_, traverse_)
 import Data.Proxy
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
+import Data.Monoid (mempty)
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
@@ -84,7 +85,8 @@ noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= \case
 
 -- | Run currently registered 'lsStateChangeHandlers' on the given
 -- 'Set'. Returns the 'Set' with any remaining 'Note's.
-runStateChangeHandlers :: Set -> PhaseM LoopState l Set
+runStateChangeHandlers :: ([PendingNotification], Set)
+                       -> PhaseM LoopState l ([PendingNotification], Set)
 runStateChangeHandlers noteSet = do
   stateChangeHandlers <- lsStateChangeHandlers <$> get Global
   runM stateChangeHandlers noteSet
@@ -102,14 +104,19 @@ runStateChangeHandlers noteSet = do
 -- 'updateDriveState' which performs the actual update.
 notifyDriveStateChange :: M0.SDev -> M0.ConfObjectState -> PhaseM LoopState l ()
 notifyDriveStateChange m0sdev st =
-  void . runStateChangeHandlers $ Set [Note (M0.fid m0sdev) st]
+  void . runStateChangeHandlers $ (mempty, Set [Note (M0.fid m0sdev) st])
 
-updateDriveState :: M0.SDev -- ^ Drive to update state
+-- | Update the 'M0.ConfObjectState' of the given 'M0.SDev' and its
+-- coresponding 'M0.Disk's. If we ask to send a notification as well,
+-- 'notifyMero' about the change otherwise return
+-- 'PendingNotification' we can 'sendPending' at later time.
+updateDriveState :: Bool -- ^ Send the notification to mero?
+                 -> M0.SDev -- ^ Drive to update state
                  -> M0.ConfObjectState -- ^ State to update to
-                 -> PhaseM LoopState l ()
+                 -> PhaseM LoopState l (Maybe PendingNotification)
 
 -- | For transient failures, we may need to create a new pool version.
-updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
+updateDriveState send m0sdev M0.M0_NC_TRANSIENT = do
   -- Update state in RG
   modifyGraph $ G.connectUniqueFrom m0sdev Is M0.M0_NC_TRANSIENT
   graph <- getLocalGraph
@@ -127,10 +134,13 @@ updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
       syncAction Nothing M0.SyncToConfdServersInRG
   -- Notify Mero
   let m0objs = M0.AnyConfObj <$> m0disks
-  notifyMero (M0.AnyConfObj m0sdev:m0objs) M0.M0_NC_TRANSIENT
+  if send
+    then do notifyMero (M0.AnyConfObj m0sdev:m0objs) M0.M0_NC_TRANSIENT
+            return Nothing
+    else return $ Just (M0.AnyConfObj m0sdev:m0objs, M0.M0_NC_TRANSIENT)
 
 -- | For all other states, we simply update in the RG and notify Mero.
-updateDriveState m0sdev x = do
+updateDriveState send m0sdev x = do
   phaseLog "rg" $ "Updating status of SDev "
                 ++ show m0sdev
                 ++ " to "
@@ -147,7 +157,10 @@ updateDriveState m0sdev x = do
   syncGraph (return ())
   -- Notify Mero
   let m0objs = M0.AnyConfObj <$> m0disks
-  notifyMero (M0.AnyConfObj m0sdev:m0objs) x
+  if send
+    then do notifyMero (M0.AnyConfObj m0sdev:m0objs) x
+            return Nothing
+    else return $ Just (M0.AnyConfObj m0sdev:m0objs, x)
 
 -- | RMS service address.
 rmsAddress :: String

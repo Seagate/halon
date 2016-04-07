@@ -21,6 +21,7 @@ import           Control.Monad
 import qualified Data.Binary as B
 import           Data.Foldable
 import qualified Data.HashSet as S
+import           Data.List (partition)
 import qualified Data.Map as M
 import           Data.Maybe (catMaybes, fromMaybe)
 import           Data.Monoid ((<>))
@@ -349,7 +350,7 @@ completeRepair pool prt muid = do
                 -- Update pool and drive states, startRebalanceOperation
                 -- will notify mero
                 rg <- getLocalGraph
-                mapM_ (flip updateDriveState M0_NC_REBALANCE)
+                mapM_ (flip (updateDriveState True) M0_NC_REBALANCE)
                    $ filter (isReplaced rg) sdevs
                 startRebalanceOperation pool
                 queryStartHandling pool
@@ -387,8 +388,9 @@ completeRepair pool prt muid = do
 -- TODO: Currently we don't handle a case where we have pool
 -- information in the message set but also some disks which belong to
 -- a different pool.
-handleRepair :: Set -> PhaseM LoopState l Set
-handleRepair noteSet = do
+handleRepair :: ([PendingNotification], Set)
+             -> PhaseM LoopState l ([PendingNotification], Set)
+handleRepair (pn, noteSet) = do
   (unused, pset) <- processSet noteSet
   case pset of
     -- Handle information from messages that didn't include pool
@@ -443,7 +445,16 @@ handleRepair noteSet = do
       processPoolInfo pool st m
     UnknownSet st -> do
       phaseLog "warn" $ "Could not classify " ++ show st
-  return unused
+  -- We had a chance to quiesce repair, notify about any TRANSIENT and
+  -- move on without them.
+  -- TODO: check that the TRANSIENT is for drives
+  -- TODO: let quiesce repair check that the drives are in the pool
+  -- being quiesced
+  -- TODO: remove this ugly hack all together
+  let (tr, ntr) = partition ((== M0_NC_TRANSIENT) . snd) pn
+  mapM_ sendPending tr
+
+  return (ntr, unused)
 
 -- | We have received information about a pool state change (as well
 -- as some devices) so handle this here. Such a notification is likely

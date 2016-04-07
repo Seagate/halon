@@ -36,6 +36,7 @@ module HA.Services.Mero
     , notifyMero
     , notifyMeroBlocking
     , notifyMeroAndThen
+    , sendPending
     ) where
 
 import HA.EventQueue.Producer (expiate, promulgate, promulgateWait)
@@ -396,6 +397,10 @@ notifyMero cs st = do
     getFid (M0.AnyConfObj a) = M0.fid a
     setEvent :: Mero.Notification.Set
     setEvent = Mero.Notification.Set $ map (flip Note st . getFid) cs
+
+-- | Sends a 'PendingNotification' through 'notifyMero'.
+sendPending :: PendingNotification -> PhaseM LoopState l ()
+sendPending = uncurry notifyMero
 
 lookupMeroChannelByNode :: Node -> PhaseM LoopState l (Maybe (TypedChannel NotificationMessage))
 lookupMeroChannelByNode node = do

@@ -14,6 +14,9 @@ module HA.RecoveryCoordinator.Actions.Core
   , putLocalGraph
   , modifyGraph
   , modifyLocalGraph
+#ifdef USE_MERO
+  , PendingNotification
+#endif
     -- * Operating on the graph
   , getMultimapChan
   , syncGraph
@@ -82,6 +85,8 @@ import Control.Monad (when, unless)
 import Control.Distributed.Process.Serializable
 #ifdef USE_MERO
 import Mero.Notification (Set)
+import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
 #endif
 
 import Data.Typeable (Typeable)
@@ -90,6 +95,10 @@ import Data.Proxy
 import qualified Data.Map.Strict as Map
 
 import Network.CEP
+
+#ifdef USE_MERO
+type PendingNotification = ([M0.AnyConfObj], M0.ConfObjectState)
+#endif
 
 data LoopState = LoopState {
     lsGraph    :: G.Graph -- ^ Graph
@@ -100,7 +109,9 @@ data LoopState = LoopState {
   , lsRefCount :: Map.Map UUID Int
     -- ^ Set of HAEvent uuid we've already handled.
 #ifdef USE_MERO
-  , lsStateChangeHandlers :: forall l. [Set -> PhaseM LoopState l Set]
+  , lsStateChangeHandlers :: forall l.
+                             [([PendingNotification], Set)
+                          -> PhaseM LoopState l ([PendingNotification], Set)]
 #endif
   , lsStorage :: !Storage.Storage -- ^ Global ephimeral storage.
 }
