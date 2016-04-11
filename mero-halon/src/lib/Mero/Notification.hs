@@ -248,6 +248,13 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
                      GetReply nvec <- expect
                      return nvec
              >>= \nvec -> do
+                    let got_fids = map (\(Note x _) -> x) nvec
+                        missing = filter (\f -> not $ f `elem` got_fids) fids
+                    say $ unlines [ "EntryPoint: "
+                                  , " requested: " ++ show fids
+                                  , " got:       " ++ show nvec
+                                  , " missing:   " ++ show missing
+                                  ]
                     liftIO $ updateNVecRef nvecr nvec
                     liftGlobalM0 $ doneGet nvecr 0
         Nothing -> do
