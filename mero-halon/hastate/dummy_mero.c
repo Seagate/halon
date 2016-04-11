@@ -72,7 +72,6 @@ int main(int argc,char** argv) {
         return 0;
     }
 
-    m0_node_uuid_string_set(NULL);
     m0_init_wrapper();
     rc = rpc_init();
     if (rc) {

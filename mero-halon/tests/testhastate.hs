@@ -50,19 +50,17 @@ tryIO = try
 
 main :: IO ()
 main = withMeroRoot $ \meroRoot -> getArgs >>= \args ->
+  let sbdir = "SANDBOX_DIR=/var/mero/sandbox.mero-halon-st" in
   (if notElem "--noscript" args then
-    bracket_ (callCommand "sudo systemctl start mero-mkfs")
-             (do threadDelay $ 2*1000000
-                 _ <- tryIO $ callCommand "sudo systemctl stop mero-mkfs"
-                 return ()
-             ) .
-    bracket_ (callCommand "sudo systemctl start mero")
+    bracket_ (callCommand $ "sudo " ++ sbdir ++ " " ++ meroRoot ++ "/conf/st sstart")
     (do threadDelay $ 2*1000000
-        _ <- tryIO $ callCommand "sudo systemctl stop mero"
+        _ <- tryIO $ callCommand $ "sudo " ++ sbdir ++ " " ++ meroRoot ++ "/conf/st sstop"
         threadDelay $ 2*1000000
         -- XXX: workaround for a bug in a mero test suite.
         _ <- tryIO $ callCommand $ "killall -9 lt-m0d"
         threadDelay $ 2*1000000
+        _ <- tryIO $ callCommand $ "sudo " ++ sbdir ++ " " ++ meroRoot ++ "/conf/st rmmod"
+        return ()
     )
     else id
   ) $
@@ -70,7 +68,7 @@ main = withMeroRoot $ \meroRoot -> getArgs >>= \args ->
   (take 1 . lines <$> readProcess "sudo" ["lctl", "list_nids"] "")
   >>= \[testNid] ->
   let dummyMeroAddress = testNid ++ ":12345:34:2"
-      confdAddress = testNid ++ ":12345:44:101"
+      confdAddress = testNid ++ ":12345:34:1001"
       halonAddress = testNid ++ ":12345:34:3"
   in
   (do
