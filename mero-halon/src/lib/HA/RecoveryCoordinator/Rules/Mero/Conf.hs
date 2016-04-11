@@ -20,7 +20,7 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
   , genericApplyDeferredStateChanges
   , genericApplyStateChanges
     -- * Re-export for convenience
-  , AnyStateSet(..)
+  , AnyStateSet
   , stateSet
     -- * Temporary functions
   , applyStateChangesBlocking
@@ -29,6 +29,9 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
   , InternalNotificationHandlers(..)
     -- * Rule helpers
   , setPhaseNotified
+  , setPhaseAllNotified
+  , setPhaseInternalNotification
+  , setPhaseInternalNotificationWithState
   )  where
 
 import HA.Encode (decodeP, encodeP)
@@ -36,7 +39,6 @@ import HA.EventQueue.Producer (promulgate)
 import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Actions.Castor
 import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Mero.Conf
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Events.Mero
@@ -59,17 +61,17 @@ import Control.Monad.Fix (fix)
 
 import Data.Constraint (Dict)
 import Data.Foldable (forM_)
-import Data.Traversable (mapAccumL)
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, mapMaybe)
 import Data.Monoid
+import Data.Traversable (mapAccumL)
 import Data.Typeable
+import Data.UUID (UUID)
 import Data.List (nub, genericLength)
 import Data.Either (lefts)
 import Data.Functor (void)
 import Data.Word
 
 import Network.CEP
-
 
 -- | Type wrapper for external notification handlers, to be used for
 -- keeping handlers in Storage.
@@ -278,6 +280,8 @@ applyStateChangesBlocking ass = do
 -- is received: effectively inside this rule we know that we have
 -- notified mero about the change. @extract@ is used as a view from
 -- local rule state to the object we're interested in.
+--
+-- TODO: Do we need to handle UUID here?
 setPhaseNotified :: forall b l g.
                     (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
                  => Jump PhaseHandle
@@ -296,7 +300,68 @@ setPhaseNotified handle extract act =
         if stateSet obj change `elem` map extractStateSet iosc
         then return $ Just (obj, change)
         else return Nothing
-    changeGuard _ _ l = return Nothing
+    changeGuard _ _ _ = return Nothing
+
+-- | Similar to 'setPhaseNotified' but works on a set of notifications
+-- rather than a singular one.
+--
+-- TODO: Use generic implementation for both and just specialise.
+-- TODO: Do we need to handle UUID here?
+setPhaseAllNotified :: forall l g. Jump PhaseHandle
+                    -> (l -> Maybe [AnyStateSet])
+                    -> PhaseM g l () -- ^ Callback when set has been notified
+                    -> RuleM g l ()
+setPhaseAllNotified handle extract act =
+  setPhaseIf handle changeGuard (\() -> act)
+  where
+    extractStateSet (AnyStateChange a _ n _) = stateSet a n
+
+    changeGuard :: HAEvent InternalObjectStateChangeMsg
+                -> g -> l -> Process (Maybe ())
+    changeGuard (HAEvent _ msg _) _ (extract -> Just notificationSet) =
+      (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) -> do
+        let internalStateSet = map extractStateSet iosc
+        if all (`elem` internalStateSet) notificationSet
+        then return $ Just ()
+        else return Nothing
+    changeGuard _ _ _ = return Nothing
+
+-- | As 'setPhaseInternalNotificationWithState', accepting all object states.
+setPhaseInternalNotification :: forall b l g.
+                                (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
+                                => Jump PhaseHandle
+                                -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM g l ())
+                                -> RuleM g l ()
+setPhaseInternalNotification handle act =
+  setPhaseInternalNotificationWithState handle (const True) act
+
+-- | Given a predicate on object state, retrieve all objects and
+-- states satisfying the predicate from the internal state change
+-- notification.
+setPhaseInternalNotificationWithState :: forall b l g.
+                                      (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
+                                      => Jump PhaseHandle
+                                      -> (M0.StateCarrier b -> Bool)
+                                      -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM g l ())
+                                      -> RuleM g l ()
+setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGuard act
+  where
+    extractStateSet (AnyStateChange a _ n _) = stateSet a n
+
+    getObj :: AnyStateSet -> Maybe (b, M0.StateCarrier b)
+    getObj (AnyStateSet a n) = (,) <$> cast a <*> cast n
+
+    changeGuard :: HAEvent InternalObjectStateChangeMsg
+                -> g -> l -> Process (Maybe (UUID, [(b, M0.StateCarrier b)]))
+    changeGuard (HAEvent eid msg _) _ _ =
+      (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) ->
+        case mapMaybe getObjP iosc of
+          [] -> return Nothing
+          objs -> return $ Just (eid, objs)
+
+    getObjP x = case getObj $ extractStateSet x of
+      obj@(Just (_, st)) | p st -> obj
+      _ -> Nothing
 
 -- | Rule for cascading state changes
 data StateCascadeRule a b where

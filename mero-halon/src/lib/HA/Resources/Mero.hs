@@ -227,6 +227,19 @@ data Service = Service {
   , s_params :: ServiceParams
 } deriving (Eq, Generic, Show, Typeable)
 
+-- | Service state. This is a generalisation of what might be reported to Mero.
+data ServiceState =
+    SSUnknown -- ^ Service state is not known.
+  | SSOffline -- ^ Service is stopped.
+  | SSFailed -- ^ Service has failed.
+  | SSOnline -- ^ Service is running OK.
+  | SSStarting
+  | SSInhibited ServiceState -- ^ Service state is masked by a higher level
+                             --   failure.
+  deriving (Eq, Show, Typeable, Generic)
+instance Binary ServiceState
+instance Hashable ServiceState
+
 instance Binary Service
 instance Hashable Service
 instance ConfObj Service where
@@ -396,11 +409,19 @@ data HostHardwareInfo = HostHardwareInfo
 instance Binary HostHardwareInfo
 instance Hashable HostHardwareInfo
 
+-- | Alias for process ID. In glibc @pid_t = int@.
+newtype PID = PID Int
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary PID
+instance Hashable PID
+
 -- | Process state. This is a generalisation of what might be reported to Mero.
 data ProcessState =
     PSUnknown -- ^ Process state is not known.
   | PSOffline -- ^ Process is stopped.
-  | PSStarting -- ^ Process is starting but we have not confirmed started.
+  | PSStarting
+    -- ^ Process is starting but we have not confirmed started.
   | PSOnline
   | PSStopping
   | PSFailed String -- ^ Process has failed, with reason given
@@ -470,14 +491,13 @@ instance Ord MeroClusterState where
                    LT -> GT
                    EQ -> EQ
 
--- | A message we can use to notify rule listeners about a failed
--- process. Useful for sending information that something is wrong
--- from handlers/services.
-newtype ProcessFailedNotification = ProcessFailedNotification String
+-- | A message we can use to notify bootstrap that mero-kernel failed
+-- to start.
+newtype MeroKernelFailed = MeroKernelFailed String
   deriving(Eq, Show, Typeable, Generic)
 
-instance Binary ProcessFailedNotification
-instance Hashable ProcessFailedNotification
+instance Binary MeroKernelFailed
+instance Hashable MeroKernelFailed
 
 newtype ConfUpdateVersion = ConfUpdateVersion Word64
   deriving (Eq, Show, Typeable, Generic)
@@ -505,7 +525,7 @@ $(mkDicts
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''MeroClusterState, ''ProcessBootstrapped
-  , ''ProcessState, ''DiskFailureVector
+  , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -549,8 +569,10 @@ $(mkDicts
   , (''R.Host, ''R.Has, ''LNid)
   , (''R.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
+  , (''Process, ''R.Has, ''PID)
   , (''Process, ''R.Is, ''ProcessBootstrapped)
   , (''Process, ''R.Is, ''ProcessState)
+  , (''Service, ''R.Is, ''ServiceState)
   ]
   )
 
@@ -561,7 +583,7 @@ $(mkResRel
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''MeroClusterState, ''ProcessBootstrapped
-  , ''ProcessState, ''DiskFailureVector
+  , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -605,8 +627,10 @@ $(mkResRel
   , (''R.Host, ''R.Has, ''LNid)
   , (''R.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
+  , (''Process, ''R.Has, ''PID)
   , (''Process, ''R.Is, ''ProcessBootstrapped)
   , (''Process, ''R.Is, ''ProcessState)
+  , (''Service, ''R.Is, ''ServiceState)
   ]
   []
   )
@@ -615,11 +639,17 @@ $(mkResRel
 -- 'M0.Profile's.
 getM0Services :: G.Graph -> [Service]
 getM0Services g =
-  [ sv | (prof :: Profile) <- G.connectedTo R.Cluster R.Has g
+  [ sv | p <- getM0Processes g
+       , sv <- G.connectedTo p IsParentOf g
+  ]
+
+-- | Get all 'Process' running on the 'Cluster', starting at 'Profile's.
+getM0Processes :: G.Graph -> [Process]
+getM0Processes g =
+  [ p | (prof :: Profile) <- G.connectedTo R.Cluster R.Has g
        , (fs :: Filesystem) <- G.connectedTo prof IsParentOf g
        , (node :: Node) <- G.connectedTo fs IsParentOf g
-       , (p :: Process) <- G.connectedTo node IsParentOf g
-       , sv <- G.connectedTo p IsParentOf g
+       , p <- G.connectedTo node IsParentOf g
   ]
 
 -- | Lookup a configuration object in the resource graph.
@@ -631,3 +661,9 @@ lookupConfObjByFid f =
     listToMaybe
   . filter ((== f) . fid)
   . G.getResourcesOfType
+
+-- | Lookup 'Node' associated with the given 'R.Node'.
+m0nodeToNode :: Node -> G.Graph -> Maybe R.Node
+m0nodeToNode m0node rg = listToMaybe
+  [ node | (h :: R.Host) <- G.connectedFrom R.Runs m0node rg
+         , node <- G.connectedTo h R.Runs rg ]

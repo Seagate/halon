@@ -131,7 +131,7 @@ msgHandler chan msg = do
             say $ "[SSPL-Service] received " ++ s
             promulgate (nid, x)
           ignoreMessage s f = forM_ (f srms) $ \_ -> do
-            saySSPL $ s ++ "is not used by RC, ignoring"
+            saySSPL $ s ++ " is not used by RC, ignoring."
       sendMessage "SensorResponse.HPI"
         sensorResponseMessageSensor_response_typeDisk_status_hpi
       ignoreMessage "SensorResponse.IF"
@@ -140,7 +140,7 @@ msgHandler chan msg = do
         sensorResponseMessageSensor_response_typeHost_update
       sendMessage "SensorResponse.DriveManager"
          sensorResponseMessageSensor_response_typeDisk_status_drivemanager
-      ignoreMessage "SensorResponse.Watchdog"
+      sendMessage "SensorResponse.Watchdog"
          sensorResponseMessageSensor_response_typeService_watchdog
       ignoreMessage "SensorResponse.MountData"
          sensorResponseMessageSensor_response_typeLocal_mount_data

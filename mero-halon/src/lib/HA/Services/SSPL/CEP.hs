@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE CPP                 #-}
 
 module HA.Services.SSPL.CEP where
@@ -16,12 +17,17 @@ import HA.Service hiding (configDict)
 import HA.Services.SSPL.IEM
 import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
+
 import HA.RecoveryCoordinator.Events.Drive
 import HA.ResourceGraph
 import HA.Resources (Cluster(..), Node(..), Has(..))
 import HA.Resources.Castor
 #ifdef USE_MERO
+import HA.RecoveryCoordinator.Rules.Mero.Conf
+import qualified HA.Resources.Mero as M0
+import Mero.ConfC (strToFid)
 import Mero.Notification
+import Text.Read (readMaybe)
 #endif
 
 import SSPL.Bindings
@@ -215,6 +221,9 @@ ssplRulesF sspl = sequence_
   , ruleThreadController
   , ruleSSPLTimeout sspl
   , ruleSSPLConnectFailure
+#ifdef USE_MERO
+  , ruleMonitorServiceRestart
+#endif
   ]
 
 ruleDeclareChannels :: Definitions LoopState ()
@@ -366,6 +375,70 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nodeI
              _ -> return (Just sd)
       forM_ msd $ \sd -> void $ attachStorageDeviceReplacement sd [sn, wwn, idx]
       syncGraphProcessMsg uuid
+
+#ifdef USE_MERO
+-- | Handle SSPL message about a service restart.
+ruleMonitorServiceRestart :: Definitions LoopState ()
+ruleMonitorServiceRestart = defineSimple "monitor-service-restart" $ \(HAEvent uuid (_ :: NodeId, watchdogmsg) _) -> do
+  phaseLog "info" $ "Received SSPL message about service restart: " ++ show watchdogmsg
+  let currentState = sensorResponseMessageSensor_response_typeService_watchdogService_state watchdogmsg
+      prevState = sensorResponseMessageSensor_response_typeService_watchdogPrevious_service_state watchdogmsg
+      serviceName = sensorResponseMessageSensor_response_typeService_watchdogService_name watchdogmsg
+      -- assume we have ‘service@fid.service’ format
+      mprocessFid = strToFid . T.unpack . T.takeWhile (/= '.') . T.drop 1
+                    $ T.dropWhile (/= '@') serviceName
+      mcurrentPid = readMaybe . T.unpack
+                    $ sensorResponseMessageSensor_response_typeService_watchdogPid watchdogmsg
+      mpreviousPid = readMaybe . T.unpack
+                     $ sensorResponseMessageSensor_response_typeService_watchdogPrevious_pid watchdogmsg
+
+
+  case (,,,,) <$> mprocessFid <*> mcurrentPid <*> mpreviousPid <*> pure currentState <*> pure prevState of
+    Nothing -> phaseLog "warn" $ "Couldn't parse " ++ show (mprocessFid, mcurrentPid, mpreviousPid)
+    _ | mpreviousPid == mcurrentPid -> phaseLog "warn" $
+          "Previous and current PIDs are the same, ignoring message"
+    Just (processFid, currentPid, _previousPid, "active", "inactive") -> do
+      svs <- M0.getM0Processes <$> getLocalGraph
+      phaseLog "info" $ "Looking for fid " ++ show processFid ++ " in " ++ show svs
+      let markStarting p = do
+            phaseLog "info" $ "Marking " ++ show p ++ " as starting."
+            modifyLocalGraph $ return . connectUniqueFrom p Has (M0.PID currentPid)
+            applyStateChanges [stateSet p M0.PSStarting]
+      case listToMaybe $ filter (\p -> M0.r_fid p == processFid) svs of
+        Nothing -> phaseLog "warn" $ "Couldn't find process with fid " ++ show processFid
+        Just p -> do
+          rg <- getLocalGraph
+          case (listToMaybe $ connectedTo p Is rg, listToMaybe $ connectedTo p Has rg) of
+            -- Process online, mark as FAILED and wait for ONLINE from mero
+            (Just M0.PSOnline, Nothing) -> do
+              phaseLog "warn" $ "SSPL restart notification for online process without PID"
+              markStarting p
+
+            (Just M0.PSOnline, Just (M0.PID pid))
+              | currentPid == pid -> do
+                  phaseLog "warn" $
+                   "Restart notification for already handled process, do nothing"
+              | otherwise -> do
+                  phaseLog "info" $ "Restart notification for new pid"
+                  markStarting p
+            -- Process starting with no PID, needs MERO-1666
+            (Just M0.PSStarting, Nothing) -> markStarting p
+            -- Process starting with pid, must have gotten ONLINE from
+            -- mero first and now getting SSPL part of restart, mark online
+            (Just M0.PSStarting, Just (M0.PID pid))
+              | pid == currentPid -> do
+                  phaseLog "info" $ "Received second part of restart for " ++ show p
+                  applyStateChanges [stateSet p M0.PSOnline]
+              | otherwise -> do
+                  phaseLog "warn" $
+                    "Was already waiting for notification for PID " ++ show pid
+                  markStarting p
+            s -> phaseLog "warn" $
+                 "Restart notification for process with state " ++ show s
+    Just msg -> do
+      phaseLog "info" $ "Process notification but not restarting: " ++ show msg
+  messageProcessed uuid
+#endif
 
 -- | SSPL Monitor host_update
 ruleMonitorHostUpdate :: Definitions LoopState ()

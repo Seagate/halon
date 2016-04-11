@@ -4,7 +4,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module HA.RecoveryCoordinator.Events.Castor.Cluster
-  ( 
+  (
   -- * Requests
     ClusterStatusRequest(..)
   , ClusterStartRequest(..)
@@ -62,7 +62,7 @@ data ReportClusterState = ReportClusterState
 instance Binary ReportClusterState
 
 data ReportClusterHost = ReportClusterHost
-      { crnNodeStatus :: M0.StateCarrier M0.Node 
+      { crnNodeStatus :: M0.StateCarrier M0.Node
       , crnProcesses  :: [(M0.Process, ReportClusterProcess)]
       , crpDevices    :: [(M0.SDev, M0.StateCarrier M0.SDev)]
       } deriving (Eq, Show, Typeable, Generic)
@@ -71,7 +71,7 @@ instance Binary ReportClusterHost
 
 data ReportClusterProcess = ReportClusterProcess
       { crpState    :: M0.ProcessState
-      , crpServices :: [M0.Service]
+      , crpServices :: [(M0.Service, M0.ServiceState)]
       } deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ReportClusterProcess

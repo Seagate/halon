@@ -32,6 +32,7 @@ Library
                      , hashable
                      , inline-c
                      , rpclite
+                     , text
 
   -- cc-options aren't used when compiling Haskell files, and this is necessary
   -- for using CApiFFI, thus we need to pass those options here as well

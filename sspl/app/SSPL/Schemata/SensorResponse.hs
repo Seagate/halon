@@ -168,6 +168,7 @@ schema = [schemaQQ|
               }
             },
 
+
             "service_watchdog": {
               "type": "object",
               "properties": {
@@ -183,6 +184,26 @@ schema = [schemaQQ|
                 },
                 "previous_service_state": {
                   "description": "Previous state of the service",
+                  "type": "string",
+                  "required": true
+                },
+                "service_substate": {
+                  "description": "Current substate of the service",
+                  "type": "string",
+                  "required": true
+                },
+                "previous_service_substate": {
+                  "description": "Previous substate of the service",
+                  "type": "string",
+                  "required": true
+                },
+                "pid": {
+                  "description": "Current PID of the service",
+                  "type": "string",
+                  "required": true
+                },
+                "previous_pid": {
+                  "description": "Previous PID of the service",
                   "type": "string",
                   "required": true
                 }

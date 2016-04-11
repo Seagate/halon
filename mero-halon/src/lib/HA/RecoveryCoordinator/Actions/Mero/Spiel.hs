@@ -53,7 +53,6 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (ConfObjectState(..), setState)
 
 import Mero.ConfC
   ( PDClustAttr(..)

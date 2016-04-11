@@ -7,11 +7,7 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module HA.Castor.Story.Tests (mkTests
-#ifdef USE_MERO
- , testDynamicPVer
-#endif
- ) where
+module HA.Castor.Story.Tests where
 
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
@@ -153,17 +149,18 @@ mkTests = do
 
 run :: Transport
     -> (ProcessId -> String -> Process ()) -- interceptor callback
+    -> [Definitions LoopState ()]
     -> (    TestArgs
          -> ProcessId
          -> ReceivePort NotificationMessage
          -> Process ()
        ) -- actual test
     -> Assertion
-run transport interceptor test =
+run transport interceptor rules test =
   runTest 2 20 15000000 transport myRemoteTable $ \[n] -> do
     self <- getSelfPid
     nid <- getSelfNode
-    withTrackingStation [testRules] $ \ta -> do
+    withTrackingStation (testRules:rules) $ \ta -> do
       nodeUp ([nid], 1000000)
       registerInterceptor $ \string ->
         case string of
@@ -432,7 +429,7 @@ smartTestComplete recv success (sdev,serial) = let
 --------------------------------------------------------------------------------
 
 testDiskFailure :: Transport -> IO ()
-testDiskFailure transport = run transport interceptor test where
+testDiskFailure transport = run transport interceptor [] test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
@@ -444,7 +441,7 @@ testDiskFailure transport = run transport interceptor test where
     smartTestComplete recv AckReplyPassed sdev
 
 testHitResetLimit :: Transport -> IO ()
-testHitResetLimit transport = run transport interceptor test where
+testHitResetLimit transport = run transport interceptor [] test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
@@ -471,7 +468,7 @@ testHitResetLimit transport = run transport interceptor test where
     return ()
 
 testFailedSMART :: Transport -> IO ()
-testFailedSMART transport = run transport interceptor test where
+testFailedSMART transport = run transport interceptor [] test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
@@ -483,7 +480,7 @@ testFailedSMART transport = run transport interceptor test where
     smartTestComplete recv AckReplyFailed sdev
 
 testSecondReset :: Transport -> IO ()
-testSecondReset transport = run transport interceptor test where
+testSecondReset transport = run transport interceptor [] test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
@@ -571,7 +568,7 @@ testSMARTNoResponse transport = run transport interceptor test where
 
 -- | SSPL emits EMPTY_None event for one of the drives.
 testDriveRemovedBySSPL :: Transport -> IO ()
-testDriveRemovedBySSPL transport = run transport interceptor test where
+testDriveRemovedBySSPL transport = run transport interceptor [] test where
   interceptor _rc _str = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
@@ -601,7 +598,7 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
 -- | Test that we generate an appropriate pool version in response to
 --   failure of a drive, when using 'Dynamic' strategy.
 testDynamicPVer :: Transport -> IO ()
-testDynamicPVer transport = run transport interceptor test where
+testDynamicPVer transport = run transport interceptor [] test where
   interceptor _ _ = return ()
   checkPVerExistence rg fids yes = let
       msg = if yes
@@ -644,7 +641,7 @@ testDynamicPVer transport = run transport interceptor test where
 -- | Test that we respond correctly to a notification that a RAID device
 --   has failed by sending an IEM.
 testMetadataDriveFailed :: Transport -> IO ()
-testMetadataDriveFailed transport = run transport interceptor test where
+testMetadataDriveFailed transport = run transport interceptor [] test where
   interceptor _rc _str = return ()
   test (TestArgs _ _ rc) rmq _ = do
     usend rmq $ MQBind "halon_sspl" "halon_sspl" "sspl_ll"
@@ -665,7 +662,7 @@ testMetadataDriveFailed transport = run transport interceptor test where
     debug "Raid_data message processed by RC"
 
 testGreeting :: Transport -> IO ()
-testGreeting transport = run transport interceptor test where
+testGreeting transport = run transport interceptor [] test where
   interceptor _rc _str = return ()
   test (TestArgs _ _ rc) rmq _ = do
     prepareSubscriptions rc rmq

@@ -13,7 +13,7 @@
 -- stored in the filesystem.
 --
 module Mero.Conf.Fid
-  ( Fid(..), fidToStr ) where
+  ( Fid(..), fidToStr, strToFid ) where
 
 #include "confc_helpers.h"
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
@@ -23,11 +23,14 @@ import Control.Monad ( liftM2 )
 import Data.Binary (Binary)
 import Data.Data (Data)
 import Data.Hashable (Hashable)
+import qualified Data.Text as T
 import Data.Typeable ( Typeable )
 import Data.Word ( Word64 )
 import Foreign.Storable ( Storable(..) )
 import GHC.Generics ( Generic )
 import Text.Printf (printf)
+import Text.Read (readMaybe)
+
 
 -- | Representation of @struct m0_fid@. It is an identifier for objects in
 -- confc.
@@ -43,6 +46,15 @@ instance Show Fid where
 -- various locations read by mero, such as part of filenames.
 fidToStr :: Fid -> String
 fidToStr (Fid c k) = printf "0x%x:0x%x" c k
+
+-- | Try to parse a 'String' into a 'Fid'. The input should be in a
+-- format that 'fidToStr' would produce.
+strToFid :: String -> Maybe Fid
+strToFid mfid = case readMaybe <$> breakFid mfid of
+  [Just container, Just key] -> Just $ Fid container key
+  _ -> Nothing
+  where
+    breakFid = map T.unpack . T.splitOn (T.singleton ':') . T.pack
 
 instance Binary Fid
 instance Hashable Fid

@@ -107,6 +107,7 @@ instance Hashable ProcessConfig
 data ProcessControlMsg =
     StartProcesses [([ProcessRunType], ProcessConfig)]
   | StopProcesses [([ProcessRunType], ProcessConfig)]
+  | RestartProcesses [([ProcessRunType], ProcessConfig)]
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ProcessControlMsg
 instance Hashable ProcessControlMsg
@@ -125,6 +126,13 @@ data ProcessControlResultStopMsg =
 instance Binary ProcessControlResultStopMsg
 instance Hashable ProcessControlResultStopMsg
 
+data ProcessControlResultRestartMsg =
+      ProcessControlResultRestartMsg NodeId [Either Fid (Fid,String)]
+  deriving (Eq, Generic, Show, Typeable)
+instance Binary ProcessControlResultRestartMsg
+instance Hashable ProcessControlResultRestartMsg
+
+
 data DeclareMeroChannel =
     DeclareMeroChannel
     { dmcPid     :: !(ServiceProcess MeroConf)
@@ -135,6 +143,18 @@ data DeclareMeroChannel =
 
 instance Binary DeclareMeroChannel
 instance Hashable DeclareMeroChannel
+
+data MeroChannelDeclared =
+    MeroChannelDeclared
+    { mcdPid     :: !(ServiceProcess MeroConf)
+    , mcdChannel :: !(TypedChannel NotificationMessage)
+    , mcdCtrlChannel :: !(TypedChannel ProcessControlMsg)
+    }
+    deriving (Generic, Typeable)
+
+instance Binary MeroChannelDeclared
+instance Hashable MeroChannelDeclared
+
 
 resourceDictMeroChannel :: Dict (Resource (TypedChannel NotificationMessage))
 resourceDictMeroChannel = Dict

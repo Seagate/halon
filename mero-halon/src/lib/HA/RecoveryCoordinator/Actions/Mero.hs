@@ -17,10 +17,12 @@ module HA.RecoveryCoordinator.Actions.Mero
   , createMeroClientConfig
   , startMeroService
   , startNodeProcesses
+  , restartNodeProcesses
   , stopNodeProcesses
   , announceMeroNodes
   , getLabeledProcesses
   , getLabeledNodeProcesses
+  , m0t1fsBootLevel
   )
 where
 
@@ -29,6 +31,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Conf as Conf
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Events.Mero
+import HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 
 import HA.Resources.Castor (Is(..))
 import HA.Resources (Has(..))
@@ -49,6 +52,7 @@ import Control.Monad (forM, unless)
 
 import Data.Foldable (forM_)
 import Data.Proxy
+import Data.List ((\\))
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 
@@ -180,10 +184,20 @@ calculateMeroClusterStatus = do
         onlineOrFailed st = st == M0.PSOnline
 
         failedProcs = getLabeledProcesses lbl (\p g -> not . null $
-                      [ () | (M0.PSFailed _) <- G.connectedTo p Is g ] ) rg
+                      [ () | M0.PSFailed _ <- [M0.getState p g] ] ) rg
+
+        allProcs = getLabeledProcesses lbl (\_ _ -> True) rg
+
+        finishedProcs = getLabeledProcesses lbl
+                        ( \proc g -> not . null $
+                        [ () | state <- [M0.getState proc g]
+                        , onlineOrFailed state
+                        ] ) rg
+        stillWaiting = allProcs \\ finishedProcs
+
         allProcsFinished = null $ getLabeledProcesses lbl
                            ( \proc g -> null $
-                           [ () | state <- G.connectedTo proc Is g
+                           [ () | state <- [M0.getState proc g]
                            , onlineOrFailed state
                            ] ) rg
       in case failedProcs of
@@ -193,7 +207,9 @@ calculateMeroClusterStatus = do
                   then return M0.MeroClusterRunning
                   else return $ M0.MeroClusterStarting $ M0.BootLevel (i+1)
           -- Not everything has finished but nothing has failed yet either
-          False -> return $ M0.MeroClusterStarting bl
+          False -> do
+            phaseLog "info" $ "Still waiting for boot: " ++ show stillWaiting
+            return $ M0.MeroClusterStarting bl
         -- Some process failed, bail
         _:_ -> return M0.MeroClusterFailed
     M0.MeroClusterStopping bl@(M0.BootLevel i) -> getLocalGraph >>= \rg ->
@@ -201,17 +217,20 @@ calculateMeroClusterStatus = do
         lbl = case M0.BootLevel i of
           x | x == m0t1fsBootLevel -> M0.PLM0t1fs
           x -> M0.PLBootLevel x
+
         stillUnstopped = getLabeledProcesses lbl
                          ( \proc g -> not . null $
                          [ () | state <- G.connectedTo proc Is g
-                         , state `elem` [M0.PSOnline, M0.PSStarting, M0.PSStopping]
+                              , state `elem` [M0.PSOnline, M0.PSStopping, M0.PSStarting]
                          ] ) rg
-
-      in if null stillUnstopped
+      in if null $ stillUnstopped
       then case i of
         0 -> return M0.MeroClusterStopped
         _ -> return $ M0.MeroClusterStopping $ M0.BootLevel (i-1)
-      else return $ M0.MeroClusterStopping bl
+      else do
+        phaseLog "info" $ "Still waiting for following processes to stop: "
+                       ++ show (M0.fid <$> stillUnstopped)
+        return $ M0.MeroClusterStopping bl
 
 -- | Start all Mero processes labelled with the specified process label on
 --   a given node. Returns all the processes which are being started.
@@ -243,10 +262,10 @@ startNodeProcesses host (TypedChannel chan) label mkfs = do
               (_, True) -> forM procs $ (\(proc,b) -> ((if b then (M0MKFS:) else id) [M0D],) <$> runConfig proc rg)
               (_, False) -> forM procs $ (\(proc,_) -> ([M0D],) <$> runConfig proc rg)
       forM_ procs $ \(p, _) -> do
-        modifyLocalGraph $ \rg ->  do
-          rg' <- return $ G.connectUniqueFrom p Is M0.PSStarting rg
-          let srvs = G.connectedTo p M0.IsParentOf rg :: [M0.Service]
-          return $ foldr (\s -> G.connectUniqueFrom s Is M0.M0_NC_TRANSIENT) rg' srvs
+        let srvs = G.connectedTo p M0.IsParentOf rg :: [M0.Service]
+
+        applyStateChanges $ stateSet p M0.PSStarting
+                          : map (\s -> stateSet s M0.SSStarting) srvs
 
       liftProcess $ sendChan chan msg
 
@@ -260,11 +279,22 @@ startNodeProcesses host (TypedChannel chan) label mkfs = do
       not . null $ [ () | M0.Service{ M0.s_type = CST_MGS }
                           <- G.connectedTo proc M0.IsParentOf rg ]
 
-stopNodeProcesses :: Castor.Host
-                  -> TypedChannel ProcessControlMsg
+restartNodeProcesses :: TypedChannel ProcessControlMsg
+                     -> [M0.Process]
+                     -> PhaseM LoopState a ()
+restartNodeProcesses (TypedChannel chan) ps = do
+   rg <- getLocalGraph
+   let msg = RestartProcesses $ map (go rg) ps
+   liftProcess $ sendChan chan msg
+   where
+     go rg p = case G.connectedTo p Has rg of
+        [M0.PLM0t1fs] -> ([M0T1FS], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))
+        _             -> ([M0D], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))
+
+stopNodeProcesses :: TypedChannel ProcessControlMsg
                   -> [M0.Process]
                   -> PhaseM LoopState a ()
-stopNodeProcesses _ (TypedChannel chan) ps = do
+stopNodeProcesses (TypedChannel chan) ps = do
    rg <- getLocalGraph
    let msg = StopProcesses $ map (go rg) ps
    liftProcess $ sendChan chan msg

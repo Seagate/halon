@@ -13,6 +13,7 @@ import qualified HA.Autoboot.Tests
 #ifdef USE_MOCK_REPLICATOR
 import qualified HA.RecoveryCoordinator.SSPL.Tests
 #endif
+import qualified HA.Castor.Story.ProcessRestart
 import qualified HA.Castor.Tests
 import qualified HA.Castor.Story.Tests
 #endif
@@ -67,6 +68,7 @@ ut _host transport breakConnection = do
   ssplTest <- HA.Test.SSPL.mkTests
 #ifdef USE_MERO
   driveFailureTests <- HA.Castor.Story.Tests.mkTests
+  processRestartTests <- HA.Castor.Story.ProcessRestart.mkTests
 #endif
   return $
     testGroup "mero-halon" $ (:[]) $
@@ -85,6 +87,8 @@ ut _host transport breakConnection = do
       , MERO_TEST(testGroup,"Castor",HA.Castor.Tests.tests _host transport
                  , [testCase "Ignore me" $ return ()])
       , MERO_TEST( testGroup, "DriveFailure", driveFailureTests transport
+                 , [testCase "Ignore me" $ return ()])
+      , MERO_TEST(testGroup, "ProcessRestart", processRestartTests transport
                  , [testCase "Ignore me" $ return ()])
       , testGroup "disconnect" $
         [ MERO_TEST(testCase, "testRejoinTimeout", HA.Test.Disconnect.testRejoinTimeout _host transport breakConnection, return ())

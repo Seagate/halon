@@ -556,7 +556,8 @@ publish e = singleton $ Publish e
 
 -- | Simple log. First parameter is the context and the last one is the log.
 phaseLog :: String -> String -> PhaseM g l ()
-phaseLog ctx line = singleton $ PhaseLog ctx line
+phaseLog ctx line = -- liftProcess . say $ ctx ++ " => " ++ line
+  singleton $ PhaseLog ctx line
 
 -- | Changes state machine context. Given the list of 'PhaseHandle', switch to
 --   the first 'Phase' that's successfully executed.
