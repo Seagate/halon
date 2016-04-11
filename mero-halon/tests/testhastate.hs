@@ -37,7 +37,6 @@ import System.Directory
     , setCurrentDirectory
     , createDirectoryIfMissing
     )
-import Helper.Environment (withMeroRoot)
 import System.Environment ( getArgs, getExecutablePath, lookupEnv )
 import System.Exit ( exitFailure, exitSuccess )
 import System.FilePath ( (</>) )
@@ -49,7 +48,7 @@ tryIO :: IO a -> IO (Either IOException a)
 tryIO = try
 
 main :: IO ()
-main = withMeroRoot $ \meroRoot -> getArgs >>= \args ->
+main = getArgs >>= \args ->
   (if notElem "--noscript" args then
     bracket_ (callCommand "sudo systemctl start mero-mkfs")
              (do _ <- tryIO $ callCommand "sudo systemctl stop mero-mkfs"
@@ -106,8 +105,7 @@ main = withMeroRoot $ \meroRoot -> getArgs >>= \args ->
 
         -- Invoke again with root privileges
         putStrLn $ "Calling test with sudo ..."
-        callProcess "sudo" $ ["MERO_ROOT=" ++ meroRoot] ++
-                             maybeToList mld ++ prog : "--noscript" : args
+        callProcess "sudo" $ maybeToList mld ++ prog : "--noscript" : args
       exitSuccess
   ) >>
   (newEmptyMVar :: IO (MVar [ByteString])) >>= \mv ->
