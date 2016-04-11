@@ -52,8 +52,7 @@ main :: IO ()
 main = withMeroRoot $ \meroRoot -> getArgs >>= \args ->
   (if notElem "--noscript" args then
     bracket_ (callCommand "sudo systemctl start mero-mkfs")
-             (do threadDelay $ 2*1000000
-                 _ <- tryIO $ callCommand "sudo systemctl stop mero-mkfs"
+             (do _ <- tryIO $ callCommand "sudo systemctl stop mero-mkfs"
                  return ()
              ) .
     bracket_ (callCommand "sudo systemctl start mero")
@@ -61,7 +60,7 @@ main = withMeroRoot $ \meroRoot -> getArgs >>= \args ->
         _ <- tryIO $ callCommand "sudo systemctl stop mero"
         threadDelay $ 2*1000000
         -- XXX: workaround for a bug in a mero test suite.
-        _ <- tryIO $ callCommand $ "killall -9 lt-m0d"
+        _ <- tryIO $ callCommand $ "sudo killall -9 lt-m0d"
         threadDelay $ 2*1000000
     )
     else id
