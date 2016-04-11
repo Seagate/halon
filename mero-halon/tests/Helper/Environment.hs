@@ -93,29 +93,25 @@ getHalonEndpoint = lookupEnv halonEndpoint >>= \case
   Just nid -> return nid
 
 withMeroEnvironment :: IO (Maybe (IO ())) -> IO () -> IO ()
-withMeroEnvironment router wrapper = withMeroRoot $ \meroRoot ->
+withMeroEnvironment router wrapper =
   withSudo ["LD_LIBRARY_PATH", "MERO_ROOT", "TASTY_PATTERN", "TEST_LISTEN"] $ do
     mtest <- router
     case mtest of
       Just test -> test
-      Nothing -> bracket_
+      Nothing ->
+        bracket_
+        (callCommand "systemctl start mero-mkfs")
+        (tryIO (callCommand "systemctl stop mero-mkfs") >> return ())
+        $ bracket_
         (do setEnv "SANDBOX_DIR" "/var/mero/sandbox.mero-halon-st"
-            putStrLn "Calling rmmod just in case, ignore error message if any"
-            _ <- tryIO $ callCommand "rmmod m0ctl"
-            _ <- tryIO . callCommand $ meroRoot ++ "/conf/st rmmod"
-            callCommand $ meroRoot ++ "/conf/st sstart"
-            )
-
+            callCommand "systemctl start mero"
+        )
         (do threadDelay $ 2*1000000
-            _ <- tryIO $ callCommand $ meroRoot ++ "/conf/st sstop"
+            _ <- tryIO $ callCommand "systemctl stop mero"
             threadDelay $ 2*1000000
-            -- XXX: workaround for a bug in a mero test suite.
-            _ <- tryIO $ callCommand $ "killall -9 lt-m0d"
-            threadDelay $ 2*1000000
-            _ <- tryIO $ callCommand $ meroRoot ++ "/conf/st rmmod"
-            return ())
+        )
         (do nid <- getLnetNid
-            setEnv confdEndpoint  $ nid ++ ":12345:34:1001"
+            setEnv confdEndpoint  $ nid ++ ":12345:44:101"
             setEnv confd2Endpoint $ nid ++ ":12345:34:1002"
             setEnv halonEndpoint  $ nid ++ ":12345:35:401"
             wrapper)
