@@ -96,7 +96,7 @@ main = getArgs >>= \args ->
                   ]
       putStrLn $ "Calling dummy mero: " ++ unwords dummyMeroCmd
       bracket_ (callProcess "sudo" dummyMeroCmd)
-               (callCommand "sudo kill $(cat dummy_mero.pid)")
+               (callCommand "sudo kill -9 $(cat dummy_mero.pid)")
         $ do
         -- wait for dummy mero to be up
         callProcess (meroHalonTopDir </> "scripts" </> "wait_contents")
