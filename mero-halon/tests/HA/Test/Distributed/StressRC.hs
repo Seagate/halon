@@ -113,7 +113,9 @@ test = testCase "StressRC" $
 
       let numPings = 500 :: Int
       say $ "Sending " ++ show numPings ++ " pings ..."
-      forM_ [0..numPings] $ send pingPid . show
+      forM_ [1..numPings] $ send pingPid . show
 
-      forM_ [0..numPings] $ \i ->
+      forM_ [1..numPings] $ \i -> do
         expectLog [nid0] $ isInfixOf $ "received DummyEvent " ++ show i
+        say $ "Found event " ++ show i
+      say "SUCCESS!"
