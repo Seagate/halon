@@ -66,15 +66,27 @@ self = "HA.Satellite"
 start :: NodeId -> Config -> Process (Maybe String)
 start nid Config{..} = do
     say $ "This is " ++ self
-    (_, mref) <- spawnMonitor nid $ $(mkClosure 'nodeUp)
+    (sender, mref) <- spawnMonitor nid $ $(mkClosure 'nodeUp)
                    (trackers, fromDefault configDelay)
 #ifdef USE_RPC
     -- The RPC transport triggers a bug in spawn where the action never
     -- executes.
     _ <- receiveTimeout 1000000 [] :: Process (Maybe ())
 #endif
-    receiveWait
+    result <- receiveTimeout (fromDefault configDelay `div` 2)
       [ matchIf (\(ProcessMonitorNotification ref _ _) -> ref == mref) handler ]
+    case result of
+      Nothing -> do
+        kill sender "timeout.."
+        say $ "Failed to connect to the cluster, retrying.."
+        (sender2, mref2) <- spawnMonitor nid $ $(mkClosure 'nodeUp)
+           (trackers, fromDefault configDelay)
+        result2 <- receiveTimeout (fromDefault configDelay)
+           [ matchIf (\(ProcessMonitorNotification ref _ _) -> ref == mref2) handler ]
+        case result2 of
+          Nothing -> return (Just "Timeout.")
+          Just x  -> return x
+      Just r -> return r
   where
     trackers = fmap conjureRemoteNodeId (fromDefault configTrackers)
     handler (ProcessMonitorNotification _ _ dr) = return $ case dr of
