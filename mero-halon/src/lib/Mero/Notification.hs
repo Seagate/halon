@@ -240,6 +240,7 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
           link rc
           self <- getSelfPid
           fids <- fmap no_id <$> liftIO (readNVecRef nvecr)
+          say $ "State get!: " ++ show fids
           liftIO (fmap (getNVec fids) <$> readIORef globalResourceGraphCache)
              >>= \case
                    Just nvec -> return nvec
@@ -250,7 +251,7 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
              >>= \nvec -> do
                     let got_fids = map (\(Note x _) -> x) nvec
                         missing = filter (\f -> not $ f `elem` got_fids) fids
-                    say $ unlines [ "EntryPoint: "
+                    say $ unlines [ "State get rep: "
                                   , " requested: " ++ show fids
                                   , " got:       " ++ show nvec
                                   , " missing:   " ++ show missing

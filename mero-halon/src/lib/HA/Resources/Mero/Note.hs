@@ -31,7 +31,7 @@ import Data.Binary (Binary)
 import Data.Bits (shiftR)
 import Data.Hashable (Hashable)
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
+import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
 import Data.Monoid ((<>))
 import Data.Typeable (Typeable)
 import Data.Proxy (Proxy(..))
@@ -141,8 +141,8 @@ instance HasConfObjectState M0.Enclosure
 instance HasConfObjectState M0.Controller
 instance HasConfObjectState M0.Node
 instance HasConfObjectState M0.Process where
-  getConfObjState x rg = case G.connectedTo x Is rg of
-      [y] -> ms y
+  getConfObjState x rg = case G.connectedTo x Is rg :: [M0.ProcessState] of
+      -- [y] -> ms y -- XXX:
       _ -> M0_NC_ONLINE
     where
       ms M0.PSUnknown = M0_NC_UNKNOWN
@@ -175,12 +175,13 @@ data SomeConfObjDict = forall x. (Typeable x, M0.ConfObj x, HasConfObjectState x
 -- Yields the ConfObj dictionary of the object with the given Fid.
 --
 -- TODO: Generate this with TH.
-fidConfObjDict :: Fid -> Maybe [SomeConfObjDict]
-fidConfObjDict f = Map.lookup (f_container f `shiftR` (64 - 8)) dictMap
+fidConfObjDict :: Fid -> [SomeConfObjDict]
+fidConfObjDict f = fromMaybe []
+  $ Map.lookup (f_container f `shiftR` (64 - 8)) dictMap
 
 -- | Map of all dictionaries
 dictMap :: Map.Map Word64 [SomeConfObjDict]
-dictMap = Map.fromListWith (<>) . fmap (fmap (: [])) $ 
+dictMap = Map.fromListWith (<>) . fmap (fmap (: [])) $
     [ mkTypePair (Proxy :: Proxy M0.Root)
     , mkTypePair (Proxy :: Proxy M0.Profile)
     , mkTypePair (Proxy :: Proxy M0.Filesystem)
@@ -205,13 +206,10 @@ dictMap = Map.fromListWith (<>) . fmap (fmap (: [])) $
     mkTypePair a = (M0.fidType a, SomeConfObjDict (Proxy :: Proxy a))
 
 lookupConfObjectState :: G.Graph -> Fid -> Maybe ConfObjectState
-lookupConfObjectState g fid = fidConfObjDict fid
-    >>= listToMaybe . catMaybes . map go
-  where
-    go scod = case scod of
-      SomeConfObjDict (_ :: Proxy ct0) -> do
-        obj <- M0.lookupConfObjByFid fid g :: Maybe ct0
-        return $ getConfObjState obj g
+lookupConfObjectState g fid = listToMaybe $ mapMaybe go $ fidConfObjDict fid where
+  go (SomeConfObjDict (_ :: Proxy ct0)) = do
+      obj <- M0.lookupConfObjByFid fid g :: Maybe ct0
+      return $ getConfObjState obj g
 
 -- | Lookup the configuration object states of objects with the given FIDs.
 lookupConfObjectStates :: [Fid] -> G.Graph -> [(Fid, ConfObjectState)]
