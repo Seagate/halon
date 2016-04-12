@@ -202,11 +202,8 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
       modifyGraph $ G.newResource proc
                 >>> G.newResource proc
                 >>> G.newResource procLabel
-                >>> G.newResource M0.PSOnline
                 >>> G.connect node M0.IsParentOf proc
                 >>> G.connectUniqueFrom proc Has procLabel
-                -- TODO Remove this when we handle process state.
-                >>> G.connectUniqueFrom proc Is M0.PSOnline
 
   goSrv proc devs CI.M0Service{..} = let
       filteredDevs = maybe

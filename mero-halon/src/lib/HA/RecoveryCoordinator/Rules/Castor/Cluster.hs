@@ -108,8 +108,7 @@ ruleClusterStart = defineSimple "cluster-start-request"
                   modifyGraph $ \g ->
                      let procs = G.getResourcesOfType g :: [M0.Process]
                          srvs  = procs >>= \p -> G.connectedTo p M0.IsParentOf g :: [M0.Service]
-                     in flip (foldr (\p -> G.connectUniqueFrom p R.Is M0.PSOnline)) procs
-                          >>> flip (foldr (\s -> G.connectUniqueFrom s R.Is M0.M0_NC_ONLINE)) srvs
+                     in flip (foldr (\s -> G.connectUniqueFrom s R.Is M0.M0_NC_ONLINE)) srvs
                               $ g
                   announceMeroNodes
                   syncGraphCallback $ \pid proc -> do
@@ -169,7 +168,7 @@ notifyOnClusterTranstion :: (Binary a, Typeable a)
                          -> PhaseM LoopState l ()
 notifyOnClusterTranstion desiredState msg meid = do
   newState <- calculateMeroClusterStatus
-  phaseLog "notifyOnClusterTransition:desiredState" $ show newState
+  phaseLog "notifyOnClusterTransition:desiredState" $ show desiredState
   phaseLog "notifyOnClusterTransition:state" $ show newState
   if newState == desiredState then do
     modifyGraph $ G.connectUnique R.Cluster R.Has newState
