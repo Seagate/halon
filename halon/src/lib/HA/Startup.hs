@@ -18,11 +18,11 @@ import HA.Logger
 import HA.Multimap ( MetaInfo, defaultMetaInfo, StoreChan )
 import HA.Multimap.Implementation ( Multimap, fromList )
 import HA.Multimap.Process ( startMultimap )
-import HA.Replicator ( RGroup(..), RStateView(..), retryRGroup )
+import HA.Replicator ( RGroup(..), retryRGroup )
 import HA.Replicator.Log ( RLogGroup )
 import qualified HA.Storage as Storage
 
-import Control.Arrow ( first, second, (***) )
+import Control.Arrow ( (***) )
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
   ( remotable
@@ -284,7 +284,7 @@ remotableDecl [ [d|
     eqGroup <- join $ unClosure cEQGroup
     mmGroup <- join $ unClosure cMMGroup
     startupTrace "autoboot: getRGroupMembers eq"
-    eqNids <- retryRGroup eqGroup 1000000 $ getRGroupMembers eqGroup
+    _eqNids <- retryRGroup eqGroup 1000000 $ getRGroupMembers eqGroup
     startupTrace "autoboot: getRGroupMembers mm"
     mmNids <- retryRGroup mmGroup 1000000 $ getRGroupMembers mmGroup
     let rcClosure' = rcClosure `closureApply` closure $(mkStatic 'decodeNids)

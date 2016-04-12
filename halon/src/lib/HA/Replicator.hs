@@ -15,7 +15,6 @@
 {-# LANGUAGE CPP #-}
 module HA.Replicator
   ( RGroup(..)
-  , RStateView(..)
   , retryRGroup
   , withRGroupMonitoring
   ) where
@@ -28,20 +27,6 @@ import Control.Distributed.Process.Monitor
 
 import Data.Typeable ( Typeable )
 
-
--- | Functions which allow to update and query parts of
--- a replicated state.
---
--- In @RStateView st v@ the type @st@ is the type of states
--- and @v@ is the type of a particular view of those states.
---
--- It should hold: @prj . update f == f . prj@
---
-data RStateView st v = Serializable v => RStateView
-    { prj :: st -> v
-    , update :: (v -> v) -> st -> st
-    }
-  deriving Typeable
 
 -- | Interface of replication groups.
 --
@@ -125,9 +110,6 @@ class RGroup g where
 
   -- | Reads the replicated state using the given function.
   getStateWith :: g st -> Closure (st -> Process ()) -> Process Bool
-
-  -- | Sets the view of the replicated state.
-  viewRState :: Typeable v => Static (RStateView st v) -> g st -> g v
 
   -- | Monitors the group. When connectivity to the group is lost a process
   -- monitor notification is sent to the caller. Lost connectivity could mean

@@ -46,8 +46,6 @@ import qualified Control.Distributed.State as State ( update, log )
 import Control.Distributed.Process
   ( Process
   , Static
-  , Closure
-  , liftIO
   , say
   , die
   , NodeId
@@ -56,16 +54,15 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types (nodeAddress)
 import Control.Distributed.Static
-  ( closureApplyStatic
-  , staticApply
+  ( staticApply
   , staticClosure
   , closure
   , closureApply
+  , closureCompose
   )
 
 import Data.Constraint ( Dict(..) )
 
-import Control.Exception ( evaluate )
 import Control.Monad ( when, forM, void, forM_ )
 import Data.Binary ( decode, encode, Binary )
 import Data.ByteString.Lazy ( ByteString )
@@ -79,31 +76,13 @@ import System.IO.Unsafe (unsafePerformIO)
 
 -- | Implementation of RGroups on top of "Control.Distributed.State".
 data RLogGroup st where
-  RLogGroup :: (Typeable q, Typeable st)
+  RLogGroup :: Typeable st
             => Static (SerializableDict st)
-            -> Static (SerializableDict q)
             -> String                       -- name of the group
-            -> Log.Handle (Command q)
-            -> CommandPort q
-            -> Static (RStateView q st)
+            -> Log.Handle (Command st)
+            -> CommandPort st
             -> RLogGroup st
  deriving Typeable
-
-rvDict :: RStateView st v -> SerializableDict v
-rvDict (RStateView _ _) = SerializableDict
-
-idRStateView :: SerializableDict st -> RStateView st st
-idRStateView SerializableDict = RStateView id id
-
-composeSV :: RStateView q v -> RStateView v w -> RStateView q w
-composeSV (RStateView p0 u0) (RStateView p1 u1) =
-    RStateView (p1 . p0) (u0 . u1)
-
-prjProc :: RStateView st v -> st -> Process v
-prjProc rv = return . prj rv
-
-updateProc :: RStateView st v -> (v -> v) -> st -> Process st
-updateProc rv f = liftIO . evaluate . update rv f
 
 mstateTypeableDict :: SerializableDict st -> Dict (Typeable st)
 mstateTypeableDict SerializableDict = Dict
@@ -160,22 +139,13 @@ bToM :: Bool -> Maybe ()
 bToM True  = Just ()
 bToM False = Nothing
 
-composeM :: (a -> Process b) -> (b -> Process c) -> a -> Process c
-composeM f g x = f x >>= g
-
-remotable [ 'composeSV
-          , 'updateProc
-          , 'idRStateView
-          , 'prjProc
-          , 'commandSerializableDict
-          , 'rvDict
+remotable [ 'commandSerializableDict
           , 'mstateTypeableDict
           , 'removeNodes
           , 'rgroupLog
           , 'rgroupConfig
           , 'snapshotServer
           , 'halonPersistDirectory
-          , 'composeM
           ]
 
 fromPort :: Typeable st
@@ -185,10 +155,10 @@ fromPort :: Typeable st
          -> CommandPort st
          -> Process (RLogGroup st)
 fromPort sdictState name h port = do
-    return $ RLogGroup sdictState sdictState name h port
-                    ($(mkStatic 'idRStateView) `staticApply` sdictState)
+    return $ RLogGroup sdictState name h port
   where
     _ = $(functionSDict 'halonPersistDirectory) -- avoids unused warning
+    _ = $(functionTDict 'snapshotServer) -- avoids unused warning
 
 remotableDecl [ [d|
 
@@ -201,17 +171,6 @@ remotableDecl [ [d|
       newPort h >>= fromPort sdictState name h
 
   |] ]
-
--- | Provides a way to transform closures with views.
-updateClosure :: (Typeable st,Typeable v) => Static (RStateView st v)
-              -> Closure (v -> v) -> Closure (st -> Process st)
-updateClosure rv c =
-    staticApply $(mkStatic 'updateProc) rv `closureApplyStatic` c
-
--- | Provides a way to transform closures with views.
-queryStatic :: (Typeable st,Typeable v) => Static (RStateView st v)
-              -> Static (st -> Process v)
-queryStatic rv = staticApply $(mkStatic 'prjProc) rv
 
 instance RGroup RLogGroup where
 
@@ -251,11 +210,11 @@ instance RGroup RLogGroup where
                                  $ encode (sdictState, name, rHandle))
                         `closureApply` staticClosure sdictState
 
-  killReplica (RLogGroup _ _ _ h _ _) nid = Log.killReplica h nid
+  killReplica (RLogGroup _ _ h _) nid = Log.killReplica h nid
 
-  getRGroupMembers (RLogGroup _ _ _ h _ _) = Log.getMembership h
+  getRGroupMembers (RLogGroup _ _ h _) = Log.getMembership h
 
-  setRGroupMembers rg@(RLogGroup _ _ name h _ _) ns inGroup = do
+  setRGroupMembers rg@(RLogGroup _ name h _) ns inGroup = do
     say $ "setRGroupMembers: " ++ show ns
     retryRGroup rg 1000000 $ fmap bToM $
       Log.reconfigure h ($(mkClosure 'removeNodes) () `closureApply` inGroup)
@@ -266,25 +225,17 @@ instance RGroup RLogGroup where
       retryRGroup rg 1000000 $ fmap bToM $ Log.addReplica h nid
       return $ Replica nid
 
-  updateRGroup (RLogGroup _ _ _ h _ _) (Replica ρ) = Log.updateHandle h ρ
+  updateRGroup (RLogGroup _ _ h _) (Replica ρ) = Log.updateHandle h ρ
 
-  updateStateWith (RLogGroup _ _ _ _ port rp) cUpd =
-    State.update port $ updateClosure rp cUpd
+  updateStateWith (RLogGroup _ _ _ port) cUpd =
+    State.update port $ closureCompose idCP cUpd
 
-  getState (RLogGroup sdict _ _ _ port rv) =
-    select sdict port $ staticClosure $ queryStatic rv
+  getState (RLogGroup sdict _ _ port) = select sdict port idCP
 
-  getStateWith (RLogGroup _ _ _ _ port rv) cRd =
-    fmap isJust $ select sdictUnit port $
-      $(mkStaticClosure 'composeM)
-        `closureApply` staticClosure (queryStatic rv)
-        `closureApply` cRd
+  getStateWith (RLogGroup _ _ _ port) cRd =
+    fmap isJust $ select sdictUnit port cRd
 
-  viewRState rv (RLogGroup _ sdq name h port rv') =
-      RLogGroup ($(mkStatic 'rvDict) `staticApply` rv) sdq name h port $
-                $(mkStatic 'composeSV) `staticApply` rv' `staticApply` rv
-
-  monitorRGroup (RLogGroup _ _ _ h _ _) = Log.monitorLog h
+  monitorRGroup (RLogGroup _ _ h _) = Log.monitorLog h
 
 #if ! MIN_VERSION_base(4,7,0)
 -- | The sole purpose of this type is to provide a typeable instance from
