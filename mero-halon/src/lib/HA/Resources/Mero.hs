@@ -355,6 +355,7 @@ data PoolRepairInformation = PoolRepairInformation
   { priOnlineNotifications :: Int
   , priTimeOfFirstCompletion :: TimeSpec
   , priTimeLastHourlyRan :: TimeSpec
+  , priStateUpdates      :: [(SDev, Int)]
   } deriving (Eq, Show, Generic, Typeable)
 
 instance Binary PoolRepairInformation
@@ -366,7 +367,7 @@ instance Hashable PoolRepairInformation
 -- set to 0 seconds after epoch ensuring they queries actually start
 -- on the first invocation.
 defaultPoolRepairInformation :: PoolRepairInformation
-defaultPoolRepairInformation = PoolRepairInformation 0 0 0
+defaultPoolRepairInformation = PoolRepairInformation 0 0 0 []
 
 data PoolRepairStatus = PoolRepairStatus
   { prsType :: PoolRepairType

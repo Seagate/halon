@@ -572,7 +572,8 @@ Test-Suite unit-tests
                     uuid,
                     time,
                     unix,
-                    process
+                    process,
+                    exceptions
 
   if flag(mero)
       Build-Depends: rpclite, syb
@@ -658,7 +659,8 @@ Test-Suite integration-tests
                     text,
                     unix,
                     process,
-                    uuid
+                    uuid,
+                    exceptions
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
@@ -732,7 +734,8 @@ Test-Suite scheduler-tests
                     time,
                     text,
                     process,
-                    uuid
+                    uuid,
+                    exceptions
 
   if flag(mero)
     CPP-Options:    -DUSE_MERO
@@ -911,7 +914,8 @@ Test-Suite tests-mero-integration
                         unix,
                         directory,
                         unordered-containers,
-                        uuid
+                        uuid,
+                        exceptions
 
       CPP-Options:    -DUSE_MERO
       -- Disable the test until it is fixed.

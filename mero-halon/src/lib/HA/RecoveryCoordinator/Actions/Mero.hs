@@ -13,7 +13,6 @@ module HA.RecoveryCoordinator.Actions.Mero
   , module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , notifyDriveStateChange
   , updateDriveState
-  , updateDriveStatesFromSet
   , noteToSDev
   , calculateMeroClusterStatus
   , createMeroKernelConfig
@@ -54,7 +53,7 @@ import Control.Monad (forM, unless)
 
 import Data.Foldable (forM_, traverse_)
 import Data.Proxy
-import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
@@ -82,13 +81,6 @@ noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= \case
     Just disk -> fmap (stType,) <$> Conf.lookupDiskSDev disk
     Nothing -> return Nothing
 
--- | Extract information about drives from the given set of
--- notifications and update the state in RG accordingly.
-updateDriveStatesFromSet :: Set -> PhaseM LoopState l ()
-updateDriveStatesFromSet (Set ns) = f . catMaybes <$> mapM noteToSDev ns
-                             >>= mapM_ (\(typ, sd) -> updateDriveState sd typ)
-  where f = filter ((`elem` [M0.M0_NC_ONLINE, M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT]).fst)
-
 -- | Notify ourselves about a state change of the 'M0.SDev'.
 --
 -- Internally, build a note 'Set' and pass it to all registered
@@ -98,6 +90,7 @@ updateDriveStatesFromSet (Set ns) = f . catMaybes <$> mapM noteToSDev ns
 -- 'updateDriveState' which performs the actual update.
 notifyDriveStateChange :: M0.SDev -> M0.ConfObjectState -> PhaseM LoopState l ()
 notifyDriveStateChange m0sdev st = do
+    updateDriveState m0sdev st
     stateChangeHandlers <- lsStateChangeHandlers <$> get Global
     sequence_ $ ($ ns) <$> stateChangeHandlers
  where
