@@ -51,7 +51,13 @@ main = withMeroRoot $ \meroRoot -> withSudo ["LD_LIBRARY_PATH", "MERO_ROOT"] $ d
       | test == Test.Management.name -> Test.Management.test
     _ -> bracket_
       (do setEnv "SANDBOX_DIR" "/var/mero/sandbox.conf-st"
-          callCommand "systemctl start mero")
+          callCommand "systemctl start mero"
+          -- We need the RM service to be up in order for the tests to succeed.
+          -- But there is no way to know when the RM service is up other than
+          -- pinging it. For now we insert this delay to reduce likelyhood of
+          -- running the test when the service hasn't started.
+          threadDelay $ 3*1000000
+      )
       (do threadDelay $ 3*1000000
           tryIO $ callCommand "systemctl stop mero"
           )
