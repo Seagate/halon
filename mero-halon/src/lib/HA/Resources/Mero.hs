@@ -426,6 +426,7 @@ data MeroClusterState =
   | MeroClusterStarting BootLevel -- ^ Cluster is currently starting on a concrete bootlevel.
   | MeroClusterStopping BootLevel -- ^ Cluster is currently stopping on a concrete bootlevel.
   | MeroClusterRunning -- ^ Cluster is running succesfully.
+  | MeroClusterFailed -- ^ Cluster bootstrap has failed.
   deriving (Eq,Show, Typeable, Generic)
 instance Binary MeroClusterState
 instance Hashable MeroClusterState
@@ -442,6 +443,12 @@ instance Ord MeroClusterState where
                    GT -> LT
                    LT -> GT
                    EQ -> EQ
+
+-- | Message sent when mero service fails to come up, failing bootstrap.
+newtype BootstrapFailedNotification = BootstrapFailedNotification String
+  deriving(Eq, Show, Typeable, Generic)
+instance Binary BootstrapFailedNotification
+instance Hashable BootstrapFailedNotification
 
 -- | Relation that one object is waiting for another.
 data Pending = Pending deriving (Eq, Show, Typeable, Generic)

@@ -97,6 +97,10 @@ sendMeroChannel cn cc = do
               (ServiceProcess pid) (TypedChannel cn) (TypedChannel cc)
   void $ promulgate chan
 
+-- | Tell the RC that something has failed
+notifyBootstrapFailure :: String -> Process ()
+notifyBootstrapFailure = void . promulgate . M0.BootstrapFailedNotification
+
 statusProcess :: RPC.ServerEndpoint
               -> ProcessId
               -> ReceivePort NotificationMessage
@@ -255,15 +259,18 @@ remotableDecl [ [d|
   m0dProcess :: MeroConf -> Process ()
   m0dProcess conf = do
     say "[Service:m0d] starting."
-    bracket_ startKernel stopKernel $ do
+    Catch.bracket startKernel (\_ -> stopKernel) $ \rc -> do
       say "[Service:m0d] Kernel module loaded."
-      bracket_ bootstrap teardown $ do
-        self <- getSelfPid
-        c <- withEp $ \ep -> spawnChannelLocal (statusProcess ep self)
-        cc <- spawnChannelLocal (controlProcess conf self)
-        sendMeroChannel c cc
-        say "[Service:m0d] Starting service m0d on mero client"
-        go
+      case rc of
+        ExitSuccess -> bracket_ bootstrap teardown $ do
+          self <- getSelfPid
+          c <- withEp $ \ep -> spawnChannelLocal (statusProcess ep self)
+          cc <- spawnChannelLocal (controlProcess conf self)
+          sendMeroChannel c cc
+          say "[Service:m0d] Starting service m0d on mero client"
+          go
+        ExitFailure i ->
+          notifyBootstrapFailure $ "mero-kernel service failed to start: " ++ show i
     where
       haAddr = RPC.rpcAddress $ mcHAAddress conf
       withEp = Mero.Notification.withServerEndpoint haAddr

@@ -234,30 +234,45 @@ calculateMeroClusterStatus = do
   case recordedState of
     M0.MeroClusterStopped -> return M0.MeroClusterStopped
     M0.MeroClusterRunning -> return M0.MeroClusterRunning
+    M0.MeroClusterFailed -> return M0.MeroClusterFailed
     M0.MeroClusterStarting bl@(M0.BootLevel i) -> getLocalGraph >>= \rg ->
       let
         lbl = case M0.BootLevel i of
           x | x == m0t1fsBootLevel -> M0.PLM0t1fs
           x -> M0.PLBootLevel x
-      in if null $ getLabeledProcesses lbl
-                  ( \proc g -> null $
-                    [ () | state <- G.connectedTo proc Is g
-                    , state == M0.PSOnline
-                    ] ) rg
-      then case i of
-        x | M0.BootLevel x == clusterStartedBootLevel -> return M0.MeroClusterRunning
-        _ -> return $ M0.MeroClusterStarting $ M0.BootLevel (i+1)
-      else return $ M0.MeroClusterStarting bl
+
+        onlineOrFailed (M0.PSFailed _) = True
+        onlineOrFailed st = st == M0.PSOnline
+
+        failedProcs = getLabeledProcesses lbl (\p g -> not . null $
+                      [ () | (M0.PSFailed _) <- G.connectedTo p Is g ] ) rg
+        allProcsFinished = null $ getLabeledProcesses lbl
+                           ( \proc g -> null $
+                           [ () | state <- G.connectedTo proc Is g
+                           , onlineOrFailed state
+                           ] ) rg
+      in case failedProcs of
+        [] -> case allProcsFinished of
+          -- All processes finished and none failed
+          True -> if M0.BootLevel i == clusterStartedBootLevel
+                  then return M0.MeroClusterRunning
+                  else return $ M0.MeroClusterStarting $ M0.BootLevel (i+1)
+          -- Not everything has finished but nothing has failed yet either
+          False -> return $ M0.MeroClusterStarting bl
+        -- Some process failed, bail
+        _:_ -> return M0.MeroClusterFailed
     M0.MeroClusterStopping bl@(M0.BootLevel i) -> getLocalGraph >>= \rg ->
       let
         lbl = case M0.BootLevel i of
           x | x == m0t1fsBootLevel -> M0.PLM0t1fs
           x -> M0.PLBootLevel x
-      in if null $ getLabeledProcesses lbl
-                ( \proc g -> not . null $
-                  [ () | state <- G.connectedTo proc Is g
-                  , state `elem` [M0.PSOnline, M0.PSStarting, M0.PSStopping]
-                  ] ) rg
+        stillUnstopped = getLabeledProcesses lbl
+                         ( \proc g -> not . null $
+                         [ () | state <- G.connectedTo proc Is g
+                         , state `elem` [M0.PSOnline, M0.PSStarting, M0.PSStopping]
+                         ] ) rg
+
+      in if null stillUnstopped
       then case i of
         0 -> return M0.MeroClusterStopped
         _ -> return $ M0.MeroClusterStopping $ M0.BootLevel (i-1)
