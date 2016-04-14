@@ -247,13 +247,16 @@ remotableDecl [ [d|
               `staticApply` $(mkStatic 'configDictMeroConf))
 
   m0dProcess :: MeroConf -> Process ()
-  m0dProcess conf = bracket_ startKernel stopKernel $ do
+  m0dProcess conf = do
+    say "[Service:m0d] starting."
+    bracket_ startKernel stopKernel $ do
+      say "[Service:m0d] Kernel module loaded."
       bracket_ bootstrap teardown $ do
         self <- getSelfPid
         c <- withEp $ \ep -> spawnChannelLocal (statusProcess ep self)
         cc <- spawnChannelLocal (controlProcess conf self)
         sendMeroChannel c cc
-        say $ "Starting service m0d on mero client"
+        say "[Service:m0d] Starting service m0d on mero client"
         go
     where
       haAddr = RPC.rpcAddress $ mcHAAddress conf
