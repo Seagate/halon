@@ -197,7 +197,7 @@ ruleDriveRemoved = define "drive-removed" $ do
     phaseLog "debug" "Notify about drive state change"
     notifyDriveStateChange m0sdev M0_NC_FAILED
     mdisk <- lookupSDevDisk m0sdev
-    forM_ mdisk $ \disk -> 
+    forM_ mdisk $ \disk ->
       withSpielRC $ \sp m0 -> withRConfRC sp
         $ m0 $ Spiel.deviceDetach sp (fid disk)
     messageProcessed uuid
@@ -393,7 +393,9 @@ ruleGetEntryPoint :: Definitions LoopState ()
 ruleGetEntryPoint = defineSimple "castor-entry-point-request" $
   \(HAEvent uuid (GetSpielAddress pid) _) -> do
     phaseLog "info" $ "Spiel Address requested by " ++ show pid
-    liftProcess . usend pid =<< getSpielAddressRC
+    ep <- getSpielAddressRC
+    liftProcess $ usend pid ep
+    phaseLog "entrypoint" $ show ep
     messageProcessed uuid
 #endif
 
