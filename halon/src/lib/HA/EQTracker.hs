@@ -22,7 +22,7 @@ module HA.EQTracker
   ( ReplicaLocation(..)
   , ReplicaRequest(..)
   , ReplicaReply(..)
-  , PreferReplicas(..)
+  , PreferReplica(..)
   , ServiceMessage(..)
   , startEQTracker
   , name
@@ -32,14 +32,13 @@ module HA.EQTracker
   , __remoteTable
   ) where
 
-import Control.SpineSeq (spineSeq)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 
 import Control.Monad (unless)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
-import Data.List (intersect, sort, union)
+import Data.List (union)
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -52,26 +51,22 @@ data ServiceMessage =
 
 instance Binary ServiceMessage
 
--- | Loop state for the tracker. We store a list of preferred replicas as
---   well as the full list of known replicas. None of these are guaranteed
---   to exist.
+-- | Loop state for the tracker. We store a preferred replica as well as the
+-- full list of known replicas. None of these are guaranteed to exist.
 data ReplicaLocation = ReplicaLocation
-  { eqsPreferredReplicas :: [NodeId]
+  { eqsPreferredReplica :: Maybe NodeId
   , eqsReplicas :: [NodeId]
   } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary ReplicaLocation
 instance Hashable ReplicaLocation
 
--- | Message sent by clients to indicate a preference for certain replicas.
-data PreferReplicas = PreferReplicas
-  { responsiveNid :: NodeId
-  , preferredNid :: NodeId
-  }
+-- | Message sent by clients to indicate a preference for a certain replica.
+data PreferReplica = PreferReplica NodeId
   deriving (Eq, Generic, Show, Typeable)
 
-instance Binary PreferReplicas
-instance Hashable PreferReplicas
+instance Binary PreferReplica
+instance Hashable PreferReplica
 
 -- | Message sent by clients to request a replica list.
 newtype ReplicaRequest = ReplicaRequest ProcessId
@@ -105,23 +100,25 @@ remotable [ 'updateEQNodes ]
 -- fails then there is no way to reliably send messages to the EQ.
 eqTrackerProcess :: [NodeId] -> Process ()
 eqTrackerProcess nodes = do
-      go $ ReplicaLocation [] nodes
+      go $ ReplicaLocation Nothing nodes
     where
       go eqs = do
         receiveWait
           [ match $ \(caller, UpdateEQNodes eqnids) -> do
               say $ "Got UpdateEQNodes: " ++ show eqnids
               usend caller True
-              let !preferred = spineSeq $ intersect eqnids (eqsPreferredReplicas eqs)
+              let !preferred = do r <- eqsPreferredReplica eqs
+                                  if elem r eqnids then return r
+                                    else Nothing
               return $ eqs
                 { eqsReplicas = eqnids
                   -- Preserve the preferred replica only if it belongs
                   -- to the new list of nodes.
-                , eqsPreferredReplicas = preferred
+                , eqsPreferredReplica = preferred
                 }
-          , match $ \prs@(PreferReplicas rnid pnid) -> do
+          , match $ \prs@(PreferReplica rnid) -> do
               say $ "Got PreferReplicas: " ++ show prs
-              return $ handleEQResponse eqs rnid pnid
+              return $ handleEQResponse eqs rnid
           , match $ \(ReplicaRequest requester) -> do
               usend requester $ ReplicaReply eqs
               return eqs
@@ -130,22 +127,13 @@ eqTrackerProcess nodes = do
 -- The EQ response may suggest to contact another replica. This function
 -- handles the EQTracker state update.
 --
--- @handleEQResponse naState responsiveNid preferredNid@
+-- @handleEQResponse naState responsiveNid@
 --
-handleEQResponse :: ReplicaLocation -> NodeId -> NodeId -> ReplicaLocation
-handleEQResponse eqs rnid pnid =
-    if sort [rnid, pnid] /= sort (eqsPreferredReplicas eqs)
-    then
-      let !preferred = if rnid == pnid
-                       then [rnid] -- The EQ sugested itself.
-                       else if rnid `elem` (eqsPreferredReplicas eqs)
-                            then [pnid] -- Likely we have not tried reaching the preferred node yet.
-                            else [rnid, pnid] -- The preferred replica did not respond soon enough.
-      in eqs{ eqsPreferredReplicas = preferred
-            , eqsReplicas = preferred `union` eqsReplicas eqs
-            }
-    else
-      eqs
+handleEQResponse :: ReplicaLocation -> NodeId -> ReplicaLocation
+handleEQResponse eqs rnid =
+    eqs { eqsPreferredReplica = Just rnid
+        , eqsReplicas = [rnid] `union` eqsReplicas eqs
+        }
 
 startEQTracker :: [NodeId] -> Process ProcessId
 startEQTracker eqs = do

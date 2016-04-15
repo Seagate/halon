@@ -15,7 +15,7 @@
 -- Queue component can delete the event from the replicated mailbox.
 --
 -- If a recovery procedure is interrupted due to a failure in the tracking
--- station or in the RC, the Event Queue will send the unhandled events to
+-- station or in the RC, the Event Queue can send the unhandled events to
 -- another instance of the RC. This is why it is important that all operations
 -- of the recovery coordinator be idempotent.
 --
@@ -27,55 +27,61 @@
 {-# LANGUAGE TemplateHaskell    #-}
 {-# LANGUAGE TypeOperators      #-}
 module HA.EventQueue
-  ( EventQueue(_eqRC, _eqMap)
+  ( EventQueue(_eqMap)
   , __remoteTable
   , eventQueueLabel
-  , RCDied(..)
-  , RCLost(..)
   , TrimDone(..)
   , TrimUnknown(..)
-  , EventQueueState
   , startEventQueue
   , emptyEventQueue
   ) where
 
-import Prelude hiding ((.), id)
-
-import GHC.Generics
 
 import HA.EventQueue.Types
 import HA.Logger
 import HA.Replicator ( RGroup
+                     , getStateWith
                      , updateStateWith
-                     , getState
                      , retryRGroup
                      , withRGroupMonitoring
                      )
-import FRP.Netwire hiding (Last(..), when, for)
 
 import Control.Distributed.Process hiding (newChan, catch)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Internal.Types (Message(..))
+import Network.CEP
 
 import Control.Monad (when)
 import Control.Monad.Catch
 import Data.Binary (Binary, encode)
-import Data.Foldable (for_, traverse_)
-import Data.Function (on)
+import Data.Foldable (forM_)
+import Data.Function (fix)
 import Data.Functor (void)
-import Data.List
+import Data.Int (Int64)
 import qualified Data.Map as M
-import Data.Traversable (for)
 import Data.Typeable
 import Data.Word (Word64)
+import GHC.Generics
+import System.Clock
 
-import Network.CEP
 
 -- | Since there is at most one Event Queue per tracking station node,
 -- the @eventQueueLabel@ is used to register and lookup the Event Queue of a
 -- node.
 eventQueueLabel :: String
 eventQueueLabel = "HA.EventQueue"
+
+-- | Tells how many microseconds to wait between polls of the replicated state
+-- for new events.
+--
+-- Events are sent to the RC when the poller finds them.
+--
+-- When the replicator group is busy, the polling delay may be larger because
+-- the requests may take longer to be served. This is the delay when the group
+-- is moslty idle.
+--
+minimumPollingDelay :: Int
+minimumPollingDelay = 1000000
 
 eqTrace :: String -> Process ()
 eqTrace = mkHalonTracer "EQ"
@@ -89,21 +95,20 @@ type SequenceNumber = Word64
 
 -- | State of the event queue.
 --
--- It contains the process id of the RC, and the map of pending events
--- along with their sequence number.
+-- It contains the map of pending events along with their sequence number.
 data EventQueue = EventQueue
-  { _eqRC :: Maybe ProcessId
-    -- ^ 'ProcessId' of the RC if the RC is running
-  , _eqSN :: !SequenceNumber
+  { _eqSN :: !SequenceNumber
     -- ^ Tracks the ordering of the messages coming in into the
     -- 'EventQueue'. This is used to generate the otherwise-lost
-    -- ordering within '_eqMap'.
+    -- ordering within '_eqMap'. It also helps identifying new events
+    -- that haven't been sent to the RC yet.
   , _eqMap :: M.Map UUID (PersistMessage, SequenceNumber)
     -- ^ A map of the messages in the EQ. We keep track of the
-    -- messages' 'SequenceNumber', necessary to send the messages to
-    -- the RC in the expected order after RC restart. We use a 'Map'
-    -- rather than a list to provide quicker removal of messages and
-    -- reduce duplicates.
+    -- messages' 'SequenceNumber', necessary to remove the messages from
+    -- the sequence number map. We use a 'Map' rather than a list to provide
+    -- quicker removal of messages and reduce duplicates.
+  , _eqSnMap :: M.Map SequenceNumber UUID
+    -- ^ A reverse map for efficient polling of new events.
   } deriving (Eq, Ord, Generic, Typeable)
 
 instance Binary EventQueue
@@ -111,15 +116,9 @@ instance Binary EventQueue
 -- | Initial state of the 'EventQueue'. No known RC 'ProcessId and no
 -- messages.
 emptyEventQueue :: EventQueue
-emptyEventQueue = EventQueue Nothing 0 M.empty
+emptyEventQueue = EventQueue 0 M.empty M.empty
 
-data EventQueueState =
-    EventQueueState
-    { _eqsRC  :: !ProcessId
-      -- ^ Recovery Coordinator 'ProcessId'
-    , _eqsRef :: !MonitorRef
-      -- ^ Resulted 'MonitorRef' from monitoring RC 'Process'
-    }
+data EventQueueState = EventQueueState
 
 -- | Add the given 'PersistMessage' to the EQ if it doesn't already
 -- exist.
@@ -128,52 +127,60 @@ data EventQueueState =
 addSerializedEvent :: PersistMessage -> EventQueue -> EventQueue
 addSerializedEvent msg@PersistMessage{..} eq@EventQueue{..} =
   eq { _eqSN = succ _eqSN
-     , _eqMap = M.insert persistEventId (msg, _eqSN) _eqMap }
-
--- | Set a new RC 'ProcessId' in the 'EventQueue'.
-eqSetRC :: Maybe ProcessId -> EventQueue -> EventQueue
-eqSetRC mpid eq = eq { _eqRC = mpid }
-
--- | "compare and swap" for updating the RC
---
--- @O(1)@
-compareAndSwapRC :: (Maybe ProcessId, Maybe ProcessId)
-                 -> EventQueue -> EventQueue
-compareAndSwapRC (expected, new) eq@(EventQueue { _eqRC = current }) =
-    if current == expected then eq { _eqRC = new } else eq
+     , _eqMap = M.insert persistEventId (msg, _eqSN) _eqMap
+     , _eqSnMap = M.insert _eqSN persistEventId _eqSnMap
+     }
 
 -- | Remove the message with given 'UUID' from the 'EventQueue'.
 --
 -- @O(log n)@
 filterEvent :: UUID -> EventQueue -> EventQueue
-filterEvent eid eq = eq { _eqMap = M.delete eid $ _eqMap eq }
+filterEvent eid eq =
+    let (me, uuidMap') = M.updateLookupWithKey (\_ _ -> Nothing) eid (_eqMap eq)
+     in eq { _eqMap = uuidMap'
+           , _eqSnMap = maybe id (M.delete . snd) me $ _eqSnMap eq
+           }
 
 -- | Filter all occurences of the given message inside event queue.
 --
 -- @O(n)@
 filterMessage :: Message -> EventQueue -> EventQueue
 filterMessage msg eq =
-  eq { _eqMap = M.mapMaybe checkEquality $ _eqMap eq }
+    eq { _eqMap   = keep
+       , _eqSnMap = M.foldr (\(_, sn) b -> M.delete sn b) (_eqSnMap eq) remove
+       }
   where
+    (keep, remove) = M.mapEither equalEncoding $ _eqMap eq
+
     (bfgp,benc) = case msg of
        EncodedMessage f e -> (f,e)
        UnencodedMessage f p -> (f, encode p)
-    checkEquality (m@(PersistMessage uuid msg'), i) =
+    equalEncoding p@(PersistMessage uuid msg', i) =
       case msg' of
         EncodedMessage f e
-           | f == bfgp && e == benc -> Nothing
-           | otherwise -> Just (m, i)
-        UnencodedMessage f p ->
-           let enc = encode p
+           | f == bfgp && e == benc -> Right p
+           | otherwise -> Left p
+        UnencodedMessage f v ->
+           let enc = encode v
            in if f == bfgp && enc == benc
-                then Nothing
-                else Just ((PersistMessage uuid (EncodedMessage f enc)), i)
+                then Right p
+                else Left ((PersistMessage uuid (EncodedMessage f enc)), i)
+
+-- | @eqReadEvents (eq, sn)@ sends the current sequence number and all events
+-- from @sn@ onwards to @eq@.
+eqReadEvents :: (ProcessId, Word64) -> EventQueue -> Process ()
+eqReadEvents (eq, sn) (EventQueue sn' uuidMap snMap) = do
+    let (_, muuid, evs) = M.splitLookup sn snMap
+    eqTrace $ "Polling state " ++ show (sn, sn', muuid)
+    usend eq (sn', [ m | uuid <- maybe id (:) muuid $ M.elems evs
+                       , Just (m, _) <- [M.lookup uuid uuidMap]
+                   ]
+             )
 
 remotable [ 'addSerializedEvent
-          , 'eqSetRC
-          , 'compareAndSwapRC
           , 'filterEvent
           , 'filterMessage
+          , 'eqReadEvents
           ]
 
 -- | Amount of microseconds between retries of requests for the replicated
@@ -196,13 +203,8 @@ requestTimeout = 5 * 1000 * 1000
 startEventQueue :: RGroup g => g EventQueue -> Process ProcessId
 startEventQueue rg = do
     eq <- spawnLocal $ do
-      EventQueue { _eqRC = mRC } <- retryRGroup rg requestTimeout $ getState rg
-      -- The EQ must monitor the RC or it will never realize when the RC stops
-      -- responding and won't ever care of checking the replicated state to learn
-      -- of new RCs
-      st <- for mRC $ \pid -> fmap (EventQueueState pid) $ monitor pid
       eqTrace "Started"
-      execute st $ eqRules rg
+      execute EventQueueState $ eqRules rg
       eqTrace "Terminated"
      `catch` \e -> do
       eqTrace $ "Dying with " ++ show e
@@ -210,127 +212,58 @@ startEventQueue rg = do
     register eventQueueLabel eq
     return eq
 
-eqRules :: RGroup g => g EventQueue -> Definitions (Maybe EventQueueState) ()
+eqRules :: RGroup g => g EventQueue -> Definitions EventQueueState ()
 eqRules rg = do
-    defineSimple "rc-spawned" $ \rc -> do
-      recordNewRC rg rc
-      setRC rc
-      sendEventsToRC rg rc
-
-    defineSimple "monitoring" $ \(ProcessMonitorNotification _ pid reason) -> do
-      mRC <- getRC
-      -- Check the identity of the process in case the
-      -- notifications get mixed for old and new RCs.
-      when (Just pid == mRC) $
-        case reason of
-          -- The connection to the RC failed.
-          DiedDisconnect -> do
-            publish RCLost
-          -- The RC died.
-          _              -> do recordRCDied rg
-                               publish RCDied
-                               clearRC
+    defineSimple "rc-spawned" $ \rc -> liftProcess $ do
+      -- Poll the replicated state for the RC.
+      pid <- spawnLocal $ handle
+        (\e -> eqTrace $ "Poller died: " ++ show (e :: SomeException)) $ do
+        link rc
+        self <- getSelfPid
+        flip fix (0 :: Word64) $ \loop sn -> do
+          t0 <- liftIO $ getTime Monotonic
+          (sn', ms) <- retryRGroup rg requestTimeout $ do
+            b <- getStateWith rg $ $(mkClosure 'eqReadEvents) (self, sn)
+            if b then fmap Just expect else return Nothing
+          forM_ (ms :: [PersistMessage]) $ \(PersistMessage mid ev) -> do
+            eqTrace $ "Sending to RC: " ++ show mid
+            uforward ev rc
+          tf <- liftIO $ getTime Monotonic
+          -- Wait if any time remains to reach the minimum polling delay.
+          let timeSpecToMicro :: TimeSpec -> Int64
+              timeSpecToMicro (TimeSpec s ns) = s * 1000000 + ns `div` 1000
+              elapsed   = timeSpecToMicro (tf -t0)
+              remaining = fromIntegral minimumPollingDelay - elapsed
+          when (remaining > 0) $
+            void $ receiveTimeout (fromIntegral remaining) []
+          loop sn'
+      eqTrace $ "Spawned poller " ++ show (rc, pid)
 
     defineSimple "trimming" (trim rg)
     defineSimple "trimming-unknown" $ \(DoTrimUnknown msg) -> trimMsg rg msg
 
-    defineSimple "ha-event" $ \(sender, ev@(PersistMessage mid _)) -> do
-      mRC  <- lookupRC rg
-      liftProcess $ do
-        here <- getSelfNode
-        case mRC of
-          Just (Just rc) | here /= processNodeId rc -> do
-            -- Delegate on the colocated EQ.
-            -- The colocated EQ learns immediately of the RC death. This
-            -- ensures events are not sent to a defunct RC rather than to a
-            -- live one.
-            eqTrace $ "EQ: Forwarding event " ++
-                      show (mid, processNodeId rc, sender)
-            nsendRemote (processNodeId rc) eventQueueLabel
-                        (sender, ev)
-            sendReply sender $ Left $ processNodeId rc
-          Just _ -> do
-            -- Record the event if there is no known RC or if it is colocated.
-            self <- getSelfPid
-            void $ spawnLocal $ do
-              eqTrace $ "EQ: Recording event " ++ show mid
-              res <- withRGroupMonitoring rg $
-                updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
-              case res of
-                Just True -> do
-                  eqTrace $ "EQ: Recorded event " ++ show mid
-                  usend self (RecordAck sender ev)
-                _ -> do
-                  eqTrace $ "EQ: Recording event failed " ++ show (mid, sender)
-                  sendReply sender $ Left here
-          _ -> do
-            -- No quorum
-            eqTrace $ "EQ: No quorum " ++ show (mid, sender)
-            sendReply sender $ Left here
-
+    defineSimple "ha-event" $ \(sender, ev@(PersistMessage mid _)) ->
+      liftProcess $
+        void $ spawnLocal $ do
+          eqTrace $ "Recording event " ++ show mid
+          res <- withRGroupMonitoring rg $
+            updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+          case res of
+            Just True -> do
+              eqTrace $ "Recorded event " ++ show mid
+              sendReply sender True
+            _ -> do
+              eqTrace $ "Recording event failed " ++ show (mid, sender)
+              sendReply sender False
 
     defineSimple "trim-ack" $ \(TrimAck eid) -> publish (TrimDone eid)
     defineSimple "trim-ack-unknown" $ \(TrimUnknown _) -> return ()
-    defineSimple "record-ack" $ \(RecordAck sender (PersistMessage mid ev)) ->
-      do mRC <- lookupRC rg
-         liftProcess $ case mRC of
-           Just (Just rc) -> do
-             eqTrace $ "EQ: Sending to RC (" ++ show rc ++"): " ++ show (mid, sender)
-             sendReply sender $ Right $ processNodeId rc
-             uforward ev rc
-           _ -> do
-             -- Send my own node when we don't know the RC location.
-             getSelfNode >>= sendReply sender . Right
-
-setRC :: ProcessId -> PhaseM (Maybe EventQueueState) l ()
-setRC rc = do
-    prevM <- get Global
-    ref   <- liftProcess $ do
-      traverse_ (unmonitor . _eqsRef) prevM
-      monitor rc
-    put Global $ Just $ EventQueueState rc ref
-
-clearRC :: PhaseM (Maybe EventQueueState) l ()
-clearRC = traverse_ go =<< get Global
-  where
-    go EventQueueState{..} = do
-        liftProcess $ unmonitor _eqsRef
-        put Global Nothing
-
--- | Record in the replicated state that there is a new RC.
-recordNewRC :: RGroup g
-            => g EventQueue
-            -> ProcessId
-            -> PhaseM (Maybe EventQueueState) l ()
-recordNewRC rg rc = void $ liftProcess $ spawnLocal $
-    retryRGroup rg requestTimeout $ fmap bToM $
-      updateStateWith rg $ $(mkClosure 'eqSetRC) $ Just rc
-
--- | Send the pending events to the new RC.
-sendEventsToRC :: RGroup g => g EventQueue -> ProcessId -> PhaseM s l ()
-sendEventsToRC rg rc = liftProcess $ do
-    eqTrace "sendEventsToRC"
-    EventQueue { _eqMap = evs } <- retryRGroup rg requestTimeout $ getState rg
-    let pendingEvents = map fst . sortBy (compare `on` snd) $ M.elems evs
-    eqTrace $ "sendEventsToRC: " ++ show (length pendingEvents)
-    for_ pendingEvents $ \(PersistMessage mid ev) -> do
-      eqTrace $ "EQ: Sending to RC: " ++ show mid
-      uforward ev rc
 
 bToM :: Bool -> Maybe ()
 bToM True  = Just ()
 bToM False = Nothing
 
-recordRCDied :: RGroup g => g EventQueue -> PhaseM (Maybe EventQueueState) l ()
-recordRCDied rg = do
-    mRC <- getRC
-    -- We use compare and swap to make sure we don't overwrite
-    -- the pid of a respawned RC
-    void $ liftProcess $ spawnLocal $ retryRGroup rg requestTimeout $
-      fmap bToM $ updateStateWith rg $ $(mkClosure 'compareAndSwapRC)
-                                   (mRC, Nothing :: Maybe ProcessId)
-
-sendReply :: ProcessId -> Either NodeId NodeId -> Process ()
+sendReply :: ProcessId -> Bool -> Process ()
 sendReply sender reply = do here <- getSelfNode
                             usend sender (here, reply)
 
@@ -357,38 +290,6 @@ trimMsg rg msg =
         usend self (TrimUnknown msg)
       return ()
 
--- | Find the RC either in the local state or in the replicated state.
---
--- Returns @Nothing@ if we cannot read the replicated state.
---
-lookupRC :: RGroup g
-         => g EventQueue
-         -> PhaseM (Maybe EventQueueState) l (Maybe (Maybe ProcessId))
-lookupRC rg = do
-    mRC <- getRC
-    case mRC of
-      Just _ -> return $ Just mRC
-      Nothing -> do
-        liftProcess $ eqTrace "lookupRC"
-        mr <- liftProcess $ withRGroupMonitoring rg $ getState rg
-        liftProcess $ eqTrace $ "lookupRC: " ++ show (fmap (fmap _eqRC) mr)
-        case mr of
-          Just (Just (EventQueue { _eqRC = newMRC })) -> do
-            for_ newMRC setRC
-            return $ Just newMRC
-          _ -> return Nothing
-
-getRC :: PhaseM (Maybe EventQueueState) l (Maybe ProcessId)
-getRC = fmap (fmap _eqsRC) $ get Global
-
-data RCDied = RCDied deriving (Show, Typeable, Generic)
-
-instance Binary RCDied
-
-data RCLost = RCLost deriving (Show, Typeable, Generic)
-
-instance Binary RCLost
-
 data TrimDone = TrimDone UUID deriving (Typeable, Generic)
 
 instance Binary TrimDone
@@ -396,11 +297,6 @@ instance Binary TrimDone
 data TrimAck = TrimAck UUID deriving (Typeable, Generic)
 
 instance Binary TrimAck
-
-data RecordAck = RecordAck ProcessId PersistMessage
-                 deriving (Typeable, Generic)
-
-instance Binary RecordAck
 
 -- | Request EQ to remove message of type that is unknown.
 data TrimUnknown = TrimUnknown Message deriving (Typeable, Generic)

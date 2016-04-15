@@ -9,9 +9,9 @@
 
 module HA.NodeAgent.Tests ( tests, dummyRC__static, dummyRC__sdict) where
 
-import HA.EventQueue ( EventQueue, eventQueueLabel, startEventQueue, emptyEventQueue )
+import HA.EventQueue ( EventQueue, startEventQueue, emptyEventQueue )
 import HA.EventQueue.Producer (expiate)
-import HA.EventQueue.Types (PersistMessage(..), HAEvent(..))
+import HA.EventQueue.Types (HAEvent(..))
 import HA.Replicator ( RGroup(..) )
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock ( MC_RG )
@@ -31,7 +31,7 @@ import Control.Distributed.Process.Closure ( mkStatic, remotable )
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
-import Data.List (find, isPrefixOf, nub, (\\))
+import Data.List (find)
 import Control.Concurrent ( threadDelay )
 import Control.Concurrent.MVar (newEmptyMVar,putMVar,takeMVar,MVar)
 import Control.Monad ( replicateM, forM_, void )
@@ -100,43 +100,6 @@ naTestWithEQ transport action = withTmpDirectory $ E.bracket
     -- TODO: implement closing RGroups and call it here.
     threadDelay 2000000
 
-naTest :: Transport -> ([NodeId] -> Process ()) -> IO ()
-naTest transport action = withTmpDirectory $ E.bracket
-    (replicateM 2 $ newLocalNode transport
-                                 (__remoteTable remoteTable))
-    (mapM closeLocalNode)
-    $ \nodes -> do
-      let nids = map localNodeId nodes
-      runProcess (nodes !! 0) $ do
-        self <- getSelfPid
-        eq1 <- spawnLocal $ fakeEq (localNodeId $ nodes !! 0) self
-        register eventQueueLabel eq1
-        liftIO $ runProcess (nodes !! 1) $ do
-          eq2 <- spawnLocal $ fakeEq (localNodeId $ nodes !! 1) self
-          register eventQueueLabel eq2
-        eqt <- startEQTracker nids
-        bracket_ (link eqt) (unlink eqt) $
-          action nids
-  where
-    fakeEq :: NodeId -> ProcessId -> Process ()
-    fakeEq eqNodeId controller = receiveWait
-      [ match $ \x -> do
-          usend controller (eqNodeId, x :: (ProcessId, PersistMessage))
-          fakeEq eqNodeId controller
-      , match $ \() -> do
-          eq' <- spawnLocal $ fakeEq eqNodeId controller
-          reregister eventQueueLabel eq'
-      ]
-
-expectEventOnNode :: NodeId -> Process ProcessId
-expectEventOnNode n = receiveWait
-    [ matchIf (\(n', (_sender, PersistMessage _ _)) -> n' == n)
-              (return . fst . snd)
-    ]
-
-sendReply :: ProcessId -> (NodeId, Either NodeId NodeId) -> Process ()
-sendReply = usend
-
 tests :: Transport -> IO [TestTree]
 tests transport = do
     return
@@ -155,102 +118,4 @@ tests transport = do
 
              liftIO $ takeMVar sync1
              assert True
-
-      , testSuccess "na-should-compress-path" $ naTest transport $ \nids -> do
-            self <- getSelfPid
-            registerInterceptor $ \string ->
-              if "Got PreferReplicas:" `isPrefixOf` string
-              then usend self ()
-              else return ()
-
-            -- We get an event on both nodes.
-            _ <- spawnLocal $ expiate "hello1"
-            sender0 <- expectEventOnNode $ nids !! 0
-            _ <- expectEventOnNode $ nids !! 1
-            sendReply sender0 (nids !! 0, Right $ nids !! 0)
-            () <- expect
-
-            -- We still get an event on the first node and suggest NA to use the
-            -- second node.
-            _ <- spawnLocal $ expiate "hello2"
-            sender1 <- expectEventOnNode $ nids !! 0
-            sendReply sender1 (nids !! 0, Right $ nids !! 1)
-            () <- expect
-
-            -- We get an event on the second node.
-            _ <- spawnLocal $ expiate "hello3"
-            sender2 <- expectEventOnNode $ nids !! 1
-            sendReply sender2 (nids !! 1, Right $ nids !! 1)
-
-            -- We get the next event on the second node again.
-            _ <- spawnLocal $ expiate "hello4"
-            sender3 <- expectEventOnNode $ nids !! 1
-            sendReply sender3 (nids !! 1, Right $ nids !! 1)
-
-      , testSuccess "na-should-compress-path-with-failures" $ naTest transport $ \nids -> do
-
-            self <- getSelfPid
-            registerInterceptor $ \string ->
-              if "Got PreferReplicas:" `isPrefixOf` string
-              then usend self ()
-              else return ()
-
-            -- We get an event on both nodes.
-            _ <- spawnLocal $ expiate "hello1"
-            sender0 <- expectEventOnNode $ nids !! 0
-            _ <- expectEventOnNode $ nids !! 1
-            sendReply sender0 (nids !! 0, Right $ nids !! 0)
-            () <- expect
-
-            -- We still get an event on the first node and suggest NA to use the
-            -- second node.
-            _ <- spawnLocal $ expiate "hello2"
-            sender1 <- expectEventOnNode $ nids !! 0
-            sendReply sender1 (nids !! 0, Right $ nids !! 1)
-            () <- expect
-
-            -- We get an event on the second node, but we are not going to
-            -- reply, so NA should resend to the first node. We restart the
-            -- event queue so the NA notices the failure.
-            _ <- spawnLocal $ expiate "hello3"
-            _ <- expectEventOnNode $ nids !! 1
-            nsendRemote (nids !! 1) eventQueueLabel ()
-
-            sender2 <- expectEventOnNode $ nids !! 0
-            sendReply sender2 (nids !! 0, Right $ nids !! 1)
-            () <- expect
-
-            -- We get an event on the second node and we reply. But because we
-            -- didn't reply last time, NA will also send the event to the last
-            -- responsive node, that is the first one.
-            _ <- spawnLocal $ expiate "hello4"
-            evpairs <- replicateM 2 $ (expect :: Process (NodeId, (ProcessId, PersistMessage)))
-            let nids4 = nub $ map fst evpairs
-                evs   = nub $ map snd evpairs
-                (_, (sender, PersistMessage _ _)) = head evpairs
-            -- The same event was sent multiple times.
-            True <- return $ length evs == 1
-            -- The event was sent to both nodes.
-            True <- return $ length nids4 == 2
-            True <- return $ null $ nids4 \\ nids
-            sendReply sender (nids !! 1, Right $ nids !! 1)
-            () <- expect
-
-            -- We get the next event on the second node again, and we suggest
-            -- the first node.
-            _ <- spawnLocal $ expiate "hello5"
-            sender3 <- expectEventOnNode $ nids !! 1
-            sendReply sender3 (nids !! 1, Right $ nids !! 0)
-            () <- expect
-
-            -- We get the next event on the first node.
-            _ <- spawnLocal $ expiate "hello6"
-            sender4 <- expectEventOnNode $ nids !! 0
-            sendReply sender4 (nids !! 0, Right $ nids !! 0)
-            () <- expect
-
-            -- We get the next event on the first node again.
-            _ <- spawnLocal $ expiate "hello7"
-            sender5 <- expectEventOnNode $ nids !! 0
-            sendReply sender5 (nids !! 0, Right $ nids !! 0)
       ]

@@ -26,7 +26,6 @@ import RemoteTables
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Node
 
 import Control.Applicative ((<$>))
 import Control.Monad
@@ -43,11 +42,6 @@ import Test.Helpers
 
 eqSDict :: SerializableDict EventQueue
 eqSDict = SerializableDict
-
-remoteRC :: ProcessId -> Process ()
-remoteRC controller = forever $ do
-    evt <- expect
-    usend controller (evt :: HAEvent Int)
 
 remotable [ 'eqSDict ]
 
@@ -68,7 +62,7 @@ secs :: Int
 secs = 1000000
 
 tests :: AbstractTransport -> IO [TestTree]
-tests (AbstractTransport transport breakConnection _) = do
+tests (AbstractTransport transport _breakConnection _) = do
     let rt = HA.EventQueue.Tests.__remoteTable remoteTable
         (==>) :: (IO () -> TestTree) -> (ProcessId -> ProcessId -> MC_RG EventQueue -> Process ()) -> TestTree
         t ==> action = t $ setup $ \eq na rGroup ->
@@ -193,67 +187,7 @@ tests (AbstractTransport transport breakConnection _) = do
               usend eq self
               _ <- expect :: Process (HAEvent Int)
               return ()
-        , testSuccess "eq-should-record-that-rc-died" $ setup $ \eq _ _ -> do
-              subscribe eq (Proxy :: Proxy RCDied)
-              rc <- spawnLocal $ return ()
-              usend eq rc
-              -- Wait for confirmation of RC death.
-              Published RCDied _ <- expect
-              return ()
 
-          -- XXX run this test with the rpc transport when networkBreakConnection
-          -- is implemented for it.
-#ifndef USE_RPC
-        , testSuccess "eq-should-reconnect-to-rc" $
-              setup' $ \eq _ _ cRGroup ->
-                bracket
-                  (liftIO $ newLocalNode transport rt)
-                  (liftIO . closeLocalNode)
-                  $ \ln1 ->
-                -- Spawn a remote RC.
-                bracket
-                  (do self <- getSelfPid
-                      liftIO $ runProcess ln1 $ do
-                        pid <- spawnLocal $ remoteRC self
-                        -- spawn a colocated EQ
-                        rGroup <- unClosure cRGroup >>= id
-                        _ <- startEventQueue rGroup
-                        usend self pid
-                      expect
-                  )
-                  (flip exit "test finished")
-                  $ \rc -> do
-                subscribe eq (Proxy :: Proxy RCLost)
-                usend eq rc
-                say "Event 1"
-                eid <- triggerEvent 1
-                -- The RC should forward the event to me.
-                say "Expecting event ..."
-                (expectTimeout defaultTimeout :: Process (Maybe (HAEvent Int))) >>=
-                  \case
-                    Just (HAEvent eid' _ _) | eid == eid' -> return ()
-                    Nothing -> error "No HA Event received from first RC."
-                    _ -> error "Wrong event received from first RC."
-                nid <- getSelfNode
-                -- Break the connection
-                say "Breaking connection"
-                liftIO $ breakConnection (nodeAddress nid) (nodeAddress $ localNodeId ln1)
-                -- Expect confirmation from the eq that the rc connection has broken.
-                expectTimeout defaultTimeout >>= \case
-                  Just (Published RCLost _) -> return ()
-                  Nothing -> error "No confirmation of broken connection from EQ."
-                say "Event 2"
-                eid2 <- triggerEvent 2
-                -- EQ should reconnect to the RC, and the RC should forward the
-                -- event to me.
-                receiveTimeout defaultTimeout
-                  [ matchIf (\(HAEvent eid' _ _ :: HAEvent Int) -> eid2 == eid')
-                            (const $ return ())
-                  ] >>= \case
-                    Just () -> return ()
-                    Nothing -> error "No HA Event received from second RC."
-                return ()
-#endif
         -- Test that until removed, messages in the EQ are sent at least once
         -- to the RC everytime it spawns.
         , testSuccess "eq-send-events-to-new-rc" ==> \eq _na _rGroup -> do
@@ -262,7 +196,6 @@ tests (AbstractTransport transport breakConnection _) = do
             rc <- spawnLocal $ return ()
             usend eq rc
             evs <- Set.fromList <$> forM [1..eventsNum] triggerEvent
-            subscribe eq (Proxy :: Proxy RCDied)
             replicateM_ testNum $ do
               self <- getSelfPid
               rc' <- spawnLocal $ do
@@ -272,8 +205,6 @@ tests (AbstractTransport transport breakConnection _) = do
                 usend self (evs' == evs)
               usend eq rc'
               assertBool "event is correct" =<< expect
-              Published RCDied _ <- expect
-              return ()
         , testSuccess "send-until-acknowledged" ==> \eq _na _rGroup -> do
             _ <- monitor eq
             unlink eq
@@ -291,7 +222,7 @@ tests (AbstractTransport transport breakConnection _) = do
                       (pidx, PersistMessage{}) <- expect
                       say $ "Second message received: " ++ show pidx
                       n <- getSelfNode
-                      usend pidx (n, Right n :: Either NodeId NodeId)
+                      usend pidx (n, True)
                       getSelfPid >>= usend self
                       expect -- wait until the test finishes
                     reregister eventQueueLabel eq2
