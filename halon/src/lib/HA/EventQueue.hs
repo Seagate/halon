@@ -213,9 +213,20 @@ startEventQueue rg = do
 eqRules :: RGroup g => g EventQueue -> Definitions (Maybe EventQueueState) ()
 eqRules rg = do
     defineSimple "rc-spawned" $ \rc -> do
-      recordNewRC rg rc
+      -- Record the new RC pid in the replicated state.
+      liftProcess $ spawnLocal $
+        retryRGroup rg requestTimeout $ fmap bToM $
+          updateStateWith rg $ $(mkClosure 'eqSetRC) $ Just rc
       setRC rc
-      sendEventsToRC rg rc
+      -- Send pending events to the new RC.
+      liftProcess $ do
+        eqTrace "sendEventsToRC"
+        EventQueue { _eqMap = evs } <- retryRGroup rg requestTimeout $ getState rg
+        let pendingEvents = map fst . sortBy (compare `on` snd) $ M.elems evs
+        eqTrace $ "sendEventsToRC: " ++ show (length pendingEvents)
+        for_ pendingEvents $ \(PersistMessage mid ev) -> do
+          eqTrace $ "EQ: Sending to RC: " ++ show mid
+          uforward ev rc
 
     defineSimple "monitoring" $ \(ProcessMonitorNotification _ pid reason) -> do
       mRC <- getRC
@@ -296,26 +307,6 @@ clearRC = traverse_ go =<< get Global
     go EventQueueState{..} = do
         liftProcess $ unmonitor _eqsRef
         put Global Nothing
-
--- | Record in the replicated state that there is a new RC.
-recordNewRC :: RGroup g
-            => g EventQueue
-            -> ProcessId
-            -> PhaseM (Maybe EventQueueState) l ()
-recordNewRC rg rc = void $ liftProcess $ spawnLocal $
-    retryRGroup rg requestTimeout $ fmap bToM $
-      updateStateWith rg $ $(mkClosure 'eqSetRC) $ Just rc
-
--- | Send the pending events to the new RC.
-sendEventsToRC :: RGroup g => g EventQueue -> ProcessId -> PhaseM s l ()
-sendEventsToRC rg rc = liftProcess $ do
-    eqTrace "sendEventsToRC"
-    EventQueue { _eqMap = evs } <- retryRGroup rg requestTimeout $ getState rg
-    let pendingEvents = map fst . sortBy (compare `on` snd) $ M.elems evs
-    eqTrace $ "sendEventsToRC: " ++ show (length pendingEvents)
-    for_ pendingEvents $ \(PersistMessage mid ev) -> do
-      eqTrace $ "EQ: Sending to RC: " ++ show mid
-      uforward ev rc
 
 bToM :: Bool -> Maybe ()
 bToM True  = Just ()
