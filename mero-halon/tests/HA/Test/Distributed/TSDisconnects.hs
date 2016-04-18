@@ -45,7 +45,7 @@ import Control.Distributed.Process.Node
 
 import Control.Monad
 import Data.Function (fix)
-import Data.List (isInfixOf)
+import Data.List (isInfixOf, isSuffixOf)
 
 import Network.Transport (closeTransport)
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
@@ -134,9 +134,9 @@ test = testCase "TSDisconnects" $
         say $ "Isolating ts node " ++ m ++ " ..."
         liftIO $ isolateHostsAsUser "root" [m] ms
         send pingPid $ show (i :: Int)
-        expectLog tsNodes $ isInfixOf $ "received DummyEvent " ++ show i
+        expectLog tsNodes $ isSuffixOf $ "received DummyEvent " ++ show i
 
         say $ "Rejoining ts node " ++ m ++ " ..."
         liftIO $ rejoinHostsAsUser "root" [m] ms
         send pingPid $ show (i + 1)
-        expectLog tsNodes $ isInfixOf $ "received DummyEvent " ++ show (i + 1)
+        expectLog tsNodes $ isSuffixOf $ "received DummyEvent " ++ show (i + 1)
