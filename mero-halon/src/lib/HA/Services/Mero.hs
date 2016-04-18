@@ -56,6 +56,7 @@ import Mero.ConfC (Fid, ServiceType(..), fidToStr)
 import Network.CEP
 import qualified Network.RPC.RPCLite as RPC
 
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar
 import Control.Exception (SomeException, IOException)
 import qualified Control.Distributed.Process.Timeout as PT (timeout)
@@ -68,7 +69,7 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process hiding (catch, onException, bracket_)
 import Control.Monad.Catch (catch, onException, bracket_)
-import Control.Monad (forever, join, void)
+import Control.Monad (forever, join, void, when)
 import qualified Control.Monad.Catch as Catch
 import Control.Monad.Trans.Maybe
 
@@ -167,6 +168,11 @@ startProcess mc run conf = flip Catch.catch handler $ do
     confXC <- maybeWriteConfXC conf
     unit <- writeSysconfig mc run procFid m0addr confXC
     ec <- SystemD.startService $ unit ++ fidToStr procFid
+    -- XXX: This hack is required to create global barrier between mkfs
+    -- and m0d withing the cluster. mkfs usually takes less than 10s
+    -- thus we choose 20s delay to guarantee protection.
+    -- For more details see HALON-146.
+    when (run == M0MKFS) $ threadDelay (20*1000000)
     return $ case ec of
       ExitSuccess -> Left procFid
       ExitFailure x ->
