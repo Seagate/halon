@@ -17,6 +17,7 @@ import HA.RecoveryCoordinator.Actions.Core
   , unlessM
   , whenM
   )
+import HA.RecoveryCoordinator.Actions.Mero (updateDriveState)
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero (notifyDriveStateChange)
 import HA.RecoveryCoordinator.Actions.Mero.Conf
@@ -102,7 +103,7 @@ handleReset :: Set -> PhaseM LoopState l ()
 handleReset (Set ns) = do
   for_ ns $ \(Note mfid tpe) ->
     case tpe of
-      M0_NC_TRANSIENT -> do
+      _ | tpe == M0_NC_TRANSIENT || tpe == M0_NC_FAILED -> do
         sdevm <- lookupConfObjByFid mfid
         for_ sdevm $ \m0sdev -> do
           msdev <- lookupStorageDevice m0sdev
@@ -131,6 +132,7 @@ handleReset (Set ns) = do
                         updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
 
                       when (status == M0_NC_TRANSIENT) $ do
+                        updateDriveState m0sdev status
                         promulgateRC $ ResetAttempt sdev
 
                       syncGraph $ say "handleReset synchronized"
