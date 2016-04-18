@@ -33,7 +33,7 @@ import Control.Distributed.Process.Node
   )
 
 import Control.Monad(forM_)
-import Data.List (isInfixOf)
+import Data.List (isInfixOf, isSuffixOf)
 import HA.Service hiding (__remoteTable)
 import qualified HA.Services.Ping as Ping
 
@@ -109,13 +109,13 @@ test = testCase "StressRC" $
       WhereIsReply _ (Just pingPid) <- expect
       say "Sending a test ping ..."
       send pingPid "0"
-      expectLog [nid0] $ isInfixOf "received DummyEvent 0"
+      expectLog [nid0] $ isSuffixOf "received DummyEvent 0"
 
       let numPings = 500 :: Int
       say $ "Sending " ++ show numPings ++ " pings ..."
       forM_ [1..numPings] $ send pingPid . show
 
       forM_ [1..numPings] $ \i -> do
-        expectLog [nid0] $ isInfixOf $ "received DummyEvent " ++ show i
+        expectLog [nid0] $ isSuffixOf $ "received DummyEvent " ++ show i
         say $ "Found event " ++ show i
       say "SUCCESS!"

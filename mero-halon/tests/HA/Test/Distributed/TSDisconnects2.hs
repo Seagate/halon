@@ -35,7 +35,7 @@ import Control.Distributed.Process.Node
   )
 
 import Control.Monad
-import Data.List (isInfixOf)
+import Data.List (isInfixOf, isSuffixOf)
 
 import Network.Transport (closeTransport)
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
@@ -124,9 +124,9 @@ test = testCase "TSDisconnects2" $
         systemThere [m] "pkill halond; true"
         _ <- liftIO $ waitForCommand_ $ handleGetInput nh
         send pingPid $ show (i :: Int)
-        expectLog tsNodes $ isInfixOf $ "received DummyEvent " ++ show i
+        expectLog tsNodes $ isSuffixOf $ "received DummyEvent " ++ show i
 
         say $ "Restarting ts node " ++ m ++ " ..."
         _ <- spawnNode_ m ("./halond -l " ++ m ++ ":9000" ++ " 2>&1")
         send pingPid $ show (i + 1)
-        expectLog tsNodes $ isInfixOf $ "received DummyEvent " ++ show (i + 1)
+        expectLog tsNodes $ isSuffixOf $ "received DummyEvent " ++ show (i + 1)

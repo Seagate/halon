@@ -34,7 +34,7 @@ import Control.Distributed.Process.Node
   )
 
 import Control.Monad
-import Data.List (isInfixOf)
+import Data.List (isInfixOf, isSuffixOf)
 
 import Network.Transport (closeTransport)
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
@@ -115,10 +115,10 @@ test = testCase "TSRecovers2" $
         _ <- liftIO $ waitForCommand_ $ handleGetInput nh
         send pingPid $ show (i :: Int)
         -- The event shouldn't be processed
-        False <- expectTimeoutLog 1000000 tsNodes $ isInfixOf $
+        False <- expectTimeoutLog 1000000 tsNodes $ isSuffixOf $
           "received DummyEvent " ++ show i
 
         say $ "Restarting ts node " ++ m ++ " ..."
         _ <- spawnNode_ m ("./halond -l " ++ m ++ ":9000" ++ " 2>&1")
         send pingPid $ show (i + 1)
-        expectLog tsNodes $ isInfixOf $ "received DummyEvent " ++ show (i + 1)
+        expectLog tsNodes $ isSuffixOf $ "received DummyEvent " ++ show (i + 1)
