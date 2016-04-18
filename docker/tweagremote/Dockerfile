@@ -8,8 +8,8 @@ ENV LANG en_GB.UTF-8
 
 RUN yum install --assumeyes openssh-server passwd openssh-clients hostname psmisc iptables
 
-RUN curl -O http://www.mirrorservice.org/sites/dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm
-RUN rpm --install epel-release-7-5.noarch.rpm
+RUN curl -O http://www.mirrorservice.org/sites/dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+RUN rpm --install epel-release-latest-7.noarch.rpm
 RUN yum install --assumeyes leveldb
 
 RUN /usr/sbin/sshd-keygen

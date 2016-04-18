@@ -22,6 +22,8 @@ dependencies:
     - "socat TCP-LISTEN:5555,reuseaddr,fork UNIX-CLIENT:/var/run/docker.sock":
         background: true
   override:
+    # Build tweagremote image for distributed tests and copy the ssh key to access it.
+    - docker build --tag=tweagremote docker/tweagremote
     - echo | stack $STACK_FLAGS --docker-registry-username $DOCKER_REGISTRY_USERNAME --docker-registry-password $DOCKER_REGISTRY_PASSWORD docker pull
     - stack $STACK_FLAGS setup
     # Build Mero.
@@ -30,8 +32,6 @@ dependencies:
     - cd vendor/mero; stack $STACK_FLAGS exec -- make
     # Build stack-managed halon dependencies.
     - stack $STACK_FLAGS build --only-snapshot --prefetch --test --bench
-    # Build tweagremote image for distributed tests and copy the ssh key to access it.
-    - docker build --tag=tweagremote docker/tweagremote
     - stack $STACK_FLAGS exec bash -- -c 'mkdir ~/.ssh; cp -v docker/tweagremote/id_rsa ~/.ssh/ && chmod go-rwx ~/.ssh/id_rsa'
 
   cache_directories:
