@@ -44,8 +44,14 @@ import Test.Framework (withLocalNode, getBuildPath)
 import Test.Tasty (TestTree)
 import Test.Tasty.HUnit (testCase)
 import System.FilePath ((</>))
+import System.IO
 import System.Timeout
 
+
+testTrace :: String -> Process ()
+testTrace m = do
+    self <- getSelfPid
+    liftIO $ hPutStrLn stderr $ show self ++ ": [test] " ++ m
 
 test :: TestTree
 test = testCase "StressRC" $
@@ -117,5 +123,5 @@ test = testCase "StressRC" $
 
       forM_ [1..numPings] $ \i -> do
         expectLog [nid0] $ isSuffixOf $ "received DummyEvent " ++ show i
-        say $ "Found event " ++ show i
-      say "SUCCESS!"
+        testTrace $ "Found event " ++ show i
+      testTrace "SUCCESS!"
