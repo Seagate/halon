@@ -1861,16 +1861,18 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
       OMRequest a -> do
         self <- getSelfPid
         logTrace $ "ambassador: sending request to " ++ show mLeader
-        Foldable.forM_ mLeader $ flip (sendBatcher logId)
-                                      (self, epoch, a :: Request a)
+        case mLeader of
+          Just ρ -> sendBatcher logId ρ (self, epoch, a :: Request a)
+          Nothing -> forM_ (requestSender a) $ flip usend False
       -- A reconfiguration request
-      OMHelo m -> do
+      OMHelo m@(Helo sender _) -> do
         self <- getSelfPid
         logTrace $ "ambassador: sending helo request to " ++ show mLeader
-        Foldable.forM_ mLeader $ flip (sendReplica logId)
-                                      (self, epoch, m)
+        case mLeader of
+          Just ρ  -> sendReplica logId ρ (self, epoch, m)
+          Nothing -> usend sender False
       -- A recovery request
-      OMRecover m@(Recover _ ρs') -> do
+      OMRecover m@(Recover sender ρs') -> do
         self <- getSelfPid
         -- A recovery request does not need to go necessarily to the leader.
         -- The replicas might have lost quorum and could be unable to elect
