@@ -43,6 +43,7 @@ import           Data.Either (partitionEithers)
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, fromMaybe)
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import qualified Data.HashSet as S
 import           Data.Foldable
 import           Data.Proxy (Proxy(..))
 import           Data.Traversable (forM)
@@ -253,12 +254,31 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
             fromMaybe M0.MeroClusterStopped . listToMaybe . G.connectedTo R.Cluster R.Has <$> getLocalGraph
          rg <- getLocalGraph
          let isPSFailed (M0.PSFailed _) = True
+             isPSFailed (M0.PSInhibited st') = isPSFailed st'
              isPSFailed _ = False
 
-         let procs = [ (srv :: M0.Process) | srv <- G.connectedTo level M0.Pending rg
-                                           , st <- G.connectedTo srv R.Is rg
-                                           , not $ isPSFailed st ]
-         if null procs && b == (M0.BootLevel i)
+             isStopping st = st == M0.PSStopping
+                             || st == M0.PSOffline
+                             || isPSFailed st
+         -- non-failed processes on cluster on current level
+         let nonFailed = getLabeledProcesses (mkLabel $ M0.BootLevel i)
+                        (\p rg' -> null [ () | st <- G.connectedTo p R.Is rg'
+                                             , isPSFailed st ])
+                        rg
+             isProcessStopping p = maybe False isStopping
+                                   . listToMaybe $ G.connectedTo p R.Is rg
+
+             -- processes that aren't marked as pending for some
+             -- reason but aren't in failed or stopping state either
+             stillRunning = filter (not . isProcessStopping) nonFailed
+
+         let pending = [ (srv :: M0.Process) | srv <- G.connectedTo level M0.Pending rg
+                                             , st <- G.connectedTo srv R.Is rg
+                                             , not $ isPSFailed st ]
+             -- All pending or otherwise running processes
+             allProcs = S.toList . S.fromList $ pending ++ stillRunning
+
+         if null allProcs && b == (M0.BootLevel i)
          then do lvl <- case i of
                    0 -> do modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterStopped
                            return M0.MeroClusterStopped
@@ -272,7 +292,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
                  syncGraphCallback $ \self proc -> do
                    usend self (BarrierPass lvl)
                    forM_ meid proc
-         else do phaseLog "debug" $ "There are processes left:" ++ show procs
+         else do phaseLog "debug" $ "There are processes left: " ++ show allProcs
                  forM_ meid syncGraphProcessMsg
 
 
@@ -284,7 +304,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
            put Local (Just (eid, node, M0.BootLevel maxTeardownLevel))
            continue teardown
        Just eid' -> do
-         phaseLog "debug" $ show node ++ " already beign processed - ignoring."
+         phaseLog "debug" $ show node ++ " already being processed - ignoring."
          unless (eid == eid') $ messageProcessed eid
 
    directly teardown $ do
