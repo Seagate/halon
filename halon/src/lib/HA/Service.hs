@@ -80,6 +80,7 @@ import Control.Distributed.Static (unstatic)
 import Control.Monad
 import Control.Monad.Reader ( ask, asks )
 
+import Data.Aeson
 import Data.Binary
 import Data.Binary.Put (runPut)
 import Data.Binary.Get (runGet)
@@ -118,6 +119,7 @@ class
   ( Binary a
   , Typeable a
   , Hashable a
+  , ToJSON a
   , Resource (Service a)
   , Relation Supports Cluster (Service a)
   , Relation Runs Node (ServiceProcess a)

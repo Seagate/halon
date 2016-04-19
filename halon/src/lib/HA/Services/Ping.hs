@@ -27,6 +27,7 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Monad
 
+import Data.Aeson
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.Typeable (Typeable)
@@ -40,6 +41,7 @@ data PingConf = PingConf deriving (Eq, Generic, Show, Typeable)
 
 instance Binary PingConf
 instance Hashable PingConf
+instance ToJSON PingConf
 
 pingSchema :: Schema PingConf
 pingSchema = pure PingConf

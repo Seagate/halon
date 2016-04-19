@@ -34,6 +34,7 @@ import Control.Monad.Catch
   , bracket
   )
 
+import Data.Aeson
 import Data.Maybe
 import Data.Binary (Binary)
 import Data.ByteString (ByteString)
@@ -69,6 +70,13 @@ data ConnectionConf = ConnectionConf {
 
 instance Binary ConnectionConf
 instance Hashable ConnectionConf
+instance ToJSON ConnectionConf where
+  toJSON (ConnectionConf hn vh login pass) = 
+    object [ "hostname" .= fromDefault hn
+           , "virtual_host" .= fromDefault vh
+           , "username" .= login
+           , "password" .= pass
+           ]
 
 -- | Configuration to bind an exchange to a queue. This is slightly weird - on
 --   receipt side, we care only about the queue, and on the send side we care
@@ -82,6 +90,13 @@ data BindConf = BindConf {
 
 instance Binary BindConf
 instance Hashable BindConf
+instance ToJSON BindConf where
+  toJSON (BindConf ex rk qn) = 
+    object [ "exchange_name" .= fromDefault ex
+           , "routing_key" .= fromDefault rk
+           , "queue_name" .= fromDefault qn
+           ]
+   
 
 --------------------------------------------------------------------------------
 -- Schemata                                                                   --

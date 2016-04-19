@@ -79,6 +79,7 @@ Library
                    System.SystemD.API
 
   Build-Depends:   base,
+                   aeson,
                    binary >= 0.6,
                    bytestring,
                    bytestring-trie,

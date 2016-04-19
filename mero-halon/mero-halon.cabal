@@ -231,6 +231,7 @@ Executable halonctl
   Build-Depends:      halon,
                       mero-halon,
                       aeson,
+                      aeson-pretty,
                       base >= 4.5,
                       binary,
                       bytestring,

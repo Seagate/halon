@@ -33,6 +33,7 @@ import Control.Distributed.Process hiding (finally, bracket)
 import Control.Monad.Catch (finally, bracket)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
+import Data.Aeson
 import Data.Binary
 import Data.Hashable
 import Options.Schema
@@ -50,6 +51,7 @@ data FrontierConf =
 
 instance Binary FrontierConf
 instance Hashable FrontierConf
+instance ToJSON FrontierConf
 
 frontierSchema :: Schema FrontierConf
 frontierSchema =

@@ -33,6 +33,7 @@ import Control.Distributed.Process
   )
 import Control.Distributed.Process.Closure
 
+import Data.Aeson
 import Data.Binary (Binary)
 import Data.Defaultable
 import Data.Hashable (Hashable)
@@ -298,7 +299,6 @@ genericBindConf (exchange,exchangeLong)
        $ long queueLong
        <> metavar "QUEUE_NAME"
 
-
 data ActuatorConf = ActuatorConf {
     acIEM :: Rabbit.BindConf
   , acSystemd :: Rabbit.BindConf
@@ -308,6 +308,13 @@ data ActuatorConf = ActuatorConf {
 
 instance Binary ActuatorConf
 instance Hashable ActuatorConf
+instance ToJSON ActuatorConf where
+  toJSON (ActuatorConf iem systemd command timeout) =
+    object [ "iem" .= iem
+           , "systemd" .= systemd
+           , "commands" .= command
+           , "timeout"  .= fromDefault timeout
+           ]
 
 actuatorSchema :: Schema ActuatorConf
 actuatorSchema = compositeOption subOpts
@@ -341,6 +348,7 @@ data SensorConf = SensorConf {
 
 instance Binary SensorConf
 instance Hashable SensorConf
+instance ToJSON SensorConf
 
 sensorSchema :: Schema SensorConf
 sensorSchema = compositeOption subOpts
@@ -357,6 +365,7 @@ data SSPLConf = SSPLConf {
 
 instance Binary SSPLConf
 instance Hashable SSPLConf
+instance ToJSON SSPLConf
 
 ssplSchema :: Schema SSPLConf
 ssplSchema = SSPLConf

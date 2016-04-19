@@ -5,6 +5,7 @@
 -- Should import qualified.
 
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE CPP #-}
@@ -29,6 +30,7 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 
+import Data.Aeson
 import Data.Binary (Binary)
 import Data.Defaultable
 import Data.Hashable (Hashable)
@@ -43,6 +45,9 @@ import Options.Schema.Builder hiding (name, desc)
 newtype DummyConf = DummyConf {
   helloWorld :: Defaultable String
 } deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+
+instance ToJSON DummyConf where
+  toJSON (DummyConf h) = object [ "hello_string" .= fromDefault h ]
 
 dummySchema :: Schema DummyConf
 dummySchema = let

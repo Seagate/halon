@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveDataTypeable    #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -18,6 +19,7 @@ import Mero.Notification (Set)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 
+import Data.Aeson
 import Data.Binary (Binary)
 import Data.ByteString (ByteString)
 import Data.Hashable (Hashable)
@@ -36,6 +38,8 @@ data MeroKernelConf = MeroKernelConf
        } deriving (Eq, Generic, Show, Typeable)
 instance Binary MeroKernelConf
 instance Hashable MeroKernelConf
+instance ToJSON MeroKernelConf where
+  toJSON (MeroKernelConf uuid) = object [ "uuid" .= UUID.toString uuid ]
 
 -- | Mero service configuration
 data MeroConf = MeroConf
@@ -46,6 +50,13 @@ data MeroConf = MeroConf
    deriving (Eq, Generic, Show, Typeable)
 instance Binary MeroConf
 instance Hashable MeroConf
+
+instance ToJSON MeroConf where
+  toJSON (MeroConf haAddress profile kernel) =
+    object [ "endpoint_address" .= haAddress
+           , "profile"          .= profile
+           , "kernel_config"    .= kernel
+           ]
 
 newtype TypedChannel a = TypedChannel (SendPort a)
     deriving (Eq, Show, Typeable, Binary, Hashable)

@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE TemplateHaskell       #-}
 -- |
 -- Copyright: (C) 2015 Tweag I/O Limited
@@ -20,9 +21,11 @@ import           System.IO
 import Control.Distributed.Process hiding (bracket)
 import Control.Monad.Catch (bracket)
 import Control.Monad (when)
+import Data.Aeson
 import Data.Binary
 import Data.Function (on)
 import Data.List (groupBy)
+import Data.Text (Text)
 import Data.Defaultable
 import Data.Hashable
 import Data.Maybe (catMaybes)
@@ -48,6 +51,13 @@ data DecisionLogOutput
 
 instance Binary DecisionLogOutput
 instance Hashable DecisionLogOutput
+instance ToJSON DecisionLogOutput where
+  toJSON (FileOutput fp) = object ["type" .= ("file"::Text), "filename" .= fp]
+  toJSON (ProcessOutput p) = object ["type" .= ("process"::Text), "process" .= show p]
+  toJSON (StandardOutput)  = object ["type" .= ("stdout"::Text) ]
+  toJSON (StandardError)   = object ["type" .= ("stderr"::Text) ]
+  toJSON (DPLogger)        = object ["type" .= ("default_logger"::Text) ]
+
 
 -- | Writes any log to a file. It will append the content from the end of the
 --   file.
@@ -68,6 +78,7 @@ newtype DecisionLogConf = DecisionLogConf  DecisionLogOutput
 
 instance Binary DecisionLogConf
 instance Hashable DecisionLogConf
+instance ToJSON DecisionLogConf
 
 decisionLogSchema :: Schema DecisionLogConf
 decisionLogSchema =

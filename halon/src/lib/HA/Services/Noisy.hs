@@ -6,6 +6,7 @@
 
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE CPP #-}
 
@@ -34,6 +35,7 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Monad
 
+import Data.Aeson
 import Data.Binary (Binary)
 import Data.Defaultable
 import Data.Hashable (Hashable)
@@ -48,6 +50,9 @@ import Options.Schema.Builder hiding (name, desc)
 newtype NoisyConf = NoisyConf {
   pings :: Defaultable String
 } deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+
+instance ToJSON NoisyConf where
+  toJSON (NoisyConf pings) = object [ "pings" .= fromDefault pings ]
 
 noisySchema :: Schema NoisyConf
 noisySchema = let

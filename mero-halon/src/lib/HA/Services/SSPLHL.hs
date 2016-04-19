@@ -44,7 +44,7 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Monad.State.Strict hiding (mapM_)
 
-import Data.Aeson (decode, encode)
+import Data.Aeson (ToJSON, decode, encode)
 import Data.Binary (Binary)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Defaultable
@@ -104,6 +104,7 @@ data SSPLHLConf = SSPLHLConf {
 
 instance Binary SSPLHLConf
 instance Hashable SSPLHLConf
+instance ToJSON SSPLHLConf
 
 ssplhlSchema :: Schema SSPLHLConf
 ssplhlSchema = SSPLHLConf <$> Rabbit.connectionSchema

@@ -20,6 +20,7 @@ module HA.Services.Empty
   , configDictEmptyConf__static
   ) where
 
+import Data.Aeson
 import Data.Binary
 import Data.Hashable
 import Data.Typeable
@@ -37,6 +38,7 @@ data EmptyConf = EmptyConf deriving (Eq, Generic, Show, Typeable)
 
 instance Binary EmptyConf
 instance Hashable EmptyConf
+instance ToJSON EmptyConf
 
 emptySchema :: Schema EmptyConf
 emptySchema = pure EmptyConf

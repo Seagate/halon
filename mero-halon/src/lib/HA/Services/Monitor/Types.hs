@@ -14,6 +14,7 @@ import GHC.Generics
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure (mkStatic)
+import Data.Aeson
 import Data.Binary
 import Data.Hashable
 import Options.Schema
@@ -34,6 +35,7 @@ data MonitorConf = MonitorConf deriving (Eq, Generic, Show, Typeable)
 
 instance Binary MonitorConf
 instance Hashable MonitorConf
+instance ToJSON MonitorConf
 
 emptyMonitorConf :: MonitorConf
 emptyMonitorConf = MonitorConf

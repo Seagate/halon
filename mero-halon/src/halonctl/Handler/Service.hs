@@ -49,8 +49,11 @@ import Control.Distributed.Process
   )
 import Control.Monad (void)
 
+import Data.Aeson
+import Data.Aeson.Encode.Pretty
 import Data.Binary
   ( Binary )
+import qualified Data.ByteString.Lazy.Char8 as B8
 import Data.Typeable
   ( Typeable )
 import GHC.Generics
@@ -256,11 +259,11 @@ standardService nids sso svc = case sso of
       show nid ++ ": Error: " ++ msg
     showStatus (nid, Just (SrvStatRunning _ pid a)) =
       show nid ++ ": Running on PID " ++ show pid
-                ++ " with config:\n\t" ++ show a
+                ++ " with config:\n" ++ B8.unpack (encodePretty a)
     showStatus (nid, Just (SrvStatRestarting _ pid a b)) =
       show nid ++ ": Running on PID " ++ show pid
-                ++ " with config:\n\t" ++ show a
-                ++ "\nRestart requested to new config:\n\t" ++ show b
+                ++ " with config:\n" ++ B8.unpack (encodePretty a)
+                ++ "\nRestart requested to new config:\n" ++ B8.unpack (encodePretty b)
 
 -- | Start a given service on a single node.
 start :: Configuration a
