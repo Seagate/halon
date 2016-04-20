@@ -137,7 +137,7 @@ promulgateHAEvent eqnids msg = do
     rs0 <- ncallRemoteSome
       promulgateTimeout eqnids eventQueueLabel msg (isRight . snd)
     -- Continue waiting if EQs are forwarding the events to other nodes.
-    (\a b c -> fix c a b) eqnids rs0 $ \loop nids rs -> do
+    (\c -> fix c eqnids rs0) $ \loop nids rs -> do
       let nids' = nub (concatMap (either (:[]) (const []) . snd) rs) \\ nids
       if null nids' || isRight (snd (head rs)) then return rs
         else withLabeledProcesses promulgateTimeout nids' eventQueueLabel $
@@ -167,7 +167,7 @@ promulgateHAEventPref peqnids eqnids msg = do
       eventQueueLabel msg
       (isRight . snd)
     -- Continue waiting if EQs are forwarding the events to other nodes.
-    (\a b c -> fix c a b) eqnids rs0 $ \loop nids rs -> do
+    (\c -> fix c eqnids rs0) $ \loop nids rs -> do
       let nids' = nub (concatMap (either (:[]) (const []) . snd) rs) \\ nids
       if null nids' || isRight (snd (head rs)) then return rs
         else withLabeledProcesses promulgateTimeout nids' eventQueueLabel $
