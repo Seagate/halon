@@ -81,7 +81,7 @@ test = testCase "StressRC" $
       getSelfPid >>= copyLog (const True)
 
       say "Spawning halond ..."
-      nid0 <- spawnNode_ m0 ("./halond -l " ++ m0loc ++ " 2>&1")
+      nid0 <- spawnNode_ m0 ("./halond +RTS -N2 -RTS -l " ++ m0loc ++ " 2>&1")
       nid1 <- spawnNode_ m1 ("./halond -l " ++ m1loc ++ " 2>&1")
 
       say "Spawning tracking station ..."
