@@ -40,7 +40,7 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 
 import qualified Data.Aeson as Aeson
-import Data.Maybe (catMaybes, listToMaybe, maybeToList, fromMaybe)
+import Data.Maybe (catMaybes, listToMaybe, maybeToList, fromMaybe, isJust)
 import Data.Monoid ((<>))
 import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
@@ -113,6 +113,36 @@ mkDiskLoggingCmd :: T.Text -- ^ Status
                  -> LoggerCmd
 mkDiskLoggingCmd st serial reason = LoggerCmd message "LOG_WARNING" "HDS" where
   message = "{'status': '" <> st <> "', 'reason': '" <> reason <> "', 'serial_number': '" <> serial <> "'}"
+
+
+data DriveLedUpdate = DrivePermanentlyFailed -- ^ Drive is failed permanently
+                    | DriveTransientlyFailed -- ^ Drive is beign reset or smart check
+                    | DriveRebalancing       -- ^ Rebalance operation is happening on a drive
+                    | DriveOk                -- ^ Drive is ok
+                    deriving (Show)
+
+sendLedUpdate :: DriveLedUpdate -> Host -> T.Text -> PhaseM LoopState l Bool
+sendLedUpdate status host sn = do
+  phaseLog "action" $ "Sending Led update " ++ show status ++ " about " ++ show sn ++ " on " ++ show host
+  rg <- getLocalGraph
+  let mnode = listToMaybe [ node
+                          | s    <- connectedTo Cluster Supports rg
+                          , node <- connectedTo host Runs rg
+                          , isJust $ runningService (node :: Node) (s :: Service SSPLConf) rg
+                          ]
+  case mnode of
+    Just (Node nid) -> case status of
+      DrivePermanentlyFailed -> do
+        sendNodeCmd nid Nothing (DriveLed sn FaultOn)
+      DriveTransientlyFailed ->
+        sendNodeCmd nid Nothing (DriveLed sn PulseFastOn)
+      DriveRebalancing -> do
+        sendNodeCmd nid Nothing (DriveLed sn PulseSlowOn)
+      DriveOk -> do
+        sendNodeCmd nid Nothing (DriveLed sn PulseSlowOff)
+    _ -> do phaseLog "error" "Cannot find sspl service on the node!"
+            return False
+  
 
 -- | Send command to nodecontroller. Reply will be received as a
 -- HAEvent CommandAck. Where UUID will be set to UUID value if passed, and
@@ -376,6 +406,7 @@ ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid
              forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(_, status, serial) ->
                case status of
                  StorageDeviceStatus "HALON-FAILED" reason -> do
+                   sendNodeCmd nid Nothing (DriveLed (T.pack serial) FaultOn)
                    sendLoggingCmd host $ mkDiskLoggingCmd (T.pack "HALON-FAILED")
                                                           (T.pack serial)
                                                           (T.pack reason)
@@ -483,7 +514,8 @@ updateDriveManagerWithFailure disk st reason = do
     Nothing -> phaseLog "error" $ "Unable to find serial number for " ++ show disk
     Just sn -> do
       rg <- getLocalGraph
-      withHost rg disk $ \host ->
+      withHost rg disk $ \host -> do
+        sendLedUpdate DrivePermanentlyFailed host (T.pack sn)
         sendLoggingCmd host $ mkDiskLoggingCmd (T.pack st)
                                                (T.pack sn)
                                                (maybe "unknown reason" T.pack reason)

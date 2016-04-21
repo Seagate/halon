@@ -104,10 +104,54 @@ data NodeCmd
   | DrivePowerdown T.Text -- ^ Powerdown drive
   | DrivePoweron T.Text   -- ^ Poweron drive
   | SmartTest  T.Text     -- ^ SMART drive test
+  | DriveLed T.Text LedControlState -- ^ Set led style
+  | DriveLedColor T.Text (Int, Int, Int) -- ^ Set led color
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary NodeCmd
 instance Hashable NodeCmd
+
+data LedControlState
+      = FaultOn
+      | FaultOff
+      | IdentifyOn
+      | IdentifyOff
+      | PulseSlowOn
+      | PulseSlowOff
+      | PulseFastOn
+      | PulseFastOff
+      deriving (Eq, Show, Generic, Typeable)
+
+instance Binary LedControlState
+instance Hashable LedControlState
+
+-- | Convert control state to text.
+controlStateToText :: LedControlState -> T.Text
+controlStateToText FaultOn      = "FAULT_ON"
+controlStateToText FaultOff     = "FAULT_OFF"
+controlStateToText IdentifyOn   = "IDENTIFY_ON"
+controlStateToText IdentifyOff  = "IDENTIFY_ON"
+controlStateToText PulseSlowOn  = "PULSE_SLOW_ON"
+controlStateToText PulseSlowOff = "PULSE_SLOW_OFF"
+controlStateToText PulseFastOn  = "PULSE_FAST_ON"
+controlStateToText PulseFastOff = "PULSE_FAST_OFF"
+
+-- | Parse control state back.
+parseControlState :: T.Text -> Either T.Text LedControlState
+parseControlState t
+  | t == controlStateToText FaultOn      = Right FaultOn
+  | t == controlStateToText FaultOff     = Right FaultOff
+  | t == controlStateToText IdentifyOn   = Right IdentifyOn
+  | t == controlStateToText IdentifyOff  = Right IdentifyOff
+  | t == controlStateToText PulseSlowOn  = Right PulseSlowOn
+  | t == controlStateToText PulseSlowOff = Right PulseSlowOff
+  | t == controlStateToText PulseFastOn  = Right PulseFastOn
+  | t == controlStateToText PulseFastOff = Right PulseFastOff
+  | otherwise                            = Left "Unknown state"
+
+-- | LED color priority.
+halonPriority :: Int
+halonPriority = 7
 
 -- | Convert @NodeCmd@ to text represetnation.
 nodeCmdString :: NodeCmd -> T.Text
@@ -121,6 +165,10 @@ nodeCmdString (DrivePoweron drive) = T.intercalate " "
   [ "DRIVE_POWERON:", drive ]
 nodeCmdString (SmartTest drive) = T.intercalate " "
   [ "SMART_TEST:", drive ]
+nodeCmdString (DriveLed drive state) = T.intercalate " "
+  ["LED: set", drive,  controlStateToText state]
+nodeCmdString (DriveLedColor _ _) =
+  "BEZEL: [{default},7]" -- XXX: not yet supported
 
 -- | Convert @NodeCmd@ back from a text representation.
 parseNodeCmd :: T.Text -> Maybe NodeCmd
@@ -133,6 +181,10 @@ parseNodeCmd t =
       "DRIVE_POWERDOWN:" -> return $ DrivePowerdown (head rest)
       "DRIVE_POWERON:" -> return $ DrivePoweron (head rest)
       "SMART_TEST:"  -> return $ SmartTest (head rest)
+      "LED:" -> case rest of
+         ("set":drive:st:_) ->
+            either (const Nothing) (Just . DriveLed drive) (parseControlState st)
+         _ -> Nothing
       _ -> Nothing
   where
     (cmd:rest) = T.words t

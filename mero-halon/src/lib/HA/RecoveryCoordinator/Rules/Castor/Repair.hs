@@ -19,12 +19,15 @@ import           Control.Arrow (second)
 import           Control.Distributed.Process
 import           Control.Exception (SomeException)
 import           Control.Monad
+import           Control.Monad.Trans
+import           Control.Monad.Trans.Maybe
 import qualified Data.Binary as B
 import           Data.Foldable
 import qualified Data.HashSet as S
 import qualified Data.Map as M
 import qualified Data.Set as Set
-import           Data.Maybe (catMaybes, fromMaybe)
+import           Data.Maybe (catMaybes, fromMaybe, listToMaybe)
+import qualified Data.Text as T
 import           Data.Monoid ((<>))
 import           Data.Typeable (Typeable)
 import           Data.UUID (nil)
@@ -37,6 +40,7 @@ import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import qualified HA.RecoveryCoordinator.Rules.Castor.Repair.Internal as R
+import           HA.Services.SSPL.CEP
 import           HA.Resources
 import           HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
@@ -380,6 +384,13 @@ completeRepair pool prt muid = do
         notifyMero ((AnyConfObj <$> Set.toList repaired_sdevs)
                     ++ (AnyConfObj <$> repaired_disks))
                     $ R.repairedNotificationMsg prt
+
+        when (prt == M0.Rebalance) $
+           forM_ repaired_sdevs $ \m0sdev -> void $ runMaybeT $ do
+             sdev   <- MaybeT $ lookupStorageDevice m0sdev
+             host   <- MaybeT $ listToMaybe <$> getSDevHost sdev
+             serial <- MaybeT $ listToMaybe <$> lookupStorageDeviceSerial sdev
+             lift $ sendLedUpdate DriveOk host (T.pack serial)
 
         if Set.null non_repaired_sdevs
         then do phaseLog "info" $ "Full repair on " ++ show pool

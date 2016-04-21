@@ -43,6 +43,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , lookupStorageDeviceOnHost
     -- ** Querying device properties
   , getSDevNode
+  , getSDevHost
   , findStorageDeviceIdentifiers
   , hasStorageDeviceIdentifier
   , lookupStorageDevicePaths
@@ -726,6 +727,13 @@ getSDevNode sdev = do
                    , node <- G.connectedTo host Runs rg :: [Node]
             ]
   return nds
+
+getSDevHost :: StorageDevice -> PhaseM LoopState l [Host]
+getSDevHost sdev = do
+  rg <- getLocalGraph
+  return [ host | encl <- G.connectedFrom Has sdev rg :: [Enclosure]
+                , host <- G.connectedTo encl Has rg :: [Host]
+         ]
 
 markStorageDeviceReplaced :: StorageDevice -> PhaseM LoopState l ()
 markStorageDeviceReplaced sdev = do
