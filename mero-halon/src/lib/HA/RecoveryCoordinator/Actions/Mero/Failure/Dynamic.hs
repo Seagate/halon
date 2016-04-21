@@ -75,9 +75,8 @@ findFailableObjs rg fs = let
 findCurrentFailedDevices :: G.Graph -> M0.Filesystem -> S.Set Fid
 findCurrentFailedDevices rg fs = let
     isFailedDisk disk =
-      case [stat | sdev <- G.connectedFrom M0.IsOnHardware disk rg :: [M0.SDev]
-                 , stat <- G.connectedTo sdev Is  rg :: [M0.ConfObjectState]] of
-        [M0.M0_NC_TRANSIENT] -> True
+      case M0.getConfObjState disk rg of
+        M0.M0_NC_TRANSIENT -> True
         _ -> False -- Maybe? This shouldn't happen...
     racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
     encls = racks >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure])

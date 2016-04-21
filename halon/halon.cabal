@@ -49,6 +49,7 @@ Library
 
   Exposed-Modules: HA.CallTimeout
                    HA.Resources
+                   HA.Encode
                    HA.EventQueue
                    HA.EventQueue.Producer
                    HA.EventQueue.Types

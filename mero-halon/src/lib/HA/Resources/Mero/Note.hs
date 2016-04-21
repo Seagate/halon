@@ -1,42 +1,50 @@
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Mero notification specific resources.
 
-{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DefaultSignatures          #-}
 {-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StaticPointers             #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
-
-{-# OPTIONS_GHC -fno-warn-orphans       #-}
 
 module HA.Resources.Mero.Note where
 
 import HA.Resources (Cluster, Has(..))
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
+import HA.Resources.Mero.Note.TH
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Castor as R
 import HA.Resources.TH
 import Mero.ConfC (Fid(..))
 
+import Control.Distributed.Static (Static, staticPtr)
+import Control.Monad (join)
+
 import Data.Binary (Binary)
+import Data.Constraint (Dict)
 import Data.Bits (shiftR)
 import Data.Hashable (Hashable)
+import Data.List (foldl')
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
 import Data.Monoid ((<>))
 import Data.Typeable (Typeable)
 import Data.Proxy (Proxy(..))
 import Data.Word ( Word64 )
+
 import GHC.Generics (Generic)
+import GHC.StaticPtr
 
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -85,64 +93,112 @@ instance Binary PrincipalRM
 instance Hashable PrincipalRM
 
 --------------------------------------------------------------------------------
--- Dictionaries                                                               --
---------------------------------------------------------------------------------
-
-$(mkDicts
-  [ ''ConfObjectState, ''PrincipalRM]
-  [ (''Cluster, ''Has, ''PrincipalRM)
-  , (''M0.Rack, ''Is, ''ConfObjectState)
-  , (''M0.Enclosure, ''Is, ''ConfObjectState)
-  , (''M0.Controller, ''Is, ''ConfObjectState)
-  , (''M0.Node, ''Is, ''ConfObjectState)
-  , (''M0.Service, ''Is, ''ConfObjectState)
-  , (''M0.Service, ''Is, ''PrincipalRM)
-  , (''M0.Disk, ''Is, ''ConfObjectState)
-  , (''M0.SDev, ''Is, ''ConfObjectState)
-  , (''M0.Pool, ''Is, ''ConfObjectState)
-  , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
-  )
-
-$(mkResRel
-  [ ''ConfObjectState, ''PrincipalRM ]
-  [ (''Cluster, ''Has, ''PrincipalRM)
-  , (''M0.Rack, ''Is, ''ConfObjectState)
-  , (''M0.Enclosure, ''Is, ''ConfObjectState)
-  , (''M0.Controller, ''Is, ''ConfObjectState)
-  , (''M0.Node, ''Is, ''ConfObjectState)
-  , (''M0.Service, ''Is, ''ConfObjectState)
-  , (''M0.Service, ''Is, ''PrincipalRM)
-  , (''M0.Disk, ''Is, ''ConfObjectState)
-  , (''M0.SDev, ''Is, ''ConfObjectState)
-  , (''M0.Pool, ''Is, ''ConfObjectState)
-  , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
-  []
-  )
-
---------------------------------------------------------------------------------
 -- Specific object state                                                      --
 --------------------------------------------------------------------------------
 
+-- | Dictionary for carrying some object state.
+data SomeHasConfObjectStateDict = forall a.
+    SomeHasConfObjectStateDict (Dict (HasConfObjectState a))
+  deriving Typeable
+
+-- | Necessary for making this static.
+someHasConfObjectStateDict :: Dict (HasConfObjectState a)
+                           -> SomeHasConfObjectStateDict
+someHasConfObjectStateDict = SomeHasConfObjectStateDict
+
 -- | Class to determine configuration object state from the resource graph.
-class (G.Resource a, M0.ConfObj a) => HasConfObjectState a where
-  getConfObjState :: a -> G.Graph -> ConfObjectState
-  default getConfObjState :: G.Relation Is a ConfObjectState
-                          => a -> G.Graph -> ConfObjectState
-  getConfObjState x rg = fromMaybe M0_NC_ONLINE
-                          . listToMaybe $ G.connectedTo x Is rg
+class (G.Resource a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateCarrier a))
+  => HasConfObjectState a where
+    type StateCarrier a :: *
+    type StateCarrier a = ConfObjectState
+
+    -- | Dictionary providing evidence of this class
+    hasStateDict :: Static (Dict (HasConfObjectState a))
+
+    getConfObjState :: a -> G.Graph -> ConfObjectState
+    default getConfObjState :: G.Relation Is a ConfObjectState
+                            => a -> G.Graph -> ConfObjectState
+    getConfObjState x rg = fromMaybe M0_NC_ONLINE
+                              . listToMaybe $ G.connectedTo x Is rg
+
+    setState :: a -> StateCarrier a -> G.Graph -> G.Graph
+    default setState :: G.Relation Is a ConfObjectState
+                     => a -> ConfObjectState -> G.Graph -> G.Graph
+    setState x st = G.connectUniqueFrom x Is st
+
+    getState :: a -> G.Graph -> StateCarrier a
+    default getState :: G.Relation Is a ConfObjectState
+                     => a -> G.Graph -> ConfObjectState
+    getState x rg = fromMaybe M0_NC_ONLINE
+                            . listToMaybe $ G.connectedTo x Is rg
+
+    toConfObjState :: a -> StateCarrier a -> ConfObjectState
+    default toConfObjState  :: a -> StateCarrier a -> StateCarrier a
+    toConfObjState = const id
+
+-- | Associated type used where we carry no explicit state for a type.
+data NoExplicitConfigState = NoExplicitConfigState
+  deriving (Eq, Generic, Typeable)
+instance Binary NoExplicitConfigState
+
+-- A dictionary wrapper for configuration objects
+data SomeConfObjDict = forall x. (Typeable x, M0.ConfObj x, HasConfObjectState x)
+  => SomeConfObjDict (Proxy x)
+
+-- | Generate dictionaries
+$(join <$> (mapM (mkDict ''HasConfObjectState) $
+  [ ''M0.Root
+  , ''M0.Profile
+  , ''M0.Filesystem
+  , ''M0.Rack
+  , ''M0.Enclosure
+  , ''M0.Controller
+  , ''M0.Node
+  , ''M0.Process
+  , ''M0.Service
+  , ''M0.Disk
+  , ''M0.SDev
+  , ''M0.Pool
+  , ''M0.PVer
+  , ''M0.RackV
+  , ''M0.EnclosureV
+  , ''M0.ControllerV
+  , ''M0.DiskV
+  ]))
+
 instance HasConfObjectState M0.Root where
+  type StateCarrier M0.Root = NoExplicitConfigState
   getConfObjState _ _ = M0_NC_ONLINE
+  getState _ _ = NoExplicitConfigState
+  setState _ _ = id
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Root
+  toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.Profile where
+  type StateCarrier M0.Profile = NoExplicitConfigState
   getConfObjState _ _ = M0_NC_ONLINE
+  getState _ _ = NoExplicitConfigState
+  setState _ _ = id
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Profile
+  toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.Filesystem where
+  type StateCarrier M0.Filesystem = NoExplicitConfigState
   getConfObjState _ _ = M0_NC_ONLINE
-instance HasConfObjectState M0.Rack
-instance HasConfObjectState M0.Enclosure
-instance HasConfObjectState M0.Controller
-instance HasConfObjectState M0.Node
+  getState _ _ = NoExplicitConfigState
+  setState _ _ = id
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Filesystem
+  toConfObjState _ = const M0_NC_ONLINE
+instance HasConfObjectState M0.Rack where
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Rack
+instance HasConfObjectState M0.Enclosure where
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Enclosure
+instance HasConfObjectState M0.Controller where
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Controller
+instance HasConfObjectState M0.Node where
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Node
 instance HasConfObjectState M0.Process where
+  type StateCarrier M0.Process = M0.ProcessState
   getConfObjState x rg = case G.connectedTo x Is rg :: [M0.ProcessState] of
-      -- [y] -> ms y -- XXX:
+      -- [y] -> ms y --XXX:
       _ -> M0_NC_ONLINE
     where
       ms M0.PSUnknown = M0_NC_UNKNOWN
@@ -153,24 +209,68 @@ instance HasConfObjectState M0.Process where
       ms M0.PSOnline = M0_NC_ONLINE
       ms (M0.PSInhibited M0.PSOnline) = M0_NC_TRANSIENT
       ms (M0.PSInhibited y) = ms y
-instance HasConfObjectState M0.Service
-instance HasConfObjectState M0.Disk
-instance HasConfObjectState M0.SDev
-instance HasConfObjectState M0.Pool
+  getState x rg = fromMaybe M0.PSUnknown . listToMaybe $ G.connectedTo x Is rg
+  setState x st = G.connect x Is st
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Process
+  toConfObjState _ = const M0_NC_ONLINE
+instance HasConfObjectState M0.Service where
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Service
+instance HasConfObjectState M0.Disk where
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Disk
+instance HasConfObjectState M0.SDev where
+  type StateCarrier M0.SDev = ConfObjectState
+  getConfObjState x rg = fromMaybe M0_NC_ONLINE . listToMaybe $
+    [ st
+    | (disk :: M0.Disk) <- G.connectedTo x M0.IsOnHardware rg
+    , st <- G.connectedTo disk Is rg
+    ]
+  getState x rg = fromMaybe M0_NC_ONLINE . listToMaybe $
+    [ st
+    | (disk :: M0.Disk) <- G.connectedTo x M0.IsOnHardware rg
+    , st <- G.connectedTo disk Is rg
+    ]
+  setState x st = \rg1 -> let
+      disks = G.connectedTo x M0.IsOnHardware rg1 :: [M0.Disk]
+      fun = foldl' (.) id $ (\d -> setState d st) <$> disks
+    in fun rg1
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_SDev
+instance HasConfObjectState M0.Pool where
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Pool
 instance HasConfObjectState M0.PVer where
+  type StateCarrier M0.PVer = NoExplicitConfigState
   getConfObjState _ _ = M0_NC_ONLINE
+  getState _ _ = NoExplicitConfigState
+  setState _ _ = id
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_PVer
+  toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.RackV where
+  type StateCarrier M0.RackV = NoExplicitConfigState
   getConfObjState _ _ = M0_NC_ONLINE
+  getState _ _ = NoExplicitConfigState
+  setState _ _ = id
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_RackV
+  toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.EnclosureV where
+  type StateCarrier M0.EnclosureV = NoExplicitConfigState
   getConfObjState _ _ = M0_NC_ONLINE
+  getState _ _ = NoExplicitConfigState
+  setState _ _ = id
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_EnclosureV
+  toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.ControllerV where
+  type StateCarrier M0.ControllerV = NoExplicitConfigState
   getConfObjState _ _ = M0_NC_ONLINE
+  getState _ _ = NoExplicitConfigState
+  setState _ _ = id
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_ControllerV
+  toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.DiskV where
+  type StateCarrier M0.DiskV = NoExplicitConfigState
   getConfObjState _ _ = M0_NC_ONLINE
-
--- A dictionary wrapper for configuration objects
-data SomeConfObjDict = forall x. (Typeable x, M0.ConfObj x, HasConfObjectState x)
-  => SomeConfObjDict (Proxy x)
+  getState _ _ = NoExplicitConfigState
+  setState _ _ = id
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_DiskV
+  toConfObjState _ = const M0_NC_ONLINE
 
 -- Yields the ConfObj dictionary of the object with the given Fid.
 --
@@ -216,3 +316,35 @@ lookupConfObjectStates :: [Fid] -> G.Graph -> [(Fid, ConfObjectState)]
 lookupConfObjectStates fids g = catMaybes
     . fmap (traverse id)
     $ zip fids (lookupConfObjectState g <$> fids)
+--------------------------------------------------------------------------------
+-- Dictionaries                                                               --
+--------------------------------------------------------------------------------
+
+$(mkDicts
+  [ ''ConfObjectState, ''PrincipalRM]
+  [ (''Cluster, ''Has, ''PrincipalRM)
+  , (''M0.Rack, ''Is, ''ConfObjectState)
+  , (''M0.Enclosure, ''Is, ''ConfObjectState)
+  , (''M0.Controller, ''Is, ''ConfObjectState)
+  , (''M0.Node, ''Is, ''ConfObjectState)
+  , (''M0.Service, ''Is, ''ConfObjectState)
+  , (''M0.Service, ''Is, ''PrincipalRM)
+  , (''M0.Disk, ''Is, ''ConfObjectState)
+  , (''M0.Pool, ''Is, ''ConfObjectState)
+  , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
+  )
+
+$(mkResRel
+  [ ''ConfObjectState, ''PrincipalRM ]
+  [ (''Cluster, ''Has, ''PrincipalRM)
+  , (''M0.Rack, ''Is, ''ConfObjectState)
+  , (''M0.Enclosure, ''Is, ''ConfObjectState)
+  , (''M0.Controller, ''Is, ''ConfObjectState)
+  , (''M0.Node, ''Is, ''ConfObjectState)
+  , (''M0.Service, ''Is, ''ConfObjectState)
+  , (''M0.Service, ''Is, ''PrincipalRM)
+  , (''M0.Disk, ''Is, ''ConfObjectState)
+  , (''M0.Pool, ''Is, ''ConfObjectState)
+  , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
+  []
+  )

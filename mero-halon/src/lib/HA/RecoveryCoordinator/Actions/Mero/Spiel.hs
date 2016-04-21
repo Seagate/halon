@@ -53,8 +53,8 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (ConfObjectState(..))
-import HA.Services.Mero (notifyMeroBlocking)
+import HA.Resources.Mero.Note (ConfObjectState(..), setState)
+import HA.Services.Mero (createSet, notifyMeroBlocking)
 
 import Mero.ConfC
   ( PDClustAttr(..)
@@ -155,11 +155,11 @@ startRepairOperation pool = go `catch`
     go = do
       m0sdevs <- getPoolSDevsWithState pool M0_NC_FAILED
       disks <- fmap M0.AnyConfObj . catMaybes <$> mapM lookupSDevDisk m0sdevs
-      res <- notifyMeroBlocking (M0.AnyConfObj pool : disks) M0_NC_REPAIR
+      res <- notifyMeroBlocking $ createSet (M0.AnyConfObj pool : disks) M0_NC_REPAIR
       phaseLog "spiel" $ "Starting repair on pool " ++ show pool ++ " for: " ++ show m0sdevs
-      traverse_ (\m0disk -> modifyGraph $ G.connectUniqueFrom m0disk Is M0_NC_REPAIR)
+      traverse_ (\m0disk -> modifyGraph $ setState m0disk M0_NC_REPAIR)
                  m0sdevs
-      traverse_ (\m0disk -> modifyGraph $ G.connectUniqueFrom m0disk Is M0_NC_REPAIR)
+      traverse_ (\m0disk -> modifyGraph $ setState m0disk M0_NC_REPAIR)
                 . catMaybes =<< mapM lookupSDevDisk m0sdevs
       case res of
         True -> do
@@ -250,12 +250,12 @@ startRebalanceOperation pool disks = catch go
   where
     go = do
       phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool ++ " for " ++ show disks
-      b <- notifyMeroBlocking (M0.AnyConfObj pool : map M0.AnyConfObj disks) M0_NC_REBALANCE
+      b <- notifyMeroBlocking $ createSet (M0.AnyConfObj pool : map M0.AnyConfObj disks) M0_NC_REBALANCE
       if b
       then do forM_ disks $ \d -> do
                 mt <- lookupDiskSDev d
                 forM_ mt $ \t -> do
-                  msd <- lookupStorageDevice t 
+                  msd <- lookupStorageDevice t
                   forM_ msd unmarkStorageDeviceReplaced
               _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRebalanceStart sc (M0.fid pool)
               uuid <- DP.liftIO nextRandom
@@ -368,7 +368,7 @@ syncToBS = withM0RC $ \lift -> do
     (fp, h) <- openTempFile tmpdir "conf.xc"
     hClose h >> return fp
   phaseLog "info" $ "Dumping conf in RG to: " ++ show fp
-  loadConfData >>= traverse_ (\x -> txOpenLocalContext lift >>= txPopulate lift x 
+  loadConfData >>= traverse_ (\x -> txOpenLocalContext lift >>= txPopulate lift x
                                     >>= txDumpToFile lift fp)
   bs <- DP.liftIO $ BS.readFile fp
   DP.liftIO $ removeFile fp

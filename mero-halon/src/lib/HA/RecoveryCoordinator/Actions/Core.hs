@@ -228,8 +228,6 @@ getSelfProcessId = liftProcess getSelfPid
 getMultimapChan :: PhaseM LoopState l StoreChan
 getMultimapChan = fmap lsMMChan $ get Global
 
-
-
 -- | Lifted wrapper over 'HA.Event.Queue.Producer.promulgate' call. 'promulgateRC'
 -- should be called in case when RC should send a message to itself, but this message
 -- should be guaranteed to be persisted. This call is blocking RC, so if message can't

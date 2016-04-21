@@ -3,296 +3,258 @@
 -- License   : All rights reserved.
 --
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StaticPointers      #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns        #-}
 module HA.RecoveryCoordinator.Rules.Mero.Conf
-  ( -- * Rules
-    allRules
-  , ruleService
-  , ruleProcess
-  , ruleNode
-  , ruleEnclosure
-  , ruleController
-    -- * Triggers
-    -- ** Service
-  , serviceOnline
-  , serviceTransient
-  , serviceFailed
-    -- ** Process
-  , processOnline
-  , processTransient
-  , processFailed
-    -- ** Node
-  , nodeOnline
-  , nodeTransient
-  , nodeFailed
-    -- ** Enclosure
-  , enclosureOnline
-  , enclosureTransient
-  , enclosureFailed
+  ( DeferredStateChanges(..)
+  , applyStateChangesCreateFS
+  , applyStateChangesSyncConfd
+  , createDeferredStateChanges
+  , genericApplyDeferredStateChanges
+  , genericApplyStateChanges
+    -- * Temporary functions
+  , notifyDriveStateChange
   )  where
 
-import HA.EventQueue.Types
+import HA.Encode (encodeP)
 import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Mero.Conf
-import HA.Services.Mero (notifyMero)
+import HA.RecoveryCoordinator.Actions.Mero.Failure
+import HA.RecoveryCoordinator.Actions.Mero.Spiel
+import HA.RecoveryCoordinator.Events.Mero
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
-import Mero.ConfC (ServiceType(..))
-import Data.Foldable (forM_, traverse_)
-import Control.Monad (when)
-import Network.CEP
-import Control.Distributed.Process.Serializable
+import HA.Services.Mero (notifyMeroBlocking)
+
+import Mero.Notification (Set(..))
+import Mero.Notification.HAState (Note(..))
+
+import Control.Applicative (liftA2)
+import Control.Category ((>>>))
+import Control.Distributed.Static (Static, staticApplyPtr)
+import Control.Monad (join)
+import Control.Monad.Fix (fix)
 
 import Data.Binary
+import Data.Constraint (Dict)
+import Data.Foldable (forM_, traverse_)
 import Data.Hashable
+import Data.Monoid
 import Data.Typeable
-import GHC.Generics
+import Data.List ((\\), union)
 
-newtype StateChangeEvent (a :: M0.ConfObjectState) b = StateChangeEvent { getEntity :: b } deriving
-  (Eq, Show, Binary, Hashable, Generic)
+import Network.CEP
 
--- | Collection of all rules that happens when some conf object changes its state
-allRules :: Specification LoopState ()
-allRules = sequence_
-  [ ruleService
-  , ruleProcess
-  , ruleNode
-  , ruleController
-  , ruleEnclosure
-  ]
+-- | Notify ourselves about a state change of the 'M0.SDev'.
+--
+-- Internally, build a note 'Set' and pass it to all registered
+-- stateChangeHandlers.
+--
+-- TODO Remove this function.
+notifyDriveStateChange :: M0.SDev -> M0.ConfObjectState -> PhaseM LoopState l ()
+notifyDriveStateChange m0sdev st = do
+    applyStateChangesCreateFS [ stateSet m0sdev st ]
+    stateChangeHandlers <- lsStateChangeHandlers <$> Network.CEP.get Global
+    sequence_ $ ($ ns) <$> stateChangeHandlers
+ where
+   ns = Set [Note (M0.fid m0sdev) st]
 
--------------------------------------------------------------------------------
--- Service
--------------------------------------------------------------------------------
+-- | A set of deferred state changes. Consists of a graph
+--   update function, a `Set` event for Mero, and an
+--   `InternalObjectStateChange` event to send internally.
+data DeferredStateChanges =
+  DeferredStateChanges
+    (G.Graph -> G.Graph) -- Graph update function
+    Set -- Mero notification to send
+    InternalObjectStateChange -- Internal notification to send
 
--- | Rules that fire when 'M0.Service' changes its state.
-ruleService :: Specification LoopState ()
-ruleService = defaultActions "service"
-     EventHandlers { onFailure   = [ rmsServiceFailure]
-                   , onTransient = [tryRecoverService]
-                   , onOnline    = []
-                   }
-  where
-    tryRecoverService _ = return ()
-    rmsServiceFailure srv = when (M0.s_type srv == CST_RMS) $ return ()
+instance Monoid DeferredStateChanges where
+  mempty = DeferredStateChanges id (Set []) mempty
+  (DeferredStateChanges f (Set s) i)
+    `mappend` (DeferredStateChanges f' (Set s') i') =
+      DeferredStateChanges (f >>> f') (Set $ s ++ s') (i <> i')
 
--- | Mark 'M0.Service' as failed. This message will be sent via EQ,
--- so may be processed only when the message will be back from EQ.
-serviceFailed :: M0.Service -> PhaseM LoopState l ()
-serviceFailed = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_FAILED)
-
--- | Mark 'M0.Service' as transient. This message will be sent via EQ,
--- so may be processed only when the message will be back from EQ.
-serviceTransient :: M0.Service -> PhaseM LoopState l ()
-serviceTransient = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_TRANSIENT)
-
--- | Mark 'M0.Service' as online. This message will be sent via EQ,
--- so may be processed only when the message will be back from EQ.
-serviceOnline :: M0.Service -> PhaseM LoopState l ()
-serviceOnline = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_ONLINE)
-
--------------------------------------------------------------------------------
--- Process
--------------------------------------------------------------------------------
-
--- | Rules that fire when 'M0.Process' changes its state.
-ruleProcess :: Specification LoopState ()
-ruleProcess = defaultActions "process"
-    (EventHandlers { onFailure   = [escalateFailureToService]
-                   , onTransient = [escalateTransientToService]
-                   , onOnline    = []
-                   } :: EventHandlers M0.Process)
+-- | Responsible for 'cascading' a single state set into a `DeferredStateChanges`
+--   object. Thus this should be responsible for:
+--   - Any failure implications (e.g. inhibited states)
+--   - Creating pool versions etc. in the graph
+--   - Syncing to confd if necessary.
+cascadeStateChange :: AnyStateChange -> G.Graph -> [AnyStateChange]
+cascadeStateChange asc rg = go [asc] [asc]
    where
-     escalateFailureToService pr = getChildren pr >>= traverse_ serviceFailed
-     escalateTransientToService pr = getChildren pr >>= traverse_ serviceFailed
+    -- XXX: better structues for union and difference, should we nub on b?
+    go :: [AnyStateChange] -> [AnyStateChange] -> [AnyStateChange]
+    go = fix $ \f a c ->
+           if null a
+           then c
+           else let b = join $ liftA2 unwrap a stateCascadeRules
+                in f (filter (flip all c . notMatch) b) (b ++ c)
+    notMatch (AnyStateChange (a :: a) _ _ _) (AnyStateChange (b::b) _ _ _) = 
+       case eqT :: Maybe (a :~: b) of
+         Just Refl -> a /= b
+         Nothing -> True 
+    unwrap (AnyStateChange a a_old a_new _) r = tryApplyCascadeRule (a, a_old, a_new) r
+    -- XXX: keep states in map a -> AnyStateChange, so eqT will always be Refl
+    tryApplyCascadeRule :: forall a . Typeable a
+                        => (a, M0.StateCarrier a, M0.StateCarrier a)
+                        -> AnyCascadeRule
+                        -> [AnyStateChange]
+    tryApplyCascadeRule s (AnyCascadeRule (scr :: StateCascadeRule a' b)) =
+      case eqT :: Maybe (a :~: a') of
+        Just Refl ->
+           (\(b, b_old, b_new) -> AnyStateChange b b_old b_new sp)
+             <$> applyCascadeRule scr s 
+          where
+            sp = staticApplyPtr
+                  (static M0.someHasConfObjectStateDict)
+                  (M0.hasStateDict :: Static (Dict (M0.HasConfObjectState a)))
+        Nothing -> []
+    applyCascadeRule :: ( M0.HasConfObjectState a
+                        , M0.HasConfObjectState b
+                        )
+                     => StateCascadeRule a b
+                     -> (a, M0.StateCarrier a, M0.StateCarrier a)   -- state change
+                     -> [(b, M0.StateCarrier b, M0.StateCarrier b)] -- new updated states
+    applyCascadeRule
+      (StateCascadeRule old new f u)
+      (a, a_old, a_new) =
+        if (null old || a_old `elem` old) && (null new || a_new `elem` new)
+        then [ (b, b_old, b_new)
+             | b <- f a rg
+             , let b_old = M0.getState b rg
+             , let b_new = u a_new b_old
+             ]
+        else []
 
--- | Mark 'M0.Process' as failed. This message will be sent via EQ,
--- so may be processed only when the message will be back from EQ.
-processFailed :: M0.Process -> PhaseM LoopState l ()
-processFailed = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_FAILED)
-
--- | Mark 'M0.Process' as transient. This message will be sent via EQ,
--- so may be processed only when the message will be back from EQ.
-processTransient :: M0.Process -> PhaseM LoopState l ()
-processTransient = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_TRANSIENT)
-
--- | Mark 'M0.Process' as online. This message will be sent via EQ,
--- so may be processed only when the message will be back from EQ.
-processOnline :: M0.Process -> PhaseM LoopState l ()
-processOnline = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_ONLINE)
-
--------------------------------------------------------------------------------
--- Node
--------------------------------------------------------------------------------
-
--- | Rules that fire when 'M0.Node' changes its state.
-ruleNode :: Specification LoopState ()
-ruleNode = defaultActions "node"
-   (EventHandlers { onFailure   = [ escalateToController controllerFailed
-                                  , escalateToProcess processFailed
-                                  ]
-                  , onTransient = [ escalateToController controllerFailed
-                                  , escalateToProcess processTransient
-                                  ]
-                  , onOnline    = [ escalateToController controllerOnline]
-                  } :: EventHandlers M0.Node)
+-- | Create deferred state changes for a number of objects.
+--   Should implicitly cascade all necessary changes under the covers.
+createDeferredStateChanges :: [AnyStateSet] -> G.Graph -> DeferredStateChanges
+createDeferredStateChanges stateSets rg =
+    DeferredStateChanges fn (Set nvec) (InternalObjectStateChange iosc)
   where
-    escalateToController action node = do
-      rg <- getLocalGraph
-      traverse_ action (G.connectedTo node M0.IsOnHardware rg)
-    escalateToProcess action node =
-      getChildren node >>= traverse_ action
+    stateChanges = join $ (flip cascadeStateChange $ rg) <$> rootStateChanges
+    rootStateChanges = lookupOldState <$> stateSets
+    lookupOldState (AnyStateSet (x :: a) st) =
+        AnyStateChange x (M0.getState x rg) st sp
+      where
+        sp = staticApplyPtr
+              (static M0.someHasConfObjectStateDict)
+              (M0.hasStateDict :: Static (Dict (M0.HasConfObjectState a)))
+    (fn, nvec, iosc) = go (id, [], []) stateChanges
+    go (f, nv, io) xs = case xs of
+      [] -> (f, nv, io)
+      (x@(AnyStateChange s s_old s_new _):xs') -> go (f', nv', io') xs' where
+        f' = f >>> M0.setState s s_new
+        nv' = (Note (M0.fid s) (M0.toConfObjState s s_new)) : nv
+        io' = x : io
 
--- | Mark 'M0.Node' as failed. This message will be sent via EQ,
--- so may be processed only when the message will be back from EQ.
-nodeFailed :: M0.Node -> PhaseM LoopState l ()
-nodeFailed = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_FAILED)
+-- | Apply a number of state changes, executing an action between updating
+--   the graph and sending notifications to Mero and internally.
+genericApplyStateChanges :: [AnyStateSet]
+                         -> PhaseM LoopState l a
+                         -> PhaseM LoopState l a
+genericApplyStateChanges ass act = getLocalGraph >>= \rg -> let
+    dsc@(DeferredStateChanges _ n _) = createDeferredStateChanges ass rg
+  in do
+    phaseLog "state-change-set" (show n)
+    genericApplyDeferredStateChanges dsc act
 
--- | Mark 'M0.Node' as transient. This message will be sent via EQ,
--- so may be processed only when the message will be back from EQ.
-nodeTransient :: M0.Node -> PhaseM LoopState l ()
-nodeTransient = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_TRANSIENT)
+-- | Generic function to apply deferred state changes in the standard order.
+--   The provided 'action' is executed between updating the graph and sending
+--   both 'Set' and 'InternalObjectStateChange' messages.
+--
+--   For more flexibility, you can write your own apply method which takes
+--   a `DeferredStateChanges` argument.
+genericApplyDeferredStateChanges :: DeferredStateChanges
+                                 -> PhaseM LoopState l a
+                                 -> PhaseM LoopState l a
+genericApplyDeferredStateChanges (DeferredStateChanges f s i) action = do
+  modifyGraph f
+  syncGraph (return ())
+  res <- action
+  _ <- notifyMeroBlocking s
+  promulgateRC $ encodeP i
+  return res
 
--- | Mark 'M0.Node' as online. This message will be sent via EQ,
--- so may be processed only when the message will be back from EQ.
-nodeOnline :: M0.Node -> PhaseM LoopState l ()
-nodeOnline = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_ONLINE)
-
-
--------------------------------------------------------------------------------
--- Controller
--------------------------------------------------------------------------------
-
--- | Rules that fire when 'M0.Controller' changes its state.
-ruleController :: Specification LoopState ()
-ruleController = defaultActions "controller"
-    (EventHandlers { onFailure = [ escalateFailureToEnclosure
-                                 , escalateToNode nodeFailed
-                                 ]
-                   , onTransient = [ escalateToNode nodeTransient
-                                   ]
-                   , onOnline    = [ escalateToNode nodeOnline ]
-                   } :: EventHandlers M0.Controller)
+-- | Apply state changes and synchronise with confd.
+applyStateChangesSyncConfd :: [AnyStateSet]
+                           -> PhaseM LoopState l ()
+applyStateChangesSyncConfd ass =
+    genericApplyStateChanges ass act
   where
-    escalateFailureToEnclosure cntr = do
-      encls <- getParents cntr
-      forM_ encls $ \encl -> do
-        (cntrs :: [M0.Controller]) <- getChildren encl
-        status <- filter (/= Just M0.M0_NC_FAILED) <$> traverse queryObjectStatus cntrs
-        when (null status) $ enclosureFailed encl
-    escalateToNode action cntr = do
-      rg <- getLocalGraph
-      traverse_ action (G.connectedFrom M0.IsOnHardware cntr rg)
+    act = syncAction Nothing M0.SyncToConfdServersInRG
 
--- | Mark 'M0.Controller' as failed. This message will be sent via EQ,
--- so may be processed only when the message will be back from EQ.
-controllerFailed :: M0.Controller -> PhaseM LoopState l ()
-controllerFailed = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_FAILED)
-
--- | Mark 'M0.Controller' as transient. This message will be sent via EQ,
--- so may be processed only when the message will be back from EQ.
-controllerTransient :: M0.Controller -> PhaseM LoopState l ()
-controllerTransient = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_TRANSIENT)
-
--- | Mark 'M0.Controller' as online. This message will be sent via EQ,
--- so may be processed only when the message will be back from EQ.
-controllerOnline :: M0.Controller -> PhaseM LoopState l ()
-controllerOnline = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_ONLINE)
-
--------------------------------------------------------------------------------
--- Enclosure
--------------------------------------------------------------------------------
-
--- | Rules that fire when 'M0.Enclosure' changes its state.
-ruleEnclosure :: Specification LoopState ()
-ruleEnclosure = defaultActions "enclosure"
-  (EventHandlers { onFailure = [ escalateToController controllerFailed ]
-                 , onTransient = [ escalateToController controllerTransient ]
-                 , onOnline    = [ ]
-                 } :: EventHandlers M0.Enclosure)
+-- | Apply state changes and create any dynamic failure sets if needed.
+--   This also syncs to confd.
+applyStateChangesCreateFS :: [AnyStateSet]
+                          -> PhaseM LoopState l ()
+applyStateChangesCreateFS ass =
+    genericApplyStateChanges ass act
   where
-    escalateToController action enclosure = getChildren enclosure >>= traverse_ action
+    act = do
+      sgraph <- getLocalGraph
+      mstrategy <- getCurrentStrategy
+      forM_ mstrategy $ \strategy ->
+        forM_ (onFailure strategy sgraph) $ \graph' -> do
+          putLocalGraph graph'
+          syncAction Nothing M0.SyncToConfdServersInRG
 
--- | Mark 'M0.Enclosure' as failed. This message will be sent via EQ,
--- so may be processed only when the message will be back from EQ.
-enclosureFailed :: M0.Enclosure -> PhaseM LoopState l ()
-enclosureFailed = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_FAILED)
+-- | Rule for cascading state changes
+data StateCascadeRule a b where
+  StateCascadeRule :: (M0.HasConfObjectState a, M0.HasConfObjectState b)
+                    => [M0.StateCarrier a] --  Old state(s) if applicable
+                    -> [M0.StateCarrier a] --  New state(s)
+                    -> (a -> G.Graph -> [b]) --  Function to find new objects
+                    -> (M0.StateCarrier a -> M0.StateCarrier b -> M0.StateCarrier b)
+                    -> StateCascadeRule a b
+  deriving Typeable
 
--- | Mark 'M0.Enclosure' as transient. This message will be sent via EQ,
--- so may be processed only then message will be back from EQ.
-enclosureTransient :: M0.Enclosure -> PhaseM LoopState l ()
-enclosureTransient = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_TRANSIENT)
+-- | Existential wrapper for rules, we can make to make
+-- heterogenus lits of the rules.
+data AnyCascadeRule = forall a b.
+                      ( M0.HasConfObjectState a
+                      , M0.HasConfObjectState b
+                      )
+                    => AnyCascadeRule (StateCascadeRule a b)
+  deriving Typeable
 
--- | Mark 'M0.Enclosure' as online. This message will be sent via EQ,
--- so may be processed only then message will be back from EQ.
-enclosureOnline :: M0.Enclosure -> PhaseM LoopState l ()
-enclosureOnline = promulgateRC . stateChange (Proxy :: Proxy 'M0.M0_NC_ONLINE)
-
--------------------------------------------------------------------------------
--- Helpers
--------------------------------------------------------------------------------
-
--- | Run action iff entity is not in given state.
-whenNotState :: M0.HasConfObjectState a
-              => M0.ConfObjectState -> a -> PhaseM LoopState l () -> PhaseM LoopState l ()
-whenNotState st obj cont = do
-  rg <- getLocalGraph
-  when (M0.getConfObjState obj rg == st) $
-    cont -- >> setObjectStatus obj st
-{-# INLINE whenNotState #-}
-
--- | Helper for creating 'StateChangeEvent'
-stateChange :: Proxy x  -- ^ State type witness.
-            -> a        -- ^ Object that changes state.
-            -> StateChangeEvent x a
-stateChange _ = StateChangeEvent
-{-# INLINE stateChange #-}
-
--- | Helper for writing state change function. It run simple one step action, calls 'todo'
--- and 'done', add logs and notify mero about changed state.
-onStateChange :: (M0.HasConfObjectState b, Show b, Serializable a)
-              => String             -- ^ Rule name.
-              -> M0.ConfObjectState -- ^ New object state.
-              -> (a -> b)           -- ^ Extract object from message.
-              -> (forall l . [b -> PhaseM LoopState l ()]) -- ^ List of actions
-              -> Specification LoopState ()
-onStateChange name st getE actions = defineSimpleTask name $ \(HAEvent _ (getE -> entity) _) ->
-   whenNotState st entity $ do
-     phaseLog "conf-obj" $ show entity ++ " becomes " ++ show st
-     sequence_ $ map ($ entity) actions
-     notifyMero [M0.AnyConfObj entity] st
-{-# INLINE onStateChange #-}
-
--- | Structure for keeping event handlers.
-data EventHandlers a = EventHandlers
-  { onFailure   :: (forall l . [a -> PhaseM LoopState l ()])
-  , onTransient :: (forall l . [a -> PhaseM LoopState l ()])
-  , onOnline    :: (forall l . [a -> PhaseM LoopState l ()])
-  }
-
--- | Helper for implementing default action handlers, hiding some amount of boilerplate.
-defaultActions :: forall a . M0.HasConfObjectState a
-               => String  -- ^ Entity name.
-               -> EventHandlers a -- ^ Event Handlers.
-               -> Specification LoopState ()
-defaultActions s (EventHandlers failure transient online) = sequence_
-  [ onStateChange (s++":on-failure")
-                  M0.M0_NC_FAILED
-                  (getEntity :: StateChangeEvent 'M0.M0_NC_FAILED a -> a)
-                  failure
-  , onStateChange (s++":on-transient")
-                  M0.M0_NC_TRANSIENT
-                  (getEntity :: StateChangeEvent 'M0.M0_NC_TRANSIENT a -> a)
-                  transient
-  , onStateChange (s++":on-online")
-                  M0.M0_NC_ONLINE
-                  (getEntity :: StateChangeEvent 'M0.M0_NC_ONLINE a -> a)
-                  online
+-- | List all possible cascading rules
+stateCascadeRules :: [AnyCascadeRule]
+stateCascadeRules =
+  [ AnyCascadeRule rackCascadeRule
+  , AnyCascadeRule enclosureCascadeRule
+  , AnyCascadeRule sdevCascadeRule
   ]
-{-# INLINE defaultActions #-}
+
+
+rackCascadeRule :: StateCascadeRule M0.Rack M0.Enclosure
+rackCascadeRule = StateCascadeRule
+  [M0.M0_NC_ONLINE]
+  [M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT]
+  (\x rg -> G.connectedTo x M0.IsParentOf rg)
+  (const $ const M0.M0_NC_TRANSIENT)  -- XXX: what if enclosure if failed (?)
+
+enclosureCascadeRule :: StateCascadeRule M0.Enclosure M0.Controller
+enclosureCascadeRule = StateCascadeRule
+  [M0.M0_NC_ONLINE]
+  [M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT]
+  (\x rg -> G.connectedTo x M0.IsParentOf rg)
+  (const $ const M0.M0_NC_TRANSIENT)
+
+-- This is a phantom rule; SDev state is queried through Disk state,
+-- so this rule just exists to include the `SDev` in the set of
+-- notifications which get sent out.
+sdevCascadeRule :: StateCascadeRule M0.SDev M0.Disk
+sdevCascadeRule = StateCascadeRule
+  []
+  []
+  (\x rg -> G.connectedTo x M0.IsOnHardware rg)
+  (const)

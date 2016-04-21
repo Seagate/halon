@@ -36,6 +36,7 @@ import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Rules.Castor.Repair
 import HA.RecoveryCoordinator.Rules.Castor.Reset
+import HA.RecoveryCoordinator.Rules.Mero.Conf
 import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
@@ -173,7 +174,7 @@ ruleDriveRemoved = define "drive-removed" $ do
     phaseLog "debug" $ "Associated storage device: " ++ show sd
     forM_ sd $ \m0sdev -> do
       fork CopyNewerBuffer $ do
-        phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for device."
+        phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for sdev"
         notifyDriveStateChange m0sdev M0_NC_TRANSIENT
         put Local $ Just (uuid, enc, disk, loc, m0sdev)
         switch [reinsert, timeout driveRemovalTimeout removal]
@@ -194,12 +195,12 @@ ruleDriveRemoved = define "drive-removed" $ do
 
   directly removal $ do
     Just (uuid, _, _, _, m0sdev) <- get Local
-    phaseLog "debug" "Notify about drive state change"
-    notifyDriveStateChange m0sdev M0_NC_FAILED
     mdisk <- lookupSDevDisk m0sdev
     forM_ mdisk $ \disk ->
       withSpielRC $ \sp m0 -> withRConfRC sp
         $ m0 $ Spiel.deviceDetach sp (fid disk)
+    phaseLog "debug" "Notifying M0_NC_FAILED for sdev"
+    notifyDriveStateChange m0sdev M0_NC_FAILED
     messageProcessed uuid
     continue finish
 
@@ -294,7 +295,7 @@ ruleDriveInserted = define "drive-inserted" $ do
          unmarkStorageDeviceRemoved disk
          msdev <- lookupStorageDeviceSDev disk
          forM_ msdev $ \sdev -> do
-           fmap (fromMaybe M0_NC_UNKNOWN) (queryObjectStatus sdev) >>= \case
+           getLocalGraph >>= \rg -> case getConfObjState sdev rg of
              M0_NC_UNKNOWN -> messageProcessed uuid
              M0_NC_ONLINE -> messageProcessed uuid
              M0_NC_TRANSIENT -> do
@@ -339,7 +340,7 @@ ruleDriveInserted = define "drive-inserted" $ do
     sdev <- lookupStorageDeviceSDev disk
     forM_ sdev $ \m0sdev -> do
       attachDisk m0sdev
-      fmap (fromMaybe M0_NC_UNKNOWN) (queryObjectStatus m0sdev) >>= \case
+      getLocalGraph >>= \rg -> case getConfObjState m0sdev rg of
         M0_NC_TRANSIENT -> notifyDriveStateChange m0sdev M0_NC_FAILED
         M0_NC_FAILED -> handleRepair $ Set [Note (fid m0sdev) M0_NC_FAILED]
         M0_NC_REPAIRED -> handleRepair $ Set [Note (fid m0sdev) M0_NC_ONLINE]

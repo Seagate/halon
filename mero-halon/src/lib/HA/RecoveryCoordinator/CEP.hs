@@ -35,7 +35,6 @@ import           HA.EventQueue.Types
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Status
-import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Castor
 import           HA.RecoveryCoordinator.Rules.Service
 import           HA.RecoveryCoordinator.Actions.Monitor
@@ -52,11 +51,12 @@ import qualified HA.Resources.Castor as M0
 import           Control.Monad (forM_)
 import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Actions.Mero.Conf (getFilesystem)
+import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.RecoveryCoordinator.Rules.Castor.Cluster (clusterRules)
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_ONLINE, M0_NC_TRANSIENT))
-import           HA.Services.Mero (meroRules, notifyMero)
+import           HA.Services.Mero (createSet, meroRules, notifyMero)
 import           HA.Services.SSPL (sendNodeCmd)
 import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..))
 #endif
@@ -172,7 +172,7 @@ ruleNodeUp argv = define "node-up" $ do
                         | (c :: M0.Controller) <- G.connectedFrom M0.At (Host h) g
                         , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c g
                         ]
-            notifyMero nodes M0_NC_ONLINE
+            notifyMero $ createSet nodes M0_NC_ONLINE
 #endif
             return True
         conf <- loadNodeMonitorConf node
@@ -231,6 +231,7 @@ ruleNodeUp argv = define "node-up" $ do
         ack npid
         liftProcess $ sayRC $ "Ack sent to " ++ show npid
         messageProcessed uuid
+#ifdef USE_MERO
         sendNewMeroNodeMsg <- findNodeHost (Node nid) >>= return . \case
           Nothing -> promulgateRC $ NewMeroClient (Node nid)
           Just host -> do
@@ -240,13 +241,10 @@ ruleNodeUp argv = define "node-up" $ do
             -- if we don't have the server label, assume mero client
             -- even if no client label
             else promulgateRC $ NewMeroClient (Node nid)
-#ifdef USE_MERO
         getFilesystem >>= \case
            Nothing ->
              phaseLog "info" "Configuration data was not loaded yet, skipping"
            Just{} -> sendNewMeroNodeMsg
-#else
-        sendNewMeroNodeMsg
 #endif
         finishProcessingMsg uuid
         continue end
@@ -331,7 +329,7 @@ ruleRecoverNode argv = define "recover-node" $ do
                           | (c :: M0.Controller) <- G.connectedFrom M0.At host g
                           , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c g
                           ]
-              notifyMero (M0.AnyConfObj <$> nodes) M0_NC_TRANSIENT
+              notifyMero $ createSet (M0.AnyConfObj <$> nodes) M0_NC_TRANSIENT
               -- if the node is a mero server then power-cycle it.
               -- Client nodes can run client-software that may not be
               -- OK with reboots so we only reboot servers.

@@ -43,12 +43,12 @@ extra-deps:
 - aeson-schema-0.4.0.0
 - directory-1.2.5.0
 - distributed-process-tests-0.4.3.2
-- distributed-static-0.3.2.0
+- distributed-static-0.3.4.0
 - genders-0.1.0.1
 - inline-c-0.5.5.1
 - leveldb-haskell-0.6.3
 - network-transport-tests-0.2.2.0
-- rank1dynamic-0.3.1.0
+- rank1dynamic-0.3.2.0
 - rematch-0.2.0.0
 - vinyl-0.5.2
 

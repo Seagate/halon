@@ -11,24 +11,24 @@ import HA.EventQueue.Types
   )
 import HA.RecoveryCoordinator.Actions.Core
   ( LoopState
+  , getLocalGraph
   , messageProcessed
   , promulgateRC
   , syncGraph
   , unlessM
   , whenM
   )
-import HA.RecoveryCoordinator.Actions.Mero (updateDriveState)
 import HA.RecoveryCoordinator.Actions.Hardware
-import HA.RecoveryCoordinator.Actions.Mero (notifyDriveStateChange)
 import HA.RecoveryCoordinator.Actions.Mero.Conf
   ( lookupConfObjByFid
   , lookupStorageDevice
   , lookupStorageDeviceSDev
   , queryObjectStatus
   )
+import HA.RecoveryCoordinator.Rules.Mero.Conf (notifyDriveStateChange)
 import HA.Resources (Node(..))
 import HA.Resources.Castor
-import HA.Resources.Mero.Note (ConfObjectState(..))
+import HA.Resources.Mero.Note (ConfObjectState(..), getConfObjState)
 import HA.Services.SSPL.CEP
   ( sendNodeCmd
   , updateDriveManagerWithFailure
@@ -117,8 +117,8 @@ handleReset (Set ns) = do
                    phaseLog "info" "drive is physically removed, skipping reset"
                    return ()
                 _ -> do
-                  mst <- queryObjectStatus m0sdev
-                  unless (mst == Just M0_NC_FAILED) $ do
+                  st <- getConfObjState m0sdev <$> getLocalGraph
+                  unless (st == M0_NC_FAILED) $ do
                     ongoing <- hasOngoingReset sdev
                     when (not ongoing) $ do
                       ratt <- getDiskResetAttempts sdev
@@ -132,7 +132,7 @@ handleReset (Set ns) = do
                         updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
 
                       when (status == M0_NC_TRANSIENT) $ do
-                        updateDriveState m0sdev status
+                        notifyDriveStateChange m0sdev status
                         promulgateRC $ ResetAttempt sdev
 
                       syncGraph $ say "handleReset synchronized"

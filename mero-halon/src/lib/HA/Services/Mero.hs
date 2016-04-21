@@ -33,6 +33,7 @@ module HA.Services.Mero
     , m0dProcess__tdict
     , m0d__static
     , meroRules
+    , createSet
     , notifyMero
     , notifyMeroBlocking
     , notifyMeroAndThen
@@ -50,6 +51,7 @@ import HA.Services.Mero.Types
 import qualified HA.ResourceGraph as G
 
 import qualified Mero.Notification
+import Mero.Notification (Set)
 import Mero.Notification.HAState (Note(..), HAStateException)
 import Mero.ConfC (Fid, ServiceType(..), fidToStr)
 
@@ -359,22 +361,29 @@ getNotificationChannels = do
        Just (TypedChannel chan) -> return $ Just chan
   return $ catMaybes things
 
-notifyMeroBlocking :: [M0.AnyConfObj] -- ^ List of resources (instance of @ConfObj@)
-                   -> ConfObjectState
+-- | Create a set event from a set of conf objects and a state.
+--   TODO: This is only temporary until we move to `stateSet`
+createSet :: [M0.AnyConfObj] -> ConfObjectState -> Set
+createSet cs st = setEvent
+  where
+    getFid (M0.AnyConfObj a) = M0.fid a
+    setEvent :: Mero.Notification.Set
+    setEvent = Mero.Notification.Set $ map (flip Note st . getFid) cs
+
+notifyMeroBlocking :: Set
                    -> PhaseM LoopState l Bool
-notifyMeroBlocking cs st = do
+notifyMeroBlocking setEvent = do
   res <- liftIO $ newEmptyMVar
-  notifyMeroAndThen cs st
+  notifyMeroAndThen setEvent
     (liftIO $ putMVar res True)
     (liftIO $ putMVar res False)
   liftIO $ takeMVar res
 
-notifyMeroAndThen :: [M0.AnyConfObj] -- ^ List of resources (instance of @ConfObj@)
-                  -> ConfObjectState
+notifyMeroAndThen :: Set
                   -> Process () -- ^ Action on success
                   -> Process () -- ^ Action on failure
                   -> PhaseM LoopState l ()
-notifyMeroAndThen cs st fsucc ffail = do
+notifyMeroAndThen setEvent fsucc ffail = do
     phaseLog "action" "Sending configuration update to mero services"
     chans <- getNotificationChannels
     liftProcess $ do
@@ -383,9 +392,6 @@ notifyMeroAndThen cs st fsucc ffail = do
         link self
         sendChansBlocking chans
   where
-    getFid (M0.AnyConfObj a) = M0.fid a
-    setEvent :: Mero.Notification.Set
-    setEvent = Mero.Notification.Set $ map (flip Note st . getFid) cs
     -- Send a message to all channels and block until each has replied
     sendChansBlocking :: [(SendPort NotificationMessage, [String])] -> Process ()
     sendChansBlocking chans =
@@ -397,21 +403,13 @@ notifyMeroAndThen cs st fsucc ffail = do
        ) `onException` ffail)
       >>= maybe ffail (const fsucc)
 
--- | Combine @ConfObj@s and a @ConfObjectState@ into a 'Set' and
--- send it to every mero service running on the cluster.
-notifyMero :: [M0.AnyConfObj] -- ^ List of resources (instance of @ConfObj@)
-           -> ConfObjectState
-           -> PhaseM LoopState l ()
-notifyMero cs st = do
-    phaseLog "action" $ "Sending configuration update to mero services: "
-                     ++ show setEvent
-    chans <- getNotificationChannels
-    forM_ chans $ \(sp, recipients) -> liftProcess $
-        sendChan sp $ NotificationMessage setEvent recipients []
-  where
-    getFid (M0.AnyConfObj a) = M0.fid a
-    setEvent :: Mero.Notification.Set
-    setEvent = Mero.Notification.Set $ map (flip Note st . getFid) cs
+notifyMero :: Set -> PhaseM LoopState l ()
+notifyMero setEvent = do
+  phaseLog "action" $ "Sending configuration update to mero services: "
+                   ++ show setEvent
+  chans <- getNotificationChannels
+  forM_ chans $ \(sp, recipients) -> liftProcess $
+      sendChan sp $ NotificationMessage setEvent recipients []
 
 lookupMeroChannelByNode :: Node -> PhaseM LoopState l (Maybe (TypedChannel NotificationMessage))
 lookupMeroChannelByNode node = do

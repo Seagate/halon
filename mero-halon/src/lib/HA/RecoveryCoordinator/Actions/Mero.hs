@@ -11,8 +11,6 @@ module HA.RecoveryCoordinator.Actions.Mero
   ( module Conf
   , module HA.RecoveryCoordinator.Actions.Mero.Core
   , module HA.RecoveryCoordinator.Actions.Mero.Spiel
-  , notifyDriveStateChange
-  , updateDriveState
   , noteToSDev
   , calculateMeroClusterStatus
   , createMeroKernelConfig
@@ -30,7 +28,6 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero.Conf as Conf
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
-import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Events.Mero
 
 import HA.Resources.Castor (Is(..))
@@ -44,7 +41,6 @@ import HA.Service
 import HA.Services.Mero
 
 import Mero.ConfC
-import Mero.Notification (Set(..))
 import Mero.Notification.HAState (Note(..))
 
 import Control.Category
@@ -70,7 +66,6 @@ m0t1fsBootLevel = M0.BootLevel 3
 clusterStartedBootLevel :: M0.BootLevel
 clusterStartedBootLevel = M0.BootLevel 1
 
-
 -- TODO Generalise this
 -- | If the 'Note' is about an 'SDev' or 'Disk', extract the 'SDev'
 -- and its 'M0.ConfObjectState'.
@@ -80,66 +75,6 @@ noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= \case
   Nothing -> Conf.lookupConfObjByFid mfid >>= \case
     Just disk -> fmap (stType,) <$> Conf.lookupDiskSDev disk
     Nothing -> return Nothing
-
--- | Notify ourselves about a state change of the 'M0.SDev'.
---
--- Internally, build a note 'Set' and pass it to all registered
--- stateChangeHandlers.
---
--- It's important to understand that this function does not replace
--- 'updateDriveState' which performs the actual update.
-notifyDriveStateChange :: M0.SDev -> M0.ConfObjectState -> PhaseM LoopState l ()
-notifyDriveStateChange m0sdev st = do
-    updateDriveState m0sdev st
-    stateChangeHandlers <- lsStateChangeHandlers <$> get Global
-    sequence_ $ ($ ns) <$> stateChangeHandlers
- where
-   ns = Set [Note (M0.fid m0sdev) st]
-
-updateDriveState :: M0.SDev -- ^ Drive to update state
-                 -> M0.ConfObjectState -- ^ State to update to
-                 -> PhaseM LoopState l ()
-
--- | For transient failures, we may need to create a new pool version.
-updateDriveState m0sdev M0.M0_NC_TRANSIENT = do
-  -- Update state in RG
-  modifyGraph $ G.connectUniqueFrom m0sdev Is M0.M0_NC_TRANSIENT
-  graph <- getLocalGraph
-  let m0disks = G.connectedTo m0sdev M0.IsOnHardware graph :: [M0.Disk]
-  traverse_ (\m0disk -> modifyGraph $ G.connectUniqueFrom m0disk Is M0.M0_NC_TRANSIENT)
-            m0disks
-  syncGraph (return ()) -- possibly we need to wait here, but I see no good
-                        -- reason for that.
-  -- If using dynamic failure sets, generate failure set
-  sgraph <- getLocalGraph
-  mstrategy <- getCurrentStrategy
-  forM_ mstrategy $ \strategy ->
-    forM_ (onFailure strategy sgraph) $ \graph' -> do
-      putLocalGraph graph'
-      syncAction Nothing M0.SyncToConfdServersInRG
-  -- Notify Mero
-  let m0objs = M0.AnyConfObj <$> m0disks
-  notifyMero (M0.AnyConfObj m0sdev:m0objs) M0.M0_NC_TRANSIENT
-
--- | For all other states, we simply update in the RG and notify Mero.
-updateDriveState m0sdev x = do
-  phaseLog "rg" $ "Updating status of SDev "
-                ++ show m0sdev
-                ++ " to "
-                ++ show x
-  -- Update state in RG
-  modifyGraph $ G.connectUniqueFrom m0sdev Is x
-  graph <- getLocalGraph
-  let m0disks = G.connectedTo m0sdev M0.IsOnHardware graph :: [M0.Disk]
-  traverse_ (\m0disk -> modifyGraph $ G.connectUniqueFrom m0disk Is x) m0disks
-  -- Quite possibly we need to wait for synchronization result here, because
-  -- otherwise we may notifyMero multiple times (if consesus will be lost).
-  -- however in opposite case we may never notify mero if RC will die after
-  -- sync, but before it notified mero.
-  syncGraph (return ())
-  -- Notify Mero
-  let m0objs = M0.AnyConfObj <$> m0disks
-  notifyMero (M0.AnyConfObj m0sdev:m0objs) x
 
 -- | RMS service address.
 rmsAddress :: String

@@ -64,7 +64,7 @@ import Control.Distributed.Process (liftIO)
 import Data.Foldable (foldl')
 import qualified Data.HashSet as S
 import Data.List (scanl')
-import Data.Maybe (listToMaybe, catMaybes)
+import Data.Maybe (listToMaybe)
 import Data.Proxy
 import Data.UUID.V4 (nextRandom)
 
@@ -359,8 +359,9 @@ getPoolSDevs pool = getLocalGraph >>= \rg -> do
 getPoolSDevsWithState :: M0.Pool -> M0.ConfObjectState
                        -> PhaseM LoopState l [M0.SDev]
 getPoolSDevsWithState pool st = getPoolSDevs pool >>= \devs -> do
-  sts <- mapM (\d -> fmap (,d) <$> queryObjectStatus d) devs
-  return . map snd . filter ((== st) . fst) $ catMaybes sts
+  rg <- getLocalGraph
+  let sts = (\d -> (M0.getConfObjState d rg, d)) <$> devs
+  return . map snd . filter ((== st) . fst) $ sts
 
 
 lookupEnclosureM0 :: Enclosure -> PhaseM LoopState l (Maybe M0.Enclosure)

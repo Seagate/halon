@@ -61,7 +61,7 @@ import qualified HA.Resources.Castor as M0
 #ifdef USE_MERO
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState(..))
-import HA.Services.Mero (notifyMero)
+import HA.Services.Mero (createSet, notifyMero)
 import HA.RecoveryCoordinator.Actions.Mero.Core
 #endif
 import qualified HA.ResourceGraph as G
@@ -127,7 +127,7 @@ timeoutHost h = hasHostAttr M0.HA_TRANSIENT h >>= \case
                 | (c :: M0.Controller) <- G.connectedFrom M0.At h g
                 , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c g
                 ]
-    notifyMero (M0.AnyConfObj <$> nodes) M0_NC_FAILED
+    notifyMero $ createSet (M0.AnyConfObj <$> nodes) M0_NC_FAILED
     -- TODO: do we also have to tell mero about things connected to
     -- the nodes being down?
 #endif

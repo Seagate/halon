@@ -94,6 +94,7 @@ import GHC.Generics (Generic)
 
 import Options.Schema
 
+import HA.Encode
 import HA.ResourceGraph
 import HA.Resources
 
@@ -321,13 +322,6 @@ remotable
 
 instance Resource ServiceName where
   resourceDict = $(mkStatic 'resourceDictServiceName)
-
--- | Type class to support encoding difficult types (e.g. existentials) using
---   Static machinery in the Process monad.
-class ProcessEncode a where
-  type BinRep a :: *
-  encodeP :: a -> BinRep a
-  decodeP :: BinRep a -> Process a
 
 -- | Restart service y/n
 data ServiceStart = Start | Restart

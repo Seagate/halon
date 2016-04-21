@@ -99,7 +99,6 @@ Library
                    HA.RecoveryCoordinator.Rules.Castor
                    HA.RecoveryCoordinator.Rules.Service
                    HA.RecoveryCoordinator.Events.Drive
-                   HA.RecoveryCoordinator.Events.Mero
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
 
@@ -117,6 +116,7 @@ Library
                    amqp,
                    halon,
                    bytestring,
+                   constraints,
                    containers,
                    directory,
                    distributed-process-scheduler,
@@ -168,12 +168,14 @@ Library
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
                        HA.RecoveryCoordinator.Rules.Mero.Conf
                        HA.RecoveryCoordinator.Events.Castor.Cluster
+                       HA.RecoveryCoordinator.Events.Mero
       Other-Modules:  HA.RecoveryCoordinator.Actions.Mero.Conf
                       HA.RecoveryCoordinator.Actions.Mero.Core
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
                       HA.RecoveryCoordinator.Rules.Castor.Repair
                       HA.RecoveryCoordinator.Rules.Castor.Cluster
                       HA.RecoveryCoordinator.Rules.Castor.Repair.Internal
+                      HA.Resources.Mero.Note.TH
                       HA.Services.Mero.CEP
                       HA.Services.Mero.Types
                       System.Posix.SysInfo
@@ -185,6 +187,7 @@ Library
       Build-Depends: rpclite,
                      confc,
                      inline-c,
+                     template-haskell,
                      transformers,
                      vector
   if flag(rpc)
