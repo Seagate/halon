@@ -39,12 +39,14 @@ import           Control.Monad (guard, join, unless, when, void)
 import           Control.Monad.Trans.Maybe
 
 import           Data.Binary (Binary)
-import           Data.Either (lefts, rights)
+import           Data.Either (partitionEithers)
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, fromMaybe)
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import qualified Data.HashSet as S
 import           Data.Foldable
 import           Data.Proxy (Proxy(..))
+import           Data.Traversable (forM)
 import           Data.Typeable (Typeable)
 import           Data.Vinyl
 
@@ -116,6 +118,7 @@ ruleClusterStart = defineSimple "cluster-start-request"
                     proc eid
                M0.MeroClusterStarting{} -> Left $ StateChangeOngoing st
                M0.MeroClusterStopping{} -> Left $ StateChangeError $ "cluster is stopping: " ++ show st
+               M0.MeroClusterFailed -> Left $ StateChangeError $ "cluster is failed: " ++ show st
                M0.MeroClusterRunning    -> Left $ StateChangeFinished
       case eresult of
         Left m -> liftProcess (sendChan ch m) >> messageProcessed eid
@@ -129,21 +132,24 @@ ruleClusterStop = defineSimple "cluster-stop-request"
       let eresult = case listToMaybe $ G.connectedTo R.Cluster R.Has rg of
             Nothing -> Left $ StateChangeError "Unknown current state."
             Just st -> case st of
-               M0.MeroClusterRunning    -> Right $ do
-                  modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStopping (M0.BootLevel maxTeardownLevel))
-                  let nodes =
-                        [ node | host <- G.getResourcesOfType rg :: [R.Host]
-                               , node <- take 1 (G.connectedTo host R.Runs rg) :: [R.Node] ]
-                  forM_ nodes $ promulgateRC . StopMeroServer
-                  syncGraphCallback $ \pid proc -> do
-                    sendChan ch (StateChangeStarted pid)
-                    proc eid
+               M0.MeroClusterRunning    -> Right $ stopCluster rg ch eid
+               M0.MeroClusterFailed     -> Right $ stopCluster rg ch eid
                M0.MeroClusterStopping{} -> Left $ StateChangeOngoing st
                M0.MeroClusterStarting{} -> Left $ StateChangeError $ "cluster is starting: " ++ show st
                M0.MeroClusterStopped    -> Left   StateChangeFinished
       case eresult of
         Left m -> liftProcess (sendChan ch m) >> messageProcessed eid
         Right action -> action
+  where
+    stopCluster rg ch eid = do
+      modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStopping (M0.BootLevel maxTeardownLevel))
+      let nodes =
+            [ node | host <- G.getResourcesOfType rg :: [R.Host]
+                   , node <- take 1 (G.connectedTo host R.Runs rg) :: [R.Node] ]
+      forM_ nodes $ promulgateRC . StopMeroServer
+      syncGraphCallback $ \pid proc -> do
+        sendChan ch (StateChangeStarted pid)
+        proc eid
 
 -- | Timeout to wait for reply from node.
 tearDownTimeout :: Int
@@ -247,7 +253,32 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
          level@(M0.MeroClusterStopping (M0.BootLevel i)) <-
             fromMaybe M0.MeroClusterStopped . listToMaybe . G.connectedTo R.Cluster R.Has <$> getLocalGraph
          rg <- getLocalGraph
-         if null [ (srv :: M0.Process) |  srv   <- G.connectedTo level M0.Pending rg ] && b == (M0.BootLevel i)
+         let isPSFailed (M0.PSFailed _) = True
+             isPSFailed (M0.PSInhibited st') = isPSFailed st'
+             isPSFailed _ = False
+
+             isStopping st = st == M0.PSStopping
+                             || st == M0.PSOffline
+                             || isPSFailed st
+         -- non-failed processes on cluster on current level
+         let nonFailed = getLabeledProcesses (mkLabel $ M0.BootLevel i)
+                        (\p rg' -> null [ () | st <- G.connectedTo p R.Is rg'
+                                             , isPSFailed st ])
+                        rg
+             isProcessStopping p = maybe False isStopping
+                                   . listToMaybe $ G.connectedTo p R.Is rg
+
+             -- processes that aren't marked as pending for some
+             -- reason but aren't in failed or stopping state either
+             stillRunning = filter (not . isProcessStopping) nonFailed
+
+         let pending = [ (srv :: M0.Process) | srv <- G.connectedTo level M0.Pending rg
+                                             , st <- G.connectedTo srv R.Is rg
+                                             , not $ isPSFailed st ]
+             -- All pending or otherwise running processes
+             allProcs = S.toList . S.fromList $ pending ++ stillRunning
+
+         if null allProcs && b == (M0.BootLevel i)
          then do lvl <- case i of
                    0 -> do modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterStopped
                            return M0.MeroClusterStopped
@@ -261,8 +292,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
                  syncGraphCallback $ \self proc -> do
                    usend self (BarrierPass lvl)
                    forM_ meid proc
-         else do phaseLog "debug" $ "There are processes left:" ++ show
-                                    [ (srv :: M0.Process) |  srv   <- G.connectedTo level M0.Pending rg ]
+         else do phaseLog "debug" $ "There are processes left: " ++ show allProcs
                  forM_ meid syncGraphProcessMsg
 
 
@@ -274,7 +304,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
            put Local (Just (eid, node, M0.BootLevel maxTeardownLevel))
            continue teardown
        Just eid' -> do
-         phaseLog "debug" $ show node ++ " already beign processed - ignoring."
+         phaseLog "debug" $ show node ++ " already being processed - ignoring."
          unless (eid == eid') $ messageProcessed eid
 
    directly teardown $ do
@@ -359,6 +389,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
         forM_ mh $ \(NodesRunningTeardown nodes) ->
           putStorageRC $ NodesRunningTeardown $ Map.delete  node nodes
         messageProcessed eid)
+     phaseLog "debug" $ "teardown finish"
      stop
 
    startFork initialize Nothing
@@ -383,8 +414,27 @@ ruleNewMeroServer = define "new-mero-server" $ do
     boot_level_1_complete <- phaseHandle "boot_level_1_complete"
     start_clients <- phaseHandle "start_clients"
     start_clients_complete <- phaseHandle "start_clients_complete"
+    bootstrap_failed <- phaseHandle "bootstrap_failed"
+    cluster_failed <- phaseHandle "cluster_failed"
     finish <- phaseHandle "finish"
     end <- phaseHandle "end"
+
+    let processStartedProcs :: [Either Fid (Fid, String)]
+                            -> PhaseM LoopState l ([M0.Process], [(M0.Process, String)])
+        processStartedProcs e = case partitionEithers e of
+          (okProcs', failedProcs') -> do
+            (okProcs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid okProcs'
+            -- Mark successful processes as online, and others as failed.
+            forM_ okProcs $ \p -> modifyGraph $ G.connectUniqueFrom p R.Is M0.ProcessBootstrapped
+                                          >>> G.connectUniqueFrom p R.Is M0.PSOnline
+            mfailedProcs <- forM failedProcs' $ \(f,r) -> lookupConfObjByFid f >>= \mp -> do
+              phaseLog "warning" $ "Process " ++ show f
+                                ++ " failed to start: " ++ r
+              traverse_ (\(p :: M0.Process) ->
+                modifyGraph $ G.connectUniqueFrom p R.Is (M0.PSFailed r)) mp
+              return (mp, r)
+            let failedProcs = [ (p, r) | (Just p, r) <- mfailedProcs ]
+            return (okProcs, failedProcs)
 
     setPhase new_server $ \(HAEvent eid (NewMeroServer node@(R.Node nid)) _) -> do
       phaseLog "info" $ "NewMeroServer received for node " ++ show nid
@@ -396,6 +446,9 @@ ruleNewMeroServer = define "new-mero-server" $ do
           continue finish
         Just M0.MeroClusterStopping{} -> do
           phaseLog "info" "Cluster is stopping."
+          continue finish
+        Just M0.MeroClusterFailed -> do
+          phaseLog "info" "Cluster is in failed state, doing nothing."
           continue finish
         _ -> return ()
 
@@ -416,7 +469,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
               Just lnid -> do
                 createMeroKernelConfig host $ lnid ++ "@tcp"
                 startMeroService host node
-                switch [svc_up_now, timeout 1000000 svc_up_already]
+                switch [svc_up_now, bootstrap_failed, timeout 1000000 svc_up_already]
           Nothing -> do
             phaseLog "error" $ "Can't find R.Host for node " ++ show node
             continue finish
@@ -450,24 +503,19 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
     -- Wait until every process comes back as finished bootstrapping
     setPhaseIf boot_level_0_complete processControlOnNode $ \(eid, e) -> do
-      (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
-      -- Mark successful processes as online, and others as failed.
-      forM_ procs $ \p -> modifyGraph $ G.connectUniqueFrom p R.Is M0.ProcessBootstrapped
-                                    >>> G.connectUniqueFrom p R.Is M0.PSOnline
-      forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>= \mp -> do
-        phaseLog "warning" $ "Process " ++ show f
-                          ++ " failed to start: " ++ r
-        traverse_ (\(p :: M0.Process) ->
-          modifyGraph $ G.connect p R.Is (M0.PSFailed r)) mp
+      (okProcs, failedProcs) <- processStartedProcs e
       rms <- listToMaybe
                 . filter (\s -> M0.s_type s == CST_RMS)
                 . join
                 . filter (\s -> CST_MGS `elem` fmap M0.s_type s)
-              <$> mapM getChildren procs
+              <$> mapM getChildren okProcs
       traverse_ setPrincipalRMIfUnset rms
-      let state = M0.MeroClusterStarting (M0.BootLevel 1)
-      notifyOnClusterTranstion state BarrierPass (Just eid)
-      switch [boot_level_1, timeout 5000000 finish]
+      case failedProcs of
+        [] -> do
+          let state = M0.MeroClusterStarting (M0.BootLevel 1)
+          notifyOnClusterTranstion state BarrierPass (Just eid)
+          switch [boot_level_1, timeout 5000000 finish]
+        _ -> continue cluster_failed
 
     setPhaseIf boot_level_1 (barrierPass (M0.MeroClusterStarting (M0.BootLevel 1))) $ \() -> do
       Just (node, host, _) <- get Local
@@ -487,18 +535,14 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
     -- Wait until every process comes back as finished bootstrapping
     setPhaseIf boot_level_1_complete processControlOnNode $ \(eid, e) -> do
-      (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
-      -- Mark successful processes as online, and others as failed.
-      forM_ procs $ \p -> modifyGraph $ G.connectUniqueFrom p R.Is M0.ProcessBootstrapped
-                                    >>> G.connectUniqueFrom p R.Is M0.PSOnline
-      forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>= \mp -> do
-        phaseLog "warning" $ "Process " ++ show f
-                          ++ " failed to start: " ++ r
-        traverse_ (\(p :: M0.Process) ->
-          modifyGraph $ G.connect p R.Is (M0.PSFailed r)) mp
-      let state = M0.MeroClusterRunning
-      notifyOnClusterTranstion state BarrierPass (Just eid)
-      switch [start_clients, timeout 5000000 finish]
+      (_, failedProcs) <- processStartedProcs e
+      case failedProcs of
+        [] -> do
+          let state = M0.MeroClusterRunning
+          notifyOnClusterTranstion state BarrierPass (Just eid)
+          switch [start_clients, timeout 5000000 finish]
+        _ -> continue cluster_failed
+
 
     setPhaseIf start_clients (barrierPass M0.MeroClusterRunning) $ \() -> do
       Just (node, host, _) <- get Local
@@ -514,17 +558,26 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
     -- Mark clients as coming up successfully.
     setPhaseIf start_clients_complete processControlOnNode $ \(eid, e) -> do
-      (procs :: [M0.Process]) <- catMaybes <$> mapM lookupConfObjByFid (lefts e)
-      -- Mark successful processes as online, and others as failed.
-      forM_ procs $ \p -> modifyGraph $ G.connectUniqueFrom p R.Is M0.ProcessBootstrapped
-                                    >>> G.connectUniqueFrom p R.Is M0.PSOnline
-      forM_ (rights e) $ \(f,r) -> lookupConfObjByFid f >>= \mp -> do
-        phaseLog "warning" $ "Process " ++ show f
-                          ++ " failed to start: " ++ r
-        traverse_ (\(p :: M0.Process) ->
-          modifyGraph $ G.connect p R.Is (M0.PSFailed r)) mp
+      _ <- processStartedProcs e
       messageProcessed eid
       continue finish
+
+    -- because mero-kernel start is part of the service start unlike
+    -- the m0d units, we need to notify explicitly about its failure
+    -- rather than using the mechanism we have for m0d
+    setPhase bootstrap_failed $ \(HAEvent eid (M0.BootstrapFailedNotification msg) _) -> do
+      phaseLog "server-bootstrap" $ "Cluster bootstrap has failed: " ++ show msg
+      modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
+      messageProcessed eid
+      continue cluster_failed
+
+    directly cluster_failed $ do
+      Just (n, _, eid) <- get Local
+      phaseLog "server-bootstrap" $ "Finished bootstrapping with failure "
+                                 ++ show n
+      modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
+      messageProcessed eid
+      continue end
 
     directly finish $ do
       Just (n, _, eid) <- get Local
