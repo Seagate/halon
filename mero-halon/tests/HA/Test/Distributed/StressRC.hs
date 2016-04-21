@@ -55,7 +55,7 @@ testTrace m = do
 
 test :: TestTree
 test = testCase "StressRC" $
-  (>>= maybe (error "test timed out") return) $ timeout (240 * 1000000) $
+  (>>= maybe (error "test timed out") return) $ timeout (360 * 1000000) $
   getHostAddress >>= \ip ->
   IO.bracket (do Right nt <- createTransport ip "4000" defaultTCPParameters
                  return nt
