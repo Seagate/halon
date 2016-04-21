@@ -111,6 +111,10 @@ import System.Environment (lookupEnv)
 import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 
+
+nlogTrace :: LogId -> String -> Process ()
+nlogTrace (LogId s) msg = logTrace $ s ++ ": " ++ msg
+
 deriving instance Typeable Eq
 
 -- | An auxiliary type for hiding parameters of type constructors
@@ -617,12 +621,12 @@ replica Dict
     mbpid <- whereis (batcherLabel logId)
     forM_ mbpid exitAndWait
     bpid <- spawnLocal $ do
-      logTrace "spawned batcher"
+      nlogTrace logId "spawned batcher"
       link self >> batcher (sendBatch self) (epoch, replicas)
-                     `finally` logTrace "batcher: process terminated"
+                     `finally` nlogTrace logId "batcher: process terminated"
     register (batcherLabel logId) bpid
     ppid <- spawnLocal $ do
-              logTrace "spawned proposer"
+              nlogTrace logId "spawned proposer"
               link self >> proposer self bpid w0 Bottom replicas
 
     go ReplicaState
@@ -658,7 +662,7 @@ replica Dict
     restoreSnapshot restore =
        callLocal (try $ timeout snapshotRestoreTimeout restore) >>= \case
          Left (e :: SomeException) -> do
-           logTrace $ "restoreSnapshot: failed with " ++ show e
+           nlogTrace logId $ "restoreSnapshot: failed with " ++ show e
            return Nothing
          Right ms -> return ms
 
@@ -671,7 +675,7 @@ replica Dict
                          >>= maybe (return s) loop
       let (rs1, withOldEpoch) = partition (\(_, e, _) -> e >= epoch) rs0
       forM_ (nub $ map (\(μ, _, _) -> μ) withOldEpoch) $ \μ -> do
-        logTrace $ "batcher: rejected client request " ++ show (μ, epoch)
+        nlogTrace logId $ "batcher: rejected client request " ++ show (μ, epoch)
         usend μ (epoch, ρs)
       forM_ withOldEpoch $ \(_, _, r) ->
         forM_ (requestSender r) $ flip usend False
@@ -689,22 +693,22 @@ replica Dict
               map (\(a, e, r) -> BatcherMsg a e r) rs
             (rcfgs, other) =
               partition (isReconf . requestValue . batcherMsgRequest) other0
-        logTrace "batcher: reconf"
+        nlogTrace logId "batcher: reconf"
         -- Submit the last configuration request in the batch.
         unless (null rcfgs) $ do
           usend ρ [last rcfgs]
           expect
         -- Submit the non-nullipotent requests.
-        logTrace $ "batcher: non-nullipotent " ++ show (length other, length rest)
+        nlogTrace logId $ "batcher: non-nullipotent " ++ show (length other, length rest)
         unless (null other) $ do
           usend ρ other
           expect
         -- Send nullipotent requests after all other batched requests.
-        logTrace "batcher: nullipotent"
+        nlogTrace logId "batcher: nullipotent"
         unless (null nps) $ do
           usend ρ nps
           expect
-        logTrace "batcher: done"
+        nlogTrace logId "batcher: done"
         loop rest
 
     adjustForDrift :: Int -> Int
@@ -751,7 +755,9 @@ replica Dict
       where
         wait :: (SendPort TimerMessage, Int, TimerMessage) -> Process ()
         wait (sp, t, msg) =
-          expectTimeout t >>= maybe (logTrace "timer expired" >> sendChan sp msg >> timer) wait
+          expectTimeout t >>=
+            maybe (nlogTrace logId "timer expired" >> sendChan sp msg >> timer)
+                  wait
 
     -- The proposer process makes consensus proposals.
     -- Proposals are aborted when a reconfiguration occurs or when the
@@ -769,7 +775,7 @@ replica Dict
             -- write the code to handle that case.
             mv <- liftIO newEmptyMVar
             pid <- spawnLocal $ do
-                     logTrace $ "spawned proposal for " ++ show (d, αs)
+                     nlogTrace logId $ "spawned proposal for " ++ show (d, αs)
                      link self
                      result <- runPropose'
                                  (prl_propose (sendAcceptor logId) αs d v) s
@@ -795,7 +801,7 @@ replica Dict
                                -- decree
                             (,,) αs w' <$> clearNotifications
                       ]
-            logTrace $ "proposer: proposal stopped " ++ show (d, blocked)
+            nlogTrace logId $ "proposer: proposal stopped " ++ show (d, blocked)
             if blocked then do
               exit pid "proposer reconfiguration"
               -- If the leader loses the lease, resending the request will cause
@@ -868,7 +874,7 @@ replica Dict
             [ -- The lease is about to expire or it has already.
               matchChan timerRP $ \LeaseRenewalTime -> do
                   mLeader <- liftIO $ getLeader
-                  logTrace $ "LeaseRenewalTime: " ++ show (w, cd, mLeader)
+                  nlogTrace logId $ "LeaseRenewalTime: " ++ show (w, cd, mLeader)
                   cd' <- if Just here == mLeader || isNothing mLeader then do
                       leaseRequest <-
                         mkLeaseRequest (decreeLegislatureId d) [] ρs
@@ -882,7 +888,7 @@ replica Dict
             [ -- The periodic timer ticked.
               matchChan ptimerRP $ \PeriodicTick -> do
                   mLeader <- liftIO getLeader
-                  logTrace $ "Periodic timer tick: " ++ show (w, cd, mLeader)
+                  nlogTrace logId $ "Periodic timer tick: " ++ show (w, cd, mLeader)
                   -- Kill the batcher if I'm not the leader.
                   when (mLeader /= Just here) $ exitAndWait bpid
                   usend ptimerPid (ptimerSP, leaseTimeout, PeriodicTick)
@@ -896,7 +902,7 @@ replica Dict
                        \(Decree locale di _) -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
-                  logTrace $ "Skipping decree: " ++ show (w, di, locale)
+                  nlogTrace logId $ "Skipping decree: " ++ show (w, di, locale)
 
                   case locale of
                       -- Ack back to the batcher. It may be waiting on the
@@ -915,7 +921,7 @@ replica Dict
             , matchIf (\(Decree locale di _) ->
                         locale /= Stored && w <= di && decreeNumber di == decreeNumber w) $ {-# SCC "go/Decree/Commit" #-}
                        \(Decree locale di v) -> do
-                  logTrace $ "Storing decree: " ++ show (w, di)
+                  nlogTrace logId $ "Storing decree: " ++ show (w, di)
                   liftIO $ insertInLog ph (decreeNumber di) (v :: Value a)
                   case locale of
                       -- Ack back to the client.
@@ -946,7 +952,8 @@ replica Dict
                         return mdumper
                 case v of
                   Values xs -> {-# SCC "Execute/Values" #-} do
-                      logTrace $ "Executing decree: " ++ show (w, di, d, cd)
+                      nlogTrace logId $
+                        "Executing decree: " ++ show (w, di, d, cd)
                       s' <- foldM stLogNextState s xs
                       let d'  = max d w'
                           cd' = max cd w'
@@ -963,7 +970,7 @@ replica Dict
                     -- Only execute a reconfiguration if we are on an earlier
                     -- configuration.
                     | decreeLegislatureId d < leg' -> {-# SCC "Execute/Reconf" #-} do
-                      logTrace $ "Reconfiguring: " ++
+                      nlogTrace logId $ "Reconfiguring: " ++
                                  show (di, w, d, leg', cd, ρs')
                       let d' = w' { decreeNumber = max (decreeNumber d) (decreeNumber w') }
                           cd' = w' { decreeNumber = max (decreeNumber cd) (decreeNumber w') }
@@ -992,9 +999,10 @@ replica Dict
                       bpid' <- case mbpid of
                         Nothing -> do
                           bpid' <- spawnLocal $ do
-                            logTrace "respawned batcher"
+                            nlogTrace logId "respawned batcher"
                             link self >> batcher (sendBatch self) (epoch', ρs')
-                                `finally` logTrace "batcher: process terminated"
+                              `finally`
+                                nlogTrace logId "batcher: process terminated"
                           register (batcherLabel logId) bpid'
                           return bpid'
                         Just bpid' -> return bpid'
@@ -1023,7 +1031,7 @@ replica Dict
             , match $ \(w0', sref', dumper') -> do
                 -- Only heed if the snapshot is newer than our last known
                 -- snapshot.
-                logTrace $ "Response from dumper " ++
+                nlogTrace logId $ "Response from dumper " ++
                            show (w0', dumper', mdumper)
                 if w0' > w0 then do
                   say "Trimming log."
@@ -1052,7 +1060,8 @@ replica Dict
             , matchIf (\(Decree locale di _) ->
                         locale == Remote && w < di && not (Map.member (decreeNumber di) log)) $ {-# SCC "go/other" #-}
                        \(Decree locale di v) -> do
-                  logTrace $ "Storing decree above watermark: " ++ show (w, di)
+                  nlogTrace logId $
+                    "Storing decree above watermark: " ++ show (w, di)
                   liftIO $ insertInLog ph (decreeNumber di) v
                   --- XXX set cd to @max cd (succ di)@?
                   --
@@ -1076,7 +1085,7 @@ replica Dict
               -- XXX The guard avoids proposing values for unreachable decrees.
             , matchIf (\_ -> cd == w) $ {-# SCC "go/batcher" #-} \(rs :: [BatcherMsg a]) -> do
                   mLeader <- liftIO getLeader
-                  logTrace $ "replica: request from batcher "
+                  nlogTrace logId $ "replica: request from batcher "
                              ++ show (cd, mLeader, ρs)
                   (s', cd') <- case mLeader of
                      -- Drop the request and ask for the lease.
@@ -1096,7 +1105,7 @@ replica Dict
                             ((Nullipotent ==) . requestHint . batcherMsgRequest)
                             rs
                        then do
-                         logTrace "replica: nullipotent requests"
+                         nlogTrace logId "replica: nullipotent requests"
                          -- Serve nullipotent requests from the local state.
                          s' <- foldM stLogNextState s $
                                  concatMap
@@ -1111,7 +1120,8 @@ replica Dict
                            flip usend True
                          return (s', cd)
                        else do
-                         logTrace $ "replica: non-nullipotent requests. " ++ show (length rs)
+                         nlogTrace logId $
+                           "replica: non-nullipotent requests. " ++ show (length rs)
                          let (rs', old) =
                                partition ((epoch <=) . batcherMsgEpoch) rs
                          -- Notify the ambassadors of old requests.
@@ -1121,13 +1131,15 @@ replica Dict
                            -- Notify the batcher.
                            [] -> do
                              usend bpid ()
-                             logTrace "replica: no non-nullipotent requests."
+                             nlogTrace logId
+                               "replica: no non-nullipotent requests."
                              return (s, cd)
                            BatcherMsg { batcherMsgRequest = r } : _ -> do
                              let updateLeg (Reconf t _ ρs') =
                                   Reconf t (succ $ decreeLegislatureId legD) ρs'
                                  updateLeg v = v
-                             logTrace "replica: Sending batch to proposer."
+                             nlogTrace logId
+                               "replica: Sending batch to proposer."
                              usend ppid
                                ( cd
                                , if isReconf $ requestValue r
@@ -1177,7 +1189,7 @@ replica Dict
                   forM_ others $ \ρ -> do
                     sendReplicaAsync sendPool logId ρ $ Decree Remote di vi
 
-                  logTrace $ "replica: proposal result " ++
+                  nlogTrace logId $ "replica: proposal result " ++
                              show (di, v == vi, isNothing rLease)
                   when (v /= vi && isNothing rLease) $
                     -- Send rejection ack.
@@ -1321,7 +1333,7 @@ replica Dict
                            | otherwise     = ρs'
 
                   mLeader <- liftIO getLeader
-                  logTrace $ "replica: helo request from client " ++
+                  nlogTrace logId $ "replica: helo request from client " ++
                              show (π, mLeader)
                   case mLeader of
                     -- I'm the leader, so handle the request.
@@ -1353,7 +1365,7 @@ replica Dict
 
             , matchIf (\(_, e, _) -> e < epoch) $
                       \(μ, e, Helo π _) -> do
-                  logTrace $ "Rejecting helo request " ++ show (e, epoch)
+                  nlogTrace logId $ "Rejecting helo request " ++ show (e, epoch)
                   usend π False
                   usend μ (epoch, ρs)
                   go st
@@ -1376,7 +1388,7 @@ replica Dict
                       -> return $ Just nid
                     _ -> return Nothing
 
-                  logTrace $ "replica: Recover request from client " ++
+                  nlogTrace logId $ "replica: Recover request from client " ++
                              show (π, mLeader, ρs'')
                   case mLeader of
                     -- Ask for the lease using the proposed membership.
@@ -1417,7 +1429,8 @@ replica Dict
                                        [decreeNumber w..]
                                      )
                             -> do
-                          logTrace $ "replica: recovery synchronized acceptors"
+                          nlogTrace logId
+                            "replica: recovery synchronized acceptors"
                           let trimUnreachable [] _ = []
                               trimUnreachable (p@(di, v) : ds) leg =
                                 if decreeLegislatureId di < leg
@@ -1458,7 +1471,7 @@ replica Dict
 
                         -- Didn't catch up on time
                         _ -> do
-                          logTrace $ "replica: recovery failed with " ++
+                          nlogTrace logId $ "replica: recovery failed with " ++
                                      show (fmap (map fst) edvs)
                           go st
 
@@ -1768,7 +1781,7 @@ ambassador _ _ _ [] = do
     die "ambassador: Set of replicas must be non-empty."
 ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
     (monitorReplica ρ0 >>= go 0 (Just ρ0) others)
-      `finally` logTrace "ambassador: terminated"
+      `finally` nlogTrace logId "ambassador: terminated"
   where
     go :: LegislatureId    -- ^ The epoch of the replicas (use 0 while unknown)
        -> Maybe NodeId  -- ^ The leader replica if known
@@ -1797,7 +1810,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
           -- epoch.
           if epoch <= epoch' then do
             unmonitor ref
-            logTrace $ "ambassador: Old epoch changed " ++ show mLeader
+            nlogTrace logId $ "ambassador: Old epoch changed " ++ show mLeader
                        ++ ". Trying " ++ show ρ' ++ "."
             monitorReplica ρ' >>= go epoch' (Just ρ') ρs'
           else do
@@ -1817,7 +1830,8 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
             -- are no more replicas.
             let ρ : ρss = maybe ρs (: ρs) mLeader
                 ρs'@(ρ' : _) = ρss ++ [ρ]
-            logTrace $ "ambassador: Replica disconnected or died " ++ show pmn
+            nlogTrace logId $
+              "ambassador: Replica disconnected or died " ++ show pmn
                        ++ ". Trying " ++ show ρ' ++ "."
             ref'' <- monitorReplica ρ'
             -- Ask the head replica for the new leader.
@@ -1860,14 +1874,14 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
       -- A request
       OMRequest a -> do
         self <- getSelfPid
-        logTrace $ "ambassador: sending request to " ++ show mLeader
+        nlogTrace logId $ "ambassador: sending request to " ++ show mLeader
         case mLeader of
           Just ρ -> sendBatcher logId ρ (self, epoch, a :: Request a)
           Nothing -> forM_ (requestSender a) $ flip usend False
       -- A reconfiguration request
       OMHelo m@(Helo sender _) -> do
         self <- getSelfPid
-        logTrace $ "ambassador: sending helo request to " ++ show mLeader
+        nlogTrace logId $ "ambassador: sending helo request to " ++ show mLeader
         case mLeader of
           Just ρ  -> sendReplica logId ρ (self, epoch, m)
           Nothing -> usend sender False
@@ -1878,7 +1892,8 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
         -- The replicas might have lost quorum and could be unable to elect
         -- a new leader.
         let ρ  : _ = ρs'
-        logTrace $ "ambassador: sending recover msg to " ++ show (ρ, mLeader)
+        nlogTrace logId $
+          "ambassador: sending recover msg to " ++ show (ρ, mLeader)
         sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
 
     monitorReplica ρ = do
@@ -1905,9 +1920,10 @@ checkHandle label (Handle _ _ _ _ _ μ) = do
 -- Returns @True@ on success. The client can retry it if it returns @False@.
 --
 append :: Serializable a => Handle a -> Hint -> a -> Process Bool
-append h@(Handle _ _ _ _ omchan μ) hint x = callLocal $ do
+append h@(Handle _ _ cConfig _ omchan μ) hint x = callLocal $ do
     checkHandle "Log.append" h
-    logTrace "append: start"
+    Config {..} <- unClosure cConfig
+    nlogTrace logId "append: start"
     self <- getSelfPid
     liftIO $ atomically $ writeTChan omchan $ OMRequest $ Request
         { requestSender   = [self]
@@ -1915,7 +1931,7 @@ append h@(Handle _ _ _ _ omchan μ) hint x = callLocal $ do
         , requestHint     = hint
         , requestForLease = Nothing
         }
-    logTrace $ "append: sending request to ambassador " ++ show μ
+    nlogTrace logId $ "append: sending request to ambassador " ++ show μ
     when schedulerIsEnabled $ usend μ ()
     expect
 
@@ -1947,14 +1963,14 @@ monitorLog h@(Handle _ _ cConfig _ _ μ) = do
     (monitor =<<) $ callLocal $ do
       getSelfPid >>= usend μ
       mρ <- expect
-      logTrace $ "monitorLog: ambassador response " ++ show mρ
+      cc <- unClosure cConfig
+      nlogTrace (logId cc) $ "monitorLog: ambassador response " ++ show mρ
       case mρ of
         Nothing -> fmap nullProcessId getSelfNode
         Just ρ  -> do
-          cc <- unClosure cConfig
           whereisRemoteAsync ρ (batcherLabel $ logId cc)
           mrep <- expectTimeout (leaseTimeout cc)
-          logTrace $ "monitorLog: wehereis response " ++ show mrep
+          nlogTrace (logId cc) $ "monitorLog: wehereis response " ++ show mrep
           case mrep of
            Just (WhereIsReply _ mpid) ->
              return $ maybe (nullProcessId ρ) id mpid
@@ -2080,10 +2096,11 @@ reconfigure h@(Handle _ _ _ _ omchan μ) cpolicy = callLocal $ do
 -- Returns @True@ on success. The client can retry it if it returns @False@.
 --
 recover :: Handle a -> [NodeId] -> Process Bool
-recover h@(Handle _ _ _ _ omchan μ) ρs = callLocal $ do
+recover h@(Handle _ _ cConfig _ omchan μ) ρs = callLocal $ do
     checkHandle "Log.recover" h
     self <- getSelfPid
-    logTrace $ "recover: sending request to ambassador " ++ show μ
+    Config {..} <- unClosure cConfig
+    nlogTrace logId $ "recover: sending request to ambassador " ++ show μ
     liftIO $ atomically $ writeTChan omchan $ OMRecover $ Recover self ρs
     when schedulerIsEnabled $ usend μ ()
     expect
