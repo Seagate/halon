@@ -67,7 +67,7 @@ import Data.List
 import qualified Data.Map as M
 import Data.Traversable (for)
 import Data.Typeable
-import GHC.Int (Int64)
+import Data.Word (Word64)
 
 import Network.CEP
 
@@ -85,7 +85,7 @@ eqTrace = mkHalonTracer "EQ"
 -- be at most 'Int' sized, messages are removed from EQ when processed
 -- while the sequence number is ever growing, so we want something we
 -- know is not going to overflow any time soon.
-type SequenceNumber = Int64
+type SequenceNumber = Word64
 
 -- | State of the event queue.
 --
