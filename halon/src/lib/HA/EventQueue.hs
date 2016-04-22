@@ -46,19 +46,21 @@ import HA.Replicator ( RGroup
                      , withRGroupMonitoring
                      )
 
-import Control.Distributed.Process hiding (newChan, catch)
+import Control.Distributed.Process hiding (newChan, catch, finally)
 import Control.Distributed.Process.Closure ( remotable, mkClosure )
 import Control.Distributed.Process.Internal.Types (Message(..))
-import Network.CEP
+import Network.CEP hiding (continue)
 
-import Control.Monad (when)
+import Control.Monad (join, when)
 import Control.Monad.Catch
 import Data.Binary (Binary, encode)
 import Data.Foldable (forM_)
 import Data.Function (fix)
 import Data.Functor (void)
 import Data.Int (Int64)
+import Data.IORef (IORef, atomicModifyIORef, newIORef)
 import qualified Data.Map as M
+import Data.Sequence as Seq
 import Data.Typeable
 import Data.Word (Word64)
 import GHC.Generics
@@ -203,8 +205,13 @@ requestTimeout = 5 * 1000 * 1000
 startEventQueue :: RGroup g => g EventQueue -> Process ProcessId
 startEventQueue rg = do
     eq <- spawnLocal $ do
-      eqTrace "Started"
-      execute EventQueueState $ eqRules rg
+      pool <- newProcessPool 50
+      self <- getSelfPid
+      -- Spawn the initial monitor proxy. See Note [RGroup monitor].
+      rgMonitor <- spawnLocal $ link self >> rGroupMonitor rg
+      eqTrace $ "Started " ++ show rgMonitor
+      void $ monitor rgMonitor
+      execute (EventQueueState (Just rgMonitor) Set.empty) $ eqRules rg pool
       eqTrace "Terminated"
      `catch` \e -> do
       eqTrace $ "Dying with " ++ show e
@@ -212,8 +219,9 @@ startEventQueue rg = do
     register eventQueueLabel eq
     return eq
 
-eqRules :: RGroup g => g EventQueue -> Definitions EventQueueState ()
-eqRules rg = do
+eqRules :: RGroup g
+        => g EventQueue -> ProcessPool -> Definitions EventQueueState ()
+eqRules rg pool = do
     defineSimple "rc-spawned" $ \rc -> liftProcess $ do
       -- Poll the replicated state for the RC.
       pid <- spawnLocal $ handle
@@ -239,22 +247,27 @@ eqRules rg = do
           loop sn'
       eqTrace $ "Spawned poller " ++ show (rc, pid)
 
-    defineSimple "trimming" (trim rg)
+    defineSimple "trimming" $ \eid -> liftProcess $ do
+      self <- getSelfPid
+      (mapM_ (void . spawnLocal) =<<) $ submitTask pool $ do
+        retryRGroup rg requestTimeout $ fmap bToM $
+          updateStateWith rg $ $(mkClosure 'filterEvent) eid
+        usend self (TrimAck eid)
+
     defineSimple "trimming-unknown" $ \(DoTrimUnknown msg) -> trimMsg rg msg
 
     defineSimple "ha-event" $ \(sender, ev@(PersistMessage mid _)) ->
-      liftProcess $
-        void $ spawnLocal $ do
-          eqTrace $ "Recording event " ++ show mid
-          res <- withRGroupMonitoring rg $
-            updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
-          case res of
-            Just True -> do
-              eqTrace $ "Recorded event " ++ show mid
-              sendReply sender True
-            _ -> do
-              eqTrace $ "Recording event failed " ++ show (mid, sender)
-              sendReply sender False
+      liftProcess $ (mapM_ (void . spawnLocal) =<<) $ submitTask pool $ do
+        eqTrace $ "Recording event " ++ show mid
+        res <- withRGroupMonitoring rg $
+          updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+        case res of
+          Just True -> do
+            eqTrace $ "Recorded event " ++ show mid
+            sendReply sender True
+          _ -> do
+            eqTrace $ "Recording event failed " ++ show (mid, sender)
+            sendReply sender False
 
     defineSimple "trim-ack" $ \(TrimAck eid) -> publish (TrimDone eid)
     defineSimple "trim-ack-unknown" $ \(TrimUnknown _) -> return ()
@@ -266,16 +279,6 @@ bToM False = Nothing
 sendReply :: ProcessId -> Bool -> Process ()
 sendReply sender reply = do here <- getSelfNode
                             usend sender (here, reply)
-
-trim :: RGroup g => g EventQueue -> UUID -> PhaseM s l ()
-trim rg eid =
-    liftProcess $ do
-      self <- getSelfPid
-      _ <- spawnLocal $ do
-        retryRGroup rg requestTimeout $ fmap bToM $
-          updateStateWith rg $ $(mkClosure 'filterEvent) eid
-        usend self (TrimAck eid)
-      return ()
 
 -- | Remove message of unknown type. It's important that all
 -- messages with similar layout (fingerprint and encoding) will
@@ -302,3 +305,54 @@ instance Binary TrimAck
 data TrimUnknown = TrimUnknown Message deriving (Typeable, Generic)
 
 instance Binary TrimUnknown
+
+--------------------------------------------
+-- A pool of processes to handle requests
+--------------------------------------------
+
+-- | A pool of worker processes that execute tasks.
+--
+-- It is restricted to produce only a limited amount of workers.
+--
+newtype ProcessPool = ProcessPool (IORef PoolState)
+
+data PoolState = PoolState
+    { psLimit :: Int  -- ^ Maximum amount of workers that will be created.
+    , psCount :: Int  -- ^ Amount of running workers.
+    , psQueue :: Seq (Process ()) -- ^ The queue of tasks.
+    }
+
+-- | Creates a new pool with the given limit for the amount of workers.
+newProcessPool :: Int -> Process ProcessPool
+newProcessPool limit =
+  fmap ProcessPool $ liftIO $ newIORef $ PoolState limit 0 Seq.empty
+
+-- | @submitTask pool task@ submits a task to the pool.
+--
+-- If there are more workers than the limit, then @submitTask@ yields @Nothing@
+-- and the task is queued until the first worker becomes available.
+--
+-- If there are less workers than the limit, then @submitTask@ yields
+-- @Just worker@ where @worker@ is the worker that will execute the task and
+-- possibly other tasks submitted later. Callers will likely want to run
+-- @worker@ in a newly spawned thread.
+--
+submitTask :: ProcessPool -> Process () -> Process (Maybe (Process ()))
+submitTask (ProcessPool ref) t =
+    liftIO $ atomicModifyIORef ref $ \ps@(PoolState {..}) ->
+      if psCount < psLimit then
+        ( PoolState psLimit (succ psCount) psQueue
+        , Just ((t >> continue) `finally` terminate)
+        )
+      else
+        (ps { psQueue = psQueue |> t}, Nothing)
+  where
+    continue :: Process ()
+    continue = join $ liftIO $ atomicModifyIORef ref $ \ps@(PoolState {..}) ->
+      case viewl psQueue of
+        EmptyL -> (ps, return ())
+        next :< s -> (ps { psQueue = s}, next >> continue)
+
+    terminate :: Process ()
+    terminate = liftIO $ atomicModifyIORef ref $ \ps ->
+      (ps { psCount = pred (psCount ps) }, ())
