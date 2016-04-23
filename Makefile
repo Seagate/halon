@@ -1,5 +1,3 @@
-VERSION = $(shell git describe --long --always | tr '-' '_' | cut -c 2-)
-
 # This target will generate a distributable RPM based on the current
 # checkout. It will generate a binary RPM in ./rpmbuild/RPMS/x86_64
 # and a pseudo-source tar in ./rpmbuild/SRPMS
@@ -13,7 +11,7 @@ rpm:
 	cp mero-halon/scripts/localcluster rpmbuild/SOURCES/halon-simplelocalcluster
 	cp mero-halon/scripts/mero_role_mappings.ede rpmbuild/SOURCES/role_maps/genders.ede
 	cp mero-halon/scripts/mero_provisioner_role_mappings.ede rpmbuild/SOURCES/role_maps/prov.ede
-	rpmbuild --define "_topdir ${PWD}/rpmbuild" --define "_gitversion ${VERSION}" -ba rpmbuild/SPECS/halon.spec
+	rpmbuild --define "_topdir ${PWD}/rpmbuild" -ba rpmbuild/SPECS/halon.spec
 
 .PHONY: coverage
 coverage:
