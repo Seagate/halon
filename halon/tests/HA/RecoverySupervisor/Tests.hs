@@ -130,21 +130,21 @@ tests abstractTransport = do
         say $ "Isolating " ++ show (localNodeId leaderNode)
         splitNet [ [localNodeId leaderNode], map localNodeId rest ]
 
-        -- Check that previous RC stops
+        say "Check that previous RC stops."
         _ <- receiveChan $ snd $ cStop events
 
-        -- Check that a new RC spawns
+        say "Check that a new RC spawns."
         _ <- fix $ \loop -> do
           rc' <- receiveChan $ snd $ cStart events -- XXX: Timeout ?
           when (processNodeId rc' == localNodeId leaderNode) loop
 
-        -- Read new leader pid
+        say "Read new leader pid."
         self <- getSelfPid
         _ <- liftIO $ forkProcess (head rest) $ do
                rGroup' <- join $ unClosure cRGroup
                retryRG rGroup' (getState rGroup') >>= usend self
         RSState (Just leader1) _ _<- expect
-        -- Verify that we have new leader
+        say "Verify that we have a new leader."
         liftIO $ assertBool ("the leader is not new " ++
                              show (leader0, leader1)
                             )
