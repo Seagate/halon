@@ -3,44 +3,51 @@ Name: halon
 Version: 0.1
 Release: 1
 License: All rights reserved
-Group: Development/Tools
-SOURCE0: halond
-SOURCE1: halonctl
-URL: http://www.xyratex.com/
-Packager: Ben Clifford <ben.clifford@tweag.io>
-BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
+Group: System Environment/Daemons
+Source0: genders2yaml
+Source1: halonctl
+Source2: halond
+Source3: halond.service
+Source4: halon-satellite.service
+Source5: halon-simplelocalcluster
+Source6: genders.ede
+Source6: prov.ede
+
+Requires: gmp
 Requires: leveldb
+Requires: genders
+Requires: pcre
 
 %description
-%{summary}
+Cluster monitoring and recovery for high-availability.
 
 %prep
-rm -rf $RPM_BUILD_DIR/halon
-rm -rf $RPM_BUILD_DIR/systemd
-rm -rf $RPM_BUILD_DIR/role_maps
+rm -rf %{_builddir}/halon
+rm -rf %{_builddir}/systemd
+rm -rf %{_builddir}/role_maps
 mkdir halon
 mkdir systemd
 mkdir role_maps
-cp $RPM_SOURCE_DIR/halonctl $RPM_BUILD_DIR/halon
-cp $RPM_SOURCE_DIR/halond $RPM_BUILD_DIR/halon
-cp $RPM_SOURCE_DIR/genders2yaml $RPM_BUILD_DIR/halon
-cp $RPM_SOURCE_DIR/halon-simplelocalcluster $RPM_BUILD_DIR/halon
-cp $RPM_SOURCE_DIR/halond.service $RPM_BUILD_DIR/systemd
-cp $RPM_SOURCE_DIR/halon-satellite.service $RPM_BUILD_DIR/systemd
-cp $RPM_SOURCE_DIR/role_maps/* $RPM_BUILD_DIR/role_maps
+cp %{_sourcedir}/halonctl %{_builddir}/halon
+cp %{_sourcedir}/halond %{_builddir}/halon
+cp %{_sourcedir}/genders2yaml %{_builddir}/halon
+cp %{_sourcedir}/halon-simplelocalcluster %{_builddir}/halon
+cp %{_sourcedir}/halond.service %{_builddir}/systemd
+cp %{_sourcedir}/halon-satellite.service %{_builddir}/systemd
+cp %{_sourcedir}/genders.ede %{_builddir}/role_maps
+cp %{_sourcedir}/prov.ede %{_builddir}/role_maps
 
 %build
 echo No build - this is a binary only release
 
 %install
 rm -rf %{buildroot}
-# in builddir
 mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/lib/systemd/system
 mkdir -p %{buildroot}/etc/halon/role_maps
-cp -a $RPM_BUILD_DIR/halon/* %{buildroot}/usr/bin
-cp -a $RPM_BUILD_DIR/systemd/* %{buildroot}/usr/lib/systemd/system
-cp -a $RPM_BUILD_DIR/role_maps/* %{buildroot}/etc/halon/role_maps
+cp -a %{_builddir}/halon/* %{buildroot}/usr/bin
+cp -a %{_builddir}/systemd/* %{buildroot}/usr/lib/systemd/system
+cp -a %{_builddir}/role_maps/* %{buildroot}/etc/halon/role_maps
 ln -s /etc/halon/role_maps/prov.ede %{buildroot}/etc/halon/mero_role_mappings
 
 %clean
