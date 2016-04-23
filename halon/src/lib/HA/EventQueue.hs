@@ -41,14 +41,15 @@ import HA.EventQueue.Types
 import HA.Logger
 import HA.Replicator ( RGroup
                      , getStateWith
-                     , updateStateWith
+                     , monitorRGroup
                      , retryRGroup
-                     , withRGroupMonitoring
+                     , updateStateWith
                      )
 
-import Control.Distributed.Process hiding (newChan, catch, finally)
-import Control.Distributed.Process.Closure ( remotable, mkClosure )
+import Control.Distributed.Process hiding (catch, finally, mask_)
+import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types (Message(..))
+import Control.Distributed.Process.Monitor (withMonitoring)
 import Network.CEP hiding (continue)
 
 import Control.Monad (join, when)
@@ -61,6 +62,7 @@ import Data.Int (Int64)
 import Data.IORef (IORef, atomicModifyIORef, newIORef)
 import qualified Data.Map as M
 import Data.Sequence as Seq
+import qualified Data.Set as Set
 import Data.Typeable
 import Data.Word (Word64)
 import GHC.Generics
@@ -121,6 +123,10 @@ emptyEventQueue :: EventQueue
 emptyEventQueue = EventQueue 0 M.empty M.empty
 
 data EventQueueState = EventQueueState
+    { eqsRGroupMon :: !(Maybe ProcessId)
+      -- ^ A process monitoring the RGroup. Dies when notified.
+    , eqsWorkers   :: !(Set.Set ProcessId) -- ^ Workers doing requests.
+    }
 
 -- | Add the given 'PersistMessage' to the EQ if it doesn't already
 -- exist.
@@ -179,16 +185,22 @@ eqReadEvents (eq, sn) (EventQueue sn' uuidMap snMap) = do
                    ]
              )
 
+dummyRead :: EventQueue -> Process ()
+dummyRead _ = return ()
+
 remotable [ 'addSerializedEvent
           , 'filterEvent
           , 'filterMessage
           , 'eqReadEvents
+          , 'dummyRead
           ]
 
 -- | Amount of microseconds between retries of requests for the replicated
 -- state
 requestTimeout :: Int
 requestTimeout = 5 * 1000 * 1000
+  where
+    _ = ($(functionTDict 'dummyRead), $(functionSDict 'dummyRead))
 
 -- | @startsEventQueue rg@ starts an event queue.
 --
@@ -247,30 +259,93 @@ eqRules rg pool = do
           loop sn'
       eqTrace $ "Spawned poller " ++ show (rc, pid)
 
-    defineSimple "trimming" $ \eid -> liftProcess $ do
-      self <- getSelfPid
-      (mapM_ (void . spawnLocal) =<<) $ submitTask pool $ do
-        retryRGroup rg requestTimeout $ fmap bToM $
-          updateStateWith rg $ $(mkClosure 'filterEvent) eid
-        usend self (TrimAck eid)
+    defineSimple "trimming" $ \eid -> do
+      self <- liftProcess $ getSelfPid
+      eqs <- get Global
+      (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $
+        -- Insist here in a loop until it works.
+        flip fix (eqsRGroupMon eqs) $ \loop mmon -> do
+          -- Ensure we have a pid to monitor the rgroup.
+          rgMonitor <- maybe expect return mmon
+          mr <- withMonitoring (monitor rgMonitor) $
+            updateStateWith rg $ $(mkClosure 'filterEvent) eid
+          case mr of
+            Just True -> usend self (TrimAck eid)
+            -- See if we got any update from the EQ regarding the
+            -- monitor process to use.
+            _         -> receiveTimeout requestTimeout [ match return ]
+                           >>= loop . maybe (Just rgMonitor) id
 
     defineSimple "trimming-unknown" $ \(DoTrimUnknown msg) -> trimMsg rg msg
 
-    defineSimple "ha-event" $ \(sender, ev@(PersistMessage mid _)) ->
-      liftProcess $ (mapM_ (void . spawnLocal) =<<) $ submitTask pool $ do
-        eqTrace $ "Recording event " ++ show mid
-        res <- withRGroupMonitoring rg $
-          updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
-        case res of
-          Just True -> do
-            eqTrace $ "Recorded event " ++ show mid
-            sendReply sender True
-          _ -> do
-            eqTrace $ "Recording event failed " ++ show (mid, sender)
-            sendReply sender False
+    defineSimple "monitor-notif" $ \p@(ProcessMonitorNotification _ pid _) -> do
+      eqs <- get Global
+      if eqsRGroupMon eqs == Just pid then do
+        put Global eqs { eqsRGroupMon = Nothing }
+        liftProcess $ do
+          eqTrace $ "Monitor proxy died: " ++ show p
+          self <- getSelfPid
+          -- Stop the workers.
+          forM_ (Set.elems (eqsWorkers eqs)) $
+            flip usend (Nothing :: Maybe ProcessId)
+          -- Wait until the rgroup is responsive again and then
+          -- reactivate the workers.
+          void $ spawnLocal $
+            retryRGroup rg requestTimeout $ fmap bToM $
+              getStateWith rg $(mkStaticClosure 'dummyRead)
+            -- Respawn the rgroup monitor and notify the EQ.
+            rgMonitor <- spawnLocal $ link self >> rGroupMonitor rg
+            usend self $ RGroupMonitor rgMonitor
+      else
+        put Global eqs { eqsWorkers = Set.delete pid (eqsWorkers eqs) }
+
+    defineSimple "rgroup-monitor" $ \(RGroupMonitor pid) -> do
+      eqs <- get Global
+      put Global eqs { eqsRGroupMon = Just pid }
+      liftProcess $ eqTrace $ "Monitor proxy respawned: " ++ show pid
+      liftProcess $ forM_ (Set.elems (eqsWorkers eqs)) $ flip usend $ Just pid
+
+    defineSimple "ha-event" $ \(sender, ev@(PersistMessage mid _)) -> do
+      eqs <- get Global
+      case eqsRGroupMon eqs of
+        Nothing  -> liftProcess $ do
+          eqTrace $ "No quorum " ++ show (mid, sender)
+          sendReply sender False
+        Just rgMonitor -> do
+          (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $ do
+            eqTrace $ "Recording event " ++ show (mid, rgMonitor)
+            res <- withMonitoring (monitor rgMonitor) $
+              updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
+            case res of
+              Just True -> do
+                eqTrace $ "Recorded event " ++ show mid
+                sendReply sender True
+              _ -> do
+                eqTrace $ "Recording event failed " ++ show (mid, sender)
+                sendReply sender False
 
     defineSimple "trim-ack" $ \(TrimAck eid) -> publish (TrimDone eid)
     defineSimple "trim-ack-unknown" $ \(TrimUnknown _) -> return ()
+
+  where
+    spawnWorker work = do
+      pid <- liftProcess $ do
+        self <- getSelfPid
+        workerPid <- mask_ $ spawnLocal $ link self >> work
+        void $ monitor workerPid
+        return workerPid
+      modify Global $ \eqs ->
+        eqs { eqsWorkers = Set.insert pid (eqsWorkers eqs) }
+
+-- | A process that monitors the group and dies when receiving the
+-- notification.
+rGroupMonitor :: RGroup g => g EventQueue -> Process ()
+rGroupMonitor rg = do
+   ref <- monitorRGroup rg
+   receiveWait
+     [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
+               (\p -> eqTrace $ "Monitor proxy terminating: " ++ show p)
+     ]
 
 bToM :: Bool -> Maybe ()
 bToM True  = Just ()
@@ -305,6 +380,11 @@ instance Binary TrimAck
 data TrimUnknown = TrimUnknown Message deriving (Typeable, Generic)
 
 instance Binary TrimUnknown
+
+-- | A new monitor process for the rgroup was created.
+newtype RGroupMonitor = RGroupMonitor ProcessId
+  deriving (Typeable, Generic)
+instance Binary RGroupMonitor
 
 --------------------------------------------
 -- A pool of processes to handle requests
