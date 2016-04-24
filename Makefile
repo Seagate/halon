@@ -1,19 +1,15 @@
-# This target will generate a distributable RPM based on the current
-# checkout. It will generate a binary RPM in ./rpmbuild/RPMS/x86_64
-# and a pseudo-source tar in ./rpmbuild/SRPMS
-rpm:
-	mkdir -p rpmbuild/SOURCES/role_maps
-	cp .stack-work/install/x86_64-linux/lts-3.11/7.10.2/bin/halond rpmbuild/SOURCES/
-	cp .stack-work/install/x86_64-linux/lts-3.11/7.10.2/bin/halonctl rpmbuild/SOURCES/
-	cp .stack-work/install/x86_64-linux/lts-3.11/7.10.2/bin/genders2yaml rpmbuild/SOURCES/
-	cp systemd/halond.service rpmbuild/SOURCES/
-	cp systemd/halon-satellite.service rpmbuild/SOURCES/
-	cp mero-halon/scripts/localcluster rpmbuild/SOURCES/halon-simplelocalcluster
-	cp mero-halon/scripts/mero_role_mappings.ede rpmbuild/SOURCES/role_maps/genders.ede
-	cp mero-halon/scripts/mero_provisioner_role_mappings.ede rpmbuild/SOURCES/role_maps/prov.ede
-	rpmbuild --define "_topdir ${PWD}/rpmbuild" -ba rpmbuild/SPECS/halon.spec
+# This project uses The Stack build tool. Please refer to the README
+# for build instructions.
 
-.PHONY: coverage
-coverage:
-	rm -rf coverage
-	bash run-coverage.sh
+MOCK_CONFIG = default
+SRC_RPM_DIR := $(shell mktemp -du)
+RESULT_DIR = rpmbuild
+
+.PHONY: rpm
+rpm:
+	mkdir -p $(RESULT_DIR)
+	git archive --format=tar --prefix=halon/ HEAD | gzip > $(RESULT_DIR)/halon.tar.gz
+	mock -r $(MOCK_CONFIG) --buildsrpm \
+		--spec halon.spec --sources $(RESULT_DIR)/halon.tar.gz \
+		--resultdir $(SRC_RPM_DIR)
+	mock -r $(MOCK_CONFIG) --rebuild $(SRC_RPM_DIR)/*.src.rpm --resultdir $(RESULTDIR)
