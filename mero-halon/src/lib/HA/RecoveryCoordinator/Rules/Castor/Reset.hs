@@ -3,7 +3,13 @@
 -- License   : All rights reserved.
 --
 -- Module containing some reset bits that multiple rules may want access to
-module HA.RecoveryCoordinator.Rules.Castor.Reset where
+module HA.RecoveryCoordinator.Rules.Castor.Reset
+  ( handleResetExternal
+  , handleResetInternal
+  , ResetAttempt(..)
+  , resetAttemptThreshold
+  , ruleResetAttempt
+  ) where
 
 import HA.EventQueue.Types
   ( HAEvent(..)
@@ -52,15 +58,22 @@ import Control.Monad
   , when
   , unless
   )
+import Control.Monad.IO.Class
 
 import Data.Binary (Binary)
 import Data.Foldable (for_)
 import Data.Text (Text, pack)
 import Data.Typeable (Typeable)
+import Debug.Trace (traceEventIO)
 
 import GHC.Generics (Generic)
 
-import Network.CEP
+import Network.CEP hiding (phaseLog)
+import qualified Network.CEP as C
+
+phaseLog :: String -> String -> PhaseM g l ()
+phaseLog t m = liftProcess . say $ t ++ " => " ++ m
+
 --------------------------------------------------------------------------------
 -- Reset bit                                                                  --
 --------------------------------------------------------------------------------
@@ -99,8 +112,9 @@ newtype ResetFailure =
 --   Called whenever a drive changes state. This function is
 --   responsible for potentially starting a reset attempt on
 --   one or more drives.
-handleReset :: Set -> PhaseM LoopState l ()
-handleReset (Set ns) = do
+handleResetExternal :: Set -> PhaseM LoopState l ()
+handleResetExternal (Set ns) = do
+  liftIO $ traceEventIO "START mero-halon:external-handler:reset"
   for_ ns $ \(Note mfid tpe) ->
     case tpe of
       _ | tpe == M0_NC_TRANSIENT || tpe == M0_NC_FAILED -> do
@@ -112,28 +126,33 @@ handleReset (Set ns) = do
               -- Drive reset rule may be triggered if drive is removed, we
               -- can't do anything sane here, so skipping this rule.
               mstatus <- driveStatus sdev
+              phaseLog "info" $ "handleReset for " ++ show (sdev, mstatus)
               case (\(StorageDeviceStatus s _) -> s) <$> mstatus of
-                Just "EMPTY" -> do
+                Just "EMPTY" ->
                    phaseLog "info" "drive is physically removed, skipping reset"
-                   return ()
                 _ -> do
                   st <- getConfObjState m0sdev <$> getLocalGraph
+
                   unless (st == M0_NC_FAILED) $ do
                     ongoing <- hasOngoingReset sdev
-                    when (not ongoing) $ do
+                    if ongoing
+                    then phaseLog "info" $ "Reset ongoing on a drive - ignoring message"
+                    else do
                       ratt <- getDiskResetAttempts sdev
                       let status = if ratt <= resetAttemptThreshold
                                    then M0_NC_TRANSIENT
                                    else M0_NC_FAILED
 
-                      when (status == M0_NC_FAILED) $ do
-                        notifyDriveStateChange m0sdev status
-                        -- TODO Move this into its own handler.
+                      -- We handle this status inside external rule, because we need to
+                      -- update drive manager if and only if failure is set because of
+                      -- mero notifications, not because drive removal or other event.
+                      when (status == M0_NC_FAILED) $
                         updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
 
-                      when (status == M0_NC_TRANSIENT) $ do
+                      -- Notify rest of system if stat actually changed
+                      when (st /= status) $
                         notifyDriveStateChange m0sdev status
-                        promulgateRC $ ResetAttempt sdev
+ 
 
                       syncGraph $ say "handleReset synchronized"
             _ -> do
@@ -143,6 +162,24 @@ handleReset (Set ns) = do
                                 ++ ": "
                                 ++ show msdev
       _ -> return () -- Should we do anything here?
+  liftIO $ traceEventIO "STOP mero-halon:external-handler:reset"
+
+-- | Internal reset handler, if any drive changes state to a transient,
+-- we need to run reset attempt.
+handleResetInternal :: Set -> PhaseM LoopState l ()
+handleResetInternal (Set ns) = do
+  liftIO $ traceEventIO "START mero-halon:internal-handler:reset-attempt"
+  for_ ns $ \(Note mfid tpe) ->
+    case tpe of
+      M0_NC_TRANSIENT -> do 
+        sdevm <- lookupConfObjByFid mfid
+        for_ sdevm $ \m0sdev ->  do
+          msdev <- lookupStorageDevice m0sdev
+          forM_ msdev $ \sdev ->  do
+            phaseLog "info" $ "Starting reset attempt for " ++ show sdev
+            promulgateRC $ ResetAttempt sdev
+      _ -> return ()
+  liftIO $ traceEventIO "STOP mero-halon:internal-handler:reset-attempt"
 
 ruleResetAttempt :: Definitions LoopState ()
 ruleResetAttempt = define "reset-attempt" $ do
@@ -168,9 +205,11 @@ ruleResetAttempt = define "reset-attempt" $ do
         case paths of
           serial:_ -> do
             put Local (Just (sdev, pack serial, node, uid))
-            unlessM (isStorageDevicePowered sdev) $
+            unlessM (isStorageDevicePowered sdev) $ do
+              phaseLog "info" $ "Device powered on: " ++ show sdev
               switch [resetComplete, timeout driveResetTimeout failure]
-            whenM (isStorageDeviceRunningSmartTest sdev) $
+            whenM (isStorageDeviceRunningSmartTest sdev) $ do
+              phaseLog "info" $ "Device running SMART test: " ++ show sdev
               switch [smartSuccess, smartFailure, timeout smartTestTimeout failure]
             markOnGoingReset sdev
             continue reset
@@ -209,12 +248,14 @@ ruleResetAttempt = define "reset-attempt" $ do
         Just (sdev, serial, Node nid, _) <- get Local
         sent <- sendNodeCmd nid Nothing (SmartTest serial)
         if sent
-        then do markSMARTTestIsRunning sdev
+        then do phaseLog "info" $ "Running SMART test on " ++ show sdev
+                markSMARTTestIsRunning sdev
                 switch [smartSuccess, smartFailure, timeout smartTestTimeout failure]
         else continue failure
 
       setPhaseIf smartSuccess onSmartSuccess $ \eid -> do
         Just (sdev, _, _, _) <- get Local
+        phaseLog "info" $ "Successful SMART test on " ++ show sdev
         markSMARTTestComplete sdev
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev ->
@@ -224,12 +265,14 @@ ruleResetAttempt = define "reset-attempt" $ do
 
       setPhaseIf smartFailure onSmartFailure $ \eid -> do
         Just (sdev, _, _, _) <- get Local
+        phaseLog "info" $ "SMART test failed on " ++ show sdev
         markSMARTTestComplete sdev
         messageProcessed eid
         continue failure
 
       directly failure $ do
         Just (sdev, _, _, _) <- get Local
+        phaseLog "info" $ "Drive reset failure for " ++ show sdev
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")

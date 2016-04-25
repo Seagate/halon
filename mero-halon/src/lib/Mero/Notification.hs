@@ -75,6 +75,7 @@ import Data.IORef  (IORef, newIORef, readIORef)
 import Foreign.Ptr (Ptr)
 import GHC.Generics (Generic)
 import System.IO.Unsafe (unsafePerformIO)
+import Debug.Trace (traceEventIO)
 
 
 -- | This message is sent to the RC when Mero informs of a state change.
@@ -235,6 +236,7 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
   where
     ha_state_get :: NVecRef -> IO ()
     ha_state_get nvecr = void $ CH.forkProcess lnode $ do
+      liftIO $ traceEventIO "START ha_state_get"
       whereis notificationHandlerLabel >>= \case
         Just rc -> do
           link rc
@@ -253,16 +255,20 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
         Nothing -> do
           say "notification interface callbacks: unknown RC."
           liftGlobalM0 $ doneGet nvecr (-1)
+      liftIO $ traceEventIO "STOP ha_state_get"
 
     ha_state_set :: NVec -> IO Int
     ha_state_set nvec = do
+      traceEventIO "START ha_state_set"
       CH.runProcess lnode $ do
         say $ "m0d: received state vector " ++ show nvec
         void $ promulgate $ Set nvec
+      traceEventIO "STOP ha_state_set"
       return 0
 
     ha_entrypoint :: Ptr FomV -> Ptr EntryPointRepV -> IO ()
     ha_entrypoint fom crep = void $ CH.forkProcess lnode $ do
+      liftIO $ traceEventIO "START ha_entrypoint"
       say "ha_entrypoint: try to read values from cache."
       self <- getSelfPid
       liftIO ( (fmap getSpielAddress) <$> readIORef globalResourceGraphCache)
@@ -286,6 +292,7 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
                  Nothing -> do
                    say "ha_entrypoint: failed."
                    liftGlobalM0 $ entrypointNoReplyWakeup fom crep
+      liftIO $ traceEventIO "STOP ha_entrypoint"
 
 -- | Initialiazes the 'EndpointRef' subsystem.
 --

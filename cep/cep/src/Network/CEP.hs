@@ -108,6 +108,8 @@ import Network.CEP.SM
 import Network.CEP.Types
 import Network.CEP.Utils
 
+import Debug.Trace (traceEventIO)
+
 -- | Fills type tracking map with every type of messages needed by the engine
 --   rules.
 fillMachineTypeMap :: Machine s -> Machine s
@@ -270,9 +272,12 @@ runItForever start_eng = do
                                       ]
       where
         go inner (Just (SubMsg sub)) = do
+          liftIO $ traceEventIO "START cruise:add-message"
           (_, nxt_eng) <- stepForward (rawSubRequest sub) inner
+          liftIO $ traceEventIO "STOP cruise:add-message"
           cruise debug_mode (succ loop) nxt_eng
         go inner (Just other)  = do
+          liftIO $ traceEventIO "START cruise:process-step-msg"
           let m :: Request 'Write (Process (RunInfo, Engine))
               m = case other of
                     TimeoutMsg t -> timeoutMsg t
@@ -286,11 +291,14 @@ runItForever start_eng = do
             _ -> return ()
           let act = requestAction m
           when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
+          liftIO $ traceEventIO "STOP cruise:process-step-msg"
           go nxt_eng Nothing
         go inner Nothing = do
+          liftIO $ traceEventIO "START cruise:process-step"
           (ri, nxt_eng) <- stepForward tick inner
           let act = requestAction tick
           when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
+          liftIO $ traceEventIO "STOP cruise:process-step"
           cruise debug_mode (succ loop) nxt_eng
 
 dumpDebuggingInfo :: Action RunInfo -> Integer -> RunInfo -> IO ()

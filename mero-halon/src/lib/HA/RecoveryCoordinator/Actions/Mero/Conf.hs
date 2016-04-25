@@ -78,9 +78,7 @@ import Prelude hiding (id)
 lookupConfObjByFid :: (G.Resource a, M0.ConfObj a)
                    => Fid
                    -> PhaseM LoopState l (Maybe a)
-lookupConfObjByFid f = do
-    phaseLog "rg-query" $ "Looking for conf objects with FID "
-                        ++ show f
+lookupConfObjByFid f =
     fmap (M0.lookupConfObjByFid f) getLocalGraph
 
 -- | Initialise a reflection of the Mero configuration in the resource graph.

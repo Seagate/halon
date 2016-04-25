@@ -1,7 +1,6 @@
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 --
-{-# LANGUAGE CPP #-}
 module Helper.RC
   ( emptyLoopState
   ) where
@@ -19,8 +18,4 @@ import qualified Data.Map as Map
 emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
 emptyLoopState mmchan pid = do
   g' <- getGraph mmchan >>= return . addRootNode Cluster
-#if USE_MERO
-  return $ LoopState g' Map.empty mmchan pid Map.empty [] Storage.empty
-#else
   return $ LoopState g' Map.empty mmchan pid Map.empty Storage.empty
-#endif

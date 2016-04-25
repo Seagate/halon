@@ -26,6 +26,7 @@ import qualified Data.Sequence       as S
 import qualified Data.Set            as Set
 import           Data.Traversable (mapAccumL)
 import           Data.Foldable (forM_)
+import           Debug.Trace (traceEventIO)
 
 import Network.CEP.Buffer
 import Network.CEP.Execution
@@ -322,6 +323,7 @@ executeTick = bootstrap >>= traverse (uncurry execute)
       State.put st{_machRunningSM=[]}
       return (_machRunningSM st)
     execute key sm = do
+      liftIO $ traceEventIO $ "START cep:engine:execute:" ++ _ruleKeyName key
       sti <- State.get
       let logs = fmap (const S.empty) $ _machLogger sti
           exe  = SMExecute logs (_machSubs sti) (_machState sti)
@@ -344,5 +346,6 @@ executeTick = bootstrap >>= traverse (uncurry execute)
               ,_machState = nxt_g
               }
       lift $ for_ (_machLogger sti) $ \f -> for_ mlogs $ \l -> f l nxt_g
+      liftIO $ traceEventIO $ "STOP cep:engine:execute:" ++ _ruleKeyName key
       return $ RuleInfo (RuleName $ _ruleDataName sm)
              $ map ((\(SMResult s r _) -> (s, r)) . fst) machines

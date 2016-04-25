@@ -119,31 +119,30 @@ setStateChangeHandlers = do
       setThem <- phaseHandle "set"
       finish <- phaseHandle "finish"
       directly setThem $ do
-        ls <- get Global
-        put Global $ ls { lsStateChangeHandlers = stateChangeHandlers }
+        putStorageRC $ ExternalNotificationHandlers stateChangeHandlersE
+        putStorageRC $ InternalNotificationHandlers stateChangeHandlersI
         continue finish
 
       directly finish stop
 
-      start setThem Nothing
+      start setThem ()
   where
-    stateChangeHandlers = [
-        handleReset
-      , handleRepair
+    stateChangeHandlersE = [
+        handleResetExternal
+      , handleRepairExternal
+      ]
+    stateChangeHandlersI = [
+        handleResetInternal
+      , handleRepairInternal
       ]
 
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do
-  defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> let
-      resultState (Note f M0_NC_FAILED)
-        | fidIsType (Proxy :: Proxy M0.SDev) f = Note f M0_NC_TRANSIENT
-      resultState x = x
-      noteSet = Set (resultState <$> ns)
-    in do
-      phaseLog "info" $ "Received " ++ show (Set ns)
-      stateChangeHandlers <- lsStateChangeHandlers <$> get Global
-      sequence_ $ (\x -> x noteSet) <$> stateChangeHandlers
-      messageProcessed uid
+  defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> do
+    phaseLog "info" $ "Received " ++ show (Set ns)
+    mhandlers <- getStorageRC
+    traverse_ (traverse_ ($ Set ns) . getExternalNotificationHandlers) mhandlers 
+    messageProcessed uid
 
   querySpiel
   querySpielHourly
@@ -302,16 +301,16 @@ ruleDriveInserted = define "drive-inserted" $ do
                notifyDriveStateChange sdev M0_NC_ONLINE
                messageProcessed uuid
              M0_NC_FAILED -> do
-               markIfNotMeroFailure
-               handleRepair $ Set [Note (fid sdev) M0_NC_FAILED]
+                markIfNotMeroFailure
+                handleRepairInternal $ Set [Note (fid sdev) M0_NC_FAILED]
              M0_NC_REPAIRED -> do
                markIfNotMeroFailure
                attachDisk sdev
-               handleRepair $ Set [Note (fid sdev) M0_NC_ONLINE]
+               handleRepairInternal $ Set [Note (fid sdev) M0_NC_ONLINE]
              M0_NC_REPAIR -> do
                markIfNotMeroFailure
                attachDisk sdev
-               handleRepair $ Set [Note (fid sdev) M0_NC_ONLINE]
+               handleRepairInternal $ Set [Note (fid sdev) M0_NC_ONLINE]
              M0_NC_REBALANCE ->  -- Impossible case
                messageProcessed uuid
          continue finish
@@ -342,8 +341,8 @@ ruleDriveInserted = define "drive-inserted" $ do
       attachDisk m0sdev
       getLocalGraph >>= \rg -> case getConfObjState m0sdev rg of
         M0_NC_TRANSIENT -> notifyDriveStateChange m0sdev M0_NC_FAILED
-        M0_NC_FAILED -> handleRepair $ Set [Note (fid m0sdev) M0_NC_FAILED]
-        M0_NC_REPAIRED -> handleRepair $ Set [Note (fid m0sdev) M0_NC_ONLINE]
+        M0_NC_FAILED -> handleRepairInternal $ Set [Note (fid m0sdev) M0_NC_FAILED]
+        M0_NC_REPAIRED -> handleRepairInternal $ Set [Note (fid m0sdev) M0_NC_ONLINE]
         M0_NC_REPAIR -> return ()
         -- Impossible cases
         M0_NC_UNKNOWN -> notifyDriveStateChange m0sdev M0_NC_FAILED

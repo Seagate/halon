@@ -7,7 +7,8 @@
 --
 -- Module dealing with pool repair.
 module HA.RecoveryCoordinator.Rules.Castor.Repair
-  ( handleRepair
+  ( handleRepairInternal
+  , handleRepairExternal
   , ruleRebalanceStart
   , noteToSDev
   , querySpiel
@@ -52,6 +53,7 @@ import           Mero.Notification hiding (notifyMero)
 import           Mero.Notification.HAState (Note(..))
 import qualified Mero.Spiel as Spiel
 import           Network.CEP
+import           Debug.Trace (traceEventIO)
 import           Prelude hiding (id)
 
 --------------------------------------------------------------------------------
@@ -406,102 +408,115 @@ completeRepair pool prt muid = do
 -- Main handler                                                               --
 --------------------------------------------------------------------------------
 
--- | Dispatch appropriate repair procedures based on the set of
--- notifications we have received.
+-- | Dispatch appropriate repair/rebalance action as a result of the
+-- notifications beign received.
 --
--- * Process the set of notifications into a format that we can work
--- with and only with information we care about.
---
--- * Start by processing any devices that went into a failed state.
--- Unfortunately we have to include some drive reset logic in here.
---
--- * Handle messages that only include information about devices and
--- not pools.
---
--- * If pool information was included in the message set, use
--- 'processPoolInfo' instead.
+-- TODO: add link to diagram.
 --
 -- TODO: Currently we don't handle a case where we have pool
 -- information in the message set but also some disks which belong to
 -- a different pool.
-handleRepair :: Set -> PhaseM LoopState l ()
-handleRepair noteSet = processSet noteSet >>= \case
-  -- Handle information from messages that didn't include pool
-  -- information. That is, DevicesOnly is a list of all devices and
-  -- their states that were reported in the given 'Set' message. Most
-  -- commonly we'll enter here when some device changes state and
-  -- RC is notified about the change.
-  DevicesOnly devices -> do
-    phaseLog "repair" $ "Processed as " ++ show (DevicesOnly devices)
-    for_ devices $ \(pool, diskMap) -> do
+handleRepairExternal :: Set -> PhaseM LoopState l ()
+handleRepairExternal noteSet = do
+   liftIO $ traceEventIO "START mero-halon:external-handlers:repair-rebalance"
+   getPoolInfo noteSet >>= traverse_ run
+   liftIO $ traceEventIO "STOP mero-halon:external-handlers:repair-rebalance"
+   where
+     run (PoolInfo pool st m) = do
+       phaseLog "repair" $ "Processed as PoolInfo " ++ show (pool, st, m)
+       setObjectStatus pool st
+       mprs <- getPoolRepairStatus pool
+       forM_ mprs $ \prs@(PoolRepairStatus prt _ mpri) ->
+         forM_ mpri $ \pri -> do
+           let disks = getSDevs m (R.repairedNotificationMsg prt)
+           let go ls d = case lookup d ls of
+                           Just v -> (d,v+1):filter (\(d',_) -> d' /=d) ls
+                           Nothing -> (d,1):ls
+           let pst' = foldl' go (priStateUpdates pri) disks
+           setPoolRepairStatus pool prs{prsPri = Just pri{priStateUpdates=pst'}}
+       processPoolInfo pool st m
 
-      tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
-      fa <- getPoolSDevsWithState pool M0_NC_FAILED
+-- | Dispatch appropriate repair procedures based on the set of
+-- internal notifications we have received.
+--
+-- * If any device is moves to transient state - we should stop current
+--   repair/rebalance procedure.
+--
+-- * If any device moves to failed state - we should start repair
+--   process, if there are no transient devices.
+--
+-- * If any device moves to REPAIRED state - we should try to start
+--   rebalance process, if there are no transient devices.
+--
+-- * Handle messages that only include information about devices and
+-- not pools.
+handleRepairInternal :: Set -> PhaseM LoopState l ()
+handleRepairInternal noteSet = do
+  liftIO $ traceEventIO "START mero-halon:internal-handlers:repair-rebalance"
+  processDevices noteSet >>= traverse_ go
+  liftIO $ traceEventIO "STOP mero-halon:internal-handlers:repair-rebalance"
+  where
+    -- Handle information from internal messages that didn't include pool
+    -- information. That is, DevicesOnly is a list of all devices and
+    -- their states that were reported in the given 'Set' message. Most
+    -- commonly we'll enter here when some device changes state and
+    -- RC is notified about the change.
+    go (DevicesOnly devices) = do
+      phaseLog "repair" $ "Processed as " ++ show (DevicesOnly devices)
+      for_ devices $ \(pool, diskMap) -> do
 
-      let maybeBeginRebalance = when (and [ null tr
-                                          , S.null $ getSDevs diskMap M0_NC_FAILED
-                                          , S.null $ getSDevs diskMap M0_NC_TRANSIENT
-                                          ])
-            $ do phaseLog "rebalanse" $ "Request rebalance procedure on " ++ show pool
-                 promulgateRC (PoolRebalanceRequest pool)
+        tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
+        fa <- getPoolSDevsWithState pool M0_NC_FAILED
 
-      -- If no devices are transient and something is failed, begin
-      -- repair. It's up to caller to ensure any previous repair has
-      -- been aborted/completed.
-      let maybeBeginRepair =
-            if (null tr && not (null fa))
-            then do phaseLog "repair" $ "Starting repair operation on " ++ show pool
-                    startRepairOperation pool
-                    queryStartHandling pool
-            else do phaseLog "repair" $ "Failed: " ++ show fa ++ ", Transient: " ++ show tr
-                    maybeBeginRebalance
+        -- If there are neigher no faled nor transient, and no new transient
+        -- devices were reported we could request pool rebalance procedure start.
+        -- That procedure can decide itself if there any work to do.
+        let maybeBeginRebalance = when (and [ null tr
+                                            , S.null $ getSDevs diskMap M0_NC_FAILED
+                                            , S.null $ getSDevs diskMap M0_NC_TRANSIENT
+                                            ])
+              $ promulgateRC (PoolRebalanceRequest pool)
 
-      getPoolRepairStatus pool >>= \case
-        Just (M0.PoolRepairStatus prt _ _)
-          -- Repair happening, device failed, restart repair
-          | fa' <- getSDevs diskMap M0_NC_FAILED
-          , not (S.null fa') -> abortRepair pool >> maybeBeginRepair
-          -- Repair happening, some devices are transient
-          | tr' <- getSDevs diskMap M0_NC_TRANSIENT
-          , not (S.null tr') -> do
-              phaseLog "repair" $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
-                               ++ ", quescing repair."
-              quiesceRepair pool prt
-          -- Repair happening, something came online, check if
-          -- nothing is left transient and continue repair if possible
-          | Just ds <- allWithState diskMap M0_NC_ONLINE
-          , ds' <- S.toList ds -> do
-              sdevs <- filter (`notElem` ds') <$> getPoolSDevs pool
-              sts <- getLocalGraph >>= \rg ->
-                return $ (flip getConfObjState $ rg) <$> sdevs
-              if null $ filter (== M0_NC_TRANSIENT) sts
-              then if prt == M0.Failure
-                   then continueRepair pool prt
-                   else withRepairStatus prt pool nil $ \st ->
-                          if null $ R.filterPausedRepairs st
-                          then abortRepair pool >> promulgateRC (PoolRebalanceRequest pool)
-                          else continueRepair pool prt
-              else phaseLog "repair" $ "Still some drives transient: " ++ show sts
-          | otherwise -> phaseLog "repair" $
-              "Repair on-going but don't know what to do with " ++ show diskMap
-        Nothing -> maybeBeginRepair
+        -- If no devices are transient and something is failed, begin
+        -- repair. It's up to caller to ensure any previous repair has
+        -- been aborted/completed.
+        let maybeBeginRepair =
+              if (null tr && not (null fa))
+              then do phaseLog "repair" $ "Starting repair operation on " ++ show pool
+                      startRepairOperation pool
+                      queryStartHandling pool
+              else do phaseLog "repair" $ "Failed: " ++ show fa ++ ", Transient: " ++ show tr
+                      maybeBeginRebalance
 
-  PoolInfo pool st m -> do
-    phaseLog "repair" $ "Processed as PoolInfo " ++ show (pool, st, m)
-    setObjectStatus pool st
-    mprs <- getPoolRepairStatus pool
-    forM_ mprs $ \prs@(PoolRepairStatus prt _ mpri) ->
-       forM_ mpri $ \pri -> do
-         let disks = getSDevs m (R.repairedNotificationMsg prt)
-         phaseLog "XXX" $ "new state: " ++ show disks
-         let go ls d = case lookup d ls of
-                         Just v -> (d,v+1):filter (\(d',_) -> d' /=d) ls
-                         Nothing -> (d,1):ls
-         let pst' = foldl' go (priStateUpdates pri) disks
-         phaseLog "XXX" $ "new state: " ++ show pst'
-         setPoolRepairStatus pool prs{prsPri = Just pri{priStateUpdates=pst'}}
-    processPoolInfo pool st m
-  UnknownSet st -> phaseLog "warn" $ "Could not classify " ++ show st
+        getPoolRepairStatus pool >>= \case
+          Just (M0.PoolRepairStatus prt _ _)
+            -- Repair happening, device failed, restart repair
+            | fa' <- getSDevs diskMap M0_NC_FAILED
+            , not (S.null fa') -> abortRepair pool >> maybeBeginRepair
+            -- Repair happening, some devices are transient
+            | tr' <- getSDevs diskMap M0_NC_TRANSIENT
+            , not (S.null tr') -> do
+                phaseLog "repair" $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
+                                 ++ ", quescing repair."
+                quiesceRepair pool prt
+            -- Repair happening, something came online, check if
+            -- nothing is left transient and continue repair if possible
+            | Just ds <- allWithState diskMap M0_NC_ONLINE
+            , ds' <- S.toList ds -> do
+                sdevs <- filter (`notElem` ds') <$> getPoolSDevs pool
+                sts <- getLocalGraph >>= \rg ->
+                  return $ (flip getConfObjState $ rg) <$> sdevs
+                if null $ filter (== M0_NC_TRANSIENT) sts
+                then if prt == M0.Failure
+                     then continueRepair pool prt
+                     else withRepairStatus prt pool nil $ \st ->
+                            if null $ R.filterPausedRepairs st
+                            then abortRepair pool >> promulgateRC (PoolRebalanceRequest pool)
+                            else continueRepair pool prt
+                else phaseLog "repair" $ "Still some drives transient: " ++ show sts
+            | otherwise -> phaseLog "repair" $
+                "Repair on-going but don't know what to do with " ++ show diskMap
+          Nothing -> maybeBeginRepair
 
 
 -- | We have received information about a pool state change (as well
@@ -598,55 +613,47 @@ processPoolInfo pool st m = phaseLog "warning" $ unwords
 mapMaybeM :: Monad m => (a -> m (Maybe b)) -> [a] -> m [b]
 mapMaybeM f xs = catMaybes <$> mapM f xs
 
--- | Helper used by 'processSet'
-data ProcessedSet = DevicesOnly [(M0.Pool, SDevStateMap)]
-                    -- ^ We got a set of sdevs but no pool info
-                  | PoolInfo M0.Pool ConfObjectState SDevStateMap
-                    -- ^ Some info came back about done repairs
-                  | UnknownSet Set
-                    -- ^ Can't classify
-                  deriving (Show, Eq)
+-- | Info about Pool repair update. Such sets are sent by the IO
+-- services during repair and rebalance procedures.
+data PoolInfo = PoolInfo M0.Pool ConfObjectState SDevStateMap deriving (Show)
 
--- | Given a 'Set', figure out what type of information we're getting
--- so we can act accordingly: for example, we want to act differently
--- if it's s a vector of failed drives from when it's a vector of
--- repaired pool and drives.
+-- | Given a 'Set', figure out if this update belongs to a 'PoolInfo' update.
 --
--- TODO: Currently we don't handle a case where we have pool
--- information in the message set but also some disks which belong to
--- a different pool. We should always check which SDevs belong to what
--- pool instead of making an assumption that all sdevs in notification
--- belong to the only pool in notification.
-processSet :: Set -> PhaseM LoopState l ProcessedSet
-processSet st@(Set ns) = do
-  -- Is it a set of failed drives so we should start repair?
-  getDevicesOnly >>= \case
-    Just devs -> return $ DevicesOnly devs
-    Nothing -> getPoolInfo >>= \case
-      Just pinfo -> return pinfo
-      _ -> return $ UnknownSet st
-  where
-    getDevicesOnly = mapMaybeM (\(Note fid' _) -> lookupConfObjByFid fid') ns >>= \case
-      ([] :: [M0.Pool]) -> do
-        disks <- mapMaybeM noteToSDev ns
-        pdisks <- mapMaybeM (\(stType, sdev) -> getSDevPool sdev
-                               >>= return . fmap (,(stType, sdev)))
-                            disks
+-- TODO: this function do not support processing more than one set in one
+-- message.
+getPoolInfo :: Set -> PhaseM LoopState l (Maybe PoolInfo)
+getPoolInfo (Set ns) =
+  mapMaybeM (\(Note fid' typ) -> fmap (typ,) <$> lookupConfObjByFid fid') ns >>= \case
+    [(typ, pool)] -> do
+      disks <- M.fromListWith (<>) . map (second S.singleton) <$> mapMaybeM noteToSDev ns
+      return . Just . PoolInfo pool typ $ SDevStateMap disks
+    _ -> return Nothing 
 
-        return . Just . M.toList
-                      . M.map (SDevStateMap . M.fromListWith (<>))
-                      . M.fromListWith (<>)
-                      . map (\(pool, (st', sdev)) -> (pool, [(st', S.singleton sdev)]))
-                      $ pdisks
+-- | Updates of sdev, that doesn't contain Pool version.
+newtype DevicesOnly = DevicesOnly [(M0.Pool, SDevStateMap)] deriving (Show)
 
-      _ -> return Nothing
+-- | Given a 'Set', figure if update contains only info about devices
+--
+-- XXX: do we really need it, can we just read info about devices here?
+processDevices :: Set -> PhaseM LoopState l (Maybe DevicesOnly)
+processDevices st@(Set ns) =
+  mapMaybeM (\(Note fid' _) -> lookupConfObjByFid fid') ns >>= \case
+    ([] :: [M0.Pool]) -> do
+      disks <- mapMaybeM noteToSDev ns
+      pdisks <- mapMaybeM (\(stType, sdev) -> getSDevPool sdev
+                             >>= return . fmap (,(stType, sdev)))
+                          disks
 
-    getPoolInfo = do
-      mapMaybeM (\(Note fid' typ) -> fmap (typ,) <$> lookupConfObjByFid fid') ns >>= \case
-        [(typ, pool)] -> do
-          disks <- M.fromListWith (<>) . map (second S.singleton) <$> mapMaybeM noteToSDev ns
-          return . Just . PoolInfo pool typ $ SDevStateMap disks
-        _ -> return Nothing
+      let disks = M.toList
+                . M.map (SDevStateMap . M.fromListWith (<>))
+                . M.fromListWith (<>)
+                . map (\(pool, (st', sdev)) -> (pool, [(st', S.singleton sdev)]))
+                $ pdisks
+      case disks of
+        [] -> return Nothing
+        x  -> return (Just (DevicesOnly x))
+
+    _ -> return Nothing
 
 -- | A mapping of 'ConfObjectState's to 'M0.SDev's.
 newtype SDevStateMap = SDevStateMap (M.Map ConfObjectState (S.HashSet SDev))

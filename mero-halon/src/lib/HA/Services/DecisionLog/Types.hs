@@ -29,6 +29,7 @@ import Data.Text (Text)
 import Data.Defaultable
 import Data.Hashable
 import Data.Maybe (catMaybes)
+import Data.Time (getCurrentTime)
 import Options.Schema
 import Options.Schema.Builder
 import Network.CEP
@@ -149,6 +150,7 @@ handleLogs dlo logs = when (not . null $ logsPhaseEntries logs) $ case dlo of
     DPLogger -> say $ displayS (renderPretty 0.4 80 $ ppLogs logs) ""
     FileOutput path ->
       bracket (openLogFile path) cleanupHandle $ \h -> liftIO $ do
+        hPutStrLn h . show =<< getCurrentTime
         hPutDoc h $ ppLogs logs
         hPutStr h "\n"
 

@@ -94,7 +94,7 @@ type SequenceNumber = Int64
 data EventQueue = EventQueue
   { _eqRC :: Maybe ProcessId
     -- ^ 'ProcessId' of the RC if the RC is running
-  , _eqSN :: SequenceNumber
+  , _eqSN :: !SequenceNumber
     -- ^ Tracks the ordering of the messages coming in into the
     -- 'EventQueue'. This is used to generate the otherwise-lost
     -- ordering within '_eqMap'.

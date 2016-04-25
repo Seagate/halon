@@ -92,6 +92,9 @@ mockMeroConf = MeroConf "" "" (MeroKernelConf UUID.nil)
 data MarkDriveFailed = MarkDriveFailed deriving (Generic, Typeable)
 instance Binary MarkDriveFailed
 
+ssplTimeout :: Int
+ssplTimeout = 10*1000000
+
 newMeroChannel :: ProcessId -> Process (ReceivePort NotificationMessage, MockM0)
 newMeroChannel pid = do
   (sd, recv) <- newChan
@@ -380,7 +383,7 @@ failDrive recv (sdev, serial) = let
     -- We should see `ResetAttempt` from SSPL
     let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
             $ nodeCmdString (DriveReset tserial)
-    liftIO . assertEqual "drive reset command is issued"  (Just cmd) =<< expectNodeMsg 1000000
+    liftIO . assertEqual "drive reset command is issued"  (Just cmd) =<< expectNodeMsg ssplTimeout
     debug "failDrive: OK"
 
 resetComplete :: StoreChan -> (M0.SDev, String) -> Process ()
@@ -398,7 +401,7 @@ resetComplete mm (sdev, serial) = let
                          $ nodeCmdString (SmartTest tserial)
     debug "resetComplete: waiting smart request."
     liftIO . assertEqual "RC requested smart test." (Just smartTestRequest)
-                =<< expectNodeMsg 1000000
+                =<< expectNodeMsg ssplTimeout
     debug "resetComplete: finished"
 
 
@@ -450,9 +453,11 @@ testHitResetLimit transport = run transport interceptor test where
     sdev <- G.getGraph mm >>= findSDev
 
     replicateM_ (resetAttemptThreshold + 1) $ do
+      debug "============== FAILURE START ================================"
       failDrive recv sdev
       resetComplete mm sdev
       smartTestComplete recv AckReplyPassed sdev
+      debug "============== FAILURE Finish ================================"
 
     -- Fail the drive one more time
     let fail_evt = Set [Note (M0.d_fid $ fst sdev) M0_NC_FAILED]
@@ -553,7 +558,7 @@ testSMARTNoResponse transport = run transport interceptor test where
     -- No response to SMART test, should try power cycle again
     liftIO $ threadDelay 1000001
     let sdev_path = pack $ M0.d_path sdev
-    msg <- expectNodeMsg 1000000
+    msg <- expectNodeMsg ssplTimeout
     assert $ msg
             == Just (ActuatorRequestMessageActuator_request_typeNode_controller
                       (nodeCmdString (DrivePowerdown sdev_path))
@@ -584,7 +589,7 @@ testDriveRemovedBySSPL transport = run transport interceptor test where
                 Just $ mkResponseDriveManager (pack enclosure) "serial21" devIdx "EMPTY" "None" "/path" }
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message0
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
-    Just{} <- expectTimeout 1000000 :: Process (Maybe (Published DriveRemoved))
+    Just{} <- expectTimeout ssplTimeout :: Process (Maybe (Published DriveRemoved))
     _ <- receiveTimeout 1000000 []
     debug "Check drive removed"
     True <- checkStorageDeviceRemoved enclosure devIdx <$> G.getGraph mm
@@ -656,7 +661,7 @@ testMetadataDriveFailed transport = run transport interceptor test where
                                   sensorResponseMessageSensor_response_typeRaid_data = Just raidData
                                 }
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
-    Just{} <- expectTimeout 1000000 :: Process (Maybe (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data))))
+    Just{} <- expectTimeout ssplTimeout :: Process (Maybe (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data))))
     debug "Raid_data message processed by RC"
 
 testGreeting :: Transport -> IO ()
@@ -667,7 +672,7 @@ testGreeting transport = run transport interceptor test where
     loadInitialData
 
     _ <- promulgate MarkDriveFailed
-    Nothing <- expectTimeout 1000000 :: Process (Maybe (Published (HAEvent MarkDriveFailed)))
+    Nothing <- expectTimeout ssplTimeout :: Process (Maybe (Published (HAEvent MarkDriveFailed)))
     let
       message = LBS.toStrict $ encode
                                $ mkActuatorResponse
@@ -676,9 +681,15 @@ testGreeting transport = run transport interceptor test where
                                     ActuatorResponseMessageActuator_response_typeThread_controller
                                       "ThreadController"
                                       "SSPL-LL service has started successfully"
-                                }
+                                 }
+      led  = ActuatorRequestMessageActuator_request_typeNode_controller
+           $ nodeCmdString (DriveLed "serial24" FaultOn)
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
-    mmsg <- expectLoggingMsg 1000000
-    case mmsg of
+    mmsg1 <- expectNodeMsg ssplTimeout
+    case mmsg1 of
+      Just s  -> return () -- XXX: uids are not deterministic
+      Nothing -> liftIO $ assertFailure "node cmd was not received"
+    mmsg2 <- expectLoggingMsg ssplTimeout
+    case mmsg2 of
       Left s  -> liftIO $ assertFailure $ "wrong message received" ++ s
       Right _  -> return ()

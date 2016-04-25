@@ -162,11 +162,7 @@ buildRCState :: StoreChan -> ProcessId -> Process LoopState
 buildRCState mm eq = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
     startRG <- G.sync rg (return ())
-#ifdef USE_MERO
-    return $ LoopState startRG Map.empty mm eq Map.empty [] Storage.empty
-#else
     return $ LoopState startRG Map.empty mm eq Map.empty Storage.empty
-#endif
 
 msgProcessedGap :: Int
 msgProcessedGap = 10

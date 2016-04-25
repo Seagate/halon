@@ -142,7 +142,7 @@ sendLedUpdate status host sn = do
         sendNodeCmd nid Nothing (DriveLed sn PulseSlowOff)
     _ -> do phaseLog "error" "Cannot find sspl service on the node!"
             return False
-  
+
 
 -- | Send command to nodecontroller. Reply will be received as a
 -- HAEvent CommandAck. Where UUID will be set to UUID value if passed, and
@@ -152,7 +152,7 @@ sendNodeCmd :: NodeId
             -> NodeCmd
             -> PhaseM LoopState l Bool
 sendNodeCmd nid muuid req = do
-  phaseLog "action" $ "Sending node actuator request" ++ show req
+  phaseLog "action" $ "Sending node actuator request: " ++ show req
   rg <- getLocalGraph
   let
     node = Node nid

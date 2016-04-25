@@ -644,7 +644,7 @@ defineSimpleIf :: (Serializable a, Serializable b)
                -> (forall l. b -> PhaseM g l ())
                -> Specification g ()
 defineSimpleIf n p k = define n $ do
-    h <- phaseHandle "phase-1"
+    h <- phaseHandle $ n++"-phase"
     setPhaseIf h (\e g _ -> p e g) k
     start h ()
 

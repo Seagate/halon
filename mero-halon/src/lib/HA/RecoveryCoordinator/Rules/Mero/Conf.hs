@@ -21,14 +21,14 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
   , genericApplyStateChanges
     -- * Temporary functions
   , notifyDriveStateChange
+  , ExternalNotificationHandlers(..)
+  , InternalNotificationHandlers(..)
   )  where
 
-import HA.Encode (encodeP)
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Events.Mero
-import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
@@ -43,15 +43,27 @@ import Control.Distributed.Static (Static, staticApplyPtr)
 import Control.Monad (join)
 import Control.Monad.Fix (fix)
 
-import Data.Binary
 import Data.Constraint (Dict)
 import Data.Foldable (forM_, traverse_)
-import Data.Hashable
 import Data.Monoid
 import Data.Typeable
-import Data.List ((\\), union)
 
 import Network.CEP
+
+
+-- | Type wrapper for external notification handlers, to be used for
+-- keeping handlers in Storage.
+data ExternalNotificationHandlers = ExternalNotificationHandlers 
+     { getExternalNotificationHandlers :: forall l . [Set -> PhaseM  LoopState l ()] }
+
+-- | Type wrapper for internal notification handlers, to be used for
+-- keeping handlers in Storage. This handlers is the point of change
+-- because in future they will work on 'AnyStateChange' instead of a set.
+--
+-- Internal handlers works on a set of changes that actually happened
+-- and stored in RG.
+data InternalNotificationHandlers = InternalNotificationHandlers 
+     { getInternalNotificationHandlers :: forall l . [Set -> PhaseM  LoopState l ()] }
 
 -- | Notify ourselves about a state change of the 'M0.SDev'.
 --
@@ -60,12 +72,7 @@ import Network.CEP
 --
 -- TODO Remove this function.
 notifyDriveStateChange :: M0.SDev -> M0.ConfObjectState -> PhaseM LoopState l ()
-notifyDriveStateChange m0sdev st = do
-    applyStateChangesCreateFS [ stateSet m0sdev st ]
-    stateChangeHandlers <- lsStateChangeHandlers <$> Network.CEP.get Global
-    sequence_ $ ($ ns) <$> stateChangeHandlers
- where
-   ns = Set [Note (M0.fid m0sdev) st]
+notifyDriveStateChange m0sdev st = applyStateChangesCreateFS [ stateSet m0sdev st ]
 
 -- | A set of deferred state changes. Consists of a graph
 --   update function, a `Set` event for Mero, and an
@@ -97,10 +104,10 @@ cascadeStateChange asc rg = go [asc] [asc]
            then c
            else let b = join $ liftA2 unwrap a stateCascadeRules
                 in f (filter (flip all c . notMatch) b) (b ++ c)
-    notMatch (AnyStateChange (a :: a) _ _ _) (AnyStateChange (b::b) _ _ _) = 
+    notMatch (AnyStateChange (a :: a) _ _ _) (AnyStateChange (b::b) _ _ _) =
        case eqT :: Maybe (a :~: b) of
          Just Refl -> a /= b
-         Nothing -> True 
+         Nothing -> True
     unwrap (AnyStateChange a a_old a_new _) r = tryApplyCascadeRule (a, a_old, a_new) r
     -- XXX: keep states in map a -> AnyStateChange, so eqT will always be Refl
     tryApplyCascadeRule :: forall a . Typeable a
@@ -111,7 +118,7 @@ cascadeStateChange asc rg = go [asc] [asc]
       case eqT :: Maybe (a :~: a') of
         Just Refl ->
            (\(b, b_old, b_new) -> AnyStateChange b b_old b_new sp)
-             <$> applyCascadeRule scr s 
+             <$> applyCascadeRule scr s
           where
             sp = staticApplyPtr
                   (static M0.someHasConfObjectStateDict)
@@ -151,7 +158,7 @@ createDeferredStateChanges stateSets rg =
     (fn, nvec, iosc) = go (id, [], []) stateChanges
     go (f, nv, io) xs = case xs of
       [] -> (f, nv, io)
-      (x@(AnyStateChange s s_old s_new _):xs') -> go (f', nv', io') xs' where
+      (x@(AnyStateChange s _ s_new _):xs') -> go (f', nv', io') xs' where
         f' = f >>> M0.setState s s_new
         nv' = (Note (M0.fid s) (M0.toConfObjState s s_new)) : nv
         io' = x : io
@@ -176,12 +183,18 @@ genericApplyStateChanges ass act = getLocalGraph >>= \rg -> let
 genericApplyDeferredStateChanges :: DeferredStateChanges
                                  -> PhaseM LoopState l a
                                  -> PhaseM LoopState l a
-genericApplyDeferredStateChanges (DeferredStateChanges f s i) action = do
+genericApplyDeferredStateChanges (DeferredStateChanges f s _) action = do
   modifyGraph f
   syncGraph (return ())
   res <- action
+  -- XXX: this is very bad this is blocking RC from execution
   _ <- notifyMeroBlocking s
-  promulgateRC $ encodeP i
+  -- XXX: currently we are not emitting event notification instead we are
+  -- running handlers directly, this may be changed in future, as we need
+  -- to understand transaction properties first. 
+  mhandlers <- getStorageRC 
+  traverse_ (traverse_ ($ s) . getInternalNotificationHandlers) mhandlers
+  -- promulgateRC $ encodeP i
   return res
 
 -- | Apply state changes and synchronise with confd.
