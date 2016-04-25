@@ -123,9 +123,9 @@ emptyEventQueue :: EventQueue
 emptyEventQueue = EventQueue 0 M.empty M.empty
 
 data EventQueueState = EventQueueState
-    { eqsRGroupMon :: !(Maybe ProcessId)
+    { eqsRGroupMonitor :: !(Maybe ProcessId)
       -- ^ A process monitoring the RGroup. Dies when notified.
-    , eqsWorkers   :: !(Set.Set ProcessId) -- ^ Workers doing requests.
+    , eqsWorkers      :: !(Set.Set ProcessId) -- ^ Workers doing requests.
     }
 
 -- | Add the given 'PersistMessage' to the EQ if it doesn't already
@@ -185,6 +185,8 @@ eqReadEvents (eq, sn) (EventQueue sn' uuidMap snMap) = do
                    ]
              )
 
+-- A noop read that helps detecting when the replicator groups becomes
+-- responsive again.
 dummyRead :: EventQueue -> Process ()
 dummyRead _ = return ()
 
@@ -200,6 +202,7 @@ remotable [ 'addSerializedEvent
 requestTimeout :: Int
 requestTimeout = 5 * 1000 * 1000
   where
+    -- Silence warnings about unused definitions produced by 'remotable'.
     _ = ($(functionTDict 'dummyRead), $(functionSDict 'dummyRead))
 
 -- | @startsEventQueue rg@ starts an event queue.
@@ -234,9 +237,11 @@ startEventQueue rg = do
 eqRules :: RGroup g
         => g EventQueue -> ProcessPool -> Definitions EventQueueState ()
 eqRules rg pool = do
+    -- Whenever an RC is spawned, we want to start a poller process. Upon
+    -- noticing new events, this process will forward them to the RC.
     defineSimple "rc-spawned" $ \rc -> liftProcess $ do
       -- Poll the replicated state for the RC.
-      pid <- spawnLocal $ handle
+      poller <- spawnLocal $ handle
         (\e -> eqTrace $ "Poller died: " ++ show (e :: SomeException)) $ do
         link rc
         self <- getSelfPid
@@ -257,15 +262,18 @@ eqRules rg pool = do
           when (remaining > 0) $
             void $ receiveTimeout (fromIntegral remaining) []
           loop sn'
-      eqTrace $ "Spawned poller " ++ show (rc, pid)
+      eqTrace $ "Spawned poller " ++ show (rc, poller)
 
+    -- When the RC requests to remove an event, we submit a task to the thread
+    -- pool to get the event removed.
     defineSimple "trimming" $ \eid -> do
       self <- liftProcess $ getSelfPid
       eqs <- get Global
       (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $
         -- Insist here in a loop until it works.
-        flip fix (eqsRGroupMon eqs) $ \loop mmon -> do
+        flip fix (eqsRGroupMonitor eqs) $ \loop mmon -> do
           -- Ensure we have a pid to monitor the rgroup.
+          -- See Note [RGroup monitor].
           rgMonitor <- maybe expect return mmon
           mr <- withMonitoring (monitor rgMonitor) $
             updateStateWith rg $ $(mkClosure 'filterEvent) eid
@@ -276,41 +284,49 @@ eqRules rg pool = do
             _         -> receiveTimeout requestTimeout [ match return ]
                            >>= loop . maybe (Just rgMonitor) id
 
+    -- TODO: submit these to the thread pool.
     defineSimple "trimming-unknown" $ \(DoTrimUnknown msg) -> trimMsg rg msg
 
+    -- Deals with monitor notifications from the RGroup and from the workers.
     defineSimple "monitor-notif" $ \p@(ProcessMonitorNotification _ pid _) -> do
       eqs <- get Global
-      if eqsRGroupMon eqs == Just pid then do
-        put Global eqs { eqsRGroupMon = Nothing }
+      if eqsRGroupMonitor eqs == Just pid then do
+        -- This is a notification from the replicator group.
+        put Global eqs { eqsRGroupMonitor = Nothing }
         liftProcess $ do
-          eqTrace $ "Monitor proxy died: " ++ show p
+          eqTrace $ "RGroup monitor died: " ++ show p
           self <- getSelfPid
-          -- Stop the workers.
+          -- Tell the workers that there is no group monitor for now.
           forM_ (Set.elems (eqsWorkers eqs)) $
             flip usend (Nothing :: Maybe ProcessId)
-          -- Wait until the rgroup is responsive again and then
-          -- reactivate the workers.
-          void $ spawnLocal $
+          -- Wait until the rgroup is responsive again.
+          void $ spawnLocal $ do
             retryRGroup rg requestTimeout $ fmap bToM $
               getStateWith rg $(mkStaticClosure 'dummyRead)
             -- Respawn the rgroup monitor and notify the EQ.
             rgMonitor <- spawnLocal $ link self >> rGroupMonitor rg
             usend self $ RGroupMonitor rgMonitor
       else
+        -- A worker died.
         put Global eqs { eqsWorkers = Set.delete pid (eqsWorkers eqs) }
 
+    -- An RGroup monitor was respawned. We let the workers know.
     defineSimple "rgroup-monitor" $ \(RGroupMonitor pid) -> do
       eqs <- get Global
-      put Global eqs { eqsRGroupMon = Just pid }
-      liftProcess $ eqTrace $ "Monitor proxy respawned: " ++ show pid
+      put Global eqs { eqsRGroupMonitor = Just pid }
+      liftProcess $ eqTrace $ "RGroup monitor respawned: " ++ show pid
       liftProcess $ forM_ (Set.elems (eqsWorkers eqs)) $ flip usend $ Just pid
 
+    -- An event arrived. Insert it in the replicated state.
     defineSimple "ha-event" $ \(sender, ev@(PersistMessage mid _)) -> do
       eqs <- get Global
-      case eqsRGroupMon eqs of
+      case eqsRGroupMonitor eqs of
+        -- When there is no RGroup monitor, assume we can't modify the
+        -- replicated state.
         Nothing  -> liftProcess $ do
           eqTrace $ "No quorum " ++ show (mid, sender)
           sendReply sender False
+        -- Try to modify the replicated state.
         Just rgMonitor -> do
           (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $ do
             eqTrace $ "Recording event " ++ show (mid, rgMonitor)
@@ -324,10 +340,12 @@ eqRules rg pool = do
                 eqTrace $ "Recording event failed " ++ show (mid, sender)
                 sendReply sender False
 
+    -- The next two rules are used for testing.
     defineSimple "trim-ack" $ \(TrimAck eid) -> publish (TrimDone eid)
     defineSimple "trim-ack-unknown" $ \(TrimUnknown _) -> return ()
 
   where
+    -- Spawns a worker process.
     spawnWorker work = do
       pid <- liftProcess $ do
         self <- getSelfPid
@@ -337,6 +355,23 @@ eqRules rg pool = do
       modify Global $ \eqs ->
         eqs { eqsWorkers = Set.insert pid (eqsWorkers eqs) }
 
+-- Note [RGroup monitor]
+-- ~~~~~~~~~~~~~~~~~~~~~
+--
+-- The EQ creates a process which monitors the replicator group. This process in
+-- turn is monitored by workers of the thread pool which interact with the
+-- group. The process terminates when it receives a monitor notification from
+-- the replicas, thus acting as a monitor proxy for the group.
+--
+-- After the proxy dies, the EQ polls the group until it can read the state
+-- again. Assuming that the group is responsive again, a new proxy is spawned
+-- and communicated to the running workers.
+--
+-- This arrangement minimizes interactions with the group. Otherwise, each
+-- worker would have to monitor the group independently from the others and
+-- decide when it is fine to retry requests.
+--
+
 -- | A process that monitors the group and dies when receiving the
 -- notification.
 rGroupMonitor :: RGroup g => g EventQueue -> Process ()
@@ -344,7 +379,7 @@ rGroupMonitor rg = do
    ref <- monitorRGroup rg
    receiveWait
      [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
-               (\p -> eqTrace $ "Monitor proxy terminating: " ++ show p)
+               (\p -> eqTrace $ "RGroup monitor terminating: " ++ show p)
      ]
 
 bToM :: Bool -> Maybe ()
@@ -397,9 +432,9 @@ instance Binary RGroupMonitor
 newtype ProcessPool = ProcessPool (IORef PoolState)
 
 data PoolState = PoolState
-    { psLimit :: Int  -- ^ Maximum amount of workers that will be created.
-    , psCount :: Int  -- ^ Amount of running workers.
-    , psQueue :: Seq (Process ()) -- ^ The queue of tasks.
+    { psLimit :: !Int  -- ^ Maximum amount of workers that will be created.
+    , psCount :: !Int  -- ^ Amount of running workers.
+    , psQueue :: !(Seq (Process ())) -- ^ The queue of tasks.
     }
 
 -- | Creates a new pool with the given limit for the amount of workers.
