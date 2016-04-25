@@ -106,12 +106,12 @@ data EventQueue = EventQueue
     -- 'EventQueue'. This is used to generate the otherwise-lost
     -- ordering within '_eqMap'. It also helps identifying new events
     -- that haven't been sent to the RC yet.
-  , _eqMap :: M.Map UUID (PersistMessage, SequenceNumber)
+  , _eqMap :: !(M.Map UUID (PersistMessage, SequenceNumber))
     -- ^ A map of the messages in the EQ. We keep track of the
     -- messages' 'SequenceNumber', necessary to remove the messages from
     -- the sequence number map. We use a 'Map' rather than a list to provide
     -- quicker removal of messages and reduce duplicates.
-  , _eqSnMap :: M.Map SequenceNumber UUID
+  , _eqSnMap :: !(M.Map SequenceNumber UUID)
     -- ^ A reverse map for efficient polling of new events.
   } deriving (Eq, Ord, Generic, Typeable)
 
