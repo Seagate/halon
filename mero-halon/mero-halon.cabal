@@ -279,13 +279,13 @@ Executable halond
   -- Reduce the context-switch interval to improve sharing
   -- of the CPU when there are CPU-intensive computations
   -- in the RC.
-  Ghc-Options: -threaded -Wall -with-rtsopts=-C0
+  Ghc-Options: -threaded -Wall -with-rtsopts=-C0 -eventlog -rtsopts -g
 
   if flag(maintainer)
     Ghc-Options: -Werror
 
   if flag(debug)
-    ghc-options:      -eventlog -debug "-with-rtsopts=-C0 -l-au" -rtsopts
+    ghc-options:      -debug "-with-rtsopts=-C0 -l-au"
   default-language:   Haskell2010
   Default-Extensions: DeriveDataTypeable
                       DisambiguateRecordFields
