@@ -159,7 +159,7 @@ runSSPLTest transport interseptor test =
                , 1000 :: Int
                , 1000000 :: Int
                , $(mkClosure 'testRC) (self, [localNodeId n])
-               , 3*1000000 :: Int
+               , 8*1000000 :: Int
                )
     _ <- liftIO $ forkProcess n $ ignition args >> usend self ()
     () <- expect

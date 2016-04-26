@@ -17,8 +17,6 @@ module HA.EventQueue.Producer
 import HA.CallTimeout
   ( ncallRemoteSome
   , ncallRemoteSomePrefer
-  , withLabeledProcesses
-  , receiveFrom
   )
 import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types
@@ -27,11 +25,10 @@ import qualified HA.EQTracker as EQT
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable (Serializable)
-import Control.Monad (when, void, (>=>))
+import Control.Monad (when, void)
 
-import Data.Either (isRight)
-import Data.Function (fix)
-import Data.List ((\\), nub)
+import Data.Maybe (maybeToList)
+import Data.List ((\\))
 import Data.Typeable
 
 producerTrace :: String -> Process ()
@@ -116,12 +113,12 @@ promulgateEvent evt =
       case rl of
         Just (EQT.ReplicaReply (EQT.ReplicaLocation _ [])) ->
           void (receiveTimeout 1000000 []) >> go
-        Just (EQT.ReplicaReply (EQT.ReplicaLocation [] rest)) -> do
+        Just (EQT.ReplicaReply (EQT.ReplicaLocation Nothing rest)) -> do
           res <- promulgateHAEvent rest evt
           producerTrace $ "promulgateEvent: " ++ show (res, persistEventId evt)
           when (res == Failure) $ receiveTimeout 1000000 [] >> go
         Just (EQT.ReplicaReply (EQT.ReplicaLocation pref rest)) -> do
-          res <- promulgateHAEventPref pref rest evt
+          res <- promulgateHAEventPref (maybeToList pref) rest evt
           producerTrace $ "promulgateEvent: " ++ show (res, persistEventId evt)
           when (res == Failure) $ receiveTimeout 1000000 [] >> go
         Nothing -> receiveTimeout 1000000 [] >> go
@@ -133,19 +130,12 @@ promulgateHAEvent :: [NodeId] -- ^ EQ nodes.
                   -> Process Result
 promulgateHAEvent eqnids msg = do
   producerTrace $ "Sending " ++ show (persistEventId msg) ++ " to " ++ show eqnids
-  result <- callLocal $ do
-    rs0 <- ncallRemoteSome
-      promulgateTimeout eqnids eventQueueLabel msg (isRight . snd)
-    -- Continue waiting if EQs are forwarding the events to other nodes.
-    (\a b c -> fix c a b) eqnids rs0 $ \loop nids rs -> do
-      let nids' = nub (concatMap (either (:[]) (const []) . snd) rs) \\ nids
-      if null nids' || isRight (snd (head rs)) then return rs
-        else withLabeledProcesses promulgateTimeout nids' eventQueueLabel $
-               receiveFrom (isRight . snd) >=> loop (nids' ++ nids)
+  result <- callLocal $
+    ncallRemoteSome promulgateTimeout eqnids eventQueueLabel msg snd
   producerTrace $ "promulgateHAEvent: " ++ show (result, persistEventId msg)
-  case result :: [(NodeId, Either NodeId NodeId)] of
-    (rnid, Right pnid) : _ -> do
-      nsend EQT.name $ EQT.PreferReplicas rnid pnid
+  case result of
+    (rnid, True) : _ -> do
+      nsend EQT.name $ EQT.PreferReplica rnid
       return Success
     _ -> return Failure
 
@@ -160,22 +150,15 @@ promulgateHAEventPref peqnids eqnids msg = do
   producerTrace $ "Sending " ++ show (persistEventId msg)
                    ++ " to " ++ show peqnids
                    ++ " and then to " ++ show (eqnids \\ peqnids)
-  result <- callLocal $ do
-    rs0 <- ncallRemoteSomePrefer
+  result <- callLocal $ ncallRemoteSomePrefer
       softTimeout promulgateTimeout
       peqnids (eqnids \\ peqnids)
       eventQueueLabel msg
-      (isRight . snd)
-    -- Continue waiting if EQs are forwarding the events to other nodes.
-    (\a b c -> fix c a b) eqnids rs0 $ \loop nids rs -> do
-      let nids' = nub (concatMap (either (:[]) (const []) . snd) rs) \\ nids
-      if null nids' || isRight (snd (head rs)) then return rs
-        else withLabeledProcesses promulgateTimeout nids' eventQueueLabel $
-               receiveFrom (isRight . snd) >=> loop (nids' ++ nids)
+      snd
   producerTrace $ "promulgateHAEventPref: " ++ show (result, persistEventId msg)
-  case result :: [(NodeId, Either NodeId NodeId)] of
-    (rnid, Right pnid) : _ -> do
-      nsend EQT.name $ EQT.PreferReplicas rnid pnid
+  case result of
+    (rnid, True) : _ -> do
+      nsend EQT.name $ EQT.PreferReplica rnid
       return Success
     _ -> return Failure
 

@@ -8,6 +8,7 @@
 {-# LANGUAGE PackageImports #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 
 module Control.Distributed.Process.Scheduler.Internal
   (
@@ -98,7 +99,7 @@ import Control.Monad.Catch
 import Control.Monad.Reader ( ask )
 import Data.Accessor ((^.))
 import Data.Binary ( Binary(..), decode )
-import Data.Function (on)
+import Data.Function (fix, on)
 import Data.Int
 import Data.IORef ( newIORef, writeIORef, readIORef, IORef )
 import Data.List (delete, union, sortBy, partition)
@@ -497,7 +498,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
         GetTime pid -> DP.send pid clock >> go st
         -- a process is sending a message
         Send source pid msg ->
-          handleSend st (source, pid, msg) >>= go
+          handleSend st (source, pid, msg) >>= go . fst
         NSend source nid label msg ->
           handleNSend st (source, nid, label, msg) >>= go
         -- a process has a message and is ready to process it
@@ -632,7 +633,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                                , pid
                                , MailboxMsg pid $ DP.createUnencodedMessage rep
                                )
-                  >>= go
+                  >>= go . fst
         AddFailures fls ->
             go st { stateFailures = foldr (uncurry Map.insert) failures fls }
         RemoveFailures fls ->
@@ -661,7 +662,8 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
     handleSend :: SchedulerState
                -> (ProcessId, ProcessId, SystemMsg)
                   -- ^ (sender, destination, message)
-               -> Process SchedulerState
+               -> Process (SchedulerState, Bool)
+                   -- Returns @True@ iff the message was sent.
     handleSend st (source, pid, msg) | Set.member pid (stateAlive st) = do
       let mp = Map.lookup (DP.processNodeId source, DP.processNodeId pid)
                           (stateFailures st)
@@ -669,22 +671,25 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
         -- drop message
         Just p | (v, seed') <- randomR (0.0, 1.0) (stateSeed st), v <= p -> do
           let srcNid = DP.processNodeId source
-          notifyMonitors (st { stateSeed = seed' }) (== srcNid)
+          (,False) <$> notifyMonitors (st { stateSeed = seed' }) (== srcNid)
                          srcNid
                          (DP.NodeIdentifier $ DP.processNodeId pid)
                          DP.DiedDisconnect
         -- deliver message
-        _ -> return st
+        _ -> return
+             (st
                { stateMessages =
                    Map.insertWith
                      (const $ Map.insertWith (flip (++)) source [msg])
                      pid (Map.singleton source [msg]) (stateMessages st)
                }
+             , True
+             )
     handleSend st (_, _, msg) = do
       -- If the target is not known to the scheduler we assume it doesn't
       -- matter in which order messages are delivered to it.
       forwardSystemMsg msg
-      return st
+      return (st, True)
 
     handleNSend :: SchedulerState
                 -> (ProcessId, NodeId, String, DP.Message)
@@ -748,7 +753,18 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                                            otherMons
                                            (stateMonitors st)
                        }
-          foldM handleSend st' sends
+          -- Add back the monitors if the notifications were not sent.
+          -- The destination node may still report DiedDisconnect.
+          (\f -> fix f st' (zip sends shouldMons) []) $ \loop st2 xs0 acc ->
+            case xs0 of
+              []          -> return st2
+                { stateMonitors =
+                    if null acc then stateMonitors st2
+                      else Map.insertWith (++) (DP.ProcessIdentifier pid) acc
+                                               (stateMonitors st)
+                }
+              (x, m) : xs -> do (st3, sent) <- handleSend st2 x
+                                loop st3 xs (if sent then acc else m : acc)
         Nothing ->
           return st
     notifyMonitors st shouldNotify srcNid (DP.NodeIdentifier nid) reason = do
@@ -785,9 +801,8 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                        Map.union (Map.filter (not . null) otherMons)
                                  remainingMons
                    }
-      foldM handleSend st' [ mkMsg k x | (k, xs) <- Map.toList shouldMons
-                                       , x <- xs
-                           ]
+      foldM (\a b -> fst <$> handleSend a b) st'
+        [ mkMsg k x | (k, xs) <- Map.toList shouldMons, x <- xs ]
     notifyMonitors _ _ _ _ _ =
       error "scheduler.notifyMonitors: unimplemented case"
 
