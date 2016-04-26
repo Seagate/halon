@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# Local version of halonctl. This script attempts to parse sensible
+# values for '-l' and '-a' parameters from the `/etc/sysconfig/halond`
+# file to simplify calling halonctl. Thus it always uses the local
+# `halond` instance as an argument to `-a`.
+#
+# For more fine-grained control, please call `halonctl` directly.
+
+HALOND_CONF=/etc/sysconfig/halond
+
+if [ -e "$HALOND_CONF" ]; then
+  source "$HALOND_CONF"
+fi
+
+if [ -z "$HALOND_LISTEN" ]; then
+  echo "HALOND_LISTEN variable not set; please export or add to $HALOND_CONF"
+  die 1
+fi
+
+IFS=':' read -ra ADDR <<< "$HALOND_LISTEN"
+
+IP=${ADDR[0]}
+
+if [ -z "$IP" ]; then
+  echo "Cannot determine IP ($IP) from $HALOND_LISTEN"
+  die 1
+fi
+
+HALONCTL_LISTEN="$IP:0"
+
+halonctl -l "$HALONCTL_LISTEN" -a "$HALOND_LISTEN" "$@"
