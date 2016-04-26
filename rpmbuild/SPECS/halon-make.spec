@@ -25,6 +25,7 @@ cp $RPM_SOURCE_DIR/halonctl $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halond $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/genders2yaml $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halon-simplelocalcluster $RPM_BUILD_DIR/halon
+cp $RPM_SOURCE_DIR/hctl $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halond.service $RPM_BUILD_DIR/systemd
 cp $RPM_SOURCE_DIR/halon-satellite.service $RPM_BUILD_DIR/systemd
 cp $RPM_SOURCE_DIR/role_maps/* $RPM_BUILD_DIR/role_maps
@@ -51,6 +52,7 @@ rm -rf %{buildroot}
 /usr/bin/halond
 /usr/bin/halonctl
 /usr/bin/halon-simplelocalcluster
+/usr/bin/hctl
 /usr/bin/genders2yaml
 /usr/lib/systemd/system/halond.service
 /usr/lib/systemd/system/halon-satellite.service
