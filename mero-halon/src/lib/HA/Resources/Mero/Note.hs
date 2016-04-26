@@ -116,10 +116,7 @@ class (G.Resource a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateCarrier a))
     hasStateDict :: Static (Dict (HasConfObjectState a))
 
     getConfObjState :: a -> G.Graph -> ConfObjectState
-    default getConfObjState :: G.Relation Is a ConfObjectState
-                            => a -> G.Graph -> ConfObjectState
-    getConfObjState x rg = fromMaybe M0_NC_ONLINE
-                              . listToMaybe $ G.connectedTo x Is rg
+    getConfObjState x rg = toConfObjState x $ getState x rg
 
     setState :: a -> StateCarrier a -> G.Graph -> G.Graph
     default setState :: G.Relation Is a ConfObjectState
@@ -168,21 +165,18 @@ $(join <$> (mapM (mkDict ''HasConfObjectState) $
 
 instance HasConfObjectState M0.Root where
   type StateCarrier M0.Root = NoExplicitConfigState
-  getConfObjState _ _ = M0_NC_ONLINE
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Root
   toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.Profile where
   type StateCarrier M0.Profile = NoExplicitConfigState
-  getConfObjState _ _ = M0_NC_ONLINE
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Profile
   toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.Filesystem where
   type StateCarrier M0.Filesystem = NoExplicitConfigState
-  getConfObjState _ _ = M0_NC_ONLINE
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Filesystem
@@ -197,33 +191,25 @@ instance HasConfObjectState M0.Node where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Node
 instance HasConfObjectState M0.Process where
   type StateCarrier M0.Process = M0.ProcessState
-  getConfObjState x rg = case G.connectedTo x Is rg :: [M0.ProcessState] of
-      -- [y] -> ms y --XXX:
-      _ -> M0_NC_ONLINE
-    where
-      ms M0.PSUnknown = M0_NC_UNKNOWN
-      ms (M0.PSFailed _) = M0_NC_FAILED
-      ms M0.PSOffline = M0_NC_FAILED
-      ms M0.PSStarting = M0_NC_FAILED
-      ms M0.PSStopping = M0_NC_FAILED
-      ms M0.PSOnline = M0_NC_ONLINE
-      ms (M0.PSInhibited M0.PSOnline) = M0_NC_TRANSIENT
-      ms (M0.PSInhibited y) = ms y
   getState x rg = fromMaybe M0.PSUnknown . listToMaybe $ G.connectedTo x Is rg
   setState x st = G.connect x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Process
   toConfObjState _ = const M0_NC_ONLINE
+  -- toConfObjState _ M0.PSUnknown = M0_NC_UNKNOWN
+  -- toConfObjState _ (M0.PSFailed _) = M0_NC_FAILED
+  -- toConfObjState _ M0.PSOffline = M0_NC_FAILED
+  -- toConfObjState _ M0.PSStarting = M0_NC_FAILED
+  -- toConfObjState _ M0.PSStopping = M0_NC_FAILED
+  -- toConfObjState _ M0.PSOnline = M0_NC_ONLINE
+  -- toConfObjState _ (M0.PSInhibited M0.PSOnline) = M0_NC_TRANSIENT
+  -- toConfObjState x (M0.PSInhibited y) = toConfObjState x y
+
 instance HasConfObjectState M0.Service where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Service
 instance HasConfObjectState M0.Disk where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Disk
 instance HasConfObjectState M0.SDev where
   type StateCarrier M0.SDev = ConfObjectState
-  getConfObjState x rg = fromMaybe M0_NC_ONLINE . listToMaybe $
-    [ st
-    | (disk :: M0.Disk) <- G.connectedTo x M0.IsOnHardware rg
-    , st <- G.connectedTo disk Is rg
-    ]
   getState x rg = fromMaybe M0_NC_ONLINE . listToMaybe $
     [ st
     | (disk :: M0.Disk) <- G.connectedTo x M0.IsOnHardware rg
@@ -238,35 +224,30 @@ instance HasConfObjectState M0.Pool where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Pool
 instance HasConfObjectState M0.PVer where
   type StateCarrier M0.PVer = NoExplicitConfigState
-  getConfObjState _ _ = M0_NC_ONLINE
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_PVer
   toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.RackV where
   type StateCarrier M0.RackV = NoExplicitConfigState
-  getConfObjState _ _ = M0_NC_ONLINE
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_RackV
   toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.EnclosureV where
   type StateCarrier M0.EnclosureV = NoExplicitConfigState
-  getConfObjState _ _ = M0_NC_ONLINE
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_EnclosureV
   toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.ControllerV where
   type StateCarrier M0.ControllerV = NoExplicitConfigState
-  getConfObjState _ _ = M0_NC_ONLINE
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_ControllerV
   toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.DiskV where
   type StateCarrier M0.DiskV = NoExplicitConfigState
-  getConfObjState _ _ = M0_NC_ONLINE
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_DiskV
