@@ -1,9 +1,3 @@
-[submodule "vendor/tasty-files"]
-	path = vendor/tasty-files
-	url = ../tasty-files.git
-[submodule "options-schema"]
-	path = vendor/options-schema
-	url = ../options-schema.git
 [submodule "vendor/mero"]
 	path = vendor/mero
 	url = ../mero
