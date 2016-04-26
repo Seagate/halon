@@ -29,7 +29,6 @@ import HA.RecoveryCoordinator.Actions.Mero.Conf
   ( lookupConfObjByFid
   , lookupStorageDevice
   , lookupStorageDeviceSDev
-  , queryObjectStatus
   )
 import HA.RecoveryCoordinator.Rules.Mero.Conf (notifyDriveStateChange)
 import HA.Resources (Node(..))

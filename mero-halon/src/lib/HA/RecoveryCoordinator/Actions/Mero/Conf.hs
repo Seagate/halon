@@ -18,6 +18,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
     -- ** Get all objects of type
   , getProfile
   , getFilesystem
+  , getPool
   , getSDevPool
   , getPoolSDevs
   , getPoolSDevsWithState
@@ -275,6 +276,15 @@ getFilesystem = getLocalGraph >>= \rg -> do
   return . listToMaybe
     $ [ fs | p <- G.connectedTo Cluster Has rg :: [M0.Profile]
            , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
+      ]
+
+getPool :: PhaseM LoopState l [M0.Pool]
+getPool = getLocalGraph >>= \rg -> do
+  phaseLog "rg-query" $ "Looking for Mero pool."
+  return 
+      [ pl | p <- G.connectedTo Cluster Has rg :: [M0.Profile]
+           , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
+           , pl <- G.connectedTo fs M0.IsParentOf rg
       ]
 
 -- | RC wrapper for 'getM0Services'.
