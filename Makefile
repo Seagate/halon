@@ -3,7 +3,7 @@
 
 MOCK_CONFIG = default
 SRC_RPM_DIR := $(shell mktemp -du)
-RESULT_DIR = rpmbuild
+RESULT_DIR = $(pwd)/rpmbuild
 
 .PHONY: rpm
 rpm:
