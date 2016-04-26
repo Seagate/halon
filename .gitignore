@@ -14,3 +14,15 @@ rpclite/rpclite/test?
 rpclite/rpclite/test
 rpclite/rpclite/test-epoch
 mero-halon/src/halond/Version.c
+m0trace.*
+core
+core.*
+/tags
+/TAGS
+/cscope.*
+/ncscope.*
+GPATH
+GRTAGS
+GSYMS
+GTAGS
+*.swp
