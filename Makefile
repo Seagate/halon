@@ -12,4 +12,4 @@ rpm:
 	mock -r $(MOCK_CONFIG) --buildsrpm \
 		--spec halon.spec --sources $(RESULT_DIR)/halon.tar.gz \
 		--resultdir $(SRC_RPM_DIR)
-	mock -r $(MOCK_CONFIG) --rebuild $(SRC_RPM_DIR)/*.src.rpm --resultdir $(RESULTDIR)
+	mock -r $(MOCK_CONFIG) --rebuild $(SRC_RPM_DIR)/*.src.rpm --resultdir $(RESULT_DIR)
