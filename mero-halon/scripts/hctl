@@ -21,13 +21,12 @@ fi
 IFS=':' read -ra ADDR <<< "$HALOND_LISTEN"
 
 IP=${ADDR[0]}
-PORT=${ADDR[1]}
 
-if [ -z "$IP" ] || [ -z "$PORT" ]; then
-  echo "Cannot determine IP ($IP) or port ($PORT) from $HALOND_LISTEN"
+if [ -z "$IP" ]; then
+  echo "Cannot determine IP ($IP) from $HALOND_LISTEN"
+  die 1
 fi
 
-HALONCTL_PORT=$(($PORT+1))
-HALONCTL_LISTEN="$IP:$HALONCTL_PORT"
+HALONCTL_LISTEN="$IP:0"
 
 halonctl -l "$HALONCTL_LISTEN" -a "$HALOND_LISTEN" "$@"
