@@ -453,7 +453,9 @@ handleRepairExternal noteSet = do
 handleRepairInternal :: Set -> PhaseM LoopState l ()
 handleRepairInternal noteSet = do
   liftIO $ traceEventIO "START mero-halon:internal-handlers:repair-rebalance"
-  processDevices noteSet >>= traverse_ go
+  G.connectedTo Cluster Has <$> getLocalGraph >>= \case
+    [MeroClusterRunning] -> processDevices noteSet >>= traverse_ go
+    _ -> return ()
   liftIO $ traceEventIO "STOP mero-halon:internal-handlers:repair-rebalance"
   where
     -- Handle information from internal messages that didn't include pool
