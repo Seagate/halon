@@ -176,8 +176,11 @@ handleResetInternal (Set ns) = do
         for_ sdevm $ \m0sdev ->  do
           msdev <- lookupStorageDevice m0sdev
           forM_ msdev $ \sdev ->  do
-            phaseLog "info" $ "Starting reset attempt for " ++ show sdev
-            promulgateRC $ ResetAttempt sdev
+            mstatus <- driveStatus sdev
+            case (\(StorageDeviceStatus s _) -> s) <$> mstatus of
+              Just "EMPTY" -> phaseLog "info" "drive is physically removed, skipping reset"
+              _ -> do phaseLog "info" $ "Starting reset attempt for " ++ show sdev
+                      promulgateRC $ ResetAttempt sdev
       _ -> return ()
   liftIO $ traceEventIO "STOP mero-halon:internal-handler:reset-attempt"
 
