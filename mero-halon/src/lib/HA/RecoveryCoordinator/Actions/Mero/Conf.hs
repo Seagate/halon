@@ -263,17 +263,21 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
 createMDPoolPVer :: M0.Filesystem -> PhaseM LoopState l ()
 createMDPoolPVer fs = getLocalGraph >>= \rg -> let
     mdpool = M0.Pool (M0.f_mdpool_fid fs)
+    no_iosvcs = length . filter (\s -> M0.s_type s == CST_IOS)
+              $ M0.getM0Services rg
     racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
     encls = (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Enclosure]) =<< racks
     ctrls = (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Controller]) =<< encls
-    disks = (\r -> take 1 $ G.connectedTo r M0.IsParentOf rg :: [M0.Disk]) =<< ctrls
+    disks = case no_iosvcs of
+      1 -> (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Disk]) =<< ctrls
+      _ -> (\r -> take 1 $ G.connectedTo r M0.IsParentOf rg :: [M0.Disk]) =<< ctrls
     fids = Set.unions . (fmap Set.fromList) $
             [ (M0.fid <$> racks)
             , (M0.fid <$> encls)
             , (M0.fid <$> ctrls)
             , (M0.fid <$> disks)
             ]
-    failures = Failures 0 0 0 1 1
+    failures = Failures 0 0 0 (if no_iosvcs == 1 then 0 else 1) 1
     pver = PoolVersion fids failures
   in modifyGraph $ createPoolVersionsInPool fs mdpool [pver] False
 --------------------------------------------------------------------------------
