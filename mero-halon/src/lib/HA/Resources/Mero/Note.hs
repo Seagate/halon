@@ -223,11 +223,7 @@ instance HasConfObjectState M0.SDev where
 instance HasConfObjectState M0.Pool where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Pool
 instance HasConfObjectState M0.PVer where
-  type StateCarrier M0.PVer = NoExplicitConfigState
-  getState _ _ = NoExplicitConfigState
-  setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_PVer
-  toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.RackV where
   type StateCarrier M0.RackV = NoExplicitConfigState
   getState _ _ = NoExplicitConfigState
@@ -312,6 +308,7 @@ $(mkDicts
   , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Disk, ''Is, ''ConfObjectState)
   , (''M0.Pool, ''Is, ''ConfObjectState)
+  , (''M0.PVer, ''Is, ''ConfObjectState)
   , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
   )
 
@@ -326,6 +323,7 @@ $(mkResRel
   , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Disk, ''Is, ''ConfObjectState)
   , (''M0.Pool, ''Is, ''ConfObjectState)
+  , (''M0.PVer, ''Is, ''ConfObjectState)
   , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
   []
   )
