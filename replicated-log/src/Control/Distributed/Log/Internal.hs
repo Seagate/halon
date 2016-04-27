@@ -1786,7 +1786,7 @@ ambassador _ _ _ [] = do
     say "ambassador: Set of replicas must be non-empty."
     die "ambassador: Set of replicas must be non-empty."
 ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
-    (monitorReplica ρ0 >>= go 0 (Just ρ0) others)
+    (monitorLeaderReplica ρ0 >>= go 0 (Just ρ0) others)
       `finally` nlogTrace logId "ambassador: terminated"
   where
     go :: LegislatureId    -- ^ The epoch of the replicas (use 0 while unknown)
@@ -1818,7 +1818,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
             unmonitor ref
             nlogTrace logId $ "ambassador: Old epoch changed " ++ show mLeader
                        ++ ". Trying " ++ show ρ' ++ "."
-            monitorReplica ρ' >>= go epoch' (Just ρ') ρs'
+            monitorLeaderReplica ρ' >>= go epoch' (Just ρ') ρs'
           else do
             when (isNothing mLeader) $ do
               -- Give some time to other replicas to elect a leader.
@@ -1839,7 +1839,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
             nlogTrace logId $
               "ambassador: Replica disconnected or died " ++ show pmn
                        ++ ". Trying " ++ show ρ' ++ "."
-            ref'' <- monitorReplica ρ'
+            ref'' <- monitorLeaderReplica ρ'
             -- Ask the head replica for the new leader.
             getSelfPid >>= sendReplica logId ρ'
             go epoch Nothing ρs' ref''
@@ -1902,8 +1902,8 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
           "ambassador: sending recover msg to " ++ show (ρ, mLeader)
         sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
 
-    monitorReplica ρ = do
-      whereisRemoteAsync ρ (replicaLabel logId)
+    monitorLeaderReplica ρ = do
+      whereisRemoteAsync ρ (batcherLabel logId)
       expectTimeout leaseTimeout >>= \case
         Just (WhereIsReply _ mpid) -> do
           monitor $ maybe (nullProcessId ρ) id mpid
