@@ -107,9 +107,6 @@ import Prelude hiding (init, log)
 import System.Clock
 import System.FilePath ((</>))
 import System.Directory (doesDirectoryExist, getCurrentDirectory)
-import System.Environment (lookupEnv)
-import System.IO (hPutStrLn, stderr)
-import System.IO.Unsafe (unsafePerformIO)
 
 
 nlogTrace :: LogId -> String -> Process ()
@@ -1894,7 +1891,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
           Just ρ  -> sendReplica logId ρ (self, epoch, m)
           Nothing -> usend sender False
       -- A recovery request
-      OMRecover m@(Recover sender ρs') -> do
+      OMRecover m@(Recover _sender ρs') -> do
         self <- getSelfPid
         -- A recovery request does not need to go necessarily to the leader.
         -- The replicas might have lost quorum and could be unable to elect
