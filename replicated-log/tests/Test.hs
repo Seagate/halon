@@ -186,7 +186,7 @@ tests argv = do
                 -> IO ()
         runTest s0 clockSpeed _t reps n action
           | schedulerIsEnabled =
-              forM_ [4..reps] $ \i ->
+              forM_ [1..reps] $ \i ->
                 (withTmpDirectory $ withAbstractTransport $
                   \tr@(AbstractTransport transport _ _) ->
                   (>>= maybe (error "Timeout") return) $
