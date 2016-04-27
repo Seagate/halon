@@ -620,11 +620,16 @@ replica Dict
     -- Wait for any previously running batcher to die.
     mbpid <- whereis (batcherLabel logId)
     forM_ mbpid exitAndWait
-    bpid <- spawnLocal $ do
-      nlogTrace logId "spawned batcher"
-      link self >> batcher (sendBatch self) (epoch, replicas)
-                     `finally` nlogTrace logId "batcher: process terminated"
-    register (batcherLabel logId) bpid
+    mLeader <- getLeader leaseStart0' replicas
+    bpid <- if mLeader == Just here then do
+        bpid <- spawnLocal $ do
+          nlogTrace logId "spawned batcher"
+          link self >> batcher (sendBatch self) (epoch, replicas)
+                         `finally` nlogTrace logId "batcher: process terminated"
+        register (batcherLabel logId) bpid
+        return bpid
+      else
+        return $ nullProcessId here
     ppid <- spawnLocal $ do
               nlogTrace logId "spawned proposer"
               link self >> proposer self bpid w0 Bottom replicas
@@ -655,6 +660,21 @@ replica Dict
          }
   where
     cond b t f = if b then t else f
+
+    -- Returns the leader if the lease has not expired.
+    getLeader :: TimeSpec -> [NodeId] -> Process (Maybe NodeId)
+    getLeader leaseStart' ρs' = do
+      here <- getSelfNode
+      now <- liftIO $ getTime Monotonic
+      case ρs' of
+        ρ : _
+            -- Adjust the period to account for some clock drift, so
+            -- non-leaders think the lease is slightly longer.
+          | let adjustedPeriod = if here == ρ then leaseTimeout
+                                   else adjustForDrift leaseTimeout
+          , now - leaseStart' < fromInteger (toInteger adjustedPeriod * 1000)
+           -> return $ Just ρ
+        _  -> return Nothing
 
     -- Restores a snapshot with the given operation and returns @Nothing@ if an
     -- exception is thrown or if the operation times-out.
@@ -840,22 +860,6 @@ replica Dict
             -- Updates the watermark of the proposer if it has changed.
             updateWatermark w' = usend ppid w'
 
-            -- Returns the leader if the lease has not expired.
-            getLeader :: IO (Maybe NodeId)
-            getLeader = do
-              now <- getTime Monotonic
-              -- Adjust the period to account for some clock drift, so
-              -- non-leaders think the lease is slightly longer.
-              let adjustedPeriod = if here == head ρs
-                    then leaseTimeout
-                    else adjustForDrift leaseTimeout
-              if not (null ρs) &&
-                (now - leaseStart <
-                   fromInteger (toInteger adjustedPeriod * 1000)
-                )
-              then return $ Just $ head ρs
-              else return Nothing
-
             -- | Makes a lease request. It takes the legislature on which the
             -- request is valid.
             mkLeaseRequest :: LegislatureId -> [ProcessId] -> [NodeId]
@@ -873,7 +877,7 @@ replica Dict
         receiveWait $ cond (w == cd)
             [ -- The lease is about to expire or it has already.
               matchChan timerRP $ \LeaseRenewalTime -> do
-                  mLeader <- liftIO $ getLeader
+                  mLeader <- getLeader leaseStart ρs
                   nlogTrace logId $ "LeaseRenewalTime: " ++ show (w, cd, mLeader)
                   cd' <- if Just here == mLeader || isNothing mLeader then do
                       leaseRequest <-
@@ -887,7 +891,7 @@ replica Dict
             ]
             [ -- The periodic timer ticked.
               matchChan ptimerRP $ \PeriodicTick -> do
-                  mLeader <- liftIO getLeader
+                  mLeader <- getLeader leaseStart ρs
                   nlogTrace logId $ "Periodic timer tick: " ++ show (w, cd, mLeader)
                   -- Kill the batcher if I'm not the leader.
                   when (mLeader /= Just here) $ exitAndWait bpid
@@ -996,8 +1000,9 @@ replica Dict
                       -- is any.
                       when (epoch /= epoch' || sort ρs /= sort ρs') $
                         forM_ mbpid $ flip usend (epoch', ρs')
+                      mLeader <- getLeader leaseStart' ρs'
                       bpid' <- case mbpid of
-                        Nothing -> do
+                        Nothing | mLeader == Just here -> do
                           bpid' <- spawnLocal $ do
                             nlogTrace logId "respawned batcher"
                             link self >> batcher (sendBatch self) (epoch', ρs')
@@ -1006,6 +1011,7 @@ replica Dict
                           register (batcherLabel logId) bpid'
                           return bpid'
                         Just bpid' -> return bpid'
+                        Nothing -> return bpid
 
                       updateWatermark w'
                       go st{ stateBatcher = bpid'
@@ -1084,7 +1090,7 @@ replica Dict
               --
               -- XXX The guard avoids proposing values for unreachable decrees.
             , matchIf (\_ -> cd == w) $ {-# SCC "go/batcher" #-} \(rs :: [BatcherMsg a]) -> do
-                  mLeader <- liftIO getLeader
+                  mLeader <- getLeader leaseStart ρs
                   nlogTrace logId $ "replica: request from batcher "
                              ++ show (cd, mLeader, ρs)
                   (s', cd') <- case mLeader of
@@ -1332,7 +1338,7 @@ replica Dict
                       ρs'' | elem here ρs' = here : filter (/= here) ρs'
                            | otherwise     = ρs'
 
-                  mLeader <- liftIO getLeader
+                  mLeader <- getLeader leaseStart ρs
                   nlogTrace logId $ "replica: helo request from client " ++
                              show (π, mLeader)
                   case mLeader of
@@ -1378,7 +1384,7 @@ replica Dict
                   let ρs'' | elem here ρs' = here : filter (/= here) ρs'
                            | otherwise     = ρs'
 
-                  mLeader <- liftIO getLeader >>= \case
+                  mLeader <- getLeader leaseStart ρs >>= \case
                     -- Accept the leader only if a quorum of the old membership
                     -- is a quorum of the new membership.
                     Just nid | elem nid ρs''
@@ -1516,7 +1522,7 @@ replica Dict
                   go st
 
             , matchIf (\_ -> w == cd) $ \(μ, e, MembershipQuery sender) -> do
-                mLeader <- liftIO getLeader
+                mLeader <- getLeader leaseStart ρs
                 if mLeader == Just here then
                   usend sender $ Just (legD, ρs)
                 else do
