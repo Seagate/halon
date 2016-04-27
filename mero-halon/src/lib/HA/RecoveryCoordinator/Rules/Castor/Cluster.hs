@@ -183,8 +183,6 @@ teardownStartLevel = maxTeardownLevel + 1
 -- that triggered it.
 newtype NodesRunningTeardown = NodesRunningTeardown (Map R.Node UUID)
 
--- | Notification that barrier was passed by the cluster.
-newtype BarrierPass = BarrierPass M0.MeroClusterState deriving (Binary, Show)
 
 -- | Send a notification when the cluster state transitions.
 --

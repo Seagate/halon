@@ -453,7 +453,9 @@ handleRepairExternal noteSet = do
 handleRepairInternal :: Set -> PhaseM LoopState l ()
 handleRepairInternal noteSet = do
   liftIO $ traceEventIO "START mero-halon:internal-handlers:repair-rebalance"
-  processDevices noteSet >>= traverse_ go
+  G.connectedTo Cluster Has <$> getLocalGraph >>= \case
+    [MeroClusterRunning] -> processDevices noteSet >>= traverse_ go
+    _ -> return ()
   liftIO $ traceEventIO "STOP mero-halon:internal-handlers:repair-rebalance"
   where
     -- Handle information from internal messages that didn't include pool
@@ -518,6 +520,20 @@ handleRepairInternal noteSet = do
                 "Repair on-going but don't know what to do with " ++ show diskMap
           Nothing -> maybeBeginRepair
 
+-- | When cluster is up, we may have failed devices reported by SSPL or on the
+-- early stages of the bootstrap, so we may need to run repair.
+checkRepairOnClusterStart :: Definitions LoopState ()
+checkRepairOnClusterStart = defineSimple "check-repair-on-start" $ \(BarrierPass MeroClusterRunning) -> do
+  pools <- getPool
+  forM_ pools $ \pool ->
+    getPoolRepairStatus pool >>= \case
+      Just _ -> return () -- Repair is already handled by another rule
+      Nothing -> do
+        tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
+        fa <- getPoolSDevsWithState pool M0_NC_FAILED
+        when (null tr && not (null fa)) $ do
+          startRepairOperation pool
+          queryStartHandling pool
 
 -- | We have received information about a pool state change (as well
 -- as some devices) so handle this here. Such a notification is likely
