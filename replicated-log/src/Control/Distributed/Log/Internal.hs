@@ -1514,6 +1514,8 @@ replica Dict
 
               -- An ambassador wants to know who the leader is.
             , match $ \μ -> do
+                  nlogTrace logId $
+                    "replica: leader query: " ++ show (μ, epoch, ρs)
                   when (elem here ρs) $ usend μ (epoch, ρs)
                   go st
 
