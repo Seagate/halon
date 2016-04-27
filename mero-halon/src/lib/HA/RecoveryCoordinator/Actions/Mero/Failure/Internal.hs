@@ -9,6 +9,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
   , PoolVersion(..)
   , failuresToArray
   , createPoolVersions
+  , createPoolVersionsInPool
   ) where
 
 import HA.RecoveryCoordinator.Actions.Mero.Core
@@ -24,6 +25,7 @@ import qualified Control.Monad.State.Lazy as S
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Foldable (forM_)
+import Data.List (foldl')
 import Data.Word
 import Data.Typeable
 import Prelude hiding (id, (.))
@@ -89,21 +91,21 @@ instance Monoid Strategy where
     , onFailure = f1 >=> f2
   }
 
--- | Create specified pool versions in the resource graph.
-createPoolVersions :: M0.Filesystem
-                   -> [PoolVersion]
-                   -> Bool -- If specified, the pool version is assumed to
-                           -- contain failed devices, rather than working ones.
-                   -> G.Graph
-                   -> G.Graph
-createPoolVersions fs pvers invert rg =
+
+createPoolVersionsInPool :: M0.Filesystem
+                         -> M0.Pool
+                         -> [PoolVersion]
+                         -> Bool -- If specified, the pool version is assumed to
+                                 -- contain failed devices, rather than working ones.
+                         -> G.Graph
+                         -> G.Graph
+createPoolVersionsInPool fs pool pvers invert rg =
     case xs of
       [] -> rg
       _  -> S.execState (mapM_ createPoolVersion pvers) rg
   where
-    pool = M0.Pool (M0.f_mdpool_fid fs)
     test fids x = (if invert then Set.notMember else Set.member) (M0.fid x) fids
-    allDrives = G.getResourcesOfType rg :: [M0.Disk] -- XXX: multiprofile is not supported
+    totalDrives = length (G.getResourcesOfType rg :: [M0.Disk]) -- XXX: multiprofile is not supported
     xs   = G.connectedTo Cluster Has rg
     ~(globals:_) = xs
 
@@ -112,7 +114,7 @@ createPoolVersions fs pvers invert rg =
       let
         fids_drv = Set.filter (M0.fidIsType (Proxy :: Proxy M0.Disk)) fids
         width = if invert
-                then length allDrives - Set.size fids_drv -- TODO: check this
+                then totalDrives - Set.size fids_drv -- TODO: check this
                 else Set.size fids_drv
       S.when (width > 0) $ do
         pver <- M0.PVer <$> S.state (newFid (Proxy :: Proxy M0.PVer))
@@ -163,3 +165,16 @@ createPoolVersions fs pvers invert rg =
                     $ G.newResource diskv
                   >>> G.connect ctrlv M0.IsParentOf diskv
                   >>> G.connect disk M0.IsRealOf diskv
+
+-- | Create specified pool versions in the resource graph.
+createPoolVersions :: M0.Filesystem
+                   -> [PoolVersion]
+                   -> Bool -- If specified, the pool version is assumed to
+                           -- contain failed devices, rather than working ones.
+                   -> G.Graph
+                   -> G.Graph
+createPoolVersions fs pvers invert rg =
+    foldl' (\g p -> createPoolVersionsInPool fs p pvers invert g) rg pools
+  where
+    mdpool = M0.Pool (M0.f_mdpool_fid fs)
+    pools = filter (/= mdpool) $ G.connectedTo fs M0.IsParentOf rg

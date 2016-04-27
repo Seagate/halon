@@ -12,6 +12,8 @@
 module HA.RecoveryCoordinator.Actions.Mero.Conf
   ( -- * Initialization
     initialiseConfInRG
+  , loadMeroServers
+  , createMDPoolPVer
     -- * Queries
   , queryObjectStatus
   , setObjectStatus
@@ -25,7 +27,6 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , getM0ServicesRC
   , getChildren
   , getParents
-  , loadMeroServers
     -- ** Lookup objects based on another
   , lookupConfObjByFid
   , lookupStorageDevice
@@ -45,6 +46,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero.Core
+import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
 import qualified HA.ResourceGraph as G
 import HA.Resources (Cluster(..), Has(..), Runs(..))
 import HA.Resources.Castor
@@ -67,6 +69,7 @@ import qualified Data.HashSet as S
 import Data.List (scanl')
 import Data.Maybe (listToMaybe)
 import Data.Proxy
+import qualified Data.Set as Set
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
@@ -94,17 +97,20 @@ initialiseConfInRG = getFilesystem >>= \case
       root    <- M0.Root    <$> newFidRC (Proxy :: Proxy M0.Root)
       profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
       pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
+      mdpool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
       fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem)
-                          <*> return (M0.fid pool)
+                          <*> return (M0.fid mdpool)
       modifyGraph
           $ G.newResource root
         >>> G.newResource profile
         >>> G.newResource fs
         >>> G.newResource pool
+        >>> G.newResource mdpool
         >>> G.connectUniqueFrom Cluster Has profile
         >>> G.connectUniqueFrom Cluster Has M0.MeroClusterStopped
         >>> G.connectUniqueFrom profile M0.IsParentOf fs
         >>> G.connect fs M0.IsParentOf pool
+        >>> G.connect fs M0.IsParentOf mdpool
         >>> G.connectUniqueFrom Cluster Has root
         >>> G.connect root M0.IsParentOf profile
 
@@ -252,6 +258,24 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         >>> G.connect m0disk M0.At sdev
       return m0sdev
 
+-- | Create a pool version for the MDPool. This should have one device in
+--   each controller.
+createMDPoolPVer :: M0.Filesystem -> PhaseM LoopState l ()
+createMDPoolPVer fs = getLocalGraph >>= \rg -> let
+    mdpool = M0.Pool (M0.f_mdpool_fid fs)
+    racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
+    encls = (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Enclosure]) =<< racks
+    ctrls = (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Controller]) =<< encls
+    disks = (\r -> take 1 $ G.connectedTo r M0.IsParentOf rg :: [M0.Disk]) =<< ctrls
+    fids = Set.unions . (fmap Set.fromList) $
+            [ (M0.fid <$> racks)
+            , (M0.fid <$> encls)
+            , (M0.fid <$> ctrls)
+            , (M0.fid <$> disks)
+            ]
+    failures = Failures 0 0 0 1 1
+    pver = PoolVersion fids failures
+  in modifyGraph $ createPoolVersionsInPool fs mdpool [pver] False
 --------------------------------------------------------------------------------
 -- Querying conf in RG
 --------------------------------------------------------------------------------
@@ -281,7 +305,7 @@ getFilesystem = getLocalGraph >>= \rg -> do
 getPool :: PhaseM LoopState l [M0.Pool]
 getPool = getLocalGraph >>= \rg -> do
   phaseLog "rg-query" $ "Looking for Mero pool."
-  return 
+  return
       [ pl | p <- G.connectedTo Cluster Has rg :: [M0.Profile]
            , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
            , pl <- G.connectedTo fs M0.IsParentOf rg
