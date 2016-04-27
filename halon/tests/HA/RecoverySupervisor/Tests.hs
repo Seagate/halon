@@ -141,8 +141,13 @@ tests abstractTransport = do
         say "Read new leader pid."
         self <- getSelfPid
         _ <- liftIO $ forkProcess (head rest) $ do
+               say "Get rgroup handle."
                rGroup' <- join $ unClosure cRGroup
-               retryRG rGroup' (getState rGroup') >>= usend self
+               say "Got rgroup' handle."
+               st <- retryRG rGroup' $ do
+                 say "Trying to read state ..."
+                 getState rGroup'
+               usend self st
         RSState (Just leader1) _ _<- expect
         say "Verify that we have a new leader."
         liftIO $ assertBool ("the leader is not new " ++
@@ -185,16 +190,22 @@ tests abstractTransport = do
                  , processNodeId pid : map localNodeId bs
                  ]
 
-        -- wait that RS eventually stop
+        say "Wait that RS eventually stop."
         _ <- fix $ \loop -> do
                p <- receiveChan $ snd $ cStop events
                when (p /= pid) loop
-        -- wait that new RS eventually starts
+        say "Wait that new RS eventually starts."
         _ <- receiveChan $ snd $ cStart events
         self <- getSelfPid
+        say "Read RS state."
         _ <- liftIO $ forkProcess (head as) $ do
+               say "Get rgroup handle."
                rGroup' <- join $ unClosure cRGroup
-               retryRG rGroup' (getState rGroup') >>= usend self
+               say "Got rgroup handle."
+               st <- retryRG rGroup' $ do
+                 say "Trying to read state ..."
+                 getState rGroup'
+               usend self st
         RSState (Just _) _ _<- expect
         return ()
     , testSuccess "rs-split-in-half"  $ testSplit transport controlled 5 $ \pid nodes events splitNet _ -> do
