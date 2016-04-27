@@ -133,12 +133,8 @@ int ha_state_set_fom_tick(struct m0_fom *fom)
     struct m0_ha_nvec *note;
     int rc;
 
-    m0_fom_block_enter(fom);
-
     note = m0_fop_data(fom->fo_fop);
     rc = ha_state_cbs.ha_state_set(note);
-
-    m0_fom_block_leave(fom);
 
     if (rc != 0) {
         M0_LOG(M0_DEBUG,"ha_state_cbs->ha_state_set: %d\n",rc);
