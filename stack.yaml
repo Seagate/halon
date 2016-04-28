@@ -30,9 +30,13 @@ packages:
   extra-dep: true
 - location: vendor/netwire
   extra-dep: true
-- location: vendor/options-schema
+- location:
+    git: https://github.com/seagate-ssg/options-schema.git
+    commit: 9cf90f28c37ba97a2f06b0805200c525645558cd
   extra-dep: true
-- location: vendor/tasty-files
+- location:
+    git: https://github.com/seagate-ssg/tasty-files.git
+    commit: b800398400b05b5e6cafa8189511c3ec6532958e
   extra-dep: true
 - location:
     git: https://github.com/nc6/gitrev.git
