@@ -297,8 +297,8 @@ diskFailsPVer = StateCascadeRule
    checkBroken rg (pver@(M0.PVer _ [_, frack, fenc, fctrl, fdisk] _)) = do
      (racksv :: [M0.RackV])       <- check frack [pver] (Proxy :: Proxy M0.Rack)
      (enclsv :: [M0.EnclosureV])  <- check fenc racksv  (Proxy :: Proxy M0.Enclosure)
-     (ctrlsv :: [M0.ControllerV]) <- check fenc enclsv  (Proxy :: Proxy M0.Controller)
-     void $ (check fenc ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
+     (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
+     void $ (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
      where 
        check :: forall a b c . (G.Relation M0.IsParentOf a b, G.Relation M0.IsRealOf c b)
              => Word32 -> [a] -> Proxy c -> Either M0.PVer [b]
@@ -311,6 +311,7 @@ diskFailsPVer = StateCascadeRule
                                     ]
          when (broken > limit) $ Left pver
          return next
+   checkBroken _ _ = Right ()
 
 diskFixesPVer :: StateCascadeRule M0.Disk M0.PVer
 diskFixesPVer = StateCascadeRule
@@ -330,8 +331,8 @@ diskFixesPVer = StateCascadeRule
    checkBroken rg (pver@(M0.PVer _ [_, frack, fenc, fctrl, fdisk] _)) = do
      (racksv :: [M0.RackV])       <- check frack [pver] (Proxy :: Proxy M0.Rack)
      (enclsv :: [M0.EnclosureV])  <- check fenc racksv  (Proxy :: Proxy M0.Enclosure)
-     (ctrlsv :: [M0.ControllerV]) <- check fenc enclsv  (Proxy :: Proxy M0.Controller)
-     void $ (check fenc ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
+     (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
+     void $ (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
      where 
        check :: forall a b c . (G.Relation M0.IsParentOf a b, G.Relation M0.IsRealOf c b)
              => Word32 -> [a] -> Proxy c -> Either M0.PVer [b]
@@ -344,3 +345,4 @@ diskFixesPVer = StateCascadeRule
                                     ]
          when (broken <= limit) $ Left pver
          return next
+   checkBroken _ _ = Right ()
