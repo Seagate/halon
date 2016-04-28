@@ -11,7 +11,11 @@ import           HA.Resources
 import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
-import           Mero.ConfC (Fid)
+import Mero.ConfC
+  ( Fid
+  , PDClustAttr(..)
+  , Word128(..)
+  )
 
 import           Control.Monad (join)
 
@@ -37,18 +41,25 @@ simpleStrategy df cf cfe = Strategy {
             fs <- listToMaybe $ G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
             globs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
             let fsets = generateFailureSets df cf cfe rg globs
+                attrs = PDClustAttr {
+                          _pa_N = CI.m0_data_units globs
+                        , _pa_K = CI.m0_parity_units globs
+                        , _pa_P = 0
+                        , _pa_unit_size = 4096
+                        , _pa_seed = Word128 101 102
+                        }
                 -- update chunks
             return (flip unfoldr fsets $ \xs ->
                     case xs of
                       [] -> Nothing
                       _  -> Just $ splitAt 5 xs
-                    , fs)
+                    , fs, attrs)
       in case mchunks of
            Nothing -> Nothing
-           Just (chunks,fs) -> Just $ \sync ->
+           Just (chunks,fs, attrs) -> Just $ \sync ->
              let go g [] = return g
                  go g (c:cs) =
-                    let pvs = fmap (\(fs', fids) -> PoolVersion fids fs') c
+                    let pvs = fmap (\(fs', fids) -> PoolVersion fids fs' attrs) c
                     in do g' <- sync $ createPoolVersions fs pvs True g
                           go g' cs
              in go rg chunks

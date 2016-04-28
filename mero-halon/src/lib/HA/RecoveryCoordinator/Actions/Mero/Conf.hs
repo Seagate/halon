@@ -56,7 +56,9 @@ import qualified HA.Resources.Mero.Note as M0
 
 import Mero.ConfC
   ( Fid
+  , PDClustAttr(..)
   , ServiceType(..)
+  , Word128(..)
   , bitmapFromArray
   )
 
@@ -278,7 +280,14 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
             , (M0.fid <$> disks)
             ]
     failures = Failures 0 0 0 (if no_iosvcs == 1 then 0 else 1) 1
-    pver = PoolVersion fids failures
+    attrs = PDClustAttr {
+        _pa_N = fromIntegral $ if no_iosvcs == 1 then length disks else no_iosvcs
+      , _pa_K = 0
+      , _pa_P = 0 -- Will be overridden
+      , _pa_unit_size = 4096
+      , _pa_seed = Word128 101 101
+    }
+    pver = PoolVersion fids failures attrs
   in modifyGraph $ createPoolVersionsInPool fs mdpool [pver] False
 --------------------------------------------------------------------------------
 -- Querying conf in RG
