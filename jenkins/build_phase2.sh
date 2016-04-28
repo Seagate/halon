@@ -24,7 +24,7 @@ fi
 
 rm -rf build_failed
 
-make rpm
+make MOCK_CONFIG=${MOCK_CONFIG} rpm
 rval=$?
 if [ "$rval" != "0" ] ; then
     touch build_failed
