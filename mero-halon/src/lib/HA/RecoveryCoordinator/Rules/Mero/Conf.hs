@@ -25,6 +25,8 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
   , InternalNotificationHandlers(..)
   )  where
 
+import HA.Encode (encodeP)
+import HA.EventQueue.Producer (promulgate)
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
@@ -32,7 +34,7 @@ import HA.RecoveryCoordinator.Events.Mero
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
-import HA.Services.Mero (notifyMeroBlocking)
+import HA.Services.Mero (notifyMeroAndThen)
 
 import Mero.Notification (Set(..))
 import Mero.Notification.HAState (Note(..))
@@ -51,14 +53,14 @@ import Data.List (nub, genericLength)
 import Data.Either (lefts)
 import Data.Functor (void)
 import Data.Word
-import Control.Monad (when, guard)
+import Control.Monad (when, guard, void)
 
 import Network.CEP
 
 
 -- | Type wrapper for external notification handlers, to be used for
 -- keeping handlers in Storage.
-data ExternalNotificationHandlers = ExternalNotificationHandlers 
+data ExternalNotificationHandlers = ExternalNotificationHandlers
      { getExternalNotificationHandlers :: forall l . [Set -> PhaseM  LoopState l ()] }
 
 -- | Type wrapper for internal notification handlers, to be used for
@@ -67,7 +69,7 @@ data ExternalNotificationHandlers = ExternalNotificationHandlers
 --
 -- Internal handlers works on a set of changes that actually happened
 -- and stored in RG.
-data InternalNotificationHandlers = InternalNotificationHandlers 
+data InternalNotificationHandlers = InternalNotificationHandlers
      { getInternalNotificationHandlers :: forall l . [Set -> PhaseM  LoopState l ()] }
 
 -- | Notify ourselves about a state change of the 'M0.SDev'.
@@ -188,18 +190,13 @@ genericApplyStateChanges ass act = getLocalGraph >>= \rg -> let
 genericApplyDeferredStateChanges :: DeferredStateChanges
                                  -> PhaseM LoopState l a
                                  -> PhaseM LoopState l a
-genericApplyDeferredStateChanges (DeferredStateChanges f s _) action = do
+genericApplyDeferredStateChanges (DeferredStateChanges f s i) action = do
   modifyGraph f
   syncGraph (return ())
   res <- action
-  -- XXX: this is very bad this is blocking RC from execution
-  _ <- notifyMeroBlocking s
-  -- XXX: currently we are not emitting event notification instead we are
-  -- running handlers directly, this may be changed in future, as we need
-  -- to understand transaction properties first. 
-  mhandlers <- getStorageRC 
-  traverse_ (traverse_ ($ s) . getInternalNotificationHandlers) mhandlers
-  -- promulgateRC $ encodeP i
+  notifyMeroAndThen s
+    (void . promulgate $ encodeP i)
+    (return ()) -- What should we do here?
   return res
 
 -- | Apply state changes and synchronise with confd.
@@ -292,19 +289,19 @@ diskFailsPVer = StateCascadeRule
                                  return pver
             in lefts $ map (checkBroken rg) pvers)
   (const)
-  where 
+  where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
    checkBroken rg (pver@(M0.PVer _ [_, frack, fenc, fctrl, fdisk] _)) = do
      (racksv :: [M0.RackV])       <- check frack [pver] (Proxy :: Proxy M0.Rack)
      (enclsv :: [M0.EnclosureV])  <- check fenc racksv  (Proxy :: Proxy M0.Enclosure)
      (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
      void $ (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
-     where 
+     where
        check :: forall a b c . (G.Relation M0.IsParentOf a b, G.Relation M0.IsRealOf c b)
              => Word32 -> [a] -> Proxy c -> Either M0.PVer [b]
        check limit objects Proxy = do
          let next   = (\o -> G.connectedTo o M0.IsParentOf rg :: [b]) =<< objects
-         let broken = genericLength [ () 
+         let broken = genericLength [ ()
                                     | n     <- next
                                     , realm <- G.connectedFrom M0.IsRealOf n rg :: [c]
                                     , M0.M0_NC_FAILED == M0.getConfObjState pver rg
@@ -326,19 +323,19 @@ diskFixesPVer = StateCascadeRule
                                  return pver
             in lefts $ map (checkBroken rg) pvers)
   (const)
-  where 
+  where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
    checkBroken rg (pver@(M0.PVer _ [_, frack, fenc, fctrl, fdisk] _)) = do
      (racksv :: [M0.RackV])       <- check frack [pver] (Proxy :: Proxy M0.Rack)
      (enclsv :: [M0.EnclosureV])  <- check fenc racksv  (Proxy :: Proxy M0.Enclosure)
      (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
      void $ (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
-     where 
+     where
        check :: forall a b c . (G.Relation M0.IsParentOf a b, G.Relation M0.IsRealOf c b)
              => Word32 -> [a] -> Proxy c -> Either M0.PVer [b]
        check limit objects Proxy = do
          let next   = (\o -> G.connectedTo o M0.IsParentOf rg :: [b]) =<< objects
-         let broken = genericLength [ () 
+         let broken = genericLength [ ()
                                     | n     <- next
                                     , realm <- G.connectedFrom M0.IsRealOf n rg :: [c]
                                     , M0.M0_NC_ONLINE == M0.getConfObjState pver rg
