@@ -30,7 +30,7 @@ import           HA.Services.Mero.CEP (meroChannel)
 import           Mero.ConfC (Fid(..), ServiceType(..))
 import           Network.CEP
 
-import           Control.Applicative ((<|>))
+import           Control.Applicative
 import           Control.Category
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
@@ -89,7 +89,33 @@ ruleClusterStatus :: Definitions LoopState ()
 ruleClusterStatus = defineSimple "cluster-status-request"
   $ \(HAEvent eid  (ClusterStatusRequest ch) _) -> do
       rg <- getLocalGraph
-      liftProcess $ sendChan ch . listToMaybe $ G.connectedTo R.Cluster R.Has rg
+      profile <- getProfile
+      filesystem <- getFilesystem
+      repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairInformation p) =<< getPool
+      let status = listToMaybe $ G.connectedTo R.Cluster R.Has rg
+      hosts <- forM (G.connectedTo R.Cluster R.Has rg) $ \host -> do
+            let nodes = G.connectedTo host R.Runs rg :: [M0.Node]
+            let node_st = maybe M0.M0_NC_UNKNOWN (flip M0.getState rg) $ listToMaybe nodes
+            prs <- forM nodes $ \node -> do
+                     processes <- getChildren node
+                     forM processes $ \process -> do
+                       let st = M0.getState process rg 
+                       services <- getChildren process
+                       return (process, ReportClusterProcess st services) 
+            let go (msdev::Maybe M0.SDev) = msdev >>= \sdev ->
+                 let st = M0.getState sdev rg
+                 in if st == M0.M0_NC_ONLINE
+                    then Nothing
+                    else Just (sdev, st)
+            devs <- fmap (\x -> mapMaybe go x) . traverse lookupStorageDeviceSDev
+                      =<< findHostStorageDevices host
+            return (host, ReportClusterHost node_st (join prs) devs)
+      liftProcess $ sendChan ch $ ReportClusterState
+        { csrStatus = status
+        , csrSNS    = repairs
+        , csrInfo   = (liftA2 (,) profile filesystem)
+        , csrHosts  = hosts
+        }
       messageProcessed eid
 
 -- | Request cluster to bootstrap.

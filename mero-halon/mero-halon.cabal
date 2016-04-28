@@ -229,6 +229,7 @@ Executable halonctl
   Other-Extensions:   CPP
   if flag(mero)
     CPP-Options:    -DUSE_MERO
+    Build-Depends:    confc
   if flag(rpc)
       CPP-Options:    -DUSE_RPC
   Build-Depends:      halon,

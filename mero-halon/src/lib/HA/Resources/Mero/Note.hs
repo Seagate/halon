@@ -44,7 +44,6 @@ import Data.Proxy (Proxy(..))
 import Data.Word ( Word64 )
 
 import GHC.Generics (Generic)
-import GHC.StaticPtr
 
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -84,6 +83,15 @@ data ConfObjectState
 
 instance Binary ConfObjectState
 instance Hashable ConfObjectState
+
+prettyConfObjState :: ConfObjectState -> String
+prettyConfObjState M0_NC_UNKNOWN   = "N/A"
+prettyConfObjState M0_NC_ONLINE    = "online"
+prettyConfObjState M0_NC_FAILED    = "failed"
+prettyConfObjState M0_NC_TRANSIENT = "transient"
+prettyConfObjState M0_NC_REPAIR    = "repair"
+prettyConfObjState M0_NC_REPAIRED  = "repaired"
+prettyConfObjState M0_NC_REBALANCE = "rebalance"
 
 -- | Marker for the principal RM service
 data PrincipalRM = PrincipalRM

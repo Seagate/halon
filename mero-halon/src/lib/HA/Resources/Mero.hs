@@ -2,6 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE PackageImports             #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
 
 -- Copyright : (C) 2015 Seagate Technology Limited.
@@ -30,6 +31,7 @@ import Mero.ConfC
   , ServiceType
   )
 
+import Data.Aeson
 import Data.Binary (Binary(..))
 import Data.Bits
 import qualified Data.ByteString as BS
@@ -42,9 +44,7 @@ import Data.Word ( Word32, Word64 )
 import GHC.Generics (Generic)
 import qualified "distributed-process-scheduler" System.Clock as C
 
-import Data.Maybe (fromMaybe, listToMaybe)
-import qualified Data.Map as Map
-import Data.Monoid
+import Data.Maybe (listToMaybe)
 import Data.UUID (UUID)
 import qualified HA.ResourceGraph as G
 --------------------------------------------------------------------------------
@@ -404,6 +404,16 @@ data ProcessState =
 instance Binary ProcessState
 instance Hashable ProcessState
 
+prettyProcessState :: ProcessState -> String
+prettyProcessState PSUnknown = "N/A"
+prettyProcessState PSOffline = "offline"
+prettyProcessState PSStarting = "starting"
+prettyProcessState PSOnline   = "online"
+prettyProcessState PSStopping = "stopping"
+prettyProcessState (PSFailed reason) = "failed (" ++ reason ++ ")"
+prettyProcessState (PSInhibited st) = "inhibited (" ++ prettyProcessState st ++ ")"
+
+
 -- | Label to attach to a Mero process providing extra context about how
 --   it should run.
 data ProcessLabel =
@@ -430,6 +440,16 @@ data MeroClusterState =
   deriving (Eq,Show, Typeable, Generic)
 instance Binary MeroClusterState
 instance Hashable MeroClusterState
+
+prettyStatus :: MeroClusterState -> String
+prettyStatus MeroClusterStopped = "stopped"
+prettyStatus (MeroClusterStarting (BootLevel i)) = "starting (bootlevel " ++ show i ++ ")"
+prettyStatus (MeroClusterStopping (BootLevel i)) = "stopping (bootlevel " ++ show i ++ ")"
+prettyStatus MeroClusterRunning = "running"
+prettyStatus MeroClusterFailed = "failed"
+
+instance ToJSON MeroClusterState where
+  toJSON = toJSON . prettyStatus
 
 instance Ord MeroClusterState where
    compare MeroClusterRunning MeroClusterRunning = EQ

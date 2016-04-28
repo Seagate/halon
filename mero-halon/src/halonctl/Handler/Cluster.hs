@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP        #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -18,16 +19,19 @@ import qualified HA.Resources.Castor.Initial as CI
 #ifdef USE_MERO
 import qualified Data.ByteString as BS
 import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
-
+import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
+import qualified HA.Resources.Castor as Castor
 import HA.RecoveryCoordinator.Events.Castor.Cluster
-import Options.Applicative ((<>), (<|>))
-#else
-import Options.Applicative ((<>))
+
+import Mero.ConfC (ServiceType(..), fidToStr)
 #endif
 
+import Data.Foldable
+import Options.Applicative
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
-import Control.Monad (void)
+import Control.Monad (void, unless)
 
 import Data.Yaml
   ( prettyPrintParseException
@@ -69,9 +73,9 @@ cluster nids (LoadData l) = dataLoad nids l
 #ifdef USE_MERO
 cluster nids (Sync _) = syncToConfd nids
 cluster nids (Dump s) = dumpConfd nids s
-cluster nids (Status _) = clusterCommand nids ClusterStatusRequest
-cluster nids (Start _)  = clusterCommand nids ClusterStartRequest
-cluster nids (Stop  _)  = clusterCommand nids ClusterStopRequest
+cluster nids (Status _) = clusterCommand nids ClusterStatusRequest (liftIO . prettyReport)
+cluster nids (Start _)  = clusterCommand nids ClusterStartRequest (liftIO . print)
+cluster nids (Stop  _)  = clusterCommand nids ClusterStopRequest (liftIO . print)
 #endif
 
 data LoadOptions = LoadOptions
@@ -163,12 +167,45 @@ dumpConfd eqnids (DumpOptions fn) = do
 clusterCommand :: (Serializable a, Serializable b, Show b)
                => [NodeId]
                -> (SendPort b -> a)
+               -> (b -> Process ())
                -> Process ()
-clusterCommand eqnids mk = do
+clusterCommand eqnids mk output = do
   (schan, rchan) <- newChan
   promulgateEQ eqnids (mk schan) >>= flip withMonitor wait
-  liftIO . print =<< receiveChan rchan
+  output =<< receiveChan rchan
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 
+prettyReport :: ReportClusterState -> IO ()
+prettyReport (ReportClusterState status sns info' hosts) = do
+  putStrLn $ "Cluster is " ++ maybe "N/A" M0.prettyStatus status
+  case info' of
+    Nothing -> putStrLn "cluster information is not available, load initial data.."
+    Just (M0.Profile pfid, M0.Filesystem ffid _)  -> do
+      putStrLn   "  cluster info:"
+      putStrLn $ "    profile:    " ++ fidToStr pfid
+      putStrLn $ "    filesystem: " ++ fidToStr ffid
+      unless (null sns) $ do
+         putStrLn $ "    sns repairs:"
+         forM_ sns $ \(M0.Pool pool_fid, s) -> do
+           putStrLn $ "      " ++ fidToStr pool_fid ++ ":" 
+           forM_ (M0.priStateUpdates s) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
+             putStrLn $ "        " ++ fidToStr sdev_fid ++ " -> " ++ sdev_path
+      putStrLn $ "Hosts:"
+      forM_ hosts $ \(Castor.Host qfdn, ReportClusterHost st ps sdevs) -> do
+         putStrLn $ "  " ++ qfdn ++ " ["++ M0.prettyConfObjState st ++ "]"
+         forM_ ps $ \(M0.Process{r_fid=rfid, r_endpoint=endpoint}, ReportClusterProcess proc_st srvs) -> do
+           putStrLn $ "    " ++ "[" ++ M0.prettyProcessState proc_st ++ "]\t" 
+                             ++ endpoint ++ "\t" ++ inferType srvs ++ "\t==> " ++ fidToStr rfid
+         unless (null sdevs) $ do
+           putStrLn "    Devices:"
+           forM_ sdevs $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path}, sdev_st) -> do
+             putStrLn $ "        " ++ fidToStr sdev_fid ++ "\tat " ++ sdev_path ++ "\t[" ++ M0.prettyConfObjState sdev_st ++ "]"
+   where
+     inferType srvs
+       | any (\(M0.Service _ t _ _) -> t == CST_IOS) srvs = "ioservice"
+       | any (\(M0.Service _ t _ _) -> t == CST_MDS) srvs = "mdservice"
+       | any (\(M0.Service _ t _ _) -> t == CST_MGS) srvs = "confd    "
+       | any (\(M0.Service _ t _ _) -> t == CST_HA)  srvs = "halon    "
+       | otherwise                                        = "m0t1fs   "
 #endif
