@@ -18,12 +18,12 @@
 module HA.RecoveryCoordinator.Rules.Castor where
 
 import Control.Distributed.Process
-import HA.EventQueue.Types
 
+import HA.Encode (decodeP)
+import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Events.Drive
-
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
@@ -74,6 +74,7 @@ castorRules = sequence_
 #ifdef USE_MERO
   , setStateChangeHandlers
   , ruleMeroNoteSet
+  , ruleInternalStateChangeHandler
   , ruleGetEntryPoint
   , ruleResetAttempt
   , ruleRebalanceStart
@@ -141,12 +142,22 @@ ruleMeroNoteSet = do
   defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> do
     phaseLog "info" $ "Received " ++ show (Set ns)
     mhandlers <- getStorageRC
-    traverse_ (traverse_ ($ Set ns) . getExternalNotificationHandlers) mhandlers 
+    traverse_ (traverse_ ($ Set ns) . getExternalNotificationHandlers) mhandlers
     messageProcessed uid
 
   querySpiel
   querySpielHourly
 
+ruleInternalStateChangeHandler :: Definitions LoopState ()
+ruleInternalStateChangeHandler = do
+  defineSimpleTask "internal-state-change-controller" $ \(HAEvent _ msg _) ->
+    liftProcess (decodeP msg) >>= \(InternalObjectStateChange changes) -> let
+        s = Set $ extractNote <$> changes
+        extractNote (AnyStateChange a old new _) =
+          Note (M0.fid a) (toConfObjState a new)
+      in do
+        mhandlers <- getStorageRC
+        traverse_ (traverse_ ($ s) . getInternalNotificationHandlers) mhandlers
 #endif
 
 data CommitDriveRemoved = CommitDriveRemoved NodeId InterestingEventMessage UUID
