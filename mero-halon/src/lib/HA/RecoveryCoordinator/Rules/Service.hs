@@ -46,7 +46,7 @@ serviceBootStarted :: HAEvent ServiceStartedMsg
                    -> ServiceBoot
                    -> Process (Maybe (HAEvent ServiceStartedMsg))
 serviceBootStarted evt@(HAEvent _ msg _) ls l@(Starting _ _ _ psvc pid) = do
-    res <- notHandled evt ls l
+    res <- isNotHandled evt ls l
     case res of
       Nothing -> return Nothing
       Just _  -> do
@@ -89,7 +89,7 @@ serviceBootCouldNotStart :: HAEvent ServiceCouldNotStartMsg
                    -> ServiceBoot
                    -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
 serviceBootCouldNotStart evt@(HAEvent _ msg _) ls l@(Starting _ nd _ psvc _) = do
-    res <- notHandled evt ls l
+    res <- isNotHandled evt ls l
     case res of
       Nothing -> return Nothing
       Just _  -> do
@@ -107,7 +107,7 @@ serviceStarted :: HAEvent ServiceStartedMsg
                -> Maybe (UUID, Node, ServiceName, Int)
                -> Process (Maybe (HAEvent ServiceStartedMsg))
 serviceStarted evt@(HAEvent _ msg _) ls l@(Just (_, n1, sname, _)) = do
-    res <- notHandled evt ls l
+    res <- isNotHandled evt ls l
     case res of
       Nothing -> return Nothing
       Just _  -> do
@@ -125,7 +125,7 @@ serviceCouldNotStart :: HAEvent ServiceCouldNotStartMsg
                      -> Maybe (UUID, Node, ServiceName, Int)
                      -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
 serviceCouldNotStart evt@(HAEvent _ msg _) ls l@(Just (_, n1, sname, _)) = do
-    res <- notHandled evt ls l
+    res <- isNotHandled evt ls l
     case res of
       Nothing -> return Nothing
       Just _  -> do
@@ -151,8 +151,8 @@ serviceRules argv = do
 
     directly ph0 $ switch [ph1, ph1', ph2']
 
-    setPhaseIf ph1 notHandled $ \(HAEvent uuid msg _) -> do
-      startProcessingMsg uuid
+    setPhaseIf ph1 isNotHandled $ \(HAEvent uuid msg _) -> do
+      todo uuid
       ServiceStartRequest sstart n@(Node nid) svc conf lis <- decodeMsg msg
       phaseLog "input" $ unwords [ "ServiceStartRequest:"
                                  , "name=" ++ (snString $ serviceName svc)
@@ -182,25 +182,22 @@ serviceRules argv = do
                                     , "already running on"
                                     , show nid]
           liftProcess $ mapM_ (flip usend AlreadyRunning) lis
-          finishProcessingMsg uuid
-          messageProcessed uuid
+          done uuid
         (True, Nothing, HA.Service.Restart) -> do
           phaseLog "info" $ unwords [ snString $ serviceName svc
                                     , "not already running on"
                                     , show nid]
           liftProcess $ mapM_ (flip usend NotAlreadyRunning) lis
-          finishProcessingMsg uuid
-          messageProcessed uuid
+          done uuid
         (False, _, _) -> do
           phaseLog "info" $ unwords [ "Cannot start service on unknown node:"
                                     , show nid
                                     ]
           liftProcess $ mapM_ (flip usend NodeUnknown) lis
-          finishProcessingMsg uuid
-          messageProcessed uuid
+          done uuid
 
-    setPhaseIf ph1' notHandled $ \(HAEvent uuid msg _) -> do
-      startProcessingMsg uuid
+    setPhaseIf ph1' isNotHandled $ \(HAEvent uuid msg _) -> do
+      todo uuid
       ServiceFailed n svc pid <- decodeMsg msg
       res                     <- lookupRunningService n svc
       phaseLog "input" $ unwords [ "ServiceFailed:"
@@ -221,7 +218,7 @@ serviceRules argv = do
     -- message outside of the ServiceStart procedure. In this case the
     -- best we could do is to consult resource graph and check if we need
     -- this service running or not and proceed evaluation.
-    setPhaseIf ph2' notHandled $ \(HAEvent uuid msg _) -> do
+    setPhaseIf ph2' isNotHandled $ \(HAEvent uuid msg _) -> do
       ServiceStarted n@(Node nodeId) svc cfg sp@(ServiceProcess spid)
         <- decodeMsg msg
       phaseLog "input" $ unwords [ "ServiceStarted:"
@@ -286,9 +283,8 @@ serviceRules argv = do
                           ++ " started"
                          )
 
-      finishProcessingMsg thread
+      done thread
       messageProcessed uuid
-      messageProcessed thread
       liftProcess $ sayRC $
         "started " ++ snString (serviceName svc) ++ " service on " ++
         show (processNodeId spid)

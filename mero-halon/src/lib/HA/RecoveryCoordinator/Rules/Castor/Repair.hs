@@ -158,12 +158,9 @@ querySpiel = define "query-spiel" $ do
   runQuery <- phaseHandle "run-query"
 
   setPhase dispatchQuery $ \(HAEvent uid (SpielQuery pool prt ruuid) _) -> do
-    startProcessingMsg uid
     put Local $ Just (uid, pool, prt, ruuid)
     getPoolRepairInformation pool >>= \case
-      Nothing -> do
-        unsetPoolRepairStatusWithUUID pool ruuid
-        messageProcessed uid
+      Nothing -> unsetPoolRepairStatusWithUUID pool ruuid
       Just pri -> do
         timeNow <- liftIO getTime
         let elapsed = timeNow - priTimeOfFirstCompletion pri

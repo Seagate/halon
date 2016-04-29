@@ -152,8 +152,8 @@ ruleNodeUp argv = define "node-up" $ do
       nm_reply    <- phaseHandle "regular_monitor_reply"
       end         <- phaseHandle "end"
 
-      setPhaseIf nodeup notHandled $ \(HAEvent uuid (NodeUp h pid) _) -> do
-        startProcessingMsg uuid
+      setPhaseIf nodeup isNotHandled $ \(HAEvent uuid (NodeUp h pid) _) -> do
+        todo uuid
         let nid  = processNodeId pid
             node = Node nid
         liftProcess . sayRC $ "New node contacted: " ++ show nid
@@ -197,8 +197,7 @@ ruleNodeUp argv = define "node-up" $ do
                 continue nodeup
               Just _  -> do liftProcess . sayRC $ "node is already provisioned: " ++ show nid
                             ack pid
-                            messageProcessed uuid
-                            finishProcessingMsg uuid
+                            done uuid
                             continue nodeup
 
       directly nm_start $ do
@@ -246,7 +245,7 @@ ruleNodeUp argv = define "node-up" $ do
              phaseLog "info" "Configuration data was not loaded yet, skipping"
            Just{} -> sendNewMeroNodeMsg
 #endif
-        finishProcessingMsg uuid
+        done uuid
         continue end
 
       setPhaseIf nm_failed serviceBootCouldNotStart $
@@ -256,7 +255,7 @@ ruleNodeUp argv = define "node-up" $ do
           "failed " ++ snString (serviceName svc) ++ " service on the node " ++ show n
         messageProcessed msgid
         Starting uuid _ _ _ _ <- get Local
-        finishProcessingMsg uuid
+        done uuid
         continue end  -- XXX: retry on timeout from nm start
 
       directly end stop
@@ -314,7 +313,7 @@ ruleRecoverNode argv = define "recover-node" $ do
       finalize_rule <- phaseHandle "finalize_rule"
 
       setPhase start_recover $ \(RecoverNode uuid n1) -> do
-        startProcessingMsg uuid
+        todo uuid
         g <- getLocalGraph
 
         case listToMaybe (G.connectedFrom Runs n1 g) of
@@ -350,7 +349,7 @@ ruleRecoverNode argv = define "recover-node" $ do
 
       let ackMsg m = if Data.UUID.null m
                      then return ()
-                     else finishProcessingMsg m >> messageProcessed m
+                     else done m
 
       directly try_recover $ do
         get Local >>= \case

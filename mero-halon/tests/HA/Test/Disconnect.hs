@@ -66,9 +66,7 @@ remotableDecl [ [d|
     where
       rcDeathRules :: [Definitions LoopState ()]
       rcDeathRules = return $ defineSimple "rc-with-death" $ \(HAEvent uuid KillRC _) -> do
-        startProcessingMsg uuid
         liftProcess $ say "RC death requested from Disconnect.hs:rcDeathRules"
-        finishProcessingMsg uuid
         messageProcessed uuid
         error "RC death requested from Disconnect.hs:rcDeathRules"
   |]]

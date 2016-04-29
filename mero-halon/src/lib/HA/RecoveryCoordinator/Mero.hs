@@ -35,11 +35,7 @@ module HA.RecoveryCoordinator.Mero
        , lookupDLogServiceProcess
        , sendToMonitor
        , sendToMasterMonitor
-       , handled
-       , startProcessingMsg
-       , finishProcessingMsg
        , loadNodeMonitorConf
-       , notHandled
        , buildRCState
        , timeoutHost
        ) where
@@ -99,20 +95,6 @@ data GetMultimapProcessId =
     GetMultimapProcessId ProcessId deriving (Typeable, Generic)
 
 instance Binary GetMultimapProcessId
-
-notHandled :: HAEvent a -> LoopState -> l -> Process (Maybe (HAEvent a))
-notHandled evt@(HAEvent eid _ _) ls _
-    | Map.member eid $ lsRefCount ls = return Nothing
-    | otherwise = return $ Just evt
-
-handled :: HAEvent a -> PhaseM LoopState l ()
-handled (HAEvent eid _ _) = done eid
-
-finishProcessingMsg :: UUID -> PhaseM LoopState l ()
-finishProcessingMsg = done
-
-startProcessingMsg :: UUID -> PhaseM LoopState l ()
-startProcessingMsg = todo
 
 -- | Notify mero about the node being considered down and set the
 -- appropriate host attributes.

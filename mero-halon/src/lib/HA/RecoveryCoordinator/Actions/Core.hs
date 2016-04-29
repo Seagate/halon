@@ -36,6 +36,7 @@ module HA.RecoveryCoordinator.Actions.Core
     -- $multi-receiver
   , todo
   , done
+  , isNotHandled
   , defineSimpleTask
     -- * Lifted functions in PhaseM
   , decodeMsg
@@ -260,12 +261,13 @@ unsafePromulgateRC msg callback = liftProcess $ do
 -- $multi-receiver
 -- Sometimes message may be wanted by many rules, in that case, it's not correct to
 -- acknowledge message processing until all rules have processed message. In order to
--- solve that 'todo'/'done' framework was added. It allow to mark message as needed,
--- and message will be acknowledged only when all rules have processed that message.
+-- solve that 'todo'/'done' framework was added. It allows marking message as needed
+-- by the rule such message will be acknowledged only when all interested rules have
+-- processed that message.
 --
 -- Currently there is a caveat because of possible race condition between rule marking
--- message as 'done' and another 'rule' that is marking message as 'todo'. In order to
--- make partially remove this race following rule was introduced:
+-- message as 'done' and another rule that is marking message as 'todo'. In order to
+-- partially remove this race following rule was introduced:
 --   * Message is acknowledged if no rule is interested in message (all rules that call
 --     'todo' called 'done' also) and there were enough steps done, currently 10.
 --
@@ -293,10 +295,20 @@ done uuid = do
   st <- get Global
   put Global st{ lsRefCount = Map.insertWith (flip (-)) uuid 1 (lsRefCount st)}
 
--- | Wrap rule in 'todo' and 'done' calls
+-- | Check if no rule is already working on this message. Returns event if no
+-- other rule is processing it, or processed not longer than 10 steps ago,
+-- othwewise returns @Nothing@. This method is intended to be as a predicate
+-- in 'setPhaseIf' family of functions.
+isNotHandled :: HAEvent a -> LoopState -> l -> Process (Maybe (HAEvent a))
+isNotHandled evt@(HAEvent eid _ _) ls _
+    | Map.member eid $ lsRefCount ls = return Nothing
+    | otherwise = return $ Just evt
+
+-- | Wrap rule in 'todo' and 'done' calls. User should not mark message as
+-- processed on it's own.
 defineSimpleTask :: Serializable a
                  => String
-                 -> (forall l . HAEvent a -> PhaseM LoopState l ())
+                 -> (forall l . a -> PhaseM LoopState l ())
                  -> Specification LoopState ()
-defineSimpleTask n f = defineSimple n $ \a@(HAEvent uuid _ _) ->
+defineSimpleTask n f = defineSimple n $ \(HAEvent uuid a _) ->
    todo uuid >> f a >> done uuid
