@@ -50,23 +50,22 @@ import qualified SSPL.Bindings as SSPL
 import           Test.Framework
 import           Test.Tasty.HUnit (assertBool, assertEqual, testCase)
 import           TestRunner
-import           Helper.Environment (systemHostname)
+import           Helper.Environment
 #ifdef USE_MERO
 import           Control.Category ((>>>))
 import           Data.Function (on)
 import           Data.List (sortBy, sort)
 import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd, validateTransactionCache)
-import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.Services.Mero
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import qualified Helper.InitialData
 import           Mero.Notification
 import           Mero.Notification.HAState
-import           Helper.Environment
 import qualified Data.UUID as UUID
 import           HA.Service
 #endif
+
 
 tests :: String -> Transport -> [TestTree]
 tests host transport =
@@ -295,7 +294,7 @@ testRCsyncToConfd transport = do
     "InitialLoad" :: String <- expect
 
     let mockMeroConf = MeroConf (testListenName++"@tcp:12345:34:101") "<p|1:1>" (MeroKernelConf UUID.nil)
-    promulgateEQ [nid] $ encodeP $ ServiceStartRequest Start (Node nid) m0d mockMeroConf [self]
+    _ <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest Start (Node nid) m0d mockMeroConf [self]
     _ <- receiveTimeout 1000000 []
 
     promulgateEQ [nid] SpielSync >>= flip withMonitor wait

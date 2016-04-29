@@ -46,14 +46,14 @@ import Control.Monad (join)
 import Control.Monad.Fix (fix)
 
 import Data.Constraint (Dict)
-import Data.Foldable (forM_, traverse_)
+import Data.Foldable (forM_)
 import Data.Monoid
 import Data.Typeable
 import Data.List (nub, genericLength)
 import Data.Either (lefts)
 import Data.Functor (void)
 import Data.Word
-import Control.Monad (when, guard, void)
+import Control.Monad (when, guard)
 
 import Network.CEP
 
@@ -297,14 +297,14 @@ diskFailsPVer = StateCascadeRule
      (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
      void $ (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
      where
-       check :: forall a b c . (G.Relation M0.IsParentOf a b, G.Relation M0.IsRealOf c b)
+       check :: forall a b c . (G.Relation M0.IsParentOf a b, G.Relation M0.IsRealOf c b, M0.HasConfObjectState c)
              => Word32 -> [a] -> Proxy c -> Either M0.PVer [b]
        check limit objects Proxy = do
          let next   = (\o -> G.connectedTo o M0.IsParentOf rg :: [b]) =<< objects
-         let broken = genericLength [ ()
+         let broken = genericLength [ realm
                                     | n     <- next
                                     , realm <- G.connectedFrom M0.IsRealOf n rg :: [c]
-                                    , M0.M0_NC_FAILED == M0.getConfObjState pver rg
+                                    , M0.M0_NC_FAILED == M0.getConfObjState realm rg
                                     ]
          when (broken > limit) $ Left pver
          return next
@@ -331,14 +331,14 @@ diskFixesPVer = StateCascadeRule
      (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
      void $ (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
      where
-       check :: forall a b c . (G.Relation M0.IsParentOf a b, G.Relation M0.IsRealOf c b)
+       check :: forall a b c . (G.Relation M0.IsParentOf a b, G.Relation M0.IsRealOf c b, M0.HasConfObjectState c)
              => Word32 -> [a] -> Proxy c -> Either M0.PVer [b]
        check limit objects Proxy = do
          let next   = (\o -> G.connectedTo o M0.IsParentOf rg :: [b]) =<< objects
-         let broken = genericLength [ ()
+         let broken = genericLength [ realm
                                     | n     <- next
                                     , realm <- G.connectedFrom M0.IsRealOf n rg :: [c]
-                                    , M0.M0_NC_ONLINE == M0.getConfObjState pver rg
+                                    , M0.M0_NC_ONLINE == M0.getConfObjState realm rg
                                     ]
          when (broken <= limit) $ Left pver
          return next

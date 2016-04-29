@@ -49,7 +49,6 @@ import Control.Distributed.Process
   )
 import Control.Monad (void)
 
-import Data.Aeson
 import Data.Aeson.Encode.Pretty
 import Data.Binary
   ( Binary )

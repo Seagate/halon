@@ -8,7 +8,6 @@ module HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic where
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
 import qualified HA.ResourceGraph as G
 import           HA.Resources
-import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0

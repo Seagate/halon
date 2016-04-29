@@ -406,7 +406,7 @@ ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid
              forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(_, status, serial) ->
                case status of
                  StorageDeviceStatus "HALON-FAILED" reason -> do
-                   sendNodeCmd nid Nothing (DriveLed (T.pack serial) FaultOn)
+                   _ <- sendNodeCmd nid Nothing (DriveLed (T.pack serial) FaultOn)
                    sendLoggingCmd host $ mkDiskLoggingCmd (T.pack "HALON-FAILED")
                                                           (T.pack serial)
                                                           (T.pack reason)
@@ -515,7 +515,7 @@ updateDriveManagerWithFailure disk st reason = do
     Just sn -> do
       rg <- getLocalGraph
       withHost rg disk $ \host -> do
-        sendLedUpdate DrivePermanentlyFailed host (T.pack sn)
+        _ <- sendLedUpdate DrivePermanentlyFailed host (T.pack sn)
         sendLoggingCmd host $ mkDiskLoggingCmd (T.pack st)
                                                (T.pack sn)
                                                (maybe "unknown reason" T.pack reason)
