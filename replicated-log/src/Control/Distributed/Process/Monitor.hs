@@ -33,7 +33,8 @@ import Control.Monad.Catch
 -- | Runs the given action, but returns 'Nothing' if monitoring
 -- produces a notification.
 --
--- See 'monitorLog'.
+-- TODO: Don't leak ProcessLinkExceptions to the caller when this
+-- call is interrupted.
 --
 withMonitoring :: Process MonitorRef -> Process b -> Process (Maybe b)
 withMonitoring mon action = do
@@ -45,9 +46,8 @@ withMonitoring mon action = do
         [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
                   $ const (return ())
         ]
-    bracket_ (link pid) (unlink pid >> exit pid "withMonitoring finished") $ do
-      receiveChan rp
-      fmap Just action
+    do bracket_ (link pid) (unlink pid >> exit pid "withMonitoring finished") $
+         receiveChan rp >> fmap Just action
      `catch` \e@(ProcessLinkException pid' _ ) ->
         if pid == pid'
           then return Nothing
