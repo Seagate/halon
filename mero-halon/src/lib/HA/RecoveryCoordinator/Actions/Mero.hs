@@ -233,14 +233,23 @@ startNodeProcesses host (TypedChannel chan) label mkfs = do
                  , let b = not $ G.isConnected p Is M0.ProcessBootstrapped rg
                  ]
     phaseLog "processes" $ show (fmap (M0.fid.fst) procs)
+
+    let ps' = map (\p -> (p, (G.connectedTo (fst p) M0.IsParentOf rg :: [M0.Service]))) procs
+    phaseLog "debug" $ "Starting the procs with following services: " ++ show ps'
+
     unless (null procs) $ do
       msg <- StartProcesses <$> case (label, mkfs) of
               (M0.PLM0t1fs, _) -> forM procs $ (\(proc,_) -> ([M0T1FS],) <$> runConfig proc rg)
               (_, True) -> forM procs $ (\(proc,b) -> ((if b then (M0MKFS:) else id) [M0D],) <$> runConfig proc rg)
               (_, False) -> forM procs $ (\(proc,_) -> ([M0D],) <$> runConfig proc rg)
+      forM_ procs $ \(p, _) -> do
+        modifyLocalGraph $ \rg ->  do
+          rg' <- return $ G.connectUniqueFrom p Is M0.PSStarting rg
+          let srvs = G.connectedTo p M0.IsParentOf rg :: [M0.Service]
+          return $ foldr (\s -> G.connectUniqueFrom s Is M0.M0_NC_TRANSIENT) rg' srvs
+
       liftProcess $ sendChan chan msg
-      forM_ procs $ \(p, _) -> modifyGraph
-        $ G.connectUniqueFrom p Is M0.PSStarting
+
     return $ fst <$> procs
   where
     runConfig proc rg = case runsMgs proc rg of
@@ -249,8 +258,7 @@ startNodeProcesses host (TypedChannel chan) label mkfs = do
       False -> return $ ProcessConfigRemote (M0.fid proc) (M0.r_endpoint proc)
     runsMgs proc rg =
       not . null $ [ () | M0.Service{ M0.s_type = CST_MGS }
-                          <- G.connectedTo proc M0.IsParentOf rg
-                   ]
+                          <- G.connectedTo proc M0.IsParentOf rg ]
 
 stopNodeProcesses :: Castor.Host
                   -> TypedChannel ProcessControlMsg

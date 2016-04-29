@@ -470,11 +470,14 @@ instance Ord MeroClusterState where
                    LT -> GT
                    EQ -> EQ
 
--- | Message sent when mero service fails to come up, failing bootstrap.
-newtype BootstrapFailedNotification = BootstrapFailedNotification String
+-- | A message we can use to notify rule listeners about a failed
+-- process. Useful for sending information that something is wrong
+-- from handlers/services.
+newtype ProcessFailedNotification = ProcessFailedNotification String
   deriving(Eq, Show, Typeable, Generic)
-instance Binary BootstrapFailedNotification
-instance Hashable BootstrapFailedNotification
+
+instance Binary ProcessFailedNotification
+instance Hashable ProcessFailedNotification
 
 newtype ConfUpdateVersion = ConfUpdateVersion Word64
   deriving (Eq, Show, Typeable, Generic)

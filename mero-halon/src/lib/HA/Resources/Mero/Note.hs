@@ -199,18 +199,19 @@ instance HasConfObjectState M0.Node where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Node
 instance HasConfObjectState M0.Process where
   type StateCarrier M0.Process = M0.ProcessState
-  getState x rg = fromMaybe M0.PSUnknown . listToMaybe $ G.connectedTo x Is rg
+  -- XXX: figure out why we need PSOnline here
+  getState x rg = fromMaybe M0.PSOnline . listToMaybe $ G.connectedTo x Is rg
   setState x st = G.connectUniqueFrom x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Process
-  toConfObjState _ = const M0_NC_ONLINE
-  -- toConfObjState _ M0.PSUnknown = M0_NC_UNKNOWN
-  -- toConfObjState _ (M0.PSFailed _) = M0_NC_FAILED
-  -- toConfObjState _ M0.PSOffline = M0_NC_FAILED
-  -- toConfObjState _ M0.PSStarting = M0_NC_FAILED
-  -- toConfObjState _ M0.PSStopping = M0_NC_FAILED
-  -- toConfObjState _ M0.PSOnline = M0_NC_ONLINE
-  -- toConfObjState _ (M0.PSInhibited M0.PSOnline) = M0_NC_TRANSIENT
-  -- toConfObjState x (M0.PSInhibited y) = toConfObjState x y
+
+  toConfObjState _ M0.PSUnknown = M0_NC_UNKNOWN
+  toConfObjState _ (M0.PSFailed _) = M0_NC_FAILED
+  toConfObjState _ M0.PSOffline = M0_NC_FAILED
+  toConfObjState _ M0.PSStarting = M0_NC_FAILED
+  toConfObjState _ M0.PSStopping = M0_NC_FAILED
+  toConfObjState _ M0.PSOnline = M0_NC_ONLINE
+  toConfObjState _ (M0.PSInhibited M0.PSOnline) = M0_NC_TRANSIENT
+  toConfObjState x (M0.PSInhibited y) = toConfObjState x y
 
 instance HasConfObjectState M0.Service where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Service

@@ -34,6 +34,7 @@ import Control.Applicative
 import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
+import HA.RecoveryCoordinator.Rules.Castor.Cluster (handleServiceNotifications)
 import HA.RecoveryCoordinator.Rules.Castor.Repair
 import HA.RecoveryCoordinator.Rules.Castor.Reset
 import HA.RecoveryCoordinator.Rules.Mero.Conf
@@ -131,7 +132,8 @@ setStateChangeHandlers = do
       start setThem ()
   where
     stateChangeHandlersE = [
-        handleResetExternal
+        handleServiceNotifications
+      , handleResetExternal
       , handleRepairExternal
       ]
     stateChangeHandlersI = [

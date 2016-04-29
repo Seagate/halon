@@ -101,10 +101,6 @@ sendMeroChannel cn cc = do
               (ServiceProcess pid) (TypedChannel cn) (TypedChannel cc)
   void $ promulgate chan
 
--- | Tell the RC that something has failed
-notifyBootstrapFailure :: String -> Process ()
-notifyBootstrapFailure = void . promulgate . M0.BootstrapFailedNotification
-
 statusProcess :: RPC.ServerEndpoint
               -> ProcessId
               -> ReceivePort NotificationMessage
@@ -113,7 +109,8 @@ statusProcess ep pid rp = do
     -- TODO: When mero can handle exceptions caught here, report them to the RC.
     link pid
     forever $ do
-      NotificationMessage set addrs subs <- receiveChan rp
+      msg@(NotificationMessage set addrs subs) <- receiveChan rp
+      say $ "statusProcess: notification msg received: " ++ show msg
       forM_ addrs $ \addr ->
         let logError e =
               traceM0d $ "statusProcess: notifyMero failed: " ++ show (pid, addr, e)
@@ -277,7 +274,8 @@ remotableDecl [ [d|
           go
         ExitFailure i -> do
           traceM0d $ "Kernel module did not load correctly: " ++ show i
-          notifyBootstrapFailure $ "mero-kernel service failed to start: " ++ show i
+          void . promulgate . M0.ProcessFailedNotification $
+            "mero-kernel service failed to start: " ++ show i
     where
       haAddr = RPC.rpcAddress $ mcHAAddress conf
       withEp = Mero.Notification.withServerEndpoint haAddr
@@ -397,8 +395,9 @@ notifyMeroAndThen setEvent fsucc ffail = do
     sendChansBlocking chans =
       ((callLocal $ PT.timeout 1000000 $ do
           selfLocal <- getSelfPid
-          forM_ chans $ \(chan, recipients) ->
-            sendChan chan $ NotificationMessage setEvent recipients [selfLocal]
+          forM_ chans $ \(chan, recipients) -> do
+            let msg = NotificationMessage setEvent recipients [selfLocal]
+            sendChan chan msg
           forM_ chans $ const (expect :: Process NotificationAck)
        ) `onException` ffail)
       >>= maybe ffail (const fsucc)

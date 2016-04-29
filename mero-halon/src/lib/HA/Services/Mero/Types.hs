@@ -76,7 +76,7 @@ data NotificationMessage = NotificationMessage
        , notificationAckTo :: [ProcessId] -- Processes to send ack that
                                           -- notification is complete.
        }
-     deriving (Typeable, Generic)
+     deriving (Typeable, Generic, Show)
 instance Binary NotificationMessage
 instance Hashable NotificationMessage
 

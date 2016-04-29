@@ -3,14 +3,13 @@
 -- License   : All rights reserved.
 --
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StaticPointers      #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 module HA.RecoveryCoordinator.Rules.Mero.Conf
   ( DeferredStateChanges(..)
@@ -21,18 +20,23 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
   , genericApplyDeferredStateChanges
   , genericApplyStateChanges
     -- * Re-export for convenience
+  , AnyStateSet(..)
   , stateSet
     -- * Temporary functions
   , applyStateChangesBlocking
   , notifyDriveStateChange
   , ExternalNotificationHandlers(..)
   , InternalNotificationHandlers(..)
+    -- * Rule helpers
+  , setPhaseNotified
   )  where
 
-import HA.Encode (encodeP)
+import HA.Encode (decodeP, encodeP)
 import HA.EventQueue.Producer (promulgate)
-import HA.RecoveryCoordinator.Actions.Core
+import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Actions.Castor
+import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Mero.Conf
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Events.Mero
@@ -266,6 +270,33 @@ applyStateChangesBlocking ass = do
     (liftIO $ putMVar res True)
     (liftIO $ putMVar res False)
   liftIO $ takeMVar res
+
+-- | @'setPhaseNotified' handle change extract act@
+--
+-- Create a 'RuleM' with the given @handle@ that runs the given
+-- callback @act@ when internal state change notification for @change@
+-- is received: effectively inside this rule we know that we have
+-- notified mero about the change. @extract@ is used as a view from
+-- local rule state to the object we're interested in.
+setPhaseNotified :: forall b l g.
+                    (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
+                 => Jump PhaseHandle
+                 -> (l -> Maybe (b, M0.StateCarrier b))
+                 -> ((b, M0.StateCarrier b) -> PhaseM g l ())
+                 -> RuleM g l ()
+setPhaseNotified handle extract act =
+  setPhaseIf handle changeGuard act
+  where
+    extractStateSet (AnyStateChange a _ n _) = AnyStateSet a n
+
+    changeGuard :: HAEvent InternalObjectStateChangeMsg
+                -> g -> l -> Process (Maybe (b, M0.StateCarrier b))
+    changeGuard (HAEvent _ msg _) _ (extract -> Just (obj, change)) =
+      (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) -> do
+        if stateSet obj change `elem` map extractStateSet iosc
+        then return $ Just (obj, change)
+        else return Nothing
+    changeGuard _ _ l = return Nothing
 
 -- | Rule for cascading state changes
 data StateCascadeRule a b where
