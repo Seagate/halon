@@ -42,6 +42,10 @@ import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import qualified HA.RecoveryCoordinator.Rules.Castor.Repair.Internal as R
+import HA.RecoveryCoordinator.Rules.Mero.Conf
+  ( applyStateChangesBlocking
+  , stateSet
+  )
 import           HA.Services.SSPL.CEP
 import           HA.Resources
 import           HA.Resources.Castor
@@ -252,8 +256,16 @@ ruleRebalanceStart = defineSimple "castor-rebalance-start" $ \(HAEvent uuid (Poo
              then phaseLog "info" $ "Can't start rebalance, no drive to rebalance on"
              else do
               disks <- catMaybes <$> mapM lookupSDevDisk sdev_replaced
-              startRebalanceOperation pool disks
-              queryStartHandling pool
+              b <- applyStateChangesBlocking (
+                  stateSet pool M0_NC_REBALANCE
+                : ((flip stateSet $ M0_NC_REBALANCE) <$> disks)
+                )
+              if b
+              then do
+                startRebalanceOperation pool disks
+                queryStartHandling pool
+              else
+                phaseLog "error" $ "Failure notifying mero; cannot start rebalance."
        else phaseLog "info" $ "Can't start rebalance, not all drives are ready: " ++ show sdev_broken
       Just info -> phaseLog "info" $ "Pool Rep/Reb is already running: " ++ show info
     messageProcessed uuid
@@ -483,8 +495,16 @@ handleRepairInternal noteSet = do
         let maybeBeginRepair =
               if (null tr && not (null fa))
               then do phaseLog "repair" $ "Starting repair operation on " ++ show pool
-                      startRepairOperation pool
-                      queryStartHandling pool
+                      res <- applyStateChangesBlocking (
+                          stateSet pool M0_NC_REPAIR
+                        : ((flip stateSet $ M0_NC_REPAIR) <$> fa)
+                        )
+                      if res
+                      then do
+                        startRepairOperation pool
+                        queryStartHandling pool
+                      else
+                        phaseLog "error" $ "Unable to notify Mero; cannot start repair"
               else do phaseLog "repair" $ "Failed: " ++ show fa ++ ", Transient: " ++ show tr
                       maybeBeginRebalance
 
@@ -519,18 +539,25 @@ handleRepairInternal noteSet = do
           Nothing -> maybeBeginRepair
 
 checkRepairOnClusterStart :: Definitions LoopState ()
-checkRepairOnClusterStart = defineSimple "check-repair-on-start" $ \(BarrierPass x) -> do
-  when (x == MeroClusterRunning) $ do
-    pools <- getPool
-    forM_ pools $ \pool ->
-      getPoolRepairStatus pool >>= \case
-        Just _ -> return () -- Repair is already handled by another rule
-        Nothing -> do
-          tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
-          fa <- getPoolSDevsWithState pool M0_NC_FAILED
-          when (null tr && not (null fa)) $ do
+checkRepairOnClusterStart = defineSimple "check-repair-on-start" $ \(BarrierPass MeroClusterRunning) -> do
+  pools <- getPool
+  forM_ pools $ \pool ->
+    getPoolRepairStatus pool >>= \case
+      Just _ -> return () -- Repair is already handled by another rule
+      Nothing -> do
+        tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
+        fa <- getPoolSDevsWithState pool M0_NC_FAILED
+        when (null tr && not (null fa)) $ do
+          res <- applyStateChangesBlocking (
+              stateSet pool M0_NC_REPAIR
+            : ((flip stateSet $ M0_NC_REPAIR) <$> fa)
+            )
+          if res
+          then do
             startRepairOperation pool
             queryStartHandling pool
+          else
+            phaseLog "error" $ "Unable to notify Mero; cannot start repair"
 
 -- | We have received information about a pool state change (as well
 -- as some devices) so handle this here. Such a notification is likely
