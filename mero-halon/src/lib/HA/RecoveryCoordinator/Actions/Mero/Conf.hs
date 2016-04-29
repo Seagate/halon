@@ -288,7 +288,9 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
       , _pa_seed = Word128 101 101
     }
     pver = PoolVersion fids failures attrs
-  in modifyGraph $ createPoolVersionsInPool fs mdpool [pver] False
+  in do
+    phaseLog "info" $ "Creating PVer in metadata pool: " ++ show pver
+    modifyGraph $ createPoolVersionsInPool fs mdpool [pver] False
 --------------------------------------------------------------------------------
 -- Querying conf in RG
 --------------------------------------------------------------------------------
