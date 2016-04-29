@@ -82,6 +82,8 @@ data AnyStateSet =
   forall a. HasConfObjectState a => AnyStateSet a (StateCarrier a)
   deriving Typeable
 
+instance Eq AnyStateSet
+
 -- | Create a state 'set' request.
 stateSet :: HasConfObjectState a
          => a

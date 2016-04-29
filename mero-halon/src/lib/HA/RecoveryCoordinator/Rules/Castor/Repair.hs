@@ -34,6 +34,8 @@ import           Data.Monoid ((<>))
 import           Data.Typeable (Typeable)
 import           Data.UUID (nil)
 import           GHC.Generics (Generic)
+
+import HA.Encode (decodeP)
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
 import qualified HA.ResourceGraph as G
@@ -41,9 +43,16 @@ import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
+import HA.RecoveryCoordinator.Events.Mero
+  ( AnyStateSet(..)
+  , AnyStateChange(..)
+  , InternalObjectStateChangeMsg
+  , InternalObjectStateChange(..)
+  )
 import qualified HA.RecoveryCoordinator.Rules.Castor.Repair.Internal as R
 import HA.RecoveryCoordinator.Rules.Mero.Conf
-  ( applyStateChangesBlocking
+  ( applyStateChanges
+  , applyStateChangesBlocking
   , stateSet
   )
 import           HA.Services.SSPL.CEP
@@ -539,25 +548,55 @@ handleRepairInternal noteSet = do
           Nothing -> maybeBeginRepair
 
 checkRepairOnClusterStart :: Definitions LoopState ()
-checkRepairOnClusterStart = defineSimple "check-repair-on-start" $ \(BarrierPass MeroClusterRunning) -> do
-  pools <- getPool
-  forM_ pools $ \pool ->
-    getPoolRepairStatus pool >>= \case
-      Just _ -> return () -- Repair is already handled by another rule
-      Nothing -> do
-        tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
-        fa <- getPoolSDevsWithState pool M0_NC_FAILED
-        when (null tr && not (null fa)) $ do
-          res <- applyStateChangesBlocking (
-              stateSet pool M0_NC_REPAIR
-            : ((flip stateSet $ M0_NC_REPAIR) <$> fa)
-            )
-          if res
-          then do
-            startRepairOperation pool
-            queryStartHandling pool
-          else
-            phaseLog "error" $ "Unable to notify Mero; cannot start repair"
+checkRepairOnClusterStart = define "check-repair-on-start" $ do
+    clusterRunning <- phaseHandle "cluster-running"
+    notified <- phaseHandle "mero-notification-success"
+    end <- phaseHandle "end"
+
+    setPhaseIf clusterRunning (barrierPass MeroClusterRunning) $ \() -> do
+      pools <- getPool
+      forM_ pools $ \pool ->
+        getPoolRepairStatus pool >>= \case
+          Just _ -> return () -- Repair is already handled by another rule
+          Nothing -> do
+            tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
+            fa <- getPoolSDevsWithState pool M0_NC_FAILED
+            when (null tr && not (null fa)) $ do
+              fork NoBuffer $ do
+                put Local $ Just pool
+                applyStateChanges (
+                    stateSet pool M0_NC_REPAIR
+                  : ((flip stateSet $ M0_NC_REPAIR) <$> fa)
+                  )
+                switch [notified, timeout 1000000 end]
+              continue end
+
+    setPhaseIf notified (includesStateChange M0_NC_REPAIR) $ \pool -> do
+      startRepairOperation pool
+      queryStartHandling pool
+      continue end
+
+    directly end stop
+
+    startFork clusterRunning Nothing
+  where
+    extractStateSet (AnyStateChange a _ n _) = AnyStateSet a n
+
+    barrierPass state (BarrierPass state') _ _ =
+      if state <= state' then return (Just ()) else return Nothing
+
+    includesStateChange :: HasConfObjectState a
+                        => StateCarrier a
+                        -> HAEvent InternalObjectStateChangeMsg
+                        -> g
+                        -> (Maybe a)
+                        -> Process (Maybe a)
+    includesStateChange _ _ _ Nothing = return Nothing
+    includesStateChange change (HAEvent _ msg _) _ (Just obj) =
+      (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) ->
+        if (stateSet obj change) `elem` (extractStateSet <$> iosc)
+        then return $ Just obj
+        else return Nothing
 
 -- | We have received information about a pool state change (as well
 -- as some devices) so handle this here. Such a notification is likely
