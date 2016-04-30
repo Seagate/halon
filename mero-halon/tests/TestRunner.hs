@@ -44,7 +44,6 @@ import HA.Startup (stopHalonNode)
 import Mero.Notification
 #endif
 
-import Control.Arrow (first, second)
 import Control.Distributed.Process hiding (bracket, finally, onException)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node

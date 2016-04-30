@@ -682,12 +682,12 @@ testGreeting transport = run transport interceptor test where
                                       "ThreadController"
                                       "SSPL-LL service has started successfully"
                                  }
-      led  = ActuatorRequestMessageActuator_request_typeNode_controller
-           $ nodeCmdString (DriveLed "serial24" FaultOn)
+      -- led  = ActuatorRequestMessageActuator_request_typeNode_controller
+      --     $ nodeCmdString (DriveLed "serial24" FaultOn)
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
     mmsg1 <- expectNodeMsg ssplTimeout
     case mmsg1 of
-      Just s  -> return () -- XXX: uids are not deterministic
+      Just _s  -> return () -- XXX: uids are not deterministic
       Nothing -> liftIO $ assertFailure "node cmd was not received"
     mmsg2 <- expectLoggingMsg ssplTimeout
     case mmsg2 of

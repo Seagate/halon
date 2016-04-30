@@ -81,9 +81,6 @@ import Control.Distributed.Process
   )
 import Control.Monad (when, unless)
 import Control.Distributed.Process.Serializable
-#ifdef USE_MERO
-import Mero.Notification (Set)
-#endif
 
 import Data.Typeable (Typeable)
 import Data.Functor (void)

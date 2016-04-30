@@ -68,7 +68,6 @@ import Debug.Trace (traceEventIO)
 import GHC.Generics (Generic)
 
 import Network.CEP hiding (phaseLog)
-import qualified Network.CEP as C
 
 phaseLog :: String -> String -> PhaseM g l ()
 phaseLog t m = liftProcess . say $ t ++ " => " ++ m
@@ -293,9 +292,6 @@ ruleResetAttempt = define "reset-attempt" $ do
 --------------------------------------------------------------------------------
 -- Helpers
 --------------------------------------------------------------------------------
-
--- | States of the Timeout rule.OB
-data TimeoutState = TimeoutNormal | ResetAttemptSent
 
 onCommandAck :: (Text -> NodeCmd)
            -> HAEvent CommandAck

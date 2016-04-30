@@ -23,7 +23,6 @@ module HA.RecoveryCoordinator.Events.Mero
    where
 
 import HA.Encode (ProcessEncode(..))
-import qualified HA.ResourceGraph as G
 import HA.Resources
 import HA.Resources.Castor
 import HA.Resources.Mero.Note

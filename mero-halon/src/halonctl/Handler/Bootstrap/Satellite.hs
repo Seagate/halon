@@ -79,7 +79,7 @@ start nid Config{..} = do
       Nothing -> do
         kill sender "timeout.."
         say $ "Failed to connect to the cluster, retrying.."
-        (sender2, mref2) <- spawnMonitor nid $ $(mkClosure 'nodeUp)
+        (_, mref2) <- spawnMonitor nid $ $(mkClosure 'nodeUp)
            (trackers, fromDefault configDelay)
         result2 <- receiveTimeout (fromDefault configDelay)
            [ matchIf (\(ProcessMonitorNotification ref _ _) -> ref == mref2) handler ]

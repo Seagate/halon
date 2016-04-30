@@ -13,6 +13,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Repair
   , noteToSDev
   , querySpiel
   , querySpielHourly
+  , checkRepairOnClusterStart
   ) where
 
 import           Control.Applicative
@@ -517,8 +518,6 @@ handleRepairInternal noteSet = do
                 "Repair on-going but don't know what to do with " ++ show diskMap
           Nothing -> maybeBeginRepair
 
--- | When cluster is up, we may have failed devices reported by SSPL or on the
--- early stages of the bootstrap, so we may need to run repair.
 checkRepairOnClusterStart :: Definitions LoopState ()
 checkRepairOnClusterStart = defineSimple "check-repair-on-start" $ \(BarrierPass MeroClusterRunning) -> do
   pools <- getPool
@@ -649,7 +648,7 @@ newtype DevicesOnly = DevicesOnly [(M0.Pool, SDevStateMap)] deriving (Show)
 --
 -- XXX: do we really need it, can we just read info about devices here?
 processDevices :: Set -> PhaseM LoopState l (Maybe DevicesOnly)
-processDevices st@(Set ns) =
+processDevices (Set ns) =
   mapMaybeM (\(Note fid' _) -> lookupConfObjByFid fid') ns >>= \case
     ([] :: [M0.Pool]) -> do
       disks <- mapMaybeM noteToSDev ns
@@ -657,12 +656,12 @@ processDevices st@(Set ns) =
                              >>= return . fmap (,(stType, sdev)))
                           disks
 
-      let disks = M.toList
-                . M.map (SDevStateMap . M.fromListWith (<>))
-                . M.fromListWith (<>)
-                . map (\(pool, (st', sdev)) -> (pool, [(st', S.singleton sdev)]))
-                $ pdisks
-      case disks of
+      let ndisks = M.toList
+                 . M.map (SDevStateMap . M.fromListWith (<>))
+                 . M.fromListWith (<>)
+                 . map (\(pool, (st', sdev)) -> (pool, [(st', S.singleton sdev)]))
+                 $ pdisks
+      case ndisks of
         [] -> return Nothing
         x  -> return (Just (DevicesOnly x))
 
