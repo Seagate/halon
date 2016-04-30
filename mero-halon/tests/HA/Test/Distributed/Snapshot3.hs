@@ -119,11 +119,6 @@ test = testCase "Snapshot3" $
 
       say "Respawning halond ..."
       nid1' <- spawnNode_ m1 ("./halond -l " ++ m1 ++ ":9000 2>&1")
-      systemThere [m0] ("./halonctl"
-                     ++ " -l " ++ halonctlloc m0
-                     ++ " -a " ++ m0 ++ ":9000 bootstrap satellite "
-                     ++ "-t " ++ m1 ++ ":9000 2>&1"
-                       )
 
       say "Waiting for RC to restart ..."
       logSize <- expectLogInt [nid1'] "Log size of replica: "
