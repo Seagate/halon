@@ -553,7 +553,7 @@ checkRepairOnClusterStart = define "check-repair-on-start" $ do
     notified <- phaseHandle "mero-notification-success"
     end <- phaseHandle "end"
 
-    setPhase clusterRunning $ \(BarrierPass MeroClusterRunning) -> do
+    setPhaseIf clusterRunning (barrierPass MeroClusterRunning) $ \() -> do
       pools <- getPool
       forM_ pools $ \pool ->
         getPoolRepairStatus pool >>= \case
@@ -581,6 +581,9 @@ checkRepairOnClusterStart = define "check-repair-on-start" $ do
     startFork clusterRunning Nothing
   where
     extractStateSet (AnyStateChange a _ n _) = AnyStateSet a n
+
+    barrierPass state (BarrierPass state') _ _ =
+      if state <= state' then return (Just ()) else return Nothing
 
     includesStateChange :: HasConfObjectState a
                         => StateCarrier a
