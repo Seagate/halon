@@ -99,6 +99,7 @@ findMatchingPVer rg fs failedDevs = let
     onlineDevs = (findFailableObjs rg fs) `S.difference` failedDevs
     allPvers = [ (pver, findRealObjsInPVer rg pver)
                   | pool <- G.connectedTo fs M0.IsParentOf rg :: [M0.Pool]
+                  , M0.fid pool /= M0.f_mdpool_fid fs
                   , pver <- G.connectedTo pool M0.IsRealOf rg :: [M0.PVer]
                   ]
   in fst <$> find (\(_, x) -> x == onlineDevs) allPvers

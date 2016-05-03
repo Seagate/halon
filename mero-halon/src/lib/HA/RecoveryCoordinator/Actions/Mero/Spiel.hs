@@ -454,7 +454,6 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
   lift $ do
     addProfile t pfid
     addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid [fsParams]
-    addPool t f_mdpool_fid f_fid 0
   phaseLog "spiel" "Added profile, filesystem, mdpool objects."
   -- Racks, encls, controllers, disks
   let racks = G.connectedTo fs M0.IsParentOf g :: [M0.Rack]
@@ -507,33 +506,35 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
                    M0_CFG_DEVICE_MEDIA_DISK d_bsize d_size 0 0 d_path
   phaseLog "spiel" "Finished adding concrete entities."
   -- Pool versions
-  (Just (pool :: M0.Pool)) <- lookupConfObjByFid f_mdpool_fid
-  let pvNegWidth = negate . _pa_P . M0.v_attrs
-      pvers = sortOn pvNegWidth $ G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
-  forM_ pvers $ \pver -> do
-    lift $ addPVer t (M0.fid pver) f_mdpool_fid (M0.v_failures pver) (M0.v_attrs pver)
-    let rackvs = G.connectedTo pver M0.IsParentOf g :: [M0.RackV]
-    forM_ rackvs $ \rackv -> do
-      let (Just (rack :: M0.Rack)) = listToMaybe
-                                   $ G.connectedFrom M0.IsRealOf rackv g
-      lift $ addRackV t (M0.fid rackv) (M0.fid pver) (M0.fid rack)
-      let enclvs = G.connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
-      forM_ enclvs $ \enclv -> do
-        let (Just (encl :: M0.Enclosure)) = listToMaybe
-                                          $ G.connectedFrom M0.IsRealOf enclv g
-        lift $ addEnclosureV t (M0.fid enclv) (M0.fid rackv) (M0.fid encl)
-        let ctrlvs = G.connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
-        forM_ ctrlvs $ \ctrlv -> do
-          let (Just (ctrl :: M0.Controller)) = listToMaybe
-                                             $ G.connectedFrom M0.IsRealOf ctrlv g
-          lift $ addControllerV t (M0.fid ctrlv) (M0.fid enclv) (M0.fid ctrl)
-          let diskvs = G.connectedTo ctrlv M0.IsParentOf g :: [M0.DiskV]
-          forM_ diskvs $ \diskv -> do
-            let (Just (disk :: M0.Disk)) = listToMaybe
-                                         $ G.connectedFrom M0.IsRealOf diskv g
+  let pools = G.connectedTo fs M0.IsParentOf g :: [M0.Pool]
+      pvNegWidth = negate . _pa_P . M0.v_attrs
+  forM_ pools $ \pool -> do
+    lift $ addPool t (M0.fid pool) f_fid 0
+    let pvers = sortOn pvNegWidth $ G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
+    forM_ pvers $ \pver -> do
+      lift $ addPVer t (M0.fid pver) (M0.fid pool) (M0.v_failures pver) (M0.v_attrs pver)
+      let rackvs = G.connectedTo pver M0.IsParentOf g :: [M0.RackV]
+      forM_ rackvs $ \rackv -> do
+        let (Just (rack :: M0.Rack)) = listToMaybe
+                                     $ G.connectedFrom M0.IsRealOf rackv g
+        lift $ addRackV t (M0.fid rackv) (M0.fid pver) (M0.fid rack)
+        let enclvs = G.connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
+        forM_ enclvs $ \enclv -> do
+          let (Just (encl :: M0.Enclosure)) = listToMaybe
+                                            $ G.connectedFrom M0.IsRealOf enclv g
+          lift $ addEnclosureV t (M0.fid enclv) (M0.fid rackv) (M0.fid encl)
+          let ctrlvs = G.connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
+          forM_ ctrlvs $ \ctrlv -> do
+            let (Just (ctrl :: M0.Controller)) = listToMaybe
+                                               $ G.connectedFrom M0.IsRealOf ctrlv g
+            lift $ addControllerV t (M0.fid ctrlv) (M0.fid enclv) (M0.fid ctrl)
+            let diskvs = G.connectedTo ctrlv M0.IsParentOf g :: [M0.DiskV]
+            forM_ diskvs $ \diskv -> do
+              let (Just (disk :: M0.Disk)) = listToMaybe
+                                           $ G.connectedFrom M0.IsRealOf diskv g
 
-            lift $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
-    lift $ poolVersionDone t (M0.fid pver)
+              lift $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
+      lift $ poolVersionDone t (M0.fid pver)
   phaseLog "spiel" "Finished adding virtual entities."
   return t
 
