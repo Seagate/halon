@@ -150,7 +150,6 @@ handleResetExternal (Set ns) = do
                       -- Notify rest of system if stat actually changed
                       when (st /= status) $
                         notifyDriveStateChange m0sdev status
- 
 
                       syncGraph $ say "handleReset synchronized"
             _ -> do

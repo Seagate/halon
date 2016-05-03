@@ -151,7 +151,7 @@ ruleMeroNoteSet = do
 
 ruleInternalStateChangeHandler :: Definitions LoopState ()
 ruleInternalStateChangeHandler = do
-  defineSimpleTask "internal-state-change-controller" $ \(HAEvent _ msg _) ->
+  defineSimpleTask "internal-state-change-controller" $ \msg ->
     liftProcess (decodeP msg) >>= \(InternalObjectStateChange changes) -> let
         s = Set $ extractNote <$> changes
         extractNote (AnyStateChange a _old new _) =
