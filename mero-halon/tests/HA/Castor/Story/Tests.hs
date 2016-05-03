@@ -124,8 +124,8 @@ mkTests :: IO (Transport -> [TestTree])
 mkTests = do
   ex <- E.try $ Network.AMQP.openConnection "localhost" "/" "guest" "guest"
   case ex of
-    Left (_::AMQPException) -> return $ \_->
-      [testSuccess "Drive failure tests disabled (can't connect to rabbitMQ)"  $ return ()]
+    Left (e::AMQPException) -> return $ \_->
+      [testSuccess ("Drive failure tests disabled (can't connect to rabbitMQ):"++show e)  $ return ()]
     Right x -> do
       closeConnection x
       return $ \transport ->

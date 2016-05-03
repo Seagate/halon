@@ -195,8 +195,8 @@ genericApplyDeferredStateChanges (DeferredStateChanges f s i) action = do
   syncGraph (return ())
   res <- action
   notifyMeroAndThen s
-    (void . promulgate $ encodeP i)
-    (return ()) -- What should we do here?
+    (void . promulgate $ (encodeP i :: InternalObjectStateChangeMsg))
+    (void . promulgate $ (encodeP i :: InternalObjectStateChangeMsg)) -- XXX: we should have more complex logic here
   return res
 
 -- | Apply state changes and synchronise with confd.
