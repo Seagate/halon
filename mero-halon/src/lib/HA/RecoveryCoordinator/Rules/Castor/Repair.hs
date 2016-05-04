@@ -520,7 +520,7 @@ handleRepairInternal noteSet = do
 
 checkRepairOnClusterStart :: Definitions LoopState ()
 checkRepairOnClusterStart = defineSimple "check-repair-on-start" $ \(BarrierPass x) -> do
-  when x == MeroClusterRunning $ do
+  when (x == MeroClusterRunning) $ do
     pools <- getPool
     forM_ pools $ \pool ->
       getPoolRepairStatus pool >>= \case
