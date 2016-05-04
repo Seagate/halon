@@ -39,6 +39,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
 import Mero.ConfC (PDClustAttr(..))
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
 import HA.RecoveryCoordinator.Mero
+import HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges, stateSet)
 import HA.Replicator (RGroup(..))
 #ifdef USE_MOCK_REPLICATOR
 import HA.Replicator.Mock (MC_RG)
@@ -89,6 +90,7 @@ tests _host transport = map (localOption (mkTimeout $ 10*60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport
   , testSuccess "failure-sets-2" $ testFailureSets2 transport
   , testSuccess "initial-data-doesn't-error" $ void (loadInitialData transport)
+  , testSuccess "apply-state-changes" $ testApplyStateChanges transport
   -- , testSuccess "large-data" $ largeInitialData host transport
   , testSuccess "controller-failure" $ testControllerFailureDomain transport
   ]
@@ -196,7 +198,7 @@ loadInitialData transport = do
     hostAttrs <- runGet ls' $ findHostAttrs myHost
     liftIO $ Tasty.assertEqual "Host attributes"
                                (sort [HA_MEMSIZE_MB 4096, HA_CPU_COUNT 8, HA_M0SERVER])
-                               (sort hostAttrs) 
+                               (sort hostAttrs)
     (Just fs) <- runGet ls' getFilesystem
     let pool = M0.Pool (M0.f_mdpool_fid fs)
     assertMsg "MDPool is stored in RG"
@@ -308,6 +310,32 @@ testControllerFailureDomain transport = rGroupTest transport $ \pid -> do
   where
     iData = initialData systemHostname "192.0.2" 4 4 defaultGlobals
 
+-- | Test that applying state changes works
+testApplyStateChanges :: Transport -> IO ()
+testApplyStateChanges transport = rGroupTest transport $ \pid -> do
+    me <- getSelfNode
+    ls <- emptyLoopState pid (nullProcessId me)
+    (ls, _) <- run ls $ do
+      mapM_ goRack (CI.id_racks iData)
+      filesystem <- initialiseConfInRG
+      loadMeroGlobals (CI.id_m0_globals iData)
+      loadMeroServers filesystem (CI.id_m0_servers iData)
+
+    let procs = getResourcesOfType (lsGraph ls) :: [M0.Process]
+
+    (ls, _) <- run ls $ applyStateChanges $ (\p -> stateSet p M0.PSOnline) <$> procs
+
+    assertMsg "All processes should be online"
+      $ length (connectedFrom Is M0.PSOnline (lsGraph ls) :: [M0.Process]) ==
+        length procs
+
+    (ls, _) <- run ls $ applyStateChanges $ (\p -> stateSet p M0.PSStopping) <$> procs
+
+    assertMsg "All processes should be stopping"
+      $ length (connectedFrom Is M0.PSStopping (lsGraph ls) :: [M0.Process]) ==
+        length procs
+  where
+    iData = initialData systemHostname "192.0.2" 4 4 defaultGlobals
 
 {-
 printMem :: IO String
