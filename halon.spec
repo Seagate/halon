@@ -1,6 +1,6 @@
 Summary: halon
 Name: halon
-Version: 0.1%{?dist}
+Version: %{_gitversion}%{?dist}
 Release: 1
 License: All rights reserved
 Group: System Environment/Daemons
