@@ -9,14 +9,13 @@ module HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
   , PoolVersion(..)
   , failuresToArray
   , createPoolVersions
+  , createPoolVersionsInPool
   ) where
 
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import qualified HA.ResourceGraph as G
-import           HA.Resources
 import qualified HA.Resources.Mero as M0
-import qualified HA.Resources.Castor.Initial as CI
-import Mero.ConfC (Fid(..), PDClustAttr(..), Word128(..))
+import Mero.ConfC (Fid(..), PDClustAttr(..))
 
 import Control.Category
 import Control.Monad ((>=>))
@@ -24,6 +23,7 @@ import qualified Control.Monad.State.Lazy as S
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Foldable (forM_)
+import Data.List (foldl')
 import Data.Word
 import Data.Typeable
 import Prelude hiding (id, (.))
@@ -46,11 +46,13 @@ data Failures = Failures {
 } deriving (Eq, Ord, Show)
 
 -- |  Minimal representation of a pool version for generation.
-data PoolVersion = PoolVersion !(Set Fid) !Failures
-                  -- ^ @PoolVersion fids fs@ where @fids@ is a set of
-                  -- fids and @fs@ are allowable failures in each
-                  -- failure domain.
-  deriving (Eq, Ord, Show)
+data PoolVersion = PoolVersion !(Set Fid) !Failures !PDClustAttr
+                  -- ^ @PoolVersion fids fs attrs@ where @fids@ is a set of
+                  -- fids, @fs@ are allowable failures in each
+                  -- failure domain, and @attrs@ are the parity declustering
+                  -- attributes. Note that the value for @_pa_P@ will be
+                  -- overridden with the width of the pool.
+  deriving (Eq, Show)
 
 -- | Convert failure tolerance vector to a straight array of Words for
 --   passing to Mero.
@@ -89,41 +91,31 @@ instance Monoid Strategy where
     , onFailure = f1 >=> f2
   }
 
--- | Create specified pool versions in the resource graph.
-createPoolVersions :: M0.Filesystem
-                   -> [PoolVersion]
-                   -> Bool -- If specified, the pool version is assumed to
-                           -- contain failed devices, rather than working ones.
-                   -> G.Graph
-                   -> G.Graph
-createPoolVersions fs pvers invert rg =
-    case xs of
-      [] -> rg
-      _  -> S.execState (mapM_ createPoolVersion pvers) rg
+
+createPoolVersionsInPool :: M0.Filesystem
+                         -> M0.Pool
+                         -> [PoolVersion]
+                         -> Bool -- If specified, the pool version is assumed to
+                                 -- contain failed devices, rather than working ones.
+                         -> G.Graph
+                         -> G.Graph
+createPoolVersionsInPool fs pool pvers invert rg =
+    S.execState (mapM_ createPoolVersion pvers) rg
   where
-    pool = M0.Pool (M0.f_mdpool_fid fs)
     test fids x = (if invert then Set.notMember else Set.member) (M0.fid x) fids
-    allDrives = G.getResourcesOfType rg :: [M0.Disk] -- XXX: multiprofile is not supported
-    xs   = G.connectedTo Cluster Has rg
-    ~(globals:_) = xs
+    totalDrives = length (G.getResourcesOfType rg :: [M0.Disk]) -- XXX: multiprofile is not supported
 
     createPoolVersion :: PoolVersion -> S.State G.Graph ()
-    createPoolVersion (PoolVersion fids failures) = do
+    createPoolVersion (PoolVersion fids failures attrs) = do
       let
         fids_drv = Set.filter (M0.fidIsType (Proxy :: Proxy M0.Disk)) fids
         width = if invert
-                then length allDrives - Set.size fids_drv -- TODO: check this
+                then totalDrives - Set.size fids_drv -- TODO: check this
                 else Set.size fids_drv
       S.when (width > 0) $ do
         pver <- M0.PVer <$> S.state (newFid (Proxy :: Proxy M0.PVer))
                         <*> pure (failuresToArray failures)
-                        <*> pure (PDClustAttr
-                                    { _pa_N = CI.m0_data_units globals
-                                    , _pa_K = CI.m0_parity_units globals
-                                    , _pa_P = fromIntegral width
-                                    , _pa_unit_size = 4096
-                                    , _pa_seed = Word128 123 456
-                                    })
+                        <*> pure (attrs { _pa_P = fromIntegral width })
         S.modify'
             $ G.newResource pver
           >>> G.connect pool M0.IsRealOf pver
@@ -163,3 +155,16 @@ createPoolVersions fs pvers invert rg =
                     $ G.newResource diskv
                   >>> G.connect ctrlv M0.IsParentOf diskv
                   >>> G.connect disk M0.IsRealOf diskv
+
+-- | Create specified pool versions in the resource graph.
+createPoolVersions :: M0.Filesystem
+                   -> [PoolVersion]
+                   -> Bool -- If specified, the pool version is assumed to
+                           -- contain failed devices, rather than working ones.
+                   -> G.Graph
+                   -> G.Graph
+createPoolVersions fs pvers invert rg =
+    foldl' (\g p -> createPoolVersionsInPool fs p pvers invert g) rg pools
+  where
+    mdpool = M0.Pool (M0.f_mdpool_fid fs)
+    pools = filter (/= mdpool) $ G.connectedTo fs M0.IsParentOf rg

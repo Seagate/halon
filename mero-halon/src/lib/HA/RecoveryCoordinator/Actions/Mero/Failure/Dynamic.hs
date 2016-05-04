@@ -11,7 +11,11 @@ import           HA.Resources
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import Mero.ConfC (Fid(..))
+import Mero.ConfC
+  ( Fid(..)
+  , PDClustAttr(..)
+  , Word128(..)
+  )
 
 import Data.Maybe (listToMaybe)
 import Data.List (find)
@@ -94,6 +98,7 @@ findMatchingPVer rg fs failedDevs = let
     onlineDevs = (findFailableObjs rg fs) `S.difference` failedDevs
     allPvers = [ (pver, findRealObjsInPVer rg pver)
                   | pool <- G.connectedTo fs M0.IsParentOf rg :: [M0.Pool]
+                  , M0.fid pool /= M0.f_mdpool_fid fs
                   , pver <- G.connectedTo pool M0.IsRealOf rg :: [M0.PVer]
                   ]
   in fst <$> find (\(_, x) -> x == onlineDevs) allPvers
@@ -111,7 +116,14 @@ createTopLevelPVer fs globs rg = let
     noCtlrs = length (G.getResourcesOfType rg :: [M0.Controller])
     ctrlFailures = floor $ noCtlrs % (fromIntegral $ n+k)
     failures = Failures 0 0 0 ctrlFailures k
-    pv = PoolVersion S.empty failures
+    attrs = PDClustAttr {
+        _pa_N = n
+      , _pa_K = k
+      , _pa_P = 0 -- will be set to width
+      , _pa_unit_size = 4096
+      , _pa_seed = Word128 123 456
+      }
+    pv = PoolVersion S.empty failures attrs
   in case mcur of
     Nothing -> return $ createPoolVersions fs [pv] True rg
     Just _ -> Nothing
@@ -139,5 +151,12 @@ createPVerIfNotExists rg fs globs = let
                           pvObjs
         ctrlFailures = floor $ noCtlrs % (fromIntegral $ n+k)
         failures = Failures 0 0 0 ctrlFailures k
-        pv = PoolVersion pvObjs failures
+        attrs = PDClustAttr {
+            _pa_N = n
+          , _pa_K = k
+          , _pa_P = 0 -- will be set to width
+          , _pa_unit_size = 4096
+          , _pa_seed = Word128 123 457
+          }
+        pv = PoolVersion pvObjs failures attrs
       in return $ createPoolVersions fs [pv] False rg
