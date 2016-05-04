@@ -1538,7 +1538,7 @@ replica Dict
                   fix $ \loop ->
                     expectTimeout 0 >>= maybe (return ()) (\() -> loop)
 
-                  say $ "Status info:" ++
+                  nlogTrace logId $ "Status info:" ++
                       "\n\tunconfirmed decree: " ++ show d ++
                       "\n\tdecree:             " ++ show cd ++
                       "\n\twatermark:          " ++ show w ++

@@ -108,6 +108,21 @@ remotableDecl [ [d|
  isNodeInGroup :: [NodeId] -> NodeId -> Bool
  isNodeInGroup = flip elem
 
+ -- Gets the membership of the tracking station.
+ --
+ -- The result is sent through the given 'SendPort'. Yields 'Nothing' if
+ -- the local node is not a tracking station node.
+ getTrackingStationMembership :: SendPort (Maybe [NodeId]) -> Process ()
+ getTrackingStationMembership sp = do
+     mcRGroup <- getGlobalRGroups
+     case mcRGroup of
+       Just (_, cEQGroup, _) -> do
+         eqGroup <- join $ unClosure cEQGroup
+         eqNids <- retryRGroup eqGroup 1000000 $ getRGroupMembers eqGroup
+         sendChan sp (Just eqNids)
+       _ ->
+         sendChan sp Nothing
+
  addNodes :: ( ProcessId
              , [NodeId]
              , [NodeId]

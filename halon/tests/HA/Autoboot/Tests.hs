@@ -180,16 +180,13 @@ testIgnition transport =
                     (Set.fromList (map localNodeId $ head nids1:nids2))
                     (Set.fromList trackers)
       _ <- liftIO $ forkProcess (head nids1) $ do
-        let t = "\treplicas:           "
-        registerInterceptor $ \string -> case last $ lines string of
-          s | t `isPrefixOf` s -> usend self (drop (length t) s)
-            | otherwise        -> return ()
-        usend self ((), ())
-      ((), ()) <- expect
+        (sp, rp) <- newChan
+        getTrackingStationMembership sp
+        receiveChan rp >>= usend self
       actual <- expect
-      liftIO $ unless (any (==actual) [show x | x <- permutations trackers]) $
-        assertFailure $ "replicas should be contain all of the " ++ show trackers ++
-                        ", but got " ++ actual
+      liftIO $ unless (fmap sort actual == Just (sort trackers)) $
+        assertFailure $ "replicas should contain all of the " ++ show trackers ++
+                        ", but got " ++ show actual
 
 runTest :: Int -> Int -> Transport -> RemoteTable
         -> ([LocalNode] -> Process ()) -> IO ()
