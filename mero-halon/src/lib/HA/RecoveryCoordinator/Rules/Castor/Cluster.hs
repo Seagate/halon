@@ -24,6 +24,10 @@ import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.RecoveryCoordinator.Events.Mero
+import           HA.RecoveryCoordinator.Rules.Mero.Conf
+  ( applyStateChanges
+  , stateSet
+  )
 import           HA.Service (encodeP, ServiceStopRequest(..))
 import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
@@ -39,7 +43,7 @@ import           Control.Monad (guard, join, unless, when, void)
 import           Control.Monad.Trans.Maybe
 
 import           Data.Binary (Binary)
-import           Data.Either (partitionEithers)
+import           Data.Either (partitionEithers, rights)
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, fromMaybe)
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -99,9 +103,9 @@ ruleClusterStatus = defineSimple "cluster-status-request"
             prs <- forM nodes $ \node -> do
                      processes <- getChildren node
                      forM processes $ \process -> do
-                       let st = M0.getState process rg 
+                       let st = M0.getState process rg
                        services <- getChildren process
-                       return (process, ReportClusterProcess st services) 
+                       return (process, ReportClusterProcess st services)
             let go (msdev::Maybe M0.SDev) = msdev >>= \sdev ->
                  let st = M0.getState sdev rg
                  in if st == M0.M0_NC_ONLINE
@@ -412,9 +416,8 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
          Just (a,b, M0.BootLevel i) <- get Local
          put Local $ Just (a,b,M0.BootLevel (i-1))
          continue teardown
-       markProcessFailed lvl fids = modifyGraph $ \rg ->
-         foldr (\p -> G.disconnect (M0.MeroClusterStopping lvl) M0.Pending p
-                        >>> G.connectUniqueFrom p R.Is M0.PSStopping)
+       markProcessComplete lvl fids = modifyGraph $ \rg ->
+         foldr (\p -> G.disconnect (M0.MeroClusterStopping lvl) M0.Pending p)
                rg
                (getProcessesByFid rg fids :: [M0.Process])
 
@@ -494,17 +497,28 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
                 continue teardown_timeout
 
    setPhaseIf teardown_complete (\(HAEvent eid (ProcessControlResultStopMsg node results) _) _ minfo ->
-       runMaybeT $ do
+     runMaybeT $ do
          (_, lnode@(R.Node nid), lvl) <- MaybeT $ return minfo
          -- XXX: do we want to check that this is wanted runlevel?
          guard (nid == node)
          return (eid, lnode, lvl, results))
      $ \(eid, node, lvl, results) -> do
        phaseLog "info" $ printf "%s completed tearing down of level %s." (show node) (show lvl)
-       forM_ results $ \case
-         Left _ -> return ()
-         Right (x,s) -> phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
-       markProcessFailed lvl $ map (\case Left x -> x ; Right (x,_) -> x) results
+       rg <- getLocalGraph
+       let
+         resultProcs :: [Either M0.Process (M0.Process, String)]
+         resultProcs = mapMaybe (\case
+           Left x -> Left <$> M0.lookupConfObjByFid x rg
+           Right (x,s) -> Right . (,s) <$> M0.lookupConfObjByFid x rg)
+           results
+       phaseLog "debug" $ printf "Results of stopping: %s" (show resultProcs)
+       applyStateChanges $ (\case
+         Left x -> stateSet x M0.PSOffline
+         Right (x,s) -> stateSet x (M0.PSFailed $ "Failed to stop: " ++ show x))
+         <$> resultProcs
+       forM_ (rights results) $ \(x,s) ->
+         phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
+       markProcessComplete lvl $ map (\case Left x -> x ; Right (x,_) -> x) results
        notifyBarrier (Just eid)
        nextBootLevel
 
@@ -512,7 +526,10 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
      Just (_, node, lvl) <- get Local
      phaseLog "warning" $ printf "%s failed to stop services (timeout)" (show node)
      rg <- getLocalGraph
-     markProcessFailed lvl $ map M0.fid $ getLabeledNodeProcesses node (mkLabel lvl) rg
+     let failedProcs = getLabeledNodeProcesses node (mkLabel lvl) rg
+     applyStateChanges $ (\p -> stateSet p $ M0.PSFailed "Timeout on stop.")
+                          <$> failedProcs
+     markProcessComplete lvl $ map M0.fid failedProcs
      markNodeFailedTeardown node
      notifyBarrier Nothing
      continue finish

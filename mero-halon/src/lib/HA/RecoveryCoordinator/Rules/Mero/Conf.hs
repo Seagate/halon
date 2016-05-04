@@ -206,7 +206,7 @@ genericApplyDeferredStateChanges :: DeferredStateChanges
 genericApplyDeferredStateChanges (DeferredStateChanges f s i)
                                   action cbSucc cbFail = do
   modifyGraph f
-  syncGraph (return ())
+  syncGraphBlocking -- TODO Should we call this here?
   res <- action
   notifyMeroAndThen s
     (promulgate (encodeP i) >> cbSucc)
