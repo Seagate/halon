@@ -55,6 +55,7 @@ extra-deps:
 - rank1dynamic-0.3.2.0
 - rematch-0.2.0.0
 - vinyl-0.5.2
+- clock-0.7.1
 
 docker:
   enable: true
