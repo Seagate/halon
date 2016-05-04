@@ -22,6 +22,8 @@ else
    RPMREL=${BUILD_NUMBER}
 fi
 
+export RPMREL
+
 rm -rf build_failed
 
 make MOCK_CONFIG=${MOCK_CONFIG} rpm
