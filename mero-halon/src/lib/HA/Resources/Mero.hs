@@ -470,12 +470,6 @@ newtype BootstrapFailedNotification = BootstrapFailedNotification String
 instance Binary BootstrapFailedNotification
 instance Hashable BootstrapFailedNotification
 
--- | Relation that one object is waiting for another.
-data Pending = Pending deriving (Eq, Show, Typeable, Generic)
-
-instance Binary Pending
-instance Hashable Pending
-
 newtype ConfUpdateVersion = ConfUpdateVersion Word64
   deriving (Eq, Show, Typeable, Generic)
 
@@ -501,7 +495,7 @@ $(mkDicts
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
-  , ''MeroClusterState, ''Pending, ''ProcessBootstrapped
+  , ''MeroClusterState, ''ProcessBootstrapped
   , ''ProcessState
   ]
   [ -- Relationships connecting conf with other resources
@@ -545,7 +539,6 @@ $(mkDicts
   , (''R.Host, ''R.Has, ''LNid)
   , (''R.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
-  , (''MeroClusterState, ''Pending, ''Process)
   , (''Process, ''R.Is, ''ProcessBootstrapped)
   , (''Process, ''R.Is, ''ProcessState)
   ]
@@ -557,7 +550,7 @@ $(mkResRel
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
-  , ''MeroClusterState, ''Pending, ''ProcessBootstrapped
+  , ''MeroClusterState, ''ProcessBootstrapped
   , ''ProcessState
   ]
   [ -- Relationships connecting conf with other resources
@@ -601,7 +594,6 @@ $(mkResRel
   , (''R.Host, ''R.Has, ''LNid)
   , (''R.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
-  , (''MeroClusterState, ''Pending, ''Process)
   , (''Process, ''R.Is, ''ProcessBootstrapped)
   , (''Process, ''R.Is, ''ProcessState)
   ]
