@@ -283,7 +283,6 @@ stateCascadeRules =
   , AnyCascadeRule diskFixesPVer
   ]
 
-
 rackCascadeRule :: StateCascadeRule M0.Rack M0.Enclosure
 rackCascadeRule = StateCascadeRule
   [M0.M0_NC_ONLINE]

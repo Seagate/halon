@@ -666,6 +666,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
     -- Service comes up as a result of this invocation
     setPhaseIf svc_up_now declareMeroChannelOnNode $ \chan -> do
       Just (_, host, _) <- get Local
+      phaseLog "info" $ "halon-m0d service started on " ++ show host
       -- Legitimate to ignore the event id as it should be handled by the default
       -- 'declare-mero-channel' rule.
       procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
@@ -678,6 +679,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
     -- Service is already up
     directly svc_up_already $ do
       Just (node, host, _) <- get Local
+      phaseLog "info" $ "halon-m0d service already started on " ++ show host
       rg <- getLocalGraph
       m0svc <- lookupRunningService node m0d
       case m0svc >>= meroChannel rg of
