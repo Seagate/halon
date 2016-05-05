@@ -15,3 +15,19 @@ rpm:
 		--resultdir $(SRC_RPM_DIR) \
 		--define "_gitversion ${VERSION}"
 	mock -r $(MOCK_CONFIG) --rebuild $(SRC_RPM_DIR)/*.src.rpm --resultdir $(RESULT_DIR)
+
+# This target will generate a distributable RPM based on the current
+# checkout. It will generate a binary RPM in ./rpmbuild/RPMS/x86_64
+# and a pseudo-source tar in ./rpmbuild/SRPMS
+rpm-dev:
+	mkdir -p rpmbuild/SOURCES/role_maps
+	cp .stack-work/install/x86_64-linux/lts-3.11/7.10.2/bin/halond rpmbuild/SOURCES/
+	cp .stack-work/install/x86_64-linux/lts-3.11/7.10.2/bin/halonctl rpmbuild/SOURCES/
+	cp .stack-work/install/x86_64-linux/lts-3.11/7.10.2/bin/genders2yaml rpmbuild/SOURCES/
+	cp systemd/halond.service rpmbuild/SOURCES/
+	cp systemd/halon-satellite.service rpmbuild/SOURCES/
+	cp mero-halon/scripts/localcluster rpmbuild/SOURCES/halon-simplelocalcluster
+	cp mero-halon/scripts/hctl rpmbuild/SOURCES/hctl
+	cp mero-halon/scripts/mero_role_mappings.ede rpmbuild/SOURCES/role_maps/genders.ede
+	cp mero-halon/scripts/mero_provisioner_role_mappings.ede rpmbuild/SOURCES/role_maps/prov.ede
+	rpmbuild --define "_topdir ${PWD}/rpmbuild" --define "_gitversion ${VERSION}" -ba halon-dev.spec
