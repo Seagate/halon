@@ -115,7 +115,7 @@ someHasConfObjectStateDict :: Dict (HasConfObjectState a)
 someHasConfObjectStateDict = SomeHasConfObjectStateDict
 
 -- | Class to determine configuration object state from the resource graph.
-class (G.Resource a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateCarrier a))
+class (G.Resource a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateCarrier a), Typeable (StateCarrier a))
   => HasConfObjectState a where
     type StateCarrier a :: *
     type StateCarrier a = ConfObjectState
