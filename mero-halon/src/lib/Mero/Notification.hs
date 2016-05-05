@@ -186,7 +186,7 @@ withServerEndpoint addr f = liftProcess (initializeInternal addr)
         False -> putMVar m newRef
         -- We are not finalizing endpoint here, because it may be not
         -- safe to do, because RC may still be using endpoint.
-        True -> return ()
+        True -> putMVar m newRef
       either Catch.throwM return ev
 
 -- | Label of the process serving configuration object states.
@@ -466,7 +466,7 @@ finalize :: Process ()
 finalize = liftIO $ takeMVar globalEndpointRef >>= \case
   -- We can't finalize EndPoint here, because it may be unsafe to do so
   -- as RC could use that.
-  ref | _erRefCount ref <= 0 -> return ()
+  ref | _erRefCount ref <= 0 -> putMVar globalEndpointRef ref
   -- There are some workers active so just signal that we want to
   -- finalize and put the MVar back. Once the last worker finishes, it
   -- will check this flag and run the finalization itself
