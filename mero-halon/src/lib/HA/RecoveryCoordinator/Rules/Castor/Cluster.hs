@@ -595,7 +595,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
 -- 'M0.PLM0t1fs' processes.
 ruleNewMeroServer :: Definitions LoopState ()
 ruleNewMeroServer = define "new-mero-server" $ do
-    new_server <- phaseHandle "initial"
+    new_server <- phaseHandle "new_server"
     svc_up_now <- phaseHandle "svc_up_now"
     svc_up_already <- phaseHandle "svc_up_already"
     boot_level_0_complete <- phaseHandle "boot_level_0_complete"
@@ -658,7 +658,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
               Just lnid -> do
                 createMeroKernelConfig host $ lnid ++ "@tcp"
                 startMeroService host node
-                switch [svc_up_now, bootstrap_failed, timeout 1000000 svc_up_already]
+                switch [svc_up_now, bootstrap_failed, timeout 5 svc_up_already]
           Nothing -> do
             phaseLog "error" $ "Can't find R.Host for node " ++ show node
             continue finish
@@ -672,7 +672,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
       case procs of
         [] -> let state = M0.MeroClusterStarting (M0.BootLevel 1) in do
           notifyOnClusterTranstion state BarrierPass Nothing
-          switch [boot_level_1, timeout 5000000 finish]
+          switch [boot_level_1, timeout 180 finish]
         _ -> continue boot_level_0_complete
 
     -- Service is already up
@@ -686,9 +686,9 @@ ruleNewMeroServer = define "new-mero-server" $ do
           case procs of
             [] -> let state = M0.MeroClusterStarting (M0.BootLevel 1) in do
               notifyOnClusterTranstion state BarrierPass Nothing
-              switch [boot_level_1, timeout 5000000 finish]
+              switch [boot_level_1, timeout 180 finish]
             _ -> continue boot_level_0_complete
-        Nothing -> switch [svc_up_now, timeout 5000000 finish]
+        Nothing -> switch [svc_up_now, timeout 180 finish]
 
     -- Wait until every process comes back as finished bootstrapping
     setPhaseIf boot_level_0_complete processControlOnNode $ \(eid, e) -> do
@@ -703,7 +703,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
         [] -> do
           let state = M0.MeroClusterStarting (M0.BootLevel 1)
           notifyOnClusterTranstion state BarrierPass (Just eid)
-          switch [boot_level_1, timeout 5000000 finish]
+          switch [boot_level_1, timeout 180 finish]
         _ -> continue cluster_failed
 
     setPhaseIf boot_level_1 (barrierPass (M0.MeroClusterStarting (M0.BootLevel 1))) $ \() -> do
@@ -716,7 +716,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
           case procs of
             [] -> let state = M0.MeroClusterRunning in do
               notifyOnClusterTranstion state BarrierPass Nothing
-              switch [start_clients, timeout 5000000 finish]
+              switch [start_clients, timeout 180 finish]
             _ -> continue boot_level_1_complete
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
@@ -729,7 +729,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
         [] -> do
           let state = M0.MeroClusterRunning
           notifyOnClusterTranstion state BarrierPass (Just eid)
-          switch [start_clients, timeout 5000000 finish]
+          switch [start_clients, timeout 180 finish]
         _ -> continue cluster_failed
 
 
