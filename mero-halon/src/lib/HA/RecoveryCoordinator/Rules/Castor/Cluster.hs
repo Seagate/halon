@@ -226,15 +226,14 @@ newtype NodesRunningTeardown = NodesRunningTeardown (Map R.Node UUID)
 -- current cluster status and status of the processes on the current
 -- cluster boot level.
 notifyOnClusterTranstion :: (Binary a, Typeable a)
-                         => M0.MeroClusterState -- ^ State to notify on
+                         => (M0.MeroClusterState -> Bool) -- ^ States to notify on
                          -> (M0.MeroClusterState -> a) -- Notification to send
                          -> Maybe UUID -- Message to declare processed
                          -> PhaseM LoopState l ()
 notifyOnClusterTranstion desiredState msg meid = do
   newState <- calculateMeroClusterStatus
-  phaseLog "notifyOnClusterTransition:desiredState" $ show desiredState
   phaseLog "notifyOnClusterTransition:state" $ show newState
-  if newState == desiredState then do
+  if desiredState newState then do
     modifyGraph $ G.connectUnique R.Cluster R.Has newState
     syncGraphCallback $ \self proc -> do
       -- HALON-197 workaround - systemctl comes back before services are
@@ -251,13 +250,13 @@ notifyOnClusterTranstion desiredState msg meid = do
 -- correct level. This is used during 'ruleNewMeroServer' with the
 -- actual 'BarrierPass' message being emitted from
 -- 'notifyOnClusterTransition'.
-barrierPass :: M0.MeroClusterState
+barrierPass :: (M0.MeroClusterState -> Bool)
             -> BarrierPass
             -> g
             -> l
             -> Process (Maybe ())
-barrierPass state (BarrierPass state') _ _ =
-  if state <= state' then return (Just ()) else return Nothing
+barrierPass rightState (BarrierPass state') _ _ =
+  if rightState state' then return (Just ()) else return Nothing
 
 -- | Message guard: Check if the service process is running on this node.
 declareMeroChannelOnNode :: HAEvent DeclareMeroChannel
@@ -672,7 +671,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
       procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
       case procs of
         [] -> let state = M0.MeroClusterStarting (M0.BootLevel 1) in do
-          notifyOnClusterTranstion state BarrierPass Nothing
+          notifyOnClusterTranstion (== state) BarrierPass Nothing
           switch [boot_level_1, timeout 180 finish]
         _ -> continue boot_level_0_complete
 
@@ -687,7 +686,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
           procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
           case procs of
             [] -> let state = M0.MeroClusterStarting (M0.BootLevel 1) in do
-              notifyOnClusterTranstion state BarrierPass Nothing
+              notifyOnClusterTranstion (== state) BarrierPass Nothing
               switch [boot_level_1, timeout 180 finish]
             _ -> continue boot_level_0_complete
         Nothing -> switch [svc_up_now, timeout 180 finish]
@@ -704,11 +703,11 @@ ruleNewMeroServer = define "new-mero-server" $ do
       case failedProcs of
         [] -> do
           let state = M0.MeroClusterStarting (M0.BootLevel 1)
-          notifyOnClusterTranstion state BarrierPass (Just eid)
+          notifyOnClusterTranstion (== state) BarrierPass (Just eid)
           switch [boot_level_1, timeout 180 finish]
         _ -> continue cluster_failed
 
-    setPhaseIf boot_level_1 (barrierPass (M0.MeroClusterStarting (M0.BootLevel 1))) $ \() -> do
+    setPhaseIf boot_level_1 (barrierPass (>= (M0.MeroClusterStarting (M0.BootLevel 1)))) $ \() -> do
       Just (node, host, _) <- get Local
       g <- getLocalGraph
       m0svc <- lookupRunningService node m0d
@@ -717,7 +716,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
           procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
           case procs of
             [] -> let state = M0.MeroClusterRunning in do
-              notifyOnClusterTranstion state BarrierPass Nothing
+              notifyOnClusterTranstion (== state) BarrierPass Nothing
               switch [start_clients, timeout 180 finish]
             _ -> continue boot_level_1_complete
         Nothing -> do
@@ -730,12 +729,12 @@ ruleNewMeroServer = define "new-mero-server" $ do
       case failedProcs of
         [] -> do
           let state = M0.MeroClusterRunning
-          notifyOnClusterTranstion state BarrierPass (Just eid)
+          notifyOnClusterTranstion (== state) BarrierPass (Just eid)
           switch [start_clients, timeout 180 finish]
         _ -> continue cluster_failed
 
 
-    setPhaseIf start_clients (barrierPass M0.MeroClusterRunning) $ \() -> do
+    setPhaseIf start_clients (barrierPass (>= M0.MeroClusterRunning)) $ \() -> do
       Just (node, host, _) <- get Local
       rg <- getLocalGraph
       m0svc <- lookupRunningService node m0d
@@ -821,12 +820,10 @@ ruleDynamicClient =  define "dynamic-client-discovery" $ do
     Just hhi <- getField . rget fldHostHardwareInfo
                 <$> get Local
     createMeroClientConfig fs host hhi
-    -- TODO better notify function which takes a comparator
-    notifyOnClusterTranstion (M0.MeroClusterStarting (M0.BootLevel 1)) BarrierPass Nothing
-    notifyOnClusterTranstion M0.MeroClusterRunning BarrierPass Nothing
+    notifyOnClusterTranstion (>= M0.MeroClusterStarting (M0.BootLevel 1)) BarrierPass Nothing
     continue confd_running
 
-  setPhaseIf confd_running (barrierPass (M0.MeroClusterStarting (M0.BootLevel 1))) $ \() -> do
+  setPhaseIf confd_running (barrierPass (>= (M0.MeroClusterStarting (M0.BootLevel 1)))) $ \() -> do
     syncStat <- syncToConfd
     case syncStat of
       Left err -> do
