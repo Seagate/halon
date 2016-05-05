@@ -439,7 +439,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
        (_, _, lvl) <- MaybeT $ return minfo
        guard (i <= M0.MeroClusterStopping lvl)
        return ()
-     ) $ \() -> nextBootLevel
+     ) $ \() -> continue teardown
 
    directly stop_service $ do
      Just (_, node, _) <- get Local
