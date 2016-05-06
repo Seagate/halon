@@ -212,7 +212,7 @@ foreign import ccall unsafe ha_state_fini :: IO ()
 doneGet :: NVecRef -> Int -> IO ()
 doneGet p = ha_state_get_done p . fromIntegral
 
-foreign import ccall unsafe ha_state_get_done :: NVecRef -> CInt -> IO ()
+foreign import ccall ha_state_get_done :: NVecRef -> CInt -> IO ()
 
 -- | Notifies mero at the remote address that the state of some objects has
 -- changed.
@@ -246,7 +246,7 @@ check_rc msg i = throwIO $ HAStateException msg $ fromIntegral i
 data EntryPointRepV
 data FomV
 
-foreign import ccall unsafe ha_entrypoint_reply_wakeup
+foreign import ccall ha_entrypoint_reply_wakeup
   :: Ptr FomV -> Ptr EntryPointRepV -> CInt
   -> CInt -> Ptr Fid
   -> CInt -> Ptr CString
