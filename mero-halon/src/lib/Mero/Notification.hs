@@ -189,10 +189,6 @@ withServerEndpoint addr f = liftProcess (initializeInternal addr)
         True -> putMVar m newRef
       either Catch.throwM return ev
 
--- | Label of the process serving configuration object states.
-notificationHandlerLabel :: String
-notificationHandlerLabel = "mero-halon.notification.interface.handler"
-
 -- | Initialiazes the 'EndpointRef' subsystem.
 --
 -- An important thing to notice is that this function takes the lock
@@ -213,7 +209,6 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
     self <- getSelfPid
     Catch.onException
       (do
-        register notificationHandlerLabel self
         pid <- spawnLocal $ do
                  link self
                  notificationWorker notificationChannel (void . promulgate . Set)
@@ -224,8 +219,9 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
           addM0Finalizer $ finalizeInternal globalEndpointRef
           let ref' = emptyEndpointRef { _erServerEndpoint = Just ep }
           return (globalEndpointRef, ref', ep))
-      (do unregister notificationHandlerLabel
-          liftIO $ putMVar globalEndpointRef ref)
+      (do
+        say "initializeInternal: error"
+        liftIO $ putMVar globalEndpointRef ref )
   where
     listenCallbacks = ListenCallbacks {
       receive_callback = \_ _ -> return False
@@ -383,24 +379,18 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
     ha_state_get :: NVecRef -> IO ()
     ha_state_get nvecr = void $ CH.forkProcess lnode $ do
       liftIO $ traceEventIO "START ha_state_get"
-      whereis notificationHandlerLabel >>= \case
-        Just rc -> do
-          link rc
-          self <- getSelfPid
-          fids <- fmap no_id <$> liftIO (readNVecRef nvecr)
-          liftIO (fmap (getNVec fids) <$> readIORef globalResourceGraphCache)
-             >>= \case
-                   Just nvec -> return nvec
-                   Nothing   -> do
-                     _ <- promulgate (Get self fids)
-                     GetReply nvec <- expect
-                     return nvec
-             >>= \nvec -> do
-                    liftIO $ updateNVecRef nvecr nvec
-                    liftGlobalM0 $ doneGet nvecr 0
-        Nothing -> do
-          say "notification interface callbacks: unknown RC."
-          liftGlobalM0 $ doneGet nvecr (-1)
+      self <- getSelfPid
+      fids <- fmap no_id <$> liftIO (readNVecRef nvecr)
+      liftIO (fmap (getNVec fids) <$> readIORef globalResourceGraphCache)
+         >>= \case
+               Just nvec -> return nvec
+               Nothing   -> do
+                 _ <- promulgate (Get self fids)
+                 GetReply nvec <- expect
+                 return nvec
+         >>= \nvec -> do
+                liftIO $ updateNVecRef nvecr nvec
+                liftGlobalM0 $ doneGet nvecr 0
       liftIO $ traceEventIO "STOP ha_state_get"
 
     ha_state_set :: NVec -> IO Int
