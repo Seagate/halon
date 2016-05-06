@@ -369,6 +369,10 @@ data CacheState = Pending Note
                 | Sent Note
 
 
+-- | Time to wait for RC to respond to Get request
+promulgateTimeout :: Int
+promulgateTimeout = 30000000 -- 30s
+
 -- | Initializes the hastate interface in the node where it will be
 -- used. Call it before @m0_init@ and before 'initialize'.
 initialize_pre_m0_init :: LocalNode -> IO ()
@@ -383,14 +387,19 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
       fids <- fmap no_id <$> liftIO (readNVecRef nvecr)
       liftIO (fmap (getNVec fids) <$> readIORef globalResourceGraphCache)
          >>= \case
-               Just nvec -> return nvec
+               Just nvec -> do
+                 liftIO $ updateNVecRef nvecr nvec
+                 liftGlobalM0 $ doneGet nvecr 0
                Nothing   -> do
                  _ <- promulgate (Get self fids)
-                 GetReply nvec <- expect
-                 return nvec
-         >>= \nvec -> do
-                liftIO $ updateNVecRef nvecr nvec
-                liftGlobalM0 $ doneGet nvecr 0
+                 msg <- expectTimeout promulgateTimeout
+                 case msg of
+                   Just (GetReply nvec) -> do
+                     liftIO $ updateNVecRef nvecr nvec
+                     liftGlobalM0 $ doneGet nvecr 0
+                   Nothing -> do
+                     say "ha_state_get: Unable to query state from RC."
+                     liftGlobalM0 $ doneGet nvecr (-1)
       liftIO $ traceEventIO "STOP ha_state_get"
 
     ha_state_set :: NVec -> IO Int
