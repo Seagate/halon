@@ -4,7 +4,7 @@
 VERSION = $(shell git describe --long --always | tr '-' '_' | cut -c 2-)
 MOCK_CONFIG = default
 SRC_RPM_DIR := $(shell mktemp -du)
-RESULT_DIR = $(pwd)/rpmbuild
+RESULT_DIR = rpmbuild
 
 .PHONY: rpm
 rpm:
