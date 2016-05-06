@@ -35,7 +35,6 @@ module HA.Services.Mero
     , meroRules
     , createSet
     , notifyMero
-    , notifyMeroBlocking
     , notifyMeroAndThen
     ) where
 
@@ -59,7 +58,6 @@ import Network.CEP
 import qualified Network.RPC.RPCLite as RPC
 
 import Control.Concurrent (threadDelay)
-import Control.Concurrent.MVar
 import Control.Exception (SomeException, IOException)
 import qualified Control.Distributed.Process.Timeout as PT (timeout)
 import Control.Distributed.Process.Closure
@@ -369,15 +367,6 @@ createSet cs st = setEvent
     getFid (M0.AnyConfObj a) = M0.fid a
     setEvent :: Mero.Notification.Set
     setEvent = Mero.Notification.Set $ map (flip Note st . getFid) cs
-
-notifyMeroBlocking :: Set
-                   -> PhaseM LoopState l Bool
-notifyMeroBlocking setEvent = do
-  res <- liftIO $ newEmptyMVar
-  notifyMeroAndThen setEvent
-    (liftIO $ putMVar res True)
-    (liftIO $ putMVar res False)
-  liftIO $ takeMVar res
 
 notifyMeroAndThen :: Set
                   -> Process () -- ^ Action on success

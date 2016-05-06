@@ -54,7 +54,6 @@ import qualified HA.Resources.Castor.Initial as CI
 import HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState(..), setState)
-import HA.Services.Mero (createSet, notifyMeroBlocking)
 
 import Mero.ConfC
   ( PDClustAttr(..)
@@ -140,8 +139,7 @@ withRConfRC spiel action = do
   x <- action `sfinally` liftM0RC (Mero.Spiel.rconfStop spiel)
   return x
 
--- | Start the repair operation on the given 'M0.Pool'. Notifies mero
--- with the 'M0_NC_REPAIR' status.
+-- | Start the repair operation on the given 'M0.Pool'.
 startRepairOperation :: M0.Pool
                      -> PhaseM LoopState l ()
 startRepairOperation pool = go `catch`
@@ -153,22 +151,11 @@ startRepairOperation pool = go `catch`
     )
   where
     go = do
-      m0sdevs <- getPoolSDevsWithState pool M0_NC_FAILED
-      disks <- fmap M0.AnyConfObj . catMaybes <$> mapM lookupSDevDisk m0sdevs
-      res <- notifyMeroBlocking $ createSet (M0.AnyConfObj pool : disks) M0_NC_REPAIR
-      phaseLog "spiel" $ "Starting repair on pool " ++ show pool ++ " for: " ++ show m0sdevs
-      traverse_ (\m0disk -> modifyGraph $ setState m0disk M0_NC_REPAIR)
-                 m0sdevs
-      traverse_ (\m0disk -> modifyGraph $ setState m0disk M0_NC_REPAIR)
-                . catMaybes =<< mapM lookupSDevDisk m0sdevs
-      case res of
-        True -> do
-          _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRepairStart sc (M0.fid pool)
-          uuid <- DP.liftIO nextRandom
-          setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure uuid Nothing
-          phaseLog "spiel" $ "startRepairOperation for " ++ show pool ++ " done."
-        False -> do
-          phaseLog "error" $ "Unable to notify Mero; cannot start repair"
+      phaseLog "spiel" $ "Starting repair on pool " ++ show pool
+      _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRepairStart sc (M0.fid pool)
+      uuid <- DP.liftIO nextRandom
+      setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure uuid Nothing
+      phaseLog "spiel" $ "startRepairOperation for " ++ show pool ++ " done."
 
 -- | Retrieves the repair 'SnsStatus' of the given 'M0.Pool'.
 statusOfRepairOperation :: M0.Pool
@@ -237,8 +224,7 @@ abortRepairOperation pool = catch go
       _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRepairAbort sc (M0.fid pool)
       return Nothing
 
--- | Starts a rebalance operation on the given 'M0.Pool'. Notifies
--- mero with the 'M0_NC_FAILED' status.
+-- | Starts a rebalance operation on the given 'M0.Pool'.
 startRebalanceOperation :: M0.Pool -> [M0.Disk] -> PhaseM LoopState l ()
 startRebalanceOperation pool disks = catch go
     (\e -> do
@@ -250,17 +236,14 @@ startRebalanceOperation pool disks = catch go
   where
     go = do
       phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool ++ " for " ++ show disks
-      b <- notifyMeroBlocking $ createSet (M0.AnyConfObj pool : map M0.AnyConfObj disks) M0_NC_REBALANCE
-      if b
-      then do forM_ disks $ \d -> do
-                mt <- lookupDiskSDev d
-                forM_ mt $ \t -> do
-                  msd <- lookupStorageDevice t
-                  forM_ msd unmarkStorageDeviceReplaced
-              _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRebalanceStart sc (M0.fid pool)
-              uuid <- DP.liftIO nextRandom
-              setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Rebalance uuid Nothing
-      else do phaseLog "spiel" "Some services failed to respond - aborting"
+      forM_ disks $ \d -> do
+        mt <- lookupDiskSDev d
+        forM_ mt $ \t -> do
+          msd <- lookupStorageDevice t
+          forM_ msd unmarkStorageDeviceReplaced
+        _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRebalanceStart sc (M0.fid pool)
+        uuid <- DP.liftIO nextRandom
+        setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Rebalance uuid Nothing
 
 -- | Retrieves the rebalance 'SnsStatus' of the given pool.
 statusOfRebalanceOperation :: M0.Pool
