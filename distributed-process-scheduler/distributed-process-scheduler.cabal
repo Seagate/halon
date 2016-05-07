@@ -61,7 +61,7 @@ Test-Suite scheduler-tests
   Main-Is:          scheduler-tests.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
-  Other-Modules:    Tests
+  Other-Modules:    TestSuite
 
   Ghc-Options: -Wall
 
@@ -82,7 +82,7 @@ Test-Suite tests
   Main-Is:          tests.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
-  Other-Modules:    Tests
+  Other-Modules:    TestSuite
 
   Ghc-Options: -threaded -Wall
 

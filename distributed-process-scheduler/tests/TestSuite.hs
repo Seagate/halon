@@ -6,7 +6,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-module Tests (main) where
+module TestSuite (main) where
 
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Scheduler (withScheduler)
