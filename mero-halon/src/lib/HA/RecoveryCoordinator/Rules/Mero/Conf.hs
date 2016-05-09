@@ -206,7 +206,7 @@ genericApplyDeferredStateChanges :: DeferredStateChanges
 genericApplyDeferredStateChanges (DeferredStateChanges f s i)
                                   action cbSucc cbFail = do
   modifyGraph f
-  syncGraph (return ())
+  syncGraphBlocking -- TODO Should we call this here?
   res <- action
   notifyMeroAndThen s
     (promulgate (encodeP i) >> cbSucc)
@@ -282,7 +282,6 @@ stateCascadeRules =
   , AnyCascadeRule diskFailsPVer
   , AnyCascadeRule diskFixesPVer
   ]
-
 
 rackCascadeRule :: StateCascadeRule M0.Rack M0.Enclosure
 rackCascadeRule = StateCascadeRule

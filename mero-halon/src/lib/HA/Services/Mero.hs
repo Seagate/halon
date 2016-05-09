@@ -38,6 +38,7 @@ module HA.Services.Mero
     , notifyMeroAndThen
     ) where
 
+import HA.Logger
 import HA.EventQueue.Producer (expiate, promulgate, promulgateWait)
 import HA.RecoveryCoordinator.Actions.Core
 import HA.Resources
@@ -87,6 +88,9 @@ import System.FilePath
 import System.Directory
 import qualified System.SystemD.API as SystemD
 
+traceM0d :: String -> Process ()
+traceM0d = mkHalonTracer "halon:m0d"
+
 -- | Store information about communication channel in resource graph.
 sendMeroChannel :: SendPort NotificationMessage
                 -> SendPort ProcessControlMsg
@@ -112,14 +116,14 @@ statusProcess ep pid rp = do
       NotificationMessage set addrs subs <- receiveChan rp
       forM_ addrs $ \addr ->
         let logError e =
-              say $ "statusProcess: notifyMero failed: " ++ show (pid, addr, e)
+              traceM0d $ "statusProcess: notifyMero failed: " ++ show (pid, addr, e)
         in do
           ( Mero.Notification.notifyMero ep (RPC.rpcAddress addr) set
             `catch` \(e :: IOException) -> logError e
             ) `catch` \(e :: HAStateException) -> logError e
           traverse_ (flip usend $ NotificationAck ()) subs
    `catch` \(e :: SomeException) -> do
-      say $ "statusProcess terminated: " ++ show (pid, e)
+      traceM0d $ "statusProcess terminated: " ++ show (pid, e)
       Catch.throwM e
 
 -- | Process responsible for controlling the system level
@@ -258,18 +262,21 @@ remotableDecl [ [d|
 
   m0dProcess :: MeroConf -> Process ()
   m0dProcess conf = do
-    say "[Service:m0d] starting."
+    traceM0d "starting."
     Catch.bracket startKernel (\_ -> stopKernel) $ \rc -> do
-      say "[Service:m0d] Kernel module loaded."
+      traceM0d "Kernel module loaded."
       case rc of
         ExitSuccess -> bracket_ bootstrap teardown $ do
           self <- getSelfPid
+          traceM0d "DEBUG: Pre-withEp"
           c <- withEp $ \ep -> spawnChannelLocal (statusProcess ep self)
+          traceM0d "DEBUG: Pre-withEp"
           cc <- spawnChannelLocal (controlProcess conf self)
           sendMeroChannel c cc
-          say "[Service:m0d] Starting service m0d on mero client"
+          traceM0d "Starting service m0d on mero client"
           go
-        ExitFailure i ->
+        ExitFailure i -> do
+          traceM0d $ "Kernel module did not load correctly: " ++ show i
           notifyBootstrapFailure $ "mero-kernel service failed to start: " ++ show i
     where
       haAddr = RPC.rpcAddress $ mcHAAddress conf
@@ -284,9 +291,13 @@ remotableDecl [ [d|
       -- unload that.
       stopKernel = return () -- liftIO $ SystemD.stopService "mero-kernel"
       bootstrap = do
+        traceM0d "DEBUG: Pre-initialize"
         Mero.Notification.initialize haAddr
+        traceM0d "DEBUG: Post-initialize"
       teardown = do
+        traceM0d "DEBUG: Pre-finalize"
         Mero.Notification.finalize
+        traceM0d "DEBUG: Post-finalize"
 
       -- mainloop
       go = do

@@ -24,6 +24,10 @@ import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.RecoveryCoordinator.Events.Mero
+import           HA.RecoveryCoordinator.Rules.Mero.Conf
+  ( applyStateChanges
+  , stateSet
+  )
 import           HA.Service (encodeP, ServiceStopRequest(..))
 import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
@@ -39,7 +43,7 @@ import           Control.Monad (guard, join, unless, when, void)
 import           Control.Monad.Trans.Maybe
 
 import           Data.Binary (Binary)
-import           Data.Either (partitionEithers)
+import           Data.Either (partitionEithers, rights)
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, fromMaybe)
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -99,9 +103,9 @@ ruleClusterStatus = defineSimple "cluster-status-request"
             prs <- forM nodes $ \node -> do
                      processes <- getChildren node
                      forM processes $ \process -> do
-                       let st = M0.getState process rg 
+                       let st = M0.getState process rg
                        services <- getChildren process
-                       return (process, ReportClusterProcess st services) 
+                       return (process, ReportClusterProcess st services)
             let go (msdev::Maybe M0.SDev) = msdev >>= \sdev ->
                  let st = M0.getState sdev rg
                  in if st == M0.M0_NC_ONLINE
@@ -167,7 +171,7 @@ ruleClusterStop = defineSimple "cluster-stop-request"
         Right action -> action
   where
     stopCluster rg ch eid = do
-      modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStopping (M0.BootLevel teardownStartLevel))
+      modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStopping (M0.BootLevel maxTeardownLevel))
       let nodes =
             [ node | host <- G.getResourcesOfType rg :: [R.Host]
                    , node <- take 1 (G.connectedTo host R.Runs rg) :: [R.Node] ]
@@ -183,27 +187,6 @@ tearDownTimeout = 5*60
 -- | Bootlevel that RC procedure is started at.
 maxTeardownLevel :: Int
 maxTeardownLevel = 3
-
--- | The level to start teardown from. We start on a level higher than
--- 'maxTeardownLevel' because:
---
--- * Node teardowns are synchronised through a barrier
---
--- * Barrier decides if work on current level is finished by looking
--- for 'M0.Pending'-attached boot level label to processes.
---
--- * Barrier attaches the level pending through 'M0.Pending' relation
--- before letting the nodes to pass the barrier onto the next level.
---
--- * Barrier code is only entered at the end of a level teardown.
---
--- Therefore we need to enter barrier code to apply a 'M0.Pending'
--- label onto the processes. We need to start on a level with no
--- processes so no processes are missed and the lower level processes
--- have a chance to be marked. 'maxTeardownLevel' has processes on it
--- (@m0t1fs@) so we start on higher, process-less level.
-teardownStartLevel :: Int
-teardownStartLevel = maxTeardownLevel + 1
 
 -- | List of all nodes that are running teardown, with message id
 -- that triggered it.
@@ -221,16 +204,15 @@ newtype NodesRunningTeardown = NodesRunningTeardown (Map R.Node UUID)
 -- 'calculateMeroClusterStatus' which traverses the RG and checks the
 -- current cluster status and status of the processes on the current
 -- cluster boot level.
-notifyOnClusterTranstion :: (Binary a, Typeable a)
-                         => M0.MeroClusterState -- ^ State to notify on
+notifyOnClusterTransition :: (Binary a, Typeable a)
+                         => (M0.MeroClusterState -> Bool) -- ^ States to notify on
                          -> (M0.MeroClusterState -> a) -- Notification to send
                          -> Maybe UUID -- Message to declare processed
                          -> PhaseM LoopState l ()
-notifyOnClusterTranstion desiredState msg meid = do
+notifyOnClusterTransition desiredState msg meid = do
   newState <- calculateMeroClusterStatus
-  phaseLog "notifyOnClusterTransition:desiredState" $ show desiredState
   phaseLog "notifyOnClusterTransition:state" $ show newState
-  if newState == desiredState then do
+  if desiredState newState then do
     modifyGraph $ G.connectUnique R.Cluster R.Has newState
     syncGraphCallback $ \self proc -> do
       -- HALON-197 workaround - systemctl comes back before services are
@@ -247,13 +229,13 @@ notifyOnClusterTranstion desiredState msg meid = do
 -- correct level. This is used during 'ruleNewMeroServer' with the
 -- actual 'BarrierPass' message being emitted from
 -- 'notifyOnClusterTransition'.
-barrierPass :: M0.MeroClusterState
+barrierPass :: (M0.MeroClusterState -> Bool)
             -> BarrierPass
             -> g
             -> l
             -> Process (Maybe ())
-barrierPass state (BarrierPass state') _ _ =
-  if state <= state' then return (Just ()) else return Nothing
+barrierPass rightState (BarrierPass state') _ _ =
+  if rightState state' then return (Just ()) else return Nothing
 
 -- | Message guard: Check if the service process is running on this node.
 declareMeroChannelOnNode :: HAEvent DeclareMeroChannel
@@ -281,45 +263,6 @@ mkLabel :: M0.BootLevel -> M0.ProcessLabel
 mkLabel bl@(M0.BootLevel l)
   | l == maxTeardownLevel = M0.PLM0t1fs
   | otherwise = M0.PLBootLevel bl
-
--- | Find 'M0.Process'es that we're still waiting for to stop on the
--- given boot level. Processes that are in a failed state are excluded
--- from the results, i.e. are assumed to be stopped.
-pendingToStop :: M0.MeroClusterState -> PhaseM LoopState l [M0.Process]
-pendingToStop lvl = do
-  let isPSFailed (M0.PSFailed _) = True
-      isPSFailed (M0.PSInhibited st') = isPSFailed st'
-      isPSFailed _ = False
-
-  rg <- getLocalGraph
-  return [ (srv :: M0.Process) | srv <- G.connectedTo lvl M0.Pending rg
-                               , st <- G.connectedTo srv R.Is rg
-                               , not $ isPSFailed st ]
-
--- | Prepare the cluster to advance onto the next teardown level.
---
--- * If we're on last boot level (level 0), mark cluster ase
--- 'M0.MeroClusterStopped', we're done.
---
--- * Otherwise, mark all the processes on the next boot level with a
--- 'M0.ProcessLabel' through 'M0.Pending' relation, later used in
--- 'pendingToStop' to identify processes we're waiting for to stop.
--- Change global 'M0.MeroClusterState' to the next level.
-advanceClusterTeardown :: M0.BootLevel -> PhaseM LoopState l M0.MeroClusterState
-advanceClusterTeardown (M0.BootLevel 0) = do
-  modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterStopped
-  return M0.MeroClusterStopped
-advanceClusterTeardown (M0.BootLevel i) = do
-  let nextLevel = M0.BootLevel $ i - 1
-      clusterLevel = M0.MeroClusterStopping nextLevel
-      attachClusterLevel :: M0.Process -> G.Graph -> G.Graph
-      attachClusterLevel = G.connect clusterLevel M0.Pending
-  modifyGraph $
-    G.connectUnique R.Cluster R.Has clusterLevel
-    . (\r -> foldr attachClusterLevel r
-             -- TODO exclude nodes that failed to teardown?
-             (G.connectedFrom R.Has (mkLabel nextLevel) r))
-  return clusterLevel
 
 -- | Procedure for tearing down mero services. Starts by each node
 -- received 'StopMeroNode' message.
@@ -365,9 +308,6 @@ advanceClusterTeardown (M0.BootLevel i) = do
 --
 -- * 'notifyBarrier' grabs the current global cluster state.
 --
--- * It finds every process still running that has been marked as
--- 'M0.Pending' to stop. See 'M0.Pending' section for some discussion.
---
 -- * If there are still processes waiting to stop, do nothing: we
 -- still have nodes that need to report back their results or
 -- otherwise fail.
@@ -378,23 +318,11 @@ advanceClusterTeardown (M0.BootLevel i) = do
 -- * If there are no more processes on this level and it's not the last level:
 --
 --     1. Set global cluster state to the next level
---     2. Connect 'M0.Pending' to every 'M0.Process' on the next level.
---     3. Send out a 'BarrierPass' message: this serves as a barrier
+--     2. Send out a 'BarrierPass' message: this serves as a barrier
 --        release, blocked nodes wait for this message and when they
 --        see it, they know cluster progressed onto the given level
 --        and they can start teardown of that level.
 --
--- ==== 'M0.Pending':
---
--- There is glaring issue with usage of 'M0.Pending': it only gets
--- added inside the barrier code but barrier code doesn't get entered
--- until we have progressed through teardown of the start level (in
--- this cas 'maxTeardownLevel') on some node. This means that any
--- processes on 'maxTeardownLevel' can't be picked up by looking for
--- 'M0.Pending' labels. This caused a problem reported as part of
--- @HALON-214@. We get around this issue by starting on
--- 'teardownStartLevel' which starts on a level above
--- 'maxTeardownLevel'. See comment on 'teardownStartLevel' for info.
 ruleTearDownMeroNode :: Definitions LoopState ()
 ruleTearDownMeroNode = define "teardown-mero-server" $ do
    initialize <- phaseHandle "initialization"
@@ -412,44 +340,20 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
          Just (a,b, M0.BootLevel i) <- get Local
          put Local $ Just (a,b,M0.BootLevel (i-1))
          continue teardown
-       markProcessFailed lvl fids = modifyGraph $ \rg ->
-         foldr (\p -> G.disconnect (M0.MeroClusterStopping lvl) M0.Pending p
-                        >>> G.connectUniqueFrom p R.Is M0.PSStopping)
-               rg
-               (getProcessesByFid rg fids :: [M0.Process])
-
    -- Check if there are any processes left to be stopped on current bootlevel.
    -- If there are any process - then just process current message (meid),
    -- If there are no process left then move cluster to next bootlevel and prepare
    -- all technical information in RG, then emit BarrierPassed function.
    let notifyBarrier meid = do
          Just (_,_,b) <- get Local
-
-         -- TODO: We should figure out what to do here. Currently RC will
-         -- just die if we find the wrong state which was also previous
-         -- behaviour. Maybe we need ‘TeardownFailed’ status?
-         lvl@(M0.MeroClusterStopping bl@(M0.BootLevel _)) <-
-           listToMaybe . G.connectedTo R.Cluster R.Has <$> getLocalGraph >>= \case
-             Just lvl@(M0.MeroClusterStopping (M0.BootLevel _)) -> return lvl
-             st -> error $ "pendingToStop: unexpected level, RC dying: "
-                        ++ show st
-
-         allProcs <- pendingToStop lvl
-         if null allProcs && b == bl
-         then do lvl' <- advanceClusterTeardown bl
-                 syncGraphCallback $ \self proc -> do
-                   usend self (BarrierPass lvl')
-                   forM_ meid proc
-         else do phaseLog "debug" $ "There are processes left: " ++ show allProcs
-                 forM_ meid syncGraphProcessMsg
-
+         notifyOnClusterTransition (>= (M0.MeroClusterStopping b)) BarrierPass meid
 
    setPhase initialize $ \(HAEvent eid (StopMeroServer node) _) -> getStorageRC  >>= \nodes ->
      case Map.lookup node =<< nodes of
        Nothing -> do
          putStorageRC $ NodesRunningTeardown $ Map.insert node eid (fromMaybe Map.empty nodes)
          fork CopyNewerBuffer $ do
-           put Local (Just (eid, node, M0.BootLevel teardownStartLevel))
+           put Local (Just (eid, node, M0.BootLevel maxTeardownLevel))
            continue teardown
        Just eid' -> do
          phaseLog "debug" $ show node ++ " already being processed - ignoring."
@@ -468,8 +372,9 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
               nextBootLevel
           | s == lvl  -> continue teardown_exec
           | otherwise -> do
-              phaseLog "debug" $ printf "%s is on %s while cluster is on %s - waiting for barries."
+              phaseLog "debug" $ printf "%s is on %s while cluster is on %s - waiting for barriers."
                                         (show node) (show lvl) (show s)
+              notifyBarrier Nothing
               continue await_barrier
        _  -> continue finish
 
@@ -494,17 +399,27 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
                 continue teardown_timeout
 
    setPhaseIf teardown_complete (\(HAEvent eid (ProcessControlResultStopMsg node results) _) _ minfo ->
-       runMaybeT $ do
+     runMaybeT $ do
          (_, lnode@(R.Node nid), lvl) <- MaybeT $ return minfo
          -- XXX: do we want to check that this is wanted runlevel?
          guard (nid == node)
          return (eid, lnode, lvl, results))
      $ \(eid, node, lvl, results) -> do
        phaseLog "info" $ printf "%s completed tearing down of level %s." (show node) (show lvl)
-       forM_ results $ \case
-         Left _ -> return ()
-         Right (x,s) -> phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
-       markProcessFailed lvl $ map (\case Left x -> x ; Right (x,_) -> x) results
+       rg <- getLocalGraph
+       let
+         resultProcs :: [Either M0.Process (M0.Process, String)]
+         resultProcs = mapMaybe (\case
+           Left x -> Left <$> M0.lookupConfObjByFid x rg
+           Right (x,s) -> Right . (,s) <$> M0.lookupConfObjByFid x rg)
+           results
+       phaseLog "debug" $ printf "Results of stopping: %s" (show resultProcs)
+       applyStateChanges $ (\case
+         Left x -> stateSet x M0.PSOffline
+         Right (x,s) -> stateSet x (M0.PSFailed $ "Failed to stop: " ++ show x))
+         <$> resultProcs
+       forM_ (rights results) $ \(x,s) ->
+         phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
        notifyBarrier (Just eid)
        nextBootLevel
 
@@ -512,7 +427,9 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
      Just (_, node, lvl) <- get Local
      phaseLog "warning" $ printf "%s failed to stop services (timeout)" (show node)
      rg <- getLocalGraph
-     markProcessFailed lvl $ map M0.fid $ getLabeledNodeProcesses node (mkLabel lvl) rg
+     let failedProcs = getLabeledNodeProcesses node (mkLabel lvl) rg
+     applyStateChanges $ (\p -> stateSet p $ M0.PSFailed "Timeout on stop.")
+                          <$> failedProcs
      markNodeFailedTeardown node
      notifyBarrier Nothing
      continue finish
@@ -520,9 +437,9 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
    setPhaseIf await_barrier (\(BarrierPass i) _ minfo ->
      runMaybeT $ do
        (_, _, lvl) <- MaybeT $ return minfo
-       guard (i == M0.MeroClusterStopping lvl)
+       guard (i <= M0.MeroClusterStopping lvl)
        return ()
-     ) $ \() -> nextBootLevel
+     ) $ \() -> continue teardown
 
    directly stop_service $ do
      Just (_, node, _) <- get Local
@@ -578,7 +495,7 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
 -- 'M0.PLM0t1fs' processes.
 ruleNewMeroServer :: Definitions LoopState ()
 ruleNewMeroServer = define "new-mero-server" $ do
-    new_server <- phaseHandle "initial"
+    new_server <- phaseHandle "new_server"
     svc_up_now <- phaseHandle "svc_up_now"
     svc_up_already <- phaseHandle "svc_up_already"
     boot_level_0_complete <- phaseHandle "boot_level_0_complete"
@@ -641,7 +558,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
               Just lnid -> do
                 createMeroKernelConfig host $ lnid ++ "@tcp"
                 startMeroService host node
-                switch [svc_up_now, bootstrap_failed, timeout 1000000 svc_up_already]
+                switch [svc_up_now, bootstrap_failed, timeout 5 svc_up_already]
           Nothing -> do
             phaseLog "error" $ "Can't find R.Host for node " ++ show node
             continue finish
@@ -649,18 +566,20 @@ ruleNewMeroServer = define "new-mero-server" $ do
     -- Service comes up as a result of this invocation
     setPhaseIf svc_up_now declareMeroChannelOnNode $ \chan -> do
       Just (_, host, _) <- get Local
+      phaseLog "info" $ "halon-m0d service started on " ++ show host
       -- Legitimate to ignore the event id as it should be handled by the default
       -- 'declare-mero-channel' rule.
       procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
       case procs of
         [] -> let state = M0.MeroClusterStarting (M0.BootLevel 1) in do
-          notifyOnClusterTranstion state BarrierPass Nothing
-          switch [boot_level_1, timeout 5000000 finish]
+          notifyOnClusterTransition (== state) BarrierPass Nothing
+          switch [boot_level_1, timeout 180 finish]
         _ -> continue boot_level_0_complete
 
     -- Service is already up
     directly svc_up_already $ do
       Just (node, host, _) <- get Local
+      phaseLog "info" $ "halon-m0d service already started on " ++ show host
       rg <- getLocalGraph
       m0svc <- lookupRunningService node m0d
       case m0svc >>= meroChannel rg of
@@ -668,10 +587,10 @@ ruleNewMeroServer = define "new-mero-server" $ do
           procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
           case procs of
             [] -> let state = M0.MeroClusterStarting (M0.BootLevel 1) in do
-              notifyOnClusterTranstion state BarrierPass Nothing
-              switch [boot_level_1, timeout 5000000 finish]
+              notifyOnClusterTransition (== state) BarrierPass Nothing
+              switch [boot_level_1, timeout 180 finish]
             _ -> continue boot_level_0_complete
-        Nothing -> switch [svc_up_now, timeout 5000000 finish]
+        Nothing -> switch [svc_up_now, timeout 180 finish]
 
     -- Wait until every process comes back as finished bootstrapping
     setPhaseIf boot_level_0_complete processControlOnNode $ \(eid, e) -> do
@@ -685,11 +604,11 @@ ruleNewMeroServer = define "new-mero-server" $ do
       case failedProcs of
         [] -> do
           let state = M0.MeroClusterStarting (M0.BootLevel 1)
-          notifyOnClusterTranstion state BarrierPass (Just eid)
-          switch [boot_level_1, timeout 5000000 finish]
+          notifyOnClusterTransition (== state) BarrierPass (Just eid)
+          switch [boot_level_1, timeout 180 finish]
         _ -> continue cluster_failed
 
-    setPhaseIf boot_level_1 (barrierPass (M0.MeroClusterStarting (M0.BootLevel 1))) $ \() -> do
+    setPhaseIf boot_level_1 (barrierPass (>= (M0.MeroClusterStarting (M0.BootLevel 1)))) $ \() -> do
       Just (node, host, _) <- get Local
       g <- getLocalGraph
       m0svc <- lookupRunningService node m0d
@@ -698,8 +617,8 @@ ruleNewMeroServer = define "new-mero-server" $ do
           procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
           case procs of
             [] -> let state = M0.MeroClusterRunning in do
-              notifyOnClusterTranstion state BarrierPass Nothing
-              switch [start_clients, timeout 5000000 finish]
+              notifyOnClusterTransition (== state) BarrierPass Nothing
+              switch [start_clients, timeout 180 finish]
             _ -> continue boot_level_1_complete
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
@@ -711,12 +630,12 @@ ruleNewMeroServer = define "new-mero-server" $ do
       case failedProcs of
         [] -> do
           let state = M0.MeroClusterRunning
-          notifyOnClusterTranstion state BarrierPass (Just eid)
-          switch [start_clients, timeout 5000000 finish]
+          notifyOnClusterTransition (== state) BarrierPass (Just eid)
+          switch [start_clients, timeout 180 finish]
         _ -> continue cluster_failed
 
 
-    setPhaseIf start_clients (barrierPass M0.MeroClusterRunning) $ \() -> do
+    setPhaseIf start_clients (barrierPass (>= M0.MeroClusterRunning)) $ \() -> do
       Just (node, host, _) <- get Local
       rg <- getLocalGraph
       m0svc <- lookupRunningService node m0d
@@ -802,12 +721,10 @@ ruleDynamicClient =  define "dynamic-client-discovery" $ do
     Just hhi <- getField . rget fldHostHardwareInfo
                 <$> get Local
     createMeroClientConfig fs host hhi
-    -- TODO better notify function which takes a comparator
-    notifyOnClusterTranstion (M0.MeroClusterStarting (M0.BootLevel 1)) BarrierPass Nothing
-    notifyOnClusterTranstion M0.MeroClusterRunning BarrierPass Nothing
+    notifyOnClusterTransition (>= M0.MeroClusterStarting (M0.BootLevel 1)) BarrierPass Nothing
     continue confd_running
 
-  setPhaseIf confd_running (barrierPass (M0.MeroClusterStarting (M0.BootLevel 1))) $ \() -> do
+  setPhaseIf confd_running (barrierPass (>= (M0.MeroClusterStarting (M0.BootLevel 1)))) $ \() -> do
     syncStat <- syncToConfd
     case syncStat of
       Left err -> do

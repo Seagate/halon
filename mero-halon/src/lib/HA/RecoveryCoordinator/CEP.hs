@@ -282,12 +282,11 @@ ruleDummyEvent = defineSimple "dummy-event" $
         messageProcessed uuid
 
 ruleStopRequest :: Definitions LoopState ()
-ruleStopRequest = defineSimple "stop-request" $ \(HAEvent uuid msg _) -> do
+ruleStopRequest = defineSimpleTask "stop-request" $ \msg -> do
       ServiceStopRequest node svc <- decodeMsg msg
       res                         <- lookupRunningService node svc
       for_ res $ \sp ->
         killService sp Shutdown
-      messageProcessed uuid
 
 data RecoverNodeAck = RecoverNodeAck UUID
   deriving (Eq, Show, Typeable, Generic)

@@ -37,7 +37,7 @@ data Fid = Fid { f_container :: {-# UNPACK #-} !Word64
   deriving (Eq, Data, Ord, Typeable, Generic)
 
 instance Show Fid where
-  show (Fid c k) = printf "<0x%x:%d>" c k
+  show = fidToStr
 
 -- | Convert a 'Fid' to 'String' in a format that is expected in
 -- various locations read by mero, such as part of filenames.

@@ -341,6 +341,7 @@ serviceRules argv = do
     liftProcess $ mapM_ (flip usend (encodeP response)) listeners
     messageProcessed uuid
 
-  defineSimpleTask "service-stopped" $ \(HAEvent _ msg _) -> do
+  defineSimpleTask "service-stopped" $ \msg -> do
     ServiceExit node svc@(Service{}) _ <- decodeMsg msg
-    traverse_  (unregisterServiceProcess node svc) =<< lookupRunningService node svc 
+    phaseLog "info" $ "Service stopped normally: " ++ show svc
+    traverse_  (unregisterServiceProcess node svc) =<< lookupRunningService node svc
