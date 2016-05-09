@@ -11,6 +11,7 @@ module HA.EventQueue.Producer
   , promulgate
   , promulgateWait
   , promulgateEvent
+  , promulgateTimeout
   , expiate
   ) where
 
@@ -97,7 +98,7 @@ promulgateWait x =
            (flip kill "caller was killed")
            $ \sender -> do
      mref <- monitor sender
-     receiveWait [matchIf (\(ProcessMonitorNotification p _ _) -> p == mref) 
+     receiveWait [matchIf (\(ProcessMonitorNotification p _ _) -> p == mref)
                           (const $ return ())
                  ]
 
