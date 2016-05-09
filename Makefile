@@ -1,7 +1,7 @@
 # This project uses The Stack build tool. Please refer to the README
 # for build instructions.
 
-VERSION = $(shell git describe --long --always | tr '-' '_' | cut -c 2-)
+VERSION = $(shell git describe --long --always | tr '-' '_')
 MOCK_CONFIG = default
 SRC_RPM_DIR := $(shell mktemp -du)
 RESULT_DIR = rpmbuild
@@ -13,9 +13,9 @@ rpm:
 	mock -r $(MOCK_CONFIG) --buildsrpm \
 		--spec halon.spec --sources $(RESULT_DIR) \
 		--resultdir $(SRC_RPM_DIR) \
-		--define "_gitversion ${VERSION}" \
-		--define "_rpmrel ${RPMREL}"
-	mock -r $(MOCK_CONFIG) --rebuild $(SRC_RPM_DIR)/*.src.rpm --resultdir $(RESULT_DIR)
+		--define "_gitversion ${VERSION}"
+	mock -r $(MOCK_CONFIG) --rebuild $(SRC_RPM_DIR)/*.src.rpm --resultdir $(RESULT_DIR) \
+                --define "_gitversion ${VERSION}"
 
 # This target will generate a distributable RPM based on the current
 # checkout. It will generate a binary RPM in ./rpmbuild/RPMS/x86_64
