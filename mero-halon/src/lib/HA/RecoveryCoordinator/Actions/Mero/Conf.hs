@@ -317,6 +317,7 @@ getFilesystem = getLocalGraph >>= \rg -> do
            , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
       ]
 
+-- | Fetch all (non-metadata) pools in the system.
 getPool :: PhaseM LoopState l [M0.Pool]
 getPool = getLocalGraph >>= \rg -> do
   phaseLog "rg-query" $ "Looking for Mero pool."
@@ -324,6 +325,7 @@ getPool = getLocalGraph >>= \rg -> do
       [ pl | p <- G.connectedTo Cluster Has rg :: [M0.Profile]
            , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
            , pl <- G.connectedTo fs M0.IsParentOf rg
+           , M0.fid pl /= M0.f_mdpool_fid fs
       ]
 
 -- | RC wrapper for 'getM0Services'.

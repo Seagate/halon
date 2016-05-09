@@ -266,12 +266,16 @@ testControllerFailureDomain transport = rGroupTest transport $ \pid -> do
       putLocalGraph rg'
     -- Verify that everything is set up correctly
     (Just fs) <- runGet ls' getFilesystem
-    let pool = M0.Pool (M0.f_mdpool_fid fs)
+    let mdpool = M0.Pool (M0.f_mdpool_fid fs)
     assertMsg "MDPool is stored in RG"
-      $ memberResource pool (lsGraph ls')
-    mdpool <- runGet ls' $ lookupConfObjByFid (M0.f_mdpool_fid fs)
+      $ memberResource mdpool (lsGraph ls')
+    mdpool_byFid <- runGet ls' $ lookupConfObjByFid (M0.f_mdpool_fid fs)
     assertMsg "MDPool is findable by Fid"
-      $ mdpool == Just pool
+      $ mdpool_byFid == Just mdpool
+
+    -- Get the non metadata pool
+    [pool] <- runGet ls' getPool
+
     -- We have 4 disks in 4 enclosures.
     hosts <- runGet ls' $ findHosts ".*"
     let g = lsGraph ls'
