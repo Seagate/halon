@@ -39,11 +39,10 @@ rm -rf %{buildroot}
 mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/lib/systemd/system
 mkdir -p %{buildroot}/etc/halon/role_maps
-cp $(%{stack} path --local-install-root)/bin/genders2yaml %{buildroot}/usr/bin
 cp $(%{stack} path --local-install-root)/bin/halonctl %{buildroot}/usr/bin
 cp $(%{stack} path --local-install-root)/bin/halond %{buildroot}/usr/bin
 cp systemd/*.service %{buildroot}/usr/lib/systemd/system
-cp mero-halon/scripts/localcluster %{buildroot}/usr/bin/halon-simplelocalcluster
+cp mero-halon/scripts/hctl %{buildroot}/usr/bin/hctl
 cp mero-halon/scripts/mero_role_mappings.ede \
    %{buildroot}/etc/halon/role_maps/genders.ede
 cp mero-halon/scripts/mero_provisioner_role_mappings.ede \
@@ -57,8 +56,7 @@ rm -rf %{buildroot}
 %defattr(-,root,root,-)
 /usr/bin/halond
 /usr/bin/halonctl
-/usr/bin/halon-simplelocalcluster
-/usr/bin/genders2yaml
+/usr/bin/hctl
 /usr/lib/systemd/system/halond.service
 /usr/lib/systemd/system/halon-satellite.service
 /etc/halon/role_maps/genders.ede
