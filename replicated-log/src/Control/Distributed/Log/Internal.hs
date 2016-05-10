@@ -1173,6 +1173,8 @@ replica Dict
                        -- Notify the ambassadors.
                        forM_ (map batcherMsgAmbassador rs) $
                          flip usend (epoch, ρs)
+                       -- Kill the batcher.
+                       exitAndWait bpid
                        return (s, cd)
 
                   go st{ stateCurrentDecree = cd', stateLogState = s' }
@@ -1206,9 +1208,10 @@ replica Dict
               --
               -- The proposer rejected or aborted the request.
             , match $ {-# SCC "go/ProposerRejected" #-}
-                  \(_ :: DecreeId, Request _ (_ :: Value a) _ rLease) -> do
-                  when (isNothing rLease) $
+                  \(_ :: DecreeId, Request senders (_ :: Value a) _ rLease) -> do
+                  when (isNothing rLease) $ do
                     usend bpid ()
+                    forM_ senders $ flip usend False
                   go st
 
               -- Try to service a query if the requested decree is not too old.
