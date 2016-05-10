@@ -189,7 +189,9 @@ Library
                      inline-c,
                      template-haskell,
                      transformers,
-                     vector
+                     vector,
+                     psqueues,
+                     stm
   if flag(rpc)
       Build-Depends: rpclite,
                      network-transport-rpc
@@ -740,12 +742,14 @@ Test-Suite scheduler-tests
                     text,
                     process,
                     uuid,
-                    exceptions
+                    exceptions,
+                    stm
 
   if flag(mero)
     CPP-Options:    -DUSE_MERO
     Build-Depends:  confc,
                     rpclite
+    Other-modules:  Mero.Notification.Tests
 
 Test-Suite test-start-service-local
   Type:             exitcode-stdio-1.0

@@ -11,7 +11,6 @@ module HA.EventQueue.Producer
   , promulgate
   , promulgateWait
   , promulgateEvent
-  , promulgateTimeout
   , expiate
   ) where
 
