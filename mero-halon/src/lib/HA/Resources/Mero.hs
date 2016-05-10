@@ -262,7 +262,7 @@ instance ConfObj Controller where
   fid (Controller f) = f
 
 newtype Disk = Disk Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Binary, Eq, Generic, Hashable, Show, Typeable, Ord)
 
 instance ConfObj Disk where
   fidType _ = fromIntegral . ord $ 'k'
@@ -377,6 +377,12 @@ data PoolRepairStatus = PoolRepairStatus
 
 instance Binary PoolRepairStatus
 instance Hashable PoolRepairStatus
+
+-- | Vector of failed devices. We keep the order of failures because
+-- mero should always send information about that to mero in the same
+-- order.
+newtype DiskFailureVector = DiskFailureVector [Disk]
+  deriving (Eq, Show, Ord, Generic, Typeable, Hashable, Binary)
 
 newtype LNid = LNid String
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
@@ -496,7 +502,7 @@ $(mkDicts
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''MeroClusterState, ''ProcessBootstrapped
-  , ''ProcessState
+  , ''ProcessState, ''DiskFailureVector
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -536,6 +542,7 @@ $(mkDicts
   , (''R.Cluster, ''R.Has, ''FidSeq)
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
   , (''Pool, ''R.Has, ''PoolRepairStatus)
+  , (''Pool, ''R.Has, ''DiskFailureVector)
   , (''R.Host, ''R.Has, ''LNid)
   , (''R.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
@@ -551,7 +558,7 @@ $(mkResRel
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''MeroClusterState, ''ProcessBootstrapped
-  , ''ProcessState
+  , ''ProcessState, ''DiskFailureVector
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -591,6 +598,7 @@ $(mkResRel
   , (''R.Cluster, ''R.Has, ''FidSeq)
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
   , (''Pool, ''R.Has, ''PoolRepairStatus)
+  , (''Pool, ''R.Has, ''DiskFailureVector)
   , (''R.Host, ''R.Has, ''LNid)
   , (''R.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)

@@ -41,6 +41,8 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , isPrincipalRM
   , setPrincipalRMIfUnset
   , pickPrincipalRM
+    -- * Low level graph API
+  , rgGetPool
   ) where
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -320,13 +322,16 @@ getFilesystem = getLocalGraph >>= \rg -> do
 -- | Fetch all (non-metadata) pools in the system.
 getPool :: PhaseM LoopState l [M0.Pool]
 getPool = getLocalGraph >>= \rg -> do
-  phaseLog "rg-query" $ "Looking for Mero pool."
-  return
-      [ pl | p <- G.connectedTo Cluster Has rg :: [M0.Profile]
-           , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
-           , pl <- G.connectedTo fs M0.IsParentOf rg
-           , M0.fid pl /= M0.f_mdpool_fid fs
-      ]
+  phaseLog "rg-query" "Looking for Mero pool."
+  return $ rgGetPool rg
+
+rgGetPool :: G.Graph -> [M0.Pool]
+rgGetPool rg =
+  [ pl | p <- G.connectedTo Cluster Has rg :: [M0.Profile]
+       , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
+       , pl <- G.connectedTo fs M0.IsParentOf rg
+       , M0.fid pl /= M0.f_mdpool_fid fs
+  ]
 
 -- | RC wrapper for 'getM0Services'.
 getM0ServicesRC :: PhaseM LoopState l [M0.Service]

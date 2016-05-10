@@ -32,6 +32,7 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
 import HA.Encode (encodeP)
 import HA.EventQueue.Producer (promulgate)
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Castor
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Events.Mero
@@ -47,19 +48,21 @@ import Control.Applicative (liftA2)
 import Control.Category ((>>>))
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
 import Control.Distributed.Process (Process, liftIO)
+import Control.Arrow (first)
 import Control.Distributed.Static (Static, staticApplyPtr)
-import Control.Monad (join)
+import Control.Monad (join, when, guard)
 import Control.Monad.Fix (fix)
 
 import Data.Constraint (Dict)
 import Data.Foldable (forM_)
+import Data.Traversable (mapAccumL)
+import Data.Maybe (catMaybes)
 import Data.Monoid
 import Data.Typeable
 import Data.List (nub, genericLength)
 import Data.Either (lefts)
 import Data.Functor (void)
 import Data.Word
-import Control.Monad (when, guard)
 
 import Network.CEP
 
@@ -108,16 +111,18 @@ instance Monoid DeferredStateChanges where
 --   - Any failure implications (e.g. inhibited states)
 --   - Creating pool versions etc. in the graph
 --   - Syncing to confd if necessary.
-cascadeStateChange :: AnyStateChange -> G.Graph -> [AnyStateChange]
-cascadeStateChange asc rg = go [asc] [asc]
+cascadeStateChange :: AnyStateChange -> G.Graph -> (G.Graph->G.Graph, [AnyStateChange])
+cascadeStateChange asc rg = go [asc] [asc] id
    where
     -- XXX: better structues for union and difference, should we nub on b?
-    go :: [AnyStateChange] -> [AnyStateChange] -> [AnyStateChange]
-    go = fix $ \f a c ->
+    go :: [AnyStateChange] -> [AnyStateChange] -> (G.Graph -> G.Graph) -> (G.Graph -> G.Graph, [AnyStateChange])
+    go = fix $ \f a c old_f ->
            if null a
-           then c
-           else let b = join $ liftA2 unwrap a stateCascadeRules
-                in f (filter (flip all c . notMatch) b) (b ++ c)
+           then (old_f, c)
+           else let (updates, bs) = unzip $ liftA2 unwrap a stateCascadeRules
+                    new_f = foldl (>>>) old_f (catMaybes updates)
+                    b = join bs
+                in f (filter (flip all c . notMatch) b) (b ++ c) (new_f)
     notMatch (AnyStateChange (a :: a) _ _ _) (AnyStateChange (b::b) _ _ _) =
        case eqT :: Maybe (a :~: b) of
          Just Refl -> a /= b
@@ -127,41 +132,49 @@ cascadeStateChange asc rg = go [asc] [asc]
     tryApplyCascadeRule :: forall a . Typeable a
                         => (a, M0.StateCarrier a, M0.StateCarrier a)
                         -> AnyCascadeRule
-                        -> [AnyStateChange]
+                        -> (Maybe (G.Graph -> G.Graph), [AnyStateChange])
     tryApplyCascadeRule s (AnyCascadeRule (scr :: StateCascadeRule a' b)) =
       case eqT :: Maybe (a :~: a') of
         Just Refl ->
-           (\(b, b_old, b_new) -> AnyStateChange b b_old b_new sp)
-             <$> applyCascadeRule scr s
+           fmap ((\(b, b_old, b_new) -> AnyStateChange b b_old b_new sp) <$>)
+                (applyCascadeRule scr s)
           where
             sp = staticApplyPtr
                   (static M0.someHasConfObjectStateDict)
                   (M0.hasStateDict :: Static (Dict (M0.HasConfObjectState a)))
-        Nothing -> []
+        Nothing -> (Nothing, [])
     applyCascadeRule :: ( M0.HasConfObjectState a
                         , M0.HasConfObjectState b
                         )
                      => StateCascadeRule a b
                      -> (a, M0.StateCarrier a, M0.StateCarrier a)   -- state change
-                     -> [(b, M0.StateCarrier b, M0.StateCarrier b)] -- new updated states
+                     -> (Maybe (G.Graph -> G.Graph),[(b, M0.StateCarrier b, M0.StateCarrier b)]) -- new updated states
     applyCascadeRule
       (StateCascadeRule old new f u)
       (a, a_old, a_new) =
         if (null old || a_old `elem` old) && (null new || a_new `elem` new)
-        then [ (b, b_old, b_new)
-             | b <- f a rg
-             , let b_old = M0.getState b rg
-             , let b_new = u a_new b_old
-             ]
-        else []
+        then ( Nothing
+             , [ (b, b_old, b_new)
+               | b <- f a rg
+               , let b_old = M0.getState b rg
+               , let b_new = u a_new b_old
+               ])
+        else (Nothing, [])
+    applyCascadeRule
+      (StateCascadeTrigger old new fg)
+      (a, a_old, a_new) =
+        if (null old || a_old `elem` old) && (null new || a_new `elem` new)
+        then (Just (fg a), [])
+        else (Nothing, [])
 
 -- | Create deferred state changes for a number of objects.
 --   Should implicitly cascade all necessary changes under the covers.
 createDeferredStateChanges :: [AnyStateSet] -> G.Graph -> DeferredStateChanges
 createDeferredStateChanges stateSets rg =
-    DeferredStateChanges fn (Set nvec) (InternalObjectStateChange iosc)
+    DeferredStateChanges (fn>>>trigger_fn) (Set nvec) (InternalObjectStateChange iosc)
   where
-    stateChanges = join $ (flip cascadeStateChange $ rg) <$> rootStateChanges
+    (trigger_fn, stateChanges) = fmap join $
+        mapAccumL (\fg change -> first ((>>>) fg) (cascadeStateChange change rg)) id rootStateChanges
     rootStateChanges = lookupOldState <$> stateSets
     lookupOldState (AnyStateSet (x :: a) st) =
         AnyStateChange x (M0.getState x rg) st sp
@@ -262,6 +275,11 @@ data StateCascadeRule a b where
                     -> (a -> G.Graph -> [b]) --  Function to find new objects
                     -> (M0.StateCarrier a -> M0.StateCarrier b -> M0.StateCarrier b)
                     -> StateCascadeRule a b
+  StateCascadeTrigger :: (M0.HasConfObjectState a, b ~ a)
+                    => [M0.StateCarrier a] --  Old state(s) if applicable
+                    -> [M0.StateCarrier a] --  New state(s)
+                    -> (a -> G.Graph -> G.Graph) -- Update graph
+                    -> StateCascadeRule a b
   deriving Typeable
 
 -- | Existential wrapper for rules, we can make to make
@@ -281,6 +299,8 @@ stateCascadeRules =
   , AnyCascadeRule sdevCascadeRule
   , AnyCascadeRule diskFailsPVer
   , AnyCascadeRule diskFixesPVer
+  , AnyCascadeRule diskAddToFailureVector
+  , AnyCascadeRule diskRemoveFromFailureVector
   ]
 
 rackCascadeRule :: StateCascadeRule M0.Rack M0.Enclosure
@@ -305,7 +325,7 @@ sdevCascadeRule = StateCascadeRule
   []
   []
   (\x rg -> G.connectedTo x M0.IsOnHardware rg)
-  (const)
+  const
 
 diskFailsPVer :: StateCascadeRule M0.Disk M0.PVer
 diskFailsPVer = StateCascadeRule
@@ -319,14 +339,14 @@ diskFailsPVer = StateCascadeRule
                                  guard (M0.M0_NC_FAILED /= M0.getConfObjState pver rg)
                                  return pver
             in lefts $ map (checkBroken rg) pvers)
-  (const)
+  const
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
    checkBroken rg (pver@(M0.PVer _ [_, frack, fenc, fctrl, fdisk] _)) = do
      (racksv :: [M0.RackV])       <- check frack [pver] (Proxy :: Proxy M0.Rack)
      (enclsv :: [M0.EnclosureV])  <- check fenc racksv  (Proxy :: Proxy M0.Enclosure)
      (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
-     void $ (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
+     void (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
      where
        check :: forall a b c . (G.Relation M0.IsParentOf a b, G.Relation M0.IsRealOf c b, M0.HasConfObjectState c)
              => Word32 -> [a] -> Proxy c -> Either M0.PVer [b]
@@ -353,14 +373,14 @@ diskFixesPVer = StateCascadeRule
                                  guard (M0.M0_NC_ONLINE /= M0.getConfObjState pver rg)
                                  return pver
             in lefts $ map (checkBroken rg) pvers)
-  (const)
+  const
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
    checkBroken rg (pver@(M0.PVer _ [_, frack, fenc, fctrl, fdisk] _)) = do
      (racksv :: [M0.RackV])       <- check frack [pver] (Proxy :: Proxy M0.Rack)
      (enclsv :: [M0.EnclosureV])  <- check fenc racksv  (Proxy :: Proxy M0.Enclosure)
      (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
-     void $ (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
+     void (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
      where
        check :: forall a b c . (G.Relation M0.IsParentOf a b, G.Relation M0.IsRealOf c b, M0.HasConfObjectState c)
              => Word32 -> [a] -> Proxy c -> Either M0.PVer [b]
@@ -374,3 +394,17 @@ diskFixesPVer = StateCascadeRule
          when (broken <= limit) $ Left pver
          return next
    checkBroken _ _ = Right ()
+
+-- | When disk is failing we need to add that disk to the 'DiskFailureVector'.
+diskAddToFailureVector :: StateCascadeRule M0.Disk M0.Disk
+diskAddToFailureVector = StateCascadeTrigger
+  []
+  [M0.M0_NC_FAILED]
+  rgRecordDiskFailure
+
+-- | When disk becomes online we need to add that disk to the 'DiskFailureVector'.
+diskRemoveFromFailureVector :: StateCascadeRule M0.Disk M0.Disk
+diskRemoveFromFailureVector = StateCascadeTrigger
+  []
+  [M0.M0_NC_ONLINE]
+  rgRecordDiskOnline
