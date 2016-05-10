@@ -17,7 +17,7 @@ dependencies:
     - mkdir -p ~/.local/bin
     - curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack';
     - stack --version
-    - sudo apt-get install socat
+    - sudo apt-get install socat sysstat
     # Make the docker socket available on a port.
     - "socat TCP-LISTEN:5555,reuseaddr,fork UNIX-CLIENT:/var/run/docker.sock":
         background: true
@@ -39,6 +39,8 @@ dependencies:
 
 test:
   override:
+    - "iostat -txzm 5 &> iostats.log":
+        background: true
     # Build with USE_MERO and then without.
     - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero --haddock --no-haddock-deps
     - stack $STACK_FLAGS build --flag mero-halon:distributed-tests --test --no-run-tests --haddock --no-haddock-deps
