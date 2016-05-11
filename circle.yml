@@ -21,6 +21,8 @@ dependencies:
     # Make the docker socket available on a port.
     - "socat TCP-LISTEN:5555,reuseaddr,fork UNIX-CLIENT:/var/run/docker.sock":
         background: true
+    # Show the current cpuset mask for analysis of stats
+    - grep Cpus_a "/proc/$$/status"
   override:
     # Build tweagremote image for distributed tests and copy the ssh key to access it.
     - docker build --tag=tweagremote docker/tweagremote
@@ -39,7 +41,13 @@ dependencies:
 
 test:
   override:
-    - "iostat -txzm 5 &> iostats.log":
+    - "top -b -d 5 | grep -A 10 'PID USER' &> topten-stats.log":
+        background: true
+    - "pidstat -C 'test|halond' -du 5 &> pidstats-tests.log":
+        background: true
+    - "mpstat -P ON 5 &> mpstats.log":
+        background: true
+    - "iostat -dNtxzm 5 &> iostats.log":
         background: true
     # Build with USE_MERO and then without.
     - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero --haddock --no-haddock-deps
