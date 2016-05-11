@@ -6,3 +6,5 @@
 #include "config.h"
 
 int m0_init_wrapper ();
+
+void m0_fini_wrapper ();

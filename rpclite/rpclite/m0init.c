@@ -2,23 +2,26 @@
 // Copyright (C) 2015 Seagate Technology Limited. All rights reserved.
 //
 #include "m0init.h"
-#include "module/instance.h"
+#include "ha/halon/interface.h"
+#include "lib/memory.h"
 #include "mero/init.h"
 #include "mero/version.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-static struct m0 instance;
+static struct m0_halon_interface *hi = NULL;
 
 int m0_init_wrapper () {
     const struct m0_build_info* bi = m0_build_info_get();
+    int disable_compat_check = getenv("DISABLE_MERO_COMPAT_CHECK") == NULL;
     if (0 != strcmp(bi->bi_git_rev_id, M0_VERSION_GIT_REV_ID)) {
       fprintf(stderr, "m0_init_wrapper: The loaded mero library (%s) "
                       "is not the expected one (%s)\n"
                     , bi->bi_git_rev_id
                     , M0_VERSION_GIT_REV_ID
              );
-      if (getenv("DISABLE_MERO_COMPAT_CHECK") == NULL) {
+      if (disable_compat_check) {
         exit(1);
       }
     }
@@ -29,10 +32,17 @@ int m0_init_wrapper () {
                     , bi->bi_configure_opts
                     , M0_VERSION_BUILD_CONFIGURE_OPTS
              );
-      if (getenv("DISABLE_MERO_COMPAT_CHECK") == NULL) {
+      if (disable_compat_check) {
         exit(1);
       }
     }
-    M0_SET0(&instance);
-    return m0_init(&instance);
+    M0_ASSERT(hi == NULL);
+    hi = (struct m0_halon_interface*)calloc(1, sizeof(struct m0_halon_interface));
+    return m0_halon_interface_init(hi, M0_VERSION_GIT_REV_ID, M0_VERSION_BUILD_CONFIGURE_OPTS, disable_compat_check);
+}
+
+void m0_fini_wrapper() {
+    m0_halon_interface_fini(hi);
+    free(hi);
+    hi = NULL;
 }
