@@ -43,7 +43,7 @@ test:
   override:
     - "top -b -d 5 | grep -A 10 'PID USER' &> topten-stats.log":
         background: true
-    - "pidstat -C 'test|halond' -du 5 &> pidstats-tests.log":
+    - "pidstat -C 'mero|distributed|random|integration|test|halond' -du 5 &> pidstats-tests.log":
         background: true
     - "mpstat -P ON 5 &> mpstats.log":
         background: true
