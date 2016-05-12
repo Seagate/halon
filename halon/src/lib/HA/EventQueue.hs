@@ -176,14 +176,16 @@ filterMessage msg eq =
 
 -- | @eqReadEvents (eq, sn)@ sends the current sequence number and all events
 -- from @sn@ onwards to @eq@.
-eqReadEvents :: (ProcessId, Word64) -> EventQueue -> Process ()
-eqReadEvents (eq, sn) (EventQueue sn' uuidMap snMap) = do
+eqReadEvents :: (SendPort (SequenceNumber, [PersistMessage]), Word64)
+             -> EventQueue
+             -> Process ()
+eqReadEvents (eqSp, sn) (EventQueue sn' uuidMap snMap) = do
     let (_, muuid, evs) = M.splitLookup sn snMap
     eqTrace $ "Polling state " ++ show (sn, sn', muuid)
-    usend eq (sn', [ m | uuid <- maybe id (:) muuid $ M.elems evs
-                       , Just (m, _) <- [M.lookup uuid uuidMap]
-                   ]
-             )
+    sendChan eqSp (sn', [ m | uuid <- maybe id (:) muuid $ M.elems evs
+                            , Just (m, _) <- [M.lookup uuid uuidMap]
+                        ]
+                  )
 
 -- A noop read that helps detecting when the replicator groups becomes
 -- responsive again.
@@ -244,12 +246,12 @@ eqRules rg pool = do
       poller <- spawnLocal $ handle
         (\e -> eqTrace $ "Poller died: " ++ show (e :: SomeException)) $ do
         link rc
-        self <- getSelfPid
         flip fix (0 :: Word64) $ \loop sn -> do
           t0 <- liftIO $ getTime Monotonic
           (sn', ms) <- retryRGroup rg requestTimeout $ do
-            b <- getStateWith rg $ $(mkClosure 'eqReadEvents) (self, sn)
-            if b then fmap Just expect else return Nothing
+            (sp, rp) <- newChan
+            b <- getStateWith rg $ $(mkClosure 'eqReadEvents) (sp, sn)
+            if b then Just <$> receiveChan rp else return Nothing
           forM_ (ms :: [PersistMessage]) $ \(PersistMessage mid ev) -> do
             eqTrace $ "Sending to RC: " ++ show mid
             uforward ev rc
