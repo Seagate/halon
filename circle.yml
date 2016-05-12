@@ -2,7 +2,8 @@ machine:
   services:
     - docker
   environment:
-      STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero
+      # Use only as many jobs as CPUs are available (via cpuset)
+      STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero --jobs 2
 
 checkout:
   post:
