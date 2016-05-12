@@ -772,6 +772,28 @@ Benchmark initial-data-gc
   else
     Buildable:     False
 
+Test-Suite test-bootstrap
+  Type:             exitcode-stdio-1.0
+  Default-Language: Haskell2010
+  Hs-Source-Dirs:   tests
+  Main-Is:          test-bootstrap.hs
+  Other-Modules:    Helper.Environment
+  if flag(mero)
+    Build-Depends:  aeson,
+                    base >= 4.5,
+                    bytestring,
+                    confc,
+                    directory,
+                    filepath,
+                    mero-halon,
+                    network,
+                    process,
+                    process-extras,
+                    template-haskell,
+                    unix
+  else
+    Buildable:        False
+
 Test-Suite tests-mero-integration
   Type:             exitcode-stdio-1.0
   Default-Language: Haskell2010
