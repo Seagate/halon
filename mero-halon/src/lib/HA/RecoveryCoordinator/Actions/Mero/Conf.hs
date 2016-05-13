@@ -267,24 +267,20 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
 createMDPoolPVer :: M0.Filesystem -> PhaseM LoopState l ()
 createMDPoolPVer fs = getLocalGraph >>= \rg -> let
     mdpool = M0.Pool (M0.f_mdpool_fid fs)
-    no_iosvcs = length . filter (\s -> M0.s_type s == CST_IOS)
-              $ M0.getM0Services rg
     racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
     encls = (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Enclosure]) =<< racks
     ctrls = (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Controller]) =<< encls
-    disks = case no_iosvcs of
-      1 -> (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Disk]) =<< ctrls
-      _ -> (\r -> take 1 $ G.connectedTo r M0.IsParentOf rg :: [M0.Disk]) =<< ctrls
+    disks = (\r -> take 1 $ G.connectedTo r M0.IsParentOf rg :: [M0.Disk]) =<< ctrls
     fids = Set.unions . (fmap Set.fromList) $
             [ (M0.fid <$> racks)
             , (M0.fid <$> encls)
             , (M0.fid <$> ctrls)
             , (M0.fid <$> disks)
             ]
-    failures = Failures 0 0 0 (if no_iosvcs == 1 then 0 else 1) 1
+    failures = Failures 0 0 0 1 0
     attrs = PDClustAttr {
-        _pa_N = fromIntegral $ length disks - 2
-      , _pa_K = 1
+        _pa_N = fromIntegral $ length disks
+      , _pa_K = 0
       , _pa_P = 0 -- Will be overridden
       , _pa_unit_size = 4096
       , _pa_seed = Word128 101 101
