@@ -569,7 +569,6 @@ checkRepairOnClusterStart = define "check-repair-on-start" $ do
                   : ((flip stateSet $ M0_NC_REPAIR) <$> fa)
                   )
                 switch [notified, timeout 1000000 end]
-      continue end
 
     setPhaseIf notified (includesStateChange M0_NC_REPAIR) $ \pool -> do
       startRepairOperation pool
