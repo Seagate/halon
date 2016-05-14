@@ -87,6 +87,8 @@ import Control.Monad.Catch
 import Data.Binary (Binary, encode, decode)
 import qualified Data.ByteString.Lazy as BSL (ByteString, length)
 import Data.Constraint (Dict(..))
+import Control.DeepSeq
+import Data.Either
 import Data.Foldable (forM_)
 import Data.Function (fix)
 import Data.Int (Int64)
@@ -295,11 +297,6 @@ instance Binary Status
 
 instance Binary TimeSpec
 
-data TimerMessage = LeaseRenewalTime | PeriodicTick
-  deriving (Generic, Typeable)
-
-instance Binary TimerMessage
-
 replicaLabel :: LogId -> String
 replicaLabel (LogId kstr) = kstr ++ ".replica"
 
@@ -397,8 +394,6 @@ withPersistentStore fp =
    bracket (liftIO $ openPersistentStore fp)
            (liftIO . P.close)
 
-type Channel a = (SendPort a, ReceivePort a)
-
 -- | The internal state of a replica.
 data ReplicaState s ref a = Serializable ref => ReplicaState
   { -- | The pid of the proposer process.
@@ -446,9 +441,9 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
     -- | Batcher of client requests
   , stateBatcher           :: !ProcessId
     -- | A channel to communicate lease timeout notifications
-  , stateLeaseTimerChan         :: !(Channel TimerMessage)
+  , stateLeaseTimerRP      :: !(ReceivePort ())
     -- | A channel to communicate periodic timeout notifications
-  , statePeriodicTimerChan         :: !(Channel TimerMessage)
+  , statePeriodicTimerRP   :: !(ReceivePort ())
     -- | A pool of processes to send messages asynchronously
   , stateSendPool          :: !(ProcessPool NodeId)
 
@@ -515,6 +510,19 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
 -- leader replica, discards the requests which do not belong to the current
 -- epoch. For the leader, there is no way to know if a request from a previous
 -- epoch has been abandoned or not.
+
+-- | A timer process. When receiving @t@, the process waits for @t@
+-- microsenconds and then it sends @()@ through @sendPort@.
+--
+-- If while waiting, another @t'@ value is received, the wait
+-- restarts with the new parameters.
+--
+timer :: SendPort () -> Process ()
+timer sp = expect >>= wait
+  where
+    wait :: Int -> Process ()
+    wait t =
+      expectTimeout t >>= maybe (sendChan sp () >> timer sp) wait
 
 -- | One replica of the log. All incoming values to add to the log are submitted
 -- for consensus. A replica does not acknowledge values being appended to the
@@ -608,11 +616,11 @@ replica Dict
         Map.insert (decreeNumber d) undefined log
 
     (timerSP, timerRP) <- newChan
-    timerPid <- spawnLocal $ link self >> timer
-    leaseStart0' <- setLeaseTimer timerPid timerSP leaseStart0 replicas
+    timerPid <- spawnLocal $ link self >> timer timerSP
+    leaseStart0' <- setLeaseTimer timerPid leaseStart0 replicas
     (ptimerSP, ptimerRP) <- newChan
-    ptimerPid <- spawnLocal $ link self >> timer
-    usend ptimerPid (ptimerSP, leaseTimeout, PeriodicTick)
+    ptimerPid <- spawnLocal $ link self >> timer ptimerSP
+    usend ptimerPid leaseTimeout
 
     -- Wait for any previously running batcher to die.
     mbpid <- whereis (batcherLabel logId)
@@ -648,8 +656,8 @@ replica Dict
          , stateEpoch    = epoch
          , stateReconfDecree = legD
          , stateBatcher  = bpid
-         , stateLeaseTimerChan = (timerSP, timerRP)
-         , statePeriodicTimerChan = (ptimerSP, ptimerRP)
+         , stateLeaseTimerRP = timerRP
+         , statePeriodicTimerRP = ptimerRP
          , stateSendPool = sendPool
          , stateLogRestore = logRestore
          , stateLogDump = logDump
@@ -738,11 +746,10 @@ replica Dict
     -- Sets the timer to renew or request the lease and returns the time at
     -- which the lease is started.
     setLeaseTimer :: ProcessId     -- ^ pid of the timer process
-                  -> SendPort TimerMessage -- ^ Channel to send signals through
                   -> TimeSpec      -- ^ time at which the request was submitted
                   -> [NodeId]   -- ^ replicas
                   -> Process TimeSpec
-    setLeaseTimer timerPid timerSP requestStart ρs = do
+    setLeaseTimer timerPid requestStart ρs = do
       -- If I'm the leader, the lease starts at the time
       -- the request was made. Otherwise, it starts now.
       here <- getSelfNode
@@ -758,23 +765,8 @@ replica Dict
              -- non-leaders think the lease is slightly longer.
              else (now, adjustForDrift leaseTimeout)
 
-      usend timerPid (timerSP, t, LeaseRenewalTime)
+      usend timerPid t
       return leaseStart'
-
-    -- A timer process. When receiving @(pid, t, msg)@, the process waits for
-    -- @t@ microsenconds and then it sends @msg@ to @pid@.
-    --
-    -- If while waiting, another @(pid', t', msg')@ value is received, the
-    -- wait resumes with the new parameters.
-    --
-    timer :: Process ()
-    timer = expect >>= wait
-      where
-        wait :: (SendPort TimerMessage, Int, TimerMessage) -> Process ()
-        wait (sp, t, msg) =
-          expectTimeout t >>=
-            maybe (nlogTrace logId "timer expired" >> sendChan sp msg >> timer)
-                  wait
 
     -- The proposer process makes consensus proposals.
     -- Proposals are aborted when a reconfiguration occurs or when the
@@ -841,8 +833,7 @@ replica Dict
 
     go :: ReplicaState s ref a -> Process b
     go st@(ReplicaState ppid timerPid ptimerPid ph leaseStart ρs d cd mdumper
-                        msref w0 w s epoch legD bpid (timerSP, timerRP)
-                        (ptimerSP, ptimerRP) sendPool
+                        msref w0 w s epoch legD bpid timerRP ptimerRP sendPool
                         stLogRestore stLogDump stLogNextState
           ) =
      do
@@ -873,7 +864,7 @@ replica Dict
 
         receiveWait $ cond (w == cd)
             [ -- The lease is about to expire or it has already.
-              matchChan timerRP $ \LeaseRenewalTime -> do
+              matchChan timerRP $ \() -> do
                   mLeader <- getLeader leaseStart ρs
                   nlogTrace logId $ "LeaseRenewalTime: " ++ show (w, cd, mLeader)
                   cd' <- if Just here == mLeader || isNothing mLeader then do
@@ -883,16 +874,16 @@ replica Dict
                       return $ succ cd
                     else
                       return cd
-                  usend timerPid (timerSP, leaseTimeout, LeaseRenewalTime)
+                  usend timerPid leaseTimeout
                   go st{ stateCurrentDecree = cd' }
             ]
             [ -- The periodic timer ticked.
-              matchChan ptimerRP $ \PeriodicTick -> do
+              matchChan ptimerRP $ \() -> do
                   mLeader <- getLeader leaseStart ρs
                   nlogTrace logId $ "Periodic timer tick: " ++ show (w, cd, mLeader)
                   -- Kill the batcher if I'm not the leader.
                   when (mLeader /= Just here) $ exitAndWait bpid
-                  usend ptimerPid (ptimerSP, leaseTimeout, PeriodicTick)
+                  usend ptimerPid leaseTimeout
                   go st
             ] ++
             [ matchIf (\(Decree _ di _ :: Decree (Value a)) ->
@@ -986,7 +977,7 @@ replica Dict
                       usend self Status
 
                       leaseStart' <-
-                        setLeaseTimer timerPid timerSP requestStart ρs'
+                        setLeaseTimer timerPid requestStart ρs'
                       let epoch' = if take 1 ρs' /= take 1 ρs
                                     then decreeLegislatureId d
                                     else epoch
@@ -1257,7 +1248,7 @@ replica Dict
                     when (legD < legD') $ updateAcceptors ρs'
 
                     leaseStart' <- if legD < legD'
-                                   then setLeaseTimer timerPid timerSP 0 ρs'
+                                   then setLeaseTimer timerPid 0 ρs'
                                    else return leaseStart
 
                     -- TODO: get the snapshot asynchronously
@@ -1308,7 +1299,7 @@ replica Dict
                   when (legD < legD') $ updateAcceptors ρs'
 
                   leaseStart' <- if legD < legD'
-                                 then setLeaseTimer timerPid timerSP 0 ρs''
+                                 then setLeaseTimer timerPid 0 ρs''
                                  else return leaseStart
 
                   let cd' = max d'' cd
@@ -1776,9 +1767,36 @@ data Handle a =
 instance Eq (Handle a) where
     Handle _ _ _ _ _ μ == Handle _ _ _ _ _ μ' = μ == μ'
 
--- | The ambassador to a cgroup is a local process that stands as a proxy to
--- the cgroup. Its sole purpose is to provide a 'ProcessId' to stand for the
--- cgroup and to forward all messages to the cgroup.
+-- | State of the ambassadors
+--
+-- Ambassadors look if replicas have a batcher process to determine if they are
+-- leaders. The batcher is then monitored and the 'MonitorRef' is stored in the
+-- state ('asRef').
+--
+-- While the ambassador queries the remote node to learn the pid of the batcher,
+-- it monitors the node, and the reference is also stored in the state.
+--
+-- When the leader is unknown, the ambassador cycles through the replicas it
+-- knows about asking for the latest membership and querying the registry for
+-- the batcher process. A timer is used to throttle the rate of queries. The
+-- timer pid and the channel for timer notifications are both stored in the
+-- state.
+--
+data AmbassadorState = AmbassadorState
+    { asTimerPid :: ProcessId     -- Timer used for throtling membership queries
+    , asTimerRP  :: ReceivePort () -- The channel for timer notifications
+    , asEpoch    :: LegislatureId -- The epoch of the replicas
+    , asLeader   :: Maybe NodeId  -- The leader replica if known
+    , asReplicas :: ![NodeId]     -- The last known membership (never empty)
+    , asRef      :: MonitorRef    -- The monitor ref of a replica we contact
+    , asRefObj   :: Either NodeId ProcessId -- The monitored entity. Always
+                                            -- refers to what 'asRef' is
+                                            -- monitoring.
+    }
+
+-- | The ambassador to a group is a local process that stands as a proxy to
+-- the group. Its sole purpose is to provide a 'ProcessId' to stand for the
+-- group and to forward all messages to it.
 ambassador :: forall a. SerializableDict a
            -> Config
            -> TChan (OrderedMessage a)
@@ -1788,94 +1806,163 @@ ambassador _ _ _ [] = do
     say "ambassador: Set of replicas must be non-empty."
     die "ambassador: Set of replicas must be non-empty."
 ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
-    (monitorLeaderReplica ρ0 >>= go 0 (Just ρ0) others)
+    do self <- getSelfPid
+       (sp, rp) <- newChan
+       timerPid <- spawnLocal $ link self >> timer sp
+       ref <- monitorNode ρ0
+       whereisRemoteAsync ρ0 (batcherLabel logId)
+       go AmbassadorState
+         { asTimerPid = timerPid
+         , asTimerRP  = rp
+         , asEpoch    = 0
+         , asLeader   = Just ρ0
+         , asReplicas = ρ0 : others
+         , asRef      = ref
+         , asRefObj   = Left ρ0
+         }
       `finally` nlogTrace logId "ambassador: terminated"
   where
-    go :: LegislatureId    -- ^ The epoch of the replicas (use 0 while unknown)
-       -> Maybe NodeId  -- ^ The leader replica if known
-       -> [NodeId]      -- ^ The other replicas
-       -> MonitorRef       -- ^ The monitor ref of a replica we are contacting
-       -> Process b
-    go epoch mLeader ρs ref = do
+    go :: AmbassadorState -> Process b
+    go st@(AmbassadorState timerPid rpt epoch mLeader ρs ref refObj) = do
+     let handleMonitorNotification ref' = do
+           if ref == ref'
+           then do
+             nlogTrace logId $ "ambassador: Replica disconnected or died. "
+                               ++ show (mLeader, ρs)
+             -- Give some time to other replicas to elect a leader.
+             usend timerPid leaseTimeout
+             go st { asLeader   = Nothing }
+           else
+             go st
      _ <- receiveTimeout 0
        [ matchSTM (readTChan omchan) $ handleRequest epoch mLeader ]
      receiveWait $
       (if schedulerIsEnabled
-       then [match $ \() -> go epoch mLeader ρs ref]
+       then [match $ \() -> go st]
        else []
       ) ++
       [ match $ \(Clone δ) -> do
-          usend δ $ maybe id (:) mLeader ρs
-          go epoch mLeader ρs ref
+          usend δ ρs
+          go st
 
       , match $ \Status -> do
           Foldable.forM_ mLeader $ flip (sendReplica logId) Status
-          go epoch mLeader ρs ref
+          go st
 
         -- The leader replica changed.
-      , match $ \(epoch', ρ' : ρs') -> do
+      , match $ \(epoch', ρs'@(ρ' : ρs'')) -> do
           -- Only update the replicas if they are at the same or higher
           -- epoch.
+          --
+          -- TODO: use @epoch < epoch'@ here?
+          --
           if epoch <= epoch' then do
             unmonitor ref
-            nlogTrace logId $ "ambassador: Old epoch changed " ++ show mLeader
-                       ++ ". Trying " ++ show ρ' ++ "."
-            monitorLeaderReplica ρ' >>= go epoch' (Just ρ') ρs'
+            nlogTrace logId $ "ambassador: Old epoch changed "
+                              ++ show (mLeader, ρs)
+                              ++ ". Trying " ++ show ρ' ++ " and then "
+                              ++ show ρs'' ++ "."
+            ref' <- monitorNode ρ'
+            whereisRemoteAsync ρ' (batcherLabel logId)
+            go st { asEpoch    = epoch'
+                  , asLeader   = Just ρ'
+                  , asReplicas = ρs'
+                  , asRef      = ref'
+                  , asRefObj   = Left ρ'
+                  }
           else do
-            when (isNothing mLeader) $ do
+            when (isNothing mLeader) $
               -- Give some time to other replicas to elect a leader.
-              _ <- receiveTimeout leaseTimeout []
-              -- Ask the head replica for the new leader.
-              let ρ'' : _ = ρs
-              getSelfPid >>= sendReplica logId ρ''
-            go epoch mLeader ρs ref
+              usend timerPid leaseTimeout
+            go st
+
+        -- The timer expired.
+      , matchChan rpt $ \() -> do
+          if isNothing mLeader then do
+            unmonitor ref
+            -- Ask the head replica for the new leader.
+            ρ : ρs' <- return ρs
+            nlogTrace logId $ "ambassador: Timer expired. Trying " ++ show ρ
+            ref' <- monitorNode ρ
+            whereisRemoteAsync ρ (batcherLabel logId)
+            getSelfPid >>= sendReplica logId ρ
+            -- Force the list to avoid accumulating thunks.
+            go st { asReplicas = force $ ρs' ++ [ρ]
+                  , asRef      = ref'
+                  , asRefObj   = Left ρ
+                  }
+          else
+            go st
+
+      , match $ \nmn@(NodeMonitorNotification ref' _ _) -> do
+          nlogTrace logId $ "ambassador: Received " ++ show nmn
+          handleMonitorNotification ref'
 
       , match $ \pmn@(ProcessMonitorNotification ref' _ _) -> do
-          if ref == ref' then do
-            -- Give some time to other replicas to elect a leader.
-            _ <- receiveTimeout leaseTimeout []
-            -- Continue poking at the disconnected leader if there
-            -- are no more replicas.
-            let ρ : ρss = maybe ρs (: ρs) mLeader
-                ρs'@(ρ' : _) = ρss ++ [ρ]
-            nlogTrace logId $
-              "ambassador: Replica disconnected or died " ++ show pmn
-                       ++ ". Trying " ++ show ρ' ++ "."
-            ref'' <- monitorLeaderReplica ρ'
-            -- Ask the head replica for the new leader.
-            getSelfPid >>= sendReplica logId ρ'
-            go epoch Nothing ρs' ref''
-          else
-            go epoch mLeader ρs ref
+          nlogTrace logId $ "ambassador: Received " ++ show pmn
+          handleMonitorNotification ref'
+
+        -- A node replied whether it has a batcher.
+      , match $ \wr@(WhereIsReply _ mb) -> do
+          nlogTrace logId $ "ambassador: Received " ++ show wr
+          case mb of
+            -- No batcher
+            Nothing ->
+              -- Ignore it if we are monitoring the leader batcher.
+              -- There is no point in processing a reply to know the pid of the
+              -- batcher, given that we already know it.
+              if isRight refObj
+              then
+                go st
+              else do
+                -- We know of no batcher, and (we assume) our last registry
+                -- query yield no info. Let's try with some other node in a
+                -- while. It is possible that the 'WhereIsReply' does not
+                -- correspond to our latest request, this does not harm progress
+                -- but delays a bit more the time at which we try to contact
+                -- other nodes.
+                usend timerPid leaseTimeout
+                go st { asLeader   = Nothing }
+            -- There is a batcher.
+            Just b  -> do
+              unmonitor ref
+              ref' <- monitor b
+              let ρ = processNodeId b
+              go st { asLeader = Just ρ
+                      -- Make sure the leader is in the membership.
+                    , asReplicas = ρ : filter (/= ρ) ρs
+                    , asRef    = ref'
+                    , asRefObj = Right b
+                    }
 
         -- A new replica was added to the group.
-      , match $ \ρ' -> do
-          let ρs' = if mLeader == Just ρ' then ρs
-                    -- Discard pids of replicas on the same node.
-                    else filter (/= ρ') ρs ++ [ρ']
-          go epoch mLeader ρs' ref
+      , match $ \ρ -> do
+          go st { asReplicas = filter (/= ρ) ρs ++ [ρ] }
 
         -- A membership query
       , match $ \mq -> do
           self <- getSelfPid
           Foldable.forM_ mLeader $ flip (sendReplica logId)
                                         (self, epoch, mq :: MembershipQuery)
-          go epoch mLeader ρs ref
+          go st
 
         -- A configuration query
       , match $ \cq -> do
           Foldable.forM_ mLeader $ flip (sendReplica logId)
                                         (cq :: ConfigQuery)
-          go epoch mLeader ρs ref
+          go st
 
         -- A client wants to monitor the replicas
+        --
+        -- TODO: Replicas are looking for the pid of the batcher.
+        -- We can send that as reply.
       , match $ \pid -> do
           usend pid mLeader
-          go epoch mLeader ρs ref
+          go st
 
       , matchSTM (readTChan omchan) $ \om -> do
           handleRequest epoch mLeader om
-          go epoch mLeader ρs ref
+          go st
       ]
 
     handleRequest epoch mLeader = \case
@@ -1903,13 +1990,6 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
         nlogTrace logId $
           "ambassador: sending recover msg to " ++ show (ρ, mLeader)
         sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
-
-    monitorLeaderReplica ρ = do
-      whereisRemoteAsync ρ (batcherLabel logId)
-      expectTimeout leaseTimeout >>= \case
-        Just (WhereIsReply _ mpid) -> do
-          monitor $ maybe (nullProcessId ρ) id mpid
-        Nothing -> monitor (nullProcessId ρ)
 
     _ = $(functionTDict 'storeConf) -- stops unused warning
 
