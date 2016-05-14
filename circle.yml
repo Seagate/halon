@@ -42,9 +42,9 @@ dependencies:
 
 test:
   override:
-    - "top -b -d 5 | grep -A 10 'PID USER' &> topten-stats.log":
+    - "cp scripts/toprc ~/.toprc; stdbuf -oL -eL top -b -d 5 | stdbuf -oL -eL grep -A 10 'PID USER' &>> topten-stats.log & while (true) do { stdbuf -oL -eL date --utc && sleep 5 || break; } done &>> topten-stats.log":
         background: true
-    - "pidstat -C 'mero|distributed|random|integration|test|halond' -du 5 &> pidstats-tests.log":
+    - "pidstat -C 'scheduler|mero|distributed|random|integration|test|halond' -du 5 &> pidstats-tests.log":
         background: true
     - "mpstat -P ON 5 &> mpstats.log":
         background: true
