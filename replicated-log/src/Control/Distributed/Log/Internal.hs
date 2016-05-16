@@ -1499,10 +1499,17 @@ replica Dict
                       go st
 
             , matchIf (\(_, e, _) -> e < epoch) $
-                      \(μ, _, Recover π _) -> do
-                  usend μ (epoch, ρs)
-                  usend π False
-                  go st
+                      \(μ, _, Recover π ρs') -> do
+                -- When recovering it doesn't help sending the old membership.
+                -- Send instead the new membership, perhaps adjusted to use the
+                -- current leader if it belongs to it.
+                mLeader <- getLeader leaseStart ρs
+                let ρs'' = case mLeader of
+                      Just ρ | elem ρ ρs' -> ρ : filter (/= ρ) ρs'
+                      _                   -> ρs'
+                usend μ (epoch, ρs'')
+                usend π False
+                go st
 
               -- An ambassador wants to know who the leader is.
             , match $ \μ -> do
