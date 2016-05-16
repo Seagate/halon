@@ -1953,11 +1953,8 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
           go st
 
         -- A client wants to monitor the replicas
-        --
-        -- TODO: Replicas are looking for the pid of the batcher.
-        -- We can send that as reply.
-      , match $ \pid -> do
-          usend pid mLeader
+      , match $ \sp -> do
+          sendChan sp $ either (const Nothing) Just refObj
           go st
 
       , matchSTM (readTChan omchan) $ \om -> do
@@ -2048,22 +2045,12 @@ append h@(Handle _ _ cConfig _ omchan μ) hint x = callLocal $ do
 monitorLog :: Handle a -> Process MonitorRef
 monitorLog h@(Handle _ _ cConfig _ _ μ) = do
     checkHandle "Log.monitorLocal" h
-    (monitor =<<) $ callLocal $ do
-      getSelfPid >>= usend μ
-      mρ <- expect
-      cc <- unClosure cConfig
-      nlogTrace (logId cc) $ "monitorLog: ambassador response " ++ show mρ
-      case mρ of
-        Nothing -> fmap nullProcessId getSelfNode
-        Just ρ  -> do
-          whereisRemoteAsync ρ (batcherLabel $ logId cc)
-          mrep <- expectTimeout (leaseTimeout cc)
-          nlogTrace (logId cc) $ "monitorLog: wehereis response " ++ show mrep
-          case mrep of
-           Just (WhereIsReply _ mpid) ->
-             return $ maybe (nullProcessId ρ) id mpid
-           Nothing                    ->
-             return $ nullProcessId ρ
+    (sp, rp) <- newChan
+    usend μ sp
+    mb <- receiveChan rp
+    cc <- unClosure cConfig
+    nlogTrace (logId cc) $ "monitorLog: ambassador response " ++ show mb
+    maybe (fmap nullProcessId getSelfNode) return mb >>= monitor
 
 -- | Make replicas advertize their status info.
 status :: Serializable a => Handle a -> Process ()
