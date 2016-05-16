@@ -1984,9 +1984,12 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
         -- The replicas might have lost quorum and could be unable to elect
         -- a new leader.
         let ρ  : _ = ρs'
+            ρ' = case mLeader of
+                   Just r | elem r ρs' -> r
+                   _ -> ρ
         nlogTrace logId $
-          "ambassador: sending recover msg to " ++ show (ρ, mLeader)
-        sendReplica logId (maybe ρ id mLeader) (self, epoch, m)
+          "ambassador: sending recover msg to " ++ show (ρ', mLeader, m)
+        sendReplica logId ρ' (self, epoch, m)
 
     _ = $(functionTDict 'storeConf) -- stops unused warning
 

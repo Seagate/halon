@@ -38,7 +38,7 @@ data Helo =
 
 -- | @Recover sender newMembership@
 data Recover = Recover ProcessId [NodeId]
-  deriving (Typeable, Generic)
+  deriving (Typeable, Generic, Show)
 
 instance Binary Helo
 instance Binary Recover
