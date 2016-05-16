@@ -1498,9 +1498,10 @@ replica Dict
                       when (elem here ρs) $ usend μ (epoch, ρs)
                       go st
 
-            , matchIf (\(_, e, _ :: Recover) -> e < epoch) $
-                      \(μ, _, _) -> do
+            , matchIf (\(_, e, _) -> e < epoch) $
+                      \(μ, _, Recover π _) -> do
                   usend μ (epoch, ρs)
+                  usend π False
                   go st
 
               -- An ambassador wants to know who the leader is.
