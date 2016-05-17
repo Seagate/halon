@@ -202,10 +202,9 @@ Benchmark gc-rg
                     random,
                     containers
 
-
-Test-Suite unit-tests
+Test-Suite tests
   Type:             exitcode-stdio-1.0
-  Main-Is:          ut.hs
+  Main-Is:          tests.hs
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
   Other-Modules:    Control.SpineSeq.Tests
@@ -220,7 +219,6 @@ Test-Suite unit-tests
                     Test.Helpers
                     Test.Run
                     Test.Transport
-                    Test.Unit
 
   Ghc-Options: -threaded -Wall
 
@@ -246,6 +244,7 @@ Test-Suite unit-tests
                     exceptions,
                     filepath,
                     hashable,
+                    mtl,
                     network,
                     network-transport,
                     network-transport-controlled,
@@ -267,72 +266,6 @@ Test-Suite unit-tests
   else
       Build-Depends: network-transport-tcp >= 0.3,
                      network-transport-inmemory >= 0.5
-
-Test-Suite integration-tests
-  Type:             exitcode-stdio-1.0
-  Default-Language: Haskell2010
-  Hs-Source-Dirs:   tests
-  Main-Is:          it.hs
-  Other-Modules:    HA.Autoboot.Tests
-                    HA.EventQueue.Tests
-                    HA.Multimap.ProcessTests
-                    HA.Multimap.Tests
-                    HA.NodeAgent.Tests
-                    HA.RecoverySupervisor.Tests
-                    HA.ResourceGraph.Tests
-                    RemoteTables
-                    Test.Helpers
-                    Test.Integration
-                    Test.Run
-                    Test.Transport
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  CPP-Options:      -DMC_RG=RLogGroup
-  if flag(debug)
-    Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
-  Default-Extensions: DeriveDataTypeable
-                      DeriveGeneric
-                      GeneralizedNewtypeDeriving
-                      RecordWildCards NamedFieldPuns
-                      ScopedTypeVariables
-  Build-Depends:    halon,
-                    base >= 4.5,
-                    binary >= 0.6.4,
-                    bytestring,
-                    constraints,
-                    distributed-process-scheduler,
-                    distributed-process-test,
-                    distributed-static,
-                    directory,
-                    exceptions,
-                    filepath,
-                    hashable,
-                    mtl >= 2.0,
-                    network,
-                    network-transport,
-                    network-transport-controlled,
-                    unordered-containers,
-                    options-schema >= 0.1.1.0,
-                    process >= 1.2,
-                    random,
-                    replicated-log,
-                    tasty >= 0.8,
-                    tasty-files,
-                    tasty-hunit,
-                    cep,
-                    uuid,
-                    containers,
-                    stm
-  if flag(rpc)
-      Build-Depends: network-transport-rpc
-      CPP-Options:    -DUSE_RPC
-  else
-      Build-Depends: network-transport-tcp >= 0.3,
-                     network-transport-inmemory >= 0.3
 
 Test-Suite scheduler-tests
   Type:             exitcode-stdio-1.0
