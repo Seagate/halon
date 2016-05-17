@@ -45,6 +45,7 @@ Library
                     consensus-paxos,
                     containers >= 0.5,
                     constraints >= 0.4,
+                    deepseq,
                     directory >= 1.2.1,
                     distributed-process-scheduler,
                     distributed-static >= 0.2,
