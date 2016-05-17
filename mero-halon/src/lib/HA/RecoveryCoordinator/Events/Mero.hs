@@ -27,7 +27,7 @@ import HA.Resources
 import HA.Resources.Castor
 import HA.Resources.Mero.Note
 
-import Control.Applicative (some)
+import Control.Applicative (many)
 import Control.Distributed.Process (ProcessId, RemoteTable, Static)
 import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
 import Control.Distributed.Static (unstatic)
@@ -120,7 +120,7 @@ instance ProcessEncode InternalObjectStateChange where
 
   decodeP (InternalObjectStateChangeMsg bs) = let
       get_ :: RemoteTable -> Get [AnyStateChange]
-      get_ rt = some $ do
+      get_ rt = many $ do
         d <- get
         case unstatic rt d of
           Right (SomeHasConfObjectStateDict
