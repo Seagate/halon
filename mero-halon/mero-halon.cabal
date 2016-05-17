@@ -525,7 +525,7 @@ Test-Suite tests
                     Helper.InitialData
                     Helper.RC
 
-  Main-Is:          test.hs
+  Main-Is:          tests.hs
 
   Ghc-Options: -threaded -Wall -rtsopts -with-rtsopts=-T
 
