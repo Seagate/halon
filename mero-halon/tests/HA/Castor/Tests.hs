@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -41,11 +40,6 @@ import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges, stateSet)
 import HA.Replicator (RGroup(..))
-#ifdef USE_MOCK_REPLICATOR
-import HA.Replicator.Mock (MC_RG)
-#else
-import HA.Replicator.Log (MC_RG)
-#endif
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
@@ -62,6 +56,9 @@ import qualified Test.Tasty.HUnit as Tasty
 import Helper.InitialData
 import Helper.Environment (systemHostname)
 import Helper.RC
+import Data.Proxy
+import Data.Typeable
+
 
 mmSDict :: SerializableDict (MetaInfo, Multimap)
 mmSDict = SerializableDict
@@ -72,8 +69,9 @@ remotable
 myRemoteTable :: RemoteTable
 myRemoteTable = HA.Castor.Tests.__remoteTable remoteTable
 
-rGroupTest :: Transport -> (StoreChan -> Process ()) -> IO ()
-rGroupTest transport p =
+rGroupTest :: forall g. (Typeable g, RGroup g)
+           => Transport ->  Proxy g -> (StoreChan -> Process ()) -> IO ()
+rGroupTest transport _ p =
   withLocalNode transport myRemoteTable $ \lnid2 ->
   withLocalNode transport myRemoteTable $ \lnid3 ->
   tryRunProcessLocal transport myRemoteTable $ do
@@ -81,25 +79,26 @@ rGroupTest transport p =
     rGroup <- newRGroup $(mkStatic 'mmSDict) "mmtest" 30 1000000
                 [nid, localNodeId lnid2, localNodeId lnid3] (defaultMetaInfo, fromList [])
                 >>= unClosure
-                >>= (`asTypeOf` return (undefined :: MC_RG (MetaInfo, Multimap)))
+                >>= (`asTypeOf` return (undefined :: g (MetaInfo, Multimap)))
     (_, mmchan) <- startMultimap rGroup id
     p mmchan
 
-tests :: String -> Transport -> [TestTree]
-tests _host transport = map (localOption (mkTimeout $ 10*60*1000000))
-  [ testSuccess "failure-sets" $ testFailureSets transport
-  , testSuccess "failure-sets-2" $ testFailureSets2 transport
-  , testSuccess "initial-data-doesn't-error" $ void (loadInitialData transport)
-  , testSuccess "apply-state-changes" $ testApplyStateChanges transport
+tests :: (Typeable g, RGroup g) => String -> Transport -> Proxy g -> [TestTree]
+tests _host transport pg = map (localOption (mkTimeout $ 10*60*1000000))
+  [ testSuccess "failure-sets" $ testFailureSets transport pg
+  , testSuccess "failure-sets-2" $ testFailureSets2 transport pg
+  , testSuccess "initial-data-doesn't-error" $
+      void (loadInitialData transport pg)
+  , testSuccess "apply-state-changes" $ testApplyStateChanges transport pg
   -- , testSuccess "large-data" $ largeInitialData host transport
-  , testSuccess "controller-failure" $ testControllerFailureDomain transport
+  , testSuccess "controller-failure" $ testControllerFailureDomain transport pg
   ]
 
 fsSize :: (a, Set.Set b) -> Int
 fsSize (_, a) = Set.size a
 
-testFailureSets :: Transport -> IO ()
-testFailureSets transport = rGroupTest transport $ \pid -> do
+testFailureSets :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
     me <- getSelfNode
     ls <- emptyLoopState pid (nullProcessId me)
     (ls', _) <- run ls $ do
@@ -126,8 +125,8 @@ testFailureSets transport = rGroupTest transport $ \pid -> do
             $ defaultGlobals { CI.m0_data_units = 4
                              , CI.m0_failure_set_gen = CI.Dynamic }
 
-testFailureSets2 :: Transport -> IO ()
-testFailureSets2 transport = rGroupTest transport $ \pid -> do
+testFailureSets2 :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testFailureSets2 transport pg = rGroupTest transport pg $ \pid -> do
     me <- getSelfNode
     ls <- emptyLoopState pid (nullProcessId me)
     (ls', _) <- run ls $ do
@@ -170,10 +169,10 @@ testFailureSets2 transport = rGroupTest transport $ \pid -> do
 -- | Load the initial data into local RG and verify that it loads as expected.
 --
 -- Returns the loaded RG for use by others (@initial-data-gc@).
-loadInitialData :: Transport -> IO Graph
-loadInitialData transport = do
+loadInitialData :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO Graph
+loadInitialData transport pg = do
   gmv <- newEmptyMVar
-  rGroupTest transport $ \pid -> do
+  rGroupTest transport pg $ \pid -> do
     me <- getSelfNode
     ls <- emptyLoopState pid (nullProcessId me)
     (ls', _) <- run ls $ do
@@ -251,8 +250,8 @@ loadInitialData transport = do
     iData = initialData systemHostname "192.0.2" 1 12 defaultGlobals
 
 -- | Test that failure domain logic works correctly when we are
-testControllerFailureDomain :: Transport -> IO ()
-testControllerFailureDomain transport = rGroupTest transport $ \pid -> do
+testControllerFailureDomain :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     me <- getSelfNode
     ls <- emptyLoopState pid (nullProcessId me)
     (ls', _) <- run ls $ do
@@ -315,8 +314,8 @@ testControllerFailureDomain transport = rGroupTest transport $ \pid -> do
     iData = initialData systemHostname "192.0.2" 4 4 defaultGlobals
 
 -- | Test that applying state changes works
-testApplyStateChanges :: Transport -> IO ()
-testApplyStateChanges transport = rGroupTest transport $ \pid -> do
+testApplyStateChanges :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
     me <- getSelfNode
     ls <- emptyLoopState pid (nullProcessId me)
     (ls, _) <- run ls $ do
@@ -352,13 +351,13 @@ printMem = do
       l3 = "HWM according the GC stats: " ++ show (maxBytesUsed stats `div` (1024 * 1024)) ++ " MB"
   return $ unlines [l1,l2,l3]
 
-largeInitialData :: String -> Transport -> IO ()
-largeInitialData host transport = let
+largeInitialData :: (Typeable g, RGroup g) => String -> Transport -> Proxy g -> IO ()
+largeInitialData host transport pg = let
     numDisks = 300
     initD = (initialDataAddr host "192.0.2.2" numDisks)
     myHost = Host systemHostname
   in
-    rGroupTest transport $ \pid -> do
+    rGroupTest transport pg $ \pid -> do
       me <- getSelfNode
       ls <- emptyLoopState pid (nullProcessId me)
       (ls', _) <- run ls $ do

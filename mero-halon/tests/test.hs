@@ -10,13 +10,13 @@ import qualified HA.RecoveryCoordinator.Mero.Tests
 import qualified HA.RecoveryCoordinator.Tests
 import qualified HA.Autoboot.Tests
 #ifdef USE_MERO
-#ifdef USE_MOCK_REPLICATOR
 import qualified HA.RecoveryCoordinator.SSPL.Tests
-#endif
 import qualified HA.Castor.Story.ProcessRestart
 import qualified HA.Castor.Tests
 import qualified HA.Castor.Story.Tests
 #endif
+import HA.Replicator.Log
+import HA.Replicator.Mock
 import qualified HA.Test.Disconnect
 import qualified HA.Test.Cluster
 import qualified HA.Test.SSPL
@@ -35,6 +35,7 @@ import Test.Tasty.HUnit (testCase)
 import Control.Concurrent (threadDelay, forkIO)
 import Control.Concurrent.MVar
 import Control.Exception
+import Data.Proxy
 
 #ifdef USE_MERO
 import Mero
@@ -56,35 +57,54 @@ import Prelude
 #define MERO_TEST(K, S, X, D) (K (S ++ " [disabled due to unset USE_MERO]") (D))
 #endif
 
-#ifdef USE_MOCK_REPLICATOR
-#define MOCK_TEST(K, S, X, D) MERO_TEST(K, S, X, D)
-#else
-#define MOCK_TEST(K, S, X, D) MERO_TEST(K, (S ++ " [disabled due to unset USE_MOCK_REPLICATOR]"), D, D)
-#endif
 
+tests :: String -> Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
+tests host transport breakConnection = do
+    utests <- ut host transport breakConnection
+    itests <- it host transport breakConnection
+    return $ testGroup "mero-halon" [utests, itests]
 
 ut :: String -> Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
-ut _host transport breakConnection = do
+ut _host transport _breakConnection = do
+  let pg = Proxy :: Proxy RLocalGroup
   ssplTest <- HA.Test.SSPL.mkTests
 #ifdef USE_MERO
-  driveFailureTests <- HA.Castor.Story.Tests.mkTests
-  processRestartTests <- HA.Castor.Story.ProcessRestart.mkTests
+  driveFailureTests <- HA.Castor.Story.Tests.mkTests pg
+  processRestartTests <- HA.Castor.Story.ProcessRestart.mkTests pg
 #endif
-  return $
-    testGroup "mero-halon" $ (:[]) $
-#ifdef USE_MOCK_REPLICATOR
-    testGroup "integration-tests with mock-replicator"
-#else
-    testGroup "integration-tests without mock replicator"
+  return $ testGroup "tests with mock replicator"
+      [ testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport pg
+      , testGroup "mero" $
+          HA.RecoveryCoordinator.Mero.Tests.tests _host transport pg
+      , MERO_TEST(testGroup,"Castor",HA.Castor.Tests.tests _host transport pg
+                 , [testCase "Ignore me" $ return ()])
+      , MERO_TEST( testGroup, "DriveFailure", driveFailureTests transport
+                 , [testCase "Ignore me" $ return ()])
+      , MERO_TEST(testGroup, "ProcessRestart", processRestartTests transport
+                 , [testCase "Ignore me" $ return ()])
+      , MERO_TEST( testGroup, "Service-SSPL"
+                 , HA.RecoveryCoordinator.SSPL.Tests.utTests transport pg
+                 , [testCase "Ignore me" $ return ()]
+                 )
+      ]
+
+it :: String -> Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
+it _host transport breakConnection = do
+  let pg = Proxy :: Proxy RLogGroup
+  ssplTest <- HA.Test.SSPL.mkTests
+#ifdef USE_MERO
+  driveFailureTests <- HA.Castor.Story.Tests.mkTests pg
+  processRestartTests <- HA.Castor.Story.ProcessRestart.mkTests pg
 #endif
+  return $ testGroup "tests with log replicator"
       [ testCase "uncleanRPCClose" $ threadDelay 2000000
-      , testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport
+      , testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport pg
       , testGroup "Autoboot" $
         HA.Autoboot.Tests.tests transport
       , HA.Test.Cluster.tests transport
       , testGroup "mero" $
-          HA.RecoveryCoordinator.Mero.Tests.tests _host transport
-      , MERO_TEST(testGroup,"Castor",HA.Castor.Tests.tests _host transport
+          HA.RecoveryCoordinator.Mero.Tests.tests _host transport pg
+      , MERO_TEST(testGroup,"Castor",HA.Castor.Tests.tests _host transport pg
                  , [testCase "Ignore me" $ return ()])
       , MERO_TEST( testGroup, "DriveFailure", driveFailureTests transport
                  , [testCase "Ignore me" $ return ()])
@@ -93,8 +113,7 @@ ut _host transport breakConnection = do
       , testGroup "disconnect" $
         [ MERO_TEST(testCase, "testRejoinTimeout", HA.Test.Disconnect.testRejoinTimeout _host transport breakConnection, return ())
         , MERO_TEST(testCase, "testRejoin", HA.Test.Disconnect.testRejoin _host transport breakConnection, return ())
-        , MOCK_TEST(testCase, "testRejoinRCDeath", HA.Test.Disconnect.testRejoinRCDeath _host transport breakConnection, return ())
-#if !defined(USE_RPC) && !defined(USE_MOCK_REPLICATOR)
+#if !defined(USE_RPC)
         , testCase "testDisconnect" $
             HA.Test.Disconnect.testDisconnect transport breakConnection
 #else
@@ -103,10 +122,6 @@ ut _host transport breakConnection = do
               HA.Test.Disconnect.testDisconnect transport breakConnection
 #endif
         ]
-      , MOCK_TEST( testGroup, "Service-SSPL"
-                 , HA.RecoveryCoordinator.SSPL.Tests.utTests transport
-                 , [testCase "Ignore me" $ return ()]
-                 )
       , ssplTest transport
       ]
 
@@ -151,7 +166,7 @@ runTests tests = do
       =<< tests host0 transport connectionBreak
 
 main :: IO ()
-main = prepare $ runTests ut where
+main = prepare $ runTests tests where
 #ifdef USE_MERO
   prepare = withTmpDirectory . withM0
 #else

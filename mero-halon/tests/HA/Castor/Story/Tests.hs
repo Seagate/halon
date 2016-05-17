@@ -39,6 +39,7 @@ import HA.Services.SSPL
 import HA.Services.SSPL.Rabbit
 import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
+import HA.Replicator
 
 import RemoteTables (remoteTable)
 
@@ -54,6 +55,7 @@ import Data.Binary (Binary)
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
 import Data.Hashable (Hashable)
+import Data.Proxy
 import qualified Data.Set as S
 import Data.Typeable
 import Data.Text (pack)
@@ -116,8 +118,8 @@ testRules = do
         [] -> return ()
       messageProcessed eid
 
-mkTests :: IO (Transport -> [TestTree])
-mkTests = do
+mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
+mkTests pg = do
   ex <- E.try $ Network.AMQP.openConnection "localhost" "/" "guest" "guest"
   case ex of
     Left (e::AMQPException) -> return $ \_->
@@ -126,13 +128,13 @@ mkTests = do
       closeConnection x
       return $ \transport ->
         [ testSuccess "Drive failure, successful reset and smart test success" $
-          testDiskFailure transport
+          testDiskFailure transport pg
         , testSuccess "Drive failure, repeated attempts to reset, hitting reset limit" $
-          testHitResetLimit transport
+          testHitResetLimit transport pg
         , testSuccess "Drive failure, successful reset, failed smart test" $
-          testFailedSMART transport
+          testFailedSMART transport pg
         , testSuccess "Drive failure, second drive fails whilst handling to reset attempt" $
-          testSecondReset transport
+          testSecondReset transport pg
 --        , testSuccess "No response from powerdown" $
 --          testPowerdownNoResponse transport
 --        , testSuccess "No response from powerup" $
@@ -140,14 +142,16 @@ mkTests = do
 --        , testSuccess "No response from SMART test" $
 --          testSMARTNoResponse transport
         , testSuccess "Drive failure removal reported by SSPL" $
-          testDriveRemovedBySSPL transport
+          testDriveRemovedBySSPL transport pg
         , testSuccess "Metadata drive failure reported by IEM" $
-          testMetadataDriveFailed transport
+          testMetadataDriveFailed transport pg
         , testSuccess "Halon sends list of failed drives at SSPL start" $
-          testGreeting transport
+          testGreeting transport pg
         ]
 
-run :: Transport
+run :: (Typeable g, RGroup g)
+    => Transport
+    -> Proxy g
     -> (ProcessId -> String -> Process ()) -- interceptor callback
     -> [Definitions LoopState ()]
     -> (    TestArgs
@@ -156,11 +160,11 @@ run :: Transport
          -> Process ()
        ) -- actual test
     -> Assertion
-run transport interceptor rules test =
+run transport pg interceptor rules test =
   runTest 2 20 15000000 transport myRemoteTable $ \[n] -> do
     self <- getSelfPid
     nid <- getSelfNode
-    withTrackingStation (testRules:rules) $ \ta -> do
+    withTrackingStation pg (testRules:rules) $ \ta -> do
       nodeUp ([nid], 1000000)
       registerInterceptor $ \string ->
         case string of
@@ -428,8 +432,8 @@ smartTestComplete recv success (sdev,serial) = let
 -- Actual tests
 --------------------------------------------------------------------------------
 
-testDiskFailure :: Transport -> IO ()
-testDiskFailure transport = run transport interceptor [] test where
+testDiskFailure :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testDiskFailure transport pg = run transport pg interceptor [] test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
@@ -440,8 +444,8 @@ testDiskFailure transport = run transport interceptor [] test where
     resetComplete mm sdev
     smartTestComplete recv AckReplyPassed sdev
 
-testHitResetLimit :: Transport -> IO ()
-testHitResetLimit transport = run transport interceptor [] test where
+testHitResetLimit :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testHitResetLimit transport pg = run transport pg interceptor [] test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
@@ -467,8 +471,8 @@ testHitResetLimit transport = run transport interceptor [] test where
 
     return ()
 
-testFailedSMART :: Transport -> IO ()
-testFailedSMART transport = run transport interceptor [] test where
+testFailedSMART :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testFailedSMART transport pg = run transport pg interceptor [] test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
@@ -479,8 +483,8 @@ testFailedSMART transport = run transport interceptor [] test where
     resetComplete mm sdev
     smartTestComplete recv AckReplyFailed sdev
 
-testSecondReset :: Transport -> IO ()
-testSecondReset transport = run transport interceptor [] test where
+testSecondReset :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testSecondReset transport pg = run transport pg interceptor [] test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
@@ -520,8 +524,8 @@ testPowerdownNoResponse transport = run transport interceptor test where
     smartTestComplete recv AckReplyPassed sdev
 
 
-testPowerupNoResponse :: Transport -> IO ()
-testPowerupNoResponse transport = run transport interceptor test where
+testPowerupNoResponse :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testPowerupNoResponse transport pg = run transport pg interceptor test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
@@ -542,8 +546,8 @@ testPowerupNoResponse transport = run transport interceptor test where
     poweronComplete mm sdev
     smartTestComplete recv AckReplyPassed sdev
 
-testSMARTNoResponse :: Transport -> IO ()
-testSMARTNoResponse transport = run transport interceptor test where
+testSMARTNoResponse :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testSMARTNoResponse transport pg = run transport pg interceptor test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
@@ -567,8 +571,9 @@ testSMARTNoResponse transport = run transport interceptor test where
 -}
 
 -- | SSPL emits EMPTY_None event for one of the drives.
-testDriveRemovedBySSPL :: Transport -> IO ()
-testDriveRemovedBySSPL transport = run transport interceptor [] test where
+testDriveRemovedBySSPL :: (Typeable g, RGroup g)
+                       => Transport -> Proxy g -> IO ()
+testDriveRemovedBySSPL transport pg = run transport pg interceptor [] test where
   interceptor _rc _str = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
@@ -597,8 +602,8 @@ testDriveRemovedBySSPL transport = run transport interceptor [] test where
 #ifdef USE_MERO
 -- | Test that we generate an appropriate pool version in response to
 --   failure of a drive, when using 'Dynamic' strategy.
-testDynamicPVer :: Transport -> IO ()
-testDynamicPVer transport = run transport interceptor [] test where
+testDynamicPVer :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testDynamicPVer transport pg = run transport pg interceptor [] test where
   interceptor _ _ = return ()
   checkPVerExistence rg fids yes = let
       msg = if yes
@@ -640,8 +645,9 @@ testDynamicPVer transport = run transport interceptor [] test where
 
 -- | Test that we respond correctly to a notification that a RAID device
 --   has failed by sending an IEM.
-testMetadataDriveFailed :: Transport -> IO ()
-testMetadataDriveFailed transport = run transport interceptor [] test where
+testMetadataDriveFailed :: (Typeable g, RGroup g)
+                        => Transport -> Proxy g -> IO ()
+testMetadataDriveFailed transport pg = run transport pg interceptor [] test where
   interceptor _rc _str = return ()
   test (TestArgs _ _ rc) rmq _ = do
     usend rmq $ MQBind "halon_sspl" "halon_sspl" "sspl_ll"
@@ -661,8 +667,8 @@ testMetadataDriveFailed transport = run transport interceptor [] test where
     Just{} <- expectTimeout ssplTimeout :: Process (Maybe (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data))))
     debug "Raid_data message processed by RC"
 
-testGreeting :: Transport -> IO ()
-testGreeting transport = run transport interceptor [] test where
+testGreeting :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testGreeting transport pg = run transport pg interceptor [] test where
   interceptor _rc _str = return ()
   test (TestArgs _ _ rc) rmq _ = do
     prepareSubscriptions rc rmq

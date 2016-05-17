@@ -9,6 +9,7 @@ module Main where
 import qualified HA.Autoboot.Tests
 import qualified HA.RecoveryCoordinator.Tests
 import qualified HA.RecoveryCoordinator.Mero.Tests
+import HA.Replicator.Log
 import qualified HA.Test.Disconnect
 
 import Helper.Environment
@@ -20,6 +21,7 @@ import Test.Tasty.HUnit (testCase)
 import Control.Concurrent
 import Control.Exception
 import Control.Monad
+import Data.Proxy
 import Network.Transport (Transport)
 import Network.Transport.InMemory
 import System.Posix.Env (setEnv)
@@ -32,28 +34,30 @@ import qualified Mero.Notification.Tests
 
 
 ut :: String -> Transport -> IO TestTree
-ut _host transport = return $
+ut _host transport = do
+  let pg = Proxy :: Proxy RLogGroup
+  return $
     testGroup "mero-halon" $ (:[]) $
     testGroup "scheduler"
       [ testCase "testServiceRestarting" $
-          HA.RecoveryCoordinator.Tests.testServiceRestarting transport
+          HA.RecoveryCoordinator.Tests.testServiceRestarting transport pg
       , testCase "testServiceNotRestarting" $
-          HA.RecoveryCoordinator.Tests.testServiceNotRestarting transport
+          HA.RecoveryCoordinator.Tests.testServiceNotRestarting transport pg
       , testCase "testEQTrimming" $
-          HA.RecoveryCoordinator.Tests.testEQTrimming transport
+          HA.RecoveryCoordinator.Tests.testEQTrimming transport pg
       , testCase "testHostAddition" $
-          HA.RecoveryCoordinator.Mero.Tests.testHostAddition transport
+          HA.RecoveryCoordinator.Mero.Tests.testHostAddition transport pg
       , testCase "testDriveAddition" $
-          HA.RecoveryCoordinator.Mero.Tests.testDriveAddition transport
+          HA.RecoveryCoordinator.Mero.Tests.testDriveAddition transport pg
       , testCase "testServiceStopped" $
-          HA.RecoveryCoordinator.Tests.testServiceStopped transport
+          HA.RecoveryCoordinator.Tests.testServiceStopped transport pg
       , testCase "testMonitorManagement" $
-          HA.RecoveryCoordinator.Tests.testMonitorManagement transport
+          HA.RecoveryCoordinator.Tests.testMonitorManagement transport pg
       , testCase "testMasterMonitorManagement" $
           HA.RecoveryCoordinator.Tests.testMasterMonitorManagement
-            transport
+            transport pg
       , testCase "testNodeUpRace" $
-          HA.RecoveryCoordinator.Tests.testNodeUpRace transport
+          HA.RecoveryCoordinator.Tests.testNodeUpRace transport pg
       , testGroup "Autoboot" $
           HA.Autoboot.Tests.tests transport
       , testCase "testDisconnect" $

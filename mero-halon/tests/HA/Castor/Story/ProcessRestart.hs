@@ -17,6 +17,7 @@ import qualified HA.Castor.Story.Tests as H
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Mero
+import           HA.Replicator
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
@@ -34,8 +35,8 @@ import           Test.Framework
 import           Test.Tasty.HUnit (assertEqual)
 import           TestRunner
 
-mkTests :: IO (Transport -> [TestTree])
-mkTests = do
+mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
+mkTests pg = do
   ex <- E.try $ Network.AMQP.openConnection "localhost" "/" "guest" "guest"
   case ex of
     Left (_::AMQPException) -> return $ \_->
@@ -44,13 +45,13 @@ mkTests = do
       closeConnection x
       return $ \transport ->
         [ testSuccess "testSSPLFirst" $
-          testSSPLFirst transport
+          testSSPLFirst transport pg
         , testSuccess "testMeroOnlineFirstSamePid" $
-          testMeroOnlineFirstSamePid transport
+          testMeroOnlineFirstSamePid transport pg
         , testSuccess "testMeroOnlineFirstDiffPid" $
-          testMeroOnlineFirstDiffPid transport
+          testMeroOnlineFirstDiffPid transport pg
         , testSuccess "testNothingOnStarting" $
-          testNothingOnStarting transport
+          testNothingOnStarting transport pg
         ]
 
 --------------------------------------------------------------------------------
@@ -80,14 +81,16 @@ newtype RuleHook = RuleHook ProcessId
 instance Binary RuleHook
 
 -- | Generic test runner for failing processes
-doRestart :: Transport
+doRestart :: (Typeable g, RGroup g)
+          => Transport
+          -> Proxy g
           -> M0.ProcessState
           -- ^ Starting state of the processes
           -> (M0.Process -> ReceivePort NotificationMessage -> Process ())
           -- ^ Main test block
           -> IO ()
-doRestart transport startingState runRestartTest =
-  H.run transport interceptor [rule] test where
+doRestart transport pg startingState runRestartTest =
+  H.run transport pg interceptor [rule] test where
   interceptor _ _ = return ()
 
   test (TestArgs _ _ rc) rmq recv = do
@@ -125,8 +128,8 @@ doRestart transport startingState runRestartTest =
 -- * SSPL restart notification comes
 -- * M0_NC_ONLINE notification comes
 -- * M0_NC_FAILED and M0_NC_ONLINE are sent to mero
-testSSPLFirst :: Transport -> IO ()
-testSSPLFirst t = doRestart t M0.PSOnline $ \p recv -> do
+testSSPLFirst :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testSSPLFirst t pg = doRestart t pg M0.PSOnline $ \p recv -> do
   nid <- getSelfNode
   promulgateWait (nid, mkRestartedNotification p)
   Set nt <- notificationMessage <$> receiveChan recv
@@ -144,8 +147,8 @@ testSSPLFirst t = doRestart t M0.PSOnline $ \p recv -> do
 -- * ONLINE sent to mero, mero pid set
 -- * SSPL restart notification comes for the pid
 -- * Nothing sent to mero
-testMeroOnlineFirstSamePid :: Transport -> IO ()
-testMeroOnlineFirstSamePid t = doRestart t M0.PSOnline $ \p recv -> do
+testMeroOnlineFirstSamePid :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testMeroOnlineFirstSamePid t pg = doRestart t pg M0.PSOnline $ \p recv -> do
   nid <- getSelfNode
   promulgateWait (Set [Note (M0.r_fid p) M0_NC_ONLINE])
   Set nt <- notificationMessage <$> receiveChan recv
@@ -161,8 +164,9 @@ testMeroOnlineFirstSamePid t = doRestart t M0.PSOnline $ \p recv -> do
 -- * ONLINE sent to mero, mero pid set
 -- * SSPL restart notification comes for different pid
 -- * FAILED sent to mero
-testMeroOnlineFirstDiffPid :: Transport -> IO ()
-testMeroOnlineFirstDiffPid t = doRestart t M0.PSOnline $ \p recv -> do
+testMeroOnlineFirstDiffPid :: (Typeable g, RGroup g)
+                           => Transport -> Proxy g -> IO ()
+testMeroOnlineFirstDiffPid t pg = doRestart t pg M0.PSOnline $ \p recv -> do
   nid <- getSelfNode
   promulgateWait (Set [Note (M0.r_fid p) M0_NC_ONLINE])
   Set nt <- notificationMessage <$> receiveChan recv
@@ -181,8 +185,8 @@ testMeroOnlineFirstDiffPid t = doRestart t M0.PSOnline $ \p recv -> do
 -- * Process is in @'M0.PSStarting' 'Nothing'@ state
 -- * M0_NC_ONLINE comes
 -- * No notification is sent out
-testNothingOnStarting :: Transport -> IO ()
-testNothingOnStarting t = doRestart t M0.PSStarting $ \p recv -> do
+testNothingOnStarting :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testNothingOnStarting t pg = doRestart t pg M0.PSStarting $ \p recv -> do
   promulgateWait (Set [Note (M0.r_fid p) M0_NC_ONLINE])
   msg <- fmap notificationMessage <$> receiveChanTimeout 2000000 recv
   liftIO $ assertEqual "No message received" Nothing msg

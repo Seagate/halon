@@ -503,98 +503,7 @@ Test-Suite testeventqueue
   if !flag(eventqueue-tests)
     Buildable:     False
 
--- XXX: Tests are not build under ghc >= 7.8 because currently
--- they fails, these workarounds should be removed as soon as
--- tests will pass
-
-Test-Suite unit-tests
-  Type:             exitcode-stdio-1.0
-  Main-Is:          test.hs
-  Default-Language: Haskell2010
-  Hs-Source-Dirs:   tests
-  Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
-                    HA.RecoveryCoordinator.SSPL.Tests
-                    HA.Autoboot.Tests
-                    HA.Castor.Story.Tests
-                    HA.Castor.Tests
-                    HA.Test.Cluster
-                    HA.Test.Disconnect
-                    HA.Test.SSPL
-                    Helper.SSPL
-                    Helper.Environment
-                    Helper.InitialData
-                    Helper.RC
-                    RemoteTables
-                    TestRunner
-                    HA.RecoveryCoordinator.Helpers
-                    HA.RecoveryCoordinator.Tests
-
-  Ghc-Options: -threaded -Wall -rtsopts -with-rtsopts=-T
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  if flag(mero)
-    CPP-Options:    -DUSE_MERO
-    Build-Depends:  confc
-
-  CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
-  if flag(debug)
-    Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
-  Default-Extensions: DeriveDataTypeable
-                      DeriveGeneric
-                      GeneralizedNewtypeDeriving
-                      RecordWildCards NamedFieldPuns
-                      ScopedTypeVariables
-  Build-Depends:    halon,
-                    mero-halon,
-                    base >= 4.5,
-                    binary >= 0.6.4,
-                    aeson,
-                    bytestring,
-                    directory,
-                    distributed-process-scheduler,
-                    distributed-process-test,
-                    distributed-static,
-                    mtl,
-                    network,
-                    network-transport,
-                    network-transport-controlled,
-                    network-transport-inmemory,
-                    options-schema,
-                    hashable,
-                    unordered-containers,
-                    random,
-                    sspl,
-                    tasty,
-                    tasty-hunit,
-                    tasty-files,
-                    cep,
-                    attoparsec,
-                    containers,
-                    directory,
-                    filepath,
-                    process,
-                    amqp,
-                    text,
-                    aeson,
-                    uuid,
-                    time,
-                    unix,
-                    process,
-                    exceptions
-
-  if flag(mero)
-      Build-Depends: rpclite, syb
-      CPP-Options:    -DUSE_MERO
-
-  if flag(rpc)
-      Build-Depends: network-transport-rpc
-      CPP-Options:    -DUSE_RPC
-  else
-      Build-Depends: network-transport-tcp >= 0.3
-
-Test-Suite integration-tests
+Test-Suite tests
   Type:             exitcode-stdio-1.0
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
@@ -623,7 +532,6 @@ Test-Suite integration-tests
   if flag(maintainer)
     Ghc-Options: -Werror
 
-  CPP-Options:      -DMC_RG=RLogGroup
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
   Default-Extensions: DeriveDataTypeable
@@ -823,7 +731,6 @@ Benchmark initial-data-gc
   if flag(maintainer)
     Ghc-Options: -Werror
 
-  CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
   Default-Extensions: DeriveDataTypeable
