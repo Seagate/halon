@@ -3,7 +3,6 @@
 -- License   : All rights reserved.
 --
 
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -18,11 +17,6 @@ import HA.Multimap ( MetaInfo, StoreUpdate(..), defaultMetaInfo, updateStore
                    , getKeyValuePairs, StoreChan )
 import HA.Multimap.Implementation ( fromList, Multimap )
 import HA.Replicator ( RGroup(..) )
-#ifdef USE_MOCK_REPLICATOR
-import HA.Replicator.Mock ( MC_RG )
-#else
-import HA.Replicator.Log ( MC_RG )
-#endif
 import RemoteTables ( remoteTable )
 
 import Control.Distributed.Process
@@ -31,6 +25,8 @@ import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
 import Data.ByteString.Char8 ( pack )
+import Data.Proxy
+import Data.Typeable
 import Network.Transport ( Transport )
 import Test.Framework
 
@@ -74,8 +70,8 @@ mmSDict = SerializableDict
 
 remotable [ 'mmSDict ]
 
-tests :: Transport -> [TestTree]
-tests transport =
+tests :: forall g. (Typeable g, RGroup g) => Transport -> Proxy g -> [TestTree]
+tests transport _ =
     [ testSuccess "multimap-empty" $ setup testMultimapEmpty
     , testSuccess "multimap-order" $ setup testMultimapOrder
     , testSuccess "multimap-async" $ setup testMultimapAsync
@@ -88,7 +84,7 @@ tests transport =
           cRGroup <- newRGroup $(mkStatic 'mmSDict) "mmtest" 20 1000000 [nid]
                                (defaultMetaInfo, fromList [])
           pRGroup <- unClosure cRGroup
-          rGroup <- pRGroup :: Process (MC_RG (MetaInfo, Multimap))
+          rGroup <- pRGroup :: Process (g (MetaInfo, Multimap))
           self <- getSelfPid
           (mmpid, mmchan) <- startMultimap rGroup $ \loop -> link self >> loop
           link mmpid

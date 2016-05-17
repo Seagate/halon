@@ -131,7 +131,6 @@ Benchmark sync-rg
   if flag(maintainer)
     Ghc-Options: -Werror
 
-  CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
   Default-Extensions: DeriveDataTypeable
@@ -181,7 +180,6 @@ Benchmark gc-rg
   if flag(maintainer)
     Ghc-Options: -Werror
 
-  CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
   Default-Extensions: DeriveDataTypeable
@@ -229,7 +227,6 @@ Test-Suite unit-tests
   if flag(maintainer)
     Ghc-Options: -Werror
 
-  CPP-Options:      -DMC_RG=RLocalGroup -DUSE_MOCK_REPLICATOR
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
   Default-Extensions: DeriveDataTypeable
@@ -241,10 +238,12 @@ Test-Suite unit-tests
                     base >= 4.5,
                     binary >= 0.6.4,
                     bytestring,
+                    constraints,
                     distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static,
                     directory,
+                    exceptions,
                     filepath,
                     hashable,
                     network,
@@ -304,10 +303,12 @@ Test-Suite integration-tests
                     base >= 4.5,
                     binary >= 0.6.4,
                     bytestring,
+                    constraints,
                     distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static,
                     directory,
+                    exceptions,
                     filepath,
                     hashable,
                     mtl >= 2.0,
@@ -349,7 +350,6 @@ Test-Suite scheduler-tests
   if flag(maintainer)
     Ghc-Options: -Werror
 
-  CPP-Options:      -DMC_RG=RLogGroup
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
   Default-Extensions: DeriveDataTypeable
@@ -365,6 +365,7 @@ Test-Suite scheduler-tests
                     distributed-process-test,
                     distributed-static,
                     directory,
+                    exceptions,
                     filepath,
                     hashable,
                     network,
