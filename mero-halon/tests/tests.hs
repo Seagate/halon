@@ -67,7 +67,6 @@ tests host transport breakConnection = do
 ut :: String -> Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
 ut _host transport _breakConnection = do
   let pg = Proxy :: Proxy RLocalGroup
-  ssplTest <- HA.Test.SSPL.mkTests
 #ifdef USE_MERO
   driveFailureTests <- HA.Castor.Story.Tests.mkTests pg
   processRestartTests <- HA.Castor.Story.ProcessRestart.mkTests pg
