@@ -65,7 +65,7 @@ import HA.RecoveryCoordinator.Events.Mero (GetSpielAddress(..))
 import Control.Arrow ((***))
 import Control.Concurrent.MVar
 import Control.Distributed.Process.Internal.Types ( LocalNode )
-import qualified Control.Distributed.Process.Node as CH ( runProcess, forkProcess )
+import qualified Control.Distributed.Process.Node as CH ( forkProcess )
 import Control.Monad ( void, join )
 import Control.Monad.Trans (MonadIO)
 import Control.Monad.Catch (MonadCatch, SomeException)
@@ -291,22 +291,22 @@ notificationWorker chan announce = await_event
         Nothing -> -- timeout happened process first messasge from PSQ
           case PSQ.minView psq of
             Nothing -> await_event
-            Just (fid, _, value, psq') -> execute value now psq'
+            Just (_, _, value, psq') -> execute value now psq'
         Just [] -> next_step psq now
         Just [note@(Note fid state)]
            | state `elem` filteredStates ->
              case PSQ.lookup fid psq of
                Nothing -> next_step (PSQ.insert fid (pendingTime now) (Pending note) psq) now
-               Just (pri, cache_state) ->
+               Just (_, cache_state) ->
                  case cache_state of
-                   Pending p@(Note _ old_state)
+                   Pending (Note _ old_state)
                      | state `isCancelling` old_state ->
                        next_step (PSQ.insert fid (cancelledTime now) (Cancelled note) psq) now
                      | state `isProgressing` old_state ->
                        next_step (PSQ.insert fid (pendingTime now) (Pending note) psq) now
                      | otherwise -> next_step psq now
                    Sent p
-                     | p == note -> next_step (PSQ.insert fid (sentTime' now) (Sent p) psq) now
+                     | p == note -> next_step (PSQ.insert fid (sentTime now) (Sent p) psq) now
                      | otherwise -> next_step (PSQ.insert fid (pendingTime now) (Pending note) psq) now
                    Cancelled p
                      | p == note -> next_step (PSQ.insert fid (cancelledTime' now) (Cancelled p) psq) now
@@ -319,23 +319,22 @@ notificationWorker chan announce = await_event
     execute (Pending n@(Note fid _)) now psq = do
       announce [n]
       next_step (PSQ.insert fid (pendingTime now) (Sent n) psq) now
-    execute (Sent n) now psq =
+    execute (Sent _) now psq =
       next_step psq now
-    execute (Cancelled n) now  psq = next_step psq now
+    execute (Cancelled _) now  psq = next_step psq now
     -- Decide what to do next
     next_step psq now =
       case PSQ.minView psq of
         Nothing -> await_event
-        Just (fid, pri, v, psq') ->
+        Just (_, pri, v, psq') ->
           if now >= pri
           then execute v now psq'
           else await_execute (delay pri now) psq
     readNoteMsg = matchSTM (readTChan chan) return
     pendingTime   now = now + TimeSpec 0 (fromIntegral $ 1000*pendingInterval)
     cancelledTime now = now + TimeSpec 0 (fromIntegral $ 1000*cancelledInterval)
-    sentTime      now = now + TimeSpec 0 (fromIntegral $ 1000*sentInterval)
     -- increase only half of the period on duplicate.
-    sentTime' now      = now + TimeSpec 0 (fromIntegral $ 500*sentInterval)
+    sentTime now      = now + TimeSpec 0 (fromIntegral $ 500*sentInterval)
     cancelledTime' now = now + TimeSpec 0 (fromIntegral $ 500*cancelledInterval)
     delay  p now      = fromIntegral $ (timeSpecAsNanoSecs $ p `diffTimeSpec` now) `div` 1000
 
@@ -488,7 +487,7 @@ getSpielAddress g =
    let svs = M0.getM0Services g
        (confdsFid,confdsEps) = nub *** nub . concat $ unzip
          [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_MGS, s_endpoints = eps }) <- svs
-                     , G.isConnected svc R.Is M0.M0_NC_ONLINE g]
+                     , M0.getState svc g == M0.SSOnline ]
        (rmFids, rmEps) = unzip
          [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_RMS, s_endpoints = eps }) <- svs
                      , G.isConnected svc R.Is M0.PrincipalRM g]

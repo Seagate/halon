@@ -188,15 +188,17 @@ prettyReport (ReportClusterState status sns info' hosts) = do
       unless (null sns) $ do
          putStrLn $ "    sns repairs:"
          forM_ sns $ \(M0.Pool pool_fid, s) -> do
-           putStrLn $ "      " ++ fidToStr pool_fid ++ ":" 
+           putStrLn $ "      " ++ fidToStr pool_fid ++ ":"
            forM_ (M0.priStateUpdates s) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
              putStrLn $ "        " ++ fidToStr sdev_fid ++ " -> " ++ sdev_path
       putStrLn $ "Hosts:"
       forM_ hosts $ \(Castor.Host qfdn, ReportClusterHost st ps sdevs) -> do
          putStrLn $ "  " ++ qfdn ++ " ["++ M0.prettyConfObjState st ++ "]"
          forM_ ps $ \(M0.Process{r_fid=rfid, r_endpoint=endpoint}, ReportClusterProcess proc_st srvs) -> do
-           putStrLn $ "    " ++ "[" ++ M0.prettyProcessState proc_st ++ "]\t" 
-                             ++ endpoint ++ "\t" ++ inferType srvs ++ "\t==> " ++ fidToStr rfid
+           putStrLn $ "    " ++ "[" ++ M0.prettyProcessState proc_st ++ "]\t"
+                             ++ endpoint ++ "\t" ++ inferType (map fst srvs) ++ "\t==> " ++ fidToStr rfid
+           for_ srvs $ \(M0.Service fid' t' _ _, sst) -> do
+             putStrLn $ "        [" ++ show sst ++ "]\t" ++ show t' ++ "\t\t\t==> " ++ fidToStr fid'
          unless (null sdevs) $ do
            putStrLn "    Devices:"
            forM_ sdevs $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path}, sdev_st) -> do

@@ -9,7 +9,6 @@ module HA.RecoveryCoordinator.Actions.Castor
 
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
-import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import HA.RecoveryCoordinator.Actions.Mero.Conf (rgGetPool)
 
@@ -35,7 +34,7 @@ rgRecordDiskFailure disk = updateDiskFailure defAction ins disk where
 rgRecordDiskOnline :: M0.Disk -> G.Graph -> G.Graph
 rgRecordDiskOnline = updateDiskFailure defAction rm where
   defAction = flip const
-  rm d [] = Nothing
+  rm _ [] = Nothing
   rm d (x:xs)
      | d == x = Just xs
      | otherwise = (x:) <$> rm d xs
@@ -64,4 +63,3 @@ updateDiskFailure df f disk graph =  foldl' apply graph (allPools `intersect` po
       Just (M0.DiskFailureVector v) -> case f disk v of
         Nothing -> rg
         Just fv -> G.connect pool R.Has (M0.DiskFailureVector fv) rg
-

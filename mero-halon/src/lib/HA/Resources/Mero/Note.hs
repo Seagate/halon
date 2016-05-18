@@ -143,7 +143,7 @@ class (G.Resource a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateCarrier a),
 
 -- | Associated type used where we carry no explicit state for a type.
 data NoExplicitConfigState = NoExplicitConfigState
-  deriving (Eq, Generic, Typeable)
+  deriving (Eq, Generic, Typeable, Show)
 instance Binary NoExplicitConfigState
 
 -- A dictionary wrapper for configuration objects
@@ -199,21 +199,39 @@ instance HasConfObjectState M0.Node where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Node
 instance HasConfObjectState M0.Process where
   type StateCarrier M0.Process = M0.ProcessState
-  getState x rg = fromMaybe M0.PSUnknown . listToMaybe $ G.connectedTo x Is rg
+  -- XXX: figure out why we need PSOnline here
+  getState x rg = fromMaybe M0.PSOnline . listToMaybe $ G.connectedTo x Is rg
   setState x st = G.connectUniqueFrom x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Process
-  toConfObjState _ = const M0_NC_ONLINE
-  -- toConfObjState _ M0.PSUnknown = M0_NC_UNKNOWN
-  -- toConfObjState _ (M0.PSFailed _) = M0_NC_FAILED
-  -- toConfObjState _ M0.PSOffline = M0_NC_FAILED
-  -- toConfObjState _ M0.PSStarting = M0_NC_FAILED
-  -- toConfObjState _ M0.PSStopping = M0_NC_FAILED
-  -- toConfObjState _ M0.PSOnline = M0_NC_ONLINE
-  -- toConfObjState _ (M0.PSInhibited M0.PSOnline) = M0_NC_TRANSIENT
-  -- toConfObjState x (M0.PSInhibited y) = toConfObjState x y
+
+  toConfObjState _ M0.PSUnknown = M0_NC_UNKNOWN
+  toConfObjState _ (M0.PSFailed _) = M0_NC_FAILED
+  toConfObjState _ M0.PSOffline = M0_NC_FAILED
+  toConfObjState _ M0.PSStarting = M0_NC_FAILED
+  toConfObjState _ M0.PSStopping = M0_NC_FAILED
+  toConfObjState _ M0.PSOnline = M0_NC_ONLINE
+  toConfObjState _ (M0.PSInhibited M0.PSOnline) = M0_NC_TRANSIENT
+  toConfObjState x (M0.PSInhibited y) = toConfObjState x y
 
 instance HasConfObjectState M0.Service where
+  type StateCarrier M0.Service = M0.ServiceState
+  getConfObjState x rg = case G.connectedTo x Is rg :: [M0.ServiceState] of
+    y : _ -> toConfObjState x y
+    _ -> M0_NC_ONLINE
+  getState x rg = fromMaybe M0.SSUnknown . listToMaybe $ G.connectedTo x Is rg
+  setState x st = G.connectUniqueFrom x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Service
+
+  toConfObjState _ M0.SSUnknown = M0_NC_UNKNOWN
+  toConfObjState _ M0.SSOffline = M0_NC_FAILED
+  toConfObjState _ M0.SSFailed = M0_NC_FAILED
+  toConfObjState _ M0.SSOnline = M0_NC_ONLINE
+  -- TODO: Starting = ONLINE because mero hates non-online services
+  -- during process start
+  toConfObjState _ M0.SSStarting = M0_NC_ONLINE
+  toConfObjState _ (M0.SSInhibited M0.SSOnline) = M0_NC_TRANSIENT
+  toConfObjState x (M0.SSInhibited st) = toConfObjState x st
+
 instance HasConfObjectState M0.Disk where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Disk
 instance HasConfObjectState M0.SDev where
@@ -312,7 +330,6 @@ $(mkDicts
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
   , (''M0.Node, ''Is, ''ConfObjectState)
-  , (''M0.Service, ''Is, ''ConfObjectState)
   , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Disk, ''Is, ''ConfObjectState)
   , (''M0.Pool, ''Is, ''ConfObjectState)
@@ -327,7 +344,6 @@ $(mkResRel
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
   , (''M0.Node, ''Is, ''ConfObjectState)
-  , (''M0.Service, ''Is, ''ConfObjectState)
   , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Disk, ''Is, ''ConfObjectState)
   , (''M0.Pool, ''Is, ''ConfObjectState)

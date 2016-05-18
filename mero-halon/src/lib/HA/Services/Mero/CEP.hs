@@ -63,4 +63,5 @@ meroRulesF _ = do
     \(HAEvent eid (DeclareMeroChannel sp c cc) _) -> do
       registerChannel sp c
       registerChannel sp cc
+      promulgateRC $ MeroChannelDeclared sp c cc
       messageProcessed eid

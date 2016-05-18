@@ -34,6 +34,7 @@ import Control.Applicative
 import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
+import HA.RecoveryCoordinator.Rules.Castor.Process
 import HA.RecoveryCoordinator.Rules.Castor.Repair
 import HA.RecoveryCoordinator.Rules.Castor.Reset
 import HA.RecoveryCoordinator.Rules.Mero.Conf
@@ -79,6 +80,7 @@ castorRules = sequence_
   , ruleResetAttempt
   , ruleRebalanceStart
   , checkRepairOnClusterStart
+  , ruleProcessRestarted
 #endif
   , ruleDriveFailed
   , ruleDriveRemoved
@@ -133,6 +135,8 @@ setStateChangeHandlers = do
     stateChangeHandlersE = [
         handleResetExternal
       , handleRepairExternal
+      , handleProcessFailureE
+      , handleProcessOnlineE
       ]
     stateChangeHandlersI = [
         handleResetInternal
@@ -142,10 +146,11 @@ setStateChangeHandlers = do
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do
   defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> do
+    todo uid
     phaseLog "info" $ "Received " ++ show (Set ns)
     mhandlers <- getStorageRC
     traverse_ (traverse_ ($ Set ns) . getExternalNotificationHandlers) mhandlers
-    messageProcessed uid
+    done uid
 
   querySpiel
   querySpielHourly

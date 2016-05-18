@@ -229,7 +229,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
       modifyLocalGraph $ return
                        . (    G.newResource svc
                           >>> G.connect proc M0.IsParentOf svc
-                          >>> G.connectUniqueFrom svc Is M0.M0_NC_ONLINE
+                          >>> G.connectUniqueFrom svc Is M0.SSOnline
                           >>> linkDrives svc
                          )
 
@@ -465,7 +465,7 @@ isPrincipalRM svc = getLocalGraph >>=
 getPrincipalRM :: PhaseM LoopState l (Maybe M0.Service)
 getPrincipalRM = getLocalGraph >>= \rg ->
   return . listToMaybe
-    . filter (\x -> G.isConnected x Is M0.M0_NC_ONLINE rg)
+    . filter (\x -> M0.getState x rg == M0.SSOnline)
     $ G.connectedFrom Is M0.PrincipalRM rg
 
 setPrincipalRMIfUnset :: M0.Service

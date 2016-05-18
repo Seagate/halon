@@ -18,6 +18,7 @@ module HA.Services.Mero
     ( MeroChannel(..)
     , TypedChannel(..)
     , DeclareMeroChannel(..)
+    , MeroChannelDeclared(..)
     , NotificationMessage(..)
     , ProcessRunType(..)
     , ProcessConfig(..)
@@ -36,6 +37,7 @@ module HA.Services.Mero
     , createSet
     , notifyMero
     , notifyMeroAndThen
+    , lookupMeroChannelByNode
     ) where
 
 import HA.Logger
@@ -101,10 +103,6 @@ sendMeroChannel cn cc = do
               (ServiceProcess pid) (TypedChannel cn) (TypedChannel cc)
   void $ promulgate chan
 
--- | Tell the RC that something has failed
-notifyBootstrapFailure :: String -> Process ()
-notifyBootstrapFailure = void . promulgate . M0.BootstrapFailedNotification
-
 statusProcess :: RPC.ServerEndpoint
               -> ProcessId
               -> ReceivePort NotificationMessage
@@ -113,7 +111,8 @@ statusProcess ep pid rp = do
     -- TODO: When mero can handle exceptions caught here, report them to the RC.
     link pid
     forever $ do
-      NotificationMessage set addrs subs <- receiveChan rp
+      msg@(NotificationMessage set addrs subs) <- receiveChan rp
+      say $ "statusProcess: notification msg received: " ++ show msg
       forM_ addrs $ \addr ->
         let logError e =
               traceM0d $ "statusProcess: notifyMero failed: " ++ show (pid, addr, e)
@@ -142,6 +141,11 @@ controlProcess mc pid rp = link pid >> (forever $ receiveChan rp >>= \case
       results <- liftIO $ fmap concat $ forM procs $ \(roles, conf) ->
         forM (reverse roles) $ \role -> stopProcess role conf
       promulgateWait $ ProcessControlResultStopMsg nid results
+    RestartProcesses procs -> do
+      nid <- getSelfNode
+      results <- liftIO $ fmap concat $ forM procs $ \(roles, conf) ->
+        forM roles $ \role -> restartProcess role conf
+      promulgateWait $ ProcessControlResultRestartMsg nid results
   )
 
 
@@ -170,7 +174,7 @@ startProcess :: MeroConf
              -> ProcessRunType
              -> ProcessConfig
              -> IO (Either Fid (Fid, String))
-startProcess mc run conf = flip Catch.catch handler $ do
+startProcess mc run conf = flip Catch.catch (generalProcFailureHandler conf) $ do
     putStrLn $ "m0d: startProcess: " ++ show procFid
             ++ " with type(s) " ++ show run
     confXC <- maybeWriteConfXC conf
@@ -190,36 +194,54 @@ startProcess mc run conf = flip Catch.catch handler $ do
       liftIO $ writeConfXC bs
       return $ Just confXCPath
     maybeWriteConfXC _ = return Nothing
-    (procFid, m0addr) = case conf of
-      ProcessConfigLocal x y _ -> (x,y)
-      ProcessConfigRemote x y -> (x,y)
-    handler :: Catch.SomeException -> IO (Either Fid (Fid, String))
-    handler e = return $
-      Right (procFid, show e)
+    (procFid, m0addr) = getProcFidAndEndpoint conf
+
+restartProcess :: ProcessRunType -> ProcessConfig -> IO (Either Fid (Fid,String))
+restartProcess run conf = flip Catch.catch (generalProcFailureHandler conf) $
+  case unitString conf run of
+    Just unit -> do
+      putStrLn $ "m0d: restartProcess: " ++ unit ++ " with type(s) " ++ show run
+      ec <- SystemD.restartService unit
+      case ec of
+        ExitSuccess -> return $ Left procFid
+        ExitFailure x -> do
+          putStrLn $ "m0d: restartProcess failed."
+          return $ Right (procFid, "Unit failed to restart with exit code " ++ show x)
+    Nothing -> return (Left procFid)
+  where
+    (procFid, _) = getProcFidAndEndpoint conf
 
 -- | Stop running mero service.
 stopProcess :: ProcessRunType -> ProcessConfig -> IO (Either Fid (Fid,String))
-stopProcess run conf = flip Catch.catch handler $ do
-    let munit = case run of
-          M0T1FS -> Just $ "m0t1fs@" ++ fidToStr procFid
-          M0D    -> Just $ "m0d@" ++ fidToStr procFid
-          M0MKFS  -> Nothing
-    case munit of
-      Just unit -> do putStrLn $ "m0d: stopProcess: " ++ unit ++ " with type(s) " ++ show run
-                      ec <- SystemD.stopService $ unit ++ ".service"
-                      case ec of
-                        ExitSuccess -> return $ Left procFid
-                        ExitFailure x -> do
-                          putStrLn $ "m0d: stopProcess failed."
-                          return $ Right (procFid, "Unit failed to stop with exit code " ++ show x)
-      Nothing -> return (Left procFid)
-    where
-      procFid = case conf of
-        ProcessConfigLocal x _ _ -> x
-        ProcessConfigRemote x _  -> x
-      handler :: Catch.SomeException -> IO (Either Fid (Fid, String))
-      handler e = return $ Right (procFid, show e)
+stopProcess run conf = flip Catch.catch (generalProcFailureHandler conf) $
+  case unitString conf run of
+    Just unit -> do
+      putStrLn $ "m0d: stopProcess: " ++ unit ++ " with type(s) " ++ show run
+      ec <- SystemD.stopService unit
+      case ec of
+        ExitSuccess -> return $ Left procFid
+        ExitFailure x -> do
+          putStrLn $ "m0d: stopProcess failed."
+          return $ Right (procFid, "Unit failed to stop with exit code " ++ show x)
+    Nothing -> return (Left procFid)
+  where
+    (procFid, _) = getProcFidAndEndpoint conf
 
+unitString :: ProcessConfig -> ProcessRunType -> Maybe String
+unitString conf run = case run of
+  M0T1FS -> Just $ "m0t1fs@" ++ fidToStr (fst $ getProcFidAndEndpoint conf) ++ ".service"
+  M0D -> Just $ "m0d@" ++ fidToStr (fst $ getProcFidAndEndpoint conf) ++ ".service"
+  M0MKFS -> Nothing
+
+-- | Get the process fid and endpoint from the given 'MeroConf'.
+getProcFidAndEndpoint :: ProcessConfig -> (Fid, String)
+getProcFidAndEndpoint (ProcessConfigLocal x y _) = (x, y)
+getProcFidAndEndpoint (ProcessConfigRemote x y) = (x, y)
+
+-- | General failure handler for the process start/stop/restart actions.
+generalProcFailureHandler :: ProcessConfig -> Catch.SomeException
+                          -> IO (Either Fid (Fid, String))
+generalProcFailureHandler conf e = return $ Right (fst $ getProcFidAndEndpoint conf, show e)
 
 -- | Write out the conf.xc file for a confd server.
 writeConfXC :: BS.ByteString -- ^ Contents of conf.xc file
@@ -277,7 +299,8 @@ remotableDecl [ [d|
           go
         ExitFailure i -> do
           traceM0d $ "Kernel module did not load correctly: " ++ show i
-          notifyBootstrapFailure $ "mero-kernel service failed to start: " ++ show i
+          void . promulgate . M0.MeroKernelFailed $
+            "mero-kernel service failed to start: " ++ show i
     where
       haAddr = RPC.rpcAddress $ mcHAAddress conf
       withEp = Mero.Notification.withServerEndpoint haAddr
@@ -364,7 +387,7 @@ getNotificationChannels = do
                return $ Just chan
             Nothing -> do
               phaseLog "error" $ "HA.Service.Mero.notifyMero: cannot neither MeroChannel on "
-                              ++ show host
+                              ++ show (host, node)
                               ++ " nor local channel."
               return Nothing
        Just (TypedChannel chan) -> return $ Just chan
@@ -384,7 +407,8 @@ notifyMeroAndThen :: Set
                   -> Process () -- ^ Action on failure
                   -> PhaseM LoopState l ()
 notifyMeroAndThen setEvent fsucc ffail = do
-    phaseLog "action" "Sending configuration update to mero services"
+    phaseLog "action" $ "Sending configuration update to mero services: "
+                     ++ show setEvent
     chans <- getNotificationChannels
     liftProcess $ do
       self <- getSelfPid

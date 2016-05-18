@@ -41,7 +41,6 @@ module HA.RecoveryCoordinator.Mero
        ) where
 
 import Prelude hiding ((.), id, mapM_)
-import HA.EventQueue.Types (HAEvent(..))
 import HA.Resources
 import HA.Service
 import HA.Services.DecisionLog
@@ -71,7 +70,6 @@ import Data.Binary (Binary)
 import Data.Dynamic
 import Data.Foldable (forM_)
 import qualified Data.Map.Strict as Map
-import Data.UUID (UUID)
 
 import GHC.Generics (Generic)
 
