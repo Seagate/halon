@@ -24,7 +24,6 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
   , AnyStateSet
   , stateSet
     -- * Temporary functions
-  , applyStateChangesBlocking
   , notifyDriveStateChange
   , ExternalNotificationHandlers(..)
   , InternalNotificationHandlers(..)
@@ -261,18 +260,6 @@ applyStateChangesCreateFS ass =
         forM_ (onFailure strategy sgraph) $ \graph' -> do
           putLocalGraph graph'
           syncAction Nothing M0.SyncToConfdServersInRG
-
--- | Blocking version of apply state changes. DO NOT USE THIS FUNCTION in any
---   new code. All uses should be removed as soon as possible.
-{-# WARNING applyStateChangesBlocking "Please do not use this function in new code." #-}
-applyStateChangesBlocking :: [AnyStateSet]
-                          -> PhaseM LoopState l Bool
-applyStateChangesBlocking ass = do
-  res <- liftIO $ newEmptyMVar
-  genericApplyStateChanges ass (return ())
-    (liftIO $ putMVar res True)
-    (liftIO $ putMVar res False)
-  liftIO $ takeMVar res
 
 -- | @'setPhaseNotified' handle change extract act@
 --

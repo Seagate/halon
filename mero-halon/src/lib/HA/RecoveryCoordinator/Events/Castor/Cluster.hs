@@ -13,6 +13,7 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
   , StartMeroClientRequest(..)
   , StateChangeResult(..)
   , PoolRebalanceRequest(..)
+  , PoolRepairRequest(..)
   -- * Cluster state report
   , ReportClusterState(..)
   , ReportClusterHost(..)
@@ -55,6 +56,9 @@ data StateChangeResult
 instance Binary StateChangeResult
 
 newtype PoolRebalanceRequest = PoolRebalanceRequest M0.Pool
+  deriving (Eq, Show, Binary, Typeable, Generic)
+
+newtype PoolRepairRequest = PoolRepairRequest M0.Pool
   deriving (Eq, Show, Binary, Typeable, Generic)
 
 -- | Notification that barrier was passed by the cluster.
