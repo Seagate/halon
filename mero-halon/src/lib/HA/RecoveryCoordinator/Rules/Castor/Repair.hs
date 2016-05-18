@@ -10,6 +10,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Repair
   ( handleRepairInternal
   , handleRepairExternal
   , ruleRebalanceStart
+  , ruleRepairStart
   , noteToSDev
   , querySpiel
   , querySpielHourly
@@ -52,7 +53,7 @@ import HA.RecoveryCoordinator.Events.Mero
 import qualified HA.RecoveryCoordinator.Rules.Castor.Repair.Internal as R
 import HA.RecoveryCoordinator.Rules.Mero.Conf
   ( applyStateChanges
-  , applyStateChangesBlocking
+  , setPhaseAllNotified
   , stateSet
   )
 import           HA.Services.SSPL.CEP
@@ -247,7 +248,12 @@ querySpielHourly = define "query-spiel-hourly" $ do
   start dispatchQueryHourly Nothing
 
 ruleRebalanceStart :: Specification LoopState ()
-ruleRebalanceStart = defineSimple "castor-rebalance-start" $ \(HAEvent uuid (PoolRebalanceRequest pool) _) -> do
+ruleRebalanceStart = define "castor-rebalance-start" $ do
+  init <- phaseHandle "init"
+  pool_disks_notified <- phaseHandle "pool_disks_notified"
+  notify_timeout <- phaseHandle "notify_timeout"
+
+  setPhase init $ \(HAEvent uuid (PoolRebalanceRequest pool) _) ->
     getPoolRepairInformation pool >>= \case
       Nothing -> do
        rg <- getLocalGraph
@@ -262,22 +268,35 @@ ruleRebalanceStart = defineSimple "castor-rebalance-start" $ \(HAEvent uuid (Poo
            sdev_broken   = snd <$> filter (\(typ, _) -> not $ typ `elem` okMessages) sts
        if null sdev_broken
        then if null sdev_replaced
-             then phaseLog "info" $ "Can't start rebalance, no drive to rebalance on"
+             then do phaseLog "info" $ "Can't start rebalance, no drive to rebalance on"
+                     messageProcessed uuid
              else do
               disks <- catMaybes <$> mapM lookupSDevDisk sdev_replaced
-              b <- applyStateChangesBlocking (
-                  stateSet pool M0_NC_REBALANCE
-                : ((flip stateSet $ M0_NC_REBALANCE) <$> disks)
-                )
-              if b
-              then do
-                startRebalanceOperation pool disks
-                queryStartHandling pool
-              else
-                phaseLog "error" $ "Failure notifying mero; cannot start rebalance."
-       else phaseLog "info" $ "Can't start rebalance, not all drives are ready: " ++ show sdev_broken
-      Just info -> phaseLog "info" $ "Pool Rep/Reb is already running: " ++ show info
+              let messages = stateSet pool M0_NC_REBALANCE : (flip stateSet M0_NC_REBALANCE <$> disks)
+              put Local $ Just (uuid, messages, Just (pool, disks))
+              applyStateChanges messages
+              switch [pool_disks_notified, timeout 10 notify_timeout]
+
+       else do phaseLog "info" $ "Can't start rebalance, not all drives are ready: " ++ show sdev_broken
+               messageProcessed uuid
+      Just info -> do
+        phaseLog "info" $ "Pool Rep/Reb is already running: " ++ show info
+        messageProcessed uuid
+
+  setPhaseAllNotified pool_disks_notified (maybe Nothing (\(_, ns, _) -> return ns)) $ do
+    Just (uuid, _, Just (pool, disks)) <- get Local
+    startRebalanceOperation pool disks
+    queryStartHandling pool
     messageProcessed uuid
+
+  directly notify_timeout $ do
+    phaseLog "error" $ "Failure notifying mero; cannot start rebalance."
+    get Local >>= \case
+      Nothing -> phaseLog "warn" $ "notify_timeout without local state"
+      Just (uuid, _, _) -> messageProcessed uuid
+
+  start init Nothing
+
   where
     isReplaced :: G.Graph -> M0.SDev -> Bool
     isReplaced rg s = not . null $
@@ -286,6 +305,35 @@ ruleRebalanceStart = defineSimple "castor-rebalance-start" $ \(HAEvent uuid (Poo
            , G.isConnected sd Has SDReplaced rg]
     getSDevState :: M0.SDev -> PhaseM LoopState l' ConfObjectState
     getSDevState d = getConfObjState d <$> getLocalGraph
+
+-- | Possibly start repair on the given pool and disks.
+ruleRepairStart :: Specification LoopState ()
+ruleRepairStart = define "castor-repair-start" $ do
+  init_rule <- phaseHandle "init_rule"
+  pool_disks_notified <- phaseHandle "'pool_disks_notified"
+  notify_timeout <- phaseHandle "notify_timeout"
+
+  setPhase init_rule $ \(HAEvent uuid (PoolRepairRequest pool) _) -> do
+    fa <- getPoolSDevsWithState pool M0_NC_FAILED
+    phaseLog "repair" $ "Starting repair operation on " ++ show pool
+    let msgs = stateSet pool M0_NC_REPAIR : (flip stateSet M0_NC_REPAIR <$> fa)
+    applyStateChanges msgs
+    put Local $ Just (uuid, msgs, Just pool)
+    switch [pool_disks_notified, timeout 10 notify_timeout]
+
+  setPhaseAllNotified pool_disks_notified (maybe Nothing (\(_, ns, _) -> return ns)) $ do
+    Just (uuid, _, Just pool) <- get Local
+    startRepairOperation pool
+    queryStartHandling pool
+    messageProcessed uuid
+
+  directly notify_timeout $ do
+    phaseLog "error" $ "Unable to notify Mero; cannot start repair"
+    get Local >>= \case
+      Nothing -> phaseLog "warn" $ "notify_timeout without local state"
+      Just (uuid, _, _) -> messageProcessed uuid
+
+  start init_rule Nothing
 
 -- | Try to fetch 'Spiel.SnsStatus' for the given 'Pool' and if that
 -- fails, unset the @PRS@ and ack the message. Otherwise run the
@@ -502,18 +550,8 @@ handleRepairInternal noteSet = do
         -- repair. It's up to caller to ensure any previous repair has
         -- been aborted/completed.
         let maybeBeginRepair =
-              if (null tr && not (null fa))
-              then do phaseLog "repair" $ "Starting repair operation on " ++ show pool
-                      res <- applyStateChangesBlocking (
-                          stateSet pool M0_NC_REPAIR
-                        : ((flip stateSet $ M0_NC_REPAIR) <$> fa)
-                        )
-                      if res
-                      then do
-                        startRepairOperation pool
-                        queryStartHandling pool
-                      else
-                        phaseLog "error" $ "Unable to notify Mero; cannot start repair"
+              if null tr && not (null fa)
+              then promulgateRC $ PoolRepairRequest pool
               else do phaseLog "repair" $ "Failed: " ++ show fa ++ ", Transient: " ++ show tr
                       maybeBeginRebalance
 

@@ -78,6 +78,7 @@ castorRules = sequence_
   , ruleInternalStateChangeHandler
   , ruleGetEntryPoint
   , ruleResetAttempt
+  , ruleRepairStart
   , ruleRebalanceStart
   , checkRepairOnClusterStart
   , ruleProcessRestarted
