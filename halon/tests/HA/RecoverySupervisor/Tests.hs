@@ -3,23 +3,17 @@
 -- License   : All rights reserved.
 --
 
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 
-module HA.RecoverySupervisor.Tests ( tests ) where
+module HA.RecoverySupervisor.Tests ( tests, disconnectionTests ) where
 
 import HA.RecoverySupervisor hiding (__remoteTable)
 import HA.Replicator ( RGroup(..), retryRGroup )
-#ifdef USE_MOCK_REPLICATOR
-import HA.Replicator.Mock ( MC_RG )
-#else
-import HA.Replicator.Log ( MC_RG )
-#endif
 import RemoteTables ( remoteTable )
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (bracket, catch)
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
 import Control.Distributed.Process.Internal.Types ( ProcessExitException )
 import Control.Distributed.Process.Node
@@ -38,13 +32,14 @@ import Control.Monad
   , forM_
   , join
   )
-#ifndef USE_MOCK_REPLICATOR
 import Control.Monad (when)
+import Control.Monad.Catch (bracket, catch)
 import Data.Function (fix)
 import Data.List (partition)
-#endif
 import Data.Int
 import Data.IORef
+import Data.Proxy
+import Data.Typeable
 import Network.Transport (Transport(..))
 import Test.Framework
 import Test.Transport
@@ -71,8 +66,6 @@ data TestEvents = TestEvents
 newCounters :: Process TestEvents
 newCounters = liftM2 TestEvents newChan newChan
 
-type RG = MC_RG RSState
-
 rsSDict :: SerializableDict RSState
 rsSDict = SerializableDict
 
@@ -80,8 +73,9 @@ remotable [ 'rsSDict ]
 
 -- | Start RS environment, starts dummy RS that will notify about
 -- it's events using "Counters".
-testRS' :: TestEvents -- ^ Counters that is used in RC, see "Counters"
-        -> Closure (Process RG) -- ^ RG
+testRS' :: (Typeable g, RGroup g)
+        => TestEvents -- ^ Counters that is used in RC, see "Counters"
+        -> Closure (Process (g RSState)) -- ^ RG
         -> Process ()
 testRS' counters rg = do
   flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
@@ -101,10 +95,10 @@ testRS' counters rg = do
                 sendChan (fst $ cStop cnts) self
               )
 
-tests :: AbstractTransport -> IO [TestTree]
-tests abstractTransport = do
+tests :: forall g. (Typeable g, RGroup g)
+      => AbstractTransport -> Proxy g -> IO [TestTree]
+tests abstractTransport _ = do
   (transport, controlled) <- mkControlledTransport abstractTransport
-  putStrLn $ "Testing RecoverySupervisor ..."
   return
     [ testSuccess "rs-restart-if-process-dies" $ testSplit transport controlled 4 $
       \rc _ events _ cRGroup -> do
@@ -112,13 +106,19 @@ tests abstractTransport = do
 
         _ <- receiveChan $ snd $ cStart events
         _ <- receiveChan $ snd $ cStop events
-        rGroup <- join $ unClosure cRGroup
+        rGroup :: g RSState <- join $ unClosure cRGroup
         RSState (Just _) _ _<- retryRG rGroup $ getState rGroup
         return ()
-#ifndef USE_MOCK_REPLICATOR
-    , testSuccess "rs-restart-if-node-silent" $ testSplit transport controlled 4 $
+    , timerTests transport
+    ]
+
+disconnectionTests :: forall g. (Typeable g, RGroup g)
+                   => AbstractTransport -> Proxy g -> IO [TestTree]
+disconnectionTests abstractTransport _ = do
+  (transport, controlled) <- mkControlledTransport abstractTransport
+  return [ testSuccess "rs-restart-if-node-silent" $ testSplit transport controlled 4 $
       \rc ns events splitNet cRGroup -> do
-        rGroup <- join $ unClosure cRGroup
+        rGroup :: g RSState <- join $ unClosure cRGroup
         RSState (Just leader0) _ _ <- retryRG rGroup $ getState rGroup
         liftIO $ assertBool ("the leader is not the expected one"
                              ++ show (rc, leader0)
@@ -156,7 +156,7 @@ tests abstractTransport = do
                             $ leader0 /= leader1
     , testSuccess "rs-rc-killed-if-quorum-is-lost" $
        testSplit transport controlled 4 $ \rc ns events splitNet cRGroup -> do
-        rGroup <- join $ unClosure cRGroup
+        rGroup :: g RSState <- join $ unClosure cRGroup
         RSState (Just leader0) _ _ <- retryRG rGroup $ getState rGroup
         liftIO $ assertBool ("the leader is not the expected one"
                              ++ show (rc, leader0)
@@ -168,7 +168,7 @@ tests abstractTransport = do
         _ <- receiveChan $ snd $ cStop events
         return ()
     , testSuccess "rs-split-in-majority" $ testSplit transport controlled 5
-        $ \pid nodes events splitNet _ -> do
+        $ \pid nodes events splitNet (_ :: Closure (Process (g RSState))) -> do
           let (as,bs) = splitAt 2 $ filter ((processNodeId pid /=) . localNodeId) nodes
           splitNet [ processNodeId pid : map localNodeId as
                    , map localNodeId bs
@@ -200,7 +200,7 @@ tests abstractTransport = do
         say "Read RS state."
         _ <- liftIO $ forkProcess (head as) $ do
                say "Get rgroup handle."
-               rGroup' <- join $ unClosure cRGroup
+               rGroup' :: g RSState <- join $ unClosure cRGroup
                say "Got rgroup handle."
                st <- retryRG rGroup' $ do
                  say "Trying to read state ..."
@@ -208,7 +208,8 @@ tests abstractTransport = do
                usend self st
         RSState (Just _) _ _<- expect
         return ()
-    , testSuccess "rs-split-in-half"  $ testSplit transport controlled 5 $ \pid nodes events splitNet _ -> do
+    , testSuccess "rs-split-in-half"  $ testSplit transport controlled 5 $
+        \pid nodes events splitNet (_ :: Closure (Process (g RSState))) -> do
         let [a1,a2,a3,a4,a5] = map localNodeId nodes
         splitNet [[a1,a2], [a3,a4], [a5]]
         -- wait that RS eventually stop
@@ -225,11 +226,10 @@ tests abstractTransport = do
             True <- return $ p' == p''
             return ()
         return ()
-#endif
-    , timerTests transport
     ]
 
-testSplit :: Transport
+testSplit :: (Typeable g, RGroup g)
+          => Transport
           -> Controlled
           -- ^ Transport and controller object.
           -> Int
@@ -242,7 +242,7 @@ testSplit :: Transport
                -- ^ Channel with RS events.
                -> ([[NodeId]] -> Process ())
                -- ^ Callback that splits network between nodes in groups.
-               -> Closure (Process (MC_RG RSState))
+               -> Closure (Process (g RSState))
                -- ^ Group handle.
                -> Process ())
           -> IO ()

@@ -3,7 +3,6 @@
 -- License   : All rights reserved.
 --
 
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TemplateHaskell #-}
 module HA.EventQueue.Tests ( tests ) where
@@ -17,11 +16,6 @@ import HA.EventQueue.Producer
 import HA.EventQueue.Types (newPersistMessage, PersistMessage(..), HAEvent(..))
 import HA.EQTracker
 import HA.Replicator
-#ifdef USE_MOCK_REPLICATOR
-import HA.Replicator.Mock ( MC_RG )
-#else
-import HA.Replicator.Log ( MC_RG )
-#endif
 import RemoteTables
 
 import Control.Distributed.Process
@@ -33,9 +27,9 @@ import Data.Function (on)
 import Data.List (sortBy)
 import Data.Map (elems)
 import qualified Data.Set as Set
+import Data.Typeable
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
-import Data.Proxy (Proxy(..))
 import Network.CEP
 
 import Test.Helpers
@@ -61,22 +55,25 @@ requestTimeout = 1000000
 secs :: Int
 secs = 1000000
 
-tests :: AbstractTransport -> IO [TestTree]
-tests (AbstractTransport transport _breakConnection _) = do
+tests :: forall g. (Typeable g, RGroup g)
+      => AbstractTransport -> Proxy g -> IO [TestTree]
+tests (AbstractTransport transport _breakConnection _) _ = do
     let rt = HA.EventQueue.Tests.__remoteTable remoteTable
-        (==>) :: (IO () -> TestTree) -> (ProcessId -> ProcessId -> MC_RG EventQueue -> Process ()) -> TestTree
+        (==>) :: (IO () -> TestTree) -> (ProcessId -> ProcessId -> g EventQueue
+                        -> Process ())
+              -> TestTree
         t ==> action = t $ setup $ \eq na rGroup ->
                 -- use me as the rc.
                 getSelfPid >>= usend eq >> action eq na rGroup
 
-        setup :: (ProcessId -> ProcessId -> MC_RG EventQueue -> Process ())
+        setup :: (ProcessId -> ProcessId -> g EventQueue -> Process ())
               -> IO ()
         setup action = setup' $ \a b c _ -> action a b c
 
         setup' :: (  ProcessId
                   -> ProcessId
-                  -> MC_RG EventQueue
-                  -> Closure (Process (MC_RG EventQueue))
+                  -> g EventQueue
+                  -> Closure (Process (g EventQueue))
                   -> Process ()
                   )
                   -> IO ()
@@ -86,7 +83,7 @@ tests (AbstractTransport transport _breakConnection _) = do
 
             cRGroup <- newRGroup $(mkStatic 'eqSDict) "eqtest" 20 1000000 nodes
                                  emptyEventQueue
-            rGroup <- unClosure cRGroup >>= id
+            rGroup :: g EventQueue <- join $ unClosure cRGroup
             eq <- startEventQueue rGroup
             na <- startEQTracker []
             updateEQNodes nodes
@@ -99,7 +96,7 @@ tests (AbstractTransport transport _breakConnection _) = do
         -- the EQ: that messages are stored in most-recent-first
         -- list. This helper recovers that list and removes some
         -- repetition from the tests while it's at it.
-        getMsgsAsList :: MC_RG EventQueue -> Process [PersistMessage]
+        getMsgsAsList :: g EventQueue -> Process [PersistMessage]
         getMsgsAsList rGroup = do
           evs <- _eqMap <$> retryRGroup rGroup requestTimeout (getState rGroup)
           return . map fst . reverse . sortBy (compare `on` snd) $ elems evs

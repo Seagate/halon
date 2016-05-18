@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 -- |
 -- Copyright : (C) 2015 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -11,12 +10,6 @@ import           Control.Distributed.Process
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.Multimap
-import           HA.Multimap.Implementation
-#ifdef USE_MOCK_REPLICATOR
-import           HA.Replicator.Mock ( MC_RG )
-#else
-import           HA.Replicator.Log ( MC_RG )
-#endif
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Service
@@ -111,10 +104,3 @@ serviceProcessStillAlive mm n sc = loop (1 :: Int)
                      _ <- receiveTimeout 250000 []
                      loop (i + 1)
                    _ -> return False
-
--- | Start the RC without any extra rules. For custom rules, see
--- 'runRCEx'.
-runRC :: (ProcessId, [NodeId]) -- ^ (EQ, ignition arguments)
-      -> MC_RG (MetaInfo, Multimap)
-      -> Process ((StoreChan, ProcessId)) -- ^ MM, RC
-runRC (eq, eqNids) rGroup = runRCEx (eq, eqNids) emptyRules rGroup

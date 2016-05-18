@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
 module HA.RecoveryCoordinator.SSPL.Tests
@@ -22,11 +21,6 @@ import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Events.Drive
 import HA.Replicator (RGroup(..))
-#ifdef USE_MOCK_REPLICATOR
-import HA.Replicator.Mock (MC_RG)
-#else
-import HA.Replicator.Log (MC_RG)
-#endif
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
@@ -67,40 +61,43 @@ remotable
 myRemoteTable :: RemoteTable
 myRemoteTable = HA.RecoveryCoordinator.SSPL.Tests.__remoteTable remoteTable
 
-rGroupTest :: Transport -> (StoreChan -> Process ()) -> IO ()
-rGroupTest transport p =
+rGroupTest :: forall g. (Typeable g, RGroup g)
+           => Transport -> Proxy g -> (StoreChan -> Process ()) -> IO ()
+rGroupTest transport _ p =
   tryRunProcessLocal transport myRemoteTable $ do
     nid <- getSelfNode
     rGroup <- newRGroup $(mkStatic 'mmSDict) "mmtest" 20 1000000 [nid]
                         (defaultMetaInfo, fromList [])
                 >>= unClosure
-                >>= (`asTypeOf` return (undefined :: MC_RG (MetaInfo, Multimap)))
+                >>= (`asTypeOf` return (undefined :: g (MetaInfo, Multimap)))
     (_,mmchan) <- startMultimap rGroup id
     p mmchan
 
 -- List of unit tests
-utTests :: Transport -> [TestTree]
-utTests transport =
+utTests :: (Typeable g, RGroup g) => Transport -> Proxy g -> [TestTree]
+utTests transport pg =
    [ testGroup "hpi-requests"
        [ testSuccess "hpi request with existing WWN"
-       $ testHpiExistingWWN transport
+       $ testHpiExistingWWN transport pg
        , testSuccess "hpi request with new resource"
-       $ testHpiNewWWN transport
+       $ testHpiNewWWN transport pg
        , testSuccess "hpi request with updated WWN"
-       $ testHpiUpdatedWWN transport
+       $ testHpiUpdatedWWN transport pg
        ]
    , testSuccess "drive-manager-works"
-   $ testDMRequest transport
+   $ testDMRequest transport pg
    ]
 
 dmRequest :: Text -> Text -> Text -> Int -> Text -> SensorResponseMessageSensor_response_typeDisk_status_drivemanager
 dmRequest status reason _serial num path = mkResponseDriveManager "enclosure1" "serial1" (fromIntegral num) status reason path
 
-mkHpiTest :: (ProcessId -> Definitions LoopState b)
+mkHpiTest ::(Typeable g, RGroup g)
+          => (ProcessId -> Definitions LoopState b)
           -> (ProcessId -> Process ())
           -> Transport
+          -> Proxy g
           -> IO ()
-mkHpiTest mkTestRule test transport = rGroupTest transport $ \pid -> do
+mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
     say "start HPI test"
     self <- getSelfPid
     say "load data"
@@ -120,7 +117,7 @@ mkHpiTest mkTestRule test transport = rGroupTest transport $ \pid -> do
     say "start HPI test"
     test rc
 
-testHpiExistingWWN :: Transport -> IO ()
+testHpiExistingWWN :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testHpiExistingWWN = mkHpiTest rules test
   where
     rules self = define "check-test" $ do
@@ -159,7 +156,7 @@ testHpiExistingWWN = mkHpiTest rules test
       True <- expect
       return ()
 
-testHpiNewWWN :: Transport -> IO ()
+testHpiNewWWN :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testHpiNewWWN = mkHpiTest rules test
   where
     rules self = do
@@ -178,7 +175,7 @@ testHpiNewWWN = mkHpiTest rules test
       False <- expect
       return ()
 
-testHpiUpdatedWWN :: Transport -> IO ()
+testHpiUpdatedWWN :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testHpiUpdatedWWN = mkHpiTest rules test
   where
     rules self = do
@@ -214,7 +211,7 @@ testHpiUpdatedWWN = mkHpiTest rules test
                                ])
                  (Set.fromList is)
 
-testDMRequest :: Transport -> IO ()
+testDMRequest :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testDMRequest = mkHpiTest rules test
   where
     rules self = do

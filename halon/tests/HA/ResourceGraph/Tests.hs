@@ -2,7 +2,6 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -10,7 +9,7 @@
 
 module HA.ResourceGraph.Tests ( tests ) where
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (catch)
 import Control.Distributed.Process.Closure (mkStatic, remotable)
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable (SerializableDict(..))
@@ -22,10 +21,12 @@ import Control.Exception
   , fromException
   , throwIO
   )
+import Control.Monad.Catch (catch)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import qualified Data.HashSet as S
 import Data.List (sort, (\\))
+import Data.Proxy
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
@@ -35,11 +36,6 @@ import HA.Multimap (defaultMetaInfo, getKeyValuePairs, MetaInfo, StoreChan)
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (startMultimap)
 import HA.Replicator (RGroup(..))
-#ifdef USE_MOCK_REPLICATOR
-import HA.Replicator.Mock (MC_RG)
-#else
-import HA.Replicator.Log (MC_RG)
-#endif
 import HA.ResourceGraph hiding (__remoteTable)
 
 import RemoteTables (remoteTable)
@@ -167,9 +163,10 @@ syncWait g = do
 -- Tests                                                                      --
 --------------------------------------------------------------------------------
 
-tests :: Transport -> IO [TestTree]
-tests transport = do
-    let g = undefined :: MC_RG (MetaInfo, Multimap)
+tests :: forall g. (Typeable g, RGroup g)
+      => Transport -> Proxy g -> IO [TestTree]
+tests transport _ = do
+    let g = undefined :: g (MetaInfo, Multimap)
     return
       [ testSuccess "initial-graph" $ rGroupTest transport g $ \mm -> do
           _g <- syncWait =<< getGraph mm

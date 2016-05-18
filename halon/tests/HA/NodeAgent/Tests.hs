@@ -3,51 +3,40 @@
 -- License   : All rights reserved.
 --
 
-{-#  LANGUAGE CPP #-}
 {-#  LANGUAGE FlexibleContexts #-}
 {-#  LANGUAGE TemplateHaskell #-}
+{-#  LANGUAGE ExistentialQuantification #-}
 
-module HA.NodeAgent.Tests ( tests, dummyRC__static, dummyRC__sdict) where
+module HA.NodeAgent.Tests (tests, __remoteTable) where
 
 import HA.EventQueue ( EventQueue, startEventQueue, emptyEventQueue )
 import HA.EventQueue.Producer (expiate)
 import HA.EventQueue.Types (HAEvent(..))
 import HA.Replicator ( RGroup(..) )
-#ifdef USE_MOCK_REPLICATOR
-import HA.Replicator.Mock ( MC_RG )
-#else
-import HA.Replicator.Log ( MC_RG )
-#endif
 import HA.EQTracker hiding (__remoteTable)
 import RemoteTables ( remoteTable )
 
 
-import Control.Distributed.Process
-#ifndef USE_MOCK_REPLICATOR
-import Control.Distributed.Static ( closureApply )
-import Control.Distributed.Process.Closure ( mkClosure )
-#endif
+import Control.Distributed.Process hiding (catch)
 import Control.Distributed.Process.Closure ( mkStatic, remotable )
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
 import Data.List (find)
+import Data.Typeable
 import Control.Concurrent ( threadDelay )
 import Control.Concurrent.MVar (newEmptyMVar,putMVar,takeMVar,MVar)
-import Control.Monad ( replicateM, forM_, void )
+import Control.Monad.Catch (catch)
+import Control.Monad ( replicateM, forM_, join, void )
 import Control.Exception ( SomeException )
 import Control.Exception as E ( bracket )
 import Network.Transport ( Transport )
 import System.IO.Unsafe ( unsafePerformIO )
 import Test.Framework
 
-type RG = MC_RG EventQueue
 
-dummyRC :: () -> Process RG -> Process ()
-dummyRC () pRGroup = pRGroup >>= dummyRC'
-
-dummyRC' :: RG -> Process ()
-dummyRC' rGroup =
+dummyRC :: RGroup g => g EventQueue -> Process ()
+dummyRC rGroup =
   flip catch (\e -> say $ show (e :: SomeException)) $ do
       self <- getSelfPid
       eq <- startEventQueue rGroup
@@ -73,10 +62,11 @@ sync1 = unsafePerformIO $ newEmptyMVar
 eqSDict :: SerializableDict EventQueue
 eqSDict = SerializableDict
 
-remotable [ 'eqSDict, 'dummyRC ]
+remotable [ 'eqSDict ]
 
-naTestWithEQ :: Transport -> ([LocalNode] -> Process ()) -> IO ()
-naTestWithEQ transport action = withTmpDirectory $ E.bracket
+naTestWithEQ :: forall g. (Typeable g, RGroup g)
+             => Transport -> Proxy g -> ([LocalNode] -> Process ()) -> IO ()
+naTestWithEQ transport _ action = withTmpDirectory $ E.bracket
   (replicateM 3 $ newLocalNode transport $ __remoteTable remoteTable)
   (mapM_ closeLocalNode) $ \nodes -> do
     let nids = map localNodeId nodes
@@ -85,13 +75,9 @@ naTestWithEQ transport action = withTmpDirectory $ E.bracket
     runProcess (head nodes) $ do
       cRGroup <- newRGroup $(mkStatic 'eqSDict) "eqtest" 20 1000000 nids
                            emptyEventQueue
-#ifdef USE_MOCK_REPLICATOR
-      rGroup <- unClosure cRGroup >>= id
-      forM_ nids $ const $ spawnLocal $ dummyRC' rGroup
-#else
-      forM_ nids $ flip spawn $ $(mkClosure 'dummyRC) ()
-                                 `closureApply` cRGroup
-#endif
+      forM_ nodes $ \node -> liftIO $ forkProcess node $ do
+        rGroup :: g EventQueue <- join $ unClosure cRGroup
+        dummyRC rGroup
       action nodes
       liftIO $ putMVar mdone ()
     takeMVar mdone
@@ -100,15 +86,16 @@ naTestWithEQ transport action = withTmpDirectory $ E.bracket
     -- TODO: implement closing RGroups and call it here.
     threadDelay 2000000
 
-tests :: Transport -> IO [TestTree]
-tests transport = do
+tests :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO [TestTree]
+tests transport pg = do
     return
-      [ testSuccess "rc-get-expiate" $ naTestWithEQ transport $ \_nodes -> do
+      [ testSuccess "rc-get-expiate" $ naTestWithEQ transport pg $ \_nodes -> do
              _ <- spawnLocal $ expiate "hello0"
              liftIO $ takeMVar sync0
              assert True
 
-      , testSuccess "rc-get-expiate-after-eq-death" $ naTestWithEQ transport $ \nodes -> do
+      , testSuccess "rc-get-expiate-after-eq-death" $
+          naTestWithEQ transport pg $ \nodes -> do
              let getNotMe = do
                      self <- getSelfNode
                      return $ find ((/=) self . localNodeId) nodes

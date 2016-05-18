@@ -4,6 +4,7 @@ machine:
   environment:
       # Use only as many jobs as CPUs are available (via cpuset)
       STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero --jobs 2
+      STACK_TEST_FLAGS: "--docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1"
 
 checkout:
   post:
@@ -56,6 +57,10 @@ test:
     # Only test mero-halon and deps, without USE_MERO.
     # Testing with USE_MERO is not possible since m0_init fails when some cpus
     # on the host are forbidden via cpusets as circleci does.
-    - stack $STACK_FLAGS --docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1 --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup' build --flag mero-halon:distributed-tests --haddock --no-haddock-deps --test:
+    - stack $STACK_FLAGS $STACK_TEST_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup' build --flag mero-halon:distributed-tests replicated-log:tests halon:tests mero-halon:tests mero-halon:test-start-service-local:
+        timeout: 3600
+    - stack $STACK_FLAGS $STACK_TEST_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup' build --flag mero-halon:distributed-tests replicated-log:random replicated-log:scheduler-tests halon:scheduler-tests mero-halon:scheduler-tests:
+        timeout: 3600
+    - stack $STACK_FLAGS $STACK_TEST_FLAGS build --flag mero-halon:distributed-tests mero-halon:distributed-tests:
         timeout: 3600
     - scripts/copy_artifacts.sh "${CIRCLE_ARTIFACTS}"

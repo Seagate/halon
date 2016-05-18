@@ -37,6 +37,7 @@ import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
+import           HA.Replicator
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
@@ -67,18 +68,18 @@ import           HA.Service
 #endif
 
 
-tests :: String -> Transport -> [TestTree]
-tests host transport =
-  [ testCase "testHostAddition" $ testHostAddition transport
-  , testCase "testDriveAddition" $ testDriveAddition transport
-  , testCase "testDriveManagerUpdate" $ testDriveManagerUpdate host transport
+tests ::  (Typeable g, RGroup g) => String -> Transport -> Proxy g -> [TestTree]
+tests host transport pg =
+  [ testCase "testHostAddition" $ testHostAddition transport pg
+  , testCase "testDriveAddition" $ testDriveAddition transport pg
+  , testCase "testDriveManagerUpdate" $ testDriveManagerUpdate host transport pg
 #ifdef USE_MERO
   , testCase "testConfObjectStateQuery" $
-      testConfObjectStateQuery host transport
+      testConfObjectStateQuery host transport pg
   , testCase "good-conf-validates [disabled by TODO]" $
-      when False (testGoodConfValidates transport)
+      when False (testGoodConfValidates transport pg)
   , testCase "bad-conf-does-not-validate [disabled by TODO]" $
-      when False (testBadConfDoesNotValidate transport)
+      when False (testBadConfDoesNotValidate transport pg)
   , testCase "RG can load different fids with the same type" $ testFidsLoad
 #else
   , testCase "testConfObjectStateQuery [disabled by compilation flags]" $
@@ -110,8 +111,8 @@ testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent eid SpielSync _) 
 
 -- | Test that the recovery co-ordinator successfully adds a host to the
 --   resource graph.
-testHostAddition :: Transport -> IO ()
-testHostAddition transport = runDefaultTest transport $ do
+testHostAddition :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testHostAddition transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
   self <- getSelfPid
 
@@ -122,7 +123,7 @@ testHostAddition transport = runDefaultTest transport $ do
       _ -> return ()
 
   say $ "tests node: " ++ show nid
-  withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
+  withTrackingStation pg emptyRules $ \(TestArgs _ mm _) -> do
     nodeUp ([nid], 1000000)
     say "Send host update message to the RC"
     promulgateEQ [nid] (nid, mockEvent) >>= flip withMonitor wait
@@ -145,8 +146,8 @@ testHostAddition transport = runDefaultTest transport $ do
 
 -- | Test that the recovery co-ordinator successfully adds a drive to the RG,
 --   and updates its status accordingly.
-testDriveAddition :: Transport -> IO ()
-testDriveAddition transport = runDefaultTest transport $ do
+testDriveAddition :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testDriveAddition transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
   self <- getSelfPid
 
@@ -157,7 +158,7 @@ testDriveAddition transport = runDefaultTest transport $ do
       _ -> return ()
 
   say $ "tests node: " ++ show nid
-  withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
+  withTrackingStation pg emptyRules $ \(TestArgs _ mm _) -> do
     nodeUp ([nid], 1000000)
     -- Send host update message to the RC
     promulgateEQ [nid] (nid, mockEvent "online" "NONE" "/path") >>= flip withMonitor wait
@@ -183,8 +184,9 @@ data RunDriveManagerFailure = RunDriveManagerFailure
 instance Binary RunDriveManagerFailure
 
 -- | Update receiving a drive failure from SSPL,
-testDriveManagerUpdate :: String -> Transport -> IO ()
-testDriveManagerUpdate host transport = runDefaultTest transport $ do
+testDriveManagerUpdate :: (Typeable g, RGroup g)
+                       => String -> Transport -> Proxy g -> IO ()
+testDriveManagerUpdate host transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
   self <- getSelfPid
   registerInterceptor $ \case
@@ -198,7 +200,7 @@ testDriveManagerUpdate host transport = runDefaultTest transport $ do
             when (any (interestingSN `isPrefixOf`) (tails str)) $
               usend self ("OK" :: String)
         | otherwise -> return ()
-  withTrackingStation testRules $ \(TestArgs _ mm _) -> do
+  withTrackingStation pg testRules $ \(TestArgs _ mm _) -> do
     nodeUp ([nid], 1000000)
     "NodeUp" :: String <- expect
     promulgateEQ [nid] initialData >>= flip withMonitor wait
@@ -275,8 +277,8 @@ testDriveManagerUpdate host transport = runDefaultTest transport $ do
 #ifdef USE_MERO
 -- | Sends a message to the RC with Confd addition message and tests
 -- that it gets added to the resource graph.
-testRCsyncToConfd :: Transport -> IO ()
-testRCsyncToConfd transport = do
+testRCsyncToConfd :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testRCsyncToConfd transport pg = do
  withTestEnv $ do
   nid <- getSelfNode
   self <- getSelfPid
@@ -286,7 +288,7 @@ testRCsyncToConfd transport = do
          | "Loaded initial data" `isInfixOf` str' -> usend self ("InitialLoad" :: String)
          | otherwise -> return ()
 
-  withTrackingStation testSyncRules $ \_ -> do
+  withTrackingStation pg testSyncRules $ \_ -> do
     nodeUp ([nid],1000000)
 
     promulgateEQ [nid] Helper.InitialData.defaultInitialData
@@ -309,8 +311,9 @@ testRCsyncToConfd transport = do
 
 -- | Test that the recovery coordinator answers queries of configuration object
 -- states.
-testConfObjectStateQuery :: String -> Transport -> IO ()
-testConfObjectStateQuery host transport =
+testConfObjectStateQuery :: (Typeable g, RGroup g)
+                         => String -> Transport -> Proxy g -> IO ()
+testConfObjectStateQuery host transport pg =
     runTest 1 20 15000000 transport testRemoteTable $ \_ -> do
       nid <- getSelfNode
       self <- getSelfPid
@@ -322,7 +325,7 @@ testConfObjectStateQuery host transport =
           usend self ("mero-note-set synchronized" :: String)
 
       say $ "tests node: " ++ show nid
-      withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
+      withTrackingStation pg emptyRules $ \(TestArgs _ mm _) -> do
         nodeUp ([nid], 1000000)
         say "Loading graph."
         void $ promulgateEQ [nid] $
@@ -373,8 +376,10 @@ instance Binary ValidateCacheResult
 -- | Helper for conf validation tests.
 --
 -- Requires mero running.
-testConfValidates :: CI.InitialData -> Transport -> Process () -> IO ()
-testConfValidates iData transport act =
+testConfValidates :: (Typeable g, RGroup g)
+                  => CI.InitialData
+                  -> Transport -> Proxy g -> Process () -> IO ()
+testConfValidates iData transport pg act =
   runTest 1 20 15000000 transport testRemoteTable $ \_ -> do
     nid <- getSelfNode
     self <- getSelfPid
@@ -384,7 +389,7 @@ testConfValidates iData transport act =
         usend self ("Loaded initial data" :: String)
 
     say $ "tests node: " ++ show nid
-    withTrackingStation validateCacheRules $ \(TestArgs _ _ _) -> do
+    withTrackingStation pg validateCacheRules $ \(TestArgs _ _ _) -> do
       nodeUp ([nid], 1000000)
       say "Loading graph."
       void $ promulgateEQ [nid] iData
@@ -403,8 +408,8 @@ testConfValidates iData transport act =
       messageProcessed eid
 
 -- | Check that we can validate conf string for sample initial data
-testGoodConfValidates :: Transport -> IO ()
-testGoodConfValidates transport = testConfValidates iData transport $ do
+testGoodConfValidates :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testGoodConfValidates transport pg = testConfValidates iData transport pg $ do
   ValidateCacheResult Nothing <- expect
   return ()
   where
@@ -413,10 +418,12 @@ testGoodConfValidates transport = testConfValidates iData transport $ do
 -- | Check that we can detect a bad conf
 --
 -- TODO find initial data that will produce invalid conf string.
-testBadConfDoesNotValidate :: Transport -> IO ()
-testBadConfDoesNotValidate transport = testConfValidates iData transport $ do
-  ValidateCacheResult (Just _) <- expect
-  return ()
+testBadConfDoesNotValidate :: (Typeable g, RGroup g)
+                           => Transport -> Proxy g -> IO ()
+testBadConfDoesNotValidate transport pg =
+    testConfValidates iData transport pg $ do
+      ValidateCacheResult (Just _) <- expect
+      return ()
   where
     -- TODO manipulate initial data in a way that produces invalid
     -- context that we can then test against. Unfortunately even in

@@ -39,6 +39,7 @@ import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
+import           HA.Replicator
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Service
@@ -64,18 +65,19 @@ import           Test.Framework
 import           Test.Tasty.HUnit (testCase)
 import           TestRunner
 
-tests :: Transport -> [TestTree]
-tests transport =
-  [ testCase "testServiceRestarting" $ testServiceRestarting transport
-  , testCase "testServiceNotRestarting" $ testServiceNotRestarting transport
-  , testCase "testEQTrimming" $ testEQTrimming transport
-  , testCase "testEQTrimUnknown" $ testEQTrimUnknown transport
-  , testCase "testClusterStatus" $ testClusterStatus transport
-  , testCase "testDecisionLog" $ testDecisionLog transport
-  , testCase "testServiceStopped" $ testServiceStopped transport
-  , testCase "testMonitorManagement" $ testMonitorManagement transport
-  , testCase "testMasterMonitorManagement" $ testMasterMonitorManagement transport
-  , testCase "testNodeUpRace" $ testNodeUpRace transport
+tests :: (RGroup g, Typeable g) => Transport -> Proxy g -> [TestTree]
+tests transport pg =
+  [ testCase "testServiceRestarting" $ testServiceRestarting transport pg
+  , testCase "testServiceNotRestarting" $ testServiceNotRestarting transport pg
+  , testCase "testEQTrimming" $ testEQTrimming transport pg
+  , testCase "testEQTrimUnknown" $ testEQTrimUnknown transport pg
+  , testCase "testClusterStatus" $ testClusterStatus transport pg
+  , testCase "testDecisionLog" $ testDecisionLog transport pg
+  , testCase "testServiceStopped" $ testServiceStopped transport pg
+  , testCase "testMonitorManagement" $ testMonitorManagement transport pg
+  , testCase "testMasterMonitorManagement" $
+      testMasterMonitorManagement transport pg
+  , testCase "testNodeUpRace" $ testNodeUpRace transport pg
   ]
 
 -- | Test that the recovery co-ordinator can successfully restart a service
@@ -83,8 +85,8 @@ tests transport =
 --   This test does not verify the appropriate detection of service failure,
 --   nor does it verify that the 'one service instance per node' constraint
 --   is not violated.
-testServiceRestarting :: Transport -> IO ()
-testServiceRestarting transport = runDefaultTest transport $ do
+testServiceRestarting :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testServiceRestarting transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
   self <- getSelfPid
   registerInterceptor $ \case
@@ -92,7 +94,7 @@ testServiceRestarting transport = runDefaultTest transport $ do
       _ -> return ()
 
   say $ "tests node: " ++ show nid
-  withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
+  withTrackingStation pg emptyRules $ \(TestArgs _ mm _) -> do
     nodeUp ([nid], 1000000)
     _ <- promulgateEQ [nid] . encodeP $
       ServiceStartRequest Start (Node nid) Dummy.dummy
@@ -109,8 +111,9 @@ testServiceRestarting transport = runDefaultTest transport $ do
 
 -- | This test verifies that no service is killed when we send a `ServiceFailed`
 --   With a wrong `ProcessId`
-testServiceNotRestarting :: Transport -> IO ()
-testServiceNotRestarting transport = runDefaultTest transport $ do
+testServiceNotRestarting :: (Typeable g, RGroup g)
+                         => Transport -> Proxy g -> IO ()
+testServiceNotRestarting transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
   self <- getSelfPid
 
@@ -119,7 +122,7 @@ testServiceNotRestarting transport = runDefaultTest transport $ do
       _ -> return ()
 
   say $ "tests node: " ++ show nid
-  withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
+  withTrackingStation pg emptyRules $ \(TestArgs _ mm _) -> do
     nodeUp ([nid], 1000000)
     _ <- promulgateEQ [nid] . encodeP $
       ServiceStartRequest Start (Node nid) Dummy.dummy
@@ -137,12 +140,12 @@ testServiceNotRestarting transport = runDefaultTest transport $ do
 
 
 -- | This test verifies that every `HAEvent` sent to the RC is trimmed by the EQ
-testEQTrimming :: Transport -> IO ()
-testEQTrimming transport = runDefaultTest transport $ do
+testEQTrimming :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testEQTrimming transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
 
   say $ "tests node: " ++ show nid
-  withTrackingStation emptyRules $ \(TestArgs eq mm _) -> do
+  withTrackingStation pg emptyRules $ \(TestArgs eq mm _) -> do
     nodeUp ([nid], 1000000)
     subscribe eq (Proxy :: Proxy TrimDone)
     Published (TrimDone _) _ <- expect
@@ -165,12 +168,12 @@ instance Binary AbraCadabra
 
 
 -- | This test verifies that every `HAEvent` sent to the RC is trimmed by the EQ
-testEQTrimUnknown :: Transport -> IO ()
-testEQTrimUnknown transport = runDefaultTest transport $ do
+testEQTrimUnknown :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testEQTrimUnknown transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
 
   say $ "tests node: " ++ show nid
-  withTrackingStation emptyRules $ \(TestArgs eq _ _) -> do
+  withTrackingStation pg emptyRules $ \(TestArgs eq _ _) -> do
     subscribe eq (Proxy :: Proxy TrimUnknown)
     nodeUp ([nid], 1000000)
     _ <- promulgateEQ [nid] AbraCadabra
@@ -188,8 +191,8 @@ instance Binary MsgClusterStatus
 -- | Test that we can set and query 'ClusterStatus' through a rule.
 -- This test merely sends get/set messages and checks that the RG
 -- changes accordingly.
-testClusterStatus :: Transport -> IO ()
-testClusterStatus transport = runDefaultTest transport $ do
+testClusterStatus :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testClusterStatus transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
   self <- getSelfPid
   let sendSelf :: String -> Process ()
@@ -212,7 +215,7 @@ testClusterStatus transport = runDefaultTest transport $ do
             sendSelf "NodeUp"
         | otherwise -> return ()
 
-  withTrackingStation clusterStatusRules $ \_ -> do
+  withTrackingStation pg clusterStatusRules $ \_ -> do
     nodeUp ([nid], 1000000)
     -- wait for node to come up
     "NodeUp" :: String <- expect
@@ -250,13 +253,13 @@ testClusterStatus transport = runDefaultTest transport $ do
 -- | Tests decision-log service by starting it and redirecting the logs to own
 --  process, then starting a dummy service and checking that logs were
 --  received.
-testDecisionLog :: Transport -> IO ()
-testDecisionLog transport = do
+testDecisionLog :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testDecisionLog transport pg = do
     withTmpDirectory $ tryWithTimeout transport testRemoteTable 15000000 $ do
       nid <- getSelfNode
       self <- getSelfPid
 
-      withTrackingStation emptyRules $ \(TestArgs _ mm rc) -> do
+      withTrackingStation pg emptyRules $ \(TestArgs _ mm rc) -> do
         nodeUp ([nid], 1000000)
         -- Awaits the node local monitor to be up.
         _ <- getNodeMonitor mm
@@ -272,8 +275,8 @@ testDecisionLog transport = do
         return ()
 
 
-testServiceStopped :: Transport -> IO ()
-testServiceStopped transport = runDefaultTest transport $ do
+testServiceStopped :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testServiceStopped transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
   self <- getSelfPid
 
@@ -282,7 +285,7 @@ testServiceStopped transport = runDefaultTest transport $ do
       _ -> return ()
 
   say $ "tests node: " ++ show nid
-  withTrackingStation emptyRules $ \(TestArgs _ mm _) -> do
+  withTrackingStation pg emptyRules $ \(TestArgs _ mm _) -> do
     nodeUp ([nid], 1000000)
     _ <- promulgateEQ [nid] . encodeP $
       ServiceStartRequest Start (Node nid) Dummy.dummy
@@ -302,9 +305,9 @@ testServiceStopped transport = runDefaultTest transport $ do
 
 -- | Make sure that when a Service died, the node-local monitor detects it
 --   and notify the RC. That service should restart.
-testMonitorManagement :: Transport -> IO ()
-testMonitorManagement transport = runDefaultTest transport $ do
-  withTrackingStation emptyRules $ \(TestArgs _ mm rc) -> do
+testMonitorManagement :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testMonitorManagement transport pg = runDefaultTest transport $ do
+  withTrackingStation pg emptyRules $ \(TestArgs _ mm rc) -> do
     nid <- getSelfNode
     nodeUp ([nid], 1000000)
     -- Awaits the node local monitor to be up.
@@ -321,9 +324,9 @@ testMonitorManagement transport = runDefaultTest transport $ do
 
 -- | Make sure that when a node-local monitor died, the RC is notified by the
 --   Master monitor and restart it.
-testMasterMonitorManagement :: Transport -> IO ()
-testMasterMonitorManagement transport = runDefaultTest transport $ do
-  withTrackingStation emptyRules $ \(TestArgs eq mm rc) -> do
+testMasterMonitorManagement :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testMasterMonitorManagement transport pg = runDefaultTest transport $ do
+  withTrackingStation pg emptyRules $ \(TestArgs eq mm rc) -> do
     nodeUp ([processNodeId eq], 1000000)
 
     -- Awaits the node local monitor to be up.
@@ -339,14 +342,14 @@ testMasterMonitorManagement transport = runDefaultTest transport $ do
 -- | This test verifies that if service start message is interleaved with
 -- ServiceStart messages from the old node, that is possibe in case
 -- of network failures.
-testNodeUpRace :: Transport -> IO ()
-testNodeUpRace transport = runTest 2 20 15000000 transport testRemoteTable $ \[node2] -> do
+testNodeUpRace :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testNodeUpRace transport pg = runTest 2 20 15000000 transport testRemoteTable $ \[node2] -> do
   nid <- getSelfNode
   self <- getSelfPid
 --  void $ startEQTracker [nid]
 
   say $ "tests node: " ++ show nid
-  withTrackingStation emptyRules $ \(TestArgs eq mm _) -> do
+  withTrackingStation pg emptyRules $ \(TestArgs eq mm _) -> do
     subscribe eq (Proxy :: Proxy TrimDone)
 
     void . liftIO $ forkProcess node2 $ do

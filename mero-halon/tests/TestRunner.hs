@@ -34,11 +34,6 @@ import HA.Multimap
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.Replicator
-#ifdef USE_MOCK_REPLICATOR
-import HA.Replicator.Mock ( MC_RG )
-#else
-import HA.Replicator.Log ( MC_RG )
-#endif
 import HA.Startup (stopHalonNode)
 #ifdef USE_MERO
 import Mero.Notification
@@ -52,6 +47,8 @@ import qualified Control.Distributed.Process.Scheduler as Scheduler
 import Control.Monad (join, void, forever)
 
 import Data.Foldable
+import Data.Proxy
+import Data.Typeable
 
 import Network.CEP hiding (timeout)
 import Network.Transport (Transport(..))
@@ -83,9 +80,10 @@ data TestArgs = TestArgs {
   , ta_rc :: ProcessId
 }
 
-runRCEx :: (ProcessId, [NodeId])
+runRCEx :: RGroup g
+        => (ProcessId, [NodeId])
         -> [Definitions LoopState ()]
-        -> MC_RG (MetaInfo, Multimap)
+        -> g (MetaInfo, Multimap)
         -> Process (StoreChan, ProcessId) -- ^ MM, RC
 runRCEx (eq, eqNids) rules rGroup = do
   rec ((mm,cchan), rc) <- (,)
@@ -103,10 +101,12 @@ runRCEx (eq, eqNids) rules rGroup = do
 
 -- | Wrapper to start a test with a Halon tracking station running. Returns
 --   handles to the recovery co-ordinator, multimap and event queue.
-withTrackingStation :: [Definitions LoopState ()]
+withTrackingStation :: forall g. (Typeable g, RGroup g)
+                    => Proxy g
+                    -> [Definitions LoopState ()]
                     -> (TestArgs -> Process ())  -- ^ Test contents.
                     -> Process ()
-withTrackingStation testRules action = do
+withTrackingStation _ testRules action = do
   nid <- getSelfNode
   bracket
     (do
@@ -118,8 +118,8 @@ withTrackingStation testRules action = do
       (,) <$> join (unClosure cEQGroup) <*> join (unClosure cMMGroup)
     )
     (\(g0, g1) -> killReplica g0 nid >> killReplica g1 nid)
-    (\(eqGroup, mmGroup) -> do
-      eq <- startEventQueue (eqGroup :: MC_RG EventQueue)
+    (\(eqGroup, mmGroup :: g (MetaInfo, Multimap)) -> do
+      eq <- startEventQueue (eqGroup :: g EventQueue)
       (chan, rc) <- runRCEx (eq, [nid]) testRules mmGroup
       action $ TestArgs eq chan rc
     )
