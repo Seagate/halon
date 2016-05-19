@@ -60,6 +60,8 @@ remotableDecl [ [d|
   pingProcess :: PingConf -> Process ()
   pingProcess PingConf = do
       say $ "Starting service ping"
-      forever $ expect >>= promulgate . DummyEvent
-
+      forever $ receiveWait
+        [ match $ promulgate . DummyEvent
+        , match $ \p -> promulgate (p :: SyncPing)
+        ]
   |] ]

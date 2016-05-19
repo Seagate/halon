@@ -120,8 +120,10 @@ test = testCase "StressRC" $
       let numPings = 500 :: Int
       say $ "Sending " ++ show numPings ++ " pings ..."
       forM_ [1..numPings] $ send pingPid . show
+      send pingPid (SyncPing "final")
 
       forM_ [1..numPings] $ \i -> do
         expectLog [nid0] $ isSuffixOf $ "received DummyEvent " ++ show i
         testTrace $ "Found event " ++ show i
+      expectLog [nid0] $ isSuffixOf "received SyncPing final"
       testTrace "SUCCESS!"

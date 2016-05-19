@@ -126,6 +126,7 @@ rcRules argv additionalRules = do
               , ruleNodeStatus argv
               , ruleRecoverNode argv
               , ruleDummyEvent
+              , ruleSyncPing
               , ruleStopRequest
               ]
     setLogger sendLogs
@@ -280,6 +281,14 @@ ruleDummyEvent = defineSimple "dummy-event" $
         liftProcess $ sayRC $ "received DummyEvent " ++ str
         liftProcess $ sayRC $ "Noisy ping count: " ++ show i
         messageProcessed uuid
+
+ruleSyncPing :: Definitions LoopState ()
+ruleSyncPing = defineSimple "sync-ping" $
+      \(HAEvent uuid (SyncPing str) _) -> do
+        eqPid <- lsEQPid <$> get Global
+        syncGraph $ do
+          liftProcess $ sayRC $ "received SyncPing " ++ str
+          usend eqPid uuid
 
 ruleStopRequest :: Definitions LoopState ()
 ruleStopRequest = defineSimpleTask "stop-request" $ \msg -> do

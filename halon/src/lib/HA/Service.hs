@@ -49,6 +49,7 @@ module HA.Service
   , encodeP
   , decodeP
   , DummyEvent(..)
+  , SyncPing(..)
   , ServiceFailed(..)
   , ServiceFailedMsg
   , ServiceExit(..)
@@ -445,6 +446,12 @@ data DummyEvent = DummyEvent String
   deriving (Typeable, Generic)
 
 instance Binary DummyEvent
+
+-- | An event that causes the RC to write pending changes to the RG.
+data SyncPing = SyncPing String
+  deriving (Show, Generic, Typeable)
+
+instance Binary SyncPing
 
 -- | A notification of a successful service start.
 data ServiceStarted = forall a. Configuration a
