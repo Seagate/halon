@@ -27,6 +27,7 @@ import Data.Hashable (Hashable(..))
 import Data.Binary (Binary)
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
+import Data.Aeson
 import GHC.Generics (Generic)
 
 --------------------------------------------------------------------------------
@@ -45,7 +46,7 @@ newtype Enclosure = Enclosure
 -- | Representation of a physical host.
 newtype Host = Host
     String -- ^ Hostname
-  deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
+  deriving (Eq, Show, Generic, Typeable, Binary, Hashable, ToJSON)
 
 -- | Generic 'host attribute'.
 data HostAttr =
