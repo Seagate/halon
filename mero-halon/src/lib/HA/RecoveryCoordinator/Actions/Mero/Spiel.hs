@@ -445,6 +445,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
     forM_ encls $ \encl -> do
       lift $ addEnclosure t (M0.fid encl) (M0.fid rack)
       let ctrls = G.connectedTo encl M0.IsParentOf g :: [M0.Controller]
+      phaseLog "info" $ "Controllers: " ++ show ctrls
       forM_ ctrls $ \ctrl -> do
         -- Get node fid
         let (Just node) = listToMaybe

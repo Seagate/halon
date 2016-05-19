@@ -34,6 +34,7 @@ import Control.Applicative
 import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
+import HA.RecoveryCoordinator.Rules.Castor.Controller
 import HA.RecoveryCoordinator.Rules.Castor.Process
 import HA.RecoveryCoordinator.Rules.Castor.Repair
 import HA.RecoveryCoordinator.Rules.Castor.Reset
@@ -81,6 +82,7 @@ castorRules = sequence_
   , ruleRebalanceStart
   , checkRepairOnClusterStart
   , ruleProcessRestarted
+  , ruleControllerState
 #endif
   , ruleDriveFailed
   , ruleDriveRemoved

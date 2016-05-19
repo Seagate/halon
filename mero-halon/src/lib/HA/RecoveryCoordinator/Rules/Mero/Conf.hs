@@ -54,7 +54,7 @@ import Mero.Notification.HAState (Note(..))
 import Control.Applicative (liftA2)
 import Control.Category ((>>>))
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
-import Control.Distributed.Process (Process, liftIO)
+import Control.Distributed.Process (Process, liftIO, say)
 import Control.Arrow (first)
 import Control.Distributed.Static (Static, staticApplyPtr)
 import Control.Monad (join, when, guard)
@@ -329,7 +329,7 @@ setPhaseAllNotified handle extract act =
 
 -- | As 'setPhaseInternalNotificationWithState', accepting all object states.
 setPhaseInternalNotification :: forall b l g.
-                                (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
+                                (M0.HasConfObjectState b, Typeable (M0.StateCarrier b), Show b, Show (M0.StateCarrier b))
                                 => Jump PhaseHandle
                                 -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM g l ())
                                 -> RuleM g l ()
@@ -339,8 +339,11 @@ setPhaseInternalNotification handle act =
 -- | Given a predicate on object state, retrieve all objects and
 -- states satisfying the predicate from the internal state change
 -- notification.
+--
+-- XXX: there seems to be something wrong here, cascaded notifications
+-- don't seem to be decoding right
 setPhaseInternalNotificationWithState :: forall b l g.
-                                      (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
+                                      (M0.HasConfObjectState b, Typeable (M0.StateCarrier b), Show b, Show (M0.StateCarrier b))
                                       => Jump PhaseHandle
                                       -> (M0.StateCarrier b -> Bool)
                                       -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM g l ())
@@ -355,7 +358,8 @@ setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGua
     changeGuard :: HAEvent InternalObjectStateChangeMsg
                 -> g -> l -> Process (Maybe (UUID, [(b, M0.StateCarrier b)]))
     changeGuard (HAEvent eid msg _) _ _ =
-      (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) ->
+      (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) -> do
+        say $ "debug7 " ++ show (eid, length iosc, mapMaybe getObjP iosc)
         case mapMaybe getObjP iosc of
           [] -> return Nothing
           objs -> return $ Just (eid, objs)
@@ -398,8 +402,30 @@ stateCascadeRules =
   , AnyCascadeRule diskFixesPVer
   , AnyCascadeRule diskAddToFailureVector
   , AnyCascadeRule diskRemoveFromFailureVector
+<<<<<<< 5bda1116cdec5c3d04f7a80afe5a5344c76ce48d
   , AnyCascadeRule processCascadeRule
+=======
+  , AnyCascadeRule controllerCascadeFailedRule
+  , AnyCascadeRule controllerCascadeOnlineRule
+>>>>>>> wip [skip ci]
   ]
+
+controllerCascadeFailedRule :: StateCascadeRule M0.Controller M0.Process
+controllerCascadeFailedRule = StateCascadeRule
+  [M0.M0_NC_ONLINE]
+  [M0.M0_NC_FAILED]
+  (\c rg -> [ p | (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
+                , p <- G.connectedTo n M0.IsParentOf rg ])
+  (\_ pst -> M0.PSInhibited pst)
+
+controllerCascadeOnlineRule :: StateCascadeRule M0.Controller M0.Process
+controllerCascadeOnlineRule = StateCascadeRule
+  [M0.M0_NC_FAILED]
+  [M0.M0_NC_ONLINE]
+  (\c rg -> [ p | (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
+                , p <- G.connectedTo n M0.IsParentOf rg ])
+  (\_ _ -> M0.PSFailed "controller came online")
+
 
 rackCascadeRule :: StateCascadeRule M0.Rack M0.Enclosure
 rackCascadeRule = StateCascadeRule
