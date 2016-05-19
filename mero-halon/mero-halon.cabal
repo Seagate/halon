@@ -509,10 +509,12 @@ Test-Suite tests
   Hs-Source-Dirs:   tests
   Other-Modules:    HA.RecoveryCoordinator.Mero.Tests
                     HA.RecoveryCoordinator.Helpers
+                    HA.RecoveryCoordinator.SSPL.Tests
                     HA.RecoveryCoordinator.Tests
                     HA.Autoboot.Tests
                     HA.Castor.Tests
                     HA.Castor.Story.Tests
+                    HA.Castor.Story.ProcessRestart
                     HA.Test.Cluster
                     HA.Test.Disconnect
                     HA.Test.SSPL
