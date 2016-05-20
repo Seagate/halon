@@ -176,6 +176,7 @@ Library
                       HA.RecoveryCoordinator.Rules.Castor.Process
                       HA.RecoveryCoordinator.Rules.Castor.Repair
                       HA.RecoveryCoordinator.Rules.Castor.Cluster
+                      HA.RecoveryCoordinator.Rules.Castor.Process
                       HA.RecoveryCoordinator.Rules.Castor.Repair.Internal
                       HA.Resources.Mero.Note.TH
                       HA.Services.Mero.CEP

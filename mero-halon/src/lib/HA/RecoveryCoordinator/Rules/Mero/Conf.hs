@@ -11,6 +11,7 @@
 {-# LANGUAGE StaticPointers      #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE LambdaCase          #-}
 module HA.RecoveryCoordinator.Rules.Mero.Conf
   ( DeferredStateChanges(..)
   , applyStateChanges
@@ -158,7 +159,7 @@ cascadeStateChange asc rg = go [asc] [asc] id
     applyCascadeRule
       (StateCascadeRule old new f u)
       (a, a_old, a_new) =
-        if (null old || a_old `elem` old) && (null new || a_new `elem` new)
+        if (old a_old) && (new a_new)
         then ( Nothing
              , [ (b, b_old, b_new)
                | b <- f a rg
@@ -169,7 +170,7 @@ cascadeStateChange asc rg = go [asc] [asc] id
     applyCascadeRule
       (StateCascadeTrigger old new fg)
       (a, a_old, a_new) =
-        if (null old || a_old `elem` old) && (null new || a_new `elem` new)
+        if (old a_old) && (new a_new)
         then (Just (fg a), [])
         else (Nothing, [])
 
@@ -366,14 +367,14 @@ setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGua
 -- | Rule for cascading state changes
 data StateCascadeRule a b where
   StateCascadeRule :: (M0.HasConfObjectState a, M0.HasConfObjectState b)
-                    => [M0.StateCarrier a] --  Old state(s) if applicable
-                    -> [M0.StateCarrier a] --  New state(s)
+                    => (M0.StateCarrier a -> Bool) --  Old state(s) if applicable
+                    -> (M0.StateCarrier a -> Bool)  --  New state(s)
                     -> (a -> G.Graph -> [b]) --  Function to find new objects
                     -> (M0.StateCarrier a -> M0.StateCarrier b -> M0.StateCarrier b)
                     -> StateCascadeRule a b
   StateCascadeTrigger :: (M0.HasConfObjectState a, b ~ a)
-                    => [M0.StateCarrier a] --  Old state(s) if applicable
-                    -> [M0.StateCarrier a] --  New state(s)
+                    => (M0.StateCarrier a -> Bool) --  Old state(s) if applicable
+                    -> (M0.StateCarrier a -> Bool) --  New state(s)
                     -> (a -> G.Graph -> G.Graph) -- Update graph
                     -> StateCascadeRule a b
   deriving Typeable
@@ -397,36 +398,44 @@ stateCascadeRules =
   , AnyCascadeRule diskFixesPVer
   , AnyCascadeRule diskAddToFailureVector
   , AnyCascadeRule diskRemoveFromFailureVector
+  , AnyCascadeRule processCascadeRule
   ]
 
 rackCascadeRule :: StateCascadeRule M0.Rack M0.Enclosure
 rackCascadeRule = StateCascadeRule
-  [M0.M0_NC_ONLINE]
-  [M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT]
+  (M0.M0_NC_ONLINE==)
+  (`elem` [M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT])
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
   (const $ const M0.M0_NC_TRANSIENT)  -- XXX: what if enclosure if failed (?)
 
 enclosureCascadeRule :: StateCascadeRule M0.Enclosure M0.Controller
 enclosureCascadeRule = StateCascadeRule
-  [M0.M0_NC_ONLINE]
-  [M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT]
+  (M0.M0_NC_ONLINE ==)
+  (`elem` [M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT])
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
   (const $ const M0.M0_NC_TRANSIENT)
+
+processCascadeRule :: StateCascadeRule M0.Process M0.Service
+processCascadeRule = StateCascadeRule
+  (const True)
+  (\case { M0.PSOffline -> True ; M0.PSFailed _ -> True ; _ -> False })
+  (\x rg -> G.connectedTo x M0.IsParentOf rg)
+  (\s _ -> case s of {M0.PSOffline -> M0.SSOffline ; M0.PSFailed _ -> M0.SSFailed ; _ -> M0.SSUnknown})
 
 -- This is a phantom rule; SDev state is queried through Disk state,
 -- so this rule just exists to include the `SDev` in the set of
 -- notifications which get sent out.
 sdevCascadeRule :: StateCascadeRule M0.SDev M0.Disk
 sdevCascadeRule = StateCascadeRule
-  []
-  []
+  (const True)
+  (const True)
   (\x rg -> G.connectedTo x M0.IsOnHardware rg)
   const
 
 diskFailsPVer :: StateCascadeRule M0.Disk M0.PVer
 diskFailsPVer = StateCascadeRule
-  []
-  [M0.M0_NC_FAILED]
+  (const True)
+  (M0.M0_NC_FAILED ==)
   (\x rg -> let pvers = nub $ do diskv <- G.connectedTo x M0.IsRealOf rg :: [M0.DiskV]
                                  contv <- G.connectedFrom M0.IsParentOf diskv rg :: [M0.ControllerV]
                                  enclv <- G.connectedFrom M0.IsParentOf contv rg :: [M0.EnclosureV]
@@ -459,8 +468,8 @@ diskFailsPVer = StateCascadeRule
 
 diskFixesPVer :: StateCascadeRule M0.Disk M0.PVer
 diskFixesPVer = StateCascadeRule
-  []
-  [M0.M0_NC_ONLINE]
+  (const True)
+  (M0.M0_NC_ONLINE==)
   (\x rg -> let pvers = nub $ do diskv <- G.connectedTo x M0.IsRealOf rg :: [M0.DiskV]
                                  contv <- G.connectedFrom M0.IsParentOf diskv rg :: [M0.ControllerV]
                                  enclv <- G.connectedFrom M0.IsParentOf contv rg :: [M0.EnclosureV]
@@ -494,13 +503,13 @@ diskFixesPVer = StateCascadeRule
 -- | When disk is failing we need to add that disk to the 'DiskFailureVector'.
 diskAddToFailureVector :: StateCascadeRule M0.Disk M0.Disk
 diskAddToFailureVector = StateCascadeTrigger
-  []
-  [M0.M0_NC_FAILED]
+  (const True)
+  (M0.M0_NC_FAILED ==)
   rgRecordDiskFailure
 
 -- | When disk becomes online we need to add that disk to the 'DiskFailureVector'.
 diskRemoveFromFailureVector :: StateCascadeRule M0.Disk M0.Disk
 diskRemoveFromFailureVector = StateCascadeTrigger
-  []
-  [M0.M0_NC_ONLINE]
+  (const True)
+  (M0.M0_NC_ONLINE ==)
   rgRecordDiskOnline

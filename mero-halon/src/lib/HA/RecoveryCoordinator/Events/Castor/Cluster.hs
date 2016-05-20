@@ -9,6 +9,8 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
     ClusterStatusRequest(..)
   , ClusterStartRequest(..)
   , ClusterStopRequest(..)
+  , StopMeroClientRequest(..)
+  , StartMeroClientRequest(..)
   , StateChangeResult(..)
   , PoolRebalanceRequest(..)
   -- * Cluster state report
@@ -25,6 +27,7 @@ import qualified HA.Resources.Mero.Note as M0
 import qualified HA.Resources.Castor as Castor
 import Data.Binary
 import Data.Typeable
+import Mero.ConfC
 
 import GHC.Generics
 
@@ -36,6 +39,10 @@ instance Binary ClusterStartRequest
 
 data ClusterStopRequest = ClusterStopRequest (SendPort StateChangeResult) deriving (Eq, Show, Generic)
 instance Binary ClusterStopRequest
+
+newtype StopMeroClientRequest = StopMeroClientRequest Fid deriving (Eq, Show, Generic, Binary)
+
+newtype StartMeroClientRequest = StartMeroClientRequest Fid deriving (Eq, Show, Generic, Binary)
 
 data StateChangeResult
       = StateChangeError String

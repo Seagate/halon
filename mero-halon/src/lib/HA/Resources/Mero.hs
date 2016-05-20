@@ -418,12 +418,11 @@ instance Hashable PID
 
 -- | Process state. This is a generalisation of what might be reported to Mero.
 data ProcessState =
-    PSUnknown -- ^ Process state is not known.
-  | PSOffline -- ^ Process is stopped.
-  | PSStarting
-    -- ^ Process is starting but we have not confirmed started.
-  | PSOnline
-  | PSStopping
+    PSUnknown       -- ^ Process state is not known.
+  | PSOffline       -- ^ Process is stopped.
+  | PSStarting      -- ^ Process is starting but we have not confirmed started.
+  | PSOnline        -- ^ Process is online.
+  | PSStopping      -- ^ Process is currently stopping.
   | PSFailed String -- ^ Process has failed, with reason given
   | PSInhibited ProcessState -- ^ Process state is masked by a higher level
                              --   failure.

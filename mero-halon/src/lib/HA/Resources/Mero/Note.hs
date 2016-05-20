@@ -200,11 +200,11 @@ instance HasConfObjectState M0.Node where
 instance HasConfObjectState M0.Process where
   type StateCarrier M0.Process = M0.ProcessState
   -- XXX: figure out why we need PSOnline here
-  getState x rg = fromMaybe M0.PSOnline . listToMaybe $ G.connectedTo x Is rg
+  getState x rg = fromMaybe M0.PSUnknown . listToMaybe $ G.connectedTo x Is rg
   setState x st = G.connectUniqueFrom x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Process
 
-  toConfObjState _ M0.PSUnknown = M0_NC_UNKNOWN
+  toConfObjState _ M0.PSUnknown = M0_NC_ONLINE
   toConfObjState _ (M0.PSFailed _) = M0_NC_FAILED
   toConfObjState _ M0.PSOffline = M0_NC_FAILED
   toConfObjState _ M0.PSStarting = M0_NC_FAILED

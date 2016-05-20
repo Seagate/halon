@@ -24,7 +24,7 @@ import qualified HA.Resources.Mero.Note as M0
 import qualified HA.Resources.Castor as Castor
 import HA.RecoveryCoordinator.Events.Castor.Cluster
 
-import Mero.ConfC (ServiceType(..), fidToStr)
+import Mero.ConfC (ServiceType(..), fidToStr, strToFid)
 #endif
 
 import Data.Foldable
@@ -32,6 +32,7 @@ import Options.Applicative
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 import Control.Monad (void, unless)
+import Control.Exception (evaluate)
 
 import Data.Yaml
   ( prettyPrintParseException
@@ -47,7 +48,7 @@ data ClusterOptions =
   | Status StatusOptions
   | Start StartOptions
   | Stop  StopOptions
-
+  | ClientCmd ClientOptions
 #endif
   deriving (Eq, Show)
 
@@ -66,6 +67,8 @@ parseCluster =
         "Start mero cluster")))
   <|> ( Stop <$> Opt.subparser ( Opt.command "stop" (Opt.withDesc (pure StopOptions)
         "Stop mero cluster")))
+  <|> ( ClientCmd <$> Opt.subparser ( Opt.command "client" (Opt.withDesc parseClientOptions
+        "Control m0t1fs clients")))
 #endif
 
 cluster :: [NodeId] -> ClusterOptions -> Process ()
@@ -76,6 +79,7 @@ cluster nids (Dump s) = dumpConfd nids s
 cluster nids (Status _) = clusterCommand nids ClusterStatusRequest (liftIO . prettyReport)
 cluster nids (Start _)  = clusterCommand nids ClusterStartRequest (liftIO . print)
 cluster nids (Stop  _)  = clusterCommand nids ClusterStopRequest (liftIO . print)
+cluster nids (ClientCmd s) = client nids s
 #endif
 
 data LoadOptions = LoadOptions
@@ -139,6 +143,9 @@ newtype DumpOptions = DumpOptions FilePath
 data StatusOptions = StatusOptions deriving (Eq, Show)
 data StartOptions  = StartOptions deriving (Eq, Show)
 data StopOptions   = StopOptions deriving (Eq, Show)
+data ClientOptions = ClientStopOption String
+                   | ClientStartOption String
+                   deriving (Eq, Show)
 
 parseDumpOptions :: Opt.Parser DumpOptions
 parseDumpOptions = DumpOptions <$>
@@ -148,6 +155,21 @@ parseDumpOptions = DumpOptions <$>
     <> Opt.help "File to dump confd database to."
     <> Opt.metavar "FILENAME"
     )
+
+parseClientOptions :: Opt.Parser ClientOptions
+parseClientOptions = Opt.subparser startCmd
+                 <|> Opt.subparser stopCmd
+  where
+    startCmd = Opt.command "start" $
+       Opt.withDesc (ClientStartOption <$> fidOption) "Start m0t1fs service"
+    stopCmd = Opt.command "stop" $
+       Opt.withDesc (ClientStopOption <$> fidOption) "Stop m0t1fs service"
+    fidOption =  Opt.strOption
+       ( Opt.long "fid"
+       <> Opt.short 'f'
+       <> Opt.help "Fid of the service"
+       <> Opt.metavar "FID"
+       )
 
 dumpConfd :: [NodeId]
           -> DumpOptions
@@ -161,6 +183,26 @@ dumpConfd eqnids (DumpOptions fn) = do
     SyncDumpToBSReply (Right bs) -> do
       liftIO $ BS.writeFile fn bs
       say $ "Dumped conf in RG to this file " ++ fn
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
+
+client :: [NodeId]
+       -> ClientOptions
+       -> Process ()
+client eqnids (ClientStopOption fn) = do
+  case strToFid fn of
+    Just fid -> do
+      promulgateEQ eqnids (StopMeroClientRequest fid) >>= flip withMonitor wait
+      say "Command was delivered to EQ."
+    Nothing -> say "Incorrect Fid format."
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
+client eqnids (ClientStartOption fn) = do
+  case strToFid fn of
+    Just fid -> do
+      promulgateEQ eqnids (StartMeroClientRequest fid) >>= flip withMonitor wait
+      say "Command was delivered to EQ."
+    Nothing -> say "Incorrect Fid format."
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 

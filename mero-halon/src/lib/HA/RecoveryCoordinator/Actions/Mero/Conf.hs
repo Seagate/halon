@@ -43,6 +43,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , pickPrincipalRM
     -- * Low level graph API
   , rgGetPool
+  , m0nodeToNode
   ) where
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -53,6 +54,8 @@ import qualified HA.ResourceGraph as G
 import HA.Resources (Cluster(..), Has(..), Runs(..))
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
+import qualified HA.Resources as R
+import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 
@@ -491,5 +494,10 @@ pickPrincipalRM = getLocalGraph >>= \g ->
                   , G.isConnected proc Is M0.PSOnline g
                   , M0.s_type rm == CST_RMS
                   ]
-  in do
-    traverse setPrincipalRMIfUnset $ listToMaybe rms
+  in traverse setPrincipalRMIfUnset $ listToMaybe rms
+
+
+m0nodeToNode :: M0.Node -> G.Graph -> [R.Node]
+m0nodeToNode m0node rg =
+  [ node | (h :: R.Host) <- G.connectedFrom R.Runs m0node rg
+         , node <- G.connectedTo h R.Runs rg ]

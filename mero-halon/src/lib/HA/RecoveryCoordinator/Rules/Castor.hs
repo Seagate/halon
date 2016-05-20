@@ -405,16 +405,48 @@ ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid _ _ disk) -> 
       messageProcessed uuid
 
 #ifdef USE_MERO
+maxGetEntryPointReplies :: Int
+maxGetEntryPointReplies = 5
+
+-- | Timeout between entrypoint retry.
+entryPointTimeout :: Int
+entryPointTimeout = 1 -- 1s
+
 -- | Load information that is required to complete transaction from
 -- resource graph.
 ruleGetEntryPoint :: Definitions LoopState ()
-ruleGetEntryPoint = defineSimple "castor-entry-point-request" $
-  \(HAEvent uuid (GetSpielAddress pid) _) -> do
+ruleGetEntryPoint = define "castor-entry-point-request" $ do
+  main <- phaseHandle "main"
+  loop <- phaseHandle "loop"
+  setPhase main $ \(HAEvent uuid (GetSpielAddress pid) _) -> do
     phaseLog "info" $ "Spiel Address requested by " ++ show pid
     ep <- getSpielAddressRC
-    liftProcess $ usend pid ep
-    phaseLog "entrypoint" $ show ep
-    messageProcessed uuid
+    case ep of
+      Nothing -> do
+        put Local $ Just (pid,0)
+        -- We process message here because in case of RC death,
+        -- there will be timeout on the userside anyways.
+        messageProcessed uuid
+        continue (timeout entryPointTimeout loop)
+      Just{} -> do
+        phaseLog "entrypoint" $ show ep
+        liftProcess $ usend pid ep
+        messageProcessed uuid
+
+  directly loop $ do
+    Just (pid, i) <- get Local
+    ep <- getSpielAddressRC
+    case ep of
+      Nothing -> do
+        if i > maxGetEntryPointReplies
+        then liftProcess $ usend pid ep
+        else do put Local $ Just (pid, i+1)
+                continue (timeout entryPointTimeout loop)
+      Just{} -> do
+        phaseLog "entrypoint" $ show ep
+        liftProcess $ usend pid ep
+
+  start main Nothing
 #endif
 
 goRack :: CI.Rack -> PhaseM LoopState l ()

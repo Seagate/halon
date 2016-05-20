@@ -30,7 +30,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Conf
   , lookupStorageDevice
   , lookupStorageDeviceSDev
   )
-import HA.RecoveryCoordinator.Rules.Mero.Conf (notifyDriveStateChange)
+import HA.RecoveryCoordinator.Rules.Mero.Conf
 import HA.Resources (Node(..))
 import HA.Resources.Castor
 import HA.Resources.Mero.Note (ConfObjectState(..), getConfObjState)
@@ -149,7 +149,7 @@ handleResetExternal (Set ns) = do
 
                       -- Notify rest of system if stat actually changed
                       when (st /= status) $
-                        notifyDriveStateChange m0sdev status
+                        applyStateChangesCreateFS [ stateSet m0sdev status ]
 
                       syncGraph $ say "handleReset synchronized"
             _ -> do
@@ -168,7 +168,7 @@ handleResetInternal (Set ns) = do
   liftIO $ traceEventIO "START mero-halon:internal-handler:reset-attempt"
   for_ ns $ \(Note mfid tpe) ->
     case tpe of
-      M0_NC_TRANSIENT -> do 
+      M0_NC_TRANSIENT -> do
         sdevm <- lookupConfObjByFid mfid
         for_ sdevm $ \m0sdev ->  do
           msdev <- lookupStorageDevice m0sdev
@@ -259,7 +259,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         markSMARTTestComplete sdev
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev ->
-          notifyDriveStateChange m0sdev M0_NC_ONLINE
+          applyStateChangesCreateFS [ stateSet m0sdev M0_NC_ONLINE ]
         messageProcessed eid
         continue end
 
@@ -277,7 +277,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         forM_ sd $ \m0sdev -> do
           updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
           -- Let note handler deal with repair logic
-          notifyDriveStateChange m0sdev M0_NC_FAILED
+          applyStateChangesCreateFS [ stateSet m0sdev M0_NC_FAILED ]
         continue end
 
       directly end $ do

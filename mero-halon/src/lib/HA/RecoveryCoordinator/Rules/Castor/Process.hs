@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase       #-}
 {-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE TypeOperators    #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -10,16 +11,21 @@ module HA.RecoveryCoordinator.Rules.Castor.Process
   ( handleProcessFailureE
   , handleProcessOnlineE
   , ruleProcessRestarted
+  , ruleStopMeroProcess
+  , ruleProcessControlStop
+  , ruleProcessControlStart
   ) where
 
+import           HA.Encode
 import           Control.Monad.Trans.Maybe
-import           Data.Either (partitionEithers)
-import           Data.Foldable (for_)
-import           Data.Maybe (catMaybes, listToMaybe)
+import           Data.Either (partitionEithers, rights)
+import           Data.Maybe (catMaybes, listToMaybe, mapMaybe)
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
+import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
+import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Node(..), Cluster(..))
@@ -33,12 +39,13 @@ import           Mero.Notification (Set(..))
 import           Mero.Notification.HAState (Note(..))
 import           Network.CEP
 
--- * Process handlers
 
-alreadyFailed :: M0.Process -> G.Graph -> Bool
-alreadyFailed p rg = case getState p rg of
-    M0.PSFailed _ -> True
-    _ -> False
+import           Control.Monad (when)
+import           Data.Typeable
+import           Data.Foldable
+import           Text.Printf
+
+-- * Process handlers
 
 -- | TODO: make it @[(M0.Node, [M0.Process])]@
 getFailedProcs :: [Note] -> G.Graph -> [(M0.Node, M0.Process)]
@@ -65,6 +72,13 @@ handleProcessFailureE (Set ns) = do
              then phaseLog "warn" $ "Proceess in starting state, not restarting: "
                                  ++ show p
              else applyStateChanges [stateSet p $ M0.PSFailed "MERO-failed"]
+  where
+    alreadyFailed :: M0.Process -> G.Graph -> Bool
+    alreadyFailed p rg = case getState p rg of
+      M0.PSFailed _ -> True
+      M0.PSOffline -> True
+      M0.PSStopping -> True
+      _ -> False
 
 ruleProcessRestarted :: Definitions LoopState ()
 ruleProcessRestarted = define "processes-restarted" $ do
@@ -94,7 +108,9 @@ ruleProcessRestarted = define "processes-restarted" $ do
           phaseLog "warn" $ "Couldn't lookup node in local state"
           continue finish
 
-      isProcFailed st = case st of { M0.PSFailed _ -> True ; _ -> False }
+      isProcFailed st = case st of
+        M0.PSFailed _ -> True
+        _ -> False
 
   setPhaseInternalNotificationWithState initialize isProcFailed $ \(eid, procs) -> do
     todo eid
@@ -102,6 +118,13 @@ ruleProcessRestarted = define "processes-restarted" $ do
     for_ procs $ \(p, _) -> fork NoBuffer $ do
       todo eid
       phaseLog "info" $ "Starting restart procedure for " ++ show (M0.fid p)
+      case getState p rg of
+        M0.PSStopping -> do phaseLog "info" "service is already stopping - skipping restart"
+                            stop
+        M0.PSOffline  -> do phaseLog "info" "service is already stopped - skipping restart"
+                            stop
+        _ -> return ()
+
 
       put Local $ Just (eid, p, Nothing, Nothing, [])
       case listToMaybe $ G.connectedTo Cluster Has rg of
@@ -110,7 +133,7 @@ ruleProcessRestarted = define "processes-restarted" $ do
                      | (srv :: M0.Service) <- G.connectedTo p M0.IsParentOf rg ]
               notificationSet = srvs
 
-          case listToMaybe $ [ n | n <- G.connectedFrom M0.IsParentOf p rg ] of
+          case listToMaybe [ n | n <- G.connectedFrom M0.IsParentOf p rg ] of
             Nothing -> do
               phaseLog "warn" $ "Couldn't find node associated with " ++ show p
               continue finish
@@ -260,3 +283,84 @@ handleProcessOnlineE (Set ns) = do
     notifyProcessRestarted p pid = do
       modifyLocalGraph $ return . G.connectUniqueFrom p Has pid
       applyStateChanges [ stateSet p M0.PSOnline ]
+
+-- | Handles halon:m0d reply about service start and set Process
+-- as failed if error occur.
+ruleProcessControlStart :: Definitions LoopState ()
+ruleProcessControlStart = defineSimpleTask "handle-process-start" $ \(ProcessControlResultMsg node results) -> do
+  phaseLog "info" $ printf "Mero proceses started on %s" (show node)
+  rg <- getLocalGraph
+  let
+    resultProcs :: [Either M0.Process (M0.Process, String)]
+    resultProcs = mapMaybe (\case
+      Left x -> Left <$> M0.lookupConfObjByFid x rg
+      Right (x,s) -> Right . (,s) <$> M0.lookupConfObjByFid x rg)
+      results
+  phaseLog "debug" $ printf "Results of stopping: %s" (show resultProcs)
+  --forM_ (lefts resultProcs) $ \p ->
+  --  modifyGraph $ G.connectUniqueFrom p R.Is M0.ProcessBootstrapped
+  applyStateChanges $ (\(x, s) -> stateSet x (M0.PSFailed $ "Failed to start: " ++ s))
+    <$> rights resultProcs
+  forM_ (rights results) $ \(x,s) ->
+    phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
+
+-- | When any process goes to Quiescing state, we need to be able to
+-- give some timeout for RM to clear caches before actually stopping
+-- the service.
+ruleStopMeroProcess :: Definitions LoopState ()
+ruleStopMeroProcess = define "stop-process" $ do
+  initial      <- phaseHandle "stop-process::initial"
+  stop_service <- phaseHandle "stop-process::stop-service"
+  finish       <- phaseHandle "stop-process::finish"
+
+  setPhase initial $ \(HAEvent eid msg _) -> do
+    todo eid
+    InternalObjectStateChange chs <- liftProcess $ decodeP msg
+    let changes = mapMaybe (\(AnyStateChange (a::a)  old new _) ->
+                    case eqT :: Maybe (a :~: M0.Process) of
+                      Just Refl -> Just (new, a)
+                      Nothing   -> Nothing) chs
+    forM_ (changes :: [(M0.ProcessState, M0.Process)]) $
+      \(change, p) -> when (change == M0.PSStopping) $ do
+        put Local $ Just p
+        continue (timeout 30 stop_service)
+    done eid
+
+  directly stop_service $ do
+    Just p <- get Local
+    rg <- getLocalGraph
+    maction <- runMaybeT $ do
+      let nodes = [node | m0node <- G.connectedFrom M0.IsParentOf p rg
+                        , node   <- m0nodeToNode m0node rg
+                        ]
+      (m0svc,node) <- asum $ map (\node -> MaybeT $ fmap (,node) <$> lookupRunningService node m0d) nodes
+      host  <- MaybeT $ findNodeHost node
+      ch    <- MaybeT . return $ meroChannel rg m0svc
+      return $ do
+        stopNodeProcesses ch [p]
+        continue finish
+    forM_ maction id
+
+  directly finish stop
+
+  start initial Nothing
+
+ruleProcessControlStop :: Definitions LoopState ()
+ruleProcessControlStop = defineSimpleTask "handle-process-stop" $ \(ProcessControlResultStopMsg node results) -> do
+  phaseLog "info" $ printf "Mero processes stopped on %s" (show node)
+  rg <- getLocalGraph
+  let
+    resultProcs :: [Either M0.Process (M0.Process, String)]
+    resultProcs = mapMaybe (\case
+      Left x -> Left <$> M0.lookupConfObjByFid x rg
+      Right (x,s) -> Right . (,s) <$> M0.lookupConfObjByFid x rg)
+      results
+  phaseLog "debug" $ printf "Results of stopping: %s" (show resultProcs)
+  applyStateChanges $ (\case
+    Left x -> stateSet x M0.PSOffline
+    Right (x,s) -> stateSet x (M0.PSFailed $ "Failed to stop: " ++ show s))
+    <$> resultProcs
+  forM_ (rights results) $ \(x,s) ->
+    phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
+
+

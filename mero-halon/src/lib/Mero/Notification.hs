@@ -318,10 +318,9 @@ notificationWorker chan announce = await_event
     -- TODO: batch multiple events?
     execute (Pending n@(Note fid _)) now psq = do
       announce [n]
-      next_step (PSQ.insert fid (pendingTime now) (Sent n) psq) now
-    execute (Sent _) now psq =
-      next_step psq now
-    execute (Cancelled _) now  psq = next_step psq now
+      next_step (PSQ.insert fid (sentTime now) (Sent n) psq) now
+    execute Sent{} now psq = next_step psq now
+    execute Cancelled{} now psq = next_step psq now
     -- Decide what to do next
     next_step psq now =
       case PSQ.minView psq of
@@ -340,7 +339,7 @@ notificationWorker chan announce = await_event
 
 -- | Time to keep sent value in the cache (remove duplicates).
 sentInterval :: Int
-sentInterval = 1000000
+sentInterval = 2000000 -- 2s
 
 -- | Time to keep message in pending state (wait for cancellation).
 pendingInterval :: Int
