@@ -165,7 +165,7 @@ instance ConfObj Root where
    fid (Root f) = f
 
 newtype Profile = Profile Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Binary, Eq, Generic, Hashable, Show, Typeable, ToJSON)
 
 instance ConfObj Profile where
   fidType _ = fromIntegral . ord $ 'p'
@@ -178,6 +178,7 @@ data Filesystem = Filesystem {
 
 instance Binary Filesystem
 instance Hashable Filesystem
+instance ToJSON Filesystem
 
 instance ConfObj Filesystem where
   fidType _ = fromIntegral . ord $ 'f'
@@ -198,7 +199,7 @@ instance ConfObj Rack where
   fid (Rack f) = f
 
 newtype Pool = Pool Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable, Ord)
+  deriving (Binary, Eq, Generic, Hashable, Show, Typeable, Ord, ToJSON)
 
 instance ConfObj Pool where
   fidType _ = fromIntegral . ord $ 'o'
@@ -216,6 +217,8 @@ data Process = Process {
 
 instance Binary Process
 instance Hashable Process
+instance ToJSON Process
+instance ToJSON Bitmap
 instance ConfObj Process where
   fidType _ = fromIntegral . ord $ 'r'
   fid = r_fid
@@ -239,9 +242,11 @@ data ServiceState =
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ServiceState
 instance Hashable ServiceState
+instance ToJSON ServiceState
 
 instance Binary Service
 instance Hashable Service
+instance ToJSON Service
 instance ConfObj Service where
   fidType _ = fromIntegral . ord $ 's'
   fid = s_fid
@@ -256,6 +261,7 @@ data SDev = SDev {
 
 instance Binary SDev
 instance Hashable SDev
+instance ToJSON SDev
 instance ConfObj SDev where
   fidType _ = fromIntegral . ord $ 'd'
   fid = d_fid
@@ -373,6 +379,8 @@ data PoolRepairInformation = PoolRepairInformation
 
 instance Binary PoolRepairInformation
 instance Hashable PoolRepairInformation
+instance ToJSON PoolRepairInformation where
+  toJSON pri = object [ "pool_repair" .= priStateUpdates pri  ]
 
 -- | Sets default values for 'PoolRepairInformation'.
 --
@@ -429,6 +437,7 @@ data ProcessState =
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ProcessState
 instance Hashable ProcessState
+instance ToJSON ProcessState
 
 prettyProcessState :: ProcessState -> String
 prettyProcessState PSUnknown = "N/A"

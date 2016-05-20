@@ -28,6 +28,7 @@ import qualified HA.Resources.Castor as Castor
 import Data.Binary
 import Data.Typeable
 import Mero.ConfC
+import Data.Aeson
 
 import GHC.Generics
 
@@ -67,6 +68,7 @@ data ReportClusterState = ReportClusterState
       } deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ReportClusterState
+instance ToJSON ReportClusterState
 
 data ReportClusterHost = ReportClusterHost
       { crnNodeStatus :: M0.StateCarrier M0.Node
@@ -75,6 +77,7 @@ data ReportClusterHost = ReportClusterHost
       } deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ReportClusterHost
+instance ToJSON ReportClusterHost
 
 data ReportClusterProcess = ReportClusterProcess
       { crpState    :: M0.ProcessState
@@ -82,3 +85,4 @@ data ReportClusterProcess = ReportClusterProcess
       } deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ReportClusterProcess
+instance ToJSON ReportClusterProcess

@@ -17,7 +17,9 @@ import HA.EventQueue.Producer (promulgateEQ)
 import qualified HA.Resources.Castor.Initial as CI
 
 #ifdef USE_MERO
+import qualified Data.Aeson
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -61,7 +63,7 @@ parseCluster =
         "Force synchronisation of RG to confd servers." )))
   <|> ( Dump <$> Opt.subparser ( Opt.command "dump" (Opt.withDesc parseDumpOptions
         "Dump embedded confd database to file." )))
-  <|> ( Status <$> Opt.subparser ( Opt.command "status" (Opt.withDesc (pure StatusOptions)
+  <|> ( Status <$> Opt.subparser ( Opt.command "status" (Opt.withDesc parseStatusOptions
         "Query mero-cluster status")))
   <|> ( Start <$> Opt.subparser ( Opt.command "start" (Opt.withDesc (pure StartOptions)
         "Start mero cluster")))
@@ -76,7 +78,9 @@ cluster nids (LoadData l) = dataLoad nids l
 #ifdef USE_MERO
 cluster nids (Sync _) = syncToConfd nids
 cluster nids (Dump s) = dumpConfd nids s
-cluster nids (Status _) = clusterCommand nids ClusterStatusRequest (liftIO . prettyReport)
+cluster nids (Status (StatusOptions m)) = clusterCommand nids ClusterStatusRequest (liftIO . output m)
+  where output True = jsonReport
+        output False = prettyReport
 cluster nids (Start _)  = clusterCommand nids ClusterStartRequest (liftIO . print)
 cluster nids (Stop  _)  = clusterCommand nids ClusterStopRequest (liftIO . print)
 cluster nids (ClientCmd s) = client nids s
@@ -140,7 +144,7 @@ data SyncOptions = SyncOptions
 newtype DumpOptions = DumpOptions FilePath
   deriving (Eq, Show)
 
-data StatusOptions = StatusOptions deriving (Eq, Show)
+data StatusOptions = StatusOptions Bool deriving (Eq, Show)
 data StartOptions  = StartOptions deriving (Eq, Show)
 data StopOptions   = StopOptions deriving (Eq, Show)
 data ClientOptions = ClientStopOption String
@@ -169,6 +173,13 @@ parseClientOptions = Opt.subparser startCmd
        <> Opt.short 'f'
        <> Opt.help "Fid of the service"
        <> Opt.metavar "FID"
+       )
+
+parseStatusOptions :: Opt.Parser StatusOptions
+parseStatusOptions = StatusOptions
+  <$> Opt.switch
+       ( Opt.long "json"
+       <> Opt.help "Output in json format."
        )
 
 dumpConfd :: [NodeId]
@@ -252,4 +263,7 @@ prettyReport (ReportClusterState status sns info' hosts) = do
        | any (\(M0.Service _ t _ _) -> t == CST_MGS) srvs = "confd    "
        | any (\(M0.Service _ t _ _) -> t == CST_HA)  srvs = "halon    "
        | otherwise                                        = "m0t1fs   "
+
+jsonReport :: ReportClusterState -> IO ()
+jsonReport = BSL.putStrLn . Data.Aeson.encode
 #endif
