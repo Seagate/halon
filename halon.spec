@@ -9,6 +9,7 @@ Source: %{name}.tar.gz
 BuildRequires: binutils-devel
 BuildRequires: libgenders-devel
 BuildRequires: git
+BuildRequires: gmp-devel
 BuildRequires: leveldb-devel
 BuildRequires: libyaml-devel
 BuildRequires: mero
