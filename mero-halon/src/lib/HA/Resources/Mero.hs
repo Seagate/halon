@@ -32,6 +32,7 @@ import Mero.ConfC
   )
 
 import Data.Aeson
+import Data.Aeson.Types (typeMismatch)
 import Data.Binary (Binary(..))
 import Data.Bits
 import qualified Data.ByteString as BS
@@ -39,7 +40,9 @@ import Data.Char (ord)
 import Data.Hashable (Hashable(..))
 import Data.Int (Int64)
 import Data.Proxy (Proxy(..))
+import Data.Scientific
 import Data.Typeable (Typeable)
+import qualified Data.Vector as V
 import Data.Word ( Word32, Word64 )
 import GHC.Generics (Generic)
 import qualified "distributed-process-scheduler" System.Clock as C
@@ -165,7 +168,7 @@ instance ConfObj Root where
    fid (Root f) = f
 
 newtype Profile = Profile Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable, ToJSON)
+  deriving (Binary, Eq, Generic, Hashable, Show, Typeable, FromJSON, ToJSON)
 
 instance ConfObj Profile where
   fidType _ = fromIntegral . ord $ 'p'
@@ -179,6 +182,7 @@ data Filesystem = Filesystem {
 instance Binary Filesystem
 instance Hashable Filesystem
 instance ToJSON Filesystem
+instance FromJSON Filesystem
 
 instance ConfObj Filesystem where
   fidType _ = fromIntegral . ord $ 'f'
@@ -199,7 +203,8 @@ instance ConfObj Rack where
   fid (Rack f) = f
 
 newtype Pool = Pool Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable, Ord, ToJSON)
+  deriving
+    (Binary, Eq, Generic, Hashable, Show, Typeable, Ord, FromJSON, ToJSON)
 
 instance ConfObj Pool where
   fidType _ = fromIntegral . ord $ 'o'
@@ -218,7 +223,9 @@ data Process = Process {
 instance Binary Process
 instance Hashable Process
 instance ToJSON Process
+instance FromJSON Process
 instance ToJSON Bitmap
+instance FromJSON Bitmap
 instance ConfObj Process where
   fidType _ = fromIntegral . ord $ 'r'
   fid = r_fid
@@ -243,10 +250,12 @@ data ServiceState =
 instance Binary ServiceState
 instance Hashable ServiceState
 instance ToJSON ServiceState
+instance FromJSON ServiceState
 
 instance Binary Service
 instance Hashable Service
 instance ToJSON Service
+instance FromJSON Service
 instance ConfObj Service where
   fidType _ = fromIntegral . ord $ 's'
   fid = s_fid
@@ -262,6 +271,7 @@ data SDev = SDev {
 instance Binary SDev
 instance Hashable SDev
 instance ToJSON SDev
+instance FromJSON SDev
 instance ConfObj SDev where
   fidType _ = fromIntegral . ord $ 'd'
   fid = d_fid
@@ -339,6 +349,22 @@ newtype TimeSpec = TimeSpec { _unTimeSpec :: C.TimeSpec }
 mkTimeSpec :: Int64 -> TimeSpec
 mkTimeSpec sec = TimeSpec { _unTimeSpec = C.TimeSpec sec 0 }
 
+instance ToJSON TimeSpec where
+  toJSON (TimeSpec (C.TimeSpec secs nsecs)) =
+    Array $ V.fromList [ toJSON secs, toJSON nsecs ]
+
+instance FromJSON TimeSpec where
+  parseJSON = withArray "TimeSpec" $ \a ->
+      if V.length a /= 2 then do
+        let withIntegral expected f = withScientific expected $ \s ->
+              case floatingOrInteger s of
+                Left (_ :: Double) -> typeMismatch expected (Number s)
+                Right i            -> f i
+        secs <- withIntegral "secs" return $ (a V.! 0)
+        nsecs <- withIntegral "nsecs" return $ (a V.! 1)
+        return $ TimeSpec $ C.TimeSpec secs nsecs
+      else typeMismatch "TimeSpec" (Array a)
+
 -- | Extract the seconds value from a 'TimeSpec'
 --
 -- Warning: casts from 'Int64' to 'Int'.
@@ -379,8 +405,8 @@ data PoolRepairInformation = PoolRepairInformation
 
 instance Binary PoolRepairInformation
 instance Hashable PoolRepairInformation
-instance ToJSON PoolRepairInformation where
-  toJSON pri = object [ "pool_repair" .= priStateUpdates pri  ]
+instance ToJSON PoolRepairInformation
+instance FromJSON PoolRepairInformation
 
 -- | Sets default values for 'PoolRepairInformation'.
 --
@@ -438,6 +464,7 @@ data ProcessState =
 instance Binary ProcessState
 instance Hashable ProcessState
 instance ToJSON ProcessState
+instance FromJSON ProcessState
 
 prettyProcessState :: ProcessState -> String
 prettyProcessState PSUnknown = "N/A"
@@ -464,7 +491,8 @@ instance Hashable ProcessLabel
 --   * 0 - confd
 --   * 1 - other
 newtype BootLevel = BootLevel Int
-  deriving (Eq, Show, Typeable, Generic, Binary, Hashable, Ord)
+  deriving
+    (Eq, Show, Typeable, Generic, Binary, Hashable, Ord, FromJSON, ToJSON)
 
 data MeroClusterState =
     MeroClusterStopped -- ^ Cluster is not running.
@@ -475,6 +503,8 @@ data MeroClusterState =
   deriving (Eq,Show, Typeable, Generic)
 instance Binary MeroClusterState
 instance Hashable MeroClusterState
+instance ToJSON MeroClusterState
+instance FromJSON MeroClusterState
 
 prettyStatus :: MeroClusterState -> String
 prettyStatus MeroClusterStopped = "stopped"
@@ -482,9 +512,6 @@ prettyStatus (MeroClusterStarting (BootLevel i)) = "starting (bootlevel " ++ sho
 prettyStatus (MeroClusterStopping (BootLevel i)) = "stopping (bootlevel " ++ show i ++ ")"
 prettyStatus MeroClusterRunning = "running"
 prettyStatus MeroClusterFailed = "failed"
-
-instance ToJSON MeroClusterState where
-  toJSON = toJSON . prettyStatus
 
 instance Ord MeroClusterState where
    compare MeroClusterRunning MeroClusterRunning = EQ

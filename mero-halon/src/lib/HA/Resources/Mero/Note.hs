@@ -31,7 +31,7 @@ import Mero.ConfC (Fid(..))
 import Control.Distributed.Static (Static, staticPtr)
 import Control.Monad (join)
 
-import Data.Aeson (ToJSON)
+import Data.Aeson (FromJSON, ToJSON)
 import Data.Binary (Binary)
 import Data.Constraint (Dict)
 import Data.Bits (shiftR)
@@ -85,6 +85,7 @@ data ConfObjectState
 instance Binary ConfObjectState
 instance Hashable ConfObjectState
 instance ToJSON ConfObjectState
+instance FromJSON ConfObjectState
 
 prettyConfObjState :: ConfObjectState -> String
 prettyConfObjState M0_NC_UNKNOWN   = "N/A"

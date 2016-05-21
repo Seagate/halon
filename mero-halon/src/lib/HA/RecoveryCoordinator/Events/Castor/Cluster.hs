@@ -69,6 +69,7 @@ data ReportClusterState = ReportClusterState
 
 instance Binary ReportClusterState
 instance ToJSON ReportClusterState
+instance FromJSON ReportClusterState
 
 data ReportClusterHost = ReportClusterHost
       { crnNodeStatus :: M0.StateCarrier M0.Node
@@ -78,6 +79,7 @@ data ReportClusterHost = ReportClusterHost
 
 instance Binary ReportClusterHost
 instance ToJSON ReportClusterHost
+instance FromJSON ReportClusterHost
 
 data ReportClusterProcess = ReportClusterProcess
       { crpState    :: M0.ProcessState
@@ -86,3 +88,4 @@ data ReportClusterProcess = ReportClusterProcess
 
 instance Binary ReportClusterProcess
 instance ToJSON ReportClusterProcess
+instance FromJSON ReportClusterProcess

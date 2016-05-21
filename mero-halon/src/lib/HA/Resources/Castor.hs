@@ -46,7 +46,7 @@ newtype Enclosure = Enclosure
 -- | Representation of a physical host.
 newtype Host = Host
     String -- ^ Hostname
-  deriving (Eq, Show, Generic, Typeable, Binary, Hashable, ToJSON)
+  deriving (Eq, Show, Generic, Typeable, Binary, Hashable, FromJSON, ToJSON)
 
 -- | Generic 'host attribute'.
 data HostAttr =
