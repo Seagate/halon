@@ -105,6 +105,9 @@ data AnyStateChange =
       }
   deriving (Typeable)
 
+instance Show AnyStateChange where
+  show (AnyStateChange a b c d) = unwords ["AnyStateChange", show a, show b, show c]
+
 -- | Event sent when the state of an object changes internally to Halon.
 --   This event should be sent *after* the state of the references objects
 --   has changed in the resource graph.

@@ -205,9 +205,9 @@ genericApplyStateChanges :: [AnyStateSet]
                          -> Process () -- ^ Callback on failed notification
                          -> PhaseM LoopState l a
 genericApplyStateChanges ass act cbSucc cbFail = getLocalGraph >>= \rg -> let
-    dsc@(DeferredStateChanges _ n _) = createDeferredStateChanges ass rg
+    dsc@(DeferredStateChanges _ n (InternalObjectStateChange iosc)) = createDeferredStateChanges ass rg
   in do
-    phaseLog "state-change-set" (show n)
+    phaseLog "state-change-set" $ show (n, length iosc)
     genericApplyDeferredStateChanges dsc act cbSucc cbFail
 
 -- | Generic function to apply deferred state changes in the standard order.
@@ -319,7 +319,7 @@ setPhaseAllNotified handle extract act =
 
     changeGuard :: HAEvent InternalObjectStateChangeMsg
                 -> g -> l -> Process (Maybe ())
-    changeGuard (HAEvent _ msg _) _ (extract -> Just notificationSet) =
+    changeGuard (HAEvent eid msg _) _ (extract -> Just notificationSet) =
       (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) -> do
         let internalStateSet = map extractStateSet iosc
         if all (`elem` internalStateSet) notificationSet
@@ -359,7 +359,7 @@ setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGua
                 -> g -> l -> Process (Maybe (UUID, [(b, M0.StateCarrier b)]))
     changeGuard (HAEvent eid msg _) _ _ =
       (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) -> do
-        say $ "debug7 " ++ show (eid, length iosc, mapMaybe getObjP iosc)
+        say $ "debug7 " ++ show (eid, length iosc, mapMaybe getObjP iosc, show iosc)
         case mapMaybe getObjP iosc of
           [] -> return Nothing
           objs -> return $ Just (eid, objs)
@@ -402,26 +402,23 @@ stateCascadeRules =
   , AnyCascadeRule diskFixesPVer
   , AnyCascadeRule diskAddToFailureVector
   , AnyCascadeRule diskRemoveFromFailureVector
-<<<<<<< 5bda1116cdec5c3d04f7a80afe5a5344c76ce48d
   , AnyCascadeRule processCascadeRule
-=======
   , AnyCascadeRule controllerCascadeFailedRule
   , AnyCascadeRule controllerCascadeOnlineRule
->>>>>>> wip [skip ci]
   ]
 
 controllerCascadeFailedRule :: StateCascadeRule M0.Controller M0.Process
 controllerCascadeFailedRule = StateCascadeRule
-  [M0.M0_NC_ONLINE]
-  [M0.M0_NC_FAILED]
+  (M0.M0_NC_ONLINE ==)
+  (M0.M0_NC_FAILED ==)
   (\c rg -> [ p | (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
                 , p <- G.connectedTo n M0.IsParentOf rg ])
   (\_ pst -> M0.PSInhibited pst)
 
 controllerCascadeOnlineRule :: StateCascadeRule M0.Controller M0.Process
 controllerCascadeOnlineRule = StateCascadeRule
-  [M0.M0_NC_FAILED]
-  [M0.M0_NC_ONLINE]
+  (M0.M0_NC_FAILED ==)
+  (M0.M0_NC_ONLINE ==)
   (\c rg -> [ p | (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
                 , p <- G.connectedTo n M0.IsParentOf rg ])
   (\_ _ -> M0.PSFailed "controller came online")
