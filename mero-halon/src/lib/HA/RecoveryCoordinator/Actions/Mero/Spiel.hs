@@ -131,7 +131,7 @@ withSpielRC f = withResourceGraphCache $ do
 withRConfRC :: SpielContext -> PhaseM LoopState l a -> PhaseM LoopState l a
 withRConfRC spiel action = do
   rg <- getLocalGraph
-  let mp = listToMaybe $ G.getResourcesOfType rg :: Maybe M0.Profile
+  let mp = listToMaybe (G.connectedTo Cluster Has rg) :: Maybe M0.Profile -- XXX: multiprofile is not supported
   void $ liftM0RC $ do
      Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
      Mero.Spiel.rconfStart spiel
@@ -427,11 +427,16 @@ modifyConfUpdateVersion f = do
   modifyLocalGraph $ return . G.connectUniqueFrom Cluster Has fcsu
 
 txPopulate :: (IO () -> PhaseM LoopState l ()) -> TxConfData -> SpielTransaction -> PhaseM LoopState l SpielTransaction
-txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) t = do
+txPopulate lift (TxConfData CI.M0Globals{..} prof@(M0.Profile pfid) fs@M0.Filesystem{..}) t = do
   g <- getLocalGraph
   -- Profile, FS, pool
   -- Top-level pool width is number of devices in existence
-  let m0_pool_width = length (G.getResourcesOfType g :: [M0.Disk])
+  let m0_pool_width = length [ disk
+                             | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf g
+                             , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf g
+                             , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf g
+                             , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf g
+                             ]
       fsParams = printf "%d %d %d" m0_pool_width m0_data_units m0_parity_units
   lift $ do
     addProfile t pfid
@@ -700,6 +705,6 @@ getTimeUntilQueryHourlyPRI pool = getPoolRepairInformation pool >>= \case
 setProfileRC :: SpielContext -> (IO () -> PhaseM LoopState l ())  -> PhaseM LoopState l ()
 setProfileRC spiel lift = do
   rg <- getLocalGraph
-  let mp = listToMaybe $ G.getResourcesOfType rg :: Maybe M0.Profile
+  let mp = listToMaybe (G.connectedTo Cluster Has rg) :: Maybe M0.Profile -- XXX: multiprofile is not supported
   phaseLog "spiel" $ "set command profile to" ++ show mp
   lift $ Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)

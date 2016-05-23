@@ -113,7 +113,11 @@ createTopLevelPVer fs globs rg = let
     mcur = findMatchingPVer rg fs S.empty
     n = CI.m0_data_units globs
     k = CI.m0_parity_units globs
-    noCtlrs = length (G.getResourcesOfType rg :: [M0.Controller])
+    noCtlrs = length [ cntr
+                     | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+                     , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+                     , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+                     ]
     ctrlFailures = floor $ noCtlrs % (fromIntegral $ n+k)
     failures = Failures 0 0 0 ctrlFailures k
     attrs = PDClustAttr {
@@ -142,7 +146,6 @@ createPVerIfNotExists rg fs globs = let
   in case mcur of
     Just _ -> Nothing
     Nothing -> let
-        _allDrives = G.getResourcesOfType rg :: [M0.Disk] -- XXX: why it's not used
         n = CI.m0_data_units globs
         k = CI.m0_parity_units globs
         pvObjs = (failableObjs `S.difference` failedDevs)

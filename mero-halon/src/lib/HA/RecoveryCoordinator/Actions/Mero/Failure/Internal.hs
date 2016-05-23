@@ -103,7 +103,12 @@ createPoolVersionsInPool fs pool pvers invert rg =
     S.execState (mapM_ createPoolVersion pvers) rg
   where
     test fids x = (if invert then Set.notMember else Set.member) (M0.fid x) fids
-    totalDrives = length (G.getResourcesOfType rg :: [M0.Disk]) -- XXX: multiprofile is not supported
+    totalDrives = length
+       [ disk | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+              , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+              , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+              , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf rg
+              ]
 
     createPoolVersion :: PoolVersion -> S.State G.Graph ()
     createPoolVersion (PoolVersion fids failures attrs) = do

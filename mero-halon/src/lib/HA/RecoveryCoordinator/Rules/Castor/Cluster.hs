@@ -333,7 +333,7 @@ ruleClusterStop = defineSimple "cluster-stop-request"
     stopCluster rg ch eid = do
       modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStopping (M0.BootLevel maxTeardownLevel))
       let nodes =
-            [ node | host <- G.getResourcesOfType rg :: [R.Host]
+            [ node | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
                    , node <- take 1 (G.connectedTo host R.Runs rg) :: [R.Node] ]
       forM_ nodes $ promulgateRC . StopMeroServer
       syncGraphCallback $ \pid proc -> do

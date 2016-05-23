@@ -358,11 +358,11 @@ announceMeroNodes :: PhaseM LoopState a ()
 announceMeroNodes = do
   rg' <- getLocalGraph
   let clientHosts =
-        [ host | host <- G.getResourcesOfType rg'    :: [Castor.Host] -- all hosts
+        [ host | host <- G.connectedTo Res.Cluster Has rg' :: [Castor.Host] -- all hosts
                , G.isConnected host Has Castor.HA_M0CLIENT rg' -- which are clients
                ]
       serverHosts =
-        [ host | host <- G.getResourcesOfType rg' :: [Castor.Host]
+        [ host | host <- G.connectedTo Res.Cluster Has rg' :: [Castor.Host]
                , G.isConnected host Has Castor.HA_M0SERVER rg'
                ]
 

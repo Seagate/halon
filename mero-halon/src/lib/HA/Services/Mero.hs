@@ -362,7 +362,7 @@ meroRules = meroRulesF m0d
 getNotificationChannels :: PhaseM LoopState l [(SendPort NotificationMessage, [String])]
 getNotificationChannels = do
   rg <- getLocalGraph
-  let hosts = G.getResourcesOfType rg :: [Host]
+  let hosts = G.connectedTo Cluster Has rg :: [Host]
   things <- forM hosts $ \host -> do
      mchan <- runMaybeT $ asum (MaybeT . lookupMeroChannelByNode <$> G.connectedTo host Runs rg)
      let recipients = Set.fromList (fst <$> nha) Set.\\ Set.fromList (fst <$> ha)
