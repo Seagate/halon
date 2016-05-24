@@ -148,7 +148,7 @@ cascadeStateChange asc rg = go [asc] [asc] id
           where
             sp = staticApplyPtr
                   (static M0.someHasConfObjectStateDict)
-                  (M0.hasStateDict :: Static (Dict (M0.HasConfObjectState a)))
+                  (M0.hasStateDict :: Static (Dict (M0.HasConfObjectState b)))
         Nothing -> (Nothing, [])
     applyCascadeRule :: ( M0.HasConfObjectState a
                         , M0.HasConfObjectState b

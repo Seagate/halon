@@ -11,6 +11,7 @@ import qualified HA.RecoveryCoordinator.Tests
 import qualified HA.Autoboot.Tests
 #ifdef USE_MERO
 import qualified HA.RecoveryCoordinator.SSPL.Tests
+import qualified HA.Test.InternalStateChanges
 import qualified HA.Castor.Story.ProcessRestart
 import qualified HA.Castor.Tests
 import qualified HA.Castor.Story.Tests
@@ -75,6 +76,8 @@ ut _host transport _breakConnection = do
       [ testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport pg
       , testGroup "mero" $
           HA.RecoveryCoordinator.Mero.Tests.tests _host transport pg
+      , MERO_TEST(testGroup, "InternalStateChanges", HA.Test.InternalStateChanges.tests transport pg
+                 , [testCase "Ignore me" $ return ()])
       , MERO_TEST(testGroup,"Castor",HA.Castor.Tests.tests _host transport pg
                  , [testCase "Ignore me" $ return ()])
       , MERO_TEST( testGroup, "DriveFailure", driveFailureTests transport

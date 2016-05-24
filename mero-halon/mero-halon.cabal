@@ -518,6 +518,7 @@ Test-Suite tests
                     HA.Castor.Story.ProcessRestart
                     HA.Test.Cluster
                     HA.Test.Disconnect
+                    HA.Test.InternalStateChanges
                     HA.Test.SSPL
                     Helper.SSPL
                     RemoteTables

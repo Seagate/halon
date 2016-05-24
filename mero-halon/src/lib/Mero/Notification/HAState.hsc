@@ -66,7 +66,7 @@ import System.IO.Unsafe       ( unsafePerformIO )
 data Note = Note
     { no_id :: Fid
     , no_ostate :: ConfObjectState
-    } deriving (Eq, Typeable, Generic, Show)
+    } deriving (Eq, Typeable, Generic, Show, Ord)
 
 instance Binary Note
 instance Hashable Note
