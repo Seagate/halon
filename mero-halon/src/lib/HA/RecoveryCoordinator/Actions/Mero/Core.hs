@@ -97,7 +97,7 @@ loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
 -- control to the caller.
 -- This call will return Nothing if no RC worker was created.
 liftM0RC :: IO a -> PhaseM LoopState l (Maybe a)
-liftM0RC task = getStorageRC >>= traverse (\worker -> liftIO $ runOnM0Worker worker task)
+liftM0RC task = getStorageRC >>= traverse (\worker -> runOnM0Worker worker task)
 
 -- | A operation with guarantee that mero worker is available. This call provide
 -- an operation for running 'IO' in m0 thread.
@@ -114,11 +114,11 @@ withM0RC f = getStorageRC >>= \case
   Nothing -> do mworker <- createMeroWorker
                 case mworker of
                   Nothing -> error "No worker loaded."
-                  Just w  -> f (liftIO . runOnM0Worker w)
+                  Just w  -> f (runOnM0Worker w)
   Just w  -> liftProcess (whereis halonRCMeroWorkerLabel) >>= \case
                Nothing -> do deleteStorageRC (Proxy :: Proxy M0Worker)
                              withM0RC f
-               Just _  -> f (liftIO . runOnM0Worker w)
+               Just _  -> f (runOnM0Worker w)
 
 halonRCMeroWorkerLabel :: String
 halonRCMeroWorkerLabel = "halon:rc-mero-worker"
@@ -139,7 +139,7 @@ createMeroWorker = do
       liftProcess $ do
         whereis halonRCMeroWorkerLabel >>= \case
           Nothing -> return ()
-          Just q  -> do mref <- monitor q 
+          Just q  -> do mref <- monitor q
                         kill q "exit"
                         receiveWait [ matchIf (\(ProcessMonitorNotification m _ _) -> m == mref)
                                               $ \_ -> return ()]

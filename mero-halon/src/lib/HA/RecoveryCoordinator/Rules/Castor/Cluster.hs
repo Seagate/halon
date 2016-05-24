@@ -41,11 +41,12 @@ import           Network.CEP
 
 import           Control.Applicative
 import           Control.Category
-import           Control.Distributed.Process
+import           Control.Distributed.Process hiding (catch, try)
 import           Control.Distributed.Process.Closure (mkClosure)
 import           Control.Lens
 import           Control.Monad (guard, join, unless, when, void)
 import           Control.Monad.Trans.Maybe
+import           Control.Monad.Catch
 
 import           Data.Binary (Binary)
 import           Data.Either (partitionEithers, rights)
@@ -705,8 +706,12 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
       -- Legitimate to ignore the event id as it should be handled by the default
       -- 'declare-mero-channel' rule.
-      _ <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
-      switch [boot_level_1, timeout 180 finish]
+      eresult <- try $ startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
+      case eresult of
+        Right{} -> switch [boot_level_1, timeout 180 finish]
+        Left e -> do
+         phaseLog "error" $ "Exceptions during config generation: " ++ show (e::SomeException)
+         continue cluster_failed
 
     -- Service is already up
     directly svc_up_already $ do

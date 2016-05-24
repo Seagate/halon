@@ -17,7 +17,7 @@
 
 module HA.RecoveryCoordinator.Rules.Castor where
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (catch)
 
 import HA.Encode (decodeP)
 import HA.EventQueue.Types
@@ -31,6 +31,7 @@ import qualified HA.ResourceGraph as G
 import HA.Services.SSPL
 #ifdef USE_MERO
 import Control.Applicative
+import Control.Monad.Catch
 import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
@@ -92,25 +93,26 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
       mapM_ goRack id_racks
       syncGraphBlocking
 #ifdef USE_MERO
-      filesystem <- initialiseConfInRG
-      loadMeroGlobals id_m0_globals
-      loadMeroServers filesystem id_m0_servers
-      createMDPoolPVer filesystem
-      graph <- getLocalGraph
-      -- Pick a principal RM
-      _ <- pickPrincipalRM
-      syncGraphBlocking
-      Just strategy <- getCurrentStrategy
-      let update = onInit strategy graph
-      forM_ update $ \updateGraph -> do
-        graph' <- updateGraph $ \rg -> do
-          putLocalGraph rg
+      (do filesystem <- initialiseConfInRG
+          loadMeroGlobals id_m0_globals
+          loadMeroServers filesystem id_m0_servers
+          createMDPoolPVer filesystem
+          graph <- getLocalGraph
+          -- Pick a principal RM
+          _ <- pickPrincipalRM
           syncGraphBlocking
-          getLocalGraph
-        putLocalGraph graph'
-        syncGraphBlocking
-      (if isJust update then liftProcess else syncGraph) $
-        say "Loaded initial data"
+          Just strategy <- getCurrentStrategy
+          let update = onInit strategy graph
+          forM_ update $ \updateGraph -> do
+            graph' <- updateGraph $ \rg -> do
+              putLocalGraph rg
+              syncGraphBlocking
+              getLocalGraph
+            putLocalGraph graph'
+            syncGraphBlocking
+          (if isJust update then liftProcess else syncGraph) $
+            say "Loaded initial data")
+          `catch` (\e -> phaseLog "error" $ "Failure during initial data load: " ++ show (e::SomeException))
 #else
       liftProcess $ say "Loaded initial data"
 #endif

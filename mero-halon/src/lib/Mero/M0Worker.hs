@@ -12,13 +12,13 @@ module Mero.M0Worker
     , runOnM0Worker
     , liftGlobalM0
     , sendM0Task
-    , dummyM0Worker
     ) where
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
-import Control.Exception
+import Control.Exception (AsyncException(ThreadKilled))
+import Control.Monad.Catch
 import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Mero.Concurrent
@@ -45,22 +45,10 @@ newM0Worker = do
                 , Handler $ \ThreadKilled -> return ()
                 ]
 
--- | Simulates a worker behaviour when no m0d and kernel modules are
--- not loaded. Sending messages to that worker will have same behaviour
--- as using 'liftGlobalM0' when there is no mero running in system.
-dummyM0Worker :: IO M0Worker
-dummyM0Worker = do
-    c <- newChan
-    t <- forkIO (worker c)
-    return $ M0Worker c (error "unsafeCoerce" t)
-  where
-    worker c = do _ <- readChan c
-                  throwIO $ M0InitException (-2)
-
 -- | Terminates a worker. Waits for all queued tasks to be executed.
 terminateM0Worker :: M0Worker -> IO ()
 terminateM0Worker M0Worker {..} = do
-    writeChan m0WorkerChan $ throwIO StopWorker
+    writeChan m0WorkerChan $ throwM StopWorker
     joinM0OS m0WorkerThread
 
 -- | Queues a new task for the worker.
@@ -70,11 +58,16 @@ queueM0Worker (M0Worker {..}) task = do
       catch task (\e -> putStrLn $ "M0Worker: " ++ show (e :: SomeException))
 
 -- | Runs a task in a worker.
-runOnM0Worker :: M0Worker -> IO a -> IO a
+runOnM0Worker :: (MonadIO m, MonadThrow m) => M0Worker -> IO a -> m a
 runOnM0Worker w task = do
-    mv <- newEmptyMVar
-    queueM0Worker w $ try task >>= putMVar mv
-    takeMVar mv >>= either (throwIO :: SomeException -> IO a) return
+    result <- liftIO $ do
+      mv <- newEmptyMVar
+      queueM0Worker w $ try task >>= putMVar mv
+      takeMVar mv
+    either throw return result
+  where
+    throw :: MonadThrow m => SomeException -> m a
+    throw = throwM
 
 
 -- | Runs the given action in the global mero worker and lifts the
