@@ -133,10 +133,12 @@ emptyEventQueue = EventQueue 0 M.empty M.empty
 -- @O(log n)@
 addSerializedEvent :: PersistMessage -> EventQueue -> EventQueue
 addSerializedEvent msg@PersistMessage{..} eq@EventQueue{..} =
-  eq { _eqSN = succ _eqSN
-     , _eqMap = M.insert persistEventId (msg, _eqSN) _eqMap
-     , _eqSnMap = M.insert _eqSN persistEventId _eqSnMap
-     }
+  case M.lookup persistEventId _eqMap of
+    Nothing -> eq { _eqSN = succ _eqSN
+                  , _eqMap = M.insert persistEventId (msg, _eqSN) _eqMap
+                  , _eqSnMap = M.insert _eqSN persistEventId _eqSnMap
+                  }
+    Just{} -> eq
 
 -- | Remove the message with given 'UUID' from the 'EventQueue'.
 --
