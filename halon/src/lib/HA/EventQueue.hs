@@ -46,12 +46,17 @@ import HA.Replicator ( RGroup
                      , updateStateWith
                      )
 
-import Control.Distributed.Process hiding (catch, finally, mask_)
+import Control.Distributed.Process hiding (catch, finally, mask_, try)
+import qualified Control.Distributed.Process.Raw as DP
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types (Message(..))
 import Control.Distributed.Process.Monitor (withMonitoring)
+import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Network.CEP hiding (continue)
 
+import Control.Applicative
+import Control.Concurrent (yield)
+import Control.Concurrent.STM
 import Control.Monad (join, when)
 import Control.Monad.Catch
 import Data.Binary (Binary, encode)
@@ -62,7 +67,7 @@ import Data.Int (Int64)
 import Data.IORef (IORef, atomicModifyIORef, newIORef)
 import qualified Data.Map as M
 import Data.Sequence as Seq
-import qualified Data.Set as Set
+import qualified Data.Set as S
 import Data.Typeable
 import Data.Word (Word64)
 import GHC.Generics
@@ -121,12 +126,6 @@ instance Binary EventQueue
 -- messages.
 emptyEventQueue :: EventQueue
 emptyEventQueue = EventQueue 0 M.empty M.empty
-
-data EventQueueState = EventQueueState
-    { eqsRGroupMonitor :: !(Maybe ProcessId)
-      -- ^ A process monitoring the RGroup. Dies when notified.
-    , eqsWorkers      :: !(Set.Set ProcessId) -- ^ Workers doing requests.
-    }
 
 -- | Add the given 'PersistMessage' to the EQ if it doesn't already
 -- exist.
@@ -226,9 +225,11 @@ startEventQueue rg = do
       self <- getSelfPid
       -- Spawn the initial monitor proxy. See Note [RGroup monitor].
       rgMonitor <- spawnLocal $ link self >> rGroupMonitor rg
+      when schedulerIsEnabled startWorkerMonitor
       eqTrace $ "Started " ++ show rgMonitor
       void $ monitor rgMonitor
-      execute (EventQueueState (Just rgMonitor) Set.empty) $ eqRules rg pool
+      ref <- liftIO $ newTMVarIO rgMonitor
+      execute () $ eqRules rg pool ref
       eqTrace "Terminated"
      `catch` \e -> do
       eqTrace $ "Dying with " ++ show e
@@ -237,8 +238,8 @@ startEventQueue rg = do
     return eq
 
 eqRules :: RGroup g
-        => g EventQueue -> ProcessPool -> Definitions EventQueueState ()
-eqRules rg pool = do
+        => g EventQueue -> ProcessPool -> TMVar ProcessId -> Definitions () ()
+eqRules rg pool groupMonitor = do
     -- Whenever an RC is spawned, we want to start a poller process. Upon
     -- noticing new events, this process will forward them to the RC.
     defineSimple "rc-spawned" $ \rc -> liftProcess $ do
@@ -270,59 +271,87 @@ eqRules rg pool = do
     -- pool to get the event removed.
     defineSimple "trimming" $ \eid -> do
       self <- liftProcess $ getSelfPid
-      eqs <- get Global
       (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $
         -- Insist here in a loop until it works.
-        flip fix (eqsRGroupMonitor eqs) $ \loop mmon -> do
+        fix $ \loop -> do
           -- Ensure we have a pid to monitor the rgroup.
           -- See Note [RGroup monitor].
-          rgMonitor <- maybe expect return mmon
+          when schedulerIsEnabled $ fix $ \tmvarLoop -> do
+            -- When the scheduler is enabled, we loop until the TMVar is filled.
+            liftIO (atomically $ tryReadTMVar groupMonitor) >>= \case
+              -- We are going to block on the TMVar, tell the worker monitor.
+              Nothing -> do getSelfPid >>= DP.nsend workerMonitorLabel
+                            () <- DP.expect
+                            () <- expect
+                            tmvarLoop
+              -- We are not blocking on the TMVar, proceed.
+              Just _  -> return ()
+          rgMonitor <- liftIO $ atomically $ readTMVar groupMonitor
           mr <- withMonitoring (monitor rgMonitor) $
             updateStateWith rg $ $(mkClosure 'filterEvent) eid
           case mr of
             Just True -> usend self (TrimAck eid)
-            -- See if we got any update from the EQ regarding the
-            -- monitor process to use.
-            _         -> receiveTimeout requestTimeout [ match return ]
-                           >>= loop . maybe (Just rgMonitor) id
+            _         -> loop
 
-    -- TODO: submit these to the thread pool.
-    defineSimple "trimming-unknown" $ \(DoTrimUnknown msg) -> trimMsg rg msg
+    -- Remove message of unknown type. It's important that all
+    -- messages with similar layout (fingerprint and encoding) will
+    -- be removed.
+    defineSimple "trimming-unknown" $ \(DoTrimUnknown msg) -> do
+      self <- liftProcess getSelfPid
+      (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $
+        -- Insist here in a loop until it works.
+        fix $ \loop -> do
+          -- Ensure we have a pid to monitor the rgroup.
+          -- See Note [RGroup monitor].
+          when schedulerIsEnabled $ fix $ \tmvarLoop -> do
+            -- When the scheduler is enabled, we loop until the TMVar is filled.
+            liftIO (atomically $ tryReadTMVar groupMonitor) >>= \case
+              -- We are going to block on the TMVar, tell the worker monitor.
+              Nothing -> do getSelfPid >>= DP.nsend workerMonitorLabel
+                            () <- DP.expect
+                            () <- expect
+                            tmvarLoop
+              -- We are not blocking on the TMVar, proceed.
+              Just _  -> return ()
+          rgMonitor <- liftIO $ atomically $ readTMVar groupMonitor
+          mr <- withMonitoring (monitor rgMonitor) $
+            updateStateWith rg $ $(mkClosure 'filterMessage) msg
+          case mr of
+            Just True -> usend self (TrimUnknown msg)
+            _         -> loop
 
     -- Deals with monitor notifications from the RGroup and from the workers.
     defineSimple "monitor-notif" $ \p@(ProcessMonitorNotification _ pid _) -> do
-      eqs <- get Global
-      if eqsRGroupMonitor eqs == Just pid then do
+      monitorDied <- liftIO $ atomically $ (do
+        mx <- tryTakeTMVar groupMonitor
+        check (mx == Just pid)
+        return True) <|> return False
+      when monitorDied $ do
         -- This is a notification from the replicator group.
-        put Global eqs { eqsRGroupMonitor = Nothing }
         liftProcess $ do
           eqTrace $ "RGroup monitor died: " ++ show p
           self <- getSelfPid
-          -- Tell the workers that there is no group monitor for now.
-          forM_ (Set.elems (eqsWorkers eqs)) $
-            flip usend (Nothing :: Maybe ProcessId)
           -- Wait until the rgroup is responsive again.
           void $ spawnLocal $ do
             retryRGroup rg requestTimeout $ fmap bToM $
               getStateWith rg $(mkStaticClosure 'dummyRead)
             -- Respawn the rgroup monitor and notify the EQ.
             rgMonitor <- spawnLocal $ link self >> rGroupMonitor rg
+            liftIO $ atomically $ putTMVar groupMonitor rgMonitor
             usend self $ RGroupMonitor rgMonitor
-      else
-        -- A worker died.
-        put Global eqs { eqsWorkers = Set.delete pid (eqsWorkers eqs) }
+            when schedulerIsEnabled $ do
+              getSelfPid >>= \monPid -> DP.nsend workerMonitorLabel (monPid, ())
+              xs <- DP.expect
+              mapM_ (`usend` ()) (xs :: [ProcessId])
 
-    -- An RGroup monitor was respawned. We let the workers know.
-    defineSimple "rgroup-monitor" $ \(RGroupMonitor pid) -> do
-      eqs <- get Global
-      put Global eqs { eqsRGroupMonitor = Just pid }
-      liftProcess $ eqTrace $ "RGroup monitor respawned: " ++ show pid
-      liftProcess $ forM_ (Set.elems (eqsWorkers eqs)) $ flip usend $ Just pid
+    -- An RGroup monitor was respawned. Monitor it.
+    defineSimple "rgroup-monitor" $ \(RGroupMonitor pid) ->
+      liftProcess $ void $ monitor pid
 
     -- An event arrived. Insert it in the replicated state.
     defineSimple "ha-event" $ \(sender, ev@(PersistMessage mid _)) -> do
-      eqs <- get Global
-      case eqsRGroupMonitor eqs of
+      mRgMonitor <- liftIO $ atomically $ tryReadTMVar groupMonitor
+      case mRgMonitor of
         -- When there is no RGroup monitor, assume we can't modify the
         -- replicated state.
         Nothing  -> liftProcess $ do
@@ -338,8 +367,11 @@ eqRules rg pool = do
               Just True -> do
                 eqTrace $ "Recorded event " ++ show mid
                 sendReply sender True
-              _ -> do
+              Just False -> do
                 eqTrace $ "Recording event failed " ++ show (mid, sender)
+                sendReply sender False
+              Nothing -> do
+                eqTrace $ "Recording event failed " ++ show (mid, sender) ++ " - no quorum"
                 sendReply sender False
 
     -- The next two rules are used for testing.
@@ -348,14 +380,11 @@ eqRules rg pool = do
 
   where
     -- Spawns a worker process.
-    spawnWorker work = do
-      pid <- liftProcess $ do
-        self <- getSelfPid
-        workerPid <- mask_ $ spawnLocal $ link self >> work
-        void $ monitor workerPid
-        return workerPid
-      modify Global $ \eqs ->
-        eqs { eqsWorkers = Set.insert pid (eqsWorkers eqs) }
+    spawnWorker work = liftProcess $ do
+      self <- getSelfPid
+      workerPid <- mask_ $ spawnLocal $ link self >> work
+      void $ monitor workerPid
+      return workerPid
 
 -- Note [RGroup monitor]
 -- ~~~~~~~~~~~~~~~~~~~~~
@@ -378,6 +407,7 @@ eqRules rg pool = do
 -- notification.
 rGroupMonitor :: RGroup g => g EventQueue -> Process ()
 rGroupMonitor rg = do
+   eqTrace "RGroup monitor respawned"
    ref <- monitorRGroup rg
    receiveWait
      [ matchIf (\(ProcessMonitorNotification ref' _ _) -> ref == ref')
@@ -391,19 +421,6 @@ bToM False = Nothing
 sendReply :: ProcessId -> Bool -> Process ()
 sendReply sender reply = do here <- getSelfNode
                             usend sender (here, reply)
-
--- | Remove message of unknown type. It's important that all
--- messages with similar layout (fingerprint and encoding) will
--- be removed.
-trimMsg :: RGroup g => g EventQueue -> Message -> PhaseM s l ()
-trimMsg rg msg =
-    liftProcess $ do
-      self <- getSelfPid
-      _ <- spawnLocal $ do
-        retryRGroup rg requestTimeout $ fmap bToM $
-          updateStateWith rg $ $(mkClosure 'filterMessage) msg
-        usend self (TrimUnknown msg)
-      return ()
 
 data TrimDone = TrimDone UUID deriving (Typeable, Generic)
 
@@ -422,6 +439,29 @@ instance Binary TrimUnknown
 newtype RGroupMonitor = RGroupMonitor ProcessId
   deriving (Typeable, Generic)
 instance Binary RGroupMonitor
+
+workerMonitorLabel :: String
+workerMonitorLabel = eventQueueLabel ++ ".workerMonitor"
+
+-- | Starts a process that keeps track of the EQ workers that block.
+-- The process is linked to the caller.
+startWorkerMonitor :: Process ()
+startWorkerMonitor = do
+    let workerMonitor !xs = DP.receiveWait
+          [ DP.match $ \pid -> do DP.monitor pid >> DP.usend pid ()
+                                  workerMonitor (S.insert pid xs)
+          , DP.match $ \(ProcessMonitorNotification _ pid _) ->
+              workerMonitor (S.delete pid xs)
+          , DP.match $ \(pid, ()) -> do DP.usend pid (S.toList xs)
+                                        workerMonitor xs
+          ]
+    self <- getSelfPid
+    wm <- DP.spawnLocal $ DP.link self >> workerMonitor S.empty
+    -- Insist in registration if the monitor from a previous execution has not
+    -- died yet.
+    fix $ \loop -> try (DP.register workerMonitorLabel wm) >>= \case
+      Right () -> return ()
+      Left (_ :: ProcessRegistrationException) -> liftIO yield >> loop
 
 --------------------------------------------
 -- A pool of processes to handle requests
