@@ -122,6 +122,20 @@ data M0Globals = M0Globals {
   , m0_parity_units :: Word32  -- ^ As in genders
   , m0_md_redundancy :: Word32 -- ^ Metadata redundancy count
   , m0_failure_set_gen :: FailureSetScheme
+  , m0_be_ios_seg_size :: Word64
+  , m0_be_log_size :: Word64
+  , m0_be_seg_size :: Word64
+  , m0_be_tx_payload_size_max :: Word64
+  , m0_be_tx_reg_nr_max :: Word32
+  , m0_be_tx_reg_size_max :: Word32
+  , m0_be_txgr_freeze_timeout_max :: Word64
+  , m0_be_txgr_freeze_timeout_min :: Word64
+  , m0_be_txgr_payload_size_max :: Word64
+  , m0_be_txgr_reg_nr_max :: Word64
+  , m0_be_txgr_reg_size_max :: Word64
+  , m0_be_txgr_tx_nr_max :: Word32
+  , m0_block_size :: Word32
+  , m0_min_rpc_recvq_len :: Word32
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Binary M0Globals
