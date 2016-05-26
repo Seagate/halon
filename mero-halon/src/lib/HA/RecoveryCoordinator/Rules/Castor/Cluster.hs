@@ -195,7 +195,7 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
                        switch [process_notified, timeout 15 timed_out]
 
                else do phaseLog "info" $ "Still waiting to hear from "
-                                      ++ show (allSrvs \\ onlineSrvs)
+                                      ++ show (map M0.fid $ allSrvs \\ onlineSrvs)
                        continue finish
              (M0.SSOffline, Just p) -> case M0.getState p rg of
                M0.PSInhibited{} -> do
@@ -722,6 +722,8 @@ ruleNewMeroServer = define "new-mero-server" $ do
       case m0svc >>= meroChannel rg of
         Just chan -> do
           procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
+          when (null procs) $ do
+            phaseLog "warn" "Empty list of processes being started"
           switch [boot_level_1, timeout 180 finish]
         Nothing -> do
           phaseLog "warning" "service was not found can't start processes"
@@ -734,6 +736,8 @@ ruleNewMeroServer = define "new-mero-server" $ do
       case m0svc >>= meroChannel g of
         Just chan -> do
           procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
+          when (null procs) $ do
+            phaseLog "warn" "Empty list of processes being started"
           switch [start_clients, timeout 180 finish]
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node

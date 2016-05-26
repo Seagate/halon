@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NoMonomorphismRestriction  #-}
 {-# LANGUAGE TupleSections              #-}
@@ -53,7 +54,7 @@ import Control.Monad (forM, unless)
 
 import Data.Foldable (forM_)
 import Data.Proxy
-import Data.List ((\\))
+import Data.List ((\\), partition)
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 
@@ -209,7 +210,7 @@ calculateMeroClusterStatus = do
                   else return $ M0.MeroClusterStarting $ M0.BootLevel (i+1)
           -- Not everything has finished but nothing has failed yet either
           False -> do
-            phaseLog "info" $ "Still waiting for boot: " ++ show stillWaiting
+            phaseLog "info" $ "Still waiting for boot: " ++ show (map M0.fid stillWaiting)
             return $ M0.MeroClusterStarting bl
         -- Some process failed, bail
         _:_ -> return M0.MeroClusterFailed
@@ -246,11 +247,23 @@ startNodeProcesses host chan label mkfs = do
                       ++ " on host "
                       ++ show host
     rg <- getLocalGraph
-    let procs =  [ p
-                 | m0node <- G.connectedTo host Runs rg :: [M0.Node]
-                 , p <- G.connectedTo m0node M0.IsParentOf rg
-                 , G.isConnected p Has label rg
-                 ]
+    let allProcs =  [ p
+                    | m0node <- G.connectedTo host Runs rg :: [M0.Node]
+                    , p <- G.connectedTo m0node M0.IsParentOf rg
+                    , G.isConnected p Has label rg
+                    ]
+
+    -- If RC has restarted the bootstrap rule, some processes may have
+    -- already been online: we don't want to try and start those
+    -- processes again (so we filter them here) and we want the
+    -- bootstrap to proceed (so we notify ONLINE about those processes
+    -- here: this will cause internal notification about process state
+    -- to go out which will be picked up by adjustClusterState which
+    -- should release the barrier even if all the processes are
+    -- already started)
+    let (onlineProcs, procs) = partition (\p -> M0.getState p rg == M0.PSOnline) allProcs
+    applyStateChanges $ map (\p -> stateSet p M0.PSOnline) onlineProcs
+
     startMeroProcesses chan procs label mkfs
     return procs
 
