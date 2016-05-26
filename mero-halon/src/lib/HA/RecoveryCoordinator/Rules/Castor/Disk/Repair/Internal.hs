@@ -5,7 +5,7 @@
 -- License   : All rights reserved.
 --
 -- A helper module for repair process
-module HA.RecoveryCoordinator.Rules.Castor.Repair.Internal where
+module HA.RecoveryCoordinator.Rules.Castor.Disk.Repair.Internal where
 
 import           Control.Exception (SomeException)
 import           HA.RecoveryCoordinator.Actions.Core

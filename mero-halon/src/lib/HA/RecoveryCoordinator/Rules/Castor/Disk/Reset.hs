@@ -3,7 +3,7 @@
 -- License   : All rights reserved.
 --
 -- Module containing some reset bits that multiple rules may want access to
-module HA.RecoveryCoordinator.Rules.Castor.Reset
+module HA.RecoveryCoordinator.Rules.Castor.Disk.Reset
   ( handleResetExternal
   , handleResetInternal
   , ResetAttempt(..)

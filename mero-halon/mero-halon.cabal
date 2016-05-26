@@ -157,7 +157,8 @@ Library
                        Mero.Notification
                        Mero.Notification.HAState
                        HA.RecoveryCoordinator.Actions.Mero
-                       HA.RecoveryCoordinator.Rules.Castor.Reset
+                       HA.RecoveryCoordinator.Rules.Castor.Disk
+                       HA.RecoveryCoordinator.Rules.Castor.Disk.Reset
                        HA.RecoveryCoordinator.Rules.Mero
                        HA.Resources.Mero
                        HA.Resources.Mero.Note
@@ -174,10 +175,10 @@ Library
                       HA.RecoveryCoordinator.Actions.Mero.Core
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
                       HA.RecoveryCoordinator.Rules.Castor.Process
-                      HA.RecoveryCoordinator.Rules.Castor.Repair
+                      HA.RecoveryCoordinator.Rules.Castor.Disk.Repair
+                      HA.RecoveryCoordinator.Rules.Castor.Disk.Repair.Internal
                       HA.RecoveryCoordinator.Rules.Castor.Cluster
                       HA.RecoveryCoordinator.Rules.Castor.Process
-                      HA.RecoveryCoordinator.Rules.Castor.Repair.Internal
                       HA.Resources.Mero.Note.TH
                       HA.Services.Mero.CEP
                       HA.Services.Mero.Types

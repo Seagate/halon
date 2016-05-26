@@ -6,7 +6,7 @@
 -- License   : All rights reserved.
 --
 -- Module dealing with pool repair.
-module HA.RecoveryCoordinator.Rules.Castor.Repair
+module HA.RecoveryCoordinator.Rules.Castor.Disk.Repair
   ( handleRepairInternal
   , handleRepairExternal
   , ruleRebalanceStart
@@ -49,7 +49,7 @@ import HA.RecoveryCoordinator.Events.Mero
   , InternalObjectStateChangeMsg
   , InternalObjectStateChange(..)
   )
-import qualified HA.RecoveryCoordinator.Rules.Castor.Repair.Internal as R
+import qualified HA.RecoveryCoordinator.Rules.Castor.Disk.Repair.Internal as R
 import HA.RecoveryCoordinator.Rules.Mero.Conf
   ( applyStateChanges
   , applyStateChangesBlocking

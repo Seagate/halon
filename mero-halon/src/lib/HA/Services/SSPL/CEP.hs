@@ -285,13 +285,16 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
      Just (uuid, nid, enc, diskNum, disk_status, disk_reason, sn, path) <- get Local
      updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
      isDriveRemoved <- isStorageDriveRemoved disk
+     isOngoingReset <- hasOngoingReset disk
      phaseLog "sspl-service"
        $ "Drive in " ++ show enc ++ " at " ++ show diskNum ++ " marked as "
           ++ (if isDriveRemoved then "removed" else "active")
+          ++ (if isOngoingReset then " (ongoing reset)" else "")
      case (T.toUpper disk_status, T.toUpper disk_reason) of
        ("EMPTY", "NONE")
-          | isDriveRemoved -> do phaseLog "sspl-service" "already removed"
-                                 messageProcessed uuid
+          | isDriveRemoved || isOngoingReset -> do
+                              phaseLog "sspl-service" "already removed"
+                              messageProcessed uuid
           | otherwise      -> selfMessage $ DriveRemoved uuid (Node nid) enc disk diskNum
        ("FAILED", "SMART")
           | isDriveRemoved -> messageProcessed uuid

@@ -18,7 +18,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
    )
 #endif
 import HA.RecoveryCoordinator.Events.Drive
-import HA.RecoveryCoordinator.Rules.Castor.Reset
+import HA.RecoveryCoordinator.Rules.Castor.Disk.Reset
 import qualified HA.ResourceGraph as G
 import HA.NodeUp (nodeUp)
 import Mero.Notification
