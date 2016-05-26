@@ -15,11 +15,12 @@ module Handler.Cluster
 
 import HA.EventQueue.Producer (promulgateEQ)
 import qualified HA.Resources.Castor.Initial as CI
+import Lookup (findEQFromNodes)
 
 #ifdef USE_MERO
 import qualified Data.Aeson
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BSL
+import qualified Data.ByteString.Lazy.Char8 as BSL
 import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -34,7 +35,6 @@ import Options.Applicative
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 import Control.Monad (void, unless)
-import Control.Exception (evaluate)
 
 import Data.Yaml
   ( prettyPrintParseException
@@ -73,17 +73,35 @@ parseCluster =
         "Control m0t1fs clients")))
 #endif
 
+-- | Run the specified cluster command over the given nodes. The nodes
+-- are first verified to be EQ nodes: if they aren't, we use EQ node
+-- list retrieved from the tracker instead.
 cluster :: [NodeId] -> ClusterOptions -> Process ()
-cluster nids (LoadData l) = dataLoad nids l
+cluster nids' opt = do
+  -- HALON-267: if user specified a cluster command but none of the
+  -- addresses we list are a known EQ, try finding EQ on our own and
+  -- using that instead
+  rnids <- findEQFromNodes 5000000 nids' >>= \case
+    [] -> do
+      liftIO . putStrLn $ "cluster command requested but no known EQ, trying specified nids anyway"
+      return nids'
+    ns -> if all (`notElem` ns) nids'
+          then do liftIO . putStrLn $ "not all of the specified nodes are a known EQ, using " ++ show ns
+                  return ns
+          else return ns
+  cluster' rnids opt
+
+  where
+    cluster' nids (LoadData l) = dataLoad nids l
 #ifdef USE_MERO
-cluster nids (Sync _) = syncToConfd nids
-cluster nids (Dump s) = dumpConfd nids s
-cluster nids (Status (StatusOptions m)) = clusterCommand nids ClusterStatusRequest (liftIO . output m)
-  where output True = jsonReport
-        output False = prettyReport
-cluster nids (Start _)  = clusterCommand nids ClusterStartRequest (liftIO . print)
-cluster nids (Stop  _)  = clusterCommand nids ClusterStopRequest (liftIO . print)
-cluster nids (ClientCmd s) = client nids s
+    cluster' nids (Sync _) = syncToConfd nids
+    cluster' nids (Dump s) = dumpConfd nids s
+    cluster' nids (Status (StatusOptions m)) = clusterCommand nids ClusterStatusRequest (liftIO . output m)
+      where output True = jsonReport
+            output False = prettyReport
+    cluster' nids (Start _)  = clusterCommand nids ClusterStartRequest (liftIO . print)
+    cluster' nids (Stop  _)  = clusterCommand nids ClusterStopRequest (liftIO . print)
+    cluster' nids (ClientCmd s) = client nids s
 #endif
 
 data LoadOptions = LoadOptions

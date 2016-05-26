@@ -86,7 +86,8 @@ run (Options { .. }) = do
                         _ -> []
                   )
         ]
-    if (null $ concat replies)
+
+    if null $ concat replies
       then case optCommand of
           Bootstrap bs -> bootstrap rnids bs
           Service bs   -> service rnids bs

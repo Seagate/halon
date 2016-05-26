@@ -32,7 +32,7 @@ conjureRemoteNodeId addr =
 
 -- | Look up the location of the EQ by querying the EQTracker(s) on the
 --   provided node(s)
-findEQFromNodes :: Int -- ^ Timeout
+findEQFromNodes :: Int -- ^ Timeout in microseconds
                 -> [NodeId]
                 -> Process [NodeId]
 findEQFromNodes t n = go t n [] where
