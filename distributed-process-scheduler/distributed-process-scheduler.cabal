@@ -37,6 +37,7 @@ Library
                    Control.Distributed.Process.Internal.Types
                    Control.Distributed.Process.Closure
                    Control.Distributed.Process.Node
+                   Control.Distributed.Process.Raw
                    Control.Distributed.Process.Serializable
                    Control.Distributed.Process.Trans
                    Control.Distributed.Process.Scheduler
