@@ -21,20 +21,20 @@ defaultGlobals = CI.M0Globals {
   , CI.m0_parity_units = 2
   , CI.m0_md_redundancy = 1
   , CI.m0_failure_set_gen = CI.Preloaded 0 1 0
-  , CI.m0_be_ios_seg_size = 549755813888
-  , CI.m0_be_log_size = 17179869184
-  , CI.m0_be_seg_size = 549755813888
-  , CI.m0_be_tx_payload_size_max = 2097152
-  , CI.m0_be_tx_reg_nr_max = 262144
-  , CI.m0_be_tx_reg_size_max = 33554432
-  , CI.m0_be_txgr_freeze_timeout_max = 300
-  , CI.m0_be_txgr_freeze_timeout_min = 300
-  , CI.m0_be_txgr_payload_size_max = 134217728
-  , CI.m0_be_txgr_reg_nr_max = 2097152
-  , CI.m0_be_txgr_reg_size_max = 536870912
-  , CI.m0_be_txgr_tx_nr_max = 82
-  , CI.m0_block_size = 4096
-  , CI.m0_min_rpc_recvq_len = 2048
+  , CI.m0_be_ios_seg_size = Nothing
+  , CI.m0_be_log_size = Nothing
+  , CI.m0_be_seg_size = Nothing
+  , CI.m0_be_tx_payload_size_max = Nothing
+  , CI.m0_be_tx_reg_nr_max = Nothing
+  , CI.m0_be_tx_reg_size_max = Nothing
+  , CI.m0_be_txgr_freeze_timeout_max = Nothing
+  , CI.m0_be_txgr_freeze_timeout_min = Nothing
+  , CI.m0_be_txgr_payload_size_max = Nothing
+  , CI.m0_be_txgr_reg_nr_max = Nothing
+  , CI.m0_be_txgr_reg_size_max = Nothing
+  , CI.m0_be_txgr_tx_nr_max = Nothing
+  , CI.m0_block_size = Nothing
+  , CI.m0_min_rpc_recvq_len = Nothing
 }
 
 -- | Create initial data for use in tests.
