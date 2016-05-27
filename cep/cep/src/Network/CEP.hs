@@ -277,29 +277,31 @@ runItForever start_eng = do
           liftIO $ traceEventIO "STOP cruise:add-message"
           cruise debug_mode (succ loop) nxt_eng
         go inner (Just other)  = do
-          liftIO $ traceEventIO "START cruise:process-step-msg"
-          let m :: Request 'Write (Process (RunInfo, Engine))
-              m = case other of
-                    TimeoutMsg t -> timeoutMsg t
-                    SomeMsg x    -> rawIncoming x
-                    _            -> error "impossible: runItForever"
-          (ri, nxt_eng) <- stepForward m inner
-          case runResult ri of
-            MsgIgnored -> case other of
-              SomeMsg x -> stepForward (runDefaultHandler x) nxt_eng
+          bracket_ (liftIO $ traceEventIO "START cruise:process-step-msg")
+                   (liftIO $ traceEventIO "STOP cruise:process-step-msg")
+                   $ do
+            let m :: Request 'Write (Process (RunInfo, Engine))
+                m = case other of
+                      TimeoutMsg t -> timeoutMsg t
+                      SomeMsg x    -> rawIncoming x
+                      _            -> error "impossible: runItForever"
+            (ri, nxt_eng) <- stepForward m inner
+            case runResult ri of
+              MsgIgnored -> case other of
+                SomeMsg x -> stepForward (runDefaultHandler x) nxt_eng
+                _ -> return ()
               _ -> return ()
-            _ -> return ()
-          let act = requestAction m
-          when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
-          liftIO $ traceEventIO "STOP cruise:process-step-msg"
-          go nxt_eng Nothing
-        go inner Nothing = do
-          liftIO $ traceEventIO "START cruise:process-step"
-          (ri, nxt_eng) <- stepForward tick inner
-          let act = requestAction tick
-          when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
-          liftIO $ traceEventIO "STOP cruise:process-step"
-          cruise debug_mode (succ loop) nxt_eng
+            let act = requestAction m
+            when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
+            go nxt_eng Nothing
+        go inner Nothing =
+          bracket_ (liftIO $ traceEventIO "START cruise:process-step")
+                   (liftIO $ traceEventIO "STOP cruise:process-step")
+                   $ do
+            (ri, nxt_eng) <- stepForward tick inner
+            let act = requestAction tick
+            when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
+            cruise debug_mode (succ loop) nxt_eng
 
 dumpDebuggingInfo :: Action RunInfo -> Integer -> RunInfo -> IO ()
 dumpDebuggingInfo m loop (RunInfo total rres) = do

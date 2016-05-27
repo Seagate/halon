@@ -15,11 +15,12 @@ import Data.Traversable (for)
 import Data.Foldable (for_)
 import Data.Either (partitionEithers)
 
-import           Control.Distributed.Process
+import           Control.Distributed.Process hiding (bracket_)
 import           Control.Distributed.Process.Internal.Types
 import           Control.Distributed.Process.Serializable
 import qualified Control.Monad.State as State
 import           Control.Monad.Trans
+import           Control.Monad.Catch (bracket_)
 import qualified Data.MultiMap       as MM
 import qualified Data.Map.Strict     as M
 import qualified Data.Sequence       as S
@@ -322,8 +323,10 @@ executeTick = bootstrap >>= traverse (uncurry execute)
       st <- State.get
       State.put st{_machRunningSM=[]}
       return (_machRunningSM st)
-    execute key sm = do
-      liftIO $ traceEventIO $ "START cep:engine:execute:" ++ _ruleKeyName key
+    execute key sm =
+      bracket_ (liftIO $ traceEventIO $ "START cep:engine:execute:" ++ _ruleKeyName key)
+               (liftIO $ traceEventIO $ "STOP cep:engine:execute:" ++ _ruleKeyName key)
+               $ do
       sti <- State.get
       let logs = fmap (const S.empty) $ _machLogger sti
           exe  = SMExecute logs (_machSubs sti) (_machState sti)
@@ -346,6 +349,5 @@ executeTick = bootstrap >>= traverse (uncurry execute)
               ,_machState = nxt_g
               }
       lift $ for_ (_machLogger sti) $ \f -> for_ mlogs $ \l -> f l nxt_g
-      liftIO $ traceEventIO $ "STOP cep:engine:execute:" ++ _ruleKeyName key
       return $ RuleInfo (RuleName $ _ruleDataName sm)
              $ map ((\(SMResult s r _) -> (s, r)) . fst) machines

@@ -302,7 +302,7 @@ ruleProcessControlStart = defineSimpleTask "handle-process-start" $ \(ProcessCon
     applyStateChanges $ (\(x, s) -> stateSet x (M0.PSFailed $ "Failed to start: " ++ s))
       <$> rights resultProcs
   forM_ (rights results) $ \(x,s) ->
-    phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
+    phaseLog "error" $ printf "failed to start service %s : %s" (show x) s
 
 -- | When any process goes to Quiescing state, we need to be able to
 -- give some timeout for RM to clear caches before actually stopping
