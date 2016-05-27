@@ -17,6 +17,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Process
   ) where
 
 import           HA.Encode
+import           Control.Monad (unless)
 import           Control.Monad.Trans.Maybe
 import           Data.Either (partitionEithers, rights)
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe)
@@ -296,11 +297,10 @@ ruleProcessControlStart = defineSimpleTask "handle-process-start" $ \(ProcessCon
       Left x -> Left <$> M0.lookupConfObjByFid x rg
       Right (x,s) -> Right . (,s) <$> M0.lookupConfObjByFid x rg)
       results
-  phaseLog "debug" $ printf "Results of stopping: %s" (show resultProcs)
-  --forM_ (lefts resultProcs) $ \p ->
-  --  modifyGraph $ G.connectUniqueFrom p R.Is M0.ProcessBootstrapped
-  applyStateChanges $ (\(x, s) -> stateSet x (M0.PSFailed $ "Failed to start: " ++ s))
-    <$> rights resultProcs
+  phaseLog "debug" $ printf "Results of starting: %s" (show resultProcs)
+  unless (null $ rights resultProcs) $ do
+    applyStateChanges $ (\(x, s) -> stateSet x (M0.PSFailed $ "Failed to start: " ++ s))
+      <$> rights resultProcs
   forM_ (rights results) $ \(x,s) ->
     phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
 
@@ -362,5 +362,3 @@ ruleProcessControlStop = defineSimpleTask "handle-process-stop" $ \(ProcessContr
     <$> resultProcs
   forM_ (rights results) $ \(x,s) ->
     phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
-
-
