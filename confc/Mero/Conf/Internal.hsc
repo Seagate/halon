@@ -324,12 +324,12 @@ foreign import ccall "<ha/note.h> m0_ha_state_init"
 foreign import ccall "<ha/note.h> m0_ha_state_fini"
   c_ha_state_fini :: IO ()
 
--- | Initialize connection from current 'ServerEndpoint' to the service at 'RPCAddress',
--- that implements HA Session interface. Newly created connection is returned.
--- For additional information see @ha_state_init@ in mero sources.
-initHASession :: ServerEndpoint -> RPCAddress -> IO Connection
-initHASession sep addr = do
-  conn <- connect_se sep addr 2
+-- | Initialize connection from with the given 'RPCMachine' to the service at
+-- 'RPCAddress', that implements HA Session interface. Newly created connection
+-- is returned. For additional information see @ha_state_init@ in mero sources.
+initHASession :: RPCMachine -> RPCAddress -> IO Connection
+initHASession rpcm addr = do
+  conn <- connect_rpc_machine rpcm addr 2
   Session s <- getConnectionSession conn
   rc <- c_ha_state_init s
   when (rc /= 0) $ error "failed to initialize ha_state"

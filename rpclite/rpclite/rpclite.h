@@ -106,6 +106,11 @@ struct m0_rpc_session* rpc_get_session(rpc_connection_t* c);
  */
 int rpc_connect(rpc_endpoint_t* e,char* remote_address,int timeout_s,rpc_connection_t** c);
 
+/// Like rpc_connect but takes an rpc machine instead of an endpoint.
+int rpc_connect_rpc_machine( struct m0_rpc_machine* rpc_machine
+                           , char* remote_address
+                           , int timeout_s
+                           , rpc_connection_t** c);
 
 /** Closes the connection and releases local resources used by the connection.
  *

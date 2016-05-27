@@ -313,8 +313,7 @@ testRCsyncToConfd transport pg = do
   where
     wait = void (expect :: Process ProcessMonitorNotification)
     withTestEnv f = withTmpDirectory $ tryWithTimeoutIO transport testRemoteTable (3*60*1000000)
-                  $ \lnid -> do
-      initialize_pre_m0_init lnid
+                  $ \lnid ->
       runProcess lnid f
 
 -- | Test that the recovery coordinator answers queries of configuration object

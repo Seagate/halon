@@ -26,6 +26,7 @@ module Network.RPC.RPCLite
     , Connection
     , connect
     , connect_se
+    , connect_rpc_machine
     , disconnect
     , releaseConnection
     , send
@@ -345,6 +346,18 @@ connect_se :: ServerEndpoint  -- ^ local endpoint to use for the connection
 connect_se (ServerEndpoint _ pse) (RPCAddress rpcAddr) timeout_s =
     alloca$ \pc -> useAsCString rpcAddr$ \cRPCAddr ->
       rpc_connect pse cRPCAddr (fromIntegral timeout_s) pc
+        >>= check_rc >> fmap Connection (peek pc)
+
+foreign import ccall rpc_connect_rpc_machine
+    :: Ptr RPCMachineV -> CString -> CInt -> Ptr (Ptr ConnectionV) -> IO CInt
+
+connect_rpc_machine :: RPCMachine  -- ^ local rpc machine to use for the connection
+                    -> RPCAddress  -- ^ address of the target endpoint
+                    -> Int         -- ^ timeout in seconds to wait for the connection
+                    -> IO Connection
+connect_rpc_machine (RPCMachine rpcm) (RPCAddress rpcAddr) timeout_s =
+    alloca$ \pc -> useAsCString rpcAddr$ \cRPCAddr ->
+      rpc_connect_rpc_machine rpcm cRPCAddr (fromIntegral timeout_s) pc
         >>= check_rc >> fmap Connection (peek pc)
 
 -- | Type of exceptions that RPC calls can produce.

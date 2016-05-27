@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static struct m0_halon_interface *hi = NULL;
+struct m0_halon_interface* m0init_hi = NULL;
 
 int m0_init_wrapper () {
     const struct m0_build_info* bi = m0_build_info_get();
@@ -36,13 +36,13 @@ int m0_init_wrapper () {
         exit(1);
       }
     }
-    M0_ASSERT(hi == NULL);
-    hi = (struct m0_halon_interface*)calloc(1, sizeof(struct m0_halon_interface));
-    return m0_halon_interface_init(hi, M0_VERSION_GIT_REV_ID, M0_VERSION_BUILD_CONFIGURE_OPTS, disable_compat_check);
+    M0_ASSERT(m0init_hi == NULL);
+    m0init_hi = (struct m0_halon_interface*)calloc(1, sizeof(struct m0_halon_interface));
+    return m0_halon_interface_init(m0init_hi, M0_VERSION_GIT_REV_ID, M0_VERSION_BUILD_CONFIGURE_OPTS, disable_compat_check);
 }
 
 void m0_fini_wrapper() {
-    m0_halon_interface_fini(hi);
-    free(hi);
-    hi = NULL;
+    m0_halon_interface_fini(m0init_hi);
+    free(m0init_hi);
+    m0init_hi = NULL;
 }

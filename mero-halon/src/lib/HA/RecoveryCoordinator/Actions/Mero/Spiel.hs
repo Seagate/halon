@@ -82,7 +82,7 @@ import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
 import Network.HostName (getHostName)
-import Network.RPC.RPCLite (getRPCMachine_se, rpcAddress, RPCAddress(..))
+import Network.RPC.RPCLite (rpcAddress, RPCAddress(..))
 
 import System.IO
 import System.Directory
@@ -104,9 +104,9 @@ withRootRC f = do
  rpca <- getRPCAddress
  getConfdServers >>= \case
   [] -> return Nothing
-  confdServer:_ -> withServerEndpoint rpca $ \se ->
+  confdServer:_ -> withNI rpca $ \niRef ->
     liftM0RC $ do
-      rpcm <- getRPCMachine_se se
+      Just rpcm <- getRPCMachine niRef
       withConf rpcm (rpcAddress confdServer) f
 
 -- | Try to connect to spiel and run the 'PhaseM' on the
@@ -118,9 +118,10 @@ withSpielRC :: (SpielContext -> (forall b . IO b -> PhaseM LoopState l b) -> Pha
             -> PhaseM LoopState l (Either SomeException a)
 withSpielRC f = withResourceGraphCache $ do
   rpca <- getRPCAddress
-  try $ withServerEndpoint rpca $ \se -> withM0RC $ \lift -> do
-     conn <- lift $ initHASession se rpca
-     sc <- lift $ getRPCMachine_se se >>= \rpcm -> Mero.Spiel.start rpcm
+  try $ withNI rpca $ \niRef -> withM0RC $ \lift -> do
+     Just rpcm <- lift $ getRPCMachine niRef
+     conn <- lift $ initHASession rpcm rpca
+     sc <- lift $ Mero.Spiel.start rpcm
      f sc lift `sfinally`  lift (Mero.Spiel.stop sc >> finiHASession conn)
 
 -- | Try to start rconf sesion and run 'PhaseM' on the 'SpielContext' this
@@ -536,7 +537,7 @@ validateTransactionCache = withSpielRC $ \sc lift -> loadConfData >>= \case
     phaseLog "spiel" "validateTransactionCache: validating context"
     txOpenContext lift sc >>= txPopulate lift x >>= DP.liftIO . txValidateTransactionCache
 
--- | Creates an RPCAddress suitable for 'withServerEndpoint'
+-- | Creates an RPCAddress suitable for 'withNI'
 -- and friends. If the information about the current node's endpoint
 -- is not found in the RG, we construct an address using the default
 -- 'haAddress'.
@@ -556,11 +557,11 @@ getRPCAddress = do
 getSpielAddressRC :: PhaseM LoopState l (Maybe M0.SpielAddress)
 getSpielAddressRC = do
   phaseLog "rg-query" "Looking up confd and RM services for spiel address."
-  getSpielAddress <$> getLocalGraph
+  getSpielAddress True <$> getLocalGraph
 
 -- | List of addresses to known confd servers on the cluster.
 getConfdServers :: PhaseM LoopState l [String]
-getConfdServers = getSpielAddressRC >>= return . maybe [] M0.sa_confds_ep
+getConfdServers = (getSpielAddress False <$> getLocalGraph) >>= return . maybe [] M0.sa_confds_ep
 
 -- | Store 'ResourceGraph' in 'globalResourceGraphCache' in order to avoid dead
 -- lock conditions. RC performing all queries sequentially, thus it can't reply

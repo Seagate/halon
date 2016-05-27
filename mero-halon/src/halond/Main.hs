@@ -30,7 +30,6 @@ import Control.Distributed.Process.Node
 #ifdef USE_MERO
 import Mero
 import Mero.Environment
-import Mero.Notification (initialize_pre_m0_init)
 #endif
 import System.Directory (getCurrentDirectory)
 import System.Environment
@@ -62,7 +61,6 @@ main = do
     Run -> do
 #ifdef USE_MERO
       withM0Deferred initializeFOPs deinitializeFOPs $ mdo
-        initialize_pre_m0_init lnid
 #endif
         -- TODO: Implement a mechanism to propagate env vars in distributed tests.
         -- Perhaps an env var like

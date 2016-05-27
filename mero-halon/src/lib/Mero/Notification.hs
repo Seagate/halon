@@ -20,11 +20,12 @@ module Mero.Notification
     ( Set(..)
     , Get(..)
     , GetReply(..)
-    , initialize_pre_m0_init
     , initialize
     , finalize
+    , NIRef
+    , getRPCMachine
     , notifyMero
-    , withServerEndpoint
+    , withNI
     , MonadProcess(..)
     , globalResourceGraphCache
     , getSpielAddress
@@ -36,12 +37,14 @@ module Mero.Notification
     ) where
 
 import Control.Distributed.Process
+import Control.SpineSeq (spineSeq)
 
 import Network.CEP (liftProcess, MonadProcess)
 
 import Mero
 import Mero.ConfC (Fid, ServiceType(..))
-import Mero.Notification.HAState
+import Mero.Notification.HAState hiding (getRPCMachine)
+import qualified Mero.Notification.HAState as HAState
 import Mero.M0Worker
 import HA.EventQueue.Producer (promulgate)
 import HA.ResourceGraph (Graph)
@@ -52,35 +55,31 @@ import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (lookupConfObjectStates)
 import qualified HA.Resources.Mero.Note as M0
 import Network.RPC.RPCLite
-  ( ListenCallbacks(..)
-  , RPCAddress
-  , ServerEndpoint
-  , initRPC
-  , finalizeRPC
-  , listen
-  , stopListening
+  ( RPCAddress
+  , RPCMachine
   )
 import HA.RecoveryCoordinator.Events.Mero (GetSpielAddress(..))
 
 import Control.Arrow ((***))
 import Control.Concurrent.MVar
-import Control.Distributed.Process.Internal.Types ( LocalNode )
+import Control.Distributed.Process.Internal.Types ( LocalNode, processNode )
 import qualified Control.Distributed.Process.Node as CH ( forkProcess )
 import Control.Monad ( void, join )
 import Control.Monad.Trans (MonadIO)
 import Control.Monad.Catch (MonadCatch, SomeException)
+import Control.Monad.Reader (ask)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TChan (TChan, readTChan, newTChanIO, writeTChan)
 import qualified Control.Monad.Catch as Catch
 import Data.Foldable (forM_)
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
-import Data.List (nub)
+import Data.List (delete, nub)
 import Data.Maybe (listToMaybe)
 import Data.Typeable (Typeable)
-import Data.IORef  (IORef, newIORef, readIORef)
+import Data.IORef  (IORef, newIORef, readIORef, atomicModifyIORef', atomicModifyIORef)
+import Data.Word
 import qualified Data.HashPSQ as PSQ
-import Foreign.Ptr (Ptr)
 import GHC.Generics (Generic)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Clock
@@ -109,7 +108,7 @@ newtype GetReply = GetReply NVec
 -- | A reference to a 'ServerEndpoint' along with metadata about
 -- number of current users and finalization.
 data EndpointRef = EndpointRef
-  { _erServerEndpoint :: Maybe ServerEndpoint
+  { _erNIRef :: Maybe NIRef
     -- ^ The actual 'ServerEndpoint' used by the clients. If
     -- 'Nothing', it hasn't been 'initializeInternal'd.
   , _erRefCount :: Int
@@ -122,14 +121,13 @@ data EndpointRef = EndpointRef
 emptyEndpointRef :: EndpointRef
 emptyEndpointRef = EndpointRef Nothing 0 False
 
--- | Multiple places such as mero service or confc may need a
--- 'ServerEndpoint' but currently RPC(Lite) only supports a single
--- endpoint at a time. In order to ensure we don't end up calling
--- 'initRPC' multiple times or 'finalizeRPC' while the endpoint is
--- still in use, we use a global lock.
+-- | Multiple places such as mero service or confc may need an
+-- 'RPCMachine'. In order to ensure we don't end up initializing the machine
+-- multiple times or finalizing it while it is still in use, we use a global
+-- lock.
 --
 -- This lock is internal to the module. All users except 'initalize'
--- and 'finalizeInternal' should use 'withServerEndpoint,
+-- and 'finalizeInternal' should use 'withNI',
 -- 'initializeInternal' and 'finalize' themselves.
 globalEndpointRef :: MVar EndpointRef
 globalEndpointRef = unsafePerformIO $ newMVar emptyEndpointRef
@@ -149,32 +147,32 @@ globalResourceGraphCache :: IORef (Maybe Graph)
 globalResourceGraphCache = unsafePerformIO $ newIORef Nothing
 {-# NOINLINE globalResourceGraphCache #-}
 
--- | Grab hold of a 'ServerEndpoint' and run the action on it. You
+-- | Grab hold of an 'RPCMachine' and run the action on it. You
 -- are required to pass in an 'RPCAddress' in case the endpoint is not
 -- initialized already. Note that if the endpoint is already
 -- initialized, the passed in 'RPCAddress' is __not__ used so do not
 -- make any assumptions about which address the endpoint is started
 -- at.
 --
--- Further, be aware that the 'ServerEndpoint' used may be used
+-- Further, be aware that the 'RPCMachine' used may be used
 -- concurrently by other callers at the same time. For this reason you
 -- should not use any sort of finalizers on it here: use 'finalize'
 -- instead.
-withServerEndpoint :: forall m a. (MonadIO m, MonadProcess m, MonadCatch m)
-                   => RPCAddress
-                   -> (ServerEndpoint -> m a)
-                   -> m a
-withServerEndpoint addr f = liftProcess (initializeInternal addr)
+withNI :: forall m a. (MonadIO m, MonadProcess m, MonadCatch m)
+               => RPCAddress
+               -> (NIRef -> m a)
+               -> m a
+withNI addr f = liftProcess (initializeInternal addr)
                             >>= (`withMVarProcess` f)
   where
     trySome :: MonadCatch m => m a -> m (Either SomeException a)
     trySome = Catch.try
-    withMVarProcess :: (MVar EndpointRef, EndpointRef, ServerEndpoint)
-                    -> (ServerEndpoint -> m a) -> m a
-    withMVarProcess (m, ref, ep) p = do
+    withMVarProcess :: (MVar EndpointRef, EndpointRef, NIRef)
+                    -> (NIRef -> m a) -> m a
+    withMVarProcess (m, ref, niRef) p = do
       -- Increase the refcount and run the process with the lock released
       void . liftIO $ putMVar m (ref { _erRefCount = _erRefCount ref + 1 })
-      ev <- trySome $ p ep
+      ev <- trySome $ p niRef
       -- Get the possibly updated endpoint reference after our process
       -- has finished and decrease the count
       newRef <- liftIO $ takeMVar m >>= \x ->
@@ -194,16 +192,16 @@ withServerEndpoint addr f = liftProcess (initializeInternal addr)
 -- An important thing to notice is that this function takes the lock
 -- on 'globalEndpointRef' but does not release it:
 -- 'initializeInternal' is only meant to be used followed by
--- 'withServerEndpoint' which will release the lock. This is to ensure
+-- 'withNI' which will release the lock. This is to ensure
 -- that finalization doesn't happen between 'initializeInternal' and
--- 'withServerEndpoint'.
+-- 'withNI'.
 initializeInternal :: RPCAddress -- ^ Listen address.
-                   -> Process (MVar EndpointRef, EndpointRef, ServerEndpoint)
+                   -> Process (MVar EndpointRef, EndpointRef, NIRef)
 initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case ref of
-  EndpointRef { _erServerEndpoint = Just ep } -> do
+  EndpointRef { _erNIRef = Just niRef } -> do
     say "initializeInternal: using existing endpoint"
-    return (globalEndpointRef, ref, ep)
-  EndpointRef { _erServerEndpoint = Nothing } -> do
+    return (globalEndpointRef, ref, niRef)
+  EndpointRef { _erNIRef = Nothing } -> do
     say "initializeInternal: making new endpoint"
     say $ "listening at " ++ show addr
     self <- getSelfPid
@@ -213,19 +211,15 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
                  link self
                  notificationWorker notificationChannel (void . promulgate . Set)
         link pid
+        proc <- ask
         liftGlobalM0 $ do
-          initRPC
-          ep <- listen addr listenCallbacks
+          niRef <- initializeHAStateCallbacks (processNode proc) addr
           addM0Finalizer $ finalizeInternal globalEndpointRef
-          let ref' = emptyEndpointRef { _erServerEndpoint = Just ep }
-          return (globalEndpointRef, ref', ep))
+          let ref' = emptyEndpointRef { _erNIRef = Just niRef }
+          return (globalEndpointRef, ref', niRef))
       (do
         say "initializeInternal: error"
         liftIO $ putMVar globalEndpointRef ref )
-  where
-    listenCallbacks = ListenCallbacks {
-      receive_callback = \_ _ -> return False
-    }
 
 -- | Timeout before handler will decide that it's impossible to find entrypoint
 entryPointTimeout :: Int
@@ -374,48 +368,52 @@ data CacheState = Pending Note
 promulgateTimeout :: Int
 promulgateTimeout = 30000000 -- 30s
 
+newtype NIRef = NIRef (IORef [HALink])
+
 -- | Initializes the hastate interface in the node where it will be
 -- used. Call it before @m0_init@ and before 'initialize'.
-initialize_pre_m0_init :: LocalNode -> IO ()
-initialize_pre_m0_init lnode = initHAState ha_state_get
-                                           ha_state_set
-                                           ha_entrypoint
+initializeHAStateCallbacks :: LocalNode -> RPCAddress -> IO NIRef
+initializeHAStateCallbacks lnode addr = do
+    links <- newIORef []
+    initHAState addr ha_state_get
+                     (ha_state_set links)
+                     ha_entrypoint
+                     (ha_connected links)
+                     (ha_disconnecting links)
+    return $ NIRef links
   where
-    ha_state_get :: NVecRef -> IO ()
-    ha_state_get nvecr = void $ CH.forkProcess lnode $ do
+
+    ha_state_get :: HALink -> Word64 -> NVec -> IO ()
+    ha_state_get hl idx nvec = void $ CH.forkProcess lnode $ do
       liftIO $ traceEventIO "START ha_state_get"
       self <- getSelfPid
-      fids <- fmap no_id <$> liftIO (readNVecRef nvecr)
+      let fids = map no_id nvec
       liftIO (fmap (getNVec fids) <$> readIORef globalResourceGraphCache)
          >>= \case
-               Just nvec -> do
-                 liftIO $ updateNVecRef nvecr nvec
-                 liftGlobalM0 $ doneGet nvecr 0
+               Just nvec' ->
+                 liftGlobalM0 $ notify hl idx nvec'
                Nothing   -> do
                  _ <- promulgate (Get self fids)
                  msg <- expectTimeout promulgateTimeout
                  case msg of
-                   Just (GetReply nvec) -> do
-                     liftIO $ updateNVecRef nvecr nvec
-                     liftGlobalM0 $ doneGet nvecr 0
+                   Just (GetReply nvec') ->
+                     liftGlobalM0 $ notify hl idx nvec'
                    Nothing -> do
                      say "ha_state_get: Unable to query state from RC."
-                     liftGlobalM0 $ doneGet nvecr (-1)
       liftIO $ traceEventIO "STOP ha_state_get"
 
-    ha_state_set :: NVec -> IO Int
-    ha_state_set nvec = do
+    ha_state_set :: IORef [HALink] -> NVec -> IO ()
+    ha_state_set _ nvec = do
       traceEventIO "START ha_state_set"
       atomically $ writeTChan notificationChannel nvec
       traceEventIO "STOP ha_state_set"
-      return 0
 
-    ha_entrypoint :: Ptr FomV -> Ptr EntryPointRepV -> IO ()
-    ha_entrypoint fom crep = void $ CH.forkProcess lnode $ do
+    ha_entrypoint :: ReqId -> IO ()
+    ha_entrypoint reqId = void $ CH.forkProcess lnode $ do
       liftIO $ traceEventIO "START ha_entrypoint"
       say "ha_entrypoint: try to read values from cache."
       self <- getSelfPid
-      liftIO ( (fmap getSpielAddress) <$> readIORef globalResourceGraphCache)
+      liftIO ( (fmap (getSpielAddress True)) <$> readIORef globalResourceGraphCache)
         >>= \case
                Just (Just ep) -> return $ Just ep
                Just Nothing   -> do
@@ -429,20 +427,32 @@ initialize_pre_m0_init lnode = initHAState ha_state_get
                  Just ep -> do
                    say $ "ha_entrypoint: succeeded: " ++ show ep
                    liftGlobalM0 $
-                     entrypointReplyWakeup fom crep (sa_confds_fid ep)
-                                                    (sa_confds_ep  ep)
-                                                    (sa_rm_fid     ep)
-                                                    (sa_rm_ep      ep)
+                     entrypointReply reqId (sa_confds_fid ep)
+                                           (sa_confds_ep  ep)
+                                           (sa_rm_fid     ep)
+                                           (sa_rm_ep      ep)
                  Nothing -> do
                    say "ha_entrypoint: failed."
-                   liftGlobalM0 $ entrypointNoReplyWakeup fom crep
+                   liftGlobalM0 $ entrypointNoReply reqId
       liftIO $ traceEventIO "STOP ha_entrypoint"
+
+    ha_connected :: IORef [HALink] -> HALink -> IO ()
+    ha_connected links hl = atomicModifyIORef links $ \xs -> (hl : xs, ())
+
+    ha_disconnecting :: IORef [HALink] -> HALink -> IO ()
+    ha_disconnecting links hl = do
+      atomicModifyIORef' links $ \xs -> (spineSeq $ delete hl xs, ())
+      -- TODO: call ha_state_disconnect hl when safe
+
+-- | Yields the 'RPCMachine' created with 'initializeHAStateCallbacks'.
+getRPCMachine :: NIRef -> IO (Maybe RPCMachine)
+getRPCMachine _ = HAState.getRPCMachine
 
 -- | Initialiazes the 'EndpointRef' subsystem.
 --
 -- This function is not too useful by itself as by the time the
 -- resulting 'MVar' is to be used, it could be finalized already. Most
--- users want to simply call 'withServerEndpoint'.
+-- users want to simply call 'withNI'.
 initialize :: RPCAddress -- ^ Listen address.
            -> Process (MVar EndpointRef)
 initialize adr = do
@@ -454,10 +464,8 @@ initialize adr = do
 -- users. Only to be called when the lock on the lock is already held.
 finalizeInternal :: MVar EndpointRef -> IO ()
 finalizeInternal m = do
+  void $ swapMVar m emptyEndpointRef
   finiHAState
-  EndpointRef mep _ _ <- swapMVar m emptyEndpointRef
-  forM_ mep stopListening
-  finalizeRPC
 
 -- | Finalize the Notification subsystem. We make an assumption that
 -- if 'globalEndpointRef' is empty, we have already finalized before
@@ -472,24 +480,24 @@ finalize = liftIO $ takeMVar globalEndpointRef >>= \case
   -- will check this flag and run the finalization itself
       | otherwise -> putMVar globalEndpointRef $ ref { _erWantsFinalize = True }
 
--- | Send notification to mero address
-notifyMero :: ServerEndpoint
-           -> RPCAddress
-           -> Set
-           -> Process ()
-notifyMero ep mero (Set nvec) = liftIO $
-    sendM0Task (notify ep mero nvec 5)
+-- | Send notification to all connected mero processes
+notifyMero :: NIRef -> Set -> Process ()
+notifyMero (NIRef linksRef) (Set nvec) = liftIO $ do
+    links <- readIORef linksRef
+    sendM0Task (forM_ links $ \l -> notify l 0 nvec)
 
 -- | Load an entry point for spiel transaction.
-getSpielAddress :: G.Graph -> Maybe SpielAddress
-getSpielAddress g =
+getSpielAddress :: Bool -- Allow returning dead services
+                -> G.Graph
+                -> Maybe SpielAddress
+getSpielAddress b g =
    let svs = M0.getM0Services g
        (confdsFid,confdsEps) = nub *** nub . concat $ unzip
          [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_MGS, s_endpoints = eps }) <- svs
-                     , M0.getState svc g == M0.SSOnline ]
+                     , b || M0.getState svc g == M0.SSOnline ]
        (rmFids, rmEps) = unzip
          [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_RMS, s_endpoints = eps }) <- svs
-                     , G.isConnected svc R.Is M0.PrincipalRM g]
+                     , b || G.isConnected svc R.Is M0.PrincipalRM g]
        mrmFid = listToMaybe $ nub rmFids
        mrmEp  = listToMaybe $ nub $ concat rmEps
   in (SpielAddress confdsFid confdsEps) <$> mrmFid <*> mrmEp
