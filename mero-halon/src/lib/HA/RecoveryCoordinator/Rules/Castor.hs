@@ -74,6 +74,10 @@ castorRules = sequence_
 
 ruleInitialDataLoad :: Definitions LoopState ()
 ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
+  racks <- do rg <- getLocalGraph
+              return (G.connectedTo Cluster Has rg :: [Rack])
+  if null racks
+  then do
       mapM_ goRack id_racks
       syncGraphBlocking
 #ifdef USE_MERO
@@ -100,7 +104,8 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
 #else
       liftProcess $ say "Loaded initial data"
 #endif
-      messageProcessed eid
+  else phaseLog "error" "Initial data is already loaded."
+  messageProcessed eid
 
 #ifdef USE_MERO
 setStateChangeHandlers :: Definitions LoopState ()
