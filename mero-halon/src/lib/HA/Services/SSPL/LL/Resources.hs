@@ -98,6 +98,27 @@ parseIPMIOp t = case (T.toLower t) of
   "status" -> Just IPMI_STATUS
   _        -> Nothing
 
+-- | RAID related commands.
+data RaidCmd =
+    RaidFail T.Text
+  | RaidRemove T.Text
+  | RaidAdd T.Text
+  | RaidAssemble [T.Text]
+  | RaidRun
+  | RaidDetail
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary RaidCmd
+instance Hashable RaidCmd
+
+raidCmdToText :: T.Text -> RaidCmd -> T.Text
+raidCmdToText dev (RaidFail x) = T.intercalate " " ["fail", dev, x]
+raidCmdToText dev (RaidRemove x) = T.intercalate " " ["remove", dev, x]
+raidCmdToText dev (RaidAdd x) = T.intercalate " " ["add", dev, x]
+raidCmdToText dev (RaidAssemble xs) = T.intercalate " " $ ["assemble", dev] ++ xs
+raidCmdToText dev RaidRun = T.intercalate " " ["run", dev]
+raidCmdToText dev RaidDetail = T.intercalate " " ["detail", dev]
+
 data NodeCmd
   = IPMICmd IPMIOp T.Text -- ^ IP address
   | DriveReset T.Text     -- ^ Reset drive
@@ -106,6 +127,7 @@ data NodeCmd
   | SmartTest  T.Text     -- ^ SMART drive test
   | DriveLed T.Text LedControlState -- ^ Set led style
   | DriveLedColor T.Text (Int, Int, Int) -- ^ Set led color
+  | NodeRaidCmd T.Text RaidCmd -- ^ RAID device, command
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary NodeCmd
@@ -169,6 +191,8 @@ nodeCmdString (DriveLed drive state) = T.intercalate " "
   ["LED: set", drive,  controlStateToText state]
 nodeCmdString (DriveLedColor _ _) =
   "BEZEL: [{default},7]" -- XXX: not yet supported
+nodeCmdString (NodeRaidCmd dev cmd) = T.intercalate " "
+  ["RAID:", raidCmdToText dev cmd]
 
 -- | Convert @NodeCmd@ back from a text representation.
 parseNodeCmd :: T.Text -> Maybe NodeCmd

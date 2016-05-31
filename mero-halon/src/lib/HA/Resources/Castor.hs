@@ -78,7 +78,7 @@ newtype StorageDevice = StorageDevice
 
 data StorageDeviceAttr
     = SDResetAttempts !Int
-    | SDPowered
+    | SDPowered Bool
     | SDSMARTRunning
     | SDOnGoingReset
     | SDRemovedAt
@@ -95,6 +95,8 @@ data DeviceIdentifier =
     | DIWWN String
     | DIUUID String
     | DISerialNumber String
+    | DIRaidIdx Int -- Index in RAID array
+    | DIRaidDevice String -- Device name of RAID device containing this
   deriving (Eq, Show, Ord, Generic, Typeable)
 
 instance Binary DeviceIdentifier

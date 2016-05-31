@@ -588,22 +588,20 @@ unsetStorageDeviceAttr sd attr = do
                   ++ show attr ++ " on " ++ show sd
     modifyGraph (G.disconnect sd Has attr)
 
--- | Find (an) attribute matching the given filter on a storage device.
-findStorageDeviceAttr :: (StorageDeviceAttr -> Bool)
-                      -> StorageDevice
-                      -> PhaseM LoopState l (Maybe StorageDeviceAttr)
-findStorageDeviceAttr k sdev = do
+-- | Find attributes matching the given filter on a storage device.
+findStorageDeviceAttrs :: (StorageDeviceAttr -> Bool)
+                       -> StorageDevice
+                       -> PhaseM LoopState l [StorageDeviceAttr]
+findStorageDeviceAttrs k sdev = do
     rg <- getLocalGraph
-    let attrs =
-          [ attr | attr <- G.connectedTo sdev Has rg :: [StorageDeviceAttr]
-                 , k attr
-                 ]
-    return $ listToMaybe attrs
+    return [ attr | attr <- G.connectedTo sdev Has rg :: [StorageDeviceAttr]
+                  , k attr
+                  ]
 
 -- | Test whether a given device is currently undergoing a reset operation.
 hasOngoingReset :: StorageDevice -> PhaseM LoopState l Bool
 hasOngoingReset =
-    fmap (maybe False (const True)) . findStorageDeviceAttr go
+    fmap (not . null) . findStorageDeviceAttrs go
   where
     go SDOnGoingReset = True
     go _              = False
@@ -613,7 +611,7 @@ markOnGoingReset :: StorageDevice -> PhaseM LoopState l ()
 markOnGoingReset sdev = do
     let _F SDOnGoingReset = True
         _F _                 = False
-    m <- findStorageDeviceAttr _F sdev
+    m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
     case m of
       Nothing -> setStorageDeviceAttr sdev SDOnGoingReset
       _       -> return ()
@@ -623,7 +621,7 @@ markResetComplete :: StorageDevice -> PhaseM LoopState l ()
 markResetComplete sdev = do
     let _F SDOnGoingReset = True
         _F _                 = False
-    m <- findStorageDeviceAttr _F sdev
+    m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
     case m of
       Nothing  -> return ()
       Just old -> unsetStorageDeviceAttr sdev old
@@ -632,7 +630,7 @@ incrDiskResetAttempts :: StorageDevice -> PhaseM LoopState l ()
 incrDiskResetAttempts sdev = do
     let _F (SDResetAttempts _) = True
         _F _                        = False
-    m <- findStorageDeviceAttr _F sdev
+    m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
     case m of
       Just old@(SDResetAttempts i) -> do
         unsetStorageDeviceAttr sdev old
@@ -641,17 +639,20 @@ incrDiskResetAttempts sdev = do
 
 isStorageDevicePowered :: StorageDevice -> PhaseM LoopState l Bool
 isStorageDevicePowered sdev = do
-    phaseLog "rg" $ "Checking power status for storage device: " ++ show sdev
-    fmap (maybe False (const True)) . findStorageDeviceAttr go $ sdev
+    ps <- (maybe True id . listToMaybe . mapMaybe unwrap)
+          <$> findStorageDeviceAttrs (const True) sdev
+    phaseLog "rg" $ "Power status for storage device: " ++ show sdev
+                  ++ " is " ++ show ps
+    return ps
   where
-    go SDPowered = True
-    go _         = False
+    unwrap (SDPowered x) = Just x
+    unwrap _                 = Nothing
 
 markStorageDeviceRemoved :: StorageDevice -> PhaseM LoopState l ()
 markStorageDeviceRemoved sdev = do
     let _F SDRemovedAt = True
         _F _           = False
-    m <- findStorageDeviceAttr _F sdev
+    m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
     case m of
       Nothing -> setStorageDeviceAttr sdev SDRemovedAt
       _       -> return ()
@@ -660,34 +661,27 @@ unmarkStorageDeviceRemoved :: StorageDevice -> PhaseM LoopState l ()
 unmarkStorageDeviceRemoved sdev = do
     let _F SDRemovedAt = True
         _F _           = False
-    m <- findStorageDeviceAttr _F sdev
+    m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
     case m of
       Nothing  -> return ()
       Just old -> unsetStorageDeviceAttr sdev old
 
 markDiskPowerOn :: StorageDevice -> PhaseM LoopState l ()
 markDiskPowerOn sdev = do
-  let _F SDPowered = True
-      _F _         = False
-  m <- findStorageDeviceAttr _F sdev
-  case m of
-    Nothing -> setStorageDeviceAttr sdev SDPowered
-    _       -> return ()
+  setStorageDeviceAttr sdev (SDPowered True)
+  unsetStorageDeviceAttr sdev (SDPowered False)
+
 
 markDiskPowerOff :: StorageDevice -> PhaseM LoopState l ()
 markDiskPowerOff sdev = do
-  let _F SDPowered = True
-      _F _              = False
-  m <- findStorageDeviceAttr _F sdev
-  case m of
-    Nothing  -> return ()
-    Just old -> unsetStorageDeviceAttr sdev old
+  setStorageDeviceAttr sdev (SDPowered False)
+  unsetStorageDeviceAttr sdev (SDPowered True)
 
 isStorageDeviceRunningSmartTest :: StorageDevice -> PhaseM LoopState l Bool
 isStorageDeviceRunningSmartTest sdev = do
     phaseLog "rg"
           $ "Checking SMART test status for storage device: " ++ show sdev
-    fmap (maybe False (const True)) . findStorageDeviceAttr go $ sdev
+    fmap (maybe False (const True) . listToMaybe) . findStorageDeviceAttrs go $ sdev
   where
     go SDSMARTRunning = True
     go _              = False
@@ -696,7 +690,7 @@ markSMARTTestIsRunning :: StorageDevice -> PhaseM LoopState l ()
 markSMARTTestIsRunning sdev = do
   let _F SDSMARTRunning = True
       _F _              = False
-  m <- findStorageDeviceAttr _F sdev
+  m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
   case m of
     Nothing -> setStorageDeviceAttr sdev SDSMARTRunning
     _       -> return ()
@@ -705,7 +699,7 @@ markSMARTTestComplete :: StorageDevice -> PhaseM LoopState l ()
 markSMARTTestComplete sdev = do
   let _F SDSMARTRunning = True
       _F _              = False
-  m <- findStorageDeviceAttr _F sdev
+  m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
   case m of
     Nothing  -> return ()
     Just old -> unsetStorageDeviceAttr sdev old
@@ -714,7 +708,7 @@ getDiskResetAttempts :: StorageDevice -> PhaseM LoopState l Int
 getDiskResetAttempts sdev = do
   let _F (SDResetAttempts _) = True
       _F _                   = False
-  m <- findStorageDeviceAttr _F sdev
+  m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
   case m of
     Just (SDResetAttempts i) -> return i
     _                        -> return 0
@@ -739,7 +733,7 @@ markStorageDeviceReplaced :: StorageDevice -> PhaseM LoopState l ()
 markStorageDeviceReplaced sdev = do
   let _F SDReplaced = True
       _F _          = False
-  m <- findStorageDeviceAttr _F sdev
+  m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
   case m of
     Nothing -> setStorageDeviceAttr sdev SDReplaced
     _       -> return ()
@@ -748,7 +742,7 @@ unmarkStorageDeviceReplaced :: StorageDevice -> PhaseM LoopState l ()
 unmarkStorageDeviceReplaced sdev = do
   let _F SDReplaced = True
       _F _          = False
-  m <- findStorageDeviceAttr _F sdev
+  m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
   case m of
     Nothing  -> return ()
     Just old -> unsetStorageDeviceAttr sdev old
@@ -757,7 +751,7 @@ isStorageDeviceReplaced :: StorageDevice -> PhaseM LoopState l Bool
 isStorageDeviceReplaced sdev = do
     phaseLog "rg"
           $ "Checking Replaced status for storage device: " ++ show sdev
-    fmap (maybe False (const True)) . findStorageDeviceAttr go $ sdev
+    not . null <$> findStorageDeviceAttrs go sdev
   where
     go SDReplaced = True
     go _          = False

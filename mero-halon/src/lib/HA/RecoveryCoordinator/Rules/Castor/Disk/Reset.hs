@@ -6,7 +6,6 @@
 module HA.RecoveryCoordinator.Rules.Castor.Disk.Reset
   ( handleResetExternal
   , handleResetInternal
-  , ResetAttempt(..)
   , resetAttemptThreshold
   , ruleResetAttempt
   ) where
@@ -29,6 +28,11 @@ import HA.RecoveryCoordinator.Actions.Mero.Conf
   ( lookupConfObjByFid
   , lookupStorageDevice
   , lookupStorageDeviceSDev
+  )
+import HA.RecoveryCoordinator.Events.Drive
+  ( ResetAttempt(..)
+  , ResetFailure(..)
+  , ResetSuccess(..)
   )
 import HA.RecoveryCoordinator.Rules.Mero.Conf
 import HA.Resources (Node(..))
@@ -67,10 +71,7 @@ import Debug.Trace (traceEventIO)
 
 import GHC.Generics (Generic)
 
-import Network.CEP hiding (phaseLog)
-
-phaseLog :: String -> String -> PhaseM g l ()
-phaseLog t m = liftProcess . say $ t ++ " => " ++ m
+import Network.CEP
 
 --------------------------------------------------------------------------------
 -- Reset bit                                                                  --
@@ -88,22 +89,6 @@ driveResetTimeout = 5*60
 -- | Time to allow for SSPL reply on a smart test request.
 smartTestTimeout :: Int
 smartTestTimeout = 15*60
-
--- | Event sent when to many failures has been sent for a 'Disk'.
-data ResetAttempt = ResetAttempt StorageDevice
-  deriving (Eq, Generic, Show, Typeable)
-
-instance Binary ResetAttempt
-
--- | Event sent when a ResetAttempt were successful.
-newtype ResetSuccess =
-    ResetSuccess StorageDevice
-    deriving (Eq, Show, Binary)
-
--- | Event sent when a ResetAttempt failed.
-newtype ResetFailure =
-    ResetFailure StorageDevice
-    deriving (Eq, Show, Binary)
 
 -- | Drive state change handler for 'reset' functionality.
 --
@@ -206,7 +191,7 @@ ruleResetAttempt = define "reset-attempt" $ do
           serial:_ -> do
             put Local (Just (sdev, pack serial, node, uid))
             unlessM (isStorageDevicePowered sdev) $ do
-              phaseLog "info" $ "Device powered on: " ++ show sdev
+              phaseLog "info" $ "Device powered off: " ++ show sdev
               switch [resetComplete, timeout driveResetTimeout failure]
             whenM (isStorageDeviceRunningSmartTest sdev) $ do
               phaseLog "info" $ "Device running SMART test: " ++ show sdev
@@ -217,20 +202,23 @@ ruleResetAttempt = define "reset-attempt" $ do
             -- XXX: send IEM message
             phaseLog "warning" $ "Cannot perform reset attempt for drive "
                               ++ show sdev
-                              ++ " as it has no device paths associated."
+                              ++ " as it has no device serial number associated."
             messageProcessed uid
             stop
 
       directly reset $ do
         Just (sdev, serial, Node nid, _) <- get Local
         i <- getDiskResetAttempts sdev
+        phaseLog "debug" $ "Current reset attempts: " ++ show i
         if i <= resetAttemptThreshold
         then do
           incrDiskResetAttempts sdev
           sent <- sendNodeCmd nid Nothing (DriveReset serial)
           if sent
-          then do markDiskPowerOff sdev
-                  switch [resetComplete, timeout driveResetTimeout failure]
+          then do
+            phaseLog "debug" $ "DriveReset message sent for device " ++ show serial
+            markDiskPowerOff sdev
+            switch [resetComplete, timeout driveResetTimeout failure]
           else continue failure
         else continue failure
 
@@ -238,11 +226,15 @@ ruleResetAttempt = define "reset-attempt" $ do
         Just (sdev, _, _, _) <- get Local
         markResetComplete sdev
         if result
-        then do markDiskPowerOn sdev
-                messageProcessed eid
-                continue smart
-        else do messageProcessed eid
-                continue failure
+        then do
+          phaseLog "debug" $ "Drive reset success for sdev: " ++ show sdev
+          markDiskPowerOn sdev
+          messageProcessed eid
+          continue smart
+        else do
+          phaseLog "debug" $ "Drive reset failure for sdev: " ++ show sdev
+          messageProcessed eid
+          continue failure
 
       directly smart $ do
         Just (sdev, serial, Node nid, _) <- get Local
@@ -257,6 +249,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         Just (sdev, _, _, _) <- get Local
         phaseLog "info" $ "Successful SMART test on " ++ show sdev
         markSMARTTestComplete sdev
+        promulgateRC $ ResetSuccess sdev
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev ->
           applyStateChangesCreateFS [ stateSet m0sdev M0_NC_ONLINE ]
@@ -273,6 +266,7 @@ ruleResetAttempt = define "reset-attempt" $ do
       directly failure $ do
         Just (sdev, _, _, _) <- get Local
         phaseLog "info" $ "Drive reset failure for " ++ show sdev
+        promulgateRC $ ResetFailure sdev
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
@@ -285,7 +279,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         messageProcessed uid
         stop
 
-      start home Nothing
+      startFork home Nothing
 
 
 --------------------------------------------------------------------------------

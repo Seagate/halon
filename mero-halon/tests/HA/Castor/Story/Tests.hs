@@ -45,7 +45,7 @@ import RemoteTables (remoteTable)
 
 import SSPL.Bindings
 
-import Control.Monad (replicateM_, void)
+import Control.Monad (forM_, replicateM_, void)
 import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Node
 import Control.Exception as E hiding (assert)
@@ -77,6 +77,7 @@ import Helper.Environment (systemHostname, testListenName)
 
 debug :: String -> Process ()
 debug = say
+-- debug = liftIO . appendFile "/tmp/halon.debug" . (++ "\n")
 
 myRemoteTable :: RemoteTable
 myRemoteTable = TestRunner.__remoteTableDecl remoteTable
@@ -92,6 +93,13 @@ instance Binary MarkDriveFailed
 
 ssplTimeout :: Int
 ssplTimeout = 10*1000000
+
+data ThatWhichWeCallADisk = ADisk {
+    aDiskSD :: StorageDevice -- ^ Has a storage device
+  , aDiskMero :: Maybe (M0.SDev) -- ^ Maybe has a corresponding Mero device
+  , aDiskSN :: String -- ^ Has a serial number
+  , aDiskPath :: String -- ^ Has a path
+}
 
 newMeroChannel :: ProcessId -> Process (ReceivePort NotificationMessage, MockM0)
 newMeroChannel pid = do
@@ -241,43 +249,37 @@ run transport pg interceptor rules test =
       link pid
       return pid
 
-findSDev :: G.Graph -> Process (M0.SDev,String)
+findSDev :: G.Graph -> Process ThatWhichWeCallADisk
 findSDev rg =
-  let dvs = [ (sdev, serial) | sdev <- G.getResourcesOfType rg :: [M0.SDev]
-                             , disk <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
-                             , storage <- G.connectedTo disk M0.At rg :: [StorageDevice]
-                             , DISerialNumber serial <- G.connectedTo storage Has rg
-                             ]
+  let dvs = [ ADisk storage (Just sdev) serial path
+            | sdev <- G.getResourcesOfType rg :: [M0.SDev]
+            , disk <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
+            , storage <- G.connectedTo disk M0.At rg :: [StorageDevice]
+            , DISerialNumber serial <- G.connectedTo storage Has rg
+            , DIPath path <- G.connectedTo storage Has rg
+            ]
   in case dvs of
     dv:_ -> return dv
-    _    -> do liftIO $ assertFailure "Can't find a M0.SDev or it's serial number"
-               undefined
+    _    -> do liftIO $ assertFailure "Can't find a M0.SDev or its serial number"
+               error "Unreachable"
 
-find2SDev :: G.Graph -> Process (M0.SDev, String)
+find2SDev :: G.Graph -> Process ThatWhichWeCallADisk
 find2SDev rg =
-  case G.getResourcesOfType rg of
-    _:sdev:_ -> case [ (sdev, serial) | DISerialNumber serial <- devDI sdev rg ] of
-                  sd:_ -> return sd
-                  _  -> do liftIO $ assertFailure "Can't find serial number."
-                           undefined
-    _        -> do liftIO $ assertFailure "Can't find more than 2 SDevs"
-                   undefined
+  let dvs = [ ADisk storage (Just sdev) serial path
+            | sdev <- G.getResourcesOfType rg :: [M0.SDev]
+            , disk <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
+            , storage <- G.connectedTo disk M0.At rg :: [StorageDevice]
+            , DISerialNumber serial <- G.connectedTo storage Has rg
+            , DIPath path <- G.connectedTo storage Has rg
+            ]
+  in case dvs of
+    _:dv:_ -> return dv
+    _    -> do liftIO $ assertFailure "Can't find a second M0.SDev or its serial number"
+               error "Unreachable"
 
-devAttrs :: M0.SDev -> G.Graph -> [StorageDeviceAttr]
-devAttrs sdev rg =
-  [ attr | dev  <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
-         , sd   <- G.connectedTo dev M0.At rg :: [StorageDevice]
-         , attr <- G.connectedTo sd Has rg :: [StorageDeviceAttr]
-         ]
-
-devDI :: M0.SDev -> G.Graph -> [DeviceIdentifier]
-devDI sdev rg =
-  [ attr | dev  <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
-         , sd   <- G.connectedTo dev M0.At rg :: [StorageDevice]
-         , attr <- G.connectedTo sd Has rg :: [DeviceIdentifier]
-         ]
-
-
+devAttrs :: StorageDevice -> G.Graph -> [StorageDeviceAttr]
+devAttrs sd rg =
+  [ attr | attr <- G.connectedTo sd Has rg :: [StorageDeviceAttr] ]
 
 -- | Check if specified device have RemovedAt attribute.
 checkStorageDeviceRemoved :: String -> Int -> G.Graph -> Bool
@@ -290,8 +292,8 @@ checkStorageDeviceRemoved enc idx rg = not . Prelude.null $
        ]
 
 isPowered :: StorageDeviceAttr -> Bool
-isPowered SDPowered = True
-isPowered _         = False
+isPowered (SDPowered x) = x
+isPowered _             = False
 
 expectNodeMsg :: Int -> Process (Maybe ActuatorRequestMessageActuator_request_typeNode_controller)
 expectNodeMsg = expectActuatorMsg
@@ -360,8 +362,10 @@ loadInitialDataMod f = let
     _ <- expect :: Process (Published (HAEvent InitialData))
     return ()
 
-failDrive :: ReceivePort NotificationMessage -> (M0.SDev,String) -> Process ()
-failDrive recv (sdev, serial) = let
+-- | Fail a drive (via Mero notification)
+failDrive :: ReceivePort NotificationMessage -> ThatWhichWeCallADisk -> Process ()
+failDrive _ (ADisk _ Nothing _ _) = error "Cannot fail a non-Mero disk."
+failDrive recv (ADisk _ (Just sdev) serial _) = let
     fail_evt = Set [Note (M0.d_fid sdev) M0_NC_FAILED]
     tserial = pack serial
   in do
@@ -387,8 +391,8 @@ failDrive recv (sdev, serial) = let
     liftIO . assertEqual "drive reset command is issued"  (Just cmd) =<< expectNodeMsg ssplTimeout
     debug "failDrive: OK"
 
-resetComplete :: StoreChan -> (M0.SDev, String) -> Process ()
-resetComplete mm (sdev, serial) = let
+resetComplete :: StoreChan -> ThatWhichWeCallADisk -> Process ()
+resetComplete mm (ADisk sdev _ serial _) = let
     tserial = pack serial
     resetCmd = CommandAck Nothing (Just $ DriveReset tserial) AckReplyPassed
   in do
@@ -406,8 +410,8 @@ resetComplete mm (sdev, serial) = let
     debug "resetComplete: finished"
 
 
-smartTestComplete :: ReceivePort NotificationMessage -> AckReply -> (M0.SDev,String) -> Process ()
-smartTestComplete recv success (sdev,serial) = let
+smartTestComplete :: ReceivePort NotificationMessage -> AckReply -> ThatWhichWeCallADisk -> Process ()
+smartTestComplete recv success (ADisk _ msdev serial _) = let
     tserial = pack serial
     smartComplete = CommandAck Nothing
                         (Just $ SmartTest tserial)
@@ -421,12 +425,15 @@ smartTestComplete recv success (sdev,serial) = let
     nid <- getSelfNode
     -- Confirms that the disk powerdown operation has occured.
     _ <- promulgateEQ [nid] smartComplete
-    Set [Note fid stat, Note _ _] <- notificationMessage  <$> receiveChan recv
-    debug "smartTestComplete: Mero notification received"
-    liftIO $ assertEqual
-      "Smart test succeeded. Drive fids and status should match."
-      (M0.d_fid sdev, status)
-      (fid, stat)
+
+    -- If the sdev is there
+    forM_ msdev $ \sdev -> do
+      Set [Note fid stat, Note _ _] <- notificationMessage  <$> receiveChan recv
+      debug "smartTestComplete: Mero notification received"
+      liftIO $ assertEqual
+        "Smart test succeeded. Drive fids and status should match."
+        (M0.d_fid sdev, status)
+        (fid, stat)
 
 --------------------------------------------------------------------------------
 -- Actual tests
@@ -460,14 +467,15 @@ testHitResetLimit transport pg = run transport pg interceptor [] test where
       smartTestComplete recv AckReplyPassed sdev
       debug "============== FAILURE Finish ================================"
 
-    -- Fail the drive one more time
-    let fail_evt = Set [Note (M0.d_fid $ fst sdev) M0_NC_FAILED]
-    nid <- getSelfNode
-    void $ promulgateEQ [nid] fail_evt
-    -- Mero should be notified that the drive should be failed.
-    Set [Note _ st3, Note _ st4] <- notificationMessage <$> receiveChan recv
-    liftIO $ assertEqual "Mero should be notified that the drive should be failed."
-      (M0_NC_FAILED, M0_NC_FAILED) (st3, st4)
+    forM_ (aDiskMero sdev) $ \m0sdev -> do
+      -- Fail the drive one more time
+      let fail_evt = Set [Note (M0.d_fid m0sdev) M0_NC_FAILED]
+      nid <- getSelfNode
+      void $ promulgateEQ [nid] fail_evt
+      -- Mero should be notified that the drive should be failed.
+      Set [Note _ st3, Note _ st4] <- notificationMessage <$> receiveChan recv
+      liftIO $ assertEqual "Mero should be notified that the drive should be failed."
+        (M0_NC_FAILED, M0_NC_FAILED) (st3, st4)
 
     return ()
 
@@ -626,46 +634,97 @@ testDynamicPVer transport pg = run transport pg interceptor [] test where
       }
 
     rg <- G.getGraph mm
-    sdev <- findSDev rg
+    sdev@(ADisk _ (Just m0sdev) _ _) <- findSDev rg
     failDrive recv sdev
     -- Should now have a pool version corresponding to single failed drive
     rg1 <- G.getGraph mm
-    let [disk] = G.connectedTo (fst sdev) M0.IsOnHardware rg1 :: [M0.Disk]
+    let [disk] = G.connectedTo m0sdev M0.IsOnHardware rg1 :: [M0.Disk]
     checkPVerExistence rg (S.singleton (M0.fid disk)) False
     checkPVerExistence rg1 (S.singleton (M0.fid disk)) True
 
-    sdev2 <- find2SDev rg
+    sdev2@(ADisk _ (Just m0sdev2) _ _)  <- find2SDev rg
     failDrive recv sdev2
     -- Should now have a pool version corresponding to two failed drives
     rg2 <- G.getGraph mm
-    let [disk2] = G.connectedTo (fst sdev2) M0.IsOnHardware rg2 :: [M0.Disk]
+    let [disk2] = G.connectedTo m0sdev2 M0.IsOnHardware rg2 :: [M0.Disk]
     checkPVerExistence rg1 (S.fromList . fmap M0.fid $ [disk, disk2]) False
     checkPVerExistence rg2 (S.fromList . fmap M0.fid $ [disk, disk2]) True
 #endif
 
 -- | Test that we respond correctly to a notification that a RAID device
---   has failed by sending an IEM.
+--   has failed.
 testMetadataDriveFailed :: (Typeable g, RGroup g)
                         => Transport -> Proxy g -> IO ()
 testMetadataDriveFailed transport pg = run transport pg interceptor [] test where
   interceptor _rc _str = return ()
-  test (TestArgs _ _ rc) rmq _ = do
-    usend rmq $ MQBind "halon_sspl" "halon_sspl" "sspl_ll"
-    usend rmq $ MQBind "sspl_iem" "sspl_iem" "sspl_ll"
-    usend rmq . MQSubscribe "sspl_iem" =<< getSelfPid
-    subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data)))
-
-    let
+  test (TestArgs _ mm rc) rmq recv = let
       host = pack systemHostname
-      raidData = mkResponseRaidData host "U_"
+      raidDevice = "/dev/raid"
+      raidData = mkResponseRaidData host raidDevice
+                                    [ (("/dev/mddisk1", "mdserial1"), True) -- disk1 ok
+                                    , (("/dev/mddisk2", "mdserial2"), False) -- disk2 failed
+                                    ]
       message = LBS.toStrict $ encode
                                $ mkSensorResponse
                                $ emptySensorMessage {
                                   sensorResponseMessageSensor_response_typeRaid_data = Just raidData
                                 }
-    usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
-    Just{} <- expectTimeout ssplTimeout :: Process (Maybe (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data))))
-    debug "Raid_data message processed by RC"
+    in do
+      prepareSubscriptions rc rmq
+      usend rmq $ MQBind "sspl_iem" "sspl_iem" "sspl_ll"
+      usend rmq . MQSubscribe "sspl_iem" =<< getSelfPid
+
+      subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data)))
+      subscribe rc (Proxy :: Proxy (HAEvent ResetFailure))
+
+      loadInitialData
+      usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
+
+      debug "RAID message published"
+      -- We should see a message to SSPL to remove the drive
+      liftIO . assertEqual "drive removal command is issued"
+        (Just $ ActuatorRequestMessageActuator_request_typeNode_controller
+                $ nodeCmdString (NodeRaidCmd raidDevice (RaidRemove "/dev/mddisk2")))
+        =<< expectNodeMsg (10*1000000) -- ssplTimeout
+      -- The RC should issue a 'ResetAttempt' and should be handled.
+      debug "RAID removal for drive received at SSPL"
+      _ <- expect :: Process (Published (HAEvent ResetAttempt))
+
+      rg <- G.getGraph mm
+      -- Look up the storage device by path
+      let [sd]  = [ sd | sd <- G.connectedTo (Host systemHostname) Has rg
+                       , di <- G.connectedTo sd Has rg
+                       , di == DIPath "/dev/mddisk2"
+                       ]
+
+      let disk2 = ADisk {
+          aDiskSD = sd
+        , aDiskMero = Nothing
+        , aDiskSN = "mdserial2"
+        , aDiskPath = "/dev/mddisk2"
+      }
+
+      debug "ResetAttempt message published"
+      -- We should see `ResetAttempt` from SSPL
+      do
+        msg <- expectNodeMsg ssplTimeout
+        debug $ "sspl_msg(reset): " ++ show msg
+        let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+                  $ nodeCmdString (DriveReset "mdserial2")
+        liftIO $ assertEqual "drive reset command is issued"  (Just cmd) msg
+
+      debug "Reset command received at SSPL"
+      resetComplete mm disk2
+      smartTestComplete recv AckReplyPassed disk2
+
+      do
+        msg <- expectNodeMsg ssplTimeout
+        debug $ "sspl_msg(raid_add): " ++ show msg
+        let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+                  $ nodeCmdString (NodeRaidCmd raidDevice (RaidAdd "/dev/mddisk2"))
+        liftIO $ assertEqual "Drive is added back to raid array" (Just cmd) msg
+
+      debug "Raid_data message processed by RC"
 
 testGreeting :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testGreeting transport pg = run transport pg interceptor [] test where

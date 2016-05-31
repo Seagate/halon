@@ -8,6 +8,9 @@ module HA.RecoveryCoordinator.Events.Drive
   ( DriveRemoved(..)
   , DriveInserted(..)
   , DriveFailed(..)
+  , ResetAttempt(..)
+  , ResetSuccess(..)
+  , ResetFailure(..)
   ) where
 
 import HA.Resources
@@ -19,6 +22,22 @@ import Data.Binary   (Binary)
 import Data.Hashable (Hashable)
 import Data.Typeable (Typeable)
 import GHC.Generics
+
+-- | Event sent when to many failures has been sent for a 'Disk'.
+data ResetAttempt = ResetAttempt StorageDevice
+  deriving (Eq, Generic, Show, Typeable)
+
+instance Binary ResetAttempt
+
+-- | Event sent when a ResetAttempt were successful.
+newtype ResetSuccess =
+    ResetSuccess StorageDevice
+    deriving (Eq, Show, Binary)
+
+-- | Event sent when a ResetAttempt failed.
+newtype ResetFailure =
+    ResetFailure StorageDevice
+    deriving (Eq, Show, Binary)
 
 -- | DriveRemoved event is emmited when somebody need to trigger
 -- event that should happen when any drive have failed.

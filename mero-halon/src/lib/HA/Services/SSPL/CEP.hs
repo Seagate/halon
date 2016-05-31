@@ -48,7 +48,6 @@ import Control.Monad.Trans.Maybe
 import qualified Data.Aeson as Aeson
 import Data.Maybe (catMaybes, listToMaybe, maybeToList, fromMaybe, isJust)
 import Data.Monoid ((<>))
-import Data.Scientific (Scientific, toRealFloat)
 import qualified Data.Text as T
 import Data.UUID.V4 (nextRandom)
 import Data.UUID (UUID)
@@ -248,9 +247,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
      let enc = Enclosure . T.unpack
                          . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
                          $ srdm
-         diskNum = floor . (toRealFloat :: Scientific -> Double)
-                         . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum
-                         $ srdm
+         diskNum = fromInteger $ sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum srdm
          disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus srdm
          disk_reason = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskReason srdm
          sn = DISerialNumber . T.unpack
@@ -454,13 +451,130 @@ ruleMonitorHostUpdate = defineSimple "monitor-host-update" $ \(HAEvent uuid (nid
       phaseLog "rg" $ "Registered host: " ++ show host
       syncGraphProcessMsg uuid
 
+-- | Monitor RAID data. We should register the RAID devices in the system,
+--   with no corresponding Mero devices.
+--   Raid messages from mdstat have a slightly unusual structure - we receive
+--   the letter 'U' if the drive is part of the array and working, and
+--   an underscore (_) if not.
 ruleMonitorRaidData :: Definitions LoopState ()
-ruleMonitorRaidData = defineSimple "monitor-raid-data" $ \(HAEvent uuid (nid::NodeId, srrd) _) -> do
-      case sensorResponseMessageSensor_response_typeRaid_dataMdstat srrd of
-        Just x | x == "U_" || x == "_U" ->
-          phaseLog "action" $ "Metadrive drive failed on " ++ show nid ++ "."
-        _ -> return ()
-      messageProcessed uuid
+ruleMonitorRaidData = define "monitor-raid-data" $ do
+
+  raid_msg <- phaseHandle "raid_msg"
+  reset_success <- phaseHandle "reset_success"
+  reset_failure <- phaseHandle "reset_failure"
+  end <- phaseHandle "end"
+
+  setPhase raid_msg $ \(HAEvent uid (nid::NodeId, srrd) _) -> let
+      device_t = sensorResponseMessageSensor_response_typeRaid_dataDevice srrd
+      device = T.unpack device_t
+      -- Drives should have min length 2, so it's OK to access these directly
+      drives = sensorResponseMessageSensor_response_typeRaid_dataDrives srrd
+
+    in do
+      phaseLog "debug" "starting"
+      todo uid
+      mhost <- findNodeHost (Node nid)
+      case mhost of
+        Nothing -> phaseLog "error" $ "Cannot find host for node " ++ show nid
+                                    ++ " resulting from failure of RAID device "
+                                    ++ show device
+        Just host -> do
+          phaseLog "debug" $ "Found host: " ++ show host
+          -- First, attempt to identify each drive
+          sdevs <- forM (zip drives [0..length drives]) $ \(drive, idx) -> do
+            let
+              midentity = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentity drive
+              status = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemStatus drive
+            (fmap (, status)) <$> case midentity of
+              Just ident -> let
+                  path = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentityPath ident
+                  sn = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentitySerialNumber ident
+                  devIds = [ DIPath (T.unpack path)
+                           , DISerialNumber (T.unpack sn)
+                           , DIRaidDevice device
+                           , DIRaidIdx idx
+                           ]
+                in Just . (, path, sn) <$> do
+                  mdev <- findHostStorageDevices host
+                          >>= filterM (flip hasStorageDeviceIdentifier $ DISerialNumber (T.unpack sn))
+                  phaseLog "debug" $ "IDs: " ++ show devIds
+                  case mdev of
+                    [] -> do
+                      sdev <- StorageDevice <$> liftIO nextRandom
+                      phaseLog "debug" $ "Creating new storage device: " ++ show sdev
+                      identifyStorageDevice sdev devIds
+                      locateStorageDeviceOnHost host sdev
+                      return sdev
+                    [sdev] -> return sdev
+                    sdevs -> do
+                      phaseLog "warning" $ "Multiple devices with same IDs: " ++ show sdevs
+                      mergeStorageDevices sdevs
+              Nothing -> do -- We have no device identifiers here
+                -- See if we can find identifiers
+                runMaybeT $ do
+                  dev <- MaybeT $ findHostStorageDevices host
+                        >>= filterM (flip hasStorageDeviceIdentifier $ DIRaidIdx idx)
+                        >>= \case
+                          [] -> do
+                            phaseLog "error" $ "Metadata drive at index " ++ (show idx)
+                                            ++ " failed, but we have no prior information for"
+                                            ++ " a drive in this position."
+                            return Nothing
+                          [sdev] -> return $ Just sdev
+                          sdevs -> do
+                            phaseLog "warning" $ "Multiple devices with same IDs: " ++ show sdevs
+                            Just <$> mergeStorageDevices sdevs
+                  path <- MaybeT $ (fmap T.pack . listToMaybe) <$> lookupStorageDevicePaths dev
+                  serial <- MaybeT $ (fmap T.pack . listToMaybe) <$> lookupStorageDeviceSerial dev
+                  return (dev, path, serial)
+
+          let
+            go [] = return ()
+            go ((sdev, path, _sn):xs) = do
+              fork CopyNewerBuffer $ do
+                phaseLog "action" $ "Metadrive drive " ++ show path
+                                  ++ "failed on " ++ show nid ++ "."
+                msgUuid <- liftIO $ nextRandom
+                put Local $ Just (nid, msgUuid, sdev, device_t, path)
+                -- Tell SSPL to remove the drive from the array
+                removed <- sendNodeCmd nid (Just msgUuid)
+                            (NodeRaidCmd device_t (RaidRemove path))
+                -- Start the reset operation for this disk
+                if removed
+                then do
+                  promulgateRC $ ResetAttempt sdev
+                  switch [reset_success, reset_failure, timeout 120 end]
+                else do
+                  phaseLog "error" $ "Failed to send ResetAttept command via SSPL."
+                  continue end
+              go xs
+
+          go . fmap fst . filter (\(_,x) -> x == "_") $ catMaybes sdevs
+      done uid
+
+  setPhaseIf reset_success
+    ( \(HAEvent eid (ResetSuccess x) _) _ l -> case l of
+        Just (_,_,y,_,_) | x == y -> return $ Just eid
+        _ -> return Nothing
+    ) $ \eid -> do
+      Just (nid, _, _, device, path) <- get Local
+      -- Add drive back into array
+      void $ sendNodeCmd nid Nothing (NodeRaidCmd device (RaidAdd path))
+      messageProcessed eid
+      -- At this point we are done
+      continue end
+
+  setPhaseIf reset_failure
+    ( \(HAEvent eid (ResetFailure x) _) _ l -> case l of
+        Just (_,_,y,_,_) | x == y -> return $ Just eid
+        _ -> return Nothing
+    ) $ \eid -> do
+      messageProcessed eid
+      continue end
+
+  directly end stop
+
+  startFork raid_msg Nothing
 
 ruleThreadController :: Definitions LoopState ()
 ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid (nid, artc) _) -> let

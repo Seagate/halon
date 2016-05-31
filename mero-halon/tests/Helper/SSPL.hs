@@ -12,8 +12,8 @@ module Helper.SSPL
   , mkResponseRaidData
   ) where
 
-import Data.Text (Text)
 import qualified Data.Aeson as Aeson
+import Data.Text (Text)
 import qualified SSPL.Bindings as SSPL
 
 emptySensorMessage :: SSPL.SensorResponseMessageSensor_response_type
@@ -26,6 +26,7 @@ emptySensorMessage = SSPL.SensorResponseMessageSensor_response_type
   , SSPL.sensorResponseMessageSensor_response_typeLocal_mount_data = Nothing
   , SSPL.sensorResponseMessageSensor_response_typeCpu_data = Nothing
   , SSPL.sensorResponseMessageSensor_response_typeRaid_data = Nothing
+  , SSPL.sensorResponseMessageSensor_response_typeSnmp_trap = Nothing
   }
 
 emptyActuatorMessage :: SSPL.ActuatorResponseMessageActuator_response_type
@@ -100,7 +101,7 @@ mkResponseDriveManager enclosure serial idx status reason path =
     , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum     = fromIntegral idx
     , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus  = status
     , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber = serial
-    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerPathID      = path 
+    , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerPathID      = path
     , SSPL.sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskReason  = reason
     }
 
@@ -116,11 +117,11 @@ mkResponseHPI hostid enclosure serial location uuid wwn =
      { SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpi =
          Just $ emptyHPIMessage
            { SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiHostId = hostid
-           , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskNum = location
+           , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskNum = fromIntegral location
            , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId = uuid
            , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = wwn
            , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN = enclosure
-           , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber = serial 
+           , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber = serial
            }
      }
 
@@ -133,7 +134,7 @@ mkHpiMessage :: Text -- ^ Host ID of node
              -> SSPL.SensorResponseMessageSensor_response_typeDisk_status_hpi
 mkHpiMessage hostid enclosure serial location uuid wwn = emptyHPIMessage
   { SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiHostId = hostid
-  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskNum = location
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskNum = fromIntegral location
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId = uuid
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber = serial
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = wwn
@@ -141,9 +142,21 @@ mkHpiMessage hostid enclosure serial location uuid wwn = emptyHPIMessage
   }
 
 mkResponseRaidData :: Text -- ^ Host ID of node
-                   -> Text -- ^ Contents of /proc/mdstat
+                   -> Text -- ^ RAID device name
+                   -> [((Text, Text), Bool)] -- ^ Device path, sn, device good?
                    -> SSPL.SensorResponseMessageSensor_response_typeRaid_data
-mkResponseRaidData host mdstat = SSPL.SensorResponseMessageSensor_response_typeRaid_data {
-    SSPL.sensorResponseMessageSensor_response_typeRaid_dataHostId = host
-  , SSPL.sensorResponseMessageSensor_response_typeRaid_dataMdstat = Just mdstat
-}
+mkResponseRaidData host raidDev devStates = SSPL.SensorResponseMessageSensor_response_typeRaid_data {
+      SSPL.sensorResponseMessageSensor_response_typeRaid_dataHostId = host
+    , SSPL.sensorResponseMessageSensor_response_typeRaid_dataDevice = raidDev
+    , SSPL.sensorResponseMessageSensor_response_typeRaid_dataDrives = (\ds ->
+        SSPL.SensorResponseMessageSensor_response_typeRaid_dataDrivesItem {
+            SSPL.sensorResponseMessageSensor_response_typeRaid_dataDrivesItemStatus = status $ snd ds
+          , SSPL.sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentity = Just $
+              SSPL.SensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentity {
+                  SSPL.sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentityPath = fst . fst $ ds
+                , SSPL.sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentitySerialNumber = snd . fst $ ds
+              }
+        }) <$> devStates
+    }
+  where
+    status x = if x then "U" else "_"
