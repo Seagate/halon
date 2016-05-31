@@ -46,7 +46,7 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (ConfObjectState)
+import HA.Resources.Mero.Note (ConfObjectState, NotifyFailureEndpoints(..))
 import HA.Service
 import HA.Services.Mero.CEP (meroRulesF)
 import HA.Services.Mero.Types
@@ -72,7 +72,7 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process hiding (catch, onException, bracket_)
 import Control.Monad.Catch (catch, onException, bracket_)
-import Control.Monad (forever, join, void, when)
+import Control.Monad (forever, join, unless, void, when)
 import qualified Control.Monad.Catch as Catch
 import Control.Monad.Trans.Maybe
 
@@ -80,7 +80,7 @@ import qualified Data.ByteString as BS
 import Data.Char (toUpper)
 import Data.Foldable (forM_, asum, traverse_)
 import Data.Traversable (forM)
-import Data.List (partition)
+import Data.List (nub, partition)
 import Data.Maybe (catMaybes, listToMaybe, maybeToList)
 import qualified Data.Set as Set
 import qualified Data.UUID as UUID
@@ -113,14 +113,18 @@ statusProcess ep pid rp = do
     forever $ do
       msg@(NotificationMessage set addrs subs) <- receiveChan rp
       say $ "statusProcess: notification msg received: " ++ show msg
-      forM_ addrs $ \addr ->
-        let logError e =
+      failedAddrs <- fmap catMaybes . forM addrs $ \addr ->
+        let doError e = do
               traceM0d $ "statusProcess: notifyMero failed: " ++ show (pid, addr, e)
+              return $ Just addr
         in do
-          ( Mero.Notification.notifyMero ep (RPC.rpcAddress addr) set
-            `catch` \(e :: IOException) -> logError e
-            ) `catch` \(e :: HAStateException) -> logError e
+          maddr <- ( Mero.Notification.notifyMero ep (RPC.rpcAddress addr) set >> return Nothing
+            `catch` \(e :: IOException) -> doError e
+            ) `catch` \(e :: HAStateException) -> doError e
           traverse_ (flip usend $ NotificationAck ()) subs
+          return maddr
+      unless (null failedAddrs) $ do
+        void . promulgate . NotifyFailureEndpoints $ nub failedAddrs
    `catch` \(e :: SomeException) -> do
       traceM0d $ "statusProcess terminated: " ++ show (pid, e)
       Catch.throwM e

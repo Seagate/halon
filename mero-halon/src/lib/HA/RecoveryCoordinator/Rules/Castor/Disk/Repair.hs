@@ -6,6 +6,8 @@
 -- License   : All rights reserved.
 --
 -- Module dealing with pool repair.
+--
+-- TODO: Only abort repair on notification failure if it's IOS that failed
 module HA.RecoveryCoordinator.Rules.Castor.Disk.Repair
   ( handleRepairInternal
   , handleRepairExternal
@@ -15,6 +17,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Disk.Repair
   , querySpiel
   , querySpielHourly
   , checkRepairOnClusterStart
+  , checkRepairOnProcessRestart
   ) where
 
 import           Control.Applicative
@@ -54,6 +57,7 @@ import qualified HA.RecoveryCoordinator.Rules.Castor.Disk.Repair.Internal as R
 import HA.RecoveryCoordinator.Rules.Mero.Conf
   ( applyStateChanges
   , setPhaseAllNotified
+  , setPhaseNotified
   , stateSet
   )
 import           HA.Services.SSPL.CEP
@@ -66,10 +70,11 @@ import           HA.Resources.Mero.Note
 import           HA.Services.Mero
 import           Mero.Notification hiding (notifyMero)
 import           Mero.Notification.HAState (Note(..))
+import           Mero.ConfC (ServiceType(CST_IOS))
 import qualified Mero.Spiel as Spiel
 import           Network.CEP
 import           Debug.Trace (traceEventIO)
-import           Prelude hiding (id)
+import           Prelude
 
 --------------------------------------------------------------------------------
 -- Queries                                                               --
@@ -290,10 +295,17 @@ ruleRebalanceStart = define "castor-rebalance-start" $ do
     messageProcessed uuid
 
   directly notify_timeout $ do
-    phaseLog "error" $ "Failure notifying mero; cannot start rebalance."
+    phaseLog "warn" $ "Unable to notify Mero; cannot start rebalance"
     get Local >>= \case
       Nothing -> phaseLog "warn" $ "notify_timeout without local state"
-      Just (uuid, _, _) -> messageProcessed uuid
+      Just (uuid, _, mp) -> do
+        case mp of
+          Nothing -> phaseLog "error" "No pool info in local state"
+          Just (pool, _) -> do
+            ds <- getPoolSDevsWithState pool M0_NC_REBALANCE
+            applyStateChanges $ map (\d -> stateSet d M0_NC_FAILED) ds
+            abortRepair pool
+        messageProcessed uuid
 
   start init Nothing
 
@@ -317,21 +329,38 @@ ruleRepairStart = define "castor-repair-start" $ do
     fa <- getPoolSDevsWithState pool M0_NC_FAILED
     phaseLog "repair" $ "Starting repair operation on " ++ show pool
     let msgs = stateSet pool M0_NC_REPAIR : (flip stateSet M0_NC_REPAIR <$> fa)
-    applyStateChanges msgs
     put Local $ Just (uuid, msgs, Just pool)
+    applyStateChanges msgs
     switch [pool_disks_notified, timeout 10 notify_timeout]
 
   setPhaseAllNotified pool_disks_notified (maybe Nothing (\(_, ns, _) -> return ns)) $ do
-    Just (uuid, _, Just pool) <- get Local
+    Just (uuid, msgs, Just pool) <- get Local
     startRepairOperation pool
     queryStartHandling pool
     messageProcessed uuid
 
   directly notify_timeout $ do
-    phaseLog "error" $ "Unable to notify Mero; cannot start repair"
+    phaseLog "warn" $ "Unable to notify Mero; cannot start repair"
     get Local >>= \case
       Nothing -> phaseLog "warn" $ "notify_timeout without local state"
-      Just (uuid, _, _) -> messageProcessed uuid
+      Just (uuid, _, mp) -> do
+        case mp of
+          Nothing -> phaseLog "error" "No pool info in local state"
+          -- HALON-275: We have failed to start the repair so
+          -- clean up repair status. halon:m0d should notice that
+          -- notification has failed and fail the process, restart
+          -- should happen and repair eventually restarted if
+          -- everything goes right
+          Just pool -> do
+            ds <- getPoolSDevsWithState pool M0_NC_REPAIR
+            -- There may be a race here: either this notification
+            -- tries to go out first or the rule for failed
+            -- notification fires first. The race does not matter
+            -- because notification failure handler will check for
+            -- already failed processes.
+            applyStateChanges $ map (\d -> stateSet d M0_NC_FAILED) ds
+            abortRepair pool
+        messageProcessed uuid
 
   start init_rule Nothing
 
@@ -506,7 +535,7 @@ handleRepairExternal noteSet = do
 -- | Dispatch appropriate repair procedures based on the set of
 -- internal notifications we have received.
 --
--- * If any device is moves to transient state - we should stop current
+-- * If any device moves to transient state - we should stop current
 --   repair/rebalance procedure.
 --
 -- * If any device moves to failed state - we should start repair
@@ -601,14 +630,14 @@ checkRepairOnClusterStart = define "check-repair-on-start" $ do
             fa <- getPoolSDevsWithState pool M0_NC_FAILED
             when (null tr && not (null fa)) $ do
               fork NoBuffer $ do
-                put Local $ Just pool
+                put Local $ Just (pool, M0_NC_REPAIR)
                 applyStateChanges (
                     stateSet pool M0_NC_REPAIR
                   : ((flip stateSet $ M0_NC_REPAIR) <$> fa)
                   )
-                switch [notified, timeout 1000000 end]
+                switch [notified, timeout 10 end]
 
-    setPhaseIf notified (includesStateChange M0_NC_REPAIR) $ \pool -> do
+    setPhaseNotified notified (maybe Nothing return) $ \(pool, _) -> do
       startRepairOperation pool
       queryStartHandling pool
       continue end
@@ -617,23 +646,8 @@ checkRepairOnClusterStart = define "check-repair-on-start" $ do
 
     startFork clusterRunning Nothing
   where
-    extractStateSet (AnyStateChange a _ n _) = AnyStateSet a n
-
     barrierPass state (BarrierPass state') _ _ =
       if state <= state' then return (Just ()) else return Nothing
-
-    includesStateChange :: HasConfObjectState a
-                        => StateCarrier a
-                        -> HAEvent InternalObjectStateChangeMsg
-                        -> g
-                        -> (Maybe a)
-                        -> Process (Maybe a)
-    includesStateChange _ _ _ Nothing = return Nothing
-    includesStateChange change (HAEvent _ msg _) _ (Just obj) =
-      (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) ->
-        if (stateSet obj change) `elem` (extractStateSet <$> iosc)
-        then return $ Just obj
-        else return Nothing
 
 -- | We have received information about a pool state change (as well
 -- as some devices) so handle this here. Such a notification is likely
@@ -798,3 +812,26 @@ repairHasQuiesced pool prt = R.repairStatus prt pool >>= \case
     let p (Spiel.SnsStatus _ Spiel.M0_SNS_CM_STATUS_PAUSED _) = True
         p _                                                   = False
     return . Right . not . null $ filter p sts
+
+-- | Check if processes associated with IOS are up. If yes, try to
+-- restart repair/rebalance on the pools.
+checkRepairOnProcessRestart :: PhaseM LoopState l ()
+checkRepairOnProcessRestart = do
+  rg <- getLocalGraph
+  let failedIOS = [ p | p <- getAllProcesses rg
+                      , M0.PSFailed _ <- [getState p rg]
+                      , s <- G.connectedTo p M0.IsParentOf rg
+                      , CST_IOS <- [M0.s_type s] ]
+  case failedIOS of
+    [] -> do
+      pools <- getPool
+      for_ pools $ \pool -> case getState pool rg of
+        -- TODO: we should probably be setting pool to failed too but
+        -- after abort we lose information on what kind of repair was
+        -- happening so we currently can't; perhaps we need to mark
+        -- what kind of failure it was
+        M0_NC_REBALANCE -> promulgateRC (PoolRebalanceRequest pool)
+        M0_NC_REPAIR -> promulgateRC (PoolRepairRequest pool)
+        st -> phaseLog "warn" $
+          "checkRepairOnProcessStart: Don't know how to deal with pool state " ++ show st
+    ps -> phaseLog "info" $ "Still waiting for following IOS processes: " ++ show (M0.fid <$> ps)

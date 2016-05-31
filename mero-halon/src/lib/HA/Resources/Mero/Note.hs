@@ -29,14 +29,14 @@ import HA.Resources.TH
 import Mero.ConfC (Fid(..))
 
 import Control.Distributed.Static (Static, staticPtr)
-import Control.Monad (join)
+import Control.Monad (join, unless)
 
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Binary (Binary)
 import Data.Constraint (Dict)
 import Data.Bits (shiftR)
 import Data.Hashable (Hashable)
-import Data.List (foldl')
+import Data.List (foldl', nub)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
 import Data.Monoid ((<>))
@@ -102,6 +102,15 @@ data PrincipalRM = PrincipalRM
 
 instance Binary PrincipalRM
 instance Hashable PrincipalRM
+
+-- | A notification for the following end-points has failed. We use
+-- this message to fail the processes that failed to receive a
+-- notification.
+newtype NotifyFailureEndpoints = NotifyFailureEndpoints [String]
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary NotifyFailureEndpoints
+instance Hashable NotifyFailureEndpoints
 
 --------------------------------------------------------------------------------
 -- Specific object state                                                      --
