@@ -63,3 +63,6 @@ rm -rf %{buildroot}
 /etc/halon/role_maps/genders.ede
 /etc/halon/role_maps/prov.ede
 /etc/halon/mero_role_mappings
+
+%post
+systemctl daemon-reload
