@@ -1,15 +1,18 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 -- Module to print Halon version information.
 
-module Version where
+module Version (versionString) where
 
 import Data.List (intercalate)
+import Data.Time.Clock (UTCTime, getCurrentTime)
+import Data.Time.Format (defaultTimeLocale, formatTime, iso8601DateFormat)
 import Development.GitRev
 
 import Text.Printf (printf)
@@ -36,23 +39,48 @@ versionString = do
     peekCAString =<< [C.exp| const char* { M0_VERSION_BUILD_CONFIGURE_OPTS } |]
   mero_runtime_opts <-
     peekCAString =<< [C.exp| const char* { m0_build_info_get()->bi_configure_opts } |]
+  mero_build_build_time <-
+    peekCAString =<< [C.exp| const char* { M0_VERSION_BUILD_TIME } |]
+  mero_runtime_build_time <-
+    peekCAString =<< [C.exp| const char* { m0_build_info_get()->bi_time } |]
+  Version{..} <- version
   return $ printf (intercalate "\n" [
         "Halon %s (Git revision: %s)"
+      , "Built on: %s"
       , "Built against:"
       , "Mero: %s (Git revision: %s) (Configure flags: %s)"
+      , "Built on: %s"
       , "Running against:"
       , "Mero: %s (Git revision: %s) (Configure flags: %s)"
+      , "Built on: %s"
       ])
-    ($(gitDescribe) :: String) ($(gitHash) :: String)
-    mero_build_desc mero_build_version mero_build_opts
-    mero_runtime_desc mero_runtime_version mero_runtime_opts
+    describe commit (formatTime defaultTimeLocale (iso8601DateFormat (Just "%H:%M:%S")) date)
+    mero_build_desc mero_build_version mero_build_opts mero_build_build_time
+    mero_runtime_desc mero_runtime_version mero_runtime_opts mero_runtime_build_time
 
 #else
 versionString :: IO String
-versionString =
+versionString = do
+  Version{..} <- version
   return $ printf (intercalate "\n" [
         "Halon %s (Git revision: %s)"
+      , "Built on: %s"
       , "Built without Mero integration."
       ])
-    ($(gitDescribe) :: String) ($(gitHash) :: String)
+    describe commit (formatTime defaultTimeLocale (iso8601DateFormat (Just "%H:%M:%S")) date)
 #endif
+
+data Version = Version {
+    describe :: String
+  , commit :: String
+  , date :: UTCTime
+}
+
+version :: IO Version
+version = do
+    time <- getCurrentTime
+    return $ Version {
+        describe = $(gitDescribe)
+      , commit = $(gitHash)
+      , date = time
+      }

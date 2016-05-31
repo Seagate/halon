@@ -9,11 +9,14 @@ RESULT_DIR = rpmbuild
 .PHONY: rpm
 rpm:
 	mkdir -p $(RESULT_DIR)
+	sed -i "s/\$$(gitDescribe)/\"${VERSION}\"/" mero-halon/src/halond/Version.hs
+	sed -i "s/\$$(gitHash)/\"\\\$$Format:%H\\\$$\"/" mero-halon/src/halond/Version.hs
 	git archive --format=tar --prefix=halon/ HEAD | gzip > $(RESULT_DIR)/halon.tar.gz
 	mock -r $(MOCK_CONFIG) --buildsrpm \
 		--spec halon.spec --sources $(RESULT_DIR) \
 		--resultdir $(SRC_RPM_DIR) \
 		--define "_gitversion ${VERSION}"
+		--define "_buildnumber ${BUILD_NUMBER}"
 	mock -r $(MOCK_CONFIG) --rebuild $(SRC_RPM_DIR)/*.src.rpm --resultdir $(RESULT_DIR) \
                 --define "_gitversion ${VERSION}"
 
