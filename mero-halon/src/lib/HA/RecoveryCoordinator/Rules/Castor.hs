@@ -23,41 +23,30 @@ import HA.Encode (decodeP)
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
-import HA.RecoveryCoordinator.Events.Drive
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.ResourceGraph as G
-import HA.Services.SSPL
 #ifdef USE_MERO
 import Control.Applicative
 import Control.Monad.Catch
-import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Rules.Castor.Process
 import qualified HA.RecoveryCoordinator.Rules.Castor.Disk as Disk
 import qualified HA.RecoveryCoordinator.Rules.Castor.Disk.Repair as Repair
 import HA.RecoveryCoordinator.Rules.Mero.Conf
-import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Events.Mero
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState (Note(..))
-import Data.UUID.V4 (nextRandom)
-import qualified Data.UUID as UUID
 #endif
-import Data.Proxy (Proxy(..))
 import Data.Foldable
 
 
 import Control.Monad
 import Data.Maybe
-import Data.Binary (Binary)
-import Data.Typeable (Typeable)
-
-import GHC.Generics (Generic)
 
 import Network.CEP
 import Prelude hiding (id)

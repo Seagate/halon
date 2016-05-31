@@ -179,6 +179,7 @@ Library
                       HA.RecoveryCoordinator.Rules.Castor.Disk.Repair.Internal
                       HA.RecoveryCoordinator.Rules.Castor.Cluster
                       HA.RecoveryCoordinator.Rules.Castor.Process
+                      HA.RecoveryCoordinator.Rules.Castor.Node
                       HA.Resources.Mero.Note.TH
                       HA.Services.Mero.CEP
                       HA.Services.Mero.Types

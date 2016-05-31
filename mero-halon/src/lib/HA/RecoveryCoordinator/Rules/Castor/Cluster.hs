@@ -33,6 +33,7 @@ import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import           HA.Service (encodeP, ServiceStopRequest(..))
 import           HA.RecoveryCoordinator.Rules.Castor.Process
+import           HA.RecoveryCoordinator.Rules.Castor.Node
 import           HA.Service (encodeP, decodeP, ServiceStopRequest(..))
 import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
@@ -101,6 +102,7 @@ clusterRules = sequence_
   , updatePrincipalRM
   , stopMeroClient
   , startMeroClient
+  , nodeRules
   ]
 
 -- | Local state used in 'ruleServiceNotificationHandler'.
@@ -627,13 +629,10 @@ ruleTearDownMeroNode = define "teardown-mero-server" $ do
 -- 'M0.PLM0t1fs' processes.
 ruleNewMeroServer :: Definitions LoopState ()
 ruleNewMeroServer = define "new-mero-server" $ do
-    new_server <- phaseHandle "new_server"
     svc_up_now <- phaseHandle "svc_up_now"
-    svc_up_already <- phaseHandle "svc_up_already"
     boot_level_1 <- phaseHandle "boot_level_1"
     start_clients <- phaseHandle "start_clients"
     start_clients_complete <- phaseHandle "start_clients_complete"
-    bootstrap_failed <- phaseHandle "bootstrap_failed"
     kernel_failed <- phaseHandle "kernel_failed"
     cluster_failed <- phaseHandle "cluster_failed"
     finish <- phaseHandle "finish"
@@ -661,73 +660,24 @@ ruleNewMeroServer = define "new-mero-server" $ do
 
         isProcFailed = \case { M0.PSFailed _ -> True ; _ -> False }
 
-    setPhase new_server $ \(HAEvent eid (NewMeroServer node@(R.Node nid)) _) -> do
-      phaseLog "info" $ "NewMeroServer received for node " ++ show nid
-
-      rg <- getLocalGraph
-      case listToMaybe $ G.connectedTo R.Cluster R.Has rg of
-        Just M0.MeroClusterStopped -> do
-          phaseLog "info" "Cluster is stopped."
-          continue finish
-        Just M0.MeroClusterStopping{} -> do
-          phaseLog "info" "Cluster is stopping."
-          continue finish
-        Just M0.MeroClusterFailed -> do
-          phaseLog "info" "Cluster is in failed state, doing nothing."
-          continue finish
-        _ -> return ()
-
-      fork CopyNewerBuffer $ do
-        findNodeHost node >>= \case
-          Just host -> do
-            put Local $ Just (node, host, eid)
-            phaseLog "info" "Starting core bootstrap"
-            let mlnid =
-                      (listToMaybe [ ip | M0.LNid ip <- G.connectedTo host R.Has rg ])
-                  <|> (listToMaybe $ [ ip | CI.Interface { CI.if_network = CI.Data, CI.if_ipAddrs = ip:_ }
-                                          <- G.connectedTo host R.Has rg ])
-            case mlnid of
-              Nothing -> do
-                phaseLog "warn" $ "Unable to find Data IP addr for host "
-                                ++ show host
-                continue finish
-              Just lnid -> do
-                createMeroKernelConfig host $ lnid ++ "@tcp"
-                startMeroService host node
-                switch [svc_up_now, kernel_failed, timeout 5 svc_up_already]
-          Nothing -> do
-            phaseLog "error" $ "Can't find R.Host for node " ++ show node
-            continue finish
-
-    -- Service comes up as a result of this invocation
-    setPhaseIf svc_up_now declareMeroChannelOnNode $ \chan -> do
-      Just (_, host, _) <- get Local
-      phaseLog "info" $ "halon-m0d service started on " ++ show host
-
-      -- Legitimate to ignore the event id as it should be handled by the default
-      -- 'declare-mero-channel' rule.
-      eresult <- try $ startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
-      case eresult of
-        Right{} -> switch [boot_level_1, timeout 180 finish]
-        Left e -> do
-         phaseLog "error" $ "Exceptions during config generation: " ++ show (e::SomeException)
-         continue cluster_failed
-
-    -- Service is already up
-    directly svc_up_already $ do
-      Just (node, host, _) <- get Local
-      phaseLog "info" $ "halon-m0d service already started on " ++ show host
-      rg <- getLocalGraph
-      m0svc <- lookupRunningService node m0d
-      case m0svc >>= meroChannel rg of
-        Just chan -> do
-          procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
-          when (null procs) $ do
-            phaseLog "warn" "Empty list of processes being started"
-          switch [boot_level_1, timeout 180 finish]
-        Nothing -> do
-          phaseLog "warning" "service was not found can't start processes"
-          switch [svc_up_now, timeout 180 finish]
+    setPhase svc_up_now $ \(HAEvent eid (MeroChannelDeclared sp _ chan) _) -> do
+     rg <- getLocalGraph
+     case listToMaybe $ G.connectedTo R.Cluster R.Has rg of
+        Just M0.MeroClusterStopped -> phaseLog "info" "Cluster is stopped."
+        Just M0.MeroClusterStopping{} -> phaseLog "info" "Cluster is stopping."
+        _ -> let mnode = listToMaybe $ G.connectedFrom R.Runs sp rg
+             in case mnode of
+                  Nothing -> phaseLog "error" "can't find mero node for service"
+                  Just node -> findNodeHost node >>= \case
+                    Nothing -> phaseLog "error" $ "can't find host for node " ++ show node
+                    Just host -> do
+                      phaseLog "info" $ "halon-m0d service started on " ++ show host
+                      todo eid
+                      fork CopyBuffer $ do
+                        put Local $ Just (node, host, eid)
+                        Just (_, host, _) <- get Local
+                        _ <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
+                        switch [boot_level_1, timeout 180 finish]
 
     setPhaseIf boot_level_1 (barrierPass (>= (M0.MeroClusterStarting (M0.BootLevel 1)))) $ \() -> do
       Just (node, host, _) <- get Local
@@ -755,43 +705,24 @@ ruleNewMeroServer = define "new-mero-server" $ do
             else continue start_clients_complete
         Nothing -> continue finish
 
-    -- because mero-kernel start is part of the service start unlike
-    -- the m0d units, we need to notify explicitly about its failure
-    -- rather than using the mechanism we have for m0d
-    setPhase kernel_failed $ \(HAEvent eid (M0.MeroKernelFailed msg) _) -> do
-      phaseLog "warn" $ "mero-kernel failed to start: " ++ show msg
-      modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
-      messageProcessed eid
-      continue cluster_failed
-
-    -- for all the other processes we can just listen for internal
-    -- failure notification flying by
-    setPhaseInternalNotificationWithState bootstrap_failed isProcFailed
-      $ \(eid, (procs :: [(M0.Process, M0.ProcessState)])) -> do
-        todo eid
-        phaseLog "warn" $ "Cluster bootstrap has failed: " ++ show procs
-        modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
-        done eid -- XXX: should probably ack in cluster_failed, minor
-        continue cluster_failed
-
     directly cluster_failed $ do
       Just (n, _, eid) <- get Local
       phaseLog "server-bootstrap" $ "Finished bootstrapping with failure "
                                  ++ show n
       modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
-      messageProcessed eid
+      done eid
       continue end
 
     directly finish $ do
       Just (n, _, eid) <- get Local
       phaseLog "server-bootstrap" $ "Finished bootstrapping mero server at "
                                  ++ show n
-      messageProcessed eid
+      done eid
       continue end
 
     directly end stop
 
-    startFork new_server Nothing
+    startFork svc_up_now Nothing
 
 -- | Rule handling dynamic client addition.
 ruleDynamicClient :: Definitions LoopState ()

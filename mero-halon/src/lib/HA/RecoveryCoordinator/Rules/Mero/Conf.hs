@@ -399,6 +399,7 @@ stateCascadeRules =
   , AnyCascadeRule diskAddToFailureVector
   , AnyCascadeRule diskRemoveFromFailureVector
   , AnyCascadeRule processCascadeRule
+  , AnyCascadeRule nodeTransient
   ]
 
 rackCascadeRule :: StateCascadeRule M0.Rack M0.Enclosure
@@ -499,6 +500,15 @@ diskFixesPVer = StateCascadeRule
          when (broken <= limit) $ Left pver
          return next
    checkBroken _ _ = Right ()
+
+-- | This is a rule which interprets state change events and is responsible for
+-- changing the state of the cluster accordingly'
+nodeTransient :: StateCascadeRule M0.Node M0.Process
+nodeTransient = StateCascadeRule
+  (const True)
+  (M0.M0_NC_TRANSIENT==)
+  (\x rg -> G.connectedTo x M0.IsParentOf rg)
+  (\_ -> M0.PSInhibited)
 
 -- | When disk is failing we need to add that disk to the 'DiskFailureVector'.
 diskAddToFailureVector :: StateCascadeRule M0.Disk M0.Disk

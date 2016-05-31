@@ -54,6 +54,7 @@ import           HA.RecoveryCoordinator.Actions.Mero.Conf (getFilesystem)
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.RecoveryCoordinator.Rules.Castor.Cluster (clusterRules)
+import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_ONLINE, M0_NC_TRANSIENT))
 import           HA.Services.Mero (createSet, meroRules, notifyMero)
@@ -336,7 +337,7 @@ ruleRecoverNode argv = define "recover-node" $ do
                           | (c :: M0.Controller) <- G.connectedFrom M0.At host g
                           , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c g
                           ]
-              notifyMero $ createSet (M0.AnyConfObj <$> nodes) M0_NC_TRANSIENT
+              applyStateChanges $ (\n -> stateSet n M0_NC_TRANSIENT) <$> nodes
               -- if the node is a mero server then power-cycle it.
               -- Client nodes can run client-software that may not be
               -- OK with reboots so we only reboot servers.
