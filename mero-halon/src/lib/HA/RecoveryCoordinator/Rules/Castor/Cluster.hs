@@ -17,7 +17,6 @@ import           HA.EventQueue.Types
 import           HA.Encode
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
-import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           Mero.Notification (Set(..))
@@ -31,13 +30,12 @@ import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
-import           HA.Service (encodeP, ServiceStopRequest(..))
 import           HA.RecoveryCoordinator.Rules.Castor.Process
 import           HA.RecoveryCoordinator.Rules.Castor.Node
-import           HA.Service (encodeP, decodeP, ServiceStopRequest(..))
+import           HA.Service (ServiceStopRequest(..))
 import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
-import           Mero.ConfC (Fid(..), ServiceType(..))
+import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 
 import           Control.Applicative
@@ -47,16 +45,13 @@ import           Control.Distributed.Process.Closure (mkClosure)
 import           Control.Lens
 import           Control.Monad (guard, join, unless, when, void)
 import           Control.Monad.Trans.Maybe
-import           Control.Monad.Catch
 
 import           Data.Binary (Binary)
-import           Data.Either (partitionEithers, rights)
 import           Data.List ((\\))
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, fromMaybe, isJust)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Foldable
-import           Data.Proxy (Proxy(..))
 import           Data.Traversable (forM)
 import           Data.Typeable
 import           Data.Vinyl
@@ -237,7 +232,7 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
        Left st -> phaseLog "warn" $
          unwords [ "Received service notification about", show srvi
                  , "but cluster is in state" , show st ]
-       Right st -> return ()
+       Right _ -> return ()
      continue finish
 
    directly timed_out_prefork $ do
@@ -633,32 +628,9 @@ ruleNewMeroServer = define "new-mero-server" $ do
     boot_level_1 <- phaseHandle "boot_level_1"
     start_clients <- phaseHandle "start_clients"
     start_clients_complete <- phaseHandle "start_clients_complete"
-    kernel_failed <- phaseHandle "kernel_failed"
     cluster_failed <- phaseHandle "cluster_failed"
     finish <- phaseHandle "finish"
     end <- phaseHandle "end"
-
-    let processStartedProcs :: [Either Fid (Fid, String)]
-                            -> PhaseM LoopState l ([M0.Process], [(M0.Process, String)])
-        processStartedProcs e = case partitionEithers e of
-          (okProcs', failedProcs') -> do
-            okProcs <- catMaybes <$> mapM lookupConfObjByFid okProcs'
-            -- We don't do anything with okProcs because service
-            -- notification handler will deal with that. We do want to
-            -- deal with failed processes however.
-
-
-
-            mfailedProcs <- forM failedProcs' $ \(f,r) -> lookupConfObjByFid f >>= \mp -> do
-              phaseLog "warning" $ "Process " ++ show f
-                                ++ " failed to start: " ++ r
-              traverse_ (\(p :: M0.Process) ->
-                modifyGraph $ G.connectUniqueFrom p R.Is (M0.PSFailed r)) mp
-              return (mp, r)
-            let failedProcs = [ (p, r) | (Just p, r) <- mfailedProcs ]
-            return (okProcs, failedProcs)
-
-        isProcFailed = \case { M0.PSFailed _ -> True ; _ -> False }
 
     setPhase svc_up_now $ \(HAEvent eid (MeroChannelDeclared sp _ chan) _) -> do
      rg <- getLocalGraph
@@ -675,7 +647,6 @@ ruleNewMeroServer = define "new-mero-server" $ do
                       todo eid
                       fork CopyBuffer $ do
                         put Local $ Just (node, host, eid)
-                        Just (_, host, _) <- get Local
                         _ <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
                         switch [boot_level_1, timeout 180 finish]
 
@@ -847,7 +818,7 @@ adjustClusterState :: Definitions LoopState ()
 adjustClusterState = defineSimpleTask "update-cluster-state" $ \msg -> do
     let findChanges = do
           InternalObjectStateChange chs <- liftProcess $ decodeP msg
-          return $  mapMaybe (\(AnyStateChange (a::a)  old new _) ->
+          return $  mapMaybe (\(AnyStateChange (_ :: a) _old new _) ->
                        case eqT :: Maybe (a Data.Typeable.:~: M0.Process) of
                          Just Refl -> Just new
                          Nothing   -> Nothing) chs
@@ -884,9 +855,9 @@ updatePrincipalRM :: Definitions LoopState ()
 updatePrincipalRM = defineSimpleTask "update-principal-rm" $ \msg -> do
     let findChanges = do
           InternalObjectStateChange chs <- liftProcess $ decodeP msg
-          return $ mapMaybe (\(AnyStateChange (a::a)  old new _) ->
+          return $ mapMaybe (\(AnyStateChange (a :: a) _old new _) ->
                        case eqT :: Maybe (a Data.Typeable.:~: M0.Process) of
-                         Just Refl -> Just (new,a)
+                         Just Refl -> Just (new, a)
                          Nothing   -> Nothing) chs
     mrm <- getPrincipalRM
     unless (isJust mrm) $ do

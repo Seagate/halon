@@ -6,28 +6,20 @@ module HA.RecoveryCoordinator.Rules.Castor.Node
   ( nodeRules
   ) where
 
-import           HA.Encode
-
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
-import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.RecoveryCoordinator.Events.Mero
-import           HA.RecoveryCoordinator.Rules.Mero.Conf
 
 import qualified HA.Resources as R
-import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
-import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 
 import Network.CEP
-import Data.Maybe (listToMaybe, mapMaybe)
-import Data.Typeable
+import Data.Maybe (listToMaybe)
 import Control.Applicative ((<|>))
-import Control.Monad (unless)
 
 nodeRules :: Definitions LoopState ()
 nodeRules = sequence_

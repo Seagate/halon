@@ -39,7 +39,6 @@ import           Data.Typeable (Typeable)
 import           Data.UUID (nil)
 import           GHC.Generics (Generic)
 
-import HA.Encode (decodeP)
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
 import qualified HA.ResourceGraph as G
@@ -47,12 +46,6 @@ import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
-import HA.RecoveryCoordinator.Events.Mero
-  ( AnyStateSet(..)
-  , AnyStateChange(..)
-  , InternalObjectStateChangeMsg
-  , InternalObjectStateChange(..)
-  )
 import qualified HA.RecoveryCoordinator.Rules.Castor.Disk.Repair.Internal as R
 import HA.RecoveryCoordinator.Rules.Mero.Conf
   ( applyStateChanges
@@ -334,7 +327,7 @@ ruleRepairStart = define "castor-repair-start" $ do
     switch [pool_disks_notified, timeout 10 notify_timeout]
 
   setPhaseAllNotified pool_disks_notified (maybe Nothing (\(_, ns, _) -> return ns)) $ do
-    Just (uuid, msgs, Just pool) <- get Local
+    Just (uuid, _, Just pool) <- get Local
     startRepairOperation pool
     queryStartHandling pool
     messageProcessed uuid
