@@ -247,11 +247,12 @@ querySpielHourly = define "query-spiel-hourly" $ do
 
 ruleRebalanceStart :: Specification LoopState ()
 ruleRebalanceStart = define "castor-rebalance-start" $ do
-  init <- phaseHandle "init"
+  init_rule <- phaseHandle "init_rule"
   pool_disks_notified <- phaseHandle "pool_disks_notified"
+  notify_failed <- phaseHandle "notify_failed"
   notify_timeout <- phaseHandle "notify_timeout"
 
-  setPhase init $ \(HAEvent uuid (PoolRebalanceRequest pool) _) ->
+  setPhase init_rule $ \(HAEvent uuid (PoolRebalanceRequest pool) _) ->
     getPoolRepairInformation pool >>= \case
       Nothing -> do
        rg <- getLocalGraph
@@ -273,7 +274,7 @@ ruleRebalanceStart = define "castor-rebalance-start" $ do
               let messages = stateSet pool M0_NC_REBALANCE : (flip stateSet M0_NC_REBALANCE <$> disks)
               put Local $ Just (uuid, messages, Just (pool, disks))
               applyStateChanges messages
-              switch [pool_disks_notified, timeout 10 notify_timeout]
+              switch [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
 
        else do phaseLog "info" $ "Can't start rebalance, not all drives are ready: " ++ show sdev_broken
                messageProcessed uuid
@@ -287,10 +288,26 @@ ruleRebalanceStart = define "castor-rebalance-start" $ do
     queryStartHandling pool
     messageProcessed uuid
 
+  -- Check if it's IOS that failed, if not then just keep going
+  setPhase notify_failed $ \(HAEvent uuid' (NotifyFailureEndpoints eps) _) -> do
+    todo uuid'
+    rg <- getLocalGraph
+    case R.failedNotificationIOS eps rg of
+      [] -> get Local >>= \(Just (uuid, _, _)) -> messageProcessed uuid
+      ps -> do
+        phaseLog "warn" $ "Aborting rebalance as IOS failed: " ++ show ps
+        runAbort
+    done uuid'
+
   directly notify_timeout $ do
     phaseLog "warn" $ "Unable to notify Mero; cannot start rebalance"
-    get Local >>= \case
-      Nothing -> phaseLog "warn" $ "notify_timeout without local state"
+    runAbort
+
+  start init_rule Nothing
+
+  where
+    runAbort = get Local >>= \case
+      Nothing -> phaseLog "warn" $ "no local state"
       Just (uuid, _, mp) -> do
         case mp of
           Nothing -> phaseLog "error" "No pool info in local state"
@@ -300,9 +317,6 @@ ruleRebalanceStart = define "castor-rebalance-start" $ do
             abortRepair pool
         messageProcessed uuid
 
-  start init Nothing
-
-  where
     isReplaced :: G.Graph -> M0.SDev -> Bool
     isReplaced rg s = not . null $
       [ () | (disk :: M0.Disk) <- G.connectedTo s M0.IsOnHardware rg
@@ -316,6 +330,7 @@ ruleRepairStart :: Specification LoopState ()
 ruleRepairStart = define "castor-repair-start" $ do
   init_rule <- phaseHandle "init_rule"
   pool_disks_notified <- phaseHandle "'pool_disks_notified"
+  notify_failed <- phaseHandle "notify_failed"
   notify_timeout <- phaseHandle "notify_timeout"
 
   setPhase init_rule $ \(HAEvent uuid (PoolRepairRequest pool) _) -> do
@@ -324,7 +339,7 @@ ruleRepairStart = define "castor-repair-start" $ do
     let msgs = stateSet pool M0_NC_REPAIR : (flip stateSet M0_NC_REPAIR <$> fa)
     put Local $ Just (uuid, msgs, Just pool)
     applyStateChanges msgs
-    switch [pool_disks_notified, timeout 10 notify_timeout]
+    switch [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
 
   setPhaseAllNotified pool_disks_notified (maybe Nothing (\(_, ns, _) -> return ns)) $ do
     Just (uuid, _, Just pool) <- get Local
@@ -332,10 +347,28 @@ ruleRepairStart = define "castor-repair-start" $ do
     queryStartHandling pool
     messageProcessed uuid
 
+  -- Check if it's IOS that failed, if not then just keep going
+  setPhase notify_failed $ \(HAEvent uuid' (NotifyFailureEndpoints eps) _) -> do
+    todo uuid'
+    rg <- getLocalGraph
+    case R.failedNotificationIOS eps rg of
+      [] -> get Local >>= \(Just (uuid, _, _)) -> messageProcessed uuid
+      ps -> do
+        phaseLog "warn" $ "Aborting repair as IOS failed: " ++ show ps
+        runAbort
+    done uuid'
+
+  -- Failure endpoint message didn't come and notification didn't go
+  -- through either, abort just in case.
   directly notify_timeout $ do
     phaseLog "warn" $ "Unable to notify Mero; cannot start repair"
-    get Local >>= \case
-      Nothing -> phaseLog "warn" $ "notify_timeout without local state"
+    runAbort
+
+  start init_rule Nothing
+
+  where
+    runAbort = get Local >>= \case
+      Nothing -> phaseLog "warn" $ "no local state"
       Just (uuid, _, mp) -> do
         case mp of
           Nothing -> phaseLog "error" "No pool info in local state"
@@ -354,8 +387,6 @@ ruleRepairStart = define "castor-repair-start" $ do
             applyStateChanges $ map (\d -> stateSet d M0_NC_FAILED) ds
             abortRepair pool
         messageProcessed uuid
-
-  start init_rule Nothing
 
 -- | Try to fetch 'Spiel.SnsStatus' for the given 'Pool' and if that
 -- fails, unset the @PRS@ and ack the message. Otherwise run the

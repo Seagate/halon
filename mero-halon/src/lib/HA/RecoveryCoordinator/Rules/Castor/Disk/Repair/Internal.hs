@@ -88,3 +88,12 @@ filterPausedRepairs = filter p
     p (Spiel.SnsStatus _ Spiel.M0_SNS_CM_STATUS_PAUSED _) = True
     p _ = False
 
+-- | Find the processes associated with IOS services that have the
+-- given endpoint(s).
+failedNotificationIOS :: [String] -- ^ List of endpoints to check against
+                      -> G.Graph -> [M0.Process]
+failedNotificationIOS eps rg =
+  [ p | p <- getAllProcesses rg
+      , s <- G.connectedTo p M0.IsParentOf rg
+      , CST_IOS <- [M0.s_type s]
+      , any (`elem` M0.s_endpoints s) eps ]
