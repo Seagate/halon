@@ -378,6 +378,10 @@ foreign import capi "spiel/spiel.h m0_spiel_pool_repair_status"
                              -> Ptr (Ptr SnsStatus)
                              -> IO CInt
 
+foreign import capi "spiel/spiel.h m0_spiel_pool_repair_abort"
+  c_spiel_pool_repair_abort :: Ptr SpielContextV
+                            -> Ptr Fid
+                            -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_start"
   c_spiel_pool_rebalance_start :: Ptr SpielContextV
