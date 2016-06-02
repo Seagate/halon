@@ -215,7 +215,7 @@ notify (HALink hl) idx nvec =
   allocaBytesAligned #{size struct m0_ha_msg_nvec}
                      #{alignment struct m0_ha_msg_nvec} $ \pnvec -> do
     #{poke struct m0_ha_msg_nvec, hmnv_type} pnvec (0 :: Word64)
-    #{poke struct m0_ha_msg_nvec,  hmnv_id_of_get} pnvec idx
+    #{poke struct m0_ha_msg_nvec, hmnv_id_of_get} pnvec idx
     #{poke struct m0_ha_msg_nvec, hmnv_nr} pnvec
         (fromIntegral $ length nvec :: Word64)
     pokeArray (#{ptr struct m0_ha_msg_nvec, hmnv_vec} pnvec) nvec
