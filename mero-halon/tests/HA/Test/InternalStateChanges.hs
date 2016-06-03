@@ -1,11 +1,13 @@
+{-# LANGUAGE OverloadedStrings #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Exercise the internal state change mechanism
-module HA.Test.InternalStateChanges (tests) where
+module HA.Test.InternalStateChanges (mkTests) where
 
 import           Control.Distributed.Process hiding (bracket)
+import           Control.Exception as E
 import           Data.Binary (Binary)
 import           Data.List (sort)
 import           Data.Maybe (listToMaybe)
@@ -24,16 +26,25 @@ import           HA.Resources.Mero.Note
 import           HA.Services.Mero
 import           Mero.Notification
 import           Mero.Notification.HAState
+import           Network.AMQP
 import           Network.CEP
 import           Network.Transport
 import           Test.Framework
 import           Test.Tasty.HUnit (assertEqual)
 import           TestRunner
 
-tests :: (Typeable g, RGroup g) => Transport -> Proxy g -> [TestTree]
-tests t pg = [testSuccess "processOfflinesServices" $
-                processOfflinesServices t pg
-             ]
+mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
+mkTests pg = do
+  ex <- E.try $ Network.AMQP.openConnection "localhost" "/" "guest" "guest"
+  case ex of
+    Left (e::AMQPException) -> return $ \_->
+      [testSuccess ("InternalStateChange tests disabled (can't connect to rabbitMQ): "++show e)  $ return ()]
+    Right x -> do
+      closeConnection x
+      return $ \t ->
+        [testSuccess "processOfflinesServices" $
+           processOfflinesServices t pg
+        ]
 
 -- | Used to fire internal test rules
 newtype RuleHook = RuleHook ProcessId

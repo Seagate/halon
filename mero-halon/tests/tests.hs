@@ -71,12 +71,13 @@ ut _host transport _breakConnection = do
 #ifdef USE_MERO
   driveFailureTests <- HA.Castor.Story.Tests.mkTests pg
   processRestartTests <- HA.Castor.Story.ProcessRestart.mkTests pg
+  internalSCTests <- HA.Test.InternalStateChanges.mkTests pg
 #endif
   return $ testGroup "tests with mock replicator"
       [ testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport pg
       , testGroup "mero" $
           HA.RecoveryCoordinator.Mero.Tests.tests _host transport pg
-      , MERO_TEST(testGroup, "InternalStateChanges", HA.Test.InternalStateChanges.tests transport pg
+      , MERO_TEST(testGroup, "InternalStateChanges", internalSCTests transport
                  , [testCase "Ignore me" $ return ()])
       , MERO_TEST(testGroup,"Castor",HA.Castor.Tests.tests _host transport pg
                  , [testCase "Ignore me" $ return ()])
@@ -97,6 +98,7 @@ it _host transport breakConnection = do
 #ifdef USE_MERO
   driveFailureTests <- HA.Castor.Story.Tests.mkTests pg
   processRestartTests <- HA.Castor.Story.ProcessRestart.mkTests pg
+  internalSCTests <- HA.Test.InternalStateChanges.mkTests pg
 #endif
   return $ testGroup "tests with log replicator"
       [ testCase "uncleanRPCClose" $ threadDelay 2000000
@@ -106,6 +108,8 @@ it _host transport breakConnection = do
       , HA.Test.Cluster.tests transport
       , testGroup "mero" $
           HA.RecoveryCoordinator.Mero.Tests.tests _host transport pg
+      , MERO_TEST(testGroup, "InternalStateChanges", internalSCTests transport
+                 , [testCase "Ignore me" $ return ()])
       , MERO_TEST(testGroup,"Castor",HA.Castor.Tests.tests _host transport pg
                  , [testCase "Ignore me" $ return ()])
       , MERO_TEST( testGroup, "DriveFailure", driveFailureTests transport
