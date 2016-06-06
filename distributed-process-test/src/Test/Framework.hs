@@ -78,9 +78,10 @@ import System.Directory
   ( getCurrentDirectory
   , removeDirectory
   , setCurrentDirectory
+  , getTemporaryDirectory
   )
 import System.Environment (getExecutablePath)
-import System.FilePath (takeDirectory)
+import System.FilePath (takeDirectory, (</>))
 import System.Posix.Temp (mkdtemp)
 import System.Timeout
 import Test.Tasty hiding (Timeout)
@@ -109,7 +110,8 @@ testFailure name t = testCase name $
 withTmpDirectory :: IO a -> IO a
 withTmpDirectory action = do
     cwd <- getCurrentDirectory
-    tmpDir <- mkdtemp "/tmp/tmp."
+    tmpRoot <- getTemporaryDirectory
+    tmpDir <- mkdtemp $ tmpRoot </> "tmp."
     setCurrentDirectory tmpDir
     action `finally` do
       setCurrentDirectory cwd
