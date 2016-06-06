@@ -7,6 +7,10 @@ machine:
       STACK_TEST_FLAGS: "--docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1"
 
 checkout:
+  pre:
+    # We move the halon folder to ram to prevent tests from failing when the
+    # disk of the test box is slow (out of our control).
+      - mv halon halon2 && mkdir halon && sudo mount -t tmpfs -o size=2048m tmpfs halon && cp -r halon2/. halon && sudo chown -R $USER halon
   post:
     # remove cached submodules - otherwise interference ensues when updating submodule urls
     - rm -rf .git/modules/*
