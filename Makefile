@@ -17,8 +17,10 @@ rpm:
 		--resultdir $(SRC_RPM_DIR) \
 		--define "_gitversion ${VERSION}" \
 		--define "_buildnumber ${BUILD_NUMBER}"
-	mock -r $(MOCK_CONFIG) --rebuild $(SRC_RPM_DIR)/*.src.rpm --resultdir $(RESULT_DIR) \
-                --define "_gitversion ${VERSION}"
+	mock -r $(MOCK_CONFIG) --rebuild $(SRC_RPM_DIR)/*.src.rpm \
+		--resultdir $(RESULT_DIR) \
+    --define "_gitversion ${VERSION}" \
+		--define "_buildnumber ${BUILD_NUMBER}" 
 
 # This target will generate a distributable RPM based on the current
 # checkout. It will generate a binary RPM in ./rpmbuild/RPMS/x86_64
