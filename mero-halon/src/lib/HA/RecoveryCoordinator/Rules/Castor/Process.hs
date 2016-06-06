@@ -29,7 +29,6 @@ import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Events.Mero
-import           HA.RecoveryCoordinator.Rules.Castor.Disk.Repair (checkRepairOnProcessRestart)
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Node(..), Cluster(..))
@@ -193,7 +192,6 @@ ruleProcessRestarted = define "processes-restarted" $ do
         -- per mero) and all the processes on the node are up then
         -- node is up (handleProcessOnlineE).
         phaseLog "info" $ "Managed to restart following processes: " ++ show okFids
-        checkRepairOnProcessRestart
         continue finish
 
       (_, failures) -> do

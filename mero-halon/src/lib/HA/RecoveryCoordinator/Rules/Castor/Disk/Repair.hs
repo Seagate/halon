@@ -17,7 +17,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Disk.Repair
   , querySpiel
   , querySpielHourly
   , checkRepairOnClusterStart
-  , checkRepairOnProcessRestart
+  , checkRepairOnServiceUp
   ) where
 
 import           Control.Applicative
@@ -50,6 +50,7 @@ import qualified HA.RecoveryCoordinator.Rules.Castor.Disk.Repair.Internal as R
 import HA.RecoveryCoordinator.Rules.Mero.Conf
   ( applyStateChanges
   , setPhaseAllNotified
+  , setPhaseInternalNotificationWithState
   , setPhaseNotified
   , stateSet
   )
@@ -839,23 +840,39 @@ repairHasQuiesced pool prt = R.repairStatus prt pool >>= \case
 
 -- | Check if processes associated with IOS are up. If yes, try to
 -- restart repair/rebalance on the pools.
-checkRepairOnProcessRestart :: PhaseM LoopState l ()
-checkRepairOnProcessRestart = do
-  rg <- getLocalGraph
-  let failedIOS = [ p | p <- getAllProcesses rg
-                      , M0.PSFailed _ <- [getState p rg]
-                      , s <- G.connectedTo p M0.IsParentOf rg
-                      , CST_IOS <- [M0.s_type s] ]
-  case failedIOS of
-    [] -> do
-      pools <- getPool
-      for_ pools $ \pool -> case getState pool rg of
-        -- TODO: we should probably be setting pool to failed too but
-        -- after abort we lose information on what kind of repair was
-        -- happening so we currently can't; perhaps we need to mark
-        -- what kind of failure it was
-        M0_NC_REBALANCE -> promulgateRC (PoolRebalanceRequest pool)
-        M0_NC_REPAIR -> promulgateRC (PoolRepairRequest pool)
-        st -> phaseLog "warn" $
-          "checkRepairOnProcessStart: Don't know how to deal with pool state " ++ show st
-    ps -> phaseLog "info" $ "Still waiting for following IOS processes: " ++ show (M0.fid <$> ps)
+checkRepairOnServiceUp :: Definitions LoopState ()
+checkRepairOnServiceUp = define "checkRepairOnProcessStarte" $ do
+  init_rule <- phaseHandle "init_rule"
+
+  let isIOS s = CST_IOS == M0.s_type s
+
+  setPhaseInternalNotificationWithState init_rule (== M0.SSOnline) $ \(eid, srvs :: [(M0.Service, M0.ServiceState)]) -> do
+    todo eid
+    -- Check if any of the services are IOS: if no service is IOS then
+    -- we can just do nothing early and save ourselves some lookups
+    case filter ((== CST_IOS) . M0.s_type . fst) srvs of
+      [] -> return ()
+      -- but if we do have IOS, we don't care about which one it is as
+      -- we have to check that all IOS-related processes are up anyway
+      _ -> do
+        rg <- getLocalGraph
+        let failedIOS = [ p | p <- getAllProcesses rg
+                            , M0.PSFailed _ <- [getState p rg]
+                            , s <- G.connectedTo p M0.IsParentOf rg
+                            , CST_IOS <- [M0.s_type s] ]
+        case failedIOS of
+          [] -> do
+            pools <- getPool
+            for_ pools $ \pool -> case getState pool rg of
+              -- TODO: we should probably be setting pool to failed too but
+              -- after abort we lose information on what kind of repair was
+              -- happening so we currently can't; perhaps we need to mark
+              -- what kind of failure it was
+              M0_NC_REBALANCE -> promulgateRC (PoolRebalanceRequest pool)
+              M0_NC_REPAIR -> promulgateRC (PoolRepairRequest pool)
+              st -> phaseLog "warn" $
+                "checkRepairOnProcessStart: Don't know how to deal with pool state " ++ show st
+          ps -> phaseLog "info" $ "Still waiting for following IOS processes: " ++ show (M0.fid <$> ps)
+    done eid
+
+  start init_rule ()
