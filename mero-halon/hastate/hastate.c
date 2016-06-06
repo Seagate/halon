@@ -26,7 +26,7 @@ int ha_state_init(ha_state_callbacks_t *cbs) {
     ha_state_cbs = *cbs;
     m0_ha_state_get_fom_type_ops  = &ha_state_get_fom_type_ops;
     m0_ha_state_set_fom_type_ops  = &ha_state_set_fom_type_ops;
-    m0_ha_entrypoint_fom_type_ops = &ha_entrypoint_fom_type_ops;
+    m0_ha_old_entrypoint_fom_type_ops = &ha_entrypoint_fom_type_ops;
     return 0;
 }
 
@@ -70,9 +70,9 @@ int ha_state_notify( rpc_endpoint_t *ep, char *remote_address
     return rc;
 }
 
-// Populates m0_ha_entrypoint_rep structure by values from haskell world.
+// Populates m0_ha_old_entrypoint_rep structure by values from haskell world.
 void ha_entrypoint_reply_wakeup( struct m0_fom               *fom
-                               , struct m0_ha_entrypoint_rep *rep_fop
+                               , struct m0_ha_old_entrypoint_rep *rep_fop
                                , const int                    rc
                                , int                          confd_fid_size
                                , const struct m0_fid         *confd_fid_data

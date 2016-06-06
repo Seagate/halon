@@ -198,7 +198,7 @@ void ha_state_entrypoint_fom_fini(struct m0_fom *fom)
 static int ha_entrypoint_get_fom_tick(struct m0_fom *fom)
 {
         if (m0_fom_phase(fom) != M0_FOPH_TYPE_SPECIFIC) {
-            struct m0_ha_entrypoint_rep *rep_fop;
+            struct m0_ha_old_entrypoint_rep *rep_fop;
             rep_fop = m0_fop_data(fom->fo_rep_fop);
             rep_fop->hbp_rc = ha_state_cbs.ha_state_entrypoint(fom, rep_fop);
             m0_fom_phase_set(fom, M0_FOPH_TYPE_SPECIFIC);
@@ -220,7 +220,7 @@ static int ha_entrypoint_fom_create(struct m0_fop *fop,
 				    struct m0_reqh *reqh)
 {
 	struct m0_fom               *fom;
-	struct m0_ha_entrypoint_rep *reply;
+	struct m0_ha_old_entrypoint_rep *reply;
 
 	M0_PRE(fop != NULL);
 	M0_PRE(m != NULL);
@@ -235,7 +235,7 @@ static int ha_entrypoint_fom_create(struct m0_fop *fop,
 		return M0_ERR(-ENOMEM);
 	}
 
-	fom->fo_rep_fop = m0_fop_alloc(&m0_ha_entrypoint_rep_fopt, reply,
+	fom->fo_rep_fop = m0_fop_alloc(&m0_ha_old_entrypoint_rep_fopt, reply,
 				       m0_fop_rpc_machine(fop));
 	if (fom->fo_rep_fop == NULL) {
 		m0_free(reply);
