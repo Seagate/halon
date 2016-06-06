@@ -12,9 +12,11 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Handler.Bootstrap.Satellite
-  ( Config
+  ( Config(..)
+  , defaultConfig
   , schema
   , start
+  , startSatellitesAsync
   )
 where
 
@@ -22,14 +24,20 @@ import Prelude hiding ((<*>), (<$>))
 import HA.NodeUp (nodeUp, nodeUp__static, nodeUp__sdict)
 import Lookup (conjureRemoteNodeId)
 
+import Control.Monad.Reader (ask)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
   ( mkClosure )
+import Control.Distributed.Process.Node (forkProcess)
+import Control.Distributed.Process.Internal.Types (processNode)
 
 import Data.Binary (Binary)
-import Data.Defaultable (Defaultable, defaultable, fromDefault)
+import Data.Defaultable (Defaultable(..), defaultable, fromDefault)
+import Data.Foldable (forM_)
 import Data.Hashable (Hashable)
+import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
+import Data.Traversable (forM)
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -44,6 +52,9 @@ data Config = Config
 
 instance Binary Config
 instance Hashable Config
+
+defaultConfig :: Config
+defaultConfig = Config (Default []) (Default 10000000)
 
 schema :: Opt.Parser Config
 schema = let
@@ -92,3 +103,15 @@ start nid Config{..} = do
     handler (ProcessMonitorNotification _ _ dr) = return $ case dr of
       DiedException e -> Just e
       _ -> Nothing
+
+-- Fork start process, wait for results from each, output
+-- information about any failures.
+startSatellitesAsync :: Config -> [NodeId] -> Process [(NodeId, String)]
+startSatellitesAsync conf nids = do
+  self <- getSelfPid
+  localNode <- fmap processNode ask
+  liftIO . forM_ nids $ \nid -> do
+    forkProcess localNode $ do
+      res <- start nid conf
+      usend self $ (nid,) <$> res
+  catMaybes <$> forM nids (const expect)

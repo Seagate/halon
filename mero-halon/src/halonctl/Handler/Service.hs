@@ -15,6 +15,7 @@ module Handler.Service
   ( ServiceCmdOptions
   , service
   , parseService
+  , start
   )
 where
 
