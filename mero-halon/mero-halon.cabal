@@ -462,6 +462,8 @@ Test-Suite testhastate
   if flag(maintainer)
     Ghc-Options: -Werror
 
+  Buildable: False
+
   if flag(mero)
     Build-Depends:   halon,
                      confc,

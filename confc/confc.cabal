@@ -70,6 +70,7 @@ Test-Suite integration-tests
                 , tasty-files
                 , tasty-hunit
                 , containers
+  Buildable: False
   if !flag(mero)
     Buildable: False
 
