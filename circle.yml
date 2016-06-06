@@ -5,6 +5,7 @@ machine:
       # Use only as many jobs as CPUs are available (via cpuset)
       STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero --jobs 2
       STACK_TEST_FLAGS: "--docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1"
+      TMPDIR: .
 
 checkout:
   pre:
