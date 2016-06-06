@@ -39,8 +39,10 @@ module HA.RecoveryCoordinator.Actions.Hardware
     -- ** Searching devices
   , findEnclosureStorageDevices
   , findHostStorageDevices
+  , lookupEnclosureOfStorageDevice
   , lookupStorageDeviceInEnclosure
   , lookupStorageDeviceOnHost
+  , lookupStorageDevicesWithDI
     -- ** Querying device properties
   , getSDevNode
   , getSDevHost
@@ -425,6 +427,10 @@ lookupStorageDeviceInEnclosure enc ident = do
            , G.isConnected device Has ident rg :: Bool
            ]
 
+-- | Find all 'StorageDevice's with the given 'DeviceIdentifier'.
+lookupStorageDevicesWithDI :: DeviceIdentifier -> PhaseM LoopState l [StorageDevice]
+lookupStorageDevicesWithDI di = G.connectedFrom Has di <$> getLocalGraph
+
 lookupStorageDeviceOnHost :: Host
                           -> DeviceIdentifier
                           -> PhaseM LoopState l (Maybe StorageDevice)
@@ -435,6 +441,15 @@ lookupStorageDeviceOnHost host ident = do
            | device <- G.connectedTo  host Has rg :: [StorageDevice]
            , G.isConnected device Has ident rg :: Bool
            ]
+
+-- | Given a 'DeviceIdentifier', try to find the 'Enclosure' that the
+-- device with the identifier belongs to. Useful when SSPL is unable
+-- to tell us the enclosure of the device but we may have that info
+-- already.
+lookupEnclosureOfStorageDevice :: StorageDevice
+                               -> PhaseM LoopState l (Maybe Enclosure)
+lookupEnclosureOfStorageDevice sd =
+  listToMaybe . G.connectedFrom Has sd <$> getLocalGraph
 
 -- | Register a new drive in the system.
 locateStorageDeviceInEnclosure :: Enclosure

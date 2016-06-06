@@ -244,9 +244,9 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
    pcommit <- phaseHandle "commit"
 
    setPhase pinit $ \(HAEvent uuid (nid, srdm) _) -> do
-     let enc = Enclosure . T.unpack
-                         . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
-                         $ srdm
+     let enc' = Enclosure . T.unpack
+                          . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
+                          $ srdm
          diskNum = fromInteger $ sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum srdm
          disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus srdm
          disk_reason = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskReason srdm
@@ -256,6 +256,22 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
          path = DIPath . T.unpack
                 . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerPathID
                 $ srdm
+
+     -- If SSPL doesn't know which enclosure the drive in, try to
+     -- infer it from the drive serial number and info we may have
+     -- gotten previously
+     enc <- case enc' of
+       Enclosure "HPI_Data_Not_Available" -> lookupStorageDevicesWithDI sn >>= \case
+         [] -> do
+           phaseLog "warn" $ "No SD found with SN " ++ show sn
+           return enc'
+         sd : _ -> lookupEnclosureOfStorageDevice sd >>= \case
+           Nothing -> do
+             phaseLog "warn" $ "No enclosure found for " ++ show sd
+             return enc'
+           Just enc'' -> return enc''
+       _ -> return enc'
+
      phaseLog "sspl-service" "monitor-drivemanager request received"
      put Local $ Just (uuid, nid, enc, diskNum, disk_status, disk_reason, sn, path)
      lookupStorageDeviceInEnclosure enc (DIIndexInEnclosure diskNum) >>= \case
