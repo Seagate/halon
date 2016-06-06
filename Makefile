@@ -15,7 +15,7 @@ rpm:
 	mock -r $(MOCK_CONFIG) --buildsrpm \
 		--spec halon.spec --sources $(RESULT_DIR) \
 		--resultdir $(SRC_RPM_DIR) \
-		--define "_gitversion ${VERSION}"
+		--define "_gitversion ${VERSION}" \
 		--define "_buildnumber ${BUILD_NUMBER}"
 	mock -r $(MOCK_CONFIG) --rebuild $(SRC_RPM_DIR)/*.src.rpm --resultdir $(RESULT_DIR) \
                 --define "_gitversion ${VERSION}"
