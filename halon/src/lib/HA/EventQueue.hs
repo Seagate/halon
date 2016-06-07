@@ -227,7 +227,6 @@ startEventQueue rg = do
       self <- getSelfPid
       -- Spawn the initial monitor proxy. See Note [RGroup monitor].
       rgMonitor <- spawnLocal $ link self >> rGroupMonitor rg
-      when schedulerIsEnabled startWorkerMonitor
       eqTrace $ "Started " ++ show rgMonitor
       void $ monitor rgMonitor
       ref <- liftIO $ newTMVarIO rgMonitor
@@ -236,6 +235,7 @@ startEventQueue rg = do
      `catch` \e -> do
       eqTrace $ "Dying with " ++ show e
       throwM (e :: SomeException)
+    when schedulerIsEnabled (startWorkerMonitor eq)
     register eventQueueLabel eq
     return eq
 
@@ -343,6 +343,10 @@ eqRules rg pool groupMonitor = do
             usend self $ RGroupMonitor rgMonitor
             when schedulerIsEnabled $ do
               getSelfPid >>= \monPid -> DP.nsend workerMonitorLabel (monPid, ())
+              -- The EQ might die, in which case the worker monitor might die,
+              -- in which case we would never get a reply. Therefore, we link
+              -- the EQ.
+              DP.link self
               xs <- DP.expect
               mapM_ (`usend` ()) (xs :: [ProcessId])
 
@@ -446,9 +450,9 @@ workerMonitorLabel :: String
 workerMonitorLabel = eventQueueLabel ++ ".workerMonitor"
 
 -- | Starts a process that keeps track of the EQ workers that block.
--- The process is linked to the caller.
-startWorkerMonitor :: Process ()
-startWorkerMonitor = do
+-- The process is linked to the given pid.
+startWorkerMonitor :: ProcessId -> Process ()
+startWorkerMonitor pid = do
     let workerMonitor !xs = DP.receiveWait
           [ DP.match $ \pid -> do DP.monitor pid >> DP.usend pid ()
                                   workerMonitor (S.insert pid xs)
@@ -457,8 +461,7 @@ startWorkerMonitor = do
           , DP.match $ \(pid, ()) -> do DP.usend pid (S.toList xs)
                                         workerMonitor xs
           ]
-    self <- getSelfPid
-    wm <- DP.spawnLocal $ DP.link self >> workerMonitor S.empty
+    wm <- DP.spawnLocal $ DP.link pid >> workerMonitor S.empty
     -- Insist in registration if the monitor from a previous execution has not
     -- died yet.
     fix $ \loop -> try (DP.register workerMonitorLabel wm) >>= \case
