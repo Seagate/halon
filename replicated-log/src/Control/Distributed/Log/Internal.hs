@@ -2060,7 +2060,7 @@ monitorLog h@(Handle _ _ cConfig _ _ μ) = do
     usend μ sp
     mb <- receiveChan rp
     cc <- unClosure cConfig
-    nlogTrace (logId cc) $ "monitorLog: ambassador response " ++ show mb
+    nlogTrace (logId cc) $ "monitorLog: ambassador response " ++ show (μ, mb)
     maybe (fmap nullProcessId getSelfNode) return mb >>= monitor
 
 -- | Make replicas advertize their status info.
