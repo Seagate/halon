@@ -8,6 +8,7 @@ module Main (main) where
 
 import Flags
 import Lookup
+import Version
 
 import HA.Network.RemoteTables (haRemoteTable)
 
@@ -50,7 +51,12 @@ myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 main :: IO ()
-main = getOptions >>= run
+main = getOptions >>= maybe version run
+
+version :: IO ()
+version = do
+  printHeader
+  versionString >>= putStrLn
 
 run :: Options -> IO ()
 run (Options { .. }) = do
@@ -72,7 +78,6 @@ run (Options { .. }) = do
   lnid <- newLocalNode transport myRemoteTable
   let rnids = fmap conjureRemoteNodeId optTheirAddress
   runProcess lnid $ do
-    liftIO $ printHeader
     replies <- forM rnids $ \nid -> do
       (_, mref) <- spawnMonitor nid (returnCP sdictUnit ())
       let mkErrorMsg msg = "Error connecting to " ++ show nid ++ ": " ++ msg

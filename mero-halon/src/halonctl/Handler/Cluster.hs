@@ -94,13 +94,19 @@ cluster nids' opt = do
   where
     cluster' nids (LoadData l) = dataLoad nids l
 #ifdef USE_MERO
-    cluster' nids (Sync _) = syncToConfd nids
+    cluster' nids (Sync _) = do
+      say "Synchonizing cluster to confd."
+      syncToConfd nids
     cluster' nids (Dump s) = dumpConfd nids s
     cluster' nids (Status (StatusOptions m)) = clusterCommand nids ClusterStatusRequest (liftIO . output m)
       where output True = jsonReport
             output False = prettyReport
-    cluster' nids (Start _)  = clusterCommand nids ClusterStartRequest (liftIO . print)
-    cluster' nids (Stop  _)  = clusterCommand nids ClusterStopRequest (liftIO . print)
+    cluster' nids (Start _)  = do
+      say "Starting cluster."
+      clusterCommand nids ClusterStartRequest (liftIO . print)
+    cluster' nids (Stop  _)  = do
+      say "Stopping cluster."
+      clusterCommand nids ClusterStopRequest (liftIO . print)
     cluster' nids (ClientCmd s) = client nids s
 #endif
 
@@ -219,6 +225,7 @@ client :: [NodeId]
        -> ClientOptions
        -> Process ()
 client eqnids (ClientStopOption fn) = do
+  say "Trying to stop m0t1fs client."
   case strToFid fn of
     Just fid -> do
       promulgateEQ eqnids (StopMeroClientRequest fid) >>= flip withMonitor wait
@@ -227,6 +234,7 @@ client eqnids (ClientStopOption fn) = do
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 client eqnids (ClientStartOption fn) = do
+  say "Trying to start m0t1fs client."
   case strToFid fn of
     Just fid -> do
       promulgateEQ eqnids (StartMeroClientRequest fid) >>= flip withMonitor wait

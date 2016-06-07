@@ -101,6 +101,7 @@ Library
                    HA.RecoveryCoordinator.Events.Drive
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
+                   Version
 
   Other-Modules:   HA.RecoveryCoordinator.Actions.Monitor
                    HA.Services.DecisionLog.CEP
@@ -148,8 +149,12 @@ Library
                    filepath,
                    ede,
                    lens,
-                   vinyl
+                   vinyl,
+                   gitrev,
+                   inline-c
 
+
+  c-sources:       src/lib/Version.c
   if flag(mero)
       Exposed-Modules: Mero.Epoch
                        Mero.Environment
@@ -191,7 +196,6 @@ Library
       extra-libraries: mero
       Build-Depends: rpclite,
                      confc,
-                     inline-c,
                      template-haskell,
                      transformers,
                      vector,
@@ -236,6 +240,7 @@ Executable halonctl
                       StandaloneDeriving
   Other-Extensions:   CPP
   if flag(mero)
+    cc-options:       -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
     CPP-Options:    -DUSE_MERO
     Build-Depends:    confc
   if flag(rpc)
@@ -308,7 +313,6 @@ Executable halond
                       StandaloneDeriving
   Other-Extensions:   CPP
   if flag(mero)
-    c-sources:        src/halond/Version.c
     cc-options:       -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
     CPP-Options:      -DUSE_MERO
   if flag(rpc)
@@ -316,8 +320,6 @@ Executable halond
   Build-Depends:      halon,
                       binary,
                       directory,
-                      gitrev,
-                      inline-c,
                       mero-halon,
                       base >= 4.5,
                       distributed-commands,

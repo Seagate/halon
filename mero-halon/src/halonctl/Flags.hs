@@ -37,14 +37,15 @@ data Command =
     | Status Status.StatusOptions
   deriving (Eq)
 
-getOptions :: IO Options
+getOptions :: IO (Maybe Options)
 getOptions = do
     self <- getProgName
     O.execParser $
       O.withFullDesc self parseOptions "Control nodes (halond instances)."
   where
-    parseOptions :: O.Parser Options
-    parseOptions = Options
+    parseOptions :: O.Parser (Maybe Options)
+    parseOptions = O.flag' Nothing (O.long "version" <> O.hidden) O.<|> (Just <$> normalOptions)
+    normalOptions = Options
         <$> (O.many . O.strOption $ O.metavar "ADDRESSES" <>
                O.long "address" <>
                O.short 'a' <>

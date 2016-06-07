@@ -84,3 +84,16 @@ bootstrap nids opts = case opts of
 #ifdef USE_MERO
   BootstrapCluster clConf -> C.bootstrap clConf
 #endif
+  where
+    -- Fork start process, wait for results from each, output
+    -- information about any failures.
+    startSatellitesAsync :: S.Config -> Process [(NodeId, String)]
+    startSatellitesAsync conf = do
+      say $ "Starting satellites on " ++ show nids
+      self <- getSelfPid
+      localNode <- fmap processNode ask
+      liftIO . forM_ nids $ \nid -> do
+        forkProcess localNode $ do
+          res <- S.start nid conf
+          usend self $ (nid,) <$> res
+      catMaybes <$> forM nids (const expect)
