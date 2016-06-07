@@ -11,6 +11,7 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE ViewPatterns          #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
@@ -362,35 +363,43 @@ meroRules = meroRulesF m0d
 getNotificationChannels :: PhaseM LoopState l [(SendPort NotificationMessage, [String])]
 getNotificationChannels = do
   rg <- getLocalGraph
-  let hosts = G.connectedTo Cluster Has rg :: [Host]
-  things <- forM hosts $ \host -> do
-     mchan <- runMaybeT $ asum (MaybeT . lookupMeroChannelByNode <$> G.connectedTo host Runs rg)
+  let nodes = [ (node, m0node)
+              | host <- G.connectedTo Cluster Has rg :: [Host]
+              , m0cont <- G.connectedFrom M0.At host rg :: [M0.Controller]
+              , m0node <- G.connectedFrom M0.IsOnHardware m0cont rg :: [M0.Node]
+              , node <- G.connectedTo host Runs rg :: [Node]
+              ]
+  things <- forM nodes $ \(node, m0node) -> do
+     mchan <- lookupMeroChannelByNode node
      let recipients = Set.fromList (fst <$> nha) Set.\\ Set.fromList (fst <$> ha)
          (nha, ha) = partition ((/=) CST_HA . snd)
                    [ (endpoint, stype)
-                   | m0cont <- G.connectedFrom M0.At host rg :: [M0.Controller]
-                   , m0node <- G.connectedFrom M0.IsOnHardware m0cont rg :: [M0.Node]
-                   , m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
+                   | m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
                    , G.isConnected m0proc Is M0.PSOnline rg
                    , service <- G.connectedTo m0proc M0.IsParentOf rg :: [M0.Service]
                    , let stype = M0.s_type service
                    , endpoint <- M0.s_endpoints service
                    ]
-     (fmap (,Set.toList recipients)) <$> case mchan of
-       Nothing -> do
-         node <- liftProcess getSelfNode
-         lookupMeroChannelByNode (Node node) >>= \case
+     case (mchan, recipients) of
+       (_, x) | Set.null x -> return Nothing
+       (Nothing, Set.toList -> r) -> do
+         localNode <- liftProcess getSelfNode
+         lookupMeroChannelByNode (Node localNode) >>= \case
             Just (TypedChannel chan) -> do
                phaseLog "warning" $ "HA.Service.Mero.notifyMero: can't find remote service for"
-                                  ++ show host
-                                  ++ ", sending from local"
-               return $ Just chan
+                                  ++ show node
+                                  ++ ", sending from local. "
+                                  ++ "Recipients: "
+                                  ++ show r
+               return $ Just (chan, r)
             Nothing -> do
-              phaseLog "error" $ "HA.Service.Mero.notifyMero: cannot neither MeroChannel on "
-                              ++ show (host, node)
-                              ++ " nor local channel."
+              phaseLog "error" $ "HA.Service.Mero.notifyMero: cannot notify MeroChannel on "
+                              ++ show (node, localNode)
+                              ++ " nor local channel. "
+                              ++ "Recipients: "
+                              ++ show r
               return Nothing
-       Just (TypedChannel chan) -> return $ Just chan
+       (Just (TypedChannel chan), Set.toList -> r) -> return $ Just (chan, r)
   return $ catMaybes things
 
 -- | Create a set event from a set of conf objects and a state.

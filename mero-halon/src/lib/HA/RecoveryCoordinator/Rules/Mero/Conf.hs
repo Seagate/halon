@@ -54,7 +54,7 @@ import Mero.Notification.HAState (Note(..))
 import Control.Applicative (liftA2)
 import Control.Category ((>>>))
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
-import Control.Distributed.Process (Process, liftIO)
+import Control.Distributed.Process (Process, liftIO, say)
 import Control.Arrow (first)
 import Control.Distributed.Static (Static, staticApplyPtr)
 import Control.Monad (join, when, guard)
@@ -237,22 +237,26 @@ genericApplyDeferredStateChanges (DeferredStateChanges f s i)
 applyStateChanges :: [AnyStateSet]
                   -> PhaseM LoopState l ()
 applyStateChanges ass =
-  genericApplyStateChanges ass (return ()) (return ()) (return ())
+    genericApplyStateChanges ass (return ()) (return ()) logFail
+  where
+    logFail = say "applyStateChanges: Could not notify mero."
+
 
 -- | Apply state changes and synchronise with confd.
 applyStateChangesSyncConfd :: [AnyStateSet]
                            -> PhaseM LoopState l ()
 applyStateChangesSyncConfd ass =
-    genericApplyStateChanges ass act (return ()) (return ())
+    genericApplyStateChanges ass act (return ()) logFail
   where
     act = syncAction Nothing M0.SyncToConfdServersInRG
+    logFail = say "applyStateChangesSyncConfd: Could not notify mero."
 
 -- | Apply state changes and create any dynamic failure sets if needed.
 --   This also syncs to confd.
 applyStateChangesCreateFS :: [AnyStateSet]
                           -> PhaseM LoopState l ()
 applyStateChangesCreateFS ass =
-    genericApplyStateChanges ass act (return ()) (return ())
+    genericApplyStateChanges ass act (return ()) logFail
   where
     act = do
       sgraph <- getLocalGraph
@@ -261,6 +265,7 @@ applyStateChangesCreateFS ass =
         forM_ (onFailure strategy sgraph) $ \graph' -> do
           putLocalGraph graph'
           syncAction Nothing M0.SyncToConfdServersInRG
+    logFail = say "applyStateChangesCreateFS: Could not notify mero."
 
 -- | Blocking version of apply state changes. DO NOT USE THIS FUNCTION in any
 --   new code. All uses should be removed as soon as possible.
