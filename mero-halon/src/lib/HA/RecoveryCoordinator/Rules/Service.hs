@@ -144,12 +144,11 @@ serviceRules argv = do
     ph0 <- phaseHandle "pre-request"
     ph1 <- phaseHandle "start-request"
     ph1' <- phaseHandle "service-failed"
-    ph2' <- phaseHandle "service-started"
     ph2 <- phaseHandle "start-success"
     ph3 <- phaseHandle "start-failed"
     ph4 <- phaseHandle "start-failed-totally"
 
-    directly ph0 $ switch [ph1, ph1', ph2']
+    directly ph0 $ switch [ph1, ph1']
 
     setPhaseIf ph1 isNotHandled $ \(HAEvent uuid msg _) -> do
       todo uuid
@@ -212,46 +211,6 @@ serviceRules argv = do
           bounceServiceTo Current n svc
           switch [ph2, ph3, timeout timeup ph4]
         _ -> return ()
-
-    -- It may be possible that previous invocation of RC was killed during
-    -- service start, then it's perfectly ok to receive ServiceStarted
-    -- message outside of the ServiceStart procedure. In this case the
-    -- best we could do is to consult resource graph and check if we need
-    -- this service running or not and proceed evaluation.
-    setPhaseIf ph2' isNotHandled $ \(HAEvent uuid msg _) -> do
-      ServiceStarted n@(Node nodeId) svc cfg sp@(ServiceProcess spid)
-        <- decodeMsg msg
-      phaseLog "input" $ unwords [ "ServiceStarted:"
-                                 , "name=" ++ (snString $ serviceName svc)
-                                 , "nid=" ++ show nodeId
-                                 ]
-      phaseLog "thread-id" $ show uuid
-      known <- knownResource n
-      if known
-         then do
-          res <- lookupRunningService n svc
-          case res of
-            Just sp' -> unregisterServiceProcess n svc sp'
-            Nothing  -> registerServiceName svc
-          registerServiceProcess n svc cfg sp
-          let vitalService = serviceName regularMonitor == serviceName svc
-          if vitalService
-            then do startNodesMonitoring [msg]
-                    -- EQT may not be spawn at the moment so we create a special
-                    -- process that will update EQT as soon as it will see that.
-                    _ <- liftProcess $ spawnAsync nodeId $
-                        $(mkClosure 'EQT.updateEQNodes) (eqNodes argv)
-                    startProcessMonitoring n =<< getRunningServices n
-            else startProcessMonitoring n [msg]
-          phaseLog "info" ("Service "
-                              ++ (snString . serviceName $ svc)
-                              ++ " started"
-                             )
-          liftProcess $ sayRC $
-            "started " ++ snString (serviceName svc) ++ " service on " ++
-              show (processNodeId spid)
-          messageProcessed uuid
-        else messageProcessed uuid
 
     setPhaseIf ph2 serviceStarted $ \(HAEvent uuid msg _) -> do
       ServiceStarted n@(Node nodeId) svc cfg sp@(ServiceProcess spid)

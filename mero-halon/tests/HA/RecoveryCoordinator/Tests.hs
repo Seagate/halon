@@ -62,7 +62,7 @@ import           Network.CEP (defineSimple, liftProcess, subscribe, Definitions 
 import           Network.Transport (Transport)
 import           Prelude hiding ((<$>), (<*>))
 import           Test.Framework
-import           Test.Tasty.HUnit (testCase)
+import           Test.Tasty.HUnit (testCase, assertFailure)
 import           TestRunner
 
 tests :: (RGroup g, Typeable g) => Transport -> Proxy g -> [TestTree]
@@ -370,6 +370,7 @@ testNodeUpRace transport pg = runTest 2 20 15000000 transport testRemoteTable $ 
     pr <- expect
     rg <- G.getGraph mm
     case runningService nn Monitor.regularMonitor rg of
-      Just (ServiceProcess n) -> do True <- return $ n /= pr
-                                    return ()
+      Just (ServiceProcess n) -> if n /= pr
+                                 then return ()
+                                 else liftIO $ assertFailure $ "Process should differ: " ++ show n ++ " " ++ show pr
       Nothing -> return ()
