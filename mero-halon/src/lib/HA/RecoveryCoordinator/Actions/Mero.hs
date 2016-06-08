@@ -285,7 +285,9 @@ startMeroProcesses (TypedChannel chan) procs' label mkfs = do
       phaseLog "debug" $ "starting mero processes: " ++ show (fmap (M0.fid.fst) procs)
       liftProcess $ sendChan chan msg
       forM_ procs' $ \p -> modifyGraph
-        $ G.connectUniqueFrom p Is M0.PSStarting
+        $ \rg -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStarting)
+                       (M0.setState p M0.PSStarting rg)
+                       (G.connectedTo p M0.IsParentOf rg)
   where
     runConfig proc rg
       | runsMgs proc rg = syncToBS >>= \bs -> return $
@@ -316,7 +318,9 @@ stopNodeProcesses (TypedChannel chan) ps = do
    let msg = StopProcesses $ map (go rg) ps
    liftProcess $ sendChan chan msg
    forM_ ps $ \p -> modifyGraph
-     $ G.connectUniqueFrom p Is M0.PSStopping
+     $ \rg -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStopping)
+                    (G.connectUniqueFrom p Is M0.PSStopping rg)
+                    (G.connectedTo p M0.IsParentOf rg)
    where
      go rg p = case G.connectedTo p Has rg of
         [M0.PLM0t1fs] -> ([M0T1FS], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))

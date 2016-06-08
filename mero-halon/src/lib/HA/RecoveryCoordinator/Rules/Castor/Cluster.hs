@@ -648,7 +648,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
                       fork CopyBuffer $ do
                         put Local $ Just (node, host, eid)
                         _ <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
-                        switch [boot_level_1, timeout 180 finish]
+                        switch [boot_level_1, timeout 180 cluster_failed]
 
     setPhaseIf boot_level_1 (barrierPass (>= (M0.MeroClusterStarting (M0.BootLevel 1)))) $ \() -> do
       Just (node, host, _) <- get Local
@@ -659,7 +659,7 @@ ruleNewMeroServer = define "new-mero-server" $ do
           procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
           when (null procs) $ do
             phaseLog "warn" "Empty list of processes being started"
-          switch [start_clients, timeout 180 finish]
+          switch [start_clients, timeout 180 cluster_failed]
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
           continue finish

@@ -126,6 +126,10 @@ someHasConfObjectStateDict :: Dict (HasConfObjectState a)
                            -> SomeHasConfObjectStateDict
 someHasConfObjectStateDict = SomeHasConfObjectStateDict
 
+-- | Load configuration object state from the object.
+getConfObjState :: HasConfObjectState a => a -> G.Graph -> ConfObjectState
+getConfObjState x rg = toConfObjState x $ getState x rg
+
 -- | Class to determine configuration object state from the resource graph.
 class (G.Resource a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateCarrier a), Typeable (StateCarrier a))
   => HasConfObjectState a where
@@ -135,8 +139,6 @@ class (G.Resource a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateCarrier a),
     -- | Dictionary providing evidence of this class
     hasStateDict :: Static (Dict (HasConfObjectState a))
 
-    getConfObjState :: a -> G.Graph -> ConfObjectState
-    getConfObjState x rg = toConfObjState x $ getState x rg
 
     setState :: a -> StateCarrier a -> G.Graph -> G.Graph
     default setState :: G.Relation Is a ConfObjectState
@@ -211,7 +213,6 @@ instance HasConfObjectState M0.Node where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Node
 instance HasConfObjectState M0.Process where
   type StateCarrier M0.Process = M0.ProcessState
-  -- XXX: figure out why we need PSOnline here
   getState x rg = fromMaybe M0.PSUnknown . listToMaybe $ G.connectedTo x Is rg
   setState x st = G.connectUniqueFrom x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Process
@@ -227,22 +228,19 @@ instance HasConfObjectState M0.Process where
 
 instance HasConfObjectState M0.Service where
   type StateCarrier M0.Service = M0.ServiceState
-  getConfObjState x rg = case G.connectedTo x Is rg :: [M0.ServiceState] of
-    y : _ -> toConfObjState x y
-    _ -> M0_NC_ONLINE
   getState x rg = fromMaybe M0.SSUnknown . listToMaybe $ G.connectedTo x Is rg
   setState x st = G.connectUniqueFrom x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Service
 
-  toConfObjState _ M0.SSUnknown = M0_NC_UNKNOWN
+  toConfObjState _ M0.SSUnknown = M0_NC_ONLINE
   toConfObjState _ M0.SSOffline = M0_NC_FAILED
   toConfObjState _ M0.SSFailed = M0_NC_FAILED
   toConfObjState _ M0.SSOnline = M0_NC_ONLINE
   -- TODO: Starting = ONLINE because mero hates non-online services
   -- during process start
   toConfObjState _ M0.SSStarting = M0_NC_ONLINE
-  toConfObjState _ (M0.SSInhibited M0.SSOnline) = M0_NC_TRANSIENT
-  toConfObjState x (M0.SSInhibited st) = toConfObjState x st
+  toConfObjState _ (M0.SSInhibited M0.SSFailed) = M0_NC_FAILED
+  toConfObjState x (M0.SSInhibited st) = M0_NC_TRANSIENT
 
 instance HasConfObjectState M0.Disk where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Disk

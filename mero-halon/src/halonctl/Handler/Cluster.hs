@@ -277,7 +277,7 @@ prettyReport (ReportClusterState status sns info' hosts) = do
            putStrLn $ "    " ++ "[" ++ M0.prettyProcessState proc_st ++ "]\t"
                              ++ endpoint ++ "\t" ++ inferType (map fst srvs) ++ "\t==> " ++ fidToStr rfid
            for_ srvs $ \(M0.Service fid' t' _ _, sst) -> do
-             putStrLn $ "        [" ++ show sst ++ "]\t" ++ show t' ++ "\t\t\t==> " ++ fidToStr fid'
+             putStrLn $ "        [" ++ M0.prettyServiceState sst ++ "]\t" ++ show t' ++ "\t\t\t==> " ++ fidToStr fid'
          unless (null sdevs) $ do
            putStrLn "    Devices:"
            forM_ sdevs $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path}, sdev_st) -> do

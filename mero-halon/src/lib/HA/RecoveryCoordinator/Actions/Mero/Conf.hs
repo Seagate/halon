@@ -232,7 +232,6 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
       modifyLocalGraph $ return
                        . (    G.newResource svc
                           >>> G.connect proc M0.IsParentOf svc
-                          >>> G.connectUniqueFrom svc Is M0.SSOnline
                           >>> linkDrives svc
                          )
 

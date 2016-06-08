@@ -237,6 +237,14 @@ data Service = Service {
   , s_params :: ServiceParams
 } deriving (Eq, Generic, Show, Typeable)
 
+instance Binary Service
+instance Hashable Service
+instance ToJSON Service
+instance FromJSON Service
+instance ConfObj Service where
+  fidType _ = fromIntegral . ord $ 's'
+  fid = s_fid
+
 -- | Service state. This is a generalisation of what might be reported to Mero.
 data ServiceState =
     SSUnknown -- ^ Service state is not known.
@@ -244,6 +252,7 @@ data ServiceState =
   | SSFailed -- ^ Service has failed.
   | SSOnline -- ^ Service is running OK.
   | SSStarting
+  | SSStopping
   | SSInhibited ServiceState -- ^ Service state is masked by a higher level
                              --   failure.
   deriving (Eq, Show, Typeable, Generic)
@@ -252,13 +261,14 @@ instance Hashable ServiceState
 instance ToJSON ServiceState
 instance FromJSON ServiceState
 
-instance Binary Service
-instance Hashable Service
-instance ToJSON Service
-instance FromJSON Service
-instance ConfObj Service where
-  fidType _ = fromIntegral . ord $ 's'
-  fid = s_fid
+prettyServiceState :: ServiceState -> String
+prettyServiceState SSUnknown = "N/A"
+prettyServiceState SSOffline = "offline"
+prettyServiceState SSStarting = "starting"
+prettyServiceState SSOnline   = "online"
+prettyServiceState SSStopping = "stopping"
+prettyServiceState SSFailed   = "failed"
+prettyServiceState (SSInhibited st) = "inhibited (" ++ prettyServiceState st ++ ")"
 
 data SDev = SDev {
     d_fid :: Fid

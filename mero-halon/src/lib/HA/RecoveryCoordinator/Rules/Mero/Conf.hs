@@ -411,9 +411,23 @@ enclosureCascadeRule = StateCascadeRule
 processCascadeRule :: StateCascadeRule M0.Process M0.Service
 processCascadeRule = StateCascadeRule
   (const True)
-  (\case { M0.PSOffline -> True ; M0.PSFailed _ -> True ; _ -> False })
+  (const True)
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
-  (\s _ -> case s of {M0.PSOffline -> M0.SSOffline ; M0.PSFailed _ -> M0.SSFailed ; _ -> M0.SSUnknown})
+  (\s o -> case s of
+            M0.PSStarting -> error "M0.SSStarting"
+            M0.PSOnline -> o
+            M0.PSOffline
+              | o == M0.SSFailed -> o
+              | otherwise -> M0.SSOffline
+            M0.PSFailed _
+              | o == M0.SSFailed -> o
+              | otherwise -> M0.SSInhibited o
+            M0.PSStopping
+              | o == M0.SSFailed -> o
+              | otherwise -> M0.SSStopping
+            M0.PSInhibited _
+              | o == M0.SSFailed -> o
+              | otherwise -> M0.SSInhibited o)
 
 -- This is a phantom rule; SDev state is queried through Disk state,
 -- so this rule just exists to include the `SDev` in the set of
