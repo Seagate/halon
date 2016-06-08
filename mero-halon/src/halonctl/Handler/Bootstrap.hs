@@ -19,13 +19,7 @@ where
 
 import Prelude hiding ((<$>))
 import Control.Distributed.Process
-import Control.Distributed.Process.Node (forkProcess)
-import Control.Distributed.Process.Internal.Types
 
-import Control.Monad
-import Control.Monad.Reader (ask)
-import Data.Binary ( Binary )
-import Data.Maybe (catMaybes)
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
 import Options.Applicative ((<$>) , (<>))
@@ -84,16 +78,3 @@ bootstrap nids opts = case opts of
 #ifdef USE_MERO
   BootstrapCluster clConf -> C.bootstrap clConf
 #endif
-  where
-    -- Fork start process, wait for results from each, output
-    -- information about any failures.
-    startSatellitesAsync :: S.Config -> Process [(NodeId, String)]
-    startSatellitesAsync conf = do
-      say $ "Starting satellites on " ++ show nids
-      self <- getSelfPid
-      localNode <- fmap processNode ask
-      liftIO . forM_ nids $ \nid -> do
-        forkProcess localNode $ do
-          res <- S.start nid conf
-          usend self $ (nid,) <$> res
-      catMaybes <$> forM nids (const expect)
