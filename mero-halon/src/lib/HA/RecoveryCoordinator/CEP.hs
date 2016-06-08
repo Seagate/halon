@@ -27,6 +27,7 @@ import GHC.Generics
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
 import           Control.Distributed.Process.Internal.Types (Message(..))
+import           Control.Monad (forM_)
 import           Data.UUID (nil, null)
 import           Network.CEP
 import           Network.HostName
@@ -48,7 +49,6 @@ import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
 import qualified HA.Resources.Castor as M0
 #ifdef USE_MERO
-import           Control.Monad (forM_)
 import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Actions.Mero.Conf (getFilesystem)
 import           HA.RecoveryCoordinator.Events.Mero
@@ -392,20 +392,16 @@ ruleRecoverNode argv = define "recover-node" $ do
 
       start start_recover (nil, Nothing)
 
-
--- | Send 'Logs' to decision-log service. First it tries to send to
--- decision-log on own node. If service is not found, it tries to find
--- the service on another node and send the logs there. If no service
--- is found across all nodes, just defaults to 'printLogs'.
+-- | Send 'Logs' to decision-log services. If no service
+--   is found across all nodes, just defaults to 'printLogs'.
 sendLogs :: Logs -> LoopState -> Process ()
 sendLogs logs ls = do
   nid <- getSelfNode
-  case lookupDLogServiceProcess nid ls <|> svc of
-    Just (ServiceProcess pid) -> usend pid logs
-    Nothing -> printLogs logs
+  case svcs of
+    [] -> printLogs logs
+    xs -> forM_ xs $ \(ServiceProcess pid) -> usend pid logs
   where
     rg = lsGraph ls
     nodes = [ n | host <- G.connectedTo Cluster Has rg :: [Host]
                 , n <- G.connectedTo host Runs rg ]
-    svc = listToMaybe . catMaybes $
-          map (\n -> runningService n decisionLog rg) nodes
+    svcs = catMaybes $ map (\n -> runningService n decisionLog rg) nodes

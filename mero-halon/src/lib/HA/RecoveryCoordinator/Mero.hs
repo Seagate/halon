@@ -32,7 +32,6 @@ module HA.RecoveryCoordinator.Mero
        , GetMultimapProcessId(..)
        , ack
        , makeRecoveryCoordinator
-       , lookupDLogServiceProcess
        , sendToMonitor
        , sendToMasterMonitor
        , loadNodeMonitorConf
@@ -116,10 +115,6 @@ timeoutHost h = hasHostAttr M0.HA_TRANSIENT h >>= \case
 
 ack :: ProcessId -> PhaseM LoopState l ()
 ack pid = liftProcess $ usend pid ()
-
-lookupDLogServiceProcess :: NodeId -> LoopState -> Maybe (ServiceProcess DecisionLogConf)
-lookupDLogServiceProcess nid ls =
-    runningService (Node nid) decisionLog $ lsGraph ls
 
 initialize :: StoreChan -> Process G.Graph
 initialize mm = do
