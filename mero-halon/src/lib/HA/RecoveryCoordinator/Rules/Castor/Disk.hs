@@ -81,6 +81,8 @@ rules = sequence_
   , ruleDriveInserted
   , ruleDriveRemoved
   , Repair.checkRepairOnClusterStart
+  , Repair.checkRepairOnServiceUp
+  , Repair.ruleRepairStart
   , Repair.ruleRebalanceStart
   , Reset.ruleResetAttempt
   ]

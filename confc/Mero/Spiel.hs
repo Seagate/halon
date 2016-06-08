@@ -745,12 +745,10 @@ poolRepairQuiesce (SpielContext sc _) fid =
 poolRepairAbort :: SpielContext
                 -> Fid
                 -> IO ()
-poolRepairAbort sc fid =
+poolRepairAbort (SpielContext sc _) fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot abort pool repair: " ++ show rc)
       $ c_spiel_pool_repair_abort sc fid_ptr
-  where
-    c_spiel_pool_repair_abort = error "c_spiel_pool_repair_abort not implemented"
 
 poolRepairStatus :: SpielContext
                  -> Fid

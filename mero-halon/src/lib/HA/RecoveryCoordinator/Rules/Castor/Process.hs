@@ -14,12 +14,14 @@ module HA.RecoveryCoordinator.Rules.Castor.Process
   , ruleStopMeroProcess
   , ruleProcessControlStop
   , ruleProcessControlStart
+  , ruleFailedNotificationFailsProcess
   ) where
 
 import           HA.Encode
 import           Control.Monad (unless)
 import           Control.Monad.Trans.Maybe
 import           Data.Either (partitionEithers, rights)
+import           Data.List (nub)
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe)
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
@@ -32,7 +34,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Node(..), Cluster(..))
 import           HA.Resources.Castor (Is(..))
 import qualified HA.Resources.Mero as M0
-import           HA.Resources.Mero.Note (ConfObjectState(..), getState)
+import           HA.Resources.Mero.Note (ConfObjectState(..), getState, NotifyFailureEndpoints(..))
 import           HA.Services.Mero (m0d)
 import           HA.Services.Mero.CEP (meroChannel)
 import           HA.Services.Mero.Types
@@ -68,7 +70,7 @@ handleProcessFailureE (Set ns) = do
 
     -- Make sure we're not in PSStarting state: this means that SSPL
     -- restarted process or mero sent ONLINE (indicating a potential
-    -- process restart) which means we shouldn't try to resart again
+    -- process restart) which means we shouldn't try to restart again
     False -> if getState p rg == M0.PSStarting
              then phaseLog "warn" $ "Proceess in starting state, not restarting: "
                                  ++ show p
@@ -81,6 +83,14 @@ handleProcessFailureE (Set ns) = do
       M0.PSStopping -> True
       _ -> False
 
+-- | Watch for internal process failure notifications and orchestrate
+-- their restart. Common scenario is:
+--
+-- * Fail the services associated with the process
+-- * Request restart of the process through systemd
+-- * Wait for the systemd process exit code. Deal with non-successful
+-- exit code here. If successful, do nothing more here and let other
+-- rules handle ONLINE notifications as they come in.
 ruleProcessRestarted :: Definitions LoopState ()
 ruleProcessRestarted = define "processes-restarted" $ do
   initialize <- phaseHandle "initialize"
@@ -362,3 +372,32 @@ ruleProcessControlStop = defineSimpleTask "handle-process-stop" $ \(ProcessContr
     <$> resultProcs
   forM_ (rights results) $ \(x,s) ->
     phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
+
+-- | Listens for 'NotifyFailureEndpoints' from notification mechanism.
+-- Finds the non-failed processes which failed to be notified (through
+-- endpoints of the services in question) and fails them. This allows
+-- 'ruleProcessRestarted' to deal with them accordingly.
+ruleFailedNotificationFailsProcess :: Definitions LoopState ()
+ruleFailedNotificationFailsProcess =
+  defineSimpleTask "notification-failed-fails-process" $ \(NotifyFailureEndpoints eps) -> do
+    phaseLog "info" $ "Handling notification failure for: " ++ show eps
+    rg <- getLocalGraph
+    -- Get procs which have servicess
+    let procs = nub $
+          [ p | p <- getAllProcesses rg
+              -- Don't consider already failed processes: if a process has
+              -- failed and we try to notify about it below and that still
+              -- fails, we'll just run ourselves in circles
+              , not . isProcFailed $ getState p rg
+              , s <- G.connectedTo p M0.IsParentOf rg
+              , any (`elem` M0.s_endpoints s) eps ]
+
+    -- We don't wait for confirmation of the notification, we're after
+    -- a state change and internal notification. And this is already a
+    -- handler for failed notifications so there isn't anything sane
+    -- we could do here anyway.
+    unless (null procs) $ do
+      applyStateChanges $ map (\p -> stateSet p $ M0.PSFailed "notification-failed") procs
+  where
+    isProcFailed (M0.PSFailed _) = True
+    isProcFailed _ = False

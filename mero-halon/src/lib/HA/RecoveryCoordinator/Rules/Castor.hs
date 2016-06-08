@@ -68,6 +68,7 @@ castorRules = sequence_
   , ruleInternalStateChangeHandler
   , ruleGetEntryPoint
   , ruleProcessRestarted
+  , ruleFailedNotificationFailsProcess
   , Disk.rules
 #endif
   ]
