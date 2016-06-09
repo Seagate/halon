@@ -17,6 +17,7 @@ import Control.Distributed.Process
 
 import Data.Maybe (catMaybes)
 import qualified Data.MultiMap as MM
+import qualified Control.Monad.State.Strict as State
 
 runPhase :: forall g l. g       -- ^ Global state.
          -> l                   -- ^ Local state
@@ -24,7 +25,7 @@ runPhase :: forall g l. g       -- ^ Global state.
          -> PhaseM g l ()       -- ^ Phase to exec
          -> Process (g, [(Buffer, l)])      -- ^ Updated global and local state
 runPhase g l b p = do
-    (g', xs) <- runPhaseM "testing" MM.empty Nothing g l Nothing b p
+    (xs, g') <- State.runStateT (runPhaseM "testing" MM.empty Nothing l Nothing b p) g
     return (g', catMaybes $ fmap extract xs)
   where
     extract (b', po) = case po of

@@ -239,7 +239,7 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
           let msg       = GotMessage tpe m
               msg_count = _machTotalProcMsgs + 1 in
           go msg msg_count
-      Incoming m -> defaultHandler st (cepInitRule ir) req
+      Incoming _ -> defaultHandler st (cepInitRule ir) req
       _ -> defaultHandler st (cepInitRule ir) req
   where
     go (GotMessage ty m) msg_count = do
