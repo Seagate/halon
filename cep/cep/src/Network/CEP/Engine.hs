@@ -5,6 +5,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections   #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ViewPatterns     #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 --
@@ -153,7 +154,7 @@ data Machine s =
     , _machTotalProcMsgs :: !Int
     , _machInitRulePassed :: !Bool
       -- ^ Indicates the if the init rule has been executed already.
-    , _machRunningSM :: [(RuleKey,RuleData s)]
+    , _machRunningSM :: [(RuleKey, RuleData s)]
       -- ^ List of SM that is in a runnable state
     , _machSuspendedSM :: [(RuleKey, RuleData s)]
       -- ^ List of SM that are in suspended state
@@ -234,13 +235,11 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
       TimeoutArrived (Timeout k)
         | k == initRuleKey -> go NoMessage _machTotalProcMsgs
         | otherwise        -> defaultHandler st (cepInitRule ir) req
-      Incoming m
-        | interestingMsg (\frp -> M.member frp typs) m ->
-          let tpe       = typs M.! messageFingerprint m
-              msg       = GotMessage tpe m
+      Incoming m@((`M.lookup` typs) . messageFingerprint -> Just tpe) ->
+          let msg       = GotMessage tpe m
               msg_count = _machTotalProcMsgs + 1 in
           go msg msg_count
-        | otherwise -> defaultHandler st (cepInitRule ir) req
+      Incoming m -> defaultHandler st (cepInitRule ir) req
       _ -> defaultHandler st (cepInitRule ir) req
   where
     go (GotMessage ty m) msg_count = do
