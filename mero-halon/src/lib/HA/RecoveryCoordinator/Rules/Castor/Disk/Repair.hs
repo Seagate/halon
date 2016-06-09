@@ -335,12 +335,15 @@ ruleRepairStart = define "castor-repair-start" $ do
   notify_timeout <- phaseHandle "notify_timeout"
 
   setPhase init_rule $ \(HAEvent uuid (PoolRepairRequest pool) _) -> do
-    fa <- getPoolSDevsWithState pool M0_NC_FAILED
-    phaseLog "repair" $ "Starting repair operation on " ++ show pool
-    let msgs = stateSet pool M0_NC_REPAIR : (flip stateSet M0_NC_REPAIR <$> fa)
-    put Local $ Just (uuid, msgs, Just pool)
-    applyStateChanges msgs
-    switch [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
+    getPoolRepairInformation pool >>= \case
+      Nothing -> do
+        fa <- getPoolSDevsWithState pool M0_NC_FAILED
+        phaseLog "repair" $ "Starting repair operation on " ++ show pool
+        let msgs = stateSet pool M0_NC_REPAIR : (flip stateSet M0_NC_REPAIR <$> fa)
+        put Local $ Just (uuid, msgs, Just pool)
+        applyStateChanges msgs
+        switch [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
+      Just _ -> messageProcessed uuid
 
   setPhaseAllNotified pool_disks_notified (maybe Nothing (\(_, ns, _) -> return ns)) $ do
     Just (uuid, _, Just pool) <- get Local
