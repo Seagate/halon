@@ -69,3 +69,11 @@ test:
     - stack $STACK_FLAGS $STACK_TEST_FLAGS build --flag mero-halon:distributed-tests mero-halon:distributed-tests:
         timeout: 3600
     - scripts/copy_artifacts.sh "${CIRCLE_ARTIFACTS}"
+
+deployment:
+  # this deployment script will trigger the castor integration tests
+  # on the latest refs of the components.
+  autobuild:
+    branch: master
+    commands:
+      - bash ci/autobuild.sh
