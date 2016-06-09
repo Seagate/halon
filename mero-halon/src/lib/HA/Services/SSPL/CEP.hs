@@ -293,14 +293,12 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
      continue pcommit
 
    setPhase pcommit $ \(RuleDriveManagerDisk disk) -> do
-     Just (uuid, nid, enc, diskNum, srdm, sn, path) <- get Local
+     Just (uuid, nid, enc, _diskNum, srdm, _sn, _path) <- get Local
      let
       disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus srdm
       disk_reason = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskReason srdm
 
      oldDriveStatus <- maybe (StorageDeviceStatus "" "") id <$> driveStatus disk
-
-     isOngoingReset <- hasOngoingReset disk
 
      case ( T.toUpper disk_status, T.toUpper disk_reason) of
       (s, r) | oldDriveStatus == StorageDeviceStatus (T.unpack s) (T.unpack r) ->
@@ -337,12 +335,9 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
                   . sensorResponseMessageSensor_response_typeDisk_status_hpiDiskNum
                   $ srphi
           idx = DIIndexInEnclosure diskNum
-          host  = Host . T.unpack
-                       . sensorResponseMessageSensor_response_typeDisk_status_hpiHostId
-                       $ srphi
-          serial = DISerialNumber . T.unpack
-                       . sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber
-                       $ srphi
+          serial_str = sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber
+                     $ srphi
+          serial = DISerialNumber . T.unpack $ serial_str
           enc   = Enclosure . T.unpack
                        . sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN
                        $ srphi
@@ -359,7 +354,7 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
         (Just i, Just _) -> do
           -- Drive with this serial is known, but is not the drive in this slot.
           -- In this case the drive has probably been replaced.
-          attachStorageDeviceReplacement i [serial, wwn, idx]
+          void $ attachStorageDeviceReplacement i [serial, wwn, idx]
           return i
         (Just i, Nothing) -> do
           -- We have a device in this slot, but we don't know its serial.
@@ -376,24 +371,31 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
           locateStorageDeviceInEnclosure enc disk
           identifyStorageDevice disk [idx]
           -- TODO Do we need to do this?
-          attachStorageDeviceReplacement disk [serial, wwn, idx]
+          void $ attachStorageDeviceReplacement disk [serial, wwn, idx]
           return disk
 
       -- Now find out whether we need to send removed or powered messages
       was_powered <- isStorageDevicePowered sdev
       was_removed <- isStorageDriveRemoved sdev
 
-      case (is_installed, is_powered) of
-       (True, _) | was_removed ->
+      more_needed <- case (is_installed, is_powered) of
+       (True, _) | was_removed -> do
          selfMessage $ DriveInserted uuid sdev enc diskNum serial
-       (False, _) | (not was_removed) ->
+         return True
+       (False, _) | (not was_removed) -> do
          selfMessage $ DriveRemoved uuid (Node nid) enc sdev diskNum
-       (_, True) | (not was_powered) ->
-         selfMessage $ DrivePowerChange uuid (Node nid) enc sdev diskNum True
-       (_, False) | was_powered ->
-         selfMessage $ DrivePowerChange uuid (Node nid) enc sdev diskNum False
+         return True
+       (_, True) | (not was_powered) -> do
+         selfMessage $ DrivePowerChange uuid (Node nid) enc sdev diskNum serial_str True
+         return True
+       (_, False) | was_powered -> do
+         selfMessage $ DrivePowerChange uuid (Node nid) enc sdev diskNum serial_str False
+         return True
+       _ -> return False
 
-      syncGraphProcessMsg uuid
+      if more_needed
+      then syncGraph (return ())
+      else syncGraphProcessMsg uuid
 
 #ifdef USE_MERO
 -- | Handle SSPL message about a service restart.

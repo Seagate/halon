@@ -22,6 +22,7 @@ import Data.UUID (UUID)
 
 import Data.Binary   (Binary)
 import Data.Hashable (Hashable)
+import qualified Data.Text as T
 import Data.Typeable (Typeable)
 import GHC.Generics
 
@@ -49,6 +50,7 @@ data DrivePowerChange = DrivePowerChange
   , dpcEnclosure :: Enclosure
   , dpcDevice :: StorageDevice
   , dpcDiskNum :: Int
+  , dpcSerial :: T.Text
   , dpcPowered :: Bool -- Is device now powered?
   } deriving (Eq, Show, Typeable, Generic)
 instance Hashable DrivePowerChange
