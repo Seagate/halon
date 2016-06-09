@@ -19,7 +19,7 @@ import Data.Either (partitionEithers)
 import           Control.Distributed.Process hiding (bracket_)
 import           Control.Distributed.Process.Internal.Types
 import           Control.Distributed.Process.Serializable
-import qualified Control.Monad.State as State
+import qualified Control.Monad.Trans.State.Strict as State
 import           Control.Monad.Trans
 import           Control.Monad.Catch (bracket_)
 import qualified Data.MultiMap       as MM
@@ -251,11 +251,12 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
     go NoMessage msg_count = do
       let stk  = _ruleStack rd
           logs = fmap (const S.empty) _machLogger
-          exe  = SMExecute logs _machSubs _machState
+          exe  = SMExecute logs _machSubs
       -- We do not allow fork inside init rule, this may be ok or not
       -- depending on a usecase, but allowing fork will make implementation
       -- much harder and do not worth it, unless we have a concrete example.
-      (g, [(SMResult out infos mlogs, nxt_stk)]) <- runSM stk exe
+      ([(SMResult out infos mlogs, nxt_stk)], g) <-
+          State.runStateT (runSM stk exe) _machState
       let new_rd = rd { _ruleStack = nxt_stk }
           nxt_st = st { _machState = g }
           rinfo = RuleInfo InitRuleName [(out, infos)]
@@ -334,10 +335,8 @@ executeTick = do
                $ do
       sti <- State.get
       let logs = fmap (const S.empty) $ _machLogger sti
-          exe  = SMExecute logs (_machSubs sti) (_machState sti)
-      (g', machines) <- lift $ runSM (_ruleStack sm) exe
-      State.modify $ \nxt_st -> nxt_st{_machState = g'}
-
+          exe  = SMExecute logs (_machSubs sti)
+      (machines, g') <- lift $ State.runStateT (runSM (_ruleStack sm) exe) (_machState sti)
       let addRunning   = foldr (\x y -> mkRunningSM x . y) id machines
           addSuspended = foldr (\x y -> mkSuspendedSM x . y) id machines
           mkRunningSM (SMResult SMRunning  _ _, s) = (mkSM s :)

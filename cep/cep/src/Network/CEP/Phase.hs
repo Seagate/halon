@@ -23,7 +23,6 @@ import           Control.Monad.Trans
 import qualified Control.Monad.Trans.State.Strict as State
 import qualified Data.MultiMap as MM
 import qualified Data.Sequence as S
-import           Data.Tuple (swap)
 
 import Network.CEP.Buffer
 import Network.CEP.Types
@@ -61,16 +60,15 @@ data Extraction b =
 -- | Extracts messages from a 'Buffer' based based on 'PhaseType' need.
 extractMsg :: (Serializable a, Serializable b)
            => PhaseType g l a b
-           -> g
            -> l
            -> Buffer
-           -> Process (Maybe (Extraction b))
-extractMsg typ g l buf =
+           -> State.StateT g Process (Maybe (Extraction b))
+extractMsg typ l buf =
     case typ of
       PhaseWire _  -> error "phaseWire: not implemented yet"
-      PhaseMatch p -> extractMatchMsg p g l buf
-      PhaseNone    -> extractNormalMsg (Proxy :: Proxy a) buf
-      PhaseSeq _ s -> extractSeqMsg s buf
+      PhaseMatch p -> extractMatchMsg p l buf
+      PhaseNone    -> return $! extractNormalMsg (Proxy :: Proxy a) buf
+      PhaseSeq _ s -> return $! extractSeqMsg s buf
 
 -- -- | Extracts messages from a Netwire wire.
 -- extractWireMsg :: forall a b. (Serializable a, Serializable b)
@@ -84,16 +82,15 @@ extractMsg typ g l buf =
 --   to an effectful callback.
 extractMatchMsg :: Serializable a
                 => (a -> g -> l -> Process (Maybe b))
-                -> g
                 -> l
                 -> Buffer
-                -> Process (Maybe (Extraction b))
-extractMatchMsg p g l buf = go (-1)
+                -> State.StateT g Process (Maybe (Extraction b))
+extractMatchMsg p l buf = go (-1)
   where
     go lastIdx =
         case bufferGetWithIndex lastIdx buf of
           Just (newIdx, a, newBuf) -> do
-            res <- mask_ $ trySome $ p a g l
+            res <- State.get >>= \g -> lift (Catch.mask_ $ trySome $ p a g l)
             case res of
               Left _ -> return Nothing
               Right Nothing  -> go newIdx
@@ -112,7 +109,7 @@ extractMatchMsg p g l buf = go (-1)
 extractNormalMsg :: forall a. Serializable a
                  => Proxy a
                  -> Buffer
-                 -> Process (Maybe (Extraction a))
+                 -> Maybe (Extraction a)
 extractNormalMsg _ buf =
     case bufferGet buf of
       Just (newIdx, a, buf') ->
@@ -121,25 +118,25 @@ extractNormalMsg _ buf =
                   , _extractMsg = a
                   , _extractIndex = newIdx
                   } in
-        return $ Just ext
-      _ -> return Nothing
+        Just ext
+      _ -> Nothing
 
 -- | Extracts a message based on messages coming sequentially.
-extractSeqMsg :: PhaseStep a b -> Buffer -> Process (Maybe (Extraction b))
+extractSeqMsg :: PhaseStep a b -> Buffer -> Maybe (Extraction b)
 extractSeqMsg s sbuf = go (-1) sbuf s
   where
     go lastIdx buf (Await k) =
         case bufferGetWithIndex lastIdx buf of
           Just (idx, i, buf') -> go idx buf' $ k i
-          _                   -> return Nothing
+          _                   -> Nothing
     go lastIdx buf (Emit b) =
         let ext = Extraction
                   { _extractBuf = buf
                   , _extractMsg = b
                   , _extractIndex = lastIdx
                   } in
-        return $ Just ext
-    go _ _ _ = return Nothing
+        Just ext
+    go _ _ _ = Nothing
 
 -- | Execute a single 'Phase'
 --
@@ -151,26 +148,24 @@ extractSeqMsg s sbuf = go (-1) sbuf s
 --   or 'suspend' or 'commit'.
 runPhase :: Subscribers   -- ^ Subscribers.
          -> Maybe SMLogs  -- ^ Current logger.
-         -> g             -- ^ Global state.
          -> l             -- ^ Local state.
          -> Buffer        -- ^ Current buffer.
          -> Phase g l     -- ^ Phase handle to interpret.
-         -> Process (g, [(Buffer,PhaseOut l)])
-runPhase subs logs g l buf ph =
+         -> State.StateT g Process [(Buffer,PhaseOut l)]
+runPhase subs logs l buf ph =
     case _phCall ph of
-      DirectCall action -> swap <$> State.runStateT (runPhaseM pname subs logs l Nothing buf action) g
+      DirectCall action -> runPhaseM pname subs logs l Nothing buf action
       ContCall tpe k -> do
-        res <- extractMsg tpe g l buf
+        res <- extractMsg tpe l buf
         case res of
           Just (Extraction new_buf b idx) -> do
-            result <- State.runStateT (runPhaseM pname subs logs l (Just idx) new_buf (k b)) g
-            for_ (fst result) $ \(_,out) ->
+            result <- runPhaseM pname subs logs l (Just idx) new_buf (k b)
+            for_ result $ \(_,out) ->
               case out of
-                SM_Complete{} -> notifySubscribers subs b
+                SM_Complete{} -> lift $ notifySubscribers subs b
                 _             -> return ()
-            return $ swap result
-          Nothing -> do
-            return (g, [(buf, SM_Suspend logs)])
+            return result
+          Nothing -> return [(buf, SM_Suspend logs)]
   where
     pname = _phName ph
 

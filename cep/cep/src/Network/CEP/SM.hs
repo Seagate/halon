@@ -19,7 +19,8 @@ import Data.Foldable (toList)
 import Data.Typeable
 
 import           Control.Monad.Identity (runIdentity)
-import qualified Control.Monad.State.Strict as State
+import           Control.Monad.Trans
+import qualified Control.Monad.Trans.State.Strict as State
 import           Control.Distributed.Process
 import qualified Data.Map.Strict as M
 
@@ -27,7 +28,6 @@ import Network.CEP.Buffer
 import Network.CEP.Execution
 import Network.CEP.Phase
 import Network.CEP.Types
-import Debug.Trace
 
 newtype SM g = SM { runSM :: forall a. SMIn g a -> a }
 
@@ -41,8 +41,7 @@ newtype SM g = SM { runSM :: forall a. SMIn g a -> a }
 data SMIn g a where
     SMExecute :: Maybe SMLogs
               -> Subscribers
-              -> g
-              -> SMIn g (Process (g, [(SMResult, SM g)]))
+              -> SMIn g (State.StateT g Process [(SMResult, SM g)])
     SMMessage :: TypeInfo -> Message -> SMIn g (SM g)
 
 -- | Create CEP state machine
@@ -60,8 +59,8 @@ newSM key startPhase rn ps initialBuffer initialL =
     bootstrap b (SMMessage (TypeInfo _ (_ :: Proxy e)) msg) =
       let Just (a :: e) = runIdentity $ unwrapMessage msg in
       SM (bootstrap (bufferInsert a b))
-    bootstrap b i@(SMExecute _ _ _) = do
-        ph <- jumpEmitTimeout key startPhase
+    bootstrap b i@(SMExecute _ _) = do
+        ph <- lift $ jumpEmitTimeout key startPhase
         interpretInput initialL b [ph] i
 
     interpretInput :: l
@@ -72,8 +71,8 @@ newSM key startPhase rn ps initialBuffer initialL =
     interpretInput l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) =
       let Just (a :: e) = runIdentity $ unwrapMessage msg in
       SM (interpretInput l (bufferInsert a b) phs)
-    interpretInput l b phs (SMExecute logs subs g) =
-      executeStack logs subs g l b id id phs
+    interpretInput l b phs (SMExecute logs subs) =
+      executeStack logs subs l b id id phs
 
     -- We use '[Phase g l] -> [Phase g l]' in order to recreate stack in
     -- case if no branch have fired, this is needed only in presence of
@@ -81,28 +80,27 @@ newSM key startPhase rn ps initialBuffer initialL =
     -- live without it, and have more structure sharing.
     executeStack :: Maybe SMLogs
                  -> Subscribers
-                 -> g
                  -> l
                  -> Buffer
                  -> ([Jump (Phase g l)] -> [Jump (Phase g l)]) -- ^ Stack recreation.
                  -> ([ExecutionInfo] -> [ExecutionInfo]) -- ^ Gather execution info.
                  -> [Jump (Phase g l)]
-                 -> Process (g, [(SMResult, SM g)])
-    executeStack _ _ g l b f info [] = case f [] of
-      [] -> return (g, [stoppedSM info])
-      ph -> return (g, [(SMResult SMSuspended (info []) Nothing
-                        , SM $ interpretInput l b ph)])
-    executeStack logs subs g l b f info (jmp:phs) = do
-        res <- jumpApplyTime jmp
+                 -> State.StateT g Process [(SMResult, SM g)]
+    executeStack _ _ l b f info [] = case f [] of
+      [] -> return [stoppedSM info]
+      ph -> return [(SMResult SMSuspended (info []) Nothing
+                    , SM $ interpretInput l b ph)]
+    executeStack logs subs l b f info (jmp:phs) = do
+        res <- lift $ jumpApplyTime jmp
         case res of
           Left nxt_jmp ->
             let i   = FailExe (jumpPhaseName jmp) SuspendExe b in
-            executeStack logs subs g l b (f . (nxt_jmp:)) (info . (i:)) phs
+            executeStack logs subs l b (f . (nxt_jmp:)) (info . (i:)) phs
           Right ph -> do
-            (g',m) <- runPhase subs logs g l b ph
-            fmap concat <$> mapAccumLM (next ph) g' m
+            m <- runPhase subs logs l b ph
+            concat <$> traverse (next ph) m
       where
-        next ph gNext (buffer, out) =
+        next ph (buffer, out) =
             case out of
               SM_Complete l' newPhases rlogs -> do
                 let (result, phs') = case newPhases of
@@ -118,13 +116,13 @@ newSM key startPhase rn ps initialBuffer initialL =
                                                (info [SuccessExe pname b buffer])
                                                (mkLogs rn rlogs)
                                     , xs)
-                fin_phs <- traverse (jumpEmitTimeout key) phs'
-                return (gNext, [(result, SM $ interpretInput l' buffer fin_phs)])
-              SM_Suspend _ -> executeStack logs subs gNext l b
+                fin_phs <- lift $ traverse (jumpEmitTimeout key) phs'
+                return [(result, SM $ interpretInput l' buffer fin_phs)]
+              SM_Suspend _ -> executeStack logs subs l b
                                 (f.(normalJump ph:))
                                 (info . ((FailExe pname SuspendExe b):))
                                 phs
-              SM_Stop _ -> executeStack logs subs gNext l b
+              SM_Stop _ -> executeStack logs subs l b
                              f
                              (info . ((FailExe pname StopExe b):))
                              phs
@@ -140,17 +138,3 @@ newSM key startPhase rn ps initialBuffer initialL =
 
 mkLogs :: String -> Maybe SMLogs -> Maybe Logs
 mkLogs pn = fmap (Logs pn . toList)
-
--- |The 'mapAccumLM' works like 'Data.Traversable.mapAccumL' but
--- could perform effectfull operations.
-mapAccumLM :: (Monad m , Traversable t)
-           => (a -> b -> m (a, c))
-           -> a
-           -> t b
-           -> m (a, t c)
-mapAccumLM f s t = (\(a,b) -> (b,a)) <$> State.runStateT (traverse go t) s
-  where
-    go x = do s' <- State.get
-              (s'', x') <- State.lift $ f s' x
-              State.put s''
-              return x'
