@@ -8,6 +8,7 @@ module HA.RecoveryCoordinator.Events.Drive
   ( DriveRemoved(..)
   , DriveInserted(..)
   , DriveFailed(..)
+  , DrivePowerChange(..)
   , ResetAttempt(..)
   , ResetSuccess(..)
   , ResetFailure(..)
@@ -39,6 +40,19 @@ newtype ResetFailure =
     ResetFailure StorageDevice
     deriving (Eq, Show, Binary)
 
+-- | DrivePowerChange event is sent when the power status of a
+--   drive changes.
+data DrivePowerChange = DrivePowerChange
+  { dpcUUID :: UUID
+  , dpcNode :: Node
+  , dpcEnclosure :: Enclosure
+  , dpcDevice :: StorageDevice
+  , dpcDiskNum :: Int
+  , dpcPowered :: Bool -- Is device now powered?
+  } deriving (Eq, Show, Typeable, Generic)
+instance Hashable DrivePowerChange
+instance Binary DrivePowerChange
+
 -- | DriveRemoved event is emmited when somebody need to trigger
 -- event that should happen when any drive have failed.
 data DriveRemoved = DriveRemoved
@@ -59,7 +73,6 @@ data DriveInserted = DriveInserted
        , diEnclosure :: Enclosure -- ^ Enclosure where event happened.
        , diDiskNum :: Int -- ^ Unique location of device in enclosure.
        , diSerial :: DeviceIdentifier -- ^ Serial drive of device.
-       , diPath   :: DeviceIdentifier -- ^ Real path of the device.
        } deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveInserted

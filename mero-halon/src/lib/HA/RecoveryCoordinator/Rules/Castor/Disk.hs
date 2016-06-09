@@ -217,7 +217,6 @@ ruleDriveInserted = define "drive-inserted" $ do
     Just (_, di@DriveInserted{ diUUID = uuid
                              , diDevice = disk
                              , diSerial = sn
-                             , diPath = path
                              }) <- get Local
     -- Check if we already have device that was inserted.
     -- In case it this is the same device, then we do not need to update confd.
@@ -258,7 +257,7 @@ ruleDriveInserted = define "drive-inserted" $ do
            Nothing -> modifyGraph $
              G.disconnectAllFrom disk Has (Proxy :: Proxy DeviceIdentifier)
            Just cand -> actualizeStorageDeviceReplacement cand
-         identifyStorageDevice disk [sn, path]
+         identifyStorageDevice disk [sn]
          updateStorageDeviceSDev disk
          markStorageDeviceReplaced disk
          request <- liftIO $ nextRandom
