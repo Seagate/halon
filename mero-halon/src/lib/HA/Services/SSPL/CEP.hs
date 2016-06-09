@@ -595,6 +595,13 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
 
   startFork raid_msg Nothing
 
+ruleMonitorExpanderReset :: Definitions LoopState ()
+ruleMonitorExpanderReset = defineSimpleTask "monitor-expander-reset" $ \(nid, ExpanderResetInternal) -> do
+  menc <- runMaybeT $ do
+    host <- MaybeT $ findNodeHost (Node nid)
+    MaybeT $ findHostEnclosure host
+  forM_ menc $ promulgateRC . ExpanderReset
+
 ruleThreadController :: Definitions LoopState ()
 ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid (nid, artc) _) -> let
     module_name = actuatorResponseMessageActuator_response_typeThread_controllerModule_name artc

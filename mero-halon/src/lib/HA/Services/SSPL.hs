@@ -139,15 +139,17 @@ msgHandler chan msg = do
       sendMessage "SensorResponse.Host"
         sensorResponseMessageSensor_response_typeHost_update
       sendMessage "SensorResponse.DriveManager"
-         sensorResponseMessageSensor_response_typeDisk_status_drivemanager
+        sensorResponseMessageSensor_response_typeDisk_status_drivemanager
       sendMessage "SensorResponse.Watchdog"
-         sensorResponseMessageSensor_response_typeService_watchdog
+        sensorResponseMessageSensor_response_typeService_watchdog
       ignoreMessage "SensorResponse.MountData"
-         sensorResponseMessageSensor_response_typeLocal_mount_data
+        sensorResponseMessageSensor_response_typeLocal_mount_data
       sendMessage "SensorResponse.CPU"
-         sensorResponseMessageSensor_response_typeCpu_data
+        sensorResponseMessageSensor_response_typeCpu_data
       sendMessage "SensorResponse.Raid"
-         sensorResponseMessageSensor_response_typeRaid_data
+        sensorResponseMessageSensor_response_typeRaid_data
+      sendMessage "SensorResponse.ExpanderReset" $
+        (fmap $ const ExpanderResetInternal) . sensorResponseMessageSensor_response_typeExpander_reset
 
     Nothing -> case decode (msgBody msg) :: Maybe ActuatorResponse of
       Just ar -> do

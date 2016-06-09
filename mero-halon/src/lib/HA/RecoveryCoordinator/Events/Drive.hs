@@ -9,6 +9,7 @@ module HA.RecoveryCoordinator.Events.Drive
   , DriveInserted(..)
   , DriveFailed(..)
   , DrivePowerChange(..)
+  , ExpanderReset(..)
   , ResetAttempt(..)
   , ResetSuccess(..)
   , ResetFailure(..)
@@ -84,3 +85,11 @@ data DriveFailed = DriveFailed UUID Node Enclosure StorageDevice
 
 instance Hashable DriveFailed
 instance Binary DriveFailed
+
+-- | Sent when an expander reset attempt happens in the enclosure. In such
+--   a case, we expect to see (or have seen) multiple drive failures
+data ExpanderReset = ExpanderReset Enclosure
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Hashable ExpanderReset
+instance Binary ExpanderReset
