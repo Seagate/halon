@@ -25,8 +25,9 @@ runPhase :: forall g l. g       -- ^ Global state.
          -> PhaseM g l ()       -- ^ Phase to exec
          -> Process (g, [(Buffer, l)])      -- ^ Updated global and local state
 runPhase g l b p = do
-    (xs, g') <- State.runStateT (runPhaseM "testing" MM.empty Nothing l Nothing b p) g
-    return (g', catMaybes $ fmap extract xs)
+    (xs, (EngineState _ g')) <- State.runStateT (runPhaseM "testing" MM.empty Nothing 0 l Nothing b p)
+                                    (EngineState 1 g)
+    return (g', catMaybes $ fmap extract (snd <$> xs))
   where
     extract (b', po) = case po of
       SM_Complete l' _ _ -> Just (b',l')

@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs      #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -Wall -Werror #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
@@ -19,10 +20,13 @@ import           Control.Distributed.Process.Serializable
 import           Control.Monad.Operational
 import           Control.Exception (fromException, throwIO)
 import qualified Control.Monad.Catch as Catch
+import           Control.Monad (unless)
 import           Control.Monad.Trans
 import qualified Control.Monad.Trans.State.Strict as State
 import qualified Data.MultiMap as MM
 import qualified Data.Sequence as S
+import           Data.Traversable (for)
+import           Control.Lens hiding (Index)
 
 import Network.CEP.Buffer
 import Network.CEP.Types
@@ -148,24 +152,25 @@ extractSeqMsg s sbuf = go (-1) sbuf s
 --   or 'suspend' or 'commit'.
 runPhase :: Subscribers   -- ^ Subscribers.
          -> Maybe SMLogs  -- ^ Current logger.
+         -> SMId          -- ^ State machine id.
          -> l             -- ^ Local state.
          -> Buffer        -- ^ Current buffer.
          -> Phase g l     -- ^ Phase handle to interpret.
-         -> State.StateT g Process [(Buffer,PhaseOut l)]
-runPhase subs logs l buf ph =
+         -> State.StateT (EngineState g) Process [(SMId, (Buffer,PhaseOut l))]
+runPhase subs logs idm l buf ph =
     case _phCall ph of
-      DirectCall action -> runPhaseM pname subs logs l Nothing buf action
+      DirectCall action -> runPhaseM pname subs logs idm l Nothing buf action
       ContCall tpe k -> do
-        res <- extractMsg tpe l buf
+        res <- zoom engineStateGlobal $ extractMsg tpe l buf
         case res of
           Just (Extraction new_buf b idx) -> do
-            result <- runPhaseM pname subs logs l (Just idx) new_buf (k b)
-            for_ result $ \(_,out) ->
+            result <- runPhaseM pname subs logs idm l (Just idx) new_buf (k b)
+            for_ (snd <$> result) $ \(_,out) ->
               case out of
                 SM_Complete{} -> lift $ notifySubscribers subs b
                 _             -> return ()
             return result
-          Nothing -> return [(buf, SM_Suspend logs)]
+          Nothing -> return [(idm, (buf, SM_Suspend logs))]
   where
     pname = _phName ph
 
@@ -176,22 +181,27 @@ runPhase subs logs l buf ph =
 runPhaseM :: forall g l. String  -- ^ Process name.
           -> Subscribers         -- ^ List of events subscribers.
           -> Maybe SMLogs        -- ^ Logs.
+          -> SMId                -- ^ Machine index
           -> l                   -- ^ Local state
           -> Maybe Index         -- ^ Current index.
           -> Buffer              -- ^ Buffer
           -> PhaseM g l ()
-          -> State.StateT g Process [(Buffer, PhaseOut l)]
-runPhaseM pname subs plogs pl mindex pb action =
-    consume [(pb,pl,action)]
-  where
+          -> State.StateT (EngineState g) Process [(SMId, (Buffer, PhaseOut l))]
+runPhaseM pname subs plogs idx pl mindex pb action = consume [(idx, (pb,pl,action))] where
     consume []     = return []
-    consume ((b,l,p):ps) = do
-      g <- State.get
-      (t@(_,out), phases, _) <- go l plogs b p
-      case out of
-        SM_Complete{} -> return ()
-        _ -> State.put g
-      (t:) <$> consume (ps++phases)
+    consume ((idm, (b,l,p)):ps) = do
+      (t,phases,_) <- reverseOn (\x -> case x ^. _1 . _2 of SM_Complete{} -> True ; _ -> False)
+                                (zoom engineStateGlobal $ go l plogs b p)
+      phases' <- for phases $ \z -> (,z) <$> (engineStateMaxId <<%= (+1))
+      ((idm,t):) <$> consume (ps ++ phases')
+
+    reverseOn :: (a -> Bool) -> State.StateT (EngineState g) Process a -> State.StateT (EngineState g) Process a
+    reverseOn p f = do
+      old <- use engineStateGlobal
+      x <- f
+      unless (p x) (engineStateGlobal .= old)
+      return x
+
     go :: l -> Maybe SMLogs -> Buffer -> PhaseM g l a
        -> State.StateT g Process ((Buffer, PhaseOut l), [(Buffer, l, PhaseM g l ())], Maybe a)
     go l lgs buf a = lift (viewT a) >>= inner
@@ -248,11 +258,11 @@ runPhaseM pname subs plogs pl mindex pb action =
           go l new_logs buf $ k ()
         inner (Switch xs :>>= _) =
           return ((buf, SM_Complete l xs lgs), [], Nothing)
-        inner (Peek idx :>>= k) = do
-          case bufferPeek idx buf of
+        inner (Peek idd :>>= k) = do
+          case bufferPeek idd buf of
             Nothing -> return ((buf, SM_Suspend lgs), [], Nothing)
             Just r  -> go l lgs buf $ k r
-        inner (Shift idx :>>= k) =
-            case bufferGetWithIndex idx buf of
+        inner (Shift idd :>>= k) =
+            case bufferGetWithIndex idd buf of
               Nothing   -> return ((buf, SM_Suspend lgs),[], Nothing)
               Just (r, z, buf') -> go l lgs buf' $ k (r,z)
