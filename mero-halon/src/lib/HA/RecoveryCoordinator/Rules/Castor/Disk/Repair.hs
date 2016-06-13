@@ -847,8 +847,6 @@ checkRepairOnServiceUp :: Definitions LoopState ()
 checkRepairOnServiceUp = define "checkRepairOnProcessStarte" $ do
   init_rule <- phaseHandle "init_rule"
 
-  let isIOS s = CST_IOS == M0.s_type s
-
   setPhaseInternalNotificationWithState init_rule (== M0.SSOnline) $ \(eid, srvs :: [(M0.Service, M0.ServiceState)]) -> do
     todo eid
     -- Check if any of the services are IOS: if no service is IOS then

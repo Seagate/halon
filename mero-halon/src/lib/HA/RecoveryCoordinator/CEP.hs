@@ -15,7 +15,6 @@
 module HA.RecoveryCoordinator.CEP where
 
 import Prelude hiding ((.), id)
-import Control.Applicative ((<|>))
 import Control.Category
 import Control.Monad (void)
 import Data.Binary (Binary, encode)
@@ -396,7 +395,6 @@ ruleRecoverNode argv = define "recover-node" $ do
 --   is found across all nodes, just defaults to 'printLogs'.
 sendLogs :: Logs -> LoopState -> Process ()
 sendLogs logs ls = do
-  nid <- getSelfNode
   case svcs of
     [] -> printLogs logs
     xs -> forM_ xs $ \(ServiceProcess pid) -> usend pid logs

@@ -29,14 +29,14 @@ import HA.Resources.TH
 import Mero.ConfC (Fid(..))
 
 import Control.Distributed.Static (Static, staticPtr)
-import Control.Monad (join, unless)
+import Control.Monad (join)
 
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Binary (Binary)
 import Data.Constraint (Dict)
 import Data.Bits (shiftR)
 import Data.Hashable (Hashable)
-import Data.List (foldl', nub)
+import Data.List (foldl')
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
 import Data.Monoid ((<>))
@@ -241,8 +241,7 @@ instance HasConfObjectState M0.Service where
   -- during process start
   toConfObjState _ M0.SSStarting = M0_NC_ONLINE
   toConfObjState _ (M0.SSInhibited M0.SSFailed) = M0_NC_FAILED
-  toConfObjState x (M0.SSInhibited st) = M0_NC_TRANSIENT
-
+  toConfObjState _ (M0.SSInhibited _) = M0_NC_TRANSIENT
 instance HasConfObjectState M0.Disk where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Disk
 instance HasConfObjectState M0.SDev where

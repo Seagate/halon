@@ -75,7 +75,6 @@ import Control.Distributed.Process hiding (catch, onException, bracket_)
 import Control.Monad.Catch (catch, onException, bracket_)
 import Control.Monad (forever, join, unless, void, when)
 import qualified Control.Monad.Catch as Catch
-import Control.Monad.Trans.Maybe
 
 import qualified Data.ByteString as BS
 import Data.Char (toUpper)

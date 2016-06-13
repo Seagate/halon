@@ -63,13 +63,9 @@ import Control.Monad
   )
 import Control.Monad.IO.Class
 
-import Data.Binary (Binary)
 import Data.Foldable (for_)
 import Data.Text (Text, pack)
-import Data.Typeable (Typeable)
 import Debug.Trace (traceEventIO)
-
-import GHC.Generics (Generic)
 
 import Network.CEP
 
