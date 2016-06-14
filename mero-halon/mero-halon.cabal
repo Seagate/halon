@@ -91,6 +91,7 @@ Library
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
                    HA.RecoveryCoordinator.Events.Status
+                   HA.RecoveryCoordinator.Events.Cluster
                    HA.RecoveryCoordinator.Actions.Core
                    HA.RecoveryCoordinator.Actions.Storage
                    HA.RecoveryCoordinator.Actions.Hardware

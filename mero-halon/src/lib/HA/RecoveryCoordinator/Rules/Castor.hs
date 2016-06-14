@@ -31,6 +31,7 @@ import qualified HA.ResourceGraph as G
 import Control.Applicative
 import Control.Monad.Catch
 import HA.RecoveryCoordinator.Actions.Mero
+import HA.RecoveryCoordinator.Events.Cluster
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Rules.Castor.Process
 import qualified HA.RecoveryCoordinator.Rules.Castor.Disk as Disk
@@ -102,6 +103,7 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
           (if isJust update then liftProcess else syncGraph) $
             say "Loaded initial data")
           `catch` (\e -> phaseLog "error" $ "Failure during initial data load: " ++ show (e::SomeException))
+      notify InitialDataLoaded
 #else
       liftProcess $ say "Loaded initial data"
 #endif

@@ -26,7 +26,7 @@ module HA.RecoveryCoordinator.Tests
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Internal.Types (nullProcessId)
 import           Control.Distributed.Process.Node
-import           Control.Monad (void)
+import           Control.Monad (void, replicateM_)
 import           Data.Binary
 import           Data.Defaultable
 import           Data.List (isInfixOf)
@@ -37,6 +37,7 @@ import           HA.EventQueue
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
+import           HA.Service
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
 import           HA.Replicator
@@ -58,7 +59,7 @@ import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy as Dummy
 import           HA.Services.Monitor
 import qualified HA.Services.Monitor as Monitor
-import           Network.CEP (defineSimple, liftProcess, subscribe, Definitions , Published(..), Logs(..))
+import           Network.CEP (defineSimple, liftProcess, subscribe, Definitions , Published(..), Logs(..), phaseLog)
 import           Network.Transport (Transport)
 import           Prelude hiding ((<$>), (<*>))
 import           Test.Framework
@@ -79,6 +80,12 @@ tests transport pg =
       testMasterMonitorManagement transport pg
   , testCase "testNodeUpRace" $ testNodeUpRace transport pg
   ]
+
+newtype Step = Step () deriving (Binary)
+
+stepRule = defineSimple "step" $ \(HAEvent _ Step{} _) -> do
+  liftProcess $ say "step"
+  return ()
 
 -- | Test that the recovery co-ordinator can successfully restart a service
 --   upon notification of failure.
@@ -145,14 +152,14 @@ testEQTrimming transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
 
   say $ "tests node: " ++ show nid
-  withTrackingStation pg emptyRules $ \(TestArgs eq mm _) -> do
+  withTrackingStation pg [stepRule] $ \(TestArgs eq mm _) -> do
     nodeUp ([nid], 1000000)
     subscribe eq (Proxy :: Proxy TrimDone)
+    replicateM_ 10 $ promulgateEQ [nid] $ Step ()
     Published (TrimDone _) _ <- expect
     _ <- promulgateEQ [nid] . encodeP $
       ServiceStartRequest Start (Node nid) Dummy.dummy
         (Dummy.DummyConf $ Configured "Test 1") []
-
     Published (TrimDone _) _ <- expect
 
     pid <- getServiceProcessPid mm (Node nid) Dummy.dummy

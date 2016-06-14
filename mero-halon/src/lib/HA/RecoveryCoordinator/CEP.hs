@@ -35,6 +35,7 @@ import           HA.EventQueue.Types
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Status
+import           HA.RecoveryCoordinator.Events.Cluster
 import           HA.RecoveryCoordinator.Rules.Castor
 import           HA.RecoveryCoordinator.Rules.Service
 import           HA.RecoveryCoordinator.Actions.Monitor
@@ -63,6 +64,7 @@ import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..))
 import           HA.Services.SSPL (ssplRules)
 import           HA.Services.SSPL.HL.CEP (ssplHLRules)
 import           HA.Services.Frontier.CEP (frontierRules)
+import           Text.Printf
 
 import           System.Environment
 import           System.IO.Unsafe (unsafePerformIO)
@@ -227,25 +229,10 @@ ruleNodeUp argv = define "node-up" $ do
 
       setPhase nm_reply $ \StartMonitoringReply -> do
         Starting uuid nid _ _ npid <- get Local
-        liftProcess $ sayRC $ "Sending ack to " ++ show npid
+        phaseLog "info" $ printf "started monitor service on %s with pid %s"
+                            (show (Node nid)) (show npid)
         ack npid
-        liftProcess $ sayRC $ "Ack sent to " ++ show npid
-        messageProcessed uuid
-#ifdef USE_MERO
-        sendNewMeroNodeMsg <- findNodeHost (Node nid) >>= return . \case
-          Nothing -> promulgateRC $ NewMeroClient (Node nid)
-          Just host -> do
-            g <- getLocalGraph
-            if G.isConnected host Has HA_M0SERVER g
-            then promulgateRC $ NewMeroServer (Node nid)
-            -- if we don't have the server label, assume mero client
-            -- even if no client label
-            else promulgateRC $ NewMeroClient (Node nid)
-        getFilesystem >>= \case
-           Nothing ->
-             phaseLog "info" "Configuration data was not loaded yet, skipping"
-           Just{} -> sendNewMeroNodeMsg
-#endif
+        promulgateRC $ NewNodeConnected (Node nid)
         done uuid
         continue end
 

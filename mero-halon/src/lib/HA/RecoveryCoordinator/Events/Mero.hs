@@ -7,7 +7,6 @@
 {-# LANGUAGE TypeFamilies #-}
 module HA.RecoveryCoordinator.Events.Mero
    ( SyncComplete(..)
-   , NewMeroClient(..)
    , NewMeroClientProcessed(..)
    , NewMeroServer(..)
    , StopMeroServer(..)
@@ -47,12 +46,6 @@ data SyncComplete = SyncComplete UUID
       deriving (Eq, Show, Typeable, Generic)
 
 instance Binary SyncComplete
-
--- | New mero client was connected.
-data NewMeroClient = NewMeroClient Node
-      deriving (Eq, Show, Typeable, Generic)
-
-instance Binary NewMeroClient
 
 -- | New mero server was connected.
 data NewMeroServer = NewMeroServer Node
