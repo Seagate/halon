@@ -309,11 +309,11 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
       ("EMPTY", "NONE") -> do
         -- This is probably indicative of expander reset?
         updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
-        messageProcessed uuid -- TODO What do we do here?
+        selfMessage $ DriveTransient uuid (Node nid) enc disk
       ("OK", "NONE") -> do
         -- Disk has returned to normal after expander reset?
         updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
-        messageProcessed uuid -- TODO What do we do here?
+        selfMessage $ DriveOK uuid (Node nid) enc disk
       (s,r) -> let
           msg = InterestingEventMessage $ logSSPLUnknownMessage
                 ( "{'type': 'actuatorRequest.manager_status', "

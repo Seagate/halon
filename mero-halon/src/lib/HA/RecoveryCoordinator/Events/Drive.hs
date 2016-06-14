@@ -9,6 +9,8 @@ module HA.RecoveryCoordinator.Events.Drive
   , DriveInserted(..)
   , DriveFailed(..)
   , DrivePowerChange(..)
+  , DriveTransient(..)
+  , DriveOK(..)
   , ExpanderReset(..)
   , ResetAttempt(..)
   , ResetSuccess(..)
@@ -88,8 +90,24 @@ data DriveFailed = DriveFailed UUID Node Enclosure StorageDevice
 instance Hashable DriveFailed
 instance Binary DriveFailed
 
+-- | Event emitted when we get transient failure indication for the drive
+--   from drive manager.
+data DriveTransient = DriveTransient UUID Node Enclosure StorageDevice
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Hashable DriveTransient
+instance Binary DriveTransient
+
+-- | Event emitted when we get OK indication for the drive
+--   from drive manager.
+data DriveOK = DriveOK UUID Node Enclosure StorageDevice
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Hashable DriveOK
+instance Binary DriveOK
+
 -- | Sent when an expander reset attempt happens in the enclosure. In such
---   a case, we expect to see (or have seen) multiple drive failures
+--   a case, we expect to see (or have seen) multiple drive transient events.
 data ExpanderReset = ExpanderReset Enclosure
   deriving (Eq, Show, Typeable, Generic)
 

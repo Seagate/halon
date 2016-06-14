@@ -81,6 +81,7 @@ rules = sequence_
   , ruleDriveInserted
   , ruleDriveRemoved
   , ruleDrivePoweredOff
+  , ruleExpanderResetBlip
   , Repair.checkRepairOnClusterStart
   , Repair.checkRepairOnServiceUp
   , Repair.ruleRepairStart
@@ -385,3 +386,43 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
 
 
   startFork power_removed Nothing
+
+-- | This rule handles processing events seen when the expander resets. In
+--   such a case we expect to see many @DriveTransient@ events, as well as
+--   an @ExpanderReset@ event. This may all happen whilst Mero is also
+--   detecting failures.
+ruleExpanderResetBlip :: Definitions LoopState ()
+ruleExpanderResetBlip = define "castor::disk::expander-reset::blip" $ do
+  any_evt <- phaseHandle "any_evt"
+  drive_blip <- phaseHandle "drive_blip"
+  drive_unblip <- phaseHandle "drive_unblip"
+
+  let failable_state st = st `elem` [ M0_NC_ONLINE
+                                    , M0_NC_REPAIR
+                                    , M0_NC_REBALANCE ]
+
+  directly any_evt $ switch [drive_blip, drive_unblip]
+
+  -- Drive blip probably means we have an expander reset. But for the
+  -- moment, just fail the one drive.
+  setPhase drive_blip $ \(DriveTransient eid _ _ disk) -> do
+    rg <- getLocalGraph
+    mm0sdev <- lookupStorageDeviceSDev disk
+    forM_ mm0sdev $ \sd -> when (failable_state $ getConfObjState sd rg) $ do
+      applyStateChanges [ stateSet sd M0_NC_TRANSIENT ]
+    messageProcessed eid
+
+  -- Drive unblip. Expander reset has passed, now we can restore disks
+  -- to their previous state, provided they're not undergoing reset or similar.
+  setPhase drive_unblip $ \(DriveOK eid _ _ disk) -> do
+    rg <- getLocalGraph
+    reset <- hasOngoingReset disk
+    powered <- isStorageDevicePowered disk
+    removed <- isStorageDriveRemoved disk
+    when (not reset && powered && not removed) $ do
+      mm0sdev <- lookupStorageDeviceSDev disk
+      forM_ mm0sdev $ \sd -> when (getConfObjState sd rg == M0_NC_TRANSIENT) $ do
+        applyStateChanges [ stateSet sd M0_NC_ONLINE ]
+    messageProcessed eid
+
+  startFork any_evt ()
