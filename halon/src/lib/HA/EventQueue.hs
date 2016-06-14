@@ -47,6 +47,7 @@ import HA.Replicator ( RGroup
                      )
 
 import Control.Distributed.Process hiding (catch, finally, mask_, try)
+import Control.Distributed.Process.Pool.Bounded
 import qualified Control.Distributed.Process.Scheduler.Raw as DP
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types (Message(..))
@@ -57,16 +58,14 @@ import Network.CEP hiding (continue)
 import Control.Applicative
 import Control.Concurrent (yield)
 import Control.Concurrent.STM
-import Control.Monad (join, when)
+import Control.Monad (when)
 import Control.Monad.Catch
 import Data.Binary (Binary, encode)
 import Data.Foldable (forM_)
 import Data.Function (fix)
 import Data.Functor (void)
 import Data.Int (Int64)
-import Data.IORef (IORef, atomicModifyIORef, newIORef)
 import qualified Data.Map as M
-import Data.Sequence as Seq
 import qualified Data.Set as S
 import Data.Typeable
 import Data.Word (Word64)
@@ -223,7 +222,7 @@ requestTimeout = 2 * 1000 * 1000
 startEventQueue :: RGroup g => g EventQueue -> Process ProcessId
 startEventQueue rg = do
     eq <- spawnLocal $ do
-      pool <- newProcessPool 50
+      pool <- liftIO $ newProcessPool 50
       self <- getSelfPid
       -- Spawn the initial monitor proxy. See Note [RGroup monitor].
       rgMonitor <- spawnLocal $ link self >> rGroupMonitor rg
@@ -467,54 +466,3 @@ startWorkerMonitor pid = do
     fix $ \loop -> try (DP.register workerMonitorLabel wm) >>= \case
       Right () -> return ()
       Left (_ :: ProcessRegistrationException) -> liftIO yield >> loop
-
---------------------------------------------
--- A pool of processes to handle requests
---------------------------------------------
-
--- | A pool of worker processes that execute tasks.
---
--- It is restricted to produce only a limited amount of workers.
---
-newtype ProcessPool = ProcessPool (IORef PoolState)
-
-data PoolState = PoolState
-    { psLimit :: !Int  -- ^ Maximum amount of workers that will be created.
-    , psCount :: !Int  -- ^ Amount of running workers.
-    , psQueue :: !(Seq (Process ())) -- ^ The queue of tasks.
-    }
-
--- | Creates a new pool with the given limit for the amount of workers.
-newProcessPool :: Int -> Process ProcessPool
-newProcessPool limit =
-  fmap ProcessPool $ liftIO $ newIORef $ PoolState limit 0 Seq.empty
-
--- | @submitTask pool task@ submits a task to the pool.
---
--- If there are more workers than the limit, then @submitTask@ yields @Nothing@
--- and the task is queued until the first worker becomes available.
---
--- If there are less workers than the limit, then @submitTask@ yields
--- @Just worker@ where @worker@ is the worker that will execute the task and
--- possibly other tasks submitted later. Callers will likely want to run
--- @worker@ in a newly spawned thread.
---
-submitTask :: ProcessPool -> Process () -> Process (Maybe (Process ()))
-submitTask (ProcessPool ref) t =
-    liftIO $ atomicModifyIORef ref $ \ps@(PoolState {..}) ->
-      if psCount < psLimit then
-        ( PoolState psLimit (succ psCount) psQueue
-        , Just ((t >> continue) `finally` terminate)
-        )
-      else
-        (ps { psQueue = psQueue |> t}, Nothing)
-  where
-    continue :: Process ()
-    continue = join $ liftIO $ atomicModifyIORef ref $ \ps@(PoolState {..}) ->
-      case viewl psQueue of
-        EmptyL -> (ps, return ())
-        next :< s -> (ps { psQueue = s}, next >> continue)
-
-    terminate :: Process ()
-    terminate = liftIO $ atomicModifyIORef ref $ \ps ->
-      (ps { psCount = pred (psCount ps) }, ())

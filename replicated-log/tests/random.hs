@@ -17,7 +17,7 @@ import Control.Distributed.Log as Log
 import Control.Distributed.Log.Snapshot
 import Control.Distributed.State as State
 
-import Control.Distributed.Process hiding (bracket)
+import Control.Distributed.Process hiding (bracket, catch, onException, try)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Scheduler
@@ -25,8 +25,8 @@ import Control.Distributed.Process.Scheduler
 import Control.Distributed.Static ( staticApply, staticClosure )
 import Network.Transport (Transport(..))
 
-import Control.Exception ( bracket, throwIO, SomeException )
 import Control.Monad ( when, forM_, replicateM, foldM_, void )
+import Control.Monad.Catch
 import Data.Constraint (Dict(..))
 import qualified Data.Map as Map
 import Data.Typeable (Typeable)
@@ -81,14 +81,16 @@ testConfig = Log.Config
                     mref <- newIORef Map.empty
                     vref <- newIORef Nothing
                     return AcceptorStore
-                      { storeInsert =
+                      { storeInsert = (>>) . liftIO .
                           modifyIORef mref . flip (foldr (uncurry Map.insert))
-                      , storeLookup = \d -> Map.lookup d <$> readIORef mref
-                      , storePut = writeIORef vref . Just
-                      , storeGet = readIORef vref
+                      , storeLookup = \d ->
+                          (>>=) $ liftIO $ Map.lookup d <$> readIORef mref
+                      , storePut = (>>) . liftIO . writeIORef vref . Just
+                      , storeGet = (>>=) $ liftIO $ readIORef vref
                       , storeTrim = const $ return ()
-                      , storeList = Map.assocs <$> readIORef mref
-                      , storeMap = readIORef mref
+                      , storeList =
+                          (>>=) $ liftIO $ Map.assocs <$> readIORef mref
+                      , storeMap = (>>=) $ liftIO $ readIORef mref
                       , storeClose = return ()
                       }
                  )
@@ -105,7 +107,7 @@ ssdictState = SerializableDict
 
 killOnError :: ProcessId -> Process a -> Process a
 killOnError pid p = catch p $ \e -> liftIO (print e) >>
-  exit pid (show (e :: SomeException)) >> liftIO (throwIO e)
+  exit pid (show (e :: SomeException)) >> liftIO (throwM e)
 
 filepath :: FilePath -> NodeId -> FilePath
 filepath prefix nid = prefix </> show (nodeAddress nid)
@@ -242,7 +244,7 @@ runProcess' n p = do
   r <- newIORef undefined
   runProcess n (try p >>= liftIO . writeIORef r)
     >> readIORef r
-      >>= either (\e -> throwIO (e :: SomeException)) return
+      >>= either (\e -> throwM (e :: SomeException)) return
 
 brackets :: Int -> IO a -> (a -> IO ()) -> ([a] -> IO b) -> IO b
 brackets n c r action = go id n

@@ -8,15 +8,15 @@ import Control.Distributed.Process.Consensus
 import Control.Distributed.Process.Consensus.Paxos
 import Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 
-import Control.Distributed.Process hiding (bracket)
+import Control.Distributed.Process hiding (bracket, onException, catch, bracket)
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Scheduler
     ( schedulerIsEnabled, withScheduler, __remoteTable )
 import Network.Transport (Transport(..))
 import qualified Network.Transport.InMemory as InMemory
 
-import Control.Exception ( bracket, throwIO, SomeException )
 import Control.Monad ( when, forM, forM_, replicateM_ )
+import Control.Monad.Catch
 import Data.IORef
 import qualified Data.Map as Map
 import System.Exit ( exitFailure )
@@ -77,14 +77,16 @@ run s = bracket InMemory.createTransport closeTransport $ \transport ->
                  (undefined :: Int)
                  initialDecreeId
                  (const $ return AcceptorStore
-                    { storeInsert =
+                    { storeInsert = (>>) . liftIO .
                         modifyIORef mref . flip (foldr (uncurry Map.insert))
-                    , storeLookup = \d -> Map.lookup d <$> readIORef mref
-                    , storePut = writeIORef vref . Just
-                    , storeGet = readIORef vref
+                    , storeLookup = \d ->
+                        (>>=) $ liftIO $ Map.lookup d <$> readIORef mref
+                    , storePut = (>>) . liftIO . writeIORef vref . Just
+                    , storeGet = (>>=) $ liftIO $ readIORef vref
                     , storeTrim = const $ return ()
-                    , storeList = Map.assocs <$> readIORef mref
-                    , storeMap = readIORef mref
+                    , storeList =
+                        (>>=) $ liftIO $ Map.assocs <$> readIORef mref
+                    , storeMap = (>>=) $ liftIO $ readIORef mref
                     , storeClose = return ()
                     }
                  )
@@ -109,4 +111,4 @@ run s = bracket InMemory.createTransport closeTransport $ \transport ->
 
 killOnError :: ProcessId -> Process a -> Process a
 killOnError pid p = catch p $ \e -> liftIO (print e) >>
-  exit pid (show (e :: SomeException)) >> liftIO (throwIO e)
+  exit pid (show (e :: SomeException)) >> liftIO (throwM e)

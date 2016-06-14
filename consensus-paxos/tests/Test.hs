@@ -38,14 +38,16 @@ spawnAcceptor = do
       acceptor usend
         (undefined :: Int) initialDecreeId
         (const $ return AcceptorStore
-                      { storeInsert =
+                      { storeInsert = (>>) . liftIO .
                           modifyIORef mref . flip (foldr (uncurry Map.insert))
-                      , storeLookup = \d -> Map.lookup d <$> readIORef mref
-                      , storePut = writeIORef vref . Just
-                      , storeGet = readIORef vref
+                      , storeLookup = \d ->
+                          (>>=) $ liftIO $ Map.lookup d <$> readIORef mref
+                      , storePut = (>>) . liftIO . writeIORef vref . Just
+                      , storeGet = (>>=) $ liftIO $ readIORef vref
                       , storeTrim = const $ return ()
-                      , storeList = Map.assocs <$> readIORef mref
-                      , storeMap = readIORef mref
+                      , storeList =
+                          (>>=) $ liftIO $ Map.assocs <$> readIORef mref
+                      , storeMap = (>>=) $ liftIO $ readIORef mref
                       , storeClose = return ()
                       }
         )

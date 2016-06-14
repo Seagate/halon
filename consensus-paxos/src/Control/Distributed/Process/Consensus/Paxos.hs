@@ -24,7 +24,8 @@ import Prelude hiding ((<*>))
 import Control.Distributed.Process.Consensus
 import Control.Distributed.Process.Consensus.Paxos.Types
 import qualified Control.Distributed.Process.Consensus.Paxos.Messages as Msg
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (catch, bracket)
+import Control.Distributed.Process.Pool.Keyed
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Control.Distributed.Process.Serializable
 
@@ -35,7 +36,7 @@ import qualified Data.Map as Map
 import Data.Typeable
 import Control.Monad
 
-import Control.Monad.Catch (throwM, SomeException)
+import Control.Monad.Catch (throwM, SomeException, catch, bracket)
 import Data.Maybe (isJust)
 import Data.List (maximumBy)
 import Data.Function (on)
@@ -103,26 +104,26 @@ inline chooseValue(p_x1,p_d,p_x,p_acks) {
 *-}
 
 -- | A persistent store for acceptor state
+--
+-- All operations should be non-blocking except 'storeClose'. All of them
+-- take callbacks to be executed on completion except for 'storeTrim'.
 data AcceptorStore = AcceptorStore
     { -- | Inserts decrees in the store.
-      storeInsert :: [(DecreeId, ByteString)] -> IO ()
+      storeInsert :: [(DecreeId, ByteString)] -> Process () -> Process ()
       -- | Retrieves a decree in the store.
-      --
-      -- If the value was trimmed, it yields @Left True@.
-      -- If the value was never stored, it yields @Left False@.
-    , storeLookup :: DecreeId -> IO (Maybe ByteString)
+    , storeLookup :: DecreeId -> (Maybe ByteString -> Process ()) -> Process ()
       -- | Saves a value in the store.
-    , storePut :: ByteString -> IO ()
+    , storePut :: ByteString -> Process () -> Process ()
       -- | Restores a value from the store.
-    , storeGet :: IO (Maybe ByteString)
+    , storeGet :: (Maybe ByteString -> Process ()) -> Process ()
       -- | Trims state below the given decree.
-    , storeTrim :: DecreeId -> IO ()
+    , storeTrim :: DecreeId -> Process ()
       -- | Lists the stored decrees.
-    , storeList :: IO [(DecreeId, ByteString)]
+    , storeList :: ([(DecreeId, ByteString)] -> Process ()) -> Process ()
       -- | Yields a map of the stored decrees.
-    , storeMap :: IO (Map DecreeId ByteString)
+    , storeMap :: (Map DecreeId ByteString -> Process ()) -> Process ()
       -- | Closes the store.
-    , storeClose :: IO ()
+    , storeClose :: Process ()
     }
   deriving Typeable
 
@@ -161,9 +162,13 @@ acceptor sendA _ startDecree0 config name =
   flip catch (\e -> do paxosTrace $ "Acceptor terminated with " ++ show e
                        throwM (e :: SomeException)
              ) $
-  bracket (liftIO $ config name) (liftIO . storeClose) $ \case
+  newProcessPool >>= \pool ->
+  getSelfPid >>= \self ->
+  bracket (liftIO $ config name) storeClose $ \case
   AcceptorStore {..} -> do
-       liftIO storeGet >>= loop startDecree0 . maybe Bottom (Value . decode)
+       (sp, rp) <- newChan
+       storeGet $ sendChan sp
+       receiveChan rp >>= loop startDecree0 . maybe Bottom (Value . decode)
     where
       loop :: DecreeId -> Lifted BallotId -> Process b
       loop sd b = do
@@ -178,19 +183,18 @@ acceptor sendA _ startDecree0 config name =
                     loop sd b
                   else if b <= Value b'
                   then do
-                    self <- getSelfPid
-                    mbs <- liftIO (storeLookup d)
-                    let acks Nothing = []
-                        acks (Just bs) = let (b'', x) = decode bs
-                                          in [Msg.Ack d b'' (x :: a)]
-                    paxosTrace $ "Prepare: Promise " ++
-                                 show (isJust mbs, d, b', λ)
-                    usend λ $ Msg.Promise b' self $ acks mbs
+                    storeLookup d $ \mbs -> do
+                      let acks Nothing = []
+                          acks (Just bs) = let (b'', x) = decode bs
+                                            in [Msg.Ack d b'' (x :: a)]
+                      paxosTrace $ "Prepare: Promise " ++
+                                   show (isJust mbs, d, b', λ)
+                      usendAsync λ $ Msg.Promise b' self $ acks mbs
                     loop sd (Value b')
                   else do
                     paxosTrace $ "Prepare: Nack " ++
                                  show (d, b', λ, fromValue b)
-                    usend λ $ Msg.Nack $ fromValue b
+                    usendAsync λ $ Msg.Nack $ fromValue b
                     loop sd b
               , match $ \(Msg.Syn d b' λ x) ->
                   -- Don't reply if the value was trimmed.
@@ -199,19 +203,18 @@ acceptor sendA _ startDecree0 config name =
                   if (d < sd) then loop sd b
                   else if b <= Value b'
                   then do
-                    when (b < Value b') $
-                      liftIO $ storePut $ encode b'
-                    liftIO $ storeInsert [(d, encode (b', x :: a))]
-                    paxosTrace $ "Syn: Ack " ++ show (d, b', λ)
-                    usend λ $ Msg.Ack d b' x
+                    (if b < Value b' then storePut $ encode b' else id) $ do
+                      storeInsert [(d, encode (b', x :: a))] $ do
+                        paxosTrace $ "Syn: Ack " ++ show (d, b', λ)
+                        usendAsync λ $ Msg.Ack d b' x
                     loop sd (Value b')
                   else do
                     paxosTrace $ "Syn: Nack " ++ show (d, b', λ, fromValue b)
-                    usend λ $ Msg.Nack $ fromValue b
+                    usendAsync λ $ Msg.Nack $ fromValue b
                     loop sd b
               , match $ \(Trim d) -> do
                   paxosTrace $ "Trimming " ++ show d
-                  liftIO $ storeTrim d
+                  storeTrim d
                   loop (max d sd) b
 
                 -- Synchronization handlers
@@ -219,26 +222,26 @@ acceptor sendA _ startDecree0 config name =
               , match $ \(Msg.SyncStart κ αs) -> do
                   paxosTrace $ "SyncStart " ++ show κ
                   -- Advertise the decrees we know about
-                  dvs <- liftIO storeList
-                  forM_ αs $ flip sendA $
-                    Msg.SyncAdvertise κ name
-                      (intervals $ map fst dvs)
+                  storeList $ \dvs -> do
+                    forM_ αs $ flip sendA $
+                      Msg.SyncAdvertise κ name
+                        (intervals $ map fst dvs)
                   loop sd b
 
               , match $ \(Msg.SyncAdvertise κ α ds) -> do
                   paxosTrace $ "SyncAdvertise " ++ show (κ, ds)
                   -- Request any missing decrees
-                  dvs <- liftIO storeList
-                  let rqs = diffIntervals ds $
-                              if initialDecreeId < sd then
-                                (initialDecreeId, sd) :
-                                  intervals (dropWhile (<sd) $ map fst dvs)
-                              else
-                                intervals (map fst dvs)
-                  if null rqs then do
-                    usend κ $ Msg.SyncCompleted name
-                  else
-                    sendA α $ Msg.SyncRequest κ name rqs
+                  storeList $ \dvs -> do
+                    let rqs = diffIntervals ds $
+                                if initialDecreeId < sd then
+                                  (initialDecreeId, sd) :
+                                    intervals (dropWhile (<sd) $ map fst dvs)
+                                else
+                                  intervals (map fst dvs)
+                    if null rqs then do
+                      usendAsync κ $ Msg.SyncCompleted name
+                    else
+                      sendA α $ Msg.SyncRequest κ name rqs
                   loop sd b
 
               , match $ \(Msg.SyncRequest κ α ds) -> do
@@ -250,29 +253,38 @@ acceptor sendA _ startDecree0 config name =
                             (mvs, m'') = Map.split d1 m'
                         in maybe id (\v0 -> ((d0, v0):)) mv0 $
                              Map.assocs mvs ++ lookupRanges m'' dps
-                  m <- liftIO storeMap
-                  sendA α $ Msg.SyncResponse κ $ lookupRanges m ds
+                  storeMap $ \m ->
+                    sendA α $ Msg.SyncResponse κ $ lookupRanges m ds
                   loop sd b
 
               , match $ \(Msg.SyncResponse κ dvs) -> do
                   paxosTrace $ "SyncResponse " ++ show (κ, map fst dvs)
-                  liftIO $ storeInsert dvs
-                  usend κ $ Msg.SyncCompleted name
+                  storeInsert dvs $
+                    usendAsync κ $ Msg.SyncCompleted name
                   loop sd b
 
                 -- querying decrees
               , match $ \(Msg.QueryDecrees κ d) -> do
                   paxosTrace $ "QueryDecrees " ++ show (κ, d)
-                  m <- liftIO storeMap
-                  let (_, mv, m') = Map.splitLookup d m
-                      acks = [ Msg.Ack di b' v
-                             | (di, bs) <- maybe id ((:) . (d,)) mv $
-                                             Map.assocs m'
-                             , let (b', v) = decode bs :: (BallotId, a)
-                             ]
-                  usend κ acks
+                  storeMap $ \m -> do
+                    let (_, mv, m') = Map.splitLookup d m
+                        acks = [ Msg.Ack di b' v
+                               | (di, bs) <- maybe id ((:) . (d,)) mv $
+                                               Map.assocs m'
+                               , let (b', v) = decode bs :: (BallotId, a)
+                               ]
+                    usendAsync κ acks
                   loop sd b
               ]
+
+      usendAsync :: forall b. Serializable b => ProcessId -> b -> Process ()
+      usendAsync to msg = do
+        let nid = processNodeId to
+        mproc <- submitTask pool nid $ usend to msg
+        case mproc of
+          Nothing   -> return ()
+          Just proc -> void $ spawnLocal $ link self >> linkNode nid >> proc
+
 
 -- > expand . intervals == intervals . expand == id
 -- >   where

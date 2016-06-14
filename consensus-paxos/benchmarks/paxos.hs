@@ -15,8 +15,6 @@ import Network.Transport.TCP
 import Data.IORef
 import qualified Data.Map as Map
 import Data.Time (getCurrentTime, diffUTCTime)
-import System.FilePath ((</>))
-import System.Posix.Temp (mkdtemp)
 import Control.Monad
 import Control.Concurrent.MVar
 
@@ -36,14 +34,16 @@ spawnAcceptor = do
       acceptor usend
         (undefined :: Int) initialDecreeId
         (const $ return AcceptorStore
-                      { storeInsert =
+                      { storeInsert = (>>) . liftIO .
                           modifyIORef mref . flip (foldr (uncurry Map.insert))
-                      , storeLookup = \d -> Map.lookup d <$> readIORef mref
-                      , storePut = writeIORef vref . Just
-                      , storeGet = readIORef vref
+                      , storeLookup = \d ->
+                          (>>=) $ liftIO $ Map.lookup d <$> readIORef mref
+                      , storePut = (>>) . liftIO . writeIORef vref . Just
+                      , storeGet = (>>=) $ liftIO $ readIORef vref
                       , storeTrim = const $ return ()
-                      , storeList = Map.assocs <$> readIORef mref
-                      , storeMap = readIORef mref
+                      , storeList =
+                          (>>=) $ liftIO $ Map.assocs <$> readIORef mref
+                      , storeMap = (>>=) $ liftIO $ readIORef mref
                       , storeClose = return ()
                       }
         )
@@ -52,7 +52,6 @@ spawnAcceptor = do
 setup :: Transport -> Int -> ([ProcessId] -> Process ()) -> IO ()
 setup transport numNodes action = do
     nodes@(node0 : _) <- replicateM numNodes $ newLocalNode transport remoteTables
-    tmpdir <- mkdtemp "/tmp/tmp."
 
     runProcess node0 $ do
        αs <- forM nodes $ \nid -> liftIO $ do

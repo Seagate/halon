@@ -2,9 +2,23 @@
 -- Copyright : (C) 2015 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
--- An implementation of a pool of processes
+-- An implementation of a pool of processes with keys.
 --
-module Control.Distributed.Process.ProcessPool
+-- This pool is useful for network IO tasks. Send operations in d-p are blocking
+-- if the send buffers are full. When multiple messages are sent to the same
+-- node, it doesn't make sense to spawn one process per message. It is enough to
+-- spawn one process per destination node, and have this process send all the
+-- messages to the node. This process gets a key that can be used to submit
+-- tasks to it. In this case the key could be the 'NodeId'.
+--
+-- Thus, each message which needs to be sent to a node, motivates a task
+-- submitted to the pool with the node address as key.
+--
+-- When a connection failure is detected it doesn't make sense to block on all
+-- the queued tasks for the unreachable node, in which case the process can be
+-- terminated and the task queue can be cleared.
+--
+module Control.Distributed.Process.Pool.Keyed
   ( newProcessPool
   , submitTask
   , ProcessPool
@@ -42,10 +56,13 @@ newProcessPool = fmap ProcessPool $ liftIO $ newIORef Map.empty
 -- If worker @k@ is busy, then @submitTask@ yields @Nothing@ and the task is
 -- queued until the worker is available.
 --
--- If worker @k@ does not exist, then @submitTask@ yields @Just worker@ where
--- @worker@ is the worker that will execute the task and possibly other tasks
--- submitted later. Callers will likely want to run @worker@ in a newly spawned
--- thread.
+-- If worker @k@ does not exist, then @submitTask@ yields @Just proc@ where
+-- @proc@ is the computation that will execute the task and possibly other tasks
+-- submitted later. Callers will likely want to run @proc@ in a newly spawned
+-- process.
+--
+-- A task which returns with an exception terminates the worker and causes the
+-- queue for @k@ to be cleared.
 --
 submitTask :: Ord k
            => ProcessPool k -> k -> Process () -> Process (Maybe (Process ()))

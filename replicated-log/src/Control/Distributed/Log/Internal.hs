@@ -60,7 +60,12 @@ import Control.Distributed.Log.Policy as Policy
 import Control.Distributed.Log.Trace
 import Control.Distributed.Process.Batcher
 import Control.Distributed.Process.Consensus hiding (Value)
-import Control.Distributed.Process.ProcessPool
+import qualified Control.Distributed.Process.Pool.Bounded as Bounded
+    ( submitTask
+    , ProcessPool
+    , newProcessPool
+    )
+import qualified Control.Distributed.Process.Pool.Keyed as Keyed
     ( submitTask
     , ProcessPool
     , newProcessPool
@@ -101,6 +106,7 @@ import Data.Maybe
 import Data.Monoid (Monoid(..))
 #endif
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import Data.String (fromString)
 import Data.Ratio (Ratio, numerator, denominator)
 import Data.Typeable (Typeable)
@@ -325,18 +331,19 @@ exitAndWait p = callLocal $ bracket (monitor p) unmonitor $ \ref -> do
       ]
 
 sendReplicaAsync :: Serializable a
-                 => ProcessPool NodeId -> LogId -> NodeId -> a -> Process ()
+                 => Keyed.ProcessPool NodeId -> LogId -> NodeId -> a
+                 -> Process ()
 sendReplicaAsync pool name nid a
   | schedulerIsEnabled = sendReplica name nid a
   | otherwise          =
-    submitTask pool nid (sendReplica name nid a)
+    Keyed.submitTask pool nid (sendReplica name nid a)
       >>= maybe (return ()) spawnWorker
   where
     spawnWorker worker = do
       self <- getSelfPid
       void $ spawnLocal $ link self >> linkNode nid >> worker
 
-queryMissingFrom :: ProcessPool NodeId
+queryMissingFrom :: Keyed.ProcessPool NodeId
                  -> LogId
                  -> Int      -- ^ next decree to execute
                  -> [NodeId] -- ^ replicas to query
@@ -445,7 +452,11 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
     -- | A channel to communicate periodic timeout notifications
   , statePeriodicTimerRP   :: !(ReceivePort ())
     -- | A pool of processes to send messages asynchronously
-  , stateSendPool          :: !(ProcessPool NodeId)
+  , stateSendPool          :: !(Keyed.ProcessPool NodeId)
+    -- | A pool of processes dealing with persistence operations
+  , statePersistPool       :: !Bounded.ProcessPool
+    -- | The set of process doing asynchronous IO.
+  , statePersistProcs      :: IORef (Maybe (Set.Set ProcessId))
 
   -- from Log {..}
   , stateLogRestore        :: !(ref -> Process s)
@@ -562,13 +573,15 @@ replica Dict
    say $ "Starting new replica for " ++ show logId
    self <- getSelfPid
    here <- getSelfNode
+   persistProcs <- liftIO $ newIORef $ Just Set.empty
    -- 'withLogIdLock' makes sure that any running operation on the local state
    -- completes before we try to open it. By now we have registered the replica
    -- label, so any subsequent operations on the local state won't interfere
    -- when we release the log id lock again.
    withLogIdLock logId $ return ()
    path <- localLogPath logId persistDirectory
-   withPersistentStore path $ \persistentStore -> do
+   withPersistentStore path $ \persistentStore ->
+    flip finally (cancelWaitPersistProcs persistProcs) $ do
     logMap <- liftIO $ P.getMap persistentStore $ fromString "logMap"
     membershipMap <- liftIO $ P.getMap persistentStore
                             $ fromString "membershipMap"
@@ -611,9 +624,11 @@ replica Dict
                  }
         others = filter (/= here) replicas
 
-    sendPool <- newProcessPool
+    sendPool <- Keyed.newProcessPool
     queryMissingFrom sendPool logId (decreeNumber w0) others $
         Map.insert (decreeNumber d) undefined log
+
+    persistPool <- liftIO $ Bounded.newProcessPool 50
 
     (timerSP, timerRP) <- newChan
     timerPid <- spawnLocal $ link self >> timer timerSP
@@ -659,12 +674,26 @@ replica Dict
          , stateLeaseTimerRP = timerRP
          , statePeriodicTimerRP = ptimerRP
          , stateSendPool = sendPool
+         , statePersistPool = persistPool
+         , statePersistProcs = persistProcs
          , stateLogRestore = logRestore
          , stateLogDump = logDump
          , stateLogNextState = logNextState
          }
   where
     cond b t f = if b then t else f
+
+    -- Terminates any processes doinf async IO before the persistent store
+    -- handle is closed.
+    cancelWaitPersistProcs ref = do
+      mprocs <- liftIO $ atomicModifyIORef ref $ \mprocs -> (Nothing, mprocs)
+      case mprocs of
+        Nothing -> return ()
+        Just procs -> callLocal $ do
+          mapM_ monitor procs
+          mapM_ (`kill` "cancelWaitPersistProcs") procs
+          replicateM_ (Set.size procs)
+            (expect :: Process ProcessMonitorNotification)
 
     -- Returns the leader if the lease has not expired.
     getLeader :: TimeSpec -> [NodeId] -> Process (Maybe NodeId)
@@ -834,6 +863,7 @@ replica Dict
     go :: ReplicaState s ref a -> Process b
     go st@(ReplicaState ppid timerPid ptimerPid ph leaseStart ρs d cd mdumper
                         msref w0 w s epoch legD bpid timerRP ptimerRP sendPool
+                        persistPool persistProcs
                         stLogRestore stLogDump stLogNextState
           ) =
      do
@@ -861,6 +891,22 @@ replica Dict
                 , requestHint     = None
                 , requestForLease = Just l
                 }
+
+            -- Does a persistence operation asynchronously.
+            doPersistenceOpAsync task = do
+              mproc <- Bounded.submitTask persistPool task
+              case mproc of
+                Nothing   -> return ()
+                Just proc -> void $ spawnLocal $ do
+                  worker <- getSelfPid
+                  let forceMaybe = maybe Nothing (Just $!)
+                  ok <- liftIO $ atomicModifyIORef' persistProcs $ \mprocs ->
+                    (forceMaybe $ Set.insert worker <$> mprocs, isJust mprocs)
+                  when ok $
+                    proc `finally`
+                      liftIO (atomicModifyIORef' persistProcs $ \mprocs ->
+                                 (forceMaybe $ Set.delete worker <$> mprocs, ())
+                             )
 
         receiveWait $ cond (w == cd)
             [ -- The lease is about to expire or it has already.
@@ -914,13 +960,23 @@ replica Dict
                         locale /= Stored && w <= di && decreeNumber di == decreeNumber w) $ {-# SCC "go/Decree/Commit" #-}
                        \(Decree locale di v) -> do
                   nlogTrace logId $ "Storing decree: " ++ show (w, di)
-                  liftIO $ insertInLog ph (decreeNumber di) (v :: Value a)
-                  case locale of
+                  -- Write the log asynchronously
+                  doPersistenceOpAsync $ do
+                    liftIO $ insertInLog ph (decreeNumber di) (v :: Value a)
+                    let usendAsync to m = do
+                          let nid = processNodeId to
+                          mproc <- Keyed.submitTask sendPool nid $ usend to m
+                          case mproc of
+                            Nothing -> return ()
+                            Just proc -> void $ spawnLocal $
+                              link self >> linkNode nid >> proc
+                    case locale of
                       -- Ack back to the client.
-                      Local κs pids -> do forM_ κs $ flip usend True
+                      Local κs pids -> do forM_ κs $ flip usendAsync True
+                                          -- pids are local processes for now
                                           forM_ pids $ flip usend ()
                       _ -> return ()
-                  usend self $ Decree Stored di v
+                    usend self $ Decree Stored di v
                   go st
 
               -- Execute the decree
@@ -1056,22 +1112,30 @@ replica Dict
                        \(Decree locale di v) -> do
                   nlogTrace logId $
                     "Storing decree above watermark: " ++ show (w, di)
-                  liftIO $ insertInLog ph (decreeNumber di) v
-                  --- XXX set cd to @max cd (succ di)@?
-                  --
-                  -- Probably not, because then the replica might never find the
-                  -- values of decrees which are known to a quorum of acceptors
-                  -- but unknown to all online replicas.
-                  --
-                  --- XXX set d to @min cd (succ di)@?
-                  --
-                  -- This Decree could have been teleported. So, we shouldn't
-                  -- trust di, unless @decreeLegislatureId di < maxBound@.
-                  --
-                  -- XXX: Resending the decree may cause decrees to be stored
-                  -- more than once, but this is necessary while it is
-                  -- possible for this decree to be unreachable.
-                  usend self $ Decree locale di v
+                  doPersistenceOpAsync $ do
+                    liftIO $ insertInLog ph (decreeNumber di) v
+                    --- XXX set cd to @max cd (succ di)@?
+                    --
+                    -- Probably not, because then the replica might never find the
+                    -- values of decrees which are known to a quorum of acceptors
+                    -- but unknown to all online replicas.
+                    --
+                    --- XXX set d to @min cd (succ di)@?
+                    --
+                    -- This Decree could have been teleported. So, we shouldn't
+                    -- trust di, unless @decreeLegislatureId di < maxBound@.
+                    --
+                    -- XXX: Resending the decree may cause decrees to be stored
+                    -- more than once, but this is necessary while it is
+                    -- possible for this decree to be unreachable. We want it to
+                    -- be overwritten by a decree in the right legislature when
+                    -- the watermark reaches it.
+                    --
+                    -- TODO: are unreachable decrees currently possible? Every
+                    -- decree inserted like this in the mailbox is rechecked
+                    -- over an over whenever we execute 'receiveWait'.
+                    --
+                    usend self $ Decree locale di v
                   go st
 
               -- Message from the batcher
@@ -1280,11 +1344,11 @@ replica Dict
             , matchIf (\(Max _ d' _ _ _) -> decreeNumber d < decreeNumber d') $ {-# SCC "go/Max" #-}
                        \(Max ρ d' legD' epoch' ρs') -> do
                   say $ "Got Max " ++ show d'
-                  updateAcceptors ρs'
 
                   when (legD < legD') $
-                    liftIO $ insertInLog ph (decreeNumber legD') $
-                      Reconf 0 (decreeLegislatureId legD') ρs'
+                    doPersistenceOpAsync $
+                      liftIO $ insertInLog ph (decreeNumber legD') $
+                        Reconf 0 (decreeLegislatureId legD') ρs'
 
                   queryMissingFrom sendPool logId (decreeNumber w)
                     [processNodeId ρ] $
