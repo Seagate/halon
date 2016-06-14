@@ -14,6 +14,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   , module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , noteToSDev
   , calculateMeroClusterStatus
+  , clusterStartedBootLevel
   , createMeroKernelConfig
   , createMeroClientConfig
   , startMeroService
@@ -72,7 +73,7 @@ m0t1fsBootLevel = M0.BootLevel 3
 
 -- | At which boot level (after completion) do we consider the cluster started?
 clusterStartedBootLevel :: M0.BootLevel
-clusterStartedBootLevel = M0.BootLevel 1
+clusterStartedBootLevel = M0.BootLevel 2
 
 -- TODO Generalise this
 -- | If the 'Note' is about an 'SDev' or 'Disk', extract the 'SDev'

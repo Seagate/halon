@@ -77,6 +77,7 @@ import           HA.RecoveryCoordinator.Rules.Castor.Node
 import           HA.RecoveryCoordinator.Rules.Castor.Process
 import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
+import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 
 import           Control.Applicative
