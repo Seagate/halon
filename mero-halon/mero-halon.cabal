@@ -171,6 +171,7 @@ Library
                        HA.Resources.Mero.Note
                        HA.Services.Mero
                        HA.RecoveryCoordinator.Actions.Castor
+                       HA.RecoveryCoordinator.Actions.Castor.Cluster
                        HA.RecoveryCoordinator.Actions.Mero.Failure
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic

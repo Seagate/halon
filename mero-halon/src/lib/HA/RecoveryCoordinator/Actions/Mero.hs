@@ -34,6 +34,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Conf as Conf
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Events.Mero
+import HA.RecoveryCoordinator.Events.Castor.Cluster
 import HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 
 import HA.Resources.Castor (Is(..))
@@ -53,7 +54,7 @@ import Control.Category
 import Control.Distributed.Process
 import Control.Monad (forM, unless)
 
-import Data.Foldable (forM_)
+import Data.Foldable (for_)
 import Data.Proxy
 import Data.List ((\\), partition)
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
@@ -284,7 +285,7 @@ startMeroProcesses (TypedChannel chan) procs' label mkfs = do
               (_, False) -> forM procs (\(proc,_) -> ([M0D],) <$> runConfig proc rg)
       phaseLog "debug" $ "starting mero processes: " ++ show (fmap (M0.fid.fst) procs)
       liftProcess $ sendChan chan msg
-      forM_ procs' $ \p -> modifyGraph
+      for_ procs' $ \p -> modifyGraph
         $ \rg -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStarting)
                        (M0.setState p M0.PSStarting rg)
                        (G.connectedTo p M0.IsParentOf rg)
@@ -317,7 +318,7 @@ stopNodeProcesses (TypedChannel chan) ps = do
    rg <- getLocalGraph
    let msg = StopProcesses $ map (go rg) ps
    liftProcess $ sendChan chan msg
-   forM_ ps $ \p -> modifyGraph
+   for_ ps $ \p -> modifyGraph
      $ \rg -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStopping)
                     (G.connectUniqueFrom p Is M0.PSStopping rg)
                     (G.connectedTo p M0.IsParentOf rg)
@@ -396,9 +397,11 @@ announceMeroNodes = do
 
       hostsToNodes = mapMaybe (\h -> listToMaybe $ G.connectedTo h Runs rg')
 
-      serverNodes = hostsToNodes serverHosts :: [Res.Node]
-      clientNodes = hostsToNodes clientHosts :: [Res.Node]
+      serverNodes = hostsToNodes serverHosts :: [M0.Node]
+      clientNodes = hostsToNodes clientHosts :: [M0.Node]
   phaseLog "post-initial-load" $ "Sending messages about these new mero nodes: "
-                              ++ show ((clientNodes, clientHosts), (serverNodes, serverHosts))
-  forM_ clientNodes $ promulgateRC . NewMeroClient
-  forM_ serverNodes $ promulgateRC . NewMeroServer
+      ++ show ((clientNodes, clientHosts), (serverNodes, serverHosts))
+  for_ serverNodes $ promulgateRC . StartProcessesOnNodeRequest
+  -- XXX: this is a hack, for some reason on devvm main node is not in the
+  -- clients list.
+  for_ (serverNodes++clientNodes) $ promulgateRC . StartClientsOnNodeRequest

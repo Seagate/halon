@@ -57,8 +57,8 @@ test:
     - "iostat -dNtxzm 5 &> iostats.log":
         background: true
     # Build with USE_MERO and then without.
-    - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero --haddock --no-haddock-deps
-    - stack $STACK_FLAGS build --flag mero-halon:distributed-tests --test --no-run-tests --haddock --no-haddock-deps
+    - LANG=en_US.utf8 stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero --haddock --no-haddock-deps
+    - LANG=en_US.utf8 stack $STACK_FLAGS build --flag mero-halon:distributed-tests --test --no-run-tests --haddock --no-haddock-deps
     # Only test mero-halon and deps, without USE_MERO.
     # Testing with USE_MERO is not possible since m0_init fails when some cpus
     # on the host are forbidden via cpusets as circleci does.

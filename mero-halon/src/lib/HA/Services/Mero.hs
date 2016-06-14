@@ -44,6 +44,7 @@ module HA.Services.Mero
 import HA.Logger
 import HA.EventQueue.Producer (expiate, promulgate, promulgateWait)
 import HA.RecoveryCoordinator.Actions.Core
+import qualified HA.RecoveryCoordinator.Events.Mero as M0
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
@@ -298,8 +299,9 @@ remotableDecl [ [d|
           traceM0d "Starting service m0d on mero client"
           go
         ExitFailure i -> do
+          self <- getSelfPid
           traceM0d $ "Kernel module did not load correctly: " ++ show i
-          void . promulgate . M0.MeroKernelFailed $
+          void . promulgate . M0.MeroKernelFailed self $
             "mero-kernel service failed to start: " ++ show i
     where
       haAddr = RPC.rpcAddress $ mcHAAddress conf

@@ -10,6 +10,8 @@ module HA.RecoveryCoordinator.Events.Mero
    , NewMeroClientProcessed(..)
    , NewMeroServer(..)
    , StopMeroServer(..)
+   , MeroKernelFailed(..)
+   , NodeKernelFailed(..)
    -- * Requests
    , GetSpielAddress(..)
    -- * State changes
@@ -25,6 +27,7 @@ import HA.Encode (ProcessEncode(..))
 import HA.Resources
 import HA.Resources.Castor
 import HA.Resources.Mero.Note
+import qualified HA.Resources.Mero as M0
 
 import Control.Applicative (many)
 import Control.Distributed.Process (ProcessId, RemoteTable, Static)
@@ -133,3 +136,14 @@ instance ProcessEncode InternalObjectStateChange where
       InternalObjectStateChangeMsg . runPut $ traverse_ go xs
     where
       go (AnyStateChange obj old new dict) = put dict >> put (obj, old, new)
+
+-- | A message we can use to notify bootstrap that mero-kernel failed
+-- to start.
+data MeroKernelFailed = MeroKernelFailed ProcessId String
+  deriving(Eq, Show, Typeable, Generic)
+
+instance Binary MeroKernelFailed
+
+
+newtype NodeKernelFailed = NodeKernelFailed M0.Node
+  deriving (Eq, Show, Typeable, Generic, Binary)
