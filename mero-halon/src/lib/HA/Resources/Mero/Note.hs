@@ -236,6 +236,7 @@ instance HasConfObjectState M0.Service where
   toConfObjState _ M0.SSOffline = M0_NC_FAILED
   toConfObjState _ M0.SSFailed = M0_NC_FAILED
   toConfObjState _ M0.SSOnline = M0_NC_ONLINE
+  toConfObjState _ M0.SSStopping = M0_NC_ONLINE
   -- TODO: Starting = ONLINE because mero hates non-online services
   -- during process start
   toConfObjState _ M0.SSStarting = M0_NC_ONLINE
