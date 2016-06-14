@@ -301,7 +301,6 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
 --   to change.
 getProfile :: PhaseM LoopState l (Maybe M0.Profile)
 getProfile = getLocalGraph >>= \rg -> do
-  phaseLog "rg-query" $ "Looking for Mero profile."
   return . listToMaybe
     $ G.connectedTo Cluster Has rg
 
@@ -311,7 +310,6 @@ getProfile = getLocalGraph >>= \rg -> do
 --   to change.
 getFilesystem :: PhaseM LoopState l (Maybe M0.Filesystem)
 getFilesystem = getLocalGraph >>= \rg -> do
-  phaseLog "rg-query" $ "Looking for Mero filesystem."
   return . listToMaybe
     $ [ fs | p <- G.connectedTo Cluster Has rg :: [M0.Profile]
            , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
@@ -319,9 +317,7 @@ getFilesystem = getLocalGraph >>= \rg -> do
 
 -- | Fetch all (non-metadata) pools in the system.
 getPool :: PhaseM LoopState l [M0.Pool]
-getPool = getLocalGraph >>= \rg -> do
-  phaseLog "rg-query" "Looking for Mero pool."
-  return $ rgGetPool rg
+getPool = rgGetPool <$> getLocalGraph
 
 rgGetPool :: G.Graph -> [M0.Pool]
 rgGetPool rg =
@@ -333,9 +329,7 @@ rgGetPool rg =
 
 -- | RC wrapper for 'getM0Services'.
 getM0ServicesRC :: PhaseM LoopState l [M0.Service]
-getM0ServicesRC = do
-  phaseLog "rg-query" "Looking for Mero services."
-  M0.getM0Services <$> getLocalGraph
+getM0ServicesRC = M0.getM0Services <$> getLocalGraph
 
 lookupStorageDevice :: M0.SDev -> PhaseM LoopState l (Maybe StorageDevice)
 lookupStorageDevice sdev = do
