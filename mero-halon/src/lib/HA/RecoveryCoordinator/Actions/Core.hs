@@ -35,6 +35,8 @@ module HA.RecoveryCoordinator.Actions.Core
   , selfMessage
   , promulgateRC
   , unsafePromulgateRC
+    -- * Event handling mechanism
+  , notify
     -- * Multi-receiver messages
     -- $multi-receiver
   , todo
@@ -329,3 +331,14 @@ defineSimpleTask :: Serializable a
                  -> Specification LoopState ()
 defineSimpleTask n f = defineSimple n $ \(HAEvent uuid a _) ->
    todo uuid >> f a >> done uuid
+
+
+-- | Notify about event. This event will be sent to the internal rules
+-- in addition it will be broadcasted to all external listeners as
+-- 'Published a'.
+notify :: Serializable a
+       => a
+       -> PhaseM LoopState l ()
+notify msg = do
+  selfMessage msg
+  publish msg
