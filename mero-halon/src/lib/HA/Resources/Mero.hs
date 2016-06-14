@@ -190,7 +190,7 @@ instance ConfObj Filesystem where
   fid = f_fid
 
 newtype Node = Node Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Binary, Eq, Generic, Hashable, Show, Typeable, Ord)
 
 instance ConfObj Node where
   fidType _ = fromIntegral . ord $ 'n'
