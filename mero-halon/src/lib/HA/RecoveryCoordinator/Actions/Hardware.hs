@@ -349,24 +349,18 @@ registerInterface host int = modifyLocalGraph $ \rg -> do
 findHostStorageDevices :: Host
                        -> PhaseM LoopState l [StorageDevice]
 findHostStorageDevices host = do
-  phaseLog "rg-query" $ "Looking for storage devices on host "
-                    ++ show host
   fmap (G.connectedTo host Has) getLocalGraph
 
 -- | Find physical devices in an enclosure
 findEnclosureStorageDevices :: Enclosure
                             -> PhaseM LoopState l [StorageDevice]
 findEnclosureStorageDevices enc = do
-  phaseLog "rg-query" $ "Looking for storage devices in enclosure "
-                    ++ show enc
   fmap (G.connectedTo enc Has) getLocalGraph
 
 -- | Find additional identifiers for a (physical) storage device.
 findStorageDeviceIdentifiers :: StorageDevice
                              -> PhaseM LoopState l [DeviceIdentifier]
 findStorageDeviceIdentifiers sd = do
-  phaseLog "rg-query" $ "Looking for identifiers for physical device "
-                    ++ show sd
   fmap (G.connectedTo sd Has) getLocalGraph
 
 -- | Test if a drive have a given identifier
