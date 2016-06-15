@@ -299,30 +299,36 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
       disk_reason = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskReason srdm
 
      oldDriveStatus <- maybe (StorageDeviceStatus "" "") id <$> driveStatus disk
+     isOngoingReset <- hasOngoingReset disk
 
-     case ( T.toUpper disk_status, T.toUpper disk_reason) of
-      (s, r) | oldDriveStatus == StorageDeviceStatus (T.unpack s) (T.unpack r) ->
-        messageProcessed uuid
-      ("FAILED", "SMART") -> do
-        updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
-        selfMessage $ DriveFailed uuid (Node nid) enc disk
-      ("EMPTY", "NONE") -> do
-        -- This is probably indicative of expander reset?
-        updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
-        selfMessage $ DriveTransient uuid (Node nid) enc disk
-      ("OK", "NONE") -> do
-        -- Disk has returned to normal after expander reset?
-        updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
-        selfMessage $ DriveOK uuid (Node nid) enc disk
-      (s,r) -> let
-          msg = InterestingEventMessage $ logSSPLUnknownMessage
-                ( "{'type': 'actuatorRequest.manager_status', "
-                <> "'reason': 'Error processing drive manager response: drive status "
-                <> s <> " reason " <> r <> " is not known'}"
-                )
-        in do
-          sendInterestingEvent nid msg
+     if isOngoingReset
+     then
+       phaseLog "info" $ "Ignoring DriveManager updates sent during ongoing reset of disk: "
+                      ++ show disk
+     else
+       case ( T.toUpper disk_status, T.toUpper disk_reason) of
+        (s, r) | oldDriveStatus == StorageDeviceStatus (T.unpack s) (T.unpack r) ->
           messageProcessed uuid
+        ("FAILED", "SMART") -> do
+          updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
+          selfMessage $ DriveFailed uuid (Node nid) enc disk
+        ("EMPTY", "NONE") -> do
+          -- This is probably indicative of expander reset?
+          updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
+          selfMessage $ DriveTransient uuid (Node nid) enc disk
+        ("OK", "NONE") -> do
+          -- Disk has returned to normal after expander reset?
+          updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
+          selfMessage $ DriveOK uuid (Node nid) enc disk
+        (s,r) -> let
+            msg = InterestingEventMessage $ logSSPLUnknownMessage
+                  ( "{'type': 'actuatorRequest.manager_status', "
+                  <> "'reason': 'Error processing drive manager response: drive status "
+                  <> s <> " reason " <> r <> " is not known'}"
+                  )
+          in do
+            sendInterestingEvent nid msg
+            messageProcessed uuid
    start pinit Nothing
 
 -- | Handle information messages about drive changes from HPI system.
@@ -377,6 +383,7 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
       -- Now find out whether we need to send removed or powered messages
       was_powered <- isStorageDevicePowered sdev
       was_removed <- isStorageDriveRemoved sdev
+      isOngoingReset <- hasOngoingReset sdev
 
       more_needed <- case (is_installed, is_powered) of
        (True, _) | was_removed -> do
@@ -385,10 +392,10 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
        (False, _) | (not was_removed) -> do
          selfMessage $ DriveRemoved uuid (Node nid) enc sdev diskNum
          return True
-       (_, True) | (not was_powered) -> do
+       (_, True) | (not isOngoingReset && not was_powered) -> do
          selfMessage $ DrivePowerChange uuid (Node nid) enc sdev diskNum serial_str True
          return True
-       (_, False) | was_powered -> do
+       (_, False) | (not isOngoingReset && was_powered) -> do
          selfMessage $ DrivePowerChange uuid (Node nid) enc sdev diskNum serial_str False
          return True
        _ -> return False
