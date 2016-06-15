@@ -37,7 +37,8 @@ import HA.RecoveryCoordinator.Events.Drive
 import HA.RecoveryCoordinator.Rules.Mero.Conf
 import HA.Resources (Node(..))
 import HA.Resources.Castor
-import HA.Resources.Mero.Note (ConfObjectState(..), getConfObjState)
+import qualified HA.Resources.Mero as M0
+import HA.Resources.Mero.Note (ConfObjectState(..), getState)
 import HA.Services.SSPL.CEP
   ( sendNodeCmd
   , updateDriveManagerWithFailure
@@ -110,22 +111,22 @@ handleResetExternal (Set ns) = do
                 Just "EMPTY" ->
                    phaseLog "info" "drive is physically removed, skipping reset"
                 _ -> do
-                  st <- getConfObjState m0sdev <$> getLocalGraph
+                  st <- getState m0sdev <$> getLocalGraph
 
-                  unless (st == M0_NC_FAILED) $ do
+                  unless (st == M0.SDSFailed) $ do
                     ongoing <- hasOngoingReset sdev
                     if ongoing
                     then phaseLog "info" $ "Reset ongoing on a drive - ignoring message"
                     else do
                       ratt <- getDiskResetAttempts sdev
                       let status = if ratt <= resetAttemptThreshold
-                                   then M0_NC_TRANSIENT
-                                   else M0_NC_FAILED
+                                   then M0.sdsFailTransient st
+                                   else M0.SDSFailed
 
                       -- We handle this status inside external rule, because we need to
                       -- update drive manager if and only if failure is set because of
                       -- mero notifications, not because drive removal or other event.
-                      when (status == M0_NC_FAILED) $
+                      when (status == M0.SDSFailed) $
                         updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
 
                       -- Notify rest of system if stat actually changed
@@ -248,7 +249,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         promulgateRC $ ResetSuccess sdev
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev ->
-          applyStateChangesCreateFS [ stateSet m0sdev M0_NC_ONLINE ]
+          applyStateChangesCreateFS [ stateSet m0sdev M0.SDSOnline ]
         messageProcessed eid
         continue end
 
@@ -267,7 +268,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         forM_ sd $ \m0sdev -> do
           updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
           -- Let note handler deal with repair logic
-          applyStateChangesCreateFS [ stateSet m0sdev M0_NC_FAILED ]
+          applyStateChangesCreateFS [ stateSet m0sdev M0.SDSFailed ]
         continue end
 
       directly end $ do

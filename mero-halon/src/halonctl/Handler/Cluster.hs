@@ -281,7 +281,7 @@ prettyReport (ReportClusterState status sns info' hosts) = do
          unless (null sdevs) $ do
            putStrLn "    Devices:"
            forM_ sdevs $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path}, sdev_st) -> do
-             putStrLn $ "        " ++ fidToStr sdev_fid ++ "\tat " ++ sdev_path ++ "\t[" ++ M0.prettyConfObjState sdev_st ++ "]"
+             putStrLn $ "        " ++ fidToStr sdev_fid ++ "\tat " ++ sdev_path ++ "\t[" ++ M0.prettySDevState sdev_st ++ "]"
    where
      inferType srvs
        | any (\(M0.Service _ t _ _) -> t == CST_IOS) srvs = "ioservice"

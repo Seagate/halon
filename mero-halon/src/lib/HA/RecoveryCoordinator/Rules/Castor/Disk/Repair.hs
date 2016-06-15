@@ -272,7 +272,7 @@ ruleRebalanceStart = define "castor-rebalance-start" $ do
                      messageProcessed uuid
              else do
               disks <- catMaybes <$> mapM lookupSDevDisk sdev_replaced
-              let messages = stateSet pool M0_NC_REBALANCE : (flip stateSet M0_NC_REBALANCE <$> disks)
+              let messages = stateSet pool M0_NC_REBALANCE : (flip stateSet M0.SDSRebalancing <$> disks)
               put Local $ Just (uuid, messages, Just (pool, disks))
               applyStateChanges messages
               switch [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
@@ -314,7 +314,7 @@ ruleRebalanceStart = define "castor-rebalance-start" $ do
           Nothing -> phaseLog "error" "No pool info in local state"
           Just (pool, _) -> do
             ds <- getPoolSDevsWithState pool M0_NC_REBALANCE
-            applyStateChanges $ map (\d -> stateSet d M0_NC_FAILED) ds
+            applyStateChanges $ map (\d -> stateSet d M0.SDSFailed) ds
             abortRepair pool
         messageProcessed uuid
 
@@ -339,7 +339,7 @@ ruleRepairStart = define "castor-repair-start" $ do
       Nothing -> do
         fa <- getPoolSDevsWithState pool M0_NC_FAILED
         phaseLog "repair" $ "Starting repair operation on " ++ show pool
-        let msgs = stateSet pool M0_NC_REPAIR : (flip stateSet M0_NC_REPAIR <$> fa)
+        let msgs = stateSet pool M0_NC_REPAIR : (flip stateSet M0.SDSRepairing <$> fa)
         put Local $ Just (uuid, msgs, Just pool)
         applyStateChanges msgs
         switch [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
@@ -388,7 +388,7 @@ ruleRepairStart = define "castor-repair-start" $ do
             -- notification fires first. The race does not matter
             -- because notification failure handler will check for
             -- already failed processes.
-            applyStateChanges $ map (\d -> stateSet d M0_NC_FAILED) ds
+            applyStateChanges $ map (\d -> stateSet d M0.SDSFailed) ds
             abortRepair pool
         messageProcessed uuid
 
@@ -499,13 +499,15 @@ completeRepair pool prt muid = do
           repaired_sdevs = Set.fromList [ f | (f, v) <- drive_updates, v >= iosvs]
           -- drives that are under operation but were not fixed
           non_repaired_sdevs = repairing_sdevs `Set.difference` repaired_sdevs
+          repairedState M0.Rebalance = M0.SDSOnline
+          repairedState M0.Failure = M0.SDSRepaired
 
       repaired_disks <- mapMaybeM lookupSDevDisk $ Set.toList repaired_sdevs
       unless (null repaired_sdevs) $ do
 
-        traverse_ (\m0disk -> modifyGraph $ setState m0disk $ R.repairedNotificationMsg prt)
+        traverse_ (\m0disk -> modifyGraph $ setState m0disk $ repairedState prt)
                   repaired_sdevs
-        traverse_ (\m0disk -> modifyGraph $ setState m0disk $ R.repairedNotificationMsg prt)
+        traverse_ (\m0disk -> modifyGraph $ setState m0disk $ repairedState prt)
                   repaired_disks
         notifyMero $ createSet ((AnyConfObj <$> Set.toList repaired_sdevs)
                     ++ (AnyConfObj <$> repaired_disks))
@@ -661,7 +663,7 @@ checkRepairOnClusterStart = define "check-repair-on-start" $ do
                 put Local $ Just (pool, M0_NC_REPAIR)
                 applyStateChanges (
                     stateSet pool M0_NC_REPAIR
-                  : ((flip stateSet $ M0_NC_REPAIR) <$> fa)
+                  : ((flip stateSet $ M0.SDSRepairing) <$> fa)
                   )
                 switch [notified, timeout 10 end]
 

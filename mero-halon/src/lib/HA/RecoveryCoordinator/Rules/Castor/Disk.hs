@@ -122,7 +122,8 @@ ruleDriveRemoved = define "drive-removed" $ do
     forM_ sd $ \m0sdev -> do
       fork CopyNewerBuffer $ do
         phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for sdev"
-        notifyDriveStateChange m0sdev M0_NC_TRANSIENT
+        old_state <- getLocalGraph >>= return . getState m0sdev
+        applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
         put Local $ Just (uuid, enc, disk, loc, m0sdev)
         switch [reinsert, timeout driveRemovalTimeout removal]
     messageProcessed uuid
@@ -147,7 +148,7 @@ ruleDriveRemoved = define "drive-removed" $ do
       withSpielRC $ \sp m0 -> withRConfRC sp
         $ m0 $ Spiel.deviceDetach sp (fid disk)
     phaseLog "debug" "Notifying M0_NC_FAILED for sdev"
-    notifyDriveStateChange m0sdev M0_NC_FAILED
+    applyStateChanges [stateSet m0sdev M0.SDSFailed]
     messageProcessed uuid
     continue finish
 
@@ -238,7 +239,9 @@ ruleDriveInserted = define "drive-inserted" $ do
              M0_NC_UNKNOWN -> messageProcessed uuid
              M0_NC_ONLINE -> messageProcessed uuid
              M0_NC_TRANSIENT -> do
-               notifyDriveStateChange sdev M0_NC_ONLINE
+               applyStateChangesCreateFS [
+                   stateSet sdev . sdsRecoverTransient $ getState sdev rg
+                 ]
                messageProcessed uuid
              M0_NC_FAILED -> do
                 markIfNotMeroFailure
@@ -280,14 +283,14 @@ ruleDriveInserted = define "drive-inserted" $ do
     forM_ sdev $ \m0sdev -> do
       attachDisk m0sdev
       getLocalGraph >>= \rg -> case getConfObjState m0sdev rg of
-        M0_NC_TRANSIENT -> notifyDriveStateChange m0sdev M0_NC_FAILED
+        M0_NC_TRANSIENT -> applyStateChanges [ stateSet m0sdev M0.SDSFailed ]
         M0_NC_FAILED -> handleRepairInternal $ Set [Note (fid m0sdev) M0_NC_FAILED]
         M0_NC_REPAIRED -> handleRepairInternal $ Set [Note (fid m0sdev) M0_NC_ONLINE]
         M0_NC_REPAIR -> return ()
         -- Impossible cases
-        M0_NC_UNKNOWN -> notifyDriveStateChange m0sdev M0_NC_FAILED
-        M0_NC_ONLINE ->  notifyDriveStateChange m0sdev M0_NC_FAILED
-        M0_NC_REBALANCE -> notifyDriveStateChange m0sdev M0_NC_FAILED
+        M0_NC_UNKNOWN -> applyStateChanges [ stateSet m0sdev M0.SDSFailed ]
+        M0_NC_ONLINE ->  applyStateChanges [ stateSet m0sdev M0.SDSFailed ]
+        M0_NC_REBALANCE -> applyStateChanges [ stateSet m0sdev M0.SDSFailed ]
     unmarkStorageDeviceRemoved disk
     continue finish
 
@@ -310,7 +313,7 @@ attachDisk sdev = do
 ruleDriveFailed :: Definitions LoopState ()
 ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid _ _ disk) -> do
   sd <- lookupStorageDeviceSDev disk
-  forM_ sd $ \m0sdev -> notifyDriveStateChange m0sdev M0_NC_FAILED
+  forM_ sd $ \m0sdev -> applyStateChanges [ stateSet m0sdev M0.SDSFailed ]
   messageProcessed uuid
 
 -- | When a drive is powered off
@@ -344,7 +347,8 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       -- Mark Mero device as transient
       mm0sdev <- lookupStorageDeviceSDev dpcDevice
       forM_ mm0sdev $ \m0sdev -> do
-        applyStateChanges [stateSet m0sdev M0_NC_TRANSIENT]
+        old_state <- getLocalGraph >>= return . getState m0sdev
+        applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
 
       -- Attempt to power the disk back on
       sent <- sendNodeCmd nid Nothing (DrivePoweron dpcSerial)
@@ -369,7 +373,8 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       -- Mark Mero device as back online
       mm0sdev <- lookupStorageDeviceSDev dpcDevice
       forM_ mm0sdev $ \m0sdev -> do
-        applyStateChanges [stateSet m0sdev M0_NC_ONLINE]
+        old_state <- getLocalGraph >>= return . getState m0sdev
+        applyStateChanges [stateSet m0sdev $ sdsRecoverTransient old_state]
 
       Just (uuid, _) <- get Local
       done uuid
@@ -380,10 +385,9 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
     -- Mark Mero device as permanently failed
     mm0sdev <- lookupStorageDeviceSDev dpcDevice
     forM_ mm0sdev $ \m0sdev -> do
-      applyStateChanges [stateSet m0sdev M0_NC_FAILED]
+      applyStateChanges [stateSet m0sdev M0.SDSFailed]
 
     done uuid
-
 
   startFork power_removed Nothing
 
@@ -397,10 +401,6 @@ ruleExpanderResetBlip = define "castor::disk::expander-reset::blip" $ do
   drive_blip <- phaseHandle "drive_blip"
   drive_unblip <- phaseHandle "drive_unblip"
 
-  let failable_state st = st `elem` [ M0_NC_ONLINE
-                                    , M0_NC_REPAIR
-                                    , M0_NC_REBALANCE ]
-
   directly any_evt $ switch [drive_blip, drive_unblip]
 
   -- Drive blip probably means we have an expander reset. But for the
@@ -408,8 +408,8 @@ ruleExpanderResetBlip = define "castor::disk::expander-reset::blip" $ do
   setPhase drive_blip $ \(DriveTransient eid _ _ disk) -> do
     rg <- getLocalGraph
     mm0sdev <- lookupStorageDeviceSDev disk
-    forM_ mm0sdev $ \sd -> when (failable_state $ getConfObjState sd rg) $ do
-      applyStateChanges [ stateSet sd M0_NC_TRANSIENT ]
+    forM_ mm0sdev $ \sd -> do
+      applyStateChanges [ stateSet sd . sdsFailTransient $ getState sd rg ]
     messageProcessed eid
 
   -- Drive unblip. Expander reset has passed, now we can restore disks
@@ -421,8 +421,8 @@ ruleExpanderResetBlip = define "castor::disk::expander-reset::blip" $ do
     removed <- isStorageDriveRemoved disk
     when (not reset && powered && not removed) $ do
       mm0sdev <- lookupStorageDeviceSDev disk
-      forM_ mm0sdev $ \sd -> when (getConfObjState sd rg == M0_NC_TRANSIENT) $ do
-        applyStateChanges [ stateSet sd M0_NC_ONLINE ]
+      forM_ mm0sdev $ \sd -> do
+        applyStateChanges [ stateSet sd . sdsRecoverTransient $ getState sd rg ]
     messageProcessed eid
 
   startFork any_evt ()

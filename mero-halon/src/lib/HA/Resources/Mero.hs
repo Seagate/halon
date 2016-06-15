@@ -287,6 +287,45 @@ instance ConfObj SDev where
   fidType _ = fromIntegral . ord $ 'd'
   fid = d_fid
 
+data SDevState =
+    SDSUnknown
+  | SDSOnline
+  | SDSFailed
+  | SDSRepairing
+  | SDSRepaired
+  | SDSRebalancing
+  | SDSTransient SDevState -- Transient failure, and state before said
+                           -- transient failure.
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary SDevState
+instance Hashable SDevState
+instance ToJSON SDevState
+instance FromJSON SDevState
+
+prettySDevState :: SDevState -> String
+prettySDevState SDSUnknown = "Unknown"
+prettySDevState SDSOnline = "Online"
+prettySDevState SDSFailed = "Failed"
+prettySDevState SDSRepairing = "Repairing"
+prettySDevState SDSRepaired = "Repaired"
+prettySDevState SDSRebalancing = "Rebalancing"
+prettySDevState (SDSTransient x) = "Transient failure (" ++ prettySDevState x ++ ")"
+
+-- | Transiently fail a drive in an existing state. Most of the time
+--   this will result in @x@ becoming @SDSTransient x@, but with exceptions
+--   where the device is failed or already transient.
+sdsFailTransient :: SDevState -> SDevState
+sdsFailTransient SDSFailed = SDSFailed
+sdsFailTransient s@(SDSTransient _) = s
+sdsFailTransient x = SDSTransient x
+
+-- | Update state following recovery from a transient failure. In general
+--   this should restore the previous state.
+sdsRecoverTransient :: SDevState -> SDevState
+sdsRecoverTransient (SDSTransient x) = x
+sdsRecoverTransient y = y
+
 newtype Enclosure = Enclosure Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
 
@@ -566,6 +605,7 @@ $(mkDicts
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''MeroClusterState, ''ProcessBootstrapped
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
+  , ''SDevState
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -613,6 +653,7 @@ $(mkDicts
   , (''Process, ''R.Is, ''ProcessBootstrapped)
   , (''Process, ''R.Is, ''ProcessState)
   , (''Service, ''R.Is, ''ServiceState)
+  , (''SDev, ''R.Is, ''SDevState)
   ]
   )
 
@@ -624,6 +665,7 @@ $(mkResRel
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''MeroClusterState, ''ProcessBootstrapped
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
+  , ''SDevState
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -671,6 +713,7 @@ $(mkResRel
   , (''Process, ''R.Is, ''ProcessBootstrapped)
   , (''Process, ''R.Is, ''ProcessState)
   , (''Service, ''R.Is, ''ServiceState)
+  , (''SDev, ''R.Is, ''SDevState)
   ]
   []
   )
