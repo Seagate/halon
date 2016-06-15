@@ -357,7 +357,7 @@ $(mkDicts
   , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Pool, ''Is, ''ConfObjectState)
   , (''M0.PVer, ''Is, ''ConfObjectState)
-  , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
+  ]
   )
 
 $(mkResRel
@@ -370,6 +370,6 @@ $(mkResRel
   , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Pool, ''Is, ''ConfObjectState)
   , (''M0.PVer, ''Is, ''ConfObjectState)
-  , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
+  ]
   []
   )
