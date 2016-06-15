@@ -154,8 +154,8 @@ Library
                    inline-c
 
 
-  c-sources:       src/lib/Version.c
   if flag(mero)
+      c-sources:       src/lib/Version.c
       Exposed-Modules: Mero.Epoch
                        Mero.Environment
                        Mero.M0Worker
