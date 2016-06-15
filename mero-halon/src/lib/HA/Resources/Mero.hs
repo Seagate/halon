@@ -37,6 +37,7 @@ import Data.Binary (Binary(..))
 import Data.Bits
 import qualified Data.ByteString as BS
 import Data.Char (ord)
+import Data.Function (on)
 import Data.Hashable (Hashable(..))
 import Data.Int (Int64)
 import Data.Proxy (Proxy(..))
@@ -524,17 +525,11 @@ prettyStatus MeroClusterRunning = "running"
 prettyStatus MeroClusterFailed = "failed"
 
 instance Ord MeroClusterState where
-   compare MeroClusterRunning MeroClusterRunning = EQ
-   compare MeroClusterRunning _ = GT
-   compare (MeroClusterStarting i) (MeroClusterStarting j) = i `compare` j
-   compare MeroClusterStarting{} _ = GT
-   compare MeroClusterStopped MeroClusterStopped = EQ
-   compare MeroClusterStopped _ = GT
-   compare (MeroClusterStopping i) (MeroClusterStopping j) = j `compare` i -- !!!!!!
-   compare a b = case compare b a of
-                   GT -> LT
-                   LT -> GT
-                   EQ -> EQ
+   compare = compare `on` toInt where
+     toInt MeroClusterRunning = maxBound
+     toInt (MeroClusterStarting (BootLevel i)) = 1+i
+     toInt MeroClusterStopped     = 0
+     toInt (MeroClusterStopping (BootLevel i)) = -1-i
 
 -- | A message we can use to notify bootstrap that mero-kernel failed
 -- to start.
