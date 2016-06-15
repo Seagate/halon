@@ -13,6 +13,7 @@ import Control.Distributed.Process.Consensus (LegislatureId)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Data.Binary (Binary)
+import System.Clock (TimeSpec)
 
 
 --------------------------------------------------------------------------------
@@ -56,8 +57,10 @@ data Locale = Local [ProcessId] [ProcessId] | Remote | Stored
     deriving (Eq, Show, Typeable, Generic)
 
 -- | Signal other replicas that consensus has just been reached on a decree.
-data Decree a = Decree Locale DecreeId a
+data Decree a = Decree TimeSpec Locale DecreeId a
     deriving (Typeable, Generic)
+
+instance Binary TimeSpec
 
 -- | Replica asking another replica what the value of a given decree number is.
 data Query = Query ProcessId Int

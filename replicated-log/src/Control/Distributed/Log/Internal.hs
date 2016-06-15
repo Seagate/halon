@@ -225,11 +225,16 @@ data Config = Config
       -- | For any given node, the directory in which to store persistent state.
     , persistDirectory  :: NodeId -> FilePath
 
-      -- | The length of time before leases time out, in microseconds.
+      -- | The length of time before leases time out, in microseconds. The
+      -- period is extended by this amount every time the replica passes a
+      -- decree.
     , leaseTimeout      :: Int
 
-      -- | The length of time before a leader should seek lease renewal, in
-      -- microseconds. To avoid leader churn, you should ensure that
+      -- | The length of time that a leader should anticipate to renew its
+      -- lease, in microseconds. @leaseRenewTimeout@ microseconds before the
+      -- leaseexpires, the leader will try to renew the lease.
+      --
+      -- To avoid leader churn, you should ensure that
       -- @leaseRenewTimeout <= leaseTimeout@.
     , leaseRenewTimeout :: Int
 
@@ -254,14 +259,14 @@ data Config = Config
 data Value a
       -- | Batch of values.
     = Values [a]
-      -- | Lease start time and list of replicas.
-    | Reconf TimeSpec LegislatureId [NodeId]
+      -- | Legislature to start and the list of replicas.
+    | Reconf LegislatureId [NodeId]
     deriving (Eq, Generic, Typeable)
 
 instance Binary a => Binary (Value a)
 
 isReconf :: Value a -> Bool
-isReconf (Reconf _ _ _) = True
+isReconf (Reconf {}) = True
 isReconf _              = False
 
 -- | A type for internal requests.
@@ -269,23 +274,23 @@ data Request a = Request
     { requestSender   :: [ProcessId]
     , requestValue    :: Value a
     , requestHint     :: Hint
-      -- | @Just d@ signals a lease request, where @d@ is the decree on which
-      -- the request is valid.
-      --
-      -- Any reconfiguration executed in a future decree before the lease
-      -- request is executed invalidates the request.
-      --
-      -- If a lease request is submitted while a Reconf message produced by a
-      -- client is sitting in the mailbox, the effects of the client
-      -- reconfiguration could be overwritten by the lease request. In order to
-      -- prevent this, the @requestForLease@ field helps discarding lease
-      -- requests which have become dated.
-      --
-    , requestForLease :: Maybe LegislatureId
     }
   deriving (Generic, Typeable)
 
 instance Binary a => Binary (Request a)
+
+-- | A type for requests directed to the proposer process.
+data ProposerRequest a = ProposerRequest
+    { prDecree      :: DecreeId
+      -- | This is @True@ iff the request comes from the batcher.
+    , prFromBatcher :: Bool
+      -- | Time at which  the request was submitted.
+    , prStart       :: TimeSpec
+    , prRequest     :: Request a
+    }
+  deriving (Generic, Typeable)
+
+instance Binary a => Binary (ProposerRequest a)
 
 -- | A type for batcher messages.
 data BatcherMsg a = BatcherMsg
@@ -300,8 +305,6 @@ instance Binary a => Binary (BatcherMsg a)
 -- | Ask a replica to print status and send Max messages.
 data Status = Status deriving (Typeable, Generic)
 instance Binary Status
-
-instance Binary TimeSpec
 
 replicaLabel :: LogId -> String
 replicaLabel (LogId kstr) = kstr ++ ".replica"
@@ -371,7 +374,7 @@ insertInLog :: Serializable a => PersistenceHandle a -> Int -> Value a -> IO ()
 insertInLog (PersistenceHandle {..}) n v = do
     P.atomically persistentStore $
       case v of
-        Reconf _ leg' rs' ->
+        Reconf leg' rs' ->
           [ P.Insert persistentLogMap n $ encode v
           , P.Insert persistentMembershipMap 0 $ encode (DecreeId leg' n, rs')
           ]
@@ -615,7 +618,7 @@ replica Dict
     -- recorded decrees must be replayed. This has no effect on the current
     -- decree number and the watermark. See Note [Teleportation].
     forM_ (Map.toList log) $ \(n,v) -> do
-        usend self $ Decree Stored (DecreeId maxBound n) v
+        usend self $ Decree 0 Stored (DecreeId maxBound n) v
 
     let d = legD { decreeNumber = max (decreeNumber decree) $
                                     if Map.null log
@@ -782,27 +785,33 @@ replica Dict
       -- If I'm the leader, the lease starts at the time
       -- the request was made. Otherwise, it starts now.
       here <- getSelfNode
+      if [here] == take 1 ρs then
+        setLeaseRenewTimer timerPid requestStart
+      else do
+        usend timerPid $ adjustForDrift leaseTimeout
+        liftIO $ getTime Monotonic
+
+    -- Sets the timer to renew the lease and returns the time at which the lease
+    -- is started.
+    setLeaseRenewTimer :: ProcessId -- ^ pid of the timer process
+                       -> TimeSpec  -- ^ time at which the request was submitted
+                       -> Process TimeSpec
+    setLeaseRenewTimer timerPid requestStart = do
       now <- liftIO $ getTime Monotonic
       let timeSpecToMicro (TimeSpec s ns) = s * 1000000 + ns `div` 1000
-          (leaseStart', t) =
-             if [here] == take 1 ρs then
-               ( requestStart
-               , max 0 $ (leaseTimeout - leaseRenewTimeout) -
-                         fromIntegral (timeSpecToMicro $ now - requestStart)
-               )
-             -- Adjust the lease timeout to account for some clock drift, so
-             -- non-leaders think the lease is slightly longer.
-             else (now, adjustForDrift leaseTimeout)
-
+          t = max 0 $ (leaseTimeout - leaseRenewTimeout) -
+                      fromIntegral (timeSpecToMicro $ now - requestStart)
       usend timerPid t
-      return leaseStart'
+      return requestStart
 
     -- The proposer process makes consensus proposals.
     -- Proposals are aborted when a reconfiguration occurs or when the
     -- watermark increases beyond the proposed decree.
     proposer ρ bpid w s αs =
       receiveWait
-        [ match $ \r@(d , request@(Request {requestValue = v :: Value a})) ->
+        [ match $ \r@(ProposerRequest d _ _
+                                      (Request {requestValue = v :: Value a}))
+                  ->
            cond (d < w) (usend ρ r >> proposer ρ bpid w s αs) $ do
             self <- getSelfPid
             -- The MVar stores the result of the proposal.
@@ -853,7 +862,7 @@ replica Dict
               proposer ρ bpid w' s αs'
             else do
               (v',s') <- liftIO $ takeMVar mv
-              usend ρ (d, v', request)
+              usend ρ (v', r)
               proposer ρ bpid w' s' αs'
 
         , match $ proposer ρ bpid w s
@@ -878,19 +887,20 @@ replica Dict
             -- Updates the watermark of the proposer if it has changed.
             updateWatermark w' = usend ppid w'
 
-            -- | Makes a lease request. It takes the legislature on which the
-            -- request is valid.
-            mkLeaseRequest :: LegislatureId -> [ProcessId] -> [NodeId]
-                           -> Process (Request a)
-            mkLeaseRequest l senders replicas = do
-              now <- liftIO $ getTime Monotonic
+            -- | Makes a lease request. It takes the decree to use for
+            -- consensus.
+            proposeLeaseRequest :: DecreeId -> [ProcessId] -> [NodeId]
+                                -> Process ()
+            proposeLeaseRequest di senders replicas = do
               let ρs' = here : filter (here /=) replicas
-              return Request
-                { requestSender   = senders
-                , requestValue    = Reconf now (succ l) ρs' :: Value a
-                , requestHint     = None
-                , requestForLease = Just l
-                }
+                  req = Request
+                    { requestSender   = senders
+                    , requestValue    =
+                        Reconf (succ (decreeLegislatureId di)) ρs' :: Value a
+                    , requestHint     = None
+                    }
+              now <- liftIO $ getTime Monotonic
+              usend ppid (ProposerRequest di False now req)
 
             -- Does a persistence operation asynchronously.
             doPersistenceOpAsync task = do
@@ -914,9 +924,7 @@ replica Dict
                   mLeader <- getLeader leaseStart ρs
                   nlogTrace logId $ "LeaseRenewalTime: " ++ show (w, cd, mLeader)
                   cd' <- if Just here == mLeader || isNothing mLeader then do
-                      leaseRequest <-
-                        mkLeaseRequest (decreeLegislatureId d) [] ρs
-                      usend ppid (cd, leaseRequest)
+                      proposeLeaseRequest cd [] ρs
                       return $ succ cd
                     else
                       return cd
@@ -932,12 +940,12 @@ replica Dict
                   usend ptimerPid leaseTimeout
                   go st
             ] ++
-            [ matchIf (\(Decree _ di _ :: Decree (Value a)) ->
+            [ matchIf (\(Decree _ _ di _ :: Decree (Value a)) ->
                         -- Take the max of the watermark legislature and the
                         -- incoming legislature to deal with teleportation of
                         -- decrees. See Note [Teleportation].
                         di < max w w{decreeLegislatureId = decreeLegislatureId di}) $ {-# SCC "go/Decree/Value" #-}
-                       \(Decree locale di _) -> do
+                       \(Decree _ locale di _) -> do
                   -- We must already know this decree, or this decree is from an
                   -- old legislature, so skip it.
                   nlogTrace logId $ "Skipping decree: " ++ show (w, di, locale)
@@ -956,9 +964,9 @@ replica Dict
                   go st
 
               -- Commit the decree to the log.
-            , matchIf (\(Decree locale di _) ->
+            , matchIf (\(Decree _ locale di _) ->
                         locale /= Stored && w <= di && decreeNumber di == decreeNumber w) $ {-# SCC "go/Decree/Commit" #-}
-                       \(Decree locale di v) -> do
+                       \(Decree requestStart locale di v) -> do
                   nlogTrace logId $ "Storing decree: " ++ show (w, di)
                   -- Write the log asynchronously
                   doPersistenceOpAsync $ do
@@ -976,13 +984,13 @@ replica Dict
                                           -- pids are local processes for now
                                           forM_ pids $ flip usend ()
                       _ -> return ()
-                    usend self $ Decree Stored di v
+                    usend self $ Decree requestStart Stored di v
                   go st
 
               -- Execute the decree
-            , matchIf (\(Decree locale di _) ->
+            , matchIf (\(Decree _ locale di _) ->
                         locale == Stored && w <= di && decreeNumber di == decreeNumber w) $ {-# SCC "go/Decree/Execute" #-}
-                       \(Decree _ di v) -> do
+                       \(Decree requestStart _ di v) -> do
                 let maybeTakeSnapshot w' s' = do
                       let w0' = maybe w0 fst mdumper
                       takeSnapshot <- snapshotPolicy
@@ -998,7 +1006,7 @@ replica Dict
                         return $ Just (w', dumper)
                       else
                         return mdumper
-                case v of
+                st' <- case v of
                   Values xs -> {-# SCC "Execute/Values" #-} do
                       nlogTrace logId $
                         "Executing decree: " ++ show (w, di, d, cd)
@@ -1014,7 +1022,7 @@ replica Dict
                            , stateWatermark         = w'
                            , stateLogState          = s'
                            }
-                  Reconf requestStart leg' ρs'
+                  Reconf leg' ρs'
                     -- Only execute a reconfiguration if we are on an earlier
                     -- configuration.
                     | decreeLegislatureId d < leg' -> {-# SCC "Execute/Reconf" #-} do
@@ -1032,8 +1040,6 @@ replica Dict
                       -- Tick.
                       usend self Status
 
-                      leaseStart' <-
-                        setLeaseTimer timerPid requestStart ρs'
                       let epoch' = if take 1 ρs' /= take 1 ρs
                                     then decreeLegislatureId d
                                     else epoch
@@ -1044,7 +1050,7 @@ replica Dict
                       -- is any.
                       when (epoch /= epoch' || sort ρs /= sort ρs') $
                         forM_ mbpid $ flip usend (epoch', ρs')
-                      mLeader <- getLeader leaseStart' ρs'
+                      mLeader <- getLeader requestStart ρs'
                       bpid' <- case mbpid of
                         Nothing | mLeader == Just here -> do
                           bpid' <- spawnLocal $ do
@@ -1058,24 +1064,32 @@ replica Dict
                         Nothing -> return bpid
 
                       updateWatermark w'
-                      go st{ stateBatcher = bpid'
-                           , stateLeaseStart = leaseStart'
-                           , stateReplicas = ρs'
-                           , stateUnconfirmedDecree = d'
-                           , stateCurrentDecree = cd'
-                           , stateEpoch = epoch'
-                           , stateReconfDecree = legD'
-                           , stateSnapshotDumper = mdumper'
-                           , stateWatermark = w'
-                           }
+                      return st { stateBatcher = bpid'
+                                , stateReplicas = ρs'
+                                , stateUnconfirmedDecree = d'
+                                , stateCurrentDecree = cd'
+                                , stateEpoch = epoch'
+                                , stateReconfDecree = legD'
+                                , stateSnapshotDumper = mdumper'
+                                , stateWatermark = w'
+                                }
                     | otherwise -> {-# SCC "Execute/otherwise" #-} do
                       let w' = succ w{decreeLegislatureId = succ (decreeLegislatureId w)}
                       say $ "Not executing " ++ show (di, w, d, leg', cd)
                       mdumper' <- maybeTakeSnapshot w' s
                       updateWatermark w'
-                      go st{ stateSnapshotDumper    = mdumper'
-                           , stateWatermark = w'
-                           }
+                      return st { stateSnapshotDumper    = mdumper'
+                                , stateWatermark = w'
+                                }
+                -- Restart the timer to compete for the lease.
+                let requestStart' = max requestStart leaseStart
+                mLeader <- getLeader requestStart' (stateReplicas st')
+                leaseStart' <- if mLeader == Just here
+                  then setLeaseRenewTimer timerPid requestStart'
+                  else do
+                    usend timerPid $ adjustForDrift leaseTimeout
+                    liftIO $ getTime Monotonic
+                go st' { stateLeaseStart = leaseStart' }
 
               -- Dumping a snapshot finished.
             , match $ \(w0', sref', dumper') -> do
@@ -1107,9 +1121,9 @@ replica Dict
               -- We don't query missing decrees here, or it would cause quering
               -- too often. Queries will happen when the replica receives a
               -- 'Max' message.
-            , matchIf (\(Decree locale di _) ->
+            , matchIf (\(Decree _ locale di _) ->
                         locale == Remote && w < di && not (Map.member (decreeNumber di) log)) $ {-# SCC "go/other" #-}
-                       \(Decree locale di v) -> do
+                       \(Decree requestStart locale di v) -> do
                   nlogTrace logId $
                     "Storing decree above watermark: " ++ show (w, di)
                   doPersistenceOpAsync $ do
@@ -1135,7 +1149,7 @@ replica Dict
                     -- decree inserted like this in the mailbox is rechecked
                     -- over an over whenever we execute 'receiveWait'.
                     --
-                    usend self $ Decree locale di v
+                    usend self $ Decree requestStart locale di v
                   go st
 
               -- Message from the batcher
@@ -1148,9 +1162,7 @@ replica Dict
                   (s', cd') <- case mLeader of
                      -- Drop the request and ask for the lease.
                      Nothing | elem here ρs -> do
-                       leaseRequest <-
-                         mkLeaseRequest (decreeLegislatureId d) [] ρs
-                       usend ppid (cd, leaseRequest)
+                       proposeLeaseRequest cd [] ρs
                        -- Kill the batcher.
                        exitAndWait bpid
                        return (s, succ cd)
@@ -1193,14 +1205,17 @@ replica Dict
                                "replica: no non-nullipotent requests."
                              return (s, cd)
                            BatcherMsg { batcherMsgRequest = r } : _ -> do
-                             let updateLeg (Reconf t _ ρs') =
-                                  Reconf t (succ $ decreeLegislatureId legD) ρs'
+                             let updateLeg (Reconf _ ρs') =
+                                  Reconf (succ $ decreeLegislatureId legD) ρs'
                                  updateLeg v = v
                              nlogTrace logId
                                "replica: Sending batch to proposer."
-                             usend ppid
-                               ( cd
-                               , if isReconf $ requestValue r
+                             now <- liftIO $ getTime Monotonic
+                             usend ppid $ ProposerRequest
+                               { prDecree      = cd
+                               , prFromBatcher = True
+                               , prStart       = now
+                               , prRequest     = if isReconf $ requestValue r
                                  then r { requestValue =
                                             updateLeg $ requestValue r
                                         }
@@ -1216,9 +1231,8 @@ replica Dict
                                          )
                                          rs'
                                    , requestHint     = None
-                                   , requestForLease = Nothing
                                    }
-                               )
+                               }
                              return (s, succ cd)
 
                      -- Drop the request.
@@ -1239,32 +1253,36 @@ replica Dict
               -- The request is dropped if the decree was accepted with a
               -- different value already.
             , match $ {-# SCC "go/Proposer" #-}
-                  \(di, vi, Request κs (v :: Value a) _ rLease) -> do
+                  \(vi, ProposerRequest di fromBatcher requestStart
+                                        (Request κs (v :: Value a) _)) -> do
                   -- If the passed decree accepted other value than our
                   -- client's, don't treat it as local (ie. do not report back
                   -- to the client yet).
-                  let pids = maybe [bpid] (const []) rLease
-                      locale = if v == vi then Local κs pids else Remote
-                  usend self $ Decree locale di vi
+                  let passed = v == vi
+                      pids = if fromBatcher then [bpid] else []
+                      locale = if passed then Local κs pids else Remote
+                  usend self $ Decree requestStart locale di vi
                   forM_ others $ \ρ -> do
-                    sendReplicaAsync sendPool logId ρ $ Decree Remote di vi
+                    sendReplicaAsync sendPool logId ρ $
+                      Decree requestStart Remote di vi
 
                   nlogTrace logId $ "replica: proposal result " ++
-                             show (di, v == vi, isNothing rLease)
-                  when (v /= vi && isNothing rLease) $
+                             show (di, passed, fromBatcher)
+                  when (not passed && fromBatcher) $
                     -- Send rejection ack.
                     usend bpid ()
 
                   -- Avoid moving to unreachable decrees.
                   let d' = if d == cd then d else min cd (max d (succ di))
-                  go st{ stateUnconfirmedDecree = d' }
+                  go st { stateUnconfirmedDecree = d' }
 
               -- Message from the proposer process
               --
               -- The proposer rejected or aborted the request.
             , match $ {-# SCC "go/ProposerRejected" #-}
-                  \(_ :: DecreeId, Request senders (_ :: Value a) _ rLease) -> do
-                  when (isNothing rLease) $ do
+                  \(ProposerRequest _ fromBatcher _ (Request senders (_ :: Value a) _)) ->
+                do
+                  when fromBatcher $ do
                     usend bpid ()
                     forM_ senders $ flip usend False
                   go st
@@ -1274,7 +1292,7 @@ replica Dict
                        \(Query ρ n) -> do
                   case Map.lookup n log of
                             -- See Note [Teleportation].
-                    Just v -> usend ρ $ Decree Remote (DecreeId maxBound n) v
+                    Just v -> usend ρ $ Decree 0 Remote (DecreeId maxBound n) v
                     Nothing -> return ()
                   go st
 
@@ -1302,7 +1320,7 @@ replica Dict
 
                     when (legD < legD') $
                       liftIO $ insertInLog ph (decreeNumber legD') $
-                          Reconf 0 (decreeLegislatureId legD') ρs'
+                          Reconf (decreeLegislatureId legD') ρs'
 
                     -- Trimming here ensures that the log does not accumulate
                     -- decrees indefinitely if the state is oftenly restored
@@ -1310,10 +1328,6 @@ replica Dict
                     liftIO $ trimTheLog ph (decreeNumber w0)
 
                     when (legD < legD') $ updateAcceptors ρs'
-
-                    leaseStart' <- if legD < legD'
-                                   then setLeaseTimer timerPid 0 ρs'
-                                   else return leaseStart
 
                     -- TODO: get the snapshot asynchronously
                     st' <- restoreSnapshot (stLogRestore sref') >>= \case
@@ -1326,11 +1340,13 @@ replica Dict
                                          , stateSnapshotWatermark = w0'
                                          , stateLogState          = s'
                                          }
+                    now <- liftIO $ getTime Monotonic
+
                     let d'  = DecreeId leg'' (max (decreeNumber w0')
                                                   (decreeNumber d))
                         cd' = DecreeId leg'' (max (decreeNumber w0')
                                                   (decreeNumber cd))
-                    go st' { stateLeaseStart        = leaseStart'
+                    go st' { stateLeaseStart        = now
                            , stateReplicas          = ρs''
                            , stateUnconfirmedDecree = d'
                            , stateCurrentDecree     = cd'
@@ -1348,7 +1364,7 @@ replica Dict
                   when (legD < legD') $
                     doPersistenceOpAsync $
                       liftIO $ insertInLog ph (decreeNumber legD') $
-                        Reconf 0 (decreeLegislatureId legD') ρs'
+                        Reconf (decreeLegislatureId legD') ρs'
 
                   queryMissingFrom sendPool logId (decreeNumber w)
                     [processNodeId ρ] $
@@ -1361,14 +1377,11 @@ replica Dict
                       d'' = DecreeId leg'' $ decreeNumber d'
 
                   when (legD < legD') $ updateAcceptors ρs'
-
-                  leaseStart' <- if legD < legD'
-                                 then setLeaseTimer timerPid 0 ρs''
-                                 else return leaseStart
+                  now <- liftIO (getTime Monotonic)
 
                   let cd' = max d'' cd
                   go st
-                    { stateLeaseStart = leaseStart'
+                    { stateLeaseStart = now
                     , stateUnconfirmedDecree = d''
                     , stateCurrentDecree = cd'
                     , stateReplicas = ρs''
@@ -1400,18 +1413,15 @@ replica Dict
                     -- I'm the leader, so handle the request.
                     Just leader | here == leader -> do
 
-                      requestStart <- liftIO $ getTime Monotonic
                       -- Get self to propose reconfiguration...
                       usend bpid ( μ
                                  , epoch
                                  , Request
                                      { requestSender   = [π]
                                      , requestValue    =
-                                         Reconf requestStart
-                                                (succ (decreeLegislatureId d))
+                                         Reconf (succ (decreeLegislatureId d))
                                                 ρs'' :: Value a
                                      , requestHint     = None
-                                     , requestForLease = Nothing
                                      }
                                  )
 
@@ -1503,7 +1513,7 @@ replica Dict
                               dvs' = trimUnreachable dvs (decreeLegislatureId w)
                           forM_ dvs' $ \(di, vi :: Value a) ->
                             sendReplicaAsync sendPool logId here $
-                              Decree Remote di vi
+                              Decree 0 Remote di vi
                           -- Submit the reconfiguration request.
                           let d' = if null dvs' then d
                                    else max d $ succ $
@@ -1511,9 +1521,7 @@ replica Dict
                                      in if isReconf v
                                         then DecreeId (succ dmleg) dmn
                                         else dm
-                          r <- mkLeaseRequest (decreeLegislatureId d') [π] ρs''
-
-                          usend ppid (d', r)
+                          proposeLeaseRequest d' [π] ρs''
 
                           -- Update the list of acceptors of the proposer, so we
                           -- have a chance to succeed.
@@ -1539,18 +1547,15 @@ replica Dict
                     -- I'm the leader, so handle the request.
                     Just leader | here == leader -> do
 
-                      requestStart <- liftIO $ getTime Monotonic
                       -- Get self to propose reconfiguration...
                       usend bpid ( μ
                                  , epoch
                                  , Request
                                      { requestSender   = [π]
                                      , requestValue    =
-                                         Reconf requestStart
-                                                (succ (decreeLegislatureId d))
+                                         Reconf (succ (decreeLegislatureId d))
                                                 ρs'' :: Value a
                                      , requestHint     = None
-                                     , requestForLease = Nothing
                                      }
                                  )
 
@@ -2089,7 +2094,6 @@ append h@(Handle _ _ cConfig _ omchan μ) hint x = callLocal $ do
         { requestSender   = [self]
         , requestValue    = Values [x]
         , requestHint     = hint
-        , requestForLease = Nothing
         }
     nlogTrace logId $ "append: sending request to ambassador " ++ show μ
     when schedulerIsEnabled $ usend μ ()
