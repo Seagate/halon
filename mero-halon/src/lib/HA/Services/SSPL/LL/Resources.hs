@@ -298,6 +298,13 @@ instance Binary ResetSSPLService
 newtype SSPLConnectFailure = SSPLConnectFailure NodeId
    deriving (Eq, Show, Binary, Typeable)
 
+-- | Event representing an expander reset, which is otherwise
+--   an empty message.
+data ExpanderResetInternal = ExpanderResetInternal
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary ExpanderResetInternal
+
 --------------------------------------------------------------------------------
 -- Channels                                                                   --
 --------------------------------------------------------------------------------

@@ -164,6 +164,16 @@ schema = [schemaQQ|
 									"description": "Drive Number within the enclosure",
 									"type": "integer",
 									"required": true
+								},
+								"diskInstalled": {
+									"description": "Disk Installed in Slot",
+									"type": "boolean",
+									"required": true
+								},
+								"diskPowered": {
+									"description": "Disk Powered",
+									"type": "boolean",
+									"required": true
 								}
 							}
 						},
@@ -532,18 +542,18 @@ schema = [schemaQQ|
 											},
 											"identity": {
 												"type": "object",
-                        "properties": {
-  												"path": {
-  													"description": "Drive path (e.g. /dev/disk)",
-  													"type": "string",
-  													"required": true
-  												},
-  												"serialNumber": {
-  													"description": "Drive serial number",
-  													"type": "string",
-  													"required": true
-  												}
-                        }
+												"properties": {
+													"path": {
+														"description": "Drive path (e.g. /dev/disk)",
+														"type": "string",
+														"required": true
+													},
+													"serialNumber": {
+														"description": "Drive serial number",
+														"type": "string",
+														"required": true
+													}
+												}
 											}
 										}
 									},
@@ -562,6 +572,10 @@ schema = [schemaQQ|
 									"required": true
 								}
 							}
+						},
+
+						"expander_reset": {
+							"description": "Expander Reset Occurred"
 						}
 					}
 				}

@@ -8,6 +8,10 @@ module HA.RecoveryCoordinator.Events.Drive
   ( DriveRemoved(..)
   , DriveInserted(..)
   , DriveFailed(..)
+  , DrivePowerChange(..)
+  , DriveTransient(..)
+  , DriveOK(..)
+  , ExpanderReset(..)
   , ResetAttempt(..)
   , ResetSuccess(..)
   , ResetFailure(..)
@@ -20,6 +24,7 @@ import Data.UUID (UUID)
 
 import Data.Binary   (Binary)
 import Data.Hashable (Hashable)
+import qualified Data.Text as T
 import Data.Typeable (Typeable)
 import GHC.Generics
 
@@ -38,6 +43,20 @@ newtype ResetSuccess =
 newtype ResetFailure =
     ResetFailure StorageDevice
     deriving (Eq, Show, Binary)
+
+-- | DrivePowerChange event is sent when the power status of a
+--   drive changes.
+data DrivePowerChange = DrivePowerChange
+  { dpcUUID :: UUID
+  , dpcNode :: Node
+  , dpcEnclosure :: Enclosure
+  , dpcDevice :: StorageDevice
+  , dpcDiskNum :: Int
+  , dpcSerial :: T.Text
+  , dpcPowered :: Bool -- Is device now powered?
+  } deriving (Eq, Show, Typeable, Generic)
+instance Hashable DrivePowerChange
+instance Binary DrivePowerChange
 
 -- | DriveRemoved event is emmited when somebody need to trigger
 -- event that should happen when any drive have failed.
@@ -59,7 +78,6 @@ data DriveInserted = DriveInserted
        , diEnclosure :: Enclosure -- ^ Enclosure where event happened.
        , diDiskNum :: Int -- ^ Unique location of device in enclosure.
        , diSerial :: DeviceIdentifier -- ^ Serial drive of device.
-       , diPath   :: DeviceIdentifier -- ^ Real path of the device.
        } deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveInserted
@@ -71,3 +89,27 @@ data DriveFailed = DriveFailed UUID Node Enclosure StorageDevice
 
 instance Hashable DriveFailed
 instance Binary DriveFailed
+
+-- | Event emitted when we get transient failure indication for the drive
+--   from drive manager.
+data DriveTransient = DriveTransient UUID Node Enclosure StorageDevice
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Hashable DriveTransient
+instance Binary DriveTransient
+
+-- | Event emitted when we get OK indication for the drive
+--   from drive manager.
+data DriveOK = DriveOK UUID Node Enclosure StorageDevice
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Hashable DriveOK
+instance Binary DriveOK
+
+-- | Sent when an expander reset attempt happens in the enclosure. In such
+--   a case, we expect to see (or have seen) multiple drive transient events.
+data ExpanderReset = ExpanderReset Enclosure
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Hashable ExpanderReset
+instance Binary ExpanderReset

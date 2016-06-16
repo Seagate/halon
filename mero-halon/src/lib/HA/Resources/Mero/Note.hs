@@ -29,14 +29,14 @@ import HA.Resources.TH
 import Mero.ConfC (Fid(..))
 
 import Control.Distributed.Static (Static, staticPtr)
-import Control.Monad (join, unless)
+import Control.Monad (join)
 
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Binary (Binary)
 import Data.Constraint (Dict)
 import Data.Bits (shiftR)
 import Data.Hashable (Hashable)
-import Data.List (foldl', nub)
+import Data.List (foldl')
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
 import Data.Monoid ((<>))
@@ -241,22 +241,35 @@ instance HasConfObjectState M0.Service where
   -- during process start
   toConfObjState _ M0.SSStarting = M0_NC_ONLINE
   toConfObjState _ (M0.SSInhibited M0.SSFailed) = M0_NC_FAILED
-  toConfObjState x (M0.SSInhibited st) = M0_NC_TRANSIENT
-
+  toConfObjState _ (M0.SSInhibited _) = M0_NC_TRANSIENT
 instance HasConfObjectState M0.Disk where
-  hasStateDict = staticPtr $ static dict_HasConfObjectState_Disk
-instance HasConfObjectState M0.SDev where
-  type StateCarrier M0.SDev = ConfObjectState
-  getState x rg = fromMaybe M0_NC_ONLINE . listToMaybe $
+  type StateCarrier M0.Disk = M0.SDevState
+  getState x rg = fromMaybe M0.SDSUnknown . listToMaybe $
     [ st
-    | (disk :: M0.Disk) <- G.connectedTo x M0.IsOnHardware rg
-    , st <- G.connectedTo disk Is rg
+    | (sdev :: M0.SDev) <- G.connectedFrom M0.IsOnHardware x rg
+    , st <- G.connectedTo sdev Is rg
     ]
   setState x st = \rg1 -> let
-      disks = G.connectedTo x M0.IsOnHardware rg1 :: [M0.Disk]
-      fun = foldl' (.) id $ (\d -> setState d st) <$> disks
+      sdevs = G.connectedFrom M0.IsOnHardware x rg1 :: [M0.SDev]
+      fun = foldl' (.) id $ (\d -> setState d st) <$> sdevs
     in fun rg1
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Disk
+
+  toConfObjState _ x = toConfObjState (undefined :: M0.SDev) x
+instance HasConfObjectState M0.SDev where
+  type StateCarrier M0.SDev = M0.SDevState
+  getState x rg = fromMaybe M0.SDSUnknown . listToMaybe $ G.connectedTo x Is rg
+  setState x st = G.connectUniqueFrom x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_SDev
+
+  toConfObjState _ M0.SDSUnknown = M0_NC_ONLINE
+  toConfObjState _ M0.SDSOnline = M0_NC_ONLINE
+  toConfObjState _ M0.SDSFailed = M0_NC_FAILED
+  toConfObjState _ M0.SDSRepairing = M0_NC_REPAIR
+  toConfObjState _ M0.SDSRepaired = M0_NC_REPAIRED
+  toConfObjState _ M0.SDSRebalancing = M0_NC_REBALANCE
+  toConfObjState _ (M0.SDSTransient M0.SDSFailed) = M0_NC_FAILED -- odd case
+  toConfObjState _ (M0.SDSTransient _) = M0_NC_TRANSIENT
 instance HasConfObjectState M0.Pool where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Pool
 instance HasConfObjectState M0.PVer where
@@ -342,10 +355,9 @@ $(mkDicts
   , (''M0.Controller, ''Is, ''ConfObjectState)
   , (''M0.Node, ''Is, ''ConfObjectState)
   , (''M0.Service, ''Is, ''PrincipalRM)
-  , (''M0.Disk, ''Is, ''ConfObjectState)
   , (''M0.Pool, ''Is, ''ConfObjectState)
   , (''M0.PVer, ''Is, ''ConfObjectState)
-  , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
+  ]
   )
 
 $(mkResRel
@@ -356,9 +368,8 @@ $(mkResRel
   , (''M0.Controller, ''Is, ''ConfObjectState)
   , (''M0.Node, ''Is, ''ConfObjectState)
   , (''M0.Service, ''Is, ''PrincipalRM)
-  , (''M0.Disk, ''Is, ''ConfObjectState)
   , (''M0.Pool, ''Is, ''ConfObjectState)
   , (''M0.PVer, ''Is, ''ConfObjectState)
-  , (''R.StorageDevice, ''Is, ''ConfObjectState) ]
+  ]
   []
   )

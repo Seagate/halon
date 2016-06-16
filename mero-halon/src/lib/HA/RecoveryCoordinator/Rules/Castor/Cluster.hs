@@ -273,7 +273,7 @@ ruleClusterStatus = defineSimple "cluster-status-request"
                        return (process, ReportClusterProcess st services')
             let go (msdev::Maybe M0.SDev) = msdev >>= \sdev ->
                  let st = M0.getState sdev rg
-                 in if st == M0.M0_NC_ONLINE
+                 in if st == M0.SDSOnline
                     then Nothing
                     else Just (sdev, st)
             devs <- fmap (\x -> mapMaybe go x) . traverse lookupStorageDeviceSDev

@@ -25,7 +25,6 @@ import           Data.List (nub)
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe)
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
-import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Events.Mero
@@ -326,7 +325,7 @@ ruleStopMeroProcess = define "stop-process" $ do
   setPhase initial $ \(HAEvent eid msg _) -> do
     todo eid
     InternalObjectStateChange chs <- liftProcess $ decodeP msg
-    let changes = mapMaybe (\(AnyStateChange (a::a)  old new _) ->
+    let changes = mapMaybe (\(AnyStateChange (a::a) _ new _) ->
                     case eqT :: Maybe (a :~: M0.Process) of
                       Just Refl -> Just (new, a)
                       Nothing   -> Nothing) chs
@@ -344,7 +343,6 @@ ruleStopMeroProcess = define "stop-process" $ do
                         , node   <- m0nodeToNode m0node rg
                         ]
       (m0svc,node) <- asum $ map (\node -> MaybeT $ fmap (,node) <$> lookupRunningService node m0d) nodes
-      host  <- MaybeT $ findNodeHost node
       ch    <- MaybeT . return $ meroChannel rg m0svc
       return $ do
         stopNodeProcesses ch [p]

@@ -427,7 +427,7 @@ modifyConfUpdateVersion f = do
   modifyLocalGraph $ return . G.connectUniqueFrom Cluster Has fcsu
 
 txPopulate :: (IO () -> PhaseM LoopState l ()) -> TxConfData -> SpielTransaction -> PhaseM LoopState l SpielTransaction
-txPopulate lift (TxConfData CI.M0Globals{..} prof@(M0.Profile pfid) fs@M0.Filesystem{..}) t = do
+txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) t = do
   g <- getLocalGraph
   -- Profile, FS, pool
   -- Top-level pool width is number of devices in existence

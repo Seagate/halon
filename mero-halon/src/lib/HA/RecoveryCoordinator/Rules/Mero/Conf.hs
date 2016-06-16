@@ -24,7 +24,6 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
   , AnyStateSet
   , stateSet
     -- * Temporary functions
-  , notifyDriveStateChange
   , ExternalNotificationHandlers(..)
   , InternalNotificationHandlers(..)
     -- * Rule helpers
@@ -52,8 +51,7 @@ import Mero.Notification.HAState (Note(..))
 
 import Control.Applicative (liftA2)
 import Control.Category ((>>>))
-import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
-import Control.Distributed.Process (Process, liftIO, say)
+import Control.Distributed.Process (Process, say)
 import Control.Arrow (first)
 import Control.Distributed.Static (Static, staticApplyPtr)
 import Control.Monad (join, when, guard)
@@ -86,16 +84,6 @@ data ExternalNotificationHandlers = ExternalNotificationHandlers
 -- and stored in RG.
 data InternalNotificationHandlers = InternalNotificationHandlers
      { getInternalNotificationHandlers :: forall l . [Set -> PhaseM  LoopState l ()] }
-
--- | Notify ourselves about a state change of the 'M0.SDev'.
---
--- Internally, build a note 'Set' and pass it to all registered
--- stateChangeHandlers.
---
--- TODO Remove this function.
-{-# WARNING notifyDriveStateChange "Please do not use this function in new code." #-}
-notifyDriveStateChange :: M0.SDev -> M0.ConfObjectState -> PhaseM LoopState l ()
-notifyDriveStateChange m0sdev st = applyStateChangesCreateFS [ stateSet m0sdev st ]
 
 -- | A set of deferred state changes. Consists of a graph
 --   update function, a `Set` event for Mero, and an
@@ -442,7 +430,7 @@ sdevCascadeRule = StateCascadeRule
 diskFailsPVer :: StateCascadeRule M0.Disk M0.PVer
 diskFailsPVer = StateCascadeRule
   (const True)
-  (M0.M0_NC_FAILED ==)
+  (M0.SDSFailed ==)
   (\x rg -> let pvers = nub $ do diskv <- G.connectedTo x M0.IsRealOf rg :: [M0.DiskV]
                                  contv <- G.connectedFrom M0.IsParentOf diskv rg :: [M0.ControllerV]
                                  enclv <- G.connectedFrom M0.IsParentOf contv rg :: [M0.EnclosureV]
@@ -451,7 +439,7 @@ diskFailsPVer = StateCascadeRule
                                  guard (M0.M0_NC_FAILED /= M0.getConfObjState pver rg)
                                  return pver
             in lefts $ map (checkBroken rg) pvers)
-  const
+  (\a _ -> M0.toConfObjState (undefined :: M0.Disk) a)
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
    checkBroken rg (pver@(M0.PVer _ [_, frack, fenc, fctrl, fdisk] _)) = do
@@ -476,7 +464,7 @@ diskFailsPVer = StateCascadeRule
 diskFixesPVer :: StateCascadeRule M0.Disk M0.PVer
 diskFixesPVer = StateCascadeRule
   (const True)
-  (M0.M0_NC_ONLINE==)
+  (M0.SDSOnline==)
   (\x rg -> let pvers = nub $ do diskv <- G.connectedTo x M0.IsRealOf rg :: [M0.DiskV]
                                  contv <- G.connectedFrom M0.IsParentOf diskv rg :: [M0.ControllerV]
                                  enclv <- G.connectedFrom M0.IsParentOf contv rg :: [M0.EnclosureV]
@@ -485,7 +473,7 @@ diskFixesPVer = StateCascadeRule
                                  guard (M0.M0_NC_ONLINE /= M0.getConfObjState pver rg)
                                  return pver
             in lefts $ map (checkBroken rg) pvers)
-  const
+  (\a _ -> M0.toConfObjState (undefined :: M0.Disk) a)
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
    checkBroken rg (pver@(M0.PVer _ [_, frack, fenc, fctrl, fdisk] _)) = do
@@ -520,12 +508,12 @@ nodeTransient = StateCascadeRule
 diskAddToFailureVector :: StateCascadeRule M0.Disk M0.Disk
 diskAddToFailureVector = StateCascadeTrigger
   (const True)
-  (M0.M0_NC_FAILED ==)
+  (M0.SDSFailed ==)
   rgRecordDiskFailure
 
 -- | When disk becomes online we need to add that disk to the 'DiskFailureVector'.
 diskRemoveFromFailureVector :: StateCascadeRule M0.Disk M0.Disk
 diskRemoveFromFailureVector = StateCascadeTrigger
   (const True)
-  (M0.M0_NC_ONLINE ==)
+  (M0.SDSOnline ==)
   rgRecordDiskOnline

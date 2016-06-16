@@ -35,6 +35,7 @@ import           GHC.Generics
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
+import           HA.RecoveryCoordinator.Events.Drive (DriveOK(..))
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
 import           HA.Replicator
@@ -44,7 +45,7 @@ import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import           HA.Services.SSPL.CEP
 import           Helper.SSPL
-import           Network.CEP (defineSimple, Definitions)
+import           Network.CEP (defineSimple, Definitions, Published, subscribe)
 import           Network.Transport (Transport(..))
 import           Prelude hiding ((<$>), (<*>))
 import qualified SSPL.Bindings as SSPL
@@ -161,13 +162,13 @@ testDriveAddition transport pg = runDefaultTest transport $ do
   withTrackingStation pg emptyRules $ \(TestArgs _ mm _) -> do
     nodeUp ([nid], 1000000)
     -- Send host update message to the RC
-    promulgateEQ [nid] (nid, mockEvent "online" "NONE" "/path") >>= flip withMonitor wait
+    promulgateEQ [nid] (nid, mockEvent "OK" "NONE" "/path") >>= flip withMonitor wait
     "Drive" :: String <- expect
 
     graph <- G.getGraph mm
     let enc = Enclosure "enc1"
         drive = head (G.connectedTo enc Has graph :: [StorageDevice])
-        status = StorageDeviceStatus "online" "NONE"
+        status = StorageDeviceStatus "OK" "NONE"
     liftIO $ do
       assertBool "Enclosure exists in a graph"  $ G.memberResource enc graph
       assertBool "Drive exists in a graph"      $ G.memberResource drive graph
@@ -194,21 +195,23 @@ testDriveManagerUpdate host transport pg = runDefaultTest transport $ do
             usend self  ("NodeUp" :: String)
         | "Loaded initial data" `isInfixOf` str ->
             usend self  ("InitialData" :: String)
-        | "at 1 marked as active" `isInfixOf` str ->
-            usend self  ("DriveActive" :: String)
         | "lcType = \"HDS\"}" `isInfixOf` str ->
             when (any (interestingSN `isPrefixOf`) (tails str)) $
               usend self ("OK" :: String)
         | otherwise -> return ()
-  withTrackingStation pg testRules $ \(TestArgs _ mm _) -> do
+  withTrackingStation pg testRules $ \(TestArgs _ mm rc) -> do
+
+    subscribe rc (Proxy :: Proxy DriveOK)
+
     nodeUp ([nid], 1000000)
     "NodeUp" :: String <- expect
     promulgateEQ [nid] initialData >>= flip withMonitor wait
     "InitialData" :: String <- expect
 
     say "Sending online message"
-    promulgateEQ [nid] (nid, respDM "online" "NONE" "path") >>= flip withMonitor wait
-    "DriveActive" :: String <- expect
+    promulgateEQ [nid] (nid, respDM "OK" "NONE" "/path") >>= flip withMonitor wait
+
+    _ <- expect :: Process (Published DriveOK)
 
     say "Checking drive status sanity"
     graph <- G.getGraph mm
@@ -217,20 +220,25 @@ testDriveManagerUpdate host transport pg = runDefaultTest transport $ do
                       , sn == interestingSN
                   ]
     assert $ G.memberResource drive graph
-    assert $ G.memberResource (StorageDeviceStatus "online" "NONE") graph
+    assert $ G.memberResource (StorageDeviceStatus "OK" "NONE") graph
 
     say "Sending RunDriveManagerFailure"
     promulgateEQ [nid] RunDriveManagerFailure >>= flip withMonitor wait
     liftIO . assertEqual "Drive should be found" ("OK"::String) =<< expect
   where
     testRules :: [Definitions LoopState ()]
-    testRules = pure $ defineSimple "dmwf-trigger" $ \(HAEvent eid RunDriveManagerFailure _) -> do
-      -- Find what should be the only SD in the enclosure and trigger
-      -- repair on it
-      graph <- getLocalGraph
-      let [sd] = G.connectedTo (Enclosure enc) Has graph
-      updateDriveManagerWithFailure sd "FAILED" (Just "injected failure")
-      messageProcessed eid
+    testRules = [
+        defineSimple "dmwf-trigger" $ \(HAEvent eid RunDriveManagerFailure _) -> do
+          -- Find what should be the only SD in the enclosure and trigger
+          -- repair on it
+          graph <- getLocalGraph
+          let [sd] = G.connectedTo (Enclosure enc) Has graph
+          updateDriveManagerWithFailure sd "FAILED" (Just "injected failure")
+          messageProcessed eid
+        -- Required because normal `DriveOK` handling is only enabled with
+        -- USE_MERO
+      , defineSimple "driveok-hack" $ \(DriveOK _ _ _ _) -> return ()
+      ]
 
     wait = void (expect :: Process ProcessMonitorNotification)
     enc :: String

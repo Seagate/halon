@@ -41,8 +41,6 @@ module HA.RecoveryCoordinator.Mero
 
 import Prelude hiding ((.), id, mapM_)
 import HA.Resources
-import HA.Service
-import HA.Services.DecisionLog
 import HA.Multimap
 
 import HA.RecoveryCoordinator.Actions.Core
