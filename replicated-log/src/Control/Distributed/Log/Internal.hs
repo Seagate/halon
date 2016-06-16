@@ -37,6 +37,8 @@ module Control.Distributed.Log.Internal
     , reconfigure
     , recover
     , monitorLog
+    , monitorLocalLeader
+    , getLeaderReplica
     , addReplica
     , killReplica
     , removeReplica
@@ -2086,6 +2088,25 @@ monitorLog h@(Handle _ _ cConfig _ _ μ) = do
     cc <- unClosure cConfig
     nlogTrace (logId cc) $ "monitorLog: ambassador response " ++ show (μ, mb)
     maybe (fmap nullProcessId getSelfNode) return mb >>= monitor
+
+-- | Monitors the local replica and sends a 'ProcessMonitorNotification' to the
+-- caller when the local replica is not a leader anymore.
+monitorLocalLeader :: Handle a -> Process MonitorRef
+monitorLocalLeader (Handle _ _ _ _ _ μ) = do
+    (sp, rp) <- newChan
+    usend μ sp
+    mb <- receiveChan rp
+    here <- getSelfNode
+    case mb of
+      Just b | processNodeId b == here -> monitor b
+      _ -> fmap nullProcessId getSelfNode >>= monitor
+
+-- | Returns the 'NodeId' of the leader replica if known.
+getLeaderReplica :: Handle a -> Process (Maybe NodeId)
+getLeaderReplica (Handle _ _ _ _ _ μ) = do
+    (sp, rp) <- newChan
+    usend μ sp
+    fmap processNodeId <$> receiveChan rp
 
 -- | Make replicas advertize their status info.
 status :: Serializable a => Handle a -> Process ()

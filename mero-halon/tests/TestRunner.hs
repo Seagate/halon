@@ -111,9 +111,9 @@ withTrackingStation _ testRules action = do
   bracket
     (do
       void $ EQT.startEQTracker [nid]
-      cEQGroup <- newRGroup $(mkStatic 'eqDict) "eqtest" 1000 1000000
+      cEQGroup <- newRGroup $(mkStatic 'eqDict) "eqtest" 1000 1000000 4000000
                          [nid] emptyEventQueue
-      cMMGroup <- newRGroup $(mkStatic 'mmDict) "mmtest" 1000 1000000
+      cMMGroup <- newRGroup $(mkStatic 'mmDict) "mmtest" 1000 1000000 4000000
                          [nid] (defaultMetaInfo, fromList [])
       (,) <$> join (unClosure cEQGroup) <*> join (unClosure cMMGroup)
     )

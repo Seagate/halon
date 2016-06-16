@@ -81,8 +81,8 @@ tests (AbstractTransport transport _breakConnection _) _ = do
             self <- getSelfPid
             let nodes = [processNodeId self]
 
-            cRGroup <- newRGroup $(mkStatic 'eqSDict) "eqtest" 20 1000000 nodes
-                                 emptyEventQueue
+            cRGroup <- newRGroup $(mkStatic 'eqSDict) "eqtest" 20 1000000
+                                 4000000 nodes emptyEventQueue
             rGroup :: g EventQueue <- join $ unClosure cRGroup
             eq <- startEventQueue rGroup
             na <- startEQTracker []

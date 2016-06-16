@@ -123,8 +123,9 @@ halonPersistDirectory = filepath replicasDir
 halonLogId :: String -> Log.LogId
 halonLogId = Log.toLogId . ("halon-log." ++)
 
-rgroupConfig :: (String, Int, Int) -> Log.Config
-rgroupConfig (name, snapshotThreshold, snapshotTimeout) = Log.Config
+rgroupConfig :: (String, Int, Int, Int) -> Log.Config
+rgroupConfig (name, snapshotThreshold, snapshotTimeout, leaseDuration) =
+    Log.Config
     { logId             = halonLogId name
     , consensusProtocol =
           \dict -> BasicPaxos.protocol dict 3000000
@@ -133,8 +134,8 @@ rgroupConfig (name, snapshotThreshold, snapshotTimeout) = Log.Config
                           >>= acceptorStore
                  )
     , persistDirectory  = halonPersistDirectory
-    , leaseTimeout      = 4000000
-    , leaseRenewTimeout = 2000000
+    , leaseTimeout      = leaseDuration
+    , leaseRenewTimeout = leaseDuration `div` 2
     , driftSafetyFactor = 11 % 10
     , snapshotPolicy    = return . (>= snapshotThreshold)
     , snapshotRestoreTimeout = snapshotTimeout
@@ -182,7 +183,8 @@ instance RGroup RLogGroup where
   newtype Replica RLogGroup = Replica NodeId
     deriving Binary
 
-  newRGroup sdictState name snapshotThreshold snapshotTimeout nodes (st :: s)
+  newRGroup sdictState name snapshotThreshold snapshotTimeout leaseDuration
+            nodes (st :: s)
       = do
     when (null nodes) $ do
       say "RLogGroup: newRGroup was passed an empty list of nodes."
@@ -194,7 +196,8 @@ instance RGroup RLogGroup where
     Log.new
          $(mkStatic 'commandEqDict)
          cmSDictState
-         ($(mkClosure 'rgroupConfig) (name, snapshotThreshold, snapshotTimeout))
+         ($(mkClosure 'rgroupConfig)
+           (name, snapshotThreshold, snapshotTimeout, leaseDuration))
          (closure ($(mkStatic 'rgroupLog) `staticApply` sdictState) est)
          nodes
     h <- Log.spawnReplicas (halonLogId name)
@@ -241,6 +244,10 @@ instance RGroup RLogGroup where
     fmap isJust $ select sdictUnit port cRd
 
   monitorRGroup (RLogGroup _ _ h _) = Log.monitorLog h
+
+  monitorLocalLeader (RLogGroup _ _ h _) = Log.monitorLocalLeader h
+
+  getLeaderReplica (RLogGroup _ _ h _) = Log.getLeaderReplica h
 
 #if ! MIN_VERSION_base(4,7,0)
 -- | The sole purpose of this type is to provide a typeable instance from

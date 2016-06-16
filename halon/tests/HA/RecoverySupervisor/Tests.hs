@@ -9,8 +9,8 @@
 
 module HA.RecoverySupervisor.Tests ( tests, disconnectionTests ) where
 
-import HA.RecoverySupervisor hiding (__remoteTable)
-import HA.Replicator ( RGroup(..), retryRGroup )
+import HA.RecoverySupervisor
+import HA.Replicator ( RGroup(..) )
 import RemoteTables ( remoteTable )
 
 import Control.Distributed.Process hiding (bracket, catch)
@@ -28,30 +28,23 @@ import Control.Monad
   ( liftM2
   , void
   , replicateM_
-  , replicateM
   , forM_
   , join
+  , when
   )
-import Control.Monad (when)
 import Control.Monad.Catch (bracket, catch)
 import Data.Function (fix)
 import Data.List (partition)
-import Data.Int
-import Data.IORef
 import Data.Proxy
 import Data.Typeable
 import Network.Transport (Transport(..))
 import Test.Framework
 import Test.Transport
 import Test.Tasty.HUnit
-import System.Clock
 import System.IO
 import System.Random
 import System.Timeout (timeout)
 
-
-retryRG :: RGroup g => g st -> Process (Maybe a) -> Process a
-retryRG g = retryRGroup g 1000000
 
 pollingPeriod :: Int
 pollingPeriod = 2000000
@@ -66,7 +59,7 @@ data TestEvents = TestEvents
 newCounters :: Process TestEvents
 newCounters = liftM2 TestEvents newChan newChan
 
-rsSDict :: SerializableDict RSState
+rsSDict :: SerializableDict ()
 rsSDict = SerializableDict
 
 remotable [ 'rsSDict ]
@@ -75,7 +68,7 @@ remotable [ 'rsSDict ]
 -- it's events using "Counters".
 testRS' :: (Typeable g, RGroup g)
         => TestEvents -- ^ Counters that is used in RC, see "Counters"
-        -> Closure (Process (g RSState)) -- ^ RG
+        -> Closure (Process (g ())) -- ^ RG
         -> Process ()
 testRS' counters rg = do
   flip catch (\e -> liftIO $ print (e :: SomeException)) $ do
@@ -101,15 +94,12 @@ tests abstractTransport _ = do
   (transport, controlled) <- mkControlledTransport abstractTransport
   return
     [ testSuccess "rs-restart-if-process-dies" $ testSplit transport controlled 4 $
-      \rc _ events _ cRGroup -> do
+      \rc _ events _ (_ :: Closure (Process (g ()))) -> do
         exit rc "killed for testing"
 
-        _ <- receiveChan $ snd $ cStart events
         _ <- receiveChan $ snd $ cStop events
-        rGroup :: g RSState <- join $ unClosure cRGroup
-        RSState (Just _) _ _<- retryRG rGroup $ getState rGroup
+        _ <- receiveChan $ snd $ cStart events
         return ()
-    , timerTests transport
     ]
 
 disconnectionTests :: forall g. (Typeable g, RGroup g)
@@ -118,15 +108,21 @@ disconnectionTests abstractTransport _ = do
   (transport, controlled) <- mkControlledTransport abstractTransport
   return [ testSuccess "rs-restart-if-node-silent" $ testSplit transport controlled 4 $
       \rc ns events splitNet cRGroup -> do
-        rGroup :: g RSState <- join $ unClosure cRGroup
-        RSState (Just leader0) _ _ <- retryRG rGroup $ getState rGroup
+        rGroup :: g () <- join $ unClosure cRGroup
+        leader0 <- fix $ \loop -> getLeaderReplica rGroup >>=
+                     maybe (receiveTimeout 500000 [] >> loop) return
         liftIO $ assertBool ("the leader is not the expected one"
                              ++ show (rc, leader0)
                             )
-                            $ processNodeId rc == processNodeId leader0
+                            $ processNodeId rc == leader0
+        say "Passed first assertion"
+
+        -- read all NodeIds in the mailbox.
+        fix $ \loop -> receiveTimeout 0 [ match $ \nid -> return (nid :: NodeId) ]
+                       >>= maybe (return ()) (const loop)
 
         let ([leaderNode], rest) =
-              partition ((processNodeId leader0 ==) . localNodeId) ns
+              partition ((leader0 ==) . localNodeId) ns
         say $ "Isolating " ++ show (localNodeId leaderNode)
         splitNet [ [localNodeId leaderNode], map localNodeId rest ]
 
@@ -138,17 +134,10 @@ disconnectionTests abstractTransport _ = do
           rc' <- receiveChan $ snd $ cStart events -- XXX: Timeout ?
           when (processNodeId rc' == localNodeId leaderNode) loop
 
-        say "Read new leader pid."
-        self <- getSelfPid
-        _ <- liftIO $ forkProcess (head rest) $ do
-               say "Get rgroup handle."
-               rGroup' <- join $ unClosure cRGroup
-               say "Got rgroup' handle."
-               st <- retryRG rGroup' $ do
-                 say "Trying to read state ..."
-                 getState rGroup'
-               usend self st
-        RSState (Just leader1) _ _<- expect
+        say "Read new leader nid."
+        leader1 <- fix $ \loop -> getLeaderReplica rGroup >>=
+                     maybe (receiveTimeout 500000 [] >> loop) return
+
         say "Verify that we have a new leader."
         liftIO $ assertBool ("the leader is not new " ++
                              show (leader0, leader1)
@@ -156,19 +145,20 @@ disconnectionTests abstractTransport _ = do
                             $ leader0 /= leader1
     , testSuccess "rs-rc-killed-if-quorum-is-lost" $
        testSplit transport controlled 4 $ \rc ns events splitNet cRGroup -> do
-        rGroup :: g RSState <- join $ unClosure cRGroup
-        RSState (Just leader0) _ _ <- retryRG rGroup $ getState rGroup
+        rGroup :: g () <- join $ unClosure cRGroup
+        leader0 <- fix $ \loop -> getLeaderReplica rGroup >>=
+                     maybe (receiveTimeout 500000 [] >> loop) return
         liftIO $ assertBool ("the leader is not the expected one"
                              ++ show (rc, leader0)
                             )
-                            $ processNodeId rc == processNodeId leader0
+                            $ processNodeId rc == leader0
         let ([leaderNode], rest) =
-              partition (processNodeId leader0 ==) $ map localNodeId ns
+              partition (leader0 ==) $ map localNodeId ns
         splitNet $ [leaderNode] : map (: []) rest
         _ <- receiveChan $ snd $ cStop events
         return ()
     , testSuccess "rs-split-in-majority" $ testSplit transport controlled 5
-        $ \pid nodes events splitNet (_ :: Closure (Process (g RSState))) -> do
+        $ \pid nodes events splitNet (_ :: Closure (Process (g ()))) -> do
           let (as,bs) = splitAt 2 $ filter ((processNodeId pid /=) . localNodeId) nodes
           splitNet [ processNodeId pid : map localNodeId as
                    , map localNodeId bs
@@ -186,6 +176,7 @@ disconnectionTests abstractTransport _ = do
             _ -> error "unexpected event from the RC"
     , testSuccess "rs-split-in-minority" $ testSplit transport controlled 5 $ \pid nodes events splitNet cRGroup -> do
         let (as,bs) = splitAt 3 $ filter ((processNodeId pid /=) . localNodeId) nodes
+            _ = cRGroup :: Closure (Process (g ()))
         splitNet [ map localNodeId as
                  , processNodeId pid : map localNodeId bs
                  ]
@@ -196,20 +187,9 @@ disconnectionTests abstractTransport _ = do
                when (p /= pid) loop
         say "Wait that new RS eventually starts."
         _ <- receiveChan $ snd $ cStart events
-        self <- getSelfPid
-        say "Read RS state."
-        _ <- liftIO $ forkProcess (head as) $ do
-               say "Get rgroup handle."
-               rGroup' :: g RSState <- join $ unClosure cRGroup
-               say "Got rgroup handle."
-               st <- retryRG rGroup' $ do
-                 say "Trying to read state ..."
-                 getState rGroup'
-               usend self st
-        RSState (Just _) _ _<- expect
         return ()
     , testSuccess "rs-split-in-half"  $ testSplit transport controlled 5 $
-        \pid nodes events splitNet (_ :: Closure (Process (g RSState))) -> do
+        \pid nodes events splitNet (_ :: Closure (Process (g ()))) -> do
         let [a1,a2,a3,a4,a5] = map localNodeId nodes
         splitNet [[a1,a2], [a3,a4], [a5]]
         -- wait that RS eventually stop
@@ -242,7 +222,7 @@ testSplit :: (Typeable g, RGroup g)
                -- ^ Channel with RS events.
                -> ([[NodeId]] -> Process ())
                -- ^ Callback that splits network between nodes in groups.
-               -> Closure (Process (g RSState))
+               -> Closure (Process (g ()))
                -- ^ Group handle.
                -> Process ())
           -> IO ()
@@ -253,13 +233,13 @@ testSplit transport t amountOfReplicas action =
       let nids = map localNodeId ns
       bracket (do
                  cRGroup <- newRGroup $(mkStatic 'rsSDict) "rstest" 20
-                                      pollingPeriod nids
-                                      (RSState Nothing 0 pollingPeriod)
+                                      pollingPeriod 4000000 nids
+                                      ()
                  rGroup <- join $ unClosure cRGroup
                  return (cRGroup, rGroup)
               )
               (\(_, rGroup) -> forM_ nids $ killReplica rGroup)
-             $ \(cRGroup, rGroup) -> do
+             $ \(cRGroup, _) -> do
 
         forM_ ns $ \n -> liftIO $ forkProcess n $ do
           testRS' events cRGroup
@@ -279,72 +259,8 @@ testSplit transport t amountOfReplicas action =
 
         pid0 <- receiveChan $ snd $ cStart events
         Nothing <- receiveChanTimeout 0 $ snd $ cStop events
-        RSState (Just _) _ _ <- retryRG rGroup $ getState rGroup
         action pid0 ns events doSplit cRGroup
         -- TODO: implement closing RGroups and call it here.
-
-timerTests :: Transport -> TestTree
-timerTests transport = testGroup "RS Timer"
-  [ testSuccess "rs-timer-run-after-timeout" $ testTimerRunAfterTimeout transport
-  , testSuccess "rs-timer-cancelled" $ testTimerCancelled transport
-  -- XXX: if asynchronous exception will arrive to the thread that calls cancel
-  -- it's possible for the timer thread to lock forever.
-  -- See: https://app.asana.com/0/12314345447678/43375013903903
-  -- , testSuccess "rs-timer-should-survive-exceptions" $ testTimerExceptionLiveness transport
-  , testSuccess "rs-timer-concurrent-cancel" $ testTimerConcurrentCancel transport
-  ]
-
-data TimerData = TimerData { firedAt :: IORef Int64 }
-
-testTimerRunAfterTimeout :: Transport -> Assertion
-testTimerRunAfterTimeout transport = do
-  td <- TimerData <$> newIORef 0
-  runTest transport $ do
-    forM_ [100,1000,10000] $ \delay -> do
-      tf <- liftIO $ timeSpecToMicro <$> getTime Monotonic
-      timer <- newTimer delay $ liftIO $ writeIORef (firedAt td) . timeSpecToMicro =<< getTime Monotonic
-      _     <- receiveTimeout (delay*2) []
-      liftIO . assertBool "timeout callback should fire" . not =<< cancel timer
-      tf' <-   liftIO $ readIORef (firedAt td)
-      liftIO $ assertBool ("timeout should fire after " ++ show delay ++ "us")
-                          (tf'-tf >= fromIntegral delay)
-
-testTimerCancelled :: Transport -> Assertion
-testTimerCancelled transport = do
-  td <- TimerData <$> newIORef 0
-  runTest transport $ do
-    forM_ [100,1000,10000] $ \delay -> do
-      tf <- liftIO $ timeSpecToMicro <$> getTime Monotonic
-      timer <- newTimer delay $ liftIO $ writeIORef (firedAt td) . timeSpecToMicro =<< getTime Monotonic
-      _     <- receiveTimeout (delay `div` 2) []
-      cancelled <- cancel timer
-      if cancelled
-         then liftIO $ assertEqual "action should not happen" 0 =<< readIORef (firedAt td)
-         else liftIO $ do
-           tf' <- timeSpecToMicro <$> getTime Monotonic
-           assertBool "we missed timeout" (tf'-tf >= fromIntegral delay)
-           writeIORef (firedAt td) 0
-
-testTimerConcurrentCancel :: Transport -> Assertion
-testTimerConcurrentCancel transport = do
-  td <- TimerData <$> newIORef 0
-  runTest transport $ do
-    let delay = 10000
-    self <- getSelfPid
-    tf <- liftIO $ timeSpecToMicro <$> getTime Monotonic
-    timer <- newTimer delay $ liftIO $ writeIORef (firedAt td) . timeSpecToMicro =<< getTime Monotonic
-    replicateM_ 5 $ spawnLocal $ cancel timer >>= usend self
-    (r:esults) <- replicateM 5 expect
-    liftIO $ assertBool "all results are equal" $ all (==r) esults
-    if r
-       then liftIO $ assertEqual "action should not happen" 0 =<< readIORef (firedAt td)
-       else liftIO $ do
-         tf' <- timeSpecToMicro <$> getTime Monotonic
-         assertBool "we missed timeout"
-                    (tf'-tf >= fromIntegral delay)
-
-runTest :: Transport -> Process () -> IO ()
-runTest tr action = runTest' 1 200 tr $ const action
 
 runTest' :: Int -> Int -> Transport -> ([LocalNode] -> Process ()) -> IO ()
 runTest' numNodes numReps tr action

@@ -73,7 +73,7 @@ naTestWithEQ transport _ action = withTmpDirectory $ E.bracket
     forM_ nodes $ flip runProcess $ void $ startEQTracker nids
     mdone <- newEmptyMVar
     runProcess (head nodes) $ do
-      cRGroup <- newRGroup $(mkStatic 'eqSDict) "eqtest" 20 1000000 nids
+      cRGroup <- newRGroup $(mkStatic 'eqSDict) "eqtest" 20 1000000 4000000 nids
                            emptyEventQueue
       forM_ nodes $ \node -> liftIO $ forkProcess node $ do
         rGroup :: g EventQueue <- join $ unClosure cRGroup

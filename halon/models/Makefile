@@ -1,4 +1,4 @@
-MODELS=timer rs
+MODELS=
 
 verify: $(MODELS)
 

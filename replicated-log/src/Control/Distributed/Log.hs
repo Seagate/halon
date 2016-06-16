@@ -25,6 +25,8 @@ module Control.Distributed.Log
     , reconfigure
     , recover
     , monitorLog
+    , monitorLocalLeader
+    , getLeaderReplica
     , addReplica
     , killReplica
     , removeReplica

@@ -36,8 +36,14 @@ class RGroup g where
 
   data Replica g
 
-  -- | @newRGroup t ns onCreation st@ creates a replication group which
-  -- saves snapshots of the distributed state every @t@ updates.
+  -- | @newRGroup name t snapshotTimeout leaseTimeout ns onCreation st@ creates
+  -- a replication group with the given @name@ which saves snapshots of the
+  -- distributed state every @t@ updates and gives up saving a snapshot if it
+  -- takes longer than @snapshotTimeout@.
+  --
+  -- Leader leases last @leaseTimeout@ microseconds, the longer this value, the
+  -- longer it will take to elect a leader. But too short a value would prevent
+  -- leaders from doing any useful work before the lease is over.
   --
   -- The initial state is @st@ and each replica is created on a node of @ns@.
   --
@@ -46,6 +52,7 @@ class RGroup g where
   newRGroup :: Serializable st
             => Static (SerializableDict st)
             -> String -- ^ name of the group
+            -> Int
             -> Int
             -> Int
             -> [NodeId]
@@ -117,6 +124,13 @@ class RGroup g where
   -- internal reasons.
   --
   monitorRGroup :: g st -> Process MonitorRef
+
+  -- | Monitors the local replica and sends a 'ProcessMonitorNotification' to
+  -- the caller when the local replica is not a leader anymore.
+  monitorLocalLeader :: g st -> Process MonitorRef
+
+  -- | Returns the 'NodeId' of the leader replica if known.
+  getLeaderReplica :: g st -> Process (Maybe NodeId)
 
 retryRGroup :: RGroup g => g st -> Int -> Process (Maybe a) -> Process a
 retryRGroup = retryMonitoring . monitorRGroup

@@ -25,11 +25,14 @@ import Control.Distributed.Process
     , liftIO
     , unStatic
     , Process
+    , NodeId
     , monitor
     , getSelfPid
+    , getSelfNode
     )
 import Control.Distributed.Process.Closure
     ( mkStatic, remotableDecl )
+import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Serializable
            ( SerializableDict(..) )
 import Control.Distributed.Static ( closure )
@@ -49,7 +52,7 @@ import Unsafe.Coerce
 -- A replication group is composed of one or more processes called replicas.
 --
 data RLocalGroup st where
-  RLocalGroup :: Typeable st => IORef st -> RLocalGroup st
+  RLocalGroup :: Typeable st => IORef st -> [NodeId] -> RLocalGroup st
  deriving Typeable
 
 data Some f = forall a. Some (f a) deriving (Typeable)
@@ -74,11 +77,11 @@ instance RGroup RLocalGroup where
 
   data Replica RLocalGroup = Replica
 
-  newRGroup sd _ _snapshotThreashold _snapshotTimeout _ns st = do
+  newRGroup sd _ _snapshotThreashold _snapshotTimeout _leaseDuration ns st = do
     r <- liftIO $ newIORef st
     SerializableDict <- unStatic sd
     k <- liftIO $ atomicModifyIORef globalRLocalGroups $ \(i, m) ->
-           ((i + 1, Map.insert i (Some $ RLocalGroup r) m), i)
+           ((i + 1, Map.insert i (Some $ RLocalGroup r ns) m), i)
     return $ closure $(mkStatic 'createRLocalGroup) (encode k)
 
   spawnReplica _ _ _ = error "Mock.spawnReplica: unimplemented"
@@ -91,16 +94,24 @@ instance RGroup RLocalGroup where
 
   updateRGroup _ Replica{} = return ()
 
-  updateStateWith (RLocalGroup r) cUpd = unClosure cUpd
+  updateStateWith (RLocalGroup r _) cUpd = unClosure cUpd
     >>= \upd -> liftIO (atomicModifyIORef r $ \st -> seq st (upd st, ()))
     >> return True
 
-  getState (RLocalGroup r) = fmap Just $ liftIO $ readIORef r
+  getState (RLocalGroup r _) = fmap Just $ liftIO $ readIORef r
 
-  getStateWith (RLocalGroup r) cRd = do
+  getStateWith (RLocalGroup r _) cRd = do
     s <- liftIO $ readIORef r
     f <- unClosure cRd
     f s
     return True
 
   monitorRGroup _ = getSelfPid >>= monitor
+
+  monitorLocalLeader (RLocalGroup _ ns) = do
+    here <- getSelfNode
+    if [here] == take 1 ns then getSelfPid >>= monitor
+      else monitor (nullProcessId here)
+
+  getLeaderReplica (RLocalGroup _ []) = return Nothing
+  getLeaderReplica (RLocalGroup _ (nid : _)) = return $ Just nid

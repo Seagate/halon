@@ -68,7 +68,7 @@ schema = let
                          "distributed state between nodes."
                         )
             <> Opt.metavar "INTEGER"
-    rsLease = defaultable (8 * 1000000) . Opt.option Opt.auto
+    rsLease = defaultable (4 * 1000000) . Opt.option Opt.auto
             $ Opt.long "rs-lease"
             <> Opt.short 'r'
             <> Opt.help ("The amount of microseconds that takes the system "

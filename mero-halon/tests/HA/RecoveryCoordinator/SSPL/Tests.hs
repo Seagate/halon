@@ -66,7 +66,7 @@ rGroupTest :: forall g. (Typeable g, RGroup g)
 rGroupTest transport _ p =
   tryRunProcessLocal transport myRemoteTable $ do
     nid <- getSelfNode
-    rGroup <- newRGroup $(mkStatic 'mmSDict) "mmtest" 20 1000000 [nid]
+    rGroup <- newRGroup $(mkStatic 'mmSDict) "mmtest" 20 1000000 4000000 [nid]
                         (defaultMetaInfo, fromList [])
                 >>= unClosure
                 >>= (`asTypeOf` return (undefined :: g (MetaInfo, Multimap)))
