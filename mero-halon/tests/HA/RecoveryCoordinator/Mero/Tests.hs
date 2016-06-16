@@ -35,7 +35,7 @@ import           GHC.Generics
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
-import           HA.RecoveryCoordinator.Events.Drive (DriveOK)
+import           HA.RecoveryCoordinator.Events.Drive (DriveOK(..))
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
 import           HA.Replicator
@@ -227,13 +227,18 @@ testDriveManagerUpdate host transport pg = runDefaultTest transport $ do
     liftIO . assertEqual "Drive should be found" ("OK"::String) =<< expect
   where
     testRules :: [Definitions LoopState ()]
-    testRules = pure $ defineSimple "dmwf-trigger" $ \(HAEvent eid RunDriveManagerFailure _) -> do
-      -- Find what should be the only SD in the enclosure and trigger
-      -- repair on it
-      graph <- getLocalGraph
-      let [sd] = G.connectedTo (Enclosure enc) Has graph
-      updateDriveManagerWithFailure sd "FAILED" (Just "injected failure")
-      messageProcessed eid
+    testRules = [
+        defineSimple "dmwf-trigger" $ \(HAEvent eid RunDriveManagerFailure _) -> do
+          -- Find what should be the only SD in the enclosure and trigger
+          -- repair on it
+          graph <- getLocalGraph
+          let [sd] = G.connectedTo (Enclosure enc) Has graph
+          updateDriveManagerWithFailure sd "FAILED" (Just "injected failure")
+          messageProcessed eid
+        -- Required because normal `DriveOK` handling is only enabled with
+        -- USE_MERO
+      , defineSimple "driveok-hack" $ \(DriveOK _ _ _ _) -> return ()
+      ]
 
     wait = void (expect :: Process ProcessMonitorNotification)
     enc :: String
