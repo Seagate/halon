@@ -530,6 +530,7 @@ instance Ord MeroClusterState where
      toInt (MeroClusterStarting (BootLevel i)) = 1+i
      toInt MeroClusterStopped     = 0
      toInt (MeroClusterStopping (BootLevel i)) = -1-i
+     toInt MeroClusterFailed = minBound
 
 -- | A message we can use to notify bootstrap that mero-kernel failed
 -- to start.
