@@ -68,7 +68,7 @@ testPersistDirectory = filepath "replicas"
 
 -- | microseconds/transition
 clockSpeed :: Int
-clockSpeed = 10000
+clockSpeed = 4000
 
 retryTimeout :: Int
 retryTimeout = 1500000

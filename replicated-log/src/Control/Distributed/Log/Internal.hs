@@ -92,8 +92,6 @@ import Control.Monad.Catch
 import Data.Binary (Binary, encode, decode)
 import qualified Data.ByteString.Lazy as BSL (ByteString, length)
 import Data.Constraint (Dict(..))
-import Control.DeepSeq
-import Data.Either
 import Data.Foldable (forM_)
 import Data.Function (fix)
 import Data.Int (Int64)
@@ -317,9 +315,6 @@ batcherLabel (LogId kstr) = kstr ++ ".batcher"
 
 sendReplica :: Serializable a => LogId -> NodeId -> a -> Process ()
 sendReplica name nid = nsendRemote nid $ replicaLabel name
-
-sendBatcher :: Serializable a => LogId -> NodeId -> a -> Process ()
-sendBatcher name nid = nsendRemote nid $ batcherLabel name
 
 sendAcceptor :: Serializable a => LogId -> NodeId -> a -> Process ()
 sendAcceptor name nid = nsendRemote nid $ acceptorLabel name
@@ -1848,27 +1843,19 @@ instance Eq (Handle a) where
 --
 -- Ambassadors look if replicas have a batcher process to determine if they are
 -- leaders. The batcher is then monitored and the 'MonitorRef' is stored in the
--- state ('asRef').
---
--- While the ambassador queries the remote node to learn the pid of the batcher,
--- it monitors the node, and the reference is also stored in the state.
---
--- When the leader is unknown, the ambassador cycles through the replicas it
--- knows about asking for the latest membership and querying the registry for
--- the batcher process. A timer is used to throttle the rate of queries. The
--- timer pid and the channel for timer notifications are both stored in the
 -- state.
+--
+-- When the leader is unknown, the ambassador polls the replicas periodically
+-- asking for the latest membership and querying the registry for the batcher
+-- process. A timer is used to throttle the rate of queries. The timer pid and
+-- the channel for timer notifications are both stored in the state.
 --
 data AmbassadorState = AmbassadorState
     { asTimerPid :: ProcessId     -- Timer used for throtling membership queries
     , asTimerRP  :: ReceivePort () -- The channel for timer notifications
     , asEpoch    :: LegislatureId -- The epoch of the replicas
-    , asLeader   :: Maybe NodeId  -- The leader replica if known
-    , asReplicas :: ![NodeId]     -- The last known membership (never empty)
-    , asRef      :: MonitorRef    -- The monitor ref of a replica we contact
-    , asRefObj   :: Either NodeId ProcessId -- The monitored entity. Always
-                                            -- refers to what 'asRef' is
-                                            -- monitoring.
+    , asLeader   :: Maybe (MonitorRef, ProcessId) -- The leader batcher if known
+    , asReplicas :: [NodeId]      -- The last known membership (never empty)
     }
 
 -- | The ambassador to a group is a local process that stands as a proxy to
@@ -1882,35 +1869,25 @@ ambassador :: forall a. SerializableDict a
 ambassador _ _ _ [] = do
     say "ambassador: Set of replicas must be non-empty."
     die "ambassador: Set of replicas must be non-empty."
-ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
+ambassador SerializableDict Config{logId, leaseTimeout} omchan replicas =
     do self <- getSelfPid
        (sp, rp) <- newChan
        timerPid <- spawnLocal $ link self >> timer sp
-       ref <- monitorNode ρ0
-       whereisRemoteAsync ρ0 (batcherLabel logId)
+       forM_ replicas $ flip whereisRemoteAsync (batcherLabel logId)
+       usend timerPid leaseTimeout
        go AmbassadorState
          { asTimerPid = timerPid
          , asTimerRP  = rp
          , asEpoch    = 0
-         , asLeader   = Just ρ0
-         , asReplicas = ρ0 : others
-         , asRef      = ref
-         , asRefObj   = Left ρ0
+         , asLeader   = Nothing
+         , asReplicas = replicas
          }
       `finally` nlogTrace logId "ambassador: terminated"
   where
     go :: AmbassadorState -> Process b
-    go st@(AmbassadorState timerPid rpt epoch mLeader ρs ref refObj) = do
-     let handleMonitorNotification ref' = do
-           if ref == ref'
-           then do
-             nlogTrace logId $ "ambassador: Replica disconnected or died. "
-                               ++ show (mLeader, ρs)
-             -- Give some time to other replicas to elect a leader.
-             usend timerPid leaseTimeout
-             go st { asLeader   = Nothing }
-           else
-             go st
+    go st@(AmbassadorState timerPid rpt epoch mRefLeader ρs) = do
+     let mLeader = fmap snd mRefLeader
+         mRef    = fmap fst mRefLeader
      _ <- receiveTimeout 0
        [ matchSTM (readTChan omchan) $ handleRequest epoch mLeader ]
      receiveWait $
@@ -1923,29 +1900,25 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
           go st
 
       , match $ \Status -> do
-          Foldable.forM_ mLeader $ flip (sendReplica logId) Status
+          Foldable.forM_ (processNodeId <$> mLeader) $ \ρ ->
+            sendReplica logId ρ Status
           go st
 
         -- The leader replica changed.
-      , match $ \(epoch', ρs'@(ρ' : ρs'')) -> do
+      , match $ \(epoch', ρs') -> do
           -- Only update the replicas if they are at the same or higher
           -- epoch.
           --
           -- TODO: use @epoch < epoch'@ here?
           --
           if epoch <= epoch' then do
-            unmonitor ref
             nlogTrace logId $ "ambassador: Old epoch changed "
                               ++ show (mLeader, ρs)
-                              ++ ". Trying " ++ show ρ' ++ " and then "
-                              ++ show ρs'' ++ "."
-            ref' <- monitorNode ρ'
-            whereisRemoteAsync ρ' (batcherLabel logId)
+                              ++ ". The new membership is " ++ show ρs' ++ "."
+            forM_ ρs' $ flip whereisRemoteAsync (batcherLabel logId)
+            usend timerPid leaseTimeout
             go st { asEpoch    = epoch'
-                  , asLeader   = Just ρ'
                   , asReplicas = ρs'
-                  , asRef      = ref'
-                  , asRefObj   = Left ρ'
                   }
           else do
             when (isNothing mLeader) $
@@ -1956,60 +1929,42 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
         -- The timer expired.
       , matchChan rpt $ \() -> do
           if isNothing mLeader then do
-            unmonitor ref
-            -- Ask the head replica for the new leader.
-            ρ : ρs' <- return ρs
-            nlogTrace logId $ "ambassador: Timer expired. Trying " ++ show ρ
-            ref' <- monitorNode ρ
-            whereisRemoteAsync ρ (batcherLabel logId)
-            getSelfPid >>= sendReplica logId ρ
-            -- Force the list to avoid accumulating thunks.
-            go st { asReplicas = force $ ρs' ++ [ρ]
-                  , asRef      = ref'
-                  , asRefObj   = Left ρ
-                  }
+            mapM_ unmonitor  mRef
+            nlogTrace logId $ "ambassador: Timer expired."
+            forM_ ρs $ flip whereisRemoteAsync (batcherLabel logId)
+            self <- getSelfPid
+            forM_ ρs $ \ρ -> sendReplica logId ρ self
+            usend timerPid leaseTimeout
+            go st
           else
             go st
 
-      , match $ \nmn@(NodeMonitorNotification ref' _ _) -> do
-          nlogTrace logId $ "ambassador: Received " ++ show nmn
-          handleMonitorNotification ref'
-
       , match $ \pmn@(ProcessMonitorNotification ref' _ _) -> do
           nlogTrace logId $ "ambassador: Received " ++ show pmn
-          handleMonitorNotification ref'
+          if mRef == Just ref'
+          then do
+            nlogTrace logId $ "ambassador: Replica disconnected or died. "
+                              ++ show (mLeader, ρs)
+            -- Give some time to other replicas to elect a leader.
+            usend timerPid leaseTimeout
+            go st { asLeader = Nothing }
+          else
+            go st
 
         -- A node replied whether it has a batcher.
       , match $ \wr@(WhereIsReply _ mb) -> do
           nlogTrace logId $ "ambassador: Received " ++ show wr
           case mb of
             -- No batcher
-            Nothing ->
-              -- Ignore it if we are monitoring the leader batcher.
-              -- There is no point in processing a reply to know the pid of the
-              -- batcher, given that we already know it.
-              if isRight refObj
-              then
-                go st
-              else do
-                -- We know of no batcher, and (we assume) our last registry
-                -- query yield no info. Let's try with some other node in a
-                -- while. It is possible that the 'WhereIsReply' does not
-                -- correspond to our latest request, this does not harm progress
-                -- but delays a bit more the time at which we try to contact
-                -- other nodes.
-                usend timerPid leaseTimeout
-                go st { asLeader   = Nothing }
+            Nothing -> go st
             -- There is a batcher.
             Just b  -> do
-              unmonitor ref
-              ref' <- monitor b
+              mapM_ unmonitor mRef
+              ref <- monitor b
               let ρ = processNodeId b
-              go st { asLeader = Just ρ
+              go st { asLeader = Just (ref, b)
                       -- Make sure the leader is in the membership.
                     , asReplicas = ρ : filter (/= ρ) ρs
-                    , asRef    = ref'
-                    , asRefObj = Right b
                     }
 
         -- A new replica was added to the group.
@@ -2019,19 +1974,19 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
         -- A membership query
       , match $ \mq -> do
           self <- getSelfPid
-          Foldable.forM_ mLeader $ flip (sendReplica logId)
-                                        (self, epoch, mq :: MembershipQuery)
+          Foldable.forM_ (processNodeId <$> mLeader) $ \ρ ->
+            sendReplica logId ρ (self, epoch, mq :: MembershipQuery)
           go st
 
         -- A configuration query
       , match $ \cq -> do
-          Foldable.forM_ mLeader $ flip (sendReplica logId)
-                                        (cq :: ConfigQuery)
+          Foldable.forM_ (processNodeId <$> mLeader) $ \ρ ->
+            sendReplica logId ρ (cq :: ConfigQuery)
           go st
 
         -- A client wants to monitor the replicas
       , match $ \sp -> do
-          sendChan sp $ either (const Nothing) Just refObj
+          sendChan sp mLeader
           go st
 
       , matchSTM (readTChan omchan) $ \om -> do
@@ -2045,14 +2000,14 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
         self <- getSelfPid
         nlogTrace logId $ "ambassador: sending request to " ++ show mLeader
         case mLeader of
-          Just ρ -> sendBatcher logId ρ (self, epoch, a :: Request a)
-          Nothing -> forM_ (requestSender a) $ flip usend False
+          Just b -> usend b (self, epoch, a :: Request a)
+          Nothing     -> forM_ (requestSender a) $ flip usend False
       -- A reconfiguration request
       OMHelo m@(Helo sender _) -> do
         self <- getSelfPid
         nlogTrace logId $ "ambassador: sending helo request to " ++ show mLeader
         case mLeader of
-          Just ρ  -> sendReplica logId ρ (self, epoch, m)
+          Just b  -> sendReplica logId (processNodeId b) (self, epoch, m)
           Nothing -> usend sender False
       -- A recovery request
       OMRecover m@(Recover _sender ρs') -> do
@@ -2062,7 +2017,8 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan (ρ0 : others) =
         -- a new leader.
         let ρ  : _ = ρs'
             ρ' = case mLeader of
-                   Just r | elem r ρs' -> r
+                   Just b | let r = processNodeId b
+                          , elem r ρs' -> r
                    _ -> ρ
         nlogTrace logId $
           "ambassador: sending recover msg to " ++ show (ρ', mLeader, m)

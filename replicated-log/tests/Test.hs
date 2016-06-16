@@ -683,7 +683,7 @@ tests argv = do
                 Log.killReplica h (localNodeId node1)
 
            , testSuccess "durability" $
-               setupSched seed 5000 30000000 20 5 0 $ \nodes _ h port -> do
+               setupSched seed 1000 30000000 20 5 0 $ \nodes _ h port -> do
                  retryLog h $
                    bToM <$> State.update port incrementCP
                  assert . (>= 1) =<<
@@ -698,7 +698,7 @@ tests argv = do
                    say "Incremented state from disk."
 
            , testSuccess "recovery" $
-               setupSched seed 5000 10000000 20 2 2 $
+               setupSched seed 1000 10000000 20 2 2 $
                \lnodes0 lnodes1 h port -> do
                  let nodes0 = map localNodeId lnodes0
                      nodes1 = map localNodeId lnodes1

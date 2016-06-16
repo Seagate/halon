@@ -200,7 +200,7 @@ runTest numNodes numReps tr rt action
           E.bracket createTransport closeTransport $ \tr' ->
           let s' = s + i - 1 in do
             m <- timeout (7 * 60 * 1000000) $
-              Scheduler.withScheduler s' 1000 numNodes tr' rt' $ \nodes ->
+              Scheduler.withScheduler s' 500 numNodes tr' rt' $ \nodes ->
                 action nodes `finally` stopHalon nodes
             maybe (error "Timeout") return m
           `E.onException`
