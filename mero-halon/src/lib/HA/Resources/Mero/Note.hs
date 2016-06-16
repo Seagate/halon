@@ -16,6 +16,8 @@
 {-# LANGUAGE StaticPointers             #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE KindSignatures             #-}
 
 module HA.Resources.Mero.Note where
 
@@ -26,7 +28,7 @@ import HA.Resources.Mero.Note.TH
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Castor as R
 import HA.Resources.TH
-import Mero.ConfC (Fid(..))
+import Mero.ConfC (Fid(..), fidToStr)
 
 import Control.Distributed.Static (Static, staticPtr)
 import Control.Monad (join, unless)
@@ -44,7 +46,8 @@ import Data.Typeable (Typeable)
 import Data.Proxy (Proxy(..))
 import Data.Word ( Word64 )
 
-import GHC.Generics (Generic)
+import GHC.Generics (Generic, Rep, M1, D)
+import qualified GHC.Generics as Generics
 
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -330,6 +333,34 @@ lookupConfObjectStates :: [Fid] -> G.Graph -> [(Fid, ConfObjectState)]
 lookupConfObjectStates fids g = catMaybes
     . fmap (traverse id)
     $ zip fids (lookupConfObjectState g <$> fids)
+
+
+class ShowFidObj a where
+  showFid :: a -> String
+  default showFid :: (Generic a, GShowType (Rep a), M0.ConfObj a) => a -> String
+  showFid = genShowFid
+
+genShowFid :: (M0.ConfObj a, Generic a, GShowType (Rep a)) => a -> String
+genShowFid x = showType (Generics.from x) ++ "{" ++ fidToStr (M0.fid x) ++ "}" where
+
+class GShowType a where showType :: a b -> String
+
+instance (Generics.Datatype d) => GShowType (M1 D d a) where
+  showType x = Generics.datatypeName x
+
+instance ShowFidObj M0.Filesystem
+instance ShowFidObj M0.Pool
+instance ShowFidObj M0.PVer
+instance ShowFidObj M0.Enclosure
+instance ShowFidObj M0.Controller
+instance ShowFidObj M0.Rack
+instance ShowFidObj M0.Node
+instance ShowFidObj M0.Process
+instance ShowFidObj M0.Service
+instance ShowFidObj M0.Disk
+
+
+
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
