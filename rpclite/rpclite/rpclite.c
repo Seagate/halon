@@ -213,14 +213,13 @@ struct m0_rpc_session* rpc_get_session(rpc_connection_t* c) {
  * rpc_connect_re.
  *
  * */
-int rpc_connect(rpc_endpoint_t* e, char* remote_address, int timeout_s,
+int rpc_connect_rpc_machine(struct m0_rpc_machine* rpc_machine, char* remote_address, int timeout_s,
 		rpc_connection_t** c) {
 	m0_time_t time;
 	int rc;
 	M0_ASSERT(c);
 
 	time = m0_time_now();
-	struct m0_rpc_machine* rpc_machine = &e->rpc_machine;
 
 	*c = (rpc_connection_t*)malloc(sizeof(rpc_connection_t));
 	M0_ASSERT(strlen(remote_address)<80);
@@ -251,6 +250,18 @@ conn_destroy:
 	m0_rpc_conn_destroy(&(*c)->connection, timeout_s);
 	return rc;
 
+}
+
+/*
+ * Establishing connections must be done from an m0_thread.
+ *
+ * An alternative to create connections from non-m0_threads is to call
+ * rpc_connect_re.
+ *
+ * */
+int rpc_connect(rpc_endpoint_t* e, char* remote_address, int timeout_s,
+		rpc_connection_t** c) {
+	return rpc_connect_rpc_machine(&e->rpc_machine, remote_address, timeout_s, c);
 }
 
 

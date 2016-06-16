@@ -298,8 +298,25 @@ ruleClusterStart = defineSimple "cluster-start-request"
             (_, Nothing) -> Left $ StateChangeError "Unknown current state."
             (_, Just st) -> case st of
                M0.MeroClusterStopped    -> Right $ do
+                  -- Randomly select principal RM, it may be switched if another
+                  -- RM will appear online before this one.
+                  let pr = [ ps
+                           | pr :: M0.Profile <- G.connectedTo R.Cluster R.Has rg
+                           , fs :: M0.Filesystem <- G.connectedTo pr M0.IsParentOf rg
+                           , nd :: M0.Node <- G.connectedTo fs M0.IsParentOf rg
+                           , ps :: M0.Process <- G.connectedTo nd M0.IsParentOf rg
+                           , sv :: M0.Service <- G.connectedTo ps M0.IsParentOf rg
+                           , M0.s_type sv == CST_MGS
+                           ]
+                  let rms = listToMaybe [ srv
+                                        | p <- pr
+                                        , srv :: M0.Service <- G.connectedTo p M0.IsParentOf rg
+                                        , M0.s_type srv == CST_RMS
+                                        ]
+                  traverse_ setPrincipalRMIfUnset rms
                   modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStarting (M0.BootLevel 0))
                   announceMeroNodes
+
                   syncGraphCallback $ \pid proc -> do
                     sendChan ch (StateChangeStarted pid)
                     proc eid

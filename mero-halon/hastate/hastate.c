@@ -9,106 +9,133 @@
 #define M0_TRACE_SUBSYSTEM M0_TRACE_SUBSYS_HA
 #include "lib/trace.h"
 #include "lib/memory.h"
-#include "lib/string.h"   /* m0_strdup */
 #include "hastate.h"
-#include "fop/fop.h"
-#include "ha/note_fops.h" /* m0_ha_state_fop */
+#include "m0init.h"       /* m0init_hi */
+#include "ha/halon/interface.h"
 
-#include "hastate_foms.h"
 
-#include <stdio.h>
-
-// To hold callbacks.
+// Holds the callbacks.
+// We allow only one instance of the interface per process.
 ha_state_callbacks_t ha_state_cbs;
 
-// Initializes the ha_state interface.
-int ha_state_init(ha_state_callbacks_t *cbs) {
-    ha_state_cbs = *cbs;
-    m0_ha_state_get_fom_type_ops  = &ha_state_get_fom_type_ops;
-    m0_ha_state_set_fom_type_ops  = &ha_state_set_fom_type_ops;
-    m0_ha_old_entrypoint_fom_type_ops = &ha_entrypoint_fom_type_ops;
-    return 0;
+void entrypoint_request_cb( struct m0_halon_interface         *hi
+                          , const struct m0_uint128           *req_id
+                          , const char             *remote_rpc_endpoint
+                          ) {
+    ha_state_cbs.ha_state_entrypoint(req_id);
 }
 
-// Wake up state get FOM.
-void ha_state_get_done(struct m0_ha_nvec *note, int rc) {
-     struct ha_state_get_fom        *fom_obj;
+void msg_received_cb ( struct m0_halon_interface *hi
+                     , struct m0_ha_link         *hl
+                     , const struct m0_ha_msg    *msg
+                     , uint64_t                   tag
+                     ) {
+    if (msg->hm_data.hed_type == M0_HA_MSG_NVEC) {
+      if (msg->hm_data.u.hed_nvec.hmnv_type)
+        ha_state_cbs.ha_state_get( hl
+                                 , msg->hm_data.u.hed_nvec.hmnv_id_of_get
+                                 , &msg->hm_data.u.hed_nvec);
+      else
+        ha_state_cbs.ha_state_set(&msg->hm_data.u.hed_nvec);
+    }
+    m0_halon_interface_delivered(m0init_hi, hl, msg);
+}
 
-     fom_obj = M0_AMB(fom_obj, note, fp_note);
-     fom_obj->fp_rc = rc;
-     m0_fom_wakeup(&fom_obj->fp_gen);
+void msg_is_delivered_cb ( struct m0_halon_interface *hi
+                         , struct m0_ha_link         *hl
+                         , uint64_t                   tag
+                         ) {
+}
+
+void msg_is_not_delivered_cb ( struct m0_halon_interface *hi
+                             , struct m0_ha_link         *hl
+                             , uint64_t                   tag
+                             ) {
+}
+
+void link_connected_cb ( struct m0_halon_interface *hi
+                       , const struct m0_uint128   *req_id
+                       , struct m0_ha_link         *link
+                       ) {
+    ha_state_cbs.ha_state_link_connected(link);
+}
+
+void link_reused_cb ( struct m0_halon_interface *hi
+                    , const struct m0_uint128   *req_id
+                    , struct m0_ha_link         *link
+                    ) {
+}
+
+void link_is_disconnecting_cb ( struct m0_halon_interface *hi
+                              , struct m0_ha_link         *link
+                              ) {
+    ha_state_cbs.ha_state_link_disconnecting(link);
+}
+
+void link_disconnected_cb ( struct m0_halon_interface *hi
+                          , struct m0_ha_link         *link
+                          ) {
+}
+
+// Initializes the ha_state interface.
+int ha_state_init(const char *local_rpc_endpoint, ha_state_callbacks_t *cbs) {
+    ha_state_cbs = *cbs;
+
+    return m0_halon_interface_start( m0init_hi, local_rpc_endpoint
+                                   , entrypoint_request_cb
+                                   , msg_received_cb
+                                   , msg_is_delivered_cb
+                                   , msg_is_not_delivered_cb
+                                   , link_connected_cb
+                                   , link_reused_cb
+                                   , link_is_disconnecting_cb
+                                   , link_disconnected_cb
+                                   );
 }
 
 // Finalizes the ha_state interface.
 void ha_state_fini() {
+    m0_halon_interface_stop(m0init_hi);
 }
 
-// Avoids destroying the payload of the fop.
-static void notify_fop_release(struct m0_ref *ref) {
-    container_of(ref, struct m0_fop, f_ref)->f_data.fd_data = NULL;
-    m0_fop_release(ref);
+/// Notifies mero through the given link that the state of some objects has changed.
+uint64_t ha_state_notify(struct m0_ha_link *hl, struct m0_ha_msg_nvec *note) {
+    uint64_t tag;
+    struct m0_ha_msg msg = (struct m0_ha_msg){
+        .hm_fid            = M0_FID_INIT(0, 0),
+        .hm_source_process = M0_FID_INIT(0, 0),
+        .hm_source_service = M0_FID_INIT(0, 0),
+        .hm_time           = m0_time_now(),    
+        .hm_data = { .hed_type = M0_HA_MSG_NVEC
+                   , .u.hed_nvec = *note
+                   },
+        };
+
+    m0_halon_interface_send(m0init_hi, hl, &msg, &tag);
+    return tag;
 }
 
-/// Notifies mero at the remote address that the state of some objects has changed.
-int ha_state_notify( rpc_endpoint_t *ep, char *remote_address
-                   , struct m0_ha_nvec *note, int timeout_s
-                   ) {
-    int rc;
-    struct m0_fop *fop;
-    rpc_connection_t *c;
-    rc = rpc_connect(ep,remote_address,timeout_s,&c);
-    if (rc)
-        return rc;
+void ha_state_disconnect(struct m0_ha_link *hl) {
+    m0_halon_interface_disconnect(m0init_hi, hl);
+};
 
-    M0_ALLOC_PTR(fop);
-    M0_ASSERT(fop != NULL);
-    m0_fop_init(fop, &m0_ha_state_set_fopt, note, notify_fop_release);
-
-    rc = rpc_send_fop_blocking_and_release(c,fop,timeout_s);
-
-    rpc_disconnect(c,timeout_s);
-    return rc;
+// Replies an entrypoint request.
+void ha_entrypoint_reply( const struct m0_uint128     *req_id
+                        , const int                    rc
+                        , int                          confd_fid_size
+                        , const struct m0_fid         *confd_fid_data
+                        , int                          confd_eps_size
+                        , const char *                *confd_eps_data
+                        , const struct m0_fid         *rm_fid
+                        , const char *                 rm_eps
+                        ) {
+    m0_halon_interface_entrypoint_reply
+      ( m0init_hi, req_id, rc, confd_fid_size, confd_fid_data
+      , confd_eps_size, confd_eps_data, rm_fid, rm_eps
+      );
 }
 
-// Populates m0_ha_old_entrypoint_rep structure by values from haskell world.
-void ha_entrypoint_reply_wakeup( struct m0_fom               *fom
-                               , struct m0_ha_old_entrypoint_rep *rep_fop
-                               , const int                    rc
-                               , int                          confd_fid_size
-                               , const struct m0_fid         *confd_fid_data
-                               , int                          confd_eps_size
-                               , const char *                *confd_eps_data
-                               , const struct m0_fid         *rm_fid
-                               , const char *                 rm_eps
-                               ) {
-   rep_fop->hbp_rc = rc;
-   if (rc != 0) goto wakeup;
-
-   char *rm_ep = m0_strdup(rm_eps);
-   M0_ALLOC_ARR(rep_fop->hbp_confd_fids.af_elems, confd_fid_size);
-   M0_ALLOC_ARR(rep_fop->hbp_confd_eps.ab_elems,  confd_eps_size);
-   if (rm_ep == NULL ||
-       rep_fop->hbp_confd_fids.af_elems == NULL ||
-       rep_fop->hbp_confd_eps.ab_elems == NULL) {
-         m0_free(rm_ep);
-         m0_free(rep_fop->hbp_confd_fids.af_elems);
-         m0_free(rep_fop->hbp_confd_eps.ab_elems);
-         rep_fop->hbp_rc = -ENOMEM;
-         goto wakeup;
-   }
-   if (0 != m0_bufs_from_strings(&rep_fop->hbp_confd_eps, confd_eps_data)) {
-         m0_free(rm_ep);
-         m0_free(rep_fop->hbp_confd_fids.af_elems);
-         m0_free(rep_fop->hbp_confd_eps.ab_elems);
-         rep_fop->hbp_rc = -ENOMEM;
-         goto wakeup;
-   }
-   rep_fop->hbp_active_rm_fid = *rm_fid;
-   rep_fop->hbp_active_rm_ep  = M0_BUF_INITS(rm_ep);
-   rep_fop->hbp_confd_fids.af_count = confd_fid_size;
-   memcpy(rep_fop->hbp_confd_fids.af_elems, confd_fid_data, confd_fid_size*(sizeof confd_fid_data[0]));
-   rep_fop->hbp_quorum = confd_fid_size / 2 + 1;
-
-wakeup:
-   m0_fom_wakeup(fom);
+struct m0_rpc_machine * ha_state_rpc_machine() {
+    return m0_halon_interface_rpc_machine(m0init_hi);
 }
+

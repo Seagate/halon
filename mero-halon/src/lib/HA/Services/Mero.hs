@@ -54,7 +54,7 @@ import HA.Services.Mero.Types
 import qualified HA.ResourceGraph as G
 
 import qualified Mero.Notification
-import Mero.Notification (Set)
+import Mero.Notification (Set, NIRef)
 import Mero.Notification.HAState (Note(..), HAStateException)
 import Mero.ConfC (Fid, ServiceType(..), fidToStr)
 
@@ -103,28 +103,24 @@ sendMeroChannel cn cc = do
               (ServiceProcess pid) (TypedChannel cn) (TypedChannel cc)
   void $ promulgate chan
 
-statusProcess :: RPC.ServerEndpoint
+statusProcess :: NIRef
               -> ProcessId
               -> ReceivePort NotificationMessage
               -> Process ()
-statusProcess ep pid rp = do
+statusProcess niRef pid rp = do
     -- TODO: When mero can handle exceptions caught here, report them to the RC.
     link pid
     forever $ do
-      msg@(NotificationMessage set addrs subs) <- receiveChan rp
+      msg@(NotificationMessage set _ subs) <- receiveChan rp
       traceM0d $ "statusProcess: notification msg received: " ++ show msg
-      failedAddrs <- fmap catMaybes . forM addrs $ \addr ->
-        let doError e = do
-              traceM0d $ "statusProcess: notifyMero failed: " ++ show (pid, addr, e)
-              return $ Just addr
-        in do
-          maddr <- ( Mero.Notification.notifyMero ep (RPC.rpcAddress addr) set >> return Nothing
-            `catch` \(e :: IOException) -> doError e
-            ) `catch` \(e :: HAStateException) -> doError e
-          traverse_ (flip usend $ NotificationAck ()) subs
-          return maddr
-      unless (null failedAddrs) $ do
-        void . promulgate . NotifyFailureEndpoints $ nub failedAddrs
+      Mero.Notification.notifyMero niRef set
+      -- XXX: This is not correct as we need to store tags, and notify only when
+      -- callback received.
+      -- We need to have a mechanism to notify about failed to delivery when
+      -- callback is called also.
+      -- unless (null failedAddrs) $ do
+      --  void . promulgate . NotifyFailureEndpoints $ nub failedAddrs
+      traverse_ (flip usend $ NotificationAck ()) subs
    `catch` \(e :: SomeException) -> do
       traceM0d $ "statusProcess terminated: " ++ show (pid, e)
       Catch.throwM e
@@ -307,7 +303,7 @@ remotableDecl [ [d|
             "mero-kernel service failed to start: " ++ show i
     where
       haAddr = RPC.rpcAddress $ mcHAAddress conf
-      withEp = Mero.Notification.withServerEndpoint haAddr
+      withEp = Mero.Notification.withNI haAddr
       -- Kernel
       startKernel = liftIO $ do
         SystemD.sysctlFile "mero-kernel"

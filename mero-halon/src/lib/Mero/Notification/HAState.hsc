@@ -1,3 +1,4 @@
+{-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ExistentialQuantification  #-}
@@ -13,28 +14,25 @@
 module Mero.Notification.HAState
   ( Note(..)
   , NVec
-  , NVecRef
+  , HALink
+  , ReqId
   , initHAState
   , finiHAState
-  , doneGet
+  , getRPCMachine
   , notify
-  , readNVecRef
-  , updateNVecRef
-  , EntryPointRepV
-  , FomV
-  , entrypointReplyWakeup
-  , entrypointNoReplyWakeup
+  , disconnect
+  , entrypointReply
+  , entrypointNoReply
   , HAStateException(..)
   ) where
 
 import HA.Resources.Mero.Note
 
 import Mero.ConfC (Fid)
-import Network.RPC.RPCLite
-    ( ServerEndpoint(..), ClientEndpointV, RPCAddress(..) )
+import Network.RPC.RPCLite (RPCAddress(..), RPCMachine(..), RPCMachineV)
 
 import Control.Exception      ( Exception, throwIO, SomeException, evaluate )
-import Control.Monad          ( liftM2 )
+import Control.Monad          ( liftM2, void )
 import Control.Monad.Catch    ( catch )
 import Data.Binary            ( Binary )
 import Data.ByteString as B   ( useAsCString )
@@ -43,15 +41,13 @@ import Data.Hashable          ( Hashable )
 import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef
                               , newIORef
                               )
-import Data.List              ( find )
-import Data.Word              ( Word32 )
-import Data.Int               ( Int32 )
+import Data.Word              ( Word32, Word64 )
 import Foreign.C.Types        ( CInt(..) )
 import Foreign.C.String       ( CString, withCString )
 import Foreign.Marshal.Alloc  ( allocaBytesAligned )
-import Foreign.Marshal.Array  ( peekArray, pokeArray, withArray, withArrayLen, withArrayLen0 )
+import Foreign.Marshal.Array  ( peekArray, withArray, withArrayLen, withArrayLen0, pokeArray )
 import Foreign.Marshal.Utils  ( with, withMany )
-import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr, nullPtr )
+import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr, nullPtr, castPtr, plusPtr )
 import Foreign.Storable       ( Storable(..) )
 import GHC.Generics           ( Generic )
 import System.IO              ( hPutStrLn, stderr )
@@ -74,8 +70,12 @@ instance Hashable Note
 -- | Lists of notes
 type NVec = [Note]
 
--- | References to NVecs
-newtype NVecRef = NVecRef (Ptr NVecRef)
+-- | Link to communicate with a mero process
+newtype HALink = HALink (Ptr HALink)
+  deriving (Show, Eq)
+
+-- | Identifier of entrypoint requests
+newtype ReqId = ReqId (Ptr ReqId)
 
 -- | A type for hidding the type argument of 'FunPtr's
 data SomeFunPtr = forall a. SomeFunPtr (FunPtr a)
@@ -84,77 +84,102 @@ data SomeFunPtr = forall a. SomeFunPtr (FunPtr a)
 cbRefs :: IORef [SomeFunPtr]
 cbRefs = unsafePerformIO $ newIORef []
 
--- | @initHAState ha_state_get ha_state_set@ starts the hastate interface.
+-- | Starts the hastate interface.
 --
 -- Registers callbacks to handle arriving requests.
 --
--- The calling process should listen for incoming RPC connections
--- (to be setup with rpclite or some other interface to RPC).
+-- Must be called after 'Mero.m0_init'.
 --
--- Must be called before calling m0_init.
---
-initHAState :: (NVecRef -> IO ())
+initHAState :: RPCAddress 
+            -> (HALink -> Word64 -> NVec -> IO ())
                -- ^ Called when a request to get the state of some objects is
-               -- received. This is expected to happen when mero calls
-               -- @m0_ha_state_get(...)@.
+               -- received.
                --
-               -- When the requested state is available, doneGet must
-               -- be called by passing the same note parameter and 0. If there
-               -- is an error and the state could not be retrieved then NULL and
-               -- an error code should be provided.
-               --
-               -- If the vector contains at least one invalid indentifier, the
-               -- error code should be -EINVAL (or -EKEYREJECTED, or -ENOKEY ?).
-            -> (NVec -> IO Int)
+               -- When the requested state is available, 'notify' must
+               -- be called by passing the given link.
+            -> (NVec -> IO ())
                -- ^ Called when a request to update the state of some objects is
-               -- received. This is expected to happen when mero calls
-               -- @m0_ha_state_set(...)@.
-               --
-               -- Returns 0 if the request was accepted or an error code
-               -- otherwise.
-            -> (Ptr FomV -> Ptr EntryPointRepV -> IO ())
+               -- received.
+            -> (ReqId -> IO ())
                -- ^ Called when a request to read current confd and rm endpoints
                -- is received.
+            -> (HALink -> IO ())
+               -- ^ Called when a new link is established.
+            -> (HALink -> IO ())
+               -- ^ The link is no longer needed by the remote peer.
+               -- It is safe to call 'disconnect' when all 'notify' calls
+               -- using the link have completed.
             -> IO ()
-initHAState ha_state_get ha_state_set ha_state_entry =
+initHAState (RPCAddress rpcAddr) ha_state_get ha_state_set ha_state_entry
+            ha_state_link_connected ha_state_link_disconnecting =
+    useAsCString rpcAddr $ \cRPCAddr ->
     allocaBytesAligned #{size ha_state_callbacks_t}
                        #{alignment ha_state_callbacks_t}$ \pcbs -> do
-      wget <- wrapGetCB ha_state_get
-      wset <- wrapSetCB ha_state_set
-      wentry <- wrapEntryCB ha_state_entry
+      wget <- wrapGetCB
+      wset <- wrapSetCB
+      wentry <- wrapEntryCB
+      wconnected <- wrapConnectedCB
+      wdisconnecting <- wrapDisconnectingCB
       #{poke ha_state_callbacks_t, ha_state_get} pcbs wget
       #{poke ha_state_callbacks_t, ha_state_set} pcbs wset
       #{poke ha_state_callbacks_t, ha_state_entrypoint} pcbs wentry
-      modifyIORef cbRefs ((SomeFunPtr wget:) . (SomeFunPtr wset:) . (SomeFunPtr wentry:))
+      #{poke ha_state_callbacks_t, ha_state_link_connected} pcbs wconnected
+      #{poke ha_state_callbacks_t, ha_state_link_disconnecting} pcbs
+         wdisconnecting
+      modifyIORef cbRefs
+        ( (SomeFunPtr wget:)
+        . (SomeFunPtr wset:)
+        . (SomeFunPtr wentry:)
+        . (SomeFunPtr wconnected:)
+        . (SomeFunPtr wdisconnecting:)
+        )
 
-      rc <- ha_state_init pcbs
+      rc <- ha_state_init cRPCAddr pcbs
       check_rc "initHAState" rc
   where
-    wrapGetCB f = cwrapGetCB $ \note -> catch
-        (f note)
+    wrapGetCB = cwrapGetCB $ \hl w note -> catch
+        (peekNote note >>= ha_state_get (HALink hl) w)
         $ \e -> hPutStrLn stderr $
                   "initHAState.wrapGetCB: " ++ show (e :: SomeException)
-    wrapSetCB f = cwrapSetCB $ \note -> catch
-        (readNVecRef note >>= fmap fromIntegral . f)
+    wrapSetCB = cwrapSetCB $ \note -> catch
+        (peekNote note >>= ha_state_set)
         $ \e -> do hPutStrLn stderr $
                      "initHAState.wrapSetCB: " ++ show (e :: SomeException)
-                   return (-1)
-    wrapEntryCB f = cwrapEntryCB f
+    wrapEntryCB = cwrapEntryCB $ \reqId -> catch
+        (ha_state_entry $ ReqId reqId)
+        $ \e -> hPutStrLn stderr $
+                  "initHAState.wrapEntryCB: " ++ show (e :: SomeException)
+    wrapConnectedCB = cwrapConnectedCB $ \hl ->
+        catch (ha_state_link_connected (HALink hl)) $ \e ->
+          hPutStrLn stderr $
+            "initHAState.wrapConnectedCB: " ++ show (e :: SomeException)
+    wrapDisconnectingCB = cwrapConnectedCB $ \hl ->
+        catch (ha_state_link_disconnecting (HALink hl)) $ \e ->
+          hPutStrLn stderr $
+            "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
+
+    peekNote p = do
+      nr <- #{peek struct m0_ha_msg_nvec, hmnv_nr} p :: IO Word64
+      let array = #{ptr struct m0_ha_msg_nvec, hmnv_vec} p
+      peekArray (fromIntegral nr) array
 
 data HAStateCallbacksV
 
-foreign import ccall unsafe ha_state_init :: Ptr HAStateCallbacksV
-                                          -> IO CInt
+foreign import capi unsafe ha_state_init ::
+    CString -> Ptr HAStateCallbacksV -> IO CInt
 
-foreign import ccall "wrapper" cwrapGetCB :: (NVecRef -> IO ())
-                                          -> IO (FunPtr (NVecRef -> IO ()))
+foreign import ccall "wrapper" cwrapGetCB ::
+    (Ptr HALink -> Word64 ->  Ptr NVec -> IO ())
+    -> IO (FunPtr (Ptr HALink -> Word64 -> Ptr NVec -> IO ()))
 
-foreign import ccall "wrapper" cwrapSetCB :: (NVecRef -> IO CInt)
-                                          -> IO (FunPtr (NVecRef -> IO CInt))
+foreign import ccall "wrapper" cwrapSetCB :: (Ptr NVec -> IO ())
+                                          -> IO (FunPtr (Ptr NVec -> IO ()))
 
 foreign import ccall "wrapper" cwrapEntryCB ::
-    (Ptr FomV -> Ptr EntryPointRepV -> IO ())
-      -> IO (FunPtr (Ptr FomV -> Ptr EntryPointRepV -> IO ()))
+    (Ptr ReqId -> IO ()) -> IO (FunPtr (Ptr ReqId -> IO ()))
+
+foreign import ccall "wrapper" cwrapConnectedCB ::
+    (Ptr HALink -> IO ()) -> IO (FunPtr (Ptr HALink -> IO ()))
 
 instance Storable Note where
 
@@ -173,28 +198,6 @@ instance Storable Note where
       #{poke struct m0_ha_note, no_state} p
           (fromIntegral $ fromEnum s :: Word32)
 
--- | Reads the list of notes from a reference.
-readNVecRef :: NVecRef -> IO NVec
-readNVecRef (NVecRef pnvec) = do
-  nr <- #{peek struct m0_ha_nvec, nv_nr} pnvec :: IO Int32
-  notes <- #{peek struct m0_ha_nvec, nv_note} pnvec
-  peekArray (fromIntegral nr) notes
-
--- | @updateNVecRef ref news@ updates the states of the
--- notes in @ref@ with the states contained in @news@.
---
--- Notes in @newstates@ whose objects are not mentioned in @ref@
--- are ignored.
---
-updateNVecRef :: NVecRef -> NVec -> IO ()
-updateNVecRef nref@(NVecRef pnvec) newstates = do
-    notes <- readNVecRef nref
-    pnotes <- #{peek struct m0_ha_nvec, nv_note} pnvec
-    pokeArray pnotes $ update newstates notes
-  where
-    update news = map (\n -> maybe n id $ find (eq_id n) news)
-    eq_id (Note o0 _) (Note o1 _) = o0 == o1
-
 -- Finalizes the hastate interface.
 finiHAState :: IO ()
 finiHAState = do
@@ -203,35 +206,28 @@ finiHAState = do
   where
     freeCB (SomeFunPtr ptr) = freeHaskellFunPtr ptr
 
-foreign import ccall unsafe ha_state_fini :: IO ()
-
--- | Indicates that a request initiated with @ha_state_get@ is complete.
---
--- It takes the state vector carrying the reply and the return code of the
--- request.
-doneGet :: NVecRef -> Int -> IO ()
-doneGet p = ha_state_get_done p . fromIntegral
-
-foreign import ccall ha_state_get_done :: NVecRef -> CInt -> IO ()
+foreign import capi unsafe ha_state_fini :: IO ()
 
 -- | Notifies mero at the remote address that the state of some objects has
 -- changed.
-notify :: ServerEndpoint -> RPCAddress -> NVec -> Int -> IO ()
-notify se (RPCAddress rpcAddr) nvec timeout_s =
-  useAsCString rpcAddr $ \caddr -> withArray nvec $ \pnote ->
-    allocaBytesAligned #{size struct m0_ha_nvec}
-                       #{alignment struct m0_ha_nvec}$ \pnvec -> do
-      #{poke struct m0_ha_nvec, nv_nr} pnvec
-          (fromIntegral $ length nvec :: Int32)
-      #{poke struct m0_ha_nvec, nv_note} pnvec pnote
-      ha_state_notify (se_ptr se) caddr (NVecRef pnvec) (fromIntegral timeout_s)
-        >>= check_rc "notify"
+notify :: HALink -> Word64 -> NVec -> IO ()
+notify (HALink hl) idx nvec =
+  allocaBytesAligned #{size struct m0_ha_msg_nvec}
+                     #{alignment struct m0_ha_msg_nvec} $ \pnvec -> do
+    #{poke struct m0_ha_msg_nvec, hmnv_type} pnvec (0 :: Word64)
+    #{poke struct m0_ha_msg_nvec, hmnv_id_of_get} pnvec idx
+    #{poke struct m0_ha_msg_nvec, hmnv_nr} pnvec
+        (fromIntegral $ length nvec :: Word64)
+    pokeArray (#{ptr struct m0_ha_msg_nvec, hmnv_vec} pnvec) nvec
+    void $ ha_state_notify hl pnvec
 
-foreign import ccall ha_state_notify :: Ptr ClientEndpointV
-                                     -> CString
-                                     -> NVecRef
-                                     -> CInt
-                                     -> IO CInt
+foreign import capi ha_state_notify :: Ptr HALink -> Ptr NVec -> IO Word64
+
+-- | Disconnects a link.
+disconnect :: HALink -> IO ()
+disconnect (HALink hl) = ha_state_disconnect hl
+
+foreign import capi ha_state_disconnect :: Ptr HALink -> IO ()
 
 -- | Type of exceptions that HAState calls can produce.
 data HAStateException = HAStateException String Int
@@ -243,28 +239,38 @@ check_rc :: String -> CInt -> IO ()
 check_rc _ 0 = return ()
 check_rc msg i = throwIO $ HAStateException msg $ fromIntegral i
 
-data EntryPointRepV
-data FomV
+newtype {-# CTYPE "const char*" #-} ConstCString = ConstCString CString
 
-foreign import ccall ha_entrypoint_reply_wakeup
-  :: Ptr FomV -> Ptr EntryPointRepV -> CInt
+foreign import capi ha_entrypoint_reply
+  :: Ptr ReqId -> CInt
   -> CInt -> Ptr Fid
-  -> CInt -> Ptr CString
+  -> CInt -> Ptr ConstCString
   -> Ptr Fid -> CString
   -> IO ()
 
--- | Fill 'EntryPointRepV' structure.
-entrypointReplyWakeup :: Ptr FomV -> Ptr EntryPointRepV -> [Fid] -> [String] -> Fid -> String -> IO ()
-entrypointReplyWakeup fom eprv confdFids epNames rmFid rmEp =
+-- | Replies an entrypoint request.
+entrypointReply :: ReqId -> [Fid] -> [String] -> Fid -> String -> IO ()
+entrypointReply (ReqId reqId) confdFids epNames rmFid rmEp =
   withMany (withCString) epNames $ \cnames ->
     withArrayLen0 nullPtr cnames $ \ceps_len ceps_ptr ->
       withArrayLen confdFids $ \cfids_len cfids_ptr ->
         withCString rmEp $ \crm_ep ->
           with rmFid $ \crmfid ->
-            ha_entrypoint_reply_wakeup fom eprv 0 (fromIntegral cfids_len) cfids_ptr
-                                       (fromIntegral ceps_len) ceps_ptr crmfid crm_ep
+            ha_entrypoint_reply reqId 0 (fromIntegral cfids_len) cfids_ptr
+                                (fromIntegral ceps_len) (castPtr ceps_ptr)
+                                crmfid crm_ep
+  where
+    _ = ConstCString -- Avoid unused warning for ConstCString
 
+-- | Replies an entrypoint request as invalid.
+entrypointNoReply :: ReqId -> IO ()
+entrypointNoReply (ReqId reqId) =
+  ha_entrypoint_reply reqId (-1) 0 nullPtr 0 nullPtr nullPtr nullPtr
 
-entrypointNoReplyWakeup :: Ptr FomV -> Ptr EntryPointRepV -> IO ()
-entrypointNoReplyWakeup fom eprv =
-  ha_entrypoint_reply_wakeup fom eprv (-1) 0 nullPtr 0 nullPtr nullPtr nullPtr
+foreign import capi "hastate.h ha_state_rpc_machine" ha_state_rpc_machine :: IO (Ptr RPCMachineV)
+
+-- | Yields the 'RPCMachine' created with 'initHAState'.
+getRPCMachine :: IO (Maybe RPCMachine)
+getRPCMachine = do p <- ha_state_rpc_machine
+                   return $ if nullPtr == p then Nothing
+                              else Just $ RPCMachine p

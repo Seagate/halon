@@ -186,7 +186,4 @@ tryRunProcessLocal :: Transport -> RemoteTable -> Process () -> IO ()
 tryRunProcessLocal transport rt process =
   withTmpDirectory $
     withLocalNode transport rt $ \node -> do
-#ifdef USE_MERO
-      initialize_pre_m0_init node
-#endif
       runProcess node process
