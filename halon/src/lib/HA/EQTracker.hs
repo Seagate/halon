@@ -32,6 +32,7 @@ module HA.EQTracker
   , __remoteTable
   ) where
 
+import HA.Logger (mkHalonTracer)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 
@@ -78,6 +79,9 @@ newtype ReplicaReply = ReplicaReply ReplicaLocation
 name :: String
 name = "HA.EQTracker"
 
+traceTracker :: String -> Process ()
+traceTracker = mkHalonTracer "EQTracker"
+
 -- | Updates EQ tracker of the node. First it waits until the EQ tracker
 -- is registered and then it sends the request to update the list of
 -- EQ nodes
@@ -117,8 +121,10 @@ eqTrackerProcess nodes = do
                 , eqsPreferredReplica = preferred
                 }
           , match $ \prs@(PreferReplica rnid) -> do
-              say $ "Got PreferReplicas: " ++ show prs
-              return $ handleEQResponse eqs rnid
+              traceTracker $ "Got PreferReplicas: " ++ show prs
+              if eqsPreferredReplica eqs == Just rnid
+              then return eqs
+              else return $ handleEQResponse eqs rnid
           , match $ \(ReplicaRequest requester) -> do
               usend requester $ ReplicaReply eqs
               return eqs

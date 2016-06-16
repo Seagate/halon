@@ -112,7 +112,7 @@ statusProcess ep pid rp = do
     link pid
     forever $ do
       msg@(NotificationMessage set addrs subs) <- receiveChan rp
-      say $ "statusProcess: notification msg received: " ++ show msg
+      traceM0d $ "statusProcess: notification msg received: " ++ show msg
       failedAddrs <- fmap catMaybes . forM addrs $ \addr ->
         let doError e = do
               traceM0d $ "statusProcess: notifyMero failed: " ++ show (pid, addr, e)

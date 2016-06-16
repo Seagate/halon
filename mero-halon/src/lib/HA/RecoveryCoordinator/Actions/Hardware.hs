@@ -312,7 +312,6 @@ findHostAttrs host = do
 -- status has not been set, it is assumed to be 'ONLINE'.
 getClusterStatus :: PhaseM LoopState l ClusterStatus
 getClusterStatus = do
-  phaseLog "rg-query" "Looking up cluster status"
   getLocalGraph >>= \g ->
     return . fromMaybe ONLINE . listToMaybe $ G.connectedTo Cluster Has g
 
@@ -320,7 +319,6 @@ getClusterStatus = do
 -- has been previously set is overwritten.
 setClusterStatus :: ClusterStatus -> PhaseM LoopState l ()
 setClusterStatus cs = do
-  phaseLog "rg" $ "Setting cluster status to " ++ show cs
   modifyLocalGraph $ \g -> do
     return $ G.newResource cs >>> G.connectUnique Cluster Has cs $ g
 
