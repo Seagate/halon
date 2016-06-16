@@ -408,6 +408,7 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
 -- | Handle SSPL message about a service restart.
 ruleMonitorServiceRestart :: Definitions LoopState ()
 ruleMonitorServiceRestart = defineSimple "monitor-service-restart" $ \(HAEvent uuid (_ :: NodeId, watchdogmsg) _) -> do
+  let phaseLog c s = liftProcess . say $ c ++ " => " ++ s
   phaseLog "info" $ "Received SSPL message about service restart: " ++ show watchdogmsg
   let currentState = sensorResponseMessageSensor_response_typeService_watchdogService_state watchdogmsg
       prevState = sensorResponseMessageSensor_response_typeService_watchdogPrevious_service_state watchdogmsg
