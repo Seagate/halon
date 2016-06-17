@@ -34,7 +34,7 @@ import Data.Foldable
 import Options.Applicative
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
-import Control.Monad (void, unless)
+import Control.Monad (void, unless, when)
 
 import Data.Yaml
   ( prettyPrintParseException
@@ -98,9 +98,9 @@ cluster nids' opt = do
       say "Synchonizing cluster to confd."
       syncToConfd nids
     cluster' nids (Dump s) = dumpConfd nids s
-    cluster' nids (Status (StatusOptions m)) = clusterCommand nids ClusterStatusRequest (liftIO . output m)
-      where output True = jsonReport
-            output False = prettyReport
+    cluster' nids (Status (StatusOptions m d)) = clusterCommand nids ClusterStatusRequest (liftIO . output m d)
+      where output True _ = jsonReport
+            output False d = prettyReport d
     cluster' nids (Start _)  = do
       say "Starting cluster."
       clusterCommand nids ClusterStartRequest (liftIO . print)
@@ -168,7 +168,10 @@ data SyncOptions = SyncOptions
 newtype DumpOptions = DumpOptions FilePath
   deriving (Eq, Show)
 
-data StatusOptions = StatusOptions Bool deriving (Eq, Show)
+data StatusOptions = StatusOptions {
+    statusOptJSON :: Bool
+  , statusOptDevices :: Bool
+} deriving (Eq, Show)
 data StartOptions  = StartOptions deriving (Eq, Show)
 data StopOptions   = StopOptions deriving (Eq, Show)
 data ClientOptions = ClientStopOption String
@@ -205,6 +208,10 @@ parseStatusOptions = StatusOptions
        ( Opt.long "json"
        <> Opt.help "Output in json format."
        )
+  <*> Opt.switch
+        ( Opt.long "show-devices"
+       <> Opt.short 'd'
+       <> Opt.help "Also show failed devices and their status. Devices are always shown in the JSON format.")
 
 dumpConfd :: [NodeId]
           -> DumpOptions
@@ -255,8 +262,8 @@ clusterCommand eqnids mk output = do
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 
-prettyReport :: ReportClusterState -> IO ()
-prettyReport (ReportClusterState status sns info' hosts) = do
+prettyReport :: Bool -> ReportClusterState -> IO ()
+prettyReport showDevices (ReportClusterState status sns info' hosts) = do
   putStrLn $ "Cluster is " ++ maybe "N/A" M0.prettyStatus status
   case info' of
     Nothing -> putStrLn "cluster information is not available, load initial data.."
@@ -278,7 +285,7 @@ prettyReport (ReportClusterState status sns info' hosts) = do
                              ++ endpoint ++ "\t" ++ inferType (map fst srvs) ++ "\t==> " ++ fidToStr rfid
            for_ srvs $ \(M0.Service fid' t' _ _, sst) -> do
              putStrLn $ "        [" ++ M0.prettyServiceState sst ++ "]\t" ++ show t' ++ "\t\t\t==> " ++ fidToStr fid'
-         unless (null sdevs) $ do
+         when (showDevices && (not . null) sdevs) $ do
            putStrLn "    Devices:"
            forM_ sdevs $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path}, sdev_st) -> do
              putStrLn $ "        " ++ fidToStr sdev_fid ++ "\tat " ++ sdev_path ++ "\t[" ++ M0.prettySDevState sdev_st ++ "]"
