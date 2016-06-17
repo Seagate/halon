@@ -27,6 +27,7 @@ emptySensorMessage = SSPL.SensorResponseMessageSensor_response_type
   , SSPL.sensorResponseMessageSensor_response_typeCpu_data = Nothing
   , SSPL.sensorResponseMessageSensor_response_typeRaid_data = Nothing
   , SSPL.sensorResponseMessageSensor_response_typeSnmp_trap = Nothing
+  , SSPL.sensorResponseMessageSensor_response_typeExpander_reset = Nothing
   }
 
 emptyActuatorMessage :: SSPL.ActuatorResponseMessageActuator_response_type
@@ -70,6 +71,8 @@ emptyHPIMessage = SSPL.SensorResponseMessageSensor_response_typeDisk_status_hpi
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = "wwn"
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiProductVersion = "0.0.1"
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN = "ENCLOSURE"
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskInstalled = True
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskPowered = True
   }
 
 emptyHostUpdate :: Text -> SSPL.SensorResponseMessageSensor_response_typeHost_update
@@ -111,8 +114,10 @@ mkResponseHPI :: Text -- ^ Host ID of node
               -> Integer -- ^ Location number of drive
               -> Text -- ^ Drive identifier (UUID)
               -> Text -- ^ wwn of the drive
+              -> Bool -- Installed?
+              -> Bool -- Powered?
               -> SSPL.SensorResponseMessageSensor_response_type
-mkResponseHPI hostid enclosure serial location uuid wwn =
+mkResponseHPI hostid enclosure serial location uuid wwn installed powered =
    emptySensorMessage
      { SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpi =
          Just $ emptyHPIMessage
@@ -122,6 +127,8 @@ mkResponseHPI hostid enclosure serial location uuid wwn =
            , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = wwn
            , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN = enclosure
            , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber = serial
+           , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskInstalled = installed
+           , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskPowered = powered
            }
      }
 

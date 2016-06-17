@@ -116,7 +116,21 @@ testRules :: Definitions LoopState ()
 testRules = do
   defineSimple "register-mock-service" $
     \(HAEvent eid (MockM0 dc@(DeclareMeroChannel sp _ _)) _) -> do
+      rg <- getLocalGraph
       nid <- liftProcess $ getSelfNode
+      let node = Node nid
+          host = Host systemHostname
+          procs = [ proc
+                  | m0cont <- G.connectedFrom M0.At host rg :: [M0.Controller]
+                  , m0node <- G.connectedFrom M0.IsOnHardware m0cont rg :: [M0.Node]
+                  , proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
+                  ]
+      -- We have to mark the process as online in order for our mock mero
+      -- service to be sent notifications for them.
+      phaseLog "debug:procs" $ show procs
+      forM_ procs $ \proc -> do
+        modifyGraph $ setState proc M0.PSOnline
+      locateNodeOnHost node host
       registerServiceProcess (Node nid) m0d mockMeroConf sp
       void . liftProcess $ promulgateEQ [nid] dc
       messageProcessed eid
@@ -181,6 +195,9 @@ run transport pg interceptor rules test =
         case string of
           str@"Starting service sspl"   -> usend self str
           x -> interceptor self x
+
+      subscribe (ta_rc ta) (Proxy :: Proxy (HAEvent InitialData))
+      loadInitialData
 
       startSSPLService (ta_rc ta)
       debug "Started SSPL service"
@@ -251,6 +268,18 @@ run transport pg interceptor rules test =
                                        ("guest")
       link pid
       return pid
+
+loadInitialData :: Process ()
+loadInitialData = let
+    init_msg = initialData systemHostname testListenName 1 12 defaultGlobals
+  in do
+    debug "loadInitialData"
+    nid <- getSelfNode
+    -- We populate the graph with confc context.
+    _ <- promulgateEQ [nid] init_msg
+    _ <- expect :: Process (Published (HAEvent InitialData))
+    return ()
+
 
 findSDev :: G.Graph -> Process ThatWhichWeCallADisk
 findSDev rg =
@@ -342,17 +371,6 @@ prepareSubscriptions rc rmq = do
   -- Subscribe to SSPL channels
   usend rmq . MQSubscribe "halon_sspl" =<< getSelfPid
   usend rmq $ MQBind "halon_sspl" "halon_sspl" "sspl_ll"
-
-loadInitialData :: Process ()
-loadInitialData = let
-    init_msg = initialData systemHostname testListenName 1 12 defaultGlobals
-  in do
-    debug "loadInitialData"
-    nid <- getSelfNode
-    -- We populate the graph with confc context.
-    _ <- promulgateEQ [nid] init_msg
-    _ <- expect :: Process (Published (HAEvent InitialData))
-    return ()
 
 loadInitialDataMod :: (InitialData -> InitialData)
                    -> Process ()
@@ -447,7 +465,6 @@ testDiskFailure transport pg = run transport pg interceptor [] test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
-    loadInitialData
 
     sdev <- G.getGraph mm >>= findSDev
     failDrive recv sdev
@@ -459,7 +476,6 @@ testHitResetLimit transport pg = run transport pg interceptor [] test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
-    loadInitialData
 
     sdev <- G.getGraph mm >>= findSDev
 
@@ -487,7 +503,6 @@ testFailedSMART transport pg = run transport pg interceptor [] test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
-    loadInitialData
 
     sdev <- G.getGraph mm >>= findSDev
     failDrive recv sdev
@@ -499,7 +514,6 @@ testSecondReset transport pg = run transport pg interceptor [] test where
   interceptor _ _ = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
-    loadInitialData
 
     sdev <- G.getGraph mm >>= findSDev
     sdev2 <- G.getGraph mm >>= find2SDev
@@ -588,14 +602,13 @@ testDriveRemovedBySSPL transport pg = run transport pg interceptor [] test where
   interceptor _rc _str = return ()
   test (TestArgs _ mm rc) rmq recv = do
     prepareSubscriptions rc rmq
-    loadInitialData
     subscribe rc (Proxy :: Proxy DriveRemoved)
     let enclosure = "enclosure_2"
         host      = pack systemHostname
         devIdx    = 1
         message0 = LBS.toStrict $ encode
                                 $ mkSensorResponse
-                                $ mkResponseHPI host (pack enclosure) "serial21" (fromIntegral devIdx) "/dev/loop21" "wwn21"
+                                $ mkResponseHPI host (pack enclosure) "serial21" (fromIntegral devIdx) "/dev/loop21" "wwn21" False True
         message = LBS.toStrict $ encode $ mkSensorResponse
            $ emptySensorMessage
               { sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
@@ -711,7 +724,6 @@ testMetadataDriveFailed transport pg = run transport pg interceptor [] test wher
       subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data)))
       subscribe rc (Proxy :: Proxy (HAEvent ResetFailure))
 
-      loadInitialData
       usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
 
       debug "RAID message published"
@@ -765,7 +777,6 @@ testGreeting transport pg = run transport pg interceptor [] test where
   interceptor _rc _str = return ()
   test (TestArgs _ _ rc) rmq _ = do
     prepareSubscriptions rc rmq
-    loadInitialData
 
     _ <- promulgate MarkDriveFailed
     Nothing <- expectTimeout ssplTimeout :: Process (Maybe (Published (HAEvent MarkDriveFailed)))
