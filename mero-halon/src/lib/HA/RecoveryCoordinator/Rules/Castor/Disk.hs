@@ -22,6 +22,7 @@
 --       See "HA.RecoveryCoordinator.Rules.Castor.Disk.Repair" for details.
 
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ViewPatterns #-}
 module HA.RecoveryCoordinator.Rules.Castor.Disk
   ( -- & All rules
     rules
@@ -38,8 +39,6 @@ module HA.RecoveryCoordinator.Rules.Castor.Disk
 import HA.RecoveryCoordinator.Rules.Castor.Disk.Repair as Repair
 import HA.RecoveryCoordinator.Rules.Castor.Disk.Reset  as Reset
 
-import Control.Distributed.Process hiding (catch)
-
 import HA.Encode (decodeP)
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
@@ -50,7 +49,6 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.ResourceGraph as G
 import HA.Services.SSPL
-import Control.Applicative
 import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Rules.Mero.Conf
@@ -60,17 +58,25 @@ import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Events.Mero
 import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState (Note(..))
+
+
+import Control.Applicative
+import Control.Distributed.Process hiding (catch)
+import Control.Monad
+import Control.Monad.Trans.Maybe
+
+import Data.Binary (Binary)
+import Data.Foldable
+import Data.Maybe
+import Data.Proxy (Proxy(..))
+import qualified Data.Text as T
 import Data.UUID.V4 (nextRandom)
 import qualified Data.UUID as UUID
-import Data.Proxy (Proxy(..))
-import Data.Foldable
-
-
-import Control.Monad
-import Data.Maybe
-import Data.Binary (Binary)
 
 import Network.CEP
+
+import Text.Printf (printf)
+
 import Prelude hiding (id)
 
 -- | Set of all rules related to the disk livetime. It's reexport to be
@@ -82,6 +88,7 @@ rules = sequence_
   , ruleDriveRemoved
   , ruleDrivePoweredOff
   , ruleExpanderResetBlip
+  , rulePowerDownDriveOnFailure
   , Repair.checkRepairOnClusterStart
   , Repair.checkRepairOnServiceUp
   , Repair.ruleRepairStart
@@ -426,3 +433,32 @@ ruleExpanderResetBlip = define "castor::disk::expander-reset::blip" $ do
     messageProcessed eid
 
   startFork any_evt ()
+
+-- | When a drive is marked as failed, power it down.
+rulePowerDownDriveOnFailure :: Definitions LoopState ()
+rulePowerDownDriveOnFailure = define "power-down-drive-on-failure" $ do
+
+  m0_drive_failed <- phaseHandle "m0_drive_failed"
+
+  setPhaseInternalNotificationWithState m0_drive_failed (== M0.SDSFailed)
+    $ \(uuid, objs) -> forM_ objs $ \(m0sdev, _) -> do
+      todo uuid
+      mdiskinfo <- runMaybeT $ do
+        sdev <- MaybeT $ lookupStorageDevice m0sdev
+        serial <- MaybeT $ listToMaybe <$> lookupStorageDeviceSerial sdev
+        node <- MaybeT $ listToMaybe <$> getSDevNode sdev
+        return (node, serial)
+      forM_ mdiskinfo $ \(node@(Node nid), serial) -> do
+        sent <- sendNodeCmd nid Nothing (DrivePowerdown . T.pack $ serial)
+        if sent
+        then phaseLog "info"
+              $ printf "Powering off failed device %s on node %s"
+                          serial
+                          (show node)
+        else phaseLog "warning"
+              $ printf "Unable to power off failed device %s on node %s"
+                          serial
+                          (show node)
+      done uuid
+
+  startFork m0_drive_failed Nothing
