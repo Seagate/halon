@@ -405,10 +405,12 @@ withPersistentStore fp =
 data ReplicaState s ref a = Serializable ref => ReplicaState
   { -- | The pid of the proposer process.
     stateProposerPid       :: !ProcessId
-    -- | The pid of the lease timer process.
-  , stateLeaseTimerPid          :: !ProcessId
-    -- | The pid of the periodic timer process.
-  , statePeriodicTimerPid          :: !ProcessId
+    -- | The pid of the lease renewal timer process.
+    -- Ticks whenever the lease should be requested.
+  , stateLeaseRenewalTimerPid :: !ProcessId
+    -- | The pid of the lease timeout timer process.
+    -- The timer produces a tick whenever the lease of the replica expires.
+  , stateLeaseTimeoutTimerPid :: !ProcessId
     -- | Handle to persist the log.
   , statePersistenceHandle :: !(PersistenceHandle a)
     -- | The time at which the last lease started.
@@ -447,10 +449,10 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
   , stateReconfDecree      :: !DecreeId
     -- | Batcher of client requests
   , stateBatcher           :: !ProcessId
-    -- | A channel to communicate lease timeout notifications
-  , stateLeaseTimerRP      :: !(ReceivePort ())
-    -- | A channel to communicate periodic timeout notifications
-  , statePeriodicTimerRP   :: !(ReceivePort ())
+    -- | A channel to communicate lease renewal times
+  , stateLeaseRenewalTimerRP :: !(ReceivePort ())
+    -- | A channel to communicate lease timeouts
+  , stateLeaseTimeoutTimerRP :: !(ReceivePort ())
     -- | A pool of processes to send messages asynchronously
   , stateSendPool          :: !(Keyed.ProcessPool NodeId)
     -- | A pool of processes dealing with persistence operations
@@ -630,12 +632,11 @@ replica Dict
 
     persistPool <- liftIO $ Bounded.newProcessPool 50
 
-    (timerSP, timerRP) <- newChan
-    timerPid <- spawnLocal $ link self >> timer timerSP
-    leaseStart0' <- setLeaseTimer timerPid leaseStart0 replicas
-    (ptimerSP, ptimerRP) <- newChan
-    ptimerPid <- spawnLocal $ link self >> timer ptimerSP
-    usend ptimerPid leaseTimeout
+    (rtimerSP, rtimerRP) <- newChan
+    rtimerPid <- spawnLocal $ link self >> timer rtimerSP
+    (ttimerSP, ttimerRP) <- newChan
+    ttimerPid <- spawnLocal $ link self >> timer ttimerSP
+    leaseStart0' <- setLeaseTimer rtimerPid ttimerPid leaseStart0 replicas
 
     -- Wait for any previously running batcher to die.
     mbpid <- whereis (batcherLabel logId)
@@ -656,8 +657,8 @@ replica Dict
 
     go ReplicaState
          { stateProposerPid = ppid
-         , stateLeaseTimerPid = timerPid
-         , statePeriodicTimerPid = ptimerPid
+         , stateLeaseRenewalTimerPid = rtimerPid
+         , stateLeaseTimeoutTimerPid = ttimerPid
          , statePersistenceHandle = persistenceHandle
          , stateLeaseStart = leaseStart0'
          , stateReplicas = replicas
@@ -671,8 +672,8 @@ replica Dict
          , stateEpoch    = epoch
          , stateReconfDecree = legD
          , stateBatcher  = bpid
-         , stateLeaseTimerRP = timerRP
-         , statePeriodicTimerRP = ptimerRP
+         , stateLeaseRenewalTimerRP = rtimerRP
+         , stateLeaseTimeoutTimerRP = ttimerRP
          , stateSendPool = sendPool
          , statePersistPool = persistPool
          , statePersistProcs = persistProcs
@@ -772,33 +773,36 @@ replica Dict
       fromIntegral t * numerator   driftSafetyFactor
       `div` denominator driftSafetyFactor
 
-    -- Sets the timer to renew or request the lease and returns the time at
+    -- Sets the timers to renew or request the lease and returns the time at
     -- which the lease is started.
-    setLeaseTimer :: ProcessId     -- ^ pid of the timer process
-                  -> TimeSpec      -- ^ time at which the request was submitted
+    setLeaseTimer :: ProcessId -- ^ pid of the lease renewal timer process
+                  -> ProcessId -- ^ pid of the lease timeout timer process
+                  -> TimeSpec  -- ^ time at which the request was submitted
                   -> [NodeId]   -- ^ replicas
                   -> Process TimeSpec
-    setLeaseTimer timerPid requestStart ρs = do
+    setLeaseTimer rtimerPid ttimerPid requestStart ρs = do
       -- If I'm the leader, the lease starts at the time
       -- the request was made. Otherwise, it starts now.
       here <- getSelfNode
       if [here] == take 1 ρs then
-        setLeaseRenewTimer timerPid requestStart
+        setLeaseRenewTimer rtimerPid ttimerPid requestStart
       else do
-        usend timerPid $ adjustForDrift leaseTimeout
+        usend rtimerPid $ adjustForDrift leaseTimeout
         liftIO $ getTime Monotonic
 
     -- Sets the timer to renew the lease and returns the time at which the lease
     -- is started.
-    setLeaseRenewTimer :: ProcessId -- ^ pid of the timer process
+    setLeaseRenewTimer :: ProcessId -- ^ pid of the lease renewal timer process
+                       -> ProcessId -- ^ pid of the lease deadline timer process
                        -> TimeSpec  -- ^ time at which the request was submitted
                        -> Process TimeSpec
-    setLeaseRenewTimer timerPid requestStart = do
+    setLeaseRenewTimer rtimerPid ttimerPid requestStart = do
       now <- liftIO $ getTime Monotonic
       let timeSpecToMicro (TimeSpec s ns) = s * 1000000 + ns `div` 1000
-          t = max 0 $ (leaseTimeout - leaseRenewTimeout) -
-                      fromIntegral (timeSpecToMicro $ now - requestStart)
-      usend timerPid t
+          elapsed = fromIntegral (timeSpecToMicro $ now - requestStart)
+          t = max 0 $ leaseTimeout - leaseRenewTimeout - elapsed
+      usend rtimerPid t
+      usend ttimerPid $ max 0 $ leaseTimeout - elapsed
       return requestStart
 
     -- The proposer process makes consensus proposals.
@@ -867,8 +871,8 @@ replica Dict
         ]
 
     go :: ReplicaState s ref a -> Process b
-    go st@(ReplicaState ppid timerPid ptimerPid ph leaseStart ρs d cd mdumper
-                        msref w0 w s epoch legD bpid timerRP ptimerRP sendPool
+    go st@(ReplicaState ppid rtimerPid ttimerPid ph leaseStart ρs d cd mdumper
+                        msref w0 w s epoch legD bpid rtimerRP ttimerRP sendPool
                         persistPool persistProcs
                         stLogRestore stLogDump stLogNextState
           ) =
@@ -916,8 +920,8 @@ replica Dict
                              )
 
         receiveWait $ cond (w == cd)
-            [ -- The lease is about to expire or it has already.
-              matchChan timerRP $ \() -> do
+            [ -- The lease renewal timer ticked.
+              matchChan rtimerRP $ \() -> do
                   mLeader <- getLeader leaseStart ρs
                   nlogTrace logId $ "LeaseRenewalTime: " ++ show (w, cd, mLeader)
                   cd' <- if Just here == mLeader || isNothing mLeader then do
@@ -925,19 +929,20 @@ replica Dict
                       return $ succ cd
                     else
                       return cd
-                  usend timerPid leaseTimeout
+                  usend rtimerPid leaseTimeout
                   go st{ stateCurrentDecree = cd' }
             ]
-            [ -- The periodic timer ticked.
-              matchChan ptimerRP $ \() -> do
+            [] ++
+            [ -- The lease timeout timer ticked.
+              matchChan ttimerRP $ \() -> do
                   mLeader <- getLeader leaseStart ρs
-                  nlogTrace logId $ "Periodic timer tick: " ++ show (w, cd, mLeader)
+                  nlogTrace logId $ "Lease timeout timer tick: " ++
+                                    show (w, cd, mLeader)
                   -- Kill the batcher if I'm not the leader.
                   when (mLeader /= Just here) $ exitAndWait bpid
-                  usend ptimerPid leaseTimeout
                   go st
-            ] ++
-            [ matchIf (\(Decree _ _ di _ :: Decree (Value a)) ->
+
+            , matchIf (\(Decree _ _ di _ :: Decree (Value a)) ->
                         -- Take the max of the watermark legislature and the
                         -- incoming legislature to deal with teleportation of
                         -- decrees. See Note [Teleportation].
@@ -1082,9 +1087,9 @@ replica Dict
                 let requestStart' = max requestStart leaseStart
                 mLeader <- getLeader requestStart' (stateReplicas st')
                 leaseStart' <- if mLeader == Just here
-                  then setLeaseRenewTimer timerPid requestStart'
+                  then setLeaseRenewTimer rtimerPid ttimerPid requestStart'
                   else do
-                    usend timerPid $ adjustForDrift leaseTimeout
+                    usend rtimerPid $ adjustForDrift leaseTimeout
                     liftIO $ getTime Monotonic
                 go st' { stateLeaseStart = leaseStart' }
 
