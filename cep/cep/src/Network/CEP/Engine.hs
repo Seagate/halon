@@ -317,7 +317,13 @@ cepCruise st req = defaultHandler st cepCruise req
 
 -- | Execute one step of the Engine.
 executeTick :: State.StateT (Machine g) Process [RuleInfo]
-executeTick = bootstrap >>= traverse (uncurry execute)
+executeTick = do
+    running <- bootstrap
+    info <- traverse (uncurry execute) running
+    sti <- State.get
+    g_opt <- for (_machRuleFin sti) $ \k -> lift $ k (_machState sti)
+    for_ g_opt $ \g -> State.modify $ \n -> n{_machState=g}
+    return info
   where
     bootstrap = do
       st <- State.get
@@ -331,8 +337,8 @@ executeTick = bootstrap >>= traverse (uncurry execute)
       let logs = fmap (const S.empty) $ _machLogger sti
           exe  = SMExecute logs (_machSubs sti) (_machState sti)
       (g', machines) <- lift $ runSM (_ruleStack sm) exe
-      -- XXX: finalizer currently do smth terribly wrong
-      g_opt <- for (_machRuleFin sti) $ \k -> lift $ k g'
+      State.modify $ \nxt_st -> nxt_st{_machState = g'}
+
       let addRunning   = foldr (\x y -> mkRunningSM x . y) id machines
           addSuspended = foldr (\x y -> mkSuspendedSM x . y) id machines
           mkRunningSM (SMResult SMRunning  _ _, s) = (mkSM s :)
@@ -342,12 +348,10 @@ executeTick = bootstrap >>= traverse (uncurry execute)
           mkSuspendedSM _ = id
           mkSM nxt_stk = (key, sm{_ruleStack=nxt_stk})
           mlogs  = mapMaybe (smResultLogs .fst) machines
-          nxt_g  = fromMaybe g' g_opt
       State.modify $ \nxt_st ->
         nxt_st{_machRunningSM = addRunning $ _machRunningSM nxt_st
               ,_machSuspendedSM = addSuspended $ _machSuspendedSM nxt_st
-              ,_machState = nxt_g
               }
-      lift $ for_ (_machLogger sti) $ \f -> for_ mlogs $ \l -> f l nxt_g
+      lift $ for_ (_machLogger sti) $ \f -> for_ mlogs $ \l -> f l g'
       return $ RuleInfo (RuleName $ _ruleDataName sm)
              $ map ((\(SMResult s r _) -> (s, r)) . fst) machines
