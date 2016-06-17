@@ -65,7 +65,7 @@ import Control.Wire hiding (when)
 
 import Data.Binary (Binary)
 import Data.Dynamic
-import Data.Foldable (forM_)
+import Data.Foldable (for_)
 import qualified Data.Map.Strict as Map
 
 import GHC.Generics (Generic)
@@ -166,9 +166,9 @@ makeRecoveryCoordinator mm eq rm = do
        -- in particular message.
        let refCnt = Map.map update (lsRefCount ls)
            update i
-             | i < 0 = i-1
+             | i <= 0 = i-1
              | otherwise = i
            (removed, newRefCnt) = Map.partition (<(-msgProcessedGap)) refCnt
-       forM_ removed $ usend (lsEQPid ls)
+       for_ (Map.keys removed) $ usend (lsEQPid ls)
 
        return ls { lsGraph = newGraph, lsRefCount = newRefCnt }
