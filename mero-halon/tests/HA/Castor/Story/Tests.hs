@@ -61,6 +61,7 @@ import Data.Typeable
 import Data.Text (pack)
 import Data.Defaultable
 import qualified Data.UUID as UUID
+import Data.UUID.V4 (nextRandom)
 
 import GHC.Generics (Generic)
 
@@ -155,6 +156,8 @@ mkTests pg = do
           testMetadataDriveFailed transport pg
         , testSuccess "Halon sends list of failed drives at SSPL start" $
           testGreeting transport pg
+        , testSuccess "Halon powers down disk on failure" $
+          testDrivePoweredDown transport pg
         ]
 
 run :: (Typeable g, RGroup g)
@@ -649,7 +652,38 @@ testDynamicPVer transport pg = run transport pg interceptor [] test where
     let [disk2] = G.connectedTo m0sdev2 M0.IsOnHardware rg2 :: [M0.Disk]
     checkPVerExistence rg1 (S.fromList . fmap M0.fid $ [disk, disk2]) False
     checkPVerExistence rg2 (S.fromList . fmap M0.fid $ [disk, disk2]) True
+
 #endif
+
+-- | Test that a failed drive powers off successfully
+testDrivePoweredDown :: (Typeable g, RGroup g)
+                      => Transport -> Proxy g -> IO ()
+testDrivePoweredDown transport pg = run transport pg interceptor [] test where
+  interceptor _rc _str = return ()
+  test (TestArgs _ mm rc) rmq recv = let
+      host = pack systemHostname
+      enc = Enclosure "enclosure_2"
+    in do
+      prepareSubscriptions rc rmq
+      subscribe rc (Proxy :: Proxy (DriveFailed))
+      loadInitialData
+
+      rg <- G.getGraph mm
+      nid <- getSelfNode
+      eid <- liftIO $ nextRandom
+      disk <- findSDev rg
+      usend rc $ DriveFailed eid (Node nid) enc (aDiskSD disk)
+
+      debug "Drive failed should be processed"
+      _ <- expect :: Process (Published DriveFailed)
+
+      debug "SSPL should receive a command to power off the drive"
+      do
+        msg <- expectNodeMsg ssplTimeout
+        debug $ "sspl_msg(poweroff): " ++ show msg
+        let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+                  $ nodeCmdString (DrivePowerdown . pack $ aDiskSN disk)
+        liftIO $ assertEqual "drive powerdown command is issued"  (Just cmd) msg
 
 -- | Test that we respond correctly to a notification that a RAID device
 --   has failed.
