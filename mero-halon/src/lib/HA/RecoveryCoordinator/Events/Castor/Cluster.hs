@@ -14,6 +14,14 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
   , StateChangeResult(..)
   , PoolRebalanceRequest(..)
   , PoolRepairRequest(..)
+    -- ** Node
+  , StartCastorNodeRequest(..)
+  , StartProcessesOnNodeRequest(..)
+  , StopProcessesOnNodeRequest(..)
+  , StartHalonM0dRequest(..)
+  , StopHalonM0dRequest(..)
+  , StartClientsOnNodeRequest(..)
+  , StopClientsOnNodeRequest(..)
   -- * Cluster state report
   , ReportClusterState(..)
   , ReportClusterHost(..)
@@ -23,6 +31,7 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
   ) where
 
 import Control.Distributed.Process
+import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.Resources.Castor as Castor
@@ -93,3 +102,25 @@ data ReportClusterProcess = ReportClusterProcess
 instance Binary ReportClusterProcess
 instance ToJSON ReportClusterProcess
 instance FromJSON ReportClusterProcess
+
+
+newtype StartCastorNodeRequest = StartCastorNodeRequest R.Node deriving (Eq, Show, Generic, Binary)
+
+newtype StartHalonM0dRequest = StartHalonM0dRequest M0.Node
+  deriving (Eq, Show, Typeable, Generic, Binary)
+
+newtype StopHalonM0dRequest = StopHalonM0dRequest M0.Node
+  deriving (Eq, Show, Typeable, Generic, Binary)
+
+-- | Request start of the 'ruleNewNode'.
+newtype StartProcessesOnNodeRequest = StartProcessesOnNodeRequest M0.Node
+  deriving (Eq, Show, Generic, Binary, Ord)
+
+newtype StopProcessesOnNodeRequest = StopProcessesOnNodeRequest M0.Node
+          deriving (Eq, Show, Generic, Binary, Ord)
+
+newtype StartClientsOnNodeRequest = StartClientsOnNodeRequest M0.Node
+         deriving (Eq, Show, Generic, Binary, Ord)
+
+newtype StopClientsOnNodeRequest = StopClientsOnNodeRequest M0.Node
+         deriving (Eq, Show, Generic, Binary, Ord)

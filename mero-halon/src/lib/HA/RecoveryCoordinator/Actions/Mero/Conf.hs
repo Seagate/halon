@@ -44,6 +44,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
     -- * Low level graph API
   , rgGetPool
   , m0nodeToNode
+  , nodeToM0Node
   ) where
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -494,3 +495,9 @@ m0nodeToNode :: M0.Node -> G.Graph -> [R.Node]
 m0nodeToNode m0node rg =
   [ node | (h :: R.Host) <- G.connectedFrom R.Runs m0node rg
          , node <- G.connectedTo h R.Runs rg ]
+
+-- | Lookup 'Node' associated with the given 'R.Node'.
+nodeToM0Node :: R.Node -> G.Graph -> [M0.Node]
+nodeToM0Node node rg =
+  [ m0node | (h :: R.Host) <- G.connectedFrom R.Runs node rg
+           , m0node <- G.connectedTo h R.Runs rg ]

@@ -190,7 +190,7 @@ instance ConfObj Filesystem where
   fid = f_fid
 
 newtype Node = Node Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Binary, Eq, Generic, Hashable, Show, Typeable, Ord)
 
 instance ConfObj Node where
   fidType _ = fromIntegral . ord $ 'n'
@@ -571,13 +571,6 @@ instance Ord MeroClusterState where
      toInt (MeroClusterStopping (BootLevel i)) = -1-i
      toInt MeroClusterFailed = minBound
 
--- | A message we can use to notify bootstrap that mero-kernel failed
--- to start.
-newtype MeroKernelFailed = MeroKernelFailed String
-  deriving(Eq, Show, Typeable, Generic)
-
-instance Binary MeroKernelFailed
-instance Hashable MeroKernelFailed
 
 newtype ConfUpdateVersion = ConfUpdateVersion Word64
   deriving (Eq, Show, Typeable, Generic)

@@ -91,11 +91,13 @@ Library
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
                    HA.RecoveryCoordinator.Events.Status
+                   HA.RecoveryCoordinator.Events.Cluster
                    HA.RecoveryCoordinator.Actions.Core
                    HA.RecoveryCoordinator.Actions.Storage
                    HA.RecoveryCoordinator.Actions.Hardware
                    HA.RecoveryCoordinator.Actions.Service
                    HA.RecoveryCoordinator.Actions.Test
+                   HA.RecoveryCoordinator.Actions.Job
                    HA.RecoveryCoordinator.Rules.Castor
                    HA.RecoveryCoordinator.Rules.Service
                    HA.RecoveryCoordinator.Events.Drive
@@ -169,6 +171,7 @@ Library
                        HA.Resources.Mero.Note
                        HA.Services.Mero
                        HA.RecoveryCoordinator.Actions.Castor
+                       HA.RecoveryCoordinator.Actions.Castor.Cluster
                        HA.RecoveryCoordinator.Actions.Mero.Failure
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic

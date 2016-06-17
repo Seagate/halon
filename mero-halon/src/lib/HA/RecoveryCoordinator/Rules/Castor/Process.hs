@@ -20,7 +20,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Process
 import           HA.Encode
 import           Control.Monad (unless)
 import           Control.Monad.Trans.Maybe
-import           Data.Either (partitionEithers, rights)
+import           Data.Either (partitionEithers, rights, lefts)
 import           Data.List (nub)
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe)
 import           HA.EventQueue.Types
@@ -33,7 +33,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Node(..), Cluster(..))
 import           HA.Resources.Castor (Is(..))
 import qualified HA.Resources.Mero as M0
-import           HA.Resources.Mero.Note (ConfObjectState(..), getState, NotifyFailureEndpoints(..))
+import           HA.Resources.Mero.Note (ConfObjectState(..), getState, NotifyFailureEndpoints(..), showFid)
 import           HA.Services.Mero (m0d)
 import           HA.Services.Mero.CEP (meroChannel)
 import           HA.Services.Mero.Types
@@ -45,6 +45,7 @@ import           Network.CEP
 import           Control.Monad (when)
 import           Data.Typeable
 import           Data.Foldable
+import           Data.List (nub)
 import           Text.Printf
 
 -- * Process handlers
@@ -306,12 +307,13 @@ ruleProcessControlStart = defineSimpleTask "handle-process-start" $ \(ProcessCon
       Left x -> Left <$> M0.lookupConfObjByFid x rg
       Right (x,s) -> Right . (,s) <$> M0.lookupConfObjByFid x rg)
       results
-  phaseLog "debug" $ printf "Results of starting: %s" (show resultProcs)
   unless (null $ rights resultProcs) $ do
     applyStateChanges $ (\(x, s) -> stateSet x (M0.PSFailed $ "Failed to start: " ++ s))
       <$> rights resultProcs
-  forM_ (rights results) $ \(x,s) ->
+  for_ (rights results) $ \(x,s) ->
     phaseLog "error" $ printf "failed to start service %s : %s" (show x) s
+  for_ (nub $ lefts results) $ \x ->
+    phaseLog "info" $ printf "Process started: %s" (show x)
 
 -- | When any process goes to Quiescing state, we need to be able to
 -- give some timeout for RM to clear caches before actually stopping
@@ -363,13 +365,14 @@ ruleProcessControlStop = defineSimpleTask "handle-process-stop" $ \(ProcessContr
       Left x -> Left <$> M0.lookupConfObjByFid x rg
       Right (x,s) -> Right . (,s) <$> M0.lookupConfObjByFid x rg)
       results
-  phaseLog "debug" $ printf "Results of stopping: %s" (show resultProcs)
   applyStateChanges $ (\case
     Left x -> stateSet x M0.PSOffline
     Right (x,s) -> stateSet x (M0.PSFailed $ "Failed to stop: " ++ show s))
     <$> resultProcs
   forM_ (rights results) $ \(x,s) ->
     phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
+  forM_ (lefts results) $ \x ->
+    phaseLog "error" $ printf "process started: %s" (show x)
 
 -- | Listens for 'NotifyFailureEndpoints' from notification mechanism.
 -- Finds the non-failed processes which failed to be notified (through

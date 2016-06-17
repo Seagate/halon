@@ -27,11 +27,16 @@ module HA.RecoveryCoordinator.Actions.Core
   , putStorageRC
   , getStorageRC
   , deleteStorageRC
+  , insertStorageSetRC
+  , memberStorageSetRC
+  , deleteStorageSetRC
     -- * Communication with the EQ
   , messageProcessed
   , selfMessage
   , promulgateRC
   , unsafePromulgateRC
+    -- * Event handling mechanism
+  , notify
     -- * Multi-receiver messages
     -- $multi-receiver
   , todo
@@ -86,6 +91,7 @@ import Data.Typeable (Typeable)
 import Data.Functor (void)
 import Data.Proxy
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 
 import Network.CEP
 
@@ -112,6 +118,22 @@ putStorageRC x = modify Global $ \g -> g{lsStorage = Storage.put x $ lsStorage g
 -- | Delete value from non-peristent global storage.
 deleteStorageRC :: Typeable a => Proxy a -> PhaseM LoopState l ()
 deleteStorageRC p = modify Global $ \g -> g{lsStorage = Storage.delete p $ lsStorage g}
+
+insertStorageSetRC :: (Typeable a, Ord a) => a -> PhaseM LoopState l ()
+insertStorageSetRC x = modify Global $ \g -> do
+  case Storage.get (lsStorage g) of
+    Nothing -> g{lsStorage = Storage.put (Set.singleton x) $ lsStorage g}
+    Just z  -> g{lsStorage = Storage.put (Set.insert x z)  $ lsStorage g}
+
+memberStorageSetRC :: (Typeable a, Ord a) => a -> PhaseM LoopState l Bool
+memberStorageSetRC x = do
+   maybe False (Set.member x) . Storage.get . lsStorage <$> get Global
+
+deleteStorageSetRC :: (Typeable a, Ord a) => a -> PhaseM LoopState l ()
+deleteStorageSetRC x = modify Global $ \g -> do
+  case Storage.get (lsStorage g) of
+    Nothing -> g
+    Just z  -> g{lsStorage = Storage.put (Set.delete x z)  $ lsStorage g}
 
 -- | Is a given resource existent in the RG?
 knownResource :: G.Resource a => a -> PhaseM LoopState l Bool
@@ -309,3 +331,14 @@ defineSimpleTask :: Serializable a
                  -> Specification LoopState ()
 defineSimpleTask n f = defineSimple n $ \(HAEvent uuid a _) ->
    todo uuid >> f a >> done uuid
+
+
+-- | Notify about event. This event will be sent to the internal rules
+-- in addition it will be broadcasted to all external listeners as
+-- 'Published a'.
+notify :: Serializable a
+       => a
+       -> PhaseM LoopState l ()
+notify msg = do
+  selfMessage msg
+  publish msg
