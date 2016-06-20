@@ -127,6 +127,12 @@ makeInitialData db devs = CI.InitialWithRoles {
                       $ attributesByNode host db
                   }
                 ]
+              , CI.h_halon = Just $ CI.HalonSettings {
+                  CI._hs_address = let attrs = attributesByNode host db
+                                       lnidToIP s = takeWhile (/= '@') s ++ ":9000"
+                                   in lnidToIP . fromJust . fmap BS.unpack $ lookup "m0_lnet_nid" attrs
+                , CI._hs_roles = [CI.RoleSpec "station" Nothing]
+                }
               }
             )
             (V.toList $ nodes db)

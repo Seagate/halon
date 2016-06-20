@@ -113,6 +113,7 @@ cluster nids' opt = do
 data LoadOptions = LoadOptions
     FilePath -- ^ Facts file
     FilePath -- ^ Roles file
+    FilePath -- ^ Halon roles file
     Bool -- ^ validate only
   deriving (Eq, Show)
 
@@ -132,6 +133,14 @@ parseLoadOptions = LoadOptions
      <> Opt.showDefaultWith id
      <> Opt.value "/etc/halon/mero_role_mappings"
       )
+  <*> Opt.strOption
+      ( Opt.long "halonrolesfile"
+     <> Opt.short 's'
+     <> Opt.help "File containing template file with halon role mappings."
+     <> Opt.metavar "FILEPATH"
+     <> Opt.showDefaultWith id
+     <> Opt.value "/etc/halon/halon_role_mappings"
+      )
   <*> Opt.switch
       ( Opt.long "verify"
      <> Opt.short 'v'
@@ -141,14 +150,14 @@ parseLoadOptions = LoadOptions
 dataLoad :: [NodeId] -- ^ EQ nodes to send data to
          -> LoadOptions
          -> Process ()
-dataLoad eqnids (LoadOptions cf maps verify) = do
-  initData <- liftIO $ CI.parseInitialData cf maps
+dataLoad eqnids (LoadOptions cf maps halonMaps verify) = do
+  initData <- liftIO $ CI.parseInitialData cf maps halonMaps
   case initData of
     Left err -> liftIO . putStrLn $ prettyPrintParseException err
-    Right datum | verify -> liftIO $ do
+    Right (datum, _) | verify -> liftIO $ do
       putStrLn "Initial data file parsed successfully."
       print datum
-    Right (datum :: CI.InitialData) -> promulgateEQ eqnids datum
+    Right ((datum :: CI.InitialData), _) -> promulgateEQ eqnids datum
         >>= \pid -> withMonitor pid wait
       where
         wait = void (expect :: Process ProcessMonitorNotification)

@@ -402,7 +402,7 @@ processCascadeRule = StateCascadeRule
   (const True)
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
   (\s o -> case s of
-            M0.PSStarting -> error "M0.SSStarting"
+            M0.PSStarting -> M0.SSStarting -- error "M0.SSStarting"
             M0.PSOnline -> o
             M0.PSOffline
               | o == M0.SSFailed -> o

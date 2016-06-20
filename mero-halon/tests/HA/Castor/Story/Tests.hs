@@ -77,7 +77,7 @@ import Helper.SSPL
 import Helper.Environment (systemHostname, testListenName)
 
 debug :: String -> Process ()
-debug = say
+debug = say . ("debug: " ++)
 -- debug = liftIO . appendFile "/tmp/halon.debug" . (++ "\n")
 
 myRemoteTable :: RemoteTable
@@ -395,7 +395,7 @@ failDrive recv (ADisk _ (Just sdev) serial _) = let
     -- We a drive failure note to the RC.
     _ <- promulgateEQ [nid] fail_evt
     -- Mero should be notified that the drive should be transient.
-    (Set msg) <- notificationMessage <$> receiveChan recv
+    Just (Set msg) <- fmap notificationMessage <$> receiveChanTimeout 10000000 recv
     debug $ show msg
     liftIO $ do
       assertEqual "Response to failed drive should have entries for disk and sdev"

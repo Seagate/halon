@@ -82,6 +82,10 @@ initialData host_pfx ifaddr_pfx n_srv n_drv globs = CI.InitialData {
                         , CI.if_ipAddrs = [ifaddr]
                         }
                       ]
+                    , CI.h_halon = Just $ CI.HalonSettings {
+                        CI._hs_address = host ++ "9000"
+                      , CI._hs_roles = []
+                      }
                     }
                   ]
                 })

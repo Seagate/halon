@@ -16,10 +16,16 @@ import Mero.ConfC (ServiceParams, ServiceType)
 import Control.Monad (forM)
 #endif
 
-import Data.Aeson
+import qualified Data.Aeson as A
+import qualified Data.Aeson.Types as A
 import Data.Binary (Binary)
+import qualified Data.Binary as B
 import Data.Data
 import Data.Hashable (Hashable)
+
+import qualified Data.Hashable as H
+import qualified Data.HashMap.Strict as HM
+
 import Data.Word
   ( Word32
 #ifdef USE_MERO
@@ -30,14 +36,14 @@ import Data.Word
 import GHC.Generics (Generic)
 
 #ifdef USE_MERO
-import qualified Data.Aeson as A
-import qualified Data.Aeson.Types as A
 import           Data.Either (partitionEithers)
 import qualified Data.HashMap.Lazy as M
-import           Data.List (find, intercalate)
+import           Data.List (find, intercalate, nub)
+import qualified Text.EDE as EDE
+import qualified Data.Text as T (unpack)
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as T (toStrict)
-import qualified Text.EDE as EDE
+
 #endif
 import qualified Data.Yaml as Y
 
@@ -46,8 +52,8 @@ data Network = Data | Management | Local
 
 instance Binary Network
 instance Hashable Network
-instance FromJSON Network
-instance ToJSON Network
+instance A.FromJSON Network
+instance A.ToJSON Network
 
 data Interface = Interface {
     if_macAddress :: String
@@ -57,20 +63,39 @@ data Interface = Interface {
 
 instance Binary Interface
 instance Hashable Interface
-instance FromJSON Interface
-instance ToJSON Interface
+instance A.FromJSON Interface
+instance A.ToJSON Interface
+
+data HalonSettings = HalonSettings
+  { _hs_address :: String
+  , _hs_roles :: [RoleSpec]
+  } deriving (Eq, Data, Generic, Show, Typeable)
+
+instance Binary HalonSettings
+instance Hashable HalonSettings
+
+halonSettingsOptions :: A.Options
+halonSettingsOptions = A.defaultOptions
+  { A.fieldLabelModifier = drop (length ("_hs_" :: String)) }
+
+instance A.FromJSON HalonSettings where
+  parseJSON = A.genericParseJSON halonSettingsOptions
+
+instance A.ToJSON HalonSettings where
+  toJSON = A.genericToJSON halonSettingsOptions
 
 data Host = Host {
     h_fqdn :: String
   , h_interfaces :: [Interface]
   , h_memsize :: Word32 -- ^ Memory in MB
   , h_cpucount :: Word32 -- ^ Number of CPUs
+  , h_halon :: Maybe HalonSettings
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Binary Host
 instance Hashable Host
-instance FromJSON Host
-instance ToJSON Host
+instance A.FromJSON Host
+instance A.ToJSON Host
 
 data BMC = BMC {
     bmc_addr :: String
@@ -80,8 +105,8 @@ data BMC = BMC {
 
 instance Binary BMC
 instance Hashable BMC
-instance FromJSON BMC
-instance ToJSON BMC
+instance A.FromJSON BMC
+instance A.ToJSON BMC
 
 data Enclosure = Enclosure {
     enc_idx :: Int
@@ -92,8 +117,8 @@ data Enclosure = Enclosure {
 
 instance Binary Enclosure
 instance Hashable Enclosure
-instance FromJSON Enclosure
-instance ToJSON Enclosure
+instance A.FromJSON Enclosure
+instance A.ToJSON Enclosure
 
 data Rack = Rack {
     rack_idx :: Int
@@ -102,8 +127,8 @@ data Rack = Rack {
 
 instance Binary Rack
 instance Hashable Rack
-instance FromJSON Rack
-instance ToJSON Rack
+instance A.FromJSON Rack
+instance A.ToJSON Rack
 
 #ifdef USE_MERO
 
@@ -114,8 +139,29 @@ data FailureSetScheme =
 
 instance Binary FailureSetScheme
 instance Hashable FailureSetScheme
-instance FromJSON FailureSetScheme
-instance ToJSON FailureSetScheme
+instance A.FromJSON FailureSetScheme
+instance A.ToJSON FailureSetScheme
+
+-- | Halon config for a host
+data HalonRole = HalonRole
+  { _hc_name :: String -- ^ Role name
+  , _hc_h_bootstrap_station :: Bool
+  , _hc_h_services :: [String]
+    -- ^ List of strings starting appropriate services
+  } deriving (Show, Eq, Data, Ord, Generic, Typeable)
+
+instance Binary HalonRole
+instance Hashable HalonRole
+
+halonConfigOptions :: A.Options
+halonConfigOptions = A.defaultOptions
+  { A.fieldLabelModifier = drop (length ("_hc_" :: String)) }
+
+instance A.FromJSON HalonRole where
+  parseJSON = A.genericParseJSON halonConfigOptions
+
+instance A.ToJSON HalonRole where
+  toJSON = A.genericToJSON halonConfigOptions
 
 data M0Globals = M0Globals {
     m0_data_units :: Word32 -- ^ As in genders
@@ -140,8 +186,8 @@ data M0Globals = M0Globals {
 
 instance Binary M0Globals
 instance Hashable M0Globals
-instance FromJSON M0Globals
-instance ToJSON M0Globals
+instance A.FromJSON M0Globals
+instance A.ToJSON M0Globals
 
 data M0Device = M0Device {
     m0d_wwn :: String
@@ -153,8 +199,8 @@ data M0Device = M0Device {
 
 instance Binary M0Device
 instance Hashable M0Device
-instance FromJSON M0Device
-instance ToJSON M0Device
+instance A.FromJSON M0Device
+instance A.ToJSON M0Device
 
 -- | Represents an aggregation of three Mero concepts, which we don't
 --   necessarily need for the castor implementation - nodes, controllers, and
@@ -167,8 +213,8 @@ data M0Host = M0Host {
 
 instance Binary M0Host
 instance Hashable M0Host
-instance FromJSON M0Host
-instance ToJSON M0Host
+instance A.FromJSON M0Host
+instance A.ToJSON M0Host
 
 data M0Process = M0Process {
     m0p_endpoint :: String
@@ -184,8 +230,8 @@ data M0Process = M0Process {
 
 instance Binary M0Process
 instance Hashable M0Process
-instance FromJSON M0Process
-instance ToJSON M0Process
+instance A.FromJSON M0Process
+instance A.ToJSON M0Process
 
 data M0Service = M0Service {
     m0s_type :: ServiceType -- ^ e.g. ioservice, haservice
@@ -196,8 +242,8 @@ data M0Service = M0Service {
 
 instance Binary M0Service
 instance Hashable M0Service
-instance FromJSON M0Service
-instance ToJSON M0Service
+instance A.FromJSON M0Service
+instance A.ToJSON M0Service
 
 #endif
 
@@ -211,28 +257,11 @@ data InitialData = InitialData {
 
 instance Binary InitialData
 instance Hashable InitialData
-instance FromJSON InitialData
-instance ToJSON InitialData
+instance A.FromJSON InitialData
+instance A.ToJSON InitialData
 
-#ifdef USE_MERO
 -- | Handy synonym for role names
 type RoleName = String
-
--- | A single parsed role, ready to be used for building 'InitialData'
-data Role = Role
-  { _role_name :: RoleName
-  , _role_content :: [M0Process]
-  } deriving (Eq, Data, Generic, Show, Typeable)
-
-roleJSONOptions :: A.Options
-roleJSONOptions = A.defaultOptions
-  { A.fieldLabelModifier = drop (length ("_role_" :: String)) }
-
-instance A.FromJSON Role where
-  parseJSON = A.genericParseJSON roleJSONOptions
-
-instance A.ToJSON Role where
-  toJSON = A.genericToJSON roleJSONOptions
 
 -- | Used as list of roles in halon_facts: the user can optionally
 -- give a map overriding the environment in which the template file is
@@ -254,6 +283,34 @@ instance A.FromJSON RoleSpec where
 instance A.ToJSON RoleSpec where
   toJSON = A.genericToJSON rolespecJSONOptions
 
+instance Hashable RoleSpec where
+  hashWithSalt s (RoleSpec a v) = s `H.hashWithSalt` a `H.hashWithSalt` fmap HM.toList v
+
+-- TODO: We lose overrides here but we don't care about these in first
+-- place. We should do something like we have with 'UnexpandedHost' if
+-- we do care about it persisting through serialisation. This is
+-- short-term for purposes of bootstrap cluster command.
+instance Binary RoleSpec where
+  put (RoleSpec a _) = B.put a
+  get = RoleSpec <$> B.get <*> pure Nothing
+
+#ifdef USE_MERO
+
+-- | A single parsed role, ready to be used for building 'InitialData'
+data Role = Role
+  { _role_name :: RoleName
+  , _role_content :: [M0Process]
+  } deriving (Eq, Data, Generic, Show, Typeable)
+
+roleJSONOptions :: A.Options
+roleJSONOptions = A.defaultOptions
+  { A.fieldLabelModifier = drop (length ("_role_" :: String)) }
+
+instance A.FromJSON Role where
+  parseJSON = A.genericParseJSON roleJSONOptions
+
+instance A.ToJSON Role where
+  toJSON = A.genericToJSON roleJSONOptions
 
 -- | Parse a halon_facts file into a structure indicating roles for
 -- each given host
@@ -322,13 +379,14 @@ resolveRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts
              -> IO (Either Y.ParseException InitialData)
 resolveRoles InitialWithRoles{..} cf = EDE.eitherResult <$> EDE.parseFile cf >>= \case
   Left err -> return $ mkExc err
-  Right template -> do
-    let allHosts :: [Either [String] M0Host]
+  Right template ->
+    let procRoles uh env = mkProc template env <$> _uhost_m0h_roles uh
+        allHosts :: [Either [String] M0Host]
         allHosts = flip map _rolesinit_id_m0_servers $ \(uh, env) ->
-                     case partitionEithers $ map (mkProc template env) (_uhost_m0h_roles uh) of
+                     case partitionEithers $ procRoles uh env of
                        ([], procs) -> Right $ mkHost uh (concat procs)
                        (errs, _) -> Left errs
-    case partitionEithers allHosts of
+    in case partitionEithers allHosts of
       ([], hosts) -> return $ Right $
         InitialData { id_racks = _rolesinit_id_racks
                     , id_m0_servers = hosts
@@ -337,13 +395,8 @@ resolveRoles InitialWithRoles{..} cf = EDE.eitherResult <$> EDE.parseFile cf >>=
       (errs, _) -> return . mkExc . intercalate ", " $ concat errs
   where
     mkProc :: EDE.Template -> Y.Object -> RoleSpec -> Either String [M0Process]
-    mkProc template env role = case EDE.eitherResult $ EDE.render template env' of
-      Left err -> Left err
-      Right roleText -> case Y.decodeEither . T.encodeUtf8 $ T.toStrict roleText of
-        Left err -> Left err
-        Right roles -> findRoleProcess (_rolespec_name role) roles
-      where
-        env' = maybe env (`M.union` env) (_rolespec_overrides role)
+    mkProc template env role =
+      mkRole template env role $ findRoleProcess (_rolespec_name role)
 
     mkHost :: UnexpandedHost -> [M0Process] -> M0Host
     mkHost uh procs = M0Host { m0h_fqdn = _uhost_m0h_fqdn uh
@@ -359,16 +412,47 @@ resolveRoles InitialWithRoles{..} cf = EDE.eitherResult <$> EDE.parseFile cf >>=
 -- | Helper for exception creation
 mkExc :: String -> Either Y.ParseException a
 mkExc = Left . Y.AesonException . ("resolveRoles: " ++)
+
+mkRole :: A.FromJSON a
+       => EDE.Template -- ^ Role template
+       -> Y.Object -- ^ Surrounding env
+       -> RoleSpec -- ^ Role to expand
+       -> (a -> Either String b) -- ^ Role post-process
+       -> Either String b
+mkRole template env role f = case EDE.eitherResult $ EDE.render template env' of
+  Left err -> Left $ err
+  Right roleText -> case Y.decodeEither . T.encodeUtf8 $ T.toStrict roleText of
+    Left err -> Left $ err ++ "\n" ++ T.unpack (T.toStrict (roleText))
+    Right roles -> f roles
+  where
+    env' = maybe env (`M.union` env) (_rolespec_overrides role)
+
+-- | Expand all given 'RoleSpec's into 'HalonRole's.
+mkHalonRoles :: EDE.Template -- ^ Role template
+             -> [RoleSpec] -- ^ Roles to expand
+             -> Either String [HalonRole]
+mkHalonRoles template roles =
+  fmap (nub . concat) . forM roles $ \role ->
+    mkRole template mempty role return
 #endif
 
 -- | Entry point into 'InitialData' parsing.
 parseInitialData :: FilePath -- ^ Halon facts
                  -> FilePath -- ^ Role map file
-                 -> IO (Either Y.ParseException InitialData)
+                 -> FilePath -- ^ Halon role map file
 #ifdef USE_MERO
-parseInitialData facts maps = Y.decodeFileEither facts >>= \case
-  Left err -> return $ Left err
-  Right initialWithRoles -> resolveRoles initialWithRoles maps
+                 -> IO (Either Y.ParseException (InitialData, EDE.Template))
 #else
-parseInitialData facts _ = Y.decodeFileEither facts
+                 -> IO (Either Y.ParseException (InitialData, ()))
+#endif
+#ifdef USE_MERO
+parseInitialData facts maps halonMaps = Y.decodeFileEither facts >>= \case
+  Left err -> return $ Left err
+  Right initialWithRoles -> EDE.eitherResult <$> EDE.parseFile halonMaps >>= \case
+    Left err -> return $ mkExc err
+    Right obj -> do
+      initialD <- resolveRoles initialWithRoles maps
+      return $ (,) <$> initialD <*> pure obj
+#else
+parseInitialData facts _ _ = fmap (\x -> (x, ())) <$> Y.decodeFileEither facts
 #endif

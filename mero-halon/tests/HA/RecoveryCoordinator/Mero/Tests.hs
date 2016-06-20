@@ -200,11 +200,10 @@ testDriveManagerUpdate host transport pg = runDefaultTest transport $ do
               usend self ("OK" :: String)
         | otherwise -> return ()
   withTrackingStation pg testRules $ \(TestArgs _ mm rc) -> do
-
     subscribe rc (Proxy :: Proxy DriveOK)
-
     nodeUp ([nid], 1000000)
     "NodeUp" :: String <- expect
+    say "Loading initial data"
     promulgateEQ [nid] initialData >>= flip withMonitor wait
     "InitialData" :: String <- expect
 
@@ -267,6 +266,10 @@ testDriveManagerUpdate host transport pg = runDefaultTest transport $ do
                     , CI.if_ipAddrs = [ host ]
                     }
                   ]
+                , CI.h_halon = Just $ CI.HalonSettings {
+                    CI._hs_address = "192.0.2.1:9000"
+                  , CI._hs_roles = []
+                  }
                 }
               ]
             }
