@@ -82,15 +82,15 @@ commandSchema = let
 
 responseSchema :: Schema Rabbit.BindConf
 responseSchema = let
-    en = defaultable "sspl_hl_cmd" . strOption
+    en = defaultable "sspl_hl_resp" . strOption
         $ long "cmd_resp_exchange"
         <> metavar "EXCHANGE_NAME"
         <> summary "Exchange to send command responses to."
-    rk = defaultable "sspl_hl_cmd" . strOption
+    rk = defaultable "sspl_hl_resp" . strOption
           $ long "cmd_resp_routingKey"
           <> metavar "ROUTING_KEY"
           <> summary "Routing key to apply to command responses."
-    qn = defaultable "sspl_hl_cmd" . strOption
+    qn = defaultable "sspl_hl_resp" . strOption
           $ long "cmd_resp_queue"
           <> metavar "QUEUE_NAME"
           <> summary "Queue to bind command responses to."
