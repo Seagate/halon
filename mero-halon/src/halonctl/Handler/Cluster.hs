@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP        #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -21,6 +22,8 @@ import Lookup (findEQFromNodes)
 import qualified Data.Aeson
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
+import qualified Mero.Notification as M0
+import qualified Mero.Notification.HAState as M0
 import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -41,6 +44,7 @@ import Data.Yaml
   )
 import qualified Options.Applicative as Opt
 import qualified Options.Applicative.Extras as Opt
+import Text.Read (readMaybe)
 
 data ClusterOptions =
     LoadData LoadOptions
@@ -51,6 +55,7 @@ data ClusterOptions =
   | Start StartOptions
   | Stop  StopOptions
   | ClientCmd ClientOptions
+  | NotifyCmd NotifyOptions
 #endif
   deriving (Eq, Show)
 
@@ -71,6 +76,8 @@ parseCluster =
         "Stop mero cluster")))
   <|> ( ClientCmd <$> Opt.subparser ( Opt.command "client" (Opt.withDesc parseClientOptions
         "Control m0t1fs clients")))
+  <|> ( NotifyCmd <$> Opt.subparser ( Opt.command "notify" (Opt.withDesc parseNotifyOptions
+        "Notify mero cluster" )))
 #endif
 
 -- | Run the specified cluster command over the given nodes. The nodes
@@ -108,6 +115,7 @@ cluster nids' opt = do
       say "Stopping cluster."
       clusterCommand nids ClusterStopRequest (liftIO . print)
     cluster' nids (ClientCmd s) = client nids s
+    cluster' nids (NotifyCmd (NotifyOptions s)) = notifyHalon nids s
 #endif
 
 data LoadOptions = LoadOptions
@@ -177,6 +185,33 @@ data StopOptions   = StopOptions deriving (Eq, Show)
 data ClientOptions = ClientStopOption String
                    | ClientStartOption String
                    deriving (Eq, Show)
+
+newtype NotifyOptions = NotifyOptions [M0.Note]
+  deriving (Eq, Show)
+
+parseNotifyOptions :: Opt.Parser NotifyOptions
+parseNotifyOptions = NotifyOptions <$>
+  Opt.many (Opt.option noteReader
+    ( Opt.help "List of notes to send to halon. Format: <fid>@<conf object state>"
+    <> Opt.long "note"
+    <> Opt.metavar "NOTE"
+    ))
+
+noteReader :: Opt.ReadM M0.Note
+noteReader = Opt.eitherReader readNote
+  where
+    readNote :: String -> Either String M0.Note
+    readNote (break (== '@') -> (fid', '@':state)) = case (,) <$> strToFid fid' <*> readMaybe state of
+      Nothing -> Left $ "Couldn't parse fid or state: " ++ show (fid', state)
+      Just (fid'', state') -> Right $ M0.Note fid'' state'
+    readNote s = Left $ "Could not parse: " ++ s
+
+notifyHalon :: [NodeId] -> [M0.Note] -> Process ()
+notifyHalon eqnids notes = do
+  say $ "Sending " ++ show notes ++ " to halon."
+  promulgateEQ eqnids (M0.Set notes) >>= flip withMonitor wait
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
 
 parseDumpOptions :: Opt.Parser DumpOptions
 parseDumpOptions = DumpOptions <$>
