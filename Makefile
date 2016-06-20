@@ -36,4 +36,5 @@ rpm-dev:
 	cp mero-halon/scripts/hctl rpmbuild/SOURCES/hctl
 	cp mero-halon/scripts/mero_role_mappings.ede rpmbuild/SOURCES/role_maps/genders.ede
 	cp mero-halon/scripts/mero_provisioner_role_mappings.ede rpmbuild/SOURCES/role_maps/prov.ede
+	cp mero-halon/scripts/halon_roles.yaml rpmbuild/SOURCES/role_maps/halon_role_mappings
 	rpmbuild --define "_topdir ${PWD}/rpmbuild" --define "_gitversion ${VERSION}" -ba halon-dev.spec
