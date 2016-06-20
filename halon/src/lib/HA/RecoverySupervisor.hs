@@ -41,6 +41,7 @@ recoverySupervisor rg rcP = do
   where
     waitToBecomeLeader :: Process a
     waitToBecomeLeader = do
+      rsTrace "getLeaderReplica"
       mLeader <- getLeaderReplica rg
       here <- getSelfNode
       if mLeader == Just here then do

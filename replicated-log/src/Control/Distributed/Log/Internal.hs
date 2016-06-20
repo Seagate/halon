@@ -803,6 +803,7 @@ replica Dict
           t = max 0 $ leaseTimeout - leaseRenewTimeout - elapsed
       usend rtimerPid t
       usend ttimerPid $ max 0 $ leaseTimeout - elapsed
+      nlogTrace logId $ "set lease timer to " ++ show (leaseTimeout - elapsed)
       return requestStart
 
     -- The proposer process makes consensus proposals.
@@ -1937,7 +1938,7 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan replicas =
       , matchChan rpt $ \() -> do
           if isNothing mLeader then do
             mapM_ unmonitor  mRef
-            nlogTrace logId $ "ambassador: Timer expired."
+            nlogTrace logId $ "ambassador: Timer expired. " ++ show ρs
             forM_ ρs $ flip whereisRemoteAsync (batcherLabel logId)
             self <- getSelfPid
             forM_ ρs $ \ρ -> sendReplica logId ρ self
@@ -1993,6 +1994,8 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan replicas =
 
         -- A client wants to monitor the replicas
       , match $ \sp -> do
+          nlogTrace logId $ "ambassador: a client wants to know the leader " ++
+                            show (mLeader, sp)
           sendChan sp mLeader
           go st
 
@@ -2048,10 +2051,11 @@ checkHandle label (Handle _ _ _ _ _ μ) = do
 -- Returns @True@ on success. The client can retry it if it returns @False@.
 --
 append :: Serializable a => Handle a -> Hint -> a -> Process Bool
-append h@(Handle _ _ cConfig _ omchan μ) hint x = callLocal $ do
+append h@(Handle _ _ cConfig _ omchan μ) hint x = getSelfPid >>= \caller ->
+    callLocal $ do
     checkHandle "Log.append" h
     Config {..} <- unClosure cConfig
-    nlogTrace logId "append: start"
+    nlogTrace logId $ "append: start " ++ show caller
     self <- getSelfPid
     liftIO $ atomically $ writeTChan omchan $ OMRequest $ Request
         { requestSender   = [self]
@@ -2108,8 +2112,10 @@ monitorLocalLeader (Handle _ _ _ _ _ μ) = do
 
 -- | Returns the 'NodeId' of the leader replica if known.
 getLeaderReplica :: Handle a -> Process (Maybe NodeId)
-getLeaderReplica (Handle _ _ _ _ _ μ) = do
+getLeaderReplica (Handle _ _ cConfig _ _ μ) = do
     (sp, rp) <- newChan
+    cc <- unClosure cConfig
+    nlogTrace (logId cc) $ "getLeaderReplica: start " ++ show μ
     usend μ sp
     fmap processNodeId <$> receiveChan rp
 

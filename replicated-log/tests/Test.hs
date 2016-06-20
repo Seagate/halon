@@ -664,6 +664,7 @@ tests argv = do
                   restorePid <- spawnLocal $ do
                     () <- expect
                     when schedulerIsEnabled $ do
+                      say "restoring connection"
                       removeFailures [ (here, localNodeId node1)
                                      , (localNodeId node1, here)
                                      ]

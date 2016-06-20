@@ -254,6 +254,7 @@ eqRules rg pool groupMonitor = do
             (sp, rp) <- newChan
             b <- getStateWith rg $ $(mkClosure 'eqReadEvents) (sp, sn)
             if b then Just <$> receiveChan rp else return Nothing
+          when (null ms) $ eqTrace "Poller: No messages"
           forM_ (ms :: [PersistMessage]) $ \(PersistMessage mid ev) -> do
             eqTrace $ "Sending to RC: " ++ show mid
             uforward ev rc
