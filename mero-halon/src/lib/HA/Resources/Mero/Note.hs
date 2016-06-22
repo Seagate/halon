@@ -83,7 +83,7 @@ data ConfObjectState
       -- Rebalance process is complementary to repair: previously
       -- reconstructed data is being copied from spare space to the
       -- replacement storage.
-    deriving (Eq, Show, Enum, Typeable, Generic, Ord)
+    deriving (Eq, Show, Enum, Typeable, Generic, Ord, Read)
 
 instance Binary ConfObjectState
 instance Hashable ConfObjectState
