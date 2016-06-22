@@ -41,6 +41,7 @@ ssplHLRules = defineSimple "status-query" $
             , commandResponseMessageResponseId = msgId
             , commandResponseMessageMessageId = Just . T.pack . toString $ uuid
             }
+      phaseLog "info" $ "Sending reply " ++ show msg
       liftProcess $ usend pid msg
       messageProcessed uuid
 

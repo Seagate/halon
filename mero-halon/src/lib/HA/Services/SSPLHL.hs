@@ -13,6 +13,7 @@ module HA.Services.SSPLHL where
 
 import Prelude hiding ((<$>), (<*>), id, mapM_)
 import HA.EventQueue.Producer (promulgate)
+import HA.Logger
 import HA.Service
 import HA.Service.TH
 import qualified HA.Services.SSPL.HL.StatusHandler as StatusHandler
@@ -122,14 +123,18 @@ $(deriveService ''SSPLHLConf 'ssplhlSchema [])
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------
 
+traceSSPLHL :: String -> Process ()
+traceSSPLHL = mkHalonTracer "ssplhl-service"
+
 cmdHandler :: ProcessId -- ^ Status handler
            -> SendPort CommandResponseMessage -- ^ Response channel
            -> Network.AMQP.Message
            -> Process ()
 cmdHandler statusHandler responseChan msg = case decode (msgBody msg) of
-  Just cr -> do
-    when (isJust . commandRequestMessageServiceRequest
-                 . commandRequestMessage $ cr) $ do
+  Just cr
+    | isJust . commandRequestMessageServiceRequest
+             . commandRequestMessage $ cr -> do
+      traceSSPLHL $ "Received: " ++ show cr
       _ <- promulgate cr
       let (CommandRequestMessage _ _ _ msgId) = commandRequestMessage cr
       uuid <- liftIO nextRandom
@@ -138,8 +143,13 @@ cmdHandler statusHandler responseChan msg = case decode (msgBody msg) of
         , commandResponseMessageResponseId = msgId
         , commandResponseMessageMessageId = Just . T.pack . toString $ uuid
         }
-    when (isJust . commandRequestMessageStatusRequest . commandRequestMessage $ cr)
-      $ usend statusHandler cr
+    | isJust . commandRequestMessageStatusRequest
+             . commandRequestMessage $ cr -> do
+      traceSSPLHL $ "Received: " ++ show cr
+      usend statusHandler cr
+    | otherwise -> do
+      say $ "[sspl-hl] Unknown message " ++ show cr
+
   Nothing -> say $ "Unable to decode command request: "
                       ++ (BL.unpack $ msgBody msg)
 
