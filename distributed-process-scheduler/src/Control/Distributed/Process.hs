@@ -1,6 +1,19 @@
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
+--
+-- This module exports wrappers of the functions exported by
+-- "Control.Distributed.Process" in the distributed-process package.
+--
+-- The wrappers perform like the functions from distributed-process when the
+-- scheduler is not enabled. When the scheduler is enabled, they communicate
+-- with the scheduler to coordinate execution of the multiple processes in the
+-- application.
+--
+-- Please refer to distributed-process for the documentation of each function.
+--
+-- Unwrapped functions are reexported in
+-- "Control.Distributed.Process.Scheduler.Raw".
 
 {-# LANGUAGE PackageImports #-}
 module Control.Distributed.Process
@@ -170,8 +183,6 @@ uforward = ifSchedulerIsEnabled Internal.uforward DP.uforward
 receiveChan :: Serializable a => ReceivePort a -> Process a
 receiveChan = ifSchedulerIsEnabled Internal.receiveChan DP.receiveChan
 
--- | Wait for a message on a typed channel for at least the given amount of
--- microseconds.
 receiveChanTimeout :: Serializable a
                    => Int -> ReceivePort a -> Process (Maybe a)
 receiveChanTimeout t rPort = receiveTimeout t [ matchChan rPort return ]
