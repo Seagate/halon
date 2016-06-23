@@ -71,7 +71,7 @@ data ConnectionConf = ConnectionConf {
 instance Binary ConnectionConf
 instance Hashable ConnectionConf
 instance ToJSON ConnectionConf where
-  toJSON (ConnectionConf hn vh login pass) = 
+  toJSON (ConnectionConf hn vh login pass) =
     object [ "hostname" .= fromDefault hn
            , "virtual_host" .= fromDefault vh
            , "username" .= login
@@ -91,12 +91,12 @@ data BindConf = BindConf {
 instance Binary BindConf
 instance Hashable BindConf
 instance ToJSON BindConf where
-  toJSON (BindConf ex rk qn) = 
+  toJSON (BindConf ex rk qn) =
     object [ "exchange_name" .= fromDefault ex
            , "routing_key" .= fromDefault rk
            , "queue_name" .= fromDefault qn
            ]
-   
+
 
 --------------------------------------------------------------------------------
 -- Schemata                                                                   --

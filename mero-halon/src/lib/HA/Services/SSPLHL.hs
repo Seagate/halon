@@ -44,6 +44,7 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 import Control.Monad.State.Strict hiding (mapM_)
+import Control.Monad.Catch (bracket)
 
 import Data.Aeson (ToJSON, decode, encode)
 import Data.Binary (Binary)
@@ -196,7 +197,23 @@ remotableDecl [ [d|
           )
 
     in do
-      say $ "Starting service sspl-hl"
+      say $ "[sspl-hl] Starting service"
+
+      liftIO $ do
+        bracket (Rabbit.openConnection scConnectionConf)
+                (closeConnection)
+          $ \conn ->
+            bracket (openChannel conn)
+                    (closeChannel)
+              $ \chan ->
+                declareExchange chan newExchange
+                  { exchangeName = T.pack $ fromDefault $ Rabbit.bcExchangeName
+                                                        $ scResponseConf
+                  , exchangeType = "topic"
+                  , exchangeDurable = False
+                  }
+
+
       lock <- liftIO newEmptyMVar
       connectRetry lock
 
