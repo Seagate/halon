@@ -68,6 +68,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , yield
   , getScheduler
   , schedulerTrace
+  , ifSchedulerIsEnabled
   , AbsentScheduler(..)
   , SchedulerMsg(..)
   , SchedulerResponse(..)
@@ -126,17 +127,25 @@ schedulerIsEnabled :: Bool
 schedulerIsEnabled = unsafePerformIO $
     maybe False (== "1") <$> lookupEnv "DP_SCHEDULER_ENABLED"
 
+-- | Yields the first value if 'schedulerIsEnabled' is @True@,
+-- otherwise it yields the second value.
+ifSchedulerIsEnabled :: a -> a -> a
+ifSchedulerIsEnabled a b
+    | schedulerIsEnabled = a
+    | otherwise          = b
+
 -- | A tracing function for debugging purposes.
 schedulerTrace :: String -> Process ()
 schedulerTrace msg = do
     let b = unsafePerformIO $
               maybe False (elem "d-p-scheduler" . words)
                 <$> lookupEnv "HALON_TRACING"
-    when b $ if schedulerIsEnabled
-      then do self <- DP.getSelfPid
-              DP.liftIO $ hPutStrLn stderr $
-                show self ++ ": [d-p-scheduler] " ++ msg
-      else DP.say $ "[d-p-scheduler] " ++ msg
+    when b $ ifSchedulerIsEnabled
+      (do self <- DP.getSelfPid
+          DP.liftIO $ hPutStrLn stderr $
+            show self ++ ": [d-p-scheduler] " ++ msg
+      )
+      (DP.say $ "[d-p-scheduler] " ++ msg)
 
 -- | Tells if there is a scheduler running.
 {-# NOINLINE schedulerLock #-}
@@ -1055,25 +1064,19 @@ uforward msg pid = do
 sendS :: Serializable a => a -> Process ()
 sendS a = DP.liftIO getScheduler >>= flip DP.send a . processId
 
--- The receiveWait and receiveWaitT functions are marked NOINLINE,
--- because this way the "if" statement only has to be evaluated once
--- and not at every call site.  After the first evaluation, these
--- top-level functions are simply a jump to the appropriate function.
-
-{-# NOINLINE receiveWait #-}
 receiveWait :: [ Match b ] -> Process b
 receiveWait ms =
-    if schedulerIsEnabled
-    then do Just b <- receiveTimeoutM Nothing ms
-            return b
-    else DP.receiveWait $ map (flip unMatch Nothing) ms
+    ifSchedulerIsEnabled
+      (do Just b <- receiveTimeoutM Nothing ms
+          return b
+      )
+      (DP.receiveWait $ map (flip unMatch Nothing) ms)
 
-{-# NOINLINE receiveTimeout #-}
 receiveTimeout :: Int -> [ Match b ] -> Process (Maybe b)
 receiveTimeout us =
-    if schedulerIsEnabled
-    then receiveTimeoutM (Just us)
-    else DP.receiveTimeout us . map (flip unMatch Nothing)
+    ifSchedulerIsEnabled
+      (receiveTimeoutM (Just us))
+      (DP.receiveTimeout us . map (flip unMatch Nothing))
 
 -- | Submits a transition request of type (2) to the scheduler.
 -- Blocks until the transition is allowed and any of the match clauses
@@ -1400,11 +1403,10 @@ matchIfT p h = MatchT $ \mr -> case mr of
                  writeIORef r True
                  return (a,False)
 
-{-# NOINLINE receiveWaitT #-}
 receiveWaitT :: MonadProcess m => [MatchT m b] -> m b
-receiveWaitT = if schedulerIsEnabled
-               then receiveWaitTSched
-               else DPT.receiveWaitT . map (flip unMatchT Nothing)
+receiveWaitT = ifSchedulerIsEnabled
+                 receiveWaitTSched
+                 (DPT.receiveWaitT . map (flip unMatchT Nothing))
   where
     -- | Submits a transition request of type (2) to the scheduler.
     -- Blocks until the transition is allowed and any of the match clauses

@@ -90,7 +90,8 @@ module Control.Distributed.Process
   )  where
 
 import Control.Distributed.Process.Scheduler.Internal
-  ( Match
+  ( ifSchedulerIsEnabled
+  , Match
   , match
   , matchIf
   , matchChan
@@ -148,41 +149,24 @@ import Control.Distributed.Process.Serializable ( Serializable )
 import qualified Control.Monad.Catch as C
 
 
-ifSchedulerIsEnabled :: a -> a -> a
-ifSchedulerIsEnabled a b
-    | Internal.schedulerIsEnabled = a
-    | otherwise                   = b
-
--- These functions are marked NOINLINE, because this way the "if"
--- statement only has to be evaluated once and not at every call site.
--- After the first evaluation, these top-level functions are simply a
--- jump to the appropriate function.
-
-{-# NOINLINE usend #-}
 usend :: Serializable a => ProcessId -> a -> Process ()
 usend = ifSchedulerIsEnabled Internal.usend DP.usend
 
-{-# NOINLINE say #-}
 say :: String -> Process ()
 say = ifSchedulerIsEnabled Internal.say DP.say
 
-{-# NOINLINE nsend #-}
 nsend :: Serializable a => String -> a -> Process ()
 nsend = ifSchedulerIsEnabled Internal.nsend DP.nsend
 
-{-# NOINLINE nsendRemote #-}
 nsendRemote :: Serializable a => NodeId -> String -> a -> Process ()
 nsendRemote = ifSchedulerIsEnabled Internal.nsendRemote DP.nsendRemote
 
-{-# NOINLINE sendChan #-}
 sendChan :: Serializable a => SendPort a -> a -> Process ()
 sendChan = ifSchedulerIsEnabled Internal.sendChan DP.sendChan
 
-{-# NOINLINE uforward #-}
 uforward :: Message -> ProcessId -> Process ()
 uforward = ifSchedulerIsEnabled Internal.uforward DP.uforward
 
-{-# NOINLINE receiveChan #-}
 receiveChan :: Serializable a => ReceivePort a -> Process a
 receiveChan = ifSchedulerIsEnabled Internal.receiveChan DP.receiveChan
 
@@ -192,50 +176,39 @@ receiveChanTimeout :: Serializable a
                    => Int -> ReceivePort a -> Process (Maybe a)
 receiveChanTimeout t rPort = receiveTimeout t [ matchChan rPort return ]
 
-{-# NOINLINE monitor #-}
 monitor :: ProcessId -> Process DP.MonitorRef
 monitor = ifSchedulerIsEnabled Internal.monitor DP.monitor
 
-{-# NOINLINE monitorNode #-}
 monitorNode :: NodeId -> Process DP.MonitorRef
 monitorNode = ifSchedulerIsEnabled Internal.monitorNode DP.monitorNode
 
-{-# NOINLINE unmonitor #-}
 unmonitor :: DP.MonitorRef -> Process ()
 unmonitor = ifSchedulerIsEnabled Internal.unmonitor DP.unmonitor
 
 withMonitor :: ProcessId -> Process a -> Process a
 withMonitor pid code = C.bracket (monitor pid) unmonitor (\_ -> code)
 
-{-# NOINLINE link #-}
 link :: ProcessId -> Process ()
 link = ifSchedulerIsEnabled Internal.link DP.link
 
-{-# NOINLINE unlink #-}
 unlink :: ProcessId -> Process ()
 unlink = ifSchedulerIsEnabled Internal.unlink DP.unlink
 
-{-# NOINLINE linkNode #-}
 linkNode :: NodeId -> Process ()
 linkNode = ifSchedulerIsEnabled Internal.linkNode DP.linkNode
 
-{-# NOINLINE exit #-}
 exit :: Serializable a => ProcessId -> a -> Process ()
 exit = ifSchedulerIsEnabled Internal.exit DP.exit
 
-{-# NOINLINE kill #-}
 kill :: ProcessId -> String -> Process ()
 kill = ifSchedulerIsEnabled Internal.kill DP.kill
 
-{-# NOINLINE spawnLocal #-}
 spawnLocal :: Process () -> Process ProcessId
 spawnLocal = ifSchedulerIsEnabled Internal.spawnLocal DP.spawnLocal
 
-{-# NOINLINE spawn #-}
 spawn :: NodeId -> Closure (Process ()) -> Process ProcessId
 spawn = ifSchedulerIsEnabled Internal.spawn DP.spawn
 
-{-# NOINLINE spawnAsync #-}
 spawnAsync :: NodeId -> Closure (Process ()) -> Process DP.SpawnRef
 spawnAsync = ifSchedulerIsEnabled Internal.spawnAsync DP.spawnAsync
 
@@ -248,32 +221,25 @@ spawnMonitor :: NodeId -> Closure (Process ())
              -> Process (ProcessId, DP.MonitorRef)
 spawnMonitor = ifSchedulerIsEnabled Internal.spawnMonitor DP.spawnMonitor
 
-{-# NOINLINE callLocal #-}
 callLocal :: Process a -> Process a
 callLocal = ifSchedulerIsEnabled Internal.callLocal DP.callLocal
 
-{-# NOINLINE whereis #-}
 whereis :: String -> Process (Maybe ProcessId)
 whereis = ifSchedulerIsEnabled Internal.whereis DP.whereis
 
-{-# NOINLINE register #-}
 register :: String -> ProcessId -> Process ()
 register = ifSchedulerIsEnabled Internal.register DP.register
 
-{-# NOINLINE reregister #-}
 reregister :: String -> ProcessId -> Process ()
 reregister = ifSchedulerIsEnabled Internal.reregister DP.reregister
 
-{-# NOINLINE whereisRemoteAsync #-}
 whereisRemoteAsync :: NodeId -> String -> Process ()
 whereisRemoteAsync = ifSchedulerIsEnabled Internal.whereisRemoteAsync
                                           DP.whereisRemoteAsync
 
-{-# NOINLINE registerRemoteAsync #-}
 registerRemoteAsync :: NodeId -> String -> ProcessId -> Process ()
 registerRemoteAsync = ifSchedulerIsEnabled Internal.registerRemoteAsync
                                            DP.registerRemoteAsync
 
-{-# NOINLINE expectTimeout #-}
 expectTimeout :: Serializable a => Int -> Process (Maybe a)
 expectTimeout t = receiveTimeout t [ match return ]
