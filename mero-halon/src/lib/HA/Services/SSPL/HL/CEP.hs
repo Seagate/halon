@@ -5,6 +5,7 @@
 -- Contains RC rules that are required for SSPL HL service
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP #-}
 module HA.Services.SSPL.HL.CEP
   ( ssplHLRules
   ) where
@@ -13,6 +14,9 @@ import HA.EventQueue.Types
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.ResourceGraph as G
+#ifdef USE_MERO
+import HA.Resources.Mero
+#endif
 
 import HA.RecoveryCoordinator.Actions.Core
 
@@ -50,13 +54,16 @@ ssplHLRules = defineSimple "status-query" $
 clusterStatus :: G.Graph -> [CommandResponseMessageStatusResponseItem]
 clusterStatus g = CommandResponseMessageStatusResponseItem {
     commandResponseMessageStatusResponseItemEntityId = "cluster"
-  , commandResponseMessageStatusResponseItemStatus = formatStatus status
+  , commandResponseMessageStatusResponseItemStatus = T.pack status
   } : []
   where
-    status = fromMaybe ONLINE . listToMaybe $ G.connectedTo Cluster Has g
+#ifdef USE_MERO
+    status = prettyStatus $ fromMaybe MeroClusterStopped . listToMaybe
+                          $ G.connectedTo Cluster Has g
+#else
+    status = "No mero support."
+#endif
 
-    formatStatus :: ClusterStatus -> T.Text
-    formatStatus = T.pack . show
 
 -- | Calculate the node status for specified nodes from the resource graph.
 hostStatus :: G.Graph
