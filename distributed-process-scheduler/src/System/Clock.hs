@@ -2,7 +2,8 @@
 -- Copyright: (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
--- A wraper for System.Clock from the clock package.
+-- Provides a wrapper to 'System.Clock.getTime' of the clock package and
+-- reexports the rest.
 --
 {-# LANGUAGE PackageImports #-}
 module System.Clock
@@ -20,9 +21,18 @@ import qualified Control.Distributed.Process.Scheduler.Internal as Internal
 import qualified "distributed-process" Control.Distributed.Process as DP
 import qualified "clock" System.Clock as C
 
+-- | When the scheduler is enabled, this yields the value of a virtual clock
+-- under the scheduler control.
+--
+-- When the scheduler is not enabled, performs as the function in the clock
+-- package.
 getTime :: C.Clock -> IO C.TimeSpec
 getTime = Internal.ifSchedulerIsEnabled schedGetTime C.getTime
 
+-- | Yields the value of the virtual clock of the scheduler.
+--
+-- The scheduler must be enabled for this call to succeed.
+--
 schedGetTime :: C.Clock -> IO C.TimeSpec
 schedGetTime C.Monotonic = do
     mv <- newEmptyMVar
@@ -37,7 +47,7 @@ schedGetTime C.Monotonic = do
     return $ C.TimeSpec (fromIntegral q) (fromIntegral $ r * 1000)
 schedGetTime c = error $ "scheduler.schedGetTime not defined for " ++ show c
 
--- | TimeSpec as nano seconds.
+-- | Converts a TimeSpec as nano seconds.
 timeSpecAsNanoSecs :: C.TimeSpec -> Integer
 timeSpecAsNanoSecs t = toInteger (C.sec t) * nanos + toInteger (C.nsec t)
   where

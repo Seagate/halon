@@ -1,6 +1,9 @@
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
+--
+-- This module provides the implementation of the scheduler and the replacement
+-- for distributed-process functions which communicate with it.
 
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -157,47 +160,88 @@ schedulerLock = unsafePerformIO $ newMVar False
 schedulerVar :: MVar LocalProcess
 schedulerVar = unsafePerformIO newEmptyMVar
 
--- | A message that the scheduler can deliver.
-data SystemMsg = MailboxMsg ProcessId DP.Message
-               | ChannelMsg DP.SendPortId DP.Message
-               | LinkExceptionMsg DP.Identifier ProcessId DP.DiedReason
-               | ExitMsg ProcessId ProcessId DP.Message
-               | KillMsg ProcessId ProcessId String
+-- | Messages that the scheduler can queue to deliver to a processes.
+--
+-- The semantics of these messages are implemented in the function
+-- 'forwardSystemMsg'.
+--
+data SystemMsg
+    = -- | @MailboxMsg pid msg@ has message @msg@ sent to a process @pid@.
+      MailboxMsg ProcessId DP.Message
+      -- | Like 'MailboxMsg' but the message is sent through a channel instead.
+    | ChannelMsg DP.SendPortId DP.Message
+      -- | @LinkExceptionMsg src dst reason@ has a link exception thrown to the
+      -- process @dst@ indicating the @src@ died with the given @reason@.
+    | LinkExceptionMsg DP.Identifier ProcessId DP.DiedReason
+      -- | @ExitMsg src dst msg@ has process @dst@ terminate with reason @msg@
+      -- and reports @src@ as the caller of 'exit'.
+    | ExitMsg ProcessId ProcessId DP.Message
+      -- | Like 'ExitMsg' but the process is terminated as done by 'kill'.
+    | KillMsg ProcessId ProcessId String
   deriving (Typeable, Generic, Show)
 
 instance Binary SystemMsg
 
--- | Messages that the tested application sends to the scheduler.
+-- | Messages that processes send to the scheduler.
 data SchedulerMsg
-    = Send ProcessId ProcessId SystemMsg
-      -- ^ @Send source dest message@: send the @message@ from @source@ to
-      -- @dest@.
+    = -- | @Send source dest message@: sent by process @source@ when it wants to
+      -- send a @message@ to process @dest@.
+      Send ProcessId ProcessId SystemMsg
+      -- | @NSend source destNode label message@: sent by process @source@ when
+      -- it wants to send a @message@ to process registered with @label@ at node
+      -- @destNode@.
     | NSend ProcessId NodeId String DP.Message
-      -- ^ @NSend source destNode label message@: send the @message@ from
-      -- @source@ to @label@ in @destNode@.
-    | Block ProcessId (Maybe Int) -- ^ @Block pid timeout@: process @pid@ has no
-                                  -- messages to process and is blocked with the
-                                  -- given timeout in microseconds.
-    | Yield ProcessId    -- ^ @Yield pid@: process @pid@ is ready to continue.
+      -- | @Block pid timeout@: sent by process @pid@ when it has no messages to
+      -- handle and it wants to block for the given timeout in microseconds.
+    | Block ProcessId (Maybe Int)
+      -- | @Yield pid@: sent by process @pid@ when it is ready to continue but
+      -- it can yield control to some other process if the scheduler so decides.
+    | Yield ProcessId
+      -- | @SpawnedProcess child p@: sent when a new process was spawned.
+      -- 'SpawnAck' needs to be sent to @p@.
     | SpawnedProcess ProcessId ProcessId
-        -- ^ @SpawnedProcess child p@: a new process exists send ack to @p@.
+      -- | @Monitor who whom isLink@: sent by process @who@ when it wants to
+      -- monitor process or node @whom@. @isLink@ is @True@ when linking is
+      -- intended.
     | Monitor ProcessId DP.Identifier Bool
-        -- ^ @Monitor who whom isLink@: the process @who@ will monitor @whom@.
-        -- @isLink@ is @True@ when linking is intended.
+      -- | A process wants to stop monitoring some process or node.
     | Unmonitor DP.MonitorRef
-    | Unlink ProcessId DP.Identifier -- ^ @Unlink who whom@
-    | WhereIs ProcessId NodeId String -- ^ @WhereIs caller nodeid label@
-    | GetTime ProcessId -- ^ A process wants to know the time.
+      -- | @Unlink who whom@: sent when process @who@ wants to unlink @whom@.
+    | Unlink ProcessId DP.Identifier
+      -- @WhereIs caller nodeid label@: sent when process @caller@ wants to
+      -- query the registry for @label@ at node @nodeid@.
+    | WhereIs ProcessId NodeId String
+      -- | A process wants to read the virtual clock.
+    | GetTime ProcessId
+      -- | A process wants to add failures between the given pairs of nodes with
+      -- the given probabilities.
     | AddFailures [((NodeId, NodeId), Double)]
+      -- | A process wants to remove failures between the given pairs of nodes.
     | RemoveFailures [(NodeId, NodeId)]
   deriving (Generic, Typeable, Show)
 
--- | Messages that the scheduler sends to the tested application.
+-- | Messages that the scheduler sends to a process in response to messages it
+-- sent to the scheduler.
 data SchedulerResponse
-    = Continue     -- ^ Pick a message from your mailbox.
-    | Timeout      -- ^ Unblock by timing out.
-    | SpawnAck     -- ^ Spawned process
-    | UnlinkAck    -- ^ Unlinked process
+    = -- | Sent after the process sends a 'Yield' or 'Block' message, or to kick
+      -- start the execution of a newly spawned process. It is meant to resume
+      -- execution of the process.
+      Continue
+      -- | Like 'Continue' but it has the process unblock by timing out.
+    | Timeout
+      -- | Acknowledges a 'SpawnedProcess' message.
+      --
+      -- An ack is needed to implement
+      -- 'Control.Distributed.Process.Node.forkProcess' correctly. Otherwise
+      -- 'forkProcess' could return before the scheduler is aware of the new
+      -- process, which in turn could cause the scheduler to believe the
+      -- application is in deadlock if the caller blocks immediately after the
+      -- 'forkProcess' call.
+    | SpawnAck
+      -- | Acknowledges an 'Unlink' message. An ack is needed because if the
+      -- linked process dies after the unlink call terminates, the link
+      -- exception could be delivered if the 'Unlink' message wasn't processed.
+    | UnlinkAck
   deriving (Generic, Typeable, Show)
 
 -- | Actions that the scheduler can choose to perform when all processes block.
@@ -210,9 +254,12 @@ data Transition
       -- | Like 'PutMsg' but it is delivered to whatever process if registered
       -- at the given node with the given name.
     | PutNSendMsg NodeId String DP.Message
-                    -- ^ Put this nsend'ed message in the mailbox of the target.
-    | ContinueMsg ProcessId  -- ^ Have a process continue.
-    | TimeoutMsg ProcessId  -- ^ Have a blocked process timeout.
+      -- | Has the given process continue execution. This is only valid if the
+      -- process has sent a 'Yield' message.
+    | ContinueMsg ProcessId
+      -- | Has the given process timeout. This is only valid if the process has
+      -- sent a 'Block' message.
+    | TimeoutMsg ProcessId
   deriving Show
 
 -- | Exit reason sent to stop the scheduler.
@@ -228,8 +275,20 @@ instance Binary SchedulerResponse
 instance Binary StopScheduler
 instance Binary SchedulerTerminated
 
+-- | A queue of messages for each pair of processes
+--
+-- The messages appear in the queue in the order in which they were sent.
+-- The outer map uses the destination process as key, and the inner map
+-- uses the source process as key.
+--
+-- Invariants: No inner map is empty and no queue is empty.
 type ProcessMessages = Map ProcessId (Map ProcessId [SystemMsg])
+
+-- | Like 'ProcessMessages' but the destination process is allowed to be
+-- identified with a @(nodeid, label)@ pair.
 type NSendMessages = Map (NodeId, String) (Map ProcessId [DP.Message])
+
+-- The type of the virtual clock. Counts microseconds.
 type Time = Int
 
 -- | Internal scheduler state
@@ -238,20 +297,31 @@ data SchedulerState = SchedulerState
       stateSeed     :: StdGen
     , -- | set of tested processes
       stateAlive    :: Set ProcessId
-      -- | state of processes (blocked | has_a_message)
+      -- | state of processes
+      --
+      -- It is 'False' when the process is waiting for a message and @True@
+      -- when the process has a message to handle. If the process is running
+      -- it has no state in this field.
     , stateProcs    :: Map ProcessId Bool
       -- | Messages targeted to each process
+      --
+      -- Messages arriving at the mailbox or through a channel endup in the
+      -- same queue. TODO: To test more interleavings, each channel should have
+      -- its own queue per pair of processes.
     , stateMessages :: ProcessMessages
       -- | Messages targeted with a label
     , stateNSend    :: NSendMessages
-      -- | The monitors of each process
+      -- | The monitors of each process or node.
+      --
+      -- The key is the monitored process or node. The boolean indicates if
+      -- the monitor is a link.
     , stateMonitors :: Map DP.Identifier [(DP.MonitorRef, Bool)]
       -- | The counter for producing monitor references
     , stateMonitorCounter :: Int32
       -- | The clock of the simulation is used to decide when
       -- timeouts are expired.
     , stateClock :: Time
-      -- | The expired timeouts
+      -- | The processes blocked with timeouts which have expired
     , stateExpiredTimeouts :: Set ProcessId
       -- | A map with the pending timeouts
       --
@@ -265,16 +335,20 @@ data SchedulerState = SchedulerState
     , stateTimeouts :: Map Time [ProcessId]
       -- | Indicates the timeout of a process.
       --
+      -- This is useful to quickly find if a process has a timeout and when.
+      --
       -- Invariant:
       --
       -- > Map.keys stateTimeouts == sort (Map.elems stateReverseTimeouts)
       --
-     , stateReverseTimeouts :: Map ProcessId Time
-       -- | For each pair of nodes, indicate the probability of dropping a
-       -- message. Missing pairs means 0 probability.
-     , stateFailures :: Map (NodeId, NodeId) Double
+    , stateReverseTimeouts :: Map ProcessId Time
+      -- | For each pair of nodes, indicate the probability of dropping a
+      -- message. Missing pairs means 0 probability.
+    , stateFailures :: Map (NodeId, NodeId) Double
     }
 
+-- | We redefine 'ProcessKillException' because distributed-process does not
+-- export it.
 data ProcessKillException =
     ProcessKillException !ProcessId !String
   deriving (Typeable)
@@ -284,12 +358,15 @@ instance Show ProcessKillException where
   show (ProcessKillException pid reason) =
     "killed-by=" ++ show pid ++ ",reason=" ++ reason
 
+-- | We redefine 'throwException' because distributed-process does not export
+-- it.
 throwException :: Exception e => ProcessId -> e -> Process ()
 throwException pid e = do
   proc <- ask
   DP.liftIO $ withLocalProc (DP.processNode proc) pid $ \p ->
     void $ throwTo (DP.processThread p) e
 
+-- | We redefine 'withLocalProc' because distributed-process does not export it.
 withLocalProc :: DP.LocalNode
               -> ProcessId
               -> (DP.LocalProcess -> IO ())
@@ -301,6 +378,11 @@ withLocalProc node pid p =
 
 remotableDecl [ [d|
 
+ -- Forwards a 'SystemMsg' to the application.
+ --
+ -- An important property of this function is that the message is guaranteed
+ -- to be delivered when it completes. Thus, the scheduler can control the order
+ -- in which the messages are handled by the application.
  forwardSystemMsg :: SystemMsg -> Process ()
  forwardSystemMsg smsg =
     case smsg of
@@ -358,6 +440,8 @@ remotableDecl [ [d|
                      (\_ -> return ())
         ]
 
+    -- A version of 'ncEffectLocalPortSend' from distributed-process that can
+    -- handled encoded messages.
     ncEffectLocalPortSend' :: DP.SendPortId -> DP.Message -> Process ()
     ncEffectLocalPortSend' from msg = do
       lproc <- ask
@@ -391,7 +475,10 @@ remotableDecl [ [d|
 -- file.
 --
 -- Warning: This call sets the value of the global random generator to that of
--- the provided seed.
+-- the provided seed. This is convenient to make deterministic the behavior of
+-- functions in other libraries which also depend on the global random
+-- generator. In the case of distributed-process this is necessary to have
+-- 'ProcessId's generated with the same uniques.
 --
 startScheduler :: Int -- ^ seed
                -> Int -- ^ microseconds to increase the clock in every
@@ -401,9 +488,6 @@ startScheduler :: Int -- ^ seed
                -> DP.RemoteTable -- ^ RemoteTable to use for the nodes.
                -> IO [LocalNode]
 startScheduler seed0 clockDelta numNodes transport rtable = do
-    -- Setting the global random generator will make deterministic the behavior
-    -- of any library which depends on it. In the case of d-p this is necessary
-    -- to have ProcessIds generated with the same uniques.
     setStdGen $ mkStdGen seed0
     modifyMVar schedulerLock
       $ \initialized -> do
@@ -449,13 +533,15 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
     go st@(SchedulerState _ alive procs msgs nsMsgs _ _ _ expired timeouts _ _)
         -- Enter this equation if all processes are waiting for a transition
       | Set.size alive == Map.size procs && not (Set.null alive) = do
-        -- complain if no process has a message and there are no messages to
-        -- put in a mailbox
+        -- Determine if no process has a message and there are no messages to
+        -- put in a mailbox.
         let systemStuck =
                  Map.null (Map.filter id procs)
               && Map.null msgs
               && Map.null nsMsgs
               && Set.null expired
+        -- Complain if the system is stuck and there are no timeouts we could
+        -- wait to observe some activity.
         when (systemStuck && Map.null timeouts) $
           error $ "startScheduler: All processes (" ++ show (Set.size alive) ++
                   ") are blocked."
@@ -534,12 +620,12 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
         Block pid (Just ts) -> do
             when (not $ Set.member pid alive) $
               error $ "startScheduler invalid Block: " ++ show (m, alive)
-            let mts = (\t -> multimapDelete t pid timeouts) <$>
-                        Map.lookup pid revTimeouts
+            -- Remove the old timeout if the process had one.
+            let timeouts' = maybe timeouts (\t -> multimapDelete t pid timeouts)
+                          $ Map.lookup pid revTimeouts
             go st { stateProcs = Map.insert pid False procs
                   , stateTimeouts =
-                      Map.insertWith union (clock + ts) [pid]
-                        $ maybe timeouts id mts
+                      Map.insertWith union (clock + ts) [pid] timeouts'
                   , stateReverseTimeouts =
                       Map.insert pid (clock + ts) revTimeouts
                   }
@@ -550,7 +636,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
             go st { stateAlive = Set.insert child alive
                   , stateProcs = Map.insert child True procs
                   }
-        -- the process who is monitoring whom
+        -- the process @who@ is monitoring @whomPid@
         Monitor who whom@(DP.ProcessIdentifier whomPid) isLink -> do
             let ref = DP.MonitorRef (DP.ProcessIdentifier who) mcounter
             DP.send who ref
@@ -597,8 +683,8 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                   who == who'
                 isTheLink _ = False
             DP.send who UnlinkAck
-                    -- Remove the corresponding monitor.
-            go st { stateMonitors = Map.update
+            go st { -- Remove the corresponding monitor.
+                    stateMonitors = Map.update
                       (nothingOn null . filter (not . isTheLink)) whom monitors
                     -- Remove any pending LinkExceptionMsg.
                   , stateMessages =
@@ -628,6 +714,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                 (v, seed') = randomR (0.0, 1.0) $ stateSeed st
                 st' = maybe st (const $ st {stateSeed = seed'}) f
             case f of
+              -- Flip a coin to decide if we should drop the @WhereIs@ message.
               Just p | v <= p -> do
                 notifyNodeMonitors st' (DP.processNodeId pid)
                                    nid DP.DiedDisconnect
@@ -648,7 +735,8 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
         RemoveFailures fls ->
             go st { stateFailures = foldr Map.delete failures fls }
 
-        -- a process has terminated
+        -- A process has terminated. Notify monitors and remove all state
+        -- associated to the dead process.
         , DP.match $ \pmn@(DP.ProcessMonitorNotification _ pid reason) -> do
             schedulerTrace $ "scheduler: " ++ show (stateSeed st, pmn)
             st' <- notifyProcessMonitors st (const True)
@@ -669,11 +757,17 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                    }
          ]
 
+    -- Queues a message for a given process in the appropriate queue.
+    --
+    -- If failures are in effect, the message might be dropped without
+    -- queuing it. If the message is dropped, notification messages are
+    -- produced for the interested monitors.
+    --
+    -- Returns 'True' iff the message was sent.
     handleSend :: SchedulerState
                -> (ProcessId, ProcessId, SystemMsg)
                   -- ^ (sender, destination, message)
                -> Process (SchedulerState, Bool)
-                   -- Returns @True@ iff the message was sent.
     handleSend st (source, pid, msg) | Set.member pid (stateAlive st) = do
       let mp = Map.lookup (DP.processNodeId source, DP.processNodeId pid)
                           (stateFailures st)
@@ -684,7 +778,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                          (DP.processNodeId source)
                          (DP.processNodeId pid)
                          DP.DiedDisconnect
-        -- deliver message
+        -- queue the message
         _ -> return
              (st
                { stateMessages =
@@ -700,6 +794,8 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
       forwardSystemMsg msg
       return (st, True)
 
+    -- Like 'handleSend' but messages are directed to process with a label and
+    -- a 'NodeId'.
     handleNSend :: SchedulerState
                 -> (ProcessId, NodeId, String, DP.Message)
                 -> Process SchedulerState
@@ -860,19 +956,31 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
         []  -> Nothing
         xs' -> Just xs'
 
-    -- is the given process waiting for a new message?
+    -- Tells if the process is waiting for messages without anything useful to
+    -- do in the meantime.
     isBlocked pid procs =
       maybe (error $ "startScheduler.isBlocked: missing pid " ++ show pid) not
         $ Map.lookup pid procs
 
+    -- Tells if the 'SystemMsg' is an exception.
     isExceptionMsg (LinkExceptionMsg _ _ _) = True
     isExceptionMsg (ExitMsg _ _ _) = True
     isExceptionMsg (KillMsg _ _ _) = True
     isExceptionMsg _ = False
 
     -- | @chooseUniformly [(n_0, f_0),...,(n_k, f_k)] g@
-    -- Chooses a value from the range @(0, sum n_i)@ and then applies the
-    -- function @f_i@ corresponding to the subrange of the selected value.
+    --
+    -- The input must be sorted in ascending order of the @n_i@s.
+    --
+    -- Each pair @(n_i, f_i)@ is associated to a range @[s i .. s (i+1) - 1]@
+    -- associated to function @f_i@ where
+    --
+    -- > s 0 = 0
+    -- > s i = sum [n_0 .. n_(i-1)]
+    --
+    -- This function chooses a value from the range @(0, sum n_i)@ and then
+    -- applies the function @f_i@ corresponding to the range of the selected
+    -- value.
     chooseUniformly :: (Num i, Ord i, Random i, RandomGen g)
                     => g -> [(i, i -> g -> a)] -> a
     chooseUniformly seed ranges =
@@ -883,7 +991,10 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                          | otherwise -> pick xs' (n - k)
        in pick ranges i
 
-    -- Picks the next transition.
+    -- Picks the next transition and advances the virtual clock.
+    --
+    -- This function uses 'chooseUniformly' to select among the possible
+    -- transitions that the system can do.
     pickNextTransition :: SchedulerState
                        -> ( Transition
                           , SchedulerState
@@ -891,8 +1002,10 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
     pickNextTransition st@(SchedulerState seed _ procs msgs nsMsgs _ _ _
                                           expired _ _ _
                           ) =
+      -- We tick the clock on every transition.
       second tickClock $ chooseUniformly seed $
-        [ let has_a_message = Map.filter id procs
+        [ -- Continue running one of the non-blocked processes.
+          let has_a_message = Map.filter id procs
            in (Map.size has_a_message, \i seed' ->
                  let (pid, _) = Map.elemAt i has_a_message
                   in ( ContinueMsg pid
@@ -903,7 +1016,8 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                      )
               )
         ] ++
-        [ (Map.size pidMsgs, \i seed' ->
+        [ -- Send a message from the front of one of the message queues.
+          (Map.size pidMsgs, \i seed' ->
              let (sender, m : ms) = Map.elemAt i pidMsgs
               in ( PutMsg pid m
                  , st { stateSeed = seed'
@@ -917,7 +1031,9 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
           )
         | (pid, pidMsgs) <- Map.toList msgs
         ] ++
-        [ (Map.size nidlMsgs, \i seed' ->
+        [ -- Send a message from the front of one of the message queues for
+          -- processes addressed by label and 'NodeId'.
+          (Map.size nidlMsgs, \i seed' ->
              let (sender, m : ms) = Map.elemAt i nidlMsgs
               in ( PutNSendMsg nid label m
                  , st { stateSeed = seed'
@@ -935,7 +1051,8 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
           )
         | ((nid, label), nidlMsgs) <- Map.toList nsMsgs
         ] ++
-        [ (Set.size expired, \i seed' ->
+        [ -- Continue running one of the processes with an expired timeout.
+          (Set.size expired, \i seed' ->
             let pid = Set.elemAt i expired
              in ( TimeoutMsg pid
                 , st { stateSeed = seed'
@@ -952,11 +1069,18 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
     jumpToNextTimeout st =
       tickClock st { stateClock = fst $ Map.findMin (stateTimeouts st) }
 
+    -- Advances the virtual clock.
+    --
+    -- This increases the clock and moves any newly expired timeouts from
+    -- 'stateTimeouts' to 'stateExpiredTimeouts'.
     tickClock :: SchedulerState -> SchedulerState
     tickClock st =
-      let clock' = stateClock st + clockDelta
+      let -- New value of the clock
+          clock' = stateClock st + clockDelta
+          -- Recently expired timeouts
           (newExpired, mtpid, trest) =
             Map.splitLookup (clock' + 1) (stateTimeouts st)
+          -- New expired set of timeouts
           expired' = Set.unions $
             stateExpiredTimeouts st : map Set.fromList (Map.elems newExpired)
        in st { stateClock = clock'
@@ -1003,11 +1127,14 @@ withScheduler s clockDelta numNodes transport rtable p =
       mv <- newEmptyMVar
       _ <- forkProcess n $ do
         do spid <- processId <$> DP.liftIO getScheduler
+           -- Terminate 'withScheduler' if the scheduler dies.
            DP.link spid
            self <- DP.getSelfPid
+           -- Announce the running process to the scheduler.
            DP.send spid $ SpawnedProcess self self
            SpawnAck <- DP.expect
            Continue <- DP.expect
+           -- Run the process closure.
            p ns
            DP.unlink spid
           `finally` DP.liftIO stopScheduler
@@ -1053,9 +1180,6 @@ removeFailures = sendS . RemoveFailures
 -- TODO: Implementing 'send' correctly when testing failures requires
 -- remembering the failed connections. Right now it is treated as 'usend'.
 
--- | Sends a transition request of type (1) to the scheduler.
--- The scheduler will take care of placing the message in the mailbox of the
--- target process. Returns immediately.
 send :: Serializable a => ProcessId -> a -> Process ()
 send pid msg = do
   self <- DP.getSelfPid
@@ -1066,7 +1190,6 @@ send pid msg = do
 usend :: Serializable a => ProcessId -> a -> Process ()
 usend = send
 
--- | Log a string
 say :: String -> Process ()
 say string = do
     self <- DP.getSelfPid
@@ -1093,7 +1216,6 @@ sendChan sendPort msg = do
       spId
       (DP.createUnencodedMessage msg)
 
--- | Forward a raw 'Message' to the given 'ProcessId'.
 uforward :: DP.Message -> ProcessId -> Process ()
 uforward msg pid = do
     self <- DP.getSelfPid
@@ -1117,9 +1239,9 @@ receiveTimeout us =
       (receiveTimeoutM (Just us))
       (DP.receiveTimeout us . map (flip unMatch Nothing))
 
--- | Submits a transition request of type (2) to the scheduler.
--- Blocks until the transition is allowed and any of the match clauses
--- is performed.
+-- | Waits for a message with a timeout.
+--
+-- Waits indefinitely if given @Nothing@.
 receiveTimeoutM :: Maybe Int -> [ Match b ] -> Process (Maybe b)
 receiveTimeoutM mus ms = do
     r <- DP.liftIO $ newIORef False
@@ -1143,23 +1265,31 @@ receiveTimeoutM mus ms = do
             DP.say $ "receiveTimeoutM: unexpected " ++ show command
             error $ "receiveTimeoutM: unexpected " ++ show command
 
--- | Shorthand for @receiveWait [ match return ]@
 expect :: Serializable a => Process a
 expect = receiveWait [ match return ]
 
--- | Wait for a message on a typed channel.
 receiveChan :: Serializable a => ReceivePort a -> Process a
 receiveChan rPort = receiveWait [ matchChan rPort return ]
 
 -- | Opaque type used by 'receiveWait'.
-newtype Match a = Match { unMatch :: Maybe (IORef Bool) -> DP.Match a }
+newtype Match a = Match
+  { -- | Matches a message intended for the caller if given 'Nothing'.
+    --
+    -- When given @Just ref@, it rejects all messages, but writes 'True'
+    -- to @ref@ for those messages that would have been matched if given
+    -- 'Nothing'.
+    --
+    -- This mechanism allows a process to query if there is some message to
+    -- process without taking it from the mailbox or the channel.
+    --
+    -- This information allows the scheduler to know which processes are able to
+    -- make progress.
+    unMatch :: Maybe (IORef Bool) -> DP.Match a
+  }
 
--- | Match against any message of the right type.
 match :: Serializable a => (a -> Process b) -> Match b
 match = matchIf (const True)
 
--- | Match against any message of the right type but only if the predicate is
--- satisfied.
 matchIf :: Serializable a => (a -> Bool) -> (a -> Process b) -> Match b
 matchIf p h = Match $ \mr -> case mr of
     Nothing -> DP.matchIf p h
@@ -1170,17 +1300,12 @@ unsafeWriteIORef r a b = unsafePerformIO $ do
     writeIORef r a
     return b
 
--- | Match against an arbitrary message. 'matchAny' removes the first available
--- message from the process mailbox.
 matchAny :: (DP.Message -> Process b) -> Match b
 matchAny h = Match $ \mr -> case mr of
     Nothing -> DP.matchAny h
     Just r  -> fmap undefined $
       DP.matchMessageIf (\a -> seq (unsafeWriteIORef r True a) False) return
 
--- | Match on arbitrary STM action.
---
--- This is the basic building block for 'matchChan'.
 matchSTM :: STM a -> (a -> Process b) -> Match b
 matchSTM sa h = Match $ \mr -> case mr of
                   Nothing -> DP.matchSTM sa h
@@ -1188,31 +1313,23 @@ matchSTM sa h = Match $ \mr -> case mr of
   where
     setAndRetry r = unsafePerformIO (writeIORef r True) `seq` retry
 
--- | Match on a typed channel.
 matchChan :: ReceivePort a -> (a -> Process b) -> Match b
 matchChan = matchSTM . DP.receiveSTM
 
--- | Monitors a process, sending to the caller a @ProcessMonitorNotification@
--- when the process dies.
 monitor :: ProcessId -> Process DP.MonitorRef
 monitor pid = do self <- DP.getSelfPid
                  sendS $ Monitor self (DP.ProcessIdentifier pid) False
                  DP.expect
 
--- | Stops monitoring a process.
 unmonitor :: DP.MonitorRef -> Process ()
 unmonitor = sendS . Unmonitor
 
--- | Monitors a process, sending to the caller a @NodeMonitorNotification@
--- when the node is disconnected.
 monitorNode :: NodeId -> Process DP.MonitorRef
 monitorNode nid = do
     self <- DP.getSelfPid
     sendS $ Monitor self (DP.NodeIdentifier nid) False
     DP.expect
 
--- | Links a process, throwing to the caller a @ProcessLinkException@
--- when the process dies.
 link :: ProcessId -> Process ()
 link pid = do self <- DP.getSelfPid
               sendS $ Monitor self (DP.ProcessIdentifier pid) True
@@ -1225,8 +1342,6 @@ unlink pid = do self <- DP.getSelfPid
                 UnlinkAck <- DP.expect
                 return ()
 
--- | Links a process, throwing to the caller a @ProcessLinkException@
--- when the process dies.
 linkNode :: NodeId -> Process ()
 linkNode nid = do
     self <- DP.getSelfPid
@@ -1234,21 +1349,16 @@ linkNode nid = do
     _ <- DP.expect :: Process DP.MonitorRef
     return ()
 
--- | Throws a 'ProcessExitException' to the given process.
 exit :: Serializable a => ProcessId -> a -> Process ()
 exit pid reason = do
   self <- DP.getSelfPid
   sendS $ Send self pid $ ExitMsg self pid $ DP.createMessage reason
 
--- | Forceful request to kill a process.
 kill :: ProcessId -> String -> Process ()
 kill pid reason = do
   self <- DP.getSelfPid
   sendS $ Send self pid $ KillMsg self pid reason
 
--- | Notifies the scheduler of a new process. When acknowledged, starts the new
--- process and notifies again the scheduler when the process terminates. Returns
--- immediately.
 spawnLocal :: Process () -> Process ProcessId
 spawnLocal p = do
     child <- DP.spawnLocal $ do Continue <- DP.expect
@@ -1264,9 +1374,6 @@ spawnWrapClosure p = do
 
 remotable [ 'spawnWrapClosure ]
 
--- | Notifies the scheduler of a new process. When acknowledged, starts the new
--- process and notifies again the scheduler when the process terminates. Returns
--- immediately.
 spawnAsync :: NodeId -> Closure (Process ()) -> Process DP.SpawnRef
 spawnAsync nid cp = do
     self <- DP.getSelfPid
@@ -1280,7 +1387,6 @@ spawnAsync nid cp = do
     usend self (DP.DidSpawn ref child)
     return ref
 
--- | Like 'DP.spawnLink', but monitor the spawned process.
 spawnMonitor :: NodeId -> Closure (Process ())
              -> Process (ProcessId, DP.MonitorRef)
 spawnMonitor nid cp = do
@@ -1288,9 +1394,6 @@ spawnMonitor nid cp = do
     mref <- monitor pid
     return (pid, mref)
 
--- | Notifies the scheduler of a new process. When acknowledged, starts the new
--- process and notifies again the scheduler when the process terminates. Returns
--- immediately.
 spawn :: NodeId -> Closure (Process ()) -> Process ProcessId
 spawn nid cp = do
     ref <- spawnAsync nid cp
@@ -1298,8 +1401,6 @@ spawn nid cp = do
                            \(DP.DidSpawn _ pid) -> return pid
                 ]
 
--- | Create a new typed channel, spawn a process on the local node, passing it
--- the receive port, and return the send port
 spawnChannelLocal :: Serializable a
                   => (ReceivePort a -> Process ())
                   -> Process (SendPort a)
@@ -1318,10 +1419,6 @@ spawnChannelLocal proc = do
     receiveChan rp
     DP.liftIO $ takeMVar mvar
 
--- | Local version of 'call'. Running a process in this way isolates it from
--- messages sent to the caller process, and also allows silently dropping late
--- or duplicate messages sent to the isolated process after it exits.
--- Silently dropping messages may not always be the best approach.
 callLocal :: Process a -> Process a
 callLocal proc = mask $ \release -> do
     mv    <- DP.liftIO newEmptyMVar :: Process (MVar (Either SomeException a))
@@ -1395,27 +1492,21 @@ uninterruptiblyMaskKnownExceptions_ p = do
                  LinkExceptionMsg (DP.NodeIdentifier nid) self reason
           ]
 
--- | Looks up a process in the local registry.
 whereis :: String -> Process (Maybe ProcessId)
 whereis label = yield >> DP.whereis label
 
--- | Registers a process in the local registry.
 register :: String -> ProcessId -> Process ()
 register label p = yield >> DP.register label p
 
--- | Like 'register', but will replace an existing registration.
--- The name must already be registered.
 reregister :: String -> ProcessId -> Process ()
 reregister label p = yield >> DP.reregister label p
 
--- | Looks up a process in the registry of a node.
 whereisRemoteAsync :: NodeId -> String -> Process ()
 whereisRemoteAsync n label = do
     yield
     self <- DP.getSelfPid
     sendS (WhereIs self n label)
 
--- | Registers a process in the registry of a node.
 registerRemoteAsync :: NodeId -> String -> ProcessId -> Process ()
 registerRemoteAsync n label p = do
     yield
@@ -1447,9 +1538,6 @@ receiveWaitT = ifSchedulerIsEnabled
                  receiveWaitTSched
                  (DPT.receiveWaitT . map (flip unMatchT Nothing))
   where
-    -- | Submits a transition request of type (2) to the scheduler.
-    -- Blocks until the transition is allowed and any of the match clauses
-    -- is performed.
     receiveWaitTSched ms = do
         r <- liftProcess $ DP.liftIO $ newIORef False
         go r $ map (flip unMatchT $ Just r) ms
