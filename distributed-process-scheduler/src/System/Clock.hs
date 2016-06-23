@@ -20,14 +20,8 @@ import qualified Control.Distributed.Process.Scheduler.Internal as Internal
 import qualified "distributed-process" Control.Distributed.Process as DP
 import qualified "clock" System.Clock as C
 
-ifSchedulerIsEnabled :: a -> a -> a
-ifSchedulerIsEnabled a b
-    | Internal.schedulerIsEnabled = a
-    | otherwise                   = b
-
-{-# NOINLINE getTime #-}
 getTime :: C.Clock -> IO C.TimeSpec
-getTime = ifSchedulerIsEnabled schedGetTime C.getTime
+getTime = Internal.ifSchedulerIsEnabled schedGetTime C.getTime
 
 schedGetTime :: C.Clock -> IO C.TimeSpec
 schedGetTime C.Monotonic = do
