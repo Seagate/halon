@@ -200,11 +200,15 @@ data SchedulerResponse
     | UnlinkAck    -- ^ Unlinked process
   deriving (Generic, Typeable, Show)
 
--- | Transitions that the scheduler can choose to perform when all
--- processes block.
-data TransitionRequest
-    = PutMsg ProcessId SystemMsg
-                  -- ^ Deliver this message to mailbox, channel or as exception.
+-- | Actions that the scheduler can choose to perform when all processes block.
+--
+-- Semantics of these messages are implemented in the @go@ local function of
+-- 'startScheduler'.
+data Transition
+    = -- | Deliver this message to the mailbox of the given process.
+      PutMsg ProcessId SystemMsg
+      -- | Like 'PutMsg' but it is delivered to whatever process if registered
+      -- at the given node with the given name.
     | PutNSendMsg NodeId String DP.Message
                     -- ^ Put this nsend'ed message in the mailbox of the target.
     | ContinueMsg ProcessId  -- ^ Have a process continue.
@@ -846,7 +850,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
 
     -- Picks the next transition.
     pickNextTransition :: SchedulerState
-                       -> ( TransitionRequest
+                       -> ( Transition
                           , SchedulerState
                           )
     pickNextTransition st@(SchedulerState seed _ procs msgs nsMsgs _ _ _
