@@ -24,7 +24,6 @@ import Control.Exception
   , mask
   )
 
-import Data.Foldable (forM_)
 import Data.Word ( Word32, Word64 )
 
 import Foreign.C.Error
@@ -40,7 +39,8 @@ import Foreign.C.String
   )
 import Foreign.C.Types
   ( CUInt(..)
-  , CSize(..) )
+  , CSize(..)
+  )
 import Foreign.ForeignPtr
   ( ForeignPtr
   , mallocForeignPtrBytes
@@ -54,7 +54,6 @@ import Foreign.Marshal.Array
   ( peekArray
   , withArray0
   , withArrayLen
-  , advancePtr
   )
 import Foreign.Marshal.Error (throwIfNeg)
 import Foreign.Marshal.Utils
@@ -372,20 +371,34 @@ addController (SpielTransaction fsc) fid fsFid nodeFid = withForeignPtr fsc $ \s
     throwIfNonZero_ (\rc -> "Cannot add controller: " ++ show rc)
       $ c_spiel_controller_add sc fid_ptr fs_ptr node_ptr
 
-addPVer :: SpielTransaction
-        -> Fid
-        -> Fid -- ^ Parent pool
-        -> [Word32] -- ^ Number of failures in each failure domain.
-        -> PDClustAttr -- ^ attributes specific to layout type
-        -> IO ()
-addPVer (SpielTransaction fsc) fid parent failures attrs =
+addPVerActual :: SpielTransaction
+              -> Fid
+              -> Fid -- ^ Parent pool
+              -> PDClustAttr -- ^ attributes specific to layout type
+              -> [Word32] -- ^ Number of failures in each failure domain.
+              -> IO ()
+addPVerActual (SpielTransaction fsc) fid parent attrs failures =
   withForeignPtr fsc $ \sc ->
     withMany with [fid, parent] $ \[fid_ptr, fs_ptr] ->
-      withArrayLen failures $ \fail_nr fail_ptr ->
-        with attrs $ \c_attrs ->
+      with attrs $ \c_attrs ->
+        withArrayLen failures $ \fail_len fail_ptr ->
           throwIfNonZero_ (\rc -> "Cannot add pool version: " ++ show rc)
-            $ c_spiel_pool_version_add sc fid_ptr fs_ptr fail_ptr
-                                       (fromIntegral fail_nr) c_attrs
+            $ c_spiel_pver_actual_add sc fid_ptr fs_ptr c_attrs fail_ptr (fromIntegral fail_len)
+
+addPVerFormulaic :: SpielTransaction
+                 -> Fid
+                 -> Fid -- ^ Parent pool
+                 -> Word32   -- ^ Index
+                 -> Fid      -- ^ base
+                 -> [Word32] -- ^ Number of simulated failures in each failure domain.
+                 -> IO ()
+addPVerFormulaic (SpielTransaction fsc) fid parent idx base allowance =
+  withForeignPtr fsc $ \sc ->
+    withMany with [fid, parent, base] $ \[fid_ptr, parent_ptr, base_ptr] ->
+      withArrayLen allowance $ \allow_len allow_ptr ->
+          throwIfNonZero_ (\rc -> "Cannot add pool version: " ++ show rc)
+            $ c_spiel_pver_formulaic_add sc fid_ptr parent_ptr idx base_ptr allow_ptr (fromIntegral allow_len)
+
 
 addDisk :: SpielTransaction
         -> Fid
@@ -517,7 +530,9 @@ instance Spliceable Rack where
     mapM_ (spliceTree t (cr_fid o)) kids
 
 instance Spliceable PVer where
-  splice t p o = addPVer t (pv_fid o) p (pv_failures o) (pv_attr o)
+  splice t p o = case pv_type o of
+    s@PVerSubtree{}   -> addPVerActual t (pv_fid o) p (pvs_attr s) (pvs_tolerance s)
+    s@PVerFormulaic{} -> addPVerFormulaic t (pv_fid o) p (pvf_id s) (pvf_base s) (pvf_allowance s)
   spliceTree t p o = do
     splice t p o
     kids <- children o :: IO [RackV]
@@ -809,7 +824,7 @@ poolRebalanceStatus (SpielContext sc _) fid = mask $ \restore ->
       alloca $ \arr_ptr -> do
         poke fid_ptr fid
         rc <- fmap fromIntegral . restore
-              $ c_spiel_pool_rebalance_status sc fid_ptr arr_ptr
+                $ c_spiel_pool_rebalance_status sc fid_ptr arr_ptr
         if rc < 0
         then error $ "Cannot retrieve pool rebalance status: " ++ show rc
         else do

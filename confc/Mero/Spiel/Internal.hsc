@@ -217,14 +217,24 @@ foreign import capi "spiel/spiel.h m0_spiel_enclosure_add"
                         -> IO CInt
 
 
-foreign import capi "spiel/spiel.h m0_spiel_pool_version_add"
-  c_spiel_pool_version_add :: Ptr SpielTransactionV
-                           -> Ptr Fid -- ^ fid of the pver
-                           -> Ptr Fid -- ^ fid of the parent pool
-                           -> Ptr Word32 -- ^ nr_failures
-                           -> Word32 -- ^ nr_failures_cnt
-                           -> Ptr PDClustAttr
-                           -> IO CInt
+foreign import capi "spiel/spiel.h m0_spiel_pver_actual_add"
+  c_spiel_pver_actual_add :: Ptr SpielTransactionV
+                          -> Ptr Fid -- ^ fid of the pver
+                          -> Ptr Fid -- ^ fid of the parent pool
+                          -> Ptr PDClustAttr
+                          -> Ptr Word32 -- ^ failures vec
+                          -> Word32     -- ^ failures vec length
+                          -> IO CInt
+
+foreign import capi "spiel/spiel.h m0_spiel_pver_formulaic_add"
+  c_spiel_pver_formulaic_add :: Ptr SpielTransactionV
+                             -> Ptr Fid -- ^ fid of the pver
+                             -> Ptr Fid -- ^ fid of the parent pool
+                             -> Word32  -- ^ index
+                             -> Ptr Fid -- ^ fid of the base pver
+                             -> Ptr Word32 -- ^ allowance vector
+                             -> Word32     -- ^ allowance vector length
+                             -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_rack_v_add"
   c_spiel_rack_v_add :: Ptr SpielTransactionV

@@ -119,8 +119,8 @@ createPoolVersionsInPool fs pool pvers invert rg =
                 else Set.size fids_drv
       S.when (width > 0) $ do
         pver <- M0.PVer <$> S.state (newFid (Proxy :: Proxy M0.PVer))
-                        <*> pure (failuresToArray failures)
-                        <*> pure (attrs { _pa_P = fromIntegral width })
+                        <*> pure (M0.PVerActual (failuresToArray failures)
+                                                (attrs { _pa_P = fromIntegral width }))
         S.modify'
             $ G.newResource pver
           >>> G.connect pool M0.IsRealOf pver

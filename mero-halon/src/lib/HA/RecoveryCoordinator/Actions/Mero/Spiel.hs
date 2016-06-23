@@ -60,6 +60,7 @@ import Mero.ConfC
   , withConf
   , initHASession
   , finiHASession
+  , confPVerLvlDisks
   )
 import Mero.Notification hiding (notifyMero)
 import Mero.Spiel hiding (start)
@@ -68,11 +69,11 @@ import qualified Mero.Spiel
 import Control.Applicative
 import Control.Category ((>>>))
 import qualified Control.Distributed.Process as DP
-import Control.Monad (forM_, void, join)
+import Control.Monad (void, join)
 import Control.Monad.Catch
 
 import qualified Data.ByteString as BS
-import Data.Foldable (traverse_)
+import Data.Foldable (traverse_, for_)
 import Data.IORef (writeIORef)
 import Data.List (sortOn)
 import Data.Maybe (catMaybes, listToMaybe)
@@ -234,11 +235,11 @@ startRebalanceOperation pool disks = catch go
   where
     go = do
       phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool ++ " for " ++ show disks
-      forM_ disks $ \d -> do
+      for_ disks $ \d -> do
         mt <- lookupDiskSDev d
-        forM_ mt $ \t -> do
+        for_ mt $ \t -> do
           msd <- lookupStorageDevice t
-          forM_ msd unmarkStorageDeviceReplaced
+          for_ msd unmarkStorageDeviceReplaced
         _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRebalanceStart sc (M0.fid pool)
         uuid <- DP.liftIO nextRandom
         setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Rebalance uuid Nothing
@@ -443,23 +444,23 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
   phaseLog "spiel" "Added profile, filesystem, mdpool objects."
   -- Racks, encls, controllers, disks
   let racks = G.connectedTo fs M0.IsParentOf g :: [M0.Rack]
-  forM_ racks $ \rack -> do
+  for_ racks $ \rack -> do
     lift $ addRack t (M0.fid rack) f_fid
     let encls = G.connectedTo rack M0.IsParentOf g :: [M0.Enclosure]
-    forM_ encls $ \encl -> do
+    for_ encls $ \encl -> do
       lift $ addEnclosure t (M0.fid encl) (M0.fid rack)
       let ctrls = G.connectedTo encl M0.IsParentOf g :: [M0.Controller]
-      forM_ ctrls $ \ctrl -> do
+      for_ ctrls $ \ctrl -> do
         -- Get node fid
         let (Just node) = listToMaybe
                         $ (G.connectedFrom M0.IsOnHardware ctrl g :: [M0.Node])
         lift $ addController t (M0.fid ctrl) (M0.fid encl) (M0.fid node)
         let disks = G.connectedTo ctrl M0.IsParentOf g :: [M0.Disk]
-        forM_ disks $ \disk -> do
+        for_ disks $ \disk -> do
           lift $ addDisk t (M0.fid disk) (M0.fid ctrl)
   -- Nodes, processes, services, sdevs
   let nodes = G.connectedTo fs M0.IsParentOf g :: [M0.Node]
-  forM_ nodes $ \node -> do
+  for_ nodes $ \node -> do
     let attrs =
           [ a | ctrl <- G.connectedTo node M0.IsOnHardware g :: [M0.Controller]
               , host <- G.connectedTo ctrl M0.At g :: [Host]
@@ -476,15 +477,15 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
         getCpuCount _ = Nothing
     lift $ addNode t (M0.fid node) f_fid memsize cpucount 0 0 f_mdpool_fid
     let procs = G.connectedTo node M0.IsParentOf g :: [M0.Process]
-    forM_ procs $ \(proc@M0.Process{..}) -> do
+    for_ procs $ \(proc@M0.Process{..}) -> do
       lift $ addProcess t r_fid (M0.fid node) r_cores
                             r_mem_as r_mem_rss r_mem_stack r_mem_memlock
                             r_endpoint
       let servs = G.connectedTo proc M0.IsParentOf g :: [M0.Service]
-      forM_ servs $ \(serv@M0.Service{..}) -> do
+      for_ servs $ \(serv@M0.Service{..}) -> do
         lift $ addService t s_fid r_fid (ServiceInfo s_type s_endpoints s_params)
         let sdevs = G.connectedTo serv M0.IsParentOf g :: [M0.SDev]
-        forM_ sdevs $ \(sdev@M0.SDev{..}) -> do
+        for_ sdevs $ \(sdev@M0.SDev{..}) -> do
           let disk = listToMaybe
                    $ (G.connectedTo sdev M0.IsOnHardware g :: [M0.Disk])
           lift $ addDevice t d_fid s_fid (fmap M0.fid disk) d_idx
@@ -493,35 +494,54 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
   phaseLog "spiel" "Finished adding concrete entities."
   -- Pool versions
   let pools = G.connectedTo fs M0.IsParentOf g :: [M0.Pool]
-      pvNegWidth = negate . _pa_P . M0.v_attrs
-  forM_ pools $ \pool -> do
+      pvNegWidth pver = case pver of
+                         M0.PVer _ a@M0.PVerActual{}    -> negate . _pa_P . M0.v_attrs $ a
+                         M0.PVer _ a@M0.PVerFormulaic{} -> 0
+  for_ pools $ \pool -> do
     lift $ addPool t (M0.fid pool) f_fid 0
     let pvers = sortOn pvNegWidth $ G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
-    forM_ pvers $ \pver -> do
-      lift $ addPVer t (M0.fid pver) (M0.fid pool) (M0.v_failures pver) (M0.v_attrs pver)
-      let rackvs = G.connectedTo pver M0.IsParentOf g :: [M0.RackV]
-      forM_ rackvs $ \rackv -> do
-        let (Just (rack :: M0.Rack)) = listToMaybe
-                                     $ G.connectedFrom M0.IsRealOf rackv g
-        lift $ addRackV t (M0.fid rackv) (M0.fid pver) (M0.fid rack)
-        let enclvs = G.connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
-        forM_ enclvs $ \enclv -> do
-          let (Just (encl :: M0.Enclosure)) = listToMaybe
-                                            $ G.connectedFrom M0.IsRealOf enclv g
-          lift $ addEnclosureV t (M0.fid enclv) (M0.fid rackv) (M0.fid encl)
-          let ctrlvs = G.connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
-          forM_ ctrlvs $ \ctrlv -> do
-            let (Just (ctrl :: M0.Controller)) = listToMaybe
-                                               $ G.connectedFrom M0.IsRealOf ctrlv g
-            lift $ addControllerV t (M0.fid ctrlv) (M0.fid enclv) (M0.fid ctrl)
-            let diskvs = G.connectedTo ctrlv M0.IsParentOf g :: [M0.DiskV]
-            forM_ diskvs $ \diskv -> do
-              let (Just (disk :: M0.Disk)) = listToMaybe
-                                           $ G.connectedFrom M0.IsRealOf diskv g
+    for_ pvers $ \pver -> do
+      case M0.v_type pver of
+        pva@M0.PVerActual{} -> do
+          lift $ addPVerActual t (M0.fid pver) (M0.fid pool) (M0.v_attrs pva) (M0.v_tolerance pva)
+          let rackvs = G.connectedTo pver M0.IsParentOf g :: [M0.RackV]
+          for_ rackvs $ \rackv -> do
+            let (Just (rack :: M0.Rack)) = listToMaybe
+                                         $ G.connectedFrom M0.IsRealOf rackv g
+            lift $ addRackV t (M0.fid rackv) (M0.fid pver) (M0.fid rack)
+            let enclvs = G.connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
+            for_ enclvs $ \enclv -> do
+              let (Just (encl :: M0.Enclosure)) = listToMaybe
+                                                $ G.connectedFrom M0.IsRealOf enclv g
+              lift $ addEnclosureV t (M0.fid enclv) (M0.fid rackv) (M0.fid encl)
+              let ctrlvs = G.connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
+              for_ ctrlvs $ \ctrlv -> do
+                let (Just (ctrl :: M0.Controller)) = listToMaybe
+                                                   $ G.connectedFrom M0.IsRealOf ctrlv g
+                lift $ addControllerV t (M0.fid ctrlv) (M0.fid enclv) (M0.fid ctrl)
+                let diskvs = G.connectedTo ctrlv M0.IsParentOf g :: [M0.DiskV]
+                for_ diskvs $ \diskv -> do
+                  let (Just (disk :: M0.Disk)) = listToMaybe
+                                               $ G.connectedFrom M0.IsRealOf diskv g
 
-              lift $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
-      lift $ poolVersionDone t (M0.fid pver)
-  phaseLog "spiel" "Finished adding virtual entities."
+                  lift $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
+          lift $ poolVersionDone t (M0.fid pver)
+        pvf@M0.PVerFormulaic{} -> do
+          base <- lookupConfObjByFid (M0.v_base pvf)
+          case fmap M0.v_type base of
+            Nothing -> phaseLog "warning" $ "Ignoring pool version " ++ show pvf
+                   ++ " because base pver can't be found"
+            Just (pva@M0.PVerActual{}) -> do
+              let(PDClustAttr n k p _ _) = M0.v_attrs pva
+              if (M0.v_allowance pvf !! confPVerLvlDisks <= p - (n + 2*k))
+              then lift $ addPVerFormulaic t (M0.fid pver) (M0.fid pool)
+                            (M0.v_id pvf) (M0.v_base pvf) (M0.v_allowance pvf)
+              else phaseLog "warning" $ "Ignoring pool version " ++ show pvf
+                     ++ " because it doesn't meet"
+                     ++ " allowance[M0_CONF_PVER_LVL_DISKS] <=  P - (N+2K) criteria"
+            Just _ ->
+              phaseLog "warning" $ "Ignoring pool version " ++ show pvf
+                 ++ " because base pver is not an actual pversion"
   return t
 
 -- | Load the current conf data, create a transaction that we would

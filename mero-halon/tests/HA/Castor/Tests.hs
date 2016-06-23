@@ -17,9 +17,10 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
-import Control.Monad (forM_, join, void)
+import Control.Monad (forM_, join, void, unless)
 
-import Data.List (sort)
+import Data.List (sort, partition)
+import Data.Foldable (for_)
 import qualified Data.Set as Set
 
 import Network.Transport (Transport)
@@ -34,6 +35,7 @@ import HA.Multimap
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (startMultimap)
 import HA.RecoveryCoordinator.Actions.Mero
+import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
 import Mero.ConfC (PDClustAttr(..))
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
@@ -87,6 +89,7 @@ tests :: (Typeable g, RGroup g) => String -> Transport -> Proxy g -> [TestTree]
 tests _host transport pg = map (localOption (mkTimeout $ 10*60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport pg
   , testSuccess "failure-sets-2" $ testFailureSets2 transport pg
+  , testSuccess "failure-sets-formulaic" $ testFailureSetsFormulaic transport pg
   , testSuccess "initial-data-doesn't-error" $
       void (loadInitialData transport pg)
   , testSuccess "apply-state-changes" $ testApplyStateChanges transport pg
@@ -166,6 +169,49 @@ testFailureSets2 transport pg = rGroupTest transport pg $ \pid -> do
     iData = initialData systemHostname "192.0.2" 4 4
             $ defaultGlobals { CI.m0_failure_set_gen = CI.Dynamic }
 
+testFailureSetsFormulaic :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
+    me <- getSelfNode
+    ls <- emptyLoopState pid (nullProcessId me)
+    (ls', _) <- run ls $ do
+      mapM_ goRack (CI.id_racks iData)
+      filesystem <- initialiseConfInRG
+      loadMeroGlobals (CI.id_m0_globals iData)
+      loadMeroServers filesystem (CI.id_m0_servers iData)
+      graph <- getLocalGraph
+      Just strategy <- getCurrentStrategy
+      let update = onInit strategy graph
+      for_ update $ \ updateGraph -> do
+         graph' <- updateGraph $ \rg -> do
+           putLocalGraph rg
+           getLocalGraph
+         putLocalGraph graph'
+
+    let g = lsGraph ls'
+
+    let ppvers = [(pool, pvers) | root :: M0.Root     <- connectedTo Cluster Has g
+                                , profile :: M0.Profile <- connectedTo root M0.IsParentOf g
+                                , fs :: M0.Filesystem <- connectedTo profile M0.IsParentOf g
+                                , pool :: M0.Pool     <- connectedTo fs M0.IsParentOf g
+                                , let pvers :: [M0.PVer] = connectedTo pool M0.IsRealOf g
+                                ]
+    for_ ppvers $ \(pool, pvers) -> do
+      unless (Prelude.null pvers) $ do -- skip metadata pool
+        let (actual, formulaic) = partition (\(M0.PVer _ t) -> case t of M0.PVerActual{} -> True ; _ -> False) pvers
+        liftIO $ Tasty.assertEqual "There should be only one actual PVer for Pool" 1 (length actual)
+        liftIO $ Tasty.assertEqual "Each formula should be presented" (length sets) (length formulaic)
+        let [M0.PVer fid _] = actual
+        for_ formulaic $ \f -> do
+          liftIO $ Tasty.assertEqual "base fid should be equal to actual pver" fid (M0.v_base $ M0.v_type f)
+        let sets2 = Set.fromList $ map (\(M0.PVer _ (M0.PVerFormulaic _ a _)) -> a) formulaic
+        liftIO $ Tasty.assertEqual "all formulas should be presented" (Set.fromList sets) sets2
+        let ids = Set.fromList $ map (\(M0.PVer _ (M0.PVerFormulaic i _ _)) -> i) formulaic
+        liftIO $ Tasty.assertBool "all ids should be unique" (Set.size ids == length sets)
+  where
+    sets = [[0,0,0,0,1],[0,0,0,1,1]]
+    iData = initialData systemHostname "192.0.2" 4 4
+            $ defaultGlobals { CI.m0_failure_set_gen = CI.Formulaic sets}
+
 -- | Load the initial data into local RG and verify that it loads as expected.
 --
 -- Returns the loaded RG for use by others (@initial-data-gc@).
@@ -233,7 +279,7 @@ loadInitialData transport pg = do
       let PDClustAttr { _pa_N = paN
                       , _pa_K = paK
                       , _pa_P = paP
-                      } = M0.v_attrs pver
+                      } = M0.v_attrs $ (\(M0.PVer _ a) -> a) $ pver -- XXX partial
       assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals iData) == paN
       assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals iData) == paK
       let dver = [ diskv | rackv <- connectedTo  pver M0.IsParentOf g :: [M0.RackV]
@@ -302,7 +348,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
       let PDClustAttr { _pa_N = paN
                       , _pa_K = paK
                       , _pa_P = paP
-                      } = M0.v_attrs pver
+                      } = M0.v_attrs $ (\(M0.PVer _ a) -> a) $ pver
       assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals iData) == paN
       assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals iData) == paK
       let dver = [ diskv | rackv <- connectedTo  pver M0.IsParentOf g :: [M0.RackV]

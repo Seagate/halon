@@ -179,6 +179,7 @@ Library
                        HA.RecoveryCoordinator.Actions.Mero.Failure
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
+                       HA.RecoveryCoordinator.Actions.Mero.Failure.Formulaic
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
                        HA.RecoveryCoordinator.Rules.Mero.Conf
                        HA.RecoveryCoordinator.Events.Castor.Cluster
