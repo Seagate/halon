@@ -139,7 +139,7 @@ schedulerTrace :: String -> Process ()
 schedulerTrace msg = do
     let b = unsafePerformIO $
               maybe False (elem "d-p-scheduler" . words)
-                <$> lookupEnv "HALON_TRACING"
+                <$> lookupEnv "DP_SCHEDULER_TRACING"
     when b $ ifSchedulerIsEnabled
       (do self <- DP.getSelfPid
           DP.liftIO $ hPutStrLn stderr $
