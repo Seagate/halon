@@ -281,6 +281,7 @@ serviceRules argv = do
                       ++ show count
                       ++ " attempts."
                        )
+
       selfMessage $ RecoverNode uuid n1
 
     start ph0 Nothing

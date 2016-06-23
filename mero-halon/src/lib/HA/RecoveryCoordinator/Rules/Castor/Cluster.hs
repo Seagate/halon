@@ -312,7 +312,19 @@ eventAdjustClusterState = defineSimpleTask "castor::cluster::event::update-clust
         when anyDown $ do
           phaseLog "debug" $ "at least one process up - trying: " ++ show recordedState
           notifyOnClusterTransition (> recordedState) BarrierPass Nothing
-      _ -> return ()
+      -- TODO: transition cluster in some state while cluster is running
+      --
+      -- Note: we don't want to merge this with MeroClusterStarting
+      -- case because if we get Inhibited during bootstrap then that's
+      -- bad but if we get it while cluster is running already, that's
+      -- still bad but it probably means node is rebooting (or some
+      -- other failure we can recover from).
+      M0.MeroClusterRunning -> do
+        anyUp <- any checkUp <$> findChanges
+        when anyUp $ do
+          phaseLog "info" "Adjust while in running state"
+          notifyOnClusterTransition (== recordedState) BarrierPass Nothing
+      st -> phaseLog "info" $ "Not adjusting cluster from state " ++ show st
   where
     checkUp M0.PSOnline = True
     checkUp _        = False

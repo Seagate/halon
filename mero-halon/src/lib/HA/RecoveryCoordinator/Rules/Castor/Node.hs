@@ -128,7 +128,6 @@ import           HA.RecoveryCoordinator.Actions.Castor.Cluster
 import           Control.Distributed.Process(Process, spawnLocal, spawnAsync)
 import           Control.Distributed.Process.Closure
 import           Control.Monad.Trans.Maybe
-import           HA.Service (ServiceStopRequest(..))
 
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
@@ -344,7 +343,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
     createMeroClientConfig fs host hhi
     continue confd_running
 
-  setPhase wait_data_load $ \(HAEvent _ Event.InitialDataLoaded _) -> do
+  setPhase wait_data_load $ \Event.InitialDataLoaded -> do
     Just (StartProcessNodeNew node) <- getField . rget fldReq <$> get Local
     route node >>= switch
 
@@ -357,7 +356,17 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
 
   directly announce $ do
     mreq <- getField . rget fldReq <$> get Local
-    for_ mreq $ \(StartProcessNodeNew node) ->
+    for_ mreq $ \(StartProcessNodeNew node) -> do
+      -- TOOD: shuffle retrigger around a bit
+      rg <- getLocalGraph
+      case nodeToM0Node node rg of
+        [] -> phaseLog "info" $ "No m0node associated, not retriggering mero"
+        [m0node] -> retriggerMeroNodeBootstrap m0node
+        m0ns -> do
+          phaseLog "warn" $
+            "Multiple mero nodes associated with halon node, this may be bad: " ++ show m0ns
+          mapM_ retriggerMeroNodeBootstrap m0ns
+
       modify Local $ rlens fldRep .~ (Field . Just $ NewMeroServer node)
     continue finish
 
@@ -491,7 +500,6 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
     boot_level_0      <- phaseHandle "boot_level_0"
     boot_level_1      <- phaseHandle "boot_level_1"
     bootstrap_timeout <- phaseHandle "bootstrap_timeout"
-    start_clients     <- phaseHandle "start_clients"
 
     let route (StartProcessesOnNodeRequest m0node) = runMaybeT $ do
           node <- MaybeT $ listToMaybe . m0nodeToNode m0node <$> getLocalGraph -- XXX: list
@@ -534,7 +542,12 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       m0svc <- lookupRunningService node m0d
       case m0svc >>= meroChannel g of
         Just chan -> do
-          _ <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
+          ps <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
+          -- We aren't actually starting anything: if this is the only
+          -- node, we'd get stuck here so send out a barrier pass
+          -- directly
+          when (null ps) $ do
+            notifyOnClusterTransition (>= M0.MeroClusterStarting (M0.BootLevel 1)) BarrierPass Nothing
           switch [boot_level_1, timeout 180 bootstrap_timeout]
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
@@ -548,7 +561,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       m0svc <- lookupRunningService node m0d
       case m0svc >>= meroChannel g of
         Just chan -> do
-          procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
+          _ <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
           continue finish
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
@@ -592,14 +605,29 @@ ruleStartClientsOnNode = mkJobRule processStopClientsOnNode args $ \finish -> do
          case liftA2 (,) mnode mhost of
            Nothing -> return Nothing
            Just (node,host) -> do
-             modify Local $ rlens fldNode .~ (Field $ Just node)
-             modify Local $ rlens fldHost .~ (Field $ Just host)
+             modify Local $ rlens fldNode .~ Field (Just node)
+             modify Local $ rlens fldHost .~ Field (Just host)
+             let hasM0d = isJust $ runningService node m0d rg
              case listToMaybe $ G.connectedTo R.Cluster R.Has rg of
-                Just M0.MeroClusterRunning -> return $ Just [start_clients]
+                Just M0.MeroClusterRunning | hasM0d -> return $ Just [start_clients]
                 _ -> return $ Just [await_barrier]
 
-   setPhaseIf await_barrier (barrierPass (>= M0.MeroClusterRunning)) $ \() -> do
-      phaseLog "debug" $ "waiting for barrier"
+       -- Before starting client stuff, we want need the cluster to be
+       -- in OK state and the mero service to be up and running on the
+       -- node. In presence of node reboots, the assumption that
+       -- ‘MeroClusterRunning -> m0d is started on every node’ no
+       -- longer holds so we explicitly check for the service. An
+       -- improvement would be to check that every process on the node
+       -- is up and running.
+       nodeRunning p msg g l = barrierPass p msg g l >>= return . \case
+         Nothing -> Nothing
+         Just _ -> case getField $ rget fldNode l of
+           Nothing -> error "ruleStartClientsOnNode: ‘impossible’ happened"
+           Just n -> void $ runningService n m0d (lsGraph g)
+
+   setPhaseIf await_barrier (nodeRunning (>= M0.MeroClusterRunning)) $ \() -> do
+      Just node <- getField . rget fldNode <$> get Local
+      phaseLog "debug" $ "Past barrier on " ++ show node
       continue start_clients
 
    directly start_clients $ do
@@ -610,7 +638,7 @@ ruleStartClientsOnNode = mkJobRule processStopClientsOnNode args $ \finish -> do
       case m0svc >>= meroChannel rg of
         Just chan -> do
           phaseLog "info" $ "Starting mero client on " ++ show host
-          procs <- startNodeProcesses host chan M0.PLM0t1fs False
+          _ <- startNodeProcesses host chan M0.PLM0t1fs False
           continue finish
         Nothing -> do
           phaseLog "error" $ "can't find mero channel on " ++ show node

@@ -3,7 +3,6 @@
 -- License   : All rights reserved.
 --
 -- Recovery coordinator CEP rules
---
 
 {-# LANGUAGE CPP                       #-}
 {-# LANGUAGE ExistentialQuantification #-}
@@ -50,14 +49,13 @@ import qualified HA.EQTracker as EQT
 import qualified HA.Resources.Castor as M0
 #ifdef USE_MERO
 import qualified Data.Text as T
-import           HA.RecoveryCoordinator.Actions.Mero.Conf (getFilesystem)
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.RecoveryCoordinator.Rules.Castor.Cluster (clusterRules)
-import           HA.RecoveryCoordinator.Rules.Mero.Conf
+import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 import qualified HA.Resources.Mero as M0
-import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_ONLINE, M0_NC_TRANSIENT))
-import           HA.Services.Mero (createSet, meroRules, notifyMero)
+import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_TRANSIENT))
+import           HA.Services.Mero (meroRules, m0d)
 import           HA.Services.SSPL (sendNodeCmd)
 import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..))
 #endif
@@ -85,7 +83,7 @@ rcInitRule argv = do
       liftProcess $ do
          sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
          sayRC $ "Executing on node: " ++ show nid
-      ms   <- getNodeRegularMonitors
+      ms   <- getNodeRegularMonitors (const True)
       liftProcess $ do
         self <- getSelfPid
         EQT.updateEQNodes $ eqNodes argv
@@ -160,7 +158,8 @@ ruleNodeUp argv = define "node-up" $ do
         let nid  = processNodeId pid
             node = Node nid
         liftProcess . sayRC $ "New node contacted: " ++ show nid
-        known <- hasHostAttr HA_TRANSIENT (Host h) >>= \case
+        hasFailed <- hasHostAttr HA_TRANSIENT (Host h)
+        known <- case hasFailed of
           False -> do
             liftProcess . sayRC $ "Potentially new node, no revival: " ++ show node
             knownResource node
@@ -169,14 +168,6 @@ ruleNodeUp argv = define "node-up" $ do
             unsetHostAttr (Host h) HA_TRANSIENT
             unsetHostAttr (Host h) HA_DOWN
             syncGraph $ return () -- XXX: maybe we need barrier here
-#ifdef USE_MERO
-            g <- getLocalGraph
-            let nodes = [ M0.AnyConfObj n
-                        | (c :: M0.Controller) <- G.connectedFrom M0.At (Host h) g
-                        , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c g
-                        ]
-            notifyMero $ createSet nodes M0_NC_ONLINE
-#endif
             return True
         conf <- loadNodeMonitorConf node
         if not known
@@ -198,10 +189,29 @@ ruleNodeUp argv = define "node-up" $ do
                   put Local (Starting uuid nid conf regularMonitor pid)
                   continue nm_start
                 continue nodeup
-              Just _  -> do liftProcess . sayRC $ "node is already provisioned: " ++ show nid
-                            ack pid
-                            done uuid
-                            continue nodeup
+              Just _ | hasFailed -> do
+                phaseLog "info" $
+                  "Node has failed but has monitor, removing halon services"
+                ack pid
+                fork NoBuffer $ do
+                  put Local (Starting uuid nid conf regularMonitor pid)
+#ifdef USE_MERO
+                  findRunningServiceProcesses m0d >>= mapM_ (unregisterServiceProcess (Node nid) m0d)
+#endif
+                  getNodeRegularMonitors (== Node nid) >>= startNodesMonitoring
+                  -- We told MM to watch the old regular monitor, it
+                  -- should notice it's dead and restart it, message
+                  -- about start should come and node bootstrap should
+                  -- proceed and inturn old services should get
+                  -- restarted after the newly restarted monitor
+                  -- notices those are dead.
+                  continue mm_reply
+              Just _ | otherwise -> do
+                phaseLog "info" $
+                  "Node that hasn't failed with monitor, probably bringing up already."
+                ack pid
+                done uuid
+                continue nodeup
 
       directly nm_start $ do
         Starting _ nid conf svc _ <- get Local
@@ -232,6 +242,8 @@ ruleNodeUp argv = define "node-up" $ do
         phaseLog "info" $ printf "started monitor service on %s with pid %s"
                             (show (Node nid)) (show npid)
         ack npid
+
+        phaseLog "debug " $ "Sending NewNodeConnected for " ++ show (Node nid)
         promulgateRC $ NewNodeConnected (Node nid)
         done uuid
         continue end
@@ -300,8 +312,8 @@ instance Binary RecoverNodeAck
 -- failure rule.
 ruleRecoverNode :: IgnitionArguments -> Definitions LoopState ()
 ruleRecoverNode argv = define "recover-node" $ do
-      let expirySeconds = 300
-          maxRetries = 5
+      let expirySeconds = 600
+          maxRetries = 10
       start_recover <- phaseHandle "start_recover"
       try_recover <- phaseHandle "try_recover"
       timeout_host <- phaseHandle "timeout_host"
