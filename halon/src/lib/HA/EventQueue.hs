@@ -47,7 +47,7 @@ import HA.Replicator ( RGroup
                      )
 
 import Control.Distributed.Process hiding (catch, finally, mask_, try)
-import qualified Control.Distributed.Process.Raw as DP
+import qualified Control.Distributed.Process.Scheduler.Raw as DP
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types (Message(..))
 import Control.Distributed.Process.Monitor (withMonitoring)
