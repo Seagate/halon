@@ -564,20 +564,19 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                 st'' = maybe st' (const $ st' {stateSeed = seed'}) f
             case f of
               Just p | v <= p -> do
-                let srcNid = DP.processNodeId who
-                notifyMonitors st'' (== srcNid)
-                               srcNid
-                               (DP.NodeIdentifier $ DP.processNodeId whomPid)
-                               DP.DiedDisconnect
+                notifyNodeMonitors st''
+                                   (DP.processNodeId who)
+                                   (DP.processNodeId whomPid)
+                                   DP.DiedDisconnect
                   >>= go
               _ ->
                 if Set.member whomPid alive then
                   go st''
                 else
-                  notifyMonitors st'' (== DP.processNodeId who)
-                                 (DP.processNodeId whomPid)
-                                 (DP.ProcessIdentifier whomPid)
-                                 DP.DiedUnknownId
+                  notifyProcessMonitors st'' (== DP.processNodeId who)
+                                        (DP.processNodeId whomPid)
+                                        whomPid
+                                        DP.DiedUnknownId
                     >>= go
 
         -- monitoring a node
@@ -630,11 +629,8 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                 st' = maybe st (const $ st {stateSeed = seed'}) f
             case f of
               Just p | v <= p -> do
-                let srcNid = DP.processNodeId pid
-                notifyMonitors st' (== srcNid)
-                               srcNid
-                               (DP.NodeIdentifier nid)
-                               DP.DiedDisconnect
+                notifyNodeMonitors st' (DP.processNodeId pid)
+                                   nid DP.DiedDisconnect
                   >>= go
               _ -> do
                 DP.whereisRemoteAsync nid label
@@ -655,8 +651,9 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
         -- a process has terminated
         , DP.match $ \pmn@(DP.ProcessMonitorNotification _ pid reason) -> do
             schedulerTrace $ "scheduler: " ++ show (stateSeed st, pmn)
-            st' <- notifyMonitors st (const True) (DP.processNodeId pid)
-                                  (DP.ProcessIdentifier pid) reason
+            st' <- notifyProcessMonitors st (const True)
+                                         (DP.processNodeId pid)
+                                         pid reason
             let (mt, revTimeouts') =
                   Map.updateLookupWithKey (\_ _ -> Nothing)
                                           pid (stateReverseTimeouts st')
@@ -683,10 +680,9 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
       case mp of
         -- drop message
         Just p | (v, seed') <- randomR (0.0, 1.0) (stateSeed st), v <= p -> do
-          let srcNid = DP.processNodeId source
-          (,False) <$> notifyMonitors (st { stateSeed = seed' }) (== srcNid)
-                         srcNid
-                         (DP.NodeIdentifier $ DP.processNodeId pid)
+          (,False) <$> notifyNodeMonitors (st { stateSeed = seed' })
+                         (DP.processNodeId source)
+                         (DP.processNodeId pid)
                          DP.DiedDisconnect
         -- deliver message
         _ -> return
@@ -711,11 +707,10 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
       case Map.lookup (DP.processNodeId source, nid) (stateFailures st) of
         -- drop message
         Just p | (v, seed') <- randomR (0.0, 1.0) (stateSeed st), v <= p -> do
-          let srcNid = DP.processNodeId source
-          notifyMonitors (st { stateSeed = seed' }) (== srcNid)
-                         srcNid
-                         (DP.NodeIdentifier nid)
-                         DP.DiedDisconnect
+          notifyNodeMonitors (st { stateSeed = seed' })
+                             (DP.processNodeId source)
+                             nid
+                             DP.DiedDisconnect
         -- deliver message
         _ ->
           return st
@@ -726,38 +721,61 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                                (stateNSend st)
             }
 
-    notifyMonitors :: SchedulerState
-                   -> (NodeId -> Bool)  -- ^ Whether monitors residing on a
-                                        -- particular node should be notified.
-                   -> NodeId -- ^ Id of the node where the notification
-                             -- originated. For disconnected monitored
-                             -- processes, this is the node detecting the
-                             -- disconnection. For dead processes, this is the
-                             -- node where the dead process resided.
-                   -> DP.Identifier -- ^ Id of the process which was monitored.
-                   -> DP.DiedReason
-                   -> Process SchedulerState
-    notifyMonitors st shouldNotify srcNid dpId@(DP.ProcessIdentifier pid) reason
-      =
+    -- Given a process failure, produces notification messages and sends
+    -- them to the interested monitors.
+    --
+    -- The identifier of the node where the failure is detected is important to
+    -- determine whether the node has the conectivity to reach the monitors.
+    --
+    -- This function takes a predicate to indicate which monitors should be
+    -- notified:
+    -- * When a process dies, all monitors in all reachable nodes should be
+    --   notified.
+    -- * When a process A tries to monitor an unknown process, only the monitors
+    --   in the node of A are notified.
+    --
+    -- Notifications might be dropped due to connection failures. In this case
+    -- new notifications would be produced.
+    --
+    notifyProcessMonitors :: SchedulerState
+      -> (NodeId -> Bool)  -- ^ Whether monitors residing on a particular node
+                           -- should be notified.
+      -> NodeId -- ^ Id of the node where the notification originated. For
+                -- disconnected monitored processes, this is the node detecting
+                -- the disconnection. For dead processes, this is the node where
+                -- the dead process resided.
+      -> ProcessId -- ^ Id of the process which was monitored.
+      -> DP.DiedReason
+      -> Process SchedulerState
+    notifyProcessMonitors st shouldNotify srcNid pid
+                          reason =
       case Map.lookup (DP.ProcessIdentifier pid) (stateMonitors st) of
         Just mons -> do
-          let (shouldMons, otherMons) =
+          let -- Determine which monitors to notify. We will keep the others.
+              (shouldMons, otherMons) =
                 partition (\(DP.MonitorRef src _, _) ->
                              shouldNotify $ DP.nodeOf src
                           )
                           mons
+              -- Determine the kind of notification to send to each monitor.
+              -- These are either a link exception or a monitor notification
+              -- message.
               sends = flip map shouldMons $
                 \(ref@(DP.MonitorRef (DP.ProcessIdentifier p) _)
                  , isLink
                  ) ->
                   if isLink
-                  then ( DP.nullProcessId srcNid, p, LinkExceptionMsg dpId p reason)
+                  then ( DP.nullProcessId srcNid
+                       , p
+                       , LinkExceptionMsg (DP.ProcessIdentifier pid) p reason
+                       )
                   else ( DP.nullProcessId srcNid
                        , p
                        , MailboxMsg p $
                            DP.createUnencodedMessage $
                            DP.ProcessMonitorNotification ref pid reason
                        )
+          -- Remove the notified monitors from the state.
           let st' = st { stateMonitors =
                            if null otherMons then
                              Map.delete (DP.ProcessIdentifier pid)
@@ -767,7 +785,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                                            (stateMonitors st)
                        }
           -- Add back the monitors if the notifications were not sent.
-          -- The destination node may still report DiedDisconnect.
+          -- The destination node may not be reachable.
           (\f -> fix f st' (zip sends shouldMons) []) $ \loop st2 xs0 acc ->
             case xs0 of
               []          -> return st2
@@ -780,12 +798,38 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                                 loop st3 xs (if sent then acc else m : acc)
         Nothing ->
           return st
-    notifyMonitors st shouldNotify srcNid (DP.NodeIdentifier nid) reason = do
+
+    -- Notifies node monitors of a node disconnection. Notifications are also
+    -- produced for monitors interested on any process on the disconnected node.
+    --
+    -- Only the monitors in the node detecting the failure are notified.
+    --
+    notifyNodeMonitors :: SchedulerState
+      -> NodeId -- ^ Identifier of the node detecting the disconnection.
+      -> NodeId -- ^ Id of the node which was disconnected.
+      -> DP.DiedReason
+      -> Process SchedulerState
+    notifyNodeMonitors st srcNid nid reason = do
       let impliesDeathOf (DP.NodeIdentifier nid') = nid == nid'
           impliesDeathOf (DP.ProcessIdentifier p) = nid == DP.processNodeId p
           impliesDeathOf _                        = False
+          -- Determine which monitors are interested in the node failure.
           (mons, remainingMons) =
             Map.partitionWithKey (const . impliesDeathOf) (stateMonitors st)
+          -- Determine which monitors should be notified.
+          (shouldMons, otherMons) =
+            let splitMons = partition (\(DP.MonitorRef dpId _, _) ->
+                                         srcNid == DP.nodeOf dpId
+                                      )
+                              <$> mons
+             in (fst <$> splitMons, snd <$> splitMons)
+          -- Remove notified monitors.
+          st' = st { stateMonitors =
+                       Map.union (Map.filter (not . null) otherMons)
+                                 remainingMons
+                   }
+          -- Determine the kind of notification to send to each monitor.
+          -- These are either a node or a process monitor notification.
           mkMsg dpId ((DP.MonitorRef (DP.ProcessIdentifier p) _), True) =
             (DP.nullProcessId srcNid, p, LinkExceptionMsg dpId p reason)
           mkMsg (DP.ProcessIdentifier pid)
@@ -803,21 +847,12 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                                DP.NodeMonitorNotification ref nid reason
             )
           mkMsg _ _ = error "scheduler.notifyMonitors.mkMsg: unimplemented case"
-          (shouldMons, otherMons) =
-            let splitMons = partition (\(DP.MonitorRef dpId _, _) ->
-                                         shouldNotify $ DP.nodeOf dpId
-                                      )
-                              <$> mons
-             in (fst <$> splitMons, snd <$> splitMons)
 
-          st' = st { stateMonitors =
-                       Map.union (Map.filter (not . null) otherMons)
-                                 remainingMons
-                   }
+      -- In the node failure case, notifications travel locally only. Thus,
+      -- unlike in the 'notifyprocessMonitor' case, we don't need to worry about
+      -- unreachable monitors.
       foldM (\a b -> fst <$> handleSend a b) st'
         [ mkMsg k x | (k, xs) <- Map.toList shouldMons, x <- xs ]
-    notifyMonitors _ _ _ _ _ =
-      error "scheduler.notifyMonitors: unimplemented case"
 
     multimapDelete :: (Ord k, Eq a) => k -> a -> Map k [a] -> Map k [a]
     multimapDelete k x = flip Map.update k $ \xs ->
