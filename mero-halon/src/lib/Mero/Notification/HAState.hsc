@@ -165,7 +165,7 @@ initHAState (RPCAddress rpcAddr) ha_state_get ha_state_set ha_state_entry
 
 data HAStateCallbacksV
 
-foreign import capi unsafe ha_state_init ::
+foreign import capi ha_state_init ::
     CString -> Ptr HAStateCallbacksV -> IO CInt
 
 foreign import ccall "wrapper" cwrapGetCB ::

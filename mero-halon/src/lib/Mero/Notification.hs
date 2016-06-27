@@ -44,6 +44,7 @@ import Network.CEP (liftProcess, MonadProcess)
 import Mero
 import Mero.ConfC (Fid, ServiceType(..))
 import Mero.Notification.HAState hiding (getRPCMachine)
+import Mero.Concurrent
 import qualified Mero.Notification.HAState as HAState
 import Mero.M0Worker
 import HA.EventQueue.Producer (promulgate)
@@ -64,7 +65,7 @@ import Control.Arrow ((***))
 import Control.Concurrent.MVar
 import Control.Distributed.Process.Internal.Types ( LocalNode, processNode )
 import qualified Control.Distributed.Process.Node as CH ( forkProcess )
-import Control.Monad ( void, join )
+import Control.Monad ( void, join, (<=<) )
 import Control.Monad.Trans (MonadIO)
 import Control.Monad.Catch (MonadCatch, SomeException)
 import Control.Monad.Reader (ask)
@@ -212,11 +213,13 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
                  notificationWorker notificationChannel (void . promulgate . Set)
         link pid
         proc <- ask
-        liftGlobalM0 $ do
-          niRef <- initializeHAStateCallbacks (processNode proc) addr
-          addM0Finalizer $ finalizeInternal globalEndpointRef
-          let ref' = emptyEndpointRef { _erNIRef = Just niRef }
-          return (globalEndpointRef, ref', niRef))
+        (barrier, r) <- liftGlobalM0 $ do
+           (barrier, niRef) <- initializeHAStateCallbacks (processNode proc) addr
+           addM0Finalizer $ finalizeInternal globalEndpointRef
+           let ref' = emptyEndpointRef { _erNIRef = Just niRef }
+           return (barrier, (globalEndpointRef, ref', niRef))
+        liftIO $ either (Catch.throwM) return =<< takeMVar barrier
+        return r)
       (do
         say "initializeInternal: error"
         liftIO $ putMVar globalEndpointRef ref )
@@ -372,15 +375,18 @@ newtype NIRef = NIRef (IORef [HALink])
 
 -- | Initializes the hastate interface in the node where it will be
 -- used. Call it before @m0_init@ and before 'initialize'.
-initializeHAStateCallbacks :: LocalNode -> RPCAddress -> IO NIRef
+initializeHAStateCallbacks :: LocalNode -> RPCAddress -> IO (MVar (Either SomeException ()), NIRef)
 initializeHAStateCallbacks lnode addr = do
     links <- newIORef []
-    initHAState addr ha_state_get
-                     (ha_state_set links)
-                     ha_entrypoint
-                     (ha_connected links)
-                     (ha_disconnecting links)
-    return $ NIRef links
+    barrier <- newEmptyMVar
+    _ <- forkM0OS $ do -- Thread will be joined just before mero will be finalized
+             er <- Catch.try $ initHAState addr ha_state_get
+                            (ha_state_set links)
+                            ha_entrypoint
+                            (ha_connected links)
+                            (ha_disconnecting links)
+             putMVar barrier er
+    return (barrier, NIRef links)
   where
 
     ha_state_get :: HALink -> Word64 -> NVec -> IO ()
