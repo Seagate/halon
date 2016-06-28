@@ -262,7 +262,7 @@ writeSysconfig MeroConf{..} run procFid m0addr confdPath = do
     _ <- SystemD.sysctlFile fileName $
       [ ("MERO_" ++ fmap toUpper prefix ++ "_EP", m0addr)
       , ("MERO_HA_EP", mcHAAddress)
-      , ("MERO_PROFILE_FID", mcProfile)
+      , ("MERO_PROFILE_FID", fidToStr mcProfile)
       ] ++ maybeToList (("MERO_CONF_XC",) <$> confdPath)
     return $ unit
   where
@@ -302,8 +302,8 @@ remotableDecl [ [d|
           void . promulgate . M0.MeroKernelFailed self $
             "mero-kernel service failed to start: " ++ show i
     where
-      Just profileFid = strToFid $ mcProfile conf
-      Just processFid = strToFid $ mcProcess conf
+      profileFid = mcProfile conf
+      processFid = mcProcess conf
       haAddr = RPC.rpcAddress $ mcHAAddress conf
       withEp = Mero.Notification.withNI haAddr processFid profileFid
       -- Kernel

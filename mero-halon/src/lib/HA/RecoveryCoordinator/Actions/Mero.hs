@@ -387,17 +387,16 @@ startMeroService host node = do
     profile <- mprofile
     haAddr <- mHaAddr
     uuid <- listToMaybe $ G.connectedTo host Has rg
-    let mprocess = listToMaybe
-                     [ proc
-                     | m0node :: M0.Node  <- G.connectedTo host   Runs          rg
-                     , proc :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
-                     , srv  :: M0.Service <- G.connectedTo proc   M0.IsParentOf rg
-                     , M0.s_type srv  == CST_HA
-                     ]
-    let mconf = (\process -> MeroConf haAddr (fidToStr $ M0.fid profile)
-                                             (fidToStr $ M0.fid process)
-                                             (MeroKernelConf uuid)
-                                             ) <$> mprocess
+    let mconf = listToMaybe
+                  [ conf
+                  | m0node :: M0.Node  <- G.connectedTo host   Runs          rg
+                  , proc :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
+                  , srv  :: M0.Service <- G.connectedTo proc   M0.IsParentOf rg
+                  , M0.s_type srv  == CST_HA
+                  , let conf = MeroConf haAddr (M0.fid profile)
+                                               (M0.fid proc)
+                                               (MeroKernelConf uuid)
+                  ]
     (\conf -> encodeP $ ServiceStartRequest Start node m0d conf []) <$> mconf
 
 -- | It may happen that a node reboots (either through halon or
