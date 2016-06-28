@@ -95,7 +95,7 @@ newtype MockM0 = MockM0 DeclareMeroChannel
   deriving (Binary, Generic, Hashable, Typeable)
 
 mockMeroConf :: MeroConf
-mockMeroConf = MeroConf "" "" (MeroKernelConf UUID.nil)
+mockMeroConf = MeroConf "" "<p|1:1>" "<s|1:1>" (MeroKernelConf UUID.nil)
 
 data MarkDriveFailed = MarkDriveFailed deriving (Generic, Typeable)
 instance Binary MarkDriveFailed

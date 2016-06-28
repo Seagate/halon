@@ -306,7 +306,7 @@ testRCsyncToConfd transport pg = do
       >>= flip withMonitor wait
     "InitialLoad" :: String <- expect
 
-    let mockMeroConf = MeroConf (testListenName++"@tcp:12345:34:101") "<p|1:1>" (MeroKernelConf UUID.nil)
+    let mockMeroConf = MeroConf (testListenName++"@tcp:12345:34:101") "<p|1:1>" "<s|1:2>" (MeroKernelConf UUID.nil)
     _ <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest Start (Node nid) m0d mockMeroConf [self]
     _ <- receiveTimeout 1000000 []
 

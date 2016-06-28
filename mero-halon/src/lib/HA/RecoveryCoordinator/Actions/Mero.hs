@@ -288,9 +288,9 @@ startMeroProcesses (TypedChannel chan) procs' label mkfs = do
       phaseLog "debug" $ "starting mero processes: " ++ show (fmap (M0.fid.fst) procs)
       liftProcess $ sendChan chan msg
       for_ procs' $ \p -> modifyGraph
-        $ \rg -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStarting)
-                       (M0.setState p M0.PSStarting rg)
-                       (G.connectedTo p M0.IsParentOf rg)
+        $ \rg' -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStarting)
+                        (M0.setState p M0.PSStarting rg')
+                        (G.connectedTo p M0.IsParentOf rg')
   where
     runConfig proc rg
       | runsMgs proc rg = syncToBS >>= \bs -> return $
@@ -321,9 +321,9 @@ stopNodeProcesses (TypedChannel chan) ps = do
    let msg = StopProcesses $ map (go rg) ps
    liftProcess $ sendChan chan msg
    for_ ps $ \p -> modifyGraph
-     $ \rg -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStopping)
-                    (G.connectUniqueFrom p Is M0.PSStopping rg)
-                    (G.connectedTo p M0.IsParentOf rg)
+     $ \rg' -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStopping)
+                    (G.connectUniqueFrom p Is M0.PSStopping rg')
+                    (G.connectedTo p M0.IsParentOf rg')
    where
      go rg p = case G.connectedTo p Has rg of
         [M0.PLM0t1fs] -> ([M0T1FS], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))
@@ -387,9 +387,18 @@ startMeroService host node = do
     profile <- mprofile
     haAddr <- mHaAddr
     uuid <- listToMaybe $ G.connectedTo host Has rg
-    let conf = MeroConf haAddr (fidToStr $ M0.fid profile)
-                (MeroKernelConf uuid)
-    return $ encodeP $ ServiceStartRequest Start node m0d conf []
+    let mprocess = listToMaybe
+                     [ proc
+                     | m0node :: M0.Node  <- G.connectedTo host   Runs          rg
+                     , proc :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
+                     , srv  :: M0.Service <- G.connectedTo proc   M0.IsParentOf rg
+                     , M0.s_type srv  == CST_HA
+                     ]
+    let mconf = (\process -> MeroConf haAddr (fidToStr $ M0.fid profile)
+                                             (fidToStr $ M0.fid process)
+                                             (MeroKernelConf uuid)
+                                             ) <$> mprocess
+    (\conf -> encodeP $ ServiceStartRequest Start node m0d conf []) <$> mconf
 
 -- | It may happen that a node reboots (either through halon or
 -- through external means) during cluster's lifetime. The below

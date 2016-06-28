@@ -4,6 +4,7 @@
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wall -Werror #-}
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -45,7 +46,7 @@ import Data.Word              ( Word32, Word64 )
 import Foreign.C.Types        ( CInt(..) )
 import Foreign.C.String       ( CString, withCString )
 import Foreign.Marshal.Alloc  ( allocaBytesAligned )
-import Foreign.Marshal.Array  ( peekArray, withArray, withArrayLen, withArrayLen0, pokeArray )
+import Foreign.Marshal.Array  ( peekArray, withArrayLen, withArrayLen0, pokeArray )
 import Foreign.Marshal.Utils  ( with, withMany )
 import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr, nullPtr, castPtr, plusPtr )
 import Foreign.Storable       ( Storable(..) )
@@ -91,6 +92,8 @@ cbRefs = unsafePerformIO $ newIORef []
 -- Must be called after 'Mero.m0_init'.
 --
 initHAState :: RPCAddress 
+            -> Fid -- ^ Process Fid
+            -> Fid -- ^ Profile Fid
             -> (HALink -> Word64 -> NVec -> IO ())
                -- ^ Called when a request to get the state of some objects is
                -- received.
@@ -100,7 +103,7 @@ initHAState :: RPCAddress
             -> (NVec -> IO ())
                -- ^ Called when a request to update the state of some objects is
                -- received.
-            -> (ReqId -> IO ())
+            -> (ReqId -> Fid -> Fid -> IO ())
                -- ^ Called when a request to read current confd and rm endpoints
                -- is received.
             -> (HALink -> IO ())
@@ -110,7 +113,7 @@ initHAState :: RPCAddress
                -- It is safe to call 'disconnect' when all 'notify' calls
                -- using the link have completed.
             -> IO ()
-initHAState (RPCAddress rpcAddr) ha_state_get ha_state_set ha_state_entry
+initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_state_set ha_state_entry
             ha_state_link_connected ha_state_link_disconnecting =
     useAsCString rpcAddr $ \cRPCAddr ->
     allocaBytesAligned #{size ha_state_callbacks_t}
@@ -133,8 +136,8 @@ initHAState (RPCAddress rpcAddr) ha_state_get ha_state_set ha_state_entry
         . (SomeFunPtr wconnected:)
         . (SomeFunPtr wdisconnecting:)
         )
-
-      rc <- ha_state_init cRPCAddr pcbs
+      rc <- with procFid $ \procPtr -> with profFid $ \profPtr ->
+              ha_state_init cRPCAddr procPtr profPtr pcbs
       check_rc "initHAState" rc
   where
     wrapGetCB = cwrapGetCB $ \hl w note -> catch
@@ -145,8 +148,10 @@ initHAState (RPCAddress rpcAddr) ha_state_get ha_state_set ha_state_entry
         (peekNote note >>= ha_state_set)
         $ \e -> do hPutStrLn stderr $
                      "initHAState.wrapSetCB: " ++ show (e :: SomeException)
-    wrapEntryCB = cwrapEntryCB $ \reqId -> catch
-        (ha_state_entry $ ReqId reqId)
+    wrapEntryCB = cwrapEntryCB $ \reqId processPtr profilePtr -> catch (do
+        processFid <- peek processPtr
+        profileFid <- peek profilePtr
+        ha_state_entry (ReqId reqId) processFid profileFid)
         $ \e -> hPutStrLn stderr $
                   "initHAState.wrapEntryCB: " ++ show (e :: SomeException)
     wrapConnectedCB = cwrapConnectedCB $ \hl ->
@@ -166,7 +171,7 @@ initHAState (RPCAddress rpcAddr) ha_state_get ha_state_set ha_state_entry
 data HAStateCallbacksV
 
 foreign import capi ha_state_init ::
-    CString -> Ptr HAStateCallbacksV -> IO CInt
+    CString -> Ptr Fid -> Ptr Fid -> Ptr HAStateCallbacksV -> IO CInt
 
 foreign import ccall "wrapper" cwrapGetCB ::
     (Ptr HALink -> Word64 ->  Ptr NVec -> IO ())
@@ -176,7 +181,7 @@ foreign import ccall "wrapper" cwrapSetCB :: (Ptr NVec -> IO ())
                                           -> IO (FunPtr (Ptr NVec -> IO ()))
 
 foreign import ccall "wrapper" cwrapEntryCB ::
-    (Ptr ReqId -> IO ()) -> IO (FunPtr (Ptr ReqId -> IO ()))
+    (Ptr ReqId -> Ptr Fid -> Ptr Fid -> IO ()) -> IO (FunPtr (Ptr ReqId -> Ptr Fid -> Ptr Fid -> IO ()))
 
 foreign import ccall "wrapper" cwrapConnectedCB ::
     (Ptr HALink -> IO ()) -> IO (FunPtr (Ptr HALink -> IO ()))
