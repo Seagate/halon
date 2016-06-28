@@ -18,11 +18,13 @@ module HA.RecoveryCoordinator.Actions.Job
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
 
+import Control.Distributed.Process (say)
 import Control.Distributed.Process.Serializable
 import Control.Lens
 
 import Data.Foldable (for_)
 import Data.Proxy
+import qualified Data.Set as Set
 import Data.Vinyl
 
 import Network.CEP
@@ -65,7 +67,7 @@ mkJobRule (Job name)
       isRunning <- memberStorageSetRC input
       if isRunning
       then do
-         phaseLog "info" $ "Process " ++ name ++ " is already running, for " ++ show input
+         phaseLog "info" $ "Process " ++ name ++ " is already running for " ++ show input
          messageProcessed eid
       else
         check_input input >>= \case
@@ -95,4 +97,3 @@ mkJobRule (Job name)
     fldRequest = Proxy
     fldReply :: Proxy '("reply", Maybe output)
     fldReply = Proxy
-

@@ -27,6 +27,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   , getLabeledNodeProcesses
   , m0t1fsBootLevel
   , startMeroProcesses
+  , retriggerMeroNodeBootstrap
   )
 where
 
@@ -245,16 +246,15 @@ startNodeProcesses :: Castor.Host
                    -> Bool -- ^ Run mkfs? Ignored for m0t1fs processes.
                    -> PhaseM LoopState a [M0.Process]
 startNodeProcesses host chan label mkfs = do
-    phaseLog "action" $ "Trying to start all processes with label "
-                      ++ show label
-                      ++ " on host "
-                      ++ show host
     rg <- getLocalGraph
     let allProcs =  [ p
                     | m0node <- G.connectedTo host Runs rg :: [M0.Node]
                     , p <- G.connectedTo m0node M0.IsParentOf rg
                     , G.isConnected p Has label rg
                     ]
+    if null allProcs
+    then phaseLog "action" $ "No services with label " ++ show label ++ " on host " ++ show host
+    else phaseLog "action" $ "Starting services with label " ++ show label ++ "on host " ++ show host
 
     -- If RC has restarted the bootstrap rule, some processes may have
     -- already been online: we don't want to try and start those
@@ -383,16 +383,40 @@ startMeroService host node = do
                 (MeroKernelConf uuid)
     return $ encodeP $ ServiceStartRequest Start node m0d conf []
 
--- | Send notifications about new mero nodes and new mero servers.
-announceMeroNodes :: PhaseM LoopState a ()
-announceMeroNodes = do
+-- | It may happen that a node reboots (either through halon or
+-- through external means) during cluster's lifetime. The below
+-- function re-triggers the mero part of the bootstrap on the node.
+--
+-- Any halon services that need restarting will have been triggered in
+-- @node-up@ rule. @halon:m0d@ is excluded from that as that
+-- particular service is going to be restarted as part of the node
+-- bootstrap.
+retriggerMeroNodeBootstrap :: M0.Node -> PhaseM LoopState a ()
+retriggerMeroNodeBootstrap n = do
+  rg <- getLocalGraph
+  case listToMaybe $ G.connectedTo Res.Cluster Has rg of
+    Just M0.MeroClusterRunning -> restartMeroOnNode
+    Just M0.MeroClusterStarting{} -> restartMeroOnNode
+    cst -> phaseLog "info"
+           $ "Not trying to retrigger mero as cluster state is " ++ show cst
+  where
+    restartMeroOnNode = do
+      rg <- getLocalGraph
+      case G.connectedFrom Runs n rg of
+        [] -> phaseLog "info" $ "Not a mero node: " ++ show n
+        h : _ -> announceTheseMeroHosts [h]
+
+-- | Send notifications about new mero nodes and new mero servers for
+-- the given set of 'Castor.Host's.
+announceTheseMeroHosts :: [Castor.Host] -> PhaseM LoopState a ()
+announceTheseMeroHosts hosts = do
   rg' <- getLocalGraph
   let clientHosts =
-        [ host | host <- G.connectedTo Res.Cluster Has rg' :: [Castor.Host] -- all hosts
+        [ host | host <- hosts
                , G.isConnected host Has Castor.HA_M0CLIENT rg' -- which are clients
                ]
       serverHosts =
-        [ host | host <- G.connectedTo Res.Cluster Has rg' :: [Castor.Host]
+        [ host | host <- hosts
                , G.isConnected host Has Castor.HA_M0SERVER rg'
                ]
 
@@ -406,3 +430,11 @@ announceMeroNodes = do
   -- XXX: this is a hack, for some reason on devvm main node is not in the
   -- clients list.
   for_ (serverNodes++clientNodes) $ promulgateRC . StartClientsOnNodeRequest
+
+
+-- | Send notifications about new mero nodes and new mero servers for
+-- every 'Castor.Host' in RG.
+announceMeroNodes :: PhaseM LoopState a ()
+announceMeroNodes = do
+  rg' <- getLocalGraph
+  announceTheseMeroHosts $ G.connectedTo Res.Cluster Has rg'

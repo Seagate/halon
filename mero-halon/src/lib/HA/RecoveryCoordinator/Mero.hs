@@ -98,16 +98,6 @@ timeoutHost h = hasHostAttr M0.HA_TRANSIENT h >>= \case
   False -> return ()
   True -> do
     liftProcess . sayRC $ "Disconnecting " ++ show h ++ " due to timeout"
-#ifdef USE_MERO
-    g <- getLocalGraph
-    let nodes = [ n
-                | (c :: M0.Controller) <- G.connectedFrom M0.At h g
-                , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c g
-                ]
-    notifyMero $ createSet (M0.AnyConfObj <$> nodes) M0_NC_FAILED
-    -- TODO: do we also have to tell mero about things connected to
-    -- the nodes being down?
-#endif
     unsetHostAttr h M0.HA_TRANSIENT
     setHostAttr h M0.HA_DOWN
 

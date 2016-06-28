@@ -3,7 +3,9 @@
 -- License   : All rights reserved.
 --
 
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
@@ -34,12 +36,16 @@ import HA.RecoveryCoordinator.Actions.Hardware (nodesOnHost)
 import qualified HA.ResourceGraph as G
 import HA.Resources
 import HA.Service
+#ifdef USE_MERO
+import HA.Services.Mero.Types (meroServiceName)
+#endif
 import HA.Services.Monitor (MonitorConf)
 
 import Control.Category ((>>>))
 import Control.Distributed.Process
   ( NodeId
   , Process
+  , ProcessId
   , closure
   , exit
   , expectTimeout
@@ -52,11 +58,13 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure ( mkClosure, staticDecode )
 import Control.Distributed.Process.Internal.Types as DP ( remoteTable, processNode )
 import Control.Distributed.Static (closureApply, unstatic)
-import Control.Monad (void, join)
+import Control.Monad (forM, join, unless, void)
 import Control.Monad.Reader (asks)
 
 import Data.Binary (encode)
+import Data.Foldable (for_)
 import Data.Maybe (catMaybes, mapMaybe, listToMaybe)
+import Data.Proxy (Proxy(..))
 import Data.Typeable (Typeable, cast, gcast)
 
 
@@ -199,13 +207,13 @@ getRunningServices node = do
         msrv  = listToMaybe $ G.anyConnectedFrom InstanceOf dsp rg
     in (join $ dynMkMessage r <$> mcfg <*> msrv :: Maybe ServiceStartedMsg)
 
-
 -- | Get Monitor Service for each running node.
-getNodeRegularMonitors :: PhaseM LoopState l [ServiceStartedMsg]
-getNodeRegularMonitors = do
+getNodeRegularMonitors :: (Node -> Bool) -> PhaseM LoopState l [ServiceStartedMsg]
+getNodeRegularMonitors p = do
   rg <- getLocalGraph
   return [ encodeP (ServiceStarted node srv cfg sp)
          | node <- G.connectedTo Cluster Has rg
+         , p node
          , sp   <- G.connectedTo node Runs rg :: [ServiceProcess MonitorConf]
          , Just cfg <- return $ listToMaybe $ G.connectedTo sp HasConf rg
          , Just srv <- return $ listToMaybe $ G.connectedFrom InstanceOf sp rg
