@@ -14,8 +14,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wall -Werror #-}
-
 module Mero.Notification
     ( Set(..)
     , Get(..)

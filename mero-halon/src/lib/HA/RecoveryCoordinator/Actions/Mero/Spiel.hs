@@ -100,8 +100,7 @@ haAddress = ":12345:34:101"
 --
 -- It does nothing if 'lsRPCAddress' has not been set.
 withRootRC :: (Root -> IO a) -> PhaseM LoopState l (Maybe a)
-withRootRC f = do
- _ <- getRPCAddress
+withRootRC f =
  getConfdServers >>= \case
   [] -> return Nothing
   confdServer:_ -> liftM0RC $ do
