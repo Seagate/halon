@@ -100,13 +100,15 @@ import Prelude hiding (id, mapM_)
 
 import System.Random (randomIO)
 
-header :: UID.UUID -> Aeson.Value
-header uuid = Aeson.Object $ M.fromList [
-    ("schema_version", Aeson.String "1.0.0")
-  , ("sspl_version", Aeson.String "1.0.0")
-  , ("msg_version", Aeson.String "1.0.0")
-  , ("uuid", Aeson.String . T.decodeUtf8 . UID.toASCIIBytes $ uuid)
-  ]
+header :: UID.UUID -> ActuatorRequestMessageSspl_ll_msg_header
+header uuid = ActuatorRequestMessageSspl_ll_msg_header {
+    actuatorRequestMessageSspl_ll_msg_headerMsg_expiration = Nothing
+  , actuatorRequestMessageSspl_ll_msg_headerUuid =
+      Just $ T.decodeUtf8 . UID.toASCIIBytes $ uuid
+  , actuatorRequestMessageSspl_ll_msg_headerSspl_version = "1.0.0"
+  , actuatorRequestMessageSspl_ll_msg_headerMsg_version = "1.0.0"
+  , actuatorRequestMessageSspl_ll_msg_headerSchema_version = "1.0.0"
+  }
 
 saySSPL :: String -> Process ()
 saySSPL msg = say $ "[Service:SSPL] " ++ msg

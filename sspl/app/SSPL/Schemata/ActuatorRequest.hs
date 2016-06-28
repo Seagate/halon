@@ -44,31 +44,34 @@ schema = [schemaQQ|
       "required": true,
       "properties": {
         "sspl_ll_msg_header": {
+          "type" : "object",
           "required": true,
-          "schema_version": {
-            "description": "SSPL JSON Schema Version",
-            "type": "string",
-            "required": true
-          },
-          "sspl_version": {
-            "description": "SSPL Version",
-            "type": "string",
-            "required": true
-          },
-          "msg_version": {
-            "description": "Message Version",
-            "type": "string",
-            "required": true
-          },
-          "msg_expiration": {
-            "description": "Number of seconds for message to complete the desired action before returning an error code",
-            "type": "integer",
-            "required": false
-          },
-          "uuid": {
-            "description": "Universally Unique ID of message",
-            "type": "string",
-            "required": false
+          "properties" : {
+            "schema_version": {
+              "description": "SSPL JSON Schema Version",
+              "type": "string",
+              "required": true
+            },
+            "sspl_version": {
+              "description": "SSPL Version",
+              "type": "string",
+              "required": true
+            },
+            "msg_version": {
+              "description": "Message Version",
+              "type": "string",
+              "required": true
+            },
+            "msg_expiration": {
+              "description": "Number of seconds for message to complete the desired action before returning an error code",
+              "type": "integer",
+              "required": false
+            },
+            "uuid": {
+              "description": "Universally Unique ID of message",
+              "type": "string",
+              "required": false
+            }
           }
         },
 

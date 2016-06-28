@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE StandaloneDeriving #-}
 -- | Module testing handling of notifications from SSPL and
 -- notification interface related to systemd services and their
@@ -10,7 +11,9 @@ import           Control.Distributed.Process hiding (bracket)
 import           Control.Exception as E hiding (assert)
 import           Control.Monad (unless)
 import           Data.Binary (Binary)
-import           Data.Foldable (for_)
+import           Data.Foldable (find, for_)
+import           Data.Function (fix)
+import           Data.List (sort)
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -95,7 +98,7 @@ doRestart transport pg startingState runRestartTest =
   H.run transport pg interceptor [rule] test where
   interceptor _ _ = return ()
 
-  test (TestArgs _ _ rc) rmq recv = do
+  test (TestArgs _ _ rc) rmq recv _ = do
     H.prepareSubscriptions rc rmq
     H.loadInitialData
     self <- getSelfPid
@@ -139,7 +142,7 @@ testSSPLFirst t pg = doRestart t pg M0.PSOnline $ \p srvs recv -> do
   liftIO $ assertEqual "SSPL handler sets FAILED"
            [Note (M0.r_fid p) M0_NC_FAILED] nt
 
-  promulgateWait (Set [Note (M0.r_fid p) M0_NC_ONLINE])
+  promulgateWait (Set [Note (M0.fid p) M0_NC_ONLINE])
   Set nt' <- notificationMessage <$> receiveChan recv
   liftIO $ assertEqual "handleProcessOnline sets M0_NC_ONLINE"
            [Note (M0.r_fid p) M0_NC_ONLINE] nt'
@@ -153,11 +156,11 @@ testSSPLFirst t pg = doRestart t pg M0.PSOnline $ \p srvs recv -> do
 testMeroOnlineFirstSamePid :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testMeroOnlineFirstSamePid t pg = doRestart t pg M0.PSOnline $ \p srvs recv -> do
   nid <- getSelfNode
-  promulgateWait (Set [Note (M0.r_fid p) M0_NC_ONLINE])
-  Set nt <- notificationMessage <$> receiveChan recv
-  let mkMsg t = Note (M0.fid t) M0_NC_ONLINE
+  promulgateWait (Set [Note (M0.fid p) M0_NC_ONLINE])
+  Set nt <- H.nextNotificationFor (M0.fid p) recv
+  let mkMsg k = Note (M0.fid k) M0_NC_ONLINE
   liftIO $ assertEqual "handleProcessOnline sets M0_NC_FAILED"
-           (mkMsg p : map mkMsg srvs)  nt
+           (sort $ mkMsg p : map mkMsg srvs) (sort nt)
   promulgateWait (nid, mkRestartedNotification p)
   msg <- fmap notificationMessage <$> receiveChanTimeout 2000000 recv
   liftIO $ assertEqual "No message received" Nothing msg
@@ -173,15 +176,15 @@ testMeroOnlineFirstDiffPid :: (Typeable g, RGroup g)
 testMeroOnlineFirstDiffPid t pg = doRestart t pg M0.PSOnline $ \p srvs recv -> do
   nid <- getSelfNode
   promulgateWait (Set [Note (M0.r_fid p) M0_NC_ONLINE])
-  Set nt <- notificationMessage <$> receiveChan recv
-  let mkMsg t = Note (M0.fid t) M0_NC_ONLINE
+  Set nt <- H.nextNotificationFor (M0.fid p) recv
+  let mkMsg k = Note (M0.fid k) M0_NC_ONLINE
   liftIO $ assertEqual "handleProcessOnline sets M0_NC_FAILED"
-           (mkMsg p : map mkMsg srvs) nt
+           (sort $ mkMsg p : map mkMsg srvs) (sort nt)
   let notification = (mkRestartedNotification p)
         { sensorResponseMessageSensor_response_typeService_watchdogPid = "1235" }
 
   promulgateWait (nid, notification)
-  Set nt' <- notificationMessage <$> receiveChan recv
+  Set nt' <- H.nextNotificationFor (M0.fid p) recv
   liftIO $ assertEqual "SSPL handler sets M0_NC_ONLINE"
            [Note (M0.r_fid p) M0_NC_FAILED] nt'
 
@@ -193,5 +196,10 @@ testMeroOnlineFirstDiffPid t pg = doRestart t pg M0.PSOnline $ \p srvs recv -> d
 testNothingOnStarting :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testNothingOnStarting t pg = doRestart t pg M0.PSStarting $ \p _ recv -> do
   promulgateWait (Set [Note (M0.r_fid p) M0_NC_ONLINE])
-  msg <- fmap notificationMessage <$> receiveChanTimeout 2000000 recv
+  msg <- fix $ \go -> do
+    fmap notificationMessage <$> receiveChanTimeout 2000000 recv >>= \case
+      Nothing -> return Nothing
+      Just s@(Set xs) -> case (find (\(Note f _) -> f == M0.fid p) xs) of
+        Just _ -> return $ Just s
+        Nothing -> go
   liftIO $ assertEqual "No message received" Nothing msg

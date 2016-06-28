@@ -96,7 +96,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Node
   , processStartProcessesOnNode
   , ruleStartProcessesOnNode
   , StartProcessesOnNodeRequest(..)
-  , StartNodeResult(..)
+  , StartProcessesOnNodeResult(..)
     --- *** Stop clients on node
   , processStopClientsOnNode
   , StartClientsOnNodeRequest(..)
@@ -127,6 +127,7 @@ import           HA.RecoveryCoordinator.Actions.Castor.Cluster
 
 import           Control.Distributed.Process(Process, spawnLocal, spawnAsync)
 import           Control.Distributed.Process.Closure
+import           Control.Monad (when)
 import           Control.Monad.Trans.Maybe
 
 import qualified HA.Resources as R
@@ -140,7 +141,7 @@ import           Data.Foldable (for_)
 import           Data.Maybe (listToMaybe, fromMaybe, isNothing, isJust)
 import           Control.Applicative
 import           Control.Lens
-import           Control.Monad (void, when, guard, join)
+import           Control.Monad (void, guard, join)
 
 import           System.Posix.SysInfo
 
@@ -211,7 +212,7 @@ eventNewHalonNode = defineSimpleTask "castor::node::event::new-node" $ \(Event.N
 -- process.
 --
 -- Listens:         'MeroChannelDeclared'
--- Emits:           'NodeStarted'
+-- Emits:           'KernelStarted'
 -- State-Changes:   'M0.Node' online
 eventKernelStarted :: Definitions LoopState ()
 eventKernelStarted = defineSimpleTask "castor::node::event::kernel-started" $ \(MeroChannelDeclared sp _ _) -> do
@@ -220,7 +221,7 @@ eventKernelStarted = defineSimpleTask "castor::node::event::kernel-started" $ \(
                       , m0node <- nodeToM0Node node g
                       ]
   applyStateChanges $ (`stateSet` M0.M0_NC_ONLINE) <$> nodes
-  for_ nodes $ notify . NodeStarted
+  for_ nodes $ notify . KernelStarted
 
 -- | Handle a case when mero-kernel failed to start on the node. Mark node as failed.
 --
@@ -235,7 +236,7 @@ eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(Me
                       , m0node <- nodeToM0Node node g
                       ]
   applyStateChanges $ (`stateSet` M0.M0_NC_ONLINE) <$> nodes
-  for_ nodes $ notify . NodeKernelFailed
+  for_ nodes $ notify . KernelStartFailure
 
 {-
 eventStopHalonM0dFinished :: Definitions LoopState ()
@@ -453,17 +454,8 @@ mkQueryHostInfo andThen orFail = do
 --                                    |
 --                                  finish
 --  @@@
-processStartProcessesOnNode :: Job StartProcessesOnNodeRequest StartNodeResult
+processStartProcessesOnNode :: Job StartProcessesOnNodeRequest StartProcessesOnNodeResult
 processStartProcessesOnNode = Job "castor::node::process::start"
-
--- | Handle of the 'ruleNewNode' process.
-data StartNodeResult
-      = NodeStarted M0.Node
-      | NodeStartTimeout M0.Node
-      | NodeStartKernelFailure M0.Node
-  deriving (Eq, Show, Generic)
-
-instance Binary StartNodeResult
 
 -- | Upon receiving 'StartProcessOnNodeRequest' message, bootstraps the given
 -- node, when it's possible.
@@ -499,38 +491,42 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
     kernel_failed     <- phaseHandle "kernel_failed"
     boot_level_0      <- phaseHandle "boot_level_0"
     boot_level_1      <- phaseHandle "boot_level_1"
+    complete          <- phaseHandle "complete"
     bootstrap_timeout <- phaseHandle "bootstrap_timeout"
 
-    let route (StartProcessesOnNodeRequest m0node) = runMaybeT $ do
-          node <- MaybeT $ listToMaybe . m0nodeToNode m0node <$> getLocalGraph -- XXX: list
-          MaybeT $ do
-            rg <- getLocalGraph
-            srv <- lookupRunningService node m0d -- XXX: head
-            let chan = srv >>= meroChannel rg :: Maybe (TypedChannel ProcessControlMsg)
-            host <- findNodeHost node  -- XXX: head
-            modify Local $ rlens fldHost .~ (Field $ host)
-            modify Local $ rlens fldNode .~ (Field $ Just node)
-            if isJust chan
-            then return $ Just [boot_level_0]
-            else do phaseLog "info" $ "starting mero processes on node " ++ show m0node
-                    promulgateRC $ StartHalonM0dRequest m0node
-                    return $ Just [kernel_up, kernel_failed, timeout 180 bootstrap_timeout]
+    let route (StartProcessesOnNodeRequest m0node) = do
+          phaseLog "debug" $ show m0node
+          modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStarted m0node)
+          runMaybeT $ do
+            node <- MaybeT $ listToMaybe . m0nodeToNode m0node <$> getLocalGraph -- XXX: list
+            MaybeT $ do
+              rg <- getLocalGraph
+              srv <- lookupRunningService node m0d -- XXX: head
+              let chan = srv >>= meroChannel rg :: Maybe (TypedChannel ProcessControlMsg)
+              host <- findNodeHost node  -- XXX: head
+              modify Local $ rlens fldHost .~ (Field $ host)
+              modify Local $ rlens fldNode .~ (Field $ Just node)
+              if isJust chan
+              then return $ Just [boot_level_0]
+              else do phaseLog "info" $ "starting mero processes on node " ++ show m0node
+                      promulgateRC $ StartHalonM0dRequest m0node
+                      return $ Just [kernel_up, kernel_failed, timeout 180 bootstrap_timeout]
 
-    setPhaseIf kernel_up (\(NodeStarted node) _ l ->  -- XXX: HA event?
+    setPhaseIf kernel_up (\(KernelStarted node) _ l ->  -- XXX: HA event?
        case getField $ rget fldReq l of
          Just (StartProcessesOnNodeRequest m0node)
             | node == m0node -> return $ Just ()
          _ -> return Nothing
       ) $ \() -> continue boot_level_0
 
-    setPhaseIf kernel_failed (\(HAEvent eid (NodeKernelFailed node) _) _ l ->
+    setPhaseIf kernel_failed (\(HAEvent eid (KernelStartFailure node) _) _ l ->
        case getField $ rget fldReq l of
          Just (StartProcessesOnNodeRequest m0node)
             | node == m0node -> return $ Just (eid, m0node)
          _  -> return Nothing
        ) $ \(eid, m0node) -> do
       todo eid
-      modify Local $ rlens fldRep .~ (Field . Just $ NodeStartKernelFailure m0node)
+      modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartFailure m0node)
       done eid
       continue finish
 
@@ -551,7 +547,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
           switch [boot_level_1, timeout 180 bootstrap_timeout]
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
-          modify Local $ rlens fldRep .~ (Field . Just $ NodeStartKernelFailure m0node)
+          modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartFailure m0node)
           continue finish
 
     setPhaseIf boot_level_1 (barrierPass (>= (M0.MeroClusterStarting (M0.BootLevel 1)))) $ \() -> do
@@ -561,23 +557,32 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       m0svc <- lookupRunningService node m0d
       case m0svc >>= meroChannel g of
         Just chan -> do
-          _ <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
-          continue finish
+          procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
+          let notifications = (\p -> stateSet p M0.PSOnline) <$> procs
+          modify Local $ rlens fldNotifications . rfield .~ (Just notifications)
+          switch [complete, timeout 180 bootstrap_timeout]
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
           continue finish
+
+    setPhaseAllNotified complete (^. rlens fldNotifications . rfield) $ do
+      continue finish
 
     return route
   where
     fldReq :: Proxy '("request", Maybe StartProcessesOnNodeRequest)
     fldReq = Proxy
-    fldRep :: Proxy '("reply", Maybe StartNodeResult)
+    fldRep :: Proxy '("reply", Maybe StartProcessesOnNodeResult)
     fldRep = Proxy
+    -- Notifications to wait for
+    fldNotifications :: Proxy '("notifications", Maybe [AnyStateSet])
+    fldNotifications = Proxy
     args = fldUUID =: Nothing
        <+> fldReq  =: Nothing
        <+> fldNode =: Nothing
        <+> fldRep  =: Nothing
        <+> fldHost =: Nothing
+       <+> fldNotifications =: Nothing
        <+> RNil
 
 

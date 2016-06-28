@@ -39,14 +39,11 @@ module HA.RecoveryCoordinator.Rules.Castor.Disk
 import HA.RecoveryCoordinator.Rules.Castor.Disk.Repair as Repair
 import HA.RecoveryCoordinator.Rules.Castor.Disk.Reset  as Reset
 
-import HA.Encode (decodeP)
-import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Events.Drive
 import HA.Resources
 import HA.Resources.Castor
-import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.ResourceGraph as G
 import HA.Services.SSPL
 import qualified Mero.Spiel as Spiel
@@ -65,8 +62,6 @@ import Control.Distributed.Process hiding (catch)
 import Control.Monad
 import Control.Monad.Trans.Maybe
 
-import Data.Binary (Binary)
-import Data.Foldable
 import Data.Maybe
 import Data.Proxy (Proxy(..))
 import qualified Data.Text as T

@@ -45,6 +45,8 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , rgGetPool
   , m0nodeToNode
   , nodeToM0Node
+  , m0encToEnc
+  , encToM0Enc
   ) where
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -501,3 +503,11 @@ nodeToM0Node :: R.Node -> G.Graph -> [M0.Node]
 nodeToM0Node node rg =
   [ m0node | (h :: R.Host) <- G.connectedFrom R.Runs node rg
            , m0node <- G.connectedTo h R.Runs rg ]
+
+-- | Lookup enclosure corresponding to Mero enclosure.
+m0encToEnc :: M0.Enclosure -> G.Graph -> [R.Enclosure]
+m0encToEnc m0enc rg = G.connectedTo m0enc M0.At rg
+
+-- | Lookup Mero enclosure corresponding to enclosure.
+encToM0Enc :: R.Enclosure -> G.Graph -> [M0.Enclosure]
+encToM0Enc enc rg = G.connectedFrom M0.At enc rg

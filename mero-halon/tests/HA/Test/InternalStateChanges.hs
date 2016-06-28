@@ -59,7 +59,7 @@ doTest :: (Typeable g, RGroup g)
      -> IO ()
 doTest t pg rules test' = H.run t pg interceptor rules test where
   interceptor _ _ = return ()
-  test (TestArgs _ _ rc) rmq recv = do
+  test (TestArgs _ _ rc) rmq recv _ = do
     H.prepareSubscriptions rc rmq
     H.loadInitialData
     test' recv

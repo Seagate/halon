@@ -106,6 +106,7 @@ data RaidCmd =
   | RaidAssemble [T.Text]
   | RaidRun
   | RaidDetail
+  | RaidStop
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary RaidCmd
@@ -118,6 +119,7 @@ raidCmdToText dev (RaidAdd x) = T.intercalate " " ["add", dev, x]
 raidCmdToText dev (RaidAssemble xs) = T.intercalate " " $ ["assemble", dev] ++ xs
 raidCmdToText dev RaidRun = T.intercalate " " ["run", dev]
 raidCmdToText dev RaidDetail = T.intercalate " " ["detail", dev]
+raidCmdToText dev RaidStop = T.intercalate " " ["stop", dev]
 
 data NodeCmd
   = IPMICmd IPMIOp T.Text -- ^ IP address
@@ -128,6 +130,9 @@ data NodeCmd
   | DriveLed T.Text LedControlState -- ^ Set led style
   | DriveLedColor T.Text (Int, Int, Int) -- ^ Set led color
   | NodeRaidCmd T.Text RaidCmd -- ^ RAID device, command
+  | SwapEnable Bool -- ^ Enable/disable swap on the node
+  | Mount T.Text -- ^ Mount the mountpoint
+  | Unmount T.Text -- ^ Unmount
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary NodeCmd
@@ -193,6 +198,13 @@ nodeCmdString (DriveLedColor _ _) =
   "BEZEL: [{default},7]" -- XXX: not yet supported
 nodeCmdString (NodeRaidCmd dev cmd) = T.intercalate " "
   ["RAID:", raidCmdToText dev cmd]
+nodeCmdString (SwapEnable x) = T.intercalate " "
+  ["SSPL:", "SWAP", case x of True -> "ON"; False -> "OFF"]
+nodeCmdString (Mount x) = T.intercalate " "
+  ["SSPL:", "MOUNT", x]
+nodeCmdString (Unmount x) = T.intercalate " "
+  ["SSPL:", "UMOUNT", x]
+
 
 -- | Convert @NodeCmd@ back from a text representation.
 parseNodeCmd :: T.Text -> Maybe NodeCmd

@@ -220,6 +220,7 @@ ssplRulesF sspl = sequence_
   , ruleThreadController
   , ruleSSPLTimeout sspl
   , ruleSSPLConnectFailure
+  , ruleMonitorExpanderReset
 #ifdef USE_MERO
   , ruleMonitorServiceRestart
 #endif
@@ -527,17 +528,18 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
                   mdev <- findHostStorageDevices host
                           >>= filterM (flip hasStorageDeviceIdentifier $ DISerialNumber (T.unpack sn))
                   phaseLog "debug" $ "IDs: " ++ show devIds
-                  case mdev of
+                  dev <- case mdev of
                     [] -> do
                       sdev <- StorageDevice <$> liftIO nextRandom
                       phaseLog "debug" $ "Creating new storage device: " ++ show sdev
-                      identifyStorageDevice sdev devIds
                       locateStorageDeviceOnHost host sdev
                       return sdev
                     [sdev] -> return sdev
                     sdevs -> do
                       phaseLog "warning" $ "Multiple devices with same IDs: " ++ show sdevs
                       mergeStorageDevices sdevs
+                  identifyStorageDevice dev devIds
+                  return dev
               Nothing -> do -- We have no device identifiers here
                 -- See if we can find identifiers
                 runMaybeT $ do

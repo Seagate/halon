@@ -35,6 +35,7 @@ import HA.RecoveryCoordinator.Events.Cluster
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Rules.Castor.Process
 import qualified HA.RecoveryCoordinator.Rules.Castor.Disk as Disk
+import qualified HA.RecoveryCoordinator.Rules.Castor.Expander as Expander
 import qualified HA.RecoveryCoordinator.Rules.Castor.Node as Node
 import qualified HA.RecoveryCoordinator.Rules.Castor.Disk.Repair as Repair
 import HA.RecoveryCoordinator.Rules.Mero.Conf
@@ -72,6 +73,7 @@ castorRules = sequence_
   , ruleProcessRestarted
   , ruleFailedNotificationFailsProcess
   , Disk.rules
+  , Expander.rules
   , Node.rules
 #endif
   ]

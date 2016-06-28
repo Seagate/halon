@@ -455,7 +455,6 @@ locateStorageDeviceInEnclosure enc dev = modifyLocalGraph $ \rg -> do
 
   let rg' = G.newResource enc
         >>> G.newResource dev
-        >>> G.connect Cluster Has enc
         >>> G.connect enc Has dev
           $ rg
 

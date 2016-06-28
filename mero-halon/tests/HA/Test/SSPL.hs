@@ -27,7 +27,7 @@ import HA.EventQueue.Producer (promulgateEQ)
 import HA.EventQueue.Types (HAEvent(..))
 import HA.Multimap
 import HA.Service
-import HA.Services.SSPL
+import HA.Services.SSPL hiding (header)
 import HA.Services.SSPL.Rabbit
 import HA.Services.SSPL.LL.Resources
 import HA.Resources
@@ -49,12 +49,14 @@ import Control.Distributed.Static
 import Network.Transport (Transport)
 
 import Data.Aeson
+import qualified Data.Aeson as Aeson
 import Data.Defaultable
 import Data.Binary (Binary)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.HashMap.Strict as M (fromList)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Data.List (isInfixOf)
@@ -261,7 +263,13 @@ testDelivery transport = runSSPLTest transport interseptor test
 
       msgTime <- liftIO $ getCurrentTime
       let uuid = fromJust $ UUID.fromString "c2cc10e1-57d6-4b6f-9899-38d972112d8c"
-      let msg = ActuatorResponse
+          header = Aeson.Object $ M.fromList [
+              ("schema_version", Aeson.String "1.0.0")
+            , ("sspl_version", Aeson.String "1.0.0")
+            , ("msg_version", Aeson.String "1.0.0")
+            , ("uuid", Aeson.String . T.decodeUtf8 . UUID.toASCIIBytes $ uuid)
+            ]
+          msg = ActuatorResponse
                   { actuatorResponseSignature = "auth_sig"
                   , actuatorResponseTime      = formatTimeSSPL msgTime
                   , actuatorResponseExpires   = Nothing
@@ -279,7 +287,7 @@ testDelivery transport = runSSPLTest transport interseptor test
                                , actuatorResponseMessageActuator_response_typeThread_controller = Nothing
                                , actuatorResponseMessageActuator_response_typeService_controller = Nothing
                                }
-                        , actuatorResponseMessageSspl_ll_msg_header = header uuid
+                        , actuatorResponseMessageSspl_ll_msg_header = header
                         }
                   }
       usend pid $ MQPublish "sspl_command_ack" "halon_ack" (LBS.toStrict $ encode msg)

@@ -71,9 +71,7 @@ import           HA.RecoveryCoordinator.Rules.Mero.Conf
      , setPhaseNotified
      )
 import           HA.RecoveryCoordinator.Rules.Castor.Node
-     ( maxTeardownLevel
-     , StartNodeResult(..)
-     )
+     ( maxTeardownLevel )
 import           HA.RecoveryCoordinator.Rules.Castor.Process
 import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
@@ -123,7 +121,7 @@ eventNodeFailedStart :: Definitions LoopState ()
 eventNodeFailedStart = defineSimpleTask "castor::cluster:node-failed-bootstrap" $
   \result -> do
     case result of
-      NodeStarted{} -> return ()
+      KernelStarted{} -> return ()
       _ -> do modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
       -- XXX: notify $ MeroClusterFailed
       -- XXX: check if it's a client node, in that case such failure should not

@@ -239,12 +239,14 @@ handleProcessOnlineE :: Set -> PhaseM LoopState l ()
 handleProcessOnlineE (Set ns) = do
   -- extract ONLINE processes
   procs <- catMaybes <$> mapM getProc ns
-  rg <- getLocalGraph
 
   -- MERO-1666; this pid is used in test, don't change
   let expectedPid = M0.PID 1234
 
   for_ procs $ \p -> do
+    -- Temporary hack as we do not know the expected PID. Note this
+    -- change will *not* be synchronised!
+    rg <- getLocalGraph >>= return . G.connectUniqueFrom p Has expectedPid
     case (getState p rg, listToMaybe $ G.connectedTo p Has rg) of
       (M0.PSOnline, _) -> do
         phaseLog "warn" $ "ONLINE for PSOnline process: " ++ show p

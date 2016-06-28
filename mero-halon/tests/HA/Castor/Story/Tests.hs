@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo       #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TupleSections   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -11,18 +12,15 @@ module HA.Castor.Story.Tests where
 
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
-#ifdef USE_MERO
+import HA.NodeUp (nodeUp)
+import HA.RecoveryCoordinator.Actions.Mero.Conf (encToM0Enc)
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
    ( findRealObjsInPVer
    , findFailableObjs
    )
-#endif
 import HA.RecoveryCoordinator.Events.Drive
 import HA.RecoveryCoordinator.Rules.Castor.Disk.Reset
 import qualified HA.ResourceGraph as G
-import HA.NodeUp (nodeUp)
-import Mero.Notification
-import Mero.Notification.HAState
 import HA.Resources
 import HA.Resources.Castor.Initial
   ( InitialData(..)
@@ -41,20 +39,30 @@ import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
 import HA.Replicator
 
+
+import Mero.ConfC (Fid)
+import Mero.Notification
+import Mero.Notification.HAState
+
 import RemoteTables (remoteTable)
 
 import SSPL.Bindings
 
+import Control.Arrow ((&&&))
 import Control.Monad (forM_, replicateM_, void)
 import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Node
 import Control.Exception as E hiding (assert)
 
 import Data.Aeson (decode, encode)
+import qualified Data.Aeson.Types as Aeson
 import Data.Binary (Binary)
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
+import Data.Foldable (find)
+import Data.Function (fix)
 import Data.Hashable (Hashable)
+import Data.Maybe (listToMaybe)
 import Data.Proxy
 import qualified Data.Set as S
 import Data.Typeable
@@ -102,15 +110,19 @@ data ThatWhichWeCallADisk = ADisk {
   , aDiskPath :: String -- ^ Has a path
 }
 
-newMeroChannel :: ProcessId -> Process (ReceivePort NotificationMessage, MockM0)
+newMeroChannel :: ProcessId
+               -> Process ( ReceivePort NotificationMessage
+                          , ReceivePort ProcessControlMsg
+                          , MockM0
+                          )
 newMeroChannel pid = do
   (sd, recv) <- newChan
-  (blah, _) <- newChan
+  (cc, recv1) <- newChan
   let sdChan   = TypedChannel sd
-      connChan = TypedChannel blah
+      connChan = TypedChannel cc
       notfication = MockM0
               $ DeclareMeroChannel (ServiceProcess pid) sdChan connChan
-  return (recv, notfication)
+  return (recv, recv1, notfication)
 
 testRules :: Definitions LoopState ()
 testRules = do
@@ -130,6 +142,8 @@ testRules = do
       phaseLog "debug:procs" $ show procs
       forM_ procs $ \proc -> do
         modifyGraph $ setState proc M0.PSOnline
+      -- Also mark the cluster as running.
+      modifyGraph $ G.connectUniqueFrom Cluster Has M0.MeroClusterRunning
       locateNodeOnHost node host
       registerServiceProcess (Node nid) m0d mockMeroConf sp
       void . liftProcess $ promulgateEQ [nid] dc
@@ -172,6 +186,8 @@ mkTests pg = do
           testGreeting transport pg
         , testSuccess "Halon powers down disk on failure" $
           testDrivePoweredDown transport pg
+        , testSuccess "RAID reassembles after expander reset" $
+          testExpanderResetRAIDReassemble transport pg
         ]
 
 run :: (Typeable g, RGroup g)
@@ -182,6 +198,7 @@ run :: (Typeable g, RGroup g)
     -> (    TestArgs
          -> ProcessId
          -> ReceivePort NotificationMessage
+         -> ReceivePort ProcessControlMsg
          -> Process ()
        ) -- actual test
     -> Assertion
@@ -201,14 +218,14 @@ run transport pg interceptor rules test =
 
       startSSPLService (ta_rc ta)
       debug "Started SSPL service"
-      meroRP <- startMeroServiceMock (ta_rc ta)
+      (meroRP, meroCP) <- startMeroServiceMock (ta_rc ta)
       debug "Started Mero mock service"
       rmq <- spawnMockRabbitMQ self
       debug "Started mock RabbitMQ service."
       -- Run the test
       debug "About to run the test"
 
-      test ta rmq meroRP
+      test ta rmq meroRP meroCP
       say "Test finished"
 
       -- Tear down the test
@@ -248,15 +265,18 @@ run transport pg interceptor rules test =
 
       return ()
 
-    startMeroServiceMock :: ProcessId -> Process (ReceivePort NotificationMessage)
+    startMeroServiceMock :: ProcessId
+                         -> Process ( ReceivePort NotificationMessage
+                                    , ReceivePort ProcessControlMsg
+                                    )
     startMeroServiceMock rc = do
       subscribe rc (Proxy :: Proxy (HAEvent DeclareChannels))
       nid <- getSelfNode
       pid <- getSelfPid
-      (recv, channel) <- newMeroChannel pid
+      (recv, recvc, channel) <- newMeroChannel pid
       _ <- promulgateEQ [nid] channel
       _ <- expect :: Process (Published (HAEvent DeclareChannels))
-      return recv
+      return (recv, recvc)
 
     spawnMockRabbitMQ :: ProcessId -> Process ProcessId
     spawnMockRabbitMQ self = do
@@ -328,7 +348,10 @@ isPowered (SDPowered x) = x
 isPowered _             = False
 
 expectNodeMsg :: Int -> Process (Maybe ActuatorRequestMessageActuator_request_typeNode_controller)
-expectNodeMsg = expectActuatorMsg
+expectNodeMsg = (fmap (fmap snd)) . expectNodeMsgUid
+
+expectNodeMsgUid :: Int -> Process (Maybe (Maybe UUID, ActuatorRequestMessageActuator_request_typeNode_controller))
+expectNodeMsgUid = expectActuatorMsg
   (actuatorRequestMessageActuator_request_typeNode_controller
   . actuatorRequestMessageActuator_request_type
   . actuatorRequestMessage
@@ -342,12 +365,23 @@ expectLoggingMsg = expectActuatorMsg'
   )
 
 
-expectActuatorMsg :: (ActuatorRequest -> Maybe b) -> Int -> Process (Maybe b)
+expectActuatorMsg :: (ActuatorRequest -> Maybe b) -> Int -> Process (Maybe (Maybe UUID, b))
 expectActuatorMsg f t = do
-  expectTimeout t >>= \case
-    Just (MQMessage _ msg) -> return $ f =<< (decode . LBS.fromStrict $ msg)
-    Nothing -> do liftIO $ assertFailure "No message delivered to SSPL."
-                  undefined
+    expectTimeout t >>= \case
+      Just (MQMessage _ msg) -> return $ pull2nd . (getUUID &&& f) =<< (decode . LBS.fromStrict $ msg)
+      Nothing -> do liftIO $ assertFailure "No message delivered to SSPL."
+                    undefined
+  where
+    getUUID arm = do
+      uid_s <- actuatorRequestMessageSspl_ll_msg_headerUuid
+                . actuatorRequestMessageSspl_ll_msg_header
+                . actuatorRequestMessage
+                $ arm
+      UUID.fromText uid_s
+    pull2nd :: (a, Maybe b) -> Maybe (a,b)
+    pull2nd (x, Just y) = Just (x,y)
+    pull2nd (_, Nothing) = Nothing
+
 
 expectActuatorMsg' :: (ActuatorRequest -> Maybe b) -> Int -> Process (Either String b)
 expectActuatorMsg' f t = do
@@ -358,6 +392,12 @@ expectActuatorMsg' f t = do
     Nothing -> do liftIO $ assertFailure "No message delivered to SSPL."
                   undefined
 
+nextNotificationFor :: Fid -> ReceivePort NotificationMessage -> Process Set
+nextNotificationFor fid recv = fix $ \go -> do
+  s@(Set notes) <- notificationMessage <$> receiveChan recv
+  case (find (\(Note f _) -> f == fid) notes) of
+    Just _ -> return s
+    Nothing -> go
 --------------------------------------------------------------------------------
 -- Test primitives
 --------------------------------------------------------------------------------
@@ -395,7 +435,7 @@ failDrive recv (ADisk _ (Just sdev) serial _) = let
     -- We a drive failure note to the RC.
     _ <- promulgateEQ [nid] fail_evt
     -- Mero should be notified that the drive should be transient.
-    Just (Set msg) <- fmap notificationMessage <$> receiveChanTimeout 10000000 recv
+    Set msg <- nextNotificationFor (M0.fid sdev) recv
     debug $ show msg
     liftIO $ do
       assertEqual "Response to failed drive should have entries for disk and sdev"
@@ -449,7 +489,7 @@ smartTestComplete recv success (ADisk _ msdev serial _) = let
 
     -- If the sdev is there
     forM_ msdev $ \sdev -> do
-      Set [Note fid stat, Note _ _] <- notificationMessage  <$> receiveChan recv
+      Set [Note fid stat, Note _ _] <- nextNotificationFor (M0.fid sdev) recv
       debug "smartTestComplete: Mero notification received"
       liftIO $ assertEqual
         "Smart test succeeded. Drive fids and status should match."
@@ -463,7 +503,7 @@ smartTestComplete recv success (ADisk _ msdev serial _) = let
 testDiskFailure :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testDiskFailure transport pg = run transport pg interceptor [] test where
   interceptor _ _ = return ()
-  test (TestArgs _ mm rc) rmq recv = do
+  test (TestArgs _ mm rc) rmq recv _ = do
     prepareSubscriptions rc rmq
 
     sdev <- G.getGraph mm >>= findSDev
@@ -474,7 +514,7 @@ testDiskFailure transport pg = run transport pg interceptor [] test where
 testHitResetLimit :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testHitResetLimit transport pg = run transport pg interceptor [] test where
   interceptor _ _ = return ()
-  test (TestArgs _ mm rc) rmq recv = do
+  test (TestArgs _ mm rc) rmq recv _ = do
     prepareSubscriptions rc rmq
 
     sdev <- G.getGraph mm >>= findSDev
@@ -501,7 +541,7 @@ testHitResetLimit transport pg = run transport pg interceptor [] test where
 testFailedSMART :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testFailedSMART transport pg = run transport pg interceptor [] test where
   interceptor _ _ = return ()
-  test (TestArgs _ mm rc) rmq recv = do
+  test (TestArgs _ mm rc) rmq recv _ = do
     prepareSubscriptions rc rmq
 
     sdev <- G.getGraph mm >>= findSDev
@@ -512,7 +552,7 @@ testFailedSMART transport pg = run transport pg interceptor [] test where
 testSecondReset :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testSecondReset transport pg = run transport pg interceptor [] test where
   interceptor _ _ = return ()
-  test (TestArgs _ mm rc) rmq recv = do
+  test (TestArgs _ mm rc) rmq recv _ = do
     prepareSubscriptions rc rmq
 
     sdev <- G.getGraph mm >>= findSDev
@@ -600,7 +640,7 @@ testDriveRemovedBySSPL :: (Typeable g, RGroup g)
                        => Transport -> Proxy g -> IO ()
 testDriveRemovedBySSPL transport pg = run transport pg interceptor [] test where
   interceptor _rc _str = return ()
-  test (TestArgs _ mm rc) rmq recv = do
+  test (TestArgs _ mm rc) rmq recv _ = do
     prepareSubscriptions rc rmq
     subscribe rc (Proxy :: Proxy DriveRemoved)
     let enclosure = "enclosure_2"
@@ -643,7 +683,7 @@ testDynamicPVer transport pg = run transport pg interceptor [] test where
       pverFids = allFids `S.difference` fids
     in
       assertMsg msg $ check pverFids pvFids
-  test (TestArgs _ mm rc) rmq recv = do
+  test (TestArgs _ mm rc) rmq recv _ = do
     prepareSubscriptions rc rmq
     loadInitialDataMod $ \x -> x {
         id_m0_globals = (id_m0_globals x) { m0_failure_set_gen = Dynamic }
@@ -673,7 +713,7 @@ testDrivePoweredDown :: (Typeable g, RGroup g)
                       => Transport -> Proxy g -> IO ()
 testDrivePoweredDown transport pg = run transport pg interceptor [] test where
   interceptor _rc _str = return ()
-  test (TestArgs _ mm rc) rmq recv = let
+  test (TestArgs _ mm rc) rmq recv _ = let
       host = pack systemHostname
       enc = Enclosure "enclosure_2"
     in do
@@ -704,7 +744,7 @@ testMetadataDriveFailed :: (Typeable g, RGroup g)
                         => Transport -> Proxy g -> IO ()
 testMetadataDriveFailed transport pg = run transport pg interceptor [] test where
   interceptor _rc _str = return ()
-  test (TestArgs _ mm rc) rmq recv = let
+  test (TestArgs _ mm rc) rmq recv _ = let
       host = pack systemHostname
       raidDevice = "/dev/raid"
       raidData = mkResponseRaidData host raidDevice
@@ -775,7 +815,7 @@ testMetadataDriveFailed transport pg = run transport pg interceptor [] test wher
 testGreeting :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testGreeting transport pg = run transport pg interceptor [] test where
   interceptor _rc _str = return ()
-  test (TestArgs _ _ rc) rmq _ = do
+  test (TestArgs _ _ rc) rmq _ _ = do
     prepareSubscriptions rc rmq
 
     _ <- promulgate MarkDriveFailed
@@ -800,3 +840,142 @@ testGreeting transport pg = run transport pg interceptor [] test where
     case mmsg2 of
       Left s  -> liftIO $ assertFailure $ "wrong message received" ++ s
       Right _  -> return ()
+
+type RaidMsg = (NodeId, SensorResponseMessageSensor_response_typeRaid_data)
+
+testExpanderResetRAIDReassemble :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] test where
+  interceptor _rc _str = return ()
+  test (TestArgs _ mm rc) rmq recv recc = do
+    prepareSubscriptions rc rmq
+    subscribe rc (Proxy :: Proxy (HAEvent ExpanderReset))
+    subscribe rc (Proxy :: Proxy (HAEvent RaidMsg))
+
+    let host = pack systemHostname
+        raidDevice = "/dev/raid"
+        raidData = mkResponseRaidData host raidDevice
+                                        [ (("/dev/mddisk1", "mdserial1"), True) -- disk1 ok
+                                        , (("/dev/mddisk2", "mdserial2"), True) -- disk2 failed
+                                        ]
+        raidMsg = LBS.toStrict . encode
+              $ mkSensorResponse $ emptySensorMessage {
+                  sensorResponseMessageSensor_response_typeRaid_data = Just raidData
+              }
+        erm = LBS.toStrict . encode
+              $ mkSensorResponse $ emptySensorMessage {
+                  sensorResponseMessageSensor_response_typeExpander_reset =
+                    Just Aeson.Null
+                }
+
+    -- Before we can do anything, we need to establish a fake RAID device.
+    usend rmq $ MQPublish "sspl_halon" "sspl_ll" raidMsg
+    _ <- expect :: Process (Published (HAEvent RaidMsg))
+    debug "RAID devices established"
+
+    nid <- getSelfNode
+    rg <- G.getGraph mm
+    let encs = [ enc | rack <- G.connectedTo Cluster Has rg :: [Rack]
+                     , enc <- G.connectedTo rack Has rg]
+
+    debug $ "Enclosures: " ++ show encs
+    let [enc] = encs
+        (Just m0enc) = listToMaybe $ encToM0Enc enc rg
+
+    debug $ "(enc, m0enc): " ++ show (enc, m0enc)
+
+    -- First, we sent expander reset message for an enclosure.
+    usend rmq $ MQPublish "sspl_halon" "sspl_ll" erm
+
+    -- Should get propogated to the RC
+    _ <- expect :: Process (Published (HAEvent ExpanderReset))
+    debug "ExpanderReset rule fired"
+
+    -- Should expect notification from Mero that the enclosure is transient
+    do
+      Set notes <- nextNotificationFor (M0.fid m0enc) recv
+      debug $ "Enc-transient-notes: " ++ show notes
+      liftIO $ assertBool "enclosure is in transient state" $
+               (Note (M0.fid m0enc) M0_NC_TRANSIENT) `elem` notes
+
+    -- Should also expect a message to SSPL asking it to disable swap
+    do
+      Just (uid, msg) <- expectNodeMsgUid ssplTimeout
+      debug $ "sspl_msg(disable_swap): " ++ show msg
+      let nc = SwapEnable False
+          cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+                $ nodeCmdString nc
+      liftIO $ assertEqual "Swap is disabled" cmd msg
+      -- Reply with a command acknowledgement
+      promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
+
+    -- Mero services should be stopped
+    do
+      StopProcesses pcs <- receiveChan recc
+      liftIO $ assertEqual "One process on node" 1 $ length pcs
+      -- Reply with successful stoppage
+      let [(_, pc)] = pcs
+          fid = case pc of
+                  ProcessConfigLocal x _ _ -> x
+                  ProcessConfigRemote x _ -> x
+      promulgateEQ [nid] $ ProcessControlResultStopMsg nid [Left fid]
+
+    debug "Mero process stop result sent"
+    -- We will not see 'OFFLINE' since the process on this node is offline
+
+    -- Should see unmount message
+    do
+      Just (uid, msg) <- expectNodeMsgUid ssplTimeout
+      debug $ "sspl_msg(unmount): " ++ show msg
+      let nc = (Unmount "/var/mero")
+          cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+                $ nodeCmdString nc
+      liftIO $ assertEqual "/var/mero is unmounted" cmd msg
+      -- Reply with a command acknowledgement
+      promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
+
+    -- Should see 'stop RAID' message
+    do
+      Just (uid, msg) <- expectNodeMsgUid ssplTimeout
+      debug $ "sspl_msg(stop_raid): " ++ show msg
+      let nc = NodeRaidCmd raidDevice RaidStop
+          cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+                $ nodeCmdString nc
+      liftIO $ assertEqual "RAID is stopped" cmd msg
+      -- Reply with a command acknowledgement
+      promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
+
+    -- Should see 'reassemble RAID' message
+    do
+      Just (uid, msg) <- expectNodeMsgUid ssplTimeout
+      debug $ "sspl_msg(assemble_raid): " ++ show msg
+      let nc = NodeRaidCmd "--scan" (RaidAssemble [])
+          cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+                $ nodeCmdString nc
+      liftIO $ assertEqual "RAID is assembling" cmd msg
+      -- Reply with a command acknowledgement
+      promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
+
+    -- Mero services should be restarted
+    do
+      StartProcesses pcs <- receiveChan recc
+      liftIO $ assertEqual "One process on node" 1 $ length pcs
+      -- Reply with successful stoppage
+      let [(_, pc)] = pcs
+          fid = case pc of
+                  ProcessConfigLocal x _ _ -> x
+                  ProcessConfigRemote x _ -> x
+      promulgateEQ [nid] $ ProcessControlResultMsg nid [Left fid]
+      -- Also send ONLINE for the process
+      promulgateEQ [nid] $ Set [Note fid M0_NC_ONLINE]
+
+    debug "Mero process start result sent"
+
+    -- Should expect notification from Mero that the enclosure is online
+    do
+      Set notes <- nextNotificationFor (M0.fid m0enc) recv
+      debug $ "Enc-online-notes: " ++ show notes
+      liftIO $ assertBool "enclosure is in online state" $
+               (Note (M0.fid m0enc) M0_NC_ONLINE) `elem` notes
+
+
+    return ()

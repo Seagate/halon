@@ -25,6 +25,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   , getAllProcesses
   , getLabeledProcesses
   , getLabeledNodeProcesses
+  , getNodeProcesses
   , m0t1fsBootLevel
   , startMeroProcesses
   , retriggerMeroNodeBootstrap
@@ -350,6 +351,13 @@ getLabeledNodeProcesses node label rg =
        , G.isConnected p Is M0.PSOnline rg
        , G.isConnected p Has label rg
    ]
+
+getNodeProcesses :: Res.Node -> G.Graph -> [M0.Process]
+getNodeProcesses node rg =
+  [ p | host <- G.connectedFrom Runs node rg :: [Castor.Host]
+      , m0node <- G.connectedTo host Runs rg :: [M0.Node]
+      , p <- G.connectedTo m0node M0.IsParentOf rg
+  ]
 
 -- | Find every 'M0.Process' in the 'Res.Cluster'.
 getAllProcesses :: G.Graph -> [M0.Process]
