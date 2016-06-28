@@ -42,8 +42,8 @@ mkTests pg = do
     Right x -> do
       closeConnection x
       return $ \t ->
-        [testSuccess "processOfflinesServices" $
-           processOfflinesServices t pg
+        [testSuccess "stateCascade" $
+           stateCascade t pg
         ]
 
 -- | Used to fire internal test rules
@@ -61,7 +61,6 @@ doTest t pg rules test' = H.run t pg interceptor rules test where
   interceptor _ _ = return ()
   test (TestArgs _ _ rc) rmq recv _ = do
     H.prepareSubscriptions rc rmq
-    H.loadInitialData
     test' recv
 
 -- | Test that internal object change message is properly sent out
@@ -83,20 +82,22 @@ doTest t pg rules test' = H.run t pg interceptor rules test where
 -- * Send the expected mero messages to the test runner
 --
 -- * Compare the messages we're expecting with the messages actually sent out
-processOfflinesServices :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-processOfflinesServices t pg = doTest t pg [rule] test'
+stateCascade :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+stateCascade t pg = doTest t pg [rule] test'
   where
     test' :: ReceivePort NotificationMessage -> Process ()
     test' recv = do
       nid <- getSelfNode
       self <- getSelfPid
       _ <- promulgateEQ [nid] $ RuleHook self
-      Just (Set ns) <- expectTimeout 20000000
-      Just (Set ns') <- fmap notificationMessage <$> receiveChanTimeout 2000000 recv
+      Just (Set ns@((Note f _):_)) <- expectTimeout 20000000
+      H.debug $ "Expected: " ++ show ns
+      Set ns' <- H.nextNotificationFor f recv
+      H.debug $ "Received: " ++ show ns'
       liftIO $ assertEqual "Mero gets the expected note set" (sort ns) (sort ns')
 
     rule :: Definitions LoopState ()
-    rule = define "processOfflinesServicesTest" $ do
+    rule = define "stateCascadeTest" $ do
       init_rule <- phaseHandle "init_rule"
       notified <- phaseHandle "notified"
       timed_out <- phaseHandle "timed_out"
@@ -106,16 +107,23 @@ processOfflinesServices t pg = doTest t pg [rule] test'
       setPhase init_rule $ \(HAEvent eid (RuleHook pid) _) -> do
         rg <- getLocalGraph
         let Just p = listToMaybe $
-                [ p' | (prof :: M0.Profile) <- G.connectedTo Cluster Has rg
+                [ rack | (prof :: M0.Profile) <- G.connectedTo Cluster Has rg
                 , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
-                , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
-                , (p' :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
+                , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
                 ]
-            servs :: [M0.Service]
-            servs = G.connectedTo p M0.IsParentOf rg
-        applyStateChanges [stateSet p M0.PSOffline]
-        let notifySet = stateSet p M0.PSOffline : map (\s -> stateSet s M0.SSOffline) servs
-            meroSet = Note (M0.fid p) M0_NC_FAILED : map (\s -> Note (M0.fid s) M0_NC_FAILED) servs
+            Just encl = listToMaybe
+                      $ (G.connectedTo p M0.IsParentOf rg :: [M0.Enclosure])
+            Just ctrl = listToMaybe
+                      $ (G.connectedTo encl M0.IsParentOf rg :: [M0.Controller])
+        applyStateChanges [stateSet p M0_NC_FAILED]
+        let notifySet = stateSet p M0_NC_FAILED
+                      : stateSet encl M0_NC_TRANSIENT
+                      : stateSet ctrl M0_NC_TRANSIENT
+                      : []
+            meroSet = Note (M0.fid p) M0_NC_FAILED
+                    : (Note (M0.fid encl) M0_NC_TRANSIENT)
+                    : (Note (M0.fid ctrl) M0_NC_TRANSIENT)
+                    : []
         put Local $ Just (eid, pid, notifySet, meroSet)
         switch [notified, timeout 15 timed_out]
 

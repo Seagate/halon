@@ -397,7 +397,9 @@ nextNotificationFor fid recv = fix $ \go -> do
   s@(Set notes) <- notificationMessage <$> receiveChan recv
   case (find (\(Note f _) -> f == fid) notes) of
     Just _ -> return s
-    Nothing -> go
+    Nothing -> do
+      debug $ "Ignoring notification: " ++ show s
+      go
 --------------------------------------------------------------------------------
 -- Test primitives
 --------------------------------------------------------------------------------
