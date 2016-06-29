@@ -55,7 +55,7 @@ import Mero.Notification.HAState (Note(..))
 
 import Control.Category
 import Control.Distributed.Process
-import Control.Monad (forM, unless)
+import Control.Monad (forM, unless, when)
 
 import Data.Foldable (for_)
 import Data.Proxy
@@ -286,6 +286,11 @@ startMeroProcesses (TypedChannel chan) procs' label mkfs = do
               (_, True) -> forM procs (\(proc,b) -> ((if b then (M0MKFS:) else id) [M0D],) <$> runConfig proc rg)
               (_, False) -> forM procs (\(proc,_) -> ([M0D],) <$> runConfig proc rg)
       phaseLog "debug" $ "starting mero processes: " ++ show (fmap (M0.fid.fst) procs)
+
+      -- Hack, see ruleProcessOnline
+      for_ procs $ \(p, b) -> when (mkfs && b) $ do
+        modifyGraph $ G.connectUniqueFrom p Has (M0.PID (-1))
+
       liftProcess $ sendChan chan msg
       for_ procs' $ \p -> modifyGraph
         $ \rg' -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStarting)

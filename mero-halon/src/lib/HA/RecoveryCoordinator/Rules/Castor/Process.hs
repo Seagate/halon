@@ -237,46 +237,48 @@ ruleProcessRestarted = define "processes-restarted" $ do
 -- | Handle online notifications about processes. Part of process
 -- restart procedure.
 ruleProcessOnline :: Definitions LoopState ()
-ruleProcessOnline = defineSimpleIf "process-started" onlineProc $ \(eid, p, expectedPid) -> do
+ruleProcessOnline = defineSimpleIf "process-started" onlineProc $ \(eid, p, processPid) -> do
     todo eid
     rg <- getLocalGraph
+    -- hack: we set PID to -1 when we're waiting for MKFS notification
+    -- to swallow. Temporary measure until we get PID 0 from mero as
+    -- expected.
+    let swallowMsg = G.connectedTo p Has rg == [M0.PID (-1)]
     case (getState p rg, listToMaybe $ G.connectedTo p Has rg) of
-      (M0.PSOnline, pid') -> do
-        when (Just expectedPid /= pid') $ do
-          phaseLog "info" $ "Started notification with new PID, updating: "
-                         ++ show pid' ++ " => " ++ show expectedPid
-          modifyLocalGraph $ return . G.connectUniqueFrom p Has expectedPid
-
-        -- If all processes on the node are online and node wasn't
-        -- failed, mark node as online.
-        case listToMaybe $ G.connectedFrom M0.IsParentOf p rg of
-          Nothing -> phaseLog "warn" $ "Couldn't find node associated with: "
-                                    ++ showFid p
-          Just (n :: M0.Node) -> case getState n rg of
-            M0_NC_TRANSIENT -> do
-              let allProcs :: [(M0.Process, M0.ProcessState)]
-                  allProcs = [ (p', st) | p' <- G.connectedTo n M0.IsParentOf rg
-                                        , Just st <- [listToMaybe $ G.connectedTo p Is rg] ]
-              case all (\(_, st) -> st == M0.PSOnline) allProcs of
-                False -> do
-                  let notOnline = filter (\(_, st) -> st /= M0.PSOnline) allProcs
-                  phaseLog "info" $ "Some processes still not online: "
-                                  ++ intercalate ", " ((\(x,s) -> showFid x ++ "(" ++ show s ++ ")") <$> notOnline)
-                True -> applyStateChanges [stateSet n M0_NC_ONLINE]
-
-            st -> phaseLog "warn" $ "Process online for node in state " ++ show st
-
-      (M0.PSStarting, Just pid')
+      _ | swallowMsg -> do
+            phaseLog "warn" $ "Swallowing mkfs message for " ++ showFid p
+            modifyGraph $ G.disconnectAllFrom p Has (Proxy :: Proxy M0.PID)
+      (M0.PSOnline, Just rgPid) | processPid /= rgPid -> do
+        -- We have an online process already but the PIDs don't match
+        -- up: the process must have restarted and we didn't get an
+        -- SSPL notification about it yet. Set the process to starting
+        -- and let SSPL message handler deal with setting ONLINE when
+        -- a restart notification comes.
+        phaseLog "warn" $ showFid p ++ " restarted, updating PID: "
+                       ++ show rgPid ++ " => " ++ show processPid
+        modifyLocalGraph $ return . G.connectUniqueFrom p Has processPid
+        applyStateChanges [ stateSet p M0.PSStarting ]
+      -- We have a process but no PID for it, somehow. This can happen
+      -- if the process was set to online through all its services
+      -- coming up online and now we're receiving the process
+      -- notification itself.
+      (M0.PSOnline, Nothing) -> notifyProcessStarted p processPid
+      -- Process starting with an expected PID, it must have restarted
+      -- and SSPL has gotten to us first.
+      (M0.PSStarting, Just rgPid)
         -- Process was coming up, it's just started as we expected
-        | expectedPid == pid' -> notifyProcessStarted p expectedPid
-        -- Process was coming up but the fid doesn't match up, do nothing
+        | processPid == rgPid -> do
+            phaseLog "info" $ "Process restarted, mero first: " ++ show rgPid
+            notifyProcessStarted p processPid
+        -- Process was coming up but the PID doesn't match up, do
+        -- nothing.
         | otherwise -> phaseLog "warn" $
-            "Already waiting for notification for PID " ++ show pid'
+            "Already waiting for notification for PID " ++ show rgPid
       -- Process was coming up but we don't have a PID for it for some
       -- reason, just accept it. TODO: We can use
       -- TAG_M0_CONF_HA_PROCESS_STARTING notification now if we
       -- desire.
-      (M0.PSStarting, Nothing) -> notifyProcessStarted p expectedPid
+      (M0.PSStarting, Nothing) -> notifyProcessStarted p processPid
       st -> phaseLog "warn" $ "ruleProcessOnline: Unexpected state for"
             ++ " process " ++ show p ++ ", " ++ show st
     done eid
