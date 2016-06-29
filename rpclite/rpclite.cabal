@@ -33,9 +33,8 @@ library
   if flag(debug)
     cpp-options:      -DDEBUG
 
-  cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
+  pkgconfig-depends:   mero >= 0.1.0
   include-dirs: rpclite
-  extra-libraries: mero
   c-sources: rpclite/rpclite.c
              rpclite/rpclite_fom.c
              rpclite/rpclite_fop.c

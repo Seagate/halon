@@ -3,8 +3,8 @@ machine:
     - docker
   environment:
       # Use only as many jobs as CPUs are available (via cpuset)
-      STACK_FLAGS: --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero --jobs 2
-      STACK_TEST_FLAGS: "--docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1"
+      STACK_FLAGS: "--docker-env LANG=en_US.utf8 --docker-env PKG_CONFIG_PATH=/mero --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero --jobs 2"
+      STACK_TEST_FLAGS: "--docker-env LANG=en_US.utf8 --docker-env PKG_CONFIG_PATH=/mero --docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1"
       TMPDIR: .
 
 checkout:
@@ -57,8 +57,8 @@ test:
     - "iostat -dNtxzm 5 &> iostats.log":
         background: true
     # Build with USE_MERO and then without.
-    - stack $STACK_FLAGS build --docker-env LANG=en_US.utf8 --test --no-run-tests --flag mero-halon:mero --haddock --no-haddock-deps
-    - stack $STACK_FLAGS build --docker-env LANG=en_US.utf8 --flag mero-halon:distributed-tests --test --no-run-tests --haddock --no-haddock-deps
+    - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero --haddock --no-haddock-deps
+    - stack $STACK_FLAGS build --flag mero-halon:distributed-tests --test --no-run-tests --haddock --no-haddock-deps
     # Only test mero-halon and deps, without USE_MERO.
     # Testing with USE_MERO is not possible since m0_init fails when some cpus
     # on the host are forbidden via cpusets as circleci does.

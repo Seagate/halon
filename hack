@@ -11,11 +11,9 @@ if [ -z "$HALON_BUILD_ENV" ]; then
 fi
 
 STACK=$(which stack)
-declare -a EXTRA_LIB_DIRS
-declare -a EXTRA_INCLUDE_DIRS
 declare -a FLAGS
 
-EXTRA_INCLUDE_DIRS=("$DIR/rpclite/rpclite")
+#EXTRA_INCLUDE_DIRS=("$DIR/rpclite/rpclite")
 FLAGS=("--flag *:mero")
 
 if [ $HALON_BUILD_ENV = "bare" ]; then
@@ -24,27 +22,20 @@ if [ $HALON_BUILD_ENV = "bare" ]; then
     exit 1
   fi
   FLAGS=("${FLAGS[@]}" "--no-docker")
-  EXTRA_LIB_DIRS=("${EXTRA_LIB_DIRS[@]}" "$MERO_ROOT/mero/.libs")
-  EXTRA_INCLUDE_DIRS=("${EXTRA_INCLUDE_DIRS[@]}" "$MERO_ROOT" "$MERO_ROOT/extra-libs/galois/include")
+  export PKG_CONFIG_PATH="${MERO_ROOT}"
+  export LD_LIBRARY_PATH="${MERO_ROOT}/mero/.libs"
 fi
 
 if [ $HALON_BUILD_ENV = "prod" ]; then
   FLAGS=("${FLAGS[@]}" "--no-docker")
-  # EXTRA_LIB_DIRS=("${EXTRA_LIB_DIRS[@]}" "$MERO_ROOT/mero/.libs")
-  EXTRA_INCLUDE_DIRS=("${EXTRA_INCLUDE_DIRS[@]}" "/usr/include/mero")
 fi
 
 if [ $HALON_BUILD_ENV = "docker" ]; then
   FLAGS=("${FLAGS[@]}" "--docker")
-  EXTRA_LIB_DIRS=("${EXTRA_LIB_DIRS[@]}" "/mero/mero/.libs")
-  EXTRA_INCLUDE_DIRS=("${EXTRA_INCLUDE_DIRS[@]}" "/mero" "/mero/extra-libs/galois/include")
 fi
 
 if [ $HALON_BUILD_ENV = "nix" ]; then
   FLAGS=("${FLAGS[@]}" "--nix" "--no-docker")
 fi
 
-EXTRA_LIB_DIRS=("${EXTRA_LIB_DIRS[@]/#/--extra-lib-dirs=}")
-EXTRA_INCLUDE_DIRS=("${EXTRA_INCLUDE_DIRS[@]/#/--extra-include-dirs=}")
-
-$STACK $(intercalate ' ' ${EXTRA_LIB_DIRS[@]}) $(intercalate ' ' ${EXTRA_INCLUDE_DIRS[@]}) "$@" $(intercalate ' ' ${FLAGS[@]})
+$STACK "$@" $(intercalate ' ' ${FLAGS[@]})

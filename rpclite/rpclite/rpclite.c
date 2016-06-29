@@ -3,7 +3,6 @@
 // License   : All rights reserved.
 //
 
-#define _GNU_SOURCE
 #include "rpclite.h"
 
 #include "lib/assert.h"
@@ -83,10 +82,6 @@ int rpc_init() {
 
 	return 0;
 
-net_dom_fini:
-		m0_net_domain_fini(&client_net_dom);
-ha_fini:
-		m0_ha_domain_fini(&client_ha_dom);
 fop_fini:
 		rpclite_fop_fini();
 rpc_stat_fini:
@@ -350,19 +345,16 @@ inline void fill_rpclite_fop(struct rpclite_fop* rpclite_fop,struct iovec* segme
  *
  * */
 int rpc_send_fop_blocking_and_release(rpc_connection_t* c,struct m0_fop* fop,int timeout_s) {
-	m0_time_t time;
 	int rc;
 
 	M0_ASSERT(fop != NULL);
     if (m0_fop_payload_size(&fop->f_item)+ITEM_SIZE_CUSHION > m0_rpc_session_get_max_item_size(&c->session)) {
         fprintf(stderr,"rpc_send_fop_blocking_and_release: rpclite got a message which is too big"
-                       ": %d vs %d\n", m0_fop_payload_size(&fop->f_item)
-                                     , m0_rpc_session_get_max_item_size(&c->session)-ITEM_SIZE_CUSHION
+                       ": %d vs %d\n", (int)m0_fop_payload_size(&fop->f_item)
+                                     , (int)m0_rpc_session_get_max_item_size(&c->session)-ITEM_SIZE_CUSHION
                );
         exit(1);
     }
-
-	time = m0_time_now();
 
 	fop->f_item.ri_nr_sent_max = 1;
 	fop->f_item.ri_resend_interval = m0_time(timeout_s?timeout_s:1,0);
@@ -377,13 +369,6 @@ int rpc_send_fop_blocking_and_release(rpc_connection_t* c,struct m0_fop* fop,int
 
         m0_fop_put_lock(fop);
 
-	return rc;
-
-out:
-	if (!rc) {
-		time = m0_time_sub(m0_time_now(), time);
-		add_rpc_stat_record(RPC_STAT_SEND, time);
-	}
 	return rc;
 }
 
@@ -414,7 +399,7 @@ int rpc_get_fragment_count(rpc_item_t* it,int i){
 	// return ((struct rpclite_fop*)m0_fop_data(it->fop))->fp_fragments.f_fragments[i].f_count;
 }
 
-char* rpc_get_fragment(rpc_item_t* it,int i) {
+uint8_t* rpc_get_fragment(rpc_item_t* it,int i) {
 	return ((struct rpclite_fop*)m0_fop_data(it->fop))->fp_fragments.f_fragments;
 	// return ((struct rpclite_fop*)m0_fop_data(it->fop))->fp_fragments.f_fragments[i].f_data;
 }
@@ -507,8 +492,8 @@ int rpc_send(rpc_connection_t* c,struct iovec* segments,int segment_count,void (
 
     if (m0_fop_payload_size(&msg->fop.f_item)+ITEM_SIZE_CUSHION > m0_rpc_session_get_max_item_size(&c->session)) {
         fprintf(stderr,"rpc_send: rpclite got a message which is too big"
-                       ": %d vs %d\n", m0_fop_payload_size(&msg->fop.f_item)
-                                     , m0_rpc_session_get_max_item_size(&c->session)-ITEM_SIZE_CUSHION
+                       ": %d vs %d\n", (int)m0_fop_payload_size(&msg->fop.f_item)
+                                     , (int)m0_rpc_session_get_max_item_size(&c->session)-ITEM_SIZE_CUSHION
                );
 exit(1);
     }

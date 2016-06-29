@@ -73,8 +73,4 @@ nix:
             ]
 
 extra-include-dirs:
-- /mero
-- /mero/extra-libs/galois/include
 - ../rpclite/rpclite
-extra-lib-dirs:
-- /mero/mero/.libs

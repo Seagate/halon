@@ -193,8 +193,6 @@ Library
                       HA.Services.Mero.CEP
                       HA.Services.Mero.Types
                       System.Posix.SysInfo
-      cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
-                  -Wall
       -- cc-options aren't used when compiling Haskell files, and this is
       -- necessary for using CApiFFI, thus we need to pass those options here as
       -- well.
@@ -202,7 +200,6 @@ Library
                    -optc-DM0_EXTERN=extern -optc-Wall
       c-sources: hastate/hastate.c
       include-dirs: hastate
-      extra-libraries: mero
       Build-Depends: rpclite,
                      confc,
                      template-haskell,
@@ -210,6 +207,7 @@ Library
                      vector,
                      psqueues,
                      stm
+      pkgconfig-depends: mero >= 0.1.0
   if flag(rpc)
       Build-Depends: rpclite,
                      network-transport-rpc
@@ -249,7 +247,6 @@ Executable halonctl
                       StandaloneDeriving
   Other-Extensions:   CPP
   if flag(mero)
-    cc-options:       -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
     CPP-Options:    -DUSE_MERO
     Build-Depends:    confc
   if flag(rpc)
@@ -322,7 +319,6 @@ Executable halond
                       StandaloneDeriving
   Other-Extensions:   CPP
   if flag(mero)
-    cc-options:       -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
     CPP-Options:      -DUSE_MERO
   if flag(rpc)
       CPP-Options:    -DUSE_RPC

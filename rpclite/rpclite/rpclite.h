@@ -191,7 +191,7 @@ int rpc_get_fragments_count(rpc_item_t* it);
 /** Length of the fragment in bytes */
 int rpc_get_fragment_count(rpc_item_t* it,int i);
 /** Data of the fragment */
-char* rpc_get_fragment(rpc_item_t* it,int);
+uint8_t* rpc_get_fragment(rpc_item_t* it,int);
 
 /** an identifier of the connection on which the item was received.
  *
