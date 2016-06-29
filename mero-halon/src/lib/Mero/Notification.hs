@@ -40,7 +40,7 @@ import Control.SpineSeq (spineSeq)
 import Network.CEP (liftProcess, MonadProcess)
 
 import Mero
-import Mero.ConfC (Fid, ServiceType(..))
+import Mero.ConfC (Fid, ServiceType(..), Word128)
 import Mero.Notification.HAState hiding (getRPCMachine)
 import Mero.Concurrent
 import qualified Mero.Notification.HAState as HAState
@@ -447,8 +447,8 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
                    liftGlobalM0 $ entrypointNoReply reqId
       liftIO $ traceEventIO "STOP ha_entrypoint"
 
-    ha_connected :: IORef [HALink] -> HALink -> IO ()
-    ha_connected links hl = atomicModifyIORef links $ \xs -> (hl : xs, ())
+    ha_connected :: IORef [HALink] -> Word128 -> HALink -> IO ()
+    ha_connected links _ hl = atomicModifyIORef links $ \xs -> (hl : xs, ())
 
     ha_disconnecting :: IORef [HALink] -> HALink -> IO ()
     ha_disconnecting links hl = do

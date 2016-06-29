@@ -33,8 +33,8 @@ module Mero.Notification.HAState
 
 import HA.Resources.Mero.Note
 
-import Mero.ConfC (Fid)
-import Network.RPC.RPCLite (RPCAddress(..), RPCMachine(..), RPCMachineV)
+import Mero.ConfC             (Fid, Word128)
+import Network.RPC.RPCLite    (RPCAddress(..), RPCMachine(..), RPCMachineV)
 
 import Control.Exception      ( Exception, throwIO, SomeException, evaluate )
 import Control.Monad          ( liftM2, liftM3, liftM4, void )
@@ -153,8 +153,9 @@ initHAState :: RPCAddress
             -> (ReqId -> Fid -> Fid -> IO ())
                -- ^ Called when a request to read current confd and rm endpoints
                -- is received.
-            -> (HALink -> IO ())
+            -> (Word128 -> HALink -> IO ())
                -- ^ Called when a new link is established.
+               -- Word128 is for requiest id passed in entrypoint request.
             -> (HALink -> IO ())
                -- ^ The link is no longer needed by the remote peer.
                -- It is safe to call 'disconnect' when all 'notify' calls
@@ -211,11 +212,12 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
         ha_state_entry (ReqId reqId) processFid profileFid)
         $ \e -> hPutStrLn stderr $
                   "initHAState.wrapEntryCB: " ++ show (e :: SomeException)
-    wrapConnectedCB = cwrapConnectedCB $ \hl ->
-        catch (ha_state_link_connected (HALink hl)) $ \e ->
+    wrapConnectedCB = cwrapConnectedCB $ \wptr hl -> do
+        w128 <- peek wptr
+        catch (ha_state_link_connected w128 (HALink hl)) $ \e ->
           hPutStrLn stderr $
             "initHAState.wrapConnectedCB: " ++ show (e :: SomeException)
-    wrapDisconnectingCB = cwrapConnectedCB $ \hl ->
+    wrapDisconnectingCB = cwrapDisconnectingCB $ \hl ->
         catch (ha_state_link_disconnecting (HALink hl)) $ \e ->
           hPutStrLn stderr $
             "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
@@ -245,8 +247,13 @@ foreign import ccall "wrapper" cwrapSetCB :: (Ptr NVec -> IO ())
 foreign import ccall "wrapper" cwrapEntryCB ::
     (Ptr ReqId -> Ptr Fid -> Ptr Fid -> IO ()) -> IO (FunPtr (Ptr ReqId -> Ptr Fid -> Ptr Fid -> IO ()))
 
+foreign import ccall "wrapper" cwrapDisconnectingCB ::
+                  (Ptr HALink -> IO ())
+    -> IO (FunPtr (Ptr HALink -> IO ()))
+
 foreign import ccall "wrapper" cwrapConnectedCB ::
-    (Ptr HALink -> IO ()) -> IO (FunPtr (Ptr HALink -> IO ()))
+                  (Ptr Word128 -> Ptr HALink -> IO ())
+    -> IO (FunPtr (Ptr Word128 -> Ptr HALink -> IO ()))
 
 instance Storable Note where
 
