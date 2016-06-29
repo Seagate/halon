@@ -100,13 +100,11 @@ haAddress = ":12345:34:101"
 --
 -- It does nothing if 'lsRPCAddress' has not been set.
 withRootRC :: (Root -> IO a) -> PhaseM LoopState l (Maybe a)
-withRootRC f = do
- rpca <- getRPCAddress
+withRootRC f =
  getConfdServers >>= \case
   [] -> return Nothing
-  confdServer:_ -> withNI rpca $ \niRef ->
-    liftM0RC $ do
-      Just rpcm <- getRPCMachine niRef
+  confdServer:_ -> liftM0RC $ do
+      Just rpcm <- getRPCMachine
       withConf rpcm (rpcAddress confdServer) f
 
 -- | Try to connect to spiel and run the 'PhaseM' on the
@@ -118,8 +116,8 @@ withSpielRC :: (SpielContext -> (forall b . IO b -> PhaseM LoopState l b) -> Pha
             -> PhaseM LoopState l (Either SomeException a)
 withSpielRC f = withResourceGraphCache $ do
   rpca <- getRPCAddress
-  try $ withNI rpca $ \niRef -> withM0RC $ \lift -> do
-     Just rpcm <- lift $ getRPCMachine niRef
+  try $ withM0RC $ \lift -> do
+     Just rpcm <- lift $ getRPCMachine
      conn <- lift $ initHASession rpcm rpca
      sc <- lift $ Mero.Spiel.start rpcm
      f sc lift `sfinally`  lift (Mero.Spiel.stop sc >> finiHASession conn)

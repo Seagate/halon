@@ -13,8 +13,6 @@
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE ViewPatterns          #-}
 
-{-# OPTIONS_GHC -fno-warn-unused-binds #-}
-
 module HA.Services.Mero
     ( MeroChannel(..)
     , TypedChannel(..)
@@ -48,7 +46,7 @@ import qualified HA.RecoveryCoordinator.Events.Mero as M0
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (ConfObjectState, NotifyFailureEndpoints(..))
+import HA.Resources.Mero.Note (ConfObjectState)
 import HA.Service
 import HA.Services.Mero.CEP (meroRulesF)
 import HA.Services.Mero.Types
@@ -56,14 +54,14 @@ import qualified HA.ResourceGraph as G
 
 import qualified Mero.Notification
 import Mero.Notification (Set, NIRef)
-import Mero.Notification.HAState (Note(..), HAStateException)
-import Mero.ConfC (Fid, ServiceType(..), fidToStr)
+import Mero.Notification.HAState (Note(..))
+import Mero.ConfC (Fid, ServiceType(..), fidToStr, strToFid)
 
 import Network.CEP
 import qualified Network.RPC.RPCLite as RPC
 
 import Control.Concurrent (threadDelay)
-import Control.Exception (SomeException, IOException)
+import Control.Exception (SomeException)
 import qualified Control.Distributed.Process.Timeout as PT (timeout)
 import Control.Distributed.Process.Closure
   ( remotableDecl
@@ -74,14 +72,14 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process hiding (catch, onException, bracket_)
 import Control.Monad.Catch (catch, onException, bracket_)
-import Control.Monad (forever, join, unless, void, when)
+import Control.Monad (forever, join, void, when)
 import qualified Control.Monad.Catch as Catch
 
 import qualified Data.ByteString as BS
 import Data.Char (toUpper)
-import Data.Foldable (forM_, asum, traverse_)
+import Data.Foldable (for_, traverse_)
 import Data.Traversable (forM)
-import Data.List (nub, partition)
+import Data.List (partition)
 import Data.Maybe (catMaybes, listToMaybe, maybeToList)
 import qualified Data.Set as Set
 import qualified Data.UUID as UUID
@@ -264,7 +262,7 @@ writeSysconfig MeroConf{..} run procFid m0addr confdPath = do
     _ <- SystemD.sysctlFile fileName $
       [ ("MERO_" ++ fmap toUpper prefix ++ "_EP", m0addr)
       , ("MERO_HA_EP", mcHAAddress)
-      , ("MERO_PROFILE_FID", mcProfile)
+      , ("MERO_PROFILE_FID", fidToStr mcProfile)
       ] ++ maybeToList (("MERO_CONF_XC",) <$> confdPath)
     return $ unit
   where
@@ -304,8 +302,10 @@ remotableDecl [ [d|
           void . promulgate . M0.MeroKernelFailed self $
             "mero-kernel service failed to start: " ++ show i
     where
+      profileFid = mcProfile conf
+      processFid = mcProcess conf
       haAddr = RPC.rpcAddress $ mcHAAddress conf
-      withEp = Mero.Notification.withNI haAddr
+      withEp = Mero.Notification.withNI haAddr processFid profileFid
       -- Kernel
       startKernel = liftIO $ do
         SystemD.sysctlFile "mero-kernel"
@@ -317,7 +317,7 @@ remotableDecl [ [d|
       stopKernel = return () -- liftIO $ SystemD.stopService "mero-kernel"
       bootstrap = do
         traceM0d "DEBUG: Pre-initialize"
-        Mero.Notification.initialize haAddr
+        Mero.Notification.initialize haAddr processFid profileFid
         traceM0d "DEBUG: Post-initialize"
       teardown = do
         traceM0d "DEBUG: Pre-finalize"
@@ -431,9 +431,9 @@ notifyMeroAndThen setEvent fsucc ffail = do
     sendChansBlocking chans =
       ((callLocal $ PT.timeout 1000000 $ do
           selfLocal <- getSelfPid
-          forM_ chans $ \(chan, recipients) ->
+          for_ chans $ \(chan, recipients) ->
             sendChan chan $ NotificationMessage setEvent recipients [selfLocal]
-          forM_ chans $ const (expect :: Process NotificationAck)
+          for_ chans $ const (expect :: Process NotificationAck)
        ) `onException` ffail)
       >>= maybe ffail (const fsucc)
 
@@ -442,7 +442,7 @@ notifyMero setEvent = do
   phaseLog "action" $ "Sending configuration update to mero services: "
                    ++ show setEvent
   chans <- getNotificationChannels
-  forM_ chans $ \(sp, recipients) -> liftProcess $
+  for_ chans $ \(sp, recipients) -> liftProcess $
       sendChan sp $ NotificationMessage setEvent recipients []
 
 lookupMeroChannelByNode :: Node -> PhaseM LoopState l (Maybe (TypedChannel NotificationMessage))

@@ -14,8 +14,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -fno-warn-dodgy-exports #-}
-
 module Mero.Notification
     ( Set(..)
     , Get(..)
@@ -65,7 +63,7 @@ import Control.Arrow ((***))
 import Control.Concurrent.MVar
 import Control.Distributed.Process.Internal.Types ( LocalNode, processNode )
 import qualified Control.Distributed.Process.Node as CH ( forkProcess )
-import Control.Monad ( void, join, (<=<) )
+import Control.Monad (void, join)
 import Control.Monad.Trans (MonadIO)
 import Control.Monad.Catch (MonadCatch, SomeException)
 import Control.Monad.Reader (ask)
@@ -73,7 +71,7 @@ import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TChan (TChan, readTChan, newTChanIO, writeTChan)
 import qualified Control.Monad.Catch as Catch
 import Data.Foldable (forM_)
-import Data.Binary (Binary)
+import Data.Binary (Binary(..))
 import Data.Hashable (Hashable)
 import Data.List (delete, nub)
 import Data.Maybe (listToMaybe)
@@ -161,10 +159,13 @@ globalResourceGraphCache = unsafePerformIO $ newIORef Nothing
 -- instead.
 withNI :: forall m a. (MonadIO m, MonadProcess m, MonadCatch m)
                => RPCAddress
+               -> Fid -- ^ Process Fid
+               -> Fid -- ^ Profile Fid
                -> (NIRef -> m a)
                -> m a
-withNI addr f = liftProcess (initializeInternal addr)
-                            >>= (`withMVarProcess` f)
+withNI addr processFid profileFid f =
+    liftProcess (initializeInternal addr processFid profileFid)
+      >>= (`withMVarProcess` f)
   where
     trySome :: MonadCatch m => m a -> m (Either SomeException a)
     trySome = Catch.try
@@ -197,8 +198,10 @@ withNI addr f = liftProcess (initializeInternal addr)
 -- that finalization doesn't happen between 'initializeInternal' and
 -- 'withNI'.
 initializeInternal :: RPCAddress -- ^ Listen address.
+                   -> Fid        -- ^ Process FID
+                   -> Fid        -- ^ Profile FID
                    -> Process (MVar EndpointRef, EndpointRef, NIRef)
-initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case ref of
+initializeInternal addr processFid profileFid = liftIO (takeMVar globalEndpointRef) >>= \ref -> case ref of
   EndpointRef { _erNIRef = Just niRef } -> do
     say "initializeInternal: using existing endpoint"
     return (globalEndpointRef, ref, niRef)
@@ -214,7 +217,7 @@ initializeInternal addr = liftIO (takeMVar globalEndpointRef) >>= \ref -> case r
         link pid
         proc <- ask
         (barrier, r) <- liftGlobalM0 $ do
-           (barrier, niRef) <- initializeHAStateCallbacks (processNode proc) addr
+           (barrier, niRef) <- initializeHAStateCallbacks (processNode proc) addr processFid profileFid
            addM0Finalizer $ finalizeInternal globalEndpointRef
            let ref' = emptyEndpointRef { _erNIRef = Just niRef }
            return (barrier, (globalEndpointRef, ref', niRef))
@@ -375,12 +378,17 @@ newtype NIRef = NIRef (IORef [HALink])
 
 -- | Initializes the hastate interface in the node where it will be
 -- used. Call it before @m0_init@ and before 'initialize'.
-initializeHAStateCallbacks :: LocalNode -> RPCAddress -> IO (MVar (Either SomeException ()), NIRef)
-initializeHAStateCallbacks lnode addr = do
+initializeHAStateCallbacks :: LocalNode
+                           -> RPCAddress
+                           -> Fid -- ^ Process Fid.
+                           -> Fid -- ^ Profile Fid.
+                           -> IO (MVar (Either SomeException ()), NIRef)
+initializeHAStateCallbacks lnode addr processFid profileFid = do
     links <- newIORef []
     barrier <- newEmptyMVar
     _ <- forkM0OS $ do -- Thread will be joined just before mero will be finalized
-             er <- Catch.try $ initHAState addr ha_state_get
+             er <- Catch.try $ initHAState addr processFid profileFid
+                            ha_state_get
                             (ha_state_set links)
                             ha_entrypoint
                             (ha_connected links)
@@ -414,8 +422,8 @@ initializeHAStateCallbacks lnode addr = do
       atomically $ writeTChan notificationChannel nvec
       traceEventIO "STOP ha_state_set"
 
-    ha_entrypoint :: ReqId -> IO ()
-    ha_entrypoint reqId = void $ CH.forkProcess lnode $ do
+    ha_entrypoint :: ReqId -> Fid -> Fid -> IO ()
+    ha_entrypoint reqId _procFid _profFid = void $ CH.forkProcess lnode $ do
       liftIO $ traceEventIO "START ha_entrypoint"
       say "ha_entrypoint: try to read values from cache."
       self <- getSelfPid
@@ -451,8 +459,8 @@ initializeHAStateCallbacks lnode addr = do
       -- TODO: call ha_state_disconnect hl when safe
 
 -- | Yields the 'RPCMachine' created with 'initializeHAStateCallbacks'.
-getRPCMachine :: NIRef -> IO (Maybe RPCMachine)
-getRPCMachine _ = HAState.getRPCMachine
+getRPCMachine :: IO (Maybe RPCMachine)
+getRPCMachine = HAState.getRPCMachine
 
 -- | Initialiazes the 'EndpointRef' subsystem.
 --
@@ -460,9 +468,11 @@ getRPCMachine _ = HAState.getRPCMachine
 -- resulting 'MVar' is to be used, it could be finalized already. Most
 -- users want to simply call 'withNI'.
 initialize :: RPCAddress -- ^ Listen address.
+           -> Fid        -- ^ Process Fid.
+           -> Fid        -- ^ Profule Fid.
            -> Process (MVar EndpointRef)
-initialize adr = do
-  (m, ref, _) <- initializeInternal adr
+initialize adr processFid profileFid = do
+  (m, ref, _) <- initializeInternal adr processFid profileFid
   liftIO $ putMVar m ref
   return m
 

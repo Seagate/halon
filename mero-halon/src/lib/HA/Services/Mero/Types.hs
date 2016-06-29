@@ -13,7 +13,7 @@ import HA.ResourceGraph
 import HA.Service
 import HA.Service.TH
 
-import Mero.ConfC (Fid)
+import Mero.ConfC (Fid, strToFid)
 import Mero.Notification (Set)
 
 import Control.Distributed.Process
@@ -44,7 +44,8 @@ instance ToJSON MeroKernelConf where
 -- | Mero service configuration
 data MeroConf = MeroConf
        { mcHAAddress        :: String         -- ^ Address of the HA service endpoint
-       , mcProfile          :: String         -- ^ FID of the current profile
+       , mcProfile          :: Fid            -- ^ FID of the current profile
+       , mcProcess          :: Fid            -- ^ Fid of the current process.
        , mcKernelConfig     :: MeroKernelConf -- ^ Kernel configuration
        }
    deriving (Eq, Generic, Show, Typeable)
@@ -52,9 +53,10 @@ instance Binary MeroConf
 instance Hashable MeroConf
 
 instance ToJSON MeroConf where
-  toJSON (MeroConf haAddress profile kernel) =
+  toJSON (MeroConf haAddress profile process kernel) =
     object [ "endpoint_address" .= haAddress
            , "profile"          .= profile
+           , "process"          .= process
            , "kernel_config"    .= kernel
            ]
 
@@ -173,18 +175,23 @@ relationDictMeroChanelServiceProcessControlChannel :: Dict (
 relationDictMeroChanelServiceProcessControlChannel = Dict
 
 meroSchema :: Schema MeroConf
-meroSchema = MeroConf <$> ha <*> pr <*> ker
+meroSchema = MeroConf <$> ha <*> pr <*> pc <*> ker
   where
     ha = strOption
           $  long "listenAddr"
           <> short 'l'
           <> metavar "LISTEN_ADDRESS"
           <> summary "HA service listen endpoint address"
-    pr = strOption
+    pr = option (maybe (fail "incorrect fid") return . strToFid)
           $  long "profile"
           <> short 'p'
-          <> metavar "MERO_ADDRESS"
+          <> metavar "FID"
           <> summary "confd profile"
+    pc = option (maybe (fail "incorrect fid") return . strToFid)
+          $  long "process"
+          <> short 's'
+          <> metavar "FID"
+          <> summary "halon process Fid"
     ker = compositeOption kernelSchema $ long "kernel" <> summary "Kernel configuration"
 
 kernelSchema :: Schema MeroKernelConf

@@ -70,6 +70,7 @@ import Data.Text (pack)
 import Data.Defaultable
 import qualified Data.UUID as UUID
 import Data.UUID.V4 (nextRandom)
+import Mero.ConfC (Fid(..))
 
 import GHC.Generics (Generic)
 
@@ -86,7 +87,6 @@ import Helper.Environment (systemHostname, testListenName)
 
 debug :: String -> Process ()
 debug = say . ("debug: " ++)
--- debug = liftIO . appendFile "/tmp/halon.debug" . (++ "\n")
 
 myRemoteTable :: RemoteTable
 myRemoteTable = TestRunner.__remoteTableDecl remoteTable
@@ -95,7 +95,10 @@ newtype MockM0 = MockM0 DeclareMeroChannel
   deriving (Binary, Generic, Hashable, Typeable)
 
 mockMeroConf :: MeroConf
-mockMeroConf = MeroConf "" "" (MeroKernelConf UUID.nil)
+mockMeroConf = MeroConf ""
+                        (Fid 0x7000000000000001 0x1)
+                        (Fid 0x7200000000000001 0x18)
+                        (MeroKernelConf UUID.nil)
 
 data MarkDriveFailed = MarkDriveFailed deriving (Generic, Typeable)
 instance Binary MarkDriveFailed

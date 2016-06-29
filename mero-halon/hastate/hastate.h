@@ -34,8 +34,18 @@ typedef struct ha_state_callbacks {
 
 	/**
 	 * Called when a request to read confd and rm service state is received.
+         *
+         *  * req_id - id of the request, this Id should be used in order to link
+         *      entrypoint request to the hastate provided in the 
+         *      ha_state_link_connected request.
+         *  * process_fid - Fid of the remote process that is requesting
+         *      entrypoint.
+         *  * profile_fid - Fid of the remote prccess's profile.
 	 */
-	void (*ha_state_entrypoint)(const struct m0_uint128 *req_id);
+	void (*ha_state_entrypoint)( const struct m0_uint128 *req_id
+                                   , const struct m0_fid *process_fid
+                                   , const struct m0_fid *profile_fid
+                                   );
 
 	/**
 	 * Called when a new link is connected. The link is alive until
@@ -55,8 +65,16 @@ typedef struct ha_state_callbacks {
 /**
  * Registers ha_state_callbacks so they are used when requests arrive at the
  * given local rpc endpoint.
+ *   
+ *   * local_rpc_endpoint - endpoint address that HA interface should be
+ *       listening on.
+ *   * process_fid - Fid of the local HA process.
+ *   * profile_fid - Fid of the profile that local HA process belongs to.
  * */
-int ha_state_init(const char *local_rpc_endpoint, ha_state_callbacks_t *cbs);
+int ha_state_init( const char *local_rpc_endpoint
+                 , const struct m0_fid *process_fid
+                 , const struct m0_fid *profile_fid
+                 , ha_state_callbacks_t *cbs);
 
 // Finalizes the ha_state interface.
 void ha_state_fini();

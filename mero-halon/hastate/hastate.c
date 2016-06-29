@@ -21,8 +21,10 @@ ha_state_callbacks_t ha_state_cbs;
 void entrypoint_request_cb( struct m0_halon_interface         *hi
                           , const struct m0_uint128           *req_id
                           , const char             *remote_rpc_endpoint
+                          , const struct m0_fid               *process_fid
+                          , const struct m0_fid               *profile_fid
                           ) {
-    ha_state_cbs.ha_state_entrypoint(req_id);
+    ha_state_cbs.ha_state_entrypoint(req_id, process_fid, profile_fid);
 }
 
 void msg_received_cb ( struct m0_halon_interface *hi
@@ -78,10 +80,15 @@ void link_disconnected_cb ( struct m0_halon_interface *hi
 }
 
 // Initializes the ha_state interface.
-int ha_state_init(const char *local_rpc_endpoint, ha_state_callbacks_t *cbs) {
+int ha_state_init( const char *local_rpc_endpoint
+                 , const struct m0_fid *process_fid
+                 , const struct m0_fid *profile_fid
+                 , ha_state_callbacks_t *cbs) {
     ha_state_cbs = *cbs;
 
     return m0_halon_interface_start( m0init_hi, local_rpc_endpoint
+                                   , process_fid
+                                   , profile_fid
                                    , entrypoint_request_cb
                                    , msg_received_cb
                                    , msg_is_delivered_cb
