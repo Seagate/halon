@@ -31,6 +31,7 @@
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE ViewPatterns          #-}
 {-# LANGUAGE GADTs                 #-}
 module HA.RecoveryCoordinator.Rules.Castor.Cluster
   ( -- * All rules in one
@@ -85,7 +86,7 @@ import           Control.Lens
 import           Control.Monad (join, unless, when)
 import           Control.Monad.Trans.Maybe
 
-import           Data.List ((\\))
+import           Data.List ((\\), intercalate)
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, fromMaybe, isJust)
 import           Data.Foldable
 import           Data.Traversable (forM)
@@ -178,14 +179,20 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
 
    setPhase start_rule $ \msg@(HAEvent eid (Set _) _) -> do
      todo eid
+     rg <- getLocalGraph
+     let isStateChanged s t = M0.getState s rg /= t
      getInterestingSrvs msg >>= \case
        Nothing -> done eid
-       Just (_, services) -> do
-         phaseLog "info" $ "Cluster transition for " ++ show services
-         let msgs = uncurry stateSet <$> services
-         put Local $ Just (eid, Nothing, Nothing, services)
-         applyStateChanges msgs
-         switch [services_notified, timeout 15 timed_out_prefork]
+       Just (_, filter (uncurry isStateChanged) -> services) -> do
+         if null services
+         then done eid
+         else do
+           phaseLog "info" $ "Cluster transition for "
+             ++ "[" ++ intercalate ", " ((\(x,s) -> M0.showFid x ++ ": " ++ show s) <$> services) ++ "]"
+           let msgs = uncurry stateSet <$> services
+           put Local $ Just (eid, Nothing, Nothing, services)
+           applyStateChanges msgs
+           switch [services_notified, timeout 15 timed_out_prefork]
 
    setPhaseAllNotified services_notified viewMsgs $ do
      rg <- getLocalGraph
@@ -197,7 +204,8 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
            -- find the process, the service belongs to, check if all
            -- services are online, if yes then update process state and
            -- notify barrier
-           phaseLog "info" $ "Transition for " ++ show (srv, M0.fid . fst <$> services, eid)
+           phaseLog "info" $ show eid
+           phaseLog "info" $ "Transition for " ++ M0.showFid srv
            case (st, listToMaybe $ G.connectedFrom M0.IsParentOf srv rg) of
              (M0.SSOnline, Just (p :: M0.Process)) -> do
                let allSrvs :: [M0.Service]
@@ -209,7 +217,7 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
                put Local $ Just (eid, Just (srv, st), Just (p, newProcessState), services)
                if length allSrvs == length onlineSrvs
                then do phaseLog "info" $
-                         unwords [ "All services for", show p
+                         unwords [ "All services for", M0.showFid p
                                  , "online, marking process as online" ]
                        modifyGraph $ G.connectUniqueFrom p R.Is M0.ProcessBootstrapped
 
@@ -238,7 +246,7 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
                  let failMsg = "Underlying service failed: " ++ show (M0.fid srv)
                  applyStateChanges [stateSet p . M0.PSFailed $ failMsg]
                  continue finish
-             err -> do phaseLog "warn" $ "Couldn't handle bad state for " ++ show srv
+             err -> do phaseLog "warn" $ "Couldn't handle bad state for " ++ M0.showFid srv
                                       ++ ": " ++ show err
                        continue finish
          done eid
@@ -414,9 +422,9 @@ requestClusterStart = defineSimple "castor::cluster::request::start"
                   -- Randomly select principal RM, it may be switched if another
                   -- RM will appear online before this one.
                   let pr = [ ps
-                           | pr :: M0.Profile <- G.connectedTo R.Cluster R.Has rg
-                           , fs :: M0.Filesystem <- G.connectedTo pr M0.IsParentOf rg
-                           , nd :: M0.Node <- G.connectedTo fs M0.IsParentOf rg
+                           | prf :: M0.Profile <- G.connectedTo R.Cluster R.Has rg
+                           , fsm :: M0.Filesystem <- G.connectedTo prf M0.IsParentOf rg
+                           , nd :: M0.Node <- G.connectedTo fsm M0.IsParentOf rg
                            , ps :: M0.Process <- G.connectedTo nd M0.IsParentOf rg
                            , sv :: M0.Service <- G.connectedTo ps M0.IsParentOf rg
                            , M0.s_type sv == CST_MGS
