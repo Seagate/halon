@@ -360,12 +360,18 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
           return i
         (Just i, Just _) -> do
           -- Drive with this serial is known, but is not the drive in this slot.
-          -- In this case the drive has probably been replaced.
+          -- In this case the drive has probably been moved.
           void $ attachStorageDeviceReplacement i [serial, wwn, idx]
           return i
         (Just i, Nothing) -> do
-          -- We have a device in this slot, but we don't know its serial.
-          identifyStorageDevice i [serial, wwn]
+          lookupStorageDeviceSerial i >>= \case
+            [] -> do
+              -- We have a device in this slot, but we don't know its serial.
+              identifyStorageDevice i [serial, wwn]
+            _ -> do
+              -- We have a device in this slot, but it has the wrong serial.
+              -- So this is probably a replacement.
+              void $ attachStorageDeviceReplacement i [serial, wwn, idx]
           return i
         (Nothing, Just s) -> do
           -- We have a serial number for the device, but don't know its location.

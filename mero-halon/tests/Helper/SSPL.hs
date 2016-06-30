@@ -146,6 +146,8 @@ mkHpiMessage hostid enclosure serial location uuid wwn = emptyHPIMessage
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber = serial
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = wwn
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN = enclosure
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskInstalled = True
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskPowered = True
   }
 
 mkResponseRaidData :: Text -- ^ Host ID of node
