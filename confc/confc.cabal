@@ -41,10 +41,9 @@ Library
   default-extensions:  CPP
   other-extensions:    TemplateHaskell, QuasiQuotes, CApiFFI
 
-  cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
   include-dirs: .
   c-sources:  confc_helpers.c
-  extra-libraries: mero
+  pkgconfig-depends: mero >= 0.1.0
 
 Test-Suite integration-tests
   Type:           exitcode-stdio-1.0
