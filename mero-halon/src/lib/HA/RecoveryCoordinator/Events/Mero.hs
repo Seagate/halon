@@ -3,6 +3,7 @@
 -- License   : All rights reserved.
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 module HA.RecoveryCoordinator.Events.Mero
@@ -20,6 +21,7 @@ module HA.RecoveryCoordinator.Events.Mero
    , InternalObjectStateChange(..)
    , InternalObjectStateChangeMsg(..)
    , stateSet
+   , unStateSet
    )
    where
 
@@ -89,6 +91,11 @@ stateSet :: HasConfObjectState a
          -> StateCarrier a
          -> AnyStateSet
 stateSet = AnyStateSet
+
+-- | Try to extract value from 'set' request.
+unStateSet :: forall a . (Typeable a, HasConfObjectState a, Typeable (StateCarrier a))
+           => AnyStateSet -> Maybe (a, StateCarrier a)
+unStateSet (AnyStateSet a c) = (,) <$> cast a <*> cast c
 
 -- | Universally quantified state 'change' event.
 data AnyStateChange =
