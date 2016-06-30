@@ -256,6 +256,11 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
                 . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerPathID
                 $ srdm
 
+     phaseLog "sspl-service" $ "monitor-drivemanager request received for drive: "
+                            ++ (show [sn, path])
+                            ++ " in enclosure "
+                            ++ (show enc')
+
      -- If SSPL doesn't know which enclosure the drive in, try to
      -- infer it from the drive serial number and info we may have
      -- gotten previously
@@ -271,7 +276,6 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
            Just enc'' -> return enc''
        _ -> return enc'
 
-     phaseLog "sspl-service" "monitor-drivemanager request received"
      put Local $ Just (uuid, nid, enc, diskNum, srdm, sn, path)
      lookupStorageDeviceInEnclosure enc (DIIndexInEnclosure diskNum) >>= \case
        Nothing ->
@@ -350,6 +354,11 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
                        $ srphi
           is_powered = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskPowered srphi
           is_installed = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskInstalled srphi
+
+      phaseLog "sspl-service" $ "monitor-hpi request received for drive:"
+                             ++ show [wwn, idx, serial]
+                             ++ " in enclosure "
+                             ++ (show enc)
 
       existingByIdx <- lookupStorageDeviceInEnclosure enc idx
       existingBySerial <- lookupStorageDeviceInEnclosure enc serial
