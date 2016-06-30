@@ -41,6 +41,7 @@ printHeader listen = do
     hSetBuffering stdout LineBuffering
     putStrLn $ "This is halond/" ++ buildType ++ " listening on " ++ listen
     putStrLn $ "Working directory: " ++ show cwd
+    versionString >>= putStrLn
     hFlush stdout
   where
 #ifdef USE_RPC
