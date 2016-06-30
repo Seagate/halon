@@ -132,6 +132,7 @@ Library
                    regex-tdfa,
                    scientific,
                    sspl,
+                   template-haskell,
                    text,
                    time,
                    binary,

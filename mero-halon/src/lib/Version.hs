@@ -11,10 +11,11 @@
 module Version (versionString) where
 
 import Data.List (intercalate)
-import Data.Time.Clock (UTCTime, getCurrentTime)
+import Data.Time.Clock (getCurrentTime)
 import Data.Time.Format (defaultTimeLocale, formatTime, iso8601DateFormat)
 import Development.GitRev
 
+import Language.Haskell.TH (runIO, stringE)
 import Text.Printf (printf)
 
 #ifdef USE_MERO
@@ -54,7 +55,7 @@ versionString = do
       , "Mero: %s (Git revision: %s) (Configure flags: %s)"
       , "Built on: %s"
       ])
-    describe commit (formatTime defaultTimeLocale (iso8601DateFormat (Just "%H:%M:%S")) date)
+    describe commit date
     mero_build_desc mero_build_version mero_build_opts mero_build_build_time
     mero_runtime_desc mero_runtime_version mero_runtime_opts mero_runtime_build_time
 
@@ -67,20 +68,22 @@ versionString = do
       , "Built on: %s"
       , "Built without Mero integration."
       ])
-    describe commit (formatTime defaultTimeLocale (iso8601DateFormat (Just "%H:%M:%S")) date)
+    describe commit date
 #endif
 
 data Version = Version {
     describe :: String
   , commit :: String
-  , date :: UTCTime
+  , date :: String
 }
 
 version :: IO Version
 version = do
-    time <- getCurrentTime
     return $ Version {
         describe = $(gitDescribe)
       , commit = $(gitHash)
-      , date = time
+      , date = $(do time <- runIO getCurrentTime
+                    stringE $ formatTime defaultTimeLocale
+                              (iso8601DateFormat (Just "%H:%M:%S%z")) time
+                )
       }

@@ -16,6 +16,7 @@
 
 module HA.Replicator.Log
   ( RLogGroup
+  , storageDir
   , __remoteTable
   , __remoteTableDecl
   )  where

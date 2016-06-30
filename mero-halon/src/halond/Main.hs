@@ -20,6 +20,7 @@ import HA.Network.Transport (writeTransportGlobalIVar)
 import Network.Transport.TCP as TCP
 #endif
 import HA.RecoveryCoordinator.Definitions
+import HA.Replicator.Log (storageDir)
 import HA.Startup (startupHalonNode)
 
 import Control.Distributed.Commands.Process (sendSelfNode)
@@ -31,9 +32,16 @@ import Control.Distributed.Process.Node
 import Mero
 import Mero.Environment
 #endif
-import System.Directory (getCurrentDirectory)
+import Control.Monad (when)
+import System.FilePath ((</>))
+import System.Directory
+    ( getCurrentDirectory
+    , doesFileExist
+    , createDirectoryIfMissing
+    )
 import System.Environment
-import System.IO ( hFlush, stdout , hSetBuffering, BufferMode(..))
+import System.Exit
+import System.IO
 
 printHeader :: String -> IO ()
 printHeader listen = do
@@ -71,6 +79,7 @@ main = do
         whenTestIsDistributed $
           setEnvIfUnset "HALON_TRACING"
            "consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup"
+        checkStoredVersion
 #ifdef USE_RPC
         rpcTransport <- RPC.createTransport "s1"
                                             (RPC.rpcAddress $ localEndpoint config)
@@ -97,3 +106,20 @@ main = do
       lookupEnv "DC_CALLER_PID" >>= maybe (return ()) (const action)
 
     setEnvIfUnset v x = lookupEnv v >>= maybe (setEnv v x) (const $ return ())
+
+    checkStoredVersion = do
+      let versionFile = storageDir </> "version.txt"
+      exists <- doesFileExist versionFile
+      vString <- versionString
+      if exists then do
+        str <- readFile versionFile
+        when (str /= vString) $ do
+          hPutStrLn stderr "Version mismatch of the persisted state:"
+          hPutStrLn stderr "The state was written with version"
+          hPutStrLn stderr str
+          hPutStrLn stderr $ "but halond is at version"
+          hPutStrLn stderr vString
+          exitFailure
+      else do
+        createDirectoryIfMissing True storageDir
+        writeFile versionFile vString
