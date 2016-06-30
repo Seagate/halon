@@ -56,6 +56,7 @@ import Control.Arrow (first)
 import Control.Distributed.Static (Static, staticApplyPtr)
 import Control.Monad (join, when, guard)
 import Control.Monad.Fix (fix)
+import Control.Lens
 
 import Data.Constraint (Dict)
 import Data.Foldable (forM_)
@@ -64,7 +65,7 @@ import Data.Monoid
 import Data.Traversable (mapAccumL)
 import Data.Typeable
 import Data.UUID (UUID)
-import Data.List (nub, genericLength)
+import Data.List (nub, genericLength, (\\))
 import Data.Either (lefts)
 import Data.Functor (void)
 import Data.Word
@@ -286,26 +287,29 @@ setPhaseNotified handle extract act =
 -- | Similar to 'setPhaseNotified' but works on a set of notifications
 -- rather than a singular one.
 --
--- TODO: Use generic implementation for both and just specialise.
--- TODO: Do we need to handle UUID here?
+-- State will endup in either @Nothing@ or @Just []@ depends on lens
+-- implementation.
 setPhaseAllNotified :: forall l g. Jump PhaseHandle
-                    -> (l -> Maybe [AnyStateSet])
+                    -> (Lens' l (Maybe [AnyStateSet]))
                     -> PhaseM g l () -- ^ Callback when set has been notified
                     -> RuleM g l ()
 setPhaseAllNotified handle extract act =
-  setPhaseIf handle changeGuard (\() -> act)
+  setPhase handle $ \(HAEvent _ msg _) -> do
+     mn <- gets Local (^. extract)
+     phaseLog "XXX" $ show (length mn)
+     case mn of
+       Nothing -> do phaseLog "error" "Internal noficications are not set."
+                     act
+       Just notificationSet -> do
+         InternalObjectStateChange iosc <- liftProcess . decodeP $ (msg :: InternalObjectStateChangeMsg)
+         let internalStateSet = map extractStateSet iosc
+             next = notificationSet \\ internalStateSet
+         modify Local $ set extract (Just next)
+         case next of
+           [] -> act
+           _  -> continue handle
   where
     extractStateSet (AnyStateChange a _ n _) = stateSet a n
-
-    changeGuard :: HAEvent InternalObjectStateChangeMsg
-                -> g -> l -> Process (Maybe ())
-    changeGuard (HAEvent _ msg _) _ (extract -> Just notificationSet) =
-      (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) -> do
-        let internalStateSet = map extractStateSet iosc
-        if all (`elem` internalStateSet) notificationSet
-        then return $ Just ()
-        else return Nothing
-    changeGuard _ _ _ = return Nothing
 
 -- | As 'setPhaseInternalNotificationWithState', accepting all object states.
 setPhaseInternalNotification :: forall b l g.
@@ -415,7 +419,9 @@ processCascadeRule = StateCascadeRule
               | otherwise -> M0.SSStopping
             M0.PSInhibited _
               | o == M0.SSFailed -> o
-              | otherwise -> M0.SSInhibited o)
+              | otherwise -> M0.SSInhibited o
+            M0.PSUnknown -> o)
+
 
 -- This is a phantom rule; SDev state is queried through Disk state,
 -- so this rule just exists to include the `SDev` in the set of

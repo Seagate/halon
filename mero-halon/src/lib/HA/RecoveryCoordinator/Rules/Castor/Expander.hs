@@ -241,7 +241,7 @@ ruleReassembleRaid =
             done eid
 
       setPhaseAllNotified mero_notify_done
-                          (^. rlens fldNotifications . rfield) $ do
+                          (rlens fldNotifications . rfield) $ do
         phaseLog "debug" "Mero notification complete"
         modify Local $ rlens fldNotifications . rfield .~ Nothing
         waitDone mero_notify_done

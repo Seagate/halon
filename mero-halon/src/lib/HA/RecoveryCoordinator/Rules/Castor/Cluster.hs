@@ -135,6 +135,7 @@ type ClusterTransitionLocal =
         , Maybe (M0.Service, M0.ServiceState)
         , Maybe (M0.Process, M0.ProcessState)
         , [(M0.Service, M0.ServiceState)]
+        , [(M0.Service, M0.ServiceState)]
         )
 
 
@@ -156,10 +157,13 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
        startState = Nothing
 
        viewProc :: ClusterTransitionLocal -> Maybe (M0.Process, M0.ProcessState)
-       viewProc = maybe Nothing (\(_, _, proci, _) -> proci)
+       viewProc = maybe Nothing (\(_, _, proci, _, _) -> proci)
 
-       viewMsgs :: ClusterTransitionLocal -> Maybe [AnyStateSet]
-       viewMsgs = maybe Nothing (\(_, _, _, msgs) -> Just $ uncurry stateSet <$> msgs)
+       viewMsgs :: Lens' ClusterTransitionLocal (Maybe [AnyStateSet])
+       viewMsgs = lens lget lset where
+         lget mx = fmap (\(_,_,_,_,msgs) -> (uncurry stateSet) <$> msgs) mx
+         lset Nothing _ = Nothing
+         lset (Just (a,b,c,d,_)) x = Just (a,b,c,d, maybe [] (mapMaybe unStateSet) x)
 
        getInterestingSrvs :: HAEvent Set -> PhaseM LoopState l (Maybe (UUID, [(M0.Service, M0.ServiceState)]))
        getInterestingSrvs (HAEvent eid (Set ns) _) = do
@@ -174,7 +178,7 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
            xs -> return $ Just (eid, xs)
 
        ackMsg = get Local >>= \case
-         Just (eid, _, _, _) -> done eid
+         Just (eid, _, _, _, _) -> done eid
          lst -> phaseLog "warn" $ "In finish with strange local state: " ++ show lst
 
    setPhase start_rule $ \msg@(HAEvent eid (Set _) _) -> do
@@ -190,13 +194,13 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
            phaseLog "info" $ "Cluster transition for "
              ++ "[" ++ intercalate ", " ((\(x,s) -> M0.showFid x ++ ": " ++ show s) <$> services) ++ "]"
            let msgs = uncurry stateSet <$> services
-           put Local $ Just (eid, Nothing, Nothing, services)
+           put Local $ Just (eid, Nothing, Nothing, services, services)
            applyStateChanges msgs
            switch [services_notified, timeout 15 timed_out_prefork]
 
    setPhaseAllNotified services_notified viewMsgs $ do
      rg <- getLocalGraph
-     Just (eid, _, _, services) <- get Local
+     Just (eid, _, _, services, _) <- get Local
      case services of
        [] -> done eid
        _ -> do
@@ -214,7 +218,7 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
                                     , M0.SSOnline <- G.connectedTo s R.Is rg ]
                    newProcessState = M0.PSOnline
 
-               put Local $ Just (eid, Just (srv, st), Just (p, newProcessState), services)
+               put Local $ Just (eid, Just (srv, st), Just (p, newProcessState), services, services)
                if length allSrvs == length onlineSrvs
                then do phaseLog "info" $
                          unwords [ "All services for", M0.showFid p
@@ -253,7 +257,7 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
 
    setPhaseNotified process_notified viewProc $ \(p, pst) -> do
      phaseLog "info" $ "Process " ++ show (M0.fid p) ++ " => " ++ show pst
-     Just (_, srvi, _, _) <- get Local
+     Just (_, srvi, _, _, _) <- get Local
      rg <- getLocalGraph
      let cst = case listToMaybe $ G.connectedTo R.Cluster R.Has rg of
            Just (M0.MeroClusterStarting (M0.BootLevel 0)) ->
