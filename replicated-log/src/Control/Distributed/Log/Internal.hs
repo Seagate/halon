@@ -2000,14 +2000,18 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan replicas =
           go st
       ]
 
-    handleTimerTick timerPid ρs mLeader mRef =
-      when (isNothing mLeader) $ do
-        mapM_ unmonitor  mRef
-        nlogTrace logId $ "ambassador: Timer expired. " ++ show ρs
-        forM_ ρs $ flip whereisRemoteAsync (batcherLabel logId)
-        self <- getSelfPid
-        forM_ ρs $ \ρ -> sendReplica logId ρ self
-        usend timerPid leaseTimeout
+    handleTimerTick timerPid ρs mLeader mRef = do
+      case mLeader of
+        Nothing -> do
+          mapM_ unmonitor  mRef
+          nlogTrace logId $ "ambassador: Timer expired. " ++ show (ρs, leaseTimeout)
+          forM_ ρs $ flip whereisRemoteAsync (batcherLabel logId)
+          self <- getSelfPid
+          forM_ ρs $ \ρ -> sendReplica logId ρ self
+        Just b ->
+          -- Ping the leader node periodically to detect disconnections.
+          usend (nullProcessId (processNodeId b)) ()
+      usend timerPid leaseTimeout
 
     handleRequest epoch mLeader = \case
       -- A request
