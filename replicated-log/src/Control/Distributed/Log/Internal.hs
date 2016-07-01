@@ -1896,8 +1896,12 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan replicas =
     go st@(AmbassadorState timerPid rpt epoch mRefLeader ρs) = do
      let mLeader = fmap snd mRefLeader
          mRef    = fmap fst mRefLeader
+     -- We want to read from channels and the mailbox fairly, so we first check
+     -- channels and then the mailbox.
      _ <- receiveTimeout 0
        [ matchSTM (readTChan omchan) $ handleRequest epoch mLeader ]
+     _ <- receiveTimeout 0
+       [ matchChan rpt $ \() -> handleTimerTick timerPid ρs mLeader mRef ]
      receiveWait $
       (if schedulerIsEnabled
        then [match $ \() -> go st]
@@ -1932,19 +1936,6 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan replicas =
             when (isNothing mLeader) $
               -- Give some time to other replicas to elect a leader.
               usend timerPid leaseTimeout
-            go st
-
-        -- The timer expired.
-      , matchChan rpt $ \() -> do
-          if isNothing mLeader then do
-            mapM_ unmonitor  mRef
-            nlogTrace logId $ "ambassador: Timer expired. " ++ show ρs
-            forM_ ρs $ flip whereisRemoteAsync (batcherLabel logId)
-            self <- getSelfPid
-            forM_ ρs $ \ρ -> sendReplica logId ρ self
-            usend timerPid leaseTimeout
-            go st
-          else
             go st
 
       , match $ \pmn@(ProcessMonitorNotification ref' _ _) -> do
@@ -1999,10 +1990,24 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan replicas =
           sendChan sp mLeader
           go st
 
+        -- The timer expired.
+      , matchChan rpt $ \() -> do
+          handleTimerTick timerPid ρs mLeader mRef
+          go st
+
       , matchSTM (readTChan omchan) $ \om -> do
           handleRequest epoch mLeader om
           go st
       ]
+
+    handleTimerTick timerPid ρs mLeader mRef =
+      when (isNothing mLeader) $ do
+        mapM_ unmonitor  mRef
+        nlogTrace logId $ "ambassador: Timer expired. " ++ show ρs
+        forM_ ρs $ flip whereisRemoteAsync (batcherLabel logId)
+        self <- getSelfPid
+        forM_ ρs $ \ρ -> sendReplica logId ρ self
+        usend timerPid leaseTimeout
 
     handleRequest epoch mLeader = \case
       -- A request
