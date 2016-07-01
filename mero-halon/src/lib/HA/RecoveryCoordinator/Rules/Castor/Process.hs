@@ -22,7 +22,7 @@ import           Control.Monad (unless)
 import           Control.Monad.Trans.Maybe
 import           Data.Either (partitionEithers, rights, lefts)
 import           Data.List (nub)
-import           Data.Maybe (catMaybes, listToMaybe, mapMaybe)
+import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, fromMaybe)
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
@@ -43,9 +43,10 @@ import           Network.CEP
 
 
 import           Control.Monad (when)
+import           Control.Lens
 import           Data.Typeable
 import           Data.Foldable
-import           Data.List (nub)
+import           Data.List (intercalate)
 import           Text.Printf
 
 -- * Process handlers
@@ -102,7 +103,12 @@ ruleProcessRestarted = define "processes-restarted" $ do
   finish <- phaseHandle "finish"
   end <- phaseHandle "end"
 
-  let viewNotifySet = maybe Nothing (\(_, _, _, _, s) -> Just s)
+  let viewNotifySet :: Lens' (Maybe (a,b,c,d,[AnyStateSet])) (Maybe [AnyStateSet])
+      viewNotifySet = lens lget lset where
+        lset Nothing _ = Nothing
+        lset (Just (a,b,c,d,_)) x = Just (a,b,c,d,fromMaybe [] x)
+        lget Nothing = Nothing
+        lget (Just (_,_,_,_,x)) = Just x
       viewNode = maybe Nothing (\(_, _, m0node, st, _) -> (,) <$> m0node <*> st)
 
       resetNodeGuard (HAEvent eid (ProcessControlResultRestartMsg nid results) _) ls (Just (_, _, Just n, _, _)) = do
@@ -249,7 +255,7 @@ handleProcessOnlineE (Set ns) = do
     rg <- getLocalGraph >>= return . G.connectUniqueFrom p Has expectedPid
     case (getState p rg, listToMaybe $ G.connectedTo p Has rg) of
       (M0.PSOnline, _) -> do
-        phaseLog "warn" $ "ONLINE for PSOnline process: " ++ show p
+        phaseLog "warn" $ "ONLINE for PSOnline process: " ++ showFid p
         -- TODO I think we shouldn't do this
         --applyStateChanges [stateSet p $ M0.PSStarting Nothing]
 
@@ -258,7 +264,7 @@ handleProcessOnlineE (Set ns) = do
         -- failed, mark node as online.
         case listToMaybe $ G.connectedFrom M0.IsParentOf p rg of
           Nothing -> phaseLog "warn" $ "Couldn't find node associated with: "
-                                    ++ show p
+                                    ++ showFid p
           Just (n :: M0.Node) -> case getState n rg of
             M0_NC_TRANSIENT -> do
               let allProcs :: [(M0.Process, M0.ProcessState)]
@@ -267,7 +273,8 @@ handleProcessOnlineE (Set ns) = do
               case all (\(_, st) -> st == M0.PSOnline) allProcs of
                 False -> do
                   let notOnline = filter (\(_, st) -> st /= M0.PSOnline) allProcs
-                  phaseLog "info" $ "Some processes still not online: " ++ show notOnline
+                  phaseLog "info" $ "Some processes still not online: "
+                                  ++ intercalate ", " ((\(x,s) -> showFid x ++ "(" ++ show s ++ ")") <$> notOnline)
                 True -> applyStateChanges [stateSet n M0_NC_ONLINE]
 
             st -> phaseLog "warn" $ "Process online for node in state " ++ show st
@@ -280,7 +287,7 @@ handleProcessOnlineE (Set ns) = do
             -- case going away after MERO-1666
             notifyProcessRestarted p expectedPid
       st -> phaseLog "warn" $ "handleProcessOnline: Unexpected state for"
-            ++ " process " ++ show p ++ ", " ++ show st
+            ++ " process " ++ showFid p ++ ", " ++ show st
   where
     -- TODO: MERO-1666
     -- Assume that all process notifications come for the process
@@ -346,7 +353,7 @@ ruleStopMeroProcess = define "stop-process" $ do
       let nodes = [node | m0node <- G.connectedFrom M0.IsParentOf p rg
                         , node   <- m0nodeToNode m0node rg
                         ]
-      (m0svc,node) <- asum $ map (\node -> MaybeT $ fmap (,node) <$> lookupRunningService node m0d) nodes
+      (m0svc,_node) <- asum $ map (\node -> MaybeT $ fmap (,node) <$> lookupRunningService node m0d) nodes
       ch    <- MaybeT . return $ meroChannel rg m0svc
       return $ do
         stopNodeProcesses ch [p]

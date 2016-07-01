@@ -24,6 +24,7 @@ import           Control.Applicative
 import           Control.Arrow (second)
 import           Control.Distributed.Process
 import           Control.Exception (SomeException)
+import           Control.Lens
 import           Control.Monad
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Maybe
@@ -46,6 +47,7 @@ import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
+import           HA.RecoveryCoordinator.Events.Mero (AnyStateSet(..))
 import qualified HA.RecoveryCoordinator.Rules.Castor.Disk.Repair.Internal as R
 import HA.RecoveryCoordinator.Rules.Mero.Conf
   ( applyStateChanges
@@ -283,7 +285,13 @@ ruleRebalanceStart = define "castor-rebalance-start" $ do
         phaseLog "info" $ "Pool Rep/Reb is already running: " ++ show info
         messageProcessed uuid
 
-  setPhaseAllNotified pool_disks_notified (maybe Nothing (\(_, ns, _) -> return ns)) $ do
+  let viewNS :: Lens' (Maybe (a, [AnyStateSet], b)) (Maybe [AnyStateSet])
+      viewNS = lens lget lset where
+        lget ms = (\(_, ns, _) -> ns) <$> ms
+        lset Nothing _ = Nothing
+        lset (Just (a, _, b)) x = Just (a, fromMaybe [] x, b)
+
+  setPhaseAllNotified pool_disks_notified viewNS $ do
     Just (uuid, _, Just (pool, disks)) <- get Local
     startRebalanceOperation pool disks
     queryStartHandling pool
@@ -345,7 +353,13 @@ ruleRepairStart = define "castor-repair-start" $ do
         switch [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
       Just _ -> messageProcessed uuid
 
-  setPhaseAllNotified pool_disks_notified (maybe Nothing (\(_, ns, _) -> return ns)) $ do
+  let viewNS :: Lens' (Maybe (a, [AnyStateSet], b)) (Maybe [AnyStateSet])
+      viewNS = lens lget lset where
+        lget ms = (\(_, ns, _) -> ns) <$> ms
+        lset Nothing _ = Nothing
+        lset (Just (a, _, b)) x = Just (a, fromMaybe [] x, b)
+
+  setPhaseAllNotified pool_disks_notified viewNS $ do
     Just (uuid, _, Just pool) <- get Local
     startRepairOperation pool
     queryStartHandling pool

@@ -568,7 +568,8 @@ Test-Suite tests
                     unix,
                     process,
                     uuid,
-                    exceptions
+                    exceptions,
+                    lens
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC

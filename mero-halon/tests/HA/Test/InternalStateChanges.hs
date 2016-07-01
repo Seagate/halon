@@ -7,10 +7,11 @@
 module HA.Test.InternalStateChanges (mkTests) where
 
 import           Control.Distributed.Process hiding (bracket)
+import           Control.Lens
 import           Control.Exception as E
 import           Data.Binary (Binary)
 import           Data.List (sort)
-import           Data.Maybe (listToMaybe)
+import           Data.Maybe (listToMaybe, fromMaybe)
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import qualified HA.Castor.Story.Tests as H
@@ -102,7 +103,14 @@ stateCascade t pg = doTest t pg [rule] test'
       notified <- phaseHandle "notified"
       timed_out <- phaseHandle "timed_out"
 
-      let viewNotifySet = maybe Nothing (\(_, _, ns, _) -> Just ns)
+      let viewNotifySet :: Lens' (Maybe (UUID,ProcessId,[AnyStateSet],NVec)) (Maybe [AnyStateSet])
+          viewNotifySet = lens lget lset where
+            lset Nothing _ = Nothing
+            lset (Just (a,b,_,d)) x = Just (a,b,fromMaybe [] x,d)
+            lget = fmap (\(_,_,x,_) -> x)
+          viewNode = maybe Nothing (\(_, _, m0node, st, _) -> (,) <$> m0node <*> st)
+
+
 
       setPhase init_rule $ \(HAEvent eid (RuleHook pid) _) -> do
         rg <- getLocalGraph

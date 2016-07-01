@@ -18,13 +18,11 @@ module HA.RecoveryCoordinator.Actions.Job
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
 
-import Control.Distributed.Process (say)
 import Control.Distributed.Process.Serializable
 import Control.Lens
 
 import Data.Foldable (for_)
 import Data.Proxy
-import qualified Data.Set as Set
 import Data.Vinyl
 
 import Network.CEP
@@ -45,7 +43,7 @@ fldUUID = Proxy
 --
 -- It's not legitimate to call 'Network.CEP.stop' inside
 -- this @body@.
-mkJobRule :: forall input output l args s .
+mkJobRule :: forall input output l s .
    ( FldUUID ∈ l, '("request", Maybe input) ∈ l, '("reply", Maybe output) ∈ l
    , Serializable input, Serializable output, Ord input,Show input, s ~ Rec ElField l)
    => Job input output  -- ^ Process name.
@@ -57,9 +55,9 @@ mkJobRule :: forall input output l args s .
 mkJobRule (Job name)
               args
               body = define name $ do
-    request <- phaseHandle "request"
-    finish  <- phaseHandle "finish"
-    end     <- phaseHandle "end"
+    request <- phaseHandle $ name ++ " -> request"
+    finish  <- phaseHandle $ name ++ " -> finish"
+    end     <- phaseHandle $ name ++ " -> end"
 
     check_input <- body finish
 
@@ -67,7 +65,7 @@ mkJobRule (Job name)
       isRunning <- memberStorageSetRC input
       if isRunning
       then do
-         phaseLog "info" $ "Process " ++ name ++ " is already running for " ++ show input
+         phaseLog "info" $ "Job " ++ name ++ " is already running for " ++ show input
          messageProcessed eid
       else
         check_input input >>= \case
@@ -75,6 +73,7 @@ mkJobRule (Job name)
           Just next -> do
             insertStorageSetRC input
             fork CopyNewerBuffer $ do
+              phaseLog "info" $ "  request: " ++ show input
               modify Local $ rlens fldRequest .~ (Field $ Just input)
               modify Local $ rlens fldUUID    .~ (Field $ Just eid)
               switch next
@@ -84,6 +83,7 @@ mkJobRule (Job name)
       let uuid = state ^. rlens fldUUID
           req  = state ^. rlens fldRequest
           rep  = state ^. rlens fldReply
+      phaseLog "info" $ "  request: " ++ maybe "N/A" show (getField req)
       for_ (getField rep) notify
       for_ (getField req) deleteStorageSetRC
       for_ (getField uuid) messageProcessed

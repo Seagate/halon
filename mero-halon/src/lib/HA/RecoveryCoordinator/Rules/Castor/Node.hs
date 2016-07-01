@@ -519,15 +519,13 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
          _ -> return Nothing
       ) $ \() -> continue boot_level_0
 
-    setPhaseIf kernel_failed (\(HAEvent eid (KernelStartFailure node) _) _ l ->
+    setPhaseIf kernel_failed (\(KernelStartFailure node) _ l ->
        case getField $ rget fldReq l of
          Just (StartProcessesOnNodeRequest m0node)
-            | node == m0node -> return $ Just (eid, m0node)
+            | node == m0node -> return $ Just m0node
          _  -> return Nothing
-       ) $ \(eid, m0node) -> do
-      todo eid
+       ) $ \ m0node -> do
       modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartFailure m0node)
-      done eid
       continue finish
 
     directly boot_level_0 $ do
@@ -565,7 +563,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
           phaseLog "error" $ "Can't find service for node " ++ show node
           continue finish
 
-    setPhaseAllNotified complete (^. rlens fldNotifications . rfield) $ do
+    setPhaseAllNotified complete (rlens fldNotifications . rfield) $ do
       continue finish
 
     return route
