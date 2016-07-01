@@ -401,6 +401,13 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
       was_removed <- isStorageDriveRemoved sdev
       isOngoingReset <- hasOngoingReset sdev
 
+      phaseLog "debug" $ unwords [
+          "was_installed:", show (not was_removed)
+        , "is_installed:", show is_installed
+        , "was_powered:", show was_powered
+        , "is_powered:", show is_powered
+        , "is_undergoing_reset:", show isOngoingReset
+        ]
       more_needed <- case (is_installed, is_powered) of
        (True, _) | was_removed -> do
          selfMessage $ DriveInserted uuid sdev enc diskNum serial
