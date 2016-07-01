@@ -370,10 +370,6 @@ data CacheState = Pending Note
                 | Sent Note
 
 
--- | Time to wait for RC to respond to Get request
-promulgateTimeout :: Int
-promulgateTimeout = 30000000 -- 30s
-
 newtype NIRef = NIRef (IORef [HALink])
 
 -- | Initializes the hastate interface in the node where it will be
@@ -409,12 +405,8 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
                  liftGlobalM0 $ notify hl idx nvec'
                Nothing   -> do
                  _ <- promulgate (Get self fids)
-                 msg <- expectTimeout promulgateTimeout
-                 case msg of
-                   Just (GetReply nvec') ->
-                     liftGlobalM0 $ notify hl idx nvec'
-                   Nothing -> do
-                     say "ha_state_get: Unable to query state from RC."
+                 GetReply nvec' <- expect
+                 liftGlobalM0 $ notify hl idx nvec'
       liftIO $ traceEventIO "STOP ha_state_get"
 
     ha_process_event_set :: HAMsgMeta -> ProcessEvent -> IO ()
