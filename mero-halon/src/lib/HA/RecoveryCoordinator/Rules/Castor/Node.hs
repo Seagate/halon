@@ -512,16 +512,18 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
                       promulgateRC $ StartHalonM0dRequest m0node
                       return $ Just [kernel_up, kernel_failed, timeout 180 bootstrap_timeout]
 
-    setPhaseIf kernel_up (\(KernelStarted node) _ l ->  -- XXX: HA event?
-       case getField $ rget fldReq l of
-         Just (StartProcessesOnNodeRequest m0node)
+    setPhaseIf kernel_up (\ks _ l ->  -- XXX: HA event?
+       case (ks, getField $ rget fldReq l) of
+         (  (KernelStarted node)
+            , Just (StartProcessesOnNodeRequest m0node))
             | node == m0node -> return $ Just ()
          _ -> return Nothing
       ) $ \() -> continue boot_level_0
 
-    setPhaseIf kernel_failed (\(KernelStartFailure node) _ l ->
-       case getField $ rget fldReq l of
-         Just (StartProcessesOnNodeRequest m0node)
+    setPhaseIf kernel_failed (\ksf _ l ->
+       case (ksf, getField $ rget fldReq l) of
+         (  (KernelStartFailure node)
+            , Just (StartProcessesOnNodeRequest m0node))
             | node == m0node -> return $ Just m0node
          _  -> return Nothing
        ) $ \ m0node -> do
