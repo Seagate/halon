@@ -201,8 +201,6 @@ testMeroOnlineFirst t pg = doRestart t pg M0.PSOnline $ \p srvs recv -> do
   Set nt <- H.nextNotificationFor (M0.fid p) recv
   liftIO $ assertEqual "ruleProcessOnline sets process to online"
            (sort $ mkMsg p M0_NC_FAILED : map (`mkMsg` M0_NC_ONLINE) srvs) (sort nt)
-
-  promulgateWait (nid, mkRestartedNotification p)
   Set nt' <- H.nextNotificationFor (M0.fid p) recv
   liftIO $ assertEqual "SSPL handler sets process to online"
            (sort $ mkMsg p M0_NC_ONLINE : map (`mkMsg` M0_NC_ONLINE) srvs) (sort nt')

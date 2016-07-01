@@ -237,7 +237,12 @@ ruleProcessRestarted = define "processes-restarted" $ do
 -- | Handle online notifications about processes. Part of process
 -- restart procedure.
 ruleProcessOnline :: Definitions LoopState ()
-ruleProcessOnline = defineSimpleIf "process-started" onlineProc $ \(eid, p, processPid) -> do
+ruleProcessOnline = define "rule-process-online" $ do
+  rule_init <- phaseHandle "rule_init"
+  starting_notified <- phaseHandle "starting_notified"
+  starting_notify_failed <- phaseHandle "starting_notify_failed"
+
+  setPhaseIf rule_init onlineProc $ \(eid, p, processPid) -> do
     todo eid
     rg <- getLocalGraph
     -- hack: we set PID to -1 when we're waiting for MKFS notification
@@ -258,6 +263,8 @@ ruleProcessOnline = defineSimpleIf "process-started" onlineProc $ \(eid, p, proc
                        ++ show rgPid ++ " => " ++ show processPid
         modifyLocalGraph $ return . G.connectUniqueFrom p Has processPid
         applyStateChanges [ stateSet p M0.PSStarting ]
+        put Local $ Just (eid, (p, M0.PSStarting))
+        switch [starting_notified, timeout 10 starting_notify_failed]
       -- We have a process but no PID for it, somehow. This can happen
       -- if the process was set to online through all its services
       -- coming up online and now we're receiving the process
@@ -282,8 +289,23 @@ ruleProcessOnline = defineSimpleIf "process-started" onlineProc $ \(eid, p, proc
       st -> phaseLog "warn" $ "ruleProcessOnline: Unexpected state for"
             ++ " process " ++ show p ++ ", " ++ show st
     done eid
+
+  setPhaseNotified starting_notified procNotified $ \(p, _) -> do
+    Just (eid, _) <- get Local
+    phaseLog "info" $ "Process restart notified, setting online"
+    applyStateChanges [ stateSet p M0.PSOnline ]
+    done eid
+
+  directly starting_notify_failed $ do
+    Just (eid, _) <- get Local
+    phaseLog "warn" "Couldn't notify mero about process starting"
+    done eid
+
+  start rule_init Nothing
   where
-    onlineProc (HAEvent eid (m@HAMsgMeta{}, e@(ProcessEvent t pid)) _) ls = do
+    procNotified = maybe Nothing (Just . snd)
+
+    onlineProc (HAEvent eid (m@HAMsgMeta{}, ProcessEvent t pid) _) ls _ = do
       let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
       return $ case (t, mpd) of
         (TAG_M0_CONF_HA_PROCESS_STARTED, Just (p :: M0.Process)) | pid /= 0 ->

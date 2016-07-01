@@ -489,13 +489,15 @@ ruleMonitorServiceRestart = defineSimple "monitor-service-restart" $ \(HAEvent u
             -- Process starting with no PID, we were probably booting
             -- up first time.
             (Just M0.PSStarting, Nothing) -> markStarting p
-            -- Process starting with pid: we have received process
-            -- started about the process from mero. Now that we have
-            -- received the corresponding SSPL message, we can mark it
-            -- as online.
-            (Just M0.PSStarting, Just (M0.PID pid)) | currentPid == pid -> do
-              phaseLog "info" $ "Process restart OK, SSPL second: " ++ show pid
-              applyStateChanges [ stateSet p M0.PSOnline ]
+            -- Process starting with pid: we have either received a
+            -- message like this already and are waiting for online
+            -- notification from mero or we have received an online
+            -- notification from mero first and we're telling it to
+            -- restart connections. In first case do nothing because
+            -- duplicate message. In second case also do nothing
+            -- because the same rule will transition the process into
+            -- online by itself.
+            (Just M0.PSStarting, Just (M0.PID pid)) | currentPid == pid -> return ()
 
             s -> phaseLog "warn" $
                  "Restart notification for process with state " ++ show s
