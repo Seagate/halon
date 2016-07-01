@@ -296,7 +296,6 @@ setPhaseAllNotified :: forall l g. Jump PhaseHandle
 setPhaseAllNotified handle extract act =
   setPhase handle $ \(HAEvent _ msg _) -> do
      mn <- gets Local (^. extract)
-     phaseLog "XXX" $ show (length mn)
      case mn of
        Nothing -> do phaseLog "error" "Internal noficications are not set."
                      act
