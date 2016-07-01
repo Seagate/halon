@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, GeneralizedNewtypeDeriving, RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables, GeneralizedNewtypeDeriving, RankNTypes, DeriveGeneric #-}
 
 module Tests where
 
@@ -9,6 +9,7 @@ import Data.Binary (Binary)
 import Data.Typeable
 import Data.List (sort)
 import Data.IORef
+import GHC.Generics
 
 import System.Clock
 
@@ -57,6 +58,7 @@ tests launch =
   , testsFinalizer launch
   , testsException launch
   , testsDefaultHandler launch
+  , testsPhaseIf launch
   ]
 
 testsGlobal :: (Process () -> IO ()) -> TestTree
@@ -529,7 +531,7 @@ forkDropIsWorking = do
     usend pid donut
     usend pid (Baz 4)
     mapM_ (usend pid . Foo) [4,5,6]
-    
+
     assertEqual "foo" [4,5,6] . map unFoo
       =<< replicateM 3 expect
 
@@ -1173,3 +1175,29 @@ defaultHandlerWorks = do
     assertEqual "rule handled" ("rule"::String) =<< expect
     usend pid (3::Int)
     assertEqual "default handler" ("default"::String) =<< expect
+
+testsPhaseIf :: (Process () -> IO ()) -> TestTree
+testsPhaseIf launch = testGroup "setPhaseIf"
+  [ testCase "setPhaseIf doesn't fail on partial pattern"  $ launch setPhaseIfPartial
+  ]
+
+data AB = A | B deriving (Eq, Show, Generic, Typeable)
+
+instance Binary AB
+
+setPhaseIfPartial :: Process ()
+setPhaseIfPartial = do
+    self <- getSelfPid
+
+    let specs = define "exception-handling" $ do
+          ph0 <- phaseHandle "ph0"
+          setPhaseIf ph0 (\A () () -> return $ Just ()) $ const $ liftProcess $ usend self "foo"
+          start ph0 ()
+
+    pid <- spawnLocal $ execute () specs
+    link pid
+    usend pid A
+    usend pid B
+
+    i <- expect
+    assertEqual "Handle second message" "foo" i
