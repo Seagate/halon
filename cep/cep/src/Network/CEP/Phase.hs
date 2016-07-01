@@ -17,6 +17,7 @@ import           Control.Distributed.Process
 import           Control.Distributed.Process.Serializable
 import           Control.Monad.Operational
 import           Control.Exception (fromException, throwIO)
+import qualified Control.Monad.Catch as Catch
 import qualified Data.MultiMap as MM
 import qualified Data.Sequence as S
 
@@ -88,10 +89,11 @@ extractMatchMsg p g l buf = go (-1)
     go lastIdx =
         case bufferGetWithIndex lastIdx buf of
           Just (newIdx, a, newBuf) -> do
-            res <- p a g l
+            res <- mask_ $ trySome $ p a g l
             case res of
-              Nothing -> go newIdx
-              Just b  ->
+              Left _ -> return Nothing
+              Right Nothing  -> go newIdx
+              Right (Just b) ->
                 let ext = Extraction
                           { _extractBuf = newBuf
                           , _extractMsg = b
@@ -99,6 +101,8 @@ extractMatchMsg p g l buf = go (-1)
                           } in
                 return $ Just ext
           _ -> return Nothing
+    trySome :: Process a -> Process (Either Catch.SomeException a)
+    trySome = Catch.try
 
 -- | Extracts a simple message from the 'Buffer'.
 extractNormalMsg :: forall a. Serializable a

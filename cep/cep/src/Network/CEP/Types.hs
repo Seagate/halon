@@ -384,17 +384,6 @@ setPhaseWire :: (Serializable a, Serializable b)
              -> RuleM g l ()
 setPhaseWire h w action = singleton $ SetPhase h (ContCall (PhaseWire w) action)
 
--- | Assigns a 'PhaseHandle' to a 'Phase' state machine that would wait for
---   type of message to conform the given predicate in order to produce the
---   value needed to start.
-setPhaseMatch :: (Serializable a, Serializable b)
-              => Jump PhaseHandle
-              -> (a -> g -> l -> Process (Maybe b))
-              -> (b -> PhaseM g l ())
-              -> RuleM g l ()
-setPhaseMatch h p action =
-    singleton $ SetPhase h (ContCall (PhaseMatch p) action)
-
 -- | Internal use only. Waits for 2 type of messages to come sequentially and
 --   apply them to a predicate. If the predicate is statisfied, we yield those
 --   value in a tuple, otherwise we switch to the 'Error' state.

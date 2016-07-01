@@ -31,7 +31,6 @@ module Network.CEP
     , setPhase
     , setPhaseIf
     , setPhaseWire
-    , setPhaseMatch
     , setPhaseSequenceIf
     , setPhaseSequence
     , phaseHandle
