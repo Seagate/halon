@@ -415,10 +415,10 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
        (False, _) | (not was_removed) -> do
          selfMessage $ DriveRemoved uuid (Node nid) enc sdev diskNum
          return True
-       (_, True) | (not isOngoingReset && not was_powered) -> do
+       (_, True) | ((not isOngoingReset) && (not was_powered)) -> do
          selfMessage $ DrivePowerChange uuid (Node nid) enc sdev diskNum serial_str True
          return True
-       (_, False) | (not isOngoingReset && was_powered) -> do
+       (_, False) | (was_powered && (not isOngoingReset)) -> do
          selfMessage $ DrivePowerChange uuid (Node nid) enc sdev diskNum serial_str False
          return True
        _ -> return False
