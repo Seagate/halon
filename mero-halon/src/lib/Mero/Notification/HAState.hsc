@@ -16,7 +16,7 @@ module Mero.Notification.HAState
   ( Note(..)
   , NVec
   , HALink
-  , ReqId
+  , ReqId(..)
   , initHAState
   , finiHAState
   , getRPCMachine
@@ -120,8 +120,9 @@ type NVec = [Note]
 newtype HALink = HALink (Ptr HALink)
   deriving (Show, Eq)
 
--- | Identifier of entrypoint requests
-newtype ReqId = ReqId (Ptr ReqId)
+-- | Id of the incomming entrypoint/link connected request.
+newtype ReqId = ReqId Word128
+  deriving (Show, Eq)
 
 -- | A type for hidding the type argument of 'FunPtr's
 data SomeFunPtr = forall a. SomeFunPtr (FunPtr a)
@@ -153,8 +154,12 @@ initHAState :: RPCAddress
             -> (ReqId -> Fid -> Fid -> IO ())
                -- ^ Called when a request to read current confd and rm endpoints
                -- is received.
-            -> (Word128 -> HALink -> IO ())
+            -> (ReqId -> HALink -> IO ())
                -- ^ Called when a new link is established.
+               -- Word128 is for requiest id passed in entrypoint request.
+            -> (ReqId -> HALink -> IO ())
+               -- ^ Called when an old link is reconnected, may happen in case
+               -- of RM service change.
                -- Word128 is for requiest id passed in entrypoint request.
             -> (HALink -> IO ())
                -- ^ The link is no longer needed by the remote peer.
@@ -162,7 +167,7 @@ initHAState :: RPCAddress
                -- using the link have completed.
             -> IO ()
 initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_set ha_state_set
-            ha_state_entry ha_state_link_connected ha_state_link_disconnecting =
+            ha_state_entry ha_state_link_connected ha_state_link_reused ha_state_link_disconnecting =
     useAsCString rpcAddr $ \cRPCAddr ->
     allocaBytesAligned #{size ha_state_callbacks_t}
                        #{alignment ha_state_callbacks_t}$ \pcbs -> do
@@ -171,12 +176,14 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
       wset <- wrapSetCB
       wentry <- wrapEntryCB
       wconnected <- wrapConnectedCB
+      wreused    <- wrapReconnectedCB
       wdisconnecting <- wrapDisconnectingCB
       #{poke ha_state_callbacks_t, ha_state_get} pcbs wget
       #{poke ha_state_callbacks_t, ha_process_event_set} pcbs wpset
       #{poke ha_state_callbacks_t, ha_state_set} pcbs wset
       #{poke ha_state_callbacks_t, ha_state_entrypoint} pcbs wentry
       #{poke ha_state_callbacks_t, ha_state_link_connected} pcbs wconnected
+      #{poke ha_state_callbacks_t, ha_state_link_reused} pcbs wconnected
       #{poke ha_state_callbacks_t, ha_state_link_disconnecting} pcbs
          wdisconnecting
       modifyIORef cbRefs
@@ -185,6 +192,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
         . (SomeFunPtr wset:)
         . (SomeFunPtr wentry:)
         . (SomeFunPtr wconnected:)
+        . (SomeFunPtr wreused:)
         . (SomeFunPtr wdisconnecting:)
         )
       rc <- with procFid $ \procPtr -> with profFid $ \profPtr ->
@@ -209,14 +217,20 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
     wrapEntryCB = cwrapEntryCB $ \reqId processPtr profilePtr -> catch (do
         processFid <- peek processPtr
         profileFid <- peek profilePtr
-        ha_state_entry (ReqId reqId) processFid profileFid)
+        w128       <- peek reqId
+        ha_state_entry (ReqId w128) processFid profileFid)
         $ \e -> hPutStrLn stderr $
                   "initHAState.wrapEntryCB: " ++ show (e :: SomeException)
     wrapConnectedCB = cwrapConnectedCB $ \wptr hl -> do
         w128 <- peek wptr
-        catch (ha_state_link_connected w128 (HALink hl)) $ \e ->
+        catch (ha_state_link_connected (ReqId w128) (HALink hl)) $ \e ->
           hPutStrLn stderr $
             "initHAState.wrapConnectedCB: " ++ show (e :: SomeException)
+    wrapReconnectedCB = cwrapConnectedCB $ \wptr hl -> do
+        w128 <- peek wptr
+        catch (ha_state_link_reused (ReqId w128) (HALink hl)) $ \e ->
+          hPutStrLn stderr $
+            "initHAState.wrapReconnectedCB: " ++ show (e :: SomeException)
     wrapDisconnectingCB = cwrapDisconnectingCB $ \hl ->
         catch (ha_state_link_disconnecting (HALink hl)) $ \e ->
           hPutStrLn stderr $
@@ -245,7 +259,8 @@ foreign import ccall "wrapper" cwrapSetCB :: (Ptr NVec -> IO ())
                                           -> IO (FunPtr (Ptr NVec -> IO ()))
 
 foreign import ccall "wrapper" cwrapEntryCB ::
-    (Ptr ReqId -> Ptr Fid -> Ptr Fid -> IO ()) -> IO (FunPtr (Ptr ReqId -> Ptr Fid -> Ptr Fid -> IO ()))
+                  (Ptr Word128 -> Ptr Fid -> Ptr Fid -> IO ())
+    -> IO (FunPtr (Ptr Word128 -> Ptr Fid -> Ptr Fid -> IO ()))
 
 foreign import ccall "wrapper" cwrapDisconnectingCB ::
                   (Ptr HALink -> IO ())
@@ -316,7 +331,7 @@ check_rc msg i = throwIO $ HAStateException msg $ fromIntegral i
 newtype {-# CTYPE "const char*" #-} ConstCString = ConstCString CString
 
 foreign import capi ha_entrypoint_reply
-  :: Ptr ReqId -> CInt
+  :: Ptr Word128 -> CInt
   -> CInt -> Ptr Fid
   -> CInt -> Ptr ConstCString
   -> Ptr Fid -> CString
@@ -330,16 +345,17 @@ entrypointReply (ReqId reqId) confdFids epNames rmFid rmEp =
       withArrayLen confdFids $ \cfids_len cfids_ptr ->
         withCString rmEp $ \crm_ep ->
           with rmFid $ \crmfid ->
-            ha_entrypoint_reply reqId 0 (fromIntegral cfids_len) cfids_ptr
-                                (fromIntegral ceps_len) (castPtr ceps_ptr)
-                                crmfid crm_ep
+            with reqId $ \reqId_ptr ->
+              ha_entrypoint_reply reqId_ptr 0 (fromIntegral cfids_len) cfids_ptr
+                                  (fromIntegral ceps_len) (castPtr ceps_ptr)
+                                  crmfid crm_ep
   where
     _ = ConstCString -- Avoid unused warning for ConstCString
 
 -- | Replies an entrypoint request as invalid.
 entrypointNoReply :: ReqId -> IO ()
-entrypointNoReply (ReqId reqId) =
-  ha_entrypoint_reply reqId (-1) 0 nullPtr 0 nullPtr nullPtr nullPtr
+entrypointNoReply (ReqId reqId) = with reqId $ \reqId_ptr ->
+  ha_entrypoint_reply reqId_ptr (-1) 0 nullPtr 0 nullPtr nullPtr nullPtr
 
 foreign import capi "hastate.h ha_state_rpc_machine" ha_state_rpc_machine :: IO (Ptr RPCMachineV)
 

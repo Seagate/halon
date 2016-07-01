@@ -76,7 +76,15 @@ typedef struct ha_state_callbacks {
 	void (*ha_state_link_connected)(const struct m0_uint128 *req_id, struct m0_ha_link *hl);
 
 	/**
-	 * The link is no longer needed by the remote peer.
+	 * Called after an existing link requested entrypoint info. The link is alive until
+	 * ha_state_disconnect(..) is called.
+         *   * req_id - id of the entrypoint request for this link.
+         *   * hl     - created link.
+	 */
+	void (*ha_state_link_reused)(const struct m0_uint128 *req_id, struct m0_ha_link *hl);
+
+	/**
+	 * The link is no longer needed by the remote peer.  
 	 * It is safe to call ha_state_disconnect(..) when all ha_state_notify
 	 * calls using the link have completed.
 	 */

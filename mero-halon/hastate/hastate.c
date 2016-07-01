@@ -82,6 +82,7 @@ void link_reused_cb ( struct m0_halon_interface *hi
                     , const struct m0_uint128   *req_id
                     , struct m0_ha_link         *link
                     ) {
+    ha_state_cbs.ha_state_link_reused(req_id, link);
 }
 
 void link_is_disconnecting_cb ( struct m0_halon_interface *hi
