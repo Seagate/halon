@@ -11,7 +11,7 @@ checkout:
   pre:
     # We move the halon folder to ram to prevent tests from failing when the
     # disk of the test box is slow (out of our control).
-    - mv halon halon2 && mkdir halon && sudo mount -t tmpfs -o size=4096m tmpfs halon && cp -r halon2/. halon && sudo chown -R $USER halon
+    # - mv halon halon2 && mkdir halon && sudo mount -t tmpfs -o size=4096m tmpfs halon && cp -r halon2/. halon && sudo chown -R $USER halon
   post:
     # remove cached submodules - otherwise interference ensues when updating submodule urls
     - rm -rf .git/modules/*
