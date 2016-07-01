@@ -28,6 +28,7 @@ module Mero.Notification.HAState
   , HAStateException(..)
   , ProcessEvent(..)
   , ProcessEventType(..)
+  , ProcessType(..)
   ) where
 
 import HA.Resources.Mero.Note
@@ -36,7 +37,7 @@ import Mero.ConfC (Fid)
 import Network.RPC.RPCLite (RPCAddress(..), RPCMachine(..), RPCMachineV)
 
 import Control.Exception      ( Exception, throwIO, SomeException, evaluate )
-import Control.Monad          ( liftM2, liftM4, void )
+import Control.Monad          ( liftM2, liftM3, liftM4, void )
 import Control.Monad.Catch    ( catch )
 import Data.Binary            ( Binary )
 import Data.ByteString as B   ( useAsCString )
@@ -76,11 +77,22 @@ instance Hashable HAMsgMeta
 
 data ProcessEvent = ProcessEvent
   { _chp_event :: ProcessEventType
+  , _chp_type :: ProcessType
   , _chp_pid :: Word64
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Binary ProcessEvent
 instance Hashable ProcessEvent
+
+data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_process_type" #-}
+  ProcessType = TAG_M0_CONF_HA_PROCESS_OTHER
+              | TAG_M0_CONF_HA_PROCESS_KERNEL
+              | TAG_M0_CONF_HA_PROCESS_M0MKFS
+              | TAG_M0_CONF_HA_PROCESS_M0D
+              deriving (Show, Eq, Ord, Typeable, Generic)
+
+instance Binary ProcessType
+instance Hashable ProcessType
 
 data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_process_event" #-}
   ProcessEventType = TAG_M0_CONF_HA_PROCESS_STARTING
@@ -332,6 +344,18 @@ getRPCMachine = do p <- ha_state_rpc_machine
 
 -- * Boilerplate instances
 
+instance Enum ProcessType where
+  toEnum #{const M0_CONF_HA_PROCESS_OTHER} = TAG_M0_CONF_HA_PROCESS_OTHER
+  toEnum #{const M0_CONF_HA_PROCESS_KERNEL} = TAG_M0_CONF_HA_PROCESS_KERNEL
+  toEnum #{const M0_CONF_HA_PROCESS_M0MKFS} = TAG_M0_CONF_HA_PROCESS_M0MKFS
+  toEnum #{const M0_CONF_HA_PROCESS_M0D} = TAG_M0_CONF_HA_PROCESS_M0D
+  toEnum i = error $ "ProcessType toEnum failed with " ++ show i
+
+  fromEnum TAG_M0_CONF_HA_PROCESS_OTHER = #{const M0_CONF_HA_PROCESS_OTHER}
+  fromEnum TAG_M0_CONF_HA_PROCESS_KERNEL = #{const M0_CONF_HA_PROCESS_KERNEL}
+  fromEnum TAG_M0_CONF_HA_PROCESS_M0MKFS = #{const M0_CONF_HA_PROCESS_M0MKFS}
+  fromEnum TAG_M0_CONF_HA_PROCESS_M0D = #{const M0_CONF_HA_PROCESS_M0D}
+
 instance Enum ProcessEventType where
   toEnum #{const M0_CONF_HA_PROCESS_STARTING} = TAG_M0_CONF_HA_PROCESS_STARTING
   toEnum #{const M0_CONF_HA_PROCESS_STARTED} = TAG_M0_CONF_HA_PROCESS_STARTED
@@ -365,11 +389,13 @@ instance Storable ProcessEvent where
   sizeOf _ = #{size struct m0_conf_ha_process}
   alignment _ = #{alignment struct m0_conf_ha_process}
 
-  peek p = liftM2 ProcessEvent
+  peek p = liftM3 ProcessEvent
       (w64ToEnum <$> (#{peek struct m0_conf_ha_process, chp_event} p))
+      (w64ToEnum <$> (#{peek struct m0_conf_ha_process, chp_type} p))
       (#{peek struct m0_conf_ha_process, chp_pid} p)
-  poke p (ProcessEvent ev pid) = do
+  poke p (ProcessEvent ev et pid) = do
       #{poke struct m0_conf_ha_process, chp_event} p (enumToW64 ev)
+      #{poke struct m0_conf_ha_process, chp_event} p (enumToW64 et)
       #{poke struct m0_conf_ha_process, chp_pid} p pid
 
 enumToW64 :: Enum a => a -> Word64

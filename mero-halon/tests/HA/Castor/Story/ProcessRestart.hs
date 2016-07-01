@@ -93,6 +93,7 @@ mkProcessStartedNotification p (M0.PID pid) = (meta, event)
                      , _hm_source_service = nullFid
                      , _hm_time = 0 }
     event = ProcessEvent { _chp_event = TAG_M0_CONF_HA_PROCESS_STARTED
+                         , _chp_type = TAG_M0_CONF_HA_PROCESS_M0D
                          , _chp_pid = fromIntegral pid }
 
 

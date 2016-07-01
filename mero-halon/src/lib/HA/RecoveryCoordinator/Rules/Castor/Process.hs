@@ -245,14 +245,8 @@ ruleProcessOnline = define "rule-process-online" $ do
   setPhaseIf rule_init onlineProc $ \(eid, p, processPid) -> do
     todo eid
     rg <- getLocalGraph
-    -- hack: we set PID to -1 when we're waiting for MKFS notification
-    -- to swallow. Temporary measure until we get PID 0 from mero as
-    -- expected.
-    let swallowMsg = G.connectedTo p Has rg == [M0.PID (-1)]
+
     case (getState p rg, listToMaybe $ G.connectedTo p Has rg) of
-      _ | swallowMsg -> do
-            phaseLog "warn" $ "Swallowing mkfs message for " ++ showFid p
-            modifyGraph $ G.disconnectAllFrom p Has (Proxy :: Proxy M0.PID)
       (M0.PSOnline, Just rgPid) | processPid /= rgPid -> do
         -- We have an online process already but the PIDs don't match
         -- up: the process must have restarted and we didn't get an
@@ -305,10 +299,10 @@ ruleProcessOnline = define "rule-process-online" $ do
   where
     procNotified = maybe Nothing (Just . snd)
 
-    onlineProc (HAEvent eid (m@HAMsgMeta{}, ProcessEvent t pid) _) ls _ = do
+    onlineProc (HAEvent eid (m@HAMsgMeta{}, ProcessEvent t pt pid) _) ls _ = do
       let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
-      return $ case (t, mpd) of
-        (TAG_M0_CONF_HA_PROCESS_STARTED, Just (p :: M0.Process)) | pid /= 0 ->
+      return $ case (t, pt, mpd) of
+        (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
           Just (eid, p, M0.PID $ fromIntegral pid)
         _ -> Nothing
 
