@@ -328,9 +328,9 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
   let
     power_down_timeout = 300 -- seconds
     power_off evt@(DrivePowerChange{..}) _ _ =
-      if dpcPowered then return (Just evt) else return Nothing
-    power_on evt@(DrivePowerChange{..}) _ _ =
       if dpcPowered then return Nothing else return (Just evt)
+    power_on evt@(DrivePowerChange{..}) _ _ =
+      if dpcPowered then return (Just evt) else return Nothing
     matching_device _ _ Nothing = return Nothing
     matching_device evt@(DrivePowerChange{..}) _ (Just (_,dev)) =
       if dev == dpcDevice then return (Just evt) else return Nothing

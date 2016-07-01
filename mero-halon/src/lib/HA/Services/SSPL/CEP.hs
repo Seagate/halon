@@ -401,6 +401,13 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
       was_removed <- isStorageDriveRemoved sdev
       isOngoingReset <- hasOngoingReset sdev
 
+      phaseLog "debug" $ unwords [
+          "was_installed:", show (not was_removed)
+        , "is_installed:", show is_installed
+        , "was_powered:", show was_powered
+        , "is_powered:", show is_powered
+        , "is_undergoing_reset:", show isOngoingReset
+        ]
       more_needed <- case (is_installed, is_powered) of
        (True, _) | was_removed -> do
          selfMessage $ DriveInserted uuid sdev enc diskNum serial
@@ -408,10 +415,10 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
        (False, _) | (not was_removed) -> do
          selfMessage $ DriveRemoved uuid (Node nid) enc sdev diskNum
          return True
-       (_, True) | (not isOngoingReset && not was_powered) -> do
+       (_, True) | ((not isOngoingReset) && (not was_powered)) -> do
          selfMessage $ DrivePowerChange uuid (Node nid) enc sdev diskNum serial_str True
          return True
-       (_, False) | (not isOngoingReset && was_powered) -> do
+       (_, False) | (was_powered && (not isOngoingReset)) -> do
          selfMessage $ DrivePowerChange uuid (Node nid) enc sdev diskNum serial_str False
          return True
        _ -> return False
