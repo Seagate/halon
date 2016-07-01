@@ -27,18 +27,34 @@ void entrypoint_request_cb( struct m0_halon_interface         *hi
     ha_state_cbs.ha_state_entrypoint(req_id, process_fid, profile_fid);
 }
 
+// Pull out metadata from the m0_ha_msg struct. The user should free
+// the memory allocated for the struct.
+ha_msg_metadata_t *get_metadata(const struct m0_ha_msg *msg) {
+  ha_msg_metadata_t *m = (ha_msg_metadata_t *) malloc(sizeof(ha_msg_metadata_t));
+  m->ha_hm_fid = msg->hm_fid;
+  m->ha_hm_source_process = msg->hm_source_process;
+  m->ha_hm_source_service = msg->hm_source_service;
+  m->ha_hm_time = msg->hm_time;
+  return m;
+}
+
 void msg_received_cb ( struct m0_halon_interface *hi
                      , struct m0_ha_link         *hl
                      , const struct m0_ha_msg    *msg
                      , uint64_t                   tag
                      ) {
-    if (msg->hm_data.hed_type == M0_HA_MSG_NVEC) {
-      if (msg->hm_data.u.hed_nvec.hmnv_type)
-        ha_state_cbs.ha_state_get( hl
-                                 , msg->hm_data.u.hed_nvec.hmnv_id_of_get
-                                 , &msg->hm_data.u.hed_nvec);
-      else
-        ha_state_cbs.ha_state_set(&msg->hm_data.u.hed_nvec);
+
+    switch (msg->hm_data.hed_type) {
+      case M0_HA_MSG_NVEC:
+        if (msg->hm_data.u.hed_nvec.hmnv_type)
+          ha_state_cbs.ha_state_get( hl
+                                   , msg->hm_data.u.hed_nvec.hmnv_id_of_get
+                                   , &msg->hm_data.u.hed_nvec);
+        else
+          ha_state_cbs.ha_state_set(&msg->hm_data.u.hed_nvec);
+      case M0_HA_MSG_EVENT_PROCESS:
+        ha_state_cbs.ha_process_event_set( get_metadata(msg)
+                                         , &msg->hm_data.u.hed_event_process);
     }
     m0_halon_interface_delivered(m0init_hi, hl, msg);
 }
@@ -112,7 +128,7 @@ uint64_t ha_state_notify(struct m0_ha_link *hl, struct m0_ha_msg_nvec *note) {
         .hm_fid            = M0_FID_INIT(0, 0),
         .hm_source_process = M0_FID_INIT(0, 0),
         .hm_source_service = M0_FID_INIT(0, 0),
-        .hm_time           = m0_time_now(),    
+        .hm_time           = m0_time_now(),
         .hm_data = { .hed_type = M0_HA_MSG_NVEC
                    , .u.hed_nvec = *note
                    },
@@ -145,4 +161,3 @@ void ha_entrypoint_reply( const struct m0_uint128     *req_id
 struct m0_rpc_machine * ha_state_rpc_machine() {
     return m0_halon_interface_rpc_machine(m0init_hi);
 }
-

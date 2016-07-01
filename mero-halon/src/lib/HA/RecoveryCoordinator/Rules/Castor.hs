@@ -71,6 +71,7 @@ castorRules = sequence_
   , ruleInternalStateChangeHandler
   , ruleGetEntryPoint
   , ruleProcessRestarted
+  , ruleProcessOnline
   , ruleFailedNotificationFailsProcess
   , Disk.rules
   , Expander.rules
@@ -132,7 +133,6 @@ setStateChangeHandlers = do
     stateChangeHandlersE = concat
       [ Disk.externalNotificationHandlers
       , [ handleProcessFailureE
-        , handleProcessOnlineE
         ]
       ]
     stateChangeHandlersI = concat

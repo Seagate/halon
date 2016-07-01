@@ -389,6 +389,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
     _ <- forkM0OS $ do -- Thread will be joined just before mero will be finalized
              er <- Catch.try $ initHAState addr processFid profileFid
                             ha_state_get
+                            ha_process_event_set
                             (ha_state_set links)
                             ha_entrypoint
                             (ha_connected links)
@@ -415,6 +416,10 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
                    Nothing -> do
                      say "ha_state_get: Unable to query state from RC."
       liftIO $ traceEventIO "STOP ha_state_get"
+
+    ha_process_event_set :: HAMsgMeta -> ProcessEvent -> IO ()
+    ha_process_event_set meta pe = void $ CH.forkProcess lnode $ do
+      void $ promulgate (meta, pe)
 
     ha_state_set :: IORef [HALink] -> NVec -> IO ()
     ha_state_set _ nvec = do

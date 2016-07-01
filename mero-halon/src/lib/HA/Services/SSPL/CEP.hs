@@ -424,8 +424,7 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
 -- | Handle SSPL message about a service restart.
 ruleMonitorServiceRestart :: Definitions LoopState ()
 ruleMonitorServiceRestart = defineSimple "monitor-service-restart" $ \(HAEvent uuid (_ :: NodeId, watchdogmsg) _) -> do
-  let phaseLog c s = liftProcess . say $ c ++ " => " ++ s
-  phaseLog "info" $ "Received SSPL message about service restart: " ++ show watchdogmsg
+
   let currentState = sensorResponseMessageSensor_response_typeService_watchdogService_state watchdogmsg
       prevState = sensorResponseMessageSensor_response_typeService_watchdogPrevious_service_state watchdogmsg
       serviceName = sensorResponseMessageSensor_response_typeService_watchdogService_name watchdogmsg
@@ -437,16 +436,19 @@ ruleMonitorServiceRestart = defineSimple "monitor-service-restart" $ \(HAEvent u
       mpreviousPid = readMaybe . T.unpack
                      $ sensorResponseMessageSensor_response_typeService_watchdogPrevious_pid watchdogmsg
 
+  when (currentState == "active" && prevState == "inactive") $ do
+    phaseLog "info" $ "Received SSPL message about service restart: "
+                   ++ show watchdogmsg
 
   case (,,,,) <$> mprocessFid <*> mcurrentPid <*> mpreviousPid <*> pure currentState <*> pure prevState of
-    Nothing -> phaseLog "warn" $ "Couldn't parse " ++ show (mprocessFid, mcurrentPid, mpreviousPid)
+    Nothing -> return ()
     _ | mpreviousPid == mcurrentPid -> phaseLog "warn" $
           "Previous and current PIDs are the same, ignoring message"
-    Just (processFid, currentPid, _previousPid, "active", "inactive") -> do
+    Just (processFid, currentPid, previousPid, "active", "inactive") -> do
       svs <- M0.getM0Processes <$> getLocalGraph
       phaseLog "info" $ "Looking for fid " ++ show processFid ++ " in " ++ show svs
       let markStarting p = do
-            phaseLog "info" $ "Marking " ++ show p ++ " as starting."
+            phaseLog "info" $ "Marking " ++ show (M0.fid p) ++ " as starting."
             modifyLocalGraph $ return . connectUniqueFrom p Has (M0.PID currentPid)
             applyStateChanges [stateSet p M0.PSStarting]
       case listToMaybe $ filter (\p -> M0.r_fid p == processFid) svs of
@@ -454,30 +456,49 @@ ruleMonitorServiceRestart = defineSimple "monitor-service-restart" $ \(HAEvent u
         Just p -> do
           rg <- getLocalGraph
           case (listToMaybe $ connectedTo p Is rg, listToMaybe $ connectedTo p Has rg) of
-            -- Process online, mark as FAILED and wait for ONLINE from mero
+
+            -- We have a running process with no PID somehow: for
+            -- example all services went up, we marked process online
+            -- but the mero notification for the process with its PID
+            -- hasn't arrived yet. As SSPL is saying this process
+            -- restarted (or started up first time), mark as starting
+            -- and wait for mero to tell us when the process is ready.
             (Just M0.PSOnline, Nothing) -> do
-              phaseLog "warn" $ "SSPL restart notification for online process without PID"
+              phaseLog "info" $ "SSPL restart notification for online process without PID"
               markStarting p
 
+            -- We have a running process and the SSPL notification is
+            -- for the corresponding PID. Do nothing, the process is
+            -- OK.
             (Just M0.PSOnline, Just (M0.PID pid))
-              | currentPid == pid -> do
-                  phaseLog "warn" $
-                   "Restart notification for already handled process, do nothing"
-              | otherwise -> do
-                  phaseLog "info" $ "Restart notification for new pid"
+              | currentPid == pid -> return ()
+            -- Current process is running but SSPL says it has
+            -- restarted. Mark it as starting and wait for mero to
+            -- tell us that it's online.
+              | previousPid == pid -> do
+                  phaseLog "warn" $ "Process restarted, SSPL notification received first."
                   markStarting p
-            -- Process starting with no PID, needs MERO-1666
+            -- The message is not about current or past process, do nothing.
+              | otherwise -> do
+                  -- Warn because it's probably not gerat to have SSPL
+                  -- messages this late/out of order.
+                  phaseLog "warn" $ "Current process has PID" ++ show pid
+                                 ++ " but we got a notification for "
+                                 ++ show (previousPid, currentPid)
+
+            -- Process starting with no PID, we were probably booting
+            -- up first time.
             (Just M0.PSStarting, Nothing) -> markStarting p
-            -- Process starting with pid, must have gotten ONLINE from
-            -- mero first and now getting SSPL part of restart, mark online
-            (Just M0.PSStarting, Just (M0.PID pid))
-              | pid == currentPid -> do
-                  phaseLog "info" $ "Received second part of restart for " ++ show p
-                  applyStateChanges [stateSet p M0.PSOnline]
-              | otherwise -> do
-                  phaseLog "warn" $
-                    "Was already waiting for notification for PID " ++ show pid
-                  markStarting p
+            -- Process starting with pid: we have either received a
+            -- message like this already and are waiting for online
+            -- notification from mero or we have received an online
+            -- notification from mero first and we're telling it to
+            -- restart connections. In first case do nothing because
+            -- duplicate message. In second case also do nothing
+            -- because the same rule will transition the process into
+            -- online by itself.
+            (Just M0.PSStarting, Just (M0.PID pid)) | currentPid == pid -> return ()
+
             s -> phaseLog "warn" $
                  "Restart notification for process with state " ++ show s
     Just msg -> do

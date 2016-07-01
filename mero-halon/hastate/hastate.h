@@ -14,6 +14,14 @@
 #include "ha/note.h"
 #include "ha/halon/interface.h"
 
+// m0_ha_msg without the data or private fields
+typedef struct ha_msg_metadata {
+  struct m0_fid          ha_hm_fid;            /**< conf object fid */
+  struct m0_fid          ha_hm_source_process; /**< source process fid */
+  struct m0_fid          ha_hm_source_service; /**< source service fid */
+  m0_time_t              ha_hm_time;           /**< event timestamp */
+} ha_msg_metadata_t;
+
 /// Callbacks for handling requests made with m0_ha_state_get and m0_ha_state_set.
 typedef struct ha_state_callbacks {
 
@@ -25,6 +33,13 @@ typedef struct ha_state_callbacks {
 	 * on the given link by passing the same note parameter and 0.
 	 * */
 	void (*ha_state_get)(struct m0_ha_link *hl, uint64_t idx, const struct m0_ha_msg_nvec *note);
+
+
+	/**
+	 * Called when m0_conf_ha_process event is received.
+	 * */
+	void (*ha_process_event_set)(ha_msg_metadata_t *meta, const struct m0_conf_ha_process *proc);
+
 
 	/**
 	 * Called when a request to update the state of some objects is received.
@@ -54,7 +69,7 @@ typedef struct ha_state_callbacks {
 	void (*ha_state_link_connected)(struct m0_ha_link *hl);
 
 	/**
-	 * The link is no longer needed by the remote peer.  
+	 * The link is no longer needed by the remote peer.
 	 * It is safe to call ha_state_disconnect(..) when all ha_state_notify
 	 * calls using the link have completed.
 	 */

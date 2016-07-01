@@ -24,7 +24,11 @@ module Mero.Notification.HAState
   , disconnect
   , entrypointReply
   , entrypointNoReply
+  , HAMsgMeta(..)
   , HAStateException(..)
+  , ProcessEvent(..)
+  , ProcessEventType(..)
+  , ProcessType(..)
   ) where
 
 import HA.Resources.Mero.Note
@@ -33,7 +37,7 @@ import Mero.ConfC (Fid)
 import Network.RPC.RPCLite (RPCAddress(..), RPCMachine(..), RPCMachineV)
 
 import Control.Exception      ( Exception, throwIO, SomeException, evaluate )
-import Control.Monad          ( liftM2, void )
+import Control.Monad          ( liftM2, liftM3, liftM4, void )
 import Control.Monad.Catch    ( catch )
 import Data.Binary            ( Binary )
 import Data.ByteString as B   ( useAsCString )
@@ -45,7 +49,7 @@ import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef
 import Data.Word              ( Word32, Word64 )
 import Foreign.C.Types        ( CInt(..) )
 import Foreign.C.String       ( CString, withCString )
-import Foreign.Marshal.Alloc  ( allocaBytesAligned )
+import Foreign.Marshal.Alloc  ( allocaBytesAligned, free )
 import Foreign.Marshal.Array  ( peekArray, withArrayLen, withArrayLen0, pokeArray )
 import Foreign.Marshal.Utils  ( with, withMany )
 import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr, nullPtr, castPtr, plusPtr )
@@ -56,8 +60,49 @@ import System.IO.Unsafe       ( unsafePerformIO )
 
 #include "hastate.h"
 #include "conf/obj.h"
+#include "ha/msg.h"
 
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
+
+-- | ha_msg_metadata
+data HAMsgMeta = HAMsgMeta
+  { _hm_fid :: Fid
+  , _hm_source_process :: Fid
+  , _hm_source_service :: Fid
+  , _hm_time :: Word64
+  } deriving (Show, Eq, Ord, Typeable, Generic)
+
+instance Binary HAMsgMeta
+instance Hashable HAMsgMeta
+
+data ProcessEvent = ProcessEvent
+  { _chp_event :: ProcessEventType
+  , _chp_type :: ProcessType
+  , _chp_pid :: Word64
+  } deriving (Show, Eq, Ord, Typeable, Generic)
+
+instance Binary ProcessEvent
+instance Hashable ProcessEvent
+
+data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_process_type" #-}
+  ProcessType = TAG_M0_CONF_HA_PROCESS_OTHER
+              | TAG_M0_CONF_HA_PROCESS_KERNEL
+              | TAG_M0_CONF_HA_PROCESS_M0MKFS
+              | TAG_M0_CONF_HA_PROCESS_M0D
+              deriving (Show, Eq, Ord, Typeable, Generic)
+
+instance Binary ProcessType
+instance Hashable ProcessType
+
+data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_process_event" #-}
+  ProcessEventType = TAG_M0_CONF_HA_PROCESS_STARTING
+                   | TAG_M0_CONF_HA_PROCESS_STARTED
+                   | TAG_M0_CONF_HA_PROCESS_STOPPING
+                   | TAG_M0_CONF_HA_PROCESS_STOPPED
+                   deriving (Show, Eq, Ord, Typeable, Generic)
+
+instance Binary ProcessEventType
+instance Hashable ProcessEventType
 
 -- | Notes telling the state of a given configuration object
 data Note = Note
@@ -91,7 +136,7 @@ cbRefs = unsafePerformIO $ newIORef []
 --
 -- Must be called after 'Mero.m0_init'.
 --
-initHAState :: RPCAddress 
+initHAState :: RPCAddress
             -> Fid -- ^ Process Fid
             -> Fid -- ^ Profile Fid
             -> (HALink -> Word64 -> NVec -> IO ())
@@ -100,6 +145,8 @@ initHAState :: RPCAddress
                --
                -- When the requested state is available, 'notify' must
                -- be called by passing the given link.
+            -> (HAMsgMeta -> ProcessEvent -> IO ())
+               -- ^ Called when process event notification is received
             -> (NVec -> IO ())
                -- ^ Called when a request to update the state of some objects is
                -- received.
@@ -113,17 +160,19 @@ initHAState :: RPCAddress
                -- It is safe to call 'disconnect' when all 'notify' calls
                -- using the link have completed.
             -> IO ()
-initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_state_set ha_state_entry
-            ha_state_link_connected ha_state_link_disconnecting =
+initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_set ha_state_set
+            ha_state_entry ha_state_link_connected ha_state_link_disconnecting =
     useAsCString rpcAddr $ \cRPCAddr ->
     allocaBytesAligned #{size ha_state_callbacks_t}
                        #{alignment ha_state_callbacks_t}$ \pcbs -> do
       wget <- wrapGetCB
+      wpset <- wrapSetProcessCB
       wset <- wrapSetCB
       wentry <- wrapEntryCB
       wconnected <- wrapConnectedCB
       wdisconnecting <- wrapDisconnectingCB
       #{poke ha_state_callbacks_t, ha_state_get} pcbs wget
+      #{poke ha_state_callbacks_t, ha_process_event_set} pcbs wpset
       #{poke ha_state_callbacks_t, ha_state_set} pcbs wset
       #{poke ha_state_callbacks_t, ha_state_entrypoint} pcbs wentry
       #{poke ha_state_callbacks_t, ha_state_link_connected} pcbs wconnected
@@ -131,6 +180,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_state_set ha_st
          wdisconnecting
       modifyIORef cbRefs
         ( (SomeFunPtr wget:)
+        . (SomeFunPtr wpset:)
         . (SomeFunPtr wset:)
         . (SomeFunPtr wentry:)
         . (SomeFunPtr wconnected:)
@@ -144,10 +194,17 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_state_set ha_st
         (peekNote note >>= ha_state_get (HALink hl) w)
         $ \e -> hPutStrLn stderr $
                   "initHAState.wrapGetCB: " ++ show (e :: SomeException)
+
+    wrapSetProcessCB = cwrapProcessSetCB $ \m' pe -> catch
+      (peek m' >>= \m -> free m' >> peek pe >>= ha_process_event_set m)
+      $ \e -> do hPutStrLn stderr $
+                     "initHAState.wrapSetProcessCB: " ++ show (e :: SomeException)
+
     wrapSetCB = cwrapSetCB $ \note -> catch
         (peekNote note >>= ha_state_set)
         $ \e -> do hPutStrLn stderr $
                      "initHAState.wrapSetCB: " ++ show (e :: SomeException)
+
     wrapEntryCB = cwrapEntryCB $ \reqId processPtr profilePtr -> catch (do
         processFid <- peek processPtr
         profileFid <- peek profilePtr
@@ -163,10 +220,11 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_state_set ha_st
           hPutStrLn stderr $
             "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
 
-    peekNote p = do
-      nr <- #{peek struct m0_ha_msg_nvec, hmnv_nr} p :: IO Word64
-      let array = #{ptr struct m0_ha_msg_nvec, hmnv_vec} p
-      peekArray (fromIntegral nr) array
+peekNote :: Ptr NVec -> IO NVec
+peekNote p = do
+  nr <- #{peek struct m0_ha_msg_nvec, hmnv_nr} p :: IO Word64
+  let array = #{ptr struct m0_ha_msg_nvec, hmnv_vec} p
+  peekArray (fromIntegral nr) array
 
 data HAStateCallbacksV
 
@@ -174,8 +232,12 @@ foreign import capi ha_state_init ::
     CString -> Ptr Fid -> Ptr Fid -> Ptr HAStateCallbacksV -> IO CInt
 
 foreign import ccall "wrapper" cwrapGetCB ::
-    (Ptr HALink -> Word64 ->  Ptr NVec -> IO ())
+    (Ptr HALink -> Word64 -> Ptr NVec -> IO ())
     -> IO (FunPtr (Ptr HALink -> Word64 -> Ptr NVec -> IO ()))
+
+foreign import ccall "wrapper" cwrapProcessSetCB ::
+  (Ptr HAMsgMeta -> Ptr ProcessEvent -> IO ())
+  -> IO (FunPtr (Ptr HAMsgMeta -> Ptr ProcessEvent -> IO ()))
 
 foreign import ccall "wrapper" cwrapSetCB :: (Ptr NVec -> IO ())
                                           -> IO (FunPtr (Ptr NVec -> IO ()))
@@ -279,3 +341,65 @@ getRPCMachine :: IO (Maybe RPCMachine)
 getRPCMachine = do p <- ha_state_rpc_machine
                    return $ if nullPtr == p then Nothing
                               else Just $ RPCMachine p
+
+-- * Boilerplate instances
+
+instance Enum ProcessType where
+  toEnum #{const M0_CONF_HA_PROCESS_OTHER} = TAG_M0_CONF_HA_PROCESS_OTHER
+  toEnum #{const M0_CONF_HA_PROCESS_KERNEL} = TAG_M0_CONF_HA_PROCESS_KERNEL
+  toEnum #{const M0_CONF_HA_PROCESS_M0MKFS} = TAG_M0_CONF_HA_PROCESS_M0MKFS
+  toEnum #{const M0_CONF_HA_PROCESS_M0D} = TAG_M0_CONF_HA_PROCESS_M0D
+  toEnum i = error $ "ProcessType toEnum failed with " ++ show i
+
+  fromEnum TAG_M0_CONF_HA_PROCESS_OTHER = #{const M0_CONF_HA_PROCESS_OTHER}
+  fromEnum TAG_M0_CONF_HA_PROCESS_KERNEL = #{const M0_CONF_HA_PROCESS_KERNEL}
+  fromEnum TAG_M0_CONF_HA_PROCESS_M0MKFS = #{const M0_CONF_HA_PROCESS_M0MKFS}
+  fromEnum TAG_M0_CONF_HA_PROCESS_M0D = #{const M0_CONF_HA_PROCESS_M0D}
+
+instance Enum ProcessEventType where
+  toEnum #{const M0_CONF_HA_PROCESS_STARTING} = TAG_M0_CONF_HA_PROCESS_STARTING
+  toEnum #{const M0_CONF_HA_PROCESS_STARTED} = TAG_M0_CONF_HA_PROCESS_STARTED
+  toEnum #{const M0_CONF_HA_PROCESS_STOPPING} = TAG_M0_CONF_HA_PROCESS_STOPPING
+  toEnum #{const M0_CONF_HA_PROCESS_STOPPED} = TAG_M0_CONF_HA_PROCESS_STOPPED
+  toEnum i = error $ "ProcessEventType toEnum failed with " ++ show i
+
+  fromEnum TAG_M0_CONF_HA_PROCESS_STARTING = #{const M0_CONF_HA_PROCESS_STARTING}
+  fromEnum TAG_M0_CONF_HA_PROCESS_STARTED = #{const M0_CONF_HA_PROCESS_STARTED}
+  fromEnum TAG_M0_CONF_HA_PROCESS_STOPPING = #{const M0_CONF_HA_PROCESS_STOPPING}
+  fromEnum TAG_M0_CONF_HA_PROCESS_STOPPED = #{const M0_CONF_HA_PROCESS_STOPPED}
+
+
+instance Storable HAMsgMeta where
+  sizeOf _ = #{size ha_msg_metadata_t}
+  alignment _ = #{alignment ha_msg_metadata_t}
+
+  peek p = liftM4 HAMsgMeta
+      (#{peek ha_msg_metadata_t, ha_hm_fid} p)
+      (#{peek ha_msg_metadata_t, ha_hm_source_process} p)
+      (#{peek ha_msg_metadata_t, ha_hm_source_service} p)
+      (#{peek ha_msg_metadata_t, ha_hm_time} p)
+
+  poke p (HAMsgMeta fid' sp ss t) = do
+      #{poke ha_msg_metadata_t, ha_hm_fid} p fid'
+      #{poke ha_msg_metadata_t, ha_hm_source_process} p sp
+      #{poke ha_msg_metadata_t, ha_hm_source_service} p ss
+      #{poke ha_msg_metadata_t, ha_hm_time} p t
+
+instance Storable ProcessEvent where
+  sizeOf _ = #{size struct m0_conf_ha_process}
+  alignment _ = #{alignment struct m0_conf_ha_process}
+
+  peek p = liftM3 ProcessEvent
+      (w64ToEnum <$> (#{peek struct m0_conf_ha_process, chp_event} p))
+      (w64ToEnum <$> (#{peek struct m0_conf_ha_process, chp_type} p))
+      (#{peek struct m0_conf_ha_process, chp_pid} p)
+  poke p (ProcessEvent ev et pid) = do
+      #{poke struct m0_conf_ha_process, chp_event} p (enumToW64 ev)
+      #{poke struct m0_conf_ha_process, chp_event} p (enumToW64 et)
+      #{poke struct m0_conf_ha_process, chp_pid} p pid
+
+enumToW64 :: Enum a => a -> Word64
+enumToW64 = fromIntegral . fromEnum
+
+w64ToEnum :: Enum a => Word64 -> a
+w64ToEnum = toEnum . fromIntegral

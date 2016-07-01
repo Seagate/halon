@@ -55,7 +55,7 @@ import Mero.Notification.HAState (Note(..))
 
 import Control.Category
 import Control.Distributed.Process
-import Control.Monad (forM, unless)
+import Control.Monad (forM, unless, when)
 
 import Data.Foldable (for_)
 import Data.Proxy

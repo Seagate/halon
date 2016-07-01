@@ -381,6 +381,7 @@ getNotificationChannels = do
                    , let stype = M0.s_type service
                    , endpoint <- M0.s_endpoints service
                    ]
+     phaseLog "debug" $ show (recipients, nha, ha)
      case (mchan, recipients) of
        (_, x) | Set.null x -> return Nothing
        (Nothing, Set.toList -> r) -> do
