@@ -84,9 +84,10 @@ ruleProcessRestarted = define "processes-restarted" $ do
         lget Nothing = Nothing
         lget (Just (_,_,_,x)) = Just x
 
-      resetNodeGuard (HAEvent eid (ProcessControlResultRestartMsg nid results) _) ls (Just (_, _, Just n, _)) = do
+      resetNodeGuard (HAEvent eid (ProcessControlResultRestartMsg nid results) _) ls (Just (_, p, Just n, _)) = do
         let mnode = M0.m0nodeToNode n $ lsGraph ls
-        return $ if maybe False (== Node nid) mnode then Just (eid, results) else Nothing
+        return $ if maybe False (== Node nid) mnode && [M0.fid p] == lefts results
+                 then Just (eid, results) else Nothing
       resetNodeGuard _ _ _ = return Nothing
 
 
