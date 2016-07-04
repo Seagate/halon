@@ -33,6 +33,7 @@ import Control.Monad.Catch
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Events.Cluster
 import HA.RecoveryCoordinator.Actions.Mero.Failure
+import           HA.RecoveryCoordinator.Rules.Castor.Controller
 import qualified HA.RecoveryCoordinator.Rules.Castor.Process as Process
 import qualified HA.RecoveryCoordinator.Rules.Castor.Disk as Disk
 import qualified HA.RecoveryCoordinator.Rules.Castor.Expander as Expander
@@ -71,6 +72,7 @@ castorRules = sequence_
   , ruleMeroNoteSet
   , ruleInternalStateChangeHandler
   , ruleGetEntryPoint
+  , ruleControllerChanged
   , Process.rules
   , Disk.rules
   , Expander.rules

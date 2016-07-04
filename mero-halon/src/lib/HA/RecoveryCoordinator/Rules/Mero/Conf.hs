@@ -411,7 +411,29 @@ stateCascadeRules =
   , AnyCascadeRule diskRemoveFromFailureVector
   , AnyCascadeRule processCascadeRule
   , AnyCascadeRule nodeTransient
+  , AnyCascadeRule controllerCascadeFailedRule
+  , AnyCascadeRule controllerCascadeOnlineRule
   ]
+
+controllerCascadeFailedRule :: StateCascadeRule M0.Controller M0.Process
+controllerCascadeFailedRule = StateCascadeRule
+  (M0.M0_NC_ONLINE ==)
+  (M0.M0_NC_FAILED ==)
+  (\c rg -> [ p | (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
+                , p <- G.connectedTo n M0.IsParentOf rg ])
+  -- Controller failed, inhibit processes. Don't fail processes to not
+  -- trigger restart.
+  (\_ pst -> M0.PSInhibited pst)
+
+controllerCascadeOnlineRule :: StateCascadeRule M0.Controller M0.Process
+controllerCascadeOnlineRule = StateCascadeRule
+  (M0.M0_NC_FAILED ==)
+  (M0.M0_NC_ONLINE ==)
+  (\c rg -> [ p | (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
+                , p <- G.connectedTo n M0.IsParentOf rg ])
+  -- Controller came back so fail the processes and let halon restart
+  -- them
+  (\_ _ -> M0.PSFailed "controller came online")
 
 rackCascadeRule :: StateCascadeRule M0.Rack M0.Enclosure
 rackCascadeRule = StateCascadeRule
