@@ -56,6 +56,11 @@ typedef struct ha_state_callbacks {
          *  * process_fid - Fid of the remote process that is requesting
          *      entrypoint.
          *  * profile_fid - Fid of the remote prccess's profile.
+         *
+         * For each incoming request it's guarantees that either
+         * ha_state_link_connected or ha_state_link_reused will be called, so
+         * request id is used for making a connection between those callbacks
+         * and entrypoint request.
 	 */
 	void (*ha_state_entrypoint)( const struct m0_uint128 *req_id
                                    , const struct m0_fid *process_fid
@@ -65,11 +70,21 @@ typedef struct ha_state_callbacks {
 	/**
 	 * Called when a new link is connected. The link is alive until
 	 * ha_state_disconnect(..) is called.
+         *   * req_id - id of the entrypoint request for this link.
+         *   * hl     - created link.
 	 */
-	void (*ha_state_link_connected)(struct m0_ha_link *hl);
+	void (*ha_state_link_connected)(const struct m0_uint128 *req_id, struct m0_ha_link *hl);
 
 	/**
-	 * The link is no longer needed by the remote peer.
+	 * Called after an existing link requested entrypoint info. The link is alive until
+	 * ha_state_disconnect(..) is called.
+         *   * req_id - id of the entrypoint request for this link.
+         *   * hl     - created link.
+	 */
+	void (*ha_state_link_reused)(const struct m0_uint128 *req_id, struct m0_ha_link *hl);
+
+	/**
+	 * The link is no longer needed by the remote peer.  
 	 * It is safe to call ha_state_disconnect(..) when all ha_state_notify
 	 * calls using the link have completed.
 	 */

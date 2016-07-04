@@ -109,7 +109,7 @@ bitmapFromArray bs = Bitmap n $ go [] bs where
 
 -- @types.h m0_unit128@
 data Word128 = Word128 {-# UNPACK #-} !Word64 {-# UNPACK #-} !Word64
-  deriving (Eq, Generic, Show)
+  deriving (Eq, Ord, Generic, Show)
 
 instance Binary Word128
 instance Hashable Word128
